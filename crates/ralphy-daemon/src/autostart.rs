@@ -590,6 +590,18 @@ pub fn status() -> Result<AutostartStatus> {
 pub fn install() -> Result<()> {
     let spec = build_spec()?;
     write_registration(&unit_path()?, &systemd_unit(&spec))?;
+    // systemd reads a changed unit only after a reload. Whether `enable`
+    // reloads when the unit is already enabled is not measured, and a
+    // `daemon restart` right after a reinstall must start the new `ExecStart`
+    // (ADR-0067 amendment D8), so the reload is explicit.
+    run_argv(
+        &[
+            "systemctl".to_string(),
+            "--user".to_string(),
+            "daemon-reload".to_string(),
+        ],
+        false,
+    )?;
     run_argv(&render_install(Platform::Systemd, &spec), false)
 }
 

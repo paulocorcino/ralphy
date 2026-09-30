@@ -62,6 +62,9 @@ hmac = "0.12"
 sha1 = "0.10"
 data-encoding = "2"
 subtle = "2"
+# Erases a host password after it is handed to `ralphy host` (ADR-0067 §3);
+# already in Cargo.lock through rustls.
+zeroize = "1"
 pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
 # `default-features = false` drops the `image`/`svg` renderers — only the pure
 # unicode string render is used, so no image/bytemuck transitive tree.
@@ -109,8 +112,19 @@ libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 # The portable PTY test child enters raw console-input mode so its byte reader
-# observes ETX exactly as a real agent TUI does under ConPTY.
-windows-sys = { version = "0.61", features = ["Win32_System_Console"] }
+# observes ETX exactly as a real agent TUI does under ConPTY. The Security,
+# Threading and FileSystem features write (and the test reads back) the
+# owner-only DACL of the store files (`owner_only.rs`); features only, no new
+# crate. `SystemServices` gives the test the ACE type constant.
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Console",
+    "Win32_System_SystemServices",
+    "Win32_System_Threading",
+] }
 
 [dev-dependencies]
 # Drive the Router in-process (`ServiceExt::oneshot`) — no sockets in unit tests.

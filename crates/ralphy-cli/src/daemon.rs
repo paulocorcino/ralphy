@@ -1,25 +1,27 @@
 //! `ralphy daemon`: run the resident daemon in the foreground (docs/adr/0032),
-//! plus `daemon setup` (interactive baptism) and `daemon status`. The CLI is the
-//! composition root — it installs a plain tracing stack for readable foreground
-//! logs and hands off to `ralphy-daemon`, where the async runtime lives.
-//! Baptism is interactive stdin, so it lives in `setup`, never in the resident
-//! foreground process which must not block on stdin. `install`/`uninstall` (OS
-//! autostart, mirroring `schedule`) come in later slices.
+//! plus `daemon setup` (baptism), `daemon status` and the store verbs. The CLI is
+//! the composition root — it installs a plain tracing stack for readable
+//! foreground logs and hands off to `ralphy-daemon`, where the async runtime
+//! lives. Interactive baptism reads stdin, so it lives in `setup`, never in the
+//! resident foreground process which must not block on stdin; `setup --name
+//! --avatar` reads nothing, so a remote shell over SSH can run it (ADR-0067).
 
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use clap::{Args, Subcommand};
+use clap::{Args, Subcommand, ValueEnum};
 
 use ralphy_daemon::identity::{self, avatar_by_number, format_status_line, validate_name, AVATARS};
 use ralphy_daemon::registry;
 use ralphy_daemon::{auth, password, totp};
 
 mod bootstrap;
+mod describe;
 mod register;
 pub(crate) mod restart;
 
+pub(crate) use describe::port_from_args;
 pub(crate) use register::register_repo;
 
 #[derive(Args)]
@@ -67,7 +69,20 @@ pub(crate) struct DaemonArgs {
 pub(crate) enum DaemonCommand {
     /// Give the daemon a name (the default comes from the computer name) and an
     /// avatar. The first time, this also creates its identity.
-    Setup,
+    ///
+    /// With `--name` and `--avatar`, it asks nothing and sets only the name and
+    /// the avatar: no access token, no sign-in code, no password.
+    Setup {
+        /// The daemon's name: lowercase letters, digits and hyphens. Needs
+        /// `--avatar`.
+        #[arg(long, value_name = "NAME", requires = "avatar")]
+        name: Option<String>,
+
+        /// The avatar's number in the list that `ralphy daemon setup` shows.
+        /// Needs `--name`.
+        #[arg(long, value_name = "N", requires = "name")]
+        avatar: Option<usize>,
+    },
     /// Show the daemon's name and avatar, and the address to open.
     Status,
     /// Add a repo to the daemon by its folder. Nothing changes when it is
@@ -90,8 +105,9 @@ pub(crate) enum DaemonCommand {
         #[arg(value_name = "SLUG")]
         slug: String,
     },
-    /// Start the daemon automatically when you log in (with Task Scheduler or a
-    /// systemd user unit).
+    /// Start the daemon automatically when you log in: a value under the
+    /// Windows Run key, a systemd user unit on Linux, or a launchd agent on
+    /// macOS.
     Install,
     /// Stop starting the daemon automatically when you log in. Nothing changes
     /// when it was not set up.
@@ -100,6 +116,34 @@ pub(crate) enum DaemonCommand {
     /// an update, so the new version serves the workbench.
     // ADR-0056.
     Restart,
+    /// Ask for the access token on every request, also from this computer. Turn
+    /// it on for a daemon that another computer reaches through an SSH tunnel:
+    /// the tunnel arrives on 127.0.0.1, like a program on this computer. `on`
+    /// creates the access token when there is none. Restart the daemon to apply
+    /// the change.
+    // ADR-0067 §5.
+    RequireToken {
+        #[arg(value_enum, value_name = "STATE")]
+        state: OnOff,
+    },
+    /// Print this daemon's name, port and peer protocol as JSON, for a computer
+    /// that adds this one as a host.
+    #[command(hide = true)]
+    Describe {
+        /// Also print the access token.
+        #[arg(long)]
+        with_token: bool,
+    },
+    /// Change the access token. Every other computer that uses the old token is
+    /// disconnected. Restart the daemon to apply the change.
+    RotateToken,
+}
+
+/// A setting turned on or off.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub(crate) enum OnOff {
+    On,
+    Off,
 }
 
 pub(crate) fn run(args: &DaemonArgs) -> Result<()> {
@@ -113,7 +157,16 @@ pub(crate) fn run(args: &DaemonArgs) -> Result<()> {
                 peer_stores: args.peer_stores.clone(),
             })
         }
-        Some(DaemonCommand::Setup) => setup(args.port),
+        Some(DaemonCommand::Setup {
+            name: Some(name),
+            avatar: Some(avatar),
+        }) => setup_identity(
+            &identity::daemon_toml_path()?,
+            name,
+            *avatar,
+            &mut std::io::stdout(),
+        ),
+        Some(DaemonCommand::Setup { .. }) => setup(args.port),
         Some(DaemonCommand::Status) => status(args.port),
         Some(DaemonCommand::Add { path, init }) => {
             let repo = bootstrap::resolve_or_init_repo(path, *init)?;
@@ -156,7 +209,57 @@ pub(crate) fn run(args: &DaemonArgs) -> Result<()> {
             Ok(())
         }
         Some(DaemonCommand::Restart) => restart::restart(),
+        Some(DaemonCommand::RequireToken { state }) => {
+            require_token(&auth::store_dir()?, *state, &mut std::io::stdout())
+        }
+        Some(DaemonCommand::Describe { with_token }) => {
+            describe::describe(&auth::store_dir()?, *with_token, &mut std::io::stdout())
+        }
+        Some(DaemonCommand::RotateToken) => {
+            describe::rotate_token(&auth::store_dir()?, &mut std::io::stdout())
+        }
     }
+}
+
+/// Baptism without questions: validate `name` and `avatar`, then persist the
+/// identity at `path`. Mints no token, no TOTP seed and no password, and reads
+/// no stdin.
+fn setup_identity(path: &Path, name: &str, avatar: usize, out: &mut impl Write) -> Result<()> {
+    let name = validate_name(name)?;
+    let avatar = avatar_by_number(avatar)
+        .with_context(|| format!("pick an avatar number from 1 to {}", AVATARS.len()))?;
+    let id = identity::baptize(path, name, avatar.to_string())?;
+    writeln!(out, "baptized: {}", format_status_line(&id))?;
+    Ok(())
+}
+
+/// Turn the require-token marker on or off in the store `dir`. `on` mints the
+/// access token first when none exists, so the next start does not fail closed;
+/// the token itself is never printed.
+fn require_token(dir: &Path, state: OnOff, out: &mut impl Write) -> Result<()> {
+    match state {
+        OnOff::On => {
+            let token_path = auth::token_path_in(dir);
+            let (_, minted) = auth::ensure_token_at(&token_path)?;
+            auth::set_require_token_in(dir, true)?;
+            if minted {
+                writeln!(
+                    out,
+                    "access token: created (stored in {})",
+                    token_path.display()
+                )?;
+            } else {
+                writeln!(out, "access token: already set")?;
+            }
+            writeln!(out, "require-token: on")?;
+        }
+        OnOff::Off => {
+            auth::set_require_token_in(dir, false)?;
+            writeln!(out, "require-token: off")?;
+        }
+    }
+    writeln!(out, "run `ralphy daemon restart` to apply the change")?;
+    Ok(())
 }
 
 /// Load the registry at `registry_path`, remove `slug`, and save it. Returns

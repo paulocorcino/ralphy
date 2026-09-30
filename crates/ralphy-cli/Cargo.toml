@@ -45,12 +45,18 @@ ralphy-usage-scan.workspace = true
 ralphy-pricing.workspace = true
 ralphy-release.workspace = true
 sha2.workspace = true
+# Host-key fingerprints for `ralphy host key` (#497); already in Cargo.lock
+# through ralphy-daemon.
+data-encoding = "2"
 zip.workspace = true
 tar.workspace = true
 flate2.workspace = true
 # Terminal QR for `daemon setup` TOTP enrolment (issue #179); pure-Rust unicode
 # render only (no image/svg feature tree). Same version as ralphy-daemon.
 qrcode = { version = "0.14", default-features = false }
+# Erases the host password from memory after use (ADR-0067 §3); already in
+# Cargo.lock through rustls.
+zeroize = "1"
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -29,8 +29,8 @@ mod token;
 
 pub use policy::{
     compute_policy, remote_images_enabled_in, remote_images_path_in, require_login_enabled_in,
-    require_login_path_in, set_remote_images_in, set_require_login_in, upgrade_with_session,
-    AuthPolicy, LoginOutcome,
+    require_login_path_in, require_token_enabled_in, require_token_path_in, set_remote_images_in,
+    set_require_login_in, set_require_token_in, upgrade_with_session, AuthPolicy, LoginOutcome,
 };
 use throttle::LoginThrottle;
 pub(crate) use token::set_owner_only;
@@ -156,7 +156,7 @@ fn default_bound_addr() -> SocketAddr {
 
 /// The host part of a `Host` header, minus any port. Handles the bracketed IPv6
 /// form (`[::1]:7257`), where a plain `rsplit_once(':')` would cut the address.
-fn host_name(host: &str) -> &str {
+pub(crate) fn host_name(host: &str) -> &str {
     if let Some(rest) = host.strip_prefix('[') {
         return rest.split(']').next().unwrap_or(rest);
     }
@@ -458,6 +458,7 @@ impl AuthState {
             seed,
             pw,
             require_login,
+            require_token_enabled_in(&dir)?,
             self.epoch.clone(),
         )?;
         *self.policy.write().expect("auth policy lock poisoned") = next;

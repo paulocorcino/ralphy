@@ -96,6 +96,68 @@ fn fold_first_duplicate_identity_wins() {
     );
 }
 
+fn tunnel_toml(port: u16, local_port: u16) -> String {
+    format!(
+        "{}\n[tunnel]\ndestination = \"svrapp\"\npeer_port = 7257\nlocal_port = {local_port}\n",
+        descriptor_toml("01TUN", port)
+    )
+}
+
+#[test]
+fn fold_reads_a_tunnel_section() {
+    let (accepted, rejected) = fold(&[("01TUN.toml".to_string(), tunnel_toml(7401, 7401))]);
+    assert!(rejected.is_empty(), "got: {rejected:?}");
+    assert_eq!(
+        accepted[0].tunnel,
+        Some(TunnelSpec {
+            destination: "svrapp".into(),
+            peer_port: 7257,
+            local_port: 7401,
+            identity_file: None,
+        })
+    );
+}
+
+/// An older daemon's descriptor has no tunnel, and writing one back must not
+/// add an empty table: the file stays byte-compatible with protocol 3 readers.
+#[test]
+fn fold_without_a_tunnel_writes_no_tunnel_table() {
+    let (accepted, rejected) = fold(&[("01AAA.toml".to_string(), descriptor_toml("01AAA", 7257))]);
+    assert!(rejected.is_empty(), "got: {rejected:?}");
+    assert_eq!(accepted[0].tunnel, None);
+    let text = toml::to_string_pretty(&accepted[0]).unwrap();
+    assert!(!text.contains("tunnel"), "got: {text}");
+}
+
+#[test]
+fn fold_rejects_a_tunnel_whose_local_port_is_not_its_port() {
+    let (accepted, rejected) = fold(&[("01TUN.toml".to_string(), tunnel_toml(7402, 7401))]);
+    assert!(accepted.is_empty(), "got: {accepted:?}");
+    assert!(
+        matches!(&rejected[0], PeerReject::Malformed { why, .. }
+            if why.contains("its tunnel local port 7401 is not its port 7402")),
+        "got: {:?}",
+        rejected[0]
+    );
+}
+
+#[test]
+fn fold_rejects_a_tunnel_with_no_destination_or_a_port_0() {
+    let no_destination =
+        tunnel_toml(7401, 7401).replace(r#"destination = "svrapp""#, r#"destination = " ""#);
+    let no_peer_port = tunnel_toml(7401, 7401).replace("peer_port = 7257", "peer_port = 0");
+    for text in [no_destination, no_peer_port] {
+        let (accepted, rejected) = fold(&[("01TUN.toml".to_string(), text)]);
+        assert!(accepted.is_empty(), "got: {accepted:?}");
+        assert!(
+            matches!(&rejected[0], PeerReject::Malformed { why, .. }
+                if why.contains("its tunnel needs a destination")),
+            "got: {:?}",
+            rejected[0]
+        );
+    }
+}
+
 #[test]
 fn read_store_of_missing_dir_is_empty() {
     let dir = tempfile::tempdir().unwrap();
@@ -143,6 +205,7 @@ fn writer_emits_every_announced_field() {
         environment: "WSL: Ubuntu-22.04".into(),
         token: "tok-abc".into(),
         protocol_version: PEER_PROTOCOL_VERSION,
+        tunnel: None,
         nudge: Some(NudgeSpec {
             distro: "Ubuntu-22.04".into(),
             unit: "ralphy-daemon.service".into(),
@@ -262,4 +325,69 @@ fn diagnosis_always_names_the_environment() {
             status
         );
     }
+}
+
+#[test]
+fn tunnel_diagnoses_name_the_host_and_never_wsl() {
+    let closed = PeerStatus::TunnelClosed {
+        host: "svrapp".into(),
+        cause: None,
+    };
+    let failed = PeerStatus::TunnelClosed {
+        host: "svrapp".into(),
+        cause: Some("no ssh program found: install OpenSSH".into()),
+    };
+    let silent = PeerStatus::TunnelSilent {
+        host: "svrapp".into(),
+        why: "connection refused".into(),
+    };
+    for status in [&closed, &failed, &silent] {
+        let d = status.diagnosis("Linux");
+        assert!(d.contains("The tunnel to svrapp is"), "got: {d}");
+        assert!(!d.contains("WSL"), "a tunnel peer is not a distro: {d}");
+    }
+    assert!(closed.diagnosis("Linux").contains("is opening it again"));
+    assert!(failed
+        .diagnosis("Linux")
+        .contains("could not open it: no ssh program found"));
+    let d = silent.diagnosis("Linux");
+    assert!(
+        d.contains("does not answer: connection refused")
+            && d.contains("Start the daemon on that host"),
+        "got: {d}"
+    );
+}
+
+#[test]
+fn classify_tunnel_maps_the_ensure_answer() {
+    use super::client::classify_tunnel;
+    let started = classify_tunnel("svrapp", Ok(true), "refused".into());
+    assert_eq!(started.state(), "tunnel-closed");
+    let held = classify_tunnel("svrapp", Ok(false), "refused".into());
+    assert_eq!(held.state(), "tunnel-silent");
+    assert!(held.diagnosis("Linux").contains("refused"));
+    let failed = classify_tunnel("svrapp", Err("spawn failed".into()), "refused".into());
+    assert_eq!(failed.state(), "tunnel-closed");
+    assert!(failed.diagnosis("Linux").contains("spawn failed"));
+}
+
+#[test]
+fn paired_descriptor_refuses_an_id_that_is_not_a_ulid() {
+    let mut d = DaemonDescription {
+        daemon_id: Some("01ARZ3NDEKTSV4RRFFQ69G5FC0".to_string()),
+        name: Some("svrapp".to_string()),
+        avatar: None,
+        environment: "Linux".to_string(),
+        os: "linux".to_string(),
+        port: 7257,
+        protocol_version: PEER_PROTOCOL_VERSION,
+        require_token: true,
+        autostart: true,
+        running: true,
+        token: Some("tok".to_string()),
+    };
+    assert!(paired_descriptor(&d, "svrapp", 7401, None).is_ok());
+    d.daemon_id = Some("../../evil".to_string());
+    let err = paired_descriptor(&d, "svrapp", 7401, None).unwrap_err();
+    assert!(err.to_string().contains("not a valid id"), "{err}");
 }

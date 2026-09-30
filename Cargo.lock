@@ -1774,6 +1774,7 @@ dependencies = [
  "chrono",
  "clap",
  "console",
+ "data-encoding",
  "directories",
  "flate2",
  "hostname",
@@ -1807,6 +1808,7 @@ dependencies = [
  "unicode-width",
  "ureq",
  "winresource",
+ "zeroize",
  "zip",
 ]
 
@@ -1871,6 +1873,7 @@ dependencies = [
  "tracing",
  "ulid",
  "windows-sys 0.61.2",
+ "zeroize",
 ]
 
 [[package]]

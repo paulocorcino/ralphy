@@ -18,6 +18,7 @@ fn descriptor(id: &str, environment: &str) -> crate::peer::PeerDescriptor {
         environment: environment.to_string(),
         token: "token".to_string(),
         protocol_version: crate::peer::PEER_PROTOCOL_VERSION,
+        tunnel: None,
         nudge: None,
     }
 }

@@ -4,7 +4,8 @@ Status: **accepted** (2026-09-29). Decided in a design discussion, after a
 check of each decision against the code and a web search for the credential
 facts, then validated the same day by a spike with no code change, against a
 Linux host and a macOS host (see "Spike results"). §13 lists what is still open
-for the implementation.
+for the implementation. Amended 2026-09-29: the add flow can install Ralphy on
+the host, after the operator allows it (see "Amendment").
 
 An operator has computers other than the one that serves the workbench: a VPS
 reached over SSH, an old MacBook on the home network, maybe a second Windows
@@ -211,17 +212,19 @@ never a side effect of removal.
 
 - **One hop.** `POST /api/peer/command` never re-routes to another peer
   (ADR-0052), so the WSL distros of a remote Windows host do not appear.
-- **Upgrades stay manual on the other machine.** A protocol version mismatch
-  is diagnosed as it is today; the automatic peer update after a workbench
-  update covers WSL peers only.
+- **Upgrades are not automatic on the other machine.** A protocol version
+  mismatch is diagnosed as it is today, and the operator can install the local
+  version from the add flow (Amendment 2026-09-29); the automatic peer update
+  after a workbench update covers WSL peers only.
 - **Text in a console is capped.** A session keeps 256 KiB of output
   (`session/manager.rs`); after a long disconnection, the operator sees only
   the end.
 - **Credentials are per host, permanently** (ADR-0052 Consequences), now for
   more hosts.
-- **Installing Ralphy on the host is the operator's job.** The add flow checks
-  the version and shows the install command; it never installs software on
-  another computer.
+- **Installing Ralphy on the host needs the operator's permission.** The add
+  flow checks the version. It installs Ralphy only when the operator selects
+  *Install Ralphy on the host*, or runs `ralphy host install` (Amendment
+  2026-09-29).
 
 ### 11. The workbench: adding, showing and removing a host
 
@@ -251,8 +254,9 @@ new state glyph.
    *Trust* / *Cancel* choice. Trust writes the key to `known_hosts`.
 3. **Host checks**, a list that updates as each check runs over SSH, each with
    a mark, a one-click fix, or a command to copy:
-   - Ralphy is installed, with a compatible peer protocol; if not, the install
-     or upgrade command and a *Check again* button.
+   - Ralphy is installed, with a compatible peer protocol; if not, an
+     *Install Ralphy on the host* button (Amendment 2026-09-29) and a *Check
+     again* button.
    - The host daemon has a name; if not, a field to set it (§6).
    - The daemon starts with the system: `ralphy daemon install`, and on Linux,
      lingering. When enabling lingering needs `sudo`, the list shows the
@@ -463,3 +467,163 @@ Findings the predictions did not cover:
 - **A daemon run as `root`** turns the loopback hole into a path from any host
   user to a root shell. With §5 this is closed; the add flow should still
   advise a normal user.
+
+## Amendment (2026-09-29): the add flow installs Ralphy on the host, when the operator allows it
+
+§10 said "it never installs software on another computer": the host checks
+showed a link to the releases page and `./ralphy install`. On a new VPS this is
+the first step, and the operator must leave the dialog, find the right archive,
+copy it to the host and install it. The local computer already has what the
+host needs: its own binary, or the release archive for the host's target. This
+amendment lets the add flow send it. Decided in a design discussion on
+2026-09-29, after a check of each decision against the code.
+
+**D1. The bytes come from the local computer.** When the host has the same
+target as the local computer, the local computer sends its own executable.
+When the target is different, it downloads the release archive for the host's
+target, of **the local computer's version**, never the latest one: peer
+compatibility is an exact match of the peer protocol (`PEER_PROTOCOL_VERSION`),
+so only the same version is sure to connect. A development build (ahead of its
+tag) has no release archive, so it can install only on a host with the same
+target; for another target the flow refuses and says to install by hand. The
+host needs no internet access.
+
+**D2. The binary goes to `~/.ralphy/bin`.** On Windows it is
+`%USERPROFILE%\.ralphy\bin\ralphy.exe`. This needs no root and no
+administrator. The flow does not change `PATH` and edits no file of the
+operator (no shell profile, no registry). Every command the add, check and
+remove flows run on the host uses `~/.ralphy/bin/ralphy` when it exists, and
+`ralphy` from `PATH` otherwise. The path is fixed, so the descriptor does not
+record it. At the end, the flow says how to add the folder to `PATH` for manual
+use.
+
+**D3. An old Ralphy is not replaced; it is set aside.** When the host has a
+Ralphy with another peer protocol, the new binary goes to `~/.ralphy/bin` as in
+D2. The old binary stays where it is and is not touched: it can be a symlink
+into a development checkout, or a file that `cargo install` owns. The flow says
+that `ralphy` on `PATH` is still the old one. **The flow never installs an
+older version.** When the host reports a peer protocol higher than the local
+one, it sends nothing and says to update Ralphy on this computer.
+
+**D4. The bytes go through the standard input of the SSH session.** No `scp`
+and no `sftp`: they need a second connection, and some servers turn off the
+`sftp` subsystem. The local computer sends the executable only, taken out of
+the archive, so the host needs no `tar` and no `unzip`. On Linux and macOS the
+host writes it with `cat`; on Windows with PowerShell, which copies the
+standard input byte for byte. The `findstr` form that writes
+`authorized_keys` cannot carry a binary. The host writes `ralphy.part`,
+computes its SHA-256 (`sha256sum`, `shasum -a 256`, or `Get-FileHash`), and the
+local computer compares it with the hash it computed. Only then does the host
+make the file executable and rename it. An existing `~/.ralphy/bin/ralphy` is
+first renamed to `.old`, because Windows cannot overwrite a running
+executable.
+
+**D5. `ralphy host install <destination>` is the permission.** The CLI never
+asks a question, because the workbench runs it as a verb. So the permission is
+the command itself. `ralphy host add` never installs; when Ralphy is missing or
+old, the check suggests `ralphy host install`. In the dialog, the check of
+Ralphy gets an *Install Ralphy on the host* button, with what it will do: the
+version, the target, where the binary comes from (this computer, or a release
+download), and the folder on the host. After the install, the dialog runs
+*Check again* by itself. The new verb joins the `host` verb family and its
+argv checks, and prints its progress as JSON lines like the others.
+
+**D6. The probe reads the architecture.** It reads `uname -m` on Linux and
+macOS, and `PROCESSOR_ARCHITECTURE` on Windows, and maps the result to the
+release targets: `linux-x64`, `macos-x64`, `macos-arm64`, `windows-x64`. A
+target with no release archive is refused with a clear sentence, for example
+that there is no Ralphy build for Linux arm64 and it must be built on the host
+with `cargo`. Windows on ARM64 is refused too: it can run x64 binaries through
+emulation, but nobody has measured Ralphy's consoles there.
+
+**D7. A downloaded archive is checked like `ralphy update` checks it.** The
+flow downloads the `.sha256` file of the same release and compares. It does not
+require the GitHub attestation, because that needs `gh` on the local computer.
+The archive is kept in the local store, by version and target, so adding three
+Linux hosts downloads it once. Its hash is checked again each time it is used.
+
+**D8. `host install` moves a running daemon to the new binary; `host add`
+does the rest.** The new binary reads the same store (`~/.ralphy`) as the old
+one. If the old daemon continued to run, `describe` would report it as
+running, `add` would not restart it, and the tunnel would reach the old
+protocol. So `host install`, after it writes the binary, asks the new binary
+`daemon describe` and then:
+
+1. when autostart is registered, runs `~/.ralphy/bin/ralphy daemon install`,
+   because autostart records the executable that registers it
+   (`autostart.rs`);
+2. when a daemon is running, runs `~/.ralphy/bin/ralphy daemon restart`,
+   which stops it and starts the new binary in its place.
+
+The daemon does not end stopped, because that cannot hold on every system.
+There is no `ralphy daemon stop`. On macOS, `daemon install` unloads and loads
+the launch agent, whose `RunAtLoad` starts the daemon, and whose `KeepAlive`
+starts it again after a kill. On Linux, `daemon install` writes the systemd
+unit, and systemd reads a changed unit only after a reload. Whether `enable`
+reloads when the unit is already enabled is not measured, so `daemon install`
+runs `systemctl --user daemon-reload` before `enable`. Without a reload, the
+`systemctl --user restart` that `daemon restart` runs for a unit would still
+start the old `ExecStart`.
+
+*Check again* then shows what is still missing (the name, the token marker),
+and *Connect* (`host add`) sets them and restarts or starts the daemon, as it
+does today. `add` stays the only flow that configures the host daemon.
+
+**D9. `host remove` never uninstalls.** Other computers can use the same host
+daemon, and the computer that installed Ralphy does not own it. Removing a host
+still undoes only what belongs to this computer: its key line and its
+descriptor (§9).
+
+**Not measured yet.** The implementation must check these before it relies on
+them:
+
+- The `macos-arm64` binary keeps its ad-hoc code signature when it is copied
+  through standard input, and it runs with no quarantine attribute.
+- PowerShell on a Windows host, started by OpenSSH, writes the standard input
+  to a file byte for byte, so the SHA-256 on the host matches.
+- A binary of about 30 to 40 MB, sent in one buffer through `HostShell::run`,
+  arrives in an acceptable time on a slow link, and the dialog shows that the
+  transfer is in progress.
+
+## Amendment (2026-09-30): how the password travels (issue #498)
+
+§3 says the password is used once, in memory, and never stored. This amendment
+decides the path it takes, because `ssh` runs with `BatchMode=yes`, which also
+turns off every way to give it a password.
+
+**P1. The path.** The dialog sends the password in the `host.check`,
+`host.add` or `host.install` payload. The daemon adds `--password-stdin` to the
+argv and writes the password to the child's standard input, which it then
+closes. The CLI reads it into memory that is erased when dropped (`zeroize`).
+When the host refuses every key, the CLI runs `ssh` without `BatchMode`, with
+`SSH_ASKPASS` set to the `ralphy` binary itself and
+`SSH_ASKPASS_REQUIRE=force`. That child `ralphy` gets the password from the CLI
+over a loopback socket that answers only a one-time random nonce. The
+environment carries only the port and the nonce. The password is never in an
+argv, an environment variable, a file or a log.
+
+**P2. What the password does.** It signs in only to add this computer's peer
+key: `uname -s` (else `cmd /c ver`), on Windows the probe for the
+Administrators group, then one command that appends the key line unless the
+key is already there. Every later command, and the tunnel, uses the peer key.
+On a Windows administrator the shared keys file gets an ACL for Administrators
+and SYSTEM only, because sshd ignores it otherwise. `host check` with a
+password therefore changes the host in one way: it adds the key.
+
+**P3. One attempt.** The password sessions run with `PubkeyAuthentication=no`,
+`NumberOfPasswordPrompts=1` and `StrictHostKeyChecking=yes`. The socket answers
+the first prompt that asks for a password, and never answers the same prompt
+twice, so a wrong password costs the account one failed attempt. A different
+prompt (a second factor, a password change) is not answered; the flow fails
+with the kind `prompt` and shows the prompt. The console fallback of §3 is not
+built yet.
+
+**P4. Where a password may come from.** The daemon accepts a password only on
+a request that arrived over https (`X-Forwarded-Proto: https`) or from this
+computer: a loopback `Host` and no forwarding header. Otherwise the reply is an
+error and nothing runs. The dialog hides the field in the same case.
+
+**Measured (2026-09-30).** `OpenSSH_for_Windows_9.5p2`, started with no console
+(`DETACHED_PROCESS`, as the daemon starts its children), calls `SSH_ASKPASS`
+with `SSH_ASKPASS_REQUIRE=force`, with or without `DISPLAY`. The prompt it
+passed was `root@10.1.1.4's password: `, and it made one attempt.

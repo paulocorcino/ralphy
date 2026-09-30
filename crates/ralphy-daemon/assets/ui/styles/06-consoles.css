@@ -73,13 +73,18 @@
    by `applyColumns`. The leftmost also carries `.maximized`, so the order of
    these two rules matters: this one comes second and wins. The number of
    columns has no limit, so a column drops the floating window's minimum
-   width: with it, narrow columns would overlap. */
+   width: with it, narrow columns would overlap. A column can hold rows, one
+   above the other, of equal height (`--row-index`/`--row-count`, rows
+   amendment); they drop the minimum height for the same reason. */
 .session-window.column {
   left: calc(var(--max-left, 0px) + 100% * var(--col-index, 0) / var(--col-count, 1)) !important;
-  top: var(--max-top, 0px) !important;
+  top: calc(
+    var(--max-top, 0px) + (100% - var(--kb-inset, 0px)) * var(--row-index, 0) / var(--row-count, 1)
+  ) !important;
   width: calc(100% / var(--col-count, 1)) !important;
   min-width: 0;
-  height: calc(100% - var(--kb-inset, 0px)) !important;
+  height: calc((100% - var(--kb-inset, 0px)) / var(--row-count, 1)) !important;
+  min-height: 0;
   border-radius: 0;
 }
 /* A column is not moved, resized, locked, closed or raised to the screen:

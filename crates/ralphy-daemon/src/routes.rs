@@ -439,7 +439,8 @@ pub(crate) fn router_with_roster(
             "/ws/command",
             get({
                 let sessions = sessions.clone();
-                move |ws: WebSocketUpgrade| {
+                move |ws: WebSocketUpgrade, headers: axum::http::HeaderMap| {
+                    let secret_ok = request_may_carry_a_secret(&headers);
                     let registry_path = command_registry.clone();
                     let shutdown = command_shutdown.clone();
                     let daemon_id = command_daemon_id.clone();
@@ -457,6 +458,7 @@ pub(crate) fn router_with_roster(
                                 run_exits,
                                 bound_port,
                                 sessions,
+                                secret_ok,
                             )
                         })
                     }

@@ -161,25 +161,12 @@ pub(crate) async fn session_ws_upgrade(
                     query.repo = Some(slug.to_string());
                 }
                 fleet::route::Route::Peer { peer, slug } => {
-                    let peer_query = peer_session_query(&query, slug);
                     let me = peer::client::SelfRef {
                         port: bound_port,
                         daemon_id: &daemon_id,
                     };
-                    return match peer::client::session(peer, &peer_query, me).await {
-                        Ok(peer_socket) => ws.on_upgrade(move |socket| {
-                            peer_session_ws(socket, peer_socket, shutdown)
-                        }),
-                        Err(peer::client::SocketError::Peer(status)) => {
-                            (StatusCode::BAD_GATEWAY, status.diagnosis(&peer.environment))
-                                .into_response()
-                        }
-                        Err(peer::client::SocketError::Http { status, body }) => (
-                            StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY),
-                            body,
-                        )
-                            .into_response(),
-                    };
+                    let peer_query = peer_session_query(&query, slug);
+                    return relay_to_peer(ws, peer, &peer_query, me, shutdown).await;
                 }
                 fleet::route::Route::UnknownDaemon { daemon_id } => {
                     if let Some((environment, theirs)) = rejects
@@ -279,6 +266,17 @@ pub(crate) async fn session_ws_upgrade(
                     query.repo = Some(slug.to_string());
                 }
                 fleet::route::Route::Peer { peer, slug } => {
+                    // A peer with no WSL distro is on another machine (ADR-0067
+                    // §7): its free console runs THERE, through the same relay
+                    // as an agent session, so it outlives this computer.
+                    let Some(nudge) = peer.nudge.as_ref() else {
+                        let me = peer::client::SelfRef {
+                            port: bound_port,
+                            daemon_id: &daemon_id,
+                        };
+                        let peer_query = peer_session_query(&query, slug);
+                        return relay_to_peer(ws, peer, &peer_query, me, shutdown).await;
+                    };
                     let status = peer::client::probe(
                         peer,
                         peer::client::SelfRef {
@@ -291,16 +289,6 @@ pub(crate) async fn session_ws_upgrade(
                         return (StatusCode::BAD_GATEWAY, status.diagnosis(&peer.environment))
                             .into_response();
                     }
-                    let Some(nudge) = peer.nudge.as_ref() else {
-                        return (
-                            StatusCode::BAD_GATEWAY,
-                            format!(
-                                "{} cannot host a free console: peer advertises no WSL distro",
-                                peer.environment
-                            ),
-                        )
-                            .into_response();
-                    };
                     let Some(launcher) = session::peer_console_launcher() else {
                         return (
                             StatusCode::BAD_GATEWAY,

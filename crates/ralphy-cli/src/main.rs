@@ -18,6 +18,7 @@ mod delivery;
 mod events;
 mod guard;
 mod hook;
+mod host;
 mod init;
 mod install;
 mod issues;
@@ -45,6 +46,18 @@ use cli::{Cli, Command, ConsolidateArgs, HookCommand};
 pub(crate) use cli::CliAgent;
 
 fn main() -> Result<()> {
+    // `ssh` starts this binary as its askpass program, with the prompt as the
+    // only argument, during a host flow's password sign-in.
+    if let Some(env) = std::env::var_os(host::ASKPASS_ENV) {
+        let args: Vec<_> = std::env::args_os().skip(1).collect();
+        if let [prompt] = args.as_slice() {
+            if let Err(e) = host::askpass(&env.to_string_lossy(), &prompt.to_string_lossy()) {
+                eprintln!("{e:#}");
+                std::process::exit(1);
+            }
+            return Ok(());
+        }
+    }
     let cli = Cli::from_arg_matches(&cli::command().get_matches()).unwrap_or_else(|e| e.exit());
     match cli.command {
         Command::Run(args) => run::run_cmd(*args),
@@ -63,6 +76,7 @@ fn main() -> Result<()> {
         Command::Issues(args) => issues::issues_cmd(args),
         Command::Schedule(cmd) => schedule::run(cmd),
         Command::Daemon(args) => daemon::run(&args),
+        Command::Host(cmd) => host::run(&cmd),
         Command::Branch(cmd) => mutate::branch(cmd),
         Command::Worktree(cmd) => mutate::worktree(cmd),
         Command::Label(cmd) => mutate::label(cmd),

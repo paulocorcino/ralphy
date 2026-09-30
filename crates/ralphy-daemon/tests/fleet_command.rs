@@ -67,6 +67,7 @@ fn descriptor(id: &str, port: u16) -> PeerDescriptor {
         environment: ENV.to_string(),
         token: "peer-tok".to_string(),
         protocol_version: PEER_PROTOCOL_VERSION,
+        tunnel: None,
         nudge: None,
     }
 }

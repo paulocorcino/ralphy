@@ -53,6 +53,38 @@ fn peer_session_query_forwards_the_checkout_only_when_present() {
     );
 }
 
+/// A free console on a peer with no distro is launched there: the peer gets
+/// the console shape, the trimmed startup command, and the holder.
+#[test]
+fn peer_session_query_forwards_a_console_launch() {
+    let console = |command: Option<&str>| SessionQuery {
+        repo: Some("x".into()),
+        agent: None,
+        id: None,
+        takeover: None,
+        watch: None,
+        console: Some(1),
+        checkout: None,
+        command: command.map(str::to_string),
+        holder: Some("tab-1".into()),
+        name: None,
+    };
+    assert_eq!(
+        peer_session_query(&console(Some(" htop ")), "owner/repo"),
+        "console=1&repo=owner%2Frepo&command=htop&holder=tab-1"
+    );
+    assert_eq!(
+        peer_session_query(
+            &SessionQuery {
+                holder: None,
+                ..console(None)
+            },
+            "owner/repo"
+        ),
+        "console=1&repo=owner%2Frepo"
+    );
+}
+
 /// The owning daemon keeps the writer slot, so the relay forwards the tab's
 /// holder on a launch and on a reattach — and drops a malformed one rather
 /// than splicing it into the peer's query string.
@@ -1440,6 +1472,7 @@ fn seed_fleet_store(dir: &Path, peer_port: u16) -> PathBuf {
             environment: "WSL: Ubuntu-22.04".into(),
             token: "tok".into(),
             protocol_version: peer::PEER_PROTOCOL_VERSION,
+            tunnel: None,
             // Deliberately NOT a WSL peer: this descriptor points at a closed
             // loopback port, and announcing a distro it does not have would
             // make a failed dial ask the HOST whether that distro is running —
@@ -1490,6 +1523,7 @@ async fn api_fleet_marks_an_unreachable_peer_and_keeps_the_local_repos() {
             environment: "WSL: Ubuntu-22.04".into(),
             token: "tok".into(),
             protocol_version: peer::PEER_PROTOCOL_VERSION,
+            tunnel: None,
             nudge: Some(peer::NudgeSpec {
                 distro: "Ubuntu-22.04".into(),
                 unit: "ralphy-daemon.service".into(),
@@ -1660,6 +1694,7 @@ fn nudge_target(port: u16, address: &str) -> peer::PeerDescriptor {
         environment: "WSL: Ubuntu-22.04".into(),
         token: "tok".into(),
         protocol_version: peer::PEER_PROTOCOL_VERSION,
+        tunnel: None,
         nudge: None,
     }
 }
@@ -1787,6 +1822,7 @@ async fn api_fleet_nudge_refuses_a_peer_that_announced_no_way_to_wake_it() {
             environment: "WSL: Ubuntu-22.04".into(),
             token: "tok".into(),
             protocol_version: peer::PEER_PROTOCOL_VERSION,
+            tunnel: None,
             nudge: None,
         },
     )
@@ -2121,6 +2157,7 @@ async fn api_agents_uses_the_owning_daemons_locator() {
             environment: "WSL: Ubuntu-22.04".to_string(),
             token: "peer-token".to_string(),
             protocol_version: peer::PEER_PROTOCOL_VERSION,
+            tunnel: None,
             nudge: None,
         },
     )

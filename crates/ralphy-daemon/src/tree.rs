@@ -5,9 +5,10 @@
 //! it ([`read_with`], ADR-0036 amendment 2026-09-22); [`read_image`] returns an
 //! allowlisted image's bytes (ADR-0049). Confinement ([`crate::confine`]) is
 //! the security boundary.
-//! `.gitignore` is NOT consulted (ADR-0036, amendment 2026-07-26): the operator
-//! works in the ignored files — `.ralphy/`, run logs, build output — and hiding
-//! what [`read`] would serve anyway was never protection, only confusion.
+//! `.gitignore` does not filter the listing (ADR-0036, amendment 2026-07-26):
+//! the operator works in the ignored files — `.ralphy/`, run logs, build
+//! output — and hiding what [`read`] would serve anyway was never protection,
+//! only confusion. It only MARKS an entry ([`Entry::ignored`]).
 //! The two searches ([`find`] by name, [`grep`] by content) live in
 //! [`search`] and share this module's walker and text policy.
 
@@ -18,6 +19,7 @@ use encoding_rs::Encoding;
 use crate::confine::{self, ConfineError};
 use crate::textcodec::{self, Decoded};
 
+mod ignored;
 pub mod search;
 pub use search::{find, grep, grep_with, FindHit, GrepHit, SearchBudget, SearchReply};
 
@@ -36,14 +38,31 @@ pub(crate) const HARD_EXCLUDE: &[&str] = &["node_modules", "target", ".git"];
 pub struct Entry {
     pub name: String,
     pub dir: bool,
+    /// The repo ignores this entry (`.gitignore`, `info/exclude`, the global
+    /// excludes), or it sits inside an ignored directory. A mark, never a
+    /// filter: the entry is listed either way.
+    pub ignored: bool,
 }
 
 /// List the one-level children of the confined `rel` directory under `root`,
 /// with [`HARD_EXCLUDE`] noise dirs dropped and nothing else filtered — hidden
-/// and gitignored entries are listed. Entries are sorted dirs-first, then by
-/// name. A confinement failure (escape/missing) propagates as [`ConfineError`].
+/// and gitignored entries are listed, the latter marked [`Entry::ignored`].
+/// `root` is the checkout root the ignore rules are anchored to. Entries are
+/// sorted dirs-first, then by name. A confinement failure (escape/missing)
+/// propagates as [`ConfineError`].
 pub fn list(root: &Path, rel: &str) -> Result<Vec<Entry>, ConfineError> {
+    let base = confine::confine(root, "")?;
     let dir = confine::confine(root, rel)?;
+    let parts: Vec<String> = dir
+        .strip_prefix(&base)
+        .map(|r| {
+            r.components()
+                .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                .collect()
+        })
+        .unwrap_or_default();
+    let rules = ignored::Rules::for_dir(&base, &parts);
+    let dir_rel = parts.join("/");
 
     let mut entries: Vec<Entry> = walker(&dir)
         .max_depth(Some(1))
@@ -51,9 +70,11 @@ pub fn list(root: &Path, rel: &str) -> Result<Vec<Entry>, ConfineError> {
         .filter_map(Result::ok)
         // `max_depth(Some(1))` still yields the root dir itself at depth 0; drop it.
         .filter(|e| e.depth() > 0)
-        .map(|e| Entry {
-            name: e.file_name().to_string_lossy().into_owned(),
-            dir: e.file_type().map(|t| t.is_dir()).unwrap_or(false),
+        .map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            let dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
+            let ignored = rules.ignored(&ignored::join(&dir_rel, &name), dir);
+            Entry { name, dir, ignored }
         })
         .collect();
 

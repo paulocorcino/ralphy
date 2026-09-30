@@ -230,6 +230,14 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A peer on another machine, reached through a tunnel. */
+.env-group .env-kind {
+  display: inline-flex;
+}
+.env-group .env-kind svg {
+  width: 13px;
+  height: 13px;
+}
 .env-group .env-daemon {
   color: var(--text);
   opacity: 0.75;
@@ -252,7 +260,8 @@
 .env-group .peer-state.fault {
   color: var(--danger);
 }
-.env-group .peer-state.asleep {
+.env-group .peer-state.asleep,
+.env-group .peer-state.tunnel-closed {
   opacity: 0.7;
 }
 /* The glyph is a control on the states a nudge can answer, so it has to act
@@ -447,6 +456,16 @@
 .wb-host.wunderbaum .wb-row.wb-active {
   border-radius: var(--radius);
 }
+/* An entry the repo ignores (`.gitignore`, or inside an ignored folder) is
+   muted, as VS Code draws it: the operator sees what is outside the repo
+   without opening the rules. Opacity, not `--text-muted`: the muted tone is
+   too close to `--text` to tell two rows apart, and opacity also dims a
+   file-type glyph's own colour. Only the name and its glyph fade; the row
+   background (hover, active) keeps its full tone. */
+.wb-host.wunderbaum .wb-row.wb-ignored .wb-title,
+.wb-host.wunderbaum .wb-row.wb-ignored .wb-icon {
+  opacity: 0.5;
+}
 /* the inline rename input */
 .wb-host.wunderbaum input.wb-input-edit {
   font: inherit;
@@ -480,4 +499,18 @@
   padding: 0 0.35rem;
   font-size: 0.65rem;
   line-height: 1.4;
+}
+
+/* A tunnel group's menu button (#497): Remove host. */
+.env-group .group-menu {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  padding: 0 0.2rem;
+  border-radius: 3px;
+  color: var(--text-muted);
+}
+.env-group .group-menu:hover {
+  color: var(--text);
+  background: var(--log-bg);
 }

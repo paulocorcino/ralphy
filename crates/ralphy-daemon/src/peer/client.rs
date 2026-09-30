@@ -62,6 +62,17 @@ pub enum PeerStatus {
     Refused {
         why: String,
     },
+    /// The `ssh` that carries this peer (ADR-0067 §2) is not running; the
+    /// daemon is opening it again. Not a fault: a VPN drop ends up here.
+    TunnelClosed {
+        host: String,
+        cause: Option<String>,
+    },
+    /// The tunnel is open, but the daemon on the other end does not answer.
+    TunnelSilent {
+        host: String,
+        why: String,
+    },
 }
 
 impl PeerStatus {
@@ -74,6 +85,8 @@ impl PeerStatus {
             PeerStatus::Asleep { .. } => "asleep",
             PeerStatus::Unreachable { .. } => "unreachable",
             PeerStatus::Refused { .. } => "refused",
+            PeerStatus::TunnelClosed { .. } => "tunnel-closed",
+            PeerStatus::TunnelSilent { .. } => "tunnel-silent",
         }
     }
 
@@ -100,6 +113,18 @@ impl PeerStatus {
             PeerStatus::Refused { why } => {
                 format!("This daemon did not dial peer {environment}: {why}.")
             }
+            PeerStatus::TunnelClosed { host, cause: None } => {
+                format!("The tunnel to {host} is closed. The daemon is opening it again.")
+            }
+            PeerStatus::TunnelClosed {
+                host,
+                cause: Some(cause),
+            } => format!(
+                "The tunnel to {host} is closed, and the daemon could not open it: {cause}."
+            ),
+            PeerStatus::TunnelSilent { host, why } => format!(
+                "The tunnel to {host} is open, but the Ralphy daemon on that host does not answer: {why}. Start the daemon on that host."
+            ),
         }
     }
 }
@@ -186,12 +211,45 @@ pub fn classify_unreachable(
     }
 }
 
+/// Which tunnel state a failed dial was, from the answer of the ensure that
+/// followed it: `Ok(true)` means it had to start a new `ssh`, so the tunnel was
+/// closed; `Ok(false)` means the held `ssh` still runs, so the tunnel is open and
+/// the daemon behind it is silent. Pure: the ensure lives in `peer::tunnel`.
+pub fn classify_tunnel(
+    host: &str,
+    ensured: std::result::Result<bool, String>,
+    why: String,
+) -> PeerStatus {
+    let host = host.to_string();
+    match ensured {
+        Ok(true) => PeerStatus::TunnelClosed { host, cause: None },
+        Ok(false) => PeerStatus::TunnelSilent { host, why },
+        Err(cause) => PeerStatus::TunnelClosed {
+            host,
+            cause: Some(cause),
+        },
+    }
+}
+
 /// The failed-dial path: ask the host about the peer's distro, then classify.
 ///
 /// The question is asked ONLY here — after a dial has already failed and only for
 /// a peer that announced a distro — so a fleet whose peers all answer never
 /// spawns a process to find that out.
 async fn diagnose_failed_dial(d: &PeerDescriptor, why: String) -> PeerStatus {
+    // A tunnel peer is ensured here too (ADR-0067 §2: "after a probe fails"),
+    // and the ensure's answer is what separates its two states.
+    if let Some(spec) = d.tunnel.clone() {
+        let host = if d.name.is_empty() {
+            &d.environment
+        } else {
+            &d.name
+        };
+        let ensured = super::tunnel::hold_open(d.daemon_id.clone(), spec)
+            .await
+            .map_err(|e| format!("{e:#}"));
+        return classify_tunnel(host, ensured, why);
+    }
     let Some(distro) = d.nudge.as_ref().map(|spec| spec.distro.clone()) else {
         return PeerStatus::Unreachable { why };
     };

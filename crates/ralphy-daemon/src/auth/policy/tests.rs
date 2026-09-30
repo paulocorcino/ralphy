@@ -73,7 +73,7 @@ fn compute_policy_gates_loopback_only_when_opted_in() {
     let loop_ip: IpAddr = "127.0.0.1".parse().unwrap();
 
     // Default loopback: no gate.
-    let p = compute_policy(loop_ip, None, None, None, false, test_epoch()).unwrap();
+    let p = compute_policy(loop_ip, None, None, None, false, false, test_epoch()).unwrap();
     assert!(
         matches!(p, AuthPolicy::Localhost),
         "default loopback is open"
@@ -86,6 +86,7 @@ fn compute_policy_gates_loopback_only_when_opted_in() {
         Some(seed()),
         None,
         true,
+        false,
         test_epoch(),
     )
     .unwrap();
@@ -96,7 +97,7 @@ fn compute_policy_gates_loopback_only_when_opted_in() {
 
     // Opted in but NO token to sign with → cannot gate, stays open (safe: it
     // is loopback; the enable route mints a token so this is transient).
-    let p = compute_policy(loop_ip, None, Some(seed()), None, true, test_epoch()).unwrap();
+    let p = compute_policy(loop_ip, None, Some(seed()), None, true, false, test_epoch()).unwrap();
     assert!(
         matches!(p, AuthPolicy::Localhost),
         "no signing key → cannot gate loopback"
@@ -108,9 +109,18 @@ fn compute_policy_keeps_network_rules() {
     let seed = || totp::Seed::from_bytes(b"12345678901234567890".to_vec());
     let net_ip: IpAddr = "100.64.0.1".parse().unwrap();
     // Network + no token → fail closed (the §4 invariant).
-    assert!(compute_policy(net_ip, None, None, None, false, test_epoch()).is_err());
+    assert!(compute_policy(net_ip, None, None, None, false, false, test_epoch()).is_err());
     // Network + token, no seed → Bearer.
-    let p = compute_policy(net_ip, Some("t".into()), None, None, false, test_epoch()).unwrap();
+    let p = compute_policy(
+        net_ip,
+        Some("t".into()),
+        None,
+        None,
+        false,
+        false,
+        test_epoch(),
+    )
+    .unwrap();
     assert!(matches!(p, AuthPolicy::Bearer(_)));
     // Network + token + seed → Session (unchanged §4 derived behavior).
     let p = compute_policy(
@@ -119,10 +129,102 @@ fn compute_policy_keeps_network_rules() {
         Some(seed()),
         None,
         false,
+        false,
         test_epoch(),
     )
     .unwrap();
     assert!(matches!(p, AuthPolicy::Session(_)));
+}
+
+#[test]
+fn compute_policy_requires_the_token_on_loopback_when_marked() {
+    let seed = || totp::Seed::from_bytes(b"12345678901234567890".to_vec());
+    let loop_ip: IpAddr = "127.0.0.1".parse().unwrap();
+
+    let p = compute_policy(
+        loop_ip,
+        Some("k".into()),
+        None,
+        None,
+        false,
+        true,
+        test_epoch(),
+    )
+    .unwrap();
+    assert!(
+        matches!(p, AuthPolicy::Bearer(ref t) if t == "k"),
+        "marked loopback + token → Bearer"
+    );
+
+    let p = compute_policy(
+        loop_ip,
+        Some("k".into()),
+        Some(seed()),
+        None,
+        false,
+        true,
+        test_epoch(),
+    )
+    .unwrap();
+    assert!(
+        matches!(p, AuthPolicy::Session(_)),
+        "marked loopback + token + seed → Session"
+    );
+
+    let Err(err) = compute_policy(loop_ip, None, None, None, false, true, test_epoch()) else {
+        panic!("marked loopback with no token must fail closed");
+    };
+    assert!(
+        format!("{err:#}").contains("ralphy daemon require-token on"),
+        "the error names the fix: {err:#}"
+    );
+    let empty = compute_policy(
+        loop_ip,
+        Some(String::new()),
+        None,
+        None,
+        false,
+        true,
+        test_epoch(),
+    );
+    assert!(empty.is_err(), "an empty token counts as no token");
+
+    let p = compute_policy(
+        loop_ip,
+        Some("k".into()),
+        None,
+        None,
+        false,
+        false,
+        test_epoch(),
+    )
+    .unwrap();
+    assert!(
+        matches!(p, AuthPolicy::Localhost),
+        "unmarked loopback stays open"
+    );
+}
+
+#[test]
+fn require_token_flag_round_trips() {
+    let dir = tempfile::tempdir().unwrap();
+    assert!(
+        !require_token_enabled_in(dir.path()).unwrap(),
+        "unset by default"
+    );
+    set_require_token_in(dir.path(), true).unwrap();
+    assert!(require_token_enabled_in(dir.path()).unwrap(), "set → on");
+    assert!(
+        !require_login_enabled_in(dir.path()),
+        "require-token and require-login are separate files"
+    );
+    set_require_token_in(dir.path(), false).unwrap();
+    assert!(
+        !require_token_enabled_in(dir.path()).unwrap(),
+        "cleared → off"
+    );
+    // Idempotent clear.
+    set_require_token_in(dir.path(), false).unwrap();
 }
 
 #[test]

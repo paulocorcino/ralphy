@@ -33,6 +33,8 @@ pub(crate) struct PeerView {
     pub(crate) diagnosis: String,
     /// Whether this peer advertised how to wake it (a WSL unit).
     pub(crate) nudgeable: bool,
+    /// Whether this daemon reaches the peer through an `ssh` tunnel it holds.
+    pub(crate) tunnel: bool,
 }
 
 /// `GET /api/fleet`: the federated repo view (ADR-0052 §5) — every peer this
@@ -158,6 +160,7 @@ pub(crate) async fn fleet_route(
             state: status.state().to_string(),
             diagnosis: status.diagnosis(&d.environment),
             nudgeable: d.nudge.is_some(),
+            tunnel: d.tunnel.is_some(),
         });
         aggregate_input.push((d, status, store));
     }
@@ -175,6 +178,7 @@ pub(crate) async fn fleet_route(
             state: "malformed".to_string(),
             diagnosis: reject.why(),
             nudgeable: false,
+            tunnel: false,
         });
     }
 
@@ -225,6 +229,36 @@ pub(crate) async fn fleet_nudge_route(
         )
             .into_response();
     };
+    // A tunnel peer is woken by reopening its tunnel (ADR-0067 §2); the daemon
+    // on the other machine belongs to that machine's service manager.
+    if let Some(spec) = d.tunnel.clone() {
+        let me = peer::client::SelfRef {
+            port: bound_port,
+            daemon_id: self_daemon_id.as_deref().unwrap_or_default(),
+        };
+        if let Some(refused) = peer::client::classify_self_dial(&d.address, spec.local_port, me) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": refused.diagnosis(&d.environment) })),
+            )
+                .into_response();
+        }
+        if let Err(e) = peer::tunnel::hold_open(d.daemon_id.clone(), spec).await {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": format!("{e:#}") })),
+            )
+                .into_response();
+        }
+        let (ready, waited, last) = nudge_await_ready(
+            &d,
+            self_daemon_id.as_deref(),
+            bound_port,
+            peer::nudge::READY_DEADLINE,
+        )
+        .await;
+        return ready_body(ready, waited, &last, &d.environment);
+    }
     let Some(spec) = d.nudge.as_ref() else {
         return (
             StatusCode::BAD_REQUEST,
@@ -260,16 +294,25 @@ pub(crate) async fn fleet_nudge_route(
         peer::nudge::READY_DEADLINE,
     )
     .await;
-    // 200 either way: the nudge itself succeeded, and whether the peer came back
-    // is an OBSERVATION this reports, not a failure of the request. `ready` is the
-    // field a caller acts on — the old `nudged` is kept so an older workbench
-    // keeps working.
+    ready_body(ready, waited, &last, &d.environment)
+}
+
+/// The nudge's answer. 200 either way: the nudge itself succeeded, and whether
+/// the peer came back is an OBSERVATION this reports, not a failure of the
+/// request. `ready` is the field a caller acts on — the old `nudged` is kept so
+/// an older workbench keeps working.
+fn ready_body(
+    ready: bool,
+    waited: Duration,
+    last: &peer::client::PeerStatus,
+    environment: &str,
+) -> Response {
     Json(serde_json::json!({
         "nudged": true,
         "ready": ready,
         "waited_ms": waited.as_millis() as u64,
         "state": last.state(),
-        "diagnosis": last.diagnosis(&d.environment),
+        "diagnosis": last.diagnosis(environment),
     }))
     .into_response()
 }
@@ -381,6 +424,10 @@ pub(crate) async fn peer_command_route(
         }))
         .into_response();
     };
+    if verb.is_host() {
+        let message = "a host command runs only on the daemon you are connected to";
+        return Json(serde_json::json!({ "status": "error", "message": message })).into_response();
+    }
     if verb.effect_class() == dispatch::EffectClass::Spawn {
         return Json(serde_json::json!({
             "status": "error",

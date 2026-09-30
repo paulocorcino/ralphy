@@ -940,41 +940,68 @@ test("resumeSockets resumes the file tree socket with the others", () => {
   ]);
 });
 
-// ADR-0051 §5: the same chord walks the columns while two or more are open,
-// and the fences otherwise. The listener itself is a sink in the harness; the
-// decision lives in `arrowStep`.
-test("Alt+Shift+←/→ walks the columns while they are open and the fences otherwise", () => {
+// ADR-0051 §5: the same chord walks the columns while two or more consoles
+// are open, and the fences otherwise. The listener itself is a sink in the
+// harness; the decision lives in `arrowStep`.
+function arrowShell() {
   const { state, window } = loadShell();
   const calls = [];
-  let focused = null;
+  const box = { focused: null };
   const realConsole = globalThis.WBConsole;
   const realColumns = globalThis.WBColumns;
   globalThis.WBColumns = window.WBColumns;
   globalThis.WBConsole = {
     stepFence: (s) => (calls.push(["fence", s]), { id: "f" }),
-    focusedId: () => focused,
+    focusedId: () => box.focused,
     focusColumn: (id) => calls.push(["col", id]),
     columnMeasure: () => ({ viewport: 2000 }),
     PHONE_MAX_WIDTH: 560,
   };
+  const done = () => {
+    globalThis.WBConsole = realConsole;
+    globalThis.WBColumns = realColumns;
+  };
+  return { state, calls, box, done };
+}
+
+test("Alt+Shift+←/→ walks the columns while they are open and the fences otherwise", () => {
+  const { state, calls, box, done } = arrowShell();
   try {
     state.active = "consoles";
     state.columns = [];
-    assert.ok(state.arrowStep(1));
+    assert.ok(state.arrowStep("x", 1));
     assert.deepEqual(calls, [["fence", 1]]);
     calls.length = 0;
-    state.columns = ["a", "b", "c"];
-    focused = "c";
-    assert.ok(state.arrowStep(1));
+    state.columns = [["a"], ["b"], ["c"]];
+    box.focused = "c";
+    assert.ok(state.arrowStep("x", 1));
     assert.deepEqual(calls, [["col", "a"]], "wraps right");
     calls.length = 0;
-    focused = "a";
-    assert.ok(state.arrowStep(-1));
+    box.focused = "a";
+    assert.ok(state.arrowStep("x", -1));
     assert.deepEqual(calls, [["col", "c"]], "wraps left");
     assert.ok(!calls.some((c) => c[0] === "fence"), "no fence step while columns are open");
   } finally {
-    globalThis.WBConsole = realConsole;
-    globalThis.WBColumns = realColumns;
+    done();
+  }
+});
+
+// Rows (ADR-0051 §5): ↑/↓ walk the rows of one column, and one column of two
+// rows is enough. With nothing open, ↑/↓ apply nothing, so the key is not
+// swallowed.
+test("Alt+Shift+↑/↓ walks the rows of a column, and applies nothing with no columns", () => {
+  const { state, calls, box, done } = arrowShell();
+  try {
+    state.active = "consoles";
+    state.columns = [];
+    assert.equal(state.arrowStep("y", 1), false);
+    assert.deepEqual(calls, [], "no fence step for ↑/↓");
+    state.columns = [["a", "b"]];
+    box.focused = "a";
+    assert.ok(state.arrowStep("y", 1));
+    assert.deepEqual(calls, [["col", "b"]]);
+  } finally {
+    done();
   }
 });
 

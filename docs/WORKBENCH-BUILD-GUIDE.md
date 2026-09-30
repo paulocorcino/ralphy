@@ -75,7 +75,7 @@ collapse to `0`** (they're `overflow:hidden`) — showing or hiding either is a 
 `grid-template-columns` flip driven by body classes (`side-collapsed`, `runs-open`),
 and the whole thing animates. All colours are tokens from
 [ADR-0035](adr/0035-daemon-ui-visual-language.md), declared once in
-[styles.css](../crates/ralphy-daemon/assets/ui/styles.css) `:root`. **Do not hand-pick hex values** — use the tokens;
+[01-base.css](../crates/ralphy-daemon/assets/ui/styles/01-base.css) `:root`. **Do not hand-pick hex values** — use the tokens;
 a genuinely new colour is an amendment to ADR-0035.
 
 ### Rail toggles, account menu & the auth gate
@@ -184,14 +184,14 @@ Gotchas already paid for (keep them):
   selectors are compound: `.wb-host.wunderbaum`, not descendant.
 - A node has **no `isFolder()`** — use `node.folder || node.children`.
 - The tree is **virtualized** → the host needs a real height (the flex-column
-  chain in styles.css provides it).
+  chain in `styles/02-rail-sidebar.css` provides it).
 - `mar10.Wunderbaum.getNode(event)` resolves a node from a DOM event (right-click).
 
 ### File-type icons
 Resolved by extension in [app.js](../crates/ralphy-daemon/assets/ui/app.js): coloured **Devicon** font glyphs for
 known types (ts/js/json/rs/prisma/css/html…), **Bootstrap Icons** for folders and
 the neutral fallback. Brand colours that go near-black on the dark ground
-(Markdown, Rust) get a light-tone class override in styles.css.
+(Markdown, Rust) get a light-tone class override in `styles/02-rail-sidebar.css`.
 
 ### Right-click context menu
 Built in [app.js](../crates/ralphy-daemon/assets/ui/app.js) (`#ctxmenu`): Open, Rename (inline, also F2), Copy
@@ -210,7 +210,7 @@ scrollbar is left unstyled.
 ### Typography
 The chrome is monospace (terminal feel). **Rendered prose** — the plan.md in the
 Runs panel — uses a UI sans (`--font-ui`) so it reads well, while code spans/blocks
-stay monospace (`--font-mono`). Both tokens live in [styles.css](../crates/ralphy-daemon/assets/ui/styles.css) `:root`.
+stay monospace (`--font-mono`). Both tokens live in [01-base.css](../crates/ralphy-daemon/assets/ui/styles/01-base.css) `:root`.
 
 One Wunderbaum gotcha worth its own line: the tree swaps to its `--wb-*-grayscale`
 vars when it **loses focus**, and their defaults are near-white — the theme

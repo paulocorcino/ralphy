@@ -16,6 +16,7 @@ fn peer(id: &str, environment: &str) -> PeerDescriptor {
         environment: environment.to_string(),
         token: "token".to_string(),
         protocol_version: PEER_PROTOCOL_VERSION,
+        tunnel: None,
         nudge: None,
     }
 }

@@ -308,6 +308,9 @@ ralphy telegram test     # send a ping to confirm it works
 
 ## 📚 More you can do
 
+[Documentation index](docs/README.md): user guides, development rules, research
+and validation evidence.
+
 | Feature | What it's for | Start here |
 |---|---|---|
 | 🖥️ **The daemon & fleet** | autostart, worktrees, WSL peers, reaching it remotely | [docs/daemon.md](docs/daemon.md) |

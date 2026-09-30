@@ -11,6 +11,7 @@ fn peer(daemon_id: &str, name: &str, environment: &str) -> PeerDescriptor {
         environment: environment.into(),
         token: "tok".into(),
         protocol_version: crate::peer::PEER_PROTOCOL_VERSION,
+        tunnel: None,
         nudge: None,
     }
 }

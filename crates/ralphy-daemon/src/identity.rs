@@ -13,6 +13,8 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 
+use crate::owner_only::set_owner_only;
+
 /// The daemon's persisted identity. `id` is minted exactly once and survives
 /// every rename or avatar change (mint-once); `name`/`avatar` are mutable.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -194,21 +196,6 @@ pub fn daemon_toml_path() -> Result<PathBuf> {
 /// Load the current daemon identity from its production path.
 pub fn load_current() -> Result<Option<Identity>> {
     load_from(&daemon_toml_path()?)
-}
-
-/// Restrict a freshly written store file to the owner only (mode `0o600` on
-/// unix; the per-user home ACL on Windows), mirroring the events store.
-#[cfg(unix)]
-fn set_owner_only(path: &Path) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    let perms = std::fs::Permissions::from_mode(0o600);
-    std::fs::set_permissions(path, perms)
-        .with_context(|| format!("setting owner-only permissions on {}", path.display()))
-}
-
-#[cfg(not(unix))]
-fn set_owner_only(_path: &Path) -> Result<()> {
-    Ok(())
 }
 
 #[cfg(test)]

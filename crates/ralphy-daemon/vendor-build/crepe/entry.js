@@ -5,7 +5,7 @@
 // KaTeX, the image-block uploader and a top bar the card has no room for. The
 // `CrepeBuilder` takes features one at a time, which is what makes a 716 KB
 // bundle out of a 2.5 MB one — measured in the spike
-// (docs/spike-note-editor-2026-09-22.md).
+// (docs/research/spike-note-editor-2026-09-22.md).
 //
 // The SEVEN features, and why each is here:
 //   block-edit    — the slash menu; the Notion feel itself. Its other half,

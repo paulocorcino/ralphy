@@ -130,8 +130,8 @@ stage, over what the operator is looking at.)*
   Measured on the operator's notebook, this hid the control at the default
   font, and there was no Settings field to change the font: only the key bar's
   A−/A+, which a notebook does not show.*
-- ***A column shows less title bar.*** *It keeps open-in-a-column, restore,
-  restart and the worktree picker. Lock, fullscreen and close are hidden:
+- ***A column shows less title bar.*** *It keeps the add-a-console control,
+  restore, restart and the worktree picker. Lock, fullscreen and close are hidden:
   nothing moves inside the columns, so a lock means nothing there, and close
   would put the end of a working agent one click away in the view where the
   operator is working. Drag and resize are already gone, as for any maximized
@@ -139,8 +139,8 @@ stage, over what the operator is looking at.)*
   in a column, and it must be possible to start it there. The same reason
   holds for a single maximized console: it hides lock and close, and Restore
   takes it out first. A console in fullscreen keeps only the exit and restart:
-  maximize changes nothing there, and open-in-a-column, lock and close are
-  hidden as well.*
+  maximize changes nothing there, and the add-a-console control, lock and
+  close are hidden as well.*
 - ***Alt+Shift+←/→ moves the focus between columns while columns are open***,
   *and wraps at the ends, as the fence walk does (§7). Under a maximize the
   fence walk pans a plane the operator cannot see, so the keys lose nothing
@@ -151,6 +151,46 @@ stage, over what the operator is looking at.)*
   column's console removes that column first, because a terminal is in one
   place at a time (§8). A maximize changed on another device does not reach
   this client's columns until its next restore, where the desk wins (§8).*
+
+*(Amended 2026-09-29, rows. A column can hold more than one console, one above
+the other. Each console in a column is a **row** of that column. A column with
+one console has one row, so every rule above still holds when no column has a
+second row.)*
+
+- ***One control, two directions.*** *The title bar control is now "Add a
+  console". It opens the same list as before. At the top of the list, a choice
+  of two directions, "Right" and "Down", decides what a click on a console
+  in the list does. Right opens a new column directly to the right of the
+  caller's column, with that console as its only row. Down opens a new row
+  directly below the caller, in the caller's column. The swap control is not affected by the choice. The last
+  direction used is kept per client, with the column list (§8). With nothing
+  stored it is Right, so an operator who never picks Down sees the same list as
+  before.*
+- ***Equal sizes, two levels.*** *Columns have equal widths, as before. The rows
+  of one column have equal heights, and each column divides its own height. A
+  row never holds columns: the shape is a list of columns, each a list of rows,
+  and never a deeper tree.*
+- ***The first console in reading order is the maximized console.*** *Reading
+  order is column by column, left to right, and top to bottom inside a column.
+  The first console is the top row of the leftmost column, and it replaces "the
+  leftmost column" in every rule above. Restore removes one row, and the other
+  rows of that column grow to fill its height. A column with no row left is
+  removed, and the other columns widen. If the first console is removed, the
+  next one in reading order becomes the maximized console, written to the desk
+  as an ordinary maximize.*
+- ***A swap works on rows.*** *The swap control puts a console in the row that
+  opened the list. A console that is already in another row, in any column,
+  changes places with it.*
+- ***No row limit.*** *As with columns (2026-09-28), the operator decides how
+  short a row gets, with the console text size. At a phone width only the first
+  console is painted, and the control does not appear.*
+- ***Alt+Shift+↑/↓ moves the focus between the rows of a column***, *and wraps at
+  the ends, as Alt+Shift+←/→ does between columns. Alt+Shift+←/→ goes to the
+  row at the same position in the next column, or to its last row when that
+  column has fewer rows.*
+- ***A row has the same title bar as a column***, *and the same rules for
+  changes from outside, with "row" in place of "column": a session that ends
+  keeps its row, and a closed or detached console leaves it.*
 
 ### 6. A fence is a named, anchored rect; membership is derived
 
@@ -284,7 +324,7 @@ Three kinds of state, three owners:
 | viewport offset, open file tabs and the slot beside the active one (ADR-0037 §3c) | **per client** | shared, one client's panning would drag the other's view |
 | which fences are detached | **per client, per tab** | shared, one operator's second monitor would empty a fence on the other's screen |
 | which consoles and fences are locked | **shared** | a lock protects the layout itself, which every device shows; per client, the device that slips (the tablet) is the one that would forget it |
-| which consoles are open as columns (§5), and their order | **per client** | shared, one device's columns would open on a screen that has no room for them |
+| which consoles are open as columns and rows (§5), and their order | **per client** | shared, one device's columns would open on a screen that has no room for them |
 
 The **desk** — windows and fences — stays daemon state, shared, last-write-wins
 (ADR-0050 §2). Two people want to see the same arrangement; layout mutations are
@@ -304,6 +344,13 @@ window ids and nothing else. On restore it is checked against the desk: ids
 that no longer exist are dropped, and if the desk no longer records the list's
 first console as maximized, the list is ignored. The desk wins because it is
 the state every device agrees on.)*
+
+*(Amended 2026-09-29, rows. The stored list becomes a list of columns, each a
+list of window ids, plus the last direction used (Right or Down). A stored flat
+list, written before rows, reads as one row per column, so no stored layout is
+lost. The check on restore is the same: unknown ids are dropped, an empty column
+is dropped, and the list is ignored unless its first console in reading order is
+the one the desk records as maximized.)*
 
 *(Amended for fence detach (#344). The plane answers "where is my work"; it does
 not answer "I have a second monitor". §3 forbids the zoom that would let two
@@ -502,7 +549,7 @@ when off; ADR-0050's lock amendment has the shape and the wire rule.)*
 
 *(Amended 2026-09-26, columns: nothing here. No wire shape changes, no desk
 field, no cap. The daemon never learns that a console is in a column; it sees
-one ordinary maximize, as it does today.)*
+one ordinary maximize, as it does today. The same holds for rows, 2026-09-29.)*
 
 ## Rejected alternatives
 
@@ -573,7 +620,19 @@ one ordinary maximize, as it does today.)*
   reordering by drag.** Not in the first version (a swap between two columns
   reorders them without a drag). Equal columns are the
   smallest shape that gives "several consoles I am working in"; the others wait
-  for measured use.
+  for measured use. *(2026-09-29: rows inside a column are now decided, §5. The
+  divider and the drag still wait.)*
+
+*(Added for rows, 2026-09-29:)*
+
+- **A free tree of splits, where any row can split into columns again.**
+  Rejected: two levels cover the layouts asked for, and a tree needs a divider
+  model, a deeper stored shape and a focus walk with no clear order.
+- **One direction for the whole layout** (all columns or all rows). Rejected: a
+  column cannot then hold two consoles next to a tall one, which is the layout
+  that asked for rows.
+- **A second title bar button for Down.** Rejected: the title bar of a column
+  is already narrow, and both buttons would open the same list.
 
 ## Consequences
 
@@ -649,3 +708,13 @@ one ordinary maximize, as it does today.)*
   only). It is the same stored value the key bar's A−/A+ change. A touch screen
   no longer starts one pixel smaller: that default existed only so two 80-cell
   columns fit a landscape iPad.
+
+*(Added for rows, 2026-09-29:)*
+
+- **A short row makes the terminal shorter for every client**, for the same
+  reason a narrow column makes it narrower: the daemon applies the last
+  `resize`.
+- **The stored view changes shape inside `wb.view.v1`.** The reader accepts the
+  old flat list, so the key keeps its name.
+- **The daemon is not touched**, as for columns.
+- CONTEXT.md's **Columns** entry gains rows.

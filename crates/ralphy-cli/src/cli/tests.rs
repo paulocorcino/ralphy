@@ -144,7 +144,13 @@ fn daemon_setup_and_status_subcommands_parse() {
     let Command::Daemon(args) = cli.command else {
         panic!("expected the `daemon` subcommand");
     };
-    assert!(matches!(args.command, Some(daemon::DaemonCommand::Setup)));
+    assert!(matches!(
+        args.command,
+        Some(daemon::DaemonCommand::Setup {
+            name: None,
+            avatar: None
+        })
+    ));
 
     let cli =
         Cli::try_parse_from(["ralphy", "daemon", "status"]).expect("daemon status must parse");
@@ -172,6 +178,26 @@ fn daemon_install_and_uninstall_subcommands_parse() {
         args.command,
         Some(daemon::DaemonCommand::Uninstall)
     ));
+}
+
+#[test]
+fn daemon_install_help_names_the_real_mechanisms() {
+    use clap::CommandFactory;
+
+    let mut cmd = Cli::command();
+    let install = cmd
+        .find_subcommand_mut("daemon")
+        .expect("the `daemon` subcommand")
+        .find_subcommand_mut("install")
+        .expect("the `daemon install` subcommand");
+    let help = install.render_long_help().to_string();
+    let help = help.split_whitespace().collect::<Vec<_>>().join(" ");
+    for mechanism in ["Run key", "systemd user unit", "launchd agent"] {
+        assert!(
+            help.contains(mechanism),
+            "`daemon install --help` must name {mechanism:?}: {help}"
+        );
+    }
 }
 
 #[test]

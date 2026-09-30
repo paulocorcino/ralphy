@@ -17,7 +17,9 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-pub use fetch::{refresh_if_stale, RefreshOpts, DEFAULT_RELEASES_URL};
+pub use fetch::{
+    fetch_release_by_tag, refresh_if_stale, RefreshOpts, DEFAULT_RELEASES_URL, RELEASE_BY_TAG_URL,
+};
 pub use version::{parse_tag, Build};
 
 /// Resolve the releases disk cache: `$RALPHY_RELEASE_CACHE` when set, else

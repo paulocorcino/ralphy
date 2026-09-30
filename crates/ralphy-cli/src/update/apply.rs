@@ -28,12 +28,28 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
 /// matrix. `None` on a host the project does not publish for, which is a refusal
 /// with a name rather than a wrong download.
 pub(crate) fn host_target() -> Option<&'static str> {
-    match (std::env::consts::OS, std::env::consts::ARCH) {
+    target_for(std::env::consts::OS, std::env::consts::ARCH)
+}
+
+/// The published target for an OS and an architecture, spelled as
+/// `std::env::consts` spells them (`linux`, `macos`, `windows`; `x86_64`,
+/// `aarch64`). `None` when the release workflow builds nothing for them.
+pub(crate) fn target_for(os: &str, arch: &str) -> Option<&'static str> {
+    match (os, arch) {
         ("windows", "x86_64") => Some("windows-x64"),
         ("linux", "x86_64") => Some("linux-x64"),
         ("macos", "x86_64") => Some("macos-x64"),
         ("macos", "aarch64") => Some("macos-arm64"),
         _ => None,
+    }
+}
+
+/// The name of the binary inside a target's archive.
+pub(crate) fn binary_for_target(target: &str) -> &'static str {
+    if target.starts_with("windows-") {
+        "ralphy.exe"
+    } else {
+        "ralphy"
     }
 }
 
@@ -117,10 +133,17 @@ pub(crate) fn verify(bytes: &[u8], expected: &str) -> Result<()> {
     Ok(())
 }
 
-/// Unpack `bytes` into `dir` and return the path of the `ralphy` binary inside.
-/// The published archives carry one top-level directory, but nothing here
-/// depends on that: the binary is found by name at any depth.
+/// Unpack `bytes` into `dir` and return the path of this computer's `ralphy`
+/// binary inside.
 pub(crate) fn unpack(bytes: &[u8], name: &str, dir: &Path) -> Result<PathBuf> {
+    unpack_binary(bytes, name, dir, binary_name())
+}
+
+/// Unpack `bytes` into `dir` and return the path of the binary named `binary`
+/// inside, which is another computer's name when the archive is for another
+/// target. The published archives carry one top-level directory, but nothing
+/// here depends on that: the binary is found by name at any depth.
+pub(crate) fn unpack_binary(bytes: &[u8], name: &str, dir: &Path, binary: &str) -> Result<PathBuf> {
     std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     if name.ends_with(".zip") {
         let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))
@@ -137,16 +160,11 @@ pub(crate) fn unpack(bytes: &[u8], name: &str, dir: &Path) -> Result<PathBuf> {
         bail!("unknown archive format: {name}");
     }
 
-    find_binary(dir)?.ok_or_else(|| {
-        anyhow!(
-            "{name} carries no {} — refusing to replace anything",
-            binary_name()
-        )
-    })
+    find_binary(dir, binary)?
+        .ok_or_else(|| anyhow!("{name} carries no {binary} — refusing to replace anything"))
 }
 
-fn find_binary(dir: &Path) -> Result<Option<PathBuf>> {
-    let wanted = binary_name();
+fn find_binary(dir: &Path, wanted: &str) -> Result<Option<PathBuf>> {
     let mut stack = vec![dir.to_path_buf()];
     while let Some(current) = stack.pop() {
         let entries = std::fs::read_dir(&current)
@@ -234,6 +252,45 @@ Connection: close
             std::env::consts::OS,
             std::env::consts::ARCH
         );
+    }
+
+    #[test]
+    fn each_published_target_has_its_os_and_arch() {
+        assert_eq!(target_for("linux", "x86_64"), Some("linux-x64"));
+        assert_eq!(target_for("macos", "x86_64"), Some("macos-x64"));
+        assert_eq!(target_for("macos", "aarch64"), Some("macos-arm64"));
+        assert_eq!(target_for("windows", "x86_64"), Some("windows-x64"));
+        assert_eq!(target_for("linux", "aarch64"), None, "no Linux arm64 build");
+        assert_eq!(
+            target_for("windows", "aarch64"),
+            None,
+            "no Windows ARM64 build"
+        );
+    }
+
+    #[test]
+    fn another_targets_binary_is_found_by_its_own_name() {
+        for (target, other) in [("linux-x64", "ralphy.exe"), ("windows-x64", "ralphy")] {
+            let dir = scratch(&format!("other-{target}"));
+            let wanted = binary_for_target(target);
+            let mut buf = Vec::new();
+            {
+                let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+                for (entry, body) in [(wanted, b"wanted"), (other, b"other!")] {
+                    zip.start_file::<_, ()>(
+                        format!("ralphy-v1-{target}/{entry}"),
+                        zip::write::SimpleFileOptions::default(),
+                    )
+                    .expect("entry");
+                    std::io::Write::write_all(&mut zip, body).expect("write");
+                }
+                zip.finish().expect("finish");
+            }
+            let found =
+                unpack_binary(&buf, "ralphy-v1-x.zip", &dir.join("out"), wanted).expect("unpack");
+            assert_eq!(std::fs::read(&found).expect("read"), b"wanted", "{target}");
+            let _ = std::fs::remove_dir_all(&dir);
+        }
     }
 
     #[test]

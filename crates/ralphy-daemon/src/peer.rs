@@ -17,7 +17,9 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 pub mod client;
+pub mod key;
 pub mod nudge;
+pub mod tunnel;
 
 #[cfg(test)]
 mod tests;
@@ -33,6 +35,20 @@ pub const PEER_PROTOCOL_VERSION: u32 = 3;
 pub struct NudgeSpec {
     pub distro: String,
     pub unit: String,
+}
+
+/// How to reach a peer on another machine: an `ssh` local forward that the
+/// local daemon holds open (ADR-0067 §2). Written by hand or by the add flow,
+/// never announced by the peer itself.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TunnelSpec {
+    /// An `~/.ssh/config` alias or `user@host`.
+    pub destination: String,
+    pub peer_port: u16,
+    /// Always equal to the descriptor's `port`: the local end is what we dial.
+    pub local_port: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity_file: Option<String>,
 }
 
 /// One daemon's self-announcement, written as `<store>/peers/<daemon_id>.toml`.
@@ -52,6 +68,69 @@ pub struct PeerDescriptor {
     pub protocol_version: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nudge: Option<NudgeSpec>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tunnel: Option<TunnelSpec>,
+}
+
+/// What a host daemon says about itself to a computer that pairs with it
+/// (`ralphy daemon describe`). The producer and the consumer share this one
+/// type, so the field set cannot drift between them.
+///
+/// NOT `deny_unknown_fields`, for the same reason as [`PeerDescriptor`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DaemonDescription {
+    pub daemon_id: Option<String>,
+    pub name: Option<String>,
+    pub avatar: Option<String>,
+    pub environment: String,
+    pub os: String,
+    pub port: u16,
+    pub protocol_version: u32,
+    pub require_token: bool,
+    pub autostart: bool,
+    pub running: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token: Option<String>,
+}
+
+/// The local descriptor for a host reached through an `ssh` local forward:
+/// the local end `127.0.0.1:<local_port>` is what the fleet dials.
+pub fn paired_descriptor(
+    d: &DaemonDescription,
+    destination: &str,
+    local_port: u16,
+    identity_file: Option<String>,
+) -> Result<PeerDescriptor> {
+    let daemon_id = d
+        .daemon_id
+        .clone()
+        .context("the host daemon has no identity")?;
+    // The id names the descriptor file, and it comes from the other machine.
+    if daemon_id.parse::<ulid::Ulid>().is_err() {
+        anyhow::bail!("the host daemon's identity {daemon_id:?} is not a valid id");
+    }
+    let name = d.name.clone().context("the host daemon has no name")?;
+    let token = d
+        .token
+        .clone()
+        .context("the host daemon did not give its access token")?;
+    Ok(PeerDescriptor {
+        daemon_id,
+        name,
+        avatar: d.avatar.clone().unwrap_or_default(),
+        address: "127.0.0.1".to_string(),
+        port: local_port,
+        environment: d.environment.clone(),
+        token,
+        protocol_version: d.protocol_version,
+        nudge: None,
+        tunnel: Some(TunnelSpec {
+            destination: destination.to_string(),
+            peer_port: d.port,
+            local_port,
+            identity_file,
+        }),
+    })
 }
 
 /// Why one descriptor record was not usable. Degradation is per-record: a
@@ -138,6 +217,30 @@ pub fn fold(records: &[(String, String)]) -> (Vec<PeerDescriptor>, Vec<PeerRejec
                 daemon_id: d.daemon_id,
                 environment: d.environment,
                 theirs: d.protocol_version,
+            });
+            continue;
+        }
+        if let Some(t) = d.tunnel.as_ref().filter(|t| t.local_port != d.port) {
+            rejected.push(PeerReject::Malformed {
+                file: file.clone(),
+                why: format!(
+                    "its tunnel local port {} is not its port {}",
+                    t.local_port, d.port
+                ),
+            });
+            continue;
+        }
+        if let Some(t) = d
+            .tunnel
+            .as_ref()
+            .filter(|t| t.destination.trim().is_empty() || t.peer_port == 0 || t.local_port == 0)
+        {
+            rejected.push(PeerReject::Malformed {
+                file: file.clone(),
+                why: format!(
+                    "its tunnel needs a destination and two ports that are not 0 (destination `{}`, peer port {}, local port {})",
+                    t.destination, t.peer_port, t.local_port
+                ),
             });
             continue;
         }

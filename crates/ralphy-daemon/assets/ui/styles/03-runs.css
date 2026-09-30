@@ -564,7 +564,9 @@ body.runs-open .runs {
 }
 
 /* --- run modal --- */
-.run-modal {
+/* `.modal` in 08-modals.css loads later with the same specificity, so a bare
+   `.run-modal` loses to its 880px. */
+.modal.run-modal {
   width: min(440px, 96vw);
 }
 .run-body {
@@ -653,4 +655,192 @@ body.runs-open .runs {
   color: var(--console-text);
   font-size: 0.76rem;
   white-space: nowrap;
+}
+
+/* --- Add a host (#497) --- */
+/* This dialog is also a `.run-modal`; the two rules have the same specificity,
+   so this one must stay below `.modal.run-modal`. */
+.modal.host-modal {
+  width: min(560px, 96vw);
+}
+.host-body {
+  max-height: min(70vh, 640px);
+  overflow-y: auto;
+}
+/* The CLI's failure puts the key line on a line of its own. */
+.host-body .side-error {
+  white-space: pre-line;
+}
+.host-input {
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+}
+.host-input[readonly] {
+  color: var(--text-muted);
+}
+/* Connection: Host | Port on one row, User | Password on the next. Each
+   label sits above its field. */
+.host-conn {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+.host-grid {
+  display: grid;
+  grid-auto-flow: row;
+  column-gap: 0.6rem;
+  row-gap: 0.25rem;
+  align-items: center;
+}
+.host-grid-host { grid-template-columns: 1fr 5rem; }
+.host-grid-auth { grid-template-columns: 1fr 1fr; }
+.host-grid .host-input { width: 100%; min-width: 0; box-sizing: border-box; }
+/* The SSH config hosts open from a small arrow inside the Host field. A
+   transparent select lies over the arrow icon, so a click or the keyboard
+   opens the native list. */
+.host-field {
+  position: relative;
+  min-width: 0;
+}
+.host-field .host-input { padding-right: 1.9rem; }
+.host-alias {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  bottom: 1px;
+  width: 1.7rem;
+  display: grid;
+  place-items: center;
+  border-left: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+.host-alias:hover,
+.host-alias:focus-within { color: var(--text); }
+.host-alias-pick {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.host-alias-pick option {
+  color: var(--text);
+  background: var(--surface);
+}
+.host-link {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.74rem;
+  cursor: pointer;
+}
+.host-link:hover,
+.host-link:focus-visible { color: var(--text); text-decoration: underline; }
+.host-secret { -webkit-text-security: disc; }
+.host-input:disabled { opacity: 0.6; }
+/* Checks: the blocking check, then one folded line of passed checks. */
+.host-next {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--danger);
+  border-radius: 4px;
+}
+.host-next-text {
+  margin: 0;
+  display: flex;
+  gap: 0.45rem;
+  align-items: baseline;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+.host-next-text > .bi { color: var(--danger); }
+.host-next-act {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+.host-next-act .rel-cmd { word-break: break-all; }
+.host-passed > summary {
+  cursor: pointer;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+.host-passed > summary > .bi { color: var(--live); }
+.host-passed > .host-checks { margin-top: 0.4rem; }
+.host-advice {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+/* Advice does not block anything, so it is not drawn as an error. */
+.host-advice > .host-checks > .host-check > .bi { color: var(--text-muted); }
+.host-key {
+  margin: 0;
+  font-size: 0.78rem;
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  word-break: break-all;
+}
+.host-checks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.host-check {
+  display: grid;
+  grid-template-columns: 1.1rem 7rem 1fr;
+  gap: 0.2rem 0.45rem;
+  align-items: baseline;
+  font-size: 0.78rem;
+}
+.host-check .rel-cmd {
+  grid-column: 2 / -1;
+  justify-self: start;
+  word-break: break-all;
+}
+.host-check.pass > .bi { color: var(--live); }
+.host-check.copy > .bi,
+.host-check.warn > .bi { color: var(--danger); }
+.host-check-label { font-weight: 600; }
+.host-help {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.6rem;
+}
+.host-step {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.host-step .rel-cmd {
+  align-self: flex-start;
+  word-break: break-all;
+}
+.host-foot {
+  display: inline-flex;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+.host-remove-error {
+  white-space: pre-wrap;
+  word-break: break-all;
 }

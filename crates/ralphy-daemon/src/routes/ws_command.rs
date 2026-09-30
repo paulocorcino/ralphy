@@ -8,7 +8,9 @@ use std::time::Duration;
 use axum::extract::ws::{Message, WebSocket};
 use futures_util::{SinkExt, StreamExt};
 
+mod host;
 mod oneshot;
+mod stream;
 
 pub(crate) use oneshot::*;
 
@@ -21,17 +23,8 @@ use crate::{dispatch, fleet, peer, protocol, registry, session};
 /// repo spawns the run and reports its lifecycle — an ack (`status:"spawned"` +
 /// pid), a stream of live output (`status:"output"` + `chunk`, issue #180), then
 /// the child's exit (`status:"exited"` + code). An unknown verb or an unregistered
-/// repo gets one `status:"error"` frame and spawns nothing.
-///
-/// TEARDOWN INVARIANT (the INVERSE of `session_ws`): the dispatched run keeps its
-/// OWN lifecycle. NONE of the `select!` arms — daemon shutdown, client
-/// close/error, output, wait-complete — kills the child; the
-/// `Box<dyn dispatch::Child>` has no kill and dropping it does not kill (std
-/// semantics). A daemon shutdown or a browser disconnect stops us serving THIS
-/// socket but never the run (PRD #157 story 18/20). Do not add a kill to any arm.
-/// The output DRAIN task is likewise detached: it reads the child's pipe to EOF
-/// regardless of client presence, so a disconnect never stalls the child on a
-/// full pipe. Do not await it on a teardown arm.
+/// repo gets one `status:"error"` frame and spawns nothing. The run keeps its own
+/// lifecycle: see the teardown invariant on [`stream::stream_child`].
 // The router's per-route dependencies, one parameter each (precedent: `usage_route`).
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn command_ws(
@@ -43,6 +36,7 @@ pub(crate) async fn command_ws(
     run_exits: tokio::sync::broadcast::Sender<String>,
     bound_port: u16,
     sessions: Arc<session::SessionManager>,
+    secret_ok: bool,
 ) {
     // First frame or nothing: a client that opens and hangs up spawns nothing.
     // A frame that is refused (too big for the socket's limits, not binary,
@@ -88,6 +82,22 @@ pub(crate) async fn command_ws(
         .await;
         return;
     };
+    // A host verb names no repo and acts on THIS computer: served here, before
+    // any repo routing, and never relayed to a peer.
+    if verb.is_host() {
+        let store_dir = peers_dir.parent().unwrap_or(&peers_dir).to_path_buf();
+        host::serve_host(
+            &mut socket,
+            &cmd,
+            verb,
+            &store_dir,
+            daemon_id.as_deref(),
+            &mut shutdown,
+            secret_ok,
+        )
+        .await;
+        return;
+    }
     let repo_ref = cmd
         .payload
         .get("repo")
@@ -220,7 +230,7 @@ pub(crate) async fn command_ws(
         }
     };
     let argv_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
-    let mut child = match dispatch::dispatch(
+    let child = match dispatch::dispatch(
         &dispatch::ProcessSpawner,
         &dispatch::ralphy_exe(),
         &argv_refs,
@@ -240,121 +250,23 @@ pub(crate) async fn command_ws(
             return;
         }
     };
-    let pid = child.pid();
-    // Take the merged output reader BEFORE `child` moves into the wait task, so
-    // the drain and the wait run concurrently (each owns its half).
-    let output = child.take_output();
-    send_command(
+    // The run-completion nudge (#310) rides on the child's exit, which
+    // `stream_child` observes on every path the daemon outlives (a run that
+    // outlives the process has no nudge to send — the browser's reconnect
+    // catch-up read covers that one). A send with no `/ws/tree` subscriber is
+    // `Err`, and a nudge nobody hears is a no-op (as in `watch.rs`).
+    let nudge_slug = slug.to_string();
+    stream::stream_child(
         &mut socket,
         id,
         &cmd.verb,
-        serde_json::json!({ "status": "spawned", "pid": pid }),
+        child,
+        &mut shutdown,
+        move || {
+            let _ = run_exits.send(nudge_slug);
+        },
     )
     .await;
-
-    // A DETACHED drain owns the reader and reads to EOF unconditionally — never
-    // awaited on a teardown arm, so a client disconnect never stops it and the
-    // child never stalls on a full pipe (see dispatch.rs OUTPUT STREAMING). A
-    // dropped receiver only makes `send` error, which the drain IGNORES.
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-    if let Some(mut reader) = output {
-        tokio::task::spawn_blocking(move || {
-            use std::io::Read;
-            let mut buf = [0u8; 8192];
-            loop {
-                match reader.read(&mut buf) {
-                    Ok(0) | Err(_) => return,
-                    Ok(n) => {
-                        let _ = tx.send(buf[..n].to_vec());
-                    }
-                }
-            }
-        });
-    }
-
-    // `Child::wait` is blocking and must not sit on the tokio runtime.
-    //
-    // The run-completion nudge (#310) is sent HERE, inside the blocking task, and
-    // not from the wait arm below: the shutdown and client-disconnect arms `break`
-    // without ever polling that arm while the run keeps living (the teardown
-    // invariant above), and tokio never cancels a blocking task — so this is the
-    // only site that fires on every exit path the daemon outlives (a run that
-    // outlives the process has no nudge to send — the browser's reconnect
-    // catch-up read covers that one). A send with no `/ws/tree`
-    // subscriber is `Err`, and a nudge nobody hears is a no-op (as in `watch.rs`).
-    let nudge_slug = slug.to_string();
-    let mut wait = tokio::task::spawn_blocking(move || {
-        let result = child.wait();
-        let _ = run_exits.send(nudge_slug);
-        result
-    });
-    // Disables the output arm once the drain channel closes (child pipe EOF), so
-    // a closed `rx` never busy-loops and the other arms keep being polled.
-    let mut output_open = true;
-    loop {
-        tokio::select! {
-            // Daemon shutdown: stop serving this socket, but LEAVE the run alive.
-            _ = shutdown.changed() => break,
-            // Client closed or errored: same — abandon the wait, never kill.
-            incoming = socket.recv() => {
-                let _ = incoming;
-                break;
-            }
-            // A live output chunk: forward it into the UI log pane.
-            chunk = rx.recv(), if output_open => {
-                match chunk {
-                    Some(chunk) => {
-                        send_command(
-                            &mut socket,
-                            id,
-                            &cmd.verb,
-                            serde_json::json!({
-                                "status": "output",
-                                "chunk": String::from_utf8_lossy(&chunk),
-                            }),
-                        )
-                        .await;
-                    }
-                    // Drain closed (child pipe EOF): stop polling this arm and let
-                    // the wait arm report the exit.
-                    None => output_open = false,
-                }
-            }
-            // The run exited: flush remaining output before the exit frame.
-            // `recv().await` (not `try_recv`) closes the trailing-output race —
-            // `wait` returns before the drain thread has forwarded the child's
-            // final bytes. But the drain reaches EOF (and drops `tx`) only when
-            // EVERY pipe write end is closed, and a `ralphy run` DESCENDANT can
-            // inherit the merged fds and outlive the primary child — so we bound
-            // the wait for each next chunk: an idle gap (or channel close) ends
-            // the flush and we always emit `exited`, never wedging the handler.
-            joined = &mut wait => {
-                while let Ok(Some(chunk)) =
-                    tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
-                {
-                    send_command(
-                        &mut socket,
-                        id,
-                        &cmd.verb,
-                        serde_json::json!({
-                            "status": "output",
-                            "chunk": String::from_utf8_lossy(&chunk),
-                        }),
-                    )
-                    .await;
-                }
-                let code = joined.ok().and_then(|r| r.ok()).flatten();
-                send_command(
-                    &mut socket,
-                    id,
-                    &cmd.verb,
-                    serde_json::json!({ "status": "exited", "code": code }),
-                )
-                .await;
-                break;
-            }
-        }
-    }
 }
 
 pub(crate) async fn proxy_peer_command(

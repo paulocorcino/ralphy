@@ -170,6 +170,11 @@
         >
           <svg x-icon="'refresh-cw'"></svg>
         </button>
+        <!-- Lucide v0.460.0 has no `server-plus`: this is its `server` with the
+             lower unit shortened so a plus fits beside it. -->
+        <button class="side-refresh side-add-host" @click="openAddHost()" title="Add a host" aria-label="Add a host">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="10" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/><path d="M18 15v6"/><path d="M15 18h6"/></svg>
+        </button>
         <!-- count of located projects, at a glance (projects.length) -->
         <span class="count" x-text="projects.length" title="Number of projects"></span>
       </div>
@@ -201,8 +206,10 @@
              working across groups. A fleet of one renders no headers at all. -->
         <template x-for="g in fleetGroups()" :key="g.key">
           <div class="env-block">
-            <div class="env-group" x-show="g.header" :title="groupTitle(g)">
-              <span class="env-label" x-text="g.environment"></span>
+            <div class="env-group" x-show="g.header" :title="groupTitle(g)"
+                 @contextmenu.prevent="if (g.tunnel) showGroupMenu($event.clientX, $event.clientY, g)">
+              <span class="env-kind" x-show="g.tunnel"><svg x-icon="'server'"></svg></span>
+              <span class="env-label" x-text="groupLabel(g)"></span>
               <span class="env-daemon" x-show="g.showName" x-text="g.name"></span>
               <!-- The state is a glyph, its word in the tooltip and the
                    aria-label (wb-fleet.js `stateIcon`). The glyph becomes the
@@ -234,6 +241,8 @@
                 <span class="glyph" x-show="peerIcon(g) === 'plugged'"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m17 7 5-5"/><path d="m2 22 5-5"/><path d="M8.3 18.3a2.4 2.4 0 0 0 3.4 0L14 16l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4Z"/><path d="M9.5 11.5 12 9"/><path d="M12.5 14.5 15 12"/><path d="m10 8 6 6 2.3-2.3a2.4 2.4 0 0 0 0-3.4l-2.6-2.6a2.4 2.4 0 0 0-3.4 0Z"/></svg></span>
                 <span class="glyph" x-show="peerIcon(g) === 'unplug'"><svg x-icon="'unplug'"></svg></span>
               </span>
+              <button class="group-menu" x-show="g.tunnel" title="Host actions" aria-label="Host actions"
+                      @click.stop="showGroupMenu($event.clientX, $event.clientY, g)"><i class="bi bi-three-dots"></i></button>
             </div>
             <template x-for="p in g.rows" :key="p.key || p.slug">
               <li class="project" :class="{ open: rowOpen(p), peer: !!p.daemon }">
@@ -872,42 +881,57 @@
             <span class="pill" x-text="consoleCount + (consoleCount === 1 ? ' console' : ' consoles')"></span>
             <span class="pill" x-text="'Stage ' + stageW + ' × ' + stageH"></span>
           </div>
-          <!-- Open in a column (ADR-0051 §5): the list a maximized console's
+          <!-- Slice (ADR-0051 §5): the list a maximized console's
                title bar opens. FRAME chrome like the footer, placed under the
                button that opened it. Rows stay `.column-item`, a class of their
-               own, so queries scoped to the other menus stay inert. -->
+               own, so queries scoped to the other menus stay inert. The
+               Right | Down pair on top decides where a row opens (rows
+               amendment); the swap icon ignores it. -->
           <div class="dropdown column-menu" x-show="columnMenu" @click.outside="columnMenu = false" x-cloak
                :style="`top: ${columnMenuAt.top}px; right: ${columnMenuAt.right}px; max-width: ${columnMenuAt.maxWidth}px; max-height: ${columnMenuAt.maxHeight}px`">
+            <div class="column-dir" role="group" aria-label="Where the console opens">
+              <button type="button" class="column-dir-btn" data-dir="right" :aria-pressed="columnDir === 'right'"
+                      :class="{ on: columnDir === 'right' }" @click="setColumnDir('right')">
+                <i class="bi bi-arrow-right"></i><span>Right</span>
+              </button>
+              <button type="button" class="column-dir-btn" data-dir="down" :aria-pressed="columnDir === 'down'"
+                      :class="{ on: columnDir === 'down' }" @click="setColumnDir('down')">
+                <i class="bi bi-arrow-down"></i><span>Down</span>
+              </button>
+            </div>
             <input class="column-filter" type="text" x-ref="columnFilter" x-show="columnFilterShown()"
                    x-model="columnFilter" placeholder="Filter" aria-label="Filter consoles"
                    @keydown.enter.prevent="openFirstColumn()" @keydown.escape.prevent="columnMenu = false">
-            <template x-for="g in columnView()" :key="g.fence ? g.fence.id : '-loose'">
-              <div class="column-group">
-                <!-- Consoles outside every fence have no head. -->
-                <div class="dropdown-head column-group-head" x-show="g.fence">
-                  <span class="column-group-name" x-text="g.fence?.name"></span>
-                </div>
-                <!-- The row opens a new column; the icon beside it swaps the
-                     console into the column that opened the list. -->
-                <template x-for="r in g.rows" :key="r.id">
-                  <div class="column-row">
-                    <button class="column-item" :disabled="!r.enabled" :title="r.reason || ''"
-                            :data-id="r.id" @click="openColumn(r.id)">
-                      <i class="bi bi-terminal"></i>
-                      <span class="row-name" x-text="columnRowLabel(r)"></span>
-                      <span class="session-state" :class="r.state" x-show="r.state" :title="window.WBConsole?.agentStateTitle(r.state)"></span>
-                      <span class="row-off" x-show="!r.running">not running</span>
-                    </button>
-                    <button class="column-swap" :disabled="!r.swappable" :data-id="r.id"
-                            title="Swap into this column" aria-label="Swap into this column"
-                            @click="swapColumn(r.id)">
-                      <i class="bi bi-arrow-down-up"></i>
-                    </button>
+            <!-- Only the list scrolls: Right | Down and the filter stay on top. -->
+            <div class="column-list">
+              <template x-for="g in columnView()" :key="g.fence ? g.fence.id : '-loose'">
+                <div class="column-group">
+                  <!-- Consoles outside every fence have no head. -->
+                  <div class="dropdown-head column-group-head" x-show="g.fence">
+                    <span class="column-group-name" x-text="g.fence?.name"></span>
                   </div>
-                </template>
-              </div>
-            </template>
-            <div class="column-empty" x-show="columnFilter && !columnView().length">No console matches</div>
+                  <!-- The row opens a new column; the icon beside it swaps the
+                       console into the column that opened the list. -->
+                  <template x-for="r in g.rows" :key="r.id">
+                    <div class="column-row">
+                      <button class="column-item" :disabled="!r.enabled" :title="r.reason || ''"
+                              :data-id="r.id" @click="openColumn(r.id)">
+                        <i class="bi bi-terminal"></i>
+                        <span class="row-name" x-text="columnRowLabel(r)"></span>
+                        <span class="session-state" :class="r.state" x-show="r.state" :title="window.WBConsole?.agentStateTitle(r.state)"></span>
+                        <span class="row-off" x-show="!r.running">not running</span>
+                      </button>
+                      <button class="column-swap" :disabled="!r.swappable" :data-id="r.id"
+                              title="Swap into this column" aria-label="Swap into this column"
+                              @click="swapColumn(r.id)">
+                        <i class="bi bi-arrow-down-up"></i>
+                      </button>
+                    </div>
+                  </template>
+                </div>
+              </template>
+              <div class="column-empty" x-show="columnFilter && !columnView().length">No console matches</div>
+            </div>
           </div>
         </section>
 
@@ -2657,6 +2681,229 @@
     </div>
 
     <!-- ===================================================================
+         Add a host (#497): a computer reached over SSH becomes a peer. The
+         daemon runs `ralphy host …` on this computer; wb-hosts.js holds the
+         state. Everything the host says is shown with x-text only.
+    ==================================================================== -->
+    <div class="modal-scrim" x-cloak x-bind="scrim('addHost.open', () => closeAddHost())">
+      <div class="modal run-modal host-modal" role="dialog" aria-modal="true" aria-label="Add a host">
+        <div class="modal-head">
+          <svg x-icon="'server'"></svg>
+          <span class="modal-title">Add a host</span>
+          <span class="modal-sub" x-show="addHost.os" x-text="addHost.os"></span>
+          <span class="spacer"></span>
+          <button class="modal-x" @click="closeAddHost()" title="Close" aria-label="Close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="run-body host-body">
+          <!-- 1. Connection: four fields in two rows. An empty password signs
+               in with the SSH config's key or agent. No field is offered to the
+               browser's autofill or password manager. -->
+          <div class="host-conn" x-show="addHost.step === 'connection'" @keydown.enter="addHostNext()">
+            <div class="host-grid host-grid-host">
+              <label class="run-label" for="host-address">Host</label>
+              <label class="run-label" for="host-port">Port</label>
+              <div class="host-field">
+                <input id="host-address" class="host-input" :value="addHost.alias || addHost.address"
+                       @input="addHostHost($event.target.value)"
+                       autocomplete="off" spellcheck="false" autocapitalize="off" data-lpignore="true" data-1p-ignore />
+                <span class="host-alias" x-show="addHost.aliases.length">
+                  <i class="bi bi-chevron-down" aria-hidden="true"></i>
+                  <select class="host-alias-pick" :value="addHost.alias"
+                          @change="addHostPick($event.target.value)"
+                          title="Hosts in your SSH config" aria-label="Hosts in your SSH config">
+                    <option value="" disabled>Hosts in your SSH config</option>
+                    <template x-for="a in addHost.aliases" :key="a.alias">
+                      <option :value="a.alias" x-text="a.alias"></option>
+                    </template>
+                  </select>
+                </span>
+              </div>
+              <input id="host-port" class="host-input" :value="addHost.port" :readonly="!!addHost.alias"
+                     @input="addHostType('port', $event.target.value)" placeholder="22" inputmode="numeric"
+                     autocomplete="off" data-lpignore="true" data-1p-ignore />
+            </div>
+            <div class="host-grid host-grid-auth">
+              <label class="run-label" for="host-user">User</label>
+              <label class="run-label" for="host-password" x-show="addHost.signIn !== 'key'">Password</label>
+              <label class="run-label" for="host-key-file" x-show="addHost.signIn === 'key'">Key file</label>
+              <input id="host-user" class="host-input" :value="addHost.user" :readonly="!!addHost.alias"
+                     @input="addHostType('user', $event.target.value)"
+                     autocomplete="off" spellcheck="false" autocapitalize="off" data-lpignore="true" data-1p-ignore />
+              <input id="host-password" class="host-input host-secret" x-show="addHost.signIn !== 'key'"
+                     :type="hostSecretType()" :value="addHost.password" :disabled="!hostPasswordAllowed()"
+                     @input="addHostType('password', $event.target.value)"
+                     :placeholder="hostPasswordAllowed() ? '' : 'Needs https'"
+                     :title="hostPasswordAllowed() ? 'Used once to add Ralphy\'s key on the host. Not saved.' : 'A password is sent only over https or on this computer.'"
+                     autocomplete="off" spellcheck="false" autocapitalize="off" data-lpignore="true" data-1p-ignore />
+              <input id="host-key-file" class="host-input" x-show="addHost.signIn === 'key'" :value="addHost.keyFile"
+                     @input="addHostType('keyFile', $event.target.value)" placeholder="Full path of the private key"
+                     autocomplete="off" spellcheck="false" data-lpignore="true" data-1p-ignore />
+              <span></span>
+              <button type="button" class="host-link" @click="addHostType('signIn', addHost.signIn === 'key' ? 'config' : 'key')"
+                      x-text="addHost.signIn === 'key' ? 'Use a password' : 'Use a key file'"></button>
+            </div>
+          </div>
+
+          <!-- 2. Host identity: first contact only -->
+          <div class="run-field" x-show="addHost.step === 'identity'">
+            <p class="run-help">This computer does not know this host yet. Check that this fingerprint is the host's own, then trust it.</p>
+            <template x-for="k in addHost.keys" :key="k.fingerprint">
+              <p class="host-key"><span x-text="k.type"></span> <code x-text="k.fingerprint"></code></p>
+            </template>
+          </div>
+
+          <!-- 3. Host checks: the one thing that blocks Connect comes first,
+               with what to do about it. Passed checks fold into one line.
+               Advice shows only when nothing blocks. -->
+          <div class="run-field" x-show="addHost.step === 'checks'">
+            <p class="run-help" x-show="addHost.busy && !addHost.checks.length">Checking the host…</p>
+            <div class="host-next" x-show="hostView().blocker">
+              <p class="host-next-text">
+                <i class="bi bi-exclamation-circle"></i>
+                <span x-text="hostView().blocker ? hostView().blocker.title : ''"></span>
+              </p>
+              <p class="run-help" x-show="hostView().blocker && hostView().blocker.detail" x-text="hostView().blocker ? hostView().blocker.detail : ''"></p>
+              <template x-if="hostNeedsInstall()">
+                <div class="host-next-act">
+                  <p class="run-help" x-text="hostInstallText()"></p>
+                  <button class="btn accent" @click="addHostInstall()" :disabled="addHost.busy">Install Ralphy on the host</button>
+                  <p class="run-help" x-show="addHost.busy">Sending Ralphy to the host…</p>
+                </div>
+              </template>
+              <template x-if="hostNeedsName()">
+                <div class="host-next-act">
+                  <label class="run-label" for="host-name">Name for the daemon on the host</label>
+                  <input id="host-name" class="host-input" :value="addHost.name" @input="addHostType('name', $event.target.value)"
+                         @keydown.enter="addHostCheckAgain()" autocomplete="off" spellcheck="false" />
+                </div>
+              </template>
+              <template x-if="!hostNeedsInstall() && !hostNeedsName() && hostView().blocker && hostView().blocker.command">
+                <div class="host-next-act">
+                  <p class="run-help">Run this command, then select “Check again”:</p>
+                  <span class="rel-cmd">
+                    <code x-text="hostView().blocker.command"></code>
+                    <button class="modal-x" @click="copyHostCommand(hostView().blocker.command)" title="Copy the command" aria-label="Copy the command"><i class="bi bi-copy"></i></button>
+                  </span>
+                </div>
+              </template>
+            </div>
+            <details class="host-passed" x-show="hostView().passed.length">
+              <summary><i class="bi bi-check-circle"></i> <span x-text="hostView().passedText"></span></summary>
+              <ul class="host-checks">
+                <template x-for="c in hostView().passed" :key="c.id">
+                  <li class="host-check pass">
+                    <i class="bi bi-check-circle"></i>
+                    <span class="host-check-label" x-text="c.label"></span>
+                    <span class="host-check-text" x-text="c.text"></span>
+                  </li>
+                </template>
+              </ul>
+            </details>
+            <p class="run-help" x-show="!hostView().blocker && hostView().fixText" x-text="hostView().fixText"></p>
+            <div class="host-advice" x-show="hostView().advice.length">
+              <span class="run-label">To keep this host available</span>
+              <ul class="host-checks">
+                <template x-for="c in hostView().advice" :key="c.id">
+                  <li class="host-check" :class="c.status">
+                    <i class="bi" :class="hostCheckIcon(c)"></i>
+                    <span class="host-check-label" x-text="c.label"></span>
+                    <span class="host-check-text" x-text="c.text"></span>
+                    <span class="rel-cmd" x-show="c.command">
+                      <code x-text="c.command"></code>
+                      <button class="modal-x" @click="copyHostCommand(c.command)" title="Copy the command" aria-label="Copy the command"><i class="bi bi-copy"></i></button>
+                    </span>
+                  </li>
+                </template>
+              </ul>
+            </div>
+            <template x-for="(line, i) in addHost.lines" :key="i">
+              <p class="run-help" x-text="line"></p>
+            </template>
+          </div>
+
+          <p class="side-error" x-show="addHost.failure" x-text="addHost.failure ? addHost.failure.message : ''"></p>
+          <span class="rel-cmd" x-show="addHost.failure && addHost.failure.keyLine">
+            <code x-text="addHost.failure ? addHost.failure.keyLine : ''"></code>
+            <button class="modal-x" @click="copyHostCommand(addHost.failure.keyLine, 'Copied the key line.')" title="Copy the key line" aria-label="Copy the key line"><i class="bi bi-copy"></i></button>
+          </span>
+
+          <!-- The SSH connection failed before the host's system was known. -->
+          <div class="host-help" x-show="addHost.help">
+            <p class="run-help">Turn on the SSH server on the host:</p>
+            <div class="seg">
+              <template x-for="t in hostHelpTabs()" :key="t.id">
+                <button class="seg-btn" :class="{ on: addHost.helpTab === t.id }"
+                        @click="addHostStep({ type: 'help-tab', tab: t.id })" x-text="t.name"></button>
+              </template>
+            </div>
+            <template x-for="(st, i) in hostHelpSteps()" :key="addHost.helpTab + i">
+              <div class="host-step">
+                <p class="run-help" x-show="st.text" x-text="st.text"></p>
+                <span class="rel-cmd" x-show="st.command">
+                  <code x-text="st.command"></code>
+                  <button class="modal-x" @click="copyHostCommand(st.command)" title="Copy the command" aria-label="Copy the command"><i class="bi bi-copy"></i></button>
+                </span>
+              </div>
+            </template>
+            <p class="run-help" x-text="hostWrongAddress().text"></p>
+            <template x-for="c in hostWrongAddress().commands" :key="c.name">
+              <p class="host-key"><span x-text="c.name"></span> <code x-text="c.command"></code></p>
+            </template>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <template x-if="addHost.step === 'connection'">
+            <span class="host-foot">
+              <button class="btn" @click="closeAddHost()">Cancel</button>
+              <button class="btn accent" @click="addHostNext()" :disabled="addHost.busy || !addHostPayload().destination">Next</button>
+            </span>
+          </template>
+          <template x-if="addHost.step === 'identity'">
+            <span class="host-foot">
+              <button class="btn" @click="addHostCancelTrust()">Cancel</button>
+              <button class="btn accent" @click="addHostTrust()" :disabled="addHost.busy">Trust</button>
+            </span>
+          </template>
+          <template x-if="addHost.step === 'checks'">
+            <span class="host-foot">
+              <button class="btn" @click="closeAddHost()">Cancel</button>
+              <button class="btn" :class="{ accent: hostPrimary() === 'check' }" @click="addHostCheckAgain()" :disabled="addHost.busy">Check again</button>
+              <button class="btn accent" x-show="hostPrimary() === 'connect'" @click="addHostConnect()" :disabled="!hostReady()">Connect</button>
+            </span>
+          </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- Remove a host (#497): `ralphy host remove`, from this computer only. -->
+    <div class="modal-scrim" x-cloak x-bind="scrim('removeHost.open', () => closeRemoveHost())">
+      <div class="modal run-modal" role="dialog" aria-modal="true" aria-label="Remove host">
+        <div class="modal-head">
+          <svg x-icon="'server'"></svg>
+          <span class="modal-title">Remove host</span>
+          <span class="modal-sub" x-text="removeHost.name"></span>
+          <span class="spacer"></span>
+          <button class="modal-x" @click="closeRemoveHost()" title="Close" aria-label="Close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="run-body">
+          <p class="run-help">This removes the host from this computer only. Its daemon, repos and runs stay as they are.</p>
+          <label class="run-check">
+            <input type="checkbox" :checked="removeHost.rotate" @change="removeHost.rotate = $event.target.checked" />
+            <span>Also change this host's token. Every other computer connected to it is disconnected.</span>
+          </label>
+          <template x-for="(line, i) in removeHost.lines" :key="i">
+            <p class="run-help" x-text="line"></p>
+          </template>
+          <p class="side-error host-remove-error" x-show="removeHost.failure" x-text="removeHost.failure ? removeHost.failure.message : ''"></p>
+        </div>
+        <div class="modal-foot">
+          <button class="btn" @click="closeRemoveHost()">Cancel</button>
+          <button class="btn danger" @click="confirmRemoveHost()" :disabled="removeHost.busy">Remove</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================================================================
          Login gate — a fully-opaque overlay shown when `!authed`. Because it's
          solid (not just dimmed) and the chrome is blanked (body.locked), there's
          nothing behind to read: the real daemon never renders the app until
@@ -2771,6 +3018,7 @@
     <script src="wb-spend.js"></script>
     <script src="wb-daemon.js"></script>
     <script src="wb-release.js"></script>
+    <script src="wb-hosts.js"></script>
     <script src="app.js"></script>
     <script defer src="vendor/alpine.min.js"></script>
   </body>

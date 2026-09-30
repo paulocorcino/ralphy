@@ -139,6 +139,27 @@ pub fn set_require_login_in(dir: &Path, enable: bool) -> Result<()> {
     set_marker(&require_login_path_in(dir), enable)
 }
 
+/// The `daemon-require-token` flag path inside `dir`. Its PRESENCE means a
+/// loopback bind asks for the access token like a network bind does, because
+/// an SSH tunnel from another computer arrives on 127.0.0.1 (ADR-0067 §5).
+pub fn require_token_path_in(dir: &Path) -> PathBuf {
+    dir.join("daemon-require-token")
+}
+
+/// Whether the require-token flag is set under `dir` (the file exists). An
+/// error reading it is returned, never taken as "off": this flag gates auth.
+pub fn require_token_enabled_in(dir: &Path) -> Result<bool> {
+    let path = require_token_path_in(dir);
+    path.try_exists()
+        .with_context(|| format!("checking {}", path.display()))
+}
+
+/// Set or clear the require-token flag under `dir`, with the same marker
+/// semantics as [`set_require_login_in`].
+pub fn set_require_token_in(dir: &Path, enable: bool) -> Result<()> {
+    set_marker(&require_token_path_in(dir), enable)
+}
+
 /// The `daemon-remote-images` flag path inside `dir`. Its PRESENCE means the
 /// operator opted into images from other origins in the markdown preview: the
 /// CSP `img-src` gains `https:` (ADR-0032 amendment §F).
@@ -179,18 +200,35 @@ fn set_marker(path: &Path, enable: bool) -> Result<()> {
 /// Compute the effective policy from the resolved inputs (ADR-0032 §4 +
 /// amendment §A). A loopback bind is `Localhost` UNLESS the operator opted into
 /// require-login AND a TOTP seed is armed AND a signing token exists, in which
-/// case it is gated (`Session`). A network bind keeps the §4 rule: `Bearer`, or
-/// `Session` once a seed is armed. Fails closed exactly where [`for_bind`] does
-/// (a network bind with no token).
+/// case it is gated (`Session`). With `require_token` a loopback bind follows the
+/// network rule instead (ADR-0067 §5). A network bind keeps the §4 rule:
+/// `Bearer`, or `Session` once a seed is armed. Fails closed exactly where
+/// [`for_bind`] does (a network bind with no token), and on a loopback bind
+/// with `require_token` and no token.
 pub fn compute_policy(
     bind_ip: IpAddr,
     token: Option<String>,
     seed: Option<totp::Seed>,
     password: Option<password::Hash>,
     require_login: bool,
+    require_token: bool,
     epoch: epoch::SessionEpoch,
 ) -> Result<AuthPolicy> {
     match AuthPolicy::for_bind(bind_ip, token.clone())? {
+        AuthPolicy::Localhost if require_token => match token.filter(|t| !t.is_empty()) {
+            Some(key) => Ok(upgrade_with_session(
+                AuthPolicy::Bearer(key.clone()),
+                Some(key),
+                seed,
+                password,
+                epoch,
+            )),
+            None => anyhow::bail!(
+                "this daemon requires its access token also on 127.0.0.1, but none is set — \
+                 run `ralphy daemon require-token on` to create one, or \
+                 `ralphy daemon require-token off` to stop requiring it"
+            ),
+        },
         AuthPolicy::Localhost => match (require_login, token, seed) {
             (true, Some(key), Some(seed)) => Ok(AuthPolicy::Session(Arc::new(SessionAuth {
                 token: key,

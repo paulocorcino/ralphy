@@ -10,8 +10,8 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use ralphy_core::{BranchMode, Effort};
 
 use crate::{
-    blob, changes, config, daemon, init, install, issues, models, mutate, schedule, stop, sync,
-    telegram, triage, update, usage,
+    blob, changes, config, daemon, host, init, install, issues, models, mutate, schedule, stop,
+    sync, telegram, triage, update, usage,
 };
 
 #[derive(Parser)]
@@ -54,6 +54,10 @@ pub(crate) enum Command {
     /// It runs in this terminal. Press Ctrl+C to stop it.
     // ADR-0032.
     Daemon(daemon::DaemonArgs),
+    /// Add, check, or remove another computer that the workbench reaches over
+    /// SSH.
+    #[command(subcommand)]
+    Host(host::HostCommand),
 
     // Working the queue.
     /// Let an agent work through the repo's issue queue.

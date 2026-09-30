@@ -254,11 +254,11 @@ def ids(page):
 
 
 def shell_cols(page):
-    return page.evaluate(f"() => {SH}.columns.slice()")
+    return page.evaluate(f"() => {SH}.columns.flat()")
 
 
 def stored(page):
-    return page.evaluate("() => WBView.read()?.columns ?? null")
+    return page.evaluate("() => WBView.read()?.columns?.flat() ?? null")
 
 
 def boot(page, want=5):
@@ -363,7 +363,7 @@ def main():
             ctx.add_init_script(
                 "if (window.opener && location.href === 'about:blank') setTimeout(() => {"
                 " try { const o = window.opener;"
-                "   window.__openerCols = o.Alpine.$data(o.document.querySelector('[x-data]')).columns.slice();"
+                "   window.__openerCols = o.Alpine.$data(o.document.querySelector('[x-data]')).columns.flat();"
                 "   window.__openerAt = location.href;"
                 " } catch (e) { window.__openerCols = 'error: ' + e; } }, 0);"
             )
@@ -393,7 +393,7 @@ def main():
             # R1 -------------------------------------------------------------
             reload(page)
             try:
-                page.wait_for_function(f"() => {SH}.columns.length === 3", timeout=8000)
+                page.wait_for_function(f"() => {SH}.columns.flat().length === 3", timeout=8000)
             except Exception:
                 pass
             check("R1 after a reload the list comes back", shell_cols(page) == ["w-a", "w-b", "w-c"],
@@ -432,7 +432,7 @@ def main():
             page.evaluate("() => WBView.patch({ columns: ['w-a', 'w-gone', 'w-b'] })")
             reload(page)
             try:
-                page.wait_for_function(f"() => {SH}.columns.length === 2", timeout=8000)
+                page.wait_for_function(f"() => {SH}.columns.flat().length === 2", timeout=8000)
             except Exception:
                 pass
             check("R4 a stored id no longer on the desk is dropped", shell_cols(page) == ["w-a", "w-b"],
@@ -631,11 +631,11 @@ def main():
             gone_b = poll_desk(lambda d: "w-c" not in d)
             check("X2 setup: the other client closed w-c on the desk", gone_b is not None and "w-c" not in gone_b)
             try:
-                page.wait_for_function(f"() => !{SH}.columns.includes('w-c')", timeout=8000)
+                page.wait_for_function(f"() => !{SH}.columns.flat().includes('w-c')", timeout=8000)
             except Exception:
                 pass
             page.wait_for_timeout(500)
-            x2 = page.evaluate(f"() => ({{ list: {SH}.columns.slice(), win: !!__W('w-c'), cols: __columns() }})")
+            x2 = page.evaluate(f"() => ({{ list: {SH}.columns.flat(), win: !!__W('w-c'), cols: __columns() }})")
             check("X2 the closed console leaves the columns", x2["list"] == ["w-a", "w-b"], str(x2["list"]))
             check("X2 …and this stage", not x2["win"])
             check("X2 the others widen", equal_fill(x2["cols"], ws_w), str(x2["cols"]))
@@ -651,7 +651,7 @@ def main():
             # rest of `detachFence` and before the popup document can load.
             page.evaluate(
                 "() => { const open = window.open; window.open = (...a) => { const h = open.apply(window, a);"
-                " queueMicrotask(() => { window.__afterOpen = { cols: " + SH + ".columns.slice(),"
+                " queueMicrotask(() => { window.__afterOpen = { cols: " + SH + ".columns.flat(),"
                 "   onStage: !!__W('w-f'), popup: h ? h.location.href : null }; });"
                 " window.open = open; return h; }; }"
             )

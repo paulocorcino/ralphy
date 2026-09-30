@@ -98,7 +98,7 @@ function stubWindow() {
       removeEventListener() {},
       addListener() {},
     }),
-    location: { protocol: "http:", host: "127.0.0.1:7431", pathname: "/", search: "" },
+    location: { protocol: "http:", host: "127.0.0.1:7431", hostname: "127.0.0.1", pathname: "/", search: "" },
     setTimeout: () => 0,
     clearTimeout() {},
     setInterval: () => 0,

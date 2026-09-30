@@ -941,3 +941,190 @@ What holds:
   is busy, but the pump drops its events with a name comparison. Git runs only
   when HEAD really moved, and it runs the same two reads as one click on
   Changes.
+
+## Amendment (2026-09-29): the host verbs, the first verbs with no repo
+
+ADR-0067 says the workbench "starts the add, check and remove verbs through
+the existing command transport". Every verb before these names a registered
+repo, and `/ws/command` routes by that repo. A host has no repo: it is added
+from the computer the browser is connected to, for that computer.
+
+Seven verbs form the **host family** (`Verb::is_host`). Each one runs
+`ralphy host …` on the daemon's own computer:
+
+| Verb | Class | Reply |
+|---|---|---|
+| `host.aliases` | Query | `aliases`: the hosts of the SSH config, resolved by `ssh -G` |
+| `host.key` | Query | `key`: `known`, `unknown` with fingerprints, `unreachable`, or `proxied` |
+| `host.trust` | Mutate | `{status:"ok"}` |
+| `host.check`, `host.add`, `host.install`, `host.remove` | Spawn | `spawned`, `output`, `exited`, as for `run` |
+
+What holds:
+
+- **Local only.** `command_ws` serves a host verb right after `from_query`,
+  before any repo routing. It is never relayed to a peer, and
+  `/api/peer/command` refuses it. A host is always added from the computer
+  that will reach it.
+- **The child's own output is the progress.** The four Spawn verbs pass the
+  hidden `--json` flag. The CLI then prints one JSON object per line
+  (`connected`, `check`, `install`, `fixed`, `note`, `added`, `failed`).
+  `host.install` was added by the ADR-0067 amendment of 2026-09-29 (#499). The daemon relays
+  those lines as ordinary `output` chunks and does not read them. §8 still
+  defers a structured run feed; this is not one. The browser splits the chunks
+  into lines.
+- **Free text is checked before `ssh` sees it.** These are the first verbs that
+  carry free text. `dispatch::host_argv` refuses a destination or host that is
+  empty, longer than 255 characters, starts with `-`, or holds whitespace or a
+  control character. It also refuses a key path that is not absolute, a name
+  that could be read as an option, a fingerprint that is not `SHA256:` and 43
+  base64 characters, and a `rotate_token` that is not a boolean. A refusal is
+  one `invalid host options` frame, and nothing spawns. `ssh` still gets `--`
+  before the destination.
+- **The run lock does not apply.** No verb here touches a repo, so there is no
+  run to wait for.
+- **The teardown invariant is unchanged.** The streaming tail moved to
+  `stream_child`, which `run` and the host verbs share. No arm kills the child.
+
+## Amendment (2026-09-30): the registry verbs — add a project from the workbench
+
+Until now a project entered the registry only from a shell: `ralphy daemon
+add`, or the passive upsert of a first `init`/`run`/`triage`. The operator
+works from the workbench and must be able to add a project there, on this
+computer, on its WSL distro, or on a remote host (ADR-0067). Two verbs form
+the **registry family**:
+
+| Verb | Class | Payload | Reply |
+|---|---|---|---|
+| `dir.list` | Observe | `daemon`, `path` | `entries`, `more`, `start` |
+| `project.add` | Mutate | `daemon`, `path`, `init` | `{status:"ok", slug, path}` |
+
+### 1. Routing: a daemon target, not a repo
+
+A project that is not registered has no repo to route by. Both verbs name a
+**daemon** instead: `daemon` is a `daemon_id`, and no `daemon` means the
+daemon the browser is connected to. `command_ws` serves them after
+`from_query` and before repo routing, as it serves the host verbs.
+
+The difference from the host verbs: **a registry verb is relayed to a peer**.
+A path is a path on one filesystem, and each daemon owns its own registry
+(ADR-0052). So the listing and the add run on the daemon that owns that
+filesystem. `/api/peer/command` gains one branch for these two verbs. The peer
+serves them against its own filesystem and its own registry. That branch
+never routes again, so a relay loop stays impossible. `project.add` is a
+Mutate, so the relay's refusal of Spawn verbs does not apply.
+
+### 2. `project.add` spawns the existing subcommand
+
+`repos.toml` keeps one owner: the `daemon add` / `daemon remove` pair (the
+`project.remove` amendment). `project.add` spawns `ralphy daemon add [--init]
+-- <path>` and collects its exit. The daemon never writes the file.
+
+- `path` is free text. `dispatch` refuses a path that is empty, not absolute,
+  longer than 4096 bytes, or holds a control character. A refusal is one
+  error frame, and nothing spawns.
+- `init` is a boolean. It adds `--init` only when the browser asked for it,
+  after it showed "Initialize git and add".
+- The run lock does not apply. The project has no run yet.
+
+`daemon add` gains three refusals. They apply to the CLI as well, because the
+same defects exist there today:
+
+- **A second clone of a registered slug.** The registry key is the slug, and
+  the path is a mutable attribute of it. So adding `C:\Dev\ralphy-copy` would
+  move the entry for `owner/ralphy` away from `C:\Dev\ralphy`. `daemon add`
+  refuses when the slug is already registered at another path that still
+  exists: "owner/repo is already added from <path>". A registered path that no
+  longer exists is still updated. That is the moved-repo case the registry
+  already handles.
+- **A path that does not exist, with `--init`.** `--init` never creates a
+  directory. A typing error must not create a folder on the disk.
+- **A network path.** On Windows, a UNC path (`\server\share`) is refused.
+  Reading it makes Windows authenticate over SMB to the named server, which
+  sends the user's NTLM hash to that server.
+
+### 3. `dir.list` is the one read outside a repo root
+
+§5 confines every read to a registered repo root. `dir.list` is an exception,
+and it has fixed limits:
+
+- It lists **one level of directories**. It never recurses and never returns a
+  file, a file's content, or a size.
+- Each entry is a name and two bits: `repo` (a `.git` entry exists, file or
+  directory, so a worktree counts) and `added` (the path is in this daemon's
+  registry). Both bits come from reading bytes and from the daemon's own state.
+  No `git` process runs, so §6 still holds.
+- The prefix the operator typed is filtered in the daemon. At most 200 entries
+  return, sorted without regard to case. `more` counts the rest.
+- A dot directory, and on Windows a directory with the hidden or system
+  attribute, is left out unless the typed prefix starts with `.`.
+- Symlinks and junctions are followed. A directory the daemon cannot read is
+  an entry-level error, not a failed command.
+- A relative path is refused. `~` expands to the daemon user's home. On
+  Windows an empty path lists the drives, and a UNC path is refused for the
+  reason in §2.
+- A call with no `path` returns `start`: the parent directory shared by most
+  of this daemon's registered projects, or the home directory when there are
+  none. It is computed from the registry each time. Nothing new is stored.
+
+**Why this exception is acceptable.** §5 exists so that the file viewer is not
+a reader of the whole disk. `dir.list` returns names of directories only. And
+an authenticated operator can already open a console on the same daemon, which
+is a full shell. The daemon has no read-only operator role. So `dir.list`
+gives the operator no capability they do not already have. The control is the
+same as in §5: who enters, by the ADR-0032 §4 login.
+
+**This is not discovery.** CONTEXT.md says nothing scans the disk. That stays
+true: `dir.list` reads one level, only when the operator asks, and it
+registers nothing.
+
+### 4. The WSL path on a Windows daemon
+
+On a Windows daemon, a path under `\wsl.localhost\<distro>\` or
+`\wsl$\<distro>\` names a directory of the WSL distro. Registering it on the
+Windows daemon would run Windows `git` against the Linux filesystem, and the
+agents would run in the wrong environment. The browser maps such a path to the
+peer for that distro and rewrites it to the Linux path before it calls either
+verb. When no such peer exists, the browser says so and does not call the
+verb. The daemon refuses the UNC form in any case (§2, §3).
+
+### Consequences
+
+- The verb count grows from 49 to 51.
+- The `dir.list` limits in §3 are the security boundary of this exception.
+  Each limit has a test.
+- The browser dialog, its states, and its focus behavior are UI decisions. They
+  are recorded in the PRD, not here.
+
+## Amendment (2026-09-30): the tree marks ignored entries
+
+The 2026-07-26 amendment made the tree list ignored files. It did not let the
+operator SEE which ones they are: an ignored `dist/` looked like a tracked
+`src/`, and the only way to tell was to open `.gitignore`. Each `tree.list`
+entry now carries **`ignored: bool`**. It is a mark, never a filter: the entry
+is listed either way, and the rejected "show ignored files" toggle stays
+rejected. The workbench draws a marked row faded, as VS Code does.
+
+- **What counts as ignored.** Git's own sources and precedence: the
+  `.gitignore` of each directory from the checkout root down to the listed
+  one (the deepest one that matches decides, and `!pattern` counts), then
+  `info/exclude`, then the global excludes. An entry inside an ignored
+  directory is ignored, because git never looks inside one. The daemon still
+  runs no git (§3): the rules are parsed in-process by the `ignore` crate,
+  which `tree.grep` already uses.
+- **Cost.** The one-level walk is unchanged. The mark reads rule FILES only,
+  never a directory: a missing `.gitignore` fails fast, and once an ancestor
+  is ignored, reading stops and every entry is marked without matching.
+  Nothing is cached, so there is nothing to invalidate. The `tree.dirty`
+  nudge of the directory that holds an edited `.gitignore` already re-lists
+  it. The workbench then re-reads the levels it has open below that
+  directory, and only when the re-listed level holds a `.gitignore`.
+- **A checkout is listed from its own root.** A worktree lives under the
+  primary's `.ralphy/`, which the primary ignores. Rules read from the
+  primary would mark the whole worktree ignored. So `tree.list` with a
+  `checkout` confines the worktree dir against the registered root, as the
+  searches already do, and lists from there. A worktree reads the shared
+  `info/exclude` through its `.git` file's `gitdir:` and `commondir`.
+- **Known limit.** An edit to `info/exclude` or to the global excludes sends
+  no nudge (`.git` is noise to the watcher), so it shows at the next re-list.
+- **Wire.** The field is additive. An older peer sends no `ignored`, and its
+  rows are drawn as before.

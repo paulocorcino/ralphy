@@ -68,6 +68,7 @@
         state: isLocal(row) ? "local" : row.peerState || "",
         diagnosis: "",
         nudgeable: false,
+        tunnel: false,
         local: isLocal(row),
       });
       g.rows.push(row);
@@ -81,6 +82,7 @@
         state: "",
         diagnosis: "",
         nudgeable: false,
+        tunnel: false,
         local: false,
       });
       // The peer list is authoritative about the peer; the rows only carry what
@@ -90,6 +92,7 @@
       g.state = p.state || g.state;
       g.diagnosis = p.diagnosis || "";
       g.nudgeable = !!p.nudgeable;
+      g.tunnel = !!p.tunnel;
     }
 
     const out = Array.from(groups.values());
@@ -109,9 +112,18 @@
     for (const g of out) perEnv.set(g.environment, (perEnv.get(g.environment) || 0) + 1);
     for (const g of out) {
       g.header = header;
-      g.showName = !!g.name && perEnv.get(g.environment) > 1;
+      // A tunnel peer's label already carries its name (`groupLabel`).
+      g.showName = !g.tunnel && !!g.name && perEnv.get(g.environment) > 1;
     }
     return out;
+  }
+
+  // The header's label. A peer on another machine is `<name>: <OS>`
+  // (`svrapp: Linux`): its OS alone would not say which machine it is. A WSL
+  // peer's environment already names its distro.
+  function groupLabel(group) {
+    if (!group) return "";
+    return group.tunnel && group.name ? group.name + ": " + group.environment : group.environment;
   }
 
   // The header's connection glyph, or "" for none. The local group gets none:
@@ -126,15 +138,26 @@
 
   // Whether the glyph paints as a fault. `asleep` is exempt: WSL stopping an
   // idle distro is the ordinary course of a day, and painting it red would cry
-  // wolf on every visit.
+  // wolf on every visit. `tunnel-closed` is exempt for the same reason: a VPN
+  // drop closes the tunnel, and the daemon is already opening it again.
   function stateFault(group) {
-    return !!stateIcon(group) && group.state !== "reachable" && group.state !== "asleep";
+    return (
+      !!stateIcon(group) &&
+      group.state !== "reachable" &&
+      group.state !== "asleep" &&
+      group.state !== "tunnel-closed"
+    );
   }
 
   // The header's tooltip: what the glyph and the hidden name no longer print.
   // Two of the daemon's state codes (peer/client.rs, api_fleet.rs) as the
   // words the tooltip shows. The compare sites above keep the codes.
-  const STATE_WORD = { "version-mismatch": "version mismatch", malformed: "unreadable" };
+  const STATE_WORD = {
+    "version-mismatch": "version mismatch",
+    malformed: "unreadable",
+    "tunnel-closed": "reconnecting",
+    "tunnel-silent": "not answering",
+  };
 
   function groupTitle(group) {
     if (!group) return "";
@@ -203,5 +226,6 @@
     stateIcon: stateIcon,
     stateFault: stateFault,
     groupTitle: groupTitle,
+    groupLabel: groupLabel,
   };
 });
