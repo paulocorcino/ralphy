@@ -662,6 +662,13 @@ back.
    adds one rule: before you add an external call, a new I/O path, a watcher
    or a second computation of a fact, check the fact-ownership index. The same
    check goes into the self-review step of the plan prompt.
+   *Closed 2026-09-30 by the AGENTS.md part alone.* The prompt part is
+   dropped: `assets/prompts/` runs on every project Ralphy works on, and
+   almost none of them has a fact index, so a rule there costs every plan
+   and helps almost none. When Ralphy works on this repo, the agent already
+   loads AGENTS.md, which carries the rule. If a run here ignores the fact
+   index with AGENTS.md loaded, the fix goes in AGENTS.md, not in the
+   prompts.
 
 ## 11. Second pass: the workbench seam (2026-09-30)
 
