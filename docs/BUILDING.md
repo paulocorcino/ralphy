@@ -12,7 +12,7 @@ cargo build --release
 ```
 
 Put the binary somewhere on your `PATH` so you can run `ralphy` from any repo. The
-bundled skills (`reviewer`, `staged-plan`) are embedded into the binary at build time —
+bundled skills (`reviewer`, `setup-pocock`, `staged-plan`) are embedded into the binary at build time —
 there's nothing else to install or copy alongside it.
 
 ## Prerequisites
@@ -22,13 +22,14 @@ repo needs at runtime:
 
 - **git** — ralphy shells to the `git` CLI (no libgit2) to branch, commit, tag
   the pre-run marker, and undo. On Windows install
-  [Git for Windows](https://git-scm.com/download/win), which also provides the
-  **git-bash** shell ralphy pins agent subprocesses to; on Linux/macOS use your
-  package manager.
+  [Git for Windows](https://git-scm.com/download/win), which also provides
+  **git-bash**: on Windows, ralphy sets the Cursor agent's `SHELL` to it. On
+  Linux/macOS use your package manager.
 - **python** — backs the `reviewer` skill's `scripts/*.py` (`python` or
   `python3` on `PATH`).
 - **gh** — the [GitHub CLI](https://cli.github.com/), **authenticated**
   (`gh auth login`); ralphy uses it for every forge operation.
+- **a GitHub remote** — the repo's `origin` must point at GitHub.
 - **an agent CLI** — at least one supported vendor CLI installed and logged in.
   `ralphy run --help` lists the supported agents under `--agent`.
 
@@ -48,13 +49,13 @@ run alone. Nextest schedules every test across a single pool. Measured on a
 
 Nextest does not run doctests, so CI keeps a separate `cargo test --doc` step.
 
-Two notes for anyone chasing a slow suite, both measured on Windows:
+Two notes for a slow suite, both measured on Windows:
 
 - The suite is bound by **process creation**, not by Rust. A bare `git --version`
   spawn costs ~68ms here against ~15-25ms on a box whose antivirus is not
   inspecting the build tree. Excluding the repo's `target/`, `~/.cargo`, and the
-  `rustc`/`cargo`/`git`/`link` executables from real-time scanning is the single
-  biggest lever, and it is the operator's call to make.
+  `rustc`/`cargo`/`git`/`link` executables from real-time scanning gives the
+  largest gain. The operator decides whether to do it.
 - Dependencies build optimized in dev (`[profile.dev.package."*"]` in the root
   `Cargo.toml`) because the daemon's PBKDF2 tests are otherwise the slowest in
   the workspace. That override does not touch CI, which tests with the `ci`
@@ -71,10 +72,14 @@ Six GitHub Actions workflows live under [`.github/workflows/`](../.github/workfl
   A `ui-tests` job runs `node --test crates/ralphy-daemon/ui-tests` and oxlint
   once on Linux. A `test` matrix builds and runs the suite (via `cargo nextest
   run`, plus a `cargo test --doc` step for the doctests nextest skips) with the
-  `ci` profile on **`windows-latest`, `ubuntu-latest` and `macos-latest`**.
-  Subprocess and PTY tests use Rust helper binaries. A separate job, `changelog`, runs **on pull requests
-  only**: it reds when the diff touches the shipped surface (`crates/*/src/`, the
-  workbench UI assets, `assets/`) without a `changelog.d/` fragment, and it checks
+  `ci` profile on **`windows-latest`, `ubuntu-latest` and `macos-latest`**,
+  with `--no-fail-fast`. On Windows the tests run through
+  `.github/scripts/nextest-windows.ps1`, which bounds the run at 14 minutes
+  and kills what a hung test left alive (#441). On macOS the job also
+  registers, probes and removes the launchd autostart agent: the one place
+  `launchctl` runs for real. A separate job, `changelog`, runs **on pull
+  requests only**: it fails when the diff touches the shipped surface
+  (`crates/*/src/`, the workbench UI assets, `assets/`) without a `changelog.d/` fragment, and it checks
   that the fragments present parse. A human overrides it with the `no-changelog`
   label.
 - **`release.yml`** — builds the shippable artifacts for every platform:
@@ -88,6 +93,7 @@ Six GitHub Actions workflows live under [`.github/workflows/`](../.github/workfl
   and this `BUILDING.md`. Because the prompts and skills are embedded in the binary
   on every platform, those archives are everything a user needs.
 
+  A tag with a hyphen (`v0.1.0-rc.20`) is published as a GitHub pre-release.
   The release builds without a cargo cache, so a cache written by another run
   cannot reach a published binary. The publish job signs a build provenance for
   each archive. Check it with
@@ -100,10 +106,12 @@ Six GitHub Actions workflows live under [`.github/workflows/`](../.github/workfl
   ([`.gitleaks.toml`](../.gitleaks.toml); a reviewed false positive goes in
   `.gitleaksignore`). zizmor checks the workflows themselves. On a PR, the
   dependency review fails when a new dependency has a known vulnerability. Run
-  `cargo deny check` before you add or update a crate.
+  `cargo deny --locked check` before you add or update a crate: CI passes
+  `--locked`, and without it a stale `Cargo.lock` passes locally.
 - **`codeql.yml`** — CodeQL static analysis of the Rust code, the workbench
-  JavaScript and the workflows, on every push, every PR, and once a week. The
-  results are in the repository's Security tab.
+  JavaScript and the workflows, on every push to `main`, every PR, and once a
+  week. The results are in the repository's Security tab and in review comments
+  on the PR.
 - **`capabilities.yml`** — on every PR, lists what the change adds that gives
   the code a new power: network access or a URL host the repository did not
   name before, a subprocess, `unsafe`, a read of a secret, encoded or minified
@@ -112,26 +120,22 @@ Six GitHub Actions workflows live under [`.github/workflows/`](../.github/workfl
   diff. The detector runs from the base branch's code, so a PR cannot change
   the rules that check it. A PR from outside the maintainers fails while it has
   findings; a maintainer reads the lines and adds the `capability-reviewed`
-  label. The label approves only the commits present when it was added, so a
-  new push fails the check again. Run it locally with
+  label. The label approves only the commits present when it was added: after
+  a new push, remove the label and add it again. For a maintainer's own PR the
+  findings are reported and do not fail the check. Run it locally with
   `cargo run -p xtask -- capabilities --base origin/main`.
-
-Every action is pinned to a commit SHA, with the version in a comment, and
-[`dependabot.yml`](../.github/dependabot.yml) proposes the updates. A change to
-a workflow, a `Cargo.toml`, a `build.rs`, the prompts, the plugin skills, or the
-vendored UI code needs a review from the owners in
-[`CODEOWNERS`](../.github/CODEOWNERS).
-
 - **`refresh-seed.yml`** — a scheduled (weekly) maintenance job that keeps the
   offline pricing floor current without hand-edits (ADR-0034 A3, issue #290). It
   runs the generator (below) and opens a **diffable PR only when the seed
-  changes** — reviewed as data before it merges. No network ever runs at build
-  time; the refresh is strictly out-of-band.
+  changes**, with the `no-changelog` label. A human reviews it as data before it
+  merges. No build step fetches prices; the refresh runs only here.
 
-Ralphy's code is cross-platform (`portable-pty`, `HOME`/`~/.local/bin/claude`
-fallbacks), and the Windows, Linux and macOS binaries are built and exercised by
-the CI suite on every push. The macOS job also registers, probes and removes the
-launchd autostart agent for real — the one place `launchctl` runs.
+Every action is pinned to a commit SHA, with the version in a comment, and
+[`dependabot.yml`](../.github/dependabot.yml) proposes the updates.
+[`CODEOWNERS`](../.github/CODEOWNERS) names the owner of the workflows, the
+`Cargo.toml` files, `build.rs`, the prompts, the plugin skills, and the vendored
+UI code. It blocks a merge only when branch protection on `main` requires Code
+Owner review, and `main` has no branch protection today.
 
 ## Pricing seed refresh (`xtask`)
 
@@ -212,7 +216,10 @@ cargo run -p xtask -- changelog --release v0.1.0-rc.20  # fold, and consume the 
 ```
 
 The fold also writes `target/changelog/notes.md` (the release body) and
-`target/changelog/announce` (`yes`/`no`), which the release workflow reads.
+`target/changelog/announce` (`yes`/`no`) for you to read. The release workflow
+does not use your copy: `target/` is not committed, so its publish job writes
+both files again with `changelog --notes <tag>` from the committed
+`changelog.json`.
 
 Version numbers move together:
 
@@ -248,9 +255,11 @@ The build matrix produces every archive (each with a `.sha256` checksum) and a
 final job publishes one GitHub Release with them attached. Its body is
 `--notes-file`, rendered from the committed `changelog.json` by the same xtask —
 not `--generate-notes`, which folds commit subjects that name the change rather
-than the capability. `changelog.json` rides along as an asset so the workbench can
-read it. A release carrying a `feature`, `breaking` or `security` fragment also
-opens a Discussions announcement; a fix-only release does not.
+than the capability. `changelog.json` is attached as an asset so the workbench
+can read it. A release carrying a `feature`, `breaking` or `security` fragment also
+opens a Discussions announcement in the `Announcements` category; a fix-only
+release does not. When the announcement fails, the release is still published,
+without it.
 
 You can also run the **Release** workflow manually (`workflow_dispatch`) to produce
 the archives as downloadable run artifacts without publishing a Release.
@@ -266,5 +275,5 @@ The map of the crates, with the component each one holds, is §4 of
 | `changelog.d/` | Human-owned changelog fragments, one per pull request; consumed by the `changelog` xtask. |
 | `assets/pricing/` | The offline price floor: machine-owned `models-dev-seed.json` + human-owned `slug-overlay.json`. |
 | `assets/prompts/` | The plan/execute prompt charters. |
-| `assets/plugin/` | The Claude Code plugin (the `reviewer` + `staged-plan` skills), embedded into the binary. |
+| `assets/plugin/` | The Claude Code plugin (the `reviewer`, `setup-pocock` and `staged-plan` skills), embedded into the binary. |
 | `docs/adr/` | Architecture decision records. |

@@ -58,7 +58,7 @@ leave an orphaned test module in the parent file testing code that now lives in
 a child — the tests go into (or alongside) the child module. Integration tests
 under `tests/` follow the same rule: a `tests/queue.rs` split groups cases by
 the behaviour they cover, and the
-[subprocess/PTY helper-bin convention](../TESTING.md#platform-traps)
+[subprocess/PTY helper-bin convention](../TESTING.md#what-may-be-faked-item-2)
 still holds for any child-process cases.
 
 ### 4. Per-PR gate — the "no regression" definition

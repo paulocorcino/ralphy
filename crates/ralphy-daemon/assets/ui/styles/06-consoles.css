@@ -62,8 +62,7 @@
 /* While anything is maximized the viewport takes no scroll GESTURE — the plane
    must not slide out from under a full bleed by a stray wheel. It does not make
    the pin above un-desyncable: `overflow:hidden` still accepts a programmatic
-   `scrollLeft` write AND still fires `scroll` (measured, #338; docs/TESTING.md →
-   Platform traps), which is exactly how `reveal` pans under a full bleed
+   `scrollLeft` write AND still fires `scroll` (measured, #338), which is exactly how `reveal` pans under a full bleed
    and how `syncMaxPin` hears about it. */
 #workspace.maxlock {
   overflow: hidden;

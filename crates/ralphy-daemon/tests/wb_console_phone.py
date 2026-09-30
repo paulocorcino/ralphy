@@ -263,7 +263,7 @@ def key_attr(page, i, name, attr):
 def painted(page, selector):
     """Whether the element is actually PAINTED, not merely present in the DOM.
 
-    docs/TESTING.md → Platform traps: a visibility assertion has to prove the
+    docs/TESTING-TRAPS.md → The workbench page in a browser: a visibility assertion has to prove the
     element was visible, or `display: none` reads as a pass.
     """
     return page.evaluate(
@@ -275,7 +275,7 @@ def painted(page, selector):
 
 def viewport_y(page, i=0):
     """The terminal's scroll position — `term.buffer.active.viewportY`, never
-    `.xterm-viewport.scrollTop` (docs/TESTING.md → Platform traps)."""
+    `.xterm-viewport.scrollTop` (docs/TESTING-TRAPS.md → The workbench page in a browser)."""
     return page.evaluate(
         "(i) => document.querySelectorAll('.session-window')[i]._term.term.buffer.active.viewportY", i
     )

@@ -293,7 +293,7 @@ def tap(page, i, name):
 def bar_shown(page, i=0):
     """Whether the bar is actually PAINTED, not merely present in the DOM.
 
-    docs/TESTING.md → Platform traps: a geometry/visibility assertion has to
+    docs/TESTING-TRAPS.md → The workbench page in a browser: a geometry/visibility assertion has to
     prove the element was visible, or `display: none` reads as a pass.
     """
     return page.evaluate(
@@ -374,7 +374,7 @@ def drag2(page, i, dx, dy, steps=8):
 def viewport_y(page, i=0):
     """The terminal's scroll position.
 
-    docs/TESTING.md -> Platform traps: `term.buffer.active.viewportY`, never
+    docs/TESTING-TRAPS.md -> The workbench page in a browser: `term.buffer.active.viewportY`, never
     `.xterm-viewport.scrollTop` — the latter reads 0 in both directions here and
     would pass whether the fix works or not.
     """
@@ -1072,7 +1072,7 @@ def main():
             # lower half of every button in the row. Asked BEFORE the resize
             # below, while the window is still known to be inside the viewport —
             # `elementFromPoint` answers null off-screen, which is not a verdict
-            # (docs/TESTING.md -> Platform traps: prove the element was visible).
+            # (docs/TESTING-TRAPS.md -> The workbench page in a browser: prove the element was visible).
             keys_win = grip.evaluate(
                 "() => { const w = document.querySelector('.session-window');"
                 " const b = w.querySelector('.session-key[data-key=\"font-up\"]');"
