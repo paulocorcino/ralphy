@@ -57,8 +57,7 @@ before relying on a detail.
   confirmed present, with versions. Every command you run — build steps, verify
   commands, smoke scripts — runs HERE. Match them to this OS and these tools;
   never assume a tool exists because it is common, verify it first.
-- `CLAUDE.md`, `AGENTS.md`, `CONTEXT.md`, `docs/adr/`, and the docs they point
-  to — project rules and domain.
+- `CLAUDE.md`, `CONTEXT.md`, `docs/adr/` — project rules and domain.
 
 ## If `.ralphy/verify-failure.md` is present (a failed verify gate)
 A previous session emitted `RALPHY_DONE_EXIT`, but the runner re-ran the plan's

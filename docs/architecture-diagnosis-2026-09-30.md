@@ -662,14 +662,6 @@ back.
    adds one rule: before you add an external call, a new I/O path, a watcher
    or a second computation of a fact, check the fact-ownership index. The same
    check goes into the self-review step of the plan prompt.
-   *Done 2026-09-30, in a different place:* the check is a shared rule in
-   `assets/prompts/plan/template.md` ("Get each fact from its owner"), not
-   in the self-review step. That step is written per vendor in eight
-   overlays, and the rule has to shape the steps while they are planned, not
-   only be checked at the end. It is generic: the prompts run on any repo, so
-   it names an architecture map, a fact index or an ADR, not this repo's
-   files. The execute prompt now also lists `AGENTS.md` and the docs it
-   points to.
 
 ## 11. Second pass: the workbench seam (2026-09-30)
 
