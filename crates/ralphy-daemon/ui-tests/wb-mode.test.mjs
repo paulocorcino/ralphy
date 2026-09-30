@@ -29,3 +29,11 @@ test("only a file: page is the demo, and only the demo may show seed data", () =
     assert.equal(m.seedAllowed(), demo, `${protocol} seedAllowed`);
   }
 });
+
+test("a torn-off window opens at its route, or at its file in the demo", () => {
+  // The daemon refuses the file names, and a file: page has no router.
+  assert.equal(load("http:").pageUrl("popup"), "popup");
+  assert.equal(load("https:").pageUrl("fence"), "fence");
+  assert.equal(load("file:").pageUrl("popup"), "detached.html");
+  assert.equal(load("file:").pageUrl("fence"), "detached-fence.html");
+});

@@ -672,14 +672,16 @@ pub(crate) async fn agents_route(
     }
 }
 
-/// Serve a file from the embedded UI tree; `/` means `index.html`. Every asset
-/// carries a content `ETag` under `Cache-Control: no-cache`, so a reload is a
-/// round of `304`s, and a text asset goes out gzipped when the browser admits
-/// it (see [`crate::assets`]).
+/// Serve a file from the embedded UI tree. A page is served at its route
+/// (`/`, `/popup`, `/fence`), never at its file name
+/// ([`crate::assets::Shell`]). Every asset carries a content `ETag` under
+/// `Cache-Control: no-cache`, so a reload is a round of `304`s, and a text
+/// asset goes out gzipped when the browser admits it (see [`crate::assets`]).
 pub(crate) async fn ui_asset(headers: HeaderMap, uri: Uri) -> Response {
     let path = uri.path().trim_start_matches('/');
-    let path = if path.is_empty() { "index.html" } else { path };
-    let Some(file) = UI.get_file(path) else {
+    let Some((path, file)) =
+        assets::embedded_path(path).and_then(|p| UI.get_file(p).map(|f| (p, f)))
+    else {
         return (StatusCode::NOT_FOUND, "not found").into_response();
     };
     let content_type = content_type(path);

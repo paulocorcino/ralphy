@@ -28,5 +28,15 @@
   function seedAllowed(protocol = location.protocol) {
     return isDemo(protocol);
   }
-  window.WBMode = { modeFor, isDemo, isDaemon, seedAllowed };
+  // The URL of a torn-off window. The daemon serves each page at a route and
+  // refuses its file name (`Shell` in the daemon's `assets.rs`); a `file://`
+  // demo has no router, so it opens the file itself.
+  const PAGES = {
+    popup: { route: "popup", file: "detached.html" },
+    fence: { route: "fence", file: "detached-fence.html" },
+  };
+  function pageUrl(page, protocol = location.protocol) {
+    return isDemo(protocol) ? PAGES[page].file : PAGES[page].route;
+  }
+  window.WBMode = { modeFor, isDemo, isDaemon, seedAllowed, pageUrl };
 })();

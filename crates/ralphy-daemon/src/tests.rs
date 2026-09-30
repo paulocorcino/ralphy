@@ -3262,7 +3262,7 @@ async fn every_response_carries_the_security_headers() {
 #[tokio::test]
 async fn no_shell_carries_an_inline_event_handler() {
     let re = regex::Regex::new(r#"\son[a-z]+="#).unwrap();
-    for path in ["/index.html", "/detached.html", "/detached-fence.html"] {
+    for path in ["/", "/popup", "/fence"] {
         let body = body_string(get_local(path).await).await;
         for line in body.lines() {
             let live = line.split("<!--").next().unwrap_or(line);
@@ -3735,7 +3735,7 @@ async fn favicon_is_served_for_both_pages_and_the_bare_request() {
         resp.headers().get(header::CONTENT_TYPE).unwrap(),
         "image/svg+xml"
     );
-    for page in ["/index.html", "/detached.html", "/detached-fence.html"] {
+    for page in ["/", "/popup", "/fence"] {
         let html = body_string(get_local(page).await).await;
         assert!(
             html.contains("favicon.svg") && html.contains("favicon.ico"),
@@ -4317,7 +4317,13 @@ fn swept_ui_assets() -> Vec<String> {
         .into_iter()
         .filter(|p| !p.starts_with("vendor/"))
         .filter(|p| p.ends_with(".js") || p.ends_with(".html") || p.ends_with(".css"))
-        .map(|p| format!("/{p}"))
+        // A page is fetched at its route; its file name is a 404.
+        .map(
+            |p| match crate::assets::Shell::ALL.iter().find(|s| s.file() == p) {
+                Some(shell) => format!("/{}", shell.route()),
+                None => format!("/{p}"),
+            },
+        )
         .collect();
     out.sort();
     out
@@ -4333,7 +4339,7 @@ fn swept_ui_assets() -> Vec<String> {
 #[test]
 fn the_sweep_set_covers_every_asset_we_wrote() {
     let swept = swept_ui_assets();
-    for shell in ["/index.html", "/detached.html", "/detached-fence.html"] {
+    for shell in ["/", "/popup", "/fence"] {
         assert!(
             swept.iter().any(|p| p == shell),
             "{shell} must be swept — it is a served document this repo wrote"
@@ -5952,7 +5958,7 @@ fn shell_detaches_a_fence() {
     // window is touched, and a null handle must bail.
     let detach = body("function detachFence(");
     assert!(
-        detach.contains("window.open(\"detached-fence.html\""),
+        detach.contains("window.open(window.WBMode.pageUrl(\"fence\")"),
         "detachFence must open the popup document (#346)"
     );
     assert!(

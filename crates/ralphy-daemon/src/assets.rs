@@ -112,6 +112,56 @@ fn prepare(contents: &[u8], compressible: bool) -> Prepared {
     Prepared { etag, gzip }
 }
 
+/// A document the daemon serves at its own route. The shells' file names are
+/// never URLs: a request for `index.html` itself is a 404, so the routes below
+/// are the whole set of pages. The static `file://` demo cannot route, so it
+/// opens the file names instead (`WBMode.pageUrl` in `wb-mode.js`); the two
+/// tables must name the same pairs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Shell {
+    /// The workbench desk, at `/`.
+    Desk,
+    /// A file tab torn off into its own window.
+    Popup,
+    /// A fence torn off into its own window.
+    Fence,
+}
+
+impl Shell {
+    pub(crate) const ALL: [Shell; 3] = [Shell::Desk, Shell::Popup, Shell::Fence];
+
+    /// The URL path, without the leading `/`.
+    pub(crate) fn route(self) -> &'static str {
+        match self {
+            Shell::Desk => "",
+            Shell::Popup => "popup",
+            Shell::Fence => "fence",
+        }
+    }
+
+    /// The embedded file the route serves.
+    pub(crate) fn file(self) -> &'static str {
+        match self {
+            Shell::Desk => "index.html",
+            Shell::Popup => "detached.html",
+            Shell::Fence => "detached-fence.html",
+        }
+    }
+}
+
+/// The embedded path a request path (leading `/` stripped) serves, or `None`
+/// for a 404. Only the path is decided here; whether the file exists is the
+/// embedded tree's answer.
+pub(crate) fn embedded_path(path: &str) -> Option<&str> {
+    if let Some(shell) = Shell::ALL.into_iter().find(|s| s.route() == path) {
+        return Some(shell.file());
+    }
+    if Shell::ALL.into_iter().any(|s| s.file() == path) {
+        return None;
+    }
+    Some(path)
+}
+
 /// Whether an asset of this content type is worth deflating: text of every
 /// kind, JS, JSON, SVG and the manifest. Fonts, PNGs and ICOs are stored
 /// compressed already and would only cost the round trip.
@@ -322,6 +372,29 @@ mod tests {
         assert!(resp.headers().get(header::CONTENT_ENCODING).is_none());
         assert!(resp.headers().get(header::ETAG).is_some());
         assert_eq!(header_str(&resp, header::CONTENT_TYPE), Some("image/png"));
+    }
+
+    #[tokio::test]
+    async fn a_page_is_served_at_its_route_and_never_at_its_file_name() {
+        for (route, source) in [
+            ("/", include_bytes!("../assets/ui/index.html").as_slice()),
+            ("/popup", include_bytes!("../assets/ui/detached.html")),
+            ("/fence", include_bytes!("../assets/ui/detached-fence.html")),
+        ] {
+            let resp = get(route, &[]).await;
+            assert_eq!(resp.status(), StatusCode::OK, "GET {route}");
+            assert_eq!(
+                header_str(&resp, header::CONTENT_TYPE),
+                Some("text/html; charset=utf-8"),
+                "{route}"
+            );
+            let body = resp.into_body().collect().await.unwrap().to_bytes();
+            assert_eq!(&body[..], source, "{route} serves its own page");
+        }
+        for file in ["/index.html", "/detached.html", "/detached-fence.html"] {
+            let resp = get(file, &[]).await;
+            assert_eq!(resp.status(), StatusCode::NOT_FOUND, "GET {file}");
+        }
     }
 
     #[tokio::test]

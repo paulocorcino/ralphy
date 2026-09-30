@@ -18,13 +18,9 @@ use axum::extract::State;
 use axum::http::{header, HeaderValue, Response};
 use sha2::{Digest, Sha256};
 
+use crate::assets::Shell;
 use crate::auth::AuthState;
 use crate::UI;
-
-/// The three shells the daemon serves as documents. Every inline `<script>`
-/// they carry is hashed into the policy; a popup's script that moved out of
-/// this list would be blocked, and the pin test in `lib.rs` says so.
-const SHELLS: [&str; 3] = ["index.html", "detached.html", "detached-fence.html"];
 
 /// Append the security headers to `resp`. `map_response_with_state`
 /// middleware: runs after every handler, including the fallback that serves the
@@ -78,10 +74,12 @@ pub(crate) fn content_security_policy(remote_images: bool) -> &'static HeaderVal
     }
 }
 
+/// Every inline `<script>` of every [`Shell`] is hashed into the policy; a
+/// page missing from `Shell` would have its scripts blocked.
 fn build_policy(extra_img_src: &str) -> HeaderValue {
-    let hashes = SHELLS
+    let hashes = Shell::ALL
         .iter()
-        .filter_map(|name| UI.get_file(name))
+        .filter_map(|shell| UI.get_file(shell.file()))
         .filter_map(|file| file.contents_utf8())
         .flat_map(inline_script_bodies)
         .map(|body| format!(" 'sha256-{}'", script_hash(body)))
@@ -176,7 +174,7 @@ mod tests {
     #[test]
     fn the_policy_hashes_every_inline_script_of_every_shell() {
         let csp = content_security_policy(false).to_str().unwrap();
-        for name in SHELLS {
+        for name in Shell::ALL.map(Shell::file) {
             let html = UI.get_file(name).unwrap().contents_utf8().unwrap();
             let bodies = inline_script_bodies(html);
             assert!(!bodies.is_empty(), "{name} carries inline scripts today");

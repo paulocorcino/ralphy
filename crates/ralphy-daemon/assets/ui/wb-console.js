@@ -3516,7 +3516,7 @@ window.WBConsole = (function () {
     // INVARIANT: either the popup exists AND the members are torn down, or
     // neither. `window.open` therefore runs BEFORE a single window is touched —
     // a blocked popup must leave the fence exactly as it was.
-    const handle = window.open("detached-fence.html", "", "popup,width=900,height=700");
+    const handle = window.open(window.WBMode.pageUrl("fence"), "", "popup,width=900,height=700");
     if (!handle) {
       fenceNotice(id, "Could not detach: pop-up blocked");
       WB.emit("fence-detach-blocked", { fence: id });

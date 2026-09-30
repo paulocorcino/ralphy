@@ -4962,7 +4962,7 @@ function shell() {
       // location.origin`, NOT in the URL hash: a hash let anyone render content
       // of their choosing on the daemon's origin. Passing the bytes keeps
       // unsaved edits alive across a detach.
-      const win = window.open("detached.html", "_blank", "popup,width=920,height=760");
+      const win = window.open(window.WBMode.pageUrl("popup"), "_blank", "popup,width=920,height=760");
       if (!win) {
         WB.emit("detach-blocked", { project: desc.project, path: desc.path });
         return;

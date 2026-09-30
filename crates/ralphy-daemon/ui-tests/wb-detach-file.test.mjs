@@ -42,13 +42,14 @@ function detached() {
   const popup = fakePopup();
   let onMessage = null;
   let poll = null;
+  const urls = [];
   const { state, window } = loadShell({
     window: {
       location: { protocol: "http:", host: "127.0.0.1:7431", pathname: "/", search: "", origin: ORIGIN },
       addEventListener: (type, fn) => type === "message" && (onMessage = fn),
       setInterval: (fn) => ((poll = fn), 1),
       clearInterval: () => (poll = null),
-      open: () => popup,
+      open: (url) => (urls.push(url), popup),
     },
   });
   globalThis.WB = { emit() {} };
@@ -60,6 +61,7 @@ function detached() {
   state.detachFile(DESC);
   return {
     popup,
+    urls,
     opened,
     tick: () => poll?.(),
     polling: () => poll !== null,
@@ -69,6 +71,7 @@ function detached() {
 
 test("the popup's re-attach opens the tab with the popup's bytes, once", () => {
   const d = detached();
+  assert.deepEqual(d.urls, ["popup"], "the daemon serves the popup at its route");
   const edited = { ...DESC, content: "edited in the popup" };
   d.send(d.popup, { type: "wb-reattach", desc: edited });
   assert.equal(d.opened.length, 1);
