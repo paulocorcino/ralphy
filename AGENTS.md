@@ -9,16 +9,18 @@ source document is correct — fix this file.
   the owner of each fact, who may call whom, and where an outside product or
   platform may be used. Read its fact index before you add an outside call
   (`gh`, an HTTP API, a vendor CLI), a new path between browser, daemon and
-  CLI, a watcher or timer, or a second computation of a fact the product
-  already knows. Get the fact from its owner.
+  CLI, a watcher or timer, a new panel or other place in the workbench that
+  shows a fact, or a second computation of a fact the product already knows.
+  Get the fact from its owner. Its §4 is the map of crates.
 - **[CONTEXT.md](./CONTEXT.md)** — the ubiquitous language. Every domain term
-  (run, queue, adapter, planner/executor, event sink, blocked-by, stop-before…)
+  (run, queue label, adapter, planner/executor, event sink, blocked-by,
+  stop-before…)
   is defined there. Use these words; don't invent synonyms.
 - **[docs/adr/](./docs/adr/)** — architecture decisions. Check for a relevant
   ADR before you change a boundary between crates. That boundary was probably
   decided on purpose (for example, ADR-0002 on the core/adapter boundary). A
   new ADR starts from [docs/adr/TEMPLATE.md](./docs/adr/TEMPLATE.md).
-- **[docs/BUILDING.md](./docs/BUILDING.md)** — build, CI, crate layout.
+- **[docs/BUILDING.md](./docs/BUILDING.md)** — build, CI workflows, releases.
 - **[docs/TESTING.md](./docs/TESTING.md)** — how to write a test that fails
   only when the behavior breaks. Read it before you add, change, or review a
   test.
@@ -50,8 +52,10 @@ aggregates, repositories, or domain-event buses. Don't add them.
 
 ## Hard rules (an agent will get these wrong without being told)
 
-- **Run CI's gate before you call a change done.** These are the commands CI
-  runs; all of them must pass:
+- **Run CI's gate before you call a change done.** The source of the gate is
+  [.github/workflows/ci.yml](./.github/workflows/ci.yml); an ADR or doc that
+  lists other commands is out of date. These are the local forms of what CI
+  runs, and all of them must pass:
 
   ```sh
   cargo fmt --all --check
@@ -72,19 +76,23 @@ aggregates, repositories, or domain-event buses. Don't add them.
   ([ADR-0057](./docs/adr/0057-the-workbench-asset-contract.md) D3). A new
   `*.test.mjs` file must be imported by `ui-tests/index.mjs`, or the runner never
   opens it; a Rust test fails if you forget. **UI JS also needs**
-  `npx -y oxlint@1.85.0 crates/ralphy-daemon/assets/ui crates/ralphy-daemon/ui-tests`.
-  The rules are in `.oxlintrc.json`, and CI runs the same version. **UI text also needs**
+  `npx -y oxlint@1.85.0 --deny-warnings crates/ralphy-daemon/assets/ui crates/ralphy-daemon/ui-tests`.
+  The rules are in `.oxlintrc.json`. CI runs the same version with the same
+  flag, so a warning fails CI too. **UI text also needs**
   `cargo run -q -p xtask -- ui-copy --check`: it applies
   [ADR-0065](./docs/adr/0065-the-workbench-written-voice.md) and CI fails on a
   violation.
 - **A change a user can see needs a changelog fragment.** Add one file per PR,
   `changelog.d/<n>.md`, with a `kind:` from the closed set (`feature`, `fix`,
-  `breaking`, `security`, `internal`), a `headline:` for the release page, and a
-  sentence that names the *capability*, not the diff. The sentence is at most
-  280 characters. A fragment that follows up a feature from the same release
-  takes that feature's `topic:`, so it stays off the release page. Use
-  `internal` for a refactor that a user cannot see; it is never printed. On pull
-  requests, CI fails when the fragment is missing. Check that fragments parse
+  `breaking`, `security`, `internal`), and a sentence that names the
+  *capability*, not the diff. The sentence is at most 280 characters. An
+  optional `headline:` (at most 100 characters) replaces that sentence on the
+  release page. A fragment that follows up a feature from the same release
+  takes that feature's `topic:`, so the page shows the capability as one line;
+  a `fix` with that topic stays off the page. Use `internal` for a refactor
+  that a user cannot see; it is never printed. On pull requests that touch the
+  shipped surface (`crates/*/src/`, the UI assets, `assets/`), CI fails when
+  the fragment is missing. Check that fragments parse
   with `cargo run -q -p xtask -- changelog --check`. Format:
   [changelog.d/README.md](./changelog.d/README.md); decision:
   [ADR-0056](./docs/adr/0056-release-communication-and-the-update-watch.md).

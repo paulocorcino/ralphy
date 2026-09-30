@@ -58,7 +58,7 @@ leave an orphaned test module in the parent file testing code that now lives in
 a child — the tests go into (or alongside) the child module. Integration tests
 under `tests/` follow the same rule: a `tests/queue.rs` split groups cases by
 the behaviour they cover, and the
-[subprocess/PTY helper-bin convention](../../CONTEXT.md#testing-conventions)
+[subprocess/PTY helper-bin convention](../TESTING.md#platform-traps)
 still holds for any child-process cases.
 
 ### 4. Per-PR gate — the "no regression" definition
@@ -74,6 +74,12 @@ so:
 Because the public API is unchanged (§2), a red `cargo test` after a split is a
 mechanical mistake in the move, not an expected behavioural delta — it is the
 signal that the split broke something.
+
+*Amendment (2026-09-30).* The two commands above are no longer the gate. The
+gate of every change, a split included, is the set of commands CI runs, as
+defined in `.github/workflows/ci.yml` and listed in AGENTS.md: `cargo fmt`,
+`cargo clippy --all-targets`, `cargo nextest run` and `cargo test --doc`. The
+`/rust-skills` review of the diff still applies to a split.
 
 ### 5. Anti-overengineering: split by existing responsibility only
 

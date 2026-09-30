@@ -2,7 +2,7 @@
 
 Status: accepted (2026-09-08).
 
-D7 no longer holds for linting: oxlint was added later (`.oxlintrc.json`, run in CI). No ADR recorded that change.
+D3 and D7 are amended (2026-09-30); see the amendment at the end.
 
 `crates/ralphy-daemon/assets/ui/` holds five files over 700 lines — `styles.css`
 (6,476), `wb-console.js` (5,195), `app.js` (5,089), `index.html` (2,398),
@@ -178,3 +178,19 @@ have, and its absence took a week to notice.
   boundary D2 declines to invoke.
 - Issue #367 (the file-split series) and #369 (which raised the question D1 and
   D2 answer).
+
+## Amendment (2026-09-30): the UI gate names CI, and oxlint is allowed
+
+**D3.** The cargo commands of the gate are the ones CI runs
+(`.github/workflows/ci.yml`, listed in AGENTS.md), not the three that ADR-0022
+§4 named. For a change to `crates/ralphy-daemon/assets/ui/` or
+`crates/ralphy-daemon/ui-tests/`, the gate adds three checks, all run by the
+`ui-tests` and `lint` jobs of CI: `node --test crates/ralphy-daemon/ui-tests`,
+oxlint with `--deny-warnings`, and `cargo run -p xtask -- ui-copy --check`
+(ADR-0065).
+
+**D7.** oxlint was added on 2026-09-27 (`.oxlintrc.json`). It is allowed
+because it keeps what D7 protects: it is a linter, not a formatter, so it
+rewrites no asset, and CI runs a release binary pinned by version and checksum,
+so the workbench still needs no `npm install` (D3). The rest of D7 holds: no
+formatter (Prettier, Stylelint) and no ESLint.

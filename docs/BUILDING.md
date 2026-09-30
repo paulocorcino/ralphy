@@ -1,7 +1,7 @@
 # Building Ralphy
 
 Ralphy ships as a single self-contained executable — `ralphy.exe` on Windows, `ralphy`
-on Linux. To build it yourself you need the
+on Linux and macOS. To build it yourself you need the
 [Rust toolchain](https://www.rust-lang.org/tools/install).
 
 ```bash
@@ -29,8 +29,8 @@ repo needs at runtime:
   `python3` on `PATH`).
 - **gh** — the [GitHub CLI](https://cli.github.com/), **authenticated**
   (`gh auth login`); ralphy uses it for every forge operation.
-- **an agent CLI** — at least one supported vendor CLI installed and logged in
-  (e.g. `claude`, `codex`, `gemini`, `kimi`, `opencode`, Copilot, Cursor).
+- **an agent CLI** — at least one supported vendor CLI installed and logged in.
+  `ralphy run --help` lists the supported agents under `--agent`.
 
 To run the test suite:
 
@@ -57,18 +57,22 @@ Two notes for anyone chasing a slow suite, both measured on Windows:
   biggest lever, and it is the operator's call to make.
 - Dependencies build optimized in dev (`[profile.dev.package."*"]` in the root
   `Cargo.toml`) because the daemon's PBKDF2 tests are otherwise the slowest in
-  the workspace. That override does not touch CI, which tests in `--release`.
+  the workspace. That override does not touch CI, which tests with the `ci`
+  profile: `release` optimization without the `release` link settings.
 
 ## CI & releases
 
 Six GitHub Actions workflows live under [`.github/workflows/`](../.github/workflows/):
 
-- **`ci.yml`** — runs on every push to `main` and every PR. A `lint` job checks
-  formatting (`cargo fmt --check`) and lints (`cargo clippy -D warnings`) once on
-  Linux, and a `test` matrix builds and runs the suite (via `cargo nextest run`,
-  plus a `cargo test --doc` step for the doctests nextest skips) in release mode
-  on **`windows-latest`, `ubuntu-latest` and `macos-latest`**. Subprocess and PTY
-  tests use Rust helper binaries. A separate job, `changelog`, runs **on pull requests
+- **`ci.yml`** — runs on every push to `main` and every PR. It is the source of
+  the gate; AGENTS.md lists the same commands in their local form. A `lint` job
+  checks formatting (`cargo fmt --check`), lints (`cargo clippy --all-targets
+  -D warnings`) and the workbench text (`xtask ui-copy --check`) once on Linux.
+  A `ui-tests` job runs `node --test crates/ralphy-daemon/ui-tests` and oxlint
+  once on Linux. A `test` matrix builds and runs the suite (via `cargo nextest
+  run`, plus a `cargo test --doc` step for the doctests nextest skips) with the
+  `ci` profile on **`windows-latest`, `ubuntu-latest` and `macos-latest`**.
+  Subprocess and PTY tests use Rust helper binaries. A separate job, `changelog`, runs **on pull requests
   only**: it reds when the diff touches the shipped surface (`crates/*/src/`, the
   workbench UI assets, `assets/`) without a `changelog.d/` fragment, and it checks
   that the fragments present parse. A human overrides it with the `no-changelog`
@@ -253,18 +257,14 @@ the archives as downloadable run artifacts without publishing a Release.
 
 ## Layout
 
+The map of the crates, with the component each one holds, is §4 of
+[ARCHITECTURE.md](./ARCHITECTURE.md). The other paths:
+
 | Path | Role |
 |------|------|
-| `crates/ralphy-cli/` | The `ralphy` binary: flag parsing and the composition root. |
-| `crates/ralphy-core/` | Queue lifecycle, git/GitHub integration, run reporting. |
-| `crates/ralphy-agent-claude/` | The Claude Code adapter (plan + execute sessions). |
-| `crates/ralphy-pricing/` | The read-time price table: seed + overlay floor, models.dev fetch and cache. |
-| `crates/ralphy-release/` | Version identity and the published-release read: the releases fetch and its TTL cache (ADR-0056). |
-| `crates/ralphy-pty/` | PTY handling for the interactive execution session. |
-| `crates/xtask/` | Out-of-band repo tooling (`refresh-seed`); not part of the shipped binary. |
+| `crates/xtask/` | Out-of-band repo tooling (`refresh-seed`, `changelog`, `bump`, `ui-copy`, `asset-pins`, `capabilities`); not part of the shipped binary. |
 | `changelog.d/` | Human-owned changelog fragments, one per pull request; consumed by the `changelog` xtask. |
 | `assets/pricing/` | The offline price floor: machine-owned `models-dev-seed.json` + human-owned `slug-overlay.json`. |
 | `assets/prompts/` | The plan/execute prompt charters. |
 | `assets/plugin/` | The Claude Code plugin (the `reviewer` + `staged-plan` skills), embedded into the binary. |
 | `docs/adr/` | Architecture decision records. |
-| `legacy/` | The original PowerShell orchestrator, superseded by the Rust binary. |
