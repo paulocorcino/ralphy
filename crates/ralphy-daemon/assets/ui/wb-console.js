@@ -1759,6 +1759,7 @@ window.WBConsole = (function () {
       const held = win.classList.contains("maximized") || win.classList.contains("column");
       btn.hidden = !(OPTS.autoBoot !== false && held && cap >= 2);
     }
+    paintFenceColumns();
   }
 
   // The daemon's own desk ids, NOT the merged mirror: `mergeDesk` keeps local
@@ -2600,9 +2601,26 @@ window.WBConsole = (function () {
     lock.className = "fence-lock";
     lock.type = "button";
     lock.addEventListener("click", () => setFenceLock(f.id, !fenceLocked(f.id)));
+    // Every member as columns, in a grid that follows the stage (ADR-0051 §5,
+    // 2026-09-30). The shell owns the columns, so this only names the members
+    // and their stage rects. `refreshFenceChrome` paints disabled and hidden.
+    const columns = document.createElement("button");
+    columns.className = "fence-columns";
+    columns.type = "button";
+    columns.title = "Open this fence's consoles as columns";
+    columns.innerHTML = '<i class="bi bi-layout-three-columns"></i>';
+    columns.addEventListener("click", () => {
+      const st = stage();
+      if (!st || detached.includes(f.id)) return;
+      const all = readWindowRects(st);
+      const ids = new Set(fenceMembership(readFenceRects(st), all)[f.id] || []);
+      const items = all.filter((w) => ids.has(w.id)).map((w) => ({ id: w.id, rect: w.rect }));
+      if (!items.length) return;
+      document.dispatchEvent(new CustomEvent("workbench:fence-columns", { detail: { items } }));
+    });
     // BETWEEN arrange and close: close stays the OUTERMOST control
     // (wb_fence_342.py asserts exactly that).
-    tools.append(tile, lock, detach, drop);
+    tools.append(tile, columns, lock, detach, drop);
     // What tells an EMPTIED fence from an empty one (ADR-0051 §7a): a detached
     // fence keeps its name, rect and list entry and carries this glyph; clicking
     // it brings the consoles home. `hidden` here AND in the stylesheet: an
@@ -2952,7 +2970,10 @@ window.WBConsole = (function () {
       // Parenthesised: it trails the name field and reads as an aside to it.
       const count = el.querySelector(".fence-count");
       if (count) count.textContent = `(${n} console${n === 1 ? "" : "s"})`;
+      const cols = el.querySelector(".fence-columns");
+      if (cols) cols.disabled = s.count === 0;
     }
+    paintFenceColumns();
     // A console HELD by a locked fence wears the fence's lock (the class drops
     // its bands and grab cursor). Derived here with membership, from live rects.
     for (const w of st.querySelectorAll(".session-window")) {
@@ -2970,6 +2991,17 @@ window.WBConsole = (function () {
       const held = !own?.locked && !!fenceOf(fences, restoreRect(el))?.locked;
       el.classList.toggle("held", held);
       window.WBNotes?.applyLock(el, !!own?.locked || held);
+    }
+  }
+
+  // A detached fence's consoles are in the popup, and a phone paints one
+  // console: no columns there (ADR-0051 §5, 2026-09-30). Also called from
+  // `applyColumns`, which runs on every resize.
+  function paintFenceColumns() {
+    const narrow = columnMeasure().viewport <= PHONE_MAX_WIDTH;
+    for (const el of stage()?.querySelectorAll(".fence") || []) {
+      const btn = el.querySelector(".fence-columns");
+      if (btn) btn.hidden = narrow || detached.includes(el.dataset.fenceId);
     }
   }
 

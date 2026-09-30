@@ -5624,6 +5624,24 @@ function shell() {
       WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { cap, unmax: r.unmax, raise: true });
       this.paintColumns();
     },
+    // A fence opened as columns (ADR-0051 §5, 2026-09-30): the grid follows the
+    // members' stage rects and replaces the columns that are open.
+    columnsFromFence(items) {
+      const grid = WBColumns.fromRects(items);
+      const ids = WBColumns.flat(grid);
+      if (!ids.length) return;
+      const old =
+        this.columnIds()[0] ?? document.querySelector("#stage .session-window.maximized")?._deskId;
+      const cap = ids.length >= 2 ? this.columnCap() : 1;
+      this.setColumns(ids.length >= 2 ? grid : []);
+      WBConsole.applyColumns(WBColumns.painted(grid, cap), {
+        cap,
+        unmax: old && !ids.includes(old) ? old : null,
+        raise: true,
+      });
+      this.paintColumns();
+      WBConsole.focusColumn(ids[0]);
+    },
 
     // Ordinal, not id: the row's position in `fenceList()`, read LIVE (the
     // menu's snapshot may be stale). Returns whether it landed.
@@ -6154,6 +6172,9 @@ document.addEventListener("workbench:columns-stale", () => {
 });
 document.addEventListener("workbench:columns-leave", (e) => {
   window.getShell()?.leaveColumns(e.detail.ids);
+});
+document.addEventListener("workbench:fence-columns", (e) => {
+  window.getShell()?.columnsFromFence(e.detail.items);
 });
 document.addEventListener("workbench:desk-restored", () => {
   window.getShell()?.restoreColumns();
