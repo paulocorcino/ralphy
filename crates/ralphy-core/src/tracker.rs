@@ -22,13 +22,10 @@ pub trait IssueTracker {
         Ok(())
     }
 
-    /// Return `true` when the given issue number is closed. The default impl
-    /// returns `Ok(true)` so non-`gh` test fakes that do not override it
-    /// never block on any issue.
-    fn is_closed(&self, number: u64) -> Result<bool> {
-        let _ = number;
-        Ok(true)
-    }
+    /// Return `true` when the given issue number is closed. Required: a
+    /// tracker that answered without asking would pass every blocked-by gate
+    /// (ADR-0068 D4).
+    fn is_closed(&self, number: u64) -> Result<bool>;
 
     /// Post a free-form comment on an issue (handoff at close, skip reasoning
     /// on an infeasible plan). Default no-op so non-`gh` implementations do
@@ -53,12 +50,10 @@ pub trait IssueTracker {
     }
 
     /// Create a new issue and return its number (ADR-0018 §4): the
-    /// human-confirmed follow-up an `escalate` verdict proposes. Default no-op
-    /// returning `0` so non-`gh` implementations never create anything.
-    fn create_issue(&self, title: &str, body: &str, labels: &[String]) -> Result<u64> {
-        let _ = (title, body, labels);
-        Ok(0)
-    }
+    /// human-confirmed follow-up an `escalate` verdict proposes. Required: a
+    /// tracker that answered without creating would invent an issue number
+    /// (ADR-0068 D4).
+    fn create_issue(&self, title: &str, body: &str, labels: &[String]) -> Result<u64>;
 
     /// Post-or-edit the single comment carrying `marker` (ADR-0017): the
     /// consolidated-spec comment `ralphy triage` maintains, idempotent by

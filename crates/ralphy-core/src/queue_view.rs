@@ -158,6 +158,9 @@ mod tests {
         fn is_closed(&self, number: u64) -> Result<bool> {
             Ok(!self.open.contains(&number))
         }
+        fn create_issue(&self, _t: &str, _b: &str, _l: &[String]) -> Result<u64> {
+            panic!("create_issue: query surface must be read-only")
+        }
         fn open_children(&self, number: u64) -> Result<Vec<u64>> {
             Ok(self.children.get(&number).cloned().unwrap_or_default())
         }

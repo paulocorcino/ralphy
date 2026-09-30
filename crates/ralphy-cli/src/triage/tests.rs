@@ -95,6 +95,9 @@ impl IssueTracker for RecordingTracker {
     fn close(&self, _number: u64, _comment: &str) -> Result<()> {
         Ok(())
     }
+    fn is_closed(&self, _number: u64) -> Result<bool> {
+        Ok(true)
+    }
     fn add_label(&self, number: u64, label: &str) -> Result<()> {
         self.added.borrow_mut().push((number, label.to_string()));
         Ok(())

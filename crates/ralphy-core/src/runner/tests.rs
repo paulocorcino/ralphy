@@ -238,7 +238,8 @@ impl Agent for MiniAgent {
     }
 }
 
-/// Records closes/comments/labels; the trait's defaults cover the rest.
+/// Records closes/comments/labels. Every issue reads as closed and
+/// `create_issue` creates nothing; the trait's defaults cover the rest.
 #[derive(Default)]
 struct FakeTracker {
     closes: RefCell<Vec<u64>>,
@@ -260,6 +261,14 @@ impl IssueTracker for FakeTracker {
     fn add_label(&self, number: u64, label: &str) -> Result<()> {
         self.labels.borrow_mut().push((number, label.to_string()));
         Ok(())
+    }
+
+    fn is_closed(&self, _number: u64) -> Result<bool> {
+        Ok(true)
+    }
+
+    fn create_issue(&self, _title: &str, _body: &str, _labels: &[String]) -> Result<u64> {
+        Ok(0)
     }
 }
 

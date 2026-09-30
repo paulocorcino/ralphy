@@ -328,6 +328,10 @@ impl IssueTracker for RecordingTracker {
         Ok(self.closed_issues.contains(&number))
     }
 
+    fn create_issue(&self, _title: &str, _body: &str, _labels: &[String]) -> anyhow::Result<u64> {
+        Ok(0)
+    }
+
     fn comment(&self, number: u64, body: &str) -> anyhow::Result<()> {
         self.comments.borrow_mut().push((number, body.to_string()));
         Ok(())
