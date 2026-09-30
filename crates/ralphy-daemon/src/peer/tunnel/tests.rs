@@ -1,4 +1,5 @@
 use super::*;
+use std::process::{Command, Stdio};
 
 fn spec(identity_file: Option<&str>) -> TunnelSpec {
     TunnelSpec {
@@ -77,4 +78,49 @@ fn ssh_falls_back_to_path_without_a_system_openssh() {
     );
     let empty_root = dir.path().join("root");
     assert_eq!(choose_ssh(Some(&empty_root), path, ext), Some(ssh));
+}
+
+/// Stands in for an `ssh` that holds a tunnel: it runs until it is killed.
+/// Only ever started by [`an_edited_host_gets_a_new_tunnel`].
+#[test]
+#[ignore = "a child process of another test"]
+fn tunnel_stand_in() {
+    std::thread::sleep(std::time::Duration::from_secs(120));
+}
+
+fn stand_in() -> Result<Child> {
+    let exe = std::env::current_exe().context("locating the test binary")?;
+    Command::new(exe)
+        .args([
+            "--ignored",
+            "--exact",
+            "peer::tunnel::tests::tunnel_stand_in",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .context("starting the tunnel stand-in")
+}
+
+#[test]
+fn an_edited_host_gets_a_new_tunnel() {
+    let tunnels = Tunnels::new();
+    let before = spec(None);
+    assert!(tunnels.ensure_with("mac", &before, stand_in).unwrap());
+    assert!(
+        !tunnels.ensure_with("mac", &before, stand_in).unwrap(),
+        "a running tunnel with the same spec is kept"
+    );
+    let edited = TunnelSpec {
+        destination: "user@192.168.101.3".into(),
+        ..before.clone()
+    };
+    let old_pid = tunnels.0.lock().unwrap()["mac"].0.id();
+    assert!(tunnels.ensure_with("mac", &edited, stand_in).unwrap());
+    let mut held = tunnels.0.lock().unwrap();
+    let (child, opened_with) = held.get_mut("mac").unwrap();
+    assert_ne!(child.id(), old_pid);
+    assert_eq!(*opened_with, edited);
+    child.kill().unwrap();
+    child.wait().unwrap();
 }

@@ -35,6 +35,13 @@ pub(crate) struct PeerView {
     pub(crate) nudgeable: bool,
     /// Whether this daemon reaches the peer through an `ssh` tunnel it holds.
     pub(crate) tunnel: bool,
+    /// The SSH destination and key file of that tunnel, so the Hosts dialog
+    /// can fill its form to edit the host (ADR-0067, amendment "the Hosts
+    /// dialog", H3). What the descriptor holds; never a secret.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) destination: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) identity_file: Option<String>,
 }
 
 /// `GET /api/fleet`: the federated repo view (ADR-0052 §5) — every peer this
@@ -161,6 +168,8 @@ pub(crate) async fn fleet_route(
             diagnosis: status.diagnosis(&d.environment),
             nudgeable: d.nudge.is_some(),
             tunnel: d.tunnel.is_some(),
+            destination: d.tunnel.as_ref().map(|t| t.destination.clone()),
+            identity_file: d.tunnel.as_ref().and_then(|t| t.identity_file.clone()),
         });
         aggregate_input.push((d, status, store));
     }
@@ -179,6 +188,8 @@ pub(crate) async fn fleet_route(
             diagnosis: reject.why(),
             nudgeable: false,
             tunnel: false,
+            destination: None,
+            identity_file: None,
         });
     }
 
