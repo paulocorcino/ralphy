@@ -1,6 +1,102 @@
 {
   "releases": [
     {
+      "version": "v0.1.0-rc.31",
+      "date": "2026-09-30",
+      "announce": true,
+      "entries": [
+        {
+          "id": "494",
+          "kind": "security",
+          "text": "The daemon can ask for its access token also on 127.0.0.1 (`ralphy daemon\nrequire-token on`), and on Windows its token and stores are now readable by your\naccount only. `ralphy daemon setup --name --avatar` sets the name without\nquestions.",
+          "topic": "peers-other-machines",
+          "headline": "🔒 **Daemon security** — access token on 127.0.0.1, owner-only files on Windows"
+        },
+        {
+          "id": "495",
+          "kind": "feature",
+          "text": "A peer descriptor can name an SSH tunnel: the daemon keeps one `ssh` local\nforward open to that host, shows the host as `<name>: <OS>` in the sidebar, says\nwhether the tunnel is closed or the host daemon does not answer, and runs free\nconsoles on the host.",
+          "topic": "peers-other-machines"
+        },
+        {
+          "id": "496",
+          "kind": "feature",
+          "text": "`ralphy host add <host>` makes a computer you reach over SSH a peer: it checks\nthe host, turns on its access token, and writes the tunnel, so the host's repos\nappear in the workbench. `ralphy host check` shows what is missing, and `ralphy\nhost remove` takes the host out.",
+          "topic": "peers-other-machines"
+        },
+        {
+          "id": "497",
+          "kind": "feature",
+          "text": "The workbench can add a computer you reach over SSH from the Projects header.\nIt lists your SSH config hosts, confirms the host key, shows the host checks,\nand connects. The group menu can remove the host.",
+          "topic": "peers-other-machines",
+          "headline": "🖥️ **Add a host** — a VPS or a Mac in the workbench, over SSH"
+        },
+        {
+          "id": "498",
+          "kind": "feature",
+          "text": "The Add a host dialog can sign in with the account password. Ralphy uses it\nonce to add its own key on the host, then forgets it, so the next connections\nneed no password and nothing is typed in a console.",
+          "topic": "peers-other-machines"
+        },
+        {
+          "id": "499",
+          "kind": "feature",
+          "text": "When Ralphy is missing or too old on a host, the Add a host dialog can install\nthis computer's version there over SSH, in a folder of your home, with no\nadministrator. It never installs an older version than the one on the host.",
+          "topic": "peers-other-machines"
+        },
+        {
+          "id": "add-host-simpler",
+          "kind": "feature",
+          "text": "The Add a host dialog is shorter: Host and Port, then User and Password, and the\nbrowser no longer offers to save the password. The host checks show one thing to\ndo at a time, with the passed checks folded into one line.",
+          "topic": "peers-other-machines"
+        },
+        {
+          "id": "rows-in-columns",
+          "kind": "feature",
+          "text": "Columns can now hold consoles one above the other. The title bar button is now\n\"Slice\": pick Right to open a new column, or Down to open the console\nbelow the one you are in. Alt+Shift+↑/↓ moves between the rows of a column.",
+          "topic": "rows-in-columns",
+          "headline": "🧱 **Rows in columns** — open a console below another one, not only beside it"
+        },
+        {
+          "id": "tree-ignored-dim",
+          "kind": "feature",
+          "text": "The file tree draws the files and folders your repo ignores in a faded tone,\nas VS Code does. You can see what is outside the repo without opening\n`.gitignore`."
+        },
+        {
+          "id": "workbench-update",
+          "kind": "feature",
+          "text": "The What's new panel has an Update now button. Ralphy downloads and checks the\nnew release, restarts, and the page loads again. On Windows it then updates the\nWSL copy too. If the new version does not start, the previous one comes back.",
+          "topic": "workbench-update",
+          "headline": "⬆️ **Update now** — take a new release from the What's new panel"
+        },
+        {
+          "id": "modal-outside-click",
+          "kind": "fix",
+          "text": "A dialog no longer closes when you click outside it. A stray click lost what you\nhad typed in Settings or Add a host. Close a dialog with its ✕, its buttons, or\nEscape."
+        },
+        {
+          "id": "run-dialog-width",
+          "kind": "fix",
+          "text": "The Start a run dialog is narrower now. It was drawn as wide as the large\ndialogs, so its short form stretched across the screen."
+        },
+        {
+          "id": "update-consoles-by-daemon",
+          "kind": "fix",
+          "text": "The update question in What's new lists the consoles that close on this\ncomputer. It says apart that the WSL consoles close only if the WSL copy takes\na new version.",
+          "topic": "workbench-update"
+        },
+        {
+          "id": "update-systemd-restart",
+          "kind": "fix",
+          "text": "`ralphy update` and `ralphy daemon restart` now restart a daemon that runs as a\nsystemd service through systemd. Before, they stopped it in a way that systemd\nreads as a crash."
+        },
+        {
+          "id": "whats-new-footer",
+          "kind": "fix",
+          "text": "The What's new panel says how many consoles are open, because the update closes\nthem and stops their agents. It shows the update command with a copy icon and a\n\"Check for new releases\" checkbox."
+        }
+      ]
+    },
+    {
       "version": "v0.1.0-rc.30",
       "date": "2026-09-28",
       "announce": true,
