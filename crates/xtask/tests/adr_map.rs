@@ -3,7 +3,11 @@
 //! of the template, and a structural ADR fills its Compliance section. Older
 //! ADRs predate the template and are not read. Companion notes (a spike's
 //! validation record) are not decisions and are not read either.
+//!
+//! docs/ARCHITECTURE.md is the map of the structural decisions: every ADR it
+//! cites exists, and every structural ADR from 0068 on is cited there.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use regex::Regex;
@@ -72,6 +76,85 @@ fn format_errors_catch_a_bad_status_kind_and_an_empty_compliance() {
 
     let superseded = "Status: superseded by ADR-0070\nKind: process\n";
     assert!(format_errors("x.md", superseded).is_empty());
+}
+
+#[test]
+fn the_architecture_map_cites_real_adrs_and_every_structural_one() {
+    let arch_path = adr_dir().join("../ARCHITECTURE.md");
+    let arch = read(&arch_path);
+    let errors = map_errors(&arch, &adr_files(&adr_dir()));
+    assert!(
+        errors.is_empty(),
+        "docs/ARCHITECTURE.md is out of step with docs/adr:\n{}",
+        errors.join("\n")
+    );
+}
+
+#[test]
+fn map_errors_catch_a_missing_and_an_uncited_adr() {
+    let adrs = vec![
+        (1, "0001-a.md".to_string(), "Kind: structural\n".to_string()),
+        (
+            70,
+            "0070-b.md".to_string(),
+            "Kind: structural\n".to_string(),
+        ),
+        (71, "0071-c.md".to_string(), "Kind: feature\n".to_string()),
+        (
+            72,
+            "0072-d-validation.md".to_string(),
+            "Kind: structural\n".to_string(),
+        ),
+    ];
+    let errors = map_errors("see ADR-0001 and ADR-0999", &adrs);
+    assert_eq!(errors.len(), 2, "{errors:#?}");
+    assert!(errors.iter().any(|e| e.contains("0999")), "{errors:#?}");
+    assert!(errors.iter().any(|e| e.contains("0070")), "{errors:#?}");
+
+    let links = map_errors("ADR-0070 [a](adr/0070-b.md) [b](adr/0070-gone.md)", &adrs);
+    assert!(
+        links.len() == 1 && links[0].contains("0070-gone.md"),
+        "{links:#?}"
+    );
+}
+
+/// What the map gets wrong about the ADRs: a citation of an ADR that does not
+/// exist, a link to a missing file, or a structural ADR from 0068 on that the
+/// map does not cite.
+fn map_errors(arch: &str, adrs: &[(u32, String, String)]) -> Vec<String> {
+    let cite = Regex::new(r"ADR-(\d{4})").expect("the pattern is a valid regex literal");
+    let link =
+        Regex::new(r"adr/(\d{4}-[A-Za-z0-9-]+\.md)").expect("the pattern is a valid regex literal");
+    let decisions: Vec<&(u32, String, String)> = adrs
+        .iter()
+        .filter(|(_, name, _)| !is_companion(name))
+        .collect();
+
+    let mut errors = Vec::new();
+    let mut cited = BTreeSet::new();
+    for c in cite.captures_iter(arch) {
+        let number: u32 = c[1]
+            .parse()
+            .expect("four ASCII digits always parse as a u32");
+        if cited.insert(number) && !decisions.iter().any(|(n, _, _)| *n == number) {
+            errors.push(format!("cites ADR-{number:04}, which does not exist"));
+        }
+    }
+    for c in link.captures_iter(arch) {
+        let target = &c[1];
+        if !adrs.iter().any(|(_, name, _)| name == target) {
+            errors.push(format!("links adr/{target}, which does not exist"));
+        }
+    }
+    for (number, _, text) in decisions {
+        let structural = text
+            .lines()
+            .any(|line| line.trim_end() == "Kind: structural");
+        if *number >= FIRST_TEMPLATED && structural && !cited.contains(number) {
+            errors.push(format!("structural ADR-{number:04} is not cited"));
+        }
+    }
+    errors
 }
 
 /// What is wrong with the Status, Kind and Compliance of one ADR.
