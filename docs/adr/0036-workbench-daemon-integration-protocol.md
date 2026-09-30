@@ -1,6 +1,10 @@
 # Workbench↔daemon integration: a verb registry over one protocol
 
-Status: proposed (design interview 2026-07-13; not yet implemented).
+Status: accepted (design interview 2026-07-13; implemented).
+
+Amended by ADR-0055 (the Write class gains `image.write`) and ADR-0059 (§8: `SessionInfo` gains `agent_state`), in addition to the dated amendments below.
+
+Amended by ADR-0069 (proposed): §3 allows the daemon read-only git facts through the shared `ralphy-git-read` crate, and nothing else.
 
 The mock workbench shell (`mocks/workbench-shell/`) needs a real backend: the
 browser must drive the resident **daemon** (ADR-0032), and the daemon must reach

@@ -1,5 +1,7 @@
 # Triage vocabulary follows Matt Pocock's canonical roles; flow control is separate
 
+Status: accepted.
+
 Ralphy adopts [Matt Pocock's canonical triage roles](https://github.com/mattpocock/skills/tree/main/skills/engineering/setup-matt-pocock-skills).
 `ready-for-agent` (alias `AFK`) is the queue; `ready-for-human` (alias `HITL`) is
 human-only and **never** worked by the agent — it is simply never queried,

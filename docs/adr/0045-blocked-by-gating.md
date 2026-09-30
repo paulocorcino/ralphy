@@ -1,5 +1,7 @@
 # A blocked issue is skipped until its blocker is CLOSED; this is safe only because runs share one branch
 
+Status: accepted.
+
 _Renumbered from 0002 to 0045 (#293): the number 0002 had accidentally collided
 with the core/adapter-boundary ADR, which is the canonical 0002. The decision is
 unchanged; only the identifier moved._

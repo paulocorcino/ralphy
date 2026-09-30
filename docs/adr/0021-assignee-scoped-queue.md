@@ -1,6 +1,6 @@
 # Assignee-scoped queue: opt-in `--assignee` filter
 
-Status: proposed (design interview 2026-07-03; not yet implemented).
+Status: accepted (design interview 2026-07-03; implemented).
 Builds on ADR-0020 (queue as data, view/runner parity) and ADR-0019 (event
 envelope the filter mark rides on).
 

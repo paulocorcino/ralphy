@@ -11,7 +11,7 @@ stored") and adds a `provider` field to the D6 record — and **extends ADR-0033
 normalization). It deliberately does **not** adopt tokscale's token-*counting*
 model, its multi-source fuzzy resolver, or its universal session scanner.
 
-Status: proposed.
+Status: accepted for slice A (see "Amendment (slice A)"); slice B is still proposed.
 
 ## Why now
 

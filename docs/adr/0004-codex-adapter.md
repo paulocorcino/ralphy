@@ -1,5 +1,7 @@
 # The Codex adapter: a per-run peer of the Claude adapter, native to `codex exec`
 
+Status: accepted.
+
 Ralphy gains a second agent CLI vendor — OpenAI's `codex` — as a new isolated
 crate `ralphy-agent-codex` that implements the same PTY-free `Agent` trait
 (docs/adr/0002). The adapter is selected **per run** by a `--agent claude|codex`

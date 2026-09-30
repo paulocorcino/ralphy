@@ -22,7 +22,23 @@ was probably decided on purpose (see [CLAUDE.md](../../CLAUDE.md)).
   when the distinction matters.
 
   Current companion-note families: **0005** (opencode), **0028** (kimi),
-  **0041** (copilot), **0042** (cursor), **0043** (gemini).
+  **0041** (copilot), **0042** (cursor), **0043** (gemini), **0052** (local
+  fleet).
+
+## Writing a new ADR
+
+Start from [TEMPLATE.md](./TEMPLATE.md). It says what to put in each field.
+Two rules apply to every ADR from ADR-0068 on:
+
+- **A status line from a closed set**, kept true to the code:
+  `proposed | accepted | deferred | rejected | superseded by ADR-NNNN`.
+- **A structural ADR has a `## Compliance` section.** A structural ADR decides
+  a boundary, a dependency rule, a disk or wire format, or who owns a fact.
+  Compliance gives one line per rule: the check that fails when code breaks
+  it, or "not checked by code" and why.
+
+Older ADRs are not rewritten. They get a Compliance section when they are next
+amended.
 
 ## The 0002 ↔ 0004 core/adapter boundary
 

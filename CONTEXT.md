@@ -71,6 +71,21 @@ would contain. The single status stays the DERIVED projection — the first non-
 side — and is what the clean-tree definition reads.
 _Avoid_: diff, status, dirty list.
 
+**Run artifact**:
+A path under the repo-root `.ralphy/`. It never counts in the **Change set**,
+whether or not it is also an **Ignored path** — the rule is Ralphy's, not git's.
+_Avoid_: ignored file.
+
+**Ignored path**:
+A path the repo's own git ignore rules keep out of tracking: the `.gitignore`
+files, `info/exclude`, and the user's global excludes. It is a fact of the local
+working tree, never of the **Forge**.
+_Avoid_: hidden, excluded.
+
+**Ignored mark**:
+The sign the workbench file tree draws on an **Ignored path**.
+_Avoid_: gitignore status.
+
 **Sync status**:
 Where a repo's branch stands against its upstream: the branch HEAD is on (or the
 sha, when HEAD is detached), the upstream it tracks or the absence of one, and
@@ -156,9 +171,10 @@ _Avoid_: naming a module or a reply field `worktree(s)` for this family;
 "checkout" for the act of switching a branch (that is a **branch switch**).
 
 **Adapter**:
-The isolated unit holding everything specific to one agent CLI vendor (Claude
-Code, Codex, Kimi, and OpenCode), behind the core's agent contract. Each
-adapter owns its own execution mode and completion protocol.
+The isolated unit holding everything specific to one agent CLI vendor, behind
+the core's agent contract; one `ralphy-agent-*` crate per vendor (the current
+set is the ADR-0040 inventory). Each adapter owns its own execution mode and
+completion protocol.
 _Avoid_: driver, plugin, backend.
 
 **Planner / Executor (phase roles)**:
@@ -253,8 +269,9 @@ including the `.agents/skills` exposure dance (link-or-copy, symlink-safe
 removal, merged per-entry `.gitignore`) that Codex and Copilot both drive. It is
 the deliberate counterpart of **Adapter**: where an adapter holds what is
 vendor-specific, adapter support holds what is common. It owns **no** completion
-protocol and produces **no** `Outcome` — it hands back raw captured output and
-each adapter still classifies it (the seam ADR-0002 protects). Lives in
+protocol. It produces an `Outcome` only through the shared **Outcome classifier**
+(ADR-0023), from **completion signals** the adapter has already extracted; the
+raw-output → signal step stays in each adapter (the seam ADR-0002 protects). Lives in
 `ralphy-adapter-support`; depended on by the vendor adapter crates, never by the
 core.
 _Avoid_: shared runner, headless runner (ADR-0002 forbids a shared *Outcome*
@@ -1250,3 +1267,9 @@ ring, stream.
   (**Forge query**). GitHub
   is the only forge and existing prose naming it stays as-is; new
   cross-boundary contracts say forge, vendor-specific mechanics say GitHub.
+- "Ignored" was used for four different things — resolved: an **Ignored path**
+  is git's answer from the repo's ignore rules; a **Run artifact** (`.ralphy/`)
+  is left out of the change set by Ralphy's own rule; the file tree never lists
+  `node_modules`, `target` or `.git` for speed, which makes them neither; and
+  the workbench grep always searches `.ralphy/`. "Which files are ignored?" is
+  answered from the local working tree, never from the forge.

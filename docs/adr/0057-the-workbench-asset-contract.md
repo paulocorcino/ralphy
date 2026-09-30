@@ -2,6 +2,8 @@
 
 Status: accepted (2026-09-08).
 
+D7 no longer holds for linting: oxlint was added later (`.oxlintrc.json`, run in CI). No ADR recorded that change.
+
 `crates/ralphy-daemon/assets/ui/` holds five files over 700 lines — `styles.css`
 (6,476), `wb-console.js` (5,195), `app.js` (5,089), `index.html` (2,398),
 `wb-viewer.js` (732) — and they grow. `wb-console.js` gained 871 lines in one

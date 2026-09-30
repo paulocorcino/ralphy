@@ -1,5 +1,7 @@
 # A HITL blocker is a surfaced human-blocker that stalls only its own chain, not the whole run
 
+Status: accepted.
+
 `ready-for-human` (alias `HITL`) has been vocabulary only since ADR-0001: human-only,
 never queried, carrying no runtime behaviour. Because the roles are mutually exclusive
 (an issue is `ready-for-agent` *or* `ready-for-human`), a HITL is **never a queue

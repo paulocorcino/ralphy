@@ -1,5 +1,7 @@
 # Core is execution-mode-agnostic; adapters own how an agent is driven
 
+Status: accepted.
+
 The Ralphy rewrite (Rust workspace) splits into a `ralphy-core` that knows the
 *method* — queue, run lifecycle, branch policy, stop-at-non-green, close-on-green —
 and one **adapter** per agent CLI vendor (Claude Code today; Codex, OpenCode later).

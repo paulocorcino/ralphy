@@ -1,5 +1,7 @@
 # A shared outcome classifier over vendor-extracted completion signals
 
+Status: accepted.
+
 _Amends ADR-0004 D2 (Codex) and ADR-0005 D2 (OpenCode); ADR-0002's `Outcome`
 seam is unchanged._
 

@@ -1,5 +1,7 @@
 # Telegram notifier: a CLI-owned, read-only run monitor driven by a shared `RunState` fold
 
+Amended by ADR-0024 (the ring, worker and Layer are now the shared delivery spine) and ADR-0039 (refines D6: the event vocabulary is owned by `core::emit`).
+
 Ralphy gains an optional, always-on Telegram monitor: once a bot token and chat
 are registered globally, every real `ralphy run` posts a single live **card** to
 a Telegram chat and edits it in place across the run's whole lifecycle —

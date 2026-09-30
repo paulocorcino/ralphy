@@ -5,12 +5,19 @@ rules an agent gets wrong without being told, and it points to the documents
 that hold the details. When a rule here and its source document disagree, the
 source document is correct — fix this file.
 
+- **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)** — the architecture map:
+  the owner of each fact, who may call whom, and where an outside product or
+  platform may be used. Read its fact index before you add an outside call
+  (`gh`, an HTTP API, a vendor CLI), a new path between browser, daemon and
+  CLI, a watcher or timer, or a second computation of a fact the product
+  already knows. Get the fact from its owner.
 - **[CONTEXT.md](./CONTEXT.md)** — the ubiquitous language. Every domain term
   (run, queue, adapter, planner/executor, event sink, blocked-by, stop-before…)
   is defined there. Use these words; don't invent synonyms.
 - **[docs/adr/](./docs/adr/)** — architecture decisions. Check for a relevant
   ADR before you change a boundary between crates. That boundary was probably
-  decided on purpose (for example, ADR-0002 on the core/adapter boundary).
+  decided on purpose (for example, ADR-0002 on the core/adapter boundary). A
+  new ADR starts from [docs/adr/TEMPLATE.md](./docs/adr/TEMPLATE.md).
 - **[docs/BUILDING.md](./docs/BUILDING.md)** — build, CI, crate layout.
 - **[docs/TESTING.md](./docs/TESTING.md)** — how to write a test that fails
   only when the behavior breaks. Read it before you add, change, or review a
@@ -33,12 +40,13 @@ aggregates, repositories, or domain-event buses. Don't add them.
 - **Each `ralphy-agent-*` crate is an adapter** that implements that port. There
   is one crate per vendor, and it holds everything that is vendor-specific
   (execution mode, completion protocol). **`ralphy-adapter-support`** is the
-  vendor-*neutral* code that the adapters share. It produces no `Outcome`
-  (CONTEXT.md → *Adapter support*).
-- **`ralphy-cli` is the composition root** — the one place that names every
-  vendor and connects them. The list of vendors lives *only there* (plus the
-  [ADR-0040](./docs/adr/0040-agent-adapter-onboarding-contract.md) inventory).
-  Do not copy it anywhere else.
+  vendor-*neutral* code that the adapters share. Its one `Outcome` comes from
+  the shared classifier (CONTEXT.md → *Adapter support*).
+- **`ralphy-cli` is the composition root** — the one place that connects every
+  vendor. A list of vendors lives only there and in the places the
+  [ADR-0040](./docs/adr/0040-agent-adapter-onboarding-contract.md) inventory
+  names (for example the daemon roster and the usage scan). A new place that
+  needs the list is added to that inventory first.
 
 ## Hard rules (an agent will get these wrong without being told)
 

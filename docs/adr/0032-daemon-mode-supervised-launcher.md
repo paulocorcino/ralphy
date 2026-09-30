@@ -1,6 +1,6 @@
 # Daemon mode: a supervised launcher, never a runtime
 
-Status: proposed (design interview 2026-07-09; not yet implemented).
+Status: accepted (design interview 2026-07-09; implemented).
 
 Ralphy gains a resident "department": a process that survives between runs,
 starts with the OS, and gives the operator remote reach — triggering

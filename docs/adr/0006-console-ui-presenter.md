@@ -1,5 +1,7 @@
 # Console UI: a CLI-owned presenter driven by the existing `tracing` event stream
 
+Status: accepted.
+
 Ralphy gains an animated, Claude-Code-style console (spinners, a queue progress
 bar, semantic colour, emoji status, finished-issue lines that scroll up) **without
 touching the core's API or adding a vendor-aware UI seam**. The presenter is a
