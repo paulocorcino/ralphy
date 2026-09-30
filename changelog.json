@@ -1,6 +1,18 @@
 {
   "releases": [
     {
+      "version": "v0.1.0-rc.33",
+      "date": "2026-09-30",
+      "announce": false,
+      "entries": [
+        {
+          "id": "launchd-restart-heal",
+          "kind": "fix",
+          "text": "On a Mac host, a restart now also repairs a daemon that an older Ralphy left\nrunning outside its launch agent: it ends that daemon and lets the agent start\nit again."
+        }
+      ]
+    },
+    {
       "version": "v0.1.0-rc.32",
       "date": "2026-09-30",
       "announce": false,
