@@ -3,7 +3,8 @@
 //! the loopback gate of `peer::client` passes unchanged.
 //!
 //! Held the way `peer::nudge` holds a keepalive: started detached, never waited
-//! on, never signalled, and replaced when it has exited. Holding a handle is not
+//! on, and replaced when it has exited. It is signalled only when its host was
+//! edited, because the spec it runs is then out of date. Holding a handle is not
 //! supervision — the daemon on the other machine belongs to that machine's own
 //! service manager. Unlike the keepalive, it runs on every OS.
 //!
@@ -108,13 +109,14 @@ fn spawn_detached(argv: &[String]) -> Result<Child> {
         .with_context(|| format!("starting the tunnel `{}`", argv.join(" ")))
 }
 
-/// The tunnels this process holds, one per peer `daemon_id`. Process-wide for
-/// the same reason as `nudge::Keepalives`: the handles live as long as this
-/// daemon does, and the next daemon acquires its own.
+/// The tunnels this process holds, one per peer `daemon_id`, each with the spec
+/// it was opened with. Process-wide for the same reason as
+/// `nudge::Keepalives`: the handles live as long as this daemon does, and the
+/// next daemon acquires its own.
 ///
 /// A `std::sync::Mutex`, never held across an `.await`: `ensure` spawns a
 /// process, so every caller on the reactor hands it to `spawn_blocking`.
-pub struct Tunnels(Mutex<HashMap<String, Child>>);
+pub struct Tunnels(Mutex<HashMap<String, (Child, TunnelSpec)>>);
 
 impl Default for Tunnels {
     fn default() -> Self {
@@ -135,11 +137,12 @@ impl Tunnels {
     }
 
     /// Hold the tunnel to `daemon_id` open: start its `ssh` unless the one this
-    /// process already started is still running. Returns whether a new one was
-    /// started. A spec that changed while the old `ssh` runs applies only once
-    /// that `ssh` exits: the holder never signals.
+    /// process already started is still running with the same spec. Returns
+    /// whether a new one was started. A running `ssh` whose spec differs (the
+    /// host was edited) is stopped first, so the edit applies now (ADR-0067,
+    /// amendment "the Hosts dialog", H4).
     pub fn ensure(&self, daemon_id: &str, spec: &TunnelSpec) -> Result<bool> {
-        self.ensure_with(daemon_id, || {
+        self.ensure_with(daemon_id, spec, || {
             let ssh = ssh_program().context("no ssh program found: install OpenSSH")?;
             spawn_detached(&tunnel_argv(&ssh, spec))
         })
@@ -171,22 +174,34 @@ impl Tunnels {
     pub fn is_alive(&self, daemon_id: &str) -> bool {
         let mut held = self.0.lock().unwrap_or_else(|e| e.into_inner());
         held.get_mut(daemon_id)
-            .is_some_and(|child| matches!(child.try_wait(), Ok(None)))
+            .is_some_and(|(child, _)| matches!(child.try_wait(), Ok(None)))
     }
 
-    fn ensure_with(&self, daemon_id: &str, spawn: impl FnOnce() -> Result<Child>) -> Result<bool> {
+    fn ensure_with(
+        &self,
+        daemon_id: &str,
+        spec: &TunnelSpec,
+        spawn: impl FnOnce() -> Result<Child>,
+    ) -> Result<bool> {
         // A poisoned lock means a panic mid-insert; the map is still a map, and
         // refusing every future tunnel over it would be the worse failure.
         let mut held = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(child) = held.get_mut(daemon_id) {
+        if let Some((child, opened_with)) = held.get_mut(daemon_id) {
             // `try_wait` is a read: it neither blocks nor signals. `Err` means
             // the handle itself is unusable, which is as good as exited.
             if matches!(child.try_wait(), Ok(None)) {
-                return Ok(false);
+                if opened_with == spec {
+                    return Ok(false);
+                }
+                // The local port may be the same, so the old `ssh` must be gone
+                // before the new one binds it: kill, then reap.
+                if let Err(e) = child.kill().and_then(|()| child.wait().map(drop)) {
+                    tracing::warn!(peer = %daemon_id, error = %e, "could not stop the tunnel of an edited host");
+                }
             }
         }
         let child = spawn()?;
-        held.insert(daemon_id.to_string(), child);
+        held.insert(daemon_id.to_string(), (child, spec.clone()));
         Ok(true)
     }
 }

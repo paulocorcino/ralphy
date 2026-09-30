@@ -1,4 +1,5 @@
-// The Add a host dialog's state machine (ADR-0067 §11, issue #497).
+// The Hosts dialog's state machine (ADR-0067 §11, issue #497, and the
+// amendment "the Hosts dialog").
 //
 // PURE: state + event in, new state out. No DOM, no fetch, no Alpine. The shell
 // runs the `host.*` verbs and feeds what they answer to `next`; the progress of
@@ -14,6 +15,10 @@
   function initial() {
     return {
       open: false,
+      // "hosts" lists the paired hosts; "add" is the form, also used to edit.
+      tab: "hosts",
+      // The host being edited, `{ daemon, name }`, or null to add one.
+      editing: null,
       step: "connection",
       aliases: [],
       alias: "",
@@ -51,6 +56,29 @@
     const who = user ? user + "@" + address : address;
     if (port && port !== "22") return "ssh://" + who + ":" + port;
     return who;
+  }
+
+  // The form fields `destination` was built from, to fill the form when a
+  // host is edited. A destination without `@` is an address or an SSH config
+  // alias; either way it goes back into the Host field unchanged.
+  function fields(dest) {
+    let d = String(dest || "").trim();
+    let port = "";
+    if (d.indexOf("ssh://") === 0) {
+      d = d.slice("ssh://".length);
+      const colon = d.lastIndexOf(":");
+      if (colon > d.indexOf("@")) {
+        port = d.slice(colon + 1);
+        d = d.slice(0, colon);
+      }
+    }
+    const at = d.lastIndexOf("@");
+    return { user: at < 0 ? "" : d.slice(0, at), address: at < 0 ? d : d.slice(at + 1), port: port };
+  }
+
+  // A new form on `tab`, keeping what does not belong to one host.
+  function fresh(s, tab) {
+    return Object.assign(initial(), { open: s.open, aliases: s.aliases, tab: tab });
   }
 
   // Split raw output into JSON-line events. `buf` carries a partial last line
@@ -144,6 +172,20 @@
 
   function next(s, ev) {
     switch (ev.type) {
+      case "tab":
+        return fresh(s, ev.tab === "add" ? "add" : "hosts");
+      // Edit is the add flow with the host's connection filled in. The
+      // password is empty: the host still accepts Ralphy's key, or it asks.
+      case "edit": {
+        const h = ev.host || {};
+        const keyFile = typeof h.identity_file === "string" ? h.identity_file : "";
+        return Object.assign(
+          fresh(s, "add"),
+          { editing: { daemon: String(h.daemon_id || ""), name: String(h.name || "") } },
+          fields(h.destination),
+          keyFile ? { signIn: "key", keyFile: keyFile } : {},
+        );
+      }
       case "aliases":
         return Object.assign({}, s, { aliases: Array.isArray(ev.aliases) ? ev.aliases : [] });
       case "pick": {
@@ -196,7 +238,9 @@
         return progress(s, ev.event || {});
       case "exit": {
         if (ev.code === 0) {
-          return ev.verb === "host.add" ? Object.assign({}, s, { open: false, busy: false }) : Object.assign({}, s, { busy: false });
+          if (ev.verb !== "host.add") return Object.assign({}, s, { busy: false });
+          // An edit goes back to the list it started from.
+          return s.editing ? fresh(s, "hosts") : Object.assign({}, s, { open: false, busy: false });
         }
         const failure = s.failure || {
           kind: "other",
@@ -374,6 +418,7 @@
   return {
     initial: initial,
     destination: destination,
+    fields: fields,
     feed: feed,
     next: next,
     ready: ready,

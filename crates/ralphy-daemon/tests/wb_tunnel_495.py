@@ -8,7 +8,7 @@ exits at once, so the tunnel is "closed" whenever the daemon has to ask. No real
 SSH connection is made.
 
 Scenario 1  the tunnel peer's group header reads `svrapp: Linux`
-Scenario 2  that header carries the server icon, and no separate daemon name
+Scenario 2  that header carries the Linux penguin, and no separate daemon name
 Scenario 3  with the stub CLOSED and the page reloaded, the header's state is
             `tunnel-closed`, not painted as a fault, and its tooltip says
             `reconnecting` and never `WSL`
@@ -261,7 +261,7 @@ HEADER_EXPR = """
   return {
     label: h.querySelector('.env-label').textContent.trim(),
     title: h.getAttribute('title') || '',
-    server: shown(h.querySelector('.env-kind svg[data-lucide="server"]')),
+    penguin: shown(h.querySelector('.os-icon use[href="#os-linux"]')?.closest('svg')),
     daemonName: shown(h.querySelector('.env-daemon')),
     stateClass: state ? state.className : '',
     laid: shown(h),
@@ -317,8 +317,8 @@ def main():
                 "header={}".format(h),
             )
             check(
-                "the header carries the server icon and no separate daemon name",
-                h is not None and h["server"] and not h["daemonName"],
+                "the header carries the Linux penguin and no separate daemon name",
+                h is not None and h["penguin"] and not h["daemonName"],
                 "header={}".format(h),
             )
 

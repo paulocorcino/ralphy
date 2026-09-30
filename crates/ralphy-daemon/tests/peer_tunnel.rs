@@ -240,6 +240,10 @@ async fn fleet_reports_the_two_tunnel_states() {
     let row = peer_row(&fleet, TUNNEL_ID);
     assert_eq!(row["state"], "tunnel-closed", "got: {row}");
     assert_eq!(row["tunnel"], true);
+    assert_eq!(
+        row["destination"], "svrapp",
+        "the form of Edit needs it: {row}"
+    );
     assert!(
         !row["diagnosis"].as_str().unwrap().contains("WSL"),
         "got: {row}"

@@ -438,7 +438,7 @@ test("the add button sits in the Projects header, outside any group header", () 
 
 test("shell: Remove host runs host.remove with the daemon id and the token choice", () => {
   const { state, scripts, calls, reloads } = shell();
-  const g = { daemon: VPS_ID, name: "vps", tunnel: true };
+  const g = { daemon_id: VPS_ID, name: "vps", tunnel: true };
   scripts["host.remove"] = [
     { status: "output", chunk: line({ event: "note", text: "Forgot vps on this computer." }) },
     { status: "exited", code: 0 },
@@ -463,7 +463,7 @@ test("shell: a failed Remove host stays open with the line to remove by hand", (
     { status: "output", chunk: line({ event: "failed", kind: "unreachable", message: "vps did not answer. The key line remains" }) },
     { status: "exited", code: 1 },
   ];
-  state.openRemoveHost({ daemon: VPS_ID, name: "vps", tunnel: true });
+  state.openRemoveHost({ daemon_id: VPS_ID, name: "vps", tunnel: true });
   state.confirmRemoveHost();
   assert.equal(reloads.length, 0);
   assert.equal(state.removeHost.open, true);
@@ -472,28 +472,100 @@ test("shell: a failed Remove host stays open with the line to remove by hand", (
   assert.match(state.removeHost.failure.message, /key line remains/);
 });
 
-test("the group menu offers Remove host on tunnel groups only", () => {
+test("each row of Your hosts has Edit and Remove, and Remove asks in that row", () => {
   const html = readFileSync(join(UI, "index.html"), "utf8");
-  assert.match(html, /@contextmenu\.prevent="if \(g\.tunnel\) showGroupMenu\(/);
-  assert.match(html, /class="group-menu" x-show="g\.tunnel"/);
-  const { state } = shell();
-  let items = null;
-  state.renderMenu = (x, y, list) => (items = list);
-  state.showGroupMenu(1, 2, { daemon: VPS_ID, name: "vps", tunnel: true });
-  assert.deepEqual(items.map((i) => i.label), ["Remove host…"]);
-  items[0].run();
-  assert.equal(state.removeHost.open, true);
-  assert.equal(state.removeHost.daemon, VPS_ID);
+  const start = html.indexOf('<ul class="host-list"');
+  const end = html.indexOf("</ul>", start);
+  assert.ok(start > 0 && end > start);
+  const list = html.slice(start, end);
+  assert.match(list, /x-for="h in sshHosts\(\)"/);
+  assert.match(list, /@click="addHostEdit\(h\)"[^>]*>Edit</);
+  assert.match(list, /@click="openRemoveHost\(h\)"[^>]*>Remove</);
+  assert.match(list, /x-show="removeHost\.open && removeHost\.daemon === h\.daemon_id"/);
+  assert.match(list, /@click="confirmRemoveHost\(\)"/);
+  assert.doesNotMatch(html, /scrim\('removeHost\.open'/, "no second dialog for Remove");
 });
 
-test("the host dialogs render host text with x-text only", () => {
+test("the Hosts dialog renders host text with x-text only", () => {
   const html = readFileSync(join(UI, "index.html"), "utf8");
   const start = html.indexOf("scrim('addHost.open'");
   const end = html.indexOf("Login gate", start);
   assert.ok(start > 0 && end > start);
   const block = html.slice(start, end);
-  assert.ok(block.includes("scrim('removeHost.open'"), "both dialogs are in the block");
+  assert.ok(block.includes('class="host-list"'), "the list is in the block");
   assert.doesNotMatch(block, /x-html|innerHTML/);
+});
+
+test("fields reads back the form that built a destination", () => {
+  const { destination, fields } = load();
+  for (const form of [
+    { address: "10.0.0.5", user: "deploy", port: "2222" },
+    { address: "192.168.101.3", user: "user", port: "" },
+    { address: "svrapp", user: "", port: "" },
+  ]) {
+    const dest = destination(Object.assign({ alias: "" }, form));
+    assert.deepEqual(fields(dest), form, dest);
+  }
+});
+
+test("Edit fills the form from the host, and Save goes back to the list", () => {
+  const { initial, next } = load();
+  let s = Object.assign(initial(), { open: true, aliases: ALIASES });
+  s = next(s, {
+    type: "edit",
+    host: { daemon_id: VPS_ID, name: "vps", destination: "ssh://root@10.1.1.4:2200", identity_file: "C:/keys/vps" },
+  });
+  assert.equal(s.tab, "add");
+  assert.deepEqual(s.editing, { daemon: VPS_ID, name: "vps" });
+  assert.deepEqual([s.address, s.user, s.port, s.signIn, s.keyFile], ["10.1.1.4", "root", "2200", "key", "C:/keys/vps"]);
+  assert.equal(s.password, "");
+  assert.deepEqual(s.aliases, ALIASES, "the SSH config hosts stay");
+  s = next(s, { type: "exit", verb: "host.add", code: 0 });
+  assert.equal(s.open, true, "an edit stays in the dialog");
+  assert.equal(s.tab, "hosts");
+  assert.equal(s.editing, null);
+  assert.equal(s.address, "");
+  // A new host still closes the dialog once it is added.
+  s = next(Object.assign(initial(), { open: true, tab: "add" }), { type: "exit", verb: "host.add", code: 0 });
+  assert.equal(s.open, false);
+});
+
+test("a tab starts a new form", () => {
+  const { initial, next } = load();
+  let s = Object.assign(initial(), { open: true, aliases: ALIASES });
+  s = next(s, { type: "edit", host: { daemon_id: VPS_ID, name: "vps", destination: "user@mac" } });
+  s = next(s, { type: "tab", tab: "add" });
+  assert.equal(s.editing, null);
+  assert.equal(s.address, "");
+  assert.equal(s.tab, "add");
+  assert.deepEqual(s.aliases, ALIASES);
+  assert.equal(next(s, { type: "tab", tab: "hosts" }).tab, "hosts");
+});
+
+test("shell: Hosts opens on the list when a host is paired over SSH, else on the form", () => {
+  const { state } = shell();
+  state.fleetPeers = [{ daemon_id: "wsl", name: "ubuntu", environment: "WSL: Ubuntu", state: "reachable", tunnel: false }];
+  state.openAddHost();
+  assert.equal(state.hostTab(), "add", "a WSL daemon is not a host of this list");
+  assert.deepEqual(state.sshHosts(), []);
+  state.fleetPeers.push({ daemon_id: VPS_ID, name: "vps", environment: "Linux", state: "reachable", tunnel: true, destination: "root@vps" });
+  state.openAddHost();
+  assert.equal(state.addHost.tab, "hosts");
+  assert.deepEqual(state.sshHosts().map((h) => h.name), ["vps"]);
+  state.addHostEdit(state.sshHosts()[0]);
+  assert.equal(state.hostTab(), "add");
+  assert.equal(state.addHostPayload().destination, "root@vps");
+  state.addHostCancel();
+  assert.equal(state.addHost.open, true, "Cancel leaves an edit for the list");
+  assert.equal(state.hostTab(), "hosts");
+  state.addHostTab("add");
+  state.addHostCancel();
+  assert.equal(state.addHost.open, false, "Cancel closes a new host's form");
+  state.openAddHost();
+  // The last host removed: no list is left to show.
+  state.addHostTab("hosts");
+  state.fleetPeers = state.fleetPeers.filter((p) => !p.tunnel);
+  assert.equal(state.hostTab(), "add");
 });
 
 test("shell: a typed password goes with the check, only when signing in without a key file", async () => {

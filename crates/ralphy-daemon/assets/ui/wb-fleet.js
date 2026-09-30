@@ -215,8 +215,20 @@
     return group.state === "asleep" || group.state === "unreachable";
   }
 
+  // The system a daemon runs on, read from its environment label (`Windows`,
+  // `Linux`, `macOS`, `WSL: <distro>`, or the raw OS name; peer.rs
+  // `environment_label`). It picks the icon at the head of a group.
+  function system(environment) {
+    const e = String(environment || "");
+    if (e === "Linux" || e.indexOf("WSL") === 0) return "linux";
+    if (e === "macOS") return "macos";
+    if (e === "Windows") return "windows";
+    return "other";
+  }
+
   return {
     fleetGroups: fleetGroups,
+    system: system,
     repoRef: repoRef,
     isPeerRef: isPeerRef,
     refDaemon: refDaemon,
