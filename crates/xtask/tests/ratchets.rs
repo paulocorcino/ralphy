@@ -6,8 +6,15 @@
 //! `Command::new("git")`. A spawn through a variable (`find_program("ssh")`,
 //! `Command::new(&program)`) is not seen and is reviewed in the PR.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+
+use regex::Regex;
+
+/// Distinct `github::<item>` names used by `crates/ralphy-cli/src`.
+const FORGE_ITEMS: usize = 24;
+/// Lines that tell the agent to run `gh issue view`, under `assets/prompts/`.
+const PROMPT_GH_ISSUE_VIEW: usize = 20;
 
 const SPAWNED: [&str; 3] = ["git", "gh", "ssh"];
 
@@ -90,6 +97,94 @@ fn a_new_file_or_a_changed_count_fails_the_ratchet() {
     );
 }
 
+#[test]
+fn forge_use_matches_the_baseline() {
+    let root = workspace_root();
+    let mut files = Vec::new();
+    collect_rs(&root.join("crates/ralphy-cli/src"), &mut files);
+    let mut items = BTreeSet::new();
+    for path in &files {
+        items.extend(forge_items(&read(path)));
+    }
+
+    let mut prompts = Vec::new();
+    collect_all(&root.join("assets/prompts"), &mut prompts);
+    let issue_views: usize = prompts
+        .iter()
+        .map(|path| {
+            read(path)
+                .lines()
+                .filter(|line| line.contains("gh issue view"))
+                .count()
+        })
+        .sum();
+
+    let mut errors = Vec::new();
+    if items.len() != FORGE_ITEMS {
+        errors.push(format!(
+            "github:: items used by ralphy-cli: {FORGE_ITEMS} -> {}: {items:?}",
+            items.len()
+        ));
+    }
+    if issue_views != PROMPT_GH_ISSUE_VIEW {
+        errors.push(format!(
+            "`gh issue view` lines under assets/prompts: {PROMPT_GH_ISSUE_VIEW} -> {issue_views}"
+        ));
+    }
+    assert!(
+        errors.is_empty(),
+        "the forge does not spread (docs/ARCHITECTURE.md §6); \
+         a lower count lowers the constant in the same change:\n{}",
+        errors.join("\n")
+    );
+}
+
+#[test]
+fn forge_items_count_brace_groups_and_skip_tests() {
+    let src = "use ralphy_core::{github, git};\n\
+               // github::commented()\n\
+               fn f() { github::a(); github::a(); }\n\
+               use ralphy_core::github::{b, c as d};\n\
+               #[cfg(test)]\n\
+               mod tests { fn t() { github::e(); } }\n";
+    let items = forge_items(src);
+    assert_eq!(
+        items,
+        BTreeSet::from(["a".to_string(), "b".to_string(), "c".to_string()])
+    );
+}
+
+/// The `github::` item names used in the production part of `text`, line
+/// comments removed: `github::x`, each name of `github::{x, y as z}`, and
+/// `*` for a glob import.
+fn forge_items(text: &str) -> BTreeSet<String> {
+    let plain = Regex::new(r"\bgithub::([A-Za-z_][A-Za-z0-9_]*)")
+        .expect("the pattern is a valid regex literal");
+    let group = Regex::new(r"\bgithub::\{([^}]*)\}").expect("the pattern is a valid regex literal");
+    let first_ident =
+        Regex::new(r"^\s*([A-Za-z_][A-Za-z0-9_]*)").expect("the pattern is a valid regex literal");
+    let code: String = production(text)
+        .lines()
+        .map(|line| line.split("//").next().unwrap_or(""))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut items: BTreeSet<String> = plain
+        .captures_iter(&code)
+        .map(|c| c[1].to_string())
+        .collect();
+    for c in group.captures_iter(&code) {
+        for part in c[1].split(',') {
+            if let Some(name) = first_ident.captures(part) {
+                items.insert(name[1].to_string());
+            }
+        }
+    }
+    if code.contains("github::*") {
+        items.insert("*".to_string());
+    }
+    items
+}
+
 /// Literal `Command::new("<program>")` sites per spawned program, in the
 /// production part of `text`.
 fn spawn_sites(text: &str) -> BTreeMap<&'static str, usize> {
@@ -170,6 +265,22 @@ fn production(text: &str) -> &str {
         offset += line.len();
     }
     text
+}
+
+/// Every file under `dir`, recursively.
+fn collect_all(dir: &Path, out: &mut Vec<PathBuf>) {
+    let entries =
+        std::fs::read_dir(dir).unwrap_or_else(|e| panic!("reading {}: {e}", dir.display()));
+    for entry in entries {
+        let path = entry
+            .unwrap_or_else(|e| panic!("reading an entry of {}: {e}", dir.display()))
+            .path();
+        if path.is_dir() {
+            collect_all(&path, out);
+        } else {
+            out.push(path);
+        }
+    }
 }
 
 /// Production `.rs` files: no `tests/` dir, no `tests.rs`, no test child.
