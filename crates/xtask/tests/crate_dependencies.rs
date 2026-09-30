@@ -18,6 +18,12 @@ fn core_and_adapters_keep_their_dependency_edges() {
         "expected the workspace packages in cargo metadata, found {:?}",
         graph.iter().map(|(name, _)| name).collect::<Vec<_>>()
     );
+    assert!(
+        graph
+            .iter()
+            .any(|(name, deps)| name == "ralphy-cli" && deps.iter().any(|d| d == "ralphy-core")),
+        "the graph lost the known edge ralphy-cli -> ralphy-core: {graph:?}"
+    );
     let edges = forbidden_edges(&graph);
     assert!(
         edges.is_empty(),
@@ -29,26 +35,31 @@ fn core_and_adapters_keep_their_dependency_edges() {
 #[test]
 fn each_forbidden_edge_is_reported() {
     let graph = vec![
-        node("ralphy-core", &["ralphy-adapter-support"]),
+        node(
+            "ralphy-core",
+            &["ralphy-adapter-support", "ralphy-agent-claude"],
+        ),
         node(
             "ralphy-agent-codex",
             &["ralphy-agent-claude", "ralphy-core"],
         ),
         node("ralphy-release", &["ralphy-proc-util"]),
+        node("ralphy-pricing", &["ralphy-core"]),
         node("ralphy-cli", &["ralphy-agent-claude", "ralphy-core"]),
     ];
-    let edges = forbidden_edges(&graph);
-    assert_eq!(edges.len(), 3, "{edges:#?}");
-    for pair in [
-        "ralphy-core -> ralphy-adapter-support",
-        "ralphy-agent-codex -> ralphy-agent-claude",
-        "ralphy-release -> ralphy-proc-util",
-    ] {
-        assert!(
-            edges.iter().any(|e| e.starts_with(pair)),
-            "{pair} is not reported: {edges:#?}"
-        );
-    }
+    let core = "ralphy-core depends on no adapter and not on ralphy-adapter-support";
+    let leaf = "ralphy-pricing and ralphy-release are leaf crates";
+    assert_eq!(
+        forbidden_edges(&graph),
+        vec![
+            format!("ralphy-core -> ralphy-adapter-support: {core}"),
+            format!("ralphy-core -> ralphy-agent-claude: {core}"),
+            "ralphy-agent-codex -> ralphy-agent-claude: no adapter depends on another adapter"
+                .to_string(),
+            format!("ralphy-release -> ralphy-proc-util: {leaf}"),
+            format!("ralphy-pricing -> ralphy-core: {leaf}"),
+        ]
+    );
 }
 
 fn node(name: &str, deps: &[&str]) -> (String, Vec<String>) {

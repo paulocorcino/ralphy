@@ -5,6 +5,10 @@
 //! The spawn ratchet sees only a literal program name:
 //! `Command::new("git")`. A spawn through a variable (`find_program("ssh")`,
 //! `Command::new(&program)`) is not seen and is reviewed in the PR.
+//!
+//! The forge ratchet reads `github::` paths as text. It does not see an alias
+//! (`github as gh`), a root re-export (`ralphy_core::GhTracker`) or a name
+//! after a nested group (`github::{a::{b}, c}`).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -73,6 +77,19 @@ fn spawn_counting_cuts_at_the_test_module() {
                }\n";
     let sites = spawn_sites(src);
     assert_eq!(sites, BTreeMap::from([("git", 1)]));
+
+    let declared = "#[cfg(test)]\n\
+                    mod tests;\n\
+                    fn f() { Command::new(\"ssh\"); Command::new(\"ssh\"); }\n\
+                    #[cfg(test)]\n\
+                    pub(crate) mod more {\n\
+                    fn t() { Command::new(\"git\"); }\n\
+                    }\n";
+    assert_eq!(
+        spawn_sites(declared),
+        BTreeMap::from([("ssh", 2)]),
+        "a `mod x;` declaration is not the cut, and `pub(crate) mod x {{` is"
+    );
 }
 
 #[test]
@@ -80,10 +97,20 @@ fn a_new_file_or_a_changed_count_fails_the_ratchet() {
     let baseline = [("a.rs", "git", 1)];
     let key = |file: &str, program: &str| (file.to_string(), program.to_string());
 
-    let grown = BTreeMap::from([(key("a.rs", "git"), 2), (key("b.rs", "gh"), 1)]);
+    let grown = BTreeMap::from([
+        (key("a.rs", "git"), 2),
+        (key("a.rs", "gh"), 1),
+        (key("b.rs", "gh"), 1),
+    ]);
     let errors = ratchet_errors(&grown, &baseline);
-    assert_eq!(errors.len(), 2, "{errors:#?}");
+    assert_eq!(errors.len(), 3, "{errors:#?}");
     assert!(errors.iter().any(|e| e.contains("b.rs")), "{errors:#?}");
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.starts_with("a.rs: new spawn site for gh")),
+        "{errors:#?}"
+    );
     assert!(errors.iter().any(|e| e.contains("1 -> 2")), "{errors:#?}");
 
     let same = BTreeMap::from([(key("a.rs", "git"), 1)]);
@@ -146,11 +173,17 @@ fn forge_items_count_brace_groups_and_skip_tests() {
                fn f() { github::a(); github::a(); }\n\
                use ralphy_core::github::{b, c as d};\n\
                #[cfg(test)]\n\
-               mod tests { fn t() { github::e(); } }\n";
+               mod tests {\n\
+               fn t() { github::e(); }\n\
+               }\n";
     let items = forge_items(src);
     assert_eq!(
         items,
         BTreeSet::from(["a".to_string(), "b".to_string(), "c".to_string()])
+    );
+    assert_eq!(
+        forge_items("use ralphy_core::github::*;\n"),
+        BTreeSet::from(["*".to_string()])
     );
 }
 
@@ -255,16 +288,21 @@ fn production(text: &str) -> &str {
     let mut offset = 0;
     let mut lines = text.split_inclusive('\n').peekable();
     while let Some(line) = lines.next() {
-        if line.trim() == "#[cfg(test)]"
-            && lines
-                .peek()
-                .is_some_and(|next| next.trim_start().starts_with("mod "))
+        if line.trim() == "#[cfg(test)]" && lines.peek().is_some_and(|next| opens_inline_mod(next))
         {
             return &text[..offset];
         }
         offset += line.len();
     }
     text
+}
+
+/// `mod x {` or `pub(crate) mod x {`. A `mod x;` declaration is not a cut:
+/// the production code after it is still read.
+fn opens_inline_mod(line: &str) -> bool {
+    let head = line.trim();
+    let head = head.strip_prefix("pub(crate) ").unwrap_or(head);
+    head.starts_with("mod ") && head.ends_with('{')
 }
 
 /// Every file under `dir`, recursively.

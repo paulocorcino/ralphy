@@ -38,18 +38,35 @@ fn new_adrs_have_a_closed_status_and_kind() {
 #[test]
 fn the_closed_sets_match_the_template() {
     let template = read(&adr_dir().join("TEMPLATE.md"));
-    assert!(
-        template.lines().any(|line| line.trim()
-            == "proposed | accepted | deferred | rejected | superseded by ADR-NNNN"),
-        "the Status set in TEMPLATE.md changed; update the Status pattern in this test"
+    let statuses: Vec<String> = template
+        .lines()
+        .skip_while(|line| !line.starts_with("Status — exactly one of:"))
+        .nth(1)
+        .expect("TEMPLATE.md lists the Status set on the line after its heading")
+        .split('|')
+        .map(|s| s.trim().replace("NNNN", "0001"))
+        .collect();
+    let kind_entry = Regex::new(r"^  ([a-z]+)  ").expect("the pattern is a valid regex literal");
+    let kinds: Vec<String> = template
+        .lines()
+        .skip_while(|line| !line.starts_with("Kind — exactly one of:"))
+        .take_while(|line| !line.starts_with("Protects"))
+        .filter_map(|line| kind_entry.captures(line).map(|c| c[1].to_string()))
+        .collect();
+    assert_eq!(statuses.len(), 5, "{statuses:?}");
+    assert_eq!(
+        kinds,
+        ["structural", "feature", "vendor", "process"],
+        "the Kind set in TEMPLATE.md changed; update the Kind pattern in this test"
     );
-    for kind in ["structural", "feature", "vendor", "process"] {
-        assert!(
-            template
-                .lines()
-                .any(|line| line.starts_with(&format!("  {kind}  "))),
-            "the Kind `{kind}` is no longer in TEMPLATE.md; update the Kind pattern in this test"
-        );
+    for status in &statuses {
+        for kind in &kinds {
+            let adr = format!("Status: {status}\nKind: {kind}\n## Compliance\n- D1: x\n");
+            assert!(
+                format_errors("t.md", &adr).is_empty(),
+                "the template allows `{status}` / `{kind}`, the check refuses it"
+            );
+        }
     }
 }
 
@@ -76,6 +93,28 @@ fn format_errors_catch_a_bad_status_kind_and_an_empty_compliance() {
 
     let superseded = "Status: superseded by ADR-0070\nKind: process\n";
     assert!(format_errors("x.md", superseded).is_empty());
+
+    let no_heading = format_errors("h.md", "Status: proposed\nKind: structural\n");
+    assert!(
+        no_heading.len() == 1 && no_heading[0].contains("Compliance"),
+        "{no_heading:#?}"
+    );
+
+    let long_comment = "Status: proposed\nKind: structural\n\n## Compliance\n\n<!--\n- D1: an example\n  inside the comment\n-->\n";
+    let errors = format_errors("m.md", long_comment);
+    assert!(
+        errors.len() == 1 && errors[0].contains("Compliance"),
+        "{errors:#?}"
+    );
+    let after_comment =
+        "Status: proposed\nKind: structural\n\n## Compliance\n\n<!-- c --> - D1: x\n";
+    assert!(format_errors("a.md", after_comment).is_empty());
+
+    let missing = format_errors("n.md", "# T\n");
+    assert!(
+        missing.len() == 2 && missing[0].contains("no Status") && missing[1].contains("no Kind"),
+        "{missing:#?}"
+    );
 }
 
 #[test]
