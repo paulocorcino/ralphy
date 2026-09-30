@@ -708,7 +708,8 @@ desktop cost — each is inert where it does not apply.
 - **Resume.** A suspended tab comes back holding dead sockets that still report
   OPEN. `visibilitychange` and `online` call `resumeAll`, and the shell's
   presence heartbeat is the staleness verdict, so a desktop tab switch churns
-  nothing. See CONTEXT.md → *Resume*.
+  nothing. The term is CONTEXT.md → *Resume*; how it differs from a retry is in the
+  2026-09-30 amendment of ADR-0036.
 - **Fullscreen is not the answer on an iPad, the PWA is.** WebKit exits
   fullscreen whenever a text field takes focus and the keyboard rises, and the
   console focuses a hidden textarea on every tap — so on an iPad fullscreen and
@@ -791,7 +792,11 @@ The shell already centralizes both directions; the backend is *one adapter each*
   status chrome; a `Command` reply resolves its pending `id`; an unsolicited
   `Command` push (run output, `tree.dirty`) folds into `WBRuns.emit` / the tree.
 
-The whole client cola is a ~40-line `wb-daemon.js`:
+This was the first sketch of `wb-daemon.js`. The shipped file is larger and
+opens more than one socket: one `/ws/command` socket per command, a persistent
+`/ws/tree` socket per kind (tree, runs, changes), and one `/ws/session` socket
+per console. Read the file itself for the current shape. The sketch still
+shows the two seams:
 
 ```js
 // one call door (request/response by id) + one frame router
@@ -818,13 +823,15 @@ document.addEventListener("workbench:action", e =>
 The tree is **Observe** — the daemon reads and watches it directly, but never
 interprets it. Live updates use `notify` + `notify-debouncer-full` + `ignore`,
 kept cheap by four levers: **watch only expanded dirs** (matched to Wunderbaum's
-lazy-load; unwatch on collapse), **gitignore-filter** the walk/watch, **debounce**
-the event storm, and **push a minimal `tree.dirty {repo,path}` nudge, pull the
-subtree only if visible**. One watcher per (repo × open dirs), fanned out to all
-clients (not per-connection). Security is **confinement** (canonicalize + repo-root
-prefix — blocks traversal and symlink escape) **+ the existing login**; an
-authenticated operator reads the whole repo, secrets included, like any IDE. The
-`.gitignore` filter is UX cleanliness, **not** a security boundary.
+lazy-load; unwatch on collapse), **never enter** `node_modules`, `target` or
+`.git`, **debounce** the event storm, and **push a minimal `tree.dirty {repo,path}`
+nudge, pull the subtree only if visible**. One watcher per (repo × open dirs),
+fanned out to all clients (not per-connection). The tree does not hide an
+**ignored path**: it lists it and draws the **ignored mark** (ADR-0036 amendment
+2026-09-30; the earlier gitignore filter was removed). Security is
+**confinement** (canonicalize + repo-root prefix — blocks traversal and symlink
+escape) **+ the existing login**; an authenticated operator reads the whole repo,
+secrets included, like any IDE.
 
 ### What Phase 1 does and doesn't feed
 

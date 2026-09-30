@@ -1,6 +1,6 @@
 # A native scheduling command: `ralphy schedule`
 
-Status: proposed.
+Status: accepted.
 
 `docs/scheduling.md` gives tested, copy-pasteable recipes for re-invoking
 `ralphy run` on a timer (Windows Task Scheduler, cron, GitHub Actions), and its

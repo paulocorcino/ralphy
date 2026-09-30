@@ -1,5 +1,9 @@
 # Split planner/executor adapters (`--plan-agent`)
 
+Status: accepted.
+
+Amended by ADR-0030 D3: auto-resume is now the default for every agent, so the example below of an OpenCode executor that stops on a limit no longer holds.
+
 A run may use different adapters for planning and execution: `--agent` selects
 the executor, the new `--plan-agent` selects the planner and **defaults to the
 `--agent` value**, so the single-agent path (`ralphy run --agent claude`) is

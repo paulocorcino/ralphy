@@ -192,6 +192,30 @@ second row.)*
   changes from outside, with "row" in place of "column": a session that ends
   keeps its row, and a closed or detached console leaves it.*
 
+*(Amended 2026-09-30, a fence opens as columns. A button in the fence title
+bar opens every console of the fence as columns in one click, instead of one
+console at a time from the list.)*
+
+- ***The grid follows the stage.*** *The consoles are the fence's members
+  (§6), placeholders included, each read at its stage rect. They are sorted by
+  left edge. A console joins a column when its horizontal overlap with the
+  column's first console is more than half the width of the narrower of the
+  two; otherwise it starts a new column. Only the first console of a column is
+  compared, so a staircase of windows does not chain into one tall column.
+  Columns are ordered by the left edge of their first console, and rows by top
+  edge. The grid is similar to the stage, not equal to it: sizes stay equal
+  (see above).*
+- ***It replaces the columns that are open.*** *Nothing is lost: a console that
+  leaves the columns is only painted at its stage rect again, and the old
+  maximized console stops being maximized.*
+- ***There is no "restore all".*** *Each console is restored with its own
+  restore, one row at a time. A column never changes a stage rect, so every
+  console goes back to where it was.*
+- ***When the button acts.*** *With one console, it is an ordinary maximize.
+  With no console, it is disabled. It is hidden on a detached fence, whose
+  consoles are in the popup, and at a phone width, where only one console is
+  painted. A lock does not stop it: nothing moves on the stage.*
+
 ### 6. A fence is a named, anchored rect; membership is derived
 
 A **fence** is a named rectangle anchored on the stage — `id`, `name`, `rect`,
@@ -549,7 +573,8 @@ when off; ADR-0050's lock amendment has the shape and the wire rule.)*
 
 *(Amended 2026-09-26, columns: nothing here. No wire shape changes, no desk
 field, no cap. The daemon never learns that a console is in a column; it sees
-one ordinary maximize, as it does today. The same holds for rows, 2026-09-29.)*
+one ordinary maximize, as it does today. The same holds for rows, 2026-09-29,
+and for a fence opened as columns, 2026-09-30.)*
 
 ## Rejected alternatives
 
@@ -633,6 +658,16 @@ one ordinary maximize, as it does today. The same holds for rows, 2026-09-29.)*
   that asked for rows.
 - **A second title bar button for Down.** Rejected: the title bar of a column
   is already narrow, and both buttons would open the same list.
+
+*(Added for a fence opened as columns, 2026-09-30:)*
+
+- **A "restore all" button.** Rejected by the operator: the restore of each row
+  already exists, and each console goes back to its own place.
+- **Columns and rows that copy the stage sizes.** Rejected: columns have equal
+  sizes (§5), and a divider model is still not decided.
+- **Adding the fence's consoles to the columns that are open.** Rejected: the
+  result would mix two layouts, and the old columns lose nothing when they are
+  replaced.
 
 ## Consequences
 
@@ -718,3 +753,13 @@ one ordinary maximize, as it does today. The same holds for rows, 2026-09-29.)*
   old flat list, so the key keeps its name.
 - **The daemon is not touched**, as for columns.
 - CONTEXT.md's **Columns** entry gains rows.
+
+## Amendment (2026-09-30): rules recorded from the glossary
+
+These rules were decided earlier and were recorded only in CONTEXT.md. On 2026-09-30 the glossary was cut back to definitions, so the rules move here without change. Nothing new is decided.
+
+- **The floor pans (§1).** The floor is the **pan** surface: dragging it moves the view and never a rect, and dragging a window against the viewport edge auto-pans.
+- **The first landing (§8).** With nothing stored, the view lands on the bounding box of the restored windows; a stored offset that would show no window at all degrades to that same landing, so a smaller screen still lands on work.
+- **A watcher is refused by the client too (§9).** A watcher's keystrokes are refused by the client as well: the browser gates its own input and names what it is watching in the window, a visible state rather than a `confirm()` prompt (issue #335), with the daemon's drop kept as defence in depth.
+- **The key bar is an input surface (§9).** It is not a menu: every button sends bytes down the same path a keystroke takes, so a **watching** window refuses a tap exactly as it refuses a keystroke.
+- **A free console can start with a command.** A free console can start with a command line typed in the Consoles menu: the shell runs it, the session ends with it, and the command is the session's label, so a restart runs it again. Nothing stores the command as a default (decided 2026-09-27, `f0903843`).

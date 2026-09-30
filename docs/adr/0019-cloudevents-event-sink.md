@@ -1,6 +1,6 @@
 # CloudEvents HTTP event sink: the run as a remotely observable stream
 
-Status: proposed (design interview 2026-07-03; not yet implemented).
+Status: accepted (design interview 2026-07-03; implemented).
 
 _Amended by ADR-0024 (2026-07-06): the ring/worker/Layer/handle this ADR describes
 as mirroring the Telegram notifier (ADR-0007) is now a single shared

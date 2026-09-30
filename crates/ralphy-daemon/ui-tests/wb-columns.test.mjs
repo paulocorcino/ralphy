@@ -473,3 +473,38 @@ test("external: a detach removes the fence's consoles; the old first console is 
   assert.equal(none.changed, false);
   assert.deepEqual(none.columns, cols("a", "b", "c"));
 });
+
+// A window at `left, top`, 400 wide and 300 high unless said otherwise.
+const win = (id, left, top, width = 400) => ({ id, rect: { left, top, width, height: 300 } });
+
+test("fromRects: stacked windows are rows, windows side by side are columns", () => {
+  const C = load();
+  // A above B; C to the right; D overlaps C by a quarter of its width.
+  const items = [win("a", 0, 0), win("b", 20, 320), win("c", 420, 0), win("d", 720, 320)];
+  assert.deepEqual(C.fromRects(items), [["a", "b"], ["c"], ["d"]]);
+  assert.deepEqual(items[1], win("b", 20, 320), "input untouched");
+  // Any input order gives the same grid.
+  assert.deepEqual(C.fromRects([...items].reverse()), [["a", "b"], ["c"], ["d"]]);
+  // The first console is the top row of the leftmost column, even when a
+  // lower window starts further left.
+  assert.deepEqual(C.fromRects([win("low", 0, 400), win("high", 50, 0)]), [["high", "low"]]);
+});
+
+test("fromRects: a staircase is compared with each column's first window only", () => {
+  const C = load();
+  // Each step moves 150 px right: 250 of 400 overlap the step before, but the
+  // third step overlaps the first by only 100.
+  const stairs = [win("a", 0, 0), win("b", 150, 100), win("c", 300, 200), win("d", 450, 300)];
+  assert.deepEqual(C.fromRects(stairs), [["a", "b"], ["c", "d"]]);
+  // Exactly half of the narrower width is not enough.
+  assert.deepEqual(C.fromRects([win("a", 0, 0), win("b", 200, 320)]), [["a"], ["b"]]);
+  // A narrow window under a wide one joins it.
+  assert.deepEqual(C.fromRects([win("a", 0, 0, 800), win("b", 500, 320, 200)]), [["a", "b"]]);
+});
+
+test("fromRects: no window, one window", () => {
+  const C = load();
+  assert.deepEqual(C.fromRects([]), []);
+  assert.deepEqual(C.fromRects(undefined), []);
+  assert.deepEqual(C.fromRects([win("a", 10, 10)]), [["a"]]);
+});

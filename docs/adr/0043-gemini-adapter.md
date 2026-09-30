@@ -24,7 +24,7 @@ enumeration, session store, cost model — is in
 [docs/research/gemini-cli-adapter-spike.md](../research/gemini-cli-adapter-spike.md);
 this ADR records the decisions, the spike records the observations.
 
-Status: **proposed** — decisions settled, implementation not started.
+Status: **accepted** — implemented in `ralphy-agent-gemini`.
 Consistent with ADR-0002/0004/0005/0008/0023/0025/0030/0033/0034/0040/0042;
 applies the [ADR-0040](./0040-agent-adapter-onboarding-contract.md) onboarding
 contract for the third time, and amends its wiring inventory (see that file's

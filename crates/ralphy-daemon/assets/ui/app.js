@@ -121,6 +121,8 @@ function shell() {
     fleetPeers: [],
     // The Add a host dialog (#497): its whole state is the wb-hosts.js fold.
     addHost: window.WBHosts.initial(),
+    // The eye button of the password field. Hidden again on each open.
+    hostSecretShown: false,
     // Remove in a row of the Hosts dialog (#497): the host being removed.
     removeHost: { open: false, daemon: "", name: "", rotate: false, busy: false, lines: [], failure: null },
     // Peers with a wake in flight, keyed by daemon_id: a cold WSL boot takes
@@ -2762,6 +2764,7 @@ function shell() {
     openAddHost() {
       const tab = this.sshHosts().length ? "hosts" : "add";
       this.addHost = Object.assign(window.WBHosts.initial(), { open: true, tab });
+      this.hostSecretShown = false;
       this.removeHost.open = false;
       window.WBDaemon.observe("host.aliases", {})
         .then((reply) => {
@@ -2801,6 +2804,12 @@ function shell() {
     hostRowGroup(h) {
       return { name: h.name, state: h.state, diagnosis: h.diagnosis, local: false };
     },
+    // The row already prints the name, so the tooltip holds only the state.
+    // A fault keeps the daemon's diagnosis: it says what to do.
+    hostRowTitle(h) {
+      if (h.state === "reachable") return "Connected";
+      return h.diagnosis || window.WBFleet.groupTitle({ state: h.state, local: false });
+    },
     addHostPick(alias) {
       this.addHostStep({ type: "pick", alias });
     },
@@ -2814,7 +2823,9 @@ function shell() {
     // and `autocomplete="off"` does not stop it. A text field drawn with
     // `-webkit-text-security` hides the characters and is not offered.
     // Without that property the field falls back to a password field.
+    // The eye button shows the characters: a plain text field.
     hostSecretType() {
+      if (this.hostSecretShown) return "text";
       const css = window.CSS;
       return css?.supports?.("-webkit-text-security", "disc") ? "text" : "password";
     },
@@ -5613,6 +5624,24 @@ function shell() {
       WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { cap, unmax: r.unmax, raise: true });
       this.paintColumns();
     },
+    // A fence opened as columns (ADR-0051 §5, 2026-09-30): the grid follows the
+    // members' stage rects and replaces the columns that are open.
+    columnsFromFence(items) {
+      const grid = WBColumns.fromRects(items);
+      const ids = WBColumns.flat(grid);
+      if (!ids.length) return;
+      const old =
+        this.columnIds()[0] ?? document.querySelector("#stage .session-window.maximized")?._deskId;
+      const cap = ids.length >= 2 ? this.columnCap() : 1;
+      this.setColumns(ids.length >= 2 ? grid : []);
+      WBConsole.applyColumns(WBColumns.painted(grid, cap), {
+        cap,
+        unmax: old && !ids.includes(old) ? old : null,
+        raise: true,
+      });
+      this.paintColumns();
+      WBConsole.focusColumn(ids[0]);
+    },
 
     // Ordinal, not id: the row's position in `fenceList()`, read LIVE (the
     // menu's snapshot may be stale). Returns whether it landed.
@@ -6143,6 +6172,9 @@ document.addEventListener("workbench:columns-stale", () => {
 });
 document.addEventListener("workbench:columns-leave", (e) => {
   window.getShell()?.leaveColumns(e.detail.ids);
+});
+document.addEventListener("workbench:fence-columns", (e) => {
+  window.getShell()?.columnsFromFence(e.detail.items);
 });
 document.addEventListener("workbench:desk-restored", () => {
   window.getShell()?.restoreColumns();

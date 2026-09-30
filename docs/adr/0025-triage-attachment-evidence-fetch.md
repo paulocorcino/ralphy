@@ -1,6 +1,6 @@
 # Triage attachment evidence: mechanical fetch with guardrails
 
-Status: proposed.
+Status: accepted.
 
 ADR-0018 made promotion depend on an **evidence gate**: promote and consolidate
 require the problem be *confirmable at source* and *localizable* (`file:line`),

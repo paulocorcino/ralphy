@@ -22,7 +22,7 @@ fn scrollback_ring_is_bounded() {
 /// point — a second workbench sees the session instead of stealing it).
 ///
 /// Spawns the platform shell rather than the helper child bin: `CARGO_BIN_EXE_*`
-/// is visible only to integration tests (CONTEXT.md → Testing conventions), and
+/// is visible only to integration tests (docs/TESTING.md → Platform traps), and
 /// nothing here talks to the child — the session only has to be LIVE.
 #[tokio::test]
 async fn a_watcher_does_not_occupy_the_writer_slot() {

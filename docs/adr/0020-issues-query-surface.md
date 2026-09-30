@@ -1,6 +1,6 @@
 # Issues query surface: `ralphy issues` and the queue snapshot
 
-Status: proposed (design interview 2026-07-03; not yet implemented).
+Status: accepted (design interview 2026-07-03; implemented).
 Depends on ADR-0019 for the `--push` arm and the enriched `queue.built`.
 
 The original ask was "a GraphQL-like interface to query GitHub issues without

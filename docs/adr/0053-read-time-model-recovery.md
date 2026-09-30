@@ -110,3 +110,11 @@ This upholds ADR-0034 D3 unchanged: an unpriceable line contributes `~$?`, never
   (a prospective fix, separately tracked), adding token counters to the run
   snapshot for live in-flight spend (new instrumentation, out of scope), and the
   spend surface's own layout (reversible, no ADR).
+
+## Amendment (2026-09-30): rules recorded from the glossary
+
+These rules were decided earlier and were recorded only in CONTEXT.md. On 2026-09-30 the glossary was cut back to definitions, so the rules move here without change. Nothing new is decided.
+
+- **Delivery attribution.** The cost of a delivery (one issue) is the sum of *its* ledger phase lines: plan + execute, across both adapters on a **split run**, and across **every run** that touched the issue — failed attempts included, joined by `issue`. It is the denominator of "cost per delivered issue", the question ADR-0008 D6 exists to answer. **Run** usage is per-issue (the ledger carries `issue`), so it can be divided by delivery, while **interactive usage** carries no issue (a human session was never "delivering issue #N"): it rolls up as a **project-level overhead**, never rationed across deliveries. So the summary reads two ways: *per delivery* = that issue's run phases; *per project* = Σ deliveries (run) **+** interactive overhead.
+- **Retry burn** is the sum of ledger phase lines whose `outcome` is not success, over total spend. A delivery counts *every* attempt, so the attempts that failed are already inside the number, and retry burn is what names them. A costly delivery and a wasteful one are different diagnoses: `#251 · $84.20 · ⟳3` says the cost is retries, not scope.
+- **Unpriced volume has two causes, kept apart.** A total that could not price some tokens is a **floor** (`$2,350.59+`), never a silently short number. The two causes are disjoint, and the surface keeps them apart because one is actionable and the other is not: a **model the price table does not know** (add it to `pricing.toml`), and a ledger line whose `model` is `unknown` — the line never recorded *which* engine spent the tokens, so there is no key to look up at all. The second splits again by **model recovery** (D4).

@@ -211,3 +211,9 @@ the ledger says *which* criterion was proven; `## Verify` is *how* it was proven
 - **The gate does not replace the acceptance ledger** — `[review-only]` criteria
   remain the human's job at merge time. The gate hardens only the machine-verifiable
   `[verified]` half.
+
+## Amendment (2026-09-30): rules recorded from the glossary
+
+These rules were decided earlier and were recorded only in CONTEXT.md. On 2026-09-30 the glossary was cut back to definitions, so the rules move here without change. Nothing new is decided.
+
+- **Review debt reaches the operator.** The *review-only* lines of the acceptance ledger reach the operator by two carriers: the `needs-human-review` label the runner applies at close, and the totals panel's review-debt line. Both name **attention** debt on a *delivered* issue — a review-only criterion may be fully done; it is never unfinished work.

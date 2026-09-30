@@ -1,5 +1,7 @@
 # Usage-limit handling: auto-resume by default, from git + `plan.md` (never `claude --resume`)
 
+Status: accepted.
+
 When a Ralphy execution session hits a subscription usage/rate limit, the run
 **waits for the reset and resumes the same issue by default**, and it resumes by
 re-running the issue against the committed git history and the live

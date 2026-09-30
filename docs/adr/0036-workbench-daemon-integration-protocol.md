@@ -1,6 +1,12 @@
 # Workbench↔daemon integration: a verb registry over one protocol
 
-Status: proposed (design interview 2026-07-13; not yet implemented).
+Status: accepted (design interview 2026-07-13; implemented).
+
+Extended by ADR-0070 (proposed): §8 splits state by lifetime; ADR-0070 decides who owns each fact the workbench shows, when it is read again, and how a failed read shows.
+
+Amended by ADR-0055 (the Write class gains `image.write`) and ADR-0059 (§8: `SessionInfo` gains `agent_state`), in addition to the dated amendments below.
+
+Amended by ADR-0069 (proposed): §3 allows the daemon read-only git facts through the shared `ralphy-git-read` crate, and nothing else.
 
 The mock workbench shell (`mocks/workbench-shell/`) needs a real backend: the
 browser must drive the resident **daemon** (ADR-0032), and the daemon must reach
@@ -1128,3 +1134,11 @@ rejected. The workbench draws a marked row faded, as VS Code does.
   no nudge (`.git` is noise to the watcher), so it shows at the next re-list.
 - **Wire.** The field is additive. An older peer sends no `ignored`, and its
   rows are drawn as before.
+
+## Amendment (2026-09-30): rules recorded from the glossary
+
+These rules were decided earlier and were recorded only in CONTEXT.md. On 2026-09-30 the glossary was cut back to definitions, so the rules move here without change. Nothing new is decided.
+
+- **A CLI refusal is not an error frame.** A spawned command's frames are `output` (raw byte chunks, never line-aligned, so any "last line" fold must buffer across them), then exactly one terminal frame. A CLI refusal is `{"status":"exited","code":N}` after its complaint streamed as `output`, not an error frame, so a client that only watches the error branch never sees a refusal (#331).
+- **Seed is not a fallback.** Since #300 the seed is reachable only under `file://` (`WBMode.seedAllowed()`), because a daemon-mode transport failure must surface as an error rather than be masked by fiction. The rule is checkable and pinned: **no seed inside `assets/ui/`**. A seed copy may drift from the thing it imitates; that is what makes it cheap.
+- **Resume is not a retry.** Resuming the sockets is distinct from the fixed retry each subscription already does on a close it *heard*, and distinct from **waking** a peer daemon, which is about another machine.

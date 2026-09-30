@@ -5367,7 +5367,7 @@ fn shell_locks_consoles_and_fences() {
         "function setFenceLock(",
         "function applyLocksFromMirror(",
         "actions.append(colBtn, fullBtn, maxBtn, restartBtn, lockBtn, closeBtn)",
-        "tools.append(tile, lock, detach, drop)",
+        "tools.append(tile, columns, lock, detach, drop)",
     ] {
         assert!(
             js.contains(pin),
@@ -5431,8 +5431,8 @@ fn shell_locks_consoles_and_fences() {
         "a locked fence shows no resize bands"
     );
     assert!(
-        css_rule_body(&css, ".fence-head {").contains("8.5rem"),
-        "the head's reserve must make room for the fourth tool"
+        css_rule_body(&css, ".fence-head {").contains("10.5rem"),
+        "the head's reserve must make room for the fifth tool"
     );
     // The title bar's controls stack ABOVE the resize bands: the NE corner
     // band (26px under a coarse pointer) covered four fifths of the close
@@ -5584,6 +5584,12 @@ fn shell_arranges_into_the_fence() {
     assert!(
         rule("\n.fence-arrange {").contains("pointer-events: auto"),
         "the fence's arrange button must take pointer events (#342)"
+    );
+    // The same trap for the button that opens the fence as columns
+    // (ADR-0051 §5, 2026-09-30).
+    assert!(
+        rule("\n.fence-columns {").contains("pointer-events: auto"),
+        "the fence's columns button must take pointer events"
     );
     // The window floor lives in TWO files — the CSS declaration and the
     // constants `arrangeFence` relaxes it against. Nothing else notices when

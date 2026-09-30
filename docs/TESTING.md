@@ -2,8 +2,7 @@
 
 A test exists to fail when the behavior it names breaks, and only then. This
 file says what that requires in Ralphy. Where tests live and the CI gate are in
-[AGENTS.md](../AGENTS.md). Measured platform traps are in
-[CONTEXT.md → *Testing conventions*](../CONTEXT.md#testing-conventions).
+[AGENTS.md](../AGENTS.md). Measured platform traps are in [Platform traps](#platform-traps) below.
 
 ## Words
 
@@ -136,3 +135,76 @@ The suite is bound by process creation on Windows (see
   its first comment says so.
 - Wait on a condition with a bounded timeout. Inject short timeouts.
 - Build fixture repos with the fewest `git` calls that reach the needed state.
+
+## Platform traps
+
+Each one was measured in this repo. A test that ignores it passes for the wrong
+reason or fails for no reason.
+
+- **One Windows filesystem action may produce multiple settled watcher nudges.**
+  `notify` can split one create into multiple debounced batches, each correctly
+  mapped to the same watched directory. Assert at least one correctly stamped
+  nudge and that every received nudge names the expected repo/path; never assert
+  exact cardinality for one create.
+- **Subprocess/PTY plumbing is tested against a dedicated helper bin**, located
+  via `CARGO_BIN_EXE_<name>` from an integration test under `tests/` — see
+  `ralphy-adapter-support`'s `headless_test_child` driven by `tests/headless.rs`.
+  `CARGO_BIN_EXE_*` is only reliable in integration tests (not lib unit tests),
+  and shell-script children are not portable to Windows CI; plans that test
+  child-process behavior should follow this pattern.
+- **A PTY helper that reads `BufRead::lines()` cannot observe raw ETX (`0x03`)
+  until a later newline on Windows ConPTY.** An interrupt test child must consume
+  bytes and exit on ETX, so the test proves the daemon delivered raw Ctrl+C to
+  the native child without replacing terminal semantics with a server-side kill.
+- **Aborting an in-process Axum `serve` task does not abort WebSocket upgrade
+  tasks it already spawned.** A proxy-restart test must fire the router shutdown
+  watch before aborting the serve task; process death supplies that fan-out in
+  production, but task cancellation alone leaves the old attachment busy.
+- **A browser-test geometry assertion must prove the element was VISIBLE when
+  it measured.** An Alpine `x-show` flip is not visible to the very next
+  `evaluate`, and a hidden element reports every dimension as `0` — so
+  `scrollWidth <= clientWidth` PASSES vacuously on a box that never rendered
+  (measured in #331: a clipping check "passed" reading `0 <= 0`). Gate the
+  `wait_for_function` on `offsetParent !== null && clientWidth > 0`, and repeat
+  the `clientWidth > 0` guard inside the assertion itself — the wait proves
+  when, the guard proves what.
+- **Tree selection after a write CONVERGES; it does not land.** The daemon's own
+  `tree.dirty` for the directory arrives after the byte-op, and that reconcile
+  pass re-applies a selection it snapshotted at its own start — so the node a
+  create/duplicate just revealed is briefly displaced before settling. Measured in
+  #362: a point read right after the new row appeared saw the PREVIOUS selection
+  (`made.txt`, then `deep/revealme`) while a bounded wait saw the right one every
+  time. Assert the settled state with `wait_for_function`, never an instant read.
+  Separately, Wunderbaum paints `wb-active` a frame or more AFTER `setActive()`,
+  so `classList.contains('wb-active')` read straight after the row appears is a
+  false red even when the model is already correct — assert the tree's
+  `getActiveNode()`, or wait for the class.
+- **A terminal's scroll position is `term.buffer.active.viewportY`, never
+  `.xterm-viewport.scrollTop`.** The vendored xterm renders through a
+  monaco-style `.xterm-scrollable-element` that scrolls by transform, so the
+  viewport element never scrolls natively: measured in #337 with 400 lines
+  written, `buffer.active.baseY == 389` while
+  `scrollHeight === clientHeight === 342` and `scrollTop` stays `0`. A
+  `scrollHeight > clientHeight` precondition can therefore never become true
+  (it times out), and — worse — a `scrollTop` oracle reads `0` in BOTH
+  directions, so a wheel test asserting "the terminal scrolled" and "the
+  terminal did not scroll" passes vacuously either way. Gate the precondition
+  on `baseY`, assert on `viewportY`.
+- **`overflow: hidden` does not refuse a programmatic scroll — it only removes
+  the scrollbars.** Measured in #338: `el.scrollLeft = 250` on an
+  `overflow:hidden` box reads back `250` *and* fires a `scroll` event, exactly
+  as `overflow:auto` would. So a listener on the scroll container is a complete
+  hook for programmatic pans too, and code must not "protect" itself from a
+  write it assumes would clamp to `0` — that assumption cost this repo a
+  `reveal()` that refused to move the plane at all while a console was
+  maximized.
+- **A Python smoke script reading a Rust child's stdout on Windows must decode
+  it as UTF-8 explicitly.** `subprocess.run(..., text=True)` decodes via the
+  Windows *console codepage* (cp1252 on a pt-BR/en-US default install), not
+  UTF-8 — a non-ASCII byte the Rust side emitted (e.g. the `→` in `ralphy
+  daemon add`'s "registered X → path") comes back mangled with no exception,
+  so a downstream `str.split`/`in` match silently fails. Pass
+  `encoding="utf-8"` to `subprocess.run`, and call
+  `sys.stdout.reconfigure(encoding="utf-8")` once at the top of the script if
+  it will itself `print()` a non-ASCII string (e.g. one echoed back from that
+  output) — the default stdout write raises `UnicodeEncodeError` otherwise.

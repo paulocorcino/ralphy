@@ -2,6 +2,8 @@
 
 Status: accepted and implemented (#89).
 
+Amended by ADR-0027: `promote` now posts an evidence stamp, so §2's "no comment" no longer holds.
+
 Ralphy's coupling to issue *format* is already minimal: the body goes verbatim
 into `.ralphy/issue.json` and the planning agent interprets free prose,
 returning `Feasible: no` when the spec is not executable. The only structure

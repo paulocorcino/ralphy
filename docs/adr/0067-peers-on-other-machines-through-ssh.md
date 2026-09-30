@@ -7,6 +7,8 @@ Linux host and a macOS host (see "Spike results"). §13 lists what is still open
 for the implementation. Amended 2026-09-29: the add flow can install Ralphy on
 the host, after the operator allows it (see "Amendment").
 
+Extended by ADR-0070 (proposed): an unreadable peer store is a failure, never "no peers" (D4); peers' state is read again on the ADR-0070 D2 events.
+
 An operator has computers other than the one that serves the workbench: a VPS
 reached over SSH, an old MacBook on the home network, maybe a second Windows
 computer. They want the repos on those computers in the same workbench, the

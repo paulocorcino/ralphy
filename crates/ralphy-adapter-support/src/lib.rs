@@ -15,13 +15,13 @@
 //! bend to fit." That prohibition is about a shared **`Outcome`-detection**
 //! runner — the semantic completion protocol each vendor must shape itself. This
 //! crate extracts **only mechanical plumbing**, which is identical by nature, not
-//! by imposition. It owns **no** completion protocol and produces **no**
-//! `Outcome`: the headless runner hands back raw, still-separate stdout and
-//! stderr; the JSON runner returns whatever the adapter's own validation closure
-//! parses; the auth/limit scaffolds return a `bool`/`Option`, never an `Outcome`.
-//! Each adapter's `classify_*` function still maps captured output onto its own
-//! `Outcome`, and every vendor-specific decision (which markers signal auth, which
-//! reset-string format to parse) stays in the adapter. This extraction is the
+//! by imposition. It owns **no** completion protocol: the headless runner hands
+//! back raw, still-separate stdout and stderr; the JSON runner returns whatever
+//! the adapter's own validation closure parses; the auth/limit scaffolds return a
+//! `bool`/`Option`. The one `Outcome` it produces is [`classify`], the shared
+//! signal→`Outcome` ladder of ADR-0023, fed with [`CompletionSignals`] each
+//! adapter extracts itself. Every vendor-specific decision (which markers signal
+//! auth, which reset-string format to parse) stays in the adapter. This extraction is the
 //! mechanical floor *beneath* the seam ADR-0002 protects, not a violation of it.
 //! (This rationale is recorded here so a future architecture review does not
 //! re-flag the shared crate as an ADR-0002 violation.)

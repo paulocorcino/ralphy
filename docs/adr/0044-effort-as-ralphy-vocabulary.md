@@ -18,8 +18,8 @@ research doc records the observations, this ADR the decisions. Amends ADR-0004
 D3, ADR-0005 D3, and ADR-0041 D5a. Consistent with ADR-0002 (core/adapter
 boundary) and ADR-0039 (event vocabulary owned by `emit`).
 
-Status: **proposed** — decisions settled from the design session and the probes;
-implementation across the adapters is a follow-up (see *Wiring* and the residual
+Status: **accepted** — decisions settled from the design session and the probes;
+implemented across the adapters (see *Wiring* and the residual
 probes).
 
 ---

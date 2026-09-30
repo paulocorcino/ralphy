@@ -1,5 +1,7 @@
 # Token usage tracking: per-adapter harvest, tokens as the truth, priced at read-time
 
+Amended by ADR-0034 (D8: network price sync is now allowed, from models.dev, cached, off the hot path) and extended by ADR-0053 (read-time model recovery).
+
 Ralphy gains the ability to account for the token consumption of every agentic
 operation it drives, accumulate it durably per project, and later answer "how
 efficient is this task versus what it cost" and "which developer spent more for
