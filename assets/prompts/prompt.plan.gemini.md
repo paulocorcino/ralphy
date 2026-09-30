@@ -61,9 +61,9 @@ on one.
   you write runs HERE — match them to this OS and these tools. Never assume a
   tool exists because it is common (a `netstat`, a bare `python3`); verify it is
   present before a step depends on it.
-- `CLAUDE.md`, `CONTEXT.md`, `docs/adr/` — project rules and domain. Read what
-  is relevant; they define the project's language, toolchain, and how tests
-  and builds run.
+- `CLAUDE.md`, `AGENTS.md`, `CONTEXT.md`, `docs/adr/`, and the docs they point
+  to — project rules and domain. Read what is relevant; they define the
+  project's language, architecture, toolchain, and how tests and builds run.
 
 ## Your task
 1. Read `.ralphy/issue.json`, `.ralphy/handoffs.md` and
@@ -206,6 +206,13 @@ on one.
   becomes a load-bearing breadcrumb the next session inherits. If you cannot
   reach the source, mark the reference `(unverified — from <where you saw it>)`
   rather than stating it plainly.
+- Get each fact from its owner. When a step adds a new way to get a fact — an
+  outside call (a vendor CLI, an HTTP API), a new path between components, a
+  watcher or timer, or a second computation of something the product already
+  knows — check whether the project's docs name an owner for that fact (an
+  architecture map, a fact index, an ADR). If they do, the step reads it from
+  that owner and cites the doc; a reason to bypass the owner goes under
+  `## Decisions` with a one-line why.
 - Name the exact expected value in every command-backed oracle: a "Done when"
   bullet or `[verified]` evidence that runs a command must state the literal
   value it asserts — the exact status code, output substring, or count —
