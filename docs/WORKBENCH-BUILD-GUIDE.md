@@ -1,858 +1,231 @@
-# Workbench shell — build guide
+# Workbench build guide
 
-**What this document is.** A *living implementation guide* for the daemon web
-workbench UI — the shell served at `/` and embedded from
-`crates/ralphy-daemon/assets/ui/`. It is **not an ADR**: ADRs
-freeze one decision (see [ADR-0032](adr/0032-daemon-mode-supervised-launcher.md)
-for daemon mode, [ADR-0035](adr/0035-daemon-ui-visual-language.md) for
-the visual language). This guide is meant to change alongside the shell, and it
-records the *idea behind* the shell so the build keeps its intent.
+Read this before you change `crates/ralphy-daemon/assets/ui/`. It holds what
+the code and the ADRs do not: the procedure for each vendored library, the
+rules for touch input, and the rules a change to the page keeps. The UI gate
+commands are in [AGENTS.md](../AGENTS.md). Traps for a browser test of the page
+are in [TESTING-TRAPS.md](TESTING-TRAPS.md#the-workbench-page-in-a-browser).
 
-**How to keep it updated.** When a new interaction or panel is added to the shell,
-add its intent + its backend mapping here (or, if it's a module, point at that
-file's header comment — don't duplicate). When a decision hardens, promote it to
-a real ADR and link it from here.
+## Who owns each fact
 
-> **Scope of this file.** It documents the **shell foundation** — the pieces
-> established first: the layout, the project accordion, the file tree, and the
-> `workbench:action` seam. The later modules (file viewers, floating consoles,
-> Runs panel, run verbs, branch switcher, Settings/Security)
-> each carry their own header comment describing intent and backend sources; this
-> guide points at them rather than restating.
+| Fact | Owner |
+|---|---|
+| The contract between the page and the daemon: verbs, effect classes, the tree watch | [ADR-0036](adr/0036-workbench-daemon-integration-protocol.md) |
+| Colours and type. The tokens are in `styles/01-base.css` `:root`; a new colour is an amendment | [ADR-0035](adr/0035-daemon-ui-visual-language.md) |
+| The tabbed canvas, with the Consoles tab fixed | [ADR-0037](adr/0037-workbench-canvas-tabbed-workspace.md) |
+| Desk layout and locks are daemon state | [ADR-0050](adr/0050-desk-layout-is-daemon-state.md) |
+| The stage is a plane; fences; maximize | [ADR-0051](adr/0051-consoles-stage-plane-and-fences.md) |
+| The Runs panel feed (the run snapshot) | [ADR-0047](adr/0047-run-state-snapshot-channel.md) |
+| Which fact the page may show, and a failed read shows `—`, never `0` | [ADR-0070](adr/0070-the-workbench-shows-only-what-it-has-read.md) |
+| UI text | [ADR-0065](adr/0065-the-workbench-written-voice.md) |
+| How the assets are gated | [ADR-0057](adr/0057-the-workbench-asset-contract.md) |
+| The intent of one module and the Ralphy sources it mirrors | the header comment of that `wb-*.js` file |
 
----
+## The seam: the page states intent, the daemon acts
 
-## The core idea: the UI only *intents*
+A gesture (open, rename, delete, save, console-open, branch-switch,
+setting-change) becomes one `workbench:action` event through `WB.emit(action,
+detail)` in `app.js`. The page itself does not touch the file system, git or an
+agent. `wb-daemon.js` turns an action into a daemon verb (`ACTION_TO_VERB`) and
+routes the daemon's pushes back into the page.
 
-The shell performs **nothing** destructive. Every gesture — open, rename, delete,
-create, save, console-open, branch-switch, setting-change… — is turned into a
-single browser event and nothing else. A backend engine subscribes and does the
-real work (touch the filesystem, spawn an agent, run `git checkout`).
+The live list of actions is the code:
 
-This is the seam the real product must preserve: **the web UI is a pure intent
-surface; the daemon is the executor.** It mirrors ralphy's own ethos (it proposes,
-a human/backend disposes) and keeps the browser incapable of harm on its own.
-
-### The seam contract
-
-`window.WB.emit(action, detail)` (in [app.js](../crates/ralphy-daemon/assets/ui/app.js)) is the one exit point:
-
-```js
-document.dispatchEvent(new CustomEvent("workbench:action", {
-  detail: { action, ...detail, at: "<ISO timestamp>" }
-}));
-```
-
-A backend integration is therefore just:
-
-```js
-document.addEventListener("workbench:action", (e) => {
-  const { action, ...rest } = e.detail;   // e.g. "rename", { project, path, ... }
-  // route to the daemon (WebSocket / fetch) and perform the real action
-});
-```
-
-**Discover the live event catalogue by grepping** — it grows with the shell, so a
-static list here would rot:
-
-```
+```sh
 grep -rn "WB.emit(" crates/ralphy-daemon/assets/ui/*.js
 ```
 
-Each call site names the `action` and the payload keys it carries (project, path,
-etc.). Treat those keys as the wire contract when wiring the backend.
+An action name and its payload keys are a wire contract. Change both sides in
+the same commit, or leave both unchanged.
 
----
+## Vendored libraries
 
-## Foundation pieces (what this guide covers in full)
+Every library is loaded from `assets/ui/vendor/`; the page loads nothing from a
+CDN. `include_dir!` embeds and serves everything under `assets/ui/`, so a build
+input (a `package.json`, a build script) lives outside that directory.
 
-### Layout & chrome
-A CSS-grid shell of **four columns**: **icon rail · sidebar · canvas · Runs panel**
-(with the topbar spanning the top row). The chrome panels (topbar/rail/sidebar/runs)
-sit on `--chrome`, one subtle step above the canvas ground `--bg`, so the dotted
-canvas reads as the "floor" and the panels as framing. The **sidebar and Runs tracks
-collapse to `0`** (they're `overflow:hidden`) — showing or hiding either is a pure
-`grid-template-columns` flip driven by body classes (`side-collapsed`, `runs-open`),
-and the whole thing animates. All colours are tokens from
-[ADR-0035](adr/0035-daemon-ui-visual-language.md), declared once in
-[01-base.css](../crates/ralphy-daemon/assets/ui/styles/01-base.css) `:root`. **Do not hand-pick hex values** — use the tokens;
-a genuinely new colour is an amendment to ADR-0035.
+**Load order.** `vendor/monaco/vs/loader.js` installs a global `define` with
+`define.amd`. It must load AFTER every UMD library on the page (marked,
+DOMPurify, mermaid, Wunderbaum, xterm and its addons). Otherwise they register
+as anonymous AMD modules and never set their globals.
 
-### Rail toggles, account menu & the auth gate
-The icon rail is **interactive chrome** (handlers in [app.js](../crates/ralphy-daemon/assets/ui/app.js)): **Projects**
-and **Changes** (`showSideView('projects'|'changes')`) switch the sidebar's
-**view** — clicking the button of the view already showing collapses the sidebar,
-which is the gesture the pre-#317 `toggleSide` had — **Runs** (`toggleRuns`) reveals the
-right-hand panel, **Kanban** (`toggleKanban`) opens the tasks board as a canvas
-overlay (module: [wb-kanban.js](../crates/ralphy-daemon/assets/ui/wb-kanban.js) — see its section below), and a
-**Settings gear** pinned to the rail's bottom (`.rail-spacer` +
-`openSettings`) opens the Settings modal. There is **no "Sessions" button** — live
-sessions surface as the floating consoles on the Consoles tab.
+### Monaco (pinned `0.56.0`)
 
-The **topbar avatar** is an account menu (`avatarMenu`): **Security settings**
-(`openSecurity`) and **Log off** (`logOff`). Auth is modelled **opt-in**, faithful to
-[ADR-0032 §4](adr/0032-daemon-mode-supervised-launcher.md): the Security
-modal (content + real config sources in [wb-settings.js](../crates/ralphy-daemon/assets/ui/wb-settings.js)) covers the
-access token, an optional PBKDF2 password, and TOTP 2FA — enroll shows a **one-time**
-QR + `otpauth://` provisioning URI (vendored `qrcode`, offline), and **revoke =
-delete the seed** because ralphy has no rotate verb today. "Require login" is gated
-on TOTP being enrolled (the session factor).
-
-**The login gate** (`.login-gate`, shown on `!authed`, with `body.locked` blanking the
-chrome) is a **fully opaque** overlay — deliberately, not a dim scrim: the real
-daemon never renders the app until `/api/login` succeeds, so there is nothing behind
-to peek at. The gate is the shell's own — a 6-digit code + optional password inside
-`index.html` (there is no separate server-rendered login page since #200). Backend
-wiring: `authed` becomes "holds a valid `ralphy_session` cookie"; the form POSTs
-`/api/login`.
-
-**The stage is a plane, and nothing reflows to fit it (#336):** `#workspace` is the
-**viewport**, an `overflow:auto` box over one sized child, `#stage`, which holds the
-windows. `stageExtent()` in [wb-console.js](../crates/ralphy-daemon/assets/ui/wb-console.js)
-sizes the stage to the bounding box of the window rects unioned with the viewport plus
-a margin, from an origin pinned at 0,0. A panel toggle or a browser resize therefore
-changes only the scroll offsets — no window is ever moved or resized on the operator's
-behalf. Maximize is the one thing pinned to the frame rather than the plane
-(`--max-left`/`--max-top` + `#workspace.maxlock`). See
-[ADR-0051](adr/0051-consoles-stage-plane-and-fences.md) §§1–5; the `clampAll`
-`ResizeObserver` this section used to describe is deleted.
-
-### Tabbed canvas (Consoles tab + file tabs)
-The canvas is a **tabbed workspace**, not a single view. A tab strip (`.tabbar`)
-runs across the top: tab 0 is the fixed **Consoles** tab (never closes) and hosts the
-floating agent consoles; every opened file rides in after it as a **closable** tab.
-The console controls (**New console ▾**, **Arrange**) are pinned at the strip's
-right edge, above the workspace, so a floating console can never cover them. Tab
-state + lifecycle live in [app.js](../crates/ralphy-daemon/assets/ui/app.js) (`tabs`, `active`, `activate`,
-`openTab`, `closeTab`); the panes are owned by the viewer / console modules. On
-open, the pane is chosen by extension (`classify`): markdown → rendered, an
-allowlisted image → the image pane ([ADR-0049](adr/0049-workbench-serves-image-bytes.md)),
-other binaries → refused (`open-refused`), everything else → source. This shape ("tabbed workspace,
-Consoles fixed") is recorded in [ADR-0037](adr/0037-workbench-canvas-tabbed-workspace.md).
-
-### Sidebar views: Projects and Changes
-The sidebar hosts **two views** the rail switches between (`sideView`, #317):
-**Projects** (the accordion below) and **Changes** (`.changes-view`) — the open
-project's working-tree change set, with a toolbar (`.chg-toolbar`), the sync row
-(`.sync-row`, #316), the staged/unstaged groups (#315) and a message box
-(`.chg-compose`, inert until the write controls land). Changes is scoped to
-`openSlug` alone; it was a section *inside* the accordion until PRD #297's own
-trigger — "if Changes grows a toolbar it outgrows a section" — fired.
-
-The change **count** did not move into the view: it rides the Projects row as
-`.chg-badge` (`projectBadge`), so it stays readable with no click and no
-navigation. It renders only for a slug whose count was actually read; a failed
-read is `—`, never `0`. There is deliberately **no badge on the rail** — that
-would claim a cross-repo aggregate nothing computes.
-
-### Project accordion (sidebar)
-`projects` is the daemon's repo list (a mirror of `/api/repos`): each has a
-`slug`, `branch`, `state` (daemon reachability: live/idle/offline), `remote`
-(github/local), and a file `tree`. The list is a **single-open accordion**:
-opening a project lifts it to the top (`order:-1`), hides the siblings
-(`.projects.has-open`), and mounts its tree in the freed column. Backend wiring:
-replace the seeded `projects` array with the repo list from the daemon.
-
-Two per-row indicators are **orthogonal** and must not be conflated: the **status
-dot** (`.dot`, `dotClass`) is daemon-reachability *right now* (green live / grey
-idle / red offline), while the **provenance icon** (`.remote`, `bi-github` vs
-`bi-hdd`, before the name) is *where the repo lives* (GitHub-backed vs local-only).
-A local-only repo can be live; a GitHub repo can be offline. The header also shows a
-**count badge** (`.count` = `projects.length`) — how many repos the daemon located.
-
-**Switching branch.** The current branch renders as a clickable chip
-(`.branch-chip`) on the project row, carrying the row's `.chg-badge`. Collapsed,
-the chip is only the count (the branch is in the row's title) and inert; on the
-open row it grows the branch and → it opens the **branch switcher**
-(`.branch-modal`, `openBranchModal`): a filtered list of local branches (current
-pinned + ticked) plus a *create-from-current* row when the typed name is new.
-Switching or creating emits `branch-switch {branch}` / `branch-create {name,from}`;
-the daemon runs the real `git checkout`. The chip is **gated on reachability, not
-remote** (`canSwitchBranch` → `state !== "offline"`): a local-only repo is still a
-git checkout with branches, so only an *unreachable* repo makes the chip inert.
-
-### File tree (Wunderbaum)
-The tree is a real, mature, dependency-free library — **[Wunderbaum](https://github.com/mar10/wunderbaum)**
-(mar10; the jQuery-free successor to Fancytree) — chosen over jsTree specifically
-to avoid jQuery. It loads from a **nested JSON `source`** (`folder`/`children`),
-which is exactly the shape a backend should deliver. Backend wiring: `fetch` the
-repo tree and **lazy-load subfolders** (Wunderbaum supports it); the gestures
-already emit on the seam.
-
-Gotchas already paid for (keep them):
-- Wunderbaum puts the `wunderbaum` class **on the host element itself** → theme
-  selectors are compound: `.wb-host.wunderbaum`, not descendant.
-- A node has **no `isFolder()`** — use `node.folder || node.children`.
-- The tree is **virtualized** → the host needs a real height (the flex-column
-  chain in `styles/02-rail-sidebar.css` provides it).
-- `mar10.Wunderbaum.getNode(event)` resolves a node from a DOM event (right-click).
-
-### File-type icons
-Resolved by extension in [app.js](../crates/ralphy-daemon/assets/ui/app.js): coloured **Devicon** font glyphs for
-known types (ts/js/json/rs/prisma/css/html…), **Bootstrap Icons** for folders and
-the neutral fallback. Brand colours that go near-black on the dark ground
-(Markdown, Rust) get a light-tone class override in `styles/02-rail-sidebar.css`.
-
-### Right-click context menu
-Built in [app.js](../crates/ralphy-daemon/assets/ui/app.js) (`#ctxmenu`): Open, Rename (inline, also F2), Copy
-relative path (also writes clipboard), New file/folder, Delete. Every item calls
-`WB.emit(...)` — the menu is the clearest example of "gesture → intent".
-
-### Themed scrollbars
-Every scroll surface is themed to the warm-dark palette (`--border` thumb,
-`--border-focus` on hover, transparent track): the sidebar and the Wunderbaum
-viewport (which needs its own rule — it lost the page default), the **file viewers**
-(the markdown `.md-scroll` pane; Monaco paints its own scrollbars, so it gets the
-colour via `.monaco-scrollable-element > .scrollbar > .slider` rather than the
-`::-webkit-scrollbar` geometry), and the **Runs panel** scroll areas (`.plan-md`, `.branch-list`). No native
-scrollbar is left unstyled.
-
-### Typography
-The chrome is monospace (terminal feel). **Rendered prose** — the plan.md in the
-Runs panel — uses a UI sans (`--font-ui`) so it reads well, while code spans/blocks
-stay monospace (`--font-mono`). Both tokens live in [01-base.css](../crates/ralphy-daemon/assets/ui/styles/01-base.css) `:root`.
-
-One Wunderbaum gotcha worth its own line: the tree swaps to its `--wb-*-grayscale`
-vars when it **loses focus**, and their defaults are near-white — the theme
-overrides them to the same warm tone so a selected row doesn't flash white on blur.
-
-### Vendored libraries (loaded locally, no CDN at runtime)
-`alpine.min.js` (reactivity), `lucide.min.js` (chrome icons — prune to a subset
-when the icon set stabilises), `wunderbaum/` (tree), `devicon/` +
-`bootstrap-icons/` (file icons). Later modules added `monaco/`, `marked`,
-`mermaid`, `dompurify`, `qrcode` — see their modules.
-
-#### Vendored xterm (version UNRECORDED)
-`vendor/xterm.js` + the `fit`, `webgl` and `web-links` addons arrived with #162
-and #190, and — unlike Monaco below — **no version, upstream URL or update
-procedure was ever recorded**. That gap has a cost: it is why OSC 52 (the
-clipboard-write escape) is implemented by hand in `wb-console.js` through
-`term.parser.registerOscHandler(52, …)` instead of vendoring
-`@xterm/addon-clipboard`, since matching the addon's version to a bundle whose
-version nobody knows is guesswork. Recording the version — recoverable by diffing
-against the npm tarballs — would be worth more than the feature that exposed the
-gap.
-
-Whoever next bumps the bundle must re-check the four upstream behaviours the
-console leans on: `parser.registerOscHandler`, `attachCustomKeyEventHandler`, the
-`contextmenu` → `rightClickHandler` path (it parks the hidden textarea under the
-pointer with the selection in it, which is what makes the browser's own **Copy**
-work over a WebGL-rendered terminal), and the `copy` listener on the element.
-
-#### The console's clipboard contract
-- **Copy** — the browser's native context-menu Copy (upstream xterm, above), or
-  `Ctrl+Insert`. NOT `Ctrl+Shift+C`: on Chrome and Edge that is the DevTools
-  inspector accelerator and a page cannot take it back.
-- **Paste** — native (`Ctrl+V` into xterm's hidden textarea → `term.onData`,
-  so it inherits the #335 read-only gate), or the key bar's paste key, which is
-  the ONE JS call to `readText()` — inside the operator's tap, and feeding
-  `term.paste` so it rides the same `onData` gate. Never on a path an agent can
-  trigger: that would hand a remote agent the operator's clipboard. The Rust pin
-  counts the call sites.
-- **OSC 52 is write-only and refused twice** — during the daemon's scrollback
-  replay (the replay is raw bytes, so an old copy would rewrite the clipboard on
-  every reconnect, takeover and reattach) and in a watcher (the same bytes reach
-  every attached window; the one holding the baton owns the clipboard). The text
-  is scrubbed of control bytes and of a trailing newline, which would otherwise
-  turn a mis-paste into an execution.
-- Proven end to end by `tests/wb_console_clipboard.py`.
-
-#### Vendored Crepe (pinned `7.22.1`) — the one asset that is BUILT
-The note card's editor (ADR-0064 §6) is Milkdown Crepe, bundled lean into
-`assets/ui/vendor/crepe/{crepe.js,crepe.css,LICENSE}` — 706 KB + 20 KB, seven
-features, no CodeMirror (Monaco is this workbench's one editor engine) and no
-KaTeX. It is the only vendored asset that cannot be recovered by copying a
-tarball, so it carries a **recipe**:
-`crates/ralphy-daemon/vendor-build/crepe/` (`npm ci && node build.mjs`, by
-hand, never in CI). The recipe lives OUTSIDE `assets/ui/` because `include_dir!`
-embeds and serves everything under it — see that directory's README. The first
-line of each artefact is a provenance header naming the versions and the feature
-list, pinned by `vendored_crepe_states_its_recipe` in `lib.rs`.
-
-#### Vendored Monaco (pinned `0.56.0`)
-Monaco is the workbench's **one** editor engine (#308; CodeMirror 5 was removed in
-the same change). It lives at `assets/ui/vendor/monaco/vs/`, copied from the
-`monaco-editor@0.56.0` npm tarball's `min/vs/**` — the **minified AMD**
-distribution only — with these exclusions:
+Monaco is the one editor engine of the workbench. `vendor/monaco/vs/` is the
+`min/vs/**` directory of the `monaco-editor@0.56.0` npm tarball (the minified
+AMD build), with these exclusions:
 
 | Excluded | Why |
 | --- | --- |
-| `language/**` | a redundant 7.7 MB standalone-services copy of the four LSP modes |
-| `nls/lang/**` | localizations (the whole `nls/` dir, in 0.56) |
+| `language/**` | a second, 7.7 MB copy of the four LSP modes |
+| `nls/**` | localizations |
 | `*.d.ts`, `*.map` | types and sourcemaps |
-| `assets/{css,html,json,ts}.worker-*.js` | the four language workers (8.8 MB, `ts.worker` alone 7.0 MB) — language *services* are out of scope, and `wb-monaco.js` disables all four mode configurations at boot so nothing requests them |
-
-`assets/editor.worker-*.js` and `assets/editorWebWorkerMain-*.js` are **kept**:
-they are the BASE editor worker. Nothing on either page sets
-`globalThis.MonacoEnvironment` — `vs/workers-*.js` reads it, finds it undefined,
-and falls through to the per-call `createWorker()` factory, which is what
-actually resolves the base worker from those two files. **Do not "fix" a worker
-problem by setting `MonacoEnvironment.getWorkerUrl`**: that would route the four
-surviving 200-byte language-worker shims (`vs/{ts,css,html,json}.worker-*.js`,
-which `require.toUrl` to `./assets/<name>.worker-*.js`) at paths deliberately not
-vendored. They are inert today because `wb-monaco.js` disables the mode
-configurations that would request them.
-
-The result is **113 files / 5,570,129 bytes (5.31 MiB)**, and embedding it cost the
-daemon crate's clean build +8.5% (8.47s → 9.19s).
-
-0.56 ships **content-hashed** chunk filenames (`editor-KLE6jdfb.js`,
-`rust-Bfetafyc.js`, …), so the exclusion rule above is prefix/directory-based on
-purpose: a future Monaco bump must **re-derive the file set from the tarball**, not
-diff filenames. The embed-pin test
-(`ralphy-daemon` `src/lib.rs` `monaco_replaced_codemirror_in_the_embedded_ui`)
-asserts by prefix and fails if a language worker sneaks back in.
-
-Individual `basic-languages` grammars are deliberately **not** pruned: they are
-lazily-loaded top-level chunks reached through a map inside the minified
-`basic-languages/monaco.contribution.js`, so deleting one leaves the language
-registered and 404s on open. All ~90 Monarch grammars together are ~600 KB.
-
-Boot lives in [wb-monaco.js](../crates/ralphy-daemon/assets/ui/wb-monaco.js):
-one memoised `require(["vs/editor/editor.main"])`, the ADR-0035 `wb` theme, the
-`.toml`→`ini` extension registration, and the four disabled mode configurations.
-**Load order is load-bearing** — `vendor/monaco/vs/loader.js` installs a global
-`define` with `define.amd`, so it must come AFTER every UMD vendor on the page
-(marked, DOMPurify, mermaid, Wunderbaum, xterm + addons) or they register as
-anonymous AMD modules and never set their globals.
-
-**The diff editor** (`WBMonaco.createDiff`, #311) has two traps worth knowing
-before writing anything that asserts against it:
-
-- A diff editor exposes **no `getOption`**, and `getModifiedEditor().getOption(
-  EditorOption.renderSideBySide)` / `getRawOptions().renderSideBySide` both yield
-  `null` in 0.56 — so an options-based "is it side by side" check silently reads
-  as "the flag was ignored". Assert **geometry** instead (`.editor.original` and
-  `.editor.modified` equal-width, modified starting where original ends) or the
-  `.original-in-monaco-diff-editor` / `.modified-in-monaco-diff-editor` pane
-  classes. `monaco.editor.getDiffEditors()` *does* exist and is the way to reach
-  the models.
-- The `hideUnchangedRegions` collapse ruler renders as `.diff-hidden-lines`, and
-  only **after the diff computation settles** — later than the first `.view-lines`
-  paint. A browser test gated on the panes appearing measures zero collapse
-  widgets on a diff that does collapse; gate on `.diff-hidden-lines` itself.
-
-- `renderSideBySide: true` is **not sufficient**: Monaco's own
-  `useInlineViewWhenSpaceIsLimited` default swaps to the inline view below
-  `renderSideBySideInlineBreakpoint` (900px) regardless. Pass
-  `useInlineViewWhenSpaceIsLimited: false`, and assert side-by-side at a narrow
-  viewport too — pinning it only at a wide one cannot see the swap.
-
-Both models of a diff editor must be disposed **before** the editor on every path
-(`m.original.dispose(); m.modified.dispose(); ed.dispose()`) — disposing the
-editor does **not** dispose its models. Note the leak is *invisible* to a reopen:
-`createDiff` puts the viewer's per-open `uid` in each model URI, so a reopened tab
-never collides with a leaked model. The only honest oracle is
-`monaco.editor.getModels().length` returning to a baseline taken before the first
-open — which is what `tests/wb_diff_311.py` counts.
-
----
-
-## Element catalogue (foundation — created here, safe to evolve)
-
-Every element below was created as part of the foundation. Identifiers are DOM
-`id`/`class` or the Alpine method in [app.js](../crates/ralphy-daemon/assets/ui/app.js). Another agent updating a
-piece should keep its identifier and its emitted `action` stable (they're the
-contract), or update this table when they change.
-
-| Element | Identifier | Purpose | Events / actions |
-|---|---|---|---|
-| Topbar | `.topbar` | brand + crumb + stats/account | — |
-| Icon rail | `.rail` | switches the sidebar's view / the panels | — |
-| Sidebar | `.side` | hosts two views: Projects and Changes | — |
-| Sidebar views | `.projects-view` / `.changes-view` (`sideView`) | the accordion · the open project's change set | — |
-| Change badge | `.chg-badge` (`projectBadge`) | per-project change count on the Projects row; `—` on a failed read | — |
-| Project count | `.count` | repos located (`projects.length`) | — |
-| Provenance icon | `.remote` (`bi-github`/`bi-hdd`) | GitHub-backed vs local-only, before the name | — |
-| Canvas | `.canvas` / `.stage` | tabbed workspace: tab strip + dotted stage | — |
-| Tab strip | `.tabbar` / `.tabstrip` / `.tab` | Consoles (fixed) + closable file tabs | — |
-| Tab lifecycle | `openTab` / `activate` / `closeTab` | open / switch / close a file tab | — |
-| Console tools | `.canvas-tools` | New-console picker + Arrange, pinned right | `console-open` / `console-close` |
-| Chrome tone | `--chrome` token | panels one step above `--bg` | — |
-| Project accordion | `.projects` (+ `.has-open`) | single-open list; open hides siblings | — |
-| Project row | `.project` (+ `.open`, `order:-1`) | one repo; open rises to top | — |
-| Project header | `.project-head` | click = open/close | — |
-| Accordion toggle | `toggle(slug)` | mounts/destroys the tree on open | — |
-| Status dot | `dotClass(state)` | live / idle / offline colour | — |
-| File tree host | `.wb-host` | Wunderbaum mount point | — |
-| Tree theming | `.wb-host.wunderbaum` (compound!) | warm-dark `--wb-*` overrides | — |
-| Tree mount | `mountTree()` / `destroyTree()` | build/tear the Wunderbaum from JSON `source` | — |
-| File search | `.files-search` / `fileSearch` / `WBFileSearch` + Ctrl+Shift+F | Name \| Content field under the FILES bar; `tree.find`/`tree.grep`, the tree narrowed to the hits (ADR-0036 amendment 2026-09-15) | — |
-| Folder test | `isFolder(node)` | `node.folder \|\| node.children` (no `isFolder()` on node) | — |
-| Icon inject | `withIcons(nodes)` | attach a file-type icon per node | — |
-| Icon resolver | `fileIcon(title)` | ext → Devicon/Bootstrap class | — |
-| Context menu | `#ctxmenu`, `.ctx-item` / `.ctx-sep` | right-click actions | see below |
-| Menu show/hide | `showMenu(x,y,node)` / `hideMenu()` | build + place the menu | — |
-| Path helper | `relPath(node)` | repo-relative path from parent titles | — |
-| Copy path | `copyPath(node)` | clipboard + emit | `copy-path {path}` |
-| **The seam** | `WB.emit` / `emit(action,node,extra)` | dispatch `workbench:action` (+ `console.log`) | **event `workbench:action`** |
-| Scrollbars | `.projects` / `.wb-host` `::-webkit-scrollbar` | warm-dark themed | — |
-
-**Actions emitted by the foundation** (payload always includes
-`{project, path, title, isFolder, at}`; extras noted):
-`copy-path {path}` · `create {kind:"file"|"folder"}` · `delete` ·
-`rename {from,to}` (via the tree edit-apply). Rename edits inline via Wunderbaum's
-edit extension; `Open` was foundational too but has since evolved into
-`openFile(node)` (tabbed viewer — see wb-viewer.js).
-
----
-
-## Chrome interactions & panels (added after the foundation)
-
-The rail became interactive and the shell grew an account menu, a Settings modal,
-a Security modal, and an opaque login gate (all wired in [app.js](../crates/ralphy-daemon/assets/ui/app.js) /
-[index.html](../crates/ralphy-daemon/assets/ui/index.html); the two modals' *content* is data-driven from
-[wb-settings.js](../crates/ralphy-daemon/assets/ui/wb-settings.js)). Keep each identifier + emitted `action` stable —
-they're the contract.
-
-| Element | Identifier | Purpose | Events / actions |
-|---|---|---|---|
-| Rail toggles | `showSideView` / `toggleRuns` / `toggleKanban` | switch the sidebar's view · Runs panel · Kanban board | `kanban-toggle {open}` |
-| Settings gear | `.rail-spacer` + `openSettings` | pinned to rail bottom; opens Settings | — |
-| Runs panel | `.runs` (+ `body.runs-open`) | right-hand column; collapses to 0 | — |
-| Account menu | `.avatar-btn` / `.account-menu` | Security settings · Log off | `logoff` / `login` |
-| Settings modal | `.settings-modal` / `settings` / `settingsSection` | daemon + per-project config, data-driven | `setting-change {key,value}` |
-| Settings scoping | `scope: "daemon"\|"project"` (wb-settings.js) | daemon group is machine-wide; project group follows `openSlug`, disabled when none open | — |
-| Security modal | `.security-modal` / `security` | access token · password · TOTP 2FA | `totp-enroll` · `totp-revoke` · `password-set` · `password-clear` · `token-remint` · `require-login {on}` · `require-login-blocked` |
-| TOTP QR | `wbQr(uri)` (wb-settings.js) | one-time `otpauth://` QR via vendored `qrcode` | — |
-| Login gate | `.login-gate` (`!authed` + `body.locked`) | fully opaque lock; chrome blanked, nothing rendered behind | `login` |
-| Stage / viewport | `#stage` inside `#workspace` (`overflow:auto`); `stageExtent()` | the stage is a plane sized to bbox ∪ viewport + margin; a resize changes scroll offsets, never a rect (#336) | — |
-
-Auth posture note (faithful to current ralphy): token and TOTP are **mint-once**;
-"revoke" is a **file deletion**, not a rotate command — there is no rotate/disable verb
-in the tree today (a per-daemon revocable credential is ADR-0032 §8, Phase 2, unbuilt).
-
----
-
-## Runs panel & run verbs (added after the foundation)
-
-The Runs panel became a real surface (module: [wb-runs.js](../crates/ralphy-daemon/assets/ui/wb-runs.js)). It is
-project-scoped and shows what's *running* in ralphy for the open repo. A project can
-host **several concurrent runs** (one per `runid`), so a **run picker** chooses which
-to inspect; below it an **issue trail** renders the run's queue, each node glyph-coded
-by ralphy's real `IssueStatus` (done/skipped/blocked/infeasible/needs_split/non_green/
-hitl, plus the active node's live phase or 🌙 sleep); below that a **plan viewer**
-renders the active issue's `plan.md` — `## Steps` pinned on top, a dropdown reading
-any other `##` section. The panel is **fed by events**: `applyRunEvent` folds a
-CloudEvents-shaped `ralphy:run-event {type,runid,data}` to advance the run live, and
-`window.WBRuns.emit(evt)` is the same door (a ⚡ demo button synthesizes the next
-event to prove the path). This is the backend seam **into** the UI — the mirror of
-`WB.emit` going out.
-
-The three **daemon verbs** (`crates/ralphy-daemon/src/dispatch.rs`) live in the
-panel's action bar (`.runs-actions`): `triage` and `push` are blessed no-arg
-invocations fired straight onto the seam (`command {verb}`), the same "client never
-composes a command line" contract as the daemon UI. `run` opens a **modal**
-(`.run-modal`) that enriches it: pick the agent (executor, default claude), a checkbox
-reveals a second picker to **plan with a different agent** (`--plan-agent`), and a
-branch-mode segmented control — with a live `ralphy run …` preview. It emits
-`run-start {agent,planAgent,branchMode,command}`.
-
-| Element | Identifier | Purpose | Events / actions |
-|---|---|---|---|
-| Branch chip | `.branch-chip` + `canSwitchBranch(p)` | project-row chip → branch switcher; inert when unreachable | — |
-| Branch switcher | `.branch-modal` / `openBranchModal` / `branchList` | filtered local branches (current pinned) + create-from-current | `branch-switch {branch}` · `branch-create {name,from}` |
-| Runs toolbar | `.runs-actions` (run/triage/push) | the daemon verbs, scoped to the open project | `command {verb:"triage"\|"push"}` |
-| Run modal | `.run-modal` / `runCfg` / `startRun` | agent (+ optional `--plan-agent` split) + branch mode + live preview | `run-start {agent,planAgent,branchMode,command}` |
-| Run picker | `.run-select` / `currentRun` / `selectRun` | choose among concurrent runs (one per `runid`) | — |
-| Issue trail | `.trail` / `.trail-node.st-*` | run queue, glyph-coded by `IssueStatus`; active node = phase / 🌙 sleep | `run-issue-focus {runid,issue}` |
-| Plan viewer | `.plan-block` (`Steps` fixed + section dropdown) | render the active issue's plan.md | — |
-| Inbound run events | `applyRunEvent` / `window.WBRuns.emit` | seam **into** the panel; folds CloudEvents to advance the run | consumes `ralphy:run-event {type,runid,data}` |
-| Console shortcuts | `consoleItems()` + Alt+Shift+`1/2/3/0` | New-console accelerators, matched by physical key (`e.code`), guarded off inputs/modals | `console-open {agent,plain}` |
-
-Faithful sources: run/issue vocabulary and glyphs mirror `ralphy-cli/src/runstate/`
-+ the Telegram/presenter tables; the verbs' argv is `dispatch.rs`; run flags
-(`--agent` default claude, `--plan-agent`, `--branch-mode`) are `ralphy-cli/src/cli.rs`.
-
-## Kanban board (added after the foundation)
-
-The **Kanban** rail button opens the tasks board as an **overlay over the canvas**
-(module: [wb-kanban.js](../crates/ralphy-daemon/assets/ui/wb-kanban.js)) — the open project's GitHub issues placed by
-**ralphy's own judgment**, project-scoped like the Runs panel. It is a **read-only
-lens on the tracker**; the daemon never edits an issue's prose here. The *one*
-mutation the board allows is **changing labels** (which is how a card moves between
-columns) — everything else routes to GitHub via an **Open on GitHub** link on the
-detail drawer.
-
-**Four columns**, an issue landing in exactly one (precedence top-down, mirroring the
-runner's queue precedence): **Closed** (grouped by `stateReason` — completed / not
-planned) · **Ready for human** (`ready-for-human`/HITL — the human gate outranks
-agent-eligibility) · **Ready for agent** (`ready-for-agent` **or** `AFK` — same intent)
-· **Backlog** (everything else still open). The two **Ready** columns are ordered by the
-**dependency graph** — a JS port of `sort_queue_in_graph` (`crates/ralphy-core/src/
-blocked.rs`): **Kahn's algorithm** over `## Blocked by` edges, ascending issue number as
-the tie-break, blockers walked transparently through open out-of-queue nodes, **closed
-blockers pruned** (satisfied), a retired bundle's `## Parent` children standing in. The
-order shown IS the order the runner would execute. **Backlog** is a flat list in issue
-order with a board-wide **search**, a **label filter** (incl. *no label*), and a **sort**
-control (newest / oldest / recently updated / title).
-
-**Assignee scope (business rule — not yet applied in the seed).** The board is
-**not** the whole tracker: it shows only issues an AFK agent may act on, scoped by
-assignee. By default that is issues with **empty Assignees** (unassigned = up for
-grabs); plus, when the operator sets one, issues matching the **configured
-`queue.assignee`** (the same knob `ralphy run --assignee` / `queue.assignee` uses,
-ADR-0021). So the effective set is *unassigned* **OR** *assignee = config value* —
-anything assigned to someone else is hidden. Note this is deliberately a **union**,
-which differs from the raw `gh --assignee <login>` semantics the CLI uses (that scopes
-to the login *only*, excluding unassigned) and from the runner's unfiltered default
-when `queue.assignee` is unset — the board's default is the stricter *unassigned-only*.
-The real backend applies this when folding the tracker; the seed is small and
-left unfiltered on purpose (design unchanged), so this rule is registered here for the
-build, not enforced in `WB_KANBAN`. The detail drawer still shows each issue's
-Assignees verbatim.
-
-A card shows the number, title, label chips (in the repo's **real label colors**), a
-close-reason badge, an assignee glyph, and a **lock** when it has an open blocker. The
-**running signal**: an issue that is the *actively-worked* node of a live run (cross-ref
-into `WB_RUNS` via `window.WBRun`) carries a **run pill** — the agent's face + the live
-status glyph + phase — in whichever column it sits. Clicking a card opens the **detail
-drawer** (slides from the right): state pill, Open-on-GitHub, the running banner, a meta
-grid (column / assignees / opened / updated), **Blocked by** (each blocker with its live
-open/closed state), the **editable labels** row, the rendered issue **body** and
-**comments** (marked + DOMPurify), and the read-only footer.
-
-The drawer's selection (`kanbanSel`) is held **by issue number**, so a label move that
-re-columns the card keeps the drawer pointed at the same issue. It is **cleared whenever
-the project opens/closes/switches** (`toggle()` resets `kanbanSel`) — a selection belongs
-to the project that was open — and the drawer only takes its `.open` class when
-`selectedIssue()` actually resolves, so a stale or empty selection can never leave an
-empty strip on the right.
-
-| Element | Identifier | Purpose | Events / actions |
-|---|---|---|---|
-| Board overlay | `.kanban` / `toggleKanban` / `kanbanOpen` | canvas overlay; project-scoped issue board | `kanban-toggle {open}` |
-| Column classify | `WBKanban.columnOf(iss)` | closed → human → agent(`ready-for-agent`\|`AFK`) → backlog | — |
-| Graph order | `WBKanban.orderGraph(queue, all)` | Kahn port of `blocked.rs`; orders the two Ready columns | — |
-| Board filters | `kanbanFilter` · `kanbanLabel` · `kanbanSort` | search / label filter / Backlog sort | — |
-| Card | `.kanban-card` (`.running`, `.closed`, `.sel`) | one issue; labels, blocker lock, close badge, run pill | `openIssue(number)` |
-| Running pill | `WBKanban.runningFor(n, projectRuns)` | flags the active node of a live run (`window.WBRun`) | — |
-| Detail drawer | `.kanban-detail` / `selectedIssue` / `kanbanSel` | GitHub-style read-only view + Open-on-GitHub; selection is by number, reset on project open/close/switch, `.open` requires `selectedIssue()` | `openIssue` · `closeIssue` |
-| Label editor | `.kd-label-menu` / `toggleLabel(iss,label)` | the sole mutation; moves the card between columns | `issue-label-change {number,label,op}` |
-
-Faithful sources: the label vocabulary + colors are the repo's `gh label list`; close
-reasons are GitHub `stateReason`; the graph order is `ralphy-core/src/blocked.rs`; run
-glyphs come from `window.WBRun` (wb-runs.js). **Backend gaps this exposes**: the core has
-no *list-issues-with-bodies/comments* query yet (the board would fold it from the tracker
-or an events snapshot), and `issue-label-change` maps to a `gh` label call the core does
-own.
-
-## The rest of the shell (documented at each file's head)
-
-These were built out after the foundation; read the top-of-file comment in each
-for intent + the real ralphy sources it mirrors:
-
-- **[wb-viewer.js](../crates/ralphy-daemon/assets/ui/wb-viewer.js)** — the closable file tabs: source via Monaco
-  (highlight + edit + find; the language comes from the model's file URI, not a
-  filename map), Markdown via marked + DOMPurify + mermaid, with a
-  heading outline and in-page find. Per-file toolbar is **Find · Reload · Edit ·
-  Save · Detach**; editing emits `save`, Reload reloads from source
-  (`reload`), non-image binaries are refused (`open-refused`). An allowlisted
-  image opens read-only in the **image pane** (**Actual size · Reload · Detach**)
-  from a `data:` URL the daemon's `file.image` verb served, and a markdown
-  preview resolves its repo-relative `<img>` sources through the same verb
-  ([ADR-0049](adr/0049-workbench-serves-image-bytes.md)).
-- **[wb-console.js](../crates/ralphy-daemon/assets/ui/wb-console.js)** — the floating agent consoles on the Consoles
-  tab; mirrors the real daemon window chrome (`crates/ralphy-daemon/assets/ui/`).
-  The New-console picker lists the agents and, **last**, a plain **console** (no
-  agent — a shell in the repo dir, `plain:true`); each row has an **Alt+Shift+digit**
-  accelerator (`1/2/3` agents, `0` console). Spawns a window per repo (`console-open`)
-  and **Arrange** tiles them. The terminal is a faux local echo — swap for a real
-  xterm.js over a WebSocket.
-- **[wb-runs.js](../crates/ralphy-daemon/assets/ui/wb-runs.js)** — the Runs panel model: the seeded runs, the pure
-  helpers (status→glyph, plan.md section slicing, sleep countdown), and the inbound
-  event fold. Data is what a backend folds from the CloudEvents bus (ADR-0019),
-  faithful to ralphy's run/issue vocabulary. See the section above.
-- **[wb-kanban.js](../crates/ralphy-daemon/assets/ui/wb-kanban.js)** — the Kanban board model: the per-project issue
-  seed (`WB_KANBAN`) and the pure helpers (`WBKanban`) — column classification, the
-  Kahn graph-order port of `blocked.rs`, the running cross-ref into `WB_RUNS`, label
-  metadata/colors, and filter/sort. Read-only except labels; see the section above.
-- **[wb-settings.js](../crates/ralphy-daemon/assets/ui/wb-settings.js)** — data-driven Settings + Security (TOTP);
-  its header lists the exact real config sources per key.
-- **[detached.html](../crates/ralphy-daemon/assets/ui/detached.html)** — a torn-off file viewer in its own popup
-  window (read a file while watching an agent in the main window). Reuses
-  wb-viewer verbatim; the file descriptor rides in the URL hash and Save / Reload /
-  Re-attach talk back via **postMessage** (a `file://` opaque origin blocks reading
-  shared globals off `window.opener`), re-emitted on the opener's seam.
-
----
-
-## On a tablet
-
-The workbench is used from iPads and Android tablets, so four things in the
-console are shaped by a device with no hardware keyboard. None of them has a
-desktop cost — each is inert where it does not apply.
-
-- **The key bar** (`.session-keys`, built in `spawnWindow`) supplies the keys an
-  on-screen keyboard lacks: `esc`, `tab`, a latching `shift` (it changes only
-  the next bar key: `tab` becomes back-tab, an arrow becomes Shift+arrow), a
-  latching `ctrl`, arrows, `enter` (so a menu can be answered without the
-  keyboard), `^C`, plus
-  `copy` and `A−`/`A+`. It appears where `(any-pointer: coarse)` matches, and the
-  client-scoped **Console key bar** setting forces it on or off. Every button
-  routes through the terminal's one `sendInput`, so a **watching** window refuses
-  a tap the same way it refuses a keystroke. Buttons are 44px — Apple's HIG floor
-  — and take `touch-action: manipulation`, which is what removes the 300ms
-  double-tap-to-zoom wait before a key registers.
-- **Touch scrolling belongs to the terminal.** xterm has no native scroller to
-  hand the finger: the vendored build renders into a synthetic viewport that
-  paints its own scrollbars, `.xterm-viewport` is left an empty div and
-  `.xterm-scrollable-element` computes `overflow: visible` with
-  `scrollHeight === clientHeight`. So a drag used to find the canvas and pan the
-  whole workbench — the trackpad worked only because xterm forwards `wheel` in
-  JS (xterm.js #3613, #594, #5377). `touch-action: none` on `.session-body`
-  takes the pan back, and `touchScrollLines` converts the drag into
-  `scrollLines` at the terminal's own cell height, with a `flingStep` glide so
-  scrollback is reachable by hand.
-
-  **`none`, not `pinch-zoom`.** WebKit parses every touch-action value — it
-  computes back exactly what you wrote — but only *honours* `auto`, `none` and
-  `manipulation`; `pan-x`, `pan-y` and `pinch-zoom` behave as `auto`
-  ([WebKit #133112](https://bugs.webkit.org/show_bug.cgi?id=133112)). So the
-  first version of this declaration read as "pan freely" on an iPad, while the
-  titlebar and resize handles — already `none` — dragged perfectly on the same
-  device. That contrast is the measurement; the computed style is not, and a
-  test that only reads `getComputedStyle` would have passed. The two-finger
-  zoom this gives up is the browser's, not the terminal's, and `A+`/`A−` is the
-  zoom a console actually wants.
-
-  **The finger is the trackpad, and the trackpad has three owners.** xterm
-  hands a wheel to the *application* when it asked for mouse events (Claude
-  Code and every full-screen TUI scroll their own transcript that way), turns
-  it into arrow keys in the alternate buffer, and moves its own viewport only
-  in the plain case. `touchScrollTarget(term.modes.mouseTrackingMode,
-  term.buffer.active.type)` makes that call per flush, and the app's share
-  goes in through xterm's own `wheel` listener as line-mode `WheelEvent`s
-  carrying the finger's coordinates — one per line, so `consumeWheelEvent`
-  neither dampens them as trackpad pixels nor batches them. The first version
-  always moved the viewport, and under a TUI the viewport's history is a heap
-  of the app's stale frames: that was the iPad's "ghost text", diagnosed from a
-  field log that showed `viewportY=2/2` — two lines of history, a giant
-  scrollbar slider, and a drag that scrolled Claude Code's leftovers instead
-  of Claude Code.
-
-  **Two fingers pan the canvas.** `touch-action: none` took every browser
-  gesture away from the console, including the pan a finger gets for free on
-  the bare floor, so `touchGesture(fingers, maxlock)` gives it back: one finger
-  is the terminal's, two are the plane's — through the same `scrollLeft/Top`
-  writes the mouse pan in `onFloorDown` makes, tracking `touchCentroid` so the
-  fingers can drift without the plane jumping, and calling `cancelSlide` first
-  because the operator's hand outranks a jump in flight. Under `maxlock` two
-  fingers do nothing: the maximized window *is* the view. A second finger
-  landing mid-scroll ends the terminal's gesture; the finger left behind when
-  one lifts does not resume it.
-
-  Note when testing: a synthetic `TouchEvent` cannot drive *native* scrolling,
-  so the handler and the `touch-action` declaration are asserted separately.
-- **Gestures are Pointer Events, never mouse.** Moving and resizing a window, and
-  the fence's grab handle and edges, all listen on `pointerdown` /
-  `pointermove` / `pointerup` / `pointercancel`. iOS synthesizes mouse events
-  only *after* a tap resolves and never during a drag, so a `mousedown`-bound
-  titlebar could not be moved by a finger at all — the press fell through to the
-  system text selection. Each handle also needs `touch-action: none`, or the
-  browser claims the first few pixels as a scroll and fires `pointercancel`, plus
-  `-webkit-user-select`/`-webkit-touch-callout: none` for the long-press callout.
-  A gesture tracks one `pointerId`: a second finger opens its own stream. Under
-  `(any-pointer: coarse)` the invisible bands grow to a fingertip — 26px corners,
-  14px edges — and the key bar takes `z-index: 3` so a grown handle cannot
-  swallow the lower half of its buttons. The bottom *edge* is the bar's; the
-  bottom *corners* are not: under a coarse pointer the row carries a spacer
-  item a corner wide at each end (a real flex item, honoured wherever the row
-  is scrolled — padding at a scrolling box's far end is not) and the two
-  bottom corner bands plus the grip rise above the bar, so the bar spans the
-  whole width with no hole while no key ever sits under a corner. The first cut gave
-  the corners to the bar too, and an iPad reported the grip as gone and the
-  window as impossible to resize: the corner is the one place a hand looks for.
-- **A press is a drag only past a threshold** (`dragThreshold`: 4px for a
-  mouse, 10px for a finger, a pen or an unknown pointer; `dragBegins` is the
-  Euclidean test). A finger never holds still, and `touch-action: none` took
-  the browser's own tap-versus-scroll call away, so before this a tap on a
-  title bar to focus a console slid it a few pixels — on an iPad, often out
-  of its fence. All four gesture handlers (`makeDraggable`, `startResize`,
-  `startFenceMove`, `startFenceResize`) arm only past it. The threshold
-  delays the start and never swallows the delta: the grab offset is taken at
-  `pointerdown`, so the first placement after arming lands the whole distance
-  travelled. A press that never arms **persists nothing** — before, a bare tap
-  refreshed the record's `ts`, and under the desk fold (newest `ts` wins) a
-  tap on the desktop out-folded a real move made on the tablet.
-- **A console or a fence can be locked in place.** The title bar's lock
-  button (`.session-lock`) and the fence head's lock tool (`.fence-lock`)
-  toggle a `locked` boolean on the desk record — daemon state, so it holds on
-  every device (ADR-0050 / ADR-0051 lock amendments, 2026-09-20). The gesture
-  handlers consult `isLocked(win)` / `fenceLocked(id)` and refuse; the
-  `.locked` class (and `.held`, derived in `refreshFenceChrome` for a console a
-  locked fence holds) is what drops the bands and the grab cursor so the
-  refusal is visible before it is tried. Maximize, fullscreen and close still
-  work on a locked console: they do not rewrite the rect. Tile is a no-op on a
-  locked fence and its button is disabled. `applyLocksFromMirror` is the one
-  place a record field flows from a `GET` onto a live window without a reload
-  — rects never do. A magnetic fence border (hysteresis on leaving) was
-  considered and deliberately not built: the threshold is what makes a tap a
-  tap, and the lock is for the layouts that must not move at all.
-- **The WebGL renderer is skipped on WebKit** (`prefersDomRenderer`). It draws
-  scrolled rows twice on Safari and iPadOS, which reads as the text "distorting";
-  upstream has carried it for years (xterm.js #3357, #5816) and the standing
-  answer is not to use it. `navigator.vendor` is the engine question, not the
-  brand one — every browser on iPadOS is WebKit underneath.
-- **A maximized console is raised after a desk restore** (`raiseMaximized`).
-  Windows are spawned in record order and each raises itself, so a maximized
-  record restored early ended up under every console after it. Not pinned in CSS:
-  a fixed z-index would have to out-rank the focus ladder, and then nothing could
-  be raised over a maximized window on purpose.
-- **The keyboard inset.** `keyboardInset` reads `visualViewport` and publishes
-  `--kb-inset`; a maximized console subtracts it from its height and a fullscreen
-  one adds it to its padding (a fullscreen element is in the top layer, where the
-  UA's `!important` sizing outranks any author height). Chrome/Android never
-  needs it: `interactive-widget=resizes-content` on the viewport meta shrinks the
-  layout viewport itself.
-- **Resume.** A suspended tab comes back holding dead sockets that still report
-  OPEN. `visibilitychange` and `online` call `resumeAll`, and the shell's
-  presence heartbeat is the staleness verdict, so a desktop tab switch churns
-  nothing. The term is CONTEXT.md → *Resume*; how it differs from a retry is in the
-  2026-09-30 amendment of ADR-0036.
-- **Fullscreen is not the answer on an iPad, the PWA is.** WebKit exits
-  fullscreen whenever a text field takes focus and the keyboard rises, and the
-  console focuses a hidden textarea on every tap — so on an iPad fullscreen and
-  typing are mutually exclusive, and no page-side code changes that. Installing
-  to the home screen (`display: standalone`, which the manifest already declares)
-  gets the same chrome-free window without the Fullscreen API. So the button is not
-  built on WebKit at all — `fullscreenOffered(document.fullscreenEnabled,
-  navigator.vendor)` withholds it for two independent reasons: the API is
-  missing (a sandboxed frame, or a home-screen install, where there is no
-  browser chrome left to escape), or the engine is WebKit and hands fullscreen
-  back on the first keystroke. A control the next tap cancels is worse than no
-  control; maximize is the honest one there, and it still fills the workspace.
-  Everything the fullscreen path does keeps working where it IS offered: its
-  controls grow to 44px, it pads for the home indicator, and `syncFullState`
-  re-derives every button from `document.fullscreenElement` precisely because a
-  browser can drop fullscreen behind the page's back.
-
-- **A phone folds the chrome away under a maximized console** (`phoneBleed`).
-  Maximize fills the workspace and leaves the rail, the sidebar and the tab strip
-  standing — on a desktop that is the point — but on a 390px phone the rail alone
-  is an eighth of the width, and fullscreen is withheld on WebKit (above), so
-  maximize is the ceiling there. `syncMaxLock` mirrors "a console is maximized"
-  onto `body.console-max` on every platform, and a `max-width: 560px` media
-  query in 01-base.css is the gate that makes it mean something: width, not
-  pointer, so an iPad keeps its chrome. The window's own titlebar is the way back.
-- **Paste and line selection on the key bar.** A phone's only other paste is the
-  callout on xterm's hidden textarea, unreachable; the `paste` key calls
-  `navigator.clipboard.readText()` synchronously inside the tap (Safari grants
-  the read only there) and feeds `term.paste`, which rides `onData → sendInput`,
-  so a watcher's paste is refused like a watcher's keystroke. No `execCommand`
-  fallback exists for a read, so on an insecure origin the key is disabled
-  (`pasteOffered`) rather than dead. Selection by finger was unreachable — xterm
-  selects through mouse events and the console spends a finger's drag on
-  scrolling — so `sel` arms ONE drag that selects whole buffer lines through
-  `term.selectLines` (`selectionRow` maps the touch to a buffer row); finger-up
-  disarms it and leaves the selection for `copy`, which now wears `bi-copy` —
-  the clipboard glyph is the paste icon, and it moved to the paste key.
-
-The browser coverage is `tests/wb_console_touch.py` and, for the phone,
-`tests/wb_console_phone.py`; the pure rules are tabled in
-`ui-tests/wb-console.test.mjs`.
-
----
-
-## Backend integration: the daemon protocol
-
-The contract between this shell and the daemon is frozen in
-[ADR-0036](adr/0036-workbench-daemon-integration-protocol.md) (which
-extends [ADR-0032](adr/0032-daemon-mode-supervised-launcher.md) §6).
-The one rule that makes it navigable: **capabilities are table rows, not routes.**
-Every gesture is a `Command { id, verb, payload }` over the daemon's tagged-frame
-codec (`protocol.rs`), and each verb has an **effect class** that alone decides
-whether the daemon acts directly or delegates to `ralphy`.
-
-### Effect classes (the whole model)
-
-| Class | What it does | Mechanism | Examples |
-|---|---|---|---|
-| **Native** | daemon's own state | daemon-internal | `sessions.list/close`, identity, presence |
-| **Observe** | read working tree as **OS bytes** (no repo semantics) | daemon walks/reads/watches **directly** (confined) | `tree.list`, read a file |
-| **Query** | read that needs `ralphy`'s **judgment** | spawn `ralphy … --json`, answer on the same `id` | `issues.list`, `queue`, `config.get` |
-| **Spawn** | trigger a run | detached blessed `ralphy` child (own lifecycle) | `run`, `triage`, `push` |
-| **Mutate** | **write** repo state | a **new `ralphy` subcommand**, run-lock-aware | `config.set`, `branch.switch`, `label.set` |
-
-The division rule: **if a verb needs to *understand* or *write* the repo, it is a
-`ralphy` invocation; if it only reads OS bytes or the daemon's own state, the
-daemon does it directly** (ADR-0036 §2–§3). This is why the file tree is fast (no
-spawn per click) and why `branch.switch` is safe (a run-aware `ralphy` verb, never
-a blind `git checkout` — ADR-0036 §6 supersedes the older "the daemon runs the
-real git checkout" note in the branch-switcher section above).
-
-### The two seams, wired
-
-The shell already centralizes both directions; the backend is *one adapter each*:
-
-- **Out** — `workbench:action` → a verb. A single `ACTION_TO_VERB` map routes each
-  emitted `action` (grep `WB.emit(` for the live catalogue) to its verb; the
-  daemon's registry dispatches by effect class.
-- **In** — daemon frames → the UI. `Terminal` → xterm; `Presence` → the account/
-  status chrome; a `Command` reply resolves its pending `id`; an unsolicited
-  `Command` push (run output, `tree.dirty`) folds into `WBRuns.emit` / the tree.
-
-This was the first sketch of `wb-daemon.js`. The shipped file is larger and
-opens more than one socket: one `/ws/command` socket per command, a persistent
-`/ws/tree` socket per kind (tree, runs, changes), and one `/ws/session` socket
-per console. Read the file itself for the current shape. The sketch still
-shows the two seams:
-
-```js
-// one call door (request/response by id) + one frame router
-class Daemon {
-  call(verb, payload) {                       // Native/Observe/Query/Spawn/Mutate
-    const id = ++this.seq;
-    this.ws.send(encodeCommand({ id, verb, payload }));
-    return new Promise(r => this.pending.set(id, r));
-  }
-  onFrame(f) {
-    if (f.tag === TERMINAL) term.write(f.session, f.data);
-    if (f.tag === PRESENCE) presence.update(f);
-    if (f.tag === COMMAND)
-      this.pending.has(f.id) ? this.pending.get(f.id)(f.payload)   // a reply
-                             : route(f.payload);                    // a push
-  }
-}
-document.addEventListener("workbench:action", e =>
-  daemon.call(ACTION_TO_VERB[e.detail.action], e.detail));
-```
-
-### File tree: observe, don't own (ADR-0036 §4–§5)
-
-The tree is **Observe** — the daemon reads and watches it directly, but never
-interprets it. Live updates use `notify` + `notify-debouncer-full` + `ignore`,
-kept cheap by four levers: **watch only expanded dirs** (matched to Wunderbaum's
-lazy-load; unwatch on collapse), **never enter** `node_modules`, `target` or
-`.git`, **debounce** the event storm, and **push a minimal `tree.dirty {repo,path}`
-nudge, pull the subtree only if visible**. One watcher per (repo × open dirs),
-fanned out to all clients (not per-connection). The tree does not hide an
-**ignored path**: it lists it and draws the **ignored mark** (ADR-0036 amendment
-2026-09-30; the earlier gitignore filter was removed). Security is
-**confinement** (canonicalize + repo-root prefix — blocks traversal and symlink
-escape) **+ the existing login**; an authenticated operator reads the whole repo,
-secrets included, like any IDE.
-
-### What Phase 1 does and doesn't feed
-
-The Runs panel is fed by the **raw output** a daemon-spawned run already streams
-(`status:"output"`). The **structured** feed (`ralphy:run-event` — issue trail,
-plan viewer) is the events platform's job (Phase 2); the ⚡ demo button stands in
-until then. No CloudEvents relay is built in the daemon now.
-
----
-
-## Starting points for the real build
-
-1. **Stand up the seam listener** — subscribe to `workbench:action`, route each
-   `action` through `ACTION_TO_VERB` to a daemon `call`. This unlocks everything
-   else incrementally.
-2. **Feed real data** — replace the seeded `projects` and file `tree` with
-   `/api/repos` + `tree.list` (Observe, lazy-loaded), then wire `tree.dirty`.
-3. **Generalize the verb registry** — turn `dispatch::Verb` into the effect-class
-   table (ADR-0036 §1); the three git Mutate subcommands (`branch switch/create`,
-   `label set`) are the only new CLI surface.
-4. **Promote hardened decisions to ADRs** and link them back here — "canvas is a
-   tabbed workspace, Consoles tab fixed" is now
-   [ADR-0037](adr/0037-workbench-canvas-tabbed-workspace.md); the daemon protocol
-   is frozen in [ADR-0036](adr/0036-workbench-daemon-integration-protocol.md).
+| `assets/{css,html,json,ts}.worker-*.js` | the four language workers (8.8 MB, `ts.worker` alone 7.0 MB). Language services are out of scope, and `wb-monaco.js` disables all four mode configurations at boot |
+
+The embed-pin test `monaco_replaced_codemirror_in_the_embedded_ui`
+(`crates/ralphy-daemon/src/tests.rs`) checks these rows by prefix.
+
+- `assets/editor.worker-*.js` and `assets/editorWebWorkerMain-*.js` stay: they
+  are the base editor worker. No page sets `globalThis.MonacoEnvironment`, so
+  `vs/workers-*.js` falls through to `createWorker()`, which loads them. Keep
+  `MonacoEnvironment.getWorkerUrl` unset: setting it sends the four remaining
+  200-byte language-worker shims to the worker files that are not vendored.
+- Keep every `basic-languages` grammar. They are chunks loaded on demand
+  through a map inside `basic-languages/monaco.contribution.js`, so a deleted
+  grammar stays registered and returns 404 on open. All ~90 are ~600 KB.
+- 0.56 names its chunks by content hash (`editor-KLE6jdfb.js`). To bump Monaco,
+  derive the file set again from the new tarball with the rules above; a diff
+  of file names shows nothing useful.
+- Measured at 0.56: 113 files, 5.31 MiB; the daemon crate's clean build grew
+  8.5% (8.47s → 9.19s).
+- A diff editor does not dispose its models. On every path, dispose both
+  models before the editor: `m.original.dispose(); m.modified.dispose();
+  ed.dispose()`.
+
+### Crepe (pinned `7.22.1`), the one library that is built
+
+The note card's editor is Milkdown Crepe, built lean into
+`vendor/crepe/{crepe.js,crepe.css,LICENSE}` (706 KB + 20 KB, seven features,
+no CodeMirror, no KaTeX). A tarball copy cannot reproduce it, so it has a
+recipe in `crates/ralphy-daemon/vendor-build/crepe/`: `npm ci && node
+build.mjs`, run by hand, never in CI. The first line of each output file names
+the versions and the feature list; the test `vendored_crepe_states_its_recipe`
+checks it.
+
+### xterm (version not recorded)
+
+`vendor/xterm.js` and the `fit`, `webgl` and `web-links` addons came with #162
+and #190, with no version, upstream URL or update procedure. Because the
+version is unknown, OSC 52 is written by hand in `wb-console.js`
+(`term.parser.registerOscHandler(52, …)`) instead of with
+`@xterm/addon-clipboard`. The version can be found by comparing the file with
+the npm tarballs; record it when you do.
+
+After a bump, check the four upstream behaviours the console depends on:
+`parser.registerOscHandler`, `attachCustomKeyEventHandler`, the `contextmenu` →
+`rightClickHandler` path (it moves the hidden textarea under the pointer with
+the selection in it, so the browser's own **Copy** works over the WebGL
+renderer), and the `copy` listener on the element.
+
+### Wunderbaum
+
+Wunderbaum (the file tree) was chosen because it has no jQuery.
+
+- The `wunderbaum` class is on the host element itself, so theme selectors
+  are compound: `.wb-host.wunderbaum`.
+- A node has no `isFolder()`. Use `node.folder || node.children`.
+- The tree is virtualized, so its host needs a real height. The flex-column
+  chain in `styles/02-rail-sidebar.css` gives it one.
+- When the tree loses focus it switches to its `--wb-*-grayscale` variables,
+  whose defaults are near-white. The theme sets them to the same warm tone, so
+  a selected row keeps its colour on blur.
+- Monaco paints its own scrollbars. Colour them through
+  `.monaco-scrollable-element > .scrollbar > .slider`; the
+  `::-webkit-scrollbar` rules do not reach them.
+
+### The others
+
+`alpine`, `lucide`, `devicon`, `bootstrap-icons`, `marked`, `mermaid`,
+`dompurify` and `qrcode` are single files or directories copied from upstream,
+with no build step and no local changes.
+
+## The console clipboard
+
+The clipboard rules protect the operator from a remote agent.
+
+- **Copy** is the browser's context-menu Copy (the xterm path above) or
+  `Ctrl+Insert`. `Ctrl+Shift+C` opens the DevTools inspector on Chrome and Edge,
+  and a page cannot take that key back.
+- **Paste** is the native `Ctrl+V` into xterm's hidden textarea, or the key
+  bar's paste key. The paste key is the ONE call to
+  `navigator.clipboard.readText()`: inside the operator's tap (Safari allows
+  the read only there), feeding `term.paste`. Both paths reach `term.onData`,
+  so a watching window refuses a paste as it refuses a keystroke. Code that an
+  agent can trigger never reads the clipboard; a Rust test counts the call
+  sites. On an insecure origin the key is disabled (`pasteOffered`).
+- **OSC 52** only writes, and it is refused in two cases: during the replay of
+  the console history on attach (the replay is raw bytes, so an old copy would
+  rewrite the clipboard on every reconnect, takeover and reattach), and in a
+  watching window (the window that holds the baton owns the clipboard). Control
+  bytes and a trailing newline are removed from the text, so a wrong paste
+  cannot run a command.
+
+`tests/wb_console_clipboard.py` covers this end to end.
+
+## Touch: tablets and phones
+
+The workbench is used from iPads and Android tablets and phones.
+
+### Rules for a new gesture or control
+
+- **Listen to Pointer Events, not mouse events.** iOS sends mouse events only
+  after a tap ends and never during a drag. Each handle takes
+  `touch-action: none` (or the browser claims the first pixels as a scroll and
+  fires `pointercancel`) and `-webkit-user-select` /
+  `-webkit-touch-callout: none`. Track one `pointerId`.
+- **A press becomes a drag only past `dragThreshold`** (4px for a mouse, 10px
+  for anything else). Take the grab offset at `pointerdown`, so the first move
+  covers the whole distance. A press that never becomes a drag saves nothing:
+  the desk fold keeps the newest `ts`, so a saved tap would win over a real
+  move made on another device.
+- **Refuse on a lock.** A gesture that changes a rect checks
+  `isLocked(win)` / `fenceLocked(id)`. Maximize, fullscreen and close still
+  work on a locked console, because they do not change the rect.
+- **Size for a finger.** Buttons are at least 44px and take
+  `touch-action: manipulation` (this removes the 300ms wait for a double tap).
+  Under `(any-pointer: coarse)` the resize bands are 26px at corners and 14px
+  at edges.
+- **Send keys through `sendInput`**, so a watching window refuses them.
+
+### Behaviour measured on devices
+
+- **The finger scrolls the terminal.** xterm has no native scroller (it scrolls
+  a synthetic viewport by transform), so a drag panned the whole page.
+  `touch-action: none` on `.session-body` takes the drag back, and
+  `touchScrollLines` turns it into `scrollLines`, with a `flingStep` glide. It
+  is `none`, not `pinch-zoom`, because WebKit treats `pinch-zoom` as `auto`.
+- **The drag has three owners** (`touchScrollTarget`): the application when it
+  asked for mouse events (Claude Code and every full-screen TUI), arrow keys in
+  the alternate buffer, and xterm's viewport otherwise. The application's
+  share goes through xterm's own `wheel` listener, one line-mode `WheelEvent`
+  per line. Scrolling the viewport under a TUI shows the app's old frames: an
+  iPad report of "ghost text" was this.
+- **Two fingers pan the canvas** (`touchGesture`), through the same scroll
+  writes as the mouse pan. Under a maximized console two fingers do nothing.
+- **The WebGL renderer is off on WebKit** (`prefersDomRenderer`): it draws
+  scrolled rows twice on Safari and iPadOS (xterm.js #3357, #5816).
+- **Fullscreen is not offered on WebKit** (`fullscreenOffered`): iOS leaves
+  fullscreen when a text field takes focus, and the console focuses one on
+  every tap. The PWA install (`display: standalone`) is the full-window mode
+  on an iPad. `syncFullState` reads `document.fullscreenElement` every time,
+  because a browser can leave fullscreen without telling the page.
+- **The on-screen keyboard** (`keyboardInset`) publishes `--kb-inset` from
+  `visualViewport` for maximized and fullscreen consoles. Chrome on Android
+  does not need it: `interactive-widget=resizes-content` in the viewport meta
+  shrinks the layout viewport.
+- **On a phone, a maximized console hides the chrome** (`body.console-max`
+  with the 560px media query in `01-base.css`). The gate is width, not pointer,
+  so an iPad keeps its chrome.
+- **A restored maximized console is raised last** (`raiseMaximized`), because
+  windows are spawned in record order. A fixed `z-index` would block raising
+  another window over it on purpose.
+- **Resume.** A suspended tab comes back with dead sockets that still report
+  OPEN; `visibilitychange` and `online` call `resumeAll`. The term is
+  CONTEXT.md → *Resume*.
+
+The pure rules are tested in `ui-tests/wb-console.test.mjs`; the browser
+checks are `tests/wb_console_touch.py` and `tests/wb_console_phone.py`.
+
+## Kanban: the assignee scope is not applied yet
+
+The board must show only the issues an AFK agent may act on: issues with no
+assignee, plus, when `queue.assignee` is set, issues assigned to that login.
+This is a union. It differs from `ralphy run --assignee`, which shows only that
+login, and from the runner's default, which does not filter. `wb-kanban.js`
+does not apply it yet.
+
+## Keep this guide current
+
+Change a vendored library and its section here in the same commit. A decision
+goes to an ADR, a test trap to TESTING-TRAPS.md, and the intent of a module to
+its header comment.

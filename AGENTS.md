@@ -22,7 +22,7 @@ source document is correct — fix this file.
 - **[docs/BUILDING.md](./docs/BUILDING.md)** — build, CI workflows, releases.
 - **[docs/TESTING.md](./docs/TESTING.md)** — how to write a test that fails
   only when the behavior breaks. Read it before you add, change, or review a
-  test.
+  test, or before a browser check of the workbench page.
 
 ## Architecture — ports & adapters, ubiquitous-language-first
 
@@ -81,9 +81,13 @@ aggregates, repositories, or domain-event buses. Don't add them.
   ```
 
   A new `*.test.mjs` file runs only when `ui-tests/index.mjs` imports it.
+  Before a change there, read
+  [docs/WORKBENCH-BUILD-GUIDE.md](./docs/WORKBENCH-BUILD-GUIDE.md): vendored
+  libraries, touch rules, the clipboard contract.
 - **A change a user can see needs a changelog fragment:** one file per PR,
-  `changelog.d/<n>.md`, whose sentence names the *capability*, not the diff. A
-  refactor that a user cannot see takes `kind: internal`. CI fails a PR that
+  `changelog.d/<n>.md`: one short sentence that names the *capability*, not
+  the diff. A refactor, and a fix to a feature that no release has shipped
+  yet, take `kind: internal`. CI fails a PR that
   touches the shipped surface (`crates/*/src/`, the UI assets, `assets/`)
   without one. Kinds, length limits, `headline:` and `topic:` are in
   [changelog.d/README.md](./changelog.d/README.md). Check with
@@ -92,7 +96,7 @@ aggregates, repositories, or domain-event buses. Don't add them.
 - **Cross-platform, always.** CI builds and tests on **Windows, Linux and
   macOS**. Make no POSIX-only assumptions. Test children are never shell
   scripts: subprocess and PTY behavior is tested against a Rust helper binary
-  (docs/TESTING.md → *Platform traps*).
+  (docs/TESTING.md → *What may be faked*).
 - **The public crate API is stable by default.** Moving code inside a crate must
   not change the `pub` surface or its import paths; re-export from the parent
   module. A change to the public API is a design decision, not a side effect.
@@ -121,7 +125,7 @@ aggregates, repositories, or domain-event buses. Don't add them.
   `foo/tests.rs`. Integration tests (public API only) go in the crate's
   `tests/`, with data in `tests/fixtures/`. A **test helper child binary** goes
   in `src/bin/<name>_test_child.rs`, because `CARGO_BIN_EXE_*` is only visible
-  to integration tests (docs/TESTING.md → *Platform traps*).
+  to integration tests (docs/TESTING.md → *What may be faked*).
 - **Every new test is seen red, alone.** Before you commit it, apply one
   mutation to the production code, watch the test fail, revert, and write the
   mutation in the commit message. If another test already fails under that

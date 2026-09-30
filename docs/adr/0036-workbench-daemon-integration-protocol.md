@@ -1142,3 +1142,20 @@ These rules were decided earlier and were recorded only in CONTEXT.md. On 2026-0
 - **A CLI refusal is not an error frame.** A spawned command's frames are `output` (raw byte chunks, never line-aligned, so any "last line" fold must buffer across them), then exactly one terminal frame. A CLI refusal is `{"status":"exited","code":N}` after its complaint streamed as `output`, not an error frame, so a client that only watches the error branch never sees a refusal (#331).
 - **Seed is not a fallback.** Since #300 the seed is reachable only under `file://` (`WBMode.seedAllowed()`), because a daemon-mode transport failure must surface as an error rather than be masked by fiction. The rule is checkable and pinned: **no seed inside `assets/ui/`**. A seed copy may drift from the thing it imitates; that is what makes it cheap.
 - **Resume is not a retry.** Resuming the sockets is distinct from the fixed retry each subscription already does on a close it *heard*, and distinct from **waking** a peer daemon, which is about another machine.
+
+## Amendment (2026-09-30): the browser client is not the one in Consequences
+
+Consequences says the browser side is the `workbench:action` map plus a
+"~40-line `wb-daemon.js`", both documented in `docs/WORKBENCH-BUILD-GUIDE.md`.
+Neither is true now. Nothing new is decided.
+
+- `wb-daemon.js` is 493 lines (measured 2026-09-30). It opens one
+  `/ws/command` socket per command, one persistent `/ws/tree` socket per kind
+  (tree, runs, changes), and one `/ws/session` socket per console. The file
+  itself is the description of the client.
+- The Runs panel is fed by the run snapshot (ADR-0047) through `runs.watch`
+  and `runs.list`, not by `ralphy:run-event`. That event survives only as the
+  demo control of the static `file://` page.
+- `docs/WORKBENCH-BUILD-GUIDE.md` now holds only the `workbench:action` seam,
+  the vendored-library procedures and the touch rules. It does not document
+  the client.

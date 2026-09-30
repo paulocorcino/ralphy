@@ -25,7 +25,7 @@ particular time.
 | Follow repository rules | [Agent guide](../AGENTS.md) |
 | Use the domain vocabulary | [Domain model](../CONTEXT.md) |
 | Build, run CI checks, or release | [Building](BUILDING.md) |
-| Write and review tests | [Testing](TESTING.md) |
+| Write and review tests | [Testing](TESTING.md), [testing traps](TESTING-TRAPS.md) |
 | Understand architectural decisions | [ADRs](adr/README.md) |
 | Change the workbench shell | [Workbench build guide](WORKBENCH-BUILD-GUIDE.md) |
 | Exercise the initial daemon workflows manually | [Daemon bench](daemon-bench.md) (Phase 1 scope) |
