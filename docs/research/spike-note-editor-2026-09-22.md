@@ -1,6 +1,6 @@
 # Spike: hybrid-WYSIWYG markdown editor for notes (2026-09-22)
 
-Companion note to [ADR-0064](adr/0064-notes-on-the-stage.md) §6. One HTML page mounting the
+Companion note to [ADR-0064](../adr/0064-notes-on-the-stage.md) §6. One HTML page mounting the
 repo's own Monaco (AMD loader from `assets/ui/vendor/`), each candidate at pane size and as ten
 240×180 cards, driven headless by Playwright 1.62 (Chromium); bundles built with esbuild 0.28.2.
 The fixture exercised `#`/`##` headings, a task list, a table, a relative and an absolute link,

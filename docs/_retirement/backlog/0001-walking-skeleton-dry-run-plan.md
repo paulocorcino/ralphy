@@ -2,7 +2,7 @@
 
 **Type:** HITL
 **Triage:** needs-triage
-**Spec:** [ADR-0002](../adr/0002-core-agnostic-adapter-boundary.md), [CONTEXT.md](../../CONTEXT.md)
+**Spec:** [ADR-0002](../../adr/0002-core-agnostic-adapter-boundary.md), [CONTEXT.md](../../../CONTEXT.md)
 
 ## What to build
 

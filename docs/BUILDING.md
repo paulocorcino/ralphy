@@ -67,8 +67,8 @@ Six GitHub Actions workflows live under [`.github/workflows/`](../.github/workfl
   formatting (`cargo fmt --check`) and lints (`cargo clippy -D warnings`) once on
   Linux, and a `test` matrix builds and runs the suite (via `cargo nextest run`,
   plus a `cargo test --doc` step for the doctests nextest skips) in release mode
-  on **both `windows-latest` and `ubuntu-latest`** (the PTY tests drive `cmd.exe`
-  on Windows and `sh` on Linux). A third job, `changelog`, runs **on pull requests
+  on **`windows-latest`, `ubuntu-latest` and `macos-latest`**. Subprocess and PTY
+  tests use Rust helper binaries. A separate job, `changelog`, runs **on pull requests
   only**: it reds when the diff touches the shipped surface (`crates/*/src/`, the
   workbench UI assets, `assets/`) without a `changelog.d/` fragment, and it checks
   that the fragments present parse. A human overrides it with the `no-changelog`

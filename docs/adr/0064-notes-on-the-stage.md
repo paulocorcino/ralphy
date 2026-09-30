@@ -448,7 +448,7 @@ The series, each a vertical slice:
 6. **Mermaid** — node view + popover (§15).
 
 The spike that produced §6's numbers is recorded in
-[docs/spike-note-editor-2026-09-22.md](../spike-note-editor-2026-09-22.md);
+[docs/research/spike-note-editor-2026-09-22.md](../research/spike-note-editor-2026-09-22.md);
 the page, bundles and screenshots were scratch and were not kept.
 
 ## Amendment (2026-09-22): the container carries a length and a mask, because deflate alone did not keep §3's promise

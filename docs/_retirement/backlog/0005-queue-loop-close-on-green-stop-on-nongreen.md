@@ -2,7 +2,7 @@
 
 **Type:** AFK
 **Triage:** needs-triage
-**Spec:** [ADR-0002](../adr/0002-core-agnostic-adapter-boundary.md), [CONTEXT.md](../../CONTEXT.md), [docs/triage-roles.md](../triage-roles.md)
+**Spec:** [ADR-0002](../../adr/0002-core-agnostic-adapter-boundary.md), [CONTEXT.md](../../../CONTEXT.md), [docs/triage-roles.md](../../triage-roles.md)
 
 ## What to build
 

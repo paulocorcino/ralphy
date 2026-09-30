@@ -2,14 +2,14 @@
 
 **Type:** AFK
 **Triage:** needs-triage
-**Spec:** [ADR-0002](../adr/0002-core-agnostic-adapter-boundary.md), [CONTEXT.md](../../CONTEXT.md)
+**Spec:** [ADR-0002](../../adr/0002-core-agnostic-adapter-boundary.md), [CONTEXT.md](../../../CONTEXT.md)
 
 ## What to build
 
 Drop `--dry-run`: `ralphy run --repo <r> --only-issue N` plans **and executes** one
 issue interactively over a PTY, committing onto the run branch and classifying the
 outcome. This is the heart of the subscription-billing path (interactive over PTY,
-per [ADR-0002](../adr/0002-core-agnostic-adapter-boundary.md)). Parity oracle:
+per [ADR-0002](../../adr/0002-core-agnostic-adapter-boundary.md)). Parity oracle:
 `ralphy.ps1 -OnlyIssue N` (interactive).
 
 Completion detection ports the **current** mechanism faithfully (Q3): no PTY-stream

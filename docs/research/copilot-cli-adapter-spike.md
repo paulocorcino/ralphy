@@ -743,7 +743,8 @@ analog in the other adapters.
   the help warns that changing these flags "will break the runtime".
 - **`USE_BUILTIN_RIPGREP`** — a bundled ripgrep is used by default.
 - **`ACCEPTS_IMAGES`: `true` — ✅ VERIFIED** (probe P4). `--attachment <path>`
-  with a real PNG (`docs/screenshots/100-auth-card-20260718.png`, 18 797 bytes)
+  with a real PNG (`docs/screenshots/100-auth-card-20260718.png`, 18 797 bytes;
+  historical probe input, not retained in this repository)
   and a prompt asking for the most prominent word in the image returned
   `ATTACH_OK|Registrar|RALPHY_DONE_EXIT`, exit 0 — a word that appears only in
   the image's pixels. The flag is "only valid in non-interactive mode", which is

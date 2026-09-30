@@ -1,7 +1,7 @@
 # Implementation plan — #3 Interactive execute + completion detection
 
 **Issue:** [0003](0003-interactive-execute-completion-detection.md) ·
-**Spec:** [ADR-0002](../adr/0002-core-agnostic-adapter-boundary.md), [CONTEXT.md](../../CONTEXT.md) ·
+**Spec:** [ADR-0002](../../adr/0002-core-agnostic-adapter-boundary.md), [CONTEXT.md](../../../CONTEXT.md) ·
 **Oracle:** `ralphy.ps1 -OnlyIssue N` (interactive), `stop_exit_hook.ps1`
 
 ## Goal
@@ -24,7 +24,7 @@ run branch, detects completion from the transcript, and returns an `Outcome`.
 Ports `stop_exit_hook.ps1`. No PTY, no `claude` — pure I/O, so it lands first and
 is verifiable without billing.
 
-- New `Command::Hook { Stop }` subcommand in [main.rs](../../crates/ralphy-cli/src/main.rs).
+- New `Command::Hook { Stop }` subcommand in [main.rs](../../../crates/ralphy-cli/src/main.rs).
 - Reads the Stop-hook JSON payload from **stdin**; pulls `last_assistant_message`,
   falling back to the last `assistant` `text` block in the `transcript_path` JSONL
   (version-robust, exactly as the ps1 does).
@@ -87,7 +87,7 @@ and gate the full live run behind a manual/`#[ignore]` integration test (Stage 5
   `--remote-control`/`--no-remote-control` (default on).
 - Build `ClaudeAgent` with the exec config; clear `ANTHROPIC_API_KEY` before the
   run (guarantee subscription billing, as the ps1 does).
-- Print the executed `Outcome` (already wired at [main.rs:106](../../crates/ralphy-cli/src/main.rs#L106)).
+- Print the executed `Outcome` (already wired at [main.rs:106](../../../crates/ralphy-cli/src/main.rs#L106)).
 
 ### Stage 5 — Verification
 - **Automated (no billing):** `cargo test --workspace`, `cargo clippy`. Covers the

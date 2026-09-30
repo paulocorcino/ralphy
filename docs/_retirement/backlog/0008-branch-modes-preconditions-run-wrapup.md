@@ -2,7 +2,7 @@
 
 **Type:** AFK
 **Triage:** needs-triage
-**Spec:** [CONTEXT.md](../../CONTEXT.md)
+**Spec:** [CONTEXT.md](../../../CONTEXT.md)
 
 ## What to build
 

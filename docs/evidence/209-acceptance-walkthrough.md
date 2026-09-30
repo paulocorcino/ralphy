@@ -6,7 +6,7 @@ the network-bind Session-login half of C3). Produced by
 `ALL SYMPTOMS NOT REPRODUCIBLE`.
 
 None of the five originally-audited symptoms
-(`docs/audit-workbench-2026-07-13.md`) reproduce, plus three extras
+(`docs/evidence/audits/audit-workbench-2026-07-13.md`) reproduce, plus three extras
 corroborating #202-#208.
 
 | # | Audit id | Symptom | Result | Screenshot |

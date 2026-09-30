@@ -313,8 +313,13 @@ completion (~30 s per Windows run). Consider `-n 8` with a `> 5s` bound.
   `static Once` pattern of `session_single_writer.rs:106-115`.
 - `fleet_console.rs:196` → `fleet_session.rs` (same env).
 - `codec_transport_free.rs` + `session_transport_free.rs` → one file. The bare
-  substring scan was already tripped by prose
-  (`docs/research/plan_friction/0166…md:27`).
+  substring scan was already tripped by prose: the #166 run report records
+  that `session.rs` documentation containing the literal `WebSocket` triggered
+  `session_transport_free`; rewording the comment to "client disconnect"
+  cleared it without changing behavior. Source: the
+  [July 10 plan-friction report](https://github.com/paulocorcino/ralphy/issues/166#issuecomment-4932058203).
+  This summary preserves the relevant observation from the local research
+  export, which is ignored by Git and is not required to read this audit.
 - `observe_read.rs:236` DELETE (weaker than `file_encoding.rs:143`);
   `observe_read.rs:167` fold into `:195`.
 - `workspace_write.rs:449`, `:469`, `:492` DELETE (same inputs as

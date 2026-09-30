@@ -2,7 +2,8 @@
 
 **Type:** AFK
 **Triage:** needs-triage
-**Spec:** [ADR-0002](../adr/0002-core-agnostic-adapter-boundary.md), [guard.ps1](../../guard.ps1)
+**Spec:** [ADR-0002](../../adr/0002-core-agnostic-adapter-boundary.md), `guard.ps1`
+(historical parity oracle; the script is no longer present in this repository).
 
 ## What to build
 

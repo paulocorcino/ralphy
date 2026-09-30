@@ -2,7 +2,7 @@
 
 **Type:** AFK
 **Triage:** needs-triage
-**Spec:** [ADR-0001](../adr/0001-triage-vocabulary-and-stop-before.md), [CONTEXT.md](../../CONTEXT.md)
+**Spec:** [ADR-0001](../../adr/0001-triage-vocabulary-and-stop-before.md), [CONTEXT.md](../../../CONTEXT.md)
 
 ## What to build
 

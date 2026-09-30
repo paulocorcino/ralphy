@@ -40,3 +40,4 @@ docs/screenshots/*.png
 node_modules/
 # Staged-plan gate logs: local evidence, reports carry what reviewers need.
 docs/plans/logs/
+.cursor/

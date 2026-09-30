@@ -2,7 +2,7 @@
 
 **Type:** AFK
 **Triage:** needs-triage
-**Spec:** [CONTEXT.md](../../CONTEXT.md), [docs/triage-roles.md](../triage-roles.md)
+**Spec:** [CONTEXT.md](../../../CONTEXT.md), [docs/triage-roles.md](../../triage-roles.md)
 
 ## What to build
 
