@@ -230,13 +230,28 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* A peer on another machine, reached through a tunnel. */
-.env-group .env-kind {
+/* The system the group's daemon runs on (`WBFleet.system`). The same icon
+   heads a row of the Hosts dialog. */
+.os-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  font-size: 12px;
+  line-height: 1;
+}
+.os-icon > span {
   display: inline-flex;
 }
-.env-group .env-kind svg {
+.os-icon svg {
   width: 13px;
   height: 13px;
+}
+/* The shared symbols (index.html): drawn only through `<use>`. */
+.svg-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
 }
 .env-group .env-daemon {
   color: var(--text);
@@ -501,16 +516,3 @@
   line-height: 1.4;
 }
 
-/* A tunnel group's menu button (#497): Remove host. */
-.env-group .group-menu {
-  all: unset;
-  cursor: pointer;
-  display: inline-flex;
-  padding: 0 0.2rem;
-  border-radius: 3px;
-  color: var(--text-muted);
-}
-.env-group .group-menu:hover {
-  color: var(--text);
-  background: var(--log-bg);
-}

@@ -305,13 +305,31 @@ test("a closed tunnel is grey and reconnecting; a silent daemon behind it is a f
   assert.ok(groupTitle(group("tunnel-silent")).includes("not answering"));
 });
 
-test("the header markup shows the server icon and the group label", () => {
+test("every group header shows its system's icon and the group label, and has no menu", () => {
   const html = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../assets/ui/index.html"), "utf8");
   const start = html.indexOf('class="env-group"');
   assert.ok(start >= 0, "no .env-group in index.html");
   const labelAt = html.indexOf('class="env-label"', start);
   const head = html.slice(start, html.indexOf(">", labelAt) + 1);
-  assert.ok(head.includes('x-show="g.tunnel"'), head);
-  assert.ok(head.includes(`x-icon="'server'"`), head);
+  // The icon is drawn for every group, not only a tunnel peer's.
+  assert.doesNotMatch(head, /g\.tunnel/, head);
+  for (const os of ["windows", "macos", "linux", "other"]) {
+    assert.ok(head.includes(`osOf(g.environment) === '${os}'`), os);
+  }
+  assert.ok(head.includes('<use href="#os-linux">'), "the penguin");
+  assert.ok(html.includes('<symbol id="os-linux"'), "the penguin's symbol");
   assert.ok(head.includes('x-text="groupLabel(g)"'), head);
+  const header = html.slice(start, html.indexOf('<template x-for="p in g.rows"', start));
+  assert.doesNotMatch(header, /group-menu|contextmenu|showGroupMenu/);
+});
+
+test("a group's system comes from its environment label", () => {
+  const { system } = load();
+  assert.equal(system("Linux"), "linux");
+  assert.equal(system("WSL: Ubuntu-22.04"), "linux");
+  assert.equal(system("macOS"), "macos");
+  assert.equal(system("Windows"), "windows");
+  assert.equal(system("freebsd"), "other");
+  assert.equal(system("unknown"), "other");
+  assert.equal(system(""), "other");
 });

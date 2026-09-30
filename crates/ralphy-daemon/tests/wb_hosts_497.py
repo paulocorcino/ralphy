@@ -1,4 +1,4 @@
-"""#497 browser acceptance: add and remove a host from the workbench.
+"""#497 browser acceptance: add, edit and remove a host from the workbench.
 
 One Playwright pass over a REAL daemon on a SCRATCH `RALPHY_DAEMON_DIR`. The
 daemon runs the real `ralphy host …` verbs with the real `ssh`, but only
@@ -7,15 +7,20 @@ listener plays the peer's daemon behind the seeded tunnel descriptor, as in
 `wb_tunnel_495.py`.
 
 Scenario 1  with a fleet of one (no group headers), the Projects header has the
-            Add a host button, and it opens the dialog with the host list;
+            Hosts button, and it opens the form with the SSH config hosts;
             the password field is a text field, so no browser offers to save it
 Scenario 2  a typed address on a closed port: Next shows the help panel with
             its three tabs, the failure, and the wrong-address note
-Scenario 3  a seeded tunnel peer: its group menu opens Remove host, with the
-            token option unchecked
-Scenario 4  Remove runs `ralphy host remove`: the dialog closes, the group goes
-            away with no page reload, and the descriptor file is deleted
-Scenario 5  no page errors were thrown
+Scenario 3  a seeded tunnel peer: every group header shows its system's icon
+            (the penguin for the Linux host, the local system's for the
+            local group), and no group has a menu
+Scenario 4  Hosts now opens on Your hosts, with the host's row
+Scenario 5  Edit fills the form with the host's connection
+Scenario 6  Remove asks in the row, with the token option unchecked
+Scenario 7  Remove runs `ralphy host remove`: the group goes away with no page
+            reload, the descriptor file is deleted, and the dialog shows the
+            form, because no host is left
+Scenario 8  no page errors were thrown
 
 The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
 is also the orchestrator on this host).
@@ -281,7 +286,7 @@ def main():
             )
             page.click(".side-add-host")
             page.wait_for_function(
-                "() => { const d = document.querySelector('[aria-label=\"Add a host\"][role=dialog]');"
+                "() => { const d = document.querySelector('[aria-label=\"Hosts\"][role=dialog]');"
                 " return !!d && d.getClientRects().length > 0; }",
                 timeout=10000,
             )
@@ -324,7 +329,7 @@ def main():
             shot(page, "add-host-help")
             page.keyboard.press("Escape")
 
-            # 3. A tunnel peer: the group menu and the Remove host dialog.
+            # 3. A tunnel peer: a system icon on every group, and no menu.
             descriptor = seed_descriptor(daemon_dir, stub_port, closed_port)
             page.click(".side-refresh")
             page.wait_for_function(
@@ -333,34 +338,79 @@ def main():
                 arg=LABEL,
                 timeout=20000,
             )
-            page.click(".env-group .group-menu:visible")
-            page.click("#ctxmenu .ctx-item")
-            page.wait_for_function(
-                "() => { const d = document.querySelector('[aria-label=\"Remove host\"][role=dialog]');"
-                " return !!d && d.getClientRects().length > 0; }",
-                timeout=10000,
+            icons = page.evaluate(
+                f"""() => Array.from(document.querySelectorAll('.projects .env-group')).filter({VISIBLE}).map(g => {{
+                    const shown = Array.from(g.querySelectorAll('.os-icon > *')).filter({VISIBLE});
+                    return [g.querySelector('.env-label').textContent.trim(),
+                            shown.map(e => e.matches('svg') ? e.querySelector('use').getAttribute('href') : e.className)];
+                }})"""
             )
-            unchecked = page.evaluate(
-                "() => !document.querySelector('[aria-label=\"Remove host\"] input[type=checkbox]').checked"
+            local_icon = {"nt": "bi bi-windows"}.get(os.name, "bi bi-apple" if sys.platform == "darwin" else "#os-linux")
+            menus = page.evaluate("() => document.querySelectorAll('.group-menu').length")
+            check(
+                "every group shows its system's icon, and no group has a menu",
+                len(icons) == 2
+                and icons[0][1] == [local_icon]
+                and icons[1] == [LABEL, ["#os-linux"]]
+                and menus == 0,
+                f"icons={icons} menus={menus}",
             )
-            check("the group menu opens Remove host, the token option unchecked", unchecked)
-            shot(page, "remove-host")
+            shot(page, "group-icons")
 
-            # 4. Remove: `ralphy host remove` forgets the silent host.
-            page.click("[aria-label=\"Remove host\"] .btn.danger")
+            # 4. Hosts opens on the list.
+            page.click(".side-add-host")
+            page.wait_for_function(
+                f"() => ({VISIBLE})(document.querySelector('.host-list'))", timeout=10000
+            )
+            tab = page.evaluate("() => document.querySelector('.host-tabs .seg-btn.on').textContent.trim()")
+            row = page.evaluate(
+                "() => [document.querySelector('.host-row-name').textContent.trim(),"
+                " document.querySelector('.host-row-dest').textContent.trim()]"
+            )
+            check(
+                "Hosts opens on Your hosts, with the host's row",
+                tab == "Your hosts (1)" and row == [PEER_NAME, f"ssh://127.0.0.1:{closed_port}"],
+                f"tab={tab!r} row={row}",
+            )
+            shot(page, "hosts-list")
+
+            # 5. Edit: the form has the host's connection.
+            page.click(".host-row .btn:text-is('Edit')")
+            page.wait_for_function(f"() => ({VISIBLE})(document.querySelector('#host-address'))", timeout=10000)
+            form = page.evaluate(
+                "() => [document.querySelector('.host-tabs .seg-btn.on').textContent.trim(),"
+                " document.querySelector('#host-address').value, document.querySelector('#host-port').value,"
+                " document.querySelector('#host-user').value, document.querySelector('#host-password').value]"
+            )
+            check(
+                "Edit fills the form with the host's connection",
+                form == [f"Edit {PEER_NAME}", "127.0.0.1", str(closed_port), "", ""],
+                f"form={form}",
+            )
+            shot(page, "hosts-edit")
+            page.click(".host-tabs .seg-btn:text-is('Your hosts (1)')")
+
+            # 6. Remove asks in the row.
+            page.click(".host-row .btn:text-is('Remove')")
+            page.wait_for_function(f"() => ({VISIBLE})(document.querySelector('.host-remove'))", timeout=10000)
+            unchecked = page.evaluate("() => !document.querySelector('.host-remove input[type=checkbox]').checked")
+            check("Remove asks in the row, the token option unchecked", unchecked)
+            shot(page, "hosts-remove")
+
+            # 7. Remove: `ralphy host remove` forgets the silent host.
+            page.click(".host-remove .btn.danger")
             page.wait_for_function(
                 "(label) => !Array.from(document.querySelectorAll('.projects .env-group .env-label'))"
                 ".some(l => l.textContent.trim() === label)",
                 arg=LABEL,
                 timeout=45000,
             )
-            closed = page.evaluate(
-                "() => document.querySelector('[aria-label=\"Remove host\"][role=dialog]').getClientRects().length === 0"
-            )
+            page.wait_for_function(f"() => ({VISIBLE})(document.querySelector('#host-address'))", timeout=10000)
+            tabs_shown = page.evaluate(f"() => ({VISIBLE})(document.querySelector('.host-tabs'))")
             check(
-                "Remove closes the dialog, drops the group and deletes the descriptor",
-                closed and not descriptor.exists(),
-                f"closed={closed} descriptor_exists={descriptor.exists()}",
+                "Remove drops the group and the descriptor; with no host left the dialog shows the form",
+                not descriptor.exists() and not tabs_shown,
+                f"descriptor_exists={descriptor.exists()} tabs_shown={tabs_shown}",
             )
 
             check("no page errors were thrown", not thrown, "got={}".format(thrown))
@@ -375,8 +425,8 @@ def main():
 
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     # Floor: a deleted scenario must not pass silently as "everything green".
-    if len(results) != 6:
-        print(f"[FAIL] expected 6 checks, ran {len(results)}", flush=True)
+    if len(results) != 9:
+        print(f"[FAIL] expected 9 checks, ran {len(results)}", flush=True)
         sys.exit(1)
     sys.exit(0 if all(results) else 1)
 

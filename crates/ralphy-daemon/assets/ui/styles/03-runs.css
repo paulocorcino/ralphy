@@ -840,6 +840,71 @@ body.runs-open .runs {
   gap: 0.5rem;
   margin-left: auto;
 }
+/* The Hosts dialog: the tabs, the list of hosts, and the form. */
+.host-tabs {
+  margin-bottom: 0.2rem;
+}
+.host-form {
+  display: contents;
+}
+.host-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.host-item {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.45rem 0.6rem;
+}
+.host-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+.host-row .os-icon {
+  color: var(--text-muted);
+}
+.host-row-name {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.host-row-dest {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+.host-row .peer-state {
+  display: inline-flex;
+  color: var(--text-muted);
+}
+.host-row .peer-state .glyph {
+  display: inline-flex;
+}
+.host-row .peer-state svg {
+  width: 14px;
+  height: 14px;
+}
+.host-row .peer-state.fault {
+  color: var(--danger);
+}
+.host-remove {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
 .host-remove-error {
   white-space: pre-wrap;
   word-break: break-all;

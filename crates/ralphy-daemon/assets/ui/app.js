@@ -121,7 +121,7 @@ function shell() {
     fleetPeers: [],
     // The Add a host dialog (#497): its whole state is the wb-hosts.js fold.
     addHost: window.WBHosts.initial(),
-    // The Remove host dialog (#497).
+    // Remove in a row of the Hosts dialog (#497): the host being removed.
     removeHost: { open: false, daemon: "", name: "", rotate: false, busy: false, lines: [], failure: null },
     // Peers with a wake in flight, keyed by daemon_id: a cold WSL boot takes
     // seconds, and the key stops a second click sending a second nudge.
@@ -531,6 +531,9 @@ function shell() {
     },
     groupLabel(g) {
       return window.WBFleet.groupLabel(g);
+    },
+    osOf(environment) {
+      return window.WBFleet.system(environment);
     },
 
     // Local rows first, then one group per peer environment (wb-fleet.js).
@@ -2755,8 +2758,11 @@ function shell() {
     addHostFailed(message) {
       this.addHostStep({ type: "event", event: { event: "failed", kind: "other", message } });
     },
+    // Opens on the list when a host is paired over SSH, else on the form.
     openAddHost() {
-      this.addHost = Object.assign(window.WBHosts.initial(), { open: true });
+      const tab = this.sshHosts().length ? "hosts" : "add";
+      this.addHost = Object.assign(window.WBHosts.initial(), { open: true, tab });
+      this.removeHost.open = false;
       window.WBDaemon.observe("host.aliases", {})
         .then((reply) => {
           if (reply?.status === "ok") this.addHostStep({ type: "aliases", aliases: reply.aliases });
@@ -2766,6 +2772,34 @@ function shell() {
     },
     closeAddHost() {
       this.addHostStep({ type: "close" });
+      this.removeHost.open = false;
+    },
+    // The hosts paired over SSH. A WSL daemon is paired by its setup instead.
+    sshHosts() {
+      return (this.fleetPeers || []).filter((p) => p.tunnel);
+    },
+    // With no host left there is no list to show.
+    hostTab() {
+      return this.sshHosts().length ? this.addHost.tab : "add";
+    },
+    addHostTab(tab) {
+      if (this.addHost.busy) return;
+      this.removeHost.open = false;
+      this.addHostStep({ type: "tab", tab });
+    },
+    // Cancel leaves an edit for the list it came from.
+    addHostCancel() {
+      if (this.addHost.editing) this.addHostTab("hosts");
+      else this.closeAddHost();
+    },
+    addHostEdit(h) {
+      if (this.addHost.busy) return;
+      this.removeHost.open = false;
+      this.addHostStep({ type: "edit", host: h });
+    },
+    // A host row's state glyph and its tooltip, as in the group header.
+    hostRowGroup(h) {
+      return { name: h.name, state: h.state, diagnosis: h.diagnosis, local: false };
     },
     addHostPick(alias) {
       this.addHostStep({ type: "pick", alias });
@@ -2913,14 +2947,10 @@ function shell() {
         }
       });
     },
-    // A tunnel group's menu: its one action is Remove host.
-    showGroupMenu(x, y, g) {
-      this.renderMenu(x, y, [
-        { label: "Remove host…", icon: "bi-trash", danger: true, run: () => this.openRemoveHost(g) },
-      ]);
-    },
-    openRemoveHost(g) {
-      this.removeHost = { open: true, daemon: g.daemon, name: g.name, rotate: false, busy: false, lines: [], failure: null };
+    // Remove asks in the host's own row of the list.
+    openRemoveHost(h) {
+      if (this.removeHost.busy) return;
+      this.removeHost = { open: true, daemon: h.daemon_id, name: h.name, rotate: false, busy: false, lines: [], failure: null };
     },
     closeRemoveHost() {
       this.removeHost.open = false;
