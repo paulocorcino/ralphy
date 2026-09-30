@@ -100,12 +100,12 @@ fn restarted_by_systemd(store: &Path) -> Result<bool> {
 /// use" in `daemon.log`.
 ///
 /// A daemon outside the agent while the agent is loaded is the state an older
-/// restart left behind. It is ended first, so the agent gets the port back.
+/// restart left behind. It is ended first, so the agent gets the port back. A
+/// missing record with the agent running is the other state it left: the
+/// agent's daemon is the one to restart.
 fn restarted_by_launchd(store: &Path) -> Result<bool> {
-    let Some(pid) = ralphy_daemon::pidfile::read_in(store) else {
-        return Ok(false);
-    };
-    match launchd_plan(pid, launchd_agent()) {
+    let recorded = ralphy_daemon::pidfile::read_in(store);
+    match launchd_plan(recorded, launchd_agent()) {
         LaunchdPlan::NotTheAgent => return Ok(false),
         LaunchdPlan::Kickstart => {}
         LaunchdPlan::StopThenKickstart => {
@@ -137,11 +137,15 @@ enum LaunchdPlan {
 }
 
 /// `agent` is `None` when no agent is loaded, else the pid it runs, if any.
-fn launchd_plan(recorded: u32, agent: Option<Option<u32>>) -> LaunchdPlan {
-    match agent {
-        None => LaunchdPlan::NotTheAgent,
-        Some(Some(pid)) if pid == recorded => LaunchdPlan::Kickstart,
-        Some(_) => LaunchdPlan::StopThenKickstart,
+/// With no record, a running agent is still the daemon to restart; an agent
+/// that runs nothing is not, so a restart of "a running daemon" starts none.
+fn launchd_plan(recorded: Option<u32>, agent: Option<Option<u32>>) -> LaunchdPlan {
+    match (recorded, agent) {
+        (_, None) => LaunchdPlan::NotTheAgent,
+        (None, Some(Some(_))) => LaunchdPlan::Kickstart,
+        (None, Some(None)) => LaunchdPlan::NotTheAgent,
+        (Some(pid), Some(Some(running))) if pid == running => LaunchdPlan::Kickstart,
+        (Some(_), Some(_)) => LaunchdPlan::StopThenKickstart,
     }
 }
 
@@ -305,7 +309,7 @@ fn stop_recorded(
     if !alive(pid) {
         // A stale file names a process that is already gone; clear it rather
         // than leave the next restart reading a ghost.
-        ralphy_daemon::pidfile::clear_in(store);
+        ralphy_daemon::pidfile::clear_own_in(store, pid);
         return Ok(false);
     }
 
@@ -322,7 +326,7 @@ fn stop_recorded(
                 running = %running.display(),
                 "the recorded pid belongs to another program now"
             );
-            ralphy_daemon::pidfile::clear_in(store);
+            ralphy_daemon::pidfile::clear_own_in(store, pid);
             return Ok(false);
         }
         _ => {
@@ -346,7 +350,7 @@ fn stop_recorded(
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
         if !alive(pid) {
-            ralphy_daemon::pidfile::clear_in(store);
+            ralphy_daemon::pidfile::clear_own_in(store, pid);
             return Ok(true);
         }
         std::thread::sleep(POLL);
@@ -556,17 +560,23 @@ second daemon
 
     #[test]
     fn a_daemon_outside_a_loaded_agent_is_stopped_before_the_kickstart() {
-        assert_eq!(launchd_plan(3136, None), LaunchdPlan::NotTheAgent);
-        assert_eq!(launchd_plan(3136, Some(Some(3136))), LaunchdPlan::Kickstart);
+        assert_eq!(launchd_plan(Some(3136), None), LaunchdPlan::NotTheAgent);
+        assert_eq!(
+            launchd_plan(Some(3136), Some(Some(3136))),
+            LaunchdPlan::Kickstart
+        );
         // What a restart before this fix left: the agent retrying, not running.
         assert_eq!(
-            launchd_plan(3061, Some(None)),
+            launchd_plan(Some(3061), Some(None)),
             LaunchdPlan::StopThenKickstart
         );
         assert_eq!(
-            launchd_plan(3061, Some(Some(3136))),
+            launchd_plan(Some(3061), Some(Some(3136))),
             LaunchdPlan::StopThenKickstart
         );
+        // The record was erased while the agent's daemon serves (rc.31 on the Mac).
+        assert_eq!(launchd_plan(None, Some(Some(3307))), LaunchdPlan::Kickstart);
+        assert_eq!(launchd_plan(None, Some(None)), LaunchdPlan::NotTheAgent);
     }
 
     #[test]

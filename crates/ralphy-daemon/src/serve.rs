@@ -189,7 +189,7 @@ pub(crate) async fn serve(
     .await
     .context("serving the daemon listener")?;
     if let Some(dir) = store.as_deref() {
-        pidfile::clear_in(dir);
+        pidfile::clear_own_in(dir, std::process::id());
     }
     tracing::info!("daemon stopped");
     Ok(())

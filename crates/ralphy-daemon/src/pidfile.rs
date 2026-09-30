@@ -57,6 +57,17 @@ pub fn clear_in(dir: &Path) {
     }
 }
 
+/// Forget the recorded daemon only while the file still names `pid`. Another
+/// daemon may have recorded itself since: when launchd relaunches its agent
+/// during a restart, the new daemon writes its pid while the old one is still
+/// exiting, and a plain removal then erased the only record of the daemon that
+/// serves. Measured on macOS 12.7.6, 2026-09-30.
+pub fn clear_own_in(dir: &Path, pid: u32) {
+    if read_in(dir) == Some(pid) {
+        clear_in(dir);
+    }
+}
+
 fn read_lines(dir: &Path) -> Vec<String> {
     std::fs::read_to_string(pid_path_in(dir))
         .map(|text| text.lines().map(str::to_string).collect())
@@ -117,6 +128,19 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("ralphy-pidfile-{}-{tag}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         dir
+    }
+
+    #[test]
+    fn a_daemon_forgets_only_its_own_record() {
+        let dir = scratch("own");
+        let exe = PathBuf::from("/opt/ralphy/ralphy");
+        write_in(&dir, 3307, &exe, &[]).expect("write");
+        clear_own_in(&dir, 3136);
+        assert_eq!(read_in(&dir), Some(3307), "another daemon's record stays");
+        clear_own_in(&dir, 3307);
+        assert_eq!(read_in(&dir), None);
+        clear_own_in(&dir, 3307);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
