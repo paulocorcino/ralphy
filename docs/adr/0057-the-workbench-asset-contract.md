@@ -179,6 +179,36 @@ have, and its absence took a week to notice.
 - Issue #367 (the file-split series) and #369 (which raised the question D1 and
   D2 answer).
 
+## Compliance
+
+- D1 (wiring): checked by `crates/ralphy-daemon/src/tests.rs`
+  (`every_shell_tag_resolves_and_every_asset_is_reachable`,
+  `every_shell_links_the_whole_cascade`).
+- D1 (tree sweeps): checked by `crates/ralphy-daemon/src/tests.rs`
+  (`the_sweep_set_covers_every_asset_we_wrote`). The sweeps read the
+  embedded tree through `swept_ui_assets`, not a list of paths.
+- D1 (which layer holds a claim, and the reason a pin is dropped): not
+  checked by code: reviewed in the PR. `cargo run -p xtask -- asset-pins`
+  counts the pins by shape, but it is an inventory, not a check, and CI does
+  not run it.
+- D2: not checked by code: it states how to read ADR-0036 §3, and no code
+  can break it.
+- D3: checked by CI (`.github/workflows/ci.yml`): the `ui-tests` job runs
+  `node --test crates/ralphy-daemon/ui-tests` and oxlint with
+  `--deny-warnings`, and the `lint` job runs
+  `cargo run -q -p xtask -- ui-copy --check`.
+- D4 (every `*.test.mjs` is imported by `ui-tests/index.mjs`): checked by
+  `crates/ralphy-daemon/src/tests.rs`
+  (`every_ui_test_file_is_imported_by_the_barrel`).
+- D4 (`wb-foo.js` is tested by `wb-foo.test.mjs`, and no test file is in
+  `assets/ui/`): not checked by code: reviewed in the PR.
+- D5: checked by `crates/ralphy-daemon/src/tests.rs`
+  (`no_selector_sets_one_property_twice`). It reports two top-level blocks
+  with the same selector text that set one property to two values.
+- D6: not checked by code: reviewed in the PR.
+- D7: not checked by code: reviewed in the PR. No test fails when a
+  formatter or ESLint is added.
+
 ## Amendment (2026-09-30): the UI gate names CI, and oxlint is allowed
 
 **D3.** The cargo commands of the gate are the ones CI runs

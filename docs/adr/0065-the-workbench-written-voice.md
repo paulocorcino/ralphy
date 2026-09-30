@@ -356,3 +356,40 @@ daemon reply stays as it is, as the cause of a `Could not …` sentence (§6).
 - The lint checks every new text, and CI fails on a violation or a stale
   exemption (#431). A text that must break a rule gets an exemption with a
   reason in the JSON.
+
+## Compliance
+
+The copy lint is `cargo run -q -p xtask -- ui-copy --check`. The `lint` job
+of `.github/workflows/ci.yml` runs it, and a violation or a stale exemption
+fails the job. Its rules are in `crates/xtask/src/ui_copy/check.rs`.
+
+- §1: not checked by code: no code compares this ADR with
+  `docs/ui-copy-rules.json`. Reviewed in the PR.
+- §2 (sentence case, with `state_words`, `key_names`, `exempt_kinds` and
+  `proper_nouns`): checked by the copy lint (rules `casing:first` and
+  `casing:title`).
+- §2 (a name inside a sentence is in curly quotes): not checked by code:
+  reviewed in the PR.
+- §3: checked by the copy lint (rule `banned:ralphy`, case-sensitive).
+- §4: not checked by code: the lint cannot check the meaning of a verb. The
+  editorial passes check it by hand.
+- §5 (no final period on a tooltip): not checked by code: reviewed in the
+  PR.
+- §6 (`Unable to` is not used): checked by the copy lint (rule
+  `banned:unable to`).
+- §6 (the `Could not <act>: <cause>.` shape, the terminal notice shape, and
+  `Cannot` only for an act that is not allowed): not checked by code:
+  reviewed in the PR.
+- §7 (`…`, never `...`): checked by the copy lint (rule `punctuation:...`).
+- §7 (the other punctuation rules): not checked by code: reviewed in the PR.
+- §8 (`plane` is banned): checked by the copy lint (rule `banned:plane`).
+- §8 (the other glossary words): not checked by code: reviewed in the PR.
+- §9: checked by the copy lint. An exemption with an empty reason fails to
+  load, and an exemption that matches no text fails the check.
+- §10 (sentence length, the `plain` list, contractions): checked by the copy
+  lint (rules `sentence-length`, `plain:<term>` and `contraction`).
+- §10 (the other rules, such as active voice and one idea per sentence): not
+  checked by code: the lint cannot judge whether a sentence is clear. The
+  editorial passes read the text by hand.
+- §11: not checked by code: it limits what the other rules cover. Reviewed
+  in the PR.

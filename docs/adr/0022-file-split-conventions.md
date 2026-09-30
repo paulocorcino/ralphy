@@ -112,3 +112,17 @@ production code. The budget is enforced, not remembered:
 - The two legacy `mod.rs` dirs are the one accepted inconsistency until a PR
   naturally retires them; §1 records the intent so it is not mistaken for a
   counter-example.
+
+## Compliance
+
+- §1: not checked by code: reviewed in the PR. One legacy `mod.rs` remains
+  (`crates/ralphy-cli/src/events/mod.rs`).
+- §2: not checked by code: reviewed in the PR.
+- §3: not checked by code: reviewed in the PR.
+- §4: checked by the CI gate in `.github/workflows/ci.yml` (`cargo fmt --all
+  --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo nextest run --workspace`, `cargo test --workspace --doc`). The
+  `/rust-skills` review is not checked by code: it is reviewed in the PR.
+- §5: not checked by code: reviewed in the PR.
+- §6: checked by `crates/xtask/tests/inline_test_modules.rs`
+  (no_inline_test_module_outgrows_the_budget).

@@ -310,6 +310,31 @@ cannot be cleared by the failure it is meant to detect.
   documents are deleted. Browsing finished runs is a different feature with
   different storage questions, and nothing here forecloses it.
 
+## Compliance
+
+- §1, §2: not checked by code: they choose the channel and where the writer
+  sits on the delivery seam. Reviewed in the PR.
+- §3: not checked by code: behaviour tests pin the one writer
+  (`write_atomic_replaces_and_never_shows_a_partial_document` in
+  `crates/ralphy-run-snapshot/src/write.rs`). Reviewed in the PR.
+- §4: not checked by code: no test fails when the `runid` mint moves back into
+  the events-sink branch. Reviewed in the PR.
+- §5: not checked by code: the field list is pinned by behaviour tests only.
+  Reviewed in the PR.
+- §6: not checked by code: behaviour tests pin the one reader
+  (`list_runs_refuses_a_newer_version`, `list_runs_reports_a_malformed_document`
+  in `crates/ralphy-run-snapshot/src/read.rs`). Reviewed in the PR.
+- §7 (a dead pid is swept, not shown): not checked by code: a behaviour
+  test pins it (`list_runs_drops_and_sweeps_a_dead_pid` in
+  `crates/ralphy-run-snapshot/src/read.rs`). Reviewed in the PR.
+- §7 (no liveness field in the document): not checked by code: reviewed in the PR.
+- §8: not checked by code: the removal at exit is reviewed in the PR.
+- §9: not checked by code: no check fails when the daemon spawns `ralphy` to
+  list runs. Reviewed in the PR.
+- §10: not checked by code: `crates/xtask/tests/crate_dependencies.rs` has no
+  rule for `ralphy-run-snapshot`. Reviewed in the PR.
+- §11: not checked by code: a scope rule. Reviewed in the PR.
+
 ## Amendment: the document carries plan step state, and plan-progress detection is spine-level
 
 Status: proposed (2026-07-26; issue #329, under PRD #328).
