@@ -1,6 +1,20 @@
 {
   "releases": [
     {
+      "version": "v0.1.0-rc.35",
+      "date": "2026-09-30",
+      "announce": true,
+      "entries": [
+        {
+          "id": "hosts-dialog",
+          "kind": "feature",
+          "text": "The Hosts dialog lists the hosts reached over SSH. Edit changes the address, port, user or key file of a host, and its connection opens again at once. Remove moves into the list. Every group in the Projects list shows the icon of its system: Linux, macOS, Windows or other.",
+          "topic": "hosts",
+          "headline": "🖥️ **Hosts** — your hosts in one list, to edit a connection or remove a host"
+        }
+      ]
+    },
+    {
       "version": "v0.1.0-rc.34",
       "date": "2026-09-30",
       "announce": false,
