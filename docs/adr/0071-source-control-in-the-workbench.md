@@ -1,6 +1,6 @@
 # Source control in the workbench: one change set, refusals as values, fast-forward only
 
-Status: accepted (decided in PRDs #297 and #314; implemented)
+Status: accepted
 Kind: feature
 Protects: integrity of change, consistency of the workbench
 
