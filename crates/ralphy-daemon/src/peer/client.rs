@@ -97,33 +97,29 @@ impl PeerStatus {
     /// a final period, and the remedy as a sentence of its own.
     pub fn diagnosis(&self, environment: &str) -> String {
         match self {
-            PeerStatus::Reachable => format!("Peer {environment} answered the handshake."),
-            PeerStatus::Unauthorized => format!(
-                "Peer {environment} refused the credential, because its token changed. Restart that daemon with --peer-store to announce it again."
-            ),
-            PeerStatus::VersionMismatch { theirs, ours } => format!(
-                "Peer {environment} speaks peer protocol {theirs}, and this daemon speaks {ours}. Upgrade the older Ralphy."
-            ),
-            PeerStatus::Asleep { distro } => format!(
-                "Peer {environment} is not running: WSL stopped the distro {distro}, and its daemon with it. Wake the distro to start it again."
-            ),
-            PeerStatus::Unreachable { why } => format!(
-                "Peer {environment} did not answer: {why}. Start it. If it is a WSL distro, wake it."
-            ),
-            PeerStatus::Refused { why } => {
-                format!("This daemon did not dial peer {environment}: {why}.")
+            PeerStatus::Reachable => format!("{environment} is connected."),
+            PeerStatus::Unauthorized => {
+                format!("{environment} refused the token. Restart its daemon with --peer-store.")
             }
+            PeerStatus::VersionMismatch { theirs, ours } => format!(
+                "{environment} uses protocol {theirs}, not {ours}. Upgrade the older Ralphy."
+            ),
+            PeerStatus::Asleep { distro } => {
+                format!("{environment} is asleep. Wake the distro {distro}.")
+            }
+            PeerStatus::Unreachable { why } => {
+                format!("{environment} did not answer: {why}. Start its daemon.")
+            }
+            PeerStatus::Refused { why } => format!("{environment} was not dialled: {why}."),
             PeerStatus::TunnelClosed { host, cause: None } => {
-                format!("The tunnel to {host} is closed. The daemon is opening it again.")
+                format!("The tunnel to {host} is closed. Ralphy is opening it again.")
             }
             PeerStatus::TunnelClosed {
                 host,
                 cause: Some(cause),
-            } => format!(
-                "The tunnel to {host} is closed, and the daemon could not open it: {cause}."
-            ),
+            } => format!("The tunnel to {host} is closed. Ralphy could not open it: {cause}."),
             PeerStatus::TunnelSilent { host, why } => format!(
-                "The tunnel to {host} is open, but the Ralphy daemon on that host does not answer: {why}. Start the daemon on that host."
+                "The tunnel to {host} is open, but its daemon does not answer: {why}. Start it."
             ),
         }
     }
@@ -174,7 +170,7 @@ pub fn classify_address(address: &str) -> Option<PeerStatus> {
     match address.parse::<IpAddr>() {
         Ok(ip) if ip.is_loopback() => None,
         Ok(ip) => Some(PeerStatus::Refused {
-            why: format!("{ip} is not a loopback address. A peer is reached over loopback only"),
+            why: format!("{ip} is not a loopback address"),
         }),
         Err(e) => Some(PeerStatus::Refused {
             why: format!("`{address}` is not an IP address ({e})"),

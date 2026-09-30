@@ -746,6 +746,18 @@ body.runs-open .runs {
 .host-link:hover,
 .host-link:focus-visible { color: var(--text); text-decoration: underline; }
 .host-secret { -webkit-text-security: disc; }
+.host-eye {
+  padding: 0;
+  border-top: 0;
+  border-right: 0;
+  border-bottom: 0;
+  background: none;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.host-eye:disabled { cursor: default; opacity: 0.6; }
+.host-eye:hover,
+.host-eye:focus-visible { color: var(--text); }
 .host-input:disabled { opacity: 0.6; }
 /* Checks: the blocking check, then one folded line of passed checks. */
 .host-next {

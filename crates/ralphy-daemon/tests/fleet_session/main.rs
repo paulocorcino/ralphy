@@ -553,7 +553,7 @@ async fn incompatible_peer_is_a_pre_upgrade_environment_diagnosis() {
         "got {body}"
     );
     assert!(
-        body.contains(&format!("speaks {PEER_PROTOCOL_VERSION}")),
+        body.contains(&format!("not {PEER_PROTOCOL_VERSION}.")),
         "got {body}"
     );
 }

@@ -675,4 +675,17 @@ test("shell: the password field is a text field when the browser can hide its ch
   assert.equal(state.hostSecretType(), "password");
   delete window.CSS;
   assert.equal(state.hostSecretType(), "password");
+  state.hostSecretShown = true;
+  assert.equal(state.hostSecretType(), "text", "the eye button shows the characters");
+  state.openAddHost();
+  assert.equal(state.hostSecretType(), "password", "the dialog opens with the password hidden");
+});
+
+test("shell: a host row's tooltip holds the state, not the name the row prints", () => {
+  const { state } = loadShell();
+  const up = { name: "vps", state: "reachable", diagnosis: "Peer Linux answered the handshake." };
+  assert.equal(state.hostRowTitle(up), "Connected");
+  const closed = { name: "vps", state: "tunnel-closed", diagnosis: "The tunnel to vps is closed. The daemon is opening it again." };
+  assert.equal(state.hostRowTitle(closed), closed.diagnosis);
+  assert.equal(state.hostRowTitle({ name: "vps", state: "tunnel-silent" }), "not answering");
 });

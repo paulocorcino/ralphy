@@ -2726,7 +2726,7 @@
                   <span class="host-row-name" x-text="h.name"></span>
                   <span class="host-row-dest" x-text="h.destination || ''"></span>
                   <span class="peer-state" :class="[h.state, peerFault(hostRowGroup(h)) ? 'fault' : '']"
-                        role="img" :aria-label="h.state" :title="groupTitle(hostRowGroup(h))">
+                        role="img" :aria-label="h.state" :title="hostRowTitle(h)">
                     <span class="glyph" x-show="peerIcon(hostRowGroup(h)) === 'plugged'"><svg aria-hidden="true"><use href="#plugged"></use></svg></span>
                     <span class="glyph" x-show="peerIcon(hostRowGroup(h)) === 'unplug'"><svg x-icon="'unplug'"></svg></span>
                   </span>
@@ -2788,12 +2788,21 @@
               <input id="host-user" class="host-input" :value="addHost.user" :readonly="!!addHost.alias"
                      @input="addHostType('user', $event.target.value)"
                      autocomplete="off" spellcheck="false" autocapitalize="off" data-lpignore="true" data-1p-ignore />
-              <input id="host-password" class="host-input host-secret" x-show="addHost.signIn !== 'key'"
-                     :type="hostSecretType()" :value="addHost.password" :disabled="!hostPasswordAllowed()"
-                     @input="addHostType('password', $event.target.value)"
-                     :placeholder="hostPasswordAllowed() ? '' : 'Needs https'"
-                     :title="hostPasswordAllowed() ? 'Used once to add Ralphy\'s key on the host. Not saved.' : 'A password is sent only over https or on this computer.'"
-                     autocomplete="off" spellcheck="false" autocapitalize="off" data-lpignore="true" data-1p-ignore />
+              <div class="host-field" x-show="addHost.signIn !== 'key'">
+                <input id="host-password" class="host-input" :class="{ 'host-secret': !hostSecretShown }"
+                       :type="hostSecretType()" :value="addHost.password" :disabled="!hostPasswordAllowed()"
+                       @input="addHostType('password', $event.target.value)"
+                       :placeholder="hostPasswordAllowed() ? '' : 'Needs https'"
+                       :title="hostPasswordAllowed() ? 'Used once, never saved' : 'Only over https or on this computer'"
+                       autocomplete="off" spellcheck="false" autocapitalize="off" data-lpignore="true" data-1p-ignore />
+                <button type="button" class="host-alias host-eye" :disabled="!hostPasswordAllowed()"
+                        @click="hostSecretShown = !hostSecretShown" @keydown.enter.stop
+                        :title="hostSecretShown ? 'Hide password' : 'Show password'"
+                        :aria-label="hostSecretShown ? 'Hide password' : 'Show password'"
+                        :aria-pressed="hostSecretShown ? 'true' : 'false'">
+                  <i class="bi" :class="hostSecretShown ? 'bi-eye-slash' : 'bi-eye'" aria-hidden="true"></i>
+                </button>
+              </div>
               <input id="host-key-file" class="host-input" x-show="addHost.signIn === 'key'" :value="addHost.keyFile"
                      @input="addHostType('keyFile', $event.target.value)" placeholder="Full path of the private key"
                      autocomplete="off" spellcheck="false" data-lpignore="true" data-1p-ignore />

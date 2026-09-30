@@ -121,6 +121,8 @@ function shell() {
     fleetPeers: [],
     // The Add a host dialog (#497): its whole state is the wb-hosts.js fold.
     addHost: window.WBHosts.initial(),
+    // The eye button of the password field. Hidden again on each open.
+    hostSecretShown: false,
     // Remove in a row of the Hosts dialog (#497): the host being removed.
     removeHost: { open: false, daemon: "", name: "", rotate: false, busy: false, lines: [], failure: null },
     // Peers with a wake in flight, keyed by daemon_id: a cold WSL boot takes
@@ -2762,6 +2764,7 @@ function shell() {
     openAddHost() {
       const tab = this.sshHosts().length ? "hosts" : "add";
       this.addHost = Object.assign(window.WBHosts.initial(), { open: true, tab });
+      this.hostSecretShown = false;
       this.removeHost.open = false;
       window.WBDaemon.observe("host.aliases", {})
         .then((reply) => {
@@ -2801,6 +2804,12 @@ function shell() {
     hostRowGroup(h) {
       return { name: h.name, state: h.state, diagnosis: h.diagnosis, local: false };
     },
+    // The row already prints the name, so the tooltip holds only the state.
+    // A fault keeps the daemon's diagnosis: it says what to do.
+    hostRowTitle(h) {
+      if (h.state === "reachable") return "Connected";
+      return h.diagnosis || window.WBFleet.groupTitle({ state: h.state, local: false });
+    },
     addHostPick(alias) {
       this.addHostStep({ type: "pick", alias });
     },
@@ -2814,7 +2823,9 @@ function shell() {
     // and `autocomplete="off"` does not stop it. A text field drawn with
     // `-webkit-text-security` hides the characters and is not offered.
     // Without that property the field falls back to a password field.
+    // The eye button shows the characters: a plain text field.
     hostSecretType() {
+      if (this.hostSecretShown) return "text";
       const css = window.CSS;
       return css?.supports?.("-webkit-text-security", "disc") ? "text" : "password";
     },

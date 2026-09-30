@@ -352,8 +352,7 @@ fn tunnel_diagnoses_name_the_host_and_never_wsl() {
         .contains("could not open it: no ssh program found"));
     let d = silent.diagnosis("Linux");
     assert!(
-        d.contains("does not answer: connection refused")
-            && d.contains("Start the daemon on that host"),
+        d.contains("does not answer: connection refused") && d.ends_with("Start it."),
         "got: {d}"
     );
 }
