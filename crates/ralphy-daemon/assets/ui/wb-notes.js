@@ -2487,9 +2487,6 @@ window.WBNotes = (function () {
     // console's terminal both take Escape before a bubbling listener would.
     document.addEventListener("keydown", onKey, true);
     ok.addEventListener("click", done);
-    scrim.addEventListener("mousedown", (ev) => {
-      if (ev.target === scrim) done();
-    });
     return scrim;
   }
 

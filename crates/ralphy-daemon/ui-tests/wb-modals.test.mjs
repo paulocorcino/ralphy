@@ -105,6 +105,22 @@ test("one Escape closes only the top modal", async () => {
   }
 });
 
+// A click beside a modal is often a slip, and closing on it throws away what
+// the modal holds. So no scrim listens to the pointer: the Alpine binding has no
+// click key, and the dialogs the console and notes modules build by hand add no
+// listener to their scrim.
+test("a click outside a modal does not close it", () => {
+  const { state } = loadShell();
+  for (const s of bindAll(state)) {
+    const pointer = Object.keys(s.b).filter((k) => /^(@|x-on:)(click|mousedown|pointerdown)/.test(k));
+    assert.deepEqual(pointer, [], `${s.path}: the scrim must not close on a click`);
+  }
+  for (const file of ["wb-console.js", "wb-notes.js"]) {
+    const src = readFileSync(join(UI, file), "utf8");
+    assert.doesNotMatch(src, /\bscrim\.(addEventListener\(|on\w+\s*=)/, `${file}: a scrim with a listener`);
+  }
+});
+
 test("a modal focuses its first control on open and gives focus back on close", () => {
   const focused = [];
   const el = (name, extra = {}) => ({

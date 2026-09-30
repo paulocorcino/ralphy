@@ -5904,13 +5904,14 @@ function shell() {
     // `x-bind="scrim('runOpen', () => closeRunModal())"`. `path` names the open
     // flag, dotted for a nested one (`confirmModal.open`). Alpine evaluates the
     // object once per scrim, so `was` lives as long as the element.
+    // A click on the scrim closes nothing: a stray click must not throw away
+    // what a modal holds. Only its own buttons and Escape close it.
     scrim(path, close) {
       const isOpen = () => path.split(".").reduce((o, k) => o?.[k], this);
       let was = false;
       const self = this;
       return {
         "x-show": () => isOpen(),
-        "@click.self": () => close(),
         // Every open scrim hears the same window keydown; only the top one acts,
         // so a confirm raised over another modal closes alone. The event is
         // marked because the browser runs Alpine's effects between two

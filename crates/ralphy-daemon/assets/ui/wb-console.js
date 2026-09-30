@@ -195,9 +195,6 @@ window.WBConsole = (function () {
       // CAPTURE: a console's terminal swallows keystrokes, and Escape is one it
       // forwards to the child — the dialog must hear it first.
       document.addEventListener("keydown", onKey, true);
-      scrim.addEventListener("mousedown", (e) => {
-        if (e.target === scrim) done(false);
-      });
       cancel.addEventListener("click", () => done(false));
       go.addEventListener("click", () => done(true));
     });
@@ -1574,9 +1571,6 @@ window.WBConsole = (function () {
         }
       };
       document.addEventListener("keydown", onKey, true);
-      scrim.addEventListener("mousedown", (e) => {
-        if (e.target === scrim) done(null);
-      });
       cancel.addEventListener("click", () => done(null));
       go.addEventListener("click", submit);
     });
