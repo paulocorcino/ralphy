@@ -287,6 +287,9 @@ with one tab per system that says how to turn on the SSH server:
 option *Also change this host's token. Every other computer connected to it is
 disconnected.* (§9).
 
+The Hosts dialog amendment (2026-09-30) replaces the entry point, the group
+header and removing: see there.
+
 ### 12. What the operator sees when something stops
 
 | Event | The workbench | The host |
@@ -627,3 +630,40 @@ error and nothing runs. The dialog hides the field in the same case.
 (`DETACHED_PROCESS`, as the daemon starts its children), calls `SSH_ASKPASS`
 with `SSH_ASKPASS_REQUIRE=force`, with or without `DISPLAY`. The prompt it
 passed was `root@10.1.1.4's password: `, and it made one attempt.
+
+## Amendment (2026-09-30): the Hosts dialog
+
+This amendment changes three parts of §11. The rest of §11 stands.
+
+**H1. One dialog for hosts.** The header button opens a dialog named
+**Hosts**, with two tabs: *Your hosts (n)* and *Add a host*. It opens on
+*Your hosts* when at least one host is paired over SSH, and on *Add a host*
+otherwise. With no host, the tab bar is not drawn. The button keeps its icon.
+A WSL daemon is not a host here: it is paired by the WSL setup, not by SSH.
+
+**H2. The group header shows the operating system.** Every group header shows
+an icon for the system of its daemon: a penguin for Linux and WSL, an apple for
+macOS, the Windows logo for Windows, and a monitor for any other system. The
+icon comes from the `environment` label the group already has. The `server`
+icon of a tunnel peer is gone. The state glyphs do not change.
+
+**H3. Removing and editing are rows of *Your hosts*.** The group menu is
+removed. Each row of *Your hosts* shows the system icon, the name, the SSH
+destination and the state, and has two actions:
+
+- **Remove** asks for confirmation in the row, with the unchecked option of §9
+  to also change the host's token.
+- **Edit** opens *Add a host* with the connection of the host filled in: the
+  destination and the key file. The password field is empty. The flow is the
+  add flow: the checks run, and *Save* runs `host add` again. The descriptor is
+  keyed by the daemon id, so it is written again in place, with the same local
+  port; the name check leaves out the host's own name. A password is needed
+  only when the host no longer accepts the peer key.
+
+To fill the form, `/api/fleet` returns `destination` and `identity_file` for a
+tunnel peer. Both are what the descriptor holds; no secret leaves the daemon.
+
+**H4. A changed connection reopens the tunnel.** The daemon keeps each open
+tunnel with the spec it was opened with. When the descriptor's spec differs,
+the daemon stops that `ssh` and opens a new one, so an edit takes effect
+without a daemon restart.
