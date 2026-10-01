@@ -4931,6 +4931,14 @@ function shell() {
         node = rel === "" ? raw?.root : raw?.findFirst((n) => this.relPath(n) === rel);
         if (!node || node.isLoading?.()) return;
       }
+      const hasGitignore = source.some((n) => !n.folder && n.title === ".gitignore");
+      // A write to a file already listed nudges its directory too. When the
+      // rows on screen already match the fresh listing, the teardown would
+      // change nothing but the operator's scroll position.
+      if (this.levelShows(node, source)) {
+        if (hasGitignore) this.revalidateBelow(node, rel);
+        return;
+      }
       // Read AFTER the fetch, right before the teardown: read before it, the
       // snapshot missed every folder a FILES search opened meanwhile.
       const expandedRels = [];
@@ -4938,6 +4946,10 @@ function shell() {
         if (this.isFolder(n) && n.expanded) expandedRels.push(this.relPath(n));
       });
       const activeRel = this.relPath(this.rawTree()?.getActiveNode?.() || null) || null;
+      // The teardown shrinks the list under the viewport, the browser clamps
+      // `scrollTop` to the shorter list, and the re-activation below scrolls
+      // to the selected row. Nothing else puts the offset back.
+      const scrollTop = this.rawTree()?.element?.scrollTop ?? 0;
       node.removeChildren();
       await node.load(source);
       // `load` leaves the reloaded node collapsed, and the NEXT nudge would
@@ -4947,7 +4959,7 @@ function shell() {
       // level below it, but the re-expansion below paints those from the
       // cache. Forgetting that they were validated makes `loadTreeLevel`
       // re-read each one in the background.
-      if (source.some((n) => !n.folder && n.title === ".gitignore")) this.forgetValidatedBelow(rel);
+      if (hasGitignore) this.forgetValidatedBelow(rel);
 
       // Shallow-first. Match by rel path (NOT findFolderByRel): a freshly
       // reloaded folder has neither `folder` nor loaded `children` yet.
@@ -4961,6 +4973,38 @@ function shell() {
       // A search is on: the reloaded level has no match marks yet.
       const raw = this.rawTree();
       if (raw?.isFilterActive?.()) raw.updateFilter();
+      // A reveal that landed mid-pass owns the scroll position.
+      if (raw?.element && (this._revealSeq || 0) === seq) {
+        // The list must have its full height first, or the offset is clamped.
+        raw.updatePendingModifications?.();
+        raw.element.scrollTop = scrollTop;
+      }
+    },
+
+    // Whether the rows under `node` already show `specs` (from `treeNodes`):
+    // the same names, kinds and ignore marks, in the same order. A level still
+    // loading has a status row, so it never matches.
+    levelShows(node, specs) {
+      const rows = node.children;
+      if (!Array.isArray(rows) || rows.length !== specs.length) return false;
+      return specs.every((spec, i) => {
+        const row = rows[i];
+        return (
+          row.title === spec.title &&
+          this.isFolder(row) === !!spec.folder &&
+          !!row.hasClass?.("wb-ignored") === (spec.classes === "wb-ignored")
+        );
+      });
+    },
+
+    // An unchanged level with a `.gitignore` may still have changed the ignore
+    // marks of the levels below it: re-read each expanded one, which repaints
+    // only a level whose listing changed.
+    revalidateBelow(node, rel) {
+      this.forgetValidatedBelow(rel);
+      node.visit((n) => {
+        if (this.isFolder(n) && n.expanded) this.revalidateLevel(this.relPath(n));
+      });
     },
 
     // After a directory nudge, re-read any open tab whose file lives in `rel`
