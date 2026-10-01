@@ -14,5 +14,8 @@ include_dir.workspace = true
 ralphy-core.workspace = true
 ralphy-adapter-support.workspace = true
 
+[dev-dependencies]
+tempfile.workspace = true
+
 [lints]
 workspace = true
