@@ -202,6 +202,9 @@ function shell() {
     // The tree shows a listing the daemon could not confirm (a refusal, a
     // dropped socket). Distinct from `treeError`: rows are on screen, but stale.
     treeStale: "",
+    // The daemon could not keep watching this tree: the rows are right now,
+    // but a change on disk will not show until the project is opened again.
+    treeNotLive: "",
     // A refused `branch.switch`/`branch.create`, held until the next branch act
     // or a project switch. Not `treeError` (the tree is fine) and not
     // `changesError` (the chip lives in THIS panel).
@@ -4311,6 +4314,7 @@ function shell() {
       // re-open paints from memory in the same frame.
       this.treeError = "";
       this.treeStale = "";
+      this.treeNotLive = "";
       // The checkout this tree is built for (#406): cache key, every level
       // read and the watch carry it.
       this._treeCheckout = this.checkoutOf(this.openSlug);
@@ -4408,6 +4412,7 @@ function shell() {
           () => {
             if (!this.tabHidden()) this.onHeadMoved();
           },
+          (reason) => this.treeWatchFailed(reason),
         );
         this._treeSub.watch("");
       }
@@ -4592,6 +4597,14 @@ function shell() {
     // A read landed: whatever the tree is showing is confirmed again.
     treeFresh() {
       this.treeStale = "";
+    },
+
+    // The daemon says it could not watch a dir of this tree (`reason`), or
+    // `null` when a new socket holds every dir again.
+    treeWatchFailed(reason) {
+      this.treeNotLive = reason
+        ? `The file list no longer updates by itself: ${reason}. Reopen the project to try again.`
+        : "";
     },
 
     // --- the FILES search (ADR-0036 amendment 2026-09-15) -----------------
@@ -5070,9 +5083,10 @@ function shell() {
       } catch {}
       this._tree = null;
       document.querySelectorAll(".wb-host").forEach((h) => (h.innerHTML = ""));
-      // Both states describe a tree that no longer exists.
+      // These states describe a tree that no longer exists.
       this.treeLoading = false;
       this.treeError = "";
+      this.treeNotLive = "";
       // A search describes THIS tree; the field stays open.
       this.resetFileSearch();
       this.hideMenu();

@@ -7,8 +7,14 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-const UI = join(dirname(fileURLToPath(import.meta.url)), "../assets/ui");
+const HERE = dirname(fileURLToPath(import.meta.url));
+const UI = join(HERE, "../assets/ui");
 const SRC = readFileSync(join(UI, "wb-daemon.js"), "utf8");
+
+// A push the daemon produced, as its tests wrote it (`tests/support/golden.rs`).
+function fixture(name) {
+  return JSON.parse(readFileSync(join(HERE, "fixtures", name + ".json"), "utf8"));
+}
 
 function load() {
   // The two globals the module touches at LOAD time: `document.addEventListener`
@@ -271,7 +277,7 @@ test("observe fans out an unknown checkout to the registered listeners, after th
 
 // Timers are captured, never run: the handshake deadline and the 3s retry are
 // fired by hand, so no test waits on a real clock.
-function treeSocket(checkout, onHead) {
+function treeSocket(checkout, onHead, onFailed) {
   const d = load();
   const sockets = [];
   const timers = [];
@@ -307,7 +313,9 @@ function treeSocket(checkout, onHead) {
     }
   };
   const dirty = [];
-  const sub = withFakes(() => d.subscribeTree("o/r", (rel) => dirty.push(rel), checkout, onHead));
+  const sub = withFakes(() =>
+    d.subscribeTree("o/r", (rel) => dirty.push(rel), checkout, onHead, onFailed),
+  );
   const ws = sockets[0];
   const open = (s) => {
     s.readyState = 1;
@@ -358,6 +366,24 @@ test("subscribeTree without onHead sends no head.watch", () => {
   const { ws, push } = treeSocket(null, undefined);
   assert.deepEqual(ws.sent, []);
   assert.doesNotThrow(() => push("head.dirty", { repo: "o/r" }));
+});
+
+test("subscribeTree routes tree.failed to onFailed, and a reopen clears it", () => {
+  const failed = [];
+  const { dirty, sockets, push, open, drop, runRetries, ws } = treeSocket(null, undefined, (r) =>
+    failed.push(r),
+  );
+  const pushed = fixture("tree.failed");
+  push("tree.failed", pushed);
+  assert.deepEqual(failed, [pushed.reason]);
+  assert.deepEqual(dirty, [], "a failed watch is not a tree change");
+  // NEGATIVE CONTROL: another checkout's failure is not this tree's.
+  push("tree.failed", { ...pushed, checkout: "other" });
+  assert.deepEqual(failed, [pushed.reason]);
+  drop(ws);
+  runRetries();
+  open(sockets[1]);
+  assert.deepEqual(failed, [pushed.reason, null], "a new socket holds every dir again");
 });
 
 // --- subscribeTree: a lost socket comes back holding the same dirs ----------

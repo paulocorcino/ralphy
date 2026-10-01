@@ -307,7 +307,9 @@ window.WBDaemon = (function () {
   // daemon, so every open sends `head.watch` and each held `watch` again, and a
   // RE-open re-reads each held dir and the branch once — whatever changed while
   // the socket was down was never pushed (#484).
-  function subscribeTree(repo, onDirty, checkout, onHead) {
+  // A `tree.failed` push says the daemon could not watch a dir of this tree:
+  // `onFailed(reason)`. A reopen holds every dir again: `onFailed(null)`.
+  function subscribeTree(repo, onDirty, checkout, onHead, onFailed) {
     const held = new Set();
     const frame = (verb, path) =>
       encodeCommand({ id: 0, verb, payload: withCheckout({ repo, path: path || "" }, checkout) });
@@ -321,14 +323,19 @@ window.WBDaemon = (function () {
       onOpen: (ws, reopened) => {
         if (onHead) ws.send(frame("head.watch", ""));
         for (const path of held) ws.send(frame("watch", path));
-        if (reopened) replay();
+        if (reopened) {
+          // A new socket holds every dir again, so a failed watch is cleared.
+          onFailed?.(null);
+          replay();
+        }
       },
       onMessage: (ev) => {
         const f = commandFrame(ev);
-        if (!f || (f.verb !== "tree.dirty" && f.verb !== "head.dirty")) return;
+        if (!f || !["tree.dirty", "head.dirty", "tree.failed"].includes(f.verb)) return;
         const p = f.payload || {};
         if ((p.checkout || null) !== (checkout || null)) return;
-        if (f.verb === "head.dirty") onHead?.();
+        if (f.verb === "tree.failed") onFailed?.(p.reason || "");
+        else if (f.verb === "head.dirty") onHead?.();
         else onDirty(p.path || "");
       },
     });

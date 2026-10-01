@@ -446,6 +446,12 @@
               x-show="rowOpen(p) && !treeError && treeStale"
               x-text="treeStale"
             ></div>
+            <!-- The rows are right, but the daemon stopped watching this tree. -->
+            <div
+              class="files-stale"
+              x-show="rowOpen(p) && !treeError && treeNotLive"
+              x-text="treeNotLive"
+            ></div>
               </li>
             </template>
           </div>

@@ -95,11 +95,11 @@ fn message_type_scan_finds_verbs_routes_and_pushes() {
             put(y),
         )
         .route("/api/peer/y", post(z))"#;
-    let pushes = r#"send("tree.dirty"); let n = "not.a.push";"#;
+    let pushes = r#"send("tree.dirty"); send("tree.failed"); let n = "not.a.push";"#;
     let found: Vec<String> = message_types(dispatch, routes, pushes)
         .into_iter()
         .collect();
-    assert_eq!(found, ["a.b", "api-x", "c.d", "tree.dirty"]);
+    assert_eq!(found, ["a.b", "api-x", "c.d", "tree.dirty", "tree.failed"]);
 
     let root = workspace_root();
     let dispatch = read(&root.join("crates/ralphy-daemon/src/dispatch.rs"));
@@ -115,8 +115,8 @@ fn message_type_scan_finds_verbs_routes_and_pushes() {
 /// - routes: the `.route("…")` paths of `routes.rs` without `/api/peer/*`
 ///   (daemon to daemon), one type per path, named without the leading `/` and
 ///   with `/` as `-`;
-/// - pushes: the `<word>.dirty`, `session-open` and `session-end` literals of
-///   the routes' production code.
+/// - pushes: the `<word>.dirty`, `<word>.failed`, `session-open` and
+///   `session-end` literals of the routes' production code.
 fn message_types(dispatch: &str, routes: &str, pushes: &str) -> BTreeSet<String> {
     let mut all = verbs(dispatch);
     all.extend(ui_routes(routes));
@@ -150,7 +150,8 @@ fn ui_routes(routes: &str) -> BTreeSet<String> {
 }
 
 fn push_types(text: &str) -> BTreeSet<String> {
-    let push = Regex::new(r#""([a-z_]+\.dirty|session-open|session-end)""#).expect("a valid regex");
+    let push = Regex::new(r#""([a-z_]+\.dirty|[a-z_]+\.failed|session-open|session-end)""#)
+        .expect("a valid regex");
     push.captures_iter(text).map(|c| c[1].to_string()).collect()
 }
 
