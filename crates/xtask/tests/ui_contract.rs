@@ -2,6 +2,7 @@
 //!
 //! - Shared replies: every message type the UI reads, and how many of them
 //!   have no reply file under `crates/ralphy-daemon/ui-tests/fixtures/`.
+//!   Each ok reply file carries its JSON in the field the daemon uses.
 //! - Error literals: every string the UI compares with a reply's `reason`,
 //!   `message` or `state` is a literal in the daemon's or the CLI's Rust code.
 //! - Mirrored limits: each value the UI repeats equals its Rust constant.
@@ -53,7 +54,7 @@ fn message_types_without_a_shared_reply_match_the_baseline() {
     let tests = ui_test_text(&root);
     let orphans: Vec<String> = fixture_names(&root)
         .into_iter()
-        .filter(|name| !tests.contains(&format!("\"{name}\"")))
+        .filter(|name| !tests.contains(&format!("fixture(\"{name}\")")))
         .collect();
     assert!(
         orphans.is_empty(),
@@ -349,7 +350,7 @@ fn ui_literals(js: &str) -> BTreeSet<String> {
         .collect();
     let compares = [
         r#"WBFail\.message\([^)]*\)\s*[!=]==\s*"([^"]+)""#,
-        r#"\b(?:key|body|reply)\??\.state\s*[!=]==\s*"([^"]+)""#,
+        r#"\b(?:key|body|reply|group|h)\??\.state\s*[!=]==\s*"([^"]+)""#,
         r#"/([^/\\]+)/i?\.test\((?:reason|message)\)"#,
     ];
     for pattern in compares {
@@ -407,7 +408,8 @@ fn ui_sources(root: &Path) -> Vec<(String, String)> {
         .collect()
 }
 
-/// The production text of the daemon's and the CLI's Rust code.
+/// The production text of the daemon's and the CLI's Rust code, without
+/// comment lines: a word in a doc comment produces nothing.
 fn rust_corpus(root: &Path) -> String {
     let mut files = Vec::new();
     collect_rs(&root.join("crates/ralphy-daemon/src"), &mut files);
@@ -415,7 +417,13 @@ fn rust_corpus(root: &Path) -> String {
     files.sort();
     files
         .iter()
-        .map(|f| production(&read(f)).to_string())
+        .flat_map(|f| {
+            production(&read(f))
+                .lines()
+                .filter(|l| !l.trim_start().starts_with("//"))
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -623,4 +631,85 @@ fn fn_body_strings(src: &str, name: &str) -> BTreeSet<String> {
         out.extend(quoted.captures_iter(line).map(|c| c[1].to_string()));
     }
     out
+}
+
+/// The daemon files that name the field a Query reply carries its JSON in.
+const REPLY_FIELD_SOURCES: &[&str] = &[
+    "crates/ralphy-daemon/src/routes/ws_command/oneshot.rs",
+    "crates/ralphy-daemon/src/routes/ws_command/host.rs",
+];
+
+#[test]
+fn every_ok_fixture_carries_its_json_in_the_field_the_daemon_uses() {
+    let root = workspace_root();
+    let dispatch = read(&root.join("crates/ralphy-daemon/src/dispatch.rs"));
+    let daemon: String = REPLY_FIELD_SOURCES
+        .iter()
+        .map(|f| read(&root.join(f)))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut checked = 0;
+    for name in fixture_names(&root) {
+        let path = root.join(FIXTURES).join(format!("{name}.json"));
+        let reply: serde_json::Value = serde_json::from_str(&read(&path))
+            .unwrap_or_else(|e| panic!("{} is not JSON: {e}", path.display()));
+        if reply["status"] != "ok" {
+            continue;
+        }
+        let verb = name.split_once("--").map_or(name.as_str(), |(v, _)| v);
+        let variant = verb_variant(&dispatch, verb)
+            .unwrap_or_else(|| panic!("{verb} is not a verb of Verb::from_query"));
+        let field = reply_field(&daemon, &variant)
+            .unwrap_or_else(|| panic!("the daemon names no reply field for Verb::{variant}"));
+        let keys: Vec<&String> = reply
+            .as_object()
+            .expect("an ok reply is an object")
+            .keys()
+            .filter(|k| *k != "status")
+            .collect();
+        assert_eq!(
+            keys,
+            [&field],
+            "{name}.json: the daemon sends {verb} in `{field}`"
+        );
+        checked += 1;
+    }
+    assert!(checked >= 5, "only {checked} ok fixtures were checked");
+}
+
+#[test]
+fn reply_field_scan_reads_both_arm_shapes() {
+    let dispatch = r#"fn from_query(value: &str) -> Option<Verb> {
+        match value {
+            "board.list" => Some(Verb::BoardList),
+            _ => None,"#;
+    assert_eq!(
+        verb_variant(dispatch, "board.list").as_deref(),
+        Some("BoardList")
+    );
+    assert_eq!(verb_variant(dispatch, "nope"), None);
+    let daemon = r#"
+        dispatch::Verb::BoardList => (Ok(dispatch::board_argv()), "board"),
+        Verb::HostKey => Some("key"),"#;
+    assert_eq!(reply_field(daemon, "BoardList").as_deref(), Some("board"));
+    assert_eq!(reply_field(daemon, "HostKey").as_deref(), Some("key"));
+    assert_eq!(reply_field(daemon, "Board"), None);
+}
+
+/// The `Verb` variant `Verb::from_query` maps `verb` to.
+fn verb_variant(dispatch: &str, verb: &str) -> Option<String> {
+    let re = Regex::new(&format!(
+        r#""{}"\s*=>\s*Some\(Verb::(\w+)\)"#,
+        regex::escape(verb)
+    ))
+    .expect("a valid regex");
+    re.captures(dispatch).map(|c| c[1].to_string())
+}
+
+/// The last string literal on the match arm of `Verb::<variant>`.
+fn reply_field(daemon: &str, variant: &str) -> Option<String> {
+    let arm = Regex::new(&format!(r"\bVerb::{variant}\s*=>")).expect("a valid regex");
+    let quoted = Regex::new(r#""(\w+)""#).expect("a valid regex");
+    let line = daemon.lines().find(|l| arm.is_match(l))?;
+    quoted.captures_iter(line).last().map(|c| c[1].to_string())
 }
