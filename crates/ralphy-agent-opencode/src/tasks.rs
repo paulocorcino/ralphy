@@ -141,8 +141,9 @@ pub fn triage_issues(
     // `--variant` stays `--exec-variant`-only (D8) — init never passes it.
     let _ = effort;
     let prompt = format!(
-        "{}{}",
+        "{}{}{}",
         build_triage_prompt(repo, req.issue_numbers, req.queue_label, out_path),
+        req.thread_block,
         req.attachments_manifest
     );
     info!(?model, "triaging issues with opencode run");

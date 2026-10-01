@@ -202,6 +202,21 @@ fn every_charter_that_reads_comments_says_they_are_data() {
     }
 }
 
+/// The triage session reads each thread from the block Ralphy wrote, in which
+/// every comment carries its author's trust. A charter that sent the agent to
+/// `gh issue view --comments` would hand it the same thread unmarked.
+#[test]
+fn the_triage_charter_never_fetches_the_comment_thread() {
+    let text = fs::read_to_string(prompts_dir().join("prompt.triage.md"))
+        .expect("prompt.triage.md must exist");
+    assert!(
+        !text.contains("--comments"),
+        "prompt.triage.md tells the agent to read the thread unmarked"
+    );
+    assert!(text.contains("## Thread (issue #N)"));
+    assert!(text.contains("not an owner, member or\ncollaborator"));
+}
+
 /// The `## Acceptance ledger` example embedded in `prompt.plan.md`, parsed.
 /// The example's wording is the prompt's business; these tests only need one
 /// `[verified]` and one `[review-only]` line that the parser accepts.

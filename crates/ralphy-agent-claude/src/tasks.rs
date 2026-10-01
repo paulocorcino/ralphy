@@ -282,8 +282,9 @@ pub fn triage_issues(
         .stderr(Stdio::piped());
 
     let prompt = format!(
-        "{}{}",
+        "{}{}{}",
         build_triage_prompt(repo, req.issue_numbers, req.queue_label, out_path),
+        req.thread_block,
         req.attachments_manifest
     );
     let log_path = repo.join(".ralphy").join("triage.log");

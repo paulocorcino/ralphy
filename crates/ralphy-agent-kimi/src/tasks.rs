@@ -186,8 +186,9 @@ pub fn triage_issues(
     let _ = effort;
     let model = resolve_init_kimi_model(model);
     let prompt = format!(
-        "{}{}",
+        "{}{}{}",
         build_triage_prompt(repo, req.issue_numbers, req.queue_label, out_path),
+        req.thread_block,
         req.attachments_manifest
     );
 

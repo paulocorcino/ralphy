@@ -333,11 +333,13 @@ pub fn run(args: &TriageArgs) -> Result<()> {
         adapter_name: agent.cli_name(),
     };
     let attachments = github::fetch_triage_attachments(&repo, &numbers, images)?;
+    let thread_block = github::render_triage_threads(&attachments.threads);
 
     let out_path = repo.join(".ralphy").join("triage-draft.json");
     let req = TriageRequest {
         issue_numbers: &numbers,
         queue_label: &queue_label,
+        thread_block: &thread_block,
         attachments_manifest: &attachments.manifest,
         image_paths: &attachments.image_paths,
     };

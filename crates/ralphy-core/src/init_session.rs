@@ -127,6 +127,10 @@ pub struct TriageRequest<'a> {
     /// the built prompt (ADR-0025 §6); empty string when no attachments. Kept as
     /// an additive field so `build_triage_prompt`'s signature stays stable.
     pub attachments_manifest: &'a str,
+    /// The `## Thread (issue #N)` blocks each adapter appends after the built
+    /// prompt and before the manifest: every issue's body and comments, each
+    /// comment marked with its author's trust (ADR-0017 A1).
+    pub thread_block: &'a str,
     /// Local paths of fetched image attachments, for adapters that deliver images
     /// by argv (codex `-i`) rather than by the manifest path alone (ADR-0025 §4).
     pub image_paths: &'a [std::path::PathBuf],

@@ -190,8 +190,9 @@ pub fn triage_issues(
     let model = resolve_init_model(model);
     let effort = effort.unwrap_or("medium");
     let prompt = format!(
-        "{}{}",
+        "{}{}{}",
         build_triage_prompt(repo, req.issue_numbers, req.queue_label, out_path),
+        req.thread_block,
         req.attachments_manifest
     );
 
