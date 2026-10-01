@@ -167,6 +167,10 @@ impl RepoWatcher {
 pub struct WatcherManager {
     repos: Mutex<BTreeMap<String, RepoWatcher>>,
     max_watches: usize,
+    // notify's `PollWatcher::watch` never returns an error (notify 8.2
+    // `poll.rs`), so a test makes the next degrade fail by hand.
+    #[cfg(test)]
+    fail_next_degrade: std::sync::atomic::AtomicBool,
 }
 
 impl WatcherManager {
@@ -174,6 +178,8 @@ impl WatcherManager {
         Self {
             repos: Mutex::new(BTreeMap::new()),
             max_watches: max_watches.max(1),
+            #[cfg(test)]
+            fail_next_degrade: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -198,13 +204,18 @@ impl WatcherManager {
         if !repos.contains_key(repo) {
             repos.insert(repo.to_string(), RepoWatcher::new(repo, canon_root)?);
         }
+        // Every failure below leaves the registry as it was: no raised count,
+        // and no empty repo watcher.
         let rx = {
             let rw = repos.get_mut(repo).expect("just inserted");
             if rw.watches.get(&rel).copied().unwrap_or(0) == 0 {
                 let target = rw.target(&rel);
-                rw.debouncer
-                    .watch(&target, RecursiveMode::NonRecursive)
-                    .with_context(|| format!("watching {}", target.display()))?;
+                if let Err(e) = rw.debouncer.watch(&target, RecursiveMode::NonRecursive) {
+                    if rw.watches.is_empty() {
+                        repos.remove(repo);
+                    }
+                    return Err(e).with_context(|| format!("watching {}", target.display()));
+                }
                 rw.watch_set.lock().unwrap().insert(rel.clone());
             }
             *rw.watches.entry(rel.clone()).or_insert(0) += 1;
@@ -212,7 +223,21 @@ impl WatcherManager {
         };
         let total: usize = repos.values().map(|r| r.watches.len()).sum();
         if total > self.max_watches {
-            repos.get_mut(repo).expect("present").degrade_to_poll()?;
+            #[cfg(test)]
+            let degraded = if self
+                .fail_next_degrade
+                .swap(false, std::sync::atomic::Ordering::SeqCst)
+            {
+                Err(anyhow::anyhow!("an injected degrade failure"))
+            } else {
+                repos.get_mut(repo).expect("present").degrade_to_poll()
+            };
+            #[cfg(not(test))]
+            let degraded = repos.get_mut(repo).expect("present").degrade_to_poll();
+            if let Err(e) = degraded {
+                release(&mut repos, repo, &rel);
+                return Err(e).context("degrading to polling");
+            }
         }
         Ok(rx)
     }
@@ -222,23 +247,7 @@ impl WatcherManager {
     /// whole watcher (debouncer + pump) tears down. Unknown repo/dir is a no-op.
     pub fn unwatch(&self, repo: &str, rel: &str) {
         let rel = norm_rel(rel);
-        let mut repos = self.repos.lock().unwrap();
-        let Some(rw) = repos.get_mut(repo) else {
-            return;
-        };
-        let Some(count) = rw.watches.get_mut(&rel) else {
-            return;
-        };
-        *count -= 1;
-        if *count == 0 {
-            rw.watches.remove(&rel);
-            rw.watch_set.lock().unwrap().remove(&rel);
-            let target = rw.target(&rel);
-            let _ = rw.debouncer.unwatch(&target);
-        }
-        if rw.watches.is_empty() {
-            repos.remove(repo);
-        }
+        release(&mut self.repos.lock().unwrap(), repo, &rel);
     }
 
     #[cfg(test)]
@@ -260,6 +269,27 @@ impl WatcherManager {
     #[cfg(test)]
     fn mode(&self, repo: &str) -> Option<WatchMode> {
         self.repos.lock().unwrap().get(repo).map(|r| r.mode)
+    }
+}
+
+/// Drop one hold on `repo`'s normalized `rel` dir, under the caller's lock (see
+/// [`WatcherManager::unwatch`]).
+fn release(repos: &mut BTreeMap<String, RepoWatcher>, repo: &str, rel: &str) {
+    let Some(rw) = repos.get_mut(repo) else {
+        return;
+    };
+    let Some(count) = rw.watches.get_mut(rel) else {
+        return;
+    };
+    *count -= 1;
+    if *count == 0 {
+        rw.watches.remove(rel);
+        rw.watch_set.lock().unwrap().remove(rel);
+        let target = rw.target(rel);
+        let _ = rw.debouncer.unwatch(&target);
+    }
+    if rw.watches.is_empty() {
+        repos.remove(repo);
     }
 }
 
@@ -681,5 +711,27 @@ mod tests {
             Some(("owner/repo".to_string(), "b".to_string())),
             "poll still emits on a create"
         );
+    }
+
+    #[tokio::test]
+    async fn a_failed_first_watch_leaves_no_repo_watcher() {
+        let dir = tempfile::tempdir().unwrap();
+        let mgr = WatcherManager::new(8);
+        assert!(mgr.watch("owner/repo", dir.path(), "no-such-dir").is_err());
+        assert!(!mgr.repo_active("owner/repo"));
+    }
+
+    #[tokio::test]
+    async fn a_failed_degrade_leaves_no_refcount() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("b")).unwrap();
+
+        let mgr = WatcherManager::new(1);
+        let _rx_root = mgr.watch("owner/repo", dir.path(), "").unwrap();
+        mgr.fail_next_degrade
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        assert!(mgr.watch("owner/repo", dir.path(), "b").is_err());
+        assert_eq!(mgr.watch_refcount("owner/repo", "b"), 0);
+        assert_eq!(mgr.watch_refcount("owner/repo", ""), 1);
     }
 }
