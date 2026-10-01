@@ -23,21 +23,15 @@ const PROMPT_GH_ISSUE_VIEW: usize = 20;
 const SPAWNED: [&str; 3] = ["git", "gh", "ssh"];
 
 /// `(file, program, sites)` of every literal git/gh/ssh spawn in production
-/// code, measured on 1b50e775.
+/// code, measured on 1b50e775 and lowered when `ralphy-git-read` took the
+/// daemon's and the usage scan's git reads (#510).
 const SPAWN_BASELINE: &[(&str, &str, usize)] = &[
     ("crates/ralphy-cli/build.rs", "git", 2),
     ("crates/ralphy-cli/src/init/gate.rs", "gh", 1),
     ("crates/ralphy-core/src/git.rs", "git", 1),
     ("crates/ralphy-core/src/github/client.rs", "gh", 1),
     ("crates/ralphy-daemon/build.rs", "git", 2),
-    ("crates/ralphy-daemon/src/registry.rs", "git", 1),
-    ("crates/ralphy-usage-scan/src/claude.rs", "git", 1),
-    ("crates/ralphy-usage-scan/src/codex.rs", "git", 1),
-    ("crates/ralphy-usage-scan/src/copilot.rs", "git", 1),
-    ("crates/ralphy-usage-scan/src/cursor.rs", "git", 1),
-    ("crates/ralphy-usage-scan/src/gemini.rs", "git", 1),
-    ("crates/ralphy-usage-scan/src/kimi.rs", "git", 1),
-    ("crates/ralphy-usage-scan/src/opencode.rs", "git", 1),
+    ("crates/ralphy-git-read/src/lib.rs", "git", 1),
     ("crates/xtask/src/capabilities.rs", "git", 3),
 ];
 
