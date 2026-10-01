@@ -212,18 +212,13 @@ any code, including code that does not exist yet. A behaviour test is not one.
 | The forge does not spread | `forge_use_matches_the_baseline` (`crates/xtask/tests/ratchets.rs`), a ratchet on the `github::` items used in `ralphy-cli` and on `gh issue view` in `assets/prompts/` |
 | A new ADR has a closed-set status and kind and, if structural, a Compliance section | `new_adrs_have_a_closed_status_and_kind` (`crates/xtask/tests/adr_map.rs`), from ADR-0068 on |
 | This file stays true | `the_architecture_map_cites_real_adrs_and_every_structural_one` (`crates/xtask/tests/adr_map.rs`): every ADR cited here exists, and every structural ADR from ADR-0068 on is cited |
+| The browser and the daemon agree on each reply | shared replies in `crates/ralphy-daemon/ui-tests/fixtures/`, written by the Rust tests (`tests/support/golden.rs`) and read by `ui-tests/shared-replies.test.mjs`; `message_types_without_a_shared_reply_match_the_baseline` (`crates/xtask/tests/ui_contract.rs`), a ratchet on message types without one (ADR-0070) |
+| Every error text the UI compares is one the Rust code produces | `every_error_literal_the_ui_compares_is_produced_by_rust` (`crates/xtask/tests/ui_contract.rs`, ADR-0070) |
+| A limit repeated in the UI equals its Rust constant | `every_mirrored_limit_equals_its_rust_constant` (`crates/xtask/tests/ui_contract.rs`, ADR-0070) |
 
 A **ratchet** records today's count of known violations and fails when the
 count changes. It does not force fixing everything at once. When a count goes
 down, the same change lowers the baseline, so the count cannot grow back.
-
-**Planned** (from ADR-0070).
-
-| Rule | Check |
-|---|---|
-| The browser and the daemon agree on each reply | shared replies in `ui-tests/fixtures/`, written by the Rust tests and read by the UI tests; a ratchet on message types without one (ADR-0070) |
-| Every error text the UI compares is one the Rust code produces | an error-literal scan (ADR-0070) |
-| A limit repeated in the UI equals its Rust constant | a mirrored-constant table (ADR-0070) |
 
 The diagnosis behind this map, with the evidence and the full list of gaps,
 is [architecture-diagnosis-2026-09-30.md](./architecture-diagnosis-2026-09-30.md).

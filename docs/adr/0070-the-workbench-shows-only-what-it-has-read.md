@@ -152,19 +152,24 @@ detached file windows, which sends each file home as a tab.
 - D3, D4, D5, D6: not checked by code; each is pinned by behaviour tests where
   it is built. These rules change what one path does, not a boundary a pattern
   can find.
-- Contract of the seam (what D1–D3 rely on): checked by three tests, not built
-  yet:
+- Contract of the seam (what D1–D3 rely on): checked by three tests:
   - **Shared replies**, as a ratchet. The Rust tests that already produce real
-    replies write them to `crates/ralphy-daemon/ui-tests/fixtures/<type>.json`,
-    and the UI tests run the real JS folds on the same files. Baseline: about
-    89 of 94 message types have no shared reply; the check fails if that
-    count goes up, and a new verb, route or message starts with one.
-  - **Error literals**: every string the JS compares with a reply's `reason`,
-    `message` or `state`, and every key of the cause table in
+    replies write them to `crates/ralphy-daemon/ui-tests/fixtures/<type>.json`
+    through `crates/ralphy-daemon/tests/support/golden.rs`, and
+    `ui-tests/shared-replies.test.mjs` runs the real JS folds on the same
+    files. `message_types_without_a_shared_reply_match_the_baseline`
+    (`crates/xtask/tests/ui_contract.rs`) counts the message types with no
+    shared reply against the baseline in that test; the check fails if that
+    count changes, and a new verb, route or message starts with one.
+  - **Error literals**: `every_error_literal_the_ui_compares_is_produced_by_rust`
+    (`crates/xtask/tests/ui_contract.rs`). Every string the JS compares with a
+    reply's `reason`, `message` or `state`, and every key of the cause table in
     `assets/ui/wb-fail.js`, appears as a literal in the daemon's or the CLI's
     Rust source.
-  - **Mirrored constants**: a table pairs each limit the JS repeats (desk,
-    fence and note caps, console name length, image size, frame tags, the
-    write denylist) with its Rust constant, and the test compares the values.
-    It follows the settings test `every_settable_key_the_panel_offers_is_a_key_the_cli_accepts`
+  - **Mirrored constants**: `every_mirrored_limit_equals_its_rust_constant`
+    (`crates/xtask/tests/ui_contract.rs`). A table pairs each limit the JS
+    repeats (desk, fence and note caps, console name length, image size, frame
+    tags, the write denylist and its note exception) with its Rust constant,
+    and the test compares the values. It follows the settings test
+    `every_settable_key_the_panel_offers_is_a_key_the_cli_accepts`
     (`crates/ralphy-daemon/src/tests.rs`).
