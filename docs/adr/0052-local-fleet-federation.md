@@ -466,3 +466,27 @@ forward that the local daemon holds (a **peer tunnel**). The peer client stays
 loopback-only and the protocol is unchanged. ADR-0067 also closes, for those
 peers, the trust gap §3 accepted for WSL: a peer behind a tunnel requires its
 token even on loopback.
+
+
+## Amendment (2026-10-01): the next daemon adopts the keepalive
+
+The 2026-09-21 amendment says the keepalive is "idempotent per distro" and that
+it outlives the daemon that opened it. Both are true inside one daemon, and
+together they were false across daemons: the registry of handles is in memory,
+so the next daemon started empty and spawned a second keepalive next to the one
+still running. Measured on the reference host on 2026-10-01: nine keepalives
+for one distro. One more is left behind by every daemon exit that is not a tree
+kill: the end of a Windows job, an update hand-over, a crash.
+
+**Decision.** The keepalive's pid is written to the store, in
+`keepalive-<distro>.pid`. When a daemon holds no live keepalive for a distro, it
+reads that file first. A pid that is alive and runs `wsl.exe` is adopted and
+nothing is spawned. Any other pid is replaced by a new keepalive, and the file
+is rewritten. An adopted keepalive is only observed, never signalled, so the
+rule "supervise nothing" still holds.
+
+**Correction.** The 2026-09-21 amendment says a `ralphy daemon restart` does not
+cost the peer its sessions. That restart ends the old daemon with a tree kill,
+so the keepalive that daemon spawned ends too. The peer keeps its sessions only
+because the new daemon opens a keepalive within seconds of starting, well inside
+`vmIdleTimeout`.

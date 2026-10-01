@@ -183,30 +183,29 @@ fn keepalive_argv_is_exact() {
 #[cfg(windows)]
 #[test]
 fn a_keepalive_is_held_once_per_distro_and_replaced_once_dead() {
-    use std::process::{Command, Stdio};
-
-    fn child(args: &[&str]) -> Result<Child> {
-        Ok(Command::new(args[0])
-            .args(&args[1..])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()?)
-    }
     let held = Keepalives(Mutex::new(HashMap::new()));
+    let store = tempfile::tempdir().expect("scratch store");
+    let store = store.path();
+    let none = |_pid: u32| false;
 
     // A long-lived child stands in for `sleep infinity` (see `nudge_never_waits`
     // for why `ping`).
     let long = || child(&["ping", "-n", "31", "127.0.0.1"]);
-    assert!(held.ensure_with("distro-a", long).expect("first spawn"));
+    assert!(held
+        .ensure_with("distro-a", store, none, long)
+        .expect("first spawn"));
     assert!(
         !held
-            .ensure_with("distro-a", || panic!("must not spawn a second keepalive"))
+            .ensure_with("distro-a", store, none, || panic!(
+                "must not spawn a second keepalive"
+            ))
             .expect("second ensure"),
         "a live keepalive must be reused"
     );
     // Another distro is another handle.
-    assert!(held.ensure_with("distro-b", long).expect("other distro"));
+    assert!(held
+        .ensure_with("distro-b", store, none, long)
+        .expect("other distro"));
 
     // A child that exits at once is a dead handle: the next ensure replaces it.
     let mut short = child(&["cmd", "/c", "exit", "0"]).expect("short child");
@@ -214,16 +213,123 @@ fn a_keepalive_is_held_once_per_distro_and_replaced_once_dead() {
     held.0
         .lock()
         .expect("registry lock")
-        .insert("distro-c".into(), short);
+        .insert("distro-c".into(), Held::Spawned(short));
     assert!(
-        held.ensure_with("distro-c", long).expect("respawn"),
+        held.ensure_with("distro-c", store, none, long)
+            .expect("respawn"),
         "an exited keepalive must be replaced"
     );
 
-    // Clean up the pings this test started.
-    for (_, mut c) in held.0.lock().expect("registry lock").drain() {
-        c.kill().expect("the test ping is still running");
-        c.wait().expect("the killed ping is reaped");
+    end_pings(&held);
+}
+
+/// A keepalive outlives the daemon that spawned it. The next daemon starts with
+/// an empty registry, so it must find the running one through the pid file and
+/// adopt it, not start a second `wsl.exe`.
+#[cfg(windows)]
+#[test]
+fn a_keepalive_left_by_a_previous_daemon_is_adopted_not_doubled() {
+    let store = tempfile::tempdir().expect("scratch store");
+    let store = store.path();
+    let long = || child(&["ping", "-n", "31", "127.0.0.1"]);
+
+    let previous = Keepalives(Mutex::new(HashMap::new()));
+    assert!(previous
+        .ensure_with("Ubuntu-22.04", store, |_| false, long)
+        .expect("the previous daemon spawns"));
+    let left_pid = match previous
+        .0
+        .lock()
+        .expect("registry lock")
+        .get("Ubuntu-22.04")
+    {
+        Some(Held::Spawned(c)) => c.id(),
+        _ => panic!("the previous daemon holds the child it spawned"),
+    };
+
+    let next = Keepalives(Mutex::new(HashMap::new()));
+    let is_left = |pid: u32| pid == left_pid;
+    assert!(
+        !next
+            .ensure_with("Ubuntu-22.04", store, is_left, || panic!(
+                "must adopt, not spawn"
+            ))
+            .expect("the next daemon adopts"),
+        "a running keepalive named by the pid file must be adopted"
+    );
+    // Adopted, and still held on the next ensure.
+    assert!(!next
+        .ensure_with("Ubuntu-22.04", store, is_left, || panic!(
+            "must stay adopted"
+        ))
+        .expect("second ensure"));
+
+    end_pings(&previous);
+}
+
+/// A pid file that names no running keepalive (it exited, or the pid now runs
+/// something else) adopts nothing: a new keepalive is spawned and recorded.
+#[cfg(windows)]
+#[test]
+fn a_pid_file_naming_no_keepalive_is_replaced() {
+    let store = tempfile::tempdir().expect("scratch store");
+    let store = store.path();
+    let file = keepalive_pid_file(store, "Ubuntu-22.04");
+    std::fs::write(&file, "4242").expect("seeding a stale pid file");
+
+    let held = Keepalives(Mutex::new(HashMap::new()));
+    assert!(held
+        .ensure_with(
+            "Ubuntu-22.04",
+            store,
+            |_| false,
+            || child(&["ping", "-n", "31", "127.0.0.1"])
+        )
+        .expect("spawns"));
+    let spawned_pid = match held.0.lock().expect("registry lock").get("Ubuntu-22.04") {
+        Some(Held::Spawned(c)) => c.id(),
+        _ => panic!("a stale pid file must not be adopted"),
+    };
+    assert_eq!(
+        std::fs::read_to_string(&file).expect("reading the pid file"),
+        spawned_pid.to_string(),
+        "the new keepalive's pid replaces the stale one"
+    );
+
+    end_pings(&held);
+}
+
+#[test]
+fn a_distro_name_is_reduced_to_a_safe_file_name() {
+    assert_eq!(
+        keepalive_pid_file(std::path::Path::new("store"), "Ubuntu-22.04"),
+        std::path::Path::new("store").join("keepalive-Ubuntu-22.04.pid")
+    );
+    assert_eq!(
+        keepalive_pid_file(std::path::Path::new("store"), "../a b"),
+        std::path::Path::new("store").join("keepalive-.._a_b.pid")
+    );
+}
+
+#[cfg(windows)]
+fn child(args: &[&str]) -> Result<Child> {
+    use std::process::{Command, Stdio};
+    Ok(Command::new(args[0])
+        .args(&args[1..])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?)
+}
+
+/// End the pings a test spawned; adopted pids are not the test's to end.
+#[cfg(windows)]
+fn end_pings(held: &Keepalives) {
+    for (_, h) in held.0.lock().expect("registry lock").drain() {
+        if let Held::Spawned(mut c) = h {
+            c.kill().expect("the test ping is still running");
+            c.wait().expect("the killed ping is reaped");
+        }
     }
 }
 

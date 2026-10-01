@@ -25,6 +25,7 @@
 //! `client`, because this is the one seam that may invoke `wsl.exe`.
 
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::process::Child;
 use std::sync::{LazyLock, Mutex};
 
@@ -120,13 +121,26 @@ fn spawn_detached_child(_argv: &[String]) -> Result<Child> {
 }
 
 /// The keepalives this process holds, one per distro. Process-wide because that
-/// is what it models: the handles live as long as this daemon does and are
-/// re-acquired by the next one — a keepalive is never owned by a router or a
-/// request.
+/// is what it models: the handles live as long as this daemon does — a
+/// keepalive is never owned by a router or a request.
+///
+/// A keepalive outlives the daemon that spawned it, so its pid is also written
+/// to the store (`keepalive-<distro>.pid`). The next daemon adopts a keepalive
+/// that is still running instead of starting a second one. Every daemon exit
+/// that is not a tree kill (a job ended, an update hand-over, a crash) leaves
+/// the keepalive running; with no adoption, each next daemon adds one more
+/// (measured 2026-10-01: nine on one host).
 ///
 /// A `std::sync::Mutex`, never held across an `.await`: `ensure` spawns a
 /// process, so every caller on the reactor hands it to `spawn_blocking`.
-pub struct Keepalives(Mutex<HashMap<String, Child>>);
+pub struct Keepalives(Mutex<HashMap<String, Held>>);
+
+/// One distro's keepalive: the child this process spawned, or the pid of one a
+/// previous daemon spawned. An adopted pid is only ever read, never signalled.
+enum Held {
+    Spawned(Child),
+    Adopted(u32),
+}
 
 static KEEPALIVES: LazyLock<Keepalives> = LazyLock::new(|| Keepalives(Mutex::new(HashMap::new())));
 
@@ -136,34 +150,92 @@ pub fn keepalives() -> &'static Keepalives {
 }
 
 impl Keepalives {
-    /// Hold `spec.distro` open: spawn its keepalive unless the one this process
-    /// already spawned is still running. Returns whether a new one was spawned.
+    /// Hold `spec.distro` open: spawn its keepalive unless one is still
+    /// running — the one this process spawned, or the one the store's pid file
+    /// names. Returns whether a new one was spawned.
     ///
     /// Idempotent on purpose — a nudge per chip click, plus one at every daemon
     /// start, must add up to one `wsl.exe` per distro, not one per event. A
     /// keepalive that exited (the distro was shut down, `wsl --shutdown`, the
     /// name no longer resolves) is replaced, since a dead handle holds nothing.
     pub fn ensure(&self, spec: &NudgeSpec) -> Result<bool> {
-        self.ensure_with(&spec.distro, || spawn_detached_child(&keepalive_argv(spec)))
+        let store = crate::auth::store_dir()?;
+        self.ensure_with(&spec.distro, &store, is_running_keepalive, || {
+            spawn_detached_child(&keepalive_argv(spec))
+        })
     }
 
-    fn ensure_with(&self, distro: &str, spawn: impl FnOnce() -> Result<Child>) -> Result<bool> {
+    /// `is_keepalive` answers whether a pid is a running keepalive; injected so
+    /// a test can name a pid without a real `wsl.exe`.
+    fn ensure_with(
+        &self,
+        distro: &str,
+        store: &Path,
+        is_keepalive: impl Fn(u32) -> bool,
+        spawn: impl FnOnce() -> Result<Child>,
+    ) -> Result<bool> {
         // A poisoned lock means a panic mid-insert; the map is still a map, and
         // refusing every future wake over it would be the worse failure.
         let mut held = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(child) = held.get_mut(distro) {
+        let still_running = match held.get_mut(distro) {
             // `try_wait` is the one question asked of the child, and it is a
             // read: it neither blocks nor signals. `Err` means the handle itself
             // is unusable, which is as good as exited.
-            let still_running = matches!(child.try_wait(), Ok(None));
-            if still_running {
-                return Ok(false);
-            }
+            Some(Held::Spawned(child)) => matches!(child.try_wait(), Ok(None)),
+            Some(Held::Adopted(pid)) => is_keepalive(*pid),
+            None => false,
+        };
+        if still_running {
+            return Ok(false);
+        }
+        let pid_file = keepalive_pid_file(store, distro);
+        if let Some(pid) = read_pid(&pid_file).filter(|pid| is_keepalive(*pid)) {
+            tracing::info!(%distro, pid, "keeping the WSL distro running with the keepalive a previous daemon started");
+            held.insert(distro.to_string(), Held::Adopted(pid));
+            return Ok(false);
         }
         let child = spawn()?;
-        held.insert(distro.to_string(), child);
+        // The keepalive already holds the distro; a pid file that cannot be
+        // written only costs the next daemon one more `wsl.exe`.
+        if let Err(e) = std::fs::write(&pid_file, child.id().to_string()) {
+            tracing::warn!(%distro, path = %pid_file.display(), error = %e, "could not record the keepalive pid");
+        }
+        held.insert(distro.to_string(), Held::Spawned(child));
         Ok(true)
     }
+}
+
+/// `<store>/keepalive-<distro>.pid`. A distro name is free text to WSL, so
+/// anything outside `[A-Za-z0-9._-]` becomes `_` before it is a file name.
+fn keepalive_pid_file(store: &Path, distro: &str) -> PathBuf {
+    let safe: String = distro
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    store.join(format!("keepalive-{safe}.pid"))
+}
+
+/// The pid a keepalive file holds; `None` for a missing or unreadable file,
+/// which is the same answer as "no keepalive to adopt".
+fn read_pid(path: &Path) -> Option<u32> {
+    std::fs::read_to_string(path).ok()?.trim().parse().ok()
+}
+
+/// A pid is a keepalive to adopt when it is alive and runs `wsl.exe`. The
+/// image check guards against a reused pid; a reused pid that is some other
+/// `wsl.exe` would only keep this distro's handle out of the registry until it
+/// exits, and the next ensure replaces it.
+fn is_running_keepalive(pid: u32) -> bool {
+    ralphy_proc_util::pid_is_alive(pid)
+        && ralphy_proc_util::pid::exe_of_pid(pid)
+            .and_then(|exe| exe.file_name().map(|n| n.eq_ignore_ascii_case("wsl.exe")))
+            .unwrap_or(false)
 }
 
 /// Whether WSL currently reports `distro` as running.
