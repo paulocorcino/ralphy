@@ -303,3 +303,22 @@ fn budget_setters_reach_the_issue_deadline() {
         run_deadline
     );
 }
+
+/// Every session that builds a `codex exec` command writes the forge rule file
+/// first (ADR-0072 D6): no test here runs a real session, so a call site that
+/// lost `install_forge_rules` would leave the suite green.
+#[test]
+fn every_session_installs_the_forge_rules() {
+    for (name, src) in [
+        ("lib.rs", include_str!("lib.rs")),
+        ("tasks.rs", include_str!("tasks.rs")),
+    ] {
+        let builds = src.matches("let cmd = build_codex_").count();
+        let installs = src.matches("install_forge_rules(").count();
+        assert!(builds > 0, "{name}: no session found");
+        assert_eq!(
+            installs, builds,
+            "{name}: a session builds codex without the forge rules"
+        );
+    }
+}

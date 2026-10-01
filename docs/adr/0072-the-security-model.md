@@ -296,10 +296,14 @@ surface.
   `crates/ralphy-agent-opencode/src/command.rs`; the list is
   `DENIED_FORGE_WRITES` in `ralphy-adapter-support`). On a live run (opencode
   1.18.32, FinCal, 2026-10-01) opencode refused `gh pr create --help` and the
-  issue still ran to the end (ADR-0005 D5 amendment). Codex: the installed
-  CLI (0.159.2) has a mechanism, a `forbidden` exec-policy rule, measured to
-  refuse `git push` under `-s danger-full-access`; it is not wired yet,
-  because the rule file must sit in the target repo's `.codex/rules`.
+  issue still ran to the end (ADR-0005 D5 amendment). Codex: checked. Every
+  session writes a `forbidden` exec-policy rule file into its own
+  `.codex/rules/`, hidden by a merged `.gitignore`
+  (`every_session_installs_the_forge_rules`,
+  `the_rule_file_is_written_and_hidden_from_git`). On a live run (codex-cli
+  0.159.2, FinCal, 2026-10-01) Codex refused `gh pr create --help` and
+  `git push --dry-run`, and the issue ran to the end (ADR-0004 amendment of
+  2026-10-01).
   Copilot: checked. Every session carries one `--deny-tool=shell(<command>:*)`
   per entry (`every_session_denies_the_forge_writes`,
   `crates/ralphy-agent-copilot/src/command.rs`). CLI 1.0.90 refuses `git push`

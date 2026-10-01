@@ -24,6 +24,7 @@ use tracing::info;
 
 mod auth;
 mod command;
+mod forge_rules;
 mod outcome;
 mod skills;
 mod tasks;
@@ -39,6 +40,7 @@ use command::{
     build_codex_command, codex_config_model, recommended_tier, tier_to_model_effort,
     CODEX_MODEL_SOL, DEFAULT_CODEX_EFFORT,
 };
+use forge_rules::install_forge_rules;
 use outcome::classify_codex_outcome;
 use skills::materialize_codex_skills;
 pub use tasks::{consolidate_knowledge, diagnose_repo, draft_issues, triage_issues};
@@ -185,6 +187,7 @@ impl Agent for CodexAgent {
 
         let run = || {
             materialize_codex_skills(ws)?;
+            install_forge_rules(ws.repo_root())?;
             let _ = fs::remove_file(&out_path);
             let before = snapshot();
             let effort = self.resolved_plan_effort();
@@ -271,6 +274,7 @@ impl Agent for CodexAgent {
 
         let run = || {
             materialize_codex_skills(ws)?;
+            install_forge_rules(ws.repo_root())?;
             let _ = fs::remove_file(&out_path);
             let before = snapshot();
             let cmd = build_codex_command(&model, effort, ws.repo_root(), &out_path);
