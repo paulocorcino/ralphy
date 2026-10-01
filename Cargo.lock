@@ -1820,6 +1820,7 @@ dependencies = [
  "chrono",
  "junction",
  "os_info",
+ "ralphy-git-read",
  "ralphy-proc-util",
  "regex",
  "serde",

@@ -103,8 +103,12 @@ pub fn changes(repo: &Path) -> Result<Vec<Change>> {
             _ => None,
         };
         if let Some(entry) = entry {
-            if is_run_artifact(&entry.path)
-                || entry.original_path.as_deref().is_some_and(is_run_artifact)
+            // The `.ralphy/` rule is shared with the daemon's dirty bit.
+            if ralphy_git_read::is_run_artifact(&entry.path)
+                || entry
+                    .original_path
+                    .as_deref()
+                    .is_some_and(ralphy_git_read::is_run_artifact)
             {
                 continue;
             }
@@ -162,12 +166,6 @@ fn ordinary_status(record: &str) -> ChangeStatus {
         .find(|c| *c != '.')
         .and_then(side_status)
         .unwrap_or(ChangeStatus::Modified)
-}
-
-/// Anchored at the repo root: a nested `docs/.ralphy/x` is a real change, only
-/// the run directory itself is scratch.
-fn is_run_artifact(path: &str) -> bool {
-    path.starts_with(".ralphy/") || path.starts_with(".ralphy\\")
 }
 
 #[cfg(test)]
@@ -284,6 +282,25 @@ mod tests {
         let list = changes(&dir).unwrap();
         assert_eq!(list.len(), 1, "only the tracked edit: {list:?}");
         assert_eq!(list[0].path, "README.md");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn run_directory_only_change_is_clean_for_core_and_git_read() {
+        let dir = init_repo("agreement");
+        std::fs::write(dir.join("README.md"), "hello\n").unwrap();
+        git(&dir, &["add", "."]).unwrap();
+        git(&dir, &["commit", "-q", "-m", "init"]).unwrap();
+
+        std::fs::create_dir_all(dir.join(".ralphy")).unwrap();
+        std::fs::write(dir.join(".ralphy").join("x.txt"), "scratch\n").unwrap();
+        assert!(changes(&dir).unwrap().is_empty());
+        assert!(!ralphy_git_read::dirty(&dir).unwrap());
+
+        std::fs::write(dir.join("a.txt"), "a\n").unwrap();
+        assert!(!changes(&dir).unwrap().is_empty());
+        assert!(ralphy_git_read::dirty(&dir).unwrap());
 
         let _ = std::fs::remove_dir_all(&dir);
     }

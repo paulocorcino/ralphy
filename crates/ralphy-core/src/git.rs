@@ -105,8 +105,12 @@ pub fn fetch_origin(repo: &Path) -> Result<()> {
     Ok(())
 }
 
+/// The current branch name, or `"HEAD"` when detached (callers compare to it).
 pub fn current_branch(repo: &Path) -> Result<String> {
-    git(repo, &["rev-parse", "--abbrev-ref", "HEAD"])
+    Ok(match ralphy_git_read::head(repo)? {
+        ralphy_git_read::Head::Branch { name } => name,
+        ralphy_git_read::Head::Detached { .. } => "HEAD".to_string(),
+    })
 }
 
 /// The repo's local branch names, one per line, in `git branch` order. Backs the
@@ -126,9 +130,7 @@ pub fn local_branches(repo: &Path) -> Result<Vec<String>> {
 /// there is no `origin` remote (a local-only repo), so the caller simply omits the
 /// link rather than failing the run.
 pub fn origin_url(repo: &Path) -> Option<String> {
-    git(repo, &["remote", "get-url", "origin"])
-        .ok()
-        .filter(|s| !s.is_empty())
+    ralphy_git_read::origin_url(repo)
 }
 
 /// Extract an `owner/repo` slug from a git remote URL (ADR-0008 D7). Handles the
@@ -180,9 +182,7 @@ pub fn project_slug(repo: &Path) -> String {
 /// `git config user.email` for the run's actor (ADR-0008 D7). `None` when unset
 /// or empty — the caller substitutes a default rather than failing the run.
 pub fn user_email(repo: &Path) -> Option<String> {
-    git(repo, &["config", "user.email"])
-        .ok()
-        .filter(|s| !s.is_empty())
+    ralphy_git_read::user_email(repo)
 }
 
 /// `git config user.name` for the actor's display name (ADR-0008 D7).
