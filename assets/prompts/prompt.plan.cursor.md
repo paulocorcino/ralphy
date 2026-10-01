@@ -110,8 +110,8 @@ on one.
      executor installs a headless-browser driver (e.g. Playwright) if none
      is present — plan that check instead of conceding the criterion to
      review-only, and price
-     its evidence: a dated screenshot under `docs/screenshots/` named with
-     the issue number, committed with the work. Screenshot evidence belongs
+     its evidence: a dated screenshot under `.ralphy/screenshots/` named with
+     the issue number, never committed. Screenshot evidence belongs
      to that browser-driven path only — do not require screenshot artifacts
      for criteria a browser never renders (terminal scrollback, CLI output,
      logs). State
