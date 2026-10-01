@@ -429,3 +429,48 @@ test("resume(true) replaces an open tree socket and the new one replays the held
   open(sockets[1]);
   assert.deepEqual(sentOn(sockets[1]), [["watch", "src"]]);
 });
+
+// --- subscribePresence: the presence socket also carries the daemon's pushes
+
+test("subscribePresence hands a command frame to onPush and each open to onOpen", () => {
+  const d = load();
+  const sockets = [];
+  const realSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = () => 0;
+  globalThis.WebSocket = class {
+    constructor() {
+      sockets.push(this);
+    }
+    close() {}
+  };
+  const pushes = [];
+  const opens = [];
+  const beats = [];
+  try {
+    d.subscribePresence((p) => beats.push(p), {
+      onPush: (verb, payload) => pushes.push([verb, payload]),
+      onOpen: (reopened) => opens.push(reopened),
+    });
+  } finally {
+    globalThis.setTimeout = realSetTimeout;
+    delete globalThis.WebSocket;
+  }
+  const ws = sockets[0];
+  ws.onopen();
+  const frame = (tag, obj) => {
+    const body = new TextEncoder().encode(JSON.stringify(obj));
+    const out = new Uint8Array(1 + body.length);
+    out[0] = tag;
+    out.set(body, 1);
+    return { data: out.buffer };
+  };
+  ws.onmessage(frame(0x02, { id: 0, verb: "sessions.dirty", payload: {} }));
+  ws.onmessage(frame(0x02, { id: 0, verb: "desk.dirty", payload: { tab: "t1" } }));
+  ws.onmessage(frame(0x03, { uptime_secs: 4 }));
+  assert.deepEqual(pushes, [
+    ["sessions.dirty", {}],
+    ["desk.dirty", { tab: "t1" }],
+  ]);
+  assert.deepEqual(beats, [{ uptime_secs: 4 }], "a push is not a heartbeat");
+  assert.deepEqual(opens, [false]);
+});

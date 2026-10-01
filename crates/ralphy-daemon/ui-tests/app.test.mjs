@@ -912,15 +912,17 @@ test("the same build after a gap is a rollback, and a new build reloads the page
 test("returning to the tab reads the release view again", () => {
   const { state } = loadShell();
   const calls = [];
-  for (const name of ["maybeRefreshBoard", "refreshChanges", "resumeSockets", "loadRelease"]) {
+  for (const name of ["maybeRefreshBoard", "loadRepos", "rereadDesk", "resumeSockets", "loadRelease"]) {
     state[name] = () => calls.push(name);
   }
   state.onTabVisible();
   // Each read happens once; their order is not what the tab depends on.
+  // `loadRepos` reads the sessions, the fleet, the change set and the branch.
   assert.deepEqual(calls.toSorted(), [
     "loadRelease",
+    "loadRepos",
     "maybeRefreshBoard",
-    "refreshChanges",
+    "rereadDesk",
     "resumeSockets",
   ]);
 });
@@ -1399,4 +1401,107 @@ test("loadRepos keeps the head of a detached repo for the row title", async () =
   }
   assert.equal(state.projects.length, 1);
   assert.equal(state.rowTitle(state.projects[0]), "o/r · abc1234");
+});
+
+// --- ADR-0070 D2: a shown fact is read again on named events only ----------
+
+// Every URL the code under test fetched, answered with an empty 200. A bare
+// `fetch` in app.js resolves to `globalThis.fetch`, not the harness window's.
+async function withFetchSpy(fn) {
+  const urls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    urls.push(String(url));
+    return { ok: true, status: 200, json: async () => [] };
+  };
+  try {
+    await fn(urls);
+    // Let the reads chained behind the first await land.
+    for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  return urls;
+}
+
+test("a presence frame reads nothing", async () => {
+  const { state, window } = loadShell();
+  let beat = null;
+  window.WBDaemon.subscribePresence = (onPresence) => {
+    beat = onPresence;
+    return { resume() {}, close() {} };
+  };
+  state.subscribePresence();
+  const urls = await withFetchSpy(() => beat({ uptime_secs: 1 }));
+  assert.deepEqual(urls, [], "the heartbeat is not a read trigger");
+  assert.equal(state.uptimeText, "Running for 1s");
+});
+
+test("a hidden tab reads nothing on a push, and reads when it becomes visible", async () => {
+  const { state, document } = loadShell({ document: { visibilityState: "hidden", hasFocus: () => true } });
+  // `WBColumns` is a page global the harness does not define.
+  state.checkColumnDesk = async () => {};
+  const hidden = await withFetchSpy(() => {
+    state.onPresencePush("sessions.dirty", {});
+    state.onPresencePush("repos.dirty", {});
+    state.onPresencePush("desk.dirty", { tab: "other" });
+    state.onPresenceOpen(true);
+  });
+  assert.deepEqual(hidden, []);
+  document.visibilityState = "visible";
+  const visible = await withFetchSpy(() => state.onTabVisible());
+  assert.ok(visible.includes("/api/sessions"), visible.join(", "));
+  assert.ok(visible.includes("/api/repos"), visible.join(", "));
+  assert.ok(visible.includes("/api/desk"), visible.join(", "));
+});
+
+test("peers.dirty and repos.dirty read the project list", async () => {
+  for (const verb of ["peers.dirty", "repos.dirty"]) {
+    const { state } = loadShell({ document: { visibilityState: "visible", hasFocus: () => true } });
+    state.checkColumnDesk = async () => {};
+    const urls = await withFetchSpy(() => state.onPresencePush(verb, {}));
+    assert.ok(urls.includes("/api/repos"), `${verb}: ${urls.join(", ")}`);
+  }
+});
+
+test("desk.dirty from this tab is ignored, and from another tab reads the desk", () => {
+  const { state, window } = loadShell({ document: { visibilityState: "visible", hasFocus: () => true } });
+  // `WBColumns` is a page global the harness does not define.
+  state.checkColumnDesk = async () => {};
+  let reads = 0;
+  window.WBConsole.reloadDesk = () => {
+    reads += 1;
+    return Promise.resolve();
+  };
+  state.onPresencePush("desk.dirty", { tab: window.WBDeskSink.tabId() });
+  assert.equal(reads, 0, "this tab's own write");
+  state.onPresencePush("desk.dirty", { tab: "another-tab" });
+  assert.equal(reads, 1);
+});
+
+test("a reopened presence socket reads sessions, projects and the desk; the first open reads nothing", async () => {
+  const { state } = loadShell({ document: { visibilityState: "visible", hasFocus: () => true } });
+  // `WBColumns` is a page global the harness does not define.
+  state.checkColumnDesk = async () => {};
+  const first = await withFetchSpy(() => state.onPresenceOpen(false));
+  assert.deepEqual(first, []);
+  const again = await withFetchSpy(() => state.onPresenceOpen(true));
+  for (const url of ["/api/sessions", "/api/repos", "/api/desk"]) {
+    assert.ok(again.includes(url), `${url} in ${again.join(", ")}`);
+  }
+});
+
+test("login reads the board, the runs and the tree again", () => {
+  const { state } = loadShell();
+  const calls = [];
+  for (const name of ["loadRepos", "loadIdentity", "loadAgents", "restoreView", "hydrateRuns"]) {
+    state[name] = () => calls.push(name);
+  }
+  state.maybeRefreshBoard = (why) => calls.push(`board:${why}`);
+  state._treeSub = { replay: () => calls.push("tree") };
+  state.runsOpen = true;
+  state.rehydrateAfterAuth();
+  for (const want of ["loadRepos", "board:login", "hydrateRuns", "tree"]) {
+    assert.ok(calls.includes(want), `${want} in ${calls.join(", ")}`);
+  }
 });

@@ -20,6 +20,15 @@
    permit. Reading is harmless; replacing the desk from a partial view is not.
 --------------------------------------------------------------------------- */
 window.WBDeskSink = (function () {
+  // One id per document. The daemon echoes it in the `desk.dirty` push its
+  // PUT causes, so this tab does not read its own write again.
+  const TAB =
+    globalThis.crypto?.randomUUID?.() || "t" + Math.random().toString(36).slice(2) + Date.now();
+  function tabId() {
+    return TAB;
+  }
+  const deskUrl = () => "/api/desk?tab=" + encodeURIComponent(TAB);
+
   // The daemon-backed write. Both entry points take an already-serialised body,
   // because both callers snapshot the desk at SCHEDULE time — re-measuring at
   // fire time is what stored a zeroed pan in #339.
@@ -35,7 +44,7 @@ window.WBDeskSink = (function () {
         inFlight = inFlight
           .catch(() => {})
           .then(() =>
-            fetch("/api/desk", {
+            fetch(deskUrl(), {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
               body,
@@ -48,7 +57,7 @@ window.WBDeskSink = (function () {
       // against, and awaiting one would be awaiting past the document's life.
       putSync(body) {
         try {
-          fetch("/api/desk", {
+          fetch(deskUrl(), {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body,
@@ -70,5 +79,5 @@ window.WBDeskSink = (function () {
     };
   }
 
-  return { daemon, none };
+  return { daemon, none, tabId };
 })();

@@ -6091,12 +6091,12 @@ fn shell_detaches_a_fence() {
     // NEGATIVE CONTROL: deleting the write wholesale would satisfy the first
     // assertion alone.
     assert!(
-        !js.contains(r#""/api/desk", {"#),
+        !js.contains(r#""/api/desk", {"#) && !js.contains(r#""/api/desk?tab=""#),
         "the desk PUT must live only in wb-desk-sink.js (#346)"
     );
     let sink = include_str!("../assets/ui/wb-desk-sink.js");
     assert!(
-        sink.contains(r#""/api/desk", {"#),
+        sink.contains(r#""/api/desk?tab=""#) && sink.contains("fetch(deskUrl(), {"),
         "wb-desk-sink.js must still perform the desk PUT (#346)"
     );
     assert!(

@@ -6802,6 +6802,7 @@ window.WBConsole = (function () {
     focusedId,
     deskRecords,
     readDeskIds,
+    reloadDesk,
     dropClosedElsewhere,
     columnRoster,
     sessionPresentation,

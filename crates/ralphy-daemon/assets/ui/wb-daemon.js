@@ -311,13 +311,17 @@ window.WBDaemon = (function () {
     const held = new Set();
     const frame = (verb, path) =>
       encodeCommand({ id: 0, verb, payload: withCheckout({ repo, path: path || "" }, checkout) });
+    // Re-reads each held dir and the branch: a reopen does it, and so does a
+    // tab that becomes visible or logs in (ADR-0070 D2 events 3, 4).
+    const replay = () => {
+      for (const path of held) onDirty(path);
+      onHead?.();
+    };
     const sub = persistentSocket("/ws/tree", {
       onOpen: (ws, reopened) => {
         if (onHead) ws.send(frame("head.watch", ""));
         for (const path of held) ws.send(frame("watch", path));
-        if (!reopened) return;
-        for (const path of held) onDirty(path);
-        onHead?.();
+        if (reopened) replay();
       },
       onMessage: (ev) => {
         const f = commandFrame(ev);
@@ -342,6 +346,7 @@ window.WBDaemon = (function () {
         if (!held.delete(rel)) return;
         sub.sendIfOpen(frame("unwatch", rel));
       },
+      replay,
       resume: sub.resume,
       close: sub.close,
     };
@@ -400,10 +405,20 @@ window.WBDaemon = (function () {
   // after a daemon restart without a page reload. The heartbeat this socket
   // carries IS the shell's staleness signal, so a resume here is what re-arms
   // the probe every other resume depends on.
-  function subscribePresence(onPresence) {
+  // The same socket carries the daemon's pushes for the shown facts it owns
+  // (`sessions.dirty`, `desk.dirty`, `repos.dirty`, `peers.dirty`; ADR-0070
+  // D2): each `[0x02]` frame goes to `onPush(verb, payload)`, and every open to
+  // `onOpen(reopened)`, so a reopen reads again what a lost push would have said.
+  function subscribePresence(onPresence, { onPush, onOpen } = {}) {
     const sub = persistentSocket("/ws", {
+      onOpen: (_ws, reopened) => onOpen?.(reopened),
       onMessage: (ev) => {
         const a = new Uint8Array(ev.data);
+        if (a[0] === TAG_COMMAND) {
+          const f = commandFrame(ev);
+          if (f?.verb) onPush?.(f.verb, f.payload || {});
+          return;
+        }
         if (a[0] !== TAG_PRESENCE) return;
         try {
           onPresence(JSON.parse(new TextDecoder().decode(a.subarray(1))));

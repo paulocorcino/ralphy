@@ -222,6 +222,7 @@ window.WBKanban = {
     switch (trigger) {
       case "manual":
       case "label":
+      case "login":
         return true;
       case "visible":
       case "runs":

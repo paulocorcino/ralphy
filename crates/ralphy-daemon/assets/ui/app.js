@@ -256,6 +256,12 @@ function shell() {
       this._boardBackstop = setInterval(() => this.boardBackstopTick(), 30000);
       // Registered once; the tick asks whether the panel is open.
       this._changesBackstop = setInterval(() => this.refreshChanges(), this.CHANGES_POLL_MS);
+      // A peer pushes neither its reachability nor its sessions, so they are
+      // read every 30 s while a peer is listed and the tab is visible
+      // (ADR-0070 D2 event 6). `loadRepos` reads the fleet and the sessions.
+      this._peerTick = setInterval(() => {
+        if (!this.tabHidden() && this.fleetPeers.length) this.loadRepos();
+      }, this.PEER_READ_MS);
       // The phase clock's tick: one assignment a second while the panel is
       // open; the run document is NOT re-read.
       this._clockTick = setInterval(() => {
@@ -301,18 +307,65 @@ function shell() {
     },
 
     // The `/ws` presence heartbeat (daemon mode). Each tick stamps
-    // `_lastHeartbeat`, refreshes uptime, carries name/avatar once baptized, and
-    // re-derives `live` so the sidebar dots track sessions (~2s).
+    // `_lastHeartbeat`, refreshes uptime and carries name/avatar once
+    // baptized. It reads nothing: the shown facts are read again on the
+    // daemon's pushes, which ride the same socket (ADR-0070 D2).
     subscribePresence() {
       if (!window.WBMode.isDaemon() || !window.WBDaemon?.subscribePresence) return;
-      this._presenceSub = window.WBDaemon.subscribePresence((p) => {
-        this._lastHeartbeat = Date.now();
-        this.uptimeText = "Running for " + this.fmtUptime(p.uptime_secs);
-        if (p.name) this.identityName = p.name;
-        if (p.avatar) this.identityAvatar = p.avatar;
-        this.refreshLive();
-        this.checkColumnDesk();
-      });
+      this._presenceSub = window.WBDaemon.subscribePresence(
+        (p) => {
+          this._lastHeartbeat = Date.now();
+          this.uptimeText = "Running for " + this.fmtUptime(p.uptime_secs);
+          if (p.name) this.identityName = p.name;
+          if (p.avatar) this.identityAvatar = p.avatar;
+        },
+        {
+          onPush: (verb, payload) => this.onPresencePush(verb, payload),
+          onOpen: (reopened) => this.onPresenceOpen(reopened),
+        },
+      );
+    },
+
+    // A hidden tab reads no shown fact; `onTabVisible` reads them all again
+    // (ADR-0070 D2), so a push dropped here is not lost.
+    tabHidden() {
+      return document.visibilityState === "hidden";
+    },
+
+    // A push from the daemon for a fact it owns (ADR-0070 D2 event 1).
+    onPresencePush(verb, payload) {
+      if (this.tabHidden()) return;
+      if (verb === "sessions.dirty") {
+        // A spawn and its first agent state arrive together: one read.
+        clearTimeout(this._liveTimer);
+        this._liveTimer = setTimeout(() => this.refreshLive(), this.LIVE_SETTLE_MS);
+      } else if (verb === "desk.dirty") {
+        // This tab's own write: it already holds the result.
+        if (payload?.tab && payload.tab === window.WBDeskSink?.tabId?.()) return;
+        this.rereadDesk();
+      } else if (verb === "repos.dirty" || verb === "peers.dirty") {
+        this.loadRepos();
+      }
+    },
+    LIVE_SETTLE_MS: 250,
+    PEER_READ_MS: 30000,
+    _liveTimer: null,
+    _peerTick: null,
+
+    // The presence socket opened again: a push may have been lost while it
+    // was down (ADR-0070 D2 event 2). The first open reads nothing: `init`
+    // already did.
+    onPresenceOpen(reopened) {
+      if (!reopened || this.tabHidden()) return;
+      this.loadRepos();
+      this.rereadDesk();
+    },
+
+    // Read the desk again, then see whether a column console was closed by
+    // another client.
+    rereadDesk() {
+      const read = window.WBConsole?.reloadDesk?.();
+      if (read?.then) read.then(() => this.checkColumnDesk());
     },
 
     // Seconds → a compact `1d 2h`, `2h 14m`, `5m`, `12s` uptime string.
@@ -412,7 +465,6 @@ function shell() {
           // a peer's absence stall the LOCAL sidebar's spinner and live dots.
           // Federation is additive in latency too.
           this.loadFleet();
-          this.refreshLive();
         } else if (window.WBMode.isDaemon()) {
           // Daemon mode: a failed fetch must NOT keep the seed projects (M5) —
           // clear them and show the error.
@@ -427,6 +479,9 @@ function shell() {
         // Demo (file://): keep the seed — the shell stays navigable offline.
       } finally {
         this.reposLoading = false;
+        // The sessions are read with the projects, whatever the projects read
+        // answered: the live dots and the console menu come from them.
+        this.refreshLive();
         // The sidebar refresh button is the Changes count's manual reload (#307).
         if (this.openSlug) this.loadChanges(this.openSlug);
         if (this.openSlug) this.loadSync(this.openSlug);
@@ -2736,14 +2791,15 @@ function shell() {
       return n + " consoles are open. The update closes them and stops the agents in them.";
     },
 
+    // The tab became visible (ADR-0070 D2 event 3): every open panel's facts
+    // are read again, because a hidden tab read nothing. `loadRepos` also
+    // reads the sessions, the fleet, the change set and the branch.
     onTabVisible() {
       this.maybeRefreshBoard("visible");
-      // The Changes backstop did nothing while the tab was hidden.
-      this.refreshChanges();
-      // With Changes closed, the branch is still read once: a peer repo gets no
-      // `head.dirty`, and the tree socket that carries it does not reconnect.
-      const changesShown = this.sideOpen && this.sideView === "changes";
-      if (window.WBMode.isDaemon() && this.openSlug && !changesShown) this.loadSync(this.openSlug);
+      this.loadRepos();
+      this.rereadDesk();
+      if (this.runsOpen) this.hydrateRuns();
+      this._treeSub?.replay?.();
       this.resumeSockets();
       this.loadRelease();
     },
@@ -3628,6 +3684,11 @@ function shell() {
       window.WBConsole?.afterLogin()?.then(() => this.adoptDeskCheckouts());
       // Only now is `file.read` allowed (#339).
       this.restoreView();
+      // Every shown fact reads again after login (ADR-0070 D2 event 4);
+      // `loadRepos` above covers the sessions, the change set and the branch.
+      this.maybeRefreshBoard("login");
+      if (this.runsOpen) this.hydrateRuns();
+      this._treeSub?.replay?.();
     },
 
     // --- TOTP digit boxes -------------------------------------------------
@@ -4053,9 +4114,13 @@ function shell() {
       if (this.useDaemonTree() && window.WBDaemon?.subscribeTree) {
         this._treeSub = WBDaemon.subscribeTree(
           this.openSlug,
-          (rel) => this.onTreeDirty(rel),
+          (rel) => {
+            if (!this.tabHidden()) this.onTreeDirty(rel);
+          },
           this._treeCheckout,
-          () => this.onHeadMoved(),
+          () => {
+            if (!this.tabHidden()) this.onHeadMoved();
+          },
         );
         this._treeSub.watch("");
       }
@@ -4674,6 +4739,7 @@ function shell() {
       // A snapshot change means the tracker may have moved, so the same push
       // nudges the board (#301); the predicate coalesces it.
       this._runsSub = window.WBDaemon.subscribeRuns(this.openSlug, () => {
+        if (this.tabHidden()) return;
         this.hydrateRuns();
         this.maybeRefreshBoard("runs");
       });
@@ -4690,6 +4756,7 @@ function shell() {
     mountChangesSub() {
       if (!window.WBMode.isDaemon() || !window.WBDaemon?.subscribeChanges || !this.openSlug) return;
       this._changesSub = window.WBDaemon.subscribeChanges(this.openSlug, (frame) => {
+        if (this.tabHidden()) return;
         // Optional-chained: a frame without wb-changes.js must not throw
         // inside `onmessage`.
         if (window.WBChanges?.shouldReload?.(frame, this.openSlug)) {
@@ -5519,8 +5586,8 @@ function shell() {
       this.setColumns(r.ended ? [] : r.columns);
       WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { cap, unmax: r.unmax, raise: true });
     },
-    // A column console closed by another client leaves the columns. The desk has
-    // no push channel, so this reads it on the presence tick. A session that
+    // A column console closed by another client leaves the columns. Read when
+    // the daemon pushes `desk.dirty` (`rereadDesk`). A session that
     // ended, a remote maximize and a remote rect or fence change need nothing
     // here: `WBColumns.external` names them as no-ops.
     async checkColumnDesk() {
