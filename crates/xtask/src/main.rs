@@ -17,6 +17,7 @@ mod capabilities;
 mod changelog;
 mod release_cmds;
 mod ui_copy;
+mod vendor_lock;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -78,6 +79,7 @@ fn main() -> Result<()> {
         Some("asset-pins") => asset_pins::asset_pins_cmd(&args[1..]),
         Some("ui-copy") => ui_copy::ui_copy_cmd(&args[1..]),
         Some("capabilities") => capabilities::capabilities_cmd(&args[1..]),
+        Some("vendor-lock") => vendor_lock::vendor_lock_cmd(&args[1..]),
         _ => {
             eprintln!(
                 "usage: cargo run -p xtask -- <cmd>\n\
@@ -87,7 +89,8 @@ fn main() -> Result<()> {
                  bump <version>\n  \
                  asset-pins [--root <repo>] [--verbose]\n  \
                  ui-copy [--root <repo>] [--json | --check]\n  \
-                 capabilities --base <rev> [--head <rev>] [--repo <path>] [--github] [--check]"
+                 capabilities --base <rev> [--head <rev>] [--repo <path>] [--github] [--check]\n  \
+                 vendor-lock <out>"
             );
             std::process::exit(2);
         }
