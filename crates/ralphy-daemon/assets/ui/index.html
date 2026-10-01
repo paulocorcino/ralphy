@@ -1927,6 +1927,7 @@
             </template>
           </nav>
           <div class="settings-content">
+            <p class="side-error" x-show="settingsError" x-text="settingsError"></p>
             <template x-for="sec in SETTINGS" :key="sec.id">
               <section x-show="settingsSection === sec.id">
                 <div class="settings-h2row">
@@ -2207,6 +2208,7 @@
             <strong x-text="release.latest"></strong>
             <span class="rel-count" x-text="releaseSummary"></span>
           </p>
+          <p class="side-error" x-show="releaseStale()" x-text="releaseStale()"></p>
           <template x-for="entry in release.gap" :key="entry.version">
             <div class="rel-entry">
               <div class="rel-entry-head">

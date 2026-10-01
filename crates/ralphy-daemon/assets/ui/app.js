@@ -146,6 +146,13 @@ function shell() {
     // Per slug, named apart from the shell-wide `changesError` below: a
     // duplicate key in this literal is a silent no-op.
     changesReadError: {},
+    // Per slug, the read state of the change set, the branch (sync), the board
+    // and the runs (`WBFail.readFold`, ADR-0070 D3). A write is locked while
+    // its fact is not current.
+    changesRead: {},
+    syncRead: {},
+    boardRead: {},
+    runsRead: {},
     // The two rendered groups (#315). INVARIANT: every path that sets one must
     // set the OTHER in the SAME statement — a stale group left behind renders
     // rows under a headline while the badge already reads `—`.
@@ -999,11 +1006,7 @@ function shell() {
         if (seq !== this._changesSeq) return; // superseded → the newer read owns it
         if (!reply || reply.status !== "ok") {
           if (window.WBMode.isDaemon()) {
-            // Honest absence beats another repo's number.
-            this.changesCount[slug] = null;
-            this.changesReadError[slug] = "Could not read the changes.";
-            this.changesStaged[slug] = [];
-            this.changesUnstaged[slug] = [];
+            this.changesFailed(slug, window.WBFail.message(reply, "the daemon gave no reason"));
           }
           return;
         }
@@ -1012,15 +1015,28 @@ function shell() {
         this.changesStaged[slug] = folded.staged;
         this.changesUnstaged[slug] = folded.unstaged;
         this.changesReadError[slug] = "";
+        this.changesRead[slug] = window.WBFail.readFold(this.changesRead[slug], { ok: true, value: true, at: Date.now() });
       } catch {
         if (seq === this._changesSeq && window.WBMode.isDaemon()) {
-          this.changesCount[slug] = null;
-          this.changesReadError[slug] = "Could not read the changes.";
-          this.changesStaged[slug] = [];
-          this.changesUnstaged[slug] = [];
+          this.changesFailed(slug, "the daemon did not answer");
         }
         // Demo (static shell): leave whatever the seed/previous load holds.
       }
+    },
+    // A failed `changes.list` (ADR-0070 D3). After a good read the groups and
+    // the count stay, marked not current; before one, the count is absent
+    // (`—`), never another repo's number or a clean tree.
+    changesFailed(slug, reason) {
+      const read = window.WBFail.readFold(this.changesRead[slug], { ok: false, reason, at: Date.now() });
+      this.changesRead[slug] = read;
+      if (read.goodAt) {
+        this.changesReadError[slug] = window.WBFail.notCurrent(read, (ms) => this.fmtClock(ms));
+        return;
+      }
+      this.changesCount[slug] = null;
+      this.changesReadError[slug] = "Could not read the changes.";
+      this.changesStaged[slug] = [];
+      this.changesUnstaged[slug] = [];
     },
 
     // The open project's sync state (#316) via `sync.status`, which makes NO
@@ -1035,8 +1051,15 @@ function shell() {
           window.WBDaemon.withCheckout({ repo: slug }, this.checkoutOf(slug)),
         );
         if (seq !== this._syncSeq) return; // superseded → the newer read owns it
+        if (!reply || reply.status !== "ok") {
+          if (window.WBMode.isDaemon()) {
+            this.syncFailed(slug, window.WBFail.message(reply, "the daemon gave no reason"));
+          }
+          return;
+        }
         const sync = window.WBChanges.foldSync(reply);
         this.syncByProject[slug] = sync;
+        this.syncRead[slug] = window.WBFail.readFold(this.syncRead[slug], { ok: true, value: true, at: Date.now() });
         // Under a selected worktree the read is THAT tree's HEAD, and
         // `p.branch` is the primary's (#407), so only a primary read moves it.
         const branch = window.WBChanges.headBranch(sync);
@@ -1046,11 +1069,22 @@ function shell() {
         if (p && head !== null) p.head = head;
       } catch {
         if (seq === this._syncSeq && window.WBMode.isDaemon()) {
-          // Honest absence beats a stale row.
-          this.syncByProject[slug] = window.WBChanges.foldSync(null);
+          this.syncFailed(slug, "the daemon did not answer");
         }
         // Demo (static shell): leave whatever the previous load holds.
       }
+    },
+    // A failed `sync.status` (ADR-0070 D3). After a good read the row stays,
+    // and its note says it is not current; before one, the state is unknown.
+    syncFailed(slug, reason) {
+      const read = window.WBFail.readFold(this.syncRead[slug], { ok: false, reason, at: Date.now() });
+      this.syncRead[slug] = read;
+      const prev = this.syncByProject[slug];
+      if (read.goodAt && prev && prev.state !== "unknown") {
+        this.syncByProject[slug] = { ...prev, note: window.WBFail.notCurrent(read, (ms) => this.fmtClock(ms)) };
+        return;
+      }
+      this.syncByProject[slug] = window.WBChanges.foldSync(null);
     },
 
     // Fetch from the upstream — the operator's act, never a timer's. A refusal
@@ -1686,10 +1720,10 @@ function shell() {
         // Superseded while in flight: the newer hydration owns the state.
         if (seq !== this._runsSeq || this.openSlug !== slug) return;
         if (reply?.status !== "ok") {
-          this.runsByProject[slug] = [];
-          this.runsError = reply?.reason || reply?.message || "Could not read runs.";
+          this.runsFailed(slug, reply?.reason || reply?.message || "Could not read runs.");
           return;
         }
+        this.runsRead[slug] = window.WBFail.readFold(this.runsRead[slug], { ok: true, value: true, at: Date.now() });
         this.runsByProject[slug] = (reply.runs || []).map((d) => {
           const run = window.WBRun.fromSnapshot(d);
           // A push arrives on every snapshot write (~every few hundred ms);
@@ -1716,9 +1750,20 @@ function shell() {
       } catch (err) {
         if (seq !== this._runsSeq || this.openSlug !== slug) return;
         // A transport failure is a read failure, not an idle project.
-        this.runsByProject[slug] = [];
-        this.runsError = String(err?.message || err || "Could not reach the daemon.");
+        this.runsFailed(slug, String(err?.message || err || "Could not reach the daemon."));
       }
+    },
+    // A failed `runs.list` (ADR-0070 D3). After a good read the runs stay,
+    // marked not current; before one, there are none and the panel says why.
+    runsFailed(slug, reason) {
+      const read = window.WBFail.readFold(this.runsRead[slug], { ok: false, reason, at: Date.now() });
+      this.runsRead[slug] = read;
+      if (read.goodAt) {
+        this.runsError = window.WBFail.notCurrent(read, (ms) => this.fmtClock(ms));
+        return;
+      }
+      this.runsByProject[slug] = [];
+      this.runsError = reason;
     },
 
     // Read the selected run's plan via `file.read` (the document carries its
@@ -2288,13 +2333,12 @@ function shell() {
           ),
         ]);
         if (window.WBFail.isError(reply)) {
-          // Drop any stale board: the error banner must not sit above data
-          // that looks live.
-          this.boardIssues[slug] = [];
           if (window.WBMode.isDaemon()) {
             const msg = window.WBFail.failed(reply, "Could not load the board.");
-            this.boardError[slug] = msg;
+            this.boardFailed(slug, msg);
             this._flashAction?.(msg);
+          } else {
+            this.boardIssues[slug] = [];
           }
           return;
         }
@@ -2309,17 +2353,18 @@ function shell() {
         }
         this.boardLabels[slug] = colors;
         this.boardError[slug] = null;
+        this.boardRead[slug] = window.WBFail.readFold(this.boardRead[slug], { ok: true, value: true, at: Date.now() });
         // Fold rows carry `body: ""`: re-merge the open drawer's detail or it
         // goes blank on every refresh.
         if (this.kanbanSel != null) this.loadIssueDetail(this.kanbanSel);
       } catch {
-        // Transport error: distinct error state, stale board dropped.
-        this.boardIssues[slug] = [];
         if (window.WBMode.isDaemon()) {
-          this.boardError[slug] = "Could not load the board.";
+          this.boardFailed(slug, "Could not load the board.");
           this._flashAction?.("Could not load the board.");
+        } else {
+          // Demo (static shell): leave it empty, no throw.
+          this.boardIssues[slug] = [];
         }
-        // Demo (static shell): leave it empty, no throw.
       } finally {
         this.boardRefreshing = false;
         // Exactly ONE follow-up for whatever was coalesced away, or for a
@@ -2330,6 +2375,20 @@ function shell() {
           if (this.openSlug && this.kanbanOpen) this.loadBoard();
         }
       }
+    },
+
+    // A failed `board.list` (ADR-0070 D3). After a good read the cards stay,
+    // under a banner that says they are not current; before one, there are no
+    // cards and the banner says why. Moving a card is locked meanwhile.
+    boardFailed(slug, msg) {
+      const read = window.WBFail.readFold(this.boardRead[slug], { ok: false, reason: msg, at: Date.now() });
+      this.boardRead[slug] = read;
+      if (read.goodAt) {
+        this.boardError[slug] = window.WBFail.notCurrent(read, (ms) => this.fmtClock(ms));
+        return;
+      }
+      this.boardIssues[slug] = [];
+      this.boardError[slug] = msg;
     },
 
     // The one door every refresh trigger goes through (#301): the predicate
@@ -2585,6 +2644,7 @@ function shell() {
     openSettings() {
       this.settingsOpen = true;
       this.avatarMenu = false;
+      this.settingsError = "";
       // Client-scoped keys come from the view store; `config.get` has none.
       const view = window.WBView.read() || {};
       this.settings["consoles.relaunch_on_load"] = view.relaunch === true;
@@ -2597,6 +2657,11 @@ function shell() {
         WBDaemon.observe("config.get", { repo: this.openSlug })
           .then((reply) => {
             const cfg = reply && reply.status === "ok" ? reply.config : null;
+            // The defaults must not pass as the project's values (ADR-0070 D3).
+            if (!cfg || typeof cfg !== "object") {
+              this.settingsError =
+                "Could not read the settings: " + window.WBFail.message(reply, "the daemon gave no reason");
+            }
             if (cfg && typeof cfg === "object") {
               for (const k in cfg) {
                 // Never round-trip the MASKED secret: a save would persist the mask.
@@ -2605,9 +2670,14 @@ function shell() {
               }
             }
           })
-          .catch(() => {});
+          .catch(() => {
+            this.settingsError = "Could not read the settings: the daemon did not answer";
+          });
       }
     },
+    // Why the open project's settings could not be read, or "". While set, a
+    // project setting is not written: the panel shows defaults, not values.
+    settingsError: "",
     closeSettings() {
       this.settingsOpen = false;
     },
@@ -2869,10 +2939,21 @@ function shell() {
       this.resumeSockets();
       this.loadRelease();
     },
+    releaseRead: null,
+    releaseStale() {
+      return window.WBFail.notCurrent(this.releaseRead, (ms) => this.fmtClock(ms));
+    },
     async loadRelease() {
       if (!window.WBRelease) return;
       const view = await window.WBRelease.read();
-      // A failed read keeps what the page last knew (ADR-0056 §6).
+      // A failed read keeps what the page last knew (ADR-0056 §6), marked
+      // not current (ADR-0070 D3).
+      this.releaseRead = window.WBFail.readFold(this.releaseRead, {
+        ok: !!view,
+        value: true,
+        reason: "the daemon did not answer",
+        at: Date.now(),
+      });
       if (!view) return;
       // A dismissal is for the release that was shown. A newer one is news again.
       if (view.latest !== this.release.latest) this.releaseSeen = false;
@@ -3316,6 +3397,10 @@ function shell() {
       }
       // The run-lock-aware config Mutates; an empty/"unset" value clears the
       // key. `observe` (not `spawn`) so a run-lock refusal surfaces (#207).
+      if (this.openSlug && this.settingsError) {
+        this._flashAction("Could not change the setting: the settings were not read. Open the settings again.");
+        return;
+      }
       if (this.openSlug) {
         const empty = value === "" || value === "unset" || value == null;
         try {

@@ -1589,3 +1589,78 @@ test("a failed session read after a good one keeps the list, marked not current"
   assert.equal(state.liveSessions.length, 1);
   assert.match(state.sessionsError(), /Not current/);
 });
+
+// A shell whose `WBDaemon.observe` answers each call with the next reply.
+function observedShell(replies) {
+  const { state, window } = loadShell();
+  window.WBDaemon.observe = async () => replies.shift() ?? null;
+  state.openSlug = "o/r";
+  state._flashAction = () => {};
+  return state;
+}
+
+const CHANGES_OK = {
+  status: "ok",
+  changes: { changes: [{ path: "a.txt", index: " ", worktree: "M" }] },
+};
+
+test("a failed change-set read after a good one keeps the groups, marked not current", async () => {
+  const state = observedShell([CHANGES_OK, { status: "error", message: "git exited 128" }]);
+  await state.loadChanges("o/r");
+  const before = state.changesCount["o/r"];
+  assert.ok(before > 0, "the first read found a change");
+  await state.loadChanges("o/r");
+  assert.equal(state.changesCount["o/r"], before);
+  assert.equal(state.changesRead["o/r"].current, false);
+  assert.match(state.changesReadError["o/r"], /Not current: git exited 128/);
+});
+
+test("a failed board read after a good one keeps the cards, marked not current", async () => {
+  const state = observedShell([
+    { status: "ok", board: { issues: [{ number: 7, title: "x", labels: [] }], labels: [] } },
+    { status: "error", message: "gh not authed" },
+  ]);
+  state.loadPlan = () => {};
+  state.kanbanSel = null;
+  await state.loadBoard();
+  assert.equal(state.boardIssues["o/r"].length, 1);
+  await state.loadBoard();
+  assert.equal(state.boardIssues["o/r"].length, 1, "the cards stay");
+  assert.equal(state.boardRead["o/r"].current, false);
+  assert.match(state.boardError["o/r"], /Not current/);
+});
+
+test("a failed runs read after a good one keeps the runs, marked not current", async () => {
+  const state = observedShell([{ status: "ok", runs: [] }, { status: "error", reason: "the run store is locked" }]);
+  state.runsOpen = false;
+  await state.hydrateRuns();
+  state.runsByProject["o/r"] = [{ runid: "r1" }];
+  await state.hydrateRuns();
+  assert.deepEqual(state.runsByProject["o/r"], [{ runid: "r1" }]);
+  assert.equal(state.runsRead["o/r"].current, false);
+  assert.match(state.runsError, /Not current: the run store is locked/);
+});
+
+test("a failed settings read says so, and a project setting is not written", async () => {
+  const { state, window } = loadShell();
+  const verbs = [];
+  window.WBDaemon.observe = async (verb) => {
+    verbs.push(verb);
+    return verb === "config.get" ? { status: "error", message: "settings.json is not JSON" } : { status: "ok" };
+  };
+  window.WBView.read = () => ({});
+  state.openSlug = "o/r";
+  state._flashAction = () => {};
+  // `openSettings` names the bare `WBDaemon` global, as the page does.
+  const realDaemon = globalThis.WBDaemon;
+  globalThis.WBDaemon = window.WBDaemon;
+  try {
+    state.openSettings();
+    for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+  } finally {
+    globalThis.WBDaemon = realDaemon;
+  }
+  assert.equal(state.settingsError, "Could not read the settings: settings.json is not JSON");
+  await state.saveSetting("queue.label", "ready");
+  assert.deepEqual(verbs, ["config.get"], "no config.set over values never read");
+});
