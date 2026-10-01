@@ -16,8 +16,21 @@
 //! before exiting (a sentinel proving it ran to completion after a disconnect).
 //! `RALPHY_TEST_READ_STDIN` makes it read its standard input to the end and
 //! echo it as `dispatch-stdin: <text>`.
+//! `RALPHY_TEST_GRANDCHILD_MS` first starts a copy of itself that inherits
+//! stdout and stderr and sleeps that long: a grandchild that holds the output
+//! pipe after this child exits.
 
 fn main() {
+    if let Ok(ms) = std::env::var("RALPHY_TEST_GRANDCHILD_MS") {
+        let exe = std::env::current_exe().expect("locating this test child");
+        // Not waited: the grandchild must outlive this child.
+        #[allow(clippy::zombie_processes)]
+        let _grandchild = std::process::Command::new(exe)
+            .env_remove("RALPHY_TEST_GRANDCHILD_MS")
+            .env("RALPHY_TEST_SLEEP_MS", ms)
+            .spawn()
+            .expect("starting the grandchild");
+    }
     if let Ok(dump_path) = std::env::var("RALPHY_TEST_ENV_DUMP") {
         let token = std::env::var("RALPHY_DAEMON_TOKEN").unwrap_or_else(|_| "ABSENT".into());
         let daemon_id = std::env::var("RALPHY_DAEMON_ID").unwrap_or_else(|_| "ABSENT".into());

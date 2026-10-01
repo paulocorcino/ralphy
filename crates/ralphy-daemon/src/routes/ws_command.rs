@@ -145,7 +145,9 @@ pub(crate) async fn command_ws(
                 peer,
                 "/api/peer/command",
                 &body,
-                Duration::from_secs(60),
+                // The peer answers its own "still running" at its deadline;
+                // wait past it so that answer, not a transport timeout, arrives.
+                dispatch::REPLY_DEADLINE + Duration::from_secs(5),
             )
             .await
             {

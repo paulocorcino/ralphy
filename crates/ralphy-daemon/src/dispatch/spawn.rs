@@ -2,14 +2,96 @@
 //! `dispatch` and the collecting `collect` (docs/adr/0036 §2).
 
 use std::ffi::{OsStr, OsString};
-use std::path::Path;
+use std::io::Read;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, LazyLock};
+use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
+use tokio::sync::Semaphore;
 
-/// Spawn a Query/Mutate child and COLLECT its output to EOF, returning its exit
+/// How long a Query or Mutate command may run before the browser gets an
+/// answer anyway: the "still running" error. The child is not stopped. A peer
+/// runs the same deadline, so its relay waits a little longer than this.
+pub const REPLY_DEADLINE: Duration = Duration::from_secs(60);
+
+/// Query and Mutate children that may run at once. Opening one project sends
+/// about 6 reads at once (changes, sync, branches, worktrees, board, config), so
+/// 8 lets one opening run without a queue. Each child is a `ralphy` that spawns
+/// git or gh, and process creation is the slow part on Windows.
+const MAX_COLLECT_CHILDREN: usize = 8;
+
+/// The slots of [`MAX_COLLECT_CHILDREN`], shared by every Query and Mutate.
+pub(crate) static COLLECT_SLOTS: LazyLock<Arc<Semaphore>> =
+    LazyLock::new(|| Arc::new(Semaphore::new(MAX_COLLECT_CHILDREN)));
+
+/// The output of a collected child after the drain saw no new bytes for this
+/// long. A grandchild that inherited the pipe can hold it open after the child
+/// exits; the child's own answer is already in the pipe by then.
+const IDLE_AFTER_EXIT: Duration = Duration::from_millis(200);
+
+/// What [`collect_within`] got before its deadline.
+#[derive(Debug)]
+pub(crate) enum Collected {
+    /// The child exited: its code and its merged output.
+    Done(Option<i32>, Vec<u8>),
+    /// The spawn, the wait, or the blocking task failed.
+    Failed(anyhow::Error),
+    /// The deadline passed first. The child still runs and still holds its slot.
+    StillRunning,
+}
+
+/// [`collect`] off the runtime, with a slot from `slots` and an answer within
+/// `deadline`. INVARIANT on every path: nothing kills the child, and the slot is
+/// released only inside the blocking task, when the child has exited — a
+/// deadline does not free it, because the child still runs.
+pub(crate) async fn collect_within(
+    spawner: Arc<dyn Spawner>,
+    program: OsString,
+    argv: Vec<String>,
+    cwd: PathBuf,
+    daemon_id: Option<String>,
+    slots: Arc<Semaphore>,
+    deadline: Duration,
+) -> Collected {
+    let run = async move {
+        let permit = match slots.acquire_owned().await {
+            Ok(permit) => permit,
+            Err(e) => {
+                return Collected::Failed(anyhow::Error::new(e).context("waiting for a slot"))
+            }
+        };
+        let joined = tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            let argv_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
+            collect(
+                spawner.as_ref(),
+                &program,
+                &argv_refs,
+                &cwd,
+                daemon_id.as_deref(),
+            )
+        })
+        .await;
+        match joined {
+            Ok(Ok((code, bytes))) => Collected::Done(code, bytes),
+            Ok(Err(e)) => Collected::Failed(e),
+            Err(e) => Collected::Failed(anyhow::Error::new(e).context("joining the collect task")),
+        }
+    };
+    tokio::time::timeout(deadline, run)
+        .await
+        .unwrap_or(Collected::StillRunning)
+}
+
+/// Spawn a Query/Mutate child and COLLECT its output, returning its exit
 /// code and stdout+stderr bytes verbatim (distinct from the streaming Spawn path:
-/// a Query/Mutate answer is a single collected reply, not a live stream). Blocking
-/// (`wait` + a full read); the `command_ws` caller runs it in `spawn_blocking`.
+/// a Query/Mutate answer is a single collected reply, not a live stream). Blocking;
+/// callers on the runtime use [`collect_within`]. The output is drained on its own
+/// thread, which reads to EOF even after this returns (the module OUTPUT
+/// STREAMING note): a grandchild that holds the pipe delays only that thread, and
+/// this returns once the child exited and the pipe was idle for
+/// [`IDLE_AFTER_EXIT`].
 pub fn collect(
     spawner: &dyn Spawner,
     program: &OsStr,
@@ -17,14 +99,44 @@ pub fn collect(
     cwd: &Path,
     daemon_id: Option<&str>,
 ) -> Result<(Option<i32>, Vec<u8>)> {
-    use std::io::Read;
     let mut child = spawner.spawn(program, argv, cwd, daemon_id)?;
-    let mut bytes = Vec::new();
-    if let Some(mut reader) = child.take_output() {
-        reader.read_to_end(&mut bytes)?;
+    let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+    if let Some(reader) = child.take_output() {
+        std::thread::Builder::new()
+            .name("collect-drain".into())
+            .spawn(move || drain_to_eof(reader, &tx))
+            .context("starting the output drain")?;
+    } else {
+        drop(tx);
     }
     let code = child.wait()?;
+    let mut bytes = Vec::new();
+    while let Ok(chunk) = rx.recv_timeout(IDLE_AFTER_EXIT) {
+        bytes.extend_from_slice(&chunk);
+    }
     Ok((code, bytes))
+}
+
+/// Read `reader` to EOF, sending each chunk while someone receives and
+/// discarding it after.
+fn drain_to_eof(mut reader: Box<dyn Read + Send>, tx: &std::sync::mpsc::Sender<Vec<u8>>) {
+    let mut buf = [0u8; 8192];
+    let mut open = true;
+    loop {
+        match reader.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => {
+                if open && tx.send(buf[..n].to_vec()).is_err() {
+                    open = false;
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e) => {
+                tracing::warn!(error = %e, "reading a collected child's output failed");
+                break;
+            }
+        }
+    }
 }
 
 /// A spawned child the dispatcher can await but NEVER kill (see the module

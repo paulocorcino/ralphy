@@ -51,7 +51,8 @@ pub use argv::{
     worktree_list_argv, worktree_remove_argv, ArgvError,
 };
 pub use host::{host_argv, host_password};
-pub use spawn::{collect, dispatch, ralphy_exe, Child, ProcessSpawner, Spawner};
+pub use spawn::{collect, dispatch, ralphy_exe, Child, ProcessSpawner, Spawner, REPLY_DEADLINE};
+pub(crate) use spawn::{collect_within, Collected, COLLECT_SLOTS};
 
 /// The effect class of a verb (ADR-0036 §2). The registry's shape: `Native` runs
 /// in-daemon, `Observe`/`Query` read state, `Spawn` launches a detached `ralphy`
