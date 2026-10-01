@@ -61,6 +61,11 @@
     <link rel="stylesheet" href="styles/13-notes.css" />
   </head>
   <body x-data="shell()" x-cloak :class="{ 'side-collapsed': !sideOpen, 'runs-open': runsOpen, locked: !authed }">
+    <!-- The daemon runs a newer build than this page, and the page holds
+         unsaved work (ADR-0070 D6). It stays until the reload. -->
+    <div class="build-notice" x-show="buildSkew" x-cloak role="status">
+      Ralphy was updated. Save your open work, and this page loads the new version.
+    </div>
     <!-- Icons drawn in more than one place, each drawn with `<use>`.
          `os-linux`: Bootstrap Icons has the Windows and Apple logos but no
          Linux penguin, so this is the "Linux" icon of Simple Icons 13.21.0

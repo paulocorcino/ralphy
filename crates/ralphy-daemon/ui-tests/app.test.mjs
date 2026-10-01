@@ -1700,3 +1700,45 @@ test("two good change-set reads lock no write", async () => {
   await state.loadChanges("o/r");
   assert.equal(state.writeLocked(), false);
 });
+
+// --- ADR-0070 D6: a tab on an older build than the daemon -------------------
+
+function skewShell({ dirty = false, pageBuild = "A" } = {}) {
+  const { state, window } = loadShell();
+  let reloads = 0;
+  window.location.reload = () => (reloads += 1);
+  window.WBViewer.anyDirty = () => dirty;
+  window.WBNotes.anyDirty = () => false;
+  let beat = null;
+  window.WBDaemon.subscribePresence = (onPresence) => {
+    beat = onPresence;
+    return { resume() {}, close() {} };
+  };
+  state.pageBuild = pageBuild;
+  state.subscribePresence();
+  return { state, beat: (p) => beat(p), reloads: () => reloads };
+}
+
+test("a build the page was not served with reloads a tab with no unsaved work", () => {
+  const t = skewShell();
+  t.beat({ uptime_secs: 1, build: "A" });
+  assert.equal(t.reloads(), 0, "the same build reloads nothing");
+  t.beat({ uptime_secs: 3, build: "B" });
+  assert.equal(t.reloads(), 1);
+});
+
+test("with unsaved work the tab keeps the page, shows the notice and locks writes", () => {
+  const t = skewShell({ dirty: true });
+  t.beat({ uptime_secs: 1, build: "B" });
+  assert.equal(t.reloads(), 0);
+  assert.equal(t.state.buildSkew, true);
+  assert.equal(t.state.writeLocked(), true);
+  assert.match(t.state.writeLockReason(), /older than Ralphy/);
+});
+
+test("a page with no build id (the demo) never reloads for a build", () => {
+  const t = skewShell({ pageBuild: "" });
+  t.beat({ uptime_secs: 1, build: "B" });
+  assert.equal(t.reloads(), 0);
+  assert.equal(t.state.buildSkew, false);
+});

@@ -1401,3 +1401,20 @@
   color: var(--danger);
   font-size: 0.85rem;
 }
+
+/* The daemon runs a newer build and this page holds unsaved work
+   (ADR-0070 D6): a strip at the top that stays until the reload. */
+.build-notice {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  padding: 0.45rem 0.9rem;
+  border: 1px solid var(--danger);
+  border-top: none;
+  border-radius: 0 0 6px 6px;
+  background: var(--bg);
+  color: var(--danger);
+  font-size: 0.85rem;
+}

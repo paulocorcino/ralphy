@@ -339,6 +339,7 @@ function shell() {
           this.uptimeText = "Running for " + this.fmtUptime(p.uptime_secs);
           if (p.name) this.identityName = p.name;
           if (p.avatar) this.identityAvatar = p.avatar;
+          if (p.build && this.pageBuild && p.build !== this.pageBuild) this.onBuildSkew();
         },
         {
           onPush: (verb, payload) => this.onPresencePush(verb, payload),
@@ -1243,6 +1244,24 @@ function shell() {
       return window.WBChanges.writeLockReason(this.runsByProject[slug]);
     },
     BUILD_SKEW_LOCK: "This page is older than Ralphy. Save your work, and the page loads the new version.",
+    // The build this page was served with (`<meta name="ralphy-build">`);
+    // "" in the static demo, which never reloads for a build.
+    pageBuild: document.querySelector('meta[name="ralphy-build"]')?.content || "",
+    // The daemon runs another build than this page (ADR-0070 D6). With no
+    // unsaved work the tab reloads. With unsaved work it waits: the notice
+    // stays, only saving that work is allowed, and each heartbeat asks again.
+    // A console never holds the reload back: the daemon owns its PTY.
+    onBuildSkew() {
+      const unsaved = !!(window.WBViewer?.anyDirty?.() || window.WBNotes?.anyDirty?.());
+      if (!unsaved) {
+        window.location.reload();
+        return;
+      }
+      if (!this.buildSkew) {
+        this.buildSkew = true;
+        window.WBDeskSink?.setHold?.(true);
+      }
+    },
     // True while this tab runs an older build than the daemon and holds unsaved
     // work (ADR-0070 D6); set by `onBuildSkew`.
     buildSkew: false,

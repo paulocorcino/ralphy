@@ -2709,6 +2709,14 @@ window.WBNotes = (function () {
     }
   }
 
+  // Whether any note card holds an edit not yet saved (ADR-0070 D6).
+  function anyDirty() {
+    const st = stage();
+    if (!st) return false;
+    for (const el of st.querySelectorAll(".note-card")) if (el._noteDirty) return true;
+    return false;
+  }
+
   return {
     // folds
     titleOf,
@@ -2766,6 +2774,7 @@ window.WBNotes = (function () {
     isAway,
     cardEl,
     flushAll,
+    anyDirty,
     list,
     keepOnTop,
     putBack,

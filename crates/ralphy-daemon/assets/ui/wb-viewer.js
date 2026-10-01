@@ -1353,6 +1353,12 @@
   // --- public API ---------------------------------------------------------
   let uidSeq = 0;
   const API = {
+    // Whether any open file tab holds an edit not yet saved: the work a
+    // reload onto a new build must not lose (ADR-0070 D6).
+    anyDirty() {
+      for (const rec of map.values()) if (rec.dirty) return true;
+      return false;
+    },
     // `original` is the diff's HEAD side. `project` is the IDENTITY (tab id,
     // wire field, model URI) and stays the full ref; `label` is the human
     // form, derived here when the caller supplies none. `checkout` pins the

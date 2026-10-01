@@ -132,3 +132,20 @@ test("a refused PUT does not stop the next one — the chain swallows the reject
     globalThis.fetch = prev;
   }
 });
+
+test("a held sink writes nothing, and writes again when released", async () => {
+  const spy = spyFetch();
+  try {
+    const mod = load();
+    const sink = mod.daemon();
+    mod.setHold(true);
+    await sink.put(BODY);
+    sink.putSync(BODY);
+    assert.equal(spy.calls.length, 0);
+    mod.setHold(false);
+    await sink.put(BODY);
+    assert.equal(spy.calls.length, 1);
+  } finally {
+    spy.restore();
+  }
+});

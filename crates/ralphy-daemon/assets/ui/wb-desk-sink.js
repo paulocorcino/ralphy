@@ -28,6 +28,12 @@ window.WBDeskSink = (function () {
     return TAB;
   }
   const deskUrl = () => "/api/desk?tab=" + encodeURIComponent(TAB);
+  // While this tab runs an older build than the daemon, it writes no desk
+  // (ADR-0070 D6): its JavaScript may not know the daemon's records.
+  let hold = false;
+  function setHold(on) {
+    hold = !!on;
+  }
 
   // The daemon-backed write. Both entry points take an already-serialised body,
   // because both callers snapshot the desk at SCHEDULE time — re-measuring at
@@ -41,6 +47,7 @@ window.WBDeskSink = (function () {
     let inFlight = Promise.resolve();
     return {
       put(body) {
+        if (hold) return inFlight;
         inFlight = inFlight
           .catch(() => {})
           .then(() =>
@@ -56,6 +63,7 @@ window.WBDeskSink = (function () {
       // document. Deliberately NOT chained — there is no next flush to order
       // against, and awaiting one would be awaiting past the document's life.
       putSync(body) {
+        if (hold) return;
         try {
           fetch(deskUrl(), {
             method: "PUT",
@@ -79,5 +87,5 @@ window.WBDeskSink = (function () {
     };
   }
 
-  return { daemon, none, tabId };
+  return { daemon, none, tabId, setHold };
 })();
