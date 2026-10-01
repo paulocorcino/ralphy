@@ -363,8 +363,10 @@ surface.
   `vendor-build/crepe`; `refresh-seed.yml` moves to `permissions: {}` with
   write on the job, and gets a timeout. Accepted (review of 2026-10-01): the
   updater trusts a checksum from the same release as the archive.
-- D13: not checked by code: no `unsafe_code` lint exists. A new `unsafe` is
-  flagged by `xtask capabilities`. Decided fix (review of 2026-10-01):
-  `unsafe_code = "deny"` in `[workspace.lints]`, with an `allow` on each
-  FFI module that has `unsafe` today; then D13 is checked by the compiler.
+- D13: checked by the compiler. The root `Cargo.toml` sets
+  `unsafe_code = "deny"` in `[workspace.lints.rust]` and every member
+  inherits it; each FFI function or module that has `unsafe` carries an
+  `allow` whose `reason` names the FFI, and each `unsafe` block a
+  `// SAFETY:` comment. A new `unsafe` is also flagged by
+  `xtask capabilities`.
 - D14: not checked by code: manual, reviewed in the PR.

@@ -13,3 +13,6 @@ portable-pty = "0.9"
 [[bin]]
 name = "ralphy-pty-demo"
 path = "src/bin/demo.rs"
+
+[lints]
+workspace = true

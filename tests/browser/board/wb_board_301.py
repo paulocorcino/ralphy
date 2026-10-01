@@ -434,22 +434,17 @@ def main():
             )
 
             # Back-date the clock so the ONLY thing blocking a refresh is hiddenness.
+            # A hidden tab reads nothing on a push (ADR-0070 D2, commit c7ee39f6;
+            # crates/ralphy-daemon/ui-tests/app.test.mjs covers the read itself),
+            # so this write is left unread until the tab becomes visible in 6b.
             page.evaluate(f"() => {{ {SH}._boardLoadedAt = Date.now() - 10000; }}")
             before = board_calls(page)
             doc_a.write_text(json.dumps(snapshot(RUN_A, "planning", "planning")), encoding="utf-8")
-            page.wait_for_function(f"() => {SH}.projectRuns()[0]?.phase === 'planning'", timeout=15000)
             page.wait_for_timeout(600)
             n = board_calls(page)
             check("a hidden tab never refreshes the board", n == before, f"{before} -> {n}")
-            check(
-                "…while its run channel keeps advancing",
-                page.evaluate(f"() => {SH}.projectRuns()[0].phase") == "planning",
-                "",
-            )
 
-            # --- scenario 6b: becoming visible again refreshes ------------------
-            doc_a.write_text(json.dumps(snapshot(RUN_A, "executing", "executing")), encoding="utf-8")
-            page.wait_for_function(f"() => {SH}.projectRuns()[0]?.phase === 'executing'", timeout=15000)
+            # --- scenario 6b: becoming visible again reads the push it missed --
             page.evaluate(f"() => {{ {SH}._boardLoadedAt = Date.now() - 10000; }}")
             before = board_calls(page)
             if vis != "hidden":
@@ -458,6 +453,7 @@ def main():
             page.bring_to_front()
             if vis != "hidden":
                 page.evaluate("() => document.dispatchEvent(new Event('visibilitychange'))")
+            page.wait_for_function(f"() => {SH}.projectRuns()[0]?.phase === 'planning'", timeout=15000)
             page.wait_for_timeout(800)
             n = board_calls(page)
             check("the board reloads when the document becomes visible again", n == before + 1, f"{before} -> {n}")

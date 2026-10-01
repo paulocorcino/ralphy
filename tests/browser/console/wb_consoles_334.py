@@ -503,13 +503,13 @@ def main():
             parked_text = page_b.locator(".session-parked").inner_text()
             check(
                 "…the strip says the session is driven elsewhere",
-                "driven in another window" in parked_text,
+                "Read-only. Another window has control." in parked_text,
                 f"got={parked_text!r}",
             )
             check("…A is still NOT parked", parked(page_a) == 0)
             check(
                 "…B's terminal says so too",
-                "[watching — driven in another window]" in flat(page_b, 0),
+                "[read-only: another window has control]" in flat(page_b, 0),
                 screen(page_b, 0)[-160:],
             )
 
@@ -580,7 +580,7 @@ def main():
             check("…and A is now parked", parked(page_a) == 1)
             check(
                 "…A says the session is driven elsewhere",
-                "[watching — driven in another window]" in flat(page_a, 0),
+                "[read-only: another window has control]" in flat(page_a, 0),
                 flat(page_a, 0)[-160:],
             )
             check(

@@ -485,8 +485,10 @@ def main():
         stop(proc)
 
     # The count floor is load-bearing: an early `sys.exit` or a scenario that
-    # never ran must not report success on a handful of passing checks.
-    ok = all(results) and len(results) >= 32
+    # never ran must not report success on a handful of passing checks. 30 is
+    # the real maximum: the "not listening" and "listening" checks at startup
+    # are mutually exclusive branches, so only one of them ever runs.
+    ok = all(results) and len(results) >= 30
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     if ok:
         print("AGENT ROSTER")

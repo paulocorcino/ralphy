@@ -133,3 +133,6 @@ tower = { version = "0.5", features = ["util"] }
 tempfile.workspace = true
 # Seed an `opencode.db` fixture for the OpenCode interactive-usage integration test.
 rusqlite.workspace = true
+
+[lints]
+workspace = true

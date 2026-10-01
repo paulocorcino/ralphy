@@ -20,7 +20,6 @@ UI module in `crates/ralphy-daemon/assets/ui/` where one exists.
 
 | Folder | What it checks | UI module |
 |---|---|---|
-| `acceptance/` | operator walkthroughs that cover many areas in one pass | — |
 | `agents/` | the console menu's agent roster, the agent state dot | `wb-agents.js` |
 | `board/` | the issue board, the issue drawer, labels, a ready plan | `wb-kanban.js` |
 | `changes/` | Changes, the diff, sync, push | `wb-changes.js` |

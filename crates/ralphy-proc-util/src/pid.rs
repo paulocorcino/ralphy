@@ -12,19 +12,24 @@
 
 /// Production liveness predicate.
 #[cfg(unix)]
+#[allow(unsafe_code, reason = "FFI: libc::kill with signal 0")]
 pub fn pid_is_alive(pid: u32) -> bool {
     // Signal 0 probes without sending: 0 = alive, EPERM = alive but not ours.
+    // SAFETY: kill(2) takes plain integers and touches no memory.
     let r = unsafe { libc::kill(pid as libc::pid_t, 0) };
     r == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
 /// Production liveness predicate.
 #[cfg(windows)]
+#[allow(unsafe_code, reason = "FFI: OpenProcess and GetExitCodeProcess")]
 pub fn pid_is_alive(pid: u32) -> bool {
     use windows_sys::Win32::Foundation::{CloseHandle, ERROR_ACCESS_DENIED, STILL_ACTIVE};
     use windows_sys::Win32::System::Threading::{
         GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
     };
+    // SAFETY: the handle is checked for null before use and closed once;
+    // `code` is a valid out pointer.
     unsafe {
         let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
         if handle.is_null() {
@@ -58,11 +63,13 @@ pub fn exe_of_pid(pid: u32) -> Option<std::path::PathBuf> {
 
 /// The executable a live pid is running, when the platform will say.
 #[cfg(target_os = "macos")]
+#[allow(unsafe_code, reason = "FFI: libc::proc_pidpath")]
 pub fn exe_of_pid(pid: u32) -> Option<std::path::PathBuf> {
     use std::os::unix::ffi::OsStrExt;
 
     // PROC_PIDPATHINFO_MAXSIZE
     let mut buf = vec![0u8; 4 * libc::PATH_MAX as usize];
+    // SAFETY: `buf` holds `buf.len()` writable bytes, the size passed.
     let written = unsafe {
         libc::proc_pidpath(
             pid as libc::c_int,
@@ -85,12 +92,18 @@ pub fn exe_of_pid(_pid: u32) -> Option<std::path::PathBuf> {
 
 /// The executable a live pid is running, when the platform will say.
 #[cfg(windows)]
+#[allow(
+    unsafe_code,
+    reason = "FFI: OpenProcess and QueryFullProcessImageNameW"
+)]
 pub fn exe_of_pid(pid: u32) -> Option<std::path::PathBuf> {
     use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::Threading::{
         OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION,
     };
 
+    // SAFETY: the handle is checked for null before use and closed once; `buf`
+    // holds `len` writable UTF-16 units, the size passed.
     unsafe {
         let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
         if handle.is_null() {

@@ -24,3 +24,6 @@ ralphy-proc-util.workspace = true
 # The login probe runs in a throwaway cwd, so it is a regular dep, not a dev one
 # (see `auth::probe_gemini_login`).
 tempfile.workspace = true
+
+[lints]
+workspace = true

@@ -23,3 +23,6 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage
 # NTFS junctions for `worktree.share`: a directory link any user may create,
 # where a symlink needs Developer Mode or a privilege.
 junction = "2"
+
+[lints]
+workspace = true

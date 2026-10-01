@@ -13,3 +13,6 @@ serde_json.workspace = true
 include_dir.workspace = true
 ralphy-core.workspace = true
 ralphy-adapter-support.workspace = true
+
+[lints]
+workspace = true

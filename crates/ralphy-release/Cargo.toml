@@ -13,3 +13,6 @@ ureq.workspace = true
 chrono.workspace = true
 tracing.workspace = true
 semver.workspace = true
+
+[lints]
+workspace = true

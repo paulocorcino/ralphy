@@ -22,6 +22,11 @@ members = [
     "crates/xtask",
 ]
 
+# Every `unsafe` block sits under a named `allow` that says which FFI it
+# wraps (ADR-0072 D13).
+[workspace.lints.rust]
+unsafe_code = "deny"
+
 [workspace.package]
 edition = "2021"
 license = "GPL-3.0-or-later"

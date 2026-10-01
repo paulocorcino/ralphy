@@ -134,6 +134,7 @@ pub fn kill_tree(child: &mut Child) {
 /// when the root PID is no longer running — exactly the exit-leaking-grandchild
 /// shape (#156) — which is why the walk is native. Best-effort, and does not
 /// reap — the caller owns reaping its handle.
+#[allow(unsafe_code, reason = "FFI: libc::kill on the process group")]
 pub fn kill_tree_by_pid(pid: u32) {
     #[cfg(windows)]
     kill_tree_windows(pid);
@@ -154,6 +155,7 @@ pub fn kill_tree_by_pid(pid: u32) {
         if pid > 1 {
             // Negating a u32 that fits pid_t: pids are well under i32::MAX.
             let pgid = -(pid as i32);
+            // SAFETY: kill(2) takes plain integers and touches no memory.
             unsafe { libc::kill(pgid as libc::pid_t, libc::SIGKILL) };
         }
     }
@@ -166,6 +168,10 @@ pub fn kill_tree_by_pid(pid: u32) {
 /// process into the walk — the same exposure `taskkill /T` had, accepted for the
 /// same reason (the window is spawn-to-teardown of one gate command).
 #[cfg(windows)]
+#[allow(
+    unsafe_code,
+    reason = "FFI: Toolhelp32 snapshot walk and TerminateProcess"
+)]
 fn kill_tree_windows(root: u32) {
     use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
     use windows_sys::Win32::System::Diagnostics::ToolHelp::{
@@ -175,6 +181,8 @@ fn kill_tree_windows(root: u32) {
 
     // One snapshot of the whole (pid, parent-pid) table.
     let mut table: Vec<(u32, u32)> = Vec::new();
+    // SAFETY: the snapshot handle is checked before use and closed once;
+    // `entry` is a zeroed PROCESSENTRY32 with `dwSize` set, as the API requires.
     unsafe {
         let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
         if snap == INVALID_HANDLE_VALUE {
@@ -208,6 +216,7 @@ fn kill_tree_windows(root: u32) {
     }
 
     for pid in doomed {
+        // SAFETY: the handle is checked for null before use and closed once.
         unsafe {
             let handle = OpenProcess(PROCESS_TERMINATE, 0, pid);
             // Null on failure — already gone, or access denied. Best-effort.
