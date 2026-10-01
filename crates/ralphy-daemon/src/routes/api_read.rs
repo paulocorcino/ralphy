@@ -545,8 +545,12 @@ pub(crate) async fn ui_asset(headers: HeaderMap, uri: Uri) -> Response {
         return (StatusCode::NOT_FOUND, "not found").into_response();
     };
     let content_type = content_type(path);
-    let prepared =
-        assets::prepared(path, file.contents(), assets::compressible(content_type)).await;
+    let contents = if path == assets::Shell::Desk.file() {
+        assets::desk_page()
+    } else {
+        file.contents()
+    };
+    let prepared = assets::prepared(path, contents, assets::compressible(content_type)).await;
     let header_str = |name: header::HeaderName| headers.get(name).and_then(|v| v.to_str().ok());
 
     let mut resp = Response::builder()
@@ -563,7 +567,7 @@ pub(crate) async fn ui_asset(headers: HeaderMap, uri: Uri) -> Response {
             resp = resp.header(header::CONTENT_ENCODING, "gzip");
             axum::body::Body::from(gz.clone())
         }
-        _ => axum::body::Body::from(file.contents()),
+        _ => axum::body::Body::from(contents),
     };
     finish_asset(resp.body(body))
 }

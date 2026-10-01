@@ -121,3 +121,38 @@ async fn a_new_peer_file_pushes_peers_dirty() {
         "peers.dirty after the peer store changed"
     );
 }
+
+/// ADR-0070 D6: the page and the presence frame name the same build.
+#[tokio::test]
+async fn the_page_and_the_presence_frame_carry_one_build_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let (port, mut ws) = serve(dir.path()).await;
+    let id = ralphy_daemon::assets::build_id();
+
+    let mut sock = tokio::net::TcpStream::connect(("127.0.0.1", port))
+        .await
+        .unwrap();
+    sock.write_all(b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+        .await
+        .unwrap();
+    let mut page = String::new();
+    sock.read_to_string(&mut page).await.unwrap();
+    let tag = format!(r#"<meta name="ralphy-build" content="{id}">"#);
+    assert!(page.contains(&tag), "GET / carries {tag}");
+
+    let presence = tokio::time::timeout(Duration::from_secs(5), async {
+        while let Some(msg) = ws.next().await {
+            let Ok(Message::Binary(bytes)) = msg else {
+                continue;
+            };
+            if let Ok(Frame::Presence(p)) = protocol::decode(&bytes) {
+                return Some(p);
+            }
+        }
+        None
+    })
+    .await
+    .expect("a heartbeat within 5 s")
+    .expect("a presence frame");
+    assert_eq!(presence.build.as_deref(), Some(id));
+}
