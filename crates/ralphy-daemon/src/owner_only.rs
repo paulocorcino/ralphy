@@ -33,8 +33,12 @@ fn write_owner_only_probed(
     let name = path
         .file_name()
         .with_context(|| format!("{} names no file", path.display()))?;
+    // The counter keeps two writers in one process (the daemon's threads) off
+    // each other's temporary file; the pid keeps processes apart.
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let mut tmp_name = name.to_os_string();
-    tmp_name.push(format!(".tmp-{}", std::process::id()));
+    tmp_name.push(format!(".tmp-{}-{n}", std::process::id()));
     let tmp = path.with_file_name(tmp_name);
     let file = match create_owner_only_file(&tmp) {
         // A temporary file of a dead process with the same pid: replace it.
@@ -353,6 +357,24 @@ pub(crate) mod win {
             bail!("writing the file's access list: {err}");
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod temp_name_tests {
+    /// Two writes in one process never share a temporary file, so one cannot
+    /// remove or rename the other's half-written bytes.
+    #[test]
+    fn each_write_has_its_own_temporary_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("secret.toml");
+        let mut seen = Vec::new();
+        for bytes in [b"one", b"two"] {
+            super::write_owner_only_probed(&path, bytes, |tmp| seen.push(tmp.to_path_buf()))
+                .unwrap();
+        }
+        assert_ne!(seen[0], seen[1]);
+        assert_eq!(std::fs::read(&path).unwrap(), b"two");
     }
 }
 
