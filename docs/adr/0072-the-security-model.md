@@ -264,8 +264,8 @@ surface.
 - D3: partly checked: a new `git`, `gh` or `ssh` spawn site fails
   `spawn_sites_match_the_baseline` (`crates/xtask/tests/ratchets.rs`), and a
   new subprocess anywhere is flagged by `xtask capabilities`. "The browser
-  reaches only the daemon" is not checked: the CSP allows `connect-src ws:
-  wss:` to any host. Decided fix (review of 2026-10-01): see D10.
+  reaches only the daemon" is held by the CSP's `connect-src 'self'` (see
+  D10).
 - D4: not checked by code: a new write path is reviewed in the PR.
 - D5: checked for triage. Ralphy reads each thread with
   `authorAssociation` and gives the session a JSON block in which each
@@ -336,12 +336,16 @@ surface.
   (`renderMenu sets a label as text, never as markup` in
   `ui-tests/app.test.mjs`, `no_menu_or_key_sink_takes_a_template_string`).
   Accepted: the `wb-viewer.js` templates interpolate only helper literals
-  and the `ENCODINGS` constant. Gap: `connect-src` allows `ws:` and `wss:`
-  to any host (`crates/ralphy-daemon/src/routes/headers.rs`). Decided fix
-  (review of 2026-10-01): `connect-src` is computed from the allowed hosts
-  and the bound port, as the script hashes are, and is checked in a
-  browser, a tunnel included. If a tunnel makes that unsound, the wide
-  `connect-src` is accepted and recorded here. Accepted: notes
+  and the `ENCODINGS` constant. `connect-src` is `'self'` alone
+  (`every_response_carries_the_security_headers`). Every workbench socket is
+  built from `location.host`, so the daemon's own origin is the whole set,
+  and no list of hosts or ports is computed: a computed list could not name
+  a dev tunnel, which rewrites `Host`. Measured on 2026-10-01 with
+  `tests/browser/security/wb_csp_connect.py` in Playwright Chromium, Firefox
+  and WebKit, on loopback, through ngrok (a declared host) and through dev
+  tunnels: the workbench socket opens (`'self'` covers a same-origin `ws:`
+  and `wss:` in all three engines), and a socket to another host, or to the
+  same host on another port, is refused. Accepted: notes
   rely on the link-scheme allowlist (`wb-notes.js:1569-1604`).
 - D11: checked. One cap, `MAX_COMMAND_BYTES` in
   `crates/ralphy-daemon/src/tree.rs` (the base64 size of a 4 MiB image plus

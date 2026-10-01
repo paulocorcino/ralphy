@@ -3447,6 +3447,11 @@ async fn every_response_carries_the_security_headers() {
             csp.contains("img-src 'self' data: blob:;"),
             "remote images are opt-in, off by default: {path}: {csp}"
         );
+        // A socket goes only to the daemon's own origin (ADR-0072 D10).
+        assert!(
+            csp.contains("connect-src 'self';") && !csp.contains("ws:"),
+            "{path}: {csp}"
+        );
     }
     // The hash in the header is the hash of the bytes the browser receives:
     // recompute it from the served shell.

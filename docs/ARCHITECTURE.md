@@ -124,7 +124,7 @@ The component names are CONTEXT.md terms.
 | No `tokio` or `reqwest` in the CLI; the async stack stays in the daemon | ADR-0032 | `cli_manifest_pins_ureq_excludes_reqwest_tokio` (`crates/ralphy-cli/src/pricing.rs`) |
 | The daemon may observe the working tree as bytes; anything that interprets or changes a repo is a `ralphy` invocation, except read-only git facts through `ralphy-git-read` (ADR-0069) | ADR-0036 §3 | None yet |
 | The daemon reads git facts only through `ralphy-git-read`, and runs no git of its own | ADR-0069 | `spawn_sites_match_the_baseline` (`crates/xtask/tests/ratchets.rs`): its baseline has zero sites in `crates/ralphy-daemon/src` and `crates/ralphy-usage-scan/src`; `every_read_is_on_the_read_only_list` (`crates/ralphy-git-read/src/lib.rs`) for the read-only half |
-| The browser reaches only the daemon, and a new capability is a verb in the registry, not a new route | ADR-0036 §1 | None yet. The CSP (`crates/ralphy-daemon/src/routes/headers.rs`) allows `connect-src 'self' ws: wss:`, so WebSockets to any host pass |
+| The browser reaches only the daemon, and a new capability is a verb in the registry, not a new route | ADR-0036 §1 | The CSP's `connect-src 'self'` (`crates/ralphy-daemon/src/routes/headers.rs`), held by `every_response_carries_the_security_headers` (`crates/ralphy-daemon/src/tests.rs`); the verb half has no check yet |
 | Run → daemon is asynchronous only | ADR-0047, ADR-0054 | Behaviour tests only |
 | Only the event vocabulary in `core::emit` reaches the decoders | ADR-0039 | `every_decoder_arm_has_a_pin` (`crates/ralphy-cli/src/runstate/capture/tests.rs`) |
 
