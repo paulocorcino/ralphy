@@ -1877,6 +1877,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ralphy-git-read"
+version = "0.1.0-rc.35"
+dependencies = [
+ "anyhow",
+ "serde",
+ "tempfile",
+]
+
+[[package]]
 name = "ralphy-pricing"
 version = "0.1.0-rc.35"
 dependencies = [
