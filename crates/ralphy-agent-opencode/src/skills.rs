@@ -2,7 +2,7 @@
 //! `<repo>/.ralphy/skills` and building the `OPENCODE_CONFIG_CONTENT` JSON that
 //! points OpenCode's `skills.paths` at it.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::Result;
 use include_dir::{include_dir, Dir};
@@ -24,21 +24,6 @@ pub(crate) fn materialize_opencode_skills(ws: &Workspace) -> Result<PathBuf> {
     let skills_dir = ralphy_dir.join("skills");
     ralphy_adapter_support::materialize_assets(&SKILLS, &skills_dir, Some(&ralphy_dir))?;
     Ok(skills_dir)
-}
-
-/// Build the JSON string injected as `OPENCODE_CONFIG_CONTENT` so OpenCode's
-/// `skills.paths` points at the materialized skills container. The path is
-/// canonicalized for robustness; on failure the original path is used as-is.
-pub(crate) fn opencode_skills_config(skills_dir: &Path) -> String {
-    let abs = skills_dir
-        .canonicalize()
-        .unwrap_or_else(|_| skills_dir.to_path_buf());
-    serde_json::json!({
-        "skills": {
-            "paths": [abs]
-        }
-    })
-    .to_string()
 }
 
 #[cfg(test)]
@@ -80,27 +65,5 @@ mod tests {
         assert!(skills_dir.join("reviewer/SKILL.md").is_file());
 
         let _ = fs::remove_dir_all(&base);
-    }
-
-    // ── opencode_skills_config ─────────────────────────────────────────────
-
-    #[test]
-    fn opencode_skills_config_is_well_formed_json() {
-        let dir = std::env::temp_dir().join("ralphy-skills-cfg-test");
-        fs::create_dir_all(&dir).unwrap();
-        let json_str = opencode_skills_config(&dir);
-        let val: serde_json::Value = serde_json::from_str(&json_str).expect("must be valid JSON");
-        let paths = val["skills"]["paths"]
-            .as_array()
-            .expect("skills.paths must be an array");
-        assert_eq!(paths.len(), 1, "exactly one path entry");
-        let entry = paths[0].as_str().expect("path entry must be a string");
-        let expected = dir.canonicalize().unwrap_or_else(|_| dir.clone());
-        assert_eq!(
-            PathBuf::from(entry),
-            expected,
-            "path entry must equal the canonicalized skills dir"
-        );
-        let _ = fs::remove_dir_all(&dir);
     }
 }

@@ -289,15 +289,23 @@ surface.
   read is a deny (`unreadable_input_is_a_deny`), and a real Claude Code
   payload is judged by the rules (`a_claude_code_payload_is_judged_by_the_rules`).
   No charter tells the agent to run a denied command
-  (`charters_never_tell_the_agent_to_run_a_denied_command`). The other
-  vendors are not checked by code: it needs a live vendor CLI. The ADRs of
-  codex (ADR-0004 D5), opencode (ADR-0005 D5) and kimi (ADR-0028) state that
-  the vendor runs with no guard, so they meet D6 as written. Decided next
-  step: one spike per vendor (opencode's permission map, copilot's
-  `--deny-tool`, any codex exec rule), validated on a live run, that either
-  adds a minimal deny (`git push` and the `gh pr` write verbs) or records in
-  the adapter's ADR that the vendor has no mechanism. Kimi: accepted, no
-  mechanism is known. Accepted too: hook input is not authenticated (a
+  (`charters_never_tell_the_agent_to_run_a_denied_command`). Opencode:
+  checked. Every session carries a `permission.bash` map that denies
+  `git push` and the `gh pr` write verbs
+  (`every_session_denies_the_forge_writes_and_only_them`,
+  `crates/ralphy-agent-opencode/src/command.rs`; the list is
+  `DENIED_FORGE_WRITES` in `ralphy-adapter-support`). On a live run (opencode
+  1.18.32, FinCal, 2026-10-01) opencode refused `gh pr create --help` and the
+  issue still ran to the end (ADR-0005 D5 amendment). Codex: the installed
+  CLI (0.159.2) has a mechanism, a `forbidden` exec-policy rule, measured to
+  refuse `git push` under `-s danger-full-access`; it is not wired yet,
+  because the rule file must sit in the target repo's `.codex/rules`.
+  Copilot: `--deny-tool` is documented to win over `--allow-all-tools`, but
+  no live run was possible (the account's Copilot policy refused every
+  session); not wired yet. Kimi: accepted, no mechanism is known. The
+  vendor rules match the start of the command text, so a global flag
+  (`git -C x push`) or a wrapper (`bash -c`) gets past them: a layer, not
+  proof. Accepted too: hook input is not authenticated (a
   process with `RALPHY_FLAG_FILE` set can write the stop flag) and the guard
   trusts the payload's `cwd`; both come from the operator zone.
 - D7: checked. A new read of a secret-named environment variable is

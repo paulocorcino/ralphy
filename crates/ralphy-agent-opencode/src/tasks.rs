@@ -23,11 +23,11 @@ use crate::command::build_opencode_command;
 use crate::events::{is_opencode_auth_error, OPENCODE_AUTH_ERROR_MSG};
 use crate::usage::opencode_usage;
 
-/// The minimal `OPENCODE_CONFIG_CONTENT` for a one-shot `init` session: an empty
-/// JSON object. The diagnosis/draft sessions read the repo and write a JSON
-/// artifact with the agent's own tools — they need no ralphy skills wired in, so
-/// no `skills.paths` is injected (unlike `plan`/`execute`).
-const INIT_OPENCODE_CONFIG: &str = "{}";
+/// The skills a one-shot session gets: none. The diagnosis/draft sessions read
+/// the repo and write a JSON artifact with the agent's own tools — they need no
+/// ralphy skills wired in, so no `skills.paths` is injected (unlike
+/// `plan`/`execute`). The deny map is injected all the same.
+const NO_SKILLS: Option<&Path> = None;
 
 /// Run a one-shot headless `opencode run` repo-diagnosis session (ADR-0012 stage
 /// 2) from `neutral_cwd` — a directory OUTSIDE the target repo, so OpenCode never
@@ -49,7 +49,7 @@ pub fn diagnose_repo(
     let out_path = neutral_cwd.join("diagnosis.json");
     let prompt = build_diagnose_prompt(repo, &out_path);
     info!(?model, "diagnosing repo with opencode run");
-    let cmd = build_opencode_command(model, None, neutral_cwd, INIT_OPENCODE_CONFIG);
+    let cmd = build_opencode_command(model, None, neutral_cwd, NO_SKILLS);
     let log_path = neutral_cwd.join("diagnose.log");
     run_init_session(
         JsonSession {
@@ -99,7 +99,7 @@ pub fn draft_issues(
         mode = req.mode.as_str(),
         "drafting issues with opencode run"
     );
-    let cmd = build_opencode_command(model, None, repo, INIT_OPENCODE_CONFIG);
+    let cmd = build_opencode_command(model, None, repo, NO_SKILLS);
     let log_path = repo.join(".ralphy").join("init-issues.log");
     run_init_session(
         JsonSession {
@@ -147,7 +147,7 @@ pub fn triage_issues(
         req.attachments_manifest
     );
     info!(?model, "triaging issues with opencode run");
-    let cmd = build_opencode_command(model, None, repo, INIT_OPENCODE_CONFIG);
+    let cmd = build_opencode_command(model, None, repo, NO_SKILLS);
     let log_path = repo.join(".ralphy").join("triage.log");
     run_init_session(
         JsonSession {
@@ -199,7 +199,7 @@ pub fn consolidate_knowledge(
     std::fs::create_dir_all(run_dir).ok();
 
     info!(?model, "consolidating knowledge with opencode run");
-    let cmd = build_opencode_command(model, None, ws.repo_root(), INIT_OPENCODE_CONFIG);
+    let cmd = build_opencode_command(model, None, ws.repo_root(), NO_SKILLS);
     let log = run_text_session(
         TextSession {
             cmd,
