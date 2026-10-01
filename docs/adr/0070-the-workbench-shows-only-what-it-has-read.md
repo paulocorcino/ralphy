@@ -44,7 +44,7 @@ the classes are a reviewer's reading of each commit, see
 - Of 94 message types on the seam (49 verbs, 27 REST routes, 18 WebSocket
   messages), about 5 have a test that checks both sides agree. The JS tests
   feed hand-written replies. The 86 Playwright scripts in
-  `crates/ralphy-daemon/tests/wb_*.py` are not run in CI.
+  `tests/browser/<area>/wb_*.py` are not run in CI.
 
 ## Decision
 

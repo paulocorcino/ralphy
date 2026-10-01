@@ -146,7 +146,7 @@ A pin follows these rules:
 
 ## Browser checks
 
-A Playwright script in `crates/ralphy-daemon/tests/wb_*.py` checks the
+A Playwright script in `tests/browser/<area>/wb_*.py` checks the
 workbench in a real browser, against a daemon with a scratch store
 (`RALPHY_DAEMON_DIR`). Its screenshots go to `.ralphy/screenshots/`, which git
 ignores. Never write them under `docs/`, and never commit them: a screenshot is

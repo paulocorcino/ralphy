@@ -2,7 +2,7 @@
 
 Daemon: real, Windows, port 7357 (plus a second real daemon on port 7358 for
 the network-bind Session-login half of C3). Produced by
-`crates/ralphy-daemon/tests/wb_accept_209.py`, 30/30 checks passed,
+`tests/browser/acceptance/wb_accept_209.py`, 30/30 checks passed,
 `ALL SYMPTOMS NOT REPRODUCIBLE`.
 
 None of the five originally-audited symptoms

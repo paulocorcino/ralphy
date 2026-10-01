@@ -2,7 +2,7 @@
 
 Daemon: real, one process, one browser process, Localhost policy on port 7396
 over a scratch `RALPHY_DAEMON_DIR`. Produced by
-`crates/ralphy-daemon/tests/wb_accept_306.py`, 72/72 checks passed,
+`tests/browser/acceptance/wb_accept_306.py`, 72/72 checks passed,
 `ALL SYMPTOMS NOT REPRODUCIBLE`. The same script, same commit, was run in the
 pinned Linux container (command below) and reported the same
 `ALL SYMPTOMS NOT REPRODUCIBLE` with exit 0.
@@ -29,7 +29,7 @@ operator can see.
 Windows (the gate as run for this record):
 
 ```
-python crates/ralphy-daemon/tests/wb_accept_306.py
+python tests/browser/acceptance/wb_accept_306.py
 ```
 
 Linux, in the pinned Playwright container against a Linux `ralphy` built in
@@ -45,7 +45,7 @@ MSYS_NO_PATHCONV=1 docker run --rm --shm-size=1g -v "C:/Dev/ralphy:/w" -w /w \
   -e RALPHY_WB_TARGET=/w/target/linux/debug \
   mcr.microsoft.com/playwright/python:v1.60.0-noble \
   sh -c "pip3 install --quiet --break-system-packages playwright==1.60.0 && \
-         python3 crates/ralphy-daemon/tests/wb_accept_306.py"
+         python3 tests/browser/acceptance/wb_accept_306.py"
 ```
 
 That image ships the browsers (`/ms-playwright/chromium-1223`) but NOT the
@@ -176,7 +176,7 @@ with no vendor CLI installed and no quota spent.
   those three. No scenario here reads usage data, and the omission is
   byte-identical in all six sibling `wb_*.py` scripts — a family-wide fix, not
   a #306 one.
-- Nothing in CI runs `crates/ralphy-daemon/tests/wb_*.py`; this pass is a
+- Nothing in CI runs `tests/browser/<area>/wb_*.py`; this pass is a
   manual gate (unchanged from #303).
 
 ## Divergences

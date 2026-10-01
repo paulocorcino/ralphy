@@ -77,7 +77,7 @@ collapse. Gate on `.diff-hidden-lines` itself.
 does not dispose its two models, and each model URI carries the viewer's
 per-open `uid`, so a reopened tab never collides with a leaked model. The only
 oracle is `monaco.editor.getModels().length` returning to a baseline taken
-before the first open (`tests/wb_diff_311.py`).
+before the first open (`tests/browser/changes/wb_diff_311.py`).
 
 **On WebKit, the computed `touch-action` is not the behaviour.** WebKit parses
 every value and computes back exactly what the CSS says, but it honours only

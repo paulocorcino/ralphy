@@ -150,7 +150,7 @@ The clipboard rules protect the operator from a remote agent.
   bytes and a trailing newline are removed from the text, so a wrong paste
   cannot run a command.
 
-`tests/wb_console_clipboard.py` covers this end to end.
+`tests/browser/console/wb_console_clipboard.py` covers this end to end.
 
 ## Touch: tablets and phones
 
@@ -214,7 +214,7 @@ The workbench is used from iPads and Android tablets and phones.
   CONTEXT.md → *Resume*.
 
 The pure rules are tested in `ui-tests/wb-console.test.mjs`; the browser
-checks are `tests/wb_console_touch.py` and `tests/wb_console_phone.py`.
+checks are `tests/browser/console/wb_console_touch.py` and `tests/browser/console/wb_console_phone.py`.
 
 ## Kanban: the assignee scope is not applied yet
 
