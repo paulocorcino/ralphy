@@ -111,8 +111,9 @@ impl PtyCommand {
 /// A child process running inside a live pseudo-terminal.
 ///
 /// Hold the session to keep the PTY open: read output with [`reader`], send
-/// input with [`write_all`], [`resize`] the window, and [`kill`]/[`wait`] the
-/// process tree. Dropping the session closes the master and the writer.
+/// input with [`write_all`] (or [`take_writer`] and write from another thread),
+/// [`resize`] the window, and [`kill`]/[`wait`] the process tree. Dropping the
+/// session closes the master and the writer it still holds.
 ///
 /// The session is a raw PTY, not a terminal emulator: the consumer plays the
 /// terminal. In particular it must answer queries the child makes — most
@@ -121,13 +122,14 @@ impl PtyCommand {
 ///
 /// [`reader`]: PtySession::reader
 /// [`write_all`]: PtySession::write_all
+/// [`take_writer`]: PtySession::take_writer
 /// [`resize`]: PtySession::resize
 /// [`kill`]: PtySession::kill
 /// [`wait`]: PtySession::wait
 pub struct PtySession {
     master: Box<dyn MasterPty + Send>,
     child: Box<dyn portable_pty::Child + Send + Sync>,
-    writer: Box<dyn Write + Send>,
+    writer: Option<Box<dyn Write + Send>>,
 }
 
 impl PtySession {
@@ -183,7 +185,7 @@ impl PtySession {
         Ok(Self {
             master: pair.master,
             child,
-            writer,
+            writer: Some(writer),
         })
     }
 
@@ -198,9 +200,21 @@ impl PtySession {
 
     /// Send raw bytes to the child as terminal input (include `\r` to submit a
     /// line, as a real terminal would).
+    /// Fails once [`take_writer`](PtySession::take_writer) took the writer.
     pub fn write_all(&mut self, bytes: &[u8]) -> Result<()> {
-        self.writer.write_all(bytes).context("writing to the PTY")?;
-        self.writer.flush().context("flushing PTY input")
+        let Some(writer) = self.writer.as_mut() else {
+            anyhow::bail!("the PTY input writer was taken");
+        };
+        writer.write_all(bytes).context("writing to the PTY")?;
+        writer.flush().context("flushing PTY input")
+    }
+
+    /// Take the input writer, once, so input can be written from a thread that
+    /// does not hold the session: a write blocks while the child does not read
+    /// its input. After this, [`write_all`](PtySession::write_all) fails, and
+    /// the caller owns flushing. `None` on a second call.
+    pub fn take_writer(&mut self) -> Option<Box<dyn Write + Send>> {
+        self.writer.take()
     }
 
     /// Resize the terminal window, in character cells.

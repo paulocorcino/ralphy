@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::thread::JoinHandle;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use ralphy_pty::{PtyCommand, PtySession};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::sync::Notify;
@@ -86,6 +86,9 @@ pub struct Session {
     // not merely when the child dies, so the reader thread would otherwise block
     // forever after a tree kill.
     pty: Option<PtySession>,
+    // The PTY input, written by its own thread: a child that does not read its
+    // input blocks only that thread, never a caller that holds the session.
+    input: Option<Input>,
     // Kept so the thread is owned by the session; it exits on PTY EOF (after a
     // `close` tree-kill + master drop) and is detached on drop.
     _reader: JoinHandle<()>,
@@ -142,7 +145,11 @@ impl Session {
         if let Some(path) = widened {
             cmd = cmd.env("PATH", path);
         }
-        let pty = PtySession::spawn(cmd)?;
+        let mut pty = PtySession::spawn(cmd)?;
+        let writer = pty
+            .take_writer()
+            .context("the new PTY has no input writer")?;
+        let input = Input::start(writer).context("starting the console input thread")?;
         let mut reader = pty.reader()?;
         let (tx, rx): (UnboundedSender<Vec<u8>>, UnboundedReceiver<Vec<u8>>) = unbounded_channel();
         let reader_thread = std::thread::spawn(move || {
@@ -160,6 +167,7 @@ impl Session {
         });
         Ok(Session {
             pty: Some(pty),
+            input: Some(input),
             _reader: reader_thread,
             output: Some(rx),
         })
@@ -172,11 +180,12 @@ impl Session {
     }
 
     /// Feed raw bytes to the child as terminal input. A no-op once closed.
+    /// Queues the bytes for the input thread and does not wait for the child
+    /// to read them.
     pub fn write(&mut self, bytes: &[u8]) -> Result<()> {
-        match self.pty.as_mut() {
-            Some(pty) => pty.write_all(bytes),
-            None => Ok(()),
-        }
+        self.input
+            .as_ref()
+            .map_or(Ok(()), |input| input.send(bytes))
     }
 
     /// Whether the child has already exited (non-blocking). The pump polls this
@@ -207,6 +216,8 @@ impl Session {
     /// the slave (Unix) both reach EOF, ending the reader thread — its sender
     /// drops and the output channel yields `None`. Idempotent.
     pub fn close(&mut self) {
+        // The input thread ends when its queue closes or its write fails.
+        self.input = None;
         if let Some(mut pty) = self.pty.take() {
             if let Some(pid) = pty.process_id() {
                 ralphy_proc_util::kill_tree_by_pid(pid);
@@ -224,6 +235,40 @@ impl Drop for Session {
     /// `close` is idempotent, so an explicit `close()` before drop is harmless.
     fn drop(&mut self) {
         self.close();
+    }
+}
+
+/// The input queue of one session and the thread that writes it to the PTY.
+/// INVARIANT: the thread holds no session or manager lock. It ends when the
+/// queue closes (the session closed) or a write fails (the PTY closed).
+struct Input {
+    tx: std::sync::mpsc::Sender<Vec<u8>>,
+}
+
+impl Input {
+    /// Start the writer thread. The queue is unbounded: it holds only what the
+    /// one writer typed or pasted, and the size of one browser message limits each
+    /// item. A bound would have to block the caller or drop keystrokes.
+    fn start(mut writer: Box<dyn std::io::Write + Send>) -> Result<Input> {
+        let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+        std::thread::Builder::new()
+            .name("console-input".into())
+            .spawn(move || {
+                for bytes in rx {
+                    if let Err(e) = writer.write_all(&bytes).and_then(|()| writer.flush()) {
+                        tracing::debug!(error = %e, "the console input closed");
+                        break;
+                    }
+                }
+            })?;
+        Ok(Input { tx })
+    }
+
+    /// Queue `bytes` for the child. Never waits for the child.
+    fn send(&self, bytes: &[u8]) -> Result<()> {
+        self.tx
+            .send(bytes.to_vec())
+            .map_err(|_| anyhow::anyhow!("the console input has closed"))
     }
 }
 
@@ -385,5 +430,56 @@ mod tests {
         assert!(primary.get("checkout").is_none(), "{primary}");
         let linked = serde_json::to_value(info(Some("wt-a"))).unwrap();
         assert_eq!(linked["checkout"], "wt-a");
+    }
+
+    /// A PTY input that blocks its first write until the test sends `()`, then
+    /// appends every write to `sink`: a child that does not read its input.
+    struct Stuck {
+        gate: Option<std::sync::mpsc::Receiver<()>>,
+        sink: std::sync::Arc<Mutex<Vec<u8>>>,
+    }
+
+    impl std::io::Write for Stuck {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            if let Some(gate) = self.gate.take() {
+                gate.recv().map_err(std::io::Error::other)?;
+            }
+            self.sink.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn input_send_does_not_wait_for_a_child_that_does_not_read() {
+        let (open, gate) = std::sync::mpsc::channel();
+        let sink = std::sync::Arc::new(Mutex::new(Vec::new()));
+        let input = Input::start(Box::new(Stuck {
+            gate: Some(gate),
+            sink: sink.clone(),
+        }))
+        .unwrap();
+        let (sent_tx, sent) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let both = input.send(b"ab").and_then(|()| input.send(b"cd"));
+            sent_tx.send(both.map_err(|e| e.to_string())).unwrap();
+            // Keep the queue open until the writes land.
+            std::thread::sleep(std::time::Duration::from_secs(3));
+        });
+        sent.recv_timeout(std::time::Duration::from_secs(1))
+            .expect("two sends must return while the child does not read")
+            .unwrap();
+        open.send(()).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while sink.lock().unwrap().as_slice() != b"abcd" {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the input thread must write abcd in order, got {:?}",
+                sink.lock().unwrap()
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
     }
 }

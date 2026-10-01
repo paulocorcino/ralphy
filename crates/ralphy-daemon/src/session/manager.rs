@@ -123,7 +123,8 @@ impl ManagedSession {
     }
 
     /// Feed raw bytes to the child as terminal input. Behind the session mutex so
-    /// the single writer and a concurrent `close` do not race the PTY handle.
+    /// the single writer and a concurrent `close` do not race; the lock is held
+    /// only to queue the bytes, never for the PTY write itself.
     fn write(&self, bytes: &[u8]) -> Result<()> {
         self.session.lock().expect("session mutex").write(bytes)
     }
