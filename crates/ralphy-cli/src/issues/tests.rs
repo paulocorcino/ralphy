@@ -4,6 +4,9 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
+#[path = "../../../ralphy-daemon/tests/support/golden.rs"]
+mod golden;
+
 /// Serializes the tests that set the process-global `RALPHY_USAGE_DIR`.
 static USAGE_LOCK: Mutex<()> = Mutex::new(());
 
@@ -257,6 +260,11 @@ fn show_view_json_carries_body_spec_labels_judgment_and_history() {
     assert_eq!(hist[0]["tokens"], 110); // 100 input + 10 output
     assert_eq!(hist[1]["phase"], "execute");
     assert_eq!(hist[1]["tokens"], 120);
+    golden::check(
+        "issue.show",
+        serde_json::json!({ "status": "ok", "issue": val }),
+        &[],
+    );
 
     std::env::remove_var("RALPHY_USAGE_DIR");
     let _ = std::fs::remove_dir_all(&dir);
@@ -401,6 +409,19 @@ fn render_board_json_folds_whole_tracker_with_union_and_graph_order() {
     );
     assert!(!n2.contains(&31), "someone-else stays dropped: {val2}");
     assert_eq!(n2, vec![8, 7, 50, 30, 32, 99]);
+
+    // The shared reply shows every field the board folds, so one row must
+    // carry assignees and one must carry blocked_by.
+    let rows = val2["issues"].as_array().unwrap();
+    assert!(rows.iter().any(|r| r["assignees"] != serde_json::json!([])));
+    assert!(rows
+        .iter()
+        .any(|r| r["blocked_by"] != serde_json::json!([])));
+    golden::check(
+        "board.list",
+        serde_json::json!({ "status": "ok", "board": val2 }),
+        &[],
+    );
 }
 
 #[test]
