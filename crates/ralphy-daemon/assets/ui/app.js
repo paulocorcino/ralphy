@@ -116,6 +116,14 @@ function shell() {
     isDemo: window.WBMode.isDemo(),
     // Daemon-mode `/api/repos` failure (#202): a visible error, not the seed.
     reposError: "",
+    // The read state of the shown facts this sidebar shows (ADR-0070 D3):
+    // `WBFail.readFold` results, `null` before the first read.
+    reposRead: null,
+    fleetRead: null,
+    fleetError: "",
+    sessionsRead: null,
+    // The peer rows of the last good `/api/fleet`, kept when a read fails.
+    _fleetRows: [],
     // The local fleet's peers (ADR-0052 §5, #349), from `/api/fleet`. Empty: a
     // fleet of one, or a daemon too old to serve the route.
     fleetPeers: [],
@@ -460,22 +468,17 @@ function shell() {
             tree: [],
           }));
           this.reposError = "";
+          this.reposRead = window.WBFail.readFold(this.reposRead, { ok: true, value: true, at: Date.now() });
           // Deliberately NOT awaited: a down peer costs `/api/fleet` its 2 s
           // per-peer timeout, and holding `reposLoading` open for that would make
           // a peer's absence stall the LOCAL sidebar's spinner and live dots.
           // Federation is additive in latency too.
           this.loadFleet();
         } else if (window.WBMode.isDaemon()) {
-          // Daemon mode: a failed fetch must NOT keep the seed projects (M5) —
-          // clear them and show the error.
-          this.projects = [];
-          this.reposError = "Could not load the projects from the daemon.";
+          this.reposFailed(`the daemon answered ${r.status}`);
         }
       } catch {
-        if (window.WBMode.isDaemon()) {
-          this.projects = [];
-          this.reposError = "Could not load the projects from the daemon.";
-        }
+        if (window.WBMode.isDaemon()) this.reposFailed("the daemon did not answer");
         // Demo (file://): keep the seed — the shell stays navigable offline.
       } finally {
         this.reposLoading = false;
@@ -488,13 +491,31 @@ function shell() {
       }
     },
 
+    // A failed `/api/repos` (ADR-0070 D3). After a good read the list stays,
+    // marked not current. Before one, a failed fetch must NOT keep the seed
+    // projects (M5): the list is empty and says why.
+    reposFailed(reason) {
+      this.reposRead = window.WBFail.readFold(this.reposRead, { ok: false, reason, at: Date.now() });
+      if (this.reposRead.goodAt) {
+        this.reposError = window.WBFail.notCurrent(this.reposRead, (ms) => this.fmtClock(ms));
+        return;
+      }
+      this.projects = [];
+      this.reposError = `Could not load the projects from the daemon: ${reason}.`;
+    },
+
+    // A time of day, `14:02`, for "Read at …".
+    fmtClock(ms) {
+      return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    },
+
     // The local fleet (ADR-0052 §5, #349): append every PEER's repos after the
     // local `/api/repos` pass, plus the peer list the group headers render.
     // INVARIANT: a `/api/fleet` failure leaves the LOCAL list exactly as it was.
     async loadFleet() {
       try {
         const r = await fetch("/api/fleet");
-        if (!r.ok) throw new Error(`/api/fleet ${r.status}`);
+        if (!r.ok) throw new Error(`the daemon answered ${r.status}`);
         const fleet = await r.json();
         this.fleetPeers = Array.isArray(fleet.peers) ? fleet.peers : [];
         const rows = Array.isArray(fleet.repos) ? fleet.repos : [];
@@ -508,8 +529,7 @@ function shell() {
           }
         }
         const peerRows = rows.filter((x) => !x.local);
-        this.projects = this.projects.concat(
-          peerRows.map((x) => ({
+        this._fleetRows = peerRows.map((x) => ({
             // `<daemon_id>/<slug>`: the same `owner/repo` on two daemons is two rows.
             key: x.key,
             slug: x.slug,
@@ -527,10 +547,23 @@ function shell() {
             daemonName: x.daemon_name || "",
             env: x.environment || "",
             peerState: x.peer_state || "",
-          })),
-        );
-      } catch {
-        this.fleetPeers = [];
+          }));
+        this.projects = this.projects.concat(this._fleetRows);
+        this.fleetRead = window.WBFail.readFold(this.fleetRead, { ok: true, value: true, at: Date.now() });
+        this.fleetError = "";
+      } catch (e) {
+        // After a good read the peers and their rows stay, marked not current
+        // (ADR-0070 D3); `loadRepos` rebuilt the list without them.
+        const reason = String(e?.message || "").startsWith("the daemon") ? e.message : "the daemon did not answer";
+        this.fleetRead = window.WBFail.readFold(this.fleetRead, { ok: false, reason, at: Date.now() });
+        if (this.fleetRead.goodAt) {
+          this.projects = this.projects.concat(this._fleetRows);
+        } else {
+          this.fleetPeers = [];
+        }
+        this.fleetError = this.fleetPeers.length
+          ? window.WBFail.notCurrent(this.fleetRead, (ms) => this.fmtClock(ms))
+          : "";
       }
     },
 
@@ -609,8 +642,12 @@ function shell() {
       if (!window.WBMode.isDaemon()) return;
       try {
         const r = await fetch("/api/sessions");
-        if (!r.ok) return;
+        if (!r.ok) {
+          this.sessionsFailed(`the daemon answered ${r.status}`);
+          return;
+        }
         const sessions = await r.json();
+        this.sessionsRead = window.WBFail.readFold(this.sessionsRead, { ok: true, value: true, at: Date.now() });
         // The console menu's fold reads this (#304).
         this.liveSessions = sessions;
         // The console windows read their own row off the same poll (ADR-0059).
@@ -627,7 +664,17 @@ function shell() {
               ? "waiting"
               : "live";
         }
-      } catch {}
+      } catch {
+        this.sessionsFailed("the daemon did not answer");
+      }
+    },
+    // A failed `/api/sessions` keeps the last list and the live dots, marked
+    // not current in the console menu (ADR-0070 D3).
+    sessionsFailed(reason) {
+      this.sessionsRead = window.WBFail.readFold(this.sessionsRead, { ok: false, reason, at: Date.now() });
+    },
+    sessionsError() {
+      return window.WBFail.notCurrent(this.sessionsRead, (ms) => this.fmtClock(ms));
     },
 
     // --- chrome panels ----------------------------------------------------

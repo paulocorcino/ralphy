@@ -190,6 +190,8 @@
       </div>
       <!-- daemon-mode repos-load failure (M5, #202): honest error, not seed. -->
       <div class="side-error" x-show="reposError" x-text="reposError" x-cloak></div>
+      <!-- The peers' last good read, kept when a read fails (ADR-0070 D3). -->
+      <div class="side-error" x-show="fleetError" x-text="fleetError" x-cloak></div>
       <!-- filters the list client-side on slug/branch; "/" (global shortcut)
            focuses this input; Escape clears it. Hidden while a project is
            open: `has-open` hides every other row, so there is nothing for it
@@ -711,6 +713,7 @@
                 <span x-text="openSlug ? consoleMenuRepoName() : 'Home (no project open)'"></span>
                 <kbd class="kbd" x-text="consoleShortcutHint()"></kbd>
               </div>
+              <p class="side-error" x-show="sessionsError()" x-text="sessionsError()"></p>
               <!-- The daemon's adapter roster folded against the live sessions
                    (wb-agents.js), plain console last. Every row LAUNCHES — the
                    live count is a readout; reaching a window is the Go-to

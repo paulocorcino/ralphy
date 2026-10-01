@@ -1505,3 +1505,87 @@ test("login reads the board, the runs and the tree again", () => {
     assert.ok(calls.includes(want), `${want} in ${calls.join(", ")}`);
   }
 });
+
+// --- ADR-0070 D3: a failed read keeps the last good value, marked not current
+
+// Answers each fetch with the next reply in `replies` (`{ status, body }`).
+function scriptedFetch(replies) {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    const { status, body } = replies.shift() || { status: 500, body: null };
+    return { ok: status === 200, status, json: async () => body };
+  };
+  return () => (globalThis.fetch = realFetch);
+}
+
+test("a failed project read after a good one keeps the list, marked not current", async () => {
+  const { state } = loadShell();
+  state.loadFleet = () => {};
+  state.refreshLive = () => {};
+  state.loadChanges = () => {};
+  state.loadSync = () => {};
+  const restore = scriptedFetch([
+    { status: 200, body: [{ slug: "a/b", path: "/ab", reachable: true }] },
+    { status: 500, body: null },
+  ]);
+  try {
+    await state.loadRepos();
+    await state.loadRepos();
+  } finally {
+    restore();
+  }
+  assert.equal(state.projects.length, 1);
+  assert.equal(state.projects[0].slug, "a/b");
+  assert.match(state.reposError, /Not current: the daemon answered 500/);
+});
+
+test("a failed first project read is empty and says why", async () => {
+  const { state } = loadShell();
+  state.refreshLive = () => {};
+  const restore = scriptedFetch([{ status: 500, body: null }]);
+  try {
+    await state.loadRepos();
+  } finally {
+    restore();
+  }
+  assert.deepEqual(state.projects, []);
+  assert.equal(state.reposError, "Could not load the projects from the daemon: the daemon answered 500.");
+});
+
+test("a failed fleet read after a good one keeps the peers and their rows", async () => {
+  const { state } = loadShell();
+  const fleet = {
+    peers: [{ daemon_id: "p1", name: "wsl", environment: "WSL: U", state: "reachable" }],
+    repos: [{ key: "p1/o/r", slug: "o/r", daemon_id: "p1", reachable: true }],
+  };
+  const restore = scriptedFetch([
+    { status: 200, body: fleet },
+    { status: 502, body: null },
+  ]);
+  try {
+    await state.loadFleet();
+    state.projects = state.projects.filter((p) => !p.daemon);
+    await state.loadFleet();
+  } finally {
+    restore();
+  }
+  assert.equal(state.fleetPeers.length, 1);
+  assert.equal(state.projects.filter((p) => p.daemon === "p1").length, 1);
+  assert.match(state.fleetError, /Not current: the daemon answered 502/);
+});
+
+test("a failed session read after a good one keeps the list, marked not current", async () => {
+  const { state } = loadShell();
+  const restore = scriptedFetch([
+    { status: 200, body: [{ id: 1, repo: "o/r" }] },
+    { status: 500, body: null },
+  ]);
+  try {
+    await state.refreshLive();
+    await state.refreshLive();
+  } finally {
+    restore();
+  }
+  assert.equal(state.liveSessions.length, 1);
+  assert.match(state.sessionsError(), /Not current/);
+});
