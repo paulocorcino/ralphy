@@ -5,8 +5,8 @@ capstone note [0028-kimi-validation](./0028-kimi-validation.md) (issue
 [#155](https://github.com/paulocorcino/ralphy/issues/155)). This file **was** the
 plan; it is now the note of what issue
 [#274](https://github.com/paulocorcino/ralphy/issues/274) actually ran. Raw evidence
-lives in [`docs/evidence/274-kimi-capstone-live.md`](../evidence/274-kimi-capstone-live.md)
-and `docs/live/kimi-274-*.log`.
+lives in [`docs/spike/evidence/274-kimi-capstone-live.md`](../spike/evidence/274-kimi-capstone-live.md)
+and `docs/spike/live/kimi-274-*.log`.
 
 **Status: proposed — and it stays proposed.** The marquee D9 ceiling *was* captured
 live with a real exit code and string, satisfying the "capture" bar — but the capture

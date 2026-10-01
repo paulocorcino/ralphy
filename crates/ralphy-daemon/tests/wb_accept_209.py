@@ -1,7 +1,7 @@
 """#209 operator acceptance walkthrough (HITL, post-remediation, #202-#208).
 
 One consolidated Playwright pass over a REAL daemon asserting that none of the
-five originally-audited symptoms (docs/evidence/audits/audit-workbench-2026-07-13.md) plus
+five originally-audited symptoms (docs/spike/evidence/audits/audit-workbench-2026-07-13.md) plus
 three extras reproduce anymore:
   C1 demo badge under file:// / daemon-mode detection (#202/#208)
   C2 Kanban error state distinct from empty (#207)

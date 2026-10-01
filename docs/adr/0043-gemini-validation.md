@@ -6,7 +6,7 @@ they could not.
 
 The end-to-end **live capstone (#265)** ran 2026-07-22; its raw numbers, commands
 and log lines are in
-[docs/evidence/265-gemini-capstone-live.md](../evidence/265-gemini-capstone-live.md).
+[docs/spike/evidence/265-gemini-capstone-live.md](../spike/evidence/265-gemini-capstone-live.md).
 It closes several items this note left open: a real `--agent gemini` run reaches
 green (`gemini-3.5-flash`), the operator root is re-proved byte-identical, and two
 of the three D5 revocations are exercised live (AutonomyDisabled bails pre-spawn;

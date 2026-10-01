@@ -10,8 +10,8 @@ against the real topology: a native Linux daemon inside WSL2 Ubuntu-22.04,
 federated with the Windows daemon, driving actual work and a real push to a real
 forge.
 
-Operational checklist: [353-fleet-capstone-runbook.md](../evidence/353-fleet-capstone-runbook.md).
-Captured evidence: [353-fleet-capstone-live.md](../evidence/353-fleet-capstone-live.md).
+Operational checklist: [353-fleet-capstone-runbook.md](../spike/evidence/353-fleet-capstone-runbook.md).
+Captured evidence: [353-fleet-capstone-live.md](../spike/evidence/353-fleet-capstone-live.md).
 
 **Findings are sorted, not merged.** Design corrections amend ADR-0052 and are
 listed first. Host and environment issues are recorded as such — they are not

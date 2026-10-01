@@ -22,7 +22,7 @@ Status: **accepted** — decisions settled and shipped in slices, then
 **live-validated end-to-end** against `paulocorcino/FinCal` on 2026-07-22
 ([#272](https://github.com/paulocorcino/ralphy/issues/272);
 [validation note](./0041-copilot-validation.md),
-[evidence](../evidence/272-copilot-capstone-live.md)). The capstone ran a paid
+[evidence](../spike/evidence/272-copilot-capstone-live.md)). The capstone ran a paid
 plan-then-execute to green, reconciled tokens against the real AI-credit bill, and
 confirmed the interactive-scan inversion; one item is deferred by maintainer ruling
 (see D11). Consistent with ADR-0002/0003/0004/0005/0008/0023/0030/0040; applies the

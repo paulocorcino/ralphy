@@ -30,7 +30,7 @@ particular time.
 | Change the workbench shell | [Workbench build guide](WORKBENCH-BUILD-GUIDE.md) |
 | Exercise the initial daemon workflows manually | [Daemon bench](daemon-bench.md) (Phase 1 scope) |
 | Find execution plans and unresolved follow-up work | [Plans](plans/README.md) |
-| Find measurements and acceptance records | [Evidence](evidence/README.md) |
+| Find measurements and acceptance records | [Evidence](spike/evidence/README.md) |
 | Find design investigations and source material | [Research](research/README.md) |
 
 ## Where documents belong

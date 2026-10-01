@@ -20,7 +20,7 @@ budget [#270](https://github.com/paulocorcino/ralphy/issues/270), and logged-out
 stale-plan masking [#271](https://github.com/paulocorcino/ralphy/issues/271) — none of
 which invalidate the adapter; each is recorded in its phase. The raw numbers, commands
 and log lines behind each phase are in
-[docs/evidence/251-cursor-capstone-live.md](../evidence/251-cursor-capstone-live.md).
+[docs/spike/evidence/251-cursor-capstone-live.md](../spike/evidence/251-cursor-capstone-live.md).
 
 ## Environment the run had
 

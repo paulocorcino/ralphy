@@ -22,7 +22,7 @@ instructions or verification of the current implementation.
   supported-adapter inventory.
 - [Effort vocabulary probes](effort-vocabulary-probes.md)
 - [Note editor experiment, 2026-09-22](spike-note-editor-2026-09-22.md)
-- [Raw live captures](../live/)
+- [Raw live captures](../spike/live/)
 
 `plan_friction/` is optional, ignored local data. It is not required to read
 these documents or work on the repository.
