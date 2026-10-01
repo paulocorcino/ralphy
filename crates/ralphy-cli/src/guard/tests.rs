@@ -263,3 +263,87 @@ fn a_claude_code_payload_is_judged_by_the_rules() {
         GuardDecision::Deny(_)
     ));
 }
+
+/// The paragraphs and list items of `text`: a block ends at a blank line, and
+/// a list item starts a new one.
+fn blocks(text: &str) -> Vec<String> {
+    let mut blocks: Vec<String> = Vec::new();
+    let mut current = String::new();
+    for line in text.lines() {
+        let t = line.trim_start();
+        let item = t.starts_with("- ")
+            || t.starts_with("* ")
+            || t.split_once(". ")
+                .is_some_and(|(n, _)| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()));
+        if t.is_empty() || item {
+            blocks.push(std::mem::take(&mut current));
+        }
+        current.push_str(line);
+        current.push('\n');
+    }
+    blocks.push(current);
+    blocks
+}
+
+/// The inline-code spans of `text` that start with `git ` or `gh ` and that
+/// the guard would deny. A span in a paragraph or list item that also says
+/// `never` is a prohibition, not an instruction, and is skipped.
+fn denied_spans(text: &str) -> Vec<String> {
+    let mut denied = Vec::new();
+    for block in blocks(text) {
+        if block.to_lowercase().contains("never") {
+            continue;
+        }
+        // Odd pieces of a split on '`' are the inline spans.
+        for span in block.split('`').skip(1).step_by(2) {
+            let span = span.trim();
+            if !(span.starts_with("git ") || span.starts_with("gh ")) {
+                continue;
+            }
+            if matches!(eval("Bash", &bash(span)), GuardDecision::Deny(_)) {
+                denied.push(span.to_string());
+            }
+        }
+    }
+    denied
+}
+
+fn markdown_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            markdown_files(&path, out);
+        } else if path.extension().is_some_and(|e| e == "md") {
+            out.push(path);
+        }
+    }
+}
+
+/// No charter tells the agent to run a command the guard denies: an agent
+/// told to do it would only hit the guard and stall.
+#[test]
+fn charters_never_tell_the_agent_to_run_a_denied_command() {
+    // The scan finds an instruction and skips a prohibition.
+    assert_eq!(
+        denied_spans("Then run `gh pr create --fill`."),
+        vec!["gh pr create --fill".to_string()]
+    );
+    assert!(denied_spans("NEVER run `git push`.").is_empty());
+    assert!(denied_spans("- NEVER run `git push`,\n  `git rebase` or a delete.").is_empty());
+    // A prohibition in one item does not cover the next one.
+    assert_eq!(
+        denied_spans("- NEVER run `git push`.\n- Then run `git rebase main`.").len(),
+        1
+    );
+    assert!(denied_spans("Read it with `gh pr view 5`.").is_empty());
+
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/prompts");
+    let mut files = Vec::new();
+    markdown_files(&root, &mut files);
+    assert!(files.len() > 10, "found only {} charters", files.len());
+    for file in files {
+        let text = std::fs::read_to_string(&file).unwrap();
+        let denied = denied_spans(&text);
+        assert!(denied.is_empty(), "{}: {denied:?}", file.display());
+    }
+}
