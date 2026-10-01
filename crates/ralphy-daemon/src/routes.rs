@@ -15,6 +15,7 @@ use crate::protocol::{Command, Frame};
 use crate::StorePaths;
 use crate::{auth, desk, fleet, identity, peer, protocol, registry, rekey, session, watch};
 
+mod api_desk;
 mod api_fleet;
 mod api_read;
 mod api_security;
@@ -27,6 +28,7 @@ mod ws_command;
 mod ws_session;
 mod ws_tree;
 
+pub(crate) use api_desk::*;
 pub(crate) use api_fleet::*;
 pub(crate) use api_read::*;
 pub(crate) use api_security::*;

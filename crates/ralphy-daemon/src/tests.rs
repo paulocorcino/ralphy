@@ -412,6 +412,50 @@ async fn api_desk_empty_when_no_file() {
     );
 }
 
+/// ADR-0070 D4: a `desk.toml` that cannot be parsed is a failure on both
+/// verbs, and the PUT never writes over it.
+#[tokio::test]
+async fn api_desk_refuses_a_corrupt_desk_and_leaves_its_bytes() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("desk.toml");
+    let corrupt: &[u8] = b"windows = [\n";
+    std::fs::write(&file, corrupt).unwrap();
+    let app = desk_router(dir.path());
+
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/desk")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::CONFLICT);
+    let body: serde_json::Value = serde_json::from_str(&body_text(res).await).unwrap();
+    assert_eq!(body["state"], "unreadable");
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap_or("")
+            .contains("parsing desk layout"),
+        "the reply says why: {body}"
+    );
+
+    let up = desk_body(
+        serde_json::json!([desk_json("w-a", 1, serde_json::json!(7), false)]),
+        serde_json::json!([]),
+    );
+    let res = desk_put(dir.path(), &up).await;
+    assert_eq!(res.status(), StatusCode::CONFLICT);
+    assert_eq!(
+        std::fs::read(&file).unwrap(),
+        corrupt,
+        "a refused PUT leaves the unreadable desk byte-identical"
+    );
+}
+
 #[tokio::test]
 async fn api_desk_put_then_get_round_trips() {
     let dir = tempfile::tempdir().unwrap();
@@ -540,7 +584,7 @@ async fn api_desk_prunes_notes_to_the_cap() {
     body["notes"] = serde_json::json!(notes);
     let res = desk_put(dir.path(), &body).await;
     assert_eq!(res.status(), StatusCode::OK);
-    let stored = desk::load_from(&dir.path().join("desk.toml"));
+    let stored = desk::load_from(&dir.path().join("desk.toml")).expect("desk reads");
     assert_eq!(stored.notes.len(), desk::NOTE_MAX);
     assert!(
         !stored.notes.iter().any(|n| n.id == "n1"),
@@ -562,7 +606,7 @@ async fn an_upload_without_notes_keeps_the_stored_cards() {
     older["removed"] = serde_json::json!({ "windows": [], "fences": [] });
     let res = desk_put(dir.path(), &older).await;
     assert_eq!(res.status(), StatusCode::OK);
-    let stored = desk::load_from(&dir.path().join("desk.toml"));
+    let stored = desk::load_from(&dir.path().join("desk.toml")).expect("desk reads");
     assert_eq!(stored.notes.len(), 1, "the card survived the fold");
 }
 
