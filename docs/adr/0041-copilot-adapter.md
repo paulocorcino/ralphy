@@ -301,6 +301,22 @@ one; the escape hatch is the persisted
 (The live receipt is `ephemeral: true` on every copy, so the scan must not reuse
 the stream parser's ephemeral filter.)
 
+### Amendment (2026-10-01, issue #516 / ADR-0072 D6) — the deny rules wait for a live run
+
+ADR-0072 D6 wants a minimal deny (`git push` and the `gh pr` write verbs) on top
+of `--allow-all-tools`. Copilot has the mechanism: `copilot help permissions`
+(CLI 1.0.75) says a `--deny-tool` rule wins over every allow rule, `--allow-all-tools`
+included. The flags would be one `--deny-tool=shell(<command>)` per entry of
+`DENIED_FORGE_WRITES` (`ralphy-adapter-support`); CLI 1.0.75 accepts that
+spelling and refuses a malformed rule at startup. They are not added yet. No
+live run was possible: the operator has no active Copilot subscription, and
+every headless session ended before the first turn with "Access denied by
+policy settings". ADR-0072 D6a requires a live run before a deny rule ships,
+because only a run shows that a denied call does not stop the session. Open
+points for that run: how the rule matches a compound command
+(`cd x && git push`) and a global flag (`git -C x push`), and the exact text
+the model receives.
+
 ## D8 — The three GitHub token env vars are scrubbed from the child
 
 Copilot's precedence is `COPILOT_GITHUB_TOKEN` > `GH_TOKEN` > `GITHUB_TOKEN`.

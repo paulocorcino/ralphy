@@ -301,8 +301,9 @@ surface.
   refuse `git push` under `-s danger-full-access`; it is not wired yet,
   because the rule file must sit in the target repo's `.codex/rules`.
   Copilot: `--deny-tool` is documented to win over `--allow-all-tools`, but
-  no live run was possible (the account's Copilot policy refused every
-  session); not wired yet. Kimi: accepted, no mechanism is known. The
+  no live run was possible (no active Copilot subscription); not wired
+  until a live run, as ADR-0041 D7 amendment records. Kimi: accepted, no
+  mechanism is known. The
   vendor rules match the start of the command text, so a global flag
   (`git -C x push`) or a wrapper (`bash -c`) gets past them: a layer, not
   proof. Accepted too: hook input is not authenticated (a
