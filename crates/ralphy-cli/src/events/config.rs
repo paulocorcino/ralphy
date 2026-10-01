@@ -85,15 +85,17 @@ impl EventsStore {
 
     /// Write the store to disk owner-only, creating the base directory.
     pub fn save(&self) -> Result<()> {
-        let path = Self::config_path()?;
+        self.save_to(&Self::config_path()?)
+    }
+
+    /// Write the store to `path` owner-only on every platform, the file
+    /// owner-only from the moment it exists (ADR-0072 D7).
+    fn save_to(&self, path: &std::path::Path) -> Result<()> {
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("creating {}", parent.display()))?;
+            ralphy_daemon::owner_only::create_owner_only_dir(parent)?;
         }
         let text = toml::to_string_pretty(self).context("serializing events store")?;
-        std::fs::write(&path, text).with_context(|| format!("writing {}", path.display()))?;
-        set_owner_only(&path)?;
-        Ok(())
+        ralphy_daemon::owner_only::write_owner_only(path, text.as_bytes())
     }
 
     /// The entry for `slug`, if any.
@@ -154,24 +156,22 @@ pub fn effective_token(stored: Option<&str>) -> Option<String> {
     stored.map(str::to_owned)
 }
 
-/// Restrict a freshly written store file to the owner only (mode `0o600` on unix;
-/// the per-user home ACL on Windows), mirroring the Telegram store.
-#[cfg(unix)]
-fn set_owner_only(path: &std::path::Path) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    let perms = std::fs::Permissions::from_mode(0o600);
-    std::fs::set_permissions(path, perms)
-        .with_context(|| format!("setting owner-only permissions on {}", path.display()))
-}
-
-#[cfg(not(unix))]
-fn set_owner_only(_path: &std::path::Path) -> Result<()> {
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The store holds the sink's bearer, so it is owner-only on every
+    /// platform: a protected DACL on Windows, mode `0o600` elsewhere.
+    #[test]
+    fn the_saved_store_is_owner_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ralphy").join("events.toml");
+        let mut store = EventsStore::default();
+        store.set_token("o/r", "secret");
+        store.save_to(&path).unwrap();
+        assert!(ralphy_daemon::owner_only::is_owner_only(&path).unwrap());
+        assert!(std::fs::read_to_string(&path).unwrap().contains("secret"));
+    }
     use std::sync::atomic::{AtomicU32, Ordering};
 
     static N: AtomicU32 = AtomicU32::new(0);

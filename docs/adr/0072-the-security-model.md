@@ -297,19 +297,21 @@ surface.
   `tasks.rs:45`); the guard allows on unreadable input
   (`crates/ralphy-cli/src/guard.rs:349-356`) and does not deny
   `gh pr create`.
-- D7: partly checked: a new read of a secret-named environment variable is
-  flagged by `xtask capabilities`. Gaps: `RALPHY_TELEGRAM_TOKEN` is not
-  removed from child environments; the CLI's events and Telegram stores are
-  not owner-only on Windows (`crates/ralphy-cli/src/events/config.rs:167`,
-  `crates/ralphy-cli/src/telegram/config.rs:89`); on Linux and macOS every
-  store, the daemon's included, writes the file first and sets `0600`
-  after (`crates/ralphy-cli/src/events/config.rs:94-95`), so for a moment
-  the secret has the umask's mode; the store directory gets no `0700`.
-  Decided fix (review of 2026-10-01): strip the Telegram token where the
-  events token is stripped (`crates/ralphy-cli/src/run/wiring.rs:344`); one
-  owner-only implementation shared by the CLI and the daemon, which creates
-  the file owner-only and the directory `0700`. Accepted: the operator's
-  forge and vendor credentials reach the agent.
+- D7: checked. A new read of a secret-named environment variable is
+  flagged by `xtask capabilities`. The run captures the events and Telegram
+  tokens, then removes both from its environment before it spawns a child
+  (`strip_secret_tokens_from_env_removes_both`). One owner-only writer,
+  `crates/ralphy-daemon/src/owner_only.rs`, serves every store of the
+  daemon and the CLI's events and Telegram stores: the file is created
+  `0600` before a byte is written on Linux and macOS
+  (`write_owner_only_creates_the_file_0600`, which reads the mode at
+  creation), gets a protected DACL while still empty on Windows
+  (`write_owner_only_is_protected`), and the store directory is `0700` on
+  unix (`the_saved_store_is_owner_only`, `the_saved_config_is_owner_only`).
+  Accepted: the peer store directory is shared across a WSL/Windows mount
+  and keeps a plain create; the SSH key is written by `ssh-keygen` and
+  restricted after. Accepted: the operator's forge and vendor credentials
+  reach the agent.
 - D8: not checked by code for the agent. Ralphy's own push has one call site
   (`crates/ralphy-core/src/sync.rs:390`), held by
   `spawn_sites_match_the_baseline`.

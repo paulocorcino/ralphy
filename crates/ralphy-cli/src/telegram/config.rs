@@ -3,7 +3,7 @@
 //! A single `config.toml` resolved with the `directories` crate
 //! (`~/.config/ralphy/config.toml`; `%APPDATA%\ralphy\` on Windows) holds the
 //! bot token and the auto-detected `chat_id`. It is written owner-only (`0o600`
-//! on unix; the per-user `%APPDATA%` ACL on Windows). The environment variable
+//! on unix; a protected DACL on Windows). The environment variable
 //! `RALPHY_TELEGRAM_TOKEN` overrides the stored token so a run can carry a token
 //! without persisting it.
 
@@ -52,15 +52,18 @@ impl TelegramConfig {
 
     /// Write the config to disk owner-only, creating the config directory.
     pub fn save(&self) -> Result<()> {
-        let path = Self::config_path()?;
+        self.save_to(&Self::config_path()?)
+    }
+
+    /// Write the config to `path` owner-only on every platform: mode `0o600`
+    /// from the moment the file exists on unix, a protected DACL on Windows
+    /// (ADR-0072 D7).
+    fn save_to(&self, path: &std::path::Path) -> Result<()> {
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("creating {}", parent.display()))?;
+            ralphy_daemon::owner_only::create_owner_only_dir(parent)?;
         }
         let text = toml::to_string_pretty(self).context("serializing telegram config")?;
-        std::fs::write(&path, text).with_context(|| format!("writing {}", path.display()))?;
-        set_owner_only(&path)?;
-        Ok(())
+        ralphy_daemon::owner_only::write_owner_only(path, text.as_bytes())
     }
 
     /// Remove the stored config. A missing file is treated as success.
@@ -72,23 +75,6 @@ impl TelegramConfig {
             Err(e) => Err(e).with_context(|| format!("removing {}", path.display())),
         }
     }
-}
-
-/// Restrict a freshly written config file to the owner only.
-///
-/// On unix this sets mode `0o600`. On Windows the file inherits the per-user
-/// `%APPDATA%` ACL and no extra hardening is applied this slice (ADR-0007 D2).
-#[cfg(unix)]
-fn set_owner_only(path: &std::path::Path) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    let perms = std::fs::Permissions::from_mode(0o600);
-    std::fs::set_permissions(path, perms)
-        .with_context(|| format!("setting owner-only permissions on {}", path.display()))
-}
-
-#[cfg(not(unix))]
-fn set_owner_only(_path: &std::path::Path) -> Result<()> {
-    Ok(())
 }
 
 /// The token a run should use: `RALPHY_TELEGRAM_TOKEN` when set and non-empty,
@@ -117,6 +103,23 @@ pub fn masked_token(token: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The config holds the bot token, so it is owner-only on every platform:
+    /// a protected DACL on Windows, mode `0o600` elsewhere.
+    #[test]
+    fn the_saved_config_is_owner_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ralphy").join("config.toml");
+        let cfg = TelegramConfig {
+            token: "bot-token".into(),
+            chat_id: Some(7),
+        };
+        cfg.save_to(&path).unwrap();
+        assert!(ralphy_daemon::owner_only::is_owner_only(&path).unwrap());
+        assert!(std::fs::read_to_string(&path)
+            .unwrap()
+            .contains("bot-token"));
+    }
 
     #[test]
     fn masked_token_hides_all_but_suffix() {
