@@ -13,8 +13,6 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 
-use crate::owner_only::set_owner_only;
-
 /// The daemon's persisted identity. `id` is minted exactly once and survives
 /// every rename or avatar change (mint-once); `name`/`avatar` are mutable.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -157,13 +155,10 @@ pub fn load_from(path: &Path) -> Result<Option<Identity>> {
 /// Write `id` to `path` owner-only, creating the parent directory.
 pub fn save_to(id: &Identity, path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("creating {}", parent.display()))?;
+        crate::owner_only::create_owner_only_dir(parent)?;
     }
     let text = toml::to_string_pretty(id).context("serializing daemon identity")?;
-    std::fs::write(path, text).with_context(|| format!("writing {}", path.display()))?;
-    set_owner_only(path)?;
-    Ok(())
+    crate::owner_only::write_owner_only(path, text.as_bytes())
 }
 
 /// Baptize (or re-baptize) the daemon at `path`: mint-once semantics. Any

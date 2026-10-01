@@ -33,7 +33,6 @@ pub use policy::{
     set_require_login_in, set_require_token_in, upgrade_with_session, AuthPolicy, LoginOutcome,
 };
 use throttle::LoginThrottle;
-pub(crate) use token::set_owner_only;
 pub use token::{
     effective_token, ensure_token_at, generate_token, load_token, load_token_from, save_token_to,
     store_dir, strip_token_from_env, token_path, token_path_in, TOKEN_ENV,

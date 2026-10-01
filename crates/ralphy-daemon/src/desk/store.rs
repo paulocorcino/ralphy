@@ -38,22 +38,16 @@ pub fn is_parse_error(e: &anyhow::Error) -> bool {
 
 /// Write the desk to `path` owner-only, creating the parent directory.
 ///
-/// ATOMIC: written to a sibling temp file and renamed over the target, because
-/// this is written on every drag, resize and close. A truncated in-place write
-/// would read back as an unreadable desk, which refuses every later write until
-/// the operator starts a new one.
+/// ATOMIC: `write_owner_only` writes a sibling temp file and renames it over
+/// the target, because this is written on every drag, resize and close. A
+/// truncated in-place write would read back as an unreadable desk, which
+/// refuses every later write until the operator starts a new one.
 pub fn save_to(store: &DeskStore, path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("creating {}", parent.display()))?;
+        crate::owner_only::create_owner_only_dir(parent)?;
     }
     let text = toml::to_string_pretty(store).context("serializing desk layout")?;
-    let tmp = path.with_extension("toml.tmp");
-    std::fs::write(&tmp, text).with_context(|| format!("writing {}", tmp.display()))?;
-    crate::registry::set_owner_only(&tmp)?;
-    std::fs::rename(&tmp, path)
-        .with_context(|| format!("replacing {} with {}", path.display(), tmp.display()))?;
-    Ok(())
+    crate::owner_only::write_owner_only(path, text.as_bytes())
 }
 
 /// Rename an unreadable desk aside to `<file name>.unreadable-<today>`, adding

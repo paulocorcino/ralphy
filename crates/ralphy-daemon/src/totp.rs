@@ -136,13 +136,9 @@ pub fn load_last_step_from(path: &Path) -> Result<Option<u64>> {
 /// Record `step` as the last consumed step, owner-only.
 pub fn save_last_step_to(step: u64, path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("creating {}", parent.display()))?;
+        crate::owner_only::create_owner_only_dir(parent)?;
     }
-    std::fs::write(path, step.to_string())
-        .with_context(|| format!("writing {}", path.display()))?;
-    auth::set_owner_only(path)?;
-    Ok(())
+    crate::owner_only::write_owner_only(path, step.to_string().as_bytes())
 }
 
 /// Confirm a pending enrolment: verify `code` (±1 step) against the seed at
@@ -197,13 +193,9 @@ pub fn load_seed_from(path: &Path) -> Result<Option<Seed>> {
 /// Write `seed` to `path` owner-only (base32 text), creating the parent dir.
 pub fn save_seed_to(seed: &Seed, path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("creating {}", parent.display()))?;
+        crate::owner_only::create_owner_only_dir(parent)?;
     }
-    std::fs::write(path, seed.secret_base32())
-        .with_context(|| format!("writing {}", path.display()))?;
-    auth::set_owner_only(path)?;
-    Ok(())
+    crate::owner_only::write_owner_only(path, seed.secret_base32().as_bytes())
 }
 
 /// Mint-once at `path`: return the existing seed with `false`, or generate,

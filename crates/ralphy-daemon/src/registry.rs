@@ -16,8 +16,6 @@ use anyhow::{Context, Result};
 use ralphy_git_read::Head;
 use serde::{Deserialize, Serialize};
 
-pub(crate) use crate::owner_only::set_owner_only;
-
 /// One registered repo: its filesystem path. Reachability is derived, not
 /// stored, so a moved repo self-heals and a returned repo un-greys with no write.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -243,13 +241,10 @@ pub fn load_from(path: &Path) -> Result<RegistryStore> {
 /// Write the store to `path` owner-only, creating the parent directory.
 pub fn save_to(store: &RegistryStore, path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("creating {}", parent.display()))?;
+        crate::owner_only::create_owner_only_dir(parent)?;
     }
     let text = toml::to_string_pretty(store).context("serializing repo registry")?;
-    std::fs::write(path, text).with_context(|| format!("writing {}", path.display()))?;
-    set_owner_only(path)?;
-    Ok(())
+    crate::owner_only::write_owner_only(path, text.as_bytes())
 }
 
 /// The production path of `repos.toml`: `$RALPHY_DAEMON_DIR` when set (tests

@@ -352,7 +352,6 @@ pub fn write_descriptor(store_dir: &Path, d: &PeerDescriptor) -> Result<PathBuf>
         .with_context(|| format!("creating the peer store {}", peers.display()))?;
     let path = peers.join(format!("{}.toml", d.daemon_id));
     let text = toml::to_string_pretty(d).context("serializing the peer descriptor")?;
-    std::fs::write(&path, text).with_context(|| format!("writing {}", path.display()))?;
-    crate::registry::set_owner_only(&path)?;
+    crate::owner_only::write_owner_only(&path, text.as_bytes())?;
     Ok(path)
 }

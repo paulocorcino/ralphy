@@ -42,13 +42,9 @@ pub fn load_epoch_from(path: &Path) -> Result<u64> {
 /// Write `epoch` to `path` owner-only, creating the parent directory.
 pub fn save_epoch_to(epoch: u64, path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("creating {}", parent.display()))?;
+        crate::owner_only::create_owner_only_dir(parent)?;
     }
-    std::fs::write(path, epoch.to_string())
-        .with_context(|| format!("writing {}", path.display()))?;
-    auth::set_owner_only(path)?;
-    Ok(())
+    crate::owner_only::write_owner_only(path, epoch.to_string().as_bytes())
 }
 
 /// A live, shared session epoch: an in-memory atomic backed by a store file.
