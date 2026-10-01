@@ -22,7 +22,7 @@ Scenario 5   no DESK in browser storage — the only permitted key is the per-cl
              actually serving are all asserted; `wb-console.js` still names the
              browser store zero times, which now means "the desk module never
              touches it" (issue #339)
-Scenario 6   a CORRUPT `desk.toml` yields an empty desk, not a startup failure
+Scenario 6   a CORRUPT `desk.toml` answers 409 unreadable, not a startup failure
 Scenario 7   30 uploaded records come back as exactly 24, newest by `ts`, with the
              live windows still present
 
@@ -39,6 +39,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -508,16 +509,21 @@ def main():
             ctx_d.close()
             browser.close()
 
-        # --- scenario 6: a corrupt desk.toml is an empty desk, not a crash ----
+        # --- scenario 6: a corrupt desk.toml is a failure, not a crash ----
+        # Since #511 (ADR-0070 D4) the daemon answers 409 instead of an empty
+        # desk, so a later write cannot replace the layout it could not read.
         stop(proc)
         Path(desk_toml).write_text("not a toml { ][", encoding="utf-8")
         proc = launch(daemon_dir)
         check("the daemon starts with a corrupt desk.toml", wait_listening(BASE))
         check("…still answering /api/sessions", http("GET", "api/sessions")[0] == 200)
-        status, body = http("GET", "api/desk")
+        try:
+            status, body = http("GET", "api/desk")
+        except urllib.error.HTTPError as e:
+            status, body = e.code, e.read().decode()
         check(
-            "…and serving an EMPTY desk",
-            status == 200 and body.strip() == '{"windows":[],"fences":[]}',
+            "…and answering the desk as unreadable",
+            status == 409 and '"state":"unreadable"' in body,
             f"{status} {body!r}",
         )
     finally:
