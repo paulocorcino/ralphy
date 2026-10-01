@@ -63,6 +63,13 @@ const READ_ONLY: &[&[&str]] = &[
 ];
 
 fn is_read_only(argv: &[&str]) -> bool {
+    // `symbolic-ref <name> <ref>` writes `<name>` even after `--quiet`: only
+    // one positional argument reads.
+    if argv.first() == Some(&"symbolic-ref")
+        && argv[1..].iter().filter(|a| !a.starts_with('-')).count() != 1
+    {
+        return false;
+    }
     READ_ONLY.iter().any(|prefix| argv.starts_with(prefix))
 }
 
@@ -101,13 +108,21 @@ fn stdout_of(repo: &Path, read: Read) -> Option<String> {
 
 /// HEAD as a branch name, or the short sha when detached. `symbolic-ref` exits
 /// 1 on a detached HEAD, which is the whole discrimination: an unborn branch
-/// still resolves here, so a fresh `git init` reports `Branch`.
+/// still resolves here, so a fresh `git init` reports `Branch`. Any other exit
+/// (not a repo, a `safe.directory` refusal) is an error.
 pub fn head(repo: &Path) -> Result<Head> {
     let out = run(repo, Read::SymbolicHead)?;
     if out.status.success() {
         return Ok(Head::Branch {
             name: String::from_utf8_lossy(&out.stdout).trim().to_string(),
         });
+    }
+    if out.status.code() != Some(1) {
+        bail!(
+            "reading HEAD of {}: {}",
+            repo.display(),
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
     }
     let out = run(repo, Read::ShortSha).context("resolving the sha of a detached HEAD")?;
     if !out.status.success() {
@@ -277,6 +292,12 @@ mod tests {
         assert!(!is_read_only(&["remote", "add", "origin", "u"]));
         assert!(!is_read_only(&["checkout", "main"]));
         assert!(!is_read_only(&["symbolic-ref", "HEAD", "refs/heads/x"]));
+        assert!(!is_read_only(&[
+            "symbolic-ref",
+            "--quiet",
+            "HEAD",
+            "refs/heads/x"
+        ]));
     }
 
     #[test]
@@ -365,8 +386,11 @@ mod tests {
             ],
         );
         assert!(!dirty(dir).unwrap(), "committed");
-        git(dir, &["mv", "a.txt", "b.txt"]);
-        assert!(dirty(dir).unwrap(), "a staged rename is a change");
+        git(dir, &["mv", "a.txt", ".ralphy/a.txt"]);
+        assert!(
+            dirty(dir).unwrap(),
+            "a rename out of the tree into the run directory is a change"
+        );
     }
 
     #[test]
