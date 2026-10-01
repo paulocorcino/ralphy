@@ -208,7 +208,12 @@ pub fn commitish_exists(repo: &Path, refname: &str) -> bool {
 }
 
 pub fn checkout_new_branch(repo: &Path, branch: &str, base: &str) -> Result<()> {
-    git(repo, &["checkout", "-b", branch, base, "--quiet"])?;
+    // `--no-track`: cut from a remote branch (`origin/main`), git would make it
+    // the upstream, and a plain `git push` from the run branch would land there.
+    git(
+        repo,
+        &["checkout", "-b", branch, base, "--no-track", "--quiet"],
+    )?;
     Ok(())
 }
 
@@ -409,6 +414,48 @@ mod tests {
         validate_commitish(&dir, &sha).unwrap();
         validate_commitish(&dir, "main").unwrap();
         validate_commitish(&dir, "feat/x~0").unwrap();
+    }
+
+    /// A run branch cut from a remote branch (`origin/main`) has no upstream: git
+    /// would otherwise track `origin/main`, and a plain `git push` from the run
+    /// branch would land on `main`.
+    #[test]
+    fn a_branch_cut_from_a_remote_base_tracks_nothing() {
+        let origin = init_repo("track-origin");
+        std::fs::write(origin.join("README.md"), "hello\n").unwrap();
+        git(&origin, &["add", "."]).unwrap();
+        git(&origin, &["commit", "-q", "-m", "init"]).unwrap();
+        let clone = origin.with_file_name(format!(
+            "{}-clone",
+            origin.file_name().unwrap().to_string_lossy()
+        ));
+        let _ = std::fs::remove_dir_all(&clone);
+        git(
+            &origin,
+            &[
+                "clone",
+                "-q",
+                &origin.to_string_lossy(),
+                &clone.to_string_lossy(),
+            ],
+        )
+        .unwrap();
+        // Control: the clone's own `main` tracks `origin/main`, so this git does
+        // set an upstream when a branch comes from a remote one.
+        assert_eq!(
+            git(&clone, &["config", "--get", "branch.main.merge"]).unwrap(),
+            "refs/heads/main"
+        );
+
+        checkout_new_branch(&clone, "afk/run-t", "origin/main").unwrap();
+
+        assert_eq!(current_branch(&clone).unwrap(), "afk/run-t");
+        assert!(
+            git(&clone, &["config", "--get", "branch.afk/run-t.merge"]).is_err(),
+            "the run branch must have no upstream"
+        );
+        let _ = std::fs::remove_dir_all(&clone);
+        let _ = std::fs::remove_dir_all(&origin);
     }
 
     #[test]
