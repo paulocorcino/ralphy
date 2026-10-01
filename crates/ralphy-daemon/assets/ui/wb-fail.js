@@ -116,5 +116,24 @@
     return t ? `${capital(t)}.` : "";
   }
 
-  window.WBFail = { isError, message, failed, cause, sentence, CAUSE };
+  // One read of a shown fact folded into the last one (ADR-0070 D3). A
+  // failure after a good read keeps that read's value, marked not current;
+  // a failure before any good read has no value at all.
+  function readFold(prev, outcome) {
+    const { ok, value, reason, at } = outcome;
+    if (ok) return { value, goodAt: at, error: "", current: true };
+    if (prev?.goodAt) {
+      return { value: prev.value, goodAt: prev.goodAt, error: reason, current: false };
+    }
+    return { value: null, goodAt: 0, error: reason, current: false };
+  }
+
+  // The line a panel shows for a read that is not current; "" when it is.
+  function notCurrent(read, fmt) {
+    if (!read || read.current) return "";
+    if (read.goodAt) return `Read at ${fmt(read.goodAt)}. Not current: ${read.error}`;
+    return `Could not read: ${read.error}`;
+  }
+
+  window.WBFail = { isError, message, failed, cause, sentence, readFold, notCurrent, CAUSE };
 })();
