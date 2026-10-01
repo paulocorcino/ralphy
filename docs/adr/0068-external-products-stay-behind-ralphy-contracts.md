@@ -106,8 +106,8 @@ no adapter, but only by the component named as its owner in
 - D4: checked by the compiler: `is_closed` and `create_issue` have no
   default, so a tracker that does not implement them does not build.
 - D5: checked by `crates/xtask/tests/ratchets.rs` as a ratchet
-  (`spawn_sites_match_the_baseline`): baseline 18 literal
-  `Command::new("git" | "gh" | "ssh")` sites in 14 files of production code;
+  (`spawn_sites_match_the_baseline`): baseline 11 literal
+  `Command::new("git" | "gh" | "ssh")` sites in 7 files of production code;
   the check fails if a site is added or a count changes. A spawn through a
   variable (`find_program("ssh")`, `Command::new(&program)`) is not seen:
   reviewed in the PR.

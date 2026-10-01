@@ -93,6 +93,7 @@ The component names are CONTEXT.md terms.
 | Adapter support, Outcome classifier | `ralphy-adapter-support` |
 | Forge access | `ralphy-core::github` (the only GitHub code; see §6) |
 | Change set, Sync status, Working-tree operations | `ralphy-core` (`changes`, `sync`, `worktree`, `git`) |
+| Read-only git facts | `ralphy-git-read` |
 | Event bus, Event sink | `ralphy-core::emit`; sinks in `ralphy-cli` (`ui`, `telegram`, `events`) |
 | Run snapshot | `ralphy-run-snapshot` (format); written by `ralphy-cli`, read by `ralphy-daemon` |
 | Usage ledger, Priced usage, Usage scan | `ralphy-core::ledger`, `ralphy-pricing`, `ralphy-usage-scan` |
@@ -114,8 +115,9 @@ The component names are CONTEXT.md terms.
 | The daemon links no vendor crate and does not import `ralphy-core` | ADR-0032 §10 | `daemon_manifest_has_no_vendor_dependency` (`crates/ralphy-daemon/src/roster.rs`); the core half has none yet |
 | No `tokio` or `reqwest` in the CLI; the async stack stays in the daemon | ADR-0032 | `cli_manifest_pins_ureq_excludes_reqwest_tokio` (`crates/ralphy-cli/src/pricing.rs`) |
 | `ralphy-pricing` and `ralphy-release` are leaf crates | ADR-0034, ADR-0056 | `core_and_adapters_keep_their_dependency_edges` (`crates/xtask/tests/crate_dependencies.rs`) |
-| The daemon may observe the working tree as bytes; anything that interprets or changes a repo is a `ralphy` invocation | ADR-0036 §3 | None yet |
-| The daemon reads git facts only through `ralphy-git-read`, and runs no git of its own | ADR-0069 (proposed) | `spawn_sites_match_the_baseline` (`crates/xtask/tests/ratchets.rs`), a ratchet: its baseline still has today's daemon site, so it stops growth but does not enforce the rule |
+| `ralphy-git-read` is a leaf crate | ADR-0069 | `core_and_adapters_keep_their_dependency_edges` (`crates/xtask/tests/crate_dependencies.rs`) |
+| The daemon may observe the working tree as bytes; anything that interprets or changes a repo is a `ralphy` invocation, except read-only git facts through `ralphy-git-read` (ADR-0069) | ADR-0036 §3 | None yet |
+| The daemon reads git facts only through `ralphy-git-read`, and runs no git of its own | ADR-0069 | `spawn_sites_match_the_baseline` (`crates/xtask/tests/ratchets.rs`): its baseline has zero sites in `crates/ralphy-daemon/src` and `crates/ralphy-usage-scan/src`; `every_read_is_on_the_read_only_list` (`crates/ralphy-git-read/src/lib.rs`) for the read-only half |
 | The browser reaches only the daemon, and a new capability is a verb in the registry, not a new route | ADR-0036 §1 | None yet. The CSP (`crates/ralphy-daemon/src/routes/headers.rs`) allows `connect-src 'self' ws: wss:`, so WebSockets to any host pass |
 | Run → daemon is asynchronous only | ADR-0047, ADR-0054 | Behaviour tests only |
 | Only the event vocabulary in `core::emit` reaches the decoders | ADR-0039 | `every_decoder_arm_has_a_pin` (`crates/ralphy-cli/src/runstate/capture/tests.rs`) |
@@ -140,7 +142,7 @@ outside the adapter uses Ralphy's words.
 
 | Platform | Owner |
 |---|---|
-| git | `ralphy-core` for anything that changes a repo; `ralphy-git-read` for read-only facts ([ADR-0069](./adr/0069-git-facts-have-one-definition.md), proposed) |
+| git | `ralphy-core` for anything that changes a repo; `ralphy-git-read` for read-only facts ([ADR-0069](./adr/0069-git-facts-have-one-definition.md)) |
 | ssh | the **Peer tunnel** (`ralphy-daemon/src/peer`) and `ralphy host` (`ralphy-cli/src/host`) |
 | PTY | `ralphy-pty` |
 | OS schedulers and service managers | `ralphy-cli` (`schedule`, `daemon`) |
@@ -169,8 +171,8 @@ measured fact. A new panel adds its row here before it adds code.
 |---|---|---|---|---|
 | Issue state, labels, open issues | Forge access (`ralphy-core::github`) | `ralphy issues --format json [--board]`; verbs `board.list`, `issue.show` | a new `gh` call outside the adapter; label rules re-written in the UI | 2, 3, 4, 5; 6 every 120 s (the forge cannot push) |
 | Queue order, blocked-by | `ralphy-core::blocked` | the queue snapshot (`ralphy issues`) | a re-sort in the UI | with the board |
-| **Change set**, dirty tree | `ralphy-core::changes` | `ralphy changes list --format json`; verb `changes.list` | a second `git status` | 1 `changes.dirty`, 2–5; 6 every 50 s while the Changes panel is open, because an edit made outside a run has no push yet |
-| Current branch (**Sync status**) | `ralphy-core::sync` (`Head`) | `ralphy sync status --format json`; verb `sync.status`; `head.dirty` push | reading `.git/HEAD` yourself | local repo: 1 `head.dirty`, 2–5. Peer repo: 2–5, and 6 with the Changes panel (no `head.dirty` from peers) |
+| **Change set**, dirty tree | `ralphy-core::changes`; the dirty bit on `/api/repos` is `ralphy-git-read::dirty`, by the same `.ralphy/` rule | `ralphy changes list --format json`; verb `changes.list` | a second `git status` | 1 `changes.dirty`, 2–5; 6 every 50 s while the Changes panel is open, because an edit made outside a run has no push yet |
+| Current branch (**Sync status**) | `ralphy-git-read` (`Head`, re-exported by `ralphy-core::sync`) | `ralphy sync status --format json`; verb `sync.status`; `head.dirty` push; `head` on `/api/repos` | reading `.git/HEAD` yourself | local repo: 1 `head.dirty`, 2–5. Peer repo: 2–5, and 6 with the Changes panel (no `head.dirty` from peers) |
 | **Ignored path** | display: the daemon file tree (`tree/ignored.rs`); acting on files: `git check-ignore` in core | display: verb `tree.list`, field `ignored`; files: the core carry | the forge (`gh` has no view of the working tree) | with the tree |
 | File tree and file contents | the daemon file tree (`ralphy-daemon/src/tree.rs`) | verbs `tree.list`, `tree.find`, `tree.grep`, `file.read`; `tree.dirty` push | a walk from the UI | 1 `tree.dirty`, 2–4 |
 | Run state | the **Run snapshot** (`.ralphy/runstate/<runid>.json`) | verb `runs.list`; `runs.dirty` push | parsing run logs or console output | 1 `runs.dirty`, 2–4 |
@@ -202,6 +204,7 @@ any code, including code that does not exist yet. A behaviour test is not one.
 | UI settings mirror matches the Rust keys | the `WB_SETTINGS` test in `crates/ralphy-daemon/src/tests.rs` |
 | Core names no vendor crate; no adapter depends on another; `ralphy-pricing` and `ralphy-release` are leaf crates | `core_and_adapters_keep_their_dependency_edges` (`crates/xtask/tests/crate_dependencies.rs`) |
 | `git`, `gh` and `ssh` are spawned only by their owners (§6) | `spawn_sites_match_the_baseline` (`crates/xtask/tests/ratchets.rs`), a ratchet on literal `Command::new("git" \| "gh" \| "ssh")` sites |
+| `ralphy-git-read` runs only read-only git commands | `every_read_is_on_the_read_only_list` (`crates/ralphy-git-read/src/lib.rs`), ADR-0069 D2 |
 | The forge does not spread | `forge_use_matches_the_baseline` (`crates/xtask/tests/ratchets.rs`), a ratchet on the `github::` items used in `ralphy-cli` and on `gh issue view` in `assets/prompts/` |
 | A new ADR has a closed-set status and kind and, if structural, a Compliance section | `new_adrs_have_a_closed_status_and_kind` (`crates/xtask/tests/adr_map.rs`), from ADR-0068 on |
 | This file stays true | `the_architecture_map_cites_real_adrs_and_every_structural_one` (`crates/xtask/tests/adr_map.rs`): every ADR cited here exists, and every structural ADR from ADR-0068 on is cited |

@@ -6,7 +6,7 @@ Extended by ADR-0070 (proposed): §8 splits state by lifetime; ADR-0070 decides 
 
 Amended by ADR-0055 (the Write class gains `image.write`) and ADR-0059 (§8: `SessionInfo` gains `agent_state`), in addition to the dated amendments below.
 
-Amended by ADR-0069 (proposed): §3 allows the daemon read-only git facts through the shared `ralphy-git-read` crate, and nothing else.
+Amended by ADR-0069: §3 allows the daemon read-only git facts through the shared `ralphy-git-read` crate, and nothing else.
 
 The mock workbench shell (`mocks/workbench-shell/`) needs a real backend: the
 browser must drive the resident **daemon** (ADR-0032), and the daemon must reach
