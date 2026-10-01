@@ -432,6 +432,13 @@ fn log_stdio(store: &Path) -> (std::process::Stdio, std::process::Stdio) {
 /// `daemon.log`, and the child dropped unwaited — this command must not become
 /// the daemon's parent. Returns the child, so a caller can end one that did not
 /// come up; dropping it leaves the daemon running.
+///
+/// The daemon also leaves the Windows job of the program that ran this command.
+/// `DETACHED_PROCESS` does not: a child inherits its parent's job, and when the
+/// job's owner ends the job, every process in it is terminated with no line in
+/// `daemon.log`. Measured 2026-10-01: a daemon restarted from an agent's shell
+/// tool sat in that tool's job and died with it. IDE terminals and OpenSSH
+/// sessions also run their commands in a job.
 #[cfg(windows)]
 pub(crate) fn spawn_detached(
     exe: &Path,
@@ -443,16 +450,38 @@ pub(crate) fn spawn_detached(
 
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     const DETACHED_PROCESS: u32 = 0x0000_0008;
+    const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
 
-    let (stdout, stderr) = log_stdio(store);
-    Command::new(exe)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(stdout)
-        .stderr(stderr)
-        .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
-        .spawn()
-        .with_context(|| format!("spawning {} {}", readable(exe), args.join(" ")))
+    let spawn = |flags: u32| {
+        let (stdout, stderr) = log_stdio(store);
+        Command::new(exe)
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(stdout)
+            .stderr(stderr)
+            .creation_flags(flags)
+            .spawn()
+    };
+    let detached = CREATE_NO_WINDOW | DETACHED_PROCESS;
+    match spawn(detached | CREATE_BREAKAWAY_FROM_JOB) {
+        Err(e) if breakaway_refused(&e) => {
+            eprintln!(
+                "warning: the daemon stays inside the job of the program that started it, \
+                 so it stops when that program closes"
+            );
+            spawn(detached)
+        }
+        spawned => spawned,
+    }
+    .with_context(|| format!("spawning {} {}", readable(exe), args.join(" ")))
+}
+
+/// A job that does not allow breakaway makes `CreateProcess` fail with
+/// `ERROR_ACCESS_DENIED`; any other error is a real spawn failure.
+#[cfg(windows)]
+fn breakaway_refused(error: &std::io::Error) -> bool {
+    const ERROR_ACCESS_DENIED: i32 = 5;
+    error.raw_os_error() == Some(ERROR_ACCESS_DENIED)
 }
 
 #[cfg(not(windows))]
@@ -506,6 +535,67 @@ mod tests {
 second daemon
 "
         );
+    }
+
+    /// A restarted daemon must outlive the program that ran `daemon restart`,
+    /// so it may not stay in that program's job. The test joins a job that
+    /// allows breakaway (no kill-on-close, so the rest of the binary is not at
+    /// risk) and checks where the detached child ends up.
+    #[cfg(windows)]
+    #[test]
+    #[allow(unsafe_code, reason = "FFI: the job object calls of the test")]
+    fn a_restarted_daemon_leaves_the_job_of_its_launcher() {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Foundation::{CloseHandle, FALSE};
+        use windows_sys::Win32::System::JobObjects::{
+            AssignProcessToJobObject, CreateJobObjectW, IsProcessInJob,
+            JobObjectExtendedLimitInformation, SetInformationJobObject,
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_BREAKAWAY_OK,
+        };
+        use windows_sys::Win32::System::Threading::GetCurrentProcess;
+
+        // SAFETY: plain Win32 calls on handles this test owns; the info struct
+        // is a zeroed POD of the size passed.
+        let job = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+        assert!(!job.is_null(), "creating a job object");
+        let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+        let set = unsafe {
+            SetInformationJobObject(
+                job,
+                JobObjectExtendedLimitInformation,
+                std::ptr::from_ref(&info).cast(),
+                u32::try_from(std::mem::size_of_val(&info)).expect("the struct size fits u32"),
+            )
+        };
+        assert_ne!(set, FALSE, "allowing breakaway on the test job");
+        let joined = unsafe { AssignProcessToJobObject(job, GetCurrentProcess()) };
+        assert_ne!(joined, FALSE, "putting the test process in the job");
+
+        let store = scratch("job");
+        let mut child = spawn_detached(
+            Path::new("ping"),
+            &["-n".into(), "30".into(), "127.0.0.1".into()],
+            &store,
+        )
+        .expect("spawning the stand-in daemon");
+        let mut in_job = FALSE;
+        let asked = unsafe { IsProcessInJob(child.as_raw_handle(), job, &mut in_job) };
+        child.kill().expect("ending the stand-in daemon");
+        child.wait().expect("reaping the stand-in daemon");
+        unsafe { CloseHandle(job) };
+        assert_ne!(asked, FALSE, "asking whether the child is in the job");
+        assert_eq!(
+            in_job, FALSE,
+            "the detached daemon stayed in its launcher's job"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn only_access_denied_means_the_job_refused_breakaway() {
+        assert!(breakaway_refused(&std::io::Error::from_raw_os_error(5)));
+        assert!(!breakaway_refused(&std::io::Error::from_raw_os_error(2)));
     }
 
     fn scratch(tag: &str) -> PathBuf {

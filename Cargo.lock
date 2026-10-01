@@ -1808,6 +1808,7 @@ dependencies = [
  "ulid",
  "unicode-width",
  "ureq",
+ "windows-sys 0.61.2",
  "winresource",
  "zeroize",
  "zip",
