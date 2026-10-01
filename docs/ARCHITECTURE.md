@@ -162,10 +162,8 @@ Verbs are daemon verbs; subcommands are `ralphy` subcommands.
 numbers of [ADR-0070](./adr/0070-the-workbench-shows-only-what-it-has-read.md)
 D2: 1 push from the owner, 2 the socket opens again, 3 the tab becomes
 visible, 4 login, 5 the reply to the operator's own action, 6 a periodic read
-while the tab is visible. Every shown fact reads when its panel opens. A cell
-marked *today* is a known gap against D2; only those cells were checked
-against the code (diagnosis §11), so the others state the rule, not a
-measured fact. A new panel adds its row here before it adds code.
+while the tab is visible. Every shown fact reads when its panel opens. A new
+panel adds its row here before it adds code.
 
 | Fact | Owner | How to get it | Never from | Read again on |
 |---|---|---|---|---|
@@ -179,9 +177,9 @@ measured fact. A new panel adds its row here before it adds code.
 | Token usage | the ledger (`~/.ralphy/usage/`) for runs; the **Usage scan** for interactive use | `ralphy usage`; `/api/usage`, `/api/spend` | a stored USD value | 3, 4 |
 | Price of a model | `ralphy-pricing`, applied at read time | `ralphy usage`, the Spend view | a price written into the ledger | with token usage |
 | Settings | `ralphy-core::settings` (`.ralphy/settings.json`) | `ralphy config get --json`; verb `config.get` | a new reparse in the daemon (three exist, each pinned by a test) | 3, 4, 5 |
-| Desk layout | the daemon (`desk.rs`) | `GET` / `PUT /api/desk` | browser storage (only the per-client view lives there, `wb-view.js`) | 1 `desk.dirty`, 2–5. *Today:* page load only |
-| Consoles, console agent state | the daemon (`session/`, `agent_state.rs`) | `/api/sessions`, the presence socket | — | 1 `sessions.dirty`, 2–4. *Today:* a 2 s poll on every presence frame, also in a hidden tab |
-| Projects, peers and their state | the daemon (`registry.rs`, `peer/`, `fleet.rs`) | `/api/repos`, `/api/fleet` | — | 1, 2–5. *Today:* page load only |
+| Desk layout | the daemon (`desk.rs`) | `GET` / `PUT /api/desk` | browser storage (only the per-client view lives there, `wb-view.js`) | 1 `desk.dirty`, 2–5 |
+| Consoles, console agent state | the daemon (`session/`, `agent_state.rs`) | `/api/sessions`, the presence socket | — | 1 `sessions.dirty`, 2–4; 6 every 30 s while a peer is listed (peers do not push their sessions); an agent state that ages out has no push |
+| Projects, peers and their state | the daemon (`registry.rs`, `peer/`, `fleet.rs`) | `/api/repos`, `/api/fleet` | — | 1 `repos.dirty` / `peers.dirty` (the daemon stats its stores every 2 s), 2–5; 6 every 30 s while a peer is listed (peer reachability) |
 | Ralphy release version | `ralphy-release` | `/api/release`; the build id in the presence frame (ADR-0070 D6) | — | 3; a build id that differs reloads the tab (D6) |
 
 ## 8. Fitness functions
