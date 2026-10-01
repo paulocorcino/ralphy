@@ -49,7 +49,9 @@ daemon beyond your own computer or run Ralphy on a public repository.
 - In a run, only comments by the repository's owners, members and
   collaborators reach the agent. Comments by anyone else are dropped and
   named in the run log. Triage still reads the whole issue thread, every
-  author included.
+  author included, but each comment by someone who is not an owner, member
+  or collaborator is marked as such. `ralphy triage --yes` does not publish
+  a spec built on such a comment: it leaves the issue for you to review.
 - The agent's instructions say that a comment is information, never a
   command.
 
@@ -57,15 +59,21 @@ daemon beyond your own computer or run Ralphy on a public repository.
 
 - Ralphy never pushes a branch or opens a pull request on its own. It pushes
   only when you run `ralphy sync push`.
-- When Claude Code executes a task, Ralphy installs a guard that blocks
-  pushes, merges, destructive git commands, and writes to secret files. Other
+- Every Claude Code session that Ralphy starts carries a guard that blocks
+  pushes, writes to pull requests, merges, destructive git commands, and
+  writes to secret files. Other
   agents run with their own vendor's controls, which differ by vendor.
 - A task counts as done only when Ralphy has run its checks itself.
 
-**Ralphy's own secrets.** The daemon token, the two-factor seed and the peer
-tokens are stored in files only your user can read. The daemon token and the
-event sink token are removed from the environment of the processes Ralphy
+**Ralphy's own secrets.** The daemon token, the two-factor seed, the peer
+tokens, and the event sink and Telegram tokens are stored in files only your
+user can read, on every platform. The daemon token, the event sink token and
+the Telegram token are removed from the environment of the processes Ralphy
 starts, and the event sink token is masked in `ralphy config get`.
+
+**Third-party code.** Each browser library the workbench embeds has its
+version and hashes recorded, and a daily scan checks those versions against
+the known advisories.
 
 **Releases.** Every release archive has a SHA-256 file and a build
 provenance attestation. You can check an archive with

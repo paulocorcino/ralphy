@@ -253,10 +253,11 @@ surface.
 ## Compliance
 
 - D1: not checked by code: no check knows which keys lower the posture.
-  Gap: `queue.trust_all_comments` can be set from the workbench. Decided fix
-  (review of 2026-10-01): add it to `LOCAL_ONLY_KEYS`
-  (`crates/ralphy-daemon/src/dispatch/argv.rs:598`) and mark its row
-  read-only in `wb-settings.js`.
+  `queue.trust_all_comments` is in `LOCAL_ONLY_KEYS`
+  (`crates/ralphy-daemon/src/dispatch/argv.rs`), so the workbench cannot
+  set it (`config_argv_refuses_local_only_keys`), and its row is read-only
+  (`every_settable_key_the_panel_offers_is_a_key_the_cli_accepts`,
+  `ui-tests/wb-settings.test.mjs`).
 - D2: not checked by code: a new route or a new bind path is reviewed in the
   PR. Accepted: `/api/session` tells a caller before login whether a
   password is set (audit F15); the login screen needs it.
@@ -279,24 +280,26 @@ surface.
   attachments come from every comment
   (`crates/ralphy-core/src/github/attachments.rs`), within the host, format
   and size limits of ADR-0025.
-- D6: not checked by code: it needs a live vendor CLI. Decided fix (review
-  of 2026-10-01): the guard's deny-list goes into the plan settings and the
-  task settings, the cost gate stays in execute only, and a test pins the
-  guard hook in every Claude settings file; the `gh pr` write verbs join the
-  deny-list; unreadable input becomes a deny. The ADRs of codex (ADR-0004 D5),
-  opencode (ADR-0005 D5) and kimi (ADR-0028) state that the vendor runs with no
-  guard, so they meet D6 as written. Decided next step: one spike per vendor
-  (opencode's permission map, copilot's `--deny-tool`, any codex exec
-  rule), validated on a live run, that either adds a minimal deny (`git
-  push` and the `gh pr` write verbs) or records in the adapter's ADR that
-  the vendor has no mechanism. Kimi: accepted, no mechanism is known. Accepted too: hook input is not
-  authenticated (a process with `RALPHY_FLAG_FILE` set can write the stop
-  flag) and the guard trusts the payload's `cwd`; both come from the
-  operator zone. Gaps: Claude's plan
-  session and tasks have no guard (`crates/ralphy-agent-claude/src/settings.rs:214`,
-  `tasks.rs:45`); the guard allows on unreadable input
-  (`crates/ralphy-cli/src/guard.rs:349-356`) and does not deny
-  `gh pr create`.
+- D6: checked for Claude. Every settings file the Claude adapter writes
+  (execute, plan, and the triage, consolidate, diagnose and draft tasks)
+  carries the guard's `PreToolUse` hook, and only execute adds
+  `--cost-gate` (`every_settings_file_carries_the_guard`). The guard denies
+  the `gh pr` write verbs and allows the read verbs and `gh api`
+  (`bash_commands_are_refused_or_allowed_by_the_deny_list`); input it cannot
+  read is a deny (`unreadable_input_is_a_deny`), and a real Claude Code
+  payload is judged by the rules (`a_claude_code_payload_is_judged_by_the_rules`).
+  No charter tells the agent to run a denied command
+  (`charters_never_tell_the_agent_to_run_a_denied_command`). The other
+  vendors are not checked by code: it needs a live vendor CLI. The ADRs of
+  codex (ADR-0004 D5), opencode (ADR-0005 D5) and kimi (ADR-0028) state that
+  the vendor runs with no guard, so they meet D6 as written. Decided next
+  step: one spike per vendor (opencode's permission map, copilot's
+  `--deny-tool`, any codex exec rule), validated on a live run, that either
+  adds a minimal deny (`git push` and the `gh pr` write verbs) or records in
+  the adapter's ADR that the vendor has no mechanism. Kimi: accepted, no
+  mechanism is known. Accepted too: hook input is not authenticated (a
+  process with `RALPHY_FLAG_FILE` set can write the stop flag) and the guard
+  trusts the payload's `cwd`; both come from the operator zone.
 - D7: checked. A new read of a secret-named environment variable is
   flagged by `xtask capabilities`. The run captures the events and Telegram
   tokens, then removes both from its environment before it spawns a child
