@@ -303,7 +303,9 @@ surface.
 - D7: checked. A new read of a secret-named environment variable is
   flagged by `xtask capabilities`. The run captures the events and Telegram
   tokens, then removes both from its environment before it spawns a child
-  (`strip_secret_tokens_from_env_removes_both`). One owner-only writer,
+  (`strip_secret_tokens_from_env_removes_both`); `triage`, `init` and
+  `consolidate`, which read neither token, remove both before they start
+  (`agent_commands_outside_run_strip_the_secret_tokens`). One owner-only writer,
   `crates/ralphy-daemon/src/owner_only.rs`, serves every store of the
   daemon and the CLI's events and Telegram stores: the file is created
   `0600` before a byte is written on Linux and macOS
