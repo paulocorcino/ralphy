@@ -177,3 +177,35 @@ pub(crate) async fn desk_put_route(
             .into_response(),
     }
 }
+
+/// `POST /api/desk/new`: start a new desk when the saved one cannot be read.
+/// The old file is renamed to `desk.toml.unreadable-<date>` first, so nothing
+/// is deleted (ADR-0070 D4). A desk that reads fine, or does not exist, is not
+/// replaced: `409 {"state":"readable"}`.
+pub(crate) async fn desk_new_route(path: PathBuf) -> Response {
+    let _held = DESK_WRITE.lock().await;
+    if desk::load_from(&path).is_ok() {
+        return (
+            StatusCode::CONFLICT,
+            Json(serde_json::json!({ "state": "readable" })),
+        )
+            .into_response();
+    }
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let saved = desk::move_aside(&path, &today)
+        .and_then(|moved| desk::save_to(&desk::DeskStore::default(), &path).map(|()| moved));
+    match saved {
+        Ok(moved) => {
+            let name = moved
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            Json(serde_json::json!({ "moved_to": name })).into_response()
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": format!("{e:#}") })),
+        )
+            .into_response(),
+    }
+}

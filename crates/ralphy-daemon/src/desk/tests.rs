@@ -239,6 +239,24 @@ fn wire_key_is_camel_case_session_id() {
 }
 
 #[test]
+fn move_aside_never_overwrites() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("desk.toml");
+    let earlier = dir.path().join("desk.toml.unreadable-2026-01-02");
+    std::fs::write(&earlier, "first").unwrap();
+    std::fs::write(&path, "second").unwrap();
+    let moved = move_aside(&path, "2026-01-02").expect("the rename succeeds");
+    assert!(
+        moved.to_string_lossy().ends_with("unreadable-2026-01-02-2"),
+        "a taken name gets a counter: {}",
+        moved.display()
+    );
+    assert_eq!(std::fs::read_to_string(&earlier).unwrap(), "first");
+    assert_eq!(std::fs::read_to_string(&moved).unwrap(), "second");
+    assert!(!path.exists(), "the desk itself moved");
+}
+
+#[test]
 fn missing_file_reads_as_empty_desk() {
     let dir = tempfile::tempdir().unwrap();
     let store = load_from(&dir.path().join("desk.toml")).expect("a missing desk reads");

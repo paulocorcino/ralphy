@@ -1,6 +1,6 @@
 //! Reading and writing `desk.toml`.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
@@ -38,4 +38,24 @@ pub fn save_to(store: &DeskStore, path: &Path) -> Result<()> {
     std::fs::rename(&tmp, path)
         .with_context(|| format!("replacing {} with {}", path.display(), tmp.display()))?;
     Ok(())
+}
+
+/// Rename an unreadable desk aside to `<file name>.unreadable-<today>`, adding
+/// `-2`, `-3`… when that name is taken, so no earlier copy is overwritten.
+/// Returns the new path. Nothing is deleted (ADR-0070 D4).
+pub fn move_aside(path: &Path, today: &str) -> Result<PathBuf> {
+    let name = path
+        .file_name()
+        .with_context(|| format!("{} has no file name", path.display()))?
+        .to_string_lossy();
+    let base = format!("{name}.unreadable-{today}");
+    let mut target = path.with_file_name(&base);
+    let mut n = 2;
+    while target.exists() {
+        target = path.with_file_name(format!("{base}-{n}"));
+        n += 1;
+    }
+    std::fs::rename(path, &target)
+        .with_context(|| format!("renaming {} to {}", path.display(), target.display()))?;
+    Ok(target)
 }

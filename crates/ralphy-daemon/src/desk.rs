@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 
 mod store;
 
-pub use store::{load_from, save_to};
+pub use store::{load_from, move_aside, save_to};
 
 /// A window's restore box, in absolute STAGE pixels. No proportional or
 /// per-resolution form: the stage is a plane whose origin is pinned at 0,0, so a

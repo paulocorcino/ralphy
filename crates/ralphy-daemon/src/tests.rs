@@ -456,6 +456,63 @@ async fn api_desk_refuses_a_corrupt_desk_and_leaves_its_bytes() {
     );
 }
 
+async fn desk_new(dir: &Path) -> Response {
+    desk_router(dir)
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/desk/new")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+}
+
+fn unreadable_copies(dir: &Path) -> Vec<PathBuf> {
+    std::fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| {
+            p.file_name()
+                .is_some_and(|n| n.to_string_lossy().starts_with("desk.toml.unreadable-"))
+        })
+        .collect()
+}
+
+/// ADR-0070 D4: the operator's one action on an unreadable desk keeps the old
+/// file under a new name and starts an empty desk.
+#[tokio::test]
+async fn api_desk_new_moves_the_unreadable_file_aside() {
+    let dir = tempfile::tempdir().unwrap();
+    let corrupt: &[u8] = b"windows = [\n";
+    std::fs::write(dir.path().join("desk.toml"), corrupt).unwrap();
+
+    let res = desk_new(dir.path()).await;
+    assert_eq!(res.status(), StatusCode::OK);
+    let copies = unreadable_copies(dir.path());
+    assert_eq!(copies.len(), 1, "one aside copy: {copies:?}");
+    assert_eq!(std::fs::read(&copies[0]).unwrap(), corrupt);
+    assert_eq!(
+        desk_get(dir.path()).await,
+        r#"{"windows":[],"fences":[],"notes":[]}"#
+    );
+}
+
+/// Negative control: a desk that reads is never moved aside.
+#[tokio::test]
+async fn api_desk_new_refuses_a_readable_desk() {
+    let dir = tempfile::tempdir().unwrap();
+    let up = desk_body(
+        serde_json::json!([desk_json("w-a", 1, serde_json::json!(7), false)]),
+        serde_json::json!([]),
+    );
+    assert_eq!(desk_put(dir.path(), &up).await.status(), StatusCode::OK);
+    let res = desk_new(dir.path()).await;
+    assert_eq!(res.status(), StatusCode::CONFLICT);
+    assert!(unreadable_copies(dir.path()).is_empty());
+}
+
 #[tokio::test]
 async fn api_desk_put_then_get_round_trips() {
     let dir = tempfile::tempdir().unwrap();

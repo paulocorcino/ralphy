@@ -424,6 +424,13 @@ pub(crate) fn router_with_roster(
             }),
         )
         .route(
+            "/api/desk/new",
+            post({
+                let path = desk_path.clone();
+                move || desk_new_route(path.clone())
+            }),
+        )
+        .route(
             "/api/sessions/close",
             post({
                 let sessions = sessions.clone();
