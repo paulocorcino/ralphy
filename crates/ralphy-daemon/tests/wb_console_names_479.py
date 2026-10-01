@@ -64,7 +64,7 @@ PORT = 7479
 BASE = f"http://127.0.0.1:{PORT}/"
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
-SHOT_DIR = os.path.join(REPO_ROOT, "docs", "screenshots")
+SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 VIEW = {"width": 2400, "height": 1000}
 SLUG = "owner/fincal"

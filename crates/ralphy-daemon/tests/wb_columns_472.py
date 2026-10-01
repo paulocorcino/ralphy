@@ -65,7 +65,7 @@ PORT = 7472
 BASE = f"http://127.0.0.1:{PORT}/"
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
-SHOT = os.path.join(REPO_ROOT, "docs", "screenshots", "472-columns-2026-09-26.png")
+SHOT = os.path.join(REPO_ROOT, ".ralphy", "screenshots", "472-columns-2026-09-26.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 VIEW = {"width": 2400, "height": 1000}
 FLOOR = 63  # every check above the floor check; pinned after the first green run

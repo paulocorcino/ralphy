@@ -50,7 +50,7 @@ CLI is required and no quota is spent. The daemon is stopped by its own
 subprocess handle, NEVER by name (`ralphy.exe` doubles as the orchestrator on
 this host).
 
-Writes docs/screenshots/306-{consoles-desk,agent-menu,board-run,runs-live}-2026-07-25.png.
+Writes .ralphy/screenshots/306-{consoles-desk,agent-menu,board-run,runs-live}-2026-07-25.png.
 Run: python crates/ralphy-daemon/tests/wb_accept_306.py            (exit 0 = all pass)
 Linux: RALPHY_WB_TARGET=/w/target/linux/debug python crates/ralphy-daemon/tests/wb_accept_306.py
 """
@@ -84,7 +84,7 @@ WIN = os.name == "nt"
 TARGET = os.environ.get("RALPHY_WB_TARGET") or os.path.join(REPO_ROOT, "target", "debug")
 EXE = os.path.join(TARGET, "ralphy.exe" if WIN else "ralphy")
 CHILD = os.path.join(TARGET, "session_test_child.exe" if WIN else "session_test_child")
-SHOT_DIR = os.path.join(REPO_ROOT, "docs", "screenshots")
+SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 # The account dropdown reuses `.dropdown-item`, so every menu query is scoped (#304).
 MENU = ".console-menu"

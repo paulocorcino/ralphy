@@ -22,7 +22,7 @@ operator's own daemon registry and login policy are untouched. The daemon is
 stopped by its own subprocess handle, NEVER by name (`ralphy.exe` doubles as
 the orchestrator on this host).
 
-Writes docs/screenshots/305-consoles-tab-2026-07-25.png.
+Writes .ralphy/screenshots/305-consoles-tab-2026-07-25.png.
 Run: python crates/ralphy-daemon/tests/wb_consoles_305.py   (exit 0 = all pass)
 """
 
@@ -48,7 +48,7 @@ BASE = f"http://127.0.0.1:{PORT}/"
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 WIN = os.name == "nt"
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if WIN else "ralphy")
-SHOT_DIR = os.path.join(REPO_ROOT, "docs", "screenshots")
+SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 
 results = []

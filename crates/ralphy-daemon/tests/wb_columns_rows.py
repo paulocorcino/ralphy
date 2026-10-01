@@ -49,8 +49,8 @@ PORT = 7474
 T.PORT = PORT
 T.BASE = BASE = f"http://127.0.0.1:{PORT}/"
 SH = T.SH
-SHOT = os.path.join(T.REPO_ROOT, "docs", "screenshots", "rows-in-columns-2026-09-29.png")
-SHOT_MENU = os.path.join(T.REPO_ROOT, "docs", "screenshots", "rows-in-columns-menu-2026-09-29.png")
+SHOT = os.path.join(T.REPO_ROOT, ".ralphy", "screenshots", "rows-in-columns-2026-09-29.png")
+SHOT_MENU = os.path.join(T.REPO_ROOT, ".ralphy", "screenshots", "rows-in-columns-menu-2026-09-29.png")
 VIEW = {"width": 2000, "height": 1000}
 PHONE = {"width": 480, "height": 1000}
 FLOOR = 32  # every check above the floor check; pinned after the first green run

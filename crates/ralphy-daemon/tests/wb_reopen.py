@@ -41,7 +41,7 @@ Every row assertion is gated on `offsetParent !== null && clientWidth > 0`:
 a measurement of a zero-width element passes a "visible" test vacuously
 (CONTEXT.md, the vacuous-geometry trap).
 
-Writes docs/screenshots/reopen-cache-2026-08-02.png.
+Writes .ralphy/screenshots/reopen-cache-2026-08-02.png.
 Run: python crates/ralphy-daemon/tests/wb_reopen.py   (exit 0 = all pass)
 """
 
@@ -63,7 +63,7 @@ BASE = f"http://127.0.0.1:{PORT}/"
 # crates/ralphy-daemon/tests/wb_reopen.py -> repo root is 4 dirs up.
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
-SHOT_DIR = os.path.join(REPO_ROOT, "docs", "screenshots")
+SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "reopen-cache-2026-08-02.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 

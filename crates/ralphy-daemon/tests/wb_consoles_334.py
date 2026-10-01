@@ -19,7 +19,7 @@ Scenario 7   a genuine end (`POST /api/sessions/close`) states "closed" in both
 The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
 doubles as the orchestrator on this host).
 
-Writes docs/screenshots/334-console-pairing-2026-07-27.png.
+Writes .ralphy/screenshots/334-console-pairing-2026-07-27.png.
 Run: python crates/ralphy-daemon/tests/wb_consoles_334.py   (exit 0 = all pass)
 """
 
@@ -43,7 +43,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 TARGET = os.environ.get("RALPHY_WB_TARGET") or os.path.join(REPO_ROOT, "target", "debug")
 EXE = os.path.join(TARGET, "ralphy.exe" if os.name == "nt" else "ralphy")
 CHILD = os.path.join(TARGET, "session_test_child.exe" if os.name == "nt" else "session_test_child")
-SHOT_DIR = os.path.join(REPO_ROOT, "docs", "screenshots")
+SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = "334-console-pairing-2026-07-27.png"
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 

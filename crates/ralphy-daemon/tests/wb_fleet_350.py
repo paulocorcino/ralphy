@@ -15,7 +15,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 EXE = REPO_ROOT / "target" / "debug" / ("ralphy.exe" if os.name == "nt" else "ralphy")
-SHOT = REPO_ROOT / "docs" / "screenshots" / "350-federated-workbench-2026-07-29.png"
+SHOT = REPO_ROOT / ".ralphy" / "screenshots" / "350-federated-workbench-2026-07-29.png"
 A_PORT = 7442
 B_PORT = 7443
 A_ID = "01ARZ3NDEKTSV4RRFFQ69G5FAV"

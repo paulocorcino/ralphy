@@ -30,7 +30,7 @@ the context.
 The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
 doubles as the orchestrator on this host).
 
-Writes docs/screenshots/console-clipboard-2026-09-01.png.
+Writes .ralphy/screenshots/console-clipboard-2026-09-01.png.
 Run: python crates/ralphy-daemon/tests/wb_console_clipboard.py   (exit 0 = all pass)
 """
 
@@ -55,7 +55,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 TARGET = os.environ.get("RALPHY_WB_TARGET") or os.path.join(REPO_ROOT, "target", "debug")
 EXE = os.path.join(TARGET, "ralphy.exe" if os.name == "nt" else "ralphy")
 CHILD = os.path.join(TARGET, "session_test_child.exe" if os.name == "nt" else "session_test_child")
-SHOT_DIR = os.path.join(REPO_ROOT, "docs", "screenshots")
+SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = "console-clipboard-2026-09-01.png"
 
 # Installed before any page script: wraps the clipboard write so a scenario can

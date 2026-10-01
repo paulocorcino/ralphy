@@ -49,7 +49,7 @@ Scenario 8  no page errors
 The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
 doubles as the orchestrator on this host).
 
-Writes docs/screenshots/narrow-panes-2026-09-20.png.
+Writes .ralphy/screenshots/narrow-panes-2026-09-20.png.
 Run: python crates/ralphy-daemon/tests/wb_narrow_panes.py   (exit 0 = all pass)
 """
 
@@ -72,7 +72,7 @@ BASE = f"http://127.0.0.1:{PORT}/"
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 TARGET = os.environ.get("RALPHY_WB_TARGET") or os.path.join(REPO_ROOT, "target", "debug")
 EXE = os.path.join(TARGET, "ralphy.exe" if os.name == "nt" else "ralphy")
-SHOT_DIR = os.path.join(REPO_ROOT, "docs", "screenshots")
+SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 PHONE = {"width": 390, "height": 844}
 DESKTOP = {"width": 1280, "height": 800}

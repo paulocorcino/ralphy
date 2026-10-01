@@ -20,8 +20,7 @@ orchestrator on this host).
 
 Needs `cargo build -p ralphy-cli --bin ralphy` (the UI is embedded) and
 `cargo build -p ralphy-daemon --bins` (the `ssh` stand-in) first.
-Writes docs/screenshots/495-tunnel-header-2026-09-29.png (gitignored — commit
-it with `git add -f`).
+Writes .ralphy/screenshots/495-tunnel-header-2026-09-29.png.
 Run: python crates/ralphy-daemon/tests/wb_tunnel_495.py   (exit 0 = all pass)
 """
 
@@ -50,7 +49,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXT = ".exe" if os.name == "nt" else ""
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy" + EXT)
 SSH_STAND_IN = os.path.join(REPO_ROOT, "target", "debug", "command_test_child" + EXT)
-SHOT_DIR = os.path.join(REPO_ROOT, "docs", "screenshots")
+SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 
 # A real ULID: Crockford base32 has no I, L, O or U.
 PEER_ID = "01ARZ3NDEKTSV4RRFFQ69G5FC5"

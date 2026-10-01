@@ -38,7 +38,7 @@ T = N.T
 PORT = 7482
 T.PORT = PORT
 T.BASE = BASE = f"http://127.0.0.1:{PORT}/"
-SHOT = os.path.join(T.REPO_ROOT, "docs", "screenshots", "note-add-title-2026-09-27.png")
+SHOT = os.path.join(T.REPO_ROOT, ".ralphy", "screenshots", "note-add-title-2026-09-27.png")
 VIEW = {"width": 1600, "height": 1000}
 FLOOR = 18  # every check above the floor check; pinned after the first green run
 

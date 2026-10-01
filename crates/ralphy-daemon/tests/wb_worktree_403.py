@@ -22,7 +22,7 @@ operator's own daemon registry and login policy are untouched. The daemon is
 stopped by its own subprocess handle, NEVER by name (`ralphy.exe` doubles as the
 orchestrator on this host).
 
-Writes docs/screenshots/403-worktree-picker-2026-09-15.png.
+Writes .ralphy/screenshots/403-worktree-picker-2026-09-15.png.
 Run: python crates/ralphy-daemon/tests/wb_worktree_403.py   (exit 0 = all pass)
 """
 
@@ -44,7 +44,7 @@ BASE = f"http://127.0.0.1:{PORT}/"
 # crates/ralphy-daemon/tests/wb_worktree_403.py -> repo root is 4 dirs up.
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
-SHOT_DIR = os.path.join(REPO_ROOT, "docs", "screenshots")
+SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 
 results = []

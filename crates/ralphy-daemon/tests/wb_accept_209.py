@@ -19,7 +19,7 @@ reads empty text even when content shows, KNOWLEDGE.md). Both daemons are
 stopped by their own subprocess handle, NEVER by name (`ralphy.exe` doubles as
 the orchestrator on this host).
 
-Writes the six dated screenshots under docs/screenshots/209-*-2026-07-14.png.
+Writes the six dated screenshots under .ralphy/screenshots/209-*-2026-07-14.png.
 Run: python crates/ralphy-daemon/tests/wb_accept_209.py   (exit 0 = all pass)
 """
 
@@ -52,7 +52,7 @@ NET_BASE = f"http://127.0.0.1:{NET_PORT}/"
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe")
 INDEX_FILE = os.path.join(REPO_ROOT, "crates", "ralphy-daemon", "assets", "ui", "index.html")
-SHOT_DIR = os.path.join(REPO_ROOT, "docs", "screenshots")
+SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 
 results = []

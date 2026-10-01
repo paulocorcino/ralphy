@@ -59,8 +59,8 @@ PORT = 7481
 T.PORT = PORT
 T.BASE = BASE = f"http://127.0.0.1:{PORT}/"
 SH = T.SH
-SHOT = os.path.join(T.REPO_ROOT, "docs", "screenshots", "note-on-top-2026-09-26.png")
-SHOT_BAND = os.path.join(T.REPO_ROOT, "docs", "screenshots", "note-on-top-band-2026-09-26.png")
+SHOT = os.path.join(T.REPO_ROOT, ".ralphy", "screenshots", "note-on-top-2026-09-26.png")
+SHOT_BAND = os.path.join(T.REPO_ROOT, ".ralphy", "screenshots", "note-on-top-band-2026-09-26.png")
 VIEW = {"width": 1600, "height": 1000}
 F_LOCK = {"left": 700, "top": 40, "width": 600, "height": 500}
 F_OPEN = {"left": 40, "top": 40, "width": 600, "height": 500}

@@ -24,7 +24,7 @@ operator's own daemon registry and login policy are untouched. The daemon is
 stopped by its own subprocess handle, NEVER by name (`ralphy.exe` doubles as the
 orchestrator on this host).
 
-Writes docs/screenshots/308-monaco-source-2026-07-25.png.
+Writes .ralphy/screenshots/308-monaco-source-2026-07-25.png.
 Run: python crates/ralphy-daemon/tests/wb_monaco_308.py   (exit 0 = all pass)
 """
 
@@ -48,7 +48,7 @@ BASE = f"http://127.0.0.1:{PORT}/"
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 UI_DIR = os.path.join(REPO_ROOT, "crates", "ralphy-daemon", "assets", "ui")
-SHOT_DIR = os.path.join(REPO_ROOT, "docs", "screenshots")
+SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 
 MAIN_RS = """// the #308 fixture

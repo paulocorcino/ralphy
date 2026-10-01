@@ -41,7 +41,7 @@ Scenario 7  the keyboard map: Alt+Shift+←/→ WALK the fences in reading order
 The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
 doubles as the orchestrator on this host).
 
-Writes docs/screenshots/343-the-fence-list-is-the-map-2026-07-27.png.
+Writes .ralphy/screenshots/343-the-fence-list-is-the-map-2026-07-27.png.
 Run: python crates/ralphy-daemon/tests/wb_fence_343.py   (exit 0 = all pass)
 """
 
@@ -63,7 +63,7 @@ BASE = f"http://127.0.0.1:{PORT}/"
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
-SHOT_DIR = os.path.join(REPO_ROOT, "docs", "screenshots")
+SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "343-the-fence-list-is-the-map-2026-07-27.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 

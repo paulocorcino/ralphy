@@ -217,7 +217,7 @@ def main():
                 rows == ["src", "deep", "task_list.md"],
                 f"rows={rows}",
             )
-            page.screenshot(path=os.path.join(REPO_ROOT, "docs", "screenshots", "file-search-name.png"))
+            page.screenshot(path=os.path.join(REPO_ROOT, ".ralphy", "screenshots", "file-search-name.png"))
 
             # --- scenario b: Escape puts the tree back -------------------------
             page.evaluate(f"async () => await {SH}.closeFileSearch()")
@@ -255,7 +255,7 @@ def main():
                 badges.get("task_list.md") == "2" and badges.get("main.rs") == "1" and badges.get("plan.md") == "1",
                 f"badges={badges}",
             )
-            page.screenshot(path=os.path.join(REPO_ROOT, "docs", "screenshots", "file-search-content.png"))
+            page.screenshot(path=os.path.join(REPO_ROOT, ".ralphy", "screenshots", "file-search-content.png"))
 
             # --- scenario d: opening a content hit lands on the term ----------
             page.evaluate(

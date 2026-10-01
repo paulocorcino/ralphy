@@ -27,7 +27,7 @@ stopped by its own subprocess handle, NEVER by name (`ralphy.exe` doubles as the
 orchestrator on this host). Every session is closed before the daemon stops, so
 no helper child is left behind.
 
-Writes docs/screenshots/304-agent-menu-2026-07-25.png.
+Writes .ralphy/screenshots/304-agent-menu-2026-07-25.png.
 Run: python crates/ralphy-daemon/tests/wb_agents_304.py   (exit 0 = all pass)
 """
 
@@ -54,7 +54,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 WIN = os.name == "nt"
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if WIN else "ralphy")
 CHILD = os.path.join(REPO_ROOT, "target", "debug", "session_test_child.exe" if WIN else "session_test_child")
-SHOT_DIR = os.path.join(REPO_ROOT, "docs", "screenshots")
+SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 # The account dropdown reuses `.dropdown-item`, so every menu query is scoped.
 MENU = ".console-menu"

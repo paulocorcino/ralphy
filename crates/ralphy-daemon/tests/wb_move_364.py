@@ -35,7 +35,7 @@ Every selection assertion is a BOUNDED WAIT, never a point read: the daemon's ow
 `tree.dirty` for the same directory arrives after the write and the selection
 converges once that pass settles (#362 handoff).
 
-Writes docs/screenshots/364-move-2026-07-30.png.
+Writes .ralphy/screenshots/364-move-2026-07-30.png.
 Run: python crates/ralphy-daemon/tests/wb_move_364.py   (exit 0 = all pass)
 """
 
@@ -59,7 +59,7 @@ BASE = f"http://127.0.0.1:{PORT}/"
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 APP_JS = os.path.join(REPO_ROOT, "crates", "ralphy-daemon", "assets", "ui", "app.js")
-SHOT_DIR = os.path.join(REPO_ROOT, "docs", "screenshots")
+SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "364-move-2026-07-30.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 

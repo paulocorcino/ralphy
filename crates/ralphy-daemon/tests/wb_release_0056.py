@@ -26,7 +26,7 @@ operator's own registry and login policy are untouched. The daemon is stopped by
 its own subprocess handle, NEVER by name (`ralphy.exe` doubles as the
 orchestrator on this host).
 
-Writes docs/screenshots/0056-whats-new-2026-09-08.png.
+Writes .ralphy/screenshots/0056-whats-new-2026-09-08.png.
 Run: python crates/ralphy-daemon/tests/wb_release_0056.py   (exit 0 = all pass)
 """
 
@@ -51,7 +51,7 @@ REPO_ROOT = os.path.dirname(
 EXE = os.path.join(
     REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy"
 )
-SHOT_DIR = os.path.join(REPO_ROOT, "docs", "screenshots")
+SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "0056-whats-new-2026-09-08.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 

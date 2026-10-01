@@ -35,7 +35,7 @@ Every geometry assertion is gated on `clientWidth > 0`, repeated inside the
 assertion: a measurement of a zero-width element passes a "fits" test vacuously
 (CONTEXT.md, the vacuous-geometry trap).
 
-Writes docs/screenshots/332-projects-list-2026-07-27.png.
+Writes .ralphy/screenshots/332-projects-list-2026-07-27.png.
 Run: python crates/ralphy-daemon/tests/wb_projects_332.py   (exit 0 = all pass)
 """
 
@@ -57,7 +57,7 @@ BASE = f"http://127.0.0.1:{PORT}/"
 # crates/ralphy-daemon/tests/wb_projects_332.py -> repo root is 4 dirs up.
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
-SHOT_DIR = os.path.join(REPO_ROOT, "docs", "screenshots")
+SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 
 # The directory names ARE the fixture: scenario 2 asserts the label is the

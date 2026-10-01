@@ -69,7 +69,7 @@ EXE = os.path.join(TARGET, "ralphy.exe" if os.name == "nt" else "ralphy")
 # `session_test_child`, whose `GOT:<line>` reply is a machine-readable oracle for
 # "this keystroke reached the PTY".
 CHILD = os.path.join(TARGET, "session_test_child.exe" if os.name == "nt" else "session_test_child")
-SHOT_DIR = os.path.join(REPO_ROOT, "docs", "screenshots")
+SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "347-the-detach-survives-an-f5-2026-07-28.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 

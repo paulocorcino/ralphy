@@ -26,8 +26,7 @@ The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
 is also the orchestrator on this host).
 
 Needs `cargo build -p ralphy-cli --bin ralphy` first (the UI is embedded).
-Writes docs/screenshots/2026-09-29-issue-497-*.png (gitignored — commit them
-with `git add -f`).
+Writes .ralphy/screenshots/2026-09-29-issue-497-*.png.
 Run: python crates/ralphy-daemon/tests/wb_hosts_497.py   (exit 0 = all pass)
 """
 
@@ -54,7 +53,7 @@ BASE = f"http://127.0.0.1:{PORT}/"
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 EXT = ".exe" if os.name == "nt" else ""
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy" + EXT)
-SHOT_DIR = os.path.join(REPO_ROOT, "docs", "screenshots")
+SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 
 # A real ULID: Crockford base32 has no I, L, O or U.
 PEER_ID = "01ARZ3NDEKTSV4RRFFQ69G5FC7"

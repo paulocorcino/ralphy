@@ -19,7 +19,7 @@ Scenario 5   `window.confirm` is never called across the whole run
 The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
 doubles as the orchestrator on this host).
 
-Writes docs/screenshots/335-watch-baton-2026-07-27.png.
+Writes .ralphy/screenshots/335-watch-baton-2026-07-27.png.
 Run: python crates/ralphy-daemon/tests/wb_consoles_335.py   (exit 0 = all pass)
 """
 
@@ -44,7 +44,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 TARGET = os.environ.get("RALPHY_WB_TARGET") or os.path.join(REPO_ROOT, "target", "debug")
 EXE = os.path.join(TARGET, "ralphy.exe" if os.name == "nt" else "ralphy")
 CHILD = os.path.join(TARGET, "session_test_child.exe" if os.name == "nt" else "session_test_child")
-SHOT_DIR = os.path.join(REPO_ROOT, "docs", "screenshots")
+SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = "335-watch-baton-2026-07-27.png"
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 

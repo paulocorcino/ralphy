@@ -40,7 +40,7 @@ Portability knobs: `RALPHY_TEST_SKIP_BUILD=1` skips the cargo builds and
 `RALPHY_TEST_TARGET_DIR=<dir>` (relative to the repo root) names where the
 binaries are — the Linux leg builds in one container and runs here in another.
 
-Writes docs/screenshots/409-worktree-remove-2026-09-15.png (`-linux` off Windows).
+Writes .ralphy/screenshots/409-worktree-remove-2026-09-15.png (`-linux` off Windows).
 Run: python crates/ralphy-daemon/tests/wb_worktree_409.py   (exit 0 = all pass)
 """
 
@@ -65,7 +65,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 TARGET = os.path.join(REPO_ROOT, os.environ.get("RALPHY_TEST_TARGET_DIR", os.path.join("target", "debug")))
 EXE = os.path.join(TARGET, "ralphy.exe" if os.name == "nt" else "ralphy")
 CHILD = os.path.join(TARGET, "session_test_child.exe" if os.name == "nt" else "session_test_child")
-SHOT_DIR = os.path.join(REPO_ROOT, "docs", "screenshots")
+SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = "409-worktree-remove-2026-09-15" + ("" if os.name == "nt" else "-linux") + ".png"
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 # The local environment label, as `peer::environment_label` spells it.

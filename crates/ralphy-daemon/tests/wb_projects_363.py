@@ -29,7 +29,7 @@ a measurement of a zero-width element passes a "visible" test vacuously
 (CONTEXT.md, the vacuous-geometry trap). The Remove button fades rather than
 `display: none`s, so it keeps its box at rest and this gate is meaningful.
 
-Writes docs/screenshots/363-projects-2026-07-30.png.
+Writes .ralphy/screenshots/363-projects-2026-07-30.png.
 Run: python crates/ralphy-daemon/tests/wb_projects_363.py   (exit 0 = all pass)
 """
 
@@ -51,7 +51,7 @@ BASE = f"http://127.0.0.1:{PORT}/"
 # crates/ralphy-daemon/tests/wb_projects_363.py -> repo root is 4 dirs up.
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
-SHOT_DIR = os.path.join(REPO_ROOT, "docs", "screenshots")
+SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "363-projects-2026-07-30.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 

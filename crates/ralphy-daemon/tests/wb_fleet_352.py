@@ -21,7 +21,7 @@ HELPER = REPO_ROOT / "target" / "debug" / (
 COMMAND_HELPER = REPO_ROOT / "target" / "debug" / (
     "command_test_child.exe" if os.name == "nt" else "command_test_child"
 )
-SHOT = REPO_ROOT / "docs" / "screenshots" / "352-local-fleet-awareness-2026-07-29.png"
+SHOT = REPO_ROOT / ".ralphy" / "screenshots" / "352-local-fleet-awareness-2026-07-29.png"
 LOCAL_PORT = 7452
 PEER_PORT = 7453
 LOCAL_ID = "01ARZ3NDEKTSV4RRFFQ69G5FAY"
