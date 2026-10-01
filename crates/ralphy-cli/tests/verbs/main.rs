@@ -4,6 +4,9 @@
 
 mod support;
 
+#[path = "../../../ralphy-daemon/tests/support/golden.rs"]
+mod golden;
+
 mod blob;
 mod changes;
 mod checkout_cwd;

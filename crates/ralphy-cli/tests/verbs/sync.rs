@@ -71,6 +71,11 @@ fn sync_status_json_shape_is_the_wire_contract() {
         v["sync"]["last_fetch"].is_string(),
         "a fetched repo stamps when: {v}"
     );
+    super::golden::check(
+        "sync.status",
+        serde_json::json!({ "status": "ok", "sync": v }),
+        &["/sync/sync/last_fetch"],
+    );
 }
 
 /// The absent-upstream state must cross the wire as `null`, not as a zeroed
@@ -96,6 +101,44 @@ fn sync_status_no_upstream_is_null_not_zero() {
         "no upstream must be null: {v}"
     );
     assert!(v["sync"]["last_fetch"].is_null(), "never fetched: {v}");
+    super::golden::check(
+        "sync.status--no-upstream",
+        serde_json::json!({ "status": "ok", "sync": v }),
+        &[],
+    );
+}
+
+/// A detached HEAD crosses the wire with its short sha, which the UI shows in
+/// place of a branch name.
+#[test]
+fn sync_status_detached_carries_the_sha() {
+    let remote = init_remote();
+    let clone = clone_of(remote.path());
+    run_git(clone.path(), &["switch", "--detach", "HEAD"]);
+    let short = git_output(clone.path(), &["rev-parse", "--short", "HEAD"]);
+
+    let out = ralphy(&[
+        "sync",
+        "status",
+        "--format",
+        "json",
+        "--repo",
+        &clone.path().to_string_lossy(),
+    ]);
+    assert!(out.status.success(), "sync status must succeed");
+
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("sync status emits JSON");
+    assert_eq!(v["sync"]["head"]["kind"], "detached", "got {v}");
+    assert_eq!(v["sync"]["head"]["sha"], short.as_str(), "got {v}");
+    let mut volatile = vec!["/sync/sync/head/sha"];
+    if !v["sync"]["last_fetch"].is_null() {
+        volatile.push("/sync/sync/last_fetch");
+    }
+    super::golden::check(
+        "sync.status--detached",
+        serde_json::json!({ "status": "ok", "sync": v }),
+        &volatile,
+    );
 }
 
 /// The DEFAULT output — the one a terminal operator sees — must carry the same

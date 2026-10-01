@@ -1,0 +1,13 @@
+{
+  "status": "ok",
+  "sync": {
+    "sync": {
+      "head": {
+        "kind": "branch",
+        "name": "main"
+      },
+      "last_fetch": null,
+      "tracking": null
+    }
+  }
+}

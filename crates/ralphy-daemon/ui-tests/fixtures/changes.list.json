@@ -1,0 +1,14 @@
+{
+  "changes": {
+    "changes": [
+      {
+        "index_status": "added",
+        "original_path": null,
+        "path": "added.txt",
+        "status": "added",
+        "worktree_status": "modified"
+      }
+    ]
+  },
+  "status": "ok"
+}
