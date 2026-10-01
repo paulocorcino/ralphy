@@ -185,10 +185,11 @@ test("planBelongsTo compares by VALUE, so a string issue number still matches", 
 });
 
 // --- the plan's verdict, mirrored from the Rust that decides -----------------
-// The board's plan pill must agree with the runner: infeasible is ZERO OPEN STEPS
-// (`plan::count_open_steps`, read by runner/phases.rs), the reason is the prose
-// under `## Feasible…` (`handoff::infeasible_reason`), and a bundle verdict is
-// that reason containing "bundle" (`handoff::is_bundle_reason`).
+// The board's plan pill must agree with the runner: infeasible is zero open and
+// zero checked steps (runner/phases/plan.rs), the reason is the prose under
+// `## Feasible…` (`handoff::infeasible_reason`), and a bundle verdict is a heading
+// other than `Feasible: yes` with that reason containing "bundle"
+// (`handoff::is_bundle_verdict`).
 const FEASIBLE_PLAN = `# Plan for #350: a real one
 
 ## Feasible: yes
@@ -222,14 +223,29 @@ test("planSummary reads the trailer, the steps and the verdict together", () => 
   assert.ok(s.reason.includes("ground is all present"), s.reason);
 });
 
-test("a plan with no open steps is infeasible, whatever its heading claims", () => {
+test("a plan with no steps is infeasible, whatever its heading claims", () => {
   const wb = load();
-  // The runner's own test: zero open steps IS the refusal. A plan that says
-  // "Feasible: yes" and leaves nothing to do would still be skipped by the loop,
-  // so the board must not call it ready.
-  const lying = "## Feasible: yes\nlooks fine\n\n## Steps\n- [x] all done\n\n<!-- ralphy-plan: issue=9 -->";
+  // The runner's own test: a plan with no step at all IS the refusal, so the
+  // board must not call it ready.
+  const lying = "## Feasible: yes\nlooks fine\n\n## Steps\n\n<!-- ralphy-plan: issue=9 -->";
   assert.equal(wb.planSummary(lying).infeasible, true);
   assert.equal(wb.planSummary(lying).needsSplit, false);
+});
+
+test("a plan with every step checked was executed, not refused", () => {
+  // The runner sends this plan to the gates, so it is neither infeasible nor a
+  // bundle, even when its prose says "Not a bundle".
+  const done =
+    "## Feasible: yes\nNot a bundle: one crate.\n\n## Steps\n- [x] all done\n\n<!-- ralphy-plan: issue=9 -->";
+  const s = load().planSummary(done);
+  assert.equal(s.openSteps, 0);
+  assert.equal(s.infeasible, false);
+  assert.equal(s.needsSplit, false);
+});
+
+test("a feasible heading is never a bundle, whatever its prose says", () => {
+  const md = "## Feasible: yes\nNot a bundle: one crate.\n\n## Steps\n\n<!-- ralphy-plan: issue=9 -->";
+  assert.equal(load().planSummary(md).needsSplit, false);
 });
 
 test("a bundle verdict is recognised as needing a split", () => {

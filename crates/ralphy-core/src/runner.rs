@@ -20,6 +20,7 @@ mod comments;
 mod phases;
 mod types;
 
+use artifacts::{clear_protocol_failure, clear_verify_failure};
 pub(crate) use branch::prepare_branch;
 #[allow(unused_imports)]
 pub use branch::BranchMode;
@@ -276,8 +277,9 @@ fn run_queue_with(
             stop = Some(record_stop(issue.number, &mut worked));
             break;
         }
-        let plan = match planned {
-            Ok(PlanPhase::Planned(plan)) => plan,
+        let (plan, executed) = match planned {
+            Ok(PlanPhase::Planned(plan)) => (plan, false),
+            Ok(PlanPhase::Executed(plan)) => (plan, true),
             Ok(PlanPhase::Infeasible { needs_split }) => {
                 worked.push(IssueResult {
                     number: issue.number,
@@ -338,8 +340,18 @@ fn run_queue_with(
         }
 
         // Execute the issue; any non-green terminal outcome stops the whole
-        // run — later issues are untouched.
-        let exec_usage = match execute_phase(&cx, issue, &plan, &mut ledger)? {
+        // run — later issues are untouched. A plan already executed by an
+        // earlier run goes straight to the gates.
+        let exec = if executed {
+            clear_verify_failure(cx.ws);
+            clear_protocol_failure(cx.ws);
+            ExecPhase::Done {
+                exec_usage: Usage::default(),
+            }
+        } else {
+            execute_phase(&cx, issue, &plan, &mut ledger)?
+        };
+        let exec_usage = match exec {
             ExecPhase::Done { exec_usage } => exec_usage,
             ExecPhase::NonGreen {
                 outcome,

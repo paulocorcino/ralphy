@@ -177,7 +177,8 @@ on one.
   task line to this single issue number, the issue is a bundle: say so under
   `## Feasible` — the verdict prose MUST contain the literal word "bundle"
   (the runner keys on it to label the issue `needs-split`) — and recommend
-  the split, naming the constituent tasks.
+  the split, naming the constituent tasks. When the issue is not a bundle,
+  do not write the word "bundle" anywhere under `## Feasible`.
 - Verify a cross-issue reference at source before asserting it as fact: when
   you state what another issue covers, delivers, or requires — especially in a
   `Feasible: no` split's sub-task descriptions or any prose destined for a child

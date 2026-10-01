@@ -274,13 +274,14 @@ window.WBRun = {
   //
   // Every judgment below MIRRORS the Rust that actually decides, and must keep
   // mirroring it:
-  //   • infeasible  ⇐ ZERO open `- [ ]` steps (ralphy-core `plan::count_open_steps`,
-  //     read by runner/phases.rs — the `## Feasible:` heading is the human's
-  //     reason, never the decision).
+  //   • infeasible  ⇐ ZERO open `- [ ]` steps AND zero checked `- [x]` steps
+  //     (ralphy-core `plan::count_open_steps`, read by runner/phases/plan.rs — a plan
+  //     whose steps are all checked was already executed, and the runner sends it
+  //     to the gates).
   //   • reason      ⇐ the body under `^##\s+Feasible\b.*$` (core `handoff::infeasible_reason`;
   //     the heading carries the verdict, so any tail after "Feasible" is accepted).
-  //   • needsSplit  ⇐ that reason containing the literal word "bundle"
-  //     (core `handoff::is_bundle_reason`, which the planning prompt requires).
+  //   • needsSplit  ⇐ a heading other than `Feasible: yes` and that reason containing
+  //     the literal word "bundle" (core `handoff::is_bundle_verdict`).
   FEASIBLE_HEAD: /^##\s+Feasible\b.*$/im,
   // The `## Feasible` heading verbatim ("Feasible: no"), for the modal's banner.
   feasibleHeading(md) {
@@ -294,6 +295,7 @@ window.WBRun = {
   isBundleReason(reason) {
     return (reason || "").toLowerCase().includes("bundle");
   },
+  FEASIBLE_YES: /^##\s+Feasible\s*:\s*yes\b/im,
   // One plan.md → what the board needs to know about it. `issue` is null for prose
   // carrying no trailer, and the caller MUST treat that as "no plan for anyone":
   // an unfinished plan is not yet a plan (see `planBelongsTo`).
@@ -301,6 +303,7 @@ window.WBRun = {
     const text = md || "";
     const steps = this.parseSteps(text);
     const openSteps = steps.filter((s) => s.status === "open").length;
+    const checkedSteps = steps.filter((s) => s.status === "checked").length;
     const reason = this.feasibleReason(text);
     return {
       issue: this.planTrailerIssue(text),
@@ -308,10 +311,14 @@ window.WBRun = {
       reason,
       steps: steps.length,
       openSteps,
-      // A plan with no work left to do is the planner's refusal, whatever its
+      // A plan with no step at all is the planner's refusal, whatever its
       // heading says — that is the same test the runner applies.
-      infeasible: openSteps === 0,
-      needsSplit: openSteps === 0 && this.isBundleReason(reason),
+      infeasible: openSteps === 0 && checkedSteps === 0,
+      needsSplit:
+        openSteps === 0 &&
+        checkedSteps === 0 &&
+        !this.FEASIBLE_YES.test(text) &&
+        this.isBundleReason(reason),
     };
   },
   // The pill's words. `open` is whether the ISSUE is still open: a plan left over

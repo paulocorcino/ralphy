@@ -47,10 +47,21 @@ fn plan_steps_json(plan_md: &str) -> String {
     serde_json::to_string(&steps).unwrap_or_default()
 }
 
+/// Whether a plan has at least one checked step.
+fn is_executed(plan_md: &str) -> bool {
+    parse_plan_steps(plan_md)
+        .iter()
+        .any(|(_, status)| *status == "checked")
+}
+
 /// What the plan phase decided for one prepared issue.
 pub(crate) enum PlanPhase {
     /// A feasible plan was written — proceed to execute.
     Planned(Plan),
+    /// The plan on disk was already executed: no open step and at least one
+    /// checked one. A run killed after the executor finished resumes this plan;
+    /// it goes straight to the gates, which decide whether the work holds.
+    Executed(Plan),
     /// The planner judged the issue infeasible or a bundle; the verdict is
     /// posted on the issue — skip to the next one. `needs_split` distinguishes
     /// the bundle verdict (the `needs-split` label was applied) from a plain
@@ -146,6 +157,16 @@ pub(crate) fn plan_phase(
         plan.session_id.as_deref(),
     );
 
+    // A planner refusal has no steps at all; a plan whose steps are all checked
+    // is finished work, not a refusal.
+    if !plan.is_feasible() && is_executed(&plan_md) {
+        info!(
+            number = issue.number,
+            "plan already executed — running the gates"
+        );
+        return Ok(PlanPhase::Executed(plan));
+    }
+
     // An infeasible plan (no actionable steps) is a skip, not a failure, and
     // not green — the runner neither closes it nor stops the run. The
     // planner's reasoning is posted on the issue so the verdict is
@@ -154,7 +175,7 @@ pub(crate) fn plan_phase(
         let mut needs_split = false;
         if let Ok(plan_md) = std::fs::read_to_string(cx.ws.plan_path()) {
             if let Some(reason) = handoff::infeasible_reason(&plan_md) {
-                if handoff::is_bundle_reason(&reason) {
+                if handoff::is_bundle_verdict(&plan_md) {
                     needs_split = true;
                     crate::emit::needs_split(issue.number);
                     // Best-effort: a label failure must not stop the run —
