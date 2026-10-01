@@ -174,6 +174,14 @@ pub(crate) fn router_with_roster(
     // `/ws` relays it. Daemon-wide, like `run_exits`.
     let pushes = tokio::sync::broadcast::channel::<Push>(PUSH_CAP).0;
     let presence_pushes = pushes.clone();
+    if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+        runtime.spawn(watch_stores(
+            registry_path.clone(),
+            peers_dir.clone(),
+            pushes.clone(),
+            shutdown.clone(),
+        ));
+    }
     let presence_sessions = sessions.clone();
     let command_run_exits = run_exits.clone();
     let tree_run_exits = run_exits.clone();

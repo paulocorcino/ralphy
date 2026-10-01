@@ -103,3 +103,21 @@ async fn a_desk_write_that_changes_the_desk_pushes_desk_dirty_with_its_tab() {
         "a write that changes nothing pushes nothing"
     );
 }
+
+/// `ralphy host …` writes the peer store from another process; the daemon
+/// sees the file change and pushes `peers.dirty`.
+#[tokio::test]
+async fn a_new_peer_file_pushes_peers_dirty() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_port, mut ws) = serve(dir.path()).await;
+    // Let the watch take its first stamp before the store changes.
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    std::fs::create_dir_all(dir.path().join("peers")).unwrap();
+    std::fs::write(dir.path().join("peers").join("x.toml"), "x").unwrap();
+    assert!(
+        next_push(&mut ws, "peers.dirty", Duration::from_secs(5))
+            .await
+            .is_some(),
+        "peers.dirty after the peer store changed"
+    );
+}

@@ -1,5 +1,6 @@
 //! `/ws`: the presence heartbeat.
 
+use std::path::Path;
 use std::time::{Duration, Instant};
 
 use axum::extract::ws::{Message, WebSocket};
@@ -16,25 +17,34 @@ pub(crate) enum Push {
     /// `PUT /api/desk` changed the desk; `tab` is the writer's tab id, so
     /// that tab does not read its own write again.
     Desk { tab: Option<String> },
+    /// `repos.toml` changed on disk (`ralphy daemon add` writes it from
+    /// another process).
+    Repos,
+    /// The peer store changed on disk (`ralphy host …` writes it from
+    /// another process).
+    Peers,
 }
 
 impl Push {
     fn verb(&self) -> &'static str {
         match self {
             Push::Desk { .. } => "desk.dirty",
+            Push::Repos => "repos.dirty",
+            Push::Peers => "peers.dirty",
         }
     }
 
     fn payload(&self) -> serde_json::Value {
         match self {
             Push::Desk { tab } => serde_json::json!({ "tab": tab }),
+            Push::Repos | Push::Peers => serde_json::json!({}),
         }
     }
 
     /// Every push once: what a receiver that lagged sends, because a read
     /// again is harmless and a lost push is not.
-    fn all() -> [Push; 1] {
-        [Push::Desk { tab: None }]
+    fn all() -> [Push; 3] {
+        [Push::Desk { tab: None }, Push::Repos, Push::Peers]
     }
 }
 
@@ -45,6 +55,84 @@ pub(crate) const PUSH_CAP: usize = 32;
 /// tab hears needs no message: a tab that opens reads every fact anyway.
 pub(crate) fn push(pushes: &broadcast::Sender<Push>, p: Push) {
     let _ = pushes.send(p);
+}
+
+/// How often [`watch_stores`] looks at the files other processes write.
+pub(crate) const STORE_STAMP_EVERY: Duration = Duration::from_secs(2);
+
+/// A stamp of one file: its change time and length, or why it cannot be
+/// read. Two equal stamps mean "no change seen".
+pub(crate) fn store_stamp(path: &Path) -> String {
+    match std::fs::metadata(path) {
+        Ok(m) => {
+            let modified = m
+                .modified()
+                .map(|t| format!("{t:?}"))
+                .unwrap_or_else(|e| e.to_string());
+            format!("{modified}/{}", m.len())
+        }
+        Err(e) => format!("error: {e}"),
+    }
+}
+
+/// A stamp of a directory: the sorted name, change time and length of each
+/// entry, or why it cannot be read.
+pub(crate) fn peers_stamp(dir: &Path) -> String {
+    match std::fs::read_dir(dir) {
+        Ok(entries) => {
+            let mut rows: Vec<String> = entries
+                .map(|entry| match entry {
+                    Ok(entry) => format!(
+                        "{}:{}",
+                        entry.file_name().to_string_lossy(),
+                        store_stamp(&entry.path())
+                    ),
+                    Err(e) => format!("error: {e}"),
+                })
+                .collect();
+            rows.sort();
+            rows.join("\n")
+        }
+        Err(e) => format!("error: {e}"),
+    }
+}
+
+/// Push `repos.dirty` / `peers.dirty` when `repos.toml` or the peer store
+/// changes on disk. Another process writes both files, so only the files show
+/// the change; a stat every [`STORE_STAMP_EVERY`] works the same on every OS
+/// and needs no watcher thread. Ends on daemon shutdown.
+pub(crate) async fn watch_stores(
+    registry_path: std::path::PathBuf,
+    peers_dir: std::path::PathBuf,
+    pushes: broadcast::Sender<Push>,
+    mut shutdown: tokio::sync::watch::Receiver<bool>,
+) {
+    let stamp = |r: std::path::PathBuf, p: std::path::PathBuf| {
+        tokio::task::spawn_blocking(move || (store_stamp(&r), peers_stamp(&p)))
+    };
+    let Ok(mut last) = stamp(registry_path.clone(), peers_dir.clone()).await else {
+        return;
+    };
+    let mut tick = tokio::time::interval(STORE_STAMP_EVERY);
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    tick.tick().await;
+    loop {
+        tokio::select! {
+            _ = shutdown.changed() => break,
+            _ = tick.tick() => {
+                let Ok(now) = stamp(registry_path.clone(), peers_dir.clone()).await else {
+                    break;
+                };
+                if now.0 != last.0 {
+                    push(&pushes, Push::Repos);
+                }
+                if now.1 != last.1 {
+                    push(&pushes, Push::Peers);
+                }
+                last = now;
+            }
+        }
+    }
 }
 
 async fn send_push(socket: &mut WebSocket, verb: &str, payload: serde_json::Value) -> bool {
@@ -140,5 +228,33 @@ pub(crate) async fn ws_presence_loop(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_stamp_changes_when_the_store_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("repos.toml");
+        std::fs::write(&file, "a = 1\n").unwrap();
+        let first = store_stamp(&file);
+        assert_eq!(
+            store_stamp(&file),
+            first,
+            "an unchanged file keeps its stamp"
+        );
+        std::fs::write(&file, "a = 1\nb = 2\n").unwrap();
+        assert_ne!(store_stamp(&file), first, "a rewrite changes the stamp");
+
+        let peers = dir.path().join("peers");
+        let empty = peers_stamp(&peers);
+        std::fs::create_dir(&peers).unwrap();
+        std::fs::write(peers.join("x.toml"), "x").unwrap();
+        let one = peers_stamp(&peers);
+        assert_ne!(one, empty, "a new descriptor changes the stamp");
+        assert_eq!(peers_stamp(&peers), one);
     }
 }
