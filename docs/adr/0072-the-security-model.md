@@ -351,18 +351,19 @@ surface.
   `/ws/tree` keep the tungstenite default; the browser sends them only
   small control frames.
 - D12: checked by `.github/workflows/security.yml` (cargo-deny, gitleaks,
-  zizmor, dependency review) and `.github/workflows/codeql.yml`. Gaps:
-  xterm, Alpine, mermaid, qrcode and other vendored libraries have no
-  recorded version or hash (`docs/WORKBENCH-BUILD-GUIDE.md:95-116`), so no
-  advisory reaches them; Dependabot does not watch npm; `refresh-seed.yml`
-  grants write permissions at workflow level and has no timeout. Decided
-  fix (review of 2026-10-01): a manifest under
-  `crates/ralphy-daemon/assets/ui/vendor/` with version, source and SHA-256
-  per file, and a test that recomputes the hashes; an `osv-scanner` job in
-  `security.yml` over the manifest; Dependabot `npm` for
-  `vendor-build/crepe`; `refresh-seed.yml` moves to `permissions: {}` with
-  write on the job, and gets a timeout. Accepted (review of 2026-10-01): the
-  updater trusts a checksum from the same release as the archive.
+  zizmor, dependency review, osv-scanner) and `.github/workflows/codeql.yml`.
+  `crates/ralphy-daemon/assets/ui/vendor/manifest.json` records the
+  library, version, source and SHA-256 of every vendored file;
+  `vendored_files_match_the_manifest` recomputes the hashes and fails on a
+  file the manifest does not name. The `vendored-libraries` job turns the
+  manifest into an npm lockfile (`xtask vendor-lock`) and runs
+  `osv-scanner` over it on every trigger, the daily schedule included.
+  Dependabot watches npm for `vendor-build/crepe`. `refresh-seed.yml` starts
+  with `permissions: {}`, grants write on its job only, and has a timeout.
+  The bootstrap-icons and devicon stylesheets differ from upstream in one
+  place, the `@font-face` font list; the manifest says so. Accepted (review
+  of 2026-10-01): the updater trusts a checksum from the same release as the
+  archive.
 - D13: checked by the compiler. The root `Cargo.toml` sets
   `unsafe_code = "deny"` in `[workspace.lints.rust]` and every member
   inherits it; each FFI function or module that has `unsafe` carries an

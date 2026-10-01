@@ -42,3 +42,16 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+
+  # The build recipe of the one vendored library that is built (Milkdown
+  # Crepe). A pull request here only updates the recipe: rebuild
+  # vendor/crepe and its manifest entry by hand before it merges.
+  - package-ecosystem: npm
+    directory: "/crates/ralphy-daemon/vendor-build/crepe"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      crepe:
+        patterns: ["*"]
