@@ -16,6 +16,10 @@ Read §6 and §7 **before** you add any of these:
   fact**: add its row to §7, with the events that read it again);
 - a second way to compute a fact that the product already knows.
 
+Read §9 and [ADR-0072](./adr/0072-the-security-model.md) **before** you add
+a path across a trust boundary, a flag or setting that changes what an agent
+or a client may do, a secret, or a vendored library.
+
 If §7 names an owner for the fact, get it from that owner. If the fact is not
 in §7, it has no owner yet: say so in your plan, and do not create a second
 owner by accident. If a rule in §5 blocks your change, the answer is a
@@ -29,7 +33,9 @@ The template for a new decision is [adr/TEMPLATE.md](./adr/TEMPLATE.md).
 
 - **Portability.** Windows, Linux and macOS, all built and tested in CI.
 - **Security.** The strongest option is the recommended default, but it is
-  opt-in. Ralphy never takes a capability away from the operator.
+  opt-in. Ralphy never takes a capability away from the operator. The trust
+  zones and the premises are in
+  [ADR-0072](./adr/0072-the-security-model.md); the boundaries are in §9.
 
 **Architecture characteristics.** The first three decide trade-offs. When two
 of them conflict, the one higher in the list wins, unless an ADR says
@@ -221,3 +227,22 @@ down, the same change lowers the baseline, so the count cannot grow back.
 
 The diagnosis behind this map, with the evidence and the full list of gaps,
 is [architecture-diagnosis-2026-09-30.md](./architecture-diagnosis-2026-09-30.md).
+
+## 9. Trust boundaries
+
+Each row is a place where data or control enters from a less trusted zone
+([ADR-0072](./adr/0072-the-security-model.md)). A new path across a zone
+needs a row here before it has code. "Control" names the code that holds the
+boundary.
+
+| Boundary | What crosses | Control | Decided by |
+|---|---|---|---|
+| Network client → daemon | HTTP and WebSocket requests | The auth guard (`ralphy-daemon/src/routes/guard.rs`): Host and Origin, then the policy, then the session | ADR-0032 |
+| Workbench → repo | Verbs from the browser | The verb registry and argv shape checks (`dispatch.rs`, `dispatch/argv.rs`); path confinement (`confine.rs`, `fswrite.rs`) | ADR-0036 |
+| Peer daemon → daemon | Verbs and sessions from a peer | The peer's bearer token, dialled on loopback or through `ssh -L` only | ADR-0052, ADR-0067 |
+| Forge → prompt | Issue body, comments, attachments | The label gate; the comment trust filter (`ralphy-core/src/github/comments.rs`); the charters | ADR-0032 (H), ADR-0072 D5 |
+| Agent → repo and forge | Tool calls of the vendor CLI | The guard hook (`ralphy-cli/src/guard.rs`) or the vendor's deny policy; the verify gate | ADR-0072 D6, ADR-0011, the adapter's ADR |
+| Ralphy → child process | Environment and argv | The environment scrub of each spawn site | ADR-0072 D7 |
+| Outside service → Ralphy | Releases, prices, vendor answers | The owner in §6: HTTPS, timeout, size cap, shape check | ADR-0068, ADR-0072 D9 |
+| Release → operator's machine | A new binary | SHA-256 check before replace; step-up from the workbench | ADR-0056 |
+| Upstream → workbench assets | Vendored browser libraries | CODEOWNERS review, `xtask capabilities`, a recorded version and hash | ADR-0057, ADR-0072 D12 |

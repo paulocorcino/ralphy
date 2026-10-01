@@ -1,0 +1,351 @@
+# The security model: trust zones, and the premises every change keeps
+
+Status: accepted
+Kind: structural
+Protects: security, integrity of change
+
+## Context
+
+Ralphy runs AI agents with shell access on the operator's machine, serves a
+workbench that opens shells in a browser, and installs its own updates. Each
+of these is a way into the machine, and each was secured when it was built:
+
+- ADR-0032 and its amendments: the daemon's bind, login, session, TOTP,
+  step-up, response headers, comment trust, local-only keys.
+- ADR-0036: the closed verb registry and path confinement.
+- ADR-0049, ADR-0055, ADR-0064: what the daemon may serve and write.
+- ADR-0052, ADR-0067: peers and the ssh tunnel.
+- ADR-0056: the release watch and the update.
+- ADR-0041, ADR-0042, ADR-0043: per-vendor guards and risk hatches.
+
+No document states the whole model: who is trusted, where the boundaries
+are, and which rule holds at each one. A change to one surface cannot see
+what the others assume. `docs/ARCHITECTURE.md` §2 has the one general rule:
+the strongest option is the recommended default, but it is opt-in, and
+Ralphy never takes a capability away from the operator.
+
+The audit of 2026-09-21 (two passes, findings F1–F16, code reading and a
+live probe) covered the daemon in depth. Its fixes and its accepted risks
+are in the ADR-0032 amendment of that date. An inventory on 2026-10-01
+(code reading only) covered the two surfaces the audit did not reach in
+depth: the agent session and the distribution chain. The gaps it found are
+listed under Compliance, next to the premise each one breaks. The largest:
+
+- Claude's plan session and its triage, consolidate, diagnose and draft
+  tasks run with the permission gate off and no guard hook
+  (`crates/ralphy-agent-claude/src/settings.rs:214`, `tasks.rs:45`), while
+  they read issue text. Only the execute session has the guard.
+- The guard exits 0 (allow) when it cannot read its input
+  (`crates/ralphy-cli/src/guard.rs:349-356`), and it does not deny
+  `gh pr create`.
+- `queue.trust_all_comments`, which undoes the comment trust filter, can be
+  set from the workbench (`crates/ralphy-daemon/assets/ui/wb-settings.js:180`).
+- The updater checks a SHA-256 that comes from the same release as the
+  archive (`crates/ralphy-cli/src/update/apply.rs:128`). The binaries are not
+  signed. D12 accepts this, with the reason.
+
+## Decision
+
+### Trust zones
+
+| Zone | Trust | Why |
+|---|---|---|
+| The operator | Full | Ralphy runs as the operator's OS account and acts for them. |
+| Other processes on the operator's machine | Full under the default policy; none with `require-login` or `require-token` | A loopback bind trusts the local machine. This is correct only on a single-user host. |
+| A network client of the daemon | None until it authenticates | It may be anyone who can reach the port or the tunnel. |
+| A peer daemon | As much as the local daemon | It holds the peer's token and reaches it only through loopback or `ssh -L`. |
+| The issue body | Trusted | The label is the gate, and only a user with triage rights can set it. |
+| An issue comment | Untrusted, unless its author is an owner, member or collaborator | On a public repository anyone can comment. |
+| The agent session | Acts as the operator; its output is unverified | A prompt can turn it. Its claims are checked by the runner, not believed. |
+| An outside service (GitHub, models.dev, vendor APIs, Telegram, an event sink) | Its answer is untrusted data | Ralphy does not control it. |
+| A Ralphy release | Trusted after its checksum is verified | It comes from this repository's release workflow. |
+
+### Premises
+
+**D1. The default is safe for one person on one machine, and the stronger
+posture is one setting away.** The daemon binds loopback by default. A
+setting that lowers the posture is allowed, because Ralphy never takes a
+capability from the operator. A key that lets someone other than the
+operator influence the agent, or sends data off the machine, is local-only:
+the workbench shows it read-only, and `ralphy config set` changes it.
+Local-only is not a boundary, because a workbench session can open a
+console. It makes the change a deliberate gesture instead of one click. A
+setting that lowers the posture costs a fresh factor when one is armed.
+`queue.trust_all_comments` is local-only. `remote_control` is not: it opens
+the run to the operator's own Claude account, which is inside the operator
+zone. `events.url` is not: the token that goes with it is. The docs tell
+the operator when to use the stronger posture: `require-login` on any
+machine that is not single-user, and a TLS front for any network reach.
+
+**D2. A network bind fails closed.** A non-loopback bind with no credential
+does not start. Host and Origin are checked on every request. The daemon
+never terminates TLS: a front (a tunnel or a proxy) encrypts. A secret that
+would cross a plain-HTTP hop that is not loopback is refused, or the
+operator is warned; it is never sent in silence.
+
+**D3. The browser reaches only the daemon, and only through closed
+vocabularies.** A capability is a verb in the registry, not a new route. A
+child process gets an argv, never a shell command line. Every argument from
+the browser has its shape checked before it reaches a CLI, and a value that
+git or `gh` would read as a positional comes after `--` or
+`--end-of-options`.
+
+**D4. The daemon writes only inside a registered root.** A path is confined
+before any write. `.git` and `.ralphy` are refused under every spelling the
+OS treats as equal, except a target that a verb itself fixes. Every read
+has a size cap.
+
+**D5. Forge text is input, never instruction.** The issue body carries
+authority. In a run, a comment reaches a prompt, the blocked-by gate or a
+handoff only if its author is an owner, member or collaborator. The charters
+say that a comment is data about what its author wants.
+
+Triage is the one exception, on purpose: it reads every comment and every
+attachment, because the reporter of a bug is often an outsider and the
+evidence is theirs. So Ralphy gives the triage session the thread itself,
+with each outsider's comment marked, and the agent does not fetch the thread
+on its own (ADR-0017 amendment of 2026-10-01, A1). An outsider's comment can
+still shape a consolidated spec, which is then posted under the operator's
+identity and trusted by the run. Interactive triage shows that spec before
+it is published. Under `--yes` this is an open risk until ADR-0017 A2 holds
+such a spec back for the operator.
+
+**D6. The agent runs as the operator and is not sandboxed. Ralphy says so,
+and puts a guard where the vendor allows one.** The flags that let an agent
+run unattended (`--dangerously-skip-permissions` and each vendor's
+equivalent) stay: an unattended run has nobody to answer a permission
+prompt. The guard is a layer on top of them, not a replacement. Every
+headless session runs with Ralphy's guard hook when the vendor offers a
+pre-tool hook, and otherwise with the vendor's own deny policy. The
+adapter's ADR names which one, or states that the vendor has neither. For
+Claude, this means every headless session (plan, execute, triage, diagnose,
+draft, consolidate) carries the guard's deny-list; the verification-cost
+gate runs only in execute, because it reads the plan of the current issue.
+The guard denies the forge writes the charter forbids: `git push`, every
+`gh pr` verb that writes (`create`, `edit`, `ready`, `reopen`, `review`,
+`comment`, `merge`, `close`), and `gh release`, `repo`, `workflow`,
+`secret`, `auth`. It allows the `gh pr` reads (`view`, `list`, `diff`,
+`checks`). It does not deny `gh api`: skills use it for legitimate reads and
+writes, and a pattern wide enough to stop a hostile call would stop those
+too. That is an accepted risk: an agent turned by a prompt can still write
+to the forge through `gh api`. The guard fails closed: input it cannot read
+(empty, or not JSON) is a deny with a message that says so, and a test pins
+the payload shape Claude sends today.
+
+**D6a. A security fix does not break what works.** A new deny rule, filter
+or limit is checked against what the current flows do before it ships. A
+rule that would block a command a charter tells the agent to run is a bug in
+the rule.
+
+**D7. A secret Ralphy owns stays with Ralphy.** The daemon token, peer
+tokens, the events token, the Telegram token, the TOTP seed and the password
+hash are stored owner-only on every platform: a secret file is created
+owner-only (mode `0600` at creation on Linux and macOS, then renamed into
+place; a protected DACL on Windows), not made owner-only after it is
+written, and the store directory is owner-only too (`0700`). They are
+removed from the environment of every child, and never appear in a log, an event, an error,
+or the UI. They are compared in constant time. The operator's own forge and
+vendor credentials do reach the agent, because the agent needs them; the
+docs state this.
+
+**D8. Ralphy never publishes on its own.** Ralphy pushes only when the
+operator runs `ralphy sync push`. It never opens a pull request. An agent's
+claim of success is not evidence: the verify gate runs the checks itself.
+
+**D9. Every outside call has an owner and a limit.** The owner is the one
+named in ARCHITECTURE.md §6. The call uses HTTPS, has a timeout and a cap
+on the response size. It sends no identifier of the operator, except to a
+service the operator configured to receive one (an event sink, Telegram).
+The answer has its shape checked before it is used.
+
+**D10. The workbench runs no script it did not ship.** The CSP allows no
+inline script except by hash and allows no framing. Every HTML sink takes
+DOMPurify output or static markup. First-party code has no `eval` and no
+`new Function`. Remote content (images) is opt-in. `connect-src` names the
+daemon's own WebSocket origins, not every host. Notes render through the
+ProseMirror schema, which builds the DOM itself; their control is the
+link-scheme allowlist, not DOMPurify. `'unsafe-eval'` stays in `script-src`
+for Alpine and Monaco: removing it would mean the CSP build of Alpine and a
+rewrite of its directives.
+
+**D11. Every input the daemon accepts has an explicit cap.** This covers
+request bodies, WebSocket messages, file sizes and item counts. A library
+default is not a decision. The transport cap is derived from the largest
+legitimate payload, not written as a free number: the base64 size of
+`MAX_IMAGE_BYTES` plus 64 KiB. It applies to `/ws/command`, `/ws/session`
+and the HTTP routes that carry a command, so a larger content cap raises
+the transport cap with it. A general rate limit and per-request timeouts
+are out of scope, by the non-goal on denial of service; the login throttle
+stays.
+
+**D12. The supply chain is pinned and watched.** Rust dependencies come
+from crates.io only, and a RustSec advisory fails CI. Every action is pinned
+by SHA, a workflow starts with `permissions: {}`, and a job gets a write
+permission only when it needs one. Every vendored browser library has a
+recorded version, source URL and SHA-256 in one manifest, a test recomputes
+the hashes, and a daily scan checks those versions against the advisory
+databases. A vendored library is updated by hand and reviewed, never by a
+bot, because a bump can break the workbench. A release carries a SHA-256 per
+archive and a build provenance attestation. The updater verifies the
+archive's SHA-256 before it replaces the binary. That check detects a
+corrupt or cut download; against an attacker it adds nothing to TLS,
+because whoever can replace an archive in a release can replace its
+`.sha256` too. The trust anchor of an update is this repository on GitHub,
+and a compromised forge account is a non-goal. A signature by a CI secret,
+or a check of the attestation inside the updater, has the same anchor, so
+neither is added. A signature by an offline key is the option to reopen if
+Ralphy is ever distributed outside GitHub. Code signing (Authenticode,
+macOS notarization) is an install-experience question, not an integrity
+one, and is not decided here.
+
+**D13. `unsafe` Rust is for FFI only.** It lives in named modules, and every
+block has a `SAFETY` comment.
+
+**D14. A security fix is proven and announced.** It ships with a test that
+was seen red, and with a `kind: security` changelog fragment. A finding that
+is accepted without a fix is recorded, with the reasoning, in the ADR of its
+surface.
+
+### What Ralphy does not defend against
+
+- **Another user on the same machine, under the default policy.** Use
+  `require-login` or `require-token`.
+- **The agent itself.** The guard reduces mistakes and the effect of a
+  prompt injection. It is not a sandbox, and a determined agent can work
+  around it.
+- **Perfect prompt-injection prevention.** No filter can prove that a model
+  ignores every hostile sentence. D5 and D6 are layers, not proof.
+- **A compromised operator account, forge account, or vendor service.**
+- **Denial of service from the internet.** The daemon is not built to face
+  the internet directly. A tunnel with login is the supported way to reach
+  it from outside.
+- **Encryption at rest.** Ralphy's stores are plain files protected by the
+  OS account.
+
+## Consequences
+
+- This ADR is the index of the security model. The detail of each surface
+  stays in that surface's ADR. A new security decision for one surface goes
+  in that ADR, and changes a premise here only when it changes the model.
+- `SECURITY.md` is the summary for users and for people who report a
+  vulnerability. It must not contradict this ADR.
+- `docs/ARCHITECTURE.md` §9 maps each boundary to its control and its ADR.
+- The gaps under Compliance become issues. While a gap is open, the premise
+  it breaks is a target, not a fact. Each fix that closes a gap updates its
+  Compliance line in the same change.
+
+## Considered options
+
+- **Write the premises in ARCHITECTURE.md only.** Rejected: ARCHITECTURE.md
+  is a map that points to decisions. The premises are decisions with real
+  trade-offs (D1, D6), so they need an ADR that can be amended.
+- **Amend ADR-0032 again.** Rejected: ADR-0032 is the daemon. The agent
+  session (D5, D6) and the distribution chain (D12) are not the daemon, and
+  ADR-0032 already holds seven amendments.
+- **Run every agent session in a sandbox (container or VM) by default.**
+  Not decided here. The vendor CLIs need the operator's toolchain and
+  credentials, and Windows has no container that is portable to the other
+  two platforms. A sandbox as an opt-in is a separate decision.
+
+## Compliance
+
+- D1: not checked by code: no check knows which keys lower the posture.
+  Gap: `queue.trust_all_comments` can be set from the workbench. Decided fix
+  (review of 2026-10-01): add it to `LOCAL_ONLY_KEYS`
+  (`crates/ralphy-daemon/src/dispatch/argv.rs:598`) and mark its row
+  read-only in `wb-settings.js`.
+- D2: not checked by code: a new route or a new bind path is reviewed in the
+  PR. Accepted: `/api/session` tells a caller before login whether a
+  password is set (audit F15); the login screen needs it.
+- D3: partly checked: a new `git`, `gh` or `ssh` spawn site fails
+  `spawn_sites_match_the_baseline` (`crates/xtask/tests/ratchets.rs`), and a
+  new subprocess anywhere is flagged by `xtask capabilities`. "The browser
+  reaches only the daemon" is not checked: the CSP allows `connect-src ws:
+  wss:` to any host. Decided fix (review of 2026-10-01): see D10.
+- D4: not checked by code: a new write path is reviewed in the PR.
+- D5: not checked by code. Gap: the triage agent reads the raw thread with
+  `gh issue view --comments` (`assets/prompts/prompt.triage.md:27`), whose
+  text output names the author but not whether they are a collaborator.
+  Decided fix (review of 2026-10-01): ADR-0017 A1, then A2. Accepted:
+  triage attachments come from every comment
+  (`crates/ralphy-core/src/github/attachments.rs:401-414`), within the
+  host, format and size limits of ADR-0025.
+- D6: not checked by code: it needs a live vendor CLI. Decided fix (review
+  of 2026-10-01): the guard's deny-list goes into the plan settings and the
+  task settings, the cost gate stays in execute only, and a test pins the
+  guard hook in every Claude settings file; the `gh pr` write verbs join the
+  deny-list; unreadable input becomes a deny. The ADRs of codex (ADR-0004 D5),
+  opencode (ADR-0005 D5) and kimi (ADR-0028) state that the vendor runs with no
+  guard, so they meet D6 as written. Decided next step: one spike per vendor
+  (opencode's permission map, copilot's `--deny-tool`, any codex exec
+  rule), validated on a live run, that either adds a minimal deny (`git
+  push` and the `gh pr` write verbs) or records in the adapter's ADR that
+  the vendor has no mechanism. Kimi: accepted, no mechanism is known. Accepted too: hook input is not
+  authenticated (a process with `RALPHY_FLAG_FILE` set can write the stop
+  flag) and the guard trusts the payload's `cwd`; both come from the
+  operator zone. Gaps: Claude's plan
+  session and tasks have no guard (`crates/ralphy-agent-claude/src/settings.rs:214`,
+  `tasks.rs:45`); the guard allows on unreadable input
+  (`crates/ralphy-cli/src/guard.rs:349-356`) and does not deny
+  `gh pr create`.
+- D7: partly checked: a new read of a secret-named environment variable is
+  flagged by `xtask capabilities`. Gaps: `RALPHY_TELEGRAM_TOKEN` is not
+  removed from child environments; the CLI's events and Telegram stores are
+  not owner-only on Windows (`crates/ralphy-cli/src/events/config.rs:167`,
+  `crates/ralphy-cli/src/telegram/config.rs:89`); on Linux and macOS every
+  store, the daemon's included, writes the file first and sets `0600`
+  after (`crates/ralphy-cli/src/events/config.rs:94-95`), so for a moment
+  the secret has the umask's mode; the store directory gets no `0700`.
+  Decided fix (review of 2026-10-01): strip the Telegram token where the
+  events token is stripped (`crates/ralphy-cli/src/run/wiring.rs:344`); one
+  owner-only implementation shared by the CLI and the daemon, which creates
+  the file owner-only and the directory `0700`. Accepted: the operator's
+  forge and vendor credentials reach the agent.
+- D8: not checked by code for the agent. Ralphy's own push has one call site
+  (`crates/ralphy-core/src/sync.rs:390`), held by
+  `spawn_sites_match_the_baseline`.
+- D9: partly checked: a new URL host is flagged by `xtask capabilities`.
+  Gap: the models.dev fetch has no explicit size cap
+  (`crates/ralphy-pricing/src/fetch.rs:155`), and ingest keeps a negative or
+  non-finite price (`crates/ralphy-pricing/src/ingest.rs:16-56`). Decided
+  fix (review of 2026-10-01): an explicit cap on the read, and such a price
+  is skipped like a malformed row.
+- D10: checked by `every_response_carries_the_security_headers` and
+  `no_shell_carries_an_inline_event_handler`
+  (`crates/ralphy-daemon/src/tests.rs`); a new `eval` or `new Function` is
+  flagged by `xtask capabilities`. `'unsafe-eval'` stays in `script-src`
+  for Alpine and Monaco (accepted). Gaps: two `innerHTML` sinks build HTML
+  from a template string (`crates/ralphy-daemon/assets/ui/app.js:6080`,
+  `wb-console.js:6079`); today every value is a fixed string, so nothing is
+  exploitable, but a file name passed there would be. `connect-src` allows
+  `ws:` and `wss:` to any host (`crates/ralphy-daemon/src/routes/headers.rs:88`).
+  Decided fix (review of 2026-10-01): the two sinks build the icon as an
+  element and the text with `textContent`; `connect-src` is computed from
+  the allowed hosts and the bound port, as the script hashes are, and is
+  checked in a browser, a tunnel included. If a tunnel makes that unsound,
+  the wide `connect-src` is accepted and recorded here. Accepted: notes
+  rely on the link-scheme allowlist (`wb-notes.js:1569-1604`).
+- D11: not checked by code. Gap: the daemon sets no body limit and no
+  WebSocket message limit, so the axum default (2 MB on a `Json` body) and
+  the tungstenite default (64 MiB per message) apply. Decided fix (review
+  of 2026-10-01): the derived cap above. To check during the fix:
+  `/api/peer/command` takes a `Json` command under the 2 MB default, which
+  is smaller than a 4 MiB `image.write`.
+- D12: checked by `.github/workflows/security.yml` (cargo-deny, gitleaks,
+  zizmor, dependency review) and `.github/workflows/codeql.yml`. Gaps:
+  xterm, Alpine, mermaid, qrcode and other vendored libraries have no
+  recorded version or hash (`docs/WORKBENCH-BUILD-GUIDE.md:95-116`), so no
+  advisory reaches them; Dependabot does not watch npm; `refresh-seed.yml`
+  grants write permissions at workflow level and has no timeout. Decided
+  fix (review of 2026-10-01): a manifest under
+  `crates/ralphy-daemon/assets/ui/vendor/` with version, source and SHA-256
+  per file, and a test that recomputes the hashes; an `osv-scanner` job in
+  `security.yml` over the manifest; Dependabot `npm` for
+  `vendor-build/crepe`; `refresh-seed.yml` moves to `permissions: {}` with
+  write on the job, and gets a timeout. Accepted (review of 2026-10-01): the
+  updater trusts a checksum from the same release as the archive.
+- D13: not checked by code: no `unsafe_code` lint exists. A new `unsafe` is
+  flagged by `xtask capabilities`. Decided fix (review of 2026-10-01):
+  `unsafe_code = "deny"` in `[workspace.lints]`, with an `allow` on each
+  FFI module that has `unsafe` today; then D13 is checked by the compiler.
+- D14: not checked by code: manual, reviewed in the PR.
