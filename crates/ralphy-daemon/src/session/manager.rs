@@ -90,25 +90,30 @@ impl ManagedSession {
     /// staleness clock must not age it into `unknown` (§6). Cheap when
     /// nothing changed (an open, a seek, an empty read).
     ///
-    /// Returns whether the state the list shows changed. A refreshed `seen`
-    /// alone does not count: it changes no word on the screen.
+    /// Returns whether the state the list shows changed: its word or its
+    /// detail, including a `working` that ages into `unknown` (§6) with no
+    /// new line. A refreshed `seen` alone does not count.
     fn poll_status(&self) -> bool {
         let Some(status) = &self.status else {
             return false;
         };
         let polled = status.tail.lock().expect("tail mutex").poll();
         let mut slot = self.agent_state.lock().expect("agent_state mutex");
+        let now = SystemTime::now();
+        let shown = |slot: &Option<crate::agent_state::Observed>| {
+            slot.as_ref()
+                .map(|o| crate::agent_state::render(o, now))
+                .map(|r| (r.state, r.detail))
+        };
+        let before = shown(&slot);
         if let Some(last) = polled.transitions.into_iter().last() {
-            let changed = slot.as_ref().map(|o| o.state) != Some(last.state);
             *slot = Some(last);
-            return changed;
-        }
-        if polled.activity {
+        } else if polled.activity {
             if let Some(obs) = slot.as_mut() {
-                obs.seen = SystemTime::now();
+                obs.seen = now;
             }
         }
-        false
+        shown(&slot) != before
     }
 
     /// Feed raw bytes to the child as terminal input. Behind the session mutex so

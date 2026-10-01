@@ -271,6 +271,8 @@ function shell() {
         this.adoptDeskCheckouts();
         this.syncDeskFailure();
       });
+      // A flush can be the read that finds the desk unreadable; no push says so.
+      window.WBConsole?.setDeskFailureHook?.(() => this.syncDeskFailure());
       // Anchor the clock at page load: `_boardLoadedAt` at 0 would clear the
       // 120s floor on the first tick.
       this._boardLoadedAt = Date.now();
@@ -360,7 +362,9 @@ function shell() {
       if (verb === "sessions.dirty") {
         // A spawn and its first agent state arrive together: one read.
         clearTimeout(this._liveTimer);
-        this._liveTimer = setTimeout(() => this.refreshLive(), this.LIVE_SETTLE_MS);
+        this._liveTimer = setTimeout(() => {
+          if (!this.tabHidden()) this.refreshLive();
+        }, this.LIVE_SETTLE_MS);
       } else if (verb === "desk.dirty") {
         // This tab's own write: it already holds the result.
         if (payload?.tab && payload.tab === window.WBDeskSink?.tabId?.()) return;
@@ -540,10 +544,23 @@ function shell() {
     // local `/api/repos` pass, plus the peer list the group headers render.
     // INVARIANT: a `/api/fleet` failure leaves the LOCAL list exactly as it was.
     async loadFleet() {
+      // Two project reads close together (a wake fires the visible tab and the
+      // socket reopen) must not both append the peers: the newest read owns
+      // the peer rows, and they replace, never add to, what is there.
+      const seq = ++this._fleetSeq;
+      const localRows = () => this.projects.filter((p) => !p.daemon);
       try {
         const r = await fetch("/api/fleet");
+        if (seq !== this._fleetSeq) return;
+        if (r.status === 404) {
+          // A daemon older than the fleet: a fleet of one, not a failure.
+          this.fleetPeers = [];
+          this.fleetError = "";
+          return;
+        }
         if (!r.ok) throw new Error(`the daemon answered ${r.status}`);
         const fleet = await r.json();
+        if (seq !== this._fleetSeq) return;
         this.fleetPeers = Array.isArray(fleet.peers) ? fleet.peers : [];
         const rows = Array.isArray(fleet.repos) ? fleet.repos : [];
         // `/api/fleet` is the ONLY source of this daemon's own environment label
@@ -575,24 +592,24 @@ function shell() {
             env: x.environment || "",
             peerState: x.peer_state || "",
           }));
-        this.projects = this.projects.concat(this._fleetRows);
+        this.projects = localRows().concat(this._fleetRows);
         this.fleetRead = window.WBFail.readFold(this.fleetRead, { ok: true, value: true, at: Date.now() });
         this.fleetError = "";
       } catch (e) {
+        if (seq !== this._fleetSeq) return;
         // After a good read the peers and their rows stay, marked not current
         // (ADR-0070 D3); `loadRepos` rebuilt the list without them.
         const reason = String(e?.message || "").startsWith("the daemon") ? e.message : "the daemon did not answer";
         this.fleetRead = window.WBFail.readFold(this.fleetRead, { ok: false, reason, at: Date.now() });
         if (this.fleetRead.goodAt) {
-          this.projects = this.projects.concat(this._fleetRows);
+          this.projects = localRows().concat(this._fleetRows);
         } else {
           this.fleetPeers = [];
         }
-        this.fleetError = this.fleetPeers.length
-          ? window.WBFail.notCurrent(this.fleetRead, (ms) => this.fmtClock(ms))
-          : "";
+        this.fleetError = window.WBFail.notCurrent(this.fleetRead, (ms) => this.fmtClock(ms));
       }
     },
+    _fleetSeq: 0,
 
     // Wake a sleeping peer. The operator's action is the consent (as push,
     // ADR-0046), which is why this lives in the workbench: a daemon nudging on
@@ -667,13 +684,17 @@ function shell() {
     // `offline`; a transport throw leaves the states untouched.
     async refreshLive() {
       if (!window.WBMode.isDaemon()) return;
+      // Reads close together can answer out of order: the newest owns the list.
+      const seq = ++this._liveSeq;
       try {
         const r = await fetch("/api/sessions");
+        if (seq !== this._liveSeq) return;
         if (!r.ok) {
           this.sessionsFailed(`the daemon answered ${r.status}`);
           return;
         }
         const sessions = await r.json();
+        if (seq !== this._liveSeq) return;
         this.sessionsRead = window.WBFail.readFold(this.sessionsRead, { ok: true, value: true, at: Date.now() });
         // The console menu's fold reads this (#304).
         this.liveSessions = sessions;
@@ -692,9 +713,10 @@ function shell() {
               : "live";
         }
       } catch {
-        this.sessionsFailed("the daemon did not answer");
+        if (seq === this._liveSeq) this.sessionsFailed("the daemon did not answer");
       }
     },
+    _liveSeq: 0,
     // A failed `/api/sessions` keeps the last list and the live dots, marked
     // not current in the console menu (ADR-0070 D3).
     sessionsFailed(reason) {
@@ -1150,7 +1172,7 @@ function shell() {
     // prose. No credential UI, by decision. Push moves no file, so only the
     // counts reload.
     async syncPush(slug) {
-      if (this.syncBusy) return;
+      if (this.syncBusy || this.writeLocked()) return;
       this.syncBusy = "push";
       this.changesError = "";
       try {
@@ -1252,11 +1274,18 @@ function shell() {
     // stays, only saving that work is allowed, and each heartbeat asks again.
     // A console never holds the reload back: the daemon owns its PTY.
     onBuildSkew() {
-      const unsaved = !!(window.WBViewer?.anyDirty?.() || window.WBNotes?.anyDirty?.());
-      if (!unsaved) {
+      const unsaved = !!(
+        window.WBViewer?.anyDirty?.() ||
+        window.WBNotes?.anyDirty?.() ||
+        this.commitMsg.trim()
+      );
+      // A hidden tab waits: reloaded now, it would read every fact unseen.
+      // The next heartbeat after it becomes visible asks again.
+      if (!unsaved && !this.tabHidden()) {
         window.location.reload();
         return;
       }
+      if (!unsaved) return;
       if (!this.buildSkew) {
         this.buildSkew = true;
         window.WBDeskSink?.setHold?.(true);
@@ -1354,7 +1383,7 @@ function shell() {
     // Stage / unstage / commit, each in `syncFetch`'s shape, re-reading the
     // list on EVERY path. The list is never moved optimistically.
     async stagePaths(slug, paths) {
-      if (!slug || !paths || !paths.length) return;
+      if (!slug || !paths || !paths.length || this.writeLocked()) return;
       this.changesError = "";
       try {
         const reply = await window.WBDaemon.observe(
@@ -1377,7 +1406,7 @@ function shell() {
     },
 
     async unstagePaths(slug, paths) {
-      if (!slug || !paths || !paths.length) return;
+      if (!slug || !paths || !paths.length || this.writeLocked()) return;
       this.changesError = "";
       try {
         const reply = await window.WBDaemon.observe(
@@ -1401,7 +1430,7 @@ function shell() {
     // Discard ONE row's changes (#319) — the only irreversible act here, so the
     // only one confirmed (`discardConfirm`). A cancel makes NO daemon call.
     async discardRow(slug, entry) {
-      if (!slug || !entry || !entry.path) return;
+      if (!slug || !entry || !entry.path || this.writeLocked()) return;
       const c = window.WBChanges.discardConfirm(entry);
       const ok = await this.askConfirm({
         title: c.title,
@@ -1409,7 +1438,9 @@ function shell() {
         confirmLabel: c.confirmLabel,
         danger: true,
       });
-      if (!ok) return;
+      // A read may have failed while the dialog was open: a discard cannot
+      // be undone, so the lock is asked again.
+      if (!ok || this.writeLocked()) return;
       this.changesError = "";
       try {
         const reply = await window.WBDaemon.observe(
@@ -1432,7 +1463,7 @@ function shell() {
 
     async commitStaged(slug) {
       // Never commit a draft composed for another project.
-      if (this.commitMsgSlug !== slug) return;
+      if (this.commitMsgSlug !== slug || this.writeLocked()) return;
       const message = this.commitMsg.trim();
       if (!slug || !message) return;
       this.changesError = "";
@@ -1508,6 +1539,10 @@ function shell() {
         this.mountTree();
       }
       // The Changes panel and the sync row are the SELECTED checkout's (#407).
+      // Another tree's change set is not this tree's "last value" (ADR-0070
+      // D3): its reads start over.
+      delete this.changesRead[ref];
+      delete this.syncRead[ref];
       if (this.openSlug === ref) {
         this.loadChanges(ref);
         this.loadSync(ref);
@@ -5800,7 +5835,10 @@ function shell() {
         if (!ids) return;
         // Missing now AND seen on the daemon before: a record this page has
         // not uploaded yet (or whose upload failed) is not a close elsewhere.
-        const gone = this.columnIds().filter((id) => this._columnDeskSeen.has(id) && !ids.has(id));
+        const seen = WBConsole.daemonSeenIds?.() || new Set();
+        const gone = this.columnIds().filter(
+          (id) => (this._columnDeskSeen.has(id) || seen.has(id)) && !ids.has(id),
+        );
         for (const id of ids) this._columnDeskSeen.add(id);
         const r = WBColumns.external(this.columns, { type: "closed", ids: gone });
         if (!r.changed) return;

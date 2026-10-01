@@ -2454,3 +2454,19 @@ test("a desk read that fails in transport sets no desk failure", async () => {
     globalThis.fetch = realFetch;
   }
 });
+
+test("daemonSeenIds holds every window id a desk read returned", async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ windows: [{ id: "w-a", repo: "o/r", agent: "claude", kind: "console", rect: { left: 0, top: 0, width: 1, height: 1 }, ts: 1 }], fences: [] }),
+  });
+  try {
+    const c = load({ WBMode: { isDaemon: () => true } });
+    await c.whenDeskLoaded();
+    assert.deepEqual([...c.daemonSeenIds()], ["w-a"]);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});

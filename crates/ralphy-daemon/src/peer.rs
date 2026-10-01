@@ -286,12 +286,14 @@ pub fn read_store(dir: &Path) -> (Vec<PeerDescriptor>, Vec<PeerReject>) {
     };
     let mut records: Vec<(String, String)> = Vec::new();
     let mut rejected: Vec<PeerReject> = Vec::new();
-    for entry in entries {
+    for (n, entry) in entries.enumerate() {
         let entry = match entry {
             Ok(entry) => entry,
             Err(e) => {
+                // The fleet row's id is the path: an entry number keeps two
+                // failures in one directory from collapsing into one row.
                 rejected.push(PeerReject::Unreadable {
-                    path: dir.display().to_string(),
+                    path: format!("{} (entry {})", dir.display(), n + 1),
                     why: e.to_string(),
                 });
                 continue;

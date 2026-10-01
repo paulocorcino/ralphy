@@ -110,8 +110,12 @@ pub(crate) async fn watch_stores(
     let stamp = |r: std::path::PathBuf, p: std::path::PathBuf| {
         tokio::task::spawn_blocking(move || (store_stamp(&r), peers_stamp(&p)))
     };
-    let Ok(mut last) = stamp(registry_path.clone(), peers_dir.clone()).await else {
-        return;
+    let mut last = match stamp(registry_path.clone(), peers_dir.clone()).await {
+        Ok(stamps) => stamps,
+        Err(e) => {
+            tracing::warn!(error = %e, "the store watch stopped; repos and peers are no longer pushed");
+            return;
+        }
     };
     let mut tick = tokio::time::interval(STORE_STAMP_EVERY);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -120,8 +124,12 @@ pub(crate) async fn watch_stores(
         tokio::select! {
             _ = shutdown.changed() => break,
             _ = tick.tick() => {
-                let Ok(now) = stamp(registry_path.clone(), peers_dir.clone()).await else {
-                    break;
+                let now = match stamp(registry_path.clone(), peers_dir.clone()).await {
+                    Ok(stamps) => stamps,
+                    Err(e) => {
+                        tracing::warn!(error = %e, "the store watch stopped; repos and peers are no longer pushed");
+                        break;
+                    }
                 };
                 if now.0 != last.0 {
                     push(&pushes, Push::Repos);

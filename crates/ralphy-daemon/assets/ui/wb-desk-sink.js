@@ -47,7 +47,7 @@ window.WBDeskSink = (function () {
     let inFlight = Promise.resolve();
     return {
       put(body) {
-        if (hold) return inFlight;
+        if (hold) return Promise.resolve(null);
         inFlight = inFlight
           .catch(() => {})
           .then(() =>

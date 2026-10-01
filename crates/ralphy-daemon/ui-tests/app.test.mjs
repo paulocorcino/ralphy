@@ -1742,3 +1742,62 @@ test("a page with no build id (the demo) never reloads for a build", () => {
   assert.equal(t.reloads(), 0);
   assert.equal(t.state.buildSkew, false);
 });
+
+// --- review fixes (#511) ----------------------------------------------------
+
+// A column console closed by another tab is dropped on the first desk.dirty,
+// even when this page never saw that id in an earlier column check: the
+// console module knows every id the daemon has held.
+test("checkColumnDesk drops a column console the daemon held and no longer lists", async () => {
+  const { state, window } = loadShell();
+  const dropped = [];
+  const realConsole = globalThis.WBConsole;
+  const realColumns = globalThis.WBColumns;
+  globalThis.WBColumns = window.WBColumns;
+  globalThis.WBConsole = {
+    readDeskIds: async () => new Set(["y", "z"]),
+    daemonSeenIds: () => new Set(["x", "y", "z"]),
+    applyColumns() {},
+    dropClosedElsewhere: (id) => dropped.push(id),
+  };
+  state.columns = [["x"], ["y"], ["z"]];
+  state.columnCap = () => 3;
+  state.setColumns = (c) => (state.columns = c);
+  state.paintColumns = () => {};
+  try {
+    await state.checkColumnDesk();
+  } finally {
+    globalThis.WBConsole = realConsole;
+    globalThis.WBColumns = realColumns;
+  }
+  assert.deepEqual(dropped, ["x"]);
+});
+
+test("two fleet reads close together list each peer row once", async () => {
+  const { state } = loadShell();
+  state.projects = [{ slug: "a/b", tree: [] }];
+  const fleet = {
+    peers: [{ daemon_id: "p1", name: "wsl", environment: "WSL: U", state: "reachable" }],
+    repos: [{ key: "p1/o/r", slug: "o/r", daemon_id: "p1", reachable: true }],
+  };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => fleet });
+  try {
+    await Promise.all([state.loadFleet(), state.loadFleet()]);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.equal(state.projects.filter((p) => p.daemon === "p1").length, 1);
+  assert.equal(state.projects.filter((p) => !p.daemon).length, 1);
+});
+
+test("a new checkout's change set does not inherit the old tree's last read", () => {
+  const { state } = loadShell();
+  state.loadChanges = () => {};
+  state.loadSync = () => {};
+  state.changesRead["o/r"] = { value: true, goodAt: 5, error: "", current: true };
+  state.syncRead["o/r"] = { value: true, goodAt: 5, error: "", current: true };
+  state.setCheckout("o/r", "wt-a");
+  assert.equal(state.changesRead["o/r"], undefined);
+  assert.equal(state.syncRead["o/r"], undefined);
+});

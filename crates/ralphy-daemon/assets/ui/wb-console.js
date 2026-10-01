@@ -356,6 +356,7 @@ window.WBConsole = (function () {
 
   function ingestDesk(payload) {
     const fetched = Array.isArray(payload?.windows) ? payload.windows : [];
+    for (const r of fetched) if (r?.id) daemonSeen.add(r.id);
     ingestFences(Array.isArray(payload?.fences) ? payload.fences : []);
     ingestNotes(Array.isArray(payload?.notes) ? payload.notes : []);
     const fetchedCheckouts = payload?.checkouts;
@@ -447,6 +448,12 @@ window.WBConsole = (function () {
   // by the daemon's own `409 {"state":"unreadable"}`: a transport failure or
   // a pre-login 401 is not a broken desk, and must not offer a new one.
   let deskFailure = "";
+  // The shell's hook for a desk failure found by a flush: no push says so.
+  let onDeskFailure = null;
+  // Every window id the daemon is known to have held: in a desk it served, or
+  // in a write it accepted. A column console missing from a later read, and
+  // in this set, was closed elsewhere (`app.js` `checkColumnDesk`).
+  const daemonSeen = new Set();
   // The `409` reply of an unreadable desk, as the reason it carries, or null.
   async function unreadableDesk(r) {
     if (r.status !== 409) return null;
@@ -484,6 +491,12 @@ window.WBConsole = (function () {
   function currentDeskFailure() {
     return deskFailure;
   }
+  function setDeskFailureHook(fn) {
+    onDeskFailure = fn;
+  }
+  function daemonSeenIds() {
+    return new Set(daemonSeen);
+  }
   // The one action on an unreadable desk: the daemon renames the old file
   // aside and starts an empty desk; this page then reads and restores it.
   function startNewDesk() {
@@ -491,7 +504,12 @@ window.WBConsole = (function () {
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`the daemon answered ${r.status}`))))
       .then(() => reloadDesk())
       .then(() => {
-        if (deskLoaded) restoreDesk();
+        if (!deskLoaded) return;
+        // Windows already up were drawn over the unreadable desk: the empty
+        // desk learns them on this flush. With none up, the boot restore
+        // never ran, so it runs now.
+        if (wins.size) scheduleDeskFlush();
+        else restoreDesk();
       });
   }
   // `restoreDesk` awaits this before reconciling, so the layout is never
@@ -660,6 +678,7 @@ window.WBConsole = (function () {
         if (!why) return null;
         deskFailure = why;
         deskLoaded = false;
+        onDeskFailure?.();
         return "unreadable";
       })
       .catch(() => null)
@@ -667,8 +686,12 @@ window.WBConsole = (function () {
         // The daemon refuses a write over a desk it cannot read; so does this page.
         if (payload === "unreadable") return null;
         if (payload) ingestDesk(payload);
+        const sent = desk.map((r) => r.id);
         const body = JSON.stringify(deskBody());
-        return deskSink.put(body);
+        return deskSink.put(body).then((r) => {
+          if (r?.ok) for (const id of sent) daemonSeen.add(id);
+          return r;
+        });
       });
   }
   // A mutation in the last 250 ms before the tab closes would otherwise be
@@ -6851,6 +6874,8 @@ window.WBConsole = (function () {
     readDeskIds,
     reloadDesk,
     deskFailure: currentDeskFailure,
+    setDeskFailureHook,
+    daemonSeenIds,
     startNewDesk,
     dropClosedElsewhere,
     columnRoster,
