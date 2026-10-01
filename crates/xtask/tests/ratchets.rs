@@ -15,8 +15,10 @@ use std::path::{Path, PathBuf};
 
 use regex::Regex;
 
-/// Distinct `github::<item>` names used by `crates/ralphy-cli/src`.
-const FORGE_ITEMS: usize = 24;
+/// Distinct `github::<item>` names used by `crates/ralphy-cli/src`. 26 since
+/// ADR-0017 A2: triage `--yes` reads each comment's trust (`IssueThread`,
+/// `render_triage_threads`).
+const FORGE_ITEMS: usize = 26;
 /// Lines that tell the agent to run `gh issue view`, under `assets/prompts/`.
 const PROMPT_GH_ISSUE_VIEW: usize = 20;
 
