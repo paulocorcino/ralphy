@@ -62,7 +62,8 @@ static BASH_DENY_RULES: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| 
             "worktrees are the orchestrator's business, not the agent's",
         ),
         (
-            r"(?i)\bgh\s+pr\s+(create|edit|ready|reopen|review|comment|merge|close)\b",
+            // Global flags (`-R o/r`, `--repo=o/r`) may sit between `gh` and `pr`.
+            r"(?i)\bgh(?:\s+-\S+(?:\s+[^-\s]\S*)?)*\s+pr\s+(create|edit|ready|reopen|review|comment|merge|close)\b",
             "writing to a pull request is the operator's job",
         ),
         (
