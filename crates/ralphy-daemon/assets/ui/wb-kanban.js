@@ -225,6 +225,7 @@ window.WBKanban = {
       case "login":
         return true;
       case "visible":
+      case "reopen":
       case "runs":
         return sinceMs >= this.REFRESH_MIN_GAP_MS;
       case "backstop":

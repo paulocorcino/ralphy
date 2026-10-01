@@ -501,7 +501,14 @@ window.WBConsole = (function () {
   // aside and starts an empty desk; this page then reads and restores it.
   function startNewDesk() {
     return fetch("/api/desk/new", { method: "POST" })
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`the daemon answered ${r.status}`))))
+      .then(async (r) => {
+        if (r.ok) return;
+        // 409 "readable": another tab started the new desk first. The desk is
+        // readable, so this tab reads it like any other.
+        const body = r.status === 409 ? await r.json().catch(() => null) : null;
+        if (body?.state === "readable") return;
+        throw new Error(`the daemon answered ${r.status}`);
+      })
       .then(() => reloadDesk())
       .then(() => {
         if (!deskLoaded) return;

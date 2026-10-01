@@ -1441,6 +1441,8 @@ test("a hidden tab reads nothing on a push, and reads when it becomes visible", 
   const { state, document } = loadShell({ document: { visibilityState: "hidden", hasFocus: () => true } });
   // `WBColumns` is a page global the harness does not define.
   state.checkColumnDesk = async () => {};
+  // No settle delay, so a `sessions.dirty` read would land inside the spy.
+  state.LIVE_SETTLE_MS = 0;
   const hidden = await withFetchSpy(() => {
     state.onPresencePush("sessions.dirty", {});
     state.onPresencePush("repos.dirty", {});
@@ -1499,7 +1501,8 @@ test("login reads the board, the runs and the tree again", () => {
   }
   state.maybeRefreshBoard = (why) => calls.push(`board:${why}`);
   state._treeSub = { replay: () => calls.push("tree") };
-  state.runsOpen = true;
+  // Closed: the runs lock the writes whether the panel shows them or not.
+  state.runsOpen = false;
   state.rehydrateAfterAuth();
   for (const want of ["loadRepos", "board:login", "hydrateRuns", "tree"]) {
     assert.ok(calls.includes(want), `${want} in ${calls.join(", ")}`);
@@ -1800,4 +1803,217 @@ test("a new checkout's change set does not inherit the old tree's last read", ()
   state.setCheckout("o/r", "wt-a");
   assert.equal(state.changesRead["o/r"], undefined);
   assert.equal(state.syncRead["o/r"], undefined);
+});
+
+// --- second review of #511 ---------------------------------------------------
+
+const VISIBLE = { document: { visibilityState: "visible", hasFocus: () => true } };
+
+test("sessions.dirty on a visible tab reads the sessions", async () => {
+  const { state } = loadShell(VISIBLE);
+  state.LIVE_SETTLE_MS = 0;
+  const urls = await withFetchSpy(() => state.onPresencePush("sessions.dirty", {}));
+  assert.ok(urls.includes("/api/sessions"), urls.join(", "));
+});
+
+test("a tab that becomes visible reads the runs with the Runs panel closed, so an ended run unlocks the writes", async () => {
+  const { state, window } = loadShell(VISIBLE);
+  state.checkColumnDesk = async () => {};
+  state.loadChanges = async () => {};
+  state.loadSync = async () => {};
+  window.WBDaemon.observe = async (verb) => (verb === "runs.list" ? { status: "ok", runs: [] } : null);
+  state.openSlug = "o/r";
+  state.runsOpen = false;
+  state.runsByProject["o/r"] = [{ runid: "r1" }];
+  assert.equal(state.writeLocked(), true, "the run seen before the tab was hidden locks");
+  await withFetchSpy(() => state.onTabVisible());
+  assert.equal(state.writeLocked(), false, "the run ended while hidden: the writes unlock");
+});
+
+test("a reopened socket reads the board and the runs", () => {
+  const { state } = loadShell(VISIBLE);
+  const calls = [];
+  for (const name of ["loadRepos", "rereadDesk", "hydrateRuns"]) state[name] = () => calls.push(name);
+  state.maybeRefreshBoard = (why) => calls.push(`board:${why}`);
+  state.openSlug = "o/r";
+  state.onPresenceOpen(true);
+  assert.ok(calls.includes("board:reopen"), calls.join(", "));
+  assert.ok(calls.includes("hydrateRuns"), calls.join(", "));
+});
+
+test("visible and login read the open settings and the open Spend view again", () => {
+  const { state } = loadShell(VISIBLE);
+  const calls = [];
+  for (const name of ["loadRepos", "rereadDesk", "hydrateRuns", "loadRelease", "resumeSockets", "loadIdentity", "loadAgents", "restoreView"]) {
+    state[name] = () => {};
+  }
+  state.maybeRefreshBoard = () => {};
+  state.readSettings = () => calls.push("settings");
+  state.loadSpend = () => calls.push("spend");
+  state.settingsOpen = false;
+  state.tabs = state.tabs.filter((t) => t.id !== "spend");
+  state.onTabVisible();
+  assert.deepEqual(calls, [], "closed panels read nothing");
+  state.settingsOpen = true;
+  state.tabs.push({ id: "spend", kind: "spend" });
+  state.onTabVisible();
+  assert.deepEqual(calls, ["settings", "spend"]);
+  calls.length = 0;
+  state.rehydrateAfterAuth();
+  assert.deepEqual(calls, ["settings", "spend"]);
+});
+
+test("the peer tick and a project-list push read no change set and no branch", async () => {
+  const { state } = loadShell(VISIBLE);
+  state.checkColumnDesk = async () => {};
+  const git = [];
+  state.loadChanges = async () => git.push("changes");
+  state.loadSync = async () => git.push("sync");
+  state.openSlug = "o/r";
+  state.fleetPeers = [{ daemon_id: "d" }];
+  await withFetchSpy(async () => {
+    state.peerTick();
+    state.onPresencePush("repos.dirty", {});
+    state.onPresencePush("peers.dirty", {});
+  });
+  assert.deepEqual(git, []);
+  // NEGATIVE CONTROL: the tab becoming visible does read them.
+  await withFetchSpy(() => state.onTabVisible());
+  assert.ok(git.includes("changes") && git.includes("sync"), git.join(", "));
+});
+
+test("a project read keeps the peer rows and the live dots until the fleet and the sessions answer", async () => {
+  const { state } = loadShell(VISIBLE);
+  const peer = { key: "d/x", slug: "x", daemon: "d", state: "idle" };
+  state.projects = [{ slug: "a", state: "working", env: "wsl" }, peer];
+  state._fleetRows = [peer];
+  const realFetch = globalThis.fetch;
+  // `/api/repos` answers; the fleet and the sessions never do.
+  globalThis.fetch = (url) =>
+    String(url) === "/api/repos"
+      ? Promise.resolve({ ok: true, status: 200, json: async () => [{ slug: "a", reachable: true }] })
+      : new Promise(() => {});
+  try {
+    await state.loadRepos({ git: false });
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.deepEqual(
+    state.projects.map((p) => p.slug),
+    ["a", "x"],
+    "the peer row stays",
+  );
+  assert.equal(state.projects[0].state, "working", "the live dot stays");
+  assert.equal(state.projects[0].env, "wsl");
+});
+
+test("a commit draft does not hold the build reload", () => {
+  const t = skewShell();
+  t.state.commitMsg = "wip: half a message";
+  t.beat({ uptime_secs: 1, build: "B" });
+  assert.equal(t.reloads(), 1);
+});
+
+test("the desk hold ends right before the build reload, so the saved work's desk changes go out", () => {
+  const { state, window } = loadShell(VISIBLE);
+  const events = [];
+  window.location.reload = () => events.push("reload");
+  window.WBDeskSink.setHold = (on) => events.push(`hold:${on}`);
+  let dirty = true;
+  window.WBViewer.anyDirty = () => dirty;
+  window.WBNotes.anyDirty = () => false;
+  let beat = null;
+  window.WBDaemon.subscribePresence = (onPresence) => {
+    beat = onPresence;
+    return { resume() {}, close() {} };
+  };
+  state.pageBuild = "A";
+  state.subscribePresence();
+  beat({ uptime_secs: 1, build: "B" });
+  assert.deepEqual(events, ["hold:true"], "unsaved work: held, no reload");
+  dirty = false;
+  beat({ uptime_secs: 3, build: "B" });
+  assert.deepEqual(events, ["hold:true", "hold:false", "reload"]);
+});
+
+test("a failed first change-set or branch read says why", async () => {
+  const changes = observedShell([{ status: "error", message: "git exited 128" }]);
+  await changes.loadChanges("o/r");
+  assert.match(changes.changesReadError["o/r"], /Could not read the changes: git exited 128/);
+  const sync = observedShell([{ status: "error", message: "not a git repository" }]);
+  await sync.loadSync("o/r");
+  assert.match(sync.syncByProject["o/r"].note, /not a git repository/);
+});
+
+// ADR-0070 D3: each write action asks the lock itself, not only its button.
+test("every change-set write is refused while the change set is not current", async () => {
+  const { state, window } = loadShell();
+  const replies = [CHANGES_OK, { status: "error", message: "git exited 128" }];
+  const verbs = [];
+  window.WBDaemon.observe = async (verb) => {
+    verbs.push(verb);
+    return replies.shift() ?? { status: "ok" };
+  };
+  state.openSlug = "o/r";
+  state._flashAction = () => {};
+  state.runsByProject["o/r"] = [];
+  await state.loadChanges("o/r");
+  await state.loadChanges("o/r");
+  assert.equal(state.writeLocked(), true);
+  verbs.length = 0;
+  state.askConfirm = async () => true;
+  state.commitMsgSlug = "o/r";
+  state.commitMsg = "msg";
+  await state.stagePaths("o/r", ["a.txt"]);
+  await state.unstagePaths("o/r", ["a.txt"]);
+  await state.discardRow("o/r", { path: "a.txt", index: " ", worktree: "M" });
+  await state.commitStaged("o/r");
+  await state.syncFetch("o/r");
+  await state.syncPull("o/r");
+  await state.syncPush("o/r");
+  assert.deepEqual(verbs, [], "no write reached the daemon");
+});
+
+// NEGATIVE CONTROL for the refusal above: with a current change set, each
+// action does reach the daemon, so the refusal is the lock and not a missing
+// argument.
+test("every change-set write reaches the daemon while the change set is current", async () => {
+  const acts = {
+    stage: (s) => s.stagePaths("o/r", ["a.txt"]),
+    unstage: (s) => s.unstagePaths("o/r", ["a.txt"]),
+    discard: (s) => s.discardRow("o/r", { path: "a.txt", index: " ", worktree: "M" }),
+    commit: (s) => s.commitStaged("o/r"),
+    fetch: (s) => s.syncFetch("o/r"),
+    pull: (s) => s.syncPull("o/r"),
+    push: (s) => s.syncPush("o/r"),
+  };
+  for (const [name, act] of Object.entries(acts)) {
+    const { state, window } = loadShell();
+    const replies = [CHANGES_OK];
+    const verbs = [];
+    window.WBDaemon.observe = async (verb) => {
+      verbs.push(verb);
+      return replies.shift() ?? { status: "ok" };
+    };
+    state.openSlug = "o/r";
+    state._flashAction = () => {};
+    state.runsByProject["o/r"] = [];
+    await state.loadChanges("o/r");
+    assert.equal(state.writeLocked(), false, name);
+    verbs.length = 0;
+    state.askConfirm = async () => true;
+    state.askPush = async () => true;
+    state.commitMsgSlug = "o/r";
+    state.commitMsg = "msg";
+    await act(state);
+    assert.ok(verbs.length > 0, `${name} reached the daemon`);
+  }
+});
+
+test("a reopened socket refreshes an open board, as the tab becoming visible does", () => {
+  const { window } = loadShell();
+  const ask = (trigger) =>
+    window.WBKanban.shouldRefresh({ trigger, sinceMs: 60 * 60 * 1000, boardOpen: true, docVisible: true });
+  assert.equal(ask("reopen"), true);
+  assert.equal(ask("reopen"), ask("visible"));
 });

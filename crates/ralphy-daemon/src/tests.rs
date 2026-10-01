@@ -8362,7 +8362,7 @@ fn every_icon_is_drawn_by_the_x_icon_directive() {
 #[test]
 fn a_remoteless_project_is_labelled_by_its_directory() {
     let js = include_str!("../assets/ui/app.js");
-    let load = js_method_body(js, "async loadRepos() {");
+    let load = js_method_body(js, "async loadRepos({ git = true } = {}) {");
     assert!(
         load.contains("path: x.path"),
         "`loadRepos` must keep `/api/repos`'s path — the label reads it; \

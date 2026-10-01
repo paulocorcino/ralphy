@@ -42,7 +42,7 @@ const NAME_SRC = readFileSync(join(UI, "wb-console-name.js"), "utf8");
 // test can supply a sibling module (`WBFleet`) that index.html loads first. The
 // default is no siblings: that is the honest shape for the boot order where a
 // sibling has not loaded, and several tests pin the fallback it produces.
-function load(extras = {}) {
+function load(extras = {}, docExtras = {}) {
   // The three globals the module touches at LOAD time: `window.addEventListener`
   // (the pagehide flush), `document.readyState`/`addEventListener` (the boot
   // hooks — "loading" parks them on a no-op listener instead of running them
@@ -51,7 +51,7 @@ function load(extras = {}) {
   // lives inside `attachTerminal`, which this harness never reaches, so a
   // module-scope observer re-added alongside a clamp fails LOUDLY here.
   const window = { addEventListener() {}, ...extras };
-  const document = { readyState: "loading", addEventListener() {} };
+  const document = { readyState: "loading", addEventListener() {}, ...docExtras };
   const location = { protocol: "http:", host: "127.0.0.1:7431" };
   new Function("window", FLEET_SRC)(window);
   new Function("window", GEOM_SRC)(window);
@@ -2437,6 +2437,82 @@ test("an unreadable desk is a failure, and no flush PUTs over it", async () => {
     [],
     "no PUT over a desk the daemon cannot read",
   );
+});
+
+// A desk that becomes unreadable after a good load: the flush reads it
+// first, finds it unreadable, and uploads nothing.
+test("a flush that finds the loaded desk unreadable uploads nothing and shows the failure", async () => {
+  const calls = [];
+  let unreadable = false;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    calls.push({ url: String(url), method: init.method || "GET" });
+    if (unreadable) {
+      return { ok: false, status: 409, json: async () => ({ state: "unreadable", error: "parsing desk layout" }) };
+    }
+    return { ok: true, status: 200, json: async () => ({ windows: [], fences: [], notes: [] }) };
+  };
+  try {
+    const c = load({ WBMode: { isDaemon: () => true } });
+    await c.whenDeskLoaded();
+    assert.equal(c.deskFailure(), "", "the first read was good");
+    unreadable = true;
+    calls.length = 0;
+    c.setCheckout("o/r", "wt-a");
+    await new Promise((r) => setTimeout(r, 400));
+    assert.match(c.deskFailure(), /parsing desk layout/);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.ok(calls.some((c) => c.method === "GET"), "the flush read the desk first");
+  assert.deepEqual(
+    calls.filter((c) => c.method === "PUT"),
+    [],
+    "no PUT over a desk that became unreadable",
+  );
+});
+
+// Another tab may start the new desk first: the daemon then answers 409
+// "readable", and this tab reads the desk like any other.
+test("start a new desk treats a desk another tab already started as done", async () => {
+  let started = false;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    if (init.method === "POST") {
+      started = true;
+      return { ok: false, status: 409, json: async () => ({ state: "readable" }) };
+    }
+    if (!started) {
+      return { ok: false, status: 409, json: async () => ({ state: "unreadable", error: "parsing desk layout" }) };
+    }
+    return { ok: true, status: 200, json: async () => ({ windows: [], fences: [], notes: [] }) };
+  };
+  try {
+    // The empty new desk is restored, which looks for the stage.
+    const c = load({ WBMode: { isDaemon: () => true } }, { getElementById: () => null });
+    await c.whenDeskLoaded();
+    assert.match(c.deskFailure(), /parsing desk layout/);
+    await c.startNewDesk();
+    assert.equal(c.deskFailure(), "", "the desk is readable now");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+// NEGATIVE CONTROL: any other refusal is a failure that names the status.
+test("start a new desk fails with the status on any other refusal", async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) =>
+    init.method === "POST"
+      ? { ok: false, status: 500, json: async () => ({}) }
+      : { ok: false, status: 409, json: async () => ({ state: "unreadable", error: "x" }) };
+  try {
+    const c = load({ WBMode: { isDaemon: () => true } });
+    await c.whenDeskLoaded();
+    await assert.rejects(c.startNewDesk(), /the daemon answered 500/);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });
 
 // NEGATIVE CONTROL: a transport failure is not a broken desk, so it offers no

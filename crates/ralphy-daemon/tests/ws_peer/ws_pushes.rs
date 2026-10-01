@@ -1,6 +1,7 @@
 //! The pushes of the shown facts the daemon owns (ADR-0070 D2 event 1), read
-//! off a real `/ws` socket: `desk.dirty` after a PUT that changes the desk,
-//! and none after a PUT that changes nothing.
+//! off a real `/ws` socket: `desk.dirty` after a PUT that changes the desk
+//! and after a new desk, none after a PUT that changes nothing, and
+//! `peers.dirty` / `repos.dirty` when another process writes those stores.
 
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -60,13 +61,13 @@ async fn next_push(ws: &mut Ws, verb: &str, within: Duration) -> Option<Command>
     .flatten()
 }
 
-async fn put_desk(port: u16, tab: &str, body: &str) -> String {
+async fn request(port: u16, method: &str, path: &str, body: &str) -> String {
     let mut sock = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
         .unwrap();
     sock.write_all(
         format!(
-            "PUT /api/desk?tab={tab} HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
             body.len()
         )
         .as_bytes(),
@@ -76,6 +77,31 @@ async fn put_desk(port: u16, tab: &str, body: &str) -> String {
     let mut raw = String::new();
     sock.read_to_string(&mut raw).await.unwrap();
     raw
+}
+
+async fn put_desk(port: u16, tab: &str, body: &str) -> String {
+    request(port, "PUT", &format!("/api/desk?tab={tab}"), body).await
+}
+
+/// Change a store with `change(n)` until `verb` arrives. The watch takes its
+/// first stamp at a time the test does not know, so a change made before it
+/// would go unseen: each round makes a new change and waits one stamp
+/// period. `None` when no push arrives within 20 s.
+async fn change_until_push(
+    ws: &mut Ws,
+    verb: &str,
+    mut change: impl FnMut(u32),
+) -> Option<Command> {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let mut n = 0;
+    while Instant::now() < deadline {
+        change(n);
+        n += 1;
+        if let Some(c) = next_push(ws, verb, Duration::from_secs(3)).await {
+            return Some(c);
+        }
+    }
+    None
 }
 
 const ONE_WINDOW: &str = r#"{"windows":[{"id":"w-a","repo":"owner/repo","agent":"claude","kind":"console","rect":{"left":10.0,"top":20.0,"width":640.0,"height":480.0},"max":false,"sessionId":7,"ts":1}],"fences":[]}"#;
@@ -110,15 +136,45 @@ async fn a_desk_write_that_changes_the_desk_pushes_desk_dirty_with_its_tab() {
 async fn a_new_peer_file_pushes_peers_dirty() {
     let dir = tempfile::tempdir().unwrap();
     let (_port, mut ws) = serve(dir.path()).await;
-    // Let the watch take its first stamp before the store changes.
-    tokio::time::sleep(Duration::from_millis(500)).await;
-    std::fs::create_dir_all(dir.path().join("peers")).unwrap();
-    std::fs::write(dir.path().join("peers").join("x.toml"), "x").unwrap();
+    let peers = dir.path().join("peers");
+    std::fs::create_dir_all(&peers).unwrap();
+    let push = change_until_push(&mut ws, "peers.dirty", |n| {
+        std::fs::write(peers.join(format!("x{n}.toml")), "x").unwrap();
+    })
+    .await;
+    assert!(push.is_some(), "peers.dirty after the peer store changed");
+}
+
+/// `ralphy add` writes the project registry from another process; the daemon
+/// sees the file change and pushes `repos.dirty`.
+#[tokio::test]
+async fn a_changed_project_registry_pushes_repos_dirty() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_port, mut ws) = serve(dir.path()).await;
+    let registry = dir.path().join("repos.toml");
+    let push = change_until_push(&mut ws, "repos.dirty", |n| {
+        // A new length each round: the stamp sees it even on a file system
+        // that stores times to the second.
+        std::fs::write(&registry, "#".repeat(n as usize + 1)).unwrap();
+    })
+    .await;
+    assert!(push.is_some(), "repos.dirty after the registry changed");
+}
+
+/// Starting a new desk changes the desk every tab shows, so it pushes
+/// `desk.dirty` like a write does.
+#[tokio::test]
+async fn starting_a_new_desk_pushes_desk_dirty() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("desk.toml"), "not a toml { ][").unwrap();
+    let (port, mut ws) = serve(dir.path()).await;
+    let reply = request(port, "POST", "/api/desk/new", "").await;
+    assert!(reply.starts_with("HTTP/1.1 200"), "{reply}");
     assert!(
-        next_push(&mut ws, "peers.dirty", Duration::from_secs(5))
+        next_push(&mut ws, "desk.dirty", Duration::from_secs(5))
             .await
             .is_some(),
-        "peers.dirty after the peer store changed"
+        "desk.dirty after a new desk"
     );
 }
 

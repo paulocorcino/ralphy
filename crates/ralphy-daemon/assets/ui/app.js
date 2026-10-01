@@ -282,9 +282,7 @@ function shell() {
       // A peer pushes neither its reachability nor its sessions, so they are
       // read every 30 s while a peer is listed and the tab is visible
       // (ADR-0070 D2 event 6). `loadRepos` reads the fleet and the sessions.
-      this._peerTick = setInterval(() => {
-        if (!this.tabHidden() && this.fleetPeers.length) this.loadRepos();
-      }, this.PEER_READ_MS);
+      this._peerTick = setInterval(() => this.peerTick(), this.PEER_READ_MS);
       // The phase clock's tick: one assignment a second while the panel is
       // open; the run document is NOT re-read.
       this._clockTick = setInterval(() => {
@@ -370,8 +368,14 @@ function shell() {
         if (payload?.tab && payload.tab === window.WBDeskSink?.tabId?.()) return;
         this.rereadDesk();
       } else if (verb === "repos.dirty" || verb === "peers.dirty") {
-        this.loadRepos();
+        // The change set and the branch have their own pushes.
+        this.loadRepos({ git: false });
       }
+    },
+    // A peer reads no git fact: the change set and the branch have their own
+    // triggers.
+    peerTick() {
+      if (!this.tabHidden() && this.fleetPeers.length) this.loadRepos({ git: false });
     },
     LIVE_SETTLE_MS: 250,
     PEER_READ_MS: 30000,
@@ -385,6 +389,8 @@ function shell() {
       if (!reopened || this.tabHidden()) return;
       this.loadRepos();
       this.rereadDesk();
+      this.maybeRefreshBoard("reopen");
+      if (this.openSlug) this.hydrateRuns();
     },
 
     // Read the desk again, then see whether a column console was closed by
@@ -404,7 +410,10 @@ function shell() {
     startNewDesk() {
       window.WBConsole?.startNewDesk?.()
         .then(() => this.syncDeskFailure())
-        .catch(() => this._flashAction("Could not start a new desk: the daemon did not answer."));
+        .catch((e) => {
+          const why = String(e?.message || "").startsWith("the daemon") ? e.message : "the daemon did not answer";
+          this._flashAction(`Could not start a new desk: ${why}.`);
+        });
     },
 
     // Seconds → a compact `1d 2h`, `2h 14m`, `5m`, `12s` uptime string.
@@ -471,13 +480,20 @@ function shell() {
     // Hydrate the accordion from the daemon's repo registry. A thrown fetch
     // (file://) keeps the seed. `remote` is inferred from the slug shape
     // (`git::project_slug`'s `path-<hash>` fallback is a remoteless repo).
-    async loadRepos() {
+    // `git: false` skips the change set and the branch: a peer tick or a
+    // project-list push says nothing about them (fact index: their own push,
+    // and a periodic read only while the Changes panel is open).
+    async loadRepos({ git = true } = {}) {
       this.reposLoading = true;
       try {
         const r = await fetch("/api/repos");
         if (r.ok) {
           const repos = await r.json();
-          this.projects = repos.map((x) => ({
+          // The rows this read replaces: their live dot and their environment
+          // stay until `refreshLive` and `loadFleet` answer, and the peer rows
+          // stay until the fleet read replaces them.
+          const before = new Map(this.projects.filter((p) => !p.daemon).map((p) => [p.slug, p]));
+          const local = repos.map((x) => ({
             slug: x.slug,
             // The on-disk path: `repoLabel` needs it for a remoteless repo,
             // whose slug is a hash. The SLUG stays the identity (ADR-0008 D7).
@@ -493,11 +509,14 @@ function shell() {
             // `remote` is the github|local classification the dot binds to; the
             // raw origin url rides in `remoteUrl` for `githubUrl()`.
             dirty: !!x.dirty,
-            state: x.reachable ? "idle" : "offline",
+            state: !x.reachable ? "offline" : before.get(x.slug)?.state === "offline" ? "idle" : before.get(x.slug)?.state || "idle",
+            env: before.get(x.slug)?.env || "",
+            daemonName: before.get(x.slug)?.daemonName || "",
             remote: x.remote && x.remote.includes("github.com") ? "github" : "local",
             remoteUrl: x.remote || "",
             tree: [],
           }));
+          this.projects = local.concat(this._fleetRows);
           this.reposError = "";
           this.reposRead = window.WBFail.readFold(this.reposRead, { ok: true, value: true, at: Date.now() });
           // Deliberately NOT awaited: a down peer costs `/api/fleet` its 2 s
@@ -517,8 +536,8 @@ function shell() {
         // answered: the live dots and the console menu come from them.
         this.refreshLive();
         // The sidebar refresh button is the Changes count's manual reload (#307).
-        if (this.openSlug) this.loadChanges(this.openSlug);
-        if (this.openSlug) this.loadSync(this.openSlug);
+        if (git && this.openSlug) this.loadChanges(this.openSlug);
+        if (git && this.openSlug) this.loadSync(this.openSlug);
       }
     },
 
@@ -1057,7 +1076,7 @@ function shell() {
         return;
       }
       this.changesCount[slug] = null;
-      this.changesReadError[slug] = "Could not read the changes.";
+      this.changesReadError[slug] = `Could not read the changes: ${reason}`;
       this.changesStaged[slug] = [];
       this.changesUnstaged[slug] = [];
     },
@@ -1107,7 +1126,7 @@ function shell() {
         this.syncByProject[slug] = { ...prev, note: window.WBFail.notCurrent(read, (ms) => this.fmtClock(ms)) };
         return;
       }
-      this.syncByProject[slug] = window.WBChanges.foldSync(null);
+      this.syncByProject[slug] = { ...window.WBChanges.foldSync(null), note: `Could not read the branch: ${reason}` };
     },
 
     // Fetch from the upstream — the operator's act, never a timer's. A refusal
@@ -1274,14 +1293,16 @@ function shell() {
     // stays, only saving that work is allowed, and each heartbeat asks again.
     // A console never holds the reload back: the daemon owns its PTY.
     onBuildSkew() {
-      const unsaved = !!(
-        window.WBViewer?.anyDirty?.() ||
-        window.WBNotes?.anyDirty?.() ||
-        this.commitMsg.trim()
-      );
+      // A commit draft is not counted: the skew lock refuses the commit, so
+      // it is work the tab could never save.
+      const unsaved = !!(window.WBViewer?.anyDirty?.() || window.WBNotes?.anyDirty?.());
       // A hidden tab waits: reloaded now, it would read every fact unseen.
       // The next heartbeat after it becomes visible asks again.
       if (!unsaved && !this.tabHidden()) {
+        // The desk changes held back while the work was saved (a new note's
+        // path among them) go out with the page's last write; the daemon
+        // merges them per record.
+        window.WBDeskSink?.setHold?.(false);
         window.location.reload();
         return;
       }
@@ -2734,8 +2755,11 @@ function shell() {
       this.settings["consoles.key_bar"] = view.keys ?? "unset";
       // The size the consoles show now: the key bar's A−/A+ write the same field.
       this.settings["consoles.font_size"] = window.WBConsole?.fontSize() ?? this.settings["consoles.font_size"];
-      // The open repo's resolved config (`config.get`), merged over the schema
-      // defaults; with no repo open the project groups are disabled.
+      this.readSettings();
+    },
+    // The open repo's resolved config (`config.get`), merged over the schema
+    // defaults; with no repo open the project groups are disabled.
+    readSettings() {
       if (this.openSlug) {
         WBDaemon.observe("config.get", { repo: this.openSlug })
           .then((reply) => {
@@ -3017,10 +3041,18 @@ function shell() {
       this.maybeRefreshBoard("visible");
       this.loadRepos();
       this.rereadDesk();
-      if (this.runsOpen) this.hydrateRuns();
+      // Not only with the Runs panel open: the runs lock the writes.
+      this.hydrateRuns();
+      this.rereadOpenPanels();
       this._treeSub?.replay?.();
       this.resumeSockets();
       this.loadRelease();
+    },
+    // The panels whose facts have no push: read again on visible and after
+    // login while they are open (fact index: settings 3, 4; usage 3, 4).
+    rereadOpenPanels() {
+      if (this.settingsOpen) this.readSettings();
+      if (this.tabs.some((t) => t.id === "spend")) this.loadSpend();
     },
     releaseRead: null,
     releaseStale() {
@@ -3924,7 +3956,9 @@ function shell() {
       // Every shown fact reads again after login (ADR-0070 D2 event 4);
       // `loadRepos` above covers the sessions, the change set and the branch.
       this.maybeRefreshBoard("login");
-      if (this.runsOpen) this.hydrateRuns();
+      // Not only with the Runs panel open: the runs lock the writes.
+      this.hydrateRuns();
+      this.rereadOpenPanels();
       this._treeSub?.replay?.();
     },
 

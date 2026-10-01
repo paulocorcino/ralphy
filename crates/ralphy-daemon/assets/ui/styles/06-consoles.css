@@ -850,3 +850,45 @@
     opacity: 0;
   }
 }
+
+/* The saved desk cannot be read (ADR-0070 D4): a banner over the stage with
+   the reason and the one action. It sits outside `#stage`, so it never pans. */
+.desk-failure {
+  position: absolute;
+  top: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  max-width: min(46rem, calc(100% - 2rem));
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+
+/* The daemon runs a newer build and this page holds unsaved work
+   (ADR-0070 D6): a strip at the bottom that stays until the reload, clear
+   of the tab labels. */
+.build-notice {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  padding: 0.45rem 0.9rem;
+  border: 1px solid var(--danger);
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  background: var(--bg);
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+.desk-failure .btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
