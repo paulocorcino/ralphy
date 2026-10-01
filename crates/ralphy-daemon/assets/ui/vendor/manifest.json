@@ -1,0 +1,658 @@
+{
+  "libraries": [
+    {
+      "name": "Alpine.js",
+      "npm": "alpinejs",
+      "version": "3.14.1",
+      "source": "https://registry.npmjs.org/alpinejs/-/alpinejs-3.14.1.tgz",
+      "files": [
+        {
+          "path": "alpine.min.js",
+          "sha256": "358d9afbb1ab5befa2f48061a30776e5bcd7707f410a606ba985f98bc3b1c034"
+        }
+      ]
+    },
+    {
+      "name": "Bootstrap Icons",
+      "npm": "bootstrap-icons",
+      "version": "1.11.3",
+      "source": "https://registry.npmjs.org/bootstrap-icons/-/bootstrap-icons-1.11.3.tgz",
+      "files": [
+        {
+          "path": "bootstrap-icons/bootstrap-icons.min.css",
+          "sha256": "adfb165c714f28ccf579ee41be87274cbf17085bfe91098da213502545a60536",
+          "note": "differs from upstream 1.11.3: the @font-face src list keeps only the woff2 font"
+        },
+        {
+          "path": "bootstrap-icons/fonts/bootstrap-icons.woff2",
+          "sha256": "476adf42b40325098fcfa8b36ab3e769186bb4f6ce6a249753e2e1a9c22bf99e"
+        }
+      ]
+    },
+    {
+      "name": "Milkdown Crepe",
+      "npm": "@milkdown/crepe",
+      "version": "7.22.1",
+      "source": "crates/ralphy-daemon/vendor-build/crepe",
+      "files": [
+        {
+          "path": "crepe/LICENSE",
+          "sha256": "a9d856fd85b6598d7e894ce064a35921f2fb9bb4d903b905dd8d7b639e05422f"
+        },
+        {
+          "path": "crepe/crepe.css",
+          "sha256": "bd1723a80ad6a2a11372c99dcec46a24fd17654bc0a1ad50e73b96df7a270404"
+        },
+        {
+          "path": "crepe/crepe.js",
+          "sha256": "461e947b18bb12a732c1c6b3f1e5e090c9f56831c7f83a35a62a7226dffac766"
+        }
+      ]
+    },
+    {
+      "name": "Devicon",
+      "npm": "devicon",
+      "version": "2.17.0",
+      "source": "https://registry.npmjs.org/devicon/-/devicon-2.17.0.tgz",
+      "files": [
+        {
+          "path": "devicon/devicon.min.css",
+          "sha256": "ae7342bc49fdf62bb4594662e771cea8a42c812e23b12403e10b0a142baba149",
+          "note": "differs from upstream 2.17.0: the @font-face src list keeps only the woff font"
+        },
+        {
+          "path": "devicon/fonts/devicon.woff",
+          "sha256": "ea88166c9cfc9d616638df36a84b6dcab1aeeb2ad933c50d2e76f44096b4b258"
+        }
+      ]
+    },
+    {
+      "name": "DOMPurify",
+      "npm": "dompurify",
+      "version": "3.4.12",
+      "source": "https://registry.npmjs.org/dompurify/-/dompurify-3.4.12.tgz",
+      "files": [
+        {
+          "path": "dompurify.min.js",
+          "sha256": "c45ba939765574f96cbf35ee9b6d89f73756a17921814425e74b82f7c54603ce"
+        }
+      ]
+    },
+    {
+      "name": "Lucide",
+      "npm": "lucide",
+      "version": "0.460.0",
+      "source": "https://registry.npmjs.org/lucide/-/lucide-0.460.0.tgz",
+      "files": [
+        {
+          "path": "lucide.min.js",
+          "sha256": "1b22c6c04a1c69b75a41c64c7ea992657e8f628dabd6324984ffc61c3761a56a"
+        }
+      ]
+    },
+    {
+      "name": "Marked",
+      "npm": "marked",
+      "version": "15.0.12",
+      "source": "https://registry.npmjs.org/marked/-/marked-15.0.12.tgz",
+      "files": [
+        {
+          "path": "marked.min.js",
+          "sha256": "3e7e7d7feb3e5d58cb6c804f68ab5c24cc7e5eb6270fd6e5cbb9124739217d0c"
+        }
+      ]
+    },
+    {
+      "name": "Mermaid",
+      "npm": "mermaid",
+      "version": "11.16.0",
+      "source": "https://registry.npmjs.org/mermaid/-/mermaid-11.16.0.tgz",
+      "files": [
+        {
+          "path": "mermaid.min.js",
+          "sha256": "74d7c46dabca328c2294733910a8aa1ed0c37451776e8d5295da38a2b758fb9b"
+        }
+      ]
+    },
+    {
+      "name": "Monaco Editor",
+      "npm": "monaco-editor",
+      "version": "0.56.0",
+      "source": "https://registry.npmjs.org/monaco-editor/-/monaco-editor-0.56.0.tgz",
+      "files": [
+        {
+          "path": "monaco/vs/abap-D-t0cyap.js",
+          "sha256": "80e43a53268d6a4c632ff9985bee1e7d0c6910cceadde464aa234bf36d0a6737"
+        },
+        {
+          "path": "monaco/vs/apex-CcIm7xu6.js",
+          "sha256": "f65a5a9a27d2b6c2a2ec55a670486073ca76203fc63d5a3ef91a889fe3c6bda8"
+        },
+        {
+          "path": "monaco/vs/assets/editor.worker-lj3bdIIn.js",
+          "sha256": "4670fc1d1386c9c0e205a54326c1035b35b3b4c12f5994638aac39d532f08352"
+        },
+        {
+          "path": "monaco/vs/assets/editorWebWorkerMain-CA_vMoUU.js",
+          "sha256": "94fef4282ced27c8eb8d8062c55a6cf5d944939ee423f44bfc0f37108a7c35c4"
+        },
+        {
+          "path": "monaco/vs/azcli-BA0tQDCg.js",
+          "sha256": "b5f9c7d25c2cc748a1c965c9562de8b934b82e64dfa5e423c7121c8759090dd2"
+        },
+        {
+          "path": "monaco/vs/basic-languages/monaco.contribution.js",
+          "sha256": "1e4c6af26a394c9c183185c4736642b0a07d446cffe109f98279f930d285ba9c"
+        },
+        {
+          "path": "monaco/vs/bat-C397hTD6.js",
+          "sha256": "e5bbd4d0719d157cc7dfa6b07e07da4104e52e687b97a6a0dc94e6d4cb4614b1"
+        },
+        {
+          "path": "monaco/vs/bicep-DF5aW17k.js",
+          "sha256": "39928909c2b244bf13dd2aad877f53966ba43b5b96442a6205306c670fd73a8e"
+        },
+        {
+          "path": "monaco/vs/cameligo-plsz8qhj.js",
+          "sha256": "f8249bde4edaca22841907a087fb7c79dad81e7048ac6164937d184b23106d35"
+        },
+        {
+          "path": "monaco/vs/clojure-Y2auQMzK.js",
+          "sha256": "6dea514485eea7336b31343ea9eca9c18f3f3ce69e0ad52d39daf8f41beae311"
+        },
+        {
+          "path": "monaco/vs/coffee-Bu45yuWE.js",
+          "sha256": "f4ce02d5c428b0f84c7ed6b50edec729a64c0744b98164a148243b2e1cbd2d6d"
+        },
+        {
+          "path": "monaco/vs/cpp-CkKPQIni.js",
+          "sha256": "691086029551bc7cfbb5ff157e01a935715a35c8330dc38c879b069a1cdc068c"
+        },
+        {
+          "path": "monaco/vs/csharp-CX28MZyh.js",
+          "sha256": "747c32cc96a655fcf8399f8ff8d99c4a73c34d529afd197dcbda9a8ba1eb0595"
+        },
+        {
+          "path": "monaco/vs/csp-D8uWnyxW.js",
+          "sha256": "0b477c46df69193baafc9fcecc16858244c168ff0f8de3a332a9221718e12a4e"
+        },
+        {
+          "path": "monaco/vs/css-CaeNmE3S.js",
+          "sha256": "7e23b396ebf63139c3e8a490d4d0cee72070be0cbcc16751e21e76e77725ba1d"
+        },
+        {
+          "path": "monaco/vs/css.worker-CyhWkhHo.js",
+          "sha256": "7a6d72f46803624bb550a6582202148754d3279f3dfa6aab43f4958a179e0634"
+        },
+        {
+          "path": "monaco/vs/cssMode-CV6Ay48H.js",
+          "sha256": "df96a1345540d38c080d13e11485c4b5c1aeeba4d5b49850a6d89d3fc3919149"
+        },
+        {
+          "path": "monaco/vs/cypher-DVThT8BS.js",
+          "sha256": "a55883356cc2c54a560383f9a2915922875f4fe6fe4149006b5b8f9232c2ba73"
+        },
+        {
+          "path": "monaco/vs/dart-CmGfCvrO.js",
+          "sha256": "5a73a1c81d0c57774058fd43afd24917db02127c3aa996b9b982c6f197aecbe0"
+        },
+        {
+          "path": "monaco/vs/dockerfile-CZqqYdch.js",
+          "sha256": "84d90d95ef722d2d63cd5e0a495ac484cb60d663f0e64ffc033a8de8db800d17"
+        },
+        {
+          "path": "monaco/vs/ecl-30fUercY.js",
+          "sha256": "2a96dc1d1ae80dca79169ca133a1475b1479b61b74e16f5fbbcfc4a1c0564828"
+        },
+        {
+          "path": "monaco/vs/editor-KLE6jdfb.js",
+          "sha256": "242e91c0d4f8ee2c061830e1a0060f2d51889ec22dc236b45f15ee3b6cde3ed3"
+        },
+        {
+          "path": "monaco/vs/editor.js",
+          "sha256": "fc5ffff7b8d9131712323c12785564be61f41ed56ebdf34b5dc2cbaac49c0563"
+        },
+        {
+          "path": "monaco/vs/editor/editor.main.css",
+          "sha256": "2c86bd3daaa759fd93725bf7ef6cee17c8e280f30ece0971921b85efea4ae992"
+        },
+        {
+          "path": "monaco/vs/editor/editor.main.js",
+          "sha256": "497d4ea65f4e84cb05e1f342c4552b6e91421095a5901dcfdb4a2ccda7f31afd"
+        },
+        {
+          "path": "monaco/vs/editor/editor.worker.js",
+          "sha256": "b5d04c107914e7652f6ee354fe037c40c83ed44bcffb7cd5ae2f35399a69ec82"
+        },
+        {
+          "path": "monaco/vs/editorWorkerHost-fVE1cjcC.js",
+          "sha256": "1dcb9fe9a82c34caee0f1fab4a7126a0d0a04cdfcab5a4c79ee2a33321233383"
+        },
+        {
+          "path": "monaco/vs/elixir-xjPaIfzF.js",
+          "sha256": "12d8860be37bc331789e3bedac65ac60968fb0cc0a5ccda72d3eac0992618701"
+        },
+        {
+          "path": "monaco/vs/flow9-DqtmStfK.js",
+          "sha256": "2cc6c9f6cf019557bfeb6cb313e0d65044af5920ca0b964dc62f960d470f0e0c"
+        },
+        {
+          "path": "monaco/vs/freemarker2-FWreY7v7.js",
+          "sha256": "b432937fbc555c643387998e23223369324f272778cd41d3e080c1ded5b4f733"
+        },
+        {
+          "path": "monaco/vs/fsharp-BOMdg4U1.js",
+          "sha256": "8bfbb5834411f0b16bd92c453385e33b6d93a98746358c79eafdca0e52c9e93a"
+        },
+        {
+          "path": "monaco/vs/go-D_hbi-Jt.js",
+          "sha256": "af135fca33281be8c049b06271d38a786a7b814de6a7b3b1a3ade31d18019c2a"
+        },
+        {
+          "path": "monaco/vs/graphql-CKUU4kLG.js",
+          "sha256": "c48dc8ce6771c8320c51800f398ed8908fded44bdd30bc25bf735facf3b9fa68"
+        },
+        {
+          "path": "monaco/vs/handlebars-CZi4pHCH.js",
+          "sha256": "de5b801be5138d6da5d45c37fb17c3369ca891b19ca6fba705896c8aca459146"
+        },
+        {
+          "path": "monaco/vs/hcl-DTaboeZW.js",
+          "sha256": "a260db459911f838c6aa331b6efa841d5fd9360ec253541fea015a62594b4296"
+        },
+        {
+          "path": "monaco/vs/html-j_7ZTNRU.js",
+          "sha256": "dcec2e3027786060c8b5835eda8773545826d1269a86bb7815a0813cce6d5deb"
+        },
+        {
+          "path": "monaco/vs/html.worker-CA3iAimZ.js",
+          "sha256": "78a924d6f9f7df5f55668b2c699a7e47f7794342f254a4a4d85d1801bac9e355"
+        },
+        {
+          "path": "monaco/vs/htmlMode-27by_KM4.js",
+          "sha256": "65b932db32c65595cb5ff23c2aede962ef15ac2b143367b6b5b29d9104a2e09e"
+        },
+        {
+          "path": "monaco/vs/index-049xrXrp.js",
+          "sha256": "ddde937284533f03fd5c1bb4c55bd73f2ff2e58a131a48ec74ed00a2e1e42773"
+        },
+        {
+          "path": "monaco/vs/index-CBVt3dzv.js",
+          "sha256": "0af4fc05efa9afb21cc5902f21a02be8f3b29e91028c0183f1888f4ea71e11b9"
+        },
+        {
+          "path": "monaco/vs/index.js",
+          "sha256": "2f30cb097c9418257573ccb92fe0d373be424e6b98fa25407d239c578b6c70de"
+        },
+        {
+          "path": "monaco/vs/ini-CsNwO04R.js",
+          "sha256": "b4fbfcd2b005881b0fcbdbfd6421acfd461717db35585c66d20326e79a12f9b8"
+        },
+        {
+          "path": "monaco/vs/initialize-DL0l1TGY.js",
+          "sha256": "e08ae8f24ffd0d4e230a22eb904cf2dec51b5a12b5e3a436d422acc61a06c836"
+        },
+        {
+          "path": "monaco/vs/java-CI4ZMsH9.js",
+          "sha256": "a20ff4f207bca6f457f62f5d875da04e981d66bde50a977e8d2c0be47e91aaaf"
+        },
+        {
+          "path": "monaco/vs/javascript-DTJl4Jn1.js",
+          "sha256": "0697422f7a7d882cbe70619207e73153f4a243c36d25dc4c4534af2500e6e643"
+        },
+        {
+          "path": "monaco/vs/json.worker-BizpAl9O.js",
+          "sha256": "52b13446e5ee1ab17e459ce2b587ef8f8bc972421458cd54669fcb575c4a5d50"
+        },
+        {
+          "path": "monaco/vs/jsonMode-DLUiMUrI.js",
+          "sha256": "0d9fd7a63bfc6b9212ee7fc33bbaf46483c5935799ea312a60b9d75fa3ef8ee9"
+        },
+        {
+          "path": "monaco/vs/julia-BwzEvaQw.js",
+          "sha256": "291cf2327138ecf28f8d89045a7978ad065d2bfff59575b832c5d9bd814e9623"
+        },
+        {
+          "path": "monaco/vs/kotlin-IUYPiTV8.js",
+          "sha256": "e30cf3e62994e7c32847542a791504eadf029dbc092594e2e057e79fe17c0159"
+        },
+        {
+          "path": "monaco/vs/less-C0eDYdqa.js",
+          "sha256": "e3c00c4fb4e99ea039ec49308d637ff3581fdd1ab695b18a8ad1f7299fe428a4"
+        },
+        {
+          "path": "monaco/vs/lexon-iON-Kj97.js",
+          "sha256": "fbccd913c524e992cac0d3c3e5ddc31c3c2dc67c04c704e47f298838dd08ed1d"
+        },
+        {
+          "path": "monaco/vs/liquid-CLJYelW6.js",
+          "sha256": "2573b991169a67415f7bc5d33089783baca7d4c4cfb1ebf247fbde63e9d7742c"
+        },
+        {
+          "path": "monaco/vs/loader.js",
+          "sha256": "35b59df80b41a8b73bf1ceb159b44f040567c2ab53f4e77a3d002d9dc39d55d1"
+        },
+        {
+          "path": "monaco/vs/lspLanguageFeatures-BIkJOWLw.js",
+          "sha256": "3de95049f652b7ce2b3d5d115eab746c8870f9cd8a47e3833030f45510451630"
+        },
+        {
+          "path": "monaco/vs/lua-DtygF91M.js",
+          "sha256": "16e36e65f32eeb630be4622b6066d42ebf03b35d2aa60f8ddd884ee8c2bc8448"
+        },
+        {
+          "path": "monaco/vs/m3-CsR4AuFi.js",
+          "sha256": "8cd14878f7f2bf8ca1293a47e368f6b351d6ebd667a072049999281db306df1a"
+        },
+        {
+          "path": "monaco/vs/main-BEx-Fmlo.js",
+          "sha256": "393cc4473613f2314e73964e287ca23990a1c751c9b2bf09ea01f26a80f1ad47"
+        },
+        {
+          "path": "monaco/vs/main-DsK8pnKg.js",
+          "sha256": "1e89389527e31139925d680012e813dc9ab195b1c6ff98634cc3f5f93df16eb0"
+        },
+        {
+          "path": "monaco/vs/markdown-C_rD0bIw.js",
+          "sha256": "daab8a5150c09dd393aca1ab782bd6a1bf13c12b2f961a33a8420932c6be32c5"
+        },
+        {
+          "path": "monaco/vs/mdx-CpzZIPHF.js",
+          "sha256": "deabcb3cbe4c05af61ead9514b227fcc3d6d5124b685aa8a23f0023656555947"
+        },
+        {
+          "path": "monaco/vs/mips-CiYP61RB.js",
+          "sha256": "6c936f788a9b27b8464a492c0a7e62b439caff1b05bea2eb5a837b663663cf08"
+        },
+        {
+          "path": "monaco/vs/monaco.contribution-9cKT3C7t.js",
+          "sha256": "1eaf2e813456a583e6a3e2cf7d8a9f521a4efa0e83852159394d6ad45d742a2f"
+        },
+        {
+          "path": "monaco/vs/monaco.contribution-BE88ZNGY.js",
+          "sha256": "b7cc63f56cdb61a7b03971edef3faf3532fc73efb46077caabdb3b41fb267bea"
+        },
+        {
+          "path": "monaco/vs/monaco.contribution-BPhsneLd.js",
+          "sha256": "7d618c62cd2fc7c02aa933ef165d90c906bd57139ba62129d41998cbe7e0eb2e"
+        },
+        {
+          "path": "monaco/vs/monaco.contribution-BgRy6xDf.js",
+          "sha256": "6f8ea9b7fd550b1ac7930ca342c28512c7ee4239d983fa8eb4c51c4f2983a659"
+        },
+        {
+          "path": "monaco/vs/msdax-C38-sJlp.js",
+          "sha256": "c32791ca0a361d805fa92d92f07d316b459badacc5dd51efbc760eaf9168ae83"
+        },
+        {
+          "path": "monaco/vs/mysql-CdtbpvbG.js",
+          "sha256": "d9a7c012fd5dd55810488d928eb0e4dc3e4e8c856c5d45a497d02b4ade124510"
+        },
+        {
+          "path": "monaco/vs/nls.messages-loader.js",
+          "sha256": "c2ec390ded129b3ed8b7994c348246be7ac83969019177ea5bb23278cbe4e1b1"
+        },
+        {
+          "path": "monaco/vs/objective-c-CntZFaHX.js",
+          "sha256": "1cd6f9265e8ca66348cb976ffc510edaff6997a6d8edc96b67d674d47997899f"
+        },
+        {
+          "path": "monaco/vs/pascal-r6kuqfl_.js",
+          "sha256": "d3cfdc9a2419b8caef88c9a8d8e4857092420300f9d5f2261203b7809c41943f"
+        },
+        {
+          "path": "monaco/vs/pascaligo-BiXoTmXh.js",
+          "sha256": "04a26822cfb8ce658bd5b71c12952e397e675f64280081564ebe59c764fc1939"
+        },
+        {
+          "path": "monaco/vs/perl-DABw_TcH.js",
+          "sha256": "1e8d8ed1e81b192d98af1d0a714dbccb338bc5fa3557d6ae82274194b73713a1"
+        },
+        {
+          "path": "monaco/vs/pgsql-me_jFXeX.js",
+          "sha256": "3741dbb2623c71677e3e1d357e66dc8167129fbcddc40529e13438a0f969c628"
+        },
+        {
+          "path": "monaco/vs/php-D_kh-9LK.js",
+          "sha256": "e834d0cafddfd7b0f3aa8d29e30a9956680ad8819446c5cbf1c6f5f0f00d672c"
+        },
+        {
+          "path": "monaco/vs/pla-VfZjczW0.js",
+          "sha256": "e3b5b0b3cd82e9ca1c28975a9019da75ebd972b238151ffb0fef0f15c8ab847f"
+        },
+        {
+          "path": "monaco/vs/postiats-BBSzz8Pk.js",
+          "sha256": "0b832f7fda01fb6cbde140b562ea11358d5ca8b1ee6bdf0db5915019d035c942"
+        },
+        {
+          "path": "monaco/vs/powerquery-Dt-g_2cc.js",
+          "sha256": "ee0e9b4239a70028c6947afc8a932d92fb85f08d1c49808944ad4a6a00be0282"
+        },
+        {
+          "path": "monaco/vs/powershell-B-7ap1zc.js",
+          "sha256": "9856349e4382b5677dc41b2ad8086152304d30b48057b9fca8b2a6368957da40"
+        },
+        {
+          "path": "monaco/vs/protobuf-BmtuEB1A.js",
+          "sha256": "0728d711ae1df4b386104df5a4665cdb958f2cc7a6b9cc622573f3812df30bcc"
+        },
+        {
+          "path": "monaco/vs/pug-BRpRNeEb.js",
+          "sha256": "e92bb527a6c961dd7e0b028dd209124c776a3f25a625373cfee36506ad234b53"
+        },
+        {
+          "path": "monaco/vs/python-CqWUUgfu.js",
+          "sha256": "26894261b889e9c2b37dae8b46c2ef196f83cdf55d3c6d539623ae1b36e31944"
+        },
+        {
+          "path": "monaco/vs/qsharp-BzsFaUU9.js",
+          "sha256": "c2beabe7876542bcd360008886351e4845d1a03602ca391a09f60eb20dcc7877"
+        },
+        {
+          "path": "monaco/vs/r-f8dDdrp4.js",
+          "sha256": "8b7e4cf13007cc02bdfabb8781fae0a56be07bd8177e10bad7ff49674f91cb2a"
+        },
+        {
+          "path": "monaco/vs/razor-hok5y9Km.js",
+          "sha256": "77aa4714e6b107ce4258fdf5717fd32f3157b632952d54ae4cd97ed8ec232913"
+        },
+        {
+          "path": "monaco/vs/redis-fvZQY4PI.js",
+          "sha256": "c806c1e46656d0a13bf6695d78af89afb5cb58d050ed0f85572d74a8cde69568"
+        },
+        {
+          "path": "monaco/vs/redshift-45Et0LQi.js",
+          "sha256": "9750bbcd40ebffd72aaa4b2a113a1f1982b79fd72c1ab8616a0582a29548095a"
+        },
+        {
+          "path": "monaco/vs/restructuredtext-C7UUFKFD.js",
+          "sha256": "33e9285d3b5908a5e854fa5a34fde13f4c32fded6525bfb9948fa64c0432b7b0"
+        },
+        {
+          "path": "monaco/vs/ruby-CZO8zYTz.js",
+          "sha256": "56c7a3ae5ac52509e7398da3d3b7ed16645985c8e46794ae526e101d60748ee0"
+        },
+        {
+          "path": "monaco/vs/rust-Bfetafyc.js",
+          "sha256": "ff05b26de2000433ad35afbdf250f96f55eaa4e862804deda0ead27ebdf4f9a1"
+        },
+        {
+          "path": "monaco/vs/sb-3GYllVck.js",
+          "sha256": "4abaf69a27c130e55cd5202e42b48eb9d96515b9161f6468aab178459c85a2e4"
+        },
+        {
+          "path": "monaco/vs/scala-foMgrKo1.js",
+          "sha256": "f9ac4595980f67fe4df9c65402de72fc3bcd6234ca682624f53427e72fc23c84"
+        },
+        {
+          "path": "monaco/vs/scheme-CHdMtr7p.js",
+          "sha256": "708f7f931ee52dae9d7cb0420665120271e38100376ed578548eba4df18db12a"
+        },
+        {
+          "path": "monaco/vs/scss-C1cmLt9V.js",
+          "sha256": "b5e83dba3a0fadd33d3c29daf030ef831c1d6158c7211c8ad4cbac51b598da78"
+        },
+        {
+          "path": "monaco/vs/shell-ClXCKCEW.js",
+          "sha256": "0dd40deb01217f2de8df014b3ea910dce7794adf5849636f8c39c19bff40abeb"
+        },
+        {
+          "path": "monaco/vs/solidity-MZ6ExpPy.js",
+          "sha256": "fa2641d40cca156c21ccbaa6628981dbea7bfcb809af0c86541b31e91cf582a0"
+        },
+        {
+          "path": "monaco/vs/sophia-DWkuSsPQ.js",
+          "sha256": "225a5f3d75337b156f90e05cbb3d9eb87f0c5d26228bd7b5964a27d5bd2c3fee"
+        },
+        {
+          "path": "monaco/vs/sparql-AUGFYSyk.js",
+          "sha256": "6a3c861e35b44a4288021a868d50dd135370ed1d556fc0d9729e003c606ba883"
+        },
+        {
+          "path": "monaco/vs/sql-32GpJSV2.js",
+          "sha256": "91584effb532e0b052d806914c34e5087fee39516d126720382887bf0eef268d"
+        },
+        {
+          "path": "monaco/vs/st-CuDFIVZ_.js",
+          "sha256": "419d9fa82988329be4bce8dee4b16c23e1dd9d5a925c2b58a9f2275d139ae1a2"
+        },
+        {
+          "path": "monaco/vs/swift-t-PfMj7W.js",
+          "sha256": "e083a440cc19ffea101cafe90ddd8932ba486ed35c16bbc1494b04d58da716b8"
+        },
+        {
+          "path": "monaco/vs/systemverilog-Ch4vA8Yt.js",
+          "sha256": "0a5c60be86cfbb173b863503baf73336210593172388f03ff6c0ce8e2e08ccb9"
+        },
+        {
+          "path": "monaco/vs/tcl-D74tq1nH.js",
+          "sha256": "c492eb652ab826b99b2d2503bfa65162ef14eefabd9f5da70bed03beefba39f8"
+        },
+        {
+          "path": "monaco/vs/toggleHighContrast-qGX7E9o7.js",
+          "sha256": "839a87169e030e7312a2931a20206ba5e6eb4a59d2cbde3d1c2bfff693bef59e"
+        },
+        {
+          "path": "monaco/vs/ts.worker-2QLmBukE.js",
+          "sha256": "56d3b116c7296089890d4020496eaf29f17bc803110127bbc69db0244bd32d0d"
+        },
+        {
+          "path": "monaco/vs/tsMode-B0S_kp2q.js",
+          "sha256": "bc088e1defb899893bc5fcc9cd7539d376131ed964a89fd6733371c07f45c81b"
+        },
+        {
+          "path": "monaco/vs/twig-C6taOxMV.js",
+          "sha256": "bbeb5d2f6d6d45790b36720c969c1ab63b0faccff9a950bb48aa82d997a23cba"
+        },
+        {
+          "path": "monaco/vs/typescript-_2t_511t.js",
+          "sha256": "b35f89c8991c2352576ea0d3d3cd24308345eb57df9be49cbe694dd8511af4d0"
+        },
+        {
+          "path": "monaco/vs/typespec-8OfoLt6R.js",
+          "sha256": "39e3ba1a138a90aa3dbd7001cec575f4a4f3f08775837c6f9d6587d6605ab8af"
+        },
+        {
+          "path": "monaco/vs/vb-Dyb2648j.js",
+          "sha256": "22984a593503cf70994469f3939a16d6d25926f3e32d4d91a5ff28afb6c92285"
+        },
+        {
+          "path": "monaco/vs/wgsl-BhLXMOR0.js",
+          "sha256": "55e72c889d2acc6fb75ce2765751d7d2ff39ee6c11711f6b163d780d60fa62d5"
+        },
+        {
+          "path": "monaco/vs/workers-BBttULjf.js",
+          "sha256": "ae38fda42aabe72300ebfc0c6a70c959d0f3874e3e4c5713a459ebfc6ebacf46"
+        },
+        {
+          "path": "monaco/vs/xml-cZjNDqDT.js",
+          "sha256": "40021db8bec0cb8ca033276387aad9ae396e0f31ba0e2dece05466806e16f448"
+        },
+        {
+          "path": "monaco/vs/yaml-A1fOIdH6.js",
+          "sha256": "39ee0c52d201c5bf4705ae2d8dce8f35cf7ff05ee47591f7e0f0499ad70d256a"
+        }
+      ]
+    },
+    {
+      "name": "QR Code Generator",
+      "npm": "qrcode-generator",
+      "version": "1.5.2",
+      "source": "https://registry.npmjs.org/qrcode-generator/-/qrcode-generator-1.5.2.tgz",
+      "files": [
+        {
+          "path": "qrcode.js",
+          "sha256": "18ae399f81182bc9de916e9c77b195df20cc58d6f2d55a62b085a299f1bf1780"
+        }
+      ]
+    },
+    {
+      "name": "Wunderbaum",
+      "npm": "wunderbaum",
+      "version": "0.14.1",
+      "source": "https://registry.npmjs.org/wunderbaum/-/wunderbaum-0.14.1.tgz",
+      "files": [
+        {
+          "path": "wunderbaum/wunderbaum.css",
+          "sha256": "1ae1d7d7e5a78650b49b3b4d5e0af9c3119ce06ad23a05b0ddc8931e99776ddb"
+        },
+        {
+          "path": "wunderbaum/wunderbaum.umd.min.js",
+          "sha256": "a0f20f3a8d0c4c3ad03956a9f2765c546bc88b65ef04244a0b8a1691cb67686b"
+        }
+      ]
+    },
+    {
+      "name": "xterm.js",
+      "npm": "@xterm/xterm",
+      "version": "6.0.0",
+      "source": "https://registry.npmjs.org/@xterm/xterm/-/xterm-6.0.0.tgz",
+      "files": [
+        {
+          "path": "xterm.css",
+          "sha256": "854a7c0fb70e8b1a083c16797ab827299fb18744f5ad34f227b48337e33293c6"
+        },
+        {
+          "path": "xterm.js",
+          "sha256": "14903579ff54664cd72f8e8699e6961a6272c21863ec1c3b118cdc8af5d4a972"
+        }
+      ]
+    },
+    {
+      "name": "xterm.js fit addon",
+      "npm": "@xterm/addon-fit",
+      "version": "0.11.0",
+      "source": "https://registry.npmjs.org/@xterm/addon-fit/-/addon-fit-0.11.0.tgz",
+      "files": [
+        {
+          "path": "xterm-addon-fit.js",
+          "sha256": "ba3ea256ce0620a0992a197d6c9baea64823fc93d8da07a9e366ca9943c18527"
+        }
+      ]
+    },
+    {
+      "name": "xterm.js web-links addon",
+      "npm": "@xterm/addon-web-links",
+      "version": "0.12.0",
+      "source": "https://registry.npmjs.org/@xterm/addon-web-links/-/addon-web-links-0.12.0.tgz",
+      "files": [
+        {
+          "path": "xterm-addon-web-links.js",
+          "sha256": "b74864125ef3889753b94e61eb4dabb99b2a27f920f0c9a7bd53cbe6d10f032a"
+        }
+      ]
+    },
+    {
+      "name": "xterm.js WebGL addon",
+      "npm": "@xterm/addon-webgl",
+      "version": "0.19.0",
+      "source": "https://registry.npmjs.org/@xterm/addon-webgl/-/addon-webgl-0.19.0.tgz",
+      "files": [
+        {
+          "path": "xterm-addon-webgl.js",
+          "sha256": "b85f8d4b3e9756bebb757e3fe47134d70f03ea3d6b187624426d2e2b65dec06c"
+        }
+      ]
+    }
+  ]
+}

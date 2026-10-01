@@ -2,3 +2,7 @@
 # prompt_assembly anti-drift tests; pin LF so Windows autocrlf checkouts
 # cannot manufacture a false drift between template and artifact.
 assets/prompts/** text eol=lf
+
+# The vendored UI files are hashed in vendor/manifest.json, and include_dir!
+# embeds the working-tree bytes. No checkout may convert their line endings.
+crates/ralphy-daemon/assets/ui/vendor/** -text
