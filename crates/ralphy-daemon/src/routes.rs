@@ -265,7 +265,11 @@ pub(crate) fn router_with_roster(
                 move |body: Json<protocol::Command>| {
                     peer_command_route(registry.clone(), daemon_id.clone(), sessions.clone(), body)
                 }
-            }),
+            })
+            // axum's 2 MB default refused a forwarded 4 MiB image paste.
+            .layer(axum::extract::DefaultBodyLimit::max(
+                crate::tree::MAX_COMMAND_BYTES,
+            )),
         )
         .route(
             "/api/peer/tree/poll",
@@ -468,6 +472,9 @@ pub(crate) fn router_with_roster(
             get({
                 let sessions = sessions.clone();
                 move |ws: WebSocketUpgrade, headers: axum::http::HeaderMap| {
+                    let ws = ws
+                        .max_message_size(crate::tree::MAX_COMMAND_BYTES)
+                        .max_frame_size(crate::tree::MAX_COMMAND_BYTES);
                     let secret_ok = request_may_carry_a_secret(&headers);
                     let registry_path = command_registry.clone();
                     let shutdown = command_shutdown.clone();

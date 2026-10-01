@@ -130,6 +130,10 @@ pub(crate) async fn session_ws_upgrade(
     host: SessionHost,
     shutdown: tokio::sync::watch::Receiver<bool>,
 ) -> Response {
+    // Every upgrade below, the peer relay included, inherits the cap.
+    let ws = ws
+        .max_message_size(crate::tree::MAX_COMMAND_BYTES)
+        .max_frame_size(crate::tree::MAX_COMMAND_BYTES);
     let SessionHost {
         peers_dir,
         identity,

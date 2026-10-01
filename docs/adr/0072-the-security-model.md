@@ -336,12 +336,18 @@ surface.
   checked in a browser, a tunnel included. If a tunnel makes that unsound,
   the wide `connect-src` is accepted and recorded here. Accepted: notes
   rely on the link-scheme allowlist (`wb-notes.js:1569-1604`).
-- D11: not checked by code. Gap: the daemon sets no body limit and no
-  WebSocket message limit, so the axum default (2 MB on a `Json` body) and
-  the tungstenite default (64 MiB per message) apply. Decided fix (review
-  of 2026-10-01): the derived cap above. To check during the fix:
-  `/api/peer/command` takes a `Json` command under the 2 MB default, which
-  is smaller than a 4 MiB `image.write`.
+- D11: checked. One cap, `MAX_COMMAND_BYTES` in
+  `crates/ralphy-daemon/src/tree.rs` (the base64 size of a 4 MiB image plus
+  64 KiB, `max_command_bytes_is_derived_from_the_image_cap`), applies to
+  `/ws/command`, every `/ws/session` upgrade (the peer relay included) and
+  `/api/peer/command`. A larger command closes the socket
+  (`a_message_over_the_cap_closes_the_socket`) or is answered `413`
+  (`peer_command_refuses_a_body_over_the_cap`); a 4 MiB paste still passes
+  (`a_4_mib_image_paste_still_replies`, `peer_command_takes_a_4_mib_image`).
+  Measured before the fix: `/api/peer/command` answered `413` to a forwarded
+  4 MiB `image.write` under axum's 2 MB default. Accepted: `/ws` and
+  `/ws/tree` keep the tungstenite default; the browser sends them no
+  payload.
 - D12: checked by `.github/workflows/security.yml` (cargo-deny, gitleaks,
   zizmor, dependency review) and `.github/workflows/codeql.yml`. Gaps:
   xterm, Alpine, mermaid, qrcode and other vendored libraries have no

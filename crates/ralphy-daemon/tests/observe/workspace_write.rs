@@ -786,3 +786,59 @@ async fn the_generic_byte_ops_reach_a_note_in_the_landing_dir() {
     .await;
     assert_eq!(replies[0]["reason"], "refused", "reply={}", replies[0]);
 }
+
+// --- the transport cap (ADR-0072 D11) ----------------------------------------
+
+/// A whole 4 MiB image, base64 and envelope included, is under the cap of
+/// `/ws/command`: the paste gets its normal reply.
+#[tokio::test]
+async fn a_4_mib_image_paste_still_replies() {
+    let (url, slug, root) = serve_repo().await;
+    let mut png = PNG_BYTES.to_vec();
+    png.resize(ralphy_daemon::tree::MAX_IMAGE_BYTES as usize, 0);
+    let (replies, _) = round_trip(
+        &url,
+        40,
+        "image.write",
+        serde_json::json!({ "repo": slug, "base64": b64(&png) }),
+    )
+    .await;
+    assert_eq!(replies.len(), 1, "{replies:?}");
+    assert_eq!(replies[0]["status"], "ok", "{:?}", replies[0]);
+    let path = replies[0]["path"].as_str().unwrap();
+    assert_eq!(std::fs::read(root.join(path)).unwrap().len(), png.len());
+}
+
+/// A command over the cap is refused before it is parsed: the socket closes
+/// and no reply comes. The command is well formed, so without the cap the
+/// daemon would decode it and answer.
+#[tokio::test]
+async fn a_message_over_the_cap_closes_the_socket() {
+    let (url, slug, _root) = serve_repo().await;
+    let (mut ws, _resp) = tokio_tungstenite::connect_async(&url)
+        .await
+        .expect("connecting to /ws/command");
+    let big = protocol::encode(&Frame::Command(Command {
+        id: 41,
+        verb: "image.write".into(),
+        payload: serde_json::json!({
+            "repo": slug,
+            "base64": "A".repeat(ralphy_daemon::tree::MAX_COMMAND_BYTES),
+        }),
+    }));
+    assert!(big.len() > ralphy_daemon::tree::MAX_COMMAND_BYTES);
+    // The server may close while the frame is still being written.
+    let sent = ws.send(Message::Binary(big.into())).await;
+    let closed = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            match ws.next().await {
+                None | Some(Err(_)) | Some(Ok(Message::Close(_))) => return true,
+                Some(Ok(Message::Binary(_))) => return false,
+                Some(Ok(_)) => continue,
+            }
+        }
+    })
+    .await
+    .expect("the socket must close within 10s");
+    assert!(closed || sent.is_err(), "a message over the cap got a reply");
+}
