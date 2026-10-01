@@ -107,8 +107,8 @@ with each outsider's comment marked, and the agent does not fetch the thread
 on its own (ADR-0017 amendment of 2026-10-01, A1). An outsider's comment can
 still shape a consolidated spec, which is then posted under the operator's
 identity and trusted by the run. Interactive triage shows that spec before
-it is published. Under `--yes` this is an open risk until ADR-0017 A2 holds
-such a spec back for the operator.
+it is published. Under `--yes`, ADR-0017 A2 holds such a spec back for the
+operator.
 
 **D6. The agent runs as the operator and is not sandboxed. Ralphy says so,
 and puts a guard where the vendor allows one.** The flags that let an agent
@@ -266,13 +266,19 @@ surface.
   reaches only the daemon" is not checked: the CSP allows `connect-src ws:
   wss:` to any host. Decided fix (review of 2026-10-01): see D10.
 - D4: not checked by code: a new write path is reviewed in the PR.
-- D5: not checked by code. Gap: the triage agent reads the raw thread with
-  `gh issue view --comments` (`assets/prompts/prompt.triage.md:27`), whose
-  text output names the author but not whether they are a collaborator.
-  Decided fix (review of 2026-10-01): ADR-0017 A1, then A2. Accepted:
-  triage attachments come from every comment
-  (`crates/ralphy-core/src/github/attachments.rs:401-414`), within the
-  host, format and size limits of ADR-0025.
+- D5: checked for triage. Ralphy reads each thread with
+  `authorAssociation` and gives the session a JSON block in which each
+  outsider's comment is marked (`parse_issue_thread_marks_outsiders`,
+  `render_triage_threads_marks_and_escapes`); the charter does not fetch
+  the thread (`the_triage_charter_never_fetches_the_comment_thread`); under
+  `--yes` a consolidation that draws on an outsider's comment, an unknown
+  comment or an unread thread is held for the operator
+  (`yes_holds_a_consolidation_that_drew_on_an_outsider`). Accepted: the
+  agent reports `drew_on` itself, so an injected prompt could leave an id
+  out (see "What Ralphy does not defend against"). Accepted: triage
+  attachments come from every comment
+  (`crates/ralphy-core/src/github/attachments.rs`), within the host, format
+  and size limits of ADR-0025.
 - D6: not checked by code: it needs a live vendor CLI. Decided fix (review
   of 2026-10-01): the guard's deny-list goes into the plan settings and the
   task settings, the cost gate stays in execute only, and a test pins the

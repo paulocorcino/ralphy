@@ -4,7 +4,7 @@ Status: accepted and implemented (#89).
 
 Amended by ADR-0027: `promote` now posts an evidence stamp, so §2's "no comment" no longer holds.
 
-Amended by ADR-0072 (2026-10-01, proposed): Ralphy gives the triage session the thread with each author's trust marked; `--yes` does not publish a consolidation built on an outsider's comment.
+Amended by ADR-0072 (2026-10-01, accepted): Ralphy gives the triage session the thread with each author's trust marked; `--yes` does not publish a consolidation built on an outsider's comment.
 
 Ralphy's coupling to issue *format* is already minimal: the body goes verbatim
 into `.ralphy/issue.json` and the planning agent interprets free prose,
@@ -132,7 +132,7 @@ already `ready-for-agent`.
 
 ## Amendment (2026-10-01, ADR-0072 D5): the thread carries its authors' trust
 
-Status of this amendment: proposed.
+Status of this amendment: accepted.
 
 §1 calls the `triage-agent` label the operator's trust act. That act covers
 the thread as it was when the label was added. A comment added later, by
@@ -152,11 +152,27 @@ says so. The charter stops telling the agent to run
 `gh issue view --comments`. The agent still sees every comment; the mark
 makes "weigh a comment by who wrote it" a rule it can follow.
 
-**A2.** (Next step, not part of A1.) The `TriageDraft` of a `consolidate`
-verdict names the comments it drew on. Under `--yes`, a consolidation that
+**A2.** The `TriageDraft` of a `consolidate` verdict names the comments it
+drew on (`drew_on`, the comment ids). Under `--yes`, a consolidation that
 draws on a comment by someone who is not an owner, member or collaborator is
-not published: the issue is bounced to the operator with that reason.
-Interactive triage is unchanged, because the operator sees the preview.
+not published: the item becomes an `escalate` that names those comments, so
+the issue goes to the operator with that reason. An id the thread does not
+have, or a thread Ralphy could not read, holds the item too.
+`queue.trust_all_comments` does not apply here: the spec is posted under the
+operator's identity. Interactive triage is unchanged, because the operator
+sees the preview.
+
+The agent writes `drew_on` itself, so a prompt injection could make it leave
+an outsider's id out. That residual risk is the one ADR-0072 names: D5 is a
+layer, not proof.
+
+Code: `crates/ralphy-core/src/github/comments.rs` (`parse_issue_thread`,
+`render_triage_threads`, tested by `parse_issue_thread_marks_outsiders` and
+`render_triage_threads_marks_and_escapes`) and
+`crates/ralphy-cli/src/triage.rs` (`hold_untrusted_consolidations`, tested by
+`yes_holds_a_consolidation_that_drew_on_an_outsider`). The charter test
+`the_triage_charter_never_fetches_the_comment_thread` keeps the agent off
+`gh issue view --comments`.
 
 Attachments stay fetched from every author's comments. They are evidence
 from the reporter, and ADR-0025 already limits the host, the formats and the

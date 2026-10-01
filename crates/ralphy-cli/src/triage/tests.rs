@@ -146,6 +146,7 @@ fn promote_upserts_evidence_stamp_then_swaps_labels() {
             verdict: TriageVerdict::Promote,
             comment: Some(body.clone()),
             draft_issue: None,
+            drew_on: vec![],
         }],
     };
     let t = RecordingTracker::default();
@@ -169,6 +170,7 @@ fn consolidate_upserts_marked_comment_then_swaps_labels() {
             verdict: TriageVerdict::Consolidate,
             comment: Some(body.clone()),
             draft_issue: None,
+            drew_on: vec![],
         }],
     };
     let t = RecordingTracker::default();
@@ -192,6 +194,7 @@ fn bounce_never_asks_and_swaps_to_needs_info() {
             verdict: TriageVerdict::Bounce,
             comment: Some("Missing acceptance criteria.".into()),
             draft_issue: None,
+            drew_on: vec![],
         }],
     };
     let t = RecordingTracker::default();
@@ -228,6 +231,7 @@ fn escalate_posts_comment_and_swaps_to_ready_for_human() {
                 verdict: TriageVerdict::Escalate,
                 comment: Some(body.to_string()),
                 draft_issue,
+                drew_on: vec![],
             }],
         };
         let t = RecordingTracker::default();
@@ -259,12 +263,14 @@ fn declined_confirmation_publishes_nothing() {
                 verdict: TriageVerdict::Promote,
                 comment: Some(format!("{PROMOTE_EVIDENCE_MARKER}\nevidence")),
                 draft_issue: None,
+                drew_on: vec![],
             },
             TriageItem {
                 number: 2,
                 verdict: TriageVerdict::Consolidate,
                 comment: Some(format!("{CONSOLIDATED_SPEC_MARKER}\nspec")),
                 draft_issue: None,
+                drew_on: vec![],
             },
         ],
     };
@@ -278,5 +284,114 @@ fn declined_confirmation_publishes_nothing() {
     assert!(
         t.upserts.borrow().is_empty(),
         "declined promote/consolidate upsert nothing"
+    );
+}
+
+/// A thread of issue `number` with one comment per `(id, association)`.
+fn thread(number: u64, comments: &[(&str, &str)]) -> github::IssueThread {
+    let comments: Vec<serde_json::Value> = comments
+        .iter()
+        .map(|(id, assoc)| {
+            serde_json::json!({
+                "id": id, "author": {"login": "a"}, "authorAssociation": assoc, "body": "b"
+            })
+        })
+        .collect();
+    let json = serde_json::json!({ "body": "spec", "comments": comments });
+    github::parse_issue_thread(number, json.to_string().as_bytes()).unwrap()
+}
+
+fn consolidation(number: u64, drew_on: &[&str]) -> TriageDraft {
+    TriageDraft {
+        items: vec![TriageItem {
+            number,
+            verdict: TriageVerdict::Consolidate,
+            comment: Some(format!("{CONSOLIDATED_SPEC_MARKER}\nspec")),
+            draft_issue: None,
+            drew_on: drew_on.iter().map(|s| s.to_string()).collect(),
+        }],
+    }
+}
+
+/// Under `--yes`, a consolidation that draws on a stranger's comment, on a
+/// comment the thread does not have, or on a thread that was never read is
+/// not published: it goes to a maintainer, and the comment says which
+/// comments held it.
+#[test]
+fn yes_holds_a_consolidation_that_drew_on_an_outsider() {
+    let read = || thread(30, &[("IC_own", "OWNER"), ("IC_out", "NONE")]);
+    // (case, drew_on, threads, text the held comment names)
+    let rows = [
+        (
+            "an outsider",
+            vec!["IC_own", "IC_out"],
+            vec![read()],
+            "IC_out",
+        ),
+        ("an unknown id", vec!["IC_gone"], vec![read()], "IC_gone"),
+        (
+            "a thread not fetched",
+            vec![],
+            vec![github::IssueThread::not_fetched(30, "HTTP 502")],
+            "could not be read",
+        ),
+        ("no thread at all", vec![], vec![], "could not be read"),
+    ];
+    for (case, drew_on, threads, named) in rows {
+        let mut draft = consolidation(30, &drew_on);
+        assert_eq!(
+            hold_untrusted_consolidations(&mut draft, &threads),
+            vec![30],
+            "{case}"
+        );
+        let t = RecordingTracker::default();
+        apply_triage(&draft, &t, &labels(), |_| true).unwrap();
+        assert!(t.upserts.borrow().is_empty(), "{case}: spec published");
+        assert_eq!(
+            *t.added.borrow(),
+            vec![(30, "ready-for-human".to_string())],
+            "{case}"
+        );
+        let comments = t.comments.borrow();
+        assert_eq!(comments.len(), 1, "{case}");
+        assert!(comments[0].1.contains(named), "{case}: {}", comments[0].1);
+        assert!(
+            !comments[0].1.contains("IC_own"),
+            "{case}: {}",
+            comments[0].1
+        );
+    }
+}
+
+/// The control: a consolidation that draws only on trusted comments, or only
+/// on the body, is published as it was drafted.
+#[test]
+fn yes_publishes_a_consolidation_that_drew_on_collaborators() {
+    let threads = [thread(31, &[("IC_own", "OWNER"), ("IC_out", "NONE")])];
+    for drew_on in [vec!["IC_own"], vec![]] {
+        let mut draft = consolidation(31, &drew_on);
+        assert!(hold_untrusted_consolidations(&mut draft, &threads).is_empty());
+        let t = RecordingTracker::default();
+        apply_triage(&draft, &t, &labels(), |_| true).unwrap();
+        assert_eq!(t.upserts.borrow().len(), 1, "{drew_on:?}");
+        assert_eq!(*t.added.borrow(), vec![(31, "ready-for-agent".to_string())]);
+    }
+}
+
+/// Interactive triage asks the operator, who reads the preview: the hold runs
+/// only in the `--yes` branch of `run`.
+#[test]
+fn interactive_triage_does_not_hold() {
+    let src = include_str!("../triage.rs");
+    let calls: Vec<usize> = src
+        .match_indices("hold_untrusted_consolidations(&mut draft")
+        .map(|(at, _)| at)
+        .collect();
+    assert_eq!(calls.len(), 1);
+    let before = &src[..calls[0]];
+    let branch = before.rfind("if args.yes {").expect("no --yes branch");
+    assert!(
+        !before[branch..].contains('}'),
+        "the hold is called outside the `--yes` branch"
     );
 }

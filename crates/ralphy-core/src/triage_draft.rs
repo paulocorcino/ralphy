@@ -72,6 +72,12 @@ pub struct TriageItem {
     /// interactive create step (never `--yes`) previews and creates it.
     #[serde(default)]
     pub draft_issue: Option<DraftIssue>,
+    /// The `id`s of the comments a `consolidate` spec draws on, as the session
+    /// reported them; empty when the spec draws only on the issue body. The
+    /// `--yes` path holds a consolidation that names an untrusted or unknown
+    /// comment (ADR-0017 A2).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub drew_on: Vec<String>,
 }
 
 impl TriageItem {
@@ -211,6 +217,7 @@ mod tests {
                 verdict: TriageVerdict::Escalate,
                 comment: None,
                 draft_issue: None,
+                drew_on: vec![],
             }],
         };
         let err = draft.validate().expect_err("escalate needs a comment");
@@ -225,6 +232,7 @@ mod tests {
                 verdict: TriageVerdict::Consolidate,
                 comment: None,
                 draft_issue: None,
+                drew_on: vec![],
             }],
         };
         let err = draft.validate().expect_err("consolidate needs a comment");
@@ -239,6 +247,7 @@ mod tests {
                 verdict: TriageVerdict::Bounce,
                 comment: Some("  ".into()),
                 draft_issue: None,
+                drew_on: vec![],
             }],
         };
         assert!(draft.validate().is_err(), "whitespace comment is empty");
@@ -257,6 +266,7 @@ mod tests {
                     crate::PROMOTE_EVIDENCE_MARKER
                 )),
                 draft_issue: None,
+                drew_on: vec![],
             }],
         };
         assert!(draft.validate().is_ok());
@@ -272,6 +282,7 @@ mod tests {
                 verdict: TriageVerdict::Promote,
                 comment: None,
                 draft_issue: None,
+                drew_on: vec![],
             }],
         };
         let err = draft

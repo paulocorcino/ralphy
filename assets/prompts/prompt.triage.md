@@ -237,7 +237,7 @@ this schema (no extra keys, no trailing comments):
 {
   "items": [
     { "number": 12, "verdict": "promote", "comment": "<!-- ralphy:promote-evidence -->\n## Evidence (AFK)\n- Reproduces: src/foo.rs:42 panics on empty input (see log excerpt ...)\n- Mechanism: unchecked index in `parse_row`\n- Intent: restores the behavior tests/foo.rs::empty_ok already documents\n- Red test: `cargo test -p foo empty_ok` — fails today, passes after\n- Falsifier: a caller that filters empties upstream would make this unreachable; grepped `parse_row(` (3 call sites), none filters\n" },
-    { "number": 15, "verdict": "consolidate", "comment": "<!-- ralphy:consolidated-spec -->\n## Consolidated spec\n...\n\n## Acceptance criteria\n- [ ] ...\n\n## Provenance\n- ... (from comment by @alice)\n" },
+    { "number": 15, "verdict": "consolidate", "comment": "<!-- ralphy:consolidated-spec -->\n## Consolidated spec\n...\n\n## Acceptance criteria\n- [ ] ...\n\n## Provenance\n- ... (from comment by @alice)\n", "drew_on": ["IC_kwDOAbc"] },
     { "number": 18, "verdict": "bounce", "comment": "Under-specified: no acceptance criteria and the data source in the thread is unresolved. Please add ..." },
     { "number": 21, "verdict": "escalate", "comment": "Confirmed the flow change is needed (## Evidence: ...). Decide: keep the current rule or ...? Proposal below.", "draft_issue": { "title": "Restricted follow-up: ...", "body": "...\n\nCloses #21\n", "labels": [] } }
   ]
@@ -250,6 +250,11 @@ Rules for the JSON:
   evidence stamp). A promote with no comment is rejected before publishing.
 - A `promote` comment MUST begin with the promote-evidence marker line.
 - A `consolidate` comment MUST begin with the consolidated-spec marker line.
+- A `consolidate` item lists in `drew_on` the `id` of every comment its spec
+  draws on, from the thread block; `[]` when it draws only on the body. Under
+  `ralphy triage --yes`, a consolidation that draws on a comment marked
+  `"trusted": false` is not published: it goes to a maintainer instead. Any
+  other verdict MUST NOT carry `drew_on`.
 - `escalate` MAY carry an optional `draft_issue`
   (`{ "title", "body", "labels" }`) — the restricted follow-up it proposes, or
   its decomposition's unblocked head slice. At most one; omit it only when
