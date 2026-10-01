@@ -10,6 +10,7 @@ serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
 rusqlite.workspace = true
+ralphy-git-read.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

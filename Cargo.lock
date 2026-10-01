@@ -1944,6 +1944,7 @@ name = "ralphy-usage-scan"
 version = "0.0.0"
 dependencies = [
  "chrono",
+ "ralphy-git-read",
  "rusqlite",
  "serde",
  "serde_json",

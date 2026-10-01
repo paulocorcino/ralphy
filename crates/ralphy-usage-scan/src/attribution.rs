@@ -57,10 +57,8 @@ fn join_lexically(cwd_norm: &str, target: &str) -> String {
 /// `<primary>/.git/worktrees/<name>` to still exist on disk — a stale
 /// (prunable) pointer still names the repo whose spend this is.
 pub(crate) fn linked_worktree_primary(cwd: &str) -> Option<String> {
-    let text = fs::read_to_string(Path::new(cwd).join(".git")).ok()?;
-    let first = text.lines().next()?.trim();
-    let target = first.strip_prefix("gitdir:")?.trim();
-    let target = normalize_path(target);
+    let target = ralphy_git_read::pointer_target(Path::new(cwd))?;
+    let target = normalize_path(&target);
     let target = if is_absolute(&target) {
         target
     } else {

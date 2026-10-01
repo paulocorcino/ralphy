@@ -56,7 +56,7 @@ pub fn scan_claude(input: &ClaudeScan) -> Vec<InteractiveRecord> {
         let actor_email = matched.and_then(|r| {
             email_cache
                 .entry(r.slug.clone())
-                .or_insert_with(|| repo_actor_email(&r.path))
+                .or_insert_with(|| ralphy_git_read::user_email(Path::new(&r.path)))
                 .clone()
         });
 
@@ -240,21 +240,6 @@ fn dashed_cwd(cwd: &str) -> String {
     cwd.chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
         .collect()
-}
-
-/// `git config user.email` for the attributed repo (ADR-0008 D7). `None` on a
-/// non-zero exit or empty output. Mirrors `ralphy-core/src/git.rs` `user_email`;
-/// the scan crate cannot depend on core (ADR-0032), so it shells out directly.
-fn repo_actor_email(path: &str) -> Option<String> {
-    let output = std::process::Command::new("git")
-        .args(["-C", path, "config", "user.email"])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let email = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    (!email.is_empty()).then_some(email)
 }
 
 /// Every `*.jsonl` under `dir`, recursively. Tolerant: an unreadable subdir is

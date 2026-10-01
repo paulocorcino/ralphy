@@ -186,7 +186,7 @@ fn attribute(
             Some(r.slug.clone()),
             cache
                 .entry(r.slug.clone())
-                .or_insert_with(|| repo_actor_email(&r.path))
+                .or_insert_with(|| ralphy_git_read::user_email(Path::new(&r.path)))
                 .clone(),
         ),
         None => (None, None),
@@ -199,20 +199,6 @@ fn ms_to_rfc3339(ms: Option<i64>) -> String {
     ms.and_then(chrono::DateTime::from_timestamp_millis)
         .map(|d| d.to_rfc3339())
         .unwrap_or_default()
-}
-
-/// `git config user.email` for the attributed repo (ADR-0008 D7). `None` on a
-/// non-zero exit or empty output. Duplicated from `opencode.rs`.
-fn repo_actor_email(path: &str) -> Option<String> {
-    let output = std::process::Command::new("git")
-        .args(["-C", path, "config", "user.email"])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let email = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    (!email.is_empty()).then_some(email)
 }
 
 #[cfg(test)]
