@@ -182,6 +182,14 @@
     return sync.branch || null;
   }
 
+  // The project row's `head` as a folded sync read reports it, in the shape of
+  // `/api/repos`. `null` for an unknown read, as in `headBranch`.
+  function headOf(sync) {
+    if (!sync || sync.state === "unknown") return null;
+    if (sync.state === "detached") return { kind: "detached", sha: sync.branch || "" };
+    return { kind: "branch", name: sync.branch || "" };
+  }
+
   // How stale the counts are, as a locale-free RELATIVE string: a formatted date
   // would follow the browser locale and could carry no exact-string oracle.
   function staleness(lastFetch, now) {
@@ -345,6 +353,7 @@
     fold,
     foldSync,
     headBranch,
+    headOf,
     marker,
     shouldReload,
     diffTarget,

@@ -1372,3 +1372,31 @@ test("spendView shows the spend document only for the project that is open", () 
   own.openSlug = "owner/b";
   assert.equal(own.spendView().kind, "loading");
 });
+
+// `/api/repos` carries `head` beside `branch` (#510): a detached HEAD has no
+// branch, and the row must still name its commit.
+test("loadRepos keeps the head of a detached repo for the row title", async () => {
+  const { state } = loadShell();
+  state.loadFleet = () => {};
+  state.refreshLive = () => {};
+  state.loadChanges = () => {};
+  state.loadSync = () => {};
+  const row = {
+    slug: "o/r",
+    path: "/r",
+    reachable: true,
+    branch: null,
+    head: { kind: "detached", sha: "abc1234" },
+    dirty: false,
+    remote: null,
+  };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, json: async () => [row] });
+  try {
+    await state.loadRepos();
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.equal(state.projects.length, 1);
+  assert.equal(state.rowTitle(state.projects[0]), "o/r · abc1234");
+});

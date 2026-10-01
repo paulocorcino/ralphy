@@ -395,6 +395,9 @@ function shell() {
             root: x.root || "",
             branch: x.branch || "",
             branches: x.branch ? [x.branch] : [],
+            // `{kind:"branch",name}` or `{kind:"detached",sha}`; `null` when
+            // the daemon has no answer or is older than this field.
+            head: x.head || null,
             // `remote` is the github|local classification the dot binds to; the
             // raw origin url rides in `remoteUrl` for `githubUrl()`.
             dirty: !!x.dirty,
@@ -918,6 +921,8 @@ function shell() {
         const branch = window.WBChanges.headBranch(sync);
         const p = this.checkoutOf(slug) ? null : this.projects.find((x) => this.repoRef(x) === slug);
         if (p && branch !== null && p.branch !== branch) p.branch = branch;
+        const head = window.WBChanges.headOf(sync);
+        if (p && head !== null) p.head = head;
       } catch {
         if (seq === this._syncSeq && window.WBMode.isDaemon()) {
           // Honest absence beats a stale row.

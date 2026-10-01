@@ -64,6 +64,16 @@ test("rowTitle says branch and dirtiness for a local repo, environment for a pee
   );
 });
 
+test("rowTitle and the branch chip name the commit of a detached HEAD", () => {
+  const detached = { slug: "o/r", branch: "", head: { kind: "detached", sha: "abc1234" }, dirty: false };
+  assert.equal(wb.rowTitle(detached), "o/r · abc1234");
+  assert.equal(wb.chipLabel(detached, null, null), "abc1234");
+  assert.equal(
+    wb.rowTitle({ slug: "o/r", branch: "main", head: { kind: "branch", name: "main" }, dirty: false }),
+    "o/r · main",
+  );
+});
+
 test("canSwitchBranch and branchChipTitle refuse an unreachable repo", () => {
   assert.equal(wb.canSwitchBranch({ state: "ok" }), true);
   assert.equal(wb.canSwitchBranch({ state: "offline" }), false);

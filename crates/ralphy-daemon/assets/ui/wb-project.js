@@ -46,8 +46,17 @@ window.WBProject = (function () {
     if (p.daemon) {
       return `${p.slug} · ${p.env}`;
     }
-    if (!p.branch) return p.slug;
-    return `${p.slug} · ${p.branch}${p.dirty ? " (uncommitted changes)" : ""}`;
+    const label = headLabel(p);
+    if (!label) return p.slug;
+    return `${p.slug} · ${label}${p.dirty ? " (uncommitted changes)" : ""}`;
+  }
+
+  // What the project's HEAD is called: its branch, else the short sha of a
+  // detached HEAD (as the Changes panel names it), else nothing.
+  function headLabel(p) {
+    if (p.branch) return p.branch;
+    if (p.head && p.head.kind === "detached") return p.head.sha || "";
+    return "";
   }
 
   // Switching is possible only when the daemon can reach the repo on disk.
@@ -162,7 +171,7 @@ window.WBProject = (function () {
   // the primary's branch under a selection — that would name a branch the
   // tree is not on.
   function chipLabel(p, checkout, listing) {
-    if (!checkout) return p.branch;
+    if (!checkout) return headLabel(p);
     const entry = checkoutEntry(checkout, listing);
     if (!entry) return checkout;
     return entry.branch || "HEAD";
@@ -233,6 +242,7 @@ window.WBProject = (function () {
   return {
     repoLabel,
     rowTitle,
+    headLabel,
     agentStateOf,
     worktreeStates,
     canSwitchBranch,

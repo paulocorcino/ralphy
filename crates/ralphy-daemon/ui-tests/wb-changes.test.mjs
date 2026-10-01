@@ -395,6 +395,16 @@ test("headBranch gives the project row the HEAD a sync read saw", () => {
   assert.equal(headBranch(null), null);
 });
 
+test("headOf gives the project row the head a sync read saw, in the /api/repos shape", () => {
+  const { foldSync, headOf } = load();
+  assert.deepEqual(
+    headOf(foldSync(syncReply({ head: { kind: "detached", sha: "abc1234" }, tracking: null }), NOW)),
+    { kind: "detached", sha: "abc1234" },
+  );
+  assert.deepEqual(headOf(foldSync(tracking(0, 0), NOW)), { kind: "branch", name: "main" });
+  assert.equal(headOf(foldSync(null, NOW)), null);
+});
+
 test("foldSync labels how stale the counts are (#316)", () => {
   const foldSync = load().foldSync;
   const at = (ms) => new Date(NOW - ms).toISOString();
