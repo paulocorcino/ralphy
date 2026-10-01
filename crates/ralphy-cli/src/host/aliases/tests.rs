@@ -82,3 +82,17 @@ fn split_known_hosts_keeps_a_path_with_a_space_whole() {
         ["/home/me/.ssh/known_hosts", "~/.ssh/known_hosts2"]
     );
 }
+
+#[test]
+fn rows_is_the_host_aliases_reply() {
+    let config = "Host lab\n  HostName 10.0.0.5\n  User deploy\n  Port 2222\nHost *\n";
+    let v = rows(config, |alias| {
+        assert_eq!(alias, "lab");
+        parse_ssh_g(SSH_G, None)
+    });
+    assert_eq!(
+        v,
+        json!([{"alias": "lab", "hostname": "10.0.0.5", "user": "deploy", "port": 2222}])
+    );
+    crate::golden::check("host.aliases", json!({ "status": "ok", "aliases": v }), &[]);
+}

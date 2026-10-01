@@ -159,9 +159,15 @@ pub(crate) fn list(ssh: &Path) -> Result<serde_json::Value> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(json!([])),
         Err(e) => return Err(e).with_context(|| format!("reading {}", config.display())),
     };
-    let aliases: Vec<serde_json::Value> = parse_config_hosts(&text)
+    Ok(rows(&text, |alias| resolve(ssh, alias)))
+}
+
+/// The `host.aliases` reply: one row per `Host` alias of `text` that
+/// `resolve` can read; an alias it cannot read is skipped.
+fn rows(text: &str, resolve: impl Fn(&str) -> Result<Resolved>) -> serde_json::Value {
+    let aliases: Vec<serde_json::Value> = parse_config_hosts(text)
         .into_iter()
-        .filter_map(|alias| match resolve(ssh, &alias) {
+        .filter_map(|alias| match resolve(&alias) {
             Ok(r) => Some(
                 json!({"alias": alias, "hostname": r.hostname, "user": r.user, "port": r.port}),
             ),
@@ -172,7 +178,7 @@ pub(crate) fn list(ssh: &Path) -> Result<serde_json::Value> {
             }
         })
         .collect();
-    Ok(serde_json::Value::Array(aliases))
+    serde_json::Value::Array(aliases)
 }
 
 #[cfg(test)]

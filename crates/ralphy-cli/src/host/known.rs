@@ -174,11 +174,16 @@ pub(crate) fn key(ssh: &Path, keygen: &Path, dest: &str) -> Result<Value> {
         let reason = format!("{}:{} showed no SSH host key", r.hostname, r.port);
         return Ok(json!({"state": "unreachable", "reason": reason}));
     }
+    unknown_reply(&r.hostname, r.port, &lines)
+}
+
+/// The `host.key` reply for a host whose key no `known_hosts` file holds.
+fn unknown_reply(hostname: &str, port: u16, lines: &[ScanLine]) -> Result<Value> {
     let keys = lines
         .iter()
         .map(|l| Ok(json!({"type": l.kind, "fingerprint": fingerprint(&l.blob)?})))
         .collect::<Result<Vec<Value>>>()?;
-    Ok(json!({"state": "unknown", "host": r.hostname, "port": r.port, "keys": keys}))
+    Ok(json!({"state": "unknown", "host": hostname, "port": port, "keys": keys}))
 }
 
 /// `ralphy host trust`: read `dest`'s key again and append to the first

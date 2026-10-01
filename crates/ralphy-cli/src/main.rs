@@ -39,6 +39,10 @@ mod ui;
 mod update;
 mod usage;
 
+#[cfg(test)]
+#[path = "../../ralphy-daemon/tests/support/golden.rs"]
+mod golden;
+
 use cli::{Cli, Command, ConsolidateArgs, HookCommand};
 // Re-exported at the crate root so `crate::CliAgent` stays a stable path for the
 // sibling modules that select on it (e.g. `models`) after the CLI defs moved to
