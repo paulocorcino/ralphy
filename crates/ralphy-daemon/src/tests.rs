@@ -7215,9 +7215,13 @@ fn every_settable_key_the_panel_offers_is_a_key_the_cli_accepts() {
     // The declaration is worth nothing if the markup ignores it: an
     // `it.readonly` the input never reads is a field that still takes an
     // edit and still comes back refused.
-    assert!(
-        include_str!("../assets/ui/index.html").contains(r#":disabled="it.readonly === true""#),
-        "index.html must disable the control a readonly item declares"
+    // One binding per control a readonly key can use: text, password, toggle.
+    assert_eq!(
+        include_str!("../assets/ui/index.html")
+            .matches(r#":disabled="it.readonly === true""#)
+            .count(),
+        3,
+        "index.html must disable the text, password and toggle control a readonly item declares"
     );
     // Non-vacuous: a scan that stopped recognizing the schema's shape would
     // otherwise pass by checking nothing at all.

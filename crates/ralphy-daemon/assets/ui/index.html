@@ -1991,6 +1991,7 @@
                            into next (see the login gate's note). -->
                       <template x-if="settingsOpen && it.type === 'password'">
                         <input class="set-input" type="password" :placeholder="it.placeholder || '••••••••'"
+                               :disabled="it.readonly === true" :title="it.readonly === true ? 'Read-only. See the note below.' : ''"
                                :value="settings[it.key]" @change="saveSetting(it.key, $event.target.value)" />
                       </template>
                       <!-- a plain checkbox: the value is a real boolean, so it
@@ -1998,6 +1999,7 @@
                            inputs above need -->
                       <template x-if="it.type === 'toggle'">
                         <input class="set-check" type="checkbox"
+                               :disabled="it.readonly === true" :title="it.readonly === true ? 'Read-only. See the note below.' : ''"
                                :checked="settings[it.key] === true"
                                @change="saveSetting(it.key, $event.target.checked)" />
                       </template>

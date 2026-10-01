@@ -715,12 +715,14 @@ fn config_argv_refuses_local_only_keys() {
     // character class nor the CLI's `require_known_key` refuses it. The daemon
     // refuses the KEY itself — remotely, only: `verify.command` becomes argv[0]
     // of the verify gate's child, the two hatches re-arm what an ADR closed,
-    // `events.token` is the sink's bearer (audit F12).
+    // `events.token` is the sink's bearer (audit F12),
+    // `queue.trust_all_comments` lets a stranger's comment reach the prompt.
     for key in [
         "verify.command",
         "copilot.allow_builtin_mcp_servers_i_understand_the_risk",
         "cursor.allow_codebase_indexing_i_understand_the_risk",
         "events.token",
+        "queue.trust_all_comments",
     ] {
         assert_eq!(
             config_argv(

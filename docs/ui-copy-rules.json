@@ -189,6 +189,12 @@
       "reason": "The text ends with a command the operator types. Code keeps its case."
     },
     {
+      "file": "wb-settings.js",
+      "text": "Send comments from any GitHub account to the agent. When off, only comments from owners, members and collaborators are read. When on, anyone can add text to the prompt of a labelled issue on a public repository. Read-only here. Change it in a terminal: ralphy config set queue.trust_all_comments true",
+      "rule": "banned:ralphy",
+      "reason": "The text ends with a command the operator types. Code keeps its case."
+    },
+    {
       "file": "wb-runs.js",
       "text": "planning #{run.active}",
       "rule": "casing:first",

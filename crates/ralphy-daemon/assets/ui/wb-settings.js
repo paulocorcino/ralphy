@@ -181,7 +181,11 @@ window.WB_SETTINGS = [
         label: "Read every issue comment",
         type: "toggle",
         default: false,
-        help: "Send comments from any GitHub account to the agent. When off, only comments from owners, members and collaborators are read. When on, anyone can add text to the prompt of a labelled issue on a public repository.",
+        // Shown, never edited here: on, a stranger's comment reaches the
+        // agent's prompt, so the daemon denies the key at the remote boundary
+        // (dispatch.rs LOCAL_ONLY_KEYS) and would refuse the save.
+        readonly: true,
+        help: "Send comments from any GitHub account to the agent. When off, only comments from owners, members and collaborators are read. When on, anyone can add text to the prompt of a labelled issue on a public repository. Read-only here. Change it in a terminal: ralphy config set queue.trust_all_comments true",
       },
     ],
   },
