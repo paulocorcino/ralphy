@@ -11,8 +11,9 @@ use super::{strip_release_date, ModelPrice};
 /// Walk a models.dev-shaped document (`providers → models → cost`) into a
 /// normalized table. Renames `cache_write` → `cache_creation`, maps null/missing
 /// cache fields to `0.0`, and drops rows without a usable input+output cost (the
-/// `$0`/subscription trap). Malformed entries are skipped; a non-object root
-/// yields an empty map — never panics.
+/// `$0`/subscription trap). Malformed entries are skipped, and so is a row with
+/// a negative or non-finite price (ADR-0072 D9); a non-object root yields an
+/// empty map — never panics.
 pub fn ingest_models_dev(doc: &Value) -> BTreeMap<String, ModelPrice> {
     let mut out = BTreeMap::new();
     let Some(providers) = doc.as_object() else {
@@ -37,6 +38,12 @@ pub fn ingest_models_dev(doc: &Value) -> BTreeMap<String, ModelPrice> {
             }
             let cache_read = json_f64(cost.get("cache_read")).unwrap_or(0.0);
             let cache_creation = json_f64(cost.get("cache_write")).unwrap_or(0.0);
+            if [input, output, cache_read, cache_creation]
+                .iter()
+                .any(|p| *p < 0.0 || !p.is_finite())
+            {
+                continue;
+            }
             let key = format!("{provider}/{}", strip_release_date(model_id));
             out.insert(
                 key,
@@ -74,6 +81,26 @@ mod tests {
                 }
             }
         })
+    }
+
+    /// A negative price is skipped like a malformed row: a cost cannot be
+    /// negative, and one would lower every total it enters.
+    #[test]
+    fn negative_price_rows_are_skipped() {
+        let doc = json!({
+            "p": {
+                "models": {
+                    "neg-input": { "cost": { "input": -1, "output": 2 } },
+                    "neg-output": { "cost": { "input": 1, "output": -0.5 } },
+                    "neg-cache": { "cost": { "input": 1, "output": 2, "cache_read": -2 } },
+                    "neg-write": { "cost": { "input": 1, "output": 2, "cache_write": -3 } },
+                    "fine": { "cost": { "input": 1, "output": 2, "cache_read": 0.1 } }
+                }
+            }
+        });
+        let table = ingest_models_dev(&doc);
+        let keys: Vec<&str> = table.keys().map(String::as_str).collect();
+        assert_eq!(keys, ["p/fine"]);
     }
 
     #[test]

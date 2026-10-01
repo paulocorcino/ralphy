@@ -315,12 +315,12 @@ surface.
 - D8: not checked by code for the agent. Ralphy's own push has one call site
   (`crates/ralphy-core/src/sync.rs:390`), held by
   `spawn_sites_match_the_baseline`.
-- D9: partly checked: a new URL host is flagged by `xtask capabilities`.
-  Gap: the models.dev fetch has no explicit size cap
-  (`crates/ralphy-pricing/src/fetch.rs:155`), and ingest keeps a negative or
-  non-finite price (`crates/ralphy-pricing/src/ingest.rs:16-56`). Decided
-  fix (review of 2026-10-01): an explicit cap on the read, and such a price
-  is skipped like a malformed row.
+- D9: checked. A new URL host is flagged by `xtask capabilities`. The
+  models.dev read is capped at `MAX_MODELS_DEV_BYTES`
+  (`crates/ralphy-pricing/src/fetch.rs`); a larger body fails the fetch and
+  leaves the cache unchanged (`an_oversized_body_fails_and_leaves_the_cache`).
+  Ingest skips a row with a negative or non-finite price like a malformed
+  row (`negative_price_rows_are_skipped`).
 - D10: checked by `every_response_carries_the_security_headers` and
   `no_shell_carries_an_inline_event_handler`
   (`crates/ralphy-daemon/src/tests.rs`); a new `eval` or `new Function` is
