@@ -228,7 +228,10 @@ surface.
   stays in that surface's ADR. A new security decision for one surface goes
   in that ADR, and changes a premise here only when it changes the model.
 - `SECURITY.md` is the summary for users and for people who report a
-  vulnerability. It must not contradict this ADR.
+  vulnerability. It states only what is true today: a premise with an open
+  gap below is written there with its gap, or not at all. A change that
+  adds, removes or closes a gap in a protection that `SECURITY.md` names
+  updates `SECURITY.md` in the same change.
 - `docs/ARCHITECTURE.md` §9 maps each boundary to its control and its ADR.
 - The gaps under Compliance become issues. While a gap is open, the premise
   it breaks is a target, not a fact. Each fix that closes a gap updates its

@@ -21,9 +21,9 @@ a path across a trust boundary, a flag or setting that changes what an agent
 or a client may do, a secret, or a vendored library.
 
 If §7 names an owner for the fact, get it from that owner. If the fact is not
-in §7, it has no owner yet: say so in your plan, and do not create a second
-owner by accident. If a rule in §5 blocks your change, the answer is a
-decision (an ADR or an amendment), not a way around the rule.
+in §7, it has no owner yet: say so in your plan, and name the one owner you
+propose. If a rule in §5 blocks your change, the answer is a decision: an ADR
+or an amendment.
 
 The template for a new decision is [adr/TEMPLATE.md](./adr/TEMPLATE.md).
 
@@ -117,11 +117,11 @@ The component names are CONTEXT.md terms.
 | Rule | Decided by | Check |
 |---|---|---|
 | `ralphy-core` depends on no `ralphy-agent-*` crate and not on `ralphy-adapter-support` | ADR-0002 | `core_and_adapters_keep_their_dependency_edges` (`crates/xtask/tests/crate_dependencies.rs`) |
-| No adapter depends on another adapter | ADR-0002, ADR-0040 | `core_and_adapters_keep_their_dependency_edges` (`crates/xtask/tests/crate_dependencies.rs`) |
+| No adapter depends on another adapter | ADR-0002, ADR-0040 | the same test |
+| `ralphy-pricing` and `ralphy-release` are leaf crates | ADR-0034, ADR-0056 | the same test |
+| `ralphy-git-read` is a leaf crate | ADR-0069 | the same test |
 | The daemon links no vendor crate and does not import `ralphy-core` | ADR-0032 §10 | `daemon_manifest_has_no_vendor_dependency` (`crates/ralphy-daemon/src/roster.rs`); the core half has none yet |
 | No `tokio` or `reqwest` in the CLI; the async stack stays in the daemon | ADR-0032 | `cli_manifest_pins_ureq_excludes_reqwest_tokio` (`crates/ralphy-cli/src/pricing.rs`) |
-| `ralphy-pricing` and `ralphy-release` are leaf crates | ADR-0034, ADR-0056 | `core_and_adapters_keep_their_dependency_edges` (`crates/xtask/tests/crate_dependencies.rs`) |
-| `ralphy-git-read` is a leaf crate | ADR-0069 | `core_and_adapters_keep_their_dependency_edges` (`crates/xtask/tests/crate_dependencies.rs`) |
 | The daemon may observe the working tree as bytes; anything that interprets or changes a repo is a `ralphy` invocation, except read-only git facts through `ralphy-git-read` (ADR-0069) | ADR-0036 §3 | None yet |
 | The daemon reads git facts only through `ralphy-git-read`, and runs no git of its own | ADR-0069 | `spawn_sites_match_the_baseline` (`crates/xtask/tests/ratchets.rs`): its baseline has zero sites in `crates/ralphy-daemon/src` and `crates/ralphy-usage-scan/src`; `every_read_is_on_the_read_only_list` (`crates/ralphy-git-read/src/lib.rs`) for the read-only half |
 | The browser reaches only the daemon, and a new capability is a verb in the registry, not a new route | ADR-0036 §1 | None yet. The CSP (`crates/ralphy-daemon/src/routes/headers.rs`) allows `connect-src 'self' ws: wss:`, so WebSockets to any host pass |
@@ -138,7 +138,7 @@ outside the adapter uses Ralphy's words.
 
 | Product | Adapter (the only place its meaning may live) | Known coupling outside it (contained, must not grow) |
 |---|---|---|
-| GitHub, as the **Forge** | `ralphy-core::github` | 24 `ralphy_core::github::` items used from `ralphy-cli`; label names and body conventions in `runner`, `acceptance`, `blocked`; `gh issue view` in the prompts |
+| GitHub, as the **Forge** | `ralphy-core::github` | the `ralphy_core::github::` items used from `ralphy-cli` (the forge ratchet in §8 holds the count); label names and body conventions in `runner`, `acceptance`, `blocked`; `gh issue view` in the prompts |
 | Agent CLIs | one `ralphy-agent-*` crate each | vendor reset-time formats parsed in `ralphy-core/src/runner/clock.rs`; the vendor enums the ADR-0040 inventory lists |
 | models.dev | `ralphy-pricing` | — |
 | Telegram | `ralphy-cli/src/telegram` | — |

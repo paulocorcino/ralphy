@@ -32,7 +32,8 @@ daemon beyond your own computer or run Ralphy on a public repository.
 - Login is available with a TOTP code, and with an optional password.
   Sessions expire. Logout and every change to the security settings end
   every open session.
-- Turning a protection off needs a fresh TOTP code once one is set up.
+- Turning off a security setting of the daemon (such as "Require login")
+  needs a fresh TOTP code once one is set up.
 - Every request is checked for its Host and Origin, so another web page
   cannot drive the daemon from your browser.
 - The workbench can only call a fixed list of actions. Child processes get
@@ -45,9 +46,10 @@ daemon beyond your own computer or run Ralphy on a public repository.
 
 - An issue runs only when it carries the queue label, and only a user with
   triage rights can add a label.
-- On the issue thread, only comments by the repository's owners, members and
+- In a run, only comments by the repository's owners, members and
   collaborators reach the agent. Comments by anyone else are dropped and
-  named in the run log.
+  named in the run log. Triage still reads the whole issue thread, every
+  author included.
 - The agent's instructions say that a comment is information, never a
   command.
 
