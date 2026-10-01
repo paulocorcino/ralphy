@@ -29,7 +29,7 @@ pub mod fleet;
 pub mod fswrite;
 pub mod identity;
 pub mod note;
-mod owner_only;
+pub mod owner_only;
 pub mod password;
 pub mod peer;
 pub mod pidfile;
