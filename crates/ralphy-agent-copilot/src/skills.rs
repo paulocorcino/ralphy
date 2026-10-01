@@ -1,7 +1,8 @@
 //! Materializing ralphy's embedded skills into Copilot's discovery path
 //! (`.agents/skills/`), additively alongside any skills the operator already
-//! maintains there — plus the D9 load receipt that proves Copilot actually read
-//! them (ADR-0041 D9).
+//! maintains there — plus the D9 checks that prove Copilot finds them: the skill
+//! listing before the session, and the load receipt when the CLI emits one
+//! (ADR-0041 D9).
 //!
 //! The link/copy/ignore dance itself lives in [`ralphy_adapter_support`]; only
 //! the per-skill loop and the receipt guard are Copilot's own.
@@ -26,7 +27,7 @@ static SKILLS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../assets/plugin/s
 /// MERGED `.gitignore`, never a wipe.
 ///
 /// Returns the exposed skill names, which the caller feeds to
-/// [`skills_load_violation`] as the required set for the D9 receipt.
+/// [`skill_list_violation`] and [`skills_load_violation`] as the required set.
 pub(crate) fn materialize_copilot_skills(ws: &Workspace) -> Result<Vec<String>> {
     let store = ws.ralphy_dir().join("skills");
     ralphy_adapter_support::materialize_assets(&SKILLS, &store, Some(&ws.ralphy_dir()))?;
@@ -61,9 +62,39 @@ pub(crate) fn materialize_copilot_skills(ws: &Workspace) -> Result<Vec<String>> 
         .collect())
 }
 
+/// Check the output of `copilot skill list --json` (run in the repo before the
+/// session): every name in `required` must be listed and `enabled`. `None` is a
+/// pass; `Some(msg)` stops the run before a billed turn. Output that is not the
+/// expected array is a violation: an unreadable listing proves nothing.
+///
+/// Live shape (`copilot` 1.0.75 and 1.0.90, 2026-10-01): a JSON array of
+/// `{name, description, source, path, enabled}`. Copilot lists its own builtin
+/// skills too, so this checks PRESENCE of each required name, never set equality.
+pub(crate) fn skill_list_violation(listing: &str, required: &[String]) -> Option<String> {
+    let Ok(serde_json::Value::Array(entries)) = serde_json::from_str(listing.trim()) else {
+        return Some(
+            "Copilot's skill list could not be read, so Ralphy cannot confirm that \
+             its skills are there; stopping to be safe"
+                .into(),
+        );
+    };
+    let enabled: Vec<&str> = entries
+        .iter()
+        .filter(|e| e.get("enabled").and_then(|b| b.as_bool()) == Some(true))
+        .filter_map(|e| e.get("name").and_then(|n| n.as_str()))
+        .collect();
+    let missing = required.iter().find(|r| !enabled.contains(&r.as_str()))?;
+    Some(format!(
+        "Copilot does not offer the `{missing}` skill: Ralphy put it in \
+         .agents/skills, but Copilot lists only [{}] as enabled, so the steps that \
+         use this skill would do nothing",
+        enabled.join(", ")
+    ))
+}
+
 /// Scan a Copilot JSONL stream for the `session.skills_loaded` receipt and assert
-/// every name in `required` was loaded. `None` means the receipt was seen and all
-/// of ralphy's skills are there; `Some(msg)` is a run-failing violation.
+/// every name in `required` was loaded. `None` means no receipt, or a receipt
+/// that lists all of ralphy's skills; `Some(msg)` is a run-failing violation.
 ///
 /// Live shape (`copilot 1.0.71`, 2026-07-20): `data.skills[]`, each entry keyed
 /// `name`. Copilot injects its OWN skills into the same array, so this checks
@@ -72,18 +103,10 @@ pub(crate) fn materialize_copilot_skills(ws: &Workspace) -> Result<Vec<String>> 
 /// No `ephemeral` filter, for the same reason as `guards::builtin_mcp_violation`:
 /// the live receipt carries `"ephemeral":true`, so filtering would find nothing.
 ///
-/// `require_receipt` mirrors D7's split exactly. A MISSING required skill is
-/// always a violation. An ABSENT receipt is only one for a run that reached normal
-/// completion: a run killed by a usage limit, a crash or the wall clock can die
-/// before the receipt is emitted, and fail-closing there would overwrite the typed
-/// `Limit`/`Timeout` outcome with "skills receipt missing".
-pub(crate) fn skills_load_violation(
-    stdout: &str,
-    required: &[String],
-    require_receipt: bool,
-) -> Option<String> {
-    let mut saw_receipt = false;
-    let mut loaded: Vec<String> = Vec::new();
+/// An ABSENT receipt is not a violation: CLI 1.0.90 no longer emits it, and the
+/// skill listing before the session ([`skill_list_violation`]) is the proof that
+/// the skills are there (ADR-0041 D9 amendment of 2026-10-01).
+pub(crate) fn skills_load_violation(stdout: &str, required: &[String]) -> Option<String> {
     for line in stdout.lines() {
         let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
@@ -91,9 +114,8 @@ pub(crate) fn skills_load_violation(
         if v.get("type").and_then(|t| t.as_str()) != Some("session.skills_loaded") {
             continue;
         }
-        // A receipt counts as SEEN only once its payload is readable: a renamed or
-        // missing `data.skills` is vendor drift, and treating it as a pass would
-        // report green on a run that silently lost every skill.
+        // A receipt with an unreadable payload is skipped, not passed: the
+        // listing before the session is the proof either way.
         let Some(skills) = v
             .get("data")
             .and_then(|d| d.get("skills"))
@@ -101,17 +123,11 @@ pub(crate) fn skills_load_violation(
         else {
             continue;
         };
-        saw_receipt = true;
-        for skill in skills {
-            if let Some(name) = skill.get("name").and_then(|n| n.as_str()) {
-                loaded.push(name.to_string());
-            }
-        }
-    }
-
-    // ADR-0041 D9.
-    if saw_receipt {
-        if let Some(missing) = required.iter().find(|r| !loaded.contains(r)) {
+        let loaded: Vec<&str> = skills
+            .iter()
+            .filter_map(|skill| skill.get("name").and_then(|n| n.as_str()))
+            .collect();
+        if let Some(missing) = required.iter().find(|r| !loaded.contains(&r.as_str())) {
             return Some(format!(
                 "Copilot did not load the `{missing}` skill: Ralphy put it in \
                  .agents/skills, but Copilot reports only [{}], so the steps that \
@@ -119,16 +135,6 @@ pub(crate) fn skills_load_violation(
                 loaded.join(", ")
             ));
         }
-        return None;
-    }
-
-    if require_receipt {
-        return Some(
-            "Copilot did not report which skills it loaded (no \
-             session.skills_loaded event), so Ralphy cannot confirm that its skills \
-             are there; stopping to be safe"
-                .into(),
-        );
     }
     None
 }
@@ -326,19 +332,17 @@ mod tests {
         let stream =
             r#"{"type":"session.skills_loaded","data":{"skills":[{"name":"staged-plan-legacy"}]}}"#;
         let req = vec!["staged-plan".to_string()];
-        let msg = skills_load_violation(stream, &req, true)
+        let msg = skills_load_violation(stream, &req)
             .expect("a near-miss name must not satisfy the requirement");
         assert!(msg.contains("staged-plan"), "{msg}");
     }
 
-    /// `require_receipt` gates ONLY the absent-receipt case. A receipt that IS
-    /// present and is missing a required skill fails even for a run that died
-    /// early — otherwise an implementation that early-returns `None` whenever
-    /// `require_receipt` is false would pass the whole suite.
+    /// A receipt that IS present and is missing a required skill fails, whatever
+    /// the listing said before the session.
     #[test]
-    fn a_present_receipt_missing_a_skill_fails_even_on_a_run_that_died_early() {
+    fn a_present_receipt_missing_a_skill_fails() {
         let stream = r#"{"type":"session.skills_loaded","data":{"skills":[{"name":"reviewer"}]}}"#;
-        let msg = skills_load_violation(stream, &required(), false)
+        let msg = skills_load_violation(stream, &required())
             .expect("a present receipt missing a skill is always a violation");
         assert!(
             msg.contains("setup-pocock") || msg.contains("staged-plan"),
@@ -348,7 +352,7 @@ mod tests {
 
     #[test]
     fn skills_receipt_lists_the_ralphy_skills_passes() {
-        assert_eq!(skills_load_violation(FIXTURE, &required(), true), None);
+        assert_eq!(skills_load_violation(FIXTURE, &required()), None);
     }
 
     /// The FAILS-before / PASSES-after oracle for the whole slice: drop
@@ -365,31 +369,74 @@ mod tests {
         );
         let stream = serde_json::to_string(&v).unwrap();
 
-        let msg = skills_load_violation(&stream, &required(), true)
+        let msg = skills_load_violation(&stream, &required())
             .expect("a missing ralphy skill must fail the run");
         assert!(msg.contains("staged-plan"), "{msg}");
     }
 
-    /// A receipt whose payload ralphy cannot read is not a receipt: vendor drift in
-    /// `data.skills` must not silently count as "all skills loaded".
+    /// CLI 1.0.90 emits no receipt, and a run that died early may emit none
+    /// either: an absent or unreadable receipt is not a violation, because the
+    /// listing before the session already proved the skills.
     #[test]
-    fn skills_receipt_with_unreadable_payload_fails_closed() {
-        let drifted = r#"{"type":"session.skills_loaded","data":{"items":[]}}"#;
-        assert!(
-            skills_load_violation(drifted, &required(), true).is_some(),
-            "an unreadable receipt payload must fail closed"
-        );
+    fn an_absent_or_unreadable_receipt_is_not_a_violation() {
+        for stream in [
+            "error: usage limit reached\n",
+            r#"{"type":"session.skills_loaded","data":{"items":[]}}"#,
+        ] {
+            assert_eq!(skills_load_violation(stream, &required()), None, "{stream}");
+        }
     }
 
-    /// D7's MEDIUM-1 fix, applied to D9: a run that died before emitting the
-    /// receipt must not be turned into "skills receipt missing" — that would
-    /// overwrite the typed Limit/Timeout outcome with a wrong error.
+    // ── skill_list_violation ──────────────────────────────────────────────
+
+    /// Real `copilot skill list --json` output (CLI 1.0.90, FinCal, 2026-10-01;
+    /// descriptions shortened, paths made neutral).
+    const LISTING: &str = include_str!("../fixtures/skill-list-2026-10-01.json");
+
+    fn listing_with(edit: impl Fn(&mut serde_json::Value)) -> String {
+        let mut v: serde_json::Value = serde_json::from_str(LISTING).unwrap();
+        for entry in v.as_array_mut().unwrap() {
+            edit(entry);
+        }
+        serde_json::to_string(&v).unwrap()
+    }
+
     #[test]
-    fn absent_skills_receipt_is_not_a_violation_for_a_run_that_died_early() {
-        assert_eq!(
-            skills_load_violation("error: usage limit reached\n", &required(), false),
-            None
-        );
+    fn a_listing_with_the_ralphy_skills_passes() {
+        assert_eq!(skill_list_violation(LISTING, &required()), None);
+    }
+
+    #[test]
+    fn a_listing_without_a_ralphy_skill_fails() {
+        let listing = listing_with(|e| {
+            if e["name"] == "staged-plan" {
+                e["name"] = "staged-plan-legacy".into();
+            }
+        });
+        let msg = skill_list_violation(&listing, &required()).expect("a missing skill fails");
+        assert!(msg.contains("staged-plan"), "{msg}");
+    }
+
+    /// A disabled skill is listed but never offered to the model.
+    #[test]
+    fn a_disabled_ralphy_skill_fails() {
+        let listing = listing_with(|e| {
+            if e["name"] == "reviewer" {
+                e["enabled"] = false.into();
+            }
+        });
+        let msg = skill_list_violation(&listing, &required()).expect("a disabled skill fails");
+        assert!(msg.contains("reviewer"), "{msg}");
+    }
+
+    #[test]
+    fn an_unreadable_listing_fails_closed() {
+        for listing in ["", "not json", r#"{"skills":[]}"#] {
+            assert!(
+                skill_list_violation(listing, &required()).is_some(),
+                "{listing:?} must fail closed"
+            );
+        }
     }
 
     /// The live receipt is ephemeral; an ephemeral filter would fail closed on

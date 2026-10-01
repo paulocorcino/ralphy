@@ -120,6 +120,23 @@ pub(crate) fn build_copilot_command(
     cmd
 }
 
+/// `copilot skill list --json`, run in `repo`: Copilot's own skill discovery for
+/// that directory, with no model call and no session (ADR-0041 D9 amendment of
+/// 2026-10-01). Same D8 scrub as a session, so the listing sees what the session
+/// would see.
+pub(crate) fn build_copilot_skill_list_command(repo: &Path) -> Command {
+    let mut cmd = Command::new(resolve_program("copilot"));
+    cmd.current_dir(repo)
+        .args(["skill", "list", "--json"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .env_remove("COPILOT_GITHUB_TOKEN")
+        .env_remove("GH_TOKEN")
+        .env_remove("GITHUB_TOKEN");
+    cmd
+}
+
 /// The one-shot sibling for `tasks.rs` (diagnose/draft/triage/consolidate) — same
 /// argv, same D7 flags, same D8 env scrub, `effort` always `None` (D5), escape
 /// hatch never on for a one-shot.

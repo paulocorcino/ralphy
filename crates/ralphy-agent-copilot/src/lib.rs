@@ -15,8 +15,8 @@
 //! The one-shot `init`/`triage`/`consolidate` flows go through [`tasks`].
 
 use std::fs;
-use std::path::PathBuf;
-use std::time::Instant;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use ralphy_adapter_support::{
@@ -69,6 +69,10 @@ use usage::copilot_usage;
 /// line (Copilot's model is the operator's account default, ADR-0041 D6). Copied
 /// to `.ralphy/plan-charter.md` for the session to read; only a one-line pointer
 /// is piped on stdin. Single source of truth lives at `assets/prompts/`.
+/// `copilot skill list` makes no model call; a minute is far above its measured
+/// run time (about 0.6 s on Windows, CLI 1.0.90, 2026-10-01).
+const SKILL_LIST_TIMEOUT: Duration = Duration::from_secs(60);
+
 const PROMPT_PLAN_COPILOT: &str = include_str!("../../../assets/prompts/prompt.plan.copilot.md");
 
 /// The two phases a `CopilotAgent` drives, each with its own model source
@@ -164,13 +168,31 @@ impl CopilotAgent {
     /// the run: a charter whose skill invocations silently do nothing is a run that
     /// only looks like it worked. No escape hatch — unlike D7's builtin MCPs, a
     /// missing skill grants the operator no capability worth opting into.
-    pub(crate) fn check_skills_loaded(
-        &self,
-        stdout: &str,
-        required: &[String],
-        require_receipt: bool,
-    ) -> Result<()> {
-        match skills::skills_load_violation(stdout, required, require_receipt) {
+    pub(crate) fn check_skills_loaded(&self, stdout: &str, required: &[String]) -> Result<()> {
+        match skills::skills_load_violation(stdout, required) {
+            Some(msg) => Err(anyhow::anyhow!("{msg}")),
+            None => Ok(()),
+        }
+    }
+
+    /// D9's check before the session: `copilot skill list --json` in the repo
+    /// must list every Ralphy skill as enabled. It runs before any billed turn,
+    /// so a run with missing skills costs nothing.
+    pub(crate) fn check_skills_listed(&self, repo: &Path, required: &[String]) -> Result<()> {
+        let out = ralphy_adapter_support::run_headless(
+            command::build_copilot_skill_list_command(repo),
+            "",
+            SKILL_LIST_TIMEOUT,
+        )
+        .context("running `copilot skill list`")?;
+        if out.timed_out || !out.exit.is_some_and(|e| e.success()) {
+            anyhow::bail!(
+                "`copilot skill list` failed, so Ralphy cannot confirm that its skills \
+                 are there; stopping to be safe: {}",
+                out.stderr.trim()
+            );
+        }
+        match skills::skill_list_violation(&out.stdout, required) {
             Some(msg) => Err(anyhow::anyhow!("{msg}")),
             None => Ok(()),
         }
@@ -284,6 +306,7 @@ impl Agent for CopilotAgent {
         // the closure is `Fn`, so it borrows this rather than producing it.
         // Materializing here still precedes every `copilot` spawn.
         let required = materialize_copilot_skills(ws)?;
+        self.check_skills_listed(ws.repo_root(), &required)?;
 
         let run = || {
             let cmd = build_copilot_command(
@@ -344,7 +367,7 @@ impl Agent for CopilotAgent {
                 .map_err(|e| anyhow::anyhow!("{e} (see {})", log_path.display()))?;
             // Cross-path invariant: the SAFETY receipt (D7) keeps precedence over
             // the CAPABILITY receipt (D9) on every return path.
-            self.check_skills_loaded(&r.stdout, &required, r.exited_cleanly)
+            self.check_skills_loaded(&r.stdout, &required)
                 .map_err(|e| anyhow::anyhow!("{e} (see {})", log_path.display()))?;
         }
 
@@ -386,6 +409,7 @@ impl Agent for CopilotAgent {
 
         // See `plan`: hoisted so the D9 guard can read it after the wrapper returns.
         let required = materialize_copilot_skills(ws)?;
+        self.check_skills_listed(ws.repo_root(), &required)?;
 
         let run = || {
             let cmd = build_copilot_command(
@@ -429,7 +453,7 @@ impl Agent for CopilotAgent {
         self.check_builtin_mcps(&r.stdout, r.exited_cleanly)
             .map_err(|e| anyhow::anyhow!("{e} (see {})", log_path.display()))?;
         // D7 before D9 here too: the safety receipt keeps precedence.
-        self.check_skills_loaded(&r.stdout, &required, r.exited_cleanly)
+        self.check_skills_loaded(&r.stdout, &required)
             .map_err(|e| anyhow::anyhow!("{e} (see {})", log_path.display()))?;
 
         let after_sha = git::head_sha(ws.repo_root()).unwrap_or_default();

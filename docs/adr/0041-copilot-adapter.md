@@ -320,9 +320,9 @@ Measured on 2026-10-01:
   `gh pr create --help`, so the rules use the `:*` form.
 - CLI 1.0.75: the `git push` rule holds, and every `gh pr` rule is ignored.
 - A live `ralphy run` (FinCal #127, CLI 1.0.75) ran to the end with the rules
-  on, and `git push --dry-run` was refused. On CLI 1.0.90 no `ralphy run`
-  could start: that version no longer emits `session.skills_loaded`, so the D9
-  receipt guard stops every run. That drift is separate from this amendment.
+  on, and `git push --dry-run` was refused. CLI 1.0.90 could not run under
+  Ralphy at first, because it no longer emits `session.skills_loaded`; the D9
+  amendment of the same date fixes that.
 
 Limits, accepted: a global flag before the subcommand (`gh -R o/r pr create`)
 gets past the rules, and so would a wrapper (`pwsh -Command "..."`). The rules
@@ -387,6 +387,26 @@ array, so the guard checks each required name is PRESENT, never set equality.
 `require_receipt` follows D7's split: an absent receipt fails closed only for a run
 that exited cleanly, so a `Limit`/`Timeout` is never overwritten with
 "skills receipt missing".
+
+
+### Amendment (2026-10-01) — the proof moves to `copilot skill list` before the session
+
+CLI 1.0.90 no longer emits `session.skills_loaded`, so the absent-receipt rule above
+stopped every clean plan and execute run. The proof that the Ralphy skills are there
+is now `copilot skill list --json`, run in the repo after the skills are
+materialized and before the session starts. It is the same discovery for the same
+directory, with the same D8 token scrub, and it makes no model call (about 0.6 s on
+Windows). Each required name must be listed with `enabled: true`; a missing or
+disabled skill, an output that is not the expected array, a failed command or a
+timeout stops the run before any billed turn. The shape is the same in CLI 1.0.75
+and 1.0.90: an array of `{name, description, source, path, enabled}`. A live
+`ralphy run` on CLI 1.0.90 (FinCal, 2026-10-01) passed the check and ran to the
+end, with the deny rules of the D7 amendment on.
+
+The receipt check stays for a CLI that still emits it: a receipt that lists the
+skills without a required one fails the run. An absent or unreadable receipt is no
+longer a failure, so `require_receipt` is gone. The one-shot tasks still run no D9
+check.
 
 ## D10 — Usage: mint the session id, read the store by primary key
 

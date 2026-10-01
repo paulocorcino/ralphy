@@ -1,0 +1,121 @@
+[
+  {
+    "name": "domain-modeling",
+    "description": "Build and sharpen a project's domain model. Use when the ...",
+    "source": "project",
+    "path": "C:\\repo\\.agents\\skills\\domain-modeling",
+    "enabled": true
+  },
+  {
+    "name": "frontend-design",
+    "description": "Guidance for distinctive, intentional visual design when ...",
+    "source": "project",
+    "path": "C:\\repo\\.agents\\skills\\frontend-design",
+    "enabled": true
+  },
+  {
+    "name": "grill-me",
+    "description": "A relentless interview to sharpen a plan or design.",
+    "source": "project",
+    "path": "C:\\repo\\.agents\\skills\\grill-me",
+    "enabled": true
+  },
+  {
+    "name": "grill-with-docs",
+    "description": "A relentless interview to sharpen a plan or design, which...",
+    "source": "project",
+    "path": "C:\\repo\\.agents\\skills\\grill-with-docs",
+    "enabled": true
+  },
+  {
+    "name": "handoff",
+    "description": "Compact the current conversation into a handoff document ...",
+    "source": "project",
+    "path": "C:\\repo\\.agents\\skills\\handoff",
+    "enabled": true
+  },
+  {
+    "name": "improve-codebase-architecture",
+    "description": "Scan a codebase for deepening opportunities, present them...",
+    "source": "project",
+    "path": "C:\\repo\\.agents\\skills\\improve-codebase-architecture",
+    "enabled": true
+  },
+  {
+    "name": "prototype",
+    "description": "Build a throwaway prototype to answer a design question. ...",
+    "source": "project",
+    "path": "C:\\repo\\.agents\\skills\\prototype",
+    "enabled": true
+  },
+  {
+    "name": "reviewer",
+    "description": "Use ONLY when the user explicitly invokes /reviewer (lite...",
+    "source": "project",
+    "path": "C:\\repo\\.agents\\skills\\reviewer",
+    "enabled": true
+  },
+  {
+    "name": "setup-pocock",
+    "description": "Sets up an `## Agent skills` block in AGENTS.md/CLAUDE.md...",
+    "source": "project",
+    "path": "C:\\repo\\.agents\\skills\\setup-pocock",
+    "enabled": true
+  },
+  {
+    "name": "shadcn",
+    "description": "Manages shadcn components and projects — adding, searchin...",
+    "source": "project",
+    "path": "C:\\repo\\.agents\\skills\\shadcn",
+    "enabled": true
+  },
+  {
+    "name": "staged-plan",
+    "description": "Design a self-contained multi-stage plan whose markdown i...",
+    "source": "project",
+    "path": "C:\\repo\\.agents\\skills\\staged-plan",
+    "enabled": true
+  },
+  {
+    "name": "to-issues",
+    "description": "Break a plan, spec, or PRD into independently-grabbable i...",
+    "source": "project",
+    "path": "C:\\repo\\.agents\\skills\\to-issues",
+    "enabled": true
+  },
+  {
+    "name": "to-prd",
+    "description": "Turn the current conversation into a PRD and publish it t...",
+    "source": "project",
+    "path": "C:\\repo\\.agents\\skills\\to-prd",
+    "enabled": true
+  },
+  {
+    "name": "web-artifacts-builder",
+    "description": "Suite of tools for creating elaborate, multi-component cl...",
+    "source": "project",
+    "path": "C:\\repo\\.agents\\skills\\web-artifacts-builder",
+    "enabled": true
+  },
+  {
+    "name": "webapp-testing",
+    "description": "Toolkit for interacting with and testing local web applic...",
+    "source": "project",
+    "path": "C:\\repo\\.agents\\skills\\webapp-testing",
+    "enabled": true
+  },
+  {
+    "name": "customize-cloud-agent",
+    "description": "Skill for customizing the Copilot cloud agent (formerly k...",
+    "source": "builtin",
+    "path": "C:\\copilot\\pkg\\win32-x64\\1.0.90\\builtin\\customize-cloud-agent",
+    "enabled": true
+  },
+  {
+    "name": "github-pr-media",
+    "description": "Upload an image or video to GitHub's user attachments API...",
+    "source": "builtin",
+    "path": "C:\\copilot\\pkg\\win32-x64\\1.0.90\\builtin\\github-pr-media",
+    "enabled": true
+  }
+]
