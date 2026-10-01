@@ -1602,6 +1602,29 @@ fn fleet_router(registry_path: PathBuf) -> Router {
     )
 }
 
+/// ADR-0070 D4: the fleet view shows a peer store it cannot read as a row,
+/// in the existing `malformed` state, never as an empty fleet.
+#[tokio::test]
+async fn api_fleet_shows_an_unreadable_peer_store_as_a_row() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("peers"), "a file, not a directory").unwrap();
+    let resp = fleet_router(dir.path().join("repos.toml"))
+        .oneshot(
+            Request::builder()
+                .uri("/api/fleet")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let peers = body["peers"].as_array().unwrap();
+    assert_eq!(peers.len(), 1, "the failure is a row: {peers:?}");
+    assert_eq!(peers[0]["state"], "malformed");
+}
+
 #[tokio::test]
 async fn api_fleet_marks_an_unreachable_peer_and_keeps_the_local_repos() {
     let dir = tempfile::tempdir().unwrap();

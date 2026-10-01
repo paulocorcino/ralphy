@@ -418,7 +418,8 @@ pub fn fold_fleet_usage(
                     why: reject.why(),
                 }),
                 crate::peer::PeerReject::Malformed { .. }
-                | crate::peer::PeerReject::DuplicateIdentity { .. } => None,
+                | crate::peer::PeerReject::DuplicateIdentity { .. }
+                | crate::peer::PeerReject::Unreadable { .. } => None,
             })
             .collect(),
     };

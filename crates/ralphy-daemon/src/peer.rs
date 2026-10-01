@@ -151,6 +151,13 @@ pub enum PeerReject {
         file: String,
         daemon_id: String,
     },
+    /// The store directory, or one of its entries, exists but cannot be read
+    /// (ADR-0070 D4: a store the daemon cannot read is a failure, never "no
+    /// peers").
+    Unreadable {
+        path: String,
+        why: String,
+    },
 }
 
 impl PeerReject {
@@ -160,6 +167,7 @@ impl PeerReject {
             PeerReject::Malformed { file, .. }
             | PeerReject::IncompatibleVersion { file, .. }
             | PeerReject::DuplicateIdentity { file, .. } => file,
+            PeerReject::Unreadable { path, .. } => path,
         }
     }
 
@@ -173,6 +181,9 @@ impl PeerReject {
             ),
             PeerReject::DuplicateIdentity { file, daemon_id } => {
                 format!("{file} announces daemon {daemon_id} again. An earlier file already announced it.")
+            }
+            PeerReject::Unreadable { path, why } => {
+                format!("The peer store {path} cannot be read: {why}.")
             }
         }
     }
@@ -257,20 +268,35 @@ pub fn fold(records: &[(String, String)]) -> (Vec<PeerDescriptor>, Vec<PeerRejec
 }
 
 /// Read every `*.toml` in `dir`, sorted by file name, and [`fold`] them. A
-/// missing directory is not an error — it is a fleet of one.
+/// missing directory is not an error — it is a fleet of one. A directory or an
+/// entry that cannot be read is a [`PeerReject::Unreadable`], so the fleet
+/// view shows the failure instead of an empty fleet.
 pub fn read_store(dir: &Path) -> (Vec<PeerDescriptor>, Vec<PeerReject>) {
     let entries = match std::fs::read_dir(dir) {
         Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return (Vec::new(), Vec::new()),
         Err(e) => {
-            if e.kind() != std::io::ErrorKind::NotFound {
-                tracing::warn!(dir = %dir.display(), error = %e, "failed to read the peer store; serving no peers");
-            }
-            return (Vec::new(), Vec::new());
+            tracing::warn!(dir = %dir.display(), error = %e, "failed to read the peer store");
+            let unreadable = PeerReject::Unreadable {
+                path: dir.display().to_string(),
+                why: e.to_string(),
+            };
+            return (Vec::new(), vec![unreadable]);
         }
     };
     let mut records: Vec<(String, String)> = Vec::new();
     let mut rejected: Vec<PeerReject> = Vec::new();
-    for entry in entries.flatten() {
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(e) => {
+                rejected.push(PeerReject::Unreadable {
+                    path: dir.display().to_string(),
+                    why: e.to_string(),
+                });
+                continue;
+            }
+        };
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) != Some("toml") {
             continue;

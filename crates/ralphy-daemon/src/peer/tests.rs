@@ -166,6 +166,30 @@ fn read_store_of_missing_dir_is_empty() {
     assert!(rejected.is_empty());
 }
 
+/// ADR-0070 D4: a store that exists but cannot be listed is a failure the
+/// fleet view shows, not an empty fleet. A FILE where the directory should be
+/// makes `read_dir` fail with a kind other than `NotFound` on every OS.
+#[test]
+fn an_unreadable_store_is_a_failure_not_an_empty_fleet() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = dir.path().join("peers");
+    std::fs::write(&store, "a file, not a directory").unwrap();
+    let kind = std::fs::read_dir(&store).unwrap_err().kind();
+    assert_ne!(
+        kind,
+        std::io::ErrorKind::NotFound,
+        "the fixture must not read as missing"
+    );
+    let (accepted, rejected) = read_store(&store);
+    assert!(accepted.is_empty());
+    assert_eq!(rejected.len(), 1, "one failure: {rejected:?}");
+    assert!(
+        rejected[0].why().contains("cannot be read"),
+        "{}",
+        rejected[0].why()
+    );
+}
+
 #[test]
 fn read_store_sorts_by_file_name_and_skips_non_toml() {
     let dir = tempfile::tempdir().unwrap();
