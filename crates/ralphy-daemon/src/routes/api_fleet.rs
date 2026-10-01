@@ -459,6 +459,13 @@ pub(crate) async fn peer_command_route(
         let message = "a host command runs only on the daemon you are connected to";
         return Json(serde_json::json!({ "status": "error", "message": message })).into_response();
     }
+    // A registry verb is served against this daemon's own disk; any `daemon`
+    // in the payload is ignored, so it never routes again.
+    if verb.is_registry() {
+        let reply =
+            super::ws_command::serve_registry(&cmd, verb, &registry_path, daemon_id.as_deref());
+        return Json(reply.await).into_response();
+    }
     if verb.effect_class() == dispatch::EffectClass::Spawn {
         return Json(serde_json::json!({
             "status": "error",

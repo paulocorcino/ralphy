@@ -159,6 +159,12 @@
   ],
   "exemptions": [
     {
+      "file": "wb-add-project.js",
+      "text": "Already in Projects",
+      "rule": "casing:title",
+      "reason": "Projects is the name of the panel the folder is already in (#501)."
+    },
+    {
       "file": "index.html",
       "text": "ralphy update",
       "rule": "banned:ralphy",

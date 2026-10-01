@@ -23,6 +23,7 @@ pub mod clipboard;
 pub mod confine;
 pub mod cookie;
 pub mod desk;
+pub mod dir_list;
 pub mod dispatch;
 pub mod epoch;
 pub mod fleet;

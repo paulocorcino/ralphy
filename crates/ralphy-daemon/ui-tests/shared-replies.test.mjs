@@ -144,3 +144,34 @@ test("project.remove: the unknown-repo refusal means the project is already gone
   );
   assert.deepEqual(flashed, []);
 });
+
+test("dir.list: the dialog fold reads the entry bits the daemon wrote", () => {
+  const { window } = loadShell();
+  const P = window.WBAddProject;
+  let s = P.next(P.initial(), { type: "open" });
+  s = P.next(s, { type: "text", text: "<path>/peer-repo", peers: [] });
+  s = P.next(s, { type: "sent", seq: 1 });
+  s = P.next(s, { type: "reply", seq: 1, reply: fixture("dir.list") });
+  assert.deepEqual(P.entries(s).map((e) => e.name), ["peer-repo"]);
+  assert.deepEqual(P.primary(s), { label: "Already in Projects", disabled: true });
+});
+
+test("project.add: the shell selects the slug the reply names", async () => {
+  const { state, window } = loadShell();
+  window.WBDaemon.observe = async () => fixture("project.add");
+  state.loadRepos = async () => {};
+  state.$nextTick = (fn) => fn();
+  const toggled = [];
+  state.toggle = (ref) => toggled.push(ref);
+  state.projects = [{ slug: "o/alpha" }];
+  state.addProject = Object.assign(state.addProject, { open: true });
+  state.addProjectStep({ type: "text", text: "/srv/alpha/", peers: [] });
+  state.addProjectStep({ type: "sent", seq: 1 });
+  state.addProjectStep({
+    type: "reply",
+    seq: 1,
+    reply: { status: "ok", more: 0, entries: [], dir: { path: "/srv/alpha/", root: "/srv/alpha", added: false } },
+  });
+  await state.addProjectSubmit();
+  assert.deepEqual(toggled, ["o/alpha"]);
+});

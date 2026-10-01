@@ -1093,6 +1093,25 @@ peer for that distro and rewrites it to the Linux path before it calls either
 verb. When no such peer exists, the browser says so and does not call the
 verb. The daemon refuses the UNC form in any case (§2, §3).
 
+### 5. The reply also describes the listed folder (2026-10-01)
+
+`entries` describe the children of the listed folder. The browser also needs
+two facts about the folder itself. When the operator types a path that ends
+with a separator, that folder is the one they chose. And when the chosen folder
+is inside a repository, the button must name the repository root. So the reply
+carries one more field:
+
+- `dir`: `{path, root, added}`. `path` is the listed folder after `~`
+  expansion. `root` is the nearest folder, the listed one or an ancestor, that
+  holds a `.git` entry, or `null`. It is found by reading file metadata only,
+  so no `git` process runs. `added` is true when `root`, or the listed folder
+  when `root` is `null`, is in this daemon's registry.
+
+One refinement of the hidden-folder rule in §3: an entry whose name is exactly
+the typed prefix is kept, even when it is hidden. Without it, a hidden folder
+typed by its full name (for example `AppData` on Windows) looks like a folder
+that does not exist.
+
 ### Consequences
 
 - The verb count grows from 49 to 51.

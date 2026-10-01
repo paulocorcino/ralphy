@@ -136,6 +136,12 @@ function shell() {
     fleetPeers: [],
     // The Add a host dialog (#497): its whole state is the wb-hosts.js fold.
     addHost: window.WBHosts.initial(),
+    // The Add a project dialog (#501): its whole state is the wb-add-project.js fold.
+    addProject: window.WBAddProject.initial(),
+    // The debounce and "Loading…" timers of its folder list.
+    _addProjectTimer: null,
+    _addProjectSlow: null,
+    _addProjectSeq: 0,
     // The eye button of the password field. Hidden again on each open.
     hostSecretShown: false,
     // Remove in a row of the Hosts dialog (#497): the host being removed.
@@ -3092,6 +3098,119 @@ function shell() {
       // A dismissal is for the release that was shown. A newer one is news again.
       if (view.latest !== this.release.latest) this.releaseSeen = false;
       this.release = view;
+    },
+    // --- Add a project (#501) -----------------------------------------------
+    // Thin calls: every state change goes through `WBAddProject.next`, and
+    // the daemon that owns the folder lists it and runs `ralphy daemon add`.
+    addProjectStep(ev) {
+      this.addProject = window.WBAddProject.next(this.addProject, ev);
+    },
+    openAddProject() {
+      this.addProjectStep({ type: "open" });
+      this.addProjectList(0);
+      this.$nextTick(() => this.$refs.addProjectFolder?.focus());
+    },
+    // Closing does not cancel an add in flight: the list reloads when it ends.
+    closeAddProject() {
+      this.addProjectStep({ type: "close" });
+      clearTimeout(this._addProjectTimer);
+      clearTimeout(this._addProjectSlow);
+    },
+    addProjectPlaces() {
+      return window.WBAddProject.places(this.fleetPeers);
+    },
+    addProjectEntries() {
+      return window.WBAddProject.entries(this.addProject);
+    },
+    addProjectPrimary() {
+      return window.WBAddProject.primary(this.addProject);
+    },
+    addProjectHelp() {
+      return window.WBAddProject.help(this.addProject);
+    },
+    addProjectWhere(daemon) {
+      this.addProjectStep({ type: "where", daemon });
+      this.addProjectList(0);
+    },
+    addProjectText(text) {
+      this.addProjectStep({ type: "text", text, peers: this.fleetPeers });
+      // A WSL path with no peer calls no verb.
+      if (this.addProject.wslMissing) return;
+      this.addProjectList(150);
+    },
+    addProjectPick(entry) {
+      if (entry.error) return;
+      this.addProjectStep({ type: "pick", name: entry.name });
+      this.addProjectList(0);
+      this.$refs.addProjectFolder?.focus();
+    },
+    // Arrows move in the list; Enter or Tab on a highlighted folder goes down
+    // one level; Enter with none highlighted adds.
+    addProjectKey(ev) {
+      const list = this.addProjectEntries();
+      if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+        ev.preventDefault();
+        this.addProjectStep({ type: "move", by: ev.key === "ArrowDown" ? 1 : -1 });
+        return;
+      }
+      const picked = list[this.addProject.active];
+      if ((ev.key === "Enter" || (ev.key === "Tab" && !ev.shiftKey)) && picked) {
+        ev.preventDefault();
+        this.addProjectPick(picked);
+        return;
+      }
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        if (!this.addProjectPrimary().disabled) this.addProjectSubmit();
+      }
+    },
+    // Ask the daemon for the folder list after `delay` ms. Each request has a
+    // sequence number, and the fold drops a reply that is not the newest.
+    addProjectList(delay) {
+      clearTimeout(this._addProjectTimer);
+      this._addProjectTimer = setTimeout(() => {
+        const seq = ++this._addProjectSeq;
+        const payload = window.WBAddProject.request(this.addProject);
+        this.addProjectStep({ type: "sent", seq });
+        clearTimeout(this._addProjectSlow);
+        this._addProjectSlow = setTimeout(() => this.addProjectStep({ type: "slow", seq }), 300);
+        window.WBDaemon.observe("dir.list", payload)
+          .then((reply) => this.addProjectStep({ type: "reply", seq, reply }))
+          .catch((e) => this.addProjectStep({ type: "reply", seq, reply: { status: "error", message: String(e.message || e) } }));
+      }, delay);
+    },
+    async addProjectSubmit() {
+      if (this.addProjectPrimary().disabled) return;
+      const payload = window.WBAddProject.addPayload(this.addProject);
+      this.addProjectStep({ type: "adding" });
+      let reply;
+      try {
+        reply = await window.WBDaemon.observe("project.add", payload);
+      } catch (e) {
+        reply = { status: "error", message: String(e.message || e) };
+      }
+      if (reply?.status !== "ok") {
+        this.addProjectStep({ type: "addFailed", message: reply?.message || "The project was not added." });
+        this.loadRepos({ git: false });
+        return;
+      }
+      const stillOpen = this.addProject.open;
+      this.addProjectStep({ type: "added" });
+      await this.loadRepos({ git: false });
+      if (payload.daemon) await this.loadFleet();
+      // A stated exception to returning focus to the opener: the new project
+      // is selected, shown and focused, so work on it can start at once.
+      if (stillOpen) this.selectAddedProject(payload.daemon ? `${payload.daemon}/${reply.slug}` : reply.slug);
+    },
+    selectAddedProject(ref) {
+      if (!this.projects.some((p) => this.repoRef(p) === ref)) return;
+      if (this.openSlug !== ref) this.toggle(ref);
+      this.$nextTick(() => {
+        const head = document.querySelector("li.project.open .project-head");
+        if (!head) return;
+        head.scrollIntoView({ block: "nearest" });
+        head.focus();
+      });
     },
     // --- Add a host (ADR-0067 §11, #497) ----------------------------------
     // Thin calls: every state change goes through `WBHosts.next`, and the

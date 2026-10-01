@@ -15,9 +15,9 @@ use std::path::{Path, PathBuf};
 
 use regex::Regex;
 
-/// Message types with no shared reply file. Measured on 4e092da4 + this
-/// change: 49 registry verbs + 30 UI routes + 10 pushes = 89 types, 7 of them
-/// covered. Counting rules are in [`message_types`]. A new type starts with a
+/// Message types with no shared reply file. Measured on 4e092da4 + the
+/// registry verbs: 51 registry verbs + 30 UI routes + 10 pushes = 91 types, 9
+/// of them covered. Counting rules are in [`message_types`]. A new type starts with a
 /// shared reply; a new reply file lowers this number.
 const UNSHARED_BASELINE: usize = 82;
 
@@ -634,6 +634,17 @@ fn fn_body_strings(src: &str, name: &str) -> BTreeSet<String> {
     out
 }
 
+/// Verbs whose ok reply is flat, as the ADR-0036 amendment "the registry
+/// verbs" fixes it, and the daemon file that writes each key: a `"key"`
+/// literal or a `pub key:` field of the serialized struct.
+const FLAT_REPLIES: &[(&str, &str)] = &[
+    ("dir.list", "crates/ralphy-daemon/src/dir_list.rs"),
+    (
+        "project.add",
+        "crates/ralphy-daemon/src/routes/ws_command/registry_verbs.rs",
+    ),
+];
+
 /// The daemon files that name the field a Query reply carries its JSON in.
 const REPLY_FIELD_SOURCES: &[&str] = &[
     "crates/ralphy-daemon/src/routes/ws_command/oneshot.rs",
@@ -658,6 +669,19 @@ fn every_ok_fixture_carries_its_json_in_the_field_the_daemon_uses() {
             continue;
         }
         let verb = name.split_once("--").map_or(name.as_str(), |(v, _)| v);
+        if let Some((_, source)) = FLAT_REPLIES.iter().find(|(v, _)| *v == verb) {
+            let src = read(&root.join(source));
+            for key in reply.as_object().expect("an ok reply is an object").keys() {
+                assert!(
+                    key == "status"
+                        || src.contains(&format!("\"{key}\""))
+                        || src.contains(&format!("pub {key}:")),
+                    "{name}.json: `{key}` is not a field {source} writes"
+                );
+            }
+            checked += 1;
+            continue;
+        }
         let variant = verb_variant(&dispatch, verb)
             .unwrap_or_else(|| panic!("{verb} is not a verb of Verb::from_query"));
         let field = reply_field(&daemon, &variant)

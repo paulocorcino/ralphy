@@ -41,6 +41,17 @@ pub(crate) fn resolve_or_init_repo_with<F>(path: &Path, force: bool, ask: F) -> 
 where
     F: FnOnce() -> Result<String>,
 {
+    // A network path is refused before it is read: on Windows, reading a UNC
+    // path sends the user's NTLM hash to the named server (ADR-0036 amendment
+    // "the registry verbs" §2).
+    if ralphy_daemon::dir_list::is_network_path(path) {
+        bail!("network paths are not supported: {}", path.display());
+    }
+    // `--init` never creates a directory: a typing error must not leave a new
+    // folder on the disk (same amendment, §2).
+    if !path.is_dir() {
+        bail!("this folder does not exist: {}", path.display());
+    }
     if git::is_repo(path) {
         return git::resolve_toplevel(path);
     }
@@ -165,5 +176,36 @@ mod tests {
         resolve_or_init_repo_with(&dir, false, || Ok("\n".to_string()))
             .expect("empty answer means yes");
         assert!(dir.join(".git").exists());
+    }
+
+    /// `--init` on a path that does not exist fails and creates nothing.
+    #[test]
+    fn init_never_creates_a_missing_folder() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let dir = tmp.path().join("typo");
+
+        let err =
+            resolve_or_init_repo_with(&dir, true, || panic!("must not ask")).expect_err("refused");
+
+        assert!(
+            err.to_string().starts_with("this folder does not exist:"),
+            "got: {err}"
+        );
+        assert!(!dir.exists(), "no folder was created");
+    }
+
+    /// A UNC path is refused before anything reads it.
+    #[cfg(windows)]
+    #[test]
+    fn a_network_path_is_refused() {
+        let err = resolve_or_init_repo_with(Path::new(r"\\server\share\x"), true, || {
+            panic!("must not ask")
+        })
+        .expect_err("refused");
+        assert!(
+            err.to_string()
+                .starts_with("network paths are not supported:"),
+            "got: {err}"
+        );
     }
 }
