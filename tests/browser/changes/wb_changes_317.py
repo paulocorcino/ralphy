@@ -14,7 +14,8 @@ Scenario 3  the open project's `.chg-badge` is readable with the Changes view
             closed; with no project open the rows read 2 on A and 3 on B while NO
             element on the page reads 5 (the aggregate an implementation that
             summed the map would print), an unopened project shows no badge, and
-            a failed `changes.list` moves A's badge to `—`, never `0`
+            a failed `changes.list` keeps A's last badge, marked not current
+            (ADR-0070), never a quiet `0`
 Scenario 4  clicking a `.chg-row` still opens the diff as a canvas tab
 Scenario 5  the accordion is gone: no `.changes-sec`, no `li.project
             .changes-list`
@@ -353,23 +354,28 @@ def main():
             page.wait_for_function(f"() => {SH}.projects.length === 4", timeout=15000)
 
             # --- scenario 1: the rail switches the sidebar's view --------------
+            # Direct children only: `nav.rail button` also matches the account
+            # menu's buttons (commit aee47d3e), which are not view switches.
             rail = page.evaluate(
-                "() => ({ n: document.querySelectorAll('nav.rail button').length,"
-                " titles: Array.from(document.querySelectorAll('nav.rail button'))"
+                "() => ({ n: document.querySelectorAll('nav.rail > button').length,"
+                " titles: Array.from(document.querySelectorAll('nav.rail > button'))"
                 "   .map(b => b.getAttribute('title')),"
-                " text: (document.querySelector('nav.rail').textContent || '') })"
+                " text: Array.from(document.querySelectorAll('nav.rail > button'))"
+                "   .map(b => b.textContent || '').join('') })"
             )
             check(
-                "the rail carries five buttons, Changes among them",
-                rail["n"] == 5 and "Changes" in rail["titles"],
+                "the rail carries six view-switcher buttons, Changes among them",
+                rail["n"] == 6 and "Changes" in rail["titles"],
                 f"got={rail['titles']}",
             )
             # The negative control for criterion 6: an implementation that hung a
-            # roll-up badge on the rail button would print a digit HERE.
+            # roll-up badge on a view-switcher button would print a digit HERE.
+            # Scoped to those buttons alone: the account puck (hidden until
+            # opened) shows "Running for Ns" in its own DOM regardless.
             import re as _re
 
             check(
-                "…and no digit anywhere in the rail (no cross-repo aggregate)",
+                "…and no digit on any view-switcher button (no cross-repo aggregate)",
                 _re.search(r"[0-9]", rail["text"]) is None,
                 f"text={rail['text']!r}",
             )
@@ -516,7 +522,10 @@ def main():
                 "            : { shown: false, text: null }; };"
                 # Any element whose WHOLE text is the aggregate 2+3 — the number
                 # an implementation that summed the count map would print.
-                " const five = Array.from(document.querySelectorAll('*'))"
+                # Scoped to the Projects/Changes surfaces: elsewhere on the page
+                # a bare '5' is unrelated chrome (e.g. a `<kbd>` shortcut hint).
+                " const five = Array.from(document.querySelectorAll("
+                "     '.projects-view *, .changes-view *'))"
                 "   .filter(e => (e.textContent || '').trim() === '5')"
                 "   .map(e => e.tagName + '.' + e.className);"
                 " return { a: read(slugs[0]), b: read(slugs[1]), c: read(slugs[2]), five };"
@@ -544,7 +553,9 @@ def main():
                 f"got={badges['c']}",
             )
 
-            # A failed read has no count, so it shows no badge — never a 0.
+            # A failed read after a good one keeps the last badge, marked not
+            # current (ADR-0070 D3) — never a quiet zero, and never silently
+            # dropped either.
             page.evaluate(
                 "() => { const real = window.WBDaemon.observe;"
                 " window.__realObserve = real;"
@@ -556,10 +567,11 @@ def main():
                 f"(s) => !!{SH}.changesReadError[s]", arg=slug_a, timeout=15000
             )
             failed = page.evaluate(f"(s) => {BADGE_EXPR}", arg=slug_a)
+            reason = page.evaluate(f"(s) => {SH}.changesReadError[s]", arg=slug_a)
             check(
-                "a failed read shows no badge, never a quiet zero",
-                failed and not failed["shown"],
-                f"got={failed}",
+                "a failed read keeps the last badge and reports it as not current",
+                failed and failed["shown"] and failed["text"] == "2" and "Not current:" in (reason or ""),
+                f"got={failed} reason={reason!r}",
             )
             page.evaluate(
                 "() => { window.WBDaemon.observe = window.__realObserve;"
@@ -633,10 +645,17 @@ def main():
                 # see a sub-pixel overflow (#315's HIGH defect hid behind that).
                 box = page.evaluate(
                     f"() => {{ const v = {VIEW};"
+                    # `.side` is `position: fixed` on a phone (01-base.css's
+                    # phone breakpoint), where `offsetParent` is always null even
+                    # though the element is on screen — so visibility here is
+                    # computed style + a non-zero rect, never offsetParent.
                     " const r = (sel) => { const e = (sel === '.side' ? document : v)"
                     "     .querySelector(sel);"
-                    "   if (!e || e.offsetParent === null) return null;"
+                    "   if (!e) return null;"
+                    "   const cs = getComputedStyle(e);"
                     "   const b = e.getBoundingClientRect();"
+                    "   if (cs.display === 'none' || cs.visibility === 'hidden'"
+                    "       || (b.width === 0 && b.height === 0)) return null;"
                     "   return { top: b.top, bottom: b.bottom, height: b.height }; };"
                     " const list = v.querySelector('.changes-list');"
                     " return { side: r('.side'), toolbar: r('.chg-toolbar'),"

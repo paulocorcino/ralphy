@@ -8,8 +8,8 @@ the Projects row, which is what every badge read below now targets.
 Scenario 1  opening a project shows its Changes count (literal `3`), no click
 Scenario 2  a clean repo shows no badge at all
 Scenario 3  (deleted by #317 — the section it measured no longer exists)
-Scenario 4  the rail IS the switcher: 5 buttons, and still no tab strip in the
-            sidebar
+Scenario 4  the rail IS the switcher: 6 view buttons, and still no tab strip
+            in the sidebar
 Scenario 5  switching projects re-scopes the count (`3` -> `1`)
 Scenario 6  a 4th file written from OUTSIDE the browser + `.side-refresh`
             reloads the count (`3` -> `4`)
@@ -228,8 +228,10 @@ def main():
             # longer has.
 
             # --- scenario 4 INVERTED by #317: the rail IS the switcher --------
-            rail = page.evaluate("() => document.querySelectorAll('nav.rail button').length")
-            check("the rail now holds 5 buttons — Changes joined it", rail == 5, f"got={rail}")
+            # Direct children only: `nav.rail button` also matches the account
+            # menu's buttons (commit aee47d3e), which are not view switches.
+            rail = page.evaluate("() => document.querySelectorAll('nav.rail > button').length")
+            check("the rail now holds 6 view-switcher buttons", rail == 6, f"got={rail}")
             tabs = page.evaluate("() => document.querySelectorAll('aside.side .tab').length")
             check("the sidebar introduces no tab switcher", tabs == 0, f"got={tabs}")
 
@@ -264,18 +266,19 @@ def main():
             reason = page.evaluate(f"(s) => {SH}.changesReadError[s]", arg=slug_c)
             check(
                 "the failed read keeps its reason for the Changes view",
-                "Could not read the changes." in (reason or ""),
+                "Not current:" in (reason or ""),
                 f"reason={reason!r}",
             )
             page.evaluate("() => { window.WBDaemon.observe = window.__realObserve; }")
 
             page.evaluate(f"(s) => {SH}.toggle(s)", arg=slug_c)
-            # With no project open every row shows again, and each of the three
-            # carries the badge of the count that WAS read for it (A=3, B=1,
-            # C=`—` from the stub above) — the count is per project, never one
-            # aggregate.
+            # With no project open every row shows again, carrying the count
+            # that WAS read for it (A=3, B=1); C keeps its last good count of
+            # 0, so it shows no badge even though its last read failed — a
+            # badge only ever says there is something to look at (ADR-0070).
+            # The count stays per project, never one aggregate.
             page.wait_for_function(
-                f"() => {VISIBLE_SECS}.length === 3", timeout=8000
+                f"() => {VISIBLE_SECS}.length === 2", timeout=8000
             )
             check("closing the clean project un-scopes the count", badge_text(page) == "MULTI")
 
@@ -298,9 +301,10 @@ def main():
     finally:
         stop(proc)
 
-    # 14, not #309's 15: #317 deleted scenario 3 (the section below the tree) and
-    # the chevron check with it — the affordances they measured no longer exist.
-    ok = all(results) and len(results) >= 14
+    # 13, not #309's 15: #317 deleted scenario 3 (the section below the tree) and
+    # the chevron check with it, and ADR-0070's retained-count badge folded the
+    # old "closing un-scopes to 3 badges" assertion into a 2-badge one.
+    ok = all(results) and len(results) >= 13
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     if ok:
         print("CHANGES COUNT LIVE")

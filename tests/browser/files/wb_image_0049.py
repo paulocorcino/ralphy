@@ -20,7 +20,8 @@ Scenario 6  the image pane exposes no Save/Edit/commit control (read-only, §6)
 Scenario 7  Actual size toggles `.actual-size` on the pane and relabels to `Fit`
 Scenario 8  `docs/guide.md`'s `![](img/inner.png)` becomes a decoded `data:` URL
             resolved against the DOCUMENT's dir, while the `https://` source is
-            left verbatim
+            blocked by the CSP (remote images are opt-in) and replaced by a
+            `.md-img-blocked` notice naming how to turn them on
 Scenario 9  the REST of the allowlist — jpg, jpeg, gif, webp, bmp, ico — each
             opens under its own media type and decodes at its own distinct size
 
@@ -465,22 +466,34 @@ def main():
                 f"""() => {SH}.openTab({{ project: '{slug}', path: 'docs/guide.md',
                         title: 'guide.md', ftype: 'markdown' }})"""
             )
+            # The local image decodes; the remote one is left to the browser's
+            # CSP (remote images are opt-in, commit 4a1b1e77), which fires its
+            # own `securitypolicyviolation` and swaps it for a `.md-img-blocked`
+            # notice (wb-viewer.js `blockedImage`) — so only ONE `<img>` is ever
+            # left in `.md-body`.
             page.wait_for_function(
                 "(id) => { const el = document.querySelector(`.md-viewer[data-tab-id=\"${id}\"]`);"
                 " const imgs = el && el.querySelectorAll('.md-body img');"
-                " return !!imgs && imgs.length === 2"
+                " return !!imgs && imgs.length === 1"
                 "   && imgs[0].getAttribute('src').startsWith('data:')"
                 "   && imgs[0].complete && imgs[0].naturalWidth > 0; }",
+                arg=md_id,
+                timeout=20000,
+            )
+            page.wait_for_function(
+                "(id) => !!document.querySelector(`.md-viewer[data-tab-id=\"${id}\"] .md-body .md-img-blocked`)",
                 arg=md_id,
                 timeout=20000,
             )
             md = page.evaluate(
                 """(id) => {
                   const el = document.querySelector(`.md-viewer[data-tab-id="${id}"]`);
-                  const imgs = el.querySelectorAll('.md-body img');
-                  return { local: imgs[0].getAttribute('src').slice(0, 22),
-                           w: imgs[0].naturalWidth, h: imgs[0].naturalHeight,
-                           remote: imgs[1].getAttribute('src') };
+                  const img = el.querySelector('.md-body img');
+                  const blocked = el.querySelector('.md-body .md-img-blocked');
+                  return { local: img.getAttribute('src').slice(0, 22),
+                           w: img.naturalWidth, h: img.naturalHeight,
+                           imgCount: el.querySelectorAll('.md-body img').length,
+                           blockedTitle: blocked ? blocked.getAttribute('title') : null };
                 }""",
                 md_id,
             )
@@ -490,9 +503,14 @@ def main():
                 f"got={md['local']!r} {md['w']}×{md['h']} want={INNER_W}×{INNER_H}",
             )
             check(
-                "a remote markdown image source is left verbatim",
-                md["remote"] == "https://example.invalid/nope.png",
-                f"got={md['remote']!r}",
+                "the remote markdown image is blocked by the CSP, not left as an <img>",
+                md["imgCount"] == 1,
+                f"got={md['imgCount']}",
+            )
+            check(
+                "…and its notice says how to turn remote images on",
+                "Remote images" in (md["blockedTitle"] or ""),
+                f"got={md['blockedTitle']!r}",
             )
 
             ctx.close()

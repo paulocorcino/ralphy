@@ -403,7 +403,8 @@ def main():
             # as a column that does not exist.
             check(
                 "…and as four rows, one per token kind, none of them dropped",
-                [r["name"] for r in pane["meterRows"]] == ["input", "cache read", "cache write", "output"],
+                [r["name"] for r in pane["meterRows"]]
+                == ["Input", "Cache read", "Cache write", "Output"],
                 "rows={}".format([r["name"] for r in pane["meterRows"]]),
             )
             check(

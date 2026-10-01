@@ -305,6 +305,15 @@ def main():
             page.evaluate("() => { window.__delayMs = 1500; }")
             toggle(page, slug_a)
             page.wait_for_function(f"() => {SH}.treeLoading === true", timeout=10000)
+            # Alpine applies `x-show` a tick after the flag flips, so reading the
+            # spinner once right after `treeLoading === true` races it. Poll inside
+            # the 1.5s delay window the test itself set above.
+            page.wait_for_function(
+                "(sel) => { const e = document.querySelector(sel);"
+                "  return !!e && e.offsetParent !== null && e.clientWidth > 0; }",
+                arg=".project.open .files-spinner",
+                timeout=3000,
+            )
             spin = page.evaluate(LAID, ".project.open .files-spinner")
             check(
                 "the FILES panel shows a laid-out spinner while the read is in flight",
@@ -340,6 +349,18 @@ def main():
                 "  .some(r => r.offsetParent !== null && r.clientWidth > 0)",
                 timeout=15000,
             )
+            # The root paints in the same tick, but `restoreExpansion()` re-expands
+            # `deep` through its own lazy load, which lands a tick later. Wait for
+            # that row too before reading the titles, or the read races the restore.
+            try:
+                page.wait_for_function(
+                    "() => [...document.querySelectorAll('.wb-host .wb-row')].some("
+                    "r => r.offsetParent !== null && r.clientWidth > 0 && "
+                    "r.querySelector('.wb-title')?.textContent.trim() === 'inner.txt')",
+                    timeout=5000,
+                )
+            except Exception:
+                pass
             titles = page.evaluate(ROW_TITLES)
             check(
                 "re-opening paints the tree with the daemon STOPPED — from the cache",
@@ -370,10 +391,13 @@ def main():
             toggle(page, slug_a)  # close A
             toggle(page, slug_b)  # open a project that was NEVER opened
             page.wait_for_function(f"() => {SH}.treeError !== ''", timeout=25000)
-            err = page.evaluate(LAID, ".project.open .files-error")
+            # `.files-error` alone also matches `.files-error.branch-error`, a
+            # separate line for a refused branch switch (index.html ~432); the
+            # tree's own error line excludes that class.
+            err = page.evaluate(LAID, ".project.open .files-error:not(.branch-error)")
             check(
                 "a project with nothing cached, opened against a dead daemon, says the read failed",
-                err["laid"] and "could not read" in err["text"],
+                err["laid"] and "Could not read" in err["text"],
                 f"error={err}",
             )
             check(

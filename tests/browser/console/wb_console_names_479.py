@@ -68,7 +68,7 @@ SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 VIEW = {"width": 2400, "height": 1000}
 SLUG = "owner/fincal"
-FLOOR = 53  # every check above the floor check; pinned after the first green run
+FLOOR = 54  # every check above the floor check; pinned after the first green run
 
 F_HELD = {"left": 20, "top": 320, "width": 480, "height": 340}
 F_AWAY = {"left": 540, "top": 320, "width": 480, "height": 340}

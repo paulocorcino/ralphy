@@ -365,10 +365,15 @@ def main():
             # ===== scenario 1: an empty desk lands on the origin ================
             ctx = browser.new_context(viewport={"width": 1400, "height": 900})
             page = desk_page(ctx, {"width": 1400, "height": 900}, want=0)
+            # The desk also carries `notes` now (commit 94fb7453, ADR-0064); the
+            # Rust test `api_desk_empty_when_no_file` covers the shape, so this
+            # only needs the three keys to be empty.
+            empty_desk = json.loads(http("GET", "api/desk")[1])
+            empty_windows = page.evaluate("() => document.querySelectorAll('.session-window').length")
             check(
                 "the desk really is empty, so the origin landing is about an empty plane",
-                json.loads(http("GET", "api/desk")[1]) == {"windows": [], "fences": []}
-                and page.evaluate("() => document.querySelectorAll('.session-window').length") == 0,
+                empty_desk == {"windows": [], "fences": [], "notes": []} and empty_windows == 0,
+                f"desk={empty_desk} dom-windows={empty_windows}",
             )
             box = view_box(page)
             check(
@@ -692,12 +697,19 @@ def main():
                 # desk holds — the rule ADR-0050 §3 laid down is "no desk in
                 # browser storage", not "no fourth key". The two checks below
                 # are what actually enforce it: no desk vocabulary, no desk ids.
-                # The console preferences (keys, command, font) joined the record
+                # The console preferences (keys, font) and the column grid
+                # (columns, columnDir, ADR-0051 §8 amendment) joined the record
                 # after this check was written; `wb-view.js read()` normalises
-                # every field it knows, so `patch` writes them all back.
-                "…whose shape carries only the view: v, off, tabs, active, relaunch, keys, command, font, split",
+                # every field it knows, so `patch` writes them all back. `command`
+                # — the free console's stored startup command — was DROPPED from
+                # the record (wb-view.js ~40-43).
+                "…whose shape carries only the view: v, off, tabs, active, relaunch,"
+                " keys, font, split, columns, columnDir",
                 set(stored.keys())
-                <= {"v", "off", "tabs", "active", "relaunch", "keys", "command", "font", "split"},
+                <= {
+                    "v", "off", "tabs", "active", "relaunch", "keys", "font", "split",
+                    "columns", "columnDir",
+                },
                 f"got={sorted(stored.keys())}",
             )
             leaked = [w for w in ("windows", "fences", "rect", "sessionId") if w in raw]

@@ -6,8 +6,9 @@ written BEFORE the daemon starts, in the PRE-#340 shape (a `[[windows]]`-only
 file with no `fences` key at all), so "an existing desk loads unchanged" is
 proved against a real legacy file rather than against one this build wrote.
 
-Scenario 1   `GET /api/desk` is an OBJECT with exactly `windows` and `fences`;
-             the legacy window survives verbatim and the fence list is empty
+Scenario 1   `GET /api/desk` is an OBJECT with exactly `windows`, `fences` and
+             `notes` (commit 94fb7453, ADR-0064); the legacy window survives
+             verbatim and the fence list is empty
 Scenario 2   the toolbar `Fence` button draws two fences at the current view,
              disjoint and usable, and each is renamed IN PLACE — a single click
              leaves the name untouched, unfocused and unselected, Escape and a
@@ -25,7 +26,8 @@ Scenario 5d  a page whose desk GET was REFUSED neither overwrites the saved
              fences nor discards them once the read succeeds again
 Scenario 6   the daemon enforces the fence cap (13 in → `f2..f13`) and refuses an
              off-plane origin without touching the store
-Scenario 7   a corrupt `desk.toml` degrades to an EMPTY stage, not a failure
+Scenario 7   a corrupt `desk.toml` answers 409 unreadable (ADR-0070 D4), and the
+             shell shows no fence, no window, and the desk-failure banner
 
 The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
 doubles as the orchestrator on this host).
@@ -302,8 +304,8 @@ def main():
         status, body = http("GET", "api/desk")
         served = json.loads(body) if status == 200 else {}
         check(
-            "GET /api/desk answers an object with exactly windows and fences",
-            status == 200 and sorted(served.keys()) == ["fences", "windows"],
+            "GET /api/desk answers an object with exactly windows, fences and notes",
+            status == 200 and sorted(served.keys()) == ["fences", "notes", "windows"],
             f"status={status} got={body[:200]}",
         )
         check(
@@ -330,8 +332,24 @@ def main():
                 and len(fence_dom(page)) == 0,
             )
 
+            # The anchor is the view's scroll offset at the MOMENT of each click,
+            # not after both fences exist: #339's landing already parks the view
+            # off the plane's corner before the first fence is ever drawn, and a
+            # fence born from a later offset would make this check fail against
+            # correct code if it read a single anchor for both.
+            def scroll_offset():
+                return page.evaluate(
+                    "() => { const ws = document.getElementById('workspace');"
+                    " return { left: ws.scrollLeft, top: ws.scrollTop }; }"
+                )
+
+            anchor_a = scroll_offset()
             draw_fence(page)
+            page.wait_for_function(
+                "() => document.querySelectorAll('.fence').length === 1", timeout=10000
+            )
             page.wait_for_timeout(300)
+            anchor_b = scroll_offset()
             draw_fence(page)
             page.wait_for_function(
                 "() => document.querySelectorAll('.fence').length === 2", timeout=10000
@@ -351,14 +369,12 @@ def main():
                 a["width"] >= 240 and a["height"] >= 150 and b["width"] >= 240,
                 f"a={a['width']}x{a['height']} b={b['width']}x{b['height']}",
             )
-            anchor = page.evaluate(
-                "() => { const ws = document.getElementById('workspace');"
-                " return { left: ws.scrollLeft, top: ws.scrollTop }; }"
-            )
             check(
                 "a fence is born where the operator is LOOKING, not at the stage origin",
-                a["left"] == anchor["left"] + 40 and a["top"] == anchor["top"] + 40,
-                f"offset={anchor} fence={a['left']},{a['top']}",
+                a["left"] == anchor_a["left"] + 40
+                and a["top"] == anchor_a["top"] + 40
+                and b["top"] == anchor_b["top"] + 40,
+                f"anchor_a={anchor_a} anchor_b={anchor_b} a={a['left']},{a['top']} b={b['left']},{b['top']}",
             )
 
             # Renamed IN PLACE: a DOUBLE click unlocks the input, then Enter
@@ -897,11 +913,19 @@ def main():
                 sys.exit(1)
             check("the daemon restarts over a corrupt desk.toml", True)
 
-            status, body = http("GET", "api/desk")
+            # ADR-0070 D4 (commit b15913aa): an unreadable desk.toml is a
+            # FAILURE, never an empty desk — `GET /api/desk` answers 409
+            # `{"state":"unreadable",...}`. The Rust test
+            # `api_desk_refuses_a_corrupt_desk_and_leaves_its_bytes` covers the
+            # wire shape; this is the browser side of it.
+            try:
+                status, body = http("GET", "api/desk")
+            except urllib.error.HTTPError as e:
+                status, body = e.code, e.read().decode()
             check(
-                "a corrupt desk serves an EMPTY desk, not an error",
-                status == 200 and body == '{"windows":[],"fences":[]}',
-                f"status={status} body={body[:120]}",
+                "a corrupt desk.toml is refused as 409 unreadable, never served as empty",
+                status == 409 and json.loads(body).get("state") == "unreadable",
+                f"status={status} body={body[:160]}",
             )
 
             corrupt_ctx = browser.new_context(viewport=dict(VIEW))
@@ -910,14 +934,21 @@ def main():
             empty = corrupt.evaluate(
                 "() => ({ fences: document.querySelectorAll('.fence').length,"
                 "  windows: document.querySelectorAll('.session-window').length,"
-                "  alive: !!document.querySelector('[x-data]') })"
+                "  alive: !!document.querySelector('[x-data]'),"
+                "  failure: (() => { const el = document.querySelector('.desk-failure');"
+                "    return !!el && el.offsetParent !== null && el.clientWidth > 0; })() })"
             )
             check(
-                "…and the stage comes up EMPTY rather than failing",
+                "…and the shell draws no fence and no window over the unreadable desk",
                 empty["fences"] == 0 and empty["windows"] == 0,
                 f"got={empty}",
             )
             check("…with the shell itself alive", empty["alive"], f"got={empty}")
+            check(
+                "…and the desk-failure banner offers to start a new desk",
+                empty["failure"],
+                f"got={empty}",
+            )
             corrupt_ctx.close()
 
             browser.close()
@@ -929,7 +960,7 @@ def main():
     # The floor is the REAL count, not a loose lower bound: scenario 3 is 10
     # checks and scenario 5 is 5, so a floor set well under the total lets a
     # whole scenario stop running while the suite still exits 0.
-    ok = all(results) and len(results) >= 47
+    ok = all(results) and len(results) >= 54
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("A FENCE IS DESK STATE")

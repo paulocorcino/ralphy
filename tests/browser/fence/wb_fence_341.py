@@ -781,11 +781,15 @@ def main():
             ctx.close()
             time.sleep(1.2)
 
-            # ===== scenario 6: CREATING into an overlap is refused too =======
-            # One fence blanketing the whole spawn grid, so every slot
-            # `nextFenceSlot` can offer is taken. Drop the guard from
-            # `createFence` and this fence count goes to 2 — the criterion says
-            # creating an overlap is refused, and nothing else exercises it.
+            # ===== scenario 6: a blanket fence pushes the new one BELOW it ====
+            # `nextFenceSlot` scans 64 grid slots rather than refusing outright
+            # (wb-console.js ~2517-2532, commit 1edd37c3): a fence covering the
+            # whole viewport still has free plane below it, so a new fence
+            # spills there instead of being nudged into a gap INSIDE the
+            # blocker. `ui-tests/wb-console.test.mjs` ("nextFenceSlot: a fence
+            # covering the whole viewport spills below it, not onto it", and
+            # the -1 wall case) covers the pure fold; this is the browser-level
+            # outcome of it.
             http(
                 "PUT",
                 "api/desk",
@@ -808,34 +812,40 @@ def main():
             )
             unscroll(full)
             draw_fence(full)
+            full.wait_for_function(
+                "() => document.querySelectorAll('.fence').length === 2", timeout=10000
+            )
             full.wait_for_timeout(300)
-            flashed = full.evaluate(
-                "() => [...document.querySelectorAll('.fence')]"
-                "  .some((f) => f.classList.contains('fence-invalid'))"
-            )
-            drawn = full.evaluate("() => document.querySelectorAll('.fence').length")
-            check(
-                "a fence that could only be born overlapping is REFUSED, not nudged into a gap",
-                drawn == 1,
-                f"fence count={drawn}",
+            spilled = full.evaluate(
+                "() => [...document.querySelectorAll('.fence')].map((f) => ({"
+                "  id: f.dataset.fenceId,"
+                "  left: f.offsetLeft, top: f.offsetTop,"
+                "  width: f.offsetWidth, height: f.offsetHeight }))"
             )
             check(
-                "…with the offending fence flashed, so the refusal is visible",
-                flashed,
-                "no .fence carried fence-invalid after the refused create",
+                "a fence that could only spawn overlapping is NOT refused — it spills instead",
+                len(spilled) == 2,
+                f"fence count={len(spilled)}",
             )
-            full.wait_for_timeout(900)
+            blanket_rect = next(f for f in spilled if f["id"] == "f-blanket")
+            new_rect = next(f for f in spilled if f["id"] != "f-blanket")
             check(
-                "…and the flash clears itself, leaving no stuck red border",
-                not full.evaluate(
-                    "() => [...document.querySelectorAll('.fence')]"
-                    "  .some((f) => f.classList.contains('fence-invalid'))"
-                ),
+                "…landing BELOW the blocking fence",
+                new_rect["top"] >= blanket_rect["top"] + blanket_rect["height"],
+                f"blanket={blanket_rect} new={new_rect}",
+            )
+            check(
+                "…disjoint from it, not nudged into a gap inside it",
+                new_rect["left"] >= blanket_rect["left"] + blanket_rect["width"]
+                or blanket_rect["left"] >= new_rect["left"] + new_rect["width"]
+                or new_rect["top"] >= blanket_rect["top"] + blanket_rect["height"]
+                or blanket_rect["top"] >= new_rect["top"] + new_rect["height"],
+                f"blanket={blanket_rect} new={new_rect}",
             )
             quiet(desk_file)
             check(
-                "…and nothing reached the store: still exactly one fence",
-                len(json.loads(http("GET", "api/desk")[1])["fences"]) == 1,
+                "…and the spilled fence reached the store",
+                len(json.loads(http("GET", "api/desk")[1])["fences"]) == 2,
                 f"got={json.loads(http('GET', 'api/desk')[1])['fences']}",
             )
             full_ctx.close()

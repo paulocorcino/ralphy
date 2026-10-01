@@ -8,7 +8,7 @@ with no manual refresh while the daemon's own `/api/repos` agrees.
 
 Scenario a  every project row carries a laid-out `.project-remove` control
 Scenario b  clicking it opens the confirm, whose message contains the literal
-            `The directory on disk is not deleted.`
+            `Files on disk are kept.`
 Scenario c  Cancel opens ZERO `/ws/command` sockets (an `add_init_script`
             WebSocket spy sampled at document start) and leaves BOTH rows
 Scenario d  Confirm makes the row vanish with no reload and no Refresh click
@@ -296,7 +296,7 @@ def main():
                   "confirm={}".format(confirm))
             check(
                 "…whose message promises the directory on disk survives",
-                "The directory on disk is not deleted." in confirm["message"],
+                "Files on disk are kept." in confirm["message"],
                 "message={!r}".format(confirm["message"]),
             )
             check(

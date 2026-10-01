@@ -202,7 +202,7 @@ def open_menu_on(page, rel):
 
 def answer_prompt(page, name):
     """Fill the open prompt dialog and submit it, returning what the dialog asked
-    BEFORE it was answered (the placeholder/message this issue changed)."""
+    BEFORE it was answered (the title/placeholder/message this issue changed)."""
     # Gate on the input being LAID OUT, not merely on the flag: Alpine's x-show
     # display flip lands after the property write, so sampling on `open === true`
     # reads a box that measures zero everywhere (CONTEXT.md, the $nextTick trap).
@@ -215,8 +215,10 @@ def answer_prompt(page, name):
     asked = page.evaluate(
         "() => { const i = document.getElementById('prompt-input');"
         "  const m = document.querySelector('.prompt-modal .prompt-where');"
+        "  const t = document.querySelector('.prompt-modal .modal-title');"
         "  return { placeholder: i ? i.getAttribute('placeholder') : null,"
         "    laid: !!i && i.offsetParent !== null && i.clientWidth > 0,"
+        "    title: t ? t.textContent.trim() : '',"
         "    message: m ? m.textContent.trim() : '' }; }"
     )
     page.evaluate(f"(v) => {{ {SH}.promptModal.value = v; {SH}.promptSubmit(); }}", arg=name)
@@ -468,7 +470,8 @@ def main():
                 "the create dialog asks for a name and suggests none",
                 asked["laid"]
                 and asked["placeholder"] == ""
-                and "what should it be called?" in asked["message"].lower(),
+                and asked["message"] == ""
+                and "new folder in deep" in asked["title"].lower(),
                 "asked={}".format(asked),
             )
             page.wait_for_function(

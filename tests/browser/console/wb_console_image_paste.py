@@ -405,7 +405,7 @@ def main():
 
             # --- Scenario 6: the detached-fence popup carries the verb bridge -----
             popup = ctx.new_page()
-            popup.goto(BASE + "detached-fence.html", wait_until="load")
+            popup.goto(BASE + "fence", wait_until="load")
             popup.wait_for_timeout(500)
             bridged = popup.evaluate(
                 "() => !!window.WBDaemon && typeof window.WBDaemon.write === 'function'"

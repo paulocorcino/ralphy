@@ -236,7 +236,9 @@ def main():
             observed = {}
             controls.filter(has_text="run").click()
             page.wait_for_selector(".run-modal", state="visible")
-            page.locator(".run-modal .modal-foot .btn.accent").click()
+            # Scoped by aria-label: the Hosts dialog (#497) reuses `.run-modal`
+            # too, so the bare class now matches two elements.
+            page.locator('.run-modal[aria-label="Start a run"] .modal-foot .btn.accent').click()
 
             expected_argv = {
                 "run": "run --if-idle --agent claude --branch-mode new",

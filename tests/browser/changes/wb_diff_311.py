@@ -105,8 +105,10 @@ def make_fixture_repo():
     long_body = "\n".join(f"line {i}" for i in range(200)) + "\n"
     (p / "README.md").write_text(long_body, encoding="utf-8")
     (p / "gone.txt").write_text("doomed\n", encoding="utf-8")
-    # NUL in the first bytes: the binary tell both readers agree on.
-    (p / "logo.png").write_bytes(bytes([0x89, 0x50, 0x00, 0x01, 0x02]))
+    # NUL in the first bytes: the binary tell both readers agree on. A `.pdf`,
+    # not `.png`: ADR-0049 made an image row open as an image, so a `.png` no
+    # longer exercises the "refuses to diff" path this scenario needs.
+    (p / "doc.pdf").write_bytes(bytes([0x89, 0x50, 0x00, 0x01, 0x02]))
     for args in (
         ["git", "init"],
         ["git", "config", "user.email", "wb311@example.com"],
@@ -121,7 +123,7 @@ def make_fixture_repo():
     (p / "README.md").write_text("\n".join(lines), encoding="utf-8")  # modified
     (p / "brand-new.txt").write_text("brand new line\n", encoding="utf-8")  # untracked
     subprocess.run(["git", "rm", "-q", "gone.txt"], cwd=d, check=True, capture_output=True)  # deleted
-    (p / "logo.png").write_bytes(bytes([0x89, 0x50, 0x00, 0x09, 0x09]))  # modified binary
+    (p / "doc.pdf").write_bytes(bytes([0x89, 0x50, 0x00, 0x09, 0x09]))  # modified binary
     return d
 
 
@@ -254,7 +256,7 @@ def main():
             page.wait_for_selector("[x-data]", timeout=8000)
             page.wait_for_function(f"() => {SH}.projects.length === 1", timeout=15000)
 
-            # 4 changed paths: README.md, brand-new.txt, gone.txt, logo.png.
+            # 4 changed paths: README.md, brand-new.txt, gone.txt, doc.pdf.
             open_rows(page, slug, 4)
 
             # Monaco's model registry BEFORE any diff exists: the dispose oracle
@@ -393,8 +395,11 @@ def main():
                     // whole point of that slice. #311's own criterion is that
                     // the DIFF surface exposes no commit/discard/stage/revert
                     // control — the reader must not become a writer — and that
-                    // is exactly what `.diff-viewer` + `.tabbar` still proves.
-                    mutators: scan('.diff-viewer') + scan('.tabbar'),
+                    // is exactly what `.diff-viewer` alone proves. `.tabbar`'s
+                    // own menus name the desk "the stage" (ADR-0065), which
+                    // `/stage/i` matches as a false positive ("Consoles on the
+                    // stage"), so the scan does not reach past the diff viewer.
+                    mutators: scan('.diff-viewer'),
                     destructive: scanDestructive('.changes-view'),
                     // Monaco's own margin revert arrow writes to the modified side.
                     revertGlyphs: root.querySelectorAll('.diff-review-insert, .codicon-diff-revert, .revertButton').length,
@@ -468,7 +473,7 @@ def main():
 
             # --- scenario 6: a binary row refuses, opening no diff tab ---------
             before = tab_ids(page)
-            click_row(page, "logo.png")
+            click_row(page, "doc.pdf")
             page.wait_for_function(
                 f"() => ({SH}.runsActionMsg || '').includes('binary')", timeout=15000
             )

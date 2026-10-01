@@ -9,8 +9,6 @@ as a silent no-op or a force-push.
 Scenario a  a feature branch with no upstream is unpublished; clicking Push
             lands its exact commit on the remote and the row's counts settle
 Scenario b  clicking Push again is a no-op that flashes nothing (already level)
-Scenario c  on the remote's DEFAULT branch the click is refused, the flash says
-            "default branch", and the remote's ref is byte-identical afterwards
 Scenario d  a remote that moved on refuses with "pull first" and the other
             side's commit survives — nothing here force-pushes
 Scenario e  the page throws nothing across all of it
@@ -287,23 +285,11 @@ def main():
                 git_out(remote, "rev-parse", "refs/heads/feat/publish-me") == before,
             )
 
-            # --- scenario c: the protected ref --------------------------------
-            git(ours, "checkout", "--quiet", "main")
-            commit_in(ours, "on-main.txt", "main work\n")
-            main_before = git_out(remote, "rev-parse", "refs/heads/main")
-            page.evaluate(f"(s) => {SH}.loadSync(s)", arg=slug_ours)
-            page.wait_for_timeout(1200)
-            msg = click_push_and_settle(page)
-            check(
-                "pushing the remote's default branch is refused",
-                "default branch" in msg,
-                f"flash={msg!r}",
-            )
-            check(
-                "…and the remote's main is byte-identical afterwards",
-                git_out(remote, "rev-parse", "refs/heads/main") == main_before,
-                f"before={main_before} after={git_out(remote, 'rev-parse', 'refs/heads/main')}",
-            )
+            # Scenario c (pushing the remote's DEFAULT branch is refused) is
+            # REMOVED: ADR-0046 amendment 2026-09-16 (docs/adr/0046-orchestrator
+            # -side-push.md:64) allows it, and
+            # crates/ralphy-core/src/sync/tests.rs::push_publishes_the_remotes_
+            # default_branch covers the new behavior.
 
             # --- scenario d: a remote that moved on ---------------------------
             # The other side publishes a commit ours has never seen…
@@ -320,7 +306,7 @@ def main():
             msg = click_push_and_settle(page)
             check(
                 "a remote that moved on is refused with its own advice",
-                "pull first" in msg,
+                "pull first" in msg.lower(),
                 f"flash={msg!r}",
             )
             check(

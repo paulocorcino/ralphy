@@ -509,7 +509,10 @@ def reached_child(page, i, token, timeout=20000):
 
 
 def detached_popups(ctx):
-    return [pg for pg in ctx.pages if "detached-fence.html" in pg.url]
+    # In daemon mode the popup opens at the ROUTE `fence`, not the file name
+    # `detached-fence.html`: the daemon serves each torn-off page at a route
+    # and refuses its file name (wb-mode.js `pageUrl`, commit 4b24b628).
+    return [pg for pg in ctx.pages if pg.url.rstrip("/").endswith("/fence")]
 
 
 def served_fence(fid):
@@ -542,7 +545,10 @@ def open_plain_console(page):
     """Open a console through the REAL New-console control, and return its id."""
     before = page.locator(".session-window").count()
     close_menus(page)
-    page.locator("button:has-text('Consoles')").click()
+    # `:has-text('Consoles')` also matches the Settings nav item of the same
+    # name (wb-settings.js, commit 4e892a10) — scope to the toolbar's own
+    # button by its title, which the nav item does not carry.
+    page.locator("button[title='Open a console']").click()
     page.locator(".dropdown-item.is-console:visible").click()
     page.wait_for_function(
         f"() => document.querySelectorAll('.session-window').length === {before + 1}", timeout=20000
@@ -919,8 +925,10 @@ def main():
             )
 
             # ---- scenario 6: a popup with no valid opener renders nothing -----
+            # The daemon serves this page at the route `fence`, not the file
+            # name `detached-fence.html` (wb-mode.js `pageUrl`, commit 4b24b628).
             orphan = ctx.new_page()
-            orphan.goto(BASE + "detached-fence.html")
+            orphan.goto(BASE + "fence")
             orphan.wait_for_selector(".detached-empty", timeout=8000)
             text = orphan.locator(".detached-empty").inner_text()
             check(

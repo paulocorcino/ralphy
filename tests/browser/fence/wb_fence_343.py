@@ -371,7 +371,10 @@ def open_plain_console(page):
     """
     before = page.locator(".session-window").count()
     close_menus(page)
-    page.locator("button:has-text('Consoles')").click()
+    # `:has-text('Consoles')` also matches the Settings nav item of the same
+    # name (wb-settings.js, commit 4e892a10) — scope to the toolbar's own
+    # button by its title, which the nav item does not carry.
+    page.locator("button[title='Open a console']").click()
     page.locator(".dropdown-item.is-console:visible").click()
     page.wait_for_function(
         f"() => document.querySelectorAll('.session-window').length === {before + 1}", timeout=15000
@@ -1181,8 +1184,11 @@ def main():
             # The account menu hangs from the far side of the bar and knew
             # nothing about the toolbar's pickers, so opening it over a live
             # New-console menu left both on screen, overlapping.
+            # `.btn.accent` no longer singles out the Consoles button: the three
+            # toolbar buttons read as one row of equals now (index.html, near the
+            # Consoles button's own comment) — scope by its title instead.
             page.evaluate(f"() => {SH}.closeMenus()")
-            page.locator(".canvas-tools .btn.accent").click()
+            page.locator("button[title='Open a console']").click()
             page.wait_for_timeout(200)
             page.locator(".avatar-btn").click()
             page.wait_for_timeout(200)
@@ -1201,7 +1207,7 @@ def main():
             # Clicked through the element: the open account dropdown OVERLAPS
             # this button — which is the reported defect's own geometry — so a
             # hit-tested click waits for a menu only this click can close.
-            page.evaluate("() => document.querySelector('.canvas-tools .btn.accent').click()")
+            page.evaluate("() => document.querySelector(\"button[title='Open a console']\").click()")
             page.wait_for_timeout(200)
             open_menus = page.evaluate(
                 f"() => {{ const s = {SH};"
@@ -1223,7 +1229,7 @@ def main():
 
     # The floor is the REAL count, not a loose lower bound: set under the total,
     # a whole scenario could stop running while the suite still exits 0.
-    ok = all(results) and len(results) == 50
+    ok = all(results) and len(results) == 59
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("THE FENCE LIST IS THE MAP")

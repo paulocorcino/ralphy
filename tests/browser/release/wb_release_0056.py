@@ -18,8 +18,8 @@ Scenario d  opening the panel lists the WHOLE gap, newest first, with the
             highlights of each release — not just the newest
 Scenario e  closing it clears the dot for a quiet view (dismissed)
 Scenario f  an urgent view's dot SURVIVES the dismissal
-Scenario g  a release with no recorded summary says so rather than rendering
-            an empty bullet list
+Scenario g  a release with no recorded summary says "No summary for this
+            release." rather than rendering an empty bullet list
 
 Boots a Localhost daemon on 7443 over a SCRATCH `RALPHY_DAEMON_DIR`, so the
 operator's own registry and login policy are untouched. The daemon is stopped by
@@ -211,7 +211,7 @@ def main():
             check(
                 "g · a release with no summary says so, and only that one",
                 shown.count() == 1
-                and "No summary was recorded" in shown.first.inner_text(),
+                and "No summary for this release." in shown.first.inner_text(),
                 f"visible={shown.count()}",
             )
 

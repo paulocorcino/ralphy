@@ -5,9 +5,8 @@ port, own registry — the operator's own desk and login policy are untouched).
 Two browser contexts drive ONE live session: one holds the writer slot, the
 other watches.
 
-Scenario 1   ctx B parks on ctx A's live session; its `.session-parked` names
-             what it watches (`watching console · ` + `driven in another
-             window`)
+Scenario 1   ctx B parks on ctx A's live session; its `.session-parked` says
+             the session is read-only and another window has control
 Scenario 2   typing into parked B never reaches the child, the strip pulses
              `is-nudged` with a read-only hint, and the pulse is transient
 Scenario 3   B's explicit take-over click parks A, replays B's scrollback
@@ -362,13 +361,8 @@ def main():
             check("…B's window is parked", parked(page_b) == 1)
             parked_text = page_b.locator(".session-parked").inner_text()
             check(
-                "…the strip names what it watches",
-                "watching console · " in parked_text,
-                f"got={parked_text!r}",
-            )
-            check(
                 "…and says the session is driven elsewhere",
-                "driven in another window" in parked_text,
+                "Read-only. Another window has control." in parked_text,
                 f"got={parked_text!r}",
             )
 

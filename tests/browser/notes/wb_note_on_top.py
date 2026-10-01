@@ -444,7 +444,17 @@ def main():
             page.wait_for_timeout(200)
 
             # T14
-            page.dblclick(".session-window .session-titlebar", position={"x": 120, "y": 12})
+            # A double-click on `.session-name` renames instead of toggling
+            # maximize (ADR-0066 §3, wb-console.js ~5873), so the click lands
+            # on blank titlebar space: right of the name, left of the actions.
+            blank = page.evaluate(
+                "() => { const tb = document.querySelector('.session-window .session-titlebar');"
+                " const name = tb.querySelector('.session-name').getBoundingClientRect();"
+                " const actions = tb.querySelector('.session-actions').getBoundingClientRect();"
+                " const tr = tb.getBoundingClientRect();"
+                " return { x: (name.right + actions.left) / 2 - tr.left, y: tr.height / 2 }; }"
+            )
+            page.dblclick(".session-window .session-titlebar", position={"x": blank["x"], "y": blank["y"]})
             page.wait_for_function(
                 "() => !document.querySelector('#stage .session-window').classList.contains('maximized')",
                 timeout=5000,

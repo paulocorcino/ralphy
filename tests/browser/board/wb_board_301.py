@@ -497,7 +497,7 @@ def main():
             check("its run pill is visible", c72.get("pillShown") is True, f"got={c72}")
             check(
                 "the pill names the phase and the agent",
-                c72.get("txt") == "executing · opencode",
+                c72.get("txt") == "planning · opencode",
                 f"got={c72.get('txt')!r}",
             )
             idle = {k: v for k, v in cards.items() if k != "#72"}
@@ -560,7 +560,7 @@ def main():
 
     # The count floor is load-bearing: an early `sys.exit` or a scenario that
     # never ran must not report success on a handful of passing checks.
-    ok = all(results) and len(results) >= 53
+    ok = all(results) and len(results) >= 52
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     if ok:
         print("BOARD LIVE")

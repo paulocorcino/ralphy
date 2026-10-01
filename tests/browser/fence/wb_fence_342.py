@@ -375,9 +375,14 @@ def open_member(page, slug, index, centre):
         " return { x: el.offsetLeft + el.offsetWidth / 2, y: el.offsetTop + el.offsetHeight / 2 }; }",
         before,
     )
+    # The titlebar's geometric centre now lands on `.session-actions` (commit
+    # f1896be0's Slice button), and `makeDraggable` ignores a pointerdown on a
+    # button — so the drag must start on blank title-bar space instead. The
+    # terminal icon in `.session-head` is neither a button nor `.session-name`
+    # (the rename target), so it is always safe to press.
     bar = page.evaluate(
         "(i) => { const el = document.querySelectorAll('.session-window')[i]"
-        "   .querySelector('.session-titlebar');"
+        "   .querySelector('.session-titlebar i.bi-terminal');"
         " const r = el.getBoundingClientRect();"
         " return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }",
         before,

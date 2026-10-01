@@ -6,7 +6,7 @@ environment group, carrying its own repos, and it is MARKED — not removed — 
 it stops answering.
 
 The "peer" is a stub HTTP listener this script opens on loopback. It answers the
-two routes a peer must answer (`/api/peer/hello` with `protocol_version: 1` and
+two routes a peer must answer (`/api/peer/hello` with `protocol_version: 3` and
 `/api/repos` with one row) and nothing else — no WSL, no second Ralphy build, no
 `wsl.exe`. The environment label `WSL: Ubuntu-22.04` is DATA in the descriptor,
 which is the point: the local daemon renders the environment it was told about.
@@ -19,8 +19,8 @@ Scenario 2  the peer's repo row is present UNDER that header, and the local
 Scenario 3  the same `owner/repo` slug registered on BOTH daemons yields TWO
             rows with two distinct `key`s and two distinct paths — the collision
             case the aggregate is keyed for
-Scenario 4  a peer row is inert in this slice: clicking it does not open a
-            project (no repo operation is federated yet)
+Scenario 4  clicking a peer row opens it like any other project row — `toggle`
+            does not special-case peers (`beed2afe` wakes a sleeping one)
 Scenario 5  with the stub CLOSED and the page reloaded, the group is still
             there and its state string reads `unreachable` — marked, not removed
 Scenario 6  the local rows survive the peer going down: federation must never
@@ -109,7 +109,12 @@ class PeerStub(http.server.BaseHTTPRequestHandler):
     """The two routes a peer must answer. A wrong bearer is a 401, so the
     descriptor's token is genuinely exercised rather than assumed."""
 
-    protocol_version = "HTTP/1.1"
+    # HTTP/1.0: every request closes its connection. The daemon's probe client
+    # pools idle keep-alive connections for 90s (client.rs POOL_IDLE_TIMEOUT);
+    # with HTTP/1.1 keep-alive, `stub.shutdown()` only stops accepting NEW
+    # connections — an already-pooled one is still served by its running
+    # handler thread, so the stub answers after it is "closed" (#349 scenario 5).
+    protocol_version = "HTTP/1.0"
 
     def _json(self, code, payload):
         body = json.dumps(payload).encode("utf-8")
@@ -131,7 +136,7 @@ class PeerStub(http.server.BaseHTTPRequestHandler):
                     "name": PEER_NAME,
                     "avatar": "🐺",
                     "environment": PEER_ENV,
-                    "protocol_version": 1,
+                    "protocol_version": 3,
                 },
             )
         elif self.path == "/api/repos":
@@ -215,7 +220,7 @@ def seed_peer_descriptor(daemon_dir, port):
                 f"port = {port}",
                 f'environment = "{PEER_ENV}"',
                 f'token = "{PEER_TOKEN}"',
-                "protocol_version = 1",
+                "protocol_version = 3",
                 "",
                 "[nudge]",
                 'distro = "Ubuntu-22.04"',
@@ -416,7 +421,8 @@ def main():
             )
             page.wait_for_timeout(300)
 
-            # A peer row is inert: the SAME click must not open a project.
+            # A peer row opens the same as a local one (ADR-0067 lifted the
+            # earlier restriction): `toggle` sets `openSlug` to its `repoRef`.
             page.evaluate(
                 """() => {
                   const r = Array.from(document.querySelectorAll('li.project.peer'))[0];
@@ -426,10 +432,18 @@ def main():
             page.wait_for_timeout(300)
             open_slug = page.evaluate(f"() => {SH}.openSlug")
             check(
-                "clicking a peer row does not open a project (nothing is federated yet)",
-                open_slug is None,
+                "clicking a peer row opens it, keyed by daemon id and slug",
+                open_slug == f"{PEER_ID}/{SHARED_SLUG}",
                 "openSlug={}".format(open_slug),
             )
+            # Close it again so the peer going down (scenario 5) starts clean.
+            page.evaluate(
+                """() => {
+                  const r = Array.from(document.querySelectorAll('li.project.peer'))[0];
+                  r.querySelector('.project-head').click();
+                }"""
+            )
+            page.wait_for_timeout(300)
 
             shot = os.path.join(SHOT_DIR, "349-fleet-grouping-2026-07-28.png")
             os.makedirs(SHOT_DIR, exist_ok=True)

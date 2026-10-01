@@ -9,8 +9,9 @@ unhittable, so the persisted-maximize criterion is proved by a REAL maximize +
 reload + on-disk read instead.
 
 Scenario 1   `.canvas-foot` resolves inside `.consoles-tab` and is NOT a
-             descendant of `#stage`; the pills read the live state; the retired
-             empty-stage caption is absent from the DOM
+             descendant of `#stage`; its pills still read the live state even
+             though `04-canvas.css` hides the foot on purpose (commit
+             aee47d3e); the retired empty-stage caption is absent from the DOM
 Scenario 2   a 250px pan leaves the foot's client rect byte-identical while a
              window's client rect moves by exactly -250 (the negative control)
 Scenario 3   maximize fills the VIEWPORT at a scrolled offset — the terminal
@@ -56,8 +57,30 @@ SH = "Alpine.$data(document.querySelector('[x-data]'))"
 
 FIX_A = {"left": 40, "top": 40, "width": 600, "height": 380}
 FIX_B = {"left": 700, "top": 300, "width": 600, "height": 380}
-STAGE_W = 1500
-STAGE_H = 880
+
+
+def stage_extent_oracle(viewport, rects_, margin=200):
+    """The extent `WBGeometry.stageExtent` owes for these rects (wb-geometry.js
+    ~41-57, commit df475a45): a margin of drag room PAST the furthest edge,
+    floored at the viewport's own size on each axis — not the old fixed 200px.
+    `viewport` is `#workspace`'s own clientWidth/clientHeight, not the outer
+    browser viewport: the sidebar takes part of the 1400x900 window.
+    """
+    mx = max(margin, viewport["width"])
+    my = max(margin, viewport["height"])
+    right = max((r["left"] + r["width"] for r in rects_), default=0)
+    bottom = max((r["top"] + r["height"] for r in rects_), default=0)
+    return (
+        max(viewport["width"], right + mx),
+        max(viewport["height"], bottom + my),
+    )
+
+
+def workspace_viewport(page):
+    return page.evaluate(
+        "() => { const ws = document.getElementById('workspace');"
+        "  return { width: ws.clientWidth, height: ws.clientHeight }; }"
+    )
 
 results = []
 
@@ -350,6 +373,10 @@ def main():
                 "  ws.scrollLeft = 0; ws.scrollTop = 0; }"
             )
             page.wait_for_timeout(600)
+            # The oracle over `stageExtent`, against the viewport `#workspace`
+            # itself measures — the margin floors at THAT size, not the outer
+            # browser window (df475a45).
+            STAGE_W, STAGE_H = stage_extent_oracle(workspace_viewport(page), [FIX_A, FIX_B])
             check(
                 "the fixture desk restores verbatim",
                 rects(page) == [FIX_A, FIX_B],
@@ -380,10 +407,12 @@ def main():
 
             # The pills are the plane made legible: both read live shell state, so
             # a literal here is an oracle over `consoleCount` AND `stageExtent`.
+            # `.canvas-foot` is `display:none` on purpose (04-canvas.css, commit
+            # aee47d3e), but Alpine still writes its text nodes, so the pill TEXT
+            # is still live state to assert — on-screen visibility is not.
             pills = page.evaluate(
                 "() => { const f = document.querySelector('.canvas-foot');"
-                "  return { pills: [...f.querySelectorAll('.pill')].map((s) => s.textContent.trim()),"
-                "    footVisible: f.offsetParent !== null && f.clientWidth > 0 }; }"
+                "  return { pills: [...f.querySelectorAll('.pill')].map((s) => s.textContent.trim()) }; }"
             )
             check(
                 "the first pill counts the open consoles",
@@ -395,7 +424,6 @@ def main():
                 pills["pills"][1:2] == [f"Stage {STAGE_W} × {STAGE_H}"],
                 f"got={pills['pills']}",
             )
-            check("…on a foot that is really on screen", pills["footVisible"], f"got={pills}")
 
             # ===== scenario 2: the plane pans UNDER the chrome =================
             before = page.evaluate(
@@ -479,34 +507,6 @@ def main():
                 "…which the footer pill still reports over the full bleed",
                 post["pills"][1:2] == [f"Stage {STAGE_W} × {STAGE_H}"],
                 f"got={post['pills']}",
-            )
-
-            # The two properties the CSS half of this issue turns on. Text alone
-            # reads the same whether the pills paint above the bleed or under it,
-            # so assert the cascade AND the hit test.
-            stack = page.evaluate(
-                "() => { const f = document.querySelector('.canvas-foot');"
-                "  const pill = f.querySelector('.pill');"
-                "  const w = document.querySelector('.session-window.maximized');"
-                "  const r = pill.getBoundingClientRect();"
-                "  const under = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);"
-                "  return { footZ: getComputedStyle(f).zIndex,"
-                "    winZ: parseInt(w.style.zIndex, 10) || 0,"
-                "    events: getComputedStyle(f).pointerEvents,"
-                "    underIsChrome: !!(under && under.closest('.canvas-foot')),"
-                "    underInWindow: !!(under && under.closest('.session-window')) }; }"
-            )
-            check(
-                "the footer paints ABOVE the full bleed, by the cascade",
-                stack["footZ"] == "130" and stack["winZ"] < 130,
-                f"foot z={stack['footZ']} window z={stack['winZ']}",
-            )
-            check(
-                "…and is inert to the pointer, so a pill cannot eat a click",
-                stack["events"] == "none"
-                and not stack["underIsChrome"]
-                and stack["underInWindow"],
-                f"pointer-events={stack['events']} hit-through-to-window={stack['underInWindow']}",
             )
 
             # ===== scenario 4: Go-to pans the plane WHILE maximized ============
@@ -719,7 +719,7 @@ def main():
 
     # The floor matches the real count: set loosely, a scenario that stopped
     # running would leave the suite green.
-    ok = all(results) and len(results) >= 39
+    ok = all(results) and len(results) >= 36
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("THE CHROME IS IN THE FRAME")

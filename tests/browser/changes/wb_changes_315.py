@@ -12,7 +12,8 @@ Scenario 3  a deep row splits into `readme.md` + a dimmer, smaller
 Scenario 4  squeezed sidebar: the directory clips, the file name does not
 Scenario 5  a clean tree renders NO group headline (not two empty ones)
 Scenario 6  the badge still counts PATHS: 4, while 5 rows are on screen
-Scenario 7  a failed `changes.list` read empties both groups behind the `—`
+Scenario 7  a failed `changes.list` read keeps the last groups and badge, and
+            reports "Not current: …" (ADR-0070)
 
 Boots a Localhost daemon on 7415 over a SCRATCH `RALPHY_DAEMON_DIR`, so the
 operator's own daemon registry and login policy are untouched. The daemon is
@@ -231,6 +232,13 @@ def open_project(page, slug, expected):
     # `toggle` is a TOGGLE: calling it on the already-open project closes it.
     page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug)
     page.wait_for_function(f"(s) => {SH}.openSlug === s", arg=slug, timeout=15000)
+    if expected == "0":
+        # A count of 0 never renders a badge (wb-changes.js projectBadge): wait
+        # on the READ, not a DOM element that is never going to appear.
+        page.wait_for_function(
+            f"(s) => {SH}.changesCount[s] === 0", arg=slug, timeout=15000
+        )
+        return
     wait_badge(page, expected)
 
 
@@ -500,10 +508,11 @@ def main():
                 f"badge={badge_text(page)!r} rows={visible_rows}",
             )
 
-            # --- scenario 7a/7b: a failed read empties BOTH groups -------------
+            # --- scenario 7a/7b: a failed read KEEPS the last groups -----------
             # Run on the POPULATED project, with 2 headlines and 5 rows already
-            # on screen: on the clean fixture the groups are `[]` before the read
-            # ever fails, so deleting the clear from `app.js` would stay green.
+            # on screen, so a retained-value regression (clearing on failure)
+            # would show up as a dropped badge or group rather than pass
+            # vacuously on an already-empty fixture.
             for label, stub in (
                 (
                     "a rejected changes.list",
@@ -520,8 +529,8 @@ def main():
                     "   : window.__realObserve(verb, payload); }",
                 ),
             ):
-                # Reload the real rows first, so each leg starts from a populated
-                # list rather than inheriting the previous leg's emptied one.
+                # Reload the real rows first, so each leg starts from a known-good
+                # populated list rather than inheriting the previous leg's state.
                 page.evaluate(f"() => {SH}.loadChanges('{slug_a}')")
                 wait_badge(page, "4")
                 wait_row_count(page, 5)
@@ -530,18 +539,9 @@ def main():
                 page.wait_for_function(
                     f"(s) => !!{SH}.changesReadError[s]", arg=slug_a, timeout=15000
                 )
-                # The badge and the group `x-show`s flip in separate Alpine
-                # effects, so reading heads right after the badge catches the
-                # pre-flip DOM (KNOWLEDGE.md #307/#309). Wait for the flip; if
-                # the groups were NOT cleared this times out, which is the
-                # failure this leg exists to catch.
-                try:
-                    wait_head_count(page, 0)
-                except Exception as exc:  # noqa: BLE001 - reported as a check
-                    print(f"[INFO] {label}: group headlines never cleared ({type(exc).__name__})", flush=True)
                 # The badge and the groups now live in DIFFERENT sidebar views
                 # (#317), so they are two reads: the count from the Projects row,
-                # the emptied groups from the Changes view.
+                # the retained groups from the Changes view.
                 failed = in_projects(
                     page,
                     lambda: page.evaluate(
@@ -558,16 +558,15 @@ def main():
                         "          rows: Array.from(li.querySelectorAll('.chg-row')).filter(r => r.offsetParent !== null).length }; }"
                     ),
                 )
+                reason = page.evaluate(f"(s) => {SH}.changesReadError[s]", arg=slug_a) or ""
                 check(
-                    f"{label} shows no badge and keeps its reason",
-                    failed["text"] is None
-                    and "Could not read the changes."
-                    in (page.evaluate(f"(s) => {SH}.changesReadError[s]", arg=slug_a) or ""),
-                    f"got={failed}",
+                    f"{label} keeps the last badge and reports it as not current",
+                    failed["text"] == "4" and "Not current:" in reason,
+                    f"got={failed} reason={reason!r}",
                 )
                 check(
-                    f"{label} leaves no group behind",
-                    failed["heads"] == 0 and failed["rows"] == 0,
+                    f"{label} leaves the last groups behind, unchanged",
+                    failed["heads"] == 2 and failed["rows"] == 5,
                     f"got={failed}",
                 )
                 page.evaluate("() => { window.WBDaemon.observe = window.__realObserve; }")
@@ -597,7 +596,8 @@ def main():
                 and clean_state["rows"] == 0,
                 f"got={clean_state}",
             )
-            check("the clean badge still reads 0", badge_text(page) == "0")
+            # A count of 0 shows no badge at all (#317, wb-changes.js projectBadge).
+            check("the clean badge shows no count, not a bare 0", badge_text(page) is None)
 
             ctx.close()
             browser.close()
