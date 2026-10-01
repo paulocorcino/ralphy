@@ -398,3 +398,14 @@ fn gemini_models_resolve_flag_then_persisted_then_none() {
     assert_eq!(r.plan_model, None);
     assert_eq!(r.exec_model, None);
 }
+
+/// Both tokens leave the process environment, so no child inherits either.
+/// nextest runs each test in its own process, so the env change is isolated.
+#[test]
+fn strip_secret_tokens_from_env_removes_both() {
+    std::env::set_var(events::config::TOKEN_ENV, "sink-bearer");
+    std::env::set_var(telegram::config::TOKEN_ENV, "bot-token");
+    strip_secret_tokens_from_env();
+    assert!(std::env::var(events::config::TOKEN_ENV).is_err());
+    assert!(std::env::var(telegram::config::TOKEN_ENV).is_err());
+}

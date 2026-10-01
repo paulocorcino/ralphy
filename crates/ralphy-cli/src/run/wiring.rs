@@ -20,7 +20,7 @@ use tracing::warn;
 
 use crate::cli::{CliAgent, RunArgs};
 use crate::non_empty;
-use crate::{config, delivery, events, ui};
+use crate::{config, delivery, events, telegram, ui};
 
 /// The Claude-only run knobs resolved once (flag > settings.json >
 /// hardcoded default, ADR-0010) so the executor and an optional split planner
@@ -337,12 +337,14 @@ pub(crate) fn resolve_plan_agent(plan_agent: Option<CliAgent>, agent: CliAgent) 
     plan_agent.unwrap_or(agent)
 }
 
-/// Remove `RALPHY_EVENTS_TOKEN` from the process environment so no spawned child
-/// (adapter/agent) inherits the sink's bearer token (ADR-0019). Called once at boot
-/// after the effective token is resolved and captured by the sink transport — the
-/// run keeps using it, children never see it. Mirrors the `ANTHROPIC_API_KEY` scrub.
-pub(crate) fn strip_events_token_from_env() {
+/// Remove `RALPHY_EVENTS_TOKEN` and `RALPHY_TELEGRAM_TOKEN` from the process
+/// environment so no spawned child (adapter/agent) inherits the sink's bearer
+/// token or the bot token (ADR-0019, ADR-0072 D7). Called once at boot after both
+/// effective tokens are resolved and captured — the run keeps using them,
+/// children never see them. Mirrors the `ANTHROPIC_API_KEY` scrub.
+pub(crate) fn strip_secret_tokens_from_env() {
     std::env::remove_var(events::config::TOKEN_ENV);
+    std::env::remove_var(telegram::config::TOKEN_ENV);
 }
 
 /// The operating run branch commits land on, for the `data.git.branch` block
