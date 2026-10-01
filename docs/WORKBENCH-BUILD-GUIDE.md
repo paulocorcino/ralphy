@@ -44,6 +44,17 @@ Every library is loaded from `assets/ui/vendor/`; the page loads nothing from a
 CDN. `include_dir!` embeds and serves everything under `assets/ui/`, so a build
 input (a `package.json`, a build script) lives outside that directory.
 
+**The manifest.** `assets/ui/vendor/manifest.json` records each vendored
+library: its name, npm package, version, source, and the SHA-256 of each of
+its files. The test `vendored_files_match_the_manifest` recomputes every hash
+and fails on a file that the manifest does not name. A library is updated by
+hand and reviewed: the bump changes the files and the manifest in the same
+commit. The daily `osv-scanner` job in `.github/workflows/security.yml` checks
+the manifest's versions against the advisory databases (`cargo run -q -p xtask
+-- vendor-lock <dir>/package-lock.json` writes the lockfile it reads; the file
+must have that name). `vendor/**` is `-text` in `.gitattributes`, so a
+checkout never changes the line endings of a hashed file.
+
 **Load order.** `vendor/monaco/vs/loader.js` installs a global `define` with
 `define.amd`. It must load AFTER every UMD library on the page (marked,
 DOMPurify, mermaid, Wunderbaum, xterm and its addons). Otherwise they register
@@ -92,14 +103,14 @@ build.mjs`, run by hand, never in CI. The first line of each output file names
 the versions and the feature list; the test `vendored_crepe_states_its_recipe`
 checks it.
 
-### xterm (version not recorded)
+### xterm (`@xterm/xterm` 6.0.0)
 
-`vendor/xterm.js` and the `fit`, `webgl` and `web-links` addons came with #162
-and #190, with no version, upstream URL or update procedure. Because the
-version is unknown, OSC 52 is written by hand in `wb-console.js`
-(`term.parser.registerOscHandler(52, …)`) instead of with
-`@xterm/addon-clipboard`. The version can be found by comparing the file with
-the npm tarballs; record it when you do.
+`vendor/xterm.js` and `xterm.css` are `@xterm/xterm` 6.0.0. The addons are
+`@xterm/addon-fit` 0.11.0, `@xterm/addon-web-links` 0.12.0 and
+`@xterm/addon-webgl` 0.19.0, copied from the `lib/` directory of each tarball
+under the old `xterm-addon-*.js` names. OSC 52 is written by hand in
+`wb-console.js` (`term.parser.registerOscHandler(52, …)`) instead of with
+`@xterm/addon-clipboard`.
 
 After a bump, check the four upstream behaviours the console depends on:
 `parser.registerOscHandler`, `attachCustomKeyEventHandler`, the `contextmenu` →
@@ -127,7 +138,10 @@ Wunderbaum (the file tree) was chosen because it has no jQuery.
 
 `alpine`, `lucide`, `devicon`, `bootstrap-icons`, `marked`, `mermaid`,
 `dompurify` and `qrcode` are single files or directories copied from upstream,
-with no build step and no local changes.
+with no build step. The manifest has their versions. Two files have a local
+change: `bootstrap-icons.min.css` keeps only the `woff2` font in its
+`@font-face` list, and `devicon.min.css` keeps only the `woff` font, because
+only those font files are vendored.
 
 ## The console clipboard
 
