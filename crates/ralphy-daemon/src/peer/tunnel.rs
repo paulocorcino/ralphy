@@ -302,7 +302,9 @@ impl Tunnels {
                 state.last_said.remove(daemon_id);
             } else if let Some(exited) = state.held.remove(daemon_id) {
                 // It exited by itself: what it said last is why.
-                match exited.said.settle() {
+                let said = exited.said.settle();
+                tracing::info!(peer = %daemon_id, said = said.as_deref().unwrap_or(""), "the tunnel to a peer closed");
+                match said {
                     Some(line) => state.last_said.insert(daemon_id.to_string(), line),
                     None => state.last_said.remove(daemon_id),
                 };
