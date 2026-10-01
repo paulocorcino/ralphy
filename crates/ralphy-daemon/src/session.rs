@@ -216,8 +216,7 @@ impl Session {
     /// the slave (Unix) both reach EOF, ending the reader thread — its sender
     /// drops and the output channel yields `None`. Idempotent.
     pub fn close(&mut self) {
-        // The input thread ends when its queue closes or its write fails.
-        self.input = None;
+        let input = self.input.take();
         if let Some(mut pty) = self.pty.take() {
             if let Some(pid) = pty.process_id() {
                 ralphy_proc_util::kill_tree_by_pid(pid);
@@ -226,6 +225,11 @@ impl Session {
             // Explicit for intent; the drop at scope end closes the master.
             drop(pty);
         }
+        // After the kill: on Unix, dropping the PTY writer sends `\n` and EOF
+        // (portable-pty 0.9 `UnixMasterWriter::drop`), which would submit a
+        // half-typed line to a live shell. The input thread ends when its queue
+        // closes or its write fails.
+        drop(input);
     }
 }
 

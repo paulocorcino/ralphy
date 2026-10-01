@@ -249,8 +249,8 @@ async fn a_command_over_the_limit_waits_for_a_slot_within_the_deadline() {
     };
     let got = call_within(b(), slots.clone()).await;
     assert!(
-        matches!(got, Collected::StillRunning),
-        "B must wait while A still runs and holds the one slot: got {got:?}"
+        matches!(got, Collected::NoSlot),
+        "B must wait while A still runs and holds the one slot, and say it did not start: got {got:?}"
     );
 
     exit_a.send(()).unwrap();

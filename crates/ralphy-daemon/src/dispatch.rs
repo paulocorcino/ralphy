@@ -31,7 +31,9 @@
 //! the now-broken pipe return a non-fatal `EPIPE`/Windows write error rather than
 //! killing it. The obligation this adds is on the DAEMON, not the child: a live
 //! daemon MUST drain the reader to EOF continuously, so the pipe never fills and
-//! stalls the child. The handler's detached drain task discharges that.
+//! stalls the child. The handler's detached drain task discharges that; its
+//! channel to the browser is bounded, and a browser that does not take a frame
+//! within the stream's send deadline is given up, so the drain then discards.
 //!
 //! The [`Spawner`]/[`Child`] seam keeps this module unit-testable: a `FakeSpawner`
 //! records the argv and returns a preset exit code without touching the OS.
@@ -51,6 +53,8 @@ pub use argv::{
     worktree_list_argv, worktree_remove_argv, ArgvError,
 };
 pub use host::{host_argv, host_password};
+#[cfg(test)]
+pub(crate) use spawn::MAX_COLLECT_CHILDREN;
 pub use spawn::{collect, dispatch, ralphy_exe, Child, ProcessSpawner, Spawner, REPLY_DEADLINE};
 pub(crate) use spawn::{collect_within, Collected, COLLECT_SLOTS};
 

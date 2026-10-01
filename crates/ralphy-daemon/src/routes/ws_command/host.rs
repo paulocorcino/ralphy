@@ -6,7 +6,7 @@ use std::path::Path;
 
 use axum::extract::ws::WebSocket;
 
-use super::{collect_config, send_command, stream, STILL_RUNNING};
+use super::{collect_config, not_answered, send_command, stream};
 use crate::dispatch::{self, EffectClass, Verb};
 use crate::protocol::Command;
 
@@ -128,8 +128,8 @@ async fn collect_reply(
             tracing::warn!(error = %format!("{e:#}"), verb = ?verb, "a host command failed to run");
             serde_json::json!({ "status": "error", "message": "host command failed to run" })
         }
-        dispatch::Collected::StillRunning => {
-            serde_json::json!({ "status": "error", "message": STILL_RUNNING })
+        late @ (dispatch::Collected::StillRunning | dispatch::Collected::NoSlot) => {
+            not_answered(&late).expect("a late answer has a reply")
         }
     }
 }

@@ -19,7 +19,7 @@ pub const REPLY_DEADLINE: Duration = Duration::from_secs(60);
 /// about 6 reads at once (changes, sync, branches, worktrees, board, config), so
 /// 8 lets one opening run without a queue. Each child is a `ralphy` that spawns
 /// git or gh, and process creation is the slow part on Windows.
-const MAX_COLLECT_CHILDREN: usize = 8;
+pub(crate) const MAX_COLLECT_CHILDREN: usize = 8;
 
 /// The slots of [`MAX_COLLECT_CHILDREN`], shared by every Query and Mutate.
 pub(crate) static COLLECT_SLOTS: LazyLock<Arc<Semaphore>> =
@@ -39,6 +39,8 @@ pub(crate) enum Collected {
     Failed(anyhow::Error),
     /// The deadline passed first. The child still runs and still holds its slot.
     StillRunning,
+    /// The deadline passed before a slot was free: nothing was started.
+    NoSlot,
 }
 
 /// [`collect`] off the runtime, with a slot from `slots` and an answer within
@@ -54,13 +56,21 @@ pub(crate) async fn collect_within(
     slots: Arc<Semaphore>,
     deadline: Duration,
 ) -> Collected {
+    let started = tokio::time::Instant::now();
+    let permit = match tokio::time::timeout(deadline, slots.acquire_owned()).await {
+        Ok(Ok(permit)) => permit,
+        Ok(Err(e)) => {
+            return Collected::Failed(anyhow::Error::new(e).context("waiting for a slot"))
+        }
+        Err(_) => {
+            tracing::warn!(
+                held = MAX_COLLECT_CHILDREN,
+                "every command slot is held by a command that still runs"
+            );
+            return Collected::NoSlot;
+        }
+    };
     let run = async move {
-        let permit = match slots.acquire_owned().await {
-            Ok(permit) => permit,
-            Err(e) => {
-                return Collected::Failed(anyhow::Error::new(e).context("waiting for a slot"))
-            }
-        };
         let joined = tokio::task::spawn_blocking(move || {
             let _permit = permit;
             let argv_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
@@ -79,7 +89,7 @@ pub(crate) async fn collect_within(
             Err(e) => Collected::Failed(anyhow::Error::new(e).context("joining the collect task")),
         }
     };
-    tokio::time::timeout(deadline, run)
+    tokio::time::timeout(deadline.saturating_sub(started.elapsed()), run)
         .await
         .unwrap_or(Collected::StillRunning)
 }

@@ -12,8 +12,32 @@ use crate::dispatch;
 
 /// Decoded output chunks that may wait for the browser. Each chunk is one read
 /// of at most 8 KB, so one run buffers at most about 512 KB; past that the
-/// drain waits for the socket.
+/// drain waits for the socket, for at most [`SEND_DEADLINE`].
 const OUTPUT_CHANNEL_CAP: usize = 64;
+
+/// How long one output frame may wait for the browser's socket. A socket that
+/// takes longer (a half-open connection) is given up: the receiver drops, the
+/// drain discards to EOF, and the run is never held on a full pipe for longer.
+const SEND_DEADLINE: Duration = Duration::from_secs(10);
+
+/// Send one output chunk; `false` when the socket did not take it within
+/// [`SEND_DEADLINE`].
+async fn relay_chunk(socket: &mut WebSocket, id: u64, verb: &str, chunk: String) -> bool {
+    let frame = send_command(
+        socket,
+        id,
+        verb,
+        serde_json::json!({ "status": "output", "chunk": chunk }),
+    );
+    if tokio::time::timeout(SEND_DEADLINE, frame).await.is_ok() {
+        return true;
+    }
+    tracing::warn!(
+        verb,
+        "the browser did not take a run's output; the run continues unshown"
+    );
+    false
+}
 
 /// Relay `child` on `socket`: the `spawned` ack, each output chunk, then the
 /// exit code. `on_exit` runs once the child has exited, whether or not the
@@ -85,16 +109,9 @@ pub(super) async fn stream_child(
             chunk = rx.recv(), if output_open => {
                 match chunk {
                     Some(chunk) => {
-                        send_command(
-                            socket,
-                            id,
-                            verb,
-                            serde_json::json!({
-                                "status": "output",
-                                "chunk": chunk,
-                            }),
-                        )
-                        .await;
+                        if !relay_chunk(socket, id, verb, chunk).await {
+                            break;
+                        }
                     }
                     // Drain closed (child pipe EOF): stop polling this arm and let
                     // the wait arm report the exit.
@@ -110,19 +127,17 @@ pub(super) async fn stream_child(
             // the wait for each next chunk: an idle gap (or channel close) ends
             // the flush and we always emit `exited`, never wedging the handler.
             joined = &mut wait => {
+                let mut taken = true;
                 while let Ok(Some(chunk)) =
                     tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
                 {
-                    send_command(
-                        socket,
-                        id,
-                        verb,
-                        serde_json::json!({
-                            "status": "output",
-                            "chunk": chunk,
-                        }),
-                    )
-                    .await;
+                    if !relay_chunk(socket, id, verb, chunk).await {
+                        taken = false;
+                        break;
+                    }
+                }
+                if !taken {
+                    break;
                 }
                 let code = joined.ok().and_then(|r| r.ok()).flatten();
                 send_command(

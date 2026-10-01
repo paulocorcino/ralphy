@@ -298,6 +298,8 @@ impl Tunnels {
                 if let Err(e) = child.kill().and_then(|()| child.wait().map(drop)) {
                     tracing::warn!(peer = %daemon_id, error = %e, "could not stop the tunnel of an edited host");
                 }
+                // What the old ssh said was about the old host.
+                state.last_said.remove(daemon_id);
             } else if let Some(exited) = state.held.remove(daemon_id) {
                 // It exited by itself: what it said last is why.
                 match exited.said.settle() {

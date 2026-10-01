@@ -31,6 +31,20 @@ fn encoding_param(cmd: &protocol::Command) -> Result<Option<&'static Encoding>, 
 pub(crate) const STILL_RUNNING: &str =
     "The command is still running after 60 seconds. Ralphy did not stop it, and its answer will not come here.";
 
+/// The reply when no command slot was free within the reply deadline.
+pub(crate) const NO_SLOT: &str =
+    "Ralphy is busy: 8 commands are still running, and this one did not start. Try again later.";
+
+/// The reply for a Query or Mutate that gave no answer in time.
+pub(crate) fn not_answered(collected: &dispatch::Collected) -> Option<serde_json::Value> {
+    let message = match collected {
+        dispatch::Collected::StillRunning => STILL_RUNNING,
+        dispatch::Collected::NoSlot => NO_SLOT,
+        _ => return None,
+    };
+    Some(serde_json::json!({ "status": "error", "message": message }))
+}
+
 /// Spawn-and-COLLECT a config CLI invocation (`config get|set|unset`) for a
 /// Query/Mutate verb off the tokio runtime (ADR-0036 §2): unlike the streaming
 /// Spawn path, a config verb yields ONE collected reply. It waits for one of the
@@ -435,8 +449,9 @@ pub(crate) async fn execute_oneshot(
                             tracing::warn!(error = %format!("{e:#}"), "a query command failed to run");
                             serde_json::json!({ "status": "error", "message": "query read failed" })
                         }
-                        dispatch::Collected::StillRunning => {
-                            serde_json::json!({ "status": "error", "message": STILL_RUNNING })
+                        late
+                        @ (dispatch::Collected::StillRunning | dispatch::Collected::NoSlot) => {
+                            not_answered(&late).expect("a late answer has a reply")
                         }
                     }
                 }
@@ -524,8 +539,9 @@ pub(crate) async fn execute_oneshot(
                                 "message": "mutation write failed"
                             })
                         }
-                        dispatch::Collected::StillRunning => {
-                            serde_json::json!({ "status": "error", "message": STILL_RUNNING })
+                        late
+                        @ (dispatch::Collected::StillRunning | dispatch::Collected::NoSlot) => {
+                            not_answered(&late).expect("a late answer has a reply")
                         }
                     }
                 }
@@ -592,5 +608,21 @@ async fn note_write(cmd: &protocol::Command, repo_path: &Path) -> serde_json::Va
         Some(Ok(())) => serde_json::json!({ "status": "ok" }),
         Some(Err(e)) => serde_json::json!({ "status": "error", "reason": e.reason() }),
         None => serde_json::json!({ "status": "error", "reason": "unavailable" }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_late_replies_name_the_real_limits() {
+        let seconds = format!("after {} seconds", dispatch::REPLY_DEADLINE.as_secs());
+        assert!(STILL_RUNNING.contains(&seconds), "{STILL_RUNNING}");
+        let slots = format!(
+            "{} commands are still running",
+            dispatch::MAX_COLLECT_CHILDREN
+        );
+        assert!(NO_SLOT.contains(&slots), "{NO_SLOT}");
     }
 }
