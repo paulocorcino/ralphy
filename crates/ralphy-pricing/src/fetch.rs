@@ -26,6 +26,11 @@ const READ_TIMEOUT: Duration = Duration::from_secs(1);
 /// within ~3.2s worst case.
 const REQUEST_TIMEOUT: Duration = Duration::from_millis(1500);
 const MAX_ATTEMPTS: u32 = 2;
+/// The largest models.dev body the fetch reads (ADR-0072 D9). Measured
+/// 2026-10-01 with curl: `api.json` is 5_282_228 bytes (5.04 MiB); the cap is
+/// three times that, rounded up. A larger body fails the fetch and leaves the
+/// cache as it was.
+pub const MAX_MODELS_DEV_BYTES: u64 = 16 * 1024 * 1024;
 const RETRY_SLEEP: Duration = Duration::from_millis(200);
 
 /// Options for a best-effort models.dev refresh. `url` is injectable so tests
@@ -152,6 +157,8 @@ fn fetch_body(url: &str) -> Result<String, String> {
             Ok(mut resp) => {
                 return resp
                     .body_mut()
+                    .with_config()
+                    .limit(MAX_MODELS_DEV_BYTES)
                     .read_to_string()
                     .map_err(|e| format!("reading models.dev body: {e}"));
             }
@@ -484,6 +491,34 @@ mod tests {
 
             let _ = std::fs::remove_dir_all(cache.parent().unwrap());
         }
+    }
+
+    /// A body over the cap fails the fetch, is not retried, and leaves the
+    /// prior cache bytes as they were.
+    #[test]
+    fn an_oversized_body_fails_and_leaves_the_cache() {
+        let filler = "a".repeat(MAX_MODELS_DEV_BYTES as usize);
+        let body = format!("{{\"x\":\"{filler}\"}}");
+        assert!(body.len() as u64 > MAX_MODELS_DEV_BYTES);
+        let (port, accepts, handle) = serve_n(http_response(200, &body), 1);
+        let url = format!("http://127.0.0.1:{port}/api.json");
+        assert!(fetch_body(&url).is_err(), "an oversized body was read");
+        handle.join().ok();
+        assert_eq!(
+            accepts.load(Ordering::SeqCst),
+            1,
+            "no retry on an oversized body"
+        );
+
+        let cache = temp_cache_path("oversized");
+        let prior = br#"{"timestamp":"2020-01-01T00:00:00Z","data":{}}"#;
+        std::fs::write(&cache, prior).expect("prior");
+        let (port, _accepts, handle) = serve_n(http_response(200, &body), 1);
+        let url = format!("http://127.0.0.1:{port}/api.json");
+        refresh_if_stale(&opts(&url, &cache, true, false));
+        handle.join().ok();
+        assert_eq!(std::fs::read(&cache).unwrap(), prior);
+        let _ = std::fs::remove_dir_all(cache.parent().unwrap());
     }
 
     #[test]
