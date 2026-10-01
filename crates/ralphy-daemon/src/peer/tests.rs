@@ -356,10 +356,12 @@ fn tunnel_diagnoses_name_the_host_and_never_wsl() {
     let closed = PeerStatus::TunnelClosed {
         host: "svrapp".into(),
         cause: None,
+        said: None,
     };
     let failed = PeerStatus::TunnelClosed {
         host: "svrapp".into(),
         cause: Some("no ssh program found: install OpenSSH".into()),
+        said: None,
     };
     let silent = PeerStatus::TunnelSilent {
         host: "svrapp".into(),
@@ -384,14 +386,27 @@ fn tunnel_diagnoses_name_the_host_and_never_wsl() {
 #[test]
 fn classify_tunnel_maps_the_ensure_answer() {
     use super::client::classify_tunnel;
-    let started = classify_tunnel("svrapp", Ok(true), "refused".into());
+    let started = classify_tunnel("svrapp", Ok(true), "refused".into(), None);
     assert_eq!(started.state(), "tunnel-closed");
-    let held = classify_tunnel("svrapp", Ok(false), "refused".into());
+    let held = classify_tunnel("svrapp", Ok(false), "refused".into(), None);
     assert_eq!(held.state(), "tunnel-silent");
     assert!(held.diagnosis("Linux").contains("refused"));
-    let failed = classify_tunnel("svrapp", Err("spawn failed".into()), "refused".into());
+    let failed = classify_tunnel("svrapp", Err("spawn failed".into()), "refused".into(), None);
     assert_eq!(failed.state(), "tunnel-closed");
     assert!(failed.diagnosis("Linux").contains("spawn failed"));
+    let said = classify_tunnel(
+        "svrapp",
+        Ok(true),
+        "refused".into(),
+        Some("Permission denied (publickey).".into()),
+    );
+    assert_eq!(said.state(), "tunnel-closed");
+    let d = said.diagnosis("Linux");
+    assert!(
+        d.contains("ssh said \"Permission denied (publickey).\"")
+            && d.ends_with("opening it again."),
+        "got: {d}"
+    );
 }
 
 #[test]

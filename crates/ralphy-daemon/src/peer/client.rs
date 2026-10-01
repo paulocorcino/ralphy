@@ -67,6 +67,8 @@ pub enum PeerStatus {
     TunnelClosed {
         host: String,
         cause: Option<String>,
+        /// The last line the `ssh` that exited wrote on its stderr.
+        said: Option<String>,
     },
     /// The tunnel is open, but the daemon on the other end does not answer.
     TunnelSilent {
@@ -111,12 +113,22 @@ impl PeerStatus {
                 format!("{environment} did not answer: {why}. Start its daemon.")
             }
             PeerStatus::Refused { why } => format!("{environment} was not dialled: {why}."),
-            PeerStatus::TunnelClosed { host, cause: None } => {
-                format!("The tunnel to {host} is closed. Ralphy is opening it again.")
-            }
+            PeerStatus::TunnelClosed {
+                host,
+                cause: None,
+                said: None,
+            } => format!("The tunnel to {host} is closed. Ralphy is opening it again."),
+            PeerStatus::TunnelClosed {
+                host,
+                cause: None,
+                said: Some(said),
+            } => format!(
+                "The tunnel to {host} is closed: ssh said \"{said}\". Ralphy is opening it again."
+            ),
             PeerStatus::TunnelClosed {
                 host,
                 cause: Some(cause),
+                ..
             } => format!("The tunnel to {host} is closed. Ralphy could not open it: {cause}."),
             PeerStatus::TunnelSilent { host, why } => format!(
                 "The tunnel to {host} is open, but its daemon does not answer: {why}. Start it."
@@ -210,19 +222,26 @@ pub fn classify_unreachable(
 /// Which tunnel state a failed dial was, from the answer of the ensure that
 /// followed it: `Ok(true)` means it had to start a new `ssh`, so the tunnel was
 /// closed; `Ok(false)` means the held `ssh` still runs, so the tunnel is open and
-/// the daemon behind it is silent. Pure: the ensure lives in `peer::tunnel`.
+/// the daemon behind it is silent. `said` is the last stderr line of the `ssh`
+/// that exited. Pure: the ensure lives in `peer::tunnel`.
 pub fn classify_tunnel(
     host: &str,
     ensured: std::result::Result<bool, String>,
     why: String,
+    said: Option<String>,
 ) -> PeerStatus {
     let host = host.to_string();
     match ensured {
-        Ok(true) => PeerStatus::TunnelClosed { host, cause: None },
+        Ok(true) => PeerStatus::TunnelClosed {
+            host,
+            cause: None,
+            said,
+        },
         Ok(false) => PeerStatus::TunnelSilent { host, why },
         Err(cause) => PeerStatus::TunnelClosed {
             host,
             cause: Some(cause),
+            said,
         },
     }
 }
@@ -241,10 +260,11 @@ async fn diagnose_failed_dial(d: &PeerDescriptor, why: String) -> PeerStatus {
         } else {
             &d.name
         };
-        let ensured = super::tunnel::hold_open(d.daemon_id.clone(), spec)
-            .await
-            .map_err(|e| format!("{e:#}"));
-        return classify_tunnel(host, ensured, why);
+        let (ensured, said) = match super::tunnel::hold_open(d.daemon_id.clone(), spec).await {
+            Ok((started, said)) => (Ok(started), said),
+            Err(e) => (Err(format!("{e:#}")), None),
+        };
+        return classify_tunnel(host, ensured, why, said);
     }
     let Some(distro) = d.nudge.as_ref().map(|spec| spec.distro.clone()) else {
         return PeerStatus::Unreachable { why };

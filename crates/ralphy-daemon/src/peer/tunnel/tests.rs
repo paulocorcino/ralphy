@@ -115,12 +115,12 @@ fn an_edited_host_gets_a_new_tunnel() {
         destination: "user@192.168.101.3".into(),
         ..before.clone()
     };
-    let old_pid = tunnels.0.lock().unwrap()["mac"].0.id();
+    let old_pid = tunnels.0.lock().unwrap().held["mac"].child.id();
     assert!(tunnels.ensure_with("mac", &edited, stand_in).unwrap());
-    let mut held = tunnels.0.lock().unwrap();
-    let (child, opened_with) = held.get_mut("mac").unwrap();
-    assert_ne!(child.id(), old_pid);
-    assert_eq!(*opened_with, edited);
-    child.kill().unwrap();
-    child.wait().unwrap();
+    let mut state = tunnels.0.lock().unwrap();
+    let held = state.held.get_mut("mac").unwrap();
+    assert_ne!(held.child.id(), old_pid);
+    assert_eq!(held.spec, edited);
+    held.child.kill().unwrap();
+    held.child.wait().unwrap();
 }
