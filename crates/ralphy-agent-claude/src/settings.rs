@@ -9,10 +9,25 @@ use ralphy_core::Plan;
 
 use crate::ClaudeAgent;
 
-/// Minimal settings that keep a headless `claude -p` from hanging on a prompt.
-/// The Stop hook is an execution concern, added by [`exec_settings_json`];
-/// the agent-state hooks ride both phases ([`plan_settings_json`]).
-pub(crate) const SETTINGS_JSON: &str = r#"{"skipDangerousModePermissionPrompt":true,"skipAutoPermissionPrompt":true,"autoCompactEnabled":false}"#;
+/// The settings every headless session shares: the flags that keep `claude -p`
+/// from hanging on a prompt, and the guard's `PreToolUse` hook. Every session
+/// Ralphy starts carries the guard (ADR-0072 D6); the phase builders add their
+/// own hooks on top.
+fn base_settings(guard_command: &str) -> serde_json::Value {
+    serde_json::json!({
+        "skipDangerousModePermissionPrompt": true,
+        "skipAutoPermissionPrompt": true,
+        "autoCompactEnabled": false,
+        "hooks": {
+            "PreToolUse": [
+                {
+                    "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit",
+                    "hooks": [ { "type": "command", "command": guard_command } ]
+                }
+            ]
+        }
+    })
+}
 
 /// Claude-specific run defaults persisted under the [`ClaudeSettings::SECTION`]
 /// section of `.ralphy/settings.json` (ADR-0010). The core stores the section as
@@ -201,7 +216,7 @@ impl ClaudeAgent {
             std::env::current_exe().context("locating the ralphy binary for the Stop hook")?;
         let json = exec_settings_json(
             &stop_hook_command(&exe),
-            &guard_hook_command(&exe),
+            &guard_hook_command(&exe, true),
             &post_hook_command(&exe),
             &status_hook_command(&exe),
         );
@@ -210,13 +225,13 @@ impl ClaudeAgent {
         Ok(path)
     }
 
-    /// Write the plan phase's `ralphy.settings.json`: the skip flags and the
-    /// agent-state hooks only — no guard (the plan charter forbids writes by
-    /// prompt) and no Stop sentinel hook (ADR-0059 §4).
+    /// Write the plan phase's `ralphy.settings.json`: the skip flags, the
+    /// guard without the cost gate, and the agent-state hooks — no Stop
+    /// sentinel hook (ADR-0059 §4).
     pub(crate) fn write_plan_settings(&self) -> Result<PathBuf> {
         let exe = std::env::current_exe()
             .context("locating the ralphy binary for the agent-state hook")?;
-        let json = plan_settings_json(&status_hook_command(&exe));
+        let json = plan_settings_json(&guard_hook_command(&exe, false), &status_hook_command(&exe));
         let path = self.run_dir.join("ralphy.settings.json");
         std::fs::write(&path, json).context("writing plan settings")?;
         Ok(path)
@@ -228,9 +243,29 @@ fn stop_hook_command(exe: &Path) -> String {
     format!("\"{}\" hook stop", exe.display())
 }
 
-/// Quote the guard-hook command line for the platform: `"<exe>" hook guard`.
-fn guard_hook_command(exe: &Path) -> String {
-    format!("\"{}\" hook guard", exe.display())
+/// Quote the guard-hook command line for the platform: `"<exe>" hook guard`,
+/// with `--cost-gate` for an execute session — the gate reads the run's
+/// `plan.md`, which only execute owns (ADR-0072 D6).
+fn guard_hook_command(exe: &Path, cost_gate: bool) -> String {
+    let flag = if cost_gate { " --cost-gate" } else { "" };
+    format!("\"{}\" hook guard{flag}", exe.display())
+}
+
+/// The settings of a one-shot task session (consolidate, diagnose, draft,
+/// triage): the skip flags and the guard.
+fn task_settings_json(guard_command: &str) -> String {
+    serde_json::to_string_pretty(&base_settings(guard_command)).expect("settings serialize")
+}
+
+/// Write a task session's `ralphy.settings.json` into `dir` (created when
+/// missing). Returns the settings path.
+pub(crate) fn write_task_settings(dir: &Path) -> Result<PathBuf> {
+    let exe = std::env::current_exe().context("locating the ralphy binary for the guard hook")?;
+    std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+    let path = dir.join("ralphy.settings.json");
+    std::fs::write(&path, task_settings_json(&guard_hook_command(&exe, false)))
+        .context("writing claude settings")?;
+    Ok(path)
 }
 
 /// Quote the post-hook command line for the platform: `"<exe>" hook post`.
@@ -284,14 +319,10 @@ fn with_status_hooks(hooks: &mut serde_json::Map<String, serde_json::Value>, sta
     }
 }
 
-/// The plan phase's settings: the skip flags plus the agent-state hooks.
-fn plan_settings_json(status_command: &str) -> String {
-    let mut settings = serde_json::json!({
-        "skipDangerousModePermissionPrompt": true,
-        "skipAutoPermissionPrompt": true,
-        "autoCompactEnabled": false,
-        "hooks": {}
-    });
+/// The plan phase's settings: the skip flags, the guard, and the agent-state
+/// hooks.
+fn plan_settings_json(guard_command: &str, status_command: &str) -> String {
+    let mut settings = base_settings(guard_command);
     if let Some(hooks) = settings["hooks"].as_object_mut() {
         with_status_hooks(hooks, status_command);
     }
@@ -309,31 +340,19 @@ fn exec_settings_json(
     post_command: &str,
     status_command: &str,
 ) -> String {
-    let mut settings = serde_json::json!({
-        "skipDangerousModePermissionPrompt": true,
-        "skipAutoPermissionPrompt": true,
-        "autoCompactEnabled": false,
-        "hooks": {
-            "Stop": [
-                {
-                    "matcher": "",
-                    "hooks": [ { "type": "command", "command": stop_command } ]
-                }
-            ],
-            "PreToolUse": [
-                {
-                    "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit",
-                    "hooks": [ { "type": "command", "command": guard_command } ]
-                }
-            ],
-            "PostToolUse": [
-                {
-                    "matcher": "Bash",
-                    "hooks": [ { "type": "command", "command": post_command } ]
-                }
-            ]
+    let mut settings = base_settings(guard_command);
+    settings["hooks"]["Stop"] = serde_json::json!([
+        {
+            "matcher": "",
+            "hooks": [ { "type": "command", "command": stop_command } ]
         }
-    });
+    ]);
+    settings["hooks"]["PostToolUse"] = serde_json::json!([
+        {
+            "matcher": "Bash",
+            "hooks": [ { "type": "command", "command": post_command } ]
+        }
+    ]);
     if let Some(hooks) = settings["hooks"].as_object_mut() {
         with_status_hooks(hooks, status_command);
     }
@@ -463,12 +482,13 @@ mod tests {
         let status = "\"ralphy.exe\" hook status";
         let exec: serde_json::Value = serde_json::from_str(&exec_settings_json(
             "\"ralphy.exe\" hook stop",
-            "\"ralphy.exe\" hook guard",
+            "\"ralphy.exe\" hook guard --cost-gate",
             "\"ralphy.exe\" hook post",
             status,
         ))
         .unwrap();
-        let plan: serde_json::Value = serde_json::from_str(&plan_settings_json(status)).unwrap();
+        let plan: serde_json::Value =
+            serde_json::from_str(&plan_settings_json("\"ralphy.exe\" hook guard", status)).unwrap();
         for (doc, name) in [(&exec, "exec"), (&plan, "plan")] {
             let hooks = &doc["hooks"];
             for event in [
@@ -508,7 +528,10 @@ mod tests {
         let pre = exec["hooks"]["PreToolUse"].as_array().unwrap();
         assert_eq!(pre.len(), 2);
         assert_eq!(pre[0]["matcher"], "Bash|Edit|Write|MultiEdit|NotebookEdit");
-        assert_eq!(pre[0]["hooks"][0]["command"], "\"ralphy.exe\" hook guard");
+        assert_eq!(
+            pre[0]["hooks"][0]["command"],
+            "\"ralphy.exe\" hook guard --cost-gate"
+        );
         assert_eq!(pre[0]["hooks"][0]["type"], "command");
         assert_eq!(pre[1]["matcher"], "*");
         assert_eq!(pre[1]["hooks"][0]["command"], status);
@@ -525,11 +548,13 @@ mod tests {
         assert_eq!(post[0]["hooks"][0]["type"], "command");
         assert_eq!(post[1]["matcher"], "*");
         assert_eq!(post[1]["hooks"][0]["command"], status);
-        // Plan: status hooks only — no guard, no sentinel, no timer.
+        // Plan: the guard first, then the status hooks — no sentinel, no timer.
         let pre = plan["hooks"]["PreToolUse"].as_array().unwrap();
-        assert_eq!(pre.len(), 1);
-        assert_eq!(pre[0]["matcher"], "*");
-        assert_eq!(pre[0]["hooks"][0]["command"], status);
+        assert_eq!(pre.len(), 2);
+        assert_eq!(pre[0]["matcher"], "Bash|Edit|Write|MultiEdit|NotebookEdit");
+        assert_eq!(pre[0]["hooks"][0]["command"], "\"ralphy.exe\" hook guard");
+        assert_eq!(pre[1]["matcher"], "*");
+        assert_eq!(pre[1]["hooks"][0]["command"], status);
         let stop = plan["hooks"]["Stop"].as_array().unwrap();
         assert_eq!(stop.len(), 1);
         assert_eq!(stop[0]["hooks"][0]["command"], status);
@@ -542,7 +567,7 @@ mod tests {
     /// ADR-0059 §4 as WRITTEN, not as built in memory: the files
     /// `write_exec_settings`/`write_plan_settings` leave in the run dir carry
     /// the status hook on every one of the seven events, and the plan file has
-    /// no guard and no sentinel. Dropping the `status_hook_command` argument
+    /// no sentinel. Dropping the `status_hook_command` argument
     /// from either writer reds here where the pure-builder test stays green.
     #[test]
     fn the_written_settings_files_carry_the_status_hooks() {
@@ -555,7 +580,7 @@ mod tests {
             ("exec", |a| a.write_exec_settings(), true),
             ("plan", |a| a.write_plan_settings(), false),
         ];
-        for (name, write, guarded) in writers {
+        for (name, write, sentinel_wanted) in writers {
             let path = write(&agent).unwrap();
             assert_eq!(path, dir.path().join("ralphy.settings.json"), "{name}");
             let doc: serde_json::Value =
@@ -582,23 +607,13 @@ mod tests {
                     .count();
                 assert_eq!(status, 1, "{name}: one status hook on {event}");
             }
-            let guard = hooks["PreToolUse"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .filter_map(|e| e["hooks"][0]["command"].as_str())
-                .any(|c| c.ends_with("hook guard"));
             let sentinel = hooks["Stop"]
                 .as_array()
                 .unwrap()
                 .iter()
                 .filter_map(|e| e["hooks"][0]["command"].as_str())
                 .any(|c| c.ends_with("hook stop"));
-            assert_eq!(
-                (guard, sentinel),
-                (guarded, guarded),
-                "{name}: guard/sentinel presence"
-            );
+            assert_eq!(sentinel, sentinel_wanted, "{name}: sentinel presence");
             // The command quotes THIS binary's path.
             let cmd = hooks["SessionStart"][0]["hooks"][0]["command"]
                 .as_str()
@@ -608,5 +623,46 @@ mod tests {
                 "{name}: {cmd}"
             );
         }
+    }
+    /// The guard command of a written settings file, if it carries one.
+    fn guard_command_of(path: &Path) -> Option<String> {
+        let doc: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        doc["hooks"]["PreToolUse"]
+            .as_array()?
+            .iter()
+            .filter_map(|e| e["hooks"][0]["command"].as_str())
+            .find(|c| c.contains("hook guard"))
+            .map(str::to_string)
+    }
+
+    /// Every settings file the Claude adapter writes carries the guard, and
+    /// only the execute file turns the cost gate on. The task sessions share
+    /// one writer: no task builds its own settings file.
+    #[test]
+    fn every_settings_file_carries_the_guard() {
+        let dir = tempfile::tempdir().unwrap();
+        let agent = ClaudeAgent::new(None, None, dir.path().join("run"));
+        std::fs::create_dir_all(dir.path().join("run")).unwrap();
+        let exec = agent.write_exec_settings().unwrap();
+        let exec_guard = guard_command_of(&exec);
+        let plan = agent.write_plan_settings().unwrap();
+        let plan_guard = guard_command_of(&plan);
+        let task = write_task_settings(&dir.path().join("task").join(".ralphy")).unwrap();
+        let task_guard = guard_command_of(&task);
+        for (name, got, want) in [
+            ("exec", exec_guard, "hook guard --cost-gate"),
+            ("plan", plan_guard, "hook guard"),
+            ("task", task_guard, "hook guard"),
+        ] {
+            let got = got.unwrap_or_else(|| panic!("{name}: no guard hook"));
+            assert!(got.ends_with(want), "{name}: {got}");
+        }
+        let tasks = include_str!("tasks.rs");
+        assert!(
+            !tasks.contains("std::fs::write(&settings_path"),
+            "a task session writes its own settings file"
+        );
+        assert_eq!(tasks.matches("write_task_settings(").count(), 4);
     }
 }
