@@ -1090,7 +1090,7 @@ function shell() {
     // Fetch from the upstream — the operator's act, never a timer's. A refusal
     // is `{status:"error"}` whose message IS the core's prose.
     async syncFetch(slug) {
-      if (this.syncBusy) return;
+      if (this.syncBusy || this.writeLocked()) return;
       this.syncBusy = "fetch";
       this.changesError = "";
       try {
@@ -1117,7 +1117,7 @@ function shell() {
     // Fast-forward from the upstream. A successful pull moves the working tree,
     // so the change set is reloaded beside the counts.
     async syncPull(slug) {
-      if (this.syncBusy) return;
+      if (this.syncBusy || this.writeLocked()) return;
       this.syncBusy = "pull";
       this.changesError = "";
       let moved = false;
@@ -1224,18 +1224,38 @@ function shell() {
     // A HINT, not the authority: the CLI's `guard_run_lock` refuses
     // unconditionally, and a `ralphy triage` holding the lock writes no run
     // snapshot, so a click can still be refused while these look enabled.
+    //
+    // A write is also locked while the fact it acts on is not current
+    // (ADR-0070 D3): a failed read after a good one, or a failed first read.
+    // A fact never read yet is not "not current": the panel is loading.
     writeLocked() {
       return !!this.writeLockReason();
     },
     writeLockReason() {
-      return window.WBChanges.writeLockReason(this.runsByProject[this.openSlug]);
+      const slug = this.openSlug;
+      if (this.buildSkew) return this.BUILD_SKEW_LOCK;
+      if (this.changesRead[slug]?.current === false || this.syncRead[slug]?.current === false) {
+        return "The changes shown are not current. Wait for the next read, or reload the page.";
+      }
+      if (this.runsRead[slug]?.current === false) {
+        return "The runs shown are not current. Wait for the next read, or reload the page.";
+      }
+      return window.WBChanges.writeLockReason(this.runsByProject[slug]);
     },
+    BUILD_SKEW_LOCK: "This page is older than Ralphy. Save your work, and the page loads the new version.",
+    // True while this tab runs an older build than the daemon and holds unsaved
+    // work (ADR-0070 D6); set by `onBuildSkew`.
+    buildSkew: false,
     // The board's label editor, under the SAME lock: `label set` is a
     // run-lock-aware Mutate (mutate.rs).
     labelsLocked() {
       return !!this.labelLockReason();
     },
     labelLockReason() {
+      if (this.buildSkew) return this.BUILD_SKEW_LOCK;
+      if (this.boardRead[this.openSlug]?.current === false) {
+        return "The board shown is not current. Wait for the next read.";
+      }
       return window.WBChanges.writeLockReason(
         this.runsByProject[this.openSlug],
         "You can edit labels again when it finishes.",
@@ -1537,6 +1557,11 @@ function shell() {
     // `p.branch` is the primary's and must not move, so no optimistic update —
     // the chip converges from `_mutateBranch`'s forced `worktree.list` re-read.
     switchBranch(name) {
+      if (this.writeLocked()) {
+        this._flashAction(this.writeLockReason());
+        this.closeBranchModal();
+        return;
+      }
       if (name !== this.branchModal.current) {
         const slug = this.branchModal.slug;
         const checkout = this.checkoutOf(slug);
@@ -1554,6 +1579,10 @@ function shell() {
 
     createBranch() {
       if (!this.canCreateBranch()) return;
+      if (this.writeLocked()) {
+        this._flashAction(this.writeLockReason());
+        return;
+      }
       const name = this.branchModal.filter.trim();
       const from = this.branchModal.current;
       const slug = this.branchModal.slug;

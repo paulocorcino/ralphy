@@ -626,9 +626,9 @@
                  busy act trades its icon for a ring: the three share one
                  upstream, and a push is the longest wait in this panel. The
                  ring is a sibling the CSS swaps in. -->
-            <button class="bar-act" data-act="fetch" :disabled="!!syncBusy"
+            <button class="bar-act" data-act="fetch" :disabled="writeLocked() || !!syncBusy"
                     :class="{ busy: syncBusy === 'fetch' }"
-                    :title="syncBusyTitle('fetch') || 'Fetch from the upstream'"
+                    :title="syncBusyTitle('fetch') || writeLockReason() || 'Fetch from the upstream'"
                     @click.stop="syncFetch(openSlug)">
               <svg x-icon="'radar'"></svg><span class="bar-spinner" aria-hidden="true"></span><span class="bar-label">Fetch</span>
             </button>
@@ -636,10 +636,10 @@
                  not inert for a while, it has nothing to pull from until the
                  Publish beside it runs. The freed width goes to Publish, whose
                  label does not fit in a third of the bar. -->
-            <button class="bar-act" data-act="pull" :disabled="!!syncBusy || !!pullBlocked()"
+            <button class="bar-act" data-act="pull" :disabled="writeLocked() || !!syncBusy || !!pullBlocked()"
                     x-show="!pullBlocked()"
                     :class="{ busy: syncBusy === 'pull' }"
-                    :title="syncBusyTitle('pull') || pullBlocked() || 'Pull from the upstream (fast-forward only)'"
+                    :title="syncBusyTitle('pull') || pullBlocked() || writeLockReason() || 'Pull from the upstream (fast-forward only)'"
                     @click.stop="syncPull(openSlug)">
               <svg x-icon="'cloud-download'"></svg><span class="bar-spinner" aria-hidden="true"></span><span class="bar-label">Pull</span>
             </button>

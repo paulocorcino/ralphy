@@ -1664,3 +1664,39 @@ test("a failed settings read says so, and a project setting is not written", asy
   await state.saveSetting("queue.label", "ready");
   assert.deepEqual(verbs, ["config.get"], "no config.set over values never read");
 });
+
+// ADR-0070 D3: a write acts on what the page shows, so it is locked while that
+// is not current, and says why.
+test("writes are locked while the change set is not current", async () => {
+  const state = observedShell([CHANGES_OK, { status: "error", message: "git exited 128" }]);
+  state.runsByProject["o/r"] = [];
+  await state.loadChanges("o/r");
+  assert.equal(state.writeLocked(), false, "a good read locks nothing");
+  await state.loadChanges("o/r");
+  assert.equal(state.writeLocked(), true);
+  assert.match(state.writeLockReason(), /not current/);
+});
+
+test("moving a board card is locked while the board is not current", async () => {
+  const state = observedShell([
+    { status: "ok", board: { issues: [], labels: [] } },
+    { status: "error", message: "gh not authed" },
+  ]);
+  state.loadPlan = () => {};
+  state.kanbanSel = null;
+  state.runsByProject["o/r"] = [];
+  await state.loadBoard();
+  assert.equal(state.labelsLocked(), false);
+  await state.loadBoard();
+  assert.equal(state.labelsLocked(), true);
+  assert.match(state.labelLockReason(), /board shown is not current/);
+});
+
+// NEGATIVE CONTROL: two good reads lock nothing.
+test("two good change-set reads lock no write", async () => {
+  const state = observedShell([CHANGES_OK, CHANGES_OK]);
+  state.runsByProject["o/r"] = [];
+  await state.loadChanges("o/r");
+  await state.loadChanges("o/r");
+  assert.equal(state.writeLocked(), false);
+});
