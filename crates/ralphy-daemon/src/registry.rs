@@ -6,13 +6,14 @@
 //! never mutate the process-global env (the `RALPHY_*_DIR` env-race trap). The
 //! CLI (which has `ralphy-core`) computes the slug and calls this store; this
 //! module never depends on `ralphy-core` (ADR-0032: the daemon must not import
-//! the core). Reachability is computed at read time, never persisted — a stale
+//! the core); it reads git facts through `ralphy-git-read` (ADR-0069). Reachability is computed at read time, never persisted — a stale
 //! flag would contradict "never removed automatically" and self-healing.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use ralphy_git_read::Head;
 use serde::{Deserialize, Serialize};
 
 pub(crate) use crate::owner_only::set_owner_only;
@@ -63,26 +64,38 @@ impl RepoEntry {
         })
     }
 
-    /// The current branch name, read fresh from `<path>/.git/HEAD`. `None` for
-    /// a detached HEAD (raw commit sha), a missing/unreadable `.git/HEAD` (no
-    /// repo, or a worktree/submodule gitdir-pointer file), or any other
-    /// non-`ref:` content.
-    pub fn head_branch(&self) -> Option<String> {
-        let head = Path::new(&self.path).join(".git").join("HEAD");
-        let s = std::fs::read_to_string(head).ok()?;
-        s.trim()
-            .strip_prefix("ref: refs/heads/")
-            .map(str::to_string)
+    /// What HEAD points at, read through `ralphy-git-read` (ADR-0069 D4).
+    /// `None` when the path is not a repo or git cannot answer. Spawns git, so
+    /// callers on the async reactor MUST run this in `spawn_blocking`.
+    pub fn head(&self) -> Option<Head> {
+        match ralphy_git_read::head(Path::new(&self.path)) {
+            Ok(head) => Some(head),
+            Err(e) => {
+                tracing::debug!(path = %self.path, error = %e, "no head for repo");
+                None
+            }
+        }
     }
 
-    /// Whether the working tree has uncommitted changes, via `git -C <path>
-    /// status --porcelain` (dirty = non-empty stdout). `false` on a spawn error
-    /// or a non-git dir (no working-tree state to report). Spawns a subprocess,
-    /// so callers on the async reactor MUST run this in `spawn_blocking`.
+    /// The current branch name. `None` for a detached HEAD or when
+    /// [`Self::head`] has no answer. Spawns git, like [`Self::head`].
+    pub fn head_branch(&self) -> Option<String> {
+        match self.head()? {
+            Head::Branch { name } => Some(name),
+            Head::Detached { .. } => None,
+        }
+    }
+
+    /// Whether the working tree has uncommitted changes, by the change-set
+    /// rule (`.ralphy/` never counts). `false` when git cannot answer (no
+    /// working-tree state to report). Spawns git — run in `spawn_blocking`.
     pub fn dirty(&self) -> bool {
-        match git_output(&self.path, &["status", "--porcelain"]) {
-            Some((true, stdout)) => !stdout.trim().is_empty(),
-            _ => false,
+        match ralphy_git_read::dirty(Path::new(&self.path)) {
+            Ok(dirty) => dirty,
+            Err(e) => {
+                tracing::debug!(path = %self.path, error = %e, "no dirty bit for repo");
+                false
+            }
         }
     }
 
@@ -100,18 +113,10 @@ impl RepoEntry {
         normalize_path(&self.path) == normalize_path(&root.to_string_lossy())
     }
 
-    /// The `origin` remote URL, via `git -C <path> remote get-url origin`.
-    /// `None` when there is no `origin` (non-zero exit), the URL is empty, or
-    /// git cannot be spawned. Spawns a subprocess — run in `spawn_blocking` off
-    /// the async reactor.
+    /// The `origin` remote URL. `None` when there is no `origin`, the URL is
+    /// empty, or git cannot answer. Spawns git — run in `spawn_blocking`.
     pub fn remote(&self) -> Option<String> {
-        match git_output(&self.path, &["remote", "get-url", "origin"]) {
-            Some((true, stdout)) => {
-                let url = stdout.trim();
-                (!url.is_empty()).then(|| url.to_string())
-            }
-            _ => None,
-        }
+        ralphy_git_read::origin_url(Path::new(&self.path))
     }
 }
 
@@ -125,26 +130,6 @@ fn normalize_path(s: &str) -> String {
     } else {
         trimmed.to_string()
     }
-}
-
-/// Run `git -C <path> <args…>` with piped stdio (no console window on Windows;
-/// see `CREATE_NO_WINDOW`), returning `(status.success(), stdout)` or `None`
-/// when git cannot be spawned.
-fn git_output(path: &str, args: &[&str]) -> Option<(bool, String)> {
-    use std::process::Command;
-    let mut cmd = Command::new("git");
-    cmd.args(["-C", path]).args(args);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
-    let out = cmd.output().ok()?;
-    Some((
-        out.status.success(),
-        String::from_utf8_lossy(&out.stdout).into_owned(),
-    ))
 }
 
 /// The persisted registry: slug → entry. The slug carries a `/`, so TOML quotes

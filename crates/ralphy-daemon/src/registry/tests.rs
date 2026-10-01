@@ -108,43 +108,99 @@ fn unreachable_entry_retained_and_flagged() {
     assert!(back.entry("owner/here").unwrap().reachable());
 }
 
+/// Run git in `dir` and fail the test on a non-zero exit.
+fn git_ok(dir: &Path, args: &[&str]) {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .output()
+        .expect("git runs (CI and the build machine have git)");
+    assert!(
+        out.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// A repo on `branch` with one empty commit.
+fn committed_repo(dir: &Path, branch: &str) {
+    git_ok(dir, &["init", "-q", "-b", branch]);
+    git_ok(
+        dir,
+        &[
+            "-c",
+            "user.email=t@e",
+            "-c",
+            "user.name=T",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "x",
+        ],
+    );
+}
+
+fn entry_at(dir: &Path) -> RepoEntry {
+    RepoEntry {
+        path: dir.to_string_lossy().replace('\\', "/"),
+        ..RepoEntry::default()
+    }
+}
+
 #[test]
 fn head_branch_reads_ref() {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join(".git")).unwrap();
-    std::fs::write(
-        dir.path().join(".git").join("HEAD"),
-        "ref: refs/heads/feat/x\n",
-    )
-    .unwrap();
-    let entry = RepoEntry {
-        path: dir.path().to_string_lossy().to_string(),
-        ..RepoEntry::default()
-    };
-    assert_eq!(entry.head_branch(), Some("feat/x".to_string()));
+    committed_repo(dir.path(), "feat/x");
+    assert_eq!(
+        entry_at(dir.path()).head_branch(),
+        Some("feat/x".to_string())
+    );
 }
 
 #[test]
 fn head_branch_none_when_detached_or_missing() {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join(".git")).unwrap();
-    std::fs::write(
-        dir.path().join(".git").join("HEAD"),
-        "1234567890abcdef1234567890abcdef12345678\n",
-    )
-    .unwrap();
-    let entry = RepoEntry {
-        path: dir.path().to_string_lossy().to_string(),
-        ..RepoEntry::default()
-    };
+    committed_repo(dir.path(), "main");
+    git_ok(dir.path(), &["checkout", "-q", "--detach"]);
+    let entry = entry_at(dir.path());
     assert_eq!(entry.head_branch(), None, "detached HEAD yields None");
+    match entry.head() {
+        Some(Head::Detached { sha }) => {
+            assert!(sha.len() >= 7, "short sha: {sha}");
+            assert!(sha.chars().all(|c| c.is_ascii_hexdigit()), "hex: {sha}");
+        }
+        other => panic!("expected a detached head, got {other:?}"),
+    }
 
     let no_git = tempfile::tempdir().unwrap();
-    let entry = RepoEntry {
-        path: no_git.path().to_string_lossy().to_string(),
-        ..RepoEntry::default()
-    };
+    let entry = entry_at(no_git.path());
     assert_eq!(entry.head_branch(), None, "missing .git yields None");
+    assert_eq!(entry.head(), None);
+}
+
+/// A linked worktree's `.git` is a pointer FILE, so a read of `.git/HEAD`
+/// finds nothing; git answers its branch.
+#[test]
+fn head_branch_of_a_linked_worktree() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path().join("repo");
+    std::fs::create_dir(&repo).unwrap();
+    committed_repo(&repo, "main");
+    let wt = dir.path().join("wt");
+    git_ok(
+        &repo,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "wt-branch",
+            &wt.to_string_lossy(),
+        ],
+    );
+    assert_eq!(entry_at(&wt).head_branch(), Some("wt-branch".to_string()));
 }
 
 fn git_init(dir: &Path) {

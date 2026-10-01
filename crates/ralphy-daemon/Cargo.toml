@@ -35,6 +35,7 @@ http-body-util = "0.1"
 # program cross-platform (ralphy-proc-util); neither pulls in ralphy-core.
 ralphy-pty.workspace = true
 ralphy-proc-util.workspace = true
+ralphy-git-read.workspace = true
 # The stateless usage scan (ADR-0033 §7): sync, no tokio, no ralphy-core — the
 # daemon joins its interactive records onto the ledger's run records.
 ralphy-usage-scan.workspace = true

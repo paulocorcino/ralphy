@@ -115,20 +115,7 @@ fn worktree_dir(root: &Path, name: &str) -> PathBuf {
 /// line is a `gitdir:` pointer — what git writes for a linked worktree. A
 /// `.git` DIRECTORY (a nested repository) fails the read and answers `false`.
 pub fn is_linked(root: &Path, name: &str) -> bool {
-    pointer_target(&worktree_dir(root, name)).is_some()
-}
-
-/// The gitdir a `<dir>/.git` pointer FILE names. A relative target is taken
-/// from `dir` (git ≥ 2.48 writes one under `worktree.useRelativePaths`).
-/// `None` for a missing file, a `.git` directory, or a first line that is not
-/// a `gitdir:` pointer.
-fn pointer_target(dir: &Path) -> Option<PathBuf> {
-    let text = std::fs::read_to_string(dir.join(".git")).ok()?;
-    let target = text.lines().next()?.trim().strip_prefix("gitdir:")?.trim();
-    if target.is_empty() {
-        return None;
-    }
-    Some(dir.join(target))
+    ralphy_git_read::pointer_target(&worktree_dir(root, name)).is_some()
 }
 
 /// The rel dirs, under `root`, whose `HEAD` child moves when the checkout's
@@ -140,9 +127,8 @@ fn pointer_target(dir: &Path) -> Option<PathBuf> {
 /// missing path and a repo with no commit has no `logs/`. Never spawns.
 pub fn head_rels(root: &Path, checkout: Option<&Checkout>) -> Vec<String> {
     let gitdir = match checkout {
-        Some(c) => pointer_target(&c.dir(root)),
-        None if root.join(".git").is_dir() => Some(root.join(".git")),
-        None => pointer_target(root),
+        Some(c) => ralphy_git_read::pointer_gitdir(&c.dir(root)),
+        None => ralphy_git_read::git_dir(root),
     };
     let (Some(gitdir), Ok(canon_root)) = (gitdir, std::fs::canonicalize(root)) else {
         return Vec::new();

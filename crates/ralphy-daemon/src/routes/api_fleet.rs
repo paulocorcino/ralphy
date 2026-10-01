@@ -208,10 +208,30 @@ pub(crate) async fn fleet_route(
         .as_ref()
         .map(|i| i.name.clone())
         .unwrap_or_default();
-    let repos = fleet::aggregate(
-        (&local_id, &local_name, &environment, &local_store),
+    // A local row reads its branch through git, so the local rows are built on
+    // the blocking pool; the peer rows need no git.
+    let local_rows = {
+        let environment = environment.clone();
+        tokio::task::spawn_blocking(move || {
+            fleet::aggregate((&local_id, &local_name, &environment, &local_store), &[])
+        })
+        .await
+    };
+    let mut repos = match local_rows {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::warn!(error = %e, "the local repo rows did not complete; federating none");
+            Vec::new()
+        }
+    };
+    repos.extend(fleet::aggregate(
+        ("", "", &environment, &registry::RegistryStore::default()),
         &aggregate_input,
-    );
+    ));
+    // The order `fleet::aggregate` sorts by.
+    repos.sort_by(|a, b| {
+        (&a.environment, &a.daemon_id, &a.slug).cmp(&(&b.environment, &b.daemon_id, &b.slug))
+    });
     Json(serde_json::json!({ "peers": peer_views, "repos": repos })).into_response()
 }
 

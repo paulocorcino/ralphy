@@ -2212,12 +2212,14 @@ async fn api_repos_reports_reachability_and_branch() {
     // One existing-dir entry on a branch (reachable) and one bogus-path entry
     // (unreachable), read back through the route.
     let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join(".git")).unwrap();
-    std::fs::write(
-        dir.path().join(".git").join("HEAD"),
-        "ref: refs/heads/feat/mini-ide\n",
-    )
-    .unwrap();
+    // A real repo: the branch is git's answer, not a read of `.git/HEAD`.
+    let init = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir.path())
+        .args(["init", "-q", "-b", "feat/mini-ide"])
+        .output()
+        .expect("git (CI and the build machine have git)");
+    assert!(init.status.success(), "git init failed");
     let registry_path = dir.path().join("repos.toml");
     let mut store = registry::RegistryStore::default();
     store.upsert("owner/here", &dir.path().to_string_lossy());
@@ -2288,12 +2290,30 @@ async fn api_repos_reports_dirty_and_remote() {
     // (b) a clean repo with NO remote.
     let clean = tempfile::tempdir().unwrap();
     git(clean.path(), &["init"]);
+    // (c) a repo on a detached HEAD.
+    let detached = tempfile::tempdir().unwrap();
+    git(detached.path(), &["init", "-b", "main"]);
+    git(
+        detached.path(),
+        &[
+            "-c",
+            "user.email=t@e",
+            "-c",
+            "user.name=T",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "x",
+        ],
+    );
+    git(detached.path(), &["checkout", "--detach"]);
 
     let reg = tempfile::tempdir().unwrap();
     let registry_path = reg.path().join("repos.toml");
     let mut store = registry::RegistryStore::default();
     store.upsert("owner/dirty", &dirty.path().to_string_lossy());
     store.upsert("owner/clean", &clean.path().to_string_lossy());
+    store.upsert("owner/detached", &detached.path().to_string_lossy());
     registry::save_to(&store, &registry_path).unwrap();
 
     let resp = router(
@@ -2331,6 +2351,30 @@ async fn api_repos_reports_dirty_and_remote() {
     assert!(
         body.contains("\"remote\":null"),
         "the remoteless repo must report null; got: {body}"
+    );
+
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&body).unwrap();
+    let row = |slug: &str| {
+        rows.iter()
+            .find(|r| r["slug"] == slug)
+            .unwrap_or_else(|| panic!("no row for {slug}: {body}"))
+            .clone()
+    };
+    let detached = row("owner/detached");
+    assert_eq!(detached["branch"], serde_json::Value::Null, "{detached}");
+    assert_eq!(detached["head"]["kind"], "detached", "{detached}");
+    let sha = detached["head"]["sha"].as_str().unwrap_or_default();
+    assert!(sha.len() >= 7, "a short sha: {detached}");
+    let clean = row("owner/clean");
+    assert_eq!(clean["head"]["kind"], "branch", "{clean}");
+    assert_eq!(clean["head"]["name"], clean["branch"], "{clean}");
+    assert!(
+        body.contains("\"head\":{\"kind\":\"detached\",\"sha\":\""),
+        "{body}"
+    );
+    assert!(
+        body.contains("\"head\":{\"kind\":\"branch\",\"name\":\""),
+        "{body}"
     );
 }
 

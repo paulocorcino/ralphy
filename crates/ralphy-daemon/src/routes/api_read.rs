@@ -69,7 +69,11 @@ pub(crate) async fn repos_route(registry_path: PathBuf, memo: rekey::HealMemo) -
         slug: String,
         path: String,
         reachable: bool,
+        // `Some` only on a branch; `head` tells a detached HEAD from no answer.
         branch: Option<String>,
+        // Additive (#510): `{"kind":"branch","name"}` or `{"kind":"detached","sha"}`,
+        // the shape of `sync.status`. Peers ignore unknown fields.
+        head: Option<ralphy_git_read::Head>,
         // Additive (#204): the real working-tree state and origin URL. Both spawn
         // `git`, so the whole `Vec` is built inside `spawn_blocking` below.
         dirty: bool,
@@ -90,18 +94,25 @@ pub(crate) async fn repos_route(registry_path: PathBuf, memo: rekey::HealMemo) -
         store
             .repos
             .iter()
-            .map(|(slug, entry)| RepoView {
-                slug: slug.clone(),
-                path: entry.path.clone(),
-                reachable: entry.reachable(),
-                branch: entry.head_branch(),
-                dirty: entry.dirty(),
-                remote: entry.remote(),
-                root: entry.root(),
+            .map(|(slug, entry)| {
+                let head = entry.head();
+                RepoView {
+                    slug: slug.clone(),
+                    path: entry.path.clone(),
+                    reachable: entry.reachable(),
+                    branch: match &head {
+                        Some(ralphy_git_read::Head::Branch { name }) => Some(name.clone()),
+                        _ => None,
+                    },
+                    head,
+                    dirty: entry.dirty(),
+                    remote: entry.remote(),
+                    root: entry.root(),
+                }
             })
             .collect()
     }
-    // `dirty`/`remote` each spawn a `git` subprocess per repo — that must not
+    // `head`/`dirty`/`remote` each spawn `git` per repo — that must not
     // block the async reactor, so the whole map runs on a blocking thread.
     let views = tokio::task::spawn_blocking(move || {
         let views = build_views(&store);
