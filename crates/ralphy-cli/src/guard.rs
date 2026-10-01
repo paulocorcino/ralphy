@@ -295,8 +295,10 @@ fn shell_tokens(segment: &str) -> Vec<String> {
 
 /// Deny-list for file-write tools.
 fn evaluate_file_write(tool_input: &Value, ctx: &GuardContext) -> GuardDecision {
+    // NotebookEdit names its file `notebook_path`.
     let path = tool_input
         .get("file_path")
+        .or_else(|| tool_input.get("notebook_path"))
         .and_then(Value::as_str)
         .unwrap_or("");
     if path.trim().is_empty() {
@@ -340,9 +342,10 @@ fn normalise_path(dir: &std::path::Path) -> String {
 }
 
 /// Parse a hook payload and judge it. Input the guard cannot read — empty,
-/// blank, not JSON, or a JSON root that is not an object — is a deny: the
-/// guard fails closed. A readable payload is judged by the rules, so a
-/// missing `tool_name` stays an unknown tool and is allowed.
+/// blank, not JSON, a JSON root that is not an object, no `tool_name`, or a
+/// judged tool without its string `command` or path — is a deny: the guard
+/// fails closed. A readable payload is judged by the rules, so a tool the
+/// guard does not know is allowed.
 ///
 /// `fallback_cwd` stands in for a payload without `cwd`; `tool_dir` and
 /// `temp_dir` are already in the [`GuardContext`] form.
@@ -362,6 +365,9 @@ pub fn decide_hook_input(
         return GuardDecision::Deny(format!("could not read the tool call: {what}"));
     };
     let (tool_name, tool_input) = tool_call(&payload);
+    if let Some(what) = unreadable_shape(&payload, tool_name, tool_input) {
+        return GuardDecision::Deny(format!("could not read the tool call: {what}"));
+    }
     // The hook payload's `cwd` is the agent's worktree; fall back to the
     // process cwd (hooks run in the project directory).
     let cwd = payload
@@ -386,6 +392,25 @@ fn read_payload(raw: &str) -> Option<Value> {
     serde_json::from_str::<Value>(raw)
         .ok()
         .filter(Value::is_object)
+}
+
+/// What is missing from a payload whose fields the rules need. The settings
+/// matcher sends only the tools the guard judges, so a call without a
+/// `tool_name`, or one of those tools without its string `command` or path,
+/// is a shape the guard cannot read, not a call with nothing to judge.
+fn unreadable_shape(payload: &Value, tool_name: &str, tool_input: &Value) -> Option<&'static str> {
+    if !payload.get("tool_name").is_some_and(Value::is_string) {
+        return Some("no tool_name");
+    }
+    let has_str = |key: &str| tool_input.get(key).is_some_and(Value::is_string);
+    match tool_name {
+        "Bash" if !has_str("command") => Some("no command"),
+        "Edit" | "Write" | "MultiEdit" if !has_str("file_path") => Some("no file_path"),
+        "NotebookEdit" if !has_str("file_path") && !has_str("notebook_path") => {
+            Some("no notebook_path")
+        }
+        _ => None,
+    }
 }
 
 fn tool_call(payload: &Value) -> (&str, &Value) {

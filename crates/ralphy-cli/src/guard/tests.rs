@@ -220,7 +220,20 @@ fn decide(raw: &str) -> GuardDecision {
 /// guard fails closed instead of letting an unjudged call through.
 #[test]
 fn unreadable_input_is_a_deny() {
-    for raw in ["", "   ", "not json", "[1]", "\"text\""] {
+    let shapes = [
+        json!({"tool_input": {"command": "git push"}}),
+        json!({"tool_name": 7, "tool_input": {"command": "git push"}}),
+        json!({"tool_name": "Bash"}),
+        json!({"tool_name": "Bash", "tool_input": "git push"}),
+        json!({"tool_name": "Bash", "tool_input": {"cmd": "git push"}}),
+        json!({"tool_name": "Write", "tool_input": {"path": "/repo/.env"}}),
+        json!({"tool_name": "NotebookEdit", "tool_input": {}}),
+    ]
+    .map(|v| v.to_string());
+    let raws = ["", "   ", "not json", "[1]", "\"text\""]
+        .into_iter()
+        .chain(shapes.iter().map(String::as_str));
+    for raw in raws {
         match decide(raw) {
             GuardDecision::Deny(reason) => assert!(
                 reason.contains("could not read the tool call"),
@@ -262,6 +275,15 @@ fn a_claude_code_payload_is_judged_by_the_rules() {
         decide(&delete.to_string()),
         GuardDecision::Deny(_)
     ));
+    // NotebookEdit names its file `notebook_path`; the secret-file rule reads it.
+    let notebook = |path: &str| {
+        json!({"tool_name": "NotebookEdit", "tool_input": {"notebook_path": path}}).to_string()
+    };
+    assert!(matches!(
+        decide(&notebook("/repo/.env")),
+        GuardDecision::Deny(_)
+    ));
+    assert_eq!(decide(&notebook("/repo/a.ipynb")), GuardDecision::Allow);
 }
 
 /// The paragraphs and list items of `text`: a block ends at a blank line, and
