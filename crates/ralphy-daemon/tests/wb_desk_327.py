@@ -253,7 +253,7 @@ def main():
         check("a fresh daemon serves GET /api/desk as 200", status == 200, f"got={status}")
         check(
             "…with an empty desk",
-            body.strip() == '{"windows":[],"fences":[]}',
+            body.strip() == '{"windows":[],"fences":[],"notes":[]}',
             f"got={body!r}",
         )
         check(
@@ -270,7 +270,9 @@ def main():
             page = desk_page(ctx_a)
             open_console(page, slug)
             open_console(page, slug)
-            drag_title(page, 0, -80, 40)
+            # The drag leaves window 0 focused and on top, so it must land below
+            # window 1's title bar, or it covers the maximize button clicked next.
+            drag_title(page, 0, -40, 200)
             page.locator(".session-window").nth(1).locator(".session-max").click()
             page.wait_for_timeout(700)
 
