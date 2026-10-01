@@ -2044,3 +2044,53 @@ test("a peer the daemon could not read is named in the sidebar", async () => {
   // NEGATIVE CONTROL: a fleet with no bad peer says nothing.
   assert.equal(state.fleetRejectText([{ state: "online" }]), "");
 });
+
+// The context menu builds each item from elements: a label can name a file,
+// and a file name such as `<img src=x>` must reach the menu as text.
+test("renderMenu sets a label as text, never as markup", () => {
+  const created = [];
+  const element = (tag) => {
+    const el = {
+      tag,
+      children: [],
+      style: {},
+      className: "",
+      textContent: "",
+      innerHTMLWrites: [],
+      append(...kids) {
+        this.children.push(...kids);
+      },
+      set innerHTML(v) {
+        this.innerHTMLWrites.push(v);
+      },
+    };
+    created.push(el);
+    return el;
+  };
+  const menu = element("div");
+  const { state } = loadShell({
+    document: { getElementById: () => menu, createElement: element },
+  });
+  // `renderMenu` reads the BARE viewport globals a browser has; lend them.
+  globalThis.innerWidth = 1440;
+  globalThis.innerHeight = 900;
+  try {
+    state.renderMenu(0, 0, [{ icon: "bi-x", label: "<img src=x>", run() {} }]);
+  } finally {
+    delete globalThis.innerWidth;
+    delete globalThis.innerHeight;
+  }
+  const button = menu.children[0];
+  assert.equal(button.tag, "button");
+  const [icon, label] = button.children;
+  assert.equal(icon.tag, "i");
+  assert.equal(icon.className, "bi bi-x");
+  assert.equal(label.tag, "span");
+  assert.equal(label.textContent, "<img src=x>");
+  assert.ok(!created.some((el) => el.tag === "img"), "an img element was created");
+  for (const el of created) {
+    for (const w of el.innerHTMLWrites) {
+      assert.ok(!w.includes("<img"), `innerHTML took the label: ${w}`);
+    }
+  }
+});

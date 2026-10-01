@@ -143,9 +143,10 @@ window.WBConsole = (function () {
     modal.setAttribute("aria-label", title);
     const head = document.createElement("div");
     head.className = "modal-head";
-    head.innerHTML =
-      `<i class="bi ${danger ? "bi-exclamation-triangle" : "bi-question-circle"}"` +
-      `${danger ? ' style="color: var(--danger)"' : ""}></i>`;
+    const mark = document.createElement("i");
+    mark.className = "bi " + (danger ? "bi-exclamation-triangle" : "bi-question-circle");
+    if (danger) mark.style.color = "var(--danger)";
+    head.append(mark);
     const heading = document.createElement("span");
     heading.className = "modal-title";
     heading.textContent = title;
@@ -6068,7 +6069,9 @@ window.WBConsole = (function () {
       bar.addEventListener("pointerdown", holdFocus);
       bar.addEventListener("mousedown", holdFocus);
 
-      const key = (name, text, title, cls) => {
+      // `icon` (a Bootstrap Icons class) draws the key as that glyph; without
+      // it the key shows `text`.
+      const key = (name, text, title, cls, icon) => {
         const b = document.createElement("button");
         b.type = "button";
         // Not in the tab order: a keyboard user already has these keys.
@@ -6076,7 +6079,13 @@ window.WBConsole = (function () {
         b.className = "session-key" + (cls ? " " + cls : "");
         b.dataset.key = name;
         b.title = title;
-        b.innerHTML = text;
+        if (icon) {
+          const i = document.createElement("i");
+          i.className = "bi " + icon;
+          b.append(i);
+        } else {
+          b.textContent = text;
+        }
         bar.append(b);
         return b;
       };
@@ -6087,11 +6096,11 @@ window.WBConsole = (function () {
       shiftBtn.setAttribute("aria-pressed", "false");
       ctrlBtn = key("ctrl", "ctrl", "Ctrl: applies to the next key");
       ctrlBtn.setAttribute("aria-pressed", "false");
-      key("left", '<i class="bi bi-arrow-left"></i>', "Left");
-      key("down", '<i class="bi bi-arrow-down"></i>', "Down");
-      key("up", '<i class="bi bi-arrow-up"></i>', "Up");
-      key("right", '<i class="bi bi-arrow-right"></i>', "Right");
-      key("enter", '<i class="bi bi-arrow-return-left"></i>', "Enter");
+      key("left", "", "Left", "", "bi-arrow-left");
+      key("down", "", "Down", "", "bi-arrow-down");
+      key("up", "", "Up", "", "bi-arrow-up");
+      key("right", "", "Right", "", "bi-arrow-right");
+      key("enter", "", "Enter", "", "bi-arrow-return-left");
       key("ctrl-c", "^C", "Ctrl-C: interrupt");
       // Arms ONE drag to select whole lines; the gesture's end disarms it.
       selBtn = key("select", "sel", "Select lines: drag across the screen");
@@ -6104,7 +6113,7 @@ window.WBConsole = (function () {
       // `writeClipboard`'s textarea fallback runs inside this click (a user
       // gesture), which is what makes it work on an insecure LAN origin.
       // `bi-copy`, not `bi-clipboard`: the clipboard glyph is the PASTE icon.
-      const copyBtn = key("copy", '<i class="bi bi-copy"></i>', "Copy selection");
+      const copyBtn = key("copy", "", "Copy selection", "", "bi-copy");
       copyBtn.disabled = true;
       const syncCopy = () => {
         copyBtn.disabled = !win._term?.term.hasSelection();
@@ -6121,7 +6130,7 @@ window.WBConsole = (function () {
       // Paste. The read has no `execCommand` fallback, so on an insecure origin
       // the button is disabled (`pasteOffered`). An image becomes the same
       // `image.write` drop as a keyboard paste (ADR-0055).
-      const pasteBtn = key("paste", '<i class="bi bi-clipboard"></i>', "Paste");
+      const pasteBtn = key("paste", "", "Paste", "", "bi-clipboard");
       pasteBtn.disabled = !pasteOffered(navigator.clipboard);
 
       key("font-down", "A−", "Smaller text");

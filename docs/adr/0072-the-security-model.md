@@ -325,16 +325,18 @@ surface.
   `no_shell_carries_an_inline_event_handler`
   (`crates/ralphy-daemon/src/tests.rs`); a new `eval` or `new Function` is
   flagged by `xtask capabilities`. `'unsafe-eval'` stays in `script-src`
-  for Alpine and Monaco (accepted). Gaps: two `innerHTML` sinks build HTML
-  from a template string (`crates/ralphy-daemon/assets/ui/app.js:6080`,
-  `wb-console.js:6079`); today every value is a fixed string, so nothing is
-  exploitable, but a file name passed there would be. `connect-src` allows
-  `ws:` and `wss:` to any host (`crates/ralphy-daemon/src/routes/headers.rs:88`).
-  Decided fix (review of 2026-10-01): the two sinks build the icon as an
-  element and the text with `textContent`; `connect-src` is computed from
-  the allowed hosts and the bound port, as the script hashes are, and is
-  checked in a browser, a tunnel included. If a tunnel makes that unsound,
-  the wide `connect-src` is accepted and recorded here. Accepted: notes
+  for Alpine and Monaco (accepted). The context menu (`app.js`
+  `renderMenu`) and the console key bar (`wb-console.js` `key()`) build
+  their icons as elements and their text with `textContent`
+  (`renderMenu sets a label as text, never as markup` in
+  `ui-tests/app.test.mjs`, `no_menu_or_key_sink_takes_a_template_string`).
+  Accepted: the `wb-viewer.js` templates interpolate only helper literals
+  and the `ENCODINGS` constant. Gap: `connect-src` allows `ws:` and `wss:`
+  to any host (`crates/ralphy-daemon/src/routes/headers.rs`). Decided fix
+  (review of 2026-10-01): `connect-src` is computed from the allowed hosts
+  and the bound port, as the script hashes are, and is checked in a
+  browser, a tunnel included. If a tunnel makes that unsound, the wide
+  `connect-src` is accepted and recorded here. Accepted: notes
   rely on the link-scheme allowlist (`wb-notes.js:1569-1604`).
 - D11: checked. One cap, `MAX_COMMAND_BYTES` in
   `crates/ralphy-daemon/src/tree.rs` (the base64 size of a 4 MiB image plus
@@ -346,8 +348,8 @@ surface.
   (`a_4_mib_image_paste_still_replies`, `peer_command_takes_a_4_mib_image`).
   Measured before the fix: `/api/peer/command` answered `413` to a forwarded
   4 MiB `image.write` under axum's 2 MB default. Accepted: `/ws` and
-  `/ws/tree` keep the tungstenite default; the browser sends them no
-  payload.
+  `/ws/tree` keep the tungstenite default; the browser sends them only
+  small control frames.
 - D12: checked by `.github/workflows/security.yml` (cargo-deny, gitleaks,
   zizmor, dependency review) and `.github/workflows/codeql.yml`. Gaps:
   xterm, Alpine, mermaid, qrcode and other vendored libraries have no

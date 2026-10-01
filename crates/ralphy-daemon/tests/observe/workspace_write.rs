@@ -840,5 +840,8 @@ async fn a_message_over_the_cap_closes_the_socket() {
     })
     .await
     .expect("the socket must close within 10s");
-    assert!(closed || sent.is_err(), "a message over the cap got a reply");
+    assert!(
+        closed || sent.is_err(),
+        "a message over the cap got a reply"
+    );
 }

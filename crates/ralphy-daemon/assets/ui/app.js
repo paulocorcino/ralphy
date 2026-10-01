@@ -6110,7 +6110,12 @@ function shell() {
         }
         const b = document.createElement("button");
         b.className = "ctx-item" + (it.danger ? " danger" : "");
-        b.innerHTML = `<i class="bi ${it.icon}"></i><span>${it.label}</span>`;
+        // Built as elements: a label can name a file, and a file name is text.
+        const icon = document.createElement("i");
+        icon.className = "bi " + it.icon;
+        const label = document.createElement("span");
+        label.textContent = it.label;
+        b.append(icon, label);
         if (it.disabled) b.disabled = true;
         if (it.title) b.title = it.title;
         b.onclick = () => {
