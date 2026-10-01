@@ -197,6 +197,8 @@
       <div class="side-error" x-show="reposError" x-text="reposError" x-cloak></div>
       <!-- The peers' last good read, kept when a read fails (ADR-0070 D3). -->
       <div class="side-error" x-show="fleetError" x-text="fleetError" x-cloak></div>
+      <!-- The peers the daemon could not read (ADR-0070 D4). -->
+      <div class="side-error" x-show="fleetRejectNote" x-text="fleetRejectNote" x-cloak></div>
       <!-- filters the list client-side on slug/branch; "/" (global shortcut)
            focuses this input; Escape clears it. Hidden while a project is
            open: `has-open` hides every other row, so there is nothing for it

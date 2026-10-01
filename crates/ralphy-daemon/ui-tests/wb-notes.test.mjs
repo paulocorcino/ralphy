@@ -554,3 +554,30 @@ test("a card that handed its draft to a popup does not write the note", async ()
   await (notes.flushAll(), cards[0]._noteWrite);
   assert.deepEqual(writes, ["t.note"]);
 });
+
+// ADR-0070 D6: the build reload asks whether a note holds unsaved work. The
+// editor's change notification can land after the last keystroke, so the
+// question goes to the editor, not to the flag.
+test("a keystroke the editor holds but has not reported yet counts as unsaved", () => {
+  const card = {
+    dataset: { noteId: "n" },
+    _noteDirty: false,
+    _noteMarkdown: "saved\n",
+    _noteEditor: { getMarkdown: () => "saved plus a key\n" },
+    querySelector: () => null,
+  };
+  const window = { WBConsole: { notes: () => [], fenceRecords: () => [] } };
+  const document = {
+    getElementById: (id) => (id === "stage" ? { querySelectorAll: () => [card] } : null),
+  };
+  new Function("window", GEO)(window);
+  new Function("window", "document", SRC)(window, document);
+  assert.equal(window.WBNotes.anyDirty(), true);
+  // NEGATIVE CONTROL: an editor that holds the saved text is clean.
+  const clean = { ...card, _noteDirty: false, _noteMarkdown: "saved\n", _noteEditor: { getMarkdown: () => "saved\n" } };
+  const w2 = { WBConsole: { notes: () => [], fenceRecords: () => [] } };
+  const d2 = { getElementById: (id) => (id === "stage" ? { querySelectorAll: () => [clean] } : null) };
+  new Function("window", GEO)(w2);
+  new Function("window", "document", SRC)(w2, d2);
+  assert.equal(w2.WBNotes.anyDirty(), false);
+});

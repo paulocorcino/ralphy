@@ -12,6 +12,10 @@ Scenario 2   the project list read once, then `/api/repos` fails: a change to
 Scenario 3   a page served with another build id reloads itself once
 Scenario 4   with an unsaved edit in a file tab, a build mismatch shows a notice
              that stays, and the page does not reload
+Scenario 5   an unsaved edit in a DETACHED file window holds the main tab's
+             reload (the window saves through that tab): the notice shows,
+             the window's Save writes the file, and then the main tab reloads
+             and closes the window
 
 The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
 doubles as the orchestrator on this host).
@@ -264,12 +268,64 @@ def main():
             page3.wait_for_timeout(5000)
             check("a page from another build reloads itself once", served["n"] == 2, f"served={served['n']}")
             ctx3.close()
+
+            # --- scenario 5: a detached window's unsaved edit survives the reload
+            ctx5 = browser.new_context(viewport={"width": 1400, "height": 900})
+            page5 = ctx5.new_page()
+            page5.on("pageerror", lambda e: errors.append(str(e)))
+            page5.goto(BASE)
+            page5.wait_for_selector("[x-data]", timeout=15000)
+            page5.wait_for_timeout(1500)
+            page5.evaluate(
+                "([project]) => " f"{SH}.openTab({{ project, path: 'README.md', title: 'README.md', ftype: 'code' }})",
+                [slug],
+            )
+            page5.wait_for_function(
+                "() => !!document.querySelector('.code-viewer .monaco-editor')",
+                timeout=30000,
+            )
+            with ctx5.expect_page(timeout=15000) as pop_info:
+                page5.locator(".code-viewer").locator("xpath=..").get_by_role("button", name="Detach").first.click()
+            pop = pop_info.value
+            pop.on("pageerror", lambda e: errors.append(str(e)))
+            pop.wait_for_function(
+                "() => !!document.querySelector('.code-viewer .monaco-editor')",
+                timeout=30000,
+            )
+            pop.click(".code-viewer .view-lines")
+            pop.keyboard.press("Control+Home")
+            pop.keyboard.type("detached edit\n")
+            check("the detached window holds an unsaved edit", pop.evaluate("() => window.WBViewer.anyDirty()"))
+            loads5 = {"n": 0}
+            page5.on("framenavigated", lambda f: loads5.__setitem__("n", loads5["n"] + 1) if f == page5.main_frame else None)
+            page5.evaluate(f"() => {{ {SH}.pageBuild = 'old-build'; }}")
+            notice5 = page5.locator(".build-notice")
+            try:
+                notice5.wait_for(state="visible", timeout=8000)
+                up5 = True
+            except Exception:
+                up5 = False
+            check("…the main tab shows the notice instead of reloading", up5 and loads5["n"] == 0, f"navigations={loads5['n']}")
+            pop.get_by_role("button", name="Save").first.click()
+            deadline = time.time() + 10
+            saved = False
+            while time.time() < deadline and not saved:
+                saved = "detached edit" in Path(fixture, "README.md").read_text(encoding="utf-8")
+                if not saved:
+                    page5.wait_for_timeout(250)
+            check("…the window's Save writes the file", saved)
+            deadline = time.time() + 15
+            while time.time() < deadline and loads5["n"] < 1:
+                page5.wait_for_timeout(250)
+            check("…then the main tab reloads", loads5["n"] >= 1, f"navigations={loads5['n']}")
+            check("…and the detached window is closed", pop.is_closed())
+            ctx5.close()
             browser.close()
             check("no page error", not errors, f"errors={errors[:3]}")
     finally:
         stop(proc)
 
-    ok = all(results) and len(results) == 15
+    ok = all(results) and len(results) == 20
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("ALL CHECKS PASSED")

@@ -84,7 +84,11 @@ writes over it.** A store that does not exist reads as empty. A store that
 exists but cannot be read or parsed is a failure: the read returns the
 failure, and a write to it is refused. The daemon still starts. The operator
 can start a new store; that action renames the old file to
-`<name>.unreadable-<date>` first, so nothing is deleted. This applies to every
+`<name>.unreadable-<date>` first, so nothing is deleted. The action is
+offered only for a store that cannot be parsed. A store that cannot be read
+is tried once more, and if the read still fails it is a failure without that
+action: a read error may pass (an antivirus or an indexer that holds the
+file), and the file behind it may be fine. This applies to every
 file the daemon owns: the desk, the peer store, the registry and settings.
 
 **D5. A shown fact the browser writes is merged by its owner, per record, and
@@ -102,7 +106,10 @@ served with. When they differ:
   only saving the open work, and disables other writes as in D3.
 
 A console does not hold back the reload: the daemon owns the PTY, and the
-console reattaches after the reload.
+console reattaches after the reload. A file detached into its own window is
+unsaved work of the tab that opened it: the window saves through that tab,
+and a reloaded tab no longer hears it. Before the reload, the tab closes its
+detached file windows, which sends each file home as a tab.
 
 ## Consequences
 

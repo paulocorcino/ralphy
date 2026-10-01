@@ -499,6 +499,46 @@ async fn api_desk_new_moves_the_unreadable_file_aside() {
     );
 }
 
+/// A `desk.toml` that cannot be READ (here a directory in its place) may be a
+/// fine file held for a moment, so it is `unavailable`, not `unreadable`:
+/// writes are refused, and starting a new desk moves nothing aside.
+#[tokio::test]
+async fn a_desk_that_cannot_be_read_is_unavailable_and_never_moved_aside() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("desk.toml");
+    std::fs::create_dir(&file).unwrap();
+
+    let res = desk_router(dir.path())
+        .oneshot(
+            Request::builder()
+                .uri("/api/desk")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body: serde_json::Value = serde_json::from_str(&body_text(res).await).unwrap();
+    assert_eq!(body["state"], "unavailable");
+
+    let up = desk_body(
+        serde_json::json!([desk_json("w-a", 1, serde_json::json!(7), false)]),
+        serde_json::json!([]),
+    );
+    assert_eq!(
+        desk_put(dir.path(), &up).await.status(),
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+
+    let res = desk_new(dir.path()).await;
+    assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert!(
+        unreadable_copies(dir.path()).is_empty(),
+        "nothing is moved aside"
+    );
+    assert!(file.is_dir(), "the path is left as it was");
+}
+
 /// Negative control: a desk that reads is never moved aside.
 #[tokio::test]
 async fn api_desk_new_refuses_a_readable_desk() {

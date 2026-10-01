@@ -2709,11 +2709,16 @@ window.WBNotes = (function () {
     }
   }
 
-  // Whether any note card holds an edit not yet saved (ADR-0070 D6).
+  // Whether any note card holds an edit not yet saved (ADR-0070 D6). The
+  // editor is asked first, like every flush point: its change notification
+  // can land after the last keystroke.
   function anyDirty() {
     const st = stage();
     if (!st) return false;
-    for (const el of st.querySelectorAll(".note-card")) if (el._noteDirty) return true;
+    for (const el of st.querySelectorAll(".note-card")) {
+      syncFromEditor(el);
+      if (el._noteDirty) return true;
+    }
     return false;
   }
 

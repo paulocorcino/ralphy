@@ -121,6 +121,10 @@ function shell() {
     reposRead: null,
     fleetRead: null,
     fleetError: "",
+    // The peers the daemon could not read (a peer file it cannot parse, or a
+    // peer store it cannot list): they list no project, so the sidebar says
+    // so instead of showing an empty fleet (ADR-0070 D4).
+    fleetRejectNote: "",
     sessionsRead: null,
     // Why the daemon cannot read the saved desk, or "" (ADR-0070 D4); a copy
     // of `WBConsole.deskFailure()` so the page can show it.
@@ -562,6 +566,12 @@ function shell() {
     // The local fleet (ADR-0052 §5, #349): append every PEER's repos after the
     // local `/api/repos` pass, plus the peer list the group headers render.
     // INVARIANT: a `/api/fleet` failure leaves the LOCAL list exactly as it was.
+    fleetRejectText(peers) {
+      const bad = peers.filter((p) => p.state === "malformed");
+      if (!bad.length) return "";
+      const what = bad.length === 1 ? "a peer" : `${bad.length} peers`;
+      return `Could not read ${what}: ${bad.map((p) => p.diagnosis || p.name).join("; ")}`;
+    },
     async loadFleet() {
       // Two project reads close together (a wake fires the visible tab and the
       // socket reopen) must not both append the peers: the newest read owns
@@ -575,12 +585,14 @@ function shell() {
           // A daemon older than the fleet: a fleet of one, not a failure.
           this.fleetPeers = [];
           this.fleetError = "";
+          this.fleetRejectNote = "";
           return;
         }
         if (!r.ok) throw new Error(`the daemon answered ${r.status}`);
         const fleet = await r.json();
         if (seq !== this._fleetSeq) return;
         this.fleetPeers = Array.isArray(fleet.peers) ? fleet.peers : [];
+        this.fleetRejectNote = this.fleetRejectText(this.fleetPeers);
         const rows = Array.isArray(fleet.repos) ? fleet.repos : [];
         // `/api/fleet` is the ONLY source of this daemon's own environment label
         // and name; the local rows are stamped with it here.
@@ -1294,8 +1306,9 @@ function shell() {
     // A console never holds the reload back: the daemon owns its PTY.
     onBuildSkew() {
       // A commit draft is not counted: the skew lock refuses the commit, so
-      // it is work the tab could never save.
-      const unsaved = !!(window.WBViewer?.anyDirty?.() || window.WBNotes?.anyDirty?.());
+      // it is work the tab could never save. A detached file window is: it
+      // saves through this tab, and a reloaded tab no longer hears it.
+      const unsaved = !!(window.WBViewer?.anyDirty?.() || window.WBNotes?.anyDirty?.() || detachedDirty());
       // A hidden tab waits: reloaded now, it would read every fact unseen.
       // The next heartbeat after it becomes visible asks again.
       if (!unsaved && !this.tabHidden()) {
@@ -1303,6 +1316,9 @@ function shell() {
         // path among them) go out with the page's last write; the daemon
         // merges them per record.
         window.WBDeskSink?.setHold?.(false);
+        // A detached file window would outlive the reload with no tab that
+        // hears its Save; closing it sends the file home as a tab.
+        closeDetached();
         window.location.reload();
         return;
       }
@@ -6601,6 +6617,20 @@ function pollDetached() {
   }
 }
 
+// Whether a detached file window holds an edit not yet saved. The popups
+// are same-origin windows this shell opened, so it asks their viewer directly.
+function detachedDirty() {
+  for (const win of detachedWindows.keys()) {
+    if (!win.closed && win.WBViewer?.anyDirty?.()) return true;
+  }
+  return false;
+}
+
+// Close every detached file window; each one's unload sends its file home.
+function closeDetached() {
+  for (const win of detachedWindows.keys()) if (!win.closed) win.close();
+}
+
 // The one way a detached file comes home: the button, the popup's unload and
 // the poll all end here. Closing the popup matters after an F5 inside it: the
 // unload sent the file home, and the reloaded page has nothing left to show.
@@ -6642,7 +6672,8 @@ window.addEventListener("message", (e) => {
     // The popup booted and is asking for its file.
     e.source.postMessage({ type: "wb-detach-open", desc: detachedWindows.get(e.source) }, wbPeerOrigin());
   } else if (m.type === "wb-emit") {
-    WB.emit(m.action, m.detail || {});
+    // `fromWindow` lets a save's answer reach the pane that sent it.
+    WB.emit(m.action, { ...m.detail, fromWindow: e.source });
   } else if (m.type === "wb-open-request" && m.detail) {
     // A link clicked inside a detached pane; `openLink` re-classifies, so the
     // popup decides nothing about what opens.
@@ -6690,16 +6721,19 @@ window.addEventListener("message", (e) => {
         // The pane's encoding rides the write (ADR-0036 amendment 2026-09-22)
         // and the pane hears the answer: its dirty mark waits for the ack, and
         // a refusal is read where the bytes are, not in a flash elsewhere.
-        const id = fileTabId(repo, d.path, checkout);
+        // A detached window's pane is `detached` in its own viewer; a tab's is
+        // its tab id in this one.
+        const viewer = () => (d.fromWindow ? d.fromWindow.WBViewer : window.WBViewer);
+        const id = d.fromWindow ? "detached" : fileTabId(repo, d.path, checkout);
         const payload = { repo, path: d.path, content: d.content || "" };
         if (d.encoding) payload.encoding = d.encoding;
         if (d.bom) payload.bom = true;
         const send = (p) =>
           WBDaemon.write("file.write", aimed(p))
             .then((reply) => {
-              if (!window.WBFail.isError(reply)) return window.WBViewer?.saveDone?.(id);
+              if (!window.WBFail.isError(reply)) return viewer()?.saveDone?.(id);
               const reason = window.WBFail.message(reply, "the daemon gave no reason");
-              window.WBViewer?.saveFailed?.(id, reason, reply);
+              viewer()?.saveFailed?.(id, reason, reply);
               // UTF-8 represents everything; a refusal under it is not a
               // conversion question, and asking again would loop.
               if (reason === "unencodable" && !/^utf-?8$/i.test(p.encoding || "utf-8")) {
@@ -6708,7 +6742,7 @@ window.addEventListener("message", (e) => {
               flash(window.WBFail.failed(reply, "Could not save: the daemon gave no reason."));
             })
             .catch(() => {
-              window.WBViewer?.saveFailed?.(id, "the daemon did not answer");
+              viewer()?.saveFailed?.(id, "the daemon did not answer");
               flash("Could not save: the daemon did not answer.");
             });
         // The daemon wrote nothing (a round-trip or a refusal, never a `?`):
@@ -6726,7 +6760,7 @@ window.addEventListener("message", (e) => {
           });
           return ask.then((ok) => {
             if (!ok) return;
-            window.WBViewer?.setEncoding?.(id, "UTF-8", false);
+            viewer()?.setEncoding?.(id, "UTF-8", false);
             const { bom: _bom, ...rest } = p;
             return send({ ...rest, encoding: "utf-8" });
           });

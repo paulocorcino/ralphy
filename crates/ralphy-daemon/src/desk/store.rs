@@ -10,14 +10,30 @@ use super::DeskStore;
 /// that exists but cannot be read or parsed is an error, never an empty desk:
 /// a write over it would destroy the layout it could not read (ADR-0070 D4).
 /// The daemon does not read the desk at startup, so this error never stops it.
+///
+/// A read that fails is tried once more: on Windows an antivirus or an indexer
+/// can hold a file that is fine for a moment. [`is_parse_error`] tells a
+/// layout that cannot be parsed from a file that cannot be read.
 pub fn load_from(path: &Path) -> Result<DeskStore> {
-    match std::fs::read_to_string(path) {
+    let read = std::fs::read_to_string(path).or_else(|e| match e.kind() {
+        std::io::ErrorKind::NotFound => Err(e),
+        _ => std::fs::read_to_string(path),
+    });
+    match read {
         Ok(text) => {
             toml::from_str(&text).with_context(|| format!("parsing desk layout {}", path.display()))
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(DeskStore::default()),
         Err(e) => Err(e).with_context(|| format!("reading desk layout {}", path.display())),
     }
+}
+
+/// Whether a [`load_from`] error is a layout that cannot be parsed, as opposed
+/// to a file that cannot be read. Only the first is a desk to replace: a read
+/// error may pass, and the file behind it may be fine.
+pub fn is_parse_error(e: &anyhow::Error) -> bool {
+    e.chain()
+        .any(|c| c.downcast_ref::<toml::de::Error>().is_some())
 }
 
 /// Write the desk to `path` owner-only, creating the parent directory.

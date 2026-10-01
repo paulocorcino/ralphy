@@ -24,12 +24,20 @@ pub(crate) struct DeskPutQuery {
 /// and `move_aside` are synchronous file reads and writes.
 static DESK_WRITE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
-/// The reply for a `desk.toml` that exists but cannot be read or parsed. The
-/// shell keys on `state`, not on the status (ADR-0070 D4).
+/// The reply for a `desk.toml` that exists but cannot be loaded (ADR-0070 D4).
+/// A layout that cannot be parsed is `409 unreadable`, and the shell offers to
+/// start a new desk. A file that cannot be read is `503 unavailable`: the
+/// file may be fine, so nothing offers to replace it. The shell keys on
+/// `state`, not on the status.
 fn unreadable(e: &anyhow::Error) -> Response {
+    let (status, state) = if desk::is_parse_error(e) {
+        (StatusCode::CONFLICT, "unreadable")
+    } else {
+        (StatusCode::SERVICE_UNAVAILABLE, "unavailable")
+    };
     (
-        StatusCode::CONFLICT,
-        Json(serde_json::json!({ "state": "unreadable", "error": format!("{e:#}") })),
+        status,
+        Json(serde_json::json!({ "state": state, "error": format!("{e:#}") })),
     )
         .into_response()
 }
@@ -198,21 +206,26 @@ pub(crate) async fn desk_put_route(
     }
 }
 
-/// `POST /api/desk/new`: start a new desk when the saved one cannot be read.
+/// `POST /api/desk/new`: start a new desk when the saved one cannot be parsed.
 /// The old file is renamed to `desk.toml.unreadable-<date>` first, so nothing
 /// is deleted (ADR-0070 D4). A desk that reads fine, or does not exist, is not
-/// replaced: `409 {"state":"readable"}`.
+/// replaced: `409 {"state":"readable"}`. A file that cannot be read is not
+/// replaced either: `503 {"state":"unavailable"}`.
 pub(crate) async fn desk_new_route(
     path: PathBuf,
     pushes: tokio::sync::broadcast::Sender<Push>,
 ) -> Response {
     let _held = DESK_WRITE.lock().await;
-    if desk::load_from(&path).is_ok() {
-        return (
-            StatusCode::CONFLICT,
-            Json(serde_json::json!({ "state": "readable" })),
-        )
-            .into_response();
+    match desk::load_from(&path) {
+        Ok(_) => {
+            return (
+                StatusCode::CONFLICT,
+                Json(serde_json::json!({ "state": "readable" })),
+            )
+                .into_response();
+        }
+        Err(e) if !desk::is_parse_error(&e) => return unreadable(&e),
+        Err(_) => {}
     }
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
     let saved = desk::move_aside(&path, &today)

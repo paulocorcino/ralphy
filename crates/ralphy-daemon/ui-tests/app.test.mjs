@@ -2017,3 +2017,30 @@ test("a reopened socket refreshes an open board, as the tab becoming visible doe
   assert.equal(ask("reopen"), true);
   assert.equal(ask("reopen"), ask("visible"));
 });
+
+// ADR-0070 D4: a peer the daemon cannot read lists no project, so the sidebar
+// says so instead of showing a fleet with that peer missing.
+test("a peer the daemon could not read is named in the sidebar", async () => {
+  const { state } = loadShell(VISIBLE);
+  state.projects = [];
+  const restore = scriptedFetch([
+    {
+      status: 200,
+      body: {
+        peers: [
+          { daemon_id: "ok", state: "online" },
+          { daemon_id: "malformed:/p/peers", state: "malformed", name: "/p/peers", diagnosis: "cannot list /p/peers: access denied" },
+        ],
+        repos: [],
+      },
+    },
+  ]);
+  try {
+    await state.loadFleet();
+  } finally {
+    restore();
+  }
+  assert.equal(state.fleetRejectNote, "Could not read a peer: cannot list /p/peers: access denied");
+  // NEGATIVE CONTROL: a fleet with no bad peer says nothing.
+  assert.equal(state.fleetRejectText([{ state: "online" }]), "");
+});
