@@ -878,6 +878,13 @@
                it scrolls over; wb-console.js appends the floating console windows
                into the stage and sizes it from their bbox (issue #336). -->
           <div id="workspace"><div id="stage"></div></div>
+          <!-- The saved desk cannot be read (ADR-0070 D4): say so, and offer
+               the one action. The daemon keeps the old file under a new name. -->
+          <div class="desk-failure" x-show="deskFailure" x-cloak role="alert">
+            <span x-text="'Could not read the saved desk: ' + deskFailure"></span>
+            <button class="btn" @click="startNewDesk()"
+                    title="The old desk file is kept with a new name.">Start a new desk</button>
+          </div>
           <!-- FRAME chrome (issue #338, ADR-0051 §5): siblings of `#workspace`,
                never children of `#stage`. Inside the plane they would pan away
                with the content; here they resolve against `.consoles-tab` and

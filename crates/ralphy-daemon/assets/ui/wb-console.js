@@ -443,18 +443,56 @@ window.WBConsole = (function () {
     return out;
   }
 
+  // Why the daemon cannot read the saved desk, or "" (ADR-0070 D4). Set only
+  // by the daemon's own `409 {"state":"unreadable"}`: a transport failure or
+  // a pre-login 401 is not a broken desk, and must not offer a new one.
+  let deskFailure = "";
+  // The `409` reply of an unreadable desk, as the reason it carries, or null.
+  async function unreadableDesk(r) {
+    if (r.status !== 409) return null;
+    const body = await r.json().catch(() => null);
+    return body?.state === "unreadable" ? body.error || "the daemon cannot read it" : null;
+  }
+
   // Load (or re-load, after a login) the daemon's desk. Never rejects: an
   // unreachable daemon leaves `deskLoaded` false, which keeps this page from
-  // uploading over a desk it never read.
+  // uploading over a desk it never read. So does an unreadable desk, which
+  // also sets `deskFailure`.
   function reloadDesk() {
     if (!window.WBMode?.isDaemon()) {
       deskLoaded = true;
       return Promise.resolve();
     }
     return fetch("/api/desk")
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("desk unavailable"))))
-      .then(ingestDesk)
+      .then(async (r) => {
+        if (r.ok) return r.json();
+        const why = await unreadableDesk(r);
+        if (why) {
+          deskFailure = why;
+          deskLoaded = false;
+          return null;
+        }
+        throw new Error("desk unavailable");
+      })
+      .then((payload) => {
+        if (!payload) return;
+        deskFailure = "";
+        ingestDesk(payload);
+      })
       .catch(() => {});
+  }
+  function currentDeskFailure() {
+    return deskFailure;
+  }
+  // The one action on an unreadable desk: the daemon renames the old file
+  // aside and starts an empty desk; this page then reads and restores it.
+  function startNewDesk() {
+    return fetch("/api/desk/new", { method: "POST" })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`the daemon answered ${r.status}`))))
+      .then(() => reloadDesk())
+      .then(() => {
+        if (deskLoaded) restoreDesk();
+      });
   }
   // `restoreDesk` awaits this before reconciling, so the layout is never
   // reconciled against a desk that has not landed.
@@ -616,9 +654,18 @@ window.WBConsole = (function () {
     deskWrite = deskWrite
       .catch(() => {})
       .then(() => fetch("/api/desk"))
-      .then((r) => (r.ok ? r.json() : null))
+      .then(async (r) => {
+        if (r.ok) return r.json();
+        const why = await unreadableDesk(r);
+        if (!why) return null;
+        deskFailure = why;
+        deskLoaded = false;
+        return "unreadable";
+      })
       .catch(() => null)
       .then((payload) => {
+        // The daemon refuses a write over a desk it cannot read; so does this page.
+        if (payload === "unreadable") return null;
         if (payload) ingestDesk(payload);
         const body = JSON.stringify(deskBody());
         return deskSink.put(body);
@@ -6803,6 +6850,8 @@ window.WBConsole = (function () {
     deskRecords,
     readDeskIds,
     reloadDesk,
+    deskFailure: currentDeskFailure,
+    startNewDesk,
     dropClosedElsewhere,
     columnRoster,
     sessionPresentation,

@@ -2409,3 +2409,48 @@ test("the pure folds mutate none of their arguments", () => {
     if (check) check(out, args);
   }
 });
+
+// ADR-0070 D4: a desk the daemon cannot read is a failure with a reason, and
+// this page never uploads over it.
+test("an unreadable desk is a failure, and no flush PUTs over it", async () => {
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    calls.push({ url: String(url), method: init.method || "GET" });
+    return {
+      ok: false,
+      status: 409,
+      json: async () => ({ state: "unreadable", error: "parsing desk layout C:/x/desk.toml" }),
+    };
+  };
+  try {
+    const c = load({ WBMode: { isDaemon: () => true } });
+    await c.whenDeskLoaded();
+    assert.match(c.deskFailure(), /parsing desk layout/);
+    c.setCheckout("o/r", "wt-a");
+    await new Promise((r) => setTimeout(r, 400));
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.deepEqual(
+    calls.filter((c) => c.method === "PUT"),
+    [],
+    "no PUT over a desk the daemon cannot read",
+  );
+});
+
+// NEGATIVE CONTROL: a transport failure is not a broken desk, so it offers no
+// new desk.
+test("a desk read that fails in transport sets no desk failure", async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    throw new Error("offline");
+  };
+  try {
+    const c = load({ WBMode: { isDaemon: () => true } });
+    await c.whenDeskLoaded();
+    assert.equal(c.deskFailure(), "");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});

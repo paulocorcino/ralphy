@@ -122,6 +122,9 @@ function shell() {
     fleetRead: null,
     fleetError: "",
     sessionsRead: null,
+    // Why the daemon cannot read the saved desk, or "" (ADR-0070 D4); a copy
+    // of `WBConsole.deskFailure()` so the page can show it.
+    deskFailure: "",
     // The peer rows of the last good `/api/fleet`, kept when a read fails.
     _fleetRows: [],
     // The local fleet's peers (ADR-0052 §5, #349), from `/api/fleet`. Empty: a
@@ -257,7 +260,10 @@ function shell() {
       // The selected checkouts (#406): the ONE hook for `unknown checkout`, and
       // the copy of the desk mirror once the boot desk lands.
       window.WBDaemon?.onUnknownCheckout?.((repo, name) => this.checkoutGone(repo, name));
-      window.WBConsole?.whenDeskLoaded?.().then(() => this.adoptDeskCheckouts());
+      window.WBConsole?.whenDeskLoaded?.().then(() => {
+        this.adoptDeskCheckouts();
+        this.syncDeskFailure();
+      });
       // Anchor the clock at page load: `_boardLoadedAt` at 0 would clear the
       // 120s floor on the first tick.
       this._boardLoadedAt = Date.now();
@@ -373,7 +379,20 @@ function shell() {
     // another client.
     rereadDesk() {
       const read = window.WBConsole?.reloadDesk?.();
-      if (read?.then) read.then(() => this.checkColumnDesk());
+      if (!read?.then) return;
+      read.then(() => {
+        this.syncDeskFailure();
+        this.checkColumnDesk();
+      });
+    },
+    syncDeskFailure() {
+      this.deskFailure = window.WBConsole?.deskFailure?.() || "";
+    },
+    // The desk failure's one action (ADR-0070 D4).
+    startNewDesk() {
+      window.WBConsole?.startNewDesk?.()
+        .then(() => this.syncDeskFailure())
+        .catch(() => this._flashAction("Could not start a new desk: the daemon did not answer."));
     },
 
     // Seconds → a compact `1d 2h`, `2h 14m`, `5m`, `12s` uptime string.
@@ -3728,7 +3747,10 @@ function shell() {
       this.loadAgents();
       // `/api/desk` is gated too: unread AND unwritable until re-read (#327);
       // the selected checkouts ride it (#406).
-      window.WBConsole?.afterLogin()?.then(() => this.adoptDeskCheckouts());
+      window.WBConsole?.afterLogin()?.then(() => {
+        this.adoptDeskCheckouts();
+        this.syncDeskFailure();
+      });
       // Only now is `file.read` allowed (#339).
       this.restoreView();
       // Every shown fact reads again after login (ADR-0070 D2 event 4);
