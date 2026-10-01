@@ -50,6 +50,7 @@ fn sync_status_json_shape_is_the_wire_contract() {
     let clone = clone_of(remote.path());
     commit(remote.path(), "b.txt", "two\n", "second");
     run_git(clone.path(), &["fetch", "--quiet"]);
+    commit(clone.path(), "c.txt", "three\n", "local");
 
     let out = ralphy(&[
         "sync",
@@ -65,7 +66,7 @@ fn sync_status_json_shape_is_the_wire_contract() {
     assert_eq!(v["sync"]["head"]["kind"], "branch");
     assert_eq!(v["sync"]["head"]["name"], "main");
     assert_eq!(v["sync"]["tracking"]["upstream"], "origin/main");
-    assert_eq!(v["sync"]["tracking"]["ahead"], 0);
+    assert_eq!(v["sync"]["tracking"]["ahead"], 1);
     assert_eq!(v["sync"]["tracking"]["behind"], 1);
     assert!(
         v["sync"]["last_fetch"].is_string(),
@@ -130,14 +131,14 @@ fn sync_status_detached_carries_the_sha() {
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("sync status emits JSON");
     assert_eq!(v["sync"]["head"]["kind"], "detached", "got {v}");
     assert_eq!(v["sync"]["head"]["sha"], short.as_str(), "got {v}");
-    let mut volatile = vec!["/sync/sync/head/sha"];
-    if !v["sync"]["last_fetch"].is_null() {
-        volatile.push("/sync/sync/last_fetch");
-    }
+    assert!(
+        v["sync"]["last_fetch"].is_null(),
+        "a clone never fetched: {v}"
+    );
     super::golden::check(
         "sync.status--detached",
         serde_json::json!({ "status": "ok", "sync": v }),
-        &volatile,
+        &["/sync/sync/head/sha"],
     );
 }
 

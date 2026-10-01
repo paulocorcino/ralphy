@@ -15,7 +15,6 @@ fn fixtures_dir() -> PathBuf {
 
 /// Compare `reply` with the shared file `<name>.json`, after each JSON pointer
 /// in `volatile` is replaced by the marker `"<last segment>"`.
-#[allow(dead_code)] // each including test binary uses one of the two entry points
 pub fn check(name: &str, reply: Value, volatile: &[&str]) {
     check_in(&fixtures_dir(), name, reply, volatile);
 }
@@ -36,8 +35,13 @@ fn check_in(dir: &Path, name: &str, mut reply: Value, volatile: &[&str]) {
             .unwrap_or_else(|e| panic!("writing {}: {e}", path.display()));
         return;
     }
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|_| panic!("no shared reply {name}: run the test with UPDATE_GOLDEN=1"));
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            panic!("no shared reply {name}: run the test with UPDATE_GOLDEN=1")
+        }
+        Err(e) => panic!("reading {}: {e}", path.display()),
+    };
     let golden: Value = serde_json::from_str(&text)
         .unwrap_or_else(|e| panic!("{} is not JSON: {e}", path.display()));
     assert_eq!(

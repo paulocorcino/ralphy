@@ -8,7 +8,7 @@
       },
       "last_fetch": "<last_fetch>",
       "tracking": {
-        "ahead": 0,
+        "ahead": 1,
         "behind": 1,
         "upstream": "origin/main"
       }

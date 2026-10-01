@@ -27,6 +27,7 @@ test("changes.list: the change-set fold reads every row the CLI wrote", () => {
     folded.entries.map((e) => e.path),
     reply.changes.changes.map((r) => r.path),
   );
+  assert.equal(folded.entries[0].status, "added");
   assert.equal(folded.entries[0].indexStatus, reply.changes.changes[0].index_status);
   assert.equal(folded.entries[0].worktreeStatus, reply.changes.changes[0].worktree_status);
 });
@@ -37,8 +38,9 @@ test("sync.status: the sync fold reads branch, upstream and counts", () => {
   assert.equal(s.state, "tracking");
   assert.equal(s.branch, "main");
   assert.equal(s.upstream, "origin/main");
-  assert.equal(s.ahead, 0);
+  assert.equal(s.ahead, 1);
   assert.equal(s.behind, 1);
+  assert.equal(s.lastFetch, "<last_fetch>");
 });
 
 test("sync.status: a detached HEAD shows its sha", () => {
@@ -60,9 +62,14 @@ test("board.list: every board row keeps the fields the board shows", () => {
   const rows = fixture("board.list").board.issues;
   assert.ok(rows.some((r) => r.assignees.length > 0), "a row with assignees");
   assert.ok(rows.some((r) => r.blocked_by.length > 0), "a row with blockers");
+  assert.deepEqual(
+    rows.map((r) => state.boardRowToIssue(r).number),
+    [8, 7, 50, 30, 32, 99],
+  );
+  const closed = state.boardRowToIssue(rows.find((r) => r.state === "closed"));
+  assert.equal(closed.reason, "not_planned");
   for (const row of rows) {
     const i = state.boardRowToIssue(row);
-    assert.equal(i.number, row.number);
     assert.equal(i.title, row.title);
     assert.deepEqual(i.assignees, row.assignees);
     assert.deepEqual(i.blockedBy, row.blocked_by);
