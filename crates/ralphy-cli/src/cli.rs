@@ -185,7 +185,12 @@ pub(crate) enum HookCommand {
     /// Record in `$RALPHY_FLAG_FILE` that the agent session ended.
     Stop,
     /// Block commands and file writes that would destroy work.
-    Guard,
+    Guard {
+        /// Also refuse a check command already measured as slow while the plan
+        /// still has open steps. Execute sessions only.
+        #[arg(long)]
+        cost_gate: bool,
+    },
     /// Record how long each check command took.
     Post,
     /// Record what the agent is doing in `$RALPHY_STATUS_FILE`, so the workbench

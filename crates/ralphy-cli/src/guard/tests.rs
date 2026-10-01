@@ -53,6 +53,12 @@ fn bash_commands_are_refused_or_allowed_by_the_deny_list() {
         ("git checkout", "git checkout main", true),
         ("git switch", "git switch main", true),
         ("git worktree", "git worktree add ../tmp", true),
+        ("gh pr create", "gh pr create --fill", true),
+        ("gh pr edit", "gh pr edit 5 --title x", true),
+        ("gh pr ready", "gh pr ready 5", true),
+        ("gh pr reopen", "gh pr reopen 5", true),
+        ("gh pr review", "gh pr review 5 --approve", true),
+        ("gh pr comment", "gh pr comment 5 --body x", true),
         ("gh pr merge", "gh pr merge 42", true),
         ("gh pr close", "gh pr close 7", true),
         ("gh release", "gh release create v1.0", true),
@@ -79,6 +85,11 @@ fn bash_commands_are_refused_or_allowed_by_the_deny_list() {
             false,
         ),
         ("cargo test", "cargo test", false),
+        ("gh pr view", "gh pr view 5 --comments", false),
+        ("gh pr list", "gh pr list", false),
+        ("gh pr diff", "gh pr diff 5", false),
+        ("gh pr checks", "gh pr checks 5", false),
+        ("gh api", "gh api repos/o/r/pulls -X POST", false),
     ];
     let rows: Vec<(&str, Value, bool)> = rows
         .into_iter()
@@ -177,8 +188,9 @@ fn file_writes_are_refused_to_protected_paths() {
     }
 }
 
-/// Input the guard cannot judge passes: an empty or blank command, a blank or
-/// missing file path, and a tool it does not know.
+/// A readable tool call the rules have nothing to say about passes: an empty
+/// or blank command, a blank or missing file path, and a tool the guard does
+/// not know.
 #[test]
 fn empty_or_unknown_input_is_allowed() {
     // (case, tool, input)
@@ -193,4 +205,61 @@ fn empty_or_unknown_input_is_allowed() {
     for (case, tool, input) in rows {
         assert_eq!(eval(tool, &input), GuardDecision::Allow, "{case}");
     }
+}
+
+fn decide(raw: &str) -> GuardDecision {
+    decide_hook_input(
+        raw,
+        Some(std::path::Path::new("/repo")),
+        TOOL_DIR.into(),
+        "c:/users/x/appdata/local/temp".into(),
+    )
+}
+
+/// A payload the guard cannot read is refused, and the reason says so: the
+/// guard fails closed instead of letting an unjudged call through.
+#[test]
+fn unreadable_input_is_a_deny() {
+    for raw in ["", "   ", "not json", "[1]", "\"text\""] {
+        match decide(raw) {
+            GuardDecision::Deny(reason) => assert!(
+                reason.contains("could not read the tool call"),
+                "{raw:?}: {reason}"
+            ),
+            GuardDecision::Allow => panic!("{raw:?} was allowed"),
+        }
+    }
+}
+
+/// The payload Claude Code sends today reaches the rules: the same shape is
+/// denied for a write to a pull request and allowed for a read of one.
+#[test]
+fn a_claude_code_payload_is_judged_by_the_rules() {
+    let payload = |command: &str| {
+        json!({
+            "session_id": "s",
+            "transcript_path": "/t.jsonl",
+            "cwd": "/repo",
+            "permission_mode": "bypassPermissions",
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": command, "description": "a pull request"},
+        })
+        .to_string()
+    };
+    match decide(&payload("gh pr create --fill")) {
+        GuardDecision::Deny(reason) => assert!(reason.contains("pull request"), "{reason}"),
+        GuardDecision::Allow => panic!("gh pr create was allowed"),
+    }
+    assert_eq!(decide(&payload("gh pr view 5")), GuardDecision::Allow);
+    // The payload's `cwd` is the worktree the delete carve-out is judged by.
+    let delete = json!({
+        "cwd": "/elsewhere",
+        "tool_name": "Bash",
+        "tool_input": {"command": "rm -rf /repo/target"},
+    });
+    assert!(matches!(
+        decide(&delete.to_string()),
+        GuardDecision::Deny(_)
+    ));
 }

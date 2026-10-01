@@ -70,7 +70,7 @@ fn main() -> Result<()> {
         Command::Config(args) => config::run(args),
         Command::Usage(args) => usage::usage_cmd(args),
         Command::Hook(HookCommand::Stop) => hook::run_stop_hook(),
-        Command::Hook(HookCommand::Guard) => guard::run_guard_hook(),
+        Command::Hook(HookCommand::Guard { cost_gate }) => guard::run_guard_hook(cost_gate),
         Command::Hook(HookCommand::Post) => hook::run_post_hook(),
         Command::Hook(HookCommand::Status) => hook::run_status_hook(),
         Command::Telegram(cmd) => telegram::run(cmd),
