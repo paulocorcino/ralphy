@@ -51,7 +51,12 @@ pub fn move_aside(path: &Path, today: &str) -> Result<PathBuf> {
     let base = format!("{name}.unreadable-{today}");
     let mut target = path.with_file_name(&base);
     let mut n = 2;
-    while target.exists() {
+    // `exists` is false on a metadata error too, and `rename` replaces an
+    // existing target on every platform: an error must stop the move.
+    while target
+        .try_exists()
+        .with_context(|| format!("checking {}", target.display()))?
+    {
         target = path.with_file_name(format!("{base}-{n}"));
         n += 1;
     }

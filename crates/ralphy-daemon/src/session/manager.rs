@@ -54,6 +54,11 @@ struct ManagedSession {
     /// The last observed state, `None` until the first hook fires. Interior
     /// mutability because `info` is the immutable identity and this is not.
     agent_state: Mutex<Option<crate::agent_state::Observed>>,
+    /// The state word and detail the list showed at the last tick. A
+    /// `working` that ages into `unknown` changes what is shown with no new
+    /// observation, so the change is measured against this, not against the
+    /// observation.
+    shown: Mutex<Option<(String, Option<String>)>>,
 }
 
 /// Who holds the writer slot: the bridge's eviction token, and the holder the
@@ -90,22 +95,15 @@ impl ManagedSession {
     /// staleness clock must not age it into `unknown` (§6). Cheap when
     /// nothing changed (an open, a seek, an empty read).
     ///
-    /// Returns whether the state the list shows changed: its word or its
-    /// detail, including a `working` that ages into `unknown` (§6) with no
-    /// new line. A refreshed `seen` alone does not count.
-    fn poll_status(&self) -> bool {
+    /// Returns whether the state the list shows changed since the last tick:
+    /// its word or its detail, including a `working` that ages into `unknown`
+    /// (§6) with no new line. A refreshed `seen` alone does not count.
+    fn poll_status(&self, now: SystemTime) -> bool {
         let Some(status) = &self.status else {
             return false;
         };
         let polled = status.tail.lock().expect("tail mutex").poll();
         let mut slot = self.agent_state.lock().expect("agent_state mutex");
-        let now = SystemTime::now();
-        let shown = |slot: &Option<crate::agent_state::Observed>| {
-            slot.as_ref()
-                .map(|o| crate::agent_state::render(o, now))
-                .map(|r| (r.state, r.detail))
-        };
-        let before = shown(&slot);
         if let Some(last) = polled.transitions.into_iter().last() {
             *slot = Some(last);
         } else if polled.activity {
@@ -113,7 +111,15 @@ impl ManagedSession {
                 obs.seen = now;
             }
         }
-        shown(&slot) != before
+        let shown_now = slot
+            .as_ref()
+            .map(|o| crate::agent_state::render(o, now))
+            .map(|r| (r.state, r.detail));
+        drop(slot);
+        let mut shown = self.shown.lock().expect("shown mutex");
+        let changed = *shown != shown_now;
+        *shown = shown_now;
+        changed
     }
 
     /// Feed raw bytes to the child as terminal input. Behind the session mutex so
@@ -313,6 +319,7 @@ impl SessionManager {
             watchers: Mutex::new(Vec::new()),
             status,
             agent_state: Mutex::new(None),
+            shown: Mutex::new(None),
         });
         self.sessions
             .lock()
@@ -515,7 +522,9 @@ impl SessionManager {
 /// is `Err`, and a change nobody listens for needs no message: the next tab
 /// that opens reads the list anyway.
 fn notify(changes: &broadcast::Sender<()>) {
-    let _ = changes.send(());
+    if changes.send(()).is_err() {
+        // No subscriber: nothing to tell.
+    }
 }
 
 /// The output pump for one session: drain the child's output, feed the scrollback
@@ -553,7 +562,7 @@ fn start_pump(
                 },
                 _ = tick.tick() => {
                     // The agent-state tail rides the same tick (ADR-0059 §5).
-                    if sess.poll_status() {
+                    if sess.poll_status(SystemTime::now()) {
                         notify(&changes);
                     }
                     // One lock spanning the check + close so a client write/resize

@@ -54,7 +54,9 @@ pub(crate) const PUSH_CAP: usize = 32;
 /// Put a push on the bus. A send with no open `/ws` is `Err`, and a push no
 /// tab hears needs no message: a tab that opens reads every fact anyway.
 pub(crate) fn push(pushes: &broadcast::Sender<Push>, p: Push) {
-    let _ = pushes.send(p);
+    if pushes.send(p).is_err() {
+        // No open `/ws`: nothing to tell.
+    }
 }
 
 /// How often [`watch_stores`] looks at the files other processes write.

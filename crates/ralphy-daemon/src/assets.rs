@@ -196,7 +196,7 @@ pub(crate) fn desk_page() -> &'static [u8] {
         let source = crate::UI
             .get_file(Shell::Desk.file())
             .map(|f| f.contents())
-            .unwrap_or_default();
+            .expect("index.html is embedded at compile time");
         let filled = format!(r#"<meta name="ralphy-build" content="{}">"#, build_id());
         let page = String::from_utf8_lossy(source).replacen(BUILD_META, &filled, 1);
         Box::leak(page.into_bytes().into_boxed_slice())

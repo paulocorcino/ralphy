@@ -178,7 +178,7 @@ panel adds its row here before it adds code.
 | Price of a model | `ralphy-pricing`, applied at read time | `ralphy usage`, the Spend view | a price written into the ledger | with token usage |
 | Settings | `ralphy-core::settings` (`.ralphy/settings.json`) | `ralphy config get --json`; verb `config.get` | a new reparse in the daemon (three exist, each pinned by a test) | 3, 4, 5 |
 | Desk layout | the daemon (`desk.rs`) | `GET` / `PUT /api/desk` | browser storage (only the per-client view lives there, `wb-view.js`) | 1 `desk.dirty`, 2–5 |
-| Consoles, console agent state | the daemon (`session/`, `agent_state.rs`) | `/api/sessions`, the presence socket | — | 1 `sessions.dirty`, 2–4; 6 every 30 s while a peer is listed (peers do not push their sessions); an agent state that ages out has no push |
+| Consoles, console agent state | the daemon (`session/`, `agent_state.rs`) | `/api/sessions`, the presence socket | — | 1 `sessions.dirty`, 2–4; 6 every 30 s while a peer is listed (peers do not push their sessions); a `working` that ages into `unknown` pushes too |
 | Projects, peers and their state | the daemon (`registry.rs`, `peer/`, `fleet.rs`) | `/api/repos`, `/api/fleet` | — | 1 `repos.dirty` / `peers.dirty` (the daemon stats its stores every 2 s), 2–5; 6 every 30 s while a peer is listed (peer reachability) |
 | Ralphy release version | `ralphy-release` | `/api/release`; the build id in the presence frame (ADR-0070 D6) | — | 3; a build id that differs reloads the tab (D6) |
 

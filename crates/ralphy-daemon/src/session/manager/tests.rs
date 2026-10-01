@@ -223,3 +223,44 @@ fn a_corrupt_record_restarts_at_one() {
     std::fs::write(&file, "not a number").expect("seeding the record");
     assert_eq!(SessionManager::continuing(file).reserve_id(), 1);
 }
+
+/// The pump's tick reports a change in what the list shows, so a `working`
+/// that ages into `unknown` with no new hook line is a change too: it pushes
+/// `sessions.dirty`, and a tab does not keep showing a hung agent as working.
+#[tokio::test]
+async fn a_working_state_that_ages_out_counts_as_a_change() {
+    use crate::agent_state::{Observed, StatusFiles, STALE_AFTER};
+    let manager = Arc::new(SessionManager::new());
+    let dir = std::env::temp_dir().join(format!("ralphy-age-out-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let mut spec = console_spec(std::env::temp_dir(), 24, 80, None);
+    spec.status = Some(StatusFiles::for_session(&dir, 1));
+    let (id, _att) = manager
+        .spawn_attached(
+            "owner/r".to_string(),
+            "claude".to_string(),
+            "agent".to_string(),
+            None,
+            None,
+            spec,
+        )
+        .expect("the platform shell must spawn");
+    let sess = manager.sessions.lock().expect("sessions mutex")[&id].clone();
+    let now = SystemTime::now();
+    *sess.agent_state.lock().expect("agent_state mutex") = Some(Observed {
+        state: "working",
+        detail: None,
+        since: "t".into(),
+        seen: now - STALE_AFTER + std::time::Duration::from_secs(1),
+    });
+    assert!(sess.poll_status(now), "the first state shown is a change");
+    assert!(!sess.poll_status(now), "the same state again is not");
+    let later = now + std::time::Duration::from_secs(2);
+    assert!(
+        sess.poll_status(later),
+        "working aged into unknown with no new line is a change"
+    );
+    assert!(!sess.poll_status(later), "unknown again is not");
+    manager.close(id);
+    std::fs::remove_dir_all(&dir).ok();
+}
