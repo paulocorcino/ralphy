@@ -1087,6 +1087,8 @@ async fn api_desk_put_rejects_a_fence_with_a_non_finite_rect() {
     let res = desk_put_route(
         dir.path().join("desk.toml"),
         dir.path().join("repos.toml"),
+        tokio::sync::broadcast::channel(1).0,
+        None,
         desk::DeskUpload {
             windows: vec![],
             fences: vec![desk::DeskFence {

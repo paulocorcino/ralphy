@@ -7,3 +7,4 @@ mod fleet_usage;
 mod peer_handshake;
 mod peer_pool;
 mod ws_presence;
+mod ws_pushes;

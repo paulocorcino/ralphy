@@ -89,19 +89,26 @@ impl ManagedSession {
     /// a `working` that keeps producing `PreToolUse` lines is alive, and the
     /// staleness clock must not age it into `unknown` (§6). Cheap when
     /// nothing changed (an open, a seek, an empty read).
-    fn poll_status(&self) {
+    ///
+    /// Returns whether the state the list shows changed. A refreshed `seen`
+    /// alone does not count: it changes no word on the screen.
+    fn poll_status(&self) -> bool {
         let Some(status) = &self.status else {
-            return;
+            return false;
         };
         let polled = status.tail.lock().expect("tail mutex").poll();
         let mut slot = self.agent_state.lock().expect("agent_state mutex");
         if let Some(last) = polled.transitions.into_iter().last() {
+            let changed = slot.as_ref().map(|o| o.state) != Some(last.state);
             *slot = Some(last);
-        } else if polled.activity {
+            return changed;
+        }
+        if polled.activity {
             if let Some(obs) = slot.as_mut() {
                 obs.seen = SystemTime::now();
             }
         }
+        false
     }
 
     /// Feed raw bytes to the child as terminal input. Behind the session mutex so
@@ -126,7 +133,15 @@ impl ManagedSession {
 pub struct SessionManager {
     sessions: Mutex<BTreeMap<SessionId, Arc<ManagedSession>>>,
     ids: Mutex<IdSeq>,
+    /// One message each time the list changes: a session starts or ends, or
+    /// its agent state changes. The presence socket relays it as
+    /// `sessions.dirty` (ADR-0070 D2 event 1).
+    changes: broadcast::Sender<()>,
 }
+
+/// Capacity of [`SessionManager::subscribe_changes`]. A receiver that lags
+/// reads the list again once, so a small buffer loses nothing.
+const CHANGES_CAP: usize = 32;
 
 /// The session id sequence. With a `file`, the last id issued is written there
 /// each time, and a manager built over the same file continues past it — so a
@@ -189,6 +204,7 @@ impl SessionManager {
                 last: 0,
                 file: None,
             }),
+            changes: broadcast::channel(CHANGES_CAP).0,
         }
     }
 
@@ -198,7 +214,14 @@ impl SessionManager {
         Self {
             sessions: Mutex::new(BTreeMap::new()),
             ids: Mutex::new(IdSeq::continuing(file)),
+            changes: broadcast::channel(CHANGES_CAP).0,
         }
+    }
+
+    /// A receiver that gets one message each time the session list, or a
+    /// session's agent state, changes.
+    pub fn subscribe_changes(&self) -> broadcast::Receiver<()> {
+        self.changes.subscribe()
     }
 
     fn issue_id(&self) -> SessionId {
@@ -290,7 +313,13 @@ impl SessionManager {
             .lock()
             .expect("sessions mutex")
             .insert(id, managed.clone());
-        start_pump(managed.clone(), Arc::downgrade(self), output);
+        notify(&self.changes);
+        start_pump(
+            managed.clone(),
+            Arc::downgrade(self),
+            output,
+            self.changes.clone(),
+        );
         let attachment = self
             .attach(id, true)
             .map_err(|_| anyhow::anyhow!("fresh session unexpectedly busy"))?;
@@ -472,8 +501,16 @@ impl SessionManager {
             sess
         };
         sess.session.lock().expect("session mutex").close();
+        notify(&self.changes);
         true
     }
+}
+
+/// Tell the subscribers the session list changed. A send with no subscriber
+/// is `Err`, and a change nobody listens for needs no message: the next tab
+/// that opens reads the list anyway.
+fn notify(changes: &broadcast::Sender<()>) {
+    let _ = changes.send(());
 }
 
 /// The output pump for one session: drain the child's output, feed the scrollback
@@ -488,6 +525,7 @@ fn start_pump(
     sess: Arc<ManagedSession>,
     manager: Weak<SessionManager>,
     mut output: UnboundedReceiver<Vec<u8>>,
+    changes: broadcast::Sender<()>,
 ) {
     tokio::spawn(async move {
         // Poll for a self-exited child alongside draining output: ConPTY does not
@@ -510,7 +548,9 @@ fn start_pump(
                 },
                 _ = tick.tick() => {
                     // The agent-state tail rides the same tick (ADR-0059 §5).
-                    sess.poll_status();
+                    if sess.poll_status() {
+                        notify(&changes);
+                    }
                     // One lock spanning the check + close so a client write/resize
                     // cannot interleave between them.
                     let mut session = sess.session.lock().expect("session mutex");
@@ -533,8 +573,12 @@ fn start_pump(
             // REGISTRATION INVARIANT.
             Some(manager) => {
                 let mut map = manager.sessions.lock().expect("sessions mutex");
-                map.remove(&sess.info.id);
+                let removed = map.remove(&sess.info.id).is_some();
                 evict_all(&sess, EndReason::ChildExited);
+                drop(map);
+                if removed {
+                    notify(&changes);
+                }
             }
             // The manager is gone, so no new attachment can be registered; the
             // ones already holding this session still have to be told.

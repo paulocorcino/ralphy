@@ -10,6 +10,9 @@
 //! off the spec: a regression that dropped `spec.env` would leave the file
 //! written and the hook pointing nowhere.
 //!
+//! The presence socket `/ws` pushes `sessions.dirty` when the console
+//! starts, when its agent state changes, and when it ends (ADR-0070 D2).
+//!
 //! SOLE env-setter in its file: `RALPHY_DAEMON_DIR` and
 //! `RALPHY_DAEMON_AGENT_OVERRIDE` are process-global.
 
@@ -46,6 +49,29 @@ async fn http_get(port: u16, path: &str) -> String {
     raw.split_once("\r\n\r\n")
         .map(|(_, body)| body.to_string())
         .unwrap_or(raw)
+}
+
+/// Wait for the next `sessions.dirty` push on the presence socket, skipping
+/// heartbeats; `false` when none arrives within 5 s.
+async fn sessions_dirty<S>(ws: &mut S) -> bool
+where
+    S: futures_util::Stream<Item = tokio_tungstenite::tungstenite::Result<Message>> + Unpin,
+{
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while let Some(msg) = ws.next().await {
+            let Ok(Message::Binary(bytes)) = msg else {
+                continue;
+            };
+            if let Ok(Frame::Command(c)) = protocol::decode(&bytes) {
+                if c.verb == "sessions.dirty" {
+                    return true;
+                }
+            }
+        }
+        false
+    })
+    .await
+    .unwrap_or(false)
 }
 
 fn flatten(s: &str) -> String {
@@ -88,10 +114,19 @@ async fn a_claude_console_gets_the_status_hooks_and_reports_its_agent_state() {
         axum::serve(listener, app).await.unwrap();
     });
 
+    let (mut presence, _resp) =
+        tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}/ws"))
+            .await
+            .expect("connecting to /ws");
+
     let url = format!("ws://127.0.0.1:{port}/ws/session?repo=owner%2Fstatelab&agent=claude");
     let (mut ws, _resp) = tokio_tungstenite::connect_async(&url)
         .await
         .expect("a claude console launches");
+    assert!(
+        sessions_dirty(&mut presence).await,
+        "sessions.dirty when the console starts"
+    );
 
     let sessions_dir = store.join("sessions");
     let settings = sessions_dir.join("1.settings.json");
@@ -189,6 +224,10 @@ async fn a_claude_console_gets_the_status_hooks_and_reports_its_agent_state() {
         );
         tokio::time::sleep(Duration::from_millis(100)).await;
     };
+    assert!(
+        sessions_dirty(&mut presence).await,
+        "sessions.dirty when the agent state changes"
+    );
     let rows: serde_json::Value = serde_json::from_str(&row).unwrap();
     let state = &rows[0]["agent_state"];
     assert_eq!(state["state"], "waiting", "{row}");
@@ -205,6 +244,10 @@ async fn a_claude_console_gets_the_status_hooks_and_reports_its_agent_state() {
         assert!(Instant::now() < deadline, "the session did not end");
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
+    assert!(
+        sessions_dirty(&mut presence).await,
+        "sessions.dirty when the console ends"
+    );
     assert!(!settings.exists(), "settings removed with the session");
     assert!(!status.exists(), "status file removed with the session");
 }

@@ -7,7 +7,15 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 
+use super::{push, Push};
 use crate::{checkout, desk, registry, rekey};
+
+/// Query for `PUT /api/desk`: the writing tab's id, echoed in the
+/// `desk.dirty` push so that tab does not read its own write again.
+#[derive(Debug, serde::Deserialize)]
+pub(crate) struct DeskPutQuery {
+    pub tab: Option<String>,
+}
 
 /// Read, fold, write — as ONE step. Two pages flushing at once would
 /// otherwise both read the same desk and the second write would drop the
@@ -84,9 +92,15 @@ pub(crate) fn former_slug_aliases(
 /// the desk before a re-key still names the former slug, and is normalized
 /// through `former_slugs` before anything is written — so `desk.toml`
 /// converges on the first save after a migration, whichever tab saves.
+///
+/// A write that changes the stored desk pushes `desk.dirty` with the writer's
+/// `tab`, so the other open tabs read it again (ADR-0070 D5). A write that
+/// changes nothing pushes nothing.
 pub(crate) async fn desk_put_route(
     path: PathBuf,
     registry_path: PathBuf,
+    pushes: tokio::sync::broadcast::Sender<Push>,
+    tab: Option<String>,
     up: desk::DeskUpload,
 ) -> Response {
     if let Some(bad) = up.windows.iter().find(|r| !desk::rect_is_sane(&r.rect)) {
@@ -158,6 +172,7 @@ pub(crate) async fn desk_put_route(
         Ok(stored) => stored,
         Err(e) => return unreadable(&e),
     };
+    let before = stored.clone();
     let merged = desk::merge(stored, up);
     let store = rekey::rekey_desk(
         desk::DeskStore {
@@ -169,7 +184,12 @@ pub(crate) async fn desk_put_route(
         &former_slug_aliases(&registry_path),
     );
     match desk::save_to(&store, &path) {
-        Ok(()) => Json(store).into_response(),
+        Ok(()) => {
+            if before != store {
+                push(&pushes, Push::Desk { tab });
+            }
+            Json(store).into_response()
+        }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({ "error": format!("{e:#}") })),
@@ -182,7 +202,10 @@ pub(crate) async fn desk_put_route(
 /// The old file is renamed to `desk.toml.unreadable-<date>` first, so nothing
 /// is deleted (ADR-0070 D4). A desk that reads fine, or does not exist, is not
 /// replaced: `409 {"state":"readable"}`.
-pub(crate) async fn desk_new_route(path: PathBuf) -> Response {
+pub(crate) async fn desk_new_route(
+    path: PathBuf,
+    pushes: tokio::sync::broadcast::Sender<Push>,
+) -> Response {
     let _held = DESK_WRITE.lock().await;
     if desk::load_from(&path).is_ok() {
         return (
@@ -196,6 +219,7 @@ pub(crate) async fn desk_new_route(path: PathBuf) -> Response {
         .and_then(|moved| desk::save_to(&desk::DeskStore::default(), &path).map(|()| moved));
     match saved {
         Ok(moved) => {
+            push(&pushes, Push::Desk { tab: None });
             let name = moved
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
