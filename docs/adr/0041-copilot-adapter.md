@@ -301,21 +301,32 @@ one; the escape hatch is the persisted
 (The live receipt is `ephemeral: true` on every copy, so the scan must not reuse
 the stream parser's ephemeral filter.)
 
-### Amendment (2026-10-01, issue #516 / ADR-0072 D6) — the deny rules wait for a live run
+### Amendment (2026-10-01, issue #516 / ADR-0072 D6) — deny rules for the forge writes
 
-ADR-0072 D6 wants a minimal deny (`git push` and the `gh pr` write verbs) on top
-of `--allow-all-tools`. Copilot has the mechanism: `copilot help permissions`
-(CLI 1.0.75) says a `--deny-tool` rule wins over every allow rule, `--allow-all-tools`
-included. The flags would be one `--deny-tool=shell(<command>)` per entry of
-`DENIED_FORGE_WRITES` (`ralphy-adapter-support`); CLI 1.0.75 accepts that
-spelling and refuses a malformed rule at startup. They are not added yet. No
-live run was possible: the operator has no active Copilot subscription, and
-every headless session ended before the first turn with "Access denied by
-policy settings". ADR-0072 D6a requires a live run before a deny rule ships,
-because only a run shows that a denied call does not stop the session. Open
-points for that run: how the rule matches a compound command
-(`cd x && git push`) and a global flag (`git -C x push`), and the exact text
-the model receives.
+Every session (plan, execute and the one-shot sessions) now carries one
+`--deny-tool=shell(<command>:*)` per entry of `DENIED_FORGE_WRITES`
+(`ralphy-adapter-support`): `git push` and the `gh pr` verbs that write.
+`copilot help permissions` says a deny rule wins over every allow rule,
+`--allow-all-tools` included. A refused call reaches the model as a tool error
+("Permission to run this tool was denied due to the following rules:
+`shell(git push:*)`"), and the session goes on.
+
+Measured on 2026-10-01:
+
+- CLI 1.0.90: every `gh pr` write verb is refused, also behind a pipe
+  (`gh pr create --help | Select-Object -First 1`) and after `cd . ;`;
+  `git push` is refused, also as `git -C . push`; `gh pr view` and `git status`
+  run. The exact form `shell(gh pr create)`, with no `:*`, does not match
+  `gh pr create --help`, so the rules use the `:*` form.
+- CLI 1.0.75: the `git push` rule holds, and every `gh pr` rule is ignored.
+- A live `ralphy run` (FinCal #127, CLI 1.0.75) ran to the end with the rules
+  on, and `git push --dry-run` was refused. On CLI 1.0.90 no `ralphy run`
+  could start: that version no longer emits `session.skills_loaded`, so the D9
+  receipt guard stops every run. That drift is separate from this amendment.
+
+Limits, accepted: a global flag before the subcommand (`gh -R o/r pr create`)
+gets past the rules, and so would a wrapper (`pwsh -Command "..."`). The rules
+are a layer, not proof (ADR-0072).
 
 ## D8 — The three GitHub token env vars are scrubbed from the child
 

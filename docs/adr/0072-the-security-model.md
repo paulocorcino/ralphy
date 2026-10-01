@@ -300,13 +300,14 @@ surface.
   CLI (0.159.2) has a mechanism, a `forbidden` exec-policy rule, measured to
   refuse `git push` under `-s danger-full-access`; it is not wired yet,
   because the rule file must sit in the target repo's `.codex/rules`.
-  Copilot: `--deny-tool` is documented to win over `--allow-all-tools`, but
-  no live run was possible (no active Copilot subscription); not wired
-  until a live run, as ADR-0041 D7 amendment records. Kimi: accepted, no
-  mechanism is known. The
-  vendor rules match the start of the command text, so a global flag
-  (`git -C x push`) or a wrapper (`bash -c`) gets past them: a layer, not
-  proof. Accepted too: hook input is not authenticated (a
+  Copilot: checked. Every session carries one `--deny-tool=shell(<command>:*)`
+  per entry (`every_session_denies_the_forge_writes`,
+  `crates/ralphy-agent-copilot/src/command.rs`). CLI 1.0.90 refuses `git push`
+  and the `gh pr` write verbs; CLI 1.0.75 refuses only `git push`. A live run
+  on 1.0.75 (FinCal, 2026-10-01) ran to the end with the rules on (ADR-0041 D7
+  amendment). Kimi: accepted, no mechanism is known. A vendor rule matches
+  the start of a command, so a global flag (`gh -R o/r pr create`) or a
+  wrapper (`bash -c`) gets past it: a layer, not proof. Accepted too: hook input is not authenticated (a
   process with `RALPHY_FLAG_FILE` set can write the stop flag) and the guard
   trusts the payload's `cwd`; both come from the operator zone.
 - D7: checked. A new read of a secret-named environment variable is
