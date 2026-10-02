@@ -120,7 +120,9 @@ impl PeerStatus {
             PeerStatus::Unreachable { why } => {
                 format!("{environment} did not answer: {why}. Start its daemon.")
             }
-            PeerStatus::Refused { why } => format!("{environment} was not dialled: {why}."),
+            PeerStatus::Refused { why } => {
+                format!("Ralphy did not connect to {environment}: {why}.")
+            }
             PeerStatus::TunnelClosed {
                 host,
                 cause: None,
@@ -578,9 +580,16 @@ pub async fn probe(d: &PeerDescriptor, me: SelfRef<'_>) -> PeerStatus {
     // when either side has no id.
     if let Some(answered) = answered_id {
         if !d.daemon_id.is_empty() && answered != d.daemon_id {
+            // Only `host add` writes a tunnel descriptor, and running it again
+            // reads the identity and the socket anew.
+            let remedy = if d.tunnel.is_some() {
+                ". Add the host again"
+            } else {
+                ""
+            };
             return PeerStatus::Refused {
                 why: format!(
-                    "another daemon answers at {}:{}: it is {answered}, not {}",
+                    "another daemon answers at {}:{}: it is {answered}, not {}{remedy}",
                     d.address, d.port, d.daemon_id
                 ),
             };

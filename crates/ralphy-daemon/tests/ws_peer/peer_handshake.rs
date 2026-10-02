@@ -157,9 +157,28 @@ async fn a_hello_from_another_daemon_is_refused_and_names_both_ids() {
         matches!(status, PeerStatus::Refused { .. }),
         "another daemon's hello must be refused, got: {status:?}"
     );
-    let diagnosis = status.diagnosis(&d.environment);
-    assert!(diagnosis.contains("01OTHERDAEMON"), "got: {diagnosis}");
-    assert!(diagnosis.contains("01EXPECTED"), "got: {diagnosis}");
+    assert_eq!(
+        status.diagnosis(&d.environment),
+        format!(
+            "Ralphy did not connect to {ENV}: another daemon answers at 127.0.0.1:{port}: it is 01OTHERDAEMON, not 01EXPECTED."
+        )
+    );
+
+    d.tunnel = Some(TunnelSpec {
+        destination: "svrapp".into(),
+        peer_port: 7257,
+        peer_socket: None,
+        local_port: d.port,
+        identity_file: None,
+    });
+    let status = probe(&d, me()).await;
+    assert_eq!(
+        status.diagnosis(&d.environment),
+        format!(
+            "Ralphy did not connect to {ENV}: another daemon answers at 127.0.0.1:{port}: it is 01OTHERDAEMON, not 01EXPECTED. Add the host again."
+        ),
+        "a tunnel descriptor is fixed by adding the host again"
+    );
 }
 
 #[tokio::test]
