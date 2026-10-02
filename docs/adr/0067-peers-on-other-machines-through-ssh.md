@@ -826,3 +826,47 @@ and the icon then comes from the label, as in H2.
 A host's descriptor is written by `host add` and by Edit. A host paired before
 this change keeps its old label until the host runs the new version and the
 operator edits it.
+
+## Amendment (2026-10-02): the add flow names its steps, goes back, and checks Git
+
+This amendment changes the add dialog of §11, the H3 flow, and D5. The rest
+stands.
+
+**F1. Each button names what it does.** The connection step's button is
+**Connect**: it signs in and runs the checks. The checks step's button is
+**Add host**: it changes the host (name, autostart, token) and writes the
+descriptor. *Save* stays the name when the operator edits a host. A new host
+then gets a last step, **Done**, which says the host was added. An edit still
+goes back to *Your hosts*.
+
+**F2. Back.** The checks step has a **Back** button. It returns to the
+connection fields with what was typed, and clears the checks. A password is
+no longer in the field after the first sign-in, and is not needed: the peer
+key is on the host.
+
+**F3. The sign-in note says what changed.** When the password adds the peer
+key, the note is "Ralphy installed its SSH key on <destination>. The next
+connections do not need the password."
+
+**F4. Install on request.** The connection step has a check box, unchecked
+by default: *Install or update Ralphy on the host when it is missing or too
+old.* When it is checked and the checks offer an install, the dialog runs
+`host install` once, then the checks again. The check box is the permission
+of D5, as the install button is. The install line (version, target, source,
+folder) shows while it runs. There is no offer when the host has a newer
+Ralphy, so the check box never installs an older version. A failed install is
+not repeated until the operator selects Connect again.
+
+**F5. Git and gh are checks.** The probe reads `git --version` and
+`gh --version`. Two checks follow *User*: **Git** and **GitHub CLI**. Neither
+blocks Add host: the operator can add the host first.
+
+- Git missing: on macOS a command to copy, `xcode-select --install`; on
+  Windows, `winget install --id Git.Git -e`; on Linux, advice to use the
+  package manager of the host, because it is different on each distribution.
+- gh missing: advice. Only a run that reads or changes GitHub needs it.
+
+On macOS the probe runs `git` only after `xcode-select -p` succeeds. Without
+the Command Line Tools, `/usr/bin/git` is a stub that offers to install them.
+Whether that offer opens a window on the host's screen when the stub runs over
+SSH is not measured.

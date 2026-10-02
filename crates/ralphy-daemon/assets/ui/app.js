@@ -3442,12 +3442,20 @@ function shell() {
       this.addHostStep({ type: "check-again" });
       this.addHostCheck();
     },
+    // Back to the fields from the checks, to correct the connection.
+    addHostBack() {
+      if (this.addHost.busy) return;
+      this.addHostStep({ type: "back" });
+    },
     addHostConnect() {
       if (!this.hostReady()) return;
       this._runHostVerb("host.add");
     },
     hostNeedsInstall() {
       return window.WBHosts.needsInstall(this.addHost);
+    },
+    hostAddedText() {
+      return window.WBHosts.addedText(this.addHost);
     },
     hostInstallText() {
       return window.WBHosts.installText(this.addHost);
@@ -3473,6 +3481,10 @@ function shell() {
           // up) still made a row, so the list shows it and offers Edit.
           if (verb === "host.add" && (st.code === 0 || this.addHost.done)) this.loadRepos();
           if (verb === "host.install" && st.code === 0) this.addHostCheckAgain();
+          if (verb === "host.check" && st.code === 0 && window.WBHosts.wantsAutoInstall(this.addHost)) {
+            this.addHostStep({ type: "auto-tried" });
+            this.addHostInstall();
+          }
         } else if (st.status === "error") {
           this.addHostFailed(window.WBFail.failed(st, "Could not reach the host: the daemon did not start the command."));
           this.addHostStep({ type: "busy", value: false });

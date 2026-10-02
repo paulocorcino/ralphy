@@ -3,8 +3,10 @@ use crate::host::ssh::tests::out;
 use CheckId::*;
 
 // format of `id -u`, `id -un` and `loginctl show-user <user> --property=Linger`
-const LINUX_USER: &str =
-    "--- host\nsvr.example.com\n--- uid\n1000\n--- user\npaulo\n--- linger\nLinger=yes\n";
+const LINUX_USER: &str = "--- host\nsvr.example.com\n--- uid\n1000\n--- user\npaulo\n--- linger\nLinger=yes\n\
+--- git\ngit version 2.43.0\n--- gh\ngh version 2.45.0 (2024-03-04)\nhttps://github.com/cli/cli/releases/tag/v2.45.0\n";
+// `git --version` and `gh --version` are not found: their errors go to stderr.
+const LINUX_NO_GIT: &str = "--- uid\n1000\n--- linger\nLinger=yes\n--- git\n--- gh\n";
 const LINUX_ROOT: &str = "--- uid\n0\n--- user\nroot\n--- linger\nLinger=yes\n";
 const LINUX_NO_LINGER: &str = "--- uid\n1000\n--- user\npaulo\n--- linger\nLinger=no\n";
 
@@ -75,11 +77,49 @@ fn checks_linux_normal_user() {
     let checks = run(HostOs::Linux, LINUX_USER, &ready("linux"));
     assert_eq!(
         ids(&checks),
-        [Ralphy, Name, Autostart, Linger, RequireToken, User]
+        [Ralphy, Name, Autostart, Linger, RequireToken, User, Git, Gh]
     );
     for c in &checks {
         assert_eq!(c.status, CheckStatus::Pass, "{c:?}");
     }
+}
+
+#[test]
+fn a_host_without_git_gets_advice_that_does_not_block() {
+    let linux = run(HostOs::Linux, LINUX_NO_GIT, &ready("linux"));
+    let git = get(&linux, Git);
+    assert_eq!(git.status, CheckStatus::Warn);
+    assert!(git.text.contains("package manager"), "{git:?}");
+    assert_eq!(get(&linux, Gh).status, CheckStatus::Warn);
+    assert!(!linux.iter().any(HostCheck::is_blocking));
+
+    let mac = run(
+        HostOs::MacOs,
+        "--- uid\n501\n--- git\n--- gh\n",
+        &ready("macos"),
+    );
+    assert_eq!(
+        get(&mac, Git).status,
+        CheckStatus::Copy("xcode-select --install".to_string())
+    );
+    let windows = run(
+        HostOs::Windows,
+        "--- git \r\n--- gh \r\n",
+        &ready("windows"),
+    );
+    assert_eq!(
+        get(&windows, Git).status,
+        CheckStatus::Copy("winget install --id Git.Git -e".to_string())
+    );
+}
+
+#[test]
+fn git_is_read_from_the_windows_probe() {
+    let probe =
+        "--- git \r\ngit version 2.47.1.windows.1\r\n--- gh \r\ngh version 2.63.0 (2024-11-27)\r\n";
+    let checks = run(HostOs::Windows, probe, &ready("windows"));
+    assert_eq!(get(&checks, Git).status, CheckStatus::Pass);
+    assert_eq!(get(&checks, Gh).status, CheckStatus::Pass);
 }
 
 #[test]
@@ -105,7 +145,17 @@ fn checks_macos_filevault_on() {
     let checks = run(HostOs::MacOs, MACOS_FV_ON, &ready("macos"));
     assert_eq!(
         ids(&checks),
-        [Ralphy, Name, Autostart, SignIn, Sleep, RequireToken, User]
+        [
+            Ralphy,
+            Name,
+            Autostart,
+            SignIn,
+            Sleep,
+            RequireToken,
+            User,
+            Git,
+            Gh
+        ]
     );
     let sign_in = get(&checks, SignIn);
     assert_eq!(sign_in.status, CheckStatus::Warn);
@@ -129,7 +179,17 @@ fn checks_windows_admin() {
     let checks = run(HostOs::Windows, WINDOWS_ADMIN, &ready("windows"));
     assert_eq!(
         ids(&checks),
-        [Ralphy, Name, Autostart, SignIn, Sleep, RequireToken, User]
+        [
+            Ralphy,
+            Name,
+            Autostart,
+            SignIn,
+            Sleep,
+            RequireToken,
+            User,
+            Git,
+            Gh
+        ]
     );
     let user = get(&checks, User);
     assert_eq!(user.status, CheckStatus::Pass);

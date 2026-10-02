@@ -960,7 +960,11 @@ fn add_with_a_password_adds_the_peer_key_then_signs_in_with_it() {
         .iter()
         .all(|c| c.0.as_deref() == Some(key.as_path())));
     let printed = String::from_utf8(report.into_inner()).unwrap();
-    assert!(printed.contains("not needed again"), "{printed}");
+    assert!(
+        printed.contains("installed its SSH key on")
+            && printed.contains("do not need the password"),
+        "{printed}"
+    );
     assert!(
         !printed.contains("Added"),
         "the host is not added yet: {printed}"

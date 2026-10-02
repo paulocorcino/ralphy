@@ -2908,6 +2908,11 @@
               <button type="button" class="host-link" @click="addHostType('signIn', addHost.signIn === 'key' ? 'config' : 'key')"
                       x-text="addHost.signIn === 'key' ? 'Use a password' : 'Use a key file'"></button>
             </div>
+            <label class="run-check">
+              <input type="checkbox" :checked="addHost.autoInstall"
+                     @change="addHostType('autoInstall', $event.target.checked)" />
+              <span>Install or update Ralphy on the host when it is missing or too old.</span>
+            </label>
           </div>
 
           <!-- 2. Host identity: first contact only -->
@@ -2918,7 +2923,7 @@
             </template>
           </div>
 
-          <!-- 3. Host checks: the one thing that blocks Connect comes first,
+          <!-- 3. Host checks: the one thing that blocks Add host comes first,
                with what to do about it. Passed checks fold into one line.
                Advice shows only when nothing blocks. -->
           <div class="run-field" x-show="addHost.step === 'checks'">
@@ -2987,6 +2992,17 @@
             </template>
           </div>
 
+          <!-- 4. Added: a new host only; an edit goes back to the list. -->
+          <div class="run-field" x-show="addHost.step === 'done'">
+            <p class="host-next-text">
+              <i class="bi bi-check-circle"></i>
+              <span x-text="hostAddedText()"></span>
+            </p>
+            <template x-for="(line, i) in addHost.lines" :key="i">
+              <p class="run-help" x-text="line"></p>
+            </template>
+          </div>
+
           <p class="side-error" x-show="addHost.failure" x-text="addHost.failure ? addHost.failure.message : ''"></p>
           <span class="rel-cmd" x-show="addHost.failure && addHost.failure.keyLine">
             <code x-text="addHost.failure ? addHost.failure.keyLine : ''"></code>
@@ -3027,7 +3043,7 @@
           <template x-if="hostTab() === 'add' && addHost.step === 'connection'">
             <span class="host-foot">
               <button class="btn" @click="addHostCancel()">Cancel</button>
-              <button class="btn accent" @click="addHostNext()" :disabled="addHost.busy || !addHostPayload().destination">Next</button>
+              <button class="btn accent" @click="addHostNext()" :disabled="addHost.busy || !addHostPayload().destination">Connect</button>
             </span>
           </template>
           <template x-if="hostTab() === 'add' && addHost.step === 'identity'">
@@ -3039,9 +3055,15 @@
           <template x-if="hostTab() === 'add' && addHost.step === 'checks'">
             <span class="host-foot">
               <button class="btn" @click="addHostCancel()">Cancel</button>
+              <button class="btn" @click="addHostBack()" :disabled="addHost.busy">Back</button>
               <button class="btn" :class="{ accent: hostPrimary() === 'check' }" @click="addHostCheckAgain()" :disabled="addHost.busy">Check again</button>
               <button class="btn accent" x-show="hostPrimary() === 'connect'" @click="addHostConnect()" :disabled="!hostReady()"
-                      x-text="addHost.editing ? 'Save' : 'Connect'"></button>
+                      x-text="addHost.editing ? 'Save' : 'Add host'"></button>
+            </span>
+          </template>
+          <template x-if="hostTab() === 'add' && addHost.step === 'done'">
+            <span class="host-foot">
+              <button class="btn accent" @click="closeAddHost()">Done</button>
             </span>
           </template>
         </div>
