@@ -3169,6 +3169,9 @@ function shell() {
     addProjectHelp() {
       return window.WBAddProject.help(this.addProject);
     },
+    addProjectListable() {
+      return window.WBAddProject.listable(this.addProject);
+    },
     addProjectWhere(daemon) {
       this.addProjectStep({ type: "where", daemon });
       this.addProjectList(0);

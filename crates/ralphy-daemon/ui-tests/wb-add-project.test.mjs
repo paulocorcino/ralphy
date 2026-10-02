@@ -155,11 +155,14 @@ test("Loading… shows only for the newest request that is still waiting", () =>
   }
 });
 
-test("a peer with an older Ralphy says to update it, not the raw code", () => {
+test("a peer with an older Ralphy says to update it and hides the Folder field", () => {
   const P = load();
   let s = P.next(P.next(P.initial(), { type: "open", daemon: WSL_ID }), { type: "sent", seq: 1 });
+  assert.equal(P.listable(s), true);
   s = P.next(s, { type: "reply", seq: 1, reply: { status: "error", message: "unknown verb" } });
   assert.match(P.help(s), /^Update Ralphy on this computer/);
+  assert.equal(P.listable(s), false);
+  assert.equal(P.listable(P.next(s, { type: "where", daemon: "" })), true, "another Where brings the field back");
 });
 
 test("a pasted WSL path moves to the WSL peer and becomes a Linux path", () => {

@@ -228,14 +228,19 @@
     return { label: state.adding ? "Adding…" : t.label, disabled: !clickable || state.adding };
   }
 
+  // False when the chosen daemon cannot list folders at all. Only a peer can
+  // answer this: it runs a Ralphy older than the page's daemon, without the
+  // folder list. The Folder field is then hidden: nothing typed there works.
+  function listable(state) {
+    return state.failure !== "unknown verb";
+  }
+
   // The line under the field.
   function help(state) {
     if (state.wslMissing) {
       return `Add ${state.wslMissing} (WSL) as a host first.`;
     }
-    // Only a peer can answer this: it runs a Ralphy older than the page's
-    // daemon, without the folder list.
-    if (state.failure === "unknown verb") {
+    if (!listable(state)) {
       return "Update Ralphy on this computer to see its folders.";
     }
     if (state.failure && state.failure !== "this folder does not exist") {
@@ -372,6 +377,7 @@
     target: target,
     primary: primary,
     help: help,
+    listable: listable,
     addPayload: addPayload,
     places: places,
     mapWsl: mapWsl,

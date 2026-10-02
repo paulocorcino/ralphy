@@ -1,4 +1,4 @@
 ---
 kind: internal
 ---
-The Add a project dialog says when a host runs an older Ralphy, and no longer shows Loading… after the folder list has answered.
+Add a project says when a host runs an older Ralphy and hides its Folder field. Loading… stops once the folder list answers.
