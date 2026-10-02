@@ -3216,7 +3216,7 @@ function shell() {
       }
       if (ev.key === "Enter") {
         ev.preventDefault();
-        if (!this.addProjectPrimary().disabled) this.addProjectSubmit();
+        if (window.WBAddProject.enterAdds(this.addProject)) this.addProjectSubmit();
       }
     },
     // Ask the daemon for the folder list after `delay` ms. Each request has a
@@ -3442,12 +3442,20 @@ function shell() {
       this.addHostStep({ type: "check-again" });
       this.addHostCheck();
     },
+    // Back to the fields from the checks, to correct the connection.
+    addHostBack() {
+      if (this.addHost.busy) return;
+      this.addHostStep({ type: "back" });
+    },
     addHostConnect() {
       if (!this.hostReady()) return;
       this._runHostVerb("host.add");
     },
     hostNeedsInstall() {
       return window.WBHosts.needsInstall(this.addHost);
+    },
+    hostAddedText() {
+      return window.WBHosts.addedText(this.addHost);
     },
     hostInstallText() {
       return window.WBHosts.installText(this.addHost);
@@ -3473,6 +3481,10 @@ function shell() {
           // up) still made a row, so the list shows it and offers Edit.
           if (verb === "host.add" && (st.code === 0 || this.addHost.done)) this.loadRepos();
           if (verb === "host.install" && st.code === 0) this.addHostCheckAgain();
+          if (verb === "host.check" && st.code === 0 && window.WBHosts.wantsAutoInstall(this.addHost)) {
+            this.addHostStep({ type: "auto-tried" });
+            this.addHostInstall();
+          }
         } else if (st.status === "error") {
           this.addHostFailed(window.WBFail.failed(st, "Could not reach the host: the daemon did not start the command."));
           this.addHostStep({ type: "busy", value: false });
@@ -3510,6 +3522,12 @@ function shell() {
           } else if (st.status === "exited") {
             s = window.WBHosts.next(s, { type: "exit", verb: "host.remove", code: st.code });
             if (st.code === 0) {
+              // The fleet read that confirms this waits up to 2 s for the
+              // peer that is now down: until then the row would come back.
+              const gone = this.removeHost.daemon;
+              this.fleetPeers = (this.fleetPeers || []).filter((p) => p.daemon_id !== gone);
+              this._fleetRows = this._fleetRows.filter((r) => r.daemon !== gone);
+              this.projects = this.projects.filter((r) => r.daemon !== gone);
               this.removeHost.open = false;
               this.loadRepos();
             }

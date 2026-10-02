@@ -1043,7 +1043,8 @@ same defects exist there today:
   longer exists is still updated. That is the moved-repo case the registry
   already handles.
 - **A path that does not exist, with `--init`.** `--init` never creates a
-  directory. A typing error must not create a folder on the disk.
+  directory. A typing error must not create a folder on the disk. §6 adds
+  `--create`, which creates one folder when the operator asks for it.
 - **A network path.** On Windows, a UNC path (`\server\share`) is refused.
   Reading it makes Windows authenticate over SMB to the named server, which
   sends the user's NTLM hash to that server.
@@ -1111,6 +1112,28 @@ One refinement of the hidden-folder rule in §3: an entry whose name is exactly
 the typed prefix is kept, even when it is hidden. Without it, a hidden folder
 typed by its full name (for example `AppData` on Windows) looks like a folder
 that does not exist.
+
+### 6. A missing folder, created on request (2026-10-02)
+
+An operator who types a new folder name in the dialog wants a new project
+there. §2 refused it, and the operator had to leave the workbench to create the
+folder. The refusal stays the default; a new flag makes the folder when the
+operator asks for it:
+
+- `daemon add --init --create -- <path>` creates the last folder of `path`
+  when it does not exist, then the repository. It never creates a parent: a
+  missing parent is still "this folder does not exist", because a typing error
+  is more likely there. `--create` without `--init` is refused, so a new folder
+  always gets a repository.
+- `project.add` takes `create`, a boolean. It is valid only with `init`.
+- The browser asks for it only after it showed **Create folder and
+  repository**, with the full path in the line under the field. It offers this
+  only when the listed parent exists and is not inside a repository. Enter
+  does not create a folder; only the click does. A name that ends with a space
+  or a dot is refused, because Windows drops those characters and the folder
+  would get another name.
+- A peer that runs an older Ralphy does not know `--create`. Its refusal is
+  shown as it is.
 
 ### Consequences
 

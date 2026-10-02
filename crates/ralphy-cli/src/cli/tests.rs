@@ -122,11 +122,12 @@ fn daemon_add_init_flag_parses() {
     let Command::Daemon(args) = cli.command else {
         panic!("expected the `daemon` subcommand");
     };
-    let Some(daemon::DaemonCommand::Add { path, init }) = args.command else {
+    let Some(daemon::DaemonCommand::Add { path, init, create }) = args.command else {
         panic!("expected `daemon add`");
     };
     assert_eq!(path, std::path::PathBuf::from("."));
     assert!(init);
+    assert!(!create, "a folder is created only when asked");
 
     let cli = Cli::try_parse_from(["ralphy", "daemon", "add", "."]).expect("daemon add must parse");
     let Command::Daemon(args) = cli.command else {
@@ -136,6 +137,10 @@ fn daemon_add_init_flag_parses() {
         panic!("expected `daemon add`");
     };
     assert!(!init, "the flag must default off");
+
+    // A new folder always gets a repository: `--create` needs `--init`.
+    assert!(Cli::try_parse_from(["ralphy", "daemon", "add", "--create", "x"]).is_err());
+    assert!(Cli::try_parse_from(["ralphy", "daemon", "add", "--init", "--create", "x"]).is_ok());
 }
 
 #[test]

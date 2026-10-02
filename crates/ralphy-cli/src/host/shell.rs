@@ -84,11 +84,14 @@ impl InstalledOp {
     }
 }
 
-const LINUX_PROBE: &str = r#"echo "--- host"; uname -n; echo "--- uid"; id -u; echo "--- user"; id -un; echo "--- arch"; uname -m; echo "--- linger"; loginctl show-user "$(id -un)" --property=Linger"#;
+const LINUX_PROBE: &str = r#"echo "--- host"; uname -n; echo "--- uid"; id -u; echo "--- user"; id -un; echo "--- arch"; uname -m; echo "--- linger"; loginctl show-user "$(id -un)" --property=Linger; echo "--- git"; git --version; echo "--- gh"; gh --version"#;
 
-const MACOS_PROBE: &str = r#"echo "--- host"; uname -n; echo "--- uid"; id -u; echo "--- user"; id -un; echo "--- arch"; uname -m; echo "--- filevault"; fdesetup isactive; echo "--- autologin"; defaults read /Library/Preferences/com.apple.loginwindow autoLoginUser; echo "--- pmset"; pmset -g"#;
+// macOS runs `git` only after `xcode-select -p` succeeds: without the Command
+// Line Tools, `/usr/bin/git` is a shim that offers to install them, maybe in a
+// window on the host's screen (not measured over SSH).
+const MACOS_PROBE: &str = r#"echo "--- host"; uname -n; echo "--- uid"; id -u; echo "--- user"; id -un; echo "--- arch"; uname -m; echo "--- filevault"; fdesetup isactive; echo "--- autologin"; defaults read /Library/Preferences/com.apple.loginwindow autoLoginUser; echo "--- pmset"; pmset -g; echo "--- git"; xcode-select -p >/dev/null 2>&1 && git --version; echo "--- gh"; gh --version"#;
 
-const WINDOWS_PROBE: &str = r#"echo --- host & hostname & echo --- user & echo %USERNAME% & echo --- groups & whoami /groups & echo --- arch & echo %PROCESSOR_ARCHITECTURE% & echo --- autologon & reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v AutoAdminLogon & echo --- standby & powercfg /q SCHEME_CURRENT SUB_SLEEP STANDBYIDLE"#;
+const WINDOWS_PROBE: &str = r#"echo --- host & hostname & echo --- user & echo %USERNAME% & echo --- groups & whoami /groups & echo --- arch & echo %PROCESSOR_ARCHITECTURE% & echo --- autologon & reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v AutoAdminLogon & echo --- standby & powercfg /q SCHEME_CURRENT SUB_SLEEP STANDBYIDLE & echo --- git & git --version & echo --- gh & gh --version"#;
 
 /// Where `ralphy host install` puts the binary, in each shell's own words. It
 /// is under the home folder, so writing it needs no administrator.

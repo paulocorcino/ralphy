@@ -74,7 +74,9 @@ test("the button names what adding the typed folder does", () => {
     ["C:\\Dev\\FINCAL", "Add project", false],
     ["C:\\Dev\\ralphy", "Already in Projects", true],
     ["C:\\Dev\\notes", "Create repository and add", false],
-    ["C:\\Dev\\typo", "This folder does not exist", true],
+    ["C:\\Dev\\typo", "Create folder and repository", false],
+    ["C:\\Dev\\typo ", "A folder name cannot end with a space or a dot", true],
+    ["C:\\Dev\\typo.", "A folder name cannot end with a space or a dot", true],
     ["C:\\Dev\\locked", "Cannot read this folder", true],
   ];
   for (const [text, label, disabled] of cases) {
@@ -86,6 +88,25 @@ test("the button names what adding the typed folder does", () => {
   assert.deepEqual(P.addPayload(s), { daemon: "", path: "C:\\Dev\\notes", init: true });
   s = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "C:\\Dev\\fincal"), DEV);
   assert.deepEqual(P.addPayload(s), { daemon: "", path: "C:\\Dev\\fincal", init: false });
+});
+
+test("a missing last folder is created only by a click, with its path shown", () => {
+  const P = load();
+  const s = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "C:\\Dev\\my notes"), DEV);
+  assert.deepEqual(P.primary(s), { label: "Create folder and repository", disabled: false });
+  assert.equal(P.help(s), "Ralphy creates the folder C:\\Dev\\my notes and a git repository in it.");
+  assert.deepEqual(P.addPayload(s), { daemon: "", path: "C:\\Dev\\my notes", init: true, create: true });
+  assert.equal(P.enterAdds(s), false, "Enter does not create a folder");
+  const notes = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "C:\\Dev\\notes"), DEV);
+  assert.equal(P.enterAdds(notes), true);
+
+  // Inside a repo, a new folder would get a repository inside another one.
+  const inside = {
+    dir: { path: "/home/me/fincal/", root: "/home/me/fincal", added: false },
+    entries: [{ name: "src", repo: false, added: false }],
+  };
+  const deep = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "/home/me/fincal/new"), inside);
+  assert.deepEqual(P.primary(deep), { label: "This folder does not exist", disabled: true });
 });
 
 test("a subfolder of a repo adds the repo root, and says so", () => {

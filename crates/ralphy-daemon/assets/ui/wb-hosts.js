@@ -42,6 +42,13 @@
       busy: false,
       buf: "",
       done: false,
+      // The name `host add` gave the host, shown by the last step.
+      addedName: "",
+      // The operator's opt-in: install Ralphy when the checks offer it. The
+      // check box is the permission, as the install button is.
+      autoInstall: false,
+      // The install ran once for this Connect; a failed one is not repeated.
+      autoTried: false,
     };
   }
 
@@ -164,7 +171,7 @@
         return next;
       }
       case "added":
-        return Object.assign({}, s, { done: true });
+        return Object.assign({}, s, { done: true, addedName: String(ev.name || "") });
       default:
         return s;
     }
@@ -217,7 +224,7 @@
             failure: { kind: "unreachable", message: sentence(key.reason) },
           });
         }
-        return Object.assign({}, s, { step: "checks", failure: null, help: false });
+        return Object.assign({}, s, { step: "checks", failure: null, help: false, autoTried: false });
       }
       case "close":
         return Object.assign({}, s, { open: false, password: "" });
@@ -225,6 +232,20 @@
         return Object.assign({}, s, { step: "connection", keys: [] });
       case "trusted":
         return Object.assign({}, s, { step: "checks" });
+      // Back to the fields, which keep what was typed.
+      case "back":
+        return Object.assign({}, s, {
+          step: "connection",
+          checks: [],
+          install: null,
+          lines: [],
+          failure: null,
+          help: false,
+          buf: "",
+          autoTried: false,
+        });
+      case "auto-tried":
+        return Object.assign({}, s, { autoTried: true });
       case "check-again":
         return Object.assign({}, s, {
           checks: [],
@@ -239,8 +260,9 @@
       case "exit": {
         if (ev.code === 0) {
           if (ev.verb !== "host.add") return Object.assign({}, s, { busy: false });
-          // An edit goes back to the list it started from.
-          return s.editing ? fresh(s, "hosts") : Object.assign({}, s, { open: false, busy: false });
+          // An edit goes back to the list it started from; a new host gets
+          // a last step that says it was added.
+          return s.editing ? fresh(s, "hosts") : Object.assign({}, s, { step: "done", busy: false });
         }
         const failure = s.failure || {
           kind: "other",
@@ -266,15 +288,15 @@
     return false;
   }
 
-  // Connect is possible once the checks ran, Ralphy is ready on the host, and
+  // Add host is possible once the checks ran, Ralphy is ready on the host, and
   // the daemon has a name or gets one.
   function ready(s) {
     if (!s.checks.length || s.failure) return false;
     return !s.checks.some(blocks);
   }
 
-  // The checks as the dialog shows them: the one check that blocks Connect,
-  // the checks that passed, what Connect sets up, and advice. Advice is shown
+  // The checks as the dialog shows them: the one check that blocks Add host,
+  // the checks that passed, what Add host sets up, and advice. Advice is shown
   // only when nothing blocks, so one thing to do is on screen at a time. A
   // check that waits for an earlier one is not shown.
   function view(s) {
@@ -301,7 +323,7 @@
       passed: passed.map((c) => Object.assign({}, c, { text: sentence(c.text) })),
       passedText: passed.length === 1 ? "1 check passed" : passed.length + " checks passed",
       fixText: fixes.length
-        ? "When you connect, Ralphy also sets up: " +
+        ? "In the next step, Ralphy also sets up: " +
           fixes.map((c) => String(c.label || c.id).toLowerCase()).join(", ") +
           "."
         : "",
@@ -332,6 +354,18 @@
   function needsInstall(s) {
     const ralphy = s.checks.find((c) => c.id === "ralphy");
     return !!(s.install && ralphy && ralphy.status !== "pass");
+  }
+
+  // The last step of a new host.
+  function addedText(s) {
+    const name = s.addedName || "The host";
+    return "Added " + name + ". Its projects are now in the list of projects.";
+  }
+
+  // The operator asked for the install, the checks offer one, and it has not
+  // run yet for this Connect. No offer comes when the host has a newer Ralphy.
+  function wantsAutoInstall(s) {
+    return !!(s.autoInstall && !s.autoTried && needsInstall(s));
   }
 
   // What the install button sends, in one sentence.
@@ -426,6 +460,8 @@
     primary: primary,
     needsName: needsName,
     needsInstall: needsInstall,
+    wantsAutoInstall: wantsAutoInstall,
+    addedText: addedText,
     installText: installText,
     helpTabs: helpTabs,
     WRONG_ADDRESS: WRONG_ADDRESS,

@@ -26,6 +26,19 @@ fn project_add_argv_adds_init_only_when_asked() {
 }
 
 #[test]
+fn project_add_argv_adds_create_only_with_init() {
+    let with = project_add_argv(&json!({ "path": absolute(), "init": true, "create": true }))
+        .expect("valid");
+    assert_eq!(
+        with,
+        ["daemon", "add", "--init", "--create", "--", absolute()]
+    );
+    let without = project_add_argv(&json!({ "path": absolute(), "init": true, "create": false }))
+        .expect("valid");
+    assert_eq!(without, ["daemon", "add", "--init", "--", absolute()]);
+}
+
+#[test]
 fn project_add_argv_refuses_a_bad_path() {
     let long = format!("{}{}", absolute(), "a".repeat(4096));
     let control = format!("{}\u{1b}x", absolute());
@@ -37,6 +50,8 @@ fn project_add_argv_refuses_a_bad_path() {
         json!({ "path": long }),
         json!({ "path": control }),
         json!({ "path": absolute(), "init": "yes" }),
+        json!({ "path": absolute(), "init": true, "create": "yes" }),
+        json!({ "path": absolute(), "create": true }),
     ] {
         assert!(project_add_argv(&payload).is_err(), "{payload}");
     }

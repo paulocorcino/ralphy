@@ -25,8 +25,8 @@ use ralphy_core::git;
 /// silently get a repository it never assented to. The flag is precisely the
 /// non-interactive path, which is why the decline is spelled here, as the
 /// answer channel, rather than as a second branch inside the core.
-pub(crate) fn resolve_or_init_repo(path: &Path, force: bool) -> Result<PathBuf> {
-    resolve_or_init_repo_with(path, force, || {
+pub(crate) fn resolve_or_init_repo(path: &Path, force: bool, create: bool) -> Result<PathBuf> {
+    resolve_or_init_repo_with(path, force, create, || {
         if std::io::stdin().is_terminal() {
             crate::init::ask_yes_no("Initialize a git repository here?", true)
         } else {
@@ -37,7 +37,12 @@ pub(crate) fn resolve_or_init_repo(path: &Path, force: bool) -> Result<PathBuf> 
 
 /// The testable core: `ask` supplies the raw answer line, so the decision is
 /// exercised without a terminal.
-pub(crate) fn resolve_or_init_repo_with<F>(path: &Path, force: bool, ask: F) -> Result<PathBuf>
+pub(crate) fn resolve_or_init_repo_with<F>(
+    path: &Path,
+    force: bool,
+    create: bool,
+    ask: F,
+) -> Result<PathBuf>
 where
     F: FnOnce() -> Result<String>,
 {
@@ -47,10 +52,15 @@ where
     if ralphy_daemon::dir_list::is_network_path(path) {
         bail!("network paths are not supported: {}", path.display());
     }
-    // `--init` never creates a directory: a typing error must not leave a new
-    // folder on the disk (same amendment, §2).
+    // `--init` alone never creates a directory: a typing error must not leave
+    // a new folder on the disk (same amendment, §2). `--create` makes the one
+    // last folder the operator saw named, never a parent (§6).
     if !path.is_dir() {
-        bail!("this folder does not exist: {}", path.display());
+        if !(create && force) {
+            bail!("this folder does not exist: {}", path.display());
+        }
+        std::fs::create_dir(path)
+            .with_context(|| format!("creating the folder {}", path.display()))?;
     }
     if git::is_repo(path) {
         return git::resolve_toplevel(path);
@@ -112,7 +122,8 @@ mod tests {
         let dir = tmp.path().join("fresh");
         std::fs::create_dir_all(&dir).expect("mkdir");
 
-        let top = resolve_or_init_repo_with(&dir, true, || panic!("must not ask")).expect("init");
+        let top =
+            resolve_or_init_repo_with(&dir, true, false, || panic!("must not ask")).expect("init");
 
         assert!(dir.join(".git").exists(), "a repository was created");
         let head = std::process::Command::new("git")
@@ -141,8 +152,8 @@ mod tests {
             .expect("git init");
         assert!(status.success());
 
-        let got =
-            resolve_or_init_repo_with(dir, false, || panic!("must not ask")).expect("resolve");
+        let got = resolve_or_init_repo_with(dir, false, false, || panic!("must not ask"))
+            .expect("resolve");
         let expected = git::resolve_toplevel(dir).expect("toplevel");
         assert_eq!(got, expected);
     }
@@ -155,8 +166,8 @@ mod tests {
         let dir = tmp.path().join("fresh");
         std::fs::create_dir_all(&dir).expect("mkdir");
 
-        let err =
-            resolve_or_init_repo_with(&dir, false, || Ok("n\n".to_string())).expect_err("declined");
+        let err = resolve_or_init_repo_with(&dir, false, false, || Ok("n\n".to_string()))
+            .expect_err("declined");
         assert!(
             err.to_string().starts_with("not a git repository:"),
             "got: {err}"
@@ -173,7 +184,7 @@ mod tests {
         let dir = tmp.path().join("fresh");
         std::fs::create_dir_all(&dir).expect("mkdir");
 
-        resolve_or_init_repo_with(&dir, false, || Ok("\n".to_string()))
+        resolve_or_init_repo_with(&dir, false, false, || Ok("\n".to_string()))
             .expect("empty answer means yes");
         assert!(dir.join(".git").exists());
     }
@@ -184,8 +195,8 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         let dir = tmp.path().join("typo");
 
-        let err =
-            resolve_or_init_repo_with(&dir, true, || panic!("must not ask")).expect_err("refused");
+        let err = resolve_or_init_repo_with(&dir, true, false, || panic!("must not ask"))
+            .expect_err("refused");
 
         assert!(
             err.to_string().starts_with("this folder does not exist:"),
@@ -194,11 +205,45 @@ mod tests {
         assert!(!dir.exists(), "no folder was created");
     }
 
+    /// `--create` makes the one missing folder, then the repository in it.
+    #[test]
+    fn create_makes_one_missing_folder() {
+        git_identity();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let dir = tmp.path().join("my notes");
+
+        let top = resolve_or_init_repo_with(&dir, true, true, || panic!("must not ask"))
+            .expect("created");
+
+        assert!(dir.join(".git").exists());
+        assert_eq!(
+            std::fs::canonicalize(top).expect("top"),
+            std::fs::canonicalize(&dir).expect("dir")
+        );
+    }
+
+    /// `--create` never makes a parent: a missing parent is a typing error.
+    #[test]
+    fn create_never_makes_a_parent() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let parent = tmp.path().join("typo");
+        let dir = parent.join("notes");
+
+        let err = resolve_or_init_repo_with(&dir, true, true, || panic!("must not ask"))
+            .expect_err("refused");
+
+        assert!(
+            format!("{err:#}").starts_with("creating the folder"),
+            "got: {err:#}"
+        );
+        assert!(!parent.exists(), "no parent was created");
+    }
+
     /// A UNC path is refused before anything reads it.
     #[cfg(windows)]
     #[test]
     fn a_network_path_is_refused() {
-        let err = resolve_or_init_repo_with(Path::new(r"\\server\share\x"), true, || {
+        let err = resolve_or_init_repo_with(Path::new(r"\\server\share\x"), true, false, || {
             panic!("must not ask")
         })
         .expect_err("refused");

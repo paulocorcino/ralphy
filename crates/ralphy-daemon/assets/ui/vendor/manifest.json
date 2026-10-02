@@ -45,7 +45,7 @@
         },
         {
           "path": "crepe/crepe.js",
-          "sha256": "461e947b18bb12a732c1c6b3f1e5e090c9f56831c7f83a35a62a7226dffac766"
+          "sha256": "1a8028b2555839ca3927723228d95b77d5075fb10391de35f1498773043cc6fe"
         }
       ]
     },
@@ -69,12 +69,12 @@
     {
       "name": "DOMPurify",
       "npm": "dompurify",
-      "version": "3.4.12",
-      "source": "https://registry.npmjs.org/dompurify/-/dompurify-3.4.12.tgz",
+      "version": "3.4.16",
+      "source": "https://registry.npmjs.org/dompurify/-/dompurify-3.4.16.tgz",
       "files": [
         {
           "path": "dompurify.min.js",
-          "sha256": "c45ba939765574f96cbf35ee9b6d89f73756a17921814425e74b82f7c54603ce"
+          "sha256": "2c90a9b46d6463f26038a29b686e82bc91de01fdac9d5229e7cfe3b360134ea2"
         }
       ]
     },
@@ -105,12 +105,12 @@
     {
       "name": "Mermaid",
       "npm": "mermaid",
-      "version": "11.16.0",
-      "source": "https://registry.npmjs.org/mermaid/-/mermaid-11.16.0.tgz",
+      "version": "11.17.2",
+      "source": "https://registry.npmjs.org/mermaid/-/mermaid-11.17.2.tgz",
       "files": [
         {
           "path": "mermaid.min.js",
-          "sha256": "74d7c46dabca328c2294733910a8aa1ed0c37451776e8d5295da38a2b758fb9b"
+          "sha256": "581ed7d74bd9048d0e3a91363927d72ef22942d7722546b27f7cc29e35390eb8"
         }
       ]
     },

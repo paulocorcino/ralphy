@@ -97,6 +97,11 @@ pub(crate) enum DaemonCommand {
         /// ask (for example, when the input comes from a pipe).
         #[arg(long)]
         init: bool,
+
+        /// Create the folder at PATH when it does not exist. Its parent folder
+        /// must exist. Needs --init.
+        #[arg(long, requires = "init")]
+        create: bool,
     },
     /// Remove a repo from the daemon by its `owner/repo` name. Nothing changes
     /// when it is not there.
@@ -168,8 +173,8 @@ pub(crate) fn run(args: &DaemonArgs) -> Result<()> {
         ),
         Some(DaemonCommand::Setup { .. }) => setup(args.port),
         Some(DaemonCommand::Status) => status(args.port),
-        Some(DaemonCommand::Add { path, init }) => {
-            let repo = bootstrap::resolve_or_init_repo(path, *init)?;
+        Some(DaemonCommand::Add { path, init, create }) => {
+            let repo = bootstrap::resolve_or_init_repo(path, *init, *create)?;
             let registry_path = registry::repos_toml_path()?;
             let reg = register::register_or_migrate(&registry_path, &repo)?;
             let former = registry::load_from(&registry_path)?

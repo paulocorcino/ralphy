@@ -112,10 +112,10 @@ pub(crate) fn connect(
                 None => (Some(key.path), second),
                 Some(SshFailure::AuthRefused) if shell.has_password() => {
                     add_peer_key(shell, dest, &key.public_line)?;
-                    // Not "added": the host is added only by Connect, and
+                    // Not "added": the host is added only by Add host, and
                     // this line shows before the checks.
                     out.note(&format!(
-                        "Signed in to {dest}. The password is not needed again."
+                        "Ralphy installed its SSH key on {dest}. The next connections do not need the password."
                     ))?;
                     let third = shell.run(Some(&key.path), &uname_cmd, b"")?;
                     if let Some(k) = classify(&third) {

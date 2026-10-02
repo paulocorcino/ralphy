@@ -27,6 +27,10 @@ pub(crate) struct HostFacts {
     pub autologin: Option<bool>,
     pub sleeps: Option<bool>,
     pub windows_admin: bool,
+    /// `git --version` answered.
+    pub git: Option<bool>,
+    /// `gh --version` answered.
+    pub gh: Option<bool>,
 }
 
 /// The probe's output split into its `--- <name>` sections.
@@ -56,6 +60,8 @@ pub(crate) fn parse_facts(os: HostOs, probe_stdout: &str) -> HostFacts {
         autologin: None,
         sleeps: None,
         windows_admin: false,
+        git: None,
+        gh: None,
     };
     for (name, lines) in sections(probe_stdout) {
         let first = lines.first().copied();
@@ -87,6 +93,9 @@ pub(crate) fn parse_facts(os: HostOs, probe_stdout: &str) -> HostFacts {
                     minutes.parse::<u32>().ok().map(|m| m > 0)
                 })
             }
+            // A section with no version line: the command is not installed.
+            "git" => facts.git = Some(lines.iter().any(|l| l.starts_with("git version"))),
+            "gh" => facts.gh = Some(lines.iter().any(|l| l.starts_with("gh version"))),
             "groups" => facts.windows_admin = lines.iter().any(|l| l.contains("S-1-5-32-544")),
             "autologon" => {
                 facts.autologin = Some(
@@ -175,6 +184,8 @@ pub(crate) enum CheckId {
     Sleep,
     RequireToken,
     User,
+    Git,
+    Gh,
 }
 
 impl CheckId {
@@ -189,6 +200,8 @@ impl CheckId {
             CheckId::Sleep => "sleep",
             CheckId::RequireToken => "require_token",
             CheckId::User => "user",
+            CheckId::Git => "git",
+            CheckId::Gh => "gh",
         }
     }
 
@@ -202,6 +215,8 @@ impl CheckId {
             CheckId::Sleep => "Sleep",
             CheckId::RequireToken => "Access token",
             CheckId::User => "User",
+            CheckId::Git => "Git",
+            CheckId::Gh => "GitHub CLI",
         }
     }
 }
@@ -412,6 +427,35 @@ pub(crate) fn evaluate(
         (Pass, "signed in as a normal user".to_string())
     };
     checks.push(HostCheck::new(CheckId::User, status, text));
+
+    // Neither blocks: the host can be added first and get Git later.
+    let (status, text) = match (facts.git, os) {
+        (Some(true), _) => (Pass, "Git is installed"),
+        (Some(false), HostOs::MacOs) => (
+            Copy("xcode-select --install".to_string()),
+            "Git is not installed. Ralphy needs it for every project",
+        ),
+        (Some(false), HostOs::Windows) => (
+            Copy("winget install --id Git.Git -e".to_string()),
+            "Git is not installed. Ralphy needs it for every project",
+        ),
+        (Some(false), HostOs::Linux) => (
+            Warn,
+            "Git is not installed. Ralphy needs it for every project: install it with the package manager of the host",
+        ),
+        (None, _) => (Warn, "could not read whether Git is installed"),
+    };
+    checks.push(HostCheck::new(CheckId::Git, status, text));
+
+    let (status, text) = match facts.gh {
+        Some(true) => (Pass, "gh is installed"),
+        Some(false) => (
+            Warn,
+            "gh is not installed. A run that reads or changes GitHub needs it",
+        ),
+        None => (Warn, "could not read whether gh is installed"),
+    };
+    checks.push(HostCheck::new(CheckId::Gh, status, text));
     checks
 }
 

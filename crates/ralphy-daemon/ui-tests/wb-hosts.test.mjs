@@ -161,10 +161,15 @@ test("check again empties the list and the failure", () => {
   assert.equal(s.help, false);
 });
 
-test("add exit 0 closes the dialog; any other code keeps it open with a failure", () => {
+test("add exit 0 shows the last step; any other code keeps the checks with a failure", () => {
   const H = load();
-  const open = Object.assign(H.initial(), { open: true });
-  assert.equal(H.next(open, { type: "exit", verb: "host.add", code: 0 }).open, false);
+  const open = Object.assign(H.initial(), { open: true, step: "checks" });
+  const added = H.next(H.next(open, { type: "event", event: { event: "added", name: "vps" } }), {
+    type: "exit",
+    verb: "host.add",
+    code: 0,
+  });
+  assert.deepEqual([added.open, added.step, H.addedText(added)], [true, "done", "Added vps. Its projects are now in the list of projects."]);
   assert.equal(H.next(open, { type: "exit", verb: "host.check", code: 0 }).open, true);
   const failed = H.next(open, { type: "event", event: { event: "failed", kind: "other", message: "no" } });
   const s = H.next(failed, { type: "exit", verb: "host.add", code: 1 });
@@ -354,6 +359,65 @@ test("shell: Install runs host.install with the dialog's payload, then checks ag
   assert.equal(state.addHost.open, true, "the dialog stays open for Connect");
 });
 
+test("Back returns to the fields with what was typed, and clears the checks", () => {
+  const H = load();
+  let s = H.next(H.initial(), { type: "type", field: "address", value: "10.1.1.4" });
+  s = H.next(s, { type: "type", field: "user", value: "ralphy2" });
+  s = H.next(s, { type: "key", key: { state: "known" } });
+  s = H.next(s, { type: "event", event: { event: "check", id: "ralphy", status: "pass" } });
+  s = H.next(s, { type: "event", event: { event: "note", text: "Signed in." } });
+  s = H.next(s, { type: "back" });
+  assert.equal(s.step, "connection");
+  assert.equal(H.destination(s), "ralphy2@10.1.1.4");
+  assert.deepEqual([s.checks, s.lines, s.failure], [[], [], null]);
+});
+
+test("the install runs by itself only when asked, offered, and not tried yet", () => {
+  const H = load();
+  const offered = (s) =>
+    [
+      { event: "check", id: "ralphy", status: "copy", command: "ralphy host install vps" },
+      { event: "install", version: "v1", target: "linux-x64", source: "release", folder: "~/.ralphy/bin" },
+    ].reduce((x, event) => H.next(x, { type: "event", event }), s);
+  const asked = H.next(H.initial(), { type: "type", field: "autoInstall", value: true });
+  assert.equal(H.wantsAutoInstall(offered(H.initial())), false, "the check box starts off");
+  assert.equal(H.wantsAutoInstall(offered(asked)), true);
+  assert.equal(H.wantsAutoInstall(asked), false, "no offer: a newer Ralphy on the host gets none");
+  const tried = H.next(offered(asked), { type: "auto-tried" });
+  assert.equal(H.wantsAutoInstall(tried), false);
+  assert.equal(H.wantsAutoInstall(H.next(tried, { type: "back" })), false, "Back drops the offer");
+  assert.equal(
+    H.wantsAutoInstall(offered(H.next(tried, { type: "key", key: { state: "known" } }))),
+    true,
+    "a new Connect may try again",
+  );
+});
+
+test("shell: with the check box on, a missing Ralphy is installed once", async () => {
+  const { state, replies, scripts, calls } = shell();
+  replies["host.key"] = { status: "ok", key: { state: "known" } };
+  scripts["host.check"] = [
+    {
+      status: "output",
+      chunk:
+        line({ event: "check", id: "ralphy", status: "copy", command: "ralphy host install svrapp" }) +
+        line({ event: "install", version: "v1", target: "linux-x64", source: "release", folder: "~/.ralphy/bin" }),
+    },
+    { status: "exited", code: 0 },
+  ];
+  // The install fails: the checks are not run again, and nothing loops.
+  scripts["host.install"] = [{ status: "exited", code: 1 }];
+  state.openAddHost();
+  await tick();
+  state.addHostPick("svrapp");
+  state.addHostType("autoInstall", true);
+  await state.addHostNext();
+  const hostVerbs = () => calls.map((c) => c.verb).filter((v) => v !== "host.aliases");
+  assert.deepEqual(hostVerbs(), ["host.key", "host.check", "host.install"]);
+  state.addHostCheckAgain();
+  assert.equal(calls.filter((c) => c.verb === "host.install").length, 1, "a failed install is not repeated");
+});
+
 test("shell: a failed install keeps the offer and runs no checks", async () => {
   const { state, replies, scripts, calls } = shell();
   replies["host.key"] = { status: "ok", key: { state: "known" } };
@@ -402,6 +466,9 @@ test("shell: Connect adds the host and reloads the tree with no page reload", as
     identity: "C:/keys/id",
   });
   assert.equal(reloads.length, 1);
+  assert.equal(state.addHost.step, "done", "a last step says the host was added");
+  assert.equal(state.hostAddedText(), "Added vps. Its projects are now in the list of projects.");
+  state.closeAddHost();
   assert.equal(state.addHost.open, false);
   await tick();
   const group = state.fleetGroups().find((g) => g.daemon === VPS_ID);
@@ -480,6 +547,45 @@ test("shell: Remove host runs host.remove with the daemon id and the token choic
   assert.deepEqual(calls.at(-1).payload, { host: VPS_ID, rotate_token: false });
 });
 
+test("shell: Back from the checks keeps the fields; it waits while a command runs", async () => {
+  const { state, replies, scripts } = shell();
+  replies["host.key"] = { status: "ok", key: { state: "known" } };
+  scripts["host.check"] = [{ status: "exited", code: 0 }];
+  state.openAddHost();
+  await tick();
+  state.addHostType("address", "10.1.1.4");
+  await state.addHostNext();
+  assert.equal(state.addHost.step, "checks");
+  state.addHostStep({ type: "busy", value: true });
+  state.addHostBack();
+  assert.equal(state.addHost.step, "checks");
+  state.addHostStep({ type: "busy", value: false });
+  state.addHostBack();
+  assert.equal(state.addHost.step, "connection");
+  assert.equal(state.addHost.address, "10.1.1.4");
+  const html = readFileSync(join(UI, "index.html"), "utf8");
+  assert.match(html, /@click="addHostBack\(\)"[^>]*>Back</);
+  assert.match(html, /@click="addHostNext\(\)"[^>]*>Connect</);
+  assert.match(html, /'Save' : 'Add host'/);
+  assert.match(html, /@click="closeAddHost\(\)">Done</);
+});
+
+test("shell: a removed host leaves the list before the fleet read answers", () => {
+  const { state, scripts } = shell();
+  const other = { daemon_id: "01OTHERPEER000000000000000", name: "mac", tunnel: true };
+  state.fleetPeers = [{ daemon_id: VPS_ID, name: "vps", tunnel: true }, other];
+  state._fleetRows = [{ key: VPS_ID + "/me/app", slug: "me/app", daemon: VPS_ID }];
+  state.projects = [{ key: "me/local", slug: "me/local" }, ...state._fleetRows];
+  // The fleet read has not answered yet: the reload changes nothing.
+  state.loadRepos = async () => {};
+  scripts["host.remove"] = [{ status: "exited", code: 0 }];
+  state.openRemoveHost({ daemon_id: VPS_ID, name: "vps", tunnel: true });
+  state.confirmRemoveHost();
+  assert.deepEqual(state.sshHosts().map((h) => h.name), ["mac"]);
+  assert.deepEqual(state.projects.map((p) => p.slug), ["me/local"]);
+  assert.deepEqual(state._fleetRows, []);
+});
+
 test("shell: a failed Remove host stays open with the line to remove by hand", () => {
   const { state, scripts, reloads } = shell();
   scripts["host.remove"] = [
@@ -549,9 +655,9 @@ test("Edit fills the form from the host, and Save goes back to the list", () => 
   assert.equal(s.tab, "hosts");
   assert.equal(s.editing, null);
   assert.equal(s.address, "");
-  // A new host still closes the dialog once it is added.
+  // A new host gets the last step instead.
   s = next(Object.assign(initial(), { open: true, tab: "add" }), { type: "exit", verb: "host.add", code: 0 });
-  assert.equal(s.open, false);
+  assert.deepEqual([s.open, s.step], [true, "done"]);
 });
 
 test("a tab starts a new form", () => {
@@ -664,7 +770,7 @@ test("the checks view shows the one blocking check first, and hides waiting chec
   assert.deepEqual(v.advice.map((c) => c.id), ["sleep"]);
   assert.equal(v.advice[0].text, "The host sleeps");
   assert.equal(v.passedText, "2 checks passed");
-  assert.equal(v.fixText, "When you connect, Ralphy also sets up: name, start at boot.");
+  assert.equal(v.fixText, "In the next step, Ralphy also sets up: name, start at boot.");
   assert.equal(H.primary(Object.assign({}, s, { step: "checks" })), "connect");
 });
 
@@ -684,7 +790,7 @@ test("the connection fields are never offered to autofill or a password manager"
   const end = html.indexOf("<!-- 2. Host identity", start);
   assert.ok(start > 0 && end > start);
   const block = html.slice(start, end);
-  const inputs = block.match(/<input\b[^>]*>/g) || [];
+  const inputs = (block.match(/<input\b[^>]*>/g) || []).filter((i) => !/type="checkbox"/.test(i));
   assert.equal(inputs.length, 5, "host, port, user, password, key file");
   for (const input of inputs) assert.match(input, /autocomplete="off"/, input);
   assert.doesNotMatch(block, /type="password"/, "the type comes from hostSecretType()");

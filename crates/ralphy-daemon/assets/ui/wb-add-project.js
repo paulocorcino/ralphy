@@ -161,8 +161,8 @@
   }
 
   // The folder the text names and what adding it would do:
-  // `{ action, label, help, path, init }`, where `action` is "add", "init",
-  // "root", "added", "missing", "unreadable" or "none".
+  // `{ action, label, help, path, init, create }`, where `action` is "add",
+  // "init", "create", "root", "added", "missing", "unreadable" or "none".
   function target(state) {
     const sep = sepOf(state);
     const none = { action: "none", label: "Add project", help: "", path: "", init: false };
@@ -189,6 +189,24 @@
     } else {
       const name = lastName(text);
       const entry = listed(state).find((e) => sameName(e.name, name, sep));
+      // The parent folder exists: the last name can be created there. Not
+      // inside a repo, where a new repository would sit in another one.
+      if (!entry && !dir.root && name.trim()) {
+        // Windows drops a final space or dot, so the folder would get
+        // another name than the one shown.
+        if (/[ .]$/.test(name)) {
+          return { action: "missing", label: "A folder name cannot end with a space or a dot", help: "", path: "", init: false };
+        }
+        const path = withSep(dir.path, sep) + name;
+        return {
+          action: "create",
+          label: "Create folder and repository",
+          help: `Ralphy creates the folder ${path} and a git repository in it.`,
+          path,
+          init: true,
+          create: true,
+        };
+      }
       if (!entry) {
         return { action: "missing", label: "This folder does not exist", help: "", path: "", init: false };
       }
@@ -224,7 +242,7 @@
   // The main button: its label, and whether it can be clicked.
   function primary(state) {
     const t = target(state);
-    const clickable = t.action === "add" || t.action === "root" || t.action === "init";
+    const clickable = t.action === "add" || t.action === "root" || t.action === "init" || t.action === "create";
     return { label: state.adding ? "Adding…" : t.label, disabled: !clickable || state.adding };
   }
 
@@ -249,10 +267,18 @@
     return target(state).help;
   }
 
+  // Enter adds what the main button adds, except a new folder: a typing error
+  // must not create one, so only a click does.
+  function enterAdds(state) {
+    return !primary(state).disabled && target(state).action !== "create";
+  }
+
   // What `project.add` sends.
   function addPayload(state) {
     const t = target(state);
-    return { daemon: state.daemon, path: t.path, init: t.init };
+    const payload = { daemon: state.daemon, path: t.path, init: t.init };
+    if (t.create) payload.create = true;
+    return payload;
   }
 
   function reset(state, patch) {
@@ -379,6 +405,7 @@
     help: help,
     listable: listable,
     addPayload: addPayload,
+    enterAdds: enterAdds,
     places: places,
     mapWsl: mapWsl,
     sepOf: sepOf,

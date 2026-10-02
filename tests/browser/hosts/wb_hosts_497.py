@@ -8,8 +8,9 @@ listener plays the peer's daemon behind the seeded tunnel descriptor, as in
 
 Scenario 1  with a fleet of one (no group headers), the Projects header has the
             Hosts button, and it opens the form with the SSH config hosts;
-            the password field is a text field, so no browser offers to save it
-Scenario 2  a typed address on a closed port: Next shows the help panel with
+            the password field is a text field, so no browser offers to save it;
+            the button is Connect, and the install check box starts unchecked
+Scenario 2  a typed address on a closed port: Connect shows the help panel with
             its three tabs, the failure, and the wrong-address note
 Scenario 3  a seeded tunnel peer: every group header shows its system's icon
             (the penguin for the Linux host, the local system's for the
@@ -19,7 +20,9 @@ Scenario 5  Edit fills the form with the host's connection
 Scenario 6  Remove asks in the row, with the token option unchecked
 Scenario 7  Remove runs `ralphy host remove`: the group goes away with no page
             reload, the descriptor file is deleted, and the dialog shows the
-            form, because no host is left
+            form, because no host is left. The peer answers slowly by then,
+            as a removed host does: the row must not come back while the
+            fleet read waits for it
 Scenario 8  no page errors were thrown
 
 The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
@@ -66,6 +69,8 @@ PEER_SLUG = "ralphy-lab/remote-repo"
 LABEL = f"{PEER_NAME} · {PEER_ENV}"
 
 results = []
+# Set before Remove: the peer then answers after the fleet read gives up.
+SLOW = threading.Event()
 
 
 def check(name, ok, detail=""):
@@ -114,6 +119,8 @@ class PeerStub(http.server.BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
+        if SLOW.is_set():
+            time.sleep(5)
         if self.headers.get("Authorization") != f"Bearer {PEER_TOKEN}":
             self._json(401, {"error": "unauthorized"})
             return
@@ -253,6 +260,7 @@ def shot(page, slug):
 
 
 VISIBLE = "el => !!el && el.getClientRects().length > 0"
+SH = "Alpine.$data(document.querySelector('[x-data]'))"
 
 
 def main():
@@ -303,6 +311,20 @@ def main():
                 "the password field is not a password input, so the browser offers no save",
                 password_type == "text",
                 f"type={password_type!r}",
+            )
+            buttons = page.evaluate(
+                "() => Array.from(document.querySelectorAll('[role=dialog][aria-label=Hosts] .host-foot .btn'))"
+                ".filter(b => b.getClientRects().length > 0).map(b => b.textContent.trim())"
+            )
+            check("the connection step's buttons are Cancel and Connect", buttons == ["Cancel", "Connect"], f"buttons={buttons}")
+            box = page.evaluate(
+                "() => { const i = document.querySelector('.host-conn input[type=checkbox]');"
+                " return i ? [i.checked, i.closest('label').textContent.trim()] : null; }"
+            )
+            check(
+                "the install check box starts unchecked",
+                box == [False, "Install or update Ralphy on the host when it is missing or too old."],
+                f"box={box}",
             )
             shot(page, "add-host-connection")
 
@@ -403,8 +425,15 @@ def main():
             check("Remove asks in the row, the token option unchecked", unchecked)
             shot(page, "hosts-remove")
 
-            # 7. Remove: `ralphy host remove` forgets the silent host.
+            # 7. Remove: `ralphy host remove` forgets the silent host. The
+            # peer is slow now, so a reload alone would keep its row for 2 s.
+            SLOW.set()
             page.click(".host-remove .btn.danger")
+            left = page.wait_for_function(
+                "() => { const s = " + SH + "; return s.removeHost.open ? false : s.sshHosts().length + 1; }",
+                timeout=45000,
+            ).json_value() - 1
+            check("the removed host is gone from the list when the question closes", left == 0, f"hosts={left}")
             page.wait_for_function(
                 "(label) => !Array.from(document.querySelectorAll('.projects .env-group .env-label'))"
                 ".some(l => l.textContent.trim() === label)",
@@ -431,8 +460,8 @@ def main():
 
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     # Floor: a deleted scenario must not pass silently as "everything green".
-    if len(results) != 9:
-        print(f"[FAIL] expected 9 checks, ran {len(results)}", flush=True)
+    if len(results) != 12:
+        print(f"[FAIL] expected 12 checks, ran {len(results)}", flush=True)
         sys.exit(1)
     sys.exit(0 if all(results) else 1)
 
