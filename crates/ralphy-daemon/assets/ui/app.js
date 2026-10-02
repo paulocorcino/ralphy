@@ -3216,7 +3216,7 @@ function shell() {
       }
       if (ev.key === "Enter") {
         ev.preventDefault();
-        if (!this.addProjectPrimary().disabled) this.addProjectSubmit();
+        if (window.WBAddProject.enterAdds(this.addProject)) this.addProjectSubmit();
       }
     },
     // Ask the daemon for the folder list after `delay` ms. Each request has a

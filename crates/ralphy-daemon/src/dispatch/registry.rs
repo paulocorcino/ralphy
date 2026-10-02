@@ -17,12 +17,12 @@ impl Verb {
     }
 }
 
-/// Compose `daemon add [--init] -- <path>` for [`Verb::ProjectAdd`].
+/// Compose `daemon add [--init [--create]] -- <path>` for [`Verb::ProjectAdd`].
 ///
 /// `path` is free text from the browser. It must be non-empty, absolute, at
 /// most 4096 bytes, and hold no control character; the `--` keeps a path that
 /// starts with `-` from being read as an option. `--init` is added only when
-/// `init` is `true`.
+/// `init` is `true`, and `--create` only when `create` is `true` too.
 pub fn project_add_argv(payload: &serde_json::Value) -> Result<Vec<String>, ArgvError> {
     let path = payload
         .get("path")
@@ -39,9 +39,19 @@ pub fn project_add_argv(payload: &serde_json::Value) -> Result<Vec<String>, Argv
         None | Some(serde_json::Value::Null) => false,
         Some(v) => v.as_bool().ok_or(ArgvError::BadParam("init"))?,
     };
+    let create = match payload.get("create") {
+        None | Some(serde_json::Value::Null) => false,
+        Some(v) => v.as_bool().ok_or(ArgvError::BadParam("create"))?,
+    };
+    if create && !init {
+        return Err(ArgvError::BadParam("create"));
+    }
     let mut argv = vec!["daemon".to_string(), "add".to_string()];
     if init {
         argv.push("--init".to_string());
+    }
+    if create {
+        argv.push("--create".to_string());
     }
     argv.push("--".to_string());
     argv.push(path.to_string());
