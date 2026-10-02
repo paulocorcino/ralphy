@@ -405,17 +405,8 @@ fn nudge_verdict(body: &serde_json::Value) -> std::result::Result<(), String> {
         Err("the host was added, but the tunnel does not reach its daemon".to_string())
     } else {
         Err(format!(
-            "the host was added, but the tunnel does not reach its daemon: {}",
-            lowercase_first(diagnosis)
+            "the host was added, but the tunnel does not reach its daemon: {diagnosis}"
         ))
-    }
-}
-
-fn lowercase_first(text: &str) -> String {
-    let mut chars = text.chars();
-    match chars.next() {
-        Some(c) => c.to_lowercase().chain(chars).collect(),
-        None => String::new(),
     }
 }
 
@@ -427,10 +418,10 @@ mod tests {
     #[test]
     fn a_nudge_that_is_not_ready_fails_the_add_with_its_diagnosis() {
         let body =
-            json!({"ready": false, "state": "down", "diagnosis": "The daemon refused the token."});
+            json!({"ready": false, "state": "down", "diagnosis": "Ubuntu refused the token."});
         let message = nudge_verdict(&body).expect_err("not ready must fail");
         assert!(
-            message.contains("the daemon refused the token"),
+            message.ends_with("its daemon: Ubuntu refused the token"),
             "{message}"
         );
         assert!(!message.contains("--peer-store"), "{message}");

@@ -87,6 +87,8 @@ async fn handshake_succeeds_with_the_announced_token() {
     assert_eq!(probe(&d, me()).await, PeerStatus::Reachable);
 }
 
+/// Issue #517: `/api/peer/hello` needs the token, so a wrong token is refused
+/// before any identity is read. The result stays Unauthorized, never Refused.
 #[tokio::test]
 async fn a_wrong_bearer_is_a_legible_rejection() {
     let d = spawn_daemon(AuthPolicy::Bearer("tok".into()), "not-the-token").await;
@@ -122,23 +124,12 @@ async fn a_wrong_bearer_is_a_legible_rejection() {
         PeerStatus::Unauthorized { tunnel: true },
         "got: {status:?}"
     );
-    let diagnosis = status.diagnosis(&t.environment);
-    assert!(diagnosis.contains(ENV), "got: {diagnosis}");
-    assert!(
-        !diagnosis.contains("--peer-store"),
-        "a tunnel peer must not get the WSL advice; got: {diagnosis}"
-    );
-}
-
-/// Issue #517: `/api/peer/hello` needs the token, so a wrong token is refused
-/// before any identity is read. The result stays Unauthorized, never Refused.
-#[tokio::test]
-async fn a_wrong_token_stays_unauthorized_because_hello_needs_the_token() {
-    let d = spawn_daemon(AuthPolicy::Bearer("tok".into()), "wrong").await;
-    let status = probe(&d, me()).await;
-    assert!(
-        matches!(status, PeerStatus::Unauthorized { .. }),
-        "a wrong token must be Unauthorized, got: {status:?}"
+    assert_eq!(
+        status.diagnosis(&t.environment),
+        format!(
+            "{ENV} refused the token. Another daemon may answer on this port, or the token changed. Add the host again."
+        ),
+        "a tunnel peer must not get the WSL advice"
     );
 }
 

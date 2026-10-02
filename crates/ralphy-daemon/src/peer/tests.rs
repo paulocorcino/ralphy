@@ -132,11 +132,7 @@ fn fold_reads_a_tunnel_to_a_socket() {
 
 #[test]
 fn fold_rejects_a_tunnel_with_neither_port_nor_socket() {
-    let text = tunnel_toml(7401, 7401).replace(
-        "peer_port = 7257
-",
-        "",
-    );
+    let text = tunnel_toml(7401, 7401).replace("peer_port = 7257\n", "");
     let (accepted, rejected) = fold(&[("01TUN.toml".to_string(), text)]);
     assert!(accepted.is_empty(), "got: {accepted:?}");
     assert!(
@@ -149,14 +145,17 @@ fn fold_rejects_a_tunnel_with_neither_port_nor_socket() {
 
 #[test]
 fn fold_rejects_a_relative_socket() {
-    let text = socket_tunnel_toml("daemon.sock");
-    let (accepted, rejected) = fold(&[("01TUN.toml".to_string(), text)]);
-    assert!(accepted.is_empty(), "got: {accepted:?}");
-    assert!(
-        matches!(&rejected[0], PeerReject::Malformed { .. }),
-        "got: {:?}",
-        rejected[0]
-    );
+    let alone = socket_tunnel_toml("daemon.sock");
+    let with_port = alone.replace("local_port = 7401", "peer_port = 7257\nlocal_port = 7401");
+    for text in [alone, with_port] {
+        let (accepted, rejected) = fold(&[("01TUN.toml".to_string(), text.clone())]);
+        assert!(accepted.is_empty(), "{text}\ngot: {accepted:?}");
+        assert!(
+            matches!(&rejected[0], PeerReject::Malformed { .. }),
+            "got: {:?}",
+            rejected[0]
+        );
+    }
 }
 
 /// A descriptor written before sockets existed has `peer_port` and no

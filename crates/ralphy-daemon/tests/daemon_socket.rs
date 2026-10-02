@@ -125,6 +125,18 @@ async fn a_stale_socket_file_is_replaced() {
     assert_eq!(status, 200, "{body}");
 }
 
+#[test]
+fn a_file_that_is_not_a_socket_is_never_deleted() {
+    let store = tempfile::tempdir().expect("a temp store");
+    let path = socket::socket_path(store.path());
+    std::fs::write(&path, "not a socket").expect("a plain file");
+    assert!(socket::bind(store.path()).is_err(), "the bind must refuse");
+    assert_eq!(
+        std::fs::read_to_string(&path).expect("the file is kept"),
+        "not a socket"
+    );
+}
+
 #[tokio::test]
 async fn a_live_socket_makes_the_second_bind_fail() {
     let store = tempfile::tempdir().expect("a temp store");
@@ -199,4 +211,21 @@ async fn the_daemon_removes_only_its_own_socket_file() {
     let _other = std::os::unix::net::UnixListener::bind(&path).expect("another socket");
     remove();
     assert!(path.exists(), "the other daemon's socket is kept");
+}
+
+#[test]
+fn a_socket_that_still_answers_is_never_removed() {
+    // The same device and inode, as when a newer daemon's file reuses a freed
+    // inode number: the file still answers, so it is not this daemon's.
+    let store = tempfile::tempdir().expect("a temp store");
+    let path = socket::socket_path(store.path());
+    let rt = tokio::runtime::Runtime::new().expect("a runtime");
+    let _guard = rt.enter();
+    let (listener, remove) = socket::bind(store.path())
+        .expect("the socket binds")
+        .expect("a temp store path fits in sun_path")
+        .into_parts();
+    remove();
+    assert!(path.exists(), "a socket that answers is kept");
+    drop(listener);
 }

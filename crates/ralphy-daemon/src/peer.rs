@@ -263,9 +263,12 @@ pub fn fold(records: &[(String, String)]) -> (Vec<PeerDescriptor>, Vec<PeerRejec
             continue;
         }
         if let Some(t) = d.tunnel.as_ref().filter(|t| {
-            let has_target =
-                t.peer_port != 0 || t.peer_socket.as_deref().is_some_and(|s| s.starts_with('/'));
-            t.destination.trim().is_empty() || !has_target || t.local_port == 0
+            let bad_socket = t
+                .peer_socket
+                .as_deref()
+                .is_some_and(|s| !s.starts_with('/'));
+            let has_target = t.peer_port != 0 || t.peer_socket.is_some();
+            t.destination.trim().is_empty() || !has_target || bad_socket || t.local_port == 0
         }) {
             rejected.push(PeerReject::Malformed {
                 file: file.clone(),

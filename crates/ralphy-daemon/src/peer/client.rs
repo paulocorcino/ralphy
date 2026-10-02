@@ -109,7 +109,7 @@ impl PeerStatus {
                 format!("{environment} refused the token. Restart its daemon with --peer-store.")
             }
             PeerStatus::Unauthorized { tunnel: true } => format!(
-                "{environment} refused the token. Another daemon may answer on this port,                  or the token changed. Add the host again."
+                "{environment} refused the token. Another daemon may answer on this port, or the token changed. Add the host again."
             ),
             PeerStatus::VersionMismatch { theirs, ours } => format!(
                 "{environment} uses protocol {theirs}, not {ours}. Upgrade the older Ralphy."

@@ -8,7 +8,7 @@
 //! that owns the store can connect.
 
 use std::io;
-use std::os::unix::fs::{MetadataExt, PermissionsExt};
+use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
@@ -63,6 +63,11 @@ impl BoundSocket {
         if meta.dev() != dev || meta.ino() != ino {
             return;
         }
+        // This process's listener is closed by now, so a socket that still
+        // answers belongs to a newer daemon whose file reused the inode number.
+        if std::os::unix::net::UnixStream::connect(path).is_ok() {
+            return;
+        }
         if let Err(e) = std::fs::remove_file(path) {
             if e.kind() != io::ErrorKind::NotFound {
                 tracing::warn!(path = %path.display(), error = %e, "could not remove the daemon socket");
@@ -101,11 +106,23 @@ pub fn bind(store: &Path) -> Result<Option<BoundSocket>> {
         return Ok(None);
     }
     crate::owner_only::create_owner_only_dir(store)?;
-    if std::os::unix::net::UnixStream::connect(&path).is_ok() {
-        bail!(
+    match std::os::unix::net::UnixStream::connect(&path) {
+        Ok(_) => bail!(
             "binding the daemon socket on {}: a daemon of this account already listens there",
             path.display()
-        );
+        ),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        Err(e) if e.kind() == io::ErrorKind::ConnectionRefused => {}
+        Err(e) => {
+            return Err(e).with_context(|| format!("checking the old socket {}", path.display()))
+        }
+    }
+    match std::fs::symlink_metadata(&path) {
+        Ok(meta) if !meta.file_type().is_socket() => bail!(
+            "binding the daemon socket on {}: the name is taken by a file that is not a socket",
+            path.display()
+        ),
+        _ => {}
     }
     match std::fs::remove_file(&path) {
         Ok(()) => tracing::info!(path = %path.display(), "replaced a stale daemon socket"),

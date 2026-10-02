@@ -162,13 +162,7 @@ fn add_to_a_host_that_reports_a_socket_writes_peer_socket() {
     second.token = Some("host-tok".to_string());
     second.socket = Some("/home/ralphy2/.ralphy/daemon.sock".to_string());
     let mut fake = FakeHost::default()
-        .answer(
-            "uname -s",
-            out(
-                0, "Linux
-", "",
-            ),
-        )
+        .answer("uname -s", out(0, "Linux\n", ""))
         .answer("--- uid", out(0, LINUX_PROBE, ""))
         .answer("describe --with-token", out(0, &json(&second), ""))
         .answer("describe", out(0, &json(&first), ""))
