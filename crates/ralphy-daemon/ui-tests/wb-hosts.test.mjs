@@ -480,6 +480,22 @@ test("shell: Remove host runs host.remove with the daemon id and the token choic
   assert.deepEqual(calls.at(-1).payload, { host: VPS_ID, rotate_token: false });
 });
 
+test("shell: a removed host leaves the list before the fleet read answers", () => {
+  const { state, scripts } = shell();
+  const other = { daemon_id: "01OTHERPEER000000000000000", name: "mac", tunnel: true };
+  state.fleetPeers = [{ daemon_id: VPS_ID, name: "vps", tunnel: true }, other];
+  state._fleetRows = [{ key: VPS_ID + "/me/app", slug: "me/app", daemon: VPS_ID }];
+  state.projects = [{ key: "me/local", slug: "me/local" }, ...state._fleetRows];
+  // The fleet read has not answered yet: the reload changes nothing.
+  state.loadRepos = async () => {};
+  scripts["host.remove"] = [{ status: "exited", code: 0 }];
+  state.openRemoveHost({ daemon_id: VPS_ID, name: "vps", tunnel: true });
+  state.confirmRemoveHost();
+  assert.deepEqual(state.sshHosts().map((h) => h.name), ["mac"]);
+  assert.deepEqual(state.projects.map((p) => p.slug), ["me/local"]);
+  assert.deepEqual(state._fleetRows, []);
+});
+
 test("shell: a failed Remove host stays open with the line to remove by hand", () => {
   const { state, scripts, reloads } = shell();
   scripts["host.remove"] = [

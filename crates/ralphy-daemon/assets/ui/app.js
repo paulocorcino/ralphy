@@ -3510,6 +3510,12 @@ function shell() {
           } else if (st.status === "exited") {
             s = window.WBHosts.next(s, { type: "exit", verb: "host.remove", code: st.code });
             if (st.code === 0) {
+              // The fleet read that confirms this waits up to 2 s for the
+              // peer that is now down: until then the row would come back.
+              const gone = this.removeHost.daemon;
+              this.fleetPeers = (this.fleetPeers || []).filter((p) => p.daemon_id !== gone);
+              this._fleetRows = this._fleetRows.filter((r) => r.daemon !== gone);
+              this.projects = this.projects.filter((r) => r.daemon !== gone);
               this.removeHost.open = false;
               this.loadRepos();
             }
