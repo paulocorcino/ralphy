@@ -86,6 +86,11 @@ fn linux_host(probe: &str, first: ralphy_daemon::peer::DaemonDescription) -> Fak
         .answer("daemon restart", out(0, "", ""))
 }
 
+/// The probe of a host whose tunnel reaches its own daemon.
+fn as_the_host(_: &TunnelSpec, _: Option<&str>) -> std::result::Result<String, String> {
+    Ok(HOST_ID.to_string())
+}
+
 fn peers_dir(store: &Path) -> PathBuf {
     store.join("peers")
 }
@@ -113,6 +118,7 @@ fn add_refuses_an_unknown_host_before_anything_else() {
         None,
         no_keygen,
         |_| true,
+        &as_the_host,
         &mut Report::text(Vec::new()),
     )
     .unwrap_err()
@@ -143,6 +149,7 @@ fn add_refuses_a_changed_host_key() {
         None,
         no_keygen,
         |_| true,
+        &as_the_host,
         &mut Report::text(Vec::new()),
     )
     .unwrap_err()
@@ -177,6 +184,7 @@ fn add_to_a_host_that_reports_a_socket_writes_peer_socket() {
         None,
         no_keygen,
         |_| true,
+        &as_the_host,
         &mut Report::text(Vec::new()),
     )
     .unwrap();
@@ -188,6 +196,128 @@ fn add_to_a_host_that_reports_a_socket_writes_peer_socket() {
     );
 }
 
+/// A ready Linux host whose daemon reports a socket.
+fn host_with_a_socket() -> FakeHost {
+    let mut second = description("linux");
+    second.token = Some("host-tok".to_string());
+    second.socket = Some("/home/ralphy2/.ralphy/daemon.sock".to_string());
+    let mut first = second.clone();
+    first.token = None;
+    FakeHost::default()
+        .answer("uname -s", out(0, "Linux\n", ""))
+        .answer("--- uid", out(0, LINUX_PROBE, ""))
+        .answer("describe --with-token", out(0, &json(&second), ""))
+        .answer("describe", out(0, &json(&first), ""))
+}
+
+/// What `ssh` prints for each connection when the host's sshd has
+/// `AllowStreamLocalForwarding no` (measured 2026-10-02, OpenSSH 8.2p1).
+const NOT_FORWARDED: &str = "channel 1: open failed: connect failed: open failed";
+
+#[test]
+fn a_socket_the_host_does_not_forward_falls_back_to_the_port() {
+    let store = tempfile::tempdir().unwrap();
+    let mut fake = host_with_a_socket();
+    let tokens = std::cell::RefCell::new(Vec::new());
+    let probe = |t: &TunnelSpec, token: Option<&str>| {
+        tokens.borrow_mut().push(token.map(str::to_string));
+        match t.peer_socket {
+            Some(_) => Err(NOT_FORWARDED.to_string()),
+            None => Ok(HOST_ID.to_string()),
+        }
+    };
+    let mut report = Report::text(Vec::new());
+    let d = add(
+        &mut fake,
+        &local(store.path()),
+        "svrapp",
+        None,
+        None,
+        no_keygen,
+        |_| true,
+        &probe,
+        &mut report,
+    )
+    .unwrap();
+    let tunnel = d.tunnel.as_ref().expect("a tunnel section");
+    assert_eq!(
+        (tunnel.peer_port, tunnel.peer_socket.as_deref()),
+        (7257, None)
+    );
+    let (written, _) = peer::read_store(&peers_dir(store.path()));
+    assert_eq!(written, vec![d.clone()]);
+    assert_eq!(
+        *tokens.borrow(),
+        vec![Some("host-tok".to_string()), Some("host-tok".to_string())]
+    );
+    let printed = String::from_utf8(report.into_inner()).unwrap();
+    assert!(
+        printed.contains(&format!(
+            "The host does not forward a connection to the daemon's socket ({NOT_FORWARDED}). This computer reaches the daemon through its port 7257."
+        )),
+        "{printed}"
+    );
+}
+
+#[test]
+fn a_port_that_belongs_to_another_account_fails_the_add_before_writing() {
+    let store = tempfile::tempdir().unwrap();
+    let mut fake = host_with_a_socket();
+    let probe = |t: &TunnelSpec, _: Option<&str>| match t.peer_socket {
+        Some(_) => Err(NOT_FORWARDED.to_string()),
+        None => Ok("01ARZ3NDEKTSV4RRFFQ69G5FC1".to_string()),
+    };
+    let err = add(
+        &mut fake,
+        &local(store.path()),
+        "svrapp",
+        None,
+        None,
+        no_keygen,
+        |_| true,
+        &probe,
+        &mut Report::text(Vec::new()),
+    )
+    .unwrap_err()
+    .to_string();
+    assert_eq!(
+        err,
+        format!(
+            "the host does not forward a connection to the daemon's socket ({NOT_FORWARDED}), and its port 7257 belongs to another daemon (01ARZ3NDEKTSV4RRFFQ69G5FC1): ask the host's administrator to set `AllowStreamLocalForwarding yes` for sshd"
+        )
+    );
+    assert!(!peers_dir(store.path()).exists());
+
+    // The other account's daemon refuses this account's token, so the port
+    // usually gives no id at all.
+    let mut fake = host_with_a_socket();
+    let refused = "a daemon answers there, but it refused this account's access token";
+    let probe = |t: &TunnelSpec, _: Option<&str>| match t.peer_socket {
+        Some(_) => Err(NOT_FORWARDED.to_string()),
+        None => Err(refused.to_string()),
+    };
+    let err = add(
+        &mut fake,
+        &local(store.path()),
+        "svrapp",
+        None,
+        None,
+        no_keygen,
+        |_| true,
+        &probe,
+        &mut Report::text(Vec::new()),
+    )
+    .unwrap_err()
+    .to_string();
+    assert_eq!(
+        err,
+        format!(
+            "the host does not forward a connection to the daemon's socket ({NOT_FORWARDED}), and its port 7257 does not reach this account's daemon ({refused}): ask the host's administrator to set `AllowStreamLocalForwarding yes` for sshd"
+        )
+    );
+    assert!(!peers_dir(store.path()).exists());
+}
+
 #[test]
 fn a_running_daemon_with_no_socket_is_restarted_to_get_one() {
     let store = tempfile::tempdir().unwrap();
@@ -197,13 +327,7 @@ fn a_running_daemon_with_no_socket_is_restarted_to_get_one() {
     second.token = Some("host-tok".to_string());
     second.socket = Some("/home/ralphy2/.ralphy/daemon.sock".to_string());
     let mut fake = FakeHost::default()
-        .answer(
-            "uname -s",
-            out(
-                0, "Linux
-", "",
-            ),
-        )
+        .answer("uname -s", out(0, "Linux\n", ""))
         .answer("--- uid", out(0, LINUX_PROBE, ""))
         .answer("describe --with-token", out(0, &json(&second), ""))
         .answer("describe", out(0, &json(&first), ""))
@@ -216,6 +340,7 @@ fn a_running_daemon_with_no_socket_is_restarted_to_get_one() {
         None,
         no_keygen,
         |_| true,
+        &as_the_host,
         &mut Report::text(Vec::new()),
     )
     .unwrap();
@@ -242,6 +367,7 @@ fn add_writes_a_tunnel_descriptor_and_turns_the_marker_on() {
         None,
         no_keygen,
         |_| true,
+        &as_the_host,
         &mut Report::text(Vec::new()),
     )
     .unwrap();
@@ -289,6 +415,7 @@ fn add_names_an_unnamed_host_by_itself_in_one_run() {
         None,
         no_keygen,
         |_| true,
+        &as_the_host,
         &mut Report::text(Vec::new()),
     )
     .unwrap();
@@ -325,6 +452,7 @@ fn add_keeps_the_port_of_a_readd_and_skips_other_hosts() {
         None,
         no_keygen,
         |_| true,
+        &as_the_host,
         &mut Report::text(Vec::new()),
     )
     .unwrap();
@@ -340,6 +468,7 @@ fn add_keeps_the_port_of_a_readd_and_skips_other_hosts() {
         None,
         no_keygen,
         |p| p != 7403,
+        &as_the_host,
         &mut Report::text(Vec::new()),
     )
     .unwrap();
@@ -363,6 +492,7 @@ fn add_falls_back_to_the_peer_key() {
         None,
         fake_keygen,
         |_| true,
+        &as_the_host,
         &mut Report::text(Vec::new()),
     )
     .unwrap();
@@ -390,6 +520,7 @@ fn add_both_keys_refused_prints_the_public_line() {
         None,
         fake_keygen,
         |_| true,
+        &as_the_host,
         &mut Report::text(Vec::new()),
     )
     .unwrap_err()
@@ -422,6 +553,7 @@ fn add_blocks_on_a_missing_ralphy_and_writes_nothing() {
         Some("svrapp"),
         no_keygen,
         |_| true,
+        &as_the_host,
         &mut printed,
     )
     .unwrap_err()
@@ -461,6 +593,7 @@ fn add_linger_needs_sudo_is_not_fatal() {
         None,
         no_keygen,
         |_| true,
+        &as_the_host,
         &mut printed,
     )
     .unwrap();
@@ -489,6 +622,7 @@ fn add_refuses_this_computers_own_daemon() {
         None,
         no_keygen,
         |_| true,
+        &as_the_host,
         &mut Report::text(Vec::new()),
     )
     .unwrap_err()
@@ -809,6 +943,7 @@ fn add_with_a_password_adds_the_peer_key_then_signs_in_with_it() {
         None,
         fake_keygen,
         |_| true,
+        &as_the_host,
         &mut report,
     )
     .unwrap();
@@ -844,6 +979,7 @@ fn a_password_is_not_used_when_a_key_signs_in() {
         None,
         no_keygen,
         |_| true,
+        &as_the_host,
         &mut Report::text(Vec::new()),
     )
     .unwrap();

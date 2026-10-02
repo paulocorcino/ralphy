@@ -18,6 +18,7 @@ mod install;
 mod known;
 mod pair;
 mod password;
+mod probe;
 mod report;
 mod shell;
 mod ssh;
@@ -144,6 +145,7 @@ pub(crate) fn run(cmd: &HostCommand) -> Result<()> {
                 name.as_deref(),
                 keygen,
                 |p| std::net::TcpListener::bind(("127.0.0.1", p)).is_ok(),
+                &probe::probe,
                 out,
             )?;
             nudge(local.port, &descriptor.daemon_id, out)

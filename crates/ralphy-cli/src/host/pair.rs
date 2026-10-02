@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 use ralphy_daemon::peer::key::{key_body, key_path_in};
-use ralphy_daemon::peer::{self, DaemonDescription, PeerDescriptor};
+use ralphy_daemon::peer::{self, DaemonDescription, PeerDescriptor, TunnelSpec};
 use ralphy_release::Build;
 
 use super::checks::{
@@ -124,6 +124,10 @@ fn is_self(local: &Local<'_>, host_id: Option<&str>) -> bool {
     host_id.is_some() && host_id == local.daemon_id.as_deref()
 }
 
+/// The `daemon_id` that answers through a tunnel opened with this spec and the
+/// host's access token, or why nothing answered.
+pub(crate) type Probe<'a> = &'a dyn Fn(&TunnelSpec, Option<&str>) -> Result<String, String>;
+
 /// `ralphy host add`: check the host, apply the fixes, read its token, and
 /// write the local descriptor with its tunnel section. Writing the descriptor
 /// is the last side effect, so a failure anywhere before it leaves the local
@@ -137,6 +141,7 @@ pub(crate) fn add(
     wanted_name: Option<&str>,
     keygen: impl FnOnce(&Path) -> Result<()>,
     is_free: impl Fn(u16) -> bool,
+    probe: Probe<'_>,
     out: &mut Report<impl Write>,
 ) -> Result<PeerDescriptor> {
     let (identity, os) = connect(shell, local.store, dest, key_file, keygen, out)?;
@@ -208,10 +213,73 @@ pub(crate) fn add(
         format!("no free local port between {FIRST_TUNNEL_PORT} and {LAST_TUNNEL_PORT}")
     })?;
     let identity_file = s.identity.as_ref().map(|p| p.display().to_string());
-    let descriptor = peer::paired_descriptor(&d, dest, port, identity_file)?;
+    let descriptor = peer::paired_descriptor(&d, dest, port, identity_file.clone())?;
+    let descriptor = match reached_through_socket(&descriptor, &d, probe) {
+        Ok(()) => descriptor,
+        Err(why) => {
+            let by_port = DaemonDescription {
+                socket: None,
+                ..d.clone()
+            };
+            let descriptor = peer::paired_descriptor(&by_port, dest, port, identity_file)?;
+            port_fallback(&descriptor, &d, &why, probe)?;
+            out.note(&format!(
+                "The host does not forward a connection to the daemon's socket ({why}). This computer reaches the daemon through its port {}.",
+                d.port
+            ))?;
+            descriptor
+        }
+    };
     peer::write_descriptor(local.store, &descriptor)?;
     out.added(&descriptor, dest, port)?;
     Ok(descriptor)
+}
+
+/// `Ok` when the descriptor names no socket, or when its daemon answers
+/// through it. An `sshd` with `AllowStreamLocalForwarding no` accepts the
+/// tunnel and refuses each connection, so only a request shows it (ADR-0067
+/// amendment 2026-10-02).
+fn reached_through_socket(
+    descriptor: &PeerDescriptor,
+    d: &DaemonDescription,
+    probe: Probe<'_>,
+) -> Result<(), String> {
+    let Some(tunnel) = descriptor
+        .tunnel
+        .as_ref()
+        .filter(|t| t.peer_socket.is_some())
+    else {
+        return Ok(());
+    };
+    match probe(tunnel, d.token.as_deref()) {
+        Ok(id) if Some(id.as_str()) == d.daemon_id.as_deref() => Ok(()),
+        Ok(id) => Err(format!("another daemon answered: {id}")),
+        Err(why) => Err(why),
+    }
+}
+
+/// The port form is used only when this account's daemon answers on the port.
+/// On a host with several accounts the port may belong to another account.
+fn port_fallback(
+    descriptor: &PeerDescriptor,
+    d: &DaemonDescription,
+    socket_why: &str,
+    probe: Probe<'_>,
+) -> Result<()> {
+    let Some(tunnel) = descriptor.tunnel.as_ref() else {
+        bail!("the descriptor of the host has no tunnel");
+    };
+    match probe(tunnel, d.token.as_deref()) {
+        Ok(id) if Some(id.as_str()) == d.daemon_id.as_deref() => Ok(()),
+        Ok(id) => bail!(
+            "the host does not forward a connection to the daemon's socket ({socket_why}), and its port {} belongs to another daemon ({id}): ask the host's administrator to set `AllowStreamLocalForwarding yes` for sshd",
+            d.port
+        ),
+        Err(why) => bail!(
+            "the host does not forward a connection to the daemon's socket ({socket_why}), and its port {} does not reach this account's daemon ({why}): ask the host's administrator to set `AllowStreamLocalForwarding yes` for sshd",
+            d.port
+        ),
+    }
 }
 
 /// `ralphy host check`: the same checks as `add`, printed. Changes nothing on
