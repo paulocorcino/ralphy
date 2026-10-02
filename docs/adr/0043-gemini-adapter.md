@@ -251,6 +251,13 @@ Consequences and limits, stated plainly:
   this root governs a **child process Ralphy is accountable for**, not the
   operator's own interactive use, which is untouched.
 
+**Amendment (2026-10-01, ADR-0040 Amendment 3): the workbench console prepares
+the root.** A run is no longer the only way to create the root. When a Gemini
+console opens in a repo with no policy document, the daemon runs
+`ralphy gemini prepare-root`, which calls the same preparation a run calls, and
+then checks for the document again. A launch without the document is still
+refused.
+
 ## D5 — Autonomy is asserted three ways, because argv alone cannot hold it
 
 `--approval-mode yolo` is necessary and **not sufficient**. The spike found
