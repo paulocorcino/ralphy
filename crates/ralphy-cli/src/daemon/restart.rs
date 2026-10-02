@@ -312,7 +312,14 @@ fn stop(store: &Path) -> Result<bool> {
         EXIT_TIMEOUT,
         ralphy_proc_util::pid::pid_is_alive,
         ralphy_proc_util::pid::exe_of_pid,
-        ralphy_proc_util::kill_tree_by_pid,
+        |pid| {
+            ralphy_proc_util::kill_tree_by_pid(pid);
+            // A daemon spawned by `spawn_detached` stays in its caller's process
+            // group, so the group signal above does not reach it. The pid is
+            // proven to be the daemon before this runs.
+            #[cfg(unix)]
+            ralphy_proc_util::pid::kill_pid(pid);
+        },
     )
 }
 

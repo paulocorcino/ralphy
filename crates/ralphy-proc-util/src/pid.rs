@@ -20,6 +20,20 @@ pub fn pid_is_alive(pid: u32) -> bool {
     r == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
+/// SIGKILL one process. Call it only on a pid proven live and proven to be the
+/// program meant: a pid that was already reaped may name another process now.
+/// [`crate::kill_tree_by_pid`] signals the process group, and a process that
+/// does not lead its own group is not reached by that.
+#[cfg(unix)]
+#[allow(unsafe_code, reason = "FFI: libc::kill on one pid")]
+pub fn kill_pid(pid: u32) {
+    // `kill(0, ...)` and `kill(-1, ...)` would reach a group or every process.
+    if pid > 1 {
+        // SAFETY: kill(2) takes plain integers and touches no memory.
+        unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL) };
+    }
+}
+
 /// Production liveness predicate.
 #[cfg(windows)]
 #[allow(unsafe_code, reason = "FFI: OpenProcess and GetExitCodeProcess")]
@@ -138,6 +152,42 @@ mod tests {
         let dead = child.id();
         child.wait().expect("wait for the child");
         assert!(!pid_is_alive(dead), "pid {dead} exited but reads as alive");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn kill_pid_ends_a_process_that_does_not_lead_its_group() {
+        // The child stays in this test's process group, as a daemon spawned by
+        // an older `daemon restart` stays in its caller's group.
+        let mut child = std::process::Command::new(std::env::current_exe().expect("current_exe"))
+            .args(["--exact", "pid::tests::a_child_that_waits", "--ignored"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("spawn the test binary");
+        kill_pid(child.id());
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let ended = loop {
+            if child.try_wait().expect("poll the child").is_some() {
+                break true;
+            }
+            if std::time::Instant::now() >= deadline {
+                break false;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        };
+        if !ended {
+            child.kill().expect("end the child");
+            child.wait().expect("reap the child");
+        }
+        assert!(ended, "kill_pid left the child running");
+    }
+
+    /// The child of the test above: it waits until it is killed.
+    #[test]
+    #[ignore = "run only as the child of kill_pid_ends_a_process_that_does_not_lead_its_group"]
+    fn a_child_that_waits() {
+        std::thread::sleep(std::time::Duration::from_secs(60));
     }
 
     #[test]

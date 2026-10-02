@@ -1,4 +1,4 @@
 ---
 kind: fix
 ---
-On Linux, restarting the daemon after its binary was replaced stops the old daemon instead of leaving it running.
+On Linux and macOS, restarting the daemon stops the old daemon, also after its binary was replaced, instead of leaving it running.
