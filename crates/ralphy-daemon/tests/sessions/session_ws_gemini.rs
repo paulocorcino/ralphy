@@ -3,9 +3,9 @@
 //! under the same policy document, that `ralphy run --agent gemini` uses — and
 //! must be refused BEFORE anything is spawned when that root does not exist.
 //!
-//! Two legs against one live loopback daemon: the URL is refused with `400` and no
-//! session while the repo has no owned root, then — once the policy document
-//! exists — it launches and the child reports back BOTH halves of the containment
+//! Two legs against one live loopback daemon: the URL is refused (a `session-end`
+//! frame with `reason: "refused"`) and no session exists while the repo has no
+//! owned root, then — once the policy document exists — it launches and the child reports back BOTH halves of the containment
 //! it was actually given: the `GEMINI_CLI_HOME` in its environment and the
 //! `--policy` in its own argv. Reading them off the CHILD, not the spec, is what
 //! makes this prove the containment reached the process.
@@ -78,22 +78,18 @@ async fn gemini_session_refuses_a_rootless_repo_and_launches_under_the_owned_one
 
     let url = format!("ws://127.0.0.1:{port}/ws/session?repo=owner%2Fgeminilab&agent=gemini");
 
-    // --- Leg 1: no owned root → the upgrade is refused and nothing is spawned.
-    let err = tokio_tungstenite::connect_async(&url)
-        .await
-        .expect_err("a repo with no owned root must NOT upgrade");
-    let (status, body) = match err {
-        tokio_tungstenite::tungstenite::Error::Http(resp) => {
-            let status = resp.status();
-            let body = String::from_utf8_lossy(resp.body().as_deref().unwrap_or(&[])).into_owned();
-            (status, body)
-        }
-        other => panic!("expected an HTTP refusal, got {other:?}"),
-    };
-    assert_eq!(status.as_u16(), 400, "the refusal must be a 400");
+    // --- Leg 1: no owned root → the launch is refused and nothing is spawned.
+    let refusal = super::refused(&url).await;
+    let message = refusal["message"].as_str().unwrap_or_default();
     assert!(
-        body.contains("ralphy run --agent gemini"),
-        "the refusal must name the remedy verbatim; got:\n{body}"
+        message.contains("ralphy run --agent gemini"),
+        "the refusal must name the remedy verbatim; got:\n{message}"
+    );
+    // The browser's fold reads this very file (`endNotice`).
+    super::golden::check(
+        "session-end--refused",
+        refusal,
+        &["/daemon_id", "/environment"],
     );
     assert_eq!(
         http_get(port, "/api/sessions").await,

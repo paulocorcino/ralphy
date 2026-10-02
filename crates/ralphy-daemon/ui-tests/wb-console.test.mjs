@@ -1244,6 +1244,23 @@ test("pasteDecision refuses an image past the daemon's cap without sending it", 
   assert.equal(pasteDecision({ types: ["image/png"], size: undefined, watching: false }), "too-large");
 });
 
+// --- endNotice: the last line of a console that gave up -------------------
+// A refused launch never had a session, so this line is the only place the
+// browser can show why. Every other end keeps the line it always printed.
+
+test("endNotice names the reason of a refused launch, and only of one", () => {
+  const { endNotice } = load();
+  assert.equal(endNotice("refused", "unknown repo"), "[could not start: unknown repo]");
+  assert.equal(endNotice("refused", "  unknown repo \n"), "[could not start: unknown repo]");
+  // A refusal with no words still says it did not start, never "undefined".
+  assert.equal(endNotice("refused", null), "[could not start]");
+  assert.equal(endNotice("refused", ""), "[could not start]");
+  assert.equal(endNotice("refused", 42), "[could not start]");
+  for (const reason of ["child-exited", "daemon-shutdown", "taken-over", null]) {
+    assert.equal(endNotice(reason, "ignored"), "[session closed]", String(reason));
+  }
+});
+
 // --- resumeDecision: coming back from a suspend --------------------------
 // A tablet's tab is frozen with its sockets still reporting OPEN, and the link
 // is torn down without a close frame, so the exponential backoff never arms.

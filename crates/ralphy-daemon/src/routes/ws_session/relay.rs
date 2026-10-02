@@ -3,10 +3,11 @@
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use futures_util::{SinkExt, StreamExt};
 use tokio::io::AsyncWriteExt;
 
+use super::refuse::Refuser;
 use super::SessionQuery;
 use crate::peer;
 use crate::routes::encode_query_value;
@@ -67,27 +68,32 @@ fn push_holder(out: &mut String, query: &SessionQuery) {
 }
 
 /// Open `peer_query` on the peer that owns the session and bridge it to the
-/// browser. A refused dial is `502` with the peer's diagnosis; an HTTP refusal
-/// from the peer is passed through with its own status.
+/// browser. A refused dial is refused with the peer's diagnosis (`502` on a
+/// reattach); an HTTP refusal from the peer keeps its own status and body. A
+/// peer that announces its refusal in a frame needs nothing here: the frame is
+/// relayed like any other.
 pub(crate) async fn relay_to_peer(
     ws: WebSocketUpgrade,
     peer: &peer::PeerDescriptor,
     peer_query: &str,
     me: peer::client::SelfRef<'_>,
+    refuser: &Refuser,
     shutdown: tokio::sync::watch::Receiver<bool>,
 ) -> Response {
     match peer::client::session(peer, peer_query, me).await {
         Ok(peer_socket) => {
             ws.on_upgrade(move |socket| peer_session_ws(socket, peer_socket, shutdown))
         }
-        Err(peer::client::SocketError::Peer(status)) => {
-            (StatusCode::BAD_GATEWAY, status.diagnosis(&peer.environment)).into_response()
-        }
-        Err(peer::client::SocketError::Http { status, body }) => (
+        Err(peer::client::SocketError::Peer(status)) => refuser.refuse(
+            ws,
+            StatusCode::BAD_GATEWAY,
+            status.diagnosis(&peer.environment),
+        ),
+        Err(peer::client::SocketError::Http { status, body }) => refuser.refuse(
+            ws,
             StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY),
             body,
-        )
-            .into_response(),
+        ),
     }
 }
 

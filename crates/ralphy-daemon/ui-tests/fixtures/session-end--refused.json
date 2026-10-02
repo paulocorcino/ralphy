@@ -1,0 +1,6 @@
+{
+  "daemon_id": "<daemon_id>",
+  "environment": "<environment>",
+  "message": "gemini: no owned configuration root in this repo — run `ralphy run --agent gemini` here first (`ralphy init` alone does not write the policy document)",
+  "reason": "refused"
+}

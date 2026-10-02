@@ -10,9 +10,11 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 
 mod bridge;
+mod refuse;
 mod relay;
 
 pub(crate) use bridge::*;
+use refuse::Refuser;
 pub(crate) use relay::*;
 
 use super::{blocking_read, read_peer_store};
@@ -111,17 +113,22 @@ pub(crate) struct SessionHost {
 ///   reachable (never `409`) and nobody is evicted. Only `404` refuses it. This
 ///   is what lets a second workbench see a session instead of stealing it.
 /// - `?repo=<slug>&agent=<claude|codex|opencode>[&checkout=<name>][&name=<console name>]`
-///   — NEW agent launch. Rejects (`400`) an unknown agent, an unreadable registry, or an
-///   unregistered slug before upgrading; an unknown or malformed `checkout` is
-///   `400 unknown checkout` before anything is written or spawned (ADR-0063
-///   §3); a spawn failure is `500`.
+///   — NEW agent launch. Refuses an unknown agent, an unreadable registry, or an
+///   unregistered slug before anything is spawned; an unknown or malformed
+///   `checkout` is refused as `unknown checkout` before anything is written or
+///   spawned (ADR-0063 §3); a spawn failure is refused too.
 /// - `?console=1[&repo=<slug>][&command=<cmd>]` — NEW free-console launch
 ///   (issue #167): the platform shell in the chosen repo's dir, or the home dir
 ///   when `repo` is absent. With `command`, the shell runs that command instead
 ///   of a prompt and the session ends when it exits (the startup-command
 ///   console: `htop`, `btop`…); the session's `agent` label is then the
-///   command, so the workbench can tell it from a bare shell. Rejects (`400`)
-///   an unreadable registry or an unregistered slug; a spawn failure is `500`.
+///   command, so the workbench can tell it from a bare shell. Refuses an
+///   unreadable registry, an unregistered slug, or a spawn failure.
+///
+/// A NEW launch is refused after the upgrade, by a `session-end` frame with
+/// `reason: "refused"` and the reason as `message` ([`Refuser`]); the browser
+/// cannot read the body of a refused upgrade, and a new launch has no id to
+/// retry. A reattach keeps the HTTP statuses above.
 pub(crate) async fn session_ws_upgrade(
     ws: WebSocketUpgrade,
     Query(mut query): Query<SessionQuery>,
@@ -146,6 +153,7 @@ pub(crate) async fn session_ws_upgrade(
         .as_ref()
         .map(|identity| identity.id.to_string())
         .unwrap_or_default();
+    let refuser = Refuser::new(query.id.is_none(), &daemon_id, &environment);
     // A peer free console is the one composite-ref session hosted HERE. Match
     // both id and repo so an equal numeric id owned by the peer still proxies.
     let locally_owned = query.id.and_then(|id| {
@@ -170,7 +178,7 @@ pub(crate) async fn session_ws_upgrade(
                         daemon_id: &daemon_id,
                     };
                     let peer_query = peer_session_query(&query, slug);
-                    return relay_to_peer(ws, peer, &peer_query, me, shutdown).await;
+                    return relay_to_peer(ws, peer, &peer_query, me, &refuser, shutdown).await;
                 }
                 fleet::route::Route::UnknownDaemon { daemon_id } => {
                     if let Some((environment, theirs)) = rejects
@@ -181,14 +189,17 @@ pub(crate) async fn session_ws_upgrade(
                             theirs,
                             ours: peer::PEER_PROTOCOL_VERSION,
                         };
-                        return (StatusCode::BAD_GATEWAY, status.diagnosis(environment))
-                            .into_response();
+                        return refuser.refuse(
+                            ws,
+                            StatusCode::BAD_GATEWAY,
+                            status.diagnosis(environment),
+                        );
                     }
-                    return (
+                    return refuser.refuse(
+                        ws,
                         StatusCode::BAD_GATEWAY,
                         format!("unknown peer daemon {daemon_id}"),
-                    )
-                        .into_response();
+                    );
                 }
             }
         }
@@ -279,7 +290,7 @@ pub(crate) async fn session_ws_upgrade(
                             daemon_id: &daemon_id,
                         };
                         let peer_query = peer_session_query(&query, slug);
-                        return relay_to_peer(ws, peer, &peer_query, me, shutdown).await;
+                        return relay_to_peer(ws, peer, &peer_query, me, &refuser, shutdown).await;
                     };
                     let status = peer::client::probe(
                         peer,
@@ -290,74 +301,77 @@ pub(crate) async fn session_ws_upgrade(
                     )
                     .await;
                     if status != peer::client::PeerStatus::Reachable {
-                        return (StatusCode::BAD_GATEWAY, status.diagnosis(&peer.environment))
-                            .into_response();
+                        return refuser.refuse(
+                            ws,
+                            StatusCode::BAD_GATEWAY,
+                            status.diagnosis(&peer.environment),
+                        );
                     }
                     let Some(launcher) = session::peer_console_launcher() else {
-                        return (
+                        return refuser.refuse(
+                            ws,
                             StatusCode::BAD_GATEWAY,
                             format!(
                                 "{} cannot host a free console: wsl.exe launcher not found",
                                 peer.environment
                             ),
-                        )
-                            .into_response();
+                        );
                     };
                     let entry = match peer::client::get(peer, "/api/repos").await {
                         Ok((200, body)) => match fleet::repo_from_repos_json(&body, slug) {
                             Ok(Some(entry)) => entry,
                             Ok(None) => {
-                                return (
+                                return refuser.refuse(
+                                    ws,
                                     StatusCode::BAD_REQUEST,
                                     format!("{} has no repository {slug}", peer.environment),
-                                )
-                                    .into_response();
+                                );
                             }
                             Err(_) => {
-                                return (
+                                return refuser.refuse(
+                                    ws,
                                     StatusCode::BAD_GATEWAY,
                                     format!(
                                         "{} returned an unreadable repository list",
                                         peer.environment
                                     ),
-                                )
-                                    .into_response();
+                                );
                             }
                         },
                         Ok((status, _)) => {
-                            return (
+                            return refuser.refuse(
+                                ws,
                                 StatusCode::BAD_GATEWAY,
                                 format!(
                                     "{} refused its repository list with HTTP {status}",
                                     peer.environment
                                 ),
-                            )
-                                .into_response();
+                            );
                         }
                         Err(error) => {
-                            return (
+                            return refuser.refuse(
+                                ws,
                                 StatusCode::BAD_GATEWAY,
                                 fleet::route::peer_unreachable(peer, &format!("{error:#}")),
-                            )
-                                .into_response();
+                            );
                         }
                     };
                     if entry.path.is_empty() {
-                        return (
+                        return refuser.refuse(
+                            ws,
                             StatusCode::BAD_REQUEST,
                             format!("{} returned an empty path for {slug}", peer.environment),
-                        )
-                            .into_response();
+                        );
                     }
                     if !entry.reachable {
-                        return (
+                        return refuser.refuse(
+                            ws,
                             StatusCode::BAD_REQUEST,
                             format!(
                                 "{} reports repository {slug} path unreachable",
                                 peer.environment
                             ),
-                        )
-                            .into_response();
+                        );
                     }
                     let spec = session::peer_console_spec(
                         launcher,
@@ -396,14 +410,14 @@ pub(crate) async fn session_ws_upgrade(
                                 error = %error,
                                 "failed to spawn a peer free console"
                             );
-                            (
+                            refuser.refuse(
+                                ws,
                                 StatusCode::INTERNAL_SERVER_ERROR,
                                 format!(
                                     "{} free-console launcher failed: {error}",
                                     peer.environment
                                 ),
                             )
-                                .into_response()
                         }
                     };
                 }
@@ -416,14 +430,17 @@ pub(crate) async fn session_ws_upgrade(
                             theirs,
                             ours: peer::PEER_PROTOCOL_VERSION,
                         };
-                        return (StatusCode::BAD_GATEWAY, status.diagnosis(peer_environment))
-                            .into_response();
+                        return refuser.refuse(
+                            ws,
+                            StatusCode::BAD_GATEWAY,
+                            status.diagnosis(peer_environment),
+                        );
                     }
-                    return (
+                    return refuser.refuse(
+                        ws,
                         StatusCode::BAD_GATEWAY,
                         format!("unknown peer daemon {daemon_id}"),
-                    )
-                        .into_response();
+                    );
                 }
             }
         }
@@ -433,12 +450,15 @@ pub(crate) async fn session_ws_upgrade(
                     Ok(store) => store,
                     Err(e) => {
                         tracing::warn!(error = %e, "failed to load repo registry for a console session");
-                        return (StatusCode::BAD_REQUEST, "repo registry unreadable")
-                            .into_response();
+                        return refuser.refuse(
+                            ws,
+                            StatusCode::BAD_REQUEST,
+                            "repo registry unreadable",
+                        );
                     }
                 };
                 let Some(entry) = store.entry(slug) else {
-                    return (StatusCode::BAD_REQUEST, "unknown repo").into_response();
+                    return refuser.refuse(ws, StatusCode::BAD_REQUEST, "unknown repo");
                 };
                 Some(PathBuf::from(&entry.path))
             }
@@ -471,28 +491,32 @@ pub(crate) async fn session_ws_upgrade(
             }),
             Err(e) => {
                 tracing::warn!(error = %e, "failed to spawn a console session");
-                (StatusCode::INTERNAL_SERVER_ERROR, "failed to spawn session").into_response()
+                refuser.refuse(
+                    ws,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to spawn session",
+                )
             }
         };
     }
     let Some(agent_str) = query.agent.as_deref() else {
-        return (StatusCode::BAD_REQUEST, "unknown agent").into_response();
+        return refuser.refuse(ws, StatusCode::BAD_REQUEST, "unknown agent");
     };
     let Some(agent) = session::Agent::from_query(agent_str) else {
-        return (StatusCode::BAD_REQUEST, "unknown agent").into_response();
+        return refuser.refuse(ws, StatusCode::BAD_REQUEST, "unknown agent");
     };
     let Some(repo) = query.repo.as_deref() else {
-        return (StatusCode::BAD_REQUEST, "unknown repo").into_response();
+        return refuser.refuse(ws, StatusCode::BAD_REQUEST, "unknown repo");
     };
     let store = match registry::load_from(&registry_path) {
         Ok(store) => store,
         Err(e) => {
             tracing::warn!(error = %e, "failed to load repo registry for a session");
-            return (StatusCode::BAD_REQUEST, "repo registry unreadable").into_response();
+            return refuser.refuse(ws, StatusCode::BAD_REQUEST, "repo registry unreadable");
         }
     };
     let Some(entry) = store.entry(repo) else {
-        return (StatusCode::BAD_REQUEST, "unknown repo").into_response();
+        return refuser.refuse(ws, StatusCode::BAD_REQUEST, "unknown repo");
     };
     let root = PathBuf::from(&entry.path);
     // ADR-0063 §3: the selected checkout, resolved with the same resolver and
@@ -513,9 +537,11 @@ pub(crate) async fn session_ws_upgrade(
             match resolved {
                 Some(Ok(c)) => Some(c),
                 Some(Err(())) => {
-                    return (StatusCode::BAD_REQUEST, checkout::UNKNOWN).into_response()
+                    return refuser.refuse(ws, StatusCode::BAD_REQUEST, checkout::UNKNOWN)
                 }
-                None => return (StatusCode::INTERNAL_SERVER_ERROR, "unavailable").into_response(),
+                None => {
+                    return refuser.refuse(ws, StatusCode::INTERNAL_SERVER_ERROR, "unavailable")
+                }
             }
         }
     };
@@ -534,7 +560,7 @@ pub(crate) async fn session_ws_upgrade(
         if let Err(e) =
             ralphy_proc_util::cursor::indexing_gate(&cwd, session::cursor_indexing_allowed(&root))
         {
-            return (StatusCode::BAD_REQUEST, e.to_string()).into_response();
+            return refuser.refuse(ws, StatusCode::BAD_REQUEST, e.to_string());
         }
     }
     // ADR-0043 D4/D6: a Gemini child is contained by an owned configuration root
@@ -549,11 +575,7 @@ pub(crate) async fn session_ws_upgrade(
         // (`ralphy-agent-gemini/src/lib.rs` — `write_policy` is reached only from
         // `prepare_root`), so naming it here would send the operator round a loop
         // that ends in this same refusal.
-        return (
-            StatusCode::BAD_REQUEST,
-            "gemini: no owned configuration root in this repo — run `ralphy run --agent gemini` here first (`ralphy init` alone does not write the policy document)",
-        )
-            .into_response();
+        return refuser.refuse(ws, StatusCode::BAD_REQUEST, "gemini: no owned configuration root in this repo — run `ralphy run --agent gemini` here first (`ralphy init` alone does not write the policy document)");
     }
     // The id first: the agent-state files are named by it and must exist
     // before the child that reads them is launched (ADR-0059 §5). Only a
@@ -591,7 +613,11 @@ pub(crate) async fn session_ws_upgrade(
         }),
         Err(e) => {
             tracing::warn!(error = %e, "failed to spawn a workbench session");
-            (StatusCode::INTERNAL_SERVER_ERROR, "failed to spawn session").into_response()
+            refuser.refuse(
+                ws,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to spawn session",
+            )
         }
     }
 }

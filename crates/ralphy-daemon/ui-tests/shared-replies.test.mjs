@@ -175,3 +175,12 @@ test("project.add: the shell selects the slug the reply names", async () => {
   await state.addProjectSubmit();
   assert.deepEqual(toggled, ["o/alpha"]);
 });
+
+test("session-end--refused: a refused launch shows the daemon's own words", () => {
+  const { window } = loadShell();
+  const end = fixture("session-end--refused");
+  assert.equal(
+    window.WBConsole.endNotice(end.reason, end.message),
+    `[could not start: ${end.message}]`,
+  );
+});

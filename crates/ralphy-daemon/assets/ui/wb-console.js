@@ -4668,14 +4668,23 @@ window.WBConsole = (function () {
     return "drop";
   }
 
+  // The last line a console prints when it gives up. A launch the daemon
+  // refused names the reason; the browser cannot read it anywhere else,
+  // because a refused launch never had a session to show.
+  function endNotice(announced, message) {
+    if (announced !== "refused") return "[session closed]";
+    const why = typeof message === "string" ? message.trim() : "";
+    return why ? `[could not start: ${why}]` : "[could not start]";
+  }
+
   // The reconnect rule (#334), pure and tabled. Returns one of "reconnect" /
   // "park-as-watcher" / "give-up".
   //
-  // `announced` is the daemon's eviction reason from a data frame BEFORE the
-  // close ("taken-over" / "child-exited" / "daemon-shutdown"), else null. It is
-  // the only trustworthy signal of a deliberate end: the browser reports
-  // 1005/wasClean=false even for a served Close frame, so an unannounced dirty
-  // close is read as a flaky link.
+  // `announced` is the daemon's reason from a data frame BEFORE the close
+  // ("taken-over" / "child-exited" / "daemon-shutdown" / "refused"), else
+  // null. It is the only trustworthy signal of a deliberate end: the browser
+  // reports 1005/wasClean=false even for a served Close frame, so an
+  // unannounced dirty close is read as a flaky link.
   function reconnectDecision({
     code,
     wasClean,
@@ -5312,6 +5321,7 @@ window.WBConsole = (function () {
     // watch}` from the start). The `term.onData` gate reads this flag.
     let watching = !!opts.watch;
     let announced = null; // the daemon's reason, when it named one before closing
+    let refusal = null; // the daemon's words when that reason is "refused"
     let switching = false; // an intentional close on the way to a takeover
     let firstConnect = true;
     // True while the scrollback replay is being parsed. The replay is RAW BYTES
@@ -5333,7 +5343,7 @@ window.WBConsole = (function () {
       // Stop observing so a dead-ws terminal doesn't keep firing fit() until the
       // window is closed.
       ro.disconnect();
-      term.write("\r\n[session closed]\r\n");
+      term.write("\r\n" + endNotice(announced, refusal) + "\r\n");
       if (typeof opts.onEnded === "function") opts.onEnded();
     }
 
@@ -5352,6 +5362,7 @@ window.WBConsole = (function () {
     function connect(connOpts) {
       opened = false;
       announced = null;
+      refusal = null;
       // A reattach (`id`) gets the backlog replayed; a fresh launch has none.
       // An empty scrollback sends no replay frame, so the flag rides until the
       // first LIVE frame clears it.
@@ -5432,6 +5443,7 @@ window.WBConsole = (function () {
               opts.onSession(currentSessionId, c.payload);
           } else if (c && c.verb === "session-end") {
             announced = c.payload?.reason ?? "child-exited";
+            refusal = typeof c.payload?.message === "string" ? c.payload.message : null;
           }
         }
       };
@@ -5597,6 +5609,7 @@ window.WBConsole = (function () {
         detachSocket(ws);
         watching = false;
         announced = null;
+        refusal = null;
         failedReopens = 0;
         retryDelay = 0;
         switching = false;
@@ -6836,6 +6849,7 @@ window.WBConsole = (function () {
     viewLanding,
     panNudge,
     reconnectDecision,
+    endNotice,
     resumeDecision,
     resumeAll,
     dormancyDecision,

@@ -4,7 +4,7 @@
 //! `.ralphy/worktrees/` with the same resolver and confinement every git-backed
 //! verb uses, spawns the child with the worktree as `cwd`, and announces the
 //! name on `session-open` — on launch AND on a reattach, from the record — and
-//! on `/api/sessions`. An unknown name is `400 unknown checkout` BEFORE any
+//! on `/api/sessions`. An unknown name is refused as `unknown checkout` BEFORE any
 //! write (the Cursor gate) or spawn; no key is the primary tree, byte-identical
 //! to today.
 //!
@@ -122,21 +122,6 @@ fn cwd_line(text: &str) -> String {
     path.to_string()
 }
 
-/// Connect and expect an HTTP refusal: `(status, body)`.
-async fn refused(url: &str) -> (u16, String) {
-    let err = tokio_tungstenite::connect_async(url)
-        .await
-        .expect_err("the upgrade must be refused");
-    match err {
-        tokio_tungstenite::tungstenite::Error::Http(resp) => {
-            let status = resp.status().as_u16();
-            let body = String::from_utf8_lossy(resp.body().as_deref().unwrap_or(&[])).into_owned();
-            (status, body)
-        }
-        other => panic!("expected an HTTP refusal, got {other:?}"),
-    }
-}
-
 fn no_opt_out_anywhere(root: &Path, wt: &Path) -> bool {
     !root.join(".cursorindexingignore").exists() && !wt.join(".cursorindexingignore").exists()
 }
@@ -196,13 +181,12 @@ async fn a_console_opens_in_the_selected_checkout_and_says_so() {
     );
     let id_a = open["session"].as_u64().expect("a numeric session id");
 
-    // --- (b) an unknown name is refused with 400 and leaves no session row.
-    let (status, body) = refused(&format!("{base}&agent=claude&checkout=nope")).await;
+    // --- (b) an unknown name is refused and leaves no session row.
+    let refusal = super::refused(&format!("{base}&agent=claude&checkout=nope")).await;
     assert_eq!(
-        status, 400,
-        "(b) an unknown checkout is a 400; body {body:?}"
+        refusal["message"], "unknown checkout",
+        "(b) the one refusal text"
     );
-    assert_eq!(body, "unknown checkout", "(b) the one refusal text");
     let rows = sessions(port).await;
     assert_eq!(
         rows.len(),
@@ -211,12 +195,11 @@ async fn a_console_opens_in_the_selected_checkout_and_says_so() {
     );
 
     // --- (b') the refusal precedes the Cursor gate: nothing is written anywhere.
-    let (status, body) = refused(&format!("{base}&agent=cursor&checkout=nope")).await;
+    let refusal = super::refused(&format!("{base}&agent=cursor&checkout=nope")).await;
     assert_eq!(
-        status, 400,
-        "(b') an unknown checkout is a 400; body {body:?}"
+        refusal["message"], "unknown checkout",
+        "(b') the one refusal text"
     );
-    assert_eq!(body, "unknown checkout", "(b') the one refusal text");
     assert!(
         no_opt_out_anywhere(&root, &wt),
         "(b') a bad name must not write .cursorindexingignore at the root or the worktree"

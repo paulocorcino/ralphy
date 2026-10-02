@@ -143,6 +143,39 @@ async fn launch_local(port: u16) -> Ws {
         .0
 }
 
+/// Open a NEW launch the daemon must refuse, and return the refusal's payload:
+/// the upgrade succeeds, ONE `session-end` frame says `refused`, the stream ends.
+async fn refused(url: &str) -> serde_json::Value {
+    let (mut ws, _) = tokio_tungstenite::connect_async(url)
+        .await
+        .expect("a refused NEW launch still upgrades, so the browser can read why");
+    let mut payload = None;
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while let Some(msg) = ws.next().await {
+            let bytes = match msg {
+                Ok(Message::Binary(b)) => b,
+                Ok(Message::Close(_)) | Err(_) => break,
+                Ok(_) => continue,
+            };
+            match protocol::decode(&bytes).expect("a well-formed frame") {
+                Frame::Command(cmd) => {
+                    assert_eq!(
+                        cmd.verb, "session-end",
+                        "the only frame is the end: {cmd:?}"
+                    );
+                    assert_eq!(cmd.payload["reason"], "refused", "{cmd:?}");
+                    assert!(payload.is_none(), "exactly one refusal frame");
+                    payload = Some(cmd.payload);
+                }
+                other => panic!("a refusal carries no other frame; got {other:?}"),
+            }
+        }
+    })
+    .await
+    .expect("the daemon closes a refused launch");
+    payload.expect("a session-end frame")
+}
+
 async fn attach(port: u16, id: u64) -> Ws {
     let repo = peer_repo().replace('/', "%2F");
     let url = session_url(port, &format!("id={id}&repo={repo}"));
@@ -484,7 +517,7 @@ async fn peer_takeover_and_shutdown_end_events_keep_owner_identity() {
 }
 
 #[tokio::test]
-async fn unreachable_peer_is_a_pre_upgrade_environment_diagnosis() {
+async fn unreachable_peer_is_an_environment_diagnosis() {
     let local_store = tempfile::tempdir().unwrap();
     let local_repo = tempfile::tempdir().unwrap();
     let registry = local_store.path().join("repos.toml");
@@ -502,24 +535,29 @@ async fn unreachable_peer_is_a_pre_upgrade_environment_diagnosis() {
     .await;
 
     let repo = format!("{DEAD_ID}/{SLUG}").replace('/', "%2F");
-    let error = tokio_tungstenite::connect_async(session_url(
+    let refusal = refused(&session_url(
         local.port,
         &format!("repo={repo}&agent=claude"),
     ))
-    .await
-    .unwrap_err();
-    let tungstenite::Error::Http(response) = error else {
-        panic!("expected HTTP refusal, got {error}");
-    };
-    assert_eq!(response.status(), axum::http::StatusCode::BAD_GATEWAY);
-    let body = String::from_utf8_lossy(response.body().as_deref().unwrap_or_default());
+    .await;
+    let body = refusal["message"].as_str().unwrap_or_default();
     assert!(body.contains(ENVIRONMENT), "got {body}");
     assert!(!body.contains("serde"), "got {body}");
     assert!(!body.contains("decod"), "got {body}");
+
+    // A reattach keeps the HTTP status: the browser counts it as a failed open.
+    let error =
+        tokio_tungstenite::connect_async(session_url(local.port, &format!("id=7&repo={repo}")))
+            .await
+            .unwrap_err();
+    let tungstenite::Error::Http(response) = error else {
+        panic!("expected HTTP refusal on a reattach, got {error}");
+    };
+    assert_eq!(response.status(), axum::http::StatusCode::BAD_GATEWAY);
 }
 
 #[tokio::test]
-async fn incompatible_peer_is_a_pre_upgrade_environment_diagnosis() {
+async fn incompatible_peer_is_an_environment_diagnosis() {
     let local_store = tempfile::tempdir().unwrap();
     let local_repo = tempfile::tempdir().unwrap();
     let registry = local_store.path().join("repos.toml");
@@ -535,17 +573,12 @@ async fn incompatible_peer_is_a_pre_upgrade_environment_diagnosis() {
     .await;
 
     let repo = format!("{DEAD_ID}/{SLUG}").replace('/', "%2F");
-    let error = tokio_tungstenite::connect_async(session_url(
+    let refusal = refused(&session_url(
         local.port,
         &format!("repo={repo}&agent=claude"),
     ))
-    .await
-    .unwrap_err();
-    let tungstenite::Error::Http(response) = error else {
-        panic!("expected HTTP refusal, got {error}");
-    };
-    assert_eq!(response.status(), axum::http::StatusCode::BAD_GATEWAY);
-    let body = String::from_utf8_lossy(response.body().as_deref().unwrap_or_default());
+    .await;
+    let body = refusal["message"].as_str().unwrap_or_default();
     assert!(body.contains(ENVIRONMENT), "got {body}");
     assert!(body.contains("Upgrade the older Ralphy."), "got {body}");
     assert!(
@@ -555,5 +588,55 @@ async fn incompatible_peer_is_a_pre_upgrade_environment_diagnosis() {
     assert!(
         body.contains(&format!("not {PEER_PROTOCOL_VERSION}.")),
         "got {body}"
+    );
+}
+
+#[tokio::test]
+async fn an_old_peer_that_refuses_over_http_is_shown_as_a_refusal() {
+    // A peer that predates the refusal frame answers a refused launch with an
+    // HTTP status before the upgrade. This stand-in passes the handshake and
+    // refuses every session that way.
+    const OLD_REFUSAL: &str = "gemini: no owned configuration root in this repo";
+    let old_peer = axum::Router::new()
+        .route(
+            "/api/peer/hello",
+            axum::routing::get(|| async {
+                axum::Json(serde_json::json!({
+                    "daemon_id": DEAD_ID,
+                    "protocol_version": PEER_PROTOCOL_VERSION,
+                }))
+            }),
+        )
+        .route(
+            "/ws/session",
+            axum::routing::get(|| async { (axum::http::StatusCode::BAD_REQUEST, OLD_REFUSAL) }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let old_port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        axum::serve(listener, old_peer).await.unwrap();
+    });
+
+    let local_store = tempfile::tempdir().unwrap();
+    let local_repo = tempfile::tempdir().unwrap();
+    let registry = local_store.path().join("repos.toml");
+    save_registry(&registry, local_repo.path());
+    peer::write_descriptor(local_store.path(), &descriptor(DEAD_ID, old_port)).unwrap();
+    let local = serve(
+        identity(LOCAL_ID, "local"),
+        registry,
+        AuthState::localhost(),
+    )
+    .await;
+
+    let repo = format!("{DEAD_ID}/{SLUG}").replace('/', "%2F");
+    let refusal = refused(&session_url(
+        local.port,
+        &format!("repo={repo}&agent=gemini"),
+    ))
+    .await;
+    assert_eq!(
+        refusal["message"], OLD_REFUSAL,
+        "the peer's own words reach the console"
     );
 }
