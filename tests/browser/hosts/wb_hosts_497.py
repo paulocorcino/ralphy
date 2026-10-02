@@ -316,7 +316,11 @@ def main():
             tabs = page.evaluate(
                 "() => Array.from(document.querySelectorAll('.host-help .seg-btn')).map(b => b.textContent.trim())"
             )
-            failure = page.evaluate("() => document.querySelector('.host-modal .side-error').textContent")
+            # Scoped to the Hosts dialog: the Add a project dialog is also a
+            # `.host-modal`, and it comes first in the page.
+            failure = page.evaluate(
+                "() => document.querySelector('[role=dialog][aria-label=Hosts] .side-error:not(.host-remove-error)').textContent"
+            )
             page.click(".host-help button.seg-btn:nth-of-type(2)")
             mac = page.evaluate("() => document.querySelector('.host-help').textContent")
             check(
