@@ -52,6 +52,11 @@ macOS (Intel & Apple Silicon) — unzip it anywhere, then let it put itself on y
 ./ralphy install
 ```
 
+It needs no root and no administrator. It links `ralphy` into `~/.cargo/bin` when you have
+one, otherwise `~/.local/bin`. When that folder is not on your `PATH`, it adds it: to your
+shell start-up files on Linux and macOS, or to your user `Path` on Windows. Then open a new
+terminal. `--no-modify-path` leaves your `PATH` alone.
+
 Already have it? `ralphy update` takes the newest release: it checks the published
 checksum, replaces the binary in place, and restarts the daemon if one is running.
 `ralphy update --check` just tells you what is new.

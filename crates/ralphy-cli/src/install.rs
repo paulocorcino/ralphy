@@ -2,7 +2,9 @@
 //! be invoked by name from any working directory. By default it symlinks the
 //! running executable (so a rebuild is picked up with no re-install); on Windows,
 //! where symlinks need Developer Mode or admin, it transparently falls back to a
-//! copy. `--copy` forces the copy path on any platform.
+//! copy. `--copy` forces the copy path on any platform. When the folder is not
+//! on `PATH`, it is added to the user's own `PATH` (see [`user_path`]), so a
+//! user without root or administrator rights can run `ralphy` in a new terminal.
 //!
 //! Replacing an existing entry parks it rather than deleting it, which is what
 //! makes `--force` work over a *running* daemon: Windows refuses to delete or
@@ -14,6 +16,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 use clap::Args;
+
+mod user_path;
 
 #[derive(Args)]
 pub struct InstallArgs {
@@ -31,6 +35,12 @@ pub struct InstallArgs {
     /// error.
     #[arg(long)]
     force: bool,
+
+    /// Do not add the folder to your PATH. Without this, when the folder is
+    /// not on PATH, it is added to your shell start-up files (Linux, macOS) or
+    /// to your user Path (Windows).
+    #[arg(long)]
+    no_modify_path: bool,
 }
 
 pub fn run(args: &InstallArgs) -> Result<()> {
@@ -50,7 +60,8 @@ pub fn run(args: &InstallArgs) -> Result<()> {
     // Re-running install onto our own location is a no-op, not an error.
     if std::fs::canonicalize(&dest).is_ok_and(|d| d == exe) {
         println!("ralphy is already installed at {}", dest.display());
-        return warn_if_off_path(&dir);
+        put_on_path(&dir, args.no_modify_path);
+        return Ok(());
     }
 
     // `symlink_metadata` catches a broken/dangling symlink that `exists()` misses.
@@ -73,7 +84,8 @@ pub fn run(args: &InstallArgs) -> Result<()> {
         report_parked(&parked);
     }
 
-    warn_if_off_path(&dir)
+    put_on_path(&dir, args.no_modify_path);
+    Ok(())
 }
 
 /// The binary's name on this host. Windows resolves bare names against
@@ -235,19 +247,58 @@ fn default_bin_dir() -> Result<PathBuf> {
     Ok(home.join(".local").join("bin"))
 }
 
-/// Print a hint when the install dir isn't on PATH — the link is useless until the
-/// shell can find it. Never fails the install; it's advisory only.
-fn warn_if_off_path(dir: &Path) -> Result<()> {
-    let on_path = std::env::var_os("PATH")
-        .map(|p| std::env::split_paths(&p).any(|d| d == dir))
-        .unwrap_or(false);
-    if !on_path {
+/// Make `ralphy` resolve by name in new terminals. Never fails the install: the
+/// binary is in place, and the operator can still add the folder by hand.
+fn put_on_path(dir: &Path, no_modify_path: bool) {
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    if on_path(&path, dir) {
+        return;
+    }
+    if no_modify_path {
         println!(
             "Note: {} is not on your PATH — add it so `ralphy` resolves from any directory.",
             dir.display()
         );
+        return;
     }
-    Ok(())
+    match user_path::add_to_user_path(dir) {
+        Ok(added) => {
+            if added.places.is_empty() {
+                println!("{} is already set to be on your PATH.", dir.display());
+            } else {
+                println!("Added {} to your PATH in:", dir.display());
+                for place in &added.places {
+                    println!("  {place}");
+                }
+            }
+            match added.reload {
+                Some(cmd) => println!(
+                    "Open a new terminal to use `ralphy`, or run this in this one: {cmd}"
+                ),
+                None => println!("Open a new terminal to use `ralphy`."),
+            }
+        }
+        Err(e) => println!(
+            "Note: could not add {} to your PATH ({e:#}). Add it by hand so `ralphy` resolves from any directory.",
+            dir.display()
+        ),
+    }
+}
+
+/// Whether `dir` is one of the folders in the `PATH` value `path`. A trailing
+/// separator names the same folder, and Windows compares without case.
+fn on_path(path: &std::ffi::OsStr, dir: &Path) -> bool {
+    let norm = |p: &Path| {
+        let s = p.to_string_lossy();
+        let s = s.trim_end_matches(std::path::is_separator);
+        if cfg!(windows) {
+            s.to_lowercase()
+        } else {
+            s.to_string()
+        }
+    };
+    let want = norm(dir);
+    std::env::split_paths(path).any(|d| norm(&d) == want)
 }
 
 #[cfg(unix)]
@@ -371,6 +422,27 @@ mod tests {
             "the park holds the binary just replaced, not the one before it"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_folder_on_path_is_found_with_or_without_a_trailing_separator() {
+        let sep = if cfg!(windows) { ";" } else { ":" };
+        let base = std::env::temp_dir().join("ralphy-on-path");
+        let other = std::env::temp_dir().join("ralphy-elsewhere");
+        let with_slash = format!("{}{}", base.display(), std::path::MAIN_SEPARATOR);
+        let rows: &[(String, bool)] = &[
+            (format!("{}{sep}{}", other.display(), base.display()), true),
+            (format!("{}{sep}{with_slash}", other.display()), true),
+            (other.display().to_string(), false),
+            (String::new(), false),
+        ];
+        for (path, want) in rows {
+            assert_eq!(
+                on_path(std::ffi::OsStr::new(path), &base),
+                *want,
+                "{path:?}"
+            );
+        }
     }
 
     #[test]

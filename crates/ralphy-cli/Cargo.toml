@@ -58,6 +58,15 @@ qrcode = { version = "0.14", default-features = false }
 # Cargo.lock through rustls.
 zeroize = "1"
 
+# `ralphy install` adds its folder to the user Path in the registry. Same
+# version as the other crates, so no new tree.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_System_Registry",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
 [dev-dependencies]
 tempfile.workspace = true
 

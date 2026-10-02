@@ -11,7 +11,9 @@ cargo build --release
 # binary at target/release/ralphy  (target\release\ralphy.exe on Windows)
 ```
 
-Put the binary somewhere on your `PATH` so you can run `ralphy` from any repo. The
+Run `target/release/ralphy install` to put it on your `PATH`, so you can run `ralphy`
+from any repo: it links the build into a folder in your home and adds that folder to
+your `PATH` (see the README). The
 bundled skills (`reviewer`, `setup-pocock`, `staged-plan`) are embedded into the binary at build time —
 there's nothing else to install or copy alongside it.
 
