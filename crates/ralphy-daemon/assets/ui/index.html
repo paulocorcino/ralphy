@@ -2768,7 +2768,7 @@
                 <svg x-icon="'folder'"></svg>
                 <span class="add-project-name" x-text="e.name"></span>
                 <span class="add-project-mark" x-show="e.up" x-text="'Up one folder'"></span>
-                <span class="add-project-mark" x-show="e.error" x-text="'Cannot read this folder'"></span>
+                <span class="add-project-mark" x-show="e.error" x-text="'No access'"></span>
                 <span class="add-project-mark" x-show="!e.error && e.added" x-text="'Added'"></span>
                 <span class="add-project-mark" x-show="!e.error && !e.added && e.repo" x-text="'Repository'"></span>
               </li>
@@ -2776,7 +2776,7 @@
           </ul>
           <p class="run-help" x-show="addProject.loading" x-text="'Loading…'"></p>
           <p class="run-help" x-show="addProject.listing && addProject.listing.more > 0"
-             x-text="addProject.listing ? addProject.listing.more + ' more folders. Type more of the name to see them.' : ''"></p>
+             x-text="addProject.listing ? addProject.listing.more + ' more. Type to filter.' : ''"></p>
         </div>
         <div class="modal-foot">
           <span class="host-foot">

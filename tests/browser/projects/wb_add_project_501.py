@@ -9,7 +9,7 @@ Scenario c  a local repo: "Add project", the dialog closes, and the new
             project is selected, laid out and focused
 Scenario d  a subfolder of a repo: "Add <repo>", and the repo root is what
             the registry holds
-Scenario e  a plain folder: "Initialize git and add" creates `.git`
+Scenario e  a plain folder: "Create repository and add" creates `.git`
 Scenario f  a typing error: "This folder does not exist", disabled, and no
             folder is created
 Scenario g  a second clone of an added `owner/repo` is refused with the path
@@ -288,7 +288,7 @@ def main():
             # --- e: a plain folder ------------------------------------------
             open_dialog(page)
             type_folder(page, str(plain))
-            check("e: a plain folder reads Initialize git and add", wait_label(page, "Initialize git and add", True), str(primary(page)))
+            check("e: a plain folder reads Create repository and add", wait_label(page, "Create repository and add", True), str(primary(page)))
             added_and_selected(page, str(plain), "e")
             check("e: …and the folder is now a repository", (plain / ".git").exists())
 

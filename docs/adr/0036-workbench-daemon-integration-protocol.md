@@ -1029,7 +1029,7 @@ Mutate, so the relay's refusal of Spawn verbs does not apply.
   longer than 4096 bytes, or holds a control character. A refusal is one
   error frame, and nothing spawns.
 - `init` is a boolean. It adds `--init` only when the browser asked for it,
-  after it showed "Initialize git and add".
+  after it showed "Create repository and add".
 - The run lock does not apply. The project has no run yet.
 
 `daemon add` gains three refusals. They apply to the CLI as well, because the

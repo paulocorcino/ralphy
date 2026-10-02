@@ -207,15 +207,15 @@
       return {
         action: "root",
         label: `Add ${basename(inside)}`,
-        help: `This folder is inside the repository ${inside}. Ralphy adds that repository.`,
+        help: `Part of ${basename(inside)}. Ralphy adds all of ${basename(inside)}.`,
         path,
         init: false,
       };
     }
     return {
       action: "init",
-      label: "Initialize git and add",
-      help: "This folder has no git repository. Ralphy creates one here, with a first commit.",
+      label: "Create repository and add",
+      help: "Ralphy creates a git repository here.",
       path,
       init: true,
     };
@@ -231,12 +231,12 @@
   // The line under the field.
   function help(state) {
     if (state.wslMissing) {
-      return `Add the WSL host first. No host in Projects is the WSL distro ${state.wslMissing}.`;
+      return `Add ${state.wslMissing} (WSL) as a host first.`;
     }
     // Only a peer can answer this: it runs a Ralphy older than the page's
     // daemon, without the folder list.
     if (state.failure === "unknown verb") {
-      return "Ralphy on this computer is an older version and cannot list folders. Update Ralphy on it.";
+      return "Update Ralphy on this computer to see its folders.";
     }
     if (state.failure && state.failure !== "this folder does not exist") {
       return state.failure.charAt(0).toUpperCase() + state.failure.slice(1) + ".";
