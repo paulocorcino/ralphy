@@ -672,7 +672,7 @@ tunnel with the spec it was opened with. When the descriptor's spec differs,
 the daemon stops that `ssh` and opens a new one, so an edit takes effect
 without a daemon restart.
 
-## Amendment (2026-10-02): several operators on one host (proposed)
+## Amendment (2026-10-02): several operators on one host
 
 A daemon serves one operator (ADR-0032). A Linux or macOS host can have
 several accounts, and each account can be an operator with its own daemon. The
@@ -766,16 +766,42 @@ The failed forward does not end `ssh`: `ExitOnForwardFailure` covers only the
 setup of the forward, and a socket is opened for each connection. The tunnel
 therefore looks open, and only the probe through it fails.
 
-**Open points.**
+**M7. The add flow probes the socket tunnel before it writes the
+descriptor.** `host add` opens the tunnel the daemon would open, on a free
+local port, and asks `/api/peer/hello` once with the host's token. When this
+account's daemon answers, the descriptor names the socket. When it does not,
+the flow probes the port: when this account's daemon answers there, the
+descriptor names the port and a note says why; when another daemon answers, or
+the port refuses this account's token, the add fails before it writes
+anything and tells the operator to ask the host's administrator for
+`AllowStreamLocalForwarding yes`.
 
-- **`AllowStreamLocalForwarding no` was not measured** (it needs root on the
-  host). A host with that setting accepts the tunnel and refuses each
-  connection. The add flow must probe through the socket tunnel before it
-  writes the descriptor, and write the port form when the probe fails. Measure
-  the error text first.
+**Validated live (2026-10-02, #519).** The same host and the same two accounts.
+The local computer ran Windows 11 with `OpenSSH_for_Windows_9.5p2`; the host
+ran `OpenSSH_8.2p1 Ubuntu-4ubuntu0.9`. Both sides ran this amendment's build.
+
+| Test | Result |
+|---|---|
+| `host add` for `ralphy1` and `ralphy2` | both descriptors name `peer_socket`; both peers `reachable` at the same time, each `hello` with its own `daemon_id`; `ralphy1` holds port 7257, `ralphy2` serves only its socket (M4) |
+| Stop the daemon of `ralphy2` | its peer becomes `tunnel-silent` ("…its daemon does not answer… Start it.") in under 10 s; `ralphy1` stays `reachable`; after a start it is `reachable` again with no action |
+| Reboot the host | both daemons start from their systemd user units (lingering); both peers `reachable` again with no action |
+| `AllowStreamLocalForwarding no` in a drop-in, `sshd` reloaded | a new tunnel to a socket starts and stays up; each connection fails and `ssh` prints `channel N: open failed: connect failed: open failed` (both clients: Windows 9.5p2 and Git for Windows 10.0p2); a forward to the TCP port still works; tunnels opened before the reload keep working |
+| `host add` with that setting | `ralphy1`: port form and the note (M7); `ralphy2`: fails with the advice, its descriptor unchanged |
+
+The live run found two faults of `ralphy daemon restart` on Linux, both fixed
+before this record. After the binary was replaced with `mv`, the kernel names
+the old image `ralphy (deleted)`, and the restart took the pid as reused and
+started a second daemon next to the old one. And a daemon started by an
+earlier restart does not lead its process group, so the group signal did not
+reach it.
+
+**Not measured.**
+
 - **A path over the limit.** A home with a long path cannot hold the socket.
-  The daemon then serves only the port, and `describe` reports no socket.
-- **macOS** was not measured. It has the same sockets and the same OpenSSH.
+  The daemon then serves only the port, `describe` reports no socket, and the
+  add flow writes the port form.
+- **macOS.** No second account was available on the test Mac. It has the same
+  sockets and the same OpenSSH; the macOS CI runs the socket tests.
 
 ## Amendment (2026-10-02): the header shows the OS release
 
