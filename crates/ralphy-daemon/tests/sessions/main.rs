@@ -1,7 +1,8 @@
 //! Agent-session and console tests over a real loopback WebSocket, one test
 //! binary. Every module points the session launcher at the helper child
-//! through the same process-wide `RALPHY_DAEMON_AGENT_OVERRIDE` value and sets
-//! no other env var, so they can share a process.
+//! through the same process-wide `RALPHY_DAEMON_AGENT_OVERRIDE` value, and the
+//! CLI at `command_test_child` through `RALPHY_EXE_OVERRIDE`, and sets no other
+//! env var, so they can share a process.
 
 mod console_command_ws;
 mod console_reattach;
@@ -65,6 +66,12 @@ fn point_launcher_at_test_child() {
         std::env::set_var(
             "RALPHY_DAEMON_AGENT_OVERRIDE",
             env!("CARGO_BIN_EXE_session_test_child"),
+        );
+        // A Gemini launch with no owned root runs `ralphy gemini prepare-root`
+        // first; without this the daemon would run the TEST binary itself.
+        std::env::set_var(
+            "RALPHY_EXE_OVERRIDE",
+            env!("CARGO_BIN_EXE_command_test_child"),
         );
     });
 }

@@ -10,8 +10,8 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use ralphy_core::{BranchMode, Effort};
 
 use crate::{
-    blob, changes, config, daemon, host, init, install, issues, models, mutate, schedule, stop,
-    sync, telegram, triage, update, usage,
+    blob, changes, config, daemon, gemini, host, init, install, issues, models, mutate, schedule,
+    stop, sync, telegram, triage, update, usage,
 };
 
 #[derive(Parser)]
@@ -150,6 +150,10 @@ pub(crate) enum Command {
     // ADR-0036 §6.
     #[command(subcommand, hide = true)]
     Sync(sync::SyncCommand),
+    /// Prepare Gemini's own configuration in a repo.
+    // ADR-0040 Amendment 3.
+    #[command(subcommand, hide = true)]
+    Gemini(gemini::GeminiCommand),
 }
 
 /// The CLI as `main` parses it. The hidden commands are the ones the workbench

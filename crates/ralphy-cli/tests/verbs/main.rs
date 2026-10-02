@@ -12,6 +12,7 @@ mod changes;
 mod checkout_cwd;
 mod checkouts;
 mod daemon_cli;
+mod gemini_root;
 mod hook_status;
 mod lock_refusal;
 mod mutate;

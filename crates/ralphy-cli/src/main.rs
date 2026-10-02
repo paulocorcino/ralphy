@@ -16,6 +16,7 @@ mod config;
 mod daemon;
 mod delivery;
 mod events;
+mod gemini;
 mod guard;
 mod hook;
 mod host;
@@ -90,6 +91,7 @@ fn main() -> Result<()> {
         Command::Changes(cmd) => changes::changes(cmd),
         Command::Blob(cmd) => blob::blob(cmd),
         Command::Sync(cmd) => sync::sync(cmd),
+        Command::Gemini(cmd) => gemini::gemini(cmd),
         Command::Stop(args) => stop::stop(args),
         Command::Update(args) => update::run(&args),
     }

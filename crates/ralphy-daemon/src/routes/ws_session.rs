@@ -10,6 +10,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 
 mod bridge;
+mod gemini_root;
 mod refuse;
 mod relay;
 
@@ -565,17 +566,13 @@ pub(crate) async fn session_ws_upgrade(
     }
     // ADR-0043 D4/D6: a Gemini child is contained by an owned configuration root
     // AND the policy document inside it. The daemon may not import the adapter
-    // (ADR-0032 §10), so it cannot GENERATE that document — and duplicating the
-    // generator would drift from the operator's imported deny rules. It therefore
-    // fails closed. INVARIANT: this refusal precedes `spec_for` and every spawn
-    // path, so no Gemini child is ever created outside the owned root.
-    if agent == session::Agent::Gemini && !session::gemini_policy_path(&root).is_file() {
-        // The remedy names ONLY the run verb: `ralphy init`'s login probe calls
-        // `root::ensure` directly and writes no policy document
-        // (`ralphy-agent-gemini/src/lib.rs` — `write_policy` is reached only from
-        // `prepare_root`), so naming it here would send the operator round a loop
-        // that ends in this same refusal.
-        return refuser.refuse(ws, StatusCode::BAD_REQUEST, "gemini: no owned configuration root in this repo — run `ralphy run --agent gemini` here first (`ralphy init` alone does not write the policy document)");
+    // that writes them (ADR-0032 §10), so `gemini_root::ensure` asks the CLI to
+    // (ADR-0040 Amendment 3). INVARIANT: this refusal precedes `spec_for` and
+    // every spawn path, so no Gemini child is ever created outside the owned root.
+    if agent == session::Agent::Gemini {
+        if let Err(why) = gemini_root::ensure(&root, &daemon_id).await {
+            return refuser.refuse(ws, StatusCode::BAD_REQUEST, why);
+        }
     }
     // The id first: the agent-state files are named by it and must exist
     // before the child that reads them is launched (ADR-0059 §5). Only a

@@ -462,7 +462,9 @@ fn internal_commands_are_listed_apart_and_still_parse() {
             .map(str::to_string)
             .collect()
     };
-    let internal = ["hook", "branch", "label", "changes", "blob", "sync"];
+    let internal = [
+        "hook", "branch", "label", "changes", "blob", "sync", "gemini",
+    ];
     assert_eq!(names(footer), internal);
     for name in internal {
         assert!(
@@ -545,6 +547,7 @@ fn every_argv_the_daemon_spawns_parses() {
         d::worktree_list_argv(),
         d::changes_list_argv(),
         d::sync_status_argv(),
+        d::gemini_root_argv(),
     ];
     let mut ok = |label: &str, argv: Result<Vec<String>, d::ArgvError>| {
         built.push(argv.unwrap_or_else(|e| panic!("{label}: the daemon refused: {e}")));
