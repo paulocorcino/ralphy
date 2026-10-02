@@ -671,3 +671,104 @@ tunnel peer. Both are what the descriptor holds; no secret leaves the daemon.
 tunnel with the spec it was opened with. When the descriptor's spec differs,
 the daemon stops that `ssh` and opens a new one, so an edit takes effect
 without a daemon restart.
+
+## Amendment (2026-10-02): several operators on one host (proposed)
+
+A daemon serves one operator (ADR-0032). A Linux or macOS host can have
+several accounts, and each account can be an operator with its own daemon. The
+install folder, the store, the token and the autostart are already per account
+(D2, §3, §8). The TCP port is not: every daemon binds `127.0.0.1:7257`, and the
+autostart cannot pass `--port` (ADR-0032 §4).
+
+**What happened (measured 2026-10-02, two accounts `ralphy1` and `ralphy2` on
+the Ubuntu 20.04 test host 10.1.1.4).** `host add` for `ralphy1` worked. For
+`ralphy2`:
+
+1. Its daemon never started, because the daemon of `ralphy1` held port 7257.
+2. `ralphy daemon describe` of `ralphy2` still said `running: true`, because
+   it only tests that something answers on the port.
+3. The add flow wrote a descriptor with peer port 7257, and the tunnel reached
+   the daemon of `ralphy1`.
+4. That daemon refused the token of `ralphy2` (§5), so no data leaked. But the
+   add flow ended with exit 0, and the message said to restart the daemon with
+   `--peer-store`, which was not the cause.
+
+Without §5 (a daemon on the default `Localhost` policy), step 4 would have
+shown the repos of `ralphy1` to the operator of `ralphy2`.
+
+**M1. On Linux and macOS, every daemon also listens on a Unix socket in its
+store: `~/.ralphy/daemon.sock`, mode `0600`.** The same router and the same
+auth policy serve both listeners, so the token of §5 is still required on the
+socket. The operating system gives each account its own socket, so two daemons
+never collide, and the kernel refuses a connection from another account before
+the daemon sees it. On start, a socket file that no daemon answers is deleted
+and bound again. A socket that answers means that a daemon of this account
+already runs, and the start fails, as it does today for a port in use.
+
+This changes the exposure of ADR-0032 §4 only for the account that owns the
+store: the socket admits no one that the store does not already admit.
+
+**M2. A tunnel to a Unix host forwards to the socket.** The tunnel becomes
+`ssh -N -L 127.0.0.1:<local port>:<socket path>`. The descriptor's tunnel
+section records `peer_socket` (an absolute path) in place of `peer_port`. The
+local end, the loopback gate and the peer client do not change. Because `sshd`
+opens the socket as the signed-in account, the account that the operator signs
+in with is the daemon that the tunnel reaches. §2's "the peer daemon keeps its
+default port" no longer applies to Unix hosts.
+
+**M3. `describe` reports the socket only when the socket answers.** Its JSON
+gets `socket`: the absolute path when a connection to it succeeds, else absent.
+On a Unix host, `running` means that the socket answers. A binary that was
+updated while an older daemon still runs therefore reports no socket, and the
+add flow uses the port, as today. The add flow already reads `describe` again
+after it restarts the daemon (`pair.rs`), so a new host gets the socket on the
+first `host add`. A descriptor written before this amendment keeps the port
+until the next `host add` or *Edit* (H3). The field is optional, so the peer
+protocol version does not change.
+
+**M4. On a host paired by `host add`, the TCP port is optional.** When the
+store has the `daemon-require-token` marker (§5) and the port is in use, the
+daemon logs a warning and serves only the socket. Without the marker, a port in
+use stays a fatal error, because on the operator's own computer the browser
+needs that port. On the host, the cost is that a browser on the host reaches
+the daemon of another account and gets a 401. A headless host has no browser.
+
+**M5. The handshake checks the identity.** `probe` compares the `daemon_id`
+of `/api/peer/hello` with the descriptor's `daemon_id`. When they differ, the
+peer status is a refusal that names both ids, and never `Unauthorized`. This
+covers a Windows host (M6), a descriptor still on the port (M3), and any other
+path to the wrong daemon.
+
+**M6. A Windows host keeps the port.** The Unix socket of `tokio` exists only
+on Unix, and nobody has measured OpenSSH for Windows as a server that forwards
+to a socket. On a Windows host, a second account's daemon still fails to bind.
+With M5 the operator sees a clear refusal. A port per account on Windows waits
+for an operator who needs it.
+
+**Measured (2026-10-02).** Client `OpenSSH_for_Windows_9.5p2`, server
+`OpenSSH_8.2p1 Ubuntu-4ubuntu0.9`, default `sshd_config`. A small server bound
+`~/.ralphy/spike.sock` with mode `0600` in each account. The homes were mode
+`0755`.
+
+| Test | Result |
+|---|---|
+| Tunnel as `ralphy1` to the socket of `ralphy1` | answered `I am ralphy1` |
+| Tunnel as `ralphy2` to the socket of `ralphy2`, at the same time | answered `I am ralphy2` |
+| Tunnel as `ralphy2` to the socket of `ralphy1` | refused; `ssh` printed `channel 1: open failed: connect failed: open failed` and stayed up |
+| `ralphy2` connects to the socket of `ralphy1` on the host | `PermissionError: [Errno 13] Permission denied` |
+| Length of `/home/ralphy2/.ralphy/daemon.sock` | 33 bytes; the limit is 108 on Linux and 104 on macOS |
+
+The failed forward does not end `ssh`: `ExitOnForwardFailure` covers only the
+setup of the forward, and a socket is opened for each connection. The tunnel
+therefore looks open, and only the probe through it fails.
+
+**Open points.**
+
+- **`AllowStreamLocalForwarding no` was not measured** (it needs root on the
+  host). A host with that setting accepts the tunnel and refuses each
+  connection. The add flow must probe through the socket tunnel before it
+  writes the descriptor, and write the port form when the probe fails. Measure
+  the error text first.
+- **A path over the limit.** A home with a long path cannot hold the socket.
+  The daemon then serves only the port, and `describe` reports no socket.
+- **macOS** was not measured. It has the same sockets and the same OpenSSH.
