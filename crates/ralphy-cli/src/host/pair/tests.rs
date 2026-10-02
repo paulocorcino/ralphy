@@ -53,6 +53,7 @@ fn local(store: &Path) -> Local<'_> {
         port: 7401,
         build: ralphy_release::Build::parse("v0.1.0-rc.30"),
         target: Some("linux-x64"),
+        latest: None,
     }
 }
 

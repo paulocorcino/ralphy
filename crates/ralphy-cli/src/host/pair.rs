@@ -37,6 +37,8 @@ pub(crate) struct Local<'a> {
     pub port: u16,
     pub build: Build,
     pub target: Option<&'static str>,
+    /// The newest published release tag, read only for a development build.
+    pub latest: Option<String>,
 }
 
 /// A signed-in session: the key to use (`None` = the operator's SSH config or

@@ -489,9 +489,11 @@ When the target is different, it downloads the release archive for the host's
 target, of **the local computer's version**, never the latest one: peer
 compatibility is an exact match of the peer protocol (`PEER_PROTOCOL_VERSION`),
 so only the same version is sure to connect. A development build (ahead of its
-tag) has no release archive, so it can install only on a host with the same
-target; for another target the flow refuses and says to install by hand. The
-host needs no internet access.
+tag) has no release archive. For another target it sends the latest published
+release (amended 2026-10-02): its peer protocol may differ from the
+development build's, and the operator of a development build takes that risk.
+The describe after the install reports a mismatch. The host needs no internet
+access.
 
 **D2. The binary goes to `~/.ralphy/bin`.** On Windows it is
 `%USERPROFILE%\.ralphy\bin\ralphy.exe`. This needs no root and no

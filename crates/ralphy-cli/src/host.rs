@@ -232,13 +232,16 @@ fn paired(
 ) -> Result<()> {
     let store = auth::store_dir()?;
     let me = identity::load_from(&identity::daemon_toml_path()?)?;
+    let build = ralphy_release::Build::parse(env!("RALPHY_VERSION"));
+    let latest = if build.ahead { latest_release() } else { None };
     let local = pair::Local {
         store: &store,
         daemon_id: me.as_ref().map(|i| i.id.to_string()),
         name: me.as_ref().map(|i| i.name.clone()),
         port: crate::daemon::port_from_args(&pidfile::read_args_in(&store)),
-        build: ralphy_release::Build::parse(env!("RALPHY_VERSION")),
+        build,
         target: crate::update::apply::host_target(),
+        latest,
     };
     let stdout = std::io::stdout();
     let mut out = if json {
@@ -253,6 +256,20 @@ fn paired(
         }
     }
     result
+}
+
+/// The newest published release tag, from the release cache, refreshed when
+/// stale. `None` offline or when nothing was ever read.
+fn latest_release() -> Option<String> {
+    use ralphy_release::fetch::{self, RefreshOpts};
+    let cache = ralphy_release::cache_file()?;
+    fetch::refresh_if_stale(&RefreshOpts::new(&cache));
+    fetch::load(&cache)
+        .into_iter()
+        .filter(|r| !r.draft)
+        .filter_map(|r| r.version().map(|v| (v, r.tag_name)))
+        .max_by(|a, b| a.0.cmp(&b.0))
+        .map(|(_, tag)| tag)
 }
 
 /// The password on standard input, when the flow was asked to read one.

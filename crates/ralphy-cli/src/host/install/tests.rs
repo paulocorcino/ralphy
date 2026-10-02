@@ -1,7 +1,7 @@
 use std::cell::Cell;
 
 use ralphy_daemon::peer::PEER_PROTOCOL_VERSION;
-use ralphy_release::{Asset, Release};
+use ralphy_release::{Asset, Build, Release};
 
 use super::*;
 use crate::host::checks::tests::description;
@@ -22,6 +22,7 @@ fn local<'a>(store: &'a Path, build: &str, target: &'static str) -> Local<'a> {
         port: 7401,
         build: Build::parse(build),
         target: Some(target),
+        latest: None,
     }
 }
 
@@ -208,7 +209,7 @@ fn nothing_is_sent_when_the_install_must_not_happen() {
             "linux-x64",
         ),
         (
-            "a development build for another target",
+            "a development build that read no release",
             missing(),
             LINUX_PROBE,
             "v0.1.0-rc.30-4-gabc1234",
@@ -257,10 +258,17 @@ fn each_host_maps_to_its_release_target() {
 }
 
 #[test]
-fn a_development_build_offers_only_its_own_target() {
+fn a_development_build_sends_the_latest_release_to_another_target() {
     let store = tempfile::tempdir().unwrap();
     let facts = parse_facts(HostOs::Linux, LINUX_PROBE);
-    let dev = local(store.path(), "v0.1.0-rc.30-4-gabc1234", "windows-x64");
+    let mut dev = local(store.path(), "v0.1.0-rc.30-4-gabc1234", "windows-x64");
+    dev.latest = Some("v0.1.0-rc.31".to_string());
+    let sent = offer(&facts, &dev).expect("the latest release");
+    assert_eq!(sent.source, Source::Release("v0.1.0-rc.31".to_string()));
+    assert_eq!(sent.version, "v0.1.0-rc.31");
+    assert_eq!(sent.target, "linux-x64");
+
+    dev.latest = None;
     let ralphy = RalphyOnHost::Missing;
     let mut checks = evaluate(&facts, &ralphy, &[], "svrapp", None);
     assert_eq!(offer_for(&mut checks, &facts, &ralphy, &dev), None);
@@ -270,19 +278,13 @@ fn a_development_build_offers_only_its_own_target() {
         CheckStatus::Warn,
         "no command installs Ralphy by hand"
     );
-    assert!(
-        row.text.starts_with(
-            "Ralphy is not installed on the host. This computer runs a development build"
-        ),
-        "{row:?}"
-    );
-    assert!(row.text.contains("from source"), "{row:?}");
+    assert!(row.text.contains("latest release"), "{row:?}");
 
     let same = local(store.path(), "v0.1.0-rc.30-4-gabc1234", "linux-x64");
-    let own = offer(&facts, &same.build, same.target).expect("its own target");
+    let own = offer(&facts, &same).expect("its own target");
     assert_eq!(own.source, Source::ThisComputer);
     let release = local(store.path(), "v0.1.0-rc.30", "windows-x64");
-    let other = offer(&facts, &release.build, release.target).expect("a release");
+    let other = offer(&facts, &release).expect("a release");
     assert_eq!(other.source, Source::Release("v0.1.0-rc.30".to_string()));
     assert_eq!(other.target, "linux-x64");
 }
