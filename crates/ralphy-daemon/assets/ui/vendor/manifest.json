@@ -105,12 +105,12 @@
     {
       "name": "Mermaid",
       "npm": "mermaid",
-      "version": "11.16.0",
-      "source": "https://registry.npmjs.org/mermaid/-/mermaid-11.16.0.tgz",
+      "version": "11.17.2",
+      "source": "https://registry.npmjs.org/mermaid/-/mermaid-11.17.2.tgz",
       "files": [
         {
           "path": "mermaid.min.js",
-          "sha256": "74d7c46dabca328c2294733910a8aa1ed0c37451776e8d5295da38a2b758fb9b"
+          "sha256": "581ed7d74bd9048d0e3a91363927d72ef22942d7722546b27f7cc29e35390eb8"
         }
       ]
     },
