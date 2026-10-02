@@ -208,6 +208,7 @@ mod tests {
     /// `--create` makes the one missing folder, then the repository in it.
     #[test]
     fn create_makes_one_missing_folder() {
+        git_identity();
         let tmp = tempfile::tempdir().expect("tempdir");
         let dir = tmp.path().join("my notes");
 
