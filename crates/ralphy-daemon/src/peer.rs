@@ -94,6 +94,10 @@ pub struct DaemonDescription {
     pub require_token: bool,
     pub autostart: bool,
     pub running: bool,
+    /// The absolute path of the daemon's socket, set only when a connection
+    /// to it succeeded. Optional: an older daemon and Windows never set it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub socket: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
 }

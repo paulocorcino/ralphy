@@ -341,6 +341,7 @@ fn description(token: &str) -> peer::DaemonDescription {
         require_token: true,
         autostart: true,
         running: true,
+        socket: None,
         token: Some(token.to_string()),
     }
 }

@@ -32,7 +32,7 @@ fn max_len() -> usize {
 }
 
 /// Whether `path` fits in `sun_path` with its final NUL.
-fn fits(path: &Path) -> bool {
+pub fn fits(path: &Path) -> bool {
     path.as_os_str().len() < max_len()
 }
 

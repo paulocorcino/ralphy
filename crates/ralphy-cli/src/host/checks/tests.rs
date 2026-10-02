@@ -46,6 +46,7 @@ pub(crate) fn description(os: &str) -> DaemonDescription {
         require_token: true,
         autostart: true,
         running: true,
+        socket: None,
         token: None,
     }
 }

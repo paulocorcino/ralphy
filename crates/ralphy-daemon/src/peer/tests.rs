@@ -490,6 +490,7 @@ fn paired_descriptor_refuses_an_id_that_is_not_a_ulid() {
         require_token: true,
         autostart: true,
         running: true,
+        socket: None,
         token: Some("tok".to_string()),
     };
     let paired = paired_descriptor(&d, "svrapp", 7401, None).unwrap();

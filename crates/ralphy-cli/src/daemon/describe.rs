@@ -28,6 +28,40 @@ pub(crate) fn port_from_args(args: &[String]) -> u16 {
     ralphy_daemon::DEFAULT_PORT
 }
 
+/// What a connection to the store's socket showed.
+#[cfg_attr(not(unix), allow(dead_code))]
+struct SocketProbe {
+    path: std::path::PathBuf,
+    answers: bool,
+}
+
+/// Try the daemon socket in `dir`. `None` when there is no probe to make: on
+/// Windows, or when the path is too long for a socket address.
+#[cfg(unix)]
+fn probe_socket(dir: &Path) -> Option<SocketProbe> {
+    let path = ralphy_daemon::socket::socket_path(dir);
+    if !ralphy_daemon::socket::fits(&path) {
+        return None;
+    }
+    let path = std::fs::canonicalize(dir)
+        .map(|d| ralphy_daemon::socket::socket_path(&d))
+        .unwrap_or(path);
+    let answers = std::os::unix::net::UnixStream::connect(&path).is_ok();
+    Some(SocketProbe { path, answers })
+}
+
+#[cfg(not(unix))]
+fn probe_socket(_dir: &Path) -> Option<SocketProbe> {
+    None
+}
+
+/// Whether the daemon is running. When the socket was probed, its answer is
+/// the answer: the TCP port may be held by another account's daemon. Without a
+/// probe (Windows, or a path over the socket limit) the TCP connect decides.
+fn liveness(socket_answers: Option<bool>, tcp_answers: impl FnOnce() -> bool) -> bool {
+    socket_answers.unwrap_or_else(tcp_answers)
+}
+
 /// Print this daemon's [`DaemonDescription`] as one JSON line. The token is
 /// included only with `with_token`.
 pub(crate) fn describe(dir: &Path, with_token: bool, out: &mut impl Write) -> Result<()> {
@@ -40,8 +74,15 @@ pub(crate) fn describe(dir: &Path, with_token: bool, out: &mut impl Write) -> Re
             false
         }
     };
-    let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
-    let running = TcpStream::connect_timeout(&addr, Duration::from_millis(500)).is_ok();
+    let socket = probe_socket(dir);
+    let socket_answers = socket.as_ref().map(|s| s.answers);
+    let running = liveness(socket_answers, || {
+        let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
+        TcpStream::connect_timeout(&addr, Duration::from_millis(500)).is_ok()
+    });
+    let socket = socket
+        .filter(|s| s.answers)
+        .map(|s| s.path.to_string_lossy().into_owned());
     let token = if with_token {
         auth::load_token_from(&auth::token_path_in(dir))?
     } else {
@@ -58,6 +99,7 @@ pub(crate) fn describe(dir: &Path, with_token: bool, out: &mut impl Write) -> Re
         require_token: auth::require_token_enabled_in(dir)?,
         autostart,
         running,
+        socket,
         token,
     };
     let line = serde_json::to_string(&description).context("serializing the daemon description")?;
@@ -79,6 +121,32 @@ mod tests {
 
     fn args(a: &[&str]) -> Vec<String> {
         a.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn running_follows_the_socket_on_unix() {
+        assert!(liveness(Some(true), || false));
+        assert!(!liveness(Some(false), || true));
+    }
+
+    #[test]
+    fn a_path_over_the_limit_falls_back_to_the_port() {
+        assert!(liveness(None, || true));
+        assert!(!liveness(None, || false));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_listening_socket_is_reported_with_its_path() {
+        let store = tempfile::tempdir().unwrap();
+        let path = ralphy_daemon::socket::socket_path(store.path());
+        let listener = std::os::unix::net::UnixListener::bind(&path).unwrap();
+        let probe = probe_socket(store.path()).unwrap();
+        assert!(probe.answers);
+        assert_eq!(probe.path.file_name(), path.file_name());
+        drop(listener);
+        // The file stays but nothing listens: a refused connect is not an answer.
+        assert!(!probe_socket(store.path()).unwrap().answers);
     }
 
     #[test]
