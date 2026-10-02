@@ -16,6 +16,7 @@ fn descriptor(id: &str, environment: &str) -> crate::peer::PeerDescriptor {
         address: "127.0.0.1".to_string(),
         port: 1,
         environment: environment.to_string(),
+        os: String::new(),
         token: "token".to_string(),
         protocol_version: crate::peer::PEER_PROTOCOL_VERSION,
         tunnel: None,

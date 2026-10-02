@@ -26,6 +26,7 @@ fn descriptor(port: u16) -> PeerDescriptor {
         address: "127.0.0.1".to_string(),
         port,
         environment: "WSL: Ubuntu".to_string(),
+        os: String::new(),
         token: "peer-tok".to_string(),
         protocol_version: PEER_PROTOCOL_VERSION,
         tunnel: None,

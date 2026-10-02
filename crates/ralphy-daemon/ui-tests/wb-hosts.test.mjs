@@ -405,7 +405,8 @@ test("shell: Connect adds the host and reloads the tree with no page reload", as
   assert.equal(state.addHost.open, false);
   await tick();
   const group = state.fleetGroups().find((g) => g.daemon === VPS_ID);
-  assert.equal(state.groupLabel(group), "vps: Linux");
+  assert.equal(state.groupHost(group), "vps");
+  assert.equal(state.groupLabel(group), "Linux");
 });
 
 test("shell: a failed Connect keeps the dialog open and does not reload", async () => {

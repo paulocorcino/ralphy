@@ -772,3 +772,26 @@ therefore looks open, and only the probe through it fails.
 - **A path over the limit.** A home with a long path cannot hold the socket.
   The daemon then serves only the port, and `describe` reports no socket.
 - **macOS** was not measured. It has the same sockets and the same OpenSSH.
+
+## Amendment (2026-10-02): the header shows the OS release
+
+This amendment changes §6 and H2.
+
+**R1. The environment label names the release.** A daemon on Linux reads
+`NAME` and `VERSION_ID` from `/etc/os-release` (`Ubuntu 24.04`, `Debian 12`).
+A daemon on macOS reads `sw_vers -productVersion` and keeps the major version
+(`macOS 15`). Windows stays `Windows`. A WSL daemon stays `WSL: <distro>`: the
+workbench maps a `\\wsl.localhost\<distro>\…` path to its peer by that name.
+When the release cannot be read, the label is the OS name, as before.
+
+**R2. The header of a host is `<name> · <release>`.** The name is in capital
+letters; the release keeps its own spelling (`VPS-HETZNER · Ubuntu 24.04`).
+
+**R3. The icon comes from an `os` field, not from the label.** The peer
+descriptor, `/api/fleet` peers and the fleet rows carry the daemon's OS family
+(`windows`, `linux`, `macos`). A descriptor written before the field has none,
+and the icon then comes from the label, as in H2.
+
+A host's descriptor is written by `host add` and by Edit. A host paired before
+this change keeps its old label until the host runs the new version and the
+operator edits it.

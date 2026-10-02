@@ -29,6 +29,8 @@ pub(crate) struct PeerView {
     pub(crate) name: String,
     pub(crate) avatar: String,
     pub(crate) environment: String,
+    /// The peer's OS family, for the icon; empty when its descriptor predates it.
+    pub(crate) os: String,
     pub(crate) state: String,
     pub(crate) diagnosis: String,
     /// Whether this peer advertised how to wake it (a WSL unit).
@@ -164,6 +166,7 @@ pub(crate) async fn fleet_route(
             name: d.name.clone(),
             avatar: d.avatar.clone(),
             environment: d.environment.clone(),
+            os: d.os.clone(),
             state: status.state().to_string(),
             diagnosis: status.diagnosis(&d.environment),
             nudgeable: d.nudge.is_some(),
@@ -184,6 +187,7 @@ pub(crate) async fn fleet_route(
             name: reject.file().to_string(),
             avatar: "❔".to_string(),
             environment: "unknown".to_string(),
+            os: String::new(),
             state: "malformed".to_string(),
             diagnosis: reject.why(),
             nudgeable: false,

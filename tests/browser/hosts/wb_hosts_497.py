@@ -58,10 +58,12 @@ SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 # A real ULID: Crockford base32 has no I, L, O or U.
 PEER_ID = "01ARZ3NDEKTSV4RRFFQ69G5FC7"
 PEER_NAME = "svrapp"
-PEER_ENV = "Linux"
+# The label a Linux host announces now names its release; the icon comes from
+# the descriptor's `os`, not from the label.
+PEER_ENV = "Ubuntu 24.04"
 PEER_TOKEN = "hosts-fixture-token"
 PEER_SLUG = "ralphy-lab/remote-repo"
-LABEL = f"{PEER_NAME}: {PEER_ENV}"
+LABEL = f"{PEER_NAME} · {PEER_ENV}"
 
 results = []
 
@@ -218,6 +220,7 @@ def seed_descriptor(daemon_dir, stub_port, ssh_port):
             'address = "127.0.0.1"',
             f"port = {stub_port}",
             f'environment = "{PEER_ENV}"',
+            'os = "linux"',
             f'token = "{PEER_TOKEN}"',
             "protocol_version = 3",
             "",
@@ -306,7 +309,7 @@ def main():
             # 2. A closed port: the help panel.
             page.fill("#host-address", "127.0.0.1")
             page.fill("#host-port", str(closed_port))
-            page.click(".host-foot .btn.accent")
+            page.click("[role=dialog][aria-label=Hosts] .host-foot .btn.accent")
             page.wait_for_function(
                 f"() => ({VISIBLE})(document.querySelector('.host-help'))", timeout=30000
             )

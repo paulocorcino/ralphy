@@ -14,6 +14,7 @@ fn peer(id: &str, environment: &str) -> PeerDescriptor {
         address: "127.0.0.1".to_string(),
         port: 7441,
         environment: environment.to_string(),
+        os: String::new(),
         token: "token".to_string(),
         protocol_version: PEER_PROTOCOL_VERSION,
         tunnel: None,

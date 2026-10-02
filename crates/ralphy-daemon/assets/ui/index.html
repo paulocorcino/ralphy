@@ -237,12 +237,12 @@
           <div class="env-block">
             <div class="env-group" x-show="g.header" :title="groupTitle(g)">
               <span class="os-icon" aria-hidden="true">
-                <i class="bi bi-windows" x-show="osOf(g.environment) === 'windows'"></i>
-                <i class="bi bi-apple" x-show="osOf(g.environment) === 'macos'"></i>
-                <svg x-show="osOf(g.environment) === 'linux'"><use href="#os-linux"></use></svg>
-                <span x-show="osOf(g.environment) === 'other'"><svg x-icon="'monitor'"></svg></span>
+                <i class="bi bi-windows" x-show="osOf(g) === 'windows'"></i>
+                <i class="bi bi-apple" x-show="osOf(g) === 'macos'"></i>
+                <svg x-show="osOf(g) === 'linux'"><use href="#os-linux"></use></svg>
+                <span x-show="osOf(g) === 'other'"><svg x-icon="'monitor'"></svg></span>
               </span>
-              <span class="env-label" x-text="groupLabel(g)"></span>
+              <span class="env-label"><span class="env-host" x-text="groupHost(g) ? groupHost(g) + ' · ' : ''"></span><span class="env-os" x-text="groupLabel(g)"></span></span>
               <span class="env-daemon" x-show="g.showName" x-text="g.name"></span>
               <!-- The state is a glyph, its word in the tooltip and the
                    aria-label (wb-fleet.js `stateIcon`). The glyph becomes the
@@ -2816,10 +2816,10 @@
               <li class="host-item" :data-host="h.daemon_id">
                 <div class="host-row">
                   <span class="os-icon" :title="h.environment">
-                    <i class="bi bi-windows" x-show="osOf(h.environment) === 'windows'"></i>
-                    <i class="bi bi-apple" x-show="osOf(h.environment) === 'macos'"></i>
-                    <svg x-show="osOf(h.environment) === 'linux'"><use href="#os-linux"></use></svg>
-                    <span x-show="osOf(h.environment) === 'other'"><svg x-icon="'monitor'"></svg></span>
+                    <i class="bi bi-windows" x-show="osOf(h) === 'windows'"></i>
+                    <i class="bi bi-apple" x-show="osOf(h) === 'macos'"></i>
+                    <svg x-show="osOf(h) === 'linux'"><use href="#os-linux"></use></svg>
+                    <span x-show="osOf(h) === 'other'"><svg x-icon="'monitor'"></svg></span>
                   </span>
                   <span class="host-row-name" x-text="h.name"></span>
                   <span class="host-row-dest" x-text="h.destination || ''"></span>

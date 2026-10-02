@@ -132,6 +132,7 @@ fn descriptor(id: &str, port: u16, tunnel: Option<TunnelSpec>) -> PeerDescriptor
         address: "127.0.0.1".to_string(),
         port,
         environment: "Linux".to_string(),
+        os: String::new(),
         token: "peer-token".to_string(),
         protocol_version: PEER_PROTOCOL_VERSION,
         nudge: None,

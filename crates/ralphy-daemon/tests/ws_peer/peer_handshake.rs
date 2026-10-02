@@ -51,6 +51,7 @@ fn descriptor(port: u16, token: &str) -> PeerDescriptor {
         address: "127.0.0.1".into(),
         port,
         environment: ENV.into(),
+        os: String::new(),
         token: token.into(),
         protocol_version: PEER_PROTOCOL_VERSION,
         tunnel: None,

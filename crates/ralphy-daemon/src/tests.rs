@@ -1476,6 +1476,11 @@ fn announced_descriptor_advertises_a_nudge_only_inside_wsl() {
         "no `wsl.exe` can reach a non-WSL daemon, so it advertises no nudge"
     );
     assert_ne!(outside.environment, "WSL: Ubuntu-22.04");
+    assert_eq!(
+        outside.os,
+        std::env::consts::OS,
+        "the OS family is announced for the workbench icon"
+    );
 }
 
 /// Announcing must never touch the auth policy: it takes the token it is
@@ -1613,6 +1618,7 @@ fn seed_fleet_store(dir: &Path, peer_port: u16) -> PathBuf {
             address: "127.0.0.1".into(),
             port: peer_port,
             environment: "WSL: Ubuntu-22.04".into(),
+            os: String::new(),
             token: "tok".into(),
             protocol_version: peer::PEER_PROTOCOL_VERSION,
             tunnel: None,
@@ -1687,6 +1693,7 @@ async fn api_fleet_marks_an_unreachable_peer_and_keeps_the_local_repos() {
             address: "127.0.0.1".into(),
             port: closed,
             environment: "WSL: Ubuntu-22.04".into(),
+            os: "linux".into(),
             token: "tok".into(),
             protocol_version: peer::PEER_PROTOCOL_VERSION,
             tunnel: None,
@@ -1720,6 +1727,14 @@ async fn api_fleet_marks_an_unreachable_peer_and_keeps_the_local_repos() {
 
     let peers = body["peers"].as_array().unwrap();
     assert_eq!(peers.len(), 3, "both peers AND the bad record: {peers:?}");
+    let wsl = peers
+        .iter()
+        .find(|p| p["daemon_id"] == "01PEERWSL")
+        .expect("the WSL peer must be listed");
+    assert_eq!(
+        wsl["os"], "linux",
+        "the OS family rides through for the icon: {wsl}"
+    );
     let live = peers
         .iter()
         .find(|p| p["daemon_id"] == "01PEERFAKE")
@@ -1858,6 +1873,7 @@ fn nudge_target(port: u16, address: &str) -> peer::PeerDescriptor {
         address: address.into(),
         port,
         environment: "WSL: Ubuntu-22.04".into(),
+        os: String::new(),
         token: "tok".into(),
         protocol_version: peer::PEER_PROTOCOL_VERSION,
         tunnel: None,
@@ -1986,6 +2002,7 @@ async fn api_fleet_nudge_refuses_a_peer_that_announced_no_way_to_wake_it() {
             address: "127.0.0.1".into(),
             port: 7257,
             environment: "WSL: Ubuntu-22.04".into(),
+            os: String::new(),
             token: "tok".into(),
             protocol_version: peer::PEER_PROTOCOL_VERSION,
             tunnel: None,
@@ -2321,6 +2338,7 @@ async fn api_agents_uses_the_owning_daemons_locator() {
             address: "127.0.0.1".to_string(),
             port: peer_port,
             environment: "WSL: Ubuntu-22.04".to_string(),
+            os: String::new(),
             token: "peer-token".to_string(),
             protocol_version: peer::PEER_PROTOCOL_VERSION,
             tunnel: None,

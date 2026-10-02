@@ -38,6 +38,9 @@ pub struct FederatedRepo {
     pub daemon_id: String,
     pub daemon_name: String,
     pub environment: String,
+    /// The owning daemon's OS family (`std::env::consts::OS`), for the icon.
+    /// Empty for a peer whose descriptor predates the field.
+    pub os: String,
     /// [`LOCAL_STATE`], or the peer's liveness state.
     pub peer_state: String,
     pub slug: String,
@@ -112,6 +115,7 @@ pub fn aggregate(
             daemon_id: local_id.to_string(),
             daemon_name: local_name.to_string(),
             environment: local_env.to_string(),
+            os: std::env::consts::OS.to_string(),
             peer_state: LOCAL_STATE.to_string(),
             slug: slug.clone(),
             name: crate::registry::project_name(slug, &entry.path),
@@ -135,6 +139,7 @@ pub fn aggregate(
             daemon_id: d.daemon_id.clone(),
             daemon_name: d.name.clone(),
             environment: d.environment.clone(),
+            os: d.os.clone(),
             peer_state: status.state().to_string(),
             slug: slug.clone(),
             name: crate::registry::project_name(slug, &row.path),

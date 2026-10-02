@@ -9,6 +9,7 @@ fn peer(daemon_id: &str, name: &str, environment: &str) -> PeerDescriptor {
         address: "127.0.0.1".into(),
         port: 7257,
         environment: environment.into(),
+        os: String::new(),
         token: "tok".into(),
         protocol_version: crate::peer::PEER_PROTOCOL_VERSION,
         tunnel: None,
@@ -85,6 +86,30 @@ fn a_peer_rows_remote_and_dirty_ride_through_and_a_local_row_has_neither() {
         "a local row is not re-derived here: {mine:?}"
     );
     assert_eq!(mine.dirty, None, "{mine:?}");
+}
+
+#[test]
+fn every_row_carries_its_owners_os() {
+    let local = store(&[("owner/local", "C:/Dev/local")]);
+    let theirs = peer_store(&[("owner/forge", "/home/forge")]);
+    let mut d = peer("01XYZ", "svrapp", "Ubuntu 24.04");
+    d.os = "linux".into();
+    let rows = aggregate(
+        ("01ABC", "anvil", "Windows", &local),
+        &[(&d, &PeerStatus::Reachable, Some(&theirs))],
+    );
+    let os = |key: &str| {
+        rows.iter()
+            .find(|r| r.key == key)
+            .map(|r| r.os.clone())
+            .expect("the row folds")
+    };
+    assert_eq!(os("01XYZ/owner/forge"), "linux", "the peer's own OS");
+    assert_eq!(
+        os("01ABC/owner/local"),
+        std::env::consts::OS,
+        "this daemon's OS"
+    );
 }
 
 #[test]

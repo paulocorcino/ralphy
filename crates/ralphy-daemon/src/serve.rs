@@ -250,7 +250,16 @@ pub(crate) fn announced_descriptor(
         avatar: id.avatar.clone(),
         address: Ipv4Addr::LOCALHOST.to_string(),
         port,
-        environment: peer::environment_label(wsl_distro, std::env::consts::OS),
+        environment: peer::environment_label(
+            wsl_distro,
+            std::env::consts::OS,
+            wsl_distro
+                .is_none()
+                .then(peer::system_release)
+                .flatten()
+                .as_deref(),
+        ),
+        os: std::env::consts::OS.to_string(),
         token,
         protocol_version: peer::PEER_PROTOCOL_VERSION,
         tunnel: None,

@@ -64,6 +64,11 @@ pub struct PeerDescriptor {
     pub address: String,
     pub port: u16,
     pub environment: String,
+    /// The peer's OS family (`std::env::consts::OS`: `windows`, `linux`,
+    /// `macos`). It picks the workbench icon; the `environment` label is for
+    /// people. Empty in a descriptor written before the field existed.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub os: String,
     pub token: String,
     pub protocol_version: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -121,6 +126,7 @@ pub fn paired_descriptor(
         address: "127.0.0.1".to_string(),
         port: local_port,
         environment: d.environment.clone(),
+        os: d.os.clone(),
         token,
         protocol_version: d.protocol_version,
         nudge: None,
@@ -319,25 +325,120 @@ pub fn read_store(dir: &Path) -> (Vec<PeerDescriptor>, Vec<PeerReject>) {
 }
 
 /// The human label for an environment: the WSL distro when running inside one,
-/// else a presentable OS name. Pure so the WSL branch is testable off Windows.
-pub fn environment_label(wsl_distro: Option<&str>, os: &str) -> String {
-    match wsl_distro {
-        Some(d) => format!("WSL: {d}"),
-        None => match os {
-            "windows" => "Windows".to_string(),
-            "linux" => "Linux".to_string(),
-            "macos" => "macOS".to_string(),
-            other => other.to_string(),
-        },
+/// else the OS release (`Ubuntu 24.04`, `macOS 15`) when it was read, else a
+/// presentable OS name. Pure so every branch is testable on any host.
+///
+/// The WSL label keeps the registered distro name verbatim: the workbench maps
+/// a `\\wsl.localhost\<distro>\…` path to its peer by it. Windows keeps its
+/// plain name.
+pub fn environment_label(wsl_distro: Option<&str>, os: &str, release: Option<&str>) -> String {
+    if let Some(d) = wsl_distro {
+        return format!("WSL: {d}");
+    }
+    match (os, release) {
+        ("windows", _) => "Windows".to_string(),
+        (_, Some(release)) => release.to_string(),
+        ("linux", None) => "Linux".to_string(),
+        ("macos", None) => "macOS".to_string(),
+        (other, None) => other.to_string(),
     }
 }
 
-/// This process's environment label, from `WSL_DISTRO_NAME` and the target OS.
-pub fn detect_environment() -> String {
-    let distro = std::env::var("WSL_DISTRO_NAME")
+/// The distro and version in an `os-release` file: `NAME` and `VERSION_ID`
+/// (`Ubuntu 24.04`, `Debian 12`), or `NAME` alone for a rolling release
+/// (`Arch Linux`). `None` without a `NAME`.
+pub fn linux_release(os_release: &str) -> Option<String> {
+    let field = |key: &str| {
+        os_release.lines().find_map(|line| {
+            let value = line.trim().strip_prefix(key)?.strip_prefix('=')?;
+            let value = value.trim().trim_matches(|c| c == '"' || c == '\'');
+            (!value.is_empty()).then(|| value.to_string())
+        })
+    };
+    let name = field("NAME")?;
+    // Debian's NAME is `Debian GNU/Linux`; the family is already in the icon.
+    let name = name.strip_suffix(" GNU/Linux").unwrap_or(&name).to_string();
+    Some(match field("VERSION_ID") {
+        Some(version) => format!("{name} {version}"),
+        None => name,
+    })
+}
+
+/// The macOS release from `sw_vers -productVersion`: the major version only
+/// (`15.3.1` → `macOS 15`), since it changes with every update otherwise.
+/// Before macOS 11 the major was always `10`, so `10.x` keeps its minor.
+pub fn macos_release(product_version: &str) -> Option<String> {
+    let mut parts = product_version.trim().split('.');
+    let major = parts.next().filter(|p| !p.is_empty())?;
+    if major == "10" {
+        if let Some(minor) = parts.next() {
+            return Some(format!("macOS 10.{minor}"));
+        }
+    }
+    Some(format!("macOS {major}"))
+}
+
+/// This machine's OS release for [`environment_label`], read once per process.
+/// `None` when it cannot be read; the label then falls back to the OS name.
+pub fn system_release() -> Option<String> {
+    static RELEASE: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    RELEASE.get_or_init(read_system_release).clone()
+}
+
+#[cfg(target_os = "linux")]
+fn read_system_release() -> Option<String> {
+    // The os-release(5) lookup order.
+    ["/etc/os-release", "/usr/lib/os-release"].iter().find_map(
+        |path| match std::fs::read_to_string(path) {
+            Ok(text) => linux_release(&text),
+            Err(e) => {
+                tracing::debug!(path, error = %e, "could not read the OS release");
+                None
+            }
+        },
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn read_system_release() -> Option<String> {
+    match std::process::Command::new("sw_vers")
+        .arg("-productVersion")
+        .output()
+    {
+        Ok(out) if out.status.success() => macos_release(&String::from_utf8_lossy(&out.stdout)),
+        Ok(out) => {
+            tracing::debug!(status = %out.status, "sw_vers did not give the macOS version");
+            None
+        }
+        Err(e) => {
+            tracing::debug!(error = %e, "could not run sw_vers");
+            None
+        }
+    }
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn read_system_release() -> Option<String> {
+    None
+}
+
+/// The WSL distro this process runs in, from `WSL_DISTRO_NAME`.
+fn wsl_distro() -> Option<String> {
+    std::env::var("WSL_DISTRO_NAME")
         .ok()
-        .filter(|d| !d.is_empty());
-    environment_label(distro.as_deref(), std::env::consts::OS)
+        .filter(|d| !d.is_empty())
+}
+
+/// This process's environment label, from `WSL_DISTRO_NAME`, the target OS, and
+/// the OS release. Inside WSL the release is never read: the distro name wins.
+pub fn detect_environment() -> String {
+    let distro = wsl_distro();
+    let release = if distro.is_some() {
+        None
+    } else {
+        system_release()
+    };
+    environment_label(distro.as_deref(), std::env::consts::OS, release.as_deref())
 }
 
 /// Write `d` as `<store_dir>/peers/<daemon_id>.toml`, creating the directory and

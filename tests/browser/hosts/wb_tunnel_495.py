@@ -57,7 +57,9 @@ PEER_NAME = "svrapp"
 PEER_ENV = "Linux"
 PEER_TOKEN = "tunnel-fixture-token"
 PEER_SLUG = "ralphy-lab/remote-repo"
-LABEL = f"{PEER_NAME}: {PEER_ENV}"
+# A descriptor with no `os` (written before the field): the icon falls back
+# to the label.
+LABEL = f"{PEER_NAME} · {PEER_ENV}"
 
 results = []
 
@@ -311,7 +313,7 @@ def main():
 
             h = header(page, "reachable")
             check(
-                "the tunnel peer's header reads `svrapp: Linux`",
+                "the tunnel peer's header reads `svrapp · Linux`",
                 h is not None and h["label"] == LABEL and h["laid"],
                 "header={}".format(h),
             )

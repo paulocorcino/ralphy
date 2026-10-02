@@ -208,13 +208,79 @@ fn read_store_sorts_by_file_name_and_skips_non_toml() {
 #[test]
 fn environment_label_names_the_distro() {
     assert_eq!(
-        environment_label(Some("Ubuntu-22.04"), "linux"),
-        "WSL: Ubuntu-22.04"
+        environment_label(Some("Ubuntu-22.04"), "linux", Some("Ubuntu 22.04")),
+        "WSL: Ubuntu-22.04",
+        "inside WSL the registered distro name wins over the release"
     );
-    assert_eq!(environment_label(None, "windows"), "Windows");
-    assert_eq!(environment_label(None, "linux"), "Linux");
-    assert_eq!(environment_label(None, "macos"), "macOS");
-    assert_eq!(environment_label(None, "freebsd"), "freebsd");
+    assert_eq!(environment_label(None, "windows", None), "Windows");
+    assert_eq!(environment_label(None, "linux", None), "Linux");
+    assert_eq!(environment_label(None, "macos", None), "macOS");
+    assert_eq!(environment_label(None, "freebsd", None), "freebsd");
+    assert_eq!(
+        environment_label(None, "linux", Some("Ubuntu 24.04")),
+        "Ubuntu 24.04"
+    );
+    assert_eq!(
+        environment_label(None, "macos", Some("macOS 15")),
+        "macOS 15"
+    );
+    assert_eq!(
+        environment_label(None, "windows", Some("Windows 10.0.26200")),
+        "Windows",
+        "Windows keeps its plain name"
+    );
+}
+
+#[test]
+fn linux_release_reads_name_and_version() {
+    let ubuntu = "PRETTY_NAME=\"Ubuntu 24.04.1 LTS\"
+NAME=\"Ubuntu\"
+VERSION_ID=\"24.04\"
+ID=ubuntu
+";
+    assert_eq!(linux_release(ubuntu).as_deref(), Some("Ubuntu 24.04"));
+    let debian = "PRETTY_NAME=\"Debian GNU/Linux 12 (bookworm)\"
+NAME=\"Debian GNU/Linux\"
+VERSION_ID=\"12\"
+";
+    assert_eq!(linux_release(debian).as_deref(), Some("Debian 12"));
+    let arch = "NAME=\"Arch Linux\"
+PRETTY_NAME=\"Arch Linux\"
+ID=arch
+BUILD_ID=rolling
+";
+    assert_eq!(
+        linux_release(arch).as_deref(),
+        Some("Arch Linux"),
+        "a rolling release has no VERSION_ID"
+    );
+    assert_eq!(
+        linux_release(
+            "ID=custom
+VERSION_ID=1
+"
+        ),
+        None
+    );
+}
+
+#[test]
+fn macos_release_keeps_the_major_version() {
+    assert_eq!(
+        macos_release(
+            "15.3.1
+"
+        )
+        .as_deref(),
+        Some("macOS 15")
+    );
+    assert_eq!(macos_release("26.0").as_deref(), Some("macOS 26"));
+    assert_eq!(
+        macos_release("10.15.7").as_deref(),
+        Some("macOS 10.15"),
+        "before macOS 11 the minor names the release"
+    );
+    assert_eq!(macos_release(""), None);
 }
 
 #[test]
@@ -227,6 +293,7 @@ fn writer_emits_every_announced_field() {
         address: "127.0.0.1".into(),
         port: 7443,
         environment: "WSL: Ubuntu-22.04".into(),
+        os: String::new(),
         token: "tok-abc".into(),
         protocol_version: PEER_PROTOCOL_VERSION,
         tunnel: None,
@@ -424,7 +491,11 @@ fn paired_descriptor_refuses_an_id_that_is_not_a_ulid() {
         running: true,
         token: Some("tok".to_string()),
     };
-    assert!(paired_descriptor(&d, "svrapp", 7401, None).is_ok());
+    let paired = paired_descriptor(&d, "svrapp", 7401, None).unwrap();
+    assert_eq!(
+        paired.os, "linux",
+        "the host's OS family is kept for the icon"
+    );
     d.daemon_id = Some("../../evil".to_string());
     let err = paired_descriptor(&d, "svrapp", 7401, None).unwrap_err();
     assert!(err.to_string().contains("not a valid id"), "{err}");

@@ -614,6 +614,7 @@ function shell() {
         if (mine) {
           for (const p of this.projects) {
             p.env = mine.environment || "";
+            p.os = mine.os || "";
             p.daemonName = mine.daemon_name || "";
           }
         }
@@ -636,6 +637,7 @@ function shell() {
             daemon: x.daemon_id,
             daemonName: x.daemon_name || "",
             env: x.environment || "",
+            os: x.os || "",
             peerState: x.peer_state || "",
           }));
         this.projects = localRows().concat(this._fleetRows);
@@ -717,8 +719,13 @@ function shell() {
     groupLabel(g) {
       return window.WBFleet.groupLabel(g);
     },
-    osOf(environment) {
-      return window.WBFleet.system(environment);
+    groupHost(g) {
+      return window.WBFleet.groupHost(g);
+    },
+    // `x` is a fleet group or a peer of `/api/fleet`: both carry `os` and
+    // `environment`.
+    osOf(x) {
+      return window.WBFleet.system(x && x.os, x && x.environment);
     },
 
     // Local rows first, then one group per peer environment (wb-fleet.js).
