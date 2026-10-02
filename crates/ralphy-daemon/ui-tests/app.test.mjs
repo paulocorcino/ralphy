@@ -2156,3 +2156,13 @@ test("an unreadable run is counted, and its id is never shown", async () => {
     "Could not read 1 saved run. The file is damaged or from another version of Ralphy.",
   );
 });
+
+test("run and peer states show as words, and the dot says what it means", () => {
+  const { state } = loadShell();
+  assert.equal(state.runStateWord("sleep"), "usage limit — sleeping");
+  assert.equal(state.issueRunningLabel({ state: "hitl", agent: "claude" }), "Running · waiting on human (claude)");
+  assert.equal(state.peerStateWord("version-mismatch"), "version mismatch");
+  assert.equal(state.peerStateWord("asleep"), "asleep");
+  assert.equal(state.dotTitle("offline"), "The folder cannot be reached");
+  assert.equal(state.dotTitle("idle"), "No console is open");
+});

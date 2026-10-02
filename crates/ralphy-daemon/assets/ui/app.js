@@ -2627,7 +2627,14 @@ function shell() {
     },
     // The issue drawer's run line: `Running · executing (claude)`.
     issueRunningLabel(run) {
-      return `Running · ${run?.state || ""} (${run?.agent || ""})`;
+      return `Running · ${this.runStateWord(run?.state)} (${run?.agent || ""})`;
+    },
+    // A run state as the Runs panel words it (`sleep` → "usage limit — sleeping").
+    runStateWord(state) {
+      return (state && window.WBRun?.LABEL?.[state]) || state || "";
+    },
+    peerStateWord(state) {
+      return window.WBFleet.stateWord(state);
     },
 
     // Thin delegations to the faithful helpers (used in the template).
@@ -4404,6 +4411,16 @@ function shell() {
     // The status dot: live → green, idle → grey, offline → red (unreachable
     // path), waiting → yellow (an agent is asking for you, ADR-0059).
     // Orthogonal to `remote`.
+    // The project dot's tooltip, in words; the class keeps the state code.
+    dotTitle(state) {
+      return (
+        {
+          live: "A console is open",
+          waiting: "An agent is waiting for you",
+          offline: "The folder cannot be reached",
+        }[state] || "No console is open"
+      );
+    },
     dotClass(state) {
       return state === "live"
         ? "live"

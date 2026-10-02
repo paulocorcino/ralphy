@@ -259,7 +259,7 @@
                 :class="[g.state, peerFault(g) ? 'fault' : '', waking[g.daemon] ? 'waking' : '']"
                 :disabled="!!waking[g.daemon]"
                 :title="wakeTitle(g)"
-                :aria-label="waking[g.daemon] ? 'waking' : g.state"
+                :aria-label="waking[g.daemon] ? 'waking' : peerStateWord(g.state)"
                 @click.stop="wakePeer(g.daemon)"
               ><svg x-icon="'unplug'"></svg></button>
               <span
@@ -267,7 +267,7 @@
                 x-show="!peerWakeable(g) && peerIcon(g)"
                 :class="[g.state, peerFault(g) ? 'fault' : '']"
                 role="img"
-                :aria-label="g.state"
+                :aria-label="peerStateWord(g.state)"
               >
                 <span class="glyph" x-show="peerIcon(g) === 'plugged'"><svg aria-hidden="true"><use href="#plugged"></use></svg></span>
                 <span class="glyph" x-show="peerIcon(g) === 'unplug'"><svg x-icon="'unplug'"></svg></span>
@@ -290,7 +290,7 @@
                    (unreachable path). Orthogonal to the provenance icon beside
                    it (GitHub vs local-only). A local-only repo can be live; a
                    GitHub repo can be offline. -->
-              <span class="dot" :class="dotClass(p.state)" :title="p.state"></span>
+              <span class="dot" :class="dotClass(p.state)" :title="dotTitle(p.state)"></span>
               <!-- provenance: a GitHub-backed repo vs one that lives only on
                    this disk. Orthogonal to the daemon-reachability dot above. -->
               <i
@@ -1326,7 +1326,7 @@
               <h4>Usage missing from some daemons</h4>
               <template x-for="peer in ledgerModel.missing" :key="peer.daemon_id">
                 <p class="ledger-missing-row">
-                  <strong x-text="peer.environment || peer.daemon_id"></strong>
+                  <strong x-text="peer.environment || 'Another computer'"></strong>
                   <span x-text="peer.why || 'Usage unavailable'"></span>
                 </p>
               </template>
@@ -1365,12 +1365,12 @@
                 <template x-for="(r, i) in ledgerModel.rows" :key="i">
                   <tr class="ledger-row" :class="{ unpriced: !!r.unpriced, floor: r.lowerBound }">
                     <td class="ledger-col-kind">
-                      <span x-text="r.kind"></span><span class="ledger-bound" x-text="r.boundNote"></span>
+                      <span x-text="r.kindLabel"></span><span class="ledger-bound" x-text="r.boundNote"></span>
                       <!-- WHY this row is unpriced, in the daemon's own word.
                            The class alone would say only "something is wrong
                            here", and recoverable vs lost is the whole reason the
                            split exists (ADR-0053 D4). -->
-                      <span class="ledger-cause" x-show="r.unpriced" x-text="r.unpriced"></span>
+                      <span class="ledger-cause" x-show="r.unpriced" x-text="r.unpricedLabel"></span>
                     </td>
                     <td class="ledger-col-issue" x-text="r.issue"></td>
                     <td class="ledger-col-phase" x-text="r.phase"></td>
@@ -1379,7 +1379,7 @@
                     <td class="ledger-col-outcome" x-text="r.outcome"></td>
                     <td class="ledger-col-actor" x-text="r.actor"></td>
                     <td class="ledger-col-version" x-text="r.version"></td>
-                    <td class="ledger-col-when" x-text="r.when"></td>
+                    <td class="ledger-col-when" x-text="r.whenLabel" :title="r.when"></td>
                     <td class="ledger-num" x-text="r.tokens.input"></td>
                     <td class="ledger-num" x-text="r.tokens.cache_read"></td>
                     <td class="ledger-num" x-text="r.tokens.cache_creation"></td>
@@ -1516,7 +1516,7 @@
                          @click.stop="openRunFor(iss.number)" title="Open this run">
                       <span class="kc-run-face" x-text="issueRunning(iss.number)?.face"></span>
                       <span class="kc-run-glyph" x-text="issueRunning(iss.number)?.glyph"></span>
-                      <span class="kc-run-txt" x-text="(issueRunning(iss.number)?.state || '') + ' · ' + (issueRunning(iss.number)?.agent || '')"></span>
+                      <span class="kc-run-txt" x-text="runStateWord(issueRunning(iss.number)?.state) + ' · ' + (issueRunning(iss.number)?.agent || '')"></span>
                     </div>
                     <!-- plan pill: a FINALIZED plan for this issue is sitting in
                          `.ralphy/plan.md`, and the next run will execute it. The
@@ -2824,7 +2824,7 @@
                   <span class="host-row-name" x-text="h.name"></span>
                   <span class="host-row-dest" x-text="h.destination || ''"></span>
                   <span class="peer-state" :class="[h.state, peerFault(hostRowGroup(h)) ? 'fault' : '']"
-                        role="img" :aria-label="h.state" :title="hostRowTitle(h)">
+                        role="img" :aria-label="peerStateWord(h.state)" :title="hostRowTitle(h)">
                     <span class="glyph" x-show="peerIcon(hostRowGroup(h)) === 'plugged'"><svg aria-hidden="true"><use href="#plugged"></use></svg></span>
                     <span class="glyph" x-show="peerIcon(hostRowGroup(h)) === 'unplug'"><svg x-icon="'unplug'"></svg></span>
                   </span>

@@ -35,7 +35,27 @@
       title: "lost",
       hint: "No session ID is recorded. The model cannot be recovered.",
     },
+    // A Ledger row only: an interactive record the vendor keeps no count for.
+    unmetered: {
+      title: "no token count",
+      hint: "The vendor keeps no token count for this session.",
+    },
   };
+
+  // The words a Ledger row shows for its kind and its unpriced cause. The row
+  // keeps the keys (`kind`, `unpriced`) for filters and classes.
+  const KIND_WORD = { ledger: "run", interactive: "interactive" };
+  function causeWord(key) {
+    if (!key) return "";
+    return (CAUSE_COPY[key] || {}).title || key;
+  }
+  // An ISO time as the browser's local date and time; a value that does not
+  // parse stays as it is.
+  function localTime(ts) {
+    if (!ts || ts === NONE) return NONE;
+    const d = new Date(ts);
+    return Number.isNaN(d.getTime()) ? ts : d.toLocaleString();
+  }
 
   // A daemon cause row plus its copy. An unknown key (a future fourth cause)
   // renders under its own name rather than vanishing — the gap must never get
@@ -417,6 +437,7 @@
   function ledgerRow(rec, daemonId) {
     return {
       kind: "ledger",
+      kindLabel: KIND_WORD.ledger,
       peer: fromPeer(rec, daemonId),
       issue: rec.issue ? "#" + rec.issue : NONE,
       phase: text(rec.phase),
@@ -426,8 +447,10 @@
       actor: text(rec.actor_name || rec.actor_email),
       version: text(rec.ralphy_version),
       when: text(rec.ts),
+      whenLabel: localTime(text(rec.ts)),
       tokens: counts(rec.tokens, !!rec.lower_bound),
       unpriced: rec.unpriced_cause || "",
+      unpricedLabel: causeWord(rec.unpriced_cause),
       lowerBound: !!rec.lower_bound,
       boundNote: boundNote(!!rec.lower_bound),
     };
@@ -439,6 +462,7 @@
   function interactiveRow(rec, daemonId) {
     return {
       kind: "interactive",
+      kindLabel: KIND_WORD.interactive,
       peer: fromPeer(rec, daemonId),
       issue: NONE,
       phase: NONE,
@@ -448,8 +472,10 @@
       actor: text(rec.actor_name || rec.actor_email),
       version: NONE,
       when: text(rec.last_ts || rec.first_ts),
+      whenLabel: localTime(text(rec.last_ts || rec.first_ts)),
       tokens: counts(rec.tokens, !!rec.lower_bound),
       unpriced: rec.unpriced_cause || "",
+      unpricedLabel: causeWord(rec.unpriced_cause),
       lowerBound: !!rec.lower_bound,
       boundNote: boundNote(!!rec.lower_bound),
     };

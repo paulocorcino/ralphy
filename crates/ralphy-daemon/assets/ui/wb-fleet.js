@@ -159,6 +159,11 @@
     "tunnel-silent": "not answering",
   };
 
+  // A peer state as words; a state with no entry is already a word.
+  function stateWord(state) {
+    return STATE_WORD[state] || state || "";
+  }
+
   function groupTitle(group) {
     if (!group) return "";
     const parts = [];
@@ -227,6 +232,7 @@
   }
 
   return {
+    stateWord: stateWord,
     fleetGroups: fleetGroups,
     system: system,
     repoRef: repoRef,
