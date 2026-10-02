@@ -299,9 +299,11 @@ def main():
                 "Files on disk are kept." in confirm["message"],
                 "message={!r}".format(confirm["message"]),
             )
+            # A remoteless fixture: its slug is a `path-<hash>` key, and the
+            # dialog names the folder instead.
             check(
-                "…and names the project it is about",
-                drop_slug in confirm["message"],
+                "…and names the project it is about, by its folder and not its key",
+                "“dropped-fixture”" in confirm["message"] and drop_slug not in confirm["message"],
                 "message={!r}".format(confirm["message"]),
             )
             check("…with a Remove action, not a bare OK", "Remove" in confirm["confirmLabel"],

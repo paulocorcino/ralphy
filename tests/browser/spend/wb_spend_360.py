@@ -73,7 +73,6 @@ OTHER_SLUG = "acme/other-repo"
 # The column order the grid is contracted to, header labels verbatim.
 COLUMNS = [
     "Kind",
-    "Project",
     "Issue",
     "Phase",
     "Agent",
@@ -330,7 +329,7 @@ def main():
 
             # --- scenario b · every dimension, in order ------------------------
             check(
-                "the grid's header carries all fourteen columns, in order",
+                "the grid's header carries all thirteen columns, in order (no Project: every row is the open one's)",
                 view["columns"] == COLUMNS,
                 "columns={}".format(view["columns"]),
             )
@@ -341,12 +340,14 @@ def main():
             )
             # The FIRST fixture line, cell by cell. The four counts are RAW: an
             # abbreviation reintroduced in JavaScript would read `1.0M` here.
+            # The kind and the time are words for the operator: `run`, not the
+            # `ledger` key, and a local time, not the ISO text.
+            top = view["rows"][0]["cells"]
             check(
                 "…and the top row is the fixture line's own values, unabbreviated",
-                view["rows"][0]["cells"]
+                top[:8] + top[9:]
                 == [
-                    "ledger",
-                    slug,
+                    "run",
                     "#251",
                     "execute",
                     "claude",
@@ -354,13 +355,17 @@ def main():
                     "done",
                     "wb360",
                     "0.0.0-test",
-                    RECENT,
                     "1000000",
                     "0",
                     "0",
                     "0",
                 ],
-                "cells={}".format(view["rows"][0]["cells"]),
+                "cells={}".format(top),
+            )
+            check(
+                "…with the time shown as a local time, not the raw ISO text",
+                bool(top[8]) and top[8] != RECENT and "T" not in top[8],
+                "when={!r}".format(top[8]),
             )
             # The verdict is the daemon's, per row, and it discriminates: the
             # priced line carries no mark while the other two do.
@@ -371,12 +376,8 @@ def main():
             )
 
             # --- scenario c · the grid is scoped to the open project -----------
-            projects = sorted({r["cells"][1] for r in view["rows"]})
-            check(
-                "every row belongs to the open project, and the other one has none",
-                projects == [slug] and OTHER_SLUG not in projects,
-                "projects={}".format(projects),
-            )
+            # The grid has no Project column; the three rows above are the open
+            # project's, and the route below proves the other one never came.
             # The route, independently of the DOM: the second project's rows are
             # not merely unrendered, they never crossed the wire.
             body = page.evaluate(
@@ -438,17 +439,17 @@ def main():
             check(
                 "…showing ONLY the unpriceable rows — 2 of the project's 3",
                 len(drilled["rows"]) == 2 and all(r["unpriced"] for r in drilled["rows"]),
-                "rows={}".format([r["cells"][:6] for r in drilled["rows"]]),
+                "rows={}".format([r["cells"][:5] for r in drilled["rows"]]),
             )
             # The two are unpriceable for DIFFERENT reasons, so the filter is on
             # "has a cause" and not on one cause it happened to be written against.
-            models = sorted(r["cells"][5] for r in drilled["rows"])
+            models = sorted(r["cells"][4] for r in drilled["rows"])
             check(
                 "…and they are the recoverable one AND the unpriceable-model one",
                 models == sorted(["unknown", UNPRICED_MODEL]),
                 "models={}".format(models),
             )
-            # The daemon's CAUSE WORD on screen, not merely a highlight class: a
+            # The cause in WORDS on screen, not merely a highlight class: a
             # row the operator cannot tell `recoverable` from `lost` on is a gap
             # with no owner, which is what this drill-down exists to give it.
             # Sorted as strings, with `None` mapped to a sentinel: a null cell is
@@ -456,8 +457,8 @@ def main():
             # TypeError would kill the suite with ZERO `[FAIL]` lines.
             causes = sorted(str(r["cause"]) for r in drilled["rows"])
             check(
-                "…each labelled with the daemon's own cause word",
-                causes == ["no_price", "recoverable"],
+                "…each labelled with the words for the daemon's cause",
+                causes == ["no price", "recoverable"],
                 "causes={}".format(causes),
             )
 
