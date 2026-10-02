@@ -235,6 +235,8 @@ function shell(opts = {}) {
       return 1;
     },
   };
+  // No DOM here: the scroll to an opened row is checked in the browser.
+  state.$nextTick = () => {};
   const reloads = [];
   // What a real reload brings back after an add: the new tunnel peer's group.
   state.loadRepos = async () => {

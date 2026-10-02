@@ -2813,7 +2813,7 @@
           <!-- Your hosts: the hosts paired over SSH. Remove asks in the row. -->
           <ul class="host-list" x-show="hostTab() === 'hosts'">
             <template x-for="h in sshHosts()" :key="h.daemon_id">
-              <li class="host-item">
+              <li class="host-item" :data-host="h.daemon_id">
                 <div class="host-row">
                   <span class="os-icon" :title="h.environment">
                     <i class="bi bi-windows" x-show="osOf(h.environment) === 'windows'"></i>

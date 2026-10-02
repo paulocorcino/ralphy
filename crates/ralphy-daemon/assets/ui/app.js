@@ -3474,6 +3474,12 @@ function shell() {
     openRemoveHost(h) {
       if (this.removeHost.busy) return;
       this.removeHost = { open: true, daemon: h.daemon_id, name: h.name, rotate: false, busy: false, lines: [], failure: null };
+      // The list scrolls: the last row's question opens below the visible part.
+      this.$nextTick(() =>
+        document
+          .querySelector('.host-item[data-host="' + CSS.escape(h.daemon_id) + '"]')
+          ?.scrollIntoView({ block: "nearest" }),
+      );
     },
     closeRemoveHost() {
       this.removeHost.open = false;

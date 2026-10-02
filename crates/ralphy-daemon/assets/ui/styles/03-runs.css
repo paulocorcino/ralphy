@@ -933,11 +933,20 @@ body.runs-open .runs {
 }
 .host-list {
   list-style: none;
-  margin: 0;
-  padding: 0;
+  margin: 0 -0.6rem 0 0;
+  padding: 0 0.6rem 0 0;
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+  overflow-y: auto;
+  /* A shadow shows at an edge only while rows are hidden past it: the two
+     `local` covers move with the rows and hide the two `scroll` shadows when
+     the list is at that end. The covers are the dialog's own color. */
+  background:
+    linear-gradient(var(--chrome) 30%, transparent) top / 100% 2rem no-repeat local,
+    linear-gradient(transparent, var(--chrome) 70%) bottom / 100% 2rem no-repeat local,
+    radial-gradient(farthest-side at 50% 0, rgba(0, 0, 0, 0.55), transparent) top / 100% 0.7rem no-repeat scroll,
+    radial-gradient(farthest-side at 50% 100%, rgba(0, 0, 0, 0.55), transparent) bottom / 100% 0.7rem no-repeat scroll;
 }
 .host-item {
   border: 1px solid var(--border);
