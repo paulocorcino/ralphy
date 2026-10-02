@@ -501,7 +501,12 @@ impl AuthState {
 /// tests and the frictionless `Localhost`/`fixed` states never write the real
 /// global store (mirrors [`epoch::SessionEpoch::in_memory_detached`]).
 fn detached_last_step_path() -> PathBuf {
-    std::env::temp_dir().join(format!("ralphy-laststep-{}", ulid::Ulid::new()))
+    // In its own directory: `record_step` makes the parent owner-only, and on
+    // Linux the shared temp dir belongs to root, so a chmod there fails and the
+    // step is never recorded.
+    std::env::temp_dir()
+        .join(format!("ralphy-laststep-{}", ulid::Ulid::new()))
+        .join("daemon-totp-laststep")
 }
 
 /// Constant-time byte equality: length-checked, then XOR-accumulate over the
