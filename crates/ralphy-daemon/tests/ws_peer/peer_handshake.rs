@@ -18,7 +18,7 @@ use ralphy_daemon::auth::{AuthPolicy, AuthState};
 use ralphy_daemon::epoch::SessionEpoch;
 use ralphy_daemon::identity;
 use ralphy_daemon::peer::client::{probe, PeerStatus, SelfRef};
-use ralphy_daemon::peer::{PeerDescriptor, PEER_PROTOCOL_VERSION};
+use ralphy_daemon::peer::{PeerDescriptor, TunnelSpec, PEER_PROTOCOL_VERSION};
 
 /// The environment label every descriptor here announces. Asserted verbatim in
 /// each rejection diagnosis.
@@ -45,7 +45,7 @@ fn anvil() -> identity::Identity {
 
 fn descriptor(port: u16, token: &str) -> PeerDescriptor {
     PeerDescriptor {
-        daemon_id: "01TESTPEER".into(),
+        daemon_id: ulid::Ulid::nil().to_string(),
         name: "anvil".into(),
         avatar: "🐙".into(),
         address: "127.0.0.1".into(),
@@ -91,7 +91,11 @@ async fn handshake_succeeds_with_the_announced_token() {
 async fn a_wrong_bearer_is_a_legible_rejection() {
     let d = spawn_daemon(AuthPolicy::Bearer("tok".into()), "not-the-token").await;
     let status = probe(&d, me()).await;
-    assert_eq!(status, PeerStatus::Unauthorized, "got: {status:?}");
+    assert_eq!(
+        status,
+        PeerStatus::Unauthorized { tunnel: false },
+        "got: {status:?}"
+    );
     let diagnosis = status.diagnosis(&d.environment);
     assert!(
         diagnosis.contains(ENV),
@@ -101,6 +105,84 @@ async fn a_wrong_bearer_is_a_legible_rejection() {
         diagnosis.contains("--peer-store"),
         "the rejection must name the fix; got: {diagnosis}"
     );
+
+    // A tunnel peer is not a WSL distro: the same refusal must not send the
+    // operator to `--peer-store`.
+    let mut t = d.clone();
+    t.tunnel = Some(TunnelSpec {
+        destination: "svrapp".into(),
+        peer_port: 7257,
+        local_port: t.port,
+        identity_file: None,
+    });
+    let status = probe(&t, me()).await;
+    assert_eq!(
+        status,
+        PeerStatus::Unauthorized { tunnel: true },
+        "got: {status:?}"
+    );
+    let diagnosis = status.diagnosis(&t.environment);
+    assert!(diagnosis.contains(ENV), "got: {diagnosis}");
+    assert!(
+        !diagnosis.contains("--peer-store"),
+        "a tunnel peer must not get the WSL advice; got: {diagnosis}"
+    );
+}
+
+/// Issue #517: `/api/peer/hello` needs the token, so a wrong token is refused
+/// before any identity is read. The result stays Unauthorized, never Refused.
+#[tokio::test]
+async fn a_wrong_token_stays_unauthorized_because_hello_needs_the_token() {
+    let d = spawn_daemon(AuthPolicy::Bearer("tok".into()), "wrong").await;
+    let status = probe(&d, me()).await;
+    assert!(
+        matches!(status, PeerStatus::Unauthorized { .. }),
+        "a wrong token must be Unauthorized, got: {status:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_hello_from_another_daemon_is_refused_and_names_both_ids() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let app = Router::new().route(
+        "/api/peer/hello",
+        get(|| async {
+            Json(serde_json::json!({
+                "daemon_id": "01OTHERDAEMON",
+                "protocol_version": PEER_PROTOCOL_VERSION
+            }))
+        }),
+    );
+    tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+
+    let mut d = descriptor(port, "tok");
+    d.daemon_id = "01EXPECTED".into();
+    let status = probe(&d, me()).await;
+    assert!(
+        matches!(status, PeerStatus::Refused { .. }),
+        "another daemon's hello must be refused, got: {status:?}"
+    );
+    let diagnosis = status.diagnosis(&d.environment);
+    assert!(diagnosis.contains("01OTHERDAEMON"), "got: {diagnosis}");
+    assert!(diagnosis.contains("01EXPECTED"), "got: {diagnosis}");
+}
+
+#[tokio::test]
+async fn a_hello_with_no_daemon_id_is_still_reachable() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let app = Router::new().route(
+        "/api/peer/hello",
+        get(|| async { Json(serde_json::json!({"protocol_version": PEER_PROTOCOL_VERSION})) }),
+    );
+    tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+    let d = descriptor(port, "tok");
+    assert_eq!(probe(&d, me()).await, PeerStatus::Reachable);
 }
 
 #[tokio::test]
@@ -188,14 +270,12 @@ async fn revoking_one_peer_leaves_the_other_working() {
     // Two daemons, two DIFFERENT tokens — there is no shared secret. Peer A has
     // rotated its token since it announced (its descriptor still carries the old
     // one); peer B has not.
-    let mut a = spawn_daemon(AuthPolicy::Bearer("a-rotated".into()), "a-announced").await;
-    a.daemon_id = "01PEERA".into();
-    let mut b = spawn_daemon(AuthPolicy::Bearer("b-token".into()), "b-token").await;
-    b.daemon_id = "01PEERB".into();
+    let a = spawn_daemon(AuthPolicy::Bearer("a-rotated".into()), "a-announced").await;
+    let b = spawn_daemon(AuthPolicy::Bearer("b-token".into()), "b-token").await;
 
     assert_eq!(
         probe(&a, me()).await,
-        PeerStatus::Unauthorized,
+        PeerStatus::Unauthorized { tunnel: false },
         "the rotated peer is revoked"
     );
     assert_eq!(

@@ -398,7 +398,8 @@ fn diagnosis_always_names_the_environment() {
     let env = "WSL: Ubuntu-22.04";
     for status in [
         PeerStatus::Reachable,
-        PeerStatus::Unauthorized,
+        PeerStatus::Unauthorized { tunnel: false },
+        PeerStatus::Unauthorized { tunnel: true },
         PeerStatus::VersionMismatch {
             theirs: 999,
             ours: 1,
