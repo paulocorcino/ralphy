@@ -146,6 +146,20 @@ test("Loading… shows only for the newest request that is still waiting", () =>
   assert.equal(s.loading, true);
   s = P.next(s, { type: "reply", seq: 2, reply: Object.assign({ status: "ok", more: 0 }, DEV) });
   assert.equal(s.loading, false);
+
+  // A reply faster than the slow timer: the timer fires late and shows nothing.
+  for (const reply of [Object.assign({ status: "ok", more: 0 }, DEV), { status: "error", message: "unknown verb" }]) {
+    let f = P.next(P.next(P.initial(), { type: "open" }), { type: "sent", seq: 1 });
+    f = P.next(f, { type: "reply", seq: 1, reply });
+    assert.equal(P.next(f, { type: "slow", seq: 1 }).loading, false, reply.status);
+  }
+});
+
+test("a peer with an older Ralphy says to update it, not the raw code", () => {
+  const P = load();
+  let s = P.next(P.next(P.initial(), { type: "open", daemon: WSL_ID }), { type: "sent", seq: 1 });
+  s = P.next(s, { type: "reply", seq: 1, reply: { status: "error", message: "unknown verb" } });
+  assert.match(P.help(s), /^Ralphy on this computer is an older version/);
 });
 
 test("a pasted WSL path moves to the WSL peer and becomes a Linux path", () => {

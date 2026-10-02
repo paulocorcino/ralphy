@@ -26,6 +26,8 @@
       // The sequence number of the newest `dir.list` sent. Older replies are
       // dropped.
       seq: 0,
+      // The sequence number of the newest reply that arrived.
+      answered: 0,
       // The newest reply, and the text it answers.
       listing: null,
       listedText: null,
@@ -213,6 +215,11 @@
     if (state.wslMissing) {
       return `Add the WSL host first. No host in Projects is the WSL distro ${state.wslMissing}.`;
     }
+    // Only a peer can answer this: it runs a Ralphy older than the page's
+    // daemon, without the folder list.
+    if (state.failure === "unknown verb") {
+      return "Ralphy on this computer is an older version and cannot list folders. Update Ralphy on it.";
+    }
     if (state.failure && state.failure !== "this folder does not exist") {
       return state.failure.charAt(0).toUpperCase() + state.failure.slice(1) + ".";
     }
@@ -281,12 +288,15 @@
       case "sent":
         return Object.assign({}, state, { seq: ev.seq, sentText: state.needStart ? null : state.text });
       case "slow":
-        return ev.seq === state.seq ? Object.assign({}, state, { loading: true }) : state;
+        // A reply that came first means there is nothing to wait for.
+        if (ev.seq !== state.seq || state.answered === ev.seq) return state;
+        return Object.assign({}, state, { loading: true });
       case "reply": {
         if (ev.seq !== state.seq) return state;
         const reply = ev.reply || {};
         if (reply.status !== "ok") {
           return Object.assign({}, state, {
+            answered: ev.seq,
             listing: null,
             listedText: state.sentText,
             failure: reply.message || reply.reason || "the folder list failed",
@@ -294,7 +304,7 @@
             active: -1,
           });
         }
-        const patch = { listing: reply, listedText: state.sentText, failure: "", loading: false, active: -1 };
+        const patch = { answered: ev.seq, listing: reply, listedText: state.sentText, failure: "", loading: false, active: -1 };
         if (state.sentText === null && reply.start) {
           const sep = /^[A-Za-z]:/.test(reply.start) || reply.start.includes("\\") ? "\\" : "/";
           patch.text = withSep(reply.start, sep);
