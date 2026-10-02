@@ -721,8 +721,9 @@ gets `socket`: the absolute path when a connection to it succeeds, else absent.
 On a Unix host, `running` means that the socket answers. A binary that was
 updated while an older daemon still runs therefore reports no socket, and the
 add flow uses the port, as today. The add flow already reads `describe` again
-after it restarts the daemon (`pair.rs`), so a new host gets the socket on the
-first `host add`. A descriptor written before this amendment keeps the port
+after it restarts the daemon (`pair.rs`), and `ralphy daemon restart` returns
+only when the new daemon answers, so a new host gets the socket on the first
+`host add`. A descriptor written before this amendment keeps the port
 until the next `host add` or *Edit* (H3). The field is optional, so the peer
 protocol version does not change.
 

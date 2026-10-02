@@ -27,29 +27,55 @@ use ralphy_daemon::autostart::{LAUNCHD_LABEL, UNIT_NAME};
 /// new one. Generous: a wedged old process is worth reporting, not racing.
 const EXIT_TIMEOUT: Duration = Duration::from_secs(10);
 const POLL: Duration = Duration::from_millis(100);
+/// How long the new daemon has to answer before the restart is reported as
+/// failed. `host add` reads `describe` right after the restart, and a daemon
+/// that does not answer yet shows no socket (ADR-0067 amendment M3).
+const START_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub(crate) fn restart() -> Result<()> {
     let exe = current_exe()?;
     let store = ralphy_daemon::auth::store_dir()?;
+    let args = effective(&ralphy_daemon::pidfile::read_args_in(&store));
     if restarted_by_systemd(&store)? {
         println!("restarted {UNIT_NAME}");
-        return Ok(());
-    }
-    if restarted_by_launchd(&store)? {
+    } else if restarted_by_launchd(&store)? {
         println!("restarted {LAUNCHD_LABEL}");
-        return Ok(());
-    }
-    let args = ralphy_daemon::pidfile::read_args_in(&store);
-    if stop(&store)? {
-        println!("stopped the running daemon");
     } else {
-        println!("no daemon was running");
+        if stop(&store)? {
+            println!("stopped the running daemon");
+        } else {
+            println!("no daemon was running");
+        }
+        spawn_detached(&exe, &args, &store)?;
+        println!("started {} {}", readable(&exe), args.join(" "));
     }
-
-    let args = effective(&args);
-    spawn_detached(&exe, &args, &store)?;
-    println!("started {} {}", readable(&exe), args.join(" "));
+    let port = super::describe::port_from_args(&args);
+    if !started(
+        || super::describe::answers(&store, port),
+        START_TIMEOUT,
+        POLL,
+    ) {
+        bail!(
+            "the daemon did not answer within {}s after the restart: see {}",
+            START_TIMEOUT.as_secs(),
+            readable(&store.join("daemon.log"))
+        );
+    }
     Ok(())
+}
+
+/// Whether `answers` turns true before `timeout` ends, asked every `poll`.
+fn started(answers: impl Fn() -> bool, timeout: Duration, poll: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if answers() {
+            return true;
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(poll);
+    }
 }
 
 /// Restart only a daemon that is actually running, bringing back `exe`.
@@ -505,6 +531,26 @@ pub(crate) fn spawn_detached(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn started_returns_once_the_daemon_answers() {
+        let asked = std::cell::Cell::new(0);
+        let answers = || {
+            asked.set(asked.get() + 1);
+            asked.get() >= 3
+        };
+        assert!(started(answers, Duration::from_secs(5), Duration::ZERO));
+        assert_eq!(asked.get(), 3);
+    }
+
+    #[test]
+    fn started_gives_up_after_the_timeout() {
+        assert!(!started(
+            || false,
+            Duration::from_millis(30),
+            Duration::from_millis(5)
+        ));
+    }
 
     /// A restart continues the log: appending to what the last daemon wrote,
     /// creating the file when there is none, never truncating it.

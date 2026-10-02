@@ -62,6 +62,17 @@ fn liveness(socket_answers: Option<bool>, tcp_answers: impl FnOnce() -> bool) ->
     socket_answers.unwrap_or_else(tcp_answers)
 }
 
+fn tcp_answers(port: u16) -> bool {
+    let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
+    TcpStream::connect_timeout(&addr, Duration::from_millis(500)).is_ok()
+}
+
+/// Whether the daemon of the store `dir` answers: on its socket when the socket
+/// can be probed, else on its TCP port.
+pub(crate) fn answers(dir: &Path, port: u16) -> bool {
+    liveness(probe_socket(dir).map(|s| s.answers), || tcp_answers(port))
+}
+
 /// Print this daemon's [`DaemonDescription`] as one JSON line. The token is
 /// included only with `with_token`.
 pub(crate) fn describe(dir: &Path, with_token: bool, out: &mut impl Write) -> Result<()> {
@@ -76,10 +87,7 @@ pub(crate) fn describe(dir: &Path, with_token: bool, out: &mut impl Write) -> Re
     };
     let socket = probe_socket(dir);
     let socket_answers = socket.as_ref().map(|s| s.answers);
-    let running = liveness(socket_answers, || {
-        let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
-        TcpStream::connect_timeout(&addr, Duration::from_millis(500)).is_ok()
-    });
+    let running = liveness(socket_answers, || tcp_answers(port));
     let socket = socket
         .filter(|s| s.answers)
         .map(|s| s.path.to_string_lossy().into_owned());
