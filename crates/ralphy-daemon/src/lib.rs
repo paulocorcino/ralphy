@@ -23,13 +23,14 @@ pub mod clipboard;
 pub mod confine;
 pub mod cookie;
 pub mod desk;
+pub mod dir_list;
 pub mod dispatch;
 pub mod epoch;
 pub mod fleet;
 pub mod fswrite;
 pub mod identity;
 pub mod note;
-mod owner_only;
+pub mod owner_only;
 pub mod password;
 pub mod peer;
 pub mod pidfile;
@@ -48,6 +49,11 @@ pub mod watch;
 
 mod routes;
 mod serve;
+
+// The daemon socket exists on Unix only: tokio has no Unix socket on Windows
+// (#518, amendment M6).
+#[cfg(unix)]
+pub use serve::socket;
 
 use routes::*;
 use serve::serve;

@@ -343,8 +343,8 @@ call — the ceiling bites during **planning**, where the adapter passed `|_log|
 as the plan-time detector, so every real limit was misclassified as "kimi produced
 no plan". Both paths now route the 0.28 text through `detect_limit` → a `reset:
 None` limit (execute) / `PlanLimit { reset: None }` (plan), driving the ADR-0030
-synthetic cadence — the Codex/Gemini pattern. Evidence: `docs/live/kimi-274-limit.log`,
-`docs/evidence/274-kimi-capstone-live.md`.
+synthetic cadence — the Codex/Gemini pattern. Evidence: `docs/spike/live/kimi-274-limit.log`,
+`docs/spike/evidence/274-kimi-capstone-live.md`.
 
 ## Consequences
 

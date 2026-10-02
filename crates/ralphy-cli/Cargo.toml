@@ -61,7 +61,20 @@ zeroize = "1"
 [dev-dependencies]
 tempfile.workspace = true
 
+# A test puts itself in a job object and checks that a restarted daemon leaves
+# it. Same version and crate as ralphy-daemon's, so no new tree.
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }
+
 # Embed the ralphy.exe application icon (assets/icons/ralphy.ico) into the
 # Windows binary via build.rs. Windows-only; on Linux build.rs is a no-op.
 [target.'cfg(windows)'.build-dependencies]
 winresource = { workspace = true }
+
+[lints]
+workspace = true

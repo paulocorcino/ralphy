@@ -16,6 +16,7 @@ mod config;
 mod daemon;
 mod delivery;
 mod events;
+mod gemini;
 mod guard;
 mod hook;
 mod host;
@@ -39,6 +40,10 @@ mod ui;
 mod update;
 mod usage;
 
+#[cfg(test)]
+#[path = "../../ralphy-daemon/tests/support/golden.rs"]
+mod golden;
+
 use cli::{Cli, Command, ConsolidateArgs, HookCommand};
 // Re-exported at the crate root so `crate::CliAgent` stays a stable path for the
 // sibling modules that select on it (e.g. `models`) after the CLI defs moved to
@@ -59,6 +64,9 @@ fn main() -> Result<()> {
         }
     }
     let cli = Cli::from_arg_matches(&cli::command().get_matches()).unwrap_or_else(|e| e.exit());
+    if starts_an_agent_outside_run(&cli.command) {
+        run::strip_secret_tokens_from_env();
+    }
     match cli.command {
         Command::Run(args) => run::run_cmd(*args),
         Command::Consolidate(args) => consolidate_cmd(args),
@@ -66,7 +74,7 @@ fn main() -> Result<()> {
         Command::Config(args) => config::run(args),
         Command::Usage(args) => usage::usage_cmd(args),
         Command::Hook(HookCommand::Stop) => hook::run_stop_hook(),
-        Command::Hook(HookCommand::Guard) => guard::run_guard_hook(),
+        Command::Hook(HookCommand::Guard { cost_gate }) => guard::run_guard_hook(cost_gate),
         Command::Hook(HookCommand::Post) => hook::run_post_hook(),
         Command::Hook(HookCommand::Status) => hook::run_status_hook(),
         Command::Telegram(cmd) => telegram::run(cmd),
@@ -83,9 +91,22 @@ fn main() -> Result<()> {
         Command::Changes(cmd) => changes::changes(cmd),
         Command::Blob(cmd) => blob::blob(cmd),
         Command::Sync(cmd) => sync::sync(cmd),
+        Command::Gemini(cmd) => gemini::gemini(cmd),
         Command::Stop(args) => stop::stop(args),
         Command::Update(args) => update::run(&args),
     }
+}
+
+/// The commands other than `run` that start an agent session. None of them
+/// reads the event sink or Telegram token, so both leave the environment
+/// before the agent can inherit them. `run` strips them itself, after it has
+/// captured them.
+// ADR-0072 D7.
+fn starts_an_agent_outside_run(command: &Command) -> bool {
+    matches!(
+        command,
+        Command::Triage(_) | Command::Init(_) | Command::Consolidate(_)
+    )
 }
 
 /// The default consolidation model/effort per vendor when the operator names none.
@@ -304,6 +325,28 @@ pub(crate) fn non_empty(s: String) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn agent_commands_outside_run_strip_the_secret_tokens() {
+        let parse = |args: &[&str]| {
+            let matches = cli::command()
+                .try_get_matches_from(args)
+                .expect("the arguments parse");
+            Cli::from_arg_matches(&matches).expect("a command").command
+        };
+        for name in ["triage", "init", "consolidate"] {
+            assert!(
+                starts_an_agent_outside_run(&parse(&["ralphy", name])),
+                "{name}"
+            );
+        }
+        for name in ["run", "models", "usage"] {
+            assert!(
+                !starts_an_agent_outside_run(&parse(&["ralphy", name])),
+                "{name}"
+            );
+        }
+    }
 
     /// #237: the four one-shot dispatch sites must route Copilot to REAL work, not
     /// #259, the same pin one vendor over: each `Agent::Gemini`/`CliAgent::Gemini`

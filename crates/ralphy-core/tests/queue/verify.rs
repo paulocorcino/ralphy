@@ -43,6 +43,52 @@ fn verify_gate_passes_and_issue_closes() {
 }
 
 #[test]
+fn a_resumed_plan_with_every_step_done_runs_the_gates_and_closes() {
+    // A run killed after its executor finished leaves a finalized plan with
+    // every step checked. The next run resumes it: zero open steps here is
+    // finished work, so the runner skips the executor, runs the gates over the
+    // committed state, and closes the issue. It never parks it as a bundle,
+    // even though the prose says "Not a bundle".
+    let repo = init_repo("resumed-executed");
+    let queue = vec![issue(1)];
+    let extra = format!(
+        "## Feasible: yes\nNot a bundle: the work sits in one crate.\n\n## Verify\n\n{}\n",
+        verify_ok_line()
+    );
+    let agent = ScriptedAgent::new(vec![])
+        .already_executed()
+        .with_plan_extra(extra);
+    let tracker = RecordingTracker::default();
+
+    let report = run_queue(
+        &cfg(&repo, "stamp-resumed-executed", false),
+        &queue,
+        &agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    assert!(
+        report.stop.is_none(),
+        "a finished plan does not stop the run"
+    );
+    assert!(
+        agent.executed.borrow().is_empty(),
+        "the executor does not run again"
+    );
+    let closes: Vec<u64> = tracker.closes.borrow().iter().map(|(n, _)| *n).collect();
+    assert_eq!(closes, vec![1], "issue closed on a passing gate");
+    assert!(
+        tracker.labels.borrow().is_empty(),
+        "no needs-split label: {:?}",
+        tracker.labels.borrow()
+    );
+
+    fs::remove_dir_all(&repo).ok();
+}
+
+#[test]
 fn verify_gate_fails_skips_issue_and_continues_queue() {
     // A plan whose `## Verify` command always fails: the runner hands the failure
     // back to the agent up to VERIFY_MAX_REPAIRS times, re-running the SAME gate

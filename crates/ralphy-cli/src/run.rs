@@ -27,6 +27,7 @@ use lifecycle::{
 };
 
 use report::{empty_queue_scope, render_final_panel};
+pub(crate) use wiring::strip_secret_tokens_from_env;
 use wiring::{
     build_agent, build_run_queue, operating_branch, preflight_agents, resolve_plan_agent,
     ResolvedClaude, ResolvedEffort,

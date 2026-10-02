@@ -27,29 +27,55 @@ use ralphy_daemon::autostart::{LAUNCHD_LABEL, UNIT_NAME};
 /// new one. Generous: a wedged old process is worth reporting, not racing.
 const EXIT_TIMEOUT: Duration = Duration::from_secs(10);
 const POLL: Duration = Duration::from_millis(100);
+/// How long the new daemon has to answer before the restart is reported as
+/// failed. `host add` reads `describe` right after the restart, and a daemon
+/// that does not answer yet shows no socket (ADR-0067 amendment M3).
+const START_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub(crate) fn restart() -> Result<()> {
     let exe = current_exe()?;
     let store = ralphy_daemon::auth::store_dir()?;
+    let args = effective(&ralphy_daemon::pidfile::read_args_in(&store));
     if restarted_by_systemd(&store)? {
         println!("restarted {UNIT_NAME}");
-        return Ok(());
-    }
-    if restarted_by_launchd(&store)? {
+    } else if restarted_by_launchd(&store)? {
         println!("restarted {LAUNCHD_LABEL}");
-        return Ok(());
-    }
-    let args = ralphy_daemon::pidfile::read_args_in(&store);
-    if stop(&store)? {
-        println!("stopped the running daemon");
     } else {
-        println!("no daemon was running");
+        if stop(&store)? {
+            println!("stopped the running daemon");
+        } else {
+            println!("no daemon was running");
+        }
+        spawn_detached(&exe, &args, &store)?;
+        println!("started {} {}", readable(&exe), args.join(" "));
     }
-
-    let args = effective(&args);
-    spawn_detached(&exe, &args, &store)?;
-    println!("started {} {}", readable(&exe), args.join(" "));
+    let port = super::describe::port_from_args(&args);
+    if !started(
+        || super::describe::answers(&store, port),
+        START_TIMEOUT,
+        POLL,
+    ) {
+        bail!(
+            "the daemon did not answer within {}s after the restart: see {}",
+            START_TIMEOUT.as_secs(),
+            readable(&store.join("daemon.log"))
+        );
+    }
     Ok(())
+}
+
+/// Whether `answers` turns true before `timeout` ends, asked every `poll`.
+fn started(answers: impl Fn() -> bool, timeout: Duration, poll: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if answers() {
+            return true;
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(poll);
+    }
 }
 
 /// Restart only a daemon that is actually running, bringing back `exe`.
@@ -286,7 +312,14 @@ fn stop(store: &Path) -> Result<bool> {
         EXIT_TIMEOUT,
         ralphy_proc_util::pid::pid_is_alive,
         ralphy_proc_util::pid::exe_of_pid,
-        ralphy_proc_util::kill_tree_by_pid,
+        |pid| {
+            ralphy_proc_util::kill_tree_by_pid(pid);
+            // A daemon spawned by `spawn_detached` stays in its caller's process
+            // group, so the group signal above does not reach it. The pid is
+            // proven to be the daemon before this runs.
+            #[cfg(unix)]
+            ralphy_proc_util::pid::kill_pid(pid);
+        },
     )
 }
 
@@ -362,10 +395,16 @@ fn stop_recorded(
 /// written before a replacement and read after one, and Windows and Unix
 /// disagree on canonicalization (extended-length prefixes, resolved symlinks).
 /// The question is "the same program", not "the same spelling".
-fn same_program(a: &Path, b: &Path) -> bool {
+pub(crate) fn same_program(a: &Path, b: &Path) -> bool {
     match (a.file_name(), b.file_name()) {
         (Some(a), Some(b)) => {
-            unparked(&a.to_string_lossy()).eq_ignore_ascii_case(&unparked(&b.to_string_lossy()))
+            let name = |n: &std::ffi::OsStr| {
+                let n = n.to_string_lossy();
+                // Linux reports an image whose file was replaced or unlinked as
+                // `<path> (deleted)`: the state after `mv` over the binary.
+                unparked(n.strip_suffix(" (deleted)").unwrap_or(&n))
+            };
+            name(a).eq_ignore_ascii_case(&name(b))
         }
         _ => false,
     }
@@ -432,6 +471,13 @@ fn log_stdio(store: &Path) -> (std::process::Stdio, std::process::Stdio) {
 /// `daemon.log`, and the child dropped unwaited — this command must not become
 /// the daemon's parent. Returns the child, so a caller can end one that did not
 /// come up; dropping it leaves the daemon running.
+///
+/// The daemon also leaves the Windows job of the program that ran this command.
+/// `DETACHED_PROCESS` does not: a child inherits its parent's job, and when the
+/// job's owner ends the job, every process in it is terminated with no line in
+/// `daemon.log`. Measured 2026-10-01: a daemon restarted from an agent's shell
+/// tool sat in that tool's job and died with it. IDE terminals and OpenSSH
+/// sessions also run their commands in a job.
 #[cfg(windows)]
 pub(crate) fn spawn_detached(
     exe: &Path,
@@ -443,16 +489,41 @@ pub(crate) fn spawn_detached(
 
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     const DETACHED_PROCESS: u32 = 0x0000_0008;
+    const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
 
-    let (stdout, stderr) = log_stdio(store);
-    Command::new(exe)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(stdout)
-        .stderr(stderr)
-        .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
-        .spawn()
-        .with_context(|| format!("spawning {} {}", readable(exe), args.join(" ")))
+    let spawn = |flags: u32| {
+        let (stdout, stderr) = log_stdio(store);
+        Command::new(exe)
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(stdout)
+            .stderr(stderr)
+            .creation_flags(flags)
+            .spawn()
+    };
+    // Otherwise the daemon also inherits this command's own stdout, and a
+    // caller that reads it (a pipe, an SSH session) waits until the daemon ends.
+    ralphy_proc_util::keep_std_handles_from_children();
+    let detached = CREATE_NO_WINDOW | DETACHED_PROCESS;
+    match spawn(detached | CREATE_BREAKAWAY_FROM_JOB) {
+        Err(e) if breakaway_refused(&e) => {
+            eprintln!(
+                "warning: the daemon stays inside the job of the program that started it, \
+                 so it stops when that program closes"
+            );
+            spawn(detached)
+        }
+        spawned => spawned,
+    }
+    .with_context(|| format!("spawning {} {}", readable(exe), args.join(" ")))
+}
+
+/// A job that does not allow breakaway makes `CreateProcess` fail with
+/// `ERROR_ACCESS_DENIED`; any other error is a real spawn failure.
+#[cfg(windows)]
+fn breakaway_refused(error: &std::io::Error) -> bool {
+    const ERROR_ACCESS_DENIED: i32 = 5;
+    error.raw_os_error() == Some(ERROR_ACCESS_DENIED)
 }
 
 #[cfg(not(windows))]
@@ -476,6 +547,26 @@ pub(crate) fn spawn_detached(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn started_returns_once_the_daemon_answers() {
+        let asked = std::cell::Cell::new(0);
+        let answers = || {
+            asked.set(asked.get() + 1);
+            asked.get() >= 3
+        };
+        assert!(started(answers, Duration::from_secs(5), Duration::ZERO));
+        assert_eq!(asked.get(), 3);
+    }
+
+    #[test]
+    fn started_gives_up_after_the_timeout() {
+        assert!(!started(
+            || false,
+            Duration::from_millis(30),
+            Duration::from_millis(5)
+        ));
+    }
 
     /// A restart continues the log: appending to what the last daemon wrote,
     /// creating the file when there is none, never truncating it.
@@ -506,6 +597,67 @@ mod tests {
 second daemon
 "
         );
+    }
+
+    /// A restarted daemon must outlive the program that ran `daemon restart`,
+    /// so it may not stay in that program's job. The test joins a job that
+    /// allows breakaway (no kill-on-close, so the rest of the binary is not at
+    /// risk) and checks where the detached child ends up.
+    #[cfg(windows)]
+    #[test]
+    #[allow(unsafe_code, reason = "FFI: the job object calls of the test")]
+    fn a_restarted_daemon_leaves_the_job_of_its_launcher() {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Foundation::{CloseHandle, FALSE};
+        use windows_sys::Win32::System::JobObjects::{
+            AssignProcessToJobObject, CreateJobObjectW, IsProcessInJob,
+            JobObjectExtendedLimitInformation, SetInformationJobObject,
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_BREAKAWAY_OK,
+        };
+        use windows_sys::Win32::System::Threading::GetCurrentProcess;
+
+        // SAFETY: plain Win32 calls on handles this test owns; the info struct
+        // is a zeroed POD of the size passed.
+        let job = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+        assert!(!job.is_null(), "creating a job object");
+        let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_BREAKAWAY_OK;
+        let set = unsafe {
+            SetInformationJobObject(
+                job,
+                JobObjectExtendedLimitInformation,
+                std::ptr::from_ref(&info).cast(),
+                u32::try_from(std::mem::size_of_val(&info)).expect("the struct size fits u32"),
+            )
+        };
+        assert_ne!(set, FALSE, "allowing breakaway on the test job");
+        let joined = unsafe { AssignProcessToJobObject(job, GetCurrentProcess()) };
+        assert_ne!(joined, FALSE, "putting the test process in the job");
+
+        let store = scratch("job");
+        let mut child = spawn_detached(
+            Path::new("ping"),
+            &["-n".into(), "30".into(), "127.0.0.1".into()],
+            &store,
+        )
+        .expect("spawning the stand-in daemon");
+        let mut in_job = FALSE;
+        let asked = unsafe { IsProcessInJob(child.as_raw_handle(), job, &mut in_job) };
+        child.kill().expect("ending the stand-in daemon");
+        child.wait().expect("reaping the stand-in daemon");
+        unsafe { CloseHandle(job) };
+        assert_ne!(asked, FALSE, "asking whether the child is in the job");
+        assert_eq!(
+            in_job, FALSE,
+            "the detached daemon stayed in its launcher's job"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn only_access_denied_means_the_job_refused_breakaway() {
+        assert!(breakaway_refused(&std::io::Error::from_raw_os_error(5)));
+        assert!(!breakaway_refused(&std::io::Error::from_raw_os_error(2)));
     }
 
     fn scratch(tag: &str) -> PathBuf {
@@ -646,6 +798,19 @@ second daemon
         assert!(!same_program(
             Path::new("/bin/ralphy"),
             Path::new("/bin/sshd.old")
+        ));
+        // Linux names an image whose file was replaced or removed this way.
+        assert!(same_program(
+            Path::new("/home/u/.ralphy/bin/ralphy"),
+            Path::new("/home/u/.ralphy/bin/ralphy (deleted)")
+        ));
+        assert!(same_program(
+            Path::new("/usr/local/bin/ralphy"),
+            Path::new("/usr/local/bin/ralphy.old (deleted)")
+        ));
+        assert!(!same_program(
+            Path::new("/bin/ralphy"),
+            Path::new("/bin/sshd (deleted)")
         ));
         assert_eq!(unparked("ralphy.exe"), "ralphy.exe");
         assert_eq!(unparked("ralphy.exe.old"), "ralphy.exe");

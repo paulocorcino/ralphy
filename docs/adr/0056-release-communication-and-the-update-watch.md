@@ -434,3 +434,46 @@ depends on nothing like that.
   daemon's tree. The daemon gains one route that spawns a child and one reason
   to shut down by itself. The rollback belongs to the hand-over only: in a
 terminal the operator sees a failed start and can act on it.
+
+## Compliance
+
+- §1 (the closed set of kinds): checked by the `changelog` job in
+  `.github/workflows/ci.yml` (`cargo run -q -p xtask -- changelog --check`),
+  which fails on an unknown `kind:`.
+- §2: not checked by code: that only the fold writes `CHANGELOG.md` is
+  reviewed in the PR.
+- §3: checked by the `changelog` job in `.github/workflows/ci.yml` (step "A
+  user-visible change carries a fragment").
+- §4 (a leaf crate): checked by `crates/xtask/tests/crate_dependencies.rs`
+  (`core_and_adapters_keep_their_dependency_edges`), which fails when
+  `ralphy-release` or `ralphy-pricing` depends on any workspace crate.
+- §4 (the daemon's only outbound seam besides peers): not checked by code:
+  reviewed in the PR.
+- §5 (both tag spellings order by their number; a build that is ahead is
+  never told to update): not checked by code: behaviour tests pin it
+  (`the_dotted_spelling_outranks_the_undotted_one_it_replaces`,
+  `a_development_build_is_never_offered_an_update` in `crates/ralphy-release`).
+  Reviewed in the PR.
+- §5 (`--match 'v*'` in both `build.rs`): not checked by code: reviewed in the PR.
+- §6 (a failed fetch leaves the cache alone): not checked by code: a
+  behaviour test pins it (`a_failed_fetch_leaves_the_prior_cache_alone` in
+  `crates/ralphy-release/src/fetch.rs`). Reviewed in the PR.
+- §7: not checked by code: reviewed in the PR.
+- §8 (the archive is verified against its checksum): not checked by code:
+  behaviour tests pin it (`a_flipped_byte_is_refused`,
+  `an_archive_is_only_taken_with_its_checksum` in `crates/ralphy-cli/src/update`).
+  Reviewed in the PR.
+- §8 (no unattended update): not checked by code: reviewed in the PR.
+- §9 (the request carries nothing that identifies an installation): not
+  checked by code: a behaviour test pins it
+  (`a_missing_cache_is_fetched_and_written` in
+  `crates/ralphy-release/src/fetch.rs`). Reviewed in the PR.
+- §10 (the length caps): checked by the `changelog` job in
+  `.github/workflows/ci.yml` (`cargo run -q -p xtask -- changelog --check`).
+- §11 (a machine client is refused; the button is offered only to a build
+  that is behind and not under systemd): not checked by code: behaviour tests
+  pin it (`the_update_is_refused_to_a_machine_client`,
+  `only_a_build_that_is_behind_and_not_under_systemd_is_offered_the_update`
+  in `crates/ralphy-daemon`). Reviewed in the PR.
+- §11 (the hand-over, the rollback and the fresh factor): not checked by code:
+  reviewed in the PR.

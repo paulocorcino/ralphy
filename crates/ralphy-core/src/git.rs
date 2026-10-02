@@ -105,8 +105,12 @@ pub fn fetch_origin(repo: &Path) -> Result<()> {
     Ok(())
 }
 
+/// The current branch name, or `"HEAD"` when detached (callers compare to it).
 pub fn current_branch(repo: &Path) -> Result<String> {
-    git(repo, &["rev-parse", "--abbrev-ref", "HEAD"])
+    Ok(match ralphy_git_read::head(repo)? {
+        ralphy_git_read::Head::Branch { name } => name,
+        ralphy_git_read::Head::Detached { .. } => "HEAD".to_string(),
+    })
 }
 
 /// The repo's local branch names, one per line, in `git branch` order. Backs the
@@ -126,9 +130,7 @@ pub fn local_branches(repo: &Path) -> Result<Vec<String>> {
 /// there is no `origin` remote (a local-only repo), so the caller simply omits the
 /// link rather than failing the run.
 pub fn origin_url(repo: &Path) -> Option<String> {
-    git(repo, &["remote", "get-url", "origin"])
-        .ok()
-        .filter(|s| !s.is_empty())
+    ralphy_git_read::origin_url(repo)
 }
 
 /// Extract an `owner/repo` slug from a git remote URL (ADR-0008 D7). Handles the
@@ -180,9 +182,7 @@ pub fn project_slug(repo: &Path) -> String {
 /// `git config user.email` for the run's actor (ADR-0008 D7). `None` when unset
 /// or empty — the caller substitutes a default rather than failing the run.
 pub fn user_email(repo: &Path) -> Option<String> {
-    git(repo, &["config", "user.email"])
-        .ok()
-        .filter(|s| !s.is_empty())
+    ralphy_git_read::user_email(repo)
 }
 
 /// `git config user.name` for the actor's display name (ADR-0008 D7).
@@ -208,7 +208,12 @@ pub fn commitish_exists(repo: &Path, refname: &str) -> bool {
 }
 
 pub fn checkout_new_branch(repo: &Path, branch: &str, base: &str) -> Result<()> {
-    git(repo, &["checkout", "-b", branch, base, "--quiet"])?;
+    // `--no-track`: cut from a remote branch (`origin/main`), git would make it
+    // the upstream, and a plain `git push` from the run branch would land there.
+    git(
+        repo,
+        &["checkout", "-b", branch, base, "--no-track", "--quiet"],
+    )?;
     Ok(())
 }
 
@@ -409,6 +414,48 @@ mod tests {
         validate_commitish(&dir, &sha).unwrap();
         validate_commitish(&dir, "main").unwrap();
         validate_commitish(&dir, "feat/x~0").unwrap();
+    }
+
+    /// A run branch cut from a remote branch (`origin/main`) has no upstream: git
+    /// would otherwise track `origin/main`, and a plain `git push` from the run
+    /// branch would land on `main`.
+    #[test]
+    fn a_branch_cut_from_a_remote_base_tracks_nothing() {
+        let origin = init_repo("track-origin");
+        std::fs::write(origin.join("README.md"), "hello\n").unwrap();
+        git(&origin, &["add", "."]).unwrap();
+        git(&origin, &["commit", "-q", "-m", "init"]).unwrap();
+        let clone = origin.with_file_name(format!(
+            "{}-clone",
+            origin.file_name().unwrap().to_string_lossy()
+        ));
+        let _ = std::fs::remove_dir_all(&clone);
+        git(
+            &origin,
+            &[
+                "clone",
+                "-q",
+                &origin.to_string_lossy(),
+                &clone.to_string_lossy(),
+            ],
+        )
+        .unwrap();
+        // Control: the clone's own `main` tracks `origin/main`, so this git does
+        // set an upstream when a branch comes from a remote one.
+        assert_eq!(
+            git(&clone, &["config", "--get", "branch.main.merge"]).unwrap(),
+            "refs/heads/main"
+        );
+
+        checkout_new_branch(&clone, "afk/run-t", "origin/main").unwrap();
+
+        assert_eq!(current_branch(&clone).unwrap(), "afk/run-t");
+        assert!(
+            git(&clone, &["config", "--get", "branch.afk/run-t.merge"]).is_err(),
+            "the run branch must have no upstream"
+        );
+        let _ = std::fs::remove_dir_all(&clone);
+        let _ = std::fs::remove_dir_all(&origin);
     }
 
     #[test]

@@ -19,8 +19,10 @@ use std::path::Path;
 /// stamper, and the detector all derive the exact literal from one place.
 ///
 /// "Finalized" means "the planner finished writing" — NOT "the issue completed".
-/// Resume relies on the external invariant that a completed issue leaves the
-/// queue and worktrees are per-run, so a finalized plan is never re-executed.
+/// An executor may keep the trailer last after its own appends, so a run killed
+/// after execution (in the gates, before the close) also resumes here. The runner
+/// reads that plan's steps: when every step is checked it skips the executor and
+/// runs the gates, so a finished plan is never executed again.
 pub fn plan_trailer(issue_number: u64) -> String {
     format!("<!-- ralphy-plan: issue={issue_number} -->")
 }
@@ -32,11 +34,10 @@ pub fn plan_trailer(issue_number: u64) -> String {
 /// NON-empty line so a stray trailing blank an editor may append still resolves,
 /// while a plan truncated mid-write (its real last line is prose) does not match.
 ///
-/// Note: the resume window closes once the executor appends a section AFTER the
-/// trailer (`## Notes & decisions`, `## Plan friction`, `## Handoff`) — the
-/// trailer is then no longer the last line, so a later kill falls back to
-/// re-planning. That is a safe degradation (a wasted re-plan, never an incorrect
-/// resume); the common case — killed mid-execution before any append — resumes.
+/// Note: when the executor appends a section AFTER the trailer (`## Notes &
+/// decisions`, `## Plan friction`, `## Handoff`), the trailer is no longer the
+/// last line and a later kill falls back to re-planning — a wasted re-plan,
+/// never an incorrect resume.
 pub fn plan_is_finalized_for(plan_path: &Path, issue_number: u64) -> bool {
     let Ok(md) = fs::read_to_string(plan_path) else {
         return false;

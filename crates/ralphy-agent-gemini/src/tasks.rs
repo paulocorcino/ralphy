@@ -284,15 +284,17 @@ pub fn draft_issues(
     )
 }
 
-/// Assemble the triage charter: the core prompt, then `attachments_manifest`
+/// Assemble the triage charter: the core prompt, then the issue threads, then
+/// `attachments_manifest`
 /// (the vendor-neutral textual inventory, ADR-0025 §6), then this vendor's own
 /// `@`-reference block per fetched image (ADR-0043 D14). The `@` syntax is
 /// this vendor's alone, so it is appended here rather than folded into the
 /// core-owned manifest.
 pub(crate) fn triage_prompt(repo: &Path, req: &TriageRequest, out_path: &Path) -> String {
     format!(
-        "{}{}{}",
+        "{}{}{}{}",
         build_triage_prompt(repo, req.issue_numbers, req.queue_label, out_path),
+        req.thread_block,
         req.attachments_manifest,
         command::attachment_block(req.image_paths)
     )
@@ -608,6 +610,7 @@ mod tests {
         let req = TriageRequest {
             issue_numbers: &[1],
             queue_label: "triage-agent",
+            thread_block: "\n## Thread (issue #1)\nthread not fetched: x\n",
             attachments_manifest: "\n\n## Attachments\n- #1: red.png\n",
             image_paths: std::slice::from_ref(&png),
         };
@@ -621,6 +624,10 @@ mod tests {
         assert!(
             prompt.contains(req.attachments_manifest),
             "the manifest text must survive verbatim: {prompt}"
+        );
+        assert!(
+            prompt.contains(&format!("{}{}", req.thread_block, req.attachments_manifest)),
+            "the thread block comes before the manifest: {prompt}"
         );
     }
 

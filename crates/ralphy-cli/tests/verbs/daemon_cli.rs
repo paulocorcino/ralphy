@@ -116,6 +116,7 @@ fn describe_prints_the_pairing_facts() {
         "{d}"
     );
     assert_eq!(d["port"], 7257, "{d}");
+    assert!(d.get("socket").is_none(), "no daemon, no socket: {d}");
     assert_eq!(d["token"], token.trim(), "{d}");
     assert!(
         d["daemon_id"].as_str().is_some_and(|s| !s.is_empty()),

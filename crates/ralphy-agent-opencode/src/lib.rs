@@ -54,7 +54,7 @@ use events::{
     usage_limit_regex, OPENCODE_AUTH_ERROR_MSG,
 };
 use outcome::{classify_opencode_outcome, unschedulable_opencode_limit};
-use skills::{materialize_opencode_skills, opencode_skills_config};
+use skills::materialize_opencode_skills;
 pub use tasks::{consolidate_knowledge, diagnose_repo, draft_issues, list_models, triage_issues};
 use usage::{opencode_usage, resolved_model_label, session_id_from_stream};
 
@@ -175,12 +175,11 @@ impl Agent for OpenCodeAgent {
 
         let run = || {
             let skills_dir = materialize_opencode_skills(ws)?;
-            let skills_config = opencode_skills_config(&skills_dir);
             let cmd = build_opencode_command(
                 self.model.as_deref(),
                 self.variant.as_deref(),
                 ws.repo_root(),
-                &skills_config,
+                Some(&skills_dir),
             );
             // ADR-0044 D4 No-op: resolved `--plan-effort` accepted at the CLI,
             // discarded here — must not alter argv; emit effort "". `--variant`
@@ -258,12 +257,11 @@ impl Agent for OpenCodeAgent {
 
         let run = || {
             let skills_dir = materialize_opencode_skills(ws)?;
-            let skills_config = opencode_skills_config(&skills_dir);
             let cmd = build_opencode_command(
                 self.model.as_deref(),
                 self.variant.as_deref(),
                 ws.repo_root(),
-                &skills_config,
+                Some(&skills_dir),
             );
             // ADR-0044 D4 No-op: resolved `--exec-effort` accepted at the CLI,
             // discarded here — must not alter argv; emit effort "". `--variant`

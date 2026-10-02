@@ -333,6 +333,13 @@ pub struct Image {
 /// an image's cost is decode and paint, not lines in an editor (ADR-0049 §4).
 pub const MAX_IMAGE_BYTES: u64 = 4 * 1024 * 1024;
 
+/// The one transport cap on a command a client sends, on `/ws/command`,
+/// `/ws/session` and `/api/peer/command`: the base64 size of a
+/// [`MAX_IMAGE_BYTES`] image (the largest payload a verb takes, `image.write`)
+/// plus 64 KiB for the JSON envelope. A larger message is refused before it is
+/// parsed (ADR-0072 D11).
+pub const MAX_COMMAND_BYTES: usize = (MAX_IMAGE_BYTES as usize).div_ceil(3) * 4 + 64 * 1024;
+
 /// Read the confined `rel` file under `root` as an allowlisted image. The
 /// extension picks the candidate [`ImageType`] and the bytes must AGREE with it
 /// ([`ImageType::matches`]); a disagreement — or an extension naming no image
@@ -363,6 +370,18 @@ pub fn read_image(root: &Path, rel: &str) -> Result<Image, ReadError> {
 
 #[cfg(test)]
 mod tests {
+    /// The cap is the base64 size of the largest image plus 64 KiB, so a
+    /// 4 MiB paste and its envelope fit and nothing much larger does.
+    #[test]
+    fn max_command_bytes_is_derived_from_the_image_cap() {
+        assert_eq!(
+            MAX_COMMAND_BYTES,
+            (4 * 1024 * 1024usize).div_ceil(3) * 4 + 65_536
+        );
+        assert_eq!(MAX_COMMAND_BYTES, 5_657_944);
+        assert!(MAX_COMMAND_BYTES > (MAX_IMAGE_BYTES as usize).div_ceil(3) * 4 + 4096);
+    }
+
     use super::*;
     use std::fs;
 

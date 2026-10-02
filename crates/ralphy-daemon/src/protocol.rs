@@ -51,6 +51,10 @@ pub struct Presence {
     pub name: Option<String>,
     pub avatar: Option<String>,
     pub uptime_secs: u64,
+    /// The daemon's build id; a tab served by another build reloads
+    /// (ADR-0070 D6). Absent in a frame from an older daemon.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub build: Option<String>,
 }
 
 /// Why a byte string failed to decode into a [`Frame`].
@@ -148,6 +152,7 @@ mod tests {
                 name: name.map(str::to_string),
                 avatar: Some("🐙".into()),
                 uptime_secs: 42,
+                build: Some("v1+abc".into()),
             })
         };
         // (case, frame)
@@ -175,6 +180,17 @@ mod tests {
         }
     }
 
+    /// A heartbeat from a daemon older than the build id still decodes.
+    #[test]
+    fn a_presence_without_a_build_decodes_as_none() {
+        let mut bytes = vec![TAG_PRESENCE];
+        bytes.extend_from_slice(br#"{"name":null,"avatar":null,"uptime_secs":3}"#);
+        match decode(&bytes) {
+            Ok(Frame::Presence(p)) => assert_eq!(p.build, None),
+            other => panic!("expected a presence frame, got {other:?}"),
+        }
+    }
+
     #[test]
     fn channels_are_distinct() {
         let terminal = Frame::Terminal {
@@ -186,6 +202,7 @@ mod tests {
             name: None,
             avatar: None,
             uptime_secs: 0,
+            build: None,
         });
         assert_eq!(encode(&terminal)[0], TAG_TERMINAL);
         assert_eq!(encode(&command)[0], TAG_COMMAND);

@@ -143,9 +143,10 @@ window.WBConsole = (function () {
     modal.setAttribute("aria-label", title);
     const head = document.createElement("div");
     head.className = "modal-head";
-    head.innerHTML =
-      `<i class="bi ${danger ? "bi-exclamation-triangle" : "bi-question-circle"}"` +
-      `${danger ? ' style="color: var(--danger)"' : ""}></i>`;
+    const mark = document.createElement("i");
+    mark.className = "bi " + (danger ? "bi-exclamation-triangle" : "bi-question-circle");
+    if (danger) mark.style.color = "var(--danger)";
+    head.append(mark);
     const heading = document.createElement("span");
     heading.className = "modal-title";
     heading.textContent = title;
@@ -356,6 +357,7 @@ window.WBConsole = (function () {
 
   function ingestDesk(payload) {
     const fetched = Array.isArray(payload?.windows) ? payload.windows : [];
+    for (const r of fetched) if (r?.id) daemonSeen.add(r.id);
     ingestFences(Array.isArray(payload?.fences) ? payload.fences : []);
     ingestNotes(Array.isArray(payload?.notes) ? payload.notes : []);
     const fetchedCheckouts = payload?.checkouts;
@@ -443,18 +445,84 @@ window.WBConsole = (function () {
     return out;
   }
 
+  // Why the daemon cannot read the saved desk, or "" (ADR-0070 D4). Set only
+  // by the daemon's own `409 {"state":"unreadable"}`: a transport failure or
+  // a pre-login 401 is not a broken desk, and must not offer a new one.
+  let deskFailure = "";
+  // The shell's hook for a desk failure found by a flush: no push says so.
+  let onDeskFailure = null;
+  // Every window id the daemon is known to have held: in a desk it served, or
+  // in a write it accepted. A column console missing from a later read, and
+  // in this set, was closed elsewhere (`app.js` `checkColumnDesk`).
+  const daemonSeen = new Set();
+  // The `409` reply of an unreadable desk, as the reason to show, or null.
+  // The daemon's own text is a parser message for a developer: it goes to
+  // the browser console, and the operator reads what it means.
+  async function unreadableDesk(r) {
+    if (r.status !== 409) return null;
+    const body = await r.json().catch(() => null);
+    if (body?.state !== "unreadable") return null;
+    if (body.error) console.warn("saved desk:", body.error);
+    return "the file is damaged";
+  }
+
   // Load (or re-load, after a login) the daemon's desk. Never rejects: an
   // unreachable daemon leaves `deskLoaded` false, which keeps this page from
-  // uploading over a desk it never read.
+  // uploading over a desk it never read. So does an unreadable desk, which
+  // also sets `deskFailure`.
   function reloadDesk() {
     if (!window.WBMode?.isDaemon()) {
       deskLoaded = true;
       return Promise.resolve();
     }
     return fetch("/api/desk")
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("desk unavailable"))))
-      .then(ingestDesk)
+      .then(async (r) => {
+        if (r.ok) return r.json();
+        const why = await unreadableDesk(r);
+        if (why) {
+          deskFailure = why;
+          deskLoaded = false;
+          return null;
+        }
+        throw new Error("desk unavailable");
+      })
+      .then((payload) => {
+        if (!payload) return;
+        deskFailure = "";
+        ingestDesk(payload);
+      })
       .catch(() => {});
+  }
+  function currentDeskFailure() {
+    return deskFailure;
+  }
+  function setDeskFailureHook(fn) {
+    onDeskFailure = fn;
+  }
+  function daemonSeenIds() {
+    return new Set(daemonSeen);
+  }
+  // The one action on an unreadable desk: the daemon renames the old file
+  // aside and starts an empty desk; this page then reads and restores it.
+  function startNewDesk() {
+    return fetch("/api/desk/new", { method: "POST" })
+      .then(async (r) => {
+        if (r.ok) return;
+        // 409 "readable": another tab started the new desk first. The desk is
+        // readable, so this tab reads it like any other.
+        const body = r.status === 409 ? await r.json().catch(() => null) : null;
+        if (body?.state === "readable") return;
+        throw new Error(`the daemon answered ${r.status}`);
+      })
+      .then(() => reloadDesk())
+      .then(() => {
+        if (!deskLoaded) return;
+        // Windows already up were drawn over the unreadable desk: the empty
+        // desk learns them on this flush. With none up, the boot restore
+        // never ran, so it runs now.
+        if (wins.size) scheduleDeskFlush();
+        else restoreDesk();
+      });
   }
   // `restoreDesk` awaits this before reconciling, so the layout is never
   // reconciled against a desk that has not landed.
@@ -616,12 +684,26 @@ window.WBConsole = (function () {
     deskWrite = deskWrite
       .catch(() => {})
       .then(() => fetch("/api/desk"))
-      .then((r) => (r.ok ? r.json() : null))
+      .then(async (r) => {
+        if (r.ok) return r.json();
+        const why = await unreadableDesk(r);
+        if (!why) return null;
+        deskFailure = why;
+        deskLoaded = false;
+        onDeskFailure?.();
+        return "unreadable";
+      })
       .catch(() => null)
       .then((payload) => {
+        // The daemon refuses a write over a desk it cannot read; so does this page.
+        if (payload === "unreadable") return null;
         if (payload) ingestDesk(payload);
+        const sent = desk.map((r) => r.id);
         const body = JSON.stringify(deskBody());
-        return deskSink.put(body);
+        return deskSink.put(body).then((r) => {
+          if (r?.ok) for (const id of sent) daemonSeen.add(id);
+          return r;
+        });
       });
   }
   // A mutation in the last 250 ms before the tab closes would otherwise be
@@ -1049,11 +1131,43 @@ window.WBConsole = (function () {
     return !!reply && reply.status === "error" && reply.message === "unknown checkout";
   }
 
-  // The console name's prefix is taken from the SLUG, never the ref: a peer ref
-  // carries a `<daemon_id>/` routing head (ADR-0052 §5), and the same repo on
-  // two environments shares one count (ADR-0066 §2).
+  // The project name and tooltip text per repo ref, fed by the shell
+  // (`ingestProjects`) from the daemon's project list. A ref the shell has not
+  // named yet (the detached popup, a desk read before the list) falls back to
+  // its slug, never to the ref: a peer ref carries a `<daemon_id>/` routing
+  // head (ADR-0052 §5).
+  const projectNames = new Map();
+  function projectNameOf(ref) {
+    const known = projectNames.get(ref);
+    if (known) return known.name;
+    return window.WBFleet ? window.WBFleet.refSlug(ref) : ref;
+  }
+  function projectTitleOf(ref) {
+    if (ref === "~") return ref;
+    return projectNames.get(ref)?.title || projectNameOf(ref);
+  }
+  // `rows` is `[{ ref, name, title }]`. Titles and tooltips already drawn are
+  // drawn again; a console NAME already given is the operator's and stays.
+  function ingestProjects(rows) {
+    projectNames.clear();
+    for (const r of rows || []) {
+      if (r && r.ref && r.name) projectNames.set(r.ref, { name: r.name, title: r.title || r.name });
+    }
+    for (const win of wins) {
+      if (!win._title || !win._presentation) continue;
+      const p = win._presentation;
+      p.tooltip = window.WBConsoleName.tooltipLines(projectTitleOf(win._deskRepo), p.environment, p.name).join("\n");
+      win._title.title = p.tooltip;
+      renderTitle(win, win._title, p);
+    }
+  }
+
+  // The console name's prefix is the PROJECT NAME's last segment: a peer ref's
+  // routing head never shows, a remoteless repo is named by its folder and not
+  // its `path-<hash>` key, and the same repo on two environments shares one
+  // count (ADR-0066 §2).
   function consolePrefix(repo) {
-    return window.WBConsoleName.prefixOf(window.WBFleet ? window.WBFleet.refSlug(repo) : repo);
+    return window.WBConsoleName.prefixOf(projectNameOf(repo));
   }
   // Every console name in use: the desk mirror's and the stage's windows',
   // except `exceptId` (the console being renamed).
@@ -1086,7 +1200,7 @@ window.WBConsole = (function () {
       environment,
       name,
       checkout,
-      tooltip: window.WBConsoleName.tooltipLines(repo, environment, name).join("\n"),
+      tooltip: window.WBConsoleName.tooltipLines(projectTitleOf(repo), environment, name).join("\n"),
     };
   }
 
@@ -1178,10 +1292,10 @@ window.WBConsole = (function () {
     title.append(nameSpan, " ", labelSpan);
     wireRename(win, nameSpan);
     if (switchable) appendCheckout(win, title, presentation);
-    // The repo slug closes the title and is the first text cut; a console with
-    // no repo has none, its default name already says `home`.
-    const repo = window.WBFleet ? window.WBFleet.refSlug(win._deskRepo) : win._deskRepo;
-    if (repo && repo !== "~") {
+    // The project name closes the title and is the first text cut; a console
+    // with no repo has none, its default name already says `home`.
+    const repo = win._deskRepo && win._deskRepo !== "~" ? projectNameOf(win._deskRepo) : "";
+    if (repo) {
       const repoSpan = document.createElement("span");
       repoSpan.className = "session-repo";
       // The dot is inside the span, so a repo cut to nothing leaves no dot.
@@ -4590,14 +4704,23 @@ window.WBConsole = (function () {
     return "drop";
   }
 
+  // The last line a console prints when it gives up. A launch the daemon
+  // refused names the reason; the browser cannot read it anywhere else,
+  // because a refused launch never had a session to show.
+  function endNotice(announced, message) {
+    if (announced !== "refused") return "[session closed]";
+    const why = typeof message === "string" ? message.trim() : "";
+    return why ? `[could not start: ${why}]` : "[could not start]";
+  }
+
   // The reconnect rule (#334), pure and tabled. Returns one of "reconnect" /
   // "park-as-watcher" / "give-up".
   //
-  // `announced` is the daemon's eviction reason from a data frame BEFORE the
-  // close ("taken-over" / "child-exited" / "daemon-shutdown"), else null. It is
-  // the only trustworthy signal of a deliberate end: the browser reports
-  // 1005/wasClean=false even for a served Close frame, so an unannounced dirty
-  // close is read as a flaky link.
+  // `announced` is the daemon's reason from a data frame BEFORE the close
+  // ("taken-over" / "child-exited" / "daemon-shutdown" / "refused"), else
+  // null. It is the only trustworthy signal of a deliberate end: the browser
+  // reports 1005/wasClean=false even for a served Close frame, so an
+  // unannounced dirty close is read as a flaky link.
   function reconnectDecision({
     code,
     wasClean,
@@ -5004,7 +5127,7 @@ window.WBConsole = (function () {
           .write("image.write", { repo: currentRepo, base64 })
           .then((reply) => {
             if (window.WBFail.isError(reply) || !reply.path) {
-              const why = window.WBFail.message(reply, "refused");
+              const why = window.WBFail.why(reply, "the daemon refused it");
               term.write(`\r\n[paste refused — ${why}]\r\n`);
               return;
             }
@@ -5234,6 +5357,7 @@ window.WBConsole = (function () {
     // watch}` from the start). The `term.onData` gate reads this flag.
     let watching = !!opts.watch;
     let announced = null; // the daemon's reason, when it named one before closing
+    let refusal = null; // the daemon's words when that reason is "refused"
     let switching = false; // an intentional close on the way to a takeover
     let firstConnect = true;
     // True while the scrollback replay is being parsed. The replay is RAW BYTES
@@ -5255,7 +5379,7 @@ window.WBConsole = (function () {
       // Stop observing so a dead-ws terminal doesn't keep firing fit() until the
       // window is closed.
       ro.disconnect();
-      term.write("\r\n[session closed]\r\n");
+      term.write("\r\n" + endNotice(announced, refusal) + "\r\n");
       if (typeof opts.onEnded === "function") opts.onEnded();
     }
 
@@ -5274,6 +5398,7 @@ window.WBConsole = (function () {
     function connect(connOpts) {
       opened = false;
       announced = null;
+      refusal = null;
       // A reattach (`id`) gets the backlog replayed; a fresh launch has none.
       // An empty scrollback sends no replay frame, so the flag rides until the
       // first LIVE frame clears it.
@@ -5354,6 +5479,7 @@ window.WBConsole = (function () {
               opts.onSession(currentSessionId, c.payload);
           } else if (c && c.verb === "session-end") {
             announced = c.payload?.reason ?? "child-exited";
+            refusal = typeof c.payload?.message === "string" ? c.payload.message : null;
           }
         }
       };
@@ -5519,6 +5645,7 @@ window.WBConsole = (function () {
         detachSocket(ws);
         watching = false;
         announced = null;
+        refusal = null;
         failedReopens = 0;
         retryDelay = 0;
         switching = false;
@@ -5991,7 +6118,9 @@ window.WBConsole = (function () {
       bar.addEventListener("pointerdown", holdFocus);
       bar.addEventListener("mousedown", holdFocus);
 
-      const key = (name, text, title, cls) => {
+      // `icon` (a Bootstrap Icons class) draws the key as that glyph; without
+      // it the key shows `text`.
+      const key = (name, text, title, cls, icon) => {
         const b = document.createElement("button");
         b.type = "button";
         // Not in the tab order: a keyboard user already has these keys.
@@ -5999,7 +6128,13 @@ window.WBConsole = (function () {
         b.className = "session-key" + (cls ? " " + cls : "");
         b.dataset.key = name;
         b.title = title;
-        b.innerHTML = text;
+        if (icon) {
+          const i = document.createElement("i");
+          i.className = "bi " + icon;
+          b.append(i);
+        } else {
+          b.textContent = text;
+        }
         bar.append(b);
         return b;
       };
@@ -6010,11 +6145,11 @@ window.WBConsole = (function () {
       shiftBtn.setAttribute("aria-pressed", "false");
       ctrlBtn = key("ctrl", "ctrl", "Ctrl: applies to the next key");
       ctrlBtn.setAttribute("aria-pressed", "false");
-      key("left", '<i class="bi bi-arrow-left"></i>', "Left");
-      key("down", '<i class="bi bi-arrow-down"></i>', "Down");
-      key("up", '<i class="bi bi-arrow-up"></i>', "Up");
-      key("right", '<i class="bi bi-arrow-right"></i>', "Right");
-      key("enter", '<i class="bi bi-arrow-return-left"></i>', "Enter");
+      key("left", "", "Left", "", "bi-arrow-left");
+      key("down", "", "Down", "", "bi-arrow-down");
+      key("up", "", "Up", "", "bi-arrow-up");
+      key("right", "", "Right", "", "bi-arrow-right");
+      key("enter", "", "Enter", "", "bi-arrow-return-left");
       key("ctrl-c", "^C", "Ctrl-C: interrupt");
       // Arms ONE drag to select whole lines; the gesture's end disarms it.
       selBtn = key("select", "sel", "Select lines: drag across the screen");
@@ -6027,7 +6162,7 @@ window.WBConsole = (function () {
       // `writeClipboard`'s textarea fallback runs inside this click (a user
       // gesture), which is what makes it work on an insecure LAN origin.
       // `bi-copy`, not `bi-clipboard`: the clipboard glyph is the PASTE icon.
-      const copyBtn = key("copy", '<i class="bi bi-copy"></i>', "Copy selection");
+      const copyBtn = key("copy", "", "Copy selection", "", "bi-copy");
       copyBtn.disabled = true;
       const syncCopy = () => {
         copyBtn.disabled = !win._term?.term.hasSelection();
@@ -6044,7 +6179,7 @@ window.WBConsole = (function () {
       // Paste. The read has no `execCommand` fallback, so on an insecure origin
       // the button is disabled (`pasteOffered`). An image becomes the same
       // `image.write` drop as a keyboard paste (ADR-0055).
-      const pasteBtn = key("paste", '<i class="bi bi-clipboard"></i>', "Paste");
+      const pasteBtn = key("paste", "", "Paste", "", "bi-clipboard");
       pasteBtn.disabled = !pasteOffered(navigator.clipboard);
 
       key("font-down", "A−", "Smaller text");
@@ -6125,7 +6260,7 @@ window.WBConsole = (function () {
             if (window.WBSessionRoute.closeSucceeded(response.status)) finish();
             else
               win._term?.term.write(
-                `\r\n[close failed — HTTP ${response.status}]\r\n`,
+                `\r\n[close failed — the daemon refused it]\r\n`,
               );
           },
           () => win._term?.term.write("\r\n[close failed — connection unavailable]\r\n"),
@@ -6739,6 +6874,7 @@ window.WBConsole = (function () {
     relaunchRequest,
     ingestWorktrees,
     ingestSessions,
+    ingestProjects,
     sessionRowFor,
     arrangeFence,
     count,
@@ -6750,6 +6886,7 @@ window.WBConsole = (function () {
     viewLanding,
     panNudge,
     reconnectDecision,
+    endNotice,
     resumeDecision,
     resumeAll,
     dormancyDecision,
@@ -6802,9 +6939,15 @@ window.WBConsole = (function () {
     focusedId,
     deskRecords,
     readDeskIds,
+    reloadDesk,
+    deskFailure: currentDeskFailure,
+    setDeskFailureHook,
+    daemonSeenIds,
+    startNewDesk,
     dropClosedElsewhere,
     columnRoster,
     sessionPresentation,
+    consolePrefix,
     pruneDesk,
     list,
     reveal,

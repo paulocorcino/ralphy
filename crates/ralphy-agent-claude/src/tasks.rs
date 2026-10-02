@@ -20,7 +20,7 @@ use ralphy_core::PROMPT_CONSOLIDATE;
 
 use crate::auth::{is_claude_auth_error, CLAUDE_AUTH_ERROR_MSG};
 use crate::interactive::resolve_claude_binary;
-use crate::settings::SETTINGS_JSON;
+use crate::settings::write_task_settings;
 use crate::usage::parse_plan_usage;
 
 /// Run a one-shot headless `claude -p` knowledge-consolidation session in
@@ -40,9 +40,7 @@ pub fn consolidate_knowledge(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<Usage> {
-    std::fs::create_dir_all(run_dir).ok();
-    let settings_path = run_dir.join("ralphy.settings.json");
-    std::fs::write(&settings_path, SETTINGS_JSON).context("writing claude settings")?;
+    let settings_path = write_task_settings(run_dir)?;
 
     let mut args: Vec<String> = Vec::new();
     if let Some(m) = model {
@@ -105,9 +103,7 @@ pub fn diagnose_repo(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<DiagnosisReport> {
-    std::fs::create_dir_all(neutral_cwd).ok();
-    let settings_path = neutral_cwd.join("ralphy.settings.json");
-    std::fs::write(&settings_path, SETTINGS_JSON).context("writing claude settings")?;
+    let settings_path = write_task_settings(neutral_cwd)?;
 
     let out_path = neutral_cwd.join("diagnosis.json");
     // A stale report from a prior run must never masquerade as this session's
@@ -180,11 +176,7 @@ pub fn draft_issues(
     if let Some(parent) = out_path.parent() {
         std::fs::create_dir_all(parent).ok();
     }
-    let settings_path = repo.join(".ralphy").join("ralphy.settings.json");
-    if let Some(parent) = settings_path.parent() {
-        std::fs::create_dir_all(parent).ok();
-    }
-    std::fs::write(&settings_path, SETTINGS_JSON).context("writing claude settings")?;
+    let settings_path = write_task_settings(&repo.join(".ralphy"))?;
 
     // A stale draft from a prior run must never masquerade as this session's
     // output, so clear it before the session runs.
@@ -261,11 +253,7 @@ pub fn triage_issues(
     if let Some(parent) = out_path.parent() {
         std::fs::create_dir_all(parent).ok();
     }
-    let settings_path = repo.join(".ralphy").join("ralphy.settings.json");
-    if let Some(parent) = settings_path.parent() {
-        std::fs::create_dir_all(parent).ok();
-    }
-    std::fs::write(&settings_path, SETTINGS_JSON).context("writing claude settings")?;
+    let settings_path = write_task_settings(&repo.join(".ralphy"))?;
 
     // A stale draft from a prior run must never masquerade as this session's
     // output, so clear it before the session runs.
@@ -294,8 +282,9 @@ pub fn triage_issues(
         .stderr(Stdio::piped());
 
     let prompt = format!(
-        "{}{}",
+        "{}{}{}",
         build_triage_prompt(repo, req.issue_numbers, req.queue_label, out_path),
+        req.thread_block,
         req.attachments_manifest
     );
     let log_path = repo.join(".ralphy").join("triage.log");

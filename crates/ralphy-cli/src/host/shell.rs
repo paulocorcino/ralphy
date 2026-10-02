@@ -84,11 +84,11 @@ impl InstalledOp {
     }
 }
 
-const LINUX_PROBE: &str = r#"echo "--- uid"; id -u; echo "--- user"; id -un; echo "--- arch"; uname -m; echo "--- linger"; loginctl show-user "$(id -un)" --property=Linger"#;
+const LINUX_PROBE: &str = r#"echo "--- host"; uname -n; echo "--- uid"; id -u; echo "--- user"; id -un; echo "--- arch"; uname -m; echo "--- linger"; loginctl show-user "$(id -un)" --property=Linger"#;
 
-const MACOS_PROBE: &str = r#"echo "--- uid"; id -u; echo "--- arch"; uname -m; echo "--- filevault"; fdesetup isactive; echo "--- autologin"; defaults read /Library/Preferences/com.apple.loginwindow autoLoginUser; echo "--- pmset"; pmset -g"#;
+const MACOS_PROBE: &str = r#"echo "--- host"; uname -n; echo "--- uid"; id -u; echo "--- user"; id -un; echo "--- arch"; uname -m; echo "--- filevault"; fdesetup isactive; echo "--- autologin"; defaults read /Library/Preferences/com.apple.loginwindow autoLoginUser; echo "--- pmset"; pmset -g"#;
 
-const WINDOWS_PROBE: &str = r#"echo --- groups & whoami /groups & echo --- arch & echo %PROCESSOR_ARCHITECTURE% & echo --- autologon & reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v AutoAdminLogon & echo --- standby & powercfg /q SCHEME_CURRENT SUB_SLEEP STANDBYIDLE"#;
+const WINDOWS_PROBE: &str = r#"echo --- host & hostname & echo --- user & echo %USERNAME% & echo --- groups & whoami /groups & echo --- arch & echo %PROCESSOR_ARCHITECTURE% & echo --- autologon & reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v AutoAdminLogon & echo --- standby & powercfg /q SCHEME_CURRENT SUB_SLEEP STANDBYIDLE"#;
 
 /// Where `ralphy host install` puts the binary, in each shell's own words. It
 /// is under the home folder, so writing it needs no administrator.

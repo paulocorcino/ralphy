@@ -1,6 +1,6 @@
 # Read-only git facts have one definition, shared by core and the daemon
 
-Status: proposed
+Status: accepted
 Kind: structural
 Protects: integrity of change, responsiveness
 
@@ -81,12 +81,20 @@ invocation, as ADR-0036 §3 says.
 
 ## Compliance
 
-- D1, D3: not checked by code: a second implementation of a fact cannot be
-  found reliably by a pattern. Reviewed in the PR. D4's check catches the most
-  likely case.
-- D2: to be checked by a test inside `ralphy-git-read` that every git argv it
-  builds starts with a read-only subcommand from a fixed list. Not built yet.
-- D4: to be checked by the ADR-0068 D5 spawn ratchet:
+- D1 (leaf crate): checked by `core_and_adapters_keep_their_dependency_edges`
+  (`crates/xtask/tests/crate_dependencies.rs`): `ralphy-git-read` depends on
+  no workspace crate.
+- D1, D3 (one definition): a second implementation of a fact cannot be found
+  reliably by a pattern, so this is reviewed in the PR. The dirty rule is
+  checked by `run_directory_only_change_is_clean_for_core_and_git_read`
+  (`crates/ralphy-core/src/changes.rs`): the core change set and the crate's
+  dirty bit agree that a change under `.ralphy/` only is clean. D4's check
+  catches the most likely case.
+- D2: checked by `every_read_is_on_the_read_only_list`
+  (`crates/ralphy-git-read/src/lib.rs`): every git argv the crate can build
+  starts with a prefix from a fixed read-only list, and `run` refuses any
+  other.
+- D4: checked by the ADR-0068 D5 spawn ratchet
+  (`spawn_sites_match_the_baseline`, `crates/xtask/tests/ratchets.rs`):
   `crates/ralphy-daemon/src` and `crates/ralphy-usage-scan/src` have zero
-  `Command::new("git")` sites after the move (baseline today: 1 and 10). Not
-  built yet.
+  `Command::new("git")` sites in production code, and the crate has one.

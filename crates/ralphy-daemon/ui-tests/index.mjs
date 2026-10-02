@@ -4,6 +4,8 @@
 // patterns with zero positional args or an explicit glob, never a bare path
 // (see https://nodejs.org/api/test.html#test-runner-execution-model).
 import "./app.test.mjs";
+import "./wb-add-project.test.mjs";
+import "./shared-replies.test.mjs";
 import "./wb-agents.test.mjs";
 import "./wb-changes.test.mjs";
 import "./wb-changes-open.test.mjs";

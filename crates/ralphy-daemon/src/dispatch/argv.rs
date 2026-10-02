@@ -117,7 +117,9 @@ pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>
         | Verb::HostCheck
         | Verb::HostAdd
         | Verb::HostInstall
-        | Verb::HostRemove => Err(ArgvError::BadParam("verb")),
+        | Verb::HostRemove
+        | Verb::DirList
+        | Verb::ProjectAdd => Err(ArgvError::BadParam("verb")),
     }
 }
 
@@ -591,15 +593,19 @@ fn well_shaped_key(key: &str) -> bool {
 ///   (ADR-0042 D6). The long key IS the gesture; a checkbox is not.
 /// - `events.token` is the bearer every CloudEvent carries to the sink: set
 ///   remotely, it redirects the run's telemetry credential.
+/// - `queue.trust_all_comments` lets a comment by any GitHub account reach the
+///   agent's prompt: set remotely, it opens the prompt to strangers
+///   (ADR-0072 D5).
 ///
 /// `pub(crate)` so the settings-panel gate in `lib.rs` can assert the schema
 /// declares each of these `readonly` — a key denied here but offered as an
 /// editable field is a control that takes an edit and answers "refused".
-pub(crate) const LOCAL_ONLY_KEYS: [&str; 4] = [
+pub(crate) const LOCAL_ONLY_KEYS: [&str; 5] = [
     "verify.command",
     "copilot.allow_builtin_mcp_servers_i_understand_the_risk",
     "cursor.allow_codebase_indexing_i_understand_the_risk",
     "events.token",
+    "queue.trust_all_comments",
 ];
 
 /// Whether `key` may be set through the daemon's `config.set`/`config.unset`.

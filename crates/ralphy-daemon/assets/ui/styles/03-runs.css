@@ -657,6 +657,78 @@ body.runs-open .runs {
   white-space: nowrap;
 }
 
+/* --- Add a project (#501) --- */
+/* The dialog borrows `.host-modal` for its width and `.host-input` for its
+   fields. The folder list under the field scrolls by itself, so a folder
+   with 200 subfolders keeps the buttons in view. */
+.add-project-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.add-project-body .run-label {
+  margin-top: 0.4rem;
+}
+.add-project-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 16rem;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.add-project-list:empty {
+  display: none;
+}
+.add-project-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  /* A list row is the finger's target too (touch rules: no double-tap zoom). */
+  touch-action: manipulation;
+}
+.add-project-item svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--text-muted);
+}
+.add-project-item:hover,
+.add-project-item.active {
+  background: var(--surface-hi);
+}
+.add-project-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.add-project-mark {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+/* The Projects panel with no project yet. `.side-empty` gives the padding
+   and the color; this adds the button under the line. */
+.projects-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+.projects-empty p {
+  margin: 0;
+}
+.projects-empty .btn svg {
+  width: 14px;
+  height: 14px;
+  vertical-align: -2px;
+}
+
 /* --- Add a host (#497) --- */
 /* This dialog is also a `.run-modal`; the two rules have the same specificity,
    so this one must stay below `.modal.run-modal`. */
@@ -861,11 +933,20 @@ body.runs-open .runs {
 }
 .host-list {
   list-style: none;
-  margin: 0;
-  padding: 0;
+  margin: 0 -0.6rem 0 0;
+  padding: 0 0.6rem 0 0;
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+  overflow-y: auto;
+  /* A shadow shows at an edge only while rows are hidden past it: the two
+     `local` covers move with the rows and hide the two `scroll` shadows when
+     the list is at that end. The covers are the dialog's own color. */
+  background:
+    linear-gradient(var(--chrome) 30%, transparent) top / 100% 2rem no-repeat local,
+    linear-gradient(transparent, var(--chrome) 70%) bottom / 100% 2rem no-repeat local,
+    radial-gradient(farthest-side at 50% 0, rgba(0, 0, 0, 0.55), transparent) top / 100% 0.7rem no-repeat scroll,
+    radial-gradient(farthest-side at 50% 100%, rgba(0, 0, 0, 0.55), transparent) bottom / 100% 0.7rem no-repeat scroll;
 }
 .host-item {
   border: 1px solid var(--border);

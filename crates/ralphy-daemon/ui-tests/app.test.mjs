@@ -912,15 +912,17 @@ test("the same build after a gap is a rollback, and a new build reloads the page
 test("returning to the tab reads the release view again", () => {
   const { state } = loadShell();
   const calls = [];
-  for (const name of ["maybeRefreshBoard", "refreshChanges", "resumeSockets", "loadRelease"]) {
+  for (const name of ["maybeRefreshBoard", "loadRepos", "rereadDesk", "resumeSockets", "loadRelease"]) {
     state[name] = () => calls.push(name);
   }
   state.onTabVisible();
   // Each read happens once; their order is not what the tab depends on.
+  // `loadRepos` reads the sessions, the fleet, the change set and the branch.
   assert.deepEqual(calls.toSorted(), [
     "loadRelease",
+    "loadRepos",
     "maybeRefreshBoard",
-    "refreshChanges",
+    "rereadDesk",
     "resumeSockets",
   ]);
 });
@@ -1371,4 +1373,796 @@ test("spendView shows the spend document only for the project that is open", () 
   // A document read for another project is stale: the pane waits for its own.
   own.openSlug = "owner/b";
   assert.equal(own.spendView().kind, "loading");
+});
+
+// `/api/repos` carries `head` beside `branch` (#510): a detached HEAD has no
+// branch, and the row must still name its commit.
+test("loadRepos keeps the head of a detached repo for the row title", async () => {
+  const { state } = loadShell();
+  state.loadFleet = () => {};
+  state.refreshLive = () => {};
+  state.loadChanges = () => {};
+  state.loadSync = () => {};
+  const row = {
+    slug: "o/r",
+    path: "/r",
+    reachable: true,
+    branch: null,
+    head: { kind: "detached", sha: "abc1234" },
+    dirty: false,
+    remote: null,
+  };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, json: async () => [row] });
+  try {
+    await state.loadRepos();
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.equal(state.projects.length, 1);
+  assert.equal(state.rowTitle(state.projects[0]), "o/r · abc1234");
+});
+
+// --- ADR-0070 D2: a shown fact is read again on named events only ----------
+
+// Every URL the code under test fetched, answered with an empty 200. A bare
+// `fetch` in app.js resolves to `globalThis.fetch`, not the harness window's.
+async function withFetchSpy(fn) {
+  const urls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    urls.push(String(url));
+    return { ok: true, status: 200, json: async () => [] };
+  };
+  try {
+    await fn(urls);
+    // Let the reads chained behind the first await land.
+    for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  return urls;
+}
+
+test("a presence frame reads nothing", async () => {
+  const { state, window } = loadShell();
+  let beat = null;
+  window.WBDaemon.subscribePresence = (onPresence) => {
+    beat = onPresence;
+    return { resume() {}, close() {} };
+  };
+  state.subscribePresence();
+  const urls = await withFetchSpy(() => beat({ uptime_secs: 1 }));
+  assert.deepEqual(urls, [], "the heartbeat is not a read trigger");
+  assert.equal(state.uptimeText, "Running for 1s");
+});
+
+test("a hidden tab reads nothing on a push, and reads when it becomes visible", async () => {
+  const { state, document } = loadShell({ document: { visibilityState: "hidden", hasFocus: () => true } });
+  // `WBColumns` is a page global the harness does not define.
+  state.checkColumnDesk = async () => {};
+  // No settle delay, so a `sessions.dirty` read would land inside the spy.
+  state.LIVE_SETTLE_MS = 0;
+  const hidden = await withFetchSpy(() => {
+    state.onPresencePush("sessions.dirty", {});
+    state.onPresencePush("repos.dirty", {});
+    state.onPresencePush("desk.dirty", { tab: "other" });
+    state.onPresenceOpen(true);
+  });
+  assert.deepEqual(hidden, []);
+  document.visibilityState = "visible";
+  const visible = await withFetchSpy(() => state.onTabVisible());
+  assert.ok(visible.includes("/api/sessions"), visible.join(", "));
+  assert.ok(visible.includes("/api/repos"), visible.join(", "));
+  assert.ok(visible.includes("/api/desk"), visible.join(", "));
+});
+
+test("peers.dirty and repos.dirty read the project list", async () => {
+  for (const verb of ["peers.dirty", "repos.dirty"]) {
+    const { state } = loadShell({ document: { visibilityState: "visible", hasFocus: () => true } });
+    state.checkColumnDesk = async () => {};
+    const urls = await withFetchSpy(() => state.onPresencePush(verb, {}));
+    assert.ok(urls.includes("/api/repos"), `${verb}: ${urls.join(", ")}`);
+  }
+});
+
+test("desk.dirty from this tab is ignored, and from another tab reads the desk", () => {
+  const { state, window } = loadShell({ document: { visibilityState: "visible", hasFocus: () => true } });
+  // `WBColumns` is a page global the harness does not define.
+  state.checkColumnDesk = async () => {};
+  let reads = 0;
+  window.WBConsole.reloadDesk = () => {
+    reads += 1;
+    return Promise.resolve();
+  };
+  state.onPresencePush("desk.dirty", { tab: window.WBDeskSink.tabId() });
+  assert.equal(reads, 0, "this tab's own write");
+  state.onPresencePush("desk.dirty", { tab: "another-tab" });
+  assert.equal(reads, 1);
+});
+
+test("a reopened presence socket reads sessions, projects and the desk; the first open reads nothing", async () => {
+  const { state } = loadShell({ document: { visibilityState: "visible", hasFocus: () => true } });
+  // `WBColumns` is a page global the harness does not define.
+  state.checkColumnDesk = async () => {};
+  const first = await withFetchSpy(() => state.onPresenceOpen(false));
+  assert.deepEqual(first, []);
+  const again = await withFetchSpy(() => state.onPresenceOpen(true));
+  for (const url of ["/api/sessions", "/api/repos", "/api/desk"]) {
+    assert.ok(again.includes(url), `${url} in ${again.join(", ")}`);
+  }
+});
+
+test("login reads the board, the runs and the tree again", () => {
+  const { state } = loadShell();
+  const calls = [];
+  for (const name of ["loadRepos", "loadIdentity", "loadAgents", "restoreView", "hydrateRuns"]) {
+    state[name] = () => calls.push(name);
+  }
+  state.maybeRefreshBoard = (why) => calls.push(`board:${why}`);
+  state._treeSub = { replay: () => calls.push("tree") };
+  // Closed: the runs lock the writes whether the panel shows them or not.
+  state.runsOpen = false;
+  state.rehydrateAfterAuth();
+  for (const want of ["loadRepos", "board:login", "hydrateRuns", "tree"]) {
+    assert.ok(calls.includes(want), `${want} in ${calls.join(", ")}`);
+  }
+});
+
+// --- ADR-0070 D3: a failed read keeps the last good value, marked not current
+
+// Answers each fetch with the next reply in `replies` (`{ status, body }`).
+function scriptedFetch(replies) {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    const { status, body } = replies.shift() || { status: 500, body: null };
+    return { ok: status === 200, status, json: async () => body };
+  };
+  return () => (globalThis.fetch = realFetch);
+}
+
+test("a failed project read after a good one keeps the list, marked not current", async () => {
+  const { state } = loadShell();
+  state.loadFleet = () => {};
+  state.refreshLive = () => {};
+  state.loadChanges = () => {};
+  state.loadSync = () => {};
+  const restore = scriptedFetch([
+    { status: 200, body: [{ slug: "a/b", path: "/ab", reachable: true }] },
+    { status: 500, body: null },
+  ]);
+  try {
+    await state.loadRepos();
+    await state.loadRepos();
+  } finally {
+    restore();
+  }
+  assert.equal(state.projects.length, 1);
+  assert.equal(state.projects[0].slug, "a/b");
+  assert.match(state.reposError, /Not current: the daemon answered 500/);
+});
+
+test("a failed first project read is empty and says why", async () => {
+  const { state } = loadShell();
+  state.refreshLive = () => {};
+  const restore = scriptedFetch([{ status: 500, body: null }]);
+  try {
+    await state.loadRepos();
+  } finally {
+    restore();
+  }
+  assert.deepEqual(state.projects, []);
+  assert.equal(state.reposError, "Could not load the projects from the daemon: the daemon answered 500.");
+});
+
+test("a failed fleet read after a good one keeps the peers and their rows", async () => {
+  const { state } = loadShell();
+  const fleet = {
+    peers: [{ daemon_id: "p1", name: "wsl", environment: "WSL: U", state: "reachable" }],
+    repos: [{ key: "p1/o/r", slug: "o/r", daemon_id: "p1", reachable: true }],
+  };
+  const restore = scriptedFetch([
+    { status: 200, body: fleet },
+    { status: 502, body: null },
+  ]);
+  try {
+    await state.loadFleet();
+    state.projects = state.projects.filter((p) => !p.daemon);
+    await state.loadFleet();
+  } finally {
+    restore();
+  }
+  assert.equal(state.fleetPeers.length, 1);
+  assert.equal(state.projects.filter((p) => p.daemon === "p1").length, 1);
+  assert.match(state.fleetError, /Not current: the daemon answered 502/);
+});
+
+test("a failed session read after a good one keeps the list, marked not current", async () => {
+  const { state } = loadShell();
+  const restore = scriptedFetch([
+    { status: 200, body: [{ id: 1, repo: "o/r" }] },
+    { status: 500, body: null },
+  ]);
+  try {
+    await state.refreshLive();
+    await state.refreshLive();
+  } finally {
+    restore();
+  }
+  assert.equal(state.liveSessions.length, 1);
+  assert.match(state.sessionsError(), /Not current/);
+});
+
+// A shell whose `WBDaemon.observe` answers each call with the next reply.
+function observedShell(replies) {
+  const { state, window } = loadShell();
+  window.WBDaemon.observe = async () => replies.shift() ?? null;
+  state.openSlug = "o/r";
+  state._flashAction = () => {};
+  return state;
+}
+
+const CHANGES_OK = {
+  status: "ok",
+  changes: { changes: [{ path: "a.txt", index: " ", worktree: "M" }] },
+};
+
+test("a failed change-set read after a good one keeps the groups, marked not current", async () => {
+  const state = observedShell([CHANGES_OK, { status: "error", message: "git exited 128" }]);
+  await state.loadChanges("o/r");
+  const before = state.changesCount["o/r"];
+  assert.ok(before > 0, "the first read found a change");
+  await state.loadChanges("o/r");
+  assert.equal(state.changesCount["o/r"], before);
+  assert.equal(state.changesRead["o/r"].current, false);
+  assert.match(state.changesReadError["o/r"], /Not current: git exited 128/);
+});
+
+test("a failed board read after a good one keeps the cards, marked not current", async () => {
+  const state = observedShell([
+    { status: "ok", board: { issues: [{ number: 7, title: "x", labels: [] }], labels: [] } },
+    { status: "error", message: "gh not authed" },
+  ]);
+  state.loadPlan = () => {};
+  state.kanbanSel = null;
+  await state.loadBoard();
+  assert.equal(state.boardIssues["o/r"].length, 1);
+  await state.loadBoard();
+  assert.equal(state.boardIssues["o/r"].length, 1, "the cards stay");
+  assert.equal(state.boardRead["o/r"].current, false);
+  assert.match(state.boardError["o/r"], /Not current/);
+});
+
+test("a failed runs read after a good one keeps the runs, marked not current", async () => {
+  const state = observedShell([{ status: "ok", runs: [] }, { status: "error", reason: "the run store is locked" }]);
+  state.runsOpen = false;
+  await state.hydrateRuns();
+  state.runsByProject["o/r"] = [{ runid: "r1" }];
+  await state.hydrateRuns();
+  assert.deepEqual(state.runsByProject["o/r"], [{ runid: "r1" }]);
+  assert.equal(state.runsRead["o/r"].current, false);
+  assert.match(state.runsError, /Not current: the run store is locked/);
+});
+
+test("a failed settings read says so, and a project setting is not written", async () => {
+  const { state, window } = loadShell();
+  const verbs = [];
+  window.WBDaemon.observe = async (verb) => {
+    verbs.push(verb);
+    return verb === "config.get" ? { status: "error", message: "settings.json is not JSON" } : { status: "ok" };
+  };
+  window.WBView.read = () => ({});
+  state.openSlug = "o/r";
+  state._flashAction = () => {};
+  // `openSettings` names the bare `WBDaemon` global, as the page does.
+  const realDaemon = globalThis.WBDaemon;
+  globalThis.WBDaemon = window.WBDaemon;
+  try {
+    state.openSettings();
+    for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+  } finally {
+    globalThis.WBDaemon = realDaemon;
+  }
+  assert.equal(state.settingsError, "Could not read the settings: settings.json is not JSON.");
+  await state.saveSetting("queue.label", "ready");
+  assert.deepEqual(verbs, ["config.get"], "no config.set over values never read");
+});
+
+// ADR-0070 D3: a write acts on what the page shows, so it is locked while that
+// is not current, and says why.
+test("writes are locked while the change set is not current", async () => {
+  const state = observedShell([CHANGES_OK, { status: "error", message: "git exited 128" }]);
+  state.runsByProject["o/r"] = [];
+  await state.loadChanges("o/r");
+  assert.equal(state.writeLocked(), false, "a good read locks nothing");
+  await state.loadChanges("o/r");
+  assert.equal(state.writeLocked(), true);
+  assert.match(state.writeLockReason(), /not current/);
+});
+
+test("moving a board card is locked while the board is not current", async () => {
+  const state = observedShell([
+    { status: "ok", board: { issues: [], labels: [] } },
+    { status: "error", message: "gh not authed" },
+  ]);
+  state.loadPlan = () => {};
+  state.kanbanSel = null;
+  state.runsByProject["o/r"] = [];
+  await state.loadBoard();
+  assert.equal(state.labelsLocked(), false);
+  await state.loadBoard();
+  assert.equal(state.labelsLocked(), true);
+  assert.match(state.labelLockReason(), /board shown is not current/);
+});
+
+// NEGATIVE CONTROL: two good reads lock nothing.
+test("two good change-set reads lock no write", async () => {
+  const state = observedShell([CHANGES_OK, CHANGES_OK]);
+  state.runsByProject["o/r"] = [];
+  await state.loadChanges("o/r");
+  await state.loadChanges("o/r");
+  assert.equal(state.writeLocked(), false);
+});
+
+// --- ADR-0070 D6: a tab on an older build than the daemon -------------------
+
+function skewShell({ dirty = false, pageBuild = "A" } = {}) {
+  const { state, window } = loadShell();
+  let reloads = 0;
+  window.location.reload = () => (reloads += 1);
+  window.WBViewer.anyDirty = () => dirty;
+  window.WBNotes.anyDirty = () => false;
+  let beat = null;
+  window.WBDaemon.subscribePresence = (onPresence) => {
+    beat = onPresence;
+    return { resume() {}, close() {} };
+  };
+  state.pageBuild = pageBuild;
+  state.subscribePresence();
+  return { state, beat: (p) => beat(p), reloads: () => reloads };
+}
+
+test("a build the page was not served with reloads a tab with no unsaved work", () => {
+  const t = skewShell();
+  t.beat({ uptime_secs: 1, build: "A" });
+  assert.equal(t.reloads(), 0, "the same build reloads nothing");
+  t.beat({ uptime_secs: 3, build: "B" });
+  assert.equal(t.reloads(), 1);
+});
+
+test("with unsaved work the tab keeps the page, shows the notice and locks writes", () => {
+  const t = skewShell({ dirty: true });
+  t.beat({ uptime_secs: 1, build: "B" });
+  assert.equal(t.reloads(), 0);
+  assert.equal(t.state.buildSkew, true);
+  assert.equal(t.state.writeLocked(), true);
+  assert.match(t.state.writeLockReason(), /older than Ralphy/);
+});
+
+test("a page with no build id (the demo) never reloads for a build", () => {
+  const t = skewShell({ pageBuild: "" });
+  t.beat({ uptime_secs: 1, build: "B" });
+  assert.equal(t.reloads(), 0);
+  assert.equal(t.state.buildSkew, false);
+});
+
+// --- review fixes (#511) ----------------------------------------------------
+
+// A column console closed by another tab is dropped on the first desk.dirty,
+// even when this page never saw that id in an earlier column check: the
+// console module knows every id the daemon has held.
+test("checkColumnDesk drops a column console the daemon held and no longer lists", async () => {
+  const { state, window } = loadShell();
+  const dropped = [];
+  const realConsole = globalThis.WBConsole;
+  const realColumns = globalThis.WBColumns;
+  globalThis.WBColumns = window.WBColumns;
+  globalThis.WBConsole = {
+    readDeskIds: async () => new Set(["y", "z"]),
+    daemonSeenIds: () => new Set(["x", "y", "z"]),
+    applyColumns() {},
+    dropClosedElsewhere: (id) => dropped.push(id),
+  };
+  state.columns = [["x"], ["y"], ["z"]];
+  state.columnCap = () => 3;
+  state.setColumns = (c) => (state.columns = c);
+  state.paintColumns = () => {};
+  try {
+    await state.checkColumnDesk();
+  } finally {
+    globalThis.WBConsole = realConsole;
+    globalThis.WBColumns = realColumns;
+  }
+  assert.deepEqual(dropped, ["x"]);
+});
+
+test("two fleet reads close together list each peer row once", async () => {
+  const { state } = loadShell();
+  state.projects = [{ slug: "a/b", tree: [] }];
+  const fleet = {
+    peers: [{ daemon_id: "p1", name: "wsl", environment: "WSL: U", state: "reachable" }],
+    repos: [{ key: "p1/o/r", slug: "o/r", daemon_id: "p1", reachable: true }],
+  };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => fleet });
+  try {
+    await Promise.all([state.loadFleet(), state.loadFleet()]);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.equal(state.projects.filter((p) => p.daemon === "p1").length, 1);
+  assert.equal(state.projects.filter((p) => !p.daemon).length, 1);
+});
+
+test("a new checkout's change set does not inherit the old tree's last read", () => {
+  const { state } = loadShell();
+  state.loadChanges = () => {};
+  state.loadSync = () => {};
+  state.changesRead["o/r"] = { value: true, goodAt: 5, error: "", current: true };
+  state.syncRead["o/r"] = { value: true, goodAt: 5, error: "", current: true };
+  state.setCheckout("o/r", "wt-a");
+  assert.equal(state.changesRead["o/r"], undefined);
+  assert.equal(state.syncRead["o/r"], undefined);
+});
+
+// --- second review of #511 ---------------------------------------------------
+
+const VISIBLE = { document: { visibilityState: "visible", hasFocus: () => true } };
+
+test("sessions.dirty on a visible tab reads the sessions", async () => {
+  const { state } = loadShell(VISIBLE);
+  state.LIVE_SETTLE_MS = 0;
+  const urls = await withFetchSpy(() => state.onPresencePush("sessions.dirty", {}));
+  assert.ok(urls.includes("/api/sessions"), urls.join(", "));
+});
+
+test("a tab that becomes visible reads the runs with the Runs panel closed, so an ended run unlocks the writes", async () => {
+  const { state, window } = loadShell(VISIBLE);
+  state.checkColumnDesk = async () => {};
+  state.loadChanges = async () => {};
+  state.loadSync = async () => {};
+  window.WBDaemon.observe = async (verb) => (verb === "runs.list" ? { status: "ok", runs: [] } : null);
+  state.openSlug = "o/r";
+  state.runsOpen = false;
+  state.runsByProject["o/r"] = [{ runid: "r1" }];
+  assert.equal(state.writeLocked(), true, "the run seen before the tab was hidden locks");
+  await withFetchSpy(() => state.onTabVisible());
+  assert.equal(state.writeLocked(), false, "the run ended while hidden: the writes unlock");
+});
+
+test("a reopened socket reads the board and the runs", () => {
+  const { state } = loadShell(VISIBLE);
+  const calls = [];
+  for (const name of ["loadRepos", "rereadDesk", "hydrateRuns"]) state[name] = () => calls.push(name);
+  state.maybeRefreshBoard = (why) => calls.push(`board:${why}`);
+  state.openSlug = "o/r";
+  state.onPresenceOpen(true);
+  assert.ok(calls.includes("board:reopen"), calls.join(", "));
+  assert.ok(calls.includes("hydrateRuns"), calls.join(", "));
+});
+
+test("visible and login read the open settings and the open Spend view again", () => {
+  const { state } = loadShell(VISIBLE);
+  const calls = [];
+  for (const name of ["loadRepos", "rereadDesk", "hydrateRuns", "loadRelease", "resumeSockets", "loadIdentity", "loadAgents", "restoreView"]) {
+    state[name] = () => {};
+  }
+  state.maybeRefreshBoard = () => {};
+  state.readSettings = () => calls.push("settings");
+  state.loadSpend = () => calls.push("spend");
+  state.settingsOpen = false;
+  state.tabs = state.tabs.filter((t) => t.id !== "spend");
+  state.onTabVisible();
+  assert.deepEqual(calls, [], "closed panels read nothing");
+  state.settingsOpen = true;
+  state.tabs.push({ id: "spend", kind: "spend" });
+  state.onTabVisible();
+  assert.deepEqual(calls, ["settings", "spend"]);
+  calls.length = 0;
+  state.rehydrateAfterAuth();
+  assert.deepEqual(calls, ["settings", "spend"]);
+});
+
+test("the peer tick and a project-list push read no change set and no branch", async () => {
+  const { state } = loadShell(VISIBLE);
+  state.checkColumnDesk = async () => {};
+  const git = [];
+  state.loadChanges = async () => git.push("changes");
+  state.loadSync = async () => git.push("sync");
+  state.openSlug = "o/r";
+  state.fleetPeers = [{ daemon_id: "d" }];
+  await withFetchSpy(async () => {
+    state.peerTick();
+    state.onPresencePush("repos.dirty", {});
+    state.onPresencePush("peers.dirty", {});
+  });
+  assert.deepEqual(git, []);
+  // NEGATIVE CONTROL: the tab becoming visible does read them.
+  await withFetchSpy(() => state.onTabVisible());
+  assert.ok(git.includes("changes") && git.includes("sync"), git.join(", "));
+});
+
+test("a project read keeps the peer rows and the live dots until the fleet and the sessions answer", async () => {
+  const { state } = loadShell(VISIBLE);
+  const peer = { key: "d/x", slug: "x", daemon: "d", state: "idle" };
+  state.projects = [{ slug: "a", state: "working", env: "wsl" }, peer];
+  state._fleetRows = [peer];
+  const realFetch = globalThis.fetch;
+  // `/api/repos` answers; the fleet and the sessions never do.
+  globalThis.fetch = (url) =>
+    String(url) === "/api/repos"
+      ? Promise.resolve({ ok: true, status: 200, json: async () => [{ slug: "a", reachable: true }] })
+      : new Promise(() => {});
+  try {
+    await state.loadRepos({ git: false });
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.deepEqual(
+    state.projects.map((p) => p.slug),
+    ["a", "x"],
+    "the peer row stays",
+  );
+  assert.equal(state.projects[0].state, "working", "the live dot stays");
+  assert.equal(state.projects[0].env, "wsl");
+});
+
+test("a commit draft does not hold the build reload", () => {
+  const t = skewShell();
+  t.state.commitMsg = "wip: half a message";
+  t.beat({ uptime_secs: 1, build: "B" });
+  assert.equal(t.reloads(), 1);
+});
+
+test("the desk hold ends right before the build reload, so the saved work's desk changes go out", () => {
+  const { state, window } = loadShell(VISIBLE);
+  const events = [];
+  window.location.reload = () => events.push("reload");
+  window.WBDeskSink.setHold = (on) => events.push(`hold:${on}`);
+  let dirty = true;
+  window.WBViewer.anyDirty = () => dirty;
+  window.WBNotes.anyDirty = () => false;
+  let beat = null;
+  window.WBDaemon.subscribePresence = (onPresence) => {
+    beat = onPresence;
+    return { resume() {}, close() {} };
+  };
+  state.pageBuild = "A";
+  state.subscribePresence();
+  beat({ uptime_secs: 1, build: "B" });
+  assert.deepEqual(events, ["hold:true"], "unsaved work: held, no reload");
+  dirty = false;
+  beat({ uptime_secs: 3, build: "B" });
+  assert.deepEqual(events, ["hold:true", "hold:false", "reload"]);
+});
+
+test("a failed first change-set or branch read says why", async () => {
+  const changes = observedShell([{ status: "error", message: "git exited 128" }]);
+  await changes.loadChanges("o/r");
+  assert.match(changes.changesReadError["o/r"], /Could not read the changes: git exited 128/);
+  const sync = observedShell([{ status: "error", message: "not a git repository" }]);
+  await sync.loadSync("o/r");
+  assert.match(sync.syncByProject["o/r"].note, /not a git repository/);
+});
+
+// ADR-0070 D3: each write action asks the lock itself, not only its button.
+test("every change-set write is refused while the change set is not current", async () => {
+  const { state, window } = loadShell();
+  const replies = [CHANGES_OK, { status: "error", message: "git exited 128" }];
+  const verbs = [];
+  window.WBDaemon.observe = async (verb) => {
+    verbs.push(verb);
+    return replies.shift() ?? { status: "ok" };
+  };
+  state.openSlug = "o/r";
+  state._flashAction = () => {};
+  state.runsByProject["o/r"] = [];
+  await state.loadChanges("o/r");
+  await state.loadChanges("o/r");
+  assert.equal(state.writeLocked(), true);
+  verbs.length = 0;
+  state.askConfirm = async () => true;
+  state.commitMsgSlug = "o/r";
+  state.commitMsg = "msg";
+  await state.stagePaths("o/r", ["a.txt"]);
+  await state.unstagePaths("o/r", ["a.txt"]);
+  await state.discardRow("o/r", { path: "a.txt", index: " ", worktree: "M" });
+  await state.commitStaged("o/r");
+  await state.syncFetch("o/r");
+  await state.syncPull("o/r");
+  await state.syncPush("o/r");
+  assert.deepEqual(verbs, [], "no write reached the daemon");
+});
+
+// NEGATIVE CONTROL for the refusal above: with a current change set, each
+// action does reach the daemon, so the refusal is the lock and not a missing
+// argument.
+test("every change-set write reaches the daemon while the change set is current", async () => {
+  const acts = {
+    stage: (s) => s.stagePaths("o/r", ["a.txt"]),
+    unstage: (s) => s.unstagePaths("o/r", ["a.txt"]),
+    discard: (s) => s.discardRow("o/r", { path: "a.txt", index: " ", worktree: "M" }),
+    commit: (s) => s.commitStaged("o/r"),
+    fetch: (s) => s.syncFetch("o/r"),
+    pull: (s) => s.syncPull("o/r"),
+    push: (s) => s.syncPush("o/r"),
+  };
+  for (const [name, act] of Object.entries(acts)) {
+    const { state, window } = loadShell();
+    const replies = [CHANGES_OK];
+    const verbs = [];
+    window.WBDaemon.observe = async (verb) => {
+      verbs.push(verb);
+      return replies.shift() ?? { status: "ok" };
+    };
+    state.openSlug = "o/r";
+    state._flashAction = () => {};
+    state.runsByProject["o/r"] = [];
+    await state.loadChanges("o/r");
+    assert.equal(state.writeLocked(), false, name);
+    verbs.length = 0;
+    state.askConfirm = async () => true;
+    state.askPush = async () => true;
+    state.commitMsgSlug = "o/r";
+    state.commitMsg = "msg";
+    await act(state);
+    assert.ok(verbs.length > 0, `${name} reached the daemon`);
+  }
+});
+
+test("a reopened socket refreshes an open board, as the tab becoming visible does", () => {
+  const { window } = loadShell();
+  const ask = (trigger) =>
+    window.WBKanban.shouldRefresh({ trigger, sinceMs: 60 * 60 * 1000, boardOpen: true, docVisible: true });
+  assert.equal(ask("reopen"), true);
+  assert.equal(ask("reopen"), ask("visible"));
+});
+
+// ADR-0070 D4: a peer the daemon cannot read lists no project, so the sidebar
+// says so instead of showing a fleet with that peer missing.
+test("a peer the daemon could not read is named in the sidebar", async () => {
+  const { state } = loadShell(VISIBLE);
+  state.projects = [];
+  const restore = scriptedFetch([
+    {
+      status: 200,
+      body: {
+        peers: [
+          { daemon_id: "ok", state: "online" },
+          { daemon_id: "malformed:/p/peers", state: "malformed", name: "/p/peers", diagnosis: "cannot list /p/peers: access denied" },
+        ],
+        repos: [],
+      },
+    },
+  ]);
+  try {
+    await state.loadFleet();
+  } finally {
+    restore();
+  }
+  assert.equal(state.fleetRejectNote, "Could not read a peer: cannot list /p/peers: access denied");
+  // NEGATIVE CONTROL: a fleet with no bad peer says nothing.
+  assert.equal(state.fleetRejectText([{ state: "online" }]), "");
+});
+
+// The context menu builds each item from elements: a label can name a file,
+// and a file name such as `<img src=x>` must reach the menu as text.
+test("renderMenu sets a label as text, never as markup", () => {
+  const created = [];
+  const element = (tag) => {
+    const el = {
+      tag,
+      children: [],
+      style: {},
+      className: "",
+      textContent: "",
+      innerHTMLWrites: [],
+      append(...kids) {
+        this.children.push(...kids);
+      },
+      set innerHTML(v) {
+        this.innerHTMLWrites.push(v);
+      },
+    };
+    created.push(el);
+    return el;
+  };
+  const menu = element("div");
+  const { state } = loadShell({
+    document: { getElementById: () => menu, createElement: element },
+  });
+  // `renderMenu` reads the BARE viewport globals a browser has; lend them.
+  globalThis.innerWidth = 1440;
+  globalThis.innerHeight = 900;
+  try {
+    state.renderMenu(0, 0, [{ icon: "bi-x", label: "<img src=x>", run() {} }]);
+  } finally {
+    delete globalThis.innerWidth;
+    delete globalThis.innerHeight;
+  }
+  const button = menu.children[0];
+  assert.equal(button.tag, "button");
+  const [icon, label] = button.children;
+  assert.equal(icon.tag, "i");
+  assert.equal(icon.className, "bi bi-x");
+  assert.equal(label.tag, "span");
+  assert.equal(label.textContent, "<img src=x>");
+  assert.ok(!created.some((el) => el.tag === "img"), "an img element was created");
+  for (const el of created) {
+    for (const w of el.innerHTMLWrites) {
+      assert.ok(!w.includes("<img"), `innerHTML took the label: ${w}`);
+    }
+  }
+});
+
+test("Remove project names a remoteless repo by its folder, not its path- slug", async () => {
+  const { state } = loadShell();
+  const asked = [];
+  state.askConfirm = async (o) => {
+    asked.push(o.message);
+    return false;
+  };
+  await state.removeProject({ slug: "path-8ee0b8b587ea7891", name: "widget", path: "/home/me/widget/" });
+  await state.removeProject({ slug: "owner/repo", path: "/home/me/elsewhere" });
+  assert.deepEqual(asked, [
+    "Remove “widget” from Ralphy? Files on disk are kept.",
+    "Remove “owner/repo” from Ralphy? Files on disk are kept.",
+  ]);
+});
+
+test("projectLabel and projectTitle never print a path- key or a daemon id", () => {
+  const { state } = loadShell();
+  state.projects = [
+    { slug: "path-8ee0b8b587ea7891", name: "widget", path: "C:/Dev/widget" },
+    { key: "01KYPEER/path-1234", slug: "path-1234", name: "gadget", path: "/home/me/gadget", daemon: "01KYPEER", env: "WSL: Ubuntu" },
+    { slug: "owner/repo", name: "owner/repo", path: "C:/Dev/repo" },
+  ];
+  const ref = (p) => state.repoRef(p);
+  const [local, peer, forge] = state.projects;
+  assert.equal(state.projectLabel(ref(local)), "widget");
+  assert.equal(state.projectTitle(ref(local)), "C:/Dev/widget");
+  assert.equal(state.projectLabel(ref(peer)), "gadget · WSL: Ubuntu");
+  assert.equal(state.projectTitle(ref(peer)), "/home/me/gadget · WSL: Ubuntu");
+  assert.equal(state.projectLabel(ref(forge)), "owner/repo");
+  assert.equal(state.projectTitle(ref(forge)), "owner/repo");
+  state.openSlug = ref(local);
+  assert.equal(state.consoleMenuRepoName(), "widget");
+  assert.equal(state.columnRepoLabel(ref(peer)), "gadget");
+});
+
+test("a read failure shows the words for a daemon code, never the code", async () => {
+  const state = observedShell([
+    { status: "error", message: "unknown repo" },
+    { status: "error", message: "unknown checkout" },
+    { status: "error", reason: "unknown repo" },
+  ]);
+  await state.loadChanges("o/r");
+  assert.equal(state.changesReadError["o/r"], "Could not read the changes: the project is not in the list");
+  await state.loadSync("o/r");
+  assert.equal(state.syncByProject["o/r"].note, "Could not read the branch: the worktree does not exist");
+  state.runsOpen = false;
+  await state.hydrateRuns();
+  assert.equal(state.runsError, "Could not read the runs: the project is not in the list.");
+});
+
+test("an unreadable run is counted, and its id is never shown", async () => {
+  const state = observedShell([
+    { status: "ok", runs: [], unreadable: [{ runid: "01JX4ABCDEF", reason: "malformed" }] },
+  ]);
+  state.runsOpen = false;
+  await state.hydrateRuns();
+  assert.equal(
+    state.runsError,
+    "Could not read 1 saved run. The file is damaged or from another version of Ralphy.",
+  );
+});
+
+test("run and peer states show as words, and the dot says what it means", () => {
+  const { state } = loadShell();
+  assert.equal(state.runStateWord("sleep"), "usage limit — sleeping");
+  assert.equal(state.issueRunningLabel({ state: "hitl", agent: "claude" }), "Running · waiting on human (claude)");
+  assert.equal(state.peerStateWord("version-mismatch"), "version mismatch");
+  assert.equal(state.peerStateWord("asleep"), "asleep");
+  assert.equal(state.dotTitle("offline"), "The folder cannot be reached");
+  assert.equal(state.dotTitle("idle"), "No console is open");
 });

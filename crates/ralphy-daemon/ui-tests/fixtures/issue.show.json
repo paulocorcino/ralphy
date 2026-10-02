@@ -1,0 +1,40 @@
+{
+  "issue": {
+    "blocked_by": [],
+    "body": "the issue body",
+    "comments": [
+      {
+        "at": "2026-07-23T17:21:43Z",
+        "author": "octocat",
+        "body": "<!-- ralphy:consolidated-spec -->\n## Consolidated spec\nthe real spec\n"
+      }
+    ],
+    "consolidated_spec": "<!-- ralphy:consolidated-spec -->\n## Consolidated spec\nthe real spec\n",
+    "history": [
+      {
+        "issue": 7,
+        "model": "claude-opus-4",
+        "outcome": "ok",
+        "phase": "plan",
+        "tokens": 110,
+        "ts": "2026-07-03T10:00:00Z"
+      },
+      {
+        "issue": 7,
+        "model": "claude-opus-4",
+        "outcome": "ok",
+        "phase": "execute",
+        "tokens": 120,
+        "ts": "2026-07-03T10:00:00Z"
+      }
+    ],
+    "labels": [
+      "queue"
+    ],
+    "number": 7,
+    "queue_status": "eligible",
+    "skip_reason": null,
+    "title": "issue 7"
+  },
+  "status": "ok"
+}

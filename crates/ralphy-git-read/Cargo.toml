@@ -1,0 +1,17 @@
+[package]
+name = "ralphy-git-read"
+version = "0.1.0-rc.35"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Leaf crate for the read-only git facts Ralphy's core, daemon and usage scan share: the current head, the dirty bit by the change-set rule, the origin URL, the .git pointer file, and user.email."
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

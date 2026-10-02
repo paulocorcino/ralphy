@@ -489,9 +489,11 @@ When the target is different, it downloads the release archive for the host's
 target, of **the local computer's version**, never the latest one: peer
 compatibility is an exact match of the peer protocol (`PEER_PROTOCOL_VERSION`),
 so only the same version is sure to connect. A development build (ahead of its
-tag) has no release archive, so it can install only on a host with the same
-target; for another target the flow refuses and says to install by hand. The
-host needs no internet access.
+tag) has no release archive. For another target it sends the latest published
+release (amended 2026-10-02): its peer protocol may differ from the
+development build's, and the operator of a development build takes that risk.
+The describe after the install reports a mismatch. The host needs no internet
+access.
 
 **D2. The binary goes to `~/.ralphy/bin`.** On Windows it is
 `%USERPROFILE%\.ralphy\bin\ralphy.exe`. This needs no root and no
@@ -669,3 +671,158 @@ tunnel peer. Both are what the descriptor holds; no secret leaves the daemon.
 tunnel with the spec it was opened with. When the descriptor's spec differs,
 the daemon stops that `ssh` and opens a new one, so an edit takes effect
 without a daemon restart.
+
+## Amendment (2026-10-02): several operators on one host
+
+A daemon serves one operator (ADR-0032). A Linux or macOS host can have
+several accounts, and each account can be an operator with its own daemon. The
+install folder, the store, the token and the autostart are already per account
+(D2, §3, §8). The TCP port is not: every daemon binds `127.0.0.1:7257`, and the
+autostart cannot pass `--port` (ADR-0032 §4).
+
+**What happened (measured 2026-10-02, two accounts `ralphy1` and `ralphy2` on
+the Ubuntu 20.04 test host 10.1.1.4).** `host add` for `ralphy1` worked. For
+`ralphy2`:
+
+1. Its daemon never started, because the daemon of `ralphy1` held port 7257.
+2. `ralphy daemon describe` of `ralphy2` still said `running: true`, because
+   it only tests that something answers on the port.
+3. The add flow wrote a descriptor with peer port 7257, and the tunnel reached
+   the daemon of `ralphy1`.
+4. That daemon refused the token of `ralphy2` (§5), so no data leaked. But the
+   add flow ended with exit 0, and the message said to restart the daemon with
+   `--peer-store`, which was not the cause.
+
+Without §5 (a daemon on the default `Localhost` policy), step 4 would have
+shown the repos of `ralphy1` to the operator of `ralphy2`.
+
+**M1. On Linux and macOS, every daemon also listens on a Unix socket in its
+store: `~/.ralphy/daemon.sock`, mode `0600`.** The same router and the same
+auth policy serve both listeners, so the token of §5 is still required on the
+socket. The operating system gives each account its own socket, so two daemons
+never collide, and the kernel refuses a connection from another account before
+the daemon sees it. On start, a socket file that no daemon answers is deleted
+and bound again. A socket that answers means that a daemon of this account
+already runs, and the start fails, as it does today for a port in use.
+
+This changes the exposure of ADR-0032 §4 only for the account that owns the
+store: the socket admits no one that the store does not already admit.
+
+**M2. A tunnel to a Unix host forwards to the socket.** The tunnel becomes
+`ssh -N -L 127.0.0.1:<local port>:<socket path>`. The descriptor's tunnel
+section records `peer_socket` (an absolute path) in place of `peer_port`. The
+local end, the loopback gate and the peer client do not change. Because `sshd`
+opens the socket as the signed-in account, the account that the operator signs
+in with is the daemon that the tunnel reaches. §2's "the peer daemon keeps its
+default port" no longer applies to Unix hosts.
+
+**M3. `describe` reports the socket only when the socket answers.** Its JSON
+gets `socket`: the absolute path when a connection to it succeeds, else absent.
+On a Unix host, `running` means that the socket answers, or that the process
+in this account's pid file still runs the recorded program. The TCP port is
+not asked, because another account's daemon may hold it. A binary that was
+updated while an older daemon still runs therefore reports `running` and no
+socket, so `host install` restarts that daemon, and the add flow restarts a
+daemon that runs without a socket. The add flow already reads `describe` again
+after it restarts the daemon (`pair.rs`), and `ralphy daemon restart` returns
+only when the new daemon answers, so a new host gets the socket on the first
+`host add`. A descriptor written before this amendment keeps the port
+until the next `host add` or *Edit* (H3). The field is optional, so the peer
+protocol version does not change.
+
+**M4. On a host paired by `host add`, the TCP port is optional.** When the
+store has the `daemon-require-token` marker (§5) and the port is in use, the
+daemon logs a warning and serves only the socket. Without the marker, a port in
+use stays a fatal error, because on the operator's own computer the browser
+needs that port. On the host, the cost is that a browser on the host reaches
+the daemon of another account and gets a 401. A headless host has no browser.
+
+**M5. The handshake checks the identity.** `probe` compares the `daemon_id`
+of `/api/peer/hello` with the descriptor's `daemon_id`. When they differ, the
+peer status is a refusal that names both ids, and never `Unauthorized`. This
+covers a Windows host (M6), a descriptor still on the port (M3), and any other
+path to the wrong daemon.
+
+**M6. A Windows host keeps the port.** The Unix socket of `tokio` exists only
+on Unix, and nobody has measured OpenSSH for Windows as a server that forwards
+to a socket. On a Windows host, a second account's daemon still fails to bind.
+With M5 the operator sees a clear refusal. A port per account on Windows waits
+for an operator who needs it.
+
+**Measured (2026-10-02).** Client `OpenSSH_for_Windows_9.5p2`, server
+`OpenSSH_8.2p1 Ubuntu-4ubuntu0.9`, default `sshd_config`. A small server bound
+`~/.ralphy/spike.sock` with mode `0600` in each account. The homes were mode
+`0755`.
+
+| Test | Result |
+|---|---|
+| Tunnel as `ralphy1` to the socket of `ralphy1` | answered `I am ralphy1` |
+| Tunnel as `ralphy2` to the socket of `ralphy2`, at the same time | answered `I am ralphy2` |
+| Tunnel as `ralphy2` to the socket of `ralphy1` | refused; `ssh` printed `channel 1: open failed: connect failed: open failed` and stayed up |
+| `ralphy2` connects to the socket of `ralphy1` on the host | `PermissionError: [Errno 13] Permission denied` |
+| Length of `/home/ralphy2/.ralphy/daemon.sock` | 33 bytes; the limit is 108 on Linux and 104 on macOS |
+
+The failed forward does not end `ssh`: `ExitOnForwardFailure` covers only the
+setup of the forward, and a socket is opened for each connection. The tunnel
+therefore looks open, and only the probe through it fails.
+
+**M7. The add flow probes the socket tunnel before it writes the
+descriptor.** `host add` opens the tunnel the daemon would open, on a free
+local port, and asks `/api/peer/hello` once with the host's token. When this
+account's daemon answers, the descriptor names the socket. When it does not,
+the flow probes the port: when this account's daemon answers there, the
+descriptor names the port and a note says why; when another daemon answers, or
+the port refuses this account's token, the add fails before it writes
+anything and tells the operator to ask the host's administrator for
+`AllowStreamLocalForwarding yes`.
+
+**Validated live (2026-10-02, #519).** The same host and the same two accounts.
+The local computer ran Windows 11 with `OpenSSH_for_Windows_9.5p2`; the host
+ran `OpenSSH_8.2p1 Ubuntu-4ubuntu0.9`. Both sides ran this amendment's build.
+
+| Test | Result |
+|---|---|
+| `host add` for `ralphy1` and `ralphy2` | both descriptors name `peer_socket`; both peers `reachable` at the same time, each `hello` with its own `daemon_id`; `ralphy1` holds port 7257, `ralphy2` serves only its socket (M4) |
+| Stop the daemon of `ralphy2` | its peer becomes `tunnel-silent` ("…its daemon does not answer… Start it.") in under 10 s; `ralphy1` stays `reachable`; after a start it is `reachable` again with no action |
+| Reboot the host | both daemons start from their systemd user units (lingering); both peers `reachable` again with no action |
+| `AllowStreamLocalForwarding no` in a drop-in, `sshd` reloaded | a new tunnel to a socket starts and stays up; each connection fails and `ssh` prints `channel N: open failed: connect failed: open failed` (both clients: Windows 9.5p2 and Git for Windows 10.0p2); a forward to the TCP port still works; tunnels opened before the reload keep working |
+| `host add` with that setting | `ralphy1`: port form and the note (M7); `ralphy2`: fails with the advice, its descriptor unchanged |
+| A free console on each peer, through the local daemon (`/ws/session?console=1`) | `ralphy1` runs as uid 1001 and `ralphy2` as uid 1002, each in its own home; each connects to its own socket and gets `Permission denied` on the other account's socket. A console needs a repo added on the peer: without one, the peer answers `unknown repo` |
+
+The live run found two faults of `ralphy daemon restart` on Linux, both fixed
+before this record. After the binary was replaced with `mv`, the kernel names
+the old image `ralphy (deleted)`, and the restart took the pid as reused and
+started a second daemon next to the old one. And a daemon started by an
+earlier restart does not lead its process group, so the group signal did not
+reach it.
+
+**Not measured.**
+
+- **A path over the limit.** A home with a long path cannot hold the socket.
+  The daemon then serves only the port, `describe` reports no socket, and the
+  add flow writes the port form.
+- **macOS.** No second account was available on the test Mac. It has the same
+  sockets and the same OpenSSH; the macOS CI runs the socket tests.
+
+## Amendment (2026-10-02): the header shows the OS release
+
+This amendment changes §6 and H2.
+
+**R1. The environment label names the release.** A daemon on Linux reads
+`NAME` and `VERSION_ID` from `/etc/os-release` (`Ubuntu 24.04`, `Debian 12`).
+A daemon on macOS reads `sw_vers -productVersion` and keeps the major version
+(`macOS 15`). Windows stays `Windows`. A WSL daemon stays `WSL: <distro>`: the
+workbench maps a `\\wsl.localhost\<distro>\…` path to its peer by that name.
+When the release cannot be read, the label is the OS name, as before.
+
+**R2. The header of a host is `<name> · <release>`.** The name is in capital
+letters; the release keeps its own spelling (`VPS-HETZNER · Ubuntu 24.04`).
+
+**R3. The icon comes from an `os` field, not from the label.** The peer
+descriptor, `/api/fleet` peers and the fleet rows carry the daemon's OS family
+(`windows`, `linux`, `macos`). A descriptor written before the field has none,
+and the icon then comes from the label, as in H2.
+
+A host's descriptor is written by `host add` and by Edit. A host paired before
+this change keeps its old label until the host runs the new version and the
+operator edits it.

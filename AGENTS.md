@@ -12,6 +12,10 @@ source document is correct — fix this file.
   CLI, a watcher or timer, a new panel or other place in the workbench that
   shows a fact, or a second computation of a fact the product already knows.
   Get the fact from its owner. Its §4 is the map of crates.
+- **[ADR-0072](./docs/adr/0072-the-security-model.md)** — the security
+  model: trust zones and the premises every change keeps. Read it before you
+  add a vendor CLI flag, an environment variable passed to a child, a secret,
+  a setting that turns a protection off, or a vendored library.
 - **[CONTEXT.md](./CONTEXT.md)** — the ubiquitous language. Every domain term
   (run, queue label, adapter, planner/executor, event sink…) is defined there.
   Use these words and only these words.

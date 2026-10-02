@@ -510,3 +510,84 @@ fn locate_program_prefers_path_over_local_bin() {
     assert_eq!(got.file_stem(), Some(std::ffi::OsStr::new("tool")));
     let _ = fs::remove_dir_all(&tmp);
 }
+
+/// A detached grandchild must not hold the pipe its parent writes to: a reader
+/// of `ralphy daemon restart` waited until the daemon stopped (2026-10-02).
+#[cfg(windows)]
+#[test]
+fn std_handles_do_not_reach_a_detached_grandchild() {
+    use std::io::Read;
+    use std::process::Stdio;
+    use std::time::Duration;
+
+    let mut parent = Command::new(std::env::current_exe().expect("current_exe"))
+        .args([
+            "--exact",
+            "tests::a_parent_that_leaves_a_detached_child",
+            "--ignored",
+            "--nocapture",
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn the parent");
+    let mut stdout = parent.stdout.take().expect("the parent's stdout");
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut text = String::new();
+        let read = stdout.read_to_string(&mut text).map(|_| text);
+        let _ = tx.send(read);
+    });
+    let ended = rx.recv_timeout(Duration::from_secs(20));
+    parent.wait().expect("reap the parent");
+    let grandchild = |text: &str| {
+        text.lines()
+            .find_map(|l| l.strip_prefix("grandchild pid "))
+            .and_then(|p| p.trim().parse::<u32>().ok())
+    };
+    match ended {
+        Ok(Ok(text)) => {
+            if let Some(pid) = grandchild(&text) {
+                kill_tree_by_pid(pid);
+            }
+            assert!(grandchild(&text).is_some(), "the parent said: {text}");
+        }
+        other => {
+            panic!("the pipe did not reach its end while the grandchild ran: {other:?}");
+        }
+    }
+}
+
+/// The parent of the test above: it starts a detached child and exits.
+#[cfg(windows)]
+#[test]
+#[ignore = "run only as the child of std_handles_do_not_reach_a_detached_grandchild"]
+#[allow(
+    clippy::zombie_processes,
+    reason = "the grandchild must outlive this process; the test above ends it"
+)]
+fn a_parent_that_leaves_a_detached_child() {
+    use std::os::windows::process::CommandExt;
+    use std::process::Stdio;
+    const DETACHED_PROCESS: u32 = 0x0000_0008;
+
+    keep_std_handles_from_children();
+    let child = Command::new(std::env::current_exe().expect("current_exe"))
+        .args(["--exact", "tests::a_child_that_waits_a_minute", "--ignored"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .creation_flags(DETACHED_PROCESS)
+        .spawn()
+        .expect("spawn the grandchild");
+    println!("grandchild pid {}", child.id());
+}
+
+/// The grandchild: it waits until it is ended.
+#[cfg(windows)]
+#[test]
+#[ignore = "run only as the grandchild of std_handles_do_not_reach_a_detached_grandchild"]
+fn a_child_that_waits_a_minute() {
+    std::thread::sleep(std::time::Duration::from_secs(60));
+}

@@ -26,28 +26,45 @@ fn encoding_param(cmd: &protocol::Command) -> Result<Option<&'static Encoding>, 
     }
 }
 
+/// The reply when a Query or Mutate command passed the reply deadline. The
+/// command is not stopped.
+pub(crate) const STILL_RUNNING: &str =
+    "The command is still running after 60 seconds. Ralphy did not stop it, and its answer will not come here.";
+
+/// The reply when no command slot was free within the reply deadline.
+pub(crate) const NO_SLOT: &str =
+    "Ralphy is busy: 8 commands are still running, and this one did not start. Try again later.";
+
+/// The reply for a Query or Mutate that gave no answer in time.
+pub(crate) fn not_answered(collected: &dispatch::Collected) -> Option<serde_json::Value> {
+    let message = match collected {
+        dispatch::Collected::StillRunning => STILL_RUNNING,
+        dispatch::Collected::NoSlot => NO_SLOT,
+        _ => return None,
+    };
+    Some(serde_json::json!({ "status": "error", "message": message }))
+}
+
 /// Spawn-and-COLLECT a config CLI invocation (`config get|set|unset`) for a
 /// Query/Mutate verb off the tokio runtime (ADR-0036 §2): unlike the streaming
-/// Spawn path, a config verb yields ONE collected reply. `None` when the blocking
-/// join or the spawn itself failed. Runs in `cwd` with the dispatch `daemon_id`.
+/// Spawn path, a config verb yields ONE collected reply. It waits for one of the
+/// shared command slots and answers within [`dispatch::REPLY_DEADLINE`]. Runs in
+/// `cwd` with the dispatch `daemon_id`.
 pub(crate) async fn collect_config(
     argv: Vec<String>,
     cwd: PathBuf,
     daemon_id: Option<String>,
-) -> Option<(Option<i32>, Vec<u8>)> {
-    tokio::task::spawn_blocking(move || {
-        let argv_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
-        dispatch::collect(
-            &dispatch::ProcessSpawner,
-            &dispatch::ralphy_exe(),
-            &argv_refs,
-            &cwd,
-            daemon_id.as_deref(),
-        )
-    })
+) -> dispatch::Collected {
+    dispatch::collect_within(
+        std::sync::Arc::new(dispatch::ProcessSpawner),
+        dispatch::ralphy_exe(),
+        argv,
+        cwd,
+        daemon_id,
+        dispatch::COLLECT_SLOTS.clone(),
+        dispatch::REPLY_DEADLINE,
+    )
     .await
-    .ok()
-    .and_then(Result::ok)
 }
 
 /// Resolve the optional `checkout` key of `cmd` against `repo_path`. `Err` is
@@ -413,7 +430,7 @@ pub(crate) async fn execute_oneshot(
                         Err(reply) => return Some(reply),
                     };
                     match collect_config(argv, cwd, daemon_id.map(str::to_owned)).await {
-                        Some((Some(0), bytes)) => {
+                        dispatch::Collected::Done(Some(0), bytes) => {
                             let text = String::from_utf8_lossy(&bytes);
                             let parsed: serde_json::Value = serde_json::from_str(text.trim())
                                 .unwrap_or_else(|_| {
@@ -424,12 +441,17 @@ pub(crate) async fn execute_oneshot(
                             obj.insert(field.to_string(), parsed);
                             serde_json::Value::Object(obj)
                         }
-                        Some((_, bytes)) => serde_json::json!({
+                        dispatch::Collected::Done(_, bytes) => serde_json::json!({
                             "status": "error",
                             "message": String::from_utf8_lossy(&bytes).trim(),
                         }),
-                        None => {
+                        dispatch::Collected::Failed(e) => {
+                            tracing::warn!(error = %format!("{e:#}"), "a query command failed to run");
                             serde_json::json!({ "status": "error", "message": "query read failed" })
+                        }
+                        late
+                        @ (dispatch::Collected::StillRunning | dispatch::Collected::NoSlot) => {
+                            not_answered(&late).expect("a late answer has a reply")
                         }
                     }
                 }
@@ -495,7 +517,7 @@ pub(crate) async fn execute_oneshot(
                         // on stdout after the add succeeded, and those are the
                         // picker's notice. Relayed under `message` when there
                         // is any; the `{status:"ok"}` shape otherwise.
-                        Some((Some(0), bytes)) => {
+                        dispatch::Collected::Done(Some(0), bytes) => {
                             let msg = String::from_utf8_lossy(&bytes);
                             let msg = msg.trim();
                             if msg.is_empty() || !matches!(verb, dispatch::Verb::WorktreeAdd) {
@@ -504,16 +526,23 @@ pub(crate) async fn execute_oneshot(
                                 serde_json::json!({ "status": "ok", "message": msg })
                             }
                         }
-                        Some((_, bytes)) => {
+                        dispatch::Collected::Done(_, bytes) => {
                             let msg = String::from_utf8_lossy(&bytes);
                             let msg = msg.trim();
                             let msg = if msg.is_empty() { "refused" } else { msg };
                             serde_json::json!({ "status": "error", "message": msg })
                         }
-                        None => serde_json::json!({
-                            "status": "error",
-                            "message": "mutation write failed"
-                        }),
+                        dispatch::Collected::Failed(e) => {
+                            tracing::warn!(error = %format!("{e:#}"), "a mutation command failed to run");
+                            serde_json::json!({
+                                "status": "error",
+                                "message": "mutation write failed"
+                            })
+                        }
+                        late
+                        @ (dispatch::Collected::StillRunning | dispatch::Collected::NoSlot) => {
+                            not_answered(&late).expect("a late answer has a reply")
+                        }
                     }
                 }
             })
@@ -579,5 +608,21 @@ async fn note_write(cmd: &protocol::Command, repo_path: &Path) -> serde_json::Va
         Some(Ok(())) => serde_json::json!({ "status": "ok" }),
         Some(Err(e)) => serde_json::json!({ "status": "error", "reason": e.reason() }),
         None => serde_json::json!({ "status": "error", "reason": "unavailable" }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_late_replies_name_the_real_limits() {
+        let seconds = format!("after {} seconds", dispatch::REPLY_DEADLINE.as_secs());
+        assert!(STILL_RUNNING.contains(&seconds), "{STILL_RUNNING}");
+        let slots = format!(
+            "{} commands are still running",
+            dispatch::MAX_COLLECT_CHILDREN
+        );
+        assert!(NO_SLOT.contains(&slots), "{NO_SLOT}");
     }
 }

@@ -232,7 +232,33 @@ pub(crate) async fn tree_ws(
                                         }
                                         watched.push(key);
                                     }
-                                    Err(e) => tracing::warn!(error = %e, "tree watch failed"),
+                                    Err(e) => {
+                                        tracing::warn!(error = %format!("{e:#}"), "tree watch failed");
+                                        // The tree shows it no longer updates by
+                                        // itself (ADR-0070 D3). Paths are pushed
+                                        // like `tree.dirty`; the runs list has no
+                                        // line to show it, so it stays a log line.
+                                        if runs {
+                                            continue;
+                                        }
+                                        let reason = format!("{e:#}");
+                                        let payload = match (&alias, head) {
+                                            (Some((_, name)), true) => serde_json::json!({
+                                                "repo": repo, "checkout": name, "reason": reason,
+                                            }),
+                                            (None, true) => {
+                                                serde_json::json!({ "repo": repo, "reason": reason })
+                                            }
+                                            (Some((shown, name)), false) => serde_json::json!({
+                                                "repo": repo, "path": shown, "checkout": name,
+                                                "reason": reason,
+                                            }),
+                                            (None, false) => serde_json::json!({
+                                                "repo": repo, "path": rel, "reason": reason,
+                                            }),
+                                        };
+                                        send_command(&mut socket, 0, "tree.failed", payload).await;
+                                    }
                                 }
                             }
                         }

@@ -92,6 +92,37 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: zizmor --format github .github/
 
+  vendored-libraries:
+    name: osv-scanner (vendored UI libraries)
+    # The workbench libraries are copied into crates/ralphy-daemon/assets/ui/
+    # vendor/, so no lockfile names them and cargo-deny cannot see them.
+    # Their versions are in vendor/manifest.json; xtask turns that into an npm
+    # lockfile, and osv-scanner fails on a known advisory.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+        with:
+          toolchain: stable
+
+      - name: Install osv-scanner
+        uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2.87.20
+        with:
+          tool: osv-scanner@2.6.0
+
+      - name: Write the lockfile of the vendored versions
+        run: cargo run -q -p xtask -- vendor-lock "$RUNNER_TEMP/package-lock.json"
+
+      - name: osv-scanner
+        run: osv-scanner scan --lockfile "$RUNNER_TEMP/package-lock.json"
+
   dependency-review:
     name: dependency review
     # Fails a pull request that adds a dependency with a known vulnerability.

@@ -1,0 +1,406 @@
+"""#352 browser acceptance: execution and environment-aware fleet surfaces."""
+
+import os
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.request
+from pathlib import Path
+
+from playwright.sync_api import sync_playwright
+
+sys.stdout.reconfigure(encoding="utf-8")
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+EXE = REPO_ROOT / "target" / "debug" / ("ralphy.exe" if os.name == "nt" else "ralphy")
+HELPER = REPO_ROOT / "target" / "debug" / (
+    "session_test_child.exe" if os.name == "nt" else "session_test_child"
+)
+COMMAND_HELPER = REPO_ROOT / "target" / "debug" / (
+    "command_test_child.exe" if os.name == "nt" else "command_test_child"
+)
+SHOT = REPO_ROOT / ".ralphy" / "screenshots" / "352-local-fleet-awareness-2026-07-29.png"
+LOCAL_PORT = 7452
+PEER_PORT = 7453
+LOCAL_ID = "01ARZ3NDEKTSV4RRFFQ69G5FAY"
+PEER_ID = "01ARZ3NDEKTSV4RRFFQ69G5FAZ"
+SLUG = "ralphy-lab/shared-repo"
+PEER_REF = f"{PEER_ID}/{SLUG}"
+PEER_ENV = "WSL: Ubuntu-22.04"
+SHELL = "Alpine.$data(document.querySelector('[x-data]'))"
+results = []
+
+
+def check(name, ok, detail=""):
+    results.append(bool(ok))
+    print(f"[{'PASS' if ok else 'FAIL'}] {name} {detail}", flush=True)
+
+
+def assert_port_free(port):
+    sock = socket.socket()
+    try:
+        sock.bind(("127.0.0.1", port))
+    except OSError as error:
+        raise RuntimeError(f"port {port} is occupied: {error}") from error
+    finally:
+        sock.close()
+
+
+def wait_listening(port, timeout=25):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=1)
+            return True
+        except Exception:
+            time.sleep(0.25)
+    return False
+
+
+def stop(proc):
+    if proc is None or proc.poll() is not None:
+        return
+    proc.terminate()
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=5)
+
+
+def git(cwd, *args):
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
+
+
+def seed_repo(prefix):
+    root = Path(tempfile.mkdtemp(prefix=prefix)) / "shared-repo"
+    root.mkdir()
+    (root / "README.md").write_text(f"# {prefix}\n", encoding="utf-8")
+    git(root, "init", "-b", "main")
+    git(root, "config", "user.email", "wb352@example.com")
+    git(root, "config", "user.name", "wb352")
+    git(root, "remote", "add", "origin", f"https://github.com/{SLUG}.git")
+    git(root, "add", "-A")
+    git(root, "commit", "-m", "fixture")
+    return root
+
+
+def baptize(store, daemon_id, name):
+    store.mkdir(parents=True, exist_ok=True)
+    (store / "daemon.toml").write_text(
+        f'id = "{daemon_id}"\nname = "{name}"\navatar = "🐙"\n',
+        encoding="utf-8",
+    )
+
+
+def register(store, repo):
+    subprocess.run(
+        [str(EXE), "daemon", "add", str(repo)],
+        env=dict(os.environ, RALPHY_DAEMON_DIR=str(store)),
+        check=True,
+        capture_output=True,
+        encoding="utf-8",
+    )
+
+
+def daemon_env(store, empty_home, command_dump, token=None, peer=False):
+    empty_usage = tempfile.mkdtemp(prefix="wb352_usage_")
+    env = dict(
+        os.environ,
+        RALPHY_DAEMON_DIR=str(store),
+        RALPHY_DAEMON_AGENT_OVERRIDE=str(HELPER),
+        RALPHY_EXE_OVERRIDE=str(COMMAND_HELPER),
+        RALPHY_TEST_ENV_DUMP=str(command_dump),
+        RALPHY_USAGE_DIR=empty_usage,
+        RALPHY_CLAUDE_PROJECTS_DIR=empty_usage,
+        RALPHY_CODEX_DIR=empty_usage,
+        RALPHY_OPENCODE_DB=os.path.join(empty_usage, "none.db"),
+        RALPHY_KIMI_DIR=empty_usage,
+        RALPHY_KIMI_CODE_DIR=empty_usage,
+        RALPHY_COPILOT_DB=os.path.join(empty_usage, "copilot-none.db"),
+        RALPHY_CURSOR_DIR=empty_usage,
+        RALPHY_GEMINI_DIR=empty_usage,
+    )
+    if token:
+        env["RALPHY_DAEMON_TOKEN"] = token
+    if peer:
+        env["WSL_DISTRO_NAME"] = "Ubuntu-22.04"
+        env["PATH"] = ""
+        env["USERPROFILE"] = str(empty_home)
+        env["HOME"] = str(empty_home)
+        env["LOCALAPPDATA"] = str(empty_home)
+        env["ProgramFiles"] = str(empty_home)
+        env["ProgramFiles(x86)"] = str(empty_home)
+    else:
+        env.pop("WSL_DISTRO_NAME", None)
+    return env
+
+
+def launch(
+    store, port, empty_home, command_dump, peer_store=None, token=None, peer=False
+):
+    argv = [str(EXE), "daemon", "--port", str(port)]
+    if peer_store:
+        argv.extend(["--peer-store", str(peer_store)])
+    return subprocess.Popen(
+        argv,
+        env=daemon_env(store, empty_home, command_dump, token, peer),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
+def main():
+    local_proc = None
+    peer_proc = None
+    try:
+        assert_port_free(LOCAL_PORT)
+        assert_port_free(PEER_PORT)
+        subprocess.run(
+            [
+                "cargo",
+                "build",
+                "-p",
+                "ralphy-cli",
+                "--bin",
+                "ralphy",
+                "-p",
+                "ralphy-daemon",
+                "--bin",
+                "session_test_child",
+                "--bin",
+                "command_test_child",
+            ],
+            cwd=REPO_ROOT,
+            check=True,
+        )
+
+        local_store = Path(tempfile.mkdtemp(prefix="wb352_local_store_"))
+        peer_store = Path(tempfile.mkdtemp(prefix="wb352_peer_store_"))
+        empty_home = Path(tempfile.mkdtemp(prefix="wb352_empty_home_"))
+        command_dump = Path(tempfile.mkdtemp(prefix="wb352_command_")) / "env.txt"
+        local_repo = seed_repo("wb352-local")
+        peer_repo = seed_repo("wb352-peer")
+        baptize(local_store, LOCAL_ID, "local-daemon")
+        baptize(peer_store, PEER_ID, "peer-daemon")
+        register(local_store, local_repo)
+        register(peer_store, peer_repo)
+
+        peer_proc = launch(
+            peer_store,
+            PEER_PORT,
+            empty_home,
+            command_dump,
+            peer_store=local_store,
+            token="peer-token-352",
+            peer=True,
+        )
+        if not wait_listening(PEER_PORT) or peer_proc.poll() is not None:
+            raise RuntimeError("peer daemon did not start")
+        local_proc = launch(local_store, LOCAL_PORT, empty_home, command_dump)
+        if not wait_listening(LOCAL_PORT) or local_proc.poll() is not None:
+            raise RuntimeError("local daemon did not start")
+
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(
+                headless=True, args=["--disable-webgl", "--disable-gpu"]
+            )
+            page = browser.new_page(viewport={"width": 1500, "height": 950})
+            thrown = []
+            page.on("pageerror", lambda error: thrown.append(str(error)))
+            page.goto(f"http://127.0.0.1:{LOCAL_PORT}/", wait_until="networkidle")
+            page.wait_for_function(
+                "() => document.querySelectorAll('li.project').length === 2",
+                timeout=20000,
+            )
+
+            peer_row = page.locator("li.project.peer").first
+            peer_row.locator(".project-head").click()
+            page.wait_for_function(f"(ref) => {SHELL}.openSlug === ref", arg=PEER_REF)
+            page.wait_for_function(
+                f"() => {SHELL}.roster.some(r => r.id === 'opencode' && r.available === false)",
+                timeout=10000,
+            )
+
+            page.locator("button[title='Runs']").click()
+            page.wait_for_selector(".runs-actions", state="visible")
+            controls = page.locator(".runs-actions .run-verb")
+            check(
+                "peer run, triage, and push controls are enabled",
+                controls.count() == 3
+                and all(not controls.nth(i).is_disabled() for i in range(controls.count())),
+            )
+
+            observed = {}
+            controls.filter(has_text="run").click()
+            page.wait_for_selector(".run-modal", state="visible")
+            # Scoped by aria-label: the Hosts dialog (#497) reuses `.run-modal`
+            # too, so the bare class now matches two elements.
+            page.locator('.run-modal[aria-label="Start a run"] .modal-foot .btn.accent').click()
+
+            expected_argv = {
+                "run": "run --if-idle --agent claude --branch-mode new",
+                "triage": "triage --if-idle --yes",
+                "push": "issues --push",
+            }
+
+            def wait_for_verb(verb):
+                try:
+                    page.wait_for_function(
+                        f"(wanted) => {SHELL}.rawFeed.includes('dispatch-argv: ' + wanted)",
+                        arg=expected_argv[verb],
+                        timeout=10000,
+                    )
+                except Exception as error:
+                    state = page.evaluate(
+                        f"() => ({{rawFeed: {SHELL}.rawFeed, verbError: {SHELL}.verbError}})"
+                    )
+                    dump = (
+                        command_dump.read_text(encoding="utf-8")
+                        if command_dump.exists()
+                        else "missing"
+                    )
+                    raise RuntimeError(
+                        f"{verb} produced no peer marker; state={state}; dump={dump}"
+                    ) from error
+
+            wait_for_verb("run")
+            observed["run"] = page.evaluate(f"() => {SHELL}.rawFeed")
+            observed["run-identity"] = command_dump.read_text(encoding="utf-8")
+
+            for verb in ("triage", "push"):
+                controls.filter(has_text=verb).click()
+                wait_for_verb(verb)
+                observed[verb] = page.evaluate(f"() => {SHELL}.rawFeed")
+                observed[f"{verb}-identity"] = command_dump.read_text(
+                    encoding="utf-8"
+                )
+
+            check(
+                "each peer workbench verb executes in the owning daemon",
+                all(
+                    f"dispatch-argv: {expected_argv[verb]}" in observed[verb]
+                    and f"dispatch-cwd: {peer_repo}" in observed[verb]
+                    and f"RALPHY_DAEMON_ID={PEER_ID}"
+                    in observed[f"{verb}-identity"]
+                    for verb in ("run", "triage", "push")
+                ),
+                f"observed={observed}",
+            )
+            page.locator("button[title='Runs']").click()
+            page.wait_for_selector("aside.runs", state="hidden")
+
+            page.locator(".tab[data-tab='consoles'], .tab").filter(
+                has_text="Consoles"
+            ).first.click()
+            page.get_by_role("button", name="Consoles").click()
+            page.wait_for_selector(
+                ".console-choice .dropdown-item[title='Not installed here.']",
+                state="visible",
+            )
+            unavailable = page.locator(".console-choice").filter(
+                has=page.locator(".dropdown-item[title='Not installed here.']")
+            ).first
+            check(
+                "unavailable peer roster row states the reason and keeps try-anyway",
+                unavailable.locator(".dropdown-item").is_disabled()
+                and unavailable.locator(".dropdown-item").get_attribute("title")
+                == "Not installed here."
+                and unavailable.locator(".row-try").is_visible(),
+            )
+            page.get_by_role("button", name="Consoles").click()
+
+            page.evaluate(
+                "(repo) => window.WBConsole.open({repo, plain: true})", SLUG
+            )
+            page.evaluate(
+                "(repo) => window.WBConsole.open({repo, plain: true})", PEER_REF
+            )
+            page.wait_for_function(
+                "() => document.querySelectorAll('.session-window').length === 2"
+            )
+            # #479: the environment moved from the title to its tooltip, after
+            # the full ref.
+            page.wait_for_function(
+                "(env) => [...document.querySelectorAll('.session-title')].some(e => e.title.includes(env))",
+                arg=PEER_ENV,
+                timeout=15000,
+            )
+            titles = page.locator(".session-title").all_text_contents()
+            tips = page.locator(".session-title").evaluate_all(
+                "els => els.map(e => e.title)"
+            )
+            check(
+                "peer free-console tooltip names its effective environment",
+                any(tip.split("\n")[:2] == [PEER_REF, PEER_ENV] for tip in tips),
+                f"tips={tips}",
+            )
+            # The routing head is NOT a name: the title never carries the
+            # daemon_id — it stays reachable as the element's tooltip.
+            check(
+                "no session title exposes the routing head",
+                all(PEER_ID not in title for title in titles),
+                f"titles={titles}",
+            )
+            tips = page.locator(".session-title").evaluate_all(
+                "els => els.map(e => e.title)"
+            )
+            check(
+                "the peer console keeps its full ref as a tooltip",
+                any(tip.split("\n")[0] == PEER_REF for tip in tips),
+                f"tips={tips}",
+            )
+
+            page.wait_for_timeout(500)
+            desk = page.evaluate("async () => await (await fetch('/api/desk')).json()")
+            refs = [record.get("repo") for record in desk.get("windows", [])]
+            check(
+                "desk keeps same-slug local and peer windows distinct",
+                SLUG in refs and PEER_REF in refs and refs.count(SLUG) == 1 and refs.count(PEER_REF) == 1,
+                f"refs={refs}",
+            )
+
+            stop(peer_proc)
+            peer_proc = None
+            # #360 moved this surface: the Usage modal is gone and the
+            # missing-contributions banner lives in the Spend tab's Ledger pane,
+            # the only place the RAW rows are read.
+            page.evaluate(f"() => {SHELL}.openSpend()")
+            page.evaluate(f"async () => await {SHELL}.setSpendPane('ledger')")
+            page.wait_for_function(
+                "(env) => [...document.querySelectorAll('.ledger-missing strong')].some(e => e.textContent.includes(env))",
+                arg=PEER_ENV,
+                timeout=10000,
+            )
+            missing_text = page.locator(".ledger-missing").inner_text()
+            check(
+                "missing usage contribution names the peer environment",
+                PEER_ENV in missing_text
+                and "Usage missing from some daemons" in missing_text
+                and "connecting" in missing_text,
+                missing_text,
+            )
+
+            SHOT.parent.mkdir(parents=True, exist_ok=True)
+            page.screenshot(path=str(SHOT))
+            print(f"[INFO] screenshot {SHOT}", flush=True)
+            check("no page errors were thrown", not thrown, f"got={thrown}")
+            browser.close()
+    except Exception as error:
+        print(f"[FAIL] browser acceptance crashed: {error}", flush=True)
+        results.append(False)
+    finally:
+        stop(local_proc)
+        stop(peer_proc)
+
+    print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
+    if len(results) != 9:
+        print(f"[FAIL] expected 9 checks, ran {len(results)}", flush=True)
+        sys.exit(1)
+    sys.exit(0 if all(results) else 1)
+
+
+if __name__ == "__main__":
+    main()

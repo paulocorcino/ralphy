@@ -138,7 +138,13 @@ fn main() {
 /// before it ever reached its stdin. `OPOST` is deliberately left on: the tests
 /// read the output as lines.
 #[cfg(unix)]
+#[allow(
+    unsafe_code,
+    reason = "FFI: tcgetattr/tcsetattr on the test child's stdin"
+)]
 fn configure_raw_input() {
+    // SAFETY: `attrs` is a zeroed termios that tcgetattr fills before it is
+    // read or passed back; both calls take the stdin descriptor this process owns.
     unsafe {
         let mut attrs: libc::termios = std::mem::zeroed();
         if libc::tcgetattr(libc::STDIN_FILENO, &mut attrs) != 0 {
@@ -156,12 +162,18 @@ fn configure_raw_input() {
 fn configure_raw_input() {}
 
 #[cfg(windows)]
+#[allow(
+    unsafe_code,
+    reason = "FFI: GetConsoleMode/SetConsoleMode on the test child's stdin"
+)]
 fn configure_raw_input() {
     use windows_sys::Win32::System::Console::{
         GetConsoleMode, GetStdHandle, SetConsoleMode, ENABLE_ECHO_INPUT, ENABLE_LINE_INPUT,
         ENABLE_PROCESSED_INPUT, STD_INPUT_HANDLE,
     };
 
+    // SAFETY: the handle comes from GetStdHandle and `mode` is a valid out
+    // pointer; a failed GetConsoleMode leaves the console as it was.
     unsafe {
         let input = GetStdHandle(STD_INPUT_HANDLE);
         let mut mode = 0;

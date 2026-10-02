@@ -1,0 +1,499 @@
+"""#304 browser acceptance: the console menu serves the daemon's adapter roster with live sessions.
+
+One Playwright pass over a REAL daemon: real `/api/agents`, real sessions, real
+PTYs. Nothing is stubbed — the fixtures are a throwaway git repo registered with
+the daemon and `RALPHY_DAEMON_AGENT_OVERRIDE` pointing every "vendor" launch at
+the session test-child bin, so an agent console spawns the helper instead of a
+vendor CLI (no quota, no install requirement).
+
+Scenario 1   `GET /api/agents` from the page: 7 rows, claude→"1" … gemini→"7"
+Scenario 2   with NO repo selected the menu renders the 7 roster labels + console
+             last, agent rows `disabled` with the verbatim "select a repo first…"
+Scenario 3   selecting the fixture repo enables them
+Scenario 4   a live claude console makes its row read "1 live"; clicking the row
+             LAUNCHES another (the menu is "New console") — 2 sessions, a launch socket
+Scenario 5   the row reads "2 live" and carries no "+" (a readout, not a reach)
+Scenario 6   `Alt+Shift+Digit2` still opens a `/ws/session?…agent=codex` console
+Scenario 7   `Alt+Shift+Digit1` on a LIVE row launches too — the key is the click
+Scenario 8   a disabled row's accelerator is inert (no repo selected)
+Scenario 9   a 500 from `/api/agents` in DAEMON mode leaves the roster empty —
+             the demo seed is never shown to a daemon that cannot answer
+Scenario 10  no row carries an action or a session id; the head names the bare
+             repo and states the accelerator pattern once, rows carry the digit
+
+Boots a Localhost daemon on 7399 over a SCRATCH `RALPHY_DAEMON_DIR`, so the
+operator's own daemon registry and login policy are untouched. The daemon is
+stopped by its own subprocess handle, NEVER by name (`ralphy.exe` doubles as the
+orchestrator on this host). Every session is closed before the daemon stops, so
+no helper child is left behind.
+
+Writes .ralphy/screenshots/304-agent-menu-2026-07-25.png.
+Run: python tests/browser/agents/wb_agents_304.py   (exit 0 = all pass)
+"""
+
+import os
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.request
+from pathlib import Path
+
+from playwright.sync_api import sync_playwright
+
+# The Windows console's default codepage (cp1252 here) cannot encode the glyphs
+# this script prints in its detail strings; force utf-8 stdout so a PASSING
+# assertion never dies on its own detail.
+sys.stdout.reconfigure(encoding="utf-8")
+
+PORT = 7399
+BASE = f"http://127.0.0.1:{PORT}/"
+
+# tests/browser/agents/wb_agents_304.py -> repo root is 4 dirs up.
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+WIN = os.name == "nt"
+EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if WIN else "ralphy")
+CHILD = os.path.join(REPO_ROOT, "target", "debug", "session_test_child.exe" if WIN else "session_test_child")
+SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
+SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The account dropdown reuses `.dropdown-item`, so every menu query is scoped.
+MENU = ".console-menu"
+
+# The daemon's roster, as this issue pins it (roster.rs::accelerators_are_unique_and_stable).
+EXPECTED = [
+    ("claude", "1"),
+    ("codex", "2"),
+    ("opencode", "3"),
+    ("kimi", "4"),
+    ("copilot", "5"),
+    ("cursor", "6"),
+    ("gemini", "7"),
+]
+NEEDS_REPO = "Open a project before you start an agent."
+
+results = []
+
+
+def check(name, ok, detail=""):
+    results.append(bool(ok))
+    print(f"[{'PASS' if ok else 'FAIL'}] {name} {detail}", flush=True)
+
+
+def wait_listening(base, timeout=25):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            urllib.request.urlopen(base, timeout=1)
+            return True
+        except Exception:
+            time.sleep(0.3)
+    return False
+
+
+def stop(proc):
+    proc.terminate()
+    try:
+        proc.wait(timeout=5)
+    except Exception:
+        proc.kill()
+
+
+def empty_env(daemon_dir):
+    """A scratch registry + empty vendor stores, and every agent launch pointed at
+    the session test child: the operator's daemon dir is never touched and no
+    vendor CLI is required to prove the launch path."""
+    empty = tempfile.mkdtemp(prefix="wb304_empty_")
+    return dict(
+        os.environ,
+        RALPHY_DAEMON_DIR=daemon_dir,
+        RALPHY_DAEMON_AGENT_OVERRIDE=CHILD,
+        RALPHY_USAGE_DIR=empty,
+        RALPHY_CLAUDE_PROJECTS_DIR=empty,
+        RALPHY_CODEX_DIR=empty,
+        RALPHY_OPENCODE_DB=os.path.join(empty, "none.db"),
+        RALPHY_KIMI_DIR=empty,
+        RALPHY_KIMI_CODE_DIR=empty,
+    )
+
+
+def make_fixture_repo():
+    d = tempfile.mkdtemp(prefix="wb304_fixture_")
+    p = Path(d)
+    (p / "README.md").write_text("# fixture\n\nThe #304 agent-menu fixture repo.\n", encoding="utf-8")
+    for args in (
+        ["git", "init"],
+        ["git", "config", "user.email", "wb304@example.com"],
+        ["git", "config", "user.name", "wb304"],
+        ["git", "add", "-A"],
+        ["git", "commit", "-m", "fixture"],
+    ):
+        subprocess.run(args, cwd=d, check=True, capture_output=True)
+    return d
+
+
+def register_fixture(daemon_dir, fixture_dir):
+    env = dict(os.environ, RALPHY_DAEMON_DIR=daemon_dir)
+    result = subprocess.run(
+        [EXE, "daemon", "add", fixture_dir], env=env, check=True, capture_output=True, encoding="utf-8"
+    )
+    # stdout: "registered <slug> → <path>"; the arrow is U+2192, so decode utf-8.
+    return result.stdout.strip().split("registered ", 1)[1].split(" →")[0].strip()
+
+
+def build():
+    # The UI assets are `include_dir!`-embedded, so the binary must be rebuilt
+    # after any assets/ui edit or the browser loads yesterday's console. The
+    # helper child is the stand-in every agent launch resolves to.
+    subprocess.run(["cargo", "build", "-p", "ralphy-cli", "--bin", "ralphy"], cwd=REPO_ROOT, check=True)
+    subprocess.run(["cargo", "build", "-p", "ralphy-daemon", "--bins"], cwd=REPO_ROOT, check=True)
+
+
+def launch(daemon_dir):
+    return subprocess.Popen(
+        [EXE, "daemon", "--port", str(PORT)],
+        env=empty_env(daemon_dir),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
+def open_menu(page):
+    """Open the New console dropdown and return its rendered rows."""
+    if not page.evaluate(f"() => {SH}.agentMenu"):
+        page.evaluate(f"() => {{ {SH}.agentMenu = true; }}")
+    page.wait_for_timeout(250)
+    return page.locator(f"{MENU} .dropdown-item")
+
+
+def close_menu(page):
+    page.evaluate(f"() => {{ {SH}.agentMenu = false; }}")
+    page.wait_for_timeout(150)
+
+
+def sessions_of(page):
+    return page.request.get(BASE + "api/sessions").json()
+
+
+def row_by_label(page, label):
+    return page.locator(f"{MENU} .dropdown-item", has=page.locator(f"span:text-is('{label}')")).first
+
+
+def main():
+    os.makedirs(SHOT_DIR, exist_ok=True)
+    build()
+    daemon_dir = tempfile.mkdtemp(prefix="wb304_reg_")
+    fixture_dir = make_fixture_repo()
+    slug = register_fixture(daemon_dir, fixture_dir)
+
+    proc = launch(daemon_dir)
+    try:
+        if not wait_listening(BASE):
+            # A bare `return` here would skip the exit gate below and report
+            # success with ZERO browser assertions run.
+            check(f"daemon listening on {PORT}", False)
+            sys.exit(1)
+        check(f"daemon listening on {PORT}", True)
+
+        with sync_playwright() as p:
+            # DOM renderer, no WebGL: headless chromium's WebGL canvas reads
+            # empty text even when content shows (KNOWLEDGE.md).
+            browser = p.chromium.launch(headless=True, args=["--disable-webgl", "--disable-gpu"])
+            ctx = browser.new_context(viewport={"width": 1400, "height": 900})
+            page = ctx.new_page()
+            sockets = []
+            page.on("websocket", lambda ws: sockets.append(ws.url))
+            page.goto(BASE)
+            page.wait_for_selector("[x-data]", timeout=8000)
+
+            # --- scenario 1: the endpoint IS the roster -----------------------
+            served = page.evaluate("async () => (await fetch('/api/agents')).json()")
+            check(
+                "GET /api/agents serves one row per launchable adapter",
+                len(served) == len(EXPECTED),
+                f"got={served}",
+            )
+            check(
+                "…with the id/label/accelerator of every adapter, in digit order",
+                [(r["id"], r["accelerator"]) for r in served] == EXPECTED,
+                f"got={[(r['id'], r['accelerator']) for r in served]}",
+            )
+            check(
+                "…and exactly the roster's fields: identity, accelerator, availability",
+                all(
+                    sorted(r.keys()) == ["accelerator", "available", "id", "label", "reason"]
+                    for r in served
+                ),
+                f"keys={sorted(served[0].keys())}",
+            )
+
+            # --- scenario 2: the menu renders from it, disabled with no repo --
+            page.evaluate(f"() => {{ {SH}.openSlug = null; }}")
+            page.wait_for_timeout(200)
+            rows = open_menu(page)
+            labels = rows.locator("span:not(.row-live):not(.row-new)").all_inner_texts()
+            check(
+                "the menu renders the served roster, plain console LAST",
+                labels == [r["id"] for r in served] + ["console"],
+                f"got={labels}",
+            )
+            digits = rows.locator("kbd").all_inner_texts()
+            check(
+                "…each row carrying its accelerator DIGIT from the daemon, console on 0",
+                digits == [d for (_, d) in EXPECTED] + ["0"],
+                f"got={digits}",
+            )
+            disabled = page.evaluate(
+                f"() => [...document.querySelectorAll('{MENU} .dropdown-item')]"
+                ".map((b) => [b.disabled, b.getAttribute('title')])"
+            )
+            check(
+                "with no repo selected every AGENT row is disabled",
+                all(d[0] is True for d in disabled[:-1]),
+                f"got={[d[0] for d in disabled]}",
+            )
+            check(
+                "…and says why, verbatim",
+                all(d[1] == NEEDS_REPO for d in disabled[:-1]),
+                f"got={disabled[0][1]!r}",
+            )
+            check(
+                "…while the plain console stays enabled (it falls back to the home dir)",
+                disabled[-1][0] is False and (disabled[-1][1] or "") == "",
+                f"got={disabled[-1]}",
+            )
+
+            # --- scenario 3: selecting a repo enables them --------------------
+            close_menu(page)
+            page.evaluate(f"() => {{ {SH}.openSlug = '{slug}'; {SH}.active = 'consoles'; }}")
+            page.wait_for_timeout(300)
+            open_menu(page)
+            enabled = page.evaluate(
+                f"() => [...document.querySelectorAll('{MENU} .dropdown-item')]"
+                ".map((b) => [b.disabled, b.getAttribute('title')])"
+            )
+            check(
+                "selecting a repo enables every agent row",
+                all(e[0] is False for e in enabled),
+                f"got={[e[0] for e in enabled]}",
+            )
+            check(
+                "…and clears the explanation",
+                all((e[1] or "") == "" for e in enabled),
+                f"got={[e[1] for e in enabled]}",
+            )
+            check(
+                "no row reports a live session yet",
+                page.locator(f"{MENU} .dropdown-item .row-live:visible").count() == 0,
+                "",
+            )
+
+            # --- scenario 4: a live row REACHES its session -------------------
+            row_by_label(page, "claude").click()
+            page.wait_for_timeout(300)
+            page.locator(".session-window .xterm").first.wait_for(timeout=15000)
+            page.wait_for_timeout(800)
+            after_launch = sessions_of(page)
+            check(
+                "clicking an agent row with no live session launches one",
+                len(after_launch) == 1 and after_launch[0]["agent"] == "claude",
+                f"got={after_launch}",
+            )
+            # The presence tick feeds the fold; ask for it now rather than waiting.
+            page.evaluate(f"async () => {SH}.refreshLive()")
+            page.wait_for_timeout(400)
+            rows = open_menu(page)
+            claude_row = row_by_label(page, "claude")
+            check(
+                "the claude row now reports its live session, and how many",
+                claude_row.locator(".row-live").inner_text() == "1 live",
+                f"got={claude_row.locator('.row-live').inner_text()!r}",
+            )
+            check(
+                "…and it is the ONLY row reporting one",
+                page.locator(f"{MENU} .dropdown-item .row-live:visible").count() == 1,
+                f"got={page.locator('.dropdown-item .row-live:visible').count()}",
+            )
+            # The menu is "New console": the live row's click is a LAUNCH like
+            # any other. `/ws` is the daemon's control channel, always opened;
+            # only `/ws/session` sockets launch or attach a PTY (#303).
+            mark = len([u for u in sockets if "/ws/session" in u])
+            windows_before = page.locator(".session-window").count()
+            claude_row.click()
+            page.wait_for_timeout(300)
+            page.wait_for_function(
+                "() => document.querySelectorAll('.session-window .xterm').length === 2",
+                timeout=15000,
+            )
+            page.wait_for_timeout(800)
+            two = sessions_of(page)
+            check(
+                "clicking the live row launches a SECOND claude console",
+                len(two) == 2 and all(s["agent"] == "claude" for s in two),
+                f"got={two}",
+            )
+            opened = [u for u in sockets if "/ws/session" in u][mark:]
+            check(
+                "…through one launch socket, in a new window",
+                len(opened) == 1
+                and "agent=claude" in opened[0]
+                and page.locator(".session-window").count() == windows_before + 1,
+                f"new sockets={opened}",
+            )
+
+            # --- scenario 5: the count is a readout; there is no "+" ----------
+            page.evaluate(f"async () => {SH}.refreshLive()")
+            page.wait_for_timeout(400)
+            rows = open_menu(page)
+            page.screenshot(path=os.path.join(SHOT_DIR, "304-agent-menu-2026-07-25.png"))
+            check(
+                "the row counts both",
+                row_by_label(page, "claude").locator(".row-live").inner_text() == "2 live",
+                f"got={row_by_label(page, 'claude').locator('.row-live').inner_text()!r}",
+            )
+            check(
+                "…and carries no + (the click already launches)",
+                page.locator(f"{MENU} .row-new").count() == 0,
+                f"got={page.locator(f'{MENU} .row-new').count()}",
+            )
+
+            # --- scenario 6: the accelerators keep their digits ---------------
+            close_menu(page)
+            mark = len([u for u in sockets if "/ws/session" in u])
+            page.keyboard.press("Alt+Shift+Digit2")
+            page.wait_for_timeout(300)
+            page.wait_for_function(
+                "() => document.querySelectorAll('.session-window .xterm').length === 3",
+                timeout=15000,
+            )
+            page.wait_for_timeout(800)
+            opened = [u for u in sockets if "/ws/session" in u][mark:]
+            check(
+                "Alt+Shift+2 still opens a codex console",
+                len(opened) == 1 and "agent=codex" in opened[0] and f"repo={slug}" in opened[0],
+                f"new sockets={opened}",
+            )
+            check(
+                "…and the daemon really started it",
+                any(s["agent"] == "codex" for s in sessions_of(page)),
+                f"got={sessions_of(page)}",
+            )
+
+            # --- scenario 7: the accelerator IS the row's click -----------------
+            # A live row launches on click, so its key launches too.
+            mark = len([u for u in sockets if "/ws/session" in u])
+            windows_before = page.locator(".session-window").count()
+            page.evaluate(f"async () => {SH}.refreshLive()")
+            page.wait_for_timeout(400)
+            page.keyboard.press("Alt+Shift+Digit1")
+            page.wait_for_timeout(300)
+            page.wait_for_function(
+                "() => document.querySelectorAll('.session-window .xterm').length === 4",
+                timeout=15000,
+            )
+            page.wait_for_timeout(800)
+            check(
+                "Alt+Shift+1 on a LIVE claude row launches a fourth session",
+                len(sessions_of(page)) == 4,
+                f"got={sessions_of(page)}",
+            )
+            opened = [u for u in sockets if "/ws/session" in u][mark:]
+            check(
+                "…through a launch socket, in a new window",
+                len(opened) == 1
+                and "agent=claude" in opened[0]
+                and page.locator(".session-window").count() == windows_before + 1,
+                f"new sockets={opened}",
+            )
+
+            # --- scenario 8: a DISABLED row's accelerator is inert -------------
+            page.evaluate(f"() => {{ {SH}.openSlug = null; }}")
+            page.wait_for_timeout(300)
+            mark = len([u for u in sockets if "/ws/session" in u])
+            windows_before = page.locator(".session-window").count()
+            page.keyboard.press("Alt+Shift+Digit3")
+            page.wait_for_timeout(1200)
+            check(
+                "with no repo selected an agent accelerator launches nothing",
+                len(sessions_of(page)) == 4
+                and [u for u in sockets if "/ws/session" in u][mark:] == []
+                and page.locator(".session-window").count() == windows_before,
+                f"sessions={len(sessions_of(page))}",
+            )
+            page.evaluate(f"() => {{ {SH}.openSlug = '{slug}'; }}")
+            page.wait_for_timeout(200)
+
+            # --- scenario 9: a FAILED /api/agents in DAEMON mode shows nothing -
+            # The demo seed is for `file://` only; a daemon that cannot answer
+            # must not have adapters invented for it.
+            # `*` after the path: the roster URL carries `?repo=` once a repo is open.
+            page.route("**/api/agents*", lambda route: route.fulfill(status=500, body="nope"))
+            page.evaluate(f"async () => {SH}.loadAgents()")
+            page.wait_for_timeout(400)
+            check(
+                "a 500 from /api/agents leaves the roster EMPTY in daemon mode",
+                page.evaluate(f"() => [{SH}.roster.length, {SH}.agents.length]") == [0, 0],
+                f"got={page.evaluate(f'() => {SH}.roster')}",
+            )
+            open_menu(page)
+            check(
+                "…so the menu offers the plain console alone, never the demo seed",
+                page.locator(f"{MENU} .dropdown-item").count() == 1
+                and page.locator(f"{MENU} .dropdown-item span").first.inner_text() == "console",
+                f"rows={page.locator(f'{MENU} .dropdown-item').all_inner_texts()}",
+            )
+            close_menu(page)
+            page.unroute("**/api/agents*")
+            page.evaluate(f"async () => {SH}.loadAgents()")
+            page.wait_for_timeout(400)
+
+            # --- scenario 10: rows launch, nothing else; the head says it once -
+            page.evaluate(f"async () => {SH}.refreshLive()")
+            page.wait_for_timeout(300)
+            keys = page.evaluate(
+                f"() => {SH}.consoleItems().map((r) => Object.keys(r).sort().join(','))"
+            )
+            check(
+                "no row carries an action or a session id — a row is a launch",
+                all("action" not in k and "sessionId" not in k for k in keys),
+                f"got={keys}",
+            )
+            open_menu(page)
+            head = page.locator(f"{MENU} .dropdown-head")
+            check(
+                "the head names the repo by its bare name, the full ref on hover",
+                head.locator("span").inner_text() == slug.split("/")[-1]
+                and head.get_attribute("title") == slug,
+                f"got={head.locator('span').inner_text()!r} title={head.get_attribute('title')!r}",
+            )
+            check(
+                "…and states the accelerator pattern once; rows carry the digit",
+                head.locator("kbd").inner_text() == "Alt+Shift+<n>"
+                and row_by_label(page, "claude").locator("kbd").inner_text() == "1",
+                f"got={head.locator('kbd').inner_text()!r}",
+            )
+            close_menu(page)
+
+            # --- teardown: leave no helper child behind -----------------------
+            for s in sessions_of(page):
+                page.request.post(BASE + f"api/sessions/close?id={s['id']}")
+            page.wait_for_timeout(600)
+            check("every session closed before the daemon stops", sessions_of(page) == [], "")
+
+            ctx.close()
+            browser.close()
+    finally:
+        stop(proc)
+
+    # The count floor is load-bearing: an early `sys.exit` or a scenario that
+    # never ran must not report success on a handful of passing checks. 30 is
+    # the real maximum: the "not listening" and "listening" checks at startup
+    # are mutually exclusive branches, so only one of them ever runs.
+    ok = all(results) and len(results) >= 30
+    print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
+    if ok:
+        print("AGENT ROSTER")
+    sys.exit(0 if ok else 1)
+
+
+if __name__ == "__main__":
+    main()

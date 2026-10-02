@@ -87,7 +87,7 @@ pub(crate) fn scan_codex_with_stems(input: &CodexScan) -> Vec<(String, Interacti
             let actor_email = matched.and_then(|r| {
                 email_cache
                     .entry(r.slug.clone())
-                    .or_insert_with(|| repo_actor_email(&r.path))
+                    .or_insert_with(|| ralphy_git_read::user_email(Path::new(&r.path)))
                     .clone()
             });
 
@@ -252,21 +252,6 @@ fn ts_lt(a: &str, b: &str) -> bool {
         (Ok(a), Ok(b)) => a < b,
         _ => a < b,
     }
-}
-
-/// `git config user.email` for the attributed repo (ADR-0008 D7). `None` on a
-/// non-zero exit or empty output. Duplicated from `claude.rs` (ADR-0033 §7); the
-/// scan crate cannot depend on core (ADR-0032), so it shells out directly.
-fn repo_actor_email(path: &str) -> Option<String> {
-    let output = std::process::Command::new("git")
-        .args(["-C", path, "config", "user.email"])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let email = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    (!email.is_empty()).then_some(email)
 }
 
 /// Every `*.jsonl` under `dir`, recursively. Tolerant: an unreadable or missing

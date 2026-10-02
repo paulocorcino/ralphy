@@ -235,6 +235,8 @@ function shell(opts = {}) {
       return 1;
     },
   };
+  // No DOM here: the scroll to an opened row is checked in the browser.
+  state.$nextTick = () => {};
   const reloads = [];
   // What a real reload brings back after an add: the new tunnel peer's group.
   state.loadRepos = async () => {
@@ -403,7 +405,8 @@ test("shell: Connect adds the host and reloads the tree with no page reload", as
   assert.equal(state.addHost.open, false);
   await tick();
   const group = state.fleetGroups().find((g) => g.daemon === VPS_ID);
-  assert.equal(state.groupLabel(group), "vps: Linux");
+  assert.equal(state.groupHost(group), "vps");
+  assert.equal(state.groupLabel(group), "Linux");
 });
 
 test("shell: a failed Connect keeps the dialog open and does not reload", async () => {
@@ -425,6 +428,27 @@ test("shell: a failed Connect keeps the dialog open and does not reload", async 
   assert.equal(reloads.length, 0);
   assert.equal(state.addHost.open, true);
   assert.equal(state.addHost.failure.message, "Restart failed");
+});
+
+test("shell: a Connect that saved the host but ended non-zero still reloads the list", async () => {
+  const { state, replies, scripts, reloads } = shell();
+  replies["host.key"] = { status: "ok", key: { state: "known" } };
+  scripts["host.check"] = [
+    { status: "output", chunk: line({ event: "check", id: "ralphy", status: "pass" }) },
+    { status: "exited", code: 0 },
+  ];
+  scripts["host.add"] = [
+    { status: "output", chunk: line({ event: "added", name: "vps", daemon_id: VPS_ID, port: 7401 }) },
+    { status: "output", chunk: line({ event: "failed", kind: "other", message: "the tunnel does not reach its daemon" }) },
+    { status: "exited", code: 1 },
+  ];
+  state.openAddHost();
+  await tick();
+  state.addHostPick("svrapp");
+  await state.addHostNext();
+  state.addHostConnect();
+  assert.equal(reloads.length, 1);
+  assert.equal(state.addHost.open, true);
 });
 
 test("the add button sits in the Projects header, outside any group header", () => {

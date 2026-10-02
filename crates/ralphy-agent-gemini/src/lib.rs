@@ -31,6 +31,7 @@ use tracing::info;
 
 mod auth;
 mod command;
+mod console;
 mod context;
 mod model;
 mod outcome;
@@ -57,6 +58,9 @@ pub use settings::GeminiSettings;
 /// Whether the operator is authenticated, from the vendor's own exit code
 /// (ADR-0043 D6) — what `ralphy init`'s gate reports.
 pub use auth::{probe_gemini_login, GEMINI_AUTH_ERROR_MSG};
+
+/// The owned root and policy document a workbench console needs.
+pub use console::prepare_console_root;
 
 /// Locating the vendor's binary, which npm installs without an executable
 /// extension on Windows (ADR-0043 D16) — `ralphy init`'s presence gate goes

@@ -443,6 +443,7 @@ pub fn powershell_flavor(path: Option<&str>) -> PowerShellFlavor {
 
 /// The uid that owns this process — the launchd `gui/<uid>` domain.
 #[cfg(unix)]
+#[allow(unsafe_code, reason = "FFI: libc::getuid")]
 fn current_uid() -> Option<u32> {
     // SAFETY: `getuid` takes no arguments, cannot fail, and touches no memory.
     Some(unsafe { libc::getuid() })

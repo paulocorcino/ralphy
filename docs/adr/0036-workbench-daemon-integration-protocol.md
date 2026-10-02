@@ -6,7 +6,7 @@ Extended by ADR-0070 (proposed): §8 splits state by lifetime; ADR-0070 decides 
 
 Amended by ADR-0055 (the Write class gains `image.write`) and ADR-0059 (§8: `SessionInfo` gains `agent_state`), in addition to the dated amendments below.
 
-Amended by ADR-0069 (proposed): §3 allows the daemon read-only git facts through the shared `ralphy-git-read` crate, and nothing else.
+Amended by ADR-0069: §3 allows the daemon read-only git facts through the shared `ralphy-git-read` crate, and nothing else.
 
 The mock workbench shell (`mocks/workbench-shell/`) needs a real backend: the
 browser must drive the resident **daemon** (ADR-0032), and the daemon must reach
@@ -1029,7 +1029,7 @@ Mutate, so the relay's refusal of Spawn verbs does not apply.
   longer than 4096 bytes, or holds a control character. A refusal is one
   error frame, and nothing spawns.
 - `init` is a boolean. It adds `--init` only when the browser asked for it,
-  after it showed "Initialize git and add".
+  after it showed "Create repository and add".
 - The run lock does not apply. The project has no run yet.
 
 `daemon add` gains three refusals. They apply to the CLI as well, because the
@@ -1092,6 +1092,25 @@ agents would run in the wrong environment. The browser maps such a path to the
 peer for that distro and rewrites it to the Linux path before it calls either
 verb. When no such peer exists, the browser says so and does not call the
 verb. The daemon refuses the UNC form in any case (§2, §3).
+
+### 5. The reply also describes the listed folder (2026-10-01)
+
+`entries` describe the children of the listed folder. The browser also needs
+two facts about the folder itself. When the operator types a path that ends
+with a separator, that folder is the one they chose. And when the chosen folder
+is inside a repository, the button must name the repository root. So the reply
+carries one more field:
+
+- `dir`: `{path, root, added}`. `path` is the listed folder after `~`
+  expansion. `root` is the nearest folder, the listed one or an ancestor, that
+  holds a `.git` entry, or `null`. It is found by reading file metadata only,
+  so no `git` process runs. `added` is true when `root`, or the listed folder
+  when `root` is `null`, is in this daemon's registry.
+
+One refinement of the hidden-folder rule in §3: an entry whose name is exactly
+the typed prefix is kept, even when it is hidden. Without it, a hidden folder
+typed by its full name (for example `AppData` on Windows) looks like a folder
+that does not exist.
 
 ### Consequences
 

@@ -54,6 +54,7 @@ fn spec(local_port: u16) -> TunnelSpec {
     TunnelSpec {
         destination: "svrapp".into(),
         peer_port: 7257,
+        peer_socket: None,
         local_port,
         identity_file: None,
     }
@@ -132,6 +133,7 @@ fn descriptor(id: &str, port: u16, tunnel: Option<TunnelSpec>) -> PeerDescriptor
         address: "127.0.0.1".to_string(),
         port,
         environment: "Linux".to_string(),
+        os: String::new(),
         token: "peer-token".to_string(),
         protocol_version: PEER_PROTOCOL_VERSION,
         nudge: None,
@@ -273,6 +275,14 @@ async fn fleet_reports_the_two_tunnel_states() {
         row["state"], "tunnel-closed",
         "the dead ssh was replaced: {row}"
     );
+    // The stand-in wrote this on its stderr before it exited.
+    assert!(
+        row["diagnosis"]
+            .as_str()
+            .unwrap()
+            .contains("dispatch-stderr-marker"),
+        "the closed tunnel says what ssh said: {row}"
+    );
     let (_, fleet) = call(&local, "GET", "/api/fleet").await;
     let row = peer_row(&fleet, TUNNEL_ID);
     assert_eq!(row["state"], "tunnel-silent", "got: {row}");
@@ -332,6 +342,7 @@ fn description(token: &str) -> peer::DaemonDescription {
         require_token: true,
         autostart: true,
         running: true,
+        socket: None,
         token: Some(token.to_string()),
     }
 }

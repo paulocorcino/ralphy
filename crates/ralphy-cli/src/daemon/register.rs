@@ -17,7 +17,7 @@
 
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 
 use ralphy_core::git;
 use ralphy_daemon::registry;
@@ -56,6 +56,17 @@ pub(crate) fn register_or_migrate(registry_path: &Path, repo_root: &Path) -> Res
         Some(forge) if !is_forge(&derived) => (forge.clone(), Some(derived)),
         _ => (derived, None),
     };
+
+    // The slug is the key and the path is an attribute of it, so a second
+    // clone of a registered repo would move the entry away from the first one.
+    // Refused while the first path still exists; a path that is gone is the
+    // moved-repo case, and the entry is updated (ADR-0036 amendment "the
+    // registry verbs" §2).
+    if let Some(existing) = store.entry(&target) {
+        if !existing.same_root(repo_root) && Path::new(&existing.path).is_dir() {
+            bail!("{target} is already added from {}", existing.path);
+        }
+    }
 
     let mut migrated_from = Vec::new();
     for slug in matches {
@@ -298,5 +309,54 @@ mod tests {
             store.entry("new/name").unwrap().former_slugs,
             vec!["old/name".to_string()]
         );
+    }
+
+    /// Two clones of one `owner/repo`: the first stays registered, the second
+    /// is refused, and the registry file is unchanged.
+    #[test]
+    fn register_or_migrate_refuses_a_second_clone() {
+        let reg_dir = tempfile::tempdir().unwrap();
+        let registry_path = reg_dir.path().join("repos.toml");
+        let (first_dir, first) = repo();
+        let (second_dir, second) = repo();
+        for dir in [first_dir.path(), second_dir.path()] {
+            git(
+                dir,
+                &["remote", "add", "origin", "https://github.com/o/r.git"],
+            );
+        }
+        register_or_migrate(&registry_path, &first).unwrap();
+        let before = std::fs::read_to_string(&registry_path).unwrap();
+
+        let err = register_or_migrate(&registry_path, &second).expect_err("refused");
+
+        assert_eq!(
+            err.to_string(),
+            format!("o/r is already added from {}", first.to_string_lossy())
+        );
+        assert_eq!(std::fs::read_to_string(&registry_path).unwrap(), before);
+    }
+
+    /// The moved-repo case: the registered path is gone, so the same slug at a
+    /// new path updates the entry.
+    #[test]
+    fn register_or_migrate_updates_a_slug_whose_path_is_gone() {
+        let reg_dir = tempfile::tempdir().unwrap();
+        let registry_path = reg_dir.path().join("repos.toml");
+        let (dir, top) = repo();
+        git(
+            dir.path(),
+            &["remote", "add", "origin", "https://github.com/o/r.git"],
+        );
+        let mut store = registry::load_from(&registry_path).unwrap();
+        let gone = reg_dir.path().join("moved-away");
+        store.upsert("o/r", &gone.to_string_lossy());
+        registry::save_to(&store, &registry_path).unwrap();
+
+        let reg = register_or_migrate(&registry_path, &top).unwrap();
+
+        assert_eq!(reg.slug, "o/r");
+        let store = registry::load_from(&registry_path).unwrap();
+        assert_eq!(store.entry("o/r").unwrap().path, top.to_string_lossy());
     }
 }

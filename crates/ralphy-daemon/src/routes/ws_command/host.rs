@@ -6,7 +6,7 @@ use std::path::Path;
 
 use axum::extract::ws::WebSocket;
 
-use super::{collect_config, send_command, stream};
+use super::{collect_config, not_answered, send_command, stream};
 use crate::dispatch::{self, EffectClass, Verb};
 use crate::protocol::Command;
 
@@ -96,7 +96,7 @@ async fn collect_reply(
         _ => None,
     };
     match collect_config(argv, store_dir.to_path_buf(), daemon_id.map(str::to_owned)).await {
-        Some((Some(0), bytes)) => {
+        dispatch::Collected::Done(Some(0), bytes) => {
             let Some(field) = field else {
                 return serde_json::json!({ "status": "ok" });
             };
@@ -120,10 +120,16 @@ async fn collect_reply(
                 }
             }
         }
-        Some((_, bytes)) => serde_json::json!({
+        dispatch::Collected::Done(_, bytes) => serde_json::json!({
             "status": "error",
             "message": String::from_utf8_lossy(&bytes).trim(),
         }),
-        None => serde_json::json!({ "status": "error", "message": "host command failed to run" }),
+        dispatch::Collected::Failed(e) => {
+            tracing::warn!(error = %format!("{e:#}"), verb = ?verb, "a host command failed to run");
+            serde_json::json!({ "status": "error", "message": "host command failed to run" })
+        }
+        late @ (dispatch::Collected::StillRunning | dispatch::Collected::NoSlot) => {
+            not_answered(&late).expect("a late answer has a reply")
+        }
     }
 }

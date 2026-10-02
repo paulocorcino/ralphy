@@ -45,7 +45,12 @@ const MAX_PEER_BODY: usize = (crate::tree::MAX_IMAGE_BYTES as usize).div_ceil(3)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PeerStatus {
     Reachable,
-    Unauthorized,
+    /// The peer refused the token. `tunnel` is true when the peer is reached
+    /// through a tunnel, where the `--peer-store` advice for a WSL distro does
+    /// not apply.
+    Unauthorized {
+        tunnel: bool,
+    },
     VersionMismatch {
         theirs: u32,
         ours: u32,
@@ -67,6 +72,8 @@ pub enum PeerStatus {
     TunnelClosed {
         host: String,
         cause: Option<String>,
+        /// The last line the `ssh` that exited wrote on its stderr.
+        said: Option<String>,
     },
     /// The tunnel is open, but the daemon on the other end does not answer.
     TunnelSilent {
@@ -80,7 +87,7 @@ impl PeerStatus {
     pub fn state(&self) -> &'static str {
         match self {
             PeerStatus::Reachable => "reachable",
-            PeerStatus::Unauthorized => "unauthorized",
+            PeerStatus::Unauthorized { .. } => "unauthorized",
             PeerStatus::VersionMismatch { .. } => "version-mismatch",
             PeerStatus::Asleep { .. } => "asleep",
             PeerStatus::Unreachable { .. } => "unreachable",
@@ -98,9 +105,12 @@ impl PeerStatus {
     pub fn diagnosis(&self, environment: &str) -> String {
         match self {
             PeerStatus::Reachable => format!("{environment} is connected."),
-            PeerStatus::Unauthorized => {
+            PeerStatus::Unauthorized { tunnel: false } => {
                 format!("{environment} refused the token. Restart its daemon with --peer-store.")
             }
+            PeerStatus::Unauthorized { tunnel: true } => format!(
+                "{environment} refused the token. Another daemon may answer on this port, or the token changed. Add the host again."
+            ),
             PeerStatus::VersionMismatch { theirs, ours } => format!(
                 "{environment} uses protocol {theirs}, not {ours}. Upgrade the older Ralphy."
             ),
@@ -110,13 +120,25 @@ impl PeerStatus {
             PeerStatus::Unreachable { why } => {
                 format!("{environment} did not answer: {why}. Start its daemon.")
             }
-            PeerStatus::Refused { why } => format!("{environment} was not dialled: {why}."),
-            PeerStatus::TunnelClosed { host, cause: None } => {
-                format!("The tunnel to {host} is closed. Ralphy is opening it again.")
+            PeerStatus::Refused { why } => {
+                format!("Ralphy did not connect to {environment}: {why}.")
             }
             PeerStatus::TunnelClosed {
                 host,
+                cause: None,
+                said: None,
+            } => format!("The tunnel to {host} is closed. Ralphy is opening it again."),
+            PeerStatus::TunnelClosed {
+                host,
+                cause: None,
+                said: Some(said),
+            } => format!(
+                "The tunnel to {host} is closed: ssh said \"{said}\". Ralphy is opening it again."
+            ),
+            PeerStatus::TunnelClosed {
+                host,
                 cause: Some(cause),
+                ..
             } => format!("The tunnel to {host} is closed. Ralphy could not open it: {cause}."),
             PeerStatus::TunnelSilent { host, why } => format!(
                 "The tunnel to {host} is open, but its daemon does not answer: {why}. Start it."
@@ -210,19 +232,26 @@ pub fn classify_unreachable(
 /// Which tunnel state a failed dial was, from the answer of the ensure that
 /// followed it: `Ok(true)` means it had to start a new `ssh`, so the tunnel was
 /// closed; `Ok(false)` means the held `ssh` still runs, so the tunnel is open and
-/// the daemon behind it is silent. Pure: the ensure lives in `peer::tunnel`.
+/// the daemon behind it is silent. `said` is the last stderr line of the `ssh`
+/// that exited. Pure: the ensure lives in `peer::tunnel`.
 pub fn classify_tunnel(
     host: &str,
     ensured: std::result::Result<bool, String>,
     why: String,
+    said: Option<String>,
 ) -> PeerStatus {
     let host = host.to_string();
     match ensured {
-        Ok(true) => PeerStatus::TunnelClosed { host, cause: None },
+        Ok(true) => PeerStatus::TunnelClosed {
+            host,
+            cause: None,
+            said,
+        },
         Ok(false) => PeerStatus::TunnelSilent { host, why },
         Err(cause) => PeerStatus::TunnelClosed {
             host,
             cause: Some(cause),
+            said,
         },
     }
 }
@@ -241,10 +270,11 @@ async fn diagnose_failed_dial(d: &PeerDescriptor, why: String) -> PeerStatus {
         } else {
             &d.name
         };
-        let ensured = super::tunnel::hold_open(d.daemon_id.clone(), spec)
-            .await
-            .map_err(|e| format!("{e:#}"));
-        return classify_tunnel(host, ensured, why);
+        let (ensured, said) = match super::tunnel::hold_open(d.daemon_id.clone(), spec).await {
+            Ok((started, said)) => (Ok(started), said),
+            Err(e) => (Err(format!("{e:#}")), None),
+        };
+        return classify_tunnel(host, ensured, why, said);
     }
     let Some(distro) = d.nudge.as_ref().map(|spec| spec.distro.clone()) else {
         return PeerStatus::Unreachable { why };
@@ -519,7 +549,9 @@ pub async fn probe(d: &PeerDescriptor, me: SelfRef<'_>) -> PeerStatus {
         Err(e) => return diagnose_failed_dial(d, format!("{e:#}")).await,
     };
     if status == 401 || status == 403 {
-        return PeerStatus::Unauthorized;
+        return PeerStatus::Unauthorized {
+            tunnel: d.tunnel.is_some(),
+        };
     }
     if status != 200 {
         return PeerStatus::Unreachable {
@@ -542,6 +574,26 @@ pub async fn probe(d: &PeerDescriptor, me: SelfRef<'_>) -> PeerStatus {
                 d.address, d.port
             ),
         };
+    }
+    // ADR-0067 amendment M5: several daemons can share one host, so a port can
+    // answer with another daemon than the one this descriptor names. Skipped
+    // when either side has no id.
+    if let Some(answered) = answered_id {
+        if !d.daemon_id.is_empty() && answered != d.daemon_id {
+            // Only `host add` writes a tunnel descriptor, and running it again
+            // reads the identity and the socket anew.
+            let remedy = if d.tunnel.is_some() {
+                ". Add the host again"
+            } else {
+                ""
+            };
+            return PeerStatus::Refused {
+                why: format!(
+                    "another daemon answers at {}:{}: it is {answered}, not {}{remedy}",
+                    d.address, d.port, d.daemon_id
+                ),
+            };
+        }
     }
     let theirs = hello
         .as_ref()

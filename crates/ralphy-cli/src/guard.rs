@@ -62,8 +62,9 @@ static BASH_DENY_RULES: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| 
             "worktrees are the orchestrator's business, not the agent's",
         ),
         (
-            r"(?i)\bgh\s+pr\s+(merge|close)\b",
-            "merging/closing PRs is a human decision",
+            // Global flags (`-R o/r`, `--repo=o/r`) may sit between `gh` and `pr`.
+            r"(?i)\bgh(?:\s+-\S+(?:\s+[^-\s]\S*)?)*\s+pr\s+(create|edit|ready|reopen|review|comment|merge|close)\b",
+            "writing to a pull request is the operator's job",
         ),
         (
             r"(?i)\bgh\s+(release|repo|workflow|secret|auth)\b",
@@ -295,8 +296,10 @@ fn shell_tokens(segment: &str) -> Vec<String> {
 
 /// Deny-list for file-write tools.
 fn evaluate_file_write(tool_input: &Value, ctx: &GuardContext) -> GuardDecision {
+    // NotebookEdit names its file `notebook_path`.
     let path = tool_input
         .get("file_path")
+        .or_else(|| tool_input.get("notebook_path"))
         .and_then(Value::as_str)
         .unwrap_or("");
     if path.trim().is_empty() {
@@ -339,58 +342,121 @@ fn normalise_path(dir: &std::path::Path) -> String {
         .to_lowercase()
 }
 
-/// Run the `hook guard` subcommand: read the payload from stdin, evaluate it,
-/// and exit 0 (allow) or exit 2 (deny). Never returns — always calls
-/// `std::process::exit`.
-pub fn run_guard_hook() -> ! {
-    use std::io::Read;
-
-    let mut raw = String::new();
-    if std::io::stdin().read_to_string(&mut raw).is_err() || raw.trim().is_empty() {
-        std::process::exit(0);
-    }
-
-    let payload: Value = match serde_json::from_str(&raw) {
-        Ok(v) => v,
-        Err(_) => std::process::exit(0),
+/// Parse a hook payload and judge it. Input the guard cannot read — empty,
+/// blank, not JSON, a JSON root that is not an object, no `tool_name`, or a
+/// judged tool without its string `command` or path — is a deny: the guard
+/// fails closed. A readable payload is judged by the rules, so a tool the
+/// guard does not know is allowed.
+///
+/// `fallback_cwd` stands in for a payload without `cwd`; `tool_dir` and
+/// `temp_dir` are already in the [`GuardContext`] form.
+// ADR-0072 D6.
+pub fn decide_hook_input(
+    raw: &str,
+    fallback_cwd: Option<&std::path::Path>,
+    tool_dir: String,
+    temp_dir: String,
+) -> GuardDecision {
+    let Some(payload) = read_payload(raw) else {
+        let what = if raw.trim().is_empty() {
+            "empty input"
+        } else {
+            "not JSON"
+        };
+        return GuardDecision::Deny(format!("could not read the tool call: {what}"));
     };
-
-    let tool_name = payload
-        .get("tool_name")
-        .and_then(Value::as_str)
-        .unwrap_or("");
-    let tool_input = payload.get("tool_input").unwrap_or(&Value::Null);
-
-    let tool_dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(normalise_path))
-        .unwrap_or_default();
+    let (tool_name, tool_input) = tool_call(&payload);
+    if let Some(what) = unreadable_shape(&payload, tool_name, tool_input) {
+        return GuardDecision::Deny(format!("could not read the tool call: {what}"));
+    }
     // The hook payload's `cwd` is the agent's worktree; fall back to the
     // process cwd (hooks run in the project directory).
     let cwd = payload
         .get("cwd")
         .and_then(Value::as_str)
         .map(|s| normalise_path(std::path::Path::new(s)))
-        .or_else(|| std::env::current_dir().ok().map(|p| normalise_path(&p)))
+        .or_else(|| fallback_cwd.map(normalise_path))
         .unwrap_or_default();
-    let temp_dir = normalise_path(&std::env::temp_dir());
-
     let ctx = GuardContext {
         tool_dir,
         cwd,
         temp_dir,
     };
+    evaluate_guard(tool_name, tool_input, &ctx)
+}
 
-    match evaluate_guard(tool_name, tool_input, &ctx) {
+/// The payload as a JSON object, or `None` when it is not one.
+fn read_payload(raw: &str) -> Option<Value> {
+    if raw.trim().is_empty() {
+        return None;
+    }
+    serde_json::from_str::<Value>(raw)
+        .ok()
+        .filter(Value::is_object)
+}
+
+/// What is missing from a payload whose fields the rules need. The settings
+/// matcher sends only the tools the guard judges, so a call without a
+/// `tool_name`, or one of those tools without its string `command` or path,
+/// is a shape the guard cannot read, not a call with nothing to judge.
+fn unreadable_shape(payload: &Value, tool_name: &str, tool_input: &Value) -> Option<&'static str> {
+    if !payload.get("tool_name").is_some_and(Value::is_string) {
+        return Some("no tool_name");
+    }
+    let has_str = |key: &str| tool_input.get(key).is_some_and(Value::is_string);
+    match tool_name {
+        "Bash" if !has_str("command") => Some("no command"),
+        "Edit" | "Write" | "MultiEdit" if !has_str("file_path") => Some("no file_path"),
+        "NotebookEdit" if !has_str("file_path") && !has_str("notebook_path") => {
+            Some("no notebook_path")
+        }
+        _ => None,
+    }
+}
+
+fn tool_call(payload: &Value) -> (&str, &Value) {
+    let tool_name = payload
+        .get("tool_name")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    (tool_name, payload.get("tool_input").unwrap_or(&Value::Null))
+}
+
+/// Run the `hook guard` subcommand: read the payload from stdin, evaluate it,
+/// and exit 0 (allow) or exit 2 (deny). With `cost_gate`, an allowed Bash call
+/// also passes the verification-cost gate. Never returns — always calls
+/// `std::process::exit`.
+pub fn run_guard_hook(cost_gate: bool) -> ! {
+    use std::io::Read;
+
+    let mut raw = String::new();
+    // A read error leaves `raw` empty or partial; both are judged unreadable.
+    if std::io::stdin().read_to_string(&mut raw).is_err() {
+        raw.clear();
+    }
+    let tool_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(normalise_path))
+        .unwrap_or_default();
+    let process_cwd = std::env::current_dir().ok();
+    let temp_dir = normalise_path(&std::env::temp_dir());
+
+    match decide_hook_input(&raw, process_cwd.as_deref(), tool_dir, temp_dir) {
         GuardDecision::Allow => {
-            // Verification-cost gate (Bash only): deny re-paying a plan
-            // `## Verify` command already measured as expensive while the plan
-            // still has real work open. Safety-neutral and fail-open — any
-            // missing file or unknown cost allows.
-            if tool_name == "Bash" {
-                if let Some(reason) = evaluate_cmd_cost(&payload, tool_input) {
-                    eprintln!("BLOCKED by Ralphy guard: {reason}");
-                    std::process::exit(2);
+            // Verification-cost gate (Bash only, execute sessions only): deny
+            // re-paying a plan `## Verify` command already measured as
+            // expensive while the plan still has real work open.
+            // Safety-neutral and fail-open — any missing file or unknown cost
+            // allows.
+            if cost_gate {
+                if let Some(payload) = read_payload(&raw) {
+                    let (tool_name, tool_input) = tool_call(&payload);
+                    if tool_name == "Bash" {
+                        if let Some(reason) = evaluate_cmd_cost(&payload, tool_input) {
+                            eprintln!("BLOCKED by Ralphy guard: {reason}");
+                            std::process::exit(2);
+                        }
+                    }
                 }
             }
             std::process::exit(0)

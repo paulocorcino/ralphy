@@ -132,6 +132,7 @@ mod tests {
             address: "127.0.0.1".into(),
             port: 7257,
             environment: "wsl".into(),
+            os: String::new(),
             token: String::new(),
             protocol_version: ralphy_daemon::peer::PEER_PROTOCOL_VERSION,
             tunnel: None,

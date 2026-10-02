@@ -1,0 +1,13 @@
+{
+  "status": "ok",
+  "sync": {
+    "sync": {
+      "head": {
+        "kind": "detached",
+        "sha": "<sha>"
+      },
+      "last_fetch": null,
+      "tracking": null
+    }
+  }
+}

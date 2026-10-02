@@ -162,3 +162,20 @@ test("each modal's password fields render when THAT modal is open", () => {
   }
   assert.ok(checked >= 4, `expected the Settings and Security password fields, checked ${checked}`);
 });
+
+// The daemon refuses to write `queue.trust_all_comments` from a browser, so the
+// row declares it read-only and the toggle that renders it is disabled: a
+// checkbox that takes a click and answers "refused" is the failure.
+test("the read-every-comment toggle is read-only and rendered disabled", () => {
+  const { window } = loadShell();
+  const item = window.WB_SETTINGS.flatMap((s) => s.items).find(
+    (it) => it.key === "queue.trust_all_comments",
+  );
+  assert.equal(item.type, "toggle");
+  assert.equal(item.readonly, true);
+  assert.match(item.help, /ralphy config set queue\.trust_all_comments true/);
+  const html = withoutComments(readFileSync(join(UI, "index.html"), "utf8"));
+  const toggle = html.match(/<template x-if="it\.type === 'toggle'">\s*<input[^>]*>/);
+  assert.ok(toggle, "the toggle template is gone");
+  assert.match(toggle[0], /:disabled="it\.readonly === true"/);
+});

@@ -273,6 +273,52 @@ pub fn apply_triage(
     Ok(())
 }
 
+/// Under `--yes`, hold every `consolidate` item that draws on a comment by
+/// someone who is not an owner, member or collaborator: it becomes an
+/// `escalate` that names those comments, so no one but the operator publishes
+/// a spec built on a stranger's words (ADR-0017 A2). Fails closed: a thread
+/// that was not fetched, or a `drew_on` id the thread does not have, holds the
+/// item too. `queue.trust_all_comments` does not apply: a consolidation is
+/// posted under the operator's identity. Only the `--yes` branch of [`run`]
+/// calls this; interactive triage asks the operator instead. Returns the
+/// numbers of the held items.
+pub fn hold_untrusted_consolidations(
+    draft: &mut TriageDraft,
+    threads: &[github::IssueThread],
+) -> Vec<u64> {
+    let mut held = Vec::new();
+    for item in &mut draft.items {
+        if item.verdict != TriageVerdict::Consolidate {
+            continue;
+        }
+        let thread = threads
+            .iter()
+            .find(|t| t.number == item.number && t.not_fetched.is_none());
+        let untrusted: Vec<&str> = match thread {
+            None => vec!["the thread could not be read"],
+            Some(t) => item
+                .drew_on
+                .iter()
+                .filter(|id| !t.comment(id).is_some_and(|c| c.trusted))
+                .map(String::as_str)
+                .collect(),
+        };
+        if untrusted.is_empty() {
+            continue;
+        }
+        item.verdict = TriageVerdict::Escalate;
+        item.draft_issue = None;
+        item.comment = Some(format!(
+            "Not published by `ralphy triage --yes`: this consolidated spec draws on \
+             comments by people who are not owners, members or collaborators of the \
+             repository ({}). An operator must review it.",
+            untrusted.join(", ")
+        ));
+        held.push(item.number);
+    }
+    held
+}
+
 /// `ralphy triage`: list the `triage-agent` issues, run the judgment session,
 /// preview the verdicts, and apply them on confirm (or `--yes`).
 pub fn run(args: &TriageArgs) -> Result<()> {
@@ -332,16 +378,18 @@ pub fn run(args: &TriageArgs) -> Result<()> {
         accepts: agent.accepts_images(),
         adapter_name: agent.cli_name(),
     };
-    let attachments = github::fetch_triage_attachments(&repo, &numbers, images)?;
+    let mut attachments = github::fetch_triage_attachments(&repo, &numbers, images)?;
+    let thread_block = github::render_triage_threads(&attachments.threads);
 
     let out_path = repo.join(".ralphy").join("triage-draft.json");
     let req = TriageRequest {
         issue_numbers: &numbers,
         queue_label: &queue_label,
+        thread_block: &thread_block,
         attachments_manifest: &attachments.manifest,
         image_paths: &attachments.image_paths,
     };
-    let draft = triage_with_agent(
+    let mut draft = triage_with_agent(
         agent,
         &repo,
         &out_path,
@@ -350,12 +398,22 @@ pub fn run(args: &TriageArgs) -> Result<()> {
         Some(&args.effort),
         Duration::from_secs(args.max_minutes * 60),
     )?;
+    let threads = std::mem::take(&mut attachments.threads);
     // Pin the TempDir alive until AFTER the session has read the files; its Drop
     // deletes the attachment dir last (ADR-0025 §7).
     drop(attachments);
     draft
         .validate()
         .map_err(|reason| anyhow::anyhow!("triage draft is invalid: {reason}"))?;
+    // Held before the preview, so the preview shows what `--yes` applies.
+    if args.yes {
+        for number in hold_untrusted_consolidations(&mut draft, &threads) {
+            println!(
+                "held #{number}: the spec draws on a comment by someone who is not \
+                 an owner, member or collaborator"
+            );
+        }
+    }
 
     // Preview every outward action before publishing (ADR-0012 posture).
     println!("\nTriage verdicts:");

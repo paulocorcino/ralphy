@@ -13,8 +13,6 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 
-use crate::owner_only::set_owner_only;
-
 /// The daemon's persisted identity. `id` is minted exactly once and survives
 /// every rename or avatar change (mint-once); `name`/`avatar` are mutable.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -126,18 +124,48 @@ pub fn validate_name(raw: &str) -> std::result::Result<String, NameError> {
 /// first `.`, lowercased and stripped to `[a-z0-9-]`. Falls back to `"ralphy"`
 /// when the result is empty or itself reserved.
 pub fn suggest_name(hostname: &str) -> String {
-    let stem: String = hostname
-        .split('.')
+    let stem = name_stem(hostname);
+    if stem.is_empty() || RESERVED.iter().any(|r| stem.eq_ignore_ascii_case(r)) {
+        return "ralphy".to_string();
+    }
+    stem
+}
+
+/// The part of a machine or account name that a daemon name may hold: the
+/// segment before the first `.`, lowercased and stripped to `[a-z0-9-]`.
+fn name_stem(raw: &str) -> String {
+    raw.split('.')
         .next()
         .unwrap_or("")
         .to_ascii_lowercase()
         .chars()
         .filter(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == '-')
-        .collect();
-    if stem.is_empty() || RESERVED.iter().any(|r| stem.eq_ignore_ascii_case(r)) {
-        return "ralphy".to_string();
+        .collect()
+}
+
+/// The name a host daemon gets when the operator gives none: `host-user`, or
+/// `host` alone when the user is empty. When the result is taken (ignoring
+/// case) or not valid, `-2`, `-3` and so on are tried until one is free.
+/// `None` when the host part is empty.
+pub fn default_name(host: &str, user: Option<&str>, taken: &[String]) -> Option<String> {
+    let host = name_stem(host);
+    let user = name_stem(user.unwrap_or(""));
+    let base = match (host.is_empty(), user.is_empty()) {
+        (true, _) => return None,
+        (false, true) => host,
+        (false, false) => format!("{host}-{user}"),
+    };
+    let free = |n: &str| !taken.iter().any(|t| t.eq_ignore_ascii_case(n));
+    if let Ok(n) = validate_name(&base) {
+        if free(&n) {
+            return Some(n);
+        }
     }
-    stem
+    (2..).find_map(|i| {
+        validate_name(&format!("{base}-{i}"))
+            .ok()
+            .filter(|n| free(n))
+    })
 }
 
 /// Load an [`Identity`] from `path`, or `Ok(None)` when the file does not exist
@@ -157,13 +185,10 @@ pub fn load_from(path: &Path) -> Result<Option<Identity>> {
 /// Write `id` to `path` owner-only, creating the parent directory.
 pub fn save_to(id: &Identity, path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("creating {}", parent.display()))?;
+        crate::owner_only::create_owner_only_dir(parent)?;
     }
     let text = toml::to_string_pretty(id).context("serializing daemon identity")?;
-    std::fs::write(path, text).with_context(|| format!("writing {}", path.display()))?;
-    set_owner_only(path)?;
-    Ok(())
+    crate::owner_only::write_owner_only(path, text.as_bytes())
 }
 
 /// Baptize (or re-baptize) the daemon at `path`: mint-once semantics. Any
@@ -246,6 +271,33 @@ mod tests {
         assert_eq!(suggest_name("MyBox.example.com"), "mybox");
         assert_eq!(suggest_name("run"), "ralphy", "reserved stem falls back");
         assert_eq!(suggest_name("...."), "ralphy", "empty stem falls back");
+    }
+
+    #[test]
+    fn default_name_joins_host_and_user() {
+        assert_eq!(
+            default_name("vps.example.com", Some("Ralphy1"), &[]),
+            Some("vps-ralphy1".to_string())
+        );
+        assert_eq!(default_name("vps", None, &[]), Some("vps".to_string()));
+        assert_eq!(default_name("vps", Some(""), &[]), Some("vps".to_string()));
+    }
+
+    #[test]
+    fn default_name_counts_up_past_a_taken_or_reserved_name() {
+        let taken = vec!["vps-ralphy1".to_string(), "VPS-ralphy1-2".to_string()];
+        assert_eq!(
+            default_name("vps", Some("ralphy1"), &taken),
+            Some("vps-ralphy1-3".to_string())
+        );
+        // "run" is reserved, so "run" alone is refused and "run-2" is the first valid name.
+        assert_eq!(default_name("run", None, &[]), Some("run-2".to_string()));
+    }
+
+    #[test]
+    fn default_name_is_none_without_a_host() {
+        assert_eq!(default_name("", Some("ralphy1"), &[]), None);
+        assert_eq!(default_name("...", Some("ralphy1"), &[]), None);
     }
 
     #[test]

@@ -6,8 +6,6 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
-pub(crate) use crate::owner_only::set_owner_only;
-
 /// Env override for the access token: when set non-empty it wins over the
 /// on-disk token (a spawned daemon can be handed its token this way). Stripped
 /// from the process env at boot so no child inherits it (mirrors
@@ -53,12 +51,9 @@ pub fn load_token_from(path: &Path) -> Result<Option<String>> {
 /// Write `token` to `path` owner-only, creating the parent directory.
 pub fn save_token_to(token: &str, path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("creating {}", parent.display()))?;
+        crate::owner_only::create_owner_only_dir(parent)?;
     }
-    std::fs::write(path, token).with_context(|| format!("writing {}", path.display()))?;
-    set_owner_only(path)?;
-    Ok(())
+    crate::owner_only::write_owner_only(path, token.as_bytes())
 }
 
 /// Generate a fresh access token: 32 CSPRNG bytes (256 bits) hex-encoded to 64

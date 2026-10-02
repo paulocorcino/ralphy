@@ -31,7 +31,9 @@
 //! the now-broken pipe return a non-fatal `EPIPE`/Windows write error rather than
 //! killing it. The obligation this adds is on the DAEMON, not the child: a live
 //! daemon MUST drain the reader to EOF continuously, so the pipe never fills and
-//! stalls the child. The handler's detached drain task discharges that.
+//! stalls the child. The handler's detached drain task discharges that; its
+//! channel to the browser is bounded, and a browser that does not take a frame
+//! within the stream's send deadline is given up, so the drain then discards.
 //!
 //! The [`Spawner`]/[`Child`] seam keeps this module unit-testable: a `FakeSpawner`
 //! records the argv and returns a preset exit code without touching the OS.
@@ -39,7 +41,9 @@
 use crate::session::Agent;
 
 mod argv;
+mod gemini;
 mod host;
+mod registry;
 mod spawn;
 
 #[cfg(test)]
@@ -50,8 +54,13 @@ pub use argv::{
     project_remove_argv, run_stop_argv, spawn_argv, sync_argv, sync_status_argv, worktree_add_argv,
     worktree_list_argv, worktree_remove_argv, ArgvError,
 };
+pub use gemini::gemini_root_argv;
 pub use host::{host_argv, host_password};
-pub use spawn::{collect, dispatch, ralphy_exe, Child, ProcessSpawner, Spawner};
+pub use registry::project_add_argv;
+#[cfg(test)]
+pub(crate) use spawn::MAX_COLLECT_CHILDREN;
+pub use spawn::{collect, dispatch, ralphy_exe, Child, ProcessSpawner, Spawner, REPLY_DEADLINE};
+pub(crate) use spawn::{collect_within, Collected, COLLECT_SLOTS};
 
 /// The effect class of a verb (ADR-0036 §2). The registry's shape: `Native` runs
 /// in-daemon, `Observe`/`Query` read state, `Spawn` launches a detached `ralphy`
@@ -261,6 +270,10 @@ pub enum Verb {
     HostInstall,
     /// Remove a host (Spawn: `host remove --json`).
     HostRemove,
+    /// List one level of folder names on the daemon's disk (Observe, no repo).
+    DirList,
+    /// Register a folder (Mutate: `daemon add [--init] -- <path>`, no repo).
+    ProjectAdd,
 }
 
 impl Verb {
@@ -324,6 +337,8 @@ impl Verb {
             "host.add" => Some(Verb::HostAdd),
             "host.install" => Some(Verb::HostInstall),
             "host.remove" => Some(Verb::HostRemove),
+            "dir.list" => Some(Verb::DirList),
+            "project.add" => Some(Verb::ProjectAdd),
             _ => None,
         }
     }
@@ -379,6 +394,8 @@ impl Verb {
         Verb::HostAdd,
         Verb::HostInstall,
         Verb::HostRemove,
+        Verb::DirList,
+        Verb::ProjectAdd,
     ];
 
     /// The effect class of this verb (ADR-0036 §2): the Observe read verbs read
@@ -393,7 +410,8 @@ impl Verb {
             | Verb::FileRead
             | Verb::ImageRead
             | Verb::NoteRead
-            | Verb::RunsList => EffectClass::Observe,
+            | Verb::RunsList
+            | Verb::DirList => EffectClass::Observe,
             Verb::ConfigGet
             | Verb::BoardList
             | Verb::IssueShow
@@ -420,6 +438,7 @@ impl Verb {
             | Verb::ChangesDiscard
             | Verb::RunStop
             | Verb::ProjectRemove
+            | Verb::ProjectAdd
             | Verb::HostTrust => EffectClass::Mutate,
             Verb::FileWrite
             | Verb::FileCreate
@@ -564,10 +583,21 @@ mod tests {
             7,
             "the host family is seven verbs"
         );
+        // The registry family (ADR-0036 amendment "the registry verbs"): a
+        // one-level folder read and a spawn of `daemon add`, the one owner of
+        // the registry file. Neither is a host verb: both are relayed to a peer.
+        for (query, verb, class) in [
+            ("dir.list", Verb::DirList, EffectClass::Observe),
+            ("project.add", Verb::ProjectAdd, EffectClass::Mutate),
+        ] {
+            assert_eq!(Verb::from_query(query), Some(verb));
+            assert_eq!(verb.effect_class(), class, "{query}");
+            assert!(!verb.is_host(), "{query}");
+        }
         assert_eq!(
             Verb::ALL.len(),
-            49,
-            "the registry holds exactly forty-nine verbs"
+            51,
+            "the registry holds exactly fifty-one verbs"
         );
     }
 
@@ -732,6 +762,10 @@ mod tests {
             "host.list",
             "host.run",
             "host.exec",
+            "dir",
+            "dir.read",
+            "dir.create",
+            "project.create",
         ] {
             assert_eq!(
                 Verb::from_query(rejected),
@@ -773,7 +807,7 @@ mod tests {
             }
         }
         assert_eq!(count, 13, "the family is the 13 git-backed verbs");
-        assert_eq!(Verb::ALL.len(), 49, "Verb::ALL grew — revisit the family");
+        assert_eq!(Verb::ALL.len(), 51, "Verb::ALL grew — revisit the family");
 
         for &v in Verb::ALL {
             if matches!(

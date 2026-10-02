@@ -117,6 +117,7 @@ fn json_connected_fixed_added_and_linger_lines() {
         address: "127.0.0.1".to_string(),
         port: 7401,
         environment: "Linux".to_string(),
+        os: String::new(),
         token: String::new(),
         protocol_version: 3,
         nudge: None,

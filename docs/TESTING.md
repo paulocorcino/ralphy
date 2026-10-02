@@ -144,6 +144,14 @@ A pin follows these rules:
 - **A scanner proves it scans.** A lint or guard over many files has a known-bad
   fixture it must catch.
 
+## Browser checks
+
+A Playwright script in `tests/browser/<area>/wb_*.py` checks the
+workbench in a real browser, against a daemon with a scratch store
+(`RALPHY_DAEMON_DIR`). Its screenshots go to `.ralphy/screenshots/`, which git
+ignores. Never write them under `docs/`, and never commit them: a screenshot is
+the evidence of one run, and the script makes it again.
+
 ## Cost
 
 The suite is bound by process creation on Windows (see

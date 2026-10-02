@@ -38,9 +38,16 @@ pub struct FederatedRepo {
     pub daemon_id: String,
     pub daemon_name: String,
     pub environment: String,
+    /// The owning daemon's OS family (`std::env::consts::OS`), for the icon.
+    /// Empty for a peer whose descriptor predates the field.
+    pub os: String,
     /// [`LOCAL_STATE`], or the peer's liveness state.
     pub peer_state: String,
     pub slug: String,
+    /// What the operator calls the repo ([`crate::registry::project_name`]).
+    /// Built here from `slug` and `path`, so an older peer that serves no name
+    /// still gets one.
+    pub name: String,
     pub path: String,
     /// Whether the path resolves to a directory. Read-time for a LOCAL row; for a
     /// peer row it is the peer's own answer, which is `false` while the peer is
@@ -108,8 +115,10 @@ pub fn aggregate(
             daemon_id: local_id.to_string(),
             daemon_name: local_name.to_string(),
             environment: local_env.to_string(),
+            os: std::env::consts::OS.to_string(),
             peer_state: LOCAL_STATE.to_string(),
             slug: slug.clone(),
+            name: crate::registry::project_name(slug, &entry.path),
             path: entry.path.clone(),
             reachable: entry.reachable(),
             branch: entry.head_branch(),
@@ -130,8 +139,10 @@ pub fn aggregate(
             daemon_id: d.daemon_id.clone(),
             daemon_name: d.name.clone(),
             environment: d.environment.clone(),
+            os: d.os.clone(),
             peer_state: status.state().to_string(),
             slug: slug.clone(),
+            name: crate::registry::project_name(slug, &row.path),
             path: row.path.clone(),
             reachable: peer_live && row.reachable,
             branch: row.branch.clone(),

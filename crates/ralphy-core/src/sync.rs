@@ -20,14 +20,8 @@ use serde::Serialize;
 
 use crate::git::{git, raw, raw_env};
 
-/// What HEAD points at. Detached is a STATE, not a failure: a repo mid-bisect
-/// or on a checked-out tag reports it and the UI renders it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum Head {
-    Branch { name: String },
-    Detached { sha: String },
-}
+/// What HEAD points at. Defined in `ralphy-git-read` (ADR-0069 D1).
+pub use ralphy_git_read::Head;
 
 /// The branch's relation to its upstream. Absent (`Option::None` on
 /// [`SyncStatus`]) when there is no upstream at all — which is a different
@@ -55,7 +49,7 @@ pub struct SyncStatus {
 /// `repo` must be the git TOPLEVEL, as [`crate::changes::changes`] requires:
 /// callers resolve with [`crate::git::resolve_toplevel`].
 pub fn status(repo: &Path) -> Result<SyncStatus> {
-    let head = head_of(repo)?;
+    let head = ralphy_git_read::head(repo)?;
     let tracking = tracking_of(repo, &head)?;
     let last_fetch = last_fetch_of(repo)?;
     Ok(SyncStatus {
@@ -63,21 +57,6 @@ pub fn status(repo: &Path) -> Result<SyncStatus> {
         tracking,
         last_fetch,
     })
-}
-
-/// HEAD as a branch name, or the short sha when detached. `symbolic-ref` exits
-/// 1 on a detached HEAD, which is the whole discrimination — an unborn branch
-/// still resolves here, so a fresh `git init` reports `Branch`.
-fn head_of(repo: &Path) -> Result<Head> {
-    let out = raw(repo, &["symbolic-ref", "--quiet", "--short", "HEAD"])?;
-    if out.status.success() {
-        return Ok(Head::Branch {
-            name: String::from_utf8_lossy(&out.stdout).trim().to_string(),
-        });
-    }
-    let sha = git(repo, &["rev-parse", "--short", "HEAD"])
-        .context("resolving the sha of a detached HEAD")?;
-    Ok(Head::Detached { sha })
 }
 
 /// The upstream and the two counts, or `None` when there is nothing to compare
@@ -221,7 +200,7 @@ pub fn fetch(repo: &Path) -> Result<FetchOutcome> {
 /// remotes, none of them `origin`, and no branch config) is `None`: this module
 /// has no way to pick, and guessing is worse than refusing.
 fn remote_for_head(repo: &Path) -> Result<Option<String>> {
-    if let Head::Branch { name } = head_of(repo)? {
+    if let Head::Branch { name } = ralphy_git_read::head(repo)? {
         let key = format!("branch.{name}.remote");
         let out = raw(repo, &["config", "--get", &key])?;
         if out.status.success() {

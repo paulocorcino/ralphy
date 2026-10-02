@@ -3,7 +3,8 @@ use crate::host::ssh::tests::out;
 use CheckId::*;
 
 // format of `id -u`, `id -un` and `loginctl show-user <user> --property=Linger`
-const LINUX_USER: &str = "--- uid\n1000\n--- user\npaulo\n--- linger\nLinger=yes\n";
+const LINUX_USER: &str =
+    "--- host\nsvr.example.com\n--- uid\n1000\n--- user\npaulo\n--- linger\nLinger=yes\n";
 const LINUX_ROOT: &str = "--- uid\n0\n--- user\nroot\n--- linger\nLinger=yes\n";
 const LINUX_NO_LINGER: &str = "--- uid\n1000\n--- user\npaulo\n--- linger\nLinger=no\n";
 
@@ -45,6 +46,7 @@ pub(crate) fn description(os: &str) -> DaemonDescription {
         require_token: true,
         autostart: true,
         running: true,
+        socket: None,
         token: None,
     }
 }
@@ -230,6 +232,76 @@ fn checks_name_used_in_fleet() {
 }
 
 #[test]
+fn the_probe_reads_the_host_name_on_each_os() {
+    // format of `uname -n` and `hostname`; cmd's `echo %USERNAME% &` keeps a trailing space
+    assert_eq!(
+        parse_facts(HostOs::Linux, LINUX_USER).host.as_deref(),
+        Some("svr.example.com")
+    );
+    let mac = parse_facts(
+        HostOs::MacOs,
+        "--- host\nMacBook.local\n--- uid\n501\n--- user\npaulo\n",
+    );
+    assert_eq!(mac.host.as_deref(), Some("MacBook.local"));
+    assert_eq!(mac.user.as_deref(), Some("paulo"));
+    let win = parse_facts(
+        HostOs::Windows,
+        "--- host \r\nDESKTOP-1\r\n--- user \r\nPaulo \r\n--- groups \r\nx\r\n",
+    );
+    assert_eq!(win.host.as_deref(), Some("DESKTOP-1"));
+    assert_eq!(win.user.as_deref(), Some("Paulo"));
+}
+
+fn unnamed() -> RalphyOnHost {
+    let mut d = description("linux");
+    d.name = None;
+    RalphyOnHost::Described(d)
+}
+
+#[test]
+fn an_unnamed_host_gets_its_default_name_in_the_first_run() {
+    let facts = parse_facts(HostOs::Linux, LINUX_USER);
+    let checks = evaluate(&facts, &unnamed(), &[], "svrapp", None);
+    let name = get(&checks, Name);
+    assert_eq!(
+        name.status,
+        CheckStatus::Fix(HostOp::SetName {
+            name: "svr-paulo".to_string(),
+            avatar: 1
+        })
+    );
+    assert!(name.text.contains("svr-paulo"), "{name:?}");
+    assert!(!checks.iter().any(HostCheck::is_blocking));
+}
+
+#[test]
+fn the_default_name_skips_a_name_the_fleet_has() {
+    let facts = parse_facts(HostOs::Linux, LINUX_USER);
+    let fleet = vec!["svr-paulo".to_string()];
+    let checks = evaluate(&facts, &unnamed(), &fleet, "svrapp", None);
+    assert_eq!(
+        get(&checks, Name).status,
+        CheckStatus::Fix(HostOp::SetName {
+            name: "svr-paulo-2".to_string(),
+            avatar: 1
+        })
+    );
+}
+
+#[test]
+fn wanted_name_beats_the_default() {
+    let facts = parse_facts(HostOs::Linux, LINUX_USER);
+    let checks = evaluate(&facts, &unnamed(), &[], "svrapp", Some("Box-2"));
+    assert_eq!(
+        get(&checks, Name).status,
+        CheckStatus::Fix(HostOp::SetName {
+            name: "box-2".to_string(),
+            avatar: 1
+        })
+    );
+}
+
+#[test]
 fn checks_unnamed_host_takes_the_wanted_name() {
     let facts = parse_facts(HostOs::Linux, LINUX_USER);
     let mut d = description("linux");
@@ -245,6 +317,8 @@ fn checks_unnamed_host_takes_the_wanted_name() {
         })
     );
 
+    // no host name in the probe, so there is no default to give
+    let facts = parse_facts(HostOs::Linux, "--- uid\n1000\n--- user\npaulo\n");
     let checks = evaluate(&facts, &ralphy, &[], "svrapp", None);
     let name = get(&checks, Name);
     assert_eq!(

@@ -5,7 +5,7 @@
 use std::io::Write;
 
 use anyhow::{bail, Result};
-use ralphy_daemon::identity::validate_name;
+use ralphy_daemon::identity::{default_name, validate_name};
 use ralphy_daemon::peer::{DaemonDescription, PEER_PROTOCOL_VERSION};
 
 use super::shell::{keys_path, HostOp, HostOs};
@@ -18,6 +18,8 @@ pub(crate) struct HostFacts {
     pub os: HostOs,
     pub uid: Option<u32>,
     pub user: Option<String>,
+    /// What `uname -n` or `hostname` printed.
+    pub host: Option<String>,
     /// What `uname -m` or `PROCESSOR_ARCHITECTURE` printed.
     pub arch: Option<String>,
     pub linger: Option<bool>,
@@ -47,6 +49,7 @@ pub(crate) fn parse_facts(os: HostOs, probe_stdout: &str) -> HostFacts {
         os,
         uid: None,
         user: None,
+        host: None,
         arch: None,
         linger: None,
         filevault: None,
@@ -59,6 +62,7 @@ pub(crate) fn parse_facts(os: HostOs, probe_stdout: &str) -> HostFacts {
         match name {
             "uid" => facts.uid = first.and_then(|l| l.parse().ok()),
             "user" => facts.user = first.map(str::to_string),
+            "host" => facts.host = first.map(str::to_string),
             "arch" => facts.arch = first.map(str::to_string),
             "linger" => {
                 facts.linger = lines.iter().find_map(|l| match *l {
@@ -311,7 +315,7 @@ pub(crate) fn evaluate(
 
     let (status, text) = match described {
         None => pending(),
-        Some(d) => name_check(d, fleet_names, destination, wanted_name),
+        Some(d) => name_check(d, facts, fleet_names, destination, wanted_name),
     };
     checks.push(HostCheck::new(CheckId::Name, status, text));
 
@@ -413,6 +417,7 @@ pub(crate) fn evaluate(
 
 fn name_check(
     d: &DaemonDescription,
+    facts: &HostFacts,
     fleet_names: &[String],
     destination: &str,
     wanted_name: Option<&str>,
@@ -428,10 +433,23 @@ fn name_check(
         Some(n) if taken(n) => used(n),
         Some(n) => (CheckStatus::Pass, format!("the daemon is named {n}")),
         None => match wanted_name.map(validate_name) {
-            None => (
-                CheckStatus::Copy(format!("ralphy host add {destination} --name <name>")),
-                "the daemon on the host has no name".to_string(),
-            ),
+            None => match facts
+                .host
+                .as_deref()
+                .and_then(|h| default_name(h, facts.user.as_deref(), fleet_names))
+            {
+                Some(n) => (
+                    CheckStatus::Fix(HostOp::SetName {
+                        name: n.clone(),
+                        avatar: 1,
+                    }),
+                    format!("the daemon has no name: Ralphy names it {n}"),
+                ),
+                None => (
+                    CheckStatus::Copy(format!("ralphy host add {destination} --name <name>")),
+                    "the daemon on the host has no name".to_string(),
+                ),
+            },
             Some(Err(e)) => (
                 CheckStatus::Copy(format!("ralphy host add {destination} --name <name>")),
                 format!("the name is not valid: {e}"),

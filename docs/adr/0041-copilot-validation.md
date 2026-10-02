@@ -33,8 +33,8 @@ cannot settle are settled here:
 Status: **accepted** — executed against `paulocorcino/FinCal` on 2026-07-22
 ([#272](https://github.com/paulocorcino/ralphy/issues/272)). Every phase below ran;
 the observations, numbers and log lines are in the companion
-[docs/evidence/272-copilot-capstone-live.md](../evidence/272-copilot-capstone-live.md)
-(and the raw captures under `docs/live/copilot-272-*.log`). Phases 0, 1, 2a, 2b, 3,
+[docs/spike/evidence/272-copilot-capstone-live.md](../spike/evidence/272-copilot-capstone-live.md)
+(and the raw captures under `docs/spike/live/copilot-272-*.log`). Phases 0, 1, 2a, 2b, 3,
 3.4, 4, 5 and 6 are green; 2c fired the planner-infeasible block live (the executor
 `RALPHY_BLOCKED_EXIT` path stays unit-validated); **Phase 4b — the real account-quota
 ceiling — remains unobserved and is deferred by maintainer ruling** (the

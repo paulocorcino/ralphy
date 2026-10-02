@@ -10,10 +10,12 @@
 //! spelling holds end to end.
 
 use std::collections::BTreeMap;
-use std::path::Path;
 
-use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+
+mod store;
+
+pub use store::{is_parse_error, load_from, move_aside, save_to};
 
 /// A window's restore box, in absolute STAGE pixels. No proportional or
 /// per-resolution form: the stage is a plane whose origin is pinned at 0,0, so a
@@ -417,27 +419,6 @@ fn fold_by_id<T>(
     out
 }
 
-/// Load the desk from `path`. A missing file AND a corrupt one both read as an
-/// empty desk — deliberately diverging from [`crate::registry::load_from`],
-/// which returns a `Result`: an unreadable layout costs a cascaded stage, not a
-/// daemon, so this must never give a caller a startup failure to propagate.
-pub fn load_from(path: &Path) -> DeskStore {
-    match std::fs::read_to_string(path) {
-        Ok(text) => match toml::from_str(&text) {
-            Ok(store) => store,
-            Err(e) => {
-                tracing::warn!(path = %path.display(), error = %e, "unreadable desk layout — starting from an empty desk");
-                DeskStore::default()
-            }
-        },
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => DeskStore::default(),
-        Err(e) => {
-            tracing::warn!(path = %path.display(), error = %e, "could not read desk layout — starting from an empty desk");
-            DeskStore::default()
-        }
-    }
-}
-
 /// Whether a rect is one this daemon will persist: every component finite, and
 /// the origin on the stage.
 ///
@@ -463,26 +444,6 @@ pub fn rect_is_sane(r: &DeskRect) -> bool {
         && r.height.is_finite()
         && r.left >= 0.0
         && r.top >= 0.0
-}
-
-/// Write the desk to `path` owner-only, creating the parent directory.
-///
-/// ATOMIC: written to a sibling temp file and renamed over the target, because
-/// this is written on every drag, resize and close. A truncated in-place write
-/// would read back as an empty desk ([`load_from`] maps a parse error to
-/// `default()`), losing the layout silently instead of noisily.
-pub fn save_to(store: &DeskStore, path: &Path) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("creating {}", parent.display()))?;
-    }
-    let text = toml::to_string_pretty(store).context("serializing desk layout")?;
-    let tmp = path.with_extension("toml.tmp");
-    std::fs::write(&tmp, text).with_context(|| format!("writing {}", tmp.display()))?;
-    crate::registry::set_owner_only(&tmp)?;
-    std::fs::rename(&tmp, path)
-        .with_context(|| format!("replacing {} with {}", path.display(), tmp.display()))?;
-    Ok(())
 }
 
 #[cfg(test)]

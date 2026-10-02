@@ -17,37 +17,45 @@
    state and stay where that state is.
    --------------------------------------------------------------------------- */
 window.WBProject = (function () {
-  // Sidebar row label: just the repo name (last slug segment), UPPERCASED. The
+  // Sidebar row label: just the repo name (last segment), UPPERCASED. The
   // full `owner/repo` already shows in the top crumb, so trimming the owner here
   // declutters the accordion.
   function repoLabel(p) {
-    // A remoteless repo has no name in its slug: ADR-0008 D7 keys it
-    // `path-<hash>`, which reads as twenty useless characters in a fixed 300px
-    // column. The directory basename is what the operator calls it. The `/`
-    // test is not optional — `slug_from_url` always yields `owner/repo`, so a
-    // real GitHub repo named `owner/path-utils` is NOT this case and must
-    // never be re-labelled off disk (#332).
-    if (!p.slug.includes("/") && p.slug.startsWith("path-")) {
-      // Windows and POSIX in one pass. Trailing separators go FIRST, or
-      // `C:\src\widget\` basenames to the empty string.
-      const base = String(p.path || "")
-        .replace(/[\\/]+$/, "")
-        .split(/[\\/]/)
-        .pop();
-      if (base) return base.toUpperCase();
-    }
-    return (p.slug.split("/").pop() || p.slug).toUpperCase();
+    return (projectName(p).split("/").pop() || p.slug).toUpperCase();
+  }
+
+  // What the operator calls the project: the daemon's `name` (`owner/repo`, or
+  // the folder of a remoteless repo, whose slug is a `path-<hash>` key). A row
+  // from a daemon older than that field falls back to the slug.
+  function projectName(p) {
+    return p.name || p.slug;
+  }
+
+  // What a tooltip says to tell two projects apart: `owner/repo`, or the full
+  // folder of a remoteless repo. Never the hash key.
+  function projectTitle(p) {
+    return projectName(p) !== p.slug && p.path ? p.path : projectName(p);
   }
 
   // The row's tooltip. A PEER row says its environment and never its branch:
   // the branch belongs to a checkout this daemon can see, and a peer's is not
   // one of those.
   function rowTitle(p) {
+    const who = projectTitle(p);
     if (p.daemon) {
-      return `${p.slug} · ${p.env}`;
+      return `${who} · ${p.env}`;
     }
-    if (!p.branch) return p.slug;
-    return `${p.slug} · ${p.branch}${p.dirty ? " (uncommitted changes)" : ""}`;
+    const label = headLabel(p);
+    if (!label) return who;
+    return `${who} · ${label}${p.dirty ? " (uncommitted changes)" : ""}`;
+  }
+
+  // What the project's HEAD is called: its branch, else the short sha of a
+  // detached HEAD (as the Changes panel names it), else nothing.
+  function headLabel(p) {
+    if (p.branch) return p.branch;
+    if (p.head && p.head.kind === "detached") return p.head.sha || "";
+    return "";
   }
 
   // Switching is possible only when the daemon can reach the repo on disk.
@@ -162,7 +170,7 @@ window.WBProject = (function () {
   // the primary's branch under a selection — that would name a branch the
   // tree is not on.
   function chipLabel(p, checkout, listing) {
-    if (!checkout) return p.branch;
+    if (!checkout) return headLabel(p);
     const entry = checkoutEntry(checkout, listing);
     if (!entry) return checkout;
     return entry.branch || "HEAD";
@@ -232,7 +240,10 @@ window.WBProject = (function () {
 
   return {
     repoLabel,
+    projectName,
+    projectTitle,
     rowTitle,
+    headLabel,
     agentStateOf,
     worktreeStates,
     canSwitchBranch,

@@ -9,6 +9,7 @@ fn peer(daemon_id: &str, name: &str, environment: &str) -> PeerDescriptor {
         address: "127.0.0.1".into(),
         port: 7257,
         environment: environment.into(),
+        os: String::new(),
         token: "tok".into(),
         protocol_version: crate::peer::PEER_PROTOCOL_VERSION,
         tunnel: None,
@@ -85,6 +86,30 @@ fn a_peer_rows_remote_and_dirty_ride_through_and_a_local_row_has_neither() {
         "a local row is not re-derived here: {mine:?}"
     );
     assert_eq!(mine.dirty, None, "{mine:?}");
+}
+
+#[test]
+fn every_row_carries_its_owners_os() {
+    let local = store(&[("owner/local", "C:/Dev/local")]);
+    let theirs = peer_store(&[("owner/forge", "/home/forge")]);
+    let mut d = peer("01XYZ", "svrapp", "Ubuntu 24.04");
+    d.os = "linux".into();
+    let rows = aggregate(
+        ("01ABC", "anvil", "Windows", &local),
+        &[(&d, &PeerStatus::Reachable, Some(&theirs))],
+    );
+    let os = |key: &str| {
+        rows.iter()
+            .find(|r| r.key == key)
+            .map(|r| r.os.clone())
+            .expect("the row folds")
+    };
+    assert_eq!(os("01XYZ/owner/forge"), "linux", "the peer's own OS");
+    assert_eq!(
+        os("01ABC/owner/local"),
+        std::env::consts::OS,
+        "this daemon's OS"
+    );
 }
 
 #[test]
@@ -285,4 +310,27 @@ fn a_peer_row_carries_the_owners_branch() {
 fn store_from_repos_json_rejects_a_non_list_body() {
     assert!(store_from_repos_json(b"not json").is_none());
     assert!(store_from_repos_json(br#"{"error":"nope"}"#).is_none());
+}
+
+/// Every row carries the name the operator uses, built from the path here, so
+/// an older peer that serves no name still has one.
+#[test]
+fn every_row_names_a_remoteless_repo_by_its_folder() {
+    let local = store(&[("path-aaa", "C:/Dev/widget"), ("owner/repo", "C:/Dev/repo")]);
+    let theirs = peer_store(&[("path-bbb", "/home/p/gadget")]);
+    let d = peer("01XYZ", "wsl-box", "WSL: Ubuntu-22.04");
+    let rows = aggregate(
+        ("01ABC", "anvil", "Windows", &local),
+        &[(&d, &PeerStatus::Reachable, Some(&theirs))],
+    );
+    let name = |k: &str| {
+        rows.iter()
+            .find(|r| r.key == k)
+            .unwrap_or_else(|| panic!("missing key {k}; got {rows:?}"))
+            .name
+            .clone()
+    };
+    assert_eq!(name("01ABC/path-aaa"), "widget");
+    assert_eq!(name("01ABC/owner/repo"), "owner/repo");
+    assert_eq!(name("01XYZ/path-bbb"), "gadget");
 }

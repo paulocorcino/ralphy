@@ -33,7 +33,6 @@ pub use policy::{
     set_require_login_in, set_require_token_in, upgrade_with_session, AuthPolicy, LoginOutcome,
 };
 use throttle::LoginThrottle;
-pub(crate) use token::set_owner_only;
 pub use token::{
     effective_token, ensure_token_at, generate_token, load_token, load_token_from, save_token_to,
     store_dir, strip_token_from_env, token_path, token_path_in, TOKEN_ENV,
@@ -502,7 +501,12 @@ impl AuthState {
 /// tests and the frictionless `Localhost`/`fixed` states never write the real
 /// global store (mirrors [`epoch::SessionEpoch::in_memory_detached`]).
 fn detached_last_step_path() -> PathBuf {
-    std::env::temp_dir().join(format!("ralphy-laststep-{}", ulid::Ulid::new()))
+    // In its own directory: `record_step` makes the parent owner-only, and on
+    // Linux the shared temp dir belongs to root, so a chmod there fails and the
+    // step is never recorded.
+    std::env::temp_dir()
+        .join(format!("ralphy-laststep-{}", ulid::Ulid::new()))
+        .join("daemon-totp-laststep")
 }
 
 /// Constant-time byte equality: length-checked, then XOR-accumulate over the

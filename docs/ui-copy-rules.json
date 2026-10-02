@@ -16,6 +16,7 @@
       "lost",
       "needs split",
       "no price",
+      "no token count",
       "not enrolled",
       "not feasible",
       "not planned",
@@ -159,6 +160,12 @@
   ],
   "exemptions": [
     {
+      "file": "wb-add-project.js",
+      "text": "Already in Projects",
+      "rule": "casing:title",
+      "reason": "Projects is the name of the panel the folder is already in (#501)."
+    },
+    {
       "file": "index.html",
       "text": "ralphy update",
       "rule": "banned:ralphy",
@@ -185,6 +192,12 @@
     {
       "file": "wb-settings.js",
       "text": "Runs before an issue is closed, when the plan has no ‘## Verify’ section. Read-only here. Set it in a terminal: ralphy config set verify.command '…'",
+      "rule": "banned:ralphy",
+      "reason": "The text ends with a command the operator types. Code keeps its case."
+    },
+    {
+      "file": "wb-settings.js",
+      "text": "Send comments from any GitHub account to the agent. When off, only comments from owners, members and collaborators are read. When on, anyone can add text to the prompt of a labelled issue on a public repository. Read-only here. Change it in a terminal: ralphy config set queue.trust_all_comments true",
       "rule": "banned:ralphy",
       "reason": "The text ends with a command the operator types. Code keeps its case."
     },

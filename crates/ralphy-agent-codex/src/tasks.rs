@@ -19,6 +19,7 @@ use ralphy_core::{
 
 use crate::auth::{is_codex_auth_error, CODEX_AUTH_ERROR_MSG};
 use crate::command::{build_codex_init_command, resolve_init_model};
+use crate::forge_rules::install_forge_rules;
 use crate::usage::{codex_sessions_dir, fold_rollout_usage};
 
 /// Run a one-shot headless `codex exec` repo-diagnosis session (ADR-0012 stage 2)
@@ -44,6 +45,7 @@ pub fn diagnose_repo(
         model = model.as_deref().unwrap_or("(codex default)"),
         effort, "diagnosing repo with codex exec"
     );
+    install_forge_rules(neutral_cwd)?;
     let cmd = build_codex_init_command(model.as_deref(), effort, neutral_cwd, &[]);
     let log_path = neutral_cwd.join("diagnose.log");
     run_init_session(
@@ -95,6 +97,7 @@ pub fn draft_issues(
         mode = req.mode.as_str(),
         "drafting issues with codex exec"
     );
+    install_forge_rules(repo)?;
     let cmd = build_codex_init_command(model.as_deref(), effort, repo, &[]);
     let log_path = repo.join(".ralphy").join("init-issues.log");
     run_init_session(
@@ -157,6 +160,7 @@ pub fn consolidate_knowledge(
             .unwrap_or_default()
     };
 
+    install_forge_rules(ws.repo_root())?;
     let cmd = build_codex_init_command(model.as_deref(), effort, ws.repo_root(), &[]);
     let before = snapshot();
     run_text_session(
@@ -190,8 +194,9 @@ pub fn triage_issues(
     let model = resolve_init_model(model);
     let effort = effort.unwrap_or("medium");
     let prompt = format!(
-        "{}{}",
+        "{}{}{}",
         build_triage_prompt(repo, req.issue_numbers, req.queue_label, out_path),
+        req.thread_block,
         req.attachments_manifest
     );
 
@@ -199,6 +204,7 @@ pub fn triage_issues(
         model = model.as_deref().unwrap_or("(codex default)"),
         effort, "triaging issues with codex exec"
     );
+    install_forge_rules(repo)?;
     let cmd = build_codex_init_command(model.as_deref(), effort, repo, req.image_paths);
     let log_path = repo.join(".ralphy").join("triage.log");
     run_init_session(

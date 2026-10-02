@@ -110,11 +110,40 @@
     return `${capital(p.cause)}.${tail(p.rest)}`;
   }
 
+  // The cause alone, to follow `Could not <act>: ` in a line the caller
+  // builds: lowercase, no final period. A code never shows as it is.
+  function why(reply, fallback) {
+    const p = parts(reply);
+    if (!p) return fallback;
+    if (p.sentence) return bare(p.sentence);
+    return p.cause;
+  }
+
   // One line of a success report (`warning: …`) as a sentence.
   function sentence(line) {
     const t = bare(String(line || ""));
     return t ? `${capital(t)}.` : "";
   }
 
-  window.WBFail = { isError, message, failed, cause, sentence, CAUSE };
+  // One read of a shown fact folded into the last one (ADR-0070 D3). A
+  // failure after a good read keeps that read's value, marked not current;
+  // a failure before any good read has no value at all.
+  function readFold(prev, outcome) {
+    const { ok, value, reason, at } = outcome;
+    if (ok) return { value, goodAt: at, error: "", current: true };
+    if (prev?.goodAt) {
+      return { value: prev.value, goodAt: prev.goodAt, error: reason, current: false };
+    }
+    return { value: null, goodAt: 0, error: reason, current: false };
+  }
+
+  // The line a panel shows for a read that is not current; "" when it is.
+  function notCurrent(read, fmt) {
+    if (!read || read.current) return "";
+    const error = Object.hasOwn(CAUSE, read.error) ? CAUSE[read.error] : read.error;
+    if (read.goodAt) return `Read at ${fmt(read.goodAt)}. Not current: ${error}`;
+    return `Could not read: ${error}`;
+  }
+
+  window.WBFail = { isError, message, failed, cause, why, sentence, readFold, notCurrent, CAUSE };
 })();

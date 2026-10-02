@@ -142,9 +142,10 @@ one spawn per tool call, one per prompt, one per turn end.
 
 The **plan phase** gets the same status hooks. Today plan runs with the
 hook-less `SETTINGS_JSON` (`lib.rs:193`), which is why a planner stuck at a
-question is invisible until the watchdog. The guard stays execute-only —
-the plan charter forbids writes by prompt, and a `PreToolUse` guard on a
-read-only session would only add latency.
+question is invisible until the watchdog. (Changed 2026-10-01 by ADR-0072
+D6: the plan session and the triage, consolidate, diagnose and draft tasks
+now carry the guard too, because they read issue text. Only the cost gate
+stays execute-only, as `hook guard --cost-gate`.)
 
 `PermissionRequest` deserves one sentence: Ralphy launches with
 `--dangerously-skip-permissions`, so the vendor should never raise it. If it

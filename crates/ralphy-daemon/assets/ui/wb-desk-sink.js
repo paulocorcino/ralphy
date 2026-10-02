@@ -20,6 +20,21 @@
    permit. Reading is harmless; replacing the desk from a partial view is not.
 --------------------------------------------------------------------------- */
 window.WBDeskSink = (function () {
+  // One id per document. The daemon echoes it in the `desk.dirty` push its
+  // PUT causes, so this tab does not read its own write again.
+  const TAB =
+    globalThis.crypto?.randomUUID?.() || "t" + Math.random().toString(36).slice(2) + Date.now();
+  function tabId() {
+    return TAB;
+  }
+  const deskUrl = () => "/api/desk?tab=" + encodeURIComponent(TAB);
+  // While this tab runs an older build than the daemon, it writes no desk
+  // (ADR-0070 D6): its JavaScript may not know the daemon's records.
+  let hold = false;
+  function setHold(on) {
+    hold = !!on;
+  }
+
   // The daemon-backed write. Both entry points take an already-serialised body,
   // because both callers snapshot the desk at SCHEDULE time — re-measuring at
   // fire time is what stored a zeroed pan in #339.
@@ -32,10 +47,11 @@ window.WBDeskSink = (function () {
     let inFlight = Promise.resolve();
     return {
       put(body) {
+        if (hold) return Promise.resolve(null);
         inFlight = inFlight
           .catch(() => {})
           .then(() =>
-            fetch("/api/desk", {
+            fetch(deskUrl(), {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
               body,
@@ -47,8 +63,9 @@ window.WBDeskSink = (function () {
       // document. Deliberately NOT chained — there is no next flush to order
       // against, and awaiting one would be awaiting past the document's life.
       putSync(body) {
+        if (hold) return;
         try {
-          fetch("/api/desk", {
+          fetch(deskUrl(), {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body,
@@ -70,5 +87,5 @@ window.WBDeskSink = (function () {
     };
   }
 
-  return { daemon, none };
+  return { daemon, none, tabId, setHold };
 })();

@@ -103,6 +103,71 @@ fn tunnel_toml(port: u16, local_port: u16) -> String {
     )
 }
 
+fn socket_tunnel_toml(socket: &str) -> String {
+    format!(
+        "{}
+[tunnel]
+destination = \"svrapp\"
+peer_socket = \"{socket}\"
+local_port = 7401
+",
+        descriptor_toml("01TUN", 7401)
+    )
+}
+
+#[test]
+fn fold_reads_a_tunnel_to_a_socket() {
+    let text = socket_tunnel_toml("/home/ralphy2/.ralphy/daemon.sock");
+    let (accepted, rejected) = fold(&[("01TUN.toml".to_string(), text)]);
+    assert!(rejected.is_empty(), "got: {rejected:?}");
+    let tunnel = accepted[0].tunnel.clone().unwrap();
+    assert_eq!(tunnel.peer_port, 0);
+    assert_eq!(
+        tunnel.peer_socket.as_deref(),
+        Some("/home/ralphy2/.ralphy/daemon.sock")
+    );
+    let written = toml::to_string_pretty(&accepted[0]).unwrap();
+    assert!(!written.contains("peer_port"), "got: {written}");
+}
+
+#[test]
+fn fold_rejects_a_tunnel_with_neither_port_nor_socket() {
+    let text = tunnel_toml(7401, 7401).replace("peer_port = 7257\n", "");
+    let (accepted, rejected) = fold(&[("01TUN.toml".to_string(), text)]);
+    assert!(accepted.is_empty(), "got: {accepted:?}");
+    assert!(
+        matches!(&rejected[0], PeerReject::Malformed { why, .. }
+            if why.contains("its tunnel needs a destination")),
+        "got: {:?}",
+        rejected[0]
+    );
+}
+
+#[test]
+fn fold_rejects_a_relative_socket() {
+    let alone = socket_tunnel_toml("daemon.sock");
+    let with_port = alone.replace("local_port = 7401", "peer_port = 7257\nlocal_port = 7401");
+    for text in [alone, with_port] {
+        let (accepted, rejected) = fold(&[("01TUN.toml".to_string(), text.clone())]);
+        assert!(accepted.is_empty(), "{text}\ngot: {accepted:?}");
+        assert!(
+            matches!(&rejected[0], PeerReject::Malformed { .. }),
+            "got: {:?}",
+            rejected[0]
+        );
+    }
+}
+
+/// A descriptor written before sockets existed has `peer_port` and no
+/// `peer_socket`.
+#[test]
+fn a_descriptor_with_peer_port_still_reads() {
+    let (accepted, rejected) = fold(&[("01TUN.toml".to_string(), tunnel_toml(7401, 7401))]);
+    assert!(rejected.is_empty(), "got: {rejected:?}");
+    let tunnel = accepted[0].tunnel.clone().unwrap();
+    assert_eq!((tunnel.peer_port, tunnel.peer_socket), (7257, None));
+}
+
 #[test]
 fn fold_reads_a_tunnel_section() {
     let (accepted, rejected) = fold(&[("01TUN.toml".to_string(), tunnel_toml(7401, 7401))]);
@@ -112,6 +177,7 @@ fn fold_reads_a_tunnel_section() {
         Some(TunnelSpec {
             destination: "svrapp".into(),
             peer_port: 7257,
+            peer_socket: None,
             local_port: 7401,
             identity_file: None,
         })
@@ -166,6 +232,30 @@ fn read_store_of_missing_dir_is_empty() {
     assert!(rejected.is_empty());
 }
 
+/// ADR-0070 D4: a store that exists but cannot be listed is a failure the
+/// fleet view shows, not an empty fleet. A FILE where the directory should be
+/// makes `read_dir` fail with a kind other than `NotFound` on every OS.
+#[test]
+fn an_unreadable_store_is_a_failure_not_an_empty_fleet() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = dir.path().join("peers");
+    std::fs::write(&store, "a file, not a directory").unwrap();
+    let kind = std::fs::read_dir(&store).unwrap_err().kind();
+    assert_ne!(
+        kind,
+        std::io::ErrorKind::NotFound,
+        "the fixture must not read as missing"
+    );
+    let (accepted, rejected) = read_store(&store);
+    assert!(accepted.is_empty());
+    assert_eq!(rejected.len(), 1, "one failure: {rejected:?}");
+    assert!(
+        rejected[0].why().contains("cannot be read"),
+        "{}",
+        rejected[0].why()
+    );
+}
+
 #[test]
 fn read_store_sorts_by_file_name_and_skips_non_toml() {
     let dir = tempfile::tempdir().unwrap();
@@ -184,13 +274,79 @@ fn read_store_sorts_by_file_name_and_skips_non_toml() {
 #[test]
 fn environment_label_names_the_distro() {
     assert_eq!(
-        environment_label(Some("Ubuntu-22.04"), "linux"),
-        "WSL: Ubuntu-22.04"
+        environment_label(Some("Ubuntu-22.04"), "linux", Some("Ubuntu 22.04")),
+        "WSL: Ubuntu-22.04",
+        "inside WSL the registered distro name wins over the release"
     );
-    assert_eq!(environment_label(None, "windows"), "Windows");
-    assert_eq!(environment_label(None, "linux"), "Linux");
-    assert_eq!(environment_label(None, "macos"), "macOS");
-    assert_eq!(environment_label(None, "freebsd"), "freebsd");
+    assert_eq!(environment_label(None, "windows", None), "Windows");
+    assert_eq!(environment_label(None, "linux", None), "Linux");
+    assert_eq!(environment_label(None, "macos", None), "macOS");
+    assert_eq!(environment_label(None, "freebsd", None), "freebsd");
+    assert_eq!(
+        environment_label(None, "linux", Some("Ubuntu 24.04")),
+        "Ubuntu 24.04"
+    );
+    assert_eq!(
+        environment_label(None, "macos", Some("macOS 15")),
+        "macOS 15"
+    );
+    assert_eq!(
+        environment_label(None, "windows", Some("Windows 10.0.26200")),
+        "Windows",
+        "Windows keeps its plain name"
+    );
+}
+
+#[test]
+fn linux_release_reads_name_and_version() {
+    let ubuntu = "PRETTY_NAME=\"Ubuntu 24.04.1 LTS\"
+NAME=\"Ubuntu\"
+VERSION_ID=\"24.04\"
+ID=ubuntu
+";
+    assert_eq!(linux_release(ubuntu).as_deref(), Some("Ubuntu 24.04"));
+    let debian = "PRETTY_NAME=\"Debian GNU/Linux 12 (bookworm)\"
+NAME=\"Debian GNU/Linux\"
+VERSION_ID=\"12\"
+";
+    assert_eq!(linux_release(debian).as_deref(), Some("Debian 12"));
+    let arch = "NAME=\"Arch Linux\"
+PRETTY_NAME=\"Arch Linux\"
+ID=arch
+BUILD_ID=rolling
+";
+    assert_eq!(
+        linux_release(arch).as_deref(),
+        Some("Arch Linux"),
+        "a rolling release has no VERSION_ID"
+    );
+    assert_eq!(
+        linux_release(
+            "ID=custom
+VERSION_ID=1
+"
+        ),
+        None
+    );
+}
+
+#[test]
+fn macos_release_keeps_the_major_version() {
+    assert_eq!(
+        macos_release(
+            "15.3.1
+"
+        )
+        .as_deref(),
+        Some("macOS 15")
+    );
+    assert_eq!(macos_release("26.0").as_deref(), Some("macOS 26"));
+    assert_eq!(
+        macos_release("10.15.7").as_deref(),
+        Some("macOS 10.15"),
+        "before macOS 11 the minor names the release"
+    );
+    assert_eq!(macos_release(""), None);
 }
 
 #[test]
@@ -203,6 +359,7 @@ fn writer_emits_every_announced_field() {
         address: "127.0.0.1".into(),
         port: 7443,
         environment: "WSL: Ubuntu-22.04".into(),
+        os: String::new(),
         token: "tok-abc".into(),
         protocol_version: PEER_PROTOCOL_VERSION,
         tunnel: None,
@@ -307,7 +464,8 @@ fn diagnosis_always_names_the_environment() {
     let env = "WSL: Ubuntu-22.04";
     for status in [
         PeerStatus::Reachable,
-        PeerStatus::Unauthorized,
+        PeerStatus::Unauthorized { tunnel: false },
+        PeerStatus::Unauthorized { tunnel: true },
         PeerStatus::VersionMismatch {
             theirs: 999,
             ours: 1,
@@ -332,10 +490,12 @@ fn tunnel_diagnoses_name_the_host_and_never_wsl() {
     let closed = PeerStatus::TunnelClosed {
         host: "svrapp".into(),
         cause: None,
+        said: None,
     };
     let failed = PeerStatus::TunnelClosed {
         host: "svrapp".into(),
         cause: Some("no ssh program found: install OpenSSH".into()),
+        said: None,
     };
     let silent = PeerStatus::TunnelSilent {
         host: "svrapp".into(),
@@ -360,14 +520,27 @@ fn tunnel_diagnoses_name_the_host_and_never_wsl() {
 #[test]
 fn classify_tunnel_maps_the_ensure_answer() {
     use super::client::classify_tunnel;
-    let started = classify_tunnel("svrapp", Ok(true), "refused".into());
+    let started = classify_tunnel("svrapp", Ok(true), "refused".into(), None);
     assert_eq!(started.state(), "tunnel-closed");
-    let held = classify_tunnel("svrapp", Ok(false), "refused".into());
+    let held = classify_tunnel("svrapp", Ok(false), "refused".into(), None);
     assert_eq!(held.state(), "tunnel-silent");
     assert!(held.diagnosis("Linux").contains("refused"));
-    let failed = classify_tunnel("svrapp", Err("spawn failed".into()), "refused".into());
+    let failed = classify_tunnel("svrapp", Err("spawn failed".into()), "refused".into(), None);
     assert_eq!(failed.state(), "tunnel-closed");
     assert!(failed.diagnosis("Linux").contains("spawn failed"));
+    let said = classify_tunnel(
+        "svrapp",
+        Ok(true),
+        "refused".into(),
+        Some("Permission denied (publickey).".into()),
+    );
+    assert_eq!(said.state(), "tunnel-closed");
+    let d = said.diagnosis("Linux");
+    assert!(
+        d.contains("ssh said \"Permission denied (publickey).\"")
+            && d.ends_with("opening it again."),
+        "got: {d}"
+    );
 }
 
 #[test]
@@ -383,9 +556,14 @@ fn paired_descriptor_refuses_an_id_that_is_not_a_ulid() {
         require_token: true,
         autostart: true,
         running: true,
+        socket: None,
         token: Some("tok".to_string()),
     };
-    assert!(paired_descriptor(&d, "svrapp", 7401, None).is_ok());
+    let paired = paired_descriptor(&d, "svrapp", 7401, None).unwrap();
+    assert_eq!(
+        paired.os, "linux",
+        "the host's OS family is kept for the icon"
+    );
     d.daemon_id = Some("../../evil".to_string());
     let err = paired_descriptor(&d, "svrapp", 7401, None).unwrap_err();
     assert!(err.to_string().contains("not a valid id"), "{err}");

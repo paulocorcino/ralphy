@@ -215,7 +215,6 @@
   padding: 0.35rem 0.6rem;
   font-size: 0.68rem;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
   color: var(--text-muted);
   background: var(--chrome);
   border-bottom: 1px solid var(--border);
@@ -229,6 +228,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* The machine's name is a heading; the OS release keeps its own spelling
+   (`macOS 15`, not `MACOS 15`). */
+.env-group .env-host {
+  text-transform: uppercase;
 }
 /* The system the group's daemon runs on (`WBFleet.system`). The same icon
    heads a row of the Hosts dialog. */

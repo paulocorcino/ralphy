@@ -22,7 +22,7 @@ Status: **accepted** — decisions settled and shipped in slices, then
 **live-validated end-to-end** against `paulocorcino/FinCal` on 2026-07-22
 ([#272](https://github.com/paulocorcino/ralphy/issues/272);
 [validation note](./0041-copilot-validation.md),
-[evidence](../evidence/272-copilot-capstone-live.md)). The capstone ran a paid
+[evidence](../spike/evidence/272-copilot-capstone-live.md)). The capstone ran a paid
 plan-then-execute to green, reconciled tokens against the real AI-credit bill, and
 confirmed the interactive-scan inversion; one item is deferred by maintainer ruling
 (see D11). Consistent with ADR-0002/0003/0004/0005/0008/0023/0030/0040; applies the
@@ -301,6 +301,33 @@ one; the escape hatch is the persisted
 (The live receipt is `ephemeral: true` on every copy, so the scan must not reuse
 the stream parser's ephemeral filter.)
 
+### Amendment (2026-10-01, issue #516 / ADR-0072 D6) — deny rules for the forge writes
+
+Every session (plan, execute and the one-shot sessions) now carries one
+`--deny-tool=shell(<command>:*)` per entry of `DENIED_FORGE_WRITES`
+(`ralphy-adapter-support`): `git push` and the `gh pr` verbs that write.
+`copilot help permissions` says a deny rule wins over every allow rule,
+`--allow-all-tools` included. A refused call reaches the model as a tool error
+("Permission to run this tool was denied due to the following rules:
+`shell(git push:*)`"), and the session goes on.
+
+Measured on 2026-10-01:
+
+- CLI 1.0.90: every `gh pr` write verb is refused, also behind a pipe
+  (`gh pr create --help | Select-Object -First 1`) and after `cd . ;`;
+  `git push` is refused, also as `git -C . push`; `gh pr view` and `git status`
+  run. The exact form `shell(gh pr create)`, with no `:*`, does not match
+  `gh pr create --help`, so the rules use the `:*` form.
+- CLI 1.0.75: the `git push` rule holds, and every `gh pr` rule is ignored.
+- A live `ralphy run` (FinCal #127, CLI 1.0.75) ran to the end with the rules
+  on, and `git push --dry-run` was refused. CLI 1.0.90 could not run under
+  Ralphy at first, because it no longer emits `session.skills_loaded`; the D9
+  amendment of the same date fixes that.
+
+Limits, accepted: a global flag before the subcommand (`gh -R o/r pr create`)
+gets past the rules, and so would a wrapper (`pwsh -Command "..."`). The rules
+are a layer, not proof (ADR-0072).
+
 ## D8 — The three GitHub token env vars are scrubbed from the child
 
 Copilot's precedence is `COPILOT_GITHUB_TOKEN` > `GH_TOKEN` > `GITHUB_TOKEN`.
@@ -360,6 +387,26 @@ array, so the guard checks each required name is PRESENT, never set equality.
 `require_receipt` follows D7's split: an absent receipt fails closed only for a run
 that exited cleanly, so a `Limit`/`Timeout` is never overwritten with
 "skills receipt missing".
+
+
+### Amendment (2026-10-01) — the proof moves to `copilot skill list` before the session
+
+CLI 1.0.90 no longer emits `session.skills_loaded`, so the absent-receipt rule above
+stopped every clean plan and execute run. The proof that the Ralphy skills are there
+is now `copilot skill list --json`, run in the repo after the skills are
+materialized and before the session starts. It is the same discovery for the same
+directory, with the same D8 token scrub, and it makes no model call (about 0.6 s on
+Windows). Each required name must be listed with `enabled: true`; a missing or
+disabled skill, an output that is not the expected array, a failed command or a
+timeout stops the run before any billed turn. The shape is the same in CLI 1.0.75
+and 1.0.90: an array of `{name, description, source, path, enabled}`. A live
+`ralphy run` on CLI 1.0.90 (FinCal, 2026-10-01) passed the check and ran to the
+end, with the deny rules of the D7 amendment on.
+
+The receipt check stays for a CLI that still emits it: a receipt that lists the
+skills without a required one fails the run. An absent or unreadable receipt is no
+longer a failure, so `require_receipt` is gone. The one-shot tasks still run no D9
+check.
 
 ## D10 — Usage: mint the session id, read the store by primary key
 

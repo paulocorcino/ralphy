@@ -168,6 +168,25 @@ pub fn consolidate_knowledge(
     Ok(fold_wire_usage(&before, &after, Some(model)))
 }
 
+/// Write the triage thread block to `triage-threads.md` beside `out_path`, and
+/// return the prompt line that points to it. Kimi takes its prompt on argv,
+/// the triage charter alone is ~17 KB, and the Windows command line ends at
+/// 32,767 characters, so the threads cannot ride the prompt. An empty block
+/// stays empty.
+fn thread_file_pointer(out_path: &Path, block: &str) -> Result<String> {
+    if block.trim().is_empty() {
+        return Ok(String::new());
+    }
+    let path = out_path.with_file_name("triage-threads.md");
+    std::fs::write(&path, block)
+        .with_context(|| format!("writing the triage threads to {}", path.display()))?;
+    Ok(format!(
+        "\n\n## Threads\n\nThe `## Thread (issue #N)` blocks are in `{}`. Read that \
+         file before you judge any issue.\n",
+        path.display()
+    ))
+}
+
 /// Run a one-shot headless `kimi` agent-triage session (ADR-0017). Mirrors
 /// [`draft_issues`] but drives the triage charter over each `triage-agent` issue's
 /// body + full comment thread, writing a [`TriageDraft`] JSON to `out_path` for
@@ -185,9 +204,11 @@ pub fn triage_issues(
     // ADR-0044 D4 No-op: neutral Effort word discarded; must not alter argv.
     let _ = effort;
     let model = resolve_init_kimi_model(model);
+    let threads = thread_file_pointer(out_path, req.thread_block)?;
     let prompt = format!(
-        "{}{}",
+        "{}{}{}",
         build_triage_prompt(repo, req.issue_numbers, req.queue_label, out_path),
+        threads,
         req.attachments_manifest
     );
 
@@ -216,4 +237,25 @@ pub fn triage_issues(
             })
         },
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_thread_block_goes_to_a_file_not_the_command_line() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let out = dir.path().join("triage-draft.json");
+        let block = "## Thread (issue #9)\n```json\n{\"body\": \"long\"}\n```\n";
+        let line = thread_file_pointer(&out, block).expect("pointer");
+        let file = dir.path().join("triage-threads.md");
+        assert_eq!(std::fs::read_to_string(&file).expect("thread file"), block);
+        assert!(line.contains(&file.display().to_string()), "{line}");
+        assert!(
+            !line.contains("\"body\""),
+            "the block is not in the prompt: {line}"
+        );
+        assert_eq!(thread_file_pointer(&out, "  ").expect("empty"), "");
+    }
 }

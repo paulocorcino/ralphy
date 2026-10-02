@@ -304,10 +304,11 @@ planner). As you complete each step, update the matching ledger line:
    install command a human should run.
    Every browser-driven verification MUST leave evidence: capture a
    screenshot at the asserting moment, save it as
-   `docs/screenshots/<YYYY-MM-DD>-issue-<N>-<slug>.png`, commit it with the
-   work it proves, and cite the path + commit hash in the ledger evidence
-   line (the runner publishes the ledger on the issue; the image renders in
-   the PR). A DOM assertion without its screenshot is half the evidence.
+   `.ralphy/screenshots/<YYYY-MM-DD>-issue-<N>-<slug>.png`, and cite that
+   path in the ledger evidence line (the runner publishes the ledger on the
+   issue). Never commit a screenshot, and never write one under `docs/` or
+   anywhere else in the tree: it is the evidence of one run, not part of the
+   work. A DOM assertion without its screenshot is half the evidence.
 
 **The ledger does NOT gate `RALPHY_DONE_EXIT`.** The green gate stays keyed to
 the plan's machine-verifiable "Done when" conditions. Emit `RALPHY_DONE_EXIT`

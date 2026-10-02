@@ -57,6 +57,16 @@ pub fn is_bundle_reason(reason: &str) -> bool {
     reason.to_lowercase().contains("bundle")
 }
 
+/// Whether a plan carries a bundle verdict. A `## Feasible: yes` heading is
+/// never one, whatever its prose says ("Not a bundle: …" contains the word);
+/// any other heading defers to [`is_bundle_reason`] over its prose.
+pub fn is_bundle_verdict(plan_md: &str) -> bool {
+    let says_yes = Regex::new(r"(?im)^##\s+Feasible\s*:\s*yes\b")
+        .expect("valid regex")
+        .is_match(plan_md);
+    !says_yes && infeasible_reason(plan_md).is_some_and(|r| is_bundle_reason(&r))
+}
+
 /// Pick the handoff out of an issue's comments: the LAST comment containing a
 /// `## Handoff` heading (a re-run of the issue supersedes earlier reports).
 pub fn find_handoff_comment(comments: &[String]) -> Option<String> {
@@ -276,6 +286,17 @@ some note
         assert!(!is_bundle_reason(
             "No acceptance criteria and no verifiable done condition."
         ));
+    }
+
+    #[test]
+    fn is_bundle_verdict_reads_the_heading_before_the_prose() {
+        // A feasible verdict whose prose denies being a bundle.
+        let yes = "# Plan\n\n## Feasible: yes\nNot a bundle: diagnosis §11 maps this work to #511 alone.\n\n## Steps\n- [x] a\n";
+        assert!(!is_bundle_verdict(yes));
+        let no = "# Plan\n\n## Feasible: no\nThe issue bundles six PRD tasks; split into W1-T01..T06.\n\n## Steps\n";
+        assert!(is_bundle_verdict(no));
+        let generic = "# Plan\n\n## Feasible: no\nNo verifiable done condition.\n\n## Steps\n";
+        assert!(!is_bundle_verdict(generic));
     }
 
     #[test]

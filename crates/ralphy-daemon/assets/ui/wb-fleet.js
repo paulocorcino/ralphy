@@ -61,6 +61,7 @@
       const key = groupKey(row);
       const g = ensure(key, {
         environment: row.env || "",
+        os: row.os || "",
         daemon: isLocal(row) ? "" : row.daemon,
         // A local group has no entry in the peer list below, so its name has to
         // come off the row — which `loadFleet` stamps from `/api/fleet`.
@@ -77,6 +78,7 @@
     for (const p of peerList) {
       const g = ensure(p.daemon_id, {
         environment: p.environment || "",
+        os: "",
         daemon: p.daemon_id,
         name: "",
         state: "",
@@ -88,6 +90,7 @@
       // The peer list is authoritative about the peer; the rows only carry what
       // a row needs. A row-derived state is a fallback, never an override.
       g.environment = p.environment || g.environment;
+      g.os = p.os || g.os;
       g.name = p.name || "";
       g.state = p.state || g.state;
       g.diagnosis = p.diagnosis || "";
@@ -112,18 +115,23 @@
     for (const g of out) perEnv.set(g.environment, (perEnv.get(g.environment) || 0) + 1);
     for (const g of out) {
       g.header = header;
-      // A tunnel peer's label already carries its name (`groupLabel`).
+      // A tunnel peer's header already carries its name (`groupHost`).
       g.showName = !g.tunnel && !!g.name && perEnv.get(g.environment) > 1;
     }
     return out;
   }
 
-  // The header's label. A peer on another machine is `<name>: <OS>`
-  // (`svrapp: Linux`): its OS alone would not say which machine it is. A WSL
-  // peer's environment already names its distro.
+  // The header names a peer on another machine before its OS release
+  // (`svrapp · Ubuntu 24.04`): the release alone would not say which machine
+  // it is. "" for every other group: a WSL peer's environment already names
+  // its distro, and the local group is the machine the operator sits at.
+  function groupHost(group) {
+    return group && group.tunnel && group.name ? group.name : "";
+  }
+
+  // The header's environment: the OS release, or `WSL: <distro>`.
   function groupLabel(group) {
-    if (!group) return "";
-    return group.tunnel && group.name ? group.name + ": " + group.environment : group.environment;
+    return group ? group.environment : "";
   }
 
   // The header's connection glyph, or "" for none. The local group gets none:
@@ -158,6 +166,11 @@
     "tunnel-closed": "reconnecting",
     "tunnel-silent": "not answering",
   };
+
+  // A peer state as words; a state with no entry is already a word.
+  function stateWord(state) {
+    return STATE_WORD[state] || state || "";
+  }
 
   function groupTitle(group) {
     if (!group) return "";
@@ -215,10 +228,14 @@
     return group.state === "asleep" || group.state === "unreachable";
   }
 
-  // The system a daemon runs on, read from its environment label (`Windows`,
-  // `Linux`, `macOS`, `WSL: <distro>`, or the raw OS name; peer.rs
-  // `environment_label`). It picks the icon at the head of a group.
-  function system(environment) {
+  // The system a daemon runs on. It picks the icon at the head of a group.
+  // `os` is the daemon's own OS family (peer.rs `PeerDescriptor::os`). A
+  // descriptor written before that field has only its environment label, and
+  // that older label is `Windows`, `Linux`, `macOS`, `WSL: <distro>`, or the
+  // raw OS name (peer.rs `environment_label`).
+  const SYSTEMS = ["windows", "linux", "macos"];
+  function system(os, environment) {
+    if (SYSTEMS.includes(os)) return os;
     const e = String(environment || "");
     if (e === "Linux" || e.indexOf("WSL") === 0) return "linux";
     if (e === "macOS") return "macos";
@@ -227,6 +244,7 @@
   }
 
   return {
+    stateWord: stateWord,
     fleetGroups: fleetGroups,
     system: system,
     repoRef: repoRef,
@@ -239,5 +257,6 @@
     stateFault: stateFault,
     groupTitle: groupTitle,
     groupLabel: groupLabel,
+    groupHost: groupHost,
   };
 });

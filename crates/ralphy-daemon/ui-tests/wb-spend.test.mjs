@@ -160,12 +160,12 @@ test("the pane's states are named, and the peer banner survives every one", () =
   assert.equal(WB.ledger({ project: "a/b", loading: true, missing }).kind, WB.LOADING);
   assert.equal(WB.ledger({ project: "a/b", error: "boom", missing }).missing.length, 1);
   assert.equal(WB.ledger({ project: "a/b", error: "boom" }).message, "boom");
-  // Every ledger field has a column; their order on screen is layout.
+  // Every ledger field has a column, except the project: every row is the open
+  // project's, and the pane head names it. Their order on screen is layout.
   assert.deepEqual(
     WB.LEDGER_COLUMNS.map((c) => c.key).toSorted(),
     [
       "kind",
-      "project",
       "issue",
       "phase",
       "agent",
@@ -240,4 +240,16 @@ test("the pane state: no project, then error, then loading, then the document", 
   assert.equal(priced.floorNote, "");
   assert.equal(priced.unpriced.any, false);
   assert.equal(priced.coverage.show, false);
+});
+
+test("a ledger row shows words for its kind, its unpriced cause and its time", () => {
+  const [run] = ledger({ records: [row({ unpriced_cause: "no_price" })] }).rows;
+  assert.equal(run.kindLabel, "run");
+  assert.equal(run.unpricedLabel, "no price");
+  assert.equal(run.unpriced, "no_price", "the key stays for the filter");
+  assert.notEqual(run.whenLabel, run.when, "the time is not the raw ISO text");
+  const [chat] = ledger({
+    interactive: [{ project: "acme/widget", agent: "cursor", session_id: "i1", tokens: null, unpriced_cause: "unmetered" }],
+  }).rows;
+  assert.equal(chat.unpricedLabel, "no token count");
 });

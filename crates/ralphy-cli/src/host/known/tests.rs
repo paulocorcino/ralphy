@@ -75,3 +75,15 @@ fn trust_scanned_writes_only_the_key_shown() {
         format!("old k0\nsvrapp ssh-ed25519 {OTHER}\n")
     );
 }
+
+#[test]
+fn unknown_reply_is_the_host_key_reply() {
+    let v = unknown_reply("10.0.0.5", 2222, &parse_scan(&scan_text())).unwrap();
+    assert_eq!(v["state"], "unknown");
+    assert_eq!(v["host"], "10.0.0.5");
+    assert_eq!(v["port"], 2222);
+    assert_eq!(v["keys"][0]["type"], "ssh-ed25519");
+    assert_eq!(v["keys"][0]["fingerprint"], ED25519_FP);
+    assert_eq!(v["keys"][1]["fingerprint"], OTHER_FP);
+    crate::golden::check("host.key", json!({ "status": "ok", "key": v }), &[]);
+}

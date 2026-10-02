@@ -1,0 +1,93 @@
+{
+  "board": {
+    "issues": [
+      {
+        "assignees": [],
+        "blocked_by": [],
+        "created": "2026-07-01T00:00:00Z",
+        "labels": [
+          "ready-for-agent"
+        ],
+        "number": 8,
+        "reason": null,
+        "state": "open",
+        "title": "issue 8",
+        "updated": "2026-07-02T00:00:00Z"
+      },
+      {
+        "assignees": [],
+        "blocked_by": [
+          8
+        ],
+        "created": "2026-07-01T00:00:00Z",
+        "labels": [
+          "ready-for-agent"
+        ],
+        "number": 7,
+        "reason": null,
+        "state": "open",
+        "title": "issue 7",
+        "updated": "2026-07-02T00:00:00Z"
+      },
+      {
+        "assignees": [],
+        "blocked_by": [],
+        "created": "",
+        "labels": [],
+        "number": 50,
+        "reason": null,
+        "state": "open",
+        "title": "issue 50",
+        "updated": ""
+      },
+      {
+        "assignees": [],
+        "blocked_by": [],
+        "created": "2026-07-01T00:00:00Z",
+        "labels": [
+          "ready-for-agent"
+        ],
+        "number": 30,
+        "reason": null,
+        "state": "open",
+        "title": "issue 30",
+        "updated": "2026-07-02T00:00:00Z"
+      },
+      {
+        "assignees": [
+          "octo"
+        ],
+        "blocked_by": [],
+        "created": "2026-07-01T00:00:00Z",
+        "labels": [
+          "ready-for-agent"
+        ],
+        "number": 32,
+        "reason": null,
+        "state": "open",
+        "title": "issue 32",
+        "updated": "2026-07-02T00:00:00Z"
+      },
+      {
+        "assignees": [],
+        "blocked_by": [],
+        "created": "2026-07-01T00:00:00Z",
+        "labels": [
+          "ready-for-agent"
+        ],
+        "number": 99,
+        "reason": "not_planned",
+        "state": "closed",
+        "title": "issue 99",
+        "updated": "2026-07-02T00:00:00Z"
+      }
+    ],
+    "labels": [
+      {
+        "color": "0e8a16",
+        "name": "ready-for-agent"
+      }
+    ]
+  },
+  "status": "ok"
+}

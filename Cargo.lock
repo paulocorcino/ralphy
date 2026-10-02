@@ -1748,6 +1748,7 @@ dependencies = [
  "ralphy-adapter-support",
  "ralphy-core",
  "serde_json",
+ "tempfile",
  "tracing",
 ]
 
@@ -1807,6 +1808,7 @@ dependencies = [
  "ulid",
  "unicode-width",
  "ureq",
+ "windows-sys 0.61.2",
  "winresource",
  "zeroize",
  "zip",
@@ -1820,6 +1822,7 @@ dependencies = [
  "chrono",
  "junction",
  "os_info",
+ "ralphy-git-read",
  "ralphy-proc-util",
  "regex",
  "serde",
@@ -1851,6 +1854,7 @@ dependencies = [
  "notify-debouncer-full",
  "pbkdf2",
  "qrcode",
+ "ralphy-git-read",
  "ralphy-pricing",
  "ralphy-proc-util",
  "ralphy-pty",
@@ -1874,6 +1878,15 @@ dependencies = [
  "ulid",
  "windows-sys 0.61.2",
  "zeroize",
+]
+
+[[package]]
+name = "ralphy-git-read"
+version = "0.1.0-rc.35"
+dependencies = [
+ "anyhow",
+ "serde",
+ "tempfile",
 ]
 
 [[package]]
@@ -1933,6 +1946,7 @@ name = "ralphy-usage-scan"
 version = "0.0.0"
 dependencies = [
  "chrono",
+ "ralphy-git-read",
  "rusqlite",
  "serde",
  "serde_json",

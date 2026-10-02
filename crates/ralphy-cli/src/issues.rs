@@ -275,6 +275,7 @@ fn push_snapshot(
     // from the env once captured so nothing this process spawns inherits it (ADR-0019).
     let token = effective_token(entry.as_ref().and_then(|e| e.token.as_deref()));
     std::env::remove_var(TOKEN_ENV);
+    std::env::remove_var(crate::telegram::config::TOKEN_ENV);
 
     // The per-run identity/context, minted exactly as `ralphy run` does.
     let ctx = envelope::EventCtx {

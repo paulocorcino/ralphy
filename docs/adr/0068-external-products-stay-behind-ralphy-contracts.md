@@ -1,6 +1,6 @@
 # External products stay behind Ralphy's contracts; platforms have one owner
 
-Status: proposed
+Status: accepted
 Kind: structural
 Protects: extensibility, integrity of change
 
@@ -93,16 +93,21 @@ no adapter, but only by the component named as its owner in
 
 - D1: not checked by code: a classification, applied in review and listed in
   `docs/ARCHITECTURE.md`.
-- D2, D3 (forge in Rust): to be checked by an `xtask` ratchet: baseline 24
-  distinct `ralphy_core::github::` items used from `crates/ralphy-cli/src`;
-  the check fails if the count goes up. Not built yet.
-- D2, D3 (forge in prompts): to be checked by the same ratchet: baseline 20
-  `gh issue view` lines under `assets/prompts/`. Not built yet.
+- D2, D3 (forge in Rust): checked by `crates/xtask/tests/ratchets.rs` as a
+  ratchet (`forge_use_matches_the_baseline`): baseline 24 distinct
+  `github::` items used from `crates/ralphy-cli/src`; the check fails if the
+  count changes.
+- D2, D3 (forge in prompts): checked by `crates/xtask/tests/ratchets.rs` as
+  a ratchet (`forge_use_matches_the_baseline`): baseline 20 `gh issue view`
+  lines under `assets/prompts/`; the check fails if the count changes.
 - D2 (agent vendors in core): not checked by code: a vendor date format in
   core cannot be found reliably by a pattern. Known violation:
   `crates/ralphy-core/src/runner/clock.rs`.
-- D4: checked by the compiler once the defaults are removed: a tracker that
-  does not implement the method does not build. Not done yet.
-- D5: to be checked by an `xtask` ratchet over process spawns: each
-  `Command::new("git" | "gh" | "ssh")` site must be in the owner's allowlist;
-  baseline today's sites. Not built yet.
+- D4: checked by the compiler: `is_closed` and `create_issue` have no
+  default, so a tracker that does not implement them does not build.
+- D5: checked by `crates/xtask/tests/ratchets.rs` as a ratchet
+  (`spawn_sites_match_the_baseline`): baseline 11 literal
+  `Command::new("git" | "gh" | "ssh")` sites in 7 files of production code;
+  the check fails if a site is added or a count changes. A spawn through a
+  variable (`find_program("ssh")`, `Command::new(&program)`) is not seen:
+  reviewed in the PR.

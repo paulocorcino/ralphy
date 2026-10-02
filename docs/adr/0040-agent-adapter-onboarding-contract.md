@@ -23,6 +23,9 @@ sites this ADR never named (`config.rs`, `run.rs`). Measured by enumerating ever
 file referencing **Copilot** — the most recently *implemented* vendor
 ([ADR-0041](./0041-copilot-adapter.md)) — outside its own crate: **24 files**.
 Evidence in [the Gemini spike, §C](../research/gemini-cli-adapter-spike.md).
+**Amendment 3** (2026-10-01) lets the workbench console prepare an owned
+configuration root through a CLI subcommand, instead of refusing until a run has
+made one — see the end of this file.
 
 ## How to use this ADR
 
@@ -284,9 +287,12 @@ because the interactive launch bypasses the adapter entirely. First,
 — a launch spec that sets one and not the other yields a child the operator
 believes is contained and is not. Second, the daemon cannot GENERATE that root
 (ADR-0032 §10 bars importing the adapter, and duplicating the generator would
-drift from the operator's imported rules), so the session route **fails closed**:
-it refuses the upgrade with a `400` naming the remedy when the root is absent,
-BEFORE `spec_for` and before any spawn. The layout constants it duplicates are
+drift from the operator's imported rules). When the root is absent, the session
+route asks the CLI to prepare it — `ralphy gemini prepare-root`, the adapter's
+own generator — and checks for the policy document again. It still **fails
+closed**: if the document is still missing, the launch is refused with the CLI's
+reason, BEFORE `spec_for` and before any spawn (Amendment 3). The layout
+constants it duplicates are
 pinned against the adapter's own source
 (`session.rs::the_gemini_root_layout_matches_the_adapters_own`), the same way the
 Cursor opt-in key is.
@@ -409,3 +415,45 @@ tokens only in the live stream envelope and persists none of it, so
 vendor. Tier 4's `usage-scan/src/<vendor>.rs` is still written — it enumerates
 sessions and reports tokens as unavailable. **Stating the gap is the deliverable;
 inventing a number is the failure.**
+
+## Amendment 3 — 2026-10-01, the console prepares an owned configuration root
+
+**Before.** A Gemini console opened from the workbench was refused until a
+`ralphy run --agent gemini` had run in that repo, because only the adapter can
+write the owned root and its policy document. On 2026-10-01, one repo out of
+ten on the Windows host had a root, and neither WSL repo had one. Every other
+repo refused the console. The refusal also looked like a dropped connection,
+which a separate fix closed: a refused launch now says why.
+
+**Decision.** When the policy document is absent, the session route runs
+`ralphy gemini prepare-root` in the repo's primary tree and then checks for the
+document again.
+
+- The subcommand calls the adapter's own preparation — the same function that
+  a run and each one-shot call before their spawn. It writes the owned root,
+  the settings, Ralphy's skills and the policy document, with the operator's
+  imported `deny` rules. It reads the administrator's tier and stops if a
+  control disables autonomy. It starts no model turn and no other child.
+- The daemon calls it as it calls every other `ralphy` subcommand
+  ([ADR-0036](./0036-workbench-daemon-integration-protocol.md) §2): a fixed
+  argv, no client input, the shared command slots, and the reply deadline. The
+  daemon still imports no adapter (ADR-0032 §10), and there is still one
+  generator.
+- It is **not a registry verb**. The browser cannot name it; it is one step of
+  a session launch. It is **not run-lock-aware**
+  ([ADR-0036](./0036-workbench-daemon-integration-protocol.md) §5): it writes
+  only Ralphy's own root inside `.ralphy/`, with the bytes a run writes itself,
+  and it touches no git, issue or label.
+- **Still fail closed.** The gate keys on the file, not on the exit code. A
+  failed subcommand, a timeout, or a success that wrote nothing all refuse the
+  launch, and the refusal carries the subcommand's last output line. No Gemini
+  child starts without the policy document.
+
+**Security** ([ADR-0072](./0072-the-security-model.md)). The change adds a
+protection where there was none to add: the console runs under the same policy
+as a run. It passes no new environment variable to a child and stores no
+secret. The subcommand runs with the daemon's child environment, which already
+has the daemon token removed.
+
+**Public API.** `ralphy-agent-gemini` gains one public function for the
+subcommand to call. This amendment is the decision that adds it.

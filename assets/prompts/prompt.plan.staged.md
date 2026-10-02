@@ -113,8 +113,8 @@ on one.
      executor installs a headless-browser driver (e.g. Playwright) if none
      is present — plan that check instead of conceding the criterion to
      review-only, and price
-     its evidence: a dated screenshot under `docs/screenshots/` named with
-     the issue number, committed with the work. Screenshot evidence belongs
+     its evidence: a dated screenshot under `.ralphy/screenshots/` named with
+     the issue number, never committed. Screenshot evidence belongs
      to that browser-driven path only — do not require screenshot artifacts
      for criteria a browser never renders (terminal scrollback, CLI output,
      logs). State
@@ -200,7 +200,8 @@ on one.
   task line to this single issue number, the issue is a bundle: say so under
   `## Feasible` — the verdict prose MUST contain the literal word "bundle"
   (the runner keys on it to label the issue `needs-split`) — and recommend
-  the split, naming the constituent tasks.
+  the split, naming the constituent tasks. When the issue is not a bundle,
+  do not write the word "bundle" anywhere under `## Feasible`.
 - Verify a cross-issue reference at source before asserting it as fact: when
   you state what another issue covers, delivers, or requires — especially in a
   `Feasible: no` split's sub-task descriptions or any prose destined for a child

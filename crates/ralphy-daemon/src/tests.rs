@@ -412,6 +412,147 @@ async fn api_desk_empty_when_no_file() {
     );
 }
 
+/// ADR-0070 D4: a `desk.toml` that cannot be parsed is a failure on both
+/// verbs, and the PUT never writes over it.
+#[tokio::test]
+async fn api_desk_refuses_a_corrupt_desk_and_leaves_its_bytes() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("desk.toml");
+    let corrupt: &[u8] = b"windows = [\n";
+    std::fs::write(&file, corrupt).unwrap();
+    let app = desk_router(dir.path());
+
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/desk")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::CONFLICT);
+    let body: serde_json::Value = serde_json::from_str(&body_text(res).await).unwrap();
+    assert_eq!(body["state"], "unreadable");
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap_or("")
+            .contains("parsing desk layout"),
+        "the reply says why: {body}"
+    );
+
+    let up = desk_body(
+        serde_json::json!([desk_json("w-a", 1, serde_json::json!(7), false)]),
+        serde_json::json!([]),
+    );
+    let res = desk_put(dir.path(), &up).await;
+    assert_eq!(res.status(), StatusCode::CONFLICT);
+    assert_eq!(
+        std::fs::read(&file).unwrap(),
+        corrupt,
+        "a refused PUT leaves the unreadable desk byte-identical"
+    );
+}
+
+async fn desk_new(dir: &Path) -> Response {
+    desk_router(dir)
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/desk/new")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+}
+
+fn unreadable_copies(dir: &Path) -> Vec<PathBuf> {
+    std::fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| {
+            p.file_name()
+                .is_some_and(|n| n.to_string_lossy().starts_with("desk.toml.unreadable-"))
+        })
+        .collect()
+}
+
+/// ADR-0070 D4: the operator's one action on an unreadable desk keeps the old
+/// file under a new name and starts an empty desk.
+#[tokio::test]
+async fn api_desk_new_moves_the_unreadable_file_aside() {
+    let dir = tempfile::tempdir().unwrap();
+    let corrupt: &[u8] = b"windows = [\n";
+    std::fs::write(dir.path().join("desk.toml"), corrupt).unwrap();
+
+    let res = desk_new(dir.path()).await;
+    assert_eq!(res.status(), StatusCode::OK);
+    let copies = unreadable_copies(dir.path());
+    assert_eq!(copies.len(), 1, "one aside copy: {copies:?}");
+    assert_eq!(std::fs::read(&copies[0]).unwrap(), corrupt);
+    assert_eq!(
+        desk_get(dir.path()).await,
+        r#"{"windows":[],"fences":[],"notes":[]}"#
+    );
+}
+
+/// A `desk.toml` that cannot be READ (here a directory in its place) may be a
+/// fine file held for a moment, so it is `unavailable`, not `unreadable`:
+/// writes are refused, and starting a new desk moves nothing aside.
+#[tokio::test]
+async fn a_desk_that_cannot_be_read_is_unavailable_and_never_moved_aside() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("desk.toml");
+    std::fs::create_dir(&file).unwrap();
+
+    let res = desk_router(dir.path())
+        .oneshot(
+            Request::builder()
+                .uri("/api/desk")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body: serde_json::Value = serde_json::from_str(&body_text(res).await).unwrap();
+    assert_eq!(body["state"], "unavailable");
+
+    let up = desk_body(
+        serde_json::json!([desk_json("w-a", 1, serde_json::json!(7), false)]),
+        serde_json::json!([]),
+    );
+    assert_eq!(
+        desk_put(dir.path(), &up).await.status(),
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+
+    let res = desk_new(dir.path()).await;
+    assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert!(
+        unreadable_copies(dir.path()).is_empty(),
+        "nothing is moved aside"
+    );
+    assert!(file.is_dir(), "the path is left as it was");
+}
+
+/// Negative control: a desk that reads is never moved aside.
+#[tokio::test]
+async fn api_desk_new_refuses_a_readable_desk() {
+    let dir = tempfile::tempdir().unwrap();
+    let up = desk_body(
+        serde_json::json!([desk_json("w-a", 1, serde_json::json!(7), false)]),
+        serde_json::json!([]),
+    );
+    assert_eq!(desk_put(dir.path(), &up).await.status(), StatusCode::OK);
+    let res = desk_new(dir.path()).await;
+    assert_eq!(res.status(), StatusCode::CONFLICT);
+    assert!(unreadable_copies(dir.path()).is_empty());
+}
+
 #[tokio::test]
 async fn api_desk_put_then_get_round_trips() {
     let dir = tempfile::tempdir().unwrap();
@@ -540,7 +681,7 @@ async fn api_desk_prunes_notes_to_the_cap() {
     body["notes"] = serde_json::json!(notes);
     let res = desk_put(dir.path(), &body).await;
     assert_eq!(res.status(), StatusCode::OK);
-    let stored = desk::load_from(&dir.path().join("desk.toml"));
+    let stored = desk::load_from(&dir.path().join("desk.toml")).expect("desk reads");
     assert_eq!(stored.notes.len(), desk::NOTE_MAX);
     assert!(
         !stored.notes.iter().any(|n| n.id == "n1"),
@@ -562,7 +703,7 @@ async fn an_upload_without_notes_keeps_the_stored_cards() {
     older["removed"] = serde_json::json!({ "windows": [], "fences": [] });
     let res = desk_put(dir.path(), &older).await;
     assert_eq!(res.status(), StatusCode::OK);
-    let stored = desk::load_from(&dir.path().join("desk.toml"));
+    let stored = desk::load_from(&dir.path().join("desk.toml")).expect("desk reads");
     assert_eq!(stored.notes.len(), 1, "the card survived the fold");
 }
 
@@ -986,6 +1127,8 @@ async fn api_desk_put_rejects_a_fence_with_a_non_finite_rect() {
     let res = desk_put_route(
         dir.path().join("desk.toml"),
         dir.path().join("repos.toml"),
+        tokio::sync::broadcast::channel(1).0,
+        None,
         desk::DeskUpload {
             windows: vec![],
             fences: vec![desk::DeskFence {
@@ -1333,6 +1476,11 @@ fn announced_descriptor_advertises_a_nudge_only_inside_wsl() {
         "no `wsl.exe` can reach a non-WSL daemon, so it advertises no nudge"
     );
     assert_ne!(outside.environment, "WSL: Ubuntu-22.04");
+    assert_eq!(
+        outside.os,
+        std::env::consts::OS,
+        "the OS family is announced for the workbench icon"
+    );
 }
 
 /// Announcing must never touch the auth policy: it takes the token it is
@@ -1470,6 +1618,7 @@ fn seed_fleet_store(dir: &Path, peer_port: u16) -> PathBuf {
             address: "127.0.0.1".into(),
             port: peer_port,
             environment: "WSL: Ubuntu-22.04".into(),
+            os: String::new(),
             token: "tok".into(),
             protocol_version: peer::PEER_PROTOCOL_VERSION,
             tunnel: None,
@@ -1501,6 +1650,29 @@ fn fleet_router(registry_path: PathBuf) -> Router {
     )
 }
 
+/// ADR-0070 D4: the fleet view shows a peer store it cannot read as a row,
+/// in the existing `malformed` state, never as an empty fleet.
+#[tokio::test]
+async fn api_fleet_shows_an_unreadable_peer_store_as_a_row() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("peers"), "a file, not a directory").unwrap();
+    let resp = fleet_router(dir.path().join("repos.toml"))
+        .oneshot(
+            Request::builder()
+                .uri("/api/fleet")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let peers = body["peers"].as_array().unwrap();
+    assert_eq!(peers.len(), 1, "the failure is a row: {peers:?}");
+    assert_eq!(peers[0]["state"], "malformed");
+}
+
 #[tokio::test]
 async fn api_fleet_marks_an_unreachable_peer_and_keeps_the_local_repos() {
     let dir = tempfile::tempdir().unwrap();
@@ -1521,6 +1693,7 @@ async fn api_fleet_marks_an_unreachable_peer_and_keeps_the_local_repos() {
             address: "127.0.0.1".into(),
             port: closed,
             environment: "WSL: Ubuntu-22.04".into(),
+            os: "linux".into(),
             token: "tok".into(),
             protocol_version: peer::PEER_PROTOCOL_VERSION,
             tunnel: None,
@@ -1554,6 +1727,14 @@ async fn api_fleet_marks_an_unreachable_peer_and_keeps_the_local_repos() {
 
     let peers = body["peers"].as_array().unwrap();
     assert_eq!(peers.len(), 3, "both peers AND the bad record: {peers:?}");
+    let wsl = peers
+        .iter()
+        .find(|p| p["daemon_id"] == "01PEERWSL")
+        .expect("the WSL peer must be listed");
+    assert_eq!(
+        wsl["os"], "linux",
+        "the OS family rides through for the icon: {wsl}"
+    );
     let live = peers
         .iter()
         .find(|p| p["daemon_id"] == "01PEERFAKE")
@@ -1692,6 +1873,7 @@ fn nudge_target(port: u16, address: &str) -> peer::PeerDescriptor {
         address: address.into(),
         port,
         environment: "WSL: Ubuntu-22.04".into(),
+        os: String::new(),
         token: "tok".into(),
         protocol_version: peer::PEER_PROTOCOL_VERSION,
         tunnel: None,
@@ -1820,6 +2002,7 @@ async fn api_fleet_nudge_refuses_a_peer_that_announced_no_way_to_wake_it() {
             address: "127.0.0.1".into(),
             port: 7257,
             environment: "WSL: Ubuntu-22.04".into(),
+            os: String::new(),
             token: "tok".into(),
             protocol_version: peer::PEER_PROTOCOL_VERSION,
             tunnel: None,
@@ -2155,6 +2338,7 @@ async fn api_agents_uses_the_owning_daemons_locator() {
             address: "127.0.0.1".to_string(),
             port: peer_port,
             environment: "WSL: Ubuntu-22.04".to_string(),
+            os: String::new(),
             token: "peer-token".to_string(),
             protocol_version: peer::PEER_PROTOCOL_VERSION,
             tunnel: None,
@@ -2212,12 +2396,14 @@ async fn api_repos_reports_reachability_and_branch() {
     // One existing-dir entry on a branch (reachable) and one bogus-path entry
     // (unreachable), read back through the route.
     let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join(".git")).unwrap();
-    std::fs::write(
-        dir.path().join(".git").join("HEAD"),
-        "ref: refs/heads/feat/mini-ide\n",
-    )
-    .unwrap();
+    // A real repo: the branch is git's answer, not a read of `.git/HEAD`.
+    let init = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir.path())
+        .args(["init", "-q", "-b", "feat/mini-ide"])
+        .output()
+        .expect("git (CI and the build machine have git)");
+    assert!(init.status.success(), "git init failed");
     let registry_path = dir.path().join("repos.toml");
     let mut store = registry::RegistryStore::default();
     store.upsert("owner/here", &dir.path().to_string_lossy());
@@ -2247,6 +2433,10 @@ async fn api_repos_reports_reachability_and_branch() {
     assert!(
         body.contains("owner/here") && body.contains("owner/gone"),
         "body must carry both slugs; got: {body}"
+    );
+    assert!(
+        body.contains("\"name\":\"owner/here\""),
+        "each row carries the project name; got: {body}"
     );
     assert!(
         body.contains("\"reachable\":true"),
@@ -2288,12 +2478,30 @@ async fn api_repos_reports_dirty_and_remote() {
     // (b) a clean repo with NO remote.
     let clean = tempfile::tempdir().unwrap();
     git(clean.path(), &["init"]);
+    // (c) a repo on a detached HEAD.
+    let detached = tempfile::tempdir().unwrap();
+    git(detached.path(), &["init", "-b", "main"]);
+    git(
+        detached.path(),
+        &[
+            "-c",
+            "user.email=t@e",
+            "-c",
+            "user.name=T",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "x",
+        ],
+    );
+    git(detached.path(), &["checkout", "--detach"]);
 
     let reg = tempfile::tempdir().unwrap();
     let registry_path = reg.path().join("repos.toml");
     let mut store = registry::RegistryStore::default();
     store.upsert("owner/dirty", &dirty.path().to_string_lossy());
     store.upsert("owner/clean", &clean.path().to_string_lossy());
+    store.upsert("owner/detached", &detached.path().to_string_lossy());
     registry::save_to(&store, &registry_path).unwrap();
 
     let resp = router(
@@ -2331,6 +2539,30 @@ async fn api_repos_reports_dirty_and_remote() {
     assert!(
         body.contains("\"remote\":null"),
         "the remoteless repo must report null; got: {body}"
+    );
+
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&body).unwrap();
+    let row = |slug: &str| {
+        rows.iter()
+            .find(|r| r["slug"] == slug)
+            .unwrap_or_else(|| panic!("no row for {slug}: {body}"))
+            .clone()
+    };
+    let detached = row("owner/detached");
+    assert_eq!(detached["branch"], serde_json::Value::Null, "{detached}");
+    assert_eq!(detached["head"]["kind"], "detached", "{detached}");
+    let sha = detached["head"]["sha"].as_str().unwrap_or_default();
+    assert!(sha.len() >= 7, "a short sha: {detached}");
+    let clean = row("owner/clean");
+    assert_eq!(clean["head"]["kind"], "branch", "{clean}");
+    assert_eq!(clean["head"]["name"], clean["branch"], "{clean}");
+    assert!(
+        body.contains("\"head\":{\"kind\":\"detached\",\"sha\":\""),
+        "{body}"
+    );
+    assert!(
+        body.contains("\"head\":{\"kind\":\"branch\",\"name\":\""),
+        "{body}"
     );
 }
 
@@ -3236,6 +3468,11 @@ async fn every_response_carries_the_security_headers() {
         assert!(
             csp.contains("img-src 'self' data: blob:;"),
             "remote images are opt-in, off by default: {path}: {csp}"
+        );
+        // A socket goes only to the daemon's own origin (ADR-0072 D10).
+        assert!(
+            csp.contains("connect-src 'self';") && !csp.contains("ws:"),
+            "{path}: {csp}"
         );
     }
     // The hash in the header is the hash of the bytes the browser receives:
@@ -4997,12 +5234,14 @@ fn the_workbench_never_titles_a_repo_with_its_routing_head() {
             "index.html must never print the routing head raw: {anti}"
         );
     }
-    // The console name's prefix is the slug's last segment (ADR-0066 §2);
-    // taken from the ref, a peer console would be named after its ULID.
+    // The console name's prefix is the project name's last segment (ADR-0066
+    // §2 and its 2026-10-02 amendment); an unnamed ref falls back to the
+    // slug. Taken from the ref, a peer console would be named after its ULID.
     let console = include_str!("../assets/ui/wb-console.js");
     assert!(
-        console.contains("WBFleet.refSlug(repo)"),
-        "a console name prefix must come from the slug, not the ref"
+        console.contains("prefixOf(projectNameOf(repo))")
+            && console.contains("WBFleet.refSlug(ref)"),
+        "a console name prefix must come from the project name or the slug, not the ref"
     );
 }
 
@@ -5921,12 +6160,12 @@ fn shell_detaches_a_fence() {
     // NEGATIVE CONTROL: deleting the write wholesale would satisfy the first
     // assertion alone.
     assert!(
-        !js.contains(r#""/api/desk", {"#),
+        !js.contains(r#""/api/desk", {"#) && !js.contains(r#""/api/desk?tab=""#),
         "the desk PUT must live only in wb-desk-sink.js (#346)"
     );
     let sink = include_str!("../assets/ui/wb-desk-sink.js");
     assert!(
-        sink.contains(r#""/api/desk", {"#),
+        sink.contains(r#""/api/desk?tab=""#) && sink.contains("fetch(deskUrl(), {"),
         "wb-desk-sink.js must still perform the desk PUT (#346)"
     );
     assert!(
@@ -7005,9 +7244,13 @@ fn every_settable_key_the_panel_offers_is_a_key_the_cli_accepts() {
     // The declaration is worth nothing if the markup ignores it: an
     // `it.readonly` the input never reads is a field that still takes an
     // edit and still comes back refused.
-    assert!(
-        include_str!("../assets/ui/index.html").contains(r#":disabled="it.readonly === true""#),
-        "index.html must disable the control a readonly item declares"
+    // One binding per control a readonly key can use: text, password, toggle.
+    assert_eq!(
+        include_str!("../assets/ui/index.html")
+            .matches(r#":disabled="it.readonly === true""#)
+            .count(),
+        3,
+        "index.html must disable the text, password and toggle control a readonly item declares"
     );
     // Non-vacuous: a scan that stopped recognizing the schema's shape would
     // otherwise pass by checking nothing at all.
@@ -7439,8 +7682,8 @@ fn a_refused_change_act_reports_in_the_changes_panel() {
 fn a_remote_act_in_flight_locks_the_bar_and_shows_a_ring() {
     let html = include_str!("../assets/ui/index.html");
     for pin in [
-        r#"data-act="fetch" :disabled="!!syncBusy""#,
-        r#"data-act="pull" :disabled="!!syncBusy || !!pullBlocked()""#,
+        r#"data-act="fetch" :disabled="writeLocked() || !!syncBusy""#,
+        r#"data-act="pull" :disabled="writeLocked() || !!syncBusy || !!pullBlocked()""#,
         r#"data-act="push" :disabled="writeLocked() || !!syncBusy""#,
         r#":class="{ busy: syncBusy === 'fetch' }""#,
         r#":class="{ busy: syncBusy === 'pull' }""#,
@@ -8192,10 +8435,10 @@ fn every_icon_is_drawn_by_the_x_icon_directive() {
 #[test]
 fn a_remoteless_project_is_labelled_by_its_directory() {
     let js = include_str!("../assets/ui/app.js");
-    let load = js_method_body(js, "async loadRepos() {");
+    let load = js_method_body(js, "async loadRepos({ git = true } = {}) {");
     assert!(
-        load.contains("path: x.path"),
-        "`loadRepos` must keep `/api/repos`'s path — the label reads it; \
+        load.contains("name: x.name"),
+        "`loadRepos` must keep `/api/repos`'s name — the label reads it; \
          found: {load:?}"
     );
 
@@ -8211,8 +8454,8 @@ fn a_remoteless_project_is_labelled_by_its_directory() {
         .expect("repoLabel must close at module indent")
         .0;
     assert!(
-        label.contains(r#"!p.slug.includes("/")"#),
-        "only a slug with no `/` is relabelled; found: {label:?}"
+        label.contains("projectName(p)"),
+        "the label is built on the daemon's project name; found: {label:?}"
     );
 
     let filter = js_method_body(js, "filteredProjects() {");
@@ -8229,9 +8472,9 @@ fn a_remoteless_project_is_labelled_by_its_directory() {
         "the row must render the label through `repoLabel`"
     );
     assert!(
-        html.contains(r#":title="p.slug""#),
-        "the label is a view concern; `.project-slug`'s own title must stay \
-         the canonical ADR-0008 D7 slug (the browser tests locate a row by it)"
+        html.contains(r#":data-slug="p.slug""#),
+        "the label is a view concern; `.project-slug` must keep the canonical \
+         ADR-0008 D7 slug in `data-slug` (the browser tests locate a row by it)"
     );
 }
 
@@ -8381,4 +8624,190 @@ fn the_sidebar_column_keeps_one_gutter() {
              here re-rags the column; found: {body:?}"
         );
     }
+}
+
+/// POST `body` to `/api/peer/command` on a daemon with one registered repo,
+/// `owner/cap`; return the status.
+async fn peer_command_status(body: Vec<u8>) -> StatusCode {
+    let dir = tempfile::tempdir().unwrap();
+    let registry_path = dir.path().join("repos.toml");
+    let mut store = registry::RegistryStore::default();
+    store.upsert("owner/cap", &dir.path().to_string_lossy());
+    registry::save_to(&store, &registry_path).unwrap();
+    let resp = fleet_router(registry_path)
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/peer/command")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    resp.status()
+}
+
+/// A paste forwarded to a peer carries a whole image: a 4 MiB `image.write`
+/// is under the transport cap, so the peer route takes it.
+#[tokio::test]
+async fn peer_command_takes_a_4_mib_image() {
+    let mut png = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR".to_vec();
+    png.resize(tree::MAX_IMAGE_BYTES as usize, 0);
+    let body = serde_json::json!({
+        "id": 1,
+        "verb": "image.write",
+        "payload": {"repo": "owner/cap", "base64": data_encoding::BASE64.encode(&png)},
+    });
+    let status = peer_command_status(body.to_string().into_bytes()).await;
+    assert_ne!(status, StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(status, StatusCode::OK);
+}
+
+/// A body over the transport cap is refused before it is parsed.
+#[tokio::test]
+async fn peer_command_refuses_a_body_over_the_cap() {
+    let body = vec![b' '; tree::MAX_COMMAND_BYTES + 1];
+    assert_eq!(
+        peer_command_status(body).await,
+        StatusCode::PAYLOAD_TOO_LARGE
+    );
+}
+
+/// The `innerHTML` writes of `src` that take a template string with a value
+/// in it, or a bare variable: each is a sink that would parse a file name as
+/// markup.
+fn template_html_sinks(src: &str) -> Vec<String> {
+    let template = regex::Regex::new(r"innerHTML\s*=\s*`[^`]*\$\{").expect("valid regex");
+    let variable = regex::Regex::new(r"innerHTML\s*=\s*[A-Za-z_$][\w$]*\s*;").expect("valid regex");
+    template
+        .find_iter(src)
+        .chain(variable.find_iter(src))
+        .map(|m| m.as_str().to_string())
+        .collect()
+}
+
+/// The context menu and the console key bar build their icons as elements
+/// and their text with `textContent`: no `innerHTML` there takes a template
+/// string with a value in it, or a variable.
+#[test]
+fn no_menu_or_key_sink_takes_a_template_string() {
+    // The matcher sees both shapes, across a line break too.
+    assert_eq!(template_html_sinks("b.innerHTML = `<i>${x}</i>`;").len(), 1);
+    assert_eq!(
+        template_html_sinks("h.innerHTML =\n  `<i class=\"${a}\">`;").len(),
+        1
+    );
+    assert_eq!(template_html_sinks("b.innerHTML = text;").len(), 1);
+    assert!(template_html_sinks("b.innerHTML = '<i class=\"bi bi-x\"></i>';").is_empty());
+    assert!(template_html_sinks("menu.innerHTML = \"\";").is_empty());
+    for (name, src) in [
+        ("app.js", include_str!("../assets/ui/app.js")),
+        ("wb-console.js", include_str!("../assets/ui/wb-console.js")),
+    ] {
+        let sinks = template_html_sinks(src);
+        assert!(sinks.is_empty(), "{name}: {sinks:?}");
+    }
+}
+
+/// Every problem `vendor/manifest.json` has against `files` (path relative to
+/// `vendor/`, embedded bytes). Empty when each file has exactly one entry
+/// whose SHA-256 matches, and each entry names a file that exists.
+fn check_manifest(files: &[(String, Vec<u8>)], manifest: &serde_json::Value) -> Vec<String> {
+    use sha2::{Digest, Sha256};
+    let mut problems = Vec::new();
+    let mut entries: std::collections::BTreeMap<String, String> = Default::default();
+    let libraries = manifest["libraries"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    if libraries.is_empty() {
+        problems.push("the manifest lists no libraries".to_string());
+    }
+    for lib in &libraries {
+        for key in ["name", "version", "source"] {
+            if lib[key].as_str().is_none_or(str::is_empty) {
+                problems.push(format!("{lib}: `{key}` is missing"));
+            }
+        }
+        for f in lib["files"].as_array().into_iter().flatten() {
+            let (Some(path), Some(sha)) = (f["path"].as_str(), f["sha256"].as_str()) else {
+                problems.push(format!("{f}: an entry needs `path` and `sha256`"));
+                continue;
+            };
+            if entries.insert(path.to_string(), sha.to_string()).is_some() {
+                problems.push(format!("{path}: listed twice in the manifest"));
+            }
+        }
+    }
+    for (path, bytes) in files {
+        let actual: String = Sha256::digest(bytes)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        match entries.remove(path) {
+            None => problems.push(format!("{path}: not in the manifest")),
+            Some(sha) if sha != actual => problems.push(format!(
+                "{path}: sha256 is {actual}, the manifest says {sha}"
+            )),
+            Some(_) => {}
+        }
+    }
+    for path in entries.keys() {
+        problems.push(format!("{path}: in the manifest, but not vendored"));
+    }
+    problems
+}
+
+/// Each vendored file is the one its manifest entry names: a changed byte or
+/// a file nobody recorded fails here, so a library bump also updates the
+/// version and source the vulnerability scan reads (ADR-0072 D12).
+#[test]
+fn vendored_files_match_the_manifest() {
+    fn walk(dir: &include_dir::Dir<'_>, out: &mut Vec<(String, Vec<u8>)>) {
+        for f in dir.files() {
+            let path = f.path().to_string_lossy().replace('\\', "/");
+            let rel = path.strip_prefix("vendor/").unwrap_or(&path).to_string();
+            if rel != "manifest.json" {
+                out.push((rel, f.contents().to_vec()));
+            }
+        }
+        for d in dir.dirs() {
+            walk(d, out);
+        }
+    }
+    let manifest: serde_json::Value = serde_json::from_slice(
+        UI.get_file("vendor/manifest.json")
+            .expect("vendor/manifest.json is embedded")
+            .contents(),
+    )
+    .expect("vendor/manifest.json is JSON");
+    let mut files = Vec::new();
+    walk(
+        UI.get_dir("vendor").expect("vendor/ is embedded"),
+        &mut files,
+    );
+    assert!(files.len() > 100, "the walk found the vendored files");
+    let problems = check_manifest(&files, &manifest);
+    assert!(problems.is_empty(), "{}", problems.join("\n"));
+
+    // Negative controls: the checker sees a changed byte and an extra file.
+    let mut flipped = files.clone();
+    flipped[0].1[0] ^= 1;
+    let problems = check_manifest(&flipped, &manifest);
+    assert!(
+        problems.len() == 1 && problems[0].starts_with(&format!("{}: sha256 is", flipped[0].0)),
+        "{problems:?}"
+    );
+    let mut extra = files.clone();
+    extra.push(("stray.js".to_string(), b"x".to_vec()));
+    assert_eq!(
+        check_manifest(&extra, &manifest),
+        vec!["stray.js: not in the manifest".to_string()]
+    );
+    let missing = &files[1..];
+    assert_eq!(
+        check_manifest(missing, &manifest),
+        vec![format!("{}: in the manifest, but not vendored", files[0].0)]
+    );
 }

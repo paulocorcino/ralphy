@@ -81,6 +81,9 @@ struct ScriptedAgent {
     /// order; once exhausted, `Usage::default()` (no model). Lets a test
     /// script the resume loop's model-folding behavior.
     exec_usages: RefCell<VecDeque<Usage>>,
+    /// When true, `plan` hands back a plan whose steps are all checked and
+    /// reports zero open steps, as a resumed plan from a finished run does.
+    already_executed: bool,
 }
 
 impl ScriptedAgent {
@@ -106,6 +109,7 @@ impl ScriptedAgent {
             lint_dirty: false,
             fix_protocol: false,
             exec_usages: RefCell::new(VecDeque::new()),
+            already_executed: false,
         }
     }
 
@@ -151,6 +155,13 @@ impl ScriptedAgent {
     /// Script an infeasible plan (zero open steps).
     fn infeasible(mut self) -> Self {
         self.steps = 0;
+        self
+    }
+
+    /// Script a resumed plan that an earlier run already executed: every step
+    /// checked, zero open steps.
+    fn already_executed(mut self) -> Self {
+        self.already_executed = true;
         self
     }
 
@@ -227,7 +238,7 @@ impl Agent for ScriptedAgent {
         }
         fs::write(&path, body)?;
         Ok(Plan {
-            open_steps: self.steps,
+            open_steps: if self.already_executed { 0 } else { self.steps },
             recommended_model: None,
             path,
             usage: Usage::default(),
@@ -326,6 +337,10 @@ impl IssueTracker for RecordingTracker {
 
     fn is_closed(&self, number: u64) -> anyhow::Result<bool> {
         Ok(self.closed_issues.contains(&number))
+    }
+
+    fn create_issue(&self, _title: &str, _body: &str, _labels: &[String]) -> anyhow::Result<u64> {
+        Ok(0)
     }
 
     fn comment(&self, number: u64, body: &str) -> anyhow::Result<()> {

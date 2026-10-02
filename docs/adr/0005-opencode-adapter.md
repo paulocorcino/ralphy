@@ -122,6 +122,31 @@ We rejected injecting an `OPENCODE_CONFIG_CONTENT` permission map (more moving
 parts for the same effective full-autonomy) and "flag + config" belt-and-suspenders
 (complexity unwarranted for v1). The only config we inject is the skills path (D7).
 
+### Amendment (2026-10-01, issue #516 / ADR-0072 D6) — a deny map on top of the flag
+
+The flag stays, and every headless session now also carries a `permission.bash`
+map in `OPENCODE_CONFIG_CONTENT` that denies `git push` and the `gh pr` verbs that
+write (`create`, `edit`, `ready`, `reopen`, `review`, `comment`, `merge`,
+`close`). Each command has two patterns, the bare form and `<command> *`. This
+reverses the rejection above: the map does not change the autonomy, it only
+removes the forge writes the charter already forbids. The sessions are plan,
+execute, and the one-shot init, triage and consolidate sessions;
+`build_opencode_command` builds the config, so no caller can leave the map out.
+
+Measured with opencode 1.18.32: `--dangerously-skip-permissions` is now a hidden
+alias of `--auto`, which approves only what is not explicitly denied. A denied
+call ends as a tool error that the model reads ("The user has specified a rule
+which prevents you from using this specific tool call…"), and the run goes on to
+the end. opencode splits a compound command (`cd x && git push`, `a; git push`,
+a pipe) and checks each part.
+
+Limits, accepted: the patterns match the start of the command text, so a global
+flag (`git -C x push`, `gh -R o/r pr create`) or a wrapper (`bash -c "…"`,
+`env git push`) gets past them. A pattern such as `git * push *` would close the
+first case but would also refuse `git commit -m "fix push logic"`, so it is not
+added (ADR-0072 D6a). The map has no `"*"` entry, so the operator's own bash rules
+still apply.
+
 ## D6 — Auth is the operator's; the adapter scrubs the keys OpenCode auto-detects
 
 OpenCode is multi-provider; the operator owns `opencode auth login` (credentials

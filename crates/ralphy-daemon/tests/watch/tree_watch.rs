@@ -224,3 +224,36 @@ async fn malformed_checkout_on_watch_holds_nothing() {
         Some((slug.clone(), String::new(), None))
     );
 }
+
+/// A watch the daemon cannot hold is pushed as `tree.failed`, so the tree can
+/// show that it no longer updates by itself (ADR-0070 D3).
+#[tokio::test]
+async fn a_watch_that_fails_is_pushed_as_tree_failed() {
+    let (url, slug, _root) = serve_repo().await;
+    let (mut ws, _r) = connect_async(&url).await.expect("connect");
+    send_verb(&mut ws, "watch", &slug, "no-such-dir").await;
+    let payload = tokio::time::timeout(Duration::from_secs(5), async {
+        while let Some(msg) = ws.next().await {
+            let Ok(Message::Binary(bytes)) = msg else {
+                continue;
+            };
+            if let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) {
+                if cmd.verb == "tree.failed" {
+                    return Some(cmd.payload);
+                }
+            }
+        }
+        None
+    })
+    .await
+    .ok()
+    .flatten()
+    .expect("a failed watch must be pushed as tree.failed");
+    assert_eq!(payload["path"], "no-such-dir");
+    assert_eq!(payload["repo"], slug.as_str());
+    assert!(
+        payload["reason"].as_str().is_some_and(|r| !r.is_empty()),
+        "the push names why: {payload}"
+    );
+    crate::golden::check("tree.failed", payload, &["/reason"]);
+}

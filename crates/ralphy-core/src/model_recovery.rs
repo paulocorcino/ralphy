@@ -192,6 +192,7 @@ impl Drop for MapLock {
 }
 
 #[cfg(unix)]
+#[allow(unsafe_code, reason = "FFI: flock(2) for the model-recovery lock")]
 fn lock_exclusive(file: &File) -> std::io::Result<()> {
     use std::os::fd::AsRawFd;
 
@@ -209,6 +210,7 @@ fn lock_exclusive(file: &File) -> std::io::Result<()> {
 }
 
 #[cfg(unix)]
+#[allow(unsafe_code, reason = "FFI: flock(2) for the model-recovery lock")]
 fn try_lock_exclusive(file: &File) -> std::io::Result<bool> {
     use std::os::fd::AsRawFd;
 
@@ -232,6 +234,7 @@ fn try_lock_exclusive(file: &File) -> std::io::Result<bool> {
 }
 
 #[cfg(unix)]
+#[allow(unsafe_code, reason = "FFI: flock(2) for the model-recovery lock")]
 fn unlock(file: &File) -> std::io::Result<()> {
     use std::os::fd::AsRawFd;
 
@@ -249,6 +252,10 @@ fn unlock(file: &File) -> std::io::Result<()> {
 }
 
 #[cfg(windows)]
+#[allow(
+    unsafe_code,
+    reason = "FFI: LockFileEx/UnlockFileEx for the model-recovery lock"
+)]
 fn lock_exclusive(file: &File) -> std::io::Result<()> {
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Storage::FileSystem::{LockFileEx, LOCKFILE_EXCLUSIVE_LOCK};
@@ -257,6 +264,8 @@ fn lock_exclusive(file: &File) -> std::io::Result<()> {
     // SAFETY: zero is the documented synchronous OVERLAPPED shape; the file
     // handle remains owned by `MapLock` until the matching unlock.
     let mut overlapped: OVERLAPPED = unsafe { std::mem::zeroed() };
+    // SAFETY: the handle is valid while `file` lives, and `overlapped` is a
+    // valid out pointer for the call.
     let result = unsafe {
         LockFileEx(
             file.as_raw_handle() as _,
@@ -275,6 +284,10 @@ fn lock_exclusive(file: &File) -> std::io::Result<()> {
 }
 
 #[cfg(windows)]
+#[allow(
+    unsafe_code,
+    reason = "FFI: LockFileEx/UnlockFileEx for the model-recovery lock"
+)]
 fn try_lock_exclusive(file: &File) -> std::io::Result<bool> {
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Storage::FileSystem::{
@@ -285,6 +298,8 @@ fn try_lock_exclusive(file: &File) -> std::io::Result<bool> {
     // SAFETY: zero is the documented synchronous OVERLAPPED shape; the handle
     // remains valid while the result is interpreted.
     let mut overlapped: OVERLAPPED = unsafe { std::mem::zeroed() };
+    // SAFETY: the handle is valid while `file` lives, and `overlapped` is a
+    // valid out pointer for the call.
     let result = unsafe {
         LockFileEx(
             file.as_raw_handle() as _,
@@ -308,6 +323,10 @@ fn try_lock_exclusive(file: &File) -> std::io::Result<bool> {
 }
 
 #[cfg(windows)]
+#[allow(
+    unsafe_code,
+    reason = "FFI: LockFileEx/UnlockFileEx for the model-recovery lock"
+)]
 fn unlock(file: &File) -> std::io::Result<()> {
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Storage::FileSystem::UnlockFileEx;
@@ -315,6 +334,8 @@ fn unlock(file: &File) -> std::io::Result<()> {
 
     // SAFETY: this matches the range locked by `lock_exclusive`; the handle is valid.
     let mut overlapped: OVERLAPPED = unsafe { std::mem::zeroed() };
+    // SAFETY: the handle is valid while `file` lives, and `overlapped` is a
+    // valid out pointer for the call.
     let result = unsafe {
         UnlockFileEx(
             file.as_raw_handle() as _,

@@ -1,0 +1,16 @@
+{
+  "dir": {
+    "added": false,
+    "path": "<path>",
+    "root": null
+  },
+  "entries": [
+    {
+      "added": true,
+      "name": "peer-repo",
+      "repo": true
+    }
+  ],
+  "more": 0,
+  "status": "ok"
+}

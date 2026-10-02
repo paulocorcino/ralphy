@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 
-use super::{ct_eq, set_owner_only, SessionAuth};
+use super::{ct_eq, SessionAuth};
 use crate::{cookie, epoch, password, totp};
 
 /// The outcome of a [`SessionAuth::login_checked`] attempt.
@@ -182,12 +182,9 @@ pub fn set_remote_images_in(dir: &Path, enable: bool) -> Result<()> {
 fn set_marker(path: &Path, enable: bool) -> Result<()> {
     if enable {
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("creating {}", parent.display()))?;
+            crate::owner_only::create_owner_only_dir(parent)?;
         }
-        std::fs::write(path, "1").with_context(|| format!("writing {}", path.display()))?;
-        set_owner_only(path)?;
-        Ok(())
+        crate::owner_only::write_owner_only(path, b"1")
     } else {
         match std::fs::remove_file(path) {
             Ok(()) => Ok(()),

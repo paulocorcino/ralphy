@@ -125,6 +125,7 @@ async fn the_marker_requires_the_token_on_loopback_and_the_fleet_still_reaches_t
             address: "127.0.0.1".to_string(),
             port,
             environment: "vps".to_string(),
+            os: String::new(),
             token: TOKEN.to_string(),
             protocol_version: PEER_PROTOCOL_VERSION,
             tunnel: None,

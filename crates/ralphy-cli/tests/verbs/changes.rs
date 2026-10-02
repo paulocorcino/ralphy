@@ -84,6 +84,11 @@ fn changes_list_json_carries_both_sides() {
         "the derived projection is untouched by the split"
     );
     assert!(v["changes"][0]["original_path"].is_null());
+    super::golden::check(
+        "changes.list",
+        serde_json::json!({ "status": "ok", "changes": v }),
+        &[],
+    );
 }
 
 #[test]

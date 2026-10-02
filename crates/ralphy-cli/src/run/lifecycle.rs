@@ -8,7 +8,7 @@ use anyhow::Result;
 use ralphy_core::{git, Workspace};
 
 use super::report::{emit_run_finished, maybe_consolidate_knowledge};
-use super::wiring::{init_tracing, strip_events_token_from_env};
+use super::wiring::{init_tracing, strip_secret_tokens_from_env};
 use super::{snapshot_engine, summary};
 use crate::cli::{CliAgent, RunArgs};
 use crate::{events, runstate, telegram, ui};
@@ -81,10 +81,9 @@ pub(super) fn start_delivery(
 ) {
     let mut notifier: Option<telegram::notifier::NotifierHandle> = None;
     if let (Some(event_queue), Some(cfg)) = (obs.event_queue.as_ref(), obs.tg_cfg.as_ref()) {
-        if let (Some(chat_id), Some(token)) = (
-            cfg.chat_id,
-            telegram::config::effective_token(Some(&cfg.token)),
-        ) {
+        // The token captured before the env scrub: reading the env again here
+        // would miss a token given only as `RALPHY_TELEGRAM_TOKEN`.
+        if let (Some(chat_id), Some(token)) = (cfg.chat_id, obs.tg_token.clone()) {
             let state = runstate::RunState::new(title.to_string(), queue_len);
             let client =
                 telegram::client::BotClient::new(telegram::client::UreqTransport::new(token));
@@ -134,6 +133,8 @@ pub(super) struct Observability {
     pub(super) presenter: ui::PresenterHandle,
     pub(super) event_queue: Option<Arc<telegram::notifier::EventQueue>>,
     pub(super) tg_cfg: Option<telegram::config::TelegramConfig>,
+    /// The effective bot token, captured before [`strip_secret_tokens_from_env`].
+    pub(super) tg_token: Option<String>,
     pub(super) event_sink_queue: Option<Arc<telegram::notifier::EventQueue>>,
     /// The run-snapshot ring (ADR-0047 §1): unconditional — no config gates it,
     /// which is exactly what makes a terminal-started run visible in the panel.
@@ -147,7 +148,7 @@ pub(super) struct Observability {
 /// CloudEvents sink ring/Layer, the events-token env scrub, and the tracing
 /// subscriber — and return the handles the later worker starts consume.
 ///
-/// ORDERING (load-bearing, ADR-0019): `strip_events_token_from_env` runs HERE, before
+/// ORDERING (load-bearing, ADR-0019): `strip_secret_tokens_from_env` runs HERE, before
 /// `init_tracing` installs the layers and before any worker thread is spawned, so the
 /// `remove_var` stays single-threaded with no concurrent `getenv` to race. The caller
 /// invokes this at one fixed position in `run_cmd`, so no side effect is reordered.
@@ -163,9 +164,12 @@ pub(super) fn install_observability(
     // the lifecycle from `queue built` onward. The worker is started later, once the
     // queue (and thus the title) is known.
     let tg_cfg = telegram::config::TelegramConfig::load().ok().flatten();
-    let configured = tg_cfg.as_ref().is_some_and(|c| {
-        c.chat_id.is_some() && telegram::config::effective_token(Some(&c.token)).is_some()
-    });
+    let tg_token = tg_cfg
+        .as_ref()
+        .and_then(|c| telegram::config::effective_token(Some(&c.token)));
+    let configured = tg_cfg
+        .as_ref()
+        .is_some_and(|c| c.chat_id.is_some() && tg_token.is_some());
     let notify = telegram::notifier::should_notify(configured, args.no_telegram, args.dry_run);
     let event_queue = notify.then(|| Arc::new(telegram::notifier::EventQueue::new()));
     let notifier_layer = event_queue
@@ -186,13 +190,14 @@ pub(super) fn install_observability(
     let events_url = events_entry.as_ref().and_then(|e| e.url.clone());
     let events_token =
         events::config::effective_token(events_entry.as_ref().and_then(|e| e.token.as_deref()));
-    // Strip RALPHY_EVENTS_TOKEN from the process env now that the effective token is
-    // captured in `events_token` (an owned String the sink transport keeps using):
-    // every child spawned later inherits this environment and none must see the
-    // sink's bearer token (ADR-0019). Done HERE — before init_tracing installs the
-    // layers and before any worker thread is spawned — so the `remove_var` runs
-    // single-threaded, with no concurrent `getenv` to race (edition 2021).
-    strip_events_token_from_env();
+    // Strip RALPHY_EVENTS_TOKEN and RALPHY_TELEGRAM_TOKEN from the process env now
+    // that the effective tokens are captured in `events_token` and `tg_token`
+    // (owned Strings the workers keep using): every child spawned later inherits
+    // this environment and none must see either token (ADR-0019, ADR-0072 D7).
+    // Done HERE — before init_tracing installs the layers and before any worker
+    // thread is spawned — so the `remove_var` runs single-threaded, with no
+    // concurrent `getenv` to race (edition 2021).
+    strip_secret_tokens_from_env();
     let event_sink_queue = events_url.as_ref().map(|_| events::sink::new_queue());
     let events_layer = event_sink_queue
         .as_ref()
@@ -216,6 +221,7 @@ pub(super) fn install_observability(
         presenter,
         event_queue,
         tg_cfg,
+        tg_token,
         event_sink_queue,
         snapshot_queue,
         events_url,

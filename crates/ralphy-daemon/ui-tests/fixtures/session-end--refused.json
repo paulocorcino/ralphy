@@ -1,0 +1,6 @@
+{
+  "daemon_id": "<daemon_id>",
+  "environment": "<environment>",
+  "message": "gemini: autonomy is disabled by your administrator",
+  "reason": "refused"
+}

@@ -4,26 +4,21 @@
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use ralphy_adapter_support::resolve_program;
+use ralphy_adapter_support::{resolve_program, DENIED_FORGE_WRITES};
 
 /// Build the headless `opencode run` command both `plan` and `execute` go through
 /// — the single point that fixes the invocation, always passes
 /// `--dangerously-skip-permissions` (the headless-hang guard, ADR-0005 D5) and
 /// `--format json`, omits `-m` unless the operator set one (D4), passes
-/// `--variant` only when set (D3), injects `OPENCODE_CONFIG_CONTENT` with the
-/// skills path (D7), runs in the repo root, and defensively removes both
+/// `--variant` only when set (D3), injects `OPENCODE_CONFIG_CONTENT` (see
+/// [`opencode_config`]), runs in `root`, and defensively removes both
 /// `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` so an inherited key can't switch
 /// the run to metered API billing (D6). The prompt is written on stdin.
-///
-/// GUARD ASYMMETRY: `--dangerously-skip-permissions` runs with no equivalent
-/// of the Claude adapter's PreToolUse guard hook (opencode has no such hook
-/// point wired here) — safety rests on the isolated run branch and the
-/// prompt's hard rules.
 pub(crate) fn build_opencode_command(
     model: Option<&str>,
     variant: Option<&str>,
     root: &Path,
-    skills_config: &str,
+    skills_dir: Option<&Path>,
 ) -> Command {
     // Resolve `opencode` to its real path: on Windows it ships as an npm `.cmd`
     // shim with no `.exe`, which a bare `Command::new("opencode")` cannot find.
@@ -55,10 +50,33 @@ pub(crate) fn build_opencode_command(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .env("OPENCODE_CONFIG_CONTENT", skills_config)
+        .env("OPENCODE_CONFIG_CONTENT", opencode_config(skills_dir))
         .env_remove("ANTHROPIC_API_KEY")
         .env_remove("OPENAI_API_KEY");
     cmd
+}
+
+/// The JSON injected as `OPENCODE_CONFIG_CONTENT`: `skills.paths` when the
+/// session has materialized skills (plan and execute, ADR-0005 D7), and in
+/// every session a `permission.bash` map that denies the forge writes
+/// (ADR-0072 D6, ADR-0005 D5 amendment). opencode applies an explicit `deny`
+/// even under `--dangerously-skip-permissions`, and the refused call reaches
+/// the model as a tool error; the run goes on (measured with opencode 1.18.32).
+/// The map has no `"*"` entry, so the operator's own bash rules still apply.
+fn opencode_config(skills_dir: Option<&Path>) -> String {
+    let mut bash = serde_json::Map::new();
+    for words in DENIED_FORGE_WRITES {
+        let command = words.join(" ");
+        bash.insert(format!("{command} *"), "deny".into());
+        bash.insert(command, "deny".into());
+    }
+    let mut config = serde_json::json!({ "permission": { "bash": bash } });
+    if let Some(dir) = skills_dir {
+        // Canonicalized for robustness; on failure the path is used as-is.
+        let abs = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
+        config["skills"] = serde_json::json!({ "paths": [abs] });
+    }
+    config.to_string()
 }
 
 #[cfg(test)]
@@ -74,7 +92,7 @@ mod tests {
 
     #[test]
     fn build_command_omits_model_when_none() {
-        let cmd = build_opencode_command(None, None, Path::new("/repo"), "{}");
+        let cmd = build_opencode_command(None, None, Path::new("/repo"), None);
         // The program is `resolve_program("opencode")`: a full path (e.g.
         // `opencode.cmd` on Windows) when found on PATH, else the bare name. Either
         // way the file stem is `opencode`.
@@ -111,7 +129,7 @@ mod tests {
             Some("anthropic/claude-sonnet-4-6"),
             None,
             Path::new("/repo"),
-            "{}",
+            None,
         );
         let args = argv(&cmd);
         assert!(args.contains(&"-m".to_string()), "argv: {args:?}");
@@ -123,10 +141,10 @@ mod tests {
 
     #[test]
     fn build_command_includes_variant_only_when_some() {
-        let without = build_opencode_command(None, None, Path::new("/repo"), "{}");
+        let without = build_opencode_command(None, None, Path::new("/repo"), None);
         assert!(!argv(&without).contains(&"--variant".to_string()));
 
-        let with = build_opencode_command(None, Some("high"), Path::new("/repo"), "{}");
+        let with = build_opencode_command(None, Some("high"), Path::new("/repo"), None);
         let args = argv(&with);
         assert!(args.contains(&"--variant".to_string()), "argv: {args:?}");
         assert!(args.contains(&"high".to_string()), "argv: {args:?}");
@@ -134,7 +152,7 @@ mod tests {
 
     #[test]
     fn build_command_removes_both_api_keys() {
-        let cmd = build_opencode_command(None, None, Path::new("/repo"), "{}");
+        let cmd = build_opencode_command(None, None, Path::new("/repo"), None);
         let anthropic_removed = cmd
             .get_envs()
             .any(|(k, v)| k == "ANTHROPIC_API_KEY" && v.is_none());
@@ -151,15 +169,95 @@ mod tests {
         );
     }
 
-    #[test]
-    fn build_command_injects_skills_config() {
-        let cfg = r#"{"skills":{"paths":["/some/skills"]}}"#;
-        let cmd = build_opencode_command(None, None, Path::new("/repo"), cfg);
-        let injected = cmd
+    fn injected_config(cmd: &Command) -> serde_json::Value {
+        let raw = cmd
             .get_envs()
             .find(|(k, _)| *k == "OPENCODE_CONFIG_CONTENT")
             .and_then(|(_, v)| v)
-            .map(|v| v.to_string_lossy().into_owned());
-        assert_eq!(injected.as_deref(), Some(cfg));
+            .map(|v| v.to_string_lossy().into_owned())
+            .expect("OPENCODE_CONFIG_CONTENT is set");
+        serde_json::from_str(&raw).expect("the injected config is JSON")
+    }
+
+    #[test]
+    fn build_command_injects_the_skills_path_only_when_given() {
+        let dir = std::env::temp_dir().join("ralphy-opencode-skills-cfg");
+        std::fs::create_dir_all(&dir).unwrap();
+        let cmd = build_opencode_command(None, None, Path::new("/repo"), Some(&dir));
+        let expected = dir.canonicalize().unwrap_or_else(|_| dir.clone());
+        assert_eq!(
+            injected_config(&cmd)["skills"]["paths"],
+            serde_json::json!([expected])
+        );
+
+        let cfg = injected_config(&build_opencode_command(
+            None,
+            None,
+            Path::new("/repo"),
+            None,
+        ));
+        assert!(cfg.get("skills").is_none(), "{cfg}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// opencode's documented wildcard rule: `*` is any run of characters and
+    /// the pattern must match the whole command.
+    fn glob(pattern: &str, text: &str) -> bool {
+        match pattern.split_once('*') {
+            None => pattern == text,
+            Some((head, tail)) => {
+                let Some(rest) = text.strip_prefix(head) else {
+                    return false;
+                };
+                rest.char_indices()
+                    .map(|(i, _)| i)
+                    .chain([rest.len()])
+                    .any(|i| glob(tail, &rest[i..]))
+            }
+        }
+    }
+
+    /// Every session, with or without skills, carries the deny map, and the
+    /// map denies the forge writes and nothing else.
+    #[test]
+    fn every_session_denies_the_forge_writes_and_only_them() {
+        let skills = std::env::temp_dir();
+        for skills_dir in [None, Some(skills.as_path())] {
+            let cmd = build_opencode_command(None, None, Path::new("/repo"), skills_dir);
+            let cfg = injected_config(&cmd);
+            let rules = cfg["permission"]["bash"]
+                .as_object()
+                .expect("permission.bash is a map");
+            assert!(rules.values().all(|v| v == "deny"), "{cfg}");
+            assert!(!rules.contains_key("*"), "the operator's own rules apply");
+            let denied = |command: &str| rules.keys().any(|p| glob(p, command));
+            for command in [
+                "git push",
+                "git push origin HEAD",
+                "gh pr create --fill",
+                "gh pr edit 5",
+                "gh pr ready",
+                "gh pr reopen 5",
+                "gh pr review 5 --approve",
+                "gh pr comment 5 -b hi",
+                "gh pr merge 5",
+                "gh pr close 5",
+            ] {
+                assert!(denied(command), "{command} must be denied");
+            }
+            for command in [
+                "git status",
+                "git commit -m \"fix push logic\"",
+                "git pull",
+                "gh pr view 5",
+                "gh pr list",
+                "gh pr diff 5",
+                "gh pr checks 5",
+                "gh api repos/o/r/pulls",
+                "gh issue comment 5 -b hi",
+            ] {
+                assert!(!denied(command), "{command} must stay allowed");
+            }
+        }
     }
 }

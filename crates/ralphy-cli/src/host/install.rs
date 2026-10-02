@@ -7,7 +7,7 @@ use std::io::Write;
 use std::path::Path;
 
 use anyhow::{anyhow, bail, Context, Result};
-use ralphy_release::{Build, Release};
+use ralphy_release::Release;
 use sha2::{Digest, Sha256};
 
 use super::checks::{
@@ -86,27 +86,26 @@ pub(crate) fn target_of(os: HostOs, arch: Option<&str>) -> Result<&'static str, 
 }
 
 /// What `ralphy host install` sends to a host with `facts`, or why it cannot.
-/// A development build has no release archive, so it can send only its own
-/// executable, to a host with its own target.
-pub(crate) fn offer(
-    facts: &HostFacts,
-    build: &Build,
-    local_target: Option<&str>,
-) -> Result<Offer, String> {
+/// A development build has no release archive, so a host with another target
+/// gets the latest release. Its peer protocol may differ from this build's;
+/// the operator of a development build takes that risk (ADR-0067 amendment
+/// D1), and the describe after the install reports it.
+pub(crate) fn offer(facts: &HostFacts, local: &Local<'_>) -> Result<Offer, String> {
     let target = target_of(facts.os, facts.arch.as_deref())?;
-    let (version, source) = if local_target == Some(target) {
+    let build = &local.build;
+    let (version, source) = if local.target == Some(target) {
         (build.raw.clone(), Source::ThisComputer)
     } else {
-        match (&build.tag, build.ahead) {
-            (Some(tag), false) => (tag.clone(), Source::Release(tag.clone())),
-            _ => {
-                return Err(format!(
-                    "this computer runs a development build of Ralphy, so it can send Ralphy only to a \
-                     host with the same system, and this host needs {target}. Build Ralphy on the host \
-                     from source, or run a Ralphy release on this computer"
-                ))
-            }
-        }
+        let tag = match (&build.tag, build.ahead) {
+            (Some(tag), false) => tag,
+            _ => local.latest.as_ref().ok_or_else(|| {
+                format!(
+                    "this computer runs a development build of Ralphy and could not read the \
+                     latest release for {target}"
+                )
+            })?,
+        };
+        (tag.clone(), Source::Release(tag.clone()))
     };
     Ok(Offer {
         version,
@@ -128,7 +127,7 @@ pub(crate) fn offer_for(
     if matches!(ralphy, RalphyOnHost::Described(_)) || ralphy.is_newer() {
         return None;
     }
-    match offer(facts, &local.build, local.target) {
+    match offer(facts, local) {
         Ok(offer) => Some(offer),
         Err(why) => {
             if let Some(c) = checks.iter_mut().find(|c| c.id == CheckId::Ralphy) {
@@ -283,7 +282,7 @@ pub(crate) fn install(
     if ralphy.is_newer() {
         bail!("the Ralphy on {dest} is newer than this one, so it was not replaced: update Ralphy on this computer");
     }
-    let offer = offer(&facts, &local.build, local.target).map_err(|why| anyhow!(why))?;
+    let offer = offer(&facts, local).map_err(|why| anyhow!(why))?;
 
     let bytes = fetch.binary(&offer.source, offer.target)?;
     let expected = format!("{:x}", Sha256::digest(&bytes));
@@ -310,7 +309,14 @@ pub(crate) fn install(
 
     let now = s.run_ok(&HostOp::Installed(InstalledOp::Describe), b"")?;
     let RalphyOnHost::Described(d) = classify_describe(&now)? else {
-        bail!("the Ralphy installed on {dest} does not answer as this computer's version");
+        bail!(
+            "the Ralphy installed on {dest} does not answer as this computer's version{}",
+            if local.build.ahead {
+                ": this development build speaks another peer protocol than the latest release"
+            } else {
+                ""
+            }
+        );
     };
     if d.autostart {
         s.run_ok(&HostOp::Installed(InstalledOp::InstallAutostart), b"")?;

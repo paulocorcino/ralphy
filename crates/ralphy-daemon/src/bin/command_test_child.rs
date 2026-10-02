@@ -16,8 +16,33 @@
 //! before exiting (a sentinel proving it ran to completion after a disconnect).
 //! `RALPHY_TEST_READ_STDIN` makes it read its standard input to the end and
 //! echo it as `dispatch-stdin: <text>`.
+//! `RALPHY_TEST_GRANDCHILD_MS` first starts a copy of itself that inherits
+//! stdout and stderr and sleeps that long: a grandchild that holds the output
+//! pipe after this child exits.
+//!
+//! Called as `gemini prepare-root`, it stands in for that subcommand and
+//! decides by files in its working directory, not by the environment (one
+//! test binary runs several repos at once, each in its own directory): it
+//! always writes `prepare-root.ran`; with `prepare-root.fail` present it
+//! prints an `Error: ` line and exits 1; with `prepare-root.noop` present it
+//! exits 0 and writes nothing else; otherwise it writes the policy document
+//! the daemon looks for and exits 0.
 
 fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args == ["gemini", "prepare-root"] {
+        prepare_root();
+    }
+    if let Ok(ms) = std::env::var("RALPHY_TEST_GRANDCHILD_MS") {
+        let exe = std::env::current_exe().expect("locating this test child");
+        // Not waited: the grandchild must outlive this child.
+        #[allow(clippy::zombie_processes)]
+        let _grandchild = std::process::Command::new(exe)
+            .env_remove("RALPHY_TEST_GRANDCHILD_MS")
+            .env("RALPHY_TEST_SLEEP_MS", ms)
+            .spawn()
+            .expect("starting the grandchild");
+    }
     if let Ok(dump_path) = std::env::var("RALPHY_TEST_ENV_DUMP") {
         let token = std::env::var("RALPHY_DAEMON_TOKEN").unwrap_or_else(|_| "ABSENT".into());
         let daemon_id = std::env::var("RALPHY_DAEMON_ID").unwrap_or_else(|_| "ABSENT".into());
@@ -102,4 +127,20 @@ fn main() {
         std::fs::rename(&staged, &done_path).expect("publishing the done sentinel");
     }
     std::process::exit(code);
+}
+
+/// The `gemini prepare-root` stand-in described in the module docs. Never returns.
+fn prepare_root() {
+    let cwd = std::env::current_dir().expect("reading the working directory");
+    std::fs::write(cwd.join("prepare-root.ran"), "").expect("writing prepare-root.ran");
+    if cwd.join("prepare-root.fail").exists() {
+        eprintln!("Error: autonomy is disabled by your administrator");
+        std::process::exit(1);
+    }
+    if !cwd.join("prepare-root.noop").exists() {
+        let dir = cwd.join(".ralphy").join("gemini-home").join(".gemini");
+        std::fs::create_dir_all(&dir).expect("creating the owned root");
+        std::fs::write(dir.join("ralphy-policy.toml"), "# policy\n").expect("writing the policy");
+    }
+    std::process::exit(0);
 }

@@ -167,16 +167,14 @@ fn check_skills_loaded_fails_a_run_missing_a_ralphy_skill() {
     );
     let agent = CopilotAgent::new(None, PathBuf::from("/run"));
     let err = agent
-        .check_skills_loaded(missing, &required, true)
+        .check_skills_loaded(missing, &required)
         .expect_err("a missing ralphy skill must fail the run");
     assert!(err.to_string().contains("staged-plan"), "{err}");
 
     // The D7 hatch is scoped to D7: it must NOT suppress the capability guard.
     let permissive = CopilotAgent::new(None, PathBuf::from("/run")).with_allow_builtin_mcps(true);
     assert!(
-        permissive
-            .check_skills_loaded(missing, &required, true)
-            .is_err(),
+        permissive.check_skills_loaded(missing, &required).is_err(),
         "D9 has no escape hatch; the D7 hatch must not suppress it"
     );
 
@@ -185,7 +183,7 @@ fn check_skills_loaded_fails_a_run_missing_a_ralphy_skill() {
         r#"{"type":"session.skills_loaded","data":{"skills":[{"name":"reviewer"},{"name":"staged-plan"}]},"ephemeral":true}"#,
         "\n"
     );
-    assert!(agent.check_skills_loaded(complete, &required, true).is_ok());
+    assert!(agent.check_skills_loaded(complete, &required).is_ok());
 }
 
 /// Same reasoning as D7's pin, for D9: no test here constructs a `Workspace`,
@@ -203,6 +201,10 @@ fn the_skills_guard_is_wired_into_both_phases() {
         assert!(
             body.contains(concat!("materialize_copilot", "_skills(ws)")),
             "skills must be materialized on the {phase} path"
+        );
+        assert!(
+            body.contains(concat!("self.check_skills_listed(", "ws.repo_root(),")),
+            "the skill listing must be checked on the {phase} path"
         );
     }
 }

@@ -4,11 +4,15 @@
 
 mod support;
 
+#[path = "../../../ralphy-daemon/tests/support/golden.rs"]
+mod golden;
+
 mod blob;
 mod changes;
 mod checkout_cwd;
 mod checkouts;
 mod daemon_cli;
+mod gemini_root;
 mod hook_status;
 mod lock_refusal;
 mod mutate;

@@ -280,18 +280,30 @@ const TUNNEL_PEER = {
   tunnel: true,
 };
 
-test("a tunnel peer's header is `<name>: <OS>`; a WSL peer's stays its distro", () => {
+test("a tunnel peer's header is its name and its OS; a WSL peer's stays its distro", () => {
   const wb = load();
   const groups = wb.fleetGroups([LOCAL_ROW, PEER_ROW], [PEER, TUNNEL_PEER]);
   const tunnel = groups.find((g) => g.daemon === TUNNEL_PEER.daemon_id);
   assert.equal(tunnel.tunnel, true);
-  assert.equal(wb.groupLabel(tunnel), "svrapp: Linux");
-  assert.equal(tunnel.showName, false, "the name is already in the label");
+  assert.equal(wb.groupHost(tunnel), "svrapp");
+  assert.equal(wb.groupLabel(tunnel), "Linux");
+  assert.equal(tunnel.showName, false, "the name is already in the header");
   const wsl = groups.find((g) => g.daemon === PEER.daemon_id);
   assert.equal(wsl.tunnel, false);
+  assert.equal(wb.groupHost(wsl), "", "a WSL peer's distro already says which one");
   assert.equal(wb.groupLabel(wsl), "WSL: Ubuntu-22.04");
   // A nameless tunnel peer has nothing to add to its OS.
-  assert.equal(wb.groupLabel(Object.assign({}, tunnel, { name: "" })), "Linux");
+  assert.equal(wb.groupHost(Object.assign({}, tunnel, { name: "" })), "");
+});
+
+test("a group takes its OS from its rows, and the peer list wins", () => {
+  const { fleetGroups } = load();
+  const local = Object.assign({}, LOCAL_ROW, { os: "windows" });
+  const row = Object.assign({}, PEER_ROW, { os: "" });
+  const peer = Object.assign({}, PEER, { os: "linux" });
+  const groups = fleetGroups([local, row], [peer]);
+  assert.equal(groups.find((g) => g.local).os, "windows");
+  assert.equal(groups.find((g) => g.daemon === PEER.daemon_id).os, "linux");
 });
 
 test("a closed tunnel is grey and reconnecting; a silent daemon behind it is a fault", () => {
@@ -314,22 +326,33 @@ test("every group header shows its system's icon and the group label, and has no
   // The icon is drawn for every group, not only a tunnel peer's.
   assert.doesNotMatch(head, /g\.tunnel/, head);
   for (const os of ["windows", "macos", "linux", "other"]) {
-    assert.ok(head.includes(`osOf(g.environment) === '${os}'`), os);
+    assert.ok(head.includes(`osOf(g) === '${os}'`), os);
   }
   assert.ok(head.includes('<use href="#os-linux">'), "the penguin");
   assert.ok(html.includes('<symbol id="os-linux"'), "the penguin's symbol");
-  assert.ok(head.includes('x-text="groupLabel(g)"'), head);
+  const label = html.slice(labelAt, html.indexOf("</span></span>", labelAt));
+  assert.ok(label.includes('x-text="groupHost(g) ?'), label);
+  assert.ok(label.includes('x-text="groupLabel(g)"'), label);
   const header = html.slice(start, html.indexOf('<template x-for="p in g.rows"', start));
   assert.doesNotMatch(header, /group-menu|contextmenu|showGroupMenu/);
 });
 
-test("a group's system comes from its environment label", () => {
+test("a group's system comes from its OS, whatever its label says", () => {
   const { system } = load();
-  assert.equal(system("Linux"), "linux");
-  assert.equal(system("WSL: Ubuntu-22.04"), "linux");
-  assert.equal(system("macOS"), "macos");
-  assert.equal(system("Windows"), "windows");
-  assert.equal(system("freebsd"), "other");
-  assert.equal(system("unknown"), "other");
-  assert.equal(system(""), "other");
+  assert.equal(system("linux", "Ubuntu 24.04"), "linux");
+  assert.equal(system("linux", "WSL: Ubuntu-22.04"), "linux");
+  assert.equal(system("macos", "macOS 15"), "macos");
+  assert.equal(system("windows", "Windows"), "windows");
+});
+
+test("a descriptor without an OS falls back to its older environment label", () => {
+  const { system } = load();
+  assert.equal(system("", "Linux"), "linux");
+  assert.equal(system(undefined, "WSL: Ubuntu-22.04"), "linux");
+  assert.equal(system("", "macOS"), "macos");
+  assert.equal(system("", "Windows"), "windows");
+  assert.equal(system("", "freebsd"), "other");
+  assert.equal(system("", "unknown"), "other");
+  assert.equal(system("", ""), "other");
+  assert.equal(system("freebsd", "FreeBSD 14.1"), "other", "no icon for an OS Ralphy does not ship");
 });

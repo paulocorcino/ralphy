@@ -1,0 +1,17 @@
+{
+  "status": "ok",
+  "sync": {
+    "sync": {
+      "head": {
+        "kind": "branch",
+        "name": "main"
+      },
+      "last_fetch": "<last_fetch>",
+      "tracking": {
+        "ahead": 1,
+        "behind": 1,
+        "upstream": "origin/main"
+      }
+    }
+  }
+}

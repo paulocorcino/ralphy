@@ -165,3 +165,46 @@ test("the formatter's edge branches keep CLI text out of the pass-through", () =
     "Writing inside a worktree is not available yet.",
   );
 });
+
+test("readFold keeps the last good value, marked not current, after a failure", () => {
+  const F = load();
+  const good = F.readFold(null, { ok: true, value: [{ slug: "a/b" }], at: 100 });
+  assert.equal(good.current, true);
+  const failed = F.readFold(good, { ok: false, reason: "the daemon did not answer", at: 200 });
+  assert.deepEqual(failed.value, [{ slug: "a/b" }]);
+  assert.equal(failed.current, false);
+  assert.equal(failed.goodAt, 100);
+  assert.equal(failed.error, "the daemon did not answer");
+});
+
+test("readFold before any good read has no value", () => {
+  const F = load();
+  const first = F.readFold(undefined, { ok: false, reason: "HTTP 500", at: 1 });
+  assert.equal(first.value, null);
+  assert.equal(first.current, false);
+});
+
+test("notCurrent names the time of the good read and the reason", () => {
+  const F = load();
+  const fmt = () => "14:02";
+  const good = F.readFold(null, { ok: true, value: 1, at: 5 });
+  assert.equal(F.notCurrent(good, fmt), "");
+  const stale = F.readFold(good, { ok: false, reason: "the daemon did not answer", at: 6 });
+  assert.equal(F.notCurrent(stale, fmt), "Read at 14:02. Not current: the daemon did not answer");
+  const never = F.readFold(null, { ok: false, reason: "HTTP 500", at: 6 });
+  assert.equal(F.notCurrent(never, fmt), "Could not read: HTTP 500");
+});
+
+test("why gives the cause of a code, to follow `Could not <act>: `", () => {
+  const F = load();
+  assert.equal(F.why({ status: "error", message: "unknown repo" }, "x"), "the project is not in the list");
+  assert.equal(F.why({ status: "error", reason: "transport" }, "x"), "the daemon did not answer");
+  assert.equal(F.why({ status: "error", message: "git exited 128" }, "x"), "git exited 128");
+  assert.equal(F.why({ status: "error" }, "the daemon gave no reason"), "the daemon gave no reason");
+});
+
+test("notCurrent shows the words for a code it was given", () => {
+  const F = load();
+  const read = { current: false, goodAt: 0, error: "unknown checkout" };
+  assert.equal(F.notCurrent(read, () => ""), "Could not read: the worktree does not exist");
+});

@@ -3,7 +3,7 @@
 **Status:** accepted
 **Date:** 2026-07-19
 **Refines:** ADR-0007 D6 (the decoder contract gains an owned emit side)
-**Evidence base:** `docs/evidence/audits/audit-events-2026-07-19.md` (§2–§3, findings F1/F5)
+**Evidence base:** `docs/spike/evidence/audits/audit-events-2026-07-19.md` (§2–§3, findings F1/F5)
 
 ## Context
 
@@ -159,6 +159,26 @@ generates both.
   the deliberate Decision-3 collapse, which the round-trip tests pin instead.
 - One decoder arm per concept remains the law; the per-adapter arm family was
   the only violation and this removes it.
+
+## Compliance
+
+- §1: not checked by code: reviewed in the PR. No test finds a raw `info!`
+  that restates a vocabulary message outside `ralphy_core::emit`, and no test
+  finds a decoder arm that matches a literal instead of a constant.
+- §2: checked by `crates/ralphy-cli/src/runstate/roundtrip.rs`
+  (`_every_variant_has_a_roundtrip`, an exhaustive `match` on `RunEvent`: a new
+  variant does not compile until it is listed) and by
+  `crates/ralphy-cli/src/runstate/capture/tests.rs`
+  (every_decoder_arm_has_a_pin: a decoder arm added without a pin fails).
+- §3: not checked by code: reviewed in the PR. every_decoder_arm_has_a_pin
+  makes a new decoder arm visible, but it does not forbid a per-adapter arm.
+- §4: checked by `crates/ralphy-cli/src/runstate/capture/tests.rs`
+  (every_decoder_arm_has_a_pin, shared_vocabulary_constants_are_pinned). Both
+  import `IDLE_REAPED_MSG` through `ralphy_adapter_support`, so they do not
+  compile if the re-export goes away.
+- §5: not checked by code: these are limits on scope, reviewed in the PR.
+- Amendment (#220): not checked by code: that nothing routes on the `tracing`
+  target is reviewed in the PR.
 
 ## Amendment (Fase 1a, #220): the `tracing` target collapses to `ralphy_core::emit`
 

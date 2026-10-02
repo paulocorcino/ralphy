@@ -10,9 +10,11 @@ use futures_util::{SinkExt, StreamExt};
 
 mod host;
 mod oneshot;
+mod registry_verbs;
 mod stream;
 
 pub(crate) use oneshot::*;
+pub(crate) use registry_verbs::serve_registry;
 
 use super::{read_peer_store, send_command};
 use crate::protocol::{Command, Frame};
@@ -98,6 +100,35 @@ pub(crate) async fn command_ws(
         .await;
         return;
     }
+    // A registry verb names a daemon, not a repo: no `daemon`, or this
+    // daemon's own id, is served here; a peer's id is relayed to that peer,
+    // which serves it against its own disk and registry.
+    if verb.is_registry() {
+        let target = cmd.payload.get("daemon").and_then(|v| v.as_str());
+        let reply = match target {
+            None | Some("") => {
+                serve_registry(&cmd, verb, &registry_path, daemon_id.as_deref()).await
+            }
+            Some(t) if Some(t) == daemon_id.as_deref() => {
+                serve_registry(&cmd, verb, &registry_path, daemon_id.as_deref()).await
+            }
+            Some(t) => {
+                let (descriptors, _) = read_peer_store(peers_dir).await;
+                match descriptors.iter().find(|d| d.daemon_id == t) {
+                    Some(peer) => {
+                        let mut proxied = cmd.clone();
+                        if let Some(obj) = proxied.payload.as_object_mut() {
+                            obj.remove("daemon");
+                        }
+                        relay_to_peer(peer, &proxied).await
+                    }
+                    None => unknown_daemon(t),
+                }
+            }
+        };
+        send_command(&mut socket, id, &cmd.verb, reply).await;
+        return;
+    }
     let repo_ref = cmd
         .payload
         .get("repo")
@@ -107,18 +138,7 @@ pub(crate) async fn command_ws(
     let slug = match fleet::route(repo_ref, daemon_id.as_deref().unwrap_or(""), &descriptors) {
         fleet::Route::Local { slug } => slug.to_string(),
         fleet::Route::UnknownDaemon { daemon_id } => {
-            send_command(
-                &mut socket,
-                id,
-                &cmd.verb,
-                serde_json::json!({
-                    "status": "error",
-                    "message": format!(
-                        "No environment is announced as {daemon_id}. Its daemon has not written a peer descriptor into this store."
-                    ),
-                }),
-            )
-            .await;
+            send_command(&mut socket, id, &cmd.verb, unknown_daemon(daemon_id)).await;
             return;
         }
         fleet::Route::Peer { peer, slug } => {
@@ -140,36 +160,7 @@ pub(crate) async fn command_ws(
             }
             let mut proxied = cmd.clone();
             proxied.payload["repo"] = serde_json::Value::String(slug.to_string());
-            let body = serde_json::to_value(&proxied).expect("Command always serializes");
-            let payload = match peer::client::post_json_timeout(
-                peer,
-                "/api/peer/command",
-                &body,
-                Duration::from_secs(60),
-            )
-            .await
-            {
-                Ok((200, body)) => serde_json::from_slice(&body).unwrap_or_else(|_| {
-                    serde_json::json!({
-                        "status": "error",
-                        "message": fleet::peer_unreachable(
-                            peer,
-                            "the peer answered invalid repo command data"
-                        ),
-                    })
-                }),
-                Ok((code, _)) => serde_json::json!({
-                    "status": "error",
-                    "message": fleet::peer_unreachable(
-                        peer,
-                        &format!("the peer answered HTTP {code} to a repo command")
-                    ),
-                }),
-                Err(e) => serde_json::json!({
-                    "status": "error",
-                    "message": fleet::peer_unreachable(peer, &format!("{e:#}")),
-                }),
-            };
+            let payload = relay_to_peer(peer, &proxied).await;
             send_command(&mut socket, id, &cmd.verb, payload).await;
             return;
         }
@@ -267,6 +258,52 @@ pub(crate) async fn command_ws(
         },
     )
     .await;
+}
+
+fn unknown_daemon(daemon_id: &str) -> serde_json::Value {
+    serde_json::json!({
+        "status": "error",
+        "message": format!(
+            "No environment is announced as {daemon_id}. Its daemon has not written a peer descriptor into this store."
+        ),
+    })
+}
+
+/// Relay a one-reply command to a peer's `/api/peer/command` and return the
+/// peer's reply, or an error that names the peer.
+async fn relay_to_peer(peer: &peer::PeerDescriptor, command: &Command) -> serde_json::Value {
+    let body = serde_json::to_value(command).expect("Command always serializes");
+    match peer::client::post_json_timeout(
+        peer,
+        "/api/peer/command",
+        &body,
+        // The peer answers its own "still running" at its deadline;
+        // wait past it so that answer, not a transport timeout, arrives.
+        dispatch::REPLY_DEADLINE + Duration::from_secs(5),
+    )
+    .await
+    {
+        Ok((200, body)) => serde_json::from_slice(&body).unwrap_or_else(|_| {
+            serde_json::json!({
+                "status": "error",
+                "message": fleet::peer_unreachable(
+                    peer,
+                    "the peer answered invalid repo command data"
+                ),
+            })
+        }),
+        Ok((code, _)) => serde_json::json!({
+            "status": "error",
+            "message": fleet::peer_unreachable(
+                peer,
+                &format!("the peer answered HTTP {code} to a repo command")
+            ),
+        }),
+        Err(e) => serde_json::json!({
+            "status": "error",
+            "message": fleet::peer_unreachable(peer, &format!("{e:#}")),
+        }),
+    }
 }
 
 pub(crate) async fn proxy_peer_command(

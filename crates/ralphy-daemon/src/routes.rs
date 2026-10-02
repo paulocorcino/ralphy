@@ -15,6 +15,7 @@ use crate::protocol::{Command, Frame};
 use crate::StorePaths;
 use crate::{auth, desk, fleet, identity, peer, protocol, registry, rekey, session, watch};
 
+mod api_desk;
 mod api_fleet;
 mod api_read;
 mod api_security;
@@ -27,6 +28,7 @@ mod ws_command;
 mod ws_session;
 mod ws_tree;
 
+pub(crate) use api_desk::*;
 pub(crate) use api_fleet::*;
 pub(crate) use api_read::*;
 pub(crate) use api_security::*;
@@ -168,6 +170,19 @@ pub(crate) fn router_with_roster(
     // subscription-free — same ownership model as `watchers`, so the public
     // `router` signature holds.
     let run_exits = tokio::sync::broadcast::channel::<String>(RUN_EXIT_CAP).0;
+    // The push bus of the shown facts the daemon owns (ADR-0070 D2): every
+    // `/ws` relays it. Daemon-wide, like `run_exits`.
+    let pushes = tokio::sync::broadcast::channel::<Push>(PUSH_CAP).0;
+    let presence_pushes = pushes.clone();
+    if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+        runtime.spawn(watch_stores(
+            registry_path.clone(),
+            peers_dir.clone(),
+            pushes.clone(),
+            shutdown.clone(),
+        ));
+    }
+    let presence_sessions = sessions.clone();
     let command_run_exits = run_exits.clone();
     let tree_run_exits = run_exits.clone();
     let tree_watchers = watchers.clone();
@@ -250,7 +265,11 @@ pub(crate) fn router_with_roster(
                 move |body: Json<protocol::Command>| {
                     peer_command_route(registry.clone(), daemon_id.clone(), sessions.clone(), body)
                 }
-            }),
+            })
+            // axum's 2 MB default refused a forwarded 4 MiB image paste.
+            .layer(axum::extract::DefaultBodyLimit::max(
+                crate::tree::MAX_COMMAND_BYTES,
+            )),
         )
         .route(
             "/api/peer/tree/poll",
@@ -371,8 +390,12 @@ pub(crate) fn router_with_roster(
             get(move |ws: WebSocketUpgrade| {
                 let id = ws_identity.clone();
                 let shutdown = shutdown.clone();
+                let sessions_rx = presence_sessions.subscribe_changes();
+                let pushes_rx = presence_pushes.subscribe();
                 async move {
-                    ws.on_upgrade(move |socket| ws_presence_loop(socket, id, start, shutdown))
+                    ws.on_upgrade(move |socket| {
+                        ws_presence_loop(socket, id, start, shutdown, sessions_rx, pushes_rx)
+                    })
                 }
             }),
         )
@@ -416,9 +439,18 @@ pub(crate) fn router_with_roster(
             .put({
                 let path = desk_path.clone();
                 let registry = registry_path.clone();
-                move |Json(up): Json<desk::DeskUpload>| {
-                    desk_put_route(path.clone(), registry.clone(), up)
+                let pushes = pushes.clone();
+                move |Query(q): Query<DeskPutQuery>, Json(up): Json<desk::DeskUpload>| {
+                    desk_put_route(path.clone(), registry.clone(), pushes.clone(), q.tab, up)
                 }
+            }),
+        )
+        .route(
+            "/api/desk/new",
+            post({
+                let path = desk_path.clone();
+                let pushes = pushes.clone();
+                move || desk_new_route(path.clone(), pushes.clone())
             }),
         )
         .route(
@@ -440,6 +472,9 @@ pub(crate) fn router_with_roster(
             get({
                 let sessions = sessions.clone();
                 move |ws: WebSocketUpgrade, headers: axum::http::HeaderMap| {
+                    let ws = ws
+                        .max_message_size(crate::tree::MAX_COMMAND_BYTES)
+                        .max_frame_size(crate::tree::MAX_COMMAND_BYTES);
                     let secret_ok = request_may_carry_a_secret(&headers);
                     let registry_path = command_registry.clone();
                     let shutdown = command_shutdown.clone();

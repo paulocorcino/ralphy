@@ -55,8 +55,11 @@ pub(crate) async fn security_headers<B>(
 /// mermaid, which all set inline styles; `worker-src blob:` for Monaco's
 /// language workers; `img-src data: blob:` for the QR code, mermaid and
 /// Monaco's icons; `font-src data:` for Monaco's codicon font (an inline
-/// `data:font/ttf` in its bundle); `connect-src ws: wss:` for the daemon's own sockets (a
-/// same-origin `ws://` is not covered by `'self'` in every browser). No
+/// `data:font/ttf` in its bundle). `connect-src` is `'self'` alone: every
+/// workbench socket is built from `location.host`, and `'self'` covers a
+/// same-origin `ws:`/`wss:` (measured 2026-10-01 in Playwright Chromium,
+/// Firefox and WebKit, on loopback, through ngrok and through dev tunnels:
+/// `tests/browser/security/wb_csp_connect.py`; ADR-0072 D10). No
 /// `upgrade-insecure-requests` and no HSTS: the daemon never terminates TLS
 /// (ADR-0032 §4), a front does.
 ///
@@ -85,7 +88,7 @@ fn build_policy(extra_img_src: &str) -> HeaderValue {
         .map(|body| format!(" 'sha256-{}'", script_hash(body)))
         .collect::<String>();
     let policy = format!(
-        "default-src 'self';          script-src 'self' 'unsafe-eval'{hashes};          style-src 'self' 'unsafe-inline';          img-src 'self' data: blob:{extra_img_src};          font-src 'self' data:;          connect-src 'self' ws: wss:;          worker-src 'self' blob:;          object-src 'none';          base-uri 'none';          form-action 'self';          frame-ancestors 'none'"
+        "default-src 'self';          script-src 'self' 'unsafe-eval'{hashes};          style-src 'self' 'unsafe-inline';          img-src 'self' data: blob:{extra_img_src};          font-src 'self' data:;          connect-src 'self';          worker-src 'self' blob:;          object-src 'none';          base-uri 'none';          form-action 'self';          frame-ancestors 'none'"
     );
     HeaderValue::from_str(&policy).expect("the policy is ASCII by construction")
 }

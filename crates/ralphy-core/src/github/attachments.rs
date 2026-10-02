@@ -14,6 +14,7 @@ use anyhow::{Context, Result};
 use regex::Regex;
 
 use crate::github::client::{gh, gh_output};
+use crate::github::comments::{parse_issue_thread, IssueThread};
 
 /// Only files a reporter attached through GitHub's own UI are fetchable — this is
 /// what closes SSRF: the model never chooses a fetch target (ADR-0025 §3.1).
@@ -209,6 +210,9 @@ pub struct TriageAttachments {
     /// Local paths of every `(fetched)` image, for adapters (e.g. codex `-i`)
     /// that deliver images by argv path rather than by the manifest alone.
     pub image_paths: Vec<PathBuf>,
+    /// One thread per requested issue, in request order — a thread that could
+    /// not be read says why.
+    pub threads: Vec<IssueThread>,
 }
 
 /// The filename an attachment URL's last path segment names (query/fragment
@@ -238,22 +242,6 @@ fn http_code(err: &str) -> String {
         .captures(err)
         .map(|c| c[1].to_string())
         .unwrap_or_else(|| "error".to_string())
-}
-
-/// Body + comments of one issue, as `gh issue view <n> --json body,comments`
-/// renders them.
-#[derive(serde::Deserialize)]
-struct IssueBodyComments {
-    #[serde(default)]
-    body: String,
-    #[serde(default)]
-    comments: Vec<CommentBody>,
-}
-
-#[derive(serde::Deserialize)]
-struct CommentBody {
-    #[serde(default)]
-    body: String,
 }
 
 /// Apply the by-category size policy to already-downloaded, non-login bytes
@@ -383,9 +371,11 @@ fn fetch_one(repo: &Path, dir: &Path, url: &str, images: &ImageCapability) -> At
 }
 
 /// Fetch every issue's text attachments into a per-run OS temp dir and build the
-/// combined inline manifest (ADR-0025). Best-effort and never blocking: only a
-/// `TempDir` creation failure returns `Err`; a per-issue `gh` failure or a
-/// download error becomes a visible `not fetched` manifest line, never an abort.
+/// combined inline manifest (ADR-0025), and read each issue's thread for the
+/// session's input. Best-effort and never blocking: only a `TempDir` creation
+/// failure returns `Err`; a per-issue `gh` failure or a download error becomes
+/// a visible `not fetched` line, never an abort. Invariant: `threads` holds one
+/// entry per requested issue, on every path.
 pub fn fetch_triage_attachments(
     repo: &Path,
     issue_numbers: &[u64],
@@ -395,23 +385,24 @@ pub fn fetch_triage_attachments(
         .context("creating triage attachment temp dir")?;
     let mut manifest = String::new();
     let mut image_paths: Vec<PathBuf> = Vec::new();
+    let mut threads: Vec<IssueThread> = Vec::new();
     for &n in issue_numbers {
         // Best-effort: a `gh issue view` failure leaves this issue without an
-        // attachment block rather than aborting the whole triage run.
-        let Ok(out) = gh_output(&format!("gh issue view {n} --json body,comments"), || {
+        // attachment block and with a thread that says why, rather than
+        // aborting the whole triage run.
+        let fetched = gh_output(&format!("gh issue view {n} --json body,comments"), || {
             let mut c = gh(repo);
             c.args(["issue", "view", &n.to_string(), "--json", "body,comments"]);
             c
-        }) else {
-            continue;
+        })
+        .and_then(|out| parse_issue_thread(n, &out.stdout));
+        let thread = match fetched {
+            Ok(t) => t,
+            Err(e) => IssueThread::not_fetched(n, format!("{e:#}")),
         };
-        let parsed: IssueBodyComments =
-            match serde_json::from_slice(&out.stdout).context("parsing issue body,comments") {
-                Ok(p) => p,
-                Err(_) => continue,
-            };
-        let comments: Vec<String> = parsed.comments.into_iter().map(|c| c.body).collect();
-        let links = extract_user_attachment_links(&parsed.body, &comments);
+        let comments: Vec<String> = thread.comments.iter().map(|c| c.body.clone()).collect();
+        let links = extract_user_attachment_links(&thread.body, &comments);
+        threads.push(thread);
         if links.is_empty() {
             continue;
         }
@@ -452,6 +443,7 @@ pub fn fetch_triage_attachments(
         dir,
         manifest,
         image_paths,
+        threads,
     })
 }
 

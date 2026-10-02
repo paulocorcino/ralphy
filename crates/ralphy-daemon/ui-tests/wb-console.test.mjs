@@ -42,7 +42,7 @@ const NAME_SRC = readFileSync(join(UI, "wb-console-name.js"), "utf8");
 // test can supply a sibling module (`WBFleet`) that index.html loads first. The
 // default is no siblings: that is the honest shape for the boot order where a
 // sibling has not loaded, and several tests pin the fallback it produces.
-function load(extras = {}) {
+function load(extras = {}, docExtras = {}) {
   // The three globals the module touches at LOAD time: `window.addEventListener`
   // (the pagehide flush), `document.readyState`/`addEventListener` (the boot
   // hooks — "loading" parks them on a no-op listener instead of running them
@@ -51,7 +51,7 @@ function load(extras = {}) {
   // lives inside `attachTerminal`, which this harness never reaches, so a
   // module-scope observer re-added alongside a clamp fails LOUDLY here.
   const window = { addEventListener() {}, ...extras };
-  const document = { readyState: "loading", addEventListener() {} };
+  const document = { readyState: "loading", addEventListener() {}, ...docExtras };
   const location = { protocol: "http:", host: "127.0.0.1:7431" };
   new Function("window", FLEET_SRC)(window);
   new Function("window", GEOM_SRC)(window);
@@ -88,15 +88,16 @@ test("sessionPresentation applies session-open environment and persists its owne
     environment: "WSL: Ubuntu-22.04",
     name: null,
     checkout: null,
-    // The TOOLTIP keeps the routing head, then the environment (ADR-0066 §5).
-    tooltip: "01ARZ3NDEKTSV4RRFFQ69G5FAZ/owner/shared\nWSL: Ubuntu-22.04",
+    // The TOOLTIP names the project, then the environment (ADR-0066 §5); the
+    // routing head is a key and never shows.
+    tooltip: "owner/shared\nWSL: Ubuntu-22.04",
   });
 });
 
-// ADR-0066 §5: the title no longer carries the repo or the environment. The
-// TOOLTIP holds them, one per line: the full ref (the routing head kept), the
-// environment, and the vendor's session name when the launch had one.
-test("sessionPresentation puts the full ref, the environment and the name in the tooltip", () => {
+// ADR-0066 §5: the TOOLTIP holds, one per line: the project (never the
+// routing head), the environment, and the vendor's session name when the
+// launch had one.
+test("sessionPresentation puts the project, the environment and the name in the tooltip", () => {
   // Through the REAL `WBFleet.refSlug`. A hand-written stub here
   // (`ref.split("/").slice(-2).join("/")`) passed while saying nothing about the
   // production fold, which strips a head only when it is a ULID — so a broken
@@ -118,9 +119,26 @@ test("sessionPresentation puts the full ref, the environment and the name in the
       environment: "WSL: Ubuntu-22.04",
       name: "reviewer",
       checkout: null,
-      tooltip: "01ARZ3NDEKTSV4RRFFQ69G5FAZ/owner/shared\nWSL: Ubuntu-22.04\nreviewer",
+      tooltip: "owner/shared\nWSL: Ubuntu-22.04\nreviewer",
     },
   );
+});
+
+// A remoteless repo is keyed `path-<hash>`: once the shell has shared the
+// project names, the tooltip shows the folder and the console prefix is the
+// folder name, never the key.
+test("ingestProjects names a remoteless repo by its folder in the tooltip and the console prefix", () => {
+  const c = load();
+  const ref = "01ARZ3NDEKTSV4RRFFQ69G5FAZ/path-8ee0b8b587ea7891";
+  // Before the shell shares the names, the key is all the module has.
+  assert.equal(c.consolePrefix(ref), "path-8ee0b8b587ea7891");
+  c.ingestProjects([{ ref, name: "widget", title: "/home/me/widget" }]);
+  assert.equal(c.consolePrefix(ref), "widget");
+  const got = c.sessionPresentation("claude", ref, { daemonId: null, environment: null }, {
+    daemon_id: "01ARZ3NDEKTSV4RRFFQ69G5FAZ",
+    environment: "WSL: Ubuntu-22.04",
+  });
+  assert.equal(got.tooltip, "/home/me/widget\nWSL: Ubuntu-22.04");
 });
 
 // NEGATIVE CONTROL: the name has no desk fallback — it dies with the child, so a
@@ -1242,6 +1260,23 @@ test("pasteDecision refuses an image past the daemon's cap without sending it", 
   // An image item whose file could not be read has no size: refuse, never send.
   assert.equal(pasteDecision({ types: ["image/png"], size: -1, watching: false }), "too-large");
   assert.equal(pasteDecision({ types: ["image/png"], size: undefined, watching: false }), "too-large");
+});
+
+// --- endNotice: the last line of a console that gave up -------------------
+// A refused launch never had a session, so this line is the only place the
+// browser can show why. Every other end keeps the line it always printed.
+
+test("endNotice names the reason of a refused launch, and only of one", () => {
+  const { endNotice } = load();
+  assert.equal(endNotice("refused", "unknown repo"), "[could not start: unknown repo]");
+  assert.equal(endNotice("refused", "  unknown repo \n"), "[could not start: unknown repo]");
+  // A refusal with no words still says it did not start, never "undefined".
+  assert.equal(endNotice("refused", null), "[could not start]");
+  assert.equal(endNotice("refused", ""), "[could not start]");
+  assert.equal(endNotice("refused", 42), "[could not start]");
+  for (const reason of ["child-exited", "daemon-shutdown", "taken-over", null]) {
+    assert.equal(endNotice(reason, "ignored"), "[session closed]", String(reason));
+  }
 });
 
 // --- resumeDecision: coming back from a suspend --------------------------
@@ -2407,5 +2442,142 @@ test("the pure folds mutate none of their arguments", () => {
     const out = call(...args);
     assert.deepEqual(args, before, `${name} mutated its arguments`);
     if (check) check(out, args);
+  }
+});
+
+// ADR-0070 D4: a desk the daemon cannot read is a failure with a reason, and
+// this page never uploads over it.
+test("an unreadable desk is a failure, and no flush PUTs over it", async () => {
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    calls.push({ url: String(url), method: init.method || "GET" });
+    return {
+      ok: false,
+      status: 409,
+      json: async () => ({ state: "unreadable", error: "parsing desk layout C:/x/desk.toml" }),
+    };
+  };
+  try {
+    const c = load({ WBMode: { isDaemon: () => true } });
+    await c.whenDeskLoaded();
+    assert.equal(c.deskFailure(), "the file is damaged");
+    c.setCheckout("o/r", "wt-a");
+    await new Promise((r) => setTimeout(r, 400));
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.deepEqual(
+    calls.filter((c) => c.method === "PUT"),
+    [],
+    "no PUT over a desk the daemon cannot read",
+  );
+});
+
+// A desk that becomes unreadable after a good load: the flush reads it
+// first, finds it unreadable, and uploads nothing.
+test("a flush that finds the loaded desk unreadable uploads nothing and shows the failure", async () => {
+  const calls = [];
+  let unreadable = false;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    calls.push({ url: String(url), method: init.method || "GET" });
+    if (unreadable) {
+      return { ok: false, status: 409, json: async () => ({ state: "unreadable", error: "parsing desk layout" }) };
+    }
+    return { ok: true, status: 200, json: async () => ({ windows: [], fences: [], notes: [] }) };
+  };
+  try {
+    const c = load({ WBMode: { isDaemon: () => true } });
+    await c.whenDeskLoaded();
+    assert.equal(c.deskFailure(), "", "the first read was good");
+    unreadable = true;
+    calls.length = 0;
+    c.setCheckout("o/r", "wt-a");
+    await new Promise((r) => setTimeout(r, 400));
+    assert.equal(c.deskFailure(), "the file is damaged");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.ok(calls.some((c) => c.method === "GET"), "the flush read the desk first");
+  assert.deepEqual(
+    calls.filter((c) => c.method === "PUT"),
+    [],
+    "no PUT over a desk that became unreadable",
+  );
+});
+
+// Another tab may start the new desk first: the daemon then answers 409
+// "readable", and this tab reads the desk like any other.
+test("start a new desk treats a desk another tab already started as done", async () => {
+  let started = false;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    if (init.method === "POST") {
+      started = true;
+      return { ok: false, status: 409, json: async () => ({ state: "readable" }) };
+    }
+    if (!started) {
+      return { ok: false, status: 409, json: async () => ({ state: "unreadable", error: "parsing desk layout" }) };
+    }
+    return { ok: true, status: 200, json: async () => ({ windows: [], fences: [], notes: [] }) };
+  };
+  try {
+    // The empty new desk is restored, which looks for the stage.
+    const c = load({ WBMode: { isDaemon: () => true } }, { getElementById: () => null });
+    await c.whenDeskLoaded();
+    assert.equal(c.deskFailure(), "the file is damaged");
+    await c.startNewDesk();
+    assert.equal(c.deskFailure(), "", "the desk is readable now");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+// NEGATIVE CONTROL: any other refusal is a failure that names the status.
+test("start a new desk fails with the status on any other refusal", async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) =>
+    init.method === "POST"
+      ? { ok: false, status: 500, json: async () => ({}) }
+      : { ok: false, status: 409, json: async () => ({ state: "unreadable", error: "x" }) };
+  try {
+    const c = load({ WBMode: { isDaemon: () => true } });
+    await c.whenDeskLoaded();
+    await assert.rejects(c.startNewDesk(), /the daemon answered 500/);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+// NEGATIVE CONTROL: a transport failure is not a broken desk, so it offers no
+// new desk.
+test("a desk read that fails in transport sets no desk failure", async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    throw new Error("offline");
+  };
+  try {
+    const c = load({ WBMode: { isDaemon: () => true } });
+    await c.whenDeskLoaded();
+    assert.equal(c.deskFailure(), "");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("daemonSeenIds holds every window id a desk read returned", async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ windows: [{ id: "w-a", repo: "o/r", agent: "claude", kind: "console", rect: { left: 0, top: 0, width: 1, height: 1 }, ts: 1 }], fences: [] }),
+  });
+  try {
+    const c = load({ WBMode: { isDaemon: () => true } });
+    await c.whenDeskLoaded();
+    assert.deepEqual([...c.daemonSeenIds()], ["w-a"]);
+  } finally {
+    globalThis.fetch = realFetch;
   }
 });

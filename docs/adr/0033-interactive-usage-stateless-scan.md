@@ -4,7 +4,7 @@ Status: accepted (design interview 2026-07-10; implemented).
 
 Amended by ADR-0034 (the scan gains `provider` and shares the counting normalization).
 
-Amended by ADR-0069 (proposed): the scanners read `user.email` through the shared `ralphy-git-read` crate instead of their own copies.
+Amended by ADR-0069: the scanners read `user.email` through the shared `ralphy-git-read` crate instead of their own copies.
 
 ADR-0008 made every **run**'s token consumption a recorded fact in the
 `~/.ralphy/usage/` ledger. What stays invisible is **interactive usage** — the

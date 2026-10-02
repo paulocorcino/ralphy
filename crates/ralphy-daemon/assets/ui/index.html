@@ -2,6 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <meta name="ralphy-build" content="">
     <!-- `interactive-widget=resizes-content` puts the virtual keyboard INSIDE
          the layout viewport on Chrome/Android: the page shrinks and the console
          refits itself with no JS. iOS ignores it and pans the visual viewport
@@ -60,6 +61,11 @@
     <link rel="stylesheet" href="styles/13-notes.css" />
   </head>
   <body x-data="shell()" x-cloak :class="{ 'side-collapsed': !sideOpen, 'runs-open': runsOpen, locked: !authed }">
+    <!-- The daemon runs a newer build than this page, and the page holds
+         unsaved work (ADR-0070 D6). It stays until the reload. -->
+    <div class="build-notice" x-show="buildSkew" x-cloak role="status">
+      Ralphy was updated. Save your open work, and this page loads the new version.
+    </div>
     <!-- Icons drawn in more than one place, each drawn with `<use>`.
          `os-linux`: Bootstrap Icons has the Windows and Apple logos but no
          Linux penguin, so this is the "Linux" icon of Simple Icons 13.21.0
@@ -179,6 +185,10 @@
         >
           <svg x-icon="'refresh-cw'"></svg>
         </button>
+        <!-- Add a project (#501) comes before Hosts: it is the more frequent act. -->
+        <button class="side-refresh side-add-project" @click="openAddProject()" title="Add a project" aria-label="Add a project">
+          <svg x-icon="'folder-plus'"></svg>
+        </button>
         <!-- Lucide v0.460.0 has no `server-plus`: this is its `server` with the
              lower unit shortened so a plus fits beside it. -->
         <button class="side-refresh side-add-host" @click="openAddHost()" title="Hosts" aria-label="Hosts">
@@ -189,6 +199,16 @@
       </div>
       <!-- daemon-mode repos-load failure (M5, #202): honest error, not seed. -->
       <div class="side-error" x-show="reposError" x-text="reposError" x-cloak></div>
+      <!-- The peers' last good read, kept when a read fails (ADR-0070 D3). -->
+      <div class="side-error" x-show="fleetError" x-text="fleetError" x-cloak></div>
+      <!-- The peers the daemon could not read (ADR-0070 D4). -->
+      <div class="side-error" x-show="fleetRejectNote" x-text="fleetRejectNote" x-cloak></div>
+      <!-- No project yet: say what to do first (#501). A failed read shows its
+           error above instead. -->
+      <div class="side-empty projects-empty" x-show="!projects.length && !reposError && !reposLoading" x-cloak>
+        <p>No projects yet</p>
+        <button class="btn accent" @click="openAddProject()"><svg x-icon="'folder-plus'"></svg> Add a project</button>
+      </div>
       <!-- filters the list client-side on slug/branch; "/" (global shortcut)
            focuses this input; Escape clears it. Hidden while a project is
            open: `has-open` hides every other row, so there is nothing for it
@@ -217,12 +237,12 @@
           <div class="env-block">
             <div class="env-group" x-show="g.header" :title="groupTitle(g)">
               <span class="os-icon" aria-hidden="true">
-                <i class="bi bi-windows" x-show="osOf(g.environment) === 'windows'"></i>
-                <i class="bi bi-apple" x-show="osOf(g.environment) === 'macos'"></i>
-                <svg x-show="osOf(g.environment) === 'linux'"><use href="#os-linux"></use></svg>
-                <span x-show="osOf(g.environment) === 'other'"><svg x-icon="'monitor'"></svg></span>
+                <i class="bi bi-windows" x-show="osOf(g) === 'windows'"></i>
+                <i class="bi bi-apple" x-show="osOf(g) === 'macos'"></i>
+                <svg x-show="osOf(g) === 'linux'"><use href="#os-linux"></use></svg>
+                <span x-show="osOf(g) === 'other'"><svg x-icon="'monitor'"></svg></span>
               </span>
-              <span class="env-label" x-text="groupLabel(g)"></span>
+              <span class="env-label"><span class="env-host" x-text="groupHost(g) ? groupHost(g) + ' · ' : ''"></span><span class="env-os" x-text="groupLabel(g)"></span></span>
               <span class="env-daemon" x-show="g.showName" x-text="g.name"></span>
               <!-- The state is a glyph, its word in the tooltip and the
                    aria-label (wb-fleet.js `stateIcon`). The glyph becomes the
@@ -239,7 +259,7 @@
                 :class="[g.state, peerFault(g) ? 'fault' : '', waking[g.daemon] ? 'waking' : '']"
                 :disabled="!!waking[g.daemon]"
                 :title="wakeTitle(g)"
-                :aria-label="waking[g.daemon] ? 'waking' : g.state"
+                :aria-label="waking[g.daemon] ? 'waking' : peerStateWord(g.state)"
                 @click.stop="wakePeer(g.daemon)"
               ><svg x-icon="'unplug'"></svg></button>
               <span
@@ -247,7 +267,7 @@
                 x-show="!peerWakeable(g) && peerIcon(g)"
                 :class="[g.state, peerFault(g) ? 'fault' : '']"
                 role="img"
-                :aria-label="g.state"
+                :aria-label="peerStateWord(g.state)"
               >
                 <span class="glyph" x-show="peerIcon(g) === 'plugged'"><svg aria-hidden="true"><use href="#plugged"></use></svg></span>
                 <span class="glyph" x-show="peerIcon(g) === 'unplug'"><svg x-icon="'unplug'"></svg></span>
@@ -259,10 +279,10 @@
             <!-- `rowTitle` is what a COLLAPSED row can no longer show: the
                  branch chip moved to the Files bar below, which only the open
                  project renders (#332). It sits on the row, never on
-                 `.project-slug` — that title is the canonical slug, the
-                 ADR-0008 D7 identity, and the child's own title still wins when
-                 the pointer is over the name, which is what you want there. -->
-            <div class="project-head" @click="toggle(repoRef(p), p)" :title="rowTitle(p)">
+                 `.project-slug`: the name's own title still wins when the
+                 pointer is over the name. The slug, the ADR-0008 D7 identity,
+                 rides `data-slug` for the browser tests. -->
+            <div class="project-head" tabindex="-1" @click="toggle(repoRef(p), p)" :title="rowTitle(p)">
               <span class="chevron"><svg x-icon="'chevron-right'"></svg></span>
               <!-- status dot: the project's daemon-reachability *right now* —
                    green = live (session/daemon active there), grey = idle
@@ -270,7 +290,7 @@
                    (unreachable path). Orthogonal to the provenance icon beside
                    it (GitHub vs local-only). A local-only repo can be live; a
                    GitHub repo can be offline. -->
-              <span class="dot" :class="dotClass(p.state)" :title="p.state"></span>
+              <span class="dot" :class="dotClass(p.state)" :title="dotTitle(p.state)"></span>
               <!-- provenance: a GitHub-backed repo vs one that lives only on
                    this disk. Orthogonal to the daemon-reachability dot above. -->
               <i
@@ -278,7 +298,7 @@
                 :class="p.remote === 'github' ? 'bi bi-github' : 'bi bi-hdd'"
                 :title="p.remote === 'github' ? 'On GitHub' : 'Local only'"
               ></i>
-              <span class="project-slug" x-text="repoLabel(p)" :title="p.slug"></span>
+              <span class="project-slug" x-text="repoLabel(p)" :title="projectTitle(repoRef(p))" :data-slug="p.slug"></span>
               <!-- The branch chip carries the change count. Collapsed, only the
                    count shows — the branch is in `rowTitle` — so a closed row
                    costs the name nothing (#332); open, the chip grows its branch
@@ -435,6 +455,12 @@
               class="files-stale"
               x-show="rowOpen(p) && !treeError && treeStale"
               x-text="treeStale"
+            ></div>
+            <!-- The rows are right, but the daemon stopped watching this tree. -->
+            <div
+              class="files-stale"
+              x-show="rowOpen(p) && !treeError && treeNotLive"
+              x-text="treeNotLive"
             ></div>
               </li>
             </template>
@@ -623,9 +649,9 @@
                  busy act trades its icon for a ring: the three share one
                  upstream, and a push is the longest wait in this panel. The
                  ring is a sibling the CSS swaps in. -->
-            <button class="bar-act" data-act="fetch" :disabled="!!syncBusy"
+            <button class="bar-act" data-act="fetch" :disabled="writeLocked() || !!syncBusy"
                     :class="{ busy: syncBusy === 'fetch' }"
-                    :title="syncBusyTitle('fetch') || 'Fetch from the upstream'"
+                    :title="syncBusyTitle('fetch') || writeLockReason() || 'Fetch from the upstream'"
                     @click.stop="syncFetch(openSlug)">
               <svg x-icon="'radar'"></svg><span class="bar-spinner" aria-hidden="true"></span><span class="bar-label">Fetch</span>
             </button>
@@ -633,10 +659,10 @@
                  not inert for a while, it has nothing to pull from until the
                  Publish beside it runs. The freed width goes to Publish, whose
                  label does not fit in a third of the bar. -->
-            <button class="bar-act" data-act="pull" :disabled="!!syncBusy || !!pullBlocked()"
+            <button class="bar-act" data-act="pull" :disabled="writeLocked() || !!syncBusy || !!pullBlocked()"
                     x-show="!pullBlocked()"
                     :class="{ busy: syncBusy === 'pull' }"
-                    :title="syncBusyTitle('pull') || pullBlocked() || 'Pull from the upstream (fast-forward only)'"
+                    :title="syncBusyTitle('pull') || pullBlocked() || writeLockReason() || 'Pull from the upstream (fast-forward only)'"
                     @click.stop="syncPull(openSlug)">
               <svg x-icon="'cloud-download'"></svg><span class="bar-spinner" aria-hidden="true"></span><span class="bar-label">Pull</span>
             </button>
@@ -706,10 +732,11 @@
                    owner and the environment are the sidebar's; the prefix
                    never varies, so each row below carries only its digit
                    (the Fence menu's rule). -->
-              <div class="dropdown-head" :title="openSlug ? projectLabel(openSlug) : ''">
+              <div class="dropdown-head" :title="openSlug ? projectTitle(openSlug) : ''">
                 <span x-text="openSlug ? consoleMenuRepoName() : 'Home (no project open)'"></span>
                 <kbd class="kbd" x-text="consoleShortcutHint()"></kbd>
               </div>
+              <p class="side-error" x-show="sessionsError()" x-text="sessionsError()"></p>
               <!-- The daemon's adapter roster folded against the live sessions
                    (wb-agents.js), plain console last. Every row LAUNCHES — the
                    live count is a readout; reaching a window is the Go-to
@@ -874,6 +901,13 @@
                it scrolls over; wb-console.js appends the floating console windows
                into the stage and sizes it from their bbox (issue #336). -->
           <div id="workspace"><div id="stage"></div></div>
+          <!-- The saved desk cannot be read (ADR-0070 D4): say so, and offer
+               the one action. The daemon keeps the old file under a new name. -->
+          <div class="desk-failure" x-show="deskFailure" x-cloak role="alert">
+            <span x-text="'Could not read the saved desk: ' + deskFailure"></span>
+            <button class="btn" @click="startNewDesk()"
+                    title="The old desk file is kept with a new name.">Start a new desk</button>
+          </div>
           <!-- FRAME chrome (issue #338, ADR-0051 §5): siblings of `#workspace`,
                never children of `#stage`. Inside the plane they would pan away
                with the content; here they resolve against `.consoles-tab` and
@@ -974,7 +1008,7 @@
           <header class="spend-bar">
             <span class="spend-eyebrow">Spend</span>
             <span class="spend-sep" x-show="openSlug">/</span>
-            <span class="spend-project" x-text="projectLabel(openSlug)" :title="openSlug" x-show="openSlug"></span>
+            <span class="spend-project" x-text="projectLabel(openSlug)" :title="projectTitle(openSlug)" x-show="openSlug"></span>
             <!-- Overview | Ledger · two readings of ONE project, so they are two
                  panes of one tab and not two tabs. The Ledger side is what the
                  removed Usage modal did, with columns and scoped to the project
@@ -1292,7 +1326,7 @@
               <h4>Usage missing from some daemons</h4>
               <template x-for="peer in ledgerModel.missing" :key="peer.daemon_id">
                 <p class="ledger-missing-row">
-                  <strong x-text="peer.environment || peer.daemon_id"></strong>
+                  <strong x-text="peer.environment || 'Another computer'"></strong>
                   <span x-text="peer.why || 'Usage unavailable'"></span>
                 </p>
               </template>
@@ -1331,14 +1365,13 @@
                 <template x-for="(r, i) in ledgerModel.rows" :key="i">
                   <tr class="ledger-row" :class="{ unpriced: !!r.unpriced, floor: r.lowerBound }">
                     <td class="ledger-col-kind">
-                      <span x-text="r.kind"></span><span class="ledger-bound" x-text="r.boundNote"></span>
+                      <span x-text="r.kindLabel"></span><span class="ledger-bound" x-text="r.boundNote"></span>
                       <!-- WHY this row is unpriced, in the daemon's own word.
                            The class alone would say only "something is wrong
                            here", and recoverable vs lost is the whole reason the
                            split exists (ADR-0053 D4). -->
-                      <span class="ledger-cause" x-show="r.unpriced" x-text="r.unpriced"></span>
+                      <span class="ledger-cause" x-show="r.unpriced" x-text="r.unpricedLabel"></span>
                     </td>
-                    <td class="ledger-col-project" x-text="r.project"></td>
                     <td class="ledger-col-issue" x-text="r.issue"></td>
                     <td class="ledger-col-phase" x-text="r.phase"></td>
                     <td class="ledger-col-agent" x-text="r.agent"></td>
@@ -1346,7 +1379,7 @@
                     <td class="ledger-col-outcome" x-text="r.outcome"></td>
                     <td class="ledger-col-actor" x-text="r.actor"></td>
                     <td class="ledger-col-version" x-text="r.version"></td>
-                    <td class="ledger-col-when" x-text="r.when"></td>
+                    <td class="ledger-col-when" x-text="r.whenLabel" :title="r.when"></td>
                     <td class="ledger-num" x-text="r.tokens.input"></td>
                     <td class="ledger-num" x-text="r.tokens.cache_read"></td>
                     <td class="ledger-num" x-text="r.tokens.cache_creation"></td>
@@ -1394,7 +1427,7 @@
       <section class="kanban" x-show="kanbanOpen" x-cloak aria-label="Kanban board">
         <div class="kanban-head">
           <span class="kanban-title"><svg x-icon="'square-kanban'"></svg> Board</span>
-          <span class="kanban-scope" x-text="openSlug ? projectLabel(openSlug) : 'No project open'" :title="openSlug"></span>
+          <span class="kanban-scope" x-text="openSlug ? projectLabel(openSlug) : 'No project open'" :title="projectTitle(openSlug)"></span>
           <span class="spacer"></span>
           <!-- board-wide search + label filter (apply to every column) -->
           <div class="kanban-search">
@@ -1483,7 +1516,7 @@
                          @click.stop="openRunFor(iss.number)" title="Open this run">
                       <span class="kc-run-face" x-text="issueRunning(iss.number)?.face"></span>
                       <span class="kc-run-glyph" x-text="issueRunning(iss.number)?.glyph"></span>
-                      <span class="kc-run-txt" x-text="(issueRunning(iss.number)?.state || '') + ' · ' + (issueRunning(iss.number)?.agent || '')"></span>
+                      <span class="kc-run-txt" x-text="runStateWord(issueRunning(iss.number)?.state) + ' · ' + (issueRunning(iss.number)?.agent || '')"></span>
                     </div>
                     <!-- plan pill: a FINALIZED plan for this issue is sitting in
                          `.ralphy/plan.md`, and the next run will execute it. The
@@ -1916,6 +1949,7 @@
             </template>
           </nav>
           <div class="settings-content">
+            <p class="side-error" x-show="settingsError" x-text="settingsError"></p>
             <template x-for="sec in SETTINGS" :key="sec.id">
               <section x-show="settingsSection === sec.id">
                 <div class="settings-h2row">
@@ -1923,7 +1957,7 @@
                   <span class="scope-chip" :class="sec.scope"
                         x-text="sec.scope === 'client' ? 'This browser only'
                                 : sec.scope === 'daemon' ? 'Daemon · all projects'
-                                : (openSlug ? ('Project · ' + openSlug) : 'Project · none open')"></span>
+                                : (openSlug ? ('Project · ' + projectLabel(openSlug)) : 'Project · none open')"></span>
                 </div>
                 <p class="settings-blurb" x-text="sec.blurb"></p>
                 <!-- per-project sections need an open repo to write into -->
@@ -1966,6 +2000,7 @@
                            into next (see the login gate's note). -->
                       <template x-if="settingsOpen && it.type === 'password'">
                         <input class="set-input" type="password" :placeholder="it.placeholder || '••••••••'"
+                               :disabled="it.readonly === true" :title="it.readonly === true ? 'Read-only. See the note below.' : ''"
                                :value="settings[it.key]" @change="saveSetting(it.key, $event.target.value)" />
                       </template>
                       <!-- a plain checkbox: the value is a real boolean, so it
@@ -1973,6 +2008,7 @@
                            inputs above need -->
                       <template x-if="it.type === 'toggle'">
                         <input class="set-check" type="checkbox"
+                               :disabled="it.readonly === true" :title="it.readonly === true ? 'Read-only. See the note below.' : ''"
                                :checked="settings[it.key] === true"
                                @change="saveSetting(it.key, $event.target.checked)" />
                       </template>
@@ -2196,6 +2232,7 @@
             <strong x-text="release.latest"></strong>
             <span class="rel-count" x-text="releaseSummary"></span>
           </p>
+          <p class="side-error" x-show="releaseStale()" x-text="releaseStale()"></p>
           <template x-for="entry in release.gap" :key="entry.version">
             <div class="rel-entry">
               <div class="rel-entry-head">
@@ -2388,7 +2425,7 @@
         <div class="modal-head">
           <svg x-icon="'git-branch'"></svg>
           <span class="modal-title">Switch branch</span>
-          <span class="modal-sub" x-text="projectLabel(branchModal.slug)" :title="branchModal.slug"></span>
+          <span class="modal-sub" x-text="projectLabel(branchModal.slug)" :title="projectTitle(branchModal.slug)"></span>
           <span class="sec-badge off" x-show="branchModal.checkoutDirty"
                 title="The working tree has uncommitted changes">uncommitted</span>
           <span class="spacer"></span>
@@ -2578,7 +2615,7 @@
         <div class="modal-head">
           <svg x-icon="'scroll-text'"></svg>
           <span class="modal-title" x-text="'Plan · #' + (openPlan()?.summary?.issue ?? '')"></span>
-          <span class="modal-sub" x-text="projectLabel(openSlug)" :title="openSlug"></span>
+          <span class="modal-sub" x-text="projectLabel(openSlug)" :title="projectTitle(openSlug)"></span>
           <span class="spacer"></span>
           <button class="modal-x" @click="closePlanModal()" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
@@ -2626,7 +2663,7 @@
         <div class="modal-head">
           <svg x-icon="'play'"></svg>
           <span class="modal-title">Start a run</span>
-          <span class="modal-sub" x-text="projectLabel(openSlug)" :title="openSlug"></span>
+          <span class="modal-sub" x-text="projectLabel(openSlug)" :title="projectTitle(openSlug)"></span>
           <span class="spacer"></span>
           <button class="modal-x" @click="closeRunModal()" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
@@ -2690,6 +2727,67 @@
     </div>
 
     <!-- ===================================================================
+         Add a project (#501): a folder on this computer or on a peer becomes
+         a project. The daemon that owns the folder lists it (`dir.list`) and
+         runs `ralphy daemon add` (`project.add`); wb-add-project.js holds the
+         state. Folder names are shown with x-text only.
+    ==================================================================== -->
+    <div class="modal-scrim" x-cloak x-bind="scrim('addProject.open', () => closeAddProject())">
+      <div class="modal run-modal host-modal" role="dialog" aria-modal="true" aria-label="Add a project">
+        <div class="modal-head">
+          <svg x-icon="'folder-plus'"></svg>
+          <span class="modal-title">Add a project</span>
+          <span class="spacer"></span>
+          <button class="modal-x" @click="closeAddProject()" title="Close" aria-label="Close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="run-body host-body add-project-body">
+          <label class="run-label" for="add-project-where">Where</label>
+          <select id="add-project-where" class="host-input" :value="addProject.daemon"
+                  :disabled="addProject.adding" @change="addProjectWhere($event.target.value)">
+            <template x-for="w in addProjectPlaces()" :key="w.id">
+              <option :value="w.id" :disabled="w.disabled" :title="w.reason" x-text="w.label"></option>
+            </template>
+          </select>
+
+          <label class="run-label" for="add-project-folder" x-show="addProjectListable()">Folder</label>
+          <input id="add-project-folder" class="host-input" x-ref="addProjectFolder" x-show="addProjectListable()"
+                 :value="addProject.text" :disabled="addProject.adding"
+                 @input="addProjectText($event.target.value)" @keydown="addProjectKey($event)"
+                 role="combobox" aria-autocomplete="list" aria-controls="add-project-list"
+                 :aria-expanded="addProjectEntries().length > 0"
+                 autocomplete="off" spellcheck="false" autocapitalize="off" data-lpignore="true" data-1p-ignore />
+          <p class="run-help" x-show="addProjectHelp()" x-text="addProjectHelp()"></p>
+          <p class="side-error" role="alert" x-show="addProject.error" x-text="addProject.error"></p>
+
+          <ul id="add-project-list" class="add-project-list" role="listbox" aria-label="Folders" x-show="addProjectListable()"
+              @pointerdown="_addProjectTouch = $event.pointerType !== 'mouse'">
+            <template x-for="(e, i) in addProjectEntries()" :key="e.name">
+              <li role="option" class="add-project-item" :class="{ active: i === addProject.active }"
+                  :aria-selected="i === addProject.active" @click="addProjectPick(e, $event)">
+                <svg x-icon="'folder'"></svg>
+                <span class="add-project-name" x-text="e.name"></span>
+                <span class="add-project-mark" x-show="e.up" x-text="'Up one folder'"></span>
+                <span class="add-project-mark" x-show="e.error" x-text="'No access'"></span>
+                <span class="add-project-mark" x-show="!e.error && e.added" x-text="'Added'"></span>
+                <span class="add-project-mark" x-show="!e.error && !e.added && e.repo" x-text="'Repository'"></span>
+              </li>
+            </template>
+          </ul>
+          <p class="run-help" x-show="addProject.loading" x-text="'Loading…'"></p>
+          <p class="run-help" x-show="addProject.listing && addProject.listing.more > 0"
+             x-text="addProject.listing ? addProject.listing.more + ' more. Type to filter.' : ''"></p>
+        </div>
+        <div class="modal-foot">
+          <span class="host-foot">
+            <button class="btn" @click="closeAddProject()">Cancel</button>
+            <button class="btn accent" @click="addProjectSubmit()" :disabled="addProjectPrimary().disabled"
+                    x-text="addProjectPrimary().label"></button>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================================================================
          Add a host (#497): a computer reached over SSH becomes a peer. The
          daemon runs `ralphy host …` on this computer; wb-hosts.js holds the
          state. Everything the host says is shown with x-text only.
@@ -2715,18 +2813,18 @@
           <!-- Your hosts: the hosts paired over SSH. Remove asks in the row. -->
           <ul class="host-list" x-show="hostTab() === 'hosts'">
             <template x-for="h in sshHosts()" :key="h.daemon_id">
-              <li class="host-item">
+              <li class="host-item" :data-host="h.daemon_id">
                 <div class="host-row">
                   <span class="os-icon" :title="h.environment">
-                    <i class="bi bi-windows" x-show="osOf(h.environment) === 'windows'"></i>
-                    <i class="bi bi-apple" x-show="osOf(h.environment) === 'macos'"></i>
-                    <svg x-show="osOf(h.environment) === 'linux'"><use href="#os-linux"></use></svg>
-                    <span x-show="osOf(h.environment) === 'other'"><svg x-icon="'monitor'"></svg></span>
+                    <i class="bi bi-windows" x-show="osOf(h) === 'windows'"></i>
+                    <i class="bi bi-apple" x-show="osOf(h) === 'macos'"></i>
+                    <svg x-show="osOf(h) === 'linux'"><use href="#os-linux"></use></svg>
+                    <span x-show="osOf(h) === 'other'"><svg x-icon="'monitor'"></svg></span>
                   </span>
                   <span class="host-row-name" x-text="h.name"></span>
                   <span class="host-row-dest" x-text="h.destination || ''"></span>
                   <span class="peer-state" :class="[h.state, peerFault(hostRowGroup(h)) ? 'fault' : '']"
-                        role="img" :aria-label="h.state" :title="hostRowTitle(h)">
+                        role="img" :aria-label="peerStateWord(h.state)" :title="hostRowTitle(h)">
                     <span class="glyph" x-show="peerIcon(hostRowGroup(h)) === 'plugged'"><svg aria-hidden="true"><use href="#plugged"></use></svg></span>
                     <span class="glyph" x-show="peerIcon(hostRowGroup(h)) === 'unplug'"><svg x-icon="'unplug'"></svg></span>
                   </span>
@@ -3066,6 +3164,7 @@
     <script src="wb-daemon.js"></script>
     <script src="wb-release.js"></script>
     <script src="wb-hosts.js"></script>
+    <script src="wb-add-project.js"></script>
     <script src="app.js"></script>
     <script defer src="vendor/alpine.min.js"></script>
   </body>

@@ -22,28 +22,26 @@ function load() {
 
 const wb = load();
 
-test("repoLabel re-labels only a remoteless repo, off its directory name", () => {
-  // ADR-0008 D7 keys a repo with no remote as `path-<hash>`, which is twenty
-  // useless characters in a fixed column. The basename is what the operator
-  // calls it (#332).
-  assert.equal(wb.repoLabel({ slug: "path-9f2a1c", path: "C:\\src\\widget" }), "WIDGET");
-  assert.equal(wb.repoLabel({ slug: "path-9f2a1c", path: "/home/me/widget" }), "WIDGET");
-  // Trailing separators are stripped FIRST, or the basename is the empty string.
-  assert.equal(wb.repoLabel({ slug: "path-9f2a1c", path: "C:\\src\\widget\\" }), "WIDGET");
-  assert.equal(wb.repoLabel({ slug: "path-9f2a1c", path: "/home/me/widget/" }), "WIDGET");
-  // NEGATIVE CONTROL, and the reason the `/` test is not optional: a real
-  // GitHub repo genuinely NAMED `path-utils` must never be re-labelled off
-  // DISK. `slug_from_url` always yields `owner/repo`, so the slash decides.
-  // Note what the guarantee is and is not: the label is still the slug's last
-  // segment upper-cased — `owner/path-utils` reads `PATH-UTILS`, not
-  // `SOMETHING-ELSE`. The directory is what must not leak in.
+test("repoLabel shows the daemon's project name, never a path- key", () => {
+  // A repo with no remote is keyed `path-<hash>` (ADR-0008 D7); the daemon
+  // names it by its folder (#332). The label is that name's last segment.
+  assert.equal(wb.repoLabel({ slug: "path-9f2a1c", name: "widget", path: "C:\\src\\widget" }), "WIDGET");
+  assert.equal(wb.repoLabel({ slug: "owner/path-utils", name: "owner/path-utils" }), "PATH-UTILS");
+  assert.equal(wb.repoLabel({ slug: "owner/repo", name: "owner/repo" }), "REPO");
+  // A row from a daemon older than `name`: the slug stands.
+  assert.equal(wb.repoLabel({ slug: "owner/repo" }), "REPO");
+});
+
+test("projectTitle names a remoteless repo by its full folder, a forge repo by its slug", () => {
   assert.equal(
-    wb.repoLabel({ slug: "owner/path-utils", path: "C:\\src\\something-else" }),
-    "PATH-UTILS",
+    wb.projectTitle({ slug: "path-9f2a1c", name: "widget", path: "C:/src/widget" }),
+    "C:/src/widget",
   );
-  assert.equal(wb.repoLabel({ slug: "owner/repo", path: "C:\\src\\elsewhere" }), "REPO");
-  // No path to fall back on: the slug stands, ugly or not.
-  assert.equal(wb.repoLabel({ slug: "path-9f2a1c", path: "" }), "PATH-9F2A1C");
+  assert.equal(wb.projectTitle({ slug: "owner/repo", name: "owner/repo", path: "C:/src/repo" }), "owner/repo");
+  assert.equal(
+    wb.rowTitle({ slug: "path-9f2a1c", name: "widget", path: "/home/me/widget", branch: "main" }),
+    "/home/me/widget · main",
+  );
 });
 
 test("rowTitle says branch and dirtiness for a local repo, environment for a peer", () => {
@@ -61,6 +59,16 @@ test("rowTitle says branch and dirtiness for a local repo, environment for a pee
   assert.equal(
     wb.rowTitle({ slug: "owner/repo", daemon: true, env: "WSL: Ubuntu-22.04", branch: "main" }),
     "owner/repo · WSL: Ubuntu-22.04",
+  );
+});
+
+test("rowTitle and the branch chip name the commit of a detached HEAD", () => {
+  const detached = { slug: "o/r", branch: "", head: { kind: "detached", sha: "abc1234" }, dirty: false };
+  assert.equal(wb.rowTitle(detached), "o/r · abc1234");
+  assert.equal(wb.chipLabel(detached, null, null), "abc1234");
+  assert.equal(
+    wb.rowTitle({ slug: "o/r", branch: "main", head: { kind: "branch", name: "main" }, dirty: false }),
+    "o/r · main",
   );
 });
 

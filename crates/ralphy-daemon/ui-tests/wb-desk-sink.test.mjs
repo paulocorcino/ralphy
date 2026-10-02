@@ -58,7 +58,7 @@ test("the daemon sink PUTs the body to /api/desk — the control the null sink i
     const sink = load().daemon();
     await sink.put(BODY);
     assert.equal(spy.calls.length, 1);
-    assert.equal(spy.calls[0].url, "/api/desk");
+    assert.match(spy.calls[0].url, /^\/api\/desk\?tab=/);
     assert.equal(spy.calls[0].init.method, "PUT");
     assert.equal(spy.calls[0].init.body, BODY);
     assert.equal(spy.calls[0].init.headers["Content-Type"], "application/json");
@@ -130,5 +130,22 @@ test("a refused PUT does not stop the next one — the chain swallows the reject
     assert.equal(calls.length, 2);
   } finally {
     globalThis.fetch = prev;
+  }
+});
+
+test("a held sink writes nothing, and writes again when released", async () => {
+  const spy = spyFetch();
+  try {
+    const mod = load();
+    const sink = mod.daemon();
+    mod.setHold(true);
+    await sink.put(BODY);
+    sink.putSync(BODY);
+    assert.equal(spy.calls.length, 0);
+    mod.setHold(false);
+    await sink.put(BODY);
+    assert.equal(spy.calls.length, 1);
+  } finally {
+    spy.restore();
   }
 });

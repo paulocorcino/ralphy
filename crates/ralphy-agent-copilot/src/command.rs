@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use ralphy_adapter_support::resolve_program;
+use ralphy_adapter_support::{resolve_program, DENIED_FORGE_WRITES};
 
 /// Mint the session id Ralphy hands the CLI with `--session-id`. A v4 UUID: the
 /// vendor's `sessions.id` primary key is a UUID, so the later usage slice (D10)
@@ -62,6 +62,15 @@ pub(crate) fn mint_session_id() -> String {
 /// server off, and an absent receipt fails closed) and D11's `continueOnAutoMode`,
 /// checked as a preflight before any child is spawned.
 ///
+/// One `--deny-tool=shell(<command>:*)` per forge write Ralphy forbids
+/// (`DENIED_FORGE_WRITES`, ADR-0072 D6, ADR-0041 D7 amendment): a deny rule wins
+/// over `--allow-all-tools`, and the refused call reaches the model as a tool
+/// error while the session goes on. Measured with CLI 1.0.90: the exact form
+/// `shell(gh pr create)` does NOT match `gh pr create --help`, the `:*` form
+/// does, also behind a pipe or `cd . ;`; `shell(git push:*)` also refuses
+/// `git -C . push`; `gh pr view` and `git status` keep running. CLI 1.0.75
+/// honours the `git push` rule and ignores every `gh pr` rule.
+///
 /// `images` (D12): one `--attachment <path>` per entry, valid only in
 /// non-interactive mode (which is Ralphy's mode); an empty slice emits nothing.
 pub(crate) fn build_copilot_command(
@@ -86,6 +95,9 @@ pub(crate) fn build_copilot_command(
     if !allow_builtin_mcps {
         cmd.arg("--disable-builtin-mcps");
     }
+    for words in DENIED_FORGE_WRITES {
+        cmd.arg(format!("--deny-tool=shell({}:*)", words.join(" ")));
+    }
     if let Some(m) = model {
         cmd.arg("--model").arg(m);
     }
@@ -102,6 +114,23 @@ pub(crate) fn build_copilot_command(
         // token can never authenticate the child. Copilot's own OAuth session
         // (`copilot login`) is the only credential Ralphy drives it with — an
         // ambient PAT would silently widen the run's GitHub reach.
+        .env_remove("COPILOT_GITHUB_TOKEN")
+        .env_remove("GH_TOKEN")
+        .env_remove("GITHUB_TOKEN");
+    cmd
+}
+
+/// `copilot skill list --json`, run in `repo`: Copilot's own skill discovery for
+/// that directory, with no model call and no session (ADR-0041 D9 amendment of
+/// 2026-10-01). Same D8 scrub as a session, so the listing sees what the session
+/// would see.
+pub(crate) fn build_copilot_skill_list_command(repo: &Path) -> Command {
+    let mut cmd = Command::new(resolve_program("copilot"));
+    cmd.current_dir(repo)
+        .args(["skill", "list", "--json"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .env_remove("COPILOT_GITHUB_TOKEN")
         .env_remove("GH_TOKEN")
         .env_remove("GITHUB_TOKEN");
@@ -193,6 +222,27 @@ mod tests {
             serde_json::to_string(&crate::CopilotSettings::default()).unwrap(),
             "{}"
         );
+    }
+
+    /// Every session, the one-shot ones included, denies each forge write in
+    /// the prefix form the CLI matches, and denies nothing else.
+    #[test]
+    fn every_session_denies_the_forge_writes() {
+        let run = build_copilot_command("id", None, None, Path::new("/repo"), true, &[]);
+        let one_shot = build_copilot_init_command(None, Path::new("/repo"), &[]);
+        for cmd in [run, one_shot] {
+            let denies: Vec<String> = argv(&cmd)
+                .into_iter()
+                .filter(|a| a.starts_with("--deny-tool"))
+                .collect();
+            let mut want = vec!["--deny-tool=shell(git push:*)".to_string()];
+            for verb in [
+                "create", "edit", "ready", "reopen", "review", "comment", "merge", "close",
+            ] {
+                want.push(format!("--deny-tool=shell(gh pr {verb}:*)"));
+            }
+            assert_eq!(denies, want);
+        }
     }
 
     #[test]

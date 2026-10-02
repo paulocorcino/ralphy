@@ -1,12 +1,139 @@
-//! Restrict a daemon store file (token, registry, identity, markers) to the
-//! current user: mode `0o600` on unix, and on Windows a protected DACL with one
-//! ACE for the current user (ADR-0067: Windows OpenSSH also checks the ACL of a
-//! key file). Called on every write, including `desk::save_to` on each drag, so
-//! Windows uses the Win32 API in-process rather than spawning `icacls`.
+//! Restrict a store file (token, registry, identity, markers, and the CLI's
+//! events and Telegram stores) to the current user: mode `0o600` on unix, and
+//! on Windows a protected DACL with one ACE for the current user (ADR-0067:
+//! Windows OpenSSH also checks the ACL of a key file). Called on every write,
+//! including `desk::save_to` on each drag, so Windows uses the Win32 API
+//! in-process rather than spawning `icacls`.
+//!
+//! Public because the CLI's secret stores share this one implementation
+//! (ADR-0072 D7).
 
+use std::io::Write;
 use std::path::Path;
 
 use anyhow::{Context, Result};
+
+/// Write `bytes` to `path` so the file is owner-only from the moment it
+/// exists. The bytes go to a sibling temporary file that is created owner-only
+/// (mode `0o600` at creation on unix; on Windows the DACL is set while the file
+/// is still empty), then the file is synced and renamed over `path`.
+/// Invariant: no temporary file is left behind on any return path.
+pub fn write_owner_only(path: &Path, bytes: &[u8]) -> Result<()> {
+    write_owner_only_probed(path, bytes, |_| {})
+}
+
+/// [`write_owner_only`], with `after_create` called on the temporary file
+/// right after it is created, before any byte is written: the test hook that
+/// reads its mode at that instant.
+fn write_owner_only_probed(
+    path: &Path,
+    bytes: &[u8],
+    after_create: impl FnOnce(&Path),
+) -> Result<()> {
+    let name = path
+        .file_name()
+        .with_context(|| format!("{} names no file", path.display()))?;
+    // The counter keeps two writers in one process (the daemon's threads) off
+    // each other's temporary file; the pid keeps processes apart.
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let mut tmp_name = name.to_os_string();
+    tmp_name.push(format!(".tmp-{}-{n}", std::process::id()));
+    let tmp = path.with_file_name(tmp_name);
+    let file = match create_owner_only_file(&tmp) {
+        // A temporary file of a dead process with the same pid: replace it.
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            std::fs::remove_file(&tmp)
+                .with_context(|| format!("removing the stale {}", tmp.display()))?;
+            create_owner_only_file(&tmp)
+        }
+        other => other,
+    }
+    .with_context(|| format!("creating {}", tmp.display()))?;
+    let written = (|| -> Result<()> {
+        let mut file = file;
+        protect_new_file(&tmp)?;
+        after_create(&tmp);
+        file.write_all(bytes)
+            .with_context(|| format!("writing {}", tmp.display()))?;
+        file.sync_all()
+            .with_context(|| format!("syncing {}", tmp.display()))?;
+        drop(file);
+        std::fs::rename(&tmp, path)
+            .with_context(|| format!("renaming {} to {}", tmp.display(), path.display()))
+    })();
+    if let Err(e) = written {
+        if let Err(rm) = std::fs::remove_file(&tmp) {
+            if rm.kind() != std::io::ErrorKind::NotFound {
+                return Err(e.context(format!("also removing {}: {rm}", tmp.display())));
+            }
+        }
+        return Err(e);
+    }
+    Ok(())
+}
+
+/// Create `path` new, readable and writable by the owner only.
+#[cfg(unix)]
+fn create_owner_only_file(path: &Path) -> std::io::Result<std::fs::File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)
+}
+
+/// Create `path` new; [`protect_new_file`] sets its DACL before any write.
+#[cfg(windows)]
+fn create_owner_only_file(path: &Path) -> std::io::Result<std::fs::File> {
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+}
+
+/// On unix the mode was set at creation; nothing is left to do.
+#[cfg(unix)]
+fn protect_new_file(_path: &Path) -> Result<()> {
+    Ok(())
+}
+
+#[cfg(windows)]
+fn protect_new_file(path: &Path) -> Result<()> {
+    set_owner_only(path)
+}
+
+/// Create the store directory `path` (and its parents). On unix it gets mode
+/// `0o700`; on Windows it keeps the per-user profile's ACL, and each secret
+/// file carries its own DACL.
+pub fn create_owner_only_dir(path: &Path) -> Result<()> {
+    std::fs::create_dir_all(path).with_context(|| format!("creating {}", path.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))
+            .with_context(|| format!("setting owner-only permissions on {}", path.display()))?;
+    }
+    Ok(())
+}
+
+/// Whether `path` is owner-only: mode `0o600` on unix; on Windows a protected
+/// DACL whose one ACE gives the current user full access.
+#[cfg(unix)]
+pub fn is_owner_only(path: &Path) -> Result<bool> {
+    use std::os::unix::fs::PermissionsExt;
+    let meta = std::fs::metadata(path).with_context(|| format!("reading {}", path.display()))?;
+    Ok(meta.permissions().mode() & 0o777 == 0o600)
+}
+
+/// Whether `path` is owner-only: mode `0o600` on unix; on Windows a protected
+/// DACL whose one ACE gives the current user full access.
+#[cfg(windows)]
+pub fn is_owner_only(path: &Path) -> Result<bool> {
+    let dacl = win::read_dacl(path)?;
+    Ok(dacl.protected && dacl.ace_count == 1 && dacl.first_is_user_full_access)
+}
 
 /// Restrict `path` to the current user, replacing whatever it inherited.
 #[cfg(unix)]
@@ -25,22 +152,113 @@ pub(crate) fn set_owner_only(path: &Path) -> Result<()> {
 }
 
 #[cfg(windows)]
-mod win {
+#[allow(
+    unsafe_code,
+    reason = "FFI: the Win32 security API that reads and writes a file's DACL"
+)]
+pub(crate) mod win {
     use std::io;
     use std::os::windows::ffi::OsStrExt;
     use std::path::Path;
     use std::ptr::{null, null_mut};
 
     use anyhow::{bail, Context, Result};
-    use windows_sys::Win32::Foundation::{CloseHandle, ERROR_SUCCESS, HANDLE};
-    use windows_sys::Win32::Security::Authorization::{SetNamedSecurityInfoW, SE_FILE_OBJECT};
+    use windows_sys::Win32::Foundation::{CloseHandle, LocalFree, ERROR_SUCCESS, HANDLE};
+    use windows_sys::Win32::Security::Authorization::{
+        GetNamedSecurityInfoW, SetNamedSecurityInfoW, SE_FILE_OBJECT,
+    };
     use windows_sys::Win32::Security::{
-        AddAccessAllowedAce, GetLengthSid, GetTokenInformation, InitializeAcl, TokenUser,
-        ACCESS_ALLOWED_ACE, ACL, ACL_REVISION, DACL_SECURITY_INFORMATION,
-        PROTECTED_DACL_SECURITY_INFORMATION, PSID, TOKEN_QUERY, TOKEN_USER,
+        AddAccessAllowedAce, EqualSid, GetAce, GetLengthSid, GetSecurityDescriptorControl,
+        GetTokenInformation, InitializeAcl, TokenUser, ACCESS_ALLOWED_ACE, ACL, ACL_REVISION,
+        DACL_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID,
+        SE_DACL_PROTECTED, TOKEN_QUERY, TOKEN_USER,
     };
     use windows_sys::Win32::Storage::FileSystem::FILE_ALL_ACCESS;
+    use windows_sys::Win32::System::SystemServices::ACCESS_ALLOWED_ACE_TYPE;
     use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+
+    /// What a file's DACL says, read back from the file system.
+    #[derive(Debug, PartialEq)]
+    pub(crate) struct Dacl {
+        pub(crate) protected: bool,
+        pub(crate) ace_count: u16,
+        /// The first ACE allows everything to the current user.
+        pub(crate) first_is_user_full_access: bool,
+    }
+
+    /// Frees the security descriptor GetNamedSecurityInfoW allocated, on every
+    /// return path.
+    struct Descriptor(PSECURITY_DESCRIPTOR);
+
+    impl Drop for Descriptor {
+        fn drop(&mut self) {
+            // SAFETY: the descriptor came from GetNamedSecurityInfoW and is
+            // freed once. A failed free leaks it; there is nothing to report to.
+            unsafe { LocalFree(self.0) };
+        }
+    }
+
+    pub(crate) fn read_dacl(path: &Path) -> Result<Dacl> {
+        let wide: Vec<u16> = path
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let mut dacl: *mut ACL = null_mut();
+        let mut sd: PSECURITY_DESCRIPTOR = null_mut();
+        // SAFETY: `wide` is NUL-terminated; the out pointers are valid. `sd` is
+        // freed by `Descriptor`, and `dacl` points inside it.
+        let code = unsafe {
+            GetNamedSecurityInfoW(
+                wide.as_ptr(),
+                SE_FILE_OBJECT,
+                DACL_SECURITY_INFORMATION,
+                null_mut(),
+                null_mut(),
+                &mut dacl,
+                null_mut(),
+                &mut sd,
+            )
+        };
+        if code != ERROR_SUCCESS {
+            let err = io::Error::from_raw_os_error(code as i32);
+            bail!("reading the access list of {}: {err}", path.display());
+        }
+        let sd = Descriptor(sd);
+
+        let mut control = 0u16;
+        let mut revision = 0u32;
+        // SAFETY: `sd.0` is the descriptor returned above.
+        if unsafe { GetSecurityDescriptorControl(sd.0, &mut control, &mut revision) } == 0 {
+            return Err(io::Error::last_os_error()).context("reading the descriptor control");
+        }
+
+        let user = CurrentUser::query()?;
+        let (ace_count, first_is_user_full_access) = if dacl.is_null() {
+            (0, false)
+        } else {
+            // SAFETY: `dacl` is non-null and points inside `sd`.
+            let count = unsafe { (*dacl).AceCount };
+            let mut ace: *mut core::ffi::c_void = null_mut();
+            // SAFETY: index 0 is checked against `count`; `ace` is a valid out pointer.
+            let first = count > 0 && unsafe { GetAce(dacl, 0, &mut ace) } != 0 && {
+                let ace = ace.cast::<ACCESS_ALLOWED_ACE>();
+                // SAFETY: GetAce returned a pointer to ACE 0 inside the DACL; an
+                // ACCESS_ALLOWED ACE holds its SID from `SidStart` on.
+                unsafe {
+                    u32::from((*ace).Header.AceType) == ACCESS_ALLOWED_ACE_TYPE
+                        && (*ace).Mask == FILE_ALL_ACCESS
+                        && EqualSid((&raw const (*ace).SidStart).cast_mut().cast(), user.sid()) != 0
+                }
+            };
+            (count, first)
+        };
+        Ok(Dacl {
+            protected: control & SE_DACL_PROTECTED != 0,
+            ace_count,
+            first_is_user_full_access,
+        })
+    }
 
     /// The `TOKEN_USER` of this process, in a buffer that owns the SID it points
     /// to. `u64` elements keep the buffer aligned for the pointer inside.
@@ -142,95 +360,61 @@ mod win {
     }
 }
 
+#[cfg(test)]
+mod temp_name_tests {
+    /// Two writes in one process never share a temporary file, so one cannot
+    /// remove or rename the other's half-written bytes.
+    #[test]
+    fn each_write_has_its_own_temporary_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("secret.toml");
+        let mut seen = Vec::new();
+        for bytes in [b"one", b"two"] {
+            super::write_owner_only_probed(&path, bytes, |tmp| seen.push(tmp.to_path_buf()))
+                .unwrap();
+        }
+        assert_ne!(seen[0], seen[1]);
+        assert_eq!(std::fs::read(&path).unwrap(), b"two");
+    }
+}
+
 #[cfg(all(test, windows))]
 pub(crate) mod tests {
-    use std::os::windows::ffi::OsStrExt;
     use std::path::Path;
-    use std::ptr::null_mut;
 
-    use windows_sys::Win32::Foundation::{LocalFree, ERROR_SUCCESS};
-    use windows_sys::Win32::Security::Authorization::{GetNamedSecurityInfoW, SE_FILE_OBJECT};
-    use windows_sys::Win32::Security::{
-        EqualSid, GetAce, GetSecurityDescriptorControl, ACCESS_ALLOWED_ACE, ACL,
-        DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, SE_DACL_PROTECTED,
-    };
-    use windows_sys::Win32::Storage::FileSystem::FILE_ALL_ACCESS;
-    use windows_sys::Win32::System::SystemServices::ACCESS_ALLOWED_ACE_TYPE;
-
-    use super::win::CurrentUser;
-
-    /// What the file's DACL says, read back from the file system.
-    #[derive(Debug, PartialEq)]
-    pub(crate) struct Dacl {
-        pub(crate) protected: bool,
-        pub(crate) ace_count: u16,
-        /// The first ACE allows everything to the current user.
-        pub(crate) first_is_user_full_access: bool,
-    }
+    pub(crate) use super::win::Dacl;
 
     pub(crate) fn read_dacl(path: &Path) -> Dacl {
-        let wide: Vec<u16> = path
-            .as_os_str()
-            .encode_wide()
-            .chain(std::iter::once(0))
+        super::win::read_dacl(path).expect("reading the DACL")
+    }
+
+    /// The written file carries the owner-only DACL, a rewrite keeps it, and
+    /// no temporary file is left beside it.
+    #[test]
+    fn write_owner_only_is_protected() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = dir.path().join("store");
+        super::create_owner_only_dir(&store).unwrap();
+        let path = store.join("secret.toml");
+        let mut seen = None;
+        super::write_owner_only_probed(&path, b"one", |tmp| seen = Some(read_dacl(tmp))).unwrap();
+        let owner_only = Dacl {
+            protected: true,
+            ace_count: 1,
+            first_is_user_full_access: true,
+        };
+        assert_eq!(seen, Some(owner_only), "the empty temporary file");
+        super::write_owner_only(&path, b"two").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"two");
+        assert!(super::is_owner_only(&path).unwrap());
+        let plain = store.join("plain.txt");
+        std::fs::write(&plain, "x").unwrap();
+        assert!(!super::is_owner_only(&plain).unwrap());
+        let names: Vec<String> = std::fs::read_dir(&store)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
-        let mut dacl: *mut ACL = null_mut();
-        let mut sd: PSECURITY_DESCRIPTOR = null_mut();
-        // SAFETY: `wide` is NUL-terminated; the out pointers are valid. `sd` is
-        // freed with LocalFree below, and `dacl` points inside it.
-        let code = unsafe {
-            GetNamedSecurityInfoW(
-                wide.as_ptr(),
-                SE_FILE_OBJECT,
-                DACL_SECURITY_INFORMATION,
-                null_mut(),
-                null_mut(),
-                &mut dacl,
-                null_mut(),
-                &mut sd,
-            )
-        };
-        assert_eq!(
-            code,
-            ERROR_SUCCESS,
-            "reading the DACL of {}",
-            path.display()
-        );
-
-        let mut control = 0u16;
-        let mut revision = 0u32;
-        // SAFETY: `sd` is the descriptor returned above.
-        let ok = unsafe { GetSecurityDescriptorControl(sd, &mut control, &mut revision) };
-        assert_ne!(ok, 0, "reading the descriptor control");
-
-        let user = CurrentUser::query().expect("the current user");
-        let (ace_count, first_is_user_full_access) = if dacl.is_null() {
-            (0, false)
-        } else {
-            // SAFETY: `dacl` is non-null and points inside `sd`.
-            let count = unsafe { (*dacl).AceCount };
-            let mut ace: *mut core::ffi::c_void = null_mut();
-            // SAFETY: index 0 is checked against `count`; `ace` is a valid out pointer.
-            let first = count > 0 && unsafe { GetAce(dacl, 0, &mut ace) } != 0 && {
-                let ace = ace.cast::<ACCESS_ALLOWED_ACE>();
-                // SAFETY: GetAce returned a pointer to ACE 0 inside the DACL; an
-                // ACCESS_ALLOWED ACE holds its SID from `SidStart` on.
-                unsafe {
-                    u32::from((*ace).Header.AceType) == ACCESS_ALLOWED_ACE_TYPE
-                        && (*ace).Mask == FILE_ALL_ACCESS
-                        && EqualSid((&raw const (*ace).SidStart).cast_mut().cast(), user.sid()) != 0
-                }
-            };
-            (count, first)
-        };
-        // SAFETY: `sd` was allocated by GetNamedSecurityInfoW and is freed once.
-        unsafe { LocalFree(sd) };
-
-        Dacl {
-            protected: control & SE_DACL_PROTECTED != 0,
-            ace_count,
-            first_is_user_full_access,
-        }
+        assert!(!names.iter().any(|n| n.contains(".tmp-")), "{names:?}");
     }
 
     #[test]
@@ -271,5 +455,40 @@ pub(crate) mod tests {
                 file.display()
             );
         }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod unix_tests {
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::Path;
+
+    fn mode(path: &Path) -> u32 {
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
+    /// The secret file never exists with a wider mode than `0o600`: the
+    /// temporary file has that mode the instant it is created, before a byte
+    /// is written. The final file keeps it, the store directory is `0o700`,
+    /// and no temporary file is left behind.
+    #[test]
+    fn write_owner_only_creates_the_file_0600() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = dir.path().join("store");
+        super::create_owner_only_dir(&store).unwrap();
+        assert_eq!(mode(&store), 0o700);
+        let path = store.join("secret.toml");
+        let mut at_creation = None;
+        super::write_owner_only_probed(&path, b"one", |tmp| at_creation = Some(mode(tmp))).unwrap();
+        assert_eq!(at_creation, Some(0o600), "the temporary file at creation");
+        assert_eq!(mode(&path), 0o600);
+        assert!(super::is_owner_only(&path).unwrap());
+        super::write_owner_only(&path, b"two").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"two");
+        let names: Vec<String> = std::fs::read_dir(&store)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, ["secret.toml"]);
     }
 }

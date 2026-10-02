@@ -1,4 +1,4 @@
-//! The read-only resources: repos, usage and spend, the desk, identity,
+//! The read-only resources: repos, usage and spend, identity,
 //! about, release, agents, and the embedded UI bytes.
 
 use std::path::{Path, PathBuf};
@@ -12,9 +12,7 @@ use axum::Json;
 use super::AgentLocator;
 use super::{encode_query_value, read_peer_store};
 use crate::{assets, StorePaths, UI};
-use crate::{
-    checkout, desk, dispatch, fleet, identity, peer, registry, rekey, release, roster, spend, usage,
-};
+use crate::{dispatch, fleet, identity, peer, registry, rekey, release, roster, spend, usage};
 
 /// Query for `GET /api/usage`: an optional `since` (RFC3339 UTC) lower bound.
 /// Callers MUST URL-encode `+` as `%2B` — axum/`serde_urlencoded` decode a raw
@@ -67,9 +65,16 @@ pub(crate) async fn repos_route(registry_path: PathBuf, memo: rekey::HealMemo) -
     #[derive(serde::Serialize)]
     struct RepoView {
         slug: String,
+        // Additive: what the operator calls the project (`registry::project_name`).
+        // The slug of a remoteless repo is a hash key, never a name.
+        name: String,
         path: String,
         reachable: bool,
+        // `Some` only on a branch; `head` tells a detached HEAD from no answer.
         branch: Option<String>,
+        // Additive (#510): `{"kind":"branch","name"}` or `{"kind":"detached","sha"}`,
+        // the shape of `sync.status`. Peers ignore unknown fields.
+        head: Option<ralphy_git_read::Head>,
         // Additive (#204): the real working-tree state and origin URL. Both spawn
         // `git`, so the whole `Vec` is built inside `spawn_blocking` below.
         dirty: bool,
@@ -90,18 +95,26 @@ pub(crate) async fn repos_route(registry_path: PathBuf, memo: rekey::HealMemo) -
         store
             .repos
             .iter()
-            .map(|(slug, entry)| RepoView {
-                slug: slug.clone(),
-                path: entry.path.clone(),
-                reachable: entry.reachable(),
-                branch: entry.head_branch(),
-                dirty: entry.dirty(),
-                remote: entry.remote(),
-                root: entry.root(),
+            .map(|(slug, entry)| {
+                let head = entry.head();
+                RepoView {
+                    slug: slug.clone(),
+                    name: registry::project_name(slug, &entry.path),
+                    path: entry.path.clone(),
+                    reachable: entry.reachable(),
+                    branch: match &head {
+                        Some(ralphy_git_read::Head::Branch { name }) => Some(name.clone()),
+                        _ => None,
+                    },
+                    head,
+                    dirty: entry.dirty(),
+                    remote: entry.remote(),
+                    root: entry.root(),
+                }
             })
             .collect()
     }
-    // `dirty`/`remote` each spawn a `git` subprocess per repo — that must not
+    // `head`/`dirty`/`remote` each spawn `git` per repo — that must not
     // block the async reactor, so the whole map runs on a blocking thread.
     let views = tokio::task::spawn_blocking(move || {
         let views = build_views(&store);
@@ -353,155 +366,6 @@ pub(crate) fn local_usage_contribution(
     usage::local_contribution(&usage_dir, &stores, &store, daemon_id, since)
 }
 
-/// `GET /api/desk`: the saved desk — windows and fences together, each in layout
-/// order (ADR-0050, ADR-0051 §10), plus `checkouts` (the selected worktree per
-/// repo ref, ADR-0063 §4) when any is set. An absent or corrupt `desk.toml`
-/// answers `200 {"windows":[],"fences":[]}` — a lost layout costs a cascaded
-/// stage, never an error the shell has to handle.
-///
-/// Served under the registry's CANONICAL keys: a record saved under a slug the
-/// registry has since re-keyed (`former_slugs`) is rewritten on the way out,
-/// so a migrated project's consoles come back to it (ADR-0036 amendment
-/// 2026-09-16). The registry is read fresh, like `/api/repos`.
-pub(crate) async fn desk_get_route(path: PathBuf, registry_path: PathBuf) -> Response {
-    let aliases = former_slug_aliases(&registry_path);
-    Json(rekey::rekey_desk(desk::load_from(&path), &aliases)).into_response()
-}
-
-/// The registry's former-slug → canonical-key map, or empty when the registry
-/// is unreadable (warned; the desk is still served — a lost alias costs a
-/// cascaded stage, never the layout).
-pub(crate) fn former_slug_aliases(
-    registry_path: &Path,
-) -> std::collections::BTreeMap<String, String> {
-    match registry::load_from(registry_path) {
-        Ok(store) => store.former_slug_map(),
-        Err(e) => {
-            tracing::warn!(error = %e, "repo registry unreadable; desk served without slug aliases");
-            Default::default()
-        }
-    }
-}
-
-/// `PUT /api/desk`: replace the desk wholesale, each record type pruned to its
-/// own cap ([`desk::DESK_MAX`], [`desk::FENCE_MAX`]) newest by `ts`, answering
-/// `200` with the pruned store — the client needs the daemon's post-prune truth
-/// in one round trip (last-write-wins, no ETag).
-///
-/// A body that is not a `{ windows, fences, checkouts? }` object — including
-/// the pre-#340 bare array — is rejected by the `Json` extractor as `422` and
-/// never reaches here, so `desk.toml` is untouched; a rect that is out of frame
-/// — non-finite, or an origin off the stage's pinned 0,0 — and a checkout
-/// value that is not one path component (`checkout::lexical`) are rejected
-/// here as `400`. Every rejection returns BEFORE any write, so a refused upload
-/// leaves `desk.toml` byte-identical on every path. A well-shaped checkout name
-/// is stored unvalidated: whether the worktree still exists is the verb's call
-/// (`unknown checkout`), not a spawn per desk write.
-///
-/// Non-overlap between fences is deliberately NOT validated: refusing a whole
-/// desk upload would cost the operator their layout and the daemon has no repair
-/// path, so that invariant belongs to the client (ADR-0051 §6).
-///
-/// Stored under the registry's canonical keys: an upload from a tab that read
-/// the desk before a re-key still names the former slug, and is normalized
-/// through `former_slugs` before anything is written — so `desk.toml`
-/// converges on the first save after a migration, whichever tab saves.
-pub(crate) async fn desk_put_route(
-    path: PathBuf,
-    registry_path: PathBuf,
-    up: desk::DeskUpload,
-) -> Response {
-    if let Some(bad) = up.windows.iter().find(|r| !desk::rect_is_sane(&r.rect)) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(
-                serde_json::json!({ "error": format!("record {} has an out-of-frame rect", bad.id) }),
-            ),
-        )
-            .into_response();
-    }
-    if let Some(bad) = up.fences.iter().find(|f| !desk::rect_is_sane(&f.rect)) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(
-                serde_json::json!({ "error": format!("fence {} has an out-of-frame rect", bad.id) }),
-            ),
-        )
-            .into_response();
-    }
-    if let Some(bad) = up.notes.iter().find(|n| !desk::rect_is_sane(&n.rect)) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(
-                serde_json::json!({ "error": format!("note {} has an out-of-frame rect", bad.id) }),
-            ),
-        )
-            .into_response();
-    }
-    if let Some((repo, name)) = up
-        .checkouts
-        .iter()
-        .find(|(_, n)| checkout::lexical(n).is_none())
-    {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(
-                serde_json::json!({ "error": format!("checkout {name} for {repo} is not a valid name") }),
-            ),
-        )
-            .into_response();
-    }
-    // #411: a per-record checkout is the same kind of name as the per-repo
-    // selection, gated the same way before anything is written. A note card
-    // carries the same key (ADR-0064 §4, identity is `(checkout, path)`).
-    let record_checkouts = up
-        .windows
-        .iter()
-        .map(|r| (r.id.as_str(), r.checkout.as_deref()))
-        .chain(
-            up.notes
-                .iter()
-                .map(|n| (n.id.as_str(), n.checkout.as_deref())),
-        );
-    if let Some((id, name)) = record_checkouts
-        .filter_map(|(id, c)| c.map(|n| (id, n)))
-        .find(|(_, n)| checkout::lexical(n).is_none())
-    {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(
-                serde_json::json!({ "error": format!("checkout {name} on record {id} is not a valid name") }),
-            ),
-        )
-            .into_response();
-    }
-    // Read, fold, write — as ONE step. Two pages flushing at once would
-    // otherwise both read the same desk and the second write would drop the
-    // first fold; the lock is process-wide because the store is (one
-    // `desk.toml` per daemon). Nothing awaits under it: `load_from` and
-    // `save_to` are synchronous file reads and writes.
-    static DESK_WRITE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-    let _held = DESK_WRITE.lock().await;
-    let merged = desk::merge(desk::load_from(&path), up);
-    let store = rekey::rekey_desk(
-        desk::DeskStore {
-            windows: desk::prune(merged.windows),
-            fences: desk::prune_fences(merged.fences),
-            notes: desk::prune_notes(merged.notes),
-            checkouts: merged.checkouts,
-        },
-        &former_slug_aliases(&registry_path),
-    );
-    match desk::save_to(&store, &path) {
-        Ok(()) => Json(store).into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({ "error": format!("{e:#}") })),
-        )
-            .into_response(),
-    }
-}
-
 /// `GET /api/identity`: the loaded identity's `name`/`avatar` as JSON, or 404
 /// when the daemon has not been baptized yet.
 pub(crate) async fn identity_route(identity: Option<identity::Identity>) -> Response {
@@ -665,7 +529,7 @@ pub(crate) async fn agents_route(
             }
             (
                 StatusCode::BAD_GATEWAY,
-                format!("unknown peer daemon {daemon_id}"),
+                "the environment of this project is not in the list".to_string(),
             )
                 .into_response()
         }
@@ -685,8 +549,12 @@ pub(crate) async fn ui_asset(headers: HeaderMap, uri: Uri) -> Response {
         return (StatusCode::NOT_FOUND, "not found").into_response();
     };
     let content_type = content_type(path);
-    let prepared =
-        assets::prepared(path, file.contents(), assets::compressible(content_type)).await;
+    let contents = if path == assets::Shell::Desk.file() {
+        assets::desk_page()
+    } else {
+        file.contents()
+    };
+    let prepared = assets::prepared(path, contents, assets::compressible(content_type)).await;
     let header_str = |name: header::HeaderName| headers.get(name).and_then(|v| v.to_str().ok());
 
     let mut resp = Response::builder()
@@ -703,7 +571,7 @@ pub(crate) async fn ui_asset(headers: HeaderMap, uri: Uri) -> Response {
             resp = resp.header(header::CONTENT_ENCODING, "gzip");
             axum::body::Body::from(gz.clone())
         }
-        _ => axum::body::Body::from(file.contents()),
+        _ => axum::body::Body::from(contents),
     };
     finish_asset(resp.body(body))
 }

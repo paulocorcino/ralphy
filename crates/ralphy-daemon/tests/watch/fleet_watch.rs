@@ -123,6 +123,7 @@ async fn peer_and_local_creates_push_their_own_repo_identity() {
             address: "127.0.0.1".to_string(),
             port: peer_port,
             environment: "WSL: Ubuntu-22.04".to_string(),
+            os: String::new(),
             token: "peer-tok".to_string(),
             protocol_version: PEER_PROTOCOL_VERSION,
             tunnel: None,

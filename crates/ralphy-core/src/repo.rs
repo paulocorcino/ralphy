@@ -15,7 +15,8 @@ use crate::git;
 /// The git operations the run lifecycle needs, with the repo root baked into
 /// the implementor (mirroring [`GhTracker`]'s shape). Methods a fake rarely
 /// cares about carry neutral defaults, so a test overrides only what it
-/// scripts — the same stance as [`IssueTracker`]'s default bodies.
+/// scripts — the same stance as [`IssueTracker`]'s no-op defaults. As there,
+/// a method that guards integrity gets no default.
 ///
 /// [`GhTracker`]: crate::GhTracker
 /// [`IssueTracker`]: crate::IssueTracker

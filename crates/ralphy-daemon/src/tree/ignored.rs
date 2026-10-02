@@ -139,33 +139,12 @@ fn push_global(layers: &mut Vec<Layer>, root: &Path) {
 /// names the shared one: worktrees share the primary's `info/exclude`, which
 /// is where ralphy's own worktree setup writes.
 fn exclude_file(root: &Path) -> Option<PathBuf> {
-    let dot_git = root.join(".git");
-    if dot_git.is_dir() {
-        return Some(dot_git.join("info").join("exclude"));
-    }
-    if !dot_git.is_file() {
-        return None;
-    }
-    let git_dir = root.join(first_line(&dot_git)?.strip_prefix("gitdir: ")?);
-    let common = git_dir.join("commondir");
-    let common = if common.is_file() {
-        git_dir.join(first_line(&common)?)
-    } else {
-        git_dir
-    };
-    Some(common.join("info").join("exclude"))
-}
-
-/// The first line of a small git pointer file, or `None` when it cannot be
-/// read — the worktree then just has no `info/exclude` rules.
-fn first_line(path: &Path) -> Option<String> {
-    match std::fs::read_to_string(path) {
-        Ok(text) => text.lines().next().map(|l| l.trim().to_string()),
-        Err(e) => {
-            tracing::debug!(path = %path.display(), error = %e, "unreadable git pointer file");
-            None
-        }
-    }
+    let git_dir = ralphy_git_read::git_dir(root)?;
+    Some(
+        ralphy_git_read::common_dir(&git_dir)?
+            .join("info")
+            .join("exclude"),
+    )
 }
 
 #[cfg(test)]

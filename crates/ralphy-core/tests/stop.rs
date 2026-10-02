@@ -160,6 +160,12 @@ impl IssueTracker for SilentTracker {
     fn close(&self, _number: u64, _comment: &str) -> anyhow::Result<()> {
         Ok(())
     }
+    fn is_closed(&self, _number: u64) -> anyhow::Result<bool> {
+        Ok(true)
+    }
+    fn create_issue(&self, _title: &str, _body: &str, _labels: &[String]) -> anyhow::Result<u64> {
+        Ok(0)
+    }
 }
 
 /// Never expires, never sleeps — so nothing in these tests can stop a run except

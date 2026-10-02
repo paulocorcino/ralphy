@@ -149,6 +149,60 @@ impl Shell {
     }
 }
 
+/// This build's id: the version, then the first 12 hex digits of a sha256 over
+/// every embedded UI file (its path, then its bytes) in path order. The version
+/// alone does not change between two dev builds of one commit; the hash
+/// changes whenever the JavaScript a tab runs changes (ADR-0070 D6).
+/// Computed once.
+pub fn build_id() -> &'static str {
+    static ID: OnceLock<String> = OnceLock::new();
+    ID.get_or_init(|| {
+        let mut files = Vec::new();
+        collect_files(&crate::UI, &mut files);
+        files.sort_by(|a, b| a.0.cmp(&b.0));
+        let mut hash = Sha256::new();
+        for (path, contents) in files {
+            hash.update(path.as_bytes());
+            hash.update(contents);
+        }
+        let digest = hash.finalize();
+        let hex: String = digest[..6].iter().map(|b| format!("{b:02x}")).collect();
+        format!("{}+{hex}", env!("RALPHY_VERSION"))
+    })
+}
+
+fn collect_files(dir: &'static include_dir::Dir<'static>, out: &mut Vec<(String, &'static [u8])>) {
+    for file in dir.files() {
+        out.push((
+            file.path().to_string_lossy().replace('\\', "/"),
+            file.contents(),
+        ));
+    }
+    for sub in dir.dirs() {
+        collect_files(sub, out);
+    }
+}
+
+/// The empty build-id tag in `index.html`; the served desk page carries
+/// [`build_id`] in it.
+const BUILD_META: &str = r#"<meta name="ralphy-build" content="">"#;
+
+/// The desk page as served: `index.html` with [`build_id`] in its
+/// `ralphy-build` tag. The tag is outside every `<script>`, so the CSP hashes
+/// of the inline scripts do not change. Built once.
+pub(crate) fn desk_page() -> &'static [u8] {
+    static PAGE: OnceLock<&'static [u8]> = OnceLock::new();
+    PAGE.get_or_init(|| {
+        let source = crate::UI
+            .get_file(Shell::Desk.file())
+            .map(|f| f.contents())
+            .expect("index.html is embedded at compile time");
+        let filled = format!(r#"<meta name="ralphy-build" content="{}">"#, build_id());
+        let page = String::from_utf8_lossy(source).replacen(BUILD_META, &filled, 1);
+        Box::leak(page.into_bytes().into_boxed_slice())
+    })
+}
+
 /// The embedded path a request path (leading `/` stripped) serves, or `None`
 /// for a 404. Only the path is decided here; whether the file exists is the
 /// embedded tree's answer.
@@ -377,7 +431,7 @@ mod tests {
     #[tokio::test]
     async fn a_page_is_served_at_its_route_and_never_at_its_file_name() {
         for (route, source) in [
-            ("/", include_bytes!("../assets/ui/index.html").as_slice()),
+            ("/", desk_page()),
             ("/popup", include_bytes!("../assets/ui/detached.html")),
             ("/fence", include_bytes!("../assets/ui/detached-fence.html")),
         ] {
@@ -395,6 +449,24 @@ mod tests {
             let resp = get(file, &[]).await;
             assert_eq!(resp.status(), StatusCode::NOT_FOUND, "GET {file}");
         }
+    }
+
+    #[tokio::test]
+    async fn the_desk_page_carries_the_build_id() {
+        let source = include_bytes!("../assets/ui/index.html");
+        assert!(
+            String::from_utf8_lossy(source).contains(BUILD_META),
+            "index.html keeps the empty tag the daemon fills"
+        );
+        let page = String::from_utf8_lossy(desk_page()).into_owned();
+        assert!(
+            page.contains(&format!(
+                r#"<meta name="ralphy-build" content="{}">"#,
+                build_id()
+            )),
+            "the served page names this build"
+        );
+        assert!(build_id().starts_with(env!("RALPHY_VERSION")));
     }
 
     #[tokio::test]

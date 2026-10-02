@@ -62,7 +62,7 @@ fn round_trip_preserves_records() {
     };
     save_to(&store, &path).unwrap();
 
-    let back = load_from(&path);
+    let back = load_from(&path).expect("desk reads");
     assert_eq!(back, store, "the desk round-trips through desk.toml");
     assert_eq!(back.windows[0].session_id, None);
     assert_eq!(
@@ -213,7 +213,7 @@ height = 480.0
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("desk.toml");
         std::fs::write(&path, text).unwrap();
-        let store = load_from(&path);
+        let store = load_from(&path).expect("desk reads");
         assert_eq!(store.windows.len(), 1, "{case}: the one window loads");
         assert_eq!(store.windows[0].id, id, "{case}");
         assert_eq!(store.windows[0].console_name, None, "{case}");
@@ -224,7 +224,10 @@ height = 480.0
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("desk.toml");
     std::fs::write(&path, windows_only).unwrap();
-    assert_eq!(load_from(&path).windows, vec![record("w-legacy", 5)]);
+    assert_eq!(
+        load_from(&path).expect("desk reads").windows,
+        vec![record("w-legacy", 5)]
+    );
 }
 #[test]
 fn wire_key_is_camel_case_session_id() {
@@ -236,21 +239,39 @@ fn wire_key_is_camel_case_session_id() {
 }
 
 #[test]
+fn move_aside_never_overwrites() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("desk.toml");
+    let earlier = dir.path().join("desk.toml.unreadable-2026-01-02");
+    std::fs::write(&earlier, "first").unwrap();
+    std::fs::write(&path, "second").unwrap();
+    let moved = move_aside(&path, "2026-01-02").expect("the rename succeeds");
+    assert!(
+        moved.to_string_lossy().ends_with("unreadable-2026-01-02-2"),
+        "a taken name gets a counter: {}",
+        moved.display()
+    );
+    assert_eq!(std::fs::read_to_string(&earlier).unwrap(), "first");
+    assert_eq!(std::fs::read_to_string(&moved).unwrap(), "second");
+    assert!(!path.exists(), "the desk itself moved");
+}
+
+#[test]
 fn missing_file_reads_as_empty_desk() {
     let dir = tempfile::tempdir().unwrap();
-    let store = load_from(&dir.path().join("desk.toml"));
+    let store = load_from(&dir.path().join("desk.toml")).expect("a missing desk reads");
     assert!(store.windows.is_empty());
 }
 
 #[test]
-fn corrupt_file_reads_as_empty_desk() {
+fn a_corrupt_desk_is_a_failure_not_an_empty_desk() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("desk.toml");
-    std::fs::write(&path, "not a toml { ][").unwrap();
-    let store = load_from(&path);
+    std::fs::write(&path, "windows = [\n").unwrap();
+    let e = load_from(&path).expect_err("a corrupt desk is an error, not an empty desk");
     assert!(
-        store.windows.is_empty(),
-        "a corrupt desk reads empty and does not panic"
+        format!("{e:#}").contains("parsing desk layout"),
+        "the error names the parse: {e:#}"
     );
 }
 
@@ -307,7 +328,10 @@ fn a_failed_save_leaves_the_previous_desk_intact() {
         before,
         "the good desk is byte-identical after a failed save"
     );
-    assert_eq!(load_from(&path).windows[0].id, "w-keep");
+    assert_eq!(
+        load_from(&path).expect("desk reads").windows[0].id,
+        "w-keep"
+    );
 }
 
 #[test]
@@ -380,7 +404,7 @@ fn load_from_does_not_filter_a_legacy_negative_rect() {
         .unwrap(),
     )
     .unwrap();
-    assert_eq!(load_from(&path).windows, vec![legacy]);
+    assert_eq!(load_from(&path).expect("desk reads").windows, vec![legacy]);
 }
 
 /// The ubiquitous language is a deliverable of the desk issues: CONTEXT.md
@@ -446,7 +470,7 @@ fn a_console_name_round_trips_through_the_wire_and_desk_toml() {
         ..Default::default()
     };
     save_to(&store, &path).unwrap();
-    let back = load_from(&path);
+    let back = load_from(&path).expect("desk reads");
     assert_eq!(back, store);
     assert_eq!(
         back.windows[0].console_name.as_deref(),
@@ -720,7 +744,7 @@ fn a_note_card_round_trips_its_placement() {
         checkouts: BTreeMap::new(),
     };
     save_to(&store, &path).unwrap();
-    assert_eq!(load_from(&path), store);
+    assert_eq!(load_from(&path).expect("desk reads"), store);
 
     // The TOML keeps `[[notes]]` between the fences and the `[checkouts]`
     // table — the ordering rule the store's doc comment states.
@@ -825,7 +849,7 @@ fn a_desk_with_both_a_note_and_a_checkout_round_trips() {
     save_to(&store, &path).expect("a desk with every collection must serialise");
     // Windows, fences (a locked one included), notes and checkouts all round
     // trip, and the `[checkouts]` table did not swallow a window.
-    assert_eq!(load_from(&path), store);
+    assert_eq!(load_from(&path).expect("desk reads"), store);
     let text = std::fs::read_to_string(&path).unwrap();
     let at = |needle: &str| {
         text.find(needle)

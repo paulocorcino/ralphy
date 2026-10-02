@@ -298,3 +298,31 @@ a single point on a `(model, effort)` cost/power ladder, and a fourth rung
 This supersedes the 2026-07-23 amendment's "effort stays orthogonal to
 tier→model" for the execute phase; that orthogonality still holds for the plan
 phase and the init/triage one-shots.
+
+## Amendment (2026-10-01): a forbidden rule for the forge writes (issue #516 / ADR-0072 D6)
+
+The flags and D5's net stay, and every headless session now also runs with a
+Codex exec-policy rule file that forbids `git push` and the `gh pr` verbs that
+write. The Claude guard is still not ported; this is Codex's own deny policy.
+
+- **Where.** `<dir>/.codex/rules/ralphy-forge.rules`, where `<dir>` is the
+  session's `-C` directory: the repo root for plan, execute, draft, consolidate
+  and triage, and the neutral directory for diagnose. Codex loads rules only from
+  `$CODEX_HOME/rules` or a project's `.codex/rules` and has no `-c` key for a
+  rules path, and the operator's `CODEX_HOME` is not Ralphy's to change. A merged
+  `.codex/rules/.gitignore` lists the file and itself, so `git status` and the
+  dirty-tree check never see them. A tracked file of the repo's own in
+  `.codex/rules/` is not touched. The file is rewritten before every session.
+- **What.** One `prefix_rule(pattern=[…], decision="forbidden",
+  justification=…)` per entry of `DENIED_FORGE_WRITES` (`ralphy-adapter-support`).
+  `codex execpolicy check` agrees: `git push`, `gh pr merge` and `gh pr create`
+  are forbidden; `gh pr view`, `git status` and `gh api` match no rule.
+- **Measured** (codex-cli 0.159.2, Windows): the rule holds under
+  `-s danger-full-access` and under `--dangerously-bypass-approvals-and-sandbox`.
+  The command is refused before it starts, and the model reads the
+  justification. A compound line (`a; git push`) is refused whole. A live
+  `ralphy run` (FinCal, 2026-10-01) refused `gh pr create --help` and
+  `git push --dry-run`, and the issue ran to the end with a clean tree.
+- **Limits, accepted.** A prefix rule matches the start of the argv, so a global
+  flag (`git -C . push`) or a nested shell (`pwsh -Command "git push"`) gets past
+  it. The rule is a layer, not proof (ADR-0072).
