@@ -37,12 +37,19 @@ const SSH_OVERRIDE_ENV: &str = "RALPHY_DAEMON_SSH_OVERRIDE";
 /// The exact argv of the tunnel, vector form, no shell. `ServerAlive*` make a
 /// forward that a VPN drop broke exit in about 45 s instead of hours; `--` keeps
 /// a destination that starts with `-` from being read as an option.
+/// `ExitOnForwardFailure` does not cover a socket that refuses a connection:
+/// the forward is set up and the failure shows only when a client connects
+/// (measured 2026-10-02, OpenSSH_for_Windows_9.5p2 to OpenSSH_8.2p1).
 pub fn tunnel_argv(ssh: &Path, spec: &TunnelSpec) -> Vec<String> {
+    let target = match &spec.peer_socket {
+        Some(socket) => socket.clone(),
+        None => format!("127.0.0.1:{}", spec.peer_port),
+    };
     let mut argv = vec![
         ssh.display().to_string(),
         "-N".to_string(),
         "-L".to_string(),
-        format!("127.0.0.1:{}:127.0.0.1:{}", spec.local_port, spec.peer_port),
+        format!("127.0.0.1:{}:{}", spec.local_port, target),
         "-o".to_string(),
         "BatchMode=yes".to_string(),
         "-o".to_string(),

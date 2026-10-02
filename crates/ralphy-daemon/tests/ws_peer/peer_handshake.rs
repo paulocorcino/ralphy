@@ -112,6 +112,7 @@ async fn a_wrong_bearer_is_a_legible_rejection() {
     t.tunnel = Some(TunnelSpec {
         destination: "svrapp".into(),
         peer_port: 7257,
+        peer_socket: None,
         local_port: t.port,
         identity_file: None,
     });

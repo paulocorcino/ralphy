@@ -103,6 +103,72 @@ fn tunnel_toml(port: u16, local_port: u16) -> String {
     )
 }
 
+fn socket_tunnel_toml(socket: &str) -> String {
+    format!(
+        "{}
+[tunnel]
+destination = \"svrapp\"
+peer_socket = \"{socket}\"
+local_port = 7401
+",
+        descriptor_toml("01TUN", 7401)
+    )
+}
+
+#[test]
+fn fold_reads_a_tunnel_to_a_socket() {
+    let text = socket_tunnel_toml("/home/ralphy2/.ralphy/daemon.sock");
+    let (accepted, rejected) = fold(&[("01TUN.toml".to_string(), text)]);
+    assert!(rejected.is_empty(), "got: {rejected:?}");
+    let tunnel = accepted[0].tunnel.clone().unwrap();
+    assert_eq!(tunnel.peer_port, 0);
+    assert_eq!(
+        tunnel.peer_socket.as_deref(),
+        Some("/home/ralphy2/.ralphy/daemon.sock")
+    );
+    let written = toml::to_string_pretty(&accepted[0]).unwrap();
+    assert!(!written.contains("peer_port"), "got: {written}");
+}
+
+#[test]
+fn fold_rejects_a_tunnel_with_neither_port_nor_socket() {
+    let text = tunnel_toml(7401, 7401).replace(
+        "peer_port = 7257
+",
+        "",
+    );
+    let (accepted, rejected) = fold(&[("01TUN.toml".to_string(), text)]);
+    assert!(accepted.is_empty(), "got: {accepted:?}");
+    assert!(
+        matches!(&rejected[0], PeerReject::Malformed { why, .. }
+            if why.contains("its tunnel needs a destination")),
+        "got: {:?}",
+        rejected[0]
+    );
+}
+
+#[test]
+fn fold_rejects_a_relative_socket() {
+    let text = socket_tunnel_toml("daemon.sock");
+    let (accepted, rejected) = fold(&[("01TUN.toml".to_string(), text)]);
+    assert!(accepted.is_empty(), "got: {accepted:?}");
+    assert!(
+        matches!(&rejected[0], PeerReject::Malformed { .. }),
+        "got: {:?}",
+        rejected[0]
+    );
+}
+
+/// A descriptor written before sockets existed has `peer_port` and no
+/// `peer_socket`.
+#[test]
+fn a_descriptor_with_peer_port_still_reads() {
+    let (accepted, rejected) = fold(&[("01TUN.toml".to_string(), tunnel_toml(7401, 7401))]);
+    assert!(rejected.is_empty(), "got: {rejected:?}");
+    let tunnel = accepted[0].tunnel.clone().unwrap();
+    assert_eq!((tunnel.peer_port, tunnel.peer_socket), (7257, None));
+}
+
 #[test]
 fn fold_reads_a_tunnel_section() {
     let (accepted, rejected) = fold(&[("01TUN.toml".to_string(), tunnel_toml(7401, 7401))]);
@@ -112,6 +178,7 @@ fn fold_reads_a_tunnel_section() {
         Some(TunnelSpec {
             destination: "svrapp".into(),
             peer_port: 7257,
+            peer_socket: None,
             local_port: 7401,
             identity_file: None,
         })

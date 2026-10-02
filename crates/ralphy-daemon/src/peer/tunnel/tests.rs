@@ -5,6 +5,7 @@ fn spec(identity_file: Option<&str>) -> TunnelSpec {
     TunnelSpec {
         destination: "svrapp".into(),
         peer_port: 7257,
+        peer_socket: None,
         local_port: 7401,
         identity_file: identity_file.map(str::to_string),
     }
@@ -34,6 +35,30 @@ fn tunnel_argv_is_exact() {
     let mut want: Vec<&str> = base.to_vec();
     want.extend(["-i", "C:/keys/ralphy", "--", "svrapp"]);
     assert_eq!(tunnel_argv(ssh, &spec(Some("C:/keys/ralphy"))), want);
+}
+
+#[test]
+fn tunnel_argv_forwards_to_the_socket() {
+    let mut s = spec(None);
+    s.peer_port = 0;
+    s.peer_socket = Some("/home/ralphy2/.ralphy/daemon.sock".into());
+    let want = [
+        "ssh",
+        "-N",
+        "-L",
+        "127.0.0.1:7401:/home/ralphy2/.ralphy/daemon.sock",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ExitOnForwardFailure=yes",
+        "-o",
+        "ServerAliveInterval=15",
+        "-o",
+        "ServerAliveCountMax=3",
+        "--",
+        "svrapp",
+    ];
+    assert_eq!(tunnel_argv(Path::new("ssh"), &s), want);
 }
 
 /// Git for Windows puts its own `ssh.exe` on `PATH`, often first. It does not
@@ -117,6 +142,16 @@ fn an_edited_host_gets_a_new_tunnel() {
     };
     let old_pid = tunnels.0.lock().unwrap().held["mac"].child.id();
     assert!(tunnels.ensure_with("mac", &edited, stand_in).unwrap());
+    let to_socket = TunnelSpec {
+        peer_port: 0,
+        peer_socket: Some("/home/ralphy2/.ralphy/daemon.sock".into()),
+        ..edited.clone()
+    };
+    assert!(
+        tunnels.ensure_with("mac", &to_socket, stand_in).unwrap(),
+        "a spec that changes from a port to a socket replaces the tunnel"
+    );
+    let edited = to_socket;
     let mut state = tunnels.0.lock().unwrap();
     let held = state.held.get_mut("mac").unwrap();
     assert_ne!(held.child.id(), old_pid);

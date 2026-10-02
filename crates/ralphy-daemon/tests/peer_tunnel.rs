@@ -54,6 +54,7 @@ fn spec(local_port: u16) -> TunnelSpec {
     TunnelSpec {
         destination: "svrapp".into(),
         peer_port: 7257,
+        peer_socket: None,
         local_port,
         identity_file: None,
     }

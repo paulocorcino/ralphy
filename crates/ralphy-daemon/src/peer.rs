@@ -44,11 +44,21 @@ pub struct NudgeSpec {
 pub struct TunnelSpec {
     /// An `~/.ssh/config` alias or `user@host`.
     pub destination: String,
+    /// The peer's TCP port. 0 when `peer_socket` names the destination.
+    #[serde(default, skip_serializing_if = "is_zero")]
     pub peer_port: u16,
+    /// The absolute path of the peer account's socket on the host. Set instead
+    /// of `peer_port` when the host reports a socket.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub peer_socket: Option<String>,
     /// Always equal to the descriptor's `port`: the local end is what we dial.
     pub local_port: u16,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identity_file: Option<String>,
+}
+
+fn is_zero(n: &u16) -> bool {
+    *n == 0
 }
 
 /// One daemon's self-announcement, written as `<store>/peers/<daemon_id>.toml`.
@@ -136,7 +146,8 @@ pub fn paired_descriptor(
         nudge: None,
         tunnel: Some(TunnelSpec {
             destination: destination.to_string(),
-            peer_port: d.port,
+            peer_port: if d.socket.is_some() { 0 } else { d.port },
+            peer_socket: d.socket.clone(),
             local_port,
             identity_file,
         }),
@@ -251,16 +262,16 @@ pub fn fold(records: &[(String, String)]) -> (Vec<PeerDescriptor>, Vec<PeerRejec
             });
             continue;
         }
-        if let Some(t) = d
-            .tunnel
-            .as_ref()
-            .filter(|t| t.destination.trim().is_empty() || t.peer_port == 0 || t.local_port == 0)
-        {
+        if let Some(t) = d.tunnel.as_ref().filter(|t| {
+            let has_target =
+                t.peer_port != 0 || t.peer_socket.as_deref().is_some_and(|s| s.starts_with('/'));
+            t.destination.trim().is_empty() || !has_target || t.local_port == 0
+        }) {
             rejected.push(PeerReject::Malformed {
                 file: file.clone(),
                 why: format!(
-                    "its tunnel needs a destination and two ports that are not 0 (destination `{}`, peer port {}, local port {})",
-                    t.destination, t.peer_port, t.local_port
+                    "its tunnel needs a destination, a local port that is not 0, and a peer port that is not 0 or an absolute peer socket path (destination `{}`, peer port {}, peer socket {:?}, local port {})",
+                    t.destination, t.peer_port, t.peer_socket, t.local_port
                 ),
             });
             continue;

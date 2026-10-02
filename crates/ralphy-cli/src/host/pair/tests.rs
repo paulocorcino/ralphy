@@ -153,6 +153,48 @@ fn add_refuses_a_changed_host_key() {
 }
 
 #[test]
+fn add_to_a_host_that_reports_a_socket_writes_peer_socket() {
+    let store = tempfile::tempdir().unwrap();
+    let mut first = description("linux");
+    first.require_token = false;
+    first.autostart = false;
+    let mut second = description("linux");
+    second.token = Some("host-tok".to_string());
+    second.socket = Some("/home/ralphy2/.ralphy/daemon.sock".to_string());
+    let mut fake = FakeHost::default()
+        .answer(
+            "uname -s",
+            out(
+                0, "Linux
+", "",
+            ),
+        )
+        .answer("--- uid", out(0, LINUX_PROBE, ""))
+        .answer("describe --with-token", out(0, &json(&second), ""))
+        .answer("describe", out(0, &json(&first), ""))
+        .answer("daemon install", out(0, "", ""))
+        .answer("require-token on", out(0, "", ""))
+        .answer("daemon restart", out(0, "", ""));
+    let d = add(
+        &mut fake,
+        &local(store.path()),
+        "svrapp",
+        None,
+        None,
+        no_keygen,
+        |_| true,
+        &mut Report::text(Vec::new()),
+    )
+    .unwrap();
+    let tunnel = d.tunnel.as_ref().expect("a tunnel section");
+    assert_eq!(tunnel.peer_port, 0);
+    assert_eq!(
+        tunnel.peer_socket.as_deref(),
+        Some("/home/ralphy2/.ralphy/daemon.sock")
+    );
+}
+
+#[test]
 fn add_writes_a_tunnel_descriptor_and_turns_the_marker_on() {
     let store = tempfile::tempdir().unwrap();
     let mut first = description("linux");
@@ -176,6 +218,7 @@ fn add_writes_a_tunnel_descriptor_and_turns_the_marker_on() {
     assert_eq!(tunnel.local_port, d.port);
     assert_ne!(d.port, 7401, "not the local daemon's port");
     assert_eq!(tunnel.peer_port, 7257);
+    assert_eq!(tunnel.peer_socket, None);
     assert_eq!(tunnel.identity_file, None);
     assert_eq!(d.token, "host-tok");
     assert_eq!(d.daemon_id, HOST_ID);
