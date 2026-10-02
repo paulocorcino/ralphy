@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 use ralphy_daemon::peer::key::{key_body, key_path_in};
-use ralphy_daemon::peer::{self, PeerDescriptor};
+use ralphy_daemon::peer::{self, DaemonDescription, PeerDescriptor};
 use ralphy_release::Build;
 
 use super::checks::{
@@ -157,9 +157,12 @@ pub(crate) fn add(
     if checks.iter().any(HostCheck::is_blocking) {
         bail!("the host {dest} is not ready: do what the checks above say, then run this command again");
     }
-    let running = matches!(&ralphy, RalphyOnHost::Described(d) if d.running);
-
-    let mut restart = !running;
+    // A daemon that runs without a socket on a Unix host is an older daemon:
+    // the restart brings up the socket that the descriptor should name
+    // (ADR-0067 amendment M3).
+    let restart_needed =
+        |d: &DaemonDescription| !d.running || (s.os != HostOs::Windows && d.socket.is_none());
+    let mut restart = !matches!(&ralphy, RalphyOnHost::Described(d) if !restart_needed(d));
     for check in &checks {
         let CheckStatus::Fix(op) = &check.status else {
             continue;

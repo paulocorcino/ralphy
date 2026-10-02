@@ -718,9 +718,12 @@ default port" no longer applies to Unix hosts.
 
 **M3. `describe` reports the socket only when the socket answers.** Its JSON
 gets `socket`: the absolute path when a connection to it succeeds, else absent.
-On a Unix host, `running` means that the socket answers. A binary that was
-updated while an older daemon still runs therefore reports no socket, and the
-add flow uses the port, as today. The add flow already reads `describe` again
+On a Unix host, `running` means that the socket answers, or that the process
+in this account's pid file still runs the recorded program. The TCP port is
+not asked, because another account's daemon may hold it. A binary that was
+updated while an older daemon still runs therefore reports `running` and no
+socket, so `host install` restarts that daemon, and the add flow restarts a
+daemon that runs without a socket. The add flow already reads `describe` again
 after it restarts the daemon (`pair.rs`), and `ralphy daemon restart` returns
 only when the new daemon answers, so a new host gets the socket on the first
 `host add`. A descriptor written before this amendment keeps the port

@@ -388,7 +388,7 @@ fn stop_recorded(
 /// written before a replacement and read after one, and Windows and Unix
 /// disagree on canonicalization (extended-length prefixes, resolved symlinks).
 /// The question is "the same program", not "the same spelling".
-fn same_program(a: &Path, b: &Path) -> bool {
+pub(crate) fn same_program(a: &Path, b: &Path) -> bool {
     match (a.file_name(), b.file_name()) {
         (Some(a), Some(b)) => {
             unparked(&a.to_string_lossy()).eq_ignore_ascii_case(&unparked(&b.to_string_lossy()))

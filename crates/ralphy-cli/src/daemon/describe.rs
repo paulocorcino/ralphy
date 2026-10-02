@@ -55,11 +55,44 @@ fn probe_socket(_dir: &Path) -> Option<SocketProbe> {
     None
 }
 
-/// Whether the daemon is running. When the socket was probed, its answer is
-/// the answer: the TCP port may be held by another account's daemon. Without a
-/// probe (Windows, or a path over the socket limit) the TCP connect decides.
-fn liveness(socket_answers: Option<bool>, tcp_answers: impl FnOnce() -> bool) -> bool {
-    socket_answers.unwrap_or_else(tcp_answers)
+/// Whether the daemon is running. A socket that answers says yes. When the
+/// socket was probed and does not answer, the TCP port is not asked, because
+/// another account's daemon may hold it; the process in this store's pid file
+/// decides, so an older daemon with no socket still counts. Without a probe
+/// (Windows, or a path over the socket limit) the TCP connect decides.
+fn liveness(
+    socket_answers: Option<bool>,
+    own_daemon_alive: impl FnOnce() -> bool,
+    tcp_answers: impl FnOnce() -> bool,
+) -> bool {
+    match socket_answers {
+        Some(true) => true,
+        Some(false) => own_daemon_alive(),
+        None => tcp_answers(),
+    }
+}
+
+/// Whether the pid file of `dir` names a live process that runs the program it
+/// recorded. The same proof `daemon restart` asks for before it ends a process.
+fn own_daemon_alive(dir: &Path) -> bool {
+    let Some(pid) = pidfile::read_in(dir) else {
+        return false;
+    };
+    if !ralphy_proc_util::pid::pid_is_alive(pid) {
+        return false;
+    }
+    match (
+        pidfile::read_exe_in(dir),
+        ralphy_proc_util::pid::exe_of_pid(pid),
+    ) {
+        (Some(recorded), Some(running)) => {
+            // Linux reports a replaced binary as `<path> (deleted)`.
+            let running = running.to_string_lossy();
+            let running = running.strip_suffix(" (deleted)").unwrap_or(&running);
+            super::restart::same_program(&recorded, Path::new(running))
+        }
+        _ => false,
+    }
 }
 
 fn tcp_answers(port: u16) -> bool {
@@ -70,7 +103,11 @@ fn tcp_answers(port: u16) -> bool {
 /// Whether the daemon of the store `dir` answers: on its socket when the socket
 /// can be probed, else on its TCP port.
 pub(crate) fn answers(dir: &Path, port: u16) -> bool {
-    liveness(probe_socket(dir).map(|s| s.answers), || tcp_answers(port))
+    liveness(
+        probe_socket(dir).map(|s| s.answers),
+        || false,
+        || tcp_answers(port),
+    )
 }
 
 /// Print this daemon's [`DaemonDescription`] as one JSON line. The token is
@@ -87,7 +124,11 @@ pub(crate) fn describe(dir: &Path, with_token: bool, out: &mut impl Write) -> Re
     };
     let socket = probe_socket(dir);
     let socket_answers = socket.as_ref().map(|s| s.answers);
-    let running = liveness(socket_answers, || tcp_answers(port));
+    let running = liveness(
+        socket_answers,
+        || own_daemon_alive(dir),
+        || tcp_answers(port),
+    );
     let socket = socket
         .filter(|s| s.answers)
         .map(|s| s.path.to_string_lossy().into_owned());
@@ -133,14 +174,21 @@ mod tests {
 
     #[test]
     fn running_follows_the_socket_on_unix() {
-        assert!(liveness(Some(true), || false));
-        assert!(!liveness(Some(false), || true));
+        assert!(liveness(Some(true), || false, || false));
+        assert!(
+            !liveness(Some(false), || false, || true),
+            "another account may hold the port"
+        );
+        assert!(
+            liveness(Some(false), || true, || false),
+            "an older daemon of this account has no socket"
+        );
     }
 
     #[test]
     fn a_path_over_the_limit_falls_back_to_the_port() {
-        assert!(liveness(None, || true));
-        assert!(!liveness(None, || false));
+        assert!(liveness(None, || false, || true));
+        assert!(!liveness(None, || true, || false));
     }
 
     #[cfg(unix)]

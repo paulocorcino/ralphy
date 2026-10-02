@@ -189,6 +189,45 @@ fn add_to_a_host_that_reports_a_socket_writes_peer_socket() {
 }
 
 #[test]
+fn a_running_daemon_with_no_socket_is_restarted_to_get_one() {
+    let store = tempfile::tempdir().unwrap();
+    let first = description("linux");
+    assert!(first.running && first.require_token && first.socket.is_none());
+    let mut second = description("linux");
+    second.token = Some("host-tok".to_string());
+    second.socket = Some("/home/ralphy2/.ralphy/daemon.sock".to_string());
+    let mut fake = FakeHost::default()
+        .answer(
+            "uname -s",
+            out(
+                0, "Linux
+", "",
+            ),
+        )
+        .answer("--- uid", out(0, LINUX_PROBE, ""))
+        .answer("describe --with-token", out(0, &json(&second), ""))
+        .answer("describe", out(0, &json(&first), ""))
+        .answer("daemon restart", out(0, "", ""));
+    let d = add(
+        &mut fake,
+        &local(store.path()),
+        "svrapp",
+        None,
+        None,
+        no_keygen,
+        |_| true,
+        &mut Report::text(Vec::new()),
+    )
+    .unwrap();
+    assert!(fake.index_of("restart").is_some(), "{:?}", fake.commands());
+    let tunnel = d.tunnel.as_ref().expect("a tunnel section");
+    assert_eq!(
+        tunnel.peer_socket.as_deref(),
+        Some("/home/ralphy2/.ralphy/daemon.sock")
+    );
+}
+
+#[test]
 fn add_writes_a_tunnel_descriptor_and_turns_the_marker_on() {
     let store = tempfile::tempdir().unwrap();
     let mut first = description("linux");
@@ -275,7 +314,9 @@ fn add_keeps_the_port_of_a_readd_and_skips_other_hosts() {
         &peer::paired_descriptor(&other, "other", 7402, None).unwrap(),
     )
     .unwrap();
-    let mut fake = linux_host(LINUX_PROBE, description("linux"));
+    let mut ready = description("linux");
+    ready.socket = Some("/home/paulo/.ralphy/daemon.sock".to_string());
+    let mut fake = linux_host(LINUX_PROBE, ready);
     let d = add(
         &mut fake,
         &local(store.path()),
