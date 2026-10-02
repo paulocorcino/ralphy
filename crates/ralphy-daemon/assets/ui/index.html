@@ -2760,10 +2760,11 @@
           <p class="run-help" x-show="addProjectHelp()" x-text="addProjectHelp()"></p>
           <p class="side-error" role="alert" x-show="addProject.error" x-text="addProject.error"></p>
 
-          <ul id="add-project-list" class="add-project-list" role="listbox" aria-label="Folders">
+          <ul id="add-project-list" class="add-project-list" role="listbox" aria-label="Folders"
+              @pointerdown="_addProjectTouch = $event.pointerType !== 'mouse'">
             <template x-for="(e, i) in addProjectEntries()" :key="e.name">
               <li role="option" class="add-project-item" :class="{ active: i === addProject.active }"
-                  :aria-selected="i === addProject.active" @click="addProjectPick(e)">
+                  :aria-selected="i === addProject.active" @click="addProjectPick(e, $event)">
                 <svg x-icon="'folder'"></svg>
                 <span class="add-project-name" x-text="e.name"></span>
                 <span class="add-project-mark" x-show="e.up" x-text="'Up one folder'"></span>

@@ -142,6 +142,8 @@ function shell() {
     _addProjectTimer: null,
     _addProjectSlow: null,
     _addProjectSeq: 0,
+    // The last press on the folder list was not a mouse.
+    _addProjectTouch: false,
     // The eye button of the password field. Hidden again on each open.
     hostSecretShown: false,
     // Remove in a row of the Hosts dialog (#497): the host being removed.
@@ -3138,11 +3140,15 @@ function shell() {
       if (this.addProject.wslMissing) return;
       this.addProjectList(150);
     },
-    addProjectPick(entry) {
-      if (entry.error) return;
+    // `ev` is the click, absent for a key. The second click of a double click
+    // is dropped: by then the list may show the folder the first one opened.
+    // A touch does not focus the field: on a phone that opens the keyboard,
+    // and iOS Safari zooms into an input with text under 16px.
+    addProjectPick(entry, ev) {
+      if (entry.error || (ev && ev.detail > 1)) return;
       this.addProjectStep({ type: "pick", name: entry.name, up: !!entry.up });
       this.addProjectList(0);
-      this.$refs.addProjectFolder?.focus();
+      if (!this._addProjectTouch) this.$refs.addProjectFolder?.focus();
     },
     // Arrows move in the list; Enter or Tab on a highlighted folder goes down
     // one level; Enter with none highlighted adds.

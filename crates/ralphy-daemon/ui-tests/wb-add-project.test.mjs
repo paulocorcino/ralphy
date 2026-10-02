@@ -217,6 +217,23 @@ test("picking a folder goes down one level; `..` goes up", () => {
   assert.equal(d.text, "D:\\");
 });
 
+test("a pick before the next listing arrives names a folder of the rows on screen", () => {
+  const P = load();
+  let s = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "C:\\Dev\\"), DEV);
+  s = P.next(s, { type: "pick", name: "fincal" });
+  // The rows are still those of C:\Dev\: the same row again is the same folder.
+  s = P.next(s, { type: "pick", name: "fincal" });
+  assert.equal(s.text, "C:\\Dev\\fincal\\");
+  s = P.next(s, { type: "pick", name: "notes" });
+  assert.equal(s.text, "C:\\Dev\\notes\\");
+
+  // A name typed after the rows were listed: a row is still a folder of C:\Dev\.
+  s = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "C:\\Dev\\fi"), DEV);
+  s = typed(P, s, "C:\\Dev\\fin");
+  s = P.next(s, { type: "pick", name: "fincal" });
+  assert.equal(s.text, "C:\\Dev\\fincal\\");
+});
+
 test("the `..` row goes up one folder, to the drive list above a drive root", () => {
   const P = load();
   let s = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "C:\\Dev\\"), DEV);
@@ -337,6 +354,41 @@ test("shell: a WSL path with no peer calls no verb", () => {
   assert.deepEqual(calls, []);
   state.addProjectText("C:\\Dev\\");
   assert.deepEqual(listings, [150], "an ordinary path is listed after the debounce");
+});
+
+test("shell: the second click of a double click is dropped", () => {
+  const { state } = shell();
+  state.addProjectList = () => {};
+  ready(state, "C:\\Dev\\");
+  // The listing of fincal arrived between the two clicks.
+  state.addProjectPick({ name: "fincal" }, { detail: 1 });
+  state.addProjectStep({ type: "sent", seq: 2 });
+  state.addProjectStep({
+    type: "reply",
+    seq: 2,
+    reply: { status: "ok", more: 0, dir: { path: "C:\\Dev\\fincal\\", root: "C:\\Dev\\fincal", added: false }, entries: [{ name: "src", repo: false, added: false }] },
+  });
+  state.addProjectPick({ name: "src" }, { detail: 2 });
+  assert.equal(state.addProject.text, "C:\\Dev\\fincal\\");
+});
+
+test("shell: a pick by touch does not focus the field; by mouse or key it does", () => {
+  const { state } = shell();
+  state.addProjectList = () => {};
+  let focused = 0;
+  state.$refs.addProjectFolder = { focus: () => focused++ };
+  ready(state, "C:\\Dev\\");
+  state._addProjectTouch = true;
+  state.addProjectPick({ name: "fincal" }, { detail: 1 });
+  assert.equal(focused, 0);
+  state._addProjectTouch = false;
+  state.addProjectPick({ name: "notes" }, { detail: 1 });
+  state.addProjectPick({ name: "fincal" });
+  assert.equal(focused, 2);
+
+  const html = readFileSync(join(UI, "index.html"), "utf8");
+  assert.match(html, /id="add-project-list"[^>]*@pointerdown="_addProjectTouch = \$event\.pointerType !== 'mouse'"/);
+  assert.match(html, /@click="addProjectPick\(e, \$event\)"/);
 });
 
 test("the Add a project button comes before Hosts, after refresh", () => {

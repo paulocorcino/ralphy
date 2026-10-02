@@ -345,8 +345,12 @@
           if (up === null) return state;
           return Object.assign({}, state, { text: up, needStart: false, chosen: true, active: -1, error: "" });
         }
-        const base = endsWithSep(state.text) ? state.text : parentText(state.text);
-        const text = state.listing && state.listing.dir && state.listing.dir.path === "" ? ev.name : base + ev.name;
+        // The rows on screen belong to the listed folder, not to the text: a
+        // pick made before the next listing arrives must not add its name to
+        // the folder the previous pick already chose.
+        const dir = state.listing && state.listing.dir;
+        const base = dir ? withSep(dir.path, sep) : endsWithSep(state.text) ? state.text : parentText(state.text);
+        const text = dir && dir.path === "" ? ev.name : base + ev.name;
         return Object.assign({}, state, { text: withSep(text, sep), needStart: false, chosen: true, active: -1, error: "" });
       }
       case "adding":
