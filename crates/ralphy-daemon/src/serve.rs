@@ -2,6 +2,8 @@
 //! until the shutdown signal (docs/adr/0032, ADR-0052 §3).
 
 use std::net::{Ipv4Addr, SocketAddr};
+#[cfg(unix)]
+use std::path::Path;
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -11,6 +13,9 @@ use crate::router;
 use crate::routes::{poll_releases, RELEASE_POLL_EVERY};
 use crate::StorePaths;
 use crate::{auth, autostart, epoch, identity, peer, pidfile, registry, usage};
+
+#[cfg(unix)]
+pub mod socket;
 
 pub(crate) async fn serve(
     addr: SocketAddr,
@@ -23,14 +28,30 @@ pub(crate) async fn serve(
     // Fired when the operator asks the daemon to stop. Every `/ws` presence loop
     // watches this so a held-open connection cannot stall graceful shutdown.
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
-    let listener = tokio::net::TcpListener::bind(addr)
-        .await
-        .with_context(|| format!("binding the daemon listener on {addr}"))?;
+    let store = auth::store_dir().ok();
+    // Both listeners are bound before anything that depends on them: the pid
+    // file, the announce, the auth state and the tunnels.
+    let bound = tokio::net::TcpListener::bind(addr).await;
+    #[cfg(unix)]
+    let (tcp, socket) = bind_unix(bound, addr, store.as_deref())?;
+    #[cfg(not(unix))]
+    let tcp = Some(bound.with_context(|| format!("binding the daemon listener on {addr}"))?);
     // Log the *bound* address, not the requested one, so a future `port: 0`
-    // (OS-assigned) still reports something a browser can open.
-    let addr = listener.local_addr().context("reading the bound address")?;
-    tracing::info!(%addr, "daemon listening — open http://{addr} (Ctrl+C to stop)");
-    if !addr.ip().is_loopback() {
+    // (OS-assigned) still reports something a browser can open. A daemon that
+    // serves only its socket keeps the requested address as a nominal one: the
+    // auth state, the self-dial gate and the tunnels key on its port.
+    let addr = match &tcp {
+        Some(listener) => listener.local_addr().context("reading the bound address")?,
+        None => addr,
+    };
+    if tcp.is_some() {
+        tracing::info!(%addr, "daemon listening — open http://{addr} (Ctrl+C to stop)");
+    }
+    #[cfg(unix)]
+    if let Some(socket) = &socket {
+        tracing::info!(path = %socket.path().display(), "daemon listening on its socket");
+    }
+    if tcp.is_some() && !addr.ip().is_loopback() {
         // TLS-aware, not TLS-enforcing (ADR-0032 §4 and its audit amendment):
         // the daemon never terminates TLS, and never refuses the bind either —
         // it says so once, where the operator who chose the bind will read it.
@@ -43,7 +64,6 @@ pub(crate) async fn serve(
     // Record which process is serving, so `ralphy daemon restart` can end it —
     // there is no other way to name it (ADR-0056 §8). Advisory, never a lock: a
     // failure to write it must not stop a daemon that is otherwise ready.
-    let store = auth::store_dir().ok();
     if let Some(dir) = store.as_deref() {
         // The invocation, not just the pid: a daemon started with `--port 8080`
         // must come back on 8080, not on the default. And the program, so a
@@ -117,7 +137,9 @@ pub(crate) async fn serve(
     // AC5 ("the auth policy is unchanged") forbids.
     // INVARIANT: a store that cannot be written logs and is skipped — announcing
     // must never abort a listener that is already serving.
-    if !peer_stores.is_empty() {
+    // A daemon that serves only its socket announces nothing: a descriptor
+    // carries a TCP port, and the port belongs to another daemon.
+    if !peer_stores.is_empty() && tcp.is_some() {
         announce_peer(&peer_stores, id.as_ref(), addr, token.clone());
     }
     // The live session epoch (ADR-0032 amendment §B): mixed into every cookie so a
@@ -168,31 +190,108 @@ pub(crate) async fn serve(
         cursor_dir: usage::cursor_dir_path()?,
         gemini_dir: usage::gemini_dir_path()?,
     };
-    axum::serve(
-        listener,
-        router(
-            id,
-            registry_path,
-            usage_dir,
-            stores,
-            start,
-            shutdown_rx,
-            auth_state,
-        ),
-    )
-    .with_graceful_shutdown(async move {
+    let stop = shutdown_rx.clone();
+    let app = router(
+        id,
+        registry_path,
+        usage_dir,
+        stores,
+        start,
+        shutdown_rx,
+        auth_state,
+    );
+    // One task waits for the signal and fans it out on the watch: every `/ws`
+    // loop and every listener's graceful shutdown wait on a receiver, so a
+    // held-open heartbeat cannot stall the stop.
+    tokio::spawn(async move {
         shutdown_signal().await;
-        // Break every live `/ws` loop so graceful shutdown does not wait on
-        // a long-lived heartbeat connection.
-        let _ = shutdown_tx.send(true);
-    })
-    .await
-    .context("serving the daemon listener")?;
+        if let Err(e) = shutdown_tx.send(true) {
+            tracing::debug!(error = %e, "nothing was waiting for the shutdown");
+        }
+    });
+    let served_tcp = async {
+        match tcp {
+            Some(listener) => axum::serve(listener, app.clone())
+                .with_graceful_shutdown(stopped(stop.clone()))
+                .await
+                .context("serving the daemon listener"),
+            None => Ok(()),
+        }
+    };
+    #[cfg(unix)]
+    {
+        let (listener, remove) = match socket.map(socket::BoundSocket::into_parts) {
+            Some((listener, remove)) => (Some(listener), Some(remove)),
+            None => (None, None),
+        };
+        let served_socket = async {
+            match listener {
+                Some(listener) => axum::serve(listener, app.clone())
+                    .with_graceful_shutdown(stopped(stop.clone()))
+                    .await
+                    .context("serving the daemon socket"),
+                None => Ok(()),
+            }
+        };
+        let (tcp_result, socket_result) = tokio::join!(served_tcp, served_socket);
+        if let Some(remove) = remove {
+            remove();
+        }
+        tcp_result?;
+        socket_result?;
+    }
+    #[cfg(not(unix))]
+    served_tcp.await?;
     if let Some(dir) = store.as_deref() {
         pidfile::clear_own_in(dir, std::process::id());
     }
     tracing::info!("daemon stopped");
     Ok(())
+}
+
+/// Bind the daemon socket next to the TCP result. A busy port with the
+/// require-token marker leaves the daemon on its socket alone (#518, M4); a
+/// daemon with neither listener keeps the TCP error.
+#[cfg(unix)]
+fn bind_unix(
+    bound: std::io::Result<tokio::net::TcpListener>,
+    addr: SocketAddr,
+    store: Option<&Path>,
+) -> Result<(Option<tokio::net::TcpListener>, Option<socket::BoundSocket>)> {
+    if let Err(e) = &bound {
+        // A marker that cannot be read counts as absent: the TCP error stays.
+        let marker =
+            store.is_some_and(|dir| matches!(auth::require_token_enabled_in(dir), Ok(true)));
+        if socket::tcp_bind_failure_is_fatal(e.kind(), marker) {
+            return bound
+                .map(|_| (None, None))
+                .with_context(|| format!("binding the daemon listener on {addr}"));
+        }
+    }
+    let socket = match store {
+        Some(dir) => socket::bind(dir)?,
+        None => None,
+    };
+    match (bound, socket) {
+        (Ok(tcp), socket) => Ok((Some(tcp), socket)),
+        (Err(e), None) => Err(e).with_context(|| format!("binding the daemon listener on {addr}")),
+        (Err(e), Some(socket)) => {
+            tracing::warn!(
+                error = %e,
+                "port {} is in use; this daemon serves only its socket",
+                addr.port()
+            );
+            Ok((None, Some(socket)))
+        }
+    }
+}
+
+/// Resolves when the shutdown watch says stop.
+async fn stopped(mut stop: tokio::sync::watch::Receiver<bool>) {
+    if let Err(e) = stop.wait_for(|stop| *stop).await {
+        // The sender is gone, so nothing can ask for a stop any more.
+        tracing::warn!(error = %e, "the shutdown signal is gone; stopping");
+    }
 }
 
 /// Open a keepalive for every announced peer that can be nudged, skipping this

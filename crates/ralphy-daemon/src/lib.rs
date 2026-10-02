@@ -50,6 +50,11 @@ pub mod watch;
 mod routes;
 mod serve;
 
+// The daemon socket exists on Unix only: tokio has no Unix socket on Windows
+// (#518, amendment M6).
+#[cfg(unix)]
+pub use serve::socket;
+
 use routes::*;
 use serve::serve;
 
