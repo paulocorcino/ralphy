@@ -391,7 +391,13 @@ fn stop_recorded(
 pub(crate) fn same_program(a: &Path, b: &Path) -> bool {
     match (a.file_name(), b.file_name()) {
         (Some(a), Some(b)) => {
-            unparked(&a.to_string_lossy()).eq_ignore_ascii_case(&unparked(&b.to_string_lossy()))
+            let name = |n: &std::ffi::OsStr| {
+                let n = n.to_string_lossy();
+                // Linux reports an image whose file was replaced or unlinked as
+                // `<path> (deleted)`: the state after `mv` over the binary.
+                unparked(n.strip_suffix(" (deleted)").unwrap_or(&n))
+            };
+            name(a).eq_ignore_ascii_case(&name(b))
         }
         _ => false,
     }
@@ -782,6 +788,19 @@ second daemon
         assert!(!same_program(
             Path::new("/bin/ralphy"),
             Path::new("/bin/sshd.old")
+        ));
+        // Linux names an image whose file was replaced or removed this way.
+        assert!(same_program(
+            Path::new("/home/u/.ralphy/bin/ralphy"),
+            Path::new("/home/u/.ralphy/bin/ralphy (deleted)")
+        ));
+        assert!(same_program(
+            Path::new("/usr/local/bin/ralphy"),
+            Path::new("/usr/local/bin/ralphy.old (deleted)")
+        ));
+        assert!(!same_program(
+            Path::new("/bin/ralphy"),
+            Path::new("/bin/sshd (deleted)")
         ));
         assert_eq!(unparked("ralphy.exe"), "ralphy.exe");
         assert_eq!(unparked("ralphy.exe.old"), "ralphy.exe");

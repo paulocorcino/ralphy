@@ -85,12 +85,7 @@ fn own_daemon_alive(dir: &Path) -> bool {
         pidfile::read_exe_in(dir),
         ralphy_proc_util::pid::exe_of_pid(pid),
     ) {
-        (Some(recorded), Some(running)) => {
-            // Linux reports a replaced binary as `<path> (deleted)`.
-            let running = running.to_string_lossy();
-            let running = running.strip_suffix(" (deleted)").unwrap_or(&running);
-            super::restart::same_program(&recorded, Path::new(running))
-        }
+        (Some(recorded), Some(running)) => super::restart::same_program(&recorded, &running),
         _ => false,
     }
 }
