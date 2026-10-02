@@ -41,9 +41,9 @@ const PUBLIC: &str = "ssh-ed25519 BODY ralphy-peer@anvil";
 
 // format of `id -u`, `id -un` and `loginctl show-user`
 const LINUX_PROBE: &str =
-    "--- uid\n1000\n--- user\npaulo\n--- arch\nx86_64\n--- linger\nLinger=yes\n";
+    "--- host\nsvr.example.com\n--- uid\n1000\n--- user\npaulo\n--- arch\nx86_64\n--- linger\nLinger=yes\n";
 const LINUX_NO_LINGER: &str =
-    "--- uid\n1000\n--- user\npaulo\n--- arch\nx86_64\n--- linger\nLinger=no\n";
+    "--- host\nsvr.example.com\n--- uid\n1000\n--- user\npaulo\n--- arch\nx86_64\n--- linger\nLinger=no\n";
 
 fn local(store: &Path) -> Local<'_> {
     Local {
@@ -197,6 +197,33 @@ fn add_writes_a_tunnel_descriptor_and_turns_the_marker_on() {
     assert!(install < restart, "{:?}", fake.commands());
     assert!(marker < restart && restart < token, "{:?}", fake.commands());
     assert!(fake.calls.iter().all(|c| c.0.is_none()));
+}
+
+#[test]
+fn add_names_an_unnamed_host_by_itself_in_one_run() {
+    let store = tempfile::tempdir().unwrap();
+    let mut first = description("linux");
+    first.name = None;
+    let mut fake = linux_host(LINUX_PROBE, first).answer("daemon setup", out(0, "", ""));
+    add(
+        &mut fake,
+        &local(store.path()),
+        "svrapp",
+        None,
+        None,
+        no_keygen,
+        |_| true,
+        &mut Report::text(Vec::new()),
+    )
+    .unwrap();
+    let setup = fake.index_of("daemon setup").expect("setup sent");
+    assert!(
+        fake.commands()[setup].contains("--name svr-paulo --avatar 1"),
+        "{:?}",
+        fake.commands()
+    );
+    let restart = fake.index_of("daemon restart").expect("restart sent");
+    assert!(setup < restart, "{:?}", fake.commands());
 }
 
 #[test]
