@@ -93,10 +93,10 @@ The embed-pin test `monaco_replaced_codemirror_in_the_embedded_ui`
   models before the editor: `m.original.dispose(); m.modified.dispose();
   ed.dispose()`.
 
-### Crepe (pinned `7.22.1`), the one library that is built
+### Crepe (pinned `7.22.2`), the one library that is built
 
 The note card's editor is Milkdown Crepe, built lean into
-`vendor/crepe/{crepe.js,crepe.css,LICENSE}` (706 KB + 20 KB, seven features,
+`vendor/crepe/{crepe.js,crepe.css,LICENSE}` (715 KB + 20 KB, seven features,
 no CodeMirror, no KaTeX). A tarball copy cannot reproduce it, so it has a
 recipe in `crates/ralphy-daemon/vendor-build/crepe/`: `npm ci && node
 build.mjs`, run by hand, never in CI. The first line of each output file names
