@@ -534,6 +534,7 @@ function shell() {
             tree: [],
           }));
           this.projects = local.concat(this._fleetRows);
+          this.shareProjectNames();
           this.reposError = "";
           this.reposRead = window.WBFail.readFold(this.reposRead, { ok: true, value: true, at: Date.now() });
           // Deliberately NOT awaited: a down peer costs `/api/fleet` its 2 s
@@ -638,6 +639,7 @@ function shell() {
             peerState: x.peer_state || "",
           }));
         this.projects = localRows().concat(this._fleetRows);
+        this.shareProjectNames();
         this.fleetRead = window.WBFail.readFold(this.fleetRead, { ok: true, value: true, at: Date.now() });
         this.fleetError = "";
       } catch (e) {
@@ -648,6 +650,7 @@ function shell() {
         this.fleetRead = window.WBFail.readFold(this.fleetRead, { ok: false, reason, at: Date.now() });
         if (this.fleetRead.goodAt) {
           this.projects = localRows().concat(this._fleetRows);
+          this.shareProjectNames();
         } else {
           this.fleetPeers = [];
         }
@@ -853,6 +856,17 @@ function shell() {
       if (!row) return window.WBFleet.refLabel(ref);
       const name = window.WBProject.projectName(row);
       return row.daemon && row.env ? `${name} · ${row.env}` : name;
+    },
+    // The consoles name their project too (title, tooltip, default name), and
+    // `wb-console.js` has no project list of its own.
+    shareProjectNames() {
+      window.WBConsole?.ingestProjects?.(
+        this.projects.map((p) => ({
+          ref: this.repoRef(p),
+          name: window.WBProject.projectName(p),
+          title: window.WBProject.projectTitle(p),
+        })),
+      );
     },
     // The tooltip twin of `projectLabel`: `owner/repo`, or the full folder of
     // a remoteless repo, plus the environment of a peer. Never a hash key or

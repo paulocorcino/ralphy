@@ -88,15 +88,16 @@ test("sessionPresentation applies session-open environment and persists its owne
     environment: "WSL: Ubuntu-22.04",
     name: null,
     checkout: null,
-    // The TOOLTIP keeps the routing head, then the environment (ADR-0066 §5).
-    tooltip: "01ARZ3NDEKTSV4RRFFQ69G5FAZ/owner/shared\nWSL: Ubuntu-22.04",
+    // The TOOLTIP names the project, then the environment (ADR-0066 §5); the
+    // routing head is a key and never shows.
+    tooltip: "owner/shared\nWSL: Ubuntu-22.04",
   });
 });
 
-// ADR-0066 §5: the title no longer carries the repo or the environment. The
-// TOOLTIP holds them, one per line: the full ref (the routing head kept), the
-// environment, and the vendor's session name when the launch had one.
-test("sessionPresentation puts the full ref, the environment and the name in the tooltip", () => {
+// ADR-0066 §5: the TOOLTIP holds, one per line: the project (never the
+// routing head), the environment, and the vendor's session name when the
+// launch had one.
+test("sessionPresentation puts the project, the environment and the name in the tooltip", () => {
   // Through the REAL `WBFleet.refSlug`. A hand-written stub here
   // (`ref.split("/").slice(-2).join("/")`) passed while saying nothing about the
   // production fold, which strips a head only when it is a ULID — so a broken
@@ -118,9 +119,26 @@ test("sessionPresentation puts the full ref, the environment and the name in the
       environment: "WSL: Ubuntu-22.04",
       name: "reviewer",
       checkout: null,
-      tooltip: "01ARZ3NDEKTSV4RRFFQ69G5FAZ/owner/shared\nWSL: Ubuntu-22.04\nreviewer",
+      tooltip: "owner/shared\nWSL: Ubuntu-22.04\nreviewer",
     },
   );
+});
+
+// A remoteless repo is keyed `path-<hash>`: once the shell has shared the
+// project names, the tooltip shows the folder and the console prefix is the
+// folder name, never the key.
+test("ingestProjects names a remoteless repo by its folder in the tooltip and the console prefix", () => {
+  const c = load();
+  const ref = "01ARZ3NDEKTSV4RRFFQ69G5FAZ/path-8ee0b8b587ea7891";
+  // Before the shell shares the names, the key is all the module has.
+  assert.equal(c.consolePrefix(ref), "path-8ee0b8b587ea7891");
+  c.ingestProjects([{ ref, name: "widget", title: "/home/me/widget" }]);
+  assert.equal(c.consolePrefix(ref), "widget");
+  const got = c.sessionPresentation("claude", ref, { daemonId: null, environment: null }, {
+    daemon_id: "01ARZ3NDEKTSV4RRFFQ69G5FAZ",
+    environment: "WSL: Ubuntu-22.04",
+  });
+  assert.equal(got.tooltip, "/home/me/widget\nWSL: Ubuntu-22.04");
 });
 
 // NEGATIVE CONTROL: the name has no desk fallback — it dies with the child, so a

@@ -223,3 +223,24 @@ home #1 (console)
 - The environment stays in the tooltip (§5 is unchanged for it).
 - Only the title bar changes. The Go-to row and the column list row keep the
   one label of §4, and their tooltip still gives the full ref.
+
+## Amendment (2026-10-02): the project name, never a key
+
+The prefix of §2, the repo at the end of the title, and the first line of the
+tooltip used the slug or the full ref. Two of those are keys, not names: the
+`path-<hash>` slug of a repo with no remote, and the `<daemon_id>/` head of a
+peer ref. The operator saw `path-8ee0b8b587ea7891 #1` and `01KY…/owner/repo`.
+
+- All three now use the **project name** that the daemon serves on
+  `/api/repos` and `/api/fleet` (`name`): `owner/repo`, or the folder of a
+  repo with no remote. The prefix is the last segment of that name.
+- The first tooltip line is the project name, or the full folder path of a
+  repo with no remote. The routing head never shows; the environment is still
+  the second line. This replaces "the full ref" in §5 and in the amendment of
+  2026-09-27.
+- The daemon builds the fallback Claude `--name` (no console name sent) from
+  the same project name.
+- The browser gets the names from the shell. Until they arrive, and in the
+  detached window, the slug stands in.
+- A console that already has a name keeps it. Only new consoles get the
+  folder prefix.

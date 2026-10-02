@@ -1127,11 +1127,43 @@ window.WBConsole = (function () {
     return !!reply && reply.status === "error" && reply.message === "unknown checkout";
   }
 
-  // The console name's prefix is taken from the SLUG, never the ref: a peer ref
-  // carries a `<daemon_id>/` routing head (ADR-0052 §5), and the same repo on
-  // two environments shares one count (ADR-0066 §2).
+  // The project name and tooltip text per repo ref, fed by the shell
+  // (`ingestProjects`) from the daemon's project list. A ref the shell has not
+  // named yet (the detached popup, a desk read before the list) falls back to
+  // its slug, never to the ref: a peer ref carries a `<daemon_id>/` routing
+  // head (ADR-0052 §5).
+  const projectNames = new Map();
+  function projectNameOf(ref) {
+    const known = projectNames.get(ref);
+    if (known) return known.name;
+    return window.WBFleet ? window.WBFleet.refSlug(ref) : ref;
+  }
+  function projectTitleOf(ref) {
+    if (ref === "~") return ref;
+    return projectNames.get(ref)?.title || projectNameOf(ref);
+  }
+  // `rows` is `[{ ref, name, title }]`. Titles and tooltips already drawn are
+  // drawn again; a console NAME already given is the operator's and stays.
+  function ingestProjects(rows) {
+    projectNames.clear();
+    for (const r of rows || []) {
+      if (r && r.ref && r.name) projectNames.set(r.ref, { name: r.name, title: r.title || r.name });
+    }
+    for (const win of wins) {
+      if (!win._title || !win._presentation) continue;
+      const p = win._presentation;
+      p.tooltip = window.WBConsoleName.tooltipLines(projectTitleOf(win._deskRepo), p.environment, p.name).join("\n");
+      win._title.title = p.tooltip;
+      renderTitle(win, win._title, p);
+    }
+  }
+
+  // The console name's prefix is the PROJECT NAME's last segment: a peer ref's
+  // routing head never shows, a remoteless repo is named by its folder and not
+  // its `path-<hash>` key, and the same repo on two environments shares one
+  // count (ADR-0066 §2).
   function consolePrefix(repo) {
-    return window.WBConsoleName.prefixOf(window.WBFleet ? window.WBFleet.refSlug(repo) : repo);
+    return window.WBConsoleName.prefixOf(projectNameOf(repo));
   }
   // Every console name in use: the desk mirror's and the stage's windows',
   // except `exceptId` (the console being renamed).
@@ -1164,7 +1196,7 @@ window.WBConsole = (function () {
       environment,
       name,
       checkout,
-      tooltip: window.WBConsoleName.tooltipLines(repo, environment, name).join("\n"),
+      tooltip: window.WBConsoleName.tooltipLines(projectTitleOf(repo), environment, name).join("\n"),
     };
   }
 
@@ -1256,10 +1288,10 @@ window.WBConsole = (function () {
     title.append(nameSpan, " ", labelSpan);
     wireRename(win, nameSpan);
     if (switchable) appendCheckout(win, title, presentation);
-    // The repo slug closes the title and is the first text cut; a console with
-    // no repo has none, its default name already says `home`.
-    const repo = window.WBFleet ? window.WBFleet.refSlug(win._deskRepo) : win._deskRepo;
-    if (repo && repo !== "~") {
+    // The project name closes the title and is the first text cut; a console
+    // with no repo has none, its default name already says `home`.
+    const repo = win._deskRepo && win._deskRepo !== "~" ? projectNameOf(win._deskRepo) : "";
+    if (repo) {
       const repoSpan = document.createElement("span");
       repoSpan.className = "session-repo";
       // The dot is inside the span, so a repo cut to nothing leaves no dot.
@@ -6838,6 +6870,7 @@ window.WBConsole = (function () {
     relaunchRequest,
     ingestWorktrees,
     ingestSessions,
+    ingestProjects,
     sessionRowFor,
     arrangeFence,
     count,
@@ -6910,6 +6943,7 @@ window.WBConsole = (function () {
     dropClosedElsewhere,
     columnRoster,
     sessionPresentation,
+    consolePrefix,
     pruneDesk,
     list,
     reveal,

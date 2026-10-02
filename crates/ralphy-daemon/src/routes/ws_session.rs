@@ -585,7 +585,10 @@ pub(crate) async fn session_ws_upgrade(
             .map(|d| agent_state::StatusFiles::for_session(&d.join("sessions"), id)),
         _ => None,
     };
-    let spec = session::spec_with_status(agent, &root, cwd, repo, query.name(), 24, 80, status);
+    // The fallback `--name` is built from the project NAME: a remoteless repo's
+    // slug is a `path-<hash>` key, and the operator reads this name.
+    let project = registry::project_name(repo, &entry.path);
+    let spec = session::spec_with_status(agent, &root, cwd, &project, query.name(), 24, 80, status);
     // Lifted before the spec moves into the spawn: the bridge announces the name
     // in `session-open`, which is how the shell learns it without deriving the
     // format a second time.
