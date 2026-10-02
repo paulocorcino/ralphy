@@ -501,6 +501,9 @@ pub(crate) fn spawn_detached(
             .creation_flags(flags)
             .spawn()
     };
+    // Otherwise the daemon also inherits this command's own stdout, and a
+    // caller that reads it (a pipe, an SSH session) waits until the daemon ends.
+    ralphy_proc_util::keep_std_handles_from_children();
     let detached = CREATE_NO_WINDOW | DETACHED_PROCESS;
     match spawn(detached | CREATE_BREAKAWAY_FROM_JOB) {
         Err(e) if breakaway_refused(&e) => {

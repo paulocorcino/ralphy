@@ -106,6 +106,49 @@ pub fn no_window(cmd: &mut Command) {
     let _ = cmd;
 }
 
+/// Keep this process's stdin, stdout and stderr out of the processes it starts
+/// from now on, unless a `Command` passes them on purpose. Call it before
+/// spawning a child that outlives this process.
+///
+/// On Windows, `Command::spawn` lets the child inherit every inheritable handle
+/// of the parent, not only the three it is given, and the standard handles
+/// this process got from a shell or `sshd` are inheritable. A detached daemon
+/// then holds its caller's stdout pipe until it exits, so a reader of that
+/// pipe never sees the end (measured 2026-10-02: `ralphy daemon restart | tail`
+/// waited until the daemon stopped). `std` passes a child inheritable
+/// duplicates of the handles it is given, `Stdio::inherit()` included, so later
+/// spawns are not affected. A no-op off Windows: there `Command` passes only
+/// fds 0, 1 and 2, and every other fd is close-on-exec.
+#[allow(unsafe_code, reason = "FFI: GetStdHandle and SetHandleInformation")]
+pub fn keep_std_handles_from_children() {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Foundation::{
+            SetHandleInformation, HANDLE_FLAG_INHERIT, INVALID_HANDLE_VALUE,
+        };
+        use windows_sys::Win32::System::Console::{
+            GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
+        };
+        for which in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+            // SAFETY: GetStdHandle takes a constant and returns a handle this
+            // process owns, or null or INVALID_HANDLE_VALUE, which are skipped.
+            // SetHandleInformation changes only the flag of that handle.
+            unsafe {
+                let handle = GetStdHandle(which);
+                if handle.is_null() || handle == INVALID_HANDLE_VALUE {
+                    continue;
+                }
+                if SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0) == 0 {
+                    tracing::debug!(
+                        error = %std::io::Error::last_os_error(),
+                        "could not keep a standard handle from child processes"
+                    );
+                }
+            }
+        }
+    }
+}
+
 /// Kill `child` and every descendant it spawned, then reap it. `child.kill()`
 /// signals only the direct child, so a grandchild — an agent CLI's helper, or a
 /// dev server a `## Verify` command backgrounded — would survive and keep an
