@@ -41,6 +41,10 @@ pub struct FederatedRepo {
     /// [`LOCAL_STATE`], or the peer's liveness state.
     pub peer_state: String,
     pub slug: String,
+    /// What the operator calls the repo ([`crate::registry::project_name`]).
+    /// Built here from `slug` and `path`, so an older peer that serves no name
+    /// still gets one.
+    pub name: String,
     pub path: String,
     /// Whether the path resolves to a directory. Read-time for a LOCAL row; for a
     /// peer row it is the peer's own answer, which is `false` while the peer is
@@ -110,6 +114,7 @@ pub fn aggregate(
             environment: local_env.to_string(),
             peer_state: LOCAL_STATE.to_string(),
             slug: slug.clone(),
+            name: crate::registry::project_name(slug, &entry.path),
             path: entry.path.clone(),
             reachable: entry.reachable(),
             branch: entry.head_branch(),
@@ -132,6 +137,7 @@ pub fn aggregate(
             environment: d.environment.clone(),
             peer_state: status.state().to_string(),
             slug: slug.clone(),
+            name: crate::registry::project_name(slug, &row.path),
             path: row.path.clone(),
             reachable: peer_live && row.reachable,
             branch: row.branch.clone(),

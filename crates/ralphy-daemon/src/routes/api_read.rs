@@ -65,6 +65,9 @@ pub(crate) async fn repos_route(registry_path: PathBuf, memo: rekey::HealMemo) -
     #[derive(serde::Serialize)]
     struct RepoView {
         slug: String,
+        // Additive: what the operator calls the project (`registry::project_name`).
+        // The slug of a remoteless repo is a hash key, never a name.
+        name: String,
         path: String,
         reachable: bool,
         // `Some` only on a branch; `head` tells a detached HEAD from no answer.
@@ -96,6 +99,7 @@ pub(crate) async fn repos_route(registry_path: PathBuf, memo: rekey::HealMemo) -
                 let head = entry.head();
                 RepoView {
                     slug: slug.clone(),
+                    name: registry::project_name(slug, &entry.path),
                     path: entry.path.clone(),
                     reachable: entry.reachable(),
                     branch: match &head {

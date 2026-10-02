@@ -286,3 +286,26 @@ fn store_from_repos_json_rejects_a_non_list_body() {
     assert!(store_from_repos_json(b"not json").is_none());
     assert!(store_from_repos_json(br#"{"error":"nope"}"#).is_none());
 }
+
+/// Every row carries the name the operator uses, built from the path here, so
+/// an older peer that serves no name still has one.
+#[test]
+fn every_row_names_a_remoteless_repo_by_its_folder() {
+    let local = store(&[("path-aaa", "C:/Dev/widget"), ("owner/repo", "C:/Dev/repo")]);
+    let theirs = peer_store(&[("path-bbb", "/home/p/gadget")]);
+    let d = peer("01XYZ", "wsl-box", "WSL: Ubuntu-22.04");
+    let rows = aggregate(
+        ("01ABC", "anvil", "Windows", &local),
+        &[(&d, &PeerStatus::Reachable, Some(&theirs))],
+    );
+    let name = |k: &str| {
+        rows.iter()
+            .find(|r| r.key == k)
+            .unwrap_or_else(|| panic!("missing key {k}; got {rows:?}"))
+            .name
+            .clone()
+    };
+    assert_eq!(name("01ABC/path-aaa"), "widget");
+    assert_eq!(name("01ABC/owner/repo"), "owner/repo");
+    assert_eq!(name("01XYZ/path-bbb"), "gadget");
+}

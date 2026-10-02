@@ -125,7 +125,8 @@ async fn added_reply(registry_path: &Path, requested: PathBuf) -> serde_json::Va
     .await;
     match found {
         Ok(Ok(Some((slug, path)))) => {
-            serde_json::json!({ "status": "ok", "slug": slug, "path": path })
+            let name = registry::project_name(&slug, &path);
+            serde_json::json!({ "status": "ok", "slug": slug, "name": name, "path": path })
         }
         Ok(Ok(None)) => {
             serde_json::json!({ "status": "error", "message": "the project was not found in the registry after the add" })

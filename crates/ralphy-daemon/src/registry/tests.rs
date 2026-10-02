@@ -405,3 +405,23 @@ fn former_slugs_round_trip_and_are_omitted_when_empty() {
     let old: RegistryStore = toml::from_str("[repos.\"o/r\"]\npath = \"/x\"\n").unwrap();
     assert!(old.entry("o/r").unwrap().former_slugs.is_empty());
 }
+
+/// A remoteless repo is named by its folder; a forge repo by its slug, even
+/// when the repo itself is called `path-…` (#332).
+#[test]
+fn project_name_is_the_folder_of_a_remoteless_repo_and_the_slug_otherwise() {
+    assert_eq!(project_name("path-9f2a1c", "C:/src/widget"), "widget");
+    assert_eq!(project_name("path-9f2a1c", r"C:\src\widget\"), "widget");
+    assert_eq!(project_name("path-9f2a1c", "/home/me/widget/"), "widget");
+    assert_eq!(
+        project_name("owner/path-utils", "C:/src/something-else"),
+        "owner/path-utils"
+    );
+    assert_eq!(
+        project_name("owner/repo", "/home/me/elsewhere"),
+        "owner/repo"
+    );
+    // No folder to name: the key stands.
+    assert_eq!(project_name("path-9f2a1c", ""), "path-9f2a1c");
+    assert_eq!(project_name("path-9f2a1c", "C:/"), "path-9f2a1c");
+}

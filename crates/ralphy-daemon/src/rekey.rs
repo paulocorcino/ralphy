@@ -21,6 +21,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::desk::DeskStore;
 use crate::dispatch;
+use crate::registry::is_hash_key;
 
 /// The `(slug, remote)` pairs already handed to `ralphy daemon add` this router
 /// lifetime. A remote whose URL yields no forge slug leaves the key a hash, and
@@ -38,12 +39,6 @@ pub(crate) struct Candidate {
     pub(crate) slug: String,
     pub(crate) path: String,
     pub(crate) remote: String,
-}
-
-/// Whether `slug` is the remoteless fallback. The `/` test is not optional: a
-/// forge repo literally named `owner/path-utils` is NOT this case (#332).
-fn is_hash_key(slug: &str) -> bool {
-    !slug.contains('/') && slug.starts_with("path-")
 }
 
 /// The rows worth a registrar spawn — hash-keyed, with an origin, not yet

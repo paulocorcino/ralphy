@@ -118,6 +118,33 @@ impl RepoEntry {
     }
 }
 
+/// Whether `slug` is the remoteless fallback key `path-<hash>`. The `/` test
+/// is not optional: a forge repo literally named `owner/path-utils` is NOT
+/// this case (#332).
+pub fn is_hash_key(slug: &str) -> bool {
+    !slug.contains('/') && slug.starts_with("path-")
+}
+
+/// What the operator calls a project: the slug (`owner/repo`), or, for the
+/// remoteless `path-<hash>` key, the last folder of its path. The hash is a
+/// key for the registry and means nothing to a person. With no folder to
+/// name, the slug stands.
+pub fn project_name(slug: &str, path: &str) -> String {
+    if is_hash_key(slug) {
+        // Windows and POSIX spellings in one pass; a trailing separator is
+        // stripped first, or `C:\src\widget\` names the empty string.
+        let folder = path
+            .trim_end_matches(['/', '\\'])
+            .rsplit(['/', '\\'])
+            .next()
+            .unwrap_or_default();
+        if !folder.is_empty() && !folder.ends_with(':') {
+            return folder.to_string();
+        }
+    }
+    slug.to_string()
+}
+
 /// The string form [`RepoEntry::same_root`] falls back to: one separator, no
 /// trailing one, case-folded where the filesystem is (Windows).
 fn normalize_path(s: &str) -> String {

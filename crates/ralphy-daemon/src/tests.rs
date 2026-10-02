@@ -2417,6 +2417,10 @@ async fn api_repos_reports_reachability_and_branch() {
         "body must carry both slugs; got: {body}"
     );
     assert!(
+        body.contains("\"name\":\"owner/here\""),
+        "each row carries the project name; got: {body}"
+    );
+    assert!(
         body.contains("\"reachable\":true"),
         "the existing-dir entry must be reachable; got: {body}"
     );
