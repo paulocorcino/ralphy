@@ -787,6 +787,7 @@ ran `OpenSSH_8.2p1 Ubuntu-4ubuntu0.9`. Both sides ran this amendment's build.
 | Reboot the host | both daemons start from their systemd user units (lingering); both peers `reachable` again with no action |
 | `AllowStreamLocalForwarding no` in a drop-in, `sshd` reloaded | a new tunnel to a socket starts and stays up; each connection fails and `ssh` prints `channel N: open failed: connect failed: open failed` (both clients: Windows 9.5p2 and Git for Windows 10.0p2); a forward to the TCP port still works; tunnels opened before the reload keep working |
 | `host add` with that setting | `ralphy1`: port form and the note (M7); `ralphy2`: fails with the advice, its descriptor unchanged |
+| A free console on each peer, through the local daemon (`/ws/session?console=1`) | `ralphy1` runs as uid 1001 and `ralphy2` as uid 1002, each in its own home; each connects to its own socket and gets `Permission denied` on the other account's socket. A console needs a repo added on the peer: without one, the peer answers `unknown repo` |
 
 The live run found two faults of `ralphy daemon restart` on Linux, both fixed
 before this record. After the binary was replaced with `mv`, the kernel names
