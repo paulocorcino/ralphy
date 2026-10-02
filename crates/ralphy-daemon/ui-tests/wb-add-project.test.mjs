@@ -340,7 +340,7 @@ test("shell: a refused add keeps the dialog open with the reason", async () => {
   assert.equal(state.addProject.open, true);
   assert.equal(state.addProject.adding, false);
   assert.equal(state.addProject.text, "C:\\Dev\\fincal");
-  assert.equal(state.addProject.error, "o/fincal is already added from C:/Other/fincal");
+  assert.equal(state.addProject.error, "Could not add the project: o/fincal is already added from C:/Other/fincal.");
   assert.deepEqual(toggled, []);
 });
 

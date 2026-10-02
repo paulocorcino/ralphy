@@ -861,7 +861,10 @@
     unencodable: "This file cannot be decoded with that encoding.",
   };
   function refusalText(reason) {
-    return REFUSAL_TEXT[reason] || `The file could not be opened: ${reason}.`;
+    if (REFUSAL_TEXT[reason]) return REFUSAL_TEXT[reason];
+    // `detached.html` loads no `wb-fail.js`.
+    if (!window.WBFail) return "Could not open the file.";
+    return window.WBFail.failed({ message: reason }, "Could not open the file: the daemon gave no reason.");
   }
 
   function buildRefused(rec) {

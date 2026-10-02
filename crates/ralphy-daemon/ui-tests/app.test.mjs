@@ -1663,7 +1663,7 @@ test("a failed settings read says so, and a project setting is not written", asy
   } finally {
     globalThis.WBDaemon = realDaemon;
   }
-  assert.equal(state.settingsError, "Could not read the settings: settings.json is not JSON");
+  assert.equal(state.settingsError, "Could not read the settings: settings.json is not JSON.");
   await state.saveSetting("queue.label", "ready");
   assert.deepEqual(verbs, ["config.get"], "no config.set over values never read");
 });
@@ -2128,4 +2128,31 @@ test("projectLabel and projectTitle never print a path- key or a daemon id", () 
   state.openSlug = ref(local);
   assert.equal(state.consoleMenuRepoName(), "widget");
   assert.equal(state.columnRepoLabel(ref(peer)), "gadget");
+});
+
+test("a read failure shows the words for a daemon code, never the code", async () => {
+  const state = observedShell([
+    { status: "error", message: "unknown repo" },
+    { status: "error", message: "unknown checkout" },
+    { status: "error", reason: "unknown repo" },
+  ]);
+  await state.loadChanges("o/r");
+  assert.equal(state.changesReadError["o/r"], "Could not read the changes: the project is not in the list");
+  await state.loadSync("o/r");
+  assert.equal(state.syncByProject["o/r"].note, "Could not read the branch: the worktree does not exist");
+  state.runsOpen = false;
+  await state.hydrateRuns();
+  assert.equal(state.runsError, "Could not read the runs: the project is not in the list.");
+});
+
+test("an unreadable run is counted, and its id is never shown", async () => {
+  const state = observedShell([
+    { status: "ok", runs: [], unreadable: [{ runid: "01JX4ABCDEF", reason: "malformed" }] },
+  ]);
+  state.runsOpen = false;
+  await state.hydrateRuns();
+  assert.equal(
+    state.runsError,
+    "Could not read 1 saved run. The file is damaged or from another version of Ralphy.",
+  );
 });

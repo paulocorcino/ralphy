@@ -2461,7 +2461,7 @@ test("an unreadable desk is a failure, and no flush PUTs over it", async () => {
   try {
     const c = load({ WBMode: { isDaemon: () => true } });
     await c.whenDeskLoaded();
-    assert.match(c.deskFailure(), /parsing desk layout/);
+    assert.equal(c.deskFailure(), "the file is damaged");
     c.setCheckout("o/r", "wt-a");
     await new Promise((r) => setTimeout(r, 400));
   } finally {
@@ -2495,7 +2495,7 @@ test("a flush that finds the loaded desk unreadable uploads nothing and shows th
     calls.length = 0;
     c.setCheckout("o/r", "wt-a");
     await new Promise((r) => setTimeout(r, 400));
-    assert.match(c.deskFailure(), /parsing desk layout/);
+    assert.equal(c.deskFailure(), "the file is damaged");
   } finally {
     globalThis.fetch = realFetch;
   }
@@ -2526,7 +2526,7 @@ test("start a new desk treats a desk another tab already started as done", async
     // The empty new desk is restored, which looks for the stage.
     const c = load({ WBMode: { isDaemon: () => true } }, { getElementById: () => null });
     await c.whenDeskLoaded();
-    assert.match(c.deskFailure(), /parsing desk layout/);
+    assert.equal(c.deskFailure(), "the file is damaged");
     await c.startNewDesk();
     assert.equal(c.deskFailure(), "", "the desk is readable now");
   } finally {

@@ -194,3 +194,17 @@ test("notCurrent names the time of the good read and the reason", () => {
   const never = F.readFold(null, { ok: false, reason: "HTTP 500", at: 6 });
   assert.equal(F.notCurrent(never, fmt), "Could not read: HTTP 500");
 });
+
+test("why gives the cause of a code, to follow `Could not <act>: `", () => {
+  const F = load();
+  assert.equal(F.why({ status: "error", message: "unknown repo" }, "x"), "the project is not in the list");
+  assert.equal(F.why({ status: "error", reason: "transport" }, "x"), "the daemon did not answer");
+  assert.equal(F.why({ status: "error", message: "git exited 128" }, "x"), "git exited 128");
+  assert.equal(F.why({ status: "error" }, "the daemon gave no reason"), "the daemon gave no reason");
+});
+
+test("notCurrent shows the words for a code it was given", () => {
+  const F = load();
+  const read = { current: false, goodAt: 0, error: "unknown checkout" };
+  assert.equal(F.notCurrent(read, () => ""), "Could not read: the worktree does not exist");
+});

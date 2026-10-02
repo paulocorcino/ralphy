@@ -110,6 +110,15 @@
     return `${capital(p.cause)}.${tail(p.rest)}`;
   }
 
+  // The cause alone, to follow `Could not <act>: ` in a line the caller
+  // builds: lowercase, no final period. A code never shows as it is.
+  function why(reply, fallback) {
+    const p = parts(reply);
+    if (!p) return fallback;
+    if (p.sentence) return bare(p.sentence);
+    return p.cause;
+  }
+
   // One line of a success report (`warning: …`) as a sentence.
   function sentence(line) {
     const t = bare(String(line || ""));
@@ -131,9 +140,10 @@
   // The line a panel shows for a read that is not current; "" when it is.
   function notCurrent(read, fmt) {
     if (!read || read.current) return "";
-    if (read.goodAt) return `Read at ${fmt(read.goodAt)}. Not current: ${read.error}`;
-    return `Could not read: ${read.error}`;
+    const error = Object.hasOwn(CAUSE, read.error) ? CAUSE[read.error] : read.error;
+    if (read.goodAt) return `Read at ${fmt(read.goodAt)}. Not current: ${error}`;
+    return `Could not read: ${error}`;
   }
 
-  window.WBFail = { isError, message, failed, cause, sentence, readFold, notCurrent, CAUSE };
+  window.WBFail = { isError, message, failed, cause, why, sentence, readFold, notCurrent, CAUSE };
 })();

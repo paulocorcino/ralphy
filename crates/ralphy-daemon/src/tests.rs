@@ -5216,12 +5216,14 @@ fn the_workbench_never_titles_a_repo_with_its_routing_head() {
             "index.html must never print the routing head raw: {anti}"
         );
     }
-    // The console name's prefix is the slug's last segment (ADR-0066 §2);
-    // taken from the ref, a peer console would be named after its ULID.
+    // The console name's prefix is the project name's last segment (ADR-0066
+    // §2 and its 2026-10-02 amendment); an unnamed ref falls back to the
+    // slug. Taken from the ref, a peer console would be named after its ULID.
     let console = include_str!("../assets/ui/wb-console.js");
     assert!(
-        console.contains("WBFleet.refSlug(repo)"),
-        "a console name prefix must come from the slug, not the ref"
+        console.contains("prefixOf(projectNameOf(repo))")
+            && console.contains("WBFleet.refSlug(ref)"),
+        "a console name prefix must come from the project name or the slug, not the ref"
     );
 }
 

@@ -239,7 +239,7 @@
       return "Update Ralphy on this computer to see its folders.";
     }
     if (state.failure && state.failure !== "this folder does not exist") {
-      return state.failure.charAt(0).toUpperCase() + state.failure.slice(1) + ".";
+      return window.WBFail.cause({ message: state.failure }, "Could not list this folder.");
     }
     return target(state).help;
   }

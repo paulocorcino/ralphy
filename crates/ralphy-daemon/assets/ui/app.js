@@ -1100,7 +1100,7 @@ function shell() {
         if (seq !== this._changesSeq) return; // superseded → the newer read owns it
         if (!reply || reply.status !== "ok") {
           if (window.WBMode.isDaemon()) {
-            this.changesFailed(slug, window.WBFail.message(reply, "the daemon gave no reason"));
+            this.changesFailed(slug, window.WBFail.why(reply, "the daemon gave no reason"));
           }
           return;
         }
@@ -1147,7 +1147,7 @@ function shell() {
         if (seq !== this._syncSeq) return; // superseded → the newer read owns it
         if (!reply || reply.status !== "ok") {
           if (window.WBMode.isDaemon()) {
-            this.syncFailed(slug, window.WBFail.message(reply, "the daemon gave no reason"));
+            this.syncFailed(slug, window.WBFail.why(reply, "the daemon gave no reason"));
           }
           return;
         }
@@ -1880,7 +1880,7 @@ function shell() {
         // Superseded while in flight: the newer hydration owns the state.
         if (seq !== this._runsSeq || this.openSlug !== slug) return;
         if (reply?.status !== "ok") {
-          this.runsFailed(slug, reply?.reason || reply?.message || "Could not read runs.");
+          this.runsFailed(slug, window.WBFail.why(reply, "the daemon gave no reason"));
           return;
         }
         this.runsRead[slug] = window.WBFail.readFold(this.runsRead[slug], { ok: true, value: true, at: Date.now() });
@@ -1895,10 +1895,11 @@ function shell() {
           }
           return run;
         });
+        // A run's id is a key, not a name: the line counts the runs instead.
         const bad = reply.unreadable || [];
         this.runsError = bad.length
-          ? `Could not read ${bad.length} run${bad.length > 1 ? "s" : ""}: ` +
-            bad.map((u) => `${u.runid} (${u.reason})`).join(", ")
+          ? `Could not read ${bad.length} saved run${bad.length > 1 ? "s" : ""}. ` +
+            "The file is damaged or from another version of Ralphy."
           : "";
         // Keep the selected run while it is still listed.
         const listed = this.projectRuns();
@@ -1910,7 +1911,7 @@ function shell() {
       } catch (err) {
         if (seq !== this._runsSeq || this.openSlug !== slug) return;
         // A transport failure is a read failure, not an idle project.
-        this.runsFailed(slug, String(err?.message || err || "Could not reach the daemon."));
+        this.runsFailed(slug, window.WBFail.why({ message: err?.message }, "the daemon did not answer"));
       }
     },
     // A failed `runs.list` (ADR-0070 D3). After a good read the runs stay,
@@ -1923,7 +1924,7 @@ function shell() {
         return;
       }
       this.runsByProject[slug] = [];
-      this.runsError = reason;
+      this.runsError = `Could not read the runs: ${reason}.`;
     },
 
     // Read the selected run's plan via `file.read` (the document carries its
@@ -2822,8 +2823,10 @@ function shell() {
             const cfg = reply && reply.status === "ok" ? reply.config : null;
             // The defaults must not pass as the project's values (ADR-0070 D3).
             if (!cfg || typeof cfg !== "object") {
-              this.settingsError =
-                "Could not read the settings: " + window.WBFail.message(reply, "the daemon gave no reason");
+              this.settingsError = window.WBFail.failed(
+                reply,
+                "Could not read the settings: the daemon gave no reason.",
+              );
             }
             if (cfg && typeof cfg === "object") {
               for (const k in cfg) {
@@ -3225,7 +3228,10 @@ function shell() {
         reply = { status: "error", message: String(e.message || e) };
       }
       if (reply?.status !== "ok") {
-        this.addProjectStep({ type: "addFailed", message: reply?.message || "The project was not added." });
+        this.addProjectStep({
+          type: "addFailed",
+          message: window.WBFail.failed(reply, "Could not add the project: the daemon gave no reason."),
+        });
         this.loadRepos({ git: false });
         return;
       }
@@ -5443,7 +5449,7 @@ function shell() {
         const refuse = (reason) => {
           if (refused) return null;
           refused = true;
-          this._flashAction?.(reason);
+          this._flashAction?.(window.WBFail.failed({ message: reason }, "Could not open the diff: the daemon gave no reason."));
           this.closeTab(t.id);
           return null;
         };
@@ -5467,7 +5473,7 @@ function shell() {
             // As `openTab`: the pane follows the CURRENT active tab.
             this.syncViewer();
           })
-          .catch(() => refuse("diff read failed"));
+          .catch(() => refuse("transport"));
       });
     },
 
@@ -6406,7 +6412,11 @@ function shell() {
         WBDaemon.withCheckout({ repo: this.openSlug, path: rel, to }, checkout),
       ).catch(() => null);
       if (!reply || WBFail.isError(reply)) {
-        this._flashAction?.(reply?.reason || "duplicate failed");
+        this._flashAction?.(
+          reply
+            ? window.WBFail.failed(reply, "Could not duplicate the file: the daemon gave no reason.")
+            : "Could not duplicate the file: the daemon did not answer.",
+        );
         return;
       }
       await this.onTreeDirty(parent);

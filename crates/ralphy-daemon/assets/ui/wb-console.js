@@ -455,11 +455,15 @@ window.WBConsole = (function () {
   // in a write it accepted. A column console missing from a later read, and
   // in this set, was closed elsewhere (`app.js` `checkColumnDesk`).
   const daemonSeen = new Set();
-  // The `409` reply of an unreadable desk, as the reason it carries, or null.
+  // The `409` reply of an unreadable desk, as the reason to show, or null.
+  // The daemon's own text is a parser message for a developer: it goes to
+  // the browser console, and the operator reads what it means.
   async function unreadableDesk(r) {
     if (r.status !== 409) return null;
     const body = await r.json().catch(() => null);
-    return body?.state === "unreadable" ? body.error || "the daemon cannot read it" : null;
+    if (body?.state !== "unreadable") return null;
+    if (body.error) console.warn("saved desk:", body.error);
+    return "the file is damaged";
   }
 
   // Load (or re-load, after a login) the daemon's desk. Never rejects: an
@@ -5123,7 +5127,7 @@ window.WBConsole = (function () {
           .write("image.write", { repo: currentRepo, base64 })
           .then((reply) => {
             if (window.WBFail.isError(reply) || !reply.path) {
-              const why = window.WBFail.message(reply, "refused");
+              const why = window.WBFail.why(reply, "the daemon refused it");
               term.write(`\r\n[paste refused — ${why}]\r\n`);
               return;
             }
@@ -6256,7 +6260,7 @@ window.WBConsole = (function () {
             if (window.WBSessionRoute.closeSucceeded(response.status)) finish();
             else
               win._term?.term.write(
-                `\r\n[close failed — HTTP ${response.status}]\r\n`,
+                `\r\n[close failed — the daemon refused it]\r\n`,
               );
           },
           () => win._term?.term.write("\r\n[close failed — connection unavailable]\r\n"),

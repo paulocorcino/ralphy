@@ -1089,7 +1089,8 @@ window.WBNotes = (function () {
           // The reason in the footer, beside the path that footer already
           // shows — and the whole of it on hover, because `.note-state` is a
           // narrow box and "not found" alone is the half that matters.
-          paintMissing(el, reason, `${record.path} — ${reason}`);
+          const said = window.WBFail.why(reply, "the file could not be read");
+          paintMissing(el, said, `${record.path} — ${said}`);
           // An editor over what the card still holds — the unsaved text if
           // there is any, and an empty document if the read is all this card
           // ever had. Typing in it makes the card dirty, and a dirty card
@@ -1100,7 +1101,7 @@ window.WBNotes = (function () {
           // clearing the footer, and the card would go translucent while
           // saying nothing about why.
           return mountEditor(el, el._noteMarkdown || dress(el, "")).then((mounted) => {
-            paintMissing(el, reason, `${record.path} — ${reason}`);
+            paintMissing(el, said, `${record.path} — ${said}`);
             return mounted;
           });
         }
@@ -1111,7 +1112,7 @@ window.WBNotes = (function () {
         return mountEditor(el, reply.markdown || "");
       })
       .catch((err) => {
-        paintMissing(el, String(err?.message || err));
+        paintMissing(el, window.WBFail.cause({ message: err?.message }, "The daemon did not answer."));
         return null;
       });
   }
@@ -1295,7 +1296,7 @@ window.WBNotes = (function () {
         .catch((err) => {
           el._noteInFlight = false;
           el.classList.add("danger");
-          paintState(el, String(err?.message || err));
+          paintState(el, window.WBFail.cause({ message: err?.message }, "The daemon did not answer."));
         });
     });
   }
@@ -1339,7 +1340,7 @@ window.WBNotes = (function () {
         // A dropped socket mid-probe must not leave the card unable to ever
         // name itself: clear the memo and say why.
         el._noteNaming = null;
-        paintState(el, String(err?.message || err));
+        paintState(el, window.WBFail.cause({ message: err?.message }, "The daemon did not answer."));
         return null;
       });
     return el._noteNaming;
@@ -2585,7 +2586,7 @@ window.WBNotes = (function () {
         paintPath(el, to);
         paintState(el, "Renamed");
       })
-      .catch((err) => paintState(el, String(err?.message || err)));
+      .catch((err) => paintState(el, window.WBFail.cause({ message: err?.message }, "The daemon did not answer.")));
   }
 
   // Delete the file — a SEPARATE act from closing the card (§11), confirmed,
@@ -2614,7 +2615,7 @@ window.WBNotes = (function () {
           );
           render();
         })
-        .catch((err) => paintState(el, String(err?.message || err)));
+        .catch((err) => paintState(el, window.WBFail.cause({ message: err?.message }, "The daemon did not answer.")));
     });
   }
 

@@ -199,7 +199,7 @@ pub(crate) async fn session_ws_upgrade(
                     return refuser.refuse(
                         ws,
                         StatusCode::BAD_GATEWAY,
-                        format!("unknown peer daemon {daemon_id}"),
+                        "the environment of this project is not in the list".to_string(),
                     );
                 }
             }
@@ -325,7 +325,7 @@ pub(crate) async fn session_ws_upgrade(
                                 return refuser.refuse(
                                     ws,
                                     StatusCode::BAD_REQUEST,
-                                    format!("{} has no repository {slug}", peer.environment),
+                                    format!("{} does not have this project", peer.environment),
                                 );
                             }
                             Err(_) => {
@@ -361,7 +361,7 @@ pub(crate) async fn session_ws_upgrade(
                         return refuser.refuse(
                             ws,
                             StatusCode::BAD_REQUEST,
-                            format!("{} returned an empty path for {slug}", peer.environment),
+                            format!("{} sent no folder for this project", peer.environment),
                         );
                     }
                     if !entry.reachable {
@@ -369,8 +369,8 @@ pub(crate) async fn session_ws_upgrade(
                             ws,
                             StatusCode::BAD_REQUEST,
                             format!(
-                                "{} reports repository {slug} path unreachable",
-                                peer.environment
+                                "{} cannot reach the folder {}",
+                                peer.environment, entry.path
                             ),
                         );
                     }
@@ -440,7 +440,7 @@ pub(crate) async fn session_ws_upgrade(
                     return refuser.refuse(
                         ws,
                         StatusCode::BAD_GATEWAY,
-                        format!("unknown peer daemon {daemon_id}"),
+                        "the environment of this project is not in the list".to_string(),
                     );
                 }
             }

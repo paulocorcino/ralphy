@@ -529,7 +529,7 @@ pub(crate) async fn agents_route(
             }
             (
                 StatusCode::BAD_GATEWAY,
-                format!("unknown peer daemon {daemon_id}"),
+                "the environment of this project is not in the list".to_string(),
             )
                 .into_response()
         }
