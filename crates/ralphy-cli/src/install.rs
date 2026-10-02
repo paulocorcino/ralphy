@@ -301,6 +301,53 @@ fn on_path(path: &std::ffi::OsStr, dir: &Path) -> bool {
     std::env::split_paths(path).any(|d| norm(&d) == want)
 }
 
+/// What `ralphy update` does about `PATH` once the new binary is in place.
+#[derive(Debug, PartialEq, Eq)]
+enum PathFix {
+    /// A folder on `PATH` already runs this binary by name.
+    Nothing,
+    /// The install folder runs this binary, but it is not on `PATH`.
+    Add(PathBuf),
+    /// No install folder runs this binary: only `ralphy install` can fix it.
+    Install,
+}
+
+/// `dest` is the canonical path of the binary the update replaced. An entry is
+/// one of ours when it resolves to `dest`: a link to it, or `dest` itself.
+fn path_fix(dest: &Path, path: &std::ffi::OsStr, default_dir: &Path) -> PathFix {
+    let runs_dest = |dir: &Path| {
+        std::fs::canonicalize(dir.join(binary_name())).is_ok_and(|entry| entry == dest)
+    };
+    if std::env::split_paths(path).any(|d| runs_dest(&d)) {
+        return PathFix::Nothing;
+    }
+    if runs_dest(default_dir) {
+        return PathFix::Add(default_dir.to_path_buf());
+    }
+    PathFix::Install
+}
+
+/// After `ralphy update`: an operator who installed before `ralphy install`
+/// edited `PATH` gets the same repair. Never fails the update.
+pub(crate) fn put_on_path_after_update(dest: &Path) {
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    let default_dir = match default_bin_dir() {
+        Ok(dir) => dir,
+        Err(e) => {
+            println!("Note: could not check your PATH ({e:#}).");
+            return;
+        }
+    };
+    match path_fix(dest, &path, &default_dir) {
+        PathFix::Nothing => {}
+        PathFix::Add(dir) => put_on_path(&dir, false),
+        PathFix::Install => println!(
+            "Note: `ralphy` is not on your PATH. Run `{} install` so it works by name in a new terminal.",
+            dest.display()
+        ),
+    }
+}
+
 #[cfg(unix)]
 fn symlink(src: &Path, dst: &Path) -> Result<()> {
     std::os::unix::fs::symlink(src, dst).map_err(Into::into)
@@ -443,6 +490,43 @@ mod tests {
                 "{path:?}"
             );
         }
+    }
+
+    #[test]
+    fn an_update_adds_the_install_folder_only_when_it_runs_this_binary() {
+        let root = scratch("after-update");
+        let bin = root.join("bin");
+        let on = root.join("on-path");
+        let away = root.join("unzipped");
+        for d in [&bin, &on, &away] {
+            std::fs::create_dir_all(d).expect("dir");
+        }
+        let put = |dir: &Path| {
+            let file = dir.join(binary_name());
+            std::fs::write(&file, b"ralphy").expect("binary");
+            std::fs::canonicalize(&file).expect("canonical")
+        };
+        let path = std::ffi::OsString::from(on.as_os_str());
+
+        // The install folder holds the binary, and nothing on PATH runs it.
+        let in_bin = put(&bin);
+        assert_eq!(path_fix(&in_bin, &path, &bin), PathFix::Add(bin.clone()));
+
+        // A folder on PATH runs it: nothing to do, even with the install folder
+        // holding a copy of its own.
+        let in_on = put(&on);
+        assert_eq!(path_fix(&in_on, &path, &bin), PathFix::Nothing);
+
+        // Neither runs it: the binary was never installed.
+        let in_away = put(&away);
+        assert_eq!(path_fix(&in_away, &path, &bin), PathFix::Install);
+
+        // A link in the install folder runs the unzipped binary.
+        std::fs::remove_file(bin.join(binary_name())).expect("remove");
+        if symlink(&away.join(binary_name()), &bin.join(binary_name())).is_ok() {
+            assert_eq!(path_fix(&in_away, &path, &bin), PathFix::Add(bin.clone()));
+        }
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

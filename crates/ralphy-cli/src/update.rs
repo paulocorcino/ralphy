@@ -145,6 +145,7 @@ fn take(release: &Release) -> Result<()> {
         // worth reporting loudly, but it does not un-take the release.
         Err(e) => println!("the daemon did not restart: {e:#}"),
     }
+    crate::install::put_on_path_after_update(&dest);
     println!("now on {}", release.tag_name);
     Ok(())
 }
