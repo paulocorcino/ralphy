@@ -8417,8 +8417,8 @@ fn a_remoteless_project_is_labelled_by_its_directory() {
     let js = include_str!("../assets/ui/app.js");
     let load = js_method_body(js, "async loadRepos({ git = true } = {}) {");
     assert!(
-        load.contains("path: x.path"),
-        "`loadRepos` must keep `/api/repos`'s path — the label reads it; \
+        load.contains("name: x.name"),
+        "`loadRepos` must keep `/api/repos`'s name — the label reads it; \
          found: {load:?}"
     );
 
@@ -8434,8 +8434,8 @@ fn a_remoteless_project_is_labelled_by_its_directory() {
         .expect("repoLabel must close at module indent")
         .0;
     assert!(
-        label.contains(r#"!p.slug.includes("/")"#),
-        "only a slug with no `/` is relabelled; found: {label:?}"
+        label.contains("projectName(p)"),
+        "the label is built on the daemon's project name; found: {label:?}"
     );
 
     let filter = js_method_body(js, "filteredProjects() {");
@@ -8452,9 +8452,9 @@ fn a_remoteless_project_is_labelled_by_its_directory() {
         "the row must render the label through `repoLabel`"
     );
     assert!(
-        html.contains(r#":title="p.slug""#),
-        "the label is a view concern; `.project-slug`'s own title must stay \
-         the canonical ADR-0008 D7 slug (the browser tests locate a row by it)"
+        html.contains(r#":data-slug="p.slug""#),
+        "the label is a view concern; `.project-slug` must keep the canonical \
+         ADR-0008 D7 slug in `data-slug` (the browser tests locate a row by it)"
     );
 }
 

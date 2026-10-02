@@ -343,12 +343,12 @@
   // --- the Ledger pane -------------------------------------------------------
 
   // Every dimension the ledger record carries, plus the four token counts in the
-  // canonical meter order (PRD #355 story 29). The four counts are RAW: they are
+  // canonical meter order (PRD #355 story 29). Not `project`: the daemon serves
+  // only the open project's rows, and the pane head already names it. The four counts are RAW: they are
   // per-row, and the daemon's `k`/`M` abbreviation is a summary vocabulary — a
   // grid whose whole purpose is the detailed read must not round.
   const LEDGER_COLUMNS = [
     { key: "kind", label: "Kind" },
-    { key: "project", label: "Project" },
     { key: "issue", label: "Issue" },
     { key: "phase", label: "Phase" },
     { key: "agent", label: "Agent" },
@@ -418,7 +418,6 @@
     return {
       kind: "ledger",
       peer: fromPeer(rec, daemonId),
-      project: text(rec.project),
       issue: rec.issue ? "#" + rec.issue : NONE,
       phase: text(rec.phase),
       agent: text(rec.agent),
@@ -441,7 +440,6 @@
     return {
       kind: "interactive",
       peer: fromPeer(rec, daemonId),
-      project: text(rec.project),
       issue: NONE,
       phase: NONE,
       agent: text(rec.agent),

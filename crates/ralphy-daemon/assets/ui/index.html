@@ -279,9 +279,9 @@
             <!-- `rowTitle` is what a COLLAPSED row can no longer show: the
                  branch chip moved to the Files bar below, which only the open
                  project renders (#332). It sits on the row, never on
-                 `.project-slug` — that title is the canonical slug, the
-                 ADR-0008 D7 identity, and the child's own title still wins when
-                 the pointer is over the name, which is what you want there. -->
+                 `.project-slug`: the name's own title still wins when the
+                 pointer is over the name. The slug, the ADR-0008 D7 identity,
+                 rides `data-slug` for the browser tests. -->
             <div class="project-head" tabindex="-1" @click="toggle(repoRef(p), p)" :title="rowTitle(p)">
               <span class="chevron"><svg x-icon="'chevron-right'"></svg></span>
               <!-- status dot: the project's daemon-reachability *right now* —
@@ -298,7 +298,7 @@
                 :class="p.remote === 'github' ? 'bi bi-github' : 'bi bi-hdd'"
                 :title="p.remote === 'github' ? 'On GitHub' : 'Local only'"
               ></i>
-              <span class="project-slug" x-text="repoLabel(p)" :title="p.slug"></span>
+              <span class="project-slug" x-text="repoLabel(p)" :title="projectTitle(repoRef(p))" :data-slug="p.slug"></span>
               <!-- The branch chip carries the change count. Collapsed, only the
                    count shows — the branch is in `rowTitle` — so a closed row
                    costs the name nothing (#332); open, the chip grows its branch
@@ -732,7 +732,7 @@
                    owner and the environment are the sidebar's; the prefix
                    never varies, so each row below carries only its digit
                    (the Fence menu's rule). -->
-              <div class="dropdown-head" :title="openSlug ? projectLabel(openSlug) : ''">
+              <div class="dropdown-head" :title="openSlug ? projectTitle(openSlug) : ''">
                 <span x-text="openSlug ? consoleMenuRepoName() : 'Home (no project open)'"></span>
                 <kbd class="kbd" x-text="consoleShortcutHint()"></kbd>
               </div>
@@ -1008,7 +1008,7 @@
           <header class="spend-bar">
             <span class="spend-eyebrow">Spend</span>
             <span class="spend-sep" x-show="openSlug">/</span>
-            <span class="spend-project" x-text="projectLabel(openSlug)" :title="openSlug" x-show="openSlug"></span>
+            <span class="spend-project" x-text="projectLabel(openSlug)" :title="projectTitle(openSlug)" x-show="openSlug"></span>
             <!-- Overview | Ledger · two readings of ONE project, so they are two
                  panes of one tab and not two tabs. The Ledger side is what the
                  removed Usage modal did, with columns and scoped to the project
@@ -1372,7 +1372,6 @@
                            split exists (ADR-0053 D4). -->
                       <span class="ledger-cause" x-show="r.unpriced" x-text="r.unpriced"></span>
                     </td>
-                    <td class="ledger-col-project" x-text="r.project"></td>
                     <td class="ledger-col-issue" x-text="r.issue"></td>
                     <td class="ledger-col-phase" x-text="r.phase"></td>
                     <td class="ledger-col-agent" x-text="r.agent"></td>
@@ -1428,7 +1427,7 @@
       <section class="kanban" x-show="kanbanOpen" x-cloak aria-label="Kanban board">
         <div class="kanban-head">
           <span class="kanban-title"><svg x-icon="'square-kanban'"></svg> Board</span>
-          <span class="kanban-scope" x-text="openSlug ? projectLabel(openSlug) : 'No project open'" :title="openSlug"></span>
+          <span class="kanban-scope" x-text="openSlug ? projectLabel(openSlug) : 'No project open'" :title="projectTitle(openSlug)"></span>
           <span class="spacer"></span>
           <!-- board-wide search + label filter (apply to every column) -->
           <div class="kanban-search">
@@ -1958,7 +1957,7 @@
                   <span class="scope-chip" :class="sec.scope"
                         x-text="sec.scope === 'client' ? 'This browser only'
                                 : sec.scope === 'daemon' ? 'Daemon · all projects'
-                                : (openSlug ? ('Project · ' + openSlug) : 'Project · none open')"></span>
+                                : (openSlug ? ('Project · ' + projectLabel(openSlug)) : 'Project · none open')"></span>
                 </div>
                 <p class="settings-blurb" x-text="sec.blurb"></p>
                 <!-- per-project sections need an open repo to write into -->
@@ -2426,7 +2425,7 @@
         <div class="modal-head">
           <svg x-icon="'git-branch'"></svg>
           <span class="modal-title">Switch branch</span>
-          <span class="modal-sub" x-text="projectLabel(branchModal.slug)" :title="branchModal.slug"></span>
+          <span class="modal-sub" x-text="projectLabel(branchModal.slug)" :title="projectTitle(branchModal.slug)"></span>
           <span class="sec-badge off" x-show="branchModal.checkoutDirty"
                 title="The working tree has uncommitted changes">uncommitted</span>
           <span class="spacer"></span>
@@ -2616,7 +2615,7 @@
         <div class="modal-head">
           <svg x-icon="'scroll-text'"></svg>
           <span class="modal-title" x-text="'Plan · #' + (openPlan()?.summary?.issue ?? '')"></span>
-          <span class="modal-sub" x-text="projectLabel(openSlug)" :title="openSlug"></span>
+          <span class="modal-sub" x-text="projectLabel(openSlug)" :title="projectTitle(openSlug)"></span>
           <span class="spacer"></span>
           <button class="modal-x" @click="closePlanModal()" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
@@ -2664,7 +2663,7 @@
         <div class="modal-head">
           <svg x-icon="'play'"></svg>
           <span class="modal-title">Start a run</span>
-          <span class="modal-sub" x-text="projectLabel(openSlug)" :title="openSlug"></span>
+          <span class="modal-sub" x-text="projectLabel(openSlug)" :title="projectTitle(openSlug)"></span>
           <span class="spacer"></span>
           <button class="modal-x" @click="closeRunModal()" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>

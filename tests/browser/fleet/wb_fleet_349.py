@@ -296,7 +296,7 @@ SIDEBAR_EXPR = """
       rows: Array.from(b.querySelectorAll('li.project')).map(r => {
         const n = r.querySelector('.project-slug');
         return {
-          slug: n ? n.getAttribute('title') : '',
+          slug: n ? n.getAttribute('data-slug') : '',
           peer: r.classList.contains('peer'),
           laid: r.offsetParent !== null && r.clientWidth > 0,
           title: (r.querySelector('.project-head') || {}).getAttribute?.('title') ?? '',

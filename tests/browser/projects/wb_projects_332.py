@@ -159,13 +159,13 @@ def launch(daemon_dir):
     )
 
 
-# One project row, by slug. The row is found through `.project-slug`'s `title`
-# (the full slug) because the visible label is the UPPERCASED name — which is
+# One project row, by slug. The row is found through `.project-slug`'s
+# `data-slug` (the full slug) because the visible label is the UPPERCASED name — which is
 # precisely what this issue changed, so the locator must not depend on it.
 ROW_EXPR = (
     "(s) => { const r = Array.from(document.querySelectorAll('li.project'))"
     "  .find(e => { const n = e.querySelector('.project-slug');"
-    "              return n && n.getAttribute('title') === s; });"
+    "              return n && n.getAttribute('data-slug') === s; });"
     "  if (!r) return null; const n = r.querySelector('.project-slug');"
     "  const b = n.getBoundingClientRect();"
     "  const head = r.querySelector('.project-head');"
@@ -192,7 +192,7 @@ def visible_slugs(page):
         "() => Array.from(document.querySelectorAll('li.project'))"
         "  .filter(e => e.offsetParent !== null)"
         "  .map(e => { const n = e.querySelector('.project-slug');"
-        "              return n ? n.getAttribute('title') : null; })"
+        "              return n ? n.getAttribute('data-slug') : null; })"
     )
 
 
@@ -269,8 +269,8 @@ def main():
                 "got={} want={}".format(label_b, DIR_LOCAL.upper()),
             )
             check(
-                "…while its title is still the path-hash identity",
-                bool(title_b) and title_b.startswith("path-"),
+                "…and its title is its folder, never the path-hash key",
+                bool(title_b) and not title_b.startswith("path-") and title_b.rstrip("/\\").endswith(DIR_LOCAL),
                 "got={}".format(title_b),
             )
             check(

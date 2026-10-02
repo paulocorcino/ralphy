@@ -204,7 +204,7 @@ def main():
             check(
                 "peer environment group and repo row render",
                 peer_row.is_visible()
-                and peer_row.locator(".project-slug").get_attribute("title") == SLUG
+                and peer_row.locator(".project-slug").get_attribute("data-slug") == SLUG
                 and "peer-daemon" in page.locator(".env-daemon").all_text_contents(),
             )
 

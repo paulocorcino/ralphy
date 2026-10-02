@@ -153,7 +153,7 @@ PROJECT_ROWS = """
     const head = li.querySelector('.project-head');
     const btn = li.querySelector('.project-remove');
     return {
-      slug: head?.querySelector('.project-slug')?.getAttribute('title') || null,
+      slug: head?.querySelector('.project-slug')?.getAttribute('data-slug') || null,
       hasRemove: !!btn,
       removeLaid: !!btn && btn.offsetParent !== null && btn.clientWidth > 0,
       removeLabel: btn?.getAttribute('aria-label') || null,
@@ -198,7 +198,7 @@ def command_sockets(page):
 
 
 def row_locator_for(page, slug):
-    return page.locator(f"li.project:has(.project-slug[title='{slug}']) .project-remove")
+    return page.locator(f"li.project:has(.project-slug[data-slug='{slug}']) .project-remove")
 
 
 def main():
@@ -339,7 +339,7 @@ def main():
             try:
                 page.wait_for_function(
                     "(slug) => ![...document.querySelectorAll('li.project')].some("
-                    "li => li.querySelector('.project-slug')?.getAttribute('title') === slug)",
+                    "li => li.querySelector('.project-slug')?.getAttribute('data-slug') === slug)",
                     arg=drop_slug,
                     timeout=20000,
                 )

@@ -267,11 +267,11 @@ def groups(page):
 
 
 # One project row's badge, by slug. The row is found through `.project-slug`'s
-# `title` (the full slug) because the visible label is the UPPERCASED repo name.
+# `data-slug` (the full slug) because the visible label is the UPPERCASED repo name.
 BADGE_EXPR = (
     "(() => { const r = Array.from(document.querySelectorAll('li.project'))"
     "   .find(e => { const n = e.querySelector('.project-slug');"
-    "               return n && n.getAttribute('title') === s; });"
+    "               return n && n.getAttribute('data-slug') === s; });"
     "  if (!r) return null; const b = r.querySelector('.chg-badge');"
     "  return b ? { shown: b.offsetParent !== null, text: b.textContent.trim() }"
     "           : { shown: false, text: null }; })()"
@@ -515,7 +515,7 @@ def main():
                 " const rows = Array.from(document.querySelectorAll('li.project'));"
                 " const find = (s) => rows.find(r => {"
                 "   const n = r.querySelector('.project-slug');"
-                "   return n && n.getAttribute('title') === s; });"
+                "   return n && n.getAttribute('data-slug') === s; });"
                 " const read = (s) => { const r = find(s); if (!r) return null;"
                 "   const b = r.querySelector('.chg-badge');"
                 "   return b ? { shown: b.offsetParent !== null, text: b.textContent.trim() }"

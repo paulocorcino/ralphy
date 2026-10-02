@@ -510,8 +510,10 @@ function shell() {
           const before = new Map(this.projects.filter((p) => !p.daemon).map((p) => [p.slug, p]));
           const local = repos.map((x) => ({
             slug: x.slug,
-            // The on-disk path: `repoLabel` needs it for a remoteless repo,
-            // whose slug is a hash. The SLUG stays the identity (ADR-0008 D7).
+            // What the operator calls the project; the SLUG stays the identity
+            // (ADR-0008 D7), and for a remoteless repo it is a hash key.
+            name: x.name || x.slug,
+            // The on-disk path: the tooltip of a remoteless repo shows it.
             path: x.path || "",
             // The ABSOLUTE native root (#362), distinct from `path` (git's
             // forward-slashed `--show-toplevel` that peers parse).
@@ -619,6 +621,7 @@ function shell() {
             // `<daemon_id>/<slug>`: the same `owner/repo` on two daemons is two rows.
             key: x.key,
             slug: x.slug,
+            name: x.name || x.slug,
             path: x.path || "",
             branch: x.branch || "",
             branches: [],
@@ -847,7 +850,19 @@ function shell() {
     projectLabel(ref) {
       if (!ref) return "";
       const row = this.projects.find((p) => this.repoRef(p) === ref);
-      return window.WBFleet.refLabel(ref, row?.env);
+      if (!row) return window.WBFleet.refLabel(ref);
+      const name = window.WBProject.projectName(row);
+      return row.daemon && row.env ? `${name} · ${row.env}` : name;
+    },
+    // The tooltip twin of `projectLabel`: `owner/repo`, or the full folder of
+    // a remoteless repo, plus the environment of a peer. Never a hash key or
+    // a daemon id.
+    projectTitle(ref) {
+      if (!ref) return "";
+      const row = this.projects.find((p) => this.repoRef(p) === ref);
+      if (!row) return window.WBFleet.refLabel(ref);
+      const who = window.WBProject.projectTitle(row);
+      return row.daemon && row.env ? `${who} · ${row.env}` : who;
     },
 
     // The global `/` shortcut.
@@ -912,8 +927,8 @@ function shell() {
     },
 
     // The branch chip lives on the Files bar (#332), which only the OPEN
-    // project renders. `.project-slug` keeps its own title: it is the ADR-0008
-    // D7 identity and how the browser tests find a row.
+    // project renders. `.project-slug` carries the ADR-0008 D7 identity in
+    // `data-slug`, which is how the browser tests find a row.
     rowOpen(p) {
       return this.openSlug === this.repoRef(p);
     },
@@ -3516,7 +3531,9 @@ function shell() {
       }
       // The list as it is now, not as the last poll left it.
       await this.refreshLive();
-      const consoles = this.localSessions().map((s) => s.name || s.repo);
+      const consoles = this.localSessions().map(
+        (s) => s.name || (s.repo && s.repo !== "~" ? this.projectLabel(s.repo) : "home"),
+      );
       // A peer that can be woken through `wsl.exe` is the one the update takes
       // after this daemon (ADR-0056 §11). Its consoles close only if it takes a
       // new version, so they are counted apart.
@@ -5690,7 +5707,9 @@ function shell() {
     // pick. The full ref rides the head's title.
     consoleMenuRepoName() {
       if (!this.openSlug) return "";
-      return window.WBFleet.refSlug(this.openSlug).split("/").pop() || this.openSlug;
+      const row = this.projects.find((p) => this.repoRef(p) === this.openSlug);
+      const name = row ? window.WBProject.projectName(row) : window.WBFleet.refSlug(this.openSlug);
+      return name.split("/").pop() || name;
     },
     // Every row is a launch (the menu is "New console"); `opts.tryAnyway` is
     // the unavailable row's escape hatch.
@@ -6117,7 +6136,8 @@ function shell() {
     // `owner/repo` without the environment: the operator already knows where
     // each console runs, and the list is about telling the consoles apart.
     columnRepoLabel(ref) {
-      return window.WBFleet.refLabel(ref);
+      const row = this.projects.find((p) => this.repoRef(p) === ref);
+      return row ? window.WBProject.projectName(row) : window.WBFleet.refLabel(ref);
     },
     columnView() {
       return WBColumns.filterGroups(this.columnGroups, this.columnFilter, (ref) => this.columnRepoLabel(ref));

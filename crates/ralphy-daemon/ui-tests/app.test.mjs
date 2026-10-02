@@ -2102,10 +2102,30 @@ test("Remove project names a remoteless repo by its folder, not its path- slug",
     asked.push(o.message);
     return false;
   };
-  await state.removeProject({ slug: "path-8ee0b8b587ea7891", path: "/home/me/widget/" });
+  await state.removeProject({ slug: "path-8ee0b8b587ea7891", name: "widget", path: "/home/me/widget/" });
   await state.removeProject({ slug: "owner/repo", path: "/home/me/elsewhere" });
   assert.deepEqual(asked, [
     "Remove “widget” from Ralphy? Files on disk are kept.",
     "Remove “owner/repo” from Ralphy? Files on disk are kept.",
   ]);
+});
+
+test("projectLabel and projectTitle never print a path- key or a daemon id", () => {
+  const { state } = loadShell();
+  state.projects = [
+    { slug: "path-8ee0b8b587ea7891", name: "widget", path: "C:/Dev/widget" },
+    { key: "01KYPEER/path-1234", slug: "path-1234", name: "gadget", path: "/home/me/gadget", daemon: "01KYPEER", env: "WSL: Ubuntu" },
+    { slug: "owner/repo", name: "owner/repo", path: "C:/Dev/repo" },
+  ];
+  const ref = (p) => state.repoRef(p);
+  const [local, peer, forge] = state.projects;
+  assert.equal(state.projectLabel(ref(local)), "widget");
+  assert.equal(state.projectTitle(ref(local)), "C:/Dev/widget");
+  assert.equal(state.projectLabel(ref(peer)), "gadget · WSL: Ubuntu");
+  assert.equal(state.projectTitle(ref(peer)), "/home/me/gadget · WSL: Ubuntu");
+  assert.equal(state.projectLabel(ref(forge)), "owner/repo");
+  assert.equal(state.projectTitle(ref(forge)), "owner/repo");
+  state.openSlug = ref(local);
+  assert.equal(state.consoleMenuRepoName(), "widget");
+  assert.equal(state.columnRepoLabel(ref(peer)), "gadget");
 });
