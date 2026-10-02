@@ -3469,7 +3469,9 @@ function shell() {
         } else if (st.status === "exited") {
           this.addHostStep({ type: "exit", verb, code: st.code });
           // `loadRepos`, not `loadFleet`: the latter CONCATENATES peer rows.
-          if (verb === "host.add" && st.code === 0) this.loadRepos();
+          // An add that saved the host (`done`) but ended non-zero (the tunnel is not
+          // up) still made a row, so the list shows it and offers Edit.
+          if (verb === "host.add" && (st.code === 0 || this.addHost.done)) this.loadRepos();
           if (verb === "host.install" && st.code === 0) this.addHostCheckAgain();
         } else if (st.status === "error") {
           this.addHostFailed(window.WBFail.failed(st, "Could not reach the host: the daemon did not start the command."));

@@ -390,5 +390,60 @@ fn nudge(port: u16, daemon_id: &str, out: &mut Report<impl Write>) -> Result<()>
     if let Some(diagnosis) = body["diagnosis"].as_str().filter(|d| !d.is_empty()) {
         out.note(diagnosis)?;
     }
-    Ok(())
+    nudge_verdict(&body).map_err(|message| anyhow::anyhow!(message))
+}
+
+/// The nudge answer says `ready: false` when the tunnel does not reach the
+/// daemon. An older daemon sends no `ready`, and that is not a failure.
+fn nudge_verdict(body: &serde_json::Value) -> std::result::Result<(), String> {
+    if body["ready"].as_bool() != Some(false) {
+        return Ok(());
+    }
+    let diagnosis = body["diagnosis"].as_str().unwrap_or("").trim();
+    let diagnosis = diagnosis.trim_end_matches('.');
+    if diagnosis.is_empty() {
+        Err("the host was added, but the tunnel does not reach its daemon".to_string())
+    } else {
+        Err(format!(
+            "the host was added, but the tunnel does not reach its daemon: {}",
+            lowercase_first(diagnosis)
+        ))
+    }
+}
+
+fn lowercase_first(text: &str) -> String {
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(c) => c.to_lowercase().chain(chars).collect(),
+        None => String::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::nudge_verdict;
+    use serde_json::json;
+
+    #[test]
+    fn a_nudge_that_is_not_ready_fails_the_add_with_its_diagnosis() {
+        let body =
+            json!({"ready": false, "state": "down", "diagnosis": "The daemon refused the token."});
+        let message = nudge_verdict(&body).expect_err("not ready must fail");
+        assert!(
+            message.contains("the daemon refused the token"),
+            "{message}"
+        );
+        assert!(!message.contains("--peer-store"), "{message}");
+        assert!(!message.ends_with('.'), "{message}");
+    }
+
+    #[test]
+    fn a_ready_nudge_passes() {
+        assert!(nudge_verdict(&json!({"ready": true})).is_ok());
+    }
+
+    #[test]
+    fn a_body_without_ready_passes() {
+        assert!(nudge_verdict(&json!({"state": "up"})).is_ok());
+    }
 }
