@@ -1,4 +1,4 @@
 ---
 kind: fix
 ---
-The workbench names a project with no remote by its folder everywhere, not by an internal key.
+The workbench shows names and plain words, not internal keys or codes: a project with no remote is named by its folder.
