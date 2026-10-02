@@ -21,12 +21,18 @@ window.WBProject = (function () {
   // full `owner/repo` already shows in the top crumb, so trimming the owner here
   // declutters the accordion.
   function repoLabel(p) {
+    return (projectName(p).split("/").pop() || p.slug).toUpperCase();
+  }
+
+  // What the operator calls the project in a sentence: `owner/repo`, or the
+  // directory basename for a remoteless repo.
+  function projectName(p) {
     // A remoteless repo has no name in its slug: ADR-0008 D7 keys it
-    // `path-<hash>`, which reads as twenty useless characters in a fixed 300px
-    // column. The directory basename is what the operator calls it. The `/`
-    // test is not optional — `slug_from_url` always yields `owner/repo`, so a
-    // real GitHub repo named `owner/path-utils` is NOT this case and must
-    // never be re-labelled off disk (#332).
+    // `path-<hash>`, which reads as twenty useless characters. The directory
+    // basename is what the operator calls it. The `/` test is not optional —
+    // `slug_from_url` always yields `owner/repo`, so a real GitHub repo named
+    // `owner/path-utils` is NOT this case and must never be re-labelled off
+    // disk (#332).
     if (!p.slug.includes("/") && p.slug.startsWith("path-")) {
       // Windows and POSIX in one pass. Trailing separators go FIRST, or
       // `C:\src\widget\` basenames to the empty string.
@@ -34,9 +40,9 @@ window.WBProject = (function () {
         .replace(/[\\/]+$/, "")
         .split(/[\\/]/)
         .pop();
-      if (base) return base.toUpperCase();
+      if (base) return base;
     }
-    return (p.slug.split("/").pop() || p.slug).toUpperCase();
+    return p.slug;
   }
 
   // The row's tooltip. A PEER row says its environment and never its branch:
@@ -241,6 +247,7 @@ window.WBProject = (function () {
 
   return {
     repoLabel,
+    projectName,
     rowTitle,
     headLabel,
     agentStateOf,

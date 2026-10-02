@@ -937,7 +937,7 @@ function shell() {
       const ref = this.repoRef(p);
       const ok = await this.askConfirm({
         title: "Remove project",
-        message: `Remove “${p.slug}” from Ralphy? Files on disk are kept.`,
+        message: `Remove “${window.WBProject.projectName(p)}” from Ralphy? Files on disk are kept.`,
         confirmLabel: "Remove",
         danger: true,
       });

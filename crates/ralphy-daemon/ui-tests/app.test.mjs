@@ -2094,3 +2094,18 @@ test("renderMenu sets a label as text, never as markup", () => {
     }
   }
 });
+
+test("Remove project names a remoteless repo by its folder, not its path- slug", async () => {
+  const { state } = loadShell();
+  const asked = [];
+  state.askConfirm = async (o) => {
+    asked.push(o.message);
+    return false;
+  };
+  await state.removeProject({ slug: "path-8ee0b8b587ea7891", path: "/home/me/widget/" });
+  await state.removeProject({ slug: "owner/repo", path: "/home/me/elsewhere" });
+  assert.deepEqual(asked, [
+    "Remove “widget” from Ralphy? Files on disk are kept.",
+    "Remove “owner/repo” from Ralphy? Files on disk are kept.",
+  ]);
+});
