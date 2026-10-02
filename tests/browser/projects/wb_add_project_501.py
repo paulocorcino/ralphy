@@ -10,8 +10,11 @@ Scenario c  a local repo: "Add project", the dialog closes, and the new
 Scenario d  a subfolder of a repo: "Add <repo>", and the repo root is what
             the registry holds
 Scenario e  a plain folder: "Create repository and add" creates `.git`
-Scenario f  a typing error: "This folder does not exist", disabled, and no
-            folder is created
+Scenario f  a typing error in a parent folder: "This folder does not exist",
+            disabled, and no folder is created
+Scenario i  a new name in a folder that exists: "Create folder and
+            repository" with the full path; Enter creates nothing; the click
+            creates the folder and its repository, and adds it
 Scenario g  a second clone of an added `owner/repo` is refused with the path
             of the first; the dialog stays open with the path and the reason
 Scenario h  the first clone reads "Already in Projects", disabled
@@ -295,8 +298,8 @@ def main():
             # --- f: a typing error ------------------------------------------
             open_dialog(page)
             typo = str(base / "no-such-folder")
-            type_folder(page, typo)
-            check("f: a missing folder reads This folder does not exist", wait_label(page, "This folder does not exist", False), str(primary(page)))
+            type_folder(page, typo + sep + "x")
+            check("f: a missing parent reads This folder does not exist", wait_label(page, "This folder does not exist", False), str(primary(page)))
             check("f: …and the button is disabled", primary(page)["disabled"])
             check("f: …and no folder was created", not os.path.exists(typo))
 
@@ -328,6 +331,28 @@ def main():
             check("h: an added folder reads Already in Projects", wait_label(page, "Already in Projects", False), str(primary(page)))
             check("h: …and the button is disabled", primary(page)["disabled"])
 
+            # --- i: a new folder --------------------------------------------
+            fresh = base / "new project"
+            type_folder(page, str(fresh))
+            check("i: a new name reads Create folder and repository", wait_label(page, "Create folder and repository", True), str(primary(page)))
+            hint = page.evaluate("() => document.querySelector('.modal[aria-label=\\'Add a project\\'] .run-help')?.textContent.trim()")
+            check(
+                "i: …the line under the field names the full path",
+                hint == f"Ralphy creates the folder {fresh} and a git repository in it.",
+                repr(hint),
+            )
+            page.focus("#add-project-folder")
+            page.keyboard.press("Enter")
+            time.sleep(1.5)
+            check(
+                "i: …Enter creates nothing and the dialog stays open",
+                not fresh.exists() and page.evaluate(f"() => {SH}.addProject.open"),
+            )
+            page.screenshot(path=os.path.join(SHOT_DIR, "501-add-project-create-folder.png"))
+            added_and_selected(page, str(fresh), "i")
+            check("i: …the folder exists and is a repository", (fresh / ".git").exists())
+
+            open_dialog(page)
             page.keyboard.press("Escape")
             page.wait_for_function(f"() => {SH}.addProject.open === false", timeout=5000)
             check("Escape closes the dialog", True)
@@ -338,7 +363,7 @@ def main():
 
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     # A deleted scenario must not silently shrink the suite.
-    check_floor = 31
+    check_floor = 37
     if len(results) != check_floor:
         print(f"[FAIL] the suite ran {len(results)} checks, expected {check_floor}", flush=True)
         sys.exit(1)
