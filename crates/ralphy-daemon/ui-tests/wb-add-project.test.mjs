@@ -217,13 +217,36 @@ test("picking a folder goes down one level; `..` goes up", () => {
   assert.equal(d.text, "D:\\");
 });
 
+test("the `..` row goes up one folder, to the drive list above a drive root", () => {
+  const P = load();
+  let s = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "C:\\Dev\\"), DEV);
+  const rows = P.entries(s);
+  assert.deepEqual(rows[0], { name: "..", up: true, repo: false, added: false });
+  assert.equal(rows.length, DEV.entries.length + 1);
+  s = P.next(s, { type: "pick", name: "..", up: true });
+  assert.equal(s.text, "C:\\");
+  assert.equal(P.request(s).path, "C:\\");
+
+  s = listed(P, s, { dir: { path: "C:\\", root: null, added: false }, entries: [{ name: "Dev", repo: false, added: false }] });
+  assert.equal(P.entries(s)[0].name, "..");
+  s = P.next(s, { type: "pick", name: "..", up: true });
+  assert.equal(s.text, "");
+  assert.equal(P.request(s).path, "");
+
+  // No row above `/`, and none while a name is being typed.
+  let l = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "/"), { dir: { path: "/", root: null, added: false }, entries: [] });
+  assert.equal(P.entries(l).length, 0);
+  let f = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "C:\\Dev\\fi"), DEV);
+  assert.equal(P.entries(f).length, DEV.entries.length);
+});
+
 test("the arrows move the highlight and wrap around", () => {
   const P = load();
   let s = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "C:\\Dev\\"), DEV);
   s = P.next(s, { type: "move", by: 1 });
   assert.equal(s.active, 0);
   s = P.next(s, { type: "move", by: -1 });
-  assert.equal(s.active, DEV.entries.length - 1);
+  assert.equal(s.active, P.entries(s).length - 1);
 });
 
 test("while adding, the controls are locked; a failure keeps the path", () => {

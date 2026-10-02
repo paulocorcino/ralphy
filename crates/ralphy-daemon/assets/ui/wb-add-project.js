@@ -125,9 +125,27 @@
     return lastName(path.replace(/[\\/]+$/, "")) || path;
   }
 
-  // The listed entries, for the list under the field.
-  function entries(state) {
+  // The folders the daemon listed.
+  function listed(state) {
     return (state.listing && state.listing.entries) || [];
+  }
+
+  // The text that lists the folder above the listed one: its parent, or ""
+  // (the drive list) above a Windows drive root. `null` at the top.
+  function upText(state) {
+    const dir = state.listing && state.listing.dir;
+    if (!dir || !dir.path || !endsWithSep(state.text)) return null;
+    const trimmed = dir.path.replace(/[\\/]+$/, "");
+    if (!trimmed) return null;
+    if (/^[A-Za-z]:$/.test(trimmed)) return "";
+    return parentText(trimmed) || null;
+  }
+
+  // The rows of the list under the field: `..` first when there is a folder
+  // above, then the listed folders.
+  function entries(state) {
+    const rows = listed(state);
+    return upText(state) === null ? rows : [{ name: "..", up: true, repo: false, added: false }].concat(rows);
   }
 
   function sameName(a, b, sep) {
@@ -170,7 +188,7 @@
       if (dir.root && !repo) inside = dir.root;
     } else {
       const name = lastName(text);
-      const entry = entries(state).find((e) => sameName(e.name, name, sep));
+      const entry = listed(state).find((e) => sameName(e.name, name, sep));
       if (!entry) {
         return { action: "missing", label: "This folder does not exist", help: "", path: "", init: false };
       }
@@ -322,6 +340,11 @@
       case "pick": {
         if (state.adding) return state;
         const sep = sepOf(state);
+        if (ev.up) {
+          const up = upText(state);
+          if (up === null) return state;
+          return Object.assign({}, state, { text: up, needStart: false, chosen: true, active: -1, error: "" });
+        }
         const base = endsWithSep(state.text) ? state.text : parentText(state.text);
         const text = state.listing && state.listing.dir && state.listing.dir.path === "" ? ev.name : base + ev.name;
         return Object.assign({}, state, { text: withSep(text, sep), needStart: false, chosen: true, active: -1, error: "" });

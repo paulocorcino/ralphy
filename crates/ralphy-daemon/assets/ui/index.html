@@ -2766,6 +2766,7 @@
                   :aria-selected="i === addProject.active" @click="addProjectPick(e)">
                 <svg x-icon="'folder'"></svg>
                 <span class="add-project-name" x-text="e.name"></span>
+                <span class="add-project-mark" x-show="e.up" x-text="'Up one folder'"></span>
                 <span class="add-project-mark" x-show="e.error" x-text="'Cannot read this folder'"></span>
                 <span class="add-project-mark" x-show="!e.error && e.added" x-text="'Added'"></span>
                 <span class="add-project-mark" x-show="!e.error && !e.added && e.repo" x-text="'Repository'"></span>

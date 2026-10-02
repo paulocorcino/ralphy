@@ -3140,7 +3140,7 @@ function shell() {
     },
     addProjectPick(entry) {
       if (entry.error) return;
-      this.addProjectStep({ type: "pick", name: entry.name });
+      this.addProjectStep({ type: "pick", name: entry.name, up: !!entry.up });
       this.addProjectList(0);
       this.$refs.addProjectFolder?.focus();
     },
