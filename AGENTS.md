@@ -8,7 +8,9 @@ the source is `.github/workflows/ci.yml`, and it wins over any ADR or doc.
 
 - **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)** — the architecture map:
   the owner of each fact, who may call whom, and where an outside product or
-  platform may be used. Read its fact index before you add an outside call
+  platform may be used. Its §1 names the section each kind of change needs;
+  read that section, not the whole file. Read its fact index (§7) before you
+  add an outside call
   (`gh`, an HTTP API, a vendor CLI), a new path between browser, daemon and
   CLI, a watcher or timer, a new panel or other place in the workbench that
   shows a fact, or a second computation of a fact the product already knows.
@@ -19,8 +21,9 @@ the source is `.github/workflows/ci.yml`, and it wins over any ADR or doc.
   a setting that turns a protection off, or a vendored library.
 - **[CONTEXT.md](./CONTEXT.md)** — the ubiquitous language. Every domain term
   (run, queue label, adapter, planner/executor, event sink…) is defined there.
-  Use these words and only these words. Read it before you name a new type,
-  module, flag, or term a user sees.
+  Use these words and only these words. Before you name a new type, module,
+  flag, or term a user sees, search it for the word: each term starts a line
+  as `**Term**:`. Read the whole file only to learn the domain.
 - **[docs/adr/](./docs/adr/)** — architecture decisions. Read the relevant ADR
   before you change or add a boundary between crates. A boundary that no ADR
   covers needs an ADR before any code, and the change is probably in the wrong
