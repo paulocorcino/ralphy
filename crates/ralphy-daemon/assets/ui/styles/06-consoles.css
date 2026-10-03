@@ -540,6 +540,13 @@
      browser's, not the terminal's, and A+/A− is the zoom a console wants. */
   touch-action: none;
 }
+/* iOS Safari zooms the page when a field under 16px takes focus, and xterm's
+   input field inherits the body's 13px. The pinch that would undo the zoom is
+   the one `touch-action: none` above gives up, so over a console the zoom
+   stuck. The field is invisible, so its size changes nothing on screen. */
+.session-body .xterm .xterm-helper-textarea {
+  font-size: 16px;
+}
 /* THE KEY BAR — the row a virtual keyboard does not have. Hidden unless the
    window carries `.keys`, which `applyKeyBar` sets from the operator's setting
    (auto = this machine has a touch surface). It is the LAST flex child, under
