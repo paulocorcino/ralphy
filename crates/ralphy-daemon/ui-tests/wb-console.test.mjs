@@ -1311,6 +1311,7 @@ test("resumeAll and setStaleProbe are exported like the rest of the module's sea
 // allowed to sleep, so each test below changes exactly one thing about it.
 const live = {
   intersecting: false,
+  covered: false,
   dormant: false,
   maximized: false,
   fullscreen: false,
@@ -1334,6 +1335,15 @@ test("dormancyDecision sleeps only a live console nobody can see", () => {
       "a dormant console that comes back wakes even maximized and focused",
       { intersecting: true, ...asleep, maximized: true, focused: true },
       "wake",
+    ],
+    // Columns, a maximize or the physical screen fill the viewport. The
+    // windows under them are inside it, so the observer calls them visible,
+    // but nobody sees them: they sleep, and they do not wake until uncovered.
+    ["a console under a full bleed sleeps", { intersecting: true, covered: true }, "sleep"],
+    [
+      "a dormant console under a full bleed stays asleep",
+      { intersecting: true, covered: true, ...asleep },
+      "hold",
     ],
     // Already asleep and still away: nothing to do. Without this the caller
     // would re-arm its timer on every observer callback for the life of the page.

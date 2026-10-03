@@ -515,6 +515,16 @@ does. What §9 forbids is CLAIMING, and nothing here claims.*
 desk record (ADR-0050), never told to the daemon. The daemon's view of who holds
 the baton is exactly what it was.)*
 
+*(Amended 2026-10-03, covered consoles. Columns, a maximize and the physical
+screen fill the viewport. The consoles under them are still inside it, and the
+`IntersectionObserver` reports geometry, not paint, so it called them visible
+and they never slept. With any number of columns (§5), the live terminals
+passed Chrome's limit of about 16 WebGL contexts, and the canvas of a dropped
+context turned white with a sad face. A console that does not itself fill the
+viewport, while another console does, now counts as off the viewport: it sleeps
+after the same grace period, and it wakes when the cover goes. The rule is the
+same pure fold with one more input.)*
+
 *(Amended 2026-09-22, the half-open writer. Measured behind a tunnel
 (TunnelDeck for dev tunnels): after a phone switched from wifi to 4G, the tunnel
 agent kept its legs to the daemon ESTABLISHED for minutes although the browser

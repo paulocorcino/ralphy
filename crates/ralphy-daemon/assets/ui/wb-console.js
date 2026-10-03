@@ -65,7 +65,9 @@ window.WBConsole = (function () {
   // the DOM renderer.
   //
   // So a window off the viewport long enough disposes its terminal and closes
-  // its socket, and rebuilds on return. The SESSION is untouched — child, PTY and
+  // its socket, and rebuilds on return. A window under columns, a maximize or
+  // the physical screen counts as off the viewport (ADR-0051 §9, covered
+  // amendment). The SESSION is untouched — child, PTY and
   // scrollback are the daemon's (session.rs) and the reattach replays them; same
   // "dispose the terminal, keep the record" as `tearDownMember`, releasing the
   // writer slot the same way. A dormant console wakes by the ORDINARY attach and
@@ -120,6 +122,9 @@ window.WBConsole = (function () {
   let cascade = 0;
 
   function changed() {
+    // A close takes a full bleed away without moving the windows under it, so
+    // the observer has nothing to report.
+    refreshCover();
     document.dispatchEvent(new CustomEvent("workbench:consoles-changed", { detail: { count: wins.size } }));
   }
 
@@ -831,12 +836,36 @@ window.WBConsole = (function () {
     return verdict;
   }
 
+  // Columns, a maximize and the physical screen each fill the whole viewport,
+  // so every other console is under them.
+  function fillsViewport(win) {
+    return win.classList.contains("maximized") || win.classList.contains("column") || isFull(win);
+  }
+
+  function isCovered(win) {
+    if (fillsViewport(win)) return false;
+    for (const other of wins) if (other !== win && fillsViewport(other)) return true;
+    return false;
+  }
+
+  // Re-ask only the windows whose cover changed: `applyDormancy` restarts the
+  // grace period, and the callers run on every columns repaint.
+  function refreshCover() {
+    for (const win of wins) {
+      const covered = isCovered(win);
+      if (covered === !!win._covered) continue;
+      win._covered = covered;
+      applyDormancy(win);
+    }
+  }
+
   // The live reading of one window, handed to the pure fold.
   function dormancyInputs(win) {
     return {
       // Unobserved windows have never been told; treat them as visible, which
       // is the reading that changes nothing.
       intersecting: win._visible !== false,
+      covered: isCovered(win),
       dormant: !!win._dormant,
       maximized: win.classList.contains("maximized") || win.classList.contains("column"),
       fullscreen: isFull(win),
@@ -2053,6 +2082,7 @@ window.WBConsole = (function () {
       // titlebar is the operator's exit affordance on a tablet.
       win?.classList.toggle("fullscreen", on);
     }
+    refreshCover();
   }
 
   // A maximized console is a FULL BLEED: anything stacked on top of it is a
@@ -2094,6 +2124,7 @@ window.WBConsole = (function () {
     // The body-level mirror, for the phone bleed: the rail and the sidebar are
     // `#workspace`'s cousins, unreachable from `maxlock`. The width gate is CSS's.
     document.body?.classList.toggle("console-max", maxed);
+    refreshCover();
   }
 
   // The maximize pin, DERIVED the same way: `--max-left`/`--max-top` are only
@@ -2267,7 +2298,11 @@ window.WBConsole = (function () {
     }
     win.style.zIndex = z;
     for (const w of workspace().querySelectorAll(".session-window.focused, .note-card.focused")) {
-      if (w !== win) w.classList.remove("focused");
+      if (w === win) continue;
+      w.classList.remove("focused");
+      // Focus held it awake (`dormancyDecision` D2); the observer will not
+      // report a window that did not move.
+      if (wins.has(w)) applyDormancy(w);
     }
     win.classList.add("focused");
   }
@@ -4655,6 +4690,7 @@ window.WBConsole = (function () {
   //   "hold"  — leave it exactly as it is.
   function dormancyDecision({
     intersecting,
+    covered,
     dormant,
     maximized,
     fullscreen,
@@ -4663,8 +4699,9 @@ window.WBConsole = (function () {
     ended,
     sessionId,
   }) {
-    // Visible outranks everything.
-    if (intersecting) return dormant ? "wake" : "hold";
+    // Visible outranks everything. A window under a full bleed is inside the
+    // viewport but nobody sees it: the observer reports geometry, not paint.
+    if (intersecting && !covered) return dormant ? "wake" : "hold";
     if (dormant) return "hold";
     // D1: maximized/fullscreen fills the viewport; "outside" is a lie the
     // observer can tell in the frame between the class and the layout.
@@ -6007,6 +6044,8 @@ window.WBConsole = (function () {
         renderTitle(win, title, presentation);
         title.title = presentation.tooltip;
         persistWin(win);
+        // Without an id the window could not sleep (`dormancyDecision` D5).
+        applyDormancy(win);
       },
       // Parked: watching a session another window drives. It KEEPS its window
       // and output; the strip's button is the only way `takeover` is ever sent
