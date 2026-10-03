@@ -101,7 +101,10 @@ window.WBConsole = (function () {
     return dormancyObserver;
   }
   function trackDormancy(win) {
-    dormancyWatch()?.observe(win);
+    const watch = dormancyWatch();
+    if (watch) watch.observe(win);
+    // Nothing will ever report this window seen.
+    else win._term?.useGpu();
   }
   // Paired with every `wins.delete`: the observer holds its targets, so a window
   // taken off the plane without this stays reachable for the life of the page.
@@ -827,7 +830,9 @@ window.WBConsole = (function () {
       win._dormantTimer = null;
     }
     if (verdict === "wake") wakeWindow(win);
-    else if (verdict === "sleep") {
+    // `=== true`, not the fold's reading: an unobserved window is not yet seen.
+    if (win._visible === true && !isCovered(win)) win._term?.useGpu();
+    if (verdict === "sleep") {
       win._dormantTimer = setTimeout(() => {
         win._dormantTimer = null;
         if (dormancyDecision(dormancyInputs(win)) === "sleep") sleepWindow(win);
@@ -4907,7 +4912,15 @@ window.WBConsole = (function () {
     // NOT on WebKit: the addon renders scrolled rows twice there (xterm.js
     // #3357, #5816; reproduced with the scrollbar, so the renderer, not our
     // gesture). Every browser on iPadOS is WebKit.
-    if (!prefersDomRenderer(navigator.vendor)) {
+    // The terminal starts on the DOM renderer, and the window loads the addon
+    // once it is seen (`applyDormancy`). LIMIT: Chrome keeps ~16 live WebGL
+    // contexts per renderer process and drops the oldest past it; a restore
+    // that gave every console on the desk a context lost the extra ones
+    // (measured: 22 consoles, 6 lost, Chrome on Windows, 2026-10-03).
+    let gpuLoaded = false;
+    function useGpu() {
+      if (gpuLoaded || prefersDomRenderer(navigator.vendor)) return;
+      gpuLoaded = true;
       try {
         const webgl = new WebglAddon.WebglAddon();
         webgl.onContextLoss(() => webgl.dispose());
@@ -5592,6 +5605,7 @@ window.WBConsole = (function () {
     return {
       term,
       fit,
+      useGpu,
       get ws() {
         return ws;
       },

@@ -13,9 +13,11 @@ the daemon helpers are `wb_columns_473.py`'s:
   w-a  loose, live shell, maximized
   w-b  loose, live shell, inside the viewport under w-a
 
-C1  setup: w-a is maximized, w-b has a terminal and is inside the viewport
+C1  setup: w-a is maximized, w-b has a terminal and is inside the viewport;
+    only the seen w-a draws with WebGL, so a restore of a large desk does not
+    pass Chrome's context limit
 C2  after the grace period w-b sleeps; w-a, the full bleed, does not
-C3  a restore of w-a uncovers w-b, and it wakes at once
+C3  a restore of w-a uncovers w-b, and it wakes at once with WebGL
 C4  maximized again, w-b sleeps again
 C5  opened as a column, w-b wakes: a column is never covered
 
@@ -43,7 +45,7 @@ SHOT = os.path.join(T.REPO_ROOT, ".ralphy", "screenshots", "columns-cover-2026-1
 VIEW = {"width": 2400, "height": 1600}
 # `DORMANT_AFTER_MS` is 15 s.
 SLEEP_WAIT_MS = 20000
-FLOOR = 9  # every check above the floor check; pinned after the first green run
+FLOOR = 12  # every check above the floor check; pinned after the first green run
 
 results = []
 
@@ -62,6 +64,7 @@ STATE = """(id) => {
     term: !!w._term,
     max: w.classList.contains('maximized'),
     column: w.classList.contains('column'),
+    gpu: !!w.querySelector('.xterm-screen canvas'),
     inside: r.right > ws.left && r.left < ws.right && r.bottom > ws.top && r.top < ws.bottom,
   };
 }"""
@@ -104,6 +107,8 @@ def main():
             check("C1 w-a is maximized", a["max"], str(a))
             check("C1 w-b has a terminal", b["term"] and not b["dormant"], str(b))
             check("C1 w-b is inside the viewport", b["inside"], str(b))
+            check("C1 the seen w-a draws with WebGL", a["gpu"], str(a))
+            check("C1 the covered w-b does not", not b["gpu"], str(b))
 
             # C2 -------------------------------------------------------------
             slept = wait_for(page, "() => __W('w-b').classList.contains('dormant')", SLEEP_WAIT_MS)
@@ -119,6 +124,8 @@ def main():
             woke = wait_for(page, "() => !!__W('w-b')._term", 2000)
             b = state(page, "w-b")
             check("C3 restore uncovers w-b and it wakes at once", woke and not b["dormant"], str(b))
+            gpu = wait_for(page, "() => !!__W('w-b').querySelector('.xterm-screen canvas')", 2000)
+            check("C3 …and draws with WebGL", gpu, str(state(page, "w-b")))
 
             # C4 -------------------------------------------------------------
             T.press_max(page, "w-a")

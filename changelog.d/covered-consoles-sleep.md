@@ -1,4 +1,4 @@
 ---
 kind: fix
 ---
-Consoles hidden under columns or a maximized console now sleep, so the console canvas no longer goes white with a sad face.
+A desk with many consoles no longer shows a white console with a sad face after a reload or under columns.
