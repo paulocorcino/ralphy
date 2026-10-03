@@ -644,6 +644,20 @@
 .session-offline p {
   margin: 0;
 }
+/* The daemon's own sentence for a peer that cannot serve the console: closed by
+   default, because it names ports and errors the box's sentence leaves out. */
+.session-detail {
+  max-width: 36rem;
+  font-size: 0.76rem;
+}
+.session-detail > summary {
+  cursor: pointer;
+}
+.session-detail > p {
+  margin-top: 0.35rem;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
 /* A parked console: this window watches a session another window drives (issue
    #334). One line between the titlebar and the terminal — the session stays
    visible and keeps streaming, so the strip must not take the body's height.

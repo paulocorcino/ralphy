@@ -1137,6 +1137,70 @@ window.WBConsole = (function () {
     return { repo, agent: record.agent, checkout: record.checkout ?? null };
   }
 
+  // The name a console box uses for the host of a peer project: the machine
+  // name of a tunnel peer, else the environment (`WSL: Ubuntu`). `fallback` is
+  // the environment the desk record kept, for a box drawn before the fleet list.
+  function peerHost(group, fallback) {
+    const host = group ? window.WBFleet.groupHost(group) || group.environment : "";
+    return host || fallback || "The other computer";
+  }
+
+  // What a console box says about a project whose peer cannot serve it, from
+  // that peer's fleet state. `group` is its fleet group (wb-fleet.js), or null
+  // before the fleet list arrived; `refusal` is the daemon's sentence from a
+  // refused launch. `action` is one of
+  //   "wake"  — a nudge can answer this state: wake the peer, then relaunch;
+  //   "retry" — launch again;
+  //   "wait"  — the daemon is already opening the tunnel again;
+  //   null    — no click here fixes it (a token, a version, a descriptor).
+  // The daemon's diagnosis is the detail: it names the cause and the remedy.
+  function peerOfflineView(group, refusal, fallbackHost) {
+    const host = peerHost(group, fallbackHost);
+    const detail = (group && group.diagnosis) || (typeof refusal === "string" ? refusal.trim() : "");
+    const view = (text, action) => ({ text, detail, action });
+    const wakeOrRetry = window.WBFleet.wakeable(group) ? "wake" : "retry";
+    switch (group && group.state) {
+      case "asleep":
+        return view(`${host} is asleep.`, wakeOrRetry);
+      case "unreachable":
+        return view(`Ralphy on ${host} is not running.`, wakeOrRetry);
+      case "tunnel-closed":
+        return view(`Reconnecting to ${host}…`, "wait");
+      case "tunnel-silent":
+        return view(`${host} does not answer. Start Ralphy there, then try again.`, "retry");
+      case "unauthorized":
+      case "version-mismatch":
+      case "refused":
+      case "malformed":
+        return view(`${host} cannot open this console.`, null);
+      default:
+        // Reachable or not known yet: the fleet has not seen what the launch saw.
+        return view(`${host} did not start this console.`, "retry");
+    }
+  }
+
+  // What a peer placeholder does on a fleet read. `available` and `offline`
+  // are both false while the peer's state is unknown. Returns one of
+  //   "relaunch" — the peer is back and this is a shell: open it again;
+  //   "offer"    — the peer is back: say so and leave the click to the
+  //                operator, because a resume never launches a vendor CLI;
+  //   "stay"     — keep the box as it is.
+  // Only a peer this box SAW offline counts as back. A refused launch on a
+  // peer the fleet still calls reachable would otherwise relaunch, be refused,
+  // and relaunch again.
+  function peerReturnDecision({ kind, canLaunch, available, wasOffline }) {
+    if (!available || !wasOffline) return "stay";
+    return kind === "console" && canLaunch ? "relaunch" : "offer";
+  }
+
+  // The fleet group of `ref`'s peer when that peer cannot serve it, else null:
+  // a local ref, an unknown peer, and a reachable one all launch as usual.
+  function peerHeld(ref, groups) {
+    const daemon = window.WBFleet.refDaemon(ref);
+    const group = daemon ? groups.get(daemon) : null;
+    return group && !window.WBFleet.available(group) ? group : null;
+  }
+
   // A console-kind session's `agent` label is its startup command, or the
   // literal `console` for the bare shell (the daemon labels it so on launch).
   // So the label alone says how to launch that console again.
@@ -1194,6 +1258,18 @@ window.WBConsole = (function () {
       win._title.title = p.tooltip;
       renderTitle(win, win._title, p);
     }
+  }
+
+  // Each peer's fleet group by daemon id, and the shell's wake action, fed by
+  // the shell (`ingestFleet`) after every fleet read. The shell owns the fleet;
+  // this is only its last answer, for the placeholders of peer projects.
+  const peerGroups = new Map();
+  let wakePeer = null;
+  function ingestFleet(groups, hooks) {
+    peerGroups.clear();
+    for (const g of groups || []) if (g && g.daemon && !g.local) peerGroups.set(g.daemon, g);
+    if (typeof hooks?.wake === "function") wakePeer = hooks.wake;
+    for (const win of [...wins]) if (typeof win._peerRefresh === "function") win._peerRefresh();
   }
 
   // The console name's prefix is the PROJECT NAME's last segment: a peer ref's
@@ -5454,7 +5530,7 @@ window.WBConsole = (function () {
       // window is closed.
       ro.disconnect();
       term.write("\r\n" + endNotice(announced, refusal) + "\r\n");
-      if (typeof opts.onEnded === "function") opts.onEnded();
+      if (typeof opts.onEnded === "function") opts.onEnded(announced, refusal);
     }
 
     function scheduleReconnect() {
@@ -6136,9 +6212,17 @@ window.WBConsole = (function () {
       // A session that ENDED: the parked strip's "take over" would only spin
       // at a dead id. The window stays (its scrollback is the last thing the
       // agent said) and the restart control is tinted as the next action.
-      onEnded: () => {
+      // A launch a PEER refused becomes that peer's placeholder, which says why
+      // in words and comes back when the peer does.
+      onEnded: (announced, refusal) => {
         clearNudge();
         win.querySelector(".session-parked")?.remove();
+        if (announced === "refused" && window.WBFleet?.refDaemon(repo)) {
+          const carry = deskOf(win);
+          discard();
+          spawnPlaceholder(carry, null, { message: refusal });
+          return;
+        }
         win.classList.add("ended");
       },
     };
@@ -6150,8 +6234,9 @@ window.WBConsole = (function () {
     // dead window, spawn a FRESH session — never the old `id`/`watch` opts,
     // which would reattach to a torn-down session. `checkout` CHOSEN by the
     // title's switcher (#412); `undefined` means "the recorded one".
-    const relaunchIn = (checkout) => {
-      const carry = deskOf(win);
+    // Take this window off the stage without announcing a gap: a window with
+    // the same desk id takes its place at once.
+    const discard = () => {
       clearNudge();
       closeCheckoutMenu();
       win._term?.dispose();
@@ -6159,6 +6244,10 @@ window.WBConsole = (function () {
       untrackDormancy(win);
       wins.delete(win);
       applyExtent();
+    };
+    const relaunchIn = (checkout) => {
+      const carry = deskOf(win);
+      discard();
       // `win._deskKind`, not the local `kind`: a window reattached at load was
       // spawned with `{id, repo}` only. `~` is the daemon's repo-less label.
       const plain = win._deskKind === "console";
@@ -6468,8 +6557,10 @@ window.WBConsole = (function () {
   // session — one click relaunches into this very record, unless the console
   // runs by now (another device started it), in which case it attaches.
   // `missing` names a worktree that no longer exists (#411): the button
-  // relaunches on the PRIMARY tree, explicitly by its label.
-  function spawnPlaceholder(record, missing) {
+  // relaunches on the PRIMARY tree, explicitly by its label. `refused` (a
+  // `{ message }`) is a launch a peer refused. A box for a peer project says
+  // what its peer's fleet state is, and redraws on every fleet read.
+  function spawnPlaceholder(record, missing, refused) {
     const { win, body, restartBtn, closeBtn } = buildChrome(
       record.agent,
       record.repo,
@@ -6483,13 +6574,64 @@ window.WBConsole = (function () {
     const note = document.createElement("div");
     note.className = "session-offline";
     const text = document.createElement("p");
-    text.textContent = "This agent console is not running.";
+    text.textContent =
+      record.kind === "console" ? "This console is not running." : "This agent console is not running.";
     const btn = document.createElement("button");
     btn.className = "session-reconnect";
     btn.textContent = "Relaunch";
     // Relaunching spawns a vendor CLI: the popup offers no way to start anything.
     note.append(text, ...(OPTS.canLaunch === false ? [] : [btn]));
     body.append(note);
+
+    // The peer's words. `peerAction` is the button's action ("wake", "retry",
+    // "relaunch"); the box starts as "not running" until the fleet says more.
+    const daemon = window.WBFleet?.refDaemon(record.repo) || "";
+    const canLaunch = OPTS.canLaunch !== false;
+    const BUTTON = { wake: "Wake and relaunch", retry: "Try again", relaunch: "Relaunch" };
+    let peerAction = "relaunch";
+    let wasOffline = false;
+    let shown = null;
+    let detail = null;
+    let detailText = null;
+    const show = (view) => {
+      shown = view;
+      text.textContent = view.text;
+      peerAction = view.action;
+      btn.hidden = !BUTTON[view.action];
+      if (BUTTON[view.action]) btn.textContent = BUTTON[view.action];
+      if (!detail) {
+        detail = document.createElement("details");
+        detail.className = "session-detail";
+        const summary = document.createElement("summary");
+        summary.textContent = "Details";
+        detailText = document.createElement("p");
+        detail.append(summary, detailText);
+        note.append(detail);
+      }
+      detailText.textContent = view.detail || "";
+      detail.hidden = !view.detail;
+    };
+    const showPeer = () => {
+      // A click in flight owns the box; a missing worktree says something else.
+      if (!daemon || missing || btn.disabled || !win.isConnected) return;
+      const group = peerGroups.get(daemon);
+      if (!group) return;
+      const available = window.WBFleet.available(group);
+      if (!available) wasOffline = true;
+      const turn = peerReturnDecision({ kind: record.kind, canLaunch, available, wasOffline });
+      if (turn === "relaunch") {
+        btn.click();
+        return;
+      }
+      if (turn === "offer") {
+        show({ text: `${peerHost(group, record.environment)} is available again.`, detail: "", action: "relaunch" });
+        return;
+      }
+      if (available && !refused) return;
+      show(peerOfflineView(available ? null : group, refused?.message, peerHost(group, record.environment)));
+    };
+    if (refused) show(peerOfflineView(null, refused.message, peerHost(peerGroups.get(daemon), record.environment)));
+    win._peerRefresh = showPeer;
 
     const markMissing = (name) => {
       missing = name;
@@ -6548,6 +6690,19 @@ window.WBConsole = (function () {
       e.stopPropagation();
       if (btn.disabled) return;
       btn.disabled = true;
+      // The shell's wake answers when the peer is usable, and reports its own
+      // failure; the box then says again what it said.
+      if (peerAction === "wake") {
+        text.textContent = `Waking ${peerHost(peerGroups.get(daemon), record.environment)}…`;
+        const woke = typeof wakePeer === "function" && (await wakePeer(daemon));
+        if (!win.isConnected) return;
+        if (!woke) {
+          btn.disabled = false;
+          show(shown);
+          showPeer();
+          return;
+        }
+      }
       const session = await check();
       if (!win.isConnected) return;
       if (session) {
@@ -6587,6 +6742,7 @@ window.WBConsole = (function () {
     trackDormancy(win);
     changed();
     persistWin(win);
+    showPeer();
     return win;
   }
 
@@ -6666,6 +6822,9 @@ window.WBConsole = (function () {
               session.repo,
               record,
             );
+          } else if (action === "relaunch" && peerHeld(record.repo, peerGroups)) {
+            // Its peer cannot serve it: a launch would only be refused.
+            spawnPlaceholder(record);
           } else if (action === "relaunch") {
             // `relaunchRequest` carries the worktree the record was in (#411).
             pending.push(
@@ -6991,6 +7150,10 @@ window.WBConsole = (function () {
     ingestWorktrees,
     ingestSessions,
     ingestProjects,
+    ingestFleet,
+    peerOfflineView,
+    peerReturnDecision,
+    peerHeld,
     sessionRowFor,
     arrangeFence,
     count,

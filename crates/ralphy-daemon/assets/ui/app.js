@@ -642,6 +642,7 @@ function shell() {
           }));
         this.projects = localRows().concat(this._fleetRows);
         this.shareProjectNames();
+        this.shareFleet();
         this.fleetRead = window.WBFail.readFold(this.fleetRead, { ok: true, value: true, at: Date.now() });
         this.fleetError = "";
       } catch (e) {
@@ -882,6 +883,14 @@ function shell() {
           title: window.WBProject.projectTitle(p),
         })),
       );
+    },
+    // A console of a peer project says what its peer's state is, and comes
+    // back when the peer does. Every project, not the filtered list: a search
+    // in the sidebar must not change what a console says.
+    shareFleet() {
+      window.WBConsole?.ingestFleet?.(window.WBFleet.fleetGroups(this.projects, this.fleetPeers), {
+        wake: (daemonId) => this.wakePeer(daemonId),
+      });
     },
     // The tooltip twin of `projectLabel`: `owner/repo`, or the full folder of
     // a remoteless repo, plus the environment of a peer. Never a hash key or

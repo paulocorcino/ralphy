@@ -1279,6 +1279,100 @@ test("endNotice names the reason of a refused launch, and only of one", () => {
   }
 });
 
+// --- peer placeholders: a console whose peer cannot serve it ---------------
+// The box words the peer's fleet state, offers only the action that can fix
+// it, and comes back by itself only as a shell.
+
+const PEER = "01ARZ3NDEKTSV4RRFFQ69G5FAZ";
+const peerGroup = (state, extra = {}) => ({
+  daemon: PEER,
+  environment: "macOS 15",
+  name: "corcino-mac",
+  tunnel: true,
+  state,
+  diagnosis: `diagnosis of ${state}`,
+  nudgeable: false,
+  local: false,
+  ...extra,
+});
+
+test("peerOfflineView words each peer state and offers only the action that fixes it", () => {
+  const { peerOfflineView } = load();
+  const wsl = { tunnel: false, name: "", environment: "WSL: Ubuntu", nudgeable: true };
+  const rows = [
+    [peerGroup("asleep", wsl), "WSL: Ubuntu is asleep.", "wake"],
+    [peerGroup("unreachable", wsl), "Ralphy on WSL: Ubuntu is not running.", "wake"],
+    [peerGroup("unreachable"), "Ralphy on corcino-mac is not running.", "retry"],
+    [peerGroup("tunnel-closed"), "Reconnecting to corcino-mac…", "wait"],
+    [
+      peerGroup("tunnel-silent"),
+      "corcino-mac does not answer. Start Ralphy there, then try again.",
+      "retry",
+    ],
+    [peerGroup("unauthorized"), "corcino-mac cannot open this console.", null],
+    [peerGroup("version-mismatch"), "corcino-mac cannot open this console.", null],
+    [peerGroup("refused"), "corcino-mac cannot open this console.", null],
+    [peerGroup("malformed"), "corcino-mac cannot open this console.", null],
+    // The fleet has not seen what the refused launch saw.
+    [peerGroup("reachable"), "corcino-mac did not start this console.", "retry"],
+  ];
+  for (const [group, text, action] of rows) {
+    const got = peerOfflineView(group, "refused words", "fallback");
+    assert.deepEqual(
+      got,
+      { text, detail: `diagnosis of ${group.state}`, action },
+      group.state,
+    );
+  }
+});
+
+test("peerOfflineView with no fleet group yet uses the refusal and the recorded environment", () => {
+  const { peerOfflineView } = load();
+  assert.deepEqual(peerOfflineView(null, "  tunnel open, daemon silent \n", "macOS 15"), {
+    text: "macOS 15 did not start this console.",
+    detail: "tunnel open, daemon silent",
+    action: "retry",
+  });
+  // Nothing known at all still names someone, and shows no empty detail.
+  assert.deepEqual(peerOfflineView(null, undefined, ""), {
+    text: "The other computer did not start this console.",
+    detail: "",
+    action: "retry",
+  });
+});
+
+test("peerReturnDecision relaunches only a shell, only after the box saw its peer offline", () => {
+  const { peerReturnDecision } = load();
+  const back = { available: true, wasOffline: true };
+  assert.equal(peerReturnDecision({ kind: "console", canLaunch: true, ...back }), "relaunch");
+  // A vendor CLI never starts without a click.
+  assert.equal(peerReturnDecision({ kind: "agent", canLaunch: true, ...back }), "offer");
+  // The popup authors no session at all.
+  assert.equal(peerReturnDecision({ kind: "console", canLaunch: false, ...back }), "offer");
+  // A refusal on a peer the fleet still calls reachable: no relaunch loop.
+  assert.equal(
+    peerReturnDecision({ kind: "console", canLaunch: true, available: true, wasOffline: false }),
+    "stay",
+  );
+  assert.equal(
+    peerReturnDecision({ kind: "console", canLaunch: true, available: false, wasOffline: true }),
+    "stay",
+  );
+});
+
+test("peerHeld holds a peer project only while its known peer cannot serve it", () => {
+  const { peerHeld } = load();
+  const ref = `${PEER}/owner/repo`;
+  const groups = (state) => new Map([[PEER, peerGroup(state)]]);
+  assert.equal(peerHeld(ref, groups("tunnel-silent"))?.state, "tunnel-silent");
+  assert.equal(peerHeld(ref, groups("asleep"))?.state, "asleep");
+  assert.equal(peerHeld(ref, groups("reachable")), null);
+  // No state yet counts as available, as in the sidebar.
+  assert.equal(peerHeld(ref, groups("")), null);
+  assert.equal(peerHeld(ref, new Map()), null);
+  assert.equal(peerHeld("owner/repo", groups("tunnel-silent")), null);
+});
+
 // --- resumeDecision: coming back from a suspend --------------------------
 // A tablet's tab is frozen with its sockets still reporting OPEN, and the link
 // is torn down without a close frame, so the exponential backoff never arms.
