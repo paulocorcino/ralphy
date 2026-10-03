@@ -1163,11 +1163,11 @@ window.WBConsole = (function () {
       case "asleep":
         return view(`${host} is asleep.`, wakeOrRetry);
       case "unreachable":
-        return view(`Ralphy on ${host} is not running.`, wakeOrRetry);
+        return view(`Ralphy is not running on ${host}.`, wakeOrRetry);
       case "tunnel-closed":
         return view(`Reconnecting to ${host}…`, "wait");
       case "tunnel-silent":
-        return view(`${host} does not answer. Start Ralphy there, then try again.`, "retry");
+        return view(`${host} does not answer.`, "retry");
       case "unauthorized":
       case "version-mismatch":
       case "refused":
@@ -6587,7 +6587,7 @@ window.WBConsole = (function () {
     // "relaunch"); the box starts as "not running" until the fleet says more.
     const daemon = window.WBFleet?.refDaemon(record.repo) || "";
     const canLaunch = OPTS.canLaunch !== false;
-    const BUTTON = { wake: "Wake and relaunch", retry: "Try again", relaunch: "Relaunch" };
+    const BUTTON = { wake: "Wake", retry: "Try again", relaunch: "Relaunch" };
     let peerAction = "relaunch";
     let wasOffline = false;
     let shown = null;
@@ -6624,7 +6624,7 @@ window.WBConsole = (function () {
         return;
       }
       if (turn === "offer") {
-        show({ text: `${peerHost(group, record.environment)} is available again.`, detail: "", action: "relaunch" });
+        show({ text: `${peerHost(group, record.environment)} is back.`, detail: "", action: "relaunch" });
         return;
       }
       if (available && !refused) return;

@@ -274,7 +274,7 @@ def main():
             check("a refused plain console becomes a placeholder", plain.get("placeholder"), f"win={plain}")
             check(
                 "the box names the peer and its state",
-                plain.get("text") == f"Ralphy on {PEER_ENV} is not running.",
+                plain.get("text") == f"Ralphy is not running on {PEER_ENV}.",
                 f"text={plain.get('text')!r}",
             )
             check("the one action is Try again", plain.get("button") == "Try again", f"button={plain.get('button')!r}")
@@ -301,7 +301,7 @@ def main():
             wins = wait_for(
                 page,
                 lambda ws: len(ws) == 2
-                and all(w["placeholder"] and w["text"] == f"Ralphy on {PEER_ENV} is not running." for w in ws),
+                and all(w["placeholder"] and w["text"] == f"Ralphy is not running on {PEER_ENV}." for w in ws),
                 timeout=25,
             )
             check(
@@ -329,7 +329,7 @@ def main():
             plain = by_kind(wins, "console") or {}
             check(
                 "the agent console offers Relaunch and starts nothing",
-                agent.get("text") == f"{PEER_ENV} is available again." and agent.get("button") == "Relaunch",
+                agent.get("text") == f"{PEER_ENV} is back." and agent.get("button") == "Relaunch",
                 f"win={agent}",
             )
             launched = sockets[before:]

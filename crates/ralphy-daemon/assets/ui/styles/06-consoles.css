@@ -640,6 +640,10 @@
   color: var(--text-muted);
   font-size: 0.82rem;
   text-align: center;
+  /* iPhone Safari enlarges the text of a block that holds a long text, here
+     the closed Details, so two boxes showed two sizes. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 .session-offline p {
   margin: 0;

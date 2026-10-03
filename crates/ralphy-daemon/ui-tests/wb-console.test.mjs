@@ -1301,12 +1301,12 @@ test("peerOfflineView words each peer state and offers only the action that fixe
   const wsl = { tunnel: false, name: "", environment: "WSL: Ubuntu", nudgeable: true };
   const rows = [
     [peerGroup("asleep", wsl), "WSL: Ubuntu is asleep.", "wake"],
-    [peerGroup("unreachable", wsl), "Ralphy on WSL: Ubuntu is not running.", "wake"],
-    [peerGroup("unreachable"), "Ralphy on corcino-mac is not running.", "retry"],
+    [peerGroup("unreachable", wsl), "Ralphy is not running on WSL: Ubuntu.", "wake"],
+    [peerGroup("unreachable"), "Ralphy is not running on corcino-mac.", "retry"],
     [peerGroup("tunnel-closed"), "Reconnecting to corcino-mac…", "wait"],
     [
       peerGroup("tunnel-silent"),
-      "corcino-mac does not answer. Start Ralphy there, then try again.",
+      "corcino-mac does not answer.",
       "retry",
     ],
     [peerGroup("unauthorized"), "corcino-mac cannot open this console.", null],
