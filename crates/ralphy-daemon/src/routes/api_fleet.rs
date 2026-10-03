@@ -14,11 +14,27 @@ use super::execute_oneshot;
 use super::read_peer_store;
 use crate::{dispatch, fleet, identity, peer, protocol, registry, session, watch};
 
-/// The last repo list each peer served, keyed by `daemon_id`. Held for the
+/// What each peer last showed this daemon, keyed by `daemon_id`. Held for the
 /// router's lifetime — same ownership model as `sessions`/`watchers`, so the
 /// public `router` signature holds.
 pub(crate) type PeerRepoCache =
-    Arc<std::sync::Mutex<std::collections::HashMap<String, fleet::PeerRepoStore>>>;
+    Arc<std::sync::Mutex<std::collections::HashMap<String, PeerMemory>>>;
+
+/// The last repo list a peer served and the last environment label its
+/// handshake gave. Each is kept until a newer answer replaces it.
+#[derive(Default)]
+pub(crate) struct PeerMemory {
+    repos: Option<fleet::PeerRepoStore>,
+    environment: Option<String>,
+}
+
+/// What one probe found: the peer's state, the label its handshake gave, and
+/// the repos it served.
+type Probed = (
+    peer::client::PeerStatus,
+    Option<String>,
+    Option<fleet::PeerRepoStore>,
+);
 
 /// One peer as the workbench sees it: who it is, where it runs, and what this
 /// daemon just observed about it. `state` is the grouping key; `diagnosis` is
@@ -112,19 +128,11 @@ pub(crate) async fn fleet_route(
             (index, status, live_environment, store)
         });
     }
-    let mut probed: Vec<Option<(peer::client::PeerStatus, Option<fleet::PeerRepoStore>)>> =
-        (0..descriptors.len()).map(|_| None).collect();
+    let mut probed: Vec<Option<Probed>> = (0..descriptors.len()).map(|_| None).collect();
     while let Some(joined) = set.join_next().await {
         match joined {
             Ok((index, status, live_environment, store)) => {
-                // The descriptor's label is what the peer said when it was
-                // paired; its handshake is what it says now (ADR-0067,
-                // amendment "the header in capitals, the label from the
-                // handshake"). The file on disk is left as `host add` wrote it.
-                if let Some(live) = live_environment {
-                    descriptors[index].environment = live;
-                }
-                probed[index] = Some((status, store));
+                probed[index] = Some((status, live_environment, store));
             }
             Err(e) => tracing::warn!(error = %e, "a peer probe task failed"),
         }
@@ -133,23 +141,35 @@ pub(crate) async fn fleet_route(
     // Remember what each peer just served, and recall it for the ones that could
     // not be asked. INVARIANT: the guard is taken and dropped inside this block —
     // it is a `std::sync::Mutex` and there is no `.await` between these lines.
+    //
+    // The descriptor's label is what the peer said when it was paired; its
+    // handshake is what it says now, and the last handshake is what it said
+    // before it stopped answering (ADR-0067, amendment "the header in
+    // capitals, the label from the handshake"). The file on disk is left as
+    // `host add` wrote it.
     let recalled: Vec<Option<fleet::PeerRepoStore>> = {
         let mut cache = match repo_cache.lock() {
             Ok(cache) => cache,
             Err(poisoned) => poisoned.into_inner(),
         };
         descriptors
-            .iter()
+            .iter_mut()
             .zip(probed.iter())
-            .map(
-                |(d, slot)| match slot.as_ref().and_then(|(_, s)| s.as_ref()) {
-                    Some(fresh) => {
-                        cache.insert(d.daemon_id.clone(), fresh.clone());
-                        Some(fresh.clone())
+            .map(|(d, slot)| {
+                let memory = cache.entry(d.daemon_id.clone()).or_default();
+                if let Some((_, live, fresh)) = slot {
+                    if live.is_some() {
+                        memory.environment = live.clone();
                     }
-                    None => cache.get(&d.daemon_id).cloned(),
-                },
-            )
+                    if fresh.is_some() {
+                        memory.repos = fresh.clone();
+                    }
+                }
+                if let Some(environment) = &memory.environment {
+                    d.environment = environment.clone();
+                }
+                memory.repos.clone()
+            })
             .collect()
     };
 
@@ -166,7 +186,7 @@ pub(crate) async fn fleet_route(
     };
     for ((d, slot), store) in descriptors.iter().zip(probed.iter()).zip(recalled.iter()) {
         let status = match slot {
-            Some((status, _)) => status,
+            Some((status, _, _)) => status,
             None => &fallback,
         };
         let store = store.as_ref();

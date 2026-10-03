@@ -883,9 +883,11 @@ in two cases looked like two kinds of text.
 **L2. A reachable peer is labelled by its handshake.** `/api/fleet` already
 reads `/api/peer/hello` from every peer on every request. When the peer
 answers, the `environment` of that answer replaces the descriptor's label in
-the peer list, its diagnosis and its rows. When it does not answer, the
-descriptor's label is used. The daemon does not rewrite the descriptor: `host
-add` and Edit own it. So a host paired before its daemon could read the
+the peer list, its diagnosis and its rows. When it stops answering, the label
+of its last answer is used, from the same memory that keeps its last repo
+list. A peer that has not answered since the daemon started has the
+descriptor's label. The daemon does not rewrite the descriptor: `host add` and
+Edit own it. So a host paired before its daemon could read the
 release shows the release as soon as it answers, without Edit.
 
 Measured on 2026-10-02: a Mac paired with `environment = "macOS"` answered the

@@ -126,16 +126,13 @@ pub(crate) fn router_with_roster(
     // same pattern as `command_daemon_id`.
     let hello_identity = identity.clone();
     let fleet_identity = identity.clone();
-    // The last repo list each peer actually served, remembered for this router's
-    // lifetime so an unreachable peer's rows stay listed (ADR-0052 §5: marked,
-    // never removed). NOT a background poller and NOT persisted: it is written
-    // only by a SUCCESSFUL probe inside a request, so liveness is still computed
-    // fresh on every `/api/fleet` — only "last known" is remembered.
-    let peer_repo_cache: PeerRepoCache =
-        Arc::new(std::sync::Mutex::new(std::collections::HashMap::<
-            String,
-            fleet::PeerRepoStore,
-        >::new()));
+    // The last repo list and environment label each peer actually served,
+    // remembered for this router's lifetime so an unreachable peer's rows stay
+    // listed under the same header (ADR-0052 §5: marked, never removed). NOT a
+    // background poller and NOT persisted: it is written only by a SUCCESSFUL
+    // probe inside a request, so liveness is still computed fresh on every
+    // `/api/fleet` — only "last known" is remembered.
+    let peer_repo_cache: PeerRepoCache = Arc::default();
     // The `(slug, remote)` pairs `/api/repos` has already handed to the
     // registrar this router lifetime (ADR-0036 amendment 2026-09-16): a hash
     // key whose remote yields no forge slug must not respawn on every page.

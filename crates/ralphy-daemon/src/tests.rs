@@ -1784,7 +1784,7 @@ async fn api_fleet_marks_an_unreachable_peer_and_keeps_the_local_repos() {
 /// once keeps its rows listed after it stops answering, with its state
 /// changed rather than its rows dropped. Liveness is still fresh — only the
 /// repo list is remembered. The environment label is the one the peer's
-/// handshake gives while it answers, and the descriptor's after it stops.
+/// handshake gives while it answers, and the last one it gave after it stops.
 #[tokio::test]
 async fn api_fleet_keeps_a_peers_last_known_repos_after_it_stops_answering() {
     let dir = tempfile::tempdir().unwrap();
@@ -1873,9 +1873,10 @@ async fn api_fleet_keeps_a_peers_last_known_repos_after_it_stops_answering() {
     assert_eq!(down_rows[0]["peer_state"], "unreachable");
     assert_eq!(down_rows[0]["reachable"], false);
     assert_eq!(
-        down["peers"][0]["environment"], "WSL: Ubuntu-22.04",
-        "a peer that does not answer keeps its descriptor's label: {down}"
+        down["peers"][0]["environment"], "WSL: Debian-12",
+        "a peer that stops answering keeps the label its last handshake gave: {down}"
     );
+    assert_eq!(down_rows[0]["environment"], "WSL: Debian-12");
 }
 
 fn nudge_target(port: u16, address: &str) -> peer::PeerDescriptor {
