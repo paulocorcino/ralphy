@@ -2645,6 +2645,17 @@ window.WBConsole = (function () {
   // The rename opens on the RELEASE after the hold, not when the timer fires:
   // iOS raises the keyboard only for a `focus()` inside an input event.
   function wireTitleTouch(win, titlebar, onDoubleTap) {
+    // Seen on an iPhone (2026-10-03): the double tap that maximized also
+    // zoomed the page, although the bar has `touch-action: none`. Safari does
+    // not zoom on a double tap whose `touchend` is cancelled. A button's
+    // `touchend` is not cancelled: it is what makes the button's `click`.
+    titlebar.addEventListener(
+      "touchend",
+      (e) => {
+        if (!e.target.closest("button, .session-name-input")) e.preventDefault();
+      },
+      { passive: false },
+    );
     titlebar.addEventListener("pointerdown", (e) => {
       win._lastPointerType = e.pointerType;
       if (e.pointerType === "mouse" || !e.isPrimary) return;

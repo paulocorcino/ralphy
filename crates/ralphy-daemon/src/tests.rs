@@ -5521,6 +5521,9 @@ fn titlebar_touch_double_taps_and_holds() {
         "win._lastPointerType = e.pointerType;",
         // Without it a `mousedown` after the hold blurs the new name input.
         "e.preventDefault();",
+        // Without it iOS Safari zooms the page on the double tap.
+        r#"if (!e.target.closest("button, .session-name-input")) e.preventDefault();"#,
+        "{ passive: false }",
         "dragBegins(pressed,",
         "HOLD_MS)",
         "isDoubleTap(win._lastTap, tap) && !isFull(win)",
