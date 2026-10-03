@@ -827,11 +827,21 @@
 .note-card .milkdown .ProseMirror:not(:focus) .note-title-toggle {
   display: none;
 }
+/* The widget is placeholder text, not note text. Safari needs the prefix
+   (the console titlebar measured it). Without it, on an iPhone (2026-10-03),
+   the caret went inside "Write a note…" and a press-and-hold for Paste landed
+   on the hint.
+   `pointer-events: none` gives a touch on the hint to the empty line under
+   it; only the action takes a tap. */
 .note-title-toggle {
   user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  pointer-events: none;
   color: color-mix(in srgb, var(--crepe-color-on-background), transparent 60%);
 }
 .note-title-act {
+  pointer-events: auto;
   margin-left: 0.8em;
   font-size: 0.85em;
   font-weight: 400;

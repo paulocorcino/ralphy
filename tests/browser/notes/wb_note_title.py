@@ -40,7 +40,7 @@ T.PORT = PORT
 T.BASE = BASE = f"http://127.0.0.1:{PORT}/"
 SHOT = os.path.join(T.REPO_ROOT, ".ralphy", "screenshots", "note-add-title-2026-09-27.png")
 VIEW = {"width": 1600, "height": 1000}
-FLOOR = 18  # every check above the floor check; pinned after the first green run
+FLOOR = 19  # every check above the floor check; pinned after the first green run
 
 results = []
 
@@ -120,6 +120,19 @@ def main():
                   s["hint"] == "Write a note…" and s["act"] == "Add title", str(s))
             check("A1 the two do not overlap, and Crepe's placeholder is hidden there",
                   s["overlap"] is False and s["before"] in ("none", "normal"), str(s))
+            # A touch on the hint reaches the empty line, so a press-and-hold
+            # there opens the browser's Paste menu (reported on an iPhone).
+            hit = page.evaluate(
+                "(id) => { const t = __card(id).querySelector('.note-title-toggle');"
+                " const at = (el) => { const r = el.getBoundingClientRect();"
+                "  return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); };"
+                " const onHint = at(t.querySelector('.note-title-hint'));"
+                " const act = t.querySelector('.note-title-act');"
+                " return { hint: onHint?.tagName, act: at(act) === act }; }",
+                nid,
+            )
+            check("A1 a touch on the hint reaches the line; 'Add title' still takes one",
+                  hit["hint"] == "P" and hit["act"], str(hit))
             os.makedirs(os.path.dirname(SHOT), exist_ok=True)
             page.locator(f".note-card[data-note-id='{nid}']").screenshot(path=SHOT)
 
