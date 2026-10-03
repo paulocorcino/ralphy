@@ -1525,6 +1525,46 @@ test("applyCtrlLatch keeps the latch armed for input it cannot fold", () => {
   assert.deepEqual(applyCtrlLatch(true, undefined), { out: undefined, latched: true });
 });
 
+// --- isTerminalReply: the answers a replayed backlog must not send ----------
+
+test("isTerminalReply knows each answer xterm writes back for a query", () => {
+  const { isTerminalReply } = load();
+  // ConPTY's startup `ESC[6n`, answered again on every reattach: the stray `R`.
+  assert.equal(isTerminalReply("\x1b[1;1R"), true);
+  assert.equal(isTerminalReply("\x1b[24;80R"), true);
+  assert.equal(isTerminalReply("\x1b[?24;80R"), true);
+  assert.equal(isTerminalReply("\x1b[0n"), true);
+  assert.equal(isTerminalReply("\x1b[?1;2c"), true);
+  assert.equal(isTerminalReply("\x1b[>0;276;0c"), true);
+  assert.equal(isTerminalReply("\x1b[?2004;1$y"), true);
+  assert.equal(isTerminalReply("\x1b[8;24;80t"), true);
+  assert.equal(isTerminalReply("\x1b[?0u"), true);
+  assert.equal(isTerminalReply("\x1bP1$r0m\x1b\\"), true);
+  assert.equal(isTerminalReply("\x1b]11;rgb:0000/0000/0000\x1b\\"), true);
+  assert.equal(isTerminalReply("\x1b]10;rgb:ffff/ffff/ffff\x07"), true);
+});
+
+test("isTerminalReply lets typed keys and pastes through", () => {
+  const { isTerminalReply } = load();
+  for (const typed of [
+    "R",
+    "c",
+    "\r",
+    "\x03",
+    "\x1b",
+    "\x1b[A",
+    "\x1bOR",
+    "\x1b[3~",
+    "\x1b[200~text\x1b[201~",
+    "\x1b[I",
+    "ls -la\r",
+    "\x1b[1;1Rx",
+    undefined,
+  ]) {
+    assert.equal(isTerminalReply(typed), false, JSON.stringify(typed));
+  }
+});
+
 // --- keyBarVisible: when the row appears ----------------------------------
 
 test("keyBarVisible obeys an explicit choice over the device", () => {

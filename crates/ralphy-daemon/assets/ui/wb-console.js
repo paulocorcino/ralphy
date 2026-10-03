@@ -4538,6 +4538,20 @@ window.WBConsole = (function () {
     return { out: String.fromCharCode(code & 0x1f), latched: false };
   }
 
+  // Whether `d` is one of the answers xterm writes back for a terminal
+  // QUERY: cursor position and status (`CSI…R`, `CSI…n`), device attributes
+  // (`CSI…c`), mode and keyboard reports (`CSI…$y`, `CSI?…u`), window reports
+  // (`CSI…t`), and the DCS and OSC replies. xterm sends each answer as one
+  // `onData` call. A replayed backlog asks its old questions again (ConPTY's
+  // startup `ESC[6n` is always there), so these answers are dropped while it
+  // replays. A modified F3 (`CSI 1;5R`) has the same bytes as a cursor answer;
+  // the replay lasts a moment, so that collision is accepted.
+  const TERMINAL_REPLY =
+    /^\x1b(?:\[(?:[?>]?[\d;]*[Rnc]|\??[\d;]+\$y|[\d;]+t|\?\d*u)|P[\s\S]*\x1b\\|\]\d+;[\s\S]*(?:\x07|\x1b\\))$/;
+  function isTerminalReply(d) {
+    return typeof d === "string" && TERMINAL_REPLY.test(d);
+  }
+
   // Whether a window shows the bar. `mode` is "on", "off", or absent for auto
   // (has a touch surface). `any-pointer` rather than `pointer`: an iPad with a
   // Magic Keyboard reports a FINE primary pointer and is still a tablet.
@@ -5594,7 +5608,12 @@ window.WBConsole = (function () {
       return false;
     }
 
-    term.onData(sendInput);
+    // The backlog's old queries are answered again during a replay; those
+    // answers would reach the child as typed input.
+    term.onData((d) => {
+      if (replaying && isTerminalReply(d)) return;
+      sendInput(d);
+    });
     term.onResize(({ rows, cols }) => {
       if (ws && ws.readyState === WebSocket.OPEN)
         ws.send(encodeResize(rows, cols));
@@ -6960,6 +6979,7 @@ window.WBConsole = (function () {
     keySequence,
     barKey,
     applyCtrlLatch,
+    isTerminalReply,
     keyBarVisible,
     pasteOffered,
     rightClickAction,
