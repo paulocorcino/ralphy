@@ -1114,6 +1114,23 @@ test("opening a row asks to wake its peer, and closing it does not", () => {
   assert.equal(named("wakePeerFor").length, 1);
 });
 
+test("a row on a host that cannot answer stays closed, and still wakes it", () => {
+  const { state, named } = toggleShell();
+  const peer = "01KY0000000000000000000000";
+  const ref = `${peer}/owner/repo`;
+  let groups = [{ daemon: peer, local: false, state: "unreachable" }];
+  state.fleetGroups = () => groups;
+  state.toggle(ref);
+  assert.equal(state.openSlug, null);
+  assert.equal(named("mountTree").length, 0);
+  assert.deepEqual(named("wakePeerFor"), [["wakePeerFor", ref]]);
+  // CONTROL: once the host answers, the same click opens the row.
+  groups = [{ daemon: peer, local: false, state: "reachable" }];
+  state.toggle(ref);
+  assert.equal(state.openSlug, ref);
+  assert.equal(named("mountTree").length, 1);
+});
+
 test("opening a row remounts the run-completion subscription", () => {
   const { state, calls } = toggleShell();
   state.toggle("owner/repo");

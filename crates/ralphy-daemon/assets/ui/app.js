@@ -707,6 +707,14 @@ function shell() {
     peerWakeable(g) {
       return window.WBFleet.wakeable(g);
     },
+    peerAvailable(g) {
+      return window.WBFleet.available(g);
+    },
+    refAvailable(ref) {
+      const daemon = window.WBFleet.refDaemon(ref);
+      if (!daemon) return true;
+      return window.WBFleet.available(this.fleetGroups().find((g) => g.daemon === daemon));
+    },
     peerIcon(g) {
       return window.WBFleet.stateIcon(g);
     },
@@ -958,6 +966,13 @@ function shell() {
     wakeTitle(g) {
       if (this.waking[g.daemon]) return `Waking ${g.environment}…`;
       return `Wake ${g.environment}. ${g.diagnosis}`;
+    },
+    // A row on a host that cannot answer: why it does not open.
+    unavailableTitle(g) {
+      const host = window.WBFleet.groupHost(g) || g.environment;
+      const head = `${host} is not available (${this.peerStateWord(g.state)}).`;
+      if (window.WBFleet.wakeable(g)) return `${head} Click to wake it.`;
+      return `${head} Its projects open when it connects again.`;
     },
     // The checkout chip of a project row: which tree Files, Changes and
     // search read, and that a click chooses another.
@@ -4405,6 +4420,12 @@ function shell() {
 
     // --- accordion --------------------------------------------------------
     toggle(ref, row) {
+      // A row on a host that cannot answer stays closed. The click still wakes
+      // a sleeping host: that is the act the operator asked for.
+      if (this.openSlug !== ref && !this.refAvailable(ref)) {
+        this.wakePeerFor(ref);
+        return;
+      }
       this.openSlug = this.openSlug === ref ? null : ref;
       // Refusal notes name an act against the project that WAS open.
       this.changesError = "";

@@ -274,7 +274,7 @@
               </span>
             </div>
             <template x-for="p in g.rows" :key="p.key || p.slug">
-              <li class="project" :class="{ open: rowOpen(p), peer: !!p.daemon }">
+              <li class="project" :class="{ open: rowOpen(p), peer: !!p.daemon, unavailable: !peerAvailable(g) }">
             <!-- click toggles the project open/closed (mounts/destroys tree) -->
             <!-- `rowTitle` is what a COLLAPSED row can no longer show: the
                  branch chip moved to the Files bar below, which only the open
@@ -282,7 +282,7 @@
                  `.project-slug`: the name's own title still wins when the
                  pointer is over the name. The slug, the ADR-0008 D7 identity,
                  rides `data-slug` for the browser tests. -->
-            <div class="project-head" tabindex="-1" @click="toggle(repoRef(p), p)" :title="rowTitle(p)">
+            <div class="project-head" tabindex="-1" @click="toggle(repoRef(p), p)" :title="peerAvailable(g) ? rowTitle(p) : unavailableTitle(g)">
               <span class="chevron"><svg x-icon="'chevron-right'"></svg></span>
               <!-- status dot: the project's daemon-reachability *right now* —
                    green = live (session/daemon active there), grey = idle

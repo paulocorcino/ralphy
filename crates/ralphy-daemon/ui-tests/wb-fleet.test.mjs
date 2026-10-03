@@ -95,6 +95,17 @@ test("only the states a nudge can answer offer to wake", () => {
   assert.equal(wakeable(null), false);
 });
 
+test("only a reachable peer, or one not yet heard of, has projects that open", () => {
+  const { available } = load();
+  const group = (state, extra) => Object.assign({ daemon: "01XYZ", local: false, state: state }, extra);
+  assert.equal(available(group("reachable")), true);
+  assert.equal(available(group("")), true, "the fleet list has not arrived yet");
+  assert.equal(available(group("", { local: true })), true, "this daemon always answers its own rows");
+  for (const state of ["asleep", "unreachable", "unauthorized", "version-mismatch", "refused", "malformed", "tunnel-closed", "tunnel-silent"]) {
+    assert.equal(available(group(state)), false, `${state} must not open`);
+  }
+});
+
 test("a peer ref names the daemon to wake, a local one names none", () => {
   const { refDaemon } = load();
   assert.equal(refDaemon("01ARZ3NDEKTSV4RRFFQ69G5FAV/owner/repo"), "01ARZ3NDEKTSV4RRFFQ69G5FAV");

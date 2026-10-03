@@ -228,6 +228,15 @@
     return group.state === "asleep" || group.state === "unreachable";
   }
 
+  // Whether the projects of this group can be opened. A peer that is not
+  // `reachable` cannot serve a tree, so its rows are shown but stay closed. A
+  // peer with no state yet (the fleet list has not arrived) counts as
+  // available, so the sidebar does not grey out on every page load.
+  function available(group) {
+    if (!group || group.local) return true;
+    return !group.state || group.state === "reachable";
+  }
+
   // The system a daemon runs on. It picks the icon at the head of a group.
   // `os` is the daemon's own OS family (peer.rs `PeerDescriptor::os`). A
   // descriptor written before that field has only its environment label, and
@@ -253,6 +262,7 @@
     refSlug: refSlug,
     refLabel: refLabel,
     wakeable: wakeable,
+    available: available,
     stateIcon: stateIcon,
     stateFault: stateFault,
     groupTitle: groupTitle,
