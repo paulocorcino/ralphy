@@ -89,13 +89,15 @@ a file boundary. If a clean seam is not already present, the file is a
 design-refactor candidate (its own issue), not a mechanical split. A split that
 adds abstraction is out of scope for this series.
 
-*Amendment (2026-10-03).* The 500-line threshold is now a ratchet: the
-`OVERSIZED` table in `crates/xtask/tests/ratchets.rs` holds each oversized
-file's exact production size. A change that grows a listed file splits it.
-When the file has no clean seam, the change raises the file's number with a
-`//` reason that names the responsibilities checked, and the file stays a
-design-refactor candidate. A raised number is a human decision: the pull
-request carries the `oversized-ok` label.
+*Amendment (2026-10-03).* The 500-line threshold counts lines of code only:
+comment and blank lines above the inline test module do not count, so
+documenting a file never pushes it over. The threshold is a recommendation,
+not a gate: a split is a refactor, and it never blocks a delivery.
+`cargo run -p xtask -- oversized` lists the files over it. An agent whose
+change touches a listed file reports it with the responsibilities a split
+could follow, and a human decides when to split, often as its own issue.
+Measured on the day: 22 of the 27 files over 500 production lines were under
+500 lines of code.
 
 ### 6. The inline-test budget (amendment, 2026-09-23)
 
@@ -123,12 +125,10 @@ production code. The budget is enforced, not remembered:
 
 ## Compliance
 
-- The 500 production-line threshold: checked by
-  `oversized_files_match_the_baseline` (`crates/xtask/tests/ratchets.rs`), a
-  ratchet on the files over the limit and their exact size, since 2026-10-03.
-  A raised or new number is checked by the `oversized` job in
-  `.github/workflows/ci.yml` (`.github/scripts/oversized-only-shrinks.sh`): on
-  a pull request it fails unless a human applied the `oversized-ok` label.
+- The 500-line threshold (§5 amendment): reported, not checked.
+  `cargo run -p xtask -- oversized` lists the files over it, and the
+  `oversized` job in `.github/workflows/ci.yml` warns on each one a pull
+  request touches. It never fails.
 
 - §1: not checked by code: reviewed in the PR. One legacy `mod.rs` remains
   (`crates/ralphy-cli/src/events/mod.rs`).

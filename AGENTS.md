@@ -109,14 +109,15 @@ ubiquitous language, and each crate is roughly one bounded context.
 - **The public crate API is stable by default.** Moving code inside a crate must
   not change the `pub` surface or its import paths; re-export from the parent
   module. A change to the public API is a design decision, not a side effect.
-- **File size is measured by the gate, not by you.** Write the code, then run
-  the gate. Two `xtask` tests measure every file: production code over 500
-  lines, and an inline `#[cfg(test)] mod tests { … }` block over 500 lines.
-  When one fails, its message says what to do, and that work is part of your
-  change. A split follows
-  [ADR-0022](./docs/adr/0022-file-split-conventions.md): the `foo.rs` + `foo/`
-  layout, tests move with their code, and the cut follows a responsibility
-  the file already has.
+- **File size is measured by tools, not by you.** Write the code, then run
+  the gate. An inline `#[cfg(test)] mod tests { … }` block over 500 lines
+  fails an `xtask` test; its message says how to move it, and the move is
+  part of your change. Production code over 500 lines of code is a
+  recommendation, not a gate: `cargo run -q -p xtask -- oversized` lists those
+  files. If it lists a file your change touches, keep working, and write in
+  your final report the file and the responsibilities you see that a split
+  could follow; a human decides when to split it, by
+  [ADR-0022](./docs/adr/0022-file-split-conventions.md).
 - **Comments state what the code cannot show:** an invariant, a measured fact
   (with the tool and version), a limit, or the ADR/issue that decided it. A
   comment does not describe the previous diff, the bug report, or a rejected

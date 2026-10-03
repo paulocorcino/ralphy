@@ -201,7 +201,7 @@ any code, including code that does not exist yet. A behaviour test is not one.
 | No `tokio`/`reqwest` in the CLI | `cli_manifest_pins_ureq_excludes_reqwest_tokio` |
 | Event vocabulary pinned | `every_decoder_arm_has_a_pin` |
 | Inline test module size | `crates/xtask/tests/inline_test_modules.rs` (ADR-0022 §6) |
-| No file grows past 500 production lines | `oversized_files_match_the_baseline` (`crates/xtask/tests/ratchets.rs`), a ratchet on the files over the limit and their exact size (ADR-0022); the `oversized` CI job fails a pull request that raises a number, unless a human applied the `oversized-ok` label |
+| Files over 500 lines of code are seen (a recommendation, not a gate) | `cargo run -p xtask -- oversized` lists them; the `oversized` CI job warns, never fails, on each one a pull request touches (ADR-0022) |
 | Text a user reads cites no ADR | `crates/xtask/tests/user_text_cites_no_adr.rs`, `no_help_text_cites_an_adr` |
 | UI written voice | `cargo run -p xtask -- ui-copy --check` (ADR-0065) |
 | Changelog fragments parse | `cargo run -p xtask -- changelog --check` (ADR-0056) |
