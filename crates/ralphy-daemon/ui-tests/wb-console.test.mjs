@@ -1927,6 +1927,26 @@ for (const [start, pointer, threshold, want, why] of BEGINS) {
   });
 }
 
+// --- isDoubleTap: two taps on a titlebar ----------------------------------
+const TAPS = [
+  // [prev, tap, expected, why]
+  [null, { t: 100, x: 0, y: 0 }, false, "a first tap is not a double tap"],
+  [{ t: 0, x: 50, y: 50 }, { t: 200, x: 52, y: 49 }, true, "a second tap close in time and place"],
+  [{ t: 0, x: 50, y: 50 }, { t: 300, x: 50, y: 50 }, true, "exactly the time limit still counts"],
+  [{ t: 0, x: 50, y: 50 }, { t: 301, x: 50, y: 50 }, false, "one ms past the time limit is a new first tap"],
+  [{ t: 0, x: 0, y: 0 }, { t: 100, x: 6, y: 8 }, false, "10px away is another place"],
+  [{ t: 0, x: 0, y: 0 }, { t: 100, x: 5, y: 8 }, true, "just under 10px is the same place"],
+  [{ t: 500, x: 0, y: 0 }, { t: 400, x: 0, y: 0 }, false, "a tap from the future is not a pair"],
+];
+
+for (const [prev, tap, want, why] of TAPS) {
+  test(`isDoubleTap: ${why}`, () => {
+    const { isDoubleTap, DOUBLE_TAP_MS } = load();
+    assert.equal(DOUBLE_TAP_MS, 300);
+    assert.equal(isDoubleTap(prev, tap), want);
+  });
+}
+
 // --- touchScrollTarget: whose gesture a finger's drag is -------------------
 // The finger must be the trackpad, and xterm gives the trackpad's wheel to
 // three different owners. Under a TUI that tracks the mouse the viewport's
@@ -2593,6 +2613,11 @@ test("the pure folds mutate none of their arguments", () => {
     peer({ type: "tick", at: SEEN + WINDOW_MS + 1 }),
     peer({ type: "gone" }),
     ["dragBegins", [{ x: 1, y: 2 }, { x: 30, y: 40 }, 10], (...args) => WB.dragBegins(...args)],
+    [
+      "isDoubleTap",
+      [{ t: 0, x: 1, y: 2 }, { t: 100, x: 3, y: 4 }],
+      (...args) => WB.isDoubleTap(...args),
+    ],
   ];
   for (const [name, args, call, check] of rows) {
     const before = structuredClone(args);

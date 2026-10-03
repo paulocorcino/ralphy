@@ -67,6 +67,11 @@ Scenario 17  TWO fingers over a console pan the CANVAS — `touch-action: none`
              does not scroll and nothing reaches the socket. Under `maxlock`
              there is nowhere to pan and the fingers do nothing.
 
+Scenario 18  on touch, two taps on the titlebar (the name included) maximize
+             and restore, two taps far apart do nothing, a finger held on
+             the name opens the rename with the focus in the field, and a
+             finger that moves first drags instead.
+
 Run: python tests/browser/console/wb_console_touch.py
 
 The daemon is stopped by its own subprocess handle, NEVER by name — a stray
@@ -439,6 +444,39 @@ def touch_drag_el(page, i, selector, dx, dy, steps=8):
         "  return { w: w.offsetWidth, h: w.offsetHeight };"
         "}",
         [i, selector, dx, dy, steps],
+    )
+
+
+def touch_presses(page, i, selector, presses):
+    """Press the i-th window's `selector` with a TOUCH pointer, in real time.
+
+    `presses` is a list of `{"wait": ms before, "hold": ms down, "move": px}`.
+    A press with `move` steps that far right 50 ms after it lands, so a hold
+    that moves is a drag before the hold time runs out.
+    """
+    return page.evaluate(
+        "async ([i, sel, presses]) => {"
+        "  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));"
+        "  const w = document.querySelectorAll('.session-window')[i];"
+        "  const ev = (type, target, cx, cy, buttons) => target.dispatchEvent("
+        "    new PointerEvent(type, { pointerId: 11, pointerType: 'touch', isPrimary: true,"
+        "      button: 0, buttons, clientX: cx, clientY: cy, bubbles: true, cancelable: true }));"
+        "  for (const p of presses) {"
+        "    await sleep(p.wait || 0);"
+        "    const h = w.querySelector(sel);"
+        "    const r = h.getBoundingClientRect();"
+        "    let x = r.left + r.width / 2, y = r.top + r.height / 2;"
+        "    ev('pointerdown', h, x, y, 1);"
+        "    if (p.move) {"
+        "      await sleep(50);"
+        "      for (let s = 1; s <= 4; s++) ev('pointermove', document, x + p.move * s / 4, y, 1);"
+        "      x += p.move;"
+        "    }"
+        "    await sleep(p.hold || 30);"
+        "    ev('pointerup', document, x, y, 0);"
+        "  }"
+        "}",
+        [i, selector, presses],
     )
 
 
@@ -1291,6 +1329,50 @@ def main():
             )
             page.locator(".session-window").nth(a_i).locator(".session-max").click()
             page.wait_for_timeout(300)
+
+            # --- Scenario 18: a double tap maximizes, a hold renames -------------
+            # On the NAME, where a mouse double-click renames: on touch the
+            # whole bar maximizes, and the name needs the hold.
+            is_max = lambda: page.evaluate(
+                "(i) => document.querySelectorAll('.session-window')[i].classList.contains('maximized')",
+                a_i,
+            )
+            name_input = lambda: page.evaluate(
+                "(i) => { const inp = document.querySelectorAll('.session-window')[i]"
+                ".querySelector('.session-name-input');"
+                " return inp ? { focused: document.activeElement === inp } : null; }",
+                a_i,
+            )
+            check("18 the console starts restored", not is_max())
+            touch_presses(page, a_i, ".session-name", [{}, {"wait": 120}])
+            page.wait_for_timeout(400)
+            check("18 two taps on the name maximize the console", is_max())
+            check("18 …and open no rename", name_input() is None, f"{name_input()}")
+            touch_presses(page, a_i, ".session-name", [{}, {"wait": 120}])
+            page.wait_for_timeout(400)
+            check("18 two more taps restore it", not is_max())
+            touch_presses(page, a_i, ".session-name", [{}, {"wait": 450}])
+            page.wait_for_timeout(400)
+            check("18 two taps far apart in time do nothing", not is_max())
+            touch_presses(page, a_i, ".session-name", [{"wait": 400, "hold": 650}])
+            page.wait_for_timeout(300)
+            held = name_input()
+            check("18 a held finger on the name opens the rename", held is not None, f"{held}")
+            check(
+                "18 …and the field keeps the focus after the finger lifts",
+                bool(held and held["focused"]),
+                f"{held}",
+            )
+            check("18 …and the hold did not maximize", not is_max())
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(300)
+            check("18 Escape ends the rename", name_input() is None, f"{name_input()}")
+            box0 = win_box(page, a_i)
+            touch_presses(page, a_i, ".session-name", [{"wait": 400, "move": 60, "hold": 650}])
+            page.wait_for_timeout(300)
+            box1 = win_box(page, a_i)
+            check("18 a finger that moves before the hold drags the window", box1 != box0, f"{box0} -> {box1}")
+            check("18 …and opens no rename", name_input() is None, f"{name_input()}")
 
             page.screenshot(path=os.path.join(SHOT_DIR, SHOT))
             info("screenshot", os.path.join(SHOT_DIR, SHOT))

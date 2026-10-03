@@ -5504,6 +5504,46 @@ fn shell_drags_only_past_a_threshold() {
     }
 }
 
+/// A finger on a console's titlebar: two taps maximize, a hold on the name
+/// renames. `isDoubleTap` is driven by `ui-tests/wb-console.test.mjs`; the
+/// wiring is DOM that no node test runs, so it is pinned here, and the
+/// gestures themselves by `tests/browser/console/wb_console_touch.py`.
+#[test]
+fn titlebar_touch_double_taps_and_holds() {
+    let js = include_str!("../assets/ui/wb-console.js");
+    let after = js
+        .split_once("function wireTitleTouch(")
+        .expect("wb-console.js must keep wireTitleTouch")
+        .1;
+    let b = &after[..after.find("\n  }").expect("the function must close")];
+    for pin in [
+        // Each `dblclick` listener needs the press's input type.
+        "win._lastPointerType = e.pointerType;",
+        // Without it a `mousedown` after the hold blurs the new name input.
+        "e.preventDefault();",
+        "dragBegins(pressed,",
+        "HOLD_MS)",
+        "isDoubleTap(win._lastTap, tap) && !isFull(win)",
+        "startRename(win, span);",
+        r#"document.addEventListener("pointercancel", onCancel);"#,
+        r#"document.removeEventListener("pointercancel", onCancel);"#,
+    ] {
+        assert!(b.contains(pin), "wireTitleTouch must keep {pin}");
+    }
+    assert!(
+        js.contains("wireTitleTouch(win, titlebar, maxOrRestore);"),
+        "every console titlebar must get the touch gestures"
+    );
+    // Both `dblclick` listeners (bar and name) leave a finger's taps to
+    // wireTitleTouch, or Chrome on Android toggles or renames twice.
+    assert_eq!(
+        js.matches(r#"if (win._lastPointerType !== "mouse") return;"#)
+            .count(),
+        2,
+        "the titlebar and the name dblclick must both ignore a touch"
+    );
+}
+
 /// A note card is a surface on the WINDOW tier and wears the plane's own
 /// chrome (ADR-0064 §8, amendment 2026-09-22). Both halves were found by
 /// the operator on the first plane that had a note on it, and neither is

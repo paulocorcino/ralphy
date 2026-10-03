@@ -1439,65 +1439,74 @@ window.WBConsole = (function () {
   }
 
   // Rename a console from its title (ADR-0066 §3): the fence rename's rules.
-  // At rest the name is plain text; a double-click swaps in an input, and
-  // `endEdit` — the ONE place an edit ends — draws the title again, which puts
-  // the text back. Enter commits; Escape, a press anywhere else and a focus
-  // loss cancel. No lock check: a locked or fenced console can be renamed. The
-  // detached popup cannot: its sink stores nothing.
+  // At rest the name is plain text; a mouse double-click, or a finger held on
+  // the name (`wireTitleTouch`), swaps in an input, and `endEdit` — the ONE
+  // place an edit ends — draws the title again, which puts the text back.
+  // Enter commits; Escape, a press anywhere else and a focus loss cancel. No
+  // lock check: a locked or fenced console can be renamed. The detached popup
+  // cannot: its sink stores nothing.
+  function canRename() {
+    return OPTS.canLaunch !== false;
+  }
   function wireRename(win, span) {
-    if (OPTS.canLaunch === false) return;
+    if (!canRename()) return;
     span.addEventListener("dblclick", (e) => {
       e.stopPropagation();
-      if (!span.isConnected) return;
-      const input = document.createElement("input");
-      input.className = "session-name-input";
-      input.setAttribute("aria-label", "Console name");
-      input.maxLength = window.WBConsoleName.NAME_MAX;
-      input.value = win._deskConsoleName || "";
-      input.style.width = `${Math.max(span.offsetWidth + 16, 96)}px`;
-      let editing = true;
-      // Capture phase, before the plane's pan handler swallows the press: the
-      // pan calls `preventDefault()` on mousedown, so focus does not move.
-      // Also ends an edit whose window left the page: not every browser fires
-      // `blur` on a removed input.
-      const stopOutside = (ev) => {
-        if (ev.target !== input || !win.isConnected) endEdit(false);
-      };
-      const endEdit = (commit) => {
-        if (!editing) return;
-        editing = false; // first: removing the input fires `blur`, which re-enters
-        document.removeEventListener("pointerdown", stopOutside, true);
-        if (commit) {
-          win._deskConsoleName = window.WBConsoleName.renameValue(
-            input.value,
-            consolePrefix(win._deskRepo),
-            takenNames(win._deskId),
-          );
-          persistWin(win);
-        } else {
-          // A name another page gave while this edit was open was skipped by
-          // `applyNamesFromMirror`; take it now, or the next drag undoes it.
-          const stored = desk.find((r) => r.id === win._deskId)?.consoleName;
-          if (stored) win._deskConsoleName = stored;
-        }
-        input.remove();
-        if (win._title && win._presentation) renderTitle(win, win._title, win._presentation);
-      };
-      input.addEventListener("pointerdown", (ev) => ev.stopPropagation());
-      input.addEventListener("dblclick", (ev) => ev.stopPropagation());
-      input.addEventListener("keydown", (ev) => {
-        // Held here so an Escape meant for this edit never reaches the plane.
-        ev.stopPropagation();
-        // An Enter that confirms an IME candidate is not a commit.
-        if (ev.isComposing) return;
-        if (ev.key === "Enter" || ev.key === "Escape") endEdit(ev.key === "Enter");
-      });
-      input.addEventListener("blur", () => endEdit(false));
-      span.replaceWith(input);
-      input.focus();
-      input.select();
-      document.addEventListener("pointerdown", stopOutside, true);
+      // On touch a double tap maximizes, even on the name.
+      if (win._lastPointerType !== "mouse") return;
+      startRename(win, span);
     });
+  }
+  function startRename(win, span) {
+    if (!span.isConnected) return;
+    const input = document.createElement("input");
+    input.className = "session-name-input";
+    input.setAttribute("aria-label", "Console name");
+    input.maxLength = window.WBConsoleName.NAME_MAX;
+    input.value = win._deskConsoleName || "";
+    input.style.width = `${Math.max(span.offsetWidth + 16, 96)}px`;
+    let editing = true;
+    // Capture phase, before the plane's pan handler swallows the press: the
+    // pan calls `preventDefault()` on mousedown, so focus does not move.
+    // Also ends an edit whose window left the page: not every browser fires
+    // `blur` on a removed input.
+    const stopOutside = (ev) => {
+      if (ev.target !== input || !win.isConnected) endEdit(false);
+    };
+    const endEdit = (commit) => {
+      if (!editing) return;
+      editing = false; // first: removing the input fires `blur`, which re-enters
+      document.removeEventListener("pointerdown", stopOutside, true);
+      if (commit) {
+        win._deskConsoleName = window.WBConsoleName.renameValue(
+          input.value,
+          consolePrefix(win._deskRepo),
+          takenNames(win._deskId),
+        );
+        persistWin(win);
+      } else {
+        // A name another page gave while this edit was open was skipped by
+        // `applyNamesFromMirror`; take it now, or the next drag undoes it.
+        const stored = desk.find((r) => r.id === win._deskId)?.consoleName;
+        if (stored) win._deskConsoleName = stored;
+      }
+      input.remove();
+      if (win._title && win._presentation) renderTitle(win, win._title, win._presentation);
+    };
+    input.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+    input.addEventListener("dblclick", (ev) => ev.stopPropagation());
+    input.addEventListener("keydown", (ev) => {
+      // Held here so an Escape meant for this edit never reaches the plane.
+      ev.stopPropagation();
+      // An Enter that confirms an IME candidate is not a commit.
+      if (ev.isComposing) return;
+      if (ev.key === "Enter" || ev.key === "Escape") endEdit(ev.key === "Enter");
+    });
+    input.addEventListener("blur", () => endEdit(false));
+    span.replaceWith(input);
+    input.focus();
+    input.select();
+    document.addEventListener("pointerdown", stopOutside, true);
   }
 
   // The checkout menu — ONE component, under the console's title segment and
@@ -2625,6 +2634,86 @@ window.WBConsole = (function () {
       document.addEventListener("contextmenu", onUp);
       document.addEventListener("keydown", onKey);
       e.preventDefault();
+    });
+  }
+
+  // The titlebar's touch gestures. A mouse keeps `dblclick`; a finger or a pen
+  // gets two taps → `onDoubleTap` (anywhere but a button, the name included),
+  // and a hold on the name → the rename. `win._lastPointerType` tells both
+  // `dblclick` listeners which input made the press, so a browser that also
+  // turns two taps into a `dblclick` (Chrome on Android) does not act twice.
+  // The rename opens on the RELEASE after the hold, not when the timer fires:
+  // iOS raises the keyboard only for a `focus()` inside an input event.
+  function wireTitleTouch(win, titlebar, onDoubleTap) {
+    titlebar.addEventListener("pointerdown", (e) => {
+      win._lastPointerType = e.pointerType;
+      if (e.pointerType === "mouse" || !e.isPrimary) return;
+      if (e.target.closest("button, .session-name-input")) return;
+      // No compatibility mouse events: a `mousedown` after the release would
+      // take focus from the new name input, and its `blur` ends the edit.
+      e.preventDefault();
+      const pointerId = e.pointerId;
+      const pressed = { x: e.clientX, y: e.clientY };
+      const threshold = dragThreshold(e.pointerType);
+      const span = canRename() ? e.target.closest(".session-name") : null;
+      let moved = false;
+      let held = false;
+      let timer = span
+        ? setTimeout(() => {
+            timer = null;
+            held = true;
+          }, HOLD_MS)
+        : null;
+      const onMove = (ev) => {
+        if (ev.pointerId !== pointerId) return;
+        // `pointerup` is not guaranteed (see `makeDraggable`).
+        if (ev.buttons === 0) {
+          finish(null);
+          return;
+        }
+        if (!moved && dragBegins(pressed, { x: ev.clientX, y: ev.clientY }, threshold)) {
+          moved = true;
+          held = false;
+          clearTimeout(timer);
+          timer = null;
+        }
+      };
+      const onUp = (ev) => {
+        if (ev.pointerId === pointerId) finish(ev);
+      };
+      const onCancel = (ev) => {
+        if (ev.pointerId === pointerId) finish(null);
+      };
+      // Android fires `contextmenu` on a held finger; its menu is not ours.
+      const onMenu = (ev) => ev.preventDefault();
+      const finish = (up) => {
+        clearTimeout(timer);
+        timer = null;
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        document.removeEventListener("pointercancel", onCancel);
+        document.removeEventListener("contextmenu", onMenu, true);
+        if (!up || moved) {
+          win._lastTap = null;
+          return;
+        }
+        if (held) {
+          win._lastTap = null;
+          startRename(win, span);
+          return;
+        }
+        const tap = { t: up.timeStamp, x: up.clientX, y: up.clientY };
+        if (isDoubleTap(win._lastTap, tap) && !isFull(win)) {
+          win._lastTap = null;
+          onDoubleTap();
+        } else {
+          win._lastTap = tap;
+        }
+      };
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+      document.addEventListener("pointercancel", onCancel);
+      document.addEventListener("contextmenu", onMenu, true);
     });
   }
 
@@ -4544,6 +4633,21 @@ window.WBConsole = (function () {
     return Math.hypot(dx, dy) >= threshold;
   }
 
+  // Two taps on a console's titlebar make a double tap when the second comes
+  // within DOUBLE_TAP_MS of the first and lands within a finger's drag
+  // threshold of it. Our own rule, not `dblclick`: WebKit on iOS does not
+  // turn two taps on a `touch-action: none` bar into one. `prev` and `tap`
+  // are `{ t, x, y }` (ms, client px); `prev` is null after a double tap.
+  const DOUBLE_TAP_MS = 300;
+  function isDoubleTap(prev, tap) {
+    if (!prev || !tap) return false;
+    const gap = tap.t - prev.t;
+    return gap >= 0 && gap <= DOUBLE_TAP_MS && !dragBegins(prev, tap, DRAG_THRESHOLD.touch);
+  }
+  // A finger held this long on the console name, without moving past the
+  // drag threshold, renames the console.
+  const HOLD_MS = 500;
+
   // Inertia. Terminals hold thousands of lines and a strict 1:1 drag makes the
   // scrollback unreachable by hand, which is the substance of xterm #594.
   // `FLING_DECAY` is per 16ms frame; below `FLING_MIN` the glide has stopped
@@ -6055,8 +6159,9 @@ window.WBConsole = (function () {
     // Pointer: a touch raises the window on contact, not after the tap resolves.
     win.addEventListener("pointerdown", () => focusWin(win));
     makeDraggable(win, titlebar);
-    // Maximize/restore: the button, or a double-click on the titlebar. The
-    // shell owns the columns, so a column's restore is its decision.
+    // Maximize/restore: the button, a double-click on the titlebar, or a
+    // double tap on it. The shell owns the columns, so a column's restore is
+    // its decision.
     const maxOrRestore = () => {
       if (win.classList.contains("column")) {
         document.dispatchEvent(
@@ -6076,8 +6181,11 @@ window.WBConsole = (function () {
       // it unseen underneath.
       // Nor may a double-click on the name, which renames (ADR-0066 §3).
       if (e.target.closest("button, .session-name, .session-name-input") || isFull(win)) return;
+      // A finger's double tap is `wireTitleTouch`'s.
+      if (win._lastPointerType !== "mouse") return;
       maxOrRestore();
     });
+    wireTitleTouch(win, titlebar, maxOrRestore);
     colBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       document.dispatchEvent(
@@ -7179,6 +7287,8 @@ window.WBConsole = (function () {
     touchCentroid,
     dragThreshold,
     dragBegins,
+    isDoubleTap,
+    DOUBLE_TAP_MS,
     prefersDomRenderer,
     isWebKit,
     fullscreenOffered,
