@@ -283,3 +283,27 @@ jobs:
 
       - name: The fragments parse
         run: cargo run -q -p xtask -- changelog --check
+
+  oversized:
+    name: oversized files only shrink
+    # The OVERSIZED ratchet in crates/xtask/tests/ratchets.rs checks that each
+    # number equals the file's size, so a raised number passes it. Only a diff
+    # against the base sees the raise: an entry that grows or appears needs a
+    # human decision, given as the `oversized-ok` label (ADR-0022 §5).
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # `git show` of the base needs history a depth-1 clone does not have.
+          fetch-depth: 0
+
+      - name: No OVERSIZED number grows without the label
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: .github/scripts/oversized-only-shrinks.sh "origin/$BASE_REF"

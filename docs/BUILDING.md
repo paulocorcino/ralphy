@@ -83,7 +83,9 @@ Six GitHub Actions workflows live under [`.github/workflows/`](../.github/workfl
   requests only**: it fails when the diff touches the shipped surface
   (`crates/*/src/`, the workbench UI assets, `assets/`) without a `changelog.d/` fragment, and it checks
   that the fragments present parse. A human overrides it with the `no-changelog`
-  label.
+  label. The job `oversized`, also on pull requests only, fails when a number
+  in the `OVERSIZED` table (`crates/xtask/tests/ratchets.rs`) grows or a new
+  entry appears; a human allows it with the `oversized-ok` label.
 - **`release.yml`** — builds the shippable artifacts for every platform:
   - `ralphy-<version>-windows-x64.zip`
   - `ralphy-<version>-linux-x64.tar.gz` — a **static musl** binary with no glibc

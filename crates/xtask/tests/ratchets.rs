@@ -316,7 +316,8 @@ fn size_errors(sizes: &BTreeMap<String, usize>, baseline: &[(&str, usize)]) -> V
                 "{file}: production lines changed {expected} -> {found}, and the file is \
                  over {SPLIT_AT}. {SPLIT_HOW} Only when the file has no clean seam: set \
                  its number in OVERSIZED to {found}, add a `//` reason that names the \
-                 responsibilities you checked, and say so in your final report"
+                 responsibilities you checked, and say so in your final report. The pull \
+                 request then needs the `oversized-ok` label, which only a human applies"
             ));
         }
     }
