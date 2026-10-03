@@ -4577,6 +4577,16 @@ window.WBConsole = (function () {
 
   function applyKeyBar(win) {
     win.classList.toggle("keys", keyBarVisible(keyBarMode(), hasTouchSurface()));
+    win._applyInputMode?.();
+  }
+
+  // The `inputmode` of a terminal's input field. With the key bar shown, the
+  // virtual keyboard opens only from the bar's keyboard key: `none` keeps the
+  // field focused, so the bar keys, a paste and a hardware keyboard still
+  // type, with no virtual keyboard on screen. Without the bar the attribute
+  // is absent and the browser decides. Pure.
+  function terminalInputMode(barShown, keyboardOpen) {
+    return barShown && !keyboardOpen ? "none" : null;
   }
 
   // Whether the key bar offers a PASTE button. `readText` exists only in a
@@ -6211,6 +6221,32 @@ window.WBConsole = (function () {
         return b;
       };
 
+      // The virtual keyboard opens only from here (`terminalInputMode`). Any
+      // blur of the field closes it: the phone's own Done key, another window
+      // taking focus, the page going to the background.
+      let keyboardOpen = false;
+      let refocusing = false;
+      const kbBtn = key("keyboard", "", "Show or hide the keyboard", "", "bi-keyboard");
+      kbBtn.setAttribute("aria-pressed", "false");
+      const applyInputMode = () => {
+        kbBtn.setAttribute("aria-pressed", keyboardOpen ? "true" : "false");
+        const field = win._term?.term.textarea;
+        if (!field) return;
+        const mode = terminalInputMode(win.classList.contains("keys"), keyboardOpen);
+        if (mode) field.setAttribute("inputmode", mode);
+        else field.removeAttribute("inputmode");
+      };
+      win._applyInputMode = applyInputMode;
+      const toggleKeyboard = (field) => {
+        keyboardOpen = !keyboardOpen;
+        applyInputMode();
+        // iOS reads `inputmode` only when the field takes focus. The click
+        // handler focuses it again, inside the same tap.
+        refocusing = true;
+        field?.blur();
+        refocusing = false;
+      };
+
       key("esc", "esc", "Escape");
       key("tab", "tab", "Tab");
       shiftBtn = key("shift", "shift", "Shift: applies to the next key");
@@ -6245,6 +6281,12 @@ window.WBConsole = (function () {
       win._rewire = (t) => {
         t.term.onSelectionChange(syncCopy);
         syncCopy();
+        t.term.textarea?.addEventListener("blur", () => {
+          if (refocusing || !keyboardOpen) return;
+          keyboardOpen = false;
+          applyInputMode();
+        });
+        applyInputMode();
       };
       win._rewire(win._term);
 
@@ -6278,6 +6320,8 @@ window.WBConsole = (function () {
             })
             .catch(() => {})
             .finally(() => win._term.term.focus());
+        } else if (name === "keyboard") {
+          toggleKeyboard(win._term.term.textarea);
         } else if (name === "copy") {
           writeClipboard(win._term.term.getSelection(), win._term.term);
         } else if (name === "select") {
@@ -6287,7 +6331,7 @@ window.WBConsole = (function () {
         } else {
           win._term.sendKey(name);
         }
-        // Back to the terminal, inside the gesture, so the keyboard stays up.
+        // Back to the terminal, inside the gesture, so an open keyboard stays up.
         win._term.term.focus();
       });
 
@@ -6979,6 +7023,7 @@ window.WBConsole = (function () {
     keySequence,
     barKey,
     applyCtrlLatch,
+    terminalInputMode,
     isTerminalReply,
     keyBarVisible,
     pasteOffered,

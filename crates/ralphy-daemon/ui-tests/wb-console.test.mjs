@@ -1525,6 +1525,19 @@ test("applyCtrlLatch keeps the latch armed for input it cannot fold", () => {
   assert.deepEqual(applyCtrlLatch(true, undefined), { out: undefined, latched: true });
 });
 
+// --- terminalInputMode: the keyboard opens only from the key bar -----------
+
+test("terminalInputMode hides the virtual keyboard until the bar opens it", () => {
+  const { terminalInputMode } = load();
+  // A touch screen: the field keeps focus with no keyboard on screen.
+  assert.equal(terminalInputMode(true, false), "none");
+  // The keyboard key opened it: the browser shows its keyboard again.
+  assert.equal(terminalInputMode(true, true), null);
+  // No bar (a desktop): the attribute stays absent, whatever the state.
+  assert.equal(terminalInputMode(false, false), null);
+  assert.equal(terminalInputMode(false, true), null);
+});
+
 // --- isTerminalReply: the answers a replayed backlog must not send ----------
 
 test("isTerminalReply knows each answer xterm writes back for a query", () => {
