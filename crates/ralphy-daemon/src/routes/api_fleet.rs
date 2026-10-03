@@ -65,7 +65,7 @@ pub(crate) async fn fleet_route(
     repo_cache: PeerRepoCache,
     bound_port: u16,
 ) -> Response {
-    let (descriptors, rejects) = read_peer_store(peers_dir.clone()).await;
+    let (mut descriptors, rejects) = read_peer_store(peers_dir.clone()).await;
     let probe_id = identity
         .as_ref()
         .map(|identity| identity.id.to_string())
@@ -77,7 +77,7 @@ pub(crate) async fn fleet_route(
     for (index, d) in descriptors.iter().cloned().enumerate() {
         let probe_id = probe_id.clone();
         set.spawn(async move {
-            let status = peer::client::probe(
+            let (status, live_environment) = peer::client::probe_hello(
                 &d,
                 peer::client::SelfRef {
                     port: bound_port,
@@ -109,14 +109,23 @@ pub(crate) async fn fleet_route(
                 }
                 _ => None,
             };
-            (index, status, store)
+            (index, status, live_environment, store)
         });
     }
     let mut probed: Vec<Option<(peer::client::PeerStatus, Option<fleet::PeerRepoStore>)>> =
         (0..descriptors.len()).map(|_| None).collect();
     while let Some(joined) = set.join_next().await {
         match joined {
-            Ok((index, status, store)) => probed[index] = Some((status, store)),
+            Ok((index, status, live_environment, store)) => {
+                // The descriptor's label is what the peer said when it was
+                // paired; its handshake is what it says now (ADR-0067,
+                // amendment "the header in capitals, the label from the
+                // handshake"). The file on disk is left as `host add` wrote it.
+                if let Some(live) = live_environment {
+                    descriptors[index].environment = live;
+                }
+                probed[index] = Some((status, store));
+            }
             Err(e) => tracing::warn!(error = %e, "a peer probe task failed"),
         }
     }

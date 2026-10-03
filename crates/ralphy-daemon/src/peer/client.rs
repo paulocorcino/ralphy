@@ -538,6 +538,25 @@ async fn send(
 
 /// Probe `d` with the version handshake and classify what came back.
 pub async fn probe(d: &PeerDescriptor, me: SelfRef<'_>) -> PeerStatus {
+    probe_hello(d, me).await.0
+}
+
+/// [`probe`], plus the environment label the peer gave in its handshake when
+/// it is reachable. `None` when the peer is not reachable or sent no label.
+pub async fn probe_hello(d: &PeerDescriptor, me: SelfRef<'_>) -> (PeerStatus, Option<String>) {
+    let mut environment = None;
+    let status = handshake(d, me, &mut environment).await;
+    if status != PeerStatus::Reachable {
+        environment = None;
+    }
+    (status, environment)
+}
+
+async fn handshake(
+    d: &PeerDescriptor,
+    me: SelfRef<'_>,
+    environment: &mut Option<String>,
+) -> PeerStatus {
     if let Some(refused) = classify_address(&d.address) {
         return refused;
     }
@@ -559,6 +578,11 @@ pub async fn probe(d: &PeerDescriptor, me: SelfRef<'_>) -> PeerStatus {
         };
     }
     let hello = serde_json::from_slice::<serde_json::Value>(&body).ok();
+    *environment = hello
+        .as_ref()
+        .and_then(|v| v.get("environment").and_then(|e| e.as_str()))
+        .filter(|e| !e.is_empty())
+        .map(str::to_string);
     // Belt and braces for the gate above: a handshake that answers with THIS
     // daemon's own id came back to us by some route the port check did not
     // model, and treating it as a peer would federate this daemon with itself.

@@ -1783,7 +1783,8 @@ async fn api_fleet_marks_an_unreachable_peer_and_keeps_the_local_repos() {
 /// The route-level proof of "marked, never removed": a peer that answered
 /// once keeps its rows listed after it stops answering, with its state
 /// changed rather than its rows dropped. Liveness is still fresh — only the
-/// repo list is remembered.
+/// repo list is remembered. The environment label is the one the peer's
+/// handshake gives while it answers, and the descriptor's after it stops.
 #[tokio::test]
 async fn api_fleet_keeps_a_peers_last_known_repos_after_it_stops_answering() {
     let dir = tempfile::tempdir().unwrap();
@@ -1793,7 +1794,10 @@ async fn api_fleet_keeps_a_peers_last_known_repos_after_it_stops_answering() {
         .route(
             "/api/peer/hello",
             axum::routing::get(|| async {
-                Json(serde_json::json!({"protocol_version": peer::PEER_PROTOCOL_VERSION}))
+                Json(serde_json::json!({
+                    "protocol_version": peer::PEER_PROTOCOL_VERSION,
+                    "environment": "WSL: Debian-12",
+                }))
             }),
         )
         .route(
@@ -1841,6 +1845,11 @@ async fn api_fleet_keeps_a_peers_last_known_repos_after_it_stops_answering() {
         .collect();
     assert_eq!(up_rows.len(), 1, "the peer's repo is federated: {up}");
     assert_eq!(up_rows[0]["slug"], "owner/theirs");
+    assert_eq!(
+        up["peers"][0]["environment"], "WSL: Debian-12",
+        "a reachable peer is labelled by its handshake, not its descriptor: {up}"
+    );
+    assert_eq!(up_rows[0]["environment"], "WSL: Debian-12");
 
     serving.abort();
     let _ = serving.await;
@@ -1863,6 +1872,10 @@ async fn api_fleet_keeps_a_peers_last_known_repos_after_it_stops_answering() {
     );
     assert_eq!(down_rows[0]["peer_state"], "unreachable");
     assert_eq!(down_rows[0]["reachable"], false);
+    assert_eq!(
+        down["peers"][0]["environment"], "WSL: Ubuntu-22.04",
+        "a peer that does not answer keeps its descriptor's label: {down}"
+    );
 }
 
 fn nudge_target(port: u16, address: &str) -> peer::PeerDescriptor {

@@ -870,3 +870,23 @@ On macOS the probe runs `git` only after `xcode-select -p` succeeds. Without
 the Command Line Tools, `/usr/bin/git` is a stub that offers to install them.
 Whether that offer opens a window on the host's screen when the stub runs over
 SSH is not measured.
+
+## Amendment (2026-10-02): the header in capitals, the label from the handshake
+
+This amendment changes R2 and the last paragraph of "the header shows the OS
+release".
+
+**L1. The whole header is in capital letters** (`VPS-HETZNER · UBUNTU 24.04`,
+`WSL: UBUNTU-22.04`). The release no longer keeps its own spelling: a header
+in two cases looked like two kinds of text.
+
+**L2. A reachable peer is labelled by its handshake.** `/api/fleet` already
+reads `/api/peer/hello` from every peer on every request. When the peer
+answers, the `environment` of that answer replaces the descriptor's label in
+the peer list, its diagnosis and its rows. When it does not answer, the
+descriptor's label is used. The daemon does not rewrite the descriptor: `host
+add` and Edit own it. So a host paired before its daemon could read the
+release shows the release as soon as it answers, without Edit.
+
+Measured on 2026-10-02: a Mac paired with `environment = "macOS"` answered the
+handshake with `macOS 12` (rc.36, `sw_vers -productVersion` = `12.7.6`).
