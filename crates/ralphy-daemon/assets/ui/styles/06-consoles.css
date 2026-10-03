@@ -574,7 +574,7 @@
   padding: 0.25rem 0.35rem;
   background: var(--surface);
   border-top: 1px solid var(--border);
-  /* A narrow window cannot fit eleven 44px targets, so the row scrolls rather
+  /* A narrow window cannot fit every 44px target, so the row scrolls rather
      than wrapping into a second one that would eat the terminal. `none`, not a
      `::-webkit-scrollbar` rule: the design system's default is the standard
      property, and the pseudo-element is inert beside it. */
@@ -607,6 +607,14 @@
   touch-action: manipulation;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
+}
+/* On a phone the first eight keys (keyboard to Down) fit a 393px screen
+   without a scroll; at 44px the eighth one is cut. */
+@media (max-width: 430px) {
+  .session-key {
+    min-width: 40px;
+    padding: 0 0.3rem;
+  }
 }
 .session-key:hover:not(:disabled) {
   color: var(--text);

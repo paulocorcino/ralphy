@@ -4676,6 +4676,8 @@ window.WBConsole = (function () {
     // CR, what a real Return key sends. Lets a menu be answered with the bar
     // alone, without opening the virtual keyboard.
     enter: "\r",
+    // Opens an agent's command menu without the virtual keyboard.
+    slash: "/",
     "ctrl-c": "\x03",
   });
   const ARROW_FINAL = Object.assign(Object.create(null), {
@@ -4686,8 +4688,8 @@ window.WBConsole = (function () {
   });
   // `shift` is the bar's Shift latch. xterm's encodings: Tab becomes back-tab
   // (CBT, which Claude Code cycles its modes on), and an arrow takes the
-  // modifier parameter 2 in both cursor modes. Esc, Enter and ^C have no
-  // Shift form in xterm, so they are sent unchanged.
+  // modifier parameter 2 in both cursor modes. Esc, Enter, / and ^C have no
+  // Shift form here, so they are sent unchanged.
   function keySequence(name, appCursor, shift) {
     if (shift && name === "tab") return "\x1b[Z";
     const literal = KEY_BYTES[name];
@@ -6444,17 +6446,20 @@ window.WBConsole = (function () {
         refocusing = false;
       };
 
+      // Most used first: on a phone only the keys up to Down show without a
+      // scroll (the narrow-screen rule in 06-consoles.css).
       key("esc", "esc", "Escape");
-      key("tab", "tab", "Tab");
       shiftBtn = key("shift", "shift", "Shift: applies to the next key");
       shiftBtn.setAttribute("aria-pressed", "false");
+      key("tab", "tab", "Tab");
+      key("enter", "", "Enter", "", "bi-arrow-return-left");
+      key("slash", "/", "Slash");
+      key("up", "", "Up", "", "bi-arrow-up");
+      key("down", "", "Down", "", "bi-arrow-down");
+      key("left", "", "Left", "", "bi-arrow-left");
+      key("right", "", "Right", "", "bi-arrow-right");
       ctrlBtn = key("ctrl", "ctrl", "Ctrl: applies to the next key");
       ctrlBtn.setAttribute("aria-pressed", "false");
-      key("left", "", "Left", "", "bi-arrow-left");
-      key("down", "", "Down", "", "bi-arrow-down");
-      key("up", "", "Up", "", "bi-arrow-up");
-      key("right", "", "Right", "", "bi-arrow-right");
-      key("enter", "", "Enter", "", "bi-arrow-return-left");
       key("ctrl-c", "^C", "Ctrl-C: interrupt");
       // Arms ONE drag to select whole lines; the gesture's end disarms it.
       selBtn = key("select", "sel", "Select lines: drag across the screen");

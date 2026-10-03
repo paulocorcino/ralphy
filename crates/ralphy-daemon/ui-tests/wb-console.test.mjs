@@ -1540,10 +1540,12 @@ test("keySequence sends the control characters a virtual keyboard has no key for
   assert.equal(keySequence("tab", false), "\t");
   assert.equal(keySequence("enter", false), "\r");
   assert.equal(keySequence("ctrl-c", false), "\x03");
+  assert.equal(keySequence("slash", false), "/");
   // The mode does not touch them — only the arrows are mode-dependent.
   assert.equal(keySequence("esc", true), "\x1b");
   assert.equal(keySequence("enter", true), "\r");
   assert.equal(keySequence("ctrl-c", true), "\x03");
+  assert.equal(keySequence("slash", true), "/");
 });
 
 test("keySequence follows the terminal into application cursor mode", () => {
@@ -1573,10 +1575,11 @@ test("keySequence with the Shift latch sends xterm's shifted forms", () => {
     assert.equal(keySequence("right", appCursor, true), "\x1b[1;2C");
     assert.equal(keySequence("left", appCursor, true), "\x1b[1;2D");
   }
-  // No Shift form in xterm: sent unchanged.
+  // No Shift form: sent unchanged.
   assert.equal(keySequence("esc", false, true), "\x1b");
   assert.equal(keySequence("enter", false, true), "\r");
   assert.equal(keySequence("ctrl-c", false, true), "\x03");
+  assert.equal(keySequence("slash", false, true), "/");
 });
 
 test("keySequence sends nothing for a name it does not know", () => {
@@ -2519,9 +2522,10 @@ test("barKey: Shift toggles the latch and one key that sends bytes uses it", () 
   assert.deepEqual(barKey("shift", false, true), { seq: "", latched: false });
   assert.deepEqual(barKey("tab", false, true), { seq: "\x1b[Z", latched: false });
   assert.deepEqual(barKey("up", true, true), { seq: "\x1b[1;2A", latched: false });
-  // Esc and Enter have no Shift form, but they still use the latch up.
+  // Esc, Enter and / have no Shift form, but they still use the latch up.
   assert.deepEqual(barKey("esc", false, true), { seq: "\x1b", latched: false });
   assert.deepEqual(barKey("enter", false, true), { seq: "\r", latched: false });
+  assert.deepEqual(barKey("slash", false, true), { seq: "/", latched: false });
   // A key that sends nothing leaves the latch as it was.
   assert.deepEqual(barKey("nope", false, true), { seq: "", latched: true });
   assert.deepEqual(barKey("tab", false, false), { seq: "\t", latched: false });
