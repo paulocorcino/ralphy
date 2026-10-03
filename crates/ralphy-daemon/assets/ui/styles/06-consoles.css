@@ -214,6 +214,15 @@
   font: inherit;
   outline: none;
 }
+/* iOS Safari zooms the page when a field under 16px takes focus, and the
+   title's 0.8rem is under it. A finger opens this field by a hold, and the
+   pinch that would undo the zoom is taken by `touch-action: none` on the
+   titlebar and the console body, so the zoom stuck. */
+@media (pointer: coarse) {
+  .session-name-input {
+    font-size: 16px;
+  }
+}
 .session-title .bi {
   color: var(--console-text);
 }
