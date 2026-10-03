@@ -3,7 +3,8 @@
 Operational guide for agents working **on Ralphy's own codebase**. It holds the
 rules an agent gets wrong without being told, and it points to the documents
 that hold the details. When a rule here and its source document disagree, the
-source document is correct — fix this file.
+source document is correct — fix this file in the same change. For the gate,
+the source is `.github/workflows/ci.yml`, and it wins over any ADR or doc.
 
 - **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)** — the architecture map:
   the owner of each fact, who may call whom, and where an outside product or
@@ -18,12 +19,14 @@ source document is correct — fix this file.
   a setting that turns a protection off, or a vendored library.
 - **[CONTEXT.md](./CONTEXT.md)** — the ubiquitous language. Every domain term
   (run, queue label, adapter, planner/executor, event sink…) is defined there.
-  Use these words and only these words.
+  Use these words and only these words. Read it before you name a new type,
+  module, flag, or term a user sees.
 - **[docs/adr/](./docs/adr/)** — architecture decisions. Read the relevant ADR
   before you change or add a boundary between crates. A boundary that no ADR
   covers needs an ADR before any code, and the change is probably in the wrong
   place. A new ADR starts from [docs/adr/TEMPLATE.md](./docs/adr/TEMPLATE.md).
 - **[docs/BUILDING.md](./docs/BUILDING.md)** — build, CI workflows, releases.
+  Read it before you change a workflow, a build profile, or the release.
 - **[docs/TESTING.md](./docs/TESTING.md)** — how to write a test that fails
   only when the behavior breaks. Read it before you add, change, or review a
   test, or before a browser check of the workbench page.
@@ -32,8 +35,7 @@ source document is correct — fix this file.
 
 Ralphy is **hexagonal (ports & adapters)** at the crate boundary. It uses DDD
 only in the **tactical** sense: the [CONTEXT.md](./CONTEXT.md) glossary *is* the
-ubiquitous language, and each crate is roughly one bounded context. There are no
-aggregates, repositories, or domain-event buses. Don't add them.
+ubiquitous language, and each crate is roughly one bounded context.
 
 - **`ralphy-core` is the center and depends on no vendor.** It defines the agent
   contract (the *port*) and owns the queue lifecycle, git/forge, and run
@@ -88,8 +90,9 @@ aggregates, repositories, or domain-event buses. Don't add them.
   Before a change there, read
   [docs/WORKBENCH-BUILD-GUIDE.md](./docs/WORKBENCH-BUILD-GUIDE.md): vendored
   libraries, touch rules, the clipboard contract.
-- **A change a user can see needs a changelog fragment:** one file per PR,
-  `changelog.d/<n>.md`: one short sentence that names the *capability*, not
+- **A change to the shipped surface needs a changelog fragment:** one file per
+  PR, `changelog.d/<pr-or-issue-number>.md`, or a short name for the work when
+  there is no number: one short sentence that names the *capability*, not
   the diff. A refactor, and a fix to a feature that no release has shipped
   yet, take `kind: internal`. CI fails a PR that
   touches the shipped surface (`crates/*/src/`, the UI assets, `assets/`)
@@ -98,21 +101,22 @@ aggregates, repositories, or domain-event buses. Don't add them.
   `cargo run -q -p xtask -- changelog --check`. `CHANGELOG.md` and
   `changelog.json` belong to the `changelog` xtask: edit only fragments.
 - **Cross-platform, always.** CI builds and tests on **Windows, Linux and
-  macOS**. Make no POSIX-only assumptions. Test children are never shell
-  scripts: subprocess and PTY behavior is tested against a Rust helper binary
-  (docs/TESTING.md → *What may be faked*).
+  macOS**. Build paths with `std::path`, spawn a program directly with its
+  arguments, and take temporary directories from `tempfile`. Subprocess and
+  PTY behavior is tested against a Rust helper binary, never a shell script
+  (docs/TESTING.md → *What may be faked*). Measured platform differences are
+  in [docs/TESTING-TRAPS.md](./docs/TESTING-TRAPS.md).
 - **The public crate API is stable by default.** Moving code inside a crate must
   not change the `pub` surface or its import paths; re-export from the parent
   module. A change to the public API is a design decision, not a side effect.
-- **Files over 500 production lines are split by
-  [ADR-0022](./docs/adr/0022-file-split-conventions.md).** Only lines above
-  `#[cfg(test)]` count. Use the `foo.rs` + `foo/` layout (never `mod.rs`), move
-  tests with their code, and split only along responsibilities that already
-  exist. **Separately, an inline `#[cfg(test)] mod tests { … }` block over 500
-  lines moves to `foo/tests.rs`** (`src/tests.rs` for a crate root), whatever the
-  production size, and the move touches no production code. If a test you add
-  pushes the block over 500 lines, the move is part of your change. A test in
-  `xtask` enforces this.
+- **File size is measured by the gate, not by you.** Write the code, then run
+  the gate. Two `xtask` tests measure every file: production code over 500
+  lines, and an inline `#[cfg(test)] mod tests { … }` block over 500 lines.
+  When one fails, its message says what to do, and that work is part of your
+  change. A split follows
+  [ADR-0022](./docs/adr/0022-file-split-conventions.md): the `foo.rs` + `foo/`
+  layout, tests move with their code, and the cut follows a responsibility
+  the file already has.
 - **Comments state what the code cannot show:** an invariant, a measured fact
   (with the tool and version), a limit, or the ADR/issue that decided it. A
   comment does not describe the previous diff, the bug report, or a rejected
@@ -132,12 +136,26 @@ aggregates, repositories, or domain-event buses. Don't add them.
   to integration tests (docs/TESTING.md → *What may be faked*).
 - **Every new test is seen red, alone.** Before you commit it, apply one
   mutation to the production code, watch the test fail, revert, and write the
-  mutation in the commit message. If another test already fails under that
-  mutation, extend that test instead of adding one. The rules are in
+  mutation in the commit body as `red: <file> <mutation> fails <test>`. If
+  another test already fails under that mutation, extend that test, or pick a
+  mutation only the new test catches. The rules are in
   [docs/TESTING.md](./docs/TESTING.md).
 - **Make the smallest change that fits the existing crate boundaries.** A new
   trait, generic, crate, or layer of indirection needs a real second caller or
   an ADR that decides it — never "for flexibility" (`anti-over-abstraction`).
+- **Duplication: merge one rule, keep two rules apart.** DRY is about
+  knowledge, not text. Before two pieces of code become one helper, ask if
+  they change for the *same reason*. An age limit and a stock quantity can
+  both be "an integer ≥ 0" today, but they are two rules: they stay two
+  functions. One rule written in two places (a limit, a format, a path rule)
+  becomes one function or constant, even inside one crate.
+- **Your task sets the scope of your fixes.** The task is what you were asked
+  to do, plus any extra work the person asking names. Fix a code defect inside
+  the code your change edits; the Rust baseline below applies there. For a
+  code defect you see elsewhere, write in your final report its `file:line`,
+  what is wrong, and the rule it breaks; a human decides whether it becomes an
+  issue. A ratchet (docs/ARCHITECTURE.md §8) is part of your task whenever
+  your change moves its count.
 - **English is the written language of the repo.** ADRs, docs, GitHub issues
   and PRs, commit messages, and code comments are in English, whatever language
   the conversation is in. Issues matter most: an agent executes them, and they
@@ -159,7 +177,8 @@ aggregates, repositories, or domain-event buses. Don't add them.
 The full `/rust-skills` set (179 rules) is for reviewing non-trivial code or a
 specific concern; invoke it when you need it. The rules below apply to every
 change without invoking anything. Each one names its rule, so
-`/rust-skills <name>` shows the bad and good examples.
+`/rust-skills <name>` shows the bad and good examples. Clippy in the gate
+already denies a `std::sync` lock guard held across an `.await`.
 
 - **Errors — Ralphy drives subprocesses, so most code paths can fail.** No
   `.unwrap()`/`.expect()` on anything recoverable (spawn, I/O, git, network,
@@ -176,8 +195,6 @@ change without invoking anything. Each one names its rule, so
 - **Signatures.** A fixed set of values or a domain identity is an `enum` or
   newtype, not a `String` — this is how the CONTEXT.md vocabulary shows up in
   the types (`anti-stringly-typed`).
-- **Async (daemon only).** Never hold a lock guard across an `.await`. Use
-  `tokio::sync` primitives and drop the guard first (`anti-lock-across-await`).
 
 ## Where things live
 

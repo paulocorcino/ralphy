@@ -89,6 +89,13 @@ a file boundary. If a clean seam is not already present, the file is a
 design-refactor candidate (its own issue), not a mechanical split. A split that
 adds abstraction is out of scope for this series.
 
+*Amendment (2026-10-03).* The 500-line threshold is now a ratchet: the
+`OVERSIZED` table in `crates/xtask/tests/ratchets.rs` holds each oversized
+file's exact production size. A change that grows a listed file splits it.
+When the file has no clean seam, the change raises the file's number with a
+`//` reason that names the responsibilities checked, and the file stays a
+design-refactor candidate.
+
 ### 6. The inline-test budget (amendment, 2026-09-23)
 
 The >500-line threshold counts production lines, so it never fires on a file
@@ -106,14 +113,18 @@ production code. The budget is enforced, not remembered:
 - The series is N small, reviewable, behaviour-preserving PRs that a human
   merges by hand, each independently revertable.
 - Reviewers judge a split PR against this ADR: right layout, unchanged public
-  API, tests carried along, three-way gate green, no new abstraction.
+  API, tests carried along, the CI gate of §4 green, no new abstraction.
 - "Convention divergence between PRs" is designed out — the failure mode this
   anchor exists to prevent.
-- The two legacy `mod.rs` dirs are the one accepted inconsistency until a PR
+- The legacy `mod.rs` dirs are the one accepted inconsistency until a PR
   naturally retires them; §1 records the intent so it is not mistaken for a
-  counter-example.
+  counter-example. `telegram.rs` has migrated; `events/mod.rs` remains.
 
 ## Compliance
+
+- The 500 production-line threshold: checked by
+  `oversized_files_match_the_baseline` (`crates/xtask/tests/ratchets.rs`), a
+  ratchet on the files over the limit and their exact size, since 2026-10-03.
 
 - §1: not checked by code: reviewed in the PR. One legacy `mod.rs` remains
   (`crates/ralphy-cli/src/events/mod.rs`).

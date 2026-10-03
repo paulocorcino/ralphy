@@ -33,8 +33,10 @@ fn no_inline_test_module_outgrows_the_budget() {
     }
     assert!(
         over.is_empty(),
-        "inline #[cfg(test)] modules over {BUDGET} lines — move each to a sibling \
-         `tests.rs` (ADR-0022 §6):\n{}",
+        "inline #[cfg(test)] modules over {BUDGET} lines. Move each, in this change, \
+         to `foo/tests.rs` beside `foo.rs` (`src/tests.rs` for a crate root) and \
+         leave `#[cfg(test)] mod tests;` in its place. It is a pure move: touch no \
+         production code:\n{}",
         over.join("\n")
     );
 }
