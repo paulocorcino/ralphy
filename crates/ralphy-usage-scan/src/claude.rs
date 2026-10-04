@@ -9,7 +9,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::{ClaudeScan, InteractiveRecord, Tokens};
 
@@ -60,7 +60,7 @@ pub fn scan_claude(input: &ClaudeScan) -> Vec<InteractiveRecord> {
                 .clone()
         });
 
-        for transcript in jsonl_files(&ws_path) {
+        for transcript in crate::walk::files_under(&ws_path, crate::walk::is_jsonl) {
             let Some(session_id) = transcript
                 .file_stem()
                 .and_then(|s| s.to_str())
@@ -240,27 +240,6 @@ fn dashed_cwd(cwd: &str) -> String {
     cwd.chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
         .collect()
-}
-
-/// Every `*.jsonl` under `dir`, recursively. Tolerant: an unreadable subdir is
-/// skipped. Order is unspecified (each file is one independent session).
-fn jsonl_files(dir: &Path) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    let mut stack = vec![dir.to_path_buf()];
-    while let Some(d) = stack.pop() {
-        let Ok(entries) = fs::read_dir(&d) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                stack.push(path);
-            } else if path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
-                out.push(path);
-            }
-        }
-    }
-    out
 }
 
 #[cfg(test)]
