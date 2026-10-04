@@ -2767,3 +2767,97 @@ test("daemonSeenIds holds every window id a desk read returned", async () => {
     globalThis.fetch = realFetch;
   }
 });
+
+// --- one session per window record (ADR-0050 amendment 2026-10-04) -----------
+
+// The session list says which record each session serves. That beats the
+// `sessionId` tuple: two shells on one repo whose ids are stale would
+// otherwise be handed out in layout order, each to the other's window.
+test("reconcileDesk attaches each session to the record it names", () => {
+  const wb = load();
+  const shell = { repo: "owner/repo", agent: "console", kind: "console" };
+  const out = wb.reconcileDesk({
+    layout: [
+      { id: "w-a", ...shell, sessionId: 9 },
+      { id: "w-b", ...shell, sessionId: null },
+    ],
+    sessions: [
+      { id: 5, ...shell, record: "w-b" },
+      { id: 6, ...shell, record: "w-a" },
+    ],
+  });
+  assert.deepEqual(
+    out.map(({ record, session, action }) => [record?.id ?? null, session?.id ?? null, action]),
+    [
+      ["w-a", 6, "attach"],
+      ["w-b", 5, "attach"],
+    ],
+  );
+});
+
+// A session whose record this page has not read yet comes back under THAT id,
+// so the page that launched it and the page that adopted it write one record.
+test("reconcileDesk adopts a session under the record it names", () => {
+  const wb = load();
+  const shell = { repo: "owner/repo", agent: "console", kind: "console" };
+  const out = wb.reconcileDesk({
+    layout: [],
+    sessions: [
+      { id: 5, ...shell, record: "w-new" },
+      { id: 6, ...shell, record: "w-new" },
+      { id: 7, ...shell },
+    ],
+  });
+  assert.deepEqual(
+    out.map(({ session, action, id }) => [session.id, action, id]),
+    [
+      [5, "adopt", "w-new"],
+      // A second claim on the same id would be two windows under one record.
+      [6, "adopt", null],
+      [7, "adopt", null],
+    ],
+  );
+});
+
+// The windows on this page's stage are pinned, and the cap never cuts one of
+// them, even when they alone are more than the cap.
+test("pruneDesk keeps every pinned record, even past the cap", () => {
+  const wb = load();
+  const records = Array.from({ length: 5 }, (_, i) => ({ id: `w${i}`, ts: i }));
+  const all = new Set(records.map((r) => r.id));
+  assert.deepEqual(
+    wb.pruneDesk(records, 3, all).map((r) => r.id),
+    ["w0", "w1", "w2", "w3", "w4"],
+  );
+  assert.deepEqual(
+    wb.pruneDesk(records, 3, new Set(["w0"])).map((r) => r.id),
+    ["w0", "w3", "w4"],
+  );
+});
+
+// A full desk refuses a NEW console instead of cutting one in silence.
+test("atDeskCap is true once the desk holds the cap", async () => {
+  const realFetch = globalThis.fetch;
+  const desk = (n) => ({
+    windows: Array.from({ length: n }, (_, i) => ({
+      id: `w${i}`,
+      repo: "o/r",
+      agent: "console",
+      kind: "console",
+      ts: i,
+    })),
+    fences: [],
+  });
+  try {
+    globalThis.fetch = async () => ({ ok: true, json: async () => desk(29) });
+    const wb = load({ WBMode: { isDaemon: () => true } });
+    await wb.whenDeskLoaded();
+    assert.equal(wb.DESK_MAX, 30);
+    assert.equal(wb.atDeskCap(), false, "29 records leave room for one more");
+    globalThis.fetch = async () => ({ ok: true, json: async () => desk(30) });
+    await wb.reloadDesk();
+    assert.equal(wb.atDeskCap(), true, "30 records are a full desk");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});

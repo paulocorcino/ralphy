@@ -60,6 +60,7 @@
       if (opts.repo) value += "&repo=" + encodeURIComponent(opts.repo);
       // The startup command (the shell runs it and the session ends with it).
       if (opts.command) value += "&command=" + encodeURIComponent(opts.command);
+      value += recordParam(opts.record);
       value += holderParam(opts.holder);
     } else {
       value +=
@@ -73,9 +74,17 @@
       // The console name: the daemon folds it into Claude's session name.
       if (typeof opts.name === "string" && opts.name)
         value += "&name=" + encodeURIComponent(opts.name);
+      value += recordParam(opts.record);
       value += holderParam(opts.holder);
     }
     return value;
+  }
+
+  // The window record of a NEW launch: the daemon keeps one live session per
+  // record, so a second page relaunching it joins the first one's session.
+  // Validated like the holder, as the daemon validates both.
+  function recordParam(r) {
+    return typeof r === "string" && HOLDER_RE.test(r) ? "&record=" + r : "";
   }
 
   function holderParam(h) {

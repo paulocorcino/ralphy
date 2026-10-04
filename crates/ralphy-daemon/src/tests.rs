@@ -6519,7 +6519,7 @@ fn shell_survives_a_reload_with_its_detach() {
     // swallowing `.catch`, costing every fence and every glyph on any boot
     // carrying a live session no record claims.
     assert!(
-        js.contains(r#"out.push({ record: null, session: s, action: "adopt" })"#),
+        js.contains(r#"out.push({ record: null, session: s, action: "adopt", id: null })"#),
         "the adopt verdict's null record is what the guard above exists for (#347)"
     );
     // The registry carries the MEMBER IDS, not just the fence ids: a

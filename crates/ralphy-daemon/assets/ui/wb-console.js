@@ -547,16 +547,19 @@ window.WBConsole = (function () {
   // decides which record wins a contended session in `reconcileDesk`). `live`
   // names ids that must NEVER be evicted — a window still on screen losing its
   // record would strand it, unrestorable, on the next load.
+  // When the pinned records alone are over `max`, all of them stay
+  // (ADR-0050 amendment 2026-10-04).
   function pruneDesk(records, max, live) {
     if (records.length <= max) return records.slice();
     const pinned = live || new Set();
+    const room = Math.max(0, max - records.filter((r) => pinned.has(r.id)).length);
     const keep = new Set(
-      [...records]
+      records
+        .filter((r) => !pinned.has(r.id))
         .sort((a, b) => (b.ts || 0) - (a.ts || 0))
-        .sort((a, b) => (pinned.has(b.id) ? 1 : 0) - (pinned.has(a.id) ? 1 : 0))
-        .slice(0, max),
+        .slice(0, room),
     );
-    return records.filter((r) => keep.has(r));
+    return records.filter((r) => pinned.has(r.id) || keep.has(r));
   }
   function saveDesk(records) {
     // A DETACHED member is not in `wins` — it lives in a popup — and its `ts` is
@@ -606,6 +609,12 @@ window.WBConsole = (function () {
     scheduleDeskFlush();
   }
 
+  // Whether a NEW console would be over the window cap — asked before it is
+  // born, so the open is refused instead of cutting a record in silence
+  // (ADR-0050 amendment 2026-10-04).
+  function atDeskCap() {
+    return desk.length >= DESK_MAX;
+  }
   // Whether another card would be over the cap — asked before a card is born,
   // so the open is refused instead of quietly evicting one that is on screen.
   function atNoteCap() {
@@ -1055,14 +1064,21 @@ window.WBConsole = (function () {
     const used = new Set();
     const out = [];
     for (const record of layout || []) {
-      const i = live.findIndex(
-        (s, idx) =>
-          !used.has(idx) &&
-          s.id === record.sessionId &&
-          s.repo === record.repo &&
-          s.agent === record.agent &&
-          s.kind === record.kind,
-      );
+      // A session that names its record is that record's, whatever a stale
+      // `sessionId` says, and never another record's (ADR-0050 amendment
+      // 2026-10-04). The tuple below is for sessions from an older daemon.
+      let i = live.findIndex((s, idx) => !used.has(idx) && s.record === record.id);
+      if (i < 0) {
+        i = live.findIndex(
+          (s, idx) =>
+            !used.has(idx) &&
+            s.record == null &&
+            s.id === record.sessionId &&
+            s.repo === record.repo &&
+            s.agent === record.agent &&
+            s.kind === record.kind,
+        );
+      }
       if (i >= 0) {
         used.add(i);
         out.push({ record, session: live[i], action: "attach" });
@@ -1085,8 +1101,18 @@ window.WBConsole = (function () {
     // restarted daemon, and attaching there keeps one console from coming back
     // as two — or, for a shell, from spawning a SECOND PTY. Only with no such
     // record is it adopted into a fresh one, so it stays visible and closable.
+    // The ids an adopted window may take: one window per record id.
+    const taken = new Set((layout || []).map((r) => r.id));
     live.forEach((s, idx) => {
       if (used.has(idx)) return;
+      // A session that names a record this page has not read is adopted under
+      // that id, so the page that launched it and this one write one record.
+      if (s.record != null) {
+        const id = taken.has(s.record) ? null : s.record;
+        if (id) taken.add(id);
+        out.push({ record: null, session: s, action: "adopt", id });
+        return;
+      }
       const waiting = out.find(
         ({ record, action }) =>
           action !== "attach" &&
@@ -1102,7 +1128,7 @@ window.WBConsole = (function () {
         waiting.action = "attach";
         return;
       }
-      out.push({ record: null, session: s, action: "adopt" });
+      out.push({ record: null, session: s, action: "adopt", id: null });
     });
     return out;
   }
@@ -5744,6 +5770,13 @@ window.WBConsole = (function () {
             currentEnvironment = owner.environment;
             if (typeof opts.onSession === "function")
               opts.onSession(currentSessionId, c.payload);
+            // A launch that joined a session another page drives is read-only
+            // from the start; the daemon says so here.
+            if (c.payload?.watch === true && !watching) {
+              watching = true;
+              term.write("\r\n[read-only: another window has control]\r\n");
+              if (typeof opts.onPark === "function") opts.onPark("joined");
+            }
           } else if (c && c.verb === "session-end") {
             announced = c.payload?.reason ?? "child-exited";
             refusal = typeof c.payload?.message === "string" ? c.payload.message : null;
@@ -6234,6 +6267,10 @@ window.WBConsole = (function () {
     // Read at launch, never later: a rename reaches the next restart and never
     // restarts the running session (ADR-0066 §6).
     if (termOpts.id == null && !termOpts.console) termOpts = { ...termOpts, name: win._deskConsoleName };
+    // Every NEW launch names its record: the daemon keeps one session per
+    // record, so a second page relaunching it joins this one (ADR-0050
+    // amendment 2026-10-04).
+    if (termOpts.id == null) termOpts = { ...termOpts, record: win._deskId };
     // A launch that names a worktree records the intent NOW, so a daemon that
     // dies mid-launch still leaves it behind.
     if (termOpts.checkout !== undefined) win._deskCheckout = termOpts.checkout ?? null;
@@ -6875,11 +6912,16 @@ window.WBConsole = (function () {
   // `command`, a shell running that command and labelled by it (the same label
   // the daemon gives the session, so the desk record relaunches it as such).
   function open({ repo, agent, plain, checkout, command }) {
+    if (atDeskCap()) {
+      toast({ text: `You can have at most ${DESK_MAX} consoles. Close one first.` });
+      return false;
+    }
     const label = agent || (plain && command) || "console";
     // The plain console ignores the checkout: it rides the repo path (on a
     // peer, `wsl.exe --cd`) and stays on the primary.
     spawnWindow(plain ? { console: true, repo, command } : { repo, agent, checkout }, label, repo);
     WB.emit("console-open", { repo: repo || null, agent: agent || null, plain: !!plain });
+    return true;
   }
 
   // Restore the desk: reconcile the saved layout against the daemon's live
@@ -6920,7 +6962,7 @@ window.WBConsole = (function () {
         // A relaunch into a recorded worktree first asks whether the tree is
         // still there; the stage is sized only once every such window landed.
         const pending = [];
-        for (const { record, session, action } of reconcileDesk({
+        for (const { record, session, action, id } of reconcileDesk({
           layout: loadDesk(),
           sessions,
           // Read at restore time, not module load. `canLaunch === false` (the
@@ -6956,14 +6998,16 @@ window.WBConsole = (function () {
             );
           } else if (action === "placeholder") {
             spawnPlaceholder(record);
-          } else {
-            // `adopt`: a cascaded window with a fresh record, keeping the live
-            // session's own kind so the desk relaunches it correctly next time.
+          } else if (!(id && onPlane.has(id))) {
+            // `adopt`: a cascaded window, keeping the live session's own kind
+            // so the desk relaunches it correctly next time, under the record
+            // the session names when it names one.
             spawnWindow(
               { id: session.id, repo: session.repo },
               session.agent || "console",
               session.repo,
               {
+                id: id || undefined,
                 kind: session.kind,
                 daemonId: session.daemon_id,
                 environment: session.environment,
@@ -7409,6 +7453,8 @@ window.WBConsole = (function () {
     saveNotes,
     atNoteCap,
     NOTE_MAX,
+    atDeskCap,
+    DESK_MAX,
     // The flush body, for the ui-test: dropping `notes` or `removed.notes`
     // from it would leave the daemon's fold preserving stale cards for ever,
     // with every test on both sides of the wire green.
