@@ -4,11 +4,15 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use axum::extract::ws::WebSocketUpgrade;
 use axum::extract::Query;
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
+use axum::routing::{get, post};
 use axum::Json;
+use axum::Router;
 
+use super::{session_ws_upgrade, RouterShared, SessionHost, SessionQuery};
 use crate::routes::read_peer_store;
 use crate::{agent_state, fleet, identity, peer, session};
 
@@ -44,6 +48,10 @@ pub(crate) struct HostedSessionInfo {
     /// load-bearing for the same reason as `name`'s: an older peer sends none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) checkout: Option<String>,
+    /// The window record the session serves (ADR-0050 amendment 2026-10-04).
+    /// `serde(default)` for the same reason as `name`'s.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) record: Option<String>,
     /// The agent's hook-reported state (ADR-0059 §5), already rendered with
     /// the staleness rule by the daemon that owns the PTY. `serde(default)`
     /// for the same reason as the two above.
@@ -67,6 +75,7 @@ pub(crate) fn hosted_session(
         environment: effective_environment,
         name: info.name,
         checkout: info.checkout,
+        record: info.record,
         agent_state: info.agent_state,
     }
 }
@@ -192,4 +201,63 @@ pub(crate) async fn close_session_route(
     } else {
         (StatusCode::NOT_FOUND, "unknown session").into_response()
     }
+}
+
+/// `/ws/session`, `/api/sessions` and `/api/sessions/close`.
+pub(crate) fn session_routes(s: &RouterShared) -> Router {
+    let host = SessionHost {
+        peers_dir: s.peers_dir.clone(),
+        identity: s.identity.clone(),
+        environment: s.environment.clone(),
+        bound_port: s.bound_port,
+    };
+    Router::new()
+        .route(
+            "/ws/session",
+            get({
+                let sessions = s.sessions.clone();
+                let registry = s.registry_path.clone();
+                // A live session bridge stops serving on graceful shutdown: it
+                // detaches, and never closes the session.
+                let shutdown = s.shutdown.clone();
+                move |ws: WebSocketUpgrade, q: Query<SessionQuery>| {
+                    let sessions = sessions.clone();
+                    let registry_path = registry.clone();
+                    let shutdown = shutdown.clone();
+                    let host = host.clone();
+                    async move {
+                        session_ws_upgrade(ws, q, sessions, registry_path, host, shutdown).await
+                    }
+                }
+            }),
+        )
+        .route(
+            "/api/sessions",
+            get({
+                let sessions = s.sessions.clone();
+                let peers = s.peers_dir.clone();
+                let identity = s.identity.clone();
+                let environment = s.environment.clone();
+                move |Query(query): Query<SessionsQuery>| {
+                    sessions_route(
+                        sessions.clone(),
+                        peers.clone(),
+                        identity.clone(),
+                        environment.clone(),
+                        query.local == Some(1),
+                    )
+                }
+            }),
+        )
+        .route(
+            "/api/sessions/close",
+            post({
+                let sessions = s.sessions.clone();
+                let peers = s.peers_dir.clone();
+                let identity = s.identity.clone();
+                move |q: Query<CloseQuery>| {
+                    close_session_route(q, sessions.clone(), peers.clone(), identity.clone())
+                }
+            }),
+        )
 }

@@ -23,7 +23,7 @@ use tokio::sync::Notify;
 mod manager;
 mod spec;
 
-pub use manager::{AttachError, Attachment, SessionManager};
+pub use manager::{AttachError, Attachment, RecordClaim, SessionManager};
 pub use spec::{
     claude_console_named, console_cwd, console_name, console_spec, cursor_indexing_allowed,
     gemini_home, gemini_policy_path, peer_console_launcher, peer_console_spec, spec_for,
@@ -302,6 +302,11 @@ pub struct SessionInfo {
     /// the primary tree. Announced on every `session-open`, a reattach included.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checkout: Option<String>,
+    /// The window record the launch named (ADR-0050 amendment 2026-10-04): the
+    /// daemon keeps at most one live session per record. `None` for a launch
+    /// from an older page, which named none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub record: Option<String>,
     /// The agent's own hook-reported state (ADR-0059 §5), rendered at READ
     /// time with the §6 staleness rule; absent for a vendor without hooks,
     /// before the first hook fired, and always on the record as stored —
@@ -428,6 +433,7 @@ mod tests {
             environment: None,
             name: None,
             checkout: checkout.map(str::to_string),
+            record: None,
             agent_state: None,
         };
         let primary = serde_json::to_value(info(None)).unwrap();

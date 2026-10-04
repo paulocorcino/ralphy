@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::extract::ws::{Message, WebSocket};
+use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::routing::get;
+use axum::Router;
 use futures_util::{SinkExt, StreamExt};
 
 mod host;
@@ -17,6 +19,7 @@ pub(crate) use oneshot::*;
 pub(crate) use registry_verbs::serve_registry;
 
 use super::{read_peer_store, send_command};
+use super::{request_may_carry_a_secret, RouterShared};
 use crate::protocol::{Command, Frame};
 use crate::{dispatch, fleet, peer, protocol, registry, session};
 
@@ -426,4 +429,52 @@ pub(crate) async fn proxy_peer_command(
             }
         }
     }
+}
+
+/// `/ws/command`: the command socket.
+pub(crate) fn command_routes(s: &RouterShared) -> Router {
+    let registry = s.registry_path.clone();
+    let peers = s.peers_dir.clone();
+    // A dispatched run must survive daemon shutdown (inverse of the session
+    // invariant), but the handler still watches `shutdown` to stop serving the
+    // socket — it just never kills the child.
+    let shutdown = s.shutdown.clone();
+    // The daemon identity a dispatched child inherits as RALPHY_DAEMON_ID (#168).
+    // Only the dispatch path passes it; session/console children get none.
+    let daemon_id = s.daemon_id.clone();
+    let run_exits = s.run_exits.clone();
+    let bound_port = s.bound_port;
+    let sessions = s.sessions.clone();
+    Router::new().route(
+        "/ws/command",
+        get(
+            move |ws: WebSocketUpgrade, headers: axum::http::HeaderMap| {
+                let ws = ws
+                    .max_message_size(crate::tree::MAX_COMMAND_BYTES)
+                    .max_frame_size(crate::tree::MAX_COMMAND_BYTES);
+                let secret_ok = request_may_carry_a_secret(&headers);
+                let registry_path = registry.clone();
+                let shutdown = shutdown.clone();
+                let daemon_id = daemon_id.clone();
+                let run_exits = run_exits.clone();
+                let peers_dir = peers.clone();
+                let sessions = sessions.clone();
+                async move {
+                    ws.on_upgrade(move |socket| {
+                        command_ws(
+                            socket,
+                            registry_path,
+                            peers_dir,
+                            shutdown,
+                            daemon_id,
+                            run_exits,
+                            bound_port,
+                            sessions,
+                            secret_ok,
+                        )
+                    })
+                }
+            },
+        ),
+    )
 }

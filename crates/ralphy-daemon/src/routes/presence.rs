@@ -3,9 +3,12 @@
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use axum::extract::ws::{Message, WebSocket};
+use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::routing::get;
+use axum::Router;
 use tokio::sync::broadcast;
 
+use super::RouterShared;
 use crate::protocol::{Command, Frame, Presence};
 use crate::{identity, protocol};
 
@@ -240,6 +243,29 @@ pub(crate) async fn ws_presence_loop(
             }
         }
     }
+}
+
+/// `/ws`: the presence socket.
+pub(crate) fn presence_routes(s: &RouterShared) -> Router {
+    let identity = s.identity.clone();
+    let start = s.start;
+    let shutdown = s.shutdown.clone();
+    let sessions = s.sessions.clone();
+    let pushes = s.pushes.clone();
+    Router::new().route(
+        "/ws",
+        get(move |ws: WebSocketUpgrade| {
+            let id = identity.clone();
+            let shutdown = shutdown.clone();
+            let sessions_rx = sessions.subscribe_changes();
+            let pushes_rx = pushes.subscribe();
+            async move {
+                ws.on_upgrade(move |socket| {
+                    ws_presence_loop(socket, id, start, shutdown, sessions_rx, pushes_rx)
+                })
+            }
+        }),
+    )
 }
 
 #[cfg(test)]

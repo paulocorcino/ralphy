@@ -6,6 +6,7 @@
 
 mod console_command_ws;
 mod console_reattach;
+mod console_record;
 mod console_ws;
 mod session_persistence;
 mod session_ws;

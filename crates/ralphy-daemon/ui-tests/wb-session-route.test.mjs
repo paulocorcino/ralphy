@@ -229,3 +229,25 @@ test("a failed peer close keeps the window available for retry", () => {
   assert.equal(closeSucceeded(404), true);
   assert.equal(closeSucceeded(502), false);
 });
+
+test("url names the window record on a new launch only", () => {
+  const { url } = load();
+  // The daemon keeps one session per record, so both launch shapes carry it.
+  assert.equal(
+    url("ws://h", { console: true, repo: "o/r", record: "w-a_1" }),
+    "ws://h/ws/session?console=1&repo=o%2Fr&record=w-a_1",
+  );
+  assert.equal(
+    url("ws://h", { repo: "o/r", agent: "claude", record: "w-a_1" }),
+    "ws://h/ws/session?repo=o%2Fr&agent=claude&record=w-a_1",
+  );
+  // A reattach names its session already.
+  assert.equal(url("ws://h", { id: 3, repo: "o/r", record: "w-a_1" }), "ws://h/ws/session?id=3&repo=o%2Fr");
+  // A malformed record is left out, never spliced into the query.
+  for (const bad of ["", "w&takeover=1", "x".repeat(65), null]) {
+    assert.equal(
+      url("ws://h", { console: true, repo: "o/r", record: bad }),
+      "ws://h/ws/session?console=1&repo=o%2Fr",
+    );
+  }
+});

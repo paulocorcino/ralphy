@@ -250,8 +250,9 @@ impl<'de> Deserialize<'de> for DeskUpload {
 }
 
 /// The daemon-side cap on desk records. Enforced here rather than trusting the
-/// uploaded array — a browser upload does not get to define the size.
-pub const DESK_MAX: usize = 24;
+/// uploaded array — a browser upload does not get to define the size. Raised
+/// from 24 by the ADR-0050 amendment of 2026-10-04.
+pub const DESK_MAX: usize = 30;
 
 /// The daemon-side cap on note cards (ADR-0064 §2). Its own const for the same
 /// reason [`FENCE_MAX`] is: a card is cheap to place and expensive to lose, and
@@ -260,7 +261,7 @@ pub const NOTE_MAX: usize = 32;
 
 /// The daemon-side cap on fences. Its own const, not shared with [`DESK_MAX`]
 /// (ADR-0051 §10): a fence holds several consoles, so a dozen named regions
-/// already out-runs the 24-window cap.
+/// already out-runs the window cap.
 pub const FENCE_MAX: usize = 12;
 
 /// The daemon-side cap on a console name, in `char`s (ADR-0066 §3). The input's
@@ -298,11 +299,32 @@ fn keep_newest_by_ts<T>(items: Vec<T>, max: usize, ts: impl Fn(&T) -> i64) -> Ve
         .collect()
 }
 
-/// Keep the [`DESK_MAX`] newest records by `ts`, PRESERVING layout order. Live
-/// windows cannot be pinned here — the daemon does not know which windows are on
-/// screen — so the shell pins them before uploading and this is the backstop.
-pub fn prune(records: Vec<DeskRecord>) -> Vec<DeskRecord> {
-    keep_newest_by_ts(records, DESK_MAX, |r| r.ts)
+/// Keep every record in `live` and the newest others by `ts` up to
+/// [`DESK_MAX`], PRESERVING layout order. `live` is the records a session of
+/// this daemon serves (ADR-0050 amendment 2026-10-04): cutting one strands a
+/// running console, and the next load adopts it at the cascade position. When
+/// `live` alone is over the cap, all of it stays. The shell pins the windows
+/// on its own stage before it uploads; this is the backstop.
+pub fn prune(
+    records: Vec<DeskRecord>,
+    live: &std::collections::HashSet<String>,
+) -> Vec<DeskRecord> {
+    if records.len() <= DESK_MAX {
+        return records;
+    }
+    let pinned = records.iter().filter(|r| live.contains(&r.id)).count();
+    let room = DESK_MAX.saturating_sub(pinned);
+    let mut by_ts: Vec<usize> = (0..records.len())
+        .filter(|&i| !live.contains(&records[i].id))
+        .collect();
+    by_ts.sort_by(|&a, &b| records[b].ts.cmp(&records[a].ts));
+    by_ts.truncate(room);
+    let keep: std::collections::HashSet<usize> = by_ts.into_iter().collect();
+    records
+        .into_iter()
+        .enumerate()
+        .filter_map(|(i, r)| (live.contains(&r.id) || keep.contains(&i)).then_some(r))
+        .collect()
 }
 
 /// Keep the [`FENCE_MAX`] newest fences by `ts`, PRESERVING layout order.

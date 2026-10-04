@@ -34,6 +34,7 @@ fn peer_session_query_forwards_the_checkout_only_when_present() {
         command: None,
         holder: None,
         name: None,
+        record: None,
     };
     assert_eq!(
         peer_session_query(&launch(Some("wt-a")), "owner/repo"),
@@ -68,6 +69,7 @@ fn peer_session_query_forwards_a_console_launch() {
         command: command.map(str::to_string),
         holder: Some("tab-1".into()),
         name: None,
+        record: None,
     };
     assert_eq!(
         peer_session_query(&console(Some(" htop ")), "owner/repo"),
@@ -101,6 +103,7 @@ fn peer_session_query_forwards_a_well_formed_holder() {
         command: None,
         holder: Some(holder.to_string()),
         name: None,
+        record: None,
     };
     assert_eq!(
         peer_session_query(&reattach("tab-1_A"), "owner/repo"),
@@ -140,6 +143,7 @@ fn peer_session_query_forwards_the_console_name_on_a_launch_only() {
         command: None,
         holder: None,
         name,
+        record: None,
     };
     assert_eq!(
         peer_session_query(&launch(Some("fincal #1".into())), "owner/repo"),
@@ -166,6 +170,54 @@ fn peer_session_query_forwards_the_console_name_on_a_launch_only() {
     );
 }
 
+/// The relay forwards the window record on a LAUNCH only, so the owning
+/// daemon keeps one session per record; a reattach names its session already,
+/// and a malformed record is dropped rather than spliced into the query.
+#[test]
+fn peer_session_query_forwards_the_record_on_a_launch_only() {
+    let console = |record: &str| SessionQuery {
+        repo: Some("x".into()),
+        agent: None,
+        id: None,
+        takeover: None,
+        watch: None,
+        console: Some(1),
+        checkout: None,
+        command: None,
+        holder: None,
+        name: None,
+        record: Some(record.to_string()),
+    };
+    assert_eq!(
+        peer_session_query(&console("w-a_1"), "owner/repo"),
+        "console=1&repo=owner%2Frepo&record=w-a_1"
+    );
+    let agent = SessionQuery {
+        console: None,
+        agent: Some("claude".into()),
+        ..console("w-a_1")
+    };
+    assert_eq!(
+        peer_session_query(&agent, "owner/repo"),
+        "repo=owner%2Frepo&agent=claude&record=w-a_1"
+    );
+    let reattach = SessionQuery {
+        id: Some(7),
+        ..console("w-a_1")
+    };
+    assert_eq!(
+        peer_session_query(&reattach, "owner/repo"),
+        "id=7&repo=owner%2Frepo"
+    );
+    for bad in ["", "w&takeover=1", &"x".repeat(65)] {
+        assert_eq!(
+            peer_session_query(&console(bad), "owner/repo"),
+            "console=1&repo=owner%2Frepo",
+            "{bad:?} is not a record"
+        );
+    }
+}
+
 /// The console name is cut to the desk's 40 characters on a char boundary,
 /// and an empty one is no name at all.
 #[test]
@@ -181,6 +233,7 @@ fn session_query_name_is_cut_to_40_and_empty_is_absent() {
         command: None,
         holder: None,
         name,
+        record: None,
     };
     let long = "é".repeat(40);
     assert_eq!(query(Some("é".repeat(41))).name(), Some(long.as_str()));
@@ -578,11 +631,11 @@ async fn api_desk_put_then_get_round_trips() {
 }
 
 #[tokio::test]
-async fn api_desk_put_prunes_to_24_newest_by_ts() {
+async fn api_desk_put_prunes_to_the_cap_newest_by_ts() {
     let dir = tempfile::tempdir().unwrap();
     let payload = desk_body(
         serde_json::Value::Array(
-            (1..=30)
+            (1..=36)
                 .map(|n| desk_json(&format!("w{n}"), n, serde_json::Value::Null, false))
                 .collect(),
         ),
@@ -592,12 +645,12 @@ async fn api_desk_put_prunes_to_24_newest_by_ts() {
     assert_eq!(res.status(), StatusCode::OK);
     let put_body: desk::DeskStore = serde_json::from_str(&body_text(res).await).unwrap();
     let ids: Vec<String> = put_body.windows.into_iter().map(|r| r.id).collect();
-    let expected: Vec<String> = (7..=30).map(|n| format!("w{n}")).collect();
+    let expected: Vec<String> = (7..=36).map(|n| format!("w{n}")).collect();
     assert_eq!(ids, expected, "the PUT answers with the pruned truth");
 
     let get_body: desk::DeskStore = serde_json::from_str(&desk_get(dir.path()).await).unwrap();
     let ids: Vec<String> = get_body.windows.into_iter().map(|r| r.id).collect();
-    assert_eq!(ids, expected, "and the persisted desk holds the same 24");
+    assert_eq!(ids, expected, "and the persisted desk holds the same 30");
 }
 /// A note card on the wire (ADR-0064 §2): placement only.
 fn note_json(id: &str, path: &str, ts: i64) -> serde_json::Value {
@@ -1128,6 +1181,7 @@ async fn api_desk_put_rejects_a_fence_with_a_non_finite_rect() {
         dir.path().join("desk.toml"),
         dir.path().join("repos.toml"),
         tokio::sync::broadcast::channel(1).0,
+        std::sync::Arc::new(crate::session::SessionManager::new()),
         None,
         desk::DeskUpload {
             windows: vec![],
@@ -6465,7 +6519,7 @@ fn shell_survives_a_reload_with_its_detach() {
     // swallowing `.catch`, costing every fence and every glyph on any boot
     // carrying a live session no record claims.
     assert!(
-        js.contains(r#"out.push({ record: null, session: s, action: "adopt" })"#),
+        js.contains(r#"out.push({ record: null, session: s, action: "adopt", id: null })"#),
         "the adopt verdict's null record is what the guard above exists for (#347)"
     );
     // The registry carries the MEMBER IDS, not just the fence ids: a

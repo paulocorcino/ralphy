@@ -2,13 +2,18 @@
 //! desk cannot be read.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
+use axum::extract::Query;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
+use axum::routing::{get, post};
 use axum::Json;
+use axum::Router;
 
+use super::RouterShared;
 use super::{push, Push};
-use crate::{checkout, desk, registry, rekey};
+use crate::{checkout, desk, registry, rekey, session};
 
 /// Query for `PUT /api/desk`: the writing tab's id, echoed in the
 /// `desk.dirty` push so that tab does not read its own write again.
@@ -108,6 +113,7 @@ pub(crate) async fn desk_put_route(
     path: PathBuf,
     registry_path: PathBuf,
     pushes: tokio::sync::broadcast::Sender<Push>,
+    sessions: Arc<session::SessionManager>,
     tab: Option<String>,
     up: desk::DeskUpload,
 ) -> Response {
@@ -182,9 +188,15 @@ pub(crate) async fn desk_put_route(
     };
     let before = stored.clone();
     let merged = desk::merge(stored, up);
+    // The records a session of this daemon serves are never cut by the cap.
+    let live: std::collections::HashSet<String> = sessions
+        .list()
+        .into_iter()
+        .filter_map(|info| info.record)
+        .collect();
     let store = rekey::rekey_desk(
         desk::DeskStore {
-            windows: desk::prune(merged.windows),
+            windows: desk::prune(merged.windows, &live),
             fences: desk::prune_fences(merged.fences),
             notes: desk::prune_notes(merged.notes),
             checkouts: merged.checkouts,
@@ -245,4 +257,41 @@ pub(crate) async fn desk_new_route(
         )
             .into_response(),
     }
+}
+
+/// `/api/desk` and `/api/desk/new`.
+pub(crate) fn desk_routes(s: &RouterShared) -> Router {
+    Router::new()
+        .route(
+            "/api/desk",
+            get({
+                let path = s.desk_path.clone();
+                let registry = s.registry_path.clone();
+                move || desk_get_route(path.clone(), registry.clone())
+            })
+            .put({
+                let path = s.desk_path.clone();
+                let registry = s.registry_path.clone();
+                let pushes = s.pushes.clone();
+                let sessions = s.sessions.clone();
+                move |Query(q): Query<DeskPutQuery>, Json(up): Json<desk::DeskUpload>| {
+                    desk_put_route(
+                        path.clone(),
+                        registry.clone(),
+                        pushes.clone(),
+                        sessions.clone(),
+                        q.tab,
+                        up,
+                    )
+                }
+            }),
+        )
+        .route(
+            "/api/desk/new",
+            post({
+                let path = s.desk_path.clone();
+                let pushes = s.pushes.clone();
+                move || desk_new_route(path.clone(), pushes.clone())
+            }),
+        )
 }

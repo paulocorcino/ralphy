@@ -109,6 +109,9 @@ pub(crate) async fn session_ws(
             // The worktree NAME the console lives in, `null` for the primary;
             // re-announced on a reattach from the record (ADR-0063 §3).
             "checkout": labels.checkout,
+            // Read-only from the start: this launch joined a session another
+            // page drives (ADR-0050 amendment 2026-10-04).
+            "watch": labels.watching,
         }),
     });
     if socket

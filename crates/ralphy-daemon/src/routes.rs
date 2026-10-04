@@ -1,23 +1,24 @@
 //! The daemon's HTTP surface: the router, the auth guard over every route,
-//! and the helpers the route handlers share. The handlers themselves live in
-//! one module per URL space.
+//! and the helpers the route handlers share. The handlers live in one module
+//! per URL space, and each of those modules registers its own routes
+//! (`<area>_routes`); the router merges them.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
-use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Form, Query};
-use axum::routing::{get, post};
-use axum::{Json, Router};
+use axum::extract::ws::{Message, WebSocket};
+use axum::Router;
 
 use crate::protocol::{Command, Frame};
 use crate::StorePaths;
-use crate::{auth, desk, fleet, identity, peer, protocol, registry, rekey, session, watch};
+use crate::{auth, fleet, identity, peer, protocol, registry, rekey, session, watch};
 
 mod api_desk;
 mod api_fleet;
+mod api_peer;
 mod api_read;
+mod api_release;
 mod api_security;
 mod api_sessions;
 mod api_update;
@@ -30,7 +31,9 @@ mod ws_tree;
 
 pub(crate) use api_desk::*;
 pub(crate) use api_fleet::*;
+pub(crate) use api_peer::*;
 pub(crate) use api_read::*;
+pub(crate) use api_release::*;
 pub(crate) use api_security::*;
 pub(crate) use api_sessions::*;
 pub(crate) use api_update::*;
@@ -55,6 +58,39 @@ pub(crate) struct RouterDependencies {
     pub(crate) roster_locator: AgentLocator,
 }
 
+/// The values the route areas share, built once per router. Each area's
+/// `<area>_routes` function borrows it and clones what its routes capture.
+pub(crate) struct RouterShared {
+    pub(crate) identity: Option<identity::Identity>,
+    /// This daemon's id as text: what a dispatched child inherits as
+    /// `RALPHY_DAEMON_ID` (#168), what `/api/usage` serves, and what a probe
+    /// compares against to refuse dialling itself.
+    pub(crate) daemon_id: Option<String>,
+    /// This daemon's environment label, resolved once: the handshake serves it
+    /// so a peer's diagnosis can name WHICH machine answered.
+    pub(crate) environment: String,
+    /// The port this daemon bound, so a peer probe can refuse to dial itself.
+    pub(crate) bound_port: u16,
+    pub(crate) registry_path: PathBuf,
+    pub(crate) peers_dir: PathBuf,
+    pub(crate) desk_path: PathBuf,
+    pub(crate) usage_dir: PathBuf,
+    pub(crate) stores: StorePaths,
+    /// Where `/api/release` reads what the watch cached.
+    pub(crate) release_store: Option<PathBuf>,
+    pub(crate) start: Instant,
+    pub(crate) shutdown: tokio::sync::watch::Receiver<bool>,
+    pub(crate) auth: Arc<auth::AuthState>,
+    pub(crate) roster_locator: AgentLocator,
+    pub(crate) sessions: Arc<session::SessionManager>,
+    pub(crate) watchers: Arc<watch::WatcherManager>,
+    pub(crate) peer_watch_subs: Arc<fleet::watchsub::WatchSubs>,
+    pub(crate) peer_repo_cache: PeerRepoCache,
+    pub(crate) heal_memo: rekey::HealMemo,
+    pub(crate) run_exits: tokio::sync::broadcast::Sender<String>,
+    pub(crate) pushes: tokio::sync::broadcast::Sender<Push>,
+}
+
 pub(crate) fn router_with_roster(
     identity: Option<identity::Identity>,
     registry_path: PathBuf,
@@ -68,7 +104,6 @@ pub(crate) fn router_with_roster(
         auth,
         roster_locator,
     } = dependencies;
-    let ws_identity = identity.clone();
     // The session manager owns sessions for this router's lifetime (the tmux
     // model, issue #166). Constructed here — NOT a `router` parameter — so the
     // public `router` signature and its call sites are untouched; production
@@ -77,11 +112,6 @@ pub(crate) fn router_with_roster(
     let sessions = Arc::new(session::SessionManager::continuing(
         registry_path.with_file_name("daemon-session-id"),
     ));
-    // `shutdown` is consumed by the `/ws` presence closure; clone one for the
-    // session route so a live session bridge also stops serving on graceful
-    // shutdown (it detaches, never closing the session).
-    let session_shutdown = shutdown.clone();
-    let session_registry = registry_path.clone();
     // The retired `console_worktree` key (ADR-0063 §3, #408) is noticed HERE and
     // nowhere else: production builds the router once (see `sessions` above),
     // which is what makes this "logged once" without a `Once`; `load_from` and
@@ -106,26 +136,6 @@ pub(crate) fn router_with_roster(
     // the same way `desk_path` is — inside `router`, never a parameter, so the
     // public signature and its call sites hold.
     let peers_dir = registry_path.with_file_name("peers");
-    let nudge_peers_dir = peers_dir.clone();
-    // This daemon's own environment label, resolved once: the handshake serves it
-    // so a peer's diagnosis can name WHICH machine answered.
-    let peer_environment = peer::detect_environment();
-    let bound_port = auth.bound_port();
-    let session_host = SessionHost {
-        peers_dir: peers_dir.clone(),
-        identity: identity.clone(),
-        environment: peer_environment.clone(),
-        bound_port,
-    };
-    let sessions_identity = identity.clone();
-    let sessions_environment = peer_environment.clone();
-    let sessions_peers = peers_dir.clone();
-    let close_identity = identity.clone();
-    let close_peers = peers_dir.clone();
-    // Captured BEFORE `identity` is moved into the `/api/identity` closure, the
-    // same pattern as `command_daemon_id`.
-    let hello_identity = identity.clone();
-    let fleet_identity = identity.clone();
     // The last repo list and environment label each peer actually served,
     // remembered for this router's lifetime so an unreachable peer's rows stay
     // listed under the same header (ADR-0052 §5: marked, never removed). NOT a
@@ -170,7 +180,6 @@ pub(crate) fn router_with_roster(
     // The push bus of the shown facts the daemon owns (ADR-0070 D2): every
     // `/ws` relays it. Daemon-wide, like `run_exits`.
     let pushes = tokio::sync::broadcast::channel::<Push>(PUSH_CAP).0;
-    let presence_pushes = pushes.clone();
     if let Ok(runtime) = tokio::runtime::Handle::try_current() {
         runtime.spawn(watch_stores(
             registry_path.clone(),
@@ -179,450 +188,52 @@ pub(crate) fn router_with_roster(
             shutdown.clone(),
         ));
     }
-    let presence_sessions = sessions.clone();
-    let command_run_exits = run_exits.clone();
-    let tree_run_exits = run_exits.clone();
-    let tree_watchers = watchers.clone();
-    let tree_registry = registry_path.clone();
-    let tree_peers = peers_dir.clone();
-    let tree_shutdown = shutdown.clone();
-    // A dispatched run must survive daemon shutdown (inverse of the session
-    // invariant), but the handler still watches `shutdown` to stop serving the
-    // socket — it just never kills the child. Clone one for that route.
-    let command_shutdown = shutdown.clone();
-    let command_registry = registry_path.clone();
-    let command_peers = peers_dir.clone();
-    let peer_command_registry = registry_path.clone();
-    // The daemon identity a dispatched child inherits as RALPHY_DAEMON_ID (#168):
-    // captured here BEFORE `identity` is moved into the `/api/identity` closure.
-    // Only the dispatch path passes it; session/console children get none.
-    let command_daemon_id = identity.as_ref().map(|i| i.id.to_string());
-    let tree_daemon_id = command_daemon_id.clone();
-    // The daemon identity served on `/api/usage` responses: captured here BEFORE
-    // `identity` is moved into the `/api/identity` closure (mirrors
-    // `command_daemon_id` above).
-    let usage_daemon_id = identity.as_ref().map(|i| i.id.to_string());
-    // The nudge waits for the peer to answer, so it probes — and a probe needs to
-    // know who this daemon is to refuse dialling itself. Same capture-before-move
-    // pattern as `command_daemon_id`.
-    let nudge_daemon_id = identity.as_ref().map(|i| i.id.to_string());
-    let usage_peers = peers_dir.clone();
-    // `/api/spend` reads the same three inputs `/api/usage` does, cloned before
-    // either closure takes them.
-    let spend_usage_dir = usage_dir.clone();
-    let spend_stores = stores.clone();
-    let spend_registry = registry_path.clone();
-    let peer_usage_dir = usage_dir.clone();
-    let peer_usage_stores = stores.clone();
-    let peer_usage_registry = registry_path.clone();
-    let peer_usage_daemon_id = usage_daemon_id.clone();
-    let agents_daemon_id = usage_daemon_id.clone().unwrap_or_default();
-    let agents_peers = peers_dir.clone();
-    // The avatar the login card wears (and ONLY the avatar): captured here BEFORE
-    // `identity` moves into the `/api/identity` closure. `/api/session` is
-    // allowlisted pre-login, so anything added to it is readable by an
-    // unauthenticated caller — see [`SessionState::avatar`] for why one glyph
-    // from a fixed public pool is the whole of what this leg may carry.
-    let session_avatar = identity.as_ref().map(|i| i.avatar.clone());
-    // The login and security routes need the runtime auth state: to read the
-    // CURRENT policy (validate a code, sign a cookie), rebuild it after a mutation,
-    // and bump the session epoch. Cloned (an `Arc`) BEFORE `auth` is moved into the
-    // guard layer below.
-    let login_auth = auth.clone();
-    let sec_auth = auth.clone();
-    let headers_auth = auth.clone();
+    let shared = RouterShared {
+        daemon_id: identity.as_ref().map(|i| i.id.to_string()),
+        identity,
+        environment: peer::detect_environment(),
+        bound_port: auth.bound_port(),
+        registry_path,
+        peers_dir,
+        desk_path,
+        usage_dir,
+        stores,
+        release_store,
+        start,
+        shutdown,
+        auth: auth.clone(),
+        roster_locator,
+        sessions,
+        watchers,
+        peer_watch_subs,
+        peer_repo_cache,
+        heal_memo,
+        run_exits,
+        pushes,
+    };
     Router::new()
-        .route("/api/identity", get(move || identity_route(identity)))
-        .route(
-            "/api/peer/hello",
-            get({
-                let id = hello_identity.clone();
-                let env = peer_environment.clone();
-                move || peer_hello_route(id.clone(), env.clone())
-            }),
-        )
-        .route(
-            "/api/peer/usage",
-            get(move |q: Query<UsageQuery>| {
-                usage_local_route(
-                    peer_usage_dir.clone(),
-                    peer_usage_stores.clone(),
-                    peer_usage_registry.clone(),
-                    peer_usage_daemon_id.clone(),
-                    q.0.since,
-                )
-            }),
-        )
-        .route(
-            "/api/peer/command",
-            post({
-                let registry = peer_command_registry.clone();
-                let daemon_id = command_daemon_id.clone();
-                let sessions = sessions.clone();
-                move |body: Json<protocol::Command>| {
-                    peer_command_route(registry.clone(), daemon_id.clone(), sessions.clone(), body)
-                }
-            })
-            // axum's 2 MB default refused a forwarded 4 MiB image paste.
-            .layer(axum::extract::DefaultBodyLimit::max(
-                crate::tree::MAX_COMMAND_BYTES,
-            )),
-        )
-        .route(
-            "/api/peer/tree/poll",
-            post({
-                let registry = registry_path.clone();
-                let subs = peer_watch_subs.clone();
-                move |body: Json<PeerTreePoll>| {
-                    peer_tree_poll_route(registry.clone(), subs.clone(), body)
-                }
-            }),
-        )
-        .route(
-            "/api/peer/tree/close",
-            post({
-                let subs = peer_watch_subs.clone();
-                move |body: Json<PeerTreeClose>| peer_tree_close_route(subs.clone(), body)
-            }),
-        )
-        .route("/api/about", get(about_route))
-        .route(
-            "/api/release",
-            get({
-                let store = release_store.clone();
-                move || release_route(store.clone())
-            }),
-        )
-        .route(
-            "/api/agents",
-            get(move |query: Query<AgentsQuery>| {
-                agents_route(
-                    query,
-                    agents_peers.clone(),
-                    agents_daemon_id.clone(),
-                    roster_locator.clone(),
-                    bound_port,
-                )
-            }),
-        )
-        .route(
-            "/api/repos",
-            get({
-                let p = registry_path.clone();
-                let memo = heal_memo.clone();
-                move || repos_route(p, memo)
-            }),
-        )
-        .route(
-            "/api/fleet",
-            get({
-                let registry = registry_path.clone();
-                let peers = peers_dir.clone();
-                let id = fleet_identity.clone();
-                let env = peer_environment.clone();
-                let cache = peer_repo_cache.clone();
-                move || {
-                    fleet_route(
-                        registry.clone(),
-                        peers.clone(),
-                        id.clone(),
-                        env.clone(),
-                        cache.clone(),
-                        bound_port,
-                    )
-                }
-            }),
-        )
-        .route(
-            "/api/fleet/nudge",
-            post({
-                let peers = nudge_peers_dir.clone();
-                let daemon_id = nudge_daemon_id.clone();
-                move |q: Query<NudgeQuery>| {
-                    fleet_nudge_route(peers.clone(), daemon_id.clone(), bound_port, q.0.daemon_id)
-                }
-            }),
-        )
-        .route(
-            "/api/usage",
-            get({
-                let dir = usage_dir.clone();
-                let stores = stores.clone();
-                let registry = registry_path.clone();
-                let daemon_id = usage_daemon_id.clone();
-                let peers = usage_peers.clone();
-                move |q: Query<UsageQuery>| {
-                    usage_route(
-                        dir,
-                        stores,
-                        registry,
-                        peers,
-                        daemon_id,
-                        q.0.since,
-                        q.0.project,
-                        q.0.period,
-                    )
-                }
-            }),
-        )
-        .route(
-            "/api/spend",
-            get({
-                let dir = spend_usage_dir.clone();
-                let stores = spend_stores.clone();
-                let registry = spend_registry.clone();
-                move |q: Query<SpendQuery>| {
-                    spend_route(
-                        dir.clone(),
-                        stores.clone(),
-                        registry.clone(),
-                        q.0.project,
-                        q.0.period,
-                    )
-                }
-            }),
-        )
-        .route(
-            "/ws",
-            get(move |ws: WebSocketUpgrade| {
-                let id = ws_identity.clone();
-                let shutdown = shutdown.clone();
-                let sessions_rx = presence_sessions.subscribe_changes();
-                let pushes_rx = presence_pushes.subscribe();
-                async move {
-                    ws.on_upgrade(move |socket| {
-                        ws_presence_loop(socket, id, start, shutdown, sessions_rx, pushes_rx)
-                    })
-                }
-            }),
-        )
-        .route(
-            "/ws/session",
-            get({
-                let sessions = sessions.clone();
-                move |ws: WebSocketUpgrade, q: Query<SessionQuery>| {
-                    let sessions = sessions.clone();
-                    let registry_path = session_registry.clone();
-                    let shutdown = session_shutdown.clone();
-                    let host = session_host.clone();
-                    async move {
-                        session_ws_upgrade(ws, q, sessions, registry_path, host, shutdown).await
-                    }
-                }
-            }),
-        )
-        .route(
-            "/api/sessions",
-            get({
-                let sessions = sessions.clone();
-                move |Query(query): Query<SessionsQuery>| {
-                    sessions_route(
-                        sessions.clone(),
-                        sessions_peers.clone(),
-                        sessions_identity.clone(),
-                        sessions_environment.clone(),
-                        query.local == Some(1),
-                    )
-                }
-            }),
-        )
-        .route(
-            "/api/desk",
-            get({
-                let path = desk_path.clone();
-                let registry = registry_path.clone();
-                move || desk_get_route(path.clone(), registry.clone())
-            })
-            .put({
-                let path = desk_path.clone();
-                let registry = registry_path.clone();
-                let pushes = pushes.clone();
-                move |Query(q): Query<DeskPutQuery>, Json(up): Json<desk::DeskUpload>| {
-                    desk_put_route(path.clone(), registry.clone(), pushes.clone(), q.tab, up)
-                }
-            }),
-        )
-        .route(
-            "/api/desk/new",
-            post({
-                let path = desk_path.clone();
-                let pushes = pushes.clone();
-                move || desk_new_route(path.clone(), pushes.clone())
-            }),
-        )
-        .route(
-            "/api/sessions/close",
-            post({
-                let sessions = sessions.clone();
-                move |q: Query<CloseQuery>| {
-                    close_session_route(
-                        q,
-                        sessions.clone(),
-                        close_peers.clone(),
-                        close_identity.clone(),
-                    )
-                }
-            }),
-        )
-        .route(
-            "/ws/command",
-            get({
-                let sessions = sessions.clone();
-                move |ws: WebSocketUpgrade, headers: axum::http::HeaderMap| {
-                    let ws = ws
-                        .max_message_size(crate::tree::MAX_COMMAND_BYTES)
-                        .max_frame_size(crate::tree::MAX_COMMAND_BYTES);
-                    let secret_ok = request_may_carry_a_secret(&headers);
-                    let registry_path = command_registry.clone();
-                    let shutdown = command_shutdown.clone();
-                    let daemon_id = command_daemon_id.clone();
-                    let run_exits = command_run_exits.clone();
-                    let peers_dir = command_peers.clone();
-                    let sessions = sessions.clone();
-                    async move {
-                        ws.on_upgrade(move |socket| {
-                            command_ws(
-                                socket,
-                                registry_path,
-                                peers_dir,
-                                shutdown,
-                                daemon_id,
-                                run_exits,
-                                bound_port,
-                                sessions,
-                                secret_ok,
-                            )
-                        })
-                    }
-                }
-            }),
-        )
-        .route(
-            "/ws/tree",
-            get(move |ws: WebSocketUpgrade| {
-                let watchers = tree_watchers.clone();
-                let registry_path = tree_registry.clone();
-                let peers_dir = tree_peers.clone();
-                let daemon_id = tree_daemon_id.clone();
-                let shutdown = tree_shutdown.clone();
-                let run_exits = tree_run_exits.clone();
-                async move {
-                    ws.on_upgrade(move |socket| {
-                        tree_ws(
-                            socket,
-                            watchers,
-                            registry_path,
-                            peers_dir,
-                            daemon_id,
-                            shutdown,
-                            run_exits,
-                        )
-                    })
-                }
-            }),
-        )
-        .route(
-            "/api/login",
-            post({
-                let auth = login_auth.clone();
-                move |headers: axum::http::HeaderMap, form: Form<LoginForm>| {
-                    let auth = auth.clone();
-                    async move { login_submit(auth, headers, form).await }
-                }
-            }),
-        )
-        .route(
-            "/api/session",
-            get({
-                let auth = login_auth.clone();
-                let avatar = session_avatar.clone();
-                move |headers: axum::http::HeaderMap| {
-                    let auth = auth.clone();
-                    let avatar = avatar.clone();
-                    async move { session_state_route(auth, avatar, headers).await }
-                }
-            }),
-        )
-        .route(
-            "/api/logout",
-            post({
-                let auth = sec_auth.clone();
-                move |headers: axum::http::HeaderMap| logout_route(auth.clone(), headers)
-            }),
-        )
-        .route("/api/security/state", get(security_state_route))
-        .route(
-            "/api/security/totp/enroll",
-            post(security_totp_enroll_route),
-        )
-        .route(
-            "/api/security/totp/confirm",
-            post({
-                let auth = sec_auth.clone();
-                move |form: Form<ConfirmForm>| security_totp_confirm_route(auth.clone(), form)
-            }),
-        )
-        .route(
-            "/api/security/totp/revoke",
-            post({
-                let auth = sec_auth.clone();
-                move |form: Form<RevokeForm>| security_totp_revoke_route(auth.clone(), form)
-            }),
-        )
-        .route(
-            "/api/security/password",
-            post({
-                let auth = sec_auth.clone();
-                move |form: Form<PasswordForm>| security_password_route(auth.clone(), form)
-            }),
-        )
-        .route(
-            "/api/security/token/remint",
-            post({
-                let auth = sec_auth.clone();
-                move |form: Form<RemintForm>| security_token_remint_route(auth.clone(), form)
-            }),
-        )
-        .route(
-            "/api/release/watch",
-            post({
-                let store = release_store.clone();
-                move |form: Form<ReleaseWatchForm>| release_watch_route(store.clone(), form)
-            }),
-        )
-        .route(
-            "/api/release/update",
-            post({
-                let auth = sec_auth.clone();
-                let store = release_store.clone();
-                move |headers: axum::http::HeaderMap, form: Form<UpdateForm>| {
-                    release_update_route(auth.clone(), store.clone(), headers, form)
-                }
-            }),
-        )
-        .route(
-            "/api/security/require-login",
-            post({
-                let auth = sec_auth.clone();
-                move |form: Form<RequireLoginForm>| security_require_login_route(auth.clone(), form)
-            }),
-        )
-        .route(
-            "/api/security/remote-images",
-            post({
-                let auth = sec_auth.clone();
-                move |form: Form<RemoteImagesForm>| security_remote_images_route(auth.clone(), form)
-            }),
-        )
+        .merge(read_routes(&shared))
+        .merge(release_routes(&shared))
+        .merge(peer_routes(&shared))
+        .merge(fleet_routes(&shared))
+        .merge(presence_routes(&shared))
+        .merge(session_routes(&shared))
+        .merge(desk_routes(&shared))
+        .merge(command_routes(&shared))
+        .merge(tree_routes(&shared))
+        .merge(security_routes(&shared))
         .fallback(ui_asset)
         // The auth guard wraps EVERY route above — the API handlers, all three
         // WS upgrades, and the UI fallback — so a network bind rejects an
         // unauthenticated request before it reaches any handler or upgrade.
-        .layer(axum::middleware::from_fn_with_state(auth, require_auth))
+        .layer(axum::middleware::from_fn_with_state(
+            auth.clone(),
+            require_auth,
+        ))
         // Outermost, so the security headers ride every response the guard
         // lets through AND every refusal it writes itself (audit F3).
         .layer(axum::middleware::map_response_with_state(
-            headers_auth,
+            auth,
             headers::security_headers,
         ))
 }

@@ -40,7 +40,7 @@ fn message_types_without_a_shared_reply_match_the_baseline() {
     let root = workspace_root();
     let types = message_types(
         &read(&root.join("crates/ralphy-daemon/src/dispatch.rs")),
-        &read(&root.join("crates/ralphy-daemon/src/routes.rs")),
+        &router_text(&root),
         &routes_production_text(&root),
     );
     let covered = covered(&root);
@@ -103,7 +103,7 @@ fn message_type_scan_finds_verbs_routes_and_pushes() {
 
     let root = workspace_root();
     let dispatch = read(&root.join("crates/ralphy-daemon/src/dispatch.rs"));
-    let routes = read(&root.join("crates/ralphy-daemon/src/routes.rs"));
+    let routes = router_text(&root);
     let pushes = routes_production_text(&root);
     assert!(verbs(&dispatch).len() >= 40, "the verb scan is blind");
     assert!(ui_routes(&routes).len() >= 20, "the route scan is blind");
@@ -112,7 +112,7 @@ fn message_type_scan_finds_verbs_routes_and_pushes() {
 
 /// The message types the UI reads:
 /// - verbs: the string keys of `Verb::from_query` in `dispatch.rs`;
-/// - routes: the `.route("…")` paths of `routes.rs` without `/api/peer/*`
+/// - routes: the `.route("…")` paths of the router without `/api/peer/*`
 ///   (daemon to daemon), one type per path, named without the leading `/` and
 ///   with `/` as `-`;
 /// - pushes: the `<word>.dirty`, `<word>.failed`, `session-open` and
@@ -153,6 +153,17 @@ fn push_types(text: &str) -> BTreeSet<String> {
     let push = Regex::new(r#""([a-z_]+\.dirty|[a-z_]+\.failed|session-open|session-end)""#)
         .expect("a valid regex");
     push.captures_iter(text).map(|c| c[1].to_string()).collect()
+}
+
+/// The text the router's paths are in: `routes.rs` builds the router, and each
+/// area module under `routes/` registers its own routes.
+fn router_text(root: &Path) -> String {
+    let routes = read(&root.join("crates/ralphy-daemon/src/routes.rs"));
+    format!(
+        "{routes}
+{}",
+        routes_production_text(root)
+    )
 }
 
 /// The production text of every file under `crates/ralphy-daemon/src/routes/`.

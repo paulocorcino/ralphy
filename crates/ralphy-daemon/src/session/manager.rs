@@ -2,7 +2,7 @@
 //! close the daemon-owned sessions, and pump each child's bytes to its
 //! subscribers.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -12,6 +12,9 @@ use tokio::sync::broadcast;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use super::{EndReason, EvictToken, Session, SessionId, SessionInfo, SessionSpec};
+
+mod record;
+pub use record::RecordClaim;
 
 /// Append `bytes` to the scrollback `ring`, then drop from the FRONT until it is
 /// no longer over `cap` — a byte-bounded ring so a chatty session cannot grow the
@@ -149,6 +152,9 @@ pub struct SessionManager {
     /// its agent state changes. The presence socket relays it as
     /// `sessions.dirty` (ADR-0070 D2 event 1).
     changes: broadcast::Sender<()>,
+    /// One gate per window record a launch is running for (ADR-0050 amendment
+    /// 2026-10-04). An entry lives while a launch holds or waits on it.
+    records: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
 }
 
 /// Capacity of [`SessionManager::subscribe_changes`]. A receiver that lags
@@ -217,6 +223,7 @@ impl SessionManager {
                 file: None,
             }),
             changes: broadcast::channel(CHANGES_CAP).0,
+            records: Mutex::new(HashMap::new()),
         }
     }
 
@@ -227,6 +234,7 @@ impl SessionManager {
             sessions: Mutex::new(BTreeMap::new()),
             ids: Mutex::new(IdSeq::continuing(file)),
             changes: broadcast::channel(CHANGES_CAP).0,
+            records: Mutex::new(HashMap::new()),
         }
     }
 
@@ -243,7 +251,9 @@ impl SessionManager {
     /// Spawn a fresh session, start its output pump, and attach to it. The caller
     /// (the WS upgrade) gets the id (for the list/close endpoints and the codec's
     /// `session` field) and an [`Attachment`] to bridge onto the socket. A fresh
-    /// session is never busy, so the initial attach always succeeds.
+    /// session is never busy, so the initial attach always succeeds. `record` is
+    /// the window record the launch named; its [`RecordClaim`] is the caller's.
+    #[allow(clippy::too_many_arguments)]
     pub fn spawn_attached(
         self: &Arc<Self>,
         repo: String,
@@ -251,10 +261,11 @@ impl SessionManager {
         kind: String,
         environment: Option<String>,
         checkout: Option<String>,
+        record: Option<String>,
         spec: SessionSpec,
     ) -> Result<(SessionId, Attachment)> {
         let id = self.issue_id();
-        self.spawn_attached_as(id, repo, agent, kind, environment, checkout, spec)
+        self.spawn_attached_as(id, repo, agent, kind, environment, checkout, record, spec)
     }
 
     /// Reserve the id the NEXT [`spawn_attached_as`](Self::spawn_attached_as)
@@ -275,6 +286,7 @@ impl SessionManager {
         kind: String,
         environment: Option<String>,
         checkout: Option<String>,
+        record: Option<String>,
         spec: SessionSpec,
     ) -> Result<(SessionId, Attachment)> {
         // Lifted before the spec is consumed by the spawn.
@@ -305,6 +317,7 @@ impl SessionManager {
             environment,
             name,
             checkout,
+            record,
             agent_state: None,
             started_at: SystemTime::now()
                 .duration_since(UNIX_EPOCH)

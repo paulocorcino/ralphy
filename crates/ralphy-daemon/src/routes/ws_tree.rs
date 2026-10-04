@@ -4,8 +4,11 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use axum::extract::ws::{Message, WebSocket};
+use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::routing::get;
+use axum::Router;
 
+use super::RouterShared;
 use super::{read_peer_store, send_command};
 use crate::protocol::Frame;
 use crate::{checkout, fleet, protocol, registry, watch};
@@ -405,4 +408,38 @@ pub(crate) fn spawn_nudge_forwarder(
             }
         }
     })
+}
+
+/// `/ws/tree`: the file-tree socket.
+pub(crate) fn tree_routes(s: &RouterShared) -> Router {
+    let watchers = s.watchers.clone();
+    let registry = s.registry_path.clone();
+    let peers = s.peers_dir.clone();
+    let daemon_id = s.daemon_id.clone();
+    let shutdown = s.shutdown.clone();
+    let run_exits = s.run_exits.clone();
+    Router::new().route(
+        "/ws/tree",
+        get(move |ws: WebSocketUpgrade| {
+            let watchers = watchers.clone();
+            let registry_path = registry.clone();
+            let peers_dir = peers.clone();
+            let daemon_id = daemon_id.clone();
+            let shutdown = shutdown.clone();
+            let run_exits = run_exits.clone();
+            async move {
+                ws.on_upgrade(move |socket| {
+                    tree_ws(
+                        socket,
+                        watchers,
+                        registry_path,
+                        peers_dir,
+                        daemon_id,
+                        shutdown,
+                        run_exits,
+                    )
+                })
+            }
+        }),
+    )
 }
