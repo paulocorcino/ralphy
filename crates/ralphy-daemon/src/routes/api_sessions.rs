@@ -44,6 +44,10 @@ pub(crate) struct HostedSessionInfo {
     /// load-bearing for the same reason as `name`'s: an older peer sends none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) checkout: Option<String>,
+    /// The window record the session serves (ADR-0050 amendment 2026-10-04).
+    /// `serde(default)` for the same reason as `name`'s.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) record: Option<String>,
     /// The agent's hook-reported state (ADR-0059 §5), already rendered with
     /// the staleness rule by the daemon that owns the PTY. `serde(default)`
     /// for the same reason as the two above.
@@ -67,6 +71,7 @@ pub(crate) fn hosted_session(
         environment: effective_environment,
         name: info.name,
         checkout: info.checkout,
+        record: info.record,
         agent_state: info.agent_state,
     }
 }

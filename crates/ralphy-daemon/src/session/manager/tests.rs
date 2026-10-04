@@ -35,6 +35,7 @@ async fn a_watcher_does_not_occupy_the_writer_slot() {
             "console".to_string(),
             None,
             None,
+            None,
             spec,
         )
         .expect("the platform shell must spawn — the free console depends on it");
@@ -86,6 +87,7 @@ async fn list_renders_the_agent_state_with_the_staleness_rule() {
             "owner/r".to_string(),
             "claude".to_string(),
             "agent".to_string(),
+            None,
             None,
             None,
             console_spec(std::env::temp_dir(), 24, 80, None),
@@ -163,6 +165,7 @@ async fn console_in_matches_only_the_repo_and_checkout_pair() {
                 "agent".to_string(),
                 None,
                 checkout.map(str::to_string),
+                None,
                 console_spec(std::env::temp_dir(), 24, 80, None),
             )
             .expect("the platform shell must spawn")
@@ -240,6 +243,7 @@ async fn a_working_state_that_ages_out_counts_as_a_change() {
             "owner/r".to_string(),
             "claude".to_string(),
             "agent".to_string(),
+            None,
             None,
             None,
             spec,

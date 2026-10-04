@@ -50,6 +50,19 @@ pub(crate) struct SessionQuery {
     /// hex name. Ignored on every other path. Empty is
     /// the same as absent; longer than 40 characters is cut to 40.
     pub(crate) name: Option<String>,
+    /// The window record a NEW launch is for (ADR-0050 amendment 2026-10-04):
+    /// while a live session serves it, the launch attaches to that session
+    /// instead of starting another. Ignored on a reattach by `id`.
+    pub(crate) record: Option<String>,
+}
+
+/// The shape of a `holder` and of a `record`: 1–64 ASCII letters, digits, `-`
+/// or `_`. Anything else is treated as absent.
+fn well_formed_key(key: &str) -> bool {
+    (1..=64).contains(&key.len())
+        && key
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
 impl SessionQuery {
@@ -57,11 +70,12 @@ impl SessionQuery {
     /// `-` or `_`. Anything else is treated as absent — it can only lose the
     /// reclaim, never gain one.
     pub(crate) fn holder(&self) -> Option<&str> {
-        self.holder.as_deref().filter(|h| {
-            (1..=64).contains(&h.len())
-                && h.bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
-        })
+        self.holder.as_deref().filter(|h| well_formed_key(h))
+    }
+
+    /// The window record, when it is a well-formed one (the `holder` shape).
+    pub(crate) fn record(&self) -> Option<&str> {
+        self.record.as_deref().filter(|r| well_formed_key(r))
     }
 
     /// The console name, cut to the desk's limit on a char boundary so the
@@ -74,6 +88,18 @@ impl SessionQuery {
                 None => name,
             },
         )
+    }
+}
+
+/// The claim a NEW launch holds on its record from the check to the insert,
+/// or `None` for a launch that named no record.
+async fn claim_for(
+    sessions: &Arc<session::SessionManager>,
+    record: &Option<String>,
+) -> Option<session::RecordClaim> {
+    match record {
+        Some(record) => Some(sessions.claim_record(record).await),
+        None => None,
     }
 }
 
@@ -92,6 +118,65 @@ fn hold(att: &session::Attachment, holder: Option<&str>) {
 pub(crate) struct SessionLabels {
     pub(crate) name: Option<String>,
     pub(crate) checkout: Option<String>,
+    /// The socket was attached read-only: a launch whose record another page
+    /// already drives (ADR-0050 amendment 2026-10-04).
+    pub(crate) watching: bool,
+}
+
+/// A launch that joined the live session already serving its record, instead
+/// of starting a second one (ADR-0050 amendment 2026-10-04).
+struct Joined {
+    id: session::SessionId,
+    att: session::Attachment,
+    labels: SessionLabels,
+    environment: String,
+}
+
+impl Joined {
+    /// Join the session `claim` found: as the writer when the slot is free or
+    /// is this holder's, else as a watcher. `None` when there is none, or it
+    /// ended meanwhile, so the launch goes on and spawns.
+    fn find(
+        sessions: &Arc<session::SessionManager>,
+        claim: Option<&session::RecordClaim>,
+        holder: Option<&str>,
+        environment: &str,
+    ) -> Option<Joined> {
+        let id = claim?.live()?;
+        let info = sessions.get(id)?;
+        let (att, watching) = match sessions.attach_as(id, false, holder) {
+            Ok(att) => (att, false),
+            Err(session::AttachError::Busy) => (sessions.watch(id).ok()?, true),
+            Err(session::AttachError::Unknown) => return None,
+        };
+        Some(Joined {
+            id,
+            att,
+            labels: SessionLabels {
+                name: info.name,
+                checkout: info.checkout,
+                watching,
+            },
+            environment: info.environment.unwrap_or_else(|| environment.to_string()),
+        })
+    }
+
+    fn upgrade(
+        self,
+        ws: WebSocketUpgrade,
+        daemon_id: String,
+        shutdown: tokio::sync::watch::Receiver<bool>,
+    ) -> Response {
+        let Joined {
+            id,
+            att,
+            labels,
+            environment,
+        } = self;
+        ws.on_upgrade(move |socket| {
+            session_ws(socket, att, id, daemon_id, environment, labels, shutdown)
+        })
+    }
 }
 
 #[derive(Clone)]
@@ -126,6 +211,11 @@ pub(crate) struct SessionHost {
 ///   command, so the workbench can tell it from a bare shell. Refuses an
 ///   unreadable registry, an unregistered slug, or a spawn failure.
 ///
+/// Either NEW launch may carry `&record=<window record id>`. While a live
+/// session already serves that record, nothing is spawned: the socket joins
+/// that session, as the writer when the slot is free or is this holder's,
+/// else read-only with `watch: true` in its `session-open`.
+///
 /// A NEW launch is refused after the upgrade, by a `session-end` frame with
 /// `reason: "refused"` and the reason as `message` ([`Refuser`]); the browser
 /// cannot read the body of a refused upgrade, and a new launch has no id to
@@ -150,6 +240,7 @@ pub(crate) async fn session_ws_upgrade(
     } = host;
     // Owned: `query` is rewritten below (a peer ref resolves to its slug).
     let holder = query.holder().map(str::to_owned);
+    let record = query.record().map(str::to_owned);
     let daemon_id = identity
         .as_ref()
         .map(|identity| identity.id.to_string())
@@ -218,6 +309,7 @@ pub(crate) async fn session_ws_upgrade(
             .map(|info| SessionLabels {
                 name: info.name.clone(),
                 checkout: info.checkout.clone(),
+                watching: false,
             })
             .unwrap_or_default();
         // A watcher never touches the writer slot, so it is dispatched BEFORE the
@@ -382,6 +474,12 @@ pub(crate) async fn session_ws_upgrade(
                         80,
                         command.as_deref(),
                     );
+                    let claim = claim_for(&sessions, &record).await;
+                    if let Some(joined) =
+                        Joined::find(&sessions, claim.as_ref(), holder.as_deref(), &environment)
+                    {
+                        return joined.upgrade(ws, daemon_id, shutdown);
+                    }
                     let effective_environment = peer.environment.clone();
                     return match sessions
                         .spawn_attached(
@@ -390,6 +488,7 @@ pub(crate) async fn session_ws_upgrade(
                             "console".to_string(),
                             Some(effective_environment.clone()),
                             None,
+                            record.clone(),
                             spec,
                         )
                         .inspect(|(_, att)| hold(att, holder.as_deref()))
@@ -468,6 +567,12 @@ pub(crate) async fn session_ws_upgrade(
         let cwd = session::console_cwd(repo_path);
         let spec = session::console_spec(cwd, 24, 80, command.as_deref());
         let repo_label = query.repo.clone().unwrap_or_else(|| "~".to_string());
+        let claim = claim_for(&sessions, &record).await;
+        if let Some(joined) =
+            Joined::find(&sessions, claim.as_ref(), holder.as_deref(), &environment)
+        {
+            return joined.upgrade(ws, daemon_id, shutdown);
+        }
         return match sessions
             .spawn_attached(
                 repo_label,
@@ -475,6 +580,7 @@ pub(crate) async fn session_ws_upgrade(
                 "console".to_string(),
                 None,
                 None,
+                record.clone(),
                 spec,
             )
             .inspect(|(_, att)| hold(att, holder.as_deref()))
@@ -577,7 +683,12 @@ pub(crate) async fn session_ws_upgrade(
     // The id first: the agent-state files are named by it and must exist
     // before the child that reads them is launched (ADR-0059 §5). Only a
     // vendor with hooks gets the slot; the store dir failing to resolve means
-    // no hooks, never no console.
+    // no hooks, never no console. The record claim comes first, so a launch
+    // that joins a live session burns no id and writes no file.
+    let claim = claim_for(&sessions, &record).await;
+    if let Some(joined) = Joined::find(&sessions, claim.as_ref(), holder.as_deref(), &environment) {
+        return joined.upgrade(ws, daemon_id, shutdown);
+    }
     let id = sessions.reserve_id();
     let status = match agent {
         session::Agent::Claude => auth::store_dir()
@@ -595,6 +706,7 @@ pub(crate) async fn session_ws_upgrade(
     let labels = SessionLabels {
         name: spec.name.clone(),
         checkout: checkout.as_ref().map(|c| c.name().to_string()),
+        watching: false,
     };
     match sessions
         .spawn_attached_as(
@@ -604,6 +716,7 @@ pub(crate) async fn session_ws_upgrade(
             "agent".to_string(),
             None,
             labels.checkout.clone(),
+            record.clone(),
             spec,
         )
         .inspect(|(_, att)| hold(att, holder.as_deref()))

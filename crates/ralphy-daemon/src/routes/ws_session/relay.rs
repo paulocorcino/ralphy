@@ -34,6 +34,7 @@ pub(crate) fn peer_session_query(query: &SessionQuery, slug: &str) -> String {
                 out.push_str(&encode_query_value(command));
             }
         }
+        push_record(&mut out, query);
         push_holder(&mut out, query);
         return out;
     }
@@ -54,8 +55,19 @@ pub(crate) fn peer_session_query(query: &SessionQuery, slug: &str) -> String {
         out.push_str("&name=");
         out.push_str(&encode_query_value(name));
     }
+    push_record(&mut out, query);
     push_holder(&mut out, query);
     out
+}
+
+/// The owning daemon keeps one session per window record (ADR-0050 amendment
+/// 2026-10-04), so it must know the record of a launch. An older peer ignores
+/// the key. Validated like the holder, so it needs no encoding.
+fn push_record(out: &mut String, query: &SessionQuery) {
+    if let Some(record) = query.record() {
+        out.push_str("&record=");
+        out.push_str(record);
+    }
 }
 
 /// The owning daemon keeps the writer slot, so it is the one that must know
