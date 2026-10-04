@@ -354,6 +354,11 @@ with each window's repo, agent, kind, place on the **stage** and state. It is
 what the workbench restores when a page opens (ADR-0050).
 _Avoid_: workspace (that is the **viewport**), geometry store, browser state.
 
+**Desk history**:
+The last 50 versions of the **desk layout** that the daemon keeps, so the
+operator can restore one, or save it as a file (ADR-0050).
+_Avoid_: backup, snapshot (that is a **Run snapshot** or a **Queue snapshot**), undo.
+
 **Key bar**:
 The row of keys under a console window that supplies the keys a tablet's
 on-screen keyboard does not have, such as `esc`, `tab`, `ctrl` and the arrows.

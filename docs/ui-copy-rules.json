@@ -290,6 +290,18 @@
     {
       "verb": "Show / Hide",
       "means": "Toggle a part that is already on screen: sections, rows, a veiled note."
+    },
+    {
+      "verb": "Restore",
+      "means": "A saved desk layout becomes the current one. Running consoles stay open."
+    },
+    {
+      "verb": "Download",
+      "means": "A copy is saved as a file on this device. Nothing in Ralphy changes."
+    },
+    {
+      "verb": "Upload",
+      "means": "A file from this device is sent to the daemon."
     }
   ]
 }
