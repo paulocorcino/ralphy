@@ -13,6 +13,9 @@ use tokio::sync::mpsc::UnboundedReceiver;
 
 use super::{EndReason, EvictToken, Session, SessionId, SessionInfo, SessionSpec};
 
+mod record;
+pub use record::RecordClaim;
+
 /// Append `bytes` to the scrollback `ring`, then drop from the FRONT until it is
 /// no longer over `cap` — a byte-bounded ring so a chatty session cannot grow the
 /// daemon's memory without bound (issue #166 AC2). Front-drop is intentional:
@@ -154,46 +157,6 @@ pub struct SessionManager {
     records: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
 }
 
-/// A launch's hold on one window record, from the check for a live session to
-/// the insert of the new one: a second launch for the same record waits here,
-/// then finds the session the first one started. Async because the agent
-/// launch awaits between the check and the spawn.
-pub struct RecordClaim {
-    manager: Arc<SessionManager>,
-    record: String,
-    gate: Arc<tokio::sync::Mutex<()>>,
-    guard: Option<tokio::sync::OwnedMutexGuard<()>>,
-}
-
-impl RecordClaim {
-    pub fn record(&self) -> &str {
-        &self.record
-    }
-
-    /// The live session that already serves this record, if any.
-    pub fn live(&self) -> Option<SessionId> {
-        self.manager
-            .sessions
-            .lock()
-            .expect("sessions mutex")
-            .values()
-            .find(|s| s.info.record.as_deref() == Some(self.record.as_str()))
-            .map(|s| s.info.id)
-    }
-}
-
-impl Drop for RecordClaim {
-    fn drop(&mut self) {
-        self.guard.take();
-        // Under the map lock, so no launch can clone the gate between the
-        // count and the removal: two references are the map's and this one.
-        let mut records = self.manager.records.lock().expect("records mutex");
-        if Arc::strong_count(&self.gate) == 2 {
-            records.remove(&self.record);
-        }
-    }
-}
-
 /// Capacity of [`SessionManager::subscribe_changes`]. A receiver that lags
 /// reads the list again once, so a small buffer loses nothing.
 const CHANGES_CAP: usize = 32;
@@ -279,26 +242,6 @@ impl SessionManager {
     /// session's agent state, changes.
     pub fn subscribe_changes(&self) -> broadcast::Receiver<()> {
         self.changes.subscribe()
-    }
-
-    /// Hold `record` until the returned claim is dropped. A launch that names
-    /// its record takes this BEFORE it looks for a live session, and keeps it
-    /// until the session it spawns is in the list.
-    pub async fn claim_record(self: &Arc<Self>, record: &str) -> RecordClaim {
-        let gate = self
-            .records
-            .lock()
-            .expect("records mutex")
-            .entry(record.to_string())
-            .or_default()
-            .clone();
-        let guard = gate.clone().lock_owned().await;
-        RecordClaim {
-            manager: self.clone(),
-            record: record.to_string(),
-            gate,
-            guard: Some(guard),
-        }
     }
 
     fn issue_id(&self) -> SessionId {
