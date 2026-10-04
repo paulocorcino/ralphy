@@ -6904,6 +6904,28 @@ window.WBConsole = (function () {
     return true;
   }
 
+  // Set once the saved layout has been reconciled: `restoreDesk` has three
+  // callers (boot, `afterLogin`, `startNewDesk`) and the retry below, and a
+  // second reconcile would spawn every window twice.
+  let deskReconciled = false;
+  // A desk that did not load is NOT an empty desk: reconciled against `[]`,
+  // every live session that names a record is adopted at the cascade under
+  // that record's id, with a newer `ts` that wins the next fold and overwrites
+  // the saved rect. So a transport failure reads the desk again and restores
+  // only once it lands. A refused (pre-login) read retries too, harmlessly;
+  // an unreadable desk waits for the operator (`startNewDesk`).
+  let deskRetryMs = 1000;
+  function retryDeskLoad() {
+    if (deskFailure) return;
+    setTimeout(() => {
+      reloadDesk().then(() => {
+        if (deskLoaded) restoreDesk();
+        else retryDeskLoad();
+      });
+    }, deskRetryMs);
+    deskRetryMs = Math.min(deskRetryMs * 2, 30000);
+  }
+
   // Restore the desk: reconcile the saved layout against the daemon's live
   // sessions and dispatch one window per verdict. A REJECTED fetch leaves the
   // desk untouched — no relaunch, no phantom placeholders.
@@ -6922,6 +6944,12 @@ window.WBConsole = (function () {
       ),
     ])
       .then(async ([, sessions]) => {
+        if (!deskLoaded) {
+          retryDeskLoad();
+          return;
+        }
+        if (deskReconciled) return;
+        deskReconciled = true;
         // Members of a fence detached BEFORE this reload are live in a popup
         // that survived it: every verdict is skipped for them (#347) — a
         // `relaunch` would be a SECOND PTY. Ids from the REGISTRY first, the
