@@ -495,7 +495,7 @@ write so that a page can only send what it changed.
 - **The page keeps the daemon's desk and its own pending changes apart.** It
   draws the daemon's last desk with its pending changes applied on top, by
   the same rules as the daemon. One table of cases,
-  `ui-tests/fixtures/desk-apply-cases.json`, is run by the Rust test and by
+  `ui-tests/fixtures/api-desk--apply-cases.json`, is run by the Rust test and by
   the node test. An upload that fails on the network, or with `401`, `409
   unreadable` or `5xx`, is kept and sent again later. A `400` or `422` drops
   it: the daemon will never accept it.

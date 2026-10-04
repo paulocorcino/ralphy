@@ -104,14 +104,19 @@ async fn change_until_push(
     None
 }
 
-const ONE_WINDOW: &str = r#"{"windows":[{"id":"w-a","repo":"owner/repo","agent":"claude","kind":"console","rect":{"left":10.0,"top":20.0,"width":640.0,"height":480.0},"max":false,"sessionId":7,"ts":1}],"fences":[]}"#;
+/// Upload `seq` of a tab: one desk change that creates a window.
+fn one_window(seq: u64) -> String {
+    format!(
+        r#"{{"seq":{seq},"changes":[{{"op":"create","type":"window","record":{{"id":"w-a","repo":"owner/repo","agent":"claude","kind":"console","rect":{{"left":10.0,"top":20.0,"width":640.0,"height":480.0}},"max":false,"sessionId":7}}}}]}}"#
+    )
+}
 
 #[tokio::test]
 async fn a_desk_write_that_changes_the_desk_pushes_desk_dirty_with_its_tab() {
     let dir = tempfile::tempdir().unwrap();
     let (port, mut ws) = serve(dir.path()).await;
 
-    let reply = put_desk(port, "t1", ONE_WINDOW).await;
+    let reply = put_desk(port, "t1", &one_window(1)).await;
     assert!(reply.starts_with("HTTP/1.1 200"), "{reply}");
     let push = next_push(&mut ws, "desk.dirty", Duration::from_secs(5))
         .await
@@ -119,8 +124,9 @@ async fn a_desk_write_that_changes_the_desk_pushes_desk_dirty_with_its_tab() {
     assert_eq!(push.id, 0);
     assert_eq!(push.payload["tab"], "t1");
 
-    // Negative control: the same write again changes nothing.
-    let reply = put_desk(port, "t1", ONE_WINDOW).await;
+    // Negative control: the same change again, as a new upload, changes
+    // nothing.
+    let reply = put_desk(port, "t1", &one_window(2)).await;
     assert!(reply.starts_with("HTTP/1.1 200"), "{reply}");
     assert!(
         next_push(&mut ws, "desk.dirty", Duration::from_secs(3))

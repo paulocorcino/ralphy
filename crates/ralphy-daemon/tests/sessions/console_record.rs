@@ -128,24 +128,21 @@ async fn two_launches_of_one_record_start_one_session() {
     assert_eq!(watchers, 1, "one writer, one watcher: {open_a} {open_b}");
 }
 
-/// The cap cuts the oldest records, but never one a running console serves:
-/// cutting it would strand the console, and the next load would adopt it at
+/// A full desk never drops a record, and a running console whose record is
+/// gone gets one back: a desk change creates past the cap within its slack
+/// (ADR-0050 amendment 2026-10-04, changes, not the desk). A record dropped
+/// for room would strand the console, and the next load would adopt it at
 /// the cascade position.
 #[tokio::test]
-async fn the_desk_cap_never_cuts_the_record_of_a_running_console() {
+async fn a_running_console_gets_its_record_back_on_a_full_desk() {
     let dir = tempfile::tempdir().unwrap();
     let port = daemon(dir.path()).await;
     let (_ws, _open) = launch(port, "w-live", "tab-a").await;
 
-    // One record more than the cap, and the running console's is the oldest.
-    let windows: Vec<serde_json::Value> = (0..=ralphy_daemon::desk::DESK_MAX)
-        .map(|n| {
-            let id = if n == 0 {
-                "w-live".to_string()
-            } else {
-                format!("w-{n}")
-            };
-            serde_json::json!({
+    let create = |id: String| {
+        serde_json::json!({
+            "op": "create", "type": "window",
+            "record": {
                 "id": id,
                 "repo": "owner/record-repo",
                 "agent": "console",
@@ -153,11 +150,15 @@ async fn the_desk_cap_never_cuts_the_record_of_a_running_console() {
                 "rect": { "left": 10.0, "top": 20.0, "width": 640.0, "height": 480.0 },
                 "max": false,
                 "sessionId": null,
-                "ts": n + 1,
-            })
+            },
         })
+    };
+    // A full desk first, then the running console's record.
+    let changes: Vec<serde_json::Value> = (1..=ralphy_daemon::desk::DESK_MAX)
+        .map(|n| create(format!("w-{n}")))
+        .chain(std::iter::once(create("w-live".to_string())))
         .collect();
-    let upload = serde_json::json!({ "windows": windows, "fences": [] }).to_string();
+    let upload = serde_json::json!({ "seq": 1, "changes": changes }).to_string();
     let (status, body) = http(port, "PUT", "/api/desk", &upload).await;
     assert_eq!(status, 200, "PUT /api/desk: {body}");
 
@@ -171,11 +172,8 @@ async fn the_desk_cap_never_cuts_the_record_of_a_running_console() {
         .collect();
     assert!(
         ids.contains(&"w-live"),
-        "the running console keeps its record: {ids:?}"
+        "the running console has its record: {ids:?}"
     );
-    assert!(
-        !ids.contains(&"w-1"),
-        "the oldest other record makes room: {ids:?}"
-    );
-    assert_eq!(ids.len(), ralphy_daemon::desk::DESK_MAX, "{ids:?}");
+    assert!(ids.contains(&"w-1"), "no record made room: {ids:?}");
+    assert_eq!(ids.len(), ralphy_daemon::desk::DESK_MAX + 1, "{ids:?}");
 }

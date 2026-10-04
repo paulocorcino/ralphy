@@ -86,11 +86,12 @@ impl From<&Version> for VersionInfo {
 }
 
 /// The desk with every field that changes without a layout change cleared:
-/// `ts` and `sessionId` (each reconnect rewrites both), the generation, and
-/// the sub-pixel part of each rect.
+/// `ts` and `sessionId` (each reconnect rewrites both), the generation and
+/// the `rev`, and the sub-pixel part of each rect.
 fn layout_of(desk: &DeskStore) -> DeskStore {
     let mut d = desk.clone();
     d.generation = 0;
+    d.rev = 0;
     let round = |r: &mut super::DeskRect| {
         r.left = r.left.round();
         r.top = r.top.round();
@@ -177,8 +178,7 @@ fn same_session(a: &DeskRecord, b: &DeskRecord) -> bool {
 /// - Fences and note cards are the version's. The checkouts are the current
 ///   ones: a selection, not layout.
 ///
-/// Every restored record gets `ts = now`, so it wins the fold over any copy a
-/// page still holds.
+/// Every restored record gets `ts = now`.
 pub fn restore(current: DeskStore, version: DeskStore, now: i64) -> (DeskStore, HashSet<String>) {
     let mut left: Vec<Option<DeskRecord>> = current.windows.into_iter().map(Some).collect();
     let mut windows = Vec::with_capacity(version.windows.len() + left.len());
@@ -217,6 +217,7 @@ pub fn restore(current: DeskStore, version: DeskStore, now: i64) -> (DeskStore, 
     let mut notes = version.notes;
     notes.iter_mut().for_each(|n| n.ts = now);
     let desk = DeskStore {
+        rev: current.rev,
         generation: current.generation,
         windows,
         fences,
@@ -306,6 +307,7 @@ pub fn append(dir: &Path, desk: &DeskStore, reason: Reason, now: i64) -> Result<
     let id = ids(dir)?.last().map_or(now, |&last| now.max(last + 1));
     let mut desk = desk.clone();
     desk.generation = 0;
+    desk.rev = 0;
     write(
         dir,
         &Version {
@@ -330,6 +332,7 @@ pub fn capture(dir: &Path, before: &DeskStore, after: &DeskStore, now: i64) -> R
             let mut v = newest.context("an overwrite needs a newest version")?;
             v.desk = after.clone();
             v.desk.generation = 0;
+            v.desk.rev = 0;
             v.saved_at = now;
             write(dir, &v)
         }

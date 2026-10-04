@@ -5,14 +5,15 @@
 //! the browser, so its window must too. Modelled on `registry`: pure sync,
 //! path-explicit, tests pass a temp path and never touch the process env.
 //!
-//! The record shape mirrors what the shell already writes (wb-console.js
-//! `persistWin`), spelled `camelCase` on the wire and in the file so one
-//! spelling holds end to end.
+//! The record shape is spelled `camelCase` on the wire and in the file so one
+//! spelling holds end to end. A page writes the desk as a list of desk
+//! changes ([`apply`]), never as whole records.
 
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+pub mod apply;
 pub mod history;
 mod store;
 
@@ -70,7 +71,7 @@ pub struct DeskRecord {
     /// The name a person reads for this console (ADR-0066 §1; ADR-0050
     /// amendment 2026-09-27). A label, not an identity: `id` stays the key.
     /// `None` is not serialised, so an older desk and an older shell keep their
-    /// exact shape. [`merge`] cuts it to [`CONSOLE_NAME_MAX`] characters.
+    /// exact shape. The store cuts it to [`CONSOLE_NAME_MAX`] characters.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub console_name: Option<String>,
     #[serde(default)]
@@ -140,9 +141,15 @@ pub struct DeskNote {
 /// end of the document: a scalar field declared after `[[windows]]` would land
 /// inside the last window's table. `checkouts` is a table and comes LAST for
 /// the same reason: `[checkouts]` after `[[fences]]` parses back at top level.
-/// `generation` is a scalar, so it comes FIRST.
+/// `rev` and `generation` are scalars, so they come FIRST.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct DeskStore {
+    /// Raised by every write that changes the desk (ADR-0050 amendment
+    /// 2026-10-04, changes, not the desk). A page ignores a desk whose `rev`
+    /// is lower than the last one it took, so a slow read never puts an older
+    /// desk on screen. `0`, and not serialised, until the first write.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub rev: u64,
     /// The epoch ms of the last restore from the desk history (ADR-0050
     /// amendment 2026-10-04, desk history). A page sends the generation it
     /// loaded with each PUT, and an older one is refused: that page still
@@ -171,106 +178,9 @@ fn is_zero(n: &u64) -> bool {
     *n == 0
 }
 
-/// The `PUT /api/desk` body. Strict where [`DeskStore`] is lenient — a body
-/// that is not this exact shape must be a refusal, never an empty desk that
-/// replaces the operator's layout. The FILE type stays lenient so a `desk.toml`
-/// written by a newer daemon degrades per-field instead of to nothing.
-///
-/// MAP-ONLY, and that is the guard. `#[derive(Deserialize)]` calls
-/// `deserialize_struct`, which `serde_json` satisfies from a JSON SEQUENCE as
-/// well as from an object: the pre-#340 bare array a stale browser tab PUTs for
-/// a desk it thinks is empty then lands as a valid upload and wipes the
-/// operator's fences with a `200`. Measured (#340): with per-field
-/// `#[serde(default)]`, `[]` did it; with both fields required, `[[],[]]` still
-/// did — the two elements satisfy the two fields POSITIONALLY.
-/// `deny_unknown_fields` covers neither. Only calling `deserialize_map` does.
-#[derive(Debug)]
-pub struct DeskUpload {
-    pub windows: Vec<DeskRecord>,
-    pub fences: Vec<DeskFence>,
-    pub notes: Vec<DeskNote>,
-    pub checkouts: BTreeMap<String, String>,
-    /// What this page DELETED since its last read (ADR-0050 amendment
-    /// 2026-09-20). Its presence is the protocol switch: an upload carrying it
-    /// is folded into the stored desk by [`merge`] — the other pages' records
-    /// survive — and one without it (a shell older than the amendment) is the
-    /// wholesale replace it always was, since that shell cannot say what it
-    /// deleted and a merge would resurrect every close.
-    pub removed: Option<DeskRemoved>,
-    /// The desk [`DeskStore::generation`] this page loaded. Absent from a
-    /// shell older than the desk history, which reads as `0`.
-    pub generation: Option<u64>,
-}
-
-/// The ids an upload retires, per record type. A record absent from an
-/// upload is not thereby deleted — the page may simply not have read it yet —
-/// so deletion has to be said.
-#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct DeskRemoved {
-    #[serde(default)]
-    pub windows: Vec<String>,
-    #[serde(default)]
-    pub fences: Vec<String>,
-    #[serde(default)]
-    pub notes: Vec<String>,
-    #[serde(default)]
-    pub checkouts: Vec<String>,
-}
-
-impl<'de> Deserialize<'de> for DeskUpload {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        #[derive(Deserialize)]
-        #[serde(deny_unknown_fields)]
-        struct Fields {
-            windows: Vec<DeskRecord>,
-            fences: Vec<DeskFence>,
-            // Optional on the wire: a shell older than ADR-0064 sends none.
-            #[serde(default)]
-            notes: Vec<DeskNote>,
-            // Optional on the wire: a shell older than ADR-0063 §4 sends none.
-            #[serde(default)]
-            checkouts: BTreeMap<String, String>,
-            // Optional on the wire, and its absence MEANS something — see
-            // `DeskUpload::removed`.
-            #[serde(default)]
-            removed: Option<DeskRemoved>,
-            #[serde(default)]
-            generation: Option<u64>,
-        }
-
-        struct MapOnly;
-        impl<'de> serde::de::Visitor<'de> for MapOnly {
-            type Value = DeskUpload;
-
-            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-                f.write_str("a desk upload object with `windows` and `fences`")
-            }
-
-            fn visit_map<A: serde::de::MapAccess<'de>>(
-                self,
-                map: A,
-            ) -> Result<Self::Value, A::Error> {
-                let fields =
-                    Fields::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
-                Ok(DeskUpload {
-                    windows: fields.windows,
-                    fences: fields.fences,
-                    notes: fields.notes,
-                    checkouts: fields.checkouts,
-                    removed: fields.removed,
-                    generation: fields.generation,
-                })
-            }
-        }
-
-        d.deserialize_map(MapOnly)
-    }
-}
-
-/// The daemon-side cap on desk records. Enforced here rather than trusting the
-/// uploaded array — a browser upload does not get to define the size. Raised
-/// from 24 by the ADR-0050 amendment of 2026-10-04.
+/// The daemon-side cap on desk records, checked on each `create`
+/// ([`apply`]) and by a restore's prune: a browser does not get to define the
+/// size. Raised from 24 by the ADR-0050 amendment of 2026-10-04.
 pub const DESK_MAX: usize = 30;
 
 /// The daemon-side cap on note cards (ADR-0064 §2). Its own const for the same
@@ -322,8 +232,8 @@ fn keep_newest_by_ts<T>(items: Vec<T>, max: usize, ts: impl Fn(&T) -> i64) -> Ve
 /// [`DESK_MAX`], PRESERVING layout order. `live` is the records a session of
 /// this daemon serves (ADR-0050 amendment 2026-10-04): cutting one strands a
 /// running console, and the next load adopts it at the cascade position. When
-/// `live` alone is over the cap, all of it stays. The shell pins the windows
-/// on its own stage before it uploads; this is the backstop.
+/// `live` alone is over the cap, all of it stays. Only a restore prunes: it
+/// builds a whole desk, and a desk change never deletes a record by age.
 pub fn prune(
     records: Vec<DeskRecord>,
     live: &std::collections::HashSet<String>,
@@ -354,115 +264,6 @@ pub fn prune_fences(fences: Vec<DeskFence>) -> Vec<DeskFence> {
 /// Keep the [`NOTE_MAX`] newest cards by `ts`, PRESERVING layout order.
 pub fn prune_notes(notes: Vec<DeskNote>) -> Vec<DeskNote> {
     keep_newest_by_ts(notes, NOTE_MAX, |n| n.ts)
-}
-
-/// Fold an upload into the stored desk (ADR-0050 amendment 2026-09-20). Three
-/// pages on one desk each hold a mirror only as fresh as their last read, so
-/// the store — the one place that sees every write — is where the union is
-/// taken. Per id the NEWER `ts` wins (a page's own mutation is newer by
-/// construction; its stale copy of another page's record is not; a tie goes
-/// to the upload, which is the one that just happened); an id the upload
-/// retires is dropped whatever the store holds; a stored record the upload
-/// does not mention survives. Order is the upload's — the page's own layout
-/// order, which decides a contended session in the shell — with the store's
-/// unmentioned records after it. Checkouts have no `ts`: the upload's entry
-/// wins per ref, a retired ref is dropped, the rest of the store's stay.
-///
-/// An upload WITHOUT `removed` is a shell that predates the amendment. It
-/// cannot say what it deleted, so it is the wholesale replace it always was.
-///
-/// A winning record with no `consoleName` keeps the stored one (ADR-0066 §2): a
-/// tab still running a shell older than the name must not erase it. A current
-/// shell never sends a record without a name.
-///
-/// The stored `generation` is kept: only a restore changes it.
-pub fn merge(stored: DeskStore, up: DeskUpload) -> DeskStore {
-    let generation = stored.generation;
-    let Some(removed) = up.removed else {
-        let mut windows = up.windows;
-        windows.iter_mut().for_each(cap_console_name);
-        return DeskStore {
-            generation,
-            windows,
-            fences: up.fences,
-            notes: up.notes,
-            checkouts: up.checkouts,
-        };
-    };
-    let stored_names: std::collections::HashMap<String, String> = stored
-        .windows
-        .iter()
-        .filter_map(|r| Some((r.id.clone(), r.console_name.clone()?)))
-        .collect();
-    let mut windows = fold_by_id(
-        stored.windows,
-        up.windows,
-        &removed.windows,
-        |r| r.id.as_str(),
-        |r| r.ts,
-    );
-    for r in &mut windows {
-        cap_console_name(r);
-        if r.console_name.is_none() {
-            r.console_name = stored_names.get(&r.id).cloned();
-        }
-    }
-    let fences = fold_by_id(
-        stored.fences,
-        up.fences,
-        &removed.fences,
-        |f| f.id.as_str(),
-        |f| f.ts,
-    );
-    let notes = fold_by_id(
-        stored.notes,
-        up.notes,
-        &removed.notes,
-        |n| n.id.as_str(),
-        |n| n.ts,
-    );
-    let mut checkouts = stored.checkouts;
-    for gone in &removed.checkouts {
-        checkouts.remove(gone);
-    }
-    checkouts.extend(up.checkouts);
-    DeskStore {
-        generation,
-        windows,
-        fences,
-        notes,
-        checkouts,
-    }
-}
-
-fn fold_by_id<T>(
-    stored: Vec<T>,
-    uploaded: Vec<T>,
-    removed: &[String],
-    id: impl Fn(&T) -> &str,
-    ts: impl Fn(&T) -> i64,
-) -> Vec<T> {
-    let gone: std::collections::HashSet<&str> = removed.iter().map(String::as_str).collect();
-    let mut theirs: std::collections::HashMap<String, T> = stored
-        .into_iter()
-        .filter(|r| !gone.contains(id(r)))
-        .map(|r| (id(&r).to_string(), r))
-        .collect();
-    let mut out: Vec<T> = Vec::with_capacity(uploaded.len() + theirs.len());
-    for ours in uploaded {
-        if gone.contains(id(&ours)) {
-            continue;
-        }
-        match theirs.remove(id(&ours)) {
-            Some(stored) if ts(&stored) > ts(&ours) => out.push(stored),
-            _ => out.push(ours),
-        }
-    }
-    // The store's unmentioned records, in the store's own order.
-    let mut rest: Vec<T> = theirs.into_values().collect();
-    rest.sort_by_key(|r| ts(r));
-    out.extend(rest);
-    out
 }
 
 /// Whether a rect is one this daemon will persist: every component finite, and

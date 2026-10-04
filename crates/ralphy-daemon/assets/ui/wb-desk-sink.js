@@ -1,8 +1,8 @@
 /* ---------------------------------------------------------------------------
    ralphy workbench — the desk WRITE seam
 
-   `wb-console.js` owns the desk mirror and decides WHEN to persist; this module
-   owns WHERE that write goes. Two implementations, one surface:
+   `wb-console.js` owns the desk changes and decides WHEN to send them; this
+   module owns WHERE that write goes. Two implementations, one surface:
 
      daemon()  the shell's real write — `PUT /api/desk` (ADR-0050)
      none()    a sink that writes nowhere
@@ -35,29 +35,37 @@ window.WBDeskSink = (function () {
     hold = !!on;
   }
 
-  // The daemon-backed write. Both entry points take an already-serialised body,
-  // because both callers snapshot the desk at SCHEDULE time — re-measuring at
-  // fire time is what stored a zeroed pan in #339.
+  // The daemon-backed write. Both entry points take an already-serialised body:
+  // the caller builds it from the changes it holds at that moment.
+  //
+  // `put` answers what happened, and never rejects:
+  //   { kind: "ok", reply }               — the daemon applied the body
+  //   { kind: "refused", status, reply }  — the daemon answered with an error
+  //   { kind: "network" }                 — the daemon could not be reached
+  //   { kind: "held" }                    — this sink writes nothing now
+  // The caller decides which of them to send again (wb-console.js `flushed`).
   function daemon() {
-    // Chained on the previous flush so two mutations 250 ms apart cannot land
-    // out of order over a LAN or a dev tunnel. INVARIANT: no drag, resize,
-    // close or `persistWin` path may await or throw on this — a refused PUT
-    // costs a stale position and the next mutation supersedes it (last write
-    // wins, no ETag).
+    // Chained on the previous write so two uploads cannot land out of order
+    // over a LAN or a dev tunnel.
     let inFlight = Promise.resolve();
     return {
       put(body) {
-        if (hold) return Promise.resolve(null);
-        inFlight = inFlight
-          .catch(() => {})
-          .then(() =>
-            fetch(deskUrl(), {
-              method: "PUT",
-              headers: { "Content-Type": "application/json" },
-              body,
-            }).catch(() => {}),
-          );
-        return inFlight;
+        if (hold) return Promise.resolve({ kind: "held" });
+        const sent = inFlight.then(() =>
+          fetch(deskUrl(), {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body,
+          }).then(
+            async (r) => {
+              const reply = (await r.json?.().catch(() => null)) ?? null;
+              return r.ok ? { kind: "ok", reply } : { kind: "refused", status: r.status, reply };
+            },
+            () => ({ kind: "network" }),
+          ),
+        );
+        inFlight = sent.catch(() => {});
+        return sent;
       },
       // The tab is going away: `keepalive` lets the request outlive the
       // document. Deliberately NOT chained — there is no next flush to order
@@ -76,12 +84,12 @@ window.WBDeskSink = (function () {
     };
   }
 
-  // Writes nowhere, and says so by returning the same shapes `daemon()` does —
-  // a caller cannot tell them apart, which is the point.
+  // Writes nowhere: every write is `held`, the answer of a sink that is not
+  // writing now.
   function none() {
     return {
       put() {
-        return Promise.resolve();
+        return Promise.resolve({ kind: "held" });
       },
       putSync() {},
     };

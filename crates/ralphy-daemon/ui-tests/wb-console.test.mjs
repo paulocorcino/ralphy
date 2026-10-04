@@ -13,6 +13,9 @@ const SRC = readFileSync(join(UI, "wb-console.js"), "utf8");
 // the browser — so the harness runs the REAL sink source first, mirroring
 // index.html's script order. A stub here would hide a broken script tag.
 const SINK_SRC = readFileSync(join(UI, "wb-desk-sink.js"), "utf8");
+// The desk's changes and view (`wb-desk-sync.js`): `wb-console.js` builds its
+// state from `window.WBDeskSync` at load, so the real source runs first here.
+const SYNC_SRC = readFileSync(join(UI, "wb-desk-sync.js"), "utf8");
 // Same reasoning for the detach link: `wb-console.js` reads
 // `window.WBDetachLink.link()` at load, so the harness runs the REAL source in
 // the same script order both documents use. It touches neither `sessionStorage`
@@ -58,6 +61,7 @@ function load(extras = {}, docExtras = {}) {
   new Function("window", WINSTATE_SRC)(window);
   new Function("window", NAME_SRC)(window);
   new Function("window", SINK_SRC)(window);
+  new Function("window", SYNC_SRC)(window);
   new Function("window", LINK_SRC)(window);
   // Node 22 ships a REAL `BroadcastChannel`, and `wb-console.js` subscribes at
   // module load — an open channel per `load()` holds the event loop open and
@@ -1287,7 +1291,7 @@ test("the fence cap is a number the shell can state, and the plane is at it from
     try {
       const wb = load({
         WBMode: { isDaemon: () => true },
-        WBConsoleOpts: { deskSink: { put: () => Promise.resolve(), putSync() {} } },
+        WBConsoleOpts: { deskSink: { put: () => Promise.resolve({ kind: "held" }), putSync() {} } },
       });
       await wb.whenDeskLoaded();
       assert.equal(wb.fenceRecords().length, n, "the desk landed");
@@ -2292,133 +2296,259 @@ test("restoreRect on a column reads the inline rect, not the painted column box"
   assert.deepEqual(restoreRect(win), REAL);
 });
 
-// --- the desk's third record type: the selected checkout per project ----------
-// ADR-0063 §4 / ADR-0050 amendment: `checkouts` rides the same store, route and
-// upload permit as windows and fences. The mirror is what `app.js` copies into
-// its reactive map once the desk lands.
+// --- the desk changes (ADR-0050 amendment 2026-10-04, changes, not the desk) --
+// A page sends only the fields each act changed. These tests load the module
+// over a fake daemon: the GET serves `served`, and the sink records every
+// body it is handed and answers `ok` with no desk.
 
-test("the desk mirror carries the selected checkouts", async () => {
+async function deskPage(served = {}, extras = {}, docExtras = {}) {
   const realFetch = globalThis.fetch;
-  globalThis.fetch = async () => ({
-    ok: true,
-    json: async () => ({ windows: [], fences: [], checkouts: { "o/r": "wt" } }),
-  });
-  try {
-    const seen = [];
-    const wb = load({
+  const gets = [];
+  globalThis.fetch = async (url) => {
+    gets.push(String(url));
+    return { ok: true, status: 200, json: async () => ({ windows: [], fences: [], notes: [], ...served }) };
+  };
+  const sent = [];
+  const answers = extras.answers || [];
+  const wb = load(
+    {
       WBMode: { isDaemon: () => true },
       WBConsoleOpts: {
         deskSink: {
           put(body) {
-            seen.push(body);
-            return Promise.resolve();
+            sent.push(JSON.parse(body));
+            return Promise.resolve(answers.shift() || { kind: "ok", reply: null });
           },
-          putSync() {},
+          putSync(body) {
+            sent.push({ closing: true, ...JSON.parse(body) });
+          },
         },
       },
-    });
-    await wb.whenDeskLoaded();
+      ...extras.window,
+    },
+    { getElementById: () => null, ...docExtras },
+  );
+  await wb.whenDeskLoaded();
+  return { wb, sent, gets, restore: () => (globalThis.fetch = realFetch) };
+}
+const settle = (ms = 400) => new Promise((r) => setTimeout(r, ms));
+const changesOf = (sent) => sent.flatMap((b) => b.changes);
+
+// The selected checkout per project (ADR-0063 §4) is the fourth record type.
+test("a checkout pick and a clear are two changes, and the clear names the tree it clears", async () => {
+  const page = await deskPage({ checkouts: { "o/r": "wt" } });
+  try {
+    const { wb, sent } = page;
     assert.equal(wb.checkoutOf("o/r"), "wt");
     assert.deepEqual(wb.checkouts(), { "o/r": "wt" });
-    // A copy, never the mirror itself.
+    // A copy, never the view itself.
     wb.checkouts()["o/r"] = "tampered";
     assert.equal(wb.checkoutOf("o/r"), "wt");
 
     wb.setCheckout("o/r", null);
     assert.equal(wb.checkoutOf("o/r"), null);
-    await new Promise((r) => setTimeout(r, 400));
-    assert.ok(seen.length >= 1, "clearing the selection flushes the desk");
-    // Gone from the MAP — and named in `removed`, which is how the daemon's
-    // fold learns to drop it rather than keep its own copy.
-    const sent = JSON.parse(seen.at(-1));
-    assert.ok(!("o/r" in sent.checkouts), `the cleared ref is gone: ${seen.at(-1)}`);
-    assert.deepEqual(sent.removed.checkouts, ["o/r"], `the clearing is said: ${seen.at(-1)}`);
-    assert.ok(seen.at(-1).includes('"checkouts"'), `the key rides the body: ${seen.at(-1)}`);
-
+    wb.setCheckout("o/s", null); // nothing selected there: nothing to say
     wb.setCheckout("o/r", "wt-b");
     assert.equal(wb.checkoutOf("o/r"), "wt-b");
-    await new Promise((r) => setTimeout(r, 400));
-    assert.ok(seen.at(-1).includes('"checkouts":{"o/r":"wt-b"}'), seen.at(-1));
+    await settle();
+    assert.deepEqual(changesOf(sent), [
+      { op: "checkout-clear", repo: "o/r", ifName: "wt" },
+      { op: "checkout", repo: "o/r", name: "wt-b" },
+    ]);
   } finally {
-    globalThis.fetch = realFetch;
+    page.restore();
   }
 });
 
 test("a desk from an older daemon has no checkouts and reads as none", async () => {
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = async () => ({
-    ok: true,
-    json: async () => ({ windows: [], fences: [] }),
-  });
+  const page = await deskPage({ checkouts: undefined });
   try {
-    const wb = load({
-      WBMode: { isDaemon: () => true },
-      WBConsoleOpts: { deskSink: { put: () => Promise.resolve(), putSync() {} } },
-    });
-    await wb.whenDeskLoaded();
-    assert.equal(wb.checkoutOf("o/r"), null);
-    assert.deepEqual(wb.checkouts(), {});
+    assert.equal(page.wb.checkoutOf("o/r"), null);
+    assert.deepEqual(page.wb.checkouts(), {});
   } finally {
-    globalThis.fetch = realFetch;
+    page.restore();
   }
 });
 
-test("a checkout set before the desk lands survives the later-arriving GET", async () => {
-  // The boot race `ingestFences` guards against, for the third record type: a
-  // selection made this page wins over the daemon's copy, and a ref cleared
-  // here stays cleared.
-  const realFetch = globalThis.fetch;
-  let release;
-  const landed = new Promise((r) => (release = r));
-  globalThis.fetch = async () => {
-    await landed;
-    return {
-      ok: true,
-      json: async () => ({ windows: [], fences: [], checkouts: { "o/r": "old", "o/s": "keep", "o/t": "gone" } }),
-    };
+// The measured loss of 2026-10-04 came from a page that wrote what it had not
+// changed. A flush reads nothing first and carries no record it was not told.
+test("a flush sends only this page's changes: no read before it, no whole desk", async () => {
+  const theirs = { id: "theirs", repo: "o/r", agent: "console", kind: "console", rect: { left: 1, top: 1, width: 300, height: 200 }, sessionId: 4, consoleName: "r #1" };
+  const page = await deskPage({ rev: 3, generation: 7, windows: [theirs] });
+  try {
+    page.wb.setCheckout("o/r", "wt");
+    await settle();
+    assert.equal(page.gets.length, 1, `only the load read the desk: ${page.gets}`);
+    assert.equal(page.sent.length, 1);
+    assert.deepEqual(Object.keys(page.sent[0]).sort(), ["changes", "generation", "seq"]);
+    assert.equal(page.sent[0].generation, 7);
+    assert.ok(!JSON.stringify(page.sent).includes("theirs"), JSON.stringify(page.sent));
+  } finally {
+    page.restore();
+  }
+});
+
+const RECT = { left: 80, top: 120, width: 240, height: 180 };
+const card = (id, path, extra = {}) => ({ id, repo: "o/r", path, rect: RECT, ...extra });
+
+test("saveNotes sends a create, the fields that changed, and a remove", async () => {
+  const page = await deskPage({ notes: [card("n1", "a.note"), card("n2", "b.note")] });
+  try {
+    const { wb, sent } = page;
+    // A move stamps nothing: a `ts` handed back is not a field.
+    wb.saveNotes(wb.notes().map((n) => (n.id === "n1" ? { ...n, rect: { ...RECT, left: 500 }, ts: 99 } : n)));
+    wb.saveNotes(wb.notes().filter((n) => n.id !== "n2"));
+    wb.saveNotes(wb.notes().concat([card("n3", "")]));
+    wb.saveNotes(wb.notes().map((n) => (n.id === "n3" ? { ...n, path: "c.note" } : n)));
+    wb.saveNotes(wb.notes());
+    await settle();
+    assert.deepEqual(changesOf(sent), [
+      { op: "set", type: "note", id: "n1", fields: { rect: { ...RECT, left: 500 } } },
+      { op: "remove", type: "note", id: "n2" },
+      { op: "create", type: "note", record: card("n3", "") },
+      { op: "set", type: "note", id: "n3", fields: { file: { repo: "o/r", path: "c.note", checkout: null } } },
+    ]);
+    // A copy: mutating what was handed out must not reach the view.
+    const kept = wb.notes();
+    kept.pop();
+    assert.equal(wb.notes().length, 2);
+  } finally {
+    page.restore();
+  }
+});
+
+test("a fence rename sends its name, and a fence remove sends the remove", async () => {
+  const fence = { id: "f1", name: "Fence 1", rect: { left: 0, top: 0, width: 400, height: 300 } };
+  const page = await deskPage({ fences: [fence] });
+  try {
+    page.wb.renameFence("f1", "backend");
+    page.wb.removeFence("f1");
+    await settle();
+    assert.deepEqual(changesOf(page.sent), [
+      { op: "set", type: "fence", id: "f1", fields: { name: "backend" } },
+      { op: "remove", type: "fence", id: "f1" },
+    ]);
+  } finally {
+    page.restore();
+  }
+});
+
+// A window the module writes without a gesture: a fake with the fields the
+// writes read.
+function deskWin(id, extra = {}) {
+  return {
+    _deskId: id,
+    _deskRepo: "o/r",
+    _deskAgent: "console",
+    _deskKind: "console",
+    _deskDaemonId: null,
+    _deskEnvironment: null,
+    _deskCheckout: null,
+    _deskLocked: false,
+    _deskConsoleName: "r #1",
+    _deskUnrecorded: false,
+    isConnected: true,
+    classList: { contains: () => false },
+    offsetLeft: 30,
+    offsetTop: 40,
+    offsetWidth: 640,
+    offsetHeight: 420,
+    style: {},
+    ...extra,
   };
+}
+const SAVED = { id: "w-1", repo: "o/r", agent: "console", kind: "console", rect: { left: 100, top: 100, width: 600, height: 400 }, max: false, sessionId: 7, checkout: "wt-a", consoleName: "r #1" };
+
+// Seven of the eleven old window writes were not about the rect, and each
+// wrote the rect anyway. A reconnect writes the session, only when it moved.
+test("a reconnect writes the session only when it differs, and never the rect", async () => {
+  const page = await deskPage({ windows: [SAVED] });
   try {
-    const wb = load({
-      WBMode: { isDaemon: () => true },
-      WBConsoleOpts: { deskSink: { put: () => Promise.resolve(), putSync() {} } },
-    });
-    wb.setCheckout("o/r", "mine");
-    wb.setCheckout("o/t", null);
-    release();
-    await wb.whenDeskLoaded();
-    assert.deepEqual(wb.checkouts(), { "o/r": "mine", "o/s": "keep" });
+    const win = deskWin("w-1", { _term: { sessionId: 7 }, _deskCheckout: "wt-a" });
+    page.wb.recordSession(win);
+    await settle();
+    assert.deepEqual(page.sent, [], "the same session writes nothing");
+    win._term.sessionId = 8;
+    page.wb.recordSession(win);
+    await settle();
+    assert.deepEqual(changesOf(page.sent), [
+      { op: "set", type: "window", id: "w-1", fields: { session: { sessionId: 8, daemonId: null, environment: null } } },
+    ]);
   } finally {
-    globalThis.fetch = realFetch;
+    page.restore();
   }
 });
 
-// Two pages on one desk (a phone and a laptop): a page's mirror is stale the
-// moment the other persists. The fold keeps the NEWEST copy of each record —
-// "local wins" wrote a stale `sessionId: null` over the laptop's live one, and
-// the next load adopted that session into a second window — while a record
-// this page deleted stays deleted and the other page's records come in.
-test("mergeDesk keeps the newest copy of each record, drops the deleted and takes in the unknown", () => {
-  const local = [
-    { id: "a", ts: 10, sessionId: null }, // stale here, newer on the daemon
-    { id: "b", ts: 30, sessionId: 2 }, // newer here (an unflushed drag)
-    { id: "c", ts: 5 }, // this page's own, unknown to the daemon yet
-  ];
-  const fetched = [
-    { id: "a", ts: 20, sessionId: 7 },
-    { id: "b", ts: 25, sessionId: 2 },
-    { id: "d", ts: 1 }, // the other page's
-    { id: "gone", ts: 99 }, // deleted here since the last read
-  ];
-  const out = load().mergeDesk(local, fetched, new Set(["gone"]));
-  assert.deepEqual(
-    out.map((r) => [r.id, r.ts, r.sessionId]),
-    [
-      ["a", 20, 7],
-      ["b", 30, 2],
-      ["d", 1, undefined],
-      ["c", 5, undefined],
-    ],
+test("a birth writes only what it changed; an adopted console waits for the operator's first act", async () => {
+  const page = await deskPage({ windows: [SAVED] });
+  try {
+    const { wb, sent } = page;
+    // A relaunch in the primary tree: the record said `wt-a`.
+    wb.recordBirth(deskWin("w-1"), SAVED);
+    // An adopted console: its record is another page's to write.
+    const adopted = deskWin("w-adopted");
+    wb.recordBirth(adopted, { unrecorded: true });
+    // A new console: its record is created.
+    wb.recordBirth(deskWin("w-new"), undefined);
+    await settle();
+    assert.deepEqual(changesOf(sent), [
+      { op: "set", type: "window", id: "w-1", fields: { checkout: null } },
+      {
+        op: "create",
+        type: "window",
+        record: {
+          id: "w-new", repo: "o/r", agent: "console", kind: "console",
+          rect: { left: 30, top: 40, width: 640, height: 420 }, max: false, sessionId: null,
+          daemonId: null, environment: null, checkout: null, locked: false, consoleName: "r #1",
+        },
+      },
+    ]);
+    assert.equal(adopted._deskUnrecorded, true);
+    // The operator's first act on it: the record, then the act, in one batch.
+    sent.length = 0;
+    wb.setWin(adopted, { locked: true });
+    await settle();
+    assert.equal(sent.length, 1, "one batch");
+    assert.deepEqual(
+      sent[0].changes.map((c) => [c.op, c.type, c.record?.id ?? c.id]),
+      [["create", "window", "w-adopted"], ["set", "window", "w-adopted"]],
+    );
+    assert.equal(adopted._deskUnrecorded, false);
+  } finally {
+    page.restore();
+  }
+});
+
+// A failure the daemon may still accept keeps the batch, resent with its
+// `seq`; a 400 drops it; a restore reloads the page.
+test("a flush keeps a batch the network lost, drops one the daemon calls malformed, and reloads on a restore", async () => {
+  let reloads = 0;
+  const page = await deskPage(
+    {},
+    {
+      answers: [{ kind: "network" }, { kind: "ok", reply: null }, { kind: "refused", status: 400, reply: { error: "x" } }, { kind: "refused", status: 409, reply: { state: "restored" } }],
+      window: { location: { reload: () => reloads++ } },
+    },
   );
+  try {
+    const { wb, sent } = page;
+    wb.setCheckout("o/r", "a");
+    await settle(1600); // the first retry waits one second
+    assert.equal(sent.length, 2);
+    assert.deepEqual(sent[1], sent[0], "the resend is the same batch, with the same seq");
+    wb.setCheckout("o/r", "b");
+    await settle();
+    assert.equal(sent[2].seq, sent[0].seq + 1);
+    wb.setCheckout("o/r", "c");
+    await settle();
+    assert.deepEqual(changesOf([sent[3]]), [{ op: "checkout", repo: "o/r", name: "c" }], "the dropped change is gone");
+    assert.equal(reloads, 1, "a restore reloads the page");
+    wb.setCheckout("o/r", "d");
+    await settle();
+    assert.equal(sent.length, 4, "a page that reloads sends nothing more");
+  } finally {
+    page.restore();
+  }
 });
 
 // A live session no record claims is that console's own placeholder come back
@@ -2512,85 +2642,6 @@ test("placeholderSession finds the session this record owns by now, and no other
     const got = wb.placeholderSession({ layout, sessions, recordId: "ph", held });
     assert.equal(got?.id ?? null, want, what);
   }
-});
-
-// The flush reads before it writes: a record another page persisted since this
-// page's last read rides the upload instead of being replaced away by it.
-test("a flush re-reads the desk, so another page's record survives this page's write", async () => {
-  const realFetch = globalThis.fetch;
-  let reads = 0;
-  globalThis.fetch = async () => ({
-    ok: true,
-    json: async () => ({
-      // The first read (the page's load) sees an empty desk; the read the
-      // flush makes sees what the other page persisted meanwhile.
-      windows: ++reads === 1 ? [] : [{ id: "theirs", ts: 5, kind: "console" }],
-      fences: [],
-    }),
-  });
-  try {
-    const seen = [];
-    const wb = load({
-      WBMode: { isDaemon: () => true },
-      WBConsoleOpts: {
-        deskSink: {
-          put(body) {
-            seen.push(body);
-            return Promise.resolve();
-          },
-          putSync() {},
-        },
-      },
-    });
-    await wb.whenDeskLoaded();
-    wb.setCheckout("o/r", "wt");
-    await new Promise((r) => setTimeout(r, 400));
-    assert.equal(seen.length, 1);
-    assert.ok(seen[0].includes('"id":"theirs"'), `the other page's record rides the body: ${seen[0]}`);
-    assert.ok(seen[0].includes('"o/r":"wt"'), `and so does this page's change: ${seen[0]}`);
-  } finally {
-    globalThis.fetch = realFetch;
-  }
-});
-
-// ---- the note cards on the desk (ADR-0064 §2) --------------------------------
-
-test("saveNotes caps the collection and hands back a copy, never the mirror", () => {
-  const C = load();
-  assert.deepEqual(C.notes(), []);
-  const many = Array.from({ length: 40 }, (_, i) => ({
-    id: `n${i + 1}`,
-    path: `a${i + 1}.note`,
-    rect: { left: 0, top: 0, width: 240, height: 180 },
-    ts: i + 1,
-  }));
-  C.saveNotes(many);
-  const kept = C.notes();
-  // Capped HERE as well as in the daemon: the flush discards the PUT response,
-  // so an uncapped client would show 40 cards while the store held 32.
-  assert.equal(kept.length, 32);
-  assert.ok(!kept.some((n) => n.id === "n1"), "the oldest card was evicted");
-  // A copy: mutating what was handed out must not reach the mirror.
-  kept.pop();
-  assert.equal(C.notes().length, 32);
-});
-
-test("deskBody carries the notes and the ids this page closed", () => {
-  const C = load();
-  C.saveNotes([
-    { id: "n1", repo: "o/r", path: "a.note", rect: { left: 0, top: 0, width: 240, height: 180 }, ts: 1 },
-    { id: "n2", repo: "o/r", path: "b.note", rect: { left: 0, top: 0, width: 240, height: 180 }, ts: 2 },
-  ]);
-  C.saveNotes(C.notes().filter((n) => n.id !== "n1"));
-  const body = C.deskBody();
-  // Without `notes` the daemon's fold preserves stale cards for ever — a
-  // closed card never dies and a moved card never moves — with every test on
-  // both sides of the wire green.
-  assert.deepEqual(
-    body.notes.map((n) => n.id),
-    ["n2"],
-  );
-  assert.deepEqual(body.removed.notes, ["n1"]);
 });
 
 // --- barKey: the key bar's Shift latch -------------------------------------
@@ -2739,9 +2790,9 @@ test("an unreadable desk is a failure, and no flush PUTs over it", async () => {
   );
 });
 
-// A desk that becomes unreadable after a good load: the flush reads it
-// first, finds it unreadable, and uploads nothing.
-test("a flush that finds the loaded desk unreadable uploads nothing and shows the failure", async () => {
+// A desk that becomes unreadable after a good load: the daemon refuses the
+// PUT, the page shows the failure and sends nothing more.
+test("a PUT the daemon refuses as unreadable shows the failure and stops the sending", async () => {
   const calls = [];
   let unreadable = false;
   const realFetch = globalThis.fetch;
@@ -2761,14 +2812,15 @@ test("a flush that finds the loaded desk unreadable uploads nothing and shows th
     c.setCheckout("o/r", "wt-a");
     await new Promise((r) => setTimeout(r, 400));
     assert.equal(c.deskFailure(), "the file is damaged");
+    c.setCheckout("o/r", "wt-b");
+    await new Promise((r) => setTimeout(r, 400));
   } finally {
     globalThis.fetch = realFetch;
   }
-  assert.ok(calls.some((c) => c.method === "GET"), "the flush read the desk first");
-  assert.deepEqual(
-    calls.filter((c) => c.method === "PUT"),
-    [],
-    "no PUT over a desk that became unreadable",
+  assert.equal(
+    calls.filter((c) => c.method === "PUT").length,
+    1,
+    "one PUT, refused, and nothing after it",
   );
 });
 
@@ -2831,22 +2883,6 @@ test("a desk read that fails in transport sets no desk failure", async () => {
   }
 });
 
-test("daemonSeenIds holds every window id a desk read returned", async () => {
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = async () => ({
-    ok: true,
-    status: 200,
-    json: async () => ({ windows: [{ id: "w-a", repo: "o/r", agent: "claude", kind: "console", rect: { left: 0, top: 0, width: 1, height: 1 }, ts: 1 }], fences: [] }),
-  });
-  try {
-    const c = load({ WBMode: { isDaemon: () => true } });
-    await c.whenDeskLoaded();
-    assert.deepEqual([...c.daemonSeenIds()], ["w-a"]);
-  } finally {
-    globalThis.fetch = realFetch;
-  }
-});
-
 // --- one session per window record (ADR-0050 amendment 2026-10-04) -----------
 
 // The session list says which record each session serves. That beats the
@@ -2898,22 +2934,6 @@ test("reconcileDesk adopts a session under the record it names", () => {
   );
 });
 
-// The windows on this page's stage are pinned, and the cap never cuts one of
-// them, even when they alone are more than the cap.
-test("pruneDesk keeps every pinned record, even past the cap", () => {
-  const wb = load();
-  const records = Array.from({ length: 5 }, (_, i) => ({ id: `w${i}`, ts: i }));
-  const all = new Set(records.map((r) => r.id));
-  assert.deepEqual(
-    wb.pruneDesk(records, 3, all).map((r) => r.id),
-    ["w0", "w1", "w2", "w3", "w4"],
-  );
-  assert.deepEqual(
-    wb.pruneDesk(records, 3, new Set(["w0"])).map((r) => r.id),
-    ["w0", "w3", "w4"],
-  );
-});
-
 // A full desk refuses a NEW console instead of cutting one in silence.
 test("atDeskCap is true once the desk holds the cap", async () => {
   const realFetch = globalThis.fetch;
@@ -2923,13 +2943,17 @@ test("atDeskCap is true once the desk holds the cap", async () => {
       repo: "o/r",
       agent: "console",
       kind: "console",
+      consoleName: `r #${i + 1}`,
       ts: i,
     })),
     fences: [],
   });
   try {
     globalThis.fetch = async () => ({ ok: true, json: async () => desk(29) });
-    const wb = load({ WBMode: { isDaemon: () => true } });
+    const wb = load({
+      WBMode: { isDaemon: () => true },
+      WBConsoleOpts: { deskSink: { put: () => Promise.resolve({ kind: "held" }), putSync() {} } },
+    });
     await wb.whenDeskLoaded();
     assert.equal(wb.DESK_MAX, 30);
     assert.equal(wb.atDeskCap(), false, "29 records leave room for one more");
