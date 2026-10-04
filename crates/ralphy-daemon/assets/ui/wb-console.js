@@ -363,7 +363,29 @@ window.WBConsole = (function () {
     checkouts = { ...merged, ...checkouts };
   }
 
+  // The desk generation this page loaded (ADR-0050 amendment 2026-10-04, desk
+  // history), null before the first read. A restore raises it. A page that
+  // loaded before then shows the older layout, and its next write would undo
+  // the restore: the daemon refuses that write, and the page reloads. Rects
+  // are never applied to live windows, so a reload is the only way to show
+  // the restored desk.
+  let deskGeneration = null;
+  let deskRestored = false;
+  function reloadForRestoredDesk() {
+    if (deskRestored) return;
+    deskRestored = true;
+    // The `pagehide` flush would upload the old layout on the way out.
+    window.WBDeskSink?.setHold(true);
+    window.location?.reload?.();
+  }
+
   function ingestDesk(payload) {
+    const generation = Number(payload?.generation) || 0;
+    if (deskGeneration != null && generation > deskGeneration) {
+      reloadForRestoredDesk();
+      return;
+    }
+    deskGeneration = generation;
     const fetched = Array.isArray(payload?.windows) ? payload.windows : [];
     for (const r of fetched) if (r?.id) daemonSeen.add(r.id);
     ingestFences(Array.isArray(payload?.fences) ? payload.fences : []);
@@ -663,6 +685,7 @@ window.WBConsole = (function () {
       fences,
       notes,
       checkouts,
+      generation: deskGeneration || 0,
       removed: {
         windows: [...deskRemoved],
         fences: [...fencesRemoved],
@@ -715,10 +738,15 @@ window.WBConsole = (function () {
         // The daemon refuses a write over a desk it cannot read; so does this page.
         if (payload === "unreadable") return null;
         if (payload) ingestDesk(payload);
+        if (deskRestored) return null;
         const sent = desk.map((r) => r.id);
         const body = JSON.stringify(deskBody());
-        return deskSink.put(body).then((r) => {
+        return deskSink.put(body).then(async (r) => {
           if (r?.ok) for (const id of sent) daemonSeen.add(id);
+          else if (r?.status === 409) {
+            const reply = await r.json().catch(() => null);
+            if (reply?.state === "restored") reloadForRestoredDesk();
+          }
           return r;
         });
       });
@@ -7404,6 +7432,7 @@ window.WBConsole = (function () {
     setDeskFailureHook,
     daemonSeenIds,
     startNewDesk,
+    reloadForRestoredDesk,
     dropClosedElsewhere,
     columnRoster,
     sessionPresentation,

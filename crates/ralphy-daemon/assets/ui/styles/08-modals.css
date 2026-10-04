@@ -674,6 +674,18 @@
   min-width: 0;
   flex: 1;
 }
+/* Settings → Desk history (wb-desk-history.js). */
+.desk-history > .sec-actions {
+  margin-bottom: 0.6rem;
+}
+.desk-history-error {
+  color: var(--danger);
+}
+.desk-history-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
 .btn.danger {
   color: var(--danger);
   border-color: color-mix(in srgb, var(--danger) 45%, var(--border));

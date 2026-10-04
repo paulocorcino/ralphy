@@ -57,6 +57,7 @@ fn round_trip_preserves_records() {
     b.max = true;
     b.locked = true;
     let store = DeskStore {
+        generation: 0,
         windows: vec![a, b],
         fences: vec![],
         notes: vec![],
@@ -104,6 +105,7 @@ fn a_field_that_is_off_or_empty_is_not_serialised() {
     let mut named = record("w2", 2);
     named.console_name = Some("fincal #1".into());
     let desk = DeskStore {
+        generation: 0,
         windows: vec![record("w1", 1)],
         fences: vec![fence("f1", "backend", 1)],
         notes: vec![],
@@ -328,6 +330,7 @@ fn a_failed_save_leaves_the_previous_desk_intact() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("desk.toml");
     let good = DeskStore {
+        generation: 0,
         windows: vec![record("w-keep", 1)],
         fences: vec![],
         notes: vec![],
@@ -341,6 +344,7 @@ fn a_failed_save_leaves_the_previous_desk_intact() {
     let blocked = path.join("nested").join("desk.toml");
     let err = save_to(
         &DeskStore {
+            generation: 0,
             windows: vec![record("w-lost", 2)],
             fences: vec![],
             notes: vec![],
@@ -370,6 +374,7 @@ fn save_leaves_no_temp_file_behind() {
     let path = dir.path().join("desk.toml");
     save_to(
         &DeskStore {
+            generation: 0,
             windows: vec![record("w1", 1)],
             fences: vec![],
             notes: vec![],
@@ -426,6 +431,7 @@ fn load_from_does_not_filter_a_legacy_negative_rect() {
     std::fs::write(
         &path,
         toml::to_string_pretty(&DeskStore {
+            generation: 0,
             windows: vec![legacy.clone()],
             fences: vec![],
             notes: vec![],
@@ -620,6 +626,7 @@ fn upload(
     removed: Option<DeskRemoved>,
 ) -> DeskUpload {
     DeskUpload {
+        generation: None,
         windows,
         fences,
         notes: Vec::new(),
@@ -664,6 +671,7 @@ fn merge_keeps_the_newest_copy_of_each_record_and_the_stores_unmentioned_ones() 
 #[test]
 fn merge_drops_what_the_upload_retires_even_when_the_store_is_newer() {
     let stored = DeskStore {
+        generation: 0,
         windows: vec![record("closed", 99), record("kept", 1)],
         fences: vec![fence("f-gone", "old", 99), fence("f-kept", "keep", 1)],
         notes: vec![],
@@ -707,6 +715,7 @@ fn merge_drops_what_the_upload_retires_even_when_the_store_is_newer() {
 #[test]
 fn an_upload_without_removed_is_the_wholesale_replace_an_older_shell_means() {
     let stored = DeskStore {
+        generation: 0,
         windows: vec![record("theirs", 99)],
         fences: vec![fence("f", "old", 99)],
         notes: vec![],
@@ -768,6 +777,7 @@ fn a_note_card_round_trips_its_placement() {
     held.checkout = Some("wt-a".into());
     held.locked = true;
     let store = DeskStore {
+        generation: 0,
         windows: vec![record("w1", 1)],
         fences: vec![fence("f1", "backend", 1)],
         notes: vec![note("n1", ".ralphy/notes/standup.note", 1), held],
@@ -807,6 +817,7 @@ fn prune_notes_keeps_the_newest_cap_in_layout_order() {
 #[test]
 fn merge_folds_notes_beside_the_other_two_collections() {
     let stored = DeskStore {
+        generation: 0,
         windows: vec![],
         fences: vec![],
         notes: vec![
@@ -864,6 +875,7 @@ fn a_desk_with_both_a_note_and_a_checkout_round_trips() {
     let mut held = fence("f2", "planning", 20);
     held.locked = true;
     let store = DeskStore {
+        generation: 0,
         windows: vec![record("w1", 1), record("w2", 2)],
         fences: vec![fence("f1", "backend", 10), held],
         notes: vec![note("n1", ".ralphy/notes/a.note", 1)],

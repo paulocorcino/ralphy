@@ -114,6 +114,9 @@ The lint reports these, and each one gets an exemption with its reason (#425).
 | **Cancel** | The negative button of a dialog, and nothing else. | `Cancel` (`wb-console.js:161`) |
 | **Open** | Start to view a thing that exists on its own. | `Open the plan for the next run` (`index.html:1346`) |
 | **Show / Hide** | Toggle a part that is already on screen. | `Show the unpriced rows` (`index.html:1174`) |
+| **Restore** | A saved desk layout becomes the current one. Running consoles stay open. | `Restore…` (Settings, “Desk history”) |
+| **Download** | A copy is saved as a file on this device. Nothing in Ralphy changes. | `Download` (Settings, “Desk history”) |
+| **Upload** | A file from this device is sent to the daemon. | `Upload…` (Settings, “Desk history”) |
 
 **Discard** is the verb of CONTEXT.md's **Working-tree operations**. This
 ADR extends it to other unsaved work: a plan (`app.js:2022` "Delete this

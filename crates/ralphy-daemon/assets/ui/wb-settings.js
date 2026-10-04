@@ -161,6 +161,17 @@ window.WB_SETTINGS = [
       },
     ],
   },
+  // No items: the section has its own body in index.html, and the list it
+  // shows is read from the daemon (wb-desk-history.js).
+  {
+    id: "desk-history",
+    title: "Desk history",
+    icon: "bi-clock-history",
+    scope: "daemon",
+    blurb:
+      "The last 50 layouts of your consoles, fences and notes. Restore one, or save it as a file.",
+    items: [],
+  },
   {
     id: "queue",
     title: "Queue",

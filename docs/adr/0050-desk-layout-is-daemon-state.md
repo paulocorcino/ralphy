@@ -339,3 +339,81 @@ daemon owns, not a field each page guesses and writes back.
   copy of a fact the daemon already has.
 - **Stop relaunching free consoles by themselves.** It removes the race by
   removing the feature. With the daemon's claim, the relaunch is safe.
+
+## Amendment (2026-10-04): desk history
+
+Bugs overwrote the desk twice in one day (the cap that cut a live record,
+cedca761; a page that reconciled after a failed read, #537). Each time the
+operator's layout was gone, because the daemon keeps one `desk.toml` and
+rewrites it on every page load and every reconnect (measured on 2026-10-04:
+written at 11:02 and again at 11:05 with no act by the operator). The daemon
+now keeps a **desk history**: the last 50 versions of the desk layout, which
+the operator can restore, download as a file, and upload again.
+
+- **Where.** A directory `desk-history/` beside `desk.toml`, one JSON file
+  per version, written owner-only and atomically like `desk.toml`. The file
+  is also the download format: `{ kind: "ralphy-desk-version", id,
+  startedAt, savedAt, reason, desk }`. The `id` is the epoch ms of the
+  version's first change. `reason` is `change`, `before-restore`, `restore`
+  or `upload`.
+- **When a version is written.** After a `PUT /api/desk` that changed the
+  stored desk, under the same lock as the write. A change of `ts` or
+  `sessionId` alone, or a rect that moves by less than 1 px, is not a layout
+  change and writes nothing: a reconnect rewrites both. A change that comes
+  less than 60 s after the FIRST change of the newest version goes into that
+  version; otherwise it starts a new one. A `restore` or `upload` version
+  takes such changes too: a page that reloads after a restore gives its
+  consoles their names and writes at once (seen in the browser check). A
+  `before-restore` version never takes a change: it is the way back. A version therefore holds at most 60 s of changes: one drag is one
+  version, and a long arrangement is one version per minute. When the newest
+  version does not hold the desk as it was before the change, that desk is
+  written first, so the layout before a change is never lost. Beyond 50
+  versions the oldest is deleted. A history write that fails is logged and
+  never fails the desk write, which already succeeded.
+- **Restore.** `POST /api/desk/history` with `{ id }` (a saved version) or
+  `{ version }` (an uploaded file, checked with the same rules as a PUT
+  body). The daemon always writes the current desk as a `before-restore`
+  version first, even when an older version holds the same layout, so the
+  way back is the row just under the restore. A failure there stops the
+  restore. Then it builds the new desk:
+  - a window of the version takes its saved place. When a current record is
+    the same console (same id, or the same live session), the version's
+    layout goes onto that record and the record keeps its session, so a
+    running console is never shown twice;
+  - a current window that is not in the version stays where it is when it
+    has a session, and is dropped when it is a placeholder: a restore never
+    ends a running console;
+  - fences and note cards are the version's. A card is only a place on the
+    stage, so the text of a note does not change;
+  - the selected checkout per project is kept: it is a selection, not
+    layout.
+
+  Every restored record gets `ts = now`, the result is written as a
+  `restore` or `upload` version, and the daemon pushes `desk.dirty`.
+- **The guard: `generation`.** An open page never applies a rect from the
+  desk onto a live window (§4, and the lock amendment), and each reconnect
+  persists the window's live rect with a fresh `ts`. So a page that loaded
+  before the restore would upload its old rects with a newer `ts`, and the
+  fold would undo the restore. A push cannot prevent this: a phone that
+  sleeps does not get it, and it uploads when it wakes. The desk therefore
+  carries `generation`, the epoch ms of the last restore (`0`, and not
+  written, until the first one). A page sends the generation it loaded with
+  every PUT, and the daemon refuses an older one with
+  `409 {"state":"restored"}` before it writes anything. A page that sees a
+  newer generation, in a refused PUT or in any desk read, stops writing and
+  reloads: there is no way to clear a page's windows and run the restore
+  again in place.
+
+### Rejected alternatives
+
+- **One backup copy of `desk.toml` per write.** The desk is rewritten on
+  every load and reconnect, so the copy would hold the bad desk minutes
+  after the bug.
+- **A timer in the daemon that writes a version after a quiet period.** A
+  background task for what one comparison on the write path decides; the
+  rule "60 s from the first change" needs no timer.
+- **A new push verb for a restore.** `desk.dirty` already makes every page
+  read the desk, and the generation in that read is what makes it reload.
+- **Restore in place, without a reload.** `restoreDesk` reconciles once per
+  page by design (#537), and the rects of live windows are never applied
+  from the desk. Both would have to change for a rare act.
