@@ -4,6 +4,7 @@
 //! Each writes its deliverable to disk and this module validates it; none ever
 //! publishes to GitHub — that stays the cli's job after the operator confirms.
 
+use std::io;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -42,33 +43,17 @@ pub fn consolidate_knowledge(
 ) -> Result<Usage> {
     let settings_path = write_task_settings(run_dir)?;
 
-    let mut args: Vec<String> = Vec::new();
-    if let Some(m) = model {
-        args.push("--model".into());
-        args.push(m.into());
-    }
-    args.push("-p".into());
-    args.push("--dangerously-skip-permissions".into());
+    info!(?model, ?effort, "consolidating knowledge with claude -p");
     // Mirror the plan pass so the stdout stream carries the `result` event
     // `parse_plan_usage` reads; `stream-json` requires `--verbose`. `KNOWLEDGE.md`
     // is still written by the session, so the stdout format is free to change.
-    args.push("--output-format".into());
-    args.push("stream-json".into());
-    args.push("--verbose".into());
-    args.push("--settings".into());
-    args.push(settings_path.to_string_lossy().into_owned());
-    if let Some(e) = effort {
-        args.push("--effort".into());
-        args.push(e.into());
-    }
-
-    info!(?model, ?effort, "consolidating knowledge with claude -p");
-    let mut cmd = Command::new(resolve_claude_binary());
-    cmd.args(&args)
-        .current_dir(ws.repo_root())
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    let args = task_args(
+        model,
+        effort,
+        &settings_path,
+        &["--output-format", "stream-json", "--verbose"],
+    );
+    let cmd = task_command(&args, ws.repo_root());
 
     // Spawn, persist the log, bail on auth then timeout — the shared
     // `run_text_session` owns that exact tail (same messages, same order) and
@@ -106,31 +91,11 @@ pub fn diagnose_repo(
     let settings_path = write_task_settings(neutral_cwd)?;
 
     let out_path = neutral_cwd.join("diagnosis.json");
-    // A stale report from a prior run must never masquerade as this session's
-    // output, so clear it before the session runs.
-    let _ = std::fs::remove_file(&out_path);
-
-    let mut args: Vec<String> = Vec::new();
-    if let Some(m) = model {
-        args.push("--model".into());
-        args.push(m.into());
-    }
-    args.push("-p".into());
-    args.push("--dangerously-skip-permissions".into());
-    args.push("--settings".into());
-    args.push(settings_path.to_string_lossy().into_owned());
-    if let Some(e) = effort {
-        args.push("--effort".into());
-        args.push(e.into());
-    }
+    clear_stale_output(&out_path)?;
 
     info!(?model, ?effort, "diagnosing repo with claude -p");
-    let mut cmd = Command::new(resolve_claude_binary());
-    cmd.args(&args)
-        .current_dir(neutral_cwd)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    let args = task_args(model, effort, &settings_path, &[]);
+    let cmd = task_command(&args, neutral_cwd);
 
     let log_path = neutral_cwd.join("diagnose.log");
     run_json_session(
@@ -173,28 +138,8 @@ pub fn draft_issues(
     timeout: Duration,
 ) -> Result<IssuesDraft> {
     let mode = req.mode;
-    if let Some(parent) = out_path.parent() {
-        std::fs::create_dir_all(parent).ok();
-    }
+    clear_stale_output(out_path)?;
     let settings_path = write_task_settings(&repo.join(".ralphy"))?;
-
-    // A stale draft from a prior run must never masquerade as this session's
-    // output, so clear it before the session runs.
-    let _ = std::fs::remove_file(out_path);
-
-    let mut args: Vec<String> = Vec::new();
-    if let Some(m) = model {
-        args.push("--model".into());
-        args.push(m.into());
-    }
-    args.push("-p".into());
-    args.push("--dangerously-skip-permissions".into());
-    args.push("--settings".into());
-    args.push(settings_path.to_string_lossy().into_owned());
-    if let Some(e) = effort {
-        args.push("--effort".into());
-        args.push(e.into());
-    }
 
     info!(
         ?model,
@@ -202,12 +147,8 @@ pub fn draft_issues(
         mode = mode.as_str(),
         "drafting issues with claude -p"
     );
-    let mut cmd = Command::new(resolve_claude_binary());
-    cmd.args(&args)
-        .current_dir(repo)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    let args = task_args(model, effort, &settings_path, &[]);
+    let cmd = task_command(&args, repo);
 
     let prompt = build_init_issues_prompt(repo, mode, req.source_docs, req.triage_label, out_path);
     let log_path = repo.join(".ralphy").join("init-issues.log");
@@ -250,36 +191,12 @@ pub fn triage_issues(
     effort: Option<&str>,
     timeout: Duration,
 ) -> Result<TriageDraft> {
-    if let Some(parent) = out_path.parent() {
-        std::fs::create_dir_all(parent).ok();
-    }
+    clear_stale_output(out_path)?;
     let settings_path = write_task_settings(&repo.join(".ralphy"))?;
 
-    // A stale draft from a prior run must never masquerade as this session's
-    // output, so clear it before the session runs.
-    let _ = std::fs::remove_file(out_path);
-
-    let mut args: Vec<String> = Vec::new();
-    if let Some(m) = model {
-        args.push("--model".into());
-        args.push(m.into());
-    }
-    args.push("-p".into());
-    args.push("--dangerously-skip-permissions".into());
-    args.push("--settings".into());
-    args.push(settings_path.to_string_lossy().into_owned());
-    if let Some(e) = effort {
-        args.push("--effort".into());
-        args.push(e.into());
-    }
-
     info!(?model, ?effort, "triaging issues with claude -p");
-    let mut cmd = Command::new(resolve_claude_binary());
-    cmd.args(&args)
-        .current_dir(repo)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    let args = task_args(model, effort, &settings_path, &[]);
+    let cmd = task_command(&args, repo);
 
     let prompt = format!(
         "{}{}{}",
@@ -310,4 +227,100 @@ pub fn triage_issues(
             })
         },
     )
+}
+
+/// The argv of a one-shot `claude -p` task. `extra` goes between the skip flag
+/// and `--settings`, the place the plan pass puts its output flags.
+fn task_args(
+    model: Option<&str>,
+    effort: Option<&str>,
+    settings_path: &Path,
+    extra: &[&str],
+) -> Vec<String> {
+    let mut args: Vec<String> = Vec::new();
+    if let Some(m) = model {
+        args.push("--model".into());
+        args.push(m.into());
+    }
+    args.push("-p".into());
+    args.push("--dangerously-skip-permissions".into());
+    args.extend(extra.iter().map(|flag| flag.to_string()));
+    args.push("--settings".into());
+    args.push(settings_path.to_string_lossy().into_owned());
+    if let Some(e) = effort {
+        args.push("--effort".into());
+        args.push(e.into());
+    }
+    args
+}
+
+/// The `claude` command for a task: `args`, run in `cwd`, all three streams
+/// piped.
+fn task_command(args: &[String], cwd: &Path) -> Command {
+    let mut cmd = Command::new(resolve_claude_binary());
+    cmd.args(args)
+        .current_dir(cwd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    cmd
+}
+
+/// Make the folder of `out_path` and remove a file left there by an earlier
+/// run: a stale deliverable must never pass for this session's output.
+fn clear_stale_output(out_path: &Path) -> Result<()> {
+    if let Some(parent) = out_path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating {}", parent.display()))?;
+    }
+    match std::fs::remove_file(out_path) {
+        Err(error) if error.kind() != io::ErrorKind::NotFound => {
+            Err(error).with_context(|| format!("removing the stale output {}", out_path.display()))
+        }
+        _ => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_task_argv_keeps_its_flag_order() {
+        let settings = Path::new("s.json");
+        assert_eq!(
+            task_args(None, None, settings, &[]),
+            [
+                "-p",
+                "--dangerously-skip-permissions",
+                "--settings",
+                "s.json"
+            ]
+        );
+        assert_eq!(
+            task_args(Some("opus"), Some("high"), settings, &["--verbose"]),
+            [
+                "--model",
+                "opus",
+                "-p",
+                "--dangerously-skip-permissions",
+                "--verbose",
+                "--settings",
+                "s.json",
+                "--effort",
+                "high"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_stale_output_is_removed_and_a_missing_one_is_not_an_error() {
+        let dir = tempfile::tempdir().expect("a temp dir is writable");
+        let out = dir.path().join("nested").join("draft.json");
+        clear_stale_output(&out).expect("a missing output is not an error");
+        assert!(out.parent().is_some_and(Path::is_dir));
+        std::fs::write(&out, "old").expect("the folder exists");
+        clear_stale_output(&out).expect("an old output is removed");
+        assert!(!out.exists());
+    }
 }
