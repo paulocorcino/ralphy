@@ -1,0 +1,14 @@
+{
+  "minTokens": 100,
+  "minLines": 10,
+  "format": ["rust", "javascript"],
+  "ignore": [
+    "**/tests/**",
+    "**/tests.rs",
+    "**/*_tests.rs",
+    "**/bin/*_test_child.rs",
+    "**/ui-tests/**",
+    "**/assets/ui/vendor/**"
+  ],
+  "reporters": ["console"]
+}

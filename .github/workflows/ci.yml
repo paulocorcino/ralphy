@@ -284,6 +284,37 @@ jobs:
       - name: The fragments parse
         run: cargo run -q -p xtask -- changelog --check
 
+  duplication:
+    name: no new duplicated code
+    # Fails when the pull request adds a clone (.jscpd.json: 100 tokens over
+    # 10 lines, test files excluded) that the base branch does not have. A
+    # clone the pull request edits counts as new too: the fingerprint is the
+    # fragment's text, so an edit inside an old clone changes it (measured
+    # with jscpd 5.4.0, 2026-10-04).
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # jscpd scans the base ref's tree, which a depth-1 clone does not have.
+          fetch-depth: 0
+
+      # The release binary, pinned by version and checksum, as for oxlint.
+      - name: No new clone against the base branch
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          JSCPD_VERSION: "5.4.0"
+          JSCPD_SHA256: 4c2819a5663e5418fe5dcf0faceca7f05c1f080d3c87fd57cc4ccf99ce857194
+        run: |
+          set -euo pipefail
+          curl -sSLf -o jscpd.tar.gz "https://github.com/kucherenko/jscpd/releases/download/v${JSCPD_VERSION}/jscpd-linux-x64-gnu.tar.gz"
+          echo "${JSCPD_SHA256}  jscpd.tar.gz" | sha256sum --check
+          tar xzf jscpd.tar.gz jscpd
+          ./jscpd --baseline-from-ref "origin/$BASE_REF" --fail-on-new-clones 0 crates
+
   oversized:
     name: oversized files (warning only)
     # The file-split threshold is a recommendation (ADR-0022): this job never

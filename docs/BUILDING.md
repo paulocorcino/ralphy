@@ -85,7 +85,12 @@ Six GitHub Actions workflows live under [`.github/workflows/`](../.github/workfl
   that the fragments present parse. A human overrides it with the `no-changelog`
   label. The job `oversized`, also on pull requests only, never fails: it puts
   a warning on the pull request for each file it touches that
-  `cargo run -p xtask -- oversized` lists (over 500 lines of code).
+  `cargo run -p xtask -- oversized` lists (over 500 lines of code). The job
+  `duplication`, on pull requests only, runs jscpd (a release binary pinned
+  by version and checksum) with the settings in `.jscpd.json`. It fails when
+  the pull request adds a clone that the base branch does not have. An edit
+  inside a clone that already exists also makes it new, because jscpd
+  fingerprints the text of the clone.
 - **`release.yml`** — builds the shippable artifacts for every platform:
   - `ralphy-<version>-windows-x64.zip`
   - `ralphy-<version>-linux-x64.tar.gz` — a **static musl** binary with no glibc

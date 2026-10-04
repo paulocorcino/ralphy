@@ -93,6 +93,19 @@ ubiquitous language, and each crate is roughly one bounded context.
   Before a change there, read
   [docs/WORKBENCH-BUILD-GUIDE.md](./docs/WORKBENCH-BUILD-GUIDE.md): vendored
   libraries, touch rules, the clipboard contract.
+
+  **On a pull request, CI also fails on a new duplicated block.** The local
+  form, with the settings in `.jscpd.json`:
+
+  ```sh
+  npx -y jscpd@5.4.0 --baseline-from-ref main --fail-on-new-clones 0 crates
+  ```
+
+  A clone is new when the base branch does not have it, and an edit inside
+  an old clone makes it new too. When the two copies are one rule, merge
+  them. When they are two rules, put the copy between
+  `// jscpd:ignore-start` and `// jscpd:ignore-end`, with a comment that
+  says why they change for different reasons.
 - **A change to the shipped surface needs a changelog fragment:** one file per
   PR, `changelog.d/<pr-or-issue-number>.md`, or a short name for the work when
   there is no number: one short sentence that names the *capability*, not
