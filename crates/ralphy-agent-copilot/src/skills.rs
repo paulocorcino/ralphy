@@ -4,15 +4,12 @@
 //! listing before the session, and the load receipt when the CLI emits one
 //! (ADR-0041 D9).
 //!
-//! The link/copy/ignore dance itself lives in [`ralphy_adapter_support`]; only
-//! the per-skill loop and the receipt guard are Copilot's own.
+//! The link/copy/ignore loop lives in [`ralphy_adapter_support::expose_skills`];
+//! only the discovery folder and the receipt guard are Copilot's own.
 
-use std::fs;
-
-use anyhow::{Context, Result};
+use anyhow::Result;
 use include_dir::{include_dir, Dir};
 
-use ralphy_adapter_support::{ensure_gitignore_entries, link_or_copy_dir, remove_path};
 use ralphy_core::Workspace;
 
 /// The skills subtree, embedded at build time so the binary is self-contained.
@@ -29,37 +26,11 @@ static SKILLS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../assets/plugin/s
 /// Returns the exposed skill names, which the caller feeds to
 /// [`skill_list_violation`] and [`skills_load_violation`] as the required set.
 pub(crate) fn materialize_copilot_skills(ws: &Workspace) -> Result<Vec<String>> {
-    let store = ws.ralphy_dir().join("skills");
-    ralphy_adapter_support::materialize_assets(&SKILLS, &store, Some(&ws.ralphy_dir()))?;
-
-    let skills_dir = ws.repo_root().join(".agents").join("skills");
-    fs::create_dir_all(&skills_dir).context("creating .agents/skills")?;
-
-    let mut names: Vec<std::ffi::OsString> = Vec::new();
-    for skill in SKILLS.dirs() {
-        let name = skill
-            .path()
-            .file_name()
-            .context("embedded skill directory has no name")?
-            .to_owned();
-        let src = store.join(&name);
-        let dest = skills_dir.join(&name);
-
-        // Replace only our own subdir; never touch sibling (operator) skills.
-        if dest.symlink_metadata().is_ok() {
-            remove_path(&dest).with_context(|| format!("clearing stale {}", dest.display()))?;
-        }
-        link_or_copy_dir(&src, &dest)
-            .with_context(|| format!("exposing skill {}", name.to_string_lossy()))?;
-        names.push(name);
-    }
-
-    ensure_gitignore_entries(&skills_dir.join(".gitignore"), &names)?;
-
-    Ok(names
-        .iter()
-        .map(|n| n.to_string_lossy().into_owned())
-        .collect())
+    ralphy_adapter_support::expose_skills(
+        &SKILLS,
+        &ws.ralphy_dir(),
+        &ws.repo_root().join(".agents").join("skills"),
+    )
 }
 
 /// Check the output of `copilot skill list --json` (run in the repo before the
@@ -142,6 +113,7 @@ pub(crate) fn skills_load_violation(stdout: &str, required: &[String]) -> Option
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     const FIXTURE: &str = include_str!("../fixtures/skills-loaded-2026-07-20.jsonl");
 

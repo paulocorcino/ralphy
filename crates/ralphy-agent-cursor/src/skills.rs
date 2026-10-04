@@ -7,15 +7,12 @@
 //! disk on demand (spike §8, P16) — so there is no load-receipt guard here, only
 //! the materialization itself.
 //!
-//! The link/copy/ignore dance itself lives in [`ralphy_adapter_support`]; only
-//! the per-skill loop is Cursor's own.
+//! The link/copy/ignore loop lives in [`ralphy_adapter_support::expose_skills`];
+//! only the discovery folder is Cursor's own.
 
-use std::fs;
-
-use anyhow::{Context, Result};
+use anyhow::Result;
 use include_dir::{include_dir, Dir};
 
-use ralphy_adapter_support::{ensure_gitignore_entries, link_or_copy_dir, remove_path};
 use ralphy_core::Workspace;
 
 /// The skills subtree, embedded at build time so the binary is self-contained.
@@ -31,42 +28,17 @@ static SKILLS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../assets/plugin/s
 /// only; the shared directory receives per-skill links and a MERGED
 /// `.gitignore`, never a wipe.
 pub(crate) fn materialize_cursor_skills(ws: &Workspace) -> Result<Vec<String>> {
-    let store = ws.ralphy_dir().join("skills");
-    ralphy_adapter_support::materialize_assets(&SKILLS, &store, Some(&ws.ralphy_dir()))?;
-
-    let skills_dir = ws.repo_root().join(".cursor").join("skills");
-    fs::create_dir_all(&skills_dir).context("creating .cursor/skills")?;
-
-    let mut names: Vec<std::ffi::OsString> = Vec::new();
-    for skill in SKILLS.dirs() {
-        let name = skill
-            .path()
-            .file_name()
-            .context("embedded skill directory has no name")?
-            .to_owned();
-        let src = store.join(&name);
-        let dest = skills_dir.join(&name);
-
-        // Replace only our own subdir; never touch sibling (operator) skills.
-        if dest.symlink_metadata().is_ok() {
-            remove_path(&dest).with_context(|| format!("clearing stale {}", dest.display()))?;
-        }
-        link_or_copy_dir(&src, &dest)
-            .with_context(|| format!("exposing skill {}", name.to_string_lossy()))?;
-        names.push(name);
-    }
-
-    ensure_gitignore_entries(&skills_dir.join(".gitignore"), &names)?;
-
-    Ok(names
-        .iter()
-        .map(|n| n.to_string_lossy().into_owned())
-        .collect())
+    ralphy_adapter_support::expose_skills(
+        &SKILLS,
+        &ws.ralphy_dir(),
+        &ws.repo_root().join(".cursor").join("skills"),
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     /// An isolated parent + repo pair: `materialize_writes_nothing_outside_the_workspace`
     /// walks the parent, and the shared OS temp root can hold thousands of

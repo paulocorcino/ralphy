@@ -2,14 +2,57 @@
 //! shared, operator-owned discovery directory without clobbering what the operator
 //! keeps there.
 //!
-//! Vendor-neutral by construction — every vendor that discovers skills through the
-//! conventional `.agents/skills` hierarchy needs the same three primitives, and
-//! only the per-skill loop around them differs.
+//! Vendor-neutral by construction — every vendor that discovers skills through a
+//! repo-local folder needs the same loop; only the folder differs.
 
 use std::fs;
 use std::path::Path;
 
 use anyhow::{Context, Result};
+
+/// Extract `skills` into the ralphy-owned store `<ralphy_dir>/skills`, then link
+/// each skill into the vendor's shared `discovery_dir` as `<discovery_dir>/<name>`.
+///
+/// `discovery_dir` is owned by the operator, so it is never wiped: only the
+/// subfolders ralphy owns are replaced, and its `.gitignore` is merged. Returns
+/// the exposed skill names.
+pub fn expose_skills(
+    skills: &include_dir::Dir,
+    ralphy_dir: &Path,
+    discovery_dir: &Path,
+) -> Result<Vec<String>> {
+    let store = ralphy_dir.join("skills");
+    crate::materialize_assets(skills, &store, Some(ralphy_dir))?;
+
+    fs::create_dir_all(discovery_dir)
+        .with_context(|| format!("creating {}", discovery_dir.display()))?;
+
+    let mut names: Vec<std::ffi::OsString> = Vec::new();
+    for skill in skills.dirs() {
+        let name = skill
+            .path()
+            .file_name()
+            .context("embedded skill directory has no name")?
+            .to_owned();
+        let src = store.join(&name);
+        let dest = discovery_dir.join(&name);
+
+        // Replace only our own subdir; never touch sibling (operator) skills.
+        if dest.symlink_metadata().is_ok() {
+            remove_path(&dest).with_context(|| format!("clearing stale {}", dest.display()))?;
+        }
+        link_or_copy_dir(&src, &dest)
+            .with_context(|| format!("exposing skill {}", name.to_string_lossy()))?;
+        names.push(name);
+    }
+
+    ensure_gitignore_entries(&discovery_dir.join(".gitignore"), &names)?;
+
+    Ok(names
+        .iter()
+        .map(|n| n.to_string_lossy().into_owned())
+        .collect())
+}
 
 /// Link `src` into `dest` as a directory symlink, falling back to a recursive copy
 /// when the symlink is rejected on Windows (no Developer Mode / not elevated).
