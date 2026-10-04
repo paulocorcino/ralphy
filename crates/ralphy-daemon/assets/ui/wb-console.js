@@ -58,11 +58,9 @@ window.WBConsole = (function () {
   const wins = new Set();
 
   // ---- dormant consoles ----------------------------------------------------
-  // Every console costs an xterm buffer, a ResizeObserver, a WebGL context and
-  // the parse+paint of every byte the daemon sends, visible or not. LIMIT: Chrome
-  // caps a document at ~16 live WebGL contexts; past it the addon loses its
-  // context (`onContextLoss` in `attachTerminal`) and EVERY terminal falls to
-  // the DOM renderer.
+  // Every console costs an xterm buffer, a ResizeObserver, a WebGL context
+  // while it holds one (`rebalanceGpu`), and the parse+paint of every byte the
+  // daemon sends, visible or not.
   //
   // So a window off the viewport long enough disposes its terminal and closes
   // its socket, and rebuilds on return. A window under columns, a maximize or
@@ -103,8 +101,11 @@ window.WBConsole = (function () {
   function trackDormancy(win) {
     const watch = dormancyWatch();
     if (watch) watch.observe(win);
-    // Nothing will ever report this window seen.
-    else win._term?.useGpu();
+    else {
+      // Nothing will ever report this window seen.
+      win._visible = true;
+      scheduleGpu();
+    }
   }
   // Paired with every `wins.delete`: the observer holds its targets, so a window
   // taken off the plane without this stays reachable for the life of the page.
@@ -114,6 +115,61 @@ window.WBConsole = (function () {
       win._dormantTimer = null;
     }
     dormancyObserver?.unobserve(win);
+    // Its context, if it had one, goes to the next window in line.
+    scheduleGpu();
+  }
+
+  // ---- the GPU budget ------------------------------------------------------
+  // LIMIT: Chrome keeps 16 live WebGL contexts per renderer process and drops
+  // the oldest past it. A desk restored as a cascade has every console seen
+  // and uncovered at once (measured: 20 consoles, 4 contexts lost, Chrome on
+  // Windows, 2026-10-04). So the page hands out at most GPU_BUDGET contexts,
+  // to the windows on top; the others draw with the DOM renderer. The budget
+  // is under 16 because the detached-fence popup has its own budget and can
+  // share the renderer process.
+  const GPU_BUDGET = 12;
+
+  // The indexes of the windows that hold a context, pure and tabled. Each
+  // window is {seen, covered, hasTerminal, z}: only a seen, uncovered window
+  // with a terminal is a candidate, and the highest `z` win (focus raises a
+  // window to the top). Ties keep the input order.
+  function gpuHolders(windows, budget) {
+    return windows
+      .map((w, i) => ({ ...w, i }))
+      .filter((w) => w.seen && !w.covered && w.hasTerminal)
+      .sort((a, b) => b.z - a.z)
+      .slice(0, budget)
+      .map((w) => w.i);
+  }
+
+  // Coalesced: a restore asks once per window, and the drops must run before
+  // the loads so the page never holds more than the budget.
+  let gpuQueued = false;
+  function scheduleGpu() {
+    if (gpuQueued) return;
+    gpuQueued = true;
+    queueMicrotask(() => {
+      gpuQueued = false;
+      rebalanceGpu();
+    });
+  }
+  function rebalanceGpu() {
+    const list = [...wins];
+    const keep = new Set(
+      gpuHolders(
+        list.map((w) => ({
+          // `=== true`, not the dormancy fold's reading: an unobserved window
+          // is not yet seen.
+          seen: w._visible === true,
+          covered: isCovered(w),
+          hasTerminal: !!w._term,
+          z: parseInt(w.style.zIndex, 10) || 0,
+        })),
+        GPU_BUDGET,
+      ).map((i) => list[i]),
+    );
+    for (const w of list) if (!keep.has(w)) w._term?.dropGpu();
+    for (const w of keep) w._term.useGpu();
   }
 
   // Focus stacking. `z` climbs each time a window is raised; when it reaches the
@@ -872,8 +928,7 @@ window.WBConsole = (function () {
       win._dormantTimer = null;
     }
     if (verdict === "wake") wakeWindow(win);
-    // `=== true`, not the fold's reading: an unobserved window is not yet seen.
-    if (win._visible === true && !isCovered(win)) win._term?.useGpu();
+    scheduleGpu();
     if (verdict === "sleep") {
       win._dormantTimer = setTimeout(() => {
         win._dormantTimer = null;
@@ -2390,6 +2445,9 @@ window.WBConsole = (function () {
       if (wins.has(w)) applyDormancy(w);
     }
     win.classList.add("focused");
+    // On top now, so first in line for a context. The `applyDormancy` above
+    // asks too, but not when the focus came from a note card.
+    scheduleGpu();
   }
 
   // Every window on the plane, for the Go-to picker. Reads the DOM, not `wins`:
@@ -5107,20 +5165,43 @@ window.WBConsole = (function () {
     // NOT on WebKit: the addon renders scrolled rows twice there (xterm.js
     // #3357, #5816; reproduced with the scrollbar, so the renderer, not our
     // gesture). Every browser on iPadOS is WebKit.
-    // The terminal starts on the DOM renderer, and the window loads the addon
-    // once it is seen (`applyDormancy`). LIMIT: Chrome keeps ~16 live WebGL
-    // contexts per renderer process and drops the oldest past it; a restore
-    // that gave every console on the desk a context lost the extra ones
-    // (measured: 22 consoles, 6 lost, Chrome on Windows, 2026-10-03).
-    let gpuLoaded = false;
+    // The terminal starts on the DOM renderer; the page decides which windows
+    // hold a context (`rebalanceGpu`) and calls `useGpu`/`dropGpu`.
+    let webgl = null;
+    // The canvases the addon added, so `dropGpu` asks only them for a context:
+    // `getContext` on a canvas that has none would create one.
+    let gpuCanvases = [];
+    // A browser that cannot give a context is not asked again.
+    let gpuBroken = false;
     function useGpu() {
-      if (gpuLoaded || prefersDomRenderer(navigator.vendor)) return;
-      gpuLoaded = true;
+      if (webgl || gpuBroken || prefersDomRenderer(navigator.vendor)) return;
       try {
-        const webgl = new WebglAddon.WebglAddon();
-        webgl.onContextLoss(() => webgl.dispose());
-        term.loadAddon(webgl);
-      } catch {}
+        const addon = new WebglAddon.WebglAddon();
+        // Lost to the browser: back to the DOM renderer without dropping the
+        // session. The slot goes back to the page at its next rebalance.
+        addon.onContextLoss(() => {
+          if (webgl === addon) dropGpu();
+        });
+        const before = new Set(term.element.querySelectorAll("canvas"));
+        term.loadAddon(addon);
+        webgl = addon;
+        gpuCanvases = [...term.element.querySelectorAll("canvas")].filter((c) => !before.has(c));
+      } catch {
+        gpuBroken = true;
+      }
+    }
+    // MEASURED: disposing the addon does not free the browser's slot until the
+    // context is collected; an explicit `loseContext` does (14 contexts, 8
+    // disposed, 8 new: 7 "Too many active WebGL contexts" warnings without it,
+    // 0 with it; Chromium headless, @xterm/addon-webgl 0.19.0, 2026-10-04).
+    function dropGpu() {
+      const addon = webgl;
+      if (!addon) return;
+      const canvases = gpuCanvases;
+      webgl = null;
+      gpuCanvases = [];
+      addon.dispose();
+      for (const c of canvases) c.getContext("webgl2")?.getExtension("WEBGL_lose_context")?.loseContext();
     }
     term.loadAddon(new WebLinksAddon.WebLinksAddon());
 
@@ -5813,6 +5894,7 @@ window.WBConsole = (function () {
       term,
       fit,
       useGpu,
+      dropGpu,
       get ws() {
         return ws;
       },
@@ -5922,6 +6004,7 @@ window.WBConsole = (function () {
         stopFling();
         stopScroll();
         if (ws && ws.readyState <= 1) ws.close();
+        dropGpu();
         term.dispose();
       },
     };
@@ -7391,6 +7474,7 @@ window.WBConsole = (function () {
     isDoubleTap,
     DOUBLE_TAP_MS,
     prefersDomRenderer,
+    gpuHolders,
     isWebKit,
     fullscreenOffered,
     flingStep,
