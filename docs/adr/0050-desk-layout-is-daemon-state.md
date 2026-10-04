@@ -360,9 +360,11 @@ the operator can restore, download as a file, and upload again.
   stored desk, under the same lock as the write. A change of `ts` or
   `sessionId` alone, or a rect that moves by less than 1 px, is not a layout
   change and writes nothing: a reconnect rewrites both. A change that comes
-  less than 60 s after the FIRST change of the newest version, when that
-  version is a `change`, goes into that version; otherwise it starts a new
-  one. A version therefore holds at most 60 s of changes: one drag is one
+  less than 60 s after the FIRST change of the newest version goes into that
+  version; otherwise it starts a new one. A `restore` or `upload` version
+  takes such changes too: a page that reloads after a restore gives its
+  consoles their names and writes at once (seen in the browser check). A
+  `before-restore` version never takes a change: it is the way back. A version therefore holds at most 60 s of changes: one drag is one
   version, and a long arrangement is one version per minute. When the newest
   version does not hold the desk as it was before the change, that desk is
   written first, so the layout before a change is never lost. Beyond 50
@@ -370,8 +372,10 @@ the operator can restore, download as a file, and upload again.
   never fails the desk write, which already succeeded.
 - **Restore.** `POST /api/desk/history` with `{ id }` (a saved version) or
   `{ version }` (an uploaded file, checked with the same rules as a PUT
-  body). The daemon writes the current desk as a `before-restore` version,
-  so a restore can be undone, then builds the new desk:
+  body). The daemon always writes the current desk as a `before-restore`
+  version first, even when an older version holds the same layout, so the
+  way back is the row just under the restore. A failure there stops the
+  restore. Then it builds the new desk:
   - a window of the version takes its saved place. When a current record is
     the same console (same id, or the same live session), the version's
     layout goes onto that record and the record keeps its session, so a
