@@ -208,6 +208,13 @@ def http(method, path, body=None):
         return r.status, r.read().decode()
 
 
+def put_changes(changes):
+    """Send a desk change list, as another device does. The body carries the
+    desk's current generation, or the daemon refuses it."""
+    generation = desk_raw().get("generation", 0)
+    return http("PUT", "api/desk", {"seq": 1, "generation": generation, "changes": changes})
+
+
 def desk_raw():
     return json.loads(http("GET", "api/desk")[1])
 
@@ -698,13 +705,8 @@ def main():
             check("X3 the columns are untouched by the re-attach", ids(page) == ["w-a", "w-b"], str(ids(page)))
 
             # X4 -------------------------------------------------------------
-            raw = desk_raw()
-            now = int(time.time() * 1000) + 60000
-            for w in raw["windows"]:
-                if w["id"] == "w-l":
-                    w["max"] = True
-                    w["ts"] = now
-            http("PUT", "api/desk", {"windows": raw["windows"], "fences": raw.get("fences", [])})
+            # A remote maximize is one `set` change from another device.
+            put_changes([{"op": "set", "type": "window", "id": "w-l", "fields": {"max": True}}])
             page.wait_for_timeout(4000)
             check("X4 a remote maximize leaves the list", shell_cols(page) == ["w-a", "w-b"], str(shell_cols(page)))
             on_top = page.evaluate(
@@ -716,12 +718,8 @@ def main():
 
             # X5 -------------------------------------------------------------
             before = page.evaluate("() => __columns()")
-            raw = desk_raw()
-            for w in raw["windows"]:
-                if w["id"] == "w-b":
-                    w["rect"] = {"left": F_ONE["left"] + 50, "top": F_ONE["top"] + 60, "width": 300, "height": 200}
-                    w["ts"] = now + 1000
-            http("PUT", "api/desk", {"windows": raw["windows"], "fences": raw.get("fences", [])})
+            rect = {"left": F_ONE["left"] + 50, "top": F_ONE["top"] + 60, "width": 300, "height": 200}
+            put_changes([{"op": "set", "type": "window", "id": "w-b", "fields": {"rect": rect}}])
             page.wait_for_timeout(6000)
             check("X5 a remote rect or fence change leaves the list", shell_cols(page) == ["w-a", "w-b"],
                   str(shell_cols(page)))

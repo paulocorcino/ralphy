@@ -140,14 +140,13 @@ def record(rid, repo, kind, agent, left, ts):
 
 
 def put_desk(windows, removed=()):
-    # The PUT is a fold: a record absent from the body survives unless it is
-    # named in `removed`.
-    body = {
-        "windows": windows,
-        "fences": [],
-        "removed": {"windows": list(removed), "fences": [], "notes": [], "checkouts": []},
-    }
-    return http("PUT", "api/desk", body)
+    # The PUT is a list of desk changes (ADR-0050 amendment 2026-10-04): each
+    # window is a `create` (a record that exists takes only its session), and
+    # each id in `removed` is a `remove`. A record the body does not name
+    # stays as it is.
+    changes = [{"op": "create", "type": "window", "record": w} for w in windows]
+    changes += [{"op": "remove", "type": "window", "id": rid} for rid in removed]
+    return http("PUT", "api/desk", {"seq": 1, "changes": changes})
 
 
 def close_all_sessions():

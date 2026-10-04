@@ -384,7 +384,8 @@ def main():
             ctx.close()
 
             # ===== scenario 2: nothing stored lands on the bounding box =========
-            status, _ = http("PUT", "api/desk", {"windows": desk_records(slug), "fences": []})
+            changes = [{"op": "create", "type": "window", "record": r} for r in desk_records(slug)]
+            status, _ = http("PUT", "api/desk", {"seq": 1, "generation": 0, "changes": changes})
             check("the two far-off fixture windows reach the daemon's desk", status == 200, f"status={status}")
 
             ctx = fresh_context(browser, {"width": 1400, "height": 900})

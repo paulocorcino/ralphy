@@ -17,7 +17,8 @@ Scenario 3   back at 1400x900 the rects are byte-identical to scenario 1 — the
 Scenario 4   a drag up-left stops at the pinned 0,0 origin; a drag right GROWS
              the stage past its old edge instead of clipping the window — and
              dragging back SHRINKS it, so the `grow` floor is not a ratchet
-Scenario 5   `PUT /api/desk` refuses a negative origin without touching the store
+Scenario 5   `PUT /api/desk` refuses a create with a negative origin: the reply
+             is 200 with `refused` naming it, and the store is untouched
 Scenario 7   a point on the bare floor hit-tests inside the viewport and a real
              wheel over it pans the plane (`#viewers` is the last positioned
              sibling and would otherwise swallow every pan gesture)
@@ -541,30 +542,36 @@ def main():
             )
 
             # A negative rect can only arrive from a hand-rolled client; the
-            # daemon refuses it rather than persisting an off-plane origin.
+            # daemon refuses that change rather than persisting an off-plane
+            # origin. A refused change does not fail the request.
+            bad_record = {
+                "id": "w-bad",
+                "repo": slug,
+                "agent": "console",
+                "kind": "console",
+                "rect": {"left": -1, "top": 0, "width": 600, "height": 380},
+                "max": False,
+                "sessionId": None,
+            }
+            generation = json.loads(http("GET", "api/desk")[1]).get("generation", 0)
             try:
-                bad = http(
+                status, reply = http(
                     "PUT",
                     "api/desk",
                     {
-                        "windows": [
-                            {
-                                "id": "w-bad",
-                                "repo": slug,
-                                "agent": "console",
-                                "kind": "console",
-                                "rect": {"left": -1, "top": 0, "width": 600, "height": 380},
-                                "max": False,
-                                "sessionId": None,
-                                "ts": 1,
-                            }
-                        ],
-                        "fences": [],
+                        "seq": 1,
+                        "generation": generation,
+                        "changes": [{"op": "create", "type": "window", "record": bad_record}],
                     },
-                )[0]
+                )
+                refused = json.loads(reply).get("refused", [])
             except urllib.error.HTTPError as e:
-                bad = e.code
-            check("PUT /api/desk refuses a negative origin", bad == 400, f"got={bad}")
+                status, refused = e.code, []
+            check(
+                "PUT /api/desk refuses a create with a negative origin, by name",
+                status == 200 and [r["index"] for r in refused] == [0],
+                f"status={status} refused={refused}",
+            )
             check(
                 "…without touching the desk it already holds",
                 [r["id"] for r in json.loads(http("GET", "api/desk")[1])["windows"]]
@@ -626,7 +633,36 @@ def main():
                 " window.WBConsole.refitAll();"
                 " document.getElementById('workspace').scrollLeft = 300; }"
             )
-            page.wait_for_timeout(400)
+            # The desk gets the same rects: an open page applies the desk's
+            # rect to a window that has no pending change of its own, so a rect
+            # set only in the DOM would be replaced by the stored one.
+            desk_ids = page.evaluate(
+                "() => [...document.querySelectorAll('.session-window')].map((w) => w._deskId)"
+            )
+            generation = json.loads(http("GET", "api/desk")[1]).get("generation", 0)
+            http(
+                "PUT",
+                "api/desk",
+                {
+                    "seq": 1,
+                    "generation": generation,
+                    "changes": [
+                        {
+                            "op": "set",
+                            "type": "window",
+                            "id": desk_ids[0],
+                            "fields": {"rect": {"left": 40, "top": 40, "width": 600, "height": 380}},
+                        },
+                        {
+                            "op": "set",
+                            "type": "window",
+                            "id": desk_ids[1],
+                            "fields": {"rect": {"left": 700, "top": 300, "width": 600, "height": 380}},
+                        },
+                    ],
+                },
+            )
+            page.wait_for_timeout(1200)
             page.locator(".session-window").nth(0).locator(".session-max").click()
             page.wait_for_timeout(600)
             maxed = page.evaluate(

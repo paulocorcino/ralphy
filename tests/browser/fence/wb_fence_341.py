@@ -183,6 +183,21 @@ def http(method, path, body=None):
         return r.status, r.read().decode()
 
 
+def replace_desk(fences):
+    """Make the stored desk hold exactly `fences` and no window or note: a
+    `remove` for every stored record, then a `create` for each fence. The body
+    carries the desk's current generation, or the daemon refuses it."""
+    desk = json.loads(http("GET", "api/desk")[1])
+    changes = [
+        {"op": "remove", "type": kind, "id": r["id"]}
+        for kind, key in (("window", "windows"), ("fence", "fences"), ("note", "notes"))
+        for r in desk.get(key, [])
+    ]
+    changes += [{"op": "create", "type": "fence", "record": f} for f in fences]
+    body = {"seq": 1, "generation": desk.get("generation", 0), "changes": changes}
+    return http("PUT", "api/desk", body)
+
+
 def settle_windows(page, want):
     """Wait for the restored windows to be REAL boxes.
 
@@ -790,20 +805,14 @@ def main():
             # covering the whole viewport spills below it, not onto it", and
             # the -1 wall case) covers the pure fold; this is the browser-level
             # outcome of it.
-            http(
-                "PUT",
-                "api/desk",
-                {
-                    "windows": [],
-                    "fences": [
-                        {
-                            "id": "f-blanket",
-                            "name": "blanket",
-                            "rect": {"left": 0.0, "top": 0.0, "width": 4000.0, "height": 4000.0},
-                            "ts": 200,
-                        }
-                    ],
-                },
+            replace_desk(
+                [
+                    {
+                        "id": "f-blanket",
+                        "name": "blanket",
+                        "rect": {"left": 0.0, "top": 0.0, "width": 4000.0, "height": 4000.0},
+                    }
+                ]
             )
             full_ctx = browser.new_context(viewport=dict(VIEW))
             full = desk_page(full_ctx)
