@@ -1,6 +1,6 @@
 //! Pure ownership routing for repo refs.
 
-use crate::peer::PeerDescriptor;
+use crate::peer::{PeerDescriptor, PeerReject};
 
 #[cfg(test)]
 mod tests;
@@ -43,4 +43,21 @@ pub fn peer_unreachable(peer: &PeerDescriptor, why: &str) -> String {
         why: why.to_string(),
     }
     .diagnosis(&peer.environment)
+}
+
+/// Say why a repo ref names a daemon that is not a usable peer: the version
+/// mismatch when the peer store rejected that daemon for its protocol, else
+/// that its environment is not in the list.
+pub fn unknown_daemon(daemon_id: &str, rejects: &[PeerReject]) -> String {
+    if let Some((environment, theirs)) = rejects
+        .iter()
+        .find_map(|reject| reject.version_mismatch_for(daemon_id))
+    {
+        return crate::peer::client::PeerStatus::VersionMismatch {
+            theirs,
+            ours: crate::peer::PEER_PROTOCOL_VERSION,
+        }
+        .diagnosis(environment);
+    }
+    "the environment of this project is not in the list".to_string()
 }

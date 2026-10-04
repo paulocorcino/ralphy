@@ -102,24 +102,10 @@ pub(crate) async fn session_ws_upgrade(
                     return relay_to_peer(ws, peer, &peer_query, me, &refuser, shutdown).await;
                 }
                 fleet::route::Route::UnknownDaemon { daemon_id } => {
-                    if let Some((environment, theirs)) = rejects
-                        .iter()
-                        .find_map(|reject| reject.version_mismatch_for(daemon_id))
-                    {
-                        let status = peer::client::PeerStatus::VersionMismatch {
-                            theirs,
-                            ours: peer::PEER_PROTOCOL_VERSION,
-                        };
-                        return refuser.refuse(
-                            ws,
-                            StatusCode::BAD_GATEWAY,
-                            status.diagnosis(environment),
-                        );
-                    }
                     return refuser.refuse(
                         ws,
                         StatusCode::BAD_GATEWAY,
-                        "the environment of this project is not in the list".to_string(),
+                        fleet::unknown_daemon(daemon_id, &rejects),
                     );
                 }
             }
@@ -351,24 +337,10 @@ pub(crate) async fn session_ws_upgrade(
                     };
                 }
                 fleet::route::Route::UnknownDaemon { daemon_id } => {
-                    if let Some((peer_environment, theirs)) = rejects
-                        .iter()
-                        .find_map(|reject| reject.version_mismatch_for(daemon_id))
-                    {
-                        let status = peer::client::PeerStatus::VersionMismatch {
-                            theirs,
-                            ours: peer::PEER_PROTOCOL_VERSION,
-                        };
-                        return refuser.refuse(
-                            ws,
-                            StatusCode::BAD_GATEWAY,
-                            status.diagnosis(peer_environment),
-                        );
-                    }
                     return refuser.refuse(
                         ws,
                         StatusCode::BAD_GATEWAY,
-                        "the environment of this project is not in the list".to_string(),
+                        fleet::unknown_daemon(daemon_id, &rejects),
                     );
                 }
             }

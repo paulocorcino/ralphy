@@ -20,7 +20,7 @@ use crate::registry::RegistryStore;
 pub mod route;
 pub mod watchsub;
 
-pub use route::{peer_unreachable, route, Route};
+pub use route::{peer_unreachable, route, unknown_daemon, Route};
 
 #[cfg(test)]
 mod tests;

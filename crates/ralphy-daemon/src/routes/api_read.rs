@@ -469,23 +469,11 @@ pub(crate) async fn agents_route(
                     .into_response(),
             }
         }
-        fleet::Route::UnknownDaemon { daemon_id } => {
-            if let Some((environment, theirs)) = rejects
-                .iter()
-                .find_map(|reject| reject.version_mismatch_for(daemon_id))
-            {
-                let status = peer::client::PeerStatus::VersionMismatch {
-                    theirs,
-                    ours: peer::PEER_PROTOCOL_VERSION,
-                };
-                return (StatusCode::BAD_GATEWAY, status.diagnosis(environment)).into_response();
-            }
-            (
-                StatusCode::BAD_GATEWAY,
-                "the environment of this project is not in the list".to_string(),
-            )
-                .into_response()
-        }
+        fleet::Route::UnknownDaemon { daemon_id } => (
+            StatusCode::BAD_GATEWAY,
+            fleet::unknown_daemon(daemon_id, &rejects),
+        )
+            .into_response(),
     }
 }
 
