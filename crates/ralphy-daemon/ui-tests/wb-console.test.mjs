@@ -614,6 +614,85 @@ for (const row of NUDGE) {
   });
 }
 
+// ---- autoPan: the loop around panNudge ---------------------------------------
+// One loop serves the window drag and the fence drag. Frames are queued by a
+// stub `requestAnimationFrame` and run by hand, so the test sees each tick.
+function withFrames(body) {
+  const frames = new Map();
+  let next = 0;
+  const saved = [globalThis.requestAnimationFrame, globalThis.cancelAnimationFrame];
+  globalThis.requestAnimationFrame = (cb) => {
+    next += 1;
+    frames.set(next, cb);
+    return next;
+  };
+  globalThis.cancelAnimationFrame = (id) => frames.delete(id);
+  const runFrame = () => {
+    const [id, cb] = frames.entries().next().value || [];
+    if (!cb) return false;
+    frames.delete(id);
+    cb();
+    return true;
+  };
+  try {
+    body(frames, runFrame);
+  } finally {
+    [globalThis.requestAnimationFrame, globalThis.cancelAnimationFrame] = saved;
+  }
+}
+
+function panHarness() {
+  const ws = { scrollLeft: 0, scrollTop: 0, getBoundingClientRect: () => PAN_VIEW };
+  const api = load({}, { getElementById: (id) => (id === "workspace" ? ws : null) });
+  const node = { isConnected: true };
+  const placed = [];
+  const pan = api.autoPan(node, (p) => placed.push(p));
+  return { ws, node, placed, pan };
+}
+
+test("autoPan: a pointer at the edge scrolls the plane and places again each frame", () => {
+  withFrames((frames, runFrame) => {
+    const { ws, placed, pan } = panHarness();
+    pan.follow({ x: 1100, y: 400 });
+    assert.ok(runFrame());
+    assert.ok(runFrame());
+    assert.equal(ws.scrollLeft, 48);
+    assert.equal(placed.length, 2);
+    assert.equal(frames.size, 1, "the loop keeps running while the pointer is in the band");
+  });
+});
+
+test("autoPan: stop ends the loop, so a released button pans nothing more", () => {
+  withFrames((frames, runFrame) => {
+    const { ws, pan } = panHarness();
+    pan.follow({ x: 1100, y: 400 });
+    pan.stop();
+    assert.equal(frames.size, 0);
+    assert.equal(runFrame(), false);
+    assert.equal(ws.scrollLeft, 0);
+  });
+});
+
+test("autoPan: a node that left the page ends the loop without placing it", () => {
+  withFrames((frames, runFrame) => {
+    const { ws, node, placed, pan } = panHarness();
+    pan.follow({ x: 1100, y: 400 });
+    node.isConnected = false;
+    assert.ok(runFrame());
+    assert.equal(frames.size, 0);
+    assert.equal(ws.scrollLeft, 0);
+    assert.equal(placed.length, 0);
+  });
+});
+
+test("autoPan: a pointer away from the edges starts no loop", () => {
+  withFrames((frames) => {
+    const { pan } = panHarness();
+    pan.follow({ x: 600, y: 400 });
+    assert.equal(frames.size, 0);
+  });
+});
+
 // The viewport and offset a new fence is placed against.
 const FENCE_VIEW = { width: 1400, height: 900 };
 const ORIGIN = { left: 0, top: 0 };

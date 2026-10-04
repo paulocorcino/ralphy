@@ -6676,11 +6676,15 @@ fn shell_navigates_the_plane() {
         squeeze(&after[..after.find("\n  }").expect("the function must close")])
     };
     // The auto-pan loop's teardown: an uncancelled rAF pans forever after
-    // the button is released.
+    // the button is released. One loop cancels it, and each gesture stops it.
+    assert!(
+        body("function autoPan(").contains("cancelAnimationFrame(panRaf)"),
+        "autoPan must cancel its loop (#337)"
+    );
     for gesture in ["function makeDraggable(", "function startFenceMove("] {
         assert!(
-            body(gesture).contains("cancelAnimationFrame(panRaf)"),
-            "{gesture} must cancel its auto-pan loop (#337)"
+            body(gesture).contains("pan.stop();"),
+            "{gesture} must stop its auto-pan loop (#337)"
         );
     }
     // …and the two lost-mouseup recoveries, which are the only reason that

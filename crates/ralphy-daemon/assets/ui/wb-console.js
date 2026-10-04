@@ -2577,38 +2577,9 @@ window.WBConsole = (function () {
         win.style.top = Math.max(0, Math.min(y, st.offsetHeight - rect.height)) + "px";
         applyExtent({ grow: true });
       };
-      // Auto-pan: holding the window against the viewport edge scrolls the plane
-      // under it. `place(last)` in the tick keeps the DROP position correct in
-      // stage coordinates.
-      let panRaf = null;
-      let last = null;
-      // INVARIANT: an uncancelled loop pans the plane forever after the button
-      // is released, so this runs as the FIRST statement of `onUp`.
-      const stopPan = () => {
-        if (panRaf != null) cancelAnimationFrame(panRaf);
-        panRaf = null;
-      };
-      const nudge = () => {
-        const ws = workspace();
-        if (!ws || !last) return { dx: 0, dy: 0 };
-        return panNudge(last, ws.getBoundingClientRect(), PAN_BAND, PAN_STEP);
-      };
-      const tickPan = () => {
-        panRaf = null;
-        // A window closed mid-drag: nothing left to carry, and `place` would
-        // write styles onto a detached node forever.
-        if (!win.isConnected) {
-          stopPan();
-          return;
-        }
-        const { dx, dy } = nudge();
-        if (!dx && !dy) return; // leaving the band ENDS the loop
-        const ws = workspace();
-        ws.scrollLeft += dx;
-        ws.scrollTop += dy;
-        place(last);
-        panRaf = requestAnimationFrame(tickPan);
-      };
+      // Holding the window against the viewport edge scrolls the plane under it.
+      // A window closed mid-drag ends the loop: nothing is left to carry.
+      const pan = autoPan(win, place);
       const onMove = (ev) => {
         // Another pointer's stream (a second finger, the mouse during a touch drag).
         if (ev.pointerId !== pointerId) return;
@@ -2619,15 +2590,13 @@ window.WBConsole = (function () {
           onUp();
           return;
         }
-        last = { x: ev.clientX, y: ev.clientY };
+        const last = { x: ev.clientX, y: ev.clientY };
         if (!armed) {
           if (!dragBegins(pressed, last, threshold)) return;
           armed = true;
         }
         place(last);
-        if (panRaf != null) return;
-        const { dx, dy } = nudge();
-        if (dx || dy) panRaf = requestAnimationFrame(tickPan);
+        pan.follow(last);
       };
       // Escape ends the drag where the window sits — no revert: a keyboard exit
       // from a loop whose mouseup may never arrive.
@@ -2635,7 +2604,7 @@ window.WBConsole = (function () {
         if (ev.key === "Escape") onUp();
       };
       const onUp = () => {
-        stopPan();
+        pan.stop();
         document.removeEventListener("pointermove", onMove);
         document.removeEventListener("pointerup", onUp);
         // A touch drag that the system takes over (an edge swipe, a call coming
@@ -3115,58 +3084,27 @@ window.WBConsole = (function () {
         }
         applyExtent({ grow: true });
       };
-      // Auto-pan, as `makeDraggable`: holding the fence against a viewport edge
-      // scrolls the plane under it. `place(last)` in the tick keeps the drop
-      // correct in stage coordinates.
-      let panRaf = null;
-      let last = null;
-      // INVARIANT: an uncancelled loop pans the plane forever after the button is
-      // released, so this runs as the FIRST statement of `onUp`.
-      const stopPan = () => {
-        if (panRaf != null) cancelAnimationFrame(panRaf);
-        panRaf = null;
-      };
-      const nudge = () => {
-        const ws = workspace();
-        if (!ws || !last) return { dx: 0, dy: 0 };
-        return panNudge(last, ws.getBoundingClientRect(), PAN_BAND, PAN_STEP);
-      };
-      const tickPan = () => {
-        panRaf = null;
-        // The fence was re-rendered or removed mid-drag: `place` would write
-        // styles onto a detached node forever.
-        if (!el.isConnected) {
-          stopPan();
-          return;
-        }
-        const { dx, dy } = nudge();
-        if (!dx && !dy) return; // leaving the band ENDS the loop
-        const ws = workspace();
-        ws.scrollLeft += dx;
-        ws.scrollTop += dy;
-        place(last);
-        panRaf = requestAnimationFrame(tickPan);
-      };
+      // Holding the fence against a viewport edge scrolls the plane under it. A
+      // fence re-rendered or removed mid-drag ends the loop.
+      const pan = autoPan(el, place);
       const onMove = (ev) => {
         if (ev.pointerId !== pointerId) return; // a second finger is not this gesture
         if (ev.buttons === 0) {
           onUp();
           return;
         }
-        last = { x: ev.clientX, y: ev.clientY };
+        const last = { x: ev.clientX, y: ev.clientY };
         if (!armed) {
           if (!dragBegins({ x: startX, y: startY }, last, threshold)) return;
           armed = true;
         }
         place(last);
-        if (panRaf != null) return;
-        const { dx, dy } = nudge();
-        if (dx || dy) panRaf = requestAnimationFrame(tickPan);
+        pan.follow(last);
       };
       const onUp = () => {
         if (done) return;
         done = true;
-        stopPan();
+        pan.stop();
         document.removeEventListener("pointermove", onMove);
         document.removeEventListener("pointerup", onUp);
         // A touch gesture the system takes over ends in `pointercancel`.
@@ -4446,6 +4384,48 @@ window.WBConsole = (function () {
     };
   }
 
+  // The auto-pan loop of a drag: while the pointer presses against a viewport
+  // edge, the plane scrolls under it each frame, and `place(pointer)` in the tick
+  // keeps the drop correct in stage coordinates. The gesture calls `follow`
+  // after each of its own `place`, and `stop` when it ends.
+  function autoPan(node, place) {
+    let panRaf = null;
+    let last = null;
+    // INVARIANT: an uncancelled loop pans the plane forever after the button
+    // is released, so `stop` is the FIRST statement of each gesture's `onUp`.
+    const stop = () => {
+      if (panRaf != null) cancelAnimationFrame(panRaf);
+      panRaf = null;
+    };
+    const nudge = () => {
+      const ws = workspace();
+      if (!ws || !last) return { dx: 0, dy: 0 };
+      return panNudge(last, ws.getBoundingClientRect(), PAN_BAND, PAN_STEP);
+    };
+    const tick = () => {
+      panRaf = null;
+      // The dragged node left the page mid-drag: `place` would write styles
+      // onto a detached node forever.
+      if (!node.isConnected) {
+        stop();
+        return;
+      }
+      const { dx, dy } = nudge();
+      if (!dx && !dy) return; // leaving the band ENDS the loop
+      const ws = workspace();
+      ws.scrollLeft += dx;
+      ws.scrollTop += dy;
+      place(last);
+      panRaf = requestAnimationFrame(tick);
+    };
+    const follow = (pointer) => {
+      last = pointer;
+      if (panRaf != null) return;
+      const { dx, dy } = nudge();
+      if (dx || dy) panRaf = requestAnimationFrame(tick);
+    };
+    return { follow, stop };
+  }
 
   // Wire one handle: drag it and the window's rect follows `resizeRect`. Every
   // exit path (mouseup anywhere on the document) drops BOTH listeners and
@@ -7332,6 +7312,7 @@ window.WBConsole = (function () {
     anchorIntoView,
     viewLanding,
     panNudge,
+    autoPan,
     reconnectDecision,
     endNotice,
     resumeDecision,
