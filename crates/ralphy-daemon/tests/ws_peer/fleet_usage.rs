@@ -187,6 +187,10 @@ async fn usage_federates_and_names_missing_contributions() {
         .find(|missing| missing["daemon_id"] == PEER_ID)
         .unwrap();
     assert_eq!(missing_peer["environment"], ENVIRONMENT);
+    // A stopped peer fails at connect on every platform: the connect limit is
+    // shorter than the request limit (#536). On Windows a closed loopback port
+    // is refused only after about 2 s, so this call waits for the connect
+    // limit (about 1 s) instead.
     assert!(
         missing_peer["why"].as_str().unwrap().contains("connecting"),
         "got {partial}"

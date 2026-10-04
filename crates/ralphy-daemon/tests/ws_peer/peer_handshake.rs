@@ -259,7 +259,7 @@ async fn a_non_loopback_descriptor_is_refused_without_dialling() {
     // The verdict alone does not prove the socket was never opened: an
     // implementation that dialled FIRST and classified afterwards returns the
     // same `Refused`. A real dial to a routable, unrouted address costs the full
-    // 2 s `PEER_TIMEOUT`; refusing without dialling is instant.
+    // 1 s `PEER_CONNECT_TIMEOUT`; refusing without dialling is instant.
     assert!(
         elapsed < std::time::Duration::from_millis(300),
         "the refusal took {elapsed:?} — that is long enough to have dialled, and \
