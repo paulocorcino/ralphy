@@ -48,6 +48,11 @@ window.WBWindowState = (function () {
     // The console name (ADR-0066 §1), seeded from the record. A label, not an
     // identity: `_deskAgent` stays the matching key.
     _deskConsoleName: null,
+    // A console adopted from a session this page found with no record: its
+    // record is created with the operator's first act on it, so its cascade
+    // place is never written over a record another page writes (ADR-0050
+    // amendment 2026-10-04, changes, not the desk).
+    _deskUnrecorded: false,
 
     // What the DAEMON announced, on `session-open`. Distinct from the `_desk*`
     // mirrors above on purpose: `_deskCheckout` is also written at spawn, by

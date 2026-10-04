@@ -391,855 +391,6 @@ async fn body_text(res: Response) -> String {
     String::from_utf8(res.into_body().collect().await.unwrap().to_bytes().to_vec()).unwrap()
 }
 
-async fn desk_get(dir: &Path) -> String {
-    let res = desk_router(dir)
-        .oneshot(
-            Request::builder()
-                .uri("/api/desk")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(res.status(), StatusCode::OK);
-    body_text(res).await
-}
-
-/// PUT a RAW body — the only way to exercise a shape the `DeskUpload`
-/// extractor must refuse (a bare array, an out-of-range float literal).
-async fn desk_put_raw(dir: &Path, body: String) -> Response {
-    desk_router(dir)
-        .oneshot(
-            Request::builder()
-                .method("PUT")
-                .uri("/api/desk")
-                .header("content-type", "application/json")
-                .body(Body::from(body))
-                .unwrap(),
-        )
-        .await
-        .unwrap()
-}
-
-async fn desk_put(dir: &Path, body: &serde_json::Value) -> Response {
-    desk_put_raw(dir, body.to_string()).await
-}
-
-/// The `{ windows, fences }` upload body (#340).
-fn desk_body(windows: serde_json::Value, fences: serde_json::Value) -> serde_json::Value {
-    serde_json::json!({ "windows": windows, "fences": fences })
-}
-
-fn fence_json(id: &str, name: &str, ts: i64) -> serde_json::Value {
-    serde_json::json!({
-        "id": id,
-        "name": name,
-        "rect": { "left": 40.0, "top": 40.0, "width": 720.0, "height": 460.0 },
-        "ts": ts,
-    })
-}
-
-fn desk_json(id: &str, ts: i64, session_id: serde_json::Value, max: bool) -> serde_json::Value {
-    serde_json::json!({
-        "id": id,
-        "repo": "owner/repo",
-        "agent": "claude",
-        "kind": "console",
-        "rect": { "left": 10.0, "top": 20.0, "width": 640.0, "height": 480.0 },
-        "max": max,
-        "sessionId": session_id,
-        "ts": ts,
-    })
-}
-
-#[tokio::test]
-async fn api_desk_empty_when_no_file() {
-    let dir = tempfile::tempdir().unwrap();
-    assert_eq!(
-        desk_get(dir.path()).await,
-        r#"{"windows":[],"fences":[],"notes":[]}"#
-    );
-    assert!(
-        !dir.path().join("desk.toml").exists(),
-        "a GET must not create the store"
-    );
-}
-
-/// ADR-0070 D4: a `desk.toml` that cannot be parsed is a failure on both
-/// verbs, and the PUT never writes over it.
-#[tokio::test]
-async fn api_desk_refuses_a_corrupt_desk_and_leaves_its_bytes() {
-    let dir = tempfile::tempdir().unwrap();
-    let file = dir.path().join("desk.toml");
-    let corrupt: &[u8] = b"windows = [\n";
-    std::fs::write(&file, corrupt).unwrap();
-    let app = desk_router(dir.path());
-
-    let res = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/api/desk")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(res.status(), StatusCode::CONFLICT);
-    let body: serde_json::Value = serde_json::from_str(&body_text(res).await).unwrap();
-    assert_eq!(body["state"], "unreadable");
-    assert!(
-        body["error"]
-            .as_str()
-            .unwrap_or("")
-            .contains("parsing desk layout"),
-        "the reply says why: {body}"
-    );
-
-    let up = desk_body(
-        serde_json::json!([desk_json("w-a", 1, serde_json::json!(7), false)]),
-        serde_json::json!([]),
-    );
-    let res = desk_put(dir.path(), &up).await;
-    assert_eq!(res.status(), StatusCode::CONFLICT);
-    assert_eq!(
-        std::fs::read(&file).unwrap(),
-        corrupt,
-        "a refused PUT leaves the unreadable desk byte-identical"
-    );
-}
-
-async fn desk_new(dir: &Path) -> Response {
-    desk_router(dir)
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/desk/new")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap()
-}
-
-fn unreadable_copies(dir: &Path) -> Vec<PathBuf> {
-    std::fs::read_dir(dir)
-        .unwrap()
-        .map(|e| e.unwrap().path())
-        .filter(|p| {
-            p.file_name()
-                .is_some_and(|n| n.to_string_lossy().starts_with("desk.toml.unreadable-"))
-        })
-        .collect()
-}
-
-/// ADR-0070 D4: the operator's one action on an unreadable desk keeps the old
-/// file under a new name and starts an empty desk.
-#[tokio::test]
-async fn api_desk_new_moves_the_unreadable_file_aside() {
-    let dir = tempfile::tempdir().unwrap();
-    let corrupt: &[u8] = b"windows = [\n";
-    std::fs::write(dir.path().join("desk.toml"), corrupt).unwrap();
-
-    let res = desk_new(dir.path()).await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let copies = unreadable_copies(dir.path());
-    assert_eq!(copies.len(), 1, "one aside copy: {copies:?}");
-    assert_eq!(std::fs::read(&copies[0]).unwrap(), corrupt);
-    assert_eq!(
-        desk_get(dir.path()).await,
-        r#"{"windows":[],"fences":[],"notes":[]}"#
-    );
-}
-
-/// A `desk.toml` that cannot be READ (here a directory in its place) may be a
-/// fine file held for a moment, so it is `unavailable`, not `unreadable`:
-/// writes are refused, and starting a new desk moves nothing aside.
-#[tokio::test]
-async fn a_desk_that_cannot_be_read_is_unavailable_and_never_moved_aside() {
-    let dir = tempfile::tempdir().unwrap();
-    let file = dir.path().join("desk.toml");
-    std::fs::create_dir(&file).unwrap();
-
-    let res = desk_router(dir.path())
-        .oneshot(
-            Request::builder()
-                .uri("/api/desk")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
-    let body: serde_json::Value = serde_json::from_str(&body_text(res).await).unwrap();
-    assert_eq!(body["state"], "unavailable");
-
-    let up = desk_body(
-        serde_json::json!([desk_json("w-a", 1, serde_json::json!(7), false)]),
-        serde_json::json!([]),
-    );
-    assert_eq!(
-        desk_put(dir.path(), &up).await.status(),
-        StatusCode::SERVICE_UNAVAILABLE
-    );
-
-    let res = desk_new(dir.path()).await;
-    assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
-    assert!(
-        unreadable_copies(dir.path()).is_empty(),
-        "nothing is moved aside"
-    );
-    assert!(file.is_dir(), "the path is left as it was");
-}
-
-/// Negative control: a desk that reads is never moved aside.
-#[tokio::test]
-async fn api_desk_new_refuses_a_readable_desk() {
-    let dir = tempfile::tempdir().unwrap();
-    let up = desk_body(
-        serde_json::json!([desk_json("w-a", 1, serde_json::json!(7), false)]),
-        serde_json::json!([]),
-    );
-    assert_eq!(desk_put(dir.path(), &up).await.status(), StatusCode::OK);
-    let res = desk_new(dir.path()).await;
-    assert_eq!(res.status(), StatusCode::CONFLICT);
-    assert!(unreadable_copies(dir.path()).is_empty());
-}
-
-#[tokio::test]
-async fn api_desk_put_then_get_round_trips() {
-    let dir = tempfile::tempdir().unwrap();
-    let payload = desk_body(
-        serde_json::json!([
-            desk_json("w-a", 1, serde_json::json!(7), true),
-            desk_json("w-b", 2, serde_json::Value::Null, false),
-        ]),
-        serde_json::json!([]),
-    );
-    let res = desk_put(dir.path(), &payload).await;
-    assert_eq!(res.status(), StatusCode::OK);
-
-    let body = desk_get(dir.path()).await;
-    assert!(
-        body.contains("\"sessionId\":7"),
-        "camelCase wire key: {body}"
-    );
-    assert!(body.contains("\"max\":true"), "maximized survives: {body}");
-    let a = body.find("w-a").expect("first record present");
-    let b = body.find("w-b").expect("second record present");
-    assert!(a < b, "layout order is preserved: {body}");
-}
-
-#[tokio::test]
-async fn api_desk_put_prunes_to_the_cap_newest_by_ts() {
-    let dir = tempfile::tempdir().unwrap();
-    let payload = desk_body(
-        serde_json::Value::Array(
-            (1..=36)
-                .map(|n| desk_json(&format!("w{n}"), n, serde_json::Value::Null, false))
-                .collect(),
-        ),
-        serde_json::json!([]),
-    );
-    let res = desk_put(dir.path(), &payload).await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let put_body: desk::DeskStore = serde_json::from_str(&body_text(res).await).unwrap();
-    let ids: Vec<String> = put_body.windows.into_iter().map(|r| r.id).collect();
-    let expected: Vec<String> = (7..=36).map(|n| format!("w{n}")).collect();
-    assert_eq!(ids, expected, "the PUT answers with the pruned truth");
-
-    let get_body: desk::DeskStore = serde_json::from_str(&desk_get(dir.path()).await).unwrap();
-    let ids: Vec<String> = get_body.windows.into_iter().map(|r| r.id).collect();
-    assert_eq!(ids, expected, "and the persisted desk holds the same 30");
-}
-/// A note card on the wire (ADR-0064 §2): placement only.
-fn note_json(id: &str, path: &str, ts: i64) -> serde_json::Value {
-    serde_json::json!({
-        "id": id,
-        "path": path,
-        "rect": { "left": 80.0, "top": 120.0, "width": 240.0, "height": 180.0 },
-        "ts": ts,
-    })
-}
-
-/// The third collection travels the same route as the other two: a PUT
-/// carrying `notes` stores them, and a GET serves them back.
-#[tokio::test]
-async fn api_desk_round_trips_notes() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut body = desk_body(serde_json::json!([]), serde_json::json!([]));
-    body["notes"] = serde_json::json!([note_json("n1", ".ralphy/notes/a.note", 1)]);
-    let res = desk_put(dir.path(), &body).await;
-    assert_eq!(res.status(), StatusCode::OK);
-
-    let served = desk_get(dir.path()).await;
-    assert!(served.contains(r#""id":"n1""#), "{served}");
-    assert!(
-        served.contains(r#""path":".ralphy/notes/a.note""#),
-        "{served}"
-    );
-    // Placement only: the wire record carries no text and no colour.
-    assert!(!served.contains("markdown"), "{served}");
-    assert!(!served.contains("color"), "{served}");
-}
-
-/// The rect guard names the record type it refused, so the shell's console
-/// says which card is off the stage.
-#[tokio::test]
-async fn api_desk_refuses_a_note_with_an_out_of_frame_rect() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut bad = note_json("n-huge", "a.note", 1);
-    bad["rect"]["top"] = serde_json::json!(-1.0);
-    let mut body = desk_body(serde_json::json!([]), serde_json::json!([]));
-    body["notes"] = serde_json::json!([bad]);
-    let res = desk_put(dir.path(), &body).await;
-    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
-    let text = body_text(res).await;
-    assert!(
-        text.contains("note n-huge has an out-of-frame rect"),
-        "the refusal names the note: {text}"
-    );
-    assert!(
-        !dir.path().join("desk.toml").exists(),
-        "a refused upload writes nothing"
-    );
-}
-
-/// A card's `checkout` is the same kind of name as a window's, gated
-/// before anything is written (ADR-0064 §4).
-#[tokio::test]
-async fn api_desk_refuses_a_note_whose_checkout_is_not_a_name() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut bad = note_json("n-bad", "a.note", 1);
-    bad["checkout"] = serde_json::json!("../escape");
-    let mut body = desk_body(serde_json::json!([]), serde_json::json!([]));
-    body["notes"] = serde_json::json!([bad]);
-    let res = desk_put(dir.path(), &body).await;
-    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
-    let text = body_text(res).await;
-    assert!(
-        text.contains("checkout ../escape on record n-bad is not a valid name"),
-        "{text}"
-    );
-}
-
-/// The daemon caps the collection whatever the browser uploads.
-#[tokio::test]
-async fn api_desk_prunes_notes_to_the_cap() {
-    let dir = tempfile::tempdir().unwrap();
-    let notes: Vec<serde_json::Value> = (1..=desk::NOTE_MAX as i64 + 3)
-        .map(|n| note_json(&format!("n{n}"), &format!("a{n}.note"), n))
-        .collect();
-    let mut body = desk_body(serde_json::json!([]), serde_json::json!([]));
-    body["notes"] = serde_json::json!(notes);
-    let res = desk_put(dir.path(), &body).await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let stored = desk::load_from(&dir.path().join("desk.toml")).expect("desk reads");
-    assert_eq!(stored.notes.len(), desk::NOTE_MAX);
-    assert!(
-        !stored.notes.iter().any(|n| n.id == "n1"),
-        "the oldest card was evicted"
-    );
-}
-
-/// A shell older than this slice sends no `notes` key at all, and its
-/// upload must not wipe the cards another page owns.
-#[tokio::test]
-async fn an_upload_without_notes_keeps_the_stored_cards() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut body = desk_body(serde_json::json!([]), serde_json::json!([]));
-    body["notes"] = serde_json::json!([note_json("n1", "a.note", 1)]);
-    body["removed"] = serde_json::json!({ "windows": [], "fences": [], "notes": [] });
-    desk_put(dir.path(), &body).await;
-
-    let mut older = desk_body(serde_json::json!([]), serde_json::json!([]));
-    older["removed"] = serde_json::json!({ "windows": [], "fences": [] });
-    let res = desk_put(dir.path(), &older).await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let stored = desk::load_from(&dir.path().join("desk.toml")).expect("desk reads");
-    assert_eq!(stored.notes.len(), 1, "the card survived the fold");
-}
-
-/// ADR-0063 §4: the selected checkout per repo ref rides the desk body,
-/// answered on the PUT and served on the next GET.
-#[tokio::test]
-async fn api_desk_round_trips_checkouts() {
-    let dir = tempfile::tempdir().unwrap();
-    let res = desk_put(
-        dir.path(),
-        &serde_json::json!({
-            "windows": [],
-            "fences": [],
-            "checkouts": { "owner/repo": "wt-a" },
-        }),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let put_body = body_text(res).await;
-    assert!(
-        put_body.contains(r#""checkouts":{"owner/repo":"wt-a"}"#),
-        "the PUT answers the checkouts: {put_body}"
-    );
-    let get_body = desk_get(dir.path()).await;
-    assert!(
-        get_body.contains(r#""checkouts":{"owner/repo":"wt-a"}"#),
-        "the GET serves them: {get_body}"
-    );
-
-    // Clearing the selection drops the key from the wire body entirely —
-    // an empty map is not serialised, so the old exact shape holds.
-    let res = desk_put(
-        dir.path(),
-        &serde_json::json!({ "windows": [], "fences": [], "checkouts": {} }),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::OK);
-    assert_eq!(
-        desk_get(dir.path()).await,
-        r#"{"windows":[],"fences":[],"notes":[]}"#
-    );
-}
-
-/// A registry whose `owner/repo` entry lists `path-abc` as a former slug —
-/// what the CLI's migration leaves behind after a gained remote.
-fn registry_with_former_slug(dir: &Path) {
-    let mut store = registry::RegistryStore::default();
-    store.upsert("path-abc", "/repo");
-    store.rekey("path-abc", "owner/repo");
-    registry::save_to(&store, &dir.join("repos.toml")).unwrap();
-}
-
-/// A desk saved BEFORE a re-key still names the former slug on disk; the
-/// GET serves it under the canonical key so the migrated project's
-/// consoles come back to it (ADR-0036 amendment 2026-09-16).
-#[tokio::test]
-async fn desk_get_serves_a_former_slug_as_its_canonical_key() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut stale = desk::DeskStore::default();
-    stale.windows.push(desk::DeskRecord {
-        id: "w1".into(),
-        repo: "path-abc".into(),
-        rect: desk::DeskRect {
-            left: 1.0,
-            top: 1.0,
-            width: 300.0,
-            height: 200.0,
-        },
-        ..desk::DeskRecord::default()
-    });
-    stale.checkouts.insert("path-abc".into(), "wt-a".into());
-    desk::save_to(&stale, &dir.path().join("desk.toml")).unwrap();
-    registry_with_former_slug(dir.path());
-
-    let body = desk_get(dir.path()).await;
-    assert!(
-        body.contains(r#""repo":"owner/repo""#) && !body.contains("path-abc"),
-        "the record follows the key: {body}"
-    );
-    assert!(
-        body.contains(r#""checkouts":{"owner/repo":"wt-a"}"#),
-        "the selection follows the key: {body}"
-    );
-}
-
-/// A tab that read the desk before the re-key uploads the former slug
-/// back; the PUT normalizes it, so `desk.toml` converges on the first save
-/// whichever tab saves — and never regresses to the hash.
-#[tokio::test]
-async fn desk_put_normalizes_a_stale_upload_through_former_slugs() {
-    let dir = tempfile::tempdir().unwrap();
-    registry_with_former_slug(dir.path());
-    let res = desk_put(
-        dir.path(),
-        &serde_json::json!({
-            "windows": [{
-                "id": "w1", "repo": "path-abc", "agent": "claude", "kind": "agent",
-                "rect": { "left": 1, "top": 1, "width": 300, "height": 200 },
-                "max": false, "sessionId": null, "ts": 1,
-            }],
-            "fences": [],
-            "checkouts": { "path-abc": "wt-stale", "owner/repo": "wt-live" },
-        }),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let put_body = body_text(res).await;
-    assert!(
-        put_body.contains(r#""repo":"owner/repo""#) && !put_body.contains("path-abc"),
-        "the answer is the canonical truth: {put_body}"
-    );
-    assert!(
-        put_body.contains(r#""checkouts":{"owner/repo":"wt-live"}"#),
-        "the canonical selection wins the collision: {put_body}"
-    );
-    let on_disk = std::fs::read_to_string(dir.path().join("desk.toml")).unwrap();
-    assert!(
-        !on_disk.contains("path-abc"),
-        "the former slug never reaches the store: {on_disk}"
-    );
-}
-
-/// Two pages on one desk (ADR-0050 amendment 2026-09-20). Page A records
-/// a console; page B, whose mirror predates it, flushes a body without
-/// it — and WITH `removed`, which says B deleted nothing. A's record
-/// survives the fold; a close B does name is dropped; and a body without
-/// `removed` (a shell from before the amendment) is still the wholesale
-/// replace, so an old page loses nothing it could not have said.
-#[tokio::test]
-async fn api_desk_folds_a_page_s_upload_into_the_other_pages_records() {
-    let dir = tempfile::tempdir().unwrap();
-    let rect = serde_json::json!({ "left": 1, "top": 1, "width": 300, "height": 200 });
-    let record = |id: &str, ts: i64, session: Option<u64>| {
-        serde_json::json!({
-            "id": id, "repo": "owner/repo", "agent": "console", "kind": "console",
-            "rect": rect, "max": false, "sessionId": session, "ts": ts,
-        })
-    };
-    let empty_removed = serde_json::json!({ "windows": [], "fences": [], "checkouts": [] });
-    // Page A: its console, with the daemon's session id.
-    let res = desk_put(
-        dir.path(),
-        &serde_json::json!({ "windows": [record("a", 10, Some(5))], "fences": [], "removed": empty_removed }),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::OK);
-    // Page B: a stale mirror that never saw `a`, plus its own window.
-    let res = desk_put(
-        dir.path(),
-        &serde_json::json!({ "windows": [record("b", 11, Some(6))], "fences": [], "removed": empty_removed }),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let got = desk_get(dir.path()).await;
-    assert!(
-        got.contains(r#""id":"b""#)
-            && got.contains(r#""id":"a""#)
-            && got.contains(r#""sessionId":5"#),
-        "A's record and its session id survive B's flush: {got}"
-    );
-    // Page B again, with a STALE copy of `a` (older ts, no session id): the
-    // store's newer copy wins.
-    let res = desk_put(
-        dir.path(),
-        &serde_json::json!({ "windows": [record("a", 1, None), record("b", 12, Some(6))], "fences": [], "removed": empty_removed }),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let got = desk_get(dir.path()).await;
-    assert!(
-        got.contains(r#""sessionId":5"#),
-        "the newer copy of `a` wins: {got}"
-    );
-    // Page A closes `a`: said in `removed`, so the fold drops it.
-    let res = desk_put(
-        dir.path(),
-        &serde_json::json!({ "windows": [], "fences": [], "removed": { "windows": ["a"], "fences": [], "checkouts": [] } }),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let got = desk_get(dir.path()).await;
-    assert!(
-        !got.contains(r#""id":"a""#) && got.contains(r#""id":"b""#),
-        "a close is a close: {got}"
-    );
-    // A shell from before the amendment: no `removed`, wholesale replace.
-    let res = desk_put(
-        dir.path(),
-        &serde_json::json!({ "windows": [record("c", 1, None)], "fences": [] }),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let got = desk_get(dir.path()).await;
-    assert!(
-        got.contains(r#""id":"c""#) && !got.contains(r#""id":"b""#),
-        "an old shell replaces: {got}"
-    );
-}
-
-/// A checkout value that is not one path component is refused as `400`
-/// before any write — the desk is the one place a name is stored, so a
-/// traversal must never be persisted for a later verb to prefix.
-/// #411: a record's own `checkout` round-trips and is gated by the same
-/// name check as the selection map.
-#[tokio::test]
-async fn api_desk_round_trips_and_gates_a_records_checkout() {
-    let dir = tempfile::tempdir().unwrap();
-    let record = |checkout: &str| {
-        serde_json::json!({
-            "id": "w1", "repo": "owner/repo", "agent": "claude", "kind": "agent",
-            "rect": { "left": 1, "top": 1, "width": 300, "height": 200 },
-            "max": false, "sessionId": null, "checkout": checkout, "ts": 1,
-        })
-    };
-    let res = desk_put(
-        dir.path(),
-        &serde_json::json!({ "windows": [record("wt-a")], "fences": [], "checkouts": {} }),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let get_body = desk_get(dir.path()).await;
-    assert!(
-        get_body.contains(r#""checkout":"wt-a""#),
-        "the GET serves the record's checkout: {get_body}"
-    );
-    let before = std::fs::read_to_string(dir.path().join("desk.toml")).unwrap();
-    let res = desk_put(
-        dir.path(),
-        &serde_json::json!({ "windows": [record("../x")], "fences": [], "checkouts": {} }),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
-    assert_eq!(
-        std::fs::read_to_string(dir.path().join("desk.toml")).unwrap(),
-        before,
-        "a refused record checkout never reaches the store"
-    );
-}
-
-/// Lock amendment (ADR-0050/0051, 2026-09-20): a locked window and a
-/// locked fence round-trip through the route, a newer unlock clears the key
-/// from the wire again, and a body without the key still parses.
-#[tokio::test]
-async fn api_desk_round_trips_a_lock_on_a_record_and_a_fence() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut w = desk_json("w1", 1, serde_json::Value::Null, false);
-    w["locked"] = serde_json::json!(true);
-    let mut f = fence_json("f1", "backend", 1);
-    f["locked"] = serde_json::json!(true);
-    let res = desk_put(
-        dir.path(),
-        &serde_json::json!({ "windows": [w], "fences": [f], "checkouts": {} }),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let get_body = desk_get(dir.path()).await;
-    assert_eq!(
-        get_body.matches(r#""locked":true"#).count(),
-        2,
-        "the GET serves both locks: {get_body}"
-    );
-    let toml = std::fs::read_to_string(dir.path().join("desk.toml")).unwrap();
-    assert_eq!(toml.matches("locked = true").count(), 2, "toml={toml}");
-    // A newer copy without the key is an unlock — and the key leaves the wire.
-    let res = desk_put(
-        dir.path(),
-        &serde_json::json!({
-            "windows": [desk_json("w1", 2, serde_json::Value::Null, false)],
-            "fences": [fence_json("f1", "backend", 2)],
-            "checkouts": {},
-        }),
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let get_body = desk_get(dir.path()).await;
-    assert!(
-        !get_body.contains("locked"),
-        "an unlocked desk carries no key: {get_body}"
-    );
-}
-
-#[tokio::test]
-async fn api_desk_refuses_a_malformed_checkout_name() {
-    let dir = tempfile::tempdir().unwrap();
-    desk_put(
-        dir.path(),
-        &serde_json::json!({
-            "windows": [],
-            "fences": [],
-            "checkouts": { "owner/repo": "wt-a" },
-        }),
-    )
-    .await;
-    let before = std::fs::read_to_string(dir.path().join("desk.toml")).unwrap();
-
-    for bad in ["a/b", "../x", "", "a\\b", "."] {
-        let res = desk_put(
-            dir.path(),
-            &serde_json::json!({
-                "windows": [],
-                "fences": [],
-                "checkouts": { "owner/repo": bad },
-            }),
-        )
-        .await;
-        assert_eq!(res.status(), StatusCode::BAD_REQUEST, "checkout {bad:?}");
-        assert_eq!(
-            std::fs::read_to_string(dir.path().join("desk.toml")).unwrap(),
-            before,
-            "a refused checkout {bad:?} never reaches the store"
-        );
-    }
-}
-/// A body the strict `DeskUpload` extractor or the rect check refuses never
-/// reaches the store: the operator's desk survives byte for byte. The bodies
-/// that could satisfy the struct POSITIONALLY each defeat a different
-/// half-fix: `[]` needs both fields defaulted; `[[],[]]` supplies both
-/// required fields as two elements and survived dropping the defaults; a map
-/// missing one key goes green again if `#[serde(default)]` is ever restored to
-/// a single field. All were measured green-then-red on this route. A rect is
-/// refused off the plane (the stage origin is pinned at 0,0) and when it is
-/// not finite — an out-of-range literal spelled in the RAW body, because a
-/// Rust `1e400_f64` will not compile and `json!(f64::INFINITY)` becomes
-/// `null`, so the wire is the only way to send what a browser can send.
-#[tokio::test]
-async fn api_desk_put_refuses_a_bad_body_without_touching_the_store() {
-    let dir = tempfile::tempdir().unwrap();
-    desk_put(
-        dir.path(),
-        &desk_body(
-            serde_json::json!([desk_json("w-a", 1, serde_json::Value::Null, false)]),
-            serde_json::json!([fence_json("f-a", "backend", 1)]),
-        ),
-    )
-    .await;
-    let before = std::fs::read_to_string(dir.path().join("desk.toml")).unwrap();
-
-    let mut negative = desk_json("w-neg", 2, serde_json::Value::Null, false);
-    negative["rect"]["left"] = serde_json::json!(-1.0);
-    let huge = desk_json("w-huge", 2, serde_json::Value::Null, false)
-        .to_string()
-        .replace("\"left\":10.0", "\"left\":1e400");
-    let unprocessable = Some(StatusCode::UNPROCESSABLE_ENTITY);
-    // (case, raw body, expected status; `None` is any refusal)
-    let rows: [(&str, String, Option<StatusCode>); 8] = [
-        (
-            "an unknown-field body",
-            serde_json::json!({ "not": "an array" }).to_string(),
-            unprocessable,
-        ),
-        (
-            "the pre-#340 bare array",
-            serde_json::json!([desk_json("w-b", 2, serde_json::Value::Null, false)]).to_string(),
-            unprocessable,
-        ),
-        ("`[]`", "[]".into(), unprocessable),
-        ("`[[],[]]`", "[[],[]]".into(), unprocessable),
-        ("windows only", r#"{"windows":[]}"#.into(), unprocessable),
-        ("fences only", r#"{"fences":[]}"#.into(), unprocessable),
-        (
-            "a negative left",
-            desk_body(serde_json::json!([negative]), serde_json::json!([])).to_string(),
-            Some(StatusCode::BAD_REQUEST),
-        ),
-        (
-            "a non-finite rect",
-            format!(r#"{{"windows":[{huge}],"fences":[]}}"#),
-            None,
-        ),
-    ];
-    for (case, body, want) in rows {
-        let res = desk_put_raw(dir.path(), body).await;
-        match want {
-            Some(want) => assert_eq!(res.status(), want, "{case}"),
-            None => assert_ne!(res.status(), StatusCode::OK, "{case}: must be refused"),
-        }
-        assert_eq!(
-            std::fs::read_to_string(dir.path().join("desk.toml")).unwrap(),
-            before,
-            "{case}: a rejected upload never reaches the store"
-        );
-    }
-}
-
-#[tokio::test]
-async fn api_desk_put_rejects_a_fence_with_a_non_finite_rect() {
-    let dir = tempfile::tempdir().unwrap();
-    desk_put(
-        dir.path(),
-        &desk_body(
-            serde_json::json!([]),
-            serde_json::json!([fence_json("f-a", "backend", 1)]),
-        ),
-    )
-    .await;
-    let before = std::fs::read_to_string(dir.path().join("desk.toml")).unwrap();
-
-    // LEG 1 — the wire. Measured: `serde_json` refuses an out-of-range float
-    // literal as a SYNTAX error ("number out of range"), which axum maps to
-    // 400 — so a non-finite rect dies in the extractor and never reaches the
-    // route's own guard. Same status, different body.
-    let bad = fence_json("w-huge", "planning", 2)
-        .to_string()
-        .replace("\"left\":40.0", "\"left\":1e999");
-    let res = desk_put_raw(dir.path(), format!(r#"{{"windows":[],"fences":[{bad}]}}"#)).await;
-    assert_eq!(
-        res.status(),
-        StatusCode::BAD_REQUEST,
-        "an out-of-range literal dies in the extractor"
-    );
-    assert_eq!(
-        std::fs::read_to_string(dir.path().join("desk.toml")).unwrap(),
-        before,
-        "a rejected fence never reaches the store"
-    );
-
-    // LEG 2 — the route's OWN guard, which the wire can no longer reach:
-    // called directly with an infinity the extractor would have refused, so
-    // the 400 and its wording are proved rather than assumed. A fresh
-    // response, not the one leg 1 asserted on.
-    let res = desk_put_route(
-        dir.path().join("desk.toml"),
-        dir.path().join("repos.toml"),
-        tokio::sync::broadcast::channel(1).0,
-        std::sync::Arc::new(crate::session::SessionManager::new()),
-        None,
-        desk::DeskUpload {
-            generation: None,
-            windows: vec![],
-            fences: vec![desk::DeskFence {
-                id: "w-huge".into(),
-                name: "planning".into(),
-                rect: desk::DeskRect {
-                    left: f64::INFINITY,
-                    top: 40.0,
-                    width: 720.0,
-                    height: 460.0,
-                },
-                locked: false,
-                ts: 2,
-            }],
-            notes: vec![],
-            checkouts: std::collections::BTreeMap::new(),
-            removed: None,
-        },
-    )
-    .await;
-    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
-    let body = body_text(res).await;
-    assert!(
-        body.contains("fence w-huge has an out-of-frame rect"),
-        "the refusal names the fence: {body}"
-    );
-    assert_eq!(
-        std::fs::read_to_string(dir.path().join("desk.toml")).unwrap(),
-        before,
-        "the guard returns BEFORE any write"
-    );
-}
-
-#[tokio::test]
-async fn api_desk_put_prunes_fences_to_the_12_newest() {
-    let dir = tempfile::tempdir().unwrap();
-    let payload = desk_body(
-        serde_json::json!([]),
-        serde_json::Value::Array(
-            (1..=13)
-                .map(|n| fence_json(&format!("f{n}"), "region", n))
-                .collect(),
-        ),
-    );
-    let res = desk_put(dir.path(), &payload).await;
-    assert_eq!(res.status(), StatusCode::OK);
-    let put_body: desk::DeskStore = serde_json::from_str(&body_text(res).await).unwrap();
-    let ids: Vec<String> = put_body.fences.into_iter().map(|f| f.id).collect();
-    let expected: Vec<String> = (2..=13).map(|n| format!("f{n}")).collect();
-    assert_eq!(ids, expected, "the PUT answers with the pruned truth");
-
-    let get_body: desk::DeskStore = serde_json::from_str(&desk_get(dir.path()).await).unwrap();
-    let ids: Vec<String> = get_body.fences.into_iter().map(|f| f.id).collect();
-    assert_eq!(ids, expected, "and the persisted desk holds the same 12");
-}
-
 #[test]
 fn security_state_reflects_the_stores() {
     let dir = tempfile::tempdir().unwrap();
@@ -4794,6 +3945,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-fleet.js",
                 "wb-fail.js",
                 "wb-desk-sink.js",
+                "wb-desk-sync.js",
                 "wb-detach-link.js",
                 "wb-session-route.js",
                 "wb-daemon.js",
@@ -4841,17 +3993,18 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
     // fence popup is a second boot path, and the reason a union-wide check is
     // not enough.
     // - `wb-console.js` destructures `WBGeometry` and `WBWindowState`,
-    //   hard-dereferences `WBDeskSink.daemon()` (#346) and `WBDetachLink`
-    //   (#347), names every console through `WBConsoleName` (ADR-0066 §2),
+    //   hard-dereferences `WBDeskSink.daemon()` (#346), `WBDeskSync` and
+    //   `WBDetachLink` (#347), names every console through `WBConsoleName` (ADR-0066 §2),
     //   routes sessions through `WBSessionRoute`, and reads `WBView` on its
     //   boot path (#339).
     // - `app.js` seeds its state from `WBRelease.EMPTY` at parse time.
     const BOTH: &[&str] = &["index.html", "detached-fence.html"];
     // (module, the module that reads it, the shells that must order them)
-    let orders: [(&str, &str, &[&str]); 8] = [
+    let orders: [(&str, &str, &[&str]); 9] = [
         ("wb-geometry.js", "wb-console.js", BOTH),
         ("wb-window-state.js", "wb-console.js", BOTH),
         ("wb-desk-sink.js", "wb-console.js", BOTH),
+        ("wb-desk-sync.js", "wb-console.js", BOTH),
         ("wb-detach-link.js", "wb-console.js", BOTH),
         ("wb-console-name.js", "wb-console.js", BOTH),
         ("wb-session-route.js", "wb-console.js", BOTH),
@@ -5411,13 +4564,13 @@ fn shell_draws_fences_below_the_windows() {
         "ending an edit must collapse the selection its `select()` made"
     );
     // THE CAP: refused, not absorbed (the refusal is driven by
-    // `wb-console.test.mjs`). `saveFences` prunes to `FENCE_MAX` by dropping
-    // the oldest `ts`, so a 13th fence used to cost the operator a DIFFERENT
-    // one. The prune stays as the backstop for a desk that arrives over the
-    // cap.
+    // `wb-console.test.mjs`). A 13th fence once cost the operator a DIFFERENT
+    // one, dropped by its age; nothing on the page drops a record now
+    // (ADR-0050 amendment 2026-10-04), and the daemon refuses a create past
+    // the cap.
     assert!(
-        squeezed.contains("pruneDesk(next, FENCE_MAX)"),
-        "the prune must remain the backstop for an over-cap desk from elsewhere"
+        squeezed.contains("if (atFenceCap()) return false;"),
+        "a fence past the cap must be refused before it is born"
     );
     // …and the name must not be counted. MEASURED against the running shell:
     // `Fence ${fences.length + 1}` froze at the cap, so the 13th fence and every
@@ -5515,15 +4668,14 @@ fn shell_drags_only_past_a_threshold() {
             "{handler} must arm only past dragThreshold"
         );
     }
-    // The console gestures persist only once armed: a bare tap must not
-    // refresh `ts`, or the tap on one device out-folds a move on another.
-    // `persist()` is the hook, not `persistWin` directly, since the note
-    // card drops through the same gesture into its own collection
-    // (ADR-0064 §8). BOTH halves are pinned: that only an armed gesture
-    // persists, AND what the hook defaults to. Pinning the call alone
-    // would let a regression bind the default to a no-op — every test
-    // green while an armed window drag persists nothing and the layout is
-    // lost on the next reload.
+    // The console gestures write only once armed: a bare tap moved nothing.
+    // `persist()` is the hook, not `setWin` directly, since the note card
+    // drops through the same gesture into its own collection (ADR-0064 §8).
+    // BOTH halves are pinned: that only an armed gesture writes, AND what the
+    // hook defaults to — the rect alone, computed at the act (ADR-0050
+    // amendment 2026-10-04). Pinning the call alone would let a regression
+    // bind the default to a no-op — every test green while an armed window
+    // drag writes nothing and the layout is lost on the next reload.
     for handler in ["function makeDraggable(", "function startResize("] {
         let b = body(handler);
         assert!(
@@ -5531,8 +4683,8 @@ fn shell_drags_only_past_a_threshold() {
             "{handler} must persist only an armed gesture"
         );
         assert!(
-            b.contains("opts?.onDrop || (() => persistWin(win))"),
-            "{handler}'s drop hook must default to persisting the window"
+            b.contains("opts?.onDrop || (() => setWin(win, { rect: restoreRect(win) }))"),
+            "{handler}'s drop hook must default to writing the window's rect"
         );
     }
     // The projection a card's lock is derived from. Pinned in Rust because
@@ -5722,7 +4874,7 @@ fn shell_locks_consoles_and_fences() {
         "function toggleLock(",
         "function paintFenceLock(",
         "function setFenceLock(",
-        "function applyLocksFromMirror(",
+        "function converge(",
         "actions.append(colBtn, fullBtn, maxBtn, restartBtn, lockBtn, closeBtn)",
         "tools.append(tile, columns, lock, detach, drop)",
     ] {
@@ -5759,8 +4911,8 @@ fn shell_locks_consoles_and_fences() {
         "tiling a locked fence must be a no-op"
     );
     assert!(
-        body("function persistWin(").contains("locked: !!win._deskLocked"),
-        "persistWin must write the lock as a bool"
+        body("function recordOf(").contains("locked: !!win._deskLocked"),
+        "recordOf must write the lock as a bool"
     );
     assert!(
         body("function deskOf(").contains("locked: !!win._deskLocked"),
@@ -5771,7 +4923,8 @@ fn shell_locks_consoles_and_fences() {
         "renderFences is the one place a fence's lock reaches the DOM"
     );
     assert!(
-        body("function ingestDesk(").contains("applyLocksFromMirror()"),
+        body("function ingestDesk(").contains("converge()")
+            && body("function converge(").contains("applyLock(w, !!r.locked)"),
         "a lock set on another device must reach this page's windows on its next GET"
     );
     let css = served_css();
@@ -5818,12 +4971,12 @@ fn shell_fences_are_a_group() {
     // Membership is DERIVED, never stored: the only fence id in the shell is
     // the fence element's OWN `data-fence-id`. A desk record that carried one
     // is exactly the state that can disagree with the geometry.
-    let persist = js
-        .split_once("function persistWin(")
-        .expect("wb-console.js must keep persistWin")
+    let record = js
+        .split_once("function recordOf(")
+        .expect("wb-console.js must keep recordOf")
         .1;
     assert!(
-        !persist[..persist.find("\n  }").expect("persistWin must close")].contains("fence"),
+        !record[..record.find("\n  }").expect("recordOf must close")].contains("fence"),
         "no window record may carry a stored fence id (#341)"
     );
     let css = served_css();
@@ -6257,7 +5410,7 @@ fn shell_detaches_a_fence() {
     // the injected sink and carry NO `detached` branch of their own —
     // "incapable of writing", not "careful not to".
     assert!(
-        body("function flushDesk(").contains("deskSink.put(body)"),
+        squeeze(&body("function flushDesk(")).contains(".put(JSON.stringify(body))"),
         "flushDesk must write through the injected sink (#346)"
     );
     assert!(
@@ -6403,10 +5556,47 @@ fn shell_detaches_a_fence() {
     }
 }
 
+/// A page writes the desk only as desk changes, each with the fields its act
+/// changed (ADR-0050 amendment 2026-10-04, changes, not the desk). The old
+/// writer built a whole record from the screen with a fresh clock, and seven of
+/// its eleven callers were not about the rect. These pins keep the shape out:
+/// no whole-record writer, no whole-desk body, no client clock in a record, and
+/// one place that builds the body.
+#[test]
+fn the_shell_writes_the_desk_only_as_changes() {
+    let console = include_str!("../assets/ui/wb-console.js");
+    let notes = include_str!("../assets/ui/wb-notes.js");
+    let sync = include_str!("../assets/ui/wb-desk-sync.js");
+    for (name, js) in [("wb-console.js", console), ("wb-notes.js", notes)] {
+        for banned in [
+            "persistWin(",
+            "deskBody(",
+            "mergeDesk(",
+            "removed: {",
+            "ts: Date.now() }",
+        ] {
+            assert!(
+                !js.contains(banned),
+                "{name} must not contain `{banned}`: a desk write carries only the changed fields"
+            );
+        }
+    }
+    // Every window write names its fields, and the body is built in one place.
+    let squeezed = squeeze(console);
+    assert!(
+        squeezed.contains(r#"emitDesk({op:"set",type:"window",id:win._deskId,fields});"#),
+        "setWin must send the fields it was handed, and nothing else"
+    );
+    assert!(
+        !console.contains("changes:") && sync.contains("changes: pending.slice(0, inflight.count)"),
+        "the upload body is built by wb-desk-sync.js alone"
+    );
+}
+
 /// ADR-0066 Consequences: the shell builds a record field by field in more than
-/// one place, and a copy that misses `consoleName` drops the name — on a flush
-/// (`persistWin`), on a restart or a worktree switch (`deskOf`, the carry of
-/// `relaunchIn`), or at birth (`buildChrome`, through the window inventory).
+/// one place, and a copy that misses `consoleName` drops the name — on a
+/// create (`recordOf`), on a restart or a worktree switch (`deskOf`, the carry
+/// of `relaunchIn`), or at birth (`buildChrome`, through the window inventory).
 #[test]
 fn console_name_rides_every_record_copy() {
     let js = include_str!("../assets/ui/wb-console.js");
@@ -6418,7 +5608,7 @@ fn console_name_rides_every_record_copy() {
         after[..after.find("\n  }").expect("the function must close")].to_string()
     };
     for copy in [
-        "function persistWin(",
+        "function recordOf(",
         "function deskOf(",
         "function buildChrome(",
     ] {
@@ -8930,3 +8120,4 @@ fn vendored_files_match_the_manifest() {
 
 /// The desk history routes (ADR-0050 amendment 2026-10-04).
 mod desk_history;
+mod desk_routes;

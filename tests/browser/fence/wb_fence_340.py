@@ -24,8 +24,9 @@ Scenario 5b  the `×` removes a fence from the screen AND from the store
 Scenario 5c  a fence seeded far out SIZES the plane with no window beside it
 Scenario 5d  a page whose desk GET was REFUSED neither overwrites the saved
              fences nor discards them once the read succeeds again
-Scenario 6   the daemon enforces the fence cap (13 in → `f2..f13`) and refuses an
-             off-plane origin without touching the store
+Scenario 6   the daemon enforces the fence cap on create (13 in → `f1..f12`,
+             the 13th named in `refused`, nothing pruned) and refuses a create
+             with an off-plane origin, by name, without touching the store
 Scenario 7   a corrupt `desk.toml` answers 409 unreadable (ADR-0070 D4), and the
              shell shows no fence, no window, and the desk-failure banner
 
@@ -257,6 +258,26 @@ def centre_of(page, selector, index=0):
         " return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }",
         [selector, index],
     )
+
+
+def put_changes(changes):
+    """Send a desk change list. The body carries the desk's current
+    generation, or the daemon refuses it."""
+    generation = json.loads(http("GET", "api/desk")[1]).get("generation", 0)
+    return http("PUT", "api/desk", {"seq": 1, "generation": generation, "changes": changes})
+
+
+def replace_desk(fences):
+    """Make the stored desk hold exactly `fences` and no window or note: a
+    `remove` for every stored record, then a `create` for each fence."""
+    desk = json.loads(http("GET", "api/desk")[1])
+    changes = [
+        {"op": "remove", "type": kind, "id": r["id"]}
+        for kind, key in (("window", "windows"), ("fence", "fences"), ("note", "notes"))
+        for r in desk.get(key, [])
+    ]
+    changes += [{"op": "create", "type": "fence", "record": f} for f in fences]
+    return put_changes(changes)
 
 
 def fence_json(fid, name, ts, left=40.0):
@@ -766,7 +787,7 @@ def main():
             # its edge. STAGE_MARGIN is 200.
             far = fence_json("f-far", "far away", 9)
             far["rect"] = {"left": 4000.0, "top": 40.0, "width": 720.0, "height": 460.0}
-            http("PUT", "api/desk", {"windows": [], "fences": [far]})
+            replace_desk([far])
             far_ctx = browser.new_context(viewport=dict(VIEW))
             far_page = desk_page(far_ctx)
             far_page.wait_for_function(
@@ -790,13 +811,12 @@ def main():
             time.sleep(1.0)
 
             # ===== scenario 5d: a REFUSED desk read must not wipe the fences ==
-            # The window twin of this is `wb_desk_327.py` scenario 8. `PUT
-            # /api/desk` replaces the desk WHOLESALE and the pre-login `GET`
-            # answers 401, so a page that could not READ the fences must never
-            # WRITE over them — and must not discard them once the read succeeds
-            # either, which is the half a wholesale-replace ingest gets wrong.
+            # The window twin of this is `wb_desk_327.py` scenario 8. The
+            # pre-login `GET` answers 401, so a page that could not READ the
+            # fences must never WRITE over them, and must not discard them once
+            # the read succeeds either.
             seeded = [fence_json("f-keep-a", "kept a", 5), fence_json("f-keep-b", "kept b", 6)]
-            http("PUT", "api/desk", {"windows": [], "fences": seeded})
+            replace_desk(seeded)
             blind_ctx = browser.new_context(viewport=dict(VIEW))
             blind = blind_ctx.new_page()
             blind.route(
@@ -844,41 +864,47 @@ def main():
             # Every page closed FIRST: a live shell debounces its own PUT and
             # would race the uploads below.
 
-            many = {
-                "windows": [],
-                "fences": [fence_json(f"f{n}", "region", n) for n in range(1, 14)],
-            }
-            status, body = http("PUT", "api/desk", many)
-            ids = [f["id"] for f in json.loads(body)["fences"]] if status == 200 else []
+            replace_desk([])
+            many = [{"op": "create", "type": "fence", "record": fence_json(f"f{n}", "region", n)} for n in range(1, 14)]
+            status, body = put_changes(many)
+            reply = json.loads(body) if status == 200 else {}
+            ids = [f["id"] for f in reply.get("fences", [])]
             check(
-                "PUT /api/desk prunes the fences to the 12 newest by ts",
-                status == 200 and ids == [f"f{n}" for n in range(2, 14)],
+                "PUT /api/desk stores 12 fences and nothing is pruned",
+                status == 200 and ids == [f"f{n}" for n in range(1, 13)],
                 f"status={status} ids={ids}",
+            )
+            refused = reply.get("refused", [])
+            check(
+                "…the 13th create is refused and named in `refused`",
+                [r["index"] for r in refused] == [12],
+                f"refused={refused}",
             )
             kept = json.loads(http("GET", "api/desk")[1])["fences"]
             check(
                 "…and the persisted desk agrees",
-                [f["id"] for f in kept] == [f"f{n}" for n in range(2, 14)],
+                [f["id"] for f in kept] == [f"f{n}" for n in range(1, 13)],
                 f"got={[f['id'] for f in kept]}",
             )
+            # Room for the off-plane create below, so the cap does not refuse it first.
+            put_changes([{"op": "remove", "type": "fence", "id": "f12"}])
 
             before_bad = desk_file.read_text(encoding="utf-8")
             try:
-                bad_status, bad_body = http(
-                    "PUT",
-                    "api/desk",
-                    {"windows": [], "fences": [fence_json("f-neg", "off-plane", 1, left=-1.0)]},
+                bad_status, bad_body = put_changes(
+                    [{"op": "create", "type": "fence", "record": fence_json("f-neg", "off-plane", 1, left=-1.0)}]
                 )
             except urllib.error.HTTPError as e:
                 bad_status, bad_body = e.code, e.read().decode()
+            bad_refused = json.loads(bad_body).get("refused", []) if bad_status == 200 else []
             check(
-                "PUT /api/desk refuses a fence with an off-plane origin",
-                bad_status == 400,
-                f"got={bad_status}",
+                "PUT /api/desk refuses a fence create with an off-plane origin, without failing the request",
+                bad_status == 200 and [r["index"] for r in bad_refused] == [0],
+                f"got={bad_status} refused={bad_refused}",
             )
             check(
                 "…naming the offending fence",
-                "fence f-neg has an out-of-frame rect" in bad_body,
+                any("fence f-neg has an out-of-frame rect" in r.get("error", "") for r in bad_refused),
                 f"body={bad_body[:200]}",
             )
             check(

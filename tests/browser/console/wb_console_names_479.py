@@ -220,6 +220,13 @@ def http(method, path, body=None):
         return r.status, r.read().decode()
 
 
+def put_changes(changes):
+    """Send a desk change list, as another device does. The body carries the
+    desk's current generation, or the daemon refuses it."""
+    generation = json.loads(http("GET", "api/desk")[1]).get("generation", 0)
+    return http("PUT", "api/desk", {"seq": 1, "generation": generation, "changes": changes})
+
+
 def desk_windows():
     return {r["id"]: r for r in json.loads(http("GET", "api/desk")[1])["windows"]}
 
@@ -351,12 +358,11 @@ def main():
             # 11b: a record from a shell that predates the name.
             raw = desk_windows()["w-4"]
             raw.pop("consoleName", None)
-            raw["ts"] = int(time.time() * 1000) + 1
-            status, _ = http("PUT", "api/desk", {"windows": [raw], "fences": [], "removed": {"windows": []}})
+            status, _ = put_changes([{"op": "create", "type": "window", "record": raw}])
             got = desk_windows()["w-4"]
-            check("11b an upload without a name and a newer ts keeps the stored name",
-                  status == 200 and got.get("consoleName") == "fincal #3" and got["ts"] == raw["ts"],
-                  f"status={status} got={got.get('consoleName')} ts={got['ts']}")
+            check("11b a create of a stored record without a name keeps the stored name",
+                  status == 200 and got.get("consoleName") == "fincal #3",
+                  f"status={status} got={got.get('consoleName')}")
 
             # 1: the title -------------------------------------------------
             t1 = page.evaluate("() => __title('w-1')")
@@ -585,10 +591,7 @@ def main():
             check("8 in a detached fence a double-click on the name does nothing", not p8["input"] and not p8["max"],
                   str(p8))
             shot(popup, "detached")
-            raw = desk_windows()["w-7"]
-            raw["consoleName"] = "away-renamed"
-            raw["ts"] = int(time.time() * 1000) + 1
-            http("PUT", "api/desk", {"windows": [raw], "fences": [], "removed": {"windows": []}})
+            put_changes([{"op": "set", "type": "window", "id": "w-7", "fields": {"consoleName": "away-renamed"}}])
             page.evaluate("() => window.WBConsole.afterLogin()")
             page.wait_for_timeout(500)
             page.evaluate("() => window.WBConsole.reattachFence('f-away')")

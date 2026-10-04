@@ -111,6 +111,7 @@ test("the console and the daemon door answer the resume question identically", (
   new Function("window", readFileSync(join(UI, "wb-geometry.js"), "utf8"))(window);
   new Function("window", readFileSync(join(UI, "wb-window-state.js"), "utf8"))(window);
   new Function("window", readFileSync(join(UI, "wb-desk-sink.js"), "utf8"))(window);
+  new Function("window", readFileSync(join(UI, "wb-desk-sync.js"), "utf8"))(window);
   new Function("window", readFileSync(join(UI, "wb-detach-link.js"), "utf8"))(window);
   const realBC = globalThis.BroadcastChannel;
   delete globalThis.BroadcastChannel;

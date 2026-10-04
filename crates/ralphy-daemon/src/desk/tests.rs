@@ -57,6 +57,7 @@ fn round_trip_preserves_records() {
     b.max = true;
     b.locked = true;
     let store = DeskStore {
+        rev: 0,
         generation: 0,
         windows: vec![a, b],
         fences: vec![],
@@ -105,6 +106,7 @@ fn a_field_that_is_off_or_empty_is_not_serialised() {
     let mut named = record("w2", 2);
     named.console_name = Some("fincal #1".into());
     let desk = DeskStore {
+        rev: 0,
         generation: 0,
         windows: vec![record("w1", 1)],
         fences: vec![fence("f1", "backend", 1)],
@@ -330,6 +332,7 @@ fn a_failed_save_leaves_the_previous_desk_intact() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("desk.toml");
     let good = DeskStore {
+        rev: 0,
         generation: 0,
         windows: vec![record("w-keep", 1)],
         fences: vec![],
@@ -344,6 +347,7 @@ fn a_failed_save_leaves_the_previous_desk_intact() {
     let blocked = path.join("nested").join("desk.toml");
     let err = save_to(
         &DeskStore {
+            rev: 0,
             generation: 0,
             windows: vec![record("w-lost", 2)],
             fences: vec![],
@@ -374,6 +378,7 @@ fn save_leaves_no_temp_file_behind() {
     let path = dir.path().join("desk.toml");
     save_to(
         &DeskStore {
+            rev: 0,
             generation: 0,
             windows: vec![record("w1", 1)],
             fences: vec![],
@@ -431,6 +436,7 @@ fn load_from_does_not_filter_a_legacy_negative_rect() {
     std::fs::write(
         &path,
         toml::to_string_pretty(&DeskStore {
+            rev: 0,
             generation: 0,
             windows: vec![legacy.clone()],
             fences: vec![],
@@ -452,44 +458,6 @@ fn context_md_defines_the_desk_terms() {
         assert!(context.contains(term), "CONTEXT.md must define {term}");
     }
 }
-/// The fold moves whole records by `ts`, so a lock rides with the newer
-/// copy: a page whose mirror predates the lock cannot unlock by accident.
-#[test]
-fn merge_carries_the_lock_with_the_newer_record() {
-    let mut held = record("a", 20);
-    held.locked = true;
-    let mut held_fence = fence("f", "backend", 20);
-    held_fence.locked = true;
-    let stored = DeskStore {
-        windows: vec![held],
-        fences: vec![held_fence],
-        ..Default::default()
-    };
-    let up = upload(
-        vec![record("a", 10)],
-        vec![fence("f", "backend", 10)],
-        Some(DeskRemoved::default()),
-    );
-    let out = merge(stored, up);
-    assert!(out.windows[0].locked, "a stale unlock does not win");
-    assert!(out.fences[0].locked);
-    let mut freed = record("a", 30);
-    freed.locked = false;
-    let stored = DeskStore {
-        windows: vec![{
-            let mut r = record("a", 20);
-            r.locked = true;
-            r
-        }],
-        ..Default::default()
-    };
-    let out = merge(
-        stored,
-        upload(vec![freed], vec![], Some(DeskRemoved::default())),
-    );
-    assert!(!out.windows[0].locked, "a newer unlock does");
-}
-
 #[test]
 fn a_console_name_round_trips_through_the_wire_and_desk_toml() {
     let mut named = record("w1", 1);
@@ -514,93 +482,6 @@ fn a_console_name_round_trips_through_the_wire_and_desk_toml() {
     );
 }
 
-/// ADR-0066 §3: the input's `maxlength` can be bypassed, so the store cuts
-/// by `char` on both merge paths. A byte cut would split `é` and panic.
-#[test]
-fn merge_cuts_a_console_name_to_40_chars() {
-    let long = || {
-        let mut r = record("a", 5);
-        r.console_name = Some("é".repeat(41));
-        r
-    };
-    let out = merge(
-        DeskStore::default(),
-        upload(vec![long()], vec![], Some(DeskRemoved::default())),
-    );
-    assert_eq!(out.windows[0].console_name, Some("é".repeat(40)));
-    let out = merge(DeskStore::default(), upload(vec![long()], vec![], None));
-    assert_eq!(out.windows[0].console_name, Some("é".repeat(40)));
-    let mut short = record("b", 5);
-    short.console_name = Some("é".repeat(40));
-    let out = merge(
-        DeskStore::default(),
-        upload(vec![short], vec![], Some(DeskRemoved::default())),
-    );
-    assert_eq!(out.windows[0].console_name, Some("é".repeat(40)));
-}
-
-/// ADR-0066 §2: a tab running a shell older than the name uploads records
-/// without one and with a newer `ts`. The stored name stays; every other field
-/// of the winning record still wins.
-#[test]
-fn merge_keeps_a_stored_console_name_when_the_winner_has_none() {
-    let stored = || {
-        let mut r = record("a", 1);
-        r.console_name = Some("backend".into());
-        DeskStore {
-            windows: vec![r],
-            ..Default::default()
-        }
-    };
-    let mut old_shell = record("a", 2);
-    old_shell.locked = true;
-    old_shell.checkout = Some("wt-a".into());
-    old_shell.rect.left = 99.0;
-    let out = merge(
-        stored(),
-        upload(vec![old_shell], vec![], Some(DeskRemoved::default())),
-    );
-    let w = &out.windows[0];
-    assert_eq!(w.console_name.as_deref(), Some("backend"));
-    assert!(w.locked);
-    assert_eq!(w.checkout.as_deref(), Some("wt-a"));
-    assert_eq!(w.rect.left, 99.0);
-    assert_eq!(w.ts, 2);
-
-    let mut renamed = record("a", 2);
-    renamed.console_name = Some("other".into());
-    let out = merge(
-        stored(),
-        upload(vec![renamed], vec![], Some(DeskRemoved::default())),
-    );
-    assert_eq!(out.windows[0].console_name.as_deref(), Some("other"));
-
-    let mut blank = record("a", 2);
-    blank.console_name = Some("   ".into());
-    let out = merge(
-        stored(),
-        upload(vec![blank], vec![], Some(DeskRemoved::default())),
-    );
-    assert_eq!(
-        out.windows[0].console_name.as_deref(),
-        Some("backend"),
-        "a blank name is no name"
-    );
-
-    let out = merge(
-        stored(),
-        upload(
-            vec![],
-            vec![],
-            Some(DeskRemoved {
-                windows: vec!["a".into()],
-                ..Default::default()
-            }),
-        ),
-    );
-    assert!(out.windows.is_empty(), "a retired record is gone");
-}
-
 #[test]
 fn prune_fences_keeps_the_12_newest_by_ts() {
     let fences: Vec<DeskFence> = (1..=13)
@@ -616,135 +497,6 @@ fn prune_fences_keeps_the_12_newest_by_ts() {
 fn prune_leaves_an_under_cap_desk_untouched() {
     let records: Vec<DeskRecord> = (1..=5).map(|n| record(&format!("w{n}"), n)).collect();
     assert_eq!(prune(records.clone(), &HashSet::new()), records);
-}
-
-// ---- merge (ADR-0050 amendment 2026-09-20) --------------------------------
-
-fn upload(
-    windows: Vec<DeskRecord>,
-    fences: Vec<DeskFence>,
-    removed: Option<DeskRemoved>,
-) -> DeskUpload {
-    DeskUpload {
-        generation: None,
-        windows,
-        fences,
-        notes: Vec::new(),
-        checkouts: BTreeMap::new(),
-        removed,
-    }
-}
-
-#[test]
-fn merge_keeps_the_newest_copy_of_each_record_and_the_stores_unmentioned_ones() {
-    let mut stale = record("a", 20);
-    stale.session_id = Some(7); // the daemon's copy, newer: another page recorded the id
-    let mut theirs = record("b", 30);
-    theirs.session_id = Some(2);
-    let stored = DeskStore {
-        windows: vec![stale.clone(), record("b", 25), record("d", 1)],
-        ..Default::default()
-    };
-    let mut ours = record("a", 10);
-    ours.session_id = None; // this page's stale mirror of `a`
-    let up = upload(
-        vec![ours, theirs.clone(), record("c", 5)],
-        vec![],
-        Some(DeskRemoved::default()),
-    );
-    let out = merge(stored, up);
-    assert_eq!(
-        out.windows
-            .iter()
-            .map(|r| (r.id.as_str(), r.ts, r.session_id))
-            .collect::<Vec<_>>(),
-        vec![
-            ("a", 20, Some(7)),
-            ("b", 30, Some(2)),
-            ("c", 5, Some(7)),
-            ("d", 1, Some(7))
-        ],
-        "newest per id; the upload's order first, the store's unmentioned after"
-    );
-}
-
-#[test]
-fn merge_drops_what_the_upload_retires_even_when_the_store_is_newer() {
-    let stored = DeskStore {
-        generation: 0,
-        windows: vec![record("closed", 99), record("kept", 1)],
-        fences: vec![fence("f-gone", "old", 99), fence("f-kept", "keep", 1)],
-        notes: vec![],
-        checkouts: BTreeMap::from([
-            ("o/r".to_string(), "wt".to_string()),
-            ("o/s".to_string(), "wt-s".to_string()),
-        ]),
-    };
-    let mut up = upload(
-        vec![],
-        vec![],
-        Some(DeskRemoved {
-            windows: vec!["closed".into()],
-            fences: vec!["f-gone".into()],
-            notes: vec![],
-            checkouts: vec!["o/r".into()],
-        }),
-    );
-    up.checkouts.insert("o/t".into(), "wt-t".into());
-    let out = merge(stored, up);
-    assert_eq!(
-        out.windows
-            .iter()
-            .map(|r| r.id.as_str())
-            .collect::<Vec<_>>(),
-        vec!["kept"]
-    );
-    assert_eq!(
-        out.fences.iter().map(|f| f.id.as_str()).collect::<Vec<_>>(),
-        vec!["f-kept"]
-    );
-    assert_eq!(
-        out.checkouts,
-        BTreeMap::from([
-            ("o/s".to_string(), "wt-s".to_string()),
-            ("o/t".to_string(), "wt-t".to_string()),
-        ])
-    );
-}
-
-#[test]
-fn an_upload_without_removed_is_the_wholesale_replace_an_older_shell_means() {
-    let stored = DeskStore {
-        generation: 0,
-        windows: vec![record("theirs", 99)],
-        fences: vec![fence("f", "old", 99)],
-        notes: vec![],
-        checkouts: BTreeMap::from([("o/r".to_string(), "wt".to_string())]),
-    };
-    let out = merge(stored, upload(vec![record("mine", 1)], vec![], None));
-    assert_eq!(
-        out.windows
-            .iter()
-            .map(|r| r.id.as_str())
-            .collect::<Vec<_>>(),
-        vec!["mine"]
-    );
-    assert!(out.fences.is_empty());
-    assert!(out.checkouts.is_empty());
-}
-
-#[test]
-fn the_upload_body_takes_removed_and_still_refuses_a_bare_array() {
-    let json = r#"{"windows":[],"fences":[],"removed":{"windows":["x"]}}"#;
-    let up: DeskUpload = serde_json::from_str(json).expect("the amended shape parses");
-    assert_eq!(
-        up.removed.expect("removed present").windows,
-        vec!["x".to_string()]
-    );
-    let legacy: DeskUpload = serde_json::from_str(r#"{"windows":[],"fences":[],"notes":[]}"#)
-        .expect("the pre-amendment shape parses");
-    assert!(legacy.removed.is_none());
-    assert!(serde_json::from_str::<DeskUpload>("[[],[]]").is_err());
 }
 
 // ---- notes (ADR-0064 §2) --------------------------------------------------
@@ -777,6 +529,7 @@ fn a_note_card_round_trips_its_placement() {
     held.checkout = Some("wt-a".into());
     held.locked = true;
     let store = DeskStore {
+        rev: 0,
         generation: 0,
         windows: vec![record("w1", 1)],
         fences: vec![fence("f1", "backend", 1)],
@@ -811,58 +564,6 @@ fn prune_notes_keeps_the_newest_cap_in_layout_order() {
     assert_eq!(kept.len(), NOTE_MAX);
 }
 
-/// Notes fold exactly like windows and fences: the newer `ts` wins per id, a
-/// retired id is dropped whatever the store holds, and a card another page
-/// owns survives an upload that never mentions it.
-#[test]
-fn merge_folds_notes_beside_the_other_two_collections() {
-    let stored = DeskStore {
-        generation: 0,
-        windows: vec![],
-        fences: vec![],
-        notes: vec![
-            note("n-closed", "gone.note", 99),
-            note("n-other", "other.note", 5),
-            note("n-moved", "moved.note", 1),
-        ],
-        checkouts: BTreeMap::new(),
-    };
-    let mut up = upload(
-        vec![],
-        vec![],
-        Some(DeskRemoved {
-            windows: vec![],
-            fences: vec![],
-            notes: vec!["n-closed".into()],
-            checkouts: vec![],
-        }),
-    );
-    let mut moved = note("n-moved", "moved.note", 7);
-    moved.rect.left = 500.0;
-    up.notes = vec![moved, note("n-new", "new.note", 8)];
-
-    let out = merge(stored, up);
-    let ids: Vec<&str> = out.notes.iter().map(|n| n.id.as_str()).collect();
-    assert_eq!(ids, vec!["n-moved", "n-new", "n-other"]);
-    assert_eq!(out.notes[0].rect.left, 500.0, "the newer move wins");
-}
-
-/// A stale page's copy of a card another page just moved must not win.
-#[test]
-fn merge_keeps_the_newer_note_when_the_upload_is_stale() {
-    let stored = DeskStore {
-        notes: vec![note("n1", "a.note", 9)],
-        ..DeskStore::default()
-    };
-    let mut up = upload(vec![], vec![], Some(DeskRemoved::default()));
-    let mut stale = note("n1", "a.note", 2);
-    stale.locked = true;
-    up.notes = vec![stale];
-    let out = merge(stored, up);
-    assert_eq!(out.notes.len(), 1);
-    assert!(!out.notes[0].locked, "the store's newer record won");
-}
-
 /// The ordering invariant the third array-of-tables rests on, proved with the
 /// two collections that can collide: TOML emits values before tables, so a
 /// `notes` field declared AFTER `checkouts` would make `to_string_pretty` fail
@@ -875,6 +576,7 @@ fn a_desk_with_both_a_note_and_a_checkout_round_trips() {
     let mut held = fence("f2", "planning", 20);
     held.locked = true;
     let store = DeskStore {
+        rev: 0,
         generation: 0,
         windows: vec![record("w1", 1), record("w2", 2)],
         fences: vec![fence("f1", "backend", 10), held],

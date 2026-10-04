@@ -19,7 +19,7 @@ use regex::Regex;
 /// registry verbs: 51 registry verbs + 30 UI routes + 10 pushes = 91 types, 9
 /// of them covered. Counting rules are in [`message_types`]. A new type starts with a
 /// shared reply; a new reply file lowers this number.
-const UNSHARED_BASELINE: usize = 81;
+const UNSHARED_BASELINE: usize = 80;
 
 const FIXTURES: &str = "crates/ralphy-daemon/ui-tests/fixtures";
 

@@ -288,6 +288,9 @@ function shell() {
       });
       // A flush can be the read that finds the desk unreadable; no push says so.
       window.WBConsole?.setDeskFailureHook?.(() => this.syncDeskFailure());
+      // A console whose record another client removed leaves the columns
+      // before it leaves the stage.
+      window.WBConsole?.setDeskGoneHook?.((ids) => this.checkColumnDesk(ids));
       // Anchor the clock at page load: `_boardLoadedAt` at 0 would clear the
       // 120s floor on the first tick.
       this._boardLoadedAt = Date.now();
@@ -408,14 +411,15 @@ function shell() {
       if (this.openSlug) this.hydrateRuns();
     },
 
-    // Read the desk again, then see whether a column console was closed by
-    // another client.
+    // Read the desk again. The console module puts it on the stage, and says
+    // which consoles left it (`checkColumnDesk`); the selected checkouts are
+    // copied, since another client may have picked a tree.
     rereadDesk() {
       const read = window.WBConsole?.reloadDesk?.();
       if (!read?.then) return;
       read.then(() => {
         this.syncDeskFailure();
-        this.checkColumnDesk();
+        this.adoptDeskCheckouts();
       });
     },
     syncDeskFailure() {
@@ -1393,7 +1397,12 @@ function shell() {
         window.location.reload();
         return;
       }
-      if (!unsaved) return;
+      // A hidden tab writes no desk until it reloads: its JavaScript may not
+      // know the daemon's desk.
+      if (!unsaved) {
+        window.WBDeskSink?.setHold?.(true);
+        return;
+      }
       if (!this.buildSkew) {
         this.buildSkew = true;
         window.WBDeskSink?.setHold?.(true);
@@ -4455,8 +4464,6 @@ function shell() {
     columnDir: "right",
     _columnsRestored: false,
     _paintedKey: "",
-    _columnDeskBusy: false,
-    _columnDeskSeen: new Set(),
     columnMenu: false,
     columnGroups: [],
     columnFilter: "",
@@ -6273,34 +6280,21 @@ function shell() {
       this.setColumns(r.ended ? [] : r.columns);
       WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { cap, unmax: r.unmax, raise: true });
     },
-    // A column console closed by another client leaves the columns. Read when
-    // the daemon pushes `desk.dirty` (`rereadDesk`). A session that
-    // ended, a remote maximize and a remote rect or fence change need nothing
-    // here: `WBColumns.external` names them as no-ops.
-    async checkColumnDesk() {
-      if (this.columnIds().length < 2 || this._columnDeskBusy) return;
-      this._columnDeskBusy = true;
-      try {
-        const ids = await WBConsole.readDeskIds();
-        if (!ids) return;
-        // Missing now AND seen on the daemon before: a record this page has
-        // not uploaded yet (or whose upload failed) is not a close elsewhere.
-        const seen = WBConsole.daemonSeenIds?.() || new Set();
-        const gone = this.columnIds().filter(
-          (id) => (this._columnDeskSeen.has(id) || seen.has(id)) && !ids.has(id),
-        );
-        for (const id of ids) this._columnDeskSeen.add(id);
-        const r = WBColumns.external(this.columns, { type: "closed", ids: gone });
-        if (!r.changed) return;
+    // Consoles whose records another client removed (`ids`, from the console
+    // module after a desk read) leave the columns, then the stage. A session
+    // that ended, a remote maximize and a remote rect or fence change need
+    // nothing here: `WBColumns.external` names them as no-ops.
+    checkColumnDesk(ids) {
+      const gone = this.columnIds().filter((id) => ids.includes(id));
+      const r = WBColumns.external(this.columns, { type: "closed", ids: gone });
+      if (r.changed) {
         const cap = r.columns.length ? this.columnCap() : 1;
         this.setColumns(r.ended ? [] : r.columns);
         // Painted BEFORE the drops, so a lone survivor is maximized first.
         WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { cap, unmax: null, raise: true });
-        for (const id of gone) WBConsole.dropClosedElsewhere(id);
-        this.paintColumns();
-      } finally {
-        this._columnDeskBusy = false;
       }
+      for (const id of ids) WBConsole.dropClosedElsewhere(id);
+      if (r.changed) this.paintColumns();
     },
     toggleColumnMenu(id, rect) {
       const was = this.columnMenu && this.columnFrom === id;

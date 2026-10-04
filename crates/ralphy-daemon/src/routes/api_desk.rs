@@ -22,12 +22,42 @@ pub(crate) struct DeskPutQuery {
     pub tab: Option<String>,
 }
 
-/// Read, fold, write — as ONE step. Two pages flushing at once would
+/// Read, apply, write — as ONE step. Two pages flushing at once would
 /// otherwise both read the same desk and the second write would drop the
-/// first fold; the lock is process-wide because the store is (one
+/// first one's changes; the lock is process-wide because the store is (one
 /// `desk.toml` per daemon). Nothing awaits under it: `load_from`, `save_to`
-/// and `move_aside` are synchronous file reads and writes.
-static DESK_WRITE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+/// and `move_aside` are synchronous file reads and writes. It also guards the
+/// last upload number per tab.
+static DESK_WRITE: tokio::sync::Mutex<TabSeqs> = tokio::sync::Mutex::const_new(TabSeqs::new());
+
+/// How many tabs' last upload number the daemon remembers.
+const TAB_SEQS: usize = 64;
+
+/// The last `seq` taken from each of the [`TAB_SEQS`] most recent tabs
+/// (ADR-0050 amendment 2026-10-04, changes, not the desk). A page resends a
+/// batch with the same `seq`; when the daemon already applied it and only the
+/// reply was lost, the resend is ignored instead of undoing a change another
+/// device made since. In memory: a daemon restart forgets it, and a resend
+/// across a restart applies again.
+struct TabSeqs(std::collections::VecDeque<(String, u64)>);
+
+impl TabSeqs {
+    const fn new() -> Self {
+        TabSeqs(std::collections::VecDeque::new())
+    }
+
+    /// Whether `tab` already sent a body numbered `seq` or higher.
+    fn is_old(&self, tab: &str, seq: u64) -> bool {
+        self.0.iter().any(|(t, last)| t == tab && seq <= *last)
+    }
+
+    /// Remember `seq` as the last one taken from `tab`, newest first.
+    fn record(&mut self, tab: &str, seq: u64) {
+        self.0.retain(|(t, _)| t != tab);
+        self.0.push_front((tab.to_string(), seq));
+        self.0.truncate(TAB_SEQS);
+    }
+}
 
 /// The reply for a `desk.toml` that exists but cannot be loaded (ADR-0070 D4).
 /// A layout that cannot be parsed is `409 unreadable`, and the shell offers to
@@ -82,8 +112,8 @@ pub(crate) fn former_slug_aliases(
 
 /// The checks a desk body passes before anything is written: every rect on
 /// the stage (`desk::rect_is_sane`) and every checkout one path component
-/// (`checkout::lexical`). Shared by the PUT and by an uploaded desk version,
-/// which must not store what a PUT would refuse.
+/// (`checkout::lexical`). Checked on an uploaded desk version, which must
+/// not store what a desk change would refuse.
 fn refuse_records(
     windows: &[desk::DeskRecord],
     fences: &[desk::DeskFence],
@@ -151,99 +181,119 @@ fn refuse_records(
     None
 }
 
-/// `PUT /api/desk`: replace the desk wholesale, each record type pruned to its
-/// own cap ([`desk::DESK_MAX`], [`desk::FENCE_MAX`]) newest by `ts`, answering
-/// `200` with the pruned store — the client needs the daemon's post-prune truth
-/// in one round trip (last-write-wins, no ETag).
+/// The `409 {"state":"restored"}` reply: the page must reload before it
+/// writes. Sent for a page that loaded before a restore and for a body
+/// without `changes`, which only a page from before the change list sends.
+fn reload_first(error: &str) -> Response {
+    (
+        StatusCode::CONFLICT,
+        Json(serde_json::json!({ "state": "restored", "error": error })),
+    )
+        .into_response()
+}
+
+/// The desk as a PUT answers it: the stored desk, with `rev`, plus the
+/// changes it skipped.
+fn put_reply(store: &desk::DeskStore, refused: &[desk::apply::Refusal]) -> Response {
+    let mut body = match serde_json::to_value(store) {
+        Ok(body) => body,
+        Err(e) => return failed(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")),
+    };
+    if let Some(map) = body.as_object_mut() {
+        map.insert("refused".to_string(), serde_json::json!(refused));
+    }
+    Json(body).into_response()
+}
+
+/// `PUT /api/desk`: apply a list of desk changes (ADR-0050 amendment
+/// 2026-10-04, changes, not the desk). The body is
+/// `{ seq, generation, changes }`; `desk::apply::apply` applies the changes
+/// in arrival order, and the reply is the stored desk with its `rev` and
+/// `refused: [{ index, error }]` for each change it skipped.
 ///
-/// A body that is not a `{ windows, fences, checkouts? }` object — including
-/// the pre-#340 bare array — is rejected by the `Json` extractor as `422` and
-/// never reaches here, so `desk.toml` is untouched; a rect that is out of frame
-/// — non-finite, or an origin off the stage's pinned 0,0 — and a checkout
-/// value that is not one path component (`checkout::lexical`) are rejected
-/// here as `400`. A `desk.toml` that cannot be read is refused as `409`, the
-/// same reply as the GET (ADR-0070 D4). Every rejection returns BEFORE any
-/// write, so a refused upload leaves `desk.toml` byte-identical on every path.
-/// A well-shaped checkout name is stored unvalidated: whether the worktree
-/// still exists is the verb's call (`unknown checkout`), not a spawn per desk
+/// The body is read as raw JSON because a missing `changes` means something:
+/// a page from before the change list, refused with `409 {"state":"restored"}`
+/// so a current page reloads. Not JSON is `400`; a bare array or any other
+/// shape is `422` (#340). A page that loaded before a restore is
+/// `409 restored` too. A `desk.toml` that cannot be read is refused as `409`,
+/// the same reply as the GET (ADR-0070 D4). Every refusal returns BEFORE any
 /// write.
 ///
-/// Non-overlap between fences is deliberately NOT validated: refusing a whole
-/// desk upload would cost the operator their layout and the daemon has no repair
-/// path, so that invariant belongs to the client (ADR-0051 §6).
+/// A body whose `seq` is not higher than the last one this tab sent is
+/// ignored and answered with the current desk ([`TabSeqs`]).
 ///
-/// Stored under the registry's canonical keys: an upload from a tab that read
-/// the desk before a re-key still names the former slug, and is normalized
-/// through `former_slugs` before anything is written — so `desk.toml`
-/// converges on the first save after a migration, whichever tab saves.
+/// Repo keys are mapped through the registry's `former_slugs` before the
+/// changes apply, so `desk.toml` converges on canonical keys whichever tab
+/// writes.
 ///
-/// A write that changes the stored desk pushes `desk.dirty` with the writer's
-/// `tab`, so the other open tabs read it again (ADR-0070 D5). A write that
-/// changes nothing pushes nothing.
+/// A write that changes the stored desk raises `rev`, records the desk
+/// history, and pushes `desk.dirty` with the writer's `tab`, so the other
+/// open tabs read it again (ADR-0070 D5). A write that changes nothing writes
+/// nothing and pushes nothing.
 pub(crate) async fn desk_put_route(
     path: PathBuf,
     registry_path: PathBuf,
     pushes: tokio::sync::broadcast::Sender<Push>,
-    sessions: Arc<session::SessionManager>,
     tab: Option<String>,
-    up: desk::DeskUpload,
+    raw: &[u8],
 ) -> Response {
-    if let Some(refusal) = refuse_records(&up.windows, &up.fences, &up.notes, &up.checkouts) {
-        return refusal;
+    let value: serde_json::Value = match serde_json::from_slice(raw) {
+        Ok(value) => value,
+        Err(e) => {
+            return failed(
+                StatusCode::BAD_REQUEST,
+                format!("the desk upload is not JSON: {e}"),
+            )
+        }
+    };
+    if value
+        .as_object()
+        .is_some_and(|m| !m.contains_key("changes"))
+    {
+        return reload_first("this page was loaded by an older version of Ralphy; reload it");
     }
-    let _held = DESK_WRITE.lock().await;
+    let body: desk::apply::DeskBody = match serde_json::from_value(value) {
+        Ok(body) => body,
+        Err(e) => {
+            return failed(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                format!("the desk upload is not a list of changes: {e}"),
+            )
+        }
+    };
+    let mut seqs = DESK_WRITE.lock().await;
     let stored = match desk::load_from(&path) {
         Ok(stored) => stored,
         Err(e) => return unreadable(&e),
     };
-    // A page that loaded before a restore still shows the older layout; its
-    // rects would win the fold with fresh `ts` and undo the restore (ADR-0050
-    // amendment 2026-10-04, desk history).
-    if up.generation.unwrap_or(0) < stored.generation {
-        return (
-            StatusCode::CONFLICT,
-            Json(serde_json::json!({
-                "state": "restored",
-                "error": "the desk was restored from its history after this page read it",
-            })),
-        )
-            .into_response();
+    let aliases = former_slug_aliases(&registry_path);
+    let stored = rekey::rekey_desk(stored, &aliases);
+    // A page that loaded before a restore still shows the older layout
+    // (ADR-0050 amendment 2026-10-04, desk history).
+    if body.generation < stored.generation {
+        return reload_first("the desk was restored from its history after this page read it");
+    }
+    if tab.as_deref().is_some_and(|t| seqs.is_old(t, body.seq)) {
+        return put_reply(&stored, &[]);
     }
     let before = stored.clone();
-    let merged = desk::merge(stored, up);
-    // The records a session of this daemon serves are never cut by the cap.
-    let live: std::collections::HashSet<String> = sessions
-        .list()
-        .into_iter()
-        .filter_map(|info| info.record)
-        .collect();
-    let store = rekey::rekey_desk(
-        desk::DeskStore {
-            generation: merged.generation,
-            windows: desk::prune(merged.windows, &live),
-            fences: desk::prune_fences(merged.fences),
-            notes: desk::prune_notes(merged.notes),
-            checkouts: merged.checkouts,
-        },
-        &former_slug_aliases(&registry_path),
-    );
-    match desk::save_to(&store, &path) {
-        Ok(()) => {
-            if before != store {
-                let dir = history_dir(&path);
-                if let Err(e) = desk::history::capture(&dir, &before, &store, now_ms()) {
-                    tracing::warn!(error = %format!("{e:#}"), "desk history not written");
-                }
-                push(&pushes, Push::Desk { tab });
-            }
-            Json(store).into_response()
+    let applied = desk::apply::apply(stored, &body.changes, &aliases, now_ms());
+    let mut store = applied.desk;
+    if applied.changed {
+        store.rev = before.rev + 1;
+        if let Err(e) = desk::save_to(&store, &path) {
+            return failed(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}"));
         }
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({ "error": format!("{e:#}") })),
-        )
-            .into_response(),
+        let dir = history_dir(&path);
+        if let Err(e) = desk::history::capture(&dir, &before, &store, now_ms()) {
+            tracing::warn!(error = %format!("{e:#}"), "desk history not written");
+        }
+        push(&pushes, Push::Desk { tab: tab.clone() });
     }
+    if let Some(t) = tab.as_deref() {
+        seqs.record(t, body.seq);
+    }
+    put_reply(&store, &applied.refused)
 }
 
 /// `POST /api/desk/new`: start a new desk when the saved one cannot be parsed.
@@ -268,8 +318,15 @@ pub(crate) async fn desk_new_route(
         Err(_) => {}
     }
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    // A new `generation`: a page that read the unreadable desk reloads
+    // instead of writing into the new one.
+    let fresh = desk::DeskStore {
+        rev: 1,
+        generation: u64::try_from(now_ms()).unwrap_or(1),
+        ..desk::DeskStore::default()
+    };
     let saved = desk::move_aside(&path, &today)
-        .and_then(|moved| desk::save_to(&desk::DeskStore::default(), &path).map(|()| moved));
+        .and_then(|moved| desk::save_to(&fresh, &path).map(|()| moved));
     match saved {
         Ok(moved) => {
             push(&pushes, Push::Desk { tab: None });
@@ -343,7 +400,7 @@ pub(crate) struct RestoreBody {
 /// Under the desk lock: the current desk is saved as a `before-restore`
 /// version first, and a failure there stops the restore, because it could
 /// not be undone. `desk::history::restore` builds the new desk, the cap pins
-/// every running console, and `generation` becomes now, so a page that read
+/// every running console, `rev` rises, and `generation` becomes now, so a page that read
 /// the desk before is refused on its next PUT and reloads. The result is
 /// saved as a `restore` or `upload` version, and `desk.dirty` is pushed. An
 /// upload passes the same checks as a PUT body. Replies `{ generation }`.
@@ -401,6 +458,7 @@ pub(crate) async fn desk_history_restore_route(
     let generation = u64::try_from(now).unwrap_or(1);
     let store = rekey::rekey_desk(
         desk::DeskStore {
+            rev: restored.rev + 1,
             generation,
             windows: desk::prune(restored.windows, &pinned),
             fences: desk::prune_fences(restored.fences),
@@ -433,16 +491,9 @@ pub(crate) fn desk_routes(s: &RouterShared) -> Router {
                 let path = s.desk_path.clone();
                 let registry = s.registry_path.clone();
                 let pushes = s.pushes.clone();
-                let sessions = s.sessions.clone();
-                move |Query(q): Query<DeskPutQuery>, Json(up): Json<desk::DeskUpload>| {
-                    desk_put_route(
-                        path.clone(),
-                        registry.clone(),
-                        pushes.clone(),
-                        sessions.clone(),
-                        q.tab,
-                        up,
-                    )
+                move |Query(q): Query<DeskPutQuery>, raw: axum::body::Bytes| {
+                    let (path, registry, pushes) = (path.clone(), registry.clone(), pushes.clone());
+                    async move { desk_put_route(path, registry, pushes, q.tab, &raw).await }
                 }
             }),
         )

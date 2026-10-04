@@ -42,6 +42,7 @@ import sys
 import tempfile
 import time
 import traceback
+import urllib.parse
 from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "columns"))
@@ -100,14 +101,25 @@ def note_leaks(notes, where):
 
 def watch_desk_writes(request):
     """Every desk PUT any page sends, checked for a snapshot-only field. The
-    daemon drops unknown fields, so reading `/api/desk` alone cannot see one."""
-    if request.method != "PUT" or not request.url.endswith("/api/desk"):
+    daemon drops unknown fields, so reading `/api/desk` alone cannot see one.
+    The body is a list of changes: a note `create` carries a whole record, and
+    a note `set` carries some fields."""
+    if request.method != "PUT" or urllib.parse.urlsplit(request.url).path != "/api/desk":
         return
     try:
         body = json.loads(request.post_data or "{}")
     except ValueError:
         return
-    note_leaks(body.get("notes"), "PUT /api/desk")
+    changes = body.get("changes") if isinstance(body, dict) else None
+    notes = []
+    for c in changes or []:
+        if not isinstance(c, dict) or c.get("type") != "note":
+            continue
+        if c.get("op") == "create":
+            notes.append(c.get("record"))
+        elif c.get("op") == "set":
+            notes.append(c.get("fields"))
+    note_leaks(notes, "PUT /api/desk")
 
 
 def desk_notes():

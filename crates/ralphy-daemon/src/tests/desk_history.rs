@@ -63,6 +63,26 @@ fn reasons(rows: &serde_json::Value) -> Vec<String> {
         .collect()
 }
 
+fn window_change(session: u64) -> serde_json::Value {
+    serde_json::json!({
+        "op": "create", "type": "window",
+        "record": {
+            "id": "w1", "repo": "owner/repo", "agent": "claude", "kind": "console",
+            "rect": { "left": 10.0, "top": 20.0, "width": 640.0, "height": 480.0 },
+            "max": false, "sessionId": session,
+        },
+    })
+}
+
+async fn put_changes(
+    dir: &Path,
+    generation: u64,
+    changes: serde_json::Value,
+) -> (StatusCode, serde_json::Value) {
+    let body = serde_json::json!({ "seq": 1, "generation": generation, "changes": changes });
+    call(dir, "PUT", "/api/desk", Some(body)).await
+}
+
 #[tokio::test]
 async fn a_put_from_a_page_that_read_before_a_restore_is_refused_and_writes_nothing() {
     let dir = tempfile::tempdir().unwrap();
@@ -72,41 +92,33 @@ async fn a_put_from_a_page_that_read_before_a_restore_is_refused_and_writes_noth
     desk::save_to(&stored, &file).unwrap();
     let bytes = std::fs::read(&file).unwrap();
 
-    let mut up = desk_body(
-        serde_json::json!([desk_json("w1", 99, serde_json::json!(1), false)]),
-        serde_json::json!([]),
-    );
-    up["removed"] = serde_json::json!({});
-    up["generation"] = serde_json::json!(4);
-    let res = desk_put(dir.path(), &up).await;
-    assert_eq!(res.status(), StatusCode::CONFLICT);
-    let reply: serde_json::Value = serde_json::from_str(&body_text(res).await).unwrap();
+    let moved = serde_json::json!([{
+        "op": "set", "type": "window", "id": "w1",
+        "fields": { "rect": { "left": 99.0, "top": 20.0, "width": 640.0, "height": 480.0 } },
+    }]);
+    let (status, reply) = put_changes(dir.path(), 4, moved.clone()).await;
+    assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(reply["state"], "restored");
     assert_eq!(std::fs::read(&file).unwrap(), bytes, "nothing was written");
 
-    up["generation"] = serde_json::json!(5);
-    assert_eq!(desk_put(dir.path(), &up).await.status(), StatusCode::OK);
+    let (status, _) = put_changes(dir.path(), 5, moved).await;
+    assert_eq!(status, StatusCode::OK);
 }
 
 #[tokio::test]
 async fn a_put_that_moves_a_window_writes_a_version_and_a_reconnect_does_not() {
     let dir = tempfile::tempdir().unwrap();
-    let up = desk_body(
-        serde_json::json!([desk_json("w1", 1, serde_json::json!(1), false)]),
-        serde_json::json!([]),
-    );
-    assert_eq!(desk_put(dir.path(), &up).await.status(), StatusCode::OK);
+    let (status, _) = put_changes(dir.path(), 0, serde_json::json!([window_change(1)])).await;
+    assert_eq!(status, StatusCode::OK);
     let (_, rows) = call(dir.path(), "GET", "/api/desk/history", None).await;
     assert_eq!(reasons(&rows), vec!["change"]);
 
-    let reconnect = desk_body(
-        serde_json::json!([desk_json("w1", 2, serde_json::json!(8), false)]),
-        serde_json::json!([]),
-    );
-    assert_eq!(
-        desk_put(dir.path(), &reconnect).await.status(),
-        StatusCode::OK
-    );
+    let reconnect = serde_json::json!([{
+        "op": "set", "type": "window", "id": "w1",
+        "fields": { "session": { "sessionId": 8 } },
+    }]);
+    let (status, _) = put_changes(dir.path(), 0, reconnect).await;
+    assert_eq!(status, StatusCode::OK);
     let (_, rows) = call(dir.path(), "GET", "/api/desk/history", None).await;
     assert_eq!(
         rows.as_array().unwrap().len(),
@@ -133,8 +145,9 @@ async fn a_restore_saves_the_desk_before_it_and_raises_the_generation() {
     let generation = reply["generation"].as_u64().unwrap();
     assert!(generation > 0);
 
-    let now: serde_json::Value = serde_json::from_str(&desk_get(dir.path()).await).unwrap();
+    let (_, now) = call(dir.path(), "GET", "/api/desk", None).await;
     assert_eq!(now["generation"].as_u64(), Some(generation));
+    assert_eq!(now["rev"], 1, "a restore raises rev");
     assert_eq!(now["windows"][0]["rect"]["left"], 300.0);
     assert_eq!(
         now["windows"][0]["sessionId"], 1,

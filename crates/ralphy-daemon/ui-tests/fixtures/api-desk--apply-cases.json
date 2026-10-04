@@ -1,0 +1,257 @@
+[
+  {
+    "name": "a set changes only the fields it names",
+    "desk": {
+      "windows": [{ "id": "w-1", "repo": "o/r", "agent": "console", "kind": "console", "rect": { "left": 100, "top": 100, "width": 600, "height": 400 }, "max": false, "sessionId": 7, "consoleName": "r #1", "ts": 1 }],
+      "fences": [], "notes": [], "checkouts": {}
+    },
+    "changes": [{ "op": "set", "type": "window", "id": "w-1", "fields": { "rect": { "left": 400, "top": 100, "width": 600, "height": 400 } } }],
+    "changed": true,
+    "expect": {
+      "windows": [{ "id": "w-1", "repo": "o/r", "agent": "console", "kind": "console", "rect": { "left": 400, "top": 100, "width": 600, "height": 400 }, "max": false, "sessionId": 7, "consoleName": "r #1", "ts": 1 }],
+      "fences": [], "notes": [], "checkouts": {}
+    }
+  },
+  {
+    "name": "a set on a record another device removed is ignored",
+    "desk": { "windows": [], "fences": [], "notes": [], "checkouts": {} },
+    "changes": [{ "op": "set", "type": "window", "id": "w-1", "fields": { "rect": { "left": 400, "top": 100, "width": 600, "height": 400 } } }],
+    "changed": false,
+    "expect": { "windows": [], "fences": [], "notes": [], "checkouts": {} }
+  },
+  {
+    "name": "a set after a remove of the same id does not bring it back",
+    "desk": {
+      "windows": [{ "id": "w-1", "repo": "o/r", "agent": "console", "kind": "console", "rect": { "left": 100, "top": 100, "width": 600, "height": 400 }, "max": false, "sessionId": 7, "ts": 1 }],
+      "fences": [], "notes": [], "checkouts": {}
+    },
+    "changes": [
+      { "op": "remove", "type": "window", "id": "w-1" },
+      { "op": "set", "type": "window", "id": "w-1", "fields": { "locked": true } }
+    ],
+    "changed": true,
+    "expect": { "windows": [], "fences": [], "notes": [], "checkouts": {} }
+  },
+  {
+    "name": "a create of an id that exists takes only its session",
+    "desk": {
+      "windows": [{ "id": "w-1", "repo": "o/r", "agent": "console", "kind": "console", "rect": { "left": 100, "top": 100, "width": 600, "height": 400 }, "max": false, "sessionId": 7, "consoleName": "r #1", "ts": 1 }],
+      "fences": [], "notes": [], "checkouts": {}
+    },
+    "changes": [{ "op": "create", "type": "window", "record": { "id": "w-1", "repo": "o/r", "agent": "console", "kind": "console", "rect": { "left": 24, "top": 24, "width": 640, "height": 420 }, "max": false, "sessionId": 9, "daemonId": "d-1", "consoleName": "r #2", "ts": 5 } }],
+    "changed": true,
+    "expect": {
+      "windows": [{ "id": "w-1", "repo": "o/r", "agent": "console", "kind": "console", "rect": { "left": 100, "top": 100, "width": 600, "height": 400 }, "max": false, "sessionId": 9, "daemonId": "d-1", "consoleName": "r #1", "ts": 1 }],
+      "fences": [], "notes": [], "checkouts": {}
+    }
+  },
+  {
+    "name": "a create appends the record at the end",
+    "desk": {
+      "windows": [{ "id": "w-1", "repo": "o/r", "agent": "console", "kind": "console", "rect": { "left": 100, "top": 100, "width": 600, "height": 400 }, "max": false, "sessionId": 7, "ts": 1 }],
+      "fences": [], "notes": [], "checkouts": {}
+    },
+    "changes": [{ "op": "create", "type": "window", "record": { "id": "w-2", "repo": "o/r", "agent": "claude", "kind": "agent", "rect": { "left": 24, "top": 24, "width": 640, "height": 420 }, "max": false, "sessionId": null, "consoleName": "r #2", "ts": 5 } }],
+    "changed": true,
+    "expect": {
+      "windows": [
+        { "id": "w-1", "repo": "o/r", "agent": "console", "kind": "console", "rect": { "left": 100, "top": 100, "width": 600, "height": 400 }, "max": false, "sessionId": 7, "ts": 1 },
+        { "id": "w-2", "repo": "o/r", "agent": "claude", "kind": "agent", "rect": { "left": 24, "top": 24, "width": 640, "height": 420 }, "max": false, "sessionId": null, "consoleName": "r #2", "ts": 5 }
+      ],
+      "fences": [], "notes": [], "checkouts": {}
+    }
+  },
+  {
+    "name": "a set to the stored value changes nothing",
+    "desk": {
+      "windows": [{ "id": "w-1", "repo": "o/r", "agent": "console", "kind": "console", "rect": { "left": 100, "top": 100, "width": 600, "height": 400 }, "max": false, "sessionId": 7, "ts": 1 }],
+      "fences": [], "notes": [], "checkouts": {}
+    },
+    "changes": [{ "op": "set", "type": "window", "id": "w-1", "fields": { "rect": { "left": 100, "top": 100, "width": 600, "height": 400 }, "session": { "sessionId": 7 } } }],
+    "changed": false,
+    "expect": {
+      "windows": [{ "id": "w-1", "repo": "o/r", "agent": "console", "kind": "console", "rect": { "left": 100, "top": 100, "width": 600, "height": 400 }, "max": false, "sessionId": 7, "ts": 1 }],
+      "fences": [], "notes": [], "checkouts": {}
+    }
+  },
+  {
+    "name": "two devices change different fields of one record and both stay",
+    "desk": {
+      "windows": [{ "id": "w-1", "repo": "o/r", "agent": "console", "kind": "console", "rect": { "left": 100, "top": 100, "width": 600, "height": 400 }, "max": false, "sessionId": 7, "consoleName": "r #1", "ts": 1 }],
+      "fences": [], "notes": [], "checkouts": {}
+    },
+    "changes": [
+      { "op": "set", "type": "window", "id": "w-1", "fields": { "rect": { "left": 400, "top": 100, "width": 600, "height": 400 } } },
+      { "op": "set", "type": "window", "id": "w-1", "fields": { "consoleName": "build" } }
+    ],
+    "changed": true,
+    "expect": {
+      "windows": [{ "id": "w-1", "repo": "o/r", "agent": "console", "kind": "console", "rect": { "left": 400, "top": 100, "width": 600, "height": 400 }, "max": false, "sessionId": 7, "consoleName": "build", "ts": 1 }],
+      "fences": [], "notes": [], "checkouts": {}
+    }
+  },
+  {
+    "name": "two devices change the same field and the change that arrives last wins",
+    "desk": {
+      "windows": [{ "id": "w-1", "repo": "o/r", "agent": "console", "kind": "console", "rect": { "left": 100, "top": 100, "width": 600, "height": 400 }, "max": false, "sessionId": 7, "ts": 1 }],
+      "fences": [], "notes": [], "checkouts": {}
+    },
+    "changes": [
+      { "op": "set", "type": "window", "id": "w-1", "fields": { "rect": { "left": 400, "top": 100, "width": 600, "height": 400 } } },
+      { "op": "set", "type": "window", "id": "w-1", "fields": { "rect": { "left": 200, "top": 100, "width": 600, "height": 400 } } }
+    ],
+    "changed": true,
+    "expect": {
+      "windows": [{ "id": "w-1", "repo": "o/r", "agent": "console", "kind": "console", "rect": { "left": 200, "top": 100, "width": 600, "height": 400 }, "max": false, "sessionId": 7, "ts": 1 }],
+      "fences": [], "notes": [], "checkouts": {}
+    }
+  },
+  {
+    "name": "a session is one unit: a reconnect without a peer clears the peer fields",
+    "desk": {
+      "windows": [{ "id": "w-1", "repo": "o/r", "agent": "console", "kind": "console", "rect": { "left": 100, "top": 100, "width": 600, "height": 400 }, "max": false, "sessionId": 7, "daemonId": "d-1", "environment": "WSL: Ubuntu", "ts": 1 }],
+      "fences": [], "notes": [], "checkouts": {}
+    },
+    "changes": [{ "op": "set", "type": "window", "id": "w-1", "fields": { "session": { "sessionId": 8, "daemonId": null, "environment": null } } }],
+    "changed": true,
+    "expect": {
+      "windows": [{ "id": "w-1", "repo": "o/r", "agent": "console", "kind": "console", "rect": { "left": 100, "top": 100, "width": 600, "height": 400 }, "max": false, "sessionId": 8, "ts": 1 }],
+      "fences": [], "notes": [], "checkouts": {}
+    }
+  },
+  {
+    "name": "a checkout of null puts the console on the primary tree",
+    "desk": {
+      "windows": [{ "id": "w-1", "repo": "o/r", "agent": "claude", "kind": "agent", "rect": { "left": 100, "top": 100, "width": 600, "height": 400 }, "max": false, "sessionId": null, "checkout": "wt-a", "ts": 1 }],
+      "fences": [], "notes": [], "checkouts": {}
+    },
+    "changes": [{ "op": "set", "type": "window", "id": "w-1", "fields": { "checkout": null } }],
+    "changed": true,
+    "expect": {
+      "windows": [{ "id": "w-1", "repo": "o/r", "agent": "claude", "kind": "agent", "rect": { "left": 100, "top": 100, "width": 600, "height": 400 }, "max": false, "sessionId": null, "ts": 1 }],
+      "fences": [], "notes": [], "checkouts": {}
+    }
+  },
+  {
+    "name": "a blank console name keeps the stored one",
+    "desk": {
+      "windows": [{ "id": "w-1", "repo": "o/r", "agent": "console", "kind": "console", "rect": { "left": 100, "top": 100, "width": 600, "height": 400 }, "max": false, "sessionId": 7, "consoleName": "r #1", "ts": 1 }],
+      "fences": [], "notes": [], "checkouts": {}
+    },
+    "changes": [{ "op": "set", "type": "window", "id": "w-1", "fields": { "consoleName": "   " } }],
+    "changed": false,
+    "expect": {
+      "windows": [{ "id": "w-1", "repo": "o/r", "agent": "console", "kind": "console", "rect": { "left": 100, "top": 100, "width": 600, "height": 400 }, "max": false, "sessionId": 7, "consoleName": "r #1", "ts": 1 }],
+      "fences": [], "notes": [], "checkouts": {}
+    }
+  },
+  {
+    "name": "a checkout-clear clears only the name it saw go",
+    "desk": { "windows": [], "fences": [], "notes": [], "checkouts": { "o/r": "wt-b" } },
+    "changes": [{ "op": "checkout-clear", "repo": "o/r", "ifName": "wt-a" }],
+    "changed": false,
+    "expect": { "windows": [], "fences": [], "notes": [], "checkouts": { "o/r": "wt-b" } }
+  },
+  {
+    "name": "a checkout-clear of the name it still holds clears it",
+    "desk": { "windows": [], "fences": [], "notes": [], "checkouts": { "o/r": "wt-a", "o/s": "wt-s" } },
+    "changes": [{ "op": "checkout-clear", "repo": "o/r", "ifName": "wt-a" }],
+    "changed": true,
+    "expect": { "windows": [], "fences": [], "notes": [], "checkouts": { "o/s": "wt-s" } }
+  },
+  {
+    "name": "a checkout selects a tree for one project and leaves the others",
+    "desk": { "windows": [], "fences": [], "notes": [], "checkouts": { "o/s": "wt-s" } },
+    "changes": [{ "op": "checkout", "repo": "o/r", "name": "wt-a" }],
+    "changed": true,
+    "expect": { "windows": [], "fences": [], "notes": [], "checkouts": { "o/r": "wt-a", "o/s": "wt-s" } }
+  },
+  {
+    "name": "a fence takes its name and its lock as two changes",
+    "desk": {
+      "windows": [],
+      "fences": [{ "id": "f-1", "name": "Fence 1", "rect": { "left": 40, "top": 40, "width": 720, "height": 460 }, "ts": 1 }],
+      "notes": [], "checkouts": {}
+    },
+    "changes": [
+      { "op": "set", "type": "fence", "id": "f-1", "fields": { "name": "backend" } },
+      { "op": "set", "type": "fence", "id": "f-1", "fields": { "locked": true } }
+    ],
+    "changed": true,
+    "expect": {
+      "windows": [],
+      "fences": [{ "id": "f-1", "name": "backend", "rect": { "left": 40, "top": 40, "width": 720, "height": 460 }, "locked": true, "ts": 1 }],
+      "notes": [], "checkouts": {}
+    }
+  },
+  {
+    "name": "a create of a fence that exists changes nothing",
+    "desk": {
+      "windows": [],
+      "fences": [{ "id": "f-1", "name": "Fence 1", "rect": { "left": 40, "top": 40, "width": 720, "height": 460 }, "ts": 1 }],
+      "notes": [], "checkouts": {}
+    },
+    "changes": [{ "op": "create", "type": "fence", "record": { "id": "f-1", "name": "Fence 9", "rect": { "left": 0, "top": 0, "width": 720, "height": 460 }, "ts": 5 } }],
+    "changed": false,
+    "expect": {
+      "windows": [],
+      "fences": [{ "id": "f-1", "name": "Fence 1", "rect": { "left": 40, "top": 40, "width": 720, "height": 460 }, "ts": 1 }],
+      "notes": [], "checkouts": {}
+    }
+  },
+  {
+    "name": "a note card's file is one unit",
+    "desk": {
+      "windows": [], "fences": [],
+      "notes": [{ "id": "n-1", "repo": "o/r", "path": "", "checkout": "wt-a", "rect": { "left": 80, "top": 120, "width": 240, "height": 180 }, "ts": 1 }],
+      "checkouts": {}
+    },
+    "changes": [{ "op": "set", "type": "note", "id": "n-1", "fields": { "file": { "repo": "o/r", "path": ".ralphy/notes/a.note", "checkout": null } } }],
+    "changed": true,
+    "expect": {
+      "windows": [], "fences": [],
+      "notes": [{ "id": "n-1", "repo": "o/r", "path": ".ralphy/notes/a.note", "rect": { "left": 80, "top": 120, "width": 240, "height": 180 }, "ts": 1 }],
+      "checkouts": {}
+    }
+  },
+  {
+    "name": "a closed card and its undo come back at the end",
+    "desk": {
+      "windows": [], "fences": [],
+      "notes": [
+        { "id": "n-1", "repo": "o/r", "path": "a.note", "rect": { "left": 80, "top": 120, "width": 240, "height": 180 }, "ts": 1 },
+        { "id": "n-2", "repo": "o/r", "path": "b.note", "rect": { "left": 380, "top": 120, "width": 240, "height": 180 }, "ts": 1 }
+      ],
+      "checkouts": {}
+    },
+    "changes": [
+      { "op": "remove", "type": "note", "id": "n-1" },
+      { "op": "create", "type": "note", "record": { "id": "n-1", "repo": "o/r", "path": "a.note", "rect": { "left": 80, "top": 120, "width": 240, "height": 180 }, "ts": 1 } }
+    ],
+    "changed": true,
+    "expect": {
+      "windows": [], "fences": [],
+      "notes": [
+        { "id": "n-2", "repo": "o/r", "path": "b.note", "rect": { "left": 380, "top": 120, "width": 240, "height": 180 }, "ts": 1 },
+        { "id": "n-1", "repo": "o/r", "path": "a.note", "rect": { "left": 80, "top": 120, "width": 240, "height": 180 }, "ts": 1 }
+      ],
+      "checkouts": {}
+    }
+  },
+  {
+    "name": "maximize and lock are fields of their own",
+    "desk": {
+      "windows": [{ "id": "w-1", "repo": "o/r", "agent": "console", "kind": "console", "rect": { "left": 100, "top": 100, "width": 600, "height": 400 }, "max": false, "sessionId": 7, "ts": 1 }],
+      "fences": [], "notes": [], "checkouts": {}
+    },
+    "changes": [
+      { "op": "set", "type": "window", "id": "w-1", "fields": { "max": true } },
+      { "op": "set", "type": "window", "id": "w-1", "fields": { "locked": true } }
+    ],
+    "changed": true,
+    "expect": {
+      "windows": [{ "id": "w-1", "repo": "o/r", "agent": "console", "kind": "console", "rect": { "left": 100, "top": 100, "width": 600, "height": 400 }, "max": true, "sessionId": 7, "locked": true, "ts": 1 }],
+      "fences": [], "notes": [], "checkouts": {}
+    }
+  }
+]

@@ -354,6 +354,12 @@ with each window's repo, agent, kind, place on the **stage** and state. It is
 what the workbench restores when a page opens (ADR-0050).
 _Avoid_: workspace (that is the **viewport**), geometry store, browser state.
 
+**Desk change**:
+One change a page sends to the **desk layout**: create, set some fields of,
+or remove one window, fence or note card, or select or clear a project's
+checkout. The daemon applies them in the order they arrive (ADR-0050).
+_Avoid_: patch, delta, diff, desk upload (that is the whole request).
+
 **Desk history**:
 The last 50 versions of the **desk layout** that the daemon keeps, so the
 operator can restore one, or save it as a file (ADR-0050).

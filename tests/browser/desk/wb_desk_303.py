@@ -9,7 +9,8 @@ Scenario 1   `WBConsole.resizeRect` in isolation: a 20-row table over the eight
              the workspace clamp
 Scenario 2   `WBConsole.reconcileDesk` in isolation: a 12-row table over literal
              layouts and session lists, including two records claiming one session
-Scenario 3   `WBConsole.pruneDesk` caps the desk at 24, newest `ts` first
+Scenario 3   (none) the page prunes no record: the cap is the daemon's, on
+             create only, and `wb_desk_327.py` scenario 7 covers it
 Scenario 4   a live west/north-edge resize on a real console window: the opposite
              edge holds, the size changes, and the terminal reflows (`term.cols`)
 Scenario 5   live clamping (minimum + stage — the bound moved off the visible box
@@ -355,29 +356,6 @@ def reconcile_table(page):
     )
 
 
-# --- scenario 3: the cap ----------------------------------------------------
-def prune_table(page):
-    got = page.evaluate(
-        "() => { const recs = Array.from({ length: 27 }, (_, i) =>"
-        " ({ id: 'w' + (i + 1), ts: i + 1 }));"
-        " const out = window.WBConsole.pruneDesk(recs, 24);"
-        " return { len: out.length, ids: out.map((r) => r.id), inputLen: recs.length }; }"
-    )
-    check("pruneDesk caps the desk at 24 records", got["len"] == 24, f"got={got['len']}")
-    check(
-        "…dropping the three OLDEST by ts",
-        got["ids"][:3] == ["w4", "w5", "w6"] and "w1" not in got["ids"],
-        f"ids={got['ids'][:5]}…",
-    )
-    check(
-        "…keeping layout order, and not mutating its input",
-        got["ids"] == sorted(got["ids"], key=lambda s: int(s[1:])) and got["inputLen"] == 27,
-        f"got={got}",
-    )
-    under = page.evaluate("() => window.WBConsole.pruneDesk([{ id: 'a', ts: 1 }], 24).length")
-    check("…and leaves an under-cap desk alone", under == 1, f"got={under}")
-
-
 def open_console(page, slug):
     """Open a free console and wait for its live terminal."""
     before = page.locator(".session-window").count()
@@ -398,6 +376,22 @@ def desk_records(page):
     # The desk body is `{ windows, fences }` since #340; this suite is about
     # the window records only.
     return page.request.get(BASE + "api/desk").json()["windows"]
+
+
+def put_changes(page, changes):
+    """Send a desk change list. The body carries the desk's current
+    generation, or the daemon refuses it."""
+    generation = page.request.get(BASE + "api/desk").json().get("generation", 0)
+    return page.request.put(BASE + "api/desk", data={"seq": 1, "generation": generation, "changes": changes})
+
+
+def replace_windows(page, records):
+    """Make the stored desk hold exactly `records` as its windows: a `remove`
+    for every stored window, then a `create` for each record."""
+    stored = page.request.get(BASE + "api/desk").json()["windows"]
+    changes = [{"op": "remove", "type": "window", "id": r["id"]} for r in stored]
+    changes += [{"op": "create", "type": "window", "record": r} for r in records]
+    return put_changes(page, changes)
 
 
 def rect_of(page, index):
@@ -460,7 +454,6 @@ def main():
 
             # --- scenarios 2 & 3: reconciliation and the cap, in isolation ----
             reconcile_table(page)
-            prune_table(page)
 
             # The Consoles tab must be in view or every terminal measures 0x0.
             page.evaluate(f"() => {{ {SH}.active = 'consoles'; }}")
@@ -514,6 +507,8 @@ def main():
                 f"got={r3}",
             )
             # Park it so its right edge sits just inside the visible box: the
+            # rect goes to the desk too, because an open page puts the desk's
+            # rect back on its windows (ADR-0050 amendment 2026-10-04). The
             # stage's own margin then puts the STAGE strictly past the viewport,
             # while the east handle stays clickable. Parked anywhere the two
             # measure equal, this assertion passes byte-identically against a
@@ -523,6 +518,7 @@ def main():
                 " const w = document.querySelectorAll('.session-window')[0];"
                 " w.style.left = '200px'; w.style.top = '60px';"
                 " w.style.width = (ws.clientWidth - 250) + 'px'; w.style.height = '300px';"
+                " window.WBConsole.setWin(w, { rect: window.WBConsole.restoreRect(w) });"
                 " window.WBConsole.refitAll(); }"
             )
             page.wait_for_timeout(300)
@@ -563,6 +559,7 @@ def main():
                 "() => { const w = document.querySelectorAll('.session-window')[0];"
                 " w.style.left = '200px'; w.style.top = '60px';"
                 " w.style.width = '400px'; w.style.height = '300px';"
+                " window.WBConsole.setWin(w, { rect: window.WBConsole.restoreRect(w) });"
                 " window.WBConsole.refitAll();"
                 " document.getElementById('workspace').scrollLeft = 0; }"
             )
@@ -752,19 +749,16 @@ def main():
             console_rec = desk_records(page)[0]
             # Seeded through the daemon; the shell picks it up on the reload
             # that the restart below forces (issue #327).
-            seeded = desk_records(page) + [
-                {
-                    "id": "w-seeded-gemini",
-                    "repo": slug,
-                    "agent": "gemini",
-                    "kind": "agent",
-                    "rect": {"left": 420, "top": 120, "width": 460, "height": 300},
-                    "max": False,
-                    "sessionId": 999,
-                    "ts": int(time.time() * 1000),
-                }
-            ]
-            page.request.put(BASE + "api/desk", data={"windows": seeded, "fences": []})
+            seeded = {
+                "id": "w-seeded-gemini",
+                "repo": slug,
+                "agent": "gemini",
+                "kind": "agent",
+                "rect": {"left": 420, "top": 120, "width": 460, "height": 300},
+                "max": False,
+                "sessionId": 999,
+            }
+            put_changes(page, [{"op": "create", "type": "window", "record": seeded}])
 
             stop(proc)
             proc = launch(daemon_dir)
@@ -908,23 +902,19 @@ def main():
             # root in this fixture, so that launch is refused by the daemon
             # before any spawn — the SOCKET is the evidence, and nothing is
             # spent proving it.
-            page.request.put(
-                BASE + "api/desk",
-                data={
-                    "windows": [
-                        {
-                            "id": "w-optin-gemini",
-                            "repo": slug,
-                            "agent": "gemini",
-                            "kind": "agent",
-                            "rect": {"left": 60, "top": 60, "width": 480, "height": 320},
-                            "max": False,
-                            "sessionId": 4242,
-                            "ts": 9,
-                        }
-                    ],
-                    "fences": [],
-                },
+            replace_windows(
+                page,
+                [
+                    {
+                        "id": "w-optin-gemini",
+                        "repo": slug,
+                        "agent": "gemini",
+                        "kind": "agent",
+                        "rect": {"left": 60, "top": 60, "width": 480, "height": 320},
+                        "max": False,
+                        "sessionId": 4242,
+                    }
+                ],
             )
             page.reload()
             page.wait_for_selector("[x-data]", timeout=8000)

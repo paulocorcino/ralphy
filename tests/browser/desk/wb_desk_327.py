@@ -23,8 +23,9 @@ Scenario 5   no DESK in browser storage — the only permitted key is the per-cl
              browser store zero times, which now means "the desk module never
              touches it" (issue #339)
 Scenario 6   a CORRUPT `desk.toml` answers 409 unreadable, not a startup failure
-Scenario 7   30 uploaded records come back as exactly 24, newest by `ts`, with the
-             live windows still present
+Scenario 7   a create past the cap (30 consoles plus a slack of 5) is refused
+             and named in `refused`; nothing is pruned, and the live windows
+             stay
 
 The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
 doubles as the orchestrator on this host).
@@ -220,6 +221,17 @@ def desk_page(ctx, viewport=None, at_origin=False):
     return page
 
 
+def put_changes(changes):
+    """Send a desk change list. The body carries the desk's current
+    generation, or the daemon refuses it."""
+    generation = json.loads(http("GET", "api/desk")[1]).get("generation", 0)
+    return http("PUT", "api/desk", {"seq": 1, "generation": generation, "changes": changes})
+
+
+def creates(records):
+    return [{"op": "create", "type": "window", "record": r} for r in records]
+
+
 def desk_record(rid, ts, left=40, top=40):
     return {
         "id": rid,
@@ -393,22 +405,38 @@ def main():
                 "() => [...document.querySelectorAll('.session-window')].map((w) => w._deskId)"
             )
             check("the live windows carry desk ids", all(live_ids), f"got={live_ids}")
-            # 30 records, the two live ones LAST (highest ts) so the cap keeps them.
-            uploaded = [desk_record(f"w{n}", n) for n in range(1, 29)] + [
+            # A create is refused once the desk holds 30 consoles plus a
+            # slack of 5. Nothing already on the desk is pruned to make room.
+            import json as _json
+
+            cap = 30 + 5
+            before = [r["id"] for r in _json.loads(http("GET", "api/desk")[1])["windows"]]
+            uploaded = [desk_record(f"w{n}", n) for n in range(1, 41)] + [
                 desk_record(live_ids[0], 100),
                 desk_record(live_ids[1], 101),
             ]
-            status, body = http("PUT", "api/desk", {"windows": uploaded, "fences": []})
+            status, body = put_changes(creates(uploaded))
             check("PUT /api/desk answers 200", status == 200, f"got={status}")
-            import json as _json
-
-            pruned = _json.loads(body)["windows"]
-            check("…pruning 30 records to exactly 24", len(pruned) == 24, f"got={len(pruned)}")
-            ids = [r["id"] for r in pruned]
+            reply = _json.loads(body)
+            ids = [r["id"] for r in reply["windows"]]
+            check(f"…the desk stops at exactly {cap} consoles", len(ids) == cap, f"got={len(ids)}")
+            room = cap - len(before)
+            want_refused = list(range(room, 40))
+            got_refused = [r["index"] for r in reply.get("refused", [])]
             check(
-                "…keeping the newest by ts and dropping the oldest",
-                "w1" not in ids and "w6" not in ids and "w28" in ids,
+                "…each create past the cap is named in `refused`",
+                got_refused == want_refused,
+                f"want={want_refused} got={got_refused}",
+            )
+            check(
+                "…the creates before the cap are stored, in order",
+                ids[len(before):] == [f"w{n}" for n in range(1, room + 1)],
                 f"got={ids}",
+            )
+            check(
+                "…and nothing already on the desk is pruned",
+                ids[: len(before)] == before,
+                f"before={before} got={ids}",
             )
             check(
                 "…with both live windows still on the desk",
@@ -422,13 +450,20 @@ def main():
                 f"got={[r['id'] for r in back]}",
             )
             ctx_b.close()
+            # The next scenarios do not need the filler records.
+            put_changes([{"op": "remove", "type": "window", "id": f"w{n}"} for n in range(1, 41)])
 
             # --- scenario 4: a smaller viewport restores VERBATIM -------------
             # Restore the two-window desk saved at 1400x900 before shrinking.
-            http(
-                "PUT",
-                "api/desk",
-                {"windows": [desk_record(live_ids[0], 200, 900, 500)], "fences": []},
+            put_changes(
+                [
+                    {
+                        "op": "set",
+                        "type": "window",
+                        "id": live_ids[0],
+                        "fields": {"rect": {"left": 900, "top": 500, "width": 400, "height": 300}},
+                    }
+                ]
             )
             ctx_c = browser.new_context(viewport={"width": 800, "height": 600})
             page_c = desk_page(ctx_c, viewport={"width": 800, "height": 600})
@@ -466,13 +501,15 @@ def main():
             ctx_c.close()
 
             # --- scenario 8: a REFUSED desk read must not wipe the desk -------
-            # The seam the self-review flagged. `PUT /api/desk` replaces the desk
-            # WHOLESALE, and under the `Session` policy the pre-login `GET
-            # /api/desk` answers 401. Treating that as "an empty desk" and then
-            # flushing on the first drag destroys the operator's real layout, so
-            # a page that could not READ the desk must never WRITE it.
+            # Under the `Session` policy the pre-login `GET /api/desk` answers
+            # 401. Treating that as "an empty desk" and then flushing on the
+            # first drag can destroy the operator's real layout, so a page that
+            # could not READ the desk must never WRITE it.
             saved = [desk_record(f"s{n}", n, 40 + n, 40 + n) for n in range(1, 6)]
-            http("PUT", "api/desk", {"windows": saved, "fences": []})
+            current = [r["id"] for r in _json.loads(http("GET", "api/desk")[1])["windows"]]
+            put_changes(
+                [{"op": "remove", "type": "window", "id": rid} for rid in current] + creates(saved)
+            )
             ctx_d = browser.new_context(viewport={"width": 1400, "height": 900})
             page_d = ctx_d.new_page()
             page_d.route(

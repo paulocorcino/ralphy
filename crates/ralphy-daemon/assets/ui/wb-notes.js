@@ -541,12 +541,12 @@ window.WBNotes = (function () {
     return (window.WBConsole?.notes?.() || []).find((n) => n.id === id) || null;
   }
 
-  // Write one card's record back, keeping the rest of the collection. Every
-  // mutation of a card goes through here, so `ts` is stamped in exactly one
-  // place and the daemon's fold always has a newer record to prefer.
+  // Write one card's record back, keeping the rest of the collection.
+  // `saveNotes` sends only the fields that differ (ADR-0050 amendment
+  // 2026-10-04, changes, not the desk).
   function patch(id, fields) {
     const next = (window.WBConsole?.notes?.() || []).map((n) =>
-      n.id === id ? { ...n, ...fields, ts: Date.now() } : n,
+      n.id === id ? { ...n, ...fields } : n,
     );
     window.WBConsole?.saveNotes(next);
   }
@@ -570,9 +570,8 @@ window.WBNotes = (function () {
     const list = Array.isArray(els) ? els : [els];
     const moved = new Map(list.filter(Boolean).map((el) => [el.dataset.noteId, rectOf(el)]));
     if (!moved.size) return;
-    const now = Date.now();
     const next = (window.WBConsole?.notes?.() || []).map((n) =>
-      moved.has(n.id) ? { ...n, rect: moved.get(n.id), ts: now } : n,
+      moved.has(n.id) ? { ...n, rect: moved.get(n.id) } : n,
     );
     window.WBConsole?.saveNotes(next);
   }
@@ -1197,7 +1196,7 @@ window.WBNotes = (function () {
   // debounce, `focusout`, `Ctrl+S`, `flushAll`). Two overlapping writes can
   // land oldest-last, and the newer reply has already cleared the dirty flag —
   // the card would then show text the file does not hold, with nothing
-  // scheduled to fix it. `wb-console.js`'s `deskWrite` chain exists for exactly
+  // scheduled to fix it. `wb-desk-sink.js` chains its writes for exactly
   // this reason and this is the same shape.
   function flush(el) {
     clearTimeout(el._noteTimer);
@@ -1816,9 +1815,7 @@ window.WBNotes = (function () {
         text: saved.path ? `Note ${saved.path} closed` : "Note closed",
         action: "Undo",
         onAction: () => {
-          window.WBConsole.saveNotes(
-            (window.WBConsole.notes() || []).concat([{ ...saved, ts: Date.now() }]),
-          );
+          window.WBConsole.saveNotes((window.WBConsole.notes() || []).concat([saved]));
           render();
         },
       });
@@ -1892,14 +1889,17 @@ window.WBNotes = (function () {
     }
   }
 
-  // One record onto one card: rect, title, path, lock.
+  // One record onto one card: rect, title, path, lock. A card under a
+  // gesture keeps the place the operator's hand gives it.
   function paint(el, record, fences) {
     el._noteRecord = record;
     const r = record.rect || {};
-    el.style.left = (r.left || 0) + "px";
-    el.style.top = (r.top || 0) + "px";
-    el.style.width = (r.width || NOTE_DEFAULT.width) + "px";
-    el.style.height = (r.height || NOTE_DEFAULT.height) + "px";
+    if (!window.WBConsole?.inGesture?.(el)) {
+      el.style.left = (r.left || 0) + "px";
+      el.style.top = (r.top || 0) + "px";
+      el.style.width = (r.width || NOTE_DEFAULT.width) + "px";
+      el.style.height = (r.height || NOTE_DEFAULT.height) + "px";
+    }
     paintTitle(el);
     paintPath(el, record.path);
     applyLock(el, !!lockedBy(record, fences));

@@ -36,9 +36,10 @@ Scenario 6d TWO PAGES on one desk: page B loaded before page A opened a
             console; B's next flush keeps A's record and its sessionId (the
             read-before-write fold); a third page attaches to A's record —
             one window, not an adopted second one
-Scenario 6e the daemon's own fold: a raw PUT that never read A's record but
-            carries `removed` keeps it; a raw PUT naming it in `removed`
-            drops it; a pre-amendment body (no `removed`) still replaces
+Scenario 6e the daemon applies changes: a change body that never names A's
+            record keeps it; a `remove` change drops only the named record;
+            an old body without `changes` is refused (409 restored) and
+            writes nothing
 Scenario 7  DESKTOP, the same tabs: the outline is the 190px column, captions
             are visible, the path is shown, an outline heading keeps one
             line, the drawer is not full width, the four board
@@ -511,24 +512,30 @@ def main():
             c_wins = page_c.evaluate("() => [...document.querySelectorAll('.session-window')].map((w) => w._deskId)")
             check("a third page attaches to A's record — one window, not two", c_wins == [a_rec["id"]], f"c={c_wins} a={a_rec['id']}")
 
-            # --- scenario 6e: the daemon folds, whatever the page read ---------
+            # --- scenario 6e: the daemon applies changes, whatever the page read
             def put_desk(body):
                 return page_c.request.put(BASE + "api/desk", data=body, headers={"Content-Type": "application/json"})
 
+            def put_changes(changes):
+                generation = page_c.request.get(BASE + "api/desk").json().get("generation", 0)
+                return put_desk({"seq": 1, "generation": generation, "changes": changes})
+
             rect_json = {"left": 1, "top": 1, "width": 300, "height": 200}
-            stranger = {"id": "w-raw-stranger", "repo": slug, "agent": "console", "kind": "console", "rect": rect_json, "max": False, "sessionId": None, "ts": 1}
-            r = put_desk({"windows": [stranger], "fences": [], "removed": {"windows": [], "fences": [], "checkouts": []}})
+            stranger = {"id": "w-raw-stranger", "repo": slug, "agent": "console", "kind": "console", "rect": rect_json, "max": False, "sessionId": None}
+            r = put_changes([{"op": "create", "type": "window", "record": stranger}])
             ids = [w["id"] for w in r.json()["windows"]]
-            check("a PUT that never read A's record keeps it (the daemon folds)", r.status == 200 and a_rec["id"] in ids and "w-raw-stranger" in ids, f"{r.status} {ids}")
-            r = put_desk({"windows": [], "fences": [], "removed": {"windows": ["w-raw-stranger"], "fences": [], "checkouts": []}})
+            check("a change body that never names A's record keeps it", r.status == 200 and a_rec["id"] in ids and "w-raw-stranger" in ids, f"{r.status} {ids}")
+            r = put_changes([{"op": "remove", "type": "window", "id": "w-raw-stranger"}])
             ids = [w["id"] for w in r.json()["windows"]]
-            check("a PUT naming a record in `removed` drops it and only it", "w-raw-stranger" not in ids and a_rec["id"] in ids, f"{ids}")
+            check("a `remove` change drops the named record and only it", "w-raw-stranger" not in ids and a_rec["id"] in ids, f"{ids}")
+            before_old = [w["id"] for w in page_c.request.get(BASE + "api/desk").json()["windows"]]
             r = put_desk({"windows": [stranger], "fences": []})
-            ids = [w["id"] for w in r.json()["windows"]]
-            check("a pre-amendment body (no `removed`) still replaces wholesale", ids == ["w-raw-stranger"], f"{ids}")
-            # Put A's record back the way the shell would, so the pages closing
-            # below have nothing surprising to reconcile.
-            put_desk({"windows": [], "fences": [], "removed": {"windows": ["w-raw-stranger"], "fences": [], "checkouts": []}})
+            after_old = [w["id"] for w in page_c.request.get(BASE + "api/desk").json()["windows"]]
+            check(
+                "an old body without `changes` is refused (409 restored) and writes nothing",
+                r.status == 409 and r.json().get("state") == "restored" and after_old == before_old,
+                f"{r.status} {r.text()} before={before_old} after={after_old}",
+            )
             ctx_c.close()
             ctx_a.close()
             ctx_b.close()

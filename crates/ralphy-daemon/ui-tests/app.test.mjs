@@ -1765,32 +1765,31 @@ test("a page with no build id (the demo) never reloads for a build", () => {
 
 // --- review fixes (#511) ----------------------------------------------------
 
-// A column console closed by another tab is dropped on the first desk.dirty,
-// even when this page never saw that id in an earlier column check: the
-// console module knows every id the daemon has held.
-test("checkColumnDesk drops a column console the daemon held and no longer lists", async () => {
+// The console module names the consoles whose records left the desk; the
+// columns lose them first, then the stage does — every one of them, a console
+// outside the columns too.
+test("checkColumnDesk takes the consoles that left the desk out of the columns, then off the stage", () => {
   const { state, window } = loadShell();
-  const dropped = [];
+  const order = [];
   const realConsole = globalThis.WBConsole;
   const realColumns = globalThis.WBColumns;
   globalThis.WBColumns = window.WBColumns;
   globalThis.WBConsole = {
-    readDeskIds: async () => new Set(["y", "z"]),
-    daemonSeenIds: () => new Set(["x", "y", "z"]),
-    applyColumns() {},
-    dropClosedElsewhere: (id) => dropped.push(id),
+    applyColumns: () => order.push("columns"),
+    dropClosedElsewhere: (id) => order.push(`drop ${id}`),
   };
   state.columns = [["x"], ["y"], ["z"]];
   state.columnCap = () => 3;
   state.setColumns = (c) => (state.columns = c);
   state.paintColumns = () => {};
   try {
-    await state.checkColumnDesk();
+    state.checkColumnDesk(["x", "loose"]);
   } finally {
     globalThis.WBConsole = realConsole;
     globalThis.WBColumns = realColumns;
   }
-  assert.deepEqual(dropped, ["x"]);
+  assert.deepEqual(state.columns, [["y"], ["z"]]);
+  assert.deepEqual(order, ["columns", "drop x", "drop loose"]);
 });
 
 test("two fleet reads close together list each peer row once", async () => {
