@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use super::*;
 
 /// A literal pre-#406 desk: one window table, no `[checkouts]`.
@@ -276,21 +278,49 @@ fn a_corrupt_desk_is_a_failure_not_an_empty_desk() {
 }
 
 #[test]
-fn prune_keeps_24_newest_by_ts_in_layout_order() {
-    let records: Vec<DeskRecord> = (1..=30).map(|n| record(&format!("w{n}"), n)).collect();
-    let kept: Vec<String> = prune(records).into_iter().map(|r| r.id).collect();
-    let expected: Vec<String> = (7..=30).map(|n| format!("w{n}")).collect();
+fn prune_keeps_the_cap_newest_by_ts_in_layout_order() {
+    let records: Vec<DeskRecord> = (1..=36).map(|n| record(&format!("w{n}"), n)).collect();
+    let kept: Vec<String> = prune(records, &HashSet::new())
+        .into_iter()
+        .map(|r| r.id)
+        .collect();
+    let expected: Vec<String> = (7..=36).map(|n| format!("w{n}")).collect();
     assert_eq!(kept, expected, "the six lowest-ts records are evicted");
 }
 
 #[test]
 fn prune_preserves_layout_order_not_ts_order() {
     // Layout order and ts order disagree: the survivors must come back in
-    // LAYOUT order (w30 first), not newest-first.
-    let records: Vec<DeskRecord> = (1..=30).map(|n| record(&format!("w{n}"), 31 - n)).collect();
-    let kept: Vec<String> = prune(records).into_iter().map(|r| r.id).collect();
-    let expected: Vec<String> = (1..=24).map(|n| format!("w{n}")).collect();
+    // LAYOUT order (w36 first), not newest-first.
+    let records: Vec<DeskRecord> = (1..=36).map(|n| record(&format!("w{n}"), 37 - n)).collect();
+    let kept: Vec<String> = prune(records, &HashSet::new())
+        .into_iter()
+        .map(|r| r.id)
+        .collect();
+    let expected: Vec<String> = (1..=30).map(|n| format!("w{n}")).collect();
     assert_eq!(kept, expected);
+}
+
+/// A record a live session serves is never cut, even the oldest, and even
+/// when the live ones alone are over the cap (ADR-0050 amendment 2026-10-04).
+#[test]
+fn prune_never_cuts_a_record_a_live_session_serves() {
+    let records: Vec<DeskRecord> = (1..=36).map(|n| record(&format!("w{n}"), n)).collect();
+    let live: HashSet<String> = ["w1".to_string()].into();
+    let kept: Vec<String> = prune(records.clone(), &live)
+        .into_iter()
+        .map(|r| r.id)
+        .collect();
+    let mut expected = vec!["w1".to_string()];
+    expected.extend((8..=36).map(|n| format!("w{n}")));
+    assert_eq!(kept, expected, "w1 stays; the oldest unpinned make room");
+
+    let all: HashSet<String> = records.iter().map(|r| r.id.clone()).collect();
+    assert_eq!(
+        prune(records.clone(), &all),
+        records,
+        "31+ live records all stay"
+    );
 }
 
 #[test]
@@ -579,7 +609,7 @@ fn prune_fences_keeps_the_12_newest_by_ts() {
 #[test]
 fn prune_leaves_an_under_cap_desk_untouched() {
     let records: Vec<DeskRecord> = (1..=5).map(|n| record(&format!("w{n}"), n)).collect();
-    assert_eq!(prune(records.clone()), records);
+    assert_eq!(prune(records.clone(), &HashSet::new()), records);
 }
 
 // ---- merge (ADR-0050 amendment 2026-09-20) --------------------------------

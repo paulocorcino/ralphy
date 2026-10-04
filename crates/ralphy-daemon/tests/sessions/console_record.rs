@@ -69,7 +69,7 @@ async fn launch(port: u16, record: &str, holder: &str) -> (Ws, serde_json::Value
 }
 
 async fn sessions(port: u16) -> Vec<serde_json::Value> {
-    let (_, body) = http(port, "GET", "/api/sessions").await;
+    let (_, body) = http(port, "GET", "/api/sessions", "").await;
     serde_json::from_str::<serde_json::Value>(&body)
         .expect("sessions JSON")
         .as_array()
@@ -77,13 +77,15 @@ async fn sessions(port: u16) -> Vec<serde_json::Value> {
         .clone()
 }
 
-/// A raw HTTP/1.1 request: the crate's dev-deps have no HTTP client.
-async fn http(port: u16, method: &str, path: &str) -> (u16, String) {
+/// A raw HTTP/1.1 request with a JSON `body`: the crate's dev-deps have no
+/// HTTP client.
+async fn http(port: u16, method: &str, path: &str, body: &str) -> (u16, String) {
     let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
         .unwrap();
     let req = format!(
-        "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+        "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
     );
     stream.write_all(req.as_bytes()).await.unwrap();
     let mut buf = Vec::new();
@@ -124,4 +126,56 @@ async fn two_launches_of_one_record_start_one_session() {
         .filter(|open| open["watch"] == true)
         .count();
     assert_eq!(watchers, 1, "one writer, one watcher: {open_a} {open_b}");
+}
+
+/// The cap cuts the oldest records, but never one a running console serves:
+/// cutting it would strand the console, and the next load would adopt it at
+/// the cascade position.
+#[tokio::test]
+async fn the_desk_cap_never_cuts_the_record_of_a_running_console() {
+    let dir = tempfile::tempdir().unwrap();
+    let port = daemon(dir.path()).await;
+    let (_ws, _open) = launch(port, "w-live", "tab-a").await;
+
+    // One record more than the cap, and the running console's is the oldest.
+    let windows: Vec<serde_json::Value> = (0..=ralphy_daemon::desk::DESK_MAX)
+        .map(|n| {
+            let id = if n == 0 {
+                "w-live".to_string()
+            } else {
+                format!("w-{n}")
+            };
+            serde_json::json!({
+                "id": id,
+                "repo": "owner/record-repo",
+                "agent": "console",
+                "kind": "console",
+                "rect": { "left": 10.0, "top": 20.0, "width": 640.0, "height": 480.0 },
+                "max": false,
+                "sessionId": null,
+                "ts": n + 1,
+            })
+        })
+        .collect();
+    let upload = serde_json::json!({ "windows": windows, "fences": [] }).to_string();
+    let (status, body) = http(port, "PUT", "/api/desk", &upload).await;
+    assert_eq!(status, 200, "PUT /api/desk: {body}");
+
+    let (_, body) = http(port, "GET", "/api/desk", "").await;
+    let desk: serde_json::Value = serde_json::from_str(&body).expect("desk JSON");
+    let ids: Vec<&str> = desk["windows"]
+        .as_array()
+        .expect("windows")
+        .iter()
+        .filter_map(|w| w["id"].as_str())
+        .collect();
+    assert!(
+        ids.contains(&"w-live"),
+        "the running console keeps its record: {ids:?}"
+    );
+    assert!(
+        !ids.contains(&"w-1"),
+        "the oldest other record makes room: {ids:?}"
+    );
+    assert_eq!(ids.len(), ralphy_daemon::desk::DESK_MAX, "{ids:?}");
 }

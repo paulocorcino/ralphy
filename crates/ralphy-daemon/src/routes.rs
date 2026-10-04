@@ -437,8 +437,16 @@ pub(crate) fn router_with_roster(
                 let path = desk_path.clone();
                 let registry = registry_path.clone();
                 let pushes = pushes.clone();
+                let sessions = sessions.clone();
                 move |Query(q): Query<DeskPutQuery>, Json(up): Json<desk::DeskUpload>| {
-                    desk_put_route(path.clone(), registry.clone(), pushes.clone(), q.tab, up)
+                    desk_put_route(
+                        path.clone(),
+                        registry.clone(),
+                        pushes.clone(),
+                        sessions.clone(),
+                        q.tab,
+                        up,
+                    )
                 }
             }),
         )

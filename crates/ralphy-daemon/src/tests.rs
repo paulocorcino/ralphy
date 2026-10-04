@@ -631,11 +631,11 @@ async fn api_desk_put_then_get_round_trips() {
 }
 
 #[tokio::test]
-async fn api_desk_put_prunes_to_24_newest_by_ts() {
+async fn api_desk_put_prunes_to_the_cap_newest_by_ts() {
     let dir = tempfile::tempdir().unwrap();
     let payload = desk_body(
         serde_json::Value::Array(
-            (1..=30)
+            (1..=36)
                 .map(|n| desk_json(&format!("w{n}"), n, serde_json::Value::Null, false))
                 .collect(),
         ),
@@ -645,12 +645,12 @@ async fn api_desk_put_prunes_to_24_newest_by_ts() {
     assert_eq!(res.status(), StatusCode::OK);
     let put_body: desk::DeskStore = serde_json::from_str(&body_text(res).await).unwrap();
     let ids: Vec<String> = put_body.windows.into_iter().map(|r| r.id).collect();
-    let expected: Vec<String> = (7..=30).map(|n| format!("w{n}")).collect();
+    let expected: Vec<String> = (7..=36).map(|n| format!("w{n}")).collect();
     assert_eq!(ids, expected, "the PUT answers with the pruned truth");
 
     let get_body: desk::DeskStore = serde_json::from_str(&desk_get(dir.path()).await).unwrap();
     let ids: Vec<String> = get_body.windows.into_iter().map(|r| r.id).collect();
-    assert_eq!(ids, expected, "and the persisted desk holds the same 24");
+    assert_eq!(ids, expected, "and the persisted desk holds the same 30");
 }
 /// A note card on the wire (ADR-0064 §2): placement only.
 fn note_json(id: &str, path: &str, ts: i64) -> serde_json::Value {
@@ -1181,6 +1181,7 @@ async fn api_desk_put_rejects_a_fence_with_a_non_finite_rect() {
         dir.path().join("desk.toml"),
         dir.path().join("repos.toml"),
         tokio::sync::broadcast::channel(1).0,
+        std::sync::Arc::new(crate::session::SessionManager::new()),
         None,
         desk::DeskUpload {
             windows: vec![],

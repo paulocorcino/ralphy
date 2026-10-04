@@ -281,7 +281,7 @@ window.WBConsole = (function () {
   // ADR-0050); `desk` is the in-memory mirror and the SYNCHRONOUS source of
   // truth, which keeps `persistWin`/`forgetRecord`/`deskOf` callable from a
   // mousemove. Capped so it cannot grow without bound.
-  const DESK_MAX = 24;
+  const DESK_MAX = 30;
   let desk = [];
   // The upload PERMIT: `PUT /api/desk` replaces the desk wholesale, so nothing
   // flushes until the daemon's own desk has landed. Under the `Session` policy
