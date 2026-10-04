@@ -4,10 +4,14 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use axum::extract::Query;
 use axum::response::{IntoResponse, Response};
+use axum::routing::{get, post};
 use axum::Json;
+use axum::Router;
 
 use super::read_peer_store;
+use super::RouterShared;
 use crate::{fleet, identity, peer, registry};
 
 mod nudge;
@@ -265,4 +269,42 @@ pub(crate) async fn fleet_route(
         (&a.environment, &a.daemon_id, &a.slug).cmp(&(&b.environment, &b.daemon_id, &b.slug))
     });
     Json(serde_json::json!({ "peers": peer_views, "repos": repos })).into_response()
+}
+
+/// `/api/fleet*`: the federated repo list and the nudge.
+pub(crate) fn fleet_routes(s: &RouterShared) -> Router {
+    let bound_port = s.bound_port;
+    Router::new()
+        .route(
+            "/api/fleet",
+            get({
+                let registry = s.registry_path.clone();
+                let peers = s.peers_dir.clone();
+                let id = s.identity.clone();
+                let env = s.environment.clone();
+                let cache = s.peer_repo_cache.clone();
+                move || {
+                    fleet_route(
+                        registry.clone(),
+                        peers.clone(),
+                        id.clone(),
+                        env.clone(),
+                        cache.clone(),
+                        bound_port,
+                    )
+                }
+            }),
+        )
+        .route(
+            "/api/fleet/nudge",
+            post({
+                let peers = s.peers_dir.clone();
+                // The nudge waits for the peer to answer, so it probes — and a
+                // probe needs to know who this daemon is to refuse dialling itself.
+                let daemon_id = s.daemon_id.clone();
+                move |q: Query<NudgeQuery>| {
+                    fleet_nudge_route(peers.clone(), daemon_id.clone(), bound_port, q.0.daemon_id)
+                }
+            }),
+        )
 }

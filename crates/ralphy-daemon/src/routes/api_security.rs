@@ -8,9 +8,12 @@ use std::sync::Arc;
 use axum::extract::Form;
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
+use axum::routing::{get, post};
 use axum::Json;
+use axum::Router;
 
 use super::now_unix;
+use super::RouterShared;
 use crate::{auth, cookie, release};
 
 pub(super) mod step_up;
@@ -474,4 +477,91 @@ pub(crate) fn apply_auth_change(state: &auth::AuthState, invalidate: bool) {
             tracing::warn!(error = %e, "failed to invalidate sessions");
         }
     }
+}
+
+/// Login, logout, the login card's session state, and `/api/security/*`.
+pub(crate) fn security_routes(s: &RouterShared) -> Router {
+    let auth = &s.auth;
+    // The avatar the login card wears (and ONLY the avatar). `/api/session` is
+    // allowlisted pre-login, so anything added to it is readable by an
+    // unauthenticated caller — see [`SessionState::avatar`] for why one glyph
+    // from a fixed public pool is the whole of what this leg may carry.
+    let session_avatar = s.identity.as_ref().map(|i| i.avatar.clone());
+    Router::new()
+        .route(
+            "/api/login",
+            post({
+                let auth = auth.clone();
+                move |headers: axum::http::HeaderMap, form: Form<LoginForm>| {
+                    let auth = auth.clone();
+                    async move { login_submit(auth, headers, form).await }
+                }
+            }),
+        )
+        .route(
+            "/api/session",
+            get({
+                let auth = auth.clone();
+                let avatar = session_avatar.clone();
+                move |headers: axum::http::HeaderMap| {
+                    let auth = auth.clone();
+                    let avatar = avatar.clone();
+                    async move { session_state_route(auth, avatar, headers).await }
+                }
+            }),
+        )
+        .route(
+            "/api/logout",
+            post({
+                let auth = auth.clone();
+                move |headers: axum::http::HeaderMap| logout_route(auth.clone(), headers)
+            }),
+        )
+        .route("/api/security/state", get(security_state_route))
+        .route(
+            "/api/security/totp/enroll",
+            post(security_totp_enroll_route),
+        )
+        .route(
+            "/api/security/totp/confirm",
+            post({
+                let auth = auth.clone();
+                move |form: Form<ConfirmForm>| security_totp_confirm_route(auth.clone(), form)
+            }),
+        )
+        .route(
+            "/api/security/totp/revoke",
+            post({
+                let auth = auth.clone();
+                move |form: Form<RevokeForm>| security_totp_revoke_route(auth.clone(), form)
+            }),
+        )
+        .route(
+            "/api/security/password",
+            post({
+                let auth = auth.clone();
+                move |form: Form<PasswordForm>| security_password_route(auth.clone(), form)
+            }),
+        )
+        .route(
+            "/api/security/token/remint",
+            post({
+                let auth = auth.clone();
+                move |form: Form<RemintForm>| security_token_remint_route(auth.clone(), form)
+            }),
+        )
+        .route(
+            "/api/security/require-login",
+            post({
+                let auth = auth.clone();
+                move |form: Form<RequireLoginForm>| security_require_login_route(auth.clone(), form)
+            }),
+        )
+        .route(
+            "/api/security/remote-images",
+            post({
+                let auth = auth.clone();
+                move |form: Form<RemoteImagesForm>| security_remote_images_route(auth.clone(), form)
+            }),
+        )
 }

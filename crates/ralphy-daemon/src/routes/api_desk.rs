@@ -4,10 +4,14 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use axum::extract::Query;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
+use axum::routing::{get, post};
 use axum::Json;
+use axum::Router;
 
+use super::RouterShared;
 use super::{push, Push};
 use crate::{checkout, desk, registry, rekey, session};
 
@@ -253,4 +257,41 @@ pub(crate) async fn desk_new_route(
         )
             .into_response(),
     }
+}
+
+/// `/api/desk` and `/api/desk/new`.
+pub(crate) fn desk_routes(s: &RouterShared) -> Router {
+    Router::new()
+        .route(
+            "/api/desk",
+            get({
+                let path = s.desk_path.clone();
+                let registry = s.registry_path.clone();
+                move || desk_get_route(path.clone(), registry.clone())
+            })
+            .put({
+                let path = s.desk_path.clone();
+                let registry = s.registry_path.clone();
+                let pushes = s.pushes.clone();
+                let sessions = s.sessions.clone();
+                move |Query(q): Query<DeskPutQuery>, Json(up): Json<desk::DeskUpload>| {
+                    desk_put_route(
+                        path.clone(),
+                        registry.clone(),
+                        pushes.clone(),
+                        sessions.clone(),
+                        q.tab,
+                        up,
+                    )
+                }
+            }),
+        )
+        .route(
+            "/api/desk/new",
+            post({
+                let path = s.desk_path.clone();
+                let pushes = s.pushes.clone();
+                move || desk_new_route(path.clone(), pushes.clone())
+            }),
+        )
 }

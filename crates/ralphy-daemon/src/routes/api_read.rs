@@ -1,18 +1,20 @@
 //! The read-only resources: repos, usage and spend, identity,
-//! about, release, agents, and the embedded UI bytes.
+//! about, agents, and the embedded UI bytes.
 
-use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::path::PathBuf;
 
 use axum::extract::Query;
 use axum::http::{header, HeaderMap, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
+use axum::routing::get;
 use axum::Json;
+use axum::Router;
 
 use super::AgentLocator;
+use super::RouterShared;
 use super::{encode_query_value, read_peer_store};
 use crate::{assets, StorePaths, UI};
-use crate::{dispatch, fleet, identity, peer, registry, rekey, release, roster, spend, usage};
+use crate::{dispatch, fleet, identity, peer, registry, rekey, roster, spend, usage};
 
 /// Query for `GET /api/usage`: an optional `since` (RFC3339 UTC) lower bound.
 /// Callers MUST URL-encode `+` as `%2B` — axum/`serde_urlencoded` decode a raw
@@ -416,55 +418,6 @@ pub(crate) async fn about_route() -> Response {
     .into_response()
 }
 
-/// How often the daemon asks what has been published. Four reads a day notices a
-/// release cut this morning and cannot contribute to exhausting the
-/// unauthenticated rate limit (ADR-0056 §6).
-pub(crate) const RELEASE_POLL_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
-
-/// One pass of the release watch. Blocking (it is `ureq`), silent on failure by
-/// construction, and a no-op when the operator turned the watch off.
-pub(crate) fn poll_releases(store: &Path) {
-    if release::watch_disabled_in(store) {
-        return;
-    }
-    let cache = release::cache_path_in(store);
-    ralphy_release::fetch::refresh_if_stale(&ralphy_release::RefreshOpts::new(&cache));
-}
-
-/// `GET /api/release`: where this build stands against what has been published,
-/// and the whole gap between the two.
-///
-/// Reads the cache only — the fetch is the background watch's job, so a page
-/// load never waits on the network and never triggers a request of its own.
-/// A store the daemon could not resolve answers the same shape with nothing in
-/// it, because "we do not know" is a normal state, not an error.
-pub(crate) async fn release_route(store: Option<PathBuf>) -> Response {
-    let (releases, disabled) = match store.as_deref() {
-        Some(dir) => (
-            ralphy_release::fetch::load(&release::cache_path_in(dir)),
-            release::watch_disabled_in(dir),
-        ),
-        None => (Vec::new(), false),
-    };
-    let view = release::view(
-        env!("RALPHY_VERSION"),
-        &releases,
-        ralphy_release::Channel::Rc,
-        disabled,
-    );
-    let can_update = store.is_some() && super::updatable(&view.standing, release::under_systemd());
-    Json(ReleaseReply { view, can_update }).into_response()
-}
-
-/// The view, plus whether the workbench may offer the update (ADR-0056 §11).
-/// A wrapper, so the public `ReleaseView` keeps its shape.
-#[derive(serde::Serialize)]
-struct ReleaseReply {
-    #[serde(flatten)]
-    view: release::ReleaseView,
-    can_update: bool,
-}
-
 /// `GET /api/agents[?repo=<routed-ref>]`: roster and presence snapshot from the
 /// environment that owns `repo`. A peer request deliberately omits `repo`, so
 /// the owning daemon computes locally and federation cannot recurse.
@@ -608,4 +561,76 @@ pub(crate) fn content_type(path: &str) -> &'static str {
         Some("webmanifest") => "application/manifest+json",
         _ => "application/octet-stream",
     }
+}
+
+/// The read routes of the workbench: identity, about, agents, repos, usage
+/// and spend.
+pub(crate) fn read_routes(s: &RouterShared) -> Router {
+    let identity = s.identity.clone();
+    let agents_peers = s.peers_dir.clone();
+    let agents_daemon_id = s.daemon_id.clone().unwrap_or_default();
+    let roster_locator = s.roster_locator.clone();
+    let bound_port = s.bound_port;
+    Router::new()
+        .route("/api/identity", get(move || identity_route(identity)))
+        .route("/api/about", get(about_route))
+        .route(
+            "/api/agents",
+            get(move |query: Query<AgentsQuery>| {
+                agents_route(
+                    query,
+                    agents_peers.clone(),
+                    agents_daemon_id.clone(),
+                    roster_locator.clone(),
+                    bound_port,
+                )
+            }),
+        )
+        .route(
+            "/api/repos",
+            get({
+                let p = s.registry_path.clone();
+                let memo = s.heal_memo.clone();
+                move || repos_route(p, memo)
+            }),
+        )
+        .route(
+            "/api/usage",
+            get({
+                let dir = s.usage_dir.clone();
+                let stores = s.stores.clone();
+                let registry = s.registry_path.clone();
+                let daemon_id = s.daemon_id.clone();
+                let peers = s.peers_dir.clone();
+                move |q: Query<UsageQuery>| {
+                    usage_route(
+                        dir,
+                        stores,
+                        registry,
+                        peers,
+                        daemon_id,
+                        q.0.since,
+                        q.0.project,
+                        q.0.period,
+                    )
+                }
+            }),
+        )
+        .route(
+            "/api/spend",
+            get({
+                let dir = s.usage_dir.clone();
+                let stores = s.stores.clone();
+                let registry = s.registry_path.clone();
+                move |q: Query<SpendQuery>| {
+                    spend_route(
+                        dir.clone(),
+                        stores.clone(),
+                        registry.clone(),
+                        q.0.project,
+                        q.0.period,
+                    )
+                }
+            }),
+        )
 }

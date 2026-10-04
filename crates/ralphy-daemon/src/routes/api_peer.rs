@@ -4,11 +4,15 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use axum::extract::Query;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
+use axum::routing::{get, post};
 use axum::Json;
+use axum::Router;
 
 use super::execute_oneshot;
+use super::{usage_local_route, RouterShared, UsageQuery};
 use crate::{dispatch, fleet, identity, peer, protocol, registry, session, watch};
 
 /// `GET /api/peer/hello`: the local fleet's version handshake (ADR-0052 §3) —
@@ -216,4 +220,67 @@ pub(crate) async fn peer_tree_close_route(
 ) -> Response {
     subs.close(&close.sub);
     Json(serde_json::json!({ "closed": true })).into_response()
+}
+
+/// `/api/peer/*`: the routes another daemon calls on this one.
+pub(crate) fn peer_routes(s: &RouterShared) -> Router {
+    Router::new()
+        .route(
+            "/api/peer/hello",
+            get({
+                let id = s.identity.clone();
+                let env = s.environment.clone();
+                move || peer_hello_route(id.clone(), env.clone())
+            }),
+        )
+        .route(
+            "/api/peer/usage",
+            get({
+                let dir = s.usage_dir.clone();
+                let stores = s.stores.clone();
+                let registry = s.registry_path.clone();
+                let daemon_id = s.daemon_id.clone();
+                move |q: Query<UsageQuery>| {
+                    usage_local_route(
+                        dir.clone(),
+                        stores.clone(),
+                        registry.clone(),
+                        daemon_id.clone(),
+                        q.0.since,
+                    )
+                }
+            }),
+        )
+        .route(
+            "/api/peer/command",
+            post({
+                let registry = s.registry_path.clone();
+                let daemon_id = s.daemon_id.clone();
+                let sessions = s.sessions.clone();
+                move |body: Json<protocol::Command>| {
+                    peer_command_route(registry.clone(), daemon_id.clone(), sessions.clone(), body)
+                }
+            })
+            // axum's 2 MB default refused a forwarded 4 MiB image paste.
+            .layer(axum::extract::DefaultBodyLimit::max(
+                crate::tree::MAX_COMMAND_BYTES,
+            )),
+        )
+        .route(
+            "/api/peer/tree/poll",
+            post({
+                let registry = s.registry_path.clone();
+                let subs = s.peer_watch_subs.clone();
+                move |body: Json<PeerTreePoll>| {
+                    peer_tree_poll_route(registry.clone(), subs.clone(), body)
+                }
+            }),
+        )
+        .route(
+            "/api/peer/tree/close",
+            post({
+                let subs = s.peer_watch_subs.clone();
+                move |body: Json<PeerTreeClose>| peer_tree_close_route(subs.clone(), body)
+            }),
+        )
 }
