@@ -176,20 +176,9 @@ pub(crate) async fn close_session_route(
                 };
             }
             fleet::route::Route::UnknownDaemon { daemon_id } => {
-                if let Some((environment, theirs)) = rejects
-                    .iter()
-                    .find_map(|reject| reject.version_mismatch_for(daemon_id))
-                {
-                    let status = peer::client::PeerStatus::VersionMismatch {
-                        theirs,
-                        ours: peer::PEER_PROTOCOL_VERSION,
-                    };
-                    return (StatusCode::BAD_GATEWAY, status.diagnosis(environment))
-                        .into_response();
-                }
                 return (
                     StatusCode::BAD_GATEWAY,
-                    "the environment of this project is not in the list".to_string(),
+                    fleet::unknown_daemon(daemon_id, &rejects),
                 )
                     .into_response();
             }

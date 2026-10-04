@@ -6,6 +6,7 @@ use std::path::PathBuf;
 mod bridge;
 mod gemini_root;
 mod join;
+mod peer_console;
 mod refuse;
 mod relay;
 mod upgrade;

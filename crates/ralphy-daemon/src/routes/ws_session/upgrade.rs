@@ -2,7 +2,7 @@
 //! launch, free-console launch), each local or relayed to the peer that owns
 //! the repo.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::extract::ws::WebSocketUpgrade;
@@ -11,6 +11,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 
 use super::join::{claim_for, hold, Joined};
+use super::peer_console::PeerConsole;
 use super::refuse::Refuser;
 use super::{gemini_root, peer_session_query, relay_to_peer, session_ws};
 use super::{SessionHost, SessionLabels, SessionQuery};
@@ -102,24 +103,10 @@ pub(crate) async fn session_ws_upgrade(
                     return relay_to_peer(ws, peer, &peer_query, me, &refuser, shutdown).await;
                 }
                 fleet::route::Route::UnknownDaemon { daemon_id } => {
-                    if let Some((environment, theirs)) = rejects
-                        .iter()
-                        .find_map(|reject| reject.version_mismatch_for(daemon_id))
-                    {
-                        let status = peer::client::PeerStatus::VersionMismatch {
-                            theirs,
-                            ours: peer::PEER_PROTOCOL_VERSION,
-                        };
-                        return refuser.refuse(
-                            ws,
-                            StatusCode::BAD_GATEWAY,
-                            status.diagnosis(environment),
-                        );
-                    }
                     return refuser.refuse(
                         ws,
                         StatusCode::BAD_GATEWAY,
-                        "the environment of this project is not in the list".to_string(),
+                        fleet::unknown_daemon(daemon_id, &rejects),
                     );
                 }
             }
@@ -203,172 +190,30 @@ pub(crate) async fn session_ws_upgrade(
                     query.repo = Some(slug.to_string());
                 }
                 fleet::route::Route::Peer { peer, slug } => {
-                    // A peer with no WSL distro is on another machine (ADR-0067
-                    // §7): its free console runs THERE, through the same relay
-                    // as an agent session, so it outlives this computer.
-                    let Some(nudge) = peer.nudge.as_ref() else {
-                        let me = peer::client::SelfRef {
-                            port: bound_port,
-                            daemon_id: &daemon_id,
-                        };
-                        let peer_query = peer_session_query(&query, slug);
-                        return relay_to_peer(ws, peer, &peer_query, me, &refuser, shutdown).await;
-                    };
-                    let status = peer::client::probe(
+                    return PeerConsole {
+                        sessions,
+                        query: &query,
                         peer,
-                        peer::client::SelfRef {
-                            port: bound_port,
-                            daemon_id: &daemon_id,
-                        },
-                    )
+                        slug,
+                        repo_ref: &repo_ref,
+                        command,
+                        agent_label,
+                        daemon_id,
+                        environment,
+                        bound_port,
+                        holder,
+                        record,
+                        refuser,
+                        shutdown,
+                    }
+                    .launch(ws)
                     .await;
-                    if status != peer::client::PeerStatus::Reachable {
-                        return refuser.refuse(
-                            ws,
-                            StatusCode::BAD_GATEWAY,
-                            status.diagnosis(&peer.environment),
-                        );
-                    }
-                    let Some(launcher) = session::peer_console_launcher() else {
-                        return refuser.refuse(
-                            ws,
-                            StatusCode::BAD_GATEWAY,
-                            format!(
-                                "{} cannot host a free console: wsl.exe launcher not found",
-                                peer.environment
-                            ),
-                        );
-                    };
-                    let entry = match peer::client::get(peer, "/api/repos").await {
-                        Ok((200, body)) => match fleet::repo_from_repos_json(&body, slug) {
-                            Ok(Some(entry)) => entry,
-                            Ok(None) => {
-                                return refuser.refuse(
-                                    ws,
-                                    StatusCode::BAD_REQUEST,
-                                    format!("{} does not have this project", peer.environment),
-                                );
-                            }
-                            Err(_) => {
-                                return refuser.refuse(
-                                    ws,
-                                    StatusCode::BAD_GATEWAY,
-                                    format!(
-                                        "{} returned an unreadable repository list",
-                                        peer.environment
-                                    ),
-                                );
-                            }
-                        },
-                        Ok((status, _)) => {
-                            return refuser.refuse(
-                                ws,
-                                StatusCode::BAD_GATEWAY,
-                                format!(
-                                    "{} refused its repository list with HTTP {status}",
-                                    peer.environment
-                                ),
-                            );
-                        }
-                        Err(error) => {
-                            return refuser.refuse(
-                                ws,
-                                StatusCode::BAD_GATEWAY,
-                                fleet::route::peer_unreachable(peer, &format!("{error:#}")),
-                            );
-                        }
-                    };
-                    if entry.path.is_empty() {
-                        return refuser.refuse(
-                            ws,
-                            StatusCode::BAD_REQUEST,
-                            format!("{} sent no folder for this project", peer.environment),
-                        );
-                    }
-                    if !entry.reachable {
-                        return refuser.refuse(
-                            ws,
-                            StatusCode::BAD_REQUEST,
-                            format!(
-                                "{} cannot reach the folder {}",
-                                peer.environment, entry.path
-                            ),
-                        );
-                    }
-                    let spec = session::peer_console_spec(
-                        launcher,
-                        &nudge.distro,
-                        Path::new(&entry.path),
-                        24,
-                        80,
-                        command.as_deref(),
-                    );
-                    let claim = claim_for(&sessions, &record).await;
-                    if let Some(joined) =
-                        Joined::find(&sessions, claim.as_ref(), holder.as_deref(), &environment)
-                    {
-                        return joined.upgrade(ws, daemon_id, shutdown);
-                    }
-                    let effective_environment = peer.environment.clone();
-                    return match sessions
-                        .spawn_attached(
-                            repo_ref.clone(),
-                            agent_label,
-                            "console".to_string(),
-                            Some(effective_environment.clone()),
-                            None,
-                            record.clone(),
-                            spec,
-                        )
-                        .inspect(|(_, att)| hold(att, holder.as_deref()))
-                    {
-                        Ok((id, att)) => ws.on_upgrade(move |socket| {
-                            session_ws(
-                                socket,
-                                att,
-                                id,
-                                daemon_id,
-                                effective_environment,
-                                SessionLabels::default(),
-                                shutdown,
-                            )
-                        }),
-                        Err(error) => {
-                            tracing::warn!(
-                                environment = %peer.environment,
-                                error = %error,
-                                "failed to spawn a peer free console"
-                            );
-                            refuser.refuse(
-                                ws,
-                                StatusCode::INTERNAL_SERVER_ERROR,
-                                format!(
-                                    "{} free-console launcher failed: {error}",
-                                    peer.environment
-                                ),
-                            )
-                        }
-                    };
                 }
                 fleet::route::Route::UnknownDaemon { daemon_id } => {
-                    if let Some((peer_environment, theirs)) = rejects
-                        .iter()
-                        .find_map(|reject| reject.version_mismatch_for(daemon_id))
-                    {
-                        let status = peer::client::PeerStatus::VersionMismatch {
-                            theirs,
-                            ours: peer::PEER_PROTOCOL_VERSION,
-                        };
-                        return refuser.refuse(
-                            ws,
-                            StatusCode::BAD_GATEWAY,
-                            status.diagnosis(peer_environment),
-                        );
-                    }
                     return refuser.refuse(
                         ws,
                         StatusCode::BAD_GATEWAY,
-                        "the environment of this project is not in the list".to_string(),
+                        fleet::unknown_daemon(daemon_id, &rejects),
                     );
                 }
             }

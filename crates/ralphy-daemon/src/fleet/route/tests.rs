@@ -1,6 +1,6 @@
 use super::*;
 use crate::dispatch;
-use crate::peer::PEER_PROTOCOL_VERSION;
+use crate::peer::{PeerReject, PEER_PROTOCOL_VERSION};
 
 const LOCAL_ID: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
 const PEER_A_ID: &str = "01ARZ3NDEKTSV4RRFFQ69G5FAW";
@@ -90,4 +90,23 @@ fn routing_is_independent_of_the_command_verb() {
 fn unreachable_diagnosis_names_the_environment() {
     let peer = peer(PEER_A_ID, "WSL: Ubuntu-22.04");
     assert!(peer_unreachable(&peer, "connection refused").contains(&peer.environment));
+}
+
+#[test]
+fn an_unknown_daemon_names_its_version_mismatch_or_the_missing_environment() {
+    let rejects = [PeerReject::IncompatibleVersion {
+        file: "peer.toml".to_string(),
+        daemon_id: PEER_A_ID.to_string(),
+        environment: "WSL: Ubuntu-22.04".to_string(),
+        theirs: 999,
+    }];
+    let mismatch = unknown_daemon(PEER_A_ID, &rejects);
+    assert!(
+        mismatch.contains("WSL: Ubuntu-22.04") && mismatch.contains("999"),
+        "got: {mismatch}"
+    );
+    assert_eq!(
+        unknown_daemon(PEER_B_ID, &rejects),
+        "the environment of this project is not in the list"
+    );
 }

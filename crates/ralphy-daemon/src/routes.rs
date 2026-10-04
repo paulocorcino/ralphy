@@ -22,9 +22,11 @@ mod api_release;
 mod api_security;
 mod api_sessions;
 mod api_update;
+mod api_usage;
 mod guard;
 mod headers;
 mod presence;
+mod ui_asset;
 mod ws_command;
 mod ws_session;
 mod ws_tree;
@@ -37,10 +39,12 @@ pub(crate) use api_release::*;
 pub(crate) use api_security::*;
 pub(crate) use api_sessions::*;
 pub(crate) use api_update::*;
+pub(crate) use api_usage::*;
 pub(crate) use guard::*;
 #[cfg(test)]
 pub(crate) use headers::{content_security_policy, inline_script_bodies, script_hash};
 pub(crate) use presence::*;
+pub(crate) use ui_asset::*;
 pub(crate) use ws_command::*;
 pub(crate) use ws_session::*;
 pub(crate) use ws_tree::*;
@@ -213,6 +217,7 @@ pub(crate) fn router_with_roster(
     };
     Router::new()
         .merge(read_routes(&shared))
+        .merge(usage_routes(&shared))
         .merge(release_routes(&shared))
         .merge(peer_routes(&shared))
         .merge(fleet_routes(&shared))
