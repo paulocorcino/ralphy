@@ -87,6 +87,14 @@ flowchart LR
 | Peer daemon | daemon | Synchronous, versioned peer protocol ([ADR-0052](./adr/0052-local-fleet-federation.md), [ADR-0067](./adr/0067-peers-on-other-machines-through-ssh.md)) |
 | Console CLI | daemon | A byte stream on a PTY; lives and dies with the daemon |
 
+Inside the browser workbench, the script is classic scripts with no build
+step. Each file sets one `window.WB<Name>` namespace. The `shell()` Alpine
+component in `app.js` holds the page layout and, for now, most features. A
+feature with its own state moves out of it into an Alpine component in its
+own file, one feature at a time
+([ADR-0073](./adr/0073-the-workbench-script-is-cut-into-alpine-components.md),
+proposed).
+
 ## 4. Components and crates
 
 The component names are CONTEXT.md terms.
