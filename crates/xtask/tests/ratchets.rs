@@ -28,11 +28,10 @@ const SPAWNED: [&str; 3] = ["git", "gh", "ssh"];
 /// code, measured on 1b50e775 and lowered when `ralphy-git-read` took the
 /// daemon's and the usage scan's git reads (#510).
 const SPAWN_BASELINE: &[(&str, &str, usize)] = &[
-    ("crates/ralphy-cli/build.rs", "git", 2),
+    ("crates/ralphy-cli/build/git_version.rs", "git", 2),
     ("crates/ralphy-cli/src/init/gate.rs", "gh", 1),
     ("crates/ralphy-core/src/git.rs", "git", 1),
     ("crates/ralphy-core/src/github/client.rs", "gh", 1),
-    ("crates/ralphy-daemon/build.rs", "git", 2),
     ("crates/ralphy-git-read/src/lib.rs", "git", 1),
     ("crates/xtask/src/capabilities.rs", "git", 3),
 ];
