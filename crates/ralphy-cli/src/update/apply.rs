@@ -185,6 +185,9 @@ fn find_binary(dir: &Path, wanted: &str) -> Result<Option<PathBuf>> {
 mod tests {
     use super::*;
 
+    // The same test is in `ralphy-pricing` and `ralphy-release`. Each tests its own
+    // agent: this one downloads the update, so it has other limits.
+    // jscpd:ignore-start
     /// ureq 3 reads a proxy from the environment when an agent is built; Ralphy
     /// never has, and #443 keeps it that way. The default agent proves the
     /// variable is one ureq reads, so the check on ours is not empty.
@@ -201,6 +204,7 @@ mod tests {
         assert!(default_uses_it, "ureq no longer reads ALL_PROXY");
         assert!(!ours_uses_it, "the agent picked up ALL_PROXY");
     }
+    // jscpd:ignore-end
 
     /// Serve `response` once on a loopback port. The release crate has a richer
     /// harness; this one exists because the cap is a property of `download`,

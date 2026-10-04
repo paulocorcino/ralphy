@@ -1,0 +1,22 @@
+[
+  { "case": "the flat field alone", "usage": { "cache_creation_input_tokens": 42 }, "tokens": 42 },
+  {
+    "case": "the two sub-tiers alone are summed",
+    "usage": { "cache_creation": { "ephemeral_5m_input_tokens": 40, "ephemeral_1h_input_tokens": 2 } },
+    "tokens": 42
+  },
+  {
+    "case": "the flat field wins when both are present",
+    "usage": {
+      "cache_creation_input_tokens": 42,
+      "cache_creation": { "ephemeral_5m_input_tokens": 30, "ephemeral_1h_input_tokens": 2 }
+    },
+    "tokens": 42
+  },
+  {
+    "case": "a missing sub-tier counts as zero",
+    "usage": { "cache_creation": { "ephemeral_5m_input_tokens": 7 } },
+    "tokens": 7
+  },
+  { "case": "no cache field at all", "usage": { "input_tokens": 5 }, "tokens": 0 }
+]
