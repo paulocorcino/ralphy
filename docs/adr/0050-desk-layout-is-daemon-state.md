@@ -261,3 +261,81 @@ chosen, shown and passed to Claude is
 These rules were decided earlier and were recorded only in CONTEXT.md. On 2026-09-30 the glossary was cut back to definitions, so the rules move here without change. Nothing new is decided.
 
 - **Restoration is asymmetric on purpose.** A **free console** relaunches by itself (a shell is free and idempotent), while an agent console returns as a **placeholder** the operator reconnects with one click: loading a page must never spawn vendor CLIs and spend quota nobody authorised.
+
+> **Corrected by the amendment of 2026-10-04 below.** A shell is free, but its
+> launch was not idempotent: two pages that load at the same time each start
+> one.
+
+## Amendment (2026-10-04): a launch names its window record, and the daemon keeps one session per record
+
+On 2026-10-03 the daemon restarted, and two pages loaded the desk 4 seconds
+apart. Each page relaunched the same free consoles, so the daemon started 8
+shells for 4 records (sessions 590–593 and 594–597). The fold of 2026-09-20
+worked: each record kept one `sessionId`, and no write was lost. But 4 shells
+had no record. On 2026-10-04 a third page loaded, found those 4 sessions, and
+adopted each one into a fresh record at the cascade position. The operator saw
+consoles leave their places, and each later load on two devices made more
+of them.
+
+The fault is not a double write. It is a double **side effect**: loading a page
+starts a process, and the daemon cannot tell that two launches are for the same
+console. Only the daemon sees the launches of every page, so the rule lives
+there. The link between a window record and its session becomes a fact the
+daemon owns, not a field each page guesses and writes back.
+
+- **A launch names its record.** A new launch on `/ws/session` (an agent
+  launch, and a `console=1` launch) carries `record=<window record id>`. A
+  reattach by `id` does not carry it: the session already has one. A value
+  that is not 1–64 characters of `A–Z`, `a–z`, `0–9`, `-` or `_` (the rule of
+  `holder`) is treated as absent.
+- **One live session per record.** When a launch names a record and a live
+  session already carries that record, the daemon starts nothing. The request
+  becomes a reattach to that session, with the normal writer-slot rules: the
+  holder that owns the slot gets it back, and any other page attaches as a
+  watcher (read-only, with "Take over"). It is never refused: the page asked
+  for this console, and this console is running. The check and the claim are
+  one step under one lock per record, and the claim is taken BEFORE the spawn,
+  so a second launch that arrives during the spawn waits for it and then
+  attaches. A check in the page before the launch is not enough: it cannot
+  see a launch from another page that is still in flight.
+- **The claim ends with the session.** A session leaves the session list when
+  its child exits or when it is closed, and its record is free from that
+  moment. A restart closes the old session first and then launches, so it
+  starts a fresh one in the same record.
+- **The session list says the record.** Each session in `/api/sessions`
+  carries `record` (absent for a session launched without one).
+  `reconcileDesk` attaches a record to the session that names it before it
+  tries the `sessionId` tuple. A session that names a record no page has yet
+  is adopted into a record with THAT id, so the page that launched it and the
+  page that adopted it write the same record.
+- **The cap is 30, and it never drops a record a session names.** The window
+  cap goes from 24 to 30: one operator already kept 23 records in normal use.
+  The daemon now knows which records have a live session, so its prune (the
+  backstop for the cap) keeps them, as the shell already keeps the records of
+  windows on its stage. When the pinned records are more than the cap, all of
+  them stay and only unpinned records are dropped. A cap that deletes the
+  record of a live console strands that console, and the next load adopts it
+  at the cascade position: the same loop as above.
+- **A full desk refuses a new console.** When the desk holds 30 window
+  records, opening a NEW console is refused with a message that asks the
+  operator to close one first, as a full set of notes already does. Nothing
+  is cut in silence to make room. A relaunch, a restart and an adopt reuse
+  or bring a record and are not refused.
+- **Older peers and older daemons.** The query field is ignored by a daemon
+  that does not know it, so a launch relayed to an older peer is not
+  protected until that peer is updated. A page from before this amendment
+  sends no `record`, and its launches start a session as before.
+
+### Rejected alternatives
+
+- **A version check (ETag) on the desk.** It refuses a write, but the second
+  shell is already running when the write happens. It would also refuse every
+  drag on one device that follows a drag on another.
+- **Ask `/api/sessions` before the relaunch.** Two pages that load at the same
+  moment both read "no session" and both launch. It narrows the window; it
+  does not close it.
+- **Only one page restores at a time (a lease).** A page that dies holding the
+  lease blocks every other page until it times out, and the lease is a second
+  copy of a fact the daemon already has.
+- **Stop relaunching free consoles by themselves.** It removes the race by
+  removing the feature. With the daemon's claim, the relaunch is safe.
