@@ -121,6 +121,11 @@ pub fn load(cache_path: &Path) -> Vec<Release> {
         .unwrap_or_default()
 }
 
+// The same code is in `ralphy-pricing/src/fetch.rs`, and it stays two copies:
+// pricing and release are leaf crates with no shared crate (ADR-0056 §4), and
+// each owns its outside product with its own timeouts and limits. A fix here
+// is checked against the pricing copy by hand.
+// jscpd:ignore-start
 /// True when `RALPHY_RELEASE_OFFLINE` trims to `"1"`. Mirrors the pricing
 /// crate's switch so an air-gapped operator turns off every outbound read the
 /// same way.
@@ -150,6 +155,7 @@ fn cache_is_fresh(path: &Path, ttl: Duration) -> bool {
     }
     age.to_std().is_ok_and(|d| d < ttl)
 }
+// jscpd:ignore-end
 
 /// The prefix of one release's URL; the tag follows it.
 pub const RELEASE_BY_TAG_URL: &str =
@@ -216,6 +222,11 @@ fn fetch_body(url: &str) -> Result<String, String> {
     Err(last_err)
 }
 
+// The same code is in `ralphy-pricing/src/fetch.rs`, and it stays two copies:
+// pricing and release are leaf crates with no shared crate (ADR-0056 §4), and
+// each owns its outside product with its own timeouts and limits. A fix here
+// is checked against the pricing copy by hand.
+// jscpd:ignore-start
 /// Write via temp file + atomic rename, so a concurrent reader sees either the
 /// old cache or the new one and never a gap. `std::fs::rename` replaces the
 /// destination on both Unix and Windows.
@@ -232,6 +243,7 @@ fn atomic_write_cache(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         }
     }
 }
+// jscpd:ignore-end
 
 #[cfg(test)]
 mod tests {
@@ -242,6 +254,9 @@ mod tests {
     use std::sync::Arc;
     use std::thread;
 
+    // The same test harness is in `ralphy-pricing/src/fetch.rs`. Each crate tests
+    // its own HTTP agent, and the two crates share no code (ADR-0056 §4).
+    // jscpd:ignore-start
     /// ureq 3 reads a proxy from the environment when an agent is built; Ralphy
     /// never has, and #443 keeps it that way. The default agent proves the
     /// variable is one ureq reads, so the check on ours is not empty.
@@ -258,6 +273,7 @@ mod tests {
         assert!(default_uses_it, "ureq no longer reads ALL_PROXY");
         assert!(!ours_uses_it, "the agent picked up ALL_PROXY");
     }
+    // jscpd:ignore-end
 
     fn fixture_body() -> String {
         r#"[
@@ -299,6 +315,9 @@ mod tests {
         String::from_utf8_lossy(&buf).to_string()
     }
 
+    // The same test harness is in `ralphy-pricing/src/fetch.rs`. Each crate tests
+    // its own HTTP agent, and the two crates share no code (ADR-0056 §4).
+    // jscpd:ignore-start
     /// Bind `127.0.0.1:0` and serve `response` up to `max_accepts` times, or
     /// until the deadline — so a join never hangs when fewer clients come.
     /// Returns the port, the accept counter, and the served request heads.
@@ -348,6 +367,7 @@ mod tests {
         thread::sleep(Duration::from_millis(20));
         (port, accepts, requests, handle)
     }
+    // jscpd:ignore-end
 
     fn temp_cache_path(tag: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!(

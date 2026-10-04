@@ -24,7 +24,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::{InteractiveRecord, KimiScan, Tokens};
 
@@ -117,7 +117,7 @@ fn scan_legacy(
 ) {
     let sessions_root = kimi_dir.join("sessions");
     let model = read_config_model(kimi_dir);
-    for file in wire_files(&sessions_root) {
+    for file in crate::walk::files_under(&sessions_root, is_wire_log) {
         let session_id = session_id_from_path(&file, &sessions_root);
         if run_session_ids.contains(&session_id) {
             continue;
@@ -214,7 +214,7 @@ fn scan_kimi_code(
     let sessions_root = kimi_code_dir.join("sessions");
     // slug → resolved git actor email, computed at most once per attributed repo.
     let mut email_cache: HashMap<String, Option<String>> = HashMap::new();
-    for file in wire_files(&sessions_root) {
+    for file in crate::walk::files_under(&sessions_root, is_wire_log) {
         let session_id = session_id_from_path(&file, &sessions_root);
         if run_session_ids.contains(&session_id) {
             continue;
@@ -372,26 +372,10 @@ fn ms_to_rfc3339(ms: Option<i64>) -> String {
         .unwrap_or_default()
 }
 
-/// Every `wire.jsonl` under `dir`, recursively. Tolerant: a missing/unreadable
-/// dir yields nothing. Order unspecified. Mirrors `codex.rs::jsonl_files`, but
-/// filters on the file NAME `wire.jsonl` (not the extension).
-fn wire_files(dir: &Path) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    let mut stack = vec![dir.to_path_buf()];
-    while let Some(d) = stack.pop() {
-        let Ok(entries) = fs::read_dir(&d) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                stack.push(path);
-            } else if path.file_name().and_then(|n| n.to_str()) == Some("wire.jsonl") {
-                out.push(path);
-            }
-        }
-    }
-    out
+/// `true` for a file named `wire.jsonl`, the Kimi session log. The filter is on
+/// the file name, not the extension.
+fn is_wire_log(path: &Path) -> bool {
+    path.file_name().and_then(|n| n.to_str()) == Some("wire.jsonl")
 }
 
 #[cfg(test)]

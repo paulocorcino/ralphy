@@ -9,7 +9,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::{ClaudeScan, InteractiveRecord, Tokens};
 
@@ -60,7 +60,7 @@ pub fn scan_claude(input: &ClaudeScan) -> Vec<InteractiveRecord> {
                 .clone()
         });
 
-        for transcript in jsonl_files(&ws_path) {
+        for transcript in crate::walk::files_under(&ws_path, crate::walk::is_jsonl) {
             let Some(session_id) = transcript
                 .file_stem()
                 .and_then(|s| s.to_str())
@@ -215,6 +215,10 @@ fn ts_lt(a: &str, b: &str) -> bool {
     }
 }
 
+// The same function is in `ralphy-agent-claude/src/usage.rs`, and it stays two
+// copies: the usage scan does not import an adapter (ADR-0033 §7). The test
+// `cache_creation_tokens_matches_the_shared_fixture` holds both to one fixture.
+// jscpd:ignore-start
 /// Sum `cache_creation` tokens from a transcript `usage` block: prefer the flat
 /// `cache_creation_input_tokens`, else the `cache_creation` 5m/1h ephemeral
 /// sub-tiers (they total to the flat field). Mirrors the adapter (ADR-0008 D5).
@@ -231,6 +235,7 @@ fn cache_creation_tokens(usage: &serde_json::Value) -> u64 {
     }
     0
 }
+// jscpd:ignore-end
 
 /// Encode a launch cwd the way Claude Code names its `~/.claude/projects/<dir>`
 /// transcript folder (ADR-0008 D10): every non-ASCII-alphanumeric character maps
@@ -242,30 +247,28 @@ fn dashed_cwd(cwd: &str) -> String {
         .collect()
 }
 
-/// Every `*.jsonl` under `dir`, recursively. Tolerant: an unreadable subdir is
-/// skipped. Order is unspecified (each file is one independent session).
-fn jsonl_files(dir: &Path) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    let mut stack = vec![dir.to_path_buf()];
-    while let Some(d) = stack.pop() {
-        let Ok(entries) = fs::read_dir(&d) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                stack.push(path);
-            } else if path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
-                out.push(path);
-            }
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The adapter's fixture: this copy and the adapter's are held to the same
+    /// rows, so the two cannot drift.
+    #[test]
+    fn cache_creation_tokens_matches_the_shared_fixture() {
+        let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+            "../../ralphy-agent-claude/tests/fixtures/cache_creation_tokens.json"
+        ))
+        .expect("the fixture is JSON");
+        assert!(rows.len() >= 5, "the fixture lost rows");
+        for row in &rows {
+            assert_eq!(
+                cache_creation_tokens(&row["usage"]),
+                row["tokens"].as_u64().expect("each row has tokens"),
+                "{}",
+                row["case"]
+            );
+        }
+    }
     use std::collections::HashSet;
 
     fn write(dir: &Path, rel: &str, content: &str) {

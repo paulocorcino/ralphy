@@ -52,6 +52,10 @@ pub struct AgentState {
     pub detail: Option<String>,
 }
 
+// The same fold is in `ralphy-agent-claude/src/status.rs`, and it stays two
+// copies: the daemon never imports an adapter (ADR-0059 §5). The shared fixture
+// test below holds the two folds equal.
+// jscpd:ignore-start
 /// The §1 table, one hook line in, one state out — or `None` for a line that
 /// changes no state. Byte-for-byte the adapter's fold; the fixture test is
 /// the proof.
@@ -107,6 +111,7 @@ fn question_detail(input: Option<&Value>) -> String {
         None => "AskUserQuestion".to_string(),
     }
 }
+// jscpd:ignore-end
 
 /// What a reader is told about an observation `now` (§6): `working` past
 /// [`STALE_AFTER`] is `unknown` — the hook that would have said otherwise
@@ -154,6 +159,10 @@ impl Tail {
         }
     }
 
+    // The same fold is in `ralphy-agent-claude/src/status.rs`, and it stays two
+    // copies: the daemon never imports an adapter (ADR-0059 §5). The shared fixture
+    // test below holds the two folds equal.
+    // jscpd:ignore-start
     pub fn poll(&mut self) -> Polled {
         let mut out = Polled::default();
         let Ok(mut file) = std::fs::File::open(&self.path) else {
@@ -184,6 +193,7 @@ impl Tail {
         }
         out
     }
+    // jscpd:ignore-end
 }
 
 /// The two files one console's hooks need, under `<store>/sessions/`: the
@@ -259,6 +269,8 @@ mod tests {
     const MAPPING: &str =
         include_str!("../../ralphy-agent-claude/tests/fixtures/agent_state_mapping.json");
 
+    // The adapter has the same test against the same fixture (ADR-0059 §5).
+    // jscpd:ignore-start
     #[test]
     fn fold_line_matches_the_adapters_mapping_fixture() {
         let rows: Vec<Value> = serde_json::from_str(MAPPING).unwrap();
@@ -276,6 +288,7 @@ mod tests {
             }
         }
     }
+    // jscpd:ignore-end
 
     /// §6: only a `working` goes stale, and only past the window.
     #[test]

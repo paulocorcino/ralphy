@@ -106,7 +106,7 @@ pub(crate) const PEER_POLL_WINDOW_MS: u64 = 25_000;
 /// never appeared (2026-09-01).
 ///
 /// Slack is cheap here and a tight budget is not: a peer that is actually gone
-/// fails at CONNECT within [`peer::client::PEER_TIMEOUT`], so this deadline is
+/// fails at CONNECT within [`peer::client::PEER_CONNECT_TIMEOUT`], so this deadline is
 /// only ever spent on a peer that accepted the request and went quiet.
 pub(crate) const PEER_POLL_DEADLINE: Duration = Duration::from_secs(40);
 
