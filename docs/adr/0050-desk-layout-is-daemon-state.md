@@ -57,6 +57,9 @@ the cost of guessing wrong is a window in the wrong place.
 > browser at a time; a solo developer with the workbench open on a phone, a
 > tablet and a laptop at once is three pages on one desk, and the cost of
 > guessing wrong turned out to be a console coming back twice.
+>
+> **Superseded by the amendment of 2026-10-04 (changes, not the desk).** The
+> PUT carries a list of changes that the daemon applies in arrival order.
 
 ### 3. One store, no browser fallback
 
@@ -177,6 +180,9 @@ beside the live window — or, for a shell, a second PTY.
 
 Three rules close it. The first changes §2's wire semantics; the other two
 are the shell's.
+
+> **The first two rules are superseded by the amendment of 2026-10-04
+> (changes, not the desk).** The third, a session finds its record, stays.
 
 - **The PUT folds.** The body gains `removed: { windows, fences, checkouts }`
   — the ids this page deleted since it loaded — and a body carrying it is
@@ -417,3 +423,144 @@ the operator can restore, download as a file, and upload again.
 - **Restore in place, without a reload.** `restoreDesk` reconciles once per
   page by design (#537), and the rects of live windows are never applied
   from the desk. Both would have to change for a rare act.
+
+## Amendment (2026-10-04): the desk upload carries changes, not the desk
+
+One operator uses a phone, a tablet and a PC within seconds. Measured on
+2026-10-04 on a scratch daemon: the PC moved a window from left 100 to 400.
+The phone still showed 100, because an open page never applied a rect from
+the desk. The phone's socket reconnected, the page wrote the window's record
+again, and the daemon held 100 again. The PC's move was lost.
+
+The cause is the shape of the write. Each page uploaded WHOLE records, built
+from its own screen and stamped with its own clock, and the daemon kept the
+record with the newest `ts`. Seven of the eleven places that wrote a window
+record were not about the rect (a rename, a lock, a reconnect, a load), but
+each one wrote the rect too, with a fresh `ts`. The same fault was in the
+other record types: a page that had changed one fence kept its whole local
+copy of every fence, and each flush sent the whole `checkouts` map. Each fix
+since 2026-09-20 (the fold, the lock and name amendments, the double launch,
+the cap, #537, the history) closed one way in. This amendment changes the
+write so that a page can only send what it changed.
+
+- **The body is a list of changes.** `PUT /api/desk?tab=<id>` takes
+  `{ seq, generation, changes: [ … ] }`. Each change is one of:
+  - `{ op: "create", type, record }`: a new window, fence or note card;
+  - `{ op: "set", type, id, fields }`: some fields of one record;
+  - `{ op: "remove", type, id }`;
+  - `{ op: "checkout", repo, name }`: select a worktree for a project;
+  - `{ op: "checkout-clear", repo, ifName }`: clear it, only if it still
+    holds `ifName`.
+
+  `type` is `window`, `fence` or `note`. A `set` may name only these fields:
+  for a window `rect`, `max`, `locked`, `consoleName`, `checkout`, and
+  `session` (`sessionId`, `daemonId` and `environment` as one unit); for a
+  fence `rect`, `name`, `locked`; for a note card `rect`, `locked`, and
+  `file` (`repo`, `path` and `checkout` as one unit). A page computes the
+  value at the act (the rect at the end of a drag, the tiles of a tile), so
+  it never writes a value it read from a screen that may be stale.
+- **The daemon applies the changes in the order they arrive.** No client
+  clock decides anything. Under the desk lock, each change is checked and
+  applied to the stored desk:
+  - a `set` or `remove` of a record that does not exist is ignored: another
+    device deleted it, and a change to it must not bring it back;
+  - a `create` of an id that exists applies only its `session`: a page that
+    adopted a running console never writes its cascade rect over the saved
+    one;
+  - a `set` to the value already stored changes nothing;
+  - a change that fails a check (a rect off the stage, a checkout that is not
+    one path component, a field not in the list, a `create` over the cap) is
+    skipped. The reply names it in `refused: [{ index, error }]`, and the
+    other changes of the body still apply;
+  - every repo key goes through the registry's former slugs first.
+
+  `ts` is now the server time of a record's last change, kept for display
+  and for the history only.
+- **The caps apply to `create` only.** A `create` past the cap (30 windows,
+  12 fences, 32 note cards) is refused, with a slack of 5 for windows: a
+  running console must always be able to get a record back. Nothing is
+  pruned by age on this path: a prune deletes a record that no page asked to
+  delete. A restore still prunes, because it builds a whole desk.
+- **`seq`: a resend never undoes a later change.** A page numbers each
+  upload. The daemon keeps the last `seq` per tab id in memory (the last 64
+  tabs). A body whose `seq` is not higher is ignored and answered with the
+  current desk. A page resends a batch with the same `seq`, so a batch the
+  daemon applied but whose reply was lost is not applied a second time, after
+  another device changed the same field. The last upload when a page closes
+  sends every change not yet answered, with a new `seq`.
+- **`rev`: a page never takes an older view.** The desk carries `rev`, a
+  counter the daemon raises on every write that changes the desk. The GET and
+  the PUT return it. A page ignores a desk whose `rev` is lower than the last
+  one it took, so a slow read cannot put an old desk on screen.
+- **The page keeps the daemon's desk and its own pending changes apart.** It
+  draws the daemon's last desk with its pending changes applied on top, by
+  the same rules as the daemon. One table of cases,
+  `ui-tests/fixtures/desk-apply-cases.json`, is run by the Rust test and by
+  the node test. An upload that fails on the network, or with `401`, `409
+  unreadable` or `5xx`, is kept and sent again later. A `400` or `422` drops
+  it: the daemon will never accept it.
+- **The screens converge.** When a page takes a desk, it applies the rect,
+  the lock and the name of each window, fence and card to what it shows,
+  except on an element under a gesture of the operator (from the press to the
+  release) and except for a field with a pending change. `max` is not applied
+  to an open page: a phone that maximizes a console must not maximize it on
+  the PC. A window whose record was removed by another device is closed on
+  this page when it is a placeholder or has ended; a running console keeps
+  its window and gets a record again, because a running console always has
+  one. A card with text not yet saved is kept. A console opened on another
+  device appears at the next load: opening it live would attach or start a
+  process without an act on this page.
+- **An old page cannot write.** A body without `changes` is a page from
+  before this amendment. The daemon refuses it with `409
+  {"state":"restored"}` and writes nothing: a page from the desk history on
+  reloads on that reply, and an older page loses that one write. A hidden
+  tab that runs an older build than the daemon holds its writes (ADR-0070
+  D6).
+- **A new desk.** `POST /api/desk/new` sets `generation`, so a page that read
+  the unreadable desk reloads instead of writing into the new one.
+
+This supersedes, for the desk upload: §2's whole-array semantics and its
+"last-write-wins, no ETag"; the 2026-09-20 rules "per id the newer `ts`
+wins" and "read before write"; and the reason the lock and `consoleName`
+amendments gave for applying those fields from the mirror, which is now the
+general rule above. The `generation` of the desk history stays: it still
+means "reload".
+
+The model is the one Figma describes for its multiplayer editor, which also
+has a central server: the server decides the order of changes, the last
+change to a property wins, a client does not apply a server value over a
+change of its own that the server has not answered, a deleted object takes
+its later changes with it, and a client that comes back reads a fresh copy
+and sends its changes again
+(figma.com/blog/how-figmas-multiplayer-technology-works).
+
+Known limits:
+
+- Two devices that change the SAME field at the same moment: the change that
+  reaches the daemon last wins. This is intended.
+- A fence moved on one device while a member is dragged out of it on
+  another, in the same seconds, can put the member back in the fence.
+  Convergence makes that window a few seconds long.
+- A console opened on another device appears at the next load, not live.
+
+### Rejected alternatives
+
+- **A CRDT library (Yjs, Automerge, Loro).** Yjs is about 18 kB of
+  JavaScript; Loro (about 180 kB) and Automerge (about 320 kB) are WASM, and
+  all three need a sync provider. A CRDT does not stop a page from writing a
+  value it did not change: a reconnect that sets the rect is a new operation,
+  and it wins. Automerge resolves a map key by the last writer, the rule used
+  here. The daemon also does work on the desk that a CRDT would have to carry
+  as its own transactions over a binary file: the caps, the slug re-key, the
+  checks, the restore, the history, and the link between a session and its
+  record. The change list above is the shape a CRDT would carry, so live
+  editing of note text could still move to one later.
+- **A version check (ETag) on the whole desk.** It refuses a drag on one
+  device after a drag on another, when the two changed different windows.
+- **A fence move as one relative change ("move this fence and its members
+  by dx, dy").** A race between a fence move and a member's drag gives a
+  wrong result either way, and convergence makes the window short. The page
+  sends the absolute rect of each member.
+- **Keep whole records, but stop the reconnect from writing.** That closes
+  one of the seven writers that were not about the rect, and the next new
+  writer opens the bug again.

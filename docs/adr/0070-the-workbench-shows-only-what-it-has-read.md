@@ -96,6 +96,12 @@ the owner pushes the change.** Today this is the desk layout: the daemon
 merges each window record by its change time, as it does now, and pushes
 `desk.dirty` so that other open tabs read it again.
 
+> **Amended 2026-10-04 (ADR-0050, the desk upload carries changes).** The
+> daemon no longer merges by change time. A page sends only the fields it
+> changed, and the daemon applies the changes in the order they arrive. The
+> push is unchanged. This also removes the accepted risk about device clocks
+> below.
+
 **D6. The browser and the daemon know each other's build.** The presence
 frame carries the daemon's build id, and the page carries the build id it was
 served with. When they differ:
