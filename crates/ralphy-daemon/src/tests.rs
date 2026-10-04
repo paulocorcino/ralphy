@@ -1184,6 +1184,7 @@ async fn api_desk_put_rejects_a_fence_with_a_non_finite_rect() {
         std::sync::Arc::new(crate::session::SessionManager::new()),
         None,
         desk::DeskUpload {
+            generation: None,
             windows: vec![],
             fences: vec![desk::DeskFence {
                 id: "w-huge".into(),
@@ -8926,3 +8927,6 @@ fn vendored_files_match_the_manifest() {
         vec![format!("{}: in the manifest, but not vendored", files[0].0)]
     );
 }
+
+/// The desk history routes (ADR-0050 amendment 2026-10-04).
+mod desk_history;

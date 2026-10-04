@@ -1,0 +1,29 @@
+[
+  {
+    "fences": 0,
+    "id": 1790000100001,
+    "notes": 0,
+    "reason": "restore",
+    "savedAt": 1790000100000,
+    "startedAt": 1790000100000,
+    "windows": 1
+  },
+  {
+    "fences": 1,
+    "id": 1790000100000,
+    "notes": 0,
+    "reason": "before-restore",
+    "savedAt": 1790000100000,
+    "startedAt": 1790000100000,
+    "windows": 2
+  },
+  {
+    "fences": 0,
+    "id": 1790000000000,
+    "notes": 0,
+    "reason": "change",
+    "savedAt": 1790000000000,
+    "startedAt": 1790000000000,
+    "windows": 1
+  }
+]

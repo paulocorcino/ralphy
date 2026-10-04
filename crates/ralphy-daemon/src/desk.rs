@@ -13,6 +13,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+pub mod history;
 mod store;
 
 pub use store::{is_parse_error, load_from, move_aside, save_to};
@@ -139,8 +140,16 @@ pub struct DeskNote {
 /// end of the document: a scalar field declared after `[[windows]]` would land
 /// inside the last window's table. `checkouts` is a table and comes LAST for
 /// the same reason: `[checkouts]` after `[[fences]]` parses back at top level.
+/// `generation` is a scalar, so it comes FIRST.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct DeskStore {
+    /// The epoch ms of the last restore from the desk history (ADR-0050
+    /// amendment 2026-10-04, desk history). A page sends the generation it
+    /// loaded with each PUT, and an older one is refused: that page still
+    /// shows the layout from before the restore. `0`, and not serialised,
+    /// until the first restore.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub generation: u64,
     #[serde(default)]
     pub windows: Vec<DeskRecord>,
     #[serde(default)]
@@ -156,6 +165,10 @@ pub struct DeskStore {
     /// shell keep their exact `{ windows, fences }` shape.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub checkouts: BTreeMap<String, String>,
+}
+
+fn is_zero(n: &u64) -> bool {
+    *n == 0
 }
 
 /// The `PUT /api/desk` body. Strict where [`DeskStore`] is lenient — a body
@@ -184,6 +197,9 @@ pub struct DeskUpload {
     /// wholesale replace it always was, since that shell cannot say what it
     /// deleted and a merge would resurrect every close.
     pub removed: Option<DeskRemoved>,
+    /// The desk [`DeskStore::generation`] this page loaded. Absent from a
+    /// shell older than the desk history, which reads as `0`.
+    pub generation: Option<u64>,
 }
 
 /// The ids an upload retires, per record type. A record absent from an
@@ -219,6 +235,8 @@ impl<'de> Deserialize<'de> for DeskUpload {
             // `DeskUpload::removed`.
             #[serde(default)]
             removed: Option<DeskRemoved>,
+            #[serde(default)]
+            generation: Option<u64>,
         }
 
         struct MapOnly;
@@ -241,6 +259,7 @@ impl<'de> Deserialize<'de> for DeskUpload {
                     notes: fields.notes,
                     checkouts: fields.checkouts,
                     removed: fields.removed,
+                    generation: fields.generation,
                 })
             }
         }
@@ -355,11 +374,15 @@ pub fn prune_notes(notes: Vec<DeskNote>) -> Vec<DeskNote> {
 /// A winning record with no `consoleName` keeps the stored one (ADR-0066 §2): a
 /// tab still running a shell older than the name must not erase it. A current
 /// shell never sends a record without a name.
+///
+/// The stored `generation` is kept: only a restore changes it.
 pub fn merge(stored: DeskStore, up: DeskUpload) -> DeskStore {
+    let generation = stored.generation;
     let Some(removed) = up.removed else {
         let mut windows = up.windows;
         windows.iter_mut().for_each(cap_console_name);
         return DeskStore {
+            generation,
             windows,
             fences: up.fences,
             notes: up.notes,
@@ -404,6 +427,7 @@ pub fn merge(stored: DeskStore, up: DeskUpload) -> DeskStore {
     }
     checkouts.extend(up.checkouts);
     DeskStore {
+        generation,
         windows,
         fences,
         notes,

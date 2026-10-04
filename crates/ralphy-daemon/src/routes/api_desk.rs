@@ -80,6 +80,77 @@ pub(crate) fn former_slug_aliases(
     }
 }
 
+/// The checks a desk body passes before anything is written: every rect on
+/// the stage (`desk::rect_is_sane`) and every checkout one path component
+/// (`checkout::lexical`). Shared by the PUT and by an uploaded desk version,
+/// which must not store what a PUT would refuse.
+fn refuse_records(
+    windows: &[desk::DeskRecord],
+    fences: &[desk::DeskFence],
+    notes: &[desk::DeskNote],
+    checkouts: &std::collections::BTreeMap<String, String>,
+) -> Option<Response> {
+    if let Some(bad) = windows.iter().find(|r| !desk::rect_is_sane(&r.rect)) {
+        return Some((
+            StatusCode::BAD_REQUEST,
+            Json(
+                serde_json::json!({ "error": format!("record {} has an out-of-frame rect", bad.id) }),
+            ),
+        )
+            .into_response());
+    }
+    if let Some(bad) = fences.iter().find(|f| !desk::rect_is_sane(&f.rect)) {
+        return Some((
+            StatusCode::BAD_REQUEST,
+            Json(
+                serde_json::json!({ "error": format!("fence {} has an out-of-frame rect", bad.id) }),
+            ),
+        )
+            .into_response());
+    }
+    if let Some(bad) = notes.iter().find(|n| !desk::rect_is_sane(&n.rect)) {
+        return Some((
+            StatusCode::BAD_REQUEST,
+            Json(
+                serde_json::json!({ "error": format!("note {} has an out-of-frame rect", bad.id) }),
+            ),
+        )
+            .into_response());
+    }
+    if let Some((repo, name)) = checkouts
+        .iter()
+        .find(|(_, n)| checkout::lexical(n).is_none())
+    {
+        return Some((
+            StatusCode::BAD_REQUEST,
+            Json(
+                serde_json::json!({ "error": format!("checkout {name} for {repo} is not a valid name") }),
+            ),
+        )
+            .into_response());
+    }
+    // #411: a per-record checkout is the same kind of name as the per-repo
+    // selection, gated the same way before anything is written. A note card
+    // carries the same key (ADR-0064 §4, identity is `(checkout, path)`).
+    let record_checkouts = windows
+        .iter()
+        .map(|r| (r.id.as_str(), r.checkout.as_deref()))
+        .chain(notes.iter().map(|n| (n.id.as_str(), n.checkout.as_deref())));
+    if let Some((id, name)) = record_checkouts
+        .filter_map(|(id, c)| c.map(|n| (id, n)))
+        .find(|(_, n)| checkout::lexical(n).is_none())
+    {
+        return Some((
+            StatusCode::BAD_REQUEST,
+            Json(
+                serde_json::json!({ "error": format!("checkout {name} on record {id} is not a valid name") }),
+            ),
+        )
+            .into_response());
+    }
+    None
+}
+
 /// `PUT /api/desk`: replace the desk wholesale, each record type pruned to its
 /// own cap ([`desk::DESK_MAX`], [`desk::FENCE_MAX`]) newest by `ts`, answering
 /// `200` with the pruned store — the client needs the daemon's post-prune truth
@@ -117,75 +188,27 @@ pub(crate) async fn desk_put_route(
     tab: Option<String>,
     up: desk::DeskUpload,
 ) -> Response {
-    if let Some(bad) = up.windows.iter().find(|r| !desk::rect_is_sane(&r.rect)) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(
-                serde_json::json!({ "error": format!("record {} has an out-of-frame rect", bad.id) }),
-            ),
-        )
-            .into_response();
-    }
-    if let Some(bad) = up.fences.iter().find(|f| !desk::rect_is_sane(&f.rect)) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(
-                serde_json::json!({ "error": format!("fence {} has an out-of-frame rect", bad.id) }),
-            ),
-        )
-            .into_response();
-    }
-    if let Some(bad) = up.notes.iter().find(|n| !desk::rect_is_sane(&n.rect)) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(
-                serde_json::json!({ "error": format!("note {} has an out-of-frame rect", bad.id) }),
-            ),
-        )
-            .into_response();
-    }
-    if let Some((repo, name)) = up
-        .checkouts
-        .iter()
-        .find(|(_, n)| checkout::lexical(n).is_none())
-    {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(
-                serde_json::json!({ "error": format!("checkout {name} for {repo} is not a valid name") }),
-            ),
-        )
-            .into_response();
-    }
-    // #411: a per-record checkout is the same kind of name as the per-repo
-    // selection, gated the same way before anything is written. A note card
-    // carries the same key (ADR-0064 §4, identity is `(checkout, path)`).
-    let record_checkouts = up
-        .windows
-        .iter()
-        .map(|r| (r.id.as_str(), r.checkout.as_deref()))
-        .chain(
-            up.notes
-                .iter()
-                .map(|n| (n.id.as_str(), n.checkout.as_deref())),
-        );
-    if let Some((id, name)) = record_checkouts
-        .filter_map(|(id, c)| c.map(|n| (id, n)))
-        .find(|(_, n)| checkout::lexical(n).is_none())
-    {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(
-                serde_json::json!({ "error": format!("checkout {name} on record {id} is not a valid name") }),
-            ),
-        )
-            .into_response();
+    if let Some(refusal) = refuse_records(&up.windows, &up.fences, &up.notes, &up.checkouts) {
+        return refusal;
     }
     let _held = DESK_WRITE.lock().await;
     let stored = match desk::load_from(&path) {
         Ok(stored) => stored,
         Err(e) => return unreadable(&e),
     };
+    // A page that loaded before a restore still shows the older layout; its
+    // rects would win the fold with fresh `ts` and undo the restore (ADR-0050
+    // amendment 2026-10-04, desk history).
+    if up.generation.unwrap_or(0) < stored.generation {
+        return (
+            StatusCode::CONFLICT,
+            Json(serde_json::json!({
+                "state": "restored",
+                "error": "the desk was restored from its history after this page read it",
+            })),
+        )
+            .into_response();
+    }
     let before = stored.clone();
     let merged = desk::merge(stored, up);
     // The records a session of this daemon serves are never cut by the cap.
@@ -196,6 +219,7 @@ pub(crate) async fn desk_put_route(
         .collect();
     let store = rekey::rekey_desk(
         desk::DeskStore {
+            generation: merged.generation,
             windows: desk::prune(merged.windows, &live),
             fences: desk::prune_fences(merged.fences),
             notes: desk::prune_notes(merged.notes),
@@ -206,6 +230,10 @@ pub(crate) async fn desk_put_route(
     match desk::save_to(&store, &path) {
         Ok(()) => {
             if before != store {
+                let dir = history_dir(&path);
+                if let Err(e) = desk::history::capture(&dir, &before, &store, now_ms()) {
+                    tracing::warn!(error = %format!("{e:#}"), "desk history not written");
+                }
                 push(&pushes, Push::Desk { tab });
             }
             Json(store).into_response()
@@ -259,7 +287,139 @@ pub(crate) async fn desk_new_route(
     }
 }
 
-/// `/api/desk` and `/api/desk/new`.
+/// The desk history directory, beside `desk.toml` (ADR-0050 amendment
+/// 2026-10-04, desk history).
+fn history_dir(desk_path: &Path) -> PathBuf {
+    desk_path.with_file_name("desk-history")
+}
+
+fn now_ms() -> i64 {
+    chrono::Utc::now().timestamp_millis()
+}
+
+fn failed(status: StatusCode, error: String) -> Response {
+    (status, Json(serde_json::json!({ "error": error }))).into_response()
+}
+
+/// Query for `GET /api/desk/history`: one version, or the list.
+#[derive(Debug, serde::Deserialize)]
+pub(crate) struct HistoryQuery {
+    pub id: Option<i64>,
+}
+
+/// `GET /api/desk/history`: the saved versions, newest first, without their
+/// desks. With `?id=`, that one version as a whole file: the download. An
+/// unknown id is `404`.
+pub(crate) async fn desk_history_get_route(path: PathBuf, id: Option<i64>) -> Response {
+    let dir = history_dir(&path);
+    match id {
+        None => match desk::history::list(&dir) {
+            Ok(rows) => Json(rows).into_response(),
+            Err(e) => failed(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")),
+        },
+        Some(id) => match desk::history::load(&dir, id) {
+            Ok(version) => Json(version).into_response(),
+            Err(e) if desk::history::is_not_found(&e) => {
+                failed(StatusCode::NOT_FOUND, format!("no desk version {id}"))
+            }
+            Err(e) => failed(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")),
+        },
+    }
+}
+
+/// Body of `POST /api/desk/history`: a saved version by `id`, or an uploaded
+/// version file. Exactly one.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RestoreBody {
+    #[serde(default)]
+    pub id: Option<i64>,
+    #[serde(default)]
+    pub version: Option<desk::history::Version>,
+}
+
+/// `POST /api/desk/history`: make a saved or uploaded version the desk.
+///
+/// Under the desk lock: the current desk is saved as a `before-restore`
+/// version first, and a failure there stops the restore, because it could
+/// not be undone. `desk::history::restore` builds the new desk, the cap pins
+/// every running console, and `generation` becomes now, so a page that read
+/// the desk before is refused on its next PUT and reloads. The result is
+/// saved as a `restore` or `upload` version, and `desk.dirty` is pushed. An
+/// upload passes the same checks as a PUT body. Replies `{ generation }`.
+pub(crate) async fn desk_history_restore_route(
+    path: PathBuf,
+    registry_path: PathBuf,
+    pushes: tokio::sync::broadcast::Sender<Push>,
+    sessions: Arc<session::SessionManager>,
+    body: RestoreBody,
+) -> Response {
+    use desk::history::{self, Reason};
+    let dir = history_dir(&path);
+    let _held = DESK_WRITE.lock().await;
+    let (saved, reason) = match (body.id, body.version) {
+        (Some(id), None) => match history::load(&dir, id) {
+            Ok(v) => (v.desk, Reason::Restore),
+            Err(e) if history::is_not_found(&e) => {
+                return failed(StatusCode::NOT_FOUND, format!("no desk version {id}"));
+            }
+            Err(e) => return failed(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")),
+        },
+        (None, Some(v)) => {
+            if v.kind != history::VERSION_KIND {
+                return failed(
+                    StatusCode::BAD_REQUEST,
+                    "the file is not a desk version".to_string(),
+                );
+            }
+            let d = &v.desk;
+            if let Some(refusal) = refuse_records(&d.windows, &d.fences, &d.notes, &d.checkouts) {
+                return refusal;
+            }
+            (v.desk, Reason::Upload)
+        }
+        _ => {
+            return failed(
+                StatusCode::BAD_REQUEST,
+                "send either `id` or `version`".to_string(),
+            );
+        }
+    };
+    let current = match desk::load_from(&path) {
+        Ok(current) => current,
+        Err(e) => return unreadable(&e),
+    };
+    let now = now_ms();
+    if let Err(e) = history::append(&dir, &current, Reason::BeforeRestore, now) {
+        return failed(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("could not save the current desk before the restore: {e:#}"),
+        );
+    }
+    let (restored, mut pinned) = history::restore(current, saved, now);
+    pinned.extend(sessions.list().into_iter().filter_map(|info| info.record));
+    let generation = u64::try_from(now).unwrap_or(1);
+    let store = rekey::rekey_desk(
+        desk::DeskStore {
+            generation,
+            windows: desk::prune(restored.windows, &pinned),
+            fences: desk::prune_fences(restored.fences),
+            notes: desk::prune_notes(restored.notes),
+            checkouts: restored.checkouts,
+        },
+        &former_slug_aliases(&registry_path),
+    );
+    if let Err(e) = desk::save_to(&store, &path) {
+        return failed(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}"));
+    }
+    if let Err(e) = history::append(&dir, &store, reason, now) {
+        tracing::warn!(error = %format!("{e:#}"), "desk history not written after a restore");
+    }
+    push(&pushes, Push::Desk { tab: None });
+    Json(serde_json::json!({ "generation": generation })).into_response()
+}
+
+/// `/api/desk`, `/api/desk/new` and `/api/desk/history`.
 pub(crate) fn desk_routes(s: &RouterShared) -> Router {
     Router::new()
         .route(
@@ -282,6 +442,28 @@ pub(crate) fn desk_routes(s: &RouterShared) -> Router {
                         sessions.clone(),
                         q.tab,
                         up,
+                    )
+                }
+            }),
+        )
+        .route(
+            "/api/desk/history",
+            get({
+                let path = s.desk_path.clone();
+                move |Query(q): Query<HistoryQuery>| desk_history_get_route(path.clone(), q.id)
+            })
+            .post({
+                let path = s.desk_path.clone();
+                let registry = s.registry_path.clone();
+                let pushes = s.pushes.clone();
+                let sessions = s.sessions.clone();
+                move |Json(body): Json<RestoreBody>| {
+                    desk_history_restore_route(
+                        path.clone(),
+                        registry.clone(),
+                        pushes.clone(),
+                        sessions.clone(),
+                        body,
                     )
                 }
             }),

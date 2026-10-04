@@ -1925,7 +1925,7 @@
               <button
                 class="settings-navitem"
                 :class="{ active: settingsSection === sec.id }"
-                @click="settingsSection = sec.id"
+                @click="showSettingsSection(sec.id)"
               >
                 <i class="bi" :class="sec.icon"></i><span x-text="sec.title"></span>
               </button>
@@ -2018,6 +2018,39 @@
                       </template>
                     </div>
                     <p class="set-help" x-text="it.help"></p>
+                  </div>
+                </template>
+                <!-- desk history: its own body, rows from wb-desk-history.js -->
+                <template x-if="sec.id === 'desk-history'">
+                  <div class="desk-history">
+                    <div class="sec-actions">
+                      <button class="btn" @click="loadDeskHistory()" title="Read the list again from the daemon">
+                        <i class="bi bi-arrow-clockwise"></i> Refresh
+                      </button>
+                      <button class="btn" @click="pickDeskUpload()" title="Restore a layout from a file on this device">
+                        <i class="bi bi-upload"></i> Upload…
+                      </button>
+                      <input id="desk-upload-input" type="file" accept=".json,application/json" hidden
+                             @change="uploadDeskVersion($event)" />
+                    </div>
+                    <p class="sec-note desk-history-error" x-show="deskHistory.error" x-text="deskHistory.error"></p>
+                    <p class="sec-note" x-show="deskHistory.loaded && !deskHistory.rows.length">
+                      No saved layouts yet. A layout is saved after you move, open or close a console.
+                    </p>
+                    <template x-for="row in deskHistory.rows" :key="row.id">
+                      <div class="set-row desk-history-row">
+                        <div class="set-main">
+                          <span class="set-label" x-text="row.when"></span>
+                          <span class="desk-history-actions">
+                            <button class="btn" @click="restoreDeskVersion(row)">Restore…</button>
+                            <button class="btn" @click="downloadDeskVersion(row)" title="Save this layout as a file on this device">
+                              <i class="bi bi-download"></i> Download
+                            </button>
+                          </span>
+                        </div>
+                        <p class="set-help" x-text="row.reason + ' · ' + row.counts"></p>
+                      </div>
+                    </template>
                   </div>
                 </template>
               </section>
@@ -3180,6 +3213,7 @@
     <script src="wb-monaco.js"></script>
     <script src="wb-viewer.js"></script>
     <script src="wb-settings.js"></script>
+    <script src="wb-desk-history.js"></script>
     <script src="wb-runs.js"></script>
     <script src="wb-kanban.js"></script>
     <script src="wb-spend.js"></script>
