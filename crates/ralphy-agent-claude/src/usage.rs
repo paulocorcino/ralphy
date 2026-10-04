@@ -337,6 +337,24 @@ fn newest_jsonl_since(base: &Path, min_modified: Option<SystemTime>) -> Option<P
 mod tests {
     use super::*;
 
+    /// The rows both copies of `cache_creation_tokens` are held to: this one and
+    /// the usage scan's, which reads the same file.
+    #[test]
+    fn cache_creation_tokens_matches_the_shared_fixture() {
+        let rows: Vec<serde_json::Value> =
+            serde_json::from_str(include_str!("../tests/fixtures/cache_creation_tokens.json"))
+                .expect("the fixture is JSON");
+        assert!(rows.len() >= 5, "the fixture lost rows");
+        for row in &rows {
+            assert_eq!(
+                cache_creation_tokens(&row["usage"]),
+                row["tokens"].as_u64().expect("each row has tokens"),
+                "{}",
+                row["case"]
+            );
+        }
+    }
+
     #[test]
     fn parse_plan_usage_skips_warning_preamble() {
         // The headless `-p --output-format stream-json` stdout is preceded by a

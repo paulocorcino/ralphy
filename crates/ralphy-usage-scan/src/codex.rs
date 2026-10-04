@@ -17,7 +17,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::{CodexScan, InteractiveRecord, Tokens};
 
@@ -51,7 +51,7 @@ pub(crate) fn scan_codex_with_stems(input: &CodexScan) -> Vec<(String, Interacti
         input.codex_dir.join("archived_sessions"),
     ];
     for dir in &dirs {
-        for file in jsonl_files(dir) {
+        for file in crate::walk::files_under(dir, crate::walk::is_jsonl) {
             let Some(stem) = file
                 .file_stem()
                 .and_then(|s| s.to_str())
@@ -252,27 +252,6 @@ fn ts_lt(a: &str, b: &str) -> bool {
         (Ok(a), Ok(b)) => a < b,
         _ => a < b,
     }
-}
-
-/// Every `*.jsonl` under `dir`, recursively. Tolerant: an unreadable or missing
-/// dir yields nothing. Order is unspecified. Duplicated from `claude.rs`.
-fn jsonl_files(dir: &Path) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    let mut stack = vec![dir.to_path_buf()];
-    while let Some(d) = stack.pop() {
-        let Ok(entries) = fs::read_dir(&d) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                stack.push(path);
-            } else if path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
-                out.push(path);
-            }
-        }
-    }
-    out
 }
 
 #[cfg(test)]

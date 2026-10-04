@@ -30,10 +30,21 @@ pub enum SocketError {
     Http { status: u16, body: String },
 }
 
-/// How long a peer has to accept a connection and answer. Short on purpose:
-/// `/api/fleet` probes every peer on every request, so an absent peer must cost
-/// the operator a beat, not a page load.
+/// How long a peer has to answer a request. Short on purpose: `/api/fleet`
+/// probes every peer on every request, so an absent peer must cost the operator
+/// a beat, not a page load.
 pub const PEER_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// How long a peer has to accept the TCP connection. Shorter than
+/// [`PEER_TIMEOUT`], so a peer that is down fails at connect, with the same
+/// reason on every platform. Windows refuses a closed loopback port only after
+/// about 2 s, while a listening port accepts in under 1 ms (measured with
+/// `TcpClient`, Windows 11, 2026-10-04).
+pub const PEER_CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
+
+// #536: with equal limits, the connect error and the request timeout raced on
+// Windows, and the operator saw one of two reasons for the same stopped peer.
+const _: () = assert!(PEER_CONNECT_TIMEOUT.as_millis() < PEER_TIMEOUT.as_millis());
 
 /// Ceiling on a peer's response body. A maximum-size accepted image expands by
 /// 4/3 in base64, then rides in a small JSON envelope; derive the cap from that
@@ -340,7 +351,7 @@ fn pool() -> &'static hyper_util::client::legacy::Client<
         let mut connector = hyper_util::client::legacy::connect::HttpConnector::new();
         // The connect bound that used to be an explicit `timeout` around
         // `TcpStream::connect`. Same promise, now enforced where the pool dials.
-        connector.set_connect_timeout(Some(PEER_TIMEOUT));
+        connector.set_connect_timeout(Some(PEER_CONNECT_TIMEOUT));
         connector.set_nodelay(true);
         hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
             .pool_idle_timeout(POOL_IDLE_TIMEOUT)
@@ -365,7 +376,7 @@ pub async fn post_json(
 }
 
 /// JSON POST whose response may legitimately outlive the ordinary peer timeout.
-/// Connection establishment remains bounded by [`PEER_TIMEOUT`].
+/// Connection establishment remains bounded by [`PEER_CONNECT_TIMEOUT`].
 pub async fn post_json_timeout(
     d: &PeerDescriptor,
     path: &str,
@@ -411,7 +422,7 @@ async fn websocket(
 
     let authority = format!("{}:{}", d.address, d.port);
     let stream = tokio::time::timeout(
-        PEER_TIMEOUT,
+        PEER_CONNECT_TIMEOUT,
         tokio::net::TcpStream::connect((d.address.as_str(), d.port)),
     )
     .await

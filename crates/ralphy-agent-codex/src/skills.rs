@@ -2,12 +2,9 @@
 //! (`.agents/skills/`), additively alongside any skills the user already
 //! maintains there.
 
-use std::fs;
-
-use anyhow::{Context, Result};
+use anyhow::Result;
 use include_dir::{include_dir, Dir};
 
-use ralphy_adapter_support::{ensure_gitignore_entries, link_or_copy_dir, remove_path};
 use ralphy_core::Workspace;
 
 /// The skills subtree, embedded at build time so the binary is self-contained.
@@ -36,45 +33,15 @@ static SKILLS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../assets/plugin/s
 ///
 /// Returns the `.agents/skills` path Codex discovers.
 pub(crate) fn materialize_codex_skills(ws: &Workspace) -> Result<std::path::PathBuf> {
-    // 1. Canonical store: real files under `.ralphy/skills`, fully ralphy-owned, so
-    //    clearing and re-extracting wholesale (and `.ralphy/.gitignore = *`) is safe.
-    let store = ws.ralphy_dir().join("skills");
-    ralphy_adapter_support::materialize_assets(&SKILLS, &store, Some(&ws.ralphy_dir()))?;
-
-    // 2. Expose to Codex's discovery path additively: reuse `.agents/skills` if it
-    //    already exists, else create it, and (re)link each ralphy skill into it.
     let skills_dir = ws.repo_root().join(".agents").join("skills");
-    fs::create_dir_all(&skills_dir).context("creating .agents/skills")?;
-
-    let mut names: Vec<std::ffi::OsString> = Vec::new();
-    for skill in SKILLS.dirs() {
-        let name = skill
-            .path()
-            .file_name()
-            .context("embedded skill directory has no name")?
-            .to_owned();
-        let src = store.join(&name);
-        let dest = skills_dir.join(&name);
-
-        // Replace only our own subdir; never touch sibling (user) skills.
-        if dest.symlink_metadata().is_ok() {
-            remove_path(&dest).with_context(|| format!("clearing stale {}", dest.display()))?;
-        }
-        link_or_copy_dir(&src, &dest)
-            .with_context(|| format!("exposing skill {}", name.to_string_lossy()))?;
-        names.push(name);
-    }
-
-    // 3. Keep our linked skills out of the executor's commits, preserving any
-    //    `.gitignore` the user already maintains in `.agents/skills`.
-    ensure_gitignore_entries(&skills_dir.join(".gitignore"), &names)?;
-
+    ralphy_adapter_support::expose_skills(&SKILLS, &ws.ralphy_dir(), &skills_dir)?;
     Ok(skills_dir)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     /// ADR-0041 D9: the dance lives in `ralphy-adapter-support`, and this adapter
     /// must keep CALLING it rather than growing a second copy. Fragments are
