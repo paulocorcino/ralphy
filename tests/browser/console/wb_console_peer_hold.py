@@ -8,13 +8,18 @@ Scenario 1  two plain consoles run on the peer
 Scenario 2  the link drops: each window shows one line that names the peer's
             state, with "Try again" and the daemon's diagnosis behind a closed
             "Details"; the terminal keeps its text
-Scenario 3  while the fleet calls the peer down, no window opens a socket
+Scenario 3  the link stays down for HOLD_S (180 s, past the old give-up):
+            no window opens a socket, none prints "[session closed]", and
+            each still holds its session
 Scenario 4  the link comes back and the fleet is read: every window attaches
             to its own session again, the line goes, nothing is launched
 Scenario 5  zero `pageerror` events over the whole pass
 
 Before the fix, scenario 3 opened a socket per window every 1 to 15 s, and
-each one failed.
+each one failed. After 11 failed opens (`MAX_FAILED_REOPENS` is 10) the window
+gave up with "[session closed]", 120 to about 156 s after the drop with the
+1-2-4-8-15 s backoff and its 30% jitter, and it did not come back with the
+peer. `RALPHY_TEST_HOLD_S` shortens the wait for a quick run.
 
 Scratch stores only. Every process is stopped by its own handle, NEVER by name
 (`ralphy.exe` doubles as the orchestrator on this host).
@@ -38,6 +43,9 @@ import wb_console_peer_unanswered as base
 sys.stdout.reconfigure(encoding="utf-8")
 
 N = 2
+# Past the old give-up: 11 failed opens, 1+2+4+8+15*7 = 120 s of backoff plus
+# up to 30% jitter.
+HOLD_S = int(os.environ.get("RALPHY_TEST_HOLD_S") or 180)
 SH = base.SH
 REF = base.REF
 results = []
@@ -63,6 +71,7 @@ WINS = f"""
     return {{
       id: w._deskId,
       session: (w._term && w._term.sessionId) ?? null,
+      open: !!(w._term && w._term.ws && w._term.ws.readyState === 1),
       placeholder: w.classList.contains('placeholder'),
       hold: strip ? strip.querySelector('.session-peer-down-text').textContent : null,
       button: btn && !btn.hidden ? btn.textContent : null,
@@ -195,11 +204,18 @@ def main():
 
             # --- scenario 3 ----------------------------------------------------
             before = len(sockets)
-            page.wait_for_timeout(20000)
+            page.wait_for_timeout(HOLD_S * 1000)
             check(
-                "while the peer is down, no window opens a socket",
+                f"for {HOLD_S} s with the peer down, no window opens a socket",
                 len(sockets) == before,
-                f"sockets={sockets[before:]}",
+                f"sockets={len(sockets) - before}",
+            )
+            wins = windows(page)
+            check(
+                "…none gives up, and each still holds its session",
+                len(wins) == N
+                and all("[session closed]" not in w["screen"] and w["hold"] and w["session"] == owned[w["id"]] for w in wins),
+                f"wins={[(w['session'], w['hold'], w['screen'][-60:]) for w in wins]}",
             )
 
             # --- scenario 4 ----------------------------------------------------
@@ -208,14 +224,14 @@ def main():
             base.fleet_read(page)
             wins = wait_for(
                 page,
-                lambda ws: {w["id"]: w["session"] for w in ws} == owned and not any(w["hold"] for w in ws),
+                lambda ws: {w["id"]: w["session"] for w in ws} == owned and all(w["open"] and not w["hold"] for w in ws),
                 25,
             )
             reopened = sockets[before:]
             check(
                 "the link back, every window attaches to its own session",
-                {w["id"]: w["session"] for w in wins} == owned and not any(w["hold"] for w in wins),
-                f"wins={[(w['id'], w['session'], w['hold']) for w in wins]}",
+                {w["id"]: w["session"] for w in wins} == owned and all(w["open"] and not w["hold"] for w in wins),
+                f"wins={[(w['id'], w['session'], w['open'], w['hold']) for w in wins]}",
             )
             check(
                 "…once each, and nothing is launched",
@@ -239,7 +255,7 @@ def main():
             shutil.rmtree(store, ignore_errors=True)
 
     # The count floor: an early exit must not report success on a few checks.
-    ok = all(results) and len(results) == 8
+    ok = all(results) and len(results) == 9
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     sys.exit(0 if ok else 1)
 
