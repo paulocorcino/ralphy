@@ -10,7 +10,7 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::io::AsyncWriteExt;
 
 use super::refuse::Refuser;
-use super::traffic::{Leave, Traffic};
+use super::traffic::{Leave, Tab, Traffic};
 use super::SessionQuery;
 use crate::peer;
 use crate::protocol::{self, Frame};
@@ -97,7 +97,7 @@ pub(crate) async fn relay_to_peer(
     ws: WebSocketUpgrade,
     peer: &peer::PeerDescriptor,
     peer_query: &str,
-    holder: Option<String>,
+    tab: Tab,
     me: peer::client::SelfRef<'_>,
     refuser: &Refuser,
     shutdown: tokio::sync::watch::Receiver<bool>,
@@ -107,7 +107,7 @@ pub(crate) async fn relay_to_peer(
             let traffic = Traffic::peer(
                 peer.daemon_id.clone(),
                 peer.environment.clone(),
-                holder,
+                tab,
                 Instant::now(),
             );
             ws.on_upgrade(move |socket| peer_session_ws(socket, peer_socket, traffic, shutdown))

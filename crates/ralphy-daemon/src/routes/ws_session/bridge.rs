@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use axum::extract::ws::{Message, WebSocket};
 
-use super::traffic::{Leave, Traffic};
+use super::traffic::{Leave, Tab, Traffic};
 use super::SessionLabels;
 use crate::protocol::{Command, Frame};
 use crate::routes::send_command;
@@ -74,7 +74,7 @@ impl Liveness {
 /// agent (measured: TunnelDeck for dev tunnels, 2026-09-22) keeps its leg to the
 /// daemon open for minutes after the browser behind it vanished, and that leg
 /// would hold the writer slot against the client's own reattach.
-/// `holder` is the browser tab that opened the socket, when it named one.
+/// `tab` is the browser tab that opened the socket.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn session_ws(
     mut socket: WebSocket,
@@ -83,7 +83,7 @@ pub(crate) async fn session_ws(
     daemon_id: String,
     environment: String,
     labels: SessionLabels,
-    holder: Option<String>,
+    tab: Tab,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) {
     // Register the eviction waiter BEFORE the first await. Pin ONE `notified`
@@ -99,7 +99,7 @@ pub(crate) async fn session_ws(
     let notified = evict.notify.notified();
     tokio::pin!(notified);
     notified.as_mut().enable();
-    let mut traffic = Traffic::local(id, holder, Instant::now());
+    let mut traffic = Traffic::local(id, tab, Instant::now());
 
     let open = Frame::Command(Command {
         id,

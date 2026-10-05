@@ -1,6 +1,6 @@
 # The daemon keeps an audit log of each device and what it did
 
-Status: proposed
+Status: accepted
 Kind: structural
 Protects: security, observability and cost
 
@@ -184,9 +184,9 @@ the browser's device, and one line on the peer with the actor `bearer`
   `crates/ralphy-daemon/src/tests/audit_routes.rs`
   (`the_device_list_marks_the_device_that_asks`). That the page keeps no
   copy is not checked by code: manual: reviewed in the PR.
-- D10: not checked by code yet: to be pinned by a daemon test that a
-  console socket's traffic summary carries the device ID and not the
-  cookie value.
+- D10: checked by `crates/ralphy-daemon/src/routes/ws_session/traffic.rs`
+  (`the_keys_name_the_session_or_the_peer_and_the_tab`, which checks the
+  summary keeps the device and writes it as 32 hex digits).
 - D11: checked by `crates/ralphy-daemon/src/tests/audit_routes.rs`
   (`device_facts_are_recorded_once_and_again_when_the_profile_changes`).
 - D12: checked by `crates/ralphy-daemon/src/routes/audit_layer.rs`

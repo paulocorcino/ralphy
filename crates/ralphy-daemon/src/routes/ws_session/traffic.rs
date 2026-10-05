@@ -6,7 +6,17 @@
 use std::collections::VecDeque;
 use std::time::Instant;
 
+use crate::device::DeviceId;
 use crate::protocol::Command;
+
+/// The browser tab that opened a console socket: the holder it named, and
+/// the device of its browser. The device ID is written in the summary, never
+/// the cookie value (ADR-0074 D10).
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Tab {
+    pub(crate) holder: Option<String>,
+    pub(crate) device: Option<DeviceId>,
+}
 
 /// Which loop owns the socket: the bridge to a session this daemon hosts, or
 /// the relay to a session a peer hosts.
@@ -87,12 +97,14 @@ struct Outstanding {
 }
 
 /// The keys that join a summary to other records: the session this daemon
-/// hosts, or the peer that hosts it; and the browser tab (the holder).
+/// hosts, or the peer that hosts it; and the browser tab (the holder) and its
+/// device.
 struct Keys {
     session: Option<u64>,
     peer_id: Option<String>,
     peer: Option<String>,
     holder: Option<String>,
+    device: Option<DeviceId>,
 }
 
 pub(crate) struct Traffic {
@@ -133,29 +145,26 @@ pub(crate) struct Summary {
 
 impl Traffic {
     /// A socket bridged to session `session` of this daemon.
-    pub(crate) fn local(session: u64, holder: Option<String>, now: Instant) -> Traffic {
+    pub(crate) fn local(session: u64, tab: Tab, now: Instant) -> Traffic {
         let keys = Keys {
             session: Some(session),
             peer_id: None,
             peer: None,
-            holder,
+            holder: tab.holder,
+            device: tab.device,
         };
         Traffic::new(Channel::Local, keys, now)
     }
 
     /// A socket relayed to a session the peer `peer_id` hosts; `peer` is its
     /// environment label, for people.
-    pub(crate) fn peer(
-        peer_id: String,
-        peer: String,
-        holder: Option<String>,
-        now: Instant,
-    ) -> Traffic {
+    pub(crate) fn peer(peer_id: String, peer: String, tab: Tab, now: Instant) -> Traffic {
         let keys = Keys {
             session: None,
             peer_id: Some(peer_id),
             peer: Some(peer),
-            holder,
+            holder: tab.holder,
+            device: tab.device,
         };
         Traffic::new(Channel::Peer, keys, now)
     }
@@ -289,6 +298,7 @@ impl Traffic {
             peer_id = self.keys.peer_id.as_deref(),
             peer = self.keys.peer.as_deref(),
             holder = self.keys.holder.as_deref(),
+            device = self.keys.device.map(|d| d.to_string()),
             end,
             secs = now.duration_since(self.started).as_secs(),
             replay_bytes = s.replay_bytes,
@@ -328,7 +338,11 @@ mod tests {
     use std::time::Duration;
 
     fn traffic(now: Instant) -> Traffic {
-        Traffic::local(1, Some("tab-1".to_string()), now)
+        let tab = Tab {
+            holder: Some("tab-1".to_string()),
+            device: None,
+        };
+        Traffic::local(1, tab, now)
     }
 
     #[test]
@@ -392,11 +406,27 @@ mod tests {
     #[test]
     fn the_keys_name_the_session_or_the_peer_and_the_tab() {
         let now = Instant::now();
-        let local = Traffic::local(7, Some("tab-a".to_string()), now);
+        let device = DeviceId::mint();
+        let tab = Tab {
+            holder: Some("tab-a".to_string()),
+            device: Some(device),
+        };
+        let local = Traffic::local(7, tab, now);
         assert_eq!(local.channel, Channel::Local);
         assert_eq!(local.keys.session, Some(7));
         assert_eq!(local.keys.holder.as_deref(), Some("tab-a"));
-        let relayed = Traffic::peer("01PEER".to_string(), "Ubuntu".to_string(), None, now);
+        assert_eq!(local.keys.device, Some(device));
+        // The summary writes the ID alone: 32 hex digits, not the cookie
+        // value with its version and HMAC.
+        let written = device.to_string();
+        assert_eq!(written.len(), 32);
+        assert!(written.bytes().all(|b| b.is_ascii_hexdigit()), "{written}");
+        let relayed = Traffic::peer(
+            "01PEER".to_string(),
+            "Ubuntu".to_string(),
+            Tab::default(),
+            now,
+        );
         assert_eq!(relayed.channel, Channel::Peer);
         assert_eq!(relayed.keys.peer_id.as_deref(), Some("01PEER"));
         assert_eq!(relayed.keys.peer.as_deref(), Some("Ubuntu"));

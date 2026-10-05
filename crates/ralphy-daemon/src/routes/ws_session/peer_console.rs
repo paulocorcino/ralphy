@@ -11,6 +11,7 @@ use axum::response::Response;
 
 use super::join::{claim_for, hold, Joined};
 use super::refuse::Refuser;
+use super::traffic::Tab;
 use super::{peer_session_query, relay_to_peer, session_ws};
 use super::{SessionLabels, SessionQuery};
 use crate::{fleet, peer, session};
@@ -27,7 +28,7 @@ pub(super) struct PeerConsole<'a> {
     pub(super) daemon_id: String,
     pub(super) environment: String,
     pub(super) bound_port: u16,
-    pub(super) holder: Option<String>,
+    pub(super) tab: Tab,
     pub(super) record: Option<String>,
     pub(super) refuser: Refuser,
     pub(super) shutdown: tokio::sync::watch::Receiver<bool>,
@@ -48,7 +49,7 @@ impl PeerConsole<'_> {
             daemon_id,
             environment,
             bound_port,
-            holder,
+            tab,
             record,
             refuser,
             shutdown,
@@ -62,7 +63,7 @@ impl PeerConsole<'_> {
                 daemon_id: &daemon_id,
             };
             let peer_query = peer_session_query(query, slug);
-            return relay_to_peer(ws, peer, &peer_query, holder, me, &refuser, shutdown).await;
+            return relay_to_peer(ws, peer, &peer_query, tab, me, &refuser, shutdown).await;
         };
         let status = peer::client::probe(
             peer,
@@ -154,10 +155,13 @@ impl PeerConsole<'_> {
             command.as_deref(),
         );
         let claim = claim_for(&sessions, &record).await;
-        if let Some(joined) =
-            Joined::find(&sessions, claim.as_ref(), holder.as_deref(), &environment)
-        {
-            return joined.upgrade(ws, daemon_id, holder, shutdown);
+        if let Some(joined) = Joined::find(
+            &sessions,
+            claim.as_ref(),
+            tab.holder.as_deref(),
+            &environment,
+        ) {
+            return joined.upgrade(ws, daemon_id, tab, shutdown);
         }
         let effective_environment = peer.environment.clone();
         match sessions
@@ -170,7 +174,7 @@ impl PeerConsole<'_> {
                 record.clone(),
                 spec,
             )
-            .inspect(|(_, att)| hold(att, holder.as_deref()))
+            .inspect(|(_, att)| hold(att, tab.holder.as_deref()))
         {
             Ok((id, att)) => ws.on_upgrade(move |socket| {
                 session_ws(
@@ -180,7 +184,7 @@ impl PeerConsole<'_> {
                     daemon_id,
                     effective_environment,
                     SessionLabels::default(),
-                    holder,
+                    tab,
                     shutdown,
                 )
             }),

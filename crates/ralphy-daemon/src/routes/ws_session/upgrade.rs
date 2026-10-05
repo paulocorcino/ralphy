@@ -13,8 +13,10 @@ use axum::response::{IntoResponse, Response};
 use super::join::{claim_for, hold, Joined};
 use super::peer_console::PeerConsole;
 use super::refuse::Refuser;
+use super::traffic::Tab;
 use super::{gemini_root, peer_session_query, relay_to_peer, session_ws};
 use super::{SessionHost, SessionLabels, SessionQuery};
+use crate::device::DeviceId;
 use crate::routes::{blocking_read, read_peer_store};
 use crate::{agent_state, auth, checkout, confine, fleet, peer, registry, session};
 
@@ -57,6 +59,7 @@ pub(crate) async fn session_ws_upgrade(
     registry_path: PathBuf,
     host: SessionHost,
     shutdown: tokio::sync::watch::Receiver<bool>,
+    device: Option<DeviceId>,
 ) -> Response {
     // Every upgrade below, the peer relay included, inherits the cap.
     let ws = ws
@@ -69,7 +72,10 @@ pub(crate) async fn session_ws_upgrade(
         bound_port,
     } = host;
     // Owned: `query` is rewritten below (a peer ref resolves to its slug).
-    let holder = query.holder().map(str::to_owned);
+    let tab = Tab {
+        holder: query.holder().map(str::to_owned),
+        device,
+    };
     let record = query.record().map(str::to_owned);
     let daemon_id = identity
         .as_ref()
@@ -100,8 +106,7 @@ pub(crate) async fn session_ws_upgrade(
                         daemon_id: &daemon_id,
                     };
                     let peer_query = peer_session_query(&query, slug);
-                    return relay_to_peer(ws, peer, &peer_query, holder, me, &refuser, shutdown)
-                        .await;
+                    return relay_to_peer(ws, peer, &peer_query, tab, me, &refuser, shutdown).await;
                 }
                 fleet::route::Route::UnknownDaemon { daemon_id } => {
                     return refuser.refuse(
@@ -141,7 +146,7 @@ pub(crate) async fn session_ws_upgrade(
                         daemon_id,
                         effective_environment,
                         effective_labels,
-                        holder,
+                        tab,
                         shutdown,
                     )
                 }),
@@ -164,7 +169,7 @@ pub(crate) async fn session_ws_upgrade(
                     daemon_id,
                     effective_environment,
                     effective_labels,
-                    holder,
+                    tab,
                     shutdown,
                 )
             }),
@@ -204,7 +209,7 @@ pub(crate) async fn session_ws_upgrade(
                         daemon_id,
                         environment,
                         bound_port,
-                        holder,
+                        tab,
                         record,
                         refuser,
                         shutdown,
@@ -245,10 +250,13 @@ pub(crate) async fn session_ws_upgrade(
         let spec = session::console_spec(cwd, 24, 80, command.as_deref());
         let repo_label = query.repo.clone().unwrap_or_else(|| "~".to_string());
         let claim = claim_for(&sessions, &record).await;
-        if let Some(joined) =
-            Joined::find(&sessions, claim.as_ref(), holder.as_deref(), &environment)
-        {
-            return joined.upgrade(ws, daemon_id, holder, shutdown);
+        if let Some(joined) = Joined::find(
+            &sessions,
+            claim.as_ref(),
+            tab.holder.as_deref(),
+            &environment,
+        ) {
+            return joined.upgrade(ws, daemon_id, tab, shutdown);
         }
         return match sessions
             .spawn_attached(
@@ -260,7 +268,7 @@ pub(crate) async fn session_ws_upgrade(
                 record.clone(),
                 spec,
             )
-            .inspect(|(_, att)| hold(att, holder.as_deref()))
+            .inspect(|(_, att)| hold(att, tab.holder.as_deref()))
         {
             Ok((id, att)) => ws.on_upgrade(move |socket| {
                 session_ws(
@@ -270,7 +278,7 @@ pub(crate) async fn session_ws_upgrade(
                     daemon_id,
                     environment,
                     SessionLabels::default(),
-                    holder,
+                    tab,
                     shutdown,
                 )
             }),
@@ -364,8 +372,13 @@ pub(crate) async fn session_ws_upgrade(
     // no hooks, never no console. The record claim comes first, so a launch
     // that joins a live session burns no id and writes no file.
     let claim = claim_for(&sessions, &record).await;
-    if let Some(joined) = Joined::find(&sessions, claim.as_ref(), holder.as_deref(), &environment) {
-        return joined.upgrade(ws, daemon_id, holder, shutdown);
+    if let Some(joined) = Joined::find(
+        &sessions,
+        claim.as_ref(),
+        tab.holder.as_deref(),
+        &environment,
+    ) {
+        return joined.upgrade(ws, daemon_id, tab, shutdown);
     }
     let id = sessions.reserve_id();
     let status = match agent {
@@ -397,7 +410,7 @@ pub(crate) async fn session_ws_upgrade(
             record.clone(),
             spec,
         )
-        .inspect(|(_, att)| hold(att, holder.as_deref()))
+        .inspect(|(_, att)| hold(att, tab.holder.as_deref()))
     {
         Ok((id, att)) => ws.on_upgrade(move |socket| {
             session_ws(
@@ -407,7 +420,7 @@ pub(crate) async fn session_ws_upgrade(
                 daemon_id,
                 environment,
                 labels,
-                holder,
+                tab,
                 shutdown,
             )
         }),
