@@ -1,6 +1,6 @@
 # The workbench script is cut by feature into Alpine components and Alpine stores
 
-Status: proposed
+Status: accepted
 Kind: structural
 Protects: testability, extensibility
 
@@ -195,12 +195,15 @@ change to modules is mechanical.
   judgment. D8 limits how much `shell()` can grow.
 - D3: checked by `crates/ralphy-daemon/src/tests.rs`
   (`every_alpine_component_is_on_window_and_has_a_test`, added by the pilot):
-  every first-party file that calls `Alpine.data` also sets a `window.WB*`
+  every first-party file that calls `Alpine.data` also assigns a `window.WB*`
   name and has a `ui-tests/<file>.test.mjs`.
-- D4: checked by the shared harness helper in `crates/ralphy-daemon/ui-tests/`
+- D4: checked by `loadComponent` in `crates/ralphy-daemon/ui-tests/harness.mjs`
   (added by the pilot). It builds the component against a scope that has only
   its own members and its `uses` names. Reading any other name fails, and
-  assigning a `shell()` field fails. The D3 check requires the test file that
+  assigning a `shell()` field fails. A write to a property inside a `uses`
+  value is not caught yet: the Security cut adds that (see the amendment). The
+  component's test checks its markup with `componentMarkup` and
+  `bindingNames` from the same file. The D3 check requires the test file that
   calls this helper.
 - D5: not checked by code: reviewed in the PR.
 - D6: not checked by code: reviewed in the PR, against the fact index.
@@ -209,3 +212,92 @@ change to modules is mechanical.
   first cut of each file): the baseline is the line count of `app.js` and
   `wb-console.js`, and the check fails if a count goes up.
 - D9: not checked by code: reviewed in the PR (as ADR-0057 D6).
+
+## Amendment (2026-10-05): the pilot result, and phase 2 as measured
+
+**The pilot passed on every mechanism and missed two exit criteria by their
+wording.** The Hosts dialog moved in #544 (issue #542). `app.js` went from
+7,443 to 7,155 lines, and 289 of its lines moved, with their text, into
+`wb-hosts-dialog.js`. `uses` has 9 names. The asset pins were 801 before and
+801 after, with the same count in each shape. The browser checks found no
+fault that `node --test` missed. Two criteria were not met:
+
+- A test file outside the Hosts tests and the modal tests changed:
+  `wb-add-project.test.mjs`, 1 line. It pinned the opener's text
+  `@click="openAddHost()"`, which D5 replaces.
+- `app.js` got 288 lines smaller, not 289. The `shell()` method that D4
+  requires (`hostRemoved`) added its own first and last lines.
+
+Both misses come from D4 and D5, so every later cut would miss them in the
+same way. From now on the two criteria read:
+
+- A test that pins the text of a feature's opener counts as one of the
+  feature's tests.
+- `app.js` gets smaller by at least the number of lines that moved out, minus
+  the lines of the `shell()` methods that D4 adds. The pull request lists those
+  methods.
+
+With this wording the pilot meets every criterion, and this ADR is accepted.
+
+**D4 covers a write inside a field.** "Never assigns a `shell()` field" also
+means no write to a property inside it (`this.security.x = …`). The pilot's
+check does not catch that write yet, because the Hosts dialog makes none. The
+first cut that reads an object from `shell()` adds it to `loadComponent`:
+a `uses` value that is an object is given to the component read-only.
+
+**An opener in the account menu closes the menu itself.** The account menu
+(`avatarMenu`) is part of the header, so it stays in `shell()` (D2). Today
+`openSettings`, `openSecurity`, `openWhatsNew` and `openAbout` close it. After
+their cuts, the opener's own markup, which is in `shell()` scope, closes the
+menu and sends the event.
+
+**"Is a modal open" is asked of the modal stack.** `consoleShortcutsBlocked`
+and the Ctrl+Shift+F listener in `app.js` read the open flags of several
+dialogs. D5 forbids that once a flag moves into a component. The cut that moves
+a flag replaces its read with a question to the modal stack, which `shell()`
+owns (D2), and the behaviour does not change.
+
+**What stays in `shell()` during phase 2.** Measured on `main` at `bde6f99c`:
+
+- **The login gate and the TOTP digit boxes.** The login gate is part of the
+  connection to the daemon (D2). After a login, `rehydrateAfterAuth` reads
+  every panel again. The gate reads 20 `shell()` names and writes 4. The TOTP
+  boxes are used only by the gate's markup, not by the Security dialog as the
+  Consequences said.
+- **The security fact:** `security.policy`, `passwordSet`, `tokenSet`,
+  `totpEnrolled`, `requireLogin` and `remoteImages`. The boot, the login gate
+  and log off read it. The form state of the Security dialog moves; the
+  dialog changes the fact through one `shell()` method.
+- **The release fact:** `release`, `releaseSeen`, `releaseRead`,
+  `loadRelease` and the getters `releaseHasNews`, `releaseUnread` and
+  `releaseSummary`. The sidebar reads it. It moves into an Alpine store (D6)
+  only together with all of its readers.
+- **`onTabVisible` and `rereadOpenPanels`.** They sit among the release code
+  but are page layout.
+
+**Phase 2, in this order.** Measured with code and markup on `main` at
+`bde6f99c` (`uses` is the count of `shell()` names read; writes are writes to
+`shell()` fields today, which the cut replaces with methods):
+
+| Cut | `app.js` lines | Markup lines | `uses` | Writes today |
+|---|---|---|---|---|
+| Add a project | 133 | 54 | 8 | none |
+| Security dialog | about 370 | 173 | 5 | `avatarMenu`, and fields inside `security` (about 60 writes) |
+| Settings | 196 | 206 | 7 | `avatarMenu` |
+| About, What's new and update | 186 | 178 | 12 | `avatarMenu`, `release`, `releaseSeen` |
+
+Together this is about 890 lines of `app.js`. The ratchet of D8 starts with
+Add a project.
+
+**`wb-console.js`: the pure functions leave before the D7 pilot.** Measured on
+`main` at `bde6f99c`, `wb-console.js` has 7,864 lines and 280 top-level
+functions. 164 of them (3,755 lines) read no module-scope `let`. 84 of them
+(about 1,125 lines) read no module state and no DOM, and call only functions
+of the same kind. Those 84 are pure folds, so by D3 they go to files of their
+own, as `wb-geometry.js` did by ADR-0057. They need no shared state object,
+so they move before the D7 pilot. There are four files, one for each theme:
+input, session, desk, and plane geometry. The plane geometry goes into
+`wb-geometry.js`. `WBConsole` exports them again, so its public namespace does
+not change (D7). The ratchet of D8 starts on `wb-console.js` with the first of
+these moves. The D7 pilot comes after them. It takes the GPU budget and the
+dormant consoles (about 130 lines, with two module `let`s of their own).
