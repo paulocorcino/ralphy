@@ -7,6 +7,8 @@ echoes each typed line back as `GOT:<line>`.
 
 Scenario 1  Settings, opened from the keyboard, takes focus into the dialog (not
             onto its ✕), Escape closes it, and focus returns to the rail button
+Scenario 1b the same for Hosts, whose dialog is its own Alpine component
+            nested in shell(): it opens on the event its sidebar button sends
 Scenario 2  Escape closes Security; Escape in the step-up field cancels only the
             step-up and leaves Security open
 Scenario 3  Branch and Prompt keep the field they focus themselves
@@ -44,6 +46,8 @@ TARGET = os.environ.get("RALPHY_WB_TARGET") or os.path.join(REPO_ROOT, "target",
 EXE = os.path.join(TARGET, "ralphy.exe" if os.name == "nt" else "ralphy")
 CHILD = os.path.join(TARGET, "session_test_child.exe" if os.name == "nt" else "session_test_child")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Hosts dialog's own component, nested in shell().
+HOSTS = "Alpine.$data(document.querySelector('.hosts-dialog'))"
 
 # What has focus, in words a failure line can print.
 ACTIVE = (
@@ -229,6 +233,22 @@ def main():
             a = active(page)
             check("1 Escape closes Settings", flag(page, "settingsOpen") is False)
             check("1 focus returns to the Settings button", a and a["title"] == "Settings", f"active={a}")
+
+            # --- scenario 1b: Hosts, a dialog with its own Alpine component ---
+            hosts_open = f"() => {HOSTS}.addHost.open"
+            page.locator("button.side-add-host").focus()
+            page.keyboard.press("Enter")
+            page.wait_for_function(f"() => {HOSTS}.addHost.open === true", timeout=5000)
+            settle(page)
+            a = active(page)
+            check("1b the sidebar button opens Hosts, and focus goes into it", a and a["modal"] == "Hosts", f"active={a}")
+            page.keyboard.press("Escape")
+            page.wait_for_function(f"() => {HOSTS}.addHost.open === false", timeout=5000)
+            settle(page)
+            a = active(page)
+            check("1b Escape closes Hosts", page.evaluate(hosts_open) is False)
+            check("1b focus returns to the Hosts button", a and a["title"] == "Hosts", f"active={a}")
+            check("1b the modal stack is empty", page.evaluate(f"() => {SH}._modalStack.length") == 0)
 
             # --- scenario 2: Security, and its step-up field ------------------
             page.evaluate(f"() => {SH}.openSecurity()")

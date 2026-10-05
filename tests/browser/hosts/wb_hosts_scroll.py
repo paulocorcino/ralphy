@@ -65,7 +65,7 @@ def shot(page, name):
 
 # Replaces the peers with `n` tunnel peers and opens the dialog on its list.
 OPEN_WITH = """(n) => {
-  const app = Alpine.$data(document.body);
+  const app = Alpine.$data(document.querySelector('.hosts-dialog'));
   const oses = ["Linux", "macOS", "Windows"];
   const hosts = Array.from({ length: n }, (_, i) => ({
     daemon_id: "01ARZ3NDEKTSV4RRFFQ69G5F" + String(i).padStart(2, "0"),
@@ -77,7 +77,7 @@ OPEN_WITH = """(n) => {
   }));
   app.sshHosts = () => hosts;
   app.addHost.open = false;
-  app.openAddHost();
+  window.dispatchEvent(new CustomEvent('workbench:hosts-open'));
 }"""
 
 LIST_GEOMETRY = """() => {

@@ -260,7 +260,8 @@ def shot(page, slug):
 
 
 VISIBLE = "el => !!el && el.getClientRects().length > 0"
-SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Hosts dialog's own component, nested in shell().
+HOSTS = "Alpine.$data(document.querySelector('.hosts-dialog'))"
 
 
 def main():
@@ -430,7 +431,7 @@ def main():
             SLOW.set()
             page.click(".host-remove .btn.danger")
             left = page.wait_for_function(
-                "() => { const s = " + SH + "; return s.removeHost.open ? false : s.sshHosts().length + 1; }",
+                "() => { const s = " + HOSTS + "; return s.removeHost.open ? false : s.sshHosts().length + 1; }",
                 timeout=45000,
             ).json_value() - 1
             check("the removed host is gone from the list when the question closes", left == 0, f"hosts={left}")

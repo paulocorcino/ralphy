@@ -109,6 +109,11 @@
   background: rgba(8, 6, 5, 0.62);
   backdrop-filter: blur(2px);
 }
+/* The element that holds a dialog's own Alpine component (`x-data`) around its
+   scrim. It draws no box of its own, so the page layout stays as it was. */
+.hosts-dialog {
+  display: contents;
+}
 /* The two dialogs a MODAL can raise (`askConfirm` / `askPrompt`) sit one tier
    above every other scrim. Every scrim shares `z-index: 500`, so before this the
    winner was DOM order: the plan modal's scrim covered the confirm it had just

@@ -155,3 +155,104 @@ export function loadShell(opts = {}) {
   const state = window.shell();
   return { state, window, document };
 }
+
+// Build the Alpine component registered as `alpineName` inside `shell()`, the
+// way the page nests it, and return the scope its code and markup see.
+//
+// In the browser a nested `x-data` sees every member of `shell()`. ADR-0073 D4
+// allows only the names in the component's `uses` list, and never a write to a
+// `shell()` field. `scope` is that rule: reading any other name throws, and so
+// does assigning anything that is not the component's own. A `shell()` method
+// in `uses` runs with `this` set to the merged scope, as Alpine runs it, so
+// `scrim()` still reaches the modal stack and the dialog's open flag.
+//
+// The factory is `window.WB<Name>.component`, where `alpineName` is
+// `wb<Name>` (ADR-0073 D3). `opts.magics` gives the `$` magics (`$nextTick`)
+// that Alpine would add. `opts.from` is a `loadShell()` result to nest the
+// component in, so several components share one page; without it the other
+// `opts` go to a new `loadShell`.
+export function loadComponent(alpineName, opts = {}) {
+  const { state: shell, window, document } = opts.from || loadShell(opts);
+  const ns = window["WB" + alpineName.slice(2)];
+  if (typeof ns?.component !== "function") {
+    throw new Error(`no window.WB${alpineName.slice(2)}.component for the Alpine component ${alpineName}`);
+  }
+  const data = ns.component();
+  const uses = new Set(data.uses);
+  for (const name of uses) {
+    if (!(name in shell)) throw new Error(`${alpineName} lists ${name} in uses, and shell() has no such member`);
+  }
+  const magics = Object.assign({}, opts.magics);
+  const own = (k) => Object.prototype.hasOwnProperty.call(data, k);
+
+  // Alpine's merged scope: the component first, then `shell()`.
+  const full = new Proxy(
+    {},
+    {
+      get: (_, k) => (own(k) ? data[k] : k in magics ? magics[k] : shell[k]),
+      set: (_, k, v) => {
+        if (own(k)) data[k] = v;
+        else shell[k] = v;
+        return true;
+      },
+      has: (_, k) => own(k) || k in magics || k in shell,
+    },
+  );
+
+  const scope = new Proxy(
+    {},
+    {
+      get(_, k) {
+        if (typeof k === "symbol") return undefined;
+        if (own(k)) return data[k];
+        if (k in magics) return magics[k];
+        if (uses.has(k)) {
+          const v = shell[k];
+          return typeof v === "function" ? (...args) => shell[k].apply(full, args) : v;
+        }
+        throw new ReferenceError(`${alpineName} reads ${k}, which is neither its own nor in its uses list`);
+      },
+      set(_, k, v) {
+        if (own(k)) data[k] = v;
+        else if (k.startsWith("$")) magics[k] = v;
+        else throw new TypeError(`${alpineName} assigns ${k}, which is not its own: it calls a shell() method instead`);
+        return true;
+      },
+      // `with (scope)` in a markup test: names the scope does not hold fall
+      // through to the globals, and an unknown one is a ReferenceError there.
+      has: (_, k) => own(k) || k in magics || uses.has(k),
+    },
+  );
+  return { scope, data, shell, window, document };
+}
+
+// The text from the element that binds `x-data="<alpineName>"` to the close of
+// the document part that holds it, with comments cut out. Ends at the next
+// banner comment (`<!-- ===`), which in index.html starts each feature.
+export function componentMarkup(html, alpineName) {
+  const start = html.indexOf(`x-data="${alpineName}"`);
+  if (start < 0) throw new Error(`index.html binds no x-data="${alpineName}"`);
+  const end = html.indexOf("<!-- ===", start);
+  return withoutComments(html.slice(start, end < 0 ? undefined : end));
+}
+
+// The names a markup binding reads from its scope: every identifier that is not
+// a property (`a.b`), an object key (`{ on: … }`), a string, or a keyword.
+// Loop variables of `x-for` and `$` magics are left to the caller.
+export function bindingNames(expr) {
+  const code = expr
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"/g, "''");
+  const names = new Set();
+  for (const m of code.matchAll(/[A-Za-z_$][\w$]*/g)) {
+    const before = code.slice(0, m.index);
+    const after = code.slice(m.index + m[0].length);
+    if (/\.\s*$/.test(before)) continue;
+    if (/[{,]\s*$/.test(before) && /^\s*:/.test(after)) continue;
+    if (["true", "false", "null", "undefined", "in", "of", "typeof"].includes(m[0])) continue;
+    names.add(m[0]);
+  }
+  return [...names];
+}
