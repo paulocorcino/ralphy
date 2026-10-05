@@ -741,60 +741,47 @@ test("logOff resets the remember box along with the credentials", async () => {
   assert.equal(state.login.passwordRequired, true, "the server-told flag does");
 });
 
-// Step-up (ADR-0032 amendment E, audit F2): lowering the auth posture costs a
-// fresh code once a TOTP seed is armed, the current password once one is
-// enrolled. These are the pure folds behind the Security modal's requests —
-// the harness serves no network, so the bodies are what can be pinned.
-test("step-up asks for a code only once a TOTP seed is armed", async () => {
-  const { state } = loadShell();
-  state.$nextTick = () => {};
-  assert.equal(state.stepUpNeeded(), false, "nothing armed: nothing to ask");
-  assert.equal(await state.askFreshCode("x"), "", "resolves at once, no prompt");
-  assert.equal(state.stepUp.open, false);
+// The Security dialog's open flag is its own (wb-security-dialog.js), so the
+// shortcuts ask the modal stack for it (ADR-0073 amendment of 2026-10-05).
+// They block in the same cases as the flag did: while the dialog is open, under
+// another modal too, and not once it closes.
+test("the shortcuts are blocked while the Security dialog is on the modal stack", () => {
+  const keydowns = [];
+  const { state, window } = loadShell({
+    document: { addEventListener: (type, fn) => type === "keydown" && keydowns.push(fn) },
+  });
+  // The Ctrl/Cmd+Shift+F listener: the one that opens the files search.
+  const filesKey = keydowns.find((fn) => /shiftKey/.test(String(fn)) && /openFileSearch/.test(String(fn)));
+  assert.ok(filesKey, "app.js registers the Ctrl+Shift+F listener at load");
+  const searches = [];
+  state.authed = true;
+  state.openSlug = "o/r";
+  state.openFileSearch = () => searches.push("files");
+  window.getShell = () => state;
+  const press = () =>
+    filesKey({ key: "F", ctrlKey: true, metaKey: false, shiftKey: true, altKey: false, preventDefault() {} });
+  const scrimEl = { querySelector: () => null };
 
-  state.security.totpEnrolled = true;
-  const asked = state.askFreshCode("rotate the access token");
-  assert.equal(state.stepUp.open, true, "the prompt opens");
-  assert.equal(state.stepUp.label, "rotate the access token");
-  state.stepUp.code = "12345";
-  state.submitStepUp();
-  assert.equal(state.stepUp.open, true, "five digits do not submit");
-  state.stepUp.code = " 123456 ";
-  state.submitStepUp();
-  assert.equal(await asked, "123456", "six digits, trimmed, hand the code back");
-  assert.equal(state.stepUp.open, false);
+  assert.equal(state.consoleShortcutsBlocked(), false, "no modal: not blocked");
+  press();
+  assert.deepEqual(searches, ["files"]);
 
-  const cancelled = state.askFreshCode("turn login off");
-  state.cancelStepUp();
-  assert.equal(await cancelled, null, "cancel resolves null so the action stops");
-});
+  state.modalOpened("securityOpen", scrimEl);
+  assert.equal(state.consoleShortcutsBlocked(), true, "Security open: blocked");
+  assert.equal(state.consoleShortcutsBlocked(true), true, "a terminal key too");
+  press();
+  assert.deepEqual(searches, ["files"], "Ctrl+Shift+F is blocked");
 
-test("step-up bodies carry the code only when there is one", () => {
-  const { state } = loadShell();
-  assert.equal(state.stepUpBody({}, ""), "", "no seed armed: an empty body");
-  assert.equal(state.stepUpBody({}, "123456"), "code=123456");
-  assert.equal(state.stepUpBody({ enable: "false" }, "123456"), "enable=false&code=123456");
-  assert.equal(state.stepUpBody({ enable: "true" }, ""), "enable=true", "enabling never sends a code");
-});
+  state.modalOpened("confirmModal.open", scrimEl);
+  assert.equal(state.consoleShortcutsBlocked(), true, "a confirm over Security: still blocked");
+  press();
+  assert.deepEqual(searches, ["files"]);
 
-test("password bodies always carry the field and add `current` once enrolled", () => {
-  const { state } = loadShell();
-  assert.equal(state.passwordBody("new"), "password=new", "first-time set: no current");
-  assert.equal(state.passwordBody(""), "password=", "the clear is an EMPTY field, never an absent one");
-  state.security.passwordSet = true;
-  state.security.passwordCurrent = "old";
-  assert.equal(state.passwordBody("new"), "password=new&current=old");
-  assert.equal(state.passwordBody(""), "password=&current=old");
-});
-
-test("step-up refusals name the throttle's wait and a rejected code", () => {
-  const { state } = loadShell();
-  state.noteStepUpRefusal({ status: 429, headers: { get: () => "17" } });
-  assert.match(state.security.stepUpError, /wait 17 s/);
-  state.noteStepUpRefusal({ status: 401 });
-  assert.match(state.security.stepUpError, /Code rejected/);
-  state.notePasswordRefusal({ status: 401 });
-  assert.match(state.security.stepUpError, /Current password rejected/);
+  state.modalClosed("confirmModal.open");
+  state.modalClosed("securityOpen");
+  assert.equal(state.consoleShortcutsBlocked(), false, "Security closed: not blocked");
+  press();
+  assert.deepEqual(searches, ["files", "files"]);
 });
 
 // The release view is read again each time the tab comes back (ADR-0056 §7).

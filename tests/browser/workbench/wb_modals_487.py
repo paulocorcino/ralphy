@@ -51,6 +51,8 @@ SH = "Alpine.$data(document.querySelector('[x-data]'))"
 HOSTS = "Alpine.$data(document.querySelector('.hosts-dialog'))"
 # The Add a project dialog's own component, nested in shell().
 ADDPROJECT = "Alpine.$data(document.querySelector('.add-project-dialog'))"
+# The Security dialog's own component, nested in shell().
+SECURITY = "Alpine.$data(document.querySelector('.security-dialog'))"
 
 # What has focus, in words a failure line can print.
 ACTIVE = (
@@ -269,10 +271,14 @@ def main():
             check("1c the modal stack is empty", page.evaluate(f"() => {SH}._modalStack.length") == 0)
 
             # --- scenario 2: Security, and its step-up field ------------------
-            page.evaluate(f"() => {SH}.openSecurity()")
-            wait_flag(page, "securityOpen", True)
+            # The account menu's item closes the menu and opens the dialog.
+            page.locator(".avatar-btn").click()
+            page.wait_for_function(f"() => {SH}.avatarMenu === true", timeout=5000)
+            page.locator(".account-menu .dropdown-item", has_text="Security settings").click()
+            page.wait_for_function(f"() => {SECURITY}.securityOpen === true", timeout=5000)
+            check("2 the account menu closes when it opens Security", flag(page, "avatarMenu") is False)
             settle(page)
-            page.evaluate(f"() => {{ {SH}.stepUp = {{ open: true, code: '', label: 'test' }}; }}")
+            page.evaluate(f"() => {{ {SECURITY}.stepUp = {{ open: true, code: '', label: 'test' }}; }}")
             page.wait_for_function(
                 "() => { const i = document.querySelector('.step-up input'); return !!i && i.offsetParent !== null; }",
                 timeout=5000,
@@ -280,14 +286,27 @@ def main():
             page.locator(".step-up input").focus()
             page.keyboard.press("Escape")
             page.wait_for_timeout(200)
+            step_up = page.evaluate(f"() => {SECURITY}.stepUp.open")
+            sec_open = page.evaluate(f"() => {SECURITY}.securityOpen")
             check(
                 "2 Escape in the step-up field cancels the step-up and keeps Security open",
-                flag(page, "stepUp.open") is False and flag(page, "securityOpen") is True,
-                f"stepUp={flag(page, 'stepUp.open')} security={flag(page, 'securityOpen')}",
+                step_up is False and sec_open is True,
+                f"stepUp={step_up} security={sec_open}",
             )
             page.keyboard.press("Escape")
             page.wait_for_timeout(200)
-            check("2 the next Escape closes Security", flag(page, "securityOpen") is False)
+            check("2 the next Escape closes Security", page.evaluate(f"() => {SECURITY}.securityOpen") is False)
+
+            # Log off closes Security with an event. On loopback there is no
+            # login gate, so the page stays usable for the next scenarios.
+            check("2 loopback has no login gate", flag(page, "security.policy") != "session", flag(page, "security.policy"))
+            page.evaluate("() => document.dispatchEvent(new CustomEvent('workbench:security-open', { bubbles: true }))")
+            page.wait_for_function(f"() => {SECURITY}.securityOpen === true", timeout=5000)
+            page.evaluate(f"() => {SH}.logOff()")
+            page.wait_for_function(f"() => {SECURITY}.securityOpen === false", timeout=5000)
+            settle(page)
+            check("2 log off closes Security", page.evaluate(f"() => {SECURITY}.securityOpen") is False)
+            check("2 the modal stack is empty after log off", page.evaluate(f"() => {SH}._modalStack.length") == 0)
 
             # --- scenario 3: Branch and Prompt keep their own field -----------
             page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug)
