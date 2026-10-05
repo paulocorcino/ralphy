@@ -161,10 +161,14 @@ export function loadShell(opts = {}) {
 //
 // In the browser a nested `x-data` sees every member of `shell()`. ADR-0073 D4
 // allows only the names in the component's `uses` list, and never a write to a
-// `shell()` field. `scope` is that rule: reading any other name throws, and so
-// does assigning anything that is not the component's own. A `shell()` method
-// in `uses` runs with `this` set to the merged scope, as Alpine runs it, so
-// `scrim()` still reaches the modal stack and the dialog's open flag.
+// `shell()` field or to a property inside one. `scope` is that rule: reading
+// any other name throws, and so does assigning anything that is not the
+// component's own. A `uses` value that is an object comes back read-only: a set
+// or a delete on it, at any depth, throws a TypeError that names the component
+// and the path (`security.passwordSet`). A `shell()` method in `uses` runs with
+// `this` set to the merged scope, as Alpine runs it, so `scrim()` still reaches
+// the modal stack and the dialog's open flag, and the method may write
+// `shell()` state: that write is the one D4 allows.
 //
 // The factory is `window.WB<Name>.component`, where `alpineName` is
 // `wb<Name>` (ADR-0073 D3). `opts.magics` gives the `$` magics (`$nextTick`)
@@ -208,7 +212,7 @@ export function loadComponent(alpineName, opts = {}) {
         if (k in magics) return magics[k];
         if (uses.has(k)) {
           const v = shell[k];
-          return typeof v === "function" ? (...args) => shell[k].apply(full, args) : v;
+          return typeof v === "function" ? (...args) => shell[k].apply(full, args) : readOnly(alpineName, v, k);
         }
         throw new ReferenceError(`${alpineName} reads ${k}, which is neither its own nor in its uses list`);
       },
@@ -224,6 +228,28 @@ export function loadComponent(alpineName, opts = {}) {
     },
   );
   return { scope, data, shell, window, document };
+}
+
+// `value` seen through a Proxy that reads as the value and refuses every write,
+// at any depth: ADR-0073 D4 (amendment of 2026-10-05). `path` names the value
+// in the error. A property the object itself can never change (frozen) is
+// given as it is, because a Proxy must return exactly that value.
+function readOnly(alpineName, value, path) {
+  if (value === null || typeof value !== "object") return value;
+  const refuse = (k) => {
+    throw new TypeError(`${alpineName} writes ${path}.${String(k)}, inside a shell() value: it calls a shell() method instead`);
+  };
+  return new Proxy(value, {
+    get(target, k) {
+      const v = Reflect.get(target, k);
+      const d = Reflect.getOwnPropertyDescriptor(target, k);
+      if (d && !d.configurable && !d.writable) return v;
+      return typeof k === "symbol" ? v : readOnly(alpineName, v, `${path}.${k}`);
+    },
+    set: (_, k) => refuse(k),
+    deleteProperty: (_, k) => refuse(k),
+    defineProperty: (_, k) => refuse(k),
+  });
 }
 
 // The text from the element that binds `x-data="<alpineName>"` to the close of

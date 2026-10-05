@@ -137,7 +137,7 @@
           <button class="dropdown-item rel-item" x-show="releaseHasNews" x-cloak @click="openWhatsNew()">
             <i class="bi bi-stars"></i><span x-text="releaseSummary"></span>
           </button>
-          <button class="dropdown-item" @click="openSecurity()">
+          <button class="dropdown-item" @click="avatarMenu = false; $dispatch('workbench:security-open')">
             <i class="bi bi-shield-lock"></i><span>Security settings</span>
           </button>
           <button class="dropdown-item" @click="openAbout()">
@@ -2120,6 +2120,8 @@
          access token, optional password (PBKDF2), and TOTP 2FA whose secret is
          shown exactly once. "Revoke" is the real "delete the daemon-totp file".
     ==================================================================== -->
+    <div class="security-dialog" x-data="wbSecurityDialog" @workbench:security-open.window="openSecurity()"
+         @workbench:log-off.window="securityOpen = false">
     <div class="modal-scrim" x-cloak x-bind="scrim('securityOpen', () => closeSecurity())">
       <div class="modal security-modal" role="dialog" aria-modal="true" aria-label="Security settings">
         <div class="modal-head">
@@ -2146,8 +2148,8 @@
               <button class="btn" @click="cancelStepUp()">Cancel</button>
             </div>
           </section>
-          <p class="sec-note" style="margin:0;color:var(--danger)" x-show="security.stepUpError"
-             x-text="security.stepUpError"></p>
+          <p class="sec-note" style="margin:0;color:var(--danger)" x-show="securityForm.stepUpError"
+             x-text="securityForm.stepUpError"></p>
 
           <!-- Access token -->
           <section class="sec-card">
@@ -2184,23 +2186,23 @@
                    still one to the browser's password manager. -->
               <template x-if="securityOpen">
                 <input class="set-input" type="password" placeholder="Current password" autocomplete="current-password"
-                       x-show="security.passwordSet" x-model="security.passwordCurrent" />
+                       x-show="security.passwordSet" x-model="securityForm.passwordCurrent" />
               </template>
               <template x-if="securityOpen">
                 <input class="set-input" type="password" placeholder="New password" autocomplete="new-password"
-                       x-model="security.passwordDraft" @keydown.enter="savePassword()" />
+                       x-model="securityForm.passwordDraft" @keydown.enter="savePassword()" />
               </template>
               <template x-if="securityOpen">
                 <input class="set-input" type="password" placeholder="Confirm password" autocomplete="new-password"
-                       x-model="security.passwordConfirm" @keydown.enter="savePassword()" />
+                       x-model="securityForm.passwordConfirm" @keydown.enter="savePassword()" />
               </template>
               <button class="btn accent" @click="savePassword()"
-                      :disabled="!security.passwordDraft.trim() || security.passwordDraft !== security.passwordConfirm || (security.passwordSet && !security.passwordCurrent)">Save</button>
+                      :disabled="!securityForm.passwordDraft.trim() || securityForm.passwordDraft !== securityForm.passwordConfirm || (security.passwordSet && !securityForm.passwordCurrent)">Save</button>
               <button class="btn" @click="clearPassword()" x-show="security.passwordSet"
-                      :disabled="!security.passwordCurrent">Remove</button>
+                      :disabled="!securityForm.passwordCurrent">Remove</button>
             </div>
             <p class="sec-note" style="margin:0.4rem 0 0;color:var(--danger)"
-               x-show="security.passwordConfirm && security.passwordDraft !== security.passwordConfirm">
+               x-show="securityForm.passwordConfirm && securityForm.passwordDraft !== securityForm.passwordConfirm">
               The passwords do not match.
             </p>
           </section>
@@ -2217,33 +2219,33 @@
             </p>
 
             <!-- not enrolled & nothing in flight → begin enrolment -->
-            <div class="sec-actions" x-show="!security.totpEnrolled && !security.pendingEnroll">
+            <div class="sec-actions" x-show="!security.totpEnrolled && !securityForm.pendingEnroll">
               <button class="btn accent" @click="enrollTotp()"><i class="bi bi-qr-code"></i> Enroll and show the QR code</button>
             </div>
 
             <!-- in-flight enrolment: QR + secret + the confirm-code step -->
-            <div class="totp-reveal" x-show="security.pendingEnroll">
-              <div class="totp-qr" x-html="security.qrHtml"></div>
+            <div class="totp-reveal" x-show="securityForm.pendingEnroll">
+              <div class="totp-qr" x-html="securityForm.qrHtml"></div>
               <div class="totp-meta">
                 <div class="totp-warn"><i class="bi bi-exclamation-triangle"></i> Shown only once. Scan or copy it now.</div>
                 <label class="set-label">Secret</label>
-                <input class="set-input mono" type="text" :value="security.secret" readonly @click="$el.select()" />
+                <input class="set-input mono" type="text" :value="securityForm.secret" readonly @click="$el.select()" />
                 <label class="set-label">Enter the current 6-digit code to confirm</label>
                 <div class="sec-actions">
                   <input class="set-input" inputmode="numeric" pattern="[0-9]*" maxlength="6"
-                         placeholder="000000" x-model="security.confirmCode"
+                         placeholder="000000" x-model="securityForm.confirmCode"
                          @keydown.enter="confirmTotp()" />
                   <button class="btn accent" @click="confirmTotp()"
-                          :disabled="security.confirmCode.trim().length !== 6">Confirm</button>
+                          :disabled="securityForm.confirmCode.trim().length !== 6">Confirm</button>
                   <button class="btn" @click="cancelEnroll()">Cancel</button>
                 </div>
-                <p class="sec-note" style="margin:0;color:var(--danger)" x-show="security.totpError"
-                   x-text="security.totpError"></p>
+                <p class="sec-note" style="margin:0;color:var(--danger)" x-show="securityForm.totpError"
+                   x-text="securityForm.totpError"></p>
               </div>
             </div>
 
             <!-- enrolled → revoke -->
-            <div class="sec-actions" x-show="security.totpEnrolled && !security.pendingEnroll">
+            <div class="sec-actions" x-show="security.totpEnrolled && !securityForm.pendingEnroll">
               <span class="sec-note" style="margin:0;flex:1">Enrolled. Revoke to start over.</span>
               <button class="btn danger" @click="revokeTotp()"><i class="bi bi-trash"></i> Revoke stored TOTP</button>
             </div>
@@ -2282,7 +2284,7 @@
             <p class="sec-note">
               Show images from other websites in markdown previews. Off by default, because each image sends a request to that website.
             </p>
-            <p class="sec-note" style="margin:0.4rem 0 0" x-show="security.remoteImagesReload">
+            <p class="sec-note" style="margin:0.4rem 0 0" x-show="securityForm.remoteImagesReload">
               Reload the page to apply this change.
             </p>
           </section>
@@ -2292,6 +2294,7 @@
           <button class="btn" @click="closeSecurity()">Done</button>
         </div>
       </div>
+    </div>
     </div>
 
     <!-- ===================================================================
@@ -3283,6 +3286,7 @@
     <script src="wb-hosts-dialog.js"></script>
     <script src="wb-add-project.js"></script>
     <script src="wb-add-project-dialog.js"></script>
+    <script src="wb-security-dialog.js"></script>
     <script src="app.js"></script>
     <script defer src="vendor/alpine.min.js"></script>
   </body>

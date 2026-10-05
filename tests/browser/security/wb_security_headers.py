@@ -45,6 +45,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Security dialog's own component, nested in shell().
+SEC = "Alpine.$data(document.querySelector('.security-dialog'))"
 
 MAIN_RS = "fn main() {\n    println!(\"csp\");\n}\n"
 NOTES_MD = "# Notes\n\n```mermaid\ngraph TD; A-->B;\n```\n"
@@ -211,16 +213,16 @@ def main():
             check("markdown/mermaid with no CSP violation", violations(page) == [], violations(page))
 
             # ── 5. the QR (data: image) ───────────────────────────────────
-            page.evaluate(f"{SH}.openSecurity()")
+            page.evaluate(f"{SEC}.openSecurity()")
             page.wait_for_timeout(500)
-            page.evaluate(f"{SH}.enrollTotp()")
-            page.wait_for_function(f"() => {SH}.security.pendingEnroll === true", timeout=10000)
+            page.evaluate(f"{SEC}.enrollTotp()")
+            page.wait_for_function(f"() => {SEC}.securityForm.pendingEnroll === true", timeout=10000)
             page.wait_for_timeout(800)
             qr_ok = page.evaluate("() => !!document.querySelector('.totp-qr img, .totp-qr canvas, .totp-qr svg, .totp-qr table')")
             check("the TOTP QR rendered", qr_ok)
             check("QR with no CSP violation", violations(page) == [], violations(page))
             page.screenshot(path=os.path.join(SHOT_DIR, "sec-audit-f3-csp-2026-09-21.png"))
-            page.evaluate(f"{SH}.cancelEnroll()")
+            page.evaluate(f"{SEC}.cancelEnroll()")
 
             # ── 6. the popups' inline scripts are hash-allowed ────────────
             for popup in ("detached.html", "detached-fence.html"):
