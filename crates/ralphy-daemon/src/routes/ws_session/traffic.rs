@@ -6,6 +6,8 @@
 use std::collections::VecDeque;
 use std::time::Instant;
 
+use crate::protocol::Command;
+
 /// Which loop owns the socket: the bridge to a session this daemon hosts, or
 /// the relay to a session a peer hosts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -23,9 +25,53 @@ impl Channel {
     }
 }
 
-/// The `end` of a socket that closed without a deliberate end: the client went
-/// away, the link failed, or a send failed.
-pub(crate) const DROPPED: &str = "dropped";
+/// The `end` of a socket that closed with no end decided by either side: the
+/// link failed, or a send failed.
+const DROPPED: &str = "dropped";
+
+/// The `end` of a socket whose client sent a Close frame without saying why.
+const CLIENT_CLOSED: &str = "client-closed";
+
+/// The command verb a page sends just before it closes a console socket.
+const DETACH: &str = "detach";
+
+/// Why the page closed a console socket, as it announced it in a `detach`
+/// command. Each of these is followed by a reattach that replays the
+/// scrollback, except `WindowClosed`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Leave {
+    /// The console window went off the viewport and gave its terminal back.
+    Dormant,
+    /// The page opens a new socket at once: a resume, a take-over, or a move
+    /// to a detached fence.
+    Reconnect,
+    /// The console window left this page.
+    WindowClosed,
+}
+
+impl Leave {
+    fn as_str(self) -> &'static str {
+        match self {
+            Leave::Dormant => "dormant",
+            Leave::Reconnect => "reconnect",
+            Leave::WindowClosed => "window-closed",
+        }
+    }
+
+    /// The leave a `detach` command names; `None` for another verb or a reason
+    /// this daemon does not know.
+    pub(crate) fn from_command(cmd: &Command) -> Option<Leave> {
+        if cmd.verb != DETACH {
+            return None;
+        }
+        match cmd.payload.get("reason")?.as_str()? {
+            "dormant" => Some(Leave::Dormant),
+            "reconnect" => Some(Leave::Reconnect),
+            "window-closed" => Some(Leave::WindowClosed),
+            _ => None,
+        }
+    }
+}
 
 /// Pings waiting for their pong. A client answers each ping, so more than a
 /// few waiting means the pongs are lost, and the oldest are dropped.
@@ -60,6 +106,8 @@ pub(crate) struct Traffic {
     lagged_events: u64,
     lagged_skipped: u64,
     live_since_ping: bool,
+    left: Option<Leave>,
+    client_closed: bool,
     outstanding: VecDeque<Outstanding>,
     busy_ms: Vec<u32>,
     idle_ms: Vec<u32>,
@@ -124,6 +172,8 @@ impl Traffic {
             lagged_events: 0,
             lagged_skipped: 0,
             live_since_ping: false,
+            left: None,
+            client_closed: false,
             outstanding: VecDeque::new(),
             busy_ms: Vec::new(),
             idle_ms: Vec::new(),
@@ -142,6 +192,31 @@ impl Traffic {
 
     pub(crate) fn inbound(&mut self, bytes: usize) {
         self.in_bytes += bytes as u64;
+    }
+
+    pub(crate) fn client_left(&mut self, leave: Leave) {
+        self.left = Some(leave);
+    }
+
+    /// The client sent a Close frame.
+    pub(crate) fn client_closed(&mut self) {
+        self.client_closed = true;
+    }
+
+    /// How the socket ended, most specific first: the end this daemon decided
+    /// (`daemon_end`), then the leave the page announced, then a bare Close
+    /// frame from the client, then `dropped`.
+    fn end_label<'a>(&self, daemon_end: Option<&'a str>) -> &'a str {
+        if let Some(end) = daemon_end {
+            return end;
+        }
+        if let Some(leave) = self.left {
+            return leave.as_str();
+        }
+        if self.client_closed {
+            return CLIENT_CLOSED;
+        }
+        DROPPED
     }
 
     /// A burst outran this socket and `skipped` messages never reached it.
@@ -204,9 +279,10 @@ impl Traffic {
         }
     }
 
-    /// `end` is how the socket ended: a session end reason, or `dropped`.
-    pub(crate) fn log(&self, end: &str, now: Instant) {
+    /// `daemon_end` is the end this daemon decided, if it decided one.
+    pub(crate) fn log(&self, daemon_end: Option<&str>, now: Instant) {
         let s = self.summary();
+        let end = self.end_label(daemon_end);
         tracing::info!(
             channel = self.channel.as_str(),
             session = self.keys.session,
@@ -325,6 +401,43 @@ mod tests {
         assert_eq!(relayed.keys.peer_id.as_deref(), Some("01PEER"));
         assert_eq!(relayed.keys.peer.as_deref(), Some("Ubuntu"));
         assert_eq!(relayed.keys.session, None);
+    }
+
+    fn command(json: &str) -> Command {
+        match crate::protocol::decode(&[&[0x02], json.as_bytes()].concat()) {
+            Ok(crate::protocol::Frame::Command(cmd)) => cmd,
+            other => panic!("not a command frame: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_detach_command_names_the_leave() {
+        // The bytes `encodeDetach` in wb-console.js produces (its node test).
+        let dormant = command(r#"{"id":0,"verb":"detach","payload":{"reason":"dormant"}}"#);
+        assert_eq!(Leave::from_command(&dormant), Some(Leave::Dormant));
+        let reconnect = command(r#"{"id":0,"verb":"detach","payload":{"reason":"reconnect"}}"#);
+        assert_eq!(Leave::from_command(&reconnect), Some(Leave::Reconnect));
+        let closed = command(r#"{"id":0,"verb":"detach","payload":{"reason":"window-closed"}}"#);
+        assert_eq!(Leave::from_command(&closed), Some(Leave::WindowClosed));
+        let unknown = command(r#"{"id":0,"verb":"detach","payload":{"reason":"bored"}}"#);
+        assert_eq!(Leave::from_command(&unknown), None);
+        let resize = command(r#"{"id":0,"verb":"resize","payload":{"reason":"dormant"}}"#);
+        assert_eq!(
+            Leave::from_command(&resize),
+            None,
+            "only `detach` names a leave"
+        );
+    }
+
+    #[test]
+    fn the_end_is_the_most_specific_reason_known() {
+        let mut t = traffic(Instant::now());
+        assert_eq!(t.end_label(None), "dropped");
+        t.client_closed();
+        assert_eq!(t.end_label(None), "client-closed");
+        t.client_left(Leave::Dormant);
+        assert_eq!(t.end_label(None), "dormant");
+        assert_eq!(t.end_label(Some("taken-over")), "taken-over");
     }
 
     #[test]

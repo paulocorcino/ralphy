@@ -1491,6 +1491,25 @@ test("resumeAll and setStaleProbe are exported like the rest of the module's sea
   assert.equal(c.resumeAll(false), 0);
 });
 
+// --- encodeDetach: why the page closes a console socket ----------------------
+// The daemon logs the reason, so a dormancy reattach is told apart from a
+// network drop. The daemon's `Leave::from_command` test reads this same JSON.
+const textOf = (frame) => new TextDecoder().decode(frame.subarray(1));
+
+test("encodeDetach is a command frame that names the reason", () => {
+  const { encodeDetach } = load();
+  const frame = encodeDetach("dormant");
+  assert.equal(frame[0], 0x02, "the command tag");
+  assert.equal(textOf(frame), '{"id":0,"verb":"detach","payload":{"reason":"dormant"}}');
+});
+
+test("encodeResize keeps its frame", () => {
+  const { encodeResize } = load();
+  const frame = encodeResize(24, 80);
+  assert.equal(frame[0], 0x02, "the command tag");
+  assert.equal(textOf(frame), '{"id":0,"verb":"resize","payload":{"rows":24,"cols":80}}');
+});
+
 // --- dormancyDecision: a console off the viewport gives its renderer back ---
 // Chrome caps a document at ~16 live WebGL contexts. Past that the xterm addon
 // disposes itself and EVERY terminal falls back to the DOM renderer, so a desk

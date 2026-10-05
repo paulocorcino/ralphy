@@ -10,9 +10,10 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::io::AsyncWriteExt;
 
 use super::refuse::Refuser;
-use super::traffic::{Traffic, DROPPED};
+use super::traffic::{Leave, Traffic};
 use super::SessionQuery;
 use crate::peer;
+use crate::protocol::{self, Frame};
 use crate::routes::encode_query_value;
 use crate::session;
 
@@ -134,11 +135,11 @@ pub(crate) async fn peer_session_ws(
     mut traffic: Traffic,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) {
-    let mut end = DROPPED;
+    let mut end = None;
     loop {
         tokio::select! {
             _ = shutdown.changed() => {
-                end = session::EndReason::DaemonShutdown.as_wire();
+                end = Some(session::EndReason::DaemonShutdown.as_wire());
                 break;
             }
             incoming = browser.recv() => {
@@ -149,6 +150,12 @@ pub(crate) async fn peer_session_ws(
                 let outbound = match message {
                     Message::Binary(bytes) => {
                         traffic.inbound(bytes.len());
+                        // Read only for the log; the bytes go on unchanged.
+                        if let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) {
+                            if let Some(leave) = Leave::from_command(&cmd) {
+                                traffic.client_left(leave);
+                            }
+                        }
                         tokio_tungstenite::tungstenite::Message::Binary(bytes)
                     }
                     Message::Ping(bytes) => tokio_tungstenite::tungstenite::Message::Ping(bytes),
@@ -157,6 +164,7 @@ pub(crate) async fn peer_session_ws(
                         tokio_tungstenite::tungstenite::Message::Pong(bytes)
                     }
                     Message::Close(_) => {
+                        traffic.client_closed();
                         close_peer_session(&mut peer).await;
                         break;
                     }
@@ -182,7 +190,7 @@ pub(crate) async fn peer_session_ws(
                     }
                     tokio_tungstenite::tungstenite::Message::Pong(bytes) => Message::Pong(bytes),
                     tokio_tungstenite::tungstenite::Message::Close(_) => {
-                        end = PEER_CLOSED;
+                        end = Some(PEER_CLOSED);
                         let _ = browser.send(Message::Close(None)).await;
                         break;
                     }

@@ -884,7 +884,7 @@ window.WBConsole = (function () {
     // this a "go to session" on a sleeping console would miss its own window
     // and spawn a SECOND one against the same id, which the daemon would park.
     if (t.sessionId != null) win._wantsSession = t.sessionId;
-    t.dispose();
+    t.dispose("dormant");
     win._term = null;
     win._dormant = true;
     win.classList.add("dormant");
@@ -2110,7 +2110,7 @@ window.WBConsole = (function () {
   function dropClosedElsewhere(id) {
     const win = findWindow(id);
     if (!win) return;
-    tearDownMember(win);
+    tearDownMember(win, "window-closed");
     applyExtent();
   }
 
@@ -3842,8 +3842,8 @@ window.WBConsole = (function () {
   // state a second client still renders) and WITHOUT closing its daemon
   // session: `dispose()` closing the socket is the writer-slot release the
   // popup then re-acquires (ADR-0051 §9).
-  function tearDownMember(win) {
-    win._term?.dispose();
+  function tearDownMember(win, reason) {
+    win._term?.dispose(reason);
     win.remove();
     untrackDormancy(win);
     wins.delete(win);
@@ -3927,7 +3927,8 @@ window.WBConsole = (function () {
     for (const m of members) {
       if (m.kind === "note") continue;
       const win = [...wins].find((w) => w._deskId === m.id);
-      if (win) tearDownMember(win);
+      // The popup attaches each member again.
+      if (win) tearDownMember(win, "reconnect");
     }
     // The cards leave the stage the same way: `renderNotes` drops every card
     // whose fence is now detached, and the records stay exactly where they are.
@@ -4582,13 +4583,29 @@ window.WBConsole = (function () {
     return out;
   }
 
-  function encodeResize(rows, cols) {
-    const json = JSON.stringify({ id: 0, verb: "resize", payload: { rows, cols } });
-    const body = new TextEncoder().encode(json);
+  function encodeCommand(verb, payload) {
+    const body = new TextEncoder().encode(JSON.stringify({ id: 0, verb, payload }));
     const out = new Uint8Array(1 + body.length);
     out[0] = TAG_COMMAND;
     out.set(body, 1);
     return out;
+  }
+
+  function encodeResize(rows, cols) {
+    return encodeCommand("resize", { rows, cols });
+  }
+
+  // Why this page closes a console socket, sent as DATA just before the close:
+  // close metadata does not survive the trip (#334), and the peer relay
+  // forwards data frames unchanged. The daemon only logs it. One of
+  // `dormant`, `reconnect`, `window-closed`.
+  function encodeDetach(reason) {
+    return encodeCommand("detach", { reason });
+  }
+
+  // Announce `reason` on an open socket. A socket still connecting cannot send.
+  function announceDetach(ws, reason) {
+    if (reason && ws && ws.readyState === 1) ws.send(encodeDetach(reason));
   }
 
   // Failed re-opens before a socket is given up on, and how many a never-opened
@@ -4625,13 +4642,14 @@ window.WBConsole = (function () {
   // as much as `onclose`: a frame still queued lands AFTER this returns, when
   // `ws` names the replacement. Local, not `WBDaemon`'s: this module loads on
   // its own in the node harness and the popup.
-  function detachSocket(ws) {
+  function detachSocket(ws, reason) {
     if (!ws) return;
     ws.onclose = null;
     ws.onmessage = null;
     ws.onopen = null;
     ws.onerror = null;
     try {
+      announceDetach(ws, reason);
       if (ws.readyState <= 1) ws.close();
     } catch {}
   }
@@ -6007,7 +6025,7 @@ window.WBConsole = (function () {
         const connectingMs = now - connectingSince;
         if (resumeDecision({ readyState, stale, connectingMs }) === "none") return false;
         lastResumeAt = now;
-        detachSocket(ws);
+        detachSocket(ws, "reconnect");
         connect({ id: currentSessionId, repo: currentRepo, watch: watching });
         return true;
       },
@@ -6024,7 +6042,7 @@ window.WBConsole = (function () {
         // returns, when `switching` is false again and `ws` names the new
         // socket. A queued `session-end` would otherwise attach a stale reason
         // to the NEW connection and turn its next drop into a give-up.
-        detachSocket(ws);
+        detachSocket(ws, "reconnect");
         watching = false;
         announced = null;
         refusal = null;
@@ -6034,7 +6052,8 @@ window.WBConsole = (function () {
         if (typeof opts.onResume === "function") opts.onResume();
         connect({ id: currentSessionId, repo: currentRepo, takeover: true });
       },
-      dispose() {
+      // `reason` (see `encodeDetach`) tells the daemon why the socket closes.
+      dispose(reason) {
         leaving = true;
         if (retryTimer) {
           clearTimeout(retryTimer);
@@ -6045,7 +6064,12 @@ window.WBConsole = (function () {
         // terminal.
         stopFling();
         stopScroll();
-        if (ws && ws.readyState <= 1) ws.close();
+        if (ws && ws.readyState <= 1) {
+          try {
+            announceDetach(ws, reason);
+          } catch {}
+          ws.close();
+        }
         dropGpu();
         term.dispose();
       },
@@ -6474,7 +6498,7 @@ window.WBConsole = (function () {
     const discard = () => {
       clearNudge();
       closeCheckoutMenu();
-      win._term?.dispose();
+      win._term?.dispose("window-closed");
       win.remove();
       untrackDormancy(win);
       wins.delete(win);
@@ -6684,7 +6708,7 @@ window.WBConsole = (function () {
       const finish = () => {
         // A window closed mid-pulse must not leave `nudgeTimer` pending.
         clearNudge();
-        win._term?.dispose();
+        win._term?.dispose("window-closed");
         // A watcher's × closes this window only: the console still runs, and
         // its record stays on the desk.
         if (!watching) forgetRecord(win._deskId);
@@ -7556,6 +7580,8 @@ window.WBConsole = (function () {
     resumeDecision,
     resumeAll,
     dormancyDecision,
+    encodeDetach,
+    encodeResize,
     DORMANT_AFTER_MS,
     DORMANT_MARGIN_PX,
     keyboardInset,

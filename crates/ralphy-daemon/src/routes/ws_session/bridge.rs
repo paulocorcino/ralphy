@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use axum::extract::ws::{Message, WebSocket};
 
-use super::traffic::{Traffic, DROPPED};
+use super::traffic::{Leave, Traffic};
 use super::SessionLabels;
 use crate::protocol::{Command, Frame};
 use crate::routes::send_command;
@@ -124,7 +124,7 @@ pub(crate) async fn session_ws(
         .await
         .is_err()
     {
-        traffic.log(DROPPED, Instant::now());
+        traffic.log(None, Instant::now());
         return;
     }
 
@@ -138,7 +138,7 @@ pub(crate) async fn session_ws(
         let encoded = protocol::encode(&frame);
         traffic.replay(encoded.len());
         if socket.send(Message::Binary(encoded.into())).await.is_err() {
-            traffic.log(DROPPED, Instant::now());
+            traffic.log(None, Instant::now());
             return;
         }
     }
@@ -226,11 +226,18 @@ pub(crate) async fn session_ws(
                                 let _ = attach.resize(rows, cols);
                             }
                         }
+                        Ok(Frame::Command(cmd)) => {
+                            if let Some(leave) = Leave::from_command(&cmd) {
+                                traffic.client_left(leave);
+                            }
+                        }
                         _ => {} // other frames carry no session meaning here
                     },
-                    Some(Ok(Message::Close(_))) | None => {
+                    Some(Ok(Message::Close(_))) => {
+                        traffic.client_closed();
                         break;
-                    },
+                    }
+                    None => break,
                     Some(Ok(Message::Pong(payload))) => {
                         traffic.pong_received(&payload, Instant::now());
                     }
@@ -268,7 +275,7 @@ pub(crate) async fn session_ws(
         })
         .await;
     }
-    traffic.log(end.map_or(DROPPED, |r| r.as_wire()), Instant::now());
+    traffic.log(end.map(|r| r.as_wire()), Instant::now());
     // Detach, do NOT close: dropping `attach` releases the single-writer slot; the
     // session (and its child) live on for a later reattach.
     drop(attach);

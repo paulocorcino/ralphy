@@ -5488,7 +5488,7 @@ fn shell_detaches_a_fence() {
     // still renders, and the socket close is the writer-slot release (§9).
     let teardown = body("function tearDownMember(");
     assert!(
-        teardown.contains("win._term?.dispose()") && teardown.contains("wins.delete(win)"),
+        teardown.contains("win._term?.dispose(") && teardown.contains("wins.delete(win)"),
         "tearDownMember must dispose the terminal and drop the window (#346, §9)"
     );
     assert!(
