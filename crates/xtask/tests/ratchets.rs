@@ -22,6 +22,10 @@ const FORGE_ITEMS: usize = 26;
 /// Lines that tell the agent to run `gh issue view`, under `assets/prompts/`.
 const PROMPT_GH_ISSUE_VIEW: usize = 20;
 
+/// Lines of `crates/ralphy-daemon/assets/ui/app.js`, the `shell()` script that
+/// ADR-0073 cuts into components (D8). Each cut lowers it in the same change.
+const APP_JS_LINES: usize = 7024;
+
 const SPAWNED: [&str; 3] = ["git", "gh", "ssh"];
 
 /// `(file, program, sites)` of every literal git/gh/ssh spawn in production
@@ -158,6 +162,21 @@ fn forge_use_matches_the_baseline() {
         "the forge does not spread (docs/ARCHITECTURE.md §6); \
          a lower count lowers the constant in the same change:\n{}",
         errors.join("\n")
+    );
+}
+
+/// ADR-0073 D8: the workbench script never grows back. A change that adds a
+/// line to `app.js` fails here, and a change that removes lines lowers the
+/// constant.
+#[test]
+fn the_workbench_script_matches_the_line_baseline() {
+    let path = workspace_root().join("crates/ralphy-daemon/assets/ui/app.js");
+    let lines = read(&path).lines().count();
+    assert!(
+        lines == APP_JS_LINES,
+        "lines of crates/ralphy-daemon/assets/ui/app.js: {APP_JS_LINES} -> {lines}; \
+         a lower count lowers APP_JS_LINES in the same change, and new code goes \
+         into a component file instead"
     );
 }
 

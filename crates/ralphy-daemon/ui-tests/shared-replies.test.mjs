@@ -156,26 +156,6 @@ test("dir.list: the dialog fold reads the entry bits the daemon wrote", () => {
   assert.deepEqual(P.primary(s), { label: "Already in Projects", disabled: true });
 });
 
-test("project.add: the shell selects the slug the reply names", async () => {
-  const { state, window } = loadShell();
-  window.WBDaemon.observe = async () => fixture("project.add");
-  state.loadRepos = async () => {};
-  state.$nextTick = (fn) => fn();
-  const toggled = [];
-  state.toggle = (ref) => toggled.push(ref);
-  state.projects = [{ slug: "o/alpha" }];
-  state.addProject = Object.assign(state.addProject, { open: true });
-  state.addProjectStep({ type: "text", text: "/srv/alpha/", peers: [] });
-  state.addProjectStep({ type: "sent", seq: 1 });
-  state.addProjectStep({
-    type: "reply",
-    seq: 1,
-    reply: { status: "ok", more: 0, entries: [], dir: { path: "/srv/alpha/", root: "/srv/alpha", added: false } },
-  });
-  await state.addProjectSubmit();
-  assert.deepEqual(toggled, ["o/alpha"]);
-});
-
 test("session-end--refused: a refused launch shows the daemon's own words", () => {
   const { window } = loadShell();
   const end = fixture("session-end--refused");

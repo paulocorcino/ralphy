@@ -9,6 +9,7 @@ Scenario 1  Settings, opened from the keyboard, takes focus into the dialog (not
             onto its ✕), Escape closes it, and focus returns to the rail button
 Scenario 1b the same for Hosts, whose dialog is its own Alpine component
             nested in shell(): it opens on the event its sidebar button sends
+Scenario 1c the same for Add a project, the second dialog with its own component
 Scenario 2  Escape closes Security; Escape in the step-up field cancels only the
             step-up and leaves Security open
 Scenario 3  Branch and Prompt keep the field they focus themselves
@@ -48,6 +49,8 @@ CHILD = os.path.join(TARGET, "session_test_child.exe" if os.name == "nt" else "s
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 # The Hosts dialog's own component, nested in shell().
 HOSTS = "Alpine.$data(document.querySelector('.hosts-dialog'))"
+# The Add a project dialog's own component, nested in shell().
+ADDPROJECT = "Alpine.$data(document.querySelector('.add-project-dialog'))"
 
 # What has focus, in words a failure line can print.
 ACTIVE = (
@@ -249,6 +252,21 @@ def main():
             check("1b Escape closes Hosts", page.evaluate(hosts_open) is False)
             check("1b focus returns to the Hosts button", a and a["title"] == "Hosts", f"active={a}")
             check("1b the modal stack is empty", page.evaluate(f"() => {SH}._modalStack.length") == 0)
+
+            # --- scenario 1c: Add a project, its own Alpine component too ------
+            page.locator("button.side-add-project").focus()
+            page.keyboard.press("Enter")
+            page.wait_for_function(f"() => {ADDPROJECT}.addProject.open === true", timeout=5000)
+            settle(page)
+            a = active(page)
+            check("1c the sidebar button opens Add a project, and focus goes into it", a and a["modal"] == "Add a project", f"active={a}")
+            page.keyboard.press("Escape")
+            page.wait_for_function(f"() => {ADDPROJECT}.addProject.open === false", timeout=5000)
+            settle(page)
+            a = active(page)
+            check("1c Escape closes Add a project", page.evaluate(f"() => {ADDPROJECT}.addProject.open") is False)
+            check("1c focus returns to the Add a project button", a and a["title"] == "Add a project", f"active={a}")
+            check("1c the modal stack is empty", page.evaluate(f"() => {SH}._modalStack.length") == 0)
 
             # --- scenario 2: Security, and its step-up field ------------------
             page.evaluate(f"() => {SH}.openSecurity()")
