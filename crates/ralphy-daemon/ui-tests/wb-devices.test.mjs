@@ -72,6 +72,18 @@ test("a console launch names the agent and the project", () => {
   assert.equal(eventLine({ event: "console_launch", agent: "console" }), "Opened a console");
 });
 
+test("a line names the project by the name the daemon gives", () => {
+  const { eventLine } = load();
+  assert.equal(
+    eventLine({ event: "console_launch", agent: "console", repo: "path-0123", repo_name: "widget" }),
+    "Opened a console in widget",
+  );
+  assert.equal(
+    eventLine({ event: "command", verb: "sync.push", repo: "path-0123", repo_name: "widget" }),
+    "Command sync.push in widget",
+  );
+});
+
 test("a take-over is one plain sentence", () => {
   const { eventLine } = load();
   assert.equal(eventLine({ event: "console_takeover", session: 7 }), "Took over a console");

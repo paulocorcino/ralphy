@@ -14,6 +14,7 @@ use super::RouterShared;
 use crate::audit::facts::ClientFacts;
 use crate::audit::{read, Audit, ServerFacts};
 use crate::device::DeviceId;
+use crate::registry;
 
 /// The largest facts body the route reads (ADR-0072 D11). The seven measured
 /// devices sent at most 6 KiB in the summarized shape.
@@ -53,6 +54,7 @@ pub(crate) fn audit_routes(s: &RouterShared) -> Router {
     let facts_audit = s.audit.clone();
     let devices_audit = s.audit.clone();
     let events_audit = s.audit.clone();
+    let registry_path = s.registry_path.clone();
     Router::new()
         .route(
             "/api/device/facts",
@@ -95,6 +97,7 @@ pub(crate) fn audit_routes(s: &RouterShared) -> Router {
             "/api/audit/events",
             get(move |Query(q): Query<EventsQuery>| {
                 let audit: Arc<Audit> = events_audit.clone();
+                let registry_path = registry_path.clone();
                 async move {
                     if !is_device_id(&q.device) {
                         return (
@@ -104,9 +107,21 @@ pub(crate) fn audit_routes(s: &RouterShared) -> Router {
                             .into_response();
                     }
                     let limit = q.limit.unwrap_or(read::MAX_EVENTS);
-                    read_reply("events", move || match audit.log_path() {
-                        Some(path) => read::events(&path, &q.device, limit),
-                        None => Ok(Vec::new()),
+                    read_reply("events", move || {
+                        let Some(path) = audit.log_path() else {
+                            return Ok(Vec::new());
+                        };
+                        let mut events = read::events(&path, &q.device, limit)?;
+                        // The names are a help to read the lines: an unreadable
+                        // registry shows the recorded values instead.
+                        match registry::load_from(&registry_path) {
+                            Ok(store) => read::name_repos(&mut events, &store),
+                            Err(e) => tracing::warn!(
+                                error = %format!("{e:#}"),
+                                "the audit events are shown without project names"
+                            ),
+                        }
+                        Ok(events)
                     })
                     .await
                 }

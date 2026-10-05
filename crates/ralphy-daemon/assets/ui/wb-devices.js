@@ -70,6 +70,8 @@ window.WBDevices = (function () {
   }
 
   function eventLine(e) {
+    // The daemon names a registered project; a peer's keeps its recorded value.
+    const repo = e.repo_name || e.repo;
     switch (e.event) {
       case "login_ok":
         return "Signed in";
@@ -86,13 +88,13 @@ window.WBDevices = (function () {
       case "action":
         return `${e.method} ${e.path} (${e.status})`;
       case "command":
-        return e.repo ? `Command ${e.verb} in ${e.repo}` : `Command ${e.verb}`;
+        return repo ? `Command ${e.verb} in ${repo}` : `Command ${e.verb}`;
       case "console_launch": {
         const what = !e.agent || e.agent === "console" ? "a console" : e.agent;
-        return e.repo ? `Opened ${what} in ${e.repo}` : `Opened ${what}`;
+        return repo ? `Opened ${what} in ${repo}` : `Opened ${what}`;
       }
       case "console_takeover":
-        return e.repo ? `Took over a console in ${e.repo}` : "Took over a console";
+        return repo ? `Took over a console in ${repo}` : "Took over a console";
       default:
         return e.event;
     }

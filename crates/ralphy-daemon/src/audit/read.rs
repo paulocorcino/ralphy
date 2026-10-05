@@ -10,6 +10,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::device::DeviceId;
+use crate::registry::{self, RegistryStore};
 
 /// The most lines one read returns.
 pub const MAX_EVENTS: usize = 200;
@@ -99,9 +100,47 @@ pub fn events(path: &Path, device: &str, limit: usize) -> Result<Vec<Value>> {
     Ok(out)
 }
 
+/// Add `repo_name`, the project name the registry gives (`registry::project_name`),
+/// to each line whose `repo` is a registered project. A line keeps `repo` as it
+/// was recorded; a project this daemon does not register (a peer's, or one
+/// removed since) gets no name.
+pub fn name_repos(events: &mut [Value], store: &RegistryStore) {
+    for event in events {
+        let Some(slug) = event.get("repo").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(entry) = store.entry(slug) else {
+            continue;
+        };
+        let name = registry::project_name(slug, &entry.path);
+        if let Some(line) = event.as_object_mut() {
+            line.insert("repo_name".to_string(), Value::String(name));
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_registered_repo_gets_its_project_name_and_another_keeps_none() {
+        let mut store = RegistryStore::default();
+        store.upsert("path-0123456789abcdef", "C:\\src\\widget");
+        let mut events = vec![
+            serde_json::json!({"event": "command", "repo": "path-0123456789abcdef"}),
+            serde_json::json!({"event": "command", "repo": "nope"}),
+            serde_json::json!({"event": "login_ok"}),
+        ];
+        name_repos(&mut events, &store);
+        assert_eq!(events[0]["repo_name"], "widget");
+        assert_eq!(
+            events[0]["repo"], "path-0123456789abcdef",
+            "the recorded value stays"
+        );
+        assert!(events[1].get("repo_name").is_none());
+        assert!(events[2].get("repo_name").is_none());
+    }
 
     const A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     const B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";

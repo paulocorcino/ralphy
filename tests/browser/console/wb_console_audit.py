@@ -11,7 +11,7 @@ PORT 7465 and the two-console desk are `wb_console_detach.py`'s.
 
 A1  each restored console wrote one console_launch line, agent console
 A2  the lines carry the device of the browser and a holder
-A3  the Devices panel shows the launch as "Opened a console in ..."
+A3  the Devices panel shows the launch by the project name, not the registry key
 R1  a reattach to an unknown session is refused with 404, and logged
 
 The daemon is stopped by its own subprocess handle, NEVER by name.
@@ -61,7 +61,8 @@ def main():
     T.build()
     daemon_dir = tempfile.mkdtemp(prefix="wbaudit_daemon_")
     log_path = os.path.join(daemon_dir, "daemon-stderr.log")
-    slug = T.register_fixture(daemon_dir, T.make_fixture_repo())
+    fixture = T.make_fixture_repo()
+    slug = T.register_fixture(daemon_dir, fixture)
     D.write_desk(daemon_dir, slug)
     proc = D.launch(daemon_dir, log_path)
     errors = []
@@ -102,10 +103,11 @@ def main():
                 ".events.map((e) => window.WBDevices.eventLine(e))",
                 device,
             )
+            fixture_name = Path(fixture).name
             check(
-                "A3 the Devices panel shows the launch",
-                any(t.startswith("Opened a console in ") for t in text),
-                str(text),
+                "A3 the Devices panel names the project, not the registry key",
+                f"Opened a console in {fixture_name}" in text,
+                f"{fixture_name} {text}",
             )
 
             # R1 ---------------------------------------------------------------
