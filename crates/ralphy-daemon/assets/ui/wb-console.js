@@ -3984,7 +3984,10 @@ window.WBConsole = (function () {
       if (member.session != null) {
         spawnWindow({ id: member.session, repo: member.repo }, member.agent || "console", member.repo, member);
       } else {
-        spawnPlaceholder(member);
+        // The snapshot keeps no session id, so a member relaunched in the
+        // popup comes home as a placeholder. `_revive` attaches it to the
+        // session that runs now and never launches one.
+        spawnPlaceholder(member)._revive();
       }
     }
     showDetachGlyph(id, false);
@@ -7044,8 +7047,11 @@ window.WBConsole = (function () {
     const btn = document.createElement("button");
     btn.className = "session-reconnect";
     btn.textContent = "Relaunch";
-    // Relaunching spawns a vendor CLI: the popup offers no way to start anything.
-    note.append(text, ...(OPTS.canLaunch === false ? [] : [btn]));
+    // The popup offers it too: a relaunch reuses this record's id, so the
+    // popup's members stay the fence's snapshot (ADR-0051 §8, amended
+    // 2026-10-05). Only a click launches there; `canLaunch` keeps every
+    // automatic relaunch out of the popup.
+    note.append(text, btn);
     body.append(note);
 
     // The peer's words. `peerAction` is the button's action ("wake", "retry",
@@ -7146,7 +7152,7 @@ window.WBConsole = (function () {
     if (missing) markMissing(missing);
     // A placeholder restored for a recorded worktree asks whether that tree is
     // still there (no spawn), so the box says "gone" on load, not on the click.
-    else if (record.checkout && OPTS.canLaunch !== false) {
+    else if (record.checkout) {
       checkoutStillThere(record.repo, record.checkout).then((there) => {
         if (!there && win.isConnected) markMissing(record.checkout);
       });

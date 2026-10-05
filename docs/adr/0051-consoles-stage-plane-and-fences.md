@@ -450,6 +450,14 @@ closes that window itself.)*
   while the window holds a card, a note button keeps the next card on top
   (ADR-0064 §7, amended the same day). A phone shows neither button: it
   paints one console.)*
+  *(Amended 2026-10-05, Relaunch in the popup. A member that does not run
+  shows the Relaunch button in the popup, as on the stage. A relaunch is not
+  a new console: it reuses the member's record id, so the popup's contents
+  are still §6's snapshot. Only the operator's click launches there; the
+  relaunch on load and the relaunch when a peer comes back stay out of the
+  popup. The snapshot keeps no session id, so on re-attach a member that
+  came home as a placeholder attaches to the session that runs for its
+  record.)*
 - **At most four popups, and one per fence** — detaching an already-detached
   fence focuses its popup. This cap is a **client** constant and deliberately
   does not sit beside §10's daemon-enforced ones: a detach *moves* consoles
