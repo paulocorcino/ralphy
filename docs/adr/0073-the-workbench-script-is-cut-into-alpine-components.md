@@ -288,3 +288,16 @@ owns (D2), and the behaviour does not change.
 
 Together this is about 890 lines of `app.js`. The ratchet of D8 starts with
 Add a project.
+
+**`wb-console.js`: the pure functions leave before the D7 pilot.** Measured on
+`main` at `bde6f99c`, `wb-console.js` has 7,864 lines and 280 top-level
+functions. 164 of them (3,755 lines) read no module-scope `let`. 84 of them
+(about 1,125 lines) read no module state and no DOM, and call only functions
+of the same kind. Those 84 are pure folds, so by D3 they go to files of their
+own, as `wb-geometry.js` did by ADR-0057. They need no shared state object,
+so they move before the D7 pilot. There are four files, one for each theme:
+input, session, desk, and plane geometry. The plane geometry goes into
+`wb-geometry.js`. `WBConsole` exports them again, so its public namespace does
+not change (D7). The ratchet of D8 starts on `wb-console.js` with the first of
+these moves. The D7 pilot comes after them. It takes the GPU budget and the
+dormant consoles (about 130 lines, with two module `let`s of their own).
