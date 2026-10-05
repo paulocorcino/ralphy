@@ -23,6 +23,11 @@ const NOT_AN_ACTION: &[&str] = &[
     "/api/peer/command",
 ];
 
+/// The request that gives a browser its device cookie (D1). Each page load
+/// reads it first. Not a WebSocket upgrade: it answers 101, and a browser may
+/// drop a cookie set there.
+const MINT_PATH: &str = "/api/session";
+
 /// Who sent a request: a bearer caller, else the browser of `device`.
 pub(crate) fn actor_of(headers: &HeaderMap, device: Option<DeviceId>) -> Actor {
     if headers.contains_key(header::AUTHORIZATION) {
@@ -152,25 +157,26 @@ pub(crate) async fn audit_layer(
     if !path.starts_with("/api/") && !path.starts_with("/ws") {
         return next.run(req).await;
     }
-    let Some(key) = audit.key(path.starts_with("/api/")) else {
-        return next.run(req).await;
-    };
+    // The one request that may mint: the page sends it first, and the other
+    // requests of a first visit would each mint an ID of their own.
+    let mints = req.method() == Method::GET && path == MINT_PATH;
+    // With no key yet, no request carries a device; lines are still written.
+    let key = audit.key(mints);
     let cookie_header = req
         .headers()
         .get(header::COOKIE)
         .and_then(|v| v.to_str().ok());
     let mut new_cookie = None;
-    let device = match key.id_in_cookie_header(cookie_header) {
-        Some(id) => Some(id),
-        // A WebSocket upgrade answers 101, and a browser may drop a cookie set
-        // there; the page's first `/api/session` sets it instead.
-        None if path.starts_with("/api/") => {
+    let from_cookie = key.and_then(|k| k.id_in_cookie_header(cookie_header));
+    let device = match (from_cookie, key) {
+        (Some(id), _) => Some(id),
+        (None, Some(key)) if mints => {
             let id = DeviceId::mint();
             let secure = super::request_is_https(req.headers());
             new_cookie = Some(device::set_cookie_value(&key.sign(id), secure));
             Some(id)
         }
-        None => None,
+        _ => None,
     };
     if let Some(id) = device {
         req.extensions_mut().insert(id);

@@ -76,12 +76,15 @@ async fn a_browser_gets_one_device_cookie_and_a_forged_one_is_replaced() {
 #[tokio::test]
 async fn an_action_line_keeps_the_path_and_drops_the_query_and_the_body() {
     let dir = tempfile::tempdir().unwrap();
+    let app = desk_router(dir.path());
+    let set = device_set_cookie(&send(app.clone(), session_read()).await).unwrap();
     let res = send(
-        desk_router(dir.path()),
+        app,
         Request::builder()
             .method("POST")
             .uri("/api/nope?token=query-secret")
             .header("x-real-ip", "203.0.113.7")
+            .header(header::COOKIE, pair(&set))
             .body(Body::from("body-secret"))
             .unwrap(),
     )
@@ -95,7 +98,6 @@ async fn an_action_line_keeps_the_path_and_drops_the_query_and_the_body() {
     assert_eq!(line["status"], res.status().as_u16());
     assert_eq!(line["ip"], "203.0.113.7");
     assert_eq!(line["actor"], "device");
-    let set = device_set_cookie(&res).unwrap();
     assert_eq!(
         line["device"],
         pair(&set).split('.').nth(1).unwrap(),
@@ -107,6 +109,66 @@ async fn an_action_line_keeps_the_path_and_drops_the_query_and_the_body() {
         owner_only::is_owner_only(&dir.path().join("daemon-audit.jsonl")).unwrap(),
         "the log is owner-only"
     );
+}
+
+fn session_read() -> Request<Body> {
+    Request::builder()
+        .uri("/api/session")
+        .body(Body::empty())
+        .unwrap()
+}
+
+#[tokio::test]
+async fn only_the_session_read_gives_a_device_cookie() {
+    let dir = tempfile::tempdir().unwrap();
+    let app = desk_router(dir.path());
+    // A first visit sends its requests together; only the session read mints.
+    let other = send(
+        app.clone(),
+        Request::builder()
+            .method("POST")
+            .uri("/api/nope")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(
+        device_set_cookie(&other),
+        None,
+        "a request that is not the session read mints no ID"
+    );
+    assert!(device_set_cookie(&send(app.clone(), session_read()).await).is_some());
+    let after = send(
+        app,
+        Request::builder()
+            .method("POST")
+            .uri("/api/nope")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(device_set_cookie(&after), None, "also once the key exists");
+    let lines = audit_lines(dir.path());
+    assert_eq!(lines.len(), 2, "{lines:?}");
+    assert!(lines
+        .iter()
+        .all(|l| l["actor"] == "unknown" && l.get("device").is_none()));
+}
+
+#[tokio::test]
+async fn device_facts_with_no_device_are_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let res = send(
+        desk_router(dir.path()),
+        facts_request("android-chrome", "", |_| {}),
+    )
+    .await;
+    assert_eq!(
+        res.status(),
+        StatusCode::CONFLICT,
+        "the page sends again later"
+    );
+    assert!(audit_lines(dir.path()).is_empty());
 }
 
 #[tokio::test]

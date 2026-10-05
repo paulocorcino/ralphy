@@ -216,11 +216,16 @@ window.WBDevice = (function () {
     };
   }
 
+  // A 409 means the daemon has not given this browser its device yet: the
+  // page's first `/api/session` is still on its way (ADR-0074 D5).
+  const RETRY_MS = 1000;
+  const RETRIES = 5;
+
   // Send once per page load. A 401 (no login yet) leaves it unsent, and the
-  // `login` action sends it again.
+  // `login` action sends it again. A 409 sends again a little later.
   function report(win) {
     let sent = false;
-    async function send() {
+    async function send(left) {
       if (sent) return;
       const facts = await collect(win);
       facts.holder = (await attempt(() => win.WBSessionRoute.tabHolder())) ?? null;
@@ -230,8 +235,9 @@ window.WBDevice = (function () {
         body: JSON.stringify(facts),
       });
       if (res.ok) sent = true;
+      else if (res.status === 409 && left > 0) win.setTimeout(() => quiet(left - 1), RETRY_MS);
     }
-    const quiet = () => send().catch(() => {});
+    const quiet = (left = RETRIES) => send(left).catch(() => {});
     win.document.addEventListener("workbench:action", (e) => {
       if (e.detail && e.detail.action === "login") quiet();
     });

@@ -64,11 +64,16 @@ pub(crate) fn audit_routes(s: &RouterShared) -> Router {
                       Json(client): Json<ClientFacts>| {
                     let audit = facts_audit.clone();
                     async move {
+                        // No device yet: the page's first `/api/session` has
+                        // not answered. The page sends again (D5).
+                        let Some(Extension(device)) = device else {
+                            return StatusCode::CONFLICT;
+                        };
                         let server = ServerFacts::from_headers(&headers);
                         // The file write is short; it runs off the async
                         // workers like the other store writes.
                         let written = tokio::task::spawn_blocking(move || {
-                            audit.record_facts(device.map(|Extension(id)| id), client, server)
+                            audit.record_facts(device, client, server)
                         })
                         .await;
                         if let Err(e) = written {

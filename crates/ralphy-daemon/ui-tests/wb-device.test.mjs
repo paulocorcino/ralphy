@@ -79,6 +79,36 @@ test("report: a 401 before login waits for the login action, then sends once", a
   assert.equal(bodies.length, 2, "a sent report is not sent again");
 });
 
+test("report: a 409 before the device cookie sends again later, a few times at most", async () => {
+  const D = load();
+  const statuses = [409, 409, 204];
+  let sends = 0;
+  const win = {
+    document: { addEventListener() {} },
+    setTimeout: (fn) => setTimeout(fn, 0),
+    fetch: async () => {
+      sends += 1;
+      const status = statuses.shift();
+      return { ok: status < 300, status };
+    },
+  };
+  D.report(win);
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(sends, 3, "two refusals, then the report");
+
+  let refused = 0;
+  D.report({
+    document: { addEventListener() {} },
+    setTimeout: (fn) => setTimeout(fn, 0),
+    fetch: async () => {
+      refused += 1;
+      return { ok: false, status: 409 };
+    },
+  });
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal(refused, 6, "the first send and five more, then it stops");
+});
+
 // The body the daemon reads (`fixtures/api-device-facts--report.json`, a
 // measured Android phone): the page sends exactly its fields, so a field
 // renamed here is not dropped without a word on the other side.

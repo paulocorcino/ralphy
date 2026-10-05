@@ -55,8 +55,15 @@ Measured facts:
 ## Decision
 
 **D1. A device has an ID that the daemon issues.** The daemon sets the
-cookie `ralphy_device` on the first `/api/*` request that does not carry a
-valid one. The value is 16 random bytes and an HMAC of them, keyed by
+cookie `ralphy_device` only on `GET /api/session` when the request does not
+carry a valid one. Each page load reads it first. On a first visit the page
+sends several requests together, and if each of them set a cookie, the
+browser would keep the last ID and the others would show as devices of their
+own (measured on an iPad, 2026-10-05). A request with no valid cookie that
+is not this read is recorded with no device. This is a limit: the requests a
+first visit sends before the read answers have no device, and so has a page
+that was open before the daemon started to issue IDs and only uses its
+WebSocket connections, until it is loaded again. The value is 16 random bytes and an HMAC of them, keyed by
 `daemon-device-key`, a key of its own in the daemon's store (owner-only).
 The cookie has no session epoch, so the ID stays the same across logout and
 login, and a new access token does not change it. It lives 400 days. It is `HttpOnly` and
@@ -82,7 +89,8 @@ never holds a request body, a query string, a cookie or an `Authorization`
 value.**
 
 **D5. The page sends its facts to `POST /api/device/facts`, once for each
-page load.** The body is a fixed shape, capped at 16 KiB. Each string is cut
+page load.** A report with no device gets `409` and writes nothing: the page
+sends it again a second later, at most five times. The body is a fixed shape, capped at 16 KiB. Each string is cut
 at a fixed length, and fields outside the shape are dropped.
 
 **D6. The daemon normalizes; the browser only collects.** The rules that turn
@@ -161,7 +169,8 @@ the browser's device, and one line on the peer with the actor `bearer`
 ## Compliance
 
 - D1: checked by `crates/ralphy-daemon/src/tests/audit_routes.rs`
-  (`a_browser_gets_one_device_cookie_and_a_forged_one_is_replaced`).
+  (`a_browser_gets_one_device_cookie_and_a_forged_one_is_replaced`,
+  `only_the_session_read_gives_a_device_cookie`).
 - D2: not checked by code: manual: reviewed in the PR (no guard or policy
   code reads the device module).
 - D3: checked by `crates/ralphy-daemon/src/tests/audit_routes.rs`
@@ -172,7 +181,9 @@ the browser's device, and one line on the peer with the actor `bearer`
   (`an_action_line_keeps_the_path_and_drops_the_query_and_the_body`,
   `a_login_and_a_replayed_login_are_recorded_with_the_server_facts`).
 - D5: checked by `crates/ralphy-daemon/src/tests/audit_routes.rs`
-  (`a_facts_body_over_the_cap_is_refused`).
+  (`a_facts_body_over_the_cap_is_refused`,
+  `device_facts_with_no_device_are_refused`) and
+  `crates/ralphy-daemon/ui-tests/wb-device.test.mjs` (the 409 report test).
 - D6: not checked by code: manual: reviewed in the PR. The rules are pinned
   on the measured devices by `crates/ralphy-daemon/src/audit/normalize/tests.rs`.
 - D7: checked by `crates/ralphy-daemon/src/tests.rs`

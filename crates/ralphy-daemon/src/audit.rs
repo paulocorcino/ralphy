@@ -271,36 +271,23 @@ impl Audit {
     /// time this daemon sees the device, `device_profile_changed` when the
     /// facts that do not change for one device did change, and nothing when
     /// the report says what the last one said.
-    pub fn record_facts(
-        &self,
-        device: Option<DeviceId>,
-        client: facts::ClientFacts,
-        server: ServerFacts,
-    ) {
+    pub fn record_facts(&self, device: DeviceId, client: facts::ClientFacts, server: ServerFacts) {
         let normalized = normalize::normalize(&client, &server);
-        let kind = match device {
-            Some(id) => {
-                let mut last = self.last_facts.lock().expect("audit facts lock poisoned");
-                let kind = match last.get(&id) {
-                    None => Some((EventKind::DeviceFacts, Vec::new())),
-                    Some(prev) if prev.profile != normalized.profile => Some((
-                        EventKind::DeviceProfileChanged,
-                        normalize::changed_fields(prev, &normalized),
-                    )),
-                    Some(_) => None,
-                };
-                last.insert(id, normalized.clone());
-                kind
-            }
-            None => Some((EventKind::DeviceFacts, Vec::new())),
+        let kind = {
+            let mut last = self.last_facts.lock().expect("audit facts lock poisoned");
+            let kind = match last.get(&device) {
+                None => Some((EventKind::DeviceFacts, Vec::new())),
+                Some(prev) if prev.profile != normalized.profile => Some((
+                    EventKind::DeviceProfileChanged,
+                    normalize::changed_fields(prev, &normalized),
+                )),
+                Some(_) => None,
+            };
+            last.insert(device, normalized.clone());
+            kind
         };
         let Some((kind, changed)) = kind else { return };
-        let actor = if device.is_some() {
-            Actor::Device
-        } else {
-            Actor::Unknown
-        };
-        let mut event = Event::new(kind, device, actor);
+        let mut event = Event::new(kind, Some(device), Actor::Device);
         event.holder = client.holder.as_ref().map(|h| h.as_str().to_string());
         event.changed = changed;
         event.normalized = Some(normalized);
