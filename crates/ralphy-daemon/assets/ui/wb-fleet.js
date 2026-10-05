@@ -129,6 +129,12 @@
     return group && group.tunnel && group.name ? group.name : "";
   }
 
+  // The name a sentence uses for a peer: its machine name when it has one,
+  // else its environment. "" for no group.
+  function peerName(group) {
+    return groupHost(group) || (group && group.environment) || "";
+  }
+
   // The header's environment: the OS release, or `WSL: <distro>`.
   function groupLabel(group) {
     return group ? group.environment : "";
@@ -268,5 +274,6 @@
     groupTitle: groupTitle,
     groupLabel: groupLabel,
     groupHost: groupHost,
+    peerName: peerName,
   };
 });

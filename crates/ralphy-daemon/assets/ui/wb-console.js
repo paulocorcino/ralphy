@@ -1207,8 +1207,7 @@ window.WBConsole = (function () {
   // name of a tunnel peer, else the environment (`WSL: Ubuntu`). `fallback` is
   // the environment the desk record kept, for a box drawn before the fleet list.
   function peerHost(group, fallback) {
-    const host = group ? window.WBFleet.groupHost(group) || group.environment : "";
-    return host || fallback || "The other computer";
+    return window.WBFleet.peerName(group) || fallback || "The other computer";
   }
 
   // What a console box says about a project whose peer cannot serve it, from

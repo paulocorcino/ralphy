@@ -444,7 +444,7 @@
             <!-- the file tree (Wunderbaum) mounts here when the project opens.
                  impl: replace the in-memory `tree` with fetch of the repo tree
                  and lazy-load subfolders; gestures already emit workbench:action. -->
-            <div class="wb-host" x-show="rowOpen(p)"></div>
+            <div class="wb-host" x-show="rowOpen(p)" :class="{ 'peer-down': rowOpen(p) && openPeerDown() }"></div>
             <!-- a refused or dropped read. Without this the failure was
                  indistinguishable from an empty repository. -->
             <div class="files-error" x-show="rowOpen(p) && treeError" x-text="treeError"></div>
@@ -453,9 +453,21 @@
                  not broken. -->
             <div
               class="files-stale"
-              x-show="rowOpen(p) && !treeError && treeStale"
+              x-show="rowOpen(p) && !treeError && treeStale && !openPeerDown()"
               x-text="treeStale"
             ></div>
+            <!-- The fleet calls this project's peer down: one sentence from the
+                 fleet, its action, and the daemon's diagnosis under Details. -->
+            <template x-if="rowOpen(p) && openPeerDown()">
+              <div class="files-stale files-peer-down">
+                <span x-text="peerDownText(openPeerDown())"></span>
+                <button type="button" class="btn" @click="peerDownAct()" x-text="peerDownAction(openPeerDown())"></button>
+                <details class="session-detail" x-show="openPeerDown().diagnosis">
+                  <summary>Details</summary>
+                  <p x-text="openPeerDown().diagnosis"></p>
+                </details>
+              </div>
+            </template>
             <!-- The rows are right, but the daemon stopped watching this tree. -->
             <div
               class="files-stale"

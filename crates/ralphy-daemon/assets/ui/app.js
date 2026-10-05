@@ -647,6 +647,7 @@ function shell() {
         this.projects = localRows().concat(this._fleetRows);
         this.shareProjectNames();
         this.shareFleet();
+        this.filesFollowFleet();
         this.fleetRead = window.WBFail.readFold(this.fleetRead, { ok: true, value: true, at: Date.now() });
         this.fleetError = "";
       } catch (e) {
@@ -996,7 +997,7 @@ function shell() {
     },
     // A row on a host that cannot answer: why it does not open.
     unavailableTitle(g) {
-      const host = window.WBFleet.groupHost(g) || g.environment;
+      const host = window.WBFleet.peerName(g);
       const head = `${host} is not available (${this.peerStateWord(g.state)}).`;
       if (window.WBFleet.wakeable(g)) return `${head} Click to wake it.`;
       return `${head} Its projects open when it connects again.`;
@@ -4701,12 +4702,25 @@ function shell() {
               return [];
             })
           : this.withIcons(project.tree),
+        // A failed level returns `false`: Wunderbaum then leaves the folder
+        // unloaded, so the next expand reads it again, and draws no row for
+        // the failure. A rethrow drew an "Error (…)" row inside the folder.
+        // The footer says why; the folder closes, because it shows nothing.
         lazyLoad: (e) =>
           this.loadTreeLevel(this.relPath(e.node)).catch((err) => {
-            // Rethrown: Wunderbaum must mark the node failed, not empty.
             this.treeWentStale(err);
-            throw err;
+            if (window.WBFleet.refDaemon(this.openSlug || "")) this.readFleetNow();
+            setTimeout(() => e.node.setExpanded(false));
+            return false;
           }),
+        // While the fleet calls the open project's peer down, a folder with
+        // no level read before does not open: its read would fail. A level
+        // read before opens from memory. A restore of the expanded folders
+        // stops here too.
+        beforeExpand: (e) => {
+          if (!e.flag || !this.openPeerDown() || e.node.children) return undefined;
+          return this._treeCache.has(this.treeKey(this.relPath(e.node))) ? undefined : false;
+        },
         // A level (re)loaded while a search is on carries no match marks, and
         // in `hide` mode an unmarked row is not painted.
         load: (e) => {
@@ -4959,6 +4973,42 @@ function shell() {
     treeFresh() {
       this.treeStale = "";
     },
+
+    // The fleet group of the open project's peer while the fleet calls that
+    // peer down, else null. FILES takes this fact from the fleet, its owner.
+    openPeerDown() {
+      const daemon = window.WBFleet.refDaemon(this.openSlug || "");
+      if (!daemon) return null;
+      const group = this.fleetGroups().find((g) => g.daemon === daemon);
+      return group && !window.WBFleet.available(group) ? group : null;
+    },
+    peerDownText(g) {
+      return `${window.WBFleet.peerName(g)} is not connected. The list shown is the last one read.`;
+    },
+    peerDownAction(g) {
+      return window.WBFleet.wakeable(g) ? "Wake" : "Try again";
+    },
+    peerDownAct() {
+      const g = this.openPeerDown();
+      if (!g) return;
+      if (window.WBFleet.wakeable(g)) this.wakePeer(g.daemon);
+      else this.readFleetNow();
+    },
+
+    // After each good fleet read: the read that calls the open project's peer
+    // back reads again the levels the tree shows.
+    filesFollowFleet() {
+      const down = !!this.openPeerDown();
+      if (!down && this._filesPeerDown && this._filesPeerDown === this.openSlug && this._tree) {
+        this.treeFresh();
+        this.revalidateLevel("");
+        this.rawTree().root.visit((n) => {
+          if (this.isFolder(n) && n.expanded) this.revalidateLevel(this.relPath(n));
+        });
+      }
+      this._filesPeerDown = down ? this.openSlug : null;
+    },
+    _filesPeerDown: null,
 
     // The daemon says it could not watch a dir of this tree (`reason`), or
     // `null` when a new socket holds every dir again.
@@ -5491,6 +5541,7 @@ function shell() {
       // These states describe a tree that no longer exists.
       this.treeLoading = false;
       this.treeError = "";
+      this.treeStale = "";
       this.treeNotLive = "";
       // A search describes THIS tree; the field stays open.
       this.resetFileSearch();

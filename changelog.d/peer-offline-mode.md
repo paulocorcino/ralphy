@@ -1,4 +1,4 @@
 ---
 kind: fix
 ---
-When another computer stops answering, its consoles say why and wait, then reconnect when it is back.
+When another computer stops answering, its consoles and file list say why and wait, then come back when it does.
