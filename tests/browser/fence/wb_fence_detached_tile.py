@@ -11,6 +11,8 @@ D2 after the button and its question, every console is inside the window's
    visible part, below the button, and no two consoles overlap
 D3 the note did not move, and it is above every console
 D4 the popup wrote nothing: the daemon's desk is the same as before the tile
+D5 after a console takes the focus, the button is still above every window
+D6 on a phone the popup does not show the button
 
 The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
 doubles as the orchestrator on this host).
@@ -65,6 +67,11 @@ BOXES = """() => [...document.querySelectorAll('#stage .session-window, #stage .
   return { note: el.classList.contains('note-card'), left: r.left, top: r.top,
            right: r.right, bottom: r.bottom, z: parseInt(el.style.zIndex, 10) || 0 };
 })"""
+
+
+# Whether the button is what a press at its centre reaches.
+ON_TOP = """() => { const b = document.querySelector('.detached-tile'); const r = b.getBoundingClientRect();
+  return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === b; }"""
 
 
 def overlap(a, b):
@@ -141,6 +148,28 @@ def main():
             # D4
             popup.wait_for_timeout(1500)
             check("D4 the popup wrote nothing to the desk", T.desk_raw() == desk_before)
+
+            # D5
+            popup.locator("#stage .session-window .session-titlebar").last.click()
+            popup.wait_for_timeout(300)
+            check("D5 a focused console does not cover the button", popup.evaluate(ON_TOP))
+            popup.close()
+            page.wait_for_function("() => !WBConsole.isDetached('f-det')", timeout=8000)
+            ctx.close()
+
+            # D6
+            phone = b.new_context(**p.devices["iPhone 13"])
+            page = phone.new_page()
+            page.goto(BASE)
+            D.boot(page)
+            popup = D.detach(phone, page, "f-det")
+            popup.wait_for_selector("#stage .session-window", timeout=15000)
+            popup.wait_for_selector(".detached-tile", state="attached", timeout=5000)
+            # Playwright gives the popup the size `window.open` asks for. A
+            # phone opens it as a tab with the phone's own width.
+            popup.set_viewport_size(p.devices["iPhone 13"]["viewport"])
+            popup.wait_for_timeout(300)
+            check("D6 a phone does not show the button", not popup.locator(".detached-tile").is_visible())
             b.close()
     except BaseException:
         # A crash is a failure, and its traceback is printed: the exit below

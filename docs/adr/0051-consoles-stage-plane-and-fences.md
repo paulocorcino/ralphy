@@ -447,7 +447,8 @@ closes that window itself.)*
   as the fence: a maximized, column or locked console is not tiled. The
   layout stays throwaway, because the popup's sink writes nothing. Notes do
   not move (ADR-0064 §8), but the tile raises them above the consoles: the
-  popup has no Note menu to bring a covered card back.)*
+  popup has no Note menu to bring a covered card back. A phone does not show
+  the button: it paints one console, so it has nothing to tile.)*
 - **At most four popups, and one per fence** — detaching an already-detached
   fence focuses its popup. This cap is a **client** constant and deliberately
   does not sit beside §10's daemon-enforced ones: a detach *moves* consoles

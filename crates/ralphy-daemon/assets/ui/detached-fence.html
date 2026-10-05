@@ -62,6 +62,13 @@
         border-color: var(--border-focus);
         color: var(--text);
       }
+      /* A phone paints one console, so it has nothing to tile. The query is
+         the workbench's phone breakpoint (app.js `PHONE_QUERY`). */
+      @media (max-width: 560px), (pointer: coarse) and (max-height: 560px) {
+        .detached-tile {
+          display: none;
+        }
+      }
       .detached-empty,
       .detached-lost {
         color: var(--danger);
