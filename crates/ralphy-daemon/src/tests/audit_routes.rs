@@ -248,3 +248,59 @@ async fn a_facts_body_over_the_cap_is_refused() {
     assert_eq!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);
     assert!(audit_lines(dir.path()).is_empty());
 }
+
+#[tokio::test]
+async fn an_events_read_refuses_a_value_that_is_not_a_device_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let res = send(
+        desk_router(dir.path()),
+        Request::builder()
+            .uri("/api/audit/events?device=../../etc")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn the_device_list_marks_the_device_that_asks() {
+    let dir = tempfile::tempdir().unwrap();
+    let app = desk_router(dir.path());
+    let first = send(
+        app.clone(),
+        Request::builder()
+            .uri("/api/session")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    let cookie = pair(&device_set_cookie(&first).unwrap());
+    send(
+        app.clone(),
+        Request::builder()
+            .method("POST")
+            .uri("/api/nope")
+            .header(header::COOKIE, &cookie)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    let list = |cookie: Option<String>| {
+        let app = app.clone();
+        async move {
+            let mut req = Request::builder().uri("/api/audit/devices");
+            if let Some(c) = cookie {
+                req = req.header(header::COOKIE, c);
+            }
+            let res = send(app, req.body(Body::empty()).unwrap()).await;
+            serde_json::from_str::<serde_json::Value>(&body_text(res).await).unwrap()
+        }
+    };
+    assert_eq!(list(Some(cookie)).await["devices"][0]["this"], true);
+    assert_eq!(
+        list(None).await["devices"][0]["this"],
+        false,
+        "another browser is not this device"
+    );
+}

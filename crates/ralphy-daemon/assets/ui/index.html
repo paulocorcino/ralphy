@@ -2053,6 +2053,46 @@
                     </template>
                   </div>
                 </template>
+                <!-- devices: its own body, the wbDevices component (wb-devices.js).
+                     Built only while the section is open, so it reads the log
+                     each time it opens and never on a page load. -->
+                <template x-if="sec.id === 'devices' && settingsOpen && settingsSection === 'devices'">
+                  <div class="devices" x-data="wbDevices">
+                    <div class="sec-actions">
+                      <button class="btn" @click="load()" title="Read the list again from the daemon">
+                        <i class="bi bi-arrow-clockwise"></i> Refresh
+                      </button>
+                    </div>
+                    <p class="sec-note devices-error" x-show="error" x-text="error"></p>
+                    <p class="sec-note" x-show="loaded && !devices.length">No device has connected yet.</p>
+                    <template x-for="d in devices" :key="d.device">
+                      <div class="set-row device-row">
+                        <div class="set-main">
+                          <span class="set-label" x-text="d.name"></span>
+                          <span class="device-this" x-show="d.this">This device</span>
+                          <button class="btn" @click="toggle(d)" x-text="open === d.device ? 'Hide activity' : 'Show activity'"></button>
+                        </div>
+                        <p class="set-help" x-text="d.detail"></p>
+                        <template x-if="open === d.device">
+                          <div class="device-events">
+                            <p class="sec-note devices-error" x-show="eventsError" x-text="eventsError"></p>
+                            <template x-for="(e, i) in events" :key="i">
+                              <div class="device-event">
+                                <span class="device-event-when" x-text="e.when"></span>
+                                <span x-text="e.text"></span>
+                                <span class="device-event-ip" x-text="e.ip"></span>
+                              </div>
+                            </template>
+                            <details class="device-raw" x-show="events.length">
+                              <summary>Raw data</summary>
+                              <pre x-text="raw"></pre>
+                            </details>
+                          </div>
+                        </template>
+                      </div>
+                    </template>
+                  </div>
+                </template>
               </section>
             </template>
           </div>
@@ -3204,6 +3244,7 @@
     <script src="wb-detach-link.js"></script>
     <script src="wb-session-route.js"></script>
     <script src="wb-device.js"></script>
+    <script src="wb-devices.js"></script>
     <script src="wb-geometry.js"></script>
     <script src="wb-split.js"></script>
     <script src="wb-columns.js"></script>

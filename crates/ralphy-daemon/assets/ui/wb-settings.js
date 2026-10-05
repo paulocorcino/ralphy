@@ -172,6 +172,17 @@ window.WB_SETTINGS = [
       "The last 50 layouts of your consoles, fences and notes. Restore one, or save it as a file.",
     items: [],
   },
+  // No items: the section has its own body in index.html, an Alpine
+  // component that reads the audit log (wb-devices.js).
+  {
+    id: "devices",
+    title: "Devices",
+    icon: "bi-phone",
+    scope: "daemon",
+    blurb:
+      "The browsers that connected to this daemon, from where, and what each one changed.",
+    items: [],
+  },
   {
     id: "queue",
     title: "Queue",

@@ -46,6 +46,11 @@ Measured facts:
     the pointer media queries do not decide the form of a device alone.
   - `document.fonts.check` returned true for every font on every device, so
     it is not a fact.
+- Playwright's three engines on one Windows 11 machine (2026-10-04,
+  `tests/browser/security/wb_device_audit.py`): Firefox 150 sends no client
+  hints and reports the graphics card as `NVIDIA GeForce GTX 980` on a
+  machine with an RTX 3060, so Firefox's graphics card is a generic model.
+  Playwright's WebKit reports a Mac user agent on Windows.
 
 ## Decision
 
@@ -159,7 +164,11 @@ joins to a device through the `device_facts` line of that tab.
   (`every_response_carries_the_security_headers`, which pins
   `connect-src 'self'`).
 - D8: not checked by code: manual: reviewed in the PR.
-- D9: not checked by code: manual: reviewed in the PR.
+- D9: checked by `crates/ralphy-daemon/tests/shared_replies.rs`
+  (`the_audit_log_reads_are_the_shared_replies`) and
+  `crates/ralphy-daemon/src/tests/audit_routes.rs`
+  (`the_device_list_marks_the_device_that_asks`). That the page keeps no
+  copy is not checked by code: manual: reviewed in the PR.
 - D10: not checked by code yet: to be pinned by a daemon test that a
   console socket's traffic summary carries the device ID and not the
   cookie value.

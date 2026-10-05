@@ -208,6 +208,11 @@ impl Audit {
         }
     }
 
+    /// The log file, or `None` when the log is off.
+    pub fn log_path(&self) -> Option<PathBuf> {
+        self.dir.as_deref().map(log_path_in)
+    }
+
     /// The device-cookie key. With `create`, a missing key is made, so a
     /// store gets the file only when a browser first needs a cookie. `None`
     /// when the log is off, or the key cannot be read or created (logged
@@ -343,6 +348,7 @@ fn line_time(line: &str) -> Option<i64> {
 
 pub mod facts;
 pub mod normalize;
+pub mod read;
 
 #[cfg(test)]
 mod tests;

@@ -1,4 +1,4 @@
 ---
 kind: feature
 ---
-The daemon records each device's logins and changes, with its public address, in `daemon-audit.jsonl`.
+Settings → Devices lists each browser that connected, with its system, public address, and the changes it made.

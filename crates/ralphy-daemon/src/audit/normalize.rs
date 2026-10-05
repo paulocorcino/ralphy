@@ -637,6 +637,12 @@ fn gpu(raw: &str) -> Gpu {
         .next()
         .unwrap_or(model)
         .trim();
+    // The cut at ` (0x` can leave an opening bracket of the model's own name.
+    let open = model
+        .matches('(')
+        .count()
+        .saturating_sub(model.matches(')').count());
+    let model = format!("{model}{}", ")".repeat(open));
     let lower = inner.to_ascii_lowercase();
     let vendor = if lower.contains("nvidia") {
         GpuVendor::Nvidia
@@ -655,10 +661,7 @@ fn gpu(raw: &str) -> Gpu {
     } else {
         GpuVendor::Other
     };
-    Gpu {
-        vendor,
-        model: model.to_string(),
-    }
+    Gpu { vendor, model }
 }
 
 /// The version after `token`, as `major.minor`.

@@ -125,6 +125,10 @@ fn the_gpu_model_loses_the_angle_wrapping() {
         "NVIDIA GeForce RTX 3060"
     );
     assert_eq!(of("android-chrome").gpu.unwrap().model, "Adreno (TM) 610");
+    // Headless Chromium's software renderer (Playwright, 2026-10-04).
+    let soft = gpu("ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)");
+    assert_eq!(soft.vendor, GpuVendor::Software);
+    assert_eq!(soft.model, "Vulkan 1.3.0 (SwiftShader Device (Subzero))");
 }
 
 #[test]

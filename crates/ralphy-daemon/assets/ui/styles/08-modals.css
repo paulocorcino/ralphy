@@ -686,6 +686,36 @@
   gap: 0.5rem;
   flex-wrap: wrap;
 }
+/* Settings → Devices (wb-devices.js). */
+.devices > .sec-actions {
+  margin-bottom: 0.6rem;
+}
+.devices-error {
+  color: var(--danger);
+}
+.device-this {
+  font-size: 0.8em;
+  color: var(--info);
+}
+.device-events {
+  margin-top: 0.4rem;
+  font-size: 0.85em;
+}
+.device-event {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.device-event-when,
+.device-event-ip {
+  color: var(--text-muted);
+}
+.device-raw pre {
+  max-height: 16rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
 .btn.danger {
   color: var(--danger);
   border-color: color-mix(in srgb, var(--danger) 45%, var(--border));

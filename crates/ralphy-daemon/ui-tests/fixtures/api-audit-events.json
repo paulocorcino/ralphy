@@ -1,0 +1,247 @@
+{
+  "events": [
+    {
+      "actor": "device",
+      "at": "<at>",
+      "device": "<device>",
+      "event": "action",
+      "ip": "203.0.113.10",
+      "method": "POST",
+      "path": "/api/sessions/close",
+      "status": 404
+    },
+    {
+      "actor": "device",
+      "at": "<at>",
+      "automation": false,
+      "browser": {
+        "source": "hint",
+        "value": "chrome"
+      },
+      "browser_version": "148",
+      "client": {
+        "automation": false,
+        "battery": {
+          "charging": true,
+          "level": 0.07
+        },
+        "connection": {
+          "downlink": 1.75,
+          "effective_type": "4g",
+          "rtt": 200.0,
+          "save_data": false,
+          "type": "wifi"
+        },
+        "cookies": true,
+        "cores": 8,
+        "do_not_track": null,
+        "dpr": 1.4875000715255735,
+        "engine_signals": {
+          "chrome_object": true,
+          "gesture_event": false,
+          "ios_standalone": null,
+          "moz_appearance": false,
+          "safari_object": false,
+          "webkit_touch_callout": false
+        },
+        "gpu": {
+          "renderer": "WebKit WebGL",
+          "unmasked_renderer": "ANGLE (Qualcomm, Adreno (TM) 610, OpenGL ES 3.2)",
+          "unmasked_vendor": "Google Inc. (Qualcomm)",
+          "vendor": "WebKit"
+        },
+        "holder": null,
+        "intl": {
+          "calendar": "gregory",
+          "hour_cycle": "h23",
+          "locale": "pt-BR",
+          "numbering_system": "latn",
+          "time_zone": "America/Sao_Paulo"
+        },
+        "keyboard": {},
+        "languages": [
+          "pt-BR",
+          "pt",
+          "en-US",
+          "en"
+        ],
+        "media": {
+          "any_pointer": "coarse",
+          "color_gamut": "srgb",
+          "color_scheme": "light",
+          "contrast": "no-preference",
+          "display_mode": null,
+          "dynamic_range": "standard",
+          "forced_colors": "none",
+          "hover": "none",
+          "inverted_colors": null,
+          "pointer": "coarse",
+          "reduced_motion": "no-preference"
+        },
+        "memory_gb": 4.0,
+        "pdf_viewer": false,
+        "platform": "Linux armv81",
+        "plugins": 0,
+        "safe_area": {
+          "bottom": 0.0,
+          "left": 0.0,
+          "right": 0.0,
+          "top": 0.0
+        },
+        "screen": {
+          "avail_height": 1076,
+          "avail_width": 485,
+          "color_depth": 24,
+          "height": 1076,
+          "is_extended": false,
+          "orientation": "portrait-primary",
+          "width": 485
+        },
+        "storage": {
+          "quota": 10737418240.0,
+          "usage": 0.0
+        },
+        "touch_points": 5,
+        "tz_offset_min": -180,
+        "ua": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Mobile Safari/537.36",
+        "ua_data": {
+          "architecture": "",
+          "bitness": "",
+          "brands": [
+            {
+              "brand": "Chromium",
+              "version": "148"
+            },
+            {
+              "brand": "Google Chrome",
+              "version": "148"
+            },
+            {
+              "brand": "Not/A)Brand",
+              "version": "99"
+            }
+          ],
+          "formFactors": [
+            "Mobile"
+          ],
+          "fullVersionList": [
+            {
+              "brand": "Chromium",
+              "version": "148.0.7778.215"
+            },
+            {
+              "brand": "Google Chrome",
+              "version": "148.0.7778.215"
+            },
+            {
+              "brand": "Not/A)Brand",
+              "version": "99.0.0.0"
+            }
+          ],
+          "mobile": true,
+          "model": "moto g(30)",
+          "platform": "Android",
+          "platformVersion": "12.0.0"
+        },
+        "vendor": "Google Inc.",
+        "voices": {
+          "count": 0,
+          "sample": []
+        },
+        "window": {
+          "inner": [
+            484,
+            927
+          ],
+          "outer": [
+            485,
+            1076
+          ],
+          "visual_scale": 1.0
+        }
+      },
+      "conflicts": [],
+      "device": "<device>",
+      "engine": {
+        "source": "feature",
+        "value": "blink"
+      },
+      "event": "device_facts",
+      "form": {
+        "source": "hint",
+        "value": "phone"
+      },
+      "gpu": {
+        "model": "Adreno (TM) 610",
+        "vendor": "qualcomm"
+      },
+      "model_hint": {
+        "source": "hint",
+        "value": "moto g(30)"
+      },
+      "normalizer": 1,
+      "os": {
+        "source": "hint",
+        "value": "android"
+      },
+      "os_version": {
+        "source": "hint",
+        "value": "12"
+      },
+      "profile": "21fc3976d8a9f26e604183dbcf2c69a2",
+      "screen": "485x1076@1.49",
+      "server": {
+        "accept_language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+        "client_hints": [
+          [
+            "arch",
+            "\"\""
+          ],
+          [
+            "bitness",
+            "\"\""
+          ],
+          [
+            "brands",
+            "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\""
+          ],
+          [
+            "form-factors",
+            "\"Mobile\""
+          ],
+          [
+            "full-version-list",
+            "\"Chromium\";v=\"148.0.7778.215\", \"Google Chrome\";v=\"148.0.7778.215\", \"Not/A)Brand\";v=\"99.0.0.0\""
+          ],
+          [
+            "mobile",
+            "?1"
+          ],
+          [
+            "model",
+            "\"moto g(30)\""
+          ],
+          [
+            "platform",
+            "\"Android\""
+          ],
+          [
+            "platform-version",
+            "\"12.0.0\""
+          ],
+          [
+            "wow64",
+            "?0"
+          ]
+        ],
+        "forwarded_for": "203.0.113.10",
+        "forwarded_host": "example-8765.brs.devtunnels.ms",
+        "forwarded_proto": "https",
+        "real_ip": "203.0.113.10",
+        "user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Mobile Safari/537.36"
+      },
+      "standalone": null,
+      "time_zone": "America/Sao_Paulo"
+    }
+  ]
+}

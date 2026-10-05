@@ -177,3 +177,139 @@ async fn the_desk_history_list_is_the_shared_reply() {
     assert_eq!(reply.as_array().map(Vec::len), Some(3));
     golden::check("api-desk-history", reply, &[]);
 }
+
+/// The Devices section's two reads (ADR-0074 D9), over a log that one
+/// measured Android phone wrote: its device facts, then one change.
+#[tokio::test]
+async fn the_audit_log_reads_are_the_shared_replies() {
+    use http_body_util::BodyExt;
+    use tower::ServiceExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let (_tx, rx) = tokio::sync::watch::channel(false);
+    let app = router(
+        None,
+        dir.path().join("repos.toml"),
+        std::path::PathBuf::from("does-not-exist"),
+        ralphy_daemon::StorePaths::default(),
+        Instant::now(),
+        rx,
+        ralphy_daemon::auth::AuthState::localhost(),
+    );
+    let send = |req: axum::http::Request<axum::body::Body>| {
+        let app = app.clone();
+        async move { app.oneshot(req).await.unwrap() }
+    };
+    let json_of = |res: axum::http::Response<axum::body::Body>| async move {
+        let bytes = res.into_body().collect().await.unwrap().to_bytes();
+        serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()
+    };
+
+    let first = send(
+        axum::http::Request::builder()
+            .uri("/api/session")
+            .body(axum::body::Body::empty())
+            .unwrap(),
+    )
+    .await;
+    let cookie = first
+        .headers()
+        .get_all("set-cookie")
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .find(|v| v.starts_with("ralphy_device="))
+        .expect("a device cookie")
+        .split(';')
+        .next()
+        .unwrap()
+        .to_string();
+    let device = cookie.split('.').nth(1).unwrap().to_string();
+
+    let measured: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/devices/android-chrome.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let mut facts = axum::http::Request::builder()
+        .method("POST")
+        .uri("/api/device/facts")
+        .header("content-type", "application/json")
+        .header("cookie", &cookie);
+    for (k, v) in measured["headers"].as_object().unwrap() {
+        if ![
+            "host",
+            "origin",
+            "referer",
+            "content-length",
+            "content-type",
+        ]
+        .contains(&k.as_str())
+        {
+            facts = facts.header(k.as_str(), v.as_str().unwrap());
+        }
+    }
+    let res = send(
+        facts
+            .body(axum::body::Body::from(measured["client"].to_string()))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(res.status(), axum::http::StatusCode::NO_CONTENT);
+    send(
+        axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/sessions/close?id=7&repo=owner/repo")
+            .header("cookie", &cookie)
+            .header("x-real-ip", "203.0.113.10")
+            .body(axum::body::Body::empty())
+            .unwrap(),
+    )
+    .await;
+
+    let devices = json_of(
+        send(
+            axum::http::Request::builder()
+                .uri("/api/audit/devices")
+                .header("cookie", &cookie)
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(devices["devices"][0]["device"], device.as_str());
+    golden::check(
+        "api-audit-devices",
+        devices,
+        &[
+            "/devices/0/device",
+            "/devices/0/first_seen",
+            "/devices/0/last_seen",
+        ],
+    );
+
+    let events = json_of(
+        send(
+            axum::http::Request::builder()
+                .uri(format!("/api/audit/events?device={device}"))
+                .header("cookie", &cookie)
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await,
+    )
+    .await;
+    golden::check(
+        "api-audit-events",
+        events,
+        &[
+            "/events/0/at",
+            "/events/0/device",
+            "/events/1/at",
+            "/events/1/device",
+        ],
+    );
+}
