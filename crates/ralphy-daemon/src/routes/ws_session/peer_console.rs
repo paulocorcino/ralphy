@@ -62,7 +62,7 @@ impl PeerConsole<'_> {
                 daemon_id: &daemon_id,
             };
             let peer_query = peer_session_query(query, slug);
-            return relay_to_peer(ws, peer, &peer_query, me, &refuser, shutdown).await;
+            return relay_to_peer(ws, peer, &peer_query, holder, me, &refuser, shutdown).await;
         };
         let status = peer::client::probe(
             peer,
@@ -157,7 +157,7 @@ impl PeerConsole<'_> {
         if let Some(joined) =
             Joined::find(&sessions, claim.as_ref(), holder.as_deref(), &environment)
         {
-            return joined.upgrade(ws, daemon_id, shutdown);
+            return joined.upgrade(ws, daemon_id, holder, shutdown);
         }
         let effective_environment = peer.environment.clone();
         match sessions
@@ -180,6 +180,7 @@ impl PeerConsole<'_> {
                     daemon_id,
                     effective_environment,
                     SessionLabels::default(),
+                    holder,
                     shutdown,
                 )
             }),

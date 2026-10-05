@@ -72,6 +72,7 @@ impl Joined {
         self,
         ws: WebSocketUpgrade,
         daemon_id: String,
+        holder: Option<String>,
         shutdown: tokio::sync::watch::Receiver<bool>,
     ) -> Response {
         let Joined {
@@ -81,7 +82,16 @@ impl Joined {
             environment,
         } = self;
         ws.on_upgrade(move |socket| {
-            session_ws(socket, att, id, daemon_id, environment, labels, shutdown)
+            session_ws(
+                socket,
+                att,
+                id,
+                daemon_id,
+                environment,
+                labels,
+                holder,
+                shutdown,
+            )
         })
     }
 }

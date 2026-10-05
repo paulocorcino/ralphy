@@ -9,7 +9,7 @@ use std::time::Instant;
 /// Which loop owns the socket: the bridge to a session this daemon hosts, or
 /// the relay to a session a peer hosts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Channel {
+enum Channel {
     Local,
     Peer,
 }
@@ -40,9 +40,18 @@ struct Outstanding {
     busy: bool,
 }
 
+/// The keys that join a summary to other records: the session this daemon
+/// hosts, or the peer that hosts it; and the browser tab (the holder).
+struct Keys {
+    session: Option<u64>,
+    peer_id: Option<String>,
+    peer: Option<String>,
+    holder: Option<String>,
+}
+
 pub(crate) struct Traffic {
     channel: Channel,
-    subject: String,
+    keys: Keys,
     started: Instant,
     replay_bytes: u64,
     live_bytes: u64,
@@ -75,11 +84,38 @@ pub(crate) struct Summary {
 }
 
 impl Traffic {
-    /// `subject` names the socket in the log line (the session, or the peer).
-    pub(crate) fn new(channel: Channel, subject: String, now: Instant) -> Traffic {
+    /// A socket bridged to session `session` of this daemon.
+    pub(crate) fn local(session: u64, holder: Option<String>, now: Instant) -> Traffic {
+        let keys = Keys {
+            session: Some(session),
+            peer_id: None,
+            peer: None,
+            holder,
+        };
+        Traffic::new(Channel::Local, keys, now)
+    }
+
+    /// A socket relayed to a session the peer `peer_id` hosts; `peer` is its
+    /// environment label, for people.
+    pub(crate) fn peer(
+        peer_id: String,
+        peer: String,
+        holder: Option<String>,
+        now: Instant,
+    ) -> Traffic {
+        let keys = Keys {
+            session: None,
+            peer_id: Some(peer_id),
+            peer: Some(peer),
+            holder,
+        };
+        Traffic::new(Channel::Peer, keys, now)
+    }
+
+    fn new(channel: Channel, keys: Keys, now: Instant) -> Traffic {
         Traffic {
             channel,
-            subject,
+            keys,
             started: now,
             replay_bytes: 0,
             live_bytes: 0,
@@ -173,7 +209,10 @@ impl Traffic {
         let s = self.summary();
         tracing::info!(
             channel = self.channel.as_str(),
-            subject = %self.subject,
+            session = self.keys.session,
+            peer_id = self.keys.peer_id.as_deref(),
+            peer = self.keys.peer.as_deref(),
+            holder = self.keys.holder.as_deref(),
             end,
             secs = now.duration_since(self.started).as_secs(),
             replay_bytes = s.replay_bytes,
@@ -213,7 +252,7 @@ mod tests {
     use std::time::Duration;
 
     fn traffic(now: Instant) -> Traffic {
-        Traffic::new(Channel::Local, "session 1".to_string(), now)
+        Traffic::local(1, Some("tab-1".to_string()), now)
     }
 
     #[test]
@@ -272,6 +311,20 @@ mod tests {
         assert_eq!(t.outstanding.len(), OUTSTANDING_CAP);
         t.pong_received(&[0], t0 + Duration::from_millis(10));
         assert_eq!(t.summary().rtt_samples, 0, "the oldest ping was dropped");
+    }
+
+    #[test]
+    fn the_keys_name_the_session_or_the_peer_and_the_tab() {
+        let now = Instant::now();
+        let local = Traffic::local(7, Some("tab-a".to_string()), now);
+        assert_eq!(local.channel, Channel::Local);
+        assert_eq!(local.keys.session, Some(7));
+        assert_eq!(local.keys.holder.as_deref(), Some("tab-a"));
+        let relayed = Traffic::peer("01PEER".to_string(), "Ubuntu".to_string(), None, now);
+        assert_eq!(relayed.channel, Channel::Peer);
+        assert_eq!(relayed.keys.peer_id.as_deref(), Some("01PEER"));
+        assert_eq!(relayed.keys.peer.as_deref(), Some("Ubuntu"));
+        assert_eq!(relayed.keys.session, None);
     }
 
     #[test]

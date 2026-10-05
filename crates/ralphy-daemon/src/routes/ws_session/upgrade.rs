@@ -100,7 +100,8 @@ pub(crate) async fn session_ws_upgrade(
                         daemon_id: &daemon_id,
                     };
                     let peer_query = peer_session_query(&query, slug);
-                    return relay_to_peer(ws, peer, &peer_query, me, &refuser, shutdown).await;
+                    return relay_to_peer(ws, peer, &peer_query, holder, me, &refuser, shutdown)
+                        .await;
                 }
                 fleet::route::Route::UnknownDaemon { daemon_id } => {
                     return refuser.refuse(
@@ -140,6 +141,7 @@ pub(crate) async fn session_ws_upgrade(
                         daemon_id,
                         effective_environment,
                         effective_labels,
+                        holder,
                         shutdown,
                     )
                 }),
@@ -162,6 +164,7 @@ pub(crate) async fn session_ws_upgrade(
                     daemon_id,
                     effective_environment,
                     effective_labels,
+                    holder,
                     shutdown,
                 )
             }),
@@ -245,7 +248,7 @@ pub(crate) async fn session_ws_upgrade(
         if let Some(joined) =
             Joined::find(&sessions, claim.as_ref(), holder.as_deref(), &environment)
         {
-            return joined.upgrade(ws, daemon_id, shutdown);
+            return joined.upgrade(ws, daemon_id, holder, shutdown);
         }
         return match sessions
             .spawn_attached(
@@ -267,6 +270,7 @@ pub(crate) async fn session_ws_upgrade(
                     daemon_id,
                     environment,
                     SessionLabels::default(),
+                    holder,
                     shutdown,
                 )
             }),
@@ -361,7 +365,7 @@ pub(crate) async fn session_ws_upgrade(
     // that joins a live session burns no id and writes no file.
     let claim = claim_for(&sessions, &record).await;
     if let Some(joined) = Joined::find(&sessions, claim.as_ref(), holder.as_deref(), &environment) {
-        return joined.upgrade(ws, daemon_id, shutdown);
+        return joined.upgrade(ws, daemon_id, holder, shutdown);
     }
     let id = sessions.reserve_id();
     let status = match agent {
@@ -396,7 +400,16 @@ pub(crate) async fn session_ws_upgrade(
         .inspect(|(_, att)| hold(att, holder.as_deref()))
     {
         Ok((id, att)) => ws.on_upgrade(move |socket| {
-            session_ws(socket, att, id, daemon_id, environment, labels, shutdown)
+            session_ws(
+                socket,
+                att,
+                id,
+                daemon_id,
+                environment,
+                labels,
+                holder,
+                shutdown,
+            )
         }),
         Err(e) => {
             tracing::warn!(error = %e, "failed to spawn a workbench session");

@@ -10,7 +10,7 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::io::AsyncWriteExt;
 
 use super::refuse::Refuser;
-use super::traffic::{Channel, Traffic, DROPPED};
+use super::traffic::{Traffic, DROPPED};
 use super::SessionQuery;
 use crate::peer;
 use crate::routes::encode_query_value;
@@ -96,14 +96,20 @@ pub(crate) async fn relay_to_peer(
     ws: WebSocketUpgrade,
     peer: &peer::PeerDescriptor,
     peer_query: &str,
+    holder: Option<String>,
     me: peer::client::SelfRef<'_>,
     refuser: &Refuser,
     shutdown: tokio::sync::watch::Receiver<bool>,
 ) -> Response {
     match peer::client::session(peer, peer_query, me).await {
         Ok(peer_socket) => {
-            let subject = format!("peer {}", peer.environment);
-            ws.on_upgrade(move |socket| peer_session_ws(socket, peer_socket, subject, shutdown))
+            let traffic = Traffic::peer(
+                peer.daemon_id.clone(),
+                peer.environment.clone(),
+                holder,
+                Instant::now(),
+            );
+            ws.on_upgrade(move |socket| peer_session_ws(socket, peer_socket, traffic, shutdown))
         }
         Err(peer::client::SocketError::Peer(status)) => refuser.refuse(
             ws,
@@ -125,10 +131,9 @@ pub(crate) async fn relay_to_peer(
 pub(crate) async fn peer_session_ws(
     mut browser: WebSocket,
     mut peer: peer::client::PeerSocket,
-    subject: String,
+    mut traffic: Traffic,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) {
-    let mut traffic = Traffic::new(Channel::Peer, subject, Instant::now());
     let mut end = DROPPED;
     loop {
         tokio::select! {
