@@ -14,6 +14,7 @@ use crate::protocol::{Command, Frame};
 use crate::StorePaths;
 use crate::{audit, auth, fleet, identity, peer, protocol, registry, rekey, session, watch};
 
+mod api_audit;
 mod api_desk;
 mod api_fleet;
 mod api_peer;
@@ -32,6 +33,7 @@ mod ws_command;
 mod ws_session;
 mod ws_tree;
 
+pub(crate) use api_audit::*;
 pub(crate) use api_desk::*;
 pub(crate) use api_fleet::*;
 pub(crate) use api_peer::*;
@@ -95,6 +97,7 @@ pub(crate) struct RouterShared {
     pub(crate) heal_memo: rekey::HealMemo,
     pub(crate) run_exits: tokio::sync::broadcast::Sender<String>,
     pub(crate) pushes: tokio::sync::broadcast::Sender<Push>,
+    pub(crate) audit: Arc<audit::Audit>,
 }
 
 pub(crate) fn router_with_roster(
@@ -224,6 +227,7 @@ pub(crate) fn router_with_roster(
         heal_memo,
         run_exits,
         pushes,
+        audit: audit.clone(),
     };
     Router::new()
         .merge(read_routes(&shared))
@@ -237,6 +241,7 @@ pub(crate) fn router_with_roster(
         .merge(command_routes(&shared))
         .merge(tree_routes(&shared))
         .merge(security_routes(&shared))
+        .merge(audit_routes(&shared))
         .fallback(ui_asset)
         // Inside the guard: only requests the guard let through are recorded.
         .layer(axum::middleware::from_fn_with_state(audit, audit_layer))

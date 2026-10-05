@@ -43,8 +43,17 @@ pub(crate) async fn security_headers<B>(
         header::REFERRER_POLICY,
         HeaderValue::from_static("no-referrer"),
     );
+    h.insert(
+        header::HeaderName::from_static("accept-ch"),
+        HeaderValue::from_static(ACCEPT_CH),
+    );
     resp
 }
+
+/// The client hints the audit log records (ADR-0074). Chromium sends them on
+/// the requests after a response that asks; Safari and Firefox send none.
+pub(crate) const ACCEPT_CH: &str = "Sec-CH-UA-Platform-Version, Sec-CH-UA-Model, \
+     Sec-CH-UA-Arch, Sec-CH-UA-Bitness, Sec-CH-UA-Full-Version-List, Sec-CH-UA-Form-Factors";
 
 /// The policy, built at first use from the embedded shells, in two variants
 /// that differ only in `img-src`.

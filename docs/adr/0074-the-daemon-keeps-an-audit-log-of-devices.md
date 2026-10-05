@@ -151,9 +151,10 @@ joins to a device through the `device_facts` line of that tab.
 - D4: checked by `crates/ralphy-daemon/src/tests/audit_routes.rs`
   (`an_action_line_keeps_the_path_and_drops_the_query_and_the_body`,
   `a_login_and_a_replayed_login_are_recorded_with_the_server_facts`).
-- D5: not checked by code yet: to be pinned by a daemon test that a 17 KiB
-  body is refused.
-- D6: not checked by code: manual: reviewed in the PR.
+- D5: checked by `crates/ralphy-daemon/src/tests/audit_routes.rs`
+  (`a_facts_body_over_the_cap_is_refused`).
+- D6: not checked by code: manual: reviewed in the PR. The rules are pinned
+  on the measured devices by `crates/ralphy-daemon/src/audit/normalize/tests.rs`.
 - D7: checked by `crates/ralphy-daemon/src/tests.rs`
   (`every_response_carries_the_security_headers`, which pins
   `connect-src 'self'`).
@@ -162,5 +163,5 @@ joins to a device through the `device_facts` line of that tab.
 - D10: not checked by code yet: to be pinned by a daemon test that a
   console socket's traffic summary carries the device ID and not the
   cookie value.
-- D11: not checked by code yet: to be pinned by a daemon test that a
-  `device_facts` line keeps the holder with source `client`.
+- D11: checked by `crates/ralphy-daemon/src/tests/audit_routes.rs`
+  (`device_facts_are_recorded_once_and_again_when_the_profile_changes`).

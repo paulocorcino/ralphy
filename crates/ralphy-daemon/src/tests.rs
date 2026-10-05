@@ -2699,6 +2699,13 @@ async fn every_response_carries_the_security_headers() {
             csp.contains("connect-src 'self';") && !csp.contains("ws:"),
             "{path}: {csp}"
         );
+        // The client hints the audit log records (ADR-0074).
+        let accept_ch = h["accept-ch"].to_str().unwrap();
+        assert!(
+            accept_ch.contains("Sec-CH-UA-Model")
+                && accept_ch.contains("Sec-CH-UA-Platform-Version"),
+            "{path}: {accept_ch}"
+        );
     }
     // The hash in the header is the hash of the bytes the browser receives:
     // recompute it from the served shell.

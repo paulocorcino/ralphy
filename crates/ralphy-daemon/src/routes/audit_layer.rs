@@ -12,9 +12,10 @@ use axum::response::Response;
 use crate::audit::{Actor, Audit, Event, EventKind, LoginFailure, ServerFacts};
 use crate::device::{self, DeviceId};
 
-/// Mutating paths the layer does not record as an `action`: a peer polls this
-/// one every few seconds, so its lines would push every other line out.
-const NOT_AN_ACTION: &[&str] = &["/api/peer/tree/poll"];
+/// Mutating paths the layer does not record as an `action`: a peer polls the
+/// first every few seconds, so its lines would push every other line out; the
+/// second writes its own line.
+const NOT_AN_ACTION: &[&str] = &["/api/peer/tree/poll", "/api/device/facts"];
 
 pub(crate) async fn audit_layer(
     State(audit): State<Arc<Audit>>,

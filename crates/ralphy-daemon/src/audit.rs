@@ -6,6 +6,7 @@
 //! relative name) keeps no log and issues no device cookie, so a test never
 //! writes into the process's working directory.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
@@ -37,6 +38,8 @@ pub enum EventKind {
     LoginOk,
     LoginFailed,
     Logout,
+    DeviceFacts,
+    DeviceProfileChanged,
     Action,
 }
 
@@ -148,6 +151,18 @@ pub struct Event {
     pub ip: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub server: Option<ServerFacts>,
+    /// The tab that reported the device facts (D11). Source `client`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub holder: Option<String>,
+    /// On `device_profile_changed`: the normalized fields that changed.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub changed: Vec<&'static str>,
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    pub normalized: Option<normalize::Normalized>,
+    /// The facts as the page reported them, so a line can be normalized
+    /// again (D6).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client: Option<facts::ClientFacts>,
 }
 
 impl Event {
@@ -163,6 +178,10 @@ impl Event {
             status: None,
             ip: None,
             server: None,
+            holder: None,
+            changed: Vec::new(),
+            normalized: None,
+            client: None,
         }
     }
 }
@@ -173,6 +192,8 @@ pub struct Audit {
     key: OnceLock<Option<DeviceKey>>,
     /// Serializes appends and prunes; holds the day of the last prune.
     writer: Mutex<Option<i64>>,
+    /// The last normalized facts of each device since the daemon started.
+    last_facts: Mutex<HashMap<DeviceId, normalize::Normalized>>,
 }
 
 impl Audit {
@@ -183,6 +204,7 @@ impl Audit {
             dir,
             key: OnceLock::new(),
             writer: Mutex::new(None),
+            last_facts: Mutex::new(HashMap::new()),
         }
     }
 
@@ -207,6 +229,48 @@ impl Audit {
                     .ok()
             })
             .as_ref()
+    }
+
+    /// Record a page's report of its device facts: `device_facts` the first
+    /// time this daemon sees the device, `device_profile_changed` when the
+    /// facts that do not change for one device did change, and nothing when
+    /// the report says what the last one said.
+    pub fn record_facts(
+        &self,
+        device: Option<DeviceId>,
+        client: facts::ClientFacts,
+        server: ServerFacts,
+    ) {
+        let normalized = normalize::normalize(&client, &server);
+        let kind = match device {
+            Some(id) => {
+                let mut last = self.last_facts.lock().expect("audit facts lock poisoned");
+                let kind = match last.get(&id) {
+                    None => Some((EventKind::DeviceFacts, Vec::new())),
+                    Some(prev) if prev.profile != normalized.profile => Some((
+                        EventKind::DeviceProfileChanged,
+                        normalize::changed_fields(prev, &normalized),
+                    )),
+                    Some(_) => None,
+                };
+                last.insert(id, normalized.clone());
+                kind
+            }
+            None => Some((EventKind::DeviceFacts, Vec::new())),
+        };
+        let Some((kind, changed)) = kind else { return };
+        let actor = if device.is_some() {
+            Actor::Device
+        } else {
+            Actor::Unknown
+        };
+        let mut event = Event::new(kind, device, actor);
+        event.holder = client.holder.as_ref().map(|h| h.as_str().to_string());
+        event.changed = changed;
+        event.normalized = Some(normalized);
+        event.server = Some(server);
+        event.client = Some(client);
+        self.record(&event);
     }
 
     /// Append `event`. A failed write is logged and never fails the request.
@@ -276,6 +340,9 @@ fn line_time(line: &str) -> Option<i64> {
         .ok()
         .map(|t| t.timestamp())
 }
+
+pub mod facts;
+pub mod normalize;
 
 #[cfg(test)]
 mod tests;

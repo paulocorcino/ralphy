@@ -159,3 +159,92 @@ async fn a_router_with_no_store_directory_sets_no_cookie_and_keeps_no_log() {
     let res = get("/api/session").await;
     assert_eq!(device_set_cookie(&res), None);
 }
+
+/// A measured device's report: its client facts as the body, and its request
+/// headers minus the ones that name the probe server.
+fn facts_request(
+    fixture: &str,
+    cookie: &str,
+    edit: impl FnOnce(&mut serde_json::Value),
+) -> Request<Body> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/devices")
+        .join(format!("{fixture}.json"));
+    let mut json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    edit(&mut json["client"]);
+    let mut req = Request::builder()
+        .method("POST")
+        .uri("/api/device/facts")
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::COOKIE, cookie);
+    for (k, v) in json["headers"].as_object().unwrap() {
+        if ![
+            "host",
+            "origin",
+            "referer",
+            "content-length",
+            "content-type",
+        ]
+        .contains(&k.as_str())
+        {
+            req = req.header(k.as_str(), v.as_str().unwrap());
+        }
+    }
+    req.body(Body::from(json["client"].to_string())).unwrap()
+}
+
+#[tokio::test]
+async fn device_facts_are_recorded_once_and_again_when_the_profile_changes() {
+    let dir = tempfile::tempdir().unwrap();
+    let app = desk_router(dir.path());
+    let first = send(
+        app.clone(),
+        Request::builder()
+            .uri("/api/session")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    let cookie = pair(&device_set_cookie(&first).unwrap());
+    let with_holder = |c: &mut serde_json::Value| c["holder"] = "tab1".into();
+    for _ in 0..2 {
+        let res = send(
+            app.clone(),
+            facts_request("android-chrome", &cookie, with_holder),
+        )
+        .await;
+        assert_eq!(res.status(), StatusCode::NO_CONTENT);
+    }
+    let turned = |c: &mut serde_json::Value| c["screen"]["width"] = 800.into();
+    send(app, facts_request("android-chrome", &cookie, turned)).await;
+
+    let lines = audit_lines(dir.path());
+    let events: Vec<_> = lines.iter().map(|l| l["event"].as_str().unwrap()).collect();
+    assert_eq!(
+        events,
+        ["device_facts", "device_profile_changed"],
+        "{lines:?}"
+    );
+    let facts = &lines[0];
+    assert_eq!(facts["os"]["value"], "android");
+    assert_eq!(facts["model_hint"]["value"], "moto g(30)");
+    assert_eq!(facts["holder"], "tab1");
+    assert_eq!(facts["normalizer"], 1);
+    assert_eq!(facts["server"]["real_ip"], "203.0.113.10");
+    assert_eq!(facts["client"]["cores"], 8, "the raw facts are kept");
+    assert_eq!(lines[1]["changed"], serde_json::json!(["screen"]));
+}
+
+#[tokio::test]
+async fn a_facts_body_over_the_cap_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let big = |c: &mut serde_json::Value| c["vendor"] = "x".repeat(17 * 1024).into();
+    let res = send(
+        desk_router(dir.path()),
+        facts_request("android-chrome", "", big),
+    )
+    .await;
+    assert_eq!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    assert!(audit_lines(dir.path()).is_empty());
+}

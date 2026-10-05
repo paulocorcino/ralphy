@@ -1,0 +1,191 @@
+{
+  "measured": "2026-10-05",
+  "headers": {
+    "accept": "*/*",
+    "host": "localhost:8765",
+    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0",
+    "accept-encoding": "gzip, deflate, br, zstd",
+    "accept-language": "pt-BR,pt;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
+    "referer": "https://example-8765.brs.devtunnels.ms/",
+    "x-real-ip": "203.0.113.10",
+    "x-forwarded-port": "443",
+    "x-forwarded-scheme": "https",
+    "x-original-uri": "/facts?label=windows",
+    "x-scheme": "https",
+    "sec-ch-ua-full-version-list": "\"Microsoft Edge\";v=\"153.0.4234.48\", \"Not_A Brand\";v=\"8.0.0.0\", \"Chromium\";v=\"153.0.8010.53\"",
+    "sec-ch-ua-platform": "\"Windows\"",
+    "sec-ch-ua": "\"Microsoft Edge\";v=\"153\", \"Not_A Brand\";v=\"8\", \"Chromium\";v=\"153\"",
+    "sec-ch-ua-bitness": "\"64\"",
+    "sec-ch-ua-model": "\"\"",
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-form-factors": "\"Desktop\"",
+    "sec-ch-ua-wow64": "?0",
+    "sec-ch-ua-arch": "\"x86\"",
+    "sec-ch-ua-platform-version": "\"19.0.0\"",
+    "sec-fetch-site": "same-origin",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-dest": "empty",
+    "priority": "u=1, i",
+    "x-forwarded-proto": "https",
+    "x-forwarded-host": "example-8765.brs.devtunnels.ms",
+    "x-forwarded-for": "203.0.113.10",
+    "origin": "http://localhost:8765",
+    "proxy-connection": "Keep-Alive",
+    "content-type": "application/json",
+    "content-length": "23362"
+  },
+  "client": {
+    "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0",
+    "ua_data": {
+      "architecture": "x86",
+      "bitness": "64",
+      "brands": [
+        {
+          "brand": "Microsoft Edge",
+          "version": "153"
+        },
+        {
+          "brand": "Not_A Brand",
+          "version": "8"
+        },
+        {
+          "brand": "Chromium",
+          "version": "153"
+        }
+      ],
+      "formFactors": [
+        "Desktop"
+      ],
+      "fullVersionList": [
+        {
+          "brand": "Microsoft Edge",
+          "version": "153.0.4234.48"
+        },
+        {
+          "brand": "Not_A Brand",
+          "version": "8.0.0.0"
+        },
+        {
+          "brand": "Chromium",
+          "version": "153.0.8010.53"
+        }
+      ],
+      "mobile": false,
+      "model": "",
+      "platform": "Windows",
+      "platformVersion": "19.0.0",
+      "wow64": false
+    },
+    "platform": "Win32",
+    "vendor": "Google Inc.",
+    "languages": [
+      "pt-BR",
+      "pt",
+      "en",
+      "en-GB",
+      "en-US"
+    ],
+    "intl": {
+      "time_zone": "America/Bahia",
+      "locale": "pt-BR",
+      "calendar": "gregory",
+      "numbering_system": "latn",
+      "hour_cycle": "h23"
+    },
+    "tz_offset_min": -180,
+    "screen": {
+      "width": 2560,
+      "height": 1080,
+      "avail_width": 2560,
+      "avail_height": 1032,
+      "color_depth": 24,
+      "orientation": "landscape-primary",
+      "is_extended": false
+    },
+    "dpr": 1,
+    "window": {
+      "inner": [
+        1270,
+        920
+      ],
+      "outer": [
+        1294,
+        1012
+      ],
+      "visual_scale": 1
+    },
+    "safe_area": {
+      "top": 0,
+      "right": 0,
+      "bottom": 0,
+      "left": 0
+    },
+    "touch_points": 0,
+    "cores": 12,
+    "memory_gb": 32,
+    "media": {
+      "pointer": "none",
+      "any_pointer": "none",
+      "hover": "none",
+      "color_scheme": "light",
+      "reduced_motion": "no-preference",
+      "contrast": "no-preference",
+      "forced_colors": "none",
+      "inverted_colors": null,
+      "color_gamut": "srgb",
+      "dynamic_range": "standard",
+      "display_mode": "browser"
+    },
+    "engine_signals": {
+      "webkit_touch_callout": false,
+      "gesture_event": false,
+      "safari_object": false,
+      "ios_standalone": null,
+      "moz_appearance": false,
+      "chrome_object": true
+    },
+    "gpu": {
+      "vendor": "WebKit",
+      "renderer": "WebKit WebGL",
+      "unmasked_vendor": "Google Inc. (NVIDIA)",
+      "unmasked_renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002487) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+    },
+    "voices": {
+      "count": 324,
+      "sample": [
+        "Microsoft Daniel - Portuguese (Brazil)|pt-BR|1",
+        "Microsoft Maria - Portuguese (Brazil)|pt-BR|1",
+        "Microsoft Adri Online (Natural) - Afrikaans (South Africa)|af-ZA|0",
+        "Microsoft Willem Online (Natural) - Afrikaans (South Africa)|af-ZA|0",
+        "Microsoft Anila Online (Natural) - Albanian (Albania)|sq-AL|0"
+      ]
+    },
+    "automation": false,
+    "plugins": 5,
+    "pdf_viewer": true,
+    "cookies": true,
+    "do_not_track": null,
+    "storage": {
+      "quota": 10737418240,
+      "usage": 0
+    },
+    "connection": {
+      "type": null,
+      "effective_type": "4g",
+      "rtt": 0,
+      "downlink": 10,
+      "save_data": false
+    },
+    "battery": {
+      "level": 1,
+      "charging": true
+    },
+    "keyboard": {
+      "KeyQ": "q",
+      "Semicolon": "ç",
+      "Backslash": "]",
+      "IntlRo": "/"
+    },
+    "holder": null
+  }
+}
