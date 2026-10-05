@@ -89,6 +89,9 @@ function stubWindow() {
   return {
     addEventListener() {},
     removeEventListener() {},
+    // A SINK, like the document's: `shell()` sends the `workbench:*` events
+    // that a component hears with `.window` on the window.
+    dispatchEvent() {},
     innerWidth: 1440,
     innerHeight: 900,
     devicePixelRatio: 1,

@@ -243,7 +243,7 @@ test("the rail button asks the dialog to open with workbench:settings-open, and 
 
 test("log off closes the dialog with the workbench:log-off event", async () => {
   const sent = [];
-  const loaded = loadShell({ document: { dispatchEvent: (e) => sent.push(e) } });
+  const loaded = loadShell({ window: { dispatchEvent: (e) => sent.push(e) } });
   const { scope: state } = loadComponent("wbSettingsDialog", { from: loaded });
   state.settingsOpen = true;
   // `logOff` emits on the bare `WB` global, which only the page defines.
@@ -256,8 +256,7 @@ test("log off closes the dialog with the workbench:log-off event", async () => {
     else globalThis.WB = real;
   }
   const ev = sent.find((e) => e.type === "workbench:log-off");
-  assert.ok(ev, `log off sends workbench:log-off; sent ${sent.map((e) => e.type)}`);
-  assert.equal(ev.bubbles, true, "sent on the document, it reaches the window only if it bubbles");
+  assert.ok(ev, `log off sends workbench:log-off on the window; sent ${sent.map((e) => e.type)}`);
 
   evalIn(state, handlerOf("workbench:log-off"));
   assert.equal(state.settingsOpen, false);
@@ -265,13 +264,12 @@ test("log off closes the dialog with the workbench:log-off event", async () => {
 
 test("the open dialog reads its settings again on workbench:panels-reread, and a closed one does not", () => {
   const sent = [];
-  const loaded = loadShell({ document: { dispatchEvent: (e) => sent.push(e) } });
+  const loaded = loadShell({ window: { dispatchEvent: (e) => sent.push(e) } });
   const { scope: state } = loadComponent("wbSettingsDialog", { from: loaded });
   loaded.state.tabs = loaded.state.tabs.filter((t) => t.id !== "spend");
   loaded.state.rereadOpenPanels();
   const ev = sent.find((e) => e.type === "workbench:panels-reread");
-  assert.ok(ev, `rereadOpenPanels sends workbench:panels-reread; sent ${sent.map((e) => e.type)}`);
-  assert.equal(ev.bubbles, true, "sent on the document, it reaches the window only if it bubbles");
+  assert.ok(ev, `rereadOpenPanels sends workbench:panels-reread on the window; sent ${sent.map((e) => e.type)}`);
 
   const reads = [];
   state.readSettings = () => reads.push("settings");
