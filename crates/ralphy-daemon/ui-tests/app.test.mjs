@@ -1810,6 +1810,39 @@ test("two fleet reads close together list each peer row once", async () => {
   assert.equal(state.projects.filter((p) => !p.daemon).length, 1);
 });
 
+test("fleet reads asked now share the read in flight, and a later ask reads again", async () => {
+  const { state } = loadShell();
+  state.projects = [];
+  let reads = 0;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (url === "/api/fleet") reads += 1;
+    return { ok: true, status: 200, json: async () => ({ peers: [], repos: [] }) };
+  };
+  try {
+    await Promise.all([state.readFleetNow(), state.readFleetNow(), state.readFleetNow()]);
+    assert.equal(reads, 1);
+    await state.readFleetNow();
+    assert.equal(reads, 2);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("the consoles get the shell's fleet read with the fleet", () => {
+  let hooks = null;
+  const { state, window } = loadShell();
+  window.WBConsole = { ingestFleet: (_groups, h) => (hooks = h) };
+  let asked = 0;
+  state.readFleetNow = () => {
+    asked += 1;
+    return Promise.resolve();
+  };
+  state.shareFleet();
+  hooks.read();
+  assert.equal(asked, 1);
+});
+
 test("a new checkout's change set does not inherit the old tree's last read", () => {
   const { state } = loadShell();
   state.loadChanges = () => {};

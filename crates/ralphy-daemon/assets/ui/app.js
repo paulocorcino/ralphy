@@ -666,6 +666,19 @@ function shell() {
     },
     _fleetSeq: 0,
 
+    // One fleet read now, for a panel that saw a peer fail before the 30 s
+    // read could. Calls close together share the read in flight: every
+    // console of a peer that drops asks at the same moment.
+    readFleetNow() {
+      if (!this._fleetNow) {
+        this._fleetNow = this.loadFleet().finally(() => {
+          this._fleetNow = null;
+        });
+      }
+      return this._fleetNow;
+    },
+    _fleetNow: null,
+
     // Wake a sleeping peer. The operator's action is the consent (as push,
     // ADR-0046), which is why this lives in the workbench: a daemon nudging on
     // every probe would be supervising by accident (ADR-0052 §4).
@@ -894,6 +907,7 @@ function shell() {
     shareFleet() {
       window.WBConsole?.ingestFleet?.(window.WBFleet.fleetGroups(this.projects, this.fleetPeers), {
         wake: (daemonId) => this.wakePeer(daemonId),
+        read: () => this.readFleetNow(),
       });
     },
     // The tooltip twin of `projectLabel`: `owner/repo`, or the full folder of

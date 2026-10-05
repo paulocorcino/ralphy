@@ -70,6 +70,14 @@ Every shown fact has events 2, 3 and 4. A hidden tab reads nothing; it reads
 again when it becomes visible. When the owner is the daemon, the fact has a
 push (event 1), not a periodic read.
 
+> **Amended 2026-10-05 (a failed peer read).** One more event, for one fact,
+> event 7: a read of a peer project fails (a console socket drops, a tree level does
+> not load), and the workbench reads the peers' state (`/api/fleet`) once.
+> The periodic read of event 6 comes every 30 s. Without event 7 a console
+> retried a peer that was down, and the file list showed the socket error, for
+> up to 30 s before the fleet said why. The reads that panels ask for at the
+> same moment share one request.
+
 **D3. A failed read shows as a failure, never as empty or clean.**
 
 - If there was no good read yet, the panel says the read failed and why.
