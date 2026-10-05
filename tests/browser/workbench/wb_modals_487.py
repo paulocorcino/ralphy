@@ -55,6 +55,8 @@ ADDPROJECT = "Alpine.$data(document.querySelector('.add-project-dialog'))"
 SECURITY = "Alpine.$data(document.querySelector('.security-dialog'))"
 # The Settings dialog's own component, nested in shell().
 SETTINGS = "Alpine.$data(document.querySelector('.settings-dialog'))"
+# The About, What's new and update dialogs' own component, nested in shell().
+RELEASE = "Alpine.$data(document.querySelector('.release-dialogs'))"
 
 # What has focus, in words a failure line can print.
 ACTIVE = (
@@ -402,13 +404,13 @@ def main():
                 a and "xterm-helper-textarea" in (a["cls"] or ""),
                 f"active={a}",
             )
-            page.evaluate(f"() => {SH}.openAbout()")
-            wait_flag(page, "aboutOpen", True)
+            page.evaluate("() => document.dispatchEvent(new CustomEvent('workbench:about-open', { bubbles: true }))")
+            page.wait_for_function(f"() => {RELEASE}.aboutOpen === true", timeout=5000)
             settle(page)
             a = active(page)
             check("5 About takes focus from the console", a and a["modal"] == "About Ralphy", f"active={a}")
             page.keyboard.press("Escape")
-            wait_flag(page, "aboutOpen", False)
+            page.wait_for_function(f"() => {RELEASE}.aboutOpen === false", timeout=5000)
             settle(page)
             a = active(page)
             check(

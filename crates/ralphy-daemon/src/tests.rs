@@ -1281,6 +1281,7 @@ fn the_release_badge_and_panel_are_pinned_in_the_served_assets() {
     let html = include_str!("../assets/ui/index.html");
     let app = include_str!("../assets/ui/app.js");
     let module = include_str!("../assets/ui/wb-release.js");
+    let dialogs = include_str!("../assets/ui/wb-release-dialogs.js");
     let css = served_css();
 
     // The tag order (app.js seeds from WBRelease.EMPTY at parse time) is
@@ -1290,7 +1291,9 @@ fn the_release_badge_and_panel_are_pinned_in_the_served_assets() {
     // The dot renders the daemon's severity; it must not be computed here.
     assert!(html.contains("class=\"rel-dot\" :class=\"release.severity\""));
     assert!(html.contains("x-show=\"releaseUnread\""));
-    assert!(html.contains("@click=\"openWhatsNew()\""));
+    // The menu row asks the dialogs' own component to open (ADR-0073 D5).
+    assert!(html.contains("$dispatch('workbench:whats-new-open')"));
+    assert!(html.contains("@workbench:whats-new-open.window=\"openWhatsNew()\""));
     assert!(html.contains("x-bind=\"scrim('whatsNewOpen', () => closeWhatsNew())\""));
     // The whole gap, not just the newest release.
     assert!(html.contains("x-for=\"entry in release.gap\""));
@@ -1306,9 +1309,15 @@ fn the_release_badge_and_panel_are_pinned_in_the_served_assets() {
         app.contains("window.WBRelease.isSticky(this.release)"),
         "an urgent release must survive a dismissal"
     );
+    // The panel's flag is in wb-release-dialogs.js; the shortcuts ask the
+    // modal stack by its path (ADR-0073 D5).
     assert!(
-        app.contains("if (this.whatsNewOpen) return true;"),
+        app.contains("if (this.modalOpen(window.WBReleaseDialogs.whatsNewFlag)) return true;"),
         "the panel must join the focus trap"
+    );
+    assert!(
+        dialogs.contains("whatsNewFlag: \"whatsNewOpen\""),
+        "the flag path the shortcuts ask is the one the panel gives to scrim()"
     );
 
     assert!(module.contains("fetch('/api/release'"));

@@ -13,15 +13,35 @@ import { loadComponent, loadShell, UI, withoutComments } from "./harness.mjs";
 // Comments dropped first: their prose quotes tags.
 const HTML = withoutComments(readFileSync(join(UI, "index.html"), "utf8"));
 
+// The index of the `</div>` that closes the `<div` at `from`.
+const divEnd = (from) => {
+  const tags = /<div\b|<\/div>/g;
+  tags.lastIndex = from;
+  let depth = 0;
+  for (let t = tags.exec(HTML); t; t = tags.exec(HTML)) {
+    depth += t[0] === "</div>" ? -1 : 1;
+    if (depth === 0) return t.index;
+  }
+  return HTML.length;
+};
+
+// Each element that holds a component nested in `shell()`, and the text it spans.
+// One element may hold several scrims (wbReleaseDialogs holds two).
+const COMPONENTS = Array.from(HTML.matchAll(/<div [^<>]*x-data="(wb\w+)"/g), (m) => ({
+  name: m[1],
+  start: m.index,
+  end: divEnd(m.index),
+}));
+
 // The scrims in document order, which is the order Alpine registers their
-// window listeners in. `component` is the Alpine component whose `x-data`
-// element holds the scrim, or null for a scrim of `shell()`.
+// window listeners in. `component` is the innermost Alpine component whose
+// `x-data` element holds the scrim, or null for a scrim of `shell()`.
 const SCRIMS = Array.from(
   HTML.matchAll(/<div class="modal-scrim" x-cloak x-bind="(scrim\('([^']+)'[^"]*)">/g),
   (m) => ({
     expr: m[1],
     path: m[2],
-    component: HTML.slice(0, m.index).match(/x-data="(\w+)"[^<>]*>\s*$/)?.[1] || null,
+    component: COMPONENTS.filter((c) => c.start < m.index && m.index < c.end).at(-1)?.name || null,
   }),
 );
 
@@ -86,6 +106,19 @@ test("Escape closes every modal, Settings and Security included", () => {
     "addProject.open",
     "addHost.open",
   ]);
+  // A flag is set on the scope that holds it, so each scrim must be read in its
+  // own component.
+  assert.deepEqual(
+    Object.fromEntries(SCRIMS.filter((s) => s.component).map((s) => [s.path, s.component])),
+    {
+      settingsOpen: "wbSettingsDialog",
+      securityOpen: "wbSecurityDialog",
+      whatsNewOpen: "wbReleaseDialogs",
+      aboutOpen: "wbReleaseDialogs",
+      "addProject.open": "wbAddProjectDialog",
+      "addHost.open": "wbHostsDialog",
+    },
+  );
   for (const scrim of SCRIMS) {
     const { path } = scrim;
     const view = page();
