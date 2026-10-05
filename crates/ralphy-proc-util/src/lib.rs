@@ -206,10 +206,9 @@ pub fn kill_tree_by_pid(pid: u32) {
 
 /// The Windows arm of [`kill_tree_by_pid`]: snapshot the process table, walk the
 /// parent-PID edges breadth-first from `root`, and terminate every process found
-/// (root first, so a live root can't spawn replacements mid-walk). PID-reuse
-/// caveat: a stale parent-PID pointing at a reused `root` would drag an unrelated
-/// process into the walk — the same exposure `taskkill /T` had, accepted for the
-/// same reason (the window is spawn-to-teardown of one gate command).
+/// (root first, so a live root can't spawn replacements mid-walk). A recorded
+/// parent pid can be a reused number; [`tree_to_kill`] holds the rules that keep
+/// such a process out of the walk.
 #[cfg(windows)]
 #[allow(
     unsafe_code,
@@ -244,20 +243,7 @@ fn kill_tree_windows(root: u32) {
         CloseHandle(snap);
     }
 
-    // Breadth-first over parent edges. `doomed` doubles as the visited set — a
-    // recycled parent PID can make the edges cyclic, so membership is checked
-    // before pushing.
-    let mut doomed: Vec<u32> = vec![root];
-    let mut queue: Vec<u32> = vec![root];
-    while let Some(parent) = queue.pop() {
-        for &(pid, ppid) in &table {
-            if ppid == parent && pid != parent && !doomed.contains(&pid) {
-                doomed.push(pid);
-                queue.push(pid);
-            }
-        }
-    }
-
+    let doomed = tree_to_kill(root, &table, std::process::id(), process_created);
     for pid in doomed {
         // SAFETY: the handle is checked for null before use and closed once.
         unsafe {
@@ -268,6 +254,85 @@ fn kill_tree_windows(root: u32) {
                 CloseHandle(handle);
             }
         }
+    }
+}
+
+/// The pids a tree kill rooted at `root` ends: `root`, then breadth-first every
+/// process whose recorded parent is already in the set. `table` is the
+/// (pid, parent pid) snapshot; `created` gives a process's creation time, or
+/// `None` when it cannot be read (the process is gone, or access is denied).
+///
+/// A recorded parent pid is only a number, and Windows reuses numbers. Two
+/// rules keep a reused number from pulling in a process that is not a child:
+/// - `me`, the process doing the kill, is never in the set, and the walk does
+///   not go through it. A daemon's recorded parent is the launcher that exited
+///   right after starting it; when a console process later got that same pid
+///   and was closed, the walk ended the daemon itself, with no line in its log
+///   (measured 2026-10-05: three deaths in three days).
+/// - A process created before the parent it records is not that parent's
+///   child, so the edge is skipped. When either time is unknown the edge is
+///   kept, because a dead root has no time to compare and its orphans must
+///   still be ended.
+///
+/// The set doubles as the visited list: a reused parent pid can make the edges
+/// cyclic, so membership is checked before a pid is added.
+#[cfg(any(windows, test))]
+fn tree_to_kill(
+    root: u32,
+    table: &[(u32, u32)],
+    me: u32,
+    created: impl Fn(u32) -> Option<u64>,
+) -> Vec<u32> {
+    if root == me {
+        return Vec::new();
+    }
+    let mut doomed: Vec<u32> = vec![root];
+    let mut queue: Vec<u32> = vec![root];
+    while let Some(parent) = queue.pop() {
+        let parent_created = created(parent);
+        for &(pid, ppid) in table {
+            if ppid != parent || pid == parent || pid == me || doomed.contains(&pid) {
+                continue;
+            }
+            let older_than_parent = matches!(
+                (parent_created, created(pid)),
+                (Some(parent_at), Some(child_at)) if child_at < parent_at
+            );
+            if older_than_parent {
+                continue;
+            }
+            doomed.push(pid);
+            queue.push(pid);
+        }
+    }
+    doomed
+}
+
+/// When `pid` was created, in 100 ns units since 1601 (a `FILETIME`), or `None`
+/// when the process cannot be opened.
+#[cfg(windows)]
+#[allow(unsafe_code, reason = "FFI: OpenProcess and GetProcessTimes")]
+fn process_created(pid: u32) -> Option<u64> {
+    use windows_sys::Win32::Foundation::{CloseHandle, FILETIME};
+    use windows_sys::Win32::System::Threading::{
+        GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    // SAFETY: the handle is checked for null before use and closed once; the
+    // four FILETIMEs are valid out pointers.
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if handle.is_null() {
+            return None;
+        }
+        let zero = FILETIME {
+            dwLowDateTime: 0,
+            dwHighDateTime: 0,
+        };
+        let (mut created, mut exited, mut kernel, mut user) = (zero, zero, zero, zero);
+        let ok = GetProcessTimes(handle, &mut created, &mut exited, &mut kernel, &mut user);
+        CloseHandle(handle);
+        (ok != 0)
+            .then(|| (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime))
     }
 }
 

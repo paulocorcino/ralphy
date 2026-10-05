@@ -591,3 +591,33 @@ fn a_parent_that_leaves_a_detached_child() {
 fn a_child_that_waits_a_minute() {
     std::thread::sleep(std::time::Duration::from_secs(60));
 }
+
+/// The process doing a tree kill is never ended by it, nor reached through it:
+/// a console whose pid reused the daemon launcher's number must not take the
+/// daemon (and the daemon's own children) down with it.
+#[test]
+fn a_tree_kill_never_ends_the_process_doing_it() {
+    // 10 is the console being closed; 20 is the caller, whose recorded parent
+    // is a launcher that exited and whose pid 10 now names; 30 is the caller's
+    // child; 40 is the console's real child.
+    let table = [(10, 1), (20, 10), (30, 20), (40, 10)];
+    let doomed = super::tree_to_kill(10, &table, 20, |_| None);
+    assert_eq!(doomed, vec![10, 40]);
+    assert!(super::tree_to_kill(20, &table, 20, |_| None).is_empty());
+}
+
+/// A process created before the parent it records is not that parent's child:
+/// the number was reused. A real child, and a child whose time is unknown,
+/// stay in the walk.
+#[test]
+fn a_process_older_than_its_recorded_parent_is_not_its_child() {
+    let table = [(10, 1), (20, 10), (30, 10), (40, 10)];
+    let created = |pid: u32| match pid {
+        10 => Some(500),
+        20 => Some(100), // older than 10: 10 reused 20's dead parent number
+        30 => Some(900),
+        _ => None,
+    };
+    let doomed = super::tree_to_kill(10, &table, 99, created);
+    assert_eq!(doomed, vec![10, 30, 40]);
+}
