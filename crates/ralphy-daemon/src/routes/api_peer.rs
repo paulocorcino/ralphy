@@ -260,10 +260,9 @@ pub(crate) fn peer_routes(s: &RouterShared) -> Router {
                 let daemon_id = s.daemon_id.clone();
                 let sessions = s.sessions.clone();
                 let audit = s.audit.clone();
-                move |device: Option<axum::Extension<crate::device::DeviceId>>,
-                      headers: axum::http::HeaderMap,
+                move |caller: Option<axum::Extension<super::audit_layer::Caller>>,
                       body: Json<protocol::Command>| {
-                    let who = super::audit_layer::SocketAudit::of(audit.clone(), device, &headers);
+                    let who = super::audit_layer::SocketAudit::of(audit.clone(), caller);
                     peer_command_route(
                         registry.clone(),
                         daemon_id.clone(),

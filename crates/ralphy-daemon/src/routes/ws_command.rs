@@ -22,7 +22,7 @@ use super::audit_layer::SocketAudit;
 use super::{read_peer_store, send_command};
 use super::{request_may_carry_a_secret, RouterShared};
 use crate::protocol::{Command, Frame};
-use crate::{device, dispatch, fleet, peer, protocol, registry, session};
+use crate::{dispatch, fleet, peer, protocol, registry, session};
 
 /// `GET /ws/command`: one remote command per connection. Read the first frame; a
 /// `Frame::Command{verb}` naming a blessed [`dispatch::Verb`] for a registered
@@ -455,13 +455,13 @@ pub(crate) fn command_routes(s: &RouterShared) -> Router {
         "/ws/command",
         get(
             move |ws: WebSocketUpgrade,
-                  device: Option<axum::Extension<device::DeviceId>>,
+                  caller: Option<axum::Extension<super::audit_layer::Caller>>,
                   headers: axum::http::HeaderMap| {
                 let ws = ws
                     .max_message_size(crate::tree::MAX_COMMAND_BYTES)
                     .max_frame_size(crate::tree::MAX_COMMAND_BYTES);
                 let secret_ok = request_may_carry_a_secret(&headers);
-                let who = SocketAudit::of(audit.clone(), device, &headers);
+                let who = SocketAudit::of(audit.clone(), caller);
                 let registry_path = registry.clone();
                 let shutdown = shutdown.clone();
                 let daemon_id = daemon_id.clone();

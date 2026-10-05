@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use axum::extract::{DefaultBodyLimit, Query};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
@@ -12,7 +12,7 @@ use serde_json::json;
 
 use super::RouterShared;
 use crate::audit::facts::ClientFacts;
-use crate::audit::{read, Audit, ServerFacts};
+use crate::audit::{read, Audit};
 use crate::device::DeviceId;
 use crate::registry;
 
@@ -59,17 +59,17 @@ pub(crate) fn audit_routes(s: &RouterShared) -> Router {
         .route(
             "/api/device/facts",
             post(
-                move |device: Option<Extension<DeviceId>>,
-                      headers: HeaderMap,
+                move |caller: Option<Extension<super::audit_layer::Caller>>,
                       Json(client): Json<ClientFacts>| {
                     let audit = facts_audit.clone();
                     async move {
                         // No device yet: the page's first `/api/session` has
                         // not answered. The page sends again (D5).
-                        let Some(Extension(device)) = device else {
+                        let Some((device, server)) =
+                            caller.and_then(|Extension(c)| Some((c.device?, c.server)))
+                        else {
                             return StatusCode::CONFLICT;
                         };
-                        let server = ServerFacts::from_headers(&headers);
                         // The file write is short; it runs off the async
                         // workers like the other store writes.
                         let written = tokio::task::spawn_blocking(move || {

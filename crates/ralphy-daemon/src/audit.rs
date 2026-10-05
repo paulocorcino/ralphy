@@ -93,6 +93,11 @@ pub struct ServerFacts {
     /// Every `Sec-CH-UA*` header, by name without the prefix.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub client_hints: Vec<(String, String)>,
+    /// The address at the other end of the TCP connection. Through the dev
+    /// tunnel it is the tunnel's loopback leg; on a direct connection it is
+    /// the client. None on the Unix socket.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peer: Option<String>,
 }
 
 impl ServerFacts {
@@ -119,7 +124,13 @@ impl ServerFacts {
             user_agent: read("user-agent"),
             accept_language: read("accept-language"),
             client_hints,
+            peer: None,
         }
+    }
+
+    /// The client's address: the front's `X-Real-IP`, else the TCP peer.
+    pub fn address(&self) -> Option<String> {
+        self.real_ip.clone().or_else(|| self.peer.clone())
     }
 }
 
@@ -291,6 +302,7 @@ impl Audit {
         event.holder = client.holder.as_ref().map(|h| h.as_str().to_string());
         event.changed = changed;
         event.normalized = Some(normalized);
+        event.ip = server.address();
         event.server = Some(server);
         event.client = Some(client);
         self.record(&event);

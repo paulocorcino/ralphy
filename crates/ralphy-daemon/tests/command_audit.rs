@@ -25,9 +25,15 @@ async fn serve(registry_path: PathBuf) -> u16 {
         rx,
         AuthState::localhost(),
     );
+    // As `serve.rs` serves the TCP listener: with the connection's address.
     tokio::spawn(async move {
         let _shutdown = tx;
-        axum::serve(listener, app).await.unwrap();
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .await
+        .unwrap();
     });
     port
 }
@@ -102,4 +108,8 @@ async fn a_command_that_changes_state_is_recorded_with_its_device() {
     assert_eq!(commands[0]["repo"], "nope");
     assert_eq!(commands[0]["device"], device.as_str());
     assert_eq!(commands[0]["actor"], "device");
+    assert_eq!(
+        commands[0]["ip"], "127.0.0.1",
+        "a direct connection with no front is recorded with its own address"
+    );
 }

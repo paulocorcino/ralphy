@@ -211,10 +211,15 @@ pub(crate) async fn serve(
     });
     let served_tcp = async {
         match tcp {
-            Some(listener) => axum::serve(listener, app.clone())
-                .with_graceful_shutdown(stopped(stop.clone()))
-                .await
-                .context("serving the daemon listener"),
+            // The connection's address reaches the audit log (ADR-0074).
+            Some(listener) => axum::serve(
+                listener,
+                app.clone()
+                    .into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .with_graceful_shutdown(stopped(stop.clone()))
+            .await
+            .context("serving the daemon listener"),
             None => Ok(()),
         }
     };

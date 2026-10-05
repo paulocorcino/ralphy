@@ -184,6 +184,7 @@
         "model": "Adreno (TM) 610",
         "vendor": "qualcomm"
       },
+      "ip": "203.0.113.10",
       "model_hint": {
         "source": "hint",
         "value": "moto g(30)"

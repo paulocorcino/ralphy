@@ -101,7 +101,9 @@ again. When two sources disagree, the line lists the field in `conflicts`.
 The normalizer does not pick one silently.
 
 **D7. No outside call finds a device fact.** The public address comes from
-the front's `X-Real-IP` only. No address lookup service, no STUN server, no
+the front's `X-Real-IP`. A request with no front (the operator's own
+computer, or a computer on the local network) is recorded with the address
+at the other end of its TCP connection. No address lookup service, no STUN server, no
 GeoIP database. The `connect-src 'self'` policy does not change.
 
 **D8. A request with an `Authorization` header records the actor

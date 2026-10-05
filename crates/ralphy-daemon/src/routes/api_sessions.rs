@@ -234,13 +234,12 @@ pub(crate) fn session_routes(s: &RouterShared) -> Router {
                 let audit = s.audit.clone();
                 move |ws: WebSocketUpgrade,
                       q: Query<SessionQuery>,
-                      device: Option<axum::Extension<crate::device::DeviceId>>,
-                      headers: axum::http::HeaderMap| {
+                      caller: Option<axum::Extension<super::audit_layer::Caller>>| {
                     let sessions = sessions.clone();
                     let registry_path = registry.clone();
                     let shutdown = shutdown.clone();
                     let host = host.clone();
-                    let who = super::audit_layer::SocketAudit::of(audit.clone(), device, &headers);
+                    let who = super::audit_layer::SocketAudit::of(audit.clone(), caller);
                     async move {
                         session_ws_upgrade(ws, q, sessions, registry_path, host, shutdown, who)
                             .await

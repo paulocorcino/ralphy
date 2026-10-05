@@ -3,9 +3,10 @@
 //! login, the logout and every request that changes state. It runs inside the
 //! auth guard, so it sees only requests the guard let through.
 
+use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::extract::State;
+use axum::extract::{ConnectInfo, State};
 use axum::http::{header, HeaderMap, Method, StatusCode};
 use axum::response::Response;
 
@@ -66,6 +67,26 @@ pub(crate) fn command_event(
     }
 }
 
+/// Who sent a request, as the audit layer found it: it reads the request
+/// once and hands this to the handlers that write their own lines.
+#[derive(Clone, Debug)]
+pub(crate) struct Caller {
+    pub(crate) device: Option<DeviceId>,
+    pub(crate) actor: Actor,
+    pub(crate) server: ServerFacts,
+}
+
+impl Caller {
+    /// A request the audit layer did not see.
+    fn unknown() -> Caller {
+        Caller {
+            device: None,
+            actor: Actor::Unknown,
+            server: ServerFacts::default(),
+        }
+    }
+}
+
 /// Who opened a socket, for the lines it writes in the audit log: the command
 /// socket's verbs and the console socket's launches and take-overs.
 #[derive(Clone)]
@@ -77,18 +98,14 @@ pub(crate) struct SocketAudit {
 }
 
 impl SocketAudit {
-    /// The caller of the request whose `headers` are given.
-    pub(crate) fn of(
-        audit: Arc<Audit>,
-        device: Option<axum::Extension<DeviceId>>,
-        headers: &HeaderMap,
-    ) -> SocketAudit {
-        let device = device.map(|axum::Extension(id)| id);
+    /// The caller the audit layer found for this request.
+    pub(crate) fn of(audit: Arc<Audit>, caller: Option<axum::Extension<Caller>>) -> SocketAudit {
+        let caller = caller.map_or_else(Caller::unknown, |axum::Extension(c)| c);
         SocketAudit {
             audit,
-            device,
-            actor: actor_of(headers, device),
-            ip: ServerFacts::from_headers(headers).real_ip,
+            device: caller.device,
+            actor: caller.actor,
+            ip: caller.server.address(),
         }
     }
 
@@ -183,7 +200,17 @@ pub(crate) async fn audit_layer(
     }
     let actor = actor_of(req.headers(), device);
     let method = req.method().clone();
-    let server = ServerFacts::from_headers(req.headers());
+    let mut server = ServerFacts::from_headers(req.headers());
+    // Present on the TCP listener only (`serve.rs`).
+    server.peer = req
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ConnectInfo(addr)| addr.ip().to_string());
+    req.extensions_mut().insert(Caller {
+        device,
+        actor,
+        server: server.clone(),
+    });
 
     let mut resp = next.run(req).await;
 
@@ -233,7 +260,7 @@ fn event_for(
             e.method = Some(method.to_string());
             e.path = Some(path.to_string());
             e.status = Some(status.as_u16());
-            e.ip = server.real_ip;
+            e.ip = server.address();
             Some(e)
         }
     }
