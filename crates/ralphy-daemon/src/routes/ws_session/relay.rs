@@ -1,6 +1,8 @@
 //! The peer relay for `/ws/session`: the query the owning daemon receives
 //! and the byte-for-byte bridge between the browser and the peer socket.
 
+use std::time::Instant;
+
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::http::StatusCode;
 use axum::response::Response;
@@ -8,9 +10,15 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::io::AsyncWriteExt;
 
 use super::refuse::Refuser;
+use super::traffic::{Channel, Traffic, DROPPED};
 use super::SessionQuery;
 use crate::peer;
 use crate::routes::encode_query_value;
+use crate::session;
+
+/// The `end` of a relayed socket the peer closed: why it closed is in the
+/// peer's own log line.
+const PEER_CLOSED: &str = "peer-closed";
 
 pub(crate) fn peer_session_query(query: &SessionQuery, slug: &str) -> String {
     if let Some(id) = query.id {
@@ -94,7 +102,8 @@ pub(crate) async fn relay_to_peer(
 ) -> Response {
     match peer::client::session(peer, peer_query, me).await {
         Ok(peer_socket) => {
-            ws.on_upgrade(move |socket| peer_session_ws(socket, peer_socket, shutdown))
+            let subject = format!("peer {}", peer.environment);
+            ws.on_upgrade(move |socket| peer_session_ws(socket, peer_socket, subject, shutdown))
         }
         Err(peer::client::SocketError::Peer(status)) => refuser.refuse(
             ws,
@@ -109,23 +118,39 @@ pub(crate) async fn relay_to_peer(
     }
 }
 
+/// The relay cannot tell a replay from live output without decoding the
+/// frames, so its traffic summary counts every byte from the peer as live.
+/// The peer forwards its own pings to the browser and the browser's pongs come
+/// back here, so the round trip timed here is the browser's leg only.
 pub(crate) async fn peer_session_ws(
     mut browser: WebSocket,
     mut peer: peer::client::PeerSocket,
+    subject: String,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) {
+    let mut traffic = Traffic::new(Channel::Peer, subject, Instant::now());
+    let mut end = DROPPED;
     loop {
         tokio::select! {
-            _ = shutdown.changed() => break,
+            _ = shutdown.changed() => {
+                end = session::EndReason::DaemonShutdown.as_wire();
+                break;
+            }
             incoming = browser.recv() => {
                 let Some(Ok(message)) = incoming else {
                     close_peer_session(&mut peer).await;
                     break;
                 };
                 let outbound = match message {
-                    Message::Binary(bytes) => tokio_tungstenite::tungstenite::Message::Binary(bytes),
+                    Message::Binary(bytes) => {
+                        traffic.inbound(bytes.len());
+                        tokio_tungstenite::tungstenite::Message::Binary(bytes)
+                    }
                     Message::Ping(bytes) => tokio_tungstenite::tungstenite::Message::Ping(bytes),
-                    Message::Pong(bytes) => tokio_tungstenite::tungstenite::Message::Pong(bytes),
+                    Message::Pong(bytes) => {
+                        traffic.pong_received(&bytes, Instant::now());
+                        tokio_tungstenite::tungstenite::Message::Pong(bytes)
+                    }
                     Message::Close(_) => {
                         close_peer_session(&mut peer).await;
                         break;
@@ -142,10 +167,17 @@ pub(crate) async fn peer_session_ws(
                     break;
                 };
                 let outbound = match message {
-                    tokio_tungstenite::tungstenite::Message::Binary(bytes) => Message::Binary(bytes),
-                    tokio_tungstenite::tungstenite::Message::Ping(bytes) => Message::Ping(bytes),
+                    tokio_tungstenite::tungstenite::Message::Binary(bytes) => {
+                        traffic.live(bytes.len());
+                        Message::Binary(bytes)
+                    }
+                    tokio_tungstenite::tungstenite::Message::Ping(bytes) => {
+                        traffic.ping_sent(&bytes, Instant::now());
+                        Message::Ping(bytes)
+                    }
                     tokio_tungstenite::tungstenite::Message::Pong(bytes) => Message::Pong(bytes),
                     tokio_tungstenite::tungstenite::Message::Close(_) => {
+                        end = PEER_CLOSED;
                         let _ = browser.send(Message::Close(None)).await;
                         break;
                     }
@@ -158,6 +190,7 @@ pub(crate) async fn peer_session_ws(
             }
         }
     }
+    traffic.log(end, Instant::now());
 }
 
 pub(crate) async fn close_peer_session(peer: &mut peer::client::PeerSocket) {

@@ -9,6 +9,7 @@ mod join;
 mod peer_console;
 mod refuse;
 mod relay;
+mod traffic;
 mod upgrade;
 
 pub(crate) use bridge::*;
