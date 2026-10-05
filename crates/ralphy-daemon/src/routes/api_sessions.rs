@@ -192,7 +192,7 @@ pub(crate) async fn close_session_route(
                         .into_response(),
                     Err(error) => (
                         StatusCode::BAD_GATEWAY,
-                        fleet::route::peer_unreachable(peer, &format!("{error:#}")),
+                        peer::client::transport_failed(peer, format!("{error:#}")).await,
                     )
                         .into_response(),
                 };

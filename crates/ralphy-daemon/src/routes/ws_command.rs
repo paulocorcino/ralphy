@@ -309,7 +309,7 @@ async fn relay_to_peer(peer: &peer::PeerDescriptor, command: &Command) -> serde_
         }),
         Err(e) => serde_json::json!({
             "status": "error",
-            "message": fleet::peer_unreachable(peer, &format!("{e:#}")),
+            "message": peer::client::transport_failed(peer, format!("{e:#}")).await,
         }),
     }
 }

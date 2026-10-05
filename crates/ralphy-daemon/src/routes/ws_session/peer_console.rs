@@ -134,7 +134,7 @@ impl PeerConsole<'_> {
                 return refuser.refuse(
                     ws,
                     StatusCode::BAD_GATEWAY,
-                    fleet::route::peer_unreachable(peer, &format!("{error:#}")),
+                    peer::client::transport_failed(peer, format!("{error:#}")).await,
                 );
             }
         };
