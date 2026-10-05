@@ -1370,12 +1370,16 @@ window.WBConsole = (function () {
   // Each peer's fleet group by daemon id, and the shell's wake action, fed by
   // the shell (`ingestFleet`) after every fleet read. The shell owns the fleet;
   // this is only its last answer, for the placeholders of peer projects.
+  // `readFleet` is the shell's fleet read on demand, for a window that saw
+  // its peer fail.
   const peerGroups = new Map();
   let wakePeer = null;
+  let readFleet = null;
   function ingestFleet(groups, hooks) {
     peerGroups.clear();
     for (const g of groups || []) if (g && g.daemon && !g.local) peerGroups.set(g.daemon, g);
     if (typeof hooks?.wake === "function") wakePeer = hooks.wake;
+    if (typeof hooks?.read === "function") readFleet = hooks.read;
     for (const win of [...wins]) if (typeof win._peerRefresh === "function") win._peerRefresh();
   }
 
@@ -5117,6 +5121,18 @@ window.WBConsole = (function () {
     return "park-as-watcher";
   }
 
+  // Whether a reattach may open a socket at all (ADR-0070 D2, event 7). A
+  // socket to a peer the fleet calls down fails and retries, so the window
+  // holds instead, and the fleet read that calls the peer back releases it.
+  // `decision` is "connect" for a window's first socket, else
+  // `reconnectDecision`'s answer. Returns it unchanged, or "hold".
+  // No group (a local project, the popup, a fleet not read yet) changes
+  // nothing, and a launch (no id) is held by its placeholder (`peerHeld`).
+  function peerGate({ decision, group, id }) {
+    if (id == null || !group || decision === "give-up") return decision;
+    return window.WBFleet.available(group) ? decision : "hold";
+  }
+
   // The terminal's surface, ADR-0035's palette. xterm.js takes no CSS variables
   // (WebGL paints the glyphs), so these mirror :root in styles.css and must
   // move with it — the lockstep `wb-monaco.js` keeps.
@@ -5773,6 +5789,27 @@ window.WBConsole = (function () {
     // id and print a second "[session closed]".
     let ended = false;
     let lastResumeAt = 0;
+    // True while the fleet calls this window's peer down: no socket, no timer.
+    // The session lives on the peer, so a hold never gives up.
+    let held = false;
+    const peerGroup = () => (typeof opts.peerGroup === "function" ? opts.peerGroup() : null);
+
+    function hold(group) {
+      held = true;
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+      if (typeof opts.onPeerHold === "function") opts.onPeerHold(group);
+    }
+
+    function release() {
+      held = false;
+      retryDelay = 0;
+      failedReopens = 0;
+      if (typeof opts.onPeerBack === "function") opts.onPeerBack();
+      connect({ id: currentSessionId, repo: currentRepo, watch: watching });
+    }
 
     function giveUp() {
       ended = true;
@@ -5895,17 +5932,20 @@ window.WBConsole = (function () {
       ws.onclose = (event) => {
         if (leaving || switching) return;
         if (!opened) failedReopens += 1;
-        switch (
-          reconnectDecision({
-            code: event?.code,
-            wasClean: !!event?.wasClean,
-            opened,
-            everOpened,
-            announced,
-            idKnown: currentSessionId != null,
-            failedReopens,
-          })
-        ) {
+        const decision = reconnectDecision({
+          code: event?.code,
+          wasClean: !!event?.wasClean,
+          opened,
+          everOpened,
+          announced,
+          idKnown: currentSessionId != null,
+          failedReopens,
+        });
+        switch (peerGate({ decision, group: peerGroup(), id: currentSessionId })) {
+          case "hold":
+            if (!opened) failedReopens -= 1;
+            hold(peerGroup());
+            return;
           case "give-up":
             giveUp();
             return;
@@ -5923,6 +5963,8 @@ window.WBConsole = (function () {
           default:
             if (retryDelay === 0) {
               term.write("\r\n[connection lost — reconnecting…]\r\n");
+              // The fleet may already know why; its answer can hold this window.
+              if (typeof opts.readFleet === "function") opts.readFleet();
             }
             scheduleReconnect();
         }
@@ -5962,7 +6004,8 @@ window.WBConsole = (function () {
         ws.send(encodeResize(rows, cols));
     });
 
-    connect(opts);
+    if (peerGate({ decision: "connect", group: peerGroup(), id: opts.id }) === "hold") hold(peerGroup());
+    else connect(opts);
 
     return {
       term,
@@ -6024,6 +6067,12 @@ window.WBConsole = (function () {
       // vendor CLI (`reconnectDecision` R1, `takeOver`).
       resume(stale) {
         if (leaving || ended || currentSessionId == null) return false;
+        // Held: the fleet decides, so ask it rather than dial a peer it calls
+        // down. Its answer reaches `peerRefresh`.
+        if (held) {
+          if (typeof opts.readFleet === "function") opts.readFleet();
+          return false;
+        }
         const now = Date.now();
         if (now - lastResumeAt < RESUME_DEBOUNCE_MS) return false;
         // A pending backoff is brought forward. `retryDelay` is kept: it stops
@@ -6066,9 +6115,27 @@ window.WBConsole = (function () {
         if (typeof opts.onResume === "function") opts.onResume();
         connect({ id: currentSessionId, repo: currentRepo, takeover: true });
       },
+      // A fleet read arrived. A held window goes back when its peer is
+      // available, or when the fleet no longer lists it (the ordinary retry
+      // decides then). A window in its backoff holds when the peer is down.
+      peerRefresh() {
+        if (leaving || ended) return;
+        const group = peerGroup();
+        const gate = peerGate({ decision: "reconnect", group, id: currentSessionId });
+        if (held) {
+          if (gate === "hold") opts.onPeerHold?.(group);
+          else release();
+          return;
+        }
+        if (retryTimer && gate === "hold") hold(group);
+      },
       // `reason` (see `encodeDetach`) tells the daemon why the socket closes.
       dispose(reason) {
         leaving = true;
+        if (held) {
+          held = false;
+          if (typeof opts.onPeerBack === "function") opts.onPeerBack();
+        }
         if (retryTimer) {
           clearTimeout(retryTimer);
           retryTimer = null;
@@ -6411,6 +6478,44 @@ window.WBConsole = (function () {
       if (hintEl) hintEl.textContent = "";
     }
 
+    // A held window's strip: the fleet's sentence for the peer, its action, and
+    // the daemon's diagnosis under Details. Built once, then reworded on each
+    // fleet read.
+    const peerDaemon = window.WBFleet?.refDaemon(repo) || "";
+    const PEER_BUTTON = { wake: "Wake", retry: "Try again" };
+    const showPeerDown = (group) => {
+      let strip = win.querySelector(".session-peer-down");
+      if (!strip) {
+        strip = document.createElement("div");
+        strip.className = "session-peer-down";
+        const text = document.createElement("span");
+        text.className = "session-peer-down-text";
+        const detail = document.createElement("details");
+        detail.className = "session-detail";
+        const summary = document.createElement("summary");
+        summary.textContent = "Details";
+        detail.append(summary, document.createElement("p"));
+        const btn = document.createElement("button");
+        btn.className = "session-reconnect";
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (btn.dataset.act === "wake") wakePeer?.(peerDaemon);
+          else readFleet?.();
+        });
+        strip.append(text, detail, btn);
+        win.insertBefore(strip, body);
+      }
+      const view = peerOfflineView(group, null, win._deskEnvironment);
+      strip.querySelector(".session-peer-down-text").textContent = view.text;
+      const detail = strip.querySelector(".session-detail");
+      detail.querySelector("p").textContent = view.detail || "";
+      detail.hidden = !view.detail;
+      const btn = strip.querySelector(".session-reconnect");
+      btn.dataset.act = view.action || "";
+      btn.hidden = !PEER_BUTTON[view.action];
+      if (PEER_BUTTON[view.action]) btn.textContent = PEER_BUTTON[view.action];
+    };
+
     // NAMED, not inline: a dormant console rebuilds its terminal (`wakeWindow`)
     // and the rebuild must be wired to the same chrome. Everything closes over
     // `win`, never a particular terminal.
@@ -6498,8 +6603,20 @@ window.WBConsole = (function () {
         }
         win.classList.add("ended");
       },
+      // A peer project: the fleet's word on its peer gates every reattach.
+      ...(peerDaemon
+        ? {
+            peerGroup: () => peerGroups.get(peerDaemon) || null,
+            readFleet: () => readFleet?.(),
+          }
+        : {}),
+      onPeerHold: (group) => showPeerDown(group),
+      onPeerBack: () => win.querySelector(".session-peer-down")?.remove(),
     };
     win._termWiring = termWiring;
+    // The fleet reaches a live window here; `wakeWindow` replaces `_term`, so
+    // it is read at each call. A dormant window has none, and its wake asks.
+    win._peerRefresh = () => win._term?.peerRefresh();
     if (birthDecision({ id: termOpts.id, observed: !!dormancyWatch() }) === "dormant") {
       // The state `sleepWindow` leaves. `_visible` is false until the observer
       // reports: a window not yet reported reads as visible, and any
@@ -7627,6 +7744,7 @@ window.WBConsole = (function () {
     panNudge,
     autoPan,
     reconnectDecision,
+    peerGate,
     endNotice,
     resumeDecision,
     resumeAll,

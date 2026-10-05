@@ -1471,6 +1471,45 @@ test("peerHeld holds a peer project only while its known peer cannot serve it", 
   assert.equal(peerHeld("owner/repo", groups("tunnel-silent")), null);
 });
 
+test("peerGate holds a reattach only while its known peer cannot serve it", () => {
+  const { peerGate } = load();
+  const opening = ["connect", "reconnect", "park-as-watcher"];
+  const down = ["asleep", "unreachable", "tunnel-closed", "tunnel-silent", "unauthorized", "version-mismatch", "refused", "malformed"];
+  for (const decision of opening) {
+    for (const state of down) {
+      assert.equal(peerGate({ decision, group: peerGroup(state), id: 7 }), "hold", `${decision} on ${state}`);
+    }
+    // Reachable, a state not heard yet, and no group: the socket opens.
+    assert.equal(peerGate({ decision, group: peerGroup("reachable"), id: 7 }), decision);
+    assert.equal(peerGate({ decision, group: peerGroup(""), id: 7 }), decision);
+    assert.equal(peerGate({ decision, group: null, id: 7 }), decision);
+    // A launch has no session to hold for: its placeholder says why.
+    assert.equal(peerGate({ decision, group: peerGroup("asleep"), id: null }), decision);
+  }
+  // A session that ended stays ended, whatever the peer does.
+  assert.equal(peerGate({ decision: "give-up", group: peerGroup("asleep"), id: 7 }), "give-up");
+});
+
+test("reconnectDecision reattaches a flaky link and gives up on a deliberate end", () => {
+  const { reconnectDecision } = load();
+  const base = { code: 1006, wasClean: false, opened: true, everOpened: true, announced: null, idKnown: true, failedReopens: 0 };
+  const rows = [
+    ["no id: nothing to reattach to", { idKnown: false }, "give-up"],
+    ["taken over: watch", { announced: "taken-over" }, "park-as-watcher"],
+    ["the daemon said why", { announced: "child-exited" }, "give-up"],
+    ["too many failed opens", { opened: false, failedReopens: 11 }, "give-up"],
+    ["a clean close of an open socket", { wasClean: true }, "give-up"],
+    ["code 1000", { code: 1000 }, "give-up"],
+    ["code 1001", { code: 1001 }, "give-up"],
+    ["a dirty drop of a held session", {}, "reconnect"],
+    ["never opened, first tries", { opened: false, everOpened: false, failedReopens: 2 }, "reconnect"],
+    ["never opened, then watch", { opened: false, everOpened: false, failedReopens: 3 }, "park-as-watcher"],
+  ];
+  for (const [name, change, want] of rows) {
+    assert.equal(reconnectDecision({ ...base, ...change }), want, name);
+  }
+});
+
 // --- resumeDecision: coming back from a suspend --------------------------
 // A tablet's tab is frozen with its sockets still reporting OPEN, and the link
 // is torn down without a close frame, so the exponential backoff never arms.

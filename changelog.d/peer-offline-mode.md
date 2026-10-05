@@ -1,4 +1,4 @@
 ---
 kind: fix
 ---
-When a project on another computer does not answer, the file list now says why, the same way the project list does.
+When another computer stops answering, its consoles say why and wait, then reconnect when it is back.
