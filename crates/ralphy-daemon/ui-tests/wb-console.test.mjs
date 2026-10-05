@@ -1490,23 +1490,25 @@ test("peerGate holds a reattach only while its known peer cannot serve it", () =
   assert.equal(peerGate({ decision: "give-up", group: peerGroup("asleep"), id: 7 }), "give-up");
 });
 
-test("reconnectDecision reattaches a flaky link and gives up on a deliberate end", () => {
+test("reconnectDecision reattaches any unannounced close and gives up only on an announced end", () => {
   const { reconnectDecision } = load();
-  const base = { code: 1006, wasClean: false, opened: true, everOpened: true, announced: null, idKnown: true, failedReopens: 0 };
+  const base = { everOpened: true, announced: null, idKnown: true, failedReopens: 0 };
   const rows = [
     ["no id: nothing to reattach to", { idKnown: false }, "give-up"],
     ["taken over: watch", { announced: "taken-over" }, "park-as-watcher"],
     ["the daemon said why", { announced: "child-exited" }, "give-up"],
-    ["too many failed opens", { opened: false, failedReopens: 11 }, "give-up"],
-    ["a clean close of an open socket", { wasClean: true }, "give-up"],
-    ["code 1000", { code: 1000 }, "give-up"],
-    ["code 1001", { code: 1001 }, "give-up"],
-    ["a dirty drop of a held session", {}, "reconnect"],
-    ["never opened, first tries", { opened: false, everOpened: false, failedReopens: 2 }, "reconnect"],
-    ["never opened, then watch", { opened: false, everOpened: false, failedReopens: 3 }, "park-as-watcher"],
+    ["too many failed opens", { failedReopens: 11 }, "give-up"],
+    ["a drop of a held session", {}, "reconnect"],
+    ["never opened, first tries", { everOpened: false, failedReopens: 2 }, "reconnect"],
+    ["never opened, then watch", { everOpened: false, failedReopens: 3 }, "park-as-watcher"],
   ];
   for (const [name, change, want] of rows) {
     assert.equal(reconnectDecision({ ...base, ...change }), want, name);
+  }
+  // A proxy closes cleanly for a socket the daemon dropped (ADR-0051 §9): the
+  // close itself says nothing, so an unannounced clean close reconnects.
+  for (const close of [{ code: 1000, wasClean: true }, { code: 1001, wasClean: true }, { code: 1005, wasClean: true }]) {
+    assert.equal(reconnectDecision({ ...base, opened: true, ...close }), "reconnect", JSON.stringify(close));
   }
 });
 

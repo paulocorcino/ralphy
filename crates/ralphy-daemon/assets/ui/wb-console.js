@@ -5094,9 +5094,6 @@ window.WBConsole = (function () {
   // reports 1005/wasClean=false even for a served Close frame, so an
   // unannounced dirty close is read as a flaky link.
   function reconnectDecision({
-    code,
-    wasClean,
-    opened,
     everOpened,
     announced,
     idKnown,
@@ -5109,9 +5106,10 @@ window.WBConsole = (function () {
     if (announced === "taken-over") return "park-as-watcher";
     if (announced != null) return "give-up";
     if (failedReopens > MAX_FAILED_REOPENS) return "give-up";
-    // R5: a clean close of a socket that DID open is a deliberate server end
-    // (an older daemon, a proxy closing).
-    if (opened && (wasClean || code === 1000 || code === 1001)) return "give-up";
+    // No rule reads the close code or `wasClean` (ADR-0051 §9). A proxy in
+    // the path can close the page side cleanly, with 1000, for a socket the
+    // daemon dropped, so a clean close is not a deliberate end. Every
+    // deliberate end is announced (R2/R3).
     // R6: held the session before, so a drop is a flaky link.
     if (everOpened) return "reconnect";
     // R7/R8: never opened. Retry a bounded number of times (an F5 racing the
@@ -5932,9 +5930,6 @@ window.WBConsole = (function () {
         if (leaving || switching) return;
         if (!opened) failedReopens += 1;
         const decision = reconnectDecision({
-          code: event?.code,
-          wasClean: !!event?.wasClean,
-          opened,
           everOpened,
           announced,
           idKnown: currentSessionId != null,
