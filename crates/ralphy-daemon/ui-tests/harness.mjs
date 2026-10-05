@@ -241,9 +241,10 @@ export function componentMarkup(html, alpineName) {
 // Loop variables of `x-for` and `$` magics are left to the caller.
 export function bindingNames(expr) {
   const code = expr
-    .replace(/&amp;/g, "&")
+    // `&amp;` last, so `&amp;lt;` stays the text `&lt;`.
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
     .replace(/'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"/g, "''");
   const names = new Set();
   for (const m of code.matchAll(/[A-Za-z_$][\w$]*/g)) {
