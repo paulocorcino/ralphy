@@ -1,6 +1,74 @@
 {
   "releases": [
     {
+      "version": "v0.1.0-rc.39",
+      "date": "2026-10-05",
+      "announce": true,
+      "entries": [
+        {
+          "id": "desk-history",
+          "kind": "feature",
+          "text": "Desk history keeps the last 50 layouts of your consoles: in Settings, restore one, download it as a file, or upload a file.",
+          "headline": "🕘 **Desk history** — restore an earlier layout of your consoles"
+        },
+        {
+          "id": "detached-columns",
+          "kind": "feature",
+          "text": "A detached fence window can open its consoles as columns and keep a note on top."
+        },
+        {
+          "id": "device-audit",
+          "kind": "feature",
+          "text": "Settings → Devices lists each browser that connected, with its system, public address, and the changes it made."
+        },
+        {
+          "id": "popup-relaunch",
+          "kind": "feature",
+          "text": "A console that is not running shows its Relaunch button in a detached fence window too."
+        },
+        {
+          "id": "536",
+          "kind": "fix",
+          "text": "On Windows, a peer whose daemon is stopped is reported after 1 second instead of 2, always as a failed connection."
+        },
+        {
+          "id": "console-born-asleep",
+          "kind": "fix",
+          "text": "After a reload, a console off the screen connects only when you scroll to it, so a reload no longer downloads the text of every console."
+        },
+        {
+          "id": "desk-double-launch",
+          "kind": "fix",
+          "text": "Opening the workbench on two devices at once no longer starts each console twice or moves consoles out of place."
+        },
+        {
+          "id": "desk-failed-load",
+          "kind": "fix",
+          "text": "Consoles keep their saved places when the page could not read the desk at first, for example right after the host wakes up."
+        },
+        {
+          "id": "desk-sync",
+          "kind": "fix",
+          "text": "A change made on one device is no longer undone by another device that was open at the same time."
+        },
+        {
+          "id": "gpu-budget",
+          "kind": "fix",
+          "text": "A desk with many consoles on the screen no longer loses the fast renderer on some of them after a reload."
+        },
+        {
+          "id": "peer-offline-mode",
+          "kind": "fix",
+          "text": "When another computer stops answering, its consoles and file list say why and wait, then come back when it does."
+        },
+        {
+          "id": "peer-unanswered",
+          "kind": "fix",
+          "text": "A console on another computer is no longer started a second time when that computer does not answer during a page load."
+        }
+      ]
+    },
+    {
       "version": "v0.1.0-rc.38",
       "date": "2026-10-04",
       "announce": true,
