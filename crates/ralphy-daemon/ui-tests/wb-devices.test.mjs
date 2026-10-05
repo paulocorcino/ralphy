@@ -49,7 +49,7 @@ test("each line of a device is one plain sentence, newest first", () => {
     rows.map((r) => [r.text, r.ip]),
     [
       ["Command branch.switch in nope", "203.0.113.10"],
-      ["POST /api/sessions/close (404)", "203.0.113.10"],
+      ["Closed a console (refused: 404)", "203.0.113.10"],
       ["Reported its device facts", "203.0.113.10"],
     ],
   );
@@ -91,6 +91,30 @@ test("a take-over is one plain sentence", () => {
     eventLine({ event: "console_takeover", repo: "owner/repo" }),
     "Took over a console in owner/repo",
   );
+});
+
+test("a desk save is named in plain words", () => {
+  const line = load().eventLine({ event: "action", method: "PUT", path: "/api/desk", status: 200 });
+  assert.equal(line, "Saved the desk");
+});
+
+test("a request with no plain name shows its method, path and status", () => {
+  const line = load().eventLine({ event: "action", method: "POST", path: "/api/fleet/nudge", status: 200 });
+  assert.equal(line, "POST /api/fleet/nudge (200)");
+});
+
+test("repeated lines in a row are one row with a count", () => {
+  const out = (at, ip = "a") => ({ event: "logout", at, ip });
+  const rows = load().eventRows(
+    { events: [out("4"), out("3"), out("2", "b"), { event: "login_ok", at: "1", ip: "a" }, out("0")] },
+    (at) => at,
+  );
+  assert.deepEqual(rows, [
+    { when: "4", text: "Signed out · 2 times", ip: "a" },
+    { when: "2", text: "Signed out", ip: "b" },
+    { when: "1", text: "Signed in", ip: "a" },
+    { when: "0", text: "Signed out", ip: "a" },
+  ]);
 });
 
 test("a changed profile names what changed in plain words", () => {

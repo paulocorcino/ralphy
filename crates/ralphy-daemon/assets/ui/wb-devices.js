@@ -45,6 +45,26 @@ window.WBDevices = (function () {
     other: "hardware",
   };
 
+  // The requests that change state, as a person would say them. A request
+  // not named here shows its method and path.
+  const ACTION_NAMES = {
+    "PUT /api/desk": "Saved the desk",
+    "POST /api/desk/new": "Started a new desk",
+    "POST /api/sessions/close": "Closed a console",
+    "POST /api/release/update": "Started an update",
+    "POST /api/security/password": "Changed the password",
+    "POST /api/security/token/remint": "Made a new access token",
+    "POST /api/security/totp/enroll": "Started to link an authenticator app",
+    "POST /api/security/totp/confirm": "Linked an authenticator app",
+    "POST /api/security/totp/revoke": "Removed the authenticator app",
+  };
+
+  function actionLine(e) {
+    const name = ACTION_NAMES[`${e.method} ${e.path}`];
+    if (!name) return `${e.method} ${e.path} (${e.status})`;
+    return e.status >= 200 && e.status < 300 ? name : `${name} (refused: ${e.status})`;
+  }
+
   function withVersion(name, version) {
     return version ? `${name} ${version}` : name;
   }
@@ -86,7 +106,7 @@ window.WBDevices = (function () {
       case "device_profile_changed":
         return `Its device facts changed: ${(e.changed || []).map((c) => CHANGED_NAMES[c] || c).join(", ")}`;
       case "action":
-        return `${e.method} ${e.path} (${e.status})`;
+        return actionLine(e);
       case "command":
         return repo ? `Command ${e.verb} in ${repo}` : `Command ${e.verb}`;
       case "console_launch": {
@@ -100,12 +120,23 @@ window.WBDevices = (function () {
     }
   }
 
+  // Newest first. Lines in a row that say the same thing from the same
+  // address are one row with a count, at the time of the newest; the log
+  // file keeps each line.
   function eventRows(reply, when) {
-    return (reply.events || []).map((e) => ({
-      when: when(e.at),
-      text: eventLine(e),
-      ip: e.ip || (e.server && e.server.real_ip) || "",
-    }));
+    const out = [];
+    for (const e of reply.events || []) {
+      const text = eventLine(e);
+      const ip = e.ip || (e.server && e.server.real_ip) || "";
+      const last = out[out.length - 1];
+      if (last && last.line === text && last.ip === ip) {
+        last.count += 1;
+        last.text = `${text} · ${last.count} times`;
+        continue;
+      }
+      out.push({ when: when(e.at), text, ip, line: text, count: 1 });
+    }
+    return out.map(({ when, text, ip }) => ({ when, text, ip }));
   }
 
   function when(at) {

@@ -1,7 +1,9 @@
 """The audit log of devices (ADR-0074) in three real browser engines.
 
 Scenario 1  each engine (Chromium, Firefox, WebKit) gets its own device cookie
-            and writes one `device_facts` line, normalized to its engine
+            and writes one `device_facts` line with that device, normalized
+            to its engine, although its first page load sends its requests
+            together
 Scenario 2  a reload of the same page writes no second `device_facts` line
 Scenario 3  a request that changes state writes an `action` line with the
             device, and a login with a wrong code writes `login_failed`
@@ -20,6 +22,7 @@ Run: python tests/browser/security/wb_device_audit.py   (exit 0 = all pass)
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -65,8 +68,7 @@ def stop(proc):
         proc.kill()
 
 
-def launch(daemon_dir):
-    empty = tempfile.mkdtemp(prefix="wbaudit_empty_")
+def launch(daemon_dir, empty):
     env = dict(
         os.environ,
         RALPHY_DAEMON_DIR=daemon_dir,
@@ -110,7 +112,8 @@ def main():
     if os.environ.get("RALPHY_TEST_SKIP_BUILD") != "1":
         subprocess.run(["cargo", "build", "-p", "ralphy-cli", "--bin", "ralphy"], cwd=REPO_ROOT, check=True)
     daemon_dir = tempfile.mkdtemp(prefix="wbaudit_reg_")
-    proc = launch(daemon_dir)
+    empty = tempfile.mkdtemp(prefix="wbaudit_empty_")
+    proc = launch(daemon_dir, empty)
     try:
         check("daemon listening", wait_listening(BASE))
         want = {"chromium": "blink", "firefox": "gecko", "webkit": "webkit"}
@@ -148,8 +151,8 @@ def main():
             chromium.evaluate("fetch('/api/desk/new', {method: 'POST'})")
             acts = wait_lines(daemon_dir, lambda l: l.get("event") == "action" and l.get("path") == "/api/desk/new")
             check(
-                "a POST writes an action line with the device",
-                bool(acts) and acts[0].get("device") == devices["chromium"],
+                "a POST writes an action line with the device and the connection's address",
+                bool(acts) and acts[0].get("device") == devices["chromium"] and acts[0].get("ip") == "127.0.0.1",
                 acts[:1],
             )
             chromium.evaluate(
@@ -199,7 +202,7 @@ def main():
             texts = chromium.locator(".device-event").all_inner_texts()
             check(
                 "its activity shows the action, the command and the device facts",
-                any("/api/desk/new" in t for t in texts)
+                any("Started a new desk" in t for t in texts)
                 and any("Command branch.switch in nope" in t for t in texts)
                 and any("Reported its device facts" in t for t in texts),
                 texts,
@@ -211,6 +214,8 @@ def main():
                 browser.close()
     finally:
         stop(proc)
+        for d in (daemon_dir, empty):
+            shutil.rmtree(d, ignore_errors=True)
     print(f"{sum(results)}/{len(results)} passed")
     return 0 if all(results) else 1
 
