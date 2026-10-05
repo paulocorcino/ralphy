@@ -1584,6 +1584,25 @@ test("dormancyDecision sleeps only a live console nobody can see", () => {
   }
 });
 
+// A restored console that reattaches starts asleep, so a console off the
+// viewport never replays its text; the observer's first report wakes the
+// visible ones.
+test("birthDecision starts asleep only a reattach the observer can wake", () => {
+  const { birthDecision } = load();
+  const rows = [
+    ["a reattach starts asleep", { id: 7, observed: true }, "dormant"],
+    ["session id zero is a reattach", { id: 0, observed: true }, "dormant"],
+    // A launch has no id to wake to: it would spawn a second CLI.
+    ["a launch attaches", { id: null, observed: true }, "attach"],
+    ["an undefined id attaches", { id: undefined, observed: true }, "attach"],
+    // Without an IntersectionObserver nothing would ever wake the window.
+    ["no observer: a reattach attaches", { id: 7, observed: false }, "attach"],
+  ];
+  for (const [name, inputs, want] of rows) {
+    assert.equal(birthDecision(inputs), want, name);
+  }
+});
+
 // --- keyboardInset: the virtual keyboard's bite out of the viewport --------
 // iOS pans the visual viewport instead of resizing the layout one, so the
 // keyboard's height has to be measured rather than reported.

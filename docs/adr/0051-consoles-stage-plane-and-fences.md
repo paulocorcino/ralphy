@@ -441,6 +441,13 @@ closes that window itself.)*
   never in the desk or in the tab's detach registry, which holds ids only.)*
 - **The popup opens no consoles**, so its contents are exactly §6's snapshot and
   re-attach stays a well-defined inverse.
+  *(Amended 2026-10-05, tile in the popup. The popup has the fence head's
+  Tile, as a button in its top-right corner. It tiles the consoles into the
+  part of the stage the window shows, below the button, with the same rules
+  as the fence: a maximized, column or locked console is not tiled. The
+  layout stays throwaway, because the popup's sink writes nothing. Notes do
+  not move (ADR-0064 §8), but the tile raises them above the consoles: the
+  popup has no Note menu to bring a covered card back.)*
 - **At most four popups, and one per fence** — detaching an already-detached
   fence focuses its popup. This cap is a **client** constant and deliberately
   does not sit beside §10's daemon-enforced ones: a detach *moves* consoles
@@ -524,6 +531,16 @@ context turned white with a sad face. A console that does not itself fill the
 viewport, while another console does, now counts as off the viewport: it sleeps
 after the same grace period, and it wakes when the cover goes. The rule is the
 same pure fold with one more input.)*
+
+*(Amended 2026-10-05, restored consoles. A window that reattaches to a known
+session (a desk restore, a fence that comes home) starts asleep, and the first
+report of the `IntersectionObserver` wakes it when it is visible. Before, it
+attached at once, replayed the text of its session, and slept after the grace
+period when nobody could see it: measured on three devices, 42% of the console
+bytes went to those replays. The wake is the same ordinary attach as above. A
+launch still attaches at once, because it has no session to wake to. Without
+an `IntersectionObserver` a window attaches at once, because nothing would
+wake it.)*
 
 *(Amended 2026-09-22, the half-open writer. Measured behind a tunnel
 (TunnelDeck for dev tunnels): after a phone switched from wifi to 4G, the tunnel

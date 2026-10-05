@@ -16,6 +16,13 @@ D2  a resume with a stale verdict reopens the awake console: `reconnect`
 D3  closing the page closes the last socket with a bare Close: `client-closed`
 D4  no line of this pass says `dropped`
 
+A second browser loads the same desk, now with a session in each record. It
+has no stored view, so the view lands on the middle of the two windows and
+neither is visible:
+B1  both consoles start asleep, with no terminal
+B2  they open no socket: after the grace period no line names their sessions
+B3  brought into view, a console wakes and attaches
+
 The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
 doubles as the orchestrator on this host).
 
@@ -41,7 +48,7 @@ T.BASE = BASE = f"http://127.0.0.1:{PORT}/"
 VIEW = {"width": 1600, "height": 900}
 # `DORMANT_AFTER_MS` in wb-console.js, plus the time to close and log.
 SLEEP_WAIT_S = 25
-FLOOR = 7  # every check above the floor check; pinned after the first green run
+FLOOR = 11  # every check above the floor check; pinned after the first green run
 
 results = []
 
@@ -107,6 +114,15 @@ STATE = """() => [...document.querySelectorAll('#stage .session-window')].map((w
   dormant: w.classList.contains('dormant'),
   session: w._term?.sessionId ?? w._dormantSession ?? null,
 }))"""
+
+
+def sessions_since(log_path, n):
+    out = []
+    for line in traffic_lines(log_path)[n:]:
+        for word in line.split():
+            if word.startswith("session="):
+                out.append(int(word[len("session=") :]))
+    return out
 
 
 def wait_for_end(log_path, end, timeout):
@@ -179,6 +195,50 @@ def main():
             str(ends(log_path)),
         )
         check("D4 no line says dropped", "dropped" not in ends(log_path), str(ends(log_path)))
+
+        # B1-B3: the desk records now name the two live sessions -------------
+        seen = len(traffic_lines(log_path))
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            page = browser.new_context(viewport=dict(VIEW)).new_page()
+            page.on("pageerror", lambda e: errors.append(str(e)))
+            page.goto(BASE)
+            T.boot(page, want=2)
+            time.sleep(2)
+            state = page.evaluate(STATE)
+            asleep = [w for w in state if w["dormant"] and w["session"] is not None]
+            no_term = page.evaluate(
+                "() => [...document.querySelectorAll('#stage .session-window.dormant')]"
+                ".every((w) => !w._term)"
+            )
+            check("B1 both consoles start asleep", len(asleep) == 2 and no_term, str(state))
+            time.sleep(SLEEP_WAIT_S)
+            named = sessions_since(log_path, seen)
+            check(
+                "B2 they opened no socket",
+                bool(asleep) and not any(w["session"] in named for w in asleep),
+                f"{asleep} {named}",
+            )
+            if asleep:
+                page.evaluate(
+                    "(id) => [...document.querySelectorAll('#stage .session-window')]"
+                    ".find((w) => w._deskId === id).scrollIntoView({ block: 'center', inline: 'center' })",
+                    asleep[0]["id"],
+                )
+            try:
+                page.wait_for_function(
+                    "(id) => { const w = [...document.querySelectorAll('#stage .session-window')]"
+                    ".find((w) => w._deskId === id);"
+                    " return !w.classList.contains('dormant') && w._term?.term?.cols > 0; }",
+                    arg=asleep[0]["id"] if asleep else "",
+                    timeout=10000,
+                )
+                woke = True
+            except Exception:
+                woke = False
+            check("B3 brought into view, it wakes and attaches", woke, str(page.evaluate(STATE)))
+            browser.close()
+        check("no page errors on the second page", not errors, str(errors[:3]))
     finally:
         T.stop(proc)
     for line in traffic_lines(log_path):

@@ -5001,6 +5001,20 @@ window.WBConsole = (function () {
     return "reconnect";
   }
 
+  // Whether a new window attaches at once or starts asleep. A window that
+  // reattaches to a known session starts asleep, and the observer's first
+  // report (it always sends one for a new target) wakes it if it is visible.
+  // Otherwise a restored desk replays the text of every console, then puts the
+  // ones off the viewport to sleep 15 s later: measured on three devices
+  // (2026-10-05), 42% of the console bytes went to those replays.
+  //   "dormant" — build the chrome only;
+  //   "attach"  — build the terminal and open the socket now.
+  // A launch has no id to wake to (`dormancyDecision` D5), and without an
+  // observer nothing would ever wake the window.
+  function birthDecision({ id, observed }) {
+    return id != null && observed ? "dormant" : "attach";
+  }
+
   // The dormancy rule, pure and tabled. The observer supplies `intersecting`,
   // `applyDormancy` owns the grace period. Returns exactly one of
   //   "sleep" — dispose this window's terminal and release its socket;
@@ -6486,9 +6500,20 @@ window.WBConsole = (function () {
       },
     };
     win._termWiring = termWiring;
-    // On the window, not in a local: after a sleep/wake cycle a captured local
-    // would name a disposed terminal.
-    win._term = attachTerminal(body, termWiring);
+    if (birthDecision({ id: termOpts.id, observed: !!dormancyWatch() }) === "dormant") {
+      // The state `sleepWindow` leaves. `_visible` is false until the observer
+      // reports: a window not yet reported reads as visible, and any
+      // `applyDormancy` before the report would wake it.
+      win._dormantSession = termOpts.id;
+      win._dormantWatch = termOpts.watch;
+      win._dormant = true;
+      win._visible = false;
+      win.classList.add("dormant");
+    } else {
+      // On the window, not in a local: after a sleep/wake cycle a captured
+      // local would name a disposed terminal.
+      win._term = attachTerminal(body, termWiring);
+    }
     // The placeholder's relaunch path: carry this window's record, drop the
     // dead window, spawn a FRESH session — never the old `id`/`watch` opts,
     // which would reattach to a torn-down session. `checkout` CHOSEN by the
@@ -6640,7 +6665,7 @@ window.WBConsole = (function () {
         });
         applyInputMode();
       };
-      win._rewire(win._term);
+      if (win._term) win._rewire(win._term);
 
       // Paste. The read has no `execCommand` fallback, so on an insecure origin
       // the button is disabled (`pasteOffered`). An image becomes the same
@@ -7470,22 +7495,11 @@ window.WBConsole = (function () {
     // decides an overlapping pair, and a singleton bypasses it.
     const live = fences.map((x) => (x.id === id ? { id: x.id, rect } : x));
     const ids = new Set(fenceMembership(live, all)[id] || []);
-    // A maximized console is NOT tiled: a tile rect written onto it is
-    // invisible while it REPLACES the pre-maximize rect. Filtered before the
-    // grid so it stays hole-free (#338). A LOCKED console is skipped too.
-    const members = all
-      .filter(
-        (m) =>
-          ids.has(m.id) &&
-          !m.el.classList.contains("maximized") &&
-          !m.el.classList.contains("column") &&
-          !m.el._deskLocked,
-      )
-      .map((m) => m.el);
+    const members = all.filter((m) => ids.has(m.id) && tileable(m.el)).map((m) => m.el);
     // An empty fence is a NO-OP, not an error.
     if (!members.length) return;
     const headH = el.querySelector(".fence-head")?.offsetHeight || 28;
-    const tiles = tileIntoRect(
+    tileWindows(
       {
         left: rect.left,
         top: rect.top + headH,
@@ -7494,6 +7508,42 @@ window.WBConsole = (function () {
       },
       members,
     );
+  }
+
+  // A maximized console is NOT tiled: a tile rect written onto it is
+  // invisible while it REPLACES the pre-maximize rect. Filtered before the
+  // grid so it stays hole-free (#338). A LOCKED console is skipped too.
+  function tileable(win) {
+    return !win.classList.contains("maximized") && !win.classList.contains("column") && !win._deskLocked;
+  }
+
+  // The popup's Tile (ADR-0051 §8, amended 2026-10-05): every console this
+  // window holds, into the part of the stage the window shows. In the popup
+  // `setWin` writes into the null sink, so the layout stays throwaway. Notes
+  // do not move (ADR-0064 §8), but they are raised after the tile, because
+  // the tile focuses each console and the popup has no Note menu to bring a
+  // covered card back. `topInset` is the band the popup's own button sits in,
+  // so no console's title bar lands under it.
+  function tileDetached(topInset = 0) {
+    const st = stage();
+    const ws = workspace();
+    if (!st || !ws) return;
+    const members = [...st.querySelectorAll(".session-window")].filter(tileable);
+    if (!members.length) return;
+    tileWindows(
+      {
+        left: ws.scrollLeft,
+        top: ws.scrollTop + topInset,
+        width: ws.clientWidth,
+        height: Math.max(0, ws.clientHeight - topInset),
+      },
+      members,
+    );
+    for (const card of st.querySelectorAll(".note-card")) focusWin(card);
+  }
+
+  function tileWindows(area, members) {
+    const tiles = tileIntoRect(area, members);
     members.forEach((win, i) => {
       const t = tiles[i];
       // The computed tile, written now: a read after the transition would
@@ -7566,6 +7616,7 @@ window.WBConsole = (function () {
     peerHeld,
     sessionRowFor,
     arrangeFence,
+    tileDetached,
     count,
     refitAll,
     resizeRect,
@@ -7580,6 +7631,7 @@ window.WBConsole = (function () {
     resumeDecision,
     resumeAll,
     dormancyDecision,
+    birthDecision,
     encodeDetach,
     encodeResize,
     DORMANT_AFTER_MS,
