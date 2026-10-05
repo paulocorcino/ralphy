@@ -92,8 +92,8 @@ step. Each file sets one `window.WB<Name>` namespace. The `shell()` Alpine
 component in `app.js` holds the page layout and, for now, most features. A
 feature with its own state moves out of it into an Alpine component in its
 own file, one feature at a time
-([ADR-0073](./adr/0073-the-workbench-script-is-cut-into-alpine-components.md),
-proposed).
+([ADR-0073](./adr/0073-the-workbench-script-is-cut-into-alpine-components.md)).
+The Hosts dialog (`wb-hosts-dialog.js`) is the first one.
 
 ## 4. Components and crates
 
