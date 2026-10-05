@@ -108,8 +108,13 @@ pub(crate) async fn sessions_route(
         (peer, reply)
     }))
     .await;
+    // A peer missing from the list is not a peer with no sessions: the page
+    // must not relaunch, adopt or forget its consoles on this read (ADR-0050
+    // amendment 2026-10-04, "a list that did not hear from a peer").
+    let mut unanswered = Vec::new();
     for (peer, reply) in replies {
         let Ok((200, body)) = reply else {
+            unanswered.push(peer.daemon_id);
             continue;
         };
         let Ok(peer_rows) = serde_json::from_slice::<Vec<HostedSessionInfo>>(&body) else {
@@ -117,6 +122,7 @@ pub(crate) async fn sessions_route(
                 daemon_id = %peer.daemon_id,
                 "peer returned an invalid session list"
             );
+            unanswered.push(peer.daemon_id);
             continue;
         };
         rows.extend(peer_rows.into_iter().map(|mut row| {
@@ -124,8 +130,24 @@ pub(crate) async fn sessions_route(
             row
         }));
     }
-    Json(rows).into_response()
+    let mut response = Json(rows).into_response();
+    // A header, not a body field: the body stays the array every reader and
+    // the peer-to-peer `?local=1` form already parse.
+    if !unanswered.is_empty() {
+        match unanswered.join(",").parse() {
+            Ok(value) => {
+                response.headers_mut().insert(UNANSWERED_HEADER, value);
+            }
+            Err(e) => tracing::warn!(error = %e, "could not name the peers that did not answer"),
+        }
+    }
+    response
 }
+
+/// The response header of `GET /api/sessions` that names, comma-separated,
+/// the peers whose sessions the list does not hold because they did not
+/// answer. Absent when every peer answered.
+pub(crate) const UNANSWERED_HEADER: &str = "x-ralphy-unanswered";
 
 /// `POST /api/sessions/close?id=<id>[&repo=<repo-ref>]`: end a local session or
 /// route a peer-owned numeric id using its composite repo ref.

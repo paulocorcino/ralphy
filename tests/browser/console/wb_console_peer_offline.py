@@ -2,7 +2,8 @@
 says why, and it comes back when the peer does.
 
 The "peer" is a stub HTTP listener on loopback that answers `/api/peer/hello`
-and `/api/repos` (the two routes the fleet probe reads) and nothing else. Its
+and `/api/repos` (the two routes the fleet probe reads), an empty
+`/api/sessions?local=1`, and nothing else. Its
 descriptor has no `[nudge]`, so the peer is "on another machine": a console on
 it goes through the relay, like a host reached through ssh. The stub is first
 CLOSED, so the daemon's own fleet state for it is `unreachable`.
@@ -128,6 +129,10 @@ class PeerStub(http.server.BaseHTTPRequestHandler):
                 200,
                 [{"slug": SLUG, "path": "/home/op/remote-repo", "reachable": True, "branch": "main", "dirty": False, "remote": None}],
             )
+        elif self.path == "/api/sessions?local=1":
+            # A peer with no session: without this answer the list never
+            # hears from the peer, and its consoles wait instead of launching.
+            self._json(200, [])
         else:
             self._json(404, {"error": "not found"})
 

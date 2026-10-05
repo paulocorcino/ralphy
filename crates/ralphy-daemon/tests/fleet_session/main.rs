@@ -250,6 +250,17 @@ async fn read_until(ws: &mut Ws, needle: &str, answer_cursor: bool) -> Seen {
 }
 
 async fn http_request(port: u16, method: &str, path: &str, bearer: Option<&str>) -> (u16, String) {
+    let (status, _, body) = http_exchange(port, method, path, bearer).await;
+    (status, body)
+}
+
+/// The status, the header block and the body.
+async fn http_exchange(
+    port: u16,
+    method: &str,
+    path: &str,
+    bearer: Option<&str>,
+) -> (u16, String, String) {
     let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
         .unwrap();
@@ -268,11 +279,16 @@ async fn http_request(port: u16, method: &str, path: &str, bearer: Option<&str>)
         .nth(1)
         .and_then(|value| value.parse().ok())
         .unwrap_or_default();
-    let body = text
-        .split_once("\r\n\r\n")
-        .map(|(_, body)| body.to_string())
-        .unwrap_or_default();
-    (status, body)
+    let (head, body) = text.split_once("\r\n\r\n").unwrap_or((&text, ""));
+    (status, head.to_string(), body.to_string())
+}
+
+/// The value of header `name` in a header block from `http_exchange`.
+fn header_value<'a>(head: &'a str, name: &str) -> Option<&'a str> {
+    head.lines().find_map(|line| {
+        let (key, value) = line.split_once(':')?;
+        key.trim().eq_ignore_ascii_case(name).then(|| value.trim())
+    })
 }
 
 async fn fixture() -> (
@@ -482,6 +498,47 @@ async fn federated_list_and_close_keep_colliding_ids_distinct() {
     assert_eq!(rows[0]["id"], local_id);
     assert_eq!(rows[0]["repo"], SLUG);
     assert_eq!(rows[0]["daemon_id"], LOCAL_ID);
+}
+
+/// A peer that does not answer is NAMED by the list, not left out of it: the
+/// page reads "no sessions on that peer" otherwise, and relaunches consoles
+/// that still run there (a second PTY on a peer without the record join).
+#[tokio::test]
+async fn the_session_list_names_the_peers_that_did_not_answer() {
+    let (_peer_store, _peer_repo, local_store, _local_repo, _peer, local) = fixture().await;
+    let mut peer_ws = launch(local.port).await;
+    let peer_open = read_until(&mut peer_ws, "READY", true).await;
+    let peer_id = peer_open.open.unwrap()["session"].as_u64().unwrap();
+
+    let (status, head, _) = http_exchange(local.port, "GET", "/api/sessions", None).await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        header_value(&head, "x-ralphy-unanswered"),
+        None,
+        "every peer answered: {head}"
+    );
+
+    let closed_port = {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        listener.local_addr().unwrap().port()
+    };
+    peer::write_descriptor(local_store.path(), &descriptor(DEAD_ID, closed_port)).unwrap();
+    let (status, head, body) = http_exchange(local.port, "GET", "/api/sessions", None).await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        header_value(&head, "x-ralphy-unanswered"),
+        Some(DEAD_ID),
+        "{head}"
+    );
+    // The peer that answered is still listed.
+    let rows: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert!(
+        rows.as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["id"] == peer_id && row["daemon_id"] == PEER_ID),
+        "got {rows}"
+    );
 }
 
 #[tokio::test]

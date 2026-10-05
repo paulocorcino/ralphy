@@ -588,14 +588,15 @@ window.WBConsole = (function () {
       return;
     }
     recordChecks.add(win);
-    fetch("/api/sessions")
-      .then((r) => (r.ok ? r.json() : null))
+    readSessions()
       .catch(() => null)
-      .then((sessions) => {
+      .then((read) => {
         recordChecks.delete(win);
         if (!win.isConnected || desk.some((r) => r.id === win._deskId)) return;
-        // Not known: the next desk this page takes asks again.
-        if (!Array.isArray(sessions)) return;
+        const sessions = read?.sessions;
+        // Not known: the next desk this page takes asks again. A list that
+        // did not hear from this window's peer does not know either.
+        if (!Array.isArray(sessions) || unheardRef(win._deskRepo, read.unheard)) return;
         const live = sessions.some((s) => s?.record === win._deskId) || !!sessionRowFor(win, sessions);
         if (live) createRecord(win);
         else leaveDesk([win._deskId]);
@@ -1256,6 +1257,47 @@ window.WBConsole = (function () {
   function peerReturnDecision({ kind, canLaunch, available, wasOffline }) {
     if (!available || !wasOffline) return "stay";
     return kind === "console" && canLaunch ? "relaunch" : "offer";
+  }
+
+  // What a box restored while the session list did not hear from its peer
+  // does once that peer is available, from `liveSessionFor`'s answer:
+  //   "attach"   — the console still runs there;
+  //   "relaunch" — the list heard from the peer and it does not run: a shell
+  //                opens again, as a restore would have opened it;
+  //   "offer"    — the same for an agent console: the click is the operator's;
+  //   "stay"     — still not known (`undefined`): ask again on the next read.
+  function heldReturnDecision({ kind, canLaunch, session }) {
+    if (session === undefined) return "stay";
+    if (session) return "attach";
+    return kind === "console" && canLaunch ? "relaunch" : "offer";
+  }
+
+  // `/api/sessions` and the peers it did not hear from (`unheard`, a Set of
+  // daemon ids). Rejects when the list cannot be read. On this read a console
+  // of an unheard peer is neither running nor gone: nothing relaunches, adopts
+  // or forgets it (ADR-0050 amendment 2026-10-04).
+  // Reads in flight at the same moment share one request: every held box
+  // asks on the same fleet read, and each request asks every peer.
+  let sessionsRead = null;
+  function readSessions() {
+    if (!sessionsRead) {
+      sessionsRead = (async () => {
+        const r = await fetch("/api/sessions");
+        if (!r.ok) throw new Error("sessions unavailable");
+        const route = window.WBSessionRoute;
+        return {
+          sessions: await r.json(),
+          unheard: route.unanswered(r.headers?.get?.(route.UNANSWERED_HEADER)),
+        };
+      })().finally(() => {
+        sessionsRead = null;
+      });
+    }
+    return sessionsRead;
+  }
+  function unheardRef(ref, unheard) {
+    const daemon = window.WBFleet.refDaemon(ref);
+    return !!daemon && !!unheard?.has(daemon);
   }
 
   // The fleet group of `ref`'s peer when that peer cannot serve it, else null:
@@ -6772,15 +6814,16 @@ window.WBConsole = (function () {
 
   // The live session a placeholder should attach to, read NOW: the page was
   // loaded before another device started this console, so neither the mirror
-  // nor the load-time session list knows it. `undefined` when the session list
-  // cannot be read.
+  // nor the load-time session list knows it. `null` when the list says it does
+  // not run; `undefined` when that is not known — the list cannot be read, or
+  // it did not hear from the record's peer.
   async function liveSessionFor(win, record) {
     await reloadDesk();
     let sessions;
     try {
-      const r = await fetch("/api/sessions");
-      if (!r.ok) return undefined;
-      sessions = await r.json();
+      const read = await readSessions();
+      if (unheardRef(record.repo, read.unheard)) return undefined;
+      sessions = read.sessions;
     } catch {
       return undefined;
     }
@@ -6820,7 +6863,9 @@ window.WBConsole = (function () {
   // relaunches on the PRIMARY tree, explicitly by its label. `refused` (a
   // `{ message }`) is a launch a peer refused. A box for a peer project says
   // what its peer's fleet state is, and redraws on every fleet read.
-  function spawnPlaceholder(record, missing, refused) {
+  // `held.unheard`: restored while the session list did not hear from its
+  // peer, so whether it runs is not known; it asks again on each fleet read.
+  function spawnPlaceholder(record, missing, refused, held) {
     const { win, body, restartBtn, closeBtn } = buildChrome(
       record.agent,
       record.repo,
@@ -6877,6 +6922,12 @@ window.WBConsole = (function () {
       const group = peerGroups.get(daemon);
       if (!group) return;
       const available = window.WBFleet.available(group);
+      // The fleet may call the peer available while its session list timed
+      // out: a held box asks the list itself, and never waits for `wasOffline`.
+      if (unheard && available) {
+        askHeld();
+        return;
+      }
       if (!available) wasOffline = true;
       const turn = peerReturnDecision({ kind: record.kind, canLaunch, available, wasOffline });
       if (turn === "relaunch") {
@@ -6891,6 +6942,39 @@ window.WBConsole = (function () {
       show(peerOfflineView(available ? null : group, refused?.message, peerHost(group, record.environment)));
     };
     if (refused) show(peerOfflineView(null, refused.message, peerHost(peerGroups.get(daemon), record.environment)));
+    let unheard = !!(daemon && held?.unheard);
+    // The box says why it waits: the list did not hear from the peer. "Try
+    // again" asks the list again, and launches only when the list heard from
+    // the peer and the console does not run there.
+    const showUnheard = () =>
+      show({
+        text: `${peerHost(peerGroups.get(daemon), record.environment)} does not answer.`,
+        detail: "",
+        action: "retry",
+      });
+    if (unheard) showUnheard();
+    // One question at a time: fleet reads arrive every 30 s and on every
+    // `peers.dirty`, and an answer must be acted on once.
+    let asking = false;
+    const askHeld = async () => {
+      if (asking) return;
+      asking = true;
+      try {
+        const session = await check();
+        if (!win.isConnected || btn.disabled || !unheard) return;
+        const turn = heldReturnDecision({ kind: record.kind, canLaunch, session });
+        if (turn === "stay") {
+          showUnheard();
+          return;
+        }
+        unheard = false;
+        if (turn === "attach") attach(session);
+        else if (turn === "relaunch") btn.click();
+        else show({ text: `${peerHost(peerGroups.get(daemon), record.environment)} is back.`, detail: "", action: "relaunch" });
+      } finally {
+        asking = false;
+      }
+    };
     win._peerRefresh = showPeer;
 
     const markMissing = (name) => {
@@ -6969,12 +7053,22 @@ window.WBConsole = (function () {
         attach(session);
         return;
       }
+      // A peer console whose list is not known may still run there: a launch
+      // would start a second one on a peer without the record join. The box
+      // says so and waits for the next read or click.
+      if (session === undefined && daemon) {
+        btn.disabled = false;
+        unheard = true;
+        showUnheard();
+        return;
+      }
       const carry = deskOf(win);
       drop(true);
       // The agent menu's launch path, reusing this record's id, rect and
       // maximized state — in the recorded worktree unless that is the one that
-      // is gone, in which case the button said "primary". An unreadable
-      // session list launches too: the launch then fails as it always did.
+      // is gone, in which case the button said "primary". For a local record
+      // an unreadable session list launches too: the launch then fails as it
+      // always did.
       if (missing) carry.checkout = null;
       spawnOrMissing(
         relaunchRequest({ ...record, checkout: missing ? null : record.checkout }),
@@ -7055,13 +7149,8 @@ window.WBConsole = (function () {
       applyLanding();
       return;
     }
-    Promise.all([
-      deskReady,
-      fetch("/api/sessions").then((r) =>
-        r.ok ? r.json() : Promise.reject(new Error("sessions unavailable")),
-      ),
-    ])
-      .then(async ([, sessions]) => {
+    Promise.all([deskReady, readSessions()])
+      .then(async ([, { sessions, unheard }]) => {
         if (!deskLoaded) {
           retryDeskLoad();
           return;
@@ -7114,6 +7203,11 @@ window.WBConsole = (function () {
               session.repo,
               record,
             );
+          } else if (action === "relaunch" && unheardRef(record.repo, unheard)) {
+            // The list did not hear from its peer: the console may still run
+            // there, and a launch on a peer without the record join would be
+            // a SECOND shell. The box asks again on the next fleet read.
+            spawnPlaceholder(record, null, null, { unheard: true });
           } else if (action === "relaunch" && peerHeld(record.repo, peerGroups)) {
             // Its peer cannot serve it: a launch would only be refused.
             spawnPlaceholder(record);
@@ -7123,7 +7217,7 @@ window.WBConsole = (function () {
               spawnOrMissing(relaunchRequest(record), record.agent, record.repo, record),
             );
           } else if (action === "placeholder") {
-            spawnPlaceholder(record);
+            spawnPlaceholder(record, null, null, { unheard: unheardRef(record.repo, unheard) });
           } else if (!(id && onPlane.has(id))) {
             // `adopt`: a cascaded window, keeping the live session's own kind
             // so the desk relaunches it correctly next time, under the record
@@ -7444,6 +7538,7 @@ window.WBConsole = (function () {
     ingestFleet,
     peerOfflineView,
     peerReturnDecision,
+    heldReturnDecision,
     peerHeld,
     sessionRowFor,
     arrangeFence,

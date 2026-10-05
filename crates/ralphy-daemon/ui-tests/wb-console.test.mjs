@@ -1443,6 +1443,21 @@ test("peerReturnDecision relaunches only a shell, only after the box saw its pee
   );
 });
 
+test("heldReturnDecision launches only when the list heard from the peer that nothing runs", () => {
+  const { heldReturnDecision } = load();
+  const row = { id: 3, repo: "01ARZ3NDEKTSV4RRFFQ69G5FAZ/owner/repo" };
+  // Not known (the list did not hear from the peer): never a launch.
+  assert.equal(heldReturnDecision({ kind: "console", canLaunch: true, session: undefined }), "stay");
+  assert.equal(heldReturnDecision({ kind: "agent", canLaunch: true, session: undefined }), "stay");
+  // It still runs there: attach, whatever the kind.
+  assert.equal(heldReturnDecision({ kind: "console", canLaunch: true, session: row }), "attach");
+  assert.equal(heldReturnDecision({ kind: "agent", canLaunch: false, session: row }), "attach");
+  // Heard, and not running: a shell opens again, a vendor CLI waits for a click.
+  assert.equal(heldReturnDecision({ kind: "console", canLaunch: true, session: null }), "relaunch");
+  assert.equal(heldReturnDecision({ kind: "agent", canLaunch: true, session: null }), "offer");
+  assert.equal(heldReturnDecision({ kind: "console", canLaunch: false, session: null }), "offer");
+});
+
 test("peerHeld holds a peer project only while its known peer cannot serve it", () => {
   const { peerHeld } = load();
   const ref = `${PEER}/owner/repo`;
