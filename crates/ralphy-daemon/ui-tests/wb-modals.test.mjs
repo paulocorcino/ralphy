@@ -108,8 +108,10 @@ test("one Escape closes only the top modal", async () => {
     const view = page();
     const { state } = view;
     const bound = bindAll(view);
-    const read = () => under.split(".").reduce((o, k) => o[k], state);
-    setPath(state, under, true);
+    // A dialog that is its own component keeps its flag in its own scope.
+    const scope = view.scopeOf(SCRIMS.find((s) => s.path === under));
+    const read = () => under.split(".").reduce((o, k) => o[k], scope);
+    setPath(scope, under, true);
     for (const s of bound) s.effect();
     const answer = state.askConfirm({ title: "Discard" });
     for (const s of bound) s.effect();

@@ -59,6 +59,8 @@ BASE = f"http://127.0.0.1:{PORT}/"
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Settings dialog's own component, nested in shell().
+SET = "Alpine.$data(document.querySelector('.settings-dialog'))"
 
 # The platform's default bar on this host; `thin` is narrower than it everywhere
 # the standard property is honoured. Compared as an INEQUALITY, never as `== 10`:
@@ -245,7 +247,7 @@ def main():
             page.wait_for_timeout(400)
             page.evaluate(f"() => {SH}.openIssue(1)")
             page.wait_for_timeout(300)
-            page.evaluate(f"() => {SH}.settingsOpen = true")
+            page.evaluate(f"() => {SET}.settingsOpen = true")
             page.wait_for_timeout(500)
             surfaces = page.evaluate(SHELL_JS, QUIET + BRIGHT)
             present = {k: v for k, v in surfaces.items() if v != "missing"}

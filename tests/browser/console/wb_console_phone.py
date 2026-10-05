@@ -528,7 +528,7 @@ def main():
             # --- Scenario 3: a watcher's paste is refused -----------------------
             # The desktop has no key bar by default; turn it on for the tap.
             page_b.evaluate(
-                "() => Alpine.$data(document.querySelector('[x-data]')).saveSetting('consoles.key_bar', 'on')"
+                "() => Alpine.$data(document.querySelector('.settings-dialog')).saveSetting('consoles.key_bar', 'on')"
             )
             page_b.wait_for_timeout(400)
             page_b.evaluate("() => navigator.clipboard.writeText('from the watcher')")

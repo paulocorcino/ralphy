@@ -525,7 +525,7 @@ def main():
             # --- Scenario 1: the operator's switch, both ways -------------------
             check("1 no key bar on a desktop, where every key already exists", not bar_shown(page))
             page.evaluate(
-                "() => Alpine.$data(document.querySelector('[x-data]'))"
+                "() => Alpine.$data(document.querySelector('.settings-dialog'))"
                 ".saveSetting('consoles.key_bar', 'on')"
             )
             page.wait_for_timeout(400)
@@ -543,7 +543,7 @@ def main():
                 f"windows={page.locator('.session-window').count()}",
             )
             page.evaluate(
-                "() => Alpine.$data(document.querySelector('[x-data]'))"
+                "() => Alpine.$data(document.querySelector('.settings-dialog'))"
                 ".saveSetting('consoles.key_bar', 'off')"
             )
             page.wait_for_timeout(400)
@@ -555,7 +555,7 @@ def main():
 
             # --- Scenario 2: the default, on each kind of machine ---------------
             page.evaluate(
-                "() => Alpine.$data(document.querySelector('[x-data]'))"
+                "() => Alpine.$data(document.querySelector('.settings-dialog'))"
                 ".saveSetting('consoles.key_bar', 'unset')"
             )
             page.wait_for_timeout(400)
@@ -585,7 +585,7 @@ def main():
 
             # --- Scenario 3: the bytes a tap puts on the wire -------------------
             page.evaluate(
-                "() => Alpine.$data(document.querySelector('[x-data]'))"
+                "() => Alpine.$data(document.querySelector('.settings-dialog'))"
                 ".saveSetting('consoles.key_bar', 'on')"
             )
             page.wait_for_timeout(400)
@@ -752,7 +752,7 @@ def main():
             page_b = desk_page(ctx_b, settle=7000)
             page_b.locator(".session-window").first.locator(".xterm").wait_for(timeout=15000)
             page_b.evaluate(
-                "() => Alpine.$data(document.querySelector('[x-data]'))"
+                "() => Alpine.$data(document.querySelector('.settings-dialog'))"
                 ".saveSetting('consoles.key_bar', 'on')"
             )
             page_b.wait_for_timeout(600)

@@ -63,6 +63,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT = os.path.join(REPO_ROOT, ".ralphy", "screenshots", "473-columns-2026-09-26.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Settings dialog's own component, nested in shell().
+SET = "Alpine.$data(document.querySelector('.settings-dialog'))"
 VIEW = {"width": 2400, "height": 1000}
 PHONE = {"width": 480, "height": 1000}
 NARROW = {"width": 1000, "height": 1000}
@@ -505,7 +507,7 @@ def main():
             page.wait_for_timeout(700)
 
             # S1 -------------------------------------------------------------
-            page.evaluate(f"() => {{ {SH}.openSettings(); {SH}.settingsSection = 'consoles'; }}")
+            page.evaluate(f"() => {{ {SET}.openSettings(); {SET}.settingsSection = 'consoles'; }}")
             page.wait_for_timeout(300)
             field = page.locator(".set-row", has_text="Console text size").locator("input.set-num")
             check("S1 the field shows the size the consoles use", field.input_value() == str(font),
@@ -520,7 +522,7 @@ def main():
                   s1["store"] == 12 and s1["sizes"] == [12, 12], str(s1))
             field.fill(str(font))
             field.dispatch_event("change")
-            page.evaluate(f"() => {SH}.closeSettings()")
+            page.evaluate(f"() => {SET}.closeSettings()")
             page.wait_for_timeout(300)
 
             # N3 -------------------------------------------------------------

@@ -53,6 +53,8 @@ HOSTS = "Alpine.$data(document.querySelector('.hosts-dialog'))"
 ADDPROJECT = "Alpine.$data(document.querySelector('.add-project-dialog'))"
 # The Security dialog's own component, nested in shell().
 SECURITY = "Alpine.$data(document.querySelector('.security-dialog'))"
+# The Settings dialog's own component, nested in shell().
+SETTINGS = "Alpine.$data(document.querySelector('.settings-dialog'))"
 
 # What has focus, in words a failure line can print.
 ACTIVE = (
@@ -224,7 +226,8 @@ def main():
             gear = page.locator('button[title="Settings"]').first
             gear.focus()
             page.keyboard.press("Enter")
-            wait_flag(page, "settingsOpen", True)
+            page.wait_for_function(f"() => {SETTINGS}.settingsOpen === true", timeout=5000)
+            check("1 the rail button shows Settings active", page.locator('button[title="Settings"].active').count() == 1)
             settle(page)
             a = active(page)
             check(
@@ -233,10 +236,10 @@ def main():
                 f"active={a}",
             )
             page.keyboard.press("Escape")
-            wait_flag(page, "settingsOpen", False)
+            page.wait_for_function(f"() => {SETTINGS}.settingsOpen === false", timeout=5000)
             settle(page)
             a = active(page)
-            check("1 Escape closes Settings", flag(page, "settingsOpen") is False)
+            check("1 Escape closes Settings", page.evaluate(f"() => {SETTINGS}.settingsOpen") is False)
             check("1 focus returns to the Settings button", a and a["title"] == "Settings", f"active={a}")
 
             # --- scenario 1b: Hosts, a dialog with its own Alpine component ---
@@ -307,6 +310,15 @@ def main():
             settle(page)
             check("2 log off closes Security", page.evaluate(f"() => {SECURITY}.securityOpen") is False)
             check("2 the modal stack is empty after log off", page.evaluate(f"() => {SH}._modalStack.length") == 0)
+
+            # Log off closes Settings the same way.
+            page.evaluate("() => document.dispatchEvent(new CustomEvent('workbench:settings-open', { bubbles: true }))")
+            page.wait_for_function(f"() => {SETTINGS}.settingsOpen === true", timeout=5000)
+            page.evaluate(f"() => {SH}.logOff()")
+            page.wait_for_function(f"() => {SETTINGS}.settingsOpen === false", timeout=5000)
+            settle(page)
+            check("2 log off closes Settings", page.evaluate(f"() => {SETTINGS}.settingsOpen") is False)
+            check("2 the modal stack is empty after Settings", page.evaluate(f"() => {SH}._modalStack.length") == 0)
 
             # --- scenario 3: Branch and Prompt keep their own field -----------
             page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug)

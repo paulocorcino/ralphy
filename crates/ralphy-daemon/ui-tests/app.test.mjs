@@ -741,11 +741,12 @@ test("logOff resets the remember box along with the credentials", async () => {
   assert.equal(state.login.passwordRequired, true, "the server-told flag does");
 });
 
-// The Security dialog's open flag is its own (wb-security-dialog.js), so the
-// shortcuts ask the modal stack for it (ADR-0073 amendment of 2026-10-05).
-// They block in the same cases as the flag did: while the dialog is open, under
-// another modal too, and not once it closes.
-test("the shortcuts are blocked while the Security dialog is on the modal stack", () => {
+// The Security and Settings dialogs' open flags are their own
+// (wb-security-dialog.js, wb-settings-dialog.js), so the shortcuts ask the modal
+// stack for them (ADR-0073 amendment of 2026-10-05). They block in the same
+// cases as the flag did: while the dialog is open, under another modal too, and
+// not once it closes.
+test("the shortcuts are blocked while the Security or Settings dialog is on the modal stack", () => {
   const keydowns = [];
   const { state, window } = loadShell({
     document: { addEventListener: (type, fn) => type === "keydown" && keydowns.push(fn) },
@@ -764,24 +765,28 @@ test("the shortcuts are blocked while the Security dialog is on the modal stack"
 
   assert.equal(state.consoleShortcutsBlocked(), false, "no modal: not blocked");
   press();
-  assert.deepEqual(searches, ["files"]);
+  let expected = ["files"];
+  assert.deepEqual(searches, expected);
 
-  state.modalOpened("securityOpen", scrimEl);
-  assert.equal(state.consoleShortcutsBlocked(), true, "Security open: blocked");
-  assert.equal(state.consoleShortcutsBlocked(true), true, "a terminal key too");
-  press();
-  assert.deepEqual(searches, ["files"], "Ctrl+Shift+F is blocked");
+  for (const flag of [window.WBSecurityDialog.openFlag, window.WBSettingsDialog.openFlag]) {
+    state.modalOpened(flag, scrimEl);
+    assert.equal(state.consoleShortcutsBlocked(), true, `${flag} open: blocked`);
+    assert.equal(state.consoleShortcutsBlocked(true), true, "a terminal key too");
+    press();
+    assert.deepEqual(searches, expected, `${flag}: Ctrl+Shift+F is blocked`);
 
-  state.modalOpened("confirmModal.open", scrimEl);
-  assert.equal(state.consoleShortcutsBlocked(), true, "a confirm over Security: still blocked");
-  press();
-  assert.deepEqual(searches, ["files"]);
+    state.modalOpened("confirmModal.open", scrimEl);
+    assert.equal(state.consoleShortcutsBlocked(), true, `a confirm over ${flag}: still blocked`);
+    press();
+    assert.deepEqual(searches, expected);
 
-  state.modalClosed("confirmModal.open");
-  state.modalClosed("securityOpen");
-  assert.equal(state.consoleShortcutsBlocked(), false, "Security closed: not blocked");
-  press();
-  assert.deepEqual(searches, ["files", "files"]);
+    state.modalClosed("confirmModal.open");
+    state.modalClosed(flag);
+    assert.equal(state.consoleShortcutsBlocked(), false, `${flag} closed: not blocked`);
+    press();
+    expected = [...expected, "files"];
+    assert.deepEqual(searches, expected);
+  }
 });
 
 // The release view is read again each time the tab comes back (ADR-0056 §7).
@@ -1648,30 +1653,6 @@ test("a failed runs read after a good one keeps the runs, marked not current", a
   assert.match(state.runsError, /Not current: the run store is locked/);
 });
 
-test("a failed settings read says so, and a project setting is not written", async () => {
-  const { state, window } = loadShell();
-  const verbs = [];
-  window.WBDaemon.observe = async (verb) => {
-    verbs.push(verb);
-    return verb === "config.get" ? { status: "error", message: "settings.json is not JSON" } : { status: "ok" };
-  };
-  window.WBView.read = () => ({});
-  state.openSlug = "o/r";
-  state._flashAction = () => {};
-  // `openSettings` names the bare `WBDaemon` global, as the page does.
-  const realDaemon = globalThis.WBDaemon;
-  globalThis.WBDaemon = window.WBDaemon;
-  try {
-    state.openSettings();
-    for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
-  } finally {
-    globalThis.WBDaemon = realDaemon;
-  }
-  assert.equal(state.settingsError, "Could not read the settings: settings.json is not JSON.");
-  await state.saveSetting("queue.label", "ready");
-  assert.deepEqual(verbs, ["config.get"], "no config.set over values never read");
-});
-
 // ADR-0070 D3: a write acts on what the page shows, so it is locked while that
 // is not current, and says why.
 test("writes are locked while the change set is not current", async () => {
@@ -1977,26 +1958,32 @@ test("a reopened socket reads the board and the runs", () => {
   assert.ok(calls.includes("hydrateRuns"), calls.join(", "));
 });
 
-test("visible and login read the open settings and the open Spend view again", () => {
-  const { state } = loadShell(VISIBLE);
+test("visible and login ask the open panels to read again, and read the open Spend view", () => {
+  // The Settings dialog hears the event and reads only when it is open
+  // (wb-settings-dialog.test.mjs); here the shell sends it each time.
+  const events = [];
+  const { state } = loadShell({
+    document: { ...VISIBLE.document, dispatchEvent: (e) => events.push(e.type) },
+  });
   const calls = [];
   for (const name of ["loadRepos", "rereadDesk", "hydrateRuns", "loadRelease", "resumeSockets", "loadIdentity", "loadAgents", "restoreView"]) {
     state[name] = () => {};
   }
   state.maybeRefreshBoard = () => {};
-  state.readSettings = () => calls.push("settings");
   state.loadSpend = () => calls.push("spend");
-  state.settingsOpen = false;
+  const rereads = () => events.filter((t) => t === "workbench:panels-reread").length;
   state.tabs = state.tabs.filter((t) => t.id !== "spend");
   state.onTabVisible();
-  assert.deepEqual(calls, [], "closed panels read nothing");
-  state.settingsOpen = true;
+  assert.deepEqual(calls, [], "a closed Spend view reads nothing");
+  assert.equal(rereads(), 1, "the tab becoming visible asks the open panels");
   state.tabs.push({ id: "spend", kind: "spend" });
   state.onTabVisible();
-  assert.deepEqual(calls, ["settings", "spend"]);
+  assert.deepEqual(calls, ["spend"]);
+  assert.equal(rereads(), 2);
   calls.length = 0;
   state.rehydrateAfterAuth();
-  assert.deepEqual(calls, ["settings", "spend"]);
+  assert.deepEqual(calls, ["spend"]);
+  assert.equal(rereads(), 3, "a login asks the open panels too");
 });
 
 test("the peer tick and a project-list push read no change set and no branch", async () => {
