@@ -5061,27 +5061,37 @@ fn shell_arranges_into_the_fence() {
     // now that the global arrange is gone. `.maximized` overrides all four
     // offsets with `!important`, so a tile rect written onto one is
     // invisible while it silently replaces the rect the restore reads back.
-    let fence_arrange = js
-        .split_once("function arrangeFence(")
-        .expect("wb-console.js must keep arrangeFence")
-        .1;
+    // The rule lives in `tileable` and the grid in `tileWindows`, shared by
+    // the fence's Tile and the popup's (ADR-0051 §8, 2026-10-05), so each
+    // caller must go through both.
+    let body = |name: &str| -> &str {
+        let after = js
+            .split_once(&format!("function {name}("))
+            .unwrap_or_else(|| panic!("wb-console.js must keep {name}"))
+            .1;
+        &after[..after
+            .find("\n  }")
+            .unwrap_or_else(|| panic!("{name} must close"))]
+    };
     // The EXPRESSION, not the bare word: `"maximized"` alone is satisfied by
     // the comment that explains the rule, so deleting the filter leaves this
     // green — measured. A pin a comment can satisfy is not a pin.
     assert!(
-        fence_arrange[..fence_arrange
-            .find("\n  }")
-            .expect("arrangeFence must close")]
-            .contains(r#"!m.el.classList.contains("maximized")"#),
-        "arrangeFence must exclude a maximized member from the grid (#338/#342)"
+        body("tileable").contains(r#"!win.classList.contains("maximized")"#),
+        "a tile must exclude a maximized member from the grid (#338/#342)"
     );
     assert!(
-        fence_arrange[..fence_arrange
-            .find("\n  }")
-            .expect("arrangeFence must close")]
-            .contains("minWidth"),
-        "arrangeFence must relax the CSS floor for a tile below it (#342)"
+        body("tileWindows").contains("minWidth"),
+        "a tile must relax the CSS floor for a tile below it (#342)"
     );
+    for caller in ["arrangeFence", "tileDetached"] {
+        for callee in ["tileable", "tileWindows("] {
+            assert!(
+                body(caller).contains(callee),
+                "{caller} must go through {callee} (#338/#342)"
+            );
+        }
+    }
     let app = include_str!("../assets/ui/app.js");
     assert!(
         !app.contains("arrangeConsoles"),

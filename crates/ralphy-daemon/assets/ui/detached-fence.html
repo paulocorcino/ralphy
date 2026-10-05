@@ -43,6 +43,25 @@
         inset: 0;
         overflow: auto;
       }
+      /* The fence's Tile, in the corner a fence head puts it. Above every
+         window: `focusWin` stacks them no higher than 120. */
+      .detached-tile {
+        position: fixed;
+        top: 4px;
+        right: 18px;
+        z-index: 124;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        color: var(--text-muted);
+        line-height: 1;
+        padding: 0.15rem 0.4rem;
+        cursor: pointer;
+      }
+      .detached-tile:hover {
+        border-color: var(--border-focus);
+        color: var(--text);
+      }
       .detached-empty,
       .detached-lost {
         color: var(--danger);
@@ -165,6 +184,7 @@
           MEMBERS = m.members || [];
           document.title = (m.fence.name || "fence") + " · Ralphy";
           WBConsole.mountDetached(m.fence, MEMBERS);
+          addTile(m.fence.name);
           openLink();
         });
         window.opener.postMessage({ type: "wb-fence-ready" }, PEER);
@@ -181,6 +201,25 @@
             window.opener.postMessage({ type: "wb-fence-reattach", fenceId }, PEER);
           }
         });
+
+        // The fence head's Tile, with its question (ADR-0051 §8, amended
+        // 2026-10-05). The tile leaves the button's band free.
+        function addTile(name) {
+          const tile = document.createElement("button");
+          tile.className = "detached-tile";
+          tile.type = "button";
+          tile.title = "Tile this fence's consoles";
+          tile.textContent = "⊞";
+          tile.addEventListener("click", async () => {
+            const ok = await WBConsole.askConfirm({
+              title: "Tile this fence?",
+              message: `Rearranges the consoles in ${name || "this fence"}. Sessions keep running.`,
+              confirmLabel: "Tile",
+            });
+            if (ok) WBConsole.tileDetached(tile.offsetTop + tile.offsetHeight + 4);
+          });
+          document.body.append(tile);
+        }
 
         // ---- the lifecycle link (issue #347) --------------------------------
         // The opener's HANDLE to this window dies with its document, so after an
