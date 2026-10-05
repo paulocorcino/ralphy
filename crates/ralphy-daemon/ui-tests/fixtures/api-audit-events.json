@@ -189,7 +189,7 @@
         "source": "hint",
         "value": "moto g(30)"
       },
-      "normalizer": 1,
+      "normalizer": 2,
       "os": {
         "source": "hint",
         "value": "android"

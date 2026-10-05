@@ -15,7 +15,7 @@ use super::ServerFacts;
 
 /// The version of these rules. A line keeps it, so an old line can be
 /// normalized again when the rules change.
-pub const NORMALIZER: u32 = 1;
+pub const NORMALIZER: u32 = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -204,7 +204,16 @@ pub fn normalize(client: &ClientFacts, server: &ServerFacts) -> Normalized {
         .as_ref()
         .map(|m| m.as_str() == "standalone")
         .or(client.engine_signals.ios_standalone);
-    let screen = screen_size.map(|(short, long, dpr)| format!("{short}x{long}@{}", ratio(dpr)));
+    // A phone or tablet turns, so its sides are sorted; a computer's screen
+    // keeps the orientation it reports (a 2560x1080 monitor is not 1080x2560).
+    let shown = match form.as_ref().map(|f| f.value) {
+        Some(Form::Desktop) => client
+            .screen
+            .as_ref()
+            .and_then(|s| Some((s.width?, s.height?, client.dpr.unwrap_or(1.0)))),
+        _ => screen_size,
+    };
+    let screen = shown.map(|(w, h, dpr)| format!("{w}x{h}@{}", ratio(dpr)));
 
     let profile = profile(&[
         &format!("{:?}", os_value),

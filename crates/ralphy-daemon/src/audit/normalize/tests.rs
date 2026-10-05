@@ -56,7 +56,7 @@ fn each_measured_device_reads_as_what_it_is() {
             form: Form::Desktop,
             model: None,
             gpu: GpuVendor::Nvidia,
-            screen: "1080x2560@1",
+            screen: "2560x1080@1",
         },
         Want {
             name: "android-chrome",
@@ -100,7 +100,7 @@ fn each_measured_device_reads_as_what_it_is() {
             form: Form::Desktop,
             model: None,
             gpu: GpuVendor::Apple,
-            screen: "800x1280@2",
+            screen: "1280x800@2",
         },
     ];
     for w in wants {

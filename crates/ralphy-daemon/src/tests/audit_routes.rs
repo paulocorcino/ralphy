@@ -292,7 +292,7 @@ async fn device_facts_are_recorded_once_and_again_when_the_profile_changes() {
     assert_eq!(facts["os"]["value"], "android");
     assert_eq!(facts["model_hint"]["value"], "moto g(30)");
     assert_eq!(facts["holder"], "tab1");
-    assert_eq!(facts["normalizer"], 1);
+    assert_eq!(facts["normalizer"], crate::audit::normalize::NORMALIZER);
     assert_eq!(facts["server"]["real_ip"], "203.0.113.10");
     assert_eq!(facts["client"]["cores"], 8, "the raw facts are kept");
     assert_eq!(lines[1]["changed"], serde_json::json!(["screen"]));
