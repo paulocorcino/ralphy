@@ -24,7 +24,7 @@ const PROMPT_GH_ISSUE_VIEW: usize = 20;
 
 /// Lines of `crates/ralphy-daemon/assets/ui/app.js`, the `shell()` script that
 /// ADR-0073 cuts into components (D8). Each cut lowers it in the same change.
-const APP_JS_LINES: usize = 6480;
+const APP_JS_LINES: usize = 6312;
 
 const SPAWNED: [&str; 3] = ["git", "gh", "ssh"];
 

@@ -134,13 +134,13 @@
           <!-- Above Security on purpose: when there is something new, it is the
                reason the operator opened this menu. Absent entirely when there
                is not, rather than greyed out. -->
-          <button class="dropdown-item rel-item" x-show="releaseHasNews" x-cloak @click="openWhatsNew()">
+          <button class="dropdown-item rel-item" x-show="releaseHasNews" x-cloak @click="avatarMenu = false; $dispatch('workbench:whats-new-open')">
             <i class="bi bi-stars"></i><span x-text="releaseSummary"></span>
           </button>
           <button class="dropdown-item" @click="avatarMenu = false; $dispatch('workbench:security-open')">
             <i class="bi bi-shield-lock"></i><span>Security settings</span>
           </button>
-          <button class="dropdown-item" @click="openAbout()">
+          <button class="dropdown-item" @click="avatarMenu = false; $dispatch('workbench:about-open')">
             <i class="bi bi-info-circle"></i><span>About</span>
           </button>
           <button class="dropdown-item" @click="logOff()">
@@ -2310,6 +2310,8 @@
          the newest, newest first — not just the last release. At a candidate
          every few days the typical reader is several behind, and a panel that
          showed only the last one would hide the reason to take it. -->
+    <div class="release-dialogs" x-data="wbReleaseDialogs" @workbench:whats-new-open.window="openWhatsNew()"
+         @workbench:about-open.window="openAbout()">
     <div class="modal-scrim" x-cloak x-bind="scrim('whatsNewOpen', () => closeWhatsNew())">
       <div class="modal rel-modal" role="dialog" aria-modal="true" aria-label="What's new">
         <div class="modal-head">
@@ -2488,6 +2490,7 @@
           <button class="btn" @click="closeAbout()">Done</button>
         </div>
       </div>
+    </div>
     </div>
 
     <!-- ===================================================================
@@ -3287,6 +3290,7 @@
     <script src="wb-spend.js"></script>
     <script src="wb-daemon.js"></script>
     <script src="wb-release.js"></script>
+    <script src="wb-release-dialogs.js"></script>
     <script src="wb-hosts.js"></script>
     <script src="wb-hosts-dialog.js"></script>
     <script src="wb-add-project.js"></script>

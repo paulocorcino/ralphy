@@ -29,6 +29,7 @@ import "./wb-mode.test.mjs";
 import "./wb-monaco.test.mjs";
 import "./wb-notes.test.mjs";
 import "./wb-project.test.mjs";
+import "./wb-release-dialogs.test.mjs";
 import "./wb-runs.test.mjs";
 import "./wb-security-dialog.test.mjs";
 import "./wb-session-route.test.mjs";
