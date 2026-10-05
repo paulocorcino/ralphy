@@ -7606,11 +7606,22 @@ window.WBConsole = (function () {
     // decides an overlapping pair, and a singleton bypasses it.
     const live = fences.map((x) => (x.id === id ? { id: x.id, rect } : x));
     const ids = new Set(fenceMembership(live, all)[id] || []);
-    const members = all.filter((m) => ids.has(m.id) && tileable(m.el)).map((m) => m.el);
+    // A maximized console is NOT tiled: a tile rect written onto it is
+    // invisible while it REPLACES the pre-maximize rect. Filtered before the
+    // grid so it stays hole-free (#338). A LOCKED console is skipped too.
+    const members = all
+      .filter(
+        (m) =>
+          ids.has(m.id) &&
+          !m.el.classList.contains("maximized") &&
+          !m.el.classList.contains("column") &&
+          !m.el._deskLocked,
+      )
+      .map((m) => m.el);
     // An empty fence is a NO-OP, not an error.
     if (!members.length) return;
     const headH = el.querySelector(".fence-head")?.offsetHeight || 28;
-    tileWindows(
+    const tiles = tileIntoRect(
       {
         left: rect.left,
         top: rect.top + headH,
@@ -7619,42 +7630,6 @@ window.WBConsole = (function () {
       },
       members,
     );
-  }
-
-  // A maximized console is NOT tiled: a tile rect written onto it is
-  // invisible while it REPLACES the pre-maximize rect. Filtered before the
-  // grid so it stays hole-free (#338). A LOCKED console is skipped too.
-  function tileable(win) {
-    return !win.classList.contains("maximized") && !win.classList.contains("column") && !win._deskLocked;
-  }
-
-  // The popup's Tile (ADR-0051 §8, amended 2026-10-05): every console this
-  // window holds, into the part of the stage the window shows. In the popup
-  // `setWin` writes into the null sink, so the layout stays throwaway. Notes
-  // do not move (ADR-0064 §8), but they are raised after the tile, because
-  // the tile focuses each console and the popup has no Note menu to bring a
-  // covered card back. `topInset` is the band the popup's own button sits in,
-  // so no console's title bar lands under it.
-  function tileDetached(topInset = 0) {
-    const st = stage();
-    const ws = workspace();
-    if (!st || !ws) return;
-    const members = [...st.querySelectorAll(".session-window")].filter(tileable);
-    if (!members.length) return;
-    tileWindows(
-      {
-        left: ws.scrollLeft,
-        top: ws.scrollTop + topInset,
-        width: ws.clientWidth,
-        height: Math.max(0, ws.clientHeight - topInset),
-      },
-      members,
-    );
-    for (const card of st.querySelectorAll(".note-card")) focusWin(card);
-  }
-
-  function tileWindows(area, members) {
-    const tiles = tileIntoRect(area, members);
     members.forEach((win, i) => {
       const t = tiles[i];
       // The computed tile, written now: a read after the transition would
@@ -7727,7 +7702,6 @@ window.WBConsole = (function () {
     peerHeld,
     sessionRowFor,
     arrangeFence,
-    tileDetached,
     count,
     refitAll,
     resizeRect,

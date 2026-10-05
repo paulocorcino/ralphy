@@ -43,29 +43,39 @@
         inset: 0;
         overflow: auto;
       }
-      /* The fence's Tile, in the corner a fence head puts it. Above every
-         window: `focusWin` stacks them no higher than 120. */
-      .detached-tile {
+      /* The window's two buttons, in the bottom-right corner: no console
+         control is there, and the top edge holds every title bar. Above
+         every window (`focusWin` stacks them no higher than 120), below a
+         card on top (125). */
+      .detached-tools {
         position: fixed;
-        top: 4px;
+        bottom: 8px;
         right: 18px;
         z-index: 124;
+        display: flex;
+        gap: 0.3rem;
+      }
+      .detached-tools button {
         background: var(--bg);
         border: 1px solid var(--border);
         border-radius: 4px;
         color: var(--text-muted);
         line-height: 1;
-        padding: 0.15rem 0.4rem;
+        padding: 0.2rem 0.4rem;
         cursor: pointer;
       }
-      .detached-tile:hover {
+      .detached-tools button:hover {
         border-color: var(--border-focus);
         color: var(--text);
       }
-      /* A phone paints one console, so it has nothing to tile. The query is
-         the workbench's phone breakpoint (app.js `PHONE_QUERY`). */
+      .detached-tools .detached-note {
+        color: var(--note-ochre);
+      }
+      /* Both are for a larger screen: a phone paints one console, and a card
+         on top there is a band over it. The query is the workbench's phone
+         breakpoint (app.js `PHONE_QUERY`). */
       @media (max-width: 560px), (pointer: coarse) and (max-height: 560px) {
-        .detached-tile {
+        .detached-tools {
           display: none;
         }
       }
@@ -131,6 +141,7 @@
          through `window.WBDaemon` exactly as it does in the workbench. -->
     <script src="wb-daemon.js"></script>
     <script src="wb-geometry.js"></script>
+    <script src="wb-columns.js"></script>
     <script src="wb-console-name.js"></script>
     <script src="wb-window-state.js"></script>
     <script src="wb-console.js"></script>
@@ -191,7 +202,7 @@
           MEMBERS = m.members || [];
           document.title = (m.fence.name || "fence") + " · Ralphy";
           WBConsole.mountDetached(m.fence, MEMBERS);
-          addTile(m.fence.name);
+          addTools();
           openLink();
         });
         window.opener.postMessage({ type: "wb-fence-ready" }, PEER);
@@ -209,23 +220,83 @@
           }
         });
 
-        // The fence head's Tile, with its question (ADR-0051 §8, amended
-        // 2026-10-05). The tile leaves the button's band free.
-        function addTile(name) {
-          const tile = document.createElement("button");
-          tile.className = "detached-tile";
-          tile.type = "button";
-          tile.title = "Tile this fence's consoles";
-          tile.textContent = "⊞";
-          tile.addEventListener("click", async () => {
-            const ok = await WBConsole.askConfirm({
-              title: "Tile this fence?",
-              message: `Rearranges the consoles in ${name || "this fence"}. Sessions keep running.`,
-              confirmLabel: "Tile",
-            });
-            if (ok) WBConsole.tileDetached(tile.offsetTop + tile.offsetHeight + 4);
-          });
-          document.body.append(tile);
+        // ---- columns and a note on top (ADR-0051 §8, amended 2026-10-05) ----
+        // The fence head's "as columns", for this window. The grid lives
+        // here, as `app.js` holds it for the shell, and is never stored: the
+        // popup's layout is throwaway. `wb-console.js` paints it.
+        let grid = [];
+        const consoles = () => [...stageEl().querySelectorAll(".session-window")];
+        const capNow = () => WBColumns.cap(WBConsole.columnMeasure().viewport, WBConsole.PHONE_MAX_WIDTH);
+        const paintGrid = (g, opts) => {
+          const cap = WBColumns.flat(g).length >= 2 ? capNow() : 1;
+          WBConsole.applyColumns(WBColumns.painted(g, cap), { cap, unmax: null, raise: false, ...opts });
+        };
+        function openColumns() {
+          const all = WBColumns.fromRects(consoles().map((w) => ({ id: w._deskId, rect: WBConsole.restoreRect(w) })));
+          const ids = WBColumns.flat(all);
+          if (!ids.length) return;
+          const old = WBColumns.flat(grid)[0] ?? stageEl().querySelector(".session-window.maximized")?._deskId;
+          grid = ids.length >= 2 ? all : [];
+          paintGrid(all, { unmax: old && !ids.includes(old) ? old : null, raise: true });
+          WBConsole.focusColumn(ids[0]);
+        }
+        function restoreColumn(id) {
+          const r = WBColumns.restore(grid, id);
+          grid = r.ended ? [] : r.columns;
+          paintGrid(r.columns, { unmax: r.unmax, raise: true });
+        }
+        // A closed console leaves the grid; a resize repaints it. As the
+        // shell's `paintColumns`: at a cap of 1 the first console is a plain
+        // maximize, and its Restore is still a column restore.
+        function repaintColumns() {
+          const head = WBColumns.flat(grid)[0];
+          if (!head) return;
+          const byId = new Map(consoles().map((w) => [w._deskId, w]));
+          const headWin = byId.get(head);
+          if (headWin && !headWin.classList.contains("maximized") && !headWin.classList.contains("column")) {
+            return restoreColumn(head);
+          }
+          const kept = WBColumns.keep(grid, new Set(byId.keys()));
+          grid = WBColumns.flat(kept).length >= 2 ? kept : [];
+          paintGrid(kept);
+        }
+        document.addEventListener("workbench:column-restore", (e) => restoreColumn(e.detail.id));
+        document.addEventListener("workbench:columns-stale", repaintColumns);
+        document.addEventListener("workbench:consoles-changed", repaintColumns);
+        window.addEventListener("resize", repaintColumns);
+
+        // Each press keeps the next note of this window on top; the card's
+        // own Put back takes it off. One card on top at a time.
+        function nextNoteOnTop() {
+          const ids = [...stageEl().querySelectorAll(".note-card")].map((el) => el.dataset.noteId);
+          const now = window.WBNotes?.onTopNow();
+          if (!ids.length || (now && ids.length === 1)) return;
+          window.WBNotes.keepOnTop(ids[(ids.indexOf(now) + 1) % ids.length]);
+        }
+
+        function addTools() {
+          const tools = document.createElement("div");
+          tools.className = "detached-tools";
+          const note = document.createElement("button");
+          note.className = "detached-note";
+          note.type = "button";
+          note.title = "Keep a note on top";
+          note.innerHTML = '<i class="bi bi-sticky-fill"></i>';
+          note.addEventListener("click", nextNoteOnTop);
+          const columns = document.createElement("button");
+          columns.className = "detached-columns";
+          columns.type = "button";
+          columns.title = "Open this fence's consoles as columns";
+          columns.innerHTML = '<i class="bi bi-layout-three-columns"></i>';
+          columns.addEventListener("click", openColumns);
+          tools.append(note, columns);
+          document.body.append(tools);
+          // The note button only while this window holds a card.
+          const paint = () => {
+            note.hidden = !stageEl().querySelector(".note-card");
+          };
+          new MutationObserver(paint).observe(stageEl(), { childList: true });
+          paint();
         }
 
         // ---- the lifecycle link (issue #347) --------------------------------

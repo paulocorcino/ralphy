@@ -14,8 +14,8 @@
    holds the grid, feeds it through these functions, and `wb-console.js`
    paints the answer. Same shape as `wb-split.js`.
 
-   Load order: BEFORE `app.js`; nothing else reads this namespace. The
-   detached-fence popup does not load it — a popup offers no columns.
+   Load order: BEFORE `app.js`. The detached-fence popup loads it too, for
+   its own grid, which it never stores (ADR-0051 §8, amended 2026-10-05).
    --------------------------------------------------------------------------- */
 window.WBColumns = (function () {
   const REASON_OPEN = "Already in a column";

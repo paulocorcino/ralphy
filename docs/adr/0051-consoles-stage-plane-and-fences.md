@@ -441,14 +441,15 @@ closes that window itself.)*
   never in the desk or in the tab's detach registry, which holds ids only.)*
 - **The popup opens no consoles**, so its contents are exactly §6's snapshot and
   re-attach stays a well-defined inverse.
-  *(Amended 2026-10-05, tile in the popup. The popup has the fence head's
-  Tile, as a button in its top-right corner. It tiles the consoles into the
-  part of the stage the window shows, below the button, with the same rules
-  as the fence: a maximized, column or locked console is not tiled. The
-  layout stays throwaway, because the popup's sink writes nothing. Notes do
-  not move (ADR-0064 §8), but the tile raises them above the consoles: the
-  popup has no Note menu to bring a covered card back. A phone does not show
-  the button: it paints one console, so it has nothing to tile.)*
+  *(Amended 2026-10-05, columns in the popup. The popup has the fence head's
+  "as columns" button, in its bottom-right corner, where no console control
+  is. It opens the window's consoles as columns that fill the window, as §5
+  does on the stage. The popup holds its own grid and never stores it: its
+  layout is throwaway. A column's restore ends the columns as on the stage.
+  The Slice list stays out of the popup, which opens no consoles. Beside it,
+  while the window holds a card, a note button keeps the next card on top
+  (ADR-0064 §7, amended the same day). A phone shows neither button: it
+  paints one console.)*
 - **At most four popups, and one per fence** — detaching an already-detached
   fence focuses its popup. This cap is a **client** constant and deliberately
   does not sit beside §10's daemon-enforced ones: a detach *moves* consoles
