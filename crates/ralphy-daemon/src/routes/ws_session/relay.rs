@@ -139,8 +139,8 @@ pub(crate) async fn relay_to_peer(
     }
 }
 
-/// The relay cannot tell a replay from live output without decoding the
-/// frames, so its traffic summary counts every byte from the peer as live.
+/// The traffic summary reads the peer's `session-open` and first terminal
+/// frame to tell the replay from live output (see [`Traffic::peer_frame`]).
 /// The peer forwards its own pings to the browser and the browser's pongs come
 /// back here, so the round trip timed here is the browser's leg only.
 pub(crate) async fn peer_session_ws(
@@ -195,7 +195,7 @@ pub(crate) async fn peer_session_ws(
                 };
                 let outbound = match message {
                     tokio_tungstenite::tungstenite::Message::Binary(bytes) => {
-                        traffic.live(bytes.len());
+                        traffic.peer_frame(&bytes);
                         Message::Binary(bytes)
                     }
                     tokio_tungstenite::tungstenite::Message::Ping(bytes) => {

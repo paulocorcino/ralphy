@@ -12,7 +12,8 @@ PORT 7465 and the two-console desk are `wb_console_detach.py`'s.
 A1  each restored console wrote one console_launch line, agent console
 A2  the lines carry the device of the browser and a holder
 A3  the Devices panel shows the launch by the project name, not the registry key
-R1  a reattach to an unknown session is refused with 404, and logged
+R1  a reattach to an unknown session is refused with 404, and logged with
+    its reason in quotes
 
 The daemon is stopped by its own subprocess handle, NEVER by name.
 
@@ -121,8 +122,11 @@ def main():
                 time.sleep(0.2)
             got = refused_lines(log_path)
             check(
-                "R1 the refused reattach is logged with status 404",
-                any("status=404" in l and "launch=false" in l for l in got),
+                "R1 the refused reattach is logged with status 404 and a quoted reason",
+                any(
+                    "status=404" in l and "launch=false" in l and 'reason="unknown session"' in l
+                    for l in got
+                ),
                 str(got),
             )
             check("no page errors", not errors, str(errors[:3]))

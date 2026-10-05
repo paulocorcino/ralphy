@@ -7,7 +7,7 @@ use std::collections::VecDeque;
 use std::time::Instant;
 
 use crate::device::DeviceId;
-use crate::protocol::Command;
+use crate::protocol::{self, Command, Frame};
 
 /// The browser tab that opened a console socket: the holder it named, and
 /// the device of its browser. The device ID is written in the summary, never
@@ -41,6 +41,9 @@ const DROPPED: &str = "dropped";
 
 /// The `end` of a socket whose client sent a Close frame without saying why.
 const CLIENT_CLOSED: &str = "client-closed";
+
+/// The command verb that opens every console socket, before any output.
+pub(crate) const SESSION_OPEN: &str = "session-open";
 
 /// The command verb a page sends just before it closes a console socket.
 const DETACH: &str = "detach";
@@ -90,6 +93,16 @@ const OUTSTANDING_CAP: usize = 4;
 /// Round-trip samples kept per socket: about 5 hours of 20 s pings.
 const SAMPLE_CAP: usize = 1024;
 
+/// Where a relayed socket is in the frames a peer sends: before the
+/// `session-open` announcement, before the first terminal frame (a replay when
+/// the announcement says so), or in the live stream.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PeerStage {
+    Open,
+    FirstOutput { replay: bool },
+    Live,
+}
+
 struct Outstanding {
     payload: Vec<u8>,
     sent: Instant,
@@ -118,6 +131,7 @@ pub(crate) struct Traffic {
     lagged_events: u64,
     lagged_skipped: u64,
     live_since_ping: bool,
+    peer_stage: PeerStage,
     left: Option<Leave>,
     client_closed: bool,
     outstanding: VecDeque<Outstanding>,
@@ -181,6 +195,7 @@ impl Traffic {
             lagged_events: 0,
             lagged_skipped: 0,
             live_since_ping: false,
+            peer_stage: PeerStage::Open,
             left: None,
             client_closed: false,
             outstanding: VecDeque::new(),
@@ -197,6 +212,44 @@ impl Traffic {
         self.live_bytes += bytes as u64;
         self.live_frames += 1;
         self.live_since_ping = true;
+    }
+
+    /// Count one binary frame a peer sent to the browser. The relay forwards
+    /// the bytes unchanged; this reads them only until the replay is known.
+    /// The `session-open` announcement names the session and says whether a
+    /// replay follows; it is not counted, as the bridge does not count it. A
+    /// peer older than the `replay` field gets its replay counted as live.
+    pub(crate) fn peer_frame(&mut self, bytes: &[u8]) {
+        match self.peer_stage {
+            PeerStage::Live => self.live(bytes.len()),
+            PeerStage::FirstOutput { replay } => {
+                if bytes.first() == Some(&protocol::TAG_TERMINAL) {
+                    self.peer_stage = PeerStage::Live;
+                    if replay {
+                        self.replay(bytes.len());
+                        return;
+                    }
+                }
+                self.live(bytes.len());
+            }
+            PeerStage::Open => {
+                if bytes.first() == Some(&protocol::TAG_COMMAND) {
+                    if let Ok(Frame::Command(cmd)) = protocol::decode(bytes) {
+                        if cmd.verb == SESSION_OPEN {
+                            if self.keys.session.is_none() {
+                                self.keys.session =
+                                    cmd.payload.get("session").and_then(|v| v.as_u64());
+                            }
+                            let replay =
+                                cmd.payload.get("replay").and_then(|v| v.as_bool()) == Some(true);
+                            self.peer_stage = PeerStage::FirstOutput { replay };
+                            return;
+                        }
+                    }
+                }
+                self.live(bytes.len());
+            }
+        }
     }
 
     pub(crate) fn inbound(&mut self, bytes: usize) {
@@ -468,6 +521,54 @@ mod tests {
         t.client_left(Leave::Dormant);
         assert_eq!(t.end_label(None), "dormant");
         assert_eq!(t.end_label(Some("taken-over")), "taken-over");
+    }
+
+    fn peer() -> Traffic {
+        Traffic::peer(
+            "01PEER".to_string(),
+            "Mac".to_string(),
+            Tab::default(),
+            Instant::now(),
+        )
+    }
+
+    fn open_frame(payload: &str) -> Vec<u8> {
+        [
+            &[protocol::TAG_COMMAND][..],
+            format!(r#"{{"id":4,"verb":"session-open","payload":{payload}}}"#).as_bytes(),
+        ]
+        .concat()
+    }
+
+    fn terminal_frame(len: usize) -> Vec<u8> {
+        protocol::encode(&Frame::Terminal {
+            session: 4,
+            data: vec![b'x'; len],
+        })
+    }
+
+    #[test]
+    fn a_relayed_replay_is_counted_as_replay_and_names_the_session() {
+        let mut t = peer();
+        t.peer_frame(&open_frame(r#"{"session":4,"replay":true}"#));
+        let replay = terminal_frame(1000);
+        t.peer_frame(&replay);
+        t.peer_frame(&terminal_frame(10));
+        let s = t.summary();
+        assert_eq!(t.keys.session, Some(4));
+        assert_eq!(s.replay_bytes, replay.len() as u64);
+        assert_eq!(s.live_frames, 1, "the open frame is not counted");
+        assert_eq!(s.live_bytes, terminal_frame(10).len() as u64);
+    }
+
+    #[test]
+    fn an_older_peer_without_the_replay_field_still_names_the_session() {
+        let mut t = peer();
+        t.peer_frame(&open_frame(r#"{"session":4}"#));
+        t.peer_frame(&terminal_frame(1000));
+        let s = t.summary();
+        assert_eq!(t.keys.session, Some(4));
+        assert_eq!((s.replay_bytes, s.live_frames), (0, 1));
     }
 
     #[test]

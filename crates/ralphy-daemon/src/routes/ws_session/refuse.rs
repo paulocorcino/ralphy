@@ -55,7 +55,7 @@ impl Refuser {
         let message = message.into();
         tracing::info!(
             status = status.as_u16(),
-            reason = %message,
+            reason = message.as_str(),
             launch = self.session.is_none(),
             session = self.session,
             holder = self.tab.holder.as_deref(),

@@ -174,6 +174,10 @@ async fn a_console_opens_in_the_selected_checkout_and_says_so() {
         open["checkout"], "wt-a",
         "(a) session-open must carry the worktree name; got {open}"
     );
+    assert_eq!(
+        open["replay"], false,
+        "(a) a new session has nothing to replay; got {open}"
+    );
     let cwd = cwd_line(&text);
     assert!(
         cwd.ends_with(".ralphy/worktrees/wt-a"),
@@ -246,6 +250,8 @@ async fn a_console_opens_in_the_selected_checkout_and_says_so() {
         open["checkout"], "wt-a",
         "(d) the reattach must re-announce the worktree; got {open}"
     );
+    // A relaying daemon reads `replay` to count the next frame as a replay.
+    assert_eq!(open["replay"], true, "(d) a replay follows; got {open}");
 
     // --- (e) the sessions listing carries the key only where it applies.
     let rows = sessions(port).await;

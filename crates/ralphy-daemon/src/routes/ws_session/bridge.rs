@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use axum::extract::ws::{Message, WebSocket};
 
-use super::traffic::{Leave, Tab, Traffic};
+use super::traffic::{Leave, Tab, Traffic, SESSION_OPEN};
 use super::SessionLabels;
 use crate::protocol::{Command, Frame};
 use crate::routes::send_command;
@@ -103,7 +103,7 @@ pub(crate) async fn session_ws(
 
     let open = Frame::Command(Command {
         id,
-        verb: "session-open".to_string(),
+        verb: SESSION_OPEN.to_string(),
         payload: serde_json::json!({
             "session": id,
             "daemon_id": daemon_id,
@@ -117,6 +117,9 @@ pub(crate) async fn session_ws(
             // Read-only from the start: this launch joined a session another
             // page drives (ADR-0050 amendment 2026-10-04).
             "watch": labels.watching,
+            // A scrollback replay follows. Read by a relaying daemon for its
+            // traffic summary; the page does not need it.
+            "replay": !attach.snapshot.is_empty(),
         }),
     });
     if socket
