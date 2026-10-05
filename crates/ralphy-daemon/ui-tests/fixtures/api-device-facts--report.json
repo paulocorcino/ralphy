@@ -1,0 +1,141 @@
+{
+  "holder": "0123456789abcdef0123456789abcdef",
+  "ua": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Mobile Safari/537.36",
+  "ua_data": {
+    "architecture": "",
+    "bitness": "",
+    "brands": [
+      {
+        "brand": "Chromium",
+        "version": "148"
+      },
+      {
+        "brand": "Google Chrome",
+        "version": "148"
+      },
+      {
+        "brand": "Not/A)Brand",
+        "version": "99"
+      }
+    ],
+    "formFactors": [
+      "Mobile"
+    ],
+    "fullVersionList": [
+      {
+        "brand": "Chromium",
+        "version": "148.0.7778.215"
+      },
+      {
+        "brand": "Google Chrome",
+        "version": "148.0.7778.215"
+      },
+      {
+        "brand": "Not/A)Brand",
+        "version": "99.0.0.0"
+      }
+    ],
+    "mobile": true,
+    "model": "moto g(30)",
+    "platform": "Android",
+    "platformVersion": "12.0.0"
+  },
+  "platform": "Linux armv81",
+  "vendor": "Google Inc.",
+  "languages": [
+    "pt-BR",
+    "pt",
+    "en-US",
+    "en"
+  ],
+  "intl": {
+    "time_zone": "America/Sao_Paulo",
+    "locale": "pt-BR",
+    "calendar": "gregory",
+    "numbering_system": "latn",
+    "hour_cycle": "h23"
+  },
+  "tz_offset_min": -180,
+  "screen": {
+    "width": 485,
+    "height": 1076,
+    "avail_width": 485,
+    "avail_height": 1076,
+    "color_depth": 24,
+    "orientation": "portrait-primary",
+    "is_extended": false
+  },
+  "dpr": 1.4875000715255737,
+  "window": {
+    "inner": [
+      484,
+      927
+    ],
+    "outer": [
+      485,
+      1076
+    ],
+    "visual_scale": 1
+  },
+  "safe_area": {
+    "top": 0,
+    "right": 0,
+    "bottom": 0,
+    "left": 0
+  },
+  "touch_points": 5,
+  "cores": 8,
+  "memory_gb": 4,
+  "media": {
+    "pointer": "coarse",
+    "any_pointer": "coarse",
+    "hover": "none",
+    "color_scheme": "light",
+    "reduced_motion": "no-preference",
+    "contrast": "no-preference",
+    "forced_colors": "none",
+    "inverted_colors": null,
+    "color_gamut": "srgb",
+    "dynamic_range": "standard",
+    "display_mode": null
+  },
+  "engine_signals": {
+    "webkit_touch_callout": false,
+    "gesture_event": false,
+    "safari_object": false,
+    "ios_standalone": null,
+    "moz_appearance": false,
+    "chrome_object": true
+  },
+  "gpu": {
+    "vendor": "WebKit",
+    "renderer": "WebKit WebGL",
+    "unmasked_vendor": "Google Inc. (Qualcomm)",
+    "unmasked_renderer": "ANGLE (Qualcomm, Adreno (TM) 610, OpenGL ES 3.2)"
+  },
+  "voices": {
+    "count": 0,
+    "sample": []
+  },
+  "automation": false,
+  "plugins": 0,
+  "pdf_viewer": false,
+  "cookies": true,
+  "do_not_track": null,
+  "storage": {
+    "quota": 10737418240,
+    "usage": 0
+  },
+  "connection": {
+    "type": "wifi",
+    "effective_type": "4g",
+    "rtt": 200,
+    "downlink": 1.75,
+    "save_data": false
+  },
+  "battery": {
+    "level": 0.07,
+    "charging": true
+  },
+  "keyboard": {}
+}

@@ -441,6 +441,23 @@ closes that window itself.)*
   never in the desk or in the tab's detach registry, which holds ids only.)*
 - **The popup opens no consoles**, so its contents are exactly §6's snapshot and
   re-attach stays a well-defined inverse.
+  *(Amended 2026-10-05, columns in the popup. The popup has the fence head's
+  "as columns" button, in its bottom-right corner, where no console control
+  is. It opens the window's consoles as columns that fill the window, as §5
+  does on the stage. The popup holds its own grid and never stores it: its
+  layout is throwaway. A column's restore ends the columns as on the stage.
+  The Slice list stays out of the popup, which opens no consoles. Beside it,
+  while the window holds a card, a note button keeps the next card on top
+  (ADR-0064 §7, amended the same day). A phone shows neither button: it
+  paints one console.)*
+  *(Amended 2026-10-05, Relaunch in the popup. A member that does not run
+  shows the Relaunch button in the popup, as on the stage. A relaunch is not
+  a new console: it reuses the member's record id, so the popup's contents
+  are still §6's snapshot. Only the operator's click launches there; the
+  relaunch on load and the relaunch when a peer comes back stay out of the
+  popup. The snapshot keeps no session id, so on re-attach a member that
+  came home as a placeholder attaches to the session that runs for its
+  record.)*
 - **At most four popups, and one per fence** — detaching an already-detached
   fence focuses its popup. This cap is a **client** constant and deliberately
   does not sit beside §10's daemon-enforced ones: a detach *moves* consoles
@@ -524,6 +541,16 @@ context turned white with a sad face. A console that does not itself fill the
 viewport, while another console does, now counts as off the viewport: it sleeps
 after the same grace period, and it wakes when the cover goes. The rule is the
 same pure fold with one more input.)*
+
+*(Amended 2026-10-05, restored consoles. A window that reattaches to a known
+session (a desk restore, a fence that comes home) starts asleep, and the first
+report of the `IntersectionObserver` wakes it when it is visible. Before, it
+attached at once, replayed the text of its session, and slept after the grace
+period when nobody could see it: measured on three devices, 42% of the console
+bytes went to those replays. The wake is the same ordinary attach as above. A
+launch still attaches at once, because it has no session to wake to. Without
+an `IntersectionObserver` a window attaches at once, because nothing would
+wake it.)*
 
 *(Amended 2026-09-22, the half-open writer. Measured behind a tunnel
 (TunnelDeck for dev tunnels): after a phone switched from wifi to 4G, the tunnel

@@ -2068,11 +2068,12 @@ window.WBNotes = (function () {
 
   // Float the card in front of the windows (decisions 1–4). One card at a
   // time: another card on top goes back first. Refused for a card that is in
-  // a detached fence's popup, and in the popup itself.
+  // a detached fence's popup (`isAway`). Inside the popup itself the card is
+  // on top of that window (ADR-0064 §7, amended 2026-10-05); its record may be
+  // the orphan `mountDetached` kept, when this window's desk does not hold it.
   function keepOnTop(id) {
-    if (fragment) return false;
-    const record = recordOf(id);
     const el = cardEl(id);
+    const record = recordOf(id) || (fragment ? el?._noteOrphan : null);
     if (!record || !el) return false;
     if (isAway(record, window.WBConsole?.fenceRecords?.() || [])) return false;
     if (onTopId === id) return true;

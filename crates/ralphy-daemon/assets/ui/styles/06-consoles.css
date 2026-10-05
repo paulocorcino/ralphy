@@ -682,8 +682,10 @@
 /* A parked console: this window watches a session another window drives (issue
    #334). One line between the titlebar and the terminal — the session stays
    visible and keeps streaming, so the strip must not take the body's height.
-   The button reuses `.session-reconnect`. */
-.session-parked {
+   The button reuses `.session-reconnect`. The same line holds a console whose
+   peer the fleet calls down: the scrollback stays, no socket is opened. */
+.session-parked,
+.session-peer-down {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
@@ -694,6 +696,10 @@
   color: var(--text-muted);
   background: var(--surface);
   border-bottom: 1px solid var(--border);
+}
+.session-peer-down .session-detail {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .session-parked-hint {
   font-size: 0.74rem;

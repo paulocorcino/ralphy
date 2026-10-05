@@ -1,0 +1,124 @@
+{
+  "measured": "2026-10-05",
+  "headers": {
+    "accept": "*/*",
+    "host": "localhost:8765",
+    "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Safari/605.1.15",
+    "accept-encoding": "gzip, deflate, br, zstd",
+    "accept-language": "pt-BR,pt;q=0.9",
+    "referer": "https://example-8765.brs.devtunnels.ms/",
+    "x-real-ip": "203.0.113.10",
+    "x-forwarded-port": "443",
+    "x-forwarded-scheme": "https",
+    "x-original-uri": "/facts?label=Ipad-teclado",
+    "x-scheme": "https",
+    "sec-fetch-site": "same-origin",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-dest": "empty",
+    "priority": "u=3, i",
+    "x-forwarded-proto": "https",
+    "x-forwarded-host": "example-8765.brs.devtunnels.ms",
+    "x-forwarded-for": "203.0.113.10",
+    "origin": "http://localhost:8765",
+    "proxy-connection": "Keep-Alive",
+    "content-type": "application/json",
+    "content-length": "2652"
+  },
+  "client": {
+    "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Safari/605.1.15",
+    "ua_data": null,
+    "platform": "MacIntel",
+    "vendor": "Apple Computer, Inc.",
+    "languages": [
+      "pt-BR"
+    ],
+    "intl": {
+      "time_zone": "America/Bahia",
+      "locale": "pt-BR",
+      "calendar": "gregory",
+      "numbering_system": "latn",
+      "hour_cycle": "h23"
+    },
+    "tz_offset_min": -180,
+    "screen": {
+      "width": 954,
+      "height": 1373,
+      "avail_width": 1373,
+      "avail_height": 954,
+      "color_depth": 24,
+      "orientation": "landscape-primary",
+      "is_extended": null
+    },
+    "dpr": 2,
+    "window": {
+      "inner": [
+        1373,
+        822
+      ],
+      "outer": [
+        1373,
+        954
+      ],
+      "visual_scale": 1
+    },
+    "safe_area": {
+      "top": 0,
+      "right": 0,
+      "bottom": 20,
+      "left": 0
+    },
+    "touch_points": 5,
+    "cores": 8,
+    "memory_gb": null,
+    "media": {
+      "pointer": "coarse",
+      "any_pointer": "fine",
+      "hover": "none",
+      "color_scheme": "dark",
+      "reduced_motion": "no-preference",
+      "contrast": "no-preference",
+      "forced_colors": "none",
+      "inverted_colors": "none",
+      "color_gamut": "p3",
+      "dynamic_range": "high",
+      "display_mode": "browser"
+    },
+    "engine_signals": {
+      "webkit_touch_callout": true,
+      "gesture_event": true,
+      "safari_object": false,
+      "ios_standalone": false,
+      "moz_appearance": false,
+      "chrome_object": false
+    },
+    "gpu": {
+      "vendor": "WebKit",
+      "renderer": "WebKit WebGL",
+      "unmasked_vendor": "Apple Inc.",
+      "unmasked_renderer": "Apple GPU"
+    },
+    "voices": {
+      "count": 68,
+      "sample": [
+        "Luciana|pt-BR|1",
+        "Joana|pt-PT|1",
+        "Alice|it-IT|1",
+        "Alva|sv-SE|1",
+        "Amélie|fr-CA|1"
+      ]
+    },
+    "automation": false,
+    "plugins": 5,
+    "pdf_viewer": true,
+    "cookies": true,
+    "do_not_track": null,
+    "storage": {
+      "quota": 34789235098,
+      "usage": 0
+    },
+    "connection": null,
+    "battery": null,
+    "keyboard": null,
+    "holder": null
+  }
+}

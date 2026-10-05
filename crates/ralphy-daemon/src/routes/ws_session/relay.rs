@@ -1,6 +1,8 @@
 //! The peer relay for `/ws/session`: the query the owning daemon receives
 //! and the byte-for-byte bridge between the browser and the peer socket.
 
+use std::time::Instant;
+
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::http::StatusCode;
 use axum::response::Response;
@@ -8,9 +10,17 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::io::AsyncWriteExt;
 
 use super::refuse::Refuser;
+use super::traffic::{Leave, Tab, Traffic};
 use super::SessionQuery;
 use crate::peer;
+use crate::protocol::{self, Frame};
+use crate::routes::audit_layer::{ConsoleRecord, SocketAudit};
 use crate::routes::encode_query_value;
+use crate::session;
+
+/// The `end` of a relayed socket the peer closed: why it closed is in the
+/// peer's own log line.
+const PEER_CLOSED: &str = "peer-closed";
 
 pub(crate) fn peer_session_query(query: &SessionQuery, slug: &str) -> String {
     if let Some(id) = query.id {
@@ -79,6 +89,15 @@ fn push_holder(out: &mut String, query: &SessionQuery) {
     }
 }
 
+/// The tab that opens a relayed console socket, and the audit line the
+/// opening writes once the peer accepts it: a launch or a take-over, or `None`
+/// for a plain reattach or a watch.
+pub(crate) struct Opening {
+    pub(crate) tab: Tab,
+    pub(crate) who: SocketAudit,
+    pub(crate) record: Option<ConsoleRecord>,
+}
+
 /// Open `peer_query` on the peer that owns the session and bridge it to the
 /// browser. A refused dial is refused with the peer's diagnosis (`502` on a
 /// reattach); an HTTP refusal from the peer keeps its own status and body. A
@@ -88,13 +107,24 @@ pub(crate) async fn relay_to_peer(
     ws: WebSocketUpgrade,
     peer: &peer::PeerDescriptor,
     peer_query: &str,
+    opening: Opening,
     me: peer::client::SelfRef<'_>,
     refuser: &Refuser,
     shutdown: tokio::sync::watch::Receiver<bool>,
 ) -> Response {
     match peer::client::session(peer, peer_query, me).await {
         Ok(peer_socket) => {
-            ws.on_upgrade(move |socket| peer_session_ws(socket, peer_socket, shutdown))
+            let Opening { tab, who, record } = opening;
+            if let Some(record) = &record {
+                who.console(record);
+            }
+            let traffic = Traffic::peer(
+                peer.daemon_id.clone(),
+                peer.environment.clone(),
+                tab,
+                Instant::now(),
+            );
+            ws.on_upgrade(move |socket| peer_session_ws(socket, peer_socket, traffic, shutdown))
         }
         Err(peer::client::SocketError::Peer(status)) => refuser.refuse(
             ws,
@@ -109,24 +139,46 @@ pub(crate) async fn relay_to_peer(
     }
 }
 
+/// The traffic summary reads the peer's `session-open` and first terminal
+/// frame to tell the replay from live output (see [`Traffic::peer_frame`]).
+/// The peer forwards its own pings to the browser and the browser's pongs come
+/// back here, so the round trip timed here is the browser's leg only.
 pub(crate) async fn peer_session_ws(
     mut browser: WebSocket,
     mut peer: peer::client::PeerSocket,
+    mut traffic: Traffic,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) {
+    let mut end = None;
     loop {
         tokio::select! {
-            _ = shutdown.changed() => break,
+            _ = shutdown.changed() => {
+                end = Some(session::EndReason::DaemonShutdown.as_wire());
+                break;
+            }
             incoming = browser.recv() => {
                 let Some(Ok(message)) = incoming else {
                     close_peer_session(&mut peer).await;
                     break;
                 };
                 let outbound = match message {
-                    Message::Binary(bytes) => tokio_tungstenite::tungstenite::Message::Binary(bytes),
+                    Message::Binary(bytes) => {
+                        traffic.inbound(bytes.len());
+                        // Read only for the log; the bytes go on unchanged.
+                        if let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) {
+                            if let Some(leave) = Leave::from_command(&cmd) {
+                                traffic.client_left(leave);
+                            }
+                        }
+                        tokio_tungstenite::tungstenite::Message::Binary(bytes)
+                    }
                     Message::Ping(bytes) => tokio_tungstenite::tungstenite::Message::Ping(bytes),
-                    Message::Pong(bytes) => tokio_tungstenite::tungstenite::Message::Pong(bytes),
+                    Message::Pong(bytes) => {
+                        traffic.pong_received(&bytes, Instant::now());
+                        tokio_tungstenite::tungstenite::Message::Pong(bytes)
+                    }
                     Message::Close(_) => {
+                        traffic.client_closed();
                         close_peer_session(&mut peer).await;
                         break;
                     }
@@ -142,10 +194,17 @@ pub(crate) async fn peer_session_ws(
                     break;
                 };
                 let outbound = match message {
-                    tokio_tungstenite::tungstenite::Message::Binary(bytes) => Message::Binary(bytes),
-                    tokio_tungstenite::tungstenite::Message::Ping(bytes) => Message::Ping(bytes),
+                    tokio_tungstenite::tungstenite::Message::Binary(bytes) => {
+                        traffic.peer_frame(&bytes);
+                        Message::Binary(bytes)
+                    }
+                    tokio_tungstenite::tungstenite::Message::Ping(bytes) => {
+                        traffic.ping_sent(&bytes, Instant::now());
+                        Message::Ping(bytes)
+                    }
                     tokio_tungstenite::tungstenite::Message::Pong(bytes) => Message::Pong(bytes),
                     tokio_tungstenite::tungstenite::Message::Close(_) => {
+                        end = Some(PEER_CLOSED);
                         let _ = browser.send(Message::Close(None)).await;
                         break;
                     }
@@ -158,6 +217,7 @@ pub(crate) async fn peer_session_ws(
             }
         }
     }
+    traffic.log(end, Instant::now());
 }
 
 pub(crate) async fn close_peer_session(peer: &mut peer::client::PeerSocket) {

@@ -328,6 +328,68 @@ async fn a_nudge_on_a_tunnel_peer_opens_its_tunnel() {
     serving.abort();
 }
 
+const SILENT_ID: &str = "01ARZ3NDEKTSV4RRFFQ69G5FB5";
+
+/// A repo command relayed to a tunnel peer whose `ssh` runs but whose daemon
+/// does not answer gets the sentence `/api/fleet` gives the same peer.
+#[tokio::test]
+async fn a_relayed_command_names_a_silent_tunnel_as_the_fleet_does() {
+    use futures_util::{SinkExt, StreamExt};
+    use ralphy_daemon::protocol::{self, Command, Frame};
+    use tokio_tungstenite::tungstenite::Message;
+
+    let _serial = SERIAL.lock().await;
+    let _fx = setup(60_000);
+    let store = tempfile::tempdir().unwrap();
+    let port = closed_port();
+    peer::write_descriptor(store.path(), &descriptor(SILENT_ID, port, Some(spec(port)))).unwrap();
+    assert!(tunnels().ensure(SILENT_ID, &spec(port)).unwrap());
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let local_port = listener.local_addr().unwrap().port();
+    let local = app(LOCAL_ID, store.path(), AuthState::localhost());
+    let serving = tokio::spawn(async move {
+        axum::serve(listener, local).await.unwrap();
+    });
+
+    let (mut ws, _) =
+        tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{local_port}/ws/command"))
+            .await
+            .unwrap();
+    ws.send(Message::Binary(
+        protocol::encode(&Frame::Command(Command {
+            id: 1,
+            verb: "tree.list".to_string(),
+            payload: serde_json::json!({ "repo": format!("{SILENT_ID}/owner/repo"), "path": "" }),
+        }))
+        .into(),
+    ))
+    .await
+    .unwrap();
+    let reply = tokio::time::timeout(Duration::from_secs(10), async {
+        while let Some(message) = ws.next().await {
+            if let Message::Binary(bytes) = message.unwrap() {
+                if let Ok(Frame::Command(reply)) = protocol::decode(&bytes) {
+                    if reply.id == 1 {
+                        return reply.payload;
+                    }
+                }
+            }
+        }
+        panic!("command socket closed without a reply");
+    })
+    .await
+    .expect("command reply timed out");
+
+    assert_eq!(reply["status"], "error", "got: {reply}");
+    let message = reply["message"].as_str().unwrap();
+    assert!(
+        message.starts_with("The tunnel to svrapp is open, but its daemon does not answer"),
+        "got: {message}"
+    );
+    serving.abort();
+}
+
 const PAIRED_ID: &str = "01ARZ3NDEKTSV4RRFFQ69G5FB4";
 
 fn description(token: &str) -> peer::DaemonDescription {

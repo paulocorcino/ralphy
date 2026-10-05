@@ -18,6 +18,7 @@ mod stream;
 pub(crate) use oneshot::*;
 pub(crate) use registry_verbs::serve_registry;
 
+use super::audit_layer::SocketAudit;
 use super::{read_peer_store, send_command};
 use super::{request_may_carry_a_secret, RouterShared};
 use crate::protocol::{Command, Frame};
@@ -42,6 +43,7 @@ pub(crate) async fn command_ws(
     bound_port: u16,
     sessions: Arc<session::SessionManager>,
     secret_ok: bool,
+    who: SocketAudit,
 ) {
     // First frame or nothing: a client that opens and hangs up spawns nothing.
     // A frame that is refused (too big for the socket's limits, not binary,
@@ -87,6 +89,9 @@ pub(crate) async fn command_ws(
         .await;
         return;
     };
+    // Recorded before any routing: a verb relayed to a peer or refused here
+    // was still asked for by this device.
+    who.record(verb, &cmd);
     // A host verb names no repo and acts on THIS computer: served here, before
     // any repo routing, and never relayed to a peer.
     if verb.is_host() {
@@ -304,7 +309,7 @@ async fn relay_to_peer(peer: &peer::PeerDescriptor, command: &Command) -> serde_
         }),
         Err(e) => serde_json::json!({
             "status": "error",
-            "message": fleet::peer_unreachable(peer, &format!("{e:#}")),
+            "message": peer::client::transport_failed(peer, format!("{e:#}")).await,
         }),
     }
 }
@@ -445,14 +450,18 @@ pub(crate) fn command_routes(s: &RouterShared) -> Router {
     let run_exits = s.run_exits.clone();
     let bound_port = s.bound_port;
     let sessions = s.sessions.clone();
+    let audit = s.audit.clone();
     Router::new().route(
         "/ws/command",
         get(
-            move |ws: WebSocketUpgrade, headers: axum::http::HeaderMap| {
+            move |ws: WebSocketUpgrade,
+                  caller: Option<axum::Extension<super::audit_layer::Caller>>,
+                  headers: axum::http::HeaderMap| {
                 let ws = ws
                     .max_message_size(crate::tree::MAX_COMMAND_BYTES)
                     .max_frame_size(crate::tree::MAX_COMMAND_BYTES);
                 let secret_ok = request_may_carry_a_secret(&headers);
+                let who = SocketAudit::of(audit.clone(), caller);
                 let registry_path = registry.clone();
                 let shutdown = shutdown.clone();
                 let daemon_id = daemon_id.clone();
@@ -471,6 +480,7 @@ pub(crate) fn command_routes(s: &RouterShared) -> Router {
                             bound_port,
                             sessions,
                             secret_ok,
+                            who,
                         )
                     })
                 }

@@ -31,6 +31,8 @@ import "./wb-runs.test.mjs";
 import "./wb-session-route.test.mjs";
 import "./wb-desk-history.test.mjs";
 import "./wb-desk-sync.test.mjs";
+import "./wb-device.test.mjs";
+import "./wb-devices.test.mjs";
 import "./wb-settings.test.mjs";
 import "./wb-spend.test.mjs";
 import "./wb-split.test.mjs";

@@ -239,14 +239,16 @@ fn secure_attr(secure: bool) -> &'static str {
 /// Extract the `ralphy_session` value from a `Cookie:` request header, or `None`
 /// when absent. Handles a multi-cookie header (`a=1; ralphy_session=…; b=2`).
 pub fn from_cookie_header(header: Option<&str>) -> Option<String> {
-    let header = header?;
-    for pair in header.split(';') {
-        let pair = pair.trim();
-        if let Some(value) = pair.strip_prefix(&format!("{COOKIE_NAME}=")) {
-            return Some(value.to_string());
-        }
-    }
-    None
+    named_value(header, COOKIE_NAME).map(str::to_string)
+}
+
+/// The value of the cookie `name` in a `Cookie:` request header, or `None`.
+pub(crate) fn named_value<'h>(header: Option<&'h str>, name: &str) -> Option<&'h str> {
+    header?.split(';').find_map(|pair| {
+        pair.trim()
+            .strip_prefix(name)
+            .and_then(|rest| rest.strip_prefix('='))
+    })
 }
 
 #[cfg(test)]

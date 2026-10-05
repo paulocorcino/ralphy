@@ -118,5 +118,28 @@
     return session.repo === repoRef;
   }
 
-  return { url, holder, tabHolder, closeUrl, closeSucceeded, announcement, matchesRepo };
+  // The `x-ralphy-unanswered` header of `/api/sessions`: the daemon ids of the
+  // peers the list did not hear from. Their sessions are UNKNOWN on this read,
+  // not absent.
+  const UNANSWERED_HEADER = "x-ralphy-unanswered";
+  function unanswered(value) {
+    return new Set(
+      String(value ?? "")
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean),
+    );
+  }
+
+  return {
+    url,
+    holder,
+    tabHolder,
+    closeUrl,
+    closeSucceeded,
+    announcement,
+    matchesRepo,
+    UNANSWERED_HEADER,
+    unanswered,
+  };
 });

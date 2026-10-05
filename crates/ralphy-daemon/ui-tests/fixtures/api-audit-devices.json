@@ -1,0 +1,19 @@
+{
+  "devices": [
+    {
+      "browser": "chrome",
+      "browser_version": "148",
+      "device": "<device>",
+      "events": 3,
+      "first_seen": "<first_seen>",
+      "form": "phone",
+      "gpu": "Adreno (TM) 610",
+      "ip": "203.0.113.10",
+      "last_seen": "<last_seen>",
+      "model": "moto g(30)",
+      "os": "android",
+      "os_version": "12",
+      "this": true
+    }
+  ]
+}

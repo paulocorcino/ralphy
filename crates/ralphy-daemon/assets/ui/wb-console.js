@@ -588,14 +588,15 @@ window.WBConsole = (function () {
       return;
     }
     recordChecks.add(win);
-    fetch("/api/sessions")
-      .then((r) => (r.ok ? r.json() : null))
+    readSessions()
       .catch(() => null)
-      .then((sessions) => {
+      .then((read) => {
         recordChecks.delete(win);
         if (!win.isConnected || desk.some((r) => r.id === win._deskId)) return;
-        // Not known: the next desk this page takes asks again.
-        if (!Array.isArray(sessions)) return;
+        const sessions = read?.sessions;
+        // Not known: the next desk this page takes asks again. A list that
+        // did not hear from this window's peer does not know either.
+        if (!Array.isArray(sessions) || unheardRef(win._deskRepo, read.unheard)) return;
         const live = sessions.some((s) => s?.record === win._deskId) || !!sessionRowFor(win, sessions);
         if (live) createRecord(win);
         else leaveDesk([win._deskId]);
@@ -883,7 +884,7 @@ window.WBConsole = (function () {
     // this a "go to session" on a sleeping console would miss its own window
     // and spawn a SECOND one against the same id, which the daemon would park.
     if (t.sessionId != null) win._wantsSession = t.sessionId;
-    t.dispose();
+    t.dispose("dormant");
     win._term = null;
     win._dormant = true;
     win.classList.add("dormant");
@@ -1206,8 +1207,7 @@ window.WBConsole = (function () {
   // name of a tunnel peer, else the environment (`WSL: Ubuntu`). `fallback` is
   // the environment the desk record kept, for a box drawn before the fleet list.
   function peerHost(group, fallback) {
-    const host = group ? window.WBFleet.groupHost(group) || group.environment : "";
-    return host || fallback || "The other computer";
+    return window.WBFleet.peerName(group) || fallback || "The other computer";
   }
 
   // What a console box says about a project whose peer cannot serve it, from
@@ -1256,6 +1256,47 @@ window.WBConsole = (function () {
   function peerReturnDecision({ kind, canLaunch, available, wasOffline }) {
     if (!available || !wasOffline) return "stay";
     return kind === "console" && canLaunch ? "relaunch" : "offer";
+  }
+
+  // What a box restored while the session list did not hear from its peer
+  // does once that peer is available, from `liveSessionFor`'s answer:
+  //   "attach"   — the console still runs there;
+  //   "relaunch" — the list heard from the peer and it does not run: a shell
+  //                opens again, as a restore would have opened it;
+  //   "offer"    — the same for an agent console: the click is the operator's;
+  //   "stay"     — still not known (`undefined`): ask again on the next read.
+  function heldReturnDecision({ kind, canLaunch, session }) {
+    if (session === undefined) return "stay";
+    if (session) return "attach";
+    return kind === "console" && canLaunch ? "relaunch" : "offer";
+  }
+
+  // `/api/sessions` and the peers it did not hear from (`unheard`, a Set of
+  // daemon ids). Rejects when the list cannot be read. On this read a console
+  // of an unheard peer is neither running nor gone: nothing relaunches, adopts
+  // or forgets it (ADR-0050 amendment 2026-10-04).
+  // Reads in flight at the same moment share one request: every held box
+  // asks on the same fleet read, and each request asks every peer.
+  let sessionsRead = null;
+  function readSessions() {
+    if (!sessionsRead) {
+      sessionsRead = (async () => {
+        const r = await fetch("/api/sessions");
+        if (!r.ok) throw new Error("sessions unavailable");
+        const route = window.WBSessionRoute;
+        return {
+          sessions: await r.json(),
+          unheard: route.unanswered(r.headers?.get?.(route.UNANSWERED_HEADER)),
+        };
+      })().finally(() => {
+        sessionsRead = null;
+      });
+    }
+    return sessionsRead;
+  }
+  function unheardRef(ref, unheard) {
+    const daemon = window.WBFleet.refDaemon(ref);
+    return !!daemon && !!unheard?.has(daemon);
   }
 
   // The fleet group of `ref`'s peer when that peer cannot serve it, else null:
@@ -1328,12 +1369,16 @@ window.WBConsole = (function () {
   // Each peer's fleet group by daemon id, and the shell's wake action, fed by
   // the shell (`ingestFleet`) after every fleet read. The shell owns the fleet;
   // this is only its last answer, for the placeholders of peer projects.
+  // `readFleet` is the shell's fleet read on demand, for a window that saw
+  // its peer fail.
   const peerGroups = new Map();
   let wakePeer = null;
+  let readFleet = null;
   function ingestFleet(groups, hooks) {
     peerGroups.clear();
     for (const g of groups || []) if (g && g.daemon && !g.local) peerGroups.set(g.daemon, g);
     if (typeof hooks?.wake === "function") wakePeer = hooks.wake;
+    if (typeof hooks?.read === "function") readFleet = hooks.read;
     for (const win of [...wins]) if (typeof win._peerRefresh === "function") win._peerRefresh();
   }
 
@@ -2068,7 +2113,7 @@ window.WBConsole = (function () {
   function dropClosedElsewhere(id) {
     const win = findWindow(id);
     if (!win) return;
-    tearDownMember(win);
+    tearDownMember(win, "window-closed");
     applyExtent();
   }
 
@@ -3800,8 +3845,8 @@ window.WBConsole = (function () {
   // state a second client still renders) and WITHOUT closing its daemon
   // session: `dispose()` closing the socket is the writer-slot release the
   // popup then re-acquires (ADR-0051 §9).
-  function tearDownMember(win) {
-    win._term?.dispose();
+  function tearDownMember(win, reason) {
+    win._term?.dispose(reason);
     win.remove();
     untrackDormancy(win);
     wins.delete(win);
@@ -3885,7 +3930,8 @@ window.WBConsole = (function () {
     for (const m of members) {
       if (m.kind === "note") continue;
       const win = [...wins].find((w) => w._deskId === m.id);
-      if (win) tearDownMember(win);
+      // The popup attaches each member again.
+      if (win) tearDownMember(win, "reconnect");
     }
     // The cards leave the stage the same way: `renderNotes` drops every card
     // whose fence is now detached, and the records stay exactly where they are.
@@ -3938,7 +3984,10 @@ window.WBConsole = (function () {
       if (member.session != null) {
         spawnWindow({ id: member.session, repo: member.repo }, member.agent || "console", member.repo, member);
       } else {
-        spawnPlaceholder(member);
+        // The snapshot keeps no session id, so a member relaunched in the
+        // popup comes home as a placeholder. `_revive` attaches it to the
+        // session that runs now and never launches one.
+        spawnPlaceholder(member)._revive();
       }
     }
     showDetachGlyph(id, false);
@@ -4540,13 +4589,29 @@ window.WBConsole = (function () {
     return out;
   }
 
-  function encodeResize(rows, cols) {
-    const json = JSON.stringify({ id: 0, verb: "resize", payload: { rows, cols } });
-    const body = new TextEncoder().encode(json);
+  function encodeCommand(verb, payload) {
+    const body = new TextEncoder().encode(JSON.stringify({ id: 0, verb, payload }));
     const out = new Uint8Array(1 + body.length);
     out[0] = TAG_COMMAND;
     out.set(body, 1);
     return out;
+  }
+
+  function encodeResize(rows, cols) {
+    return encodeCommand("resize", { rows, cols });
+  }
+
+  // Why this page closes a console socket, sent as DATA just before the close:
+  // close metadata does not survive the trip (#334), and the peer relay
+  // forwards data frames unchanged. The daemon only logs it. One of
+  // `dormant`, `reconnect`, `window-closed`.
+  function encodeDetach(reason) {
+    return encodeCommand("detach", { reason });
+  }
+
+  // Announce `reason` on an open socket. A socket still connecting cannot send.
+  function announceDetach(ws, reason) {
+    if (reason && ws && ws.readyState === 1) ws.send(encodeDetach(reason));
   }
 
   // Failed re-opens before a socket is given up on, and how many a never-opened
@@ -4583,13 +4648,14 @@ window.WBConsole = (function () {
   // as much as `onclose`: a frame still queued lands AFTER this returns, when
   // `ws` names the replacement. Local, not `WBDaemon`'s: this module loads on
   // its own in the node harness and the popup.
-  function detachSocket(ws) {
+  function detachSocket(ws, reason) {
     if (!ws) return;
     ws.onclose = null;
     ws.onmessage = null;
     ws.onopen = null;
     ws.onerror = null;
     try {
+      announceDetach(ws, reason);
       if (ws.readyState <= 1) ws.close();
     } catch {}
   }
@@ -4941,6 +5007,20 @@ window.WBConsole = (function () {
     return "reconnect";
   }
 
+  // Whether a new window attaches at once or starts asleep. A window that
+  // reattaches to a known session starts asleep, and the observer's first
+  // report (it always sends one for a new target) wakes it if it is visible.
+  // Otherwise a restored desk replays the text of every console, then puts the
+  // ones off the viewport to sleep 15 s later: measured on three devices
+  // (2026-10-05), 42% of the console bytes went to those replays.
+  //   "dormant" — build the chrome only;
+  //   "attach"  — build the terminal and open the socket now.
+  // A launch has no id to wake to (`dormancyDecision` D5), and without an
+  // observer nothing would ever wake the window.
+  function birthDecision({ id, observed }) {
+    return id != null && observed ? "dormant" : "attach";
+  }
+
   // The dormancy rule, pure and tabled. The observer supplies `intersecting`,
   // `applyDormancy` owns the grace period. Returns exactly one of
   //   "sleep" — dispose this window's terminal and release its socket;
@@ -5017,9 +5097,6 @@ window.WBConsole = (function () {
   // reports 1005/wasClean=false even for a served Close frame, so an
   // unannounced dirty close is read as a flaky link.
   function reconnectDecision({
-    code,
-    wasClean,
-    opened,
     everOpened,
     announced,
     idKnown,
@@ -5032,15 +5109,28 @@ window.WBConsole = (function () {
     if (announced === "taken-over") return "park-as-watcher";
     if (announced != null) return "give-up";
     if (failedReopens > MAX_FAILED_REOPENS) return "give-up";
-    // R5: a clean close of a socket that DID open is a deliberate server end
-    // (an older daemon, a proxy closing).
-    if (opened && (wasClean || code === 1000 || code === 1001)) return "give-up";
+    // No rule reads the close code or `wasClean` (ADR-0051 §9). A proxy in
+    // the path can close the page side cleanly, with 1000, for a socket the
+    // daemon dropped, so a clean close is not a deliberate end. Every
+    // deliberate end is announced (R2/R3).
     // R6: held the session before, so a drop is a flaky link.
     if (everOpened) return "reconnect";
     // R7/R8: never opened. Retry a bounded number of times (an F5 racing the
     // old bridge's teardown), then settle for watching.
     if (failedReopens < WATCH_AFTER) return "reconnect";
     return "park-as-watcher";
+  }
+
+  // Whether a reattach may open a socket at all (ADR-0070 D2, event 7). A
+  // socket to a peer the fleet calls down fails and retries, so the window
+  // holds instead, and the fleet read that calls the peer back releases it.
+  // `decision` is "connect" for a window's first socket, else
+  // `reconnectDecision`'s answer. Returns it unchanged, or "hold".
+  // No group (a local project, the popup, a fleet not read yet) changes
+  // nothing, and a launch (no id) is held by its placeholder (`peerHeld`).
+  function peerGate({ decision, group, id }) {
+    if (id == null || !group || decision === "give-up") return decision;
+    return window.WBFleet.available(group) ? decision : "hold";
   }
 
   // The terminal's surface, ADR-0035's palette. xterm.js takes no CSS variables
@@ -5699,6 +5789,27 @@ window.WBConsole = (function () {
     // id and print a second "[session closed]".
     let ended = false;
     let lastResumeAt = 0;
+    // True while the fleet calls this window's peer down: no socket, no timer.
+    // The session lives on the peer, so a hold never gives up.
+    let held = false;
+    const peerGroup = () => (typeof opts.peerGroup === "function" ? opts.peerGroup() : null);
+
+    function hold(group) {
+      held = true;
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+      if (typeof opts.onPeerHold === "function") opts.onPeerHold(group);
+    }
+
+    function release() {
+      held = false;
+      retryDelay = 0;
+      failedReopens = 0;
+      if (typeof opts.onPeerBack === "function") opts.onPeerBack();
+      connect({ id: currentSessionId, repo: currentRepo, watch: watching });
+    }
 
     function giveUp() {
       ended = true;
@@ -5821,17 +5932,17 @@ window.WBConsole = (function () {
       ws.onclose = (event) => {
         if (leaving || switching) return;
         if (!opened) failedReopens += 1;
-        switch (
-          reconnectDecision({
-            code: event?.code,
-            wasClean: !!event?.wasClean,
-            opened,
-            everOpened,
-            announced,
-            idKnown: currentSessionId != null,
-            failedReopens,
-          })
-        ) {
+        const decision = reconnectDecision({
+          everOpened,
+          announced,
+          idKnown: currentSessionId != null,
+          failedReopens,
+        });
+        switch (peerGate({ decision, group: peerGroup(), id: currentSessionId })) {
+          case "hold":
+            if (!opened) failedReopens -= 1;
+            hold(peerGroup());
+            return;
           case "give-up":
             giveUp();
             return;
@@ -5849,6 +5960,8 @@ window.WBConsole = (function () {
           default:
             if (retryDelay === 0) {
               term.write("\r\n[connection lost — reconnecting…]\r\n");
+              // The fleet may already know why; its answer can hold this window.
+              if (typeof opts.readFleet === "function") opts.readFleet();
             }
             scheduleReconnect();
         }
@@ -5888,7 +6001,8 @@ window.WBConsole = (function () {
         ws.send(encodeResize(rows, cols));
     });
 
-    connect(opts);
+    if (peerGate({ decision: "connect", group: peerGroup(), id: opts.id }) === "hold") hold(peerGroup());
+    else connect(opts);
 
     return {
       term,
@@ -5950,6 +6064,12 @@ window.WBConsole = (function () {
       // vendor CLI (`reconnectDecision` R1, `takeOver`).
       resume(stale) {
         if (leaving || ended || currentSessionId == null) return false;
+        // Held: the fleet decides, so ask it rather than dial a peer it calls
+        // down. Its answer reaches `peerRefresh`.
+        if (held) {
+          if (typeof opts.readFleet === "function") opts.readFleet();
+          return false;
+        }
         const now = Date.now();
         if (now - lastResumeAt < RESUME_DEBOUNCE_MS) return false;
         // A pending backoff is brought forward. `retryDelay` is kept: it stops
@@ -5965,7 +6085,7 @@ window.WBConsole = (function () {
         const connectingMs = now - connectingSince;
         if (resumeDecision({ readyState, stale, connectingMs }) === "none") return false;
         lastResumeAt = now;
-        detachSocket(ws);
+        detachSocket(ws, "reconnect");
         connect({ id: currentSessionId, repo: currentRepo, watch: watching });
         return true;
       },
@@ -5982,7 +6102,7 @@ window.WBConsole = (function () {
         // returns, when `switching` is false again and `ws` names the new
         // socket. A queued `session-end` would otherwise attach a stale reason
         // to the NEW connection and turn its next drop into a give-up.
-        detachSocket(ws);
+        detachSocket(ws, "reconnect");
         watching = false;
         announced = null;
         refusal = null;
@@ -5992,8 +6112,27 @@ window.WBConsole = (function () {
         if (typeof opts.onResume === "function") opts.onResume();
         connect({ id: currentSessionId, repo: currentRepo, takeover: true });
       },
-      dispose() {
+      // A fleet read arrived. A held window goes back when its peer is
+      // available, or when the fleet no longer lists it (the ordinary retry
+      // decides then). A window in its backoff holds when the peer is down.
+      peerRefresh() {
+        if (leaving || ended) return;
+        const group = peerGroup();
+        const gate = peerGate({ decision: "reconnect", group, id: currentSessionId });
+        if (held) {
+          if (gate === "hold") opts.onPeerHold?.(group);
+          else release();
+          return;
+        }
+        if (retryTimer && gate === "hold") hold(group);
+      },
+      // `reason` (see `encodeDetach`) tells the daemon why the socket closes.
+      dispose(reason) {
         leaving = true;
+        if (held) {
+          held = false;
+          if (typeof opts.onPeerBack === "function") opts.onPeerBack();
+        }
         if (retryTimer) {
           clearTimeout(retryTimer);
           retryTimer = null;
@@ -6003,7 +6142,12 @@ window.WBConsole = (function () {
         // terminal.
         stopFling();
         stopScroll();
-        if (ws && ws.readyState <= 1) ws.close();
+        if (ws && ws.readyState <= 1) {
+          try {
+            announceDetach(ws, reason);
+          } catch {}
+          ws.close();
+        }
         dropGpu();
         term.dispose();
       },
@@ -6331,6 +6475,44 @@ window.WBConsole = (function () {
       if (hintEl) hintEl.textContent = "";
     }
 
+    // A held window's strip: the fleet's sentence for the peer, its action, and
+    // the daemon's diagnosis under Details. Built once, then reworded on each
+    // fleet read.
+    const peerDaemon = window.WBFleet?.refDaemon(repo) || "";
+    const PEER_BUTTON = { wake: "Wake", retry: "Try again" };
+    const showPeerDown = (group) => {
+      let strip = win.querySelector(".session-peer-down");
+      if (!strip) {
+        strip = document.createElement("div");
+        strip.className = "session-peer-down";
+        const text = document.createElement("span");
+        text.className = "session-peer-down-text";
+        const detail = document.createElement("details");
+        detail.className = "session-detail";
+        const summary = document.createElement("summary");
+        summary.textContent = "Details";
+        detail.append(summary, document.createElement("p"));
+        const btn = document.createElement("button");
+        btn.className = "session-reconnect";
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (btn.dataset.act === "wake") wakePeer?.(peerDaemon);
+          else readFleet?.();
+        });
+        strip.append(text, detail, btn);
+        win.insertBefore(strip, body);
+      }
+      const view = peerOfflineView(group, null, win._deskEnvironment);
+      strip.querySelector(".session-peer-down-text").textContent = view.text;
+      const detail = strip.querySelector(".session-detail");
+      detail.querySelector("p").textContent = view.detail || "";
+      detail.hidden = !view.detail;
+      const btn = strip.querySelector(".session-reconnect");
+      btn.dataset.act = view.action || "";
+      btn.hidden = !PEER_BUTTON[view.action];
+      if (PEER_BUTTON[view.action]) btn.textContent = PEER_BUTTON[view.action];
+    };
+
     // NAMED, not inline: a dormant console rebuilds its terminal (`wakeWindow`)
     // and the rebuild must be wired to the same chrome. Everything closes over
     // `win`, never a particular terminal.
@@ -6418,11 +6600,34 @@ window.WBConsole = (function () {
         }
         win.classList.add("ended");
       },
+      // A peer project: the fleet's word on its peer gates every reattach.
+      ...(peerDaemon
+        ? {
+            peerGroup: () => peerGroups.get(peerDaemon) || null,
+            readFleet: () => readFleet?.(),
+          }
+        : {}),
+      onPeerHold: (group) => showPeerDown(group),
+      onPeerBack: () => win.querySelector(".session-peer-down")?.remove(),
     };
     win._termWiring = termWiring;
-    // On the window, not in a local: after a sleep/wake cycle a captured local
-    // would name a disposed terminal.
-    win._term = attachTerminal(body, termWiring);
+    // The fleet reaches a live window here; `wakeWindow` replaces `_term`, so
+    // it is read at each call. A dormant window has none, and its wake asks.
+    win._peerRefresh = () => win._term?.peerRefresh();
+    if (birthDecision({ id: termOpts.id, observed: !!dormancyWatch() }) === "dormant") {
+      // The state `sleepWindow` leaves. `_visible` is false until the observer
+      // reports: a window not yet reported reads as visible, and any
+      // `applyDormancy` before the report would wake it.
+      win._dormantSession = termOpts.id;
+      win._dormantWatch = termOpts.watch;
+      win._dormant = true;
+      win._visible = false;
+      win.classList.add("dormant");
+    } else {
+      // On the window, not in a local: after a sleep/wake cycle a captured
+      // local would name a disposed terminal.
+      win._term = attachTerminal(body, termWiring);
+    }
     // The placeholder's relaunch path: carry this window's record, drop the
     // dead window, spawn a FRESH session — never the old `id`/`watch` opts,
     // which would reattach to a torn-down session. `checkout` CHOSEN by the
@@ -6432,7 +6637,7 @@ window.WBConsole = (function () {
     const discard = () => {
       clearNudge();
       closeCheckoutMenu();
-      win._term?.dispose();
+      win._term?.dispose("window-closed");
       win.remove();
       untrackDormancy(win);
       wins.delete(win);
@@ -6574,7 +6779,7 @@ window.WBConsole = (function () {
         });
         applyInputMode();
       };
-      win._rewire(win._term);
+      if (win._term) win._rewire(win._term);
 
       // Paste. The read has no `execCommand` fallback, so on an insecure origin
       // the button is disabled (`pasteOffered`). An image becomes the same
@@ -6642,7 +6847,7 @@ window.WBConsole = (function () {
       const finish = () => {
         // A window closed mid-pulse must not leave `nudgeTimer` pending.
         clearNudge();
-        win._term?.dispose();
+        win._term?.dispose("window-closed");
         // A watcher's × closes this window only: the console still runs, and
         // its record stays on the desk.
         if (!watching) forgetRecord(win._deskId);
@@ -6772,15 +6977,16 @@ window.WBConsole = (function () {
 
   // The live session a placeholder should attach to, read NOW: the page was
   // loaded before another device started this console, so neither the mirror
-  // nor the load-time session list knows it. `undefined` when the session list
-  // cannot be read.
+  // nor the load-time session list knows it. `null` when the list says it does
+  // not run; `undefined` when that is not known — the list cannot be read, or
+  // it did not hear from the record's peer.
   async function liveSessionFor(win, record) {
     await reloadDesk();
     let sessions;
     try {
-      const r = await fetch("/api/sessions");
-      if (!r.ok) return undefined;
-      sessions = await r.json();
+      const read = await readSessions();
+      if (unheardRef(record.repo, read.unheard)) return undefined;
+      sessions = read.sessions;
     } catch {
       return undefined;
     }
@@ -6820,7 +7026,9 @@ window.WBConsole = (function () {
   // relaunches on the PRIMARY tree, explicitly by its label. `refused` (a
   // `{ message }`) is a launch a peer refused. A box for a peer project says
   // what its peer's fleet state is, and redraws on every fleet read.
-  function spawnPlaceholder(record, missing, refused) {
+  // `held.unheard`: restored while the session list did not hear from its
+  // peer, so whether it runs is not known; it asks again on each fleet read.
+  function spawnPlaceholder(record, missing, refused, held) {
     const { win, body, restartBtn, closeBtn } = buildChrome(
       record.agent,
       record.repo,
@@ -6839,8 +7047,11 @@ window.WBConsole = (function () {
     const btn = document.createElement("button");
     btn.className = "session-reconnect";
     btn.textContent = "Relaunch";
-    // Relaunching spawns a vendor CLI: the popup offers no way to start anything.
-    note.append(text, ...(OPTS.canLaunch === false ? [] : [btn]));
+    // The popup offers it too: a relaunch reuses this record's id, so the
+    // popup's members stay the fence's snapshot (ADR-0051 §8, amended
+    // 2026-10-05). Only a click launches there; `canLaunch` keeps every
+    // automatic relaunch out of the popup.
+    note.append(text, btn);
     body.append(note);
 
     // The peer's words. `peerAction` is the button's action ("wake", "retry",
@@ -6877,6 +7088,12 @@ window.WBConsole = (function () {
       const group = peerGroups.get(daemon);
       if (!group) return;
       const available = window.WBFleet.available(group);
+      // The fleet may call the peer available while its session list timed
+      // out: a held box asks the list itself, and never waits for `wasOffline`.
+      if (unheard && available) {
+        askHeld();
+        return;
+      }
       if (!available) wasOffline = true;
       const turn = peerReturnDecision({ kind: record.kind, canLaunch, available, wasOffline });
       if (turn === "relaunch") {
@@ -6891,6 +7108,39 @@ window.WBConsole = (function () {
       show(peerOfflineView(available ? null : group, refused?.message, peerHost(group, record.environment)));
     };
     if (refused) show(peerOfflineView(null, refused.message, peerHost(peerGroups.get(daemon), record.environment)));
+    let unheard = !!(daemon && held?.unheard);
+    // The box says why it waits: the list did not hear from the peer. "Try
+    // again" asks the list again, and launches only when the list heard from
+    // the peer and the console does not run there.
+    const showUnheard = () =>
+      show({
+        text: `${peerHost(peerGroups.get(daemon), record.environment)} does not answer.`,
+        detail: "",
+        action: "retry",
+      });
+    if (unheard) showUnheard();
+    // One question at a time: fleet reads arrive every 30 s and on every
+    // `peers.dirty`, and an answer must be acted on once.
+    let asking = false;
+    const askHeld = async () => {
+      if (asking) return;
+      asking = true;
+      try {
+        const session = await check();
+        if (!win.isConnected || btn.disabled || !unheard) return;
+        const turn = heldReturnDecision({ kind: record.kind, canLaunch, session });
+        if (turn === "stay") {
+          showUnheard();
+          return;
+        }
+        unheard = false;
+        if (turn === "attach") attach(session);
+        else if (turn === "relaunch") btn.click();
+        else show({ text: `${peerHost(peerGroups.get(daemon), record.environment)} is back.`, detail: "", action: "relaunch" });
+      } finally {
+        asking = false;
+      }
+    };
     win._peerRefresh = showPeer;
 
     const markMissing = (name) => {
@@ -6902,7 +7152,7 @@ window.WBConsole = (function () {
     if (missing) markMissing(missing);
     // A placeholder restored for a recorded worktree asks whether that tree is
     // still there (no spawn), so the box says "gone" on load, not on the click.
-    else if (record.checkout && OPTS.canLaunch !== false) {
+    else if (record.checkout) {
       checkoutStillThere(record.repo, record.checkout).then((there) => {
         if (!there && win.isConnected) markMissing(record.checkout);
       });
@@ -6969,12 +7219,22 @@ window.WBConsole = (function () {
         attach(session);
         return;
       }
+      // A peer console whose list is not known may still run there: a launch
+      // would start a second one on a peer without the record join. The box
+      // says so and waits for the next read or click.
+      if (session === undefined && daemon) {
+        btn.disabled = false;
+        unheard = true;
+        showUnheard();
+        return;
+      }
       const carry = deskOf(win);
       drop(true);
       // The agent menu's launch path, reusing this record's id, rect and
       // maximized state — in the recorded worktree unless that is the one that
-      // is gone, in which case the button said "primary". An unreadable
-      // session list launches too: the launch then fails as it always did.
+      // is gone, in which case the button said "primary". For a local record
+      // an unreadable session list launches too: the launch then fails as it
+      // always did.
       if (missing) carry.checkout = null;
       spawnOrMissing(
         relaunchRequest({ ...record, checkout: missing ? null : record.checkout }),
@@ -7055,13 +7315,8 @@ window.WBConsole = (function () {
       applyLanding();
       return;
     }
-    Promise.all([
-      deskReady,
-      fetch("/api/sessions").then((r) =>
-        r.ok ? r.json() : Promise.reject(new Error("sessions unavailable")),
-      ),
-    ])
-      .then(async ([, sessions]) => {
+    Promise.all([deskReady, readSessions()])
+      .then(async ([, { sessions, unheard }]) => {
         if (!deskLoaded) {
           retryDeskLoad();
           return;
@@ -7114,6 +7369,11 @@ window.WBConsole = (function () {
               session.repo,
               record,
             );
+          } else if (action === "relaunch" && unheardRef(record.repo, unheard)) {
+            // The list did not hear from its peer: the console may still run
+            // there, and a launch on a peer without the record join would be
+            // a SECOND shell. The box asks again on the next fleet read.
+            spawnPlaceholder(record, null, null, { unheard: true });
           } else if (action === "relaunch" && peerHeld(record.repo, peerGroups)) {
             // Its peer cannot serve it: a launch would only be refused.
             spawnPlaceholder(record);
@@ -7123,7 +7383,7 @@ window.WBConsole = (function () {
               spawnOrMissing(relaunchRequest(record), record.agent, record.repo, record),
             );
           } else if (action === "placeholder") {
-            spawnPlaceholder(record);
+            spawnPlaceholder(record, null, null, { unheard: unheardRef(record.repo, unheard) });
           } else if (!(id && onPlane.has(id))) {
             // `adopt`: a cascaded window, keeping the live session's own kind
             // so the desk relaunches it correctly next time, under the record
@@ -7444,6 +7704,7 @@ window.WBConsole = (function () {
     ingestFleet,
     peerOfflineView,
     peerReturnDecision,
+    heldReturnDecision,
     peerHeld,
     sessionRowFor,
     arrangeFence,
@@ -7457,10 +7718,14 @@ window.WBConsole = (function () {
     panNudge,
     autoPan,
     reconnectDecision,
+    peerGate,
     endNotice,
     resumeDecision,
     resumeAll,
     dormancyDecision,
+    birthDecision,
+    encodeDetach,
+    encodeResize,
     DORMANT_AFTER_MS,
     DORMANT_MARGIN_PX,
     keyboardInset,

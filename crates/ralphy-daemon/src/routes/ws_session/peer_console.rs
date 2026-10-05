@@ -11,8 +11,11 @@ use axum::response::Response;
 
 use super::join::{claim_for, hold, Joined};
 use super::refuse::Refuser;
-use super::{peer_session_query, relay_to_peer, session_ws};
+use super::traffic::Tab;
+use super::upgrade::{launch_record, relayed_record};
+use super::{peer_session_query, relay_to_peer, session_ws, Opening};
 use super::{SessionLabels, SessionQuery};
+use crate::routes::audit_layer::SocketAudit;
 use crate::{fleet, peer, session};
 
 /// The request values a peer free-console launch reads.
@@ -27,7 +30,8 @@ pub(super) struct PeerConsole<'a> {
     pub(super) daemon_id: String,
     pub(super) environment: String,
     pub(super) bound_port: u16,
-    pub(super) holder: Option<String>,
+    pub(super) tab: Tab,
+    pub(super) who: SocketAudit,
     pub(super) record: Option<String>,
     pub(super) refuser: Refuser,
     pub(super) shutdown: tokio::sync::watch::Receiver<bool>,
@@ -48,7 +52,8 @@ impl PeerConsole<'_> {
             daemon_id,
             environment,
             bound_port,
-            holder,
+            tab,
+            who,
             record,
             refuser,
             shutdown,
@@ -62,7 +67,12 @@ impl PeerConsole<'_> {
                 daemon_id: &daemon_id,
             };
             let peer_query = peer_session_query(query, slug);
-            return relay_to_peer(ws, peer, &peer_query, me, &refuser, shutdown).await;
+            let opening = Opening {
+                record: relayed_record(query, slug, &peer.daemon_id, &tab),
+                tab,
+                who,
+            };
+            return relay_to_peer(ws, peer, &peer_query, opening, me, &refuser, shutdown).await;
         };
         let status = peer::client::probe(
             peer,
@@ -124,7 +134,7 @@ impl PeerConsole<'_> {
                 return refuser.refuse(
                     ws,
                     StatusCode::BAD_GATEWAY,
-                    fleet::route::peer_unreachable(peer, &format!("{error:#}")),
+                    peer::client::transport_failed(peer, format!("{error:#}")).await,
                 );
             }
         };
@@ -154,10 +164,13 @@ impl PeerConsole<'_> {
             command.as_deref(),
         );
         let claim = claim_for(&sessions, &record).await;
-        if let Some(joined) =
-            Joined::find(&sessions, claim.as_ref(), holder.as_deref(), &environment)
-        {
-            return joined.upgrade(ws, daemon_id, shutdown);
+        if let Some(joined) = Joined::find(
+            &sessions,
+            claim.as_ref(),
+            tab.holder.as_deref(),
+            &environment,
+        ) {
+            return joined.upgrade(ws, daemon_id, tab, shutdown);
         }
         let effective_environment = peer.environment.clone();
         match sessions
@@ -170,19 +183,29 @@ impl PeerConsole<'_> {
                 record.clone(),
                 spec,
             )
-            .inspect(|(_, att)| hold(att, holder.as_deref()))
+            .inspect(|(_, att)| hold(att, tab.holder.as_deref()))
         {
-            Ok((id, att)) => ws.on_upgrade(move |socket| {
-                session_ws(
-                    socket,
-                    att,
+            Ok((id, att)) => {
+                who.console(&launch_record(
                     id,
-                    daemon_id,
-                    effective_environment,
-                    SessionLabels::default(),
-                    shutdown,
-                )
-            }),
+                    "console",
+                    Some(slug.to_string()),
+                    Some(peer.daemon_id.clone()),
+                    &tab,
+                ));
+                ws.on_upgrade(move |socket| {
+                    session_ws(
+                        socket,
+                        att,
+                        id,
+                        daemon_id,
+                        effective_environment,
+                        SessionLabels::default(),
+                        tab,
+                        shutdown,
+                    )
+                })
+            }
             Err(error) => {
                 tracing::warn!(
                     environment = %peer.environment,

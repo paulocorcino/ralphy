@@ -312,6 +312,14 @@ async fn diagnose_failed_dial(d: &PeerDescriptor, why: String) -> PeerStatus {
     classify_unreachable(Some(&distro), running, why)
 }
 
+/// The sentence for a request to `d` that failed before the peer answered.
+/// It is the diagnosis a failed handshake gets, so a tunnel whose daemon is
+/// silent or a distro that sleeps is named as such, the same way `/api/fleet`
+/// names it.
+pub(crate) async fn transport_failed(d: &PeerDescriptor, why: String) -> String {
+    diagnose_failed_dial(d, why).await.diagnosis(&d.environment)
+}
+
 /// How long an idle pooled connection is kept for the next request. Comfortably
 /// longer than the tree poll's 25 s window, so a poller reuses ONE connection
 /// instead of leaving a four-minute `TIME_WAIT` behind every cycle.

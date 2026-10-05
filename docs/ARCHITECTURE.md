@@ -176,7 +176,7 @@ Verbs are daemon verbs; subcommands are `ralphy` subcommands.
 numbers of [ADR-0070](./adr/0070-the-workbench-shows-only-what-it-has-read.md)
 D2: 1 push from the owner, 2 the socket opens again, 3 the tab becomes
 visible, 4 login, 5 the reply to the operator's own action, 6 a periodic read
-while the tab is visible. Every shown fact reads when its panel opens. A new
+while the tab is visible, 7 a read of a peer project failed (peer state only). Every shown fact reads when its panel opens. A new
 panel adds its row here before it adds code.
 
 | Fact | Owner | How to get it | Never from | Read again on |
@@ -193,8 +193,9 @@ panel adds its row here before it adds code.
 | Settings | `ralphy-core::settings` (`.ralphy/settings.json`) | `ralphy config get --json`; verb `config.get` | a new reparse in the daemon (three exist, each pinned by a test) | 3, 4, 5 |
 | Desk layout | the daemon (`desk.rs`; a PUT is a list of **desk changes** applied by `desk/apply.rs`, and each reply carries `rev`) | `GET` / `PUT /api/desk`; the browser sends changes only through `wb-desk-sync.js` | browser storage (only the per-client view lives there, `wb-view.js`); a whole record or a whole desk in a PUT | 1 `desk.dirty`, 2–5 |
 | **Desk history** | the daemon (`desk/history.rs`) | `GET` / `POST /api/desk/history` | a copy of the desk kept in the browser | when the Settings section opens; 5 |
-| Consoles, console agent state | the daemon (`session/`, `agent_state.rs`) | `/api/sessions`, the presence socket | — | 1 `sessions.dirty`, 2–4; 6 every 30 s while a peer is listed (peers do not push their sessions); a `working` that ages into `unknown` pushes too |
-| Projects, peers and their state; the project name | the daemon (`registry.rs`, `peer/`, `fleet.rs`); the name is `registry::project_name` | `/api/repos`, `/api/fleet`; the field `name` | a name worked out in the UI from the slug or the path | 1 `repos.dirty` / `peers.dirty` (the daemon stats its stores every 2 s), 2–5; 6 every 30 s while a peer is listed (peer reachability) |
+| Consoles, console agent state | the daemon (`session/`, `agent_state.rs`) | `/api/sessions` (its header `x-ralphy-unanswered` names the peers the list did not hear from), the presence socket | a peer missing from the list read as "no sessions there" | 1 `sessions.dirty`, 2–4; 6 every 30 s while a peer is listed (peers do not push their sessions); a `working` that ages into `unknown` pushes too |
+| Projects, peers and their state; the project name | the daemon (`registry.rs`, `peer/`, `fleet.rs`); the name is `registry::project_name` | `/api/repos`, `/api/fleet`; the field `name` | a name worked out in the UI from the slug or the path | 1 `repos.dirty` / `peers.dirty` (the daemon stats its stores every 2 s), 2–5; 6 every 30 s while a peer is listed (peer reachability); 7 a read of a peer project failed (peer reachability) |
+| **Devices** and the **audit log** | the daemon (`audit.rs`, `device.rs`) | `GET /api/audit/devices`, `GET /api/audit/events`; the `/ws/command` verbs that change state, and the console launches and take-overs on `/ws/session`, are recorded by the daemon itself; the page reports its facts once per load to `POST /api/device/facts` (`wb-device.js`) | a device list kept in the browser; an address lookup service (ADR-0074 D7) | when the Settings section opens; 4 |
 | Ralphy release version | `ralphy-release` | `/api/release`; the build id in the presence frame (ADR-0070 D6) | — | 3; a build id that differs reloads the tab (D6) |
 
 ## 8. Fitness functions
@@ -243,6 +244,7 @@ boundary.
 | Boundary | What crosses | Control | Decided by |
 |---|---|---|---|
 | Network client → daemon | HTTP and WebSocket requests | The auth guard (`ralphy-daemon/src/routes/guard.rs`): Host and Origin, then the policy, then the session | ADR-0032 |
+| Workbench → audit log | **Device facts** the page reports about itself | A fixed shape with a size cap (`routes/api_audit.rs`); facts are recorded with source `client` and no access decision reads them | ADR-0074 |
 | Workbench → repo | Verbs from the browser | The verb registry and argv shape checks (`dispatch.rs`, `dispatch/argv.rs`); path confinement (`confine.rs`, `fswrite.rs`) | ADR-0036 |
 | Peer daemon → daemon | Verbs and sessions from a peer | The peer's bearer token, dialled on loopback or through `ssh -L` only | ADR-0052, ADR-0067 |
 | Forge → prompt | Issue body, comments, attachments | The label gate; the comment trust filter (`ralphy-core/src/github/comments.rs`); the charters | ADR-0032 (H), ADR-0072 D5 |

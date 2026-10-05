@@ -26,7 +26,8 @@ Scenario 3  the glyph is ONE verb: a click closes the window holding the
             idempotence guarantees
 Scenario 4  a popup-local drag is discarded on re-attach, and NOT ONE
             `PUT /api/desk` is issued from the popup context
-Scenario 5  the popup exposes no way to open a new console
+Scenario 5  the popup exposes no way to open a new console, and its placeholder
+            relaunches its own record
 Scenario 6  a popup with no opener renders the empty state and no window
 Scenario 7  four fences detach; the FIFTH is refused, said on the fence, and
             nothing of the refused fence is torn down
@@ -775,12 +776,10 @@ def main():
                 f"{len(desk_before)}B -> {len(desk_after_popup)}B",
             )
 
-            # ---- scenario 5: the popup offers no way to open a console -------
-            # DISCRIMINATING because of MEM_3: the popup renders a PLACEHOLDER,
-            # which is the one window that carries `.session-reconnect` — the
-            # single control `canLaunch: false` actually gates. The shell's own
-            # placeholder is asserted to still HAVE the button, so this measures
-            # the guard rather than the absence of the markup.
+            # ---- scenario 5: the popup opens no NEW console, and relaunches ----
+            # MEM_3 restores as a PLACEHOLDER, the one window that carries
+            # `.session-reconnect`. The popup shows its Relaunch as the shell
+            # does; no control opens a console the fence's snapshot lacks.
             popup_placeholders = popup.evaluate(
                 "() => document.querySelectorAll('.session-window.placeholder').length"
             )
@@ -804,9 +803,29 @@ def main():
                 f"shell-reconnect-before-detach={shell_reconnect_before}",
             )
             check(
-                "the popup exposes no way to open a new console",
-                launchers == {"reconnect": 0, "newConsole": 0, "agents": 0, "byText": 0},
+                "the popup shows the placeholder's Relaunch, and no way to open a new console",
+                launchers == {"reconnect": 1, "newConsole": 0, "agents": 0, "byText": 0},
                 f"got={launchers}",
+            )
+            # The click launches MEM_3's own record: the test daemon runs the
+            # helper child for every agent, so no vendor CLI starts.
+            popup.locator(".session-window.placeholder .session-reconnect").click()
+            relaunched = None
+            deadline = time.time() + 20
+            while time.time() < deadline:
+                relaunched = popup.evaluate(
+                    "() => { const w = [...document.querySelectorAll('.session-window')]"
+                    "  .find((x) => x._deskId === 'w-m3');"
+                    "  return w ? { placeholder: w.classList.contains('placeholder'),"
+                    "    term: !!w.querySelector('.xterm-screen') } : null; }"
+                )
+                if relaunched == {"placeholder": False, "term": True}:
+                    break
+                popup.wait_for_timeout(200)
+            check(
+                "Relaunch in the popup runs the member again, in its own window",
+                relaunched == {"placeholder": False, "term": True},
+                f"w-m3={relaunched}",
             )
 
             # ---- scenario 2 (cont.): closing the popup brings them home ------
@@ -844,9 +863,11 @@ def main():
                 "  parked: [...document.querySelectorAll('.session-parked')]"
                 "    .filter((e) => e.offsetParent !== null && e.clientWidth > 0).length })"
             )
+            # Three: w-m3 was relaunched in the popup (scenario 5), and its
+            # snapshot carries no session, so it comes home by its record.
             check(
-                "the consoles come home ALIVE — two live terminals, one placeholder, none parked",
-                home == {"terms": 2, "placeholders": 1, "parked": 0},
+                "the consoles come home ALIVE — three live terminals, no placeholder, none parked",
+                home == {"terms": 3, "placeholders": 0, "parked": 0},
                 f"got={home}",
             )
             # By IDENTITY, not by index: the placeholder carries no `.xterm`, and

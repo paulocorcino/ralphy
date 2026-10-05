@@ -16,6 +16,7 @@ use include_dir::{include_dir, Dir};
 
 pub mod agent_state;
 pub mod assets;
+pub(crate) mod audit;
 pub mod auth;
 pub mod autostart;
 pub mod checkout;
@@ -23,6 +24,7 @@ pub mod clipboard;
 pub mod confine;
 pub mod cookie;
 pub mod desk;
+pub(crate) mod device;
 pub mod dir_list;
 pub mod dispatch;
 pub mod epoch;

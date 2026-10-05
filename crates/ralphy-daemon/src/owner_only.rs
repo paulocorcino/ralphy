@@ -73,6 +73,25 @@ fn write_owner_only_probed(
     Ok(())
 }
 
+/// Append `bytes` to `path` in one write. A file this call creates is
+/// owner-only before its first byte, as in [`write_owner_only`]; a file that
+/// exists keeps its protection.
+pub(crate) fn append_owner_only(path: &Path, bytes: &[u8]) -> Result<()> {
+    let mut file = match create_owner_only_file(path) {
+        Ok(file) => {
+            protect_new_file(path)?;
+            file
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => std::fs::OpenOptions::new()
+            .append(true)
+            .open(path)
+            .with_context(|| format!("opening {}", path.display()))?,
+        Err(e) => return Err(e).with_context(|| format!("creating {}", path.display())),
+    };
+    file.write_all(bytes)
+        .with_context(|| format!("appending to {}", path.display()))
+}
+
 /// Create `path` new, readable and writable by the owner only.
 #[cfg(unix)]
 fn create_owner_only_file(path: &Path) -> std::io::Result<std::fs::File> {

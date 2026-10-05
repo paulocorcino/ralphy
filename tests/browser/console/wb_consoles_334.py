@@ -203,15 +203,18 @@ DECISION_ROWS = [
         row(announced="child-exited", opened=True, everOpened=True, code=1000, wasClean=True),
         "give-up",
     ),
+    # The close itself is never a deliberate end (ADR-0051 §9): a proxy in the
+    # path closes cleanly for a socket the daemon dropped, and every deliberate
+    # end is announced. A reconnect carries no `takeover`, so it cannot flap.
     (
-        "no announcement + a clean 1000 gives up",
+        "no announcement + a clean 1000 reconnects",
         row(opened=True, everOpened=True, code=1000, wasClean=True),
-        "give-up",
+        "reconnect",
     ),
     (
-        "no announcement + a dirty 1001 (going away) gives up",
+        "no announcement + a 1001 (going away) reconnects",
         row(opened=True, everOpened=True, code=1001),
-        "give-up",
+        "reconnect",
     ),
     (
         "no announcement + a dirty 1006 reconnects",
@@ -253,9 +256,9 @@ DECISION_ROWS = [
         row(opened=True, everOpened=True, code=1005, failedReopens=11),
         "give-up",
     ),
-    # R5's `opened &&` guard: a clean 1000 on a socket that NEVER opened is the
-    # server refusing the handshake, not a deliberate end — dropping the guard
-    # would strand an F5 racing the old bridge's teardown.
+    # A clean 1000 on a socket that NEVER opened is the server refusing the
+    # handshake, not a deliberate end: an F5 racing the old bridge's teardown
+    # must retry.
     (
         "a clean 1000 that never opened is a refusal, so it retries",
         row(code=1000, wasClean=True, opened=False, everOpened=False),

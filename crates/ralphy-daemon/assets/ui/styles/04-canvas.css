@@ -240,6 +240,19 @@
   color: var(--text-muted);
   font-size: 0.74rem;
 }
+/* The open project's peer is down: the rows are the last read, so they dim. */
+.wb-host.peer-down {
+  opacity: 0.55;
+}
+.files-peer-down {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+.files-peer-down .session-detail {
+  flex-basis: 100%;
+}
 .side-head {
   gap: 0.35rem;
 }

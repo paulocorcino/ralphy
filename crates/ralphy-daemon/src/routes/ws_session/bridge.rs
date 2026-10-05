@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use axum::extract::ws::{Message, WebSocket};
 
+use super::traffic::{Leave, Tab, Traffic, SESSION_OPEN};
 use super::SessionLabels;
 use crate::protocol::{Command, Frame};
 use crate::routes::send_command;
@@ -73,6 +74,8 @@ impl Liveness {
 /// agent (measured: TunnelDeck for dev tunnels, 2026-09-22) keeps its leg to the
 /// daemon open for minutes after the browser behind it vanished, and that leg
 /// would hold the writer slot against the client's own reattach.
+/// `tab` is the browser tab that opened the socket.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn session_ws(
     mut socket: WebSocket,
     mut attach: session::Attachment,
@@ -80,6 +83,7 @@ pub(crate) async fn session_ws(
     daemon_id: String,
     environment: String,
     labels: SessionLabels,
+    tab: Tab,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) {
     // Register the eviction waiter BEFORE the first await. Pin ONE `notified`
@@ -95,10 +99,11 @@ pub(crate) async fn session_ws(
     let notified = evict.notify.notified();
     tokio::pin!(notified);
     notified.as_mut().enable();
+    let mut traffic = Traffic::local(id, tab, Instant::now());
 
     let open = Frame::Command(Command {
         id,
-        verb: "session-open".to_string(),
+        verb: SESSION_OPEN.to_string(),
         payload: serde_json::json!({
             "session": id,
             "daemon_id": daemon_id,
@@ -112,6 +117,9 @@ pub(crate) async fn session_ws(
             // Read-only from the start: this launch joined a session another
             // page drives (ADR-0050 amendment 2026-10-04).
             "watch": labels.watching,
+            // A scrollback replay follows. Read by a relaying daemon for its
+            // traffic summary; the page does not need it.
+            "replay": !attach.snapshot.is_empty(),
         }),
     });
     if socket
@@ -119,6 +127,7 @@ pub(crate) async fn session_ws(
         .await
         .is_err()
     {
+        traffic.log(None, Instant::now());
         return;
     }
 
@@ -129,11 +138,10 @@ pub(crate) async fn session_ws(
             session: id,
             data: std::mem::take(&mut attach.snapshot),
         };
-        if socket
-            .send(Message::Binary(protocol::encode(&frame).into()))
-            .await
-            .is_err()
-        {
+        let encoded = protocol::encode(&frame);
+        traffic.replay(encoded.len());
+        if socket.send(Message::Binary(encoded.into())).await.is_err() {
+            traffic.log(None, Instant::now());
             return;
         }
     }
@@ -145,6 +153,8 @@ pub(crate) async fn session_ws(
     ping.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     ping.tick().await; // consume the immediate first tick — no ping on connect
     let mut heard = Instant::now();
+    // Each ping carries its own number, so a pong is timed against its ping.
+    let mut ping_seq: u64 = 0;
 
     // A DELIBERATE end (daemon shutdown, takeover/child-exit eviction, or the
     // broadcast sender closing) is ANNOUNCED after the loop — a data frame naming
@@ -167,24 +177,28 @@ pub(crate) async fn session_ws(
                 if liveness.is_silent(heard.elapsed()) {
                     break;
                 }
-                if socket.send(Message::Ping(Default::default())).await.is_err() {
+                ping_seq += 1;
+                let payload = ping_seq.to_le_bytes();
+                traffic.ping_sent(&payload, Instant::now());
+                if socket.send(Message::Ping(payload.to_vec().into())).await.is_err() {
                     break;
                 }
             }
             recv = attach.rx.recv() => match recv {
                 Ok(bytes) => {
                     let frame = Frame::Terminal { session: id, data: bytes };
-                    if socket
-                        .send(Message::Binary(protocol::encode(&frame).into()))
-                        .await
-                        .is_err()
-                    {
+                    let encoded = protocol::encode(&frame);
+                    traffic.live(encoded.len());
+                    if socket.send(Message::Binary(encoded.into())).await.is_err() {
                         break;
                     }
                 }
                 // A burst outran this slow attach; scrollback already replayed and
                 // xterm.js tolerates a gap, so keep streaming.
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                    traffic.lagged(skipped);
+                    continue;
+                }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                     end = Some(session::EndReason::ChildExited);
                     break;
@@ -193,6 +207,9 @@ pub(crate) async fn session_ws(
             incoming = socket.recv() => {
                 if matches!(incoming, Some(Ok(_))) {
                     heard = Instant::now();
+                }
+                if let Some(Ok(Message::Binary(bytes))) = &incoming {
+                    traffic.inbound(bytes.len());
                 }
                 match incoming {
                     Some(Ok(Message::Binary(bytes))) => match protocol::decode(&bytes) {
@@ -212,12 +229,22 @@ pub(crate) async fn session_ws(
                                 let _ = attach.resize(rows, cols);
                             }
                         }
+                        Ok(Frame::Command(cmd)) => {
+                            if let Some(leave) = Leave::from_command(&cmd) {
+                                traffic.client_left(leave);
+                            }
+                        }
                         _ => {} // other frames carry no session meaning here
                     },
-                    Some(Ok(Message::Close(_))) | None => {
+                    Some(Ok(Message::Close(_))) => {
+                        traffic.client_closed();
                         break;
-                    },
-                    Some(Ok(_)) => {} // text/ping/pong: counted in `heard`, nothing else
+                    }
+                    None => break,
+                    Some(Ok(Message::Pong(payload))) => {
+                        traffic.pong_received(&payload, Instant::now());
+                    }
+                    Some(Ok(_)) => {} // text/ping: counted in `heard`, nothing else
                     Some(Err(_)) => break,
                 }
             }
@@ -251,6 +278,7 @@ pub(crate) async fn session_ws(
         })
         .await;
     }
+    traffic.log(end.map(|r| r.as_wire()), Instant::now());
     // Detach, do NOT close: dropping `attach` releases the single-writer slot; the
     // session (and its child) live on for a later reattach.
     drop(attach);

@@ -1116,6 +1116,13 @@ unnamed note would be named while a detach popup opens the same record with no
 path, and the two would write two files. The daemon never learns about any of this, so every other
 client sees an ordinary card in its place.
 
+*(Amended 2026-10-05, on top inside the popup. A card in a popup can be on
+top of THAT window. The popup has no `Note` menu, so a note button in its
+bottom-right corner keeps the next card of the window on top, one card at a
+time, and the card's Put back takes it off. It is the same floating card,
+memory only, and the popup still writes nothing. The rule above still holds:
+the shell cannot pull out a card that is in a popup.)*
+
 **8. A narrow viewport.** Below 840 px of width, where 50 % is less than the
 420 px floor, the card on top is a **band at the top**: full width with a small
 margin, and 50 % of the height minus `--kb-inset` (the variable the maximize

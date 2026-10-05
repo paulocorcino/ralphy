@@ -7,6 +7,7 @@ use std::sync::Arc;
 use axum::extract::ws::WebSocketUpgrade;
 use axum::response::Response;
 
+use super::traffic::Tab;
 use super::{session_ws, SessionLabels};
 use crate::session;
 
@@ -72,6 +73,7 @@ impl Joined {
         self,
         ws: WebSocketUpgrade,
         daemon_id: String,
+        tab: Tab,
         shutdown: tokio::sync::watch::Receiver<bool>,
     ) -> Response {
         let Joined {
@@ -81,7 +83,16 @@ impl Joined {
             environment,
         } = self;
         ws.on_upgrade(move |socket| {
-            session_ws(socket, att, id, daemon_id, environment, labels, shutdown)
+            session_ws(
+                socket,
+                att,
+                id,
+                daemon_id,
+                environment,
+                labels,
+                tab,
+                shutdown,
+            )
         })
     }
 }

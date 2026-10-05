@@ -207,7 +207,7 @@ pub(crate) async fn agents_route(
                     .into_response(),
                 Err(error) => (
                     StatusCode::BAD_GATEWAY,
-                    fleet::peer_unreachable(peer, &format!("{error:#}")),
+                    peer::client::transport_failed(peer, format!("{error:#}")).await,
                 )
                     .into_response(),
             }

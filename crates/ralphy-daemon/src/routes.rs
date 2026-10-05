@@ -12,8 +12,9 @@ use axum::Router;
 
 use crate::protocol::{Command, Frame};
 use crate::StorePaths;
-use crate::{auth, fleet, identity, peer, protocol, registry, rekey, session, watch};
+use crate::{audit, auth, fleet, identity, peer, protocol, registry, rekey, session, watch};
 
+mod api_audit;
 mod api_desk;
 mod api_fleet;
 mod api_peer;
@@ -23,6 +24,7 @@ mod api_security;
 mod api_sessions;
 mod api_update;
 mod api_usage;
+mod audit_layer;
 mod guard;
 mod headers;
 mod presence;
@@ -31,6 +33,7 @@ mod ws_command;
 mod ws_session;
 mod ws_tree;
 
+pub(crate) use api_audit::*;
 pub(crate) use api_desk::*;
 pub(crate) use api_fleet::*;
 pub(crate) use api_peer::*;
@@ -40,6 +43,7 @@ pub(crate) use api_security::*;
 pub(crate) use api_sessions::*;
 pub(crate) use api_update::*;
 pub(crate) use api_usage::*;
+pub(crate) use audit_layer::*;
 pub(crate) use guard::*;
 #[cfg(test)]
 pub(crate) use headers::{content_security_policy, inline_script_bodies, script_hash};
@@ -93,6 +97,7 @@ pub(crate) struct RouterShared {
     pub(crate) heal_memo: rekey::HealMemo,
     pub(crate) run_exits: tokio::sync::broadcast::Sender<String>,
     pub(crate) pushes: tokio::sync::broadcast::Sender<Push>,
+    pub(crate) audit: Arc<audit::Audit>,
 }
 
 pub(crate) fn router_with_roster(
@@ -192,6 +197,14 @@ pub(crate) fn router_with_roster(
             shutdown.clone(),
         ));
     }
+    // The audit log (ADR-0074) sits in the store beside `repos.toml`. A store
+    // with no directory (a test's bare relative name) keeps no log.
+    let audit = Arc::new(audit::Audit::in_dir(
+        registry_path
+            .parent()
+            .filter(|dir| !dir.as_os_str().is_empty())
+            .map(Path::to_path_buf),
+    ));
     let shared = RouterShared {
         daemon_id: identity.as_ref().map(|i| i.id.to_string()),
         identity,
@@ -214,6 +227,7 @@ pub(crate) fn router_with_roster(
         heal_memo,
         run_exits,
         pushes,
+        audit: audit.clone(),
     };
     Router::new()
         .merge(read_routes(&shared))
@@ -227,7 +241,10 @@ pub(crate) fn router_with_roster(
         .merge(command_routes(&shared))
         .merge(tree_routes(&shared))
         .merge(security_routes(&shared))
+        .merge(audit_routes(&shared))
         .fallback(ui_asset)
+        // Inside the guard: only requests the guard let through are recorded.
+        .layer(axum::middleware::from_fn_with_state(audit, audit_layer))
         // The auth guard wraps EVERY route above — the API handlers, all three
         // WS upgrades, and the UI fallback — so a network bind rejects an
         // unauthenticated request before it reaches any handler or upgrade.

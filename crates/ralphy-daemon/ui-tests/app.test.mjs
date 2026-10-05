@@ -1810,6 +1810,139 @@ test("two fleet reads close together list each peer row once", async () => {
   assert.equal(state.projects.filter((p) => !p.daemon).length, 1);
 });
 
+test("fleet reads asked now share the read in flight, and a later ask reads again", async () => {
+  const { state } = loadShell();
+  state.projects = [];
+  let reads = 0;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (url === "/api/fleet") reads += 1;
+    return { ok: true, status: 200, json: async () => ({ peers: [], repos: [] }) };
+  };
+  try {
+    await Promise.all([state.readFleetNow(), state.readFleetNow(), state.readFleetNow()]);
+    assert.equal(reads, 1);
+    await state.readFleetNow();
+    assert.equal(reads, 2);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("the consoles get the shell's fleet read with the fleet", () => {
+  let hooks = null;
+  const { state, window } = loadShell();
+  window.WBConsole = { ingestFleet: (_groups, h) => (hooks = h) };
+  let asked = 0;
+  state.readFleetNow = () => {
+    asked += 1;
+    return Promise.resolve();
+  };
+  state.shareFleet();
+  hooks.read();
+  assert.equal(asked, 1);
+});
+
+// --- FILES while the open project's peer is down ---------------------------
+
+const FILES_PEER = "01ARZ3NDEKTSV4RRFFQ69G5FAZ";
+const FILES_REF = `${FILES_PEER}/o/r`;
+
+// A shell with the peer project open and the peer in the given fleet state.
+function peerFilesShell(state) {
+  const loaded = loadShell();
+  const s = loaded.state;
+  s.projects = [];
+  s.fleetPeers = [{ daemon_id: FILES_PEER, name: "corcino-mac", environment: "macOS 15", tunnel: true, state, diagnosis: `diagnosis of ${state}` }];
+  s.openSlug = FILES_REF;
+  s.treeMem();
+  return loaded;
+}
+
+// The options `mountTree` gives Wunderbaum, from a stand-in that keeps them.
+function mountedTreeOptions(s, window, document) {
+  let options = null;
+  // No `/ws/tree` subscription: this checks the tree's own options.
+  window.WBDaemon = {};
+  const realMar10 = globalThis.mar10;
+  globalThis.mar10 = {
+    Wunderbaum: function (o) {
+      options = o;
+    },
+  };
+  const host = { addEventListener() {} };
+  document.querySelector = (sel) => (sel === ".project.open .wb-host" ? host : null);
+  s.projects = [{ key: FILES_REF, slug: "o/r", daemon: FILES_PEER, tree: [] }];
+  s.useDaemonTree = () => true;
+  s.loadTreeLevel = () => Promise.resolve([]);
+  try {
+    s.mountTree();
+  } finally {
+    globalThis.mar10 = realMar10;
+  }
+  return options;
+}
+
+test("a tree level that fails to load draws no error row, closes, and asks the fleet", async () => {
+  const { state, window, document } = peerFilesShell("reachable");
+  const options = mountedTreeOptions(state, window, document);
+  state.loadTreeLevel = () => Promise.reject(new Error("macOS 15 did not answer: os error 10054. Start its daemon."));
+  let fleetReads = 0;
+  state.readFleetNow = () => {
+    fleetReads += 1;
+    return Promise.resolve();
+  };
+  const closed = [];
+  const node = { title: "src", data: {}, lazy: true, parent: null, setExpanded: (flag) => closed.push(flag) };
+  state.relPath = () => "src";
+  const result = await options.lazyLoad({ node });
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(result, false, "a rethrow makes Wunderbaum draw an error row");
+  assert.deepEqual(closed, [false]);
+  assert.equal(fleetReads, 1);
+  assert.ok(state.treeStale.endsWith("The list shown is the last one read."), state.treeStale);
+});
+
+test("while the peer is down, only a folder read before opens", () => {
+  const { state, window, document } = peerFilesShell("unreachable");
+  const options = mountedTreeOptions(state, window, document);
+  state.relPath = (n) => n.rel;
+  state._treeCache.set(state.treeKey("read"), []);
+  const folder = (rel) => ({ rel, children: null });
+  assert.equal(options.beforeExpand({ flag: true, node: folder("never") }), false);
+  assert.equal(options.beforeExpand({ flag: true, node: folder("read") }), undefined);
+  assert.equal(options.beforeExpand({ flag: false, node: folder("never") }), undefined);
+  state.fleetPeers[0].state = "reachable";
+  assert.equal(options.beforeExpand({ flag: true, node: folder("never") }), undefined);
+});
+
+test("FILES names the down peer from the fleet, and the read that calls it back re-reads the tree", () => {
+  const { state } = peerFilesShell("tunnel-silent");
+  const down = state.openPeerDown();
+  assert.equal(down?.daemon, FILES_PEER);
+  assert.equal(state.peerDownText(down), "corcino-mac is not connected. The list shown is the last one read.");
+  assert.equal(state.peerDownAction(down), "Try again");
+  const reread = [];
+  state.revalidateLevel = (rel) => reread.push(rel);
+  state._tree = {};
+  const folders = [
+    { rel: "src", expanded: true },
+    { rel: "docs", expanded: false },
+  ];
+  state.rawTree = () => ({ root: { visit: (fn) => folders.forEach(fn) } });
+  state.isFolder = () => true;
+  state.relPath = (n) => n.rel;
+  state.treeStale = "Could not refresh the file list.";
+  state.filesFollowFleet();
+  assert.deepEqual(reread, [], "the peer is still down");
+  state.fleetPeers[0].state = "reachable";
+  state.filesFollowFleet();
+  assert.deepEqual(reread, ["", "src"]);
+  assert.equal(state.treeStale, "");
+  state.filesFollowFleet();
+  assert.deepEqual(reread, ["", "src"], "only the read that calls the peer back");
+});
+
 test("a new checkout's change set does not inherit the old tree's last read", () => {
   const { state } = loadShell();
   state.loadChanges = () => {};

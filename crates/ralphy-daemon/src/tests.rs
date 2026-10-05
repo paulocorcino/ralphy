@@ -2473,6 +2473,11 @@ fn rfc_seed() -> totp::Seed {
 /// Build a router under a `Session` policy over `token` + the RFC seed, with a
 /// baptized identity so `/api/identity` answers `200` once authorized.
 fn session_router(token: &str) -> Router {
+    session_router_at(PathBuf::from("does-not-exist"), token)
+}
+
+/// [`session_router`] with its store beside `registry_path`.
+fn session_router_at(registry_path: PathBuf, token: &str) -> Router {
     // One shared epoch: the `SessionAuth` signs/verifies cookies under it and
     // the wrapping `AuthState` bumps the SAME counter on logout/invalidate.
     let session_epoch = epoch::SessionEpoch::in_memory_detached();
@@ -2489,7 +2494,7 @@ fn session_router(token: &str) -> Router {
     };
     router(
         Some(id),
-        PathBuf::from("does-not-exist"),
+        registry_path,
         PathBuf::from("does-not-exist"),
         StorePaths::default(),
         Instant::now(),
@@ -2693,6 +2698,13 @@ async fn every_response_carries_the_security_headers() {
         assert!(
             csp.contains("connect-src 'self';") && !csp.contains("ws:"),
             "{path}: {csp}"
+        );
+        // The client hints the audit log records (ADR-0074).
+        let accept_ch = h["accept-ch"].to_str().unwrap();
+        assert!(
+            accept_ch.contains("Sec-CH-UA-Model")
+                && accept_ch.contains("Sec-CH-UA-Platform-Version"),
+            "{path}: {accept_ch}"
         );
     }
     // The hash in the header is the hash of the bytes the browser receives:
@@ -5483,7 +5495,7 @@ fn shell_detaches_a_fence() {
     // still renders, and the socket close is the writer-slot release (§9).
     let teardown = body("function tearDownMember(");
     assert!(
-        teardown.contains("win._term?.dispose()") && teardown.contains("wins.delete(win)"),
+        teardown.contains("win._term?.dispose(") && teardown.contains("wins.delete(win)"),
         "tearDownMember must dispose the terminal and drop the window (#346, §9)"
     );
     assert!(
@@ -8119,5 +8131,6 @@ fn vendored_files_match_the_manifest() {
 }
 
 /// The desk history routes (ADR-0050 amendment 2026-10-04).
+mod audit_routes;
 mod desk_history;
 mod desk_routes;

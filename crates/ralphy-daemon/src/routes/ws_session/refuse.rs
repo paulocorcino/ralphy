@@ -16,25 +16,31 @@ use axum::extract::ws::{Message, WebSocketUpgrade};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 
+use super::traffic::Tab;
 use crate::routes::send_command;
 
 /// The wire value of `session-end`'s `reason` for a launch the daemon refused.
 pub(crate) const REFUSED: &str = "refused";
 
-/// Refuses one `/ws/session` request in the way its client can read.
+/// Refuses one `/ws/session` request in the way its client can read, and
+/// logs each refusal: a console that does not open is the failure the
+/// operator sees.
 #[derive(Clone)]
 pub(crate) struct Refuser {
-    new_launch: bool,
+    /// The session a reattach names; `None` for a new launch.
+    session: Option<u64>,
     daemon_id: String,
     environment: String,
+    tab: Tab,
 }
 
 impl Refuser {
-    pub(crate) fn new(new_launch: bool, daemon_id: &str, environment: &str) -> Self {
+    pub(crate) fn new(session: Option<u64>, daemon_id: &str, environment: &str, tab: Tab) -> Self {
         Self {
-            new_launch,
+            session,
             daemon_id: daemon_id.to_string(),
             environment: environment.to_string(),
+            tab,
         }
     }
 
@@ -47,7 +53,16 @@ impl Refuser {
         message: impl Into<String>,
     ) -> Response {
         let message = message.into();
-        if !self.new_launch {
+        tracing::info!(
+            status = status.as_u16(),
+            reason = message.as_str(),
+            launch = self.session.is_none(),
+            session = self.session,
+            holder = self.tab.holder.as_deref(),
+            device = self.tab.device.map(|d| d.to_string()),
+            "console socket refused"
+        );
+        if self.session.is_some() {
             return (status, message).into_response();
         }
         let daemon_id = self.daemon_id.clone();

@@ -8,13 +8,15 @@ use std::sync::Arc;
 use axum::extract::ws::WebSocketUpgrade;
 use axum::extract::Query;
 use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 
 use super::join::{claim_for, hold, Joined};
 use super::peer_console::PeerConsole;
 use super::refuse::Refuser;
-use super::{gemini_root, peer_session_query, relay_to_peer, session_ws};
+use super::traffic::Tab;
+use super::{gemini_root, peer_session_query, relay_to_peer, session_ws, Opening};
 use super::{SessionHost, SessionLabels, SessionQuery};
+use crate::routes::audit_layer::{ConsoleKind, ConsoleRecord, SocketAudit};
 use crate::routes::{blocking_read, read_peer_store};
 use crate::{agent_state, auth, checkout, confine, fleet, peer, registry, session};
 
@@ -57,6 +59,7 @@ pub(crate) async fn session_ws_upgrade(
     registry_path: PathBuf,
     host: SessionHost,
     shutdown: tokio::sync::watch::Receiver<bool>,
+    who: SocketAudit,
 ) -> Response {
     // Every upgrade below, the peer relay included, inherits the cap.
     let ws = ws
@@ -69,13 +72,16 @@ pub(crate) async fn session_ws_upgrade(
         bound_port,
     } = host;
     // Owned: `query` is rewritten below (a peer ref resolves to its slug).
-    let holder = query.holder().map(str::to_owned);
+    let tab = Tab {
+        holder: query.holder().map(str::to_owned),
+        device: who.device,
+    };
     let record = query.record().map(str::to_owned);
     let daemon_id = identity
         .as_ref()
         .map(|identity| identity.id.to_string())
         .unwrap_or_default();
-    let refuser = Refuser::new(query.id.is_none(), &daemon_id, &environment);
+    let refuser = Refuser::new(query.id, &daemon_id, &environment, tab.clone());
     // A peer free console is the one composite-ref session hosted HERE. Match
     // both id and repo so an equal numeric id owned by the peer still proxies.
     let locally_owned = query.id.and_then(|id| {
@@ -100,7 +106,13 @@ pub(crate) async fn session_ws_upgrade(
                         daemon_id: &daemon_id,
                     };
                     let peer_query = peer_session_query(&query, slug);
-                    return relay_to_peer(ws, peer, &peer_query, me, &refuser, shutdown).await;
+                    let opening = Opening {
+                        record: relayed_record(&query, slug, &peer.daemon_id, &tab),
+                        tab,
+                        who,
+                    };
+                    return relay_to_peer(ws, peer, &peer_query, opening, me, &refuser, shutdown)
+                        .await;
                 }
                 fleet::route::Route::UnknownDaemon { daemon_id } => {
                     return refuser.refuse(
@@ -140,36 +152,51 @@ pub(crate) async fn session_ws_upgrade(
                         daemon_id,
                         effective_environment,
                         effective_labels,
+                        tab,
                         shutdown,
                     )
                 }),
                 // `watch` never yields `Busy`; matching the variant keeps that a
                 // compile-time fact rather than a comment.
                 Err(session::AttachError::Unknown) => {
-                    (StatusCode::NOT_FOUND, "unknown session").into_response()
+                    refuser.refuse(ws, StatusCode::NOT_FOUND, "unknown session")
                 }
                 Err(session::AttachError::Busy) => {
-                    (StatusCode::CONFLICT, "session busy").into_response()
+                    refuser.refuse(ws, StatusCode::CONFLICT, "session busy")
                 }
             };
         }
-        return match sessions.attach_as(id, query.takeover == Some(1), query.holder()) {
-            Ok(att) => ws.on_upgrade(move |socket| {
-                session_ws(
-                    socket,
-                    att,
-                    id,
-                    daemon_id,
-                    effective_environment,
-                    effective_labels,
-                    shutdown,
-                )
-            }),
+        let takeover = query.takeover == Some(1);
+        return match sessions.attach_as(id, takeover, query.holder()) {
+            Ok(att) => {
+                if takeover {
+                    who.console(&ConsoleRecord {
+                        kind: ConsoleKind::Takeover,
+                        session: Some(id),
+                        agent: None,
+                        repo: locally_owned.as_ref().map(|info| info.repo.clone()),
+                        peer: None,
+                        holder: tab.holder.clone(),
+                    });
+                }
+                ws.on_upgrade(move |socket| {
+                    session_ws(
+                        socket,
+                        att,
+                        id,
+                        daemon_id,
+                        effective_environment,
+                        effective_labels,
+                        tab,
+                        shutdown,
+                    )
+                })
+            }
             Err(session::AttachError::Unknown) => {
-                (StatusCode::NOT_FOUND, "unknown session").into_response()
+                refuser.refuse(ws, StatusCode::NOT_FOUND, "unknown session")
             }
             Err(session::AttachError::Busy) => {
-                (StatusCode::CONFLICT, "session busy").into_response()
+                refuser.refuse(ws, StatusCode::CONFLICT, "session busy")
             }
         };
     }
@@ -201,7 +228,8 @@ pub(crate) async fn session_ws_upgrade(
                         daemon_id,
                         environment,
                         bound_port,
-                        holder,
+                        tab,
+                        who,
                         record,
                         refuser,
                         shutdown,
@@ -242,10 +270,13 @@ pub(crate) async fn session_ws_upgrade(
         let spec = session::console_spec(cwd, 24, 80, command.as_deref());
         let repo_label = query.repo.clone().unwrap_or_else(|| "~".to_string());
         let claim = claim_for(&sessions, &record).await;
-        if let Some(joined) =
-            Joined::find(&sessions, claim.as_ref(), holder.as_deref(), &environment)
-        {
-            return joined.upgrade(ws, daemon_id, shutdown);
+        if let Some(joined) = Joined::find(
+            &sessions,
+            claim.as_ref(),
+            tab.holder.as_deref(),
+            &environment,
+        ) {
+            return joined.upgrade(ws, daemon_id, tab, shutdown);
         }
         return match sessions
             .spawn_attached(
@@ -257,19 +288,29 @@ pub(crate) async fn session_ws_upgrade(
                 record.clone(),
                 spec,
             )
-            .inspect(|(_, att)| hold(att, holder.as_deref()))
+            .inspect(|(_, att)| hold(att, tab.holder.as_deref()))
         {
-            Ok((id, att)) => ws.on_upgrade(move |socket| {
-                session_ws(
-                    socket,
-                    att,
+            Ok((id, att)) => {
+                who.console(&launch_record(
                     id,
-                    daemon_id,
-                    environment,
-                    SessionLabels::default(),
-                    shutdown,
-                )
-            }),
+                    "console",
+                    query.repo.clone(),
+                    None,
+                    &tab,
+                ));
+                ws.on_upgrade(move |socket| {
+                    session_ws(
+                        socket,
+                        att,
+                        id,
+                        daemon_id,
+                        environment,
+                        SessionLabels::default(),
+                        tab,
+                        shutdown,
+                    )
+                })
+            }
             Err(e) => {
                 tracing::warn!(error = %e, "failed to spawn a console session");
                 refuser.refuse(
@@ -360,8 +401,13 @@ pub(crate) async fn session_ws_upgrade(
     // no hooks, never no console. The record claim comes first, so a launch
     // that joins a live session burns no id and writes no file.
     let claim = claim_for(&sessions, &record).await;
-    if let Some(joined) = Joined::find(&sessions, claim.as_ref(), holder.as_deref(), &environment) {
-        return joined.upgrade(ws, daemon_id, shutdown);
+    if let Some(joined) = Joined::find(
+        &sessions,
+        claim.as_ref(),
+        tab.holder.as_deref(),
+        &environment,
+    ) {
+        return joined.upgrade(ws, daemon_id, tab, shutdown);
     }
     let id = sessions.reserve_id();
     let status = match agent {
@@ -393,11 +439,29 @@ pub(crate) async fn session_ws_upgrade(
             record.clone(),
             spec,
         )
-        .inspect(|(_, att)| hold(att, holder.as_deref()))
+        .inspect(|(_, att)| hold(att, tab.holder.as_deref()))
     {
-        Ok((id, att)) => ws.on_upgrade(move |socket| {
-            session_ws(socket, att, id, daemon_id, environment, labels, shutdown)
-        }),
+        Ok((id, att)) => {
+            who.console(&launch_record(
+                id,
+                agent_str,
+                Some(repo.to_string()),
+                None,
+                &tab,
+            ));
+            ws.on_upgrade(move |socket| {
+                session_ws(
+                    socket,
+                    att,
+                    id,
+                    daemon_id,
+                    environment,
+                    labels,
+                    tab,
+                    shutdown,
+                )
+            })
+        }
         Err(e) => {
             tracing::warn!(error = %e, "failed to spawn a workbench session");
             refuser.refuse(
@@ -406,5 +470,98 @@ pub(crate) async fn session_ws_upgrade(
                 "failed to spawn session",
             )
         }
+    }
+}
+
+/// The audit record of a session this daemon just spawned.
+pub(super) fn launch_record(
+    session: session::SessionId,
+    agent: &str,
+    repo: Option<String>,
+    peer: Option<String>,
+    tab: &Tab,
+) -> ConsoleRecord {
+    ConsoleRecord {
+        kind: ConsoleKind::Launch,
+        session: Some(session),
+        agent: Some(agent.to_string()),
+        repo,
+        peer,
+        holder: tab.holder.clone(),
+    }
+}
+
+/// The audit record of a request relayed to the peer `peer_id`: a launch, a
+/// take-over, or nothing for a plain reattach or a watch. The peer owns the id
+/// of a session it launches, so a relayed launch names none.
+pub(super) fn relayed_record(
+    query: &SessionQuery,
+    slug: &str,
+    peer_id: &str,
+    tab: &Tab,
+) -> Option<ConsoleRecord> {
+    let (kind, session, agent) = match query.id {
+        Some(id) if query.takeover == Some(1) && query.watch != Some(1) => {
+            (ConsoleKind::Takeover, Some(id), None)
+        }
+        Some(_) => return None,
+        None if query.console == Some(1) => {
+            (ConsoleKind::Launch, None, Some("console".to_string()))
+        }
+        None => (ConsoleKind::Launch, None, query.agent.clone()),
+    };
+    Some(ConsoleRecord {
+        kind,
+        session,
+        agent,
+        repo: Some(slug.to_string()),
+        peer: Some(peer_id.to_string()),
+        holder: tab.holder.clone(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn query(json: serde_json::Value) -> SessionQuery {
+        serde_json::from_value(json).expect("a session query")
+    }
+
+    #[test]
+    fn a_relayed_request_records_a_launch_or_a_takeover_and_nothing_else() {
+        let tab = Tab {
+            holder: Some("tab-a".to_string()),
+            device: None,
+        };
+        let record = |q| relayed_record(&query(q), "owner/repo", "01PEER", &tab);
+
+        let agent = record(serde_json::json!({"agent": "claude"})).expect("a launch");
+        assert_eq!(agent.kind, ConsoleKind::Launch);
+        assert_eq!(agent.agent.as_deref(), Some("claude"));
+        assert_eq!(
+            agent.session, None,
+            "the peer owns the id of what it launches"
+        );
+        assert_eq!(agent.peer.as_deref(), Some("01PEER"));
+        assert_eq!(agent.holder.as_deref(), Some("tab-a"));
+
+        let console =
+            record(serde_json::json!({"console": 1, "command": "htop"})).expect("a launch");
+        assert_eq!(
+            console.agent.as_deref(),
+            Some("console"),
+            "never the startup command"
+        );
+
+        let takeover = record(serde_json::json!({"id": 7, "takeover": 1})).expect("a take-over");
+        assert_eq!(takeover.kind, ConsoleKind::Takeover);
+        assert_eq!(takeover.session, Some(7));
+
+        assert!(record(serde_json::json!({"id": 7})).is_none(), "a reattach");
+        assert!(
+            record(serde_json::json!({"id": 7, "takeover": 1, "watch": 1})).is_none(),
+            "a watch"
+        );
     }
 }

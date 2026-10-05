@@ -331,6 +331,22 @@ daemon owns, not a field each page guesses and writes back.
   that does not know it, so a launch relayed to an older peer is not
   protected until that peer is updated. A page from before this amendment
   sends no `record`, and its launches start a session as before.
+- **A list that did not hear from a peer decides nothing for that peer.**
+  `/api/sessions` used to leave out a peer that did not answer, so the page
+  read "no sessions there" and relaunched every shell of that peer. On a peer
+  without the record join this started a second shell for each console, and
+  the next load adopted the first ones in a cascade (measured on 2026-10-04:
+  a Mac on rc.36 behind an ssh tunnel that dropped for a few seconds; 5
+  consoles became 11 in a reproduction with a TCP proxy as the tunnel). Now
+  the list names those peers in the response header `x-ralphy-unanswered`
+  (comma-separated daemon ids; the body stays the array every reader parses).
+  For a record of a peer the list did not hear from, the page does not
+  relaunch, does not create or drop the record, and does not launch on a
+  click. The window is a placeholder that says the peer does not answer, and
+  asks the list again on each fleet read: it attaches when the session is
+  there, and relaunches a shell only when the list heard from the peer and
+  the session is not there. This protects the consoles on every peer
+  version, the older ones included.
 
 ### Rejected alternatives
 

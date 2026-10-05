@@ -1443,6 +1443,21 @@ test("peerReturnDecision relaunches only a shell, only after the box saw its pee
   );
 });
 
+test("heldReturnDecision launches only when the list heard from the peer that nothing runs", () => {
+  const { heldReturnDecision } = load();
+  const row = { id: 3, repo: "01ARZ3NDEKTSV4RRFFQ69G5FAZ/owner/repo" };
+  // Not known (the list did not hear from the peer): never a launch.
+  assert.equal(heldReturnDecision({ kind: "console", canLaunch: true, session: undefined }), "stay");
+  assert.equal(heldReturnDecision({ kind: "agent", canLaunch: true, session: undefined }), "stay");
+  // It still runs there: attach, whatever the kind.
+  assert.equal(heldReturnDecision({ kind: "console", canLaunch: true, session: row }), "attach");
+  assert.equal(heldReturnDecision({ kind: "agent", canLaunch: false, session: row }), "attach");
+  // Heard, and not running: a shell opens again, a vendor CLI waits for a click.
+  assert.equal(heldReturnDecision({ kind: "console", canLaunch: true, session: null }), "relaunch");
+  assert.equal(heldReturnDecision({ kind: "agent", canLaunch: true, session: null }), "offer");
+  assert.equal(heldReturnDecision({ kind: "console", canLaunch: false, session: null }), "offer");
+});
+
 test("peerHeld holds a peer project only while its known peer cannot serve it", () => {
   const { peerHeld } = load();
   const ref = `${PEER}/owner/repo`;
@@ -1454,6 +1469,47 @@ test("peerHeld holds a peer project only while its known peer cannot serve it", 
   assert.equal(peerHeld(ref, groups("")), null);
   assert.equal(peerHeld(ref, new Map()), null);
   assert.equal(peerHeld("owner/repo", groups("tunnel-silent")), null);
+});
+
+test("peerGate holds a reattach only while its known peer cannot serve it", () => {
+  const { peerGate } = load();
+  const opening = ["connect", "reconnect", "park-as-watcher"];
+  const down = ["asleep", "unreachable", "tunnel-closed", "tunnel-silent", "unauthorized", "version-mismatch", "refused", "malformed"];
+  for (const decision of opening) {
+    for (const state of down) {
+      assert.equal(peerGate({ decision, group: peerGroup(state), id: 7 }), "hold", `${decision} on ${state}`);
+    }
+    // Reachable, a state not heard yet, and no group: the socket opens.
+    assert.equal(peerGate({ decision, group: peerGroup("reachable"), id: 7 }), decision);
+    assert.equal(peerGate({ decision, group: peerGroup(""), id: 7 }), decision);
+    assert.equal(peerGate({ decision, group: null, id: 7 }), decision);
+    // A launch has no session to hold for: its placeholder says why.
+    assert.equal(peerGate({ decision, group: peerGroup("asleep"), id: null }), decision);
+  }
+  // A session that ended stays ended, whatever the peer does.
+  assert.equal(peerGate({ decision: "give-up", group: peerGroup("asleep"), id: 7 }), "give-up");
+});
+
+test("reconnectDecision reattaches any unannounced close and gives up only on an announced end", () => {
+  const { reconnectDecision } = load();
+  const base = { everOpened: true, announced: null, idKnown: true, failedReopens: 0 };
+  const rows = [
+    ["no id: nothing to reattach to", { idKnown: false }, "give-up"],
+    ["taken over: watch", { announced: "taken-over" }, "park-as-watcher"],
+    ["the daemon said why", { announced: "child-exited" }, "give-up"],
+    ["too many failed opens", { failedReopens: 11 }, "give-up"],
+    ["a drop of a held session", {}, "reconnect"],
+    ["never opened, first tries", { everOpened: false, failedReopens: 2 }, "reconnect"],
+    ["never opened, then watch", { everOpened: false, failedReopens: 3 }, "park-as-watcher"],
+  ];
+  for (const [name, change, want] of rows) {
+    assert.equal(reconnectDecision({ ...base, ...change }), want, name);
+  }
+  // A proxy closes cleanly for a socket the daemon dropped (ADR-0051 §9): the
+  // close itself says nothing, so an unannounced clean close reconnects.
+  for (const close of [{ code: 1000, wasClean: true }, { code: 1001, wasClean: true }, { code: 1005, wasClean: true }]) {
+    assert.equal(reconnectDecision({ ...base, opened: true, ...close }), "reconnect", JSON.stringify(close));
+  }
 });
 
 // --- resumeDecision: coming back from a suspend --------------------------
@@ -1474,6 +1530,25 @@ test("resumeAll and setStaleProbe are exported like the rest of the module's sea
   c.setStaleProbe(() => true);
   c.setStaleProbe(null);
   assert.equal(c.resumeAll(false), 0);
+});
+
+// --- encodeDetach: why the page closes a console socket ----------------------
+// The daemon logs the reason, so a dormancy reattach is told apart from a
+// network drop. The daemon's `Leave::from_command` test reads this same JSON.
+const textOf = (frame) => new TextDecoder().decode(frame.subarray(1));
+
+test("encodeDetach is a command frame that names the reason", () => {
+  const { encodeDetach } = load();
+  const frame = encodeDetach("dormant");
+  assert.equal(frame[0], 0x02, "the command tag");
+  assert.equal(textOf(frame), '{"id":0,"verb":"detach","payload":{"reason":"dormant"}}');
+});
+
+test("encodeResize keeps its frame", () => {
+  const { encodeResize } = load();
+  const frame = encodeResize(24, 80);
+  assert.equal(frame[0], 0x02, "the command tag");
+  assert.equal(textOf(frame), '{"id":0,"verb":"resize","payload":{"rows":24,"cols":80}}');
 });
 
 // --- dormancyDecision: a console off the viewport gives its renderer back ---
@@ -1547,6 +1622,25 @@ test("dormancyDecision sleeps only a live console nobody can see", () => {
   ];
   for (const [name, change, want] of rows) {
     assert.equal(dormancyDecision({ ...live, ...change }), want, name);
+  }
+});
+
+// A restored console that reattaches starts asleep, so a console off the
+// viewport never replays its text; the observer's first report wakes the
+// visible ones.
+test("birthDecision starts asleep only a reattach the observer can wake", () => {
+  const { birthDecision } = load();
+  const rows = [
+    ["a reattach starts asleep", { id: 7, observed: true }, "dormant"],
+    ["session id zero is a reattach", { id: 0, observed: true }, "dormant"],
+    // A launch has no id to wake to: it would spawn a second CLI.
+    ["a launch attaches", { id: null, observed: true }, "attach"],
+    ["an undefined id attaches", { id: undefined, observed: true }, "attach"],
+    // Without an IntersectionObserver nothing would ever wake the window.
+    ["no observer: a reattach attaches", { id: 7, observed: false }, "attach"],
+  ];
+  for (const [name, inputs, want] of rows) {
+    assert.equal(birthDecision(inputs), want, name);
   }
 });
 

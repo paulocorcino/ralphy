@@ -1,0 +1,368 @@
+//! The device cookie and the audit log through the router (ADR-0074).
+
+use super::*;
+
+fn audit_lines(dir: &Path) -> Vec<serde_json::Value> {
+    let text = std::fs::read_to_string(dir.join("daemon-audit.jsonl")).unwrap_or_default();
+    text.lines()
+        .map(|l| serde_json::from_str(l).expect("each line is JSON"))
+        .collect()
+}
+
+fn device_set_cookie(res: &Response) -> Option<String> {
+    res.headers()
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .find(|v| v.starts_with("ralphy_device="))
+        .map(str::to_string)
+}
+
+fn pair(set_cookie: &str) -> String {
+    set_cookie.split(';').next().unwrap().to_string()
+}
+
+async fn send(app: Router, req: Request<Body>) -> Response {
+    app.oneshot(req).await.unwrap()
+}
+
+#[tokio::test]
+async fn a_browser_gets_one_device_cookie_and_a_forged_one_is_replaced() {
+    let dir = tempfile::tempdir().unwrap();
+    let app = desk_router(dir.path());
+    let first = send(
+        app.clone(),
+        Request::builder()
+            .uri("/api/session")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    let set = device_set_cookie(&first).expect("the first API request sets the device cookie");
+    assert!(
+        set.contains("HttpOnly") && set.contains("SameSite=Strict"),
+        "{set}"
+    );
+
+    let again = send(
+        app.clone(),
+        Request::builder()
+            .uri("/api/session")
+            .header(header::COOKIE, pair(&set))
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(device_set_cookie(&again), None, "a valid cookie is kept");
+
+    let value = pair(&set);
+    let id = value.split('.').nth(1).unwrap();
+    let forged = value.replace(id, &"0".repeat(32));
+    let replaced = send(
+        app,
+        Request::builder()
+            .uri("/api/session")
+            .header(header::COOKIE, forged)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert!(
+        device_set_cookie(&replaced).is_some(),
+        "a cookie whose MAC does not match gets a new ID"
+    );
+}
+
+#[tokio::test]
+async fn an_action_line_keeps_the_path_and_drops_the_query_and_the_body() {
+    let dir = tempfile::tempdir().unwrap();
+    let app = desk_router(dir.path());
+    let set = device_set_cookie(&send(app.clone(), session_read()).await).unwrap();
+    let res = send(
+        app,
+        Request::builder()
+            .method("POST")
+            .uri("/api/nope?token=query-secret")
+            .header("x-real-ip", "203.0.113.7")
+            .header(header::COOKIE, pair(&set))
+            .body(Body::from("body-secret"))
+            .unwrap(),
+    )
+    .await;
+    let lines = audit_lines(dir.path());
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    let line = &lines[0];
+    assert_eq!(line["event"], "action");
+    assert_eq!(line["method"], "POST");
+    assert_eq!(line["path"], "/api/nope");
+    assert_eq!(line["status"], res.status().as_u16());
+    assert_eq!(line["ip"], "203.0.113.7");
+    assert_eq!(line["actor"], "device");
+    assert_eq!(
+        line["device"],
+        pair(&set).split('.').nth(1).unwrap(),
+        "the line names the device the cookie carries"
+    );
+    let text = std::fs::read_to_string(dir.path().join("daemon-audit.jsonl")).unwrap();
+    assert!(!text.contains("secret"), "{text}");
+    assert!(
+        owner_only::is_owner_only(&dir.path().join("daemon-audit.jsonl")).unwrap(),
+        "the log is owner-only"
+    );
+}
+
+fn session_read() -> Request<Body> {
+    Request::builder()
+        .uri("/api/session")
+        .body(Body::empty())
+        .unwrap()
+}
+
+#[tokio::test]
+async fn only_the_session_read_gives_a_device_cookie() {
+    let dir = tempfile::tempdir().unwrap();
+    let app = desk_router(dir.path());
+    // A first visit sends its requests together; only the session read mints.
+    let other = send(
+        app.clone(),
+        Request::builder()
+            .method("POST")
+            .uri("/api/nope")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(
+        device_set_cookie(&other),
+        None,
+        "a request that is not the session read mints no ID"
+    );
+    assert!(device_set_cookie(&send(app.clone(), session_read()).await).is_some());
+    let after = send(
+        app,
+        Request::builder()
+            .method("POST")
+            .uri("/api/nope")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(device_set_cookie(&after), None, "also once the key exists");
+    let lines = audit_lines(dir.path());
+    assert_eq!(lines.len(), 2, "{lines:?}");
+    assert!(lines
+        .iter()
+        .all(|l| l["actor"] == "unknown" && l.get("device").is_none()));
+}
+
+#[tokio::test]
+async fn device_facts_with_no_device_are_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let res = send(
+        desk_router(dir.path()),
+        facts_request("android-chrome", "", |_| {}),
+    )
+    .await;
+    assert_eq!(
+        res.status(),
+        StatusCode::CONFLICT,
+        "the page sends again later"
+    );
+    assert!(audit_lines(dir.path()).is_empty());
+}
+
+#[tokio::test]
+async fn a_read_writes_no_line() {
+    let dir = tempfile::tempdir().unwrap();
+    send(
+        desk_router(dir.path()),
+        Request::builder()
+            .uri("/api/session")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert!(audit_lines(dir.path()).is_empty());
+}
+
+#[tokio::test]
+async fn a_login_and_a_replayed_login_are_recorded_with_the_server_facts() {
+    let dir = tempfile::tempdir().unwrap();
+    let app = session_router_at(dir.path().join("repos.toml"), "tok");
+    let code = rfc_seed().code_at(now_unix() / 30);
+    let login = || {
+        Request::builder()
+            .method("POST")
+            .uri("/api/login")
+            .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .header("x-real-ip", "198.51.100.4")
+            .header("sec-ch-ua-platform", "\"Android\"")
+            .body(Body::from(format!("code={code}")))
+            .unwrap()
+    };
+    assert_eq!(send(app.clone(), login()).await.status(), StatusCode::OK);
+    assert_eq!(
+        send(app, login()).await.status(),
+        StatusCode::UNAUTHORIZED,
+        "the same code again is a replay"
+    );
+    let lines = audit_lines(dir.path());
+    let events: Vec<_> = lines.iter().map(|l| l["event"].as_str().unwrap()).collect();
+    assert_eq!(events, ["login_ok", "login_failed"]);
+    assert_eq!(lines[1]["reason"], "bad_credential");
+    assert_eq!(lines[0]["server"]["real_ip"], "198.51.100.4");
+    assert_eq!(lines[0]["server"]["client_hints"][0][0], "platform");
+    let text = std::fs::read_to_string(dir.path().join("daemon-audit.jsonl")).unwrap();
+    assert!(!text.contains(&format!("code={code}")), "{text}");
+}
+
+#[tokio::test]
+async fn a_router_with_no_store_directory_sets_no_cookie_and_keeps_no_log() {
+    let res = get("/api/session").await;
+    assert_eq!(device_set_cookie(&res), None);
+}
+
+/// A measured device's report: its client facts as the body, and its request
+/// headers minus the ones that name the probe server.
+fn facts_request(
+    fixture: &str,
+    cookie: &str,
+    edit: impl FnOnce(&mut serde_json::Value),
+) -> Request<Body> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/devices")
+        .join(format!("{fixture}.json"));
+    let mut json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    edit(&mut json["client"]);
+    let mut req = Request::builder()
+        .method("POST")
+        .uri("/api/device/facts")
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::COOKIE, cookie);
+    for (k, v) in json["headers"].as_object().unwrap() {
+        if ![
+            "host",
+            "origin",
+            "referer",
+            "content-length",
+            "content-type",
+        ]
+        .contains(&k.as_str())
+        {
+            req = req.header(k.as_str(), v.as_str().unwrap());
+        }
+    }
+    req.body(Body::from(json["client"].to_string())).unwrap()
+}
+
+#[tokio::test]
+async fn device_facts_are_recorded_once_and_again_when_the_profile_changes() {
+    let dir = tempfile::tempdir().unwrap();
+    let app = desk_router(dir.path());
+    let first = send(
+        app.clone(),
+        Request::builder()
+            .uri("/api/session")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    let cookie = pair(&device_set_cookie(&first).unwrap());
+    let with_holder = |c: &mut serde_json::Value| c["holder"] = "tab1".into();
+    for _ in 0..2 {
+        let res = send(
+            app.clone(),
+            facts_request("android-chrome", &cookie, with_holder),
+        )
+        .await;
+        assert_eq!(res.status(), StatusCode::NO_CONTENT);
+    }
+    let turned = |c: &mut serde_json::Value| c["screen"]["width"] = 800.into();
+    send(app, facts_request("android-chrome", &cookie, turned)).await;
+
+    let lines = audit_lines(dir.path());
+    let events: Vec<_> = lines.iter().map(|l| l["event"].as_str().unwrap()).collect();
+    assert_eq!(
+        events,
+        ["device_facts", "device_profile_changed"],
+        "{lines:?}"
+    );
+    let facts = &lines[0];
+    assert_eq!(facts["os"]["value"], "android");
+    assert_eq!(facts["model_hint"]["value"], "moto g(30)");
+    assert_eq!(facts["holder"], "tab1");
+    assert_eq!(facts["normalizer"], crate::audit::normalize::NORMALIZER);
+    assert_eq!(facts["server"]["real_ip"], "203.0.113.10");
+    assert_eq!(facts["client"]["cores"], 8, "the raw facts are kept");
+    assert_eq!(lines[1]["changed"], serde_json::json!(["screen"]));
+}
+
+#[tokio::test]
+async fn a_facts_body_over_the_cap_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let big = |c: &mut serde_json::Value| c["vendor"] = "x".repeat(17 * 1024).into();
+    let res = send(
+        desk_router(dir.path()),
+        facts_request("android-chrome", "", big),
+    )
+    .await;
+    assert_eq!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    assert!(audit_lines(dir.path()).is_empty());
+}
+
+#[tokio::test]
+async fn an_events_read_refuses_a_value_that_is_not_a_device_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let res = send(
+        desk_router(dir.path()),
+        Request::builder()
+            .uri("/api/audit/events?device=../../etc")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn the_device_list_marks_the_device_that_asks() {
+    let dir = tempfile::tempdir().unwrap();
+    let app = desk_router(dir.path());
+    let first = send(
+        app.clone(),
+        Request::builder()
+            .uri("/api/session")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    let cookie = pair(&device_set_cookie(&first).unwrap());
+    send(
+        app.clone(),
+        Request::builder()
+            .method("POST")
+            .uri("/api/nope")
+            .header(header::COOKIE, &cookie)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    let list = |cookie: Option<String>| {
+        let app = app.clone();
+        async move {
+            let mut req = Request::builder().uri("/api/audit/devices");
+            if let Some(c) = cookie {
+                req = req.header(header::COOKIE, c);
+            }
+            let res = send(app, req.body(Body::empty()).unwrap()).await;
+            serde_json::from_str::<serde_json::Value>(&body_text(res).await).unwrap()
+        }
+    };
+    assert_eq!(list(Some(cookie)).await["devices"][0]["this"], true);
+    assert_eq!(
+        list(None).await["devices"][0]["this"],
+        false,
+        "another browser is not this device"
+    );
+}
