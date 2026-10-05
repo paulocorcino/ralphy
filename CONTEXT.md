@@ -140,7 +140,7 @@ What a page reports about its own browser, screen and machine, with what the dae
 _Avoid_: fingerprint, telemetry (Ralphy sends nothing out), user agent (one of the facts).
 
 **Audit log**:
-The daemon's record, one line per event, of each login, logout, **device facts** report and request that changed state, with the **device** that sent it (ADR-0074).
+The daemon's record, one line per event, of each login, logout, **device facts** report, request and command that changed state, with the **device** that sent it (ADR-0074).
 _Avoid_: history (the **desk history** is a different thing), access log, event log.
 
 **Fleet**:

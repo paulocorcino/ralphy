@@ -268,6 +268,24 @@ async fn the_audit_log_reads_are_the_shared_replies() {
             .unwrap(),
     )
     .await;
+    send(
+        axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/peer/command")
+            .header("content-type", "application/json")
+            .header("cookie", &cookie)
+            .header("x-real-ip", "203.0.113.10")
+            .body(axum::body::Body::from(
+                serde_json::json!({
+                    "id": 1,
+                    "verb": "branch.switch",
+                    "payload": {"repo": "nope", "name": "main"},
+                })
+                .to_string(),
+            ))
+            .unwrap(),
+    )
+    .await;
 
     let devices = json_of(
         send(
@@ -310,6 +328,8 @@ async fn the_audit_log_reads_are_the_shared_replies() {
             "/events/0/device",
             "/events/1/at",
             "/events/1/device",
+            "/events/2/at",
+            "/events/2/device",
         ],
     );
 }

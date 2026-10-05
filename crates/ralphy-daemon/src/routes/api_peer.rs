@@ -55,6 +55,7 @@ pub(crate) async fn peer_command_route(
     registry_path: PathBuf,
     daemon_id: Option<String>,
     sessions: Arc<session::SessionManager>,
+    who: super::ws_command::CommandAudit,
     Json(cmd): Json<protocol::Command>,
 ) -> Response {
     let Some(verb) = dispatch::Verb::from_query(&cmd.verb) else {
@@ -64,6 +65,7 @@ pub(crate) async fn peer_command_route(
         }))
         .into_response();
     };
+    who.record(verb, &cmd);
     if verb.is_host() {
         let message = "a host command runs only on the daemon you are connected to";
         return Json(serde_json::json!({ "status": "error", "message": message })).into_response();
@@ -257,8 +259,18 @@ pub(crate) fn peer_routes(s: &RouterShared) -> Router {
                 let registry = s.registry_path.clone();
                 let daemon_id = s.daemon_id.clone();
                 let sessions = s.sessions.clone();
-                move |body: Json<protocol::Command>| {
-                    peer_command_route(registry.clone(), daemon_id.clone(), sessions.clone(), body)
+                let audit = s.audit.clone();
+                move |device: Option<axum::Extension<crate::device::DeviceId>>,
+                      headers: axum::http::HeaderMap,
+                      body: Json<protocol::Command>| {
+                    let who = super::ws_command::CommandAudit::of(audit.clone(), device, &headers);
+                    peer_command_route(
+                        registry.clone(),
+                        daemon_id.clone(),
+                        sessions.clone(),
+                        who,
+                        body,
+                    )
                 }
             })
             // axum's 2 MB default refused a forwarded 4 MiB image paste.

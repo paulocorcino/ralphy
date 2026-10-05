@@ -4,7 +4,7 @@
       "browser": "chrome",
       "browser_version": "148",
       "device": "<device>",
-      "events": 2,
+      "events": 3,
       "first_seen": "<first_seen>",
       "form": "phone",
       "gpu": "Adreno (TM) 610",

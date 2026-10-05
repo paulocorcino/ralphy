@@ -28,7 +28,7 @@ test("a device the daemon lists is one row: its system, browser and form, then w
       device: "<device>",
       this: true,
       name: "Android 12 · Chrome 148 · phone",
-      detail: "moto g(30) · Adreno (TM) 610 · 203.0.113.10 · last seen t(<last_seen>) · 2 events",
+      detail: "moto g(30) · Adreno (TM) 610 · 203.0.113.10 · last seen t(<last_seen>) · 3 events",
     },
   ]);
 });
@@ -48,10 +48,15 @@ test("each line of a device is one plain sentence, newest first", () => {
   assert.deepEqual(
     rows.map((r) => [r.text, r.ip]),
     [
+      ["Command branch.switch in nope", "203.0.113.10"],
       ["POST /api/sessions/close (404)", "203.0.113.10"],
       ["Reported its device facts", "203.0.113.10"],
     ],
   );
+});
+
+test("a command with no project names only its verb", () => {
+  assert.equal(load().eventLine({ event: "command", verb: "host.trust" }), "Command host.trust");
 });
 
 test("a changed profile names what changed in plain words", () => {

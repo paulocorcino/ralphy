@@ -4,6 +4,15 @@
       "actor": "device",
       "at": "<at>",
       "device": "<device>",
+      "event": "command",
+      "ip": "203.0.113.10",
+      "repo": "nope",
+      "verb": "branch.switch"
+    },
+    {
+      "actor": "device",
+      "at": "<at>",
+      "device": "<device>",
       "event": "action",
       "ip": "203.0.113.10",
       "method": "POST",

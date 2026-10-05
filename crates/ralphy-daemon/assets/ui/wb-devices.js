@@ -85,6 +85,8 @@ window.WBDevices = (function () {
         return `Its device facts changed: ${(e.changed || []).map((c) => CHANGED_NAMES[c] || c).join(", ")}`;
       case "action":
         return `${e.method} ${e.path} (${e.status})`;
+      case "command":
+        return e.repo ? `Command ${e.verb} in ${e.repo}` : `Command ${e.verb}`;
       default:
         return e.event;
     }

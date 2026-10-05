@@ -75,7 +75,7 @@ and the file is kept under 20 MiB. The daemon prunes on its first write
 after it starts, and then at most once a day.
 
 **D4. The events are `login_ok`, `login_failed`, `logout`, `device_facts`,
-`device_profile_changed` and `action`.** An `action` is each authorized
+`device_profile_changed`, `action` and `command` (D12).** An `action` is each authorized
 `/api/*` request with method POST, PUT, PATCH or DELETE: its method, its path
 without the query string, its status, the device and the actor. **A line
 never holds a request body, a query string, a cookie or an `Authorization`
@@ -118,6 +118,21 @@ tab's holder ID: the ID that the console sockets already send, kept in
 `sessionStorage`, so it is the same across a reload of the tab and differs
 between tabs. Its source is `client`. A record that knows only the holder
 joins to a device through the `device_facts` line of that tab.
+
+**D12. A command-socket verb that changes state is a `command` line.** The
+command socket (`/ws/command`) and its peer form (`POST /api/peer/command`)
+carry most of the changes to a project: branch, commit, push, discard, file
+writes, a run. A verb records a line when its effect class (ADR-0036 §2) is
+Mutate, Write or Spawn, so a new verb is recorded without a list to keep. A
+read verb records nothing. The line holds the verb, the project the verb
+names as the caller sent it, the device, the actor and the address. **It
+never holds the verb's arguments** (a commit message, a path, a file's
+content), by the same rule as D4. The line is written when the verb is
+asked for, before any routing, so a verb that is refused or relayed to a peer
+is still recorded. The line does not hold the result: the result of a run is
+in the run's own records. A verb relayed to a peer writes one line here with
+the browser's device, and one line on the peer with the actor `bearer`
+(D8).
 
 ## Consequences
 
@@ -174,3 +189,10 @@ joins to a device through the `device_facts` line of that tab.
   cookie value.
 - D11: checked by `crates/ralphy-daemon/src/tests/audit_routes.rs`
   (`device_facts_are_recorded_once_and_again_when_the_profile_changes`).
+- D12: checked by `crates/ralphy-daemon/src/routes/audit_layer.rs`
+  (`a_command_that_changes_state_is_a_line_and_a_read_is_not`),
+  `crates/ralphy-daemon/tests/command_audit.rs`
+  (`a_command_that_changes_state_is_recorded_with_its_device`) and
+  `crates/ralphy-daemon/tests/shared_replies.rs`
+  (`the_audit_log_reads_are_the_shared_replies`, through
+  `POST /api/peer/command`).

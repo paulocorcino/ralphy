@@ -5,8 +5,10 @@ Scenario 1  each engine (Chromium, Firefox, WebKit) gets its own device cookie
 Scenario 2  a reload of the same page writes no second `device_facts` line
 Scenario 3  a request that changes state writes an `action` line with the
             device, and a login with a wrong code writes `login_failed`
-Scenario 4  Settings → Devices lists the three devices, marks this one, and
-            shows its activity
+Scenario 4  a command on the command socket that changes state writes a
+            `command` line with the device
+Scenario 5  Settings → Devices lists the three devices, marks this one, and
+            shows its activity, the command included
 
 Boots a Localhost daemon on 7477 over a SCRATCH `RALPHY_DAEMON_DIR`, so the
 operator's own store is untouched. The daemon is stopped by its own
@@ -161,7 +163,31 @@ def main():
                 logins,
             )
 
-            # ── 4. Settings → Devices ─────────────────────────────────────
+            # ── 4. a command that changes state ───────────────────────────
+            # The frame is the protocol's command tag (0x02) and its JSON.
+            chromium.evaluate(
+                """() => new Promise((resolve) => {
+                    const ws = new WebSocket(`ws://${location.host}/ws/command`);
+                    ws.binaryType = "arraybuffer";
+                    ws.onopen = () => {
+                        const json = JSON.stringify({id: 1, verb: "branch.switch", payload: {repo: "nope", name: "main"}});
+                        ws.send(new Uint8Array([2, ...new TextEncoder().encode(json)]));
+                    };
+                    ws.onclose = () => resolve();
+                    ws.onerror = () => resolve();
+                })"""
+            )
+            cmds = wait_lines(daemon_dir, lambda l: l.get("event") == "command")
+            check(
+                "a command that changes state writes a command line with the device",
+                len(cmds) == 1
+                and cmds[0].get("verb") == "branch.switch"
+                and cmds[0].get("device") == devices["chromium"]
+                and "name" not in cmds[0],
+                cmds,
+            )
+
+            # ── 5. Settings → Devices ─────────────────────────────────────
             chromium.evaluate(f"{SH}.openSettings(); {SH}.showSettingsSection('devices')")
             chromium.wait_for_selector(".device-row", timeout=10000)
             rows = chromium.locator(".device-row")
@@ -172,8 +198,10 @@ def main():
             chromium.wait_for_selector(".device-event", timeout=10000)
             texts = chromium.locator(".device-event").all_inner_texts()
             check(
-                "its activity shows the action and the device facts",
-                any("/api/desk/new" in t for t in texts) and any("Reported its device facts" in t for t in texts),
+                "its activity shows the action, the command and the device facts",
+                any("/api/desk/new" in t for t in texts)
+                and any("Command branch.switch in nope" in t for t in texts)
+                and any("Reported its device facts" in t for t in texts),
                 texts,
             )
             shot = os.path.join(SHOT_DIR, "device-audit-settings.png")

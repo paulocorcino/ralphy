@@ -6,16 +6,60 @@
 use std::sync::Arc;
 
 use axum::extract::State;
-use axum::http::{header, Method, StatusCode};
+use axum::http::{header, HeaderMap, Method, StatusCode};
 use axum::response::Response;
 
-use crate::audit::{Actor, Audit, Event, EventKind, LoginFailure, ServerFacts};
+use crate::audit::{self, Actor, Audit, Event, EventKind, LoginFailure, ServerFacts};
 use crate::device::{self, DeviceId};
+use crate::dispatch::{EffectClass, Verb};
+use crate::protocol::Command;
 
 /// Mutating paths the layer does not record as an `action`: a peer polls the
 /// first every few seconds, so its lines would push every other line out; the
-/// second writes its own line.
-const NOT_AN_ACTION: &[&str] = &["/api/peer/tree/poll", "/api/device/facts"];
+/// other two write their own line.
+const NOT_AN_ACTION: &[&str] = &[
+    "/api/peer/tree/poll",
+    "/api/device/facts",
+    "/api/peer/command",
+];
+
+/// Who sent a request: a bearer caller, else the browser of `device`.
+pub(crate) fn actor_of(headers: &HeaderMap, device: Option<DeviceId>) -> Actor {
+    if headers.contains_key(header::AUTHORIZATION) {
+        Actor::Bearer
+    } else if device.is_some() {
+        Actor::Device
+    } else {
+        Actor::Unknown
+    }
+}
+
+/// The line a command-socket verb writes, or `None` for a verb that only
+/// reads (D12). The line names the verb and its project, never the
+/// arguments, and it is written when the verb is asked for, before its result.
+pub(crate) fn command_event(
+    verb: Verb,
+    cmd: &Command,
+    device: Option<DeviceId>,
+    actor: Actor,
+    ip: Option<String>,
+) -> Option<Event> {
+    match verb.effect_class() {
+        EffectClass::Native | EffectClass::Observe | EffectClass::Query => None,
+        EffectClass::Spawn | EffectClass::Mutate | EffectClass::Write => {
+            let mut e = Event::new(EventKind::Command, device, actor);
+            e.verb = Some(audit::clip(&cmd.verb));
+            e.repo = cmd
+                .payload
+                .get("repo")
+                .and_then(|v| v.as_str())
+                .map(audit::clip)
+                .filter(|r| !r.is_empty());
+            e.ip = ip;
+            Some(e)
+        }
+    }
+}
 
 pub(crate) async fn audit_layer(
     State(audit): State<Arc<Audit>>,
@@ -49,13 +93,7 @@ pub(crate) async fn audit_layer(
     if let Some(id) = device {
         req.extensions_mut().insert(id);
     }
-    let actor = if req.headers().contains_key(header::AUTHORIZATION) {
-        Actor::Bearer
-    } else if device.is_some() {
-        Actor::Device
-    } else {
-        Actor::Unknown
-    };
+    let actor = actor_of(req.headers(), device);
     let method = req.method().clone();
     let server = ServerFacts::from_headers(req.headers());
 
@@ -110,5 +148,41 @@ fn event_for(
             e.ip = server.real_ip;
             Some(e)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn command(verb: &str, payload: serde_json::Value) -> Command {
+        Command {
+            id: 1,
+            verb: verb.to_string(),
+            payload,
+        }
+    }
+
+    #[test]
+    fn a_command_that_changes_state_is_a_line_and_a_read_is_not() {
+        let switch = command(
+            "branch.switch",
+            serde_json::json!({"repo": "ralphy", "name": "secret-branch"}),
+        );
+        let verb = Verb::from_query(&switch.verb).expect("a known verb");
+        let line = command_event(verb, &switch, None, Actor::Device, None)
+            .expect("a verb that changes state writes a line");
+        let json = serde_json::to_value(&line).unwrap();
+        assert_eq!(json["event"], "command");
+        assert_eq!(json["verb"], "branch.switch");
+        assert_eq!(json["repo"], "ralphy");
+        assert!(
+            !json.to_string().contains("secret-branch"),
+            "the arguments stay out: {json}"
+        );
+
+        let list = command("branch.list", serde_json::json!({"repo": "ralphy"}));
+        let verb = Verb::from_query(&list.verb).expect("a known verb");
+        assert!(command_event(verb, &list, None, Actor::Device, None).is_none());
     }
 }

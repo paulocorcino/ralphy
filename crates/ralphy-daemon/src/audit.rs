@@ -41,6 +41,8 @@ pub enum EventKind {
     DeviceFacts,
     DeviceProfileChanged,
     Action,
+    /// A command-socket verb that changes state (D12).
+    Command,
 }
 
 /// Who sent the request.
@@ -123,7 +125,8 @@ fn header_text(headers: &HeaderMap, name: &str) -> Option<String> {
         .filter(|v| !v.is_empty())
 }
 
-fn clip(text: &str) -> String {
+/// `text` trimmed and cut to the longest value a line keeps.
+pub(crate) fn clip(text: &str) -> String {
     text.trim().chars().take(MAX_HEADER_CHARS).collect()
 }
 
@@ -146,6 +149,12 @@ pub struct Event {
     pub path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<u16>,
+    /// On `command`: the verb, never its arguments (D12).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub verb: Option<String>,
+    /// On `command`: the project the verb names, as the caller sent it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
     /// The public address alone, on lines that do not carry every server fact.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ip: Option<String>,
@@ -176,6 +185,8 @@ impl Event {
             method: None,
             path: None,
             status: None,
+            verb: None,
+            repo: None,
             ip: None,
             server: None,
             holder: None,
