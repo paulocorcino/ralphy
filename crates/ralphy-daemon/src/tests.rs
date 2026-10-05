@@ -4125,6 +4125,49 @@ fn every_ui_test_file_is_imported_by_the_barrel() {
     );
 }
 
+/// ADR-0073 D3: an Alpine component can be built without Alpine. A
+/// first-party file that registers one with `Alpine.data` also sets its
+/// factory on a `window.WB*` name, and has its own `ui-tests/<file>.test.mjs`,
+/// where `loadComponent` checks the `uses` list of ADR-0073 D4.
+#[test]
+fn every_alpine_component_is_on_window_and_has_a_test() {
+    let tests = Path::new(env!("CARGO_MANIFEST_DIR")).join("ui-tests");
+    let mut found = 0;
+    for path in embedded_ui_paths() {
+        if path.starts_with("vendor/") || !path.ends_with(".js") {
+            continue;
+        }
+        let text = UI
+            .get_file(&path)
+            .and_then(|f| f.contents_utf8())
+            .unwrap_or_else(|| panic!("{path} is embedded UTF-8"));
+        if !text.contains("Alpine.data(") {
+            continue;
+        }
+        found += 1;
+        // An assignment, not a read: the component itself reads `window.WB*` folds.
+        let sets_window_name = text.match_indices("window.WB").any(|(at, _)| {
+            let rest = text[at + "window.WB".len()..]
+                .trim_start_matches(|c: char| c.is_alphanumeric() || c == '_');
+            rest.starts_with(" = ")
+        });
+        assert!(
+            sets_window_name,
+            "{path} registers an Alpine component but sets no window.WB* name, \
+             so node --test cannot build it"
+        );
+        let stem = path.trim_end_matches(".js");
+        assert!(
+            tests.join(format!("{stem}.test.mjs")).is_file(),
+            "{path} registers an Alpine component and has no ui-tests/{stem}.test.mjs"
+        );
+    }
+    assert!(
+        found >= 2,
+        "expected at least wb-devices.js and wb-hosts-dialog.js, found {found}"
+    );
+}
+
 /// #308 pins the editor swap where it can actually regress: the embedded
 /// asset tree. Monaco is vendored, CodeMirror is gone, and the four heavy
 /// language workers stay excluded (the exclusion rule is prefix-based

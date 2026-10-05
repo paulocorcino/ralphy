@@ -191,7 +191,7 @@
         </button>
         <!-- Lucide v0.460.0 has no `server-plus`: this is its `server` with the
              lower unit shortened so a plus fits beside it. -->
-        <button class="side-refresh side-add-host" @click="openAddHost()" title="Hosts" aria-label="Hosts">
+        <button class="side-refresh side-add-host" @click="$dispatch('workbench:hosts-open')" title="Hosts" aria-label="Hosts">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="10" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/><path d="M18 15v6"/><path d="M15 18h6"/></svg>
         </button>
         <!-- count of located projects, at a glance (projects.length) -->
@@ -2875,8 +2875,10 @@
     <!-- ===================================================================
          Add a host (#497): a computer reached over SSH becomes a peer. The
          daemon runs `ralphy host …` on this computer; wb-hosts.js holds the
-         state. Everything the host says is shown with x-text only.
+         state, and wb-hosts-dialog.js is the component that owns it. Everything
+         the host says is shown with x-text only.
     ==================================================================== -->
+    <div class="hosts-dialog" x-data="wbHostsDialog" @workbench:hosts-open.window="openAddHost()">
     <div class="modal-scrim" x-cloak x-bind="scrim('addHost.open', () => closeAddHost())">
       <div class="modal run-modal host-modal" role="dialog" aria-modal="true" aria-label="Hosts">
         <div class="modal-head">
@@ -3154,6 +3156,7 @@
         </div>
       </div>
     </div>
+    </div>
 
     <!-- ===================================================================
          Login gate — a fully-opaque overlay shown when `!authed`. Because it's
@@ -3275,6 +3278,7 @@
     <script src="wb-daemon.js"></script>
     <script src="wb-release.js"></script>
     <script src="wb-hosts.js"></script>
+    <script src="wb-hosts-dialog.js"></script>
     <script src="wb-add-project.js"></script>
     <script src="app.js"></script>
     <script defer src="vendor/alpine.min.js"></script>

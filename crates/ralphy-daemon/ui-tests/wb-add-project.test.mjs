@@ -419,7 +419,7 @@ test("the Add a project button comes before Hosts, after refresh", () => {
   const html = readFileSync(join(UI, "index.html"), "utf8");
   const refresh = html.indexOf('class="side-refresh"');
   const add = html.indexOf('@click="openAddProject()"');
-  const hosts = html.indexOf('@click="openAddHost()"');
+  const hosts = html.indexOf(`@click="$dispatch('workbench:hosts-open')"`);
   assert.ok(refresh > 0 && refresh < add && add < hosts, `${refresh} < ${add} < ${hosts}`);
   const tag = html.slice(html.lastIndexOf("<button", add), html.indexOf(">", add));
   assert.match(tag, /title="Add a project"/);

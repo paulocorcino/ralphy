@@ -8,17 +8,35 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadShell, UI, withoutComments } from "./harness.mjs";
+import { loadComponent, loadShell, UI, withoutComments } from "./harness.mjs";
 
 // Comments dropped first: their prose quotes tags.
 const HTML = withoutComments(readFileSync(join(UI, "index.html"), "utf8"));
 
 // The scrims in document order, which is the order Alpine registers their
-// window listeners in.
+// window listeners in. `component` is the Alpine component whose `x-data`
+// element holds the scrim, or null for a scrim of `shell()`.
 const SCRIMS = Array.from(
   HTML.matchAll(/<div class="modal-scrim" x-cloak x-bind="(scrim\('([^']+)'[^"]*)">/g),
-  (m) => ({ expr: m[1], path: m[2] }),
+  (m) => ({
+    expr: m[1],
+    path: m[2],
+    component: HTML.slice(0, m.index).match(/x-data="(\w+)"[^<>]*>\s*$/)?.[1] || null,
+  }),
 );
+
+// One page: `shell()` and each component nested in it, as the browser builds
+// them. `scopeOf(s)` is the scope a scrim's markup sees.
+const page = () => {
+  const loaded = loadShell();
+  const scopes = new Map();
+  for (const s of SCRIMS) {
+    if (s.component && !scopes.has(s.component)) {
+      scopes.set(s.component, loadComponent(s.component, { from: loaded }).scope);
+    }
+  }
+  return { state: loaded.state, scopeOf: (s) => (s.component ? scopes.get(s.component) : loaded.state) };
+};
 
 // Evaluate a markup expression the way Alpine does: names resolve on the
 // component. `with` needs sloppy mode, which `new Function` gives.
@@ -34,9 +52,9 @@ const setPath = (state, path, value) => {
 // nothing. The focus test below builds a richer one.
 const bareScrim = () => ({ querySelector: () => null, querySelectorAll: () => [], contains: () => false });
 
-const bindAll = (state) =>
+const bindAll = ({ scopeOf }) =>
   SCRIMS.map((s) => {
-    const b = evalIn(state, s.expr);
+    const b = evalIn(scopeOf(s), s.expr);
     const el = bareScrim();
     return { ...s, b, effect: () => b["x-effect"].call({ $el: el }) };
   });
@@ -68,11 +86,13 @@ test("Escape closes every modal, Settings and Security included", () => {
     "addProject.open",
     "addHost.open",
   ]);
-  for (const { path } of SCRIMS) {
-    const { state } = loadShell();
-    const bound = bindAll(state);
+  for (const scrim of SCRIMS) {
+    const { path } = scrim;
+    const view = page();
+    const { state } = view;
+    const bound = bindAll(view);
     const mine = bound.find((s) => s.path === path);
-    setPath(state, path, true);
+    setPath(view.scopeOf(scrim), path, true);
     for (const s of bound) s.effect();
     assert.equal(mine.b["x-show"](), true, `${path}: the binding shows the open modal`);
     pressEscape(bound);
@@ -85,8 +105,9 @@ test("Escape closes every modal, Settings and Security included", () => {
 // after the confirm, Settings before it.
 test("one Escape closes only the top modal", async () => {
   for (const under of ["planModal.open", "settingsOpen"]) {
-    const { state } = loadShell();
-    const bound = bindAll(state);
+    const view = page();
+    const { state } = view;
+    const bound = bindAll(view);
     const read = () => under.split(".").reduce((o, k) => o[k], state);
     setPath(state, under, true);
     for (const s of bound) s.effect();
@@ -110,8 +131,7 @@ test("one Escape closes only the top modal", async () => {
 // click key, and the dialogs the console and notes modules build by hand add no
 // listener to their scrim.
 test("a click outside a modal does not close it", () => {
-  const { state } = loadShell();
-  for (const s of bindAll(state)) {
+  for (const s of bindAll(page())) {
     const pointer = Object.keys(s.b).filter((k) => /^(@|x-on:)(click|mousedown|pointerdown)/.test(k));
     assert.deepEqual(pointer, [], `${s.path}: the scrim must not close on a click`);
   }

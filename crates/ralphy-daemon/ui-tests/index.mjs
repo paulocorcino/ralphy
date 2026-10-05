@@ -22,6 +22,7 @@ import "./wb-file-search.test.mjs";
 import "./wb-fleet.test.mjs";
 import "./wb-geometry.test.mjs";
 import "./wb-hosts.test.mjs";
+import "./wb-hosts-dialog.test.mjs";
 import "./wb-modals.test.mjs";
 import "./wb-mode.test.mjs";
 import "./wb-monaco.test.mjs";
