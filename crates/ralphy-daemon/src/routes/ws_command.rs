@@ -18,44 +18,11 @@ mod stream;
 pub(crate) use oneshot::*;
 pub(crate) use registry_verbs::serve_registry;
 
+use super::audit_layer::SocketAudit;
 use super::{read_peer_store, send_command};
 use super::{request_may_carry_a_secret, RouterShared};
 use crate::protocol::{Command, Frame};
-use crate::{audit, device, dispatch, fleet, peer, protocol, registry, session};
-
-/// Who opened a command socket, for the line its verb writes in the audit log.
-pub(crate) struct CommandAudit {
-    pub(crate) audit: Arc<audit::Audit>,
-    pub(crate) device: Option<device::DeviceId>,
-    pub(crate) actor: audit::Actor,
-    pub(crate) ip: Option<String>,
-}
-
-impl CommandAudit {
-    /// The caller of the request whose `headers` are given.
-    pub(crate) fn of(
-        audit: Arc<audit::Audit>,
-        device: Option<axum::Extension<device::DeviceId>>,
-        headers: &axum::http::HeaderMap,
-    ) -> CommandAudit {
-        let device = device.map(|axum::Extension(id)| id);
-        CommandAudit {
-            audit,
-            device,
-            actor: super::audit_layer::actor_of(headers, device),
-            ip: audit::ServerFacts::from_headers(headers).real_ip,
-        }
-    }
-
-    /// Record `verb` when it changes state.
-    pub(crate) fn record(&self, verb: dispatch::Verb, cmd: &Command) {
-        if let Some(event) =
-            super::audit_layer::command_event(verb, cmd, self.device, self.actor, self.ip.clone())
-        {
-            self.audit.record(&event);
-        }
-    }
-}
+use crate::{device, dispatch, fleet, peer, protocol, registry, session};
 
 /// `GET /ws/command`: one remote command per connection. Read the first frame; a
 /// `Frame::Command{verb}` naming a blessed [`dispatch::Verb`] for a registered
@@ -76,7 +43,7 @@ pub(crate) async fn command_ws(
     bound_port: u16,
     sessions: Arc<session::SessionManager>,
     secret_ok: bool,
-    who: CommandAudit,
+    who: SocketAudit,
 ) {
     // First frame or nothing: a client that opens and hangs up spawns nothing.
     // A frame that is refused (too big for the socket's limits, not binary,
@@ -494,7 +461,7 @@ pub(crate) fn command_routes(s: &RouterShared) -> Router {
                     .max_message_size(crate::tree::MAX_COMMAND_BYTES)
                     .max_frame_size(crate::tree::MAX_COMMAND_BYTES);
                 let secret_ok = request_may_carry_a_secret(&headers);
-                let who = CommandAudit::of(audit.clone(), device, &headers);
+                let who = SocketAudit::of(audit.clone(), device, &headers);
                 let registry_path = registry.clone();
                 let shutdown = shutdown.clone();
                 let daemon_id = daemon_id.clone();

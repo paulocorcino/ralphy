@@ -231,16 +231,18 @@ pub(crate) fn session_routes(s: &RouterShared) -> Router {
                 // A live session bridge stops serving on graceful shutdown: it
                 // detaches, and never closes the session.
                 let shutdown = s.shutdown.clone();
+                let audit = s.audit.clone();
                 move |ws: WebSocketUpgrade,
                       q: Query<SessionQuery>,
-                      device: Option<axum::Extension<crate::device::DeviceId>>| {
+                      device: Option<axum::Extension<crate::device::DeviceId>>,
+                      headers: axum::http::HeaderMap| {
                     let sessions = sessions.clone();
                     let registry_path = registry.clone();
                     let shutdown = shutdown.clone();
                     let host = host.clone();
-                    let device = device.map(|axum::Extension(id)| id);
+                    let who = super::audit_layer::SocketAudit::of(audit.clone(), device, &headers);
                     async move {
-                        session_ws_upgrade(ws, q, sessions, registry_path, host, shutdown, device)
+                        session_ws_upgrade(ws, q, sessions, registry_path, host, shutdown, who)
                             .await
                     }
                 }

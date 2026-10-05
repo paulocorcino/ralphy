@@ -87,6 +87,12 @@ window.WBDevices = (function () {
         return `${e.method} ${e.path} (${e.status})`;
       case "command":
         return e.repo ? `Command ${e.verb} in ${e.repo}` : `Command ${e.verb}`;
+      case "console_launch": {
+        const what = !e.agent || e.agent === "console" ? "a console" : e.agent;
+        return e.repo ? `Opened ${what} in ${e.repo}` : `Opened ${what}`;
+      }
+      case "console_takeover":
+        return e.repo ? `Took over a console in ${e.repo}` : "Took over a console";
       default:
         return e.event;
     }

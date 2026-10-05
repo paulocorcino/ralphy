@@ -14,6 +14,7 @@ use super::traffic::{Leave, Tab, Traffic};
 use super::SessionQuery;
 use crate::peer;
 use crate::protocol::{self, Frame};
+use crate::routes::audit_layer::{ConsoleRecord, SocketAudit};
 use crate::routes::encode_query_value;
 use crate::session;
 
@@ -88,6 +89,15 @@ fn push_holder(out: &mut String, query: &SessionQuery) {
     }
 }
 
+/// The tab that opens a relayed console socket, and the audit line the
+/// opening writes once the peer accepts it: a launch or a take-over, or `None`
+/// for a plain reattach or a watch.
+pub(crate) struct Opening {
+    pub(crate) tab: Tab,
+    pub(crate) who: SocketAudit,
+    pub(crate) record: Option<ConsoleRecord>,
+}
+
 /// Open `peer_query` on the peer that owns the session and bridge it to the
 /// browser. A refused dial is refused with the peer's diagnosis (`502` on a
 /// reattach); an HTTP refusal from the peer keeps its own status and body. A
@@ -97,13 +107,17 @@ pub(crate) async fn relay_to_peer(
     ws: WebSocketUpgrade,
     peer: &peer::PeerDescriptor,
     peer_query: &str,
-    tab: Tab,
+    opening: Opening,
     me: peer::client::SelfRef<'_>,
     refuser: &Refuser,
     shutdown: tokio::sync::watch::Receiver<bool>,
 ) -> Response {
     match peer::client::session(peer, peer_query, me).await {
         Ok(peer_socket) => {
+            let Opening { tab, who, record } = opening;
+            if let Some(record) = &record {
+                who.console(record);
+            }
             let traffic = Traffic::peer(
                 peer.daemon_id.clone(),
                 peer.environment.clone(),

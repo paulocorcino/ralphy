@@ -196,3 +196,33 @@ the browser's device, and one line on the peer with the actor `bearer`
   `crates/ralphy-daemon/tests/shared_replies.rs`
   (`the_audit_log_reads_are_the_shared_replies`, through
   `POST /api/peer/command`).
+- Amendment 2026-10-05: checked by
+  `crates/ralphy-daemon/tests/console_audit.rs`
+  (`a_launch_and_a_takeover_are_recorded_and_a_reattach_is_not`) and
+  `crates/ralphy-daemon/src/routes/ws_session/upgrade.rs`
+  (`a_relayed_request_records_a_launch_or_a_takeover_and_nothing_else`).
+
+## Amendment 2026-10-05 — console launches and take-overs
+
+This changes D4. A console socket (`/ws/session`) starts a shell or an
+agent, the same effect as a `run` on the command socket (D12), and D4 did
+not record it. Two events are added:
+
+- **`console_launch`**: an upgrade that spawned a new session on this
+  daemon, or that the daemon relayed to a peer as a launch. The line names
+  the session ID (when this daemon owns it), the agent (`console` or the
+  vendor, never a startup command, which can hold a secret), the project,
+  the peer's daemon ID (when a peer hosts the session) and the holder. A
+  launch that joins a live session spawns nothing and writes no line.
+- **`console_takeover`**: a reattach with `takeover=1` that was accepted.
+  The writer slot of a running agent changes hands, so it is recorded with
+  the session ID and the holder.
+
+A relayed request writes one line on the daemon the browser reached, with
+the device, and the peer writes its own line with the actor `bearer` (D8).
+
+A reattach, a watch, the reattach after a console sleeps, and a refused
+upgrade are **not** recorded. They happen often, they mean nothing for
+security, and D3 caps the file for security events. They are in the daemon
+log: the traffic summary of each console socket and one line for each
+refused upgrade.

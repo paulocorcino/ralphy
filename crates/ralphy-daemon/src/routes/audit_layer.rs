@@ -61,6 +61,88 @@ pub(crate) fn command_event(
     }
 }
 
+/// Who opened a socket, for the lines it writes in the audit log: the command
+/// socket's verbs and the console socket's launches and take-overs.
+#[derive(Clone)]
+pub(crate) struct SocketAudit {
+    pub(crate) audit: Arc<Audit>,
+    pub(crate) device: Option<DeviceId>,
+    pub(crate) actor: Actor,
+    pub(crate) ip: Option<String>,
+}
+
+impl SocketAudit {
+    /// The caller of the request whose `headers` are given.
+    pub(crate) fn of(
+        audit: Arc<Audit>,
+        device: Option<axum::Extension<DeviceId>>,
+        headers: &HeaderMap,
+    ) -> SocketAudit {
+        let device = device.map(|axum::Extension(id)| id);
+        SocketAudit {
+            audit,
+            device,
+            actor: actor_of(headers, device),
+            ip: ServerFacts::from_headers(headers).real_ip,
+        }
+    }
+
+    /// Record `verb` when it changes state.
+    pub(crate) fn record(&self, verb: Verb, cmd: &Command) {
+        if let Some(event) = command_event(verb, cmd, self.device, self.actor, self.ip.clone()) {
+            self.audit.record(&event);
+        }
+    }
+
+    /// Record a console launch or take-over (amendment 2026-10-05).
+    pub(crate) fn console(&self, record: &ConsoleRecord) {
+        let event = console_event(record, self.device, self.actor, self.ip.clone());
+        self.audit.record(&event);
+    }
+}
+
+/// What a console launch or take-over records. `agent` is `console` or a
+/// vendor, never a startup command; `peer` is the daemon ID of the peer that
+/// hosts the session.
+#[derive(Clone, Debug)]
+pub(crate) struct ConsoleRecord {
+    pub(crate) kind: ConsoleKind,
+    pub(crate) session: Option<u64>,
+    pub(crate) agent: Option<String>,
+    pub(crate) repo: Option<String>,
+    pub(crate) peer: Option<String>,
+    pub(crate) holder: Option<String>,
+}
+
+/// The two console events the audit log records.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ConsoleKind {
+    Launch,
+    Takeover,
+}
+
+/// The line a console launch or take-over writes.
+pub(crate) fn console_event(
+    record: &ConsoleRecord,
+    device: Option<DeviceId>,
+    actor: Actor,
+    ip: Option<String>,
+) -> Event {
+    let kind = match record.kind {
+        ConsoleKind::Launch => EventKind::ConsoleLaunch,
+        ConsoleKind::Takeover => EventKind::ConsoleTakeover,
+    };
+    let text = |v: &Option<String>| v.as_deref().map(audit::clip).filter(|t| !t.is_empty());
+    let mut e = Event::new(kind, device, actor);
+    e.session = record.session;
+    e.agent = text(&record.agent);
+    e.repo = text(&record.repo);
+    e.peer = text(&record.peer);
+    e.holder = text(&record.holder);
+    e.ip = ip;
+    e
+}
+
 pub(crate) async fn audit_layer(
     State(audit): State<Arc<Audit>>,
     mut req: axum::extract::Request,

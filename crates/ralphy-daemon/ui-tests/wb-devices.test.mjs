@@ -59,6 +59,28 @@ test("a command with no project names only its verb", () => {
   assert.equal(load().eventLine({ event: "command", verb: "host.trust" }), "Command host.trust");
 });
 
+test("a console launch names the agent and the project", () => {
+  const { eventLine } = load();
+  assert.equal(
+    eventLine({ event: "console_launch", agent: "console", repo: "owner/repo" }),
+    "Opened a console in owner/repo",
+  );
+  assert.equal(
+    eventLine({ event: "console_launch", agent: "claude", repo: "owner/repo" }),
+    "Opened claude in owner/repo",
+  );
+  assert.equal(eventLine({ event: "console_launch", agent: "console" }), "Opened a console");
+});
+
+test("a take-over is one plain sentence", () => {
+  const { eventLine } = load();
+  assert.equal(eventLine({ event: "console_takeover", session: 7 }), "Took over a console");
+  assert.equal(
+    eventLine({ event: "console_takeover", repo: "owner/repo" }),
+    "Took over a console in owner/repo",
+  );
+});
+
 test("a changed profile names what changed in plain words", () => {
   const line = load().eventLine({ event: "device_profile_changed", changed: ["gpu", "time_zone"] });
   assert.equal(line, "Its device facts changed: graphics card, time zone");

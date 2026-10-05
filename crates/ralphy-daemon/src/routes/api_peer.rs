@@ -55,7 +55,7 @@ pub(crate) async fn peer_command_route(
     registry_path: PathBuf,
     daemon_id: Option<String>,
     sessions: Arc<session::SessionManager>,
-    who: super::ws_command::CommandAudit,
+    who: super::audit_layer::SocketAudit,
     Json(cmd): Json<protocol::Command>,
 ) -> Response {
     let Some(verb) = dispatch::Verb::from_query(&cmd.verb) else {
@@ -263,7 +263,7 @@ pub(crate) fn peer_routes(s: &RouterShared) -> Router {
                 move |device: Option<axum::Extension<crate::device::DeviceId>>,
                       headers: axum::http::HeaderMap,
                       body: Json<protocol::Command>| {
-                    let who = super::ws_command::CommandAudit::of(audit.clone(), device, &headers);
+                    let who = super::audit_layer::SocketAudit::of(audit.clone(), device, &headers);
                     peer_command_route(
                         registry.clone(),
                         daemon_id.clone(),

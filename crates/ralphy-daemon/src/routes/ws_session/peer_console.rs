@@ -12,8 +12,10 @@ use axum::response::Response;
 use super::join::{claim_for, hold, Joined};
 use super::refuse::Refuser;
 use super::traffic::Tab;
-use super::{peer_session_query, relay_to_peer, session_ws};
+use super::upgrade::{launch_record, relayed_record};
+use super::{peer_session_query, relay_to_peer, session_ws, Opening};
 use super::{SessionLabels, SessionQuery};
+use crate::routes::audit_layer::SocketAudit;
 use crate::{fleet, peer, session};
 
 /// The request values a peer free-console launch reads.
@@ -29,6 +31,7 @@ pub(super) struct PeerConsole<'a> {
     pub(super) environment: String,
     pub(super) bound_port: u16,
     pub(super) tab: Tab,
+    pub(super) who: SocketAudit,
     pub(super) record: Option<String>,
     pub(super) refuser: Refuser,
     pub(super) shutdown: tokio::sync::watch::Receiver<bool>,
@@ -50,6 +53,7 @@ impl PeerConsole<'_> {
             environment,
             bound_port,
             tab,
+            who,
             record,
             refuser,
             shutdown,
@@ -63,7 +67,12 @@ impl PeerConsole<'_> {
                 daemon_id: &daemon_id,
             };
             let peer_query = peer_session_query(query, slug);
-            return relay_to_peer(ws, peer, &peer_query, tab, me, &refuser, shutdown).await;
+            let opening = Opening {
+                record: relayed_record(query, slug, &peer.daemon_id, &tab),
+                tab,
+                who,
+            };
+            return relay_to_peer(ws, peer, &peer_query, opening, me, &refuser, shutdown).await;
         };
         let status = peer::client::probe(
             peer,
@@ -176,18 +185,27 @@ impl PeerConsole<'_> {
             )
             .inspect(|(_, att)| hold(att, tab.holder.as_deref()))
         {
-            Ok((id, att)) => ws.on_upgrade(move |socket| {
-                session_ws(
-                    socket,
-                    att,
+            Ok((id, att)) => {
+                who.console(&launch_record(
                     id,
-                    daemon_id,
-                    effective_environment,
-                    SessionLabels::default(),
-                    tab,
-                    shutdown,
-                )
-            }),
+                    "console",
+                    Some(slug.to_string()),
+                    Some(peer.daemon_id.clone()),
+                    &tab,
+                ));
+                ws.on_upgrade(move |socket| {
+                    session_ws(
+                        socket,
+                        att,
+                        id,
+                        daemon_id,
+                        effective_environment,
+                        SessionLabels::default(),
+                        tab,
+                        shutdown,
+                    )
+                })
+            }
             Err(error) => {
                 tracing::warn!(
                     environment = %peer.environment,

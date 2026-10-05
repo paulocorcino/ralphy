@@ -43,6 +43,12 @@ pub enum EventKind {
     Action,
     /// A command-socket verb that changes state (D12).
     Command,
+    /// A console socket that started a new session, here or on a peer
+    /// (amendment 2026-10-05).
+    ConsoleLaunch,
+    /// A console reattach that asked to take the writer slot (amendment
+    /// 2026-10-05).
+    ConsoleTakeover,
 }
 
 /// Who sent the request.
@@ -160,9 +166,20 @@ pub struct Event {
     pub ip: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub server: Option<ServerFacts>,
-    /// The tab that reported the device facts (D11). Source `client`.
+    /// The tab that reported the device facts (D11), or that opened the
+    /// console. Source `client`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub holder: Option<String>,
+    /// On a console event: the session ID, when this daemon knows it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session: Option<u64>,
+    /// On `console_launch`: `console` or the vendor of the agent, never a
+    /// startup command.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
+    /// On a console event: the daemon ID of the peer that hosts the session.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peer: Option<String>,
     /// On `device_profile_changed`: the normalized fields that changed.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub changed: Vec<&'static str>,
@@ -190,6 +207,9 @@ impl Event {
             ip: None,
             server: None,
             holder: None,
+            session: None,
+            agent: None,
+            peer: None,
             changed: Vec::new(),
             normalized: None,
             client: None,
