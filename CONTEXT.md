@@ -131,6 +131,18 @@ _Avoid_: service, server (it dials out), agent (reserved for vendor CLIs), insta
 The three names of one **daemon**: a stable id that machines use, a unique name that people and models use, and an emoji avatar that is only for display (ADR-0032).
 _Avoid_: hostname (a suggestion for the name, not the name), token (the credential is per daemon).
 
+**Device**:
+One browser profile on one machine that talks to a **daemon**, known by an ID the daemon issues in a signed cookie. It is a record for the **audit log**, never a credential (ADR-0074).
+_Avoid_: client (also the HTTP client), fingerprint (computed in the browser), user (there is one operator), session (a login of a device).
+
+**Device facts**:
+What a page reports about its own browser, screen and machine, with what the daemon read from the request headers. Each fact keeps its source, because a page can report false facts (ADR-0074).
+_Avoid_: fingerprint, telemetry (Ralphy sends nothing out), user agent (one of the facts).
+
+**Audit log**:
+The daemon's record, one line per event, of each login, logout, **device facts** report and request that changed state, with the **device** that sent it (ADR-0074).
+_Avoid_: history (the **desk history** is a different thing), access log, event log.
+
 **Fleet**:
 The set of **daemons** one operator commands through the **control plane**, across machines and environments. A Windows host and its WSL distro are two members of the fleet.
 _Avoid_: cluster (no shared workload), farm.

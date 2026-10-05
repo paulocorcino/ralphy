@@ -187,6 +187,7 @@ panel adds its row here before it adds code.
 | **Desk history** | the daemon (`desk/history.rs`) | `GET` / `POST /api/desk/history` | a copy of the desk kept in the browser | when the Settings section opens; 5 |
 | Consoles, console agent state | the daemon (`session/`, `agent_state.rs`) | `/api/sessions` (its header `x-ralphy-unanswered` names the peers the list did not hear from), the presence socket | a peer missing from the list read as "no sessions there" | 1 `sessions.dirty`, 2–4; 6 every 30 s while a peer is listed (peers do not push their sessions); a `working` that ages into `unknown` pushes too |
 | Projects, peers and their state; the project name | the daemon (`registry.rs`, `peer/`, `fleet.rs`); the name is `registry::project_name` | `/api/repos`, `/api/fleet`; the field `name` | a name worked out in the UI from the slug or the path | 1 `repos.dirty` / `peers.dirty` (the daemon stats its stores every 2 s), 2–5; 6 every 30 s while a peer is listed (peer reachability) |
+| **Devices** and the **audit log** | the daemon (`audit.rs`, `device.rs`) | `GET /api/audit/devices`, `GET /api/audit/events`; the page reports its facts once per load to `POST /api/device/facts` (`wb-device.js`) | a device list kept in the browser; an address lookup service (ADR-0074 D7) | when the Settings section opens; 4 |
 | Ralphy release version | `ralphy-release` | `/api/release`; the build id in the presence frame (ADR-0070 D6) | — | 3; a build id that differs reloads the tab (D6) |
 
 ## 8. Fitness functions
@@ -235,6 +236,7 @@ boundary.
 | Boundary | What crosses | Control | Decided by |
 |---|---|---|---|
 | Network client → daemon | HTTP and WebSocket requests | The auth guard (`ralphy-daemon/src/routes/guard.rs`): Host and Origin, then the policy, then the session | ADR-0032 |
+| Workbench → audit log | **Device facts** the page reports about itself | A fixed shape with a size cap (`routes/api_audit.rs`); facts are recorded with source `client` and no access decision reads them | ADR-0074 |
 | Workbench → repo | Verbs from the browser | The verb registry and argv shape checks (`dispatch.rs`, `dispatch/argv.rs`); path confinement (`confine.rs`, `fswrite.rs`) | ADR-0036 |
 | Peer daemon → daemon | Verbs and sessions from a peer | The peer's bearer token, dialled on loopback or through `ssh -L` only | ADR-0052, ADR-0067 |
 | Forge → prompt | Issue body, comments, attachments | The label gate; the comment trust filter (`ralphy-core/src/github/comments.rs`); the charters | ADR-0032 (H), ADR-0072 D5 |
