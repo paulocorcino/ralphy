@@ -54,6 +54,14 @@
         z-index: 124;
         display: flex;
         gap: 0.3rem;
+        /* Faint over the console text it sits on, whole under the pointer
+           or the keyboard. */
+        opacity: 0.45;
+        transition: opacity 0.2s ease;
+      }
+      .detached-tools:hover,
+      .detached-tools:focus-within {
+        opacity: 1;
       }
       .detached-tools button {
         background: var(--bg);

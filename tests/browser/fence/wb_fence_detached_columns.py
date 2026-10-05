@@ -8,6 +8,7 @@ in the same fence, which is then detached.
 
 C1 the columns button is in the bottom-right corner, a press at its centre
    reaches it, and it covers no control of any console
+O1 the buttons are faint at rest and whole under the pointer
 C2 the button opens both consoles as columns that fill the window, side by
    side, with no overlap
 C3 a column's restore ends the columns
@@ -137,6 +138,16 @@ def main():
                 reach["reached"] and reach["meets"] == 0 and reach["right"] < 60 and reach["bottom"] < 40,
                 f"{reach}",
             )
+
+            # O1
+            opacity = "() => parseFloat(getComputedStyle(document.querySelector('.detached-tools')).opacity)"
+            popup.mouse.move(10, 10)
+            popup.wait_for_timeout(400)
+            faint = popup.evaluate(opacity)
+            popup.locator(".detached-columns").hover()
+            popup.wait_for_timeout(400)
+            whole = popup.evaluate(opacity)
+            check("O1 the buttons are faint, and whole under the pointer", faint < 1 and whole == 1, f"{faint} -> {whole}")
 
             # C2
             desk_before = T.desk_raw()
