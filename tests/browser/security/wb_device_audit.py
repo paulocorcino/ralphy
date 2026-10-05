@@ -40,6 +40,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Settings dialog's own component, nested in shell().
+SET = "Alpine.$data(document.querySelector('.settings-dialog'))"
 
 results = []
 
@@ -191,7 +193,7 @@ def main():
             )
 
             # ── 5. Settings → Devices ─────────────────────────────────────
-            chromium.evaluate(f"{SH}.openSettings(); {SH}.showSettingsSection('devices')")
+            chromium.evaluate(f"{SET}.openSettings(); {SET}.showSettingsSection('devices')")
             chromium.wait_for_selector(".device-row", timeout=10000)
             rows = chromium.locator(".device-row")
             check("the section lists three devices", rows.count() == 3, rows.count())

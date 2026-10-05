@@ -2845,160 +2845,6 @@ function shell() {
       })();
     },
 
-    // --- settings modal ---------------------------------------------------
-    // Data-driven (schema in wb-settings.js); the daemon persists via
-    // `config.set`/`config.unset`.
-    SETTINGS: window.WB_SETTINGS,
-    TRISTATE: window.WB_TRISTATE,
-    settingsOpen: false,
-    // The daemon (machine-wide) group first; per-project sections follow.
-    settingsSection: "daemon",
-    settings: window.wbSettingsDefaults(),
-
-    // Keys held in this browser profile's view store (`scope: "client"`).
-    CLIENT_KEYS: window.wbClientKeys(),
-
-    openSettings() {
-      this.settingsOpen = true;
-      this.avatarMenu = false;
-      this.settingsError = "";
-      // Client-scoped keys come from the view store; `config.get` has none.
-      const view = window.WBView.read() || {};
-      this.settings["consoles.relaunch_on_load"] = view.relaunch === true;
-      this.settings["consoles.key_bar"] = view.keys ?? "unset";
-      // The size the consoles show now: the key bar's A−/A+ write the same field.
-      this.settings["consoles.font_size"] = window.WBConsole?.fontSize() ?? this.settings["consoles.font_size"];
-      this.readSettings();
-    },
-    // The open repo's resolved config (`config.get`), merged over the schema
-    // defaults; with no repo open the project groups are disabled.
-    readSettings() {
-      if (this.openSlug) {
-        WBDaemon.observe("config.get", { repo: this.openSlug })
-          .then((reply) => {
-            const cfg = reply && reply.status === "ok" ? reply.config : null;
-            // The defaults must not pass as the project's values (ADR-0070 D3).
-            if (!cfg || typeof cfg !== "object") {
-              this.settingsError = window.WBFail.failed(
-                reply,
-                "Could not read the settings: the daemon gave no reason.",
-              );
-            }
-            if (cfg && typeof cfg === "object") {
-              for (const k in cfg) {
-                // Never round-trip the MASKED secret: a save would persist the mask.
-                if (k === "events.token") continue;
-                if (cfg[k] !== null && k in this.settings) this.settings[k] = cfg[k];
-              }
-            }
-          })
-          .catch(() => {
-            this.settingsError = "Could not read the settings: the daemon did not answer";
-          });
-      }
-    },
-    // Why the open project's settings could not be read, or "". While set, a
-    // project setting is not written: the panel shows defaults, not values.
-    settingsError: "",
-    closeSettings() {
-      this.settingsOpen = false;
-    },
-    // The "Desk history" section (ADR-0050 amendment 2026-10-04): read each
-    // time it opens. `loaded` is set only by a list the daemon served, so a
-    // failed read never shows as an empty history (ADR-0070 D3).
-    deskHistory: { loaded: false, rows: [], error: "" },
-    showSettingsSection(id) {
-      this.settingsSection = id;
-      if (id === "desk-history") this.loadDeskHistory();
-    },
-    async loadDeskHistory() {
-      this.deskHistory.error = "";
-      try {
-        const r = await fetch("/api/desk/history");
-        const reply = await r.json().catch(() => null);
-        if (!r.ok || !Array.isArray(reply)) {
-          this.deskHistory.loaded = false;
-          this.deskHistory.rows = [];
-          this.deskHistory.error = `Could not read the desk history: ${reply?.error || "the daemon gave no reason"}.`;
-          return;
-        }
-        const when = (ms) => new Date(ms).toLocaleString();
-        this.deskHistory.rows = window.WBDeskHistory.rows(reply, when);
-        this.deskHistory.loaded = true;
-      } catch {
-        this.deskHistory.loaded = false;
-        this.deskHistory.rows = [];
-        this.deskHistory.error = "Could not read the desk history: the daemon did not answer.";
-      }
-    },
-    // A restore reloads every open page, this one too: a page never moves a
-    // live window from the desk, so a reload is how the restored layout shows.
-    async postDeskRestore(body, failLine) {
-      try {
-        const r = await fetch("/api/desk/history", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-        if (r.ok) {
-          window.WBConsole?.reloadForRestoredDesk();
-          return;
-        }
-        const reply = await r.json().catch(() => null);
-        this.deskHistory.error = `${failLine}: ${reply?.error || "the daemon gave no reason"}.`;
-      } catch {
-        this.deskHistory.error = `${failLine}: the daemon did not answer.`;
-      }
-    },
-    askDeskRestore(title) {
-      return this.askConfirm({
-        title,
-        message: "Consoles that run now stay open. Every open page reloads.",
-        confirmLabel: "Restore",
-      });
-    },
-    async restoreDeskVersion(row) {
-      if (!(await this.askDeskRestore("Restore this desk layout?"))) return;
-      await this.postDeskRestore({ id: row.id }, "Could not restore the desk layout");
-    },
-    async downloadDeskVersion(row) {
-      try {
-        const r = await fetch("/api/desk/history?id=" + encodeURIComponent(row.id));
-        const version = await r.json().catch(() => null);
-        if (!r.ok || !version) {
-          this.deskHistory.error = `Could not download the desk layout: ${version?.error || "the daemon gave no reason"}.`;
-          return;
-        }
-        const blob = new Blob([JSON.stringify(version, null, 2)], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = window.WBDeskHistory.fileName(version);
-        document.body.append(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-      } catch {
-        this.deskHistory.error = "Could not download the desk layout: the daemon did not answer.";
-      }
-    },
-    pickDeskUpload() {
-      document.getElementById("desk-upload-input")?.click();
-    },
-    async uploadDeskVersion(event) {
-      const file = event.target.files?.[0];
-      event.target.value = "";
-      if (!file) return;
-      this.deskHistory.error = "";
-      const parsed = window.WBDeskHistory.parseUpload(await file.text());
-      if (parsed.cause) {
-        this.deskHistory.error = `Could not upload the desk layout: ${parsed.cause}.`;
-        return;
-      }
-      if (!(await this.askDeskRestore("Restore the desk layout from this file?"))) return;
-      await this.postDeskRestore({ version: parsed.version }, "Could not upload the desk layout");
-    },
-
     // --- spend (the Spend tab, #358) ---------------------------------------
     // A canvas tab (ADR-0037 amendment: a closable tab may be a daemon view),
     // scoped to the open project. Everything numeric is rendered by the daemon
@@ -3259,9 +3105,11 @@ function shell() {
       this.loadRelease();
     },
     // The panels whose facts have no push: read again on visible and after
-    // login while they are open (fact index: settings 3, 4; usage 3, 4).
+    // login while they are open (fact index: settings 3, 4; usage 3, 4). The
+    // Settings dialog hears the event and reads again only when it is open
+    // (ADR-0073 D5).
     rereadOpenPanels() {
-      if (this.settingsOpen) this.readSettings();
+      document.dispatchEvent(new CustomEvent("workbench:panels-reread", { bubbles: true }));
       if (this.tabs.some((t) => t.id === "spend")) this.loadSpend();
     },
     releaseRead: null,
@@ -3440,48 +3288,6 @@ function shell() {
       return new Date().getFullYear();
     },
 
-    async saveSetting(key, value) {
-      this.settings[key] = value;
-      // A client-scoped key is this browser's preference: view store, never
-      // `config.set`.
-      if (this.CLIENT_KEYS.has(key)) {
-        if (key === "consoles.relaunch_on_load") window.WBView.patch({ relaunch: value === true });
-        // "unset" is the ABSENCE of a preference: written as null.
-        if (key === "consoles.key_bar")
-          window.WBView.patch({ keys: value === "on" || value === "off" ? value : null });
-        // Held to the range the key bar steps through; an emptied field is
-        // the default size. `setFont` writes the store and refits every console.
-        if (key === "consoles.font_size") {
-          const px = window.WBConsole.stepFont(value === "" ? NaN : Number(value), 0);
-          this.settings[key] = window.WBConsole.setFont(px);
-        }
-        WB.emit("setting-change", { project: null, key, value });
-        return;
-      }
-      // The run-lock-aware config Mutates; an empty/"unset" value clears the
-      // key. `observe` (not `spawn`) so a run-lock refusal surfaces (#207).
-      if (this.openSlug && this.settingsError) {
-        this._flashAction("Could not change the setting: the settings were not read. Open the settings again.");
-        return;
-      }
-      if (this.openSlug) {
-        const empty = value === "" || value === "unset" || value == null;
-        try {
-          const reply = await window.WBDaemon.observe(empty ? "config.unset" : "config.set", {
-            repo: this.openSlug,
-            key,
-            value: String(value),
-          });
-          if (window.WBFail.isError(reply)) {
-            this._flashAction(window.WBFail.failed(reply, "Could not change the setting: the daemon gave no reason."));
-          }
-        } catch {
-          // No daemon reachable — leave the optimistic setting in place.
-        }
-      }
-      WB.emit("setting-change", { project: this.openSlug, key, value });
-    },
-
     // --- account menu + security -----------------------------------------
     // The daemon auth model (ADR-0032): an opt-in access token, an optional
     // password, and TOTP whose secret is shown exactly once.
@@ -3516,7 +3322,6 @@ function shell() {
     async logOff() {
       this.avatarMenu = false;
       document.dispatchEvent(new CustomEvent("workbench:log-off", { bubbles: true }));
-      this.settingsOpen = false;
       // The session cookie is HttpOnly — only the server can clear it. The
       // route needs a live session (audit F5): a 401 here means the cookie
       // was already invalid, which is the same place this lands anyway.
@@ -5266,7 +5071,7 @@ function shell() {
     // column walk); xterm's input is a TEXTAREA.
     consoleShortcutsBlocked(allowTerminal = false) {
       if (!this.authed) return true;
-      if (this.settingsOpen || this.modalOpen(window.WBSecurityDialog.openFlag) || this.runOpen || this.branchOpen) return true;
+      if (this.modalOpen(window.WBSettingsDialog.openFlag) || this.modalOpen(window.WBSecurityDialog.openFlag) || this.runOpen || this.branchOpen) return true;
       if (this.whatsNewOpen) return true;
       const el = document.activeElement;
       if (allowTerminal && el?.closest?.(".xterm")) return false;
@@ -6652,7 +6457,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key !== "F" && e.key !== "f") return;
   const c = window.getShell();
   if (!c || !c.authed || !c.openSlug) return;
-  if (c.settingsOpen || c.modalOpen(window.WBSecurityDialog.openFlag) || c.runOpen || c.branchOpen || c.whatsNewOpen) return;
+  if (c.modalOpen(window.WBSettingsDialog.openFlag) || c.modalOpen(window.WBSecurityDialog.openFlag) || c.runOpen || c.branchOpen || c.whatsNewOpen) return;
   e.preventDefault();
   c.openFileSearch();
 });

@@ -161,7 +161,7 @@
       <button :class="{ active: active === 'spend' }" @click="openSpend()" title="Spend (cost of this project)"><svg x-icon="'coins'"></svg></button>
       <!-- spacer pushes the settings gear to the bottom of the rail -->
       <span class="rail-spacer"></span>
-      <button :class="{ active: settingsOpen }" @click="openSettings()" title="Settings"><svg x-icon="'settings'"></svg></button>
+      <button :class="{ active: modalOpen('settingsOpen') }" @click="avatarMenu = false; $dispatch('workbench:settings-open')" title="Settings"><svg x-icon="'settings'"></svg></button>
     </nav>
 
     <!-- sidebar: project accordion. impl: `projects` comes from the daemon
@@ -1908,6 +1908,9 @@
          plain-English blurb. Changing a value emits `setting-change`; the
          daemon persists it via `config.set`/`config.unset`.
     ==================================================================== -->
+    <div class="settings-dialog" x-data="wbSettingsDialog" @workbench:settings-open.window="openSettings()"
+         @workbench:log-off.window="settingsOpen = false"
+         @workbench:panels-reread.window="settingsOpen && readSettings()">
     <div class="modal-scrim" x-cloak x-bind="scrim('settingsOpen', () => closeSettings())">
       <div class="modal settings-modal" role="dialog" aria-modal="true" aria-label="Settings">
         <div class="modal-head">
@@ -2113,6 +2116,7 @@
           <button class="btn" @click="closeSettings()">Done</button>
         </div>
       </div>
+    </div>
     </div>
 
     <!-- ===================================================================
@@ -3276,6 +3280,7 @@
     <script src="wb-monaco.js"></script>
     <script src="wb-viewer.js"></script>
     <script src="wb-settings.js"></script>
+    <script src="wb-settings-dialog.js"></script>
     <script src="wb-desk-history.js"></script>
     <script src="wb-runs.js"></script>
     <script src="wb-kanban.js"></script>

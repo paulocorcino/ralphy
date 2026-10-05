@@ -40,6 +40,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 TARGET = os.environ.get("RALPHY_WB_TARGET") or os.path.join(REPO_ROOT, "target", "debug")
 EXE = os.path.join(TARGET, "ralphy.exe" if os.name == "nt" else "ralphy")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Settings dialog's own component, nested in shell().
+SET = "Alpine.$data(document.querySelector('.settings-dialog'))"
 
 # Every icon on screen, split into drawn and empty. An icon behind `x-show`
 # is not on screen and is not counted: its turn comes when a scenario shows it.
@@ -264,8 +266,8 @@ def main():
                 ("kanban", f"{SH}.toggleKanban()"),
                 ("runs", f"{SH}.toggleRuns()"),
                 ("changes", f"{SH}.showSideView('changes')"),
-                ("settings", f"{SH}.openSettings()"),
-                ("about", f"{SH}.closeSettings(); {SH}.openAbout()"),
+                ("settings", f"{SET}.openSettings()"),
+                ("about", f"{SET}.closeSettings(); {SH}.openAbout()"),
                 ("run modal", f"{SH}.closeAbout(); {SH}.openRunModal()"),
             ]
             for name, act in views:

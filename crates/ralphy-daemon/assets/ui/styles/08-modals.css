@@ -113,7 +113,8 @@
    scrim. It draws no box of its own, so the page layout stays as it was. */
 .hosts-dialog,
 .add-project-dialog,
-.security-dialog {
+.security-dialog,
+.settings-dialog {
   display: contents;
 }
 /* The two dialogs a MODAL can raise (`askConfirm` / `askPrompt`) sit one tier

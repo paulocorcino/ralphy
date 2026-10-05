@@ -6497,10 +6497,10 @@ fn relaunching_agent_consoles_on_load_is_opt_in() {
             "wb-settings.js must keep the pin {pin}"
         );
     }
-    let app = squeeze(include_str!("../assets/ui/app.js"));
+    let app = squeeze(include_str!("../assets/ui/wb-settings-dialog.js"));
     assert!(
         app.contains("window.WBView.patch({relaunch:value===true})"),
-        "app.js must persist the toggle through the view store"
+        "wb-settings-dialog.js must persist the toggle through the view store"
     );
     assert!(
         app.contains("if(this.CLIENT_KEYS.has(key)){"),
