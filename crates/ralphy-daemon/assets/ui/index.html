@@ -186,7 +186,7 @@
           <svg x-icon="'refresh-cw'"></svg>
         </button>
         <!-- Add a project (#501) comes before Hosts: it is the more frequent act. -->
-        <button class="side-refresh side-add-project" @click="openAddProject()" title="Add a project" aria-label="Add a project">
+        <button class="side-refresh side-add-project" @click="$dispatch('workbench:add-project-open')" title="Add a project" aria-label="Add a project">
           <svg x-icon="'folder-plus'"></svg>
         </button>
         <!-- Lucide v0.460.0 has no `server-plus`: this is its `server` with the
@@ -207,7 +207,7 @@
            error above instead. -->
       <div class="side-empty projects-empty" x-show="!projects.length && !reposError && !reposLoading" x-cloak>
         <p>No projects yet</p>
-        <button class="btn accent" @click="openAddProject()"><svg x-icon="'folder-plus'"></svg> Add a project</button>
+        <button class="btn accent" @click="$dispatch('workbench:add-project-open')"><svg x-icon="'folder-plus'"></svg> Add a project</button>
       </div>
       <!-- filters the list client-side on slug/branch; "/" (global shortcut)
            focuses this input; Escape clears it. Hidden while a project is
@@ -2817,6 +2817,7 @@
          runs `ralphy daemon add` (`project.add`); wb-add-project.js holds the
          state. Folder names are shown with x-text only.
     ==================================================================== -->
+    <div class="add-project-dialog" x-data="wbAddProjectDialog" @workbench:add-project-open.window="openAddProject()">
     <div class="modal-scrim" x-cloak x-bind="scrim('addProject.open', () => closeAddProject())">
       <div class="modal run-modal host-modal" role="dialog" aria-modal="true" aria-label="Add a project">
         <div class="modal-head">
@@ -2870,6 +2871,7 @@
           </span>
         </div>
       </div>
+    </div>
     </div>
 
     <!-- ===================================================================
@@ -3280,6 +3282,7 @@
     <script src="wb-hosts.js"></script>
     <script src="wb-hosts-dialog.js"></script>
     <script src="wb-add-project.js"></script>
+    <script src="wb-add-project-dialog.js"></script>
     <script src="app.js"></script>
     <script defer src="vendor/alpine.min.js"></script>
   </body>

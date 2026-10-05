@@ -1,11 +1,10 @@
 // Unit tests for assets/ui/wb-add-project.js — runs the real source with no
-// DOM — and for the shell calls of the Add a project dialog (#501).
+// DOM. The dialog's own calls are tested in wb-add-project-dialog.test.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { loadShell, UI } from "./harness.mjs";
 
 const SRC = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "../assets/ui/wb-add-project.js"),
@@ -301,146 +300,4 @@ test("while adding, the controls are locked; a failure keeps the path", () => {
   assert.equal(s.open, true);
   assert.equal(s.text, "C:\\Dev\\fincal");
   assert.equal(s.error, "o/fincal is already added from C:/Dev/fincal");
-});
-
-// --- shell ---------------------------------------------------------------
-
-function shell() {
-  const { state, window } = loadShell();
-  const calls = [];
-  const replies = {};
-  window.WBDaemon.observe = async (verb, payload) => {
-    calls.push([verb, payload]);
-    return replies[verb];
-  };
-  const reloads = [];
-  state.loadRepos = async () => reloads.push("repos");
-  state.loadFleet = async () => reloads.push("fleet");
-  state.$nextTick = (fn) => fn();
-  state.$refs = {};
-  const toggled = [];
-  state.toggle = (ref) => {
-    toggled.push(ref);
-    state.openSlug = ref;
-  };
-  return { state, calls, replies, reloads, toggled };
-}
-
-function ready(state, text) {
-  state.addProject = Object.assign(state.addProject, { open: true });
-  state.addProjectStep({ type: "text", text, peers: [] });
-  state.addProjectStep({ type: "sent", seq: 1 });
-  state.addProjectStep({ type: "reply", seq: 1, reply: Object.assign({ status: "ok", more: 0 }, DEV) });
-}
-
-test("shell: an add selects the new project after the list reloads", async () => {
-  const { state, calls, replies, reloads, toggled } = shell();
-  ready(state, "C:\\Dev\\fincal");
-  replies["project.add"] = { status: "ok", slug: "o/fincal", path: "C:/Dev/fincal" };
-  state.projects = [{ slug: "o/fincal" }];
-  await state.addProjectSubmit();
-  assert.deepEqual(calls, [["project.add", { daemon: "", path: "C:\\Dev\\fincal", init: false }]]);
-  assert.deepEqual(reloads, ["repos"]);
-  assert.equal(state.addProject.open, false);
-  assert.deepEqual(toggled, ["o/fincal"]);
-});
-
-test("shell: a peer add selects the peer's row", async () => {
-  const { state, replies, reloads, toggled } = shell();
-  ready(state, "C:\\Dev\\fincal");
-  state.addProject.daemon = WSL_ID;
-  replies["project.add"] = { status: "ok", slug: "o/fincal", path: "/home/me/fincal" };
-  state.projects = [{ slug: "o/fincal", key: `${WSL_ID}/o/fincal`, daemon: WSL_ID }];
-  await state.addProjectSubmit();
-  assert.deepEqual(reloads, ["repos", "fleet"]);
-  assert.deepEqual(toggled, [`${WSL_ID}/o/fincal`]);
-});
-
-test("shell: a refused add keeps the dialog open with the reason", async () => {
-  const { state, replies, toggled } = shell();
-  ready(state, "C:\\Dev\\fincal");
-  replies["project.add"] = { status: "error", message: "o/fincal is already added from C:/Other/fincal" };
-  await state.addProjectSubmit();
-  assert.equal(state.addProject.open, true);
-  assert.equal(state.addProject.adding, false);
-  assert.equal(state.addProject.text, "C:\\Dev\\fincal");
-  assert.equal(state.addProject.error, "Could not add the project: o/fincal is already added from C:/Other/fincal.");
-  assert.deepEqual(toggled, []);
-});
-
-test("shell: a WSL path with no peer calls no verb", () => {
-  const { state, calls } = shell();
-  const listings = [];
-  state.addProjectList = (delay) => listings.push(delay);
-  state.addProject.open = true;
-  state.addProjectText("\\\\wsl.localhost\\Debian\\home");
-  assert.deepEqual(listings, []);
-  assert.deepEqual(calls, []);
-  state.addProjectText("C:\\Dev\\");
-  assert.deepEqual(listings, [150], "an ordinary path is listed after the debounce");
-});
-
-test("shell: the second click of a double click is dropped", () => {
-  const { state } = shell();
-  state.addProjectList = () => {};
-  ready(state, "C:\\Dev\\");
-  // The listing of fincal arrived between the two clicks.
-  state.addProjectPick({ name: "fincal" }, { detail: 1 });
-  state.addProjectStep({ type: "sent", seq: 2 });
-  state.addProjectStep({
-    type: "reply",
-    seq: 2,
-    reply: { status: "ok", more: 0, dir: { path: "C:\\Dev\\fincal\\", root: "C:\\Dev\\fincal", added: false }, entries: [{ name: "src", repo: false, added: false }] },
-  });
-  state.addProjectPick({ name: "src" }, { detail: 2 });
-  assert.equal(state.addProject.text, "C:\\Dev\\fincal\\");
-});
-
-test("shell: a pick by touch does not focus the field; by mouse or key it does", () => {
-  const { state } = shell();
-  state.addProjectList = () => {};
-  let focused = 0;
-  state.$refs.addProjectFolder = { focus: () => focused++ };
-  ready(state, "C:\\Dev\\");
-  state._addProjectTouch = true;
-  state.addProjectPick({ name: "fincal" }, { detail: 1 });
-  assert.equal(focused, 0);
-  state._addProjectTouch = false;
-  state.addProjectPick({ name: "notes" }, { detail: 1 });
-  state.addProjectPick({ name: "fincal" });
-  assert.equal(focused, 2);
-
-  const html = readFileSync(join(UI, "index.html"), "utf8");
-  assert.match(html, /id="add-project-list"[^>]*@pointerdown="_addProjectTouch = \$event\.pointerType !== 'mouse'"/);
-  assert.match(html, /@click="addProjectPick\(e, \$event\)"/);
-});
-
-test("the Add a project button comes before Hosts, after refresh", () => {
-  const html = readFileSync(join(UI, "index.html"), "utf8");
-  const refresh = html.indexOf('class="side-refresh"');
-  const add = html.indexOf('@click="openAddProject()"');
-  const hosts = html.indexOf(`@click="$dispatch('workbench:hosts-open')"`);
-  assert.ok(refresh > 0 && refresh < add && add < hosts, `${refresh} < ${add} < ${hosts}`);
-  const tag = html.slice(html.lastIndexOf("<button", add), html.indexOf(">", add));
-  assert.match(tag, /title="Add a project"/);
-  assert.match(tag, /aria-label="Add a project"/);
-  assert.match(html.slice(add, html.indexOf("</button>", add)), /x-icon="'folder-plus'"/);
-});
-
-test("the empty state offers Add a project", () => {
-  const html = readFileSync(join(UI, "index.html"), "utf8");
-  const at = html.indexOf('class="side-empty projects-empty"');
-  const block = html.slice(at, html.indexOf("</div>", at));
-  assert.match(block, /x-show="!projects\.length && !reposError && !reposLoading"/);
-  assert.match(block, /No projects yet/);
-  assert.match(block, /openAddProject\(\)/);
-});
-
-test("the dialog shows folder names and errors as text only", () => {
-  const html = readFileSync(join(UI, "index.html"), "utf8");
-  const start = html.indexOf("scrim('addProject.open'");
-  const dialog = html.slice(start, html.indexOf("scrim('addHost.open'"));
-  assert.ok(start > 0);
-  assert.doesNotMatch(dialog, /x-html/);
-  assert.match(dialog, /role="alert" x-show="addProject.error" x-text="addProject.error"/);
 });

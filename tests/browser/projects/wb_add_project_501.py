@@ -47,6 +47,8 @@ EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt"
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "501-add-project.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The dialog's own component, nested in shell().
+DLG = "Alpine.$data(document.querySelector('.add-project-dialog'))"
 DIALOG = ".modal[aria-label='Add a project']"
 PRIMARY = DIALOG + " .modal-foot .btn.accent"
 
@@ -139,9 +141,9 @@ def laid(page, selector):
 
 
 def open_dialog(page):
-    page.evaluate(f"() => {SH}.openAddProject()")
-    page.wait_for_function(f"() => {SH}.addProject.open === true", timeout=10000)
-    page.wait_for_function(f"() => !{SH}.addProject.needStart", timeout=10000)
+    page.evaluate("() => window.dispatchEvent(new CustomEvent('workbench:add-project-open'))")
+    page.wait_for_function(f"() => {DLG}.addProject.open === true", timeout=10000)
+    page.wait_for_function(f"() => !{DLG}.addProject.needStart", timeout=10000)
 
 
 def type_folder(page, path):
@@ -184,7 +186,7 @@ def added_and_selected(page, path, name):
     """Click the main button, then wait for the dialog to close and for the
     project registered at `path` to be the open, focused row."""
     page.click(PRIMARY)
-    page.wait_for_function(f"() => {SH}.addProject.open === false", timeout=30000)
+    page.wait_for_function(f"() => {DLG}.addProject.open === false", timeout=30000)
     page.wait_for_function(
         "(p) => fetch('/api/repos').then(r => r.json()).then(x => x.some(e => e.path && e.path.toLowerCase().replace(/\\\\/g, '/') === p))",
         arg=Path(path).resolve().as_posix().lower(),
@@ -258,7 +260,7 @@ def main():
 
             # --- b: the dialog opens on a start folder ----------------------
             page.click(".projects-empty .btn")
-            page.wait_for_function(f"() => {SH}.addProject.open === true", timeout=10000)
+            page.wait_for_function(f"() => {DLG}.addProject.open === true", timeout=10000)
             # Alpine's x-show lands after the property write: wait for the box.
             try:
                 page.wait_for_function(
@@ -271,7 +273,7 @@ def main():
             except Exception:
                 shown = False
             check("b: the dialog is laid out", shown)
-            page.wait_for_function(f"() => !{SH}.addProject.needStart", timeout=10000)
+            page.wait_for_function(f"() => !{DLG}.addProject.needStart", timeout=10000)
             start = page.input_value("#add-project-folder")
             check("b: the field opens on a start folder", start.endswith(("/", "\\")) and len(start) > 1, repr(start))
             page.screenshot(path=SHOT)
@@ -312,8 +314,8 @@ def main():
             check("g: the second clone reads Add project", wait_label(page, "Add project", True), str(primary(page)))
             page.click(PRIMARY)
             try:
-                page.wait_for_function(f"() => !!{SH}.addProject.error", timeout=30000)
-                error = page.evaluate(f"() => {SH}.addProject.error")
+                page.wait_for_function(f"() => !!{DLG}.addProject.error", timeout=30000)
+                error = page.evaluate(f"() => {DLG}.addProject.error")
             except Exception:
                 error = ""
             check("g: the add is refused with the first path", "wb501/clone is already added from" in error, repr(error))
@@ -346,7 +348,7 @@ def main():
             time.sleep(1.5)
             check(
                 "i: …Enter creates nothing and the dialog stays open",
-                not fresh.exists() and page.evaluate(f"() => {SH}.addProject.open"),
+                not fresh.exists() and page.evaluate(f"() => {DLG}.addProject.open"),
             )
             page.screenshot(path=os.path.join(SHOT_DIR, "501-add-project-create-folder.png"))
             added_and_selected(page, str(fresh), "i")
@@ -354,7 +356,7 @@ def main():
 
             open_dialog(page)
             page.keyboard.press("Escape")
-            page.wait_for_function(f"() => {SH}.addProject.open === false", timeout=5000)
+            page.wait_for_function(f"() => {DLG}.addProject.open === false", timeout=5000)
             check("Escape closes the dialog", True)
             check("no page errors were thrown", not thrown, f"got={thrown}")
             browser.close()

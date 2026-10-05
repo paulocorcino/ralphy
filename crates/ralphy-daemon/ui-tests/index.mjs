@@ -5,6 +5,7 @@
 // (see https://nodejs.org/api/test.html#test-runner-execution-model).
 import "./app.test.mjs";
 import "./wb-add-project.test.mjs";
+import "./wb-add-project-dialog.test.mjs";
 import "./shared-replies.test.mjs";
 import "./wb-agents.test.mjs";
 import "./wb-changes.test.mjs";

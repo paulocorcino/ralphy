@@ -111,7 +111,8 @@
 }
 /* The element that holds a dialog's own Alpine component (`x-data`) around its
    scrim. It draws no box of its own, so the page layout stays as it was. */
-.hosts-dialog {
+.hosts-dialog,
+.add-project-dialog {
   display: contents;
 }
 /* The two dialogs a MODAL can raise (`askConfirm` / `askPrompt`) sit one tier

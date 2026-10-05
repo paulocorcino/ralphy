@@ -29,7 +29,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 PORT = 7509
 BASE = f"http://127.0.0.1:{PORT}/"
 base501.PORT = PORT
-SH = base501.SH
+DLG = base501.DLG
 SHOT = os.path.join(base501.SHOT_DIR, "add-project-pick.png")
 
 results = []
@@ -44,7 +44,7 @@ def listed(page, folder):
     """Type `folder` and wait until the list shows its rows."""
     page.fill("#add-project-folder", folder)
     page.wait_for_function(
-        f"(t) => {SH}.addProject.listedText === t && document.querySelectorAll('.add-project-item').length > 0",
+        f"(t) => {DLG}.addProject.listedText === t && document.querySelectorAll('.add-project-item').length > 0",
         arg=folder,
         timeout=10000,
     )
@@ -57,7 +57,7 @@ def row(name):
 def settled(page):
     """Wait until the newest listing answers the text in the field."""
     page.wait_for_function(
-        f"() => {{ const s = {SH}.addProject; return s.listedText === s.text && !s.loading; }}",
+        f"() => {{ const s = {DLG}.addProject; return s.listedText === s.text && !s.loading; }}",
         timeout=10000,
     )
     return page.input_value("#add-project-folder")
