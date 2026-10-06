@@ -1893,7 +1893,7 @@
     <div id="ctxmenu" class="ctxmenu"></div>
 
     <!-- ===================================================================
-         Settings modal — data-driven from WB_SETTINGS (wb-settings.js). Left
+         Settings modal — data-driven from WB_SETTINGS (wb-settings.ts). Left
          rail = sections; right = the knobs for the active section, each with a
          plain-English blurb. Changing a value emits `setting-change`; the
          daemon persists it via `config.set`/`config.unset`.
@@ -3254,7 +3254,7 @@
     <script src="wb-notes.js"></script>
     <script src="wb-monaco.js"></script>
     <script src="wb-viewer.js"></script>
-    <script src="wb-settings.js"></script>
+    <script type="module" src="wb-settings.js"></script>
     <script src="wb-settings-dialog.js"></script>
     <script type="module" src="wb-desk-history.js"></script>
     <script type="module" src="wb-runs.js"></script>

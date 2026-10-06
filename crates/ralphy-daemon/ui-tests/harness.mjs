@@ -30,6 +30,7 @@ import { WBProject } from "../assets/ui/wb-project.ts";
 import { WBSplit } from "../assets/ui/wb-split.ts";
 import { WBFail } from "../assets/ui/wb-fail.ts";
 import { WBFleet } from "../assets/ui/wb-fleet.ts";
+import { WB_SETTINGS, WB_TRISTATE, wbClientKeys, wbSettingsDefaults, wbQr } from "../assets/ui/wb-settings.ts";
 
 // The `window.WB*` names that a module sets in the browser because a classic
 // script still reads them (ADR-0075 D9). A module does not run in
@@ -48,6 +49,11 @@ const MODULE_NAMESPACES = {
   WBSplit,
   WBFail,
   WBFleet,
+  WB_SETTINGS,
+  WB_TRISTATE,
+  wbClientKeys,
+  wbSettingsDefaults,
+  wbQr,
 };
 
 // The Alpine components that are ES modules (ADR-0075): `loadComponent` builds

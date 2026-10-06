@@ -48,7 +48,25 @@ const TRISTATE = ["unset", "on", "off"];
 // repo in <repo>/.ralphy/settings.json, so they follow whichever project is
 // open; "client" settings are this BROWSER profile's own, held in the view
 // store (wb-view.js) and never sent to the daemon.
-window.WB_SETTINGS = [
+/** The three stores a setting can live in; see the paragraph above. */
+type Scope = "daemon" | "project" | "client";
+/** One control of a section. */
+export type Item = {
+  key: string;
+  label: string;
+  type: string;
+  help: string;
+  default: unknown;
+  placeholder?: string;
+  options?: readonly string[];
+  readonly?: boolean;
+  min?: number;
+  max?: number;
+};
+/** One nav section of the Settings dialog. */
+export type Section = { id: string; title: string; icon: string; scope: Scope; blurb: string; items: Item[] };
+
+export const WB_SETTINGS: Section[] = [
   {
     id: "consoles",
     title: "Consoles",
@@ -389,30 +407,30 @@ window.WB_SETTINGS = [
   },
 ];
 
-window.WB_TRISTATE = TRISTATE;
+export const WB_TRISTATE = TRISTATE;
 
 // The keys this BROWSER owns. Derived from the schema rather than listed, so a
 // new client-scoped item cannot be added and then routed to `config.set` by an
 // edit that forgot about it.
-window.wbClientKeys = function () {
-  const out = new Set();
-  for (const sec of window.WB_SETTINGS) {
+export function wbClientKeys(): Set<string> {
+  const out = new Set<string>();
+  for (const sec of WB_SETTINGS) {
     if (sec.scope === "client") for (const it of sec.items) out.add(it.key);
   }
   return out;
-};
+}
 
 // Seed a flat {key: default} map the Alpine component keeps its live values in.
-window.wbSettingsDefaults = function () {
-  const out = {};
-  for (const sec of window.WB_SETTINGS) {
+export function wbSettingsDefaults(): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const sec of WB_SETTINGS) {
     for (const it of sec.items) out[it.key] = it.default;
   }
   return out;
-};
+}
 
 // Render an otpauth:// URI to an <img> QR (vendored qrcode-generator, offline).
-window.wbQr = function (uri) {
+export function wbQr(uri: string): string {
   try {
     const qr = qrcode(0, "M"); // type 0 = auto-size, error-correction M
     qr.addData(uri);
@@ -421,4 +439,23 @@ window.wbQr = function (uri) {
   } catch (e) {
     return '<div class="qr-fail">could not render QR</div>';
   }
-};
+}
+
+// Classic scripts still read these names (ADR-0075 D9).
+if (typeof window !== "undefined") {
+  window.WB_SETTINGS = WB_SETTINGS;
+  window.WB_TRISTATE = WB_TRISTATE;
+  window.wbClientKeys = wbClientKeys;
+  window.wbSettingsDefaults = wbSettingsDefaults;
+  window.wbQr = wbQr;
+}
+
+declare global {
+  interface Window {
+    WB_SETTINGS: typeof WB_SETTINGS;
+    WB_TRISTATE: typeof WB_TRISTATE;
+    wbClientKeys: typeof wbClientKeys;
+    wbSettingsDefaults: typeof wbSettingsDefaults;
+    wbQr: typeof wbQr;
+  }
+}

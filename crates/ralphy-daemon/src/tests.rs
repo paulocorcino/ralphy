@@ -4193,7 +4193,6 @@ const CLASSIC_SCRIPTS: &[&str] = &[
     "wb-release-dialogs.js",
     "wb-security-dialog.js",
     "wb-session-route.js",
-    "wb-settings.js",
     "wb-settings-dialog.js",
     "wb-view.js",
     "wb-viewer.js",
@@ -4216,6 +4215,8 @@ const MODULE_WINDOW_NAMES: &[&str] = &[
     "WBRun",
     "WBSpend",
     "WBSplit",
+    "WB_SETTINGS",
+    "WB_TRISTATE",
 ];
 
 /// ADR-0075 D1, D2, D8 and D10: first-party workbench code is TypeScript. A
@@ -6649,7 +6650,7 @@ fn relaunching_agent_consoles_on_load_is_opt_in() {
 
     // The knob, and the store it writes to. `config.set` would put a
     // per-browser choice in a repo's settings.json for every client to obey.
-    let settings = squeeze(include_str!("../assets/ui/wb-settings.js"));
+    let settings = squeeze(include_str!("../assets/ui/wb-settings.ts"));
     for pin in [
         r#"scope:"client""#,
         r#"key:"consoles.relaunch_on_load""#,
@@ -6657,7 +6658,7 @@ fn relaunching_agent_consoles_on_load_is_opt_in() {
     ] {
         assert!(
             settings.contains(pin),
-            "wb-settings.js must keep the pin {pin}"
+            "wb-settings.ts must keep the pin {pin}"
         );
     }
     let app = squeeze(include_str!("../assets/ui/wb-settings-dialog.js"));
@@ -6696,7 +6697,7 @@ fn relaunching_agent_consoles_on_load_is_opt_in() {
 /// three are gone from the schema; this is what keeps the fourth out.
 #[test]
 fn every_settable_key_the_panel_offers_is_a_key_the_cli_accepts() {
-    let schema = include_str!("../assets/ui/wb-settings.js");
+    let schema = include_str!("../assets/ui/wb-settings.ts");
     let cli = include_str!("../../ralphy-cli/src/config.rs");
     let supported = cli
         .split_once("const SUPPORTED_KEYS: &[&str] = &[")

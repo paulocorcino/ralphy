@@ -21,3 +21,9 @@ interface Window {
     data(name: string, factory: () => object): void;
   };
 }
+
+/** The vendored qrcode-generator (`vendor/qrcode.js`). */
+declare function qrcode(
+  typeNumber: number,
+  errorCorrection: string,
+): { addData(data: string): void; make(): void; createImgTag(cellSize: number, margin: number): string };

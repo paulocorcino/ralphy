@@ -9,7 +9,7 @@ use scan::Scan;
 
 /// Object keys whose value is shown: a toast's `text`, a dialog's `title`, a
 /// table row's `label`, a setting's `help` and its section's `blurb`
-/// (`wb-settings.js`, rendered by `x-text="it.help"` / `"sec.blurb"`).
+/// (`wb-settings.ts`, rendered by `x-text="it.help"` / `"sec.blurb"`).
 const SHOWN_KEYS: &[&str] = &[
     "title",
     "message",
