@@ -22,7 +22,13 @@
    Glyphs are the union of the Telegram sink + terminal presenter tables.
 --------------------------------------------------------------------------- */
 
-window.WBRun = {
+/** A run of the panel, mapped from its snapshot (`fromSnapshot`). Not typed
+ * field by field yet (ADR-0075, the last phase narrows it). */
+type Run = any;
+/** One issue of a run's queue. */
+type Issue = any;
+
+export const WBRun = {
   // per-status glyph, matching notifier.rs status_emoji + render.rs scroll glyphs.
   // `sleep`/`pending` are panel-only overlays (a sleeping active issue, and a
   // not-yet-started issue).
@@ -41,7 +47,7 @@ window.WBRun = {
     hitl: "🙋",
     sleep: "🌙",
     pending: "○",
-  },
+  } as Record<string, string>,
   LABEL: {
     planning: "planning",
     executing: "executing",
@@ -55,7 +61,7 @@ window.WBRun = {
     hitl: "waiting on human",
     sleep: "usage limit — sleeping",
     pending: "pending",
-  },
+  } as Record<string, string>,
   // per-step vocabulary (#330). The document ships `plan.steps[].status` as a
   // string in the ADR-0019 `plan.step` vocabulary; an unknown one falls back to
   // `open` rather than vanishing. Pinned from Rust by
@@ -64,24 +70,24 @@ window.WBRun = {
     open: "⬜",
     checked: "✅",
     noticed: "⚠️",
-  },
+  } as Record<string, string>,
   STEP_LABEL: {
     open: "open",
     checked: "done",
     noticed: "noticed a problem",
-  },
+  } as Record<string, string>,
   // `Object.hasOwn`, never `in`/truthiness: a status of "toString" would
   // otherwise reach Object.prototype and defeat the fallback entirely.
-  stepKey(status) {
+  stepKey(status: string) {
     return Object.hasOwn(this.STEP_GLYPH, status) ? status : "open";
   },
-  stepGlyph(status) {
+  stepGlyph(status: string) {
     return this.STEP_GLYPH[this.stepKey(status)];
   },
-  stepLabel(status) {
+  stepLabel(status: string) {
     return this.STEP_LABEL[this.stepKey(status)];
   },
-  stepClass(status) {
+  stepClass(status: string) {
     return "st-" + this.stepKey(status);
   },
   // Parse the three checkbox markers out of plan text — the same set the Rust
@@ -94,8 +100,8 @@ window.WBRun = {
   // end — so EVERY step silently disappeared and the plan read as "0 steps", i.e.
   // infeasible. Measured on this host: a plan the operator could see in the editor
   // came back with `steps: 0`.
-  parseSteps(md) {
-    const out = [];
+  parseSteps(md: string | null | undefined) {
+    const out: { text: string; status: string }[] = [];
     (md || "").split(/\r?\n/).forEach((ln) => {
       const m = ln.replace(/^\s+/, "").match(/^- \[([ xX!])\](.*)$/);
       if (!m) return;
@@ -113,7 +119,7 @@ window.WBRun = {
   // The visual state of one issue *within its run*: a terminal status as-is; the
   // active issue reflects the live phase (planning/executing, or sleep when the
   // whole run is parked on a usage limit); everything else is pending.
-  issueState(run, iss) {
+  issueState(run: Run, iss: Issue) {
     // tolerate a null run / iss: the :class binding can re-run mid-transition
     // (project switch) after the run is gone but before the node unmounts.
     if (!run || !iss) return "pending";
@@ -124,11 +130,11 @@ window.WBRun = {
     }
     return "pending";
   },
-  glyph(run, iss) {
+  glyph(run: Run, iss: Issue) {
     return this.GLYPH[this.issueState(run, iss)] || "○";
   },
 
-  runPhaseLabel(run) {
+  runPhaseLabel(run: Run) {
     switch (run.phase) {
       case "starting":
         return "starting…";
@@ -150,7 +156,7 @@ window.WBRun = {
   // CLI's console has printed `model / effort` since ADR-0006 and this is the
   // same fact on the same run, so it must read the same way. An absent effort is
   // simply omitted; an absent model yields "" and the CALLER degrades.
-  modelEffort(model, effort) {
+  modelEffort(model: string | null | undefined, effort: string | null | undefined) {
     const m = (model || "").trim();
     const e = (effort || "").trim();
     if (!m) return "";
@@ -159,28 +165,28 @@ window.WBRun = {
   // The issue the run is on. The document carries model/effort/budget PER ISSUE
   // (tier routing means #350 and #351 legitimately run different models), so
   // every render fact about "what is running now" is read off this one entry.
-  activeIssue(run) {
+  activeIssue(run: Run) {
     if (!run || run.active == null) return null;
-    return (run.issues || []).find((i) => i.number === run.active) || null;
+    return (run.issues || []).find((i: Issue) => i.number === run.active) || null;
   },
   // The picker's headline: WHICH MODEL is running, falling back to the vendor.
   // The fallback is the honesty rule, not a convenience — a queued issue carries
   // `model: null`, and so does a run before its first phase event. Naming the
   // vendor there is a true statement; inventing a model would not be.
-  runTitle(run) {
+  runTitle(run: Run) {
     if (!run) return "";
     return this.modelEffort(this.activeIssue(run)?.model, this.activeIssue(run)?.effort) || run.agent || "";
   },
   // The line under it: the vendor is not lost when the title takes the model,
   // it MOVES here, in front of the phase it is driving.
-  runIdentity(run) {
+  runIdentity(run: Run) {
     if (!run) return "";
     return [run.agent, this.runPhaseLabel(run)].filter(Boolean).join(" · ");
   },
   // `M:SS`, minutes unbounded — a verbatim mirror of `ui::render::fmt_clock`
   // (`72:05`, not `1:12:05`). Same unit as the budget it is compared against,
   // and the same string the console prints for the same phase.
-  fmtClock(ms) {
+  fmtClock(ms: number) {
     const secs = Math.floor(Math.max(0, ms || 0) / 1000);
     return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
   },
@@ -194,7 +200,7 @@ window.WBRun = {
   // `nowMs` is passed in rather than read here so the whole thing stays pure and
   // the caller owns the tick. A missing anchor renders "" (an older document, or
   // a run already in flight when this build shipped) — never a fabricated 0:00.
-  phaseClock(run, nowMs) {
+  phaseClock(run: Run, nowMs: number) {
     if (!run?.since) return "";
     const since = Date.parse(run.since);
     if (Number.isNaN(since)) return "";
@@ -207,8 +213,8 @@ window.WBRun = {
 
   // --- plan.md section slicing ------------------------------------------
   // Every `## Heading` in the plan, in order (e.g. "Feasible: yes", "Steps"…).
-  headings(md) {
-    const out = [];
+  headings(md: string | null | undefined) {
+    const out: string[] = [];
     (md || "").split("\n").forEach((ln) => {
       const m = ln.match(/^##\s+(.+?)\s*$/);
       if (m) out.push(m[1]);
@@ -230,7 +236,7 @@ window.WBRun = {
   // presence anywhere, not position. Do not "fix" this into the resume rule: the
   // prose would vanish the moment execution wrote its first note.
   PLAN_TRAILER_RE: /<!--\s*ralphy-plan:\s*issue=(\d+)\s*-->/g,
-  planTrailerIssue(md) {
+  planTrailerIssue(md: string | null | undefined) {
     if (!md) return null;
     let issue = null;
     // The LAST trailer wins: an appended section can quote an earlier plan, and
@@ -241,13 +247,13 @@ window.WBRun = {
   // Is this plan text the plan FOR `issue`? A plan with no trailer is not: it is
   // either mid-write (the planner has not finished) or not a ralphy plan at all,
   // and in both cases claiming it belongs to the active issue is the lie.
-  planBelongsTo(md, issue) {
+  planBelongsTo(md: string | null | undefined, issue: number | null | undefined) {
     if (issue == null) return false;
     return this.planTrailerIssue(md) === Number(issue);
   },
 
   // The body under one `## Heading` (heading line excluded), up to the next `##`.
-  section(md, name) {
+  section(md: string | null | undefined, name: string) {
     if (!md || !name) return "";
     const want = name.trim().toLowerCase();
     const out = [];
@@ -283,22 +289,22 @@ window.WBRun = {
   //     the literal word "bundle" (core `handoff::is_bundle_verdict`).
   FEASIBLE_HEAD: /^##\s+Feasible\b.*$/im,
   // The `## Feasible` heading verbatim ("Feasible: no"), for the modal's banner.
-  feasibleHeading(md) {
+  feasibleHeading(md: string | null | undefined) {
     return (md || "").match(this.FEASIBLE_HEAD)?.[0].replace(/^##\s+/, "").trim() || "";
   },
   // The planner's stated reason: the prose under that heading.
-  feasibleReason(md) {
+  feasibleReason(md: string | null | undefined) {
     const head = this.feasibleHeading(md);
     return head ? this.section(md, head) : "";
   },
-  isBundleReason(reason) {
+  isBundleReason(reason: string | null | undefined) {
     return (reason || "").toLowerCase().includes("bundle");
   },
   FEASIBLE_YES: /^##\s+Feasible\s*:\s*yes\b/im,
   // One plan.md → what the board needs to know about it. `issue` is null for prose
   // carrying no trailer, and the caller MUST treat that as "no plan for anyone":
   // an unfinished plan is not yet a plan (see `planBelongsTo`).
-  planSummary(md) {
+  planSummary(md: string | null | undefined) {
     const text = md || "";
     const steps = this.parseSteps(text);
     const openSteps = steps.filter((s) => s.status === "open").length;
@@ -323,7 +329,7 @@ window.WBRun = {
   // The pill's words. `open` is whether the ISSUE is still open: a plan left over
   // from a closed issue is not "ready", it is residue, and saying so is the
   // difference between an invitation and a warning.
-  planPillLabel(summary, open = true) {
+  planPillLabel(summary: any, open: boolean = true) {
     if (!summary) return "";
     if (!open) return "leftover plan";
     if (summary.needsSplit) return "needs split";
@@ -332,13 +338,13 @@ window.WBRun = {
   },
   // Whether the pill is a warning rather than an invitation — the one thing the
   // operator must not have to open a modal to notice.
-  planPillWarns(summary, open = true) {
+  planPillWarns(summary: any, open: boolean = true) {
     return !!summary && (!open || summary.infeasible);
   },
 
   // A human sleep line from the wake anchor: "waiting for reset ~20:15 · resumes
   // in ~2h 3m" (mirrors notifier.rs sleep formatting).
-  sleepText(sleep) {
+  sleepText(sleep: any) {
     if (!sleep) return "waiting for reset";
     const rem = Math.max(0, (sleep.target_epoch || 0) - Math.floor(Date.now() / 1000));
     const h = Math.floor(rem / 3600);
@@ -359,7 +365,7 @@ window.WBRun = {
   // the run's state), so it is derived from the runid — deterministic, so a run
   // keeps its face across every re-hydration and across a page reload.
   FACES: ["🦊", "🐼", "🦉", "🐙", "🐸", "🦝", "🐻", "🐨", "🦄", "🐝", "🐧", "🦋"],
-  face(runid) {
+  face(runid: string) {
     let h = 0;
     for (const ch of String(runid || "")) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
     return this.FACES[h % this.FACES.length];
@@ -368,8 +374,8 @@ window.WBRun = {
   // One `runs.list` document → the panel's run shape. `planMd` starts empty:
   // the document carries the plan's PATH, and the panel reads it through the
   // confined `file.read` verb (ADR-0047 §5).
-  fromSnapshot(doc) {
-    const issues = (doc.issues || []).map((i) => ({
+  fromSnapshot(doc: any) {
+    const issues = (doc.issues || []).map((i: any) => ({
       number: i.number,
       title: i.title || "",
       status: i.status,
@@ -395,7 +401,7 @@ window.WBRun = {
       // `phaseClock` renders nothing rather than guessing.
       since: doc.phase?.since || "",
       startedAt: doc.started_at || "",
-      completed: issues.filter((i) => this.TERMINAL.has(i.status)).length,
+      completed: issues.filter((i: Issue) => this.TERMINAL.has(i.status)).length,
       // `??`, not `||`: a real total of 0 must stay 0, not be replaced.
       queueTotal: doc.queue?.total ?? issues.length,
       sleep: doc.phase?.sleep || null,
@@ -403,7 +409,7 @@ window.WBRun = {
       planMd: "",
       // Steps come from the DOCUMENT, not from a plan.md read: they survive a
       // deleted/unreadable plan and are already accumulated when the panel opens.
-      steps: (doc.plan?.steps || []).map((s) => ({ text: s.text || "", status: s.status || "open" })),
+      steps: (doc.plan?.steps || []).map((s: any) => ({ text: s.text || "", status: s.status || "open" })),
       planIssue: doc.plan?.issue ?? null,
       planReadFailed: false,
       issues,
@@ -418,13 +424,13 @@ window.WBRun = {
     run: "Start a run. You choose the agent and the branch.",
     triage: "Triage the backlog: label and plan open issues",
     push: "Send the queue snapshot to the events endpoint",
-  },
+  } as Record<string, string>,
   // A disabled control that does not say why is just a control that stopped
   // working; the lock reason REPLACES the description rather than appending to
   // it, so the title answers the only question a dimmed button raises.
   // `hasOwn`, not a bare lookup: `verbLockTitle("constructor", "")` would
   // otherwise hand back Object's constructor instead of a string.
-  verbLockTitle(verb, reason) {
+  verbLockTitle(verb: string, reason: string | null | undefined) {
     if (reason) return reason;
     return Object.hasOwn(this.VERB_TITLE, verb)
       ? this.VERB_TITLE[verb]
@@ -436,7 +442,7 @@ window.WBRun = {
   // The last line is truncated: it is whatever the CLI happened to print, and
   // an unbounded string here becomes an unbounded box in the panel.
   EXIT_NOTE_TAIL: 200,
-  exitNote(verb, code, lastLine) {
+  exitNote(verb: string, code: number | null | undefined, lastLine: string | null | undefined) {
     if (code === 0) return "";
     const shown = code === null || code === undefined ? "unknown" : code;
     const note = `Could not ${verb} (exit ${shown})`;
@@ -448,3 +454,12 @@ window.WBRun = {
     return `${note}: ${tail}`;
   },
 };
+
+// A classic script still reads this name (ADR-0075 D9).
+if (typeof window !== "undefined") window.WBRun = WBRun;
+
+declare global {
+  interface Window {
+    WBRun: typeof WBRun;
+  }
+}

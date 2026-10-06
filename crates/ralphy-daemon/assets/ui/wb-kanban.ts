@@ -42,8 +42,14 @@
    = GitHub `stateReason`; graph order = ralphy-core/src/blocked.rs; run glyphs =
    window.WBRun (wb-runs.js).
 --------------------------------------------------------------------------- */
+import { WBRun } from "./wb-runs.ts";
 
-window.WBKanban = {
+
+/** One issue of the board, as `boardRowToIssue` shapes it (app.js). Not typed
+ * field by field yet (ADR-0075, the last phase narrows it). */
+type Issue = any;
+
+export const WBKanban = {
   // GitHub label vocabulary → { color, short }. This is only the FALLBACK seed:
   // `boardLabels[slug]` (the repo's live `gh label list`) wins when the daemon
   // answers, so the seed matters for a label the API returns without a
@@ -72,7 +78,7 @@ window.WBKanban = {
     invalid: { color: "#E4E669", short: "invalid" },
     "good first issue": { color: "#7057FF", short: "good first issue" },
     "help wanted": { color: "#008672", short: "help wanted" },
-  },
+  } as Record<string, { color: string; short: string }>,
   // The four columns, in render order (left → right), with their heading + icon.
   COLUMNS: [
     { id: "backlog", title: "Backlog", lucide: "inbox" },
@@ -81,15 +87,15 @@ window.WBKanban = {
     { id: "closed", title: "Closed", lucide: "check-check" },
   ],
 
-  labelMeta(name) {
+  labelMeta(name: string) {
     return this.LABELS[name] || { color: "#6b5f52", short: name };
   },
-  labelColor(name) {
+  labelColor(name: string) {
     return this.labelMeta(name).color;
   },
   // A chip's text color: dark ink on a light chip, light ink on a dark one, so a
   // wontfix-white and a triage-maroon both stay legible.
-  labelInk(name) {
+  labelInk(name: string) {
     const hex = this.labelColor(name).replace("#", "");
     const r = parseInt(hex.slice(0, 2), 16),
       g = parseInt(hex.slice(2, 4), 16),
@@ -100,7 +106,7 @@ window.WBKanban = {
 
   // Which column an issue belongs to — the runner's precedence, as a lens:
   // closed first, then the human gate, then agent-eligibility, else backlog.
-  columnOf(iss) {
+  columnOf(iss: Issue) {
     if (iss.state === "closed") return "closed";
     const L = iss.labels || [];
     if (L.includes("ready-for-human")) return "human";
@@ -109,16 +115,16 @@ window.WBKanban = {
   },
 
   // GitHub's close reason as a short badge label.
-  closeLabel(iss) {
+  closeLabel(iss: Issue) {
     if (iss.state !== "closed") return "";
     return iss.reason === "not_planned" ? "not planned" : "completed";
   },
 
   // The one open blocker check the board needs: is `#n` still open in this
   // project? (Mirrors the runtime gate — a closed blocker is satisfied.)
-  openBlockers(iss, all) {
+  openBlockers(iss: Issue, all: Issue[]) {
     const openSet = new Set(all.filter((i) => i.state === "open").map((i) => i.number));
-    return (iss.blockedBy || []).filter((n) => openSet.has(n));
+    return (iss.blockedBy || []).filter((n: number) => openSet.has(n));
   },
 
   // --- graph order (port of sort_queue_in_graph / Kahn) -----------------
@@ -126,7 +132,7 @@ window.WBKanban = {
   // ascending number as the tie-break. `all` is the project's full issue set
   // (for walking edges through open out-of-queue blockers, pruning closed ones,
   // and substituting a retired bundle's `## Parent` children).
-  orderGraph(queue, all) {
+  orderGraph(queue: Issue[], all: Issue[]) {
     const inQueue = new Set(queue.map((i) => i.number));
     const openNums = new Set(all.filter((i) => i.state === "open").map((i) => i.number));
     const blockedOf = new Map();
@@ -165,7 +171,7 @@ window.WBKanban = {
     // Kahn, smallest ready number first (ascending tie-break); a cycle's
     // remainder is appended ascending (the runtime gate owns correctness).
     const byNum = new Map(queue.map((i) => [i.number, i]));
-    const placed = new Set();
+    const placed = new Set<number>();
     const out = [];
     while (byNum.size) {
       const keys = [...byNum.keys()].sort((a, b) => a - b);
@@ -187,13 +193,13 @@ window.WBKanban = {
   // descriptor for the card's run pill; else null. Only the actively-worked
   // issue (planning / executing / sleeping) is flagged — a run's pending or
   // already-terminal members don't clutter the board.
-  runningFor(number, projectRuns) {
+  runningFor(number: number, projectRuns: any[] | null | undefined) {
     for (const r of projectRuns || []) {
-      const iss = (r.issues || []).find((x) => x.number === number);
+      const iss = (r.issues || []).find((x: Issue) => x.number === number);
       if (!iss) continue;
-      const st = window.WBRun.issueState(r, iss);
+      const st = WBRun.issueState(r, iss);
       if (st === "planning" || st === "executing" || st === "sleep") {
-        return { runid: r.runid, face: r.face, agent: r.agent, state: st, glyph: window.WBRun.GLYPH[st], phase: r.phase };
+        return { runid: r.runid, face: r.face, agent: r.agent, state: st, glyph: WBRun.GLYPH[st], phase: r.phase };
       }
     }
     return null;
@@ -215,7 +221,13 @@ window.WBKanban = {
   // closed: an unrecognised one never refreshes. `focused` is consulted ONLY by
   // `backstop` — a slow tick on a background tab is exactly the blind polling
   // this design refuses.
-  shouldRefresh({ trigger, sinceMs, boardOpen, docVisible, focused = true }) {
+  shouldRefresh({
+    trigger,
+    sinceMs,
+    boardOpen,
+    docVisible,
+    focused = true,
+  }: { trigger: string; sinceMs: number; boardOpen: boolean; docVisible: boolean; focused?: boolean }) {
     if (!boardOpen || !docVisible) return false;
     switch (trigger) {
       case "manual":
@@ -234,7 +246,7 @@ window.WBKanban = {
   },
 
   // --- filter / sort (Backlog) ------------------------------------------
-  matches(iss, q) {
+  matches(iss: Issue, q: string) {
     if (!q) return true;
     const s = q.trim().toLowerCase();
     if (!s) return true;
@@ -242,10 +254,10 @@ window.WBKanban = {
       String(iss.number).includes(s) ||
       (iss.title || "").toLowerCase().includes(s) ||
       (iss.body || "").toLowerCase().includes(s) ||
-      (iss.labels || []).some((l) => l.toLowerCase().includes(s))
+      (iss.labels || []).some((l: string) => l.toLowerCase().includes(s))
     );
   },
-  hasLabelFilter(iss, label) {
+  hasLabelFilter(iss: Issue, label: string | null | undefined) {
     if (label === "__all") return true;
     if (label === "__none") return (iss.labels || []).length === 0;
     return (iss.labels || []).includes(label);
@@ -256,7 +268,7 @@ window.WBKanban = {
     { id: "updated", label: "Recently updated" },
     { id: "title", label: "Title A–Z" },
   ],
-  sortBacklog(list, sort) {
+  sortBacklog(list: Issue[], sort: string) {
     const a = list.slice();
     switch (sort) {
       case "num-asc":
@@ -271,10 +283,19 @@ window.WBKanban = {
     }
   },
 
-  fmtDate(iso) {
+  fmtDate(iso: string | null | undefined) {
     if (!iso) return "";
     const d = new Date(iso);
-    if (isNaN(d)) return iso;
+    if (isNaN(d.getTime())) return iso;
     return d.toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" });
   },
 };
+
+// A classic script still reads this name (ADR-0075 D9).
+if (typeof window !== "undefined") window.WBKanban = WBKanban;
+
+declare global {
+  interface Window {
+    WBKanban: typeof WBKanban;
+  }
+}
