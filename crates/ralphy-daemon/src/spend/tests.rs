@@ -379,19 +379,19 @@ fn malformed_rows_are_skipped_not_fatal() {
 /// a total. Pins both, the way `usage.rs`'s lower-bound test pins its label.
 #[test]
 fn the_spend_tab_renders_the_servers_figures_and_formats_none_of_its_own() {
-    let js = include_str!("../../assets/ui/wb-spend.js");
+    let js = include_str!("../../assets/ui/wb-spend.ts");
     assert!(
         !js.contains("1e6") && !js.contains("1000000"),
-        "wb-spend.js must not abbreviate a token count — the daemon renders it"
+        "wb-spend.ts must not abbreviate a token count — the daemon renders it"
     );
     assert!(
         js.contains("c.label") && js.contains("c.share_label") && js.contains("p.label"),
-        "wb-spend.js must read the daemon's pre-rendered labels and shares"
+        "wb-spend.ts must read the daemon's pre-rendered labels and shares"
     );
     for cause in ["recoverable", "no_price", "lost"] {
         assert!(
             js.contains(&format!("{cause}: {{")),
-            "wb-spend.js must keep the copy for the `{cause}` unpriced cause"
+            "wb-spend.ts must keep the copy for the `{cause}` unpriced cause"
         );
     }
 
@@ -446,7 +446,7 @@ fn the_spend_tab_renders_the_servers_figures_and_formats_none_of_its_own() {
     );
     assert!(
         !js.contains("fetch(") && !js.contains("board.list"),
-        "wb-spend.js must never fetch anything — issue titles ride whatever \
+        "wb-spend.ts must never fetch anything — issue titles ride whatever \
              the board already holds, because the board fold spawns a CLI that \
              makes tracker calls and a cost page must not pay it"
     );

@@ -17,6 +17,15 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { hostsDialog } from "../assets/ui/wb-hosts-dialog.ts";
+import { WBAgents } from "../assets/ui/wb-agents.ts";
+import { WBFileSearch } from "../assets/ui/wb-file-search.ts";
+import { WBRelease } from "../assets/ui/wb-release.ts";
+import { WBSpend } from "../assets/ui/wb-spend.ts";
+
+// The `window.WB*` names that a module sets in the browser because a classic
+// script still reads them (ADR-0075 D9). A module does not run in
+// `loadShell`, so the loader sets these on the page's window itself.
+const MODULE_NAMESPACES = { WBAgents, WBFileSearch, WBRelease, WBSpend };
 
 // The Alpine components that are ES modules (ADR-0075): `loadComponent` builds
 // these from their export. A component that is still a classic script is
@@ -142,6 +151,7 @@ export function loadShell(opts = {}) {
   const document = Object.assign(stubDocument(), opts.document || {});
   window.window = window;
   window.document = document;
+  Object.assign(window, MODULE_NAMESPACES);
 
   const realBC = globalThis.BroadcastChannel;
   delete globalThis.BroadcastChannel;

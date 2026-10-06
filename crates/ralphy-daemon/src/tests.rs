@@ -1280,13 +1280,9 @@ async fn api_about_route_reports_version_and_facts() {
 fn the_release_badge_and_panel_are_pinned_in_the_served_assets() {
     let html = include_str!("../assets/ui/index.html");
     let app = include_str!("../assets/ui/app.js");
-    let module = include_str!("../assets/ui/wb-release.js");
+    let module = include_str!("../assets/ui/wb-release.ts");
     let dialogs = include_str!("../assets/ui/wb-release-dialogs.js");
     let css = served_css();
-
-    // The tag order (app.js seeds from WBRelease.EMPTY at parse time) is
-    // pinned with the other load orders in
-    // `every_shell_tag_resolves_and_every_asset_is_reachable`.
 
     // The dot renders the daemon's severity; it must not be computed here.
     assert!(html.contains("class=\"rel-dot\" :class=\"release.severity\""));
@@ -4062,10 +4058,9 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
     //   `WBDetachLink` (#347), names every console through `WBConsoleName` (ADR-0066 §2),
     //   routes sessions through `WBSessionRoute`, and reads `WBView` on its
     //   boot path (#339).
-    // - `app.js` seeds its state from `WBRelease.EMPTY` at parse time.
     const BOTH: &[&str] = &["index.html", "detached-fence.html"];
     // (module, the module that reads it, the shells that must order them)
-    let orders: [(&str, &str, &[&str]); 9] = [
+    let orders: [(&str, &str, &[&str]); 8] = [
         ("wb-geometry.js", "wb-console.js", BOTH),
         ("wb-window-state.js", "wb-console.js", BOTH),
         ("wb-desk-sink.js", "wb-console.js", BOTH),
@@ -4074,7 +4069,6 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
         ("wb-console-name.js", "wb-console.js", BOTH),
         ("wb-session-route.js", "wb-console.js", BOTH),
         ("wb-view.js", "wb-console.js", &["index.html"]),
-        ("wb-release.js", "app.js", &["index.html"]),
     ];
     for (module, reader, shells) in orders {
         for shell in shells {
@@ -4185,7 +4179,6 @@ const CLASSIC_SCRIPTS: &[&str] = &[
     "app.js",
     "wb-add-project.js",
     "wb-add-project-dialog.js",
-    "wb-agents.js",
     "wb-changes.js",
     "wb-columns.js",
     "wb-console.js",
@@ -4198,21 +4191,18 @@ const CLASSIC_SCRIPTS: &[&str] = &[
     "wb-device.js",
     "wb-devices.js",
     "wb-fail.js",
-    "wb-file-search.js",
     "wb-fleet.js",
     "wb-geometry.js",
     "wb-kanban.js",
     "wb-monaco.js",
     "wb-notes.js",
     "wb-project.js",
-    "wb-release.js",
     "wb-release-dialogs.js",
     "wb-runs.js",
     "wb-security-dialog.js",
     "wb-session-route.js",
     "wb-settings.js",
     "wb-settings-dialog.js",
-    "wb-spend.js",
     "wb-split.js",
     "wb-view.js",
     "wb-viewer.js",
@@ -4221,7 +4211,7 @@ const CLASSIC_SCRIPTS: &[&str] = &[
 
 /// The `window.WB*` names a module still sets, because a classic script
 /// reads them (ADR-0075 D9). A ratchet like `CLASSIC_SCRIPTS`.
-const MODULE_WINDOW_NAMES: &[&str] = &[];
+const MODULE_WINDOW_NAMES: &[&str] = &["WBAgents", "WBFileSearch", "WBRelease", "WBSpend"];
 
 /// ADR-0075 D1, D2, D8 and D10: first-party workbench code is TypeScript. A
 /// `.js` file in the source tree is a vendored file or a classic script on the
