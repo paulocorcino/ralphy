@@ -2717,12 +2717,13 @@ async fn every_response_carries_the_security_headers() {
         );
     }
     // The hash in the header is the hash of the bytes the browser receives:
-    // recompute it from the served shell.
-    let shell = body_string(get_local("/").await).await;
+    // recompute it from a served shell. The fence page carries inline scripts;
+    // the desk page has none.
+    let shell = body_string(get_local("/fence").await).await;
     let bodies = routes::inline_script_bodies(&shell);
     assert!(
         !bodies.is_empty(),
-        "index.html carries the demo-seed gate inline"
+        "detached-fence.html carries its handshake inline"
     );
     let csp = routes::content_security_policy(false).to_str().unwrap();
     for body in bodies {
@@ -3247,25 +3248,19 @@ async fn served_ui_copy_has_no_mock_or_false_claims() {
 
 /// The daemon ships and serves no fabricated data.
 ///
-/// The seed exists for the `file://` demo, and #300 made it INERT off
-/// `file://` — but inert is not absent: it was still compiled into every
-/// binary by `include_dir!` and still handed to any caller of `GET /`, which
-/// is unauthenticated on purpose (the shell draws its own login gate). So an
-/// unauthenticated stranger was served four fabricated `plan.md` documents.
-///
-/// The seed now lives in `assets/ui-demo/`, a sibling of the embedded tree —
-/// the same trick `ui-tests/` already uses to stay out of `include_dir!`.
-/// This is the pin that keeps it there: the next fixture someone needs in a
-/// hurry belongs beside the others, not back in a served file.
+/// The seed of the old `file://` demo was compiled into every binary by
+/// `include_dir!` and handed to any caller of `GET /`, which is
+/// unauthenticated on purpose (the shell draws its own login gate). So an
+/// unauthenticated stranger was served four fabricated `plan.md` documents
+/// (#300). The demo is archived under the tag `workbench-demo-archive`
+/// (ADR-0075 D8), and this pin keeps fabricated data out of the served tree.
 #[tokio::test]
 async fn the_served_ui_carries_no_seed() {
     // Identifiers, not prose: a comment may legitimately DISCUSS the seed
     // (several now do, explaining where it went), and a sweep that cannot
     // tell a mention from the data would make documenting the move fail.
-    // The ASSIGNMENT, not the name: `app.js` legitimately READS
-    // `window.WB_RUNS` in `initRuns()` — that consumer is production code
-    // guarded by `seedAllowed()`, and it stays. What must not come back is a
-    // served file that DEFINES the data.
+    // The ASSIGNMENT, not the name: what must not come back is a served file
+    // that DEFINES the data.
     const SEED: &[&str] = &[
         "window.WB_RUNS = {",
         "window.WB_KANBAN = {",
@@ -3289,7 +3284,7 @@ async fn the_served_ui_carries_no_seed() {
     for path in embedded_ui_paths() {
         assert!(
             !path.contains("wb-seed-"),
-            "{path} is embedded, and the seed lives in assets/ui-demo/ (#300)"
+            "{path} is embedded, and the served tree carries no seed (#300)"
         );
     }
     assert_eq!(
@@ -3957,12 +3952,11 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
     for (shell, required) in [
         (
             "detached.html",
-            &["wb-mode.js", "wb-fleet.js", "wb-monaco.js", "wb-viewer.js"][..],
+            &["wb-fleet.js", "wb-monaco.js", "wb-viewer.js"][..],
         ),
         (
             "detached-fence.html",
             &[
-                "wb-mode.js",
                 "wb-fleet.js",
                 "wb-fail.js",
                 "wb-desk-sink.js",
@@ -5526,7 +5520,7 @@ fn shell_detaches_a_fence() {
     // window is touched, and a null handle must bail.
     let detach = body("function detachFence(");
     assert!(
-        detach.contains("window.open(window.WBMode.pageUrl(\"fence\")"),
+        detach.contains("window.open(\"fence\""),
         "detachFence must open the popup document (#346)"
     );
     assert!(
@@ -5578,22 +5572,22 @@ fn shell_detaches_a_fence() {
     // The handshake's confidentiality control: a concrete targetOrigin, so a
     // page on any other origin never receives this fence's members. Pinned as
     // the ASSIGNMENT, not the bare noun — `window.location.origin` also
-    // appears in the inbound guard below it, so rewriting `PEER` to an
-    // unconditional `"*"` would leave a noun pin green (the file already
-    // contains a literal `"*"` for the demo leg).
+    // appears in the inbound guard below it, so rewriting `PEER` to `"*"`
+    // would leave a noun pin green.
     assert!(
-        html.contains(": window.location.origin;"),
+        html.contains("const PEER = window.location.origin;"),
         "the popup's PEER must resolve to a concrete origin (#346)"
     );
     assert!(
         !html.contains(r#"postMessage({ type: "wb-fence-ready" }, "*")"#),
         "the popup must never broadcast its handshake to \"*\" (#346)"
     );
-    // The opener's reply is demo-aware for the same reason the popup's PEER
-    // is: under `file://` an unconditional `location.origin` is dropped.
+    // The opener's reply has the same control as the popup's PEER: a concrete
+    // origin, never a broadcast.
+    let opener = body("window.addEventListener(\"message\"");
     assert!(
-        body("window.addEventListener(\"message\"").contains("isDemo() ? \"*\" : location.origin"),
-        "the opener's handover must mirror the popup's demo-aware origin (#346)"
+        opener.contains("if (e.origin !== location.origin) return;") && !opener.contains("\"*\""),
+        "the opener's handover must answer only its own origin (#346)"
     );
     // The tree-wide sweep in `shell_stores_only_the_view_in_the_browser`
     // scans .html too; keep this document out of the browser's stores.
@@ -5830,7 +5824,7 @@ fn shell_survives_a_reload_with_its_detach() {
     // #346's confidentiality control is UNCHANGED: the channel carries only
     // lifecycle chatter, the members still ride the concrete-origin handshake.
     assert!(
-        html.contains(": window.location.origin;"),
+        html.contains("const PEER = window.location.origin;"),
         "the initial handover must keep its concrete targetOrigin (#346, #347)"
     );
     assert!(

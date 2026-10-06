@@ -253,7 +253,6 @@ function securityDialog() {
       } finally {
         this.securityForm.passwordCurrent = "";
       }
-      this.securityChanged({}, pw); // demo login still checks locally
       this.securityForm.passwordDraft = "";
       this.securityForm.passwordConfirm = "";
     },
@@ -275,7 +274,7 @@ function securityDialog() {
       } finally {
         this.securityForm.passwordCurrent = "";
       }
-      this.securityChanged({ passwordSet: false }, "");
+      this.securityChanged({ passwordSet: false });
       this.securityForm.passwordDraft = "";
       this.securityForm.passwordConfirm = "";
     },

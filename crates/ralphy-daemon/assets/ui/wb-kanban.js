@@ -31,12 +31,11 @@
        a label filter, and a sort control — a flat, compact list.
 
    Running signal: an issue that is the *active* node of a live run (see
-   wb-runs.js / WB_RUNS) carries a run pill on its card — the agent's face + the
+   wb-runs.js) carries a run pill on its card — the agent's face + the
    live status glyph + the phase — so "what's executing right now" reads at a
    glance, in whichever column the issue sits.
 
    This file holds:
-     • WB_KANBAN  — the seed (a backend replaces it live from the tracker),
      • WBKanban   — pure helpers (column classification, graph order, running
                     cross-ref, label metadata, filter/sort).
    Faithful sources: labels + colors = the repo's `gh label list`; close reasons
@@ -47,8 +46,8 @@
 window.WBKanban = {
   // GitHub label vocabulary → { color, short }. This is only the FALLBACK seed:
   // `boardLabels[slug]` (the repo's live `gh label list`) wins when the daemon
-  // answers, so the seed matters for the static demo and for a label the API
-  // returns without a colour. Ralphy's own labels are kept in step with
+  // answers, so the seed matters for a label the API returns without a
+  // colour. Ralphy's own labels are kept in step with
   // `ralphy_label_specs` (ralphy-core/src/github/labels.rs) and grouped by its
   // families — green = go/queue, purple = blocked on a person, amber = triage,
   // red = the run stopped here. `short` is a compact chip label where the full
@@ -183,8 +182,7 @@ window.WBKanban = {
   },
 
   // --- running cross-ref (against the CALLER's runs, via window.WBRun) ----
-  // `projectRuns` is whatever the panel holds: live snapshots in daemon mode,
-  // the WB_RUNS seed under `file://` (#300). Nothing is read from the seed here.
+  // `projectRuns` is whatever the panel holds: the live run snapshots.
   // If `number` is the *active* node of one of the project's live runs, return a
   // descriptor for the card's run pill; else null. Only the actively-worked
   // issue (planning / executing / sleeping) is flagged — a run's pending or

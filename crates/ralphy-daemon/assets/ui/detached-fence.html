@@ -100,7 +100,6 @@
          this popup REUSES the consoles module rather than re-implementing it. -->
     <div id="workspace"><div id="stage"></div></div>
 
-    <script src="wb-mode.js"></script>
     <script src="wb-fleet.js"></script>
     <script src="wb-fail.js"></script>
     <script src="vendor/xterm.js"></script>
@@ -115,7 +114,7 @@
       // to whatever opened us, so the concrete origin is both the
       // confidentiality control and the authentication one: only the shell can
       // hear us, and only the shell can answer.
-      const PEER = window.WBMode?.isDemo() ? "*" : window.location.origin;
+      const PEER = window.location.origin;
 
       // The backend seam lives in the opener; forward every intent there over
       // postMessage, so a detached fence is indistinguishable from an in-shell one.
@@ -195,7 +194,7 @@
           return;
         }
         window.addEventListener("message", (e) => {
-          if (!window.WBMode?.isDemo() && e.origin !== window.location.origin) return;
+          if (e.origin !== window.location.origin) return;
           if (e.source !== window.opener) return;
           const m = e.data;
           if (!m || m.type !== "wb-fence-open" || !m.fence) return;

@@ -155,7 +155,7 @@
 .viewer-body .monaco-diff-editor {
   height: 100%;
 }
-/* the read-only degrade when Monaco's AMD loader cannot boot (file:// demo) */
+/* the read-only degrade when Monaco's AMD loader cannot boot */
 .code-fallback {
   height: 100%;
   margin: 0;

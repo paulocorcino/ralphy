@@ -1290,7 +1290,6 @@ test("the fence cap is a number the shell can state, and the plane is at it from
     globalThis.fetch = async () => ({ ok: true, json: async () => ({ windows: [], fences }) });
     try {
       const wb = load({
-        WBMode: { isDaemon: () => true },
         WBConsoleOpts: { deskSink: { put: () => Promise.resolve({ kind: "held" }), putSync() {} } },
       });
       await wb.whenDeskLoaded();
@@ -2431,7 +2430,6 @@ async function deskPage(served = {}, extras = {}, docExtras = {}) {
   const answers = extras.answers || [];
   const wb = load(
     {
-      WBMode: { isDaemon: () => true },
       WBConsoleOpts: {
         deskSink: {
           put(body) {
@@ -2894,7 +2892,7 @@ test("an unreadable desk is a failure, and no flush PUTs over it", async () => {
     };
   };
   try {
-    const c = load({ WBMode: { isDaemon: () => true } });
+    const c = load();
     await c.whenDeskLoaded();
     assert.equal(c.deskFailure(), "the file is damaged");
     c.setCheckout("o/r", "wt-a");
@@ -2923,7 +2921,7 @@ test("a PUT the daemon refuses as unreadable shows the failure and stops the sen
     return { ok: true, status: 200, json: async () => ({ windows: [], fences: [], notes: [] }) };
   };
   try {
-    const c = load({ WBMode: { isDaemon: () => true } });
+    const c = load();
     await c.whenDeskLoaded();
     assert.equal(c.deskFailure(), "", "the first read was good");
     unreadable = true;
@@ -2960,7 +2958,7 @@ test("start a new desk treats a desk another tab already started as done", async
   };
   try {
     // The empty new desk is restored, which looks for the stage.
-    const c = load({ WBMode: { isDaemon: () => true } }, { getElementById: () => null });
+    const c = load({}, { getElementById: () => null });
     await c.whenDeskLoaded();
     assert.equal(c.deskFailure(), "the file is damaged");
     await c.startNewDesk();
@@ -2978,7 +2976,7 @@ test("start a new desk fails with the status on any other refusal", async () => 
       ? { ok: false, status: 500, json: async () => ({}) }
       : { ok: false, status: 409, json: async () => ({ state: "unreadable", error: "x" }) };
   try {
-    const c = load({ WBMode: { isDaemon: () => true } });
+    const c = load();
     await c.whenDeskLoaded();
     await assert.rejects(c.startNewDesk(), /the daemon answered 500/);
   } finally {
@@ -2994,7 +2992,7 @@ test("a desk read that fails in transport sets no desk failure", async () => {
     throw new Error("offline");
   };
   try {
-    const c = load({ WBMode: { isDaemon: () => true } });
+    const c = load();
     await c.whenDeskLoaded();
     assert.equal(c.deskFailure(), "");
   } finally {
@@ -3070,7 +3068,6 @@ test("atDeskCap is true once the desk holds the cap", async () => {
   try {
     globalThis.fetch = async () => ({ ok: true, json: async () => desk(29) });
     const wb = load({
-      WBMode: { isDaemon: () => true },
       WBConsoleOpts: { deskSink: { put: () => Promise.resolve({ kind: "held" }), putSync() {} } },
     });
     await wb.whenDeskLoaded();

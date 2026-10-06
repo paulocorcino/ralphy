@@ -33,7 +33,7 @@
   left: calc(100% + 16px);
   right: auto;
 }
-/* Uptime (and the demo badge) as the identity head's closing line: a divider
+/* Uptime as the identity head's closing line: a divider
    above it separates "who this daemon is" from "what it is doing". */
 .acct-stats {
   display: flex;

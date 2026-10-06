@@ -46,9 +46,6 @@
          shell); this popup runs its own Monaco / marked / mermaid. -->
     <div id="viewers"></div>
 
-    <!-- `WBMode` decides only whether this is the backend-less file:// demo,
-         which is the one place an opaque origin forces `targetOrigin: "*"`. -->
-    <script src="wb-mode.js"></script>
     <script src="wb-fleet.js"></script>
     <script src="vendor/marked.min.js"></script>
     <script src="vendor/dompurify.min.js"></script>
@@ -63,12 +60,11 @@
       // whatever opened us, so the concrete origin is both the confidentiality
       // control and the authentication one: only the shell can hear us, and only
       // the shell can answer.
-      const PEER = window.WBMode?.isDemo() ? "*" : window.location.origin;
+      const PEER = window.location.origin;
 
       // The backend seam lives in the opener; forward every intent (save/reload)
-      // there over postMessage — file:// blocks reading shared globals across
-      // windows, but postMessage is always allowed — so a detached window is
-      // indistinguishable from an in-shell tab.
+      // there over postMessage, so a detached window is indistinguishable from
+      // an in-shell tab.
       window.WB = {
         emit(action, detail) {
           if (window.opener) window.opener.postMessage({ type: "wb-emit", action, detail }, PEER);
@@ -122,7 +118,7 @@
           return;
         }
         window.addEventListener("message", (e) => {
-          if (!window.WBMode?.isDemo() && e.origin !== window.location.origin) return;
+          if (e.origin !== window.location.origin) return;
           if (e.source !== window.opener) return;
           const m = e.data;
           if (!m || m.type !== "wb-detach-open" || !m.desc) return;

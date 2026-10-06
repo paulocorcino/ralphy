@@ -8,8 +8,7 @@ need each allowance.
 
 Scenario 1  GET / carries CSP, X-Frame-Options, X-Content-Type-Options,
             Referrer-Policy; so does an API answer
-Scenario 2  the shell boots (Alpine evaluates, the demo-seed inline gate runs)
-            with no violation
+Scenario 2  the shell boots (Alpine evaluates) with no violation
 Scenario 3  a .rs tab mounts Monaco — its language worker is a blob: worker
 Scenario 4  a markdown tab with a mermaid block renders the SVG (inline styles)
 Scenario 5  the Security modal enrols TOTP and shows the QR (`data:` image)

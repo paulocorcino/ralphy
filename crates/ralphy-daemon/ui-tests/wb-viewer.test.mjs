@@ -175,7 +175,6 @@ function loadWithDom() {
   };
   const window = {
     WB: { emit() {} },
-    WBMode: { isDaemon: () => true, isDemo: () => false },
     WBFleet: { refSlug: (p) => p },
     WBMonaco,
     monaco: monacoStub,
@@ -192,10 +191,10 @@ function loadWithDom() {
     dispatchEvent() {},
   };
   new Function("window", "document", SRC)(window, document);
-  for (const k of ["WB", "WBMonaco", "WBMode"]) globalThis[k] = window[k];
+  for (const k of ["WB", "WBMonaco"]) globalThis[k] = window[k];
   return { viewer: window.WBViewer, mount, log, models };
 }
-after(() => ["WB", "WBMonaco", "WBMode"].forEach((k) => delete globalThis[k]));
+after(() => ["WB", "WBMonaco"].forEach((k) => delete globalThis[k]));
 const settle = () => new Promise((r) => setTimeout(r, 5));
 const paneOf = (mount, id) => mount.children.find((c) => c.dataset.tabId === id);
 const mirrors = (mount) => mount.children.filter((c) => c.className.includes("mirror-viewer"));

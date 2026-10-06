@@ -16,8 +16,8 @@ Scenario 5   the row reads "2 live" and carries no "+" (a readout, not a reach)
 Scenario 6   `Alt+Shift+Digit2` still opens a `/ws/session?…agent=codex` console
 Scenario 7   `Alt+Shift+Digit1` on a LIVE row launches too — the key is the click
 Scenario 8   a disabled row's accelerator is inert (no repo selected)
-Scenario 9   a 500 from `/api/agents` in DAEMON mode leaves the roster empty —
-             the demo seed is never shown to a daemon that cannot answer
+Scenario 9   a 500 from `/api/agents` leaves the roster empty — no adapter is
+             invented for a daemon that cannot answer
 Scenario 10  no row carries an action or a session id; the head names the bare
              repo and states the accelerator pattern once, rows carry the digit
 
@@ -423,8 +423,7 @@ def main():
             page.wait_for_timeout(200)
 
             # --- scenario 9: a FAILED /api/agents in DAEMON mode shows nothing -
-            # The demo seed is for `file://` only; a daemon that cannot answer
-            # must not have adapters invented for it.
+            # A daemon that cannot answer must not have adapters invented for it.
             # `*` after the path: the roster URL carries `?repo=` once a repo is open.
             page.route("**/api/agents*", lambda route: route.fulfill(status=500, body="nope"))
             page.evaluate(f"async () => {SH}.loadAgents()")
@@ -436,7 +435,7 @@ def main():
             )
             open_menu(page)
             check(
-                "…so the menu offers the plain console alone, never the demo seed",
+                "…so the menu offers the plain console alone, never an invented adapter",
                 page.locator(f"{MENU} .dropdown-item").count() == 1
                 and page.locator(f"{MENU} .dropdown-item span").first.inner_text() == "console",
                 f"rows={page.locator(f'{MENU} .dropdown-item').all_inner_texts()}",

@@ -27,7 +27,6 @@ function shellWith(reply) {
     },
   });
   window.WBView = { patch() {}, read: () => null };
-  window.WBMode.isDaemon = () => true;
   const observed = [];
   const written = [];
   window.WBDaemon = {
@@ -222,7 +221,6 @@ function loadViewer() {
   const emitted = [];
   const window = {
     WB: { emit: (action, detail) => emitted.push({ action, ...detail }) },
-    WBMode: { isDaemon: () => true, isDemo: () => false },
     WBFleet: { refSlug: (p) => p },
     WBMonaco: { ready: () => new Promise(() => {}) }, // never boots: no editor
     getShell: () => ({ _flashAction() {}, closeTab() {} }),
@@ -239,10 +237,10 @@ function loadViewer() {
   };
   new Function("window", "document", VIEWER_SRC)(window, document);
   // The bare names the module uses, mirrored the way the shell tests do it.
-  for (const k of ["WB", "WBMonaco", "WBMode"]) globalThis[k] = window[k];
+  for (const k of ["WB", "WBMonaco"]) globalThis[k] = window[k];
   return { viewer: window.WBViewer, emitted, window };
 }
-after(() => ["WBMonaco", "WBMode"].forEach((k) => delete globalThis[k]));
+after(() => ["WBMonaco"].forEach((k) => delete globalThis[k]));
 
 test("a pane carries its encoding into the save and the detach descriptor", () => {
   const { viewer, emitted } = loadViewer();

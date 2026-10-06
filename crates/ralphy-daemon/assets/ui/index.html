@@ -126,10 +126,6 @@
             <span class="stat uptime" :class="{ stale: presenceStale }">
               <svg x-icon="'circle-dot'"></svg> <span x-text="uptimeText || 'connecting…'"></span>
             </span>
-            <!-- demo badge: only present on the static `file://` bundle, where
-                 seeds are honest seeds; absent in daemon mode (#202). It rides
-                 with the uptime because both answer "what am I attached to". -->
-            <span class="stat demo-badge" x-show="isDemo" x-cloak>demo</span>
           </div>
           <!-- Above Security on purpose: when there is something new, it is the
                reason the operator opened this menu. Absent entirely when there
@@ -1693,11 +1689,6 @@
         <span>Runs</span>
         <span class="runs-count" x-show="openSlug && projectRuns().length" x-text="projectRuns().length" title="Active runs"></span>
         <span class="spacer"></span>
-        <!-- demo-ONLY affordance (#300): synthesizes the next run event so the
-             `file://` panel visibly advances. In daemon mode the panel advances
-             from the live snapshot pushes, so the control is not rendered. -->
-        <button class="runs-demo" x-show="isDemo && openSlug && projectRuns().length" @click="demoTick()"
-                title="Demo: next run step"><i class="bi bi-lightning-charge"></i></button>
         <button class="runs-close" @click="toggleRuns()" title="Close"><i class="bi bi-x"></i></button>
       </div>
 
@@ -1752,8 +1743,7 @@
       </div>
 
       <!-- Phase 1 raw-output feed: the merged stdout+stderr of a daemon-spawned
-           run streams here live (wb-daemon.js → WBRuns.output). The structured
-           event fold stays on the ⚡ demo button. Wrapped in its own sized box
+           run streams here live (wb-daemon.js → WBRuns.output). Wrapped in its own sized box
            (#331) so the feed can never deform the panel's flex distribution;
            collapse keeps the buffer, dismiss clears it. The box arrives
            COLLAPSED — the head appears with the first chunk, the bytes only when
@@ -3241,24 +3231,6 @@
          UMD vendor above, or they register as anonymous AMD modules and never
          set window.marked / mermaid / Wunderbaum / Terminal. -->
     <script src="vendor/monaco/vs/loader.js"></script>
-    <script src="wb-mode.js"></script>
-
-    <!-- Demo seed. These files live OUTSIDE `assets/ui`, the directory lib.rs
-         embeds whole via `include_dir!`, so a daemon carries no byte of them and
-         — because the tag is gated here — never asks for them either. That makes
-         the #300 / ADR-0036 rule structural: synthetic data is not merely inert
-         off `file://`, it is absent.
-         `document.write` is deliberate. The seed globals are read at Alpine init
-         (app.js), so they must load IN ORDER before app.js, and `file://`'s
-         opaque origin rules out both ES modules and `fetch`. The alternative —
-         unconditional tags — would 404 five times on every daemon page load and
-         read as breakage to whoever opens devtools next. -->
-    <script>
-      if (window.WBMode.isDemo()) {
-        for (const f of ["projects", "runs", "kanban", "files", "agents"])
-          document.write(`<script src="../ui-demo/wb-seed-${f}.js"><\/script>`);
-      }
-    </script>
     <script src="wb-fail.js"></script>
     <script src="wb-agents.js"></script>
     <script src="wb-changes.js"></script>

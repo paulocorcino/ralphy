@@ -112,9 +112,7 @@ function classify(name) {
 function shell() {
   return {
     openSlug: null,
-    // True only on the static `file://` demo bundle (#202).
-    isDemo: window.WBMode.isDemo(),
-    // Daemon-mode `/api/repos` failure (#202): a visible error, not the seed.
+    // A failed `/api/repos` (#202): a visible error.
     reposError: "",
     // The read state of the shown facts this sidebar shows (ADR-0070 D3):
     // `WBFail.readFold` results, `null` before the first read.
@@ -239,13 +237,7 @@ function shell() {
 
     // Alpine lifecycle.
     init() {
-      this.initRuns();
-      this.currentRunId = this.projectRuns()[0]?.runid || null;
-      this.planSection = this.planHeadings(this.currentRun())[0] || "";
       this.probeSession();
-      // In daemon mode the `projects` literal is demo seed: drop it BEFORE the
-      // async loadRepos so it never flashes.
-      if (!window.WBMode.seedAllowed()) this.projects = [];
       this.loadRepos();
       this.loadAgents();
       this.subscribePresence();
@@ -302,7 +294,7 @@ function shell() {
       return this.identityAvatar || "🤖";
     },
     // Name + avatar for the account menu. A 404 (un-baptized) or a thrown
-    // fetch (file:// demo) leaves the fields empty.
+    // fetch leaves the fields empty.
     async loadIdentity() {
       try {
         const r = await fetch("/api/identity");
@@ -336,7 +328,7 @@ function shell() {
     // baptized. It reads nothing: the shown facts are read again on the
     // daemon's pushes, which ride the same socket (ADR-0070 D2).
     subscribePresence() {
-      if (!window.WBMode.isDaemon() || !window.WBDaemon?.subscribePresence) return;
+      if (!window.WBDaemon?.subscribePresence) return;
       this._presenceSub = window.WBDaemon.subscribePresence(
         (p) => {
           this._lastHeartbeat = Date.now();
@@ -434,7 +426,7 @@ function shell() {
     },
 
     // Ask the daemon whether this browser is authorized. A thrown fetch
-    // (file://) keeps `authed` at its seed default.
+    // keeps `authed` at its default.
     async probeSession() {
       try {
         const r = await fetch("/api/session");
@@ -452,16 +444,14 @@ function shell() {
           if (s.authed) this.restoreView();
         }
       } catch {
-        // ONLY the `file://` demo: a daemon that merely threw still has
-        // `authed` at its `true` seed, and a restore against a dead daemon
-        // closes every tab whose read fails — and `closeTab` persists.
-        if (window.WBMode.isDemo()) this.restoreView();
+        // No restore: `authed` is still at its `true` default, and a restore
+        // against a dead daemon closes every tab whose read fails — and
+        // `closeTab` persists.
       }
     },
 
-    // The daemon's adapter roster (#304). A file:// walkthrough falls back to
-    // the seed; in DAEMON mode a failed fetch leaves the roster EMPTY rather
-    // than showing adapters this daemon may not have.
+    // The daemon's adapter roster (#304). A failed fetch leaves the roster
+    // EMPTY rather than showing adapters this daemon may not have.
     _agentsSeq: 0,
     async loadAgents(repo = this.openSlug) {
       const seq = ++this._agentsSeq;
@@ -474,16 +464,13 @@ function shell() {
         this.agents = state.agents;
       } catch {
         if (seq !== this._agentsSeq) return;
-        const state = window.WBAgents.rosterState(
-          window.WBMode.seedAllowed() ? window.WB_SEED_ROSTER || [] : [],
-          repo,
-        );
+        const state = window.WBAgents.rosterState([], repo);
         this.roster = state.roster;
         this.agents = state.agents;
       }
     },
-    // Hydrate the accordion from the daemon's repo registry. A thrown fetch
-    // (file://) keeps the seed. `remote` is inferred from the slug shape
+    // Hydrate the accordion from the daemon's repo registry. `remote` is
+    // inferred from the slug shape
     // (`git::project_slug`'s `path-<hash>` fallback is a remoteless repo).
     // `git: false` skips the change set and the branch: a peer tick or a
     // project-list push says nothing about them (fact index: their own push,
@@ -532,12 +519,11 @@ function shell() {
           // a peer's absence stall the LOCAL sidebar's spinner and live dots.
           // Federation is additive in latency too.
           this.loadFleet();
-        } else if (window.WBMode.isDaemon()) {
+        } else {
           this.reposFailed(`the daemon answered ${r.status}`);
         }
       } catch {
-        if (window.WBMode.isDaemon()) this.reposFailed("the daemon did not answer");
-        // Demo (file://): keep the seed — the shell stays navigable offline.
+        this.reposFailed("the daemon did not answer");
       } finally {
         this.reposLoading = false;
         // The sessions are read with the projects, whatever the projects read
@@ -550,8 +536,7 @@ function shell() {
     },
 
     // A failed `/api/repos` (ADR-0070 D3). After a good read the list stays,
-    // marked not current. Before one, a failed fetch must NOT keep the seed
-    // projects (M5): the list is empty and says why.
+    // marked not current. Before one, the list is empty and says why.
     reposFailed(reason) {
       this.reposRead = window.WBFail.readFold(this.reposRead, { ok: false, reason, at: Date.now() });
       if (this.reposRead.goodAt) {
@@ -759,7 +744,6 @@ function shell() {
     // Each project's `live` dot from `/api/sessions` (#204). Never overrides
     // `offline`; a transport throw leaves the states untouched.
     async refreshLive() {
-      if (!window.WBMode.isDaemon()) return;
       // Reads close together can answer out of order: the newest owns the list.
       const seq = ++this._liveSeq;
       try {
@@ -832,7 +816,6 @@ function shell() {
     // Re-read the working tree, only while the Changes panel is on screen: both
     // reads are local but each is a subprocess.
     refreshChanges() {
-      if (!window.WBMode.isDaemon()) return;
       if (!this.sideOpen || this.sideView !== "changes" || !this.openSlug) return;
       if (document.visibilityState !== "visible") return;
       this.loadChanges(this.openSlug);
@@ -1037,7 +1020,7 @@ function shell() {
         if (this.openSlug === ref) this.openSlug = null;
         this.loadRepos();
       } catch {
-        if (window.WBMode.isDaemon()) this._flashAction("remove unavailable: no daemon");
+        this._flashAction("remove unavailable: no daemon");
       }
     },
 
@@ -1092,8 +1075,8 @@ function shell() {
       });
     },
 
-    // The repo's real local branches via `branch.list` (#199). On throw (no
-    // daemon) the modal keeps its seed.
+    // The repo's real local branches via `branch.list` (#199). A failed read
+    // empties the list (M5).
     async loadBranches(slug) {
       try {
         const reply = await window.WBDaemon.observe(
@@ -1102,11 +1085,8 @@ function shell() {
         );
         if (this.branchModal.slug !== slug) return; // modal moved on — leave it
         if (!reply || reply.status !== "ok") {
-          // Daemon mode: a failed `branch.list` must NOT keep the seed (M5).
-          if (window.WBMode.isDaemon()) {
-            this.branchModal.branches = [];
-            this._flashAction?.("Could not load the branches.");
-          }
+          this.branchModal.branches = [];
+          this._flashAction?.("Could not load the branches.");
           return;
         }
         // The daemon nests the CLI's `{current, branches:[]}` JSON under the
@@ -1116,12 +1096,10 @@ function shell() {
         if (Array.isArray(data.branches)) this.branchModal.branches = data.branches;
         if (data.current) this.branchModal.current = data.current;
       } catch {
-        // Daemon mode: transport error → honest empty list, not the seed (M5).
-        if (this.branchModal.slug === slug && window.WBMode.isDaemon()) {
+        if (this.branchModal.slug === slug) {
           this.branchModal.branches = [];
           this._flashAction?.("Could not load the branches.");
         }
-        // Demo (static shell): keep the seed.
       }
     },
 
@@ -1143,9 +1121,7 @@ function shell() {
         );
         if (seq !== this._changesSeq) return; // superseded → the newer read owns it
         if (!reply || reply.status !== "ok") {
-          if (window.WBMode.isDaemon()) {
-            this.changesFailed(slug, window.WBFail.why(reply, "the daemon gave no reason"));
-          }
+          this.changesFailed(slug, window.WBFail.why(reply, "the daemon gave no reason"));
           return;
         }
         const folded = window.WBChanges.fold(reply);
@@ -1155,10 +1131,9 @@ function shell() {
         this.changesReadError[slug] = "";
         this.changesRead[slug] = window.WBFail.readFold(this.changesRead[slug], { ok: true, value: true, at: Date.now() });
       } catch {
-        if (seq === this._changesSeq && window.WBMode.isDaemon()) {
+        if (seq === this._changesSeq) {
           this.changesFailed(slug, "the daemon did not answer");
         }
-        // Demo (static shell): leave whatever the seed/previous load holds.
       }
     },
     // A failed `changes.list` (ADR-0070 D3). After a good read the groups and
@@ -1190,9 +1165,7 @@ function shell() {
         );
         if (seq !== this._syncSeq) return; // superseded → the newer read owns it
         if (!reply || reply.status !== "ok") {
-          if (window.WBMode.isDaemon()) {
-            this.syncFailed(slug, window.WBFail.why(reply, "the daemon gave no reason"));
-          }
+          this.syncFailed(slug, window.WBFail.why(reply, "the daemon gave no reason"));
           return;
         }
         const sync = window.WBChanges.foldSync(reply);
@@ -1206,10 +1179,9 @@ function shell() {
         const head = window.WBChanges.headOf(sync);
         if (p && head !== null) p.head = head;
       } catch {
-        if (seq === this._syncSeq && window.WBMode.isDaemon()) {
+        if (seq === this._syncSeq) {
           this.syncFailed(slug, "the daemon did not answer");
         }
-        // Demo (static shell): leave whatever the previous load holds.
       }
     },
     // A failed `sync.status` (ADR-0070 D3). After a good read the row stays,
@@ -1243,9 +1215,7 @@ function shell() {
         }
       } catch {
         // A transport throw is NOT a refusal: the repo never answered.
-        if (window.WBMode.isDaemon()) {
-          this._changesRefused("Could not fetch: the daemon did not answer.");
-        }
+        this._changesRefused("Could not fetch: the daemon did not answer.");
       } finally {
         this.syncBusy = null;
       }
@@ -1272,9 +1242,7 @@ function shell() {
           moved = true;
         }
       } catch {
-        if (window.WBMode.isDaemon()) {
-          this._changesRefused("Could not pull: the daemon did not answer.");
-        }
+        this._changesRefused("Could not pull: the daemon did not answer.");
       } finally {
         this.syncBusy = null;
       }
@@ -1301,9 +1269,7 @@ function shell() {
           );
         }
       } catch {
-        if (window.WBMode.isDaemon()) {
-          this._changesRefused("Could not push: the daemon did not answer.");
-        }
+        this._changesRefused("Could not push: the daemon did not answer.");
       } finally {
         this.syncBusy = null;
       }
@@ -1351,7 +1317,7 @@ function shell() {
           this._flashAction("Stop requested. The run is stopping.");
         }
       } catch {
-        if (window.WBMode.isDaemon()) this._flashAction("Could not stop the run: the daemon is not connected.");
+        this._flashAction("Could not stop the run: the daemon is not connected.");
       } finally {
         this.runStopping = null;
       }
@@ -1382,7 +1348,7 @@ function shell() {
     },
     BUILD_SKEW_LOCK: "This page is older than Ralphy. Save your work, and the page loads the new version.",
     // The build this page was served with (`<meta name="ralphy-build">`);
-    // "" in the static demo, which never reloads for a build.
+    // "" with no such tag, and then the page never reloads for a build.
     pageBuild: document.querySelector('meta[name="ralphy-build"]')?.content || "",
     // The daemon runs another build than this page (ADR-0070 D6). With no
     // unsaved work the tab reloads. With unsaved work it waits: the notice
@@ -1523,9 +1489,7 @@ function shell() {
         }
       } catch {
         // A transport throw is NOT a refusal: the repo never answered.
-        if (window.WBMode.isDaemon()) {
-          this._changesRefused("Could not stage: the daemon did not answer.");
-        }
+        this._changesRefused("Could not stage: the daemon did not answer.");
       }
       this.loadChanges(slug);
       this.loadSync(slug);
@@ -1545,9 +1509,7 @@ function shell() {
           );
         }
       } catch {
-        if (window.WBMode.isDaemon()) {
-          this._changesRefused("Could not unstage: the daemon did not answer.");
-        }
+        this._changesRefused("Could not unstage: the daemon did not answer.");
       }
       this.loadChanges(slug);
       this.loadSync(slug);
@@ -1579,9 +1541,7 @@ function shell() {
           );
         }
       } catch {
-        if (window.WBMode.isDaemon()) {
-          this._changesRefused("Could not discard: the daemon did not answer.");
-        }
+        this._changesRefused("Could not discard: the daemon did not answer.");
       }
       this.loadChanges(slug);
       this.loadSync(slug);
@@ -1607,9 +1567,7 @@ function shell() {
           this.commitMsg = "";
         }
       } catch {
-        if (window.WBMode.isDaemon()) {
-          this._changesRefused("Could not commit: the daemon did not answer.");
-        }
+        this._changesRefused("Could not commit: the daemon did not answer.");
       }
       this.loadChanges(slug);
       this.loadSync(slug);
@@ -1813,9 +1771,7 @@ function shell() {
           this._flashAction(`Worktree ${w.name} deleted`);
         }
       } catch {
-        if (window.WBMode.isDaemon()) {
-          refused("Could not reach the daemon. Check whether the worktree was deleted.");
-        }
+        refused("Could not reach the daemon. Check whether the worktree was deleted.");
       } finally {
         await this.ensureWorktreeListing(slug, true);
         const ck = this.checkoutOf(slug);
@@ -1854,9 +1810,7 @@ function shell() {
       } catch {
         // A transport throw is NOT a refusal, so the optimistic update STAYS —
         // the verb may have landed.
-        if (window.WBMode.isDaemon()) {
-          this._branchRefused("Could not reach the daemon. Check whether the branch changed.");
-        }
+        this._branchRefused("Could not reach the daemon. Check whether the branch changed.");
       } finally {
         // Re-read the listing on every path (an unconfirmed switch may have
         // landed); a moved HEAD also changes the working tree and sync row.
@@ -1889,35 +1843,9 @@ function shell() {
     runMenu: false,
     planSection: "",
 
-    // Hydrate runs from the seed, `file://`-ONLY (#300): daemon mode is fed by
-    // `runs.list` + `runs.dirty` pushes (ADR-0047 §9).
-    initRuns() {
-      if (!window.WBMode.seedAllowed()) {
-        this.runsByProject = {};
-        return;
-      }
-      const src = window.WB_RUNS || {};
-      const out = {};
-      for (const [proj, runs] of Object.entries(src)) {
-        out[proj] = runs.map((r) => {
-          const planMd = (document.getElementById(r.planEl)?.textContent || "").trim();
-          return {
-            ...r,
-            planMd,
-            // The demo has no snapshot document: steps from the plan text (#330).
-            steps: window.WBRun.parseSteps(planMd),
-            planIssue: r.active ?? null,
-            planReadFailed: false,
-          };
-        });
-      }
-      this.runsByProject = out;
-    },
-
     // Hydrate from `runs.list` (ADR-0047 §9), by REPLACEMENT — a snapshot is
     // state, not a log. On panel open and project change.
     async hydrateRuns() {
-      if (!window.WBMode.isDaemon()) return;
       const slug = this.openSlug;
       // Clear FIRST: a stale error must not outlive its project.
       this.runsError = "";
@@ -1982,7 +1910,6 @@ function shell() {
     // `checkout` (#406): a run takes the primary tree (ADR-0063 §7). Same for
     // `loadPlan`, `diffWorkSide` and the git-backed panels.
     async loadRunPlan() {
-      if (!window.WBMode.isDaemon()) return;
       const run = this.currentRun();
       if (!run?.planPath) return;
       try {
@@ -2268,96 +2195,6 @@ function shell() {
       this._flashAction(msg);
     },
 
-    // --- inbound event fold (the backend seam) ----------------------------
-    // Advance the panel per CloudEvent; unknown types are ignored.
-    applyRunEvent(ev) {
-      // Demo-only (#300): daemon mode is driven by snapshot REPLACEMENT, and a
-      // client-side fold could only produce state the next push overwrites.
-      if (!window.WBMode.seedAllowed()) return;
-      if (!ev || !ev.runid) return;
-      let run = null;
-      for (const arr of Object.values(this.runsByProject)) {
-        const f = arr.find((r) => r.runid === ev.runid);
-        if (f) {
-          run = f;
-          break;
-        }
-      }
-      if (!run) return;
-      const d = ev.data || {};
-      switch (ev.type) {
-        case "dev.ralphy.plan.step": {
-          // tick the next open checkbox (the panel just advances a step)
-          run.planMd = run.planMd.replace(/-\s+\[ \]/, "- [x]");
-          const open = (run.steps || []).find((s) => s.status === "open");
-          if (open) open.status = "checked";
-          break;
-        }
-        case "dev.ralphy.issue.closed": {
-          const iss = run.issues.find((x) => x.number === d.number);
-          if (iss) iss.status = "done";
-          this._recount(run);
-          break;
-        }
-        case "dev.ralphy.issue.skipped": {
-          const iss = run.issues.find((x) => x.number === d.number);
-          if (iss) {
-            iss.status = "skipped";
-            iss.blockedBy = d.blocked_by || [];
-          }
-          this._recount(run);
-          break;
-        }
-        case "dev.ralphy.issue.started": {
-          const iss = run.issues.find((x) => x.number === d.number);
-          if (iss) iss.status = "executing";
-          run.active = d.number;
-          run.phase = "executing";
-          break;
-        }
-        case "dev.ralphy.run.sleep_started":
-          run.phase = "sleeping";
-          run.sleep = { reset: d.reset || null, target_epoch: d.target_epoch || 0 };
-          break;
-        case "dev.ralphy.run.sleep_ended":
-          run.phase = "executing";
-          run.sleep = null;
-          break;
-        case "dev.ralphy.run.heartbeat":
-          if (d.phase) run.phase = d.phase;
-          if (typeof d.queue_done === "number") run.completed = d.queue_done;
-          if (d.issue) run.active = d.issue.number;
-          break;
-      }
-    },
-    _recount(run) {
-      run.completed = run.issues.filter((x) => window.WBRun.TERMINAL.has(x.status)).length;
-    },
-
-    // Demo: walk the selected run forward by synthesizing the next event.
-    demoTick() {
-      if (!window.WBMode.seedAllowed()) return; // the ⚡ control is demo-only (#300)
-      const r = this.currentRun();
-      if (!r) return;
-      if ((r.planMd || "").match(/-\s+\[ \]/)) {
-        this.applyRunEvent({ type: "dev.ralphy.plan.step", runid: r.runid, data: { status: "checked" } });
-        return;
-      }
-      if (r.active != null) {
-        this.applyRunEvent({ type: "dev.ralphy.issue.closed", runid: r.runid, data: { number: r.active } });
-      }
-      const next = r.issues.find((x) => x.status === "pending");
-      if (next) {
-        this.applyRunEvent({ type: "dev.ralphy.issue.started", runid: r.runid, data: { number: next.number } });
-        r.planMd = "## Steps\n- [ ] Plan for #" + next.number + " (the planner is writing…)\n";
-        r.steps = [{ text: "Plan for #" + next.number + " (the planner is writing…)", status: "open" }];
-        r.planIssue = next.number;
-      } else {
-        r.active = null;
-        r.phase = "consolidating";
-      }
-    },
-
     // --- Kanban board -----------------------------------------------------
     // The open project's issues in four columns (window.WBKanban). Read-only
     // except labels, the one mutation that moves a card.
@@ -2400,7 +2237,7 @@ function shell() {
     planModal: { open: false, issue: null },
 
     async loadPlan(slug) {
-      if (!window.WBMode.isDaemon() || !slug) return;
+      if (!slug) return;
       try {
         const reply = await window.WBDaemon.observe("file.read", {
           repo: slug,
@@ -2543,13 +2380,9 @@ function shell() {
           ),
         ]);
         if (window.WBFail.isError(reply)) {
-          if (window.WBMode.isDaemon()) {
-            const msg = window.WBFail.failed(reply, "Could not load the board.");
-            this.boardFailed(slug, msg);
-            this._flashAction?.(msg);
-          } else {
-            this.boardIssues[slug] = [];
-          }
+          const msg = window.WBFail.failed(reply, "Could not load the board.");
+          this.boardFailed(slug, msg);
+          this._flashAction?.(msg);
           return;
         }
         const board = reply.board || {};
@@ -2568,13 +2401,8 @@ function shell() {
         // goes blank on every refresh.
         if (this.kanbanSel != null) this.loadIssueDetail(this.kanbanSel);
       } catch {
-        if (window.WBMode.isDaemon()) {
-          this.boardFailed(slug, "Could not load the board.");
-          this._flashAction?.("Could not load the board.");
-        } else {
-          // Demo (static shell): leave it empty, no throw.
-          this.boardIssues[slug] = [];
-        }
+        this.boardFailed(slug, "Could not load the board.");
+        this._flashAction?.("Could not load the board.");
       } finally {
         this.boardRefreshing = false;
         // Exactly ONE follow-up for whatever was coalesced away, or for a
@@ -2652,8 +2480,8 @@ function shell() {
         backlog: K.sortBacklog(bucket.backlog, this.kanbanSort),
         // The Ready columns keep the SERVER's graph order (#198): the fold emits
         // them in `sort_queue_in_graph` order and bucketing preserves it, so
-        // board order == core queue order. `K.orderGraph` (seed/demo only)
-        // would diverge — it lacks the full open-set + `## Parent` context.
+        // board order == core queue order. `K.orderGraph` would diverge — it
+        // lacks the full open-set + `## Parent` context.
         agent: bucket.agent,
         human: bucket.human,
         closed: bucket.closed.sort((a, b) => (b.updated || "").localeCompare(a.updated || "")),
@@ -2738,7 +2566,7 @@ function shell() {
       const stale = () =>
         gen !== this._issueDetailGen || this.openSlug !== slug || this.kanbanSel !== number;
       const fail = (msg) => {
-        if (stale() || !window.WBMode.isDaemon()) return;
+        if (stale()) return;
         this.issueError = msg;
         this._flashAction?.(msg);
       };
@@ -3132,16 +2960,12 @@ function shell() {
       // Opt-in: markdown may load images from other websites (the CSP
       // `img-src https:`, ADR-0032 amendment §F).
       remoteImages: false,
-      policy: "session", // overwritten by probeSession(); demo default keeps login interactive
+      policy: "session", // overwritten by probeSession()
     },
-    // The stored password, kept in-memory purely so the demo login can check it.
-    _passwordValue: "",
     // The Security dialog (wb-security-dialog.js) changes the security fact
-    // only here (ADR-0073 D4). `patch` holds fields of `security`; `password`,
-    // when given, is the password the demo login checks.
-    securityChanged(patch, password) {
+    // only here (ADR-0073 D4). `patch` holds fields of `security`.
+    securityChanged(patch) {
       Object.assign(this.security, patch);
-      if (password !== undefined) this._passwordValue = password;
     },
 
     // --- login gate -------------------------------------------------------
@@ -3271,7 +3095,6 @@ function shell() {
     },
 
     async submitLogin() {
-      const code = (this.login.code || "").trim();
       try {
         const res = await fetch("/api/login", {
           method: "POST",
@@ -3287,29 +3110,10 @@ function shell() {
         } else {
           this.login.error = "Invalid code or password.";
         }
-        return;
       } catch {
-        // Daemon mode: a thrown fetch must NOT authenticate via the local
-        // fallback, which exists only for the `file://` demo.
-        if (!window.WBMode.isDemo()) {
-          this.login.error = "Cannot reach the daemon. Try again.";
-          return;
-        }
-        // Demo (file:// standalone) — fall back to the local seed check.
+        // Only the daemon authenticates: a thrown fetch never logs in.
+        this.login.error = "Cannot reach the daemon. Try again.";
       }
-      if (!/^[0-9]{6}$/.test(code)) {
-        this.login.error = "Invalid code or password.";
-        return;
-      }
-      if (this.security.passwordSet && this.login.password !== this._passwordValue) {
-        this.login.error = "Invalid code or password.";
-        return;
-      }
-      this.login.error = "";
-      this.authed = true;
-      this.forgetLoginSecrets();
-      this.rehydrateAfterAuth();
-      WB.emit("login", {});
     },
 
     // The code and the password are SPENT the moment the daemon accepts them:
@@ -3404,9 +3208,8 @@ function shell() {
     splitRatio: null,
     lastLeft: null,
 
-    // The seed list is DEMO-ONLY (`assets/ui-demo/wb-seed-projects.js`,
-    // outside the embedded tree); `loadRepos()` fills this at init.
-    projects: window.WB_SEED_PROJECTS || [],
+    // `loadRepos()` fills this at init.
+    projects: [],
 
     // --- accordion --------------------------------------------------------
     toggle(ref, row) {
@@ -3517,16 +3320,6 @@ function shell() {
       return map[ext] || "bi bi-file-earmark";
     },
 
-    // An `icon` on every *file* node, recursively, without mutating the source.
-    withIcons(nodes) {
-      return nodes.map((n) => {
-        if (n.folder || n.children) {
-          return { ...n, children: this.withIcons(n.children || []) };
-        }
-        return { ...n, icon: this.fileIcon(n.title) };
-      });
-    },
-
     // --- Wunderbaum mount / teardown --------------------------------------
     mountTree() {
       const host = document.querySelector(".project.open .wb-host");
@@ -3556,16 +3349,14 @@ function shell() {
         // `autoApply` lets `updateFilter()` re-run after a level (re)loads;
         // without it a reloaded level vanishes.
         filter: { autoApply: true, mode: "hide" },
-        // Daemon: the root level from `tree.list`, folders `lazy`. `file://`:
-        // the static tree.
+        // The root level from `tree.list`, folders `lazy`. A failed root read
+        // says so and renders nothing.
         source: this.useDaemonTree()
           ? this.loadTreeLevel("").catch(() => {
-              // Never the static seed on a failed root read: a plausible tree
-              // that is not this repo's. Say so and render nothing.
               if (gen === this._treeGen) this.treeError = "Could not read the files of this project.";
               return [];
             })
-          : this.withIcons(project.tree),
+          : [],
         // A failed level returns `false`: Wunderbaum then leaves the folder
         // unloaded, so the next expand reads it again, and draws no row for
         // the failure. A rethrow drew an "Error (…)" row inside the folder.
@@ -3701,9 +3492,9 @@ function shell() {
       }
     },
 
-    // A daemon backs the tree only off `file://`.
+    // False only when the daemon client script is not loaded (a unit test).
     useDaemonTree() {
-      return window.WBMode.isDaemon() && !!window.WBDaemon?.observe;
+      return !!window.WBDaemon?.observe;
     },
 
     // One directory level from `tree.list`, folders lazy. Cache-FIRST
@@ -4080,7 +3871,6 @@ function shell() {
     // is nothing to hold a tab open for (`not found`, a transport drop): the
     // tab closes. `checkout` is the tab's PINNED checkout (#406).
     fetchContent(project, path, ftype, checkout) {
-      if (!this.useDaemonTree()) return Promise.resolve({ content: fakeContent(path, ftype) });
       const refuse = (reason) => {
         WB.emit("open-refused", { project, path, reason });
         this._flashAction?.(window.WBFail.failed({ reason }, "Could not open the file: the daemon gave no reason."));
@@ -4104,7 +3894,6 @@ function shell() {
           }
           return refuse(window.WBFail.message(reply, "refused"));
         })
-        // A transport drop must NOT fall back to `fakeContent`.
         .catch(() => refuse("transport"));
     },
 
@@ -4354,7 +4143,7 @@ function shell() {
 
     // The open project's run-snapshot subscription (#300, ADR-0047 §9).
     mountRunsSub() {
-      if (!window.WBMode.isDaemon() || !window.WBDaemon?.subscribeRuns || !this.openSlug) return;
+      if (!window.WBDaemon?.subscribeRuns || !this.openSlug) return;
       // A snapshot change means the tracker may have moved, so the same push
       // nudges the board (#301); the predicate coalesces it.
       this._runsSub = window.WBDaemon.subscribeRuns(this.openSlug, () => {
@@ -4373,7 +4162,7 @@ function shell() {
     // The run-completion subscription (#310, ADR-0036 amendment). The socket
     // carries EVERY repo's nudge, so the filter is here.
     mountChangesSub() {
-      if (!window.WBMode.isDaemon() || !window.WBDaemon?.subscribeChanges || !this.openSlug) return;
+      if (!window.WBDaemon?.subscribeChanges || !this.openSlug) return;
       this._changesSub = window.WBDaemon.subscribeChanges(this.openSlug, (frame) => {
         if (this.tabHidden()) return;
         // Optional-chained: a frame without wb-changes.js must not throw
@@ -4613,9 +4402,6 @@ function shell() {
     // The diff's HEAD side; an added/untracked path diffs against emptiness.
     diffHeadSide(project, t, refuse) {
       if (t.headAbsent) return Promise.resolve("");
-      if (!this.useDaemonTree()) {
-        return Promise.resolve(fakeContent(t.headPath, "code"));
-      }
       return WBDaemon.observe(
         "blob.read",
         WBDaemon.withCheckout({ repo: project, revision: "head", path: t.headPath }, t.checkout),
@@ -4632,10 +4418,6 @@ function shell() {
     // (deleted between the list and the click) diffs against emptiness.
     diffWorkSide(project, t, refuse) {
       if (t.workingAbsent) return Promise.resolve("");
-      if (!this.useDaemonTree()) {
-        // The static demo: a synthesised one-line delta.
-        return Promise.resolve("// (demo) edited line\n" + fakeContent(t.workingPath, "code"));
-      }
       // NOT `fetchContent`: it collapses every refusal to `null` and closes
       // the `file:` tab id rather than this diff's.
       return WBDaemon.observe(
@@ -4655,7 +4437,8 @@ function shell() {
       // location.origin`, NOT in the URL hash: a hash let anyone render content
       // of their choosing on the daemon's origin. Passing the bytes keeps
       // unsaved edits alive across a detach.
-      const win = window.open(window.WBMode.pageUrl("popup"), "_blank", "popup,width=920,height=760");
+      // `popup` is the daemon's route for the page (`Shell` in `assets.rs`).
+      const win = window.open("popup", "_blank", "popup,width=920,height=760");
       if (!win) {
         WB.emit("detach-blocked", { project: desc.project, path: desc.path });
         return;
@@ -5993,22 +5776,18 @@ function reattachFile(win, desc) {
   if (!win.closed) win.close();
 }
 
-// The origin we accept messages from and send to. `file://` documents have
-// an opaque origin, where the only usable target is `"*"`.
-const wbPeerOrigin = () => (window.WBMode?.isDemo() ? "*" : window.location.origin);
-
 // Messages from detached popups. Both guards matter: `e.origin` refuses a
 // page on another origin, `e.source` a same-origin window we did not open.
 // Without them this listener accepted `file.write` from anyone holding a
 // handle to this window.
 window.addEventListener("message", (e) => {
-  if (!window.WBMode?.isDemo() && e.origin !== window.location.origin) return;
+  if (e.origin !== window.location.origin) return;
   if (!detachedWindows.has(e.source)) return;
   const m = e.data;
   if (!m || typeof m !== "object") return;
   if (m.type === "wb-detach-ready") {
     // The popup booted and is asking for its file.
-    e.source.postMessage({ type: "wb-detach-open", desc: detachedWindows.get(e.source) }, wbPeerOrigin());
+    e.source.postMessage({ type: "wb-detach-open", desc: detachedWindows.get(e.source) }, window.location.origin);
   } else if (m.type === "wb-emit") {
     // `fromWindow` lets a save's answer reach the pane that sent it.
     WB.emit(m.action, { ...m.detail, fromWindow: e.source });
@@ -6032,7 +5811,7 @@ window.addEventListener("message", (e) => {
 // daemon's confined `file.*` verbs; a refusal is flashed. The browser composes
 // the full rel path.
 (function wireWriteVerbs() {
-  const daemonBacked = () => window.WBMode.isDaemon() && !!window.WBDaemon?.write;
+  const daemonBacked = () => !!window.WBDaemon?.write;
   const flash = (msg) => window.getShell()?._flashAction?.(msg);
   const call = (verb, payload, okMsg) => {
     WBDaemon.write(verb, payload)
@@ -6294,16 +6073,7 @@ document.addEventListener("keydown", (e) => {
   c.openFileSearch();
 });
 
-// Inbound run events, `file://` demo ONLY (#300): gated here AND in
-// `applyRunEvent` (also called by `demoTick`).
-document.addEventListener("ralphy:run-event", (e) => {
-  if (!window.WBMode.seedAllowed()) return;
-  window.getShell()?.applyRunEvent(e.detail);
-});
 window.WBRuns = {
-  emit(evt) {
-    document.dispatchEvent(new CustomEvent("ralphy:run-event", { detail: evt }));
-  },
   // Append a raw output chunk, capped so the DOM never grows unbounded.
   output(text) {
     const c = window.getShell();

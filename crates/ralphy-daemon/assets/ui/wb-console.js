@@ -362,7 +362,7 @@ window.WBConsole = (function () {
     notes = v.notes;
     checkouts = v.checkouts;
   }
-  // The page has read the desk, or runs the static demo, which has none.
+  // The page has read the desk.
   // Nothing is sent before: a page that never read the desk does not know its
   // generation. Under the `Session` policy the pre-login GET answers 401, so
   // this stays false until `reloadDesk()` succeeds after login.
@@ -636,10 +636,6 @@ window.WBConsole = (function () {
   // rejects: an unreachable daemon leaves the page as it was. An unreadable
   // desk sets `deskFailure` and stops the sending.
   function reloadDesk() {
-    if (!window.WBMode?.isDaemon()) {
-      deskLoaded = true;
-      return Promise.resolve();
-    }
     return fetch("/api/desk")
       .then(async (r) => {
         if (r.ok) return r.json();
@@ -744,7 +740,6 @@ window.WBConsole = (function () {
   let flushing = false;
   let flushBackoff = 1000;
   function scheduleDeskFlush(ms = 250) {
-    if (!window.WBMode?.isDaemon()) return;
     clearTimeout(deskFlush);
     // Cleared when it FIRES too: a spent timer id is still truthy.
     deskFlush = setTimeout(() => {
@@ -816,7 +811,7 @@ window.WBConsole = (function () {
   window.addEventListener("pagehide", () => {
     // The per-client view first, and NOT behind the desk guard: `WBView`'s store
     // is synchronous and `deskLoaded` says nothing about it — gating it would
-    // drop the last pan of every pre-login or demo page.
+    // drop the last pan of every pre-login page.
     if (offsetFlush) {
       clearTimeout(offsetFlush);
       offsetFlush = null;
@@ -2383,8 +2378,8 @@ window.WBConsole = (function () {
   // a reveal requested on the same synchronous stack as `activate` runs before
   // Alpine's `x-show` flip, which lands a microtask later.
   let pendingReveal = null;
-  // Whether `restoreDesk` has finished on ANY of its exits (demo early return
-  // and failed fetch included): distinguishes "empty because nothing restored
+  // Whether `restoreDesk` has finished on ANY of its exits (a failed fetch
+  // included): distinguishes "empty because nothing restored
   // YET" from "empty because there is nothing to restore".
   let deskSettled = false;
   function applyLanding() {
@@ -3884,7 +3879,8 @@ window.WBConsole = (function () {
     // INVARIANT: either the popup exists AND the members are torn down, or
     // neither. `window.open` therefore runs BEFORE a single window is touched —
     // a blocked popup must leave the fence exactly as it was.
-    const handle = window.open(window.WBMode.pageUrl("fence"), "", "popup,width=900,height=700");
+    // `fence` is the daemon's route for the page (`Shell` in `assets.rs`).
+    const handle = window.open("fence", "", "popup,width=900,height=700");
     if (!handle) {
       fenceNotice(id, "Could not detach: pop-up blocked");
       WB.emit("fence-detach-blocked", { fence: id });
@@ -4040,7 +4036,7 @@ window.WBConsole = (function () {
   // FILE viewer's: answered only from this origin AND from a window this tab
   // itself opened.
   window.addEventListener("message", (e) => {
-    if (!window.WBMode?.isDemo() && e.origin !== location.origin) return;
+    if (e.origin !== location.origin) return;
     let owner = null;
     for (const [id, entry] of fencePopups) if (entry.handle === e.source) owner = id;
     if (owner == null) return;
@@ -4053,13 +4049,10 @@ window.WBConsole = (function () {
         clearTimeout(entry.rescue);
         entry.rescue = null;
       }
-      // Demo-aware (the popup's `PEER` mirrors it): under `file://` the popup's
-      // origin is OPAQUE, and an unconditional `location.origin` is dropped
-      // (Chrome) or throws (Firefox). `tab` rides the handover, never the
-      // popup's own storage — `window.open` gave it a COPY of ours.
+      // `tab` rides the handover, never the popup's own storage — `window.open` gave it a COPY of ours.
       e.source.postMessage(
         { type: "wb-fence-open", fence: entry.fence, members: entry.members, tab: link.tab, pid: entry.pid },
-        window.WBMode?.isDemo() ? "*" : location.origin,
+        location.origin,
       );
     } else if (m.type === "wb-emit") {
       WB.emit(m.action, m.detail);
@@ -7008,7 +7001,7 @@ window.WBConsole = (function () {
   // time, because `visibilitychange` and `online` land together on an iOS resume.
   let reviving = null;
   function revivePlaceholders() {
-    if (!window.WBMode?.isDaemon() || reviving) return reviving;
+    if (reviving) return reviving;
     reviving = (async () => {
       for (const w of [...wins]) {
         if (typeof w._revive === "function" && w.isConnected) await w._revive();
@@ -7308,13 +7301,6 @@ window.WBConsole = (function () {
   // sessions and dispatch one window per verdict. A REJECTED fetch leaves the
   // desk untouched — no relaunch, no phantom placeholders.
   function restoreDesk() {
-    // The static demo restores nothing but must still LAND, or the latch never
-    // arms and the offset is never stored.
-    if (!window.WBMode?.isDaemon()) {
-      deskSettled = true;
-      applyLanding();
-      return;
-    }
     Promise.all([deskReady, readSessions()])
       .then(async ([, { sessions, unheard }]) => {
         if (!deskLoaded) {
@@ -7541,8 +7527,7 @@ window.WBConsole = (function () {
     link.post({ type: "origin-here", tab: link.tab });
   }
 
-  // Wired in the static demo too (`restoreDesk` returns early): an empty plane
-  // still pans. `autoBoot: false` is the popup, which renders only the members
+  // `autoBoot: false` is the popup, which renders only the members
   // its opener hands over.
   function boot() {
     wireStage();
