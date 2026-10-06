@@ -1,4 +1,4 @@
-// The settings schema in `wb-settings.js` and the way index.html renders it.
+// The settings schema in `wb-settings.ts` and the way index.html renders it.
 // The dialog's code (`saveSetting` and the rest) is tested in
 // wb-settings-dialog.test.mjs.
 import { test } from "node:test";

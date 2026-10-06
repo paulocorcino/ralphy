@@ -1,7 +1,7 @@
 // Unit tests for assets/ui/wb-settings-dialog.js, the Settings dialog's Alpine
 // component. It is built with `loadComponent`, so every test here also fails
 // when the component reads a shell() name it does not list in `uses`, or
-// assigns a shell() field (ADR-0073 D4). The schema itself (`wb-settings.js`)
+// assigns a shell() field (ADR-0073 D4). The schema itself (`wb-settings.ts`)
 // is tested in wb-settings.test.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";

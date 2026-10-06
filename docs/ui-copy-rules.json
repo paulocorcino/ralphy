@@ -184,19 +184,19 @@
       "reason": "The fixed name of this panel in most products. Readers know the phrase as a whole (#426)."
     },
     {
-      "file": "wb-settings.js",
+      "file": "wb-settings.ts",
       "text": "Sent as ‘Authorization: Bearer …’ with every event. Read-only here. Set it in a terminal on the host: ralphy config set events.token '…'",
       "rule": "banned:ralphy",
       "reason": "The text ends with a command the operator types. Code keeps its case."
     },
     {
-      "file": "wb-settings.js",
+      "file": "wb-settings.ts",
       "text": "Runs before an issue is closed, when the plan has no ‘## Verify’ section. Read-only here. Set it in a terminal: ralphy config set verify.command '…'",
       "rule": "banned:ralphy",
       "reason": "The text ends with a command the operator types. Code keeps its case."
     },
     {
-      "file": "wb-settings.js",
+      "file": "wb-settings.ts",
       "text": "Send comments from any GitHub account to the agent. When off, only comments from owners, members and collaborators are read. When on, anyone can add text to the prompt of a labelled issue on a public repository. Read-only here. Change it in a terminal: ralphy config set queue.trust_all_comments true",
       "rule": "banned:ralphy",
       "reason": "The text ends with a command the operator types. Code keeps its case."
