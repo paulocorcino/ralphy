@@ -87,16 +87,18 @@ flowchart LR
 | Peer daemon | daemon | Synchronous, versioned peer protocol ([ADR-0052](./adr/0052-local-fleet-federation.md), [ADR-0067](./adr/0067-peers-on-other-machines-through-ssh.md)) |
 | Console CLI | daemon | A byte stream on a PTY; lives and dies with the daemon |
 
-Inside the browser workbench, the script is classic scripts with no build
-step. Each file sets one `window.WB<Name>` namespace. The `shell()` Alpine
+Inside the browser workbench, the script is moving from classic scripts to
+TypeScript modules, one file at a time
+([ADR-0075](./adr/0075-the-workbench-script-is-written-in-typescript.md)).
+The daemon's `build.rs` removes the types and the binary embeds the
+result. A classic script sets one `window.WB<Name>` namespace; a module
+exports. The `shell()` Alpine
 component in `app.js` holds the page layout and, for now, most features. A
 feature with its own state moves out of it into an Alpine component in its
 own file, one feature at a time
 ([ADR-0073](./adr/0073-the-workbench-script-is-cut-into-alpine-components.md)).
-The Hosts dialog (`wb-hosts-dialog.js`) is the first one. A proposed change
-moves this code to TypeScript modules that `build.rs` turns into JavaScript,
-one file at a time
-([ADR-0075](./adr/0075-the-workbench-script-is-written-in-typescript.md)).
+The Hosts dialog (`wb-hosts-dialog.ts`) is the first one, and the first
+module.
 
 ## 4. Components and crates
 
@@ -219,6 +221,7 @@ any code, including code that does not exist yet. A behaviour test is not one.
 | UI written voice | `cargo run -p xtask -- ui-copy --check` (ADR-0065) |
 | Changelog fragments parse | `cargo run -p xtask -- changelog --check` (ADR-0056) |
 | UI asset contract | `node --test crates/ralphy-daemon/ui-tests`, oxlint (ADR-0057) |
+| Workbench modules type-check, and no first-party classic script is added | `tsc --noEmit -p crates/ralphy-daemon/assets/ui`; `first_party_scripts_move_to_typescript_and_never_back` (`crates/ralphy-daemon/src/tests.rs`), a ratchet on `CLASSIC_SCRIPTS` (ADR-0075) |
 | UI settings mirror matches the Rust keys | the `WB_SETTINGS` test in `crates/ralphy-daemon/src/tests.rs` |
 | Core names no vendor crate; no adapter depends on another; `ralphy-pricing` and `ralphy-release` are leaf crates | `core_and_adapters_keep_their_dependency_edges` (`crates/xtask/tests/crate_dependencies.rs`) |
 | `git`, `gh` and `ssh` are spawned only by their owners (§6) | `spawn_sites_match_the_baseline` (`crates/xtask/tests/ratchets.rs`), a ratchet on literal `Command::new("git" \| "gh" \| "ssh")` sites |

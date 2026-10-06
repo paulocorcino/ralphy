@@ -19,6 +19,25 @@ impl Scan<'_> {
         self.toks.get(i).and_then(Token::ident)
     }
 
+    /// The token after a TypeScript return type (`): string {`), else `at`
+    /// itself. The type is read as names, string literals, `|` and `.`; an
+    /// object type (`): { a: string } {`) is not followed.
+    pub(super) fn after_return_type(&self, at: usize) -> usize {
+        if !self.is_at(at, ":") {
+            return at;
+        }
+        let mut k = at + 1;
+        while let Some(t) = self.toks.get(k) {
+            let simple =
+                t.ident().is_some() || matches!(t.tok, Tok::Str(_)) || t.is("|") || t.is(".");
+            if !simple {
+                break;
+            }
+            k += 1;
+        }
+        k
+    }
+
     fn opens(t: &Token) -> bool {
         t.is("(") || t.is("[") || t.is("{")
     }

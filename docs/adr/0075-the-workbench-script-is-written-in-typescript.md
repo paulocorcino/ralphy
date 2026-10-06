@@ -1,6 +1,6 @@
 # The workbench script is written in TypeScript and built into JavaScript modules
 
-Status: proposed
+Status: accepted
 Kind: structural
 Protects: extensibility, testability
 
@@ -221,15 +221,18 @@ New costs:
 
 ## Compliance
 
-- D1: checked by a test in `crates/ralphy-daemon/src/tests.rs` (added by the
-  pilot) that fails on a first-party `.js` file in `assets/ui/` that is not on
-  the list of files not yet moved. That list is a ratchet: it may only get
-  shorter. `erasableSyntaxOnly` is checked by `tsc` (D4).
-- D2: checked by the same test: a `.ts` file that assigns a `window.WB` name
-  must be on the list of D9 namespaces. That list may only get shorter.
+- D1: checked by `first_party_scripts_move_to_typescript_and_never_back`
+  (`crates/ralphy-daemon/src/tests.rs`) as a ratchet: it fails on a
+  first-party `.js` file in `assets/ui/` that is not in `CLASSIC_SCRIPTS`, and
+  on a name in that list that is no longer a `.js` file. `erasableSyntaxOnly`
+  is checked by `tsc` (D4).
+- D2: checked by the same test as a ratchet: a `.ts` file that assigns a
+  `window.WB` name must be in `MODULE_WINDOW_NAMES`. A relative import that does
+  not name a `.ts` file fails `cargo build`, and a type imported without
+  `import type` fails `tsc` (`verbatimModuleSyntax`).
 - D3: checked by `cargo build`: a `.ts` file that cannot be parsed fails it.
-- D4: checked by the `tsc` step in `.github/workflows/ci.yml` (added by the
-  pilot).
+- D4: checked by the `UI type check (tsc)` step of the `ui-tests` job in
+  `.github/workflows/ci.yml`.
 - D5: not checked by code until phase 4. Phase 4 adds a test that each page
   has one module tag and calls `Alpine.start()` once.
 - D6: checked by `tsc` (D4), and by `loadComponent` in
@@ -242,3 +245,49 @@ New costs:
 - D9: not checked by code: reviewed in the PR, and by the browser checks of the
   moved feature. A load order fault shows only in a browser.
 - D10: checked by the D1 test, when its list is empty.
+
+## Amendment (2026-10-06): the pilot, as measured
+
+**D3 uses `swc_ts_fast_strip`, not `oxc_transformer`.** `oxc_codegen` prints
+the module again from its syntax tree. Measured on `wb-hosts-dialog.js` with
+types added: 327 source lines became 414, indentation became tabs, and an
+unused import was dropped. So the browser would not show the source lines,
+which Consequences states. `swc_ts_fast_strip` 59 (`StripOnly` mode, the
+engine Node uses to run `.ts`) replaces each type with spaces: 327 lines stay
+327, and every column stays. `build/ui.rs` then changes each relative import
+path from `.ts` to `.js` with `swc_ecma_parser`, which the strip crate already
+depends on. The two extensions have the same length, so the columns still
+hold. D3 reads "with `swc_ts_fast_strip`" where it says "with
+`oxc_transformer`". The `swc_*` crates publish a new major version often
+(`swc_ts_fast_strip` 59, `swc_common` 26): a bump is a reviewed change, the
+same cost that Consequences states for `oxc_*`.
+
+**D2 adds `import type`.** Removing types cannot tell a type import from a
+value import, so an untagged type import would stay in the served file and
+fail in the browser. `tsconfig.json` sets `verbatimModuleSyntax`, so `tsc`
+refuses it.
+
+**D6 is `component(uses, data)` in `wb-alpine.ts`.** It types the
+component's `this` as its own members, `Pick<Shell, …>` of `uses`, and the
+Alpine magics. `shell.d.ts` types the `shell()` members a component lists.
+The classic globals a module reads are typed in `globals.d.ts`.
+
+**The pilot moved `wb-hosts.js` and `wb-hosts-dialog.js`**, with `build.rs`, `tsconfig.json`, the gate step and the D1
+test. Measured on Windows on 2026-10-06:
+
+| Exit criterion | Result |
+|---|---|
+| Behaviour unchanged | `node --test`: 865 passed. Browser checks: `wb_hosts_497.py` 12/12, `wb_hosts_scroll.py` 6/6, `wb_modals_487.py` 36/36, `wb_security_headers.py` 13/13 (the module loads under the CSP) |
+| `cargo build` with no Node on the path | passes; `build.rs` runs no other program. CI builds and tests on Windows, Linux and macOS |
+| `tsc --noEmit` strict passes, and a name outside `uses` fails it | passes; removing `loadRepos` from `uses` gives two `TS2339` errors |
+| The tests import the `.ts` modules, with no `new Function` | yes: `wb-hosts.test.mjs`, `wb-hosts-dialog.test.mjs` (through `MODULE_COMPONENTS` in the harness) and `shared-replies.test.mjs` |
+| Time `build.rs` adds | the first build of the new crates: about 3 minutes (debug). An incremental build after a `.ts` edit: 4.4 to 5.7 seconds, with the daemon crate rebuilt |
+| Crates `swc_*` add to `Cargo.lock` | 69 (344 to 413) |
+| Asset pins | 803 claims by 512 assertions before, 841 by 516 after: the new tests add 4 assertions, and no pin moved |
+| jscpd on a renamed file | no new clone; the 4 `.ts` files have 0 duplicated lines. A file moved to TypeScript changes most of its lines anyway |
+
+One more cost was found: `xtask ui-copy` read a helper's body only when `{`
+came right after `)`, so a TypeScript return type (`): string {`) hid two
+texts of `wb-hosts.ts`. It now skips a simple return type.
+
+With this, the pilot meets every criterion, and this ADR is accepted.

@@ -19,7 +19,8 @@ are in [TESTING-TRAPS.md](TESTING-TRAPS.md#the-workbench-page-in-a-browser).
 | Which fact the page may show, and a failed read shows `—`, never `0` | [ADR-0070](adr/0070-the-workbench-shows-only-what-it-has-read.md) |
 | UI text | [ADR-0065](adr/0065-the-workbench-written-voice.md) |
 | How the assets are gated | [ADR-0057](adr/0057-the-workbench-asset-contract.md) |
-| The intent of one module and the Ralphy sources it mirrors | the header comment of that `wb-*.js` file |
+| The intent of one module and the Ralphy sources it mirrors | the header comment of that `wb-*` file |
+| TypeScript modules and the build of the served tree | [ADR-0075](adr/0075-the-workbench-script-is-written-in-typescript.md) |
 
 ## The seam: the page states intent, the daemon acts
 
@@ -38,11 +39,38 @@ grep -rn "WB.emit(" crates/ralphy-daemon/assets/ui/*.js
 An action name and its payload keys are a wire contract. Change both sides in
 the same commit, or leave both unchanged.
 
+## TypeScript modules
+
+The page code moves from classic scripts to `.ts` ES modules, one file at a
+time. The classic scripts not moved yet are listed in `CLASSIC_SCRIPTS` in
+`crates/ralphy-daemon/src/tests.rs`; a new file is always a module.
+
+- **The build.** `build.rs` copies `assets/ui/` to `$OUT_DIR/ui`, and the
+  binary embeds that copy. A `.ts` file is written as a `.js` file with its
+  types replaced by spaces, so the browser shows the same lines and columns
+  as the source. `tsconfig.json` and the `.d.ts` files are not served.
+- **Imports.** A module imports a sibling by its `.ts` name
+  (`./wb-hosts.ts`); the build changes it to `.js`. A type is imported with
+  `import type`, because the build cannot tell a type from a value. No
+  `enum`, `namespace` or parameter property: the build only removes types.
+- **Classic globals.** A module may read a classic script's `window.WB*`
+  name; `globals.d.ts` types the part it reads. A module sets a `window.WB*`
+  name only while a classic script still reads it.
+- **Components.** `component(uses, data)` in `wb-alpine.ts` types the
+  component's `this` from its `uses` list, with the `shell()` members typed
+  in `shell.d.ts`. The component registers itself on `alpine:init`, and its
+  `<script type="module">` tag sits before the deferred Alpine tag.
+- **Tests.** A test imports the `.ts` module. `ui-tests/harness.mjs` builds a
+  module component from its export (`MODULE_COMPONENTS`).
+- **Type check.** `tsc --noEmit -p crates/ralphy-daemon/assets/ui`, in the
+  UI gate of [AGENTS.md](../AGENTS.md).
+
 ## Vendored libraries
 
 Every library is loaded from `assets/ui/vendor/`; the page loads nothing from a
-CDN. `include_dir!` embeds and serves everything under `assets/ui/`, so a build
-input (a `package.json`, a build script) lives outside that directory.
+CDN. The binary embeds and serves everything under `assets/ui/` except
+`tsconfig.json` and `*.d.ts`, so another build input (a `package.json`, a
+build script) lives outside that directory.
 
 **The manifest.** `assets/ui/vendor/manifest.json` records each vendored
 library: its name, npm package, version, source, and the SHA-256 of each of

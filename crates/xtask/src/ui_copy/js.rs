@@ -73,9 +73,9 @@ pub(super) fn scan(src: &str, first_line: usize, fns: CopyFns, out: &mut Vec<Fou
         let helper_name = HELPER_SUFFIXES.iter().any(|s| name.ends_with(s))
             || fns.helpers.iter().any(|h| h == name);
         if helper_name && calls && !prev_dot {
-            let close = sc.close_of(i + 1);
-            if sc.is_at(close + 1, "{") {
-                helper_body_at = Some(close + 1);
+            let body = sc.after_return_type(sc.close_of(i + 1) + 1);
+            if sc.is_at(body, "{") {
+                helper_body_at = Some(body);
             }
         }
 

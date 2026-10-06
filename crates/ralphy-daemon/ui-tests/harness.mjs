@@ -16,6 +16,12 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { hostsDialog } from "../assets/ui/wb-hosts-dialog.ts";
+
+// The Alpine components that are ES modules (ADR-0075): `loadComponent` builds
+// these from their export. A component that is still a classic script is
+// found on `window.WB<Name>.component` instead (ADR-0073 D3).
+const MODULE_COMPONENTS = { wbHostsDialog: hostsDialog };
 
 export const UI = join(dirname(fileURLToPath(import.meta.url)), "../assets/ui");
 
@@ -176,18 +182,24 @@ export function loadShell(opts = {}) {
 // the scope as the receiver of `Reflect.get`), so a getter that reads a
 // `shell()` name obeys `uses` too.
 //
-// The factory is `window.WB<Name>.component`, where `alpineName` is
-// `wb<Name>` (ADR-0073 D3). `opts.magics` gives the `$` magics (`$nextTick`)
+// The factory is the module's export in `MODULE_COMPONENTS`, else
+// `window.WB<Name>.component`, where `alpineName` is `wb<Name>` (ADR-0073
+// D3). A module reads the page's globals on the real `window`, so for a
+// module component `globalThis.window` is set to this page's window: the
+// last component built owns it, and node --test runs each file in its own
+// process. `opts.magics` gives the `$` magics (`$nextTick`)
 // that Alpine would add. `opts.from` is a `loadShell()` result to nest the
 // component in, so several components share one page; without it the other
 // `opts` go to a new `loadShell`.
 export function loadComponent(alpineName, opts = {}) {
   const { state: shell, window, document } = opts.from || loadShell(opts);
-  const ns = window["WB" + alpineName.slice(2)];
-  if (typeof ns?.component !== "function") {
+  const fromModule = MODULE_COMPONENTS[alpineName];
+  if (fromModule) globalThis.window = window;
+  const factory = fromModule || window["WB" + alpineName.slice(2)]?.component;
+  if (typeof factory !== "function") {
     throw new Error(`no window.WB${alpineName.slice(2)}.component for the Alpine component ${alpineName}`);
   }
-  const data = ns.component();
+  const data = factory();
   const uses = new Set(data.uses);
   for (const name of uses) {
     if (!(name in shell)) throw new Error(`${alpineName} lists ${name} in uses, and shell() has no such member`);

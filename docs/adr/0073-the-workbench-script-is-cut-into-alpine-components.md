@@ -197,9 +197,10 @@ change to modules is mechanical.
 - D2: not checked by code: reviewed in the PR. Which state is "layout" is a
   judgment. D8 limits how much `shell()` can grow.
 - D3: checked by `crates/ralphy-daemon/src/tests.rs`
-  (`every_alpine_component_is_on_window_and_has_a_test`, added by the pilot):
+  (`every_alpine_component_can_be_built_and_has_a_test`, added by the pilot):
   every first-party file that calls `Alpine.data` also assigns a `window.WB*`
-  name and has a `ui-tests/<file>.test.mjs`.
+  name, or exports its factory when it is a module (ADR-0075), and has a
+  `ui-tests/<file>.test.mjs`.
 - D4: checked by `loadComponent` in `crates/ralphy-daemon/ui-tests/harness.mjs`
   (added by the pilot). It builds the component against a scope that has only
   its own members and its `uses` names. Reading any other name fails, and
