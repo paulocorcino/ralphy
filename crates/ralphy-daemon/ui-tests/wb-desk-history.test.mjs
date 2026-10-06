@@ -1,18 +1,16 @@
-// Unit tests for assets/ui/wb-desk-history.js — runs the real source with no
+// Unit tests for assets/ui/wb-desk-history.ts — imports the real module with no
 // DOM, over the daemon's own reply (`fixtures/api-desk-history.json`).
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { WBDeskHistory } from "../assets/ui/wb-desk-history.ts";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const SRC = readFileSync(join(HERE, "../assets/ui/wb-desk-history.js"), "utf8");
-
+// The module keeps no state, so one import serves every test.
 function load() {
-  const window = {};
-  new Function("window", SRC)(window);
-  return window.WBDeskHistory;
+  return WBDeskHistory;
 }
 
 function fixture(name) {

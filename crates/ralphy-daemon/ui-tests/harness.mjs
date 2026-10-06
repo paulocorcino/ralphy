@@ -24,11 +24,27 @@ import { WBSpend } from "../assets/ui/wb-spend.ts";
 import { WBRun } from "../assets/ui/wb-runs.ts";
 import { WBKanban } from "../assets/ui/wb-kanban.ts";
 import { WBChanges } from "../assets/ui/wb-changes.ts";
+import { WBAddProject } from "../assets/ui/wb-add-project.ts";
+import { WBDeskHistory } from "../assets/ui/wb-desk-history.ts";
+import { WBProject } from "../assets/ui/wb-project.ts";
+import { WBSplit } from "../assets/ui/wb-split.ts";
 
 // The `window.WB*` names that a module sets in the browser because a classic
 // script still reads them (ADR-0075 D9). A module does not run in
 // `loadShell`, so the loader sets these on the page's window itself.
-const MODULE_NAMESPACES = { WBAgents, WBFileSearch, WBRelease, WBSpend, WBRun, WBKanban, WBChanges };
+const MODULE_NAMESPACES = {
+  WBAgents,
+  WBFileSearch,
+  WBRelease,
+  WBSpend,
+  WBRun,
+  WBKanban,
+  WBChanges,
+  WBAddProject,
+  WBDeskHistory,
+  WBProject,
+  WBSplit,
+};
 
 // The Alpine components that are ES modules (ADR-0075): `loadComponent` builds
 // these from their export. A component that is still a classic script is

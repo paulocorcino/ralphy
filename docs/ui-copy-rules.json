@@ -160,7 +160,7 @@
   ],
   "exemptions": [
     {
-      "file": "wb-add-project.js",
+      "file": "wb-add-project.ts",
       "text": "Already in Projects",
       "rule": "casing:title",
       "reason": "Projects is the name of the panel the folder is already in (#501)."

@@ -74,7 +74,7 @@ test("fmtUptime steps down through the units and never renders a negative", () =
 });
 
 test("githubUrl resolves the OPEN project's remote, and refuses when it cannot", () => {
-  // The pure URL half moved to `wb-project.js` and is tested there. This is the
+  // The pure URL half moved to `wb-project.ts` and is tested there. This is the
   // half that STAYED — finding the open project among `projects` by composite
   // ref — and it lost its coverage in the move: a lookup regression would hand
   // back a link to another repo's issue with the whole suite green.

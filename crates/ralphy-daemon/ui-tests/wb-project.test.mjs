@@ -1,4 +1,4 @@
-// Unit tests for assets/ui/wb-project.js — how a project reads in the sidebar.
+// Unit tests for assets/ui/wb-project.ts — how a project reads in the sidebar.
 //
 // These came over from app.test.mjs with the folds they exercise (ADR-0057 D4).
 // They were written as CHARACTERIZATION tests against `shell()` before the
@@ -7,17 +7,11 @@
 // assertions predate it and did not move an inch.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { WBProject } from "../assets/ui/wb-project.ts";
 
-const UI = join(dirname(fileURLToPath(import.meta.url)), "../assets/ui");
-const SRC = readFileSync(join(UI, "wb-project.js"), "utf8");
-
+// The module keeps no state, so one import serves every test.
 function load() {
-  const window = {};
-  new Function("window", SRC)(window);
-  return window.WBProject;
+  return WBProject;
 }
 
 const wb = load();
@@ -116,6 +110,9 @@ test("issueUrl builds a link only from a github remote", () => {
   // with no remote must each yield nothing to link to — a link that 404s is
   // worse than no link.
   assert.equal(wb.issueUrl("https://gitlab.com/owner/repo.git", 42), null);
+  // `github.com` inside another host's name or path is not GitHub.
+  assert.equal(wb.issueUrl("https://github.com.evil.example/owner/repo", 42), null);
+  assert.equal(wb.issueUrl("https://evil.example/github.com/owner/repo", 42), null);
   assert.equal(wb.issueUrl("", 42), null);
   assert.equal(wb.issueUrl(null, 42), null);
   assert.equal(wb.issueUrl(undefined, 42), null);

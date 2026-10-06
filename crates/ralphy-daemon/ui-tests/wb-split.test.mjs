@@ -1,21 +1,13 @@
-// Unit tests for assets/ui/wb-split.js — the secondary pane's decision table
+// Unit tests for assets/ui/wb-split.ts — the secondary pane's decision table
 // (ADR-0037 §3c). Runs the real source against an empty window: the module is
 // pure and touches nothing at load.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { WBSplit } from "../assets/ui/wb-split.ts";
 
-const SRC = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../assets/ui/wb-split.js"),
-  "utf8",
-);
-
+// The module keeps no state, so one import serves every test.
 function load() {
-  const window = {};
-  new Function("window", SRC)(window);
-  return window.WBSplit;
+  return WBSplit;
 }
 
 const A = "file:p:a.js";
