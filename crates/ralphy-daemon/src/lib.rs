@@ -67,7 +67,7 @@ pub const DEFAULT_PORT: u16 = 7257;
 /// daemon reads no files from disk at runtime (ADR-0032 §4). Promoted to the
 /// daemon's `/` in #200 (PRD #185); the SPA self-gates its login (see
 /// [`routes::require_auth`]), so there is no separate server-rendered login page.
-pub(crate) static UI: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets/ui");
+pub(crate) static UI: Dir<'_> = include_dir!("$OUT_DIR/ui");
 
 /// What the composition root decides; everything else is the daemon's.
 pub struct DaemonConfig {

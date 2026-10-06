@@ -377,6 +377,22 @@ fn a_function_named_in_copy_helpers_returns_copy() {
 }
 
 #[test]
+fn a_typescript_helper_with_a_return_type_returns_copy() {
+    let ts = r#"
+  export function addedText(s: State): string {
+    return "Added the host.";
+  }
+  export function kindText(s: State): "a" | "b" {
+    return "a";
+  }
+"#;
+    assert_eq!(
+        seen(&rows("wb-hosts.ts", ts)),
+        vec![("js:helper", "Added the host."), ("js:helper", "a")]
+    );
+}
+
+#[test]
 fn a_call_named_in_copy_calls_gives_its_listed_argument() {
     let js = r#"
   function paintState(el, text) { el.dataset.state = text; }

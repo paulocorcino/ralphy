@@ -1,0 +1,24 @@
+{
+  // The type check of the workbench modules (ADR-0075 D4). `build.rs` does not
+  // read this file and does not serve it: it only removes the types.
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "strict": true,
+    "noEmit": true,
+    // An import names the `.ts` file: Node runs the tests on the source, and
+    // `build.rs` changes the path to `.js` for the browser.
+    "allowImportingTsExtensions": true,
+    // Only syntax that removing the types leaves as valid JavaScript (D1).
+    "erasableSyntaxOnly": true,
+    // A type is imported with `import type`. Removing the types cannot tell a
+    // type from a value, so an untagged type import would stay in the served
+    // file and fail in the browser.
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "types": []
+  },
+  "include": ["*.ts"]
+}

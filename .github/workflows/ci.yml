@@ -73,8 +73,15 @@ jobs:
 
       # No install step on purpose: ui-tests/package.json declares no
       # dependencies, and the suite imports only node:test and node:assert.
+      # Node 22.18 and later run the `.ts` modules by removing their types.
       - name: UI tests
         run: node --test crates/ralphy-daemon/ui-tests
+
+      # The type check of the workbench modules (ADR-0075 D4), pinned like
+      # jscpd below. Nothing is installed in the repository; tsc reads
+      # crates/ralphy-daemon/assets/ui/tsconfig.json.
+      - name: UI type check (tsc)
+        run: npx -y -p typescript@5.9.3 tsc --noEmit -p crates/ralphy-daemon/assets/ui
 
       # The release binary, pinned by version and checksum, so the workbench
       # still needs no npm install (ADR-0057 D3). Rules: .oxlintrc.json.

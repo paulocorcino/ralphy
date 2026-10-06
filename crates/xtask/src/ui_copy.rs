@@ -178,8 +178,9 @@ pub fn ui_copy_cmd(args: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// The sources: every page, `app.js` and the `wb-*.js` modules. The walk does
-/// not recurse, so `vendor/` and `styles/` are never read.
+/// The sources: every page, `app.js`, the `wb-*.js` classic scripts and the
+/// `wb-*.ts` modules. The walk does not recurse, so `vendor/` and `styles/`
+/// are never read.
 fn sources(ui: &Path) -> Result<Vec<String>> {
     let mut names = Vec::new();
     for entry in std::fs::read_dir(ui).with_context(|| format!("listing {}", ui.display()))? {
@@ -190,7 +191,7 @@ fn sources(ui: &Path) -> Result<Vec<String>> {
         let name = entry.file_name().to_string_lossy().into_owned();
         let wanted = name.ends_with(".html")
             || name == "app.js"
-            || (name.starts_with("wb-") && name.ends_with(".js"));
+            || (name.starts_with("wb-") && (name.ends_with(".js") || name.ends_with(".ts")));
         if wanted {
             names.push(name);
         }

@@ -134,5 +134,16 @@ tempfile.workspace = true
 # Seed an `opencode.db` fixture for the OpenCode interactive-usage integration test.
 rusqlite.workspace = true
 
+[build-dependencies]
+# `build/ui.rs` writes the served workbench tree (ADR-0075 D3): it removes the
+# types of each `.ts` file and keeps every line and column, so the browser runs
+# the source text. The parser rewrites `.ts` import paths to `.js`; the strip
+# crate already depends on it, so it adds no crate of its own.
+anyhow.workspace = true
+swc_ts_fast_strip = "59"
+swc_common = "26"
+swc_ecma_ast = "29"
+swc_ecma_parser = "46"
+
 [lints]
 workspace = true

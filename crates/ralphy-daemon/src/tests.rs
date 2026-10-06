@@ -3833,6 +3833,55 @@ fn the_sweep_set_covers_every_asset_we_wrote() {
     );
 }
 
+/// `refs` and every module they reach through static imports. Only a file
+/// whose source is `.ts` is read for imports: it is an ES module (ADR-0075
+/// D2), and a classic script has none.
+fn with_module_imports(refs: Vec<String>) -> Vec<String> {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/ui");
+    let mut out = refs;
+    let mut at = 0;
+    while at < out.len() {
+        let path = out[at].clone();
+        at += 1;
+        let Some(stem) = path.strip_suffix(".js") else {
+            continue;
+        };
+        if !src.join(format!("{stem}.ts")).is_file() {
+            continue;
+        }
+        let text = UI
+            .get_file(&path)
+            .and_then(|f| f.contents_utf8())
+            .unwrap_or_else(|| panic!("{path} is embedded UTF-8"));
+        for import in static_imports(text) {
+            let Some(name) = import.strip_prefix("./") else {
+                panic!("{path} imports {import}: a module imports its siblings by `./`")
+            };
+            if !out.iter().any(|p| p == name) {
+                out.push(name.to_string());
+            }
+        }
+    }
+    out
+}
+
+/// The paths of the static `import`/`export … from` lines of a module. The
+/// workbench modules put each import on one line, at the top.
+fn static_imports(js: &str) -> Vec<&str> {
+    js.lines()
+        .map(str::trim_start)
+        .filter(|l| l.starts_with("import ") || l.starts_with("export "))
+        .filter_map(|l| {
+            let from = l
+                .find(" from \"")
+                .map(|i| i + " from \"".len())
+                .or_else(|| l.strip_prefix("import \"").map(|_| "import \"".len()))?;
+            let rest = &l[from..];
+            rest.find('"').map(|end| &rest[..end])
+        })
+        .collect()
+}
+
 /// Every `src`/`href` a `<script>` or `<link>` tag carries, in source order.
 ///
 /// Deliberately not a general HTML parse: only these two tags are followed,
@@ -3929,8 +3978,9 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
     // go stale: every non-vendor asset this repo writes is loaded there. A
     // new module is protected the moment it is embedded, with no list to
     // remember.
+    // A module reached by an `import` needs no tag of its own (ADR-0075 D5).
     let index = SHELLS[0].1;
-    let index_refs = tag_references(index);
+    let index_refs = with_module_imports(tag_references(index));
     for path in embedded_ui_paths() {
         if path.starts_with("vendor/") {
             continue;
@@ -4128,13 +4178,116 @@ fn every_ui_test_file_is_imported_by_the_barrel() {
     );
 }
 
-/// ADR-0073 D3: an Alpine component can be built without Alpine. A
-/// first-party file that registers one with `Alpine.data` also sets its
-/// factory on a `window.WB*` name, and has its own `ui-tests/<file>.test.mjs`,
-/// where `loadComponent` checks the `uses` list of ADR-0073 D4.
+/// The first-party classic scripts not yet moved to TypeScript (ADR-0075
+/// D9). A ratchet: a file leaves the list in the change that moves it, and
+/// nothing joins it.
+const CLASSIC_SCRIPTS: &[&str] = &[
+    "app.js",
+    "wb-add-project.js",
+    "wb-add-project-dialog.js",
+    "wb-agents.js",
+    "wb-changes.js",
+    "wb-columns.js",
+    "wb-console.js",
+    "wb-console-name.js",
+    "wb-daemon.js",
+    "wb-desk-history.js",
+    "wb-desk-sink.js",
+    "wb-desk-sync.js",
+    "wb-detach-link.js",
+    "wb-device.js",
+    "wb-devices.js",
+    "wb-fail.js",
+    "wb-file-search.js",
+    "wb-fleet.js",
+    "wb-geometry.js",
+    "wb-kanban.js",
+    "wb-monaco.js",
+    "wb-notes.js",
+    "wb-project.js",
+    "wb-release.js",
+    "wb-release-dialogs.js",
+    "wb-runs.js",
+    "wb-security-dialog.js",
+    "wb-session-route.js",
+    "wb-settings.js",
+    "wb-settings-dialog.js",
+    "wb-spend.js",
+    "wb-split.js",
+    "wb-view.js",
+    "wb-viewer.js",
+    "wb-window-state.js",
+];
+
+/// The `window.WB*` names a module still sets, because a classic script
+/// reads them (ADR-0075 D9). A ratchet like `CLASSIC_SCRIPTS`.
+const MODULE_WINDOW_NAMES: &[&str] = &[];
+
+/// ADR-0075 D1, D2, D8 and D10: first-party workbench code is TypeScript. A
+/// `.js` file in the source tree is a vendored file or a classic script on the
+/// list that only gets shorter; a module sets no `window.WB*` name a classic
+/// script does not need; the `file://` demo does not come back.
 #[test]
-fn every_alpine_component_is_on_window_and_has_a_test() {
+fn first_party_scripts_move_to_typescript_and_never_back() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/ui");
+    let mut classic = Vec::new();
+    let mut modules = Vec::new();
+    for entry in std::fs::read_dir(&src).expect("assets/ui is readable") {
+        let name = entry
+            .expect("an entry of assets/ui")
+            .file_name()
+            .to_string_lossy()
+            .into_owned();
+        if name.ends_with(".js") {
+            classic.push(name);
+        } else if name.ends_with(".ts") && !name.ends_with(".d.ts") {
+            modules.push(name);
+        }
+    }
+    for name in &classic {
+        assert!(
+            CLASSIC_SCRIPTS.contains(&name.as_str()),
+            "assets/ui/{name} is a new classic script: first-party code is a .ts module"
+        );
+    }
+    for name in CLASSIC_SCRIPTS {
+        assert!(
+            classic.iter().any(|c| c == name),
+            "{name} is no longer a classic script: remove it from CLASSIC_SCRIPTS"
+        );
+    }
+    for name in &modules {
+        let text = std::fs::read_to_string(src.join(name)).expect("a module is readable");
+        for (at, _) in text.match_indices("window.WB") {
+            let rest = &text[at + "window.".len()..];
+            let ident: String = rest
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            if rest[ident.len()..].trim_start().starts_with("= ") {
+                assert!(
+                    MODULE_WINDOW_NAMES.contains(&ident.as_str()),
+                    "{name} sets window.{ident}: a module exports; it sets a window name only while a classic script reads it"
+                );
+            }
+        }
+    }
+    assert!(
+        !src.join("wb-mode.js").exists() && !src.parent().expect("assets").join("ui-demo").exists(),
+        "the file:// demo is archived under the tag workbench-demo-archive"
+    );
+}
+
+/// ADR-0073 D3: an Alpine component can be built without Alpine. A
+/// first-party file that registers one with `Alpine.data` gives its factory
+/// to `node --test` — an `export` when its source is an ES module (ADR-0075
+/// D2), else a `window.WB*` name — and has its own
+/// `ui-tests/<file>.test.mjs`, where `loadComponent` checks the `uses` list of
+/// ADR-0073 D4.
+#[test]
+fn every_alpine_component_can_be_built_and_has_a_test() {
     let tests = Path::new(env!("CARGO_MANIFEST_DIR")).join("ui-tests");
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/ui");
     let mut found = 0;
     for path in embedded_ui_paths() {
         if path.starts_with("vendor/") || !path.ends_with(".js") {
@@ -4148,6 +4301,19 @@ fn every_alpine_component_is_on_window_and_has_a_test() {
             continue;
         }
         found += 1;
+        let stem = path.trim_end_matches(".js");
+        if src.join(format!("{stem}.ts")).is_file() {
+            assert!(
+                text.contains("export function "),
+                "{path} registers an Alpine component and exports no factory, \
+                 so node --test cannot build it"
+            );
+            assert!(
+                tests.join(format!("{stem}.test.mjs")).is_file(),
+                "{path} registers an Alpine component and has no ui-tests/{stem}.test.mjs"
+            );
+            continue;
+        }
         // An assignment, not a read: the component itself reads `window.WB*` folds.
         let sets_window_name = text.match_indices("window.WB").any(|(at, _)| {
             let rest = text[at + "window.WB".len()..]
@@ -4159,7 +4325,6 @@ fn every_alpine_component_is_on_window_and_has_a_test() {
             "{path} registers an Alpine component but sets no window.WB* name, \
              so node --test cannot build it"
         );
-        let stem = path.trim_end_matches(".js");
         assert!(
             tests.join(format!("{stem}.test.mjs")).is_file(),
             "{path} registers an Alpine component and has no ui-tests/{stem}.test.mjs"

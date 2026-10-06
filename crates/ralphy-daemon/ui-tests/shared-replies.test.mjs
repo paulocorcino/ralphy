@@ -8,6 +8,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { loadShell } from "./harness.mjs";
+import * as WBHosts from "../assets/ui/wb-hosts.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -98,8 +99,7 @@ test("issue.show: the issue view takes the body and comments of the reply", asyn
 });
 
 test("host.aliases: picking an alias fills the host form from the reply", () => {
-  const { window } = loadShell();
-  const H = window.WBHosts;
+  const H = WBHosts;
   let s = H.next(H.initial(), { type: "aliases", aliases: fixture("host.aliases").aliases });
   s = H.next(s, { type: "pick", alias: "lab" });
   assert.equal(s.alias, "lab");
@@ -109,8 +109,7 @@ test("host.aliases: picking an alias fills the host form from the reply", () => 
 });
 
 test("host.key: an unknown key moves the form to the identity step", () => {
-  const { window } = loadShell();
-  const H = window.WBHosts;
+  const H = WBHosts;
   const key = fixture("host.key").key;
   const s = H.next(H.initial(), { type: "key", key });
   assert.equal(s.step, "identity");
