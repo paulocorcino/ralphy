@@ -2814,7 +2814,7 @@
     <!-- ===================================================================
          Add a project (#501): a folder on this computer or on a peer becomes
          a project. The daemon that owns the folder lists it (`dir.list`) and
-         runs `ralphy daemon add` (`project.add`); wb-add-project.js holds the
+         runs `ralphy daemon add` (`project.add`); wb-add-project.ts holds the
          state. Folder names are shown with x-text only.
     ==================================================================== -->
     <div class="add-project-dialog" x-data="wbAddProjectDialog" @workbench:add-project-open.window="openAddProject()">
@@ -3262,13 +3262,13 @@
     <script type="module" src="wb-spend.js"></script>
     <script src="wb-daemon.js"></script>
     <script type="module" src="wb-release.js"></script>
-    <script src="wb-release-dialogs.js"></script>
+    <script type="module" src="wb-release-dialogs.js"></script>
     <!-- A module runs after the page is parsed, before the deferred Alpine
          below, so its `alpine:init` listener is in place (ADR-0075 D9). -->
     <script type="module" src="wb-hosts-dialog.js"></script>
     <script type="module" src="wb-add-project.js"></script>
-    <script src="wb-add-project-dialog.js"></script>
-    <script src="wb-security-dialog.js"></script>
+    <script type="module" src="wb-add-project-dialog.js"></script>
+    <script type="module" src="wb-security-dialog.js"></script>
     <script src="app.js"></script>
     <script defer src="vendor/alpine.min.js"></script>
   </body>

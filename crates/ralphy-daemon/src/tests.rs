@@ -1281,7 +1281,7 @@ fn the_release_badge_and_panel_are_pinned_in_the_served_assets() {
     let html = include_str!("../assets/ui/index.html");
     let app = include_str!("../assets/ui/app.js");
     let module = include_str!("../assets/ui/wb-release.ts");
-    let dialogs = include_str!("../assets/ui/wb-release-dialogs.js");
+    let dialogs = include_str!("../assets/ui/wb-release-dialogs.ts");
     let css = served_css();
 
     // The dot renders the daemon's severity; it must not be computed here.
@@ -1305,7 +1305,7 @@ fn the_release_badge_and_panel_are_pinned_in_the_served_assets() {
         app.contains("window.WBRelease.isSticky(this.release)"),
         "an urgent release must survive a dismissal"
     );
-    // The panel's flag is in wb-release-dialogs.js; the shortcuts ask the
+    // The panel's flag is in wb-release-dialogs.ts; the shortcuts ask the
     // modal stack by its path (ADR-0073 D5).
     assert!(
         app.contains("if (this.modalOpen(window.WBReleaseDialogs.whatsNewFlag)) return true;"),
@@ -4177,7 +4177,6 @@ fn every_ui_test_file_is_imported_by_the_barrel() {
 /// nothing joins it.
 const CLASSIC_SCRIPTS: &[&str] = &[
     "app.js",
-    "wb-add-project-dialog.js",
     "wb-columns.js",
     "wb-console.js",
     "wb-console-name.js",
@@ -4189,8 +4188,6 @@ const CLASSIC_SCRIPTS: &[&str] = &[
     "wb-geometry.js",
     "wb-monaco.js",
     "wb-notes.js",
-    "wb-release-dialogs.js",
-    "wb-security-dialog.js",
     "wb-session-route.js",
     "wb-view.js",
     "wb-viewer.js",
@@ -4210,7 +4207,9 @@ const MODULE_WINDOW_NAMES: &[&str] = &[
     "WBKanban",
     "WBProject",
     "WBRelease",
+    "WBReleaseDialogs",
     "WBRun",
+    "WBSecurityDialog",
     "WBSettingsDialog",
     "WBSpend",
     "WBSplit",
@@ -4274,9 +4273,8 @@ fn first_party_scripts_move_to_typescript_and_never_back() {
 }
 
 /// ADR-0073 D3: an Alpine component can be built without Alpine. A
-/// first-party file that registers one with `Alpine.data` gives its factory
-/// to `node --test` — an `export` when its source is an ES module (ADR-0075
-/// D2), else a `window.WB*` name — and has its own
+/// first-party file that registers one with `Alpine.data` is an ES module
+/// (ADR-0075 D2) that exports its factory to `node --test`, and has its own
 /// `ui-tests/<file>.test.mjs`, where `loadComponent` checks the `uses` list of
 /// ADR-0073 D4.
 #[test]
@@ -4297,27 +4295,14 @@ fn every_alpine_component_can_be_built_and_has_a_test() {
         }
         found += 1;
         let stem = path.trim_end_matches(".js");
-        if src.join(format!("{stem}.ts")).is_file() {
-            assert!(
-                text.contains("export function "),
-                "{path} registers an Alpine component and exports no factory, \
-                 so node --test cannot build it"
-            );
-            assert!(
-                tests.join(format!("{stem}.test.mjs")).is_file(),
-                "{path} registers an Alpine component and has no ui-tests/{stem}.test.mjs"
-            );
-            continue;
-        }
-        // An assignment, not a read: the component itself reads `window.WB*` folds.
-        let sets_window_name = text.match_indices("window.WB").any(|(at, _)| {
-            let rest = text[at + "window.WB".len()..]
-                .trim_start_matches(|c: char| c.is_alphanumeric() || c == '_');
-            rest.starts_with(" = ")
-        });
         assert!(
-            sets_window_name,
-            "{path} registers an Alpine component but sets no window.WB* name, \
+            src.join(format!("{stem}.ts")).is_file(),
+            "{path} registers an Alpine component and is a classic script: \
+             a component is a .ts module"
+        );
+        assert!(
+            text.contains("export function "),
+            "{path} registers an Alpine component and exports no factory, \
              so node --test cannot build it"
         );
         assert!(
@@ -4326,8 +4311,8 @@ fn every_alpine_component_can_be_built_and_has_a_test() {
         );
     }
     assert!(
-        found >= 2,
-        "expected at least wb-devices.js and wb-hosts-dialog.js, found {found}"
+        found >= 6,
+        "expected at least the six dialog and section components, found {found}"
     );
 }
 

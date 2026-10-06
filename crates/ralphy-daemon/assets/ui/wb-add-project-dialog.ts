@@ -1,34 +1,38 @@
 /* ---------------------------------------------------------------------------
    The Add a project dialog: a folder on this computer or on a peer becomes a
    project. The daemon that owns the folder lists it (`dir.list`) and runs
-   `ralphy daemon add` (`project.add`), and `wb-add-project.js` is the fold that
+   `ralphy daemon add` (`project.add`), and `wb-add-project.ts` is the fold that
    holds the dialog's state.
 
    `addProjectDialog` is the Alpine component `wbAddProjectDialog`. It reaches
    `shell()` only through the names in `uses` (ADR-0073 D4), and it opens on the
    `workbench:add-project-open` event (ADR-0073 D5).
 
-   Load order: after `wb-add-project.js`, before `app.js` and before Alpine, on
-   `index.html` only.
+   Loaded as a module on `index.html` only. It registers itself on
+   `alpine:init`, which comes after every module ran (ADR-0075 D9).
    --------------------------------------------------------------------------- */
-function addProjectDialog() {
-  return {
-    // Every `shell()` member this component's code or markup reads or calls.
-    // `loadComponent` in ui-tests/harness.mjs fails on any other name.
-    uses: ["fleetPeers", "loadFleet", "loadRepos", "openSlug", "projects", "repoRef", "toggle", "scrim"],
-    // The Add a project dialog (#501): its whole state is the wb-add-project.js fold.
-    addProject: window.WBAddProject.initial(),
+import { component } from "./wb-alpine.ts";
+import { WBAddProject } from "./wb-add-project.ts";
+import { WBFail } from "./wb-fail.ts";
+
+export function addProjectDialog() {
+  // Every `shell()` member this component's code or markup reads or calls.
+  // `loadComponent` in ui-tests/harness.mjs fails on any other name, and the
+  // type check fails on a name the code reads.
+  return component(["fleetPeers", "loadFleet", "loadRepos", "openSlug", "projects", "repoRef", "toggle", "scrim"], {
+    // The Add a project dialog (#501): its whole state is the wb-add-project.ts fold.
+    addProject: WBAddProject.initial(),
     // The debounce and "Loading…" timers of its folder list.
-    _addProjectTimer: null,
-    _addProjectSlow: null,
+    _addProjectTimer: undefined as number | undefined,
+    _addProjectSlow: undefined as number | undefined,
     _addProjectSeq: 0,
     // The last press on the folder list was not a mouse.
     _addProjectTouch: false,
     // --- Add a project (#501) -----------------------------------------------
     // Thin calls: every state change goes through `WBAddProject.next`, and
     // the daemon that owns the folder lists it and runs `ralphy daemon add`.
-    addProjectStep(ev) {
-      this.addProject = window.WBAddProject.next(this.addProject, ev);
+    addProjectStep(ev: any) {
+      this.addProject = WBAddProject.next(this.addProject, ev);
     },
     openAddProject() {
       this.addProjectStep({ type: "open" });
@@ -42,25 +46,25 @@ function addProjectDialog() {
       clearTimeout(this._addProjectSlow);
     },
     addProjectPlaces() {
-      return window.WBAddProject.places(this.fleetPeers);
+      return WBAddProject.places(this.fleetPeers);
     },
     addProjectEntries() {
-      return window.WBAddProject.entries(this.addProject);
+      return WBAddProject.entries(this.addProject);
     },
     addProjectPrimary() {
-      return window.WBAddProject.primary(this.addProject);
+      return WBAddProject.primary(this.addProject);
     },
     addProjectHelp() {
-      return window.WBAddProject.help(this.addProject);
+      return WBAddProject.help(this.addProject);
     },
     addProjectListable() {
-      return window.WBAddProject.listable(this.addProject);
+      return WBAddProject.listable(this.addProject);
     },
-    addProjectWhere(daemon) {
+    addProjectWhere(daemon: string) {
       this.addProjectStep({ type: "where", daemon });
       this.addProjectList(0);
     },
-    addProjectText(text) {
+    addProjectText(text: string) {
       this.addProjectStep({ type: "text", text, peers: this.fleetPeers });
       // A WSL path with no peer calls no verb.
       if (this.addProject.wslMissing) return;
@@ -70,7 +74,7 @@ function addProjectDialog() {
     // is dropped: by then the list may show the folder the first one opened.
     // A touch does not focus the field: on a phone that opens the keyboard,
     // and iOS Safari zooms into an input with text under 16px.
-    addProjectPick(entry, ev) {
+    addProjectPick(entry: any, ev?: any) {
       if (entry.error || (ev && ev.detail > 1)) return;
       this.addProjectStep({ type: "pick", name: entry.name, up: !!entry.up });
       this.addProjectList(0);
@@ -78,7 +82,7 @@ function addProjectDialog() {
     },
     // Arrows move in the list; Enter or Tab on a highlighted folder goes down
     // one level; Enter with none highlighted adds.
-    addProjectKey(ev) {
+    addProjectKey(ev: any) {
       const list = this.addProjectEntries();
       if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
         ev.preventDefault();
@@ -93,16 +97,16 @@ function addProjectDialog() {
       }
       if (ev.key === "Enter") {
         ev.preventDefault();
-        if (window.WBAddProject.enterAdds(this.addProject)) this.addProjectSubmit();
+        if (WBAddProject.enterAdds(this.addProject)) this.addProjectSubmit();
       }
     },
     // Ask the daemon for the folder list after `delay` ms. Each request has a
     // sequence number, and the fold drops a reply that is not the newest.
-    addProjectList(delay) {
+    addProjectList(delay: number) {
       clearTimeout(this._addProjectTimer);
       this._addProjectTimer = setTimeout(() => {
         const seq = ++this._addProjectSeq;
-        const payload = window.WBAddProject.request(this.addProject);
+        const payload = WBAddProject.request(this.addProject);
         this.addProjectStep({ type: "sent", seq });
         clearTimeout(this._addProjectSlow);
         this._addProjectSlow = setTimeout(() => this.addProjectStep({ type: "slow", seq }), 300);
@@ -113,18 +117,18 @@ function addProjectDialog() {
     },
     async addProjectSubmit() {
       if (this.addProjectPrimary().disabled) return;
-      const payload = window.WBAddProject.addPayload(this.addProject);
+      const payload = WBAddProject.addPayload(this.addProject);
       this.addProjectStep({ type: "adding" });
       let reply;
       try {
         reply = await window.WBDaemon.observe("project.add", payload);
-      } catch (e) {
+      } catch (e: any) {
         reply = { status: "error", message: String(e.message || e) };
       }
       if (reply?.status !== "ok") {
         this.addProjectStep({
           type: "addFailed",
-          message: window.WBFail.failed(reply, "Could not add the project: the daemon gave no reason."),
+          message: WBFail.failed(reply, "Could not add the project: the daemon gave no reason."),
         });
         this.loadRepos({ git: false });
         return;
@@ -137,20 +141,18 @@ function addProjectDialog() {
       // is selected, shown and focused, so work on it can start at once.
       if (stillOpen) this.selectAddedProject(payload.daemon ? `${payload.daemon}/${reply.slug}` : reply.slug);
     },
-    selectAddedProject(ref) {
+    selectAddedProject(ref: string) {
       if (!this.projects.some((p) => this.repoRef(p) === ref)) return;
       if (this.openSlug !== ref) this.toggle(ref);
       this.$nextTick(() => {
-        const head = document.querySelector("li.project.open .project-head");
+        const head = document.querySelector<HTMLElement>("li.project.open .project-head");
         if (!head) return;
         head.scrollIntoView({ block: "nearest" });
         head.focus();
       });
     },
-  };
+  });
 }
-
-window.WBAddProjectDialog = { component: addProjectDialog };
 
 if (typeof document !== "undefined" && document.addEventListener) {
   document.addEventListener("alpine:init", () => window.Alpine.data("wbAddProjectDialog", addProjectDialog));

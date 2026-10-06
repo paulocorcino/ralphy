@@ -19,6 +19,9 @@ import { dirname, join } from "node:path";
 import { hostsDialog } from "../assets/ui/wb-hosts-dialog.ts";
 import { settingsDialog, WBSettingsDialog } from "../assets/ui/wb-settings-dialog.ts";
 import { devices } from "../assets/ui/wb-devices.ts";
+import { securityDialog, WBSecurityDialog } from "../assets/ui/wb-security-dialog.ts";
+import { releaseDialogs, WBReleaseDialogs } from "../assets/ui/wb-release-dialogs.ts";
+import { addProjectDialog } from "../assets/ui/wb-add-project-dialog.ts";
 import { WBAgents } from "../assets/ui/wb-agents.ts";
 import { WBFileSearch } from "../assets/ui/wb-file-search.ts";
 import { WBRelease } from "../assets/ui/wb-release.ts";
@@ -57,12 +60,20 @@ const MODULE_NAMESPACES = {
   wbSettingsDefaults,
   wbQr,
   WBSettingsDialog,
+  WBSecurityDialog,
+  WBReleaseDialogs,
 };
 
-// The Alpine components that are ES modules (ADR-0075): `loadComponent` builds
-// these from their export. A component that is still a classic script is
-// found on `window.WB<Name>.component` instead (ADR-0073 D3).
-const MODULE_COMPONENTS = { wbHostsDialog: hostsDialog, wbSettingsDialog: settingsDialog, wbDevices: devices };
+// The Alpine components, by the name the markup gives `x-data`: `loadComponent`
+// builds each from its module's export (ADR-0073 D3, ADR-0075 D7).
+const MODULE_COMPONENTS = {
+  wbHostsDialog: hostsDialog,
+  wbSettingsDialog: settingsDialog,
+  wbDevices: devices,
+  wbSecurityDialog: securityDialog,
+  wbReleaseDialogs: releaseDialogs,
+  wbAddProjectDialog: addProjectDialog,
+};
 
 export const UI = join(dirname(fileURLToPath(import.meta.url)), "../assets/ui");
 
@@ -224,23 +235,21 @@ export function loadShell(opts = {}) {
 // the scope as the receiver of `Reflect.get`), so a getter that reads a
 // `shell()` name obeys `uses` too.
 //
-// The factory is the module's export in `MODULE_COMPONENTS`, else
-// `window.WB<Name>.component`, where `alpineName` is `wb<Name>` (ADR-0073
-// D3). A module reads the page's globals on the real `window`, so for a
-// module component `globalThis.window` is set to this page's window: the
-// last component built owns it, and node --test runs each file in its own
-// process. `opts.magics` gives the `$` magics (`$nextTick`)
-// that Alpine would add. `opts.from` is a `loadShell()` result to nest the
-// component in, so several components share one page; without it the other
-// `opts` go to a new `loadShell`.
+// The factory is the module's export in `MODULE_COMPONENTS`. A module reads
+// the page's globals on the real `window` and `document`, so both are set to
+// this page's stubs: the last component built owns them, and node --test
+// runs each file in its own process. `opts.magics` gives the `$` magics
+// (`$nextTick`) that Alpine would add. `opts.from` is a `loadShell()` result
+// to nest the component in, so several components share one page; without
+// it the other `opts` go to a new `loadShell`.
 export function loadComponent(alpineName, opts = {}) {
   const { state: shell, window, document } = opts.from || loadShell(opts);
-  const fromModule = MODULE_COMPONENTS[alpineName];
-  if (fromModule) globalThis.window = window;
-  const factory = fromModule || window["WB" + alpineName.slice(2)]?.component;
+  const factory = MODULE_COMPONENTS[alpineName];
   if (typeof factory !== "function") {
-    throw new Error(`no window.WB${alpineName.slice(2)}.component for the Alpine component ${alpineName}`);
+    throw new Error(`no Alpine component ${alpineName} in MODULE_COMPONENTS`);
   }
+  globalThis.window = window;
+  globalThis.document = document;
   const data = factory();
   const uses = new Set(data.uses);
   for (const name of uses) {

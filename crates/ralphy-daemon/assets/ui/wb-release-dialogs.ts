@@ -10,27 +10,16 @@
    `releaseWatchChanged`. The account menu opens the dialogs with the
    `workbench:whats-new-open` and `workbench:about-open` events (ADR-0073 D5).
 
-   Load order: after wb-release.js, before `app.js` and before Alpine, on
-   `index.html` only.
+   Loaded as a module on `index.html` only. It registers itself on
+   `alpine:init`, which comes after every module ran (ADR-0075 D9).
    --------------------------------------------------------------------------- */
-function releaseDialogs() {
-  return {
-    // Every `shell()` member this component's code or markup reads or calls.
-    // `loadComponent` in ui-tests/harness.mjs fails on any other name.
-    uses: [
-      "release",
-      "releaseSummary",
-      "releaseStale",
-      "markReleaseSeen",
-      "releaseWatchChanged",
-      "refreshLive",
-      "localSessions",
-      "peerSessions",
-      "fleetPeers",
-      "projectLabel",
-      "identityMark",
-      "scrim",
-    ],
+import { component } from "./wb-alpine.ts";
+
+export function releaseDialogs() {
+  // Every `shell()` member this component's code or markup reads or calls.
+  // `loadComponent` in ui-tests/harness.mjs fails on any other name, and the
+  // type check fails on a name the code reads.
+  return component(["release", "releaseSummary", "releaseStale", "markReleaseSeen", "releaseWatchChanged", "refreshLive", "localSessions", "peerSessions", "fleetPeers", "projectLabel", "identityMark", "scrim"], {
     // --- about (read-only) ------------------------------------------------
     // The product card from `/api/about`; these defaults show until it answers.
     aboutOpen: false,
@@ -48,7 +37,15 @@ function releaseDialogs() {
     // confirm → running → restarting, or to error. `consoles` are the ones that
     // close with the daemon; `peers` are the WSL peers updated after it;
     // `needCode` is a live TOTP seed.
-    relUpdate: { phase: "idle", code: "", needCode: false, consoles: [], peers: [], peerConsoles: 0, error: "" },
+    relUpdate: {
+      phase: "idle",
+      code: "",
+      needCode: false,
+      consoles: [] as string[],
+      peers: [] as (string | undefined)[],
+      peerConsoles: 0,
+      error: "",
+    },
     // `ralphy update` in a terminal restarts only this daemon, so only its own
     // consoles close.
     get releaseConsoleWarning() {
@@ -133,7 +130,7 @@ function releaseDialogs() {
       this.awaitNewBuild(this.release.current);
     },
     // The line under the question when the daemon refused or the update failed.
-    updateRefusal(result) {
+    updateRefusal(result: any) {
       if (result.status === 401) return "Code rejected. Enter the current code from your authenticator app.";
       if (result.status === 429) {
         return `Too many attempts. Wait ${result.retryAfter || "a few"} seconds and try again.`;
@@ -144,7 +141,7 @@ function releaseDialogs() {
     // Read the release view until a different build answers, then load the
     // page again: the new build brings its own workbench. The same build
     // after a gap means the new one did not start and the old one is back.
-    async awaitNewBuild(from, pause = 2000) {
+    async awaitNewBuild(from: string, pause = 2000) {
       const deadline = Date.now() + 120000;
       let sawGap = false;
       while (Date.now() < deadline) {
@@ -173,7 +170,7 @@ function releaseDialogs() {
         error: "Ralphy did not come back in two minutes. The file .ralphy/update.log in your home folder says why.",
       };
     },
-    async setReleaseWatch(enable) {
+    async setReleaseWatch(enable: boolean) {
       if (!window.WBRelease) return;
       try {
         await window.WBRelease.setWatch(enable);
@@ -207,13 +204,20 @@ function releaseDialogs() {
     aboutYear() {
       return new Date().getFullYear();
     },
-  };
+  });
 }
 
 // `whatsNewFlag` is the path of the What's new open flag that the dialog gives
 // to `scrim()`. Code outside the component asks the modal stack with it
 // (`modalOpen`), and never reads the flag (ADR-0073 D5).
-window.WBReleaseDialogs = { component: releaseDialogs, whatsNewFlag: "whatsNewOpen" };
+export const WBReleaseDialogs = { whatsNewFlag: "whatsNewOpen" };
+// app.js, a classic script, still reads this name (ADR-0075 D9).
+if (typeof window !== "undefined") window.WBReleaseDialogs = WBReleaseDialogs;
+declare global {
+  interface Window {
+    WBReleaseDialogs: typeof WBReleaseDialogs;
+  }
+}
 
 if (typeof document !== "undefined" && document.addEventListener) {
   document.addEventListener("alpine:init", () => window.Alpine.data("wbReleaseDialogs", releaseDialogs));
