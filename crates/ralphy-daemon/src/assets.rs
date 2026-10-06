@@ -368,7 +368,7 @@ mod tests {
         assert!(matches!(etag.as_deref(), Some(t) if t.starts_with('"') && t.ends_with('"')));
 
         let body = resp.into_body().collect().await.unwrap().to_bytes();
-        let source = include_bytes!("../assets/ui/app.js");
+        let source = include_bytes!(concat!(env!("OUT_DIR"), "/ui/app.js"));
         assert!(
             body.len() < source.len() / 2,
             "gzip halves the source at least"
@@ -390,7 +390,10 @@ mod tests {
         assert!(resp.headers().get(header::CONTENT_ENCODING).is_none());
         assert!(resp.headers().get(header::ETAG).is_some());
         let body = resp.into_body().collect().await.unwrap().to_bytes();
-        assert_eq!(&body[..], &include_bytes!("../assets/ui/app.js")[..]);
+        assert_eq!(
+            &body[..],
+            &include_bytes!(concat!(env!("OUT_DIR"), "/ui/app.js"))[..]
+        );
     }
 
     #[tokio::test]

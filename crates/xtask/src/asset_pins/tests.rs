@@ -108,7 +108,7 @@ fn a_pin_is_booked_to_the_receiver_its_own_statement_reads() {
     let src = r#"
     fn t() {
         let html = include_str!("../assets/ui/index.html");
-        let app = include_str!("../assets/ui/app.js");
+        let app = include_str!("../assets/ui/app.ts");
         assert!(html.contains("id=\"stage\""), "msg");
         assert!(app.contains("function shell("), "msg");
     }
@@ -124,7 +124,7 @@ fn a_pin_is_booked_to_the_receiver_its_own_statement_reads() {
         .any(|(t, a)| t.contains("id=") && *a == Some("index.html")));
     assert!(booked
         .iter()
-        .any(|(t, a)| t.contains("function shell(") && *a == Some("app.js")));
+        .any(|(t, a)| t.contains("function shell(") && *a == Some("app.ts")));
 }
 
 /// The stylesheet is named by a CALL, not a path — and after it became twelve

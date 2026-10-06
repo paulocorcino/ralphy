@@ -16,13 +16,15 @@ interface Window {
   WBDaemon: {
     observe(verb: string, payload: object): Promise<DaemonReply>;
     spawn(verb: string, payload: object, onStatus: (st: SpawnStatus) => void): number;
+    [member: string]: any;
   };
   Alpine: {
     data(name: string, factory: () => object): void;
+    [member: string]: any;
   };
   /** The event bus of app.js. */
   WB: {
-    emit(name: string, detail: object): void;
+    emit(name: string, detail?: object): void;
   };
   /** The view store (`wb-view.js`). */
   WBView: {
@@ -35,8 +37,31 @@ interface Window {
     stepFont(px: number, step: number): number;
     setFont(px: number): number;
     reloadForRestoredDesk(): void;
+    [member: string]: any;
   };
+  /** app.js: `shell()`, and the live instance of it Alpine built. */
+  shell: () => object;
+  getShell(): any;
+  WBRuns: { output(text: string): void };
+  WBColumns: any;
+  WBConsoleName: any;
+  WBDeskSink: any;
+  WBNotes: any;
+  WBSessionRoute: any;
+  WBViewer: any;
+  /** The vendored lucide (`vendor/lucide.js`). */
+  lucide: any;
 }
+
+// Classic scripts and vendored libraries that app.js names bare.
+declare var WBColumns: any;
+declare var WBConsole: Window["WBConsole"];
+declare var WBDaemon: Window["WBDaemon"];
+declare var WBViewer: any;
+declare var marked: any;
+declare var DOMPurify: any;
+/** The vendored Wunderbaum (`vendor/wunderbaum`). */
+declare var mar10: any;
 
 /** The vendored qrcode-generator (`vendor/qrcode.js`). */
 declare function qrcode(

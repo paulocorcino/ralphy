@@ -134,13 +134,13 @@ function sentence(line: unknown) {
 // One read of a shown fact folded into the last one (ADR-0070 D3). A
 // failure after a good read keeps that read's value, marked not current;
 // a failure before any good read has no value at all.
-function readFold(prev: Read | null | undefined, outcome: Outcome) {
+function readFold(prev: Read | null | undefined, outcome: Outcome): Read {
   const { ok, value, reason, at } = outcome;
   if (ok) return { value, goodAt: at, error: "", current: true };
   if (prev?.goodAt) {
-    return { value: prev.value, goodAt: prev.goodAt, error: reason, current: false };
+    return { value: prev.value, goodAt: prev.goodAt, error: reason as string, current: false };
   }
-  return { value: null, goodAt: 0, error: reason, current: false };
+  return { value: null, goodAt: 0, error: reason as string, current: false };
 }
 
 // The line a panel shows for a read that is not current; "" when it is.

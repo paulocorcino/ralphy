@@ -58,7 +58,7 @@ BASE = f"http://127.0.0.1:{PORT}/"
 # tests/browser/files/wb_move_364.py -> repo root is 4 dirs up.
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
-APP_JS = os.path.join(REPO_ROOT, "crates", "ralphy-daemon", "assets", "ui", "app.js")
+APP_TS = os.path.join(REPO_ROOT, "crates", "ralphy-daemon", "assets", "ui", "app.ts")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "364-move-2026-07-30.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
@@ -330,14 +330,14 @@ def main():
             # --- source pins ---------------------------------------------------
             # The EXPRESSION, not the noun: a comment mentioning either would
             # satisfy a bare-word pin (the #302 trap).
-            src = Path(APP_JS).read_text(encoding="utf-8")
+            src = Path(APP_TS).read_text(encoding="utf-8")
             rename_arm = src.split('case "rename": {', 1)[1].split("break;", 1)[0]
             check(
                 "the shared rename listener no longer composes a parent onto from/to",
                 "const to = parent ?" not in rename_arm and "parentOf(" not in src,
                 "arm={!r}".format(rename_arm.strip()[:120]),
             )
-            perform = src.split("async performMove(from, to) {", 1)[1].split("\n    },", 1)[0]
+            perform = src.split("async performMove(from: any, to: any) {", 1)[1].split("\n    },", 1)[0]
             check(
                 "performMove reveals through the named revealRel primitive",
                 "revealRel(" in perform,

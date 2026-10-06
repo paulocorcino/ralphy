@@ -8,9 +8,9 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { loadShell } from "./harness.mjs";
 
-// app.js names its siblings bare, which Node resolves through `globalThis`:
+// app.ts names its siblings bare, which Node resolves through `globalThis`:
 // mirror the fakes there, and take them down after this file.
-const GLOBALS = ["WB", "WBDaemon", "WBViewer", "WBChanges"];
+const GLOBALS = ["WBDaemon", "WBViewer", "WBChanges"];
 after(() => GLOBALS.forEach((k) => delete globalThis[k]));
 
 function shell() {

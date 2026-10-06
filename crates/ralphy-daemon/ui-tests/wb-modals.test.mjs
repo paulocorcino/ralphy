@@ -1,5 +1,5 @@
 // The modals: every `.modal-scrim` in index.html takes its behavior from ONE
-// binding, `scrim()` in app.js. These tests read each scrim's real `x-bind`
+// binding, `scrim()` in app.ts. These tests read each scrim's real `x-bind`
 // expression out of the document and evaluate it against a real `shell()`, so a
 // scrim that stops using the binding, or a binding that stops closing, fails
 // here. Alpine itself does not run in this harness: a test calls the binding's

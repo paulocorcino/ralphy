@@ -226,15 +226,7 @@ test("log off closes the dialog with the workbench:log-off event", async () => {
   const loaded = loadShell({ window: { dispatchEvent: (e) => sent.push(e) } });
   const { scope: state } = loadComponent("wbSettingsDialog", { from: loaded });
   state.settingsOpen = true;
-  // `logOff` emits on the bare `WB` global, which only the page defines.
-  const real = globalThis.WB;
-  globalThis.WB = loaded.window.WB;
-  try {
-    await loaded.state.logOff();
-  } finally {
-    if (real === undefined) delete globalThis.WB;
-    else globalThis.WB = real;
-  }
+  await loaded.state.logOff();
   const ev = sent.find((e) => e.type === "workbench:log-off");
   assert.ok(ev, `log off sends workbench:log-off on the window; sent ${sent.map((e) => e.type)}`);
 
@@ -261,7 +253,7 @@ test("the open dialog reads its settings again on workbench:panels-reread, and a
   assert.deepEqual(reads, ["settings"]);
 });
 
-// `app.js` asks the modal stack with this path; it must be the path the dialog
+// `app.ts` asks the modal stack with this path; it must be the path the dialog
 // gives to `scrim()`, or the shortcuts would never see the dialog open.
 test("openFlag is the path the Settings dialog gives to scrim()", () => {
   const { window } = loadComponent("wbSettingsDialog");

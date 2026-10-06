@@ -178,7 +178,7 @@ pub fn ui_copy_cmd(args: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// The sources: every page, `app.js`, the `wb-*.js` classic scripts and the
+/// The sources: every page, `app.ts`, the `wb-*.js` classic scripts and the
 /// `wb-*.ts` modules. The walk does not recurse, so `vendor/` and `styles/`
 /// are never read.
 fn sources(ui: &Path) -> Result<Vec<String>> {
@@ -190,7 +190,7 @@ fn sources(ui: &Path) -> Result<Vec<String>> {
         }
         let name = entry.file_name().to_string_lossy().into_owned();
         let wanted = name.ends_with(".html")
-            || name == "app.js"
+            || name == "app.ts"
             || (name.starts_with("wb-") && (name.ends_with(".js") || name.ends_with(".ts")));
         if wanted {
             names.push(name);

@@ -415,7 +415,7 @@ fn the_usage_modal_is_gone_from_the_served_assets() {
     );
     let assets = [
         ("index.html", include_str!("../../assets/ui/index.html")),
-        ("app.js", include_str!("../../assets/ui/app.js")),
+        ("app.ts", include_str!("../../assets/ui/app.ts")),
         ("the stylesheet", stylesheet.as_str()),
     ];
     // The removed modal's own names. Generic class names such as `usage-row`

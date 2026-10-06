@@ -10,6 +10,7 @@
    Loaded as a module on `index.html` only. It registers itself on
    `alpine:init`, which comes after every module ran (ADR-0075 D9).
    --------------------------------------------------------------------------- */
+import type { FleetPeer } from "./app.ts";
 import { component } from "./wb-alpine.ts";
 import * as WBHosts from "./wb-hosts.ts";
 
