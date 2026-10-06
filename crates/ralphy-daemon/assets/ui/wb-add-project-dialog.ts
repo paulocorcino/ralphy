@@ -8,8 +8,7 @@
    `shell()` only through the names in `uses` (ADR-0073 D4), and it opens on the
    `workbench:add-project-open` event (ADR-0073 D5).
 
-   Loaded as a module on `index.html` only. It registers itself on
-   `alpine:init`, which comes after every module ran (ADR-0075 D9).
+   `main.ts` registers it as `wbAddProjectDialog` (ADR-0075 D5).
    --------------------------------------------------------------------------- */
 import { component } from "./wb-alpine.ts";
 import { WBAddProject } from "./wb-add-project.ts";
@@ -152,8 +151,4 @@ export function addProjectDialog() {
       });
     },
   });
-}
-
-if (typeof document !== "undefined" && document.addEventListener) {
-  document.addEventListener("alpine:init", () => window.Alpine.data("wbAddProjectDialog", addProjectDialog));
 }

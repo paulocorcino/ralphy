@@ -92,8 +92,9 @@ TypeScript modules, one file at a time
 ([ADR-0075](./adr/0075-the-workbench-script-is-written-in-typescript.md)).
 The daemon's `build.rs` removes the types and the binary embeds the
 result. A classic script sets one `window.WB<Name>` namespace; a module
-exports. The `shell()` Alpine
-component in `app.js` holds the page layout and, for now, most features. A
+exports. Each page loads one entry module, which imports the rest
+(`main.ts` for the workbench). The `shell()` Alpine
+component in `app.ts` holds the page layout and, for now, most features. A
 feature with its own state moves out of it into an Alpine component in its
 own file, one feature at a time
 ([ADR-0073](./adr/0073-the-workbench-script-is-cut-into-alpine-components.md)).

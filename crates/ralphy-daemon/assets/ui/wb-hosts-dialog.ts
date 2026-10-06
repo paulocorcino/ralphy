@@ -7,8 +7,7 @@
    only through the names in `uses` (ADR-0073 D4), and it opens on the
    `workbench:hosts-open` event (ADR-0073 D5).
 
-   Loaded as a module on `index.html` only. It registers itself on
-   `alpine:init`, which comes after every module ran (ADR-0075 D9).
+   `main.ts` registers it as `wbHostsDialog` (ADR-0075 D5).
    --------------------------------------------------------------------------- */
 import type { FleetPeer } from "./app.ts";
 import { component } from "./wb-alpine.ts";
@@ -327,8 +326,4 @@ export function hostsDialog() {
       },
     },
   );
-}
-
-if (typeof document !== "undefined" && document.addEventListener) {
-  document.addEventListener("alpine:init", () => window.Alpine.data("wbHostsDialog", hostsDialog));
 }

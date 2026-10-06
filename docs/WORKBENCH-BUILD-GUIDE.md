@@ -26,14 +26,14 @@ are in [TESTING-TRAPS.md](TESTING-TRAPS.md#the-workbench-page-in-a-browser).
 
 A gesture (open, rename, delete, save, console-open, branch-switch,
 setting-change) becomes one `workbench:action` event through `WB.emit(action,
-detail)` in `app.js`. The page itself does not touch the file system, git or an
+detail)` in `app.ts`. The page itself does not touch the file system, git or an
 agent. `wb-daemon.js` turns an action into a daemon verb (`ACTION_TO_VERB`) and
 routes the daemon's pushes back into the page.
 
 The live list of actions is the code:
 
 ```sh
-grep -rn "WB.emit(" crates/ralphy-daemon/assets/ui/*.js
+grep -rn "WB.emit(" crates/ralphy-daemon/assets/ui/*.ts crates/ralphy-daemon/assets/ui/*.js
 ```
 
 An action name and its payload keys are a wire contract. Change both sides in
@@ -49,17 +49,24 @@ time. The classic scripts not moved yet are listed in `CLASSIC_SCRIPTS` in
   binary embeds that copy. A `.ts` file is written as a `.js` file with its
   types replaced by spaces, so the browser shows the same lines and columns
   as the source. `tsconfig.json` and the `.d.ts` files are not served.
+- **The entry module.** Each page has one `<script type="module">` tag,
+  after its classic scripts: `main.ts` for `index.html`, and
+  `<page>-main.ts` for each torn-off window page. `main.ts` imports the
+  page's modules, registers each Alpine component and the `x-icon`
+  directive, and calls `Alpine.start()` once. A new module is imported by
+  `main.ts`, not given a tag of its own.
 - **Imports.** A module imports a sibling by its `.ts` name
-  (`./wb-hosts.ts`); the build changes it to `.js`. A type is imported with
+  (`./wb-hosts.ts`); the build changes it to `.js`. A vendored ES module is
+  imported by its own path under `./vendor/`, which the build keeps. A type is imported with
   `import type`, because the build cannot tell a type from a value. No
   `enum`, `namespace` or parameter property: the build only removes types.
 - **Classic globals.** A module may read a classic script's `window.WB*`
   name; `globals.d.ts` types the part it reads. A module sets a `window.WB*`
   name only while a classic script still reads it.
 - **Components.** `component(uses, data)` in `wb-alpine.ts` types the
-  component's `this` from its `uses` list, with the `shell()` members typed
-  in `shell.d.ts`. The component registers itself on `alpine:init`, and its
-  `<script type="module">` tag sits before the deferred Alpine tag.
+  component's `this` from its `uses` list, against the type of the real
+  `shell()` (`Shell` in `app.ts`). A component module exports its factory,
+  and `main.ts` registers it under the name its `x-data` uses.
 - **Tests.** A test imports the `.ts` module. `ui-tests/harness.mjs` builds a
   module component from its export (`MODULE_COMPONENTS`).
 - **Type check.** `tsc --noEmit -p crates/ralphy-daemon/assets/ui`, in the
@@ -170,6 +177,12 @@ with no build step. The manifest has their versions. Two files have a local
 change: `bootstrap-icons.min.css` keeps only the `woff2` font in its
 `@font-face` list, and `devicon.min.css` keeps only the `woff` font, because
 only those font files are vendored.
+
+Alpine is the ES module build (`dist/module.esm.min.js` of the npm package,
+vendored as `alpine.esm.min.js`). It does not start itself and sets no
+global: `main.ts` imports it, sets `window.Alpine`, and starts it.
+`alpine.esm.min.d.ts` next to it is ours: the types `main.ts` imports with
+it. The build does not serve a `.d.ts` file, so the manifest does not list it.
 
 ## The console clipboard
 

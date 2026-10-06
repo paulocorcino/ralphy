@@ -5993,44 +5993,6 @@ export function wire(window: Window, document: Document) {
   document.addEventListener("click", () => document.getElementById("ctxmenu") && (document.getElementById("ctxmenu")!.style.display = "none"));
   document.addEventListener("scroll", () => document.getElementById("ctxmenu") && (document.getElementById("ctxmenu")!.style.display = "none"), true);
 
-  // `x-icon="'name'"` draws a lucide icon INTO its own `<svg>`. It never swaps the
-  // element (lucide's `createIcons` replaces it), so it is still the node Alpine
-  // bound: the icon renders wherever Alpine initializes an element — page load, a
-  // new `x-if` branch, a new `x-for` row — and a changed name redraws it. The
-  // output matches `createIcons` (lucide 0.460.0): the icon's default attributes
-  // where the markup set none, `data-lucide` (the stylesheets select on it), and
-  // the `lucide lucide-<name>` classes.
-  document.addEventListener("alpine:init", () => {
-    const pascal = (name: any) =>
-      name.replace(/(\w)(\w*)(_|-|\s*)/g, (_: any, first: any, rest: any) => first.toUpperCase() + rest.toLowerCase());
-    window.Alpine.directive("icon", (el: any, { expression }: any, { evaluateLater, effect }: any) => {
-      const read = evaluateLater(expression);
-      const authored = new Set(el.getAttributeNames());
-      let drawn: any = null;
-      effect(() =>
-        read((name: any) => {
-          if (name === drawn) return;
-          if (drawn) el.classList.remove(`lucide-${drawn}`);
-          drawn = name;
-          const node = window.lucide?.icons[pascal(String(name))];
-          if (!node) {
-            console.warn(`x-icon: no lucide icon named "${name}"`);
-            el.replaceChildren();
-            return;
-          }
-          const [, attrs, children] = node;
-          for (const [key, value] of Object.entries(attrs)) {
-            // `class` is merged below: `:class` on the same element owns the rest.
-            if (key !== "class" && !authored.has(key)) el.setAttribute(key, String(value));
-          }
-          el.setAttribute("data-lucide", name);
-          el.classList.add("lucide", `lucide-${name}`);
-          el.replaceChildren(...children.map((child: any) => window.lucide.createElement(child)));
-        }),
-      );
-    });
-  });
-
   // Alt+Shift+<digit> → the menu row carrying that digit, through the SAME row
   // action as a click. Matched on `e.code` so layout does not matter. R is no
   // row: it opens the menu on the console row's command field, so the digits
@@ -6118,7 +6080,42 @@ export function wire(window: Window, document: Document) {
   };
 }
 
+const pascal = (name: any) =>
+  name.replace(/(\w)(\w*)(_|-|\s*)/g, (_: any, first: any, rest: any) => first.toUpperCase() + rest.toLowerCase());
+
+// `x-icon="'name'"` draws a lucide icon INTO its own `<svg>`. It never swaps the
+// element (lucide's `createIcons` replaces it), so it is still the node Alpine
+// bound: the icon renders wherever Alpine initializes an element — page load, a
+// new `x-if` branch, a new `x-for` row — and a changed name redraws it. The
+// output matches `createIcons` (lucide 0.460.0): the icon's default attributes
+// where the markup set none, `data-lucide` (the stylesheets select on it), and
+// the `lucide lucide-<name>` classes.
+export function iconDirective(el: any, { expression }: any, { evaluateLater, effect }: any) {
+  const read = evaluateLater(expression);
+  const authored = new Set(el.getAttributeNames());
+  let drawn: any = null;
+  effect(() =>
+    read((name: any) => {
+      if (name === drawn) return;
+      if (drawn) el.classList.remove(`lucide-${drawn}`);
+      drawn = name;
+      const node = window.lucide?.icons[pascal(String(name))];
+      if (!node) {
+        console.warn(`x-icon: no lucide icon named "${name}"`);
+        el.replaceChildren();
+        return;
+      }
+      const [, attrs, children] = node;
+      for (const [key, value] of Object.entries(attrs)) {
+        // `class` is merged below: `:class` on the same element owns the rest.
+        if (key !== "class" && !authored.has(key)) el.setAttribute(key, String(value));
+      }
+      el.setAttribute("data-lucide", name);
+      el.classList.add("lucide", `lucide-${name}`);
+      el.replaceChildren(...children.map((child: any) => window.lucide.createElement(child)));
+    }),
+  );
+}
+
 /** The `shell()` component: a component's `uses` names come from it (ADR-0075 D6). */
 export type Shell = ReturnType<typeof shell>;
-
-if (typeof document !== "undefined") wire(window, document);

@@ -533,7 +533,7 @@ async fn root_serves_the_embedded_page() {
         "the page must identify the daemon; got: {body}"
     );
     assert!(
-        body.contains(r#"x-data="shell()""#),
+        body.contains(r#"x-data="shell""#),
         "the workbench shell HTML must render at the root"
     );
     let resp = get("/app.js").await;
@@ -3861,6 +3861,16 @@ fn with_module_imports(refs: Vec<String>) -> Vec<String> {
     out
 }
 
+/// The `src` of each `<script type="module">` tag of a page.
+fn module_tags(html: &str) -> Vec<String> {
+    html.match_indices(r#"<script type="module" src=""#)
+        .filter_map(|(at, open)| {
+            let rest = &html[at + open.len()..];
+            rest.find('"').map(|end| rest[..end].to_string())
+        })
+        .collect()
+}
+
 /// The paths of the static `import`/`export … from` lines of a module. The
 /// workbench modules put each import on one line, at the top.
 fn static_imports(js: &str) -> Vec<&str> {
@@ -3977,8 +3987,10 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
     // A module reached by an `import` needs no tag of its own (ADR-0075 D5).
     let index = SHELLS[0].1;
     let index_refs = with_module_imports(tag_references(index));
+    // A popup's entry module is the one asset only its own page loads.
+    let popup_entries = ["detached-main.js", "detached-fence-main.js"];
     for path in embedded_ui_paths() {
-        if path.starts_with("vendor/") {
+        if path.starts_with("vendor/") || popup_entries.contains(&path.as_str()) {
             continue;
         }
         if !path.ends_with(".js") && !path.ends_with(".css") {
@@ -4028,7 +4040,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
             .iter()
             .find(|(name, _)| *name == shell)
             .expect("the shell was just listed in SHELLS");
-        let refs = tag_references(html);
+        let refs = with_module_imports(tag_references(html));
         for module in required {
             assert!(
                 refs.iter().any(|r| r == module),
@@ -4273,47 +4285,133 @@ fn first_party_scripts_move_to_typescript_and_never_back() {
     );
 }
 
-/// ADR-0073 D3: an Alpine component can be built without Alpine. A
-/// first-party file that registers one with `Alpine.data` is an ES module
-/// (ADR-0075 D2) that exports its factory to `node --test`, and has its own
-/// `ui-tests/<file>.test.mjs`, where `loadComponent` checks the `uses` list of
-/// ADR-0073 D4.
+/// ADR-0073 D3: an Alpine component can be built without Alpine. Each
+/// component `main.ts` registers is the exported factory of an ES module
+/// (ADR-0075 D2), and that module has its own `ui-tests/<file>.test.mjs`,
+/// where `loadComponent` checks the `uses` list of ADR-0073 D4.
 #[test]
 fn every_alpine_component_can_be_built_and_has_a_test() {
     let tests = Path::new(env!("CARGO_MANIFEST_DIR")).join("ui-tests");
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/ui");
+    let main = include_str!("../assets/ui/main.ts");
     let mut found = 0;
+    for (name, factory) in alpine_data_calls(main) {
+        if name == "shell" {
+            continue;
+        }
+        found += 1;
+        let stem = main
+            .lines()
+            .filter(|l| l.starts_with("import {"))
+            .find(|l| l.contains(&format!(" {factory} ")) || l.contains(&format!(" {factory},")))
+            .and_then(|l| l.split_once("from \"./")?.1.strip_suffix(".ts\";"))
+            .unwrap_or_else(|| {
+                panic!("main.ts registers {name} and imports no {factory} from a sibling")
+            });
+        let module = std::fs::read_to_string(src.join(format!("{stem}.ts")))
+            .unwrap_or_else(|e| panic!("read {stem}.ts: {e}"));
+        assert!(
+            module.contains(&format!("export function {factory}(")),
+            "{stem}.ts must export the factory {factory}, so node --test can build {name}"
+        );
+        assert!(
+            tests.join(format!("{stem}.test.mjs")).is_file(),
+            "{stem}.ts holds the component {name} and has no ui-tests/{stem}.test.mjs"
+        );
+    }
+    assert!(
+        found >= 6,
+        "expected at least the six dialog and section components, found {found}"
+    );
+}
+
+/// The `(name, factory)` of each `Alpine.data("name", factory);` line.
+fn alpine_data_calls(js: &str) -> Vec<(&str, &str)> {
+    js.lines()
+        .filter_map(|l| l.trim().strip_prefix("Alpine.data(\"")?.strip_suffix(");"))
+        .filter_map(|l| l.split_once("\", "))
+        .collect()
+}
+
+/// ADR-0075 D5: each page loads one entry module, and only the entry of
+/// `index.html` registers Alpine components and starts Alpine, once. A
+/// name in an `x-data` that `main.ts` does not register is an element
+/// Alpine cannot build, which no node test renders.
+#[test]
+fn each_page_starts_from_one_entry_module() {
+    for (page, html, entry) in [
+        (
+            "index.html",
+            include_str!("../assets/ui/index.html"),
+            "main.js",
+        ),
+        (
+            "detached.html",
+            include_str!("../assets/ui/detached.html"),
+            "detached-main.js",
+        ),
+        (
+            "detached-fence.html",
+            include_str!("../assets/ui/detached-fence.html"),
+            "detached-fence-main.js",
+        ),
+    ] {
+        assert_eq!(
+            module_tags(html),
+            vec![entry.to_string()],
+            "{page} loads one entry module"
+        );
+        assert!(
+            !tag_references(html)
+                .iter()
+                .any(|r| r.starts_with("vendor/alpine")),
+            "{page} loads Alpine only through main.ts"
+        );
+    }
+    let main = UI
+        .get_file("main.js")
+        .and_then(|f| f.contents_utf8())
+        .expect("main.js is embedded UTF-8");
+    assert!(
+        main.contains(r#"import Alpine from "./vendor/alpine.esm.min.js";"#),
+        "main.js imports the vendored Alpine ES module build, at its own path"
+    );
     for path in embedded_ui_paths() {
-        if path.starts_with("vendor/") || !path.ends_with(".js") {
+        if path.starts_with("vendor/") || !path.ends_with(".js") || path == "main.js" {
             continue;
         }
         let text = UI
             .get_file(&path)
             .and_then(|f| f.contents_utf8())
             .unwrap_or_else(|| panic!("{path} is embedded UTF-8"));
-        if !text.contains("Alpine.data(") {
-            continue;
+        for call in ["Alpine.start(", "Alpine.data(", "Alpine.directive("] {
+            assert!(
+                !text.contains(call),
+                "{path} calls {call}: only main.ts does"
+            );
         }
-        found += 1;
-        let stem = path.trim_end_matches(".js");
-        assert!(
-            src.join(format!("{stem}.ts")).is_file(),
-            "{path} registers an Alpine component and is a classic script: \
-             a component is a .ts module"
-        );
-        assert!(
-            text.contains("export function "),
-            "{path} registers an Alpine component and exports no factory, \
-             so node --test cannot build it"
-        );
-        assert!(
-            tests.join(format!("{stem}.test.mjs")).is_file(),
-            "{path} registers an Alpine component and has no ui-tests/{stem}.test.mjs"
-        );
     }
-    assert!(
-        found >= 6,
-        "expected at least the six dialog and section components, found {found}"
+    assert_eq!(
+        main.matches("Alpine.start()").count(),
+        1,
+        "main.ts starts Alpine once"
+    );
+
+    let index = include_str!("../assets/ui/index.html");
+    let mut bound: Vec<&str> = index
+        .split("x-data=\"")
+        .skip(1)
+        .filter_map(|rest| rest.split_once('"').map(|(name, _)| name))
+        .collect();
+    bound.sort_unstable();
+    let mut registered: Vec<&str> = alpine_data_calls(main)
+        .into_iter()
+        .map(|(n, _)| n)
+        .collect();
+    registered.sort_unstable();
+    assert_eq!(
+        registered, bound,
+        "main.ts registers exactly the x-data names of index.html"
     );
 }
 
@@ -4622,7 +4720,7 @@ fn the_workbench_never_titles_a_repo_with_its_routing_head() {
         include_str!("../assets/ui/detached-fence.html"),
     ] {
         assert!(
-            page.contains(r#"<script type="module" src="wb-fleet.js"></script>"#),
+            with_module_imports(tag_references(page)).contains(&"wb-fleet.js".to_string()),
             "a detached popup must load the fold it calls"
         );
     }
@@ -7920,13 +8018,11 @@ fn css_rule_body<'a>(css: &'a str, selector: &str) -> &'a str {
 fn every_icon_is_drawn_by_the_x_icon_directive() {
     let html = include_str!("../assets/ui/index.html");
     let js = include_str!("../assets/ui/app.ts");
-    let init = js
-        .split_once(r#"document.addEventListener("alpine:init", () => {"#)
-        .expect("app.ts must register its directives at alpine:init")
-        .1;
     assert!(
-        init.contains(r#"window.Alpine.directive("icon","#),
-        "the x-icon directive must be registered at alpine:init"
+        js.contains("export function iconDirective(")
+            && include_str!("../assets/ui/main.ts")
+                .contains(r#"Alpine.directive("icon", iconDirective);"#),
+        "main.ts must register the x-icon directive of app.ts"
     );
     assert!(
         html.matches("x-icon=").count() >= 40,

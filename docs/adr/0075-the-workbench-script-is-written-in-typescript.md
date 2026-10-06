@@ -291,3 +291,45 @@ came right after `)`, so a TypeScript return type (`): string {`) hid two
 texts of `wb-hosts.ts`. It now skips a simple return type.
 
 With this, the pilot meets every criterion, and this ADR is accepted.
+
+## Amendment (2026-10-06): phase 4, as measured
+
+Phase 4 moved the six Alpine components and `app.js` to TypeScript, then
+added the entry modules. Four decisions changed in the work.
+
+**D5 does not wait for the last classic script.** D9 said that D5 replaces
+the CDN Alpine build when the last classic script moves. No classic script
+reads `Alpine`, and none reads a module's name while the page is parsed. A
+module tag runs after every classic script, with or without an entry module.
+So D5 is done in phase 4, and the classic scripts that remain still work.
+
+**Each page has an entry module.** `main.ts` is the entry of `index.html`;
+`detached-main.ts` and `detached-fence-main.ts` are the entries of the two
+torn-off window pages, which have no Alpine. `main.ts` imports the modules in
+the order of the old module tags, sets `window.Alpine`, calls `wire(window,
+document)` from `app.ts`, registers each component and the `x-icon`
+directive, and calls `Alpine.start()` once. A component module no longer
+registers itself on `alpine:init`: ADR-0073 D3 reads "registered by the
+entry module". The `<body>` reads `x-data="shell"`.
+
+**A relative import may name a vendored file.** `main.ts` imports
+`./vendor/alpine.esm.min.js`, the `dist/module.esm.min.js` file of the same
+npm package and version (3.14.1), recorded in the manifest (ADR-0072 D12).
+`build/ui.rs` keeps an import of a `.js` file under `./vendor/` as it is, and
+still fails the build on any other relative import that does not name a
+`.ts` file. The types of the import come from `vendor/alpine.esm.min.d.ts`,
+which the build does not serve.
+
+**D6 types `Shell` from the real `shell()`.** `Shell` is
+`ReturnType<typeof shell>`, exported by `app.ts`, and replaces the
+hand-written `shell.d.ts`. `app.ts` was converted mechanically: a parameter
+with no obvious type is `any`, and `strict` stays on. Narrowing the `any`s is
+later work, one area at a time. Everything `app.js` did at load is in the
+exported `wire(window, document)`, so a test runs it on its own stubs and
+each call starts with new state (D7).
+
+D5 is now checked by `each_page_starts_from_one_entry_module`
+(`crates/ralphy-daemon/src/tests.rs`): each page has one module tag, the
+entry it names; only `main.ts` calls `Alpine.start`, `Alpine.data` and
+`Alpine.directive`; and `main.ts` registers exactly the `x-data` names of
+`index.html`.
