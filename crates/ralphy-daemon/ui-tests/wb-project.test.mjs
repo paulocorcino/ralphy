@@ -110,6 +110,9 @@ test("issueUrl builds a link only from a github remote", () => {
   // with no remote must each yield nothing to link to — a link that 404s is
   // worse than no link.
   assert.equal(wb.issueUrl("https://gitlab.com/owner/repo.git", 42), null);
+  // `github.com` inside another host's name or path is not GitHub.
+  assert.equal(wb.issueUrl("https://github.com.evil.example/owner/repo", 42), null);
+  assert.equal(wb.issueUrl("https://evil.example/github.com/owner/repo", 42), null);
   assert.equal(wb.issueUrl("", 42), null);
   assert.equal(wb.issueUrl(null, 42), null);
   assert.equal(wb.issueUrl(undefined, 42), null);

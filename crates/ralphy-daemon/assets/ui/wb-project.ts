@@ -94,9 +94,9 @@ function checkoutEntry(checkout: string | null | undefined, listing: Listing) {
 // and `git@github.com:owner/repo` — and a non-GitHub forge yields null rather
 // than a guessed URL, because a link that 404s is worse than no link.
 function issueUrl(remoteUrl: string | null | undefined, number: number) {
-  const url = remoteUrl || "";
-  if (!url.includes("github.com")) return null;
-  const m = url.match(/github\.com[/:]([^/]+)\/(.+?)(?:\.git)?\/?$/);
+  // The host is anchored: `github.com` must BE the host (after an optional
+  // scheme and user), not a part of another host's name or path.
+  const m = (remoteUrl || "").match(/^(?:[a-z+]+:\/\/)?(?:[^@/]+@)?github\.com[/:]([^/]+)\/(.+?)(?:\.git)?\/?$/);
   if (!m) return null;
   return `https://github.com/${m[1]}/${m[2]}/issues/${number}`;
 }
