@@ -34,7 +34,7 @@ UI module in `crates/ralphy-daemon/assets/ui/` where one exists.
 | `projects/` | the Projects list | `wb-project.js` |
 | `release/` | the release badge and What's new | `wb-release.js` |
 | `runs/` | the Runs panel | `wb-runs.js` |
-| `security/` | security headers, the CSP, the audit log of devices | `wb-device.js`, `wb-devices.js` |
+| `security/` | security headers, the CSP, the audit log of devices | `wb-device.js`, `wb-devices.ts` |
 | `spend/` | the Spend tab | `wb-spend.js` |
 | `workbench/` | rules for the whole page: shown facts, icons, modals, cost | `app.js` |
 | `worktree/` | worktrees and the checkout switcher | — |

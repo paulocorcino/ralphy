@@ -1,4 +1,4 @@
-// Unit tests for assets/ui/wb-settings-dialog.js, the Settings dialog's Alpine
+// Unit tests for assets/ui/wb-settings-dialog.ts, the Settings dialog's Alpine
 // component. It is built with `loadComponent`, so every test here also fails
 // when the component reads a shell() name it does not list in `uses`, or
 // assigns a shell() field (ADR-0073 D4). The schema itself (`wb-settings.ts`)
@@ -24,14 +24,8 @@ const wrapperTag = () => {
 };
 const handlerOf = (event) => wrapperTag().match(new RegExp(`@${event}\\.window="([^"]*)"`))[1];
 
-// `saveSetting` ends by announcing on the `WB` bus, which app.js reads as a BARE
-// global — in a browser `window.WB` IS a global, in this harness `window` is a
-// parameter object and the reference does not resolve. Promote the REAL
-// namespace the siblings built (never a fake one) and restore after, the way
-// the harness itself borrows and restores `BroadcastChannel`.
-// `async`, and the body is AWAITED inside the try: a synchronous `finally`
-// around a returned promise restores the global before the fold has run, which
-// is exactly the "WB is not defined" this helper exists to prevent.
+// The dialog with a daemon that records each `observe` call. `saveSetting`
+// ends by announcing on the page's real `WB` bus.
 async function withDialog(run) {
   const { scope: state, shell, window } = loadComponent("wbSettingsDialog");
   const calls = [];
@@ -43,14 +37,7 @@ async function withDialog(run) {
   };
   // A repo must be open or the fold skips the daemon entirely.
   shell.openSlug = "owner/repo";
-  const real = globalThis.WB;
-  globalThis.WB = window.WB;
-  try {
-    return await run(state, calls);
-  } finally {
-    if (real === undefined) delete globalThis.WB;
-    else globalThis.WB = real;
-  }
+  return await run(state, calls);
 }
 
 test("turning a toggle off SETS false — it does not unset the key", async () => {
@@ -150,15 +137,8 @@ test("a failed settings read says so, and a project setting is not written", asy
   window.WBView.read = () => ({});
   shell.openSlug = "o/r";
   shell._flashAction = () => {};
-  // `openSettings` names the bare `WBDaemon` global, as the page does.
-  const realDaemon = globalThis.WBDaemon;
-  globalThis.WBDaemon = window.WBDaemon;
-  try {
-    state.openSettings();
-    for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
-  } finally {
-    globalThis.WBDaemon = realDaemon;
-  }
+  state.openSettings();
+  for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
   assert.equal(state.settingsError, "Could not read the settings: settings.json is not JSON.");
   await state.saveSetting("queue.label", "ready");
   assert.deepEqual(verbs, ["config.get"], "no config.set over values never read");

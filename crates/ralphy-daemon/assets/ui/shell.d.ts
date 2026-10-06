@@ -28,6 +28,11 @@ interface Shell {
   loadRepos(opts?: { git?: boolean }): Promise<void>;
   _flashAction(msg: string): void;
   hostRemoved(daemonId: string): void;
+  /** The open project's slug, or null when no project is open. */
+  openSlug: string | null;
+  projectLabel(ref: string): string;
+  /** Resolves true when the operator confirms. */
+  askConfirm(opts: { title: string; message: string; confirmLabel: string }): Promise<boolean>;
 }
 
 interface AlpineMagics {

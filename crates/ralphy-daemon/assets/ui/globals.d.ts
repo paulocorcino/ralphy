@@ -20,6 +20,22 @@ interface Window {
   Alpine: {
     data(name: string, factory: () => object): void;
   };
+  /** The event bus of app.js. */
+  WB: {
+    emit(name: string, detail: object): void;
+  };
+  /** The view store (`wb-view.js`). */
+  WBView: {
+    read(): any;
+    patch(fields: object): void;
+  };
+  /** The consoles (`wb-console.js`). */
+  WBConsole: {
+    fontSize(): number;
+    stepFont(px: number, step: number): number;
+    setFont(px: number): number;
+    reloadForRestoredDesk(): void;
+  };
 }
 
 /** The vendored qrcode-generator (`vendor/qrcode.js`). */

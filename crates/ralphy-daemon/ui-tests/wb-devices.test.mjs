@@ -1,4 +1,4 @@
-// Unit tests for assets/ui/wb-devices.js — Settings → Devices (ADR-0074 D9).
+// Unit tests for assets/ui/wb-devices.ts — Settings → Devices (ADR-0074 D9).
 // Runs the real source with no DOM, over the daemon's own replies
 // (`fixtures/api-audit-devices.json`, `fixtures/api-audit-events.json`).
 import { test } from "node:test";
@@ -6,15 +6,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import * as WBDevices from "../assets/ui/wb-devices.ts";
+import { loadComponent } from "./harness.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const SRC = readFileSync(join(HERE, "../assets/ui/wb-devices.js"), "utf8");
 
-function load() {
-  const window = {};
-  new Function("window", SRC)(window);
-  return window.WBDevices;
-}
+const load = () => WBDevices;
 
 function fixture(name) {
   return JSON.parse(readFileSync(join(HERE, "fixtures", name + ".json"), "utf8"));
@@ -120,4 +117,20 @@ test("repeated lines in a row are one row with a count", () => {
 test("a changed profile names what changed in plain words", () => {
   const line = load().eventLine({ event: "device_profile_changed", changed: ["gpu", "time_zone"] });
   assert.equal(line, "Its device facts changed: graphics card, time zone");
+});
+
+// The component reads no `shell()` name, and a failed read is never an empty
+// list (ADR-0070 D3).
+test("the Devices section says why it could not read the devices", async () => {
+  const { scope } = loadComponent("wbDevices");
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: false, status: 503, json: async () => ({ error: "the audit log is closed" }) });
+  try {
+    await scope.load();
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.equal(scope.loaded, false);
+  assert.deepEqual(scope.devices, []);
+  assert.equal(scope.error, "Could not read the devices: the audit log is closed.");
 });

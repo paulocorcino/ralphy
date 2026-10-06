@@ -1,5 +1,5 @@
 /* ---------------------------------------------------------------------------
-   The Settings dialog: the data-driven knobs (schema in wb-settings.js), the
+   The Settings dialog: the data-driven knobs (schema in wb-settings.ts), the
    daemon's `config.get`/`config.set`/`config.unset`, and the desk history.
 
    `settingsDialog` is the Alpine component `wbSettingsDialog`. It reaches
@@ -10,25 +10,33 @@
    section inside it is its own component (`wbDevices`), nested one level
    deeper.
 
-   Load order: after wb-settings.js, before `app.js` and before Alpine, on
-   `index.html` only.
+   Loaded as a module on `index.html` only. It registers itself on
+   `alpine:init`, which comes after every module ran (ADR-0075 D9).
    --------------------------------------------------------------------------- */
-function settingsDialog() {
-  return {
-    // Every `shell()` member this component's code or markup reads or calls.
-    // `loadComponent` in ui-tests/harness.mjs fails on any other name.
-    uses: ["_flashAction", "askConfirm", "openSlug", "projectLabel", "scrim"],
-    // Data-driven (schema in wb-settings.js); the daemon persists via
+import { component } from "./wb-alpine.ts";
+import { WBDeskHistory } from "./wb-desk-history.ts";
+import { WBFail } from "./wb-fail.ts";
+import { WB_SETTINGS, WB_TRISTATE, wbClientKeys, wbSettingsDefaults } from "./wb-settings.ts";
+
+/** One row of the Desk history section (`WBDeskHistory.rows`). */
+type DeskRow = ReturnType<typeof WBDeskHistory.rows>[number];
+
+export function settingsDialog() {
+  // Every `shell()` member this component's code or markup reads or calls.
+  // `loadComponent` in ui-tests/harness.mjs fails on any other name, and the
+  // type check fails on a name the code reads.
+  return component(["_flashAction", "askConfirm", "openSlug", "projectLabel", "scrim"], {
+    // Data-driven (schema in wb-settings.ts); the daemon persists via
     // `config.set`/`config.unset`.
-    SETTINGS: window.WB_SETTINGS,
-    TRISTATE: window.WB_TRISTATE,
+    SETTINGS: WB_SETTINGS,
+    TRISTATE: WB_TRISTATE,
     settingsOpen: false,
     // The daemon (machine-wide) group first; per-project sections follow.
     settingsSection: "daemon",
-    settings: window.wbSettingsDefaults(),
+    settings: wbSettingsDefaults(),
 
     // Keys held in this browser profile's view store (`scope: "client"`).
-    CLIENT_KEYS: window.wbClientKeys(),
+    CLIENT_KEYS: wbClientKeys(),
 
     openSettings() {
       this.settingsOpen = true;
@@ -45,12 +53,12 @@ function settingsDialog() {
     // defaults; with no repo open the project groups are disabled.
     readSettings() {
       if (this.openSlug) {
-        WBDaemon.observe("config.get", { repo: this.openSlug })
+        window.WBDaemon.observe("config.get", { repo: this.openSlug })
           .then((reply) => {
             const cfg = reply && reply.status === "ok" ? reply.config : null;
             // The defaults must not pass as the project's values (ADR-0070 D3).
             if (!cfg || typeof cfg !== "object") {
-              this.settingsError = window.WBFail.failed(
+              this.settingsError = WBFail.failed(
                 reply,
                 "Could not read the settings: the daemon gave no reason.",
               );
@@ -77,8 +85,8 @@ function settingsDialog() {
     // The "Desk history" section (ADR-0050 amendment 2026-10-04): read each
     // time it opens. `loaded` is set only by a list the daemon served, so a
     // failed read never shows as an empty history (ADR-0070 D3).
-    deskHistory: { loaded: false, rows: [], error: "" },
-    showSettingsSection(id) {
+    deskHistory: { loaded: false, rows: [] as DeskRow[], error: "" },
+    showSettingsSection(id: string) {
       this.settingsSection = id;
       if (id === "desk-history") this.loadDeskHistory();
     },
@@ -93,8 +101,8 @@ function settingsDialog() {
           this.deskHistory.error = `Could not read the desk history: ${reply?.error || "the daemon gave no reason"}.`;
           return;
         }
-        const when = (ms) => new Date(ms).toLocaleString();
-        this.deskHistory.rows = window.WBDeskHistory.rows(reply, when);
+        const when = (ms: number) => new Date(ms).toLocaleString();
+        this.deskHistory.rows = WBDeskHistory.rows(reply, when);
         this.deskHistory.loaded = true;
       } catch {
         this.deskHistory.loaded = false;
@@ -104,7 +112,7 @@ function settingsDialog() {
     },
     // A restore reloads every open page, this one too: a page never moves a
     // live window from the desk, so a reload is how the restored layout shows.
-    async postDeskRestore(body, failLine) {
+    async postDeskRestore(body: object, failLine: string) {
       try {
         const r = await fetch("/api/desk/history", {
           method: "POST",
@@ -121,18 +129,18 @@ function settingsDialog() {
         this.deskHistory.error = `${failLine}: the daemon did not answer.`;
       }
     },
-    askDeskRestore(title) {
+    askDeskRestore(title: string) {
       return this.askConfirm({
         title,
         message: "Consoles that run now stay open. Every open page reloads.",
         confirmLabel: "Restore",
       });
     },
-    async restoreDeskVersion(row) {
+    async restoreDeskVersion(row: DeskRow) {
       if (!(await this.askDeskRestore("Restore this desk layout?"))) return;
       await this.postDeskRestore({ id: row.id }, "Could not restore the desk layout");
     },
-    async downloadDeskVersion(row) {
+    async downloadDeskVersion(row: DeskRow) {
       try {
         const r = await fetch("/api/desk/history?id=" + encodeURIComponent(row.id));
         const version = await r.json().catch(() => null);
@@ -144,7 +152,7 @@ function settingsDialog() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = window.WBDeskHistory.fileName(version);
+        a.download = WBDeskHistory.fileName(version);
         document.body.append(a);
         a.click();
         a.remove();
@@ -156,12 +164,12 @@ function settingsDialog() {
     pickDeskUpload() {
       document.getElementById("desk-upload-input")?.click();
     },
-    async uploadDeskVersion(event) {
+    async uploadDeskVersion(event: Event & { target: HTMLInputElement }) {
       const file = event.target.files?.[0];
       event.target.value = "";
       if (!file) return;
       this.deskHistory.error = "";
-      const parsed = window.WBDeskHistory.parseUpload(await file.text());
+      const parsed = WBDeskHistory.parseUpload(await file.text());
       if (parsed.cause) {
         this.deskHistory.error = `Could not upload the desk layout: ${parsed.cause}.`;
         return;
@@ -170,7 +178,7 @@ function settingsDialog() {
       await this.postDeskRestore({ version: parsed.version }, "Could not upload the desk layout");
     },
 
-    async saveSetting(key, value) {
+    async saveSetting(key: string, value: unknown) {
       this.settings[key] = value;
       // A client-scoped key is this browser's preference: view store, never
       // `config.set`.
@@ -185,7 +193,7 @@ function settingsDialog() {
           const px = window.WBConsole.stepFont(value === "" ? NaN : Number(value), 0);
           this.settings[key] = window.WBConsole.setFont(px);
         }
-        WB.emit("setting-change", { project: null, key, value });
+        window.WB.emit("setting-change", { project: null, key, value });
         return;
       }
       // The run-lock-aware config Mutates; an empty/"unset" value clears the
@@ -202,22 +210,29 @@ function settingsDialog() {
             key,
             value: String(value),
           });
-          if (window.WBFail.isError(reply)) {
-            this._flashAction(window.WBFail.failed(reply, "Could not change the setting: the daemon gave no reason."));
+          if (WBFail.isError(reply)) {
+            this._flashAction(WBFail.failed(reply, "Could not change the setting: the daemon gave no reason."));
           }
         } catch {
           // No daemon reachable — leave the optimistic setting in place.
         }
       }
-      WB.emit("setting-change", { project: this.openSlug, key, value });
+      window.WB.emit("setting-change", { project: this.openSlug, key, value });
     },
-  };
+  });
 }
 
 // `openFlag` is the path of the open flag that the dialog gives to `scrim()`.
 // Code outside the component asks the modal stack with it (`modalOpen`), and
 // never reads the flag (ADR-0073 D5).
-window.WBSettingsDialog = { component: settingsDialog, openFlag: "settingsOpen" };
+export const WBSettingsDialog = { openFlag: "settingsOpen" };
+// app.js, a classic script, still reads this name (ADR-0075 D9).
+if (typeof window !== "undefined") window.WBSettingsDialog = WBSettingsDialog;
+declare global {
+  interface Window {
+    WBSettingsDialog: typeof WBSettingsDialog;
+  }
+}
 
 if (typeof document !== "undefined" && document.addEventListener) {
   document.addEventListener("alpine:init", () => window.Alpine.data("wbSettingsDialog", settingsDialog));
