@@ -17,6 +17,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { hostsDialog } from "../assets/ui/wb-hosts-dialog.ts";
+import { settingsDialog, WBSettingsDialog } from "../assets/ui/wb-settings-dialog.ts";
+import { devices } from "../assets/ui/wb-devices.ts";
 import { WBAgents } from "../assets/ui/wb-agents.ts";
 import { WBFileSearch } from "../assets/ui/wb-file-search.ts";
 import { WBRelease } from "../assets/ui/wb-release.ts";
@@ -54,12 +56,13 @@ const MODULE_NAMESPACES = {
   wbClientKeys,
   wbSettingsDefaults,
   wbQr,
+  WBSettingsDialog,
 };
 
 // The Alpine components that are ES modules (ADR-0075): `loadComponent` builds
 // these from their export. A component that is still a classic script is
 // found on `window.WB<Name>.component` instead (ADR-0073 D3).
-const MODULE_COMPONENTS = { wbHostsDialog: hostsDialog };
+const MODULE_COMPONENTS = { wbHostsDialog: hostsDialog, wbSettingsDialog: settingsDialog, wbDevices: devices };
 
 export const UI = join(dirname(fileURLToPath(import.meta.url)), "../assets/ui");
 

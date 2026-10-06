@@ -191,7 +191,7 @@ export const WB_SETTINGS: Section[] = [
     items: [],
   },
   // No items: the section has its own body in index.html, an Alpine
-  // component that reads the audit log (wb-devices.js).
+  // component that reads the audit log (wb-devices.ts).
   {
     id: "devices",
     title: "Devices",

@@ -2058,7 +2058,7 @@
                     </template>
                   </div>
                 </template>
-                <!-- devices: its own body, the wbDevices component (wb-devices.js).
+                <!-- devices: its own body, the wbDevices component (wb-devices.ts).
                      Built only while the section is open, so it reads the log
                      each time it opens and never on a page load. -->
                 <template x-if="sec.id === 'devices' && settingsOpen && settingsSection === 'devices'">
@@ -3243,7 +3243,7 @@
     <script src="wb-detach-link.js"></script>
     <script src="wb-session-route.js"></script>
     <script src="wb-device.js"></script>
-    <script src="wb-devices.js"></script>
+    <script type="module" src="wb-devices.js"></script>
     <script src="wb-geometry.js"></script>
     <script type="module" src="wb-split.js"></script>
     <script src="wb-columns.js"></script>
@@ -3255,7 +3255,7 @@
     <script src="wb-monaco.js"></script>
     <script src="wb-viewer.js"></script>
     <script type="module" src="wb-settings.js"></script>
-    <script src="wb-settings-dialog.js"></script>
+    <script type="module" src="wb-settings-dialog.js"></script>
     <script type="module" src="wb-desk-history.js"></script>
     <script type="module" src="wb-runs.js"></script>
     <script type="module" src="wb-kanban.js"></script>

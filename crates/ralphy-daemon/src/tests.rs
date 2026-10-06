@@ -4186,14 +4186,12 @@ const CLASSIC_SCRIPTS: &[&str] = &[
     "wb-desk-sync.js",
     "wb-detach-link.js",
     "wb-device.js",
-    "wb-devices.js",
     "wb-geometry.js",
     "wb-monaco.js",
     "wb-notes.js",
     "wb-release-dialogs.js",
     "wb-security-dialog.js",
     "wb-session-route.js",
-    "wb-settings-dialog.js",
     "wb-view.js",
     "wb-viewer.js",
     "wb-window-state.js",
@@ -4213,6 +4211,7 @@ const MODULE_WINDOW_NAMES: &[&str] = &[
     "WBProject",
     "WBRelease",
     "WBRun",
+    "WBSettingsDialog",
     "WBSpend",
     "WBSplit",
     "WB_SETTINGS",
@@ -6661,10 +6660,10 @@ fn relaunching_agent_consoles_on_load_is_opt_in() {
             "wb-settings.ts must keep the pin {pin}"
         );
     }
-    let app = squeeze(include_str!("../assets/ui/wb-settings-dialog.js"));
+    let app = squeeze(include_str!("../assets/ui/wb-settings-dialog.ts"));
     assert!(
         app.contains("window.WBView.patch({relaunch:value===true})"),
-        "wb-settings-dialog.js must persist the toggle through the view store"
+        "wb-settings-dialog.ts must persist the toggle through the view store"
     );
     assert!(
         app.contains("if(this.CLIENT_KEYS.has(key)){"),

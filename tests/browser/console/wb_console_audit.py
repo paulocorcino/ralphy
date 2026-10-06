@@ -100,8 +100,9 @@ def main():
 
             # A3 ---------------------------------------------------------------
             text = page.evaluate(
-                "async (d) => (await (await fetch('/api/audit/events?device=' + d)).json())"
-                ".events.map((e) => window.WBDevices.eventLine(e))",
+                "async (d) => { const { eventLine } = await import('/wb-devices.js');"
+                " return (await (await fetch('/api/audit/events?device=' + d)).json())"
+                ".events.map((e) => eventLine(e)); }",
                 device,
             )
             fixture_name = Path(fixture).name
