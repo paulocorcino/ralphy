@@ -280,3 +280,13 @@ test("the open dialog reads its settings again on workbench:panels-reread, and a
   evalIn(state, handlerOf("workbench:panels-reread"));
   assert.deepEqual(reads, ["settings"]);
 });
+
+// `app.js` asks the modal stack with this path; it must be the path the dialog
+// gives to `scrim()`, or the shortcuts would never see the dialog open.
+test("openFlag is the path the Settings dialog gives to scrim()", () => {
+  const { window } = loadComponent("wbSettingsDialog");
+  const markup = componentMarkup(HTML, "wbSettingsDialog");
+  const paths = [...markup.matchAll(/x-bind="scrim\('([^']+)'/g)].map((m) => m[1]);
+  assert.deepEqual(paths, ["settingsOpen"]);
+  assert.equal(window.WBSettingsDialog.openFlag, paths[0]);
+});
