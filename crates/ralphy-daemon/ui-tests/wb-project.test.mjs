@@ -1,4 +1,4 @@
-// Unit tests for assets/ui/wb-project.js — how a project reads in the sidebar.
+// Unit tests for assets/ui/wb-project.ts — how a project reads in the sidebar.
 //
 // These came over from app.test.mjs with the folds they exercise (ADR-0057 D4).
 // They were written as CHARACTERIZATION tests against `shell()` before the
@@ -7,17 +7,11 @@
 // assertions predate it and did not move an inch.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { WBProject } from "../assets/ui/wb-project.ts";
 
-const UI = join(dirname(fileURLToPath(import.meta.url)), "../assets/ui");
-const SRC = readFileSync(join(UI, "wb-project.js"), "utf8");
-
+// The module keeps no state, so one import serves every test.
 function load() {
-  const window = {};
-  new Function("window", SRC)(window);
-  return window.WBProject;
+  return WBProject;
 }
 
 const wb = load();

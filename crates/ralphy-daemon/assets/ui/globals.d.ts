@@ -19,6 +19,7 @@ interface Window {
   };
   WBFail: {
     failed(reply: unknown, fallback: string): string;
+    cause(reply: unknown, fallback: string): string;
   };
   WBFleet: {
     groupTitle(group: { state: string; local: boolean }): string;

@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { WBProject } from "../assets/ui/wb-project.ts";
 
 const UI = join(dirname(fileURLToPath(import.meta.url)), "../assets/ui");
 const SRC = readFileSync(join(UI, "wb-console.js"), "utf8");
@@ -323,10 +324,8 @@ test("checkoutMenuRows puts primary first and marks the console's own tree", () 
 // (ADR-0059 §5): `primary` is the sessions with no checkout, a worktree row
 // its own; `waiting` outranks `working`; a tree with no session says nothing.
 test("checkoutMenuRows carries the agent state per tree when given sessions", () => {
-  // The fold is `WBProject.worktreeStates`, a sibling index.html loads first.
-  const project = {};
-  new Function("window", readFileSync(join(UI, "wb-project.js"), "utf8"))(project);
-  const wb = load({ WBProject: project.WBProject });
+  // The fold is `WBProject.worktreeStates`, the real module.
+  const wb = load({ WBProject });
   const listing = { primary: "/p", worktrees: [{ name: "wt-a" }, { name: "wt-b" }] };
   const sessions = [
     { id: 1, repo: "o/r", agent_state: { state: "working" } },

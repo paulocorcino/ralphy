@@ -1,20 +1,12 @@
-// Unit tests for assets/ui/wb-add-project.js — runs the real source with no
+// Unit tests for assets/ui/wb-add-project.ts — imports the real module with no
 // DOM. The dialog's own calls are tested in wb-add-project-dialog.test.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { WBAddProject } from "../assets/ui/wb-add-project.ts";
 
-const SRC = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../assets/ui/wb-add-project.js"),
-  "utf8",
-);
-
+// The module keeps no state, so one import serves every test.
 function load() {
-  const window = {};
-  new Function("window", SRC)(window);
-  return window.WBAddProject;
+  return WBAddProject;
 }
 
 const WSL_ID = "01ARZ3NDEKTSV4RRFFQ69G5FAW";

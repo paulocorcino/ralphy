@@ -4177,13 +4177,11 @@ fn every_ui_test_file_is_imported_by_the_barrel() {
 /// nothing joins it.
 const CLASSIC_SCRIPTS: &[&str] = &[
     "app.js",
-    "wb-add-project.js",
     "wb-add-project-dialog.js",
     "wb-columns.js",
     "wb-console.js",
     "wb-console-name.js",
     "wb-daemon.js",
-    "wb-desk-history.js",
     "wb-desk-sink.js",
     "wb-desk-sync.js",
     "wb-detach-link.js",
@@ -4194,13 +4192,11 @@ const CLASSIC_SCRIPTS: &[&str] = &[
     "wb-geometry.js",
     "wb-monaco.js",
     "wb-notes.js",
-    "wb-project.js",
     "wb-release-dialogs.js",
     "wb-security-dialog.js",
     "wb-session-route.js",
     "wb-settings.js",
     "wb-settings-dialog.js",
-    "wb-split.js",
     "wb-view.js",
     "wb-viewer.js",
     "wb-window-state.js",
@@ -4209,13 +4205,17 @@ const CLASSIC_SCRIPTS: &[&str] = &[
 /// The `window.WB*` names a module still sets, because a classic script
 /// reads them (ADR-0075 D9). A ratchet like `CLASSIC_SCRIPTS`.
 const MODULE_WINDOW_NAMES: &[&str] = &[
+    "WBAddProject",
     "WBAgents",
     "WBChanges",
+    "WBDeskHistory",
     "WBFileSearch",
     "WBKanban",
+    "WBProject",
     "WBRelease",
     "WBRun",
     "WBSpend",
+    "WBSplit",
 ];
 
 /// ADR-0075 D1, D2, D8 and D10: first-party workbench code is TypeScript. A
@@ -7969,12 +7969,12 @@ fn a_remoteless_project_is_labelled_by_its_directory() {
     // The label fold (`repoLabel`) is driven by `ui-tests/wb-project.test.mjs`,
     // except one clause no row reaches: an OWNER that starts with `path-`
     // (`path-org/tool`) is a GitHub repo and must not be relabelled off disk.
-    let project = include_str!("../assets/ui/wb-project.js");
+    let project = include_str!("../assets/ui/wb-project.ts");
     let label = project
-        .split_once("function repoLabel(p) {")
-        .expect("wb-project.js must define repoLabel")
+        .split_once("function repoLabel(p: Project) {")
+        .expect("wb-project.ts must define repoLabel")
         .1
-        .split_once("\n  }")
+        .split_once("\n}")
         .expect("repoLabel must close at module indent")
         .0;
     assert!(
