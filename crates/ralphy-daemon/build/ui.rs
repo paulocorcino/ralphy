@@ -114,8 +114,12 @@ fn rewrite_imports(name: &str, code: String) -> Result<String> {
         if !(path.starts_with("./") || path.starts_with("../")) {
             continue;
         }
+        // A vendored file is served as it is, so its path stays (ADR-0075 D5).
+        if path.starts_with("./vendor/") && path.ends_with(".js") {
+            continue;
+        }
         if !path.ends_with(".ts") {
-            bail!("the import {literal} must name a .ts file");
+            bail!("the import {literal} must name a .ts file or a .js file under ./vendor/");
         }
         out[hi - 3..hi - 1].copy_from_slice(b"js");
     }

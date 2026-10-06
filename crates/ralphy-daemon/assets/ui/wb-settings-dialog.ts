@@ -10,8 +10,7 @@
    section inside it is its own component (`wbDevices`), nested one level
    deeper.
 
-   Loaded as a module on `index.html` only. It registers itself on
-   `alpine:init`, which comes after every module ran (ADR-0075 D9).
+   `main.ts` registers it as `wbSettingsDialog` (ADR-0075 D5).
    --------------------------------------------------------------------------- */
 import { component } from "./wb-alpine.ts";
 import { WBDeskHistory } from "./wb-desk-history.ts";
@@ -232,8 +231,4 @@ declare global {
   interface Window {
     WBSettingsDialog: typeof WBSettingsDialog;
   }
-}
-
-if (typeof document !== "undefined" && document.addEventListener) {
-  document.addEventListener("alpine:init", () => window.Alpine.data("wbSettingsDialog", settingsDialog));
 }

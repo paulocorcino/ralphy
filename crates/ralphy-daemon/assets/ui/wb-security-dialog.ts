@@ -9,8 +9,7 @@
    `securityChanged`. The dialog opens on the `workbench:security-open` event,
    and log off closes it with the `workbench:log-off` event (ADR-0073 D5).
 
-   Loaded as a module on `index.html` only. It registers itself on
-   `alpine:init`, which comes after every module ran (ADR-0075 D9).
+   `main.ts` registers it as `wbSecurityDialog` (ADR-0075 D5).
    --------------------------------------------------------------------------- */
 import { component } from "./wb-alpine.ts";
 import { wbQr } from "./wb-settings.ts";
@@ -397,8 +396,4 @@ declare global {
   interface Window {
     WBSecurityDialog: typeof WBSecurityDialog;
   }
-}
-
-if (typeof document !== "undefined" && document.addEventListener) {
-  document.addEventListener("alpine:init", () => window.Alpine.data("wbSecurityDialog", securityDialog));
 }

@@ -20,6 +20,8 @@ interface Window {
   };
   Alpine: {
     data(name: string, factory: () => object): void;
+    directive(name: string, handler: (el: any, directive: any, utilities: any) => void): void;
+    start(): void;
     [member: string]: any;
   };
   /** The event bus of app.js. */

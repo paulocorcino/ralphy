@@ -10,8 +10,7 @@
    `releaseWatchChanged`. The account menu opens the dialogs with the
    `workbench:whats-new-open` and `workbench:about-open` events (ADR-0073 D5).
 
-   Loaded as a module on `index.html` only. It registers itself on
-   `alpine:init`, which comes after every module ran (ADR-0075 D9).
+   `main.ts` registers it as `wbReleaseDialogs` (ADR-0075 D5).
    --------------------------------------------------------------------------- */
 import { component } from "./wb-alpine.ts";
 
@@ -217,8 +216,4 @@ declare global {
   interface Window {
     WBReleaseDialogs: typeof WBReleaseDialogs;
   }
-}
-
-if (typeof document !== "undefined" && document.addEventListener) {
-  document.addEventListener("alpine:init", () => window.Alpine.data("wbReleaseDialogs", releaseDialogs));
 }

@@ -60,7 +60,7 @@
     <link rel="stylesheet" href="vendor/crepe/crepe.css" />
     <link rel="stylesheet" href="styles/13-notes.css" />
   </head>
-  <body x-data="shell()" x-cloak :class="{ 'side-collapsed': !sideOpen, 'runs-open': runsOpen, locked: !authed }">
+  <body x-data="shell" x-cloak :class="{ 'side-collapsed': !sideOpen, 'runs-open': runsOpen, locked: !authed }">
     <!-- The daemon runs a newer build than this page, and the page holds
          unsaved work (ADR-0070 D6). It stays until the reload. -->
     <div class="build-notice" x-show="buildSkew" x-cloak role="status">
@@ -3231,21 +3231,13 @@
          UMD vendor above, or they register as anonymous AMD modules and never
          set window.marked / mermaid / Wunderbaum / Terminal. -->
     <script src="vendor/monaco/vs/loader.js"></script>
-    <script type="module" src="wb-fail.js"></script>
-    <script type="module" src="wb-agents.js"></script>
-    <script type="module" src="wb-changes.js"></script>
     <script src="wb-view.js"></script>
-    <script type="module" src="wb-fleet.js"></script>
-    <script type="module" src="wb-project.js"></script>
-    <script type="module" src="wb-file-search.js"></script>
     <script src="wb-desk-sink.js"></script>
     <script src="wb-desk-sync.js"></script>
     <script src="wb-detach-link.js"></script>
     <script src="wb-session-route.js"></script>
     <script src="wb-device.js"></script>
-    <script type="module" src="wb-devices.js"></script>
     <script src="wb-geometry.js"></script>
-    <script type="module" src="wb-split.js"></script>
     <script src="wb-columns.js"></script>
     <script src="wb-console-name.js"></script>
     <script src="wb-window-state.js"></script>
@@ -3254,22 +3246,9 @@
     <script src="wb-notes.js"></script>
     <script src="wb-monaco.js"></script>
     <script src="wb-viewer.js"></script>
-    <script type="module" src="wb-settings.js"></script>
-    <script type="module" src="wb-settings-dialog.js"></script>
-    <script type="module" src="wb-desk-history.js"></script>
-    <script type="module" src="wb-runs.js"></script>
-    <script type="module" src="wb-kanban.js"></script>
-    <script type="module" src="wb-spend.js"></script>
     <script src="wb-daemon.js"></script>
-    <script type="module" src="wb-release.js"></script>
-    <script type="module" src="wb-release-dialogs.js"></script>
-    <!-- A module runs after the page is parsed, before the deferred Alpine
-         below, so its `alpine:init` listener is in place (ADR-0075 D9). -->
-    <script type="module" src="wb-hosts-dialog.js"></script>
-    <script type="module" src="wb-add-project.js"></script>
-    <script type="module" src="wb-add-project-dialog.js"></script>
-    <script type="module" src="wb-security-dialog.js"></script>
-    <script type="module" src="app.js"></script>
-    <script defer src="vendor/alpine.min.js"></script>
+    <!-- The page's one module (ADR-0075 D5). It runs after the classic scripts
+         above, imports the rest of the page, and starts Alpine. -->
+    <script type="module" src="main.js"></script>
   </body>
 </html>
