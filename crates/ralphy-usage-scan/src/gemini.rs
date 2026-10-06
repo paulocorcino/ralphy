@@ -27,7 +27,7 @@
 //! Every record this module emits carries `lower_bound: true` so the operator is
 //! never shown the floor as a total; the Spend tab's Ledger grid renders such a
 //! row's counts as `≥ n` with `(lower bound)` beside it
-//! (`assets/ui/wb-spend.js::boundMark`).
+//! (`assets/ui/wb-spend.ts::boundMark`).
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs;

@@ -643,7 +643,7 @@ mod tests {
     #[test]
     fn app_js_holds_no_vendor_list() {
         let js = include_str!("../assets/ui/app.js");
-        let agents_js = include_str!("../assets/ui/wb-agents.js");
+        let agents_js = include_str!("../assets/ui/wb-agents.ts");
 
         // Non-vacuous first: app.js delegates its request URL to the roster
         // module, whose repo-specific and local forms both name the endpoint.

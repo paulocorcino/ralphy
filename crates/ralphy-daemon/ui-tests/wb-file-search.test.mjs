@@ -1,20 +1,12 @@
-// Unit tests for assets/ui/wb-file-search.js — the pure half of the FILES
+// Unit tests for assets/ui/wb-file-search.ts — the pure half of the FILES
 // search (ADR-0036 amendment 2026-09-15): which verb a mode names, when a
 // query is worth a walk, which levels the hits need loaded, what the gutter
 // says, and what to fold back on clear.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { UI } from "./harness.mjs";
+import { WBFileSearch } from "../assets/ui/wb-file-search.ts";
 
-const SRC = readFileSync(join(UI, "wb-file-search.js"), "utf8");
-function load() {
-  const window = {};
-  new Function("window", SRC)(window);
-  return window.WBFileSearch;
-}
-const fs = load();
+const fs = WBFileSearch;
 
 test("the toggle names the verb; anything else is a name search", () => {
   assert.equal(fs.verbFor("content"), "tree.grep");

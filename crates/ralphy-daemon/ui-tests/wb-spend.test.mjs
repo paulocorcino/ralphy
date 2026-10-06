@@ -1,4 +1,4 @@
-// Unit tests for assets/ui/wb-spend.js — runs the real source with no DOM.
+// Unit tests for assets/ui/wb-spend.ts — imports the real module with no DOM.
 // This file lives OUTSIDE assets/ui on purpose: lib.rs embeds all of
 // assets/ui into the daemon binary via include_dir!, so a test there would ship.
 //
@@ -8,19 +8,11 @@
 // both.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { WBSpend } from "../assets/ui/wb-spend.ts";
 
-const SRC = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../assets/ui/wb-spend.js"),
-  "utf8",
-);
-
+// The fold keeps no state, so one import serves every test.
 function load() {
-  const window = {};
-  new Function("window", SRC)(window);
-  return window.WBSpend;
+  return WBSpend;
 }
 
 const WB = load();

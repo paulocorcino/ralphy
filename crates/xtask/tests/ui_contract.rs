@@ -486,7 +486,7 @@ const MIRRORS: &[(&str, &str, &str, &str)] = &[
     ),
     ("app.js", "PROTECTED_DIRS", "fswrite.rs", "PROTECTED_DIRS"),
     (
-        "wb-file-search.js",
+        "wb-file-search.ts",
         "MIN_CHARS",
         "tree/search.rs",
         "MIN_QUERY_CHARS",
