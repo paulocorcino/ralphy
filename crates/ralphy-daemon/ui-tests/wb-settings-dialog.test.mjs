@@ -243,7 +243,7 @@ test("the rail button asks the dialog to open with workbench:settings-open, and 
 
 test("log off closes the dialog with the workbench:log-off event", async () => {
   const sent = [];
-  const loaded = loadShell({ document: { dispatchEvent: (e) => sent.push(e) } });
+  const loaded = loadShell({ window: { dispatchEvent: (e) => sent.push(e) } });
   const { scope: state } = loadComponent("wbSettingsDialog", { from: loaded });
   state.settingsOpen = true;
   // `logOff` emits on the bare `WB` global, which only the page defines.
@@ -256,8 +256,7 @@ test("log off closes the dialog with the workbench:log-off event", async () => {
     else globalThis.WB = real;
   }
   const ev = sent.find((e) => e.type === "workbench:log-off");
-  assert.ok(ev, `log off sends workbench:log-off; sent ${sent.map((e) => e.type)}`);
-  assert.equal(ev.bubbles, true, "sent on the document, it reaches the window only if it bubbles");
+  assert.ok(ev, `log off sends workbench:log-off on the window; sent ${sent.map((e) => e.type)}`);
 
   evalIn(state, handlerOf("workbench:log-off"));
   assert.equal(state.settingsOpen, false);
@@ -265,13 +264,12 @@ test("log off closes the dialog with the workbench:log-off event", async () => {
 
 test("the open dialog reads its settings again on workbench:panels-reread, and a closed one does not", () => {
   const sent = [];
-  const loaded = loadShell({ document: { dispatchEvent: (e) => sent.push(e) } });
+  const loaded = loadShell({ window: { dispatchEvent: (e) => sent.push(e) } });
   const { scope: state } = loadComponent("wbSettingsDialog", { from: loaded });
   loaded.state.tabs = loaded.state.tabs.filter((t) => t.id !== "spend");
   loaded.state.rereadOpenPanels();
   const ev = sent.find((e) => e.type === "workbench:panels-reread");
-  assert.ok(ev, `rereadOpenPanels sends workbench:panels-reread; sent ${sent.map((e) => e.type)}`);
-  assert.equal(ev.bubbles, true, "sent on the document, it reaches the window only if it bubbles");
+  assert.ok(ev, `rereadOpenPanels sends workbench:panels-reread on the window; sent ${sent.map((e) => e.type)}`);
 
   const reads = [];
   state.readSettings = () => reads.push("settings");
@@ -281,4 +279,14 @@ test("the open dialog reads its settings again on workbench:panels-reread, and a
   state.settingsOpen = true;
   evalIn(state, handlerOf("workbench:panels-reread"));
   assert.deepEqual(reads, ["settings"]);
+});
+
+// `app.js` asks the modal stack with this path; it must be the path the dialog
+// gives to `scrim()`, or the shortcuts would never see the dialog open.
+test("openFlag is the path the Settings dialog gives to scrim()", () => {
+  const { window } = loadComponent("wbSettingsDialog");
+  const markup = componentMarkup(HTML, "wbSettingsDialog");
+  const paths = [...markup.matchAll(/x-bind="scrim\('([^']+)'/g)].map((m) => m[1]);
+  assert.deepEqual(paths, ["settingsOpen"]);
+  assert.equal(window.WBSettingsDialog.openFlag, paths[0]);
 });

@@ -6,10 +6,9 @@
    `shell()` only through the names in `uses` (ADR-0073 D4). It opens on the
    `workbench:settings-open` event; log off closes it with `workbench:log-off`,
    and a tab that becomes visible or a login makes it read its settings again,
-   when it is open, with `workbench:panels-reread` (ADR-0073 D5). `shell()`
-   sends those two events on the document, and they bubble to the window,
-   where the dialog's element listens. The Devices section inside it is its
-   own component (`wbDevices`), nested one level deeper.
+   when it is open, with `workbench:panels-reread` (ADR-0073 D5). The Devices
+   section inside it is its own component (`wbDevices`), nested one level
+   deeper.
 
    Load order: after wb-settings.js, before `app.js` and before Alpine, on
    `index.html` only.
@@ -211,7 +210,7 @@ function settingsDialog() {
         }
       }
       WB.emit("setting-change", { project: this.openSlug, key, value });
-    },
+    },
   };
 }
 

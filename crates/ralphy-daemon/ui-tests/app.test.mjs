@@ -1883,7 +1883,8 @@ test("visible and login ask the open panels to read again, and read the open Spe
   // (wb-settings-dialog.test.mjs); here the shell sends it each time.
   const events = [];
   const { state } = loadShell({
-    document: { ...VISIBLE.document, dispatchEvent: (e) => events.push(e.type) },
+    ...VISIBLE,
+    window: { dispatchEvent: (e) => events.push(e.type) },
   });
   const calls = [];
   for (const name of ["loadRepos", "rereadDesk", "hydrateRuns", "loadRelease", "resumeSockets", "loadIdentity", "loadAgents", "restoreView"]) {

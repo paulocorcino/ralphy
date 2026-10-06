@@ -235,7 +235,7 @@ test("the account menu closes itself and asks the dialog to open with workbench:
 
 test("log off closes the dialog with the workbench:log-off event", async () => {
   const sent = [];
-  const loaded = loadShell({ document: { dispatchEvent: (e) => sent.push(e) } });
+  const loaded = loadShell({ window: { dispatchEvent: (e) => sent.push(e) } });
   const { scope: state } = loadComponent("wbSecurityDialog", { from: loaded });
   state.securityOpen = true;
   // `logOff` emits on the bare `WB` global, which only the page defines.
@@ -248,10 +248,19 @@ test("log off closes the dialog with the workbench:log-off event", async () => {
     else globalThis.WB = real;
   }
   const ev = sent.find((e) => e.type === "workbench:log-off");
-  assert.ok(ev, `log off sends workbench:log-off; sent ${sent.map((e) => e.type)}`);
-  assert.equal(ev.bubbles, true, "sent on the document, it reaches the window only if it bubbles");
+  assert.ok(ev, `log off sends workbench:log-off on the window; sent ${sent.map((e) => e.type)}`);
 
   const handler = wrapperTag().match(/@workbench:log-off\.window="([^"]*)"/)[1];
   evalIn(state, handler);
   assert.equal(state.securityOpen, false);
+});
+
+// `app.js` asks the modal stack with this path; it must be the path the dialog
+// gives to `scrim()`, or the shortcuts would never see the dialog open.
+test("openFlag is the path the Security dialog gives to scrim()", () => {
+  const { window } = dialog();
+  const markup = componentMarkup(HTML, "wbSecurityDialog");
+  const paths = [...markup.matchAll(/x-bind="scrim\('([^']+)'/g)].map((m) => m[1]);
+  assert.deepEqual(paths, ["securityOpen"]);
+  assert.equal(window.WBSecurityDialog.openFlag, paths[0]);
 });

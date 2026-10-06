@@ -8,8 +8,6 @@
    off read it: the dialog reads it, and changes it only through
    `securityChanged`. The dialog opens on the `workbench:security-open` event,
    and log off closes it with the `workbench:log-off` event (ADR-0073 D5).
-   `logOff` sends that event on the document, and it bubbles to the window,
-   where the dialog's element listens.
 
    Load order: before `app.js` and before Alpine, on `index.html` only.
    --------------------------------------------------------------------------- */

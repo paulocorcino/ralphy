@@ -89,6 +89,9 @@ function stubWindow() {
   return {
     addEventListener() {},
     removeEventListener() {},
+    // A SINK, like the document's: `shell()` sends the `workbench:*` events
+    // that a component hears with `.window` on the window.
+    dispatchEvent() {},
     innerWidth: 1440,
     innerHeight: 900,
     devicePixelRatio: 1,
@@ -168,7 +171,10 @@ export function loadShell(opts = {}) {
 // and the path (`security.passwordSet`). A `shell()` method in `uses` runs with
 // `this` set to the merged scope, as Alpine runs it, so `scrim()` still reaches
 // the modal stack and the dialog's open flag, and the method may write
-// `shell()` state: that write is the one D4 allows.
+// `shell()` state: that write is the one D4 allows. A getter of the component
+// runs with the scope as `this`, as Alpine 3.14 runs it (`mergeProxies` passes
+// the scope as the receiver of `Reflect.get`), so a getter that reads a
+// `shell()` name obeys `uses` too.
 //
 // The factory is `window.WB<Name>.component`, where `alpineName` is
 // `wb<Name>` (ADR-0073 D3). `opts.magics` gives the `$` magics (`$nextTick`)
@@ -193,7 +199,7 @@ export function loadComponent(alpineName, opts = {}) {
   const full = new Proxy(
     {},
     {
-      get: (_, k) => (own(k) ? data[k] : k in magics ? magics[k] : shell[k]),
+      get: (_, k, receiver) => (own(k) ? Reflect.get(data, k, receiver) : k in magics ? magics[k] : shell[k]),
       set: (_, k, v) => {
         if (own(k)) data[k] = v;
         else shell[k] = v;
@@ -206,9 +212,9 @@ export function loadComponent(alpineName, opts = {}) {
   const scope = new Proxy(
     {},
     {
-      get(_, k) {
+      get(_, k, receiver) {
         if (typeof k === "symbol") return undefined;
-        if (own(k)) return data[k];
+        if (own(k)) return Reflect.get(data, k, receiver);
         if (k in magics) return magics[k];
         if (uses.has(k)) {
           const v = shell[k];

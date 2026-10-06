@@ -3088,7 +3088,7 @@ function shell() {
     // Settings dialog hears the event and reads again only when it is open
     // (ADR-0073 D5).
     rereadOpenPanels() {
-      document.dispatchEvent(new CustomEvent("workbench:panels-reread", { bubbles: true }));
+      window.dispatchEvent(new CustomEvent("workbench:panels-reread"));
       if (this.tabs.some((t) => t.id === "spend")) this.loadSpend();
     },
     releaseRead: null,
@@ -3153,7 +3153,7 @@ function shell() {
 
     async logOff() {
       this.avatarMenu = false;
-      document.dispatchEvent(new CustomEvent("workbench:log-off", { bubbles: true }));
+      window.dispatchEvent(new CustomEvent("workbench:log-off"));
       // The session cookie is HttpOnly — only the server can clear it. The
       // route needs a live session (audit F5): a 401 here means the cookie
       // was already invalid, which is the same place this lands anyway.
