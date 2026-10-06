@@ -2221,7 +2221,7 @@ export function shell() {
     // Fed by `board.list` (#198): rows adapted to the issue shape, and the
     // repo's name→color label map. Empty until `loadBoard()` resolves.
     boardIssues: {} as Record<string, any>,
-    boardLabels: {} as Record<string, any>,
+    boardLabels: {} as Record<string, Map<string, string>>,
     // A `board.list` failure (#207): a broken tracker connection must never
     // read as "no work to do".
     boardError: {} as Record<string, any>,
@@ -2406,12 +2406,12 @@ export function shell() {
         }
         const board = reply.board || {};
         this.boardIssues[slug] = (board.issues || []).map((r: any) => this.boardRowToIssue(r));
-        // No prototype, so a label named `constructor` reads as missing. A blank
+        // A Map, so a label named `constructor` reads as missing. A blank
         // color is skipped: a bare "#" is truthy and masks `labelColor`'s fallback.
-        const colors: Record<string, string> = Object.create(null);
+        const colors = new Map<string, string>();
         for (const l of board.labels || []) {
           if (!l.color) continue;
-          colors[l.name] = "#" + String(l.color).replace(/^#/, "");
+          colors.set(l.name, "#" + String(l.color).replace(/^#/, ""));
         }
         this.boardLabels[slug] = colors;
         this.boardError[slug] = null;
@@ -2539,7 +2539,7 @@ export function shell() {
     },
     labelColor(l: any) {
       // The repo's real label hex, else the seed vocabulary.
-      return this.boardLabels[this.openSlug]?.[l] || window.WBKanban.labelColor(l);
+      return this.boardLabels[this.openSlug]?.get(l) || window.WBKanban.labelColor(l);
     },
     labelInk(l: any) {
       return window.WBKanban.labelInk(l);
