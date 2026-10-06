@@ -4,6 +4,9 @@ Status: accepted
 Kind: structural
 Protects: testability, extensibility
 
+Amended by ADR-0075, proposed (D1 is replaced: the script is TypeScript,
+built into ES modules by `build.rs`).
+
 ## Context
 
 Two files hold most of the workbench script, and they grow fast. Measured on

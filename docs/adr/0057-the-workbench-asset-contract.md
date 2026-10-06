@@ -4,6 +4,9 @@ Status: accepted (2026-09-08).
 
 D3 and D7 are amended (2026-09-30); see the amendment at the end.
 
+Amended by ADR-0075, proposed (the gate adds a type check; D4 names
+`wb-foo.ts`).
+
 `crates/ralphy-daemon/assets/ui/` holds five files over 700 lines — `styles.css`
 (6,476), `wb-console.js` (5,195), `app.js` (5,089), `index.html` (2,398),
 `wb-viewer.js` (732) — and they grow. `wb-console.js` gained 871 lines in one
