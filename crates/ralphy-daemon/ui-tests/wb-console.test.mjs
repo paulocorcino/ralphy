@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { WBProject } from "../assets/ui/wb-project.ts";
+import { WBFleet } from "../assets/ui/wb-fleet.ts";
 
 const UI = join(dirname(fileURLToPath(import.meta.url)), "../assets/ui");
 const SRC = readFileSync(join(UI, "wb-console.js"), "utf8");
@@ -26,13 +27,12 @@ const LINK_SRC = readFileSync(join(UI, "wb-detach-link.js"), "utf8");
 // module scope, so a harness without it throws on the first line of the IIFE —
 // which is the intended failure, and the reason it is the real source here too.
 const GEOM_SRC = readFileSync(join(UI, "wb-geometry.js"), "utf8");
-// `wb-fleet.js` is loaded BEFORE `wb-console.js` by both documents that carry
-// the console (index.html, detached-fence.html), so the harness runs the REAL
-// source rather than leaving the namespace absent. Leaving it out made
-// `sessionPresentation` take its `window.WBFleet ? … : repo` fallback, and the
-// test then pinned a title the product explicitly forbids — the peer ref
-// printed whole, which is the defect wb-fleet.js was written to fix.
-const FLEET_SRC = readFileSync(join(UI, "wb-fleet.js"), "utf8");
+// `wb-fleet.ts` is on the window of both documents that carry the console
+// (index.html, detached-fence.html) before the console boots, so the harness
+// gives the REAL module rather than leaving the namespace absent. Leaving it
+// out made `sessionPresentation` take its `window.WBFleet ? … : repo`
+// fallback, and the test then pinned a title the product explicitly forbids —
+// the peer ref printed whole, which is the defect wb-fleet was written to fix.
 // The window field inventory and its accessors (`initWindow`, `sessionIdOf`,
 // `watchingOf`, `checkoutOf`). DESTRUCTURED at module scope exactly like the
 // geometry above, so the real source runs here for the same reason: a harness
@@ -57,7 +57,7 @@ function load(extras = {}, docExtras = {}) {
   const window = { addEventListener() {}, ...extras };
   const document = { readyState: "loading", addEventListener() {}, ...docExtras };
   const location = { protocol: "http:", host: "127.0.0.1:7431" };
-  new Function("window", FLEET_SRC)(window);
+  window.WBFleet = WBFleet;
   new Function("window", GEOM_SRC)(window);
   new Function("window", WINSTATE_SRC)(window);
   new Function("window", NAME_SRC)(window);

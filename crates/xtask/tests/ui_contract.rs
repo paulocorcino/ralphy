@@ -346,7 +346,7 @@ fn a_ui_literal_no_rust_code_produces_is_reported() {
 }
 
 /// The strings a UI file compares with a reply's `reason`, `message` or
-/// `state`, plus the keys of the `CAUSE` (wb-fail.js) and `REFUSAL_TEXT`
+/// `state`, plus the keys of the `CAUSE` (wb-fail.ts) and `REFUSAL_TEXT`
 /// (wb-viewer.js) tables.
 fn ui_literals(js: &str) -> BTreeSet<String> {
     // A bare `reason`/`message` or one read off `reply`. Not `typeof x ===
@@ -370,11 +370,11 @@ fn ui_literals(js: &str) -> BTreeSet<String> {
         out.extend(re.captures_iter(js).map(|c| c[1].to_string()));
     }
     let key = Regex::new(r#"^\s*(?:"([^"]+)"|([A-Za-z_]\w*))\s*:"#).expect("a valid regex");
-    for table in ["const CAUSE = {", "const REFUSAL_TEXT = {"] {
-        let Some(start) = js.find(table) else {
-            continue;
-        };
-        let body = &js[start + table.len()..];
+    // A module types the table (`const CAUSE: Record<string, string> = {`).
+    let table =
+        Regex::new(r"const (?:CAUSE|REFUSAL_TEXT)(?::[^=\n]*)? = \{").expect("a valid regex");
+    for found in table.find_iter(js) {
+        let body = &js[found.end()..];
         let body = &body[..body.find("};").unwrap_or(body.len())];
         for line in body.lines() {
             if let Some(c) = key.captures(line) {
@@ -398,7 +398,9 @@ fn missing_literals(found: &[(String, String)], corpus: &str) -> Vec<String> {
     missing
 }
 
-/// `(file name, text)` of every UI script, without the vendored libraries.
+/// `(file name, text)` of every UI script, without the vendored libraries:
+/// the classic `.js` scripts and the `.ts` modules (ADR-0075), not the `.d.ts`
+/// type files.
 fn ui_sources(root: &Path) -> Vec<(String, String)> {
     let dir = root.join("crates/ralphy-daemon/assets/ui");
     let mut files: Vec<PathBuf> = std::fs::read_dir(&dir)
@@ -408,7 +410,14 @@ fn ui_sources(root: &Path) -> Vec<(String, String)> {
                 .unwrap_or_else(|e| panic!("reading an entry of {}: {e}", dir.display()))
                 .path()
         })
-        .filter(|p| p.is_file() && p.extension().is_some_and(|e| e == "js"))
+        .filter(|p| {
+            let name = p
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            p.is_file()
+                && (name.ends_with(".js") || (name.ends_with(".ts") && !name.ends_with(".d.ts")))
+        })
         .collect();
     files.sort();
     files

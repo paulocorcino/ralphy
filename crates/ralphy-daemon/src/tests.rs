@@ -4187,8 +4187,6 @@ const CLASSIC_SCRIPTS: &[&str] = &[
     "wb-detach-link.js",
     "wb-device.js",
     "wb-devices.js",
-    "wb-fail.js",
-    "wb-fleet.js",
     "wb-geometry.js",
     "wb-monaco.js",
     "wb-notes.js",
@@ -4209,7 +4207,9 @@ const MODULE_WINDOW_NAMES: &[&str] = &[
     "WBAgents",
     "WBChanges",
     "WBDeskHistory",
+    "WBFail",
     "WBFileSearch",
+    "WBFleet",
     "WBKanban",
     "WBProject",
     "WBRelease",
@@ -4636,7 +4636,7 @@ fn the_workbench_never_titles_a_repo_with_its_routing_head() {
         include_str!("../assets/ui/detached-fence.html"),
     ] {
         assert!(
-            page.contains(r#"<script src="wb-fleet.js"></script>"#),
+            page.contains(r#"<script type="module" src="wb-fleet.js"></script>"#),
             "a detached popup must load the fold it calls"
         );
     }

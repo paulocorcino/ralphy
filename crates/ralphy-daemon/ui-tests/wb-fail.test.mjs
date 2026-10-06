@@ -1,21 +1,16 @@
-// Unit tests for assets/ui/wb-fail.js — runs the real source with no DOM.
+// Unit tests for assets/ui/wb-fail.ts — imports the real module with no DOM.
 // This file lives OUTSIDE assets/ui on purpose: lib.rs embeds all of
 // assets/ui into the daemon binary via include_dir!, so a test there would ship.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { WBFail } from "../assets/ui/wb-fail.ts";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-const SRC = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../assets/ui/wb-fail.js"),
-  "utf8",
-);
-
+// The module keeps no state, so one import serves every test.
 function load() {
-  const window = {};
-  new Function("window", SRC)(window);
-  return window.WBFail;
+  return WBFail;
 }
 
 test("message() reads the reply's own words, then the fallback", () => {
