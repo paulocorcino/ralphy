@@ -2347,7 +2347,7 @@ test("restoreRect on a maximized window still reads the pre-maximize inline rect
 
 // --- columns: only the leftmost is the maximized console the desk records ----
 // `wb-console.js` never loads `wb-columns.js` (the popup boots without it), so
-// the harness runs the REAL fold beside it, as `app.js` does in the browser.
+// the harness runs the REAL fold beside it, as `app.ts` does in the browser.
 const COLUMNS_SRC = readFileSync(join(UI, "wb-columns.js"), "utf8");
 function loadColumns() {
   const window = {};

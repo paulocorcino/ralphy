@@ -1,6 +1,6 @@
-// Characterization tests for assets/ui/app.js — the `shell()` component.
+// Characterization tests for assets/ui/app.ts — the `shell()` component.
 //
-// These exist to be written BEFORE app.js is split, not after. A split of the
+// These exist to be written BEFORE app.ts is split, not after. A split of the
 // read-only folds out of a 5,000-line component is a refactor only if something
 // states what those folds do today; without that it is a rewrite with a
 // reassuring diff. Every assertion here was derived by running the fold, not by
@@ -22,12 +22,12 @@ import { loadShell, UI } from "./harness.mjs";
 const { state: s } = loadShell();
 
 // NEGATIVE CONTROL for the whole file: a duplicate key in the state literal is
-// silently legal in sloppy mode and the LAST one wins, which is how `app.js`
+// silently legal in sloppy mode and the LAST one wins, which is how `app.ts`
 // carried two incompatible `changesError` declarations. `Object.keys()` cannot
 // see the loser, so this reads the source.
 test("the state literal declares no key twice", () => {
-  const text = readFileSync(join(UI, "app.js"), "utf8");
-  const body = text.slice(text.indexOf("function shell()"));
+  const text = readFileSync(join(UI, "app.ts"), "utf8");
+  const body = text.slice(text.indexOf("function shell()"), text.indexOf("export function wire("));
   // BOTH spellings, because the literal uses both and the collision that
   // prompted this test could just as easily be two methods. Matching only
   // `name:` saw 119 of the 393 entries and was blind to all 271 method
@@ -330,14 +330,7 @@ async function withSearchShell(run, reply = { status: "ok", hits: [], truncated:
   state.openSlug = "owner/repo";
   state.$refs = {};
   state.$nextTick = (f) => f();
-  const real = globalThis.WB;
-  globalThis.WB = window.WB;
-  try {
-    return await run(state, calls, (a) => (answer = a));
-  } finally {
-    if (real === undefined) delete globalThis.WB;
-    else globalThis.WB = real;
-  }
+  return await run(state, calls, (a) => (answer = a));
 }
 
 test("fileSearchNow sends the mode's verb with the trimmed query", async () => {
@@ -492,7 +485,7 @@ test("persistView stores the pin and restoreView hands it back explicitly", () =
 });
 
 // --- the slot (ADR-0037 §3c) ----------------------------------------------
-// `app.js` reaches `WBViewer` as a bare global; the real one needs a DOM, so
+// `app.ts` reaches `WBViewer` as a bare global; the real one needs a DOM, so
 // the fake records what the shell told it to paint and answers a wide canvas.
 function slotShell(width = 1280, seed = null) {
   const { state, window } = loadShell();
@@ -687,7 +680,7 @@ test("newConsole opens the agent in the primary even under a selected checkout",
   const { state } = loadShell();
   const calls = [];
   const real = globalThis.WBConsole;
-  // `app.js` reaches `WBConsole` as a bare global; the real one needs a DOM.
+  // `app.ts` reaches `WBConsole` as a bare global; the real one needs a DOM.
   globalThis.WBConsole = { open: (o) => calls.push(o), count: () => 0 };
   try {
     state.active = "consoles";
@@ -722,20 +715,12 @@ test("loginBody sends remember=true only when the box is checked", () => {
 });
 
 test("logOff resets the remember box along with the credentials", async () => {
-  const { state, window } = loadShell();
+  const { state } = loadShell();
   state.security.policy = "session";
   state.login.remember = true;
   state.login.passwordRequired = true;
   state.$nextTick = () => {};
-  // `logOff` emits on the bare `WB` global, which only the page defines.
-  const real = globalThis.WB;
-  globalThis.WB = window.WB;
-  try {
-    await state.logOff();
-  } finally {
-    if (real === undefined) delete globalThis.WB;
-    else globalThis.WB = real;
-  }
+  await state.logOff();
   assert.equal(state.authed, false);
   assert.equal(state.login.remember, false, "the box does not survive a log-off");
   assert.equal(state.login.passwordRequired, true, "the server-told flag does");
@@ -753,7 +738,7 @@ test("the shortcuts are blocked while the Security, Settings or What's new dialo
   });
   // The Ctrl/Cmd+Shift+F listener: the one that opens the files search.
   const filesKey = keydowns.find((fn) => /shiftKey/.test(String(fn)) && /openFileSearch/.test(String(fn)));
-  assert.ok(filesKey, "app.js registers the Ctrl+Shift+F listener at load");
+  assert.ok(filesKey, "app.ts registers the Ctrl+Shift+F listener at load");
   const searches = [];
   state.authed = true;
   state.openSlug = "o/r";
@@ -1055,30 +1040,24 @@ test("opening a row remounts the run-completion subscription", () => {
 });
 
 test("emitCreate sends the directory the create lands in", () => {
-  const { state } = loadShell();
+  const { state, window } = loadShell();
   const emitted = [];
-  const real = globalThis.WB;
-  globalThis.WB = { emit: (action, detail) => emitted.push({ action, ...detail }) };
-  try {
-    state.openSlug = "owner/repo";
-    const root = { title: "root", parent: null };
-    const src = { title: "src", parent: root, data: { folder: true } };
-    const file = { title: "main.rs", parent: src, data: {} };
-    state.emitCreate(file, "file");
-    state.emitCreate(src, "folder");
-    state.emitCreate(null, "file");
-    assert.deepEqual(
-      emitted.map((e) => [e.action, e.project, e.path, e.kind]),
-      [
-        ["create", "owner/repo", "src", "file"],
-        ["create", "owner/repo", "src", "folder"],
-        ["create", "owner/repo", "", "file"],
-      ],
-    );
-  } finally {
-    if (real === undefined) delete globalThis.WB;
-    else globalThis.WB = real;
-  }
+  window.WB = { emit: (action, detail) => emitted.push({ action, ...detail }) };
+  state.openSlug = "owner/repo";
+  const root = { title: "root", parent: null };
+  const src = { title: "src", parent: root, data: { folder: true } };
+  const file = { title: "main.rs", parent: src, data: {} };
+  state.emitCreate(file, "file");
+  state.emitCreate(src, "folder");
+  state.emitCreate(null, "file");
+  assert.deepEqual(
+    emitted.map((e) => [e.action, e.project, e.path, e.kind]),
+    [
+      ["create", "owner/repo", "src", "file"],
+      ["create", "owner/repo", "src", "folder"],
+      ["create", "owner/repo", "", "file"],
+    ],
+  );
 });
 
 test("the create action asks for the name through the shell's prompt", async () => {
@@ -1104,7 +1083,7 @@ test("the create action asks for the name through the shell's prompt", async () 
     prompted.push(msg);
     return null;
   };
-  assert.ok(listeners.length > 0, "app.js subscribes to workbench:action at load");
+  assert.ok(listeners.length > 0, "app.ts subscribes to workbench:action at load");
   await Promise.all(
     listeners.map((fn) => fn({ detail: { action: "create", project: "owner/repo", path: "src", kind: "file" } })),
   );
@@ -1331,10 +1310,36 @@ test("loadRepos keeps the head of a detached repo for the row title", async () =
   assert.equal(state.rowTitle(state.projects[0]), "o/r · abc1234");
 });
 
+// The sidebar dot says GitHub only when github.com is the remote's host.
+test("loadRepos marks a row github only for a remote hosted on github.com", async () => {
+  const { state } = loadShell();
+  state.loadFleet = () => {};
+  state.refreshLive = () => {};
+  state.loadChanges = () => {};
+  state.loadSync = () => {};
+  const row = (slug, remote) => ({ slug, path: "/" + slug, reachable: true, branch: "main", dirty: false, remote });
+  const rows = [
+    row("o/gh", "git@github.com:o/gh.git"),
+    row("o/fake", "https://github.com.evil.example/o/fake"),
+    row("o/none", null),
+  ];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, json: async () => rows });
+  try {
+    await state.loadRepos();
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.deepEqual(
+    state.projects.map((p) => [p.slug, p.remote]),
+    [["o/gh", "github"], ["o/fake", "local"], ["o/none", "local"]],
+  );
+});
+
 // --- ADR-0070 D2: a shown fact is read again on named events only ----------
 
 // Every URL the code under test fetched, answered with an empty 200. A bare
-// `fetch` in app.js resolves to `globalThis.fetch`, not the harness window's.
+// `fetch` in app.ts resolves to `globalThis.fetch`, not the harness window's.
 async function withFetchSpy(fn) {
   const urls = [];
   const realFetch = globalThis.fetch;
@@ -1559,6 +1564,21 @@ test("a failed board read after a good one keeps the cards, marked not current",
   assert.equal(state.boardIssues["o/r"].length, 1, "the cards stay");
   assert.equal(state.boardRead["o/r"].current, false);
   assert.match(state.boardError["o/r"], /Not current/);
+});
+
+// A label name is repo data: one named like an Object member (`constructor`)
+// still falls back to the seed color, not to the member.
+test("a label missing from the live list takes the seed color, whatever its name", async () => {
+  const state = observedShell([
+    { status: "ok", board: { issues: [], labels: [{ name: "bug", color: "d73a4a" }] } },
+  ]);
+  state.loadPlan = () => {};
+  state.kanbanSel = null;
+  await state.loadBoard();
+  assert.equal(state.labelColor("bug"), "#d73a4a");
+  for (const name of ["constructor", "toString", "__proto__"]) {
+    assert.equal(state.labelColor(name), globalThis.window.WBKanban.labelColor(name), name);
+  }
 });
 
 test("a failed runs read after a good one keeps the runs, marked not current", async () => {

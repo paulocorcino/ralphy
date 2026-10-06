@@ -1,14 +1,11 @@
 // A detached file popup comes home however it closes: the Re-attach button and
 // the popup's unload both send `wb-reattach` with the edited bytes, and a popup
 // that dies without an unload is found by the shell's `closed` poll. Driven
-// through the module-level `message` listener and the poll app.js registers at
+// through the module-level `message` listener and the poll app.ts registers at
 // load; the popup is a fake window, since only the shell's fold is under test.
-import { test, after } from "node:test";
+import { test } from "node:test";
 import assert from "node:assert/strict";
 import { loadShell } from "./harness.mjs";
-
-// app.js calls `WB.emit` bare, which Node resolves through `globalThis`.
-after(() => delete globalThis.WB);
 
 const ORIGIN = "http://127.0.0.1:7431";
 const DESC = {
@@ -52,7 +49,6 @@ function detached() {
       open: (url) => (urls.push(url), popup),
     },
   });
-  globalThis.WB = { emit() {} };
   const opened = [];
   state.openTab = (d) => opened.push(d);
   state.closeTab = () => {};

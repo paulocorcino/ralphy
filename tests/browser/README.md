@@ -36,7 +36,7 @@ UI module in `crates/ralphy-daemon/assets/ui/` where one exists.
 | `runs/` | the Runs panel | `wb-runs.js` |
 | `security/` | security headers, the CSP, the audit log of devices | `wb-device.js`, `wb-devices.ts` |
 | `spend/` | the Spend tab | `wb-spend.js` |
-| `workbench/` | rules for the whole page: shown facts, icons, modals, cost | `app.js` |
+| `workbench/` | rules for the whole page: shown facts, icons, modals, cost | `app.ts` |
 | `worktree/` | worktrees and the checkout switcher | — |
 
 A script that imports another script's helpers puts that script's folder on

@@ -1,8 +1,8 @@
-// Loading `app.js` — the one asset the per-module `load()` copies cannot reach.
+// Loading `app.ts` — the one asset the per-module `load()` copies cannot reach.
 //
 // Every other test file in this directory carries its own small `load()`: read
 // one source, run it against two or three stubs, take the global it defines.
-// That shape works because those modules are leaves. `app.js` is not — it is the
+// That shape works because those modules are leaves. `app.ts` is not — it is the
 // Alpine component the whole document hangs off, it reads its siblings, and
 // it wants enough of a DOM to answer `matchMedia` and `querySelector`. The
 // loader for it is thirty lines, and thirty lines copied into an eleventh file
@@ -16,6 +16,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { shell, wire } from "../assets/ui/app.ts";
 import { hostsDialog } from "../assets/ui/wb-hosts-dialog.ts";
 import { settingsDialog, WBSettingsDialog } from "../assets/ui/wb-settings-dialog.ts";
 import { devices } from "../assets/ui/wb-devices.ts";
@@ -38,8 +39,8 @@ import { WBFleet } from "../assets/ui/wb-fleet.ts";
 import { WB_SETTINGS, WB_TRISTATE, wbClientKeys, wbSettingsDefaults, wbQr } from "../assets/ui/wb-settings.ts";
 
 // The `window.WB*` names that a module sets in the browser because a classic
-// script still reads them (ADR-0075 D9). A module does not run in
-// `loadShell`, so the loader sets these on the page's window itself.
+// script still reads them (ADR-0075 D9). A module ran once, at import, so the
+// loader sets these on each page's window itself.
 const MODULE_NAMESPACES = {
   WBAgents,
   WBFileSearch,
@@ -93,7 +94,7 @@ export function withoutComments(text) {
     .join("");
 }
 
-// The siblings index.html loads BEFORE app.js, in ITS order — DERIVED from the
+// The classic scripts index.html loads, in ITS order — DERIVED from the
 // document, never hand-listed. Order is not decoration: each one assigns its
 // namespace onto `window`, `wb-console.js` destructures `WBGeometry` at module
 // scope, and `shell()` reads several of them while it is still building its
@@ -110,8 +111,8 @@ export const SIBLINGS = readFileSync(join(UI, "index.html"), "utf8")
   .map((m) => m[1])
   // Vendor bundles are third-party and none of them defines a `WB*` namespace;
   // the seed loader is a template literal resolved at runtime and points outside
-  // the embedded tree. `app.js` itself is loaded last, by `loadShell`.
-  .filter((src) => !src.startsWith("vendor/") && !src.includes("${") && src !== "app.js");
+  // the embedded tree.
+  .filter((src) => !src.startsWith("vendor/") && !src.includes("${"));
 
 // A DOM that answers, and answers NOTHING. Every query misses, every element is
 // absent: that is the honest state for a document whose body was never parsed,
@@ -173,8 +174,8 @@ function stubWindow() {
   };
 }
 
-// Evaluate app.js and its siblings the way the browser does, and return a FRESH
-// `shell()` state object.
+// Evaluate the classic scripts the way the browser does, run app.ts's `wire`
+// on this page, and return a FRESH `shell()` state object.
 //
 // Fresh per call, never shared: `shell()` returns a mutable object with ~390
 // keys, and a test that mutated a shared one would leak into whichever test ran
@@ -206,15 +207,15 @@ export function loadShell(opts = {}) {
         window.location,
       );
     }
-    new Function("window", "document", read("app.js"))(window, document);
   } finally {
     globalThis.BroadcastChannel = realBC;
   }
-
-  if (typeof window.shell !== "function") {
-    throw new Error("app.js must define window.shell — the whole document hangs off it");
-  }
-  const state = window.shell();
+  // `shell()` reads the page's globals on the real `window` and `document`:
+  // the last page loaded owns them, as in `loadComponent`.
+  globalThis.window = window;
+  globalThis.document = document;
+  wire(window, document);
+  const state = shell();
   return { state, window, document };
 }
 

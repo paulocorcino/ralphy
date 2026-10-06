@@ -1,4 +1,3 @@
-"use strict";
 /* ---------------------------------------------------------------------------
    ralphy workbench shell — shell behaviour
 
@@ -10,15 +9,23 @@
    Every user gesture becomes one CustomEvent, `workbench:action`, on
    `document`. That event IS the seam: a backend subscribes and does the work.
 --------------------------------------------------------------------------- */
+import type { AlpineMagics } from "./wb-alpine.ts";
+import { WBFail } from "./wb-fail.ts";
 
-// The one exit point: every gesture becomes a `workbench:action` event.
-window.WB = {
-  emit(action, detail = {}) {
-    const full = { action, ...detail, at: new Date().toISOString() };
-    document.dispatchEvent(new CustomEvent("workbench:action", { detail: full }));
-    // eslint-disable-next-line no-console
-    console.log("[workbench:action]", full);
-  },
+/** A peer of `/api/fleet`. */
+export type FleetPeer = {
+  daemon_id: string;
+  name: string;
+  state: string;
+  diagnosis?: string;
+  destination?: string;
+  identity_file?: string;
+  /** Set when the peer is paired over SSH. */
+  tunnel?: unknown;
+  os?: string;
+  environment?: string;
+  /** The update can wake it through `wsl.exe`. */
+  nudgeable?: boolean;
 };
 
 // A phone in either orientation: its SHORT side is under the workbench's phone
@@ -39,7 +46,7 @@ const BINARY_EXT = new Set([
   "woff2", "ttf", "eot", "otf",
 ]);
 
-function extOf(name) {
+function extOf(name: any) {
   const n = name.toLowerCase();
   return n.includes(".") ? n.split(".").pop() : "";
 }
@@ -49,7 +56,7 @@ function extOf(name) {
 // Case-insensitive: NTFS resolves `.GIT` to `.git`.
 const PROTECTED_DIRS = [".git", ".ralphy"];
 
-function isProtectedDir(name) {
+function isProtectedDir(name: any) {
   return PROTECTED_DIRS.some((p) => name.toLowerCase() === p);
 }
 
@@ -58,11 +65,11 @@ function isProtectedDir(name) {
 // landing directory IS writable (ADR-0064 §5), so the tree may offer rename
 // and delete on it. Exactly `.ralphy/notes/<name>.note`, spelled that way —
 // the same narrow shape `fswrite::is_note_in_notes_dir` opens.
-function isNoteInNotesDir(rel) {
+function isNoteInNotesDir(rel: any) {
   // `.` and empty segments are dropped first: `Path::components()` on the
   // daemon's side collapses them, so `.ralphy/./notes/x.note` is one path
   // there and would be two different answers here.
-  const parts = rel.split("/").filter((p) => p && p !== ".");
+  const parts = rel.split("/").filter((p: any) => p && p !== ".");
   return (
     parts.length === 3 &&
     parts[0] === ".ralphy" &&
@@ -72,19 +79,19 @@ function isNoteInNotesDir(rel) {
   );
 }
 
-function underProtectedDir(rel) {
+function underProtectedDir(rel: any) {
   if (isNoteInNotesDir(rel)) return false;
   return rel.split("/").some(isProtectedDir);
 }
 
 // The title of a create gesture, one sentence with its word order kept
 // whole (ADR-0065 §9). `dir` is "" for the top of the project.
-function newEntryTitle(kind, dir) {
+function newEntryTitle(kind: any, dir: any) {
   return `New ${kind} in ${dir || "the project root"}`;
 }
 
 // The directory containing `rel`; "" for a top-level entry (the repo root).
-function parentRel(rel) {
+function parentRel(rel: any) {
   const i = rel.lastIndexOf("/");
   return i < 0 ? "" : rel.slice(0, i);
 }
@@ -92,7 +99,7 @@ function parentRel(rel) {
 // A file tab's identity (#406): project, path and — ONLY under a selected
 // worktree — the checkout, so the same rel in two trees is two tabs (the
 // primary's id is the pre-#406 spelling, byte for byte).
-function fileTabId(project, path, checkout) {
+function fileTabId(project: any, path: any, checkout: any) {
   return checkout ? `file:${project}@${checkout}:${path}` : `file:${project}:${path}`;
 }
 
@@ -100,7 +107,7 @@ function fileTabId(project, path, checkout) {
 // a note → its CARD on the consoles stage (ADR-0064 §11, never a tab: two
 // editors over one file is the thing that decision exists to prevent), other
 // binaries refused, everything else source code.
-function classify(name) {
+function classify(name: any) {
   const ext = extOf(name);
   if (ext === "note") return "note";
   if (ext === "md" || ext === "markdown") return "markdown";
@@ -109,54 +116,65 @@ function classify(name) {
   return "code";
 }
 
-function shell() {
-  return {
-    openSlug: null,
+// The `this` of `shell()`'s members: its own members, the Alpine magics, and
+// any other name as `any` until its fields are typed one by one. The type a
+// component checks its `uses` against is the literal itself (`Shell`).
+function shellData<T extends object>(data: T & ThisType<T & AlpineMagics & Record<string, any>>): T {
+  return data;
+}
+
+// The popups `wire` opened, as `shell()` reaches them. `wire` sets this, so
+// each call starts with no popup.
+let detached = { watch: (_win: any, _desc: any) => {}, dirty: () => false, close: () => {} };
+
+export function shell() {
+  return shellData({
+    openSlug: null as any,
     // A failed `/api/repos` (#202): a visible error.
     reposError: "",
     // The read state of the shown facts this sidebar shows (ADR-0070 D3):
     // `WBFail.readFold` results, `null` before the first read.
-    reposRead: null,
-    fleetRead: null,
+    reposRead: null as any,
+    fleetRead: null as any,
     fleetError: "",
     // The peers the daemon could not read (a peer file it cannot parse, or a
     // peer store it cannot list): they list no project, so the sidebar says
     // so instead of showing an empty fleet (ADR-0070 D4).
     fleetRejectNote: "",
-    sessionsRead: null,
+    sessionsRead: null as any,
     // Why the daemon cannot read the saved desk, or "" (ADR-0070 D4); a copy
     // of `WBConsole.deskFailure()` so the page can show it.
     deskFailure: "",
     // The peer rows of the last good `/api/fleet`, kept when a read fails.
-    _fleetRows: [],
+    _fleetRows: [] as any[],
     // The local fleet's peers (ADR-0052 §5, #349), from `/api/fleet`. Empty: a
     // fleet of one, or a daemon too old to serve the route.
-    fleetPeers: [],
+    fleetPeers: [] as FleetPeer[],
     // Peers with a wake in flight, keyed by daemon_id: a cold WSL boot takes
     // seconds, and the key stops a second click sending a second nudge.
-    waking: {},
+    waking: {} as Record<string, any>,
     // Working-tree change count per slug (#307). `null` until a load succeeds,
     // so a failed read never reads like a clean tree; `changesReadError`
     // carries the reason into the Changes view's title.
-    changesCount: {},
+    changesCount: {} as Record<string, any>,
     // Per slug, named apart from the shell-wide `changesError` below: a
     // duplicate key in this literal is a silent no-op.
-    changesReadError: {},
+    changesReadError: {} as Record<string, any>,
     // Per slug, the read state of the change set, the branch (sync), the board
     // and the runs (`WBFail.readFold`, ADR-0070 D3). A write is locked while
     // its fact is not current.
-    changesRead: {},
-    syncRead: {},
-    boardRead: {},
-    runsRead: {},
+    changesRead: {} as Record<string, any>,
+    syncRead: {} as Record<string, any>,
+    boardRead: {} as Record<string, any>,
+    runsRead: {} as Record<string, any>,
     // The two rendered groups (#315). INVARIANT: every path that sets one must
     // set the OTHER in the SAME statement — a stale group left behind renders
     // rows under a headline while the badge already reads `—`.
-    changesStaged: {},
-    changesUnstaged: {},
+    changesStaged: {} as Record<string, any>,
+    changesUnstaged: {} as Record<string, any>,
     // The sync row per project (#316): the fold of `sync.status`. Same three
     // triggers as the change set, never a timer.
-    syncByProject: {},
+    syncByProject: {} as Record<string, any>,
     // The commit message being composed (#318). One box, but it belongs to
     // `commitMsgSlug` ONLY: a message typed for repo A must never land as repo
     // B's commit. Cleared on success only.
@@ -171,7 +189,7 @@ function shell() {
     // slot for the whole bar: the three acts share the upstream, so a second
     // click while one is out would race it against the first — and a push's
     // round trip is long enough that a silent button reads as a dead one.
-    syncBusy: null,
+    syncBusy: null as any,
     // A repo refresh in flight. The list does NOT auto-refresh (only the live
     // dots do, via the heartbeat); the button picks up a new repo or a
     // branch/dirty change.
@@ -210,13 +228,13 @@ function shell() {
       mode: "name",
       query: "",
       seq: 0,
-      hits: [],
+      hits: [] as any[],
       truncated: false,
       note: "",
-      expandedBefore: null,
+      expandedBefore: null as string[] | null,
     },
-    _tree: null, // the live Wunderbaum instance, if any
-    _treeSub: null, // the live `/ws/tree` subscription for the open project, if any
+    _tree: null as any, // the live Wunderbaum instance, if any
+    _treeSub: null as any, // the live `/ws/tree` subscription for the open project, if any
     // Tree memory, all three lazily created so they stay plain collections
     // outside Alpine's reactive data (a proxied Map is a trap):
     //   _treeCache     directory levels already shown, keyed `repo\nrel`.
@@ -224,9 +242,9 @@ function shell() {
     //   _treeValidated cached levels re-read against the disk during THIS open.
     //                  Cleared on every mount.
     //   _treeExpanded  folders expanded when a project was last closed, by repo.
-    _runsSub: null, // the live run-snapshot subscription for the open project, if any
-    _changesSub: null, // the run-completion nudge subscription for the open project (#310)
-    _presenceSub: null, // the `/ws` heartbeat subscription, kept so a resume can re-open it
+    _runsSub: null as any, // the live run-snapshot subscription for the open project, if any
+    _changesSub: null as any, // the run-completion nudge subscription for the open project (#310)
+    _presenceSub: null as any, // the `/ws` heartbeat subscription, kept so a resume can re-open it
     // Monotonic hydration token: overlapping `runs.list` replies can land OUT
     // OF ORDER; only the newest hydration commits.
     _runsSeq: 0,
@@ -259,7 +277,7 @@ function shell() {
       window.WBConsole?.setStaleProbe?.(() => this.socketsAreStale());
       // The selected checkouts (#406): the ONE hook for `unknown checkout`, and
       // the copy of the desk mirror once the boot desk lands.
-      window.WBDaemon?.onUnknownCheckout?.((repo, name) => this.checkoutGone(repo, name));
+      window.WBDaemon?.onUnknownCheckout?.((repo: any, name: any) => this.checkoutGone(repo, name));
       window.WBConsole?.whenDeskLoaded?.().then(() => {
         this.adoptDeskCheckouts();
         this.syncDeskFailure();
@@ -268,7 +286,7 @@ function shell() {
       window.WBConsole?.setDeskFailureHook?.(() => this.syncDeskFailure());
       // A console whose record another client removed leaves the columns
       // before it leaves the stage.
-      window.WBConsole?.setDeskGoneHook?.((ids) => this.checkColumnDesk(ids));
+      window.WBConsole?.setDeskGoneHook?.((ids: any) => this.checkColumnDesk(ids));
       // Anchor the clock at page load: `_boardLoadedAt` at 0 would clear the
       // 120s floor on the first tick.
       this._boardLoadedAt = Date.now();
@@ -315,7 +333,7 @@ function shell() {
 
     // Bring the long-lived subscriptions back after a suspend. Each decides for
     // itself (`resumeDecision`) and debounces.
-    resumeSockets(stale) {
+    resumeSockets(stale?: any) {
       const verdict = stale === undefined ? this.socketsAreStale() : stale;
       this._runsSub?.resume?.(verdict);
       this._changesSub?.resume?.(verdict);
@@ -330,7 +348,7 @@ function shell() {
     subscribePresence() {
       if (!window.WBDaemon?.subscribePresence) return;
       this._presenceSub = window.WBDaemon.subscribePresence(
-        (p) => {
+        (p: any) => {
           this._lastHeartbeat = Date.now();
           this.uptimeText = "Running for " + this.fmtUptime(p.uptime_secs);
           if (p.name) this.identityName = p.name;
@@ -338,8 +356,8 @@ function shell() {
           if (p.build && this.pageBuild && p.build !== this.pageBuild) this.onBuildSkew();
         },
         {
-          onPush: (verb, payload) => this.onPresencePush(verb, payload),
-          onOpen: (reopened) => this.onPresenceOpen(reopened),
+          onPush: (verb: any, payload: any) => this.onPresencePush(verb, payload),
+          onOpen: (reopened: any) => this.onPresenceOpen(reopened),
         },
       );
     },
@@ -351,7 +369,7 @@ function shell() {
     },
 
     // A push from the daemon for a fact it owns (ADR-0070 D2 event 1).
-    onPresencePush(verb, payload) {
+    onPresencePush(verb: any, payload: any) {
       if (this.tabHidden()) return;
       if (verb === "sessions.dirty") {
         // A spawn and its first agent state arrive together: one read.
@@ -375,13 +393,13 @@ function shell() {
     },
     LIVE_SETTLE_MS: 250,
     PEER_READ_MS: 30000,
-    _liveTimer: null,
-    _peerTick: null,
+    _liveTimer: null as any,
+    _peerTick: null as any,
 
     // The presence socket opened again: a push may have been lost while it
     // was down (ADR-0070 D2 event 2). The first open reads nothing: `init`
     // already did.
-    onPresenceOpen(reopened) {
+    onPresenceOpen(reopened: any) {
       if (!reopened || this.tabHidden()) return;
       this.loadRepos();
       this.rereadDesk();
@@ -407,14 +425,14 @@ function shell() {
     startNewDesk() {
       window.WBConsole?.startNewDesk?.()
         .then(() => this.syncDeskFailure())
-        .catch((e) => {
+        .catch((e: any) => {
           const why = String(e?.message || "").startsWith("the daemon") ? e.message : "the daemon did not answer";
           this._flashAction(`Could not start a new desk: ${why}.`);
         });
     },
 
     // Seconds → a compact `1d 2h`, `2h 14m`, `5m`, `12s` uptime string.
-    fmtUptime(secs) {
+    fmtUptime(secs: any) {
       const s = Math.max(0, Math.floor(secs || 0));
       const d = Math.floor(s / 86400);
       const h = Math.floor((s % 86400) / 3600);
@@ -453,7 +471,8 @@ function shell() {
     // The daemon's adapter roster (#304). A failed fetch leaves the roster
     // EMPTY rather than showing adapters this daemon may not have.
     _agentsSeq: 0,
-    async loadAgents(repo = this.openSlug) {
+    async loadAgents(repo?: any) {
+      if (repo === undefined) repo = this.openSlug;
       const seq = ++this._agentsSeq;
       try {
         const r = await fetch(window.WBAgents.rosterUrl(repo));
@@ -485,7 +504,7 @@ function shell() {
           // stay until `refreshLive` and `loadFleet` answer, and the peer rows
           // stay until the fleet read replaces them.
           const before = new Map(this.projects.filter((p) => !p.daemon).map((p) => [p.slug, p]));
-          const local = repos.map((x) => ({
+          const local = repos.map((x: any) => ({
             slug: x.slug,
             // What the operator calls the project; the SLUG stays the identity
             // (ADR-0008 D7), and for a remoteless repo it is a hash key.
@@ -506,7 +525,7 @@ function shell() {
             state: !x.reachable ? "offline" : before.get(x.slug)?.state === "offline" ? "idle" : before.get(x.slug)?.state || "idle",
             env: before.get(x.slug)?.env || "",
             daemonName: before.get(x.slug)?.daemonName || "",
-            remote: x.remote && x.remote.includes("github.com") ? "github" : "local",
+            remote: window.WBProject.isGitHubRemote(x.remote) ? "github" : "local",
             remoteUrl: x.remote || "",
             tree: [],
           }));
@@ -537,7 +556,7 @@ function shell() {
 
     // A failed `/api/repos` (ADR-0070 D3). After a good read the list stays,
     // marked not current. Before one, the list is empty and says why.
-    reposFailed(reason) {
+    reposFailed(reason: any) {
       this.reposRead = window.WBFail.readFold(this.reposRead, { ok: false, reason, at: Date.now() });
       if (this.reposRead.goodAt) {
         this.reposError = window.WBFail.notCurrent(this.reposRead, (ms) => this.fmtClock(ms));
@@ -548,18 +567,18 @@ function shell() {
     },
 
     // A time of day, `14:02`, for "Read at …".
-    fmtClock(ms) {
+    fmtClock(ms: any) {
       return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     },
 
     // The local fleet (ADR-0052 §5, #349): append every PEER's repos after the
     // local `/api/repos` pass, plus the peer list the group headers render.
     // INVARIANT: a `/api/fleet` failure leaves the LOCAL list exactly as it was.
-    fleetRejectText(peers) {
-      const bad = peers.filter((p) => p.state === "malformed");
+    fleetRejectText(peers: any) {
+      const bad = peers.filter((p: any) => p.state === "malformed");
       if (!bad.length) return "";
       const what = bad.length === 1 ? "a peer" : `${bad.length} peers`;
-      return `Could not read ${what}: ${bad.map((p) => p.diagnosis || p.name).join("; ")}`;
+      return `Could not read ${what}: ${bad.map((p: any) => p.diagnosis || p.name).join("; ")}`;
     },
     async loadFleet() {
       // Two project reads close together (a wake fires the visible tab and the
@@ -585,7 +604,7 @@ function shell() {
         const rows = Array.isArray(fleet.repos) ? fleet.repos : [];
         // `/api/fleet` is the ONLY source of this daemon's own environment label
         // and name; the local rows are stamped with it here.
-        const mine = rows.find((x) => x.local);
+        const mine = rows.find((x: any) => x.local);
         if (mine) {
           for (const p of this.projects) {
             p.env = mine.environment || "";
@@ -593,8 +612,8 @@ function shell() {
             p.daemonName = mine.daemon_name || "";
           }
         }
-        const peerRows = rows.filter((x) => !x.local);
-        this._fleetRows = peerRows.map((x) => ({
+        const peerRows = rows.filter((x: any) => !x.local);
+        this._fleetRows = peerRows.map((x: any) => ({
             // `<daemon_id>/<slug>`: the same `owner/repo` on two daemons is two rows.
             key: x.key,
             slug: x.slug,
@@ -605,7 +624,7 @@ function shell() {
             // The peer's OWN working-tree facts, same classification as `loadRepos`.
             dirty: !!x.dirty,
             state: x.reachable ? "idle" : "offline",
-            remote: x.remote && x.remote.includes("github.com") ? "github" : "local",
+            remote: window.WBProject.isGitHubRemote(x.remote) ? "github" : "local",
             remoteUrl: x.remote || "",
             tree: [],
             // What makes this a peer row.
@@ -621,7 +640,7 @@ function shell() {
         this.filesFollowFleet();
         this.fleetRead = window.WBFail.readFold(this.fleetRead, { ok: true, value: true, at: Date.now() });
         this.fleetError = "";
-      } catch (e) {
+      } catch (e: any) {
         if (seq !== this._fleetSeq) return;
         // After a good read the peers and their rows stay, marked not current
         // (ADR-0070 D3); `loadRepos` rebuilt the list without them.
@@ -649,11 +668,11 @@ function shell() {
       }
       return this._fleetNow;
     },
-    _fleetNow: null,
+    _fleetNow: null as any,
 
     // The fleet read that confirms a removed host waits up to 2 s for the
     // peer that is now down: until then its row would come back.
-    hostRemoved(daemon) {
+    hostRemoved(daemon: any) {
       this.fleetPeers = (this.fleetPeers || []).filter((p) => p.daemon_id !== daemon);
       this._fleetRows = this._fleetRows.filter((r) => r.daemon !== daemon);
       this.projects = this.projects.filter((r) => r.daemon !== daemon);
@@ -663,7 +682,7 @@ function shell() {
     // ADR-0046), which is why this lives in the workbench: a daemon nudging on
     // every probe would be supervising by accident (ADR-0052 §4).
     // `/api/fleet/nudge` resolves when the environment is USABLE.
-    async wakePeer(daemonId) {
+    async wakePeer(daemonId: any) {
       if (!daemonId || this.waking[daemonId]) return false;
       this.waking[daemonId] = true;
       try {
@@ -695,42 +714,42 @@ function shell() {
     },
 
     // Opening a row on a sleeping peer wakes it. A no-op for every other row.
-    wakePeerFor(ref) {
+    wakePeerFor(ref: any) {
       const daemon = window.WBFleet.refDaemon(ref);
       if (!daemon) return;
       const group = this.fleetGroups().find((g) => g.daemon === daemon);
       if (window.WBFleet.wakeable(group)) this.wakePeer(daemon);
     },
 
-    peerWakeable(g) {
+    peerWakeable(g: any) {
       return window.WBFleet.wakeable(g);
     },
-    peerAvailable(g) {
+    peerAvailable(g: any) {
       return window.WBFleet.available(g);
     },
-    refAvailable(ref) {
+    refAvailable(ref: any) {
       const daemon = window.WBFleet.refDaemon(ref);
       if (!daemon) return true;
       return window.WBFleet.available(this.fleetGroups().find((g) => g.daemon === daemon));
     },
-    peerIcon(g) {
+    peerIcon(g: any) {
       return window.WBFleet.stateIcon(g);
     },
-    peerFault(g) {
+    peerFault(g: any) {
       return window.WBFleet.stateFault(g);
     },
-    groupTitle(g) {
+    groupTitle(g: any) {
       return window.WBFleet.groupTitle(g);
     },
-    groupLabel(g) {
+    groupLabel(g: any) {
       return window.WBFleet.groupLabel(g);
     },
-    groupHost(g) {
+    groupHost(g: any) {
       return window.WBFleet.groupHost(g);
     },
     // `x` is a fleet group or a peer of `/api/fleet`: both carry `os` and
     // `environment`.
-    osOf(x) {
+    osOf(x: any) {
       return window.WBFleet.system(x && x.os, x && x.environment);
     },
 
@@ -738,7 +757,7 @@ function shell() {
     fleetGroups() {
       return window.WBFleet.fleetGroups(this.filteredProjects(), this.fleetPeers);
     },
-    repoRef(p) {
+    repoRef(p: any) {
       return window.WBFleet.repoRef(p);
     },
     // Each project's `live` dot from `/api/sessions` (#204). Never overrides
@@ -762,7 +781,7 @@ function shell() {
         window.WBConsole?.ingestSessions?.(sessions);
         for (const p of this.projects) {
           if (p.state === "offline") continue;
-          const mine = sessions.filter((s) =>
+          const mine = sessions.filter((s: any) =>
             window.WBSessionRoute.matchesRepo(s, this.repoRef(p)),
           );
           // A `waiting` agent outranks `live` on the dot (ADR-0059).
@@ -779,7 +798,7 @@ function shell() {
     _liveSeq: 0,
     // A failed `/api/sessions` keeps the last list and the live dots, marked
     // not current in the console menu (ADR-0070 D3).
-    sessionsFailed(reason) {
+    sessionsFailed(reason: any) {
       this.sessionsRead = window.WBFail.readFold(this.sessionsRead, { ok: false, reason, at: Date.now() });
     },
     sessionsError() {
@@ -801,7 +820,7 @@ function shell() {
     },
 
     // Clicking the rail button of the view already showing collapses the sidebar.
-    showSideView(view) {
+    showSideView(view: any) {
       if (this.sideOpen && this.sideView === view) {
         this.sideOpen = false;
         return;
@@ -828,7 +847,7 @@ function shell() {
 
     // The change indicator for one row. Only slugs whose count was READ render
     // one: a `changes.list` per repo would be N git subprocesses on open.
-    projectBadge(slug) {
+    projectBadge(slug: any) {
       return window.WBChanges.projectBadge(this.changesCount, slug);
     },
 
@@ -852,7 +871,7 @@ function shell() {
     },
 
     // Sidebar row label: the repo name, UPPERCASED (wb-project.js).
-    repoLabel(p) {
+    repoLabel(p: any) {
       return window.WBProject.repoLabel(p);
     },
 
@@ -861,7 +880,7 @@ function shell() {
     // (ADR-0052 §5), so the environment is printed in its place. The ref itself
     // is untouched on the wire, the desk and the tab ids. Row lookup by
     // `repoRef`, not slug: the same `owner/repo` on two daemons is two rows.
-    projectLabel(ref) {
+    projectLabel(ref: any) {
       if (!ref) return "";
       const row = this.projects.find((p) => this.repoRef(p) === ref);
       if (!row) return window.WBFleet.refLabel(ref);
@@ -884,14 +903,14 @@ function shell() {
     // in the sidebar must not change what a console says.
     shareFleet() {
       window.WBConsole?.ingestFleet?.(window.WBFleet.fleetGroups(this.projects, this.fleetPeers), {
-        wake: (daemonId) => this.wakePeer(daemonId),
+        wake: (daemonId: any) => this.wakePeer(daemonId),
         read: () => this.readFleetNow(),
       });
     },
     // The tooltip twin of `projectLabel`: `owner/repo`, or the full folder of
     // a remoteless repo, plus the environment of a peer. Never a hash key or
     // a daemon id.
-    projectTitle(ref) {
+    projectTitle(ref: any) {
       if (!ref) return "";
       const row = this.projects.find((p) => this.repoRef(p) === ref);
       if (!row) return window.WBFleet.refLabel(ref);
@@ -926,7 +945,7 @@ function shell() {
         // Lazy-load the tracker for the open project when the board opens.
         this.loadBoard();
       }
-      WB.emit("kanban-toggle", { open: this.kanbanOpen });
+      window.WB.emit("kanban-toggle", { open: this.kanbanOpen });
     },
 
     // --- branch switcher --------------------------------------------------
@@ -935,9 +954,9 @@ function shell() {
     // optimistically.
     branchOpen: false,
     branchModal: {
-      slug: null,
+      slug: null as string | null,
       filter: "",
-      branches: [],
+      branches: [] as string[],
       current: "",
       primaryBranch: "",
       dirty: false,
@@ -945,35 +964,35 @@ function shell() {
     },
     // A `worktree.remove` in flight, per repo ref: the chip's menu greys the
     // row and a second click is ignored until the re-read lands.
-    worktreeRemoving: {},
+    worktreeRemoving: {} as Record<string, any>,
     // The selected checkout per repo ref (#406, ADR-0063 §4): the REACTIVE copy
     // of `WBConsole`'s desk mirror (a closure variable there is invisible to
     // Alpine). `worktreeListings` is the last `worktree.list` reply per ref;
     // `_treeCheckout` is the checkout the mounted tree was built for.
-    checkouts: {},
-    worktreeListings: {},
+    checkouts: {} as Record<string, any>,
+    worktreeListings: {} as Record<string, any>,
     _treeCheckout: null,
 
     // Only when the daemon can reach the repo on disk. NOT gated on `remote`:
     // a local-only repo still has branches.
-    canSwitchBranch(p) {
+    canSwitchBranch(p: any) {
       return window.WBProject.canSwitchBranch(p);
     },
 
     // The branch chip lives on the Files bar (#332), which only the OPEN
     // project renders. `.project-slug` carries the ADR-0008 D7 identity in
     // `data-slug`, which is how the browser tests find a row.
-    rowOpen(p) {
+    rowOpen(p: any) {
       return this.openSlug === this.repoRef(p);
     },
     // A sleeping peer's wake button. Its two sentences keep their order here,
     // not in a `+` chain inside the markup (ADR-0065 §9).
-    wakeTitle(g) {
+    wakeTitle(g: any) {
       if (this.waking[g.daemon]) return `Waking ${g.environment}…`;
       return `Wake ${g.environment}. ${g.diagnosis}`;
     },
     // A row on a host that cannot answer: why it does not open.
-    unavailableTitle(g) {
+    unavailableTitle(g: any) {
       const host = window.WBFleet.peerName(g);
       const head = `${host} is not available (${this.peerStateWord(g.state)}).`;
       if (window.WBFleet.wakeable(g)) return `${head} Click to wake it.`;
@@ -981,7 +1000,7 @@ function shell() {
     },
     // The checkout chip of a project row: which tree Files, Changes and
     // search read, and that a click chooses another.
-    checkoutTitle(p) {
+    checkoutTitle(p: any) {
       const name = this.checkoutOf(this.repoRef(p));
       return name
         ? `Files, changes and search show worktree “${name}”. Click to choose another one.`
@@ -991,7 +1010,7 @@ function shell() {
     // Drop a project from the daemon's registry (#363); the disk is NOT
     // touched. The confirm is awaited BEFORE any `WBDaemon` call: cancel must
     // open no socket.
-    async removeProject(p) {
+    async removeProject(p: any) {
       const ref = this.repoRef(p);
       const ok = await this.askConfirm({
         title: "Remove project",
@@ -1024,15 +1043,15 @@ function shell() {
       }
     },
 
-    rowTitle(p) {
+    rowTitle(p: any) {
       return window.WBProject.rowTitle(p);
     },
 
-    branchChipTitle(p) {
+    branchChipTitle(p: any) {
       const ref = this.repoRef(p);
       return window.WBProject.branchChipTitle(p, this.checkoutOf(ref), this.worktreeListings[ref] || null);
     },
-    chipDirty(p) {
+    chipDirty(p: any) {
       const ref = this.repoRef(p);
       return window.WBProject.chipDirty(p, this.checkoutOf(ref), this.worktreeListings[ref] || null);
     },
@@ -1041,20 +1060,20 @@ function shell() {
     // and must not ALSO collapse the row it sits on. Switching is gated on
     // reachability, not on remote (`canSwitchBranch`): an unreachable chip
     // stays inert — informational — but still swallows the click.
-    branchChipClick(p, ev) {
+    branchChipClick(p: any, ev: any) {
       if (!this.rowOpen(p)) return;
       ev.stopPropagation();
       this.openBranchModal(p);
     },
 
-    openBranchModal(p) {
+    openBranchModal(p: any) {
       if (!this.canSwitchBranch(p)) return;
       // Reaching for the picker IS the next branch act.
       this.branchError = "";
       const ref = this.repoRef(p);
       // Under a selection "current" is the WORKTREE's branch (#407).
       const ck = this.checkoutOf(ref);
-      const wt = ck ? (this.worktreeListings[ref]?.worktrees || []).find((w) => w && w.name === ck) : null;
+      const wt = ck ? (this.worktreeListings[ref]?.worktrees || []).find((w: any) => w && w.name === ck) : null;
       this.branchModal = {
         slug: ref,
         filter: "",
@@ -1077,7 +1096,7 @@ function shell() {
 
     // The repo's real local branches via `branch.list` (#199). A failed read
     // empties the list (M5).
-    async loadBranches(slug) {
+    async loadBranches(slug: any) {
       try {
         const reply = await window.WBDaemon.observe(
           "branch.list",
@@ -1110,7 +1129,7 @@ function shell() {
     // The open project's change count (#307) via `changes.list`: reloads on
     // open, sidebar refresh and run-completion nudge (#310), never on a
     // repo-wide watch. The SELECTED checkout's (#407, ADR-0063 §2).
-    async loadChanges(slug) {
+    async loadChanges(slug: any) {
       if (!slug) return;
       // Overlapping reads can return OUT OF ORDER (as `_runsSeq`).
       const seq = ++this._changesSeq;
@@ -1139,7 +1158,7 @@ function shell() {
     // A failed `changes.list` (ADR-0070 D3). After a good read the groups and
     // the count stay, marked not current; before one, the count is absent
     // (`—`), never another repo's number or a clean tree.
-    changesFailed(slug, reason) {
+    changesFailed(slug: any, reason: any) {
       const read = window.WBFail.readFold(this.changesRead[slug], { ok: false, reason, at: Date.now() });
       this.changesRead[slug] = read;
       if (read.goodAt) {
@@ -1155,7 +1174,7 @@ function shell() {
     // The open project's sync state (#316) via `sync.status`, which makes NO
     // network call. No timer: a launcher holding N repos must never become a
     // scheduled network client.
-    async loadSync(slug) {
+    async loadSync(slug: any) {
       if (!slug) return;
       const seq = ++this._syncSeq;
       try {
@@ -1186,7 +1205,7 @@ function shell() {
     },
     // A failed `sync.status` (ADR-0070 D3). After a good read the row stays,
     // and its note says it is not current; before one, the state is unknown.
-    syncFailed(slug, reason) {
+    syncFailed(slug: any, reason: any) {
       const read = window.WBFail.readFold(this.syncRead[slug], { ok: false, reason, at: Date.now() });
       this.syncRead[slug] = read;
       const prev = this.syncByProject[slug];
@@ -1199,7 +1218,7 @@ function shell() {
 
     // Fetch from the upstream — the operator's act, never a timer's. A refusal
     // is `{status:"error"}` whose message IS the core's prose.
-    async syncFetch(slug) {
+    async syncFetch(slug: any) {
       if (this.syncBusy || this.writeLocked()) return;
       this.syncBusy = "fetch";
       this.changesError = "";
@@ -1224,7 +1243,7 @@ function shell() {
 
     // Fast-forward from the upstream. A successful pull moves the working tree,
     // so the change set is reloaded beside the counts.
-    async syncPull(slug) {
+    async syncPull(slug: any) {
       if (this.syncBusy || this.writeLocked()) return;
       this.syncBusy = "pull";
       this.changesError = "";
@@ -1254,7 +1273,7 @@ function shell() {
     // opt-in flag, ADR-0046 amendment); a refusal's message IS the core's
     // prose. No credential UI, by decision. Push moves no file, so only the
     // counts reload.
-    async syncPush(slug) {
+    async syncPush(slug: any) {
       if (this.syncBusy || this.writeLocked()) return;
       this.syncBusy = "push";
       this.changesError = "";
@@ -1292,7 +1311,7 @@ function shell() {
     // daemon never signals a dispatched child (ADR-0032 §5/§6). No wait: the
     // reply says the request was written; the run leaves the panel via
     // `runs.dirty` when it exits.
-    async stopRun(runid) {
+    async stopRun(runid: any) {
       // No runid: the run left the panel between the render and the click.
       if (!runid || this.runStopping) return;
       // ADR-0032 §6 asks for a strong confirmation. The shell's OWN dialog,
@@ -1349,7 +1368,7 @@ function shell() {
     BUILD_SKEW_LOCK: "This page is older than Ralphy. Save your work, and the page loads the new version.",
     // The build this page was served with (`<meta name="ralphy-build">`);
     // "" with no such tag, and then the page never reloads for a build.
-    pageBuild: document.querySelector('meta[name="ralphy-build"]')?.content || "",
+    pageBuild: document.querySelector<HTMLMetaElement>('meta[name="ralphy-build"]')?.content || "",
     // The daemon runs another build than this page (ADR-0070 D6). With no
     // unsaved work the tab reloads. With unsaved work it waits: the notice
     // stays, only saving that work is allowed, and each heartbeat asks again.
@@ -1358,7 +1377,7 @@ function shell() {
       // A commit draft is not counted: the skew lock refuses the commit, so
       // it is work the tab could never save. A detached file window is: it
       // saves through this tab, and a reloaded tab no longer hears it.
-      const unsaved = !!(window.WBViewer?.anyDirty?.() || window.WBNotes?.anyDirty?.() || detachedDirty());
+      const unsaved = !!(window.WBViewer?.anyDirty?.() || window.WBNotes?.anyDirty?.() || detached.dirty());
       // A hidden tab waits: reloaded now, it would read every fact unseen.
       // The next heartbeat after it becomes visible asks again.
       if (!unsaved && !this.tabHidden()) {
@@ -1368,7 +1387,7 @@ function shell() {
         window.WBDeskSink?.setHold?.(false);
         // A detached file window would outlive the reload with no tab that
         // hears its Save; closing it sends the file home as a tab.
-        closeDetached();
+        detached.close();
         window.location.reload();
         return;
       }
@@ -1408,15 +1427,15 @@ function shell() {
     verbLocked() {
       return this.writeLocked();
     },
-    verbTitle(verb) {
+    verbTitle(verb: any) {
       return window.WBRun.verbLockTitle(verb, this.writeLockReason());
     },
     // The flash after a no-arg verb is sent: `Triage requested.`
-    verbRequestedText(verb) {
+    verbRequestedText(verb: any) {
       return `${verb.charAt(0).toUpperCase()}${verb.slice(1)} requested.`;
     },
     // `all` is the group head's button, which acts on every row of the group.
-    rowActTitle(verb, all = false) {
+    rowActTitle(verb: any, all = false) {
       const locked = this.writeLockReason();
       if (locked) return locked;
       if (verb === "stage") return all ? "Stage all changes" : "Stage changes";
@@ -1439,19 +1458,19 @@ function shell() {
     },
     // The remote bar's title while an act is out: the busy act names itself,
     // the other two name what they are waiting on.
-    syncBusyTitle(verb) {
+    syncBusyTitle(verb: any) {
       if (!this.syncBusy) return "";
       if (this.syncBusy !== verb) return `Waiting for the ${this.syncBusy} to finish`;
-      return { fetch: "Fetching…", pull: "Pulling…", push: "Pushing…" }[verb] || "";
+      return ({ fetch: "Fetching…", pull: "Pulling…", push: "Pushing…" } as Record<string, string>)[verb] || "";
     },
-    groupNote(group) {
+    groupNote(group: any) {
       return window.WBChanges.groupDiscardNote(group);
     },
     commitTarget() {
       return window.WBChanges.commitTarget(this.syncByProject[this.openSlug]);
     },
     // `withOriginal` only on the UNSTAGE direction — see `wb-changes.js`.
-    groupPaths(list, withOriginal) {
+    groupPaths(list: any, withOriginal: any) {
       return window.WBChanges.groupPaths(list, withOriginal);
     },
     commitTitle() {
@@ -1474,7 +1493,7 @@ function shell() {
 
     // Stage / unstage / commit, each in `syncFetch`'s shape, re-reading the
     // list on EVERY path. The list is never moved optimistically.
-    async stagePaths(slug, paths) {
+    async stagePaths(slug: any, paths: any) {
       if (!slug || !paths || !paths.length || this.writeLocked()) return;
       this.changesError = "";
       try {
@@ -1495,7 +1514,7 @@ function shell() {
       this.loadSync(slug);
     },
 
-    async unstagePaths(slug, paths) {
+    async unstagePaths(slug: any, paths: any) {
       if (!slug || !paths || !paths.length || this.writeLocked()) return;
       this.changesError = "";
       try {
@@ -1517,7 +1536,7 @@ function shell() {
 
     // Discard ONE row's changes (#319) — the only irreversible act here, so the
     // only one confirmed (`discardConfirm`). A cancel makes NO daemon call.
-    async discardRow(slug, entry) {
+    async discardRow(slug: any, entry: any) {
       if (!slug || !entry || !entry.path || this.writeLocked()) return;
       const c = window.WBChanges.discardConfirm(entry);
       const ok = await this.askConfirm({
@@ -1547,7 +1566,7 @@ function shell() {
       this.loadSync(slug);
     },
 
-    async commitStaged(slug) {
+    async commitStaged(slug: any) {
       // Never commit a draft composed for another project.
       if (this.commitMsgSlug !== slug || this.writeLocked()) return;
       const message = this.commitMsg.trim();
@@ -1585,10 +1604,10 @@ function shell() {
     // The Files bar's checkout chip (ADR-0063 amendment 2026-09-16 b): shown
     // once the repo has a worktree; a pick sets the #406 selection (what
     // Files, Changes, diff and Find show), never where a console is launched.
-    hasWorktrees(p) {
+    hasWorktrees(p: any) {
       return window.WBProject.hasWorktrees(this.worktreeListings[this.repoRef(p)] || null);
     },
-    openCheckoutChip(p, anchor) {
+    openCheckoutChip(p: any, anchor: any) {
       const ref = this.repoRef(p);
       const listing = this.worktreeListings[ref] || null;
       const mine = (this.liveSessions || []).filter((s) => window.WBSessionRoute.matchesRepo(s, ref));
@@ -1596,23 +1615,23 @@ function shell() {
         anchor,
         host: document.body,
         rows: window.WBConsole.checkoutMenuRows(listing, this.checkoutOf(ref), mine, p.branch, !!p.dirty),
-        onPick: (row) => this.setCheckout(ref, row.primary ? null : row.name),
-        onRemove: (row) => this.removeWorktree(ref, row),
+        onPick: (row: any) => this.setCheckout(ref, row.primary ? null : row.name),
+        onRemove: (row: any) => this.removeWorktree(ref, row),
       });
     },
 
     // --- the selected checkout (#406, ADR-0063 §4) ----------------------------
-    checkoutOf(ref) {
+    checkoutOf(ref: any) {
       return this.checkouts[ref] || null;
     },
-    chipLabel(p) {
+    chipLabel(p: any) {
       const ref = this.repoRef(p);
       return window.WBProject.chipLabel(p, this.checkoutOf(ref), this.worktreeListings[ref] || null);
     },
     // The reactive map is REPLACED so Alpine sees it; persistence goes to the
     // desk mirror; an open tree is remounted (cache key, watch and rows are
     // per checkout).
-    setCheckout(ref, name) {
+    setCheckout(ref: any, name: any) {
       const next = { ...this.checkouts };
       if (name) next[ref] = String(name);
       else delete next[ref];
@@ -1634,7 +1653,7 @@ function shell() {
     },
     // The daemon answered `unknown checkout` for `name`: drop the selection —
     // unless it already moved on, in which case a late reply says nothing.
-    checkoutGone(ref, name) {
+    checkoutGone(ref: any, name: any) {
       if (this.checkoutOf(ref) !== name) return;
       this.setCheckout(ref, null);
       this._flashAction(`Worktree ${name} no longer exists. Showing the primary tree.`);
@@ -1643,10 +1662,10 @@ function shell() {
     // one read per ref, `force` re-reads (after a branch act the chip
     // converges from this reply, #407). A forced re-read that fails DROPS the
     // cached entry rather than showing the pre-act branch. Newest read wins.
-    async ensureWorktreeListing(ref, force = false) {
+    async ensureWorktreeListing(ref: any, force = false) {
       if (!ref || ref === "~" || (this.worktreeListings[ref] && !force)) return;
       const seq = (this._listingSeq = (this._listingSeq || 0) + 1);
-      let listing = null;
+      let listing: any = null;
       try {
         const reply = await window.WBDaemon.observe("worktree.list", { repo: ref });
         if (reply && reply.status === "ok") listing = reply.checkouts || null;
@@ -1694,7 +1713,7 @@ function shell() {
     // Under a selected worktree (#407) the act lands on THAT tree's HEAD:
     // `p.branch` is the primary's and must not move, so no optimistic update —
     // the chip converges from `_mutateBranch`'s forced `worktree.list` re-read.
-    switchBranch(name) {
+    switchBranch(name: any) {
       if (this.writeLocked()) {
         this._flashAction(this.writeLockReason());
         this.closeBranchModal();
@@ -1706,7 +1725,7 @@ function shell() {
         const p = checkout ? null : this.projects.find((x) => this.repoRef(x) === slug);
         const prev = p ? p.branch : null;
         if (p) p.branch = name; // optimistic — the chip updates immediately
-        WB.emit("branch-switch", { project: slug, branch: name, checkout });
+        window.WB.emit("branch-switch", { project: slug, branch: name, checkout });
         // The run-lock-aware `branch.switch` Mutate (#199): refusal → revert.
         this._mutateBranch("branch.switch", slug, name, () => {
           if (p) p.branch = prev;
@@ -1732,7 +1751,7 @@ function shell() {
         p.branches = [...(p.branches || []), name];
         p.branch = name; // a fresh branch is checked out onto
       }
-      WB.emit("branch-create", { project: slug, name, from, checkout });
+      window.WB.emit("branch-create", { project: slug, name, from, checkout });
       this._mutateBranch("branch.create", slug, name, () => {
         if (p) {
           p.branch = prevBranch;
@@ -1749,7 +1768,7 @@ function shell() {
     // (`checkoutAfterListing`), never from the reply's status. A refusal lands
     // verbatim in a notice with one OK: the menu it came from has closed.
     // A cancel makes NO daemon call.
-    async removeWorktree(slug, w) {
+    async removeWorktree(slug: any, w: any) {
       if (!slug || !w || w.primary || this.worktreeRemoving[slug]) return;
       const ok = await this.askConfirm({
         title: `Delete worktree ${w.name}?`,
@@ -1761,7 +1780,7 @@ function shell() {
       });
       if (!ok || this.worktreeRemoving[slug]) return;
       this.worktreeRemoving = { ...this.worktreeRemoving, [slug]: w.name };
-      const refused = (message) =>
+      const refused = (message: any) =>
         window.WBConsole.askNotice({ title: `Could not delete worktree ${w.name}`, message });
       try {
         const reply = await window.WBDaemon.observe("worktree.remove", { repo: slug, name: w.name });
@@ -1790,7 +1809,7 @@ function shell() {
     // the chip AND in the runs flash (the aside is closed by default). Carries
     // the selected checkout (#407): the worktree's HEAD moves, never the
     // primary's.
-    async _mutateBranch(verb, slug, name, revert) {
+    async _mutateBranch(verb: any, slug: any, name: any, revert: any) {
       try {
         const reply = await window.WBDaemon.observe(
           verb,
@@ -1820,7 +1839,7 @@ function shell() {
       }
     },
     // The Projects panel's counterpart to `_changesRefused`.
-    _branchRefused(msg) {
+    _branchRefused(msg: any) {
       this.branchError = msg || "";
       this._flashAction(msg);
     },
@@ -1828,7 +1847,7 @@ function shell() {
     // --- Runs panel -------------------------------------------------------
     // One entry per `runid`: issue queue + per-issue status, live phase, the
     // current issue's plan.md (helpers in wb-runs.js, `window.WBRun`).
-    runsByProject: {},
+    runsByProject: {} as Record<string, any>,
     // An error must never render as "No active runs": an empty project and an
     // unreadable one are different facts (ADR-0047 §6).
     runsError: "",
@@ -1861,11 +1880,11 @@ function shell() {
           return;
         }
         this.runsRead[slug] = window.WBFail.readFold(this.runsRead[slug], { ok: true, value: true, at: Date.now() });
-        this.runsByProject[slug] = (reply.runs || []).map((d) => {
+        this.runsByProject[slug] = (reply.runs || []).map((d: any) => {
           const run = window.WBRun.fromSnapshot(d);
           // A push arrives on every snapshot write (~every few hundred ms);
           // re-fetching an unchanged plan would blank the viewer each time.
-          const prev = prevRuns.find((p) => p.runid === run.runid);
+          const prev = prevRuns.find((p: any) => p.runid === run.runid);
           if (prev && prev.planPath === run.planPath) {
             run.planMd = prev.planMd;
             run.planReadFailed = prev.planReadFailed;
@@ -1880,12 +1899,12 @@ function shell() {
           : "";
         // Keep the selected run while it is still listed.
         const listed = this.projectRuns();
-        this.currentRunId = listed.some((r) => r.runid === this.currentRunId)
+        this.currentRunId = listed.some((r: any) => r.runid === this.currentRunId)
           ? this.currentRunId
           : listed[0]?.runid || null;
         // Only while showing: a whole-plan `file.read` nobody can see is cost.
         if (this.runsOpen) await this.loadRunPlan();
-      } catch (err) {
+      } catch (err: any) {
         if (seq !== this._runsSeq || this.openSlug !== slug) return;
         // A transport failure is a read failure, not an idle project.
         this.runsFailed(slug, window.WBFail.why({ message: err?.message }, "the daemon did not answer"));
@@ -1893,7 +1912,7 @@ function shell() {
     },
     // A failed `runs.list` (ADR-0070 D3). After a good read the runs stay,
     // marked not current; before one, there are none and the panel says why.
-    runsFailed(slug, reason) {
+    runsFailed(slug: any, reason: any) {
       const read = window.WBFail.readFold(this.runsRead[slug], { ok: false, reason, at: Date.now() });
       this.runsRead[slug] = read;
       if (read.goodAt) {
@@ -1942,9 +1961,9 @@ function shell() {
     // project changed).
     currentRun() {
       const runs = this.projectRuns();
-      return runs.find((r) => r.runid === this.currentRunId) || runs[0] || null;
+      return runs.find((r: any) => r.runid === this.currentRunId) || runs[0] || null;
     },
-    selectRun(runid) {
+    selectRun(runid: any) {
       this.currentRunId = runid;
       this.trailFocus = null; // the arrival marker belonged to the run we left
       // reset the section dropdown to the new run's first non-Steps heading
@@ -1954,24 +1973,24 @@ function shell() {
     },
 
     // Thin delegations to the faithful helpers in wb-runs.js.
-    runPhaseLabel(run) {
+    runPhaseLabel(run: any) {
       return run ? window.WBRun.runPhaseLabel(run) : "";
     },
-    runTitle(run) {
+    runTitle(run: any) {
       return window.WBRun.runTitle(run);
     },
-    runIdentity(run) {
+    runIdentity(run: any) {
       return window.WBRun.runIdentity(run);
     },
     // Reading `nowMs` subscribes this binding to the 1 s tick.
-    runClock(run) {
+    runClock(run: any) {
       return window.WBRun.phaseClock(run, this.nowMs);
     },
     // When this phase began, and the run's whole elapsed time.
-    clockTitle(run) {
+    clockTitle(run: any) {
       if (!run) return "";
-      const parts = [];
-      const at = (iso) =>
+      const parts: any[] = [];
+      const at = (iso: any) =>
         new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
       if (run.since) parts.push(`phase since ${at(run.since)}`);
       if (run.startedAt) {
@@ -1982,30 +2001,30 @@ function shell() {
       }
       return parts.join(" · ");
     },
-    issueState(run, iss) {
+    issueState(run: any, iss: any) {
       return window.WBRun.issueState(run, iss);
     },
-    issueGlyph(run, iss) {
+    issueGlyph(run: any, iss: any) {
       return window.WBRun.glyph(run, iss);
     },
-    sleepLabel(run) {
+    sleepLabel(run: any) {
       return window.WBRun.sleepText(run?.sleep);
     },
-    nodeTitle(run, iss) {
+    nodeTitle(run: any, iss: any) {
       if (!run || !iss) return "";
       const st = window.WBRun.issueState(run, iss);
       let t = `#${iss.number} — ${iss.title} · ${window.WBRun.LABEL[st] || st}`;
       // Per-issue: tier routing gives two issues of one run different models.
       const seg = window.WBRun.modelEffort(iss.model, iss.effort);
       if (seg) t += ` · ${seg}`;
-      if (iss.blockedBy?.length) t += ` (blocked by ${iss.blockedBy.map((n) => "#" + n).join(", ")})`;
+      if (iss.blockedBy?.length) t += ` (blocked by ${iss.blockedBy.map((n: any) => "#" + n).join(", ")})`;
       return t;
     },
     // Run → board (#301): a trail node opens that issue's detail. The Runs
     // panel closes first (`z-index: 150`, sharing the drawer's right edge).
     // `toggleKanban()` resets `kanbanSel`, so it runs BEFORE `openIssue`.
-    focusIssue(number) {
-      WB.emit("run-issue-focus", { project: this.openSlug, runid: this.currentRun()?.runid, issue: number });
+    focusIssue(number: any) {
+      window.WB.emit("run-issue-focus", { project: this.openSlug, runid: this.currentRun()?.runid, issue: number });
       this.runsOpen = false;
       this.trailFocus = null;
       if (!this.kanbanOpen) this.toggleKanban();
@@ -2014,7 +2033,7 @@ function shell() {
 
     // Board → run (#301): the card's run pill opens the Runs panel on THAT run,
     // marking the issue in the trail. The board stays open behind it.
-    openRunFor(number) {
+    openRunFor(number: any) {
       const hit = window.WBKanban.runningFor(number, this.projectRuns());
       if (!hit) return;
       this.currentRunId = hit.runid;
@@ -2033,7 +2052,7 @@ function shell() {
     // --- plan viewer ------------------------------------------------------
     // The issue whose plan this panel is showing: the snapshot's `plan.issue`
     // when it has one, else the run's active issue.
-    planIssueWanted(run) {
+    planIssueWanted(run: any) {
       return run?.planIssue ?? run?.active ?? null;
     },
     // The issue the PROSE belongs to, from the plan's own trailer. The steps
@@ -2041,21 +2060,21 @@ function shell() {
     // `.ralphy/plan.md`, and a failed read KEEPS the last text (#330): without
     // the key the block would render the PREVIOUS issue's plan. Unkeyed prose
     // (a half-written plan) stays empty.
-    planProseIssue(run) {
+    planProseIssue(run: any) {
       return window.WBRun.planTrailerIssue(run?.planMd);
     },
-    planProseIsCurrent(run) {
+    planProseIsCurrent(run: any) {
       return window.WBRun.planBelongsTo(run?.planMd, this.planIssueWanted(run));
     },
     // Every `##` section except Steps (its own block); none while the prose
     // belongs to another issue.
-    planHeadings(run) {
+    planHeadings(run: any) {
       if (!this.planProseIsCurrent(run)) return [];
       return window.WBRun.headings(run?.planMd).filter((h) => h.toLowerCase() !== "steps");
     },
     // Render one `##` section as sanitized HTML. Steps render from the
     // snapshot document, not from here (#330).
-    renderPlanSection(run, name) {
+    renderPlanSection(run: any, name: any) {
       if (!run || !name || !this.planProseIsCurrent(run)) return "";
       const body = window.WBRun.section(run?.planMd, name);
       return DOMPurify.sanitize(marked.parse(body || "_(empty)_"));
@@ -2065,13 +2084,13 @@ function shell() {
     planSteps() {
       return this.currentRun()?.steps || [];
     },
-    stepGlyph(status) {
+    stepGlyph(status: any) {
       return window.WBRun.stepGlyph(status);
     },
-    stepLabel(status) {
+    stepLabel(status: any) {
       return window.WBRun.stepLabel(status);
     },
-    stepClass(status) {
+    stepClass(status: any) {
       return window.WBRun.stepClass(status);
     },
     // Why the step list is empty — an unexplained blank block reads as a bug.
@@ -2162,7 +2181,7 @@ function shell() {
       this._resetVerbSurface();
       const c = this.runCfg;
       const planAgent = c.split && c.planAgent !== c.agent ? c.planAgent : null;
-      WB.emit("run-start", {
+      window.WB.emit("run-start", {
         project: this.openSlug,
         agent: c.agent,
         planAgent,
@@ -2174,23 +2193,23 @@ function shell() {
     },
     // triage / push: the verb name is the whole intent; the client never
     // composes a command line.
-    fireVerb(verb) {
+    fireVerb(verb: any) {
       this._resetVerbSurface();
-      WB.emit("command", { project: this.openSlug, verb });
+      window.WB.emit("command", { project: this.openSlug, verb });
       this._flashAction(this.verbRequestedText(verb));
     },
     // From wb-daemon.js on a TERMINAL frame only; an empty note is a no-op.
-    runVerbFailed(msg) {
+    runVerbFailed(msg: any) {
       if (msg) this.verbError = msg;
     },
-    _flashAction(msg) {
+    _flashAction(msg: any) {
       this.runsActionMsg = msg;
       clearTimeout(this._actionTimer);
       this._actionTimer = setTimeout(() => (this.runsActionMsg = ""), 2600);
     },
     // A refusal from the CHANGES panel lands in that panel and STAYS; the flash
     // is kept beside it. `runs-verb-error`'s counterpart (#331).
-    _changesRefused(msg) {
+    _changesRefused(msg: any) {
       this.changesError = msg || "";
       this._flashAction(msg);
     },
@@ -2201,11 +2220,11 @@ function shell() {
     KANBAN: window.WBKanban,
     // Fed by `board.list` (#198): rows adapted to the issue shape, and the
     // repo's name→color label map. Empty until `loadBoard()` resolves.
-    boardIssues: {},
-    boardLabels: {},
+    boardIssues: {} as Record<string, any>,
+    boardLabels: {} as Record<string, Map<string, string>>,
     // A `board.list` failure (#207): a broken tracker connection must never
     // read as "no work to do".
-    boardError: {},
+    boardError: {} as Record<string, any>,
     // The open drawer's detail-fetch failure (#302). One string: exactly one
     // drawer is open at a time.
     issueError: null,
@@ -2216,8 +2235,8 @@ function shell() {
     // trigger that arrived mid-fold into one follow-up load.
     _boardLoadedAt: 0,
     _boardPending: false,
-    _boardBackstop: null,
-    _changesBackstop: null,
+    _boardBackstop: null as any,
+    _changesBackstop: null as any,
     boardRefreshing: false,
     // The daemon awaits the board CLI with no timeout of its own; a wedged `gh`
     // must not disable the board for the page's life. Generous: a real fold
@@ -2233,10 +2252,10 @@ function shell() {
     // the resume signal, `WBRun.planTrailerIssue`), so the board shows it and
     // can throw it away. `planByProject[slug] = { md, summary }`, replaced on
     // every board load via the same confined `file.read`. Daemon-only (#300).
-    planByProject: {},
+    planByProject: {} as Record<string, any>,
     planModal: { open: false, issue: null },
 
-    async loadPlan(slug) {
+    async loadPlan(slug: any) {
       if (!slug) return;
       try {
         const reply = await window.WBDaemon.observe("file.read", {
@@ -2258,7 +2277,7 @@ function shell() {
       return held && held.summary.issue != null ? held : null;
     },
     // The plan for ONE card: only ever shown against the issue it names.
-    planFor(number) {
+    planFor(number: any) {
       const held = this.openPlan();
       return held && held.summary.issue === number ? held : null;
     },
@@ -2266,15 +2285,15 @@ function shell() {
     planIssueIsOpen() {
       const held = this.openPlan();
       if (!held) return true;
-      const iss = this.projectIssues().find((i) => i.number === held.summary.issue);
+      const iss = this.projectIssues().find((i: any) => i.number === held.summary.issue);
       // Absent from the fold (filtered or cold): assume open.
       return !iss || iss.state !== "closed";
     },
-    planPillLabel(number) {
+    planPillLabel(number: any) {
       const held = this.planFor(number);
       return held ? window.WBRun.planPillLabel(held.summary, this.planIssueIsOpen()) : "";
     },
-    planPillWarns(number) {
+    planPillWarns(number: any) {
       const held = this.planFor(number);
       return !!held && window.WBRun.planPillWarns(held.summary, this.planIssueIsOpen());
     },
@@ -2373,7 +2392,7 @@ function shell() {
       // must never delay the rows.
       this.loadPlan(this.openSlug);
       try {
-        const reply = await Promise.race([
+        const reply: any = await Promise.race([
           window.WBDaemon.observe("board.list", { repo: slug }),
           new Promise((_, rej) =>
             setTimeout(() => rej(new Error("board fold timed out")), this.BOARD_FOLD_TIMEOUT_MS),
@@ -2386,13 +2405,13 @@ function shell() {
           return;
         }
         const board = reply.board || {};
-        this.boardIssues[slug] = (board.issues || []).map((r) => this.boardRowToIssue(r));
-        const colors = {};
-        // Skip a blank color: a bare "#" is truthy and masks `labelColor`'s
-        // fallback.
+        this.boardIssues[slug] = (board.issues || []).map((r: any) => this.boardRowToIssue(r));
+        // A Map, so a label named `constructor` reads as missing. A blank
+        // color is skipped: a bare "#" is truthy and masks `labelColor`'s fallback.
+        const colors = new Map<string, string>();
         for (const l of board.labels || []) {
           if (!l.color) continue;
-          colors[l.name] = "#" + String(l.color).replace(/^#/, "");
+          colors.set(l.name, "#" + String(l.color).replace(/^#/, ""));
         }
         this.boardLabels[slug] = colors;
         this.boardError[slug] = null;
@@ -2418,7 +2437,7 @@ function shell() {
     // A failed `board.list` (ADR-0070 D3). After a good read the cards stay,
     // under a banner that says they are not current; before one, there are no
     // cards and the banner says why. Moving a card is locked meanwhile.
-    boardFailed(slug, msg) {
+    boardFailed(slug: any, msg: any) {
       const read = window.WBFail.readFold(this.boardRead[slug], { ok: false, reason: msg, at: Date.now() });
       this.boardRead[slug] = read;
       if (read.goodAt) {
@@ -2431,7 +2450,7 @@ function shell() {
 
     // The one door every refresh trigger goes through (#301): the predicate
     // (wb-kanban.js) decides.
-    maybeRefreshBoard(trigger) {
+    maybeRefreshBoard(trigger: any) {
       const ok = window.WBKanban.shouldRefresh({
         trigger,
         sinceMs: Date.now() - this._boardLoadedAt,
@@ -2452,7 +2471,7 @@ function shell() {
 
     // A CLI fold row → the issue shape `wb-kanban.js` expects. Body + comments
     // are absent from the fold (`issue.show` fills them on open).
-    boardRowToIssue(row) {
+    boardRowToIssue(row: any) {
       return {
         number: row.number,
         title: row.title || "",
@@ -2473,8 +2492,8 @@ function shell() {
     kanbanColumns() {
       const all = this.projectIssues();
       const K = window.WBKanban;
-      const shown = all.filter((i) => K.matches(i, this.kanbanFilter) && K.hasLabelFilter(i, this.kanbanLabel));
-      const bucket = { backlog: [], agent: [], human: [], closed: [] };
+      const shown = all.filter((i: any) => K.matches(i, this.kanbanFilter) && K.hasLabelFilter(i, this.kanbanLabel));
+      const bucket: Record<string, any[]> = { backlog: [], agent: [], human: [], closed: [] };
       for (const i of shown) bucket[K.columnOf(i)].push(i);
       return {
         backlog: K.sortBacklog(bucket.backlog, this.kanbanSort),
@@ -2488,8 +2507,8 @@ function shell() {
       };
     },
     // Per-column live count (post-filter), for the column header badge.
-    kanbanCount(colId) {
-      return this.kanbanColumns()[colId].length;
+    kanbanCount(colId: any) {
+      return (this.kanbanColumns() as Record<string, any[]>)[colId].length;
     },
     // The label set present in the project, for the filter dropdown.
     kanbanLabelOptions() {
@@ -2499,43 +2518,43 @@ function shell() {
     },
 
     // The run pill for a card (the actively-worked issue of a live run).
-    issueRunning(number) {
+    issueRunning(number: any) {
       return window.WBKanban.runningFor(number, this.projectRuns());
     },
     // The issue drawer's run line: `Running · executing (claude)`.
-    issueRunningLabel(run) {
+    issueRunningLabel(run: any) {
       return `Running · ${this.runStateWord(run?.state)} (${run?.agent || ""})`;
     },
     // A run state as the Runs panel words it (`sleep` → "usage limit — sleeping").
-    runStateWord(state) {
+    runStateWord(state: any) {
       return (state && window.WBRun?.LABEL?.[state]) || state || "";
     },
-    peerStateWord(state) {
+    peerStateWord(state: any) {
       return window.WBFleet.stateWord(state);
     },
 
     // Thin delegations to the faithful helpers (used in the template).
-    kanbanColumnOf(i) {
+    kanbanColumnOf(i: any) {
       return window.WBKanban.columnOf(i);
     },
-    labelColor(l) {
+    labelColor(l: any) {
       // The repo's real label hex, else the seed vocabulary.
-      return this.boardLabels[this.openSlug]?.[l] || window.WBKanban.labelColor(l);
+      return this.boardLabels[this.openSlug]?.get(l) || window.WBKanban.labelColor(l);
     },
-    labelInk(l) {
+    labelInk(l: any) {
       return window.WBKanban.labelInk(l);
     },
-    labelShort(l) {
+    labelShort(l: any) {
       return window.WBKanban.labelMeta(l).short;
     },
-    closeLabel(i) {
+    closeLabel(i: any) {
       return window.WBKanban.closeLabel(i);
     },
-    kanbanColumnTitle(i) {
+    kanbanColumnTitle(i: any) {
       const id = window.WBKanban.columnOf(i);
       return (window.WBKanban.COLUMNS.find((c) => c.id === id) || {}).title || id;
     },
-    kfmtDate(iso) {
+    kfmtDate(iso: any) {
       return window.WBKanban.fmtDate(iso);
     },
 
@@ -2544,15 +2563,15 @@ function shell() {
     // column) keeps the drawer pointed at the same issue.
     selectedIssue() {
       if (this.kanbanSel == null) return null;
-      return this.projectIssues().find((i) => i.number === this.kanbanSel) || null;
+      return this.projectIssues().find((i: any) => i.number === this.kanbanSel) || null;
     },
-    openIssue(number) {
+    openIssue(number: any) {
       this.kanbanSel = number;
       // `issue.show` merges body + comments + blockers into the cached row.
       this.loadIssueDetail(number);
     },
 
-    async loadIssueDetail(number) {
+    async loadIssueDetail(number: any) {
       const slug = this.openSlug;
       this.issueError = null;
       // Set BEFORE the first await so the markup never paints `_(empty)_` for
@@ -2565,7 +2584,7 @@ function shell() {
       const gen = (this._issueDetailGen = (this._issueDetailGen || 0) + 1);
       const stale = () =>
         gen !== this._issueDetailGen || this.openSlug !== slug || this.kanbanSel !== number;
-      const fail = (msg) => {
+      const fail = (msg: any) => {
         if (stale()) return;
         this.issueError = msg;
         this._flashAction?.(msg);
@@ -2581,7 +2600,7 @@ function shell() {
           return;
         }
         const detail = reply.issue;
-        const iss = (this.boardIssues[slug] || []).find((i) => i.number === number);
+        const iss = (this.boardIssues[slug] || []).find((i: any) => i.number === number);
         if (!iss || stale()) return;
         if (typeof detail.body === "string") iss.body = detail.body;
         if (Array.isArray(detail.comments)) iss.comments = detail.comments;
@@ -2602,23 +2621,23 @@ function shell() {
     },
     // The GitHub URL of an issue on the OPEN project, from its `remoteUrl`
     // (#204); `null` with no GitHub remote. Only the lookup stays here.
-    githubUrl(number) {
+    githubUrl(number: any) {
       const p = this.projects.find((x) => this.repoRef(x) === this.openSlug);
       return window.WBProject.issueUrl(p && p.remoteUrl, number);
     },
 
     // The selected issue's blockers, each with its live open/closed state.
-    issueBlockers(iss) {
+    issueBlockers(iss: any) {
       if (!iss || !iss.blockedBy?.length) return [];
       const all = this.projectIssues();
-      return iss.blockedBy.map((n) => {
-        const b = all.find((x) => x.number === n);
+      return iss.blockedBy.map((n: any) => {
+        const b = all.find((x: any) => x.number === n);
         return { number: n, open: b ? b.state === "open" : false, known: !!b, title: b?.title || "" };
       });
     },
 
     // An issue body / comment as sanitized markdown.
-    renderIssueMd(src) {
+    renderIssueMd(src: any) {
       return DOMPurify.sanitize(marked.parse(src || "_(empty)_"));
     },
 
@@ -2636,10 +2655,10 @@ function shell() {
         document.querySelector(".kd-label-menu")?.scrollIntoView({ block: "nearest", inline: "nearest" }),
       );
     },
-    hasLabel(iss, label) {
+    hasLabel(iss: any, label: any) {
       return !!iss && (iss.labels || []).includes(label);
     },
-    toggleLabel(iss, label) {
+    toggleLabel(iss: any, label: any) {
       if (!iss) return;
       // Defence in depth: a `:disabled` button is still reachable by keyboard
       // in some browsers.
@@ -2647,9 +2666,9 @@ function shell() {
       const has = this.hasLabel(iss, label);
       const op = has ? "remove" : "add";
       const prev = [...(iss.labels || [])];
-      iss.labels = has ? iss.labels.filter((l) => l !== label) : [...(iss.labels || []), label];
+      iss.labels = has ? iss.labels.filter((l: any) => l !== label) : [...(iss.labels || []), label];
       const slug = this.openSlug;
-      WB.emit("issue-label-change", { project: slug, number: iss.number, label, op });
+      window.WB.emit("issue-label-change", { project: slug, number: iss.number, label, op });
       // The run-lock-aware `label.set` Mutate (#199): refusal → revert + flash.
       (async () => {
         try {
@@ -2697,7 +2716,7 @@ function shell() {
       });
     },
     // The window is a server-side filter: assign, then re-read.
-    setSpendPeriod(key) {
+    setSpendPeriod(key: any) {
       if (this.spendPeriod === key) return;
       this.spendPeriod = key;
       this.loadSpend();
@@ -2728,7 +2747,7 @@ function shell() {
         return;
       }
       this.spend = { ...this.spend, loading: true, error: "" };
-      let doc = null;
+      let doc: any = null;
       let error = "";
       try {
         const r = await fetch(
@@ -2797,7 +2816,7 @@ function shell() {
     },
     // Deferred to the first switch: the ledger is the one response that grows
     // with the project's history.
-    setSpendPane(key) {
+    setSpendPane(key: any) {
       this.spendPane = key;
       if (key === "ledger") this.loadLedger();
     },
@@ -2819,7 +2838,7 @@ function shell() {
       let records = [];
       let interactive = [];
       let missing = [];
-      let daemonId = null;
+      let daemonId: any = null;
       let error = "";
       try {
         const r = await fetch(
@@ -2893,7 +2912,7 @@ function shell() {
       return (this.liveSessions || []).filter((s) => !peers.has(s.daemon_id));
     },
     // The consoles a peer hosts, by the peer's `daemon_id`.
-    peerSessions(daemonId) {
+    peerSessions(daemonId: any) {
       return (this.liveSessions || []).filter((s) => s.daemon_id === daemonId);
     },
 
@@ -2919,7 +2938,7 @@ function shell() {
       window.dispatchEvent(new CustomEvent("workbench:panels-reread"));
       if (this.tabs.some((t) => t.id === "spend")) this.loadSpend();
     },
-    releaseRead: null,
+    releaseRead: null as any,
     releaseStale() {
       return window.WBFail.notCurrent(this.releaseRead, (ms) => this.fmtClock(ms));
     },
@@ -2944,7 +2963,7 @@ function shell() {
       this.releaseSeen = true;
     },
     // The operator turned the release watch on or off.
-    releaseWatchChanged(enable) {
+    releaseWatchChanged(enable: any) {
       this.release = { ...this.release, disabled: !enable };
     },
 
@@ -2964,7 +2983,7 @@ function shell() {
     },
     // The Security dialog (wb-security-dialog.ts) changes the security fact
     // only here (ADR-0073 D4). `patch` holds fields of `security`.
-    securityChanged(patch) {
+    securityChanged(patch: any) {
       Object.assign(this.security, patch);
     },
 
@@ -2989,7 +3008,7 @@ function shell() {
         this.authed = false;
         this.login = { code: "", digits: ["", "", "", "", "", ""], password: "", remember: false, error: "", passwordRequired: this.login.passwordRequired };
       }
-      WB.emit("logoff", {});
+      window.WB.emit("logoff", {});
     },
 
     // Re-fetch the endpoints that returned 401 while gated; the presence
@@ -3021,7 +3040,7 @@ function shell() {
     // One input per digit; a paste or OTP autofill landing all 6 in the first
     // box is spread. `login.code` is the joined string.
 
-    _otpBoxes(el) {
+    _otpBoxes(el: any) {
       return el.closest(".login-otp").querySelectorAll("input");
     },
 
@@ -3030,7 +3049,7 @@ function shell() {
     },
 
     // Once the 6th digit lands: the password field if required, else submit.
-    _otpAdvancePastLast(el) {
+    _otpAdvancePastLast(el: any) {
       if (this.security.passwordSet || this.login.passwordRequired) {
         this.$refs.loginPassword?.focus();
       } else {
@@ -3038,7 +3057,7 @@ function shell() {
       }
     },
 
-    _otpFill(text, el) {
+    _otpFill(text: any, el: any) {
       const chars = text.replace(/\D/g, "").slice(0, 6).split("");
       for (let j = 0; j < 6; j++) this.login.digits[j] = chars[j] || "";
       this._otpSync();
@@ -3047,7 +3066,7 @@ function shell() {
       else boxes[chars.length].focus();
     },
 
-    otpInput(i, e) {
+    otpInput(i: any, e: any) {
       const v = e.target.value.replace(/\D/g, "");
       if (v.length > 1) {
         this._otpFill(v, e.target);
@@ -3061,7 +3080,7 @@ function shell() {
       else this._otpAdvancePastLast(e.target);
     },
 
-    otpKeydown(i, e) {
+    otpKeydown(i: any, e: any) {
       const boxes = this._otpBoxes(e.target);
       if (e.key === "Backspace" && !e.target.value && i > 0) {
         e.preventDefault();
@@ -3077,7 +3096,7 @@ function shell() {
       }
     },
 
-    otpPaste(e) {
+    otpPaste(e: any) {
       const text = e.clipboardData?.getData("text") || "";
       this._otpFill(text, e.target);
     },
@@ -3106,7 +3125,7 @@ function shell() {
           this.authed = true;
           this.forgetLoginSecrets();
           this.rehydrateAfterAuth();
-          WB.emit("login", {});
+          window.WB.emit("login", {});
         } else {
           this.login.error = "Invalid code or password.";
         }
@@ -3131,8 +3150,8 @@ function shell() {
     // --- canvas tabs ------------------------------------------------------
     // The adapter roster comes from `/api/agents`, never a list here:
     // onboarding a vendor must not need a frontend change (#304).
-    agents: [],
-    roster: [],
+    agents: [] as any[],
+    roster: [] as any[],
     agentMenu: false,
     // The Go-to picker (#337) and the fence picker (#343): SNAPSHOTS taken
     // when the menu opens, because the windows and fences live in the DOM.
@@ -3148,7 +3167,7 @@ function shell() {
     _columnsRestored: false,
     _paintedKey: "",
     columnMenu: false,
-    columnGroups: [],
+    columnGroups: [] as any[],
     columnFilter: "",
     columnFrom: null,
     columnMenuAt: { top: 0, right: 0, maxWidth: 400, maxHeight: 400 },
@@ -3165,7 +3184,7 @@ function shell() {
     stageH: 0,
     // The open modals, oldest first: `{ path, opener }`. Only the last one
     // answers Escape, and each returns focus to its opener on close.
-    _modalStack: [],
+    _modalStack: [] as any[],
     // The Escape keydown a modal has already answered.
     _escapeEvent: null,
     // The confirm dialog (replaces window.confirm); `askConfirm` opens it.
@@ -3177,7 +3196,7 @@ function shell() {
       cancelLabel: "Cancel",
       danger: false,
     },
-    _confirmResolve: null,
+    _confirmResolve: null as any,
     // The prompt dialog (replaces window.prompt, which is suppressible
     // per-origin and never appears in an unfocused popup). `askPrompt`
     // resolves the typed string, or null.
@@ -3190,13 +3209,13 @@ function shell() {
       confirmLabel: "Create",
       error: "",
     },
-    _promptResolve: null,
+    _promptResolve: null as any,
     // The move destination picker (#364): browses one level at a time through
     // `tree.list`. `from` is the FULL rel path; `dir` the browsed directory
     // ("" is the repo root).
-    movePick: { open: false, from: "", isFolder: false, dir: "", entries: [], busy: false, error: "" },
+    movePick: { open: false, from: "", isFolder: false, dir: "", entries: [], busy: false, error: "" } as any,
     // The SAME terminal glyph as the New-console button and its menu rows.
-    tabs: [{ id: "consoles", kind: "consoles", title: "Consoles", icon: "bi bi-terminal", closable: false }],
+    tabs: [{ id: "consoles", kind: "consoles", title: "Consoles", icon: "bi bi-terminal", closable: false }] as any[],
     active: "consoles",
     // The secondary pane (ADR-0037 §3c): `{ kind: "pin", id }` shows that tab
     // beside whichever is active, `{ kind: "mirror" }` shows the active code
@@ -3204,15 +3223,15 @@ function shell() {
     // in `syncViewer`. `splitRatio` is the left column's share (null = half);
     // `lastLeft` the tab last read on the left, so activating the pinned tab
     // itself keeps its neighbour rather than emptying the canvas.
-    slot: null,
+    slot: null as any,
     splitRatio: null,
-    lastLeft: null,
+    lastLeft: null as any,
 
     // `loadRepos()` fills this at init.
-    projects: [],
+    projects: [] as any[],
 
     // --- accordion --------------------------------------------------------
-    toggle(ref, row) {
+    toggle(ref: any, row?: any) {
       // A row on a host that cannot answer stays closed. The click still wakes
       // a sleeping host: that is the act the operator asked for.
       if (this.openSlug !== ref && !this.refAvailable(ref)) {
@@ -3262,16 +3281,16 @@ function shell() {
     // path), waiting → yellow (an agent is asking for you, ADR-0059).
     // Orthogonal to `remote`.
     // The project dot's tooltip, in words; the class keeps the state code.
-    dotTitle(state) {
+    dotTitle(state: any) {
       return (
-        {
+        ({
           live: "A console is open",
           waiting: "An agent is waiting for you",
           offline: "The folder cannot be reached",
-        }[state] || "No console is open"
+        } as Record<string, string>)[state] || "No console is open"
       );
     },
-    dotClass(state) {
+    dotClass(state: any) {
       return state === "live"
         ? "live"
         : state === "waiting"
@@ -3285,17 +3304,17 @@ function shell() {
     // `folder:true` lands at `node.data.folder` and `node.folder` is forever
     // `undefined`; `node.children` is `null` on a lazy or empty folder. Either
     // alone made EVERY collapsed folder answer "file".
-    isFolder(node) {
+    isFolder(node: any) {
       if (!node) return false;
       return !!(node.data?.folder || node.lazy || Array.isArray(node.children));
     },
 
     // --- file-type icons (Devicon font; folders use Wunderbaum defaults) ---
-    fileIcon(title) {
+    fileIcon(title: any) {
       const name = title.toLowerCase();
       if (name.endsWith("lock") || name === "package-lock.json") return "devicon-json-plain colored";
       const ext = name.includes(".") ? name.split(".").pop() : "";
-      const map = {
+      const map: Record<string, string> = {
         ts: "devicon-typescript-plain colored",
         tsx: "devicon-typescript-plain colored",
         js: "devicon-javascript-plain colored",
@@ -3361,8 +3380,8 @@ function shell() {
         // unloaded, so the next expand reads it again, and draws no row for
         // the failure. A rethrow drew an "Error (…)" row inside the folder.
         // The footer says why; the folder closes, because it shows nothing.
-        lazyLoad: (e) =>
-          this.loadTreeLevel(this.relPath(e.node)).catch((err) => {
+        lazyLoad: (e: any) =>
+          this.loadTreeLevel(this.relPath(e.node)).catch((err: any) => {
             this.treeWentStale(err);
             if (window.WBFleet.refDaemon(this.openSlug || "")) this.readFleetNow();
             setTimeout(() => e.node.setExpanded(false));
@@ -3372,18 +3391,18 @@ function shell() {
         // no level read before does not open: its read would fail. A level
         // read before opens from memory. A restore of the expanded folders
         // stops here too.
-        beforeExpand: (e) => {
+        beforeExpand: (e: any) => {
           if (!e.flag || !this.openPeerDown() || e.node.children) return undefined;
           return this._treeCache.has(this.treeKey(this.relPath(e.node))) ? undefined : false;
         },
         // A level (re)loaded while a search is on carries no match marks, and
         // in `hide` mode an unmarked row is not painted.
-        load: (e) => {
+        load: (e: any) => {
           if (e.tree.isFilterActive?.()) e.tree.updateFilter();
         },
         // The content-search badge: hit count beside the title; nothing once
         // the filter is gone (the map is empty by then).
-        render: (e) => {
+        render: (e: any) => {
           const count = this._fileHits?.get(this.relPath(e.node));
           const old = e.nodeElem.querySelector(".wb-hits");
           if (typeof count !== "number") {
@@ -3396,7 +3415,7 @@ function shell() {
           if (!old) e.nodeElem.querySelector(".wb-title")?.after(badge);
         },
         // The root level has settled: put the expanded folders back.
-        init: (e) => {
+        init: (e: any) => {
           if (gen !== this._treeGen) return;
           this.treeLoading = false;
           if (e.error) this.treeError = "Could not read the files of this project.";
@@ -3404,7 +3423,7 @@ function shell() {
         },
         edit: {
           trigger: ["F2", "macEnter"],
-          apply: (e) => {
+          apply: (e: any) => {
             // The shared listener takes full rel paths.
             const parent = parentRel(this.relPath(e.node));
             this.emit("rename", e.node, {
@@ -3415,7 +3434,7 @@ function shell() {
           },
         },
         // Live watch-set (#196): the daemon watches only the expanded set.
-        expand: (e) => {
+        expand: (e: any) => {
           if (!this.isFolder(e.node)) return;
           const rel = this.relPath(e.node);
           if (e.flag) this._treeSub?.watch(rel);
@@ -3423,7 +3442,7 @@ function shell() {
           this.rememberExpansion();
         },
         // Double-click / Enter on a leaf = "open this file".
-        dblclick: (e) => {
+        dblclick: (e: any) => {
           if (!this.isFolder(e.node)) this.openFile(e.node);
           return false;
         },
@@ -3435,21 +3454,21 @@ function shell() {
       if (this.useDaemonTree() && window.WBDaemon?.subscribeTree) {
         this._treeSub = WBDaemon.subscribeTree(
           this.openSlug,
-          (rel) => {
+          (rel: any) => {
             if (!this.tabHidden()) this.onTreeDirty(rel);
           },
           this._treeCheckout,
           () => {
             if (!this.tabHidden()) this.onHeadMoved();
           },
-          (reason) => this.treeWatchFailed(reason),
+          (reason: any) => this.treeWatchFailed(reason),
         );
         this._treeSub.watch("");
       }
 
       // Right-click → our own context menu. Empty space below the rows is the
       // repo root: the only gesture that can create a top-level entry.
-      host.addEventListener("contextmenu", (ev) => {
+      host.addEventListener("contextmenu", (ev: any) => {
         const node = mar10.Wunderbaum.getNode(ev);
         ev.preventDefault();
         node?.setActive();
@@ -3464,8 +3483,8 @@ function shell() {
       // truncate the list being replayed.
       if (this._restoringExpansion || !this._tree || !this.openSlug) return;
       this.treeMem();
-      const rels = [];
-      this.rawTree().root.visit((n) => {
+      const rels: any[] = [];
+      this.rawTree().root.visit((n: any) => {
         if (this.isFolder(n) && n.expanded) rels.push(this.relPath(n));
       });
       this._treeExpanded.set(this.openSlug, rels);
@@ -3484,7 +3503,7 @@ function shell() {
         for (const rel of [...rels].sort((a, b) => a.split("/").length - b.split("/").length)) {
           // A project switch mid-replay: this list no longer describes the tree.
           if (slug !== this.openSlug || !this._tree) return;
-          const node = this.rawTree().findFirst((n) => this.relPath(n) === rel);
+          const node = this.rawTree().findFirst((n: any) => this.relPath(n) === rel);
           if (node && !node.expanded) await node.setExpanded(true);
         }
       } finally {
@@ -3502,7 +3521,7 @@ function shell() {
     // re-read in the BACKGROUND, touching the DOM only when the directory
     // changed. Nothing is cached on the daemon (ADR-0036); the revalidation
     // is not optional, since the watch is dropped when the project closes.
-    loadTreeLevel(rel) {
+    loadTreeLevel(rel: any) {
       this.treeMem();
       const key = this.treeKey(rel);
       const hit = this._treeCache.get(key);
@@ -3528,7 +3547,7 @@ function shell() {
     // corrects would validate itself. INVARIANT: a read that FAILED throws; it
     // does NOT resolve `[]`, which is the real statement "no entries" every
     // caller acts on by replacing what is on screen.
-    fetchTreeLevel(rel) {
+    fetchTreeLevel(rel: any) {
       this.treeMem();
       const key = this.treeKey(rel);
       const payload = WBDaemon.withCheckout(
@@ -3551,9 +3570,9 @@ function shell() {
     // cache key is a path, not an identity, so a renamed-then-recreated
     // directory would inherit the old one's children. A name no longer among
     // the subdirectories cannot have children, so its remembered subtree goes.
-    pruneTreeCache(rel, entries) {
+    pruneTreeCache(rel: any, entries: any) {
       this.treeMem();
-      const dirs = new Set(entries.filter((en) => en.dir).map((en) => en.name));
+      const dirs = new Set(entries.filter((en: any) => en.dir).map((en: any) => en.name));
       // The keys DESCENDING from `rel`; its own key (empty `child`) is what
       // this listing replaces.
       const prefix = this.treeKey(rel === "" ? "" : `${rel}/`);
@@ -3568,7 +3587,7 @@ function shell() {
 
     // Mark every cached level BELOW `rel` as not validated, so the next
     // `loadTreeLevel` of each paints from the cache and re-reads it.
-    forgetValidatedBelow(rel) {
+    forgetValidatedBelow(rel: any) {
       this.treeMem();
       const prefix = this.treeKey(rel === "" ? "" : `${rel}/`);
       const own = this.treeKey(rel);
@@ -3578,7 +3597,7 @@ function shell() {
     },
 
     // Cache key, scoped by REPO and by CHECKOUT (#406).
-    treeKey(rel) {
+    treeKey(rel: any) {
       return `${this.openSlug}\n${this.checkoutOf(this.openSlug) || ""}\n${rel}`;
     },
 
@@ -3586,9 +3605,9 @@ function shell() {
     // tree OWNS and mutates the objects it is given. An ignored entry carries
     // `wb-ignored`, set once when the row is created. An older peer sends no
     // `ignored`, and its rows are simply not dimmed.
-    treeNodes(entries) {
-      return entries.map((en) => {
-        const node = en.dir
+    treeNodes(entries: any) {
+      return entries.map((en: any) => {
+        const node: any = en.dir
           ? { title: en.name, folder: true, lazy: true }
           : { title: en.name, icon: this.fileIcon(en.name) };
         if (en.ignored) node.classes = "wb-ignored";
@@ -3598,7 +3617,7 @@ function shell() {
 
     // Re-read a level painted from cache and reconcile ONLY if the directory
     // changed: the common case costs one read and zero DOM work.
-    revalidateLevel(rel) {
+    revalidateLevel(rel: any) {
       if (!this._tree || !this.useDaemonTree()) return Promise.resolve();
       this.treeMem();
       const key = this.treeKey(rel);
@@ -3613,12 +3632,12 @@ function shell() {
           if (node) return this.reconcileLevel(node, rel);
         })
         // A dropped read leaves the cached level on screen, but says so.
-        .catch((err) => this.treeWentStale(err));
+        .catch((err: any) => this.treeWentStale(err));
     },
 
     // The tree shows a listing it could not confirm: record the reason, leave
     // every row alone. Cleared by `treeFresh`.
-    treeWentStale(err) {
+    treeWentStale(err: any) {
       if (!this.useDaemonTree()) return;
       const failure = window.WBFail.failed({ message: err?.message }, "Could not refresh the file list: the daemon gave no reason.");
       this.treeStale = `${failure} The list shown is the last one read.`;
@@ -3637,10 +3656,10 @@ function shell() {
       const group = this.fleetGroups().find((g) => g.daemon === daemon);
       return group && !window.WBFleet.available(group) ? group : null;
     },
-    peerDownText(g) {
+    peerDownText(g: any) {
       return `${window.WBFleet.peerName(g)} is not connected. The list shown is the last one read.`;
     },
-    peerDownAction(g) {
+    peerDownAction(g: any) {
       return window.WBFleet.wakeable(g) ? "Wake" : "Try again";
     },
     peerDownAct() {
@@ -3657,7 +3676,7 @@ function shell() {
       if (!down && this._filesPeerDown && this._filesPeerDown === this.openSlug && this._tree) {
         this.treeFresh();
         this.revalidateLevel("");
-        this.rawTree().root.visit((n) => {
+        this.rawTree().root.visit((n: any) => {
           if (this.isFolder(n) && n.expanded) this.revalidateLevel(this.relPath(n));
         });
       }
@@ -3667,7 +3686,7 @@ function shell() {
 
     // The daemon says it could not watch a dir of this tree (`reason`), or
     // `null` when a new socket holds every dir again.
-    treeWatchFailed(reason) {
+    treeWatchFailed(reason: any) {
       this.treeNotLive = reason
         ? `The file list no longer updates by itself: ${reason}. Reopen the project to try again.`
         : "";
@@ -3704,7 +3723,7 @@ function shell() {
       return this.clearFileSearch();
     },
 
-    setFileSearchMode(mode) {
+    setFileSearchMode(mode: any) {
       if (this.fileSearch.mode === mode) return Promise.resolve();
       this.fileSearch.mode = mode;
       this.$refs.fileSearch?.focus?.();
@@ -3749,7 +3768,7 @@ function shell() {
           }
           return this.applyFileSearch(reply.hits, !!reply.truncated, seq);
         })
-        .catch((err) => {
+        .catch((err: any) => {
           if (seq !== this.fileSearch.seq) return;
           this.fileSearch.note = window.WBFail.failed({ message: err?.message }, "Could not search: the daemon did not answer.");
         });
@@ -3768,8 +3787,8 @@ function shell() {
 
     // The rels of every expanded folder — the tree's current shape.
     expandedRels() {
-      const rels = [];
-      this.rawTree()?.root?.visit((n) => {
+      const rels: any[] = [];
+      this.rawTree()?.root?.visit((n: any) => {
         if (this.isFolder(n) && n.expanded) rels.push(this.relPath(n));
       });
       return rels;
@@ -3779,7 +3798,7 @@ function shell() {
     // session, load every ancestor level (shallow-first), then filter. The
     // expands run under `_restoringExpansion`: the remembered expansion must
     // not learn them.
-    async applyFileSearch(hits, truncated, seq) {
+    async applyFileSearch(hits: any, truncated: any, seq: any) {
       this.treeMem();
       this.fileSearch.hits = hits;
       this.fileSearch.truncated = truncated;
@@ -3796,14 +3815,14 @@ function shell() {
         for (const dir of window.WBFileSearch.dirsToLoad(hits)) {
           // A newer search, or a torn-down tree, owns the screen now.
           if (seq !== this.fileSearch.seq || tree !== this.rawTree()) return;
-          const f = tree.findFirst((n) => this.relPath(n) === dir);
+          const f = tree.findFirst((n: any) => this.relPath(n) === dir);
           if (f && this.isFolder(f) && !f.expanded) await f.setExpanded(true);
         }
         if (seq !== this.fileSearch.seq || tree !== this.rawTree()) return;
         this._fileHits = window.WBFileSearch.hitMap(hits);
         // `autoExpand: false`: the extension would also open every MATCHED
         // folder, a burst of lazy loads.
-        tree.filterNodes((n) => this._fileHits.has(this.relPath(n)), {
+        tree.filterNodes((n: any) => this._fileHits.has(this.relPath(n)), {
           mode: "hide",
           autoExpand: false,
           matchBranch: false,
@@ -3840,7 +3859,7 @@ function shell() {
         const fold = window.WBFileSearch.toCollapse(before, this.expandedRels());
         for (const rel of fold) {
           if (tree !== this.rawTree()) return;
-          const f = tree.findFirst((n) => this.relPath(n) === rel);
+          const f = tree.findFirst((n: any) => this.relPath(n) === rel);
           if (f && f.expanded) await f.setExpanded(false);
         }
       } finally {
@@ -3870,9 +3889,9 @@ function shell() {
     // large`, …) — the tab KEEPS its place and says so — or `null` when there
     // is nothing to hold a tab open for (`not found`, a transport drop): the
     // tab closes. `checkout` is the tab's PINNED checkout (#406).
-    fetchContent(project, path, ftype, checkout) {
-      const refuse = (reason) => {
-        WB.emit("open-refused", { project, path, reason });
+    fetchContent(project: any, path: any, ftype: any, checkout: any) {
+      const refuse = (reason: any) => {
+        window.WB.emit("open-refused", { project, path, reason });
         this._flashAction?.(window.WBFail.failed({ reason }, "Could not open the file: the daemon gave no reason."));
         if (reason === "not found" || reason === "transport") {
           this.closeTab(fileTabId(project, path, checkout));
@@ -3882,9 +3901,9 @@ function shell() {
       };
       // An image is `file.image` (ADR-0049): a `data:` URL. Same refusal shape.
       if (ftype === "image") {
-        let refusal = null;
-        return WBDaemon.readImage(project, path, (reason) => (refusal = refuse(reason)), checkout)
-          .then((url) => (url == null ? refusal : { content: url }))
+        let refusal: any = null;
+        return WBDaemon.readImage(project, path, (reason: any) => (refusal = refuse(reason)), checkout)
+          .then((url: any) => (url == null ? refusal : { content: url }))
           .catch(() => refuse("transport"));
       }
       return WBDaemon.observe("file.read", WBDaemon.withCheckout({ repo: project, path }, checkout))
@@ -3914,11 +3933,11 @@ function shell() {
       }, this.HEAD_SETTLE_MS);
     },
     HEAD_SETTLE_MS: 250,
-    _headTimer: null,
+    _headTimer: null as any,
 
     // A `tree.dirty` nudge for `rel`: refetch that level IF it is on screen. A
     // nudge for a collapsed/absent dir is DROPPED (ADR-0036 §4).
-    onTreeDirty(rel) {
+    onTreeDirty(rel: any) {
       const tree = this.rawTree();
       if (!tree) return;
       const node = rel === "" ? tree.root : this.findFolderByRel(rel);
@@ -3928,14 +3947,14 @@ function shell() {
       // reconcile failure leaves every row in place (`_reconcileOnce` resolves
       // the listing BEFORE touching the tree) and must still refresh viewers.
       return this.reconcileLevel(node, rel)
-        .catch((err) => this.treeWentStale(err))
-        .then(() => this.refreshOpenViewers(rel));
+        .catch((err: any) => this.treeWentStale(err))
+        .then((): any => this.refreshOpenViewers(rel));
     },
 
     // Re-list one level WITHOUT duplicating nodes, preserving descendant
     // expansion and the active selection. `node.load` appends, so
     // `removeChildren()` first, then re-expand and re-activate by captured rel.
-    async reconcileLevel(node, rel) {
+    async reconcileLevel(node: any, rel: any) {
       // Reentrancy guard: overlapping removeChildren()+load() passes double
       // the children. A pass in flight for `rel` re-runs once when it finishes.
       this._reconciling ||= new Set();
@@ -3974,7 +3993,7 @@ function shell() {
       }
     },
 
-    async _reconcileOnce(nodeAtCall, rel) {
+    async _reconcileOnce(nodeAtCall: any, rel: any) {
       let node = nodeAtCall;
       // The selection restored is a SNAPSHOT; a reveal landing mid-pass must
       // not be undone by it. `_revealSeq` dates the snapshot.
@@ -3992,10 +4011,10 @@ function shell() {
       // teardown under an in-flight load doubles the children.
       if (!node.tree) {
         const raw = this.rawTree();
-        node = rel === "" ? raw?.root : raw?.findFirst((n) => this.relPath(n) === rel);
+        node = rel === "" ? raw?.root : raw?.findFirst((n: any) => this.relPath(n) === rel);
         if (!node || node.isLoading?.()) return;
       }
-      const hasGitignore = source.some((n) => !n.folder && n.title === ".gitignore");
+      const hasGitignore = source.some((n: any) => !n.folder && n.title === ".gitignore");
       // A write to a file already listed nudges its directory too. When the
       // rows on screen already match the fresh listing, the teardown would
       // change nothing but the operator's scroll position.
@@ -4005,8 +4024,8 @@ function shell() {
       }
       // Read AFTER the fetch, right before the teardown: read before it, the
       // snapshot missed every folder a FILES search opened meanwhile.
-      const expandedRels = [];
-      node.visit((n) => {
+      const expandedRels: any[] = [];
+      node.visit((n: any) => {
         if (this.isFolder(n) && n.expanded) expandedRels.push(this.relPath(n));
       });
       const activeRel = this.relPath(this.rawTree()?.getActiveNode?.() || null) || null;
@@ -4029,7 +4048,7 @@ function shell() {
       // reloaded folder has neither `folder` nor loaded `children` yet.
       expandedRels.sort((a, b) => a.split("/").length - b.split("/").length);
       for (const r of expandedRels) {
-        const f = this.rawTree()?.findFirst((n) => this.relPath(n) === r);
+        const f = this.rawTree()?.findFirst((n: any) => this.relPath(n) === r);
         if (f && !f.expanded) await f.setExpanded(true);
       }
       const target = (this._revealSeq || 0) > seq ? this._revealedRel : activeRel;
@@ -4048,10 +4067,10 @@ function shell() {
     // Whether the rows under `node` already show `specs` (from `treeNodes`):
     // the same names, kinds and ignore marks, in the same order. A level still
     // loading has a status row, so it never matches.
-    levelShows(node, specs) {
+    levelShows(node: any, specs: any) {
       const rows = node.children;
       if (!Array.isArray(rows) || rows.length !== specs.length) return false;
-      return specs.every((spec, i) => {
+      return specs.every((spec: any, i: any) => {
         const row = rows[i];
         return (
           row.title === spec.title &&
@@ -4064,23 +4083,23 @@ function shell() {
     // An unchanged level with a `.gitignore` may still have changed the ignore
     // marks of the levels below it: re-read each expanded one, which repaints
     // only a level whose listing changed.
-    revalidateBelow(node, rel) {
+    revalidateBelow(node: any, rel: any) {
       this.forgetValidatedBelow(rel);
-      node.visit((n) => {
+      node.visit((n: any) => {
         if (this.isFolder(n) && n.expanded) this.revalidateLevel(this.relPath(n));
       });
     },
 
     // After a directory nudge, re-read any open tab whose file lives in `rel`
     // and push the bytes to its viewer. A failure keeps the tab's bytes.
-    refreshOpenViewers(rel) {
+    refreshOpenViewers(rel: any) {
       if (!this.useDaemonTree()) return Promise.resolve();
-      const dirOf = (p) => {
+      const dirOf = (p: any) => {
         if (typeof p !== "string") return null;
         const i = p.lastIndexOf("/");
         return i < 0 ? "" : p.slice(0, i);
       };
-      const reads = [];
+      const reads: any[] = [];
       for (const t of this.tabs) {
         if (t.project !== this.openSlug || dirOf(t.path) !== rel) continue;
         // A tab pinned to another checkout (#406) is not this nudge's.
@@ -4099,7 +4118,7 @@ function shell() {
               );
         reads.push(
           fresh
-            .then((content) => {
+            .then((content: any) => {
               if (content != null) WBViewer.externalChange(t.id, content);
             })
             .catch(() => {}),
@@ -4115,7 +4134,7 @@ function shell() {
     // `folder` nor children yet). `opts.restore` is the reconcile path's own
     // re-activation: it must NOT bump `_revealSeq`, or a stale pass would date
     // its restore as newer than the reveal it undoes.
-    async revealRel(rel, opts = {}) {
+    async revealRel(rel: any, opts: any = {}) {
       const tree = this.rawTree();
       if (!tree || typeof rel !== "string" || rel === "") return null;
       if (!opts.restore) {
@@ -4126,19 +4145,19 @@ function shell() {
       // Ancestors only: a revealed FILE has nothing to expand.
       for (let i = 1; i < parts.length; i++) {
         const prefix = parts.slice(0, i).join("/");
-        const f = tree.findFirst((n) => this.relPath(n) === prefix);
+        const f = tree.findFirst((n: any) => this.relPath(n) === prefix);
         if (!f) return null; // an unmounted ancestor: nothing to reveal
         if (!f.expanded) await f.setExpanded(true);
       }
-      const node = tree.findFirst((n) => this.relPath(n) === rel);
+      const node = tree.findFirst((n: any) => this.relPath(n) === rel);
       if (!node) return null;
       node.setActive();
       return node;
     },
 
     // The folder node whose rel path is `rel`, or `null` if none is mounted.
-    findFolderByRel(rel) {
-      return this.rawTree()?.findFirst((n) => this.isFolder(n) && this.relPath(n) === rel) || null;
+    findFolderByRel(rel: any) {
+      return this.rawTree()?.findFirst((n: any) => this.isFolder(n) && this.relPath(n) === rel) || null;
     },
 
     // The open project's run-snapshot subscription (#300, ADR-0047 §9).
@@ -4163,7 +4182,7 @@ function shell() {
     // carries EVERY repo's nudge, so the filter is here.
     mountChangesSub() {
       if (!window.WBDaemon?.subscribeChanges || !this.openSlug) return;
-      this._changesSub = window.WBDaemon.subscribeChanges(this.openSlug, (frame) => {
+      this._changesSub = window.WBDaemon.subscribeChanges(this.openSlug, (frame: any) => {
         if (this.tabHidden()) return;
         // Optional-chained: a frame without wb-changes.js must not throw
         // inside `onmessage`.
@@ -4202,7 +4221,7 @@ function shell() {
     },
 
     // --- opening a file into a tab ----------------------------------------
-    openFile(node) {
+    openFile(node: any) {
       const path = this.relPath(node);
       const ftype = classify(node.title);
       this.emit("open", node, { ftype });
@@ -4215,7 +4234,7 @@ function shell() {
       if (ftype === "binary") {
         // Flash it too: a click that silently does nothing reads as a broken
         // tree.
-        WB.emit("open-refused", { project: this.openSlug, path, reason: "binary" });
+        window.WB.emit("open-refused", { project: this.openSlug, path, reason: "binary" });
         this._flashAction?.("Cannot open binary files.");
         return;
       }
@@ -4241,10 +4260,10 @@ function shell() {
     // card, and classifying it again would be the loop the card just escaped.
     // The viewer serves text and images and refuses anything else, so what is
     // honest here is the refusal, named — not a pane that would show nothing.
-    openLink({ project, path, fragment, checkout, as }) {
+    openLink({ project, path, fragment, checkout, as }: any) {
       const title = path.split("/").pop();
       if (as === "bytes") {
-        WB.emit("open-refused", { project, path, reason: "not a note" });
+        window.WB.emit("open-refused", { project, path, reason: "not a note" });
         this._flashAction?.(`${path} is not a note.`);
         return;
       }
@@ -4256,7 +4275,7 @@ function shell() {
         return;
       }
       if (ftype === "binary") {
-        WB.emit("open-refused", { project, path, reason: "binary" });
+        window.WB.emit("open-refused", { project, path, reason: "binary" });
         this._flashAction?.("Cannot open binary files.");
         return;
       }
@@ -4269,7 +4288,7 @@ function shell() {
     // a Save from a tab showing worktree bytes must never land on the primary.
     // `encoding`/`bom` come back with a re-attached popup's bytes, so the
     // reattached pane saves the way the detached one would have.
-    openTab({ project, path, title, ftype, content, fragment, find, checkout, encoding, bom }) {
+    openTab({ project, path, title, ftype, content, fragment, find, checkout, encoding, bom }: any) {
       const ck = checkout !== undefined ? checkout : this.checkoutOf(project);
       const id = fileTabId(project, path, ck);
       if (this.tabs.some((t) => t.id === id)) {
@@ -4293,7 +4312,7 @@ function shell() {
           content != null
             ? Promise.resolve({ content, encoding, bom })
             : this.fetchContent(project, path, ftype, ck);
-        bytes.then((body) => {
+        bytes.then((body: any) => {
           if (body == null) return; // nothing to show: fetchContent closed the tab
           WBViewer.open({
             id,
@@ -4320,7 +4339,7 @@ function shell() {
     // --- opening a Changes row into a diff tab ----------------------------
     // HEAD on one side, the working tree on the other (#311). Read-only;
     // Monaco computes the diff, nothing produces a patch.
-    openDiff(project, entry) {
+    openDiff(project: any, entry: any) {
       // Both diff sides read text, and a binary side closes the tab again: an
       // image or other binary path never reaches the diff.
       const ftype = classify(entry.path.split("/").pop());
@@ -4345,11 +4364,11 @@ function shell() {
         closable: true,
       });
       this.active = t.id;
-      WB.emit("open-diff", { project, path: t.workingPath, checkout: t.checkout });
+      window.WB.emit("open-diff", { project, path: t.workingPath, checkout: t.checkout });
       this.$nextTick(() => {
         // Latched: a path refused on BOTH sides would flash twice.
         let refused = false;
-        const refuse = (reason) => {
+        const refuse = (reason: any) => {
           if (refused) return null;
           refused = true;
           this._flashAction?.(window.WBFail.failed({ message: reason }, "Could not open the diff: the daemon gave no reason."));
@@ -4383,15 +4402,15 @@ function shell() {
     // A Changes row that names an image or other binary. An image shows its
     // working copy in the image pane (ADR-0049); a deleted one has no working
     // copy, and `blob.read` serves text only, so it is refused like a binary.
-    openChangedBinary(project, entry, ftype) {
+    openChangedBinary(project: any, entry: any, ftype: any) {
       const path = entry.path;
       if (ftype === "binary") {
-        WB.emit("open-refused", { project, path, reason: "binary" });
+        window.WB.emit("open-refused", { project, path, reason: "binary" });
         this._flashAction?.("Cannot open binary files.");
         return;
       }
       if (entry.status === "deleted") {
-        WB.emit("open-refused", { project, path, reason: "deleted" });
+        window.WB.emit("open-refused", { project, path, reason: "deleted" });
         this._flashAction?.("This image was deleted, so there is nothing to show.");
         return;
       }
@@ -4400,7 +4419,7 @@ function shell() {
     },
 
     // The diff's HEAD side; an added/untracked path diffs against emptiness.
-    diffHeadSide(project, t, refuse) {
+    diffHeadSide(project: any, t: any, refuse: any) {
       if (t.headAbsent) return Promise.resolve("");
       return WBDaemon.observe(
         "blob.read",
@@ -4416,7 +4435,7 @@ function shell() {
 
     // The diff's working side. `not found` is NOT a refusal: a stale row
     // (deleted between the list and the click) diffs against emptiness.
-    diffWorkSide(project, t, refuse) {
+    diffWorkSide(project: any, t: any, refuse: any) {
       if (t.workingAbsent) return Promise.resolve("");
       // NOT `fetchContent`: it collapses every refusal to `null` and closes
       // the `file:` tab id rather than this diff's.
@@ -4431,7 +4450,7 @@ function shell() {
     },
 
     // Pop a file tab out into a standalone popup; the in-app tab closes.
-    detachFile(desc) {
+    detachFile(desc: any) {
       const id = fileTabId(desc.project, desc.path, desc.checkout);
       // The descriptor is handed over by postMessage with `targetOrigin =
       // location.origin`, NOT in the URL hash: a hash let anyone render content
@@ -4440,16 +4459,16 @@ function shell() {
       // `popup` is the daemon's route for the page (`Shell` in `assets.rs`).
       const win = window.open("popup", "_blank", "popup,width=920,height=760");
       if (!win) {
-        WB.emit("detach-blocked", { project: desc.project, path: desc.path });
+        window.WB.emit("detach-blocked", { project: desc.project, path: desc.path });
         return;
       }
-      watchDetached(win, desc);
-      WB.emit("detach", { project: desc.project, path: desc.path });
+      detached.watch(win, desc);
+      window.WB.emit("detach", { project: desc.project, path: desc.path });
       this.closeTab(id);
       this.activate("consoles");
     },
 
-    activate(id) {
+    activate(id: any) {
       this.active = id;
       // The Spend tab's subject can change while it sits in the background.
       if (id === "spend" && this.spend.slug !== this.openSlug) this.refreshSpend();
@@ -4484,7 +4503,7 @@ function shell() {
     },
 
     // --- the slot: pin a tab beside the active one, or mirror the active one --
-    pinTab(id) {
+    pinTab(id: any) {
       this.slot = { kind: "pin", id };
       this.syncLater();
     },
@@ -4506,7 +4525,7 @@ function shell() {
       return window.WBSplit.available(WBViewer.width());
     },
 
-    closeTab(id) {
+    closeTab(id: any) {
       const idx = this.tabs.findIndex((t) => t.id === id);
       const tab = this.tabs[idx];
       if (!tab || !tab.closable) return; // Consoles never closes
@@ -4600,7 +4619,7 @@ function shell() {
     // Alt+Shift+<digit> accelerator, matched by physical key (e.code) so it
     // fires regardless of layout. Console is Alt+Shift+0; Alt+Shift+R opens the
     // menu with the console row's command field focused.
-    liveSessions: [],
+    liveSessions: [] as any[],
     // The console row's "Run…" field: one command line for ONE new console.
     // Never stored — the next console from the row or Alt+Shift+0 is a plain
     // shell again.
@@ -4630,14 +4649,14 @@ function shell() {
     },
     // Every row is a launch (the menu is "New console"); `opts.tryAnyway` is
     // the unavailable row's escape hatch.
-    openConsoleItem(item, opts = {}) {
+    openConsoleItem(item: any, opts: any = {}) {
       if (!window.WBAgents.consoleIntent(item, opts)) return;
       if (item.plain) this.newPlainConsole(item.command);
       else this.newConsole(item.kind);
       this.agentMenu = false;
     },
 
-    newConsole(agent) {
+    newConsole(agent: any) {
       // The accelerator path calls this directly: refuse with no repo here too.
       if (!this.openSlug) return;
       if (this.active !== "consoles") this.activate("consoles");
@@ -4649,7 +4668,7 @@ function shell() {
     // a bare shell in the repo dir (no agent) — the daemon's per-repo console;
     // with `command`, the shell runs it instead of a prompt and the session
     // ends with it (the console row's "Run…" field)
-    newPlainConsole(command) {
+    newPlainConsole(command: any) {
       if (this.active !== "consoles") this.activate("consoles");
       WBConsole.open({ repo: this.openSlug, plain: true, command: command || undefined });
       this.consoleCount = WBConsole.count();
@@ -4688,7 +4707,7 @@ function shell() {
       if (!this.authed) return true;
       if (this.modalOpen(window.WBSettingsDialog.openFlag) || this.modalOpen(window.WBSecurityDialog.openFlag) || this.runOpen || this.branchOpen) return true;
       if (this.modalOpen(window.WBReleaseDialogs.whatsNewFlag)) return true;
-      const el = document.activeElement;
+      const el: any = document.activeElement;
       if (allowTerminal && el?.closest?.(".xterm")) return false;
       return !!(
         el &&
@@ -4746,7 +4765,7 @@ function shell() {
       this.closeMenus();
       this.windowMenu = !was;
     },
-    revealWindow(id) {
+    revealWindow(id: any) {
       if (this.active !== "consoles") this.activate("consoles");
       this.windowMenu = false;
       // AFTER the tab is laid out: a `display:none` tab measures 0.
@@ -4793,7 +4812,7 @@ function shell() {
     // Open a `.note` as a card (ADR-0064 §11). The module decides whether this
     // is a jump to a card already on the plane or a new one; this layer only
     // puts the operator on the tab that holds the stage.
-    openNote(path, project, checkout) {
+    openNote(path: any, project?: any, checkout?: any) {
       const repo = project || this.openSlug;
       if (!repo) return;
       if (this.active !== "consoles") this.activate("consoles");
@@ -4817,7 +4836,7 @@ function shell() {
 
     // The note list is the map too (ADR-0064 §10): the row slides the plane to
     // the card.
-    jumpNote(id) {
+    jumpNote(id: any) {
       if (this.active !== "consoles") this.activate("consoles");
       this.noteMenu = false;
       // As `revealWindow`: a `display:none` tab measures a 0×0 viewport.
@@ -4826,7 +4845,7 @@ function shell() {
     // Keep a card on top, or put it back (ADR-0064, 2026-09-26 amendment).
     // The menu closes on the way on top so the card is in view; putting back
     // keeps it open and redraws the rows.
-    toggleOnTop(n) {
+    toggleOnTop(n: any) {
       if (n.away) return;
       if (n.onTop) {
         window.WBNotes.putBack();
@@ -4849,13 +4868,13 @@ function shell() {
     // Alt+Shift+←/→. Returns the fence landed on, or null when the plane has
     // none (the shortcut decides whether to swallow the key). Runs against the
     // LIVE stage.
-    stepFence(step) {
+    stepFence(step: any) {
       if (this.active !== "consoles") return null;
       return WBConsole.stepFence(step);
     },
     // Alt+Shift+arrows among the painted consoles: "x" across the columns,
     // "y" along the rows of one column. Returns whether it applied.
-    stepColumn(axis, step) {
+    stepColumn(axis: any, step: any) {
       if (this.active !== "consoles" || this.columnIds().length < 2) return false;
       const painted = WBColumns.painted(this.columns, this.columnCap());
       const to = WBColumns.focusMove(painted, WBConsole.focusedId(), axis, step);
@@ -4864,11 +4883,11 @@ function shell() {
     },
     // The columns while they are open, the fences otherwise (ADR-0051 §5). The
     // fences have no "y": ↑/↓ with no columns open applies nothing.
-    arrowStep(axis, step) {
+    arrowStep(axis: any, step: any) {
       if (this.columnIds().length >= 2) return this.stepColumn(axis, step);
       return axis === "x" && !!this.stepFence(step);
     },
-    jumpFence(id) {
+    jumpFence(id: any) {
       if (this.active !== "consoles") this.activate("consoles");
       this.fenceMenu = false;
       // As `revealWindow`: a `display:none` tab measures 0.
@@ -4879,7 +4898,7 @@ function shell() {
     // `Shift+F10`, F11 and F12 want their exact combo, and Alt takes this out
     // of their way. The ROW carries only its own key; the modifier pair is a
     // legend in the head.
-    fenceShortcutLabel(n) {
+    fenceShortcutLabel(n: any) {
       return `F${n}`;
     },
     fenceShortcutHint() {
@@ -4900,7 +4919,7 @@ function shell() {
     // changes: `paintColumns` runs on every `consoles-changed` during boot with
     // an empty grid, and an unconditional write would erase the stored grid
     // before `restoreColumns` reads it.
-    setColumns(next) {
+    setColumns(next: any) {
       if (JSON.stringify(next) === JSON.stringify(this.columns)) return;
       this.columns = next;
       window.WBView?.patch({ columns: WBColumns.toStored(next) });
@@ -4923,19 +4942,19 @@ function shell() {
       if (!next.length && raw !== null) window.WBView?.patch({ columns: null });
       if (next.length) this.paintColumns({ raise: true });
     },
-    effectiveColumns(fromId) {
+    effectiveColumns(fromId: any) {
       return this.columnIds().includes(fromId) ? this.columns : [[fromId]];
     },
     // The Right | Down choice at the top of the list, kept in this browser.
-    setColumnDir(dir) {
+    setColumnDir(dir: any) {
       this.columnDir = WBColumns.dirOf(dir);
       window.WBView?.patch({ columnDir: this.columnDir });
     },
     // Re-derive what is painted from the list and the current cap. A console
     // that left the stage (closed, detached) leaves the list.
-    paintColumns(opts) {
+    paintColumns(opts?: any) {
       const byId = new Map(
-        [...document.querySelectorAll("#stage .session-window")].map((w) => [w._deskId, w]),
+        [...document.querySelectorAll<any>("#stage .session-window")].map((w) => [w._deskId, w]),
       );
       const head = this.columnIds()[0];
       const headWin = head ? byId.get(head) : null;
@@ -4958,14 +4977,14 @@ function shell() {
       // hides comes back when the cap grows again.
       this.setColumns(keptIds.length >= 2 ? kept : []);
       const left =
-        this.columnIds()[0] ?? document.querySelector("#stage .session-window.maximized")?._deskId;
+        this.columnIds()[0] ?? document.querySelector<any>("#stage .session-window.maximized")?._deskId;
       // A hidden consoles tab measures 0 wide, which reads as a cap of 1: keep
       // the painted columns as they are until the tab shows again.
       if (left && !WBConsole.columnMeasure().viewport) return;
       const cap = left ? this.columnCap() : 1;
       const before = WBConsole.focusedId();
       const painted = WBColumns.painted(this.columns, cap);
-      const ids = painted.map((p) => p.id);
+      const ids = painted.map((p: any) => p.id);
       const key = ids.join(" ");
       // A column that stops being painted falls back to its plane rect with its
       // old z-index; raising the painted ones keeps it behind them.
@@ -4985,7 +5004,7 @@ function shell() {
       }
     },
     // A fence detached to a popup takes its consoles out of the columns.
-    leaveColumns(ids) {
+    leaveColumns(ids: any) {
       const r = WBColumns.external(this.columns, { type: "detached", ids });
       if (!r.changed) return;
       const cap = r.columns.length ? this.columnCap() : 1;
@@ -4996,8 +5015,8 @@ function shell() {
     // module after a desk read) leave the columns, then the stage. A session
     // that ended, a remote maximize and a remote rect or fence change need
     // nothing here: `WBColumns.external` names them as no-ops.
-    checkColumnDesk(ids) {
-      const gone = this.columnIds().filter((id) => ids.includes(id));
+    checkColumnDesk(ids: any) {
+      const gone = this.columnIds().filter((id: any) => ids.includes(id));
       const r = WBColumns.external(this.columns, { type: "closed", ids: gone });
       if (r.changed) {
         const cap = r.columns.length ? this.columnCap() : 1;
@@ -5008,7 +5027,7 @@ function shell() {
       for (const id of ids) WBConsole.dropClosedElsewhere(id);
       if (r.changed) this.paintColumns();
     },
-    toggleColumnMenu(id, rect) {
+    toggleColumnMenu(id: any, rect: any) {
       const was = this.columnMenu && this.columnFrom === id;
       const ids = WBColumns.flat(this.effectiveColumns(id));
       this.columnGroups = WBColumns.listFold({
@@ -5039,26 +5058,26 @@ function shell() {
     },
     // `owner/repo` without the environment: the operator already knows where
     // each console runs, and the list is about telling the consoles apart.
-    columnRepoLabel(ref) {
+    columnRepoLabel(ref: any) {
       const row = this.projects.find((p) => this.repoRef(p) === ref);
       return row ? window.WBProject.projectName(row) : window.WBFleet.refLabel(ref);
     },
     columnView() {
-      return WBColumns.filterGroups(this.columnGroups, this.columnFilter, (ref) => this.columnRepoLabel(ref));
+      return WBColumns.filterGroups(this.columnGroups, this.columnFilter, (ref: any) => this.columnRepoLabel(ref));
     },
-    columnRowLabel(r) {
+    columnRowLabel(r: any) {
       return WBColumns.rowLabel(r, window.WBConsoleName.consoleLabel);
     },
     // Enter in the filter opens the first row that can be opened; at the cap,
     // it swaps in the first row that can be swapped.
     openFirstColumn() {
-      const rows = this.columnView().flatMap((g) => g.rows);
-      const open = rows.find((r) => r.enabled);
+      const rows = this.columnView().flatMap((g: any) => g.rows);
+      const open = rows.find((r: any) => r.enabled);
       if (open) return this.openColumn(open.id);
-      const swap = rows.find((r) => r.swappable);
+      const swap = rows.find((r: any) => r.swappable);
       if (swap) this.swapColumn(swap.id);
     },
-    openColumn(id) {
+    openColumn(id: any) {
       const from = this.columnFrom;
       if (!from) return;
       const cols = this.effectiveColumns(from);
@@ -5073,7 +5092,7 @@ function shell() {
       WBConsole.focusColumn(id);
     },
     // Put `id` in the row that opened the list (ADR-0051 §5, swap).
-    swapColumn(id) {
+    swapColumn(id: any) {
       const from = this.columnFrom;
       if (!from) return;
       const r = WBColumns.swap(this.effectiveColumns(from), from, id);
@@ -5085,7 +5104,7 @@ function shell() {
       this.paintColumns();
       WBConsole.focusColumn(id);
     },
-    restoreColumn(id) {
+    restoreColumn(id: any) {
       const r = WBColumns.restore(this.columns, id);
       const cap = r.columns.length ? this.columnCap() : 1;
       this.setColumns(r.ended ? [] : r.columns);
@@ -5095,12 +5114,12 @@ function shell() {
     },
     // A fence opened as columns (ADR-0051 §5, 2026-09-30): the grid follows the
     // members' stage rects and replaces the columns that are open.
-    columnsFromFence(items) {
+    columnsFromFence(items: any) {
       const grid = WBColumns.fromRects(items);
       const ids = WBColumns.flat(grid);
       if (!ids.length) return;
       const old =
-        this.columnIds()[0] ?? document.querySelector("#stage .session-window.maximized")?._deskId;
+        this.columnIds()[0] ?? document.querySelector<any>("#stage .session-window.maximized")?._deskId;
       const cap = ids.length >= 2 ? this.columnCap() : 1;
       this.setColumns(ids.length >= 2 ? grid : []);
       WBConsole.applyColumns(WBColumns.painted(grid, cap), {
@@ -5114,7 +5133,7 @@ function shell() {
 
     // Ordinal, not id: the row's position in `fenceList()`, read LIVE (the
     // menu's snapshot may be stale). Returns whether it landed.
-    jumpFenceAt(n) {
+    jumpFenceAt(n: any) {
       if (this.active !== "consoles") return false;
       const f = WBConsole.fenceList()[n - 1];
       if (!f) return false;
@@ -5125,7 +5144,7 @@ function shell() {
     // --- context menu -----------------------------------------------------
     // `node` is null for empty tree space, which addresses the repo root: the
     // create items apply, the per-node items drop out.
-    showMenu(x, y, node) {
+    showMenu(x: any, y: any, node: any) {
       const isFolder = this.isFolder(node);
       const items = [
         node && !isFolder && { label: "Open", icon: "bi-box-arrow-up-right", run: () => this.openFile(node) },
@@ -5154,7 +5173,7 @@ function shell() {
 
     // A tab's menu (ADR-0037 §3c): the slot's two entry points and Close.
     // Consoles and Spend have no pane to put beside another, so no menu.
-    showTabMenu(x, y, t) {
+    showTabMenu(x: any, y: any, t: any) {
       if (!t?.closable) return;
       const pinned = this.slot?.kind === "pin" && this.slot.id === t.id;
       const mirrored = this.slot?.kind === "mirror";
@@ -5191,8 +5210,8 @@ function shell() {
 
     // Paint `items` into the one `#ctxmenu` and keep it on-screen. An item is
     // `{ label, icon, run }` with optional `sep`, `danger`, `disabled`, `title`.
-    renderMenu(x, y, items) {
-      const menu = document.getElementById("ctxmenu");
+    renderMenu(x: any, y: any, items: any) {
+      const menu = document.getElementById("ctxmenu") as HTMLElement;
       menu.innerHTML = "";
       for (const it of items) {
         if (it.sep) {
@@ -5225,14 +5244,14 @@ function shell() {
     },
 
     hideMenu() {
-      const menu = document.getElementById("ctxmenu");
+      const menu = document.getElementById("ctxmenu") as HTMLElement;
       if (menu) menu.style.display = "none";
     },
 
     // --- the backend seam -------------------------------------------------
     // Build the repo-relative path by walking parent titles.
-    relPath(node) {
-      const parts = [];
+    relPath(node: any) {
+      const parts: any[] = [];
       let n = node;
       while (n && n.title && n.parent) {
         parts.unshift(n.title);
@@ -5245,7 +5264,7 @@ function shell() {
     // ROOT's own separator, so it pastes into a native shell; the rel path
     // when no root is known. `navigator.clipboard` is undefined on an
     // insecure non-loopback origin, so the call is optional-chained.
-    copyPath(node, full = false) {
+    copyPath(node: any, full = false) {
       const rel = this.relPath(node);
       const root = full ? this.projects.find((p) => p.slug === this.openSlug)?.root : "";
       let path = rel;
@@ -5264,7 +5283,7 @@ function shell() {
     // Duplicate a file beside itself, NO prompt. `file.copy` refuses an
     // existing dst, so the free-name search happens HERE: the first of `<stem>
     // copy<ext>`, `<stem> copy 2<ext>`, … not taken.
-    async duplicateNode(node) {
+    async duplicateNode(node: any) {
       const rel = this.relPath(node);
       if (!rel) return;
       const parent = parentRel(rel);
@@ -5310,7 +5329,7 @@ function shell() {
     // --- move (issue #364) ------------------------------------------------
     // The destination is PICKED, never typed: the picker browses real
     // directories through `tree.list`.
-    moveNode(node) {
+    moveNode(node: any) {
       const rel = this.relPath(node);
       if (!rel) return;
       this.movePick = {
@@ -5325,7 +5344,7 @@ function shell() {
       this.movePickLoad(parentRel(rel));
     },
 
-    async movePickLoad(dir) {
+    async movePickLoad(dir: any) {
       // Stamp the request: two quick clicks would settle out of order.
       const seq = (this._movePickSeq = (this._movePickSeq || 0) + 1);
       this.movePick.busy = true;
@@ -5357,7 +5376,7 @@ function shell() {
         .filter((e) => !isProtectedDir(e.name));
     },
 
-    movePickInto(name) {
+    movePickInto(name: any) {
       this.movePickLoad(this.movePick.dir ? `${this.movePick.dir}/${name}` : name);
     },
 
@@ -5394,10 +5413,10 @@ function shell() {
       return this.performMove(from, dir ? `${dir}/${leaf}` : leaf);
     },
 
-    // Through `WBDaemon.write`, not the fire-and-forget `WB.emit("rename")`:
+    // Through `WBDaemon.write`, not the fire-and-forget `window.WB.emit("rename")`:
     // the reveal, the flash and the tab re-path need the reply. INVARIANT: no
     // tab is re-pathed and no reveal happens on a refusal.
-    async performMove(from, to) {
+    async performMove(from: any, to: any) {
       const reply = await WBDaemon.write(
         "file.rename",
         WBDaemon.withCheckout(
@@ -5422,7 +5441,7 @@ function shell() {
 
     // Re-point every open tab under the moved path: a tab's id IS its path,
     // and saves would write to the old location.
-    repathTabs(from, to) {
+    repathTabs(from: any, to: any) {
       // Snapshot: the collision branch CLOSES a tab, which mutates `this.tabs`.
       for (const t of [...this.tabs]) {
         if (t.kind === "diff" || t.project !== this.openSlug) continue;
@@ -5448,30 +5467,30 @@ function shell() {
     },
 
     // A `create` intent carries the DIRECTORY, already resolved (`createDir`).
-    emitCreate(node, kind) {
-      WB.emit("create", { project: this.openSlug, path: this.createDir(node), kind, isFolder: true });
+    emitCreate(node: any, kind: any) {
+      window.WB.emit("create", { project: this.openSlug, path: this.createDir(node), kind, isFolder: true });
     },
 
     // The directory a create addressed at `node` lands in: the folder itself,
     // the folder CONTAINING a file, or the repo root ("") for no node at all.
-    createDir(node) {
+    createDir(node: any) {
       const rel = node ? this.relPath(node) : "";
       return !node || this.isFolder(node) ? rel : parentRel(rel);
     },
 
     // The Files-header buttons create relative to the tree's active node.
-    createHere(kind) {
+    createHere(kind: any) {
       this.emitCreate(this.rawTree()?.getActiveNode() || null, kind);
     },
 
     // The header buttons' tooltip: the directory a create lands in.
-    createTitle(kind) {
+    createTitle(kind: any) {
       return newEntryTitle(kind, this.createDir(this.rawTree()?.getActiveNode() || null));
     },
 
     // Node-shaped gestures funnel through the shared WB.emit.
-    emit(action, node, extra = {}) {
-      WB.emit(action, {
+    emit(action: any, node: any, extra: any = {}) {
+      window.WB.emit(action, {
         project: this.openSlug,
         path: this.relPath(node),
         title: node.title,
@@ -5486,8 +5505,8 @@ function shell() {
     // object once per scrim, so `was` lives as long as the element.
     // A click on the scrim closes nothing: a stray click must not throw away
     // what a modal holds. Only its own buttons and Escape close it.
-    scrim(path, close) {
-      const isOpen = () => path.split(".").reduce((o, k) => o?.[k], this);
+    scrim(path: any, close: any) {
+      const isOpen = () => path.split(".").reduce((o: any, k: any) => o?.[k], this);
       let was = false;
       const self = this;
       return {
@@ -5497,7 +5516,7 @@ function shell() {
         // marked because the browser runs Alpine's effects between two
         // listeners: the close pops the stack before the next scrim is asked,
         // and the modal under it would read as the top.
-        "@keydown.escape.window": (e) => {
+        "@keydown.escape.window": (e: any) => {
           if (self._escapeEvent === e) return;
           if (isOpen() && self.isTopModal(path)) {
             self._escapeEvent = e;
@@ -5506,7 +5525,7 @@ function shell() {
         },
         // Watches the flag, not the close methods: `logOff()` clears flags
         // directly, and that close must still pop the stack.
-        "x-effect"() {
+        "x-effect"(this: any) {
           const open = !!isOpen();
           if (open === was) return;
           was = open;
@@ -5515,22 +5534,22 @@ function shell() {
         },
       };
     },
-    isTopModal(path) {
+    isTopModal(path: any) {
       return this._modalStack.at(-1)?.path === path;
     },
     // Whether the modal with this open-flag path is open, at any depth. Code
     // outside a dialog's component asks this, never the flag (ADR-0073 D5).
-    modalOpen(path) {
+    modalOpen(path: any) {
       return this._modalStack.some((m) => m.path === path);
     },
-    modalOpened(path, scrimEl) {
+    modalOpened(path: any, scrimEl: any) {
       this._modalStack.push({ path, opener: document.activeElement });
       // One frame later: `x-show` has flipped by then, and a modal that focuses
       // its own field on open (Branch, Prompt) has already done so.
       window.requestAnimationFrame(() => {
         const dialog = scrimEl.querySelector('[role="dialog"], [role="alertdialog"]') || scrimEl;
         if (dialog.contains(document.activeElement)) return;
-        const controls = Array.from(
+        const controls = Array.from<any>(
           dialog.querySelectorAll(
             'button, input, select, textarea, [href], [tabindex]:not([tabindex="-1"])',
           ),
@@ -5540,7 +5559,7 @@ function shell() {
         (controls.find((el) => !el.classList.contains("modal-x")) || controls[0])?.focus();
       });
     },
-    modalClosed(path) {
+    modalClosed(path: any) {
       const i = this._modalStack.findLastIndex((m) => m.path === path);
       if (i < 0) return;
       const [{ opener }] = this._modalStack.splice(i, 1);
@@ -5549,7 +5568,7 @@ function shell() {
 
     // Resolve `true`/`false` on the operator's choice. A pending dialog is
     // settled `false` first so a second call never strands its promise.
-    askConfirm(opts = {}) {
+    askConfirm(opts: any = {}) {
       if (this._confirmResolve) this.confirmRespond(false);
       this.confirmModal = {
         open: true,
@@ -5564,7 +5583,7 @@ function shell() {
       });
     },
     // Close the dialog and settle its promise with the choice.
-    confirmRespond(ok) {
+    confirmRespond(ok: any) {
       this.confirmModal.open = false;
       const resolve = this._confirmResolve;
       this._confirmResolve = null;
@@ -5572,7 +5591,7 @@ function shell() {
     },
 
     // Resolve the typed string, or `null`. Mirrors askConfirm.
-    askPrompt(opts = {}) {
+    askPrompt(opts: any = {}) {
       if (this._promptResolve) this.promptRespond(null);
       this.promptModal = {
         open: true,
@@ -5585,7 +5604,7 @@ function shell() {
       };
       // Focus after Alpine has painted; caret at the end, not selected.
       queueMicrotask(() => {
-        const el = document.getElementById("prompt-input");
+        const el = document.getElementById("prompt-input") as HTMLInputElement | null;
         if (!el) return;
         el.focus();
         el.setSelectionRange(el.value.length, el.value.length);
@@ -5615,468 +5634,491 @@ function shell() {
     },
 
     // Close the dialog and settle its promise with `name` (null = cancelled).
-    promptRespond(name) {
+    promptRespond(name: any) {
       this.promptModal.open = false;
       const resolve = this._promptResolve;
       this._promptResolve = null;
       if (resolve) resolve(name);
     },
-  };
+  });
 }
 
-window.shell = shell;
+// Everything the page wires at load: the window names classic scripts call,
+// the document and window listeners, and the state of detached windows.
+// `window` and `document` are parameters so a test passes its own stubs, and
+// each call starts from fresh state (ADR-0075 D7).
+export function wire(window: Window, document: Document) {
+  // The one exit point: every gesture becomes a `workbench:action` event.
+  // A classic script still reads these names (ADR-0075 D9).
+  window.WB = {
+    emit(action: any, detail: any = {}) {
+      const full = { action, ...detail, at: new Date().toISOString() };
+      document.dispatchEvent(new CustomEvent("workbench:action", { detail: full }));
+      // eslint-disable-next-line no-console
+      console.log("[workbench:action]", full);
+    },
+  };
+  window.shell = shell;
 
-// The live Alpine component instance. On `window` explicitly: two other
-// modules call it, and a bare declaration reaches them only by accident of
-// global scope.
-window.getShell = function getShell() {
-  const root = document.querySelector("[x-data]");
-  return root && root._x_dataStack ? root._x_dataStack[0] : null;
-};
+  // The live Alpine component instance. On `window` explicitly: two other
+  // modules call it, and a bare declaration reaches them only by accident of
+  // global scope.
+  window.getShell = function getShell() {
+    const root = document.querySelector<any>("[x-data]");
+    return root && root._x_dataStack ? root._x_dataStack[0] : null;
+  };
 
-// The Alpine mirror of the live console count.
-document.addEventListener("workbench:consoles-changed", (e) => {
-  const c = window.getShell();
-  if (!c) return;
-  c.consoleCount = e.detail.count;
-  c.paintColumns();
-});
+  // The Alpine mirror of the live console count.
+  document.addEventListener("workbench:consoles-changed", (e: any) => {
+    const c = window.getShell();
+    if (!c) return;
+    c.consoleCount = e.detail.count;
+    c.paintColumns();
+  });
 
-// A console's title bar asked for the columns list, or to restore a column;
-// or something changed the cap (maximize, first measurable frame).
-document.addEventListener("workbench:column-open", (e) => {
-  window.getShell()?.toggleColumnMenu(e.detail.id, e.detail.rect);
-});
-document.addEventListener("workbench:column-restore", (e) => {
-  window.getShell()?.restoreColumn(e.detail.id);
-});
-document.addEventListener("workbench:columns-stale", () => {
-  window.getShell()?.paintColumns();
-});
-document.addEventListener("workbench:columns-leave", (e) => {
-  window.getShell()?.leaveColumns(e.detail.ids);
-});
-document.addEventListener("workbench:fence-columns", (e) => {
-  window.getShell()?.columnsFromFence(e.detail.items);
-});
-document.addEventListener("workbench:desk-restored", () => {
-  window.getShell()?.restoreColumns();
-});
-// A narrower or wider viewport changes the cap. One repaint per frame.
-let columnsFrame = 0;
-window.addEventListener("resize", () => {
-  if (columnsFrame) return;
-  columnsFrame = requestAnimationFrame(() => {
-    columnsFrame = 0;
+  // A console's title bar asked for the columns list, or to restore a column;
+  // or something changed the cap (maximize, first measurable frame).
+  document.addEventListener("workbench:column-open", (e: any) => {
+    window.getShell()?.toggleColumnMenu(e.detail.id, e.detail.rect);
+  });
+  document.addEventListener("workbench:column-restore", (e: any) => {
+    window.getShell()?.restoreColumn(e.detail.id);
+  });
+  document.addEventListener("workbench:columns-stale", () => {
     window.getShell()?.paintColumns();
   });
-});
-
-// …and of the stage extent, for the footer pill (#338).
-document.addEventListener("workbench:stage-extent", (e) => {
-  const c = window.getShell();
-  if (!c) return;
-  c.stageW = e.detail.width;
-  c.stageH = e.detail.height;
-});
-
-// A viewer asked to detach → open the popup and close the tab.
-document.addEventListener("workbench:detach-request", (e) => {
-  window.getShell()?.detachFile(e.detail);
-});
-
-// A rendered markdown link asked for a repo file → open (or focus) its tab.
-document.addEventListener("workbench:open-request", (e) => {
-  window.getShell()?.openLink(e.detail);
-});
-
-// The divider between the two panes was dragged: the ratio is view state.
-document.addEventListener("workbench:split-ratio", (e) => {
-  const sh = window.getShell();
-  if (!sh) return;
-  sh.splitRatio = e.detail.ratio;
-  // Re-told, not only stored: the viewer repaints `--wb-split` from the ratio
-  // it was last given, and a repaint can come before the next activation.
-  sh.syncViewer();
-  sh.persistView();
-});
-
-// The canvas resized. Only a crossing of the split's width floor changes what
-// is painted, so the fold reruns on the crossing alone — not per pixel.
-let wbCanvasWide = null;
-document.addEventListener("workbench:canvas-resize", (e) => {
-  const sh = window.getShell();
-  if (!sh) return;
-  const wide = window.WBSplit.available(e.detail.width);
-  if (wide === wbCanvasWide) return;
-  wbCanvasWide = wide;
-  if (sh.slot) sh.syncViewer();
-});
-
-// The popups this shell opened. Membership is the authorisation for every
-// message below.
-const detachedWindows = new Map();
-
-// A popup that closes sends its bytes home on unload (`wb-reattach`). One that
-// dies without an unload event (a crashed or killed renderer) is found by this
-// poll and comes home with the descriptor it was detached with. The poll acts
-// on the SECOND tick that sees it closed: the unload message carries the
-// edited bytes and must win over the detach-time copy.
-const detachedClosedSeen = new Set();
-let detachedPoll = null;
-
-function watchDetached(win, desc) {
-  detachedWindows.set(win, desc);
-  if (!detachedPoll) detachedPoll = window.setInterval(pollDetached, 500);
-}
-
-function pollDetached() {
-  for (const [win, desc] of [...detachedWindows]) {
-    if (!win.closed) continue;
-    if (detachedClosedSeen.has(win)) reattachFile(win, desc);
-    else detachedClosedSeen.add(win);
-  }
-}
-
-// Whether a detached file window holds an edit not yet saved. The popups
-// are same-origin windows this shell opened, so it asks their viewer directly.
-function detachedDirty() {
-  for (const win of detachedWindows.keys()) {
-    if (!win.closed && win.WBViewer?.anyDirty?.()) return true;
-  }
-  return false;
-}
-
-// Close every detached file window; each one's unload sends its file home.
-function closeDetached() {
-  for (const win of detachedWindows.keys()) if (!win.closed) win.close();
-}
-
-// The one way a detached file comes home: the button, the popup's unload and
-// the poll all end here. Closing the popup matters after an F5 inside it: the
-// unload sent the file home, and the reloaded page has nothing left to show.
-function reattachFile(win, desc) {
-  // The pin comes home with the bytes (#406): explicit `null` is the primary.
-  window.getShell()?.openTab({
-    project: desc.project,
-    path: desc.path,
-    title: desc.path.split("/").pop(),
-    ftype: desc.ftype,
-    content: desc.content,
-    checkout: desc.checkout ?? null,
-    encoding: desc.encoding,
-    bom: desc.bom,
+  document.addEventListener("workbench:columns-leave", (e: any) => {
+    window.getShell()?.leaveColumns(e.detail.ids);
   });
-  detachedWindows.delete(win);
-  detachedClosedSeen.delete(win);
-  if (!detachedWindows.size) {
-    window.clearInterval(detachedPoll);
-    detachedPoll = null;
-  }
-  if (!win.closed) win.close();
-}
-
-// Messages from detached popups. Both guards matter: `e.origin` refuses a
-// page on another origin, `e.source` a same-origin window we did not open.
-// Without them this listener accepted `file.write` from anyone holding a
-// handle to this window.
-window.addEventListener("message", (e) => {
-  if (e.origin !== window.location.origin) return;
-  if (!detachedWindows.has(e.source)) return;
-  const m = e.data;
-  if (!m || typeof m !== "object") return;
-  if (m.type === "wb-detach-ready") {
-    // The popup booted and is asking for its file.
-    e.source.postMessage({ type: "wb-detach-open", desc: detachedWindows.get(e.source) }, window.location.origin);
-  } else if (m.type === "wb-emit") {
-    // `fromWindow` lets a save's answer reach the pane that sent it.
-    WB.emit(m.action, { ...m.detail, fromWindow: e.source });
-  } else if (m.type === "wb-open-request" && m.detail) {
-    // A link clicked inside a detached pane; `openLink` re-classifies, so the
-    // popup decides nothing about what opens.
-    window.getShell()?.openLink({
-      project: m.detail.project,
-      path: m.detail.path,
-      fragment: m.detail.fragment,
-      checkout: m.detail.checkout ?? null,
+  document.addEventListener("workbench:fence-columns", (e: any) => {
+    window.getShell()?.columnsFromFence(e.detail.items);
+  });
+  document.addEventListener("workbench:desk-restored", () => {
+    window.getShell()?.restoreColumns();
+  });
+  // A narrower or wider viewport changes the cap. One repaint per frame.
+  let columnsFrame = 0;
+  window.addEventListener("resize", () => {
+    if (columnsFrame) return;
+    columnsFrame = requestAnimationFrame(() => {
+      columnsFrame = 0;
+      window.getShell()?.paintColumns();
     });
-  } else if (m.type === "wb-reattach" && m.desc) {
-    // A second `wb-reattach` from the same popup (the button, then its own
-    // unload) never gets here: the guard above drops a window no longer held.
-    reattachFile(e.source, m.desc);
+  });
+
+  // …and of the stage extent, for the footer pill (#338).
+  document.addEventListener("workbench:stage-extent", (e: any) => {
+    const c = window.getShell();
+    if (!c) return;
+    c.stageW = e.detail.width;
+    c.stageH = e.detail.height;
+  });
+
+  // A viewer asked to detach → open the popup and close the tab.
+  document.addEventListener("workbench:detach-request", (e: any) => {
+    window.getShell()?.detachFile(e.detail);
+  });
+
+  // A rendered markdown link asked for a repo file → open (or focus) its tab.
+  document.addEventListener("workbench:open-request", (e: any) => {
+    window.getShell()?.openLink(e.detail);
+  });
+
+  // The divider between the two panes was dragged: the ratio is view state.
+  document.addEventListener("workbench:split-ratio", (e: any) => {
+    const sh = window.getShell();
+    if (!sh) return;
+    sh.splitRatio = e.detail.ratio;
+    // Re-told, not only stored: the viewer repaints `--wb-split` from the ratio
+    // it was last given, and a repaint can come before the next activation.
+    sh.syncViewer();
+    sh.persistView();
+  });
+
+  // The canvas resized. Only a crossing of the split's width floor changes what
+  // is painted, so the fold reruns on the crossing alone — not per pixel.
+  let wbCanvasWide: any = null;
+  document.addEventListener("workbench:canvas-resize", (e: any) => {
+    const sh = window.getShell();
+    if (!sh) return;
+    const wide = window.WBSplit.available(e.detail.width);
+    if (wide === wbCanvasWide) return;
+    wbCanvasWide = wide;
+    if (sh.slot) sh.syncViewer();
+  });
+
+  // The popups this shell opened. Membership is the authorisation for every
+  // message below.
+  const detachedWindows = new Map();
+
+  // A popup that closes sends its bytes home on unload (`wb-reattach`). One that
+  // dies without an unload event (a crashed or killed renderer) is found by this
+  // poll and comes home with the descriptor it was detached with. The poll acts
+  // on the SECOND tick that sees it closed: the unload message carries the
+  // edited bytes and must win over the detach-time copy.
+  const detachedClosedSeen = new Set();
+  let detachedPoll: any = null;
+
+  function watchDetached(win: any, desc: any) {
+    detachedWindows.set(win, desc);
+    if (!detachedPoll) detachedPoll = window.setInterval(pollDetached, 500);
   }
-});
 
-// --- Write byte-ops (#197): the workspace-mutating seam actions go to the
-// daemon's confined `file.*` verbs; a refusal is flashed. The browser composes
-// the full rel path.
-(function wireWriteVerbs() {
-  const daemonBacked = () => !!window.WBDaemon?.write;
-  const flash = (msg) => window.getShell()?._flashAction?.(msg);
-  const call = (verb, payload, okMsg) => {
-    WBDaemon.write(verb, payload)
-      .then((reply) => {
-        if (window.WBFail.isError(reply)) flash(window.WBFail.failed(reply, "Could not rename: the daemon gave no reason."));
-        else if (okMsg) flash(okMsg);
-      })
-      .catch(() => flash("Could not rename: the daemon did not answer."));
-  };
+  function pollDetached() {
+    for (const [win, desc] of [...detachedWindows]) {
+      if (!win.closed) continue;
+      if (detachedClosedSeen.has(win)) reattachFile(win, desc);
+      else detachedClosedSeen.add(win);
+    }
+  }
 
-  document.addEventListener("workbench:action", async (e) => {
-    if (!daemonBacked()) return;
-    const d = e.detail || {};
-    const repo = d.project;
-    if (!repo) return;
-    // Every Write carries the checkout it is aimed at (#406): a Save says its
-    // tab's PIN (explicit `null` = the primary, never the selection), a tree
-    // gesture says the current selection.
-    const checkout =
-      d.checkout !== undefined ? d.checkout : (window.getShell()?.checkoutOf?.(repo) ?? null);
-    const aimed = (payload) => WBDaemon.withCheckout(payload, checkout);
-    switch (d.action) {
-      case "save": {
-        // The pane's encoding rides the write (ADR-0036 amendment 2026-09-22)
-        // and the pane hears the answer: its dirty mark waits for the ack, and
-        // a refusal is read where the bytes are, not in a flash elsewhere.
-        // A detached window's pane is `detached` in its own viewer; a tab's is
-        // its tab id in this one.
-        const viewer = () => (d.fromWindow ? d.fromWindow.WBViewer : window.WBViewer);
-        const id = d.fromWindow ? "detached" : fileTabId(repo, d.path, checkout);
-        const payload = { repo, path: d.path, content: d.content || "" };
-        if (d.encoding) payload.encoding = d.encoding;
-        if (d.bom) payload.bom = true;
-        const send = (p) =>
-          WBDaemon.write("file.write", aimed(p))
-            .then((reply) => {
-              if (!window.WBFail.isError(reply)) return viewer()?.saveDone?.(id);
-              const reason = window.WBFail.message(reply, "the daemon gave no reason");
-              viewer()?.saveFailed?.(id, reason, reply);
-              // UTF-8 represents everything; a refusal under it is not a
-              // conversion question, and asking again would loop.
-              if (reason === "unencodable" && !/^utf-?8$/i.test(p.encoding || "utf-8")) {
-                return offerUtf8(p, reply);
-              }
-              flash(window.WBFail.failed(reply, "Could not save: the daemon gave no reason."));
-            })
-            .catch(() => {
-              viewer()?.saveFailed?.(id, "the daemon did not answer");
-              flash("Could not save: the daemon did not answer.");
-            });
-        // The daemon wrote nothing (a round-trip or a refusal, never a `?`):
-        // the one repair the browser can offer is a DELIBERATE conversion,
-        // named to the operator and made only on their yes.
-        const offerUtf8 = (p, reply) => {
-          const shell = window.getShell();
-          // No shell, no dialog: the pane already says "Could not save" and why.
-          if (!shell?.askConfirm) return;
-          const at = Number(reply?.char_index ?? 0) + 1;
-          const ask = shell.askConfirm({
-            title: `Could not save as ${p.encoding}`,
-            message: `Character ${at} is not representable in ${p.encoding}. Save the file as UTF-8 instead?`,
-            confirmLabel: "Save as UTF-8",
-          });
-          return ask.then((ok) => {
-            if (!ok) return;
-            viewer()?.setEncoding?.(id, "UTF-8", false);
-            const { bom: _bom, ...rest } = p;
-            return send({ ...rest, encoding: "utf-8" });
-          });
-        };
-        send(payload);
-        break;
-      }
-      case "worktree-created": {
-        // A console's switcher cut a worktree: re-read the listing, flash what
-        // the add had to say.
-        const c = window.getShell();
-        c?.ensureWorktreeListing?.(repo, true);
-        if (d.message) c?._flashAction?.(d.message.split("\n").map(window.WBFail.sentence).filter(Boolean).join(" "));
-        break;
-      }
-      case "create": {
-        // `create` carries the target DIRECTORY and no name: ask for it, then
-        // open a created file so the operator lands in it.
-        const folder = d.kind === "folder";
-        const c = window.getShell();
-        const name = c
-          ? await c.askPrompt({
-              // No placeholder: a plausible filename in an empty field reads as
-              // a name already chosen, and operators pressed Enter on it.
-              title: newEntryTitle(folder ? "folder" : "file", d.path),
-              message: "",
-              placeholder: "",
-            })
-          : window.prompt(folder ? "New folder name" : "New file name");
-        if (!name) return;
-        const path = d.path ? `${d.path}/${name}` : name;
-        const reply = await WBDaemon.write("file.create", aimed({ repo, path, dir: folder })).catch(() => null);
-        if (!reply) return flash(`Could not create ${name}: the daemon did not answer.`);
-        if (window.WBFail.isError(reply)) return flash(window.WBFail.failed(reply, `Could not create ${name}: the daemon gave no reason.`));
-        flash(`${name} created.`);
-        if (!folder) c?.openTab({ project: repo, path, title: name, ftype: classify(name) });
-        // Reveal AFTER the level has settled, so `setActive()` is the last
-        // write. `revealRel` expands the ancestors: a nudge for a COLLAPSED dir
-        // is dropped, so a nudge alone would leave the new entry invisible.
-        await c?.onTreeDirty(d.path || "");
-        await c?.revealRel(path);
-        break;
-      }
-      case "rename": {
-        // `from`/`to` are FULL rel paths (shared with the move gesture).
-        call("file.rename", aimed({ repo, path: d.from, to: d.to }));
-        break;
-      }
-      case "delete": {
-        // Irreversible (a folder removes recursively): confirm first.
-        const name = d.title || d.path.split("/").pop() || d.path;
-        const message = d.isFolder
-          ? `Delete folder “${name}” and its contents? This cannot be undone.`
-          : `Delete “${name}”? This cannot be undone.`;
-        const c = window.getShell();
-        const ok = c
-          ? await c.askConfirm({ title: "Delete", message, confirmLabel: "Delete", danger: true })
-          : window.confirm(message);
-        if (!ok) return;
-        const reply = await WBDaemon.write("file.delete", aimed({ repo, path: d.path })).catch(() => null);
-        if (!reply) return flash("Could not delete: the daemon did not answer.");
-        if (!window.WBFail.isError(reply)) return flash(`${name} deleted.`);
-        const reason = window.WBFail.message(reply, "the daemon gave no reason");
-        flash(window.WBFail.failed(reply, "Could not delete: the daemon gave no reason."));
-        // "not found" on a delete says the ROW is the lie: re-list the parent
-        // so the ghost ends up off the screen.
-        if (/not found/i.test(reason)) await c?.onTreeDirty(parentRel(d.path));
-        break;
-      }
-      default:
-        break;
+  // Whether a detached file window holds an edit not yet saved. The popups
+  // are same-origin windows this shell opened, so it asks their viewer directly.
+  function detachedDirty() {
+    for (const win of detachedWindows.keys()) {
+      if (!win.closed && win.WBViewer?.anyDirty?.()) return true;
+    }
+    return false;
+  }
+
+  // Close every detached file window; each one's unload sends its file home.
+  function closeDetached() {
+    for (const win of detachedWindows.keys()) if (!win.closed) win.close();
+  }
+
+  detached = { watch: watchDetached, dirty: detachedDirty, close: closeDetached };
+
+  // The one way a detached file comes home: the button, the popup's unload and
+  // the poll all end here. Closing the popup matters after an F5 inside it: the
+  // unload sent the file home, and the reloaded page has nothing left to show.
+  function reattachFile(win: any, desc: any) {
+    // The pin comes home with the bytes (#406): explicit `null` is the primary.
+    window.getShell()?.openTab({
+      project: desc.project,
+      path: desc.path,
+      title: desc.path.split("/").pop(),
+      ftype: desc.ftype,
+      content: desc.content,
+      checkout: desc.checkout ?? null,
+      encoding: desc.encoding,
+      bom: desc.bom,
+    });
+    detachedWindows.delete(win);
+    detachedClosedSeen.delete(win);
+    if (!detachedWindows.size) {
+      window.clearInterval(detachedPoll);
+      detachedPoll = null;
+    }
+    if (!win.closed) win.close();
+  }
+
+  // Messages from detached popups. Both guards matter: `e.origin` refuses a
+  // page on another origin, `e.source` a same-origin window we did not open.
+  // Without them this listener accepted `file.write` from anyone holding a
+  // handle to this window.
+  window.addEventListener("message", (e: any) => {
+    if (e.origin !== window.location.origin) return;
+    if (!detachedWindows.has(e.source)) return;
+    const m = e.data;
+    if (!m || typeof m !== "object") return;
+    if (m.type === "wb-detach-ready") {
+      // The popup booted and is asking for its file.
+      e.source.postMessage({ type: "wb-detach-open", desc: detachedWindows.get(e.source) }, window.location.origin);
+    } else if (m.type === "wb-emit") {
+      // `fromWindow` lets a save's answer reach the pane that sent it.
+      window.WB.emit(m.action, { ...m.detail, fromWindow: e.source });
+    } else if (m.type === "wb-open-request" && m.detail) {
+      // A link clicked inside a detached pane; `openLink` re-classifies, so the
+      // popup decides nothing about what opens.
+      window.getShell()?.openLink({
+        project: m.detail.project,
+        path: m.detail.path,
+        fragment: m.detail.fragment,
+        checkout: m.detail.checkout ?? null,
+      });
+    } else if (m.type === "wb-reattach" && m.desc) {
+      // A second `wb-reattach` from the same popup (the button, then its own
+      // unload) never gets here: the guard above drops a window no longer held.
+      reattachFile(e.source, m.desc);
     }
   });
-})();
 
-// Dismiss the context menu on any outside interaction.
-document.addEventListener("click", () => document.getElementById("ctxmenu") && (document.getElementById("ctxmenu").style.display = "none"));
-document.addEventListener("scroll", () => document.getElementById("ctxmenu") && (document.getElementById("ctxmenu").style.display = "none"), true);
+  // --- Write byte-ops (#197): the workspace-mutating seam actions go to the
+  // daemon's confined `file.*` verbs; a refusal is flashed. The browser composes
+  // the full rel path.
+  (function wireWriteVerbs() {
+    const daemonBacked = () => !!window.WBDaemon?.write;
+    const flash = (msg: any) => window.getShell()?._flashAction?.(msg);
+    const call = (verb: any, payload: any, okMsg?: any) => {
+      WBDaemon.write(verb, payload)
+        .then((reply: any) => {
+          if (window.WBFail.isError(reply)) flash(window.WBFail.failed(reply, "Could not rename: the daemon gave no reason."));
+          else if (okMsg) flash(okMsg);
+        })
+        .catch(() => flash("Could not rename: the daemon did not answer."));
+    };
 
-// `x-icon="'name'"` draws a lucide icon INTO its own `<svg>`. It never swaps the
-// element (lucide's `createIcons` replaces it), so it is still the node Alpine
-// bound: the icon renders wherever Alpine initializes an element — page load, a
-// new `x-if` branch, a new `x-for` row — and a changed name redraws it. The
-// output matches `createIcons` (lucide 0.460.0): the icon's default attributes
-// where the markup set none, `data-lucide` (the stylesheets select on it), and
-// the `lucide lucide-<name>` classes.
-document.addEventListener("alpine:init", () => {
-  const pascal = (name) =>
-    name.replace(/(\w)(\w*)(_|-|\s*)/g, (_, first, rest) => first.toUpperCase() + rest.toLowerCase());
-  window.Alpine.directive("icon", (el, { expression }, { evaluateLater, effect }) => {
-    const read = evaluateLater(expression);
-    const authored = new Set(el.getAttributeNames());
-    let drawn = null;
-    effect(() =>
-      read((name) => {
-        if (name === drawn) return;
-        if (drawn) el.classList.remove(`lucide-${drawn}`);
-        drawn = name;
-        const node = window.lucide?.icons[pascal(String(name))];
-        if (!node) {
-          console.warn(`x-icon: no lucide icon named "${name}"`);
-          el.replaceChildren();
-          return;
+    document.addEventListener("workbench:action", async (e: any) => {
+      if (!daemonBacked()) return;
+      const d = e.detail || {};
+      const repo = d.project;
+      if (!repo) return;
+      // Every Write carries the checkout it is aimed at (#406): a Save says its
+      // tab's PIN (explicit `null` = the primary, never the selection), a tree
+      // gesture says the current selection.
+      const checkout =
+        d.checkout !== undefined ? d.checkout : (window.getShell()?.checkoutOf?.(repo) ?? null);
+      const aimed = (payload: any) => WBDaemon.withCheckout(payload, checkout);
+      switch (d.action) {
+        case "save": {
+          // The pane's encoding rides the write (ADR-0036 amendment 2026-09-22)
+          // and the pane hears the answer: its dirty mark waits for the ack, and
+          // a refusal is read where the bytes are, not in a flash elsewhere.
+          // A detached window's pane is `detached` in its own viewer; a tab's is
+          // its tab id in this one.
+          const viewer = () => (d.fromWindow ? d.fromWindow.WBViewer : window.WBViewer);
+          const id = d.fromWindow ? "detached" : fileTabId(repo, d.path, checkout);
+          const payload: any = { repo, path: d.path, content: d.content || "" };
+          if (d.encoding) payload.encoding = d.encoding;
+          if (d.bom) payload.bom = true;
+          const send = (p: any) =>
+            WBDaemon.write("file.write", aimed(p))
+              .then((reply: any) => {
+                if (!window.WBFail.isError(reply)) return viewer()?.saveDone?.(id);
+                const reason = window.WBFail.message(reply, "the daemon gave no reason");
+                viewer()?.saveFailed?.(id, reason, reply);
+                // UTF-8 represents everything; a refusal under it is not a
+                // conversion question, and asking again would loop.
+                if (reason === "unencodable" && !/^utf-?8$/i.test(p.encoding || "utf-8")) {
+                  return offerUtf8(p, reply);
+                }
+                flash(window.WBFail.failed(reply, "Could not save: the daemon gave no reason."));
+              })
+              .catch(() => {
+                viewer()?.saveFailed?.(id, "the daemon did not answer");
+                flash("Could not save: the daemon did not answer.");
+              });
+          // The daemon wrote nothing (a round-trip or a refusal, never a `?`):
+          // the one repair the browser can offer is a DELIBERATE conversion,
+          // named to the operator and made only on their yes.
+          const offerUtf8 = (p: any, reply: any) => {
+            const shell = window.getShell();
+            // No shell, no dialog: the pane already says "Could not save" and why.
+            if (!shell?.askConfirm) return;
+            const at = Number(reply?.char_index ?? 0) + 1;
+            const ask = shell.askConfirm({
+              title: `Could not save as ${p.encoding}`,
+              message: `Character ${at} is not representable in ${p.encoding}. Save the file as UTF-8 instead?`,
+              confirmLabel: "Save as UTF-8",
+            });
+            return ask.then((ok: any) => {
+              if (!ok) return;
+              viewer()?.setEncoding?.(id, "UTF-8", false);
+              const { bom: _bom, ...rest } = p;
+              return send({ ...rest, encoding: "utf-8" });
+            });
+          };
+          send(payload);
+          break;
         }
-        const [, attrs, children] = node;
-        for (const [key, value] of Object.entries(attrs)) {
-          // `class` is merged below: `:class` on the same element owns the rest.
-          if (key !== "class" && !authored.has(key)) el.setAttribute(key, String(value));
+        case "worktree-created": {
+          // A console's switcher cut a worktree: re-read the listing, flash what
+          // the add had to say.
+          const c = window.getShell();
+          c?.ensureWorktreeListing?.(repo, true);
+          if (d.message) c?._flashAction?.(d.message.split("\n").map(window.WBFail.sentence).filter(Boolean).join(" "));
+          break;
         }
-        el.setAttribute("data-lucide", name);
-        el.classList.add("lucide", `lucide-${name}`);
-        el.replaceChildren(...children.map((child) => window.lucide.createElement(child)));
-      }),
-    );
+        case "create": {
+          // `create` carries the target DIRECTORY and no name: ask for it, then
+          // open a created file so the operator lands in it.
+          const folder = d.kind === "folder";
+          const c = window.getShell();
+          const name = c
+            ? await c.askPrompt({
+                // No placeholder: a plausible filename in an empty field reads as
+                // a name already chosen, and operators pressed Enter on it.
+                title: newEntryTitle(folder ? "folder" : "file", d.path),
+                message: "",
+                placeholder: "",
+              })
+            : window.prompt(folder ? "New folder name" : "New file name");
+          if (!name) return;
+          const path = d.path ? `${d.path}/${name}` : name;
+          const reply = await WBDaemon.write("file.create", aimed({ repo, path, dir: folder })).catch(() => null);
+          if (!reply) return flash(`Could not create ${name}: the daemon did not answer.`);
+          if (window.WBFail.isError(reply)) return flash(window.WBFail.failed(reply, `Could not create ${name}: the daemon gave no reason.`));
+          flash(`${name} created.`);
+          if (!folder) c?.openTab({ project: repo, path, title: name, ftype: classify(name) });
+          // Reveal AFTER the level has settled, so `setActive()` is the last
+          // write. `revealRel` expands the ancestors: a nudge for a COLLAPSED dir
+          // is dropped, so a nudge alone would leave the new entry invisible.
+          await c?.onTreeDirty(d.path || "");
+          await c?.revealRel(path);
+          break;
+        }
+        case "rename": {
+          // `from`/`to` are FULL rel paths (shared with the move gesture).
+          call("file.rename", aimed({ repo, path: d.from, to: d.to }));
+          break;
+        }
+        case "delete": {
+          // Irreversible (a folder removes recursively): confirm first.
+          const name = d.title || d.path.split("/").pop() || d.path;
+          const message = d.isFolder
+            ? `Delete folder “${name}” and its contents? This cannot be undone.`
+            : `Delete “${name}”? This cannot be undone.`;
+          const c = window.getShell();
+          const ok = c
+            ? await c.askConfirm({ title: "Delete", message, confirmLabel: "Delete", danger: true })
+            : window.confirm(message);
+          if (!ok) return;
+          const reply = await WBDaemon.write("file.delete", aimed({ repo, path: d.path })).catch(() => null);
+          if (!reply) return flash("Could not delete: the daemon did not answer.");
+          if (!window.WBFail.isError(reply)) return flash(`${name} deleted.`);
+          const reason = window.WBFail.message(reply, "the daemon gave no reason");
+          flash(window.WBFail.failed(reply, "Could not delete: the daemon gave no reason."));
+          // "not found" on a delete says the ROW is the lie: re-list the parent
+          // so the ghost ends up off the screen.
+          if (/not found/i.test(reason)) await c?.onTreeDirty(parentRel(d.path));
+          break;
+        }
+        default:
+          break;
+      }
+    });
+  })();
+
+  // Dismiss the context menu on any outside interaction.
+  document.addEventListener("click", () => document.getElementById("ctxmenu") && (document.getElementById("ctxmenu")!.style.display = "none"));
+  document.addEventListener("scroll", () => document.getElementById("ctxmenu") && (document.getElementById("ctxmenu")!.style.display = "none"), true);
+
+  // `x-icon="'name'"` draws a lucide icon INTO its own `<svg>`. It never swaps the
+  // element (lucide's `createIcons` replaces it), so it is still the node Alpine
+  // bound: the icon renders wherever Alpine initializes an element — page load, a
+  // new `x-if` branch, a new `x-for` row — and a changed name redraws it. The
+  // output matches `createIcons` (lucide 0.460.0): the icon's default attributes
+  // where the markup set none, `data-lucide` (the stylesheets select on it), and
+  // the `lucide lucide-<name>` classes.
+  document.addEventListener("alpine:init", () => {
+    const pascal = (name: any) =>
+      name.replace(/(\w)(\w*)(_|-|\s*)/g, (_: any, first: any, rest: any) => first.toUpperCase() + rest.toLowerCase());
+    window.Alpine.directive("icon", (el: any, { expression }: any, { evaluateLater, effect }: any) => {
+      const read = evaluateLater(expression);
+      const authored = new Set(el.getAttributeNames());
+      let drawn: any = null;
+      effect(() =>
+        read((name: any) => {
+          if (name === drawn) return;
+          if (drawn) el.classList.remove(`lucide-${drawn}`);
+          drawn = name;
+          const node = window.lucide?.icons[pascal(String(name))];
+          if (!node) {
+            console.warn(`x-icon: no lucide icon named "${name}"`);
+            el.replaceChildren();
+            return;
+          }
+          const [, attrs, children] = node;
+          for (const [key, value] of Object.entries(attrs)) {
+            // `class` is merged below: `:class` on the same element owns the rest.
+            if (key !== "class" && !authored.has(key)) el.setAttribute(key, String(value));
+          }
+          el.setAttribute("data-lucide", name);
+          el.classList.add("lucide", `lucide-${name}`);
+          el.replaceChildren(...children.map((child: any) => window.lucide.createElement(child)));
+        }),
+      );
+    });
   });
-});
 
-// Alt+Shift+<digit> → the menu row carrying that digit, through the SAME row
-// action as a click. Matched on `e.code` so layout does not matter. R is no
-// row: it opens the menu on the console row's command field, so the digits
-// stay a sequence of rows. They work from inside a terminal too: its xterm
-// hands them over (wb-console.js).
-document.addEventListener("keydown", (e) => {
-  if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
-  if (!/^(?:Digit\d|KeyR)$/.test(e.code)) return;
-  const c = window.getShell();
-  if (!c || c.consoleShortcutsBlocked(true)) return;
-  if (e.code === "KeyR") {
-    e.preventDefault();
-    c.openConsoleRunMenu();
-    return;
-  }
-  const row = c.consoleItems().find((it) => e.code === "Digit" + it.digit);
-  // No row, or a disabled one: inert, and the key is not swallowed.
-  if (!row || row.disabled) return;
-  e.preventDefault();
-  c.openConsoleItem(row);
-});
-
-// Alt+Shift+arrows → walk the columns (←/→) and the rows of a column (↑/↓)
-// while two or more consoles are open, from inside a column's terminal too;
-// otherwise ←/→ walk the fences in reading order (`fenceCycle`) — ADR-0051 §5.
-// With nothing to walk the key is left UNSWALLOWED.
-const ARROW_STEPS = {
-  ArrowRight: ["x", 1],
-  ArrowLeft: ["x", -1],
-  ArrowDown: ["y", 1],
-  ArrowUp: ["y", -1],
-};
-document.addEventListener("keydown", (e) => {
-  if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
-  const move = ARROW_STEPS[e.code];
-  if (!move) return;
-  const c = window.getShell();
-  if (!c || c.consoleShortcutsBlocked(c.columnIds().length >= 2)) return;
-  if (!c.arrowStep(...move)) return;
-  e.preventDefault();
-});
-
-// Alt+Shift+F<n> → the n-th fence, F1..F12 (the fence cap). None of the
-// reserved neighbours is hit — Alt+F4, Shift+F10, F11, F12 each want their
-// exact combo (MEASURED: with Alt+Shift held, F10–F12 reach the document).
-// With no fence at that ordinal the key is left UNSWALLOWED.
-document.addEventListener("keydown", (e) => {
-  if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
-  if (!/^F(?:[1-9]|1[0-2])$/.test(e.code)) return;
-  const c = window.getShell();
-  if (!c || c.consoleShortcutsBlocked()) return;
-  if (!c.jumpFenceAt(Number(e.code.slice(1)))) return;
-  e.preventDefault();
-});
-
-// `/` → the search on screen: FILES while a project is open, projects
-// otherwise.
-document.addEventListener("keydown", (e) => {
-  if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
-  const c = window.getShell();
-  if (!c || c.consoleShortcutsBlocked()) return;
-  e.preventDefault();
-  if (c.openSlug) c.openFileSearch();
-  else c.focusProjectSearch();
-});
-
-// Ctrl/Cmd+Shift+F → the FILES search. NOT `consoleShortcutsBlocked`: the
-// editor is exactly where "find in files" is reached for.
-document.addEventListener("keydown", (e) => {
-  if (!(e.ctrlKey || e.metaKey) || !e.shiftKey || e.altKey) return;
-  if (e.key !== "F" && e.key !== "f") return;
-  const c = window.getShell();
-  if (!c || !c.authed || !c.openSlug) return;
-  if (c.modalOpen(window.WBSettingsDialog.openFlag) || c.modalOpen(window.WBSecurityDialog.openFlag) || c.runOpen || c.branchOpen || c.modalOpen(window.WBReleaseDialogs.whatsNewFlag)) return;
-  e.preventDefault();
-  c.openFileSearch();
-});
-
-window.WBRuns = {
-  // Append a raw output chunk, capped so the DOM never grows unbounded.
-  output(text) {
+  // Alt+Shift+<digit> → the menu row carrying that digit, through the SAME row
+  // action as a click. Matched on `e.code` so layout does not matter. R is no
+  // row: it opens the menu on the console row's command field, so the digits
+  // stay a sequence of rows. They work from inside a terminal too: its xterm
+  // hands them over (wb-console.js).
+  document.addEventListener("keydown", (e) => {
+    if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
+    if (!/^(?:Digit\d|KeyR)$/.test(e.code)) return;
     const c = window.getShell();
-    if (c) c.rawFeed = (c.rawFeed + text).slice(-8000);
-  },
-};
+    if (!c || c.consoleShortcutsBlocked(true)) return;
+    if (e.code === "KeyR") {
+      e.preventDefault();
+      c.openConsoleRunMenu();
+      return;
+    }
+    const row = c.consoleItems().find((it: any) => e.code === "Digit" + it.digit);
+    // No row, or a disabled one: inert, and the key is not swallowed.
+    if (!row || row.disabled) return;
+    e.preventDefault();
+    c.openConsoleItem(row);
+  });
+
+  // Alt+Shift+arrows → walk the columns (←/→) and the rows of a column (↑/↓)
+  // while two or more consoles are open, from inside a column's terminal too;
+  // otherwise ←/→ walk the fences in reading order (`fenceCycle`) — ADR-0051 §5.
+  // With nothing to walk the key is left UNSWALLOWED.
+  const ARROW_STEPS = {
+    ArrowRight: ["x", 1],
+    ArrowLeft: ["x", -1],
+    ArrowDown: ["y", 1],
+    ArrowUp: ["y", -1],
+  };
+  document.addEventListener("keydown", (e) => {
+    if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
+    const move = ARROW_STEPS[e.code as keyof typeof ARROW_STEPS];
+    if (!move) return;
+    const c = window.getShell();
+    if (!c || c.consoleShortcutsBlocked(c.columnIds().length >= 2)) return;
+    if (!c.arrowStep(...move)) return;
+    e.preventDefault();
+  });
+
+  // Alt+Shift+F<n> → the n-th fence, F1..F12 (the fence cap). None of the
+  // reserved neighbours is hit — Alt+F4, Shift+F10, F11, F12 each want their
+  // exact combo (MEASURED: with Alt+Shift held, F10–F12 reach the document).
+  // With no fence at that ordinal the key is left UNSWALLOWED.
+  document.addEventListener("keydown", (e) => {
+    if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
+    if (!/^F(?:[1-9]|1[0-2])$/.test(e.code)) return;
+    const c = window.getShell();
+    if (!c || c.consoleShortcutsBlocked()) return;
+    if (!c.jumpFenceAt(Number(e.code.slice(1)))) return;
+    e.preventDefault();
+  });
+
+  // `/` → the search on screen: FILES while a project is open, projects
+  // otherwise.
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
+    const c = window.getShell();
+    if (!c || c.consoleShortcutsBlocked()) return;
+    e.preventDefault();
+    if (c.openSlug) c.openFileSearch();
+    else c.focusProjectSearch();
+  });
+
+  // Ctrl/Cmd+Shift+F → the FILES search. NOT `consoleShortcutsBlocked`: the
+  // editor is exactly where "find in files" is reached for.
+  document.addEventListener("keydown", (e) => {
+    if (!(e.ctrlKey || e.metaKey) || !e.shiftKey || e.altKey) return;
+    if (e.key !== "F" && e.key !== "f") return;
+    const c = window.getShell();
+    if (!c || !c.authed || !c.openSlug) return;
+    if (c.modalOpen(window.WBSettingsDialog.openFlag) || c.modalOpen(window.WBSecurityDialog.openFlag) || c.runOpen || c.branchOpen || c.modalOpen(window.WBReleaseDialogs.whatsNewFlag)) return;
+    e.preventDefault();
+    c.openFileSearch();
+  });
+
+  window.WBRuns = {
+    // Append a raw output chunk, capped so the DOM never grows unbounded.
+    output(text) {
+      const c = window.getShell();
+      if (c) c.rawFeed = (c.rawFeed + text).slice(-8000);
+    },
+  };
+}
+
+/** The `shell()` component: a component's `uses` names come from it (ADR-0075 D6). */
+export type Shell = ReturnType<typeof shell>;
+
+if (typeof document !== "undefined") wire(window, document);

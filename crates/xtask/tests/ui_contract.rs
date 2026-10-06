@@ -27,7 +27,7 @@ const FIXTURES: &str = "crates/ralphy-daemon/ui-tests/fixtures";
 /// literal (an exemption cannot hide a producer) and must be produced in JS.
 const UI_OWNED: &[(&str, &str)] = &[(
     "transport",
-    "app.js refuse(\"transport\"): the browser could not reach the daemon",
+    "app.ts refuse(\"transport\"): the browser could not reach the daemon",
 )];
 
 /// Measured 28 distinct literals on this change (23 `CAUSE` keys and 5
@@ -493,7 +493,7 @@ const MIRRORS: &[(&str, &str, &str, &str)] = &[
         "protocol.rs",
         "TAG_PRESENCE",
     ),
-    ("app.js", "PROTECTED_DIRS", "fswrite.rs", "PROTECTED_DIRS"),
+    ("app.ts", "PROTECTED_DIRS", "fswrite.rs", "PROTECTED_DIRS"),
     (
         "wb-file-search.ts",
         "MIN_CHARS",
@@ -507,7 +507,7 @@ const MIRRORS: &[(&str, &str, &str, &str)] = &[
 /// `(js file, js function, rust file, rust function)`: both bodies must hold
 /// the same path words.
 const NOTE_EXCEPTION: (&str, &str, &str, &str) = (
-    "app.js",
+    "app.ts",
     "isNoteInNotesDir",
     "fswrite.rs",
     "is_note_in_notes_dir",

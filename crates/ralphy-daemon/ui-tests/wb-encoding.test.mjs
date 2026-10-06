@@ -8,11 +8,11 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { loadShell } from "./harness.mjs";
 
-// app.js names its siblings bare (`WBDaemon`, `WBViewer`), which the browser
+// app.ts names its siblings bare (`WBDaemon`, `WBViewer`), which the browser
 // resolves through `window` and Node through `globalThis`: mirror the fakes
 // there for this file, and take them down after it so no other file inherits
 // a daemon that answers.
-const GLOBALS = ["WB", "WBDaemon", "WBViewer"];
+const GLOBALS = ["WBDaemon", "WBViewer"];
 after(() => GLOBALS.forEach((k) => delete globalThis[k]));
 
 // A shell whose daemon answers `file.read` with `reply` and records every

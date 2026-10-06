@@ -1279,7 +1279,7 @@ async fn api_about_route_reports_version_and_facts() {
 #[test]
 fn the_release_badge_and_panel_are_pinned_in_the_served_assets() {
     let html = include_str!("../assets/ui/index.html");
-    let app = include_str!("../assets/ui/app.js");
+    let app = include_str!("../assets/ui/app.ts");
     let module = include_str!("../assets/ui/wb-release.ts");
     let dialogs = include_str!("../assets/ui/wb-release-dialogs.ts");
     let css = served_css();
@@ -2788,13 +2788,13 @@ async fn root_serves_vendored_xterm() {
 /// gestures the daemon now accepts there.
 #[test]
 fn the_explorer_opens_a_note_as_a_card() {
-    let app = include_str!("../assets/ui/app.js");
+    let app = include_str!("../assets/ui/app.ts");
     assert!(
         app.contains(r#"if (ext === "note") return "note";"#),
         "classify must name a `.note` (ADR-0064 §11)"
     );
     for pin in ["openNote(path)", "WBNotes.openFromExplorer("] {
-        assert!(app.contains(pin), "app.js must keep the ADR-0064 pin {pin}");
+        assert!(app.contains(pin), "app.ts must keep the ADR-0064 pin {pin}");
     }
     // The UI's mirror of the denylist carve-out (`isNoteInNotesDir`) is
     // driven through the context menu by `ui-tests/app.test.mjs`.
@@ -3295,13 +3295,13 @@ async fn consoles_tab_is_fixed_and_named() {
     let body = body_string(get_local("/app.js").await).await;
     assert!(
         !body.contains(r#"title: "Agents""#),
-        "app.js must not carry the old tab title \"Agents\""
+        "app.ts must not carry the old tab title \"Agents\""
     );
     // The object literal that sets `id: "consoles"`, however it is wrapped.
     let code = squeeze(&body);
     let at = code
         .find(r#"id:"consoles""#)
-        .unwrap_or_else(|| panic!("no object in app.js sets id: \"consoles\""));
+        .unwrap_or_else(|| panic!("no object in app.ts sets id: \"consoles\""));
     let open = code[..at]
         .rfind('{')
         .expect("the id sits in an object literal");
@@ -3923,7 +3923,7 @@ fn tag_references(html: &str) -> Vec<String> {
 /// The three shells and the embedded tree agree, in both directions.
 ///
 /// This is the regression a file split actually causes, and until now
-/// NOTHING caught it: you move a fold out of `app.js` into `wb-foo.js`, and
+/// NOTHING caught it: you move a fold out of `app.ts` into `wb-foo.js`, and
 /// you forget the `<script>` tag — or you add it to `index.html` and not to
 /// `detached-fence.html`, which loads its own subset of the same modules.
 /// Every substring pin in this file still passes, every `node --test` still
@@ -4176,7 +4176,6 @@ fn every_ui_test_file_is_imported_by_the_barrel() {
 /// D9). A ratchet: a file leaves the list in the change that moves it, and
 /// nothing joins it.
 const CLASSIC_SCRIPTS: &[&str] = &[
-    "app.js",
     "wb-columns.js",
     "wb-console.js",
     "wb-console-name.js",
@@ -4197,6 +4196,7 @@ const CLASSIC_SCRIPTS: &[&str] = &[
 /// The `window.WB*` names a module still sets, because a classic script
 /// reads them (ADR-0075 D9). A ratchet like `CLASSIC_SCRIPTS`.
 const MODULE_WINDOW_NAMES: &[&str] = &[
+    "WB",
     "WBAddProject",
     "WBAgents",
     "WBChanges",
@@ -4209,6 +4209,7 @@ const MODULE_WINDOW_NAMES: &[&str] = &[
     "WBRelease",
     "WBReleaseDialogs",
     "WBRun",
+    "WBRuns",
     "WBSecurityDialog",
     "WBSettingsDialog",
     "WBSpend",
@@ -4578,16 +4579,16 @@ fn presence_staleness_is_derived_on_a_clock_not_inside_the_binding() {
         !html.contains("Date.now() - _lastHeartbeat"),
         "staleness must not be computed inside a binding — it cannot re-fire"
     );
-    let app = include_str!("../assets/ui/app.js");
+    let app = include_str!("../assets/ui/app.ts");
     assert!(
         app.contains("presenceStale: false,"),
-        "app.js must declare the flag as reactive state"
+        "app.ts must declare the flag as reactive state"
     );
     // Inside the tick, not merely somewhere in the file: a computation that
     // is not on a clock is the bug this test is named after.
     let tick = app
         .split_once("this._clockTick = setInterval(")
-        .expect("app.js must keep the shell's clock tick")
+        .expect("app.ts must keep the shell's clock tick")
         .1;
     let tick = &tick[..tick.find("}, 1000);").expect("the clock tick must close")];
     assert!(
@@ -4625,10 +4626,10 @@ fn the_workbench_never_titles_a_repo_with_its_routing_head() {
             "a detached popup must load the fold it calls"
         );
     }
-    let app = include_str!("../assets/ui/app.js");
+    let app = include_str!("../assets/ui/app.ts");
     assert!(
-        app.contains("projectLabel(ref) {"),
-        "app.js must keep the label helper the shell binds to"
+        app.contains("projectLabel(ref: any) {"),
+        "app.ts must keep the label helper the shell binds to"
     );
     // The crumb is the surface that STARTED this, and it no longer exists:
     // it went with the top bar, because the sidebar already names the open
@@ -4695,10 +4696,10 @@ fn shell_draws_fences_below_the_windows() {
         js.contains(r#"querySelectorAll(".session-window, .fence, .note-card")"#),
         "applyExtent must fold the fences and the cards into the stage extent (#340, ADR-0064)"
     );
-    let app = include_str!("../assets/ui/app.js");
+    let app = include_str!("../assets/ui/app.ts");
     assert!(
         app.contains("newFence("),
-        "app.js must wire the toolbar act"
+        "app.ts must wire the toolbar act"
     );
     let html = include_str!("../assets/ui/index.html");
     assert!(
@@ -4789,7 +4790,7 @@ fn shell_draws_fences_below_the_windows() {
         "numbering by the fence COUNT collides at the cap — measured"
     );
 
-    let app_js = include_str!("../assets/ui/app.js");
+    let app_js = include_str!("../assets/ui/app.ts");
     let app: String = app_js.split_whitespace().collect::<Vec<_>>().join(" ");
     // The shell says why before the click and again if one gets through — the
     // #318 idiom, since `wb-console.js` reaches no shell and can only refuse.
@@ -4827,7 +4828,7 @@ fn shell_draws_fences_below_the_windows() {
     // varies across the twelve rows, and spelling it in each one crowded the
     // panel until the name wrapped mid-word beside `Alt+Shift+F10`.
     assert!(
-        app.contains("fenceShortcutLabel(n) { return `F${n}`; }"),
+        app.contains("fenceShortcutLabel(n: any) { return `F${n}`; }"),
         "a fence row's label must be the bare key"
     );
     assert!(
@@ -5273,7 +5274,7 @@ fn shell_arranges_into_the_fence() {
             .contains("minWidth"),
         "arrangeFence must relax the CSS floor for a tile below it (#342)"
     );
-    let app = include_str!("../assets/ui/app.js");
+    let app = include_str!("../assets/ui/app.ts");
     assert!(
         !app.contains("arrangeConsoles"),
         "the shell's global arrange action must be gone (#342)"
@@ -5512,9 +5513,9 @@ fn shell_lists_the_fences() {
         body("function refreshFenceChrome(").contains("fenceSummaries("),
         "the fence chrome must read the same fold the list does (#343)"
     );
-    let app = include_str!("../assets/ui/app.js");
+    let app = include_str!("../assets/ui/app.ts");
     for pin in ["jumpFence(", "fenceList()"] {
-        assert!(app.contains(pin), "app.js must keep the #343 pin {pin}");
+        assert!(app.contains(pin), "app.ts must keep the #343 pin {pin}");
     }
     let html = include_str!("../assets/ui/index.html");
     // `class="fence-item"`, not the bare noun: the markup's own comment
@@ -5567,15 +5568,15 @@ fn a_detached_file_comes_home_when_its_popup_closes() {
             "detached.html must keep the unload re-attach {pin}"
         );
     }
-    let app = include_str!("../assets/ui/app.js");
+    let app = include_str!("../assets/ui/app.ts");
     for pin in [
-        "watchDetached(win, desc);",
+        "detached.watch(win, desc);",
         "window.setInterval(pollDetached, 500)",
         "reattachFile(e.source, m.desc);",
     ] {
         assert!(
             app.contains(pin),
-            "app.js must keep the detached-file re-attach {pin}"
+            "app.ts must keep the detached-file re-attach {pin}"
         );
     }
 }
@@ -5995,7 +5996,7 @@ fn workbench_session_assets_preserve_composite_repo_identity() {
     ] {
         assert!(console.contains(pin), "wb-console.js must keep {pin}");
     }
-    assert!(include_str!("../assets/ui/app.js").contains("WBSessionRoute.matchesRepo("));
+    assert!(include_str!("../assets/ui/app.ts").contains("WBSessionRoute.matchesRepo("));
 }
 
 /// The stage/viewport shell (#336). A clamp lives in CSS and markup, which
@@ -6125,11 +6126,11 @@ fn shell_navigates_the_plane() {
         "the stage itself must advertise the grab cursor (#337)"
     );
 
-    // The picker's wiring lives in app.js; without this the `@click`
+    // The picker's wiring lives in app.ts; without this the `@click`
     // handlers in index.html can go dangling with every test still green.
-    let app = include_str!("../assets/ui/app.js");
+    let app = include_str!("../assets/ui/app.ts");
     for pin in ["toggleWindowMenu(", "revealWindow(", "windowList"] {
-        assert!(app.contains(pin), "app.js must keep the #337 pin {pin}");
+        assert!(app.contains(pin), "app.ts must keep the #337 pin {pin}");
     }
 
     let html = include_str!("../assets/ui/index.html");
@@ -6384,7 +6385,7 @@ fn shell_stores_only_the_view_in_the_browser() {
     // starts.
     for (name, src) in [
         ("wb-console.js", include_str!("../assets/ui/wb-console.js")),
-        ("app.js", include_str!("../assets/ui/app.js")),
+        ("app.ts", include_str!("../assets/ui/app.ts")),
     ] {
         assert!(
             !src.contains("localStorage"),
@@ -6475,14 +6476,14 @@ fn a_quiet_detach_peer_is_challenged_before_it_is_buried() {
 /// because the browser pass — Playwright — does not run in CI.
 #[test]
 fn the_console_chrome_holds_its_three_rules() {
-    let app = include_str!("../assets/ui/app.js");
+    let app = include_str!("../assets/ui/app.ts");
     let html = include_str!("../assets/ui/index.html");
     // ONE dropdown at a time. Every toggler goes through `closeMenus`, which
     // enumerates the four in ONE place — the account menu and the toolbar's
     // pickers used to enumerate each other and left both open, overlapping.
     assert!(
         app.contains("closeMenus() {") && app.contains("this.avatarMenu = false;"),
-        "app.js must close every menu from one place"
+        "app.ts must close every menu from one place"
     );
     for pin in ["toggleAvatarMenu()", "toggleAgentMenu()"] {
         assert!(html.contains(pin), "index.html must toggle through {pin}");
@@ -6798,7 +6799,7 @@ fn the_run_picker_names_the_model_and_clocks_the_phase() {
         "the picker's headline must be the model, not the vendor"
     );
 
-    let app_js = include_str!("../assets/ui/app.js");
+    let app_js = include_str!("../assets/ui/app.ts");
     let app: String = app_js.split_whitespace().collect::<Vec<_>>().join(" ");
     // The tick is what makes the clock live, and reading `nowMs` in the getter
     // is what subscribes the binding to it — a `Date.now()` inside `runClock`
@@ -6927,7 +6928,7 @@ fn the_label_editor_is_unclipped_and_closed_under_a_live_run() {
         "both the edit button and the option rows must be gated"
     );
 
-    let app_js = include_str!("../assets/ui/app.js");
+    let app_js = include_str!("../assets/ui/app.ts");
     // ONE predicate, two subjects — the drift #318 avoided. A second
     // "does this repo have a live run" test is how the gate and the controls
     // beside it start disagreeing. The sentence itself is driven by
@@ -6948,10 +6949,10 @@ fn the_label_editor_is_unclipped_and_closed_under_a_live_run() {
 /// which is the wrong furniture for the panel's most consequential click.
 #[test]
 fn stopping_a_run_confirms_through_the_design_system_dialog() {
-    let code = squeeze(include_str!("../assets/ui/app.js"));
+    let code = squeeze(include_str!("../assets/ui/app.ts"));
     let start = code
         .find("asyncstopRun(")
-        .expect("app.js must keep stopRun");
+        .expect("app.ts must keep stopRun");
     let body = &code[start..];
     let body = &body[..body[1..].find("async").map_or(body.len(), |i| i + 1)];
     assert!(
@@ -6972,12 +6973,12 @@ fn the_board_surfaces_the_plan_the_next_run_would_execute() {
     // The plan folds (`planSummary`, the pill, `isBundleReason`, and the
     // zero-open-steps verdict that mirrors `plan::count_open_steps`) are
     // driven by `ui-tests/wb-runs.test.mjs`.
-    let app_js = include_str!("../assets/ui/app.js");
+    let app_js = include_str!("../assets/ui/app.ts");
     for pin in [
         r#"path: ".ralphy/plan.md","#,
         r#"window.WBDaemon.write("plan.discard", { repo: slug })"#,
     ] {
-        assert!(app_js.contains(pin), "app.js must keep {pin}");
+        assert!(app_js.contains(pin), "app.ts must keep {pin}");
     }
     // The discard is confirmed, and the plan is only ever shown against the
     // issue its trailer names (`planFor`) — a plan offered on the wrong card
@@ -7109,12 +7110,12 @@ fn the_runs_feed_is_contained_in_the_markup() {
          each disabled verb's title (`verbTitle`)"
     );
 
-    let app_js = include_str!("../assets/ui/app.js");
+    let app_js = include_str!("../assets/ui/app.ts");
     // `rawFeedOpen: false` is the DEFAULT, not an incidental initialiser: the
     // feed can take 30vh of a panel whose job is the trail and the plan, so
     // the bytes are opt-in and only the head arrives with the output.
     for pin in ["dismissFeed()", "runVerbFailed(", "rawFeedOpen: false"] {
-        assert!(app_js.contains(pin), "app.js must keep the #331 pin {pin}");
+        assert!(app_js.contains(pin), "app.ts must keep the #331 pin {pin}");
     }
     assert!(
         !app_js.contains("rawFeedOpen = true"),
@@ -7285,13 +7286,13 @@ fn a_refused_branch_change_reports_in_the_projects_panel() {
         "the branch refusal sits between the files bar and the tree"
     );
 
-    let app_js = include_str!("../assets/ui/app.js");
+    let app_js = include_str!("../assets/ui/app.ts");
     for pin in [
         "branchError: \"\"",
-        "_branchRefused(msg) {",
+        "_branchRefused(msg: any) {",
         "this.branchError = msg || \"\";",
     ] {
-        assert!(app_js.contains(pin), "app.js must keep the pin {pin}");
+        assert!(app_js.contains(pin), "app.ts must keep the pin {pin}");
     }
     // Both `_mutateBranch` arms report: the refusal AND, in daemon mode, the
     // transport throw. The throw is the arm that used to be deliberately
@@ -7302,7 +7303,7 @@ fn a_refused_branch_change_reports_in_the_projects_panel() {
     // act is SENT with the checkout.
     let mutate = squeeze(js_method_body(
         app_js,
-        "async _mutateBranch(verb, slug, name, revert) {",
+        "async _mutateBranch(verb: any, slug: any, name: any, revert: any) {",
     ));
     assert!(
         mutate.contains(
@@ -7370,11 +7371,11 @@ fn the_worktree_row_remove_action_stops_the_selecting_click() {
     let html = include_str!("../assets/ui/index.html");
     assert!(
         html.contains(r#"onRemove: (row) => this.removeWorktree(ref, row),"#)
-            || include_str!("../assets/ui/app.js")
-                .contains("onRemove: (row) => this.removeWorktree(ref, row),"),
+            || include_str!("../assets/ui/app.ts")
+                .contains("onRemove: (row: any) => this.removeWorktree(ref, row),"),
         "the Files chip's menu wires the remove action"
     );
-    let app_js = include_str!("../assets/ui/app.js");
+    let app_js = include_str!("../assets/ui/app.ts");
     assert!(
         app_js.contains(
             "window.WBProject.checkoutAfterListing(ck, this.worktreeListings[slug]) === null"
@@ -7382,7 +7383,7 @@ fn the_worktree_row_remove_action_stops_the_selecting_click() {
         "the selection resets from the re-read listing, never from the reply's status"
     );
     let remove = app_js
-        .find("async removeWorktree(slug, w) {")
+        .find("async removeWorktree(slug: any, w: any) {")
         .expect("removeWorktree exists");
     let body = &app_js[remove..];
     let ask = body
@@ -7692,18 +7693,18 @@ fn no_selector_sets_one_property_twice() {
 /// The run-completion nudge (#310) across the assets. `shouldReload` and
 /// `subscribeChanges` are driven by `wb-changes.test.mjs` and
 /// `wb-daemon.test.mjs`, and `toggle` remounting the subscription by
-/// `app.test.mjs`. No node test reaches the export `app.js` guards on or the
+/// `app.test.mjs`. No node test reaches the export `app.ts` guards on or the
 /// filter call inside `mountChangesSub`, so those two are pinned here.
 #[test]
 fn the_run_completion_nudge_is_wired_through_the_ui_assets() {
     assert!(
         include_str!("../assets/ui/wb-daemon.js").contains("subscribeChanges,"),
-        "wb-daemon.js must EXPORT subscribeChanges — app.js guards on it (#310)"
+        "wb-daemon.js must EXPORT subscribeChanges — app.ts guards on it (#310)"
     );
     assert!(
-        include_str!("../assets/ui/app.js")
+        include_str!("../assets/ui/app.ts")
             .contains("window.WBChanges?.shouldReload?.(frame, this.openSlug)"),
-        "app.js must filter each nudge through shouldReload (#310)"
+        "app.ts must filter each nudge through shouldReload (#310)"
     );
 }
 
@@ -7715,7 +7716,7 @@ fn the_run_completion_nudge_is_wired_through_the_ui_assets() {
 /// a route with no caller is a route that rots.
 #[test]
 fn the_peer_wake_is_wired_through_the_ui_assets() {
-    let app_js = include_str!("../assets/ui/app.js");
+    let app_js = include_str!("../assets/ui/app.ts");
     for symbol in [
         "/api/fleet/nudge?daemon_id=",
         "async wakePeer(",
@@ -7725,7 +7726,7 @@ fn the_peer_wake_is_wired_through_the_ui_assets() {
     ] {
         assert!(
             app_js.contains(symbol),
-            "app.js must keep {symbol} to wake a peer"
+            "app.ts must keep {symbol} to wake a peer"
         );
     }
     let html = include_str!("../assets/ui/index.html");
@@ -7765,15 +7766,15 @@ fn the_peer_wake_is_wired_through_the_ui_assets() {
 /// The directory `emitCreate` sends is driven by `app.test.mjs`.
 #[test]
 fn the_explorer_can_create_at_every_target_including_the_repo_root() {
-    let js = include_str!("../assets/ui/app.js");
+    let js = include_str!("../assets/ui/app.ts");
     assert!(
         js.contains("this.showMenu(ev.clientX, ev.clientY, node || null)"),
         "the tree's contextmenu handler must open the menu for a NULL node \
          (empty space = the repo root), not return early"
     );
     assert!(
-        js.contains("createHere(kind) {"),
-        "app.js must keep createHere(kind) — the Files header calls it"
+        js.contains("createHere(kind: any) {"),
+        "app.ts must keep createHere(kind) — the Files header calls it"
     );
     let html = include_str!("../assets/ui/index.html");
     for symbol in ["createHere('file')", "createHere('folder')"] {
@@ -7885,14 +7886,14 @@ fn a_changes_row_keeps_its_actions_outside_the_clipped_face() {
     }
 }
 
-/// The body of one Alpine method in `app.js`, sliced from its opener to the
+/// The body of one Alpine method in `app.ts`, sliced from its opener to the
 /// first four-space-indented `},` — the file's method terminator. Whole-file
 /// `contains` is useless for these pins: a call such as `this.$nextTick(`
 /// appears at dozens of sites, so a check that does not scope to the method
 /// it is about passes no matter which one regressed.
 fn js_method_body<'a>(js: &'a str, opener: &str) -> &'a str {
     js.split_once(opener)
-        .unwrap_or_else(|| panic!("app.js must define `{opener}`"))
+        .unwrap_or_else(|| panic!("app.ts must define `{opener}`"))
         .1
         .split_once("\n    },")
         .unwrap_or_else(|| panic!("`{opener}` must close at method indent"))
@@ -7918,10 +7919,10 @@ fn css_rule_body<'a>(css: &'a str, selector: &str) -> &'a str {
 #[test]
 fn every_icon_is_drawn_by_the_x_icon_directive() {
     let html = include_str!("../assets/ui/index.html");
-    let js = include_str!("../assets/ui/app.js");
+    let js = include_str!("../assets/ui/app.ts");
     let init = js
         .split_once(r#"document.addEventListener("alpine:init", () => {"#)
-        .expect("app.js must register its directives at alpine:init")
+        .expect("app.ts must register its directives at alpine:init")
         .1;
     assert!(
         init.contains(r#"window.Alpine.directive("icon","#),
@@ -7931,7 +7932,7 @@ fn every_icon_is_drawn_by_the_x_icon_directive() {
         html.matches("x-icon=").count() >= 40,
         "index.html must draw its icons with x-icon"
     );
-    for (file, text) in [("index.html", html), ("app.js", js)] {
+    for (file, text) in [("index.html", html), ("app.ts", js)] {
         assert!(
             !text.contains("data-lucide=") && !text.contains("createIcons()"),
             "{file} must not use lucide placeholders or the createIcons scan"
@@ -7943,7 +7944,7 @@ fn every_icon_is_drawn_by_the_x_icon_directive() {
 /// the identity; only the LABEL becomes the directory basename (#332).
 #[test]
 fn a_remoteless_project_is_labelled_by_its_directory() {
-    let js = include_str!("../assets/ui/app.js");
+    let js = include_str!("../assets/ui/app.ts");
     let load = js_method_body(js, "async loadRepos({ git = true } = {}) {");
     assert!(
         load.contains("name: x.name"),
@@ -8101,9 +8102,9 @@ fn the_branch_chip_carries_the_change_count_on_the_project_row() {
         "a collapsed chip is only its count; found: {collapsed:?}"
     );
 
-    let js = include_str!("../assets/ui/app.js");
-    for pin in ["rowTitle(p) {", "branchChipClick(p, ev) {"] {
-        assert!(js.contains(pin), "app.js must define {pin}");
+    let js = include_str!("../assets/ui/app.ts");
+    for pin in ["rowTitle(p: any) {", "branchChipClick(p: any, ev: any) {"] {
+        assert!(js.contains(pin), "app.ts must define {pin}");
     }
 }
 
@@ -8211,7 +8212,7 @@ fn no_menu_or_key_sink_takes_a_template_string() {
     assert!(template_html_sinks("b.innerHTML = '<i class=\"bi bi-x\"></i>';").is_empty());
     assert!(template_html_sinks("menu.innerHTML = \"\";").is_empty());
     for (name, src) in [
-        ("app.js", include_str!("../assets/ui/app.js")),
+        ("app.ts", include_str!("../assets/ui/app.ts")),
         ("wb-console.js", include_str!("../assets/ui/wb-console.js")),
     ] {
         let sinks = template_html_sinks(src);

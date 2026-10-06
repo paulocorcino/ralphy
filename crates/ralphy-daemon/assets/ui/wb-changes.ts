@@ -127,7 +127,7 @@ function diffTarget(entry: ChangeEntry, project: string, checkout: string | null
 // absent upstream rendered as `↑0 ↓0` would assert the branch is in sync with
 // something it does not track. `now` is injected so the staleness label is
 // testable; it defaults to the wall clock.
-function foldSync(reply: any, now: number) {
+function foldSync(reply: any, now?: number) {
   const unknown = {
     state: "unknown",
     branch: "",
@@ -196,7 +196,7 @@ function headOf(sync: Sync) {
 
 // How stale the counts are, as a locale-free RELATIVE string: a formatted date
 // would follow the browser locale and could carry no exact-string oracle.
-function staleness(lastFetch: string | null | undefined, now: number) {
+function staleness(lastFetch: string | null | undefined, now?: number) {
   if (!lastFetch) return "Never fetched";
   const then = Date.parse(lastFetch);
   if (isNaN(then)) return "Fetch time unknown";

@@ -118,6 +118,17 @@ test("issueUrl builds a link only from a github remote", () => {
   assert.equal(wb.issueUrl(undefined, 42), null);
 });
 
+test("isGitHubRemote is true only when github.com is the remote's host", () => {
+  assert.equal(wb.isGitHubRemote("https://github.com/owner/repo.git"), true);
+  assert.equal(wb.isGitHubRemote("git@github.com:owner/repo.git"), true);
+  assert.equal(wb.isGitHubRemote("ssh://git@github.com/owner/repo"), true);
+  // NEGATIVE CONTROL: `github.com` inside another host's name or path.
+  assert.equal(wb.isGitHubRemote("https://github.com.evil.example/owner/repo"), false);
+  assert.equal(wb.isGitHubRemote("https://evil.example/github.com/owner/repo"), false);
+  assert.equal(wb.isGitHubRemote("https://gitlab.com/owner/repo.git"), false);
+  assert.equal(wb.isGitHubRemote(null), false);
+});
+
 // The Files bar's checkout chip shows once the repo has a worktree — an
 // unanswered listing (`null`: an older daemon, a failed read) or an empty one
 // is "no worktrees", and the bar stays as it was before #403.

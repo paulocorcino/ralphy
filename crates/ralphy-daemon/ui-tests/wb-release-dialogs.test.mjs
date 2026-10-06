@@ -226,7 +226,7 @@ test("the account menu closes itself and asks the dialogs to open with their eve
   }
 });
 
-// `app.js` asks the modal stack with this path; it must be the path the panel
+// `app.ts` asks the modal stack with this path; it must be the path the panel
 // gives to `scrim()`, or the shortcuts would never see the panel open.
 test("whatsNewFlag is the path the What's new panel gives to scrim()", () => {
   const { window } = dialogs();

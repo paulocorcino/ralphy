@@ -635,23 +635,23 @@ mod tests {
     }
 
     /// The workbench's vendor list used to be hand-maintained in THREE places in
-    /// `app.js` and nothing compiled it — Kimi shipped missing from all three
+    /// `app.ts` and nothing compiled it — Kimi shipped missing from all three
     /// (issue #228). Issue #304 removed the list: the menu renders from
     /// `GET /api/agents`, whose digits an exhaustive match owns (`roster.rs`).
-    /// So the pin INVERTED — `app.js` must hold NO vendor enumeration, and the
+    /// So the pin INVERTED — `app.ts` must hold NO vendor enumeration, and the
     /// guarantee that every adapter reaches the menu lives in `roster.rs`.
     #[test]
     fn app_js_holds_no_vendor_list() {
-        let js = include_str!("../assets/ui/app.js");
+        let js = include_str!("../assets/ui/app.ts");
         let agents_js = include_str!("../assets/ui/wb-agents.ts");
 
-        // Non-vacuous first: app.js delegates its request URL to the roster
+        // Non-vacuous first: app.ts delegates its request URL to the roster
         // module, whose repo-specific and local forms both name the endpoint.
         assert!(
             js.contains("window.WBAgents.rosterUrl(repo)")
                 && agents_js.contains("/api/agents?repo=")
                 && agents_js.contains("\"/api/agents\""),
-            "app.js must render the menu from the daemon's roster endpoint"
+            "app.ts must render the menu from the daemon's roster endpoint"
         );
 
         // The `agents` binding survives (the run dialog's pickers bind it) but it
@@ -662,31 +662,31 @@ mod tests {
         assert_eq!(
             js.matches(" agents: [").count(),
             1,
-            "app.js must declare exactly one `agents: [` literal"
+            "app.ts must declare exactly one `agents: [` literal"
         );
         let start = js
             .find(" agents: [")
-            .expect("app.js no longer declares `agents: [`");
+            .expect("app.ts no longer declares `agents: [`");
         let rest = &js[start + " agents: [".len()..];
         let end = rest
             .find(']')
-            .expect("app.js's `agents: [` is never closed");
+            .expect("app.ts's `agents: [` is never closed");
         assert!(
             rest[..end].trim().is_empty(),
-            "app.js's `agents:` must stay an empty literal; found: {:?}",
+            "app.ts's `agents:` must stay an empty literal; found: {:?}",
             &rest[..end]
         );
 
         // The accelerator map keyed by vendor is gone; digits come from the rows.
         assert!(
             !js.contains("const map = { Digit1"),
-            "app.js still maps accelerator digits to vendors"
+            "app.ts still maps accelerator digits to vendors"
         );
 
-        // No launchable vendor is named in `app.js` — except `claude`, the run
+        // No launchable vendor is named in `app.ts` — except `claude`, the run
         // dialog's default value (a default naming one vendor is not an
         // enumeration; it is the CLI's own default). Checked
-        // QUOTE-AGNOSTICALLY: `app.js` is full of template literals and single
+        // QUOTE-AGNOSTICALLY: `app.ts` is full of template literals and single
         // quotes, so pinning only `"codex"` would wave `'codex'` and `` `codex` ``
         // straight through — the reintroduced list would look exactly like that.
         let named_non_default_vendors = |source: &str| {
@@ -703,7 +703,7 @@ mod tests {
         };
         assert!(
             named_non_default_vendors(js).is_empty(),
-            "app.js must hold no non-default vendor names"
+            "app.ts must hold no non-default vendor names"
         );
         assert_eq!(
             named_non_default_vendors(r#"agents: [{ id: "codex" }]"#),
@@ -712,7 +712,7 @@ mod tests {
         );
         assert!(
             !js.contains(r#"kind: "claude""#) && !js.contains(r#"Digit1: "claude""#),
-            "app.js still routes a console launch through a hardcoded vendor"
+            "app.ts still routes a console launch through a hardcoded vendor"
         );
     }
 

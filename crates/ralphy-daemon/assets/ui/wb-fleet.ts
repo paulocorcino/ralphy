@@ -215,7 +215,7 @@ function refSlug(ref: string | null | undefined) {
 // suffix: its environment is the machine they are sitting at. A surface that
 // ALREADY names the environment (a console title) calls `refSlug` instead, or
 // it would say it twice.
-function refLabel(ref: string | null | undefined, environment: string | null | undefined) {
+function refLabel(ref: string | null | undefined, environment?: string | null) {
   const slug = refSlug(ref);
   if (!isPeerRef(ref) || !environment) return slug;
   return slug + " · " + environment;
