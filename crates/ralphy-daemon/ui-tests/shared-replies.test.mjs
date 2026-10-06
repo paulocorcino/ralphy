@@ -85,7 +85,6 @@ test("issue.show: the issue view takes the body and comments of the reply", asyn
   const reply = fixture("issue.show");
   assert.ok(reply.issue.body.length > 0, "the fixture holds a body");
   window.WBDaemon.observe = async () => reply;
-  window.WBMode.isDaemon = () => true;
   state._flashAction = () => {};
   state.openSlug = "o/r";
   state.kanbanSel = reply.issue.number;

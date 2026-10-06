@@ -14,10 +14,6 @@
     return !reason || reason === "not installed here" ? NOT_INSTALLED : reason;
   }
 
-  // The demo roster moved to `assets/ui-demo/wb-seed-agents.js` — seed does not
-  // ship in the daemon's binary (ADR-0040 §inventory amended). app.js reads
-  // `window.WB_SEED_ROSTER` directly, so nothing here forwards it.
-
   function rowFor(kind, label, plain, digit, available, reason, sessions, openSlug) {
     // A count drawn from another repo would offer to reach a session with a
     // different working directory — a row that lies about what its click does.

@@ -219,8 +219,8 @@
     rec.mounting = true;
     return WBMonaco.ready()
       .catch((err) => {
-        // The `file://` demo has no backend and may not boot the AMD loader —
-        // degrade to read-only bytes rather than leave an empty pane (#308).
+        // The AMD loader did not boot — degrade to read-only bytes rather
+        // than leave an empty pane (#308).
         // Only a BOOT failure lands here; a throw from create()/wiring below
         // must not masquerade as one.
         rec.mounting = false;
@@ -512,10 +512,10 @@
   }
 
   // Reload discards local edits and reloads from source. Daemon-backed repos
-  // re-read the REAL file via `file.read` (#197); the `file://` demo regenerates
-  // its synthesised bytes. The apply step is shared via `applyFresh`.
+  // re-read the REAL file via `file.read` (#197). The apply step is shared via
+  // `applyFresh`. With no daemon client loaded (a unit test) it does nothing.
   function reloadFile(rec) {
-    const daemonBacked = window.WBMode.isDaemon() && !!window.WBDaemon?.observe;
+    const daemonBacked = !!window.WBDaemon?.observe;
     if (daemonBacked) {
       // Daemon mode: a non-ok reply or a transport drop must NOT regenerate
       // synthetic bytes (C1). The tab stays — the operator's bytes are still
@@ -543,8 +543,6 @@
           applyFresh(rec, reply.content);
         })
         .catch(() => fail());
-    } else {
-      applyFresh(rec, fakeContent(rec.path, rec.kind));
     }
   }
 
@@ -1006,7 +1004,7 @@
   // too — a broken image is an honest rendering of a broken link, and a
   // placeholder would fabricate.
   function resolveImages(rec, article) {
-    if (!window.WBMode?.isDaemon?.() || !window.WBDaemon?.readImage) return;
+    if (!window.WBDaemon?.readImage) return;
     const dir = rec.path.includes("/") ? rec.path.slice(0, rec.path.lastIndexOf("/")) : "";
     article.querySelectorAll("img[src]").forEach((img) => {
       const src = img.getAttribute("src") || "";
@@ -1368,7 +1366,7 @@
     // pane to the worktree its bytes came from (#406), `null` for the primary.
     // `encoding`/`bom` are what `file.read` reported (ADR-0036 amendment
     // 2026-09-22) and ride the record so a save gives the bytes back the way
-    // they came; absent (a demo, a diff) is UTF-8 without a BOM. `refused` is
+    // they came; absent (a diff) is UTF-8 without a BOM. `refused` is
     // the daemon's reason for serving nothing: the pane says so and keeps the
     // tab, instead of the tab closing under the click.
     open({ id, project, label, path, ftype, content, original, detached, checkout, encoding, bom, refused }) {

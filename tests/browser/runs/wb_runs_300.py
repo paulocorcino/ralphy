@@ -15,10 +15,8 @@ Scenario 4  the document disappearing (a run that ended) empties the panel, and
 Scenario 5  the panel survives a browser reload — the state lives on disk
 Scenario 6  the panel recovers after a DAEMON RESTART on the same port, with no
             operator action (the 3s-backoff reconnect + its catch-up read)
-Scenario 7  in daemon mode the ⚡ control is absent, the seed runs and seed plan
-            blocks are unreachable, and the client-side fold is inert
-Scenario 8  the static `file://` demo still renders a populated panel and its ⚡
-            control still advances a run
+Scenario 7  the ⚡ control is absent, the seed runs and seed plan blocks are
+            unreachable, and the client-side fold is gone
 
 Boots a Localhost daemon on 7398 over a SCRATCH `RALPHY_DAEMON_DIR`, so the
 operator's own daemon registry and login policy are untouched. The daemon is
@@ -52,7 +50,6 @@ BASE = f"http://127.0.0.1:{PORT}/"
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
-DEMO_HTML = Path(REPO_ROOT, "crates", "ralphy-daemon", "assets", "ui", "index.html")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 
 RUN_A = "01RUNAAAAAAAAAAAAAAAAA"
@@ -324,11 +321,7 @@ def main():
             page.screenshot(path=os.path.join(SHOT_DIR, "300-runs-live-2026-07-25.png"))
 
             # --- scenario 7: the seed and the fold are unreachable ------------
-            check(
-                "the ⚡ demo control is not rendered in daemon mode",
-                page.locator(".runs-demo").is_visible() is False,
-                "",
-            )
+            check("the ⚡ demo control is gone", page.locator(".runs-demo").count() == 0, "")
             keys = page.evaluate(f"() => Object.keys({SH}.runsByProject)")
             check("only the registered repo has runs (no seed project keys)", keys == [slug], f"got={keys}")
             runids = page.evaluate(f"() => {SH}.projectRuns().map(r => r.runid)")
@@ -345,33 +338,9 @@ def main():
                 len(plan_texts) > 0 and not any("Walking skeleton" in t for t in plan_texts),
                 f"blocks={len(plan_texts)}",
             )
-            before = page.evaluate(STATE_JSON)
-            page.evaluate(
-                f"() => {SH}.applyRunEvent({{ type: 'dev.ralphy.issue.closed',"
-                f" runid: '{RUN_A}', data: {{ number: 72 }} }})"
-            )
-            check("the client-side fold is inert in daemon mode", page.evaluate(STATE_JSON) == before)
-            page.evaluate(f"() => {SH}.demoTick()")
-            check("the demo advance is inert in daemon mode", page.evaluate(STATE_JSON) == before)
-
-            # --- scenario 8: the static file:// demo still works --------------
-            page.goto(DEMO_HTML.as_uri())
-            page.wait_for_selector("[x-data]", timeout=8000)
-            page.wait_for_timeout(300)
-            open_panel(page, "fincal")
-            page.wait_for_timeout(400)
-            n = page.evaluate(f"() => {SH}.projectRuns().length")
-            check("the file:// demo still renders a populated panel", n == 2, f"got={n}")
-            check("the ⚡ demo control IS rendered under file://", page.locator(".runs-demo").is_visible())
-            glyph_count = page.locator(".trail .trail-ic").count()
-            check("the demo trail still renders its issues", glyph_count == 14, f"got={glyph_count}")
-            open_steps = page.evaluate(f"() => ({SH}.currentRun().planMd.match(/-\\s+\\[ \\]/g) || []).length")
-            page.evaluate(f"() => {SH}.demoTick()")
-            now_open = page.evaluate(f"() => ({SH}.currentRun().planMd.match(/-\\s+\\[ \\]/g) || []).length")
             check(
-                "the demo advance still ticks a step under file://",
-                open_steps > 0 and now_open == open_steps - 1,
-                f"{open_steps} -> {now_open}",
+                "the client-side fold and the demo advance are gone",
+                page.evaluate(f"() => typeof {SH}.applyRunEvent + typeof {SH}.demoTick") == "undefinedundefined",
             )
 
             ctx.close()

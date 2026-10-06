@@ -114,9 +114,8 @@ fn prepare(contents: &[u8], compressible: bool) -> Prepared {
 
 /// A document the daemon serves at its own route. The shells' file names are
 /// never URLs: a request for `index.html` itself is a 404, so the routes below
-/// are the whole set of pages. The static `file://` demo cannot route, so it
-/// opens the file names instead (`WBMode.pageUrl` in `wb-mode.js`); the two
-/// tables must name the same pairs.
+/// are the whole set of pages. The page code opens a torn-off window at its
+/// route (`window.open("popup")` in `app.js`, `"fence"` in `wb-console.js`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Shell {
     /// The workbench desk, at `/`.

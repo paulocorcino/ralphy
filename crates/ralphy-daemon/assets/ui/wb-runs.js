@@ -12,9 +12,8 @@
    fixed `## Steps` block plus a dropdown to read any other `##` section.
 
    This file holds:
-     • WB_RUNS       — the seed (a backend replaces it live),
      • WBRun         — pure helpers (status → glyph/label, plan slicing, sleep),
-   both faithful to ralphy's real vocabulary:
+   faithful to ralphy's real vocabulary:
      - IssueStatus (crates/ralphy-cli/src/runstate/state.rs): planning, executing,
        done, skipped, blocked, infeasible, needs_split, non_green, hitl.
      - plan steps are `- [ ]`/`- [x]` checkboxes (open/checked).
@@ -87,7 +86,7 @@ window.WBRun = {
   },
   // Parse the three checkbox markers out of plan text — the same set the Rust
   // side parses (`ralphy_core::plan::count_open_steps` for the open ones). Used by
-  // the `file://` demo's seed AND by `planSummary` over a plan read off disk.
+  // `planSummary` over a plan read off disk.
   //
   // `/\r?\n/`, never `"\n"`: a plan.md written on Windows (or checked out with
   // `core.autocrlf`) leaves a trailing `\r` on every line, and `(.*)$` below

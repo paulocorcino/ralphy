@@ -510,9 +510,9 @@ def reached_child(page, i, token, timeout=20000):
 
 
 def detached_popups(ctx):
-    # In daemon mode the popup opens at the ROUTE `fence`, not the file name
+    # The popup opens at the ROUTE `fence`, not the file name
     # `detached-fence.html`: the daemon serves each torn-off page at a route
-    # and refuses its file name (wb-mode.js `pageUrl`, commit 4b24b628).
+    # and refuses its file name (commit 4b24b628).
     return [pg for pg in ctx.pages if pg.url.rstrip("/").endswith("/fence")]
 
 
@@ -947,7 +947,7 @@ def main():
 
             # ---- scenario 6: a popup with no valid opener renders nothing -----
             # The daemon serves this page at the route `fence`, not the file
-            # name `detached-fence.html` (wb-mode.js `pageUrl`, commit 4b24b628).
+            # name `detached-fence.html` (commit 4b24b628).
             orphan = ctx.new_page()
             orphan.goto(BASE + "fence")
             orphan.wait_for_selector(".detached-empty", timeout=8000)

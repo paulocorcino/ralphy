@@ -24,7 +24,6 @@ after(() => GLOBALS.forEach((k) => delete globalThis[k]));
 function shell() {
   const { state, window } = loadShell();
   window.WBView = { patch() {}, read: () => null };
-  window.WBMode.isDaemon = () => true;
   const observed = [];
   const images = [];
   window.WBDaemon = {

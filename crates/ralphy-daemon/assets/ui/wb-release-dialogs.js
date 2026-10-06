@@ -32,7 +32,7 @@ function releaseDialogs() {
       "scrim",
     ],
     // --- about (read-only) ------------------------------------------------
-    // The product card from `/api/about`; the seed stands in on `file://`.
+    // The product card from `/api/about`; these defaults show until it answers.
     aboutOpen: false,
     about: {
       name: "ralphy",
@@ -193,14 +193,11 @@ function releaseDialogs() {
           const data = await r.json();
           // Merge onto the seed so any missing field keeps its fallback.
           this.about = { ...this.about, ...data, error: "" };
-        } else if (window.WBMode.isDaemon()) {
+        } else {
           this.about.error = "Could not load the version details: the daemon did not answer.";
         }
       } catch {
-        // No daemon reachable (static demo): keep the seed, no error noise.
-        if (window.WBMode.isDaemon()) {
-          this.about.error = "Could not load the version details: the daemon did not answer.";
-        }
+        this.about.error = "Could not load the version details: the daemon did not answer.";
       }
     },
     closeAbout() {

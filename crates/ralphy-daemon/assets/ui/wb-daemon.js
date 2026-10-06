@@ -7,8 +7,7 @@
    handler is one-command-per-connection with a streamed lifecycle). The client
    never composes a command line — it sends closed-enum params and the daemon's
    verb registry (dispatch.rs) builds the argv. Raw `status:"output"` chunks feed
-   the Runs panel live (ADR-0032 §5, ADR-0036); the structured event fold stays on
-   the ⚡ demo button.
+   the Runs panel live (ADR-0032 §5, ADR-0036).
 --------------------------------------------------------------------------- */
 window.WBDaemon = (function () {
   // The tagged-frame codec, mirrored from src/protocol.rs (see wb-console.js).

@@ -11,7 +11,6 @@ Scenario 4  typing + Save writes the edited bytes to the real file on disk
 Scenario 5  window.CodeMirror is undefined and its vendor path 404s
 Scenario 6  the editor ground is black (rgb(0, 0, 0))
 Scenario 7  Cargo.toml resolves to the `ini` language
-Scenario 8  the file:// demo mounts Monaco OR degrades to .code-fallback
 Scenario 9  a .json tab is tokenized (its tokenizer is a mode-config provider,
             and JSON has no basic-languages grammar to fall back on)
 Scenario 10 the async boot gap: mid-boot bytes reach the model, close disposes
@@ -47,7 +46,6 @@ BASE = f"http://127.0.0.1:{PORT}/"
 # tests/browser/files/wb_monaco_308.py -> repo root is 4 dirs up.
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
-UI_DIR = os.path.join(REPO_ROOT, "crates", "ralphy-daemon", "assets", "ui")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 
@@ -82,7 +80,7 @@ PKG_JSON = '{\n  "name": "wb308",\n  "version": "0.1.0",\n  "private": true\n}\n
 
 # Pinned exactly (see the exit gate): a scenario that silently stops running
 # must fail the run, not shrink it.
-EXPECTED_CHECKS = 22
+EXPECTED_CHECKS = 21
 
 results = []
 
@@ -471,37 +469,6 @@ def main():
             )
             check("toggling back to preview keeps the edited bytes", True)
             page.evaluate(f"() => WBViewer.close('file:{slug}:NOTES.md')")
-
-            # --- scenario 8: the file:// demo ---------------------------------
-            demo = ctx.new_page()
-            demo.goto("file:///" + os.path.join(UI_DIR, "index.html").replace("\\", "/"))
-            demo.wait_for_selector("[x-data]", timeout=15000)
-            demo.wait_for_function(f"() => {SH}.projects.length > 0", timeout=15000)
-            demo.evaluate(
-                f"() => {SH}.openTab"
-                "({ project: Alpine.$data(document.querySelector('[x-data]')).projects[0].slug,"
-                " path: 'demo.rs', title: 'demo.rs', ftype: 'code' })"
-            )
-            demo.wait_for_function(
-                "() => !!document.querySelector('.code-viewer .monaco-editor')"
-                " || !!document.querySelector('.code-viewer .code-fallback')",
-                timeout=30000,
-            )
-            branch = demo.evaluate(
-                "() => document.querySelector('.code-viewer .monaco-editor') ? 'monaco' : 'fallback'"
-            )
-            if branch == "monaco":
-                ok = demo.evaluate(
-                    "() => { const m = window.monaco.editor.getModels()"
-                    ".find(m => m.uri.path.endsWith('demo.rs')); return !!m && m.getValue().length > 0; }"
-                )
-            else:
-                ok = demo.evaluate(
-                    "() => { const pre = document.querySelector('.code-viewer .code-fallback');"
-                    " return !!pre && pre.textContent.length > 0; }"
-                )
-            check(f"the file:// demo pane carries the file's bytes ({branch})", ok)
-            demo.close()
 
             ctx.close()
             browser.close()

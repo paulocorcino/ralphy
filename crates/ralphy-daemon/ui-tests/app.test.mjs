@@ -1088,7 +1088,6 @@ test("the create action asks for the name through the shell's prompt", async () 
       addEventListener: (type, fn) => type === "workbench:action" && listeners.push(fn),
     },
   });
-  window.WBMode.isDaemon = () => true;
   const written = [];
   window.WBDaemon = { write: (verb, payload) => written.push({ verb, payload }) };
   const asked = [];
@@ -1644,7 +1643,7 @@ test("with unsaved work the tab keeps the page, shows the notice and locks write
   assert.match(t.state.writeLockReason(), /older than Ralphy/);
 });
 
-test("a page with no build id (the demo) never reloads for a build", () => {
+test("a page with no build id never reloads for a build", () => {
   const t = skewShell({ pageBuild: "" });
   t.beat({ uptime_secs: 1, build: "B" });
   assert.equal(t.reloads(), 0);

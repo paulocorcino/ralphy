@@ -75,7 +75,7 @@ body.runs-open .runs {
   color: var(--danger, #e5484d);
   font-size: 0.8rem;
 }
-/* count + demo/close controls in the runs header */
+/* count + close control in the runs header */
 .runs-count {
   margin-left: 0.4rem;
   padding: 0.02rem 0.4rem;
@@ -84,20 +84,6 @@ body.runs-open .runs {
   border: 1px solid var(--border);
   color: var(--text-muted);
   font-size: 0.68rem;
-}
-.runs-demo {
-  all: unset;
-  display: inline-grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 3px;
-  color: var(--console-text);
-  cursor: pointer;
-  margin-right: 0.2rem;
-}
-.runs-demo:hover {
-  background: var(--surface);
 }
 
 /* the panel body: picker (fixed) · trail (fixed) · plan (grows) */

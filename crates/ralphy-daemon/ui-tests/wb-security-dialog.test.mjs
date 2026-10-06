@@ -127,9 +127,9 @@ test("the dialog changes the security fact only through securityChanged", async 
   const { state, shell } = dialog();
   const patches = [];
   const real = shell.securityChanged;
-  shell.securityChanged = function (patch, password) {
-    patches.push([patch, password]);
-    return real.call(this, patch, password);
+  shell.securityChanged = function (patch) {
+    patches.push(patch);
+    return real.call(this, patch);
   };
   await withFetch(
     {
@@ -149,7 +149,6 @@ test("the dialog changes the security fact only through securityChanged", async 
       state.securityForm.passwordConfirm = "pw";
       await state.savePassword();
       assert.equal(shell.security.passwordSet, true);
-      assert.equal(shell._passwordValue, "pw", "the demo login checks the new password");
       assert.equal(state.securityForm.passwordDraft, "", "the form is cleared");
 
       state.securityForm.confirmCode = "123456";
@@ -158,10 +157,9 @@ test("the dialog changes the security fact only through securityChanged", async 
     },
   );
   assert.deepEqual(patches, [
-    [{ tokenSet: false, passwordSet: false, totpEnrolled: false, requireLogin: false, remoteImages: true }, undefined],
-    [{ passwordSet: true }, undefined],
-    [{}, "pw"],
-    [{ totpEnrolled: true }, undefined],
+    { tokenSet: false, passwordSet: false, totpEnrolled: false, requireLogin: false, remoteImages: true },
+    { passwordSet: true },
+    { totpEnrolled: true },
   ]);
 });
 
