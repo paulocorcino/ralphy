@@ -1,21 +1,13 @@
-// Unit tests for assets/ui/wb-runs.js — the run-snapshot mapper and the step
-// vocabulary (#330), run against the real source with no DOM. Lives OUTSIDE
+// Unit tests for assets/ui/wb-runs.ts — the run-snapshot mapper and the step
+// vocabulary (#330), against the real module with no DOM. Lives OUTSIDE
 // assets/ui on purpose: lib.rs embeds all of assets/ui via include_dir!.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { WBRun } from "../assets/ui/wb-runs.ts";
 
-const SRC = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../assets/ui/wb-runs.js"),
-  "utf8",
-);
-
+// The module keeps no state, so one import serves every test.
 function load() {
-  const window = {};
-  new Function("window", SRC)(window);
-  return window.WBRun;
+  return WBRun;
 }
 
 test("fromSnapshot maps the plan block to steps and the issue it belongs to", () => {

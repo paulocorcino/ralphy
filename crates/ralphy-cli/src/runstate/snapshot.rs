@@ -336,7 +336,7 @@ mod tests {
         let mut lines = panel
             .lines()
             .skip_while(|l| !l.trim_start().starts_with(&format!("{name}: {{")));
-        assert!(lines.next().is_some(), "wb-runs.js declares {name}");
+        assert!(lines.next().is_some(), "wb-runs.ts declares {name}");
         lines
             .take_while(|l| !l.contains('}'))
             .map(str::trim_start)
@@ -349,7 +349,7 @@ mod tests {
     #[test]
     fn every_step_status_is_known_to_the_runs_panel() {
         use crate::plan_progress::StepStatus;
-        const PANEL: &str = include_str!("../../../ralphy-daemon/assets/ui/wb-runs.js");
+        const PANEL: &str = include_str!("../../../ralphy-daemon/assets/ui/wb-runs.ts");
         let all = [StepStatus::Open, StepStatus::Checked, StepStatus::Noticed];
         for status in all {
             // Exhaustiveness guard: a new variant stops this match compiling.
@@ -363,7 +363,7 @@ mod tests {
             for table in ["STEP_GLYPH", "STEP_LABEL"] {
                 assert!(
                     panel_table_has(PANEL, table, wire),
-                    "wb-runs.js `{table}` has no `{wire}` key — the panel would fall back to open"
+                    "wb-runs.ts `{table}` has no `{wire}` key — the panel would fall back to open"
                 );
             }
         }
@@ -408,11 +408,11 @@ mod tests {
     /// Every status the projection can emit must be known to the panel.
     #[test]
     fn every_issue_status_is_known_to_the_runs_panel() {
-        const PANEL: &str = include_str!("../../../ralphy-daemon/assets/ui/wb-runs.js");
+        const PANEL: &str = include_str!("../../../ralphy-daemon/assets/ui/wb-runs.ts");
         let terminal_line = PANEL
             .lines()
             .find(|l| l.contains("TERMINAL: new Set("))
-            .expect("wb-runs.js declares a TERMINAL set");
+            .expect("wb-runs.ts declares a TERMINAL set");
         for status in all_statuses() {
             let wire = status_wire(&status);
             // Each table on its own: a whole-file `contains` stays green when
@@ -420,13 +420,13 @@ mod tests {
             for table in ["GLYPH", "LABEL"] {
                 assert!(
                     panel_table_has(PANEL, table, wire),
-                    "wb-runs.js {table} has no `{wire}` key — the panel would render it as pending"
+                    "wb-runs.ts {table} has no `{wire}` key — the panel would render it as pending"
                 );
             }
             assert_eq!(
                 terminal_line.contains(&format!("\"{wire}\"")),
                 status.is_terminal(),
-                "wb-runs.js TERMINAL disagrees with IssueStatus::is_terminal on `{wire}`"
+                "wb-runs.ts TERMINAL disagrees with IssueStatus::is_terminal on `{wire}`"
             );
         }
     }

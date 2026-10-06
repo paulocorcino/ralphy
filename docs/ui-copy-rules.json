@@ -202,37 +202,37 @@
       "reason": "The text ends with a command the operator types. Code keeps its case."
     },
     {
-      "file": "wb-runs.js",
+      "file": "wb-runs.ts",
       "text": "planning #{run.active}",
       "rule": "casing:first",
       "reason": "A run phase is a state word shown in a chip, like “idle” and “starting…” (ADR-0065 §2)."
     },
     {
-      "file": "wb-runs.js",
+      "file": "wb-runs.ts",
       "text": "executing #{run.active}",
       "rule": "casing:first",
       "reason": "A run phase is a state word shown in a chip, like “idle” and “starting…” (ADR-0065 §2)."
     },
     {
-      "file": "wb-runs.js",
+      "file": "wb-runs.ts",
       "text": "sleeping · usage limit",
       "rule": "casing:first",
       "reason": "A run phase is a state word shown in a chip, like “idle” and “starting…” (ADR-0065 §2)."
     },
     {
-      "file": "wb-runs.js",
+      "file": "wb-runs.ts",
       "text": "consolidating knowledge",
       "rule": "casing:first",
       "reason": "A run phase is a state word shown in a chip, like “idle” and “starting…” (ADR-0065 §2)."
     },
     {
-      "file": "wb-runs.js",
+      "file": "wb-runs.ts",
       "text": "waiting for reset",
       "rule": "casing:first",
       "reason": "A run phase is a state word shown in a chip, like “idle” and “starting…” (ADR-0065 §2)."
     },
     {
-      "file": "wb-runs.js",
+      "file": "wb-runs.ts",
       "text": "waiting for reset ~{at} · resumes in {eta}",
       "rule": "casing:first",
       "reason": "A run phase is a state word shown in a chip, like “idle” and “starting…” (ADR-0065 §2)."

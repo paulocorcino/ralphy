@@ -4179,7 +4179,6 @@ const CLASSIC_SCRIPTS: &[&str] = &[
     "app.js",
     "wb-add-project.js",
     "wb-add-project-dialog.js",
-    "wb-changes.js",
     "wb-columns.js",
     "wb-console.js",
     "wb-console-name.js",
@@ -4193,12 +4192,10 @@ const CLASSIC_SCRIPTS: &[&str] = &[
     "wb-fail.js",
     "wb-fleet.js",
     "wb-geometry.js",
-    "wb-kanban.js",
     "wb-monaco.js",
     "wb-notes.js",
     "wb-project.js",
     "wb-release-dialogs.js",
-    "wb-runs.js",
     "wb-security-dialog.js",
     "wb-session-route.js",
     "wb-settings.js",
@@ -4211,7 +4208,15 @@ const CLASSIC_SCRIPTS: &[&str] = &[
 
 /// The `window.WB*` names a module still sets, because a classic script
 /// reads them (ADR-0075 D9). A ratchet like `CLASSIC_SCRIPTS`.
-const MODULE_WINDOW_NAMES: &[&str] = &["WBAgents", "WBFileSearch", "WBRelease", "WBSpend"];
+const MODULE_WINDOW_NAMES: &[&str] = &[
+    "WBAgents",
+    "WBChanges",
+    "WBFileSearch",
+    "WBKanban",
+    "WBRelease",
+    "WBRun",
+    "WBSpend",
+];
 
 /// ADR-0075 D1, D2, D8 and D10: first-party workbench code is TypeScript. A
 /// `.js` file in the source tree is a vendored file or a classic script on the

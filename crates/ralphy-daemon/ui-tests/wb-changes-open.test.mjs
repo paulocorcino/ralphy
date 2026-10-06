@@ -3,18 +3,10 @@
 // (ADR-0049), because both diff sides read text and a binary side would close
 // the tab again; any other binary is refused before a tab exists. Driven with
 // the harness's empty document, a scripted `WBDaemon`, and the real
-// `wb-changes.js`.
+// `wb-changes.ts`.
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
 import { loadShell } from "./harness.mjs";
-
-const CHANGES_SRC = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../assets/ui/wb-changes.js"),
-  "utf8",
-);
 
 // app.js names its siblings bare, which Node resolves through `globalThis`:
 // mirror the fakes there, and take them down after this file.
@@ -47,9 +39,6 @@ function shell() {
   };
   const emitted = [];
   window.WB = { emit: (action, detail) => emitted.push({ action, ...detail }) };
-  const changesWindow = {};
-  new Function("window", CHANGES_SRC)(changesWindow);
-  window.WBChanges = changesWindow.WBChanges;
   GLOBALS.forEach((k) => (globalThis[k] = window[k]));
   const flashed = [];
   state._flashAction = (msg) => flashed.push(msg);
