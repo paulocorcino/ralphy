@@ -1,4 +1,4 @@
-// Unit tests for assets/ui/wb-release-dialogs.js, the Alpine component of the
+// Unit tests for assets/ui/wb-release-dialogs.ts, the Alpine component of the
 // About, What's new and update dialogs. It is built with `loadComponent`, so
 // every test here also fails when the component reads a shell() name it does
 // not list in `uses`, assigns a shell() field, or writes inside the release

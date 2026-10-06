@@ -15,6 +15,8 @@ type FleetPeer = {
   tunnel?: unknown;
   os?: string;
   environment?: string;
+  /** The update can wake it through `wsl.exe`. */
+  nudgeable?: boolean;
 };
 
 interface Shell {
@@ -33,8 +35,37 @@ interface Shell {
   projectLabel(ref: string): string;
   /** Resolves true when the operator confirms. */
   askConfirm(opts: { title: string; message: string; confirmLabel: string }): Promise<boolean>;
+  /** The security fact; the Security dialog changes it only through `securityChanged`. */
+  security: {
+    tokenSet: boolean;
+    passwordSet: boolean;
+    totpEnrolled: boolean;
+    requireLogin: boolean;
+    remoteImages: boolean;
+    policy: string;
+  };
+  securityChanged(patch: Partial<Shell["security"]>): void;
+  probeSession(): Promise<void>;
+  logOff(): Promise<void>;
+  /** The release view (`WBRelease.read`). */
+  release: any;
+  readonly releaseSummary: string;
+  releaseStale(): boolean;
+  markReleaseSeen(): void;
+  releaseWatchChanged(enable: boolean): void;
+  refreshLive(): Promise<void>;
+  /** A row of `/api/sessions`. */
+  localSessions(): any[];
+  peerSessions(daemonId: string): any[];
+  identityMark(): string;
+  loadFleet(): Promise<void>;
+  /** The rows of `/api/repos`. */
+  projects: any[];
+  repoRef(p: any): string;
+  toggle(ref: string, row?: any): void;
 }
 
 interface AlpineMagics {
   $nextTick(callback?: () => void): Promise<void>;
+  $refs: Record<string, HTMLElement | undefined>;
 }

@@ -9,13 +9,17 @@
    `securityChanged`. The dialog opens on the `workbench:security-open` event,
    and log off closes it with the `workbench:log-off` event (ADR-0073 D5).
 
-   Load order: before `app.js` and before Alpine, on `index.html` only.
+   Loaded as a module on `index.html` only. It registers itself on
+   `alpine:init`, which comes after every module ran (ADR-0075 D9).
    --------------------------------------------------------------------------- */
-function securityDialog() {
-  return {
-    // Every `shell()` member this component's code or markup reads or calls.
-    // `loadComponent` in ui-tests/harness.mjs fails on any other name.
-    uses: ["security", "securityChanged", "probeSession", "logOff", "scrim"],
+import { component } from "./wb-alpine.ts";
+import { wbQr } from "./wb-settings.ts";
+
+export function securityDialog() {
+  // Every `shell()` member this component's code or markup reads or calls.
+  // `loadComponent` in ui-tests/harness.mjs fails on any other name, and the
+  // type check fails on a name the code reads.
+  return component(["security", "securityChanged", "probeSession", "logOff", "scrim"], {
     securityOpen: false,
     // The dialog's own form state. The fact it shows is `security` in `shell()`.
     securityForm: {
@@ -43,7 +47,7 @@ function securityDialog() {
     // three; `label` says which, `_stepUpResolve` hands the code back to the
     // action that asked.
     stepUp: { open: false, code: "", label: "" },
-    _stepUpResolve: null,
+    _stepUpResolve: null as ((code: string | null) => void) | null,
 
     async openSecurity() {
       this.securityOpen = true;
@@ -85,13 +89,13 @@ function securityDialog() {
     // Ask the operator for the current 6-digit code before `label`. Resolves
     // to the code, to `""` when no seed is armed (nothing to ask), or to
     // `null` when they cancel.
-    askFreshCode(label) {
+    askFreshCode(label: string) {
       if (!this.stepUpNeeded()) return Promise.resolve("");
       this.cancelStepUp();
       this.securityForm.stepUpError = "";
       this.stepUp = { open: true, code: "", label };
-      this.$nextTick?.(() => document.querySelector(".step-up input")?.focus());
-      return new Promise((resolve) => {
+      this.$nextTick?.(() => document.querySelector<HTMLElement>(".step-up input")?.focus());
+      return new Promise<string | null>((resolve) => {
         this._stepUpResolve = resolve;
       });
     },
@@ -112,14 +116,14 @@ function securityDialog() {
     // The form body for a step-up-guarded mutation: the base fields plus the
     // code, only when there is one to send (the daemon treats an absent code
     // as "nothing armed", and a stray empty field would read as a wrong code).
-    stepUpBody(fields, code) {
+    stepUpBody(fields: Record<string, string>, code: string) {
       const p = new URLSearchParams(fields);
       if (code) p.set("code", code);
       return p.toString();
     },
     // Turn a step-up refusal into the line under the card. `Retry-After` is
     // the throttle (amendment §D) — the same brake the login has.
-    noteStepUpRefusal(r) {
+    noteStepUpRefusal(r: Response) {
       if (r.status === 429) {
         const wait = r.headers?.get?.("Retry-After") || "a few";
         this.securityForm.stepUpError = `Too many attempts — wait ${wait} s and try again.`;
@@ -142,7 +146,7 @@ function securityDialog() {
         this.securityForm.confirmCode = "";
         this.securityForm.otpauthUri = uri;
         this.securityForm.secret = (uri.split("secret=")[1] || "").split("&")[0];
-        this.securityForm.qrHtml = window.wbQr(uri);
+        this.securityForm.qrHtml = wbQr(uri);
       } catch {}
     },
 
@@ -226,7 +230,7 @@ function securityDialog() {
     // and, once one is enrolled, the current one — the step-up the daemon
     // demands before it changes or removes the factor. `password` is ALWAYS
     // present: an absent field is a 400, never a clear.
-    passwordBody(pw) {
+    passwordBody(pw: string) {
       const p = new URLSearchParams({ password: pw });
       if (this.security.passwordSet) p.set("current", this.securityForm.passwordCurrent);
       return p.toString();
@@ -278,7 +282,7 @@ function securityDialog() {
       this.securityForm.passwordDraft = "";
       this.securityForm.passwordConfirm = "";
     },
-    notePasswordRefusal(r) {
+    notePasswordRefusal(r: Response) {
       if (r.status === 401) {
         this.securityForm.stepUpError = "Current password rejected.";
       } else {
@@ -308,7 +312,7 @@ function securityDialog() {
       if (this.security.policy === "session") this.logOff();
     },
 
-    async toggleRequireLogin(ev) {
+    async toggleRequireLogin(ev: any) {
       // Only meaningful once TOTP is enrolled; the server refuses (400) an
       // enable with no seed, the client guard just avoids the round-trip.
       const want = !this.security.requireLogin;
@@ -352,7 +356,7 @@ function securityDialog() {
       }
     },
 
-    async toggleRemoteImages(ev) {
+    async toggleRemoteImages(ev: any) {
       // Turning it ON loosens the CSP, so that direction costs a fresh code
       // once a seed is armed; turning it off stays free.
       const want = !this.security.remoteImages;
@@ -380,13 +384,20 @@ function securityDialog() {
       // `:checked` won't re-sync when the bound value did not change.
       if (ev?.target) ev.target.checked = this.security.remoteImages;
     },
-  };
+  });
 }
 
 // `openFlag` is the path of the open flag that the dialog gives to `scrim()`.
 // Code outside the component asks the modal stack with it (`modalOpen`), and
 // never reads the flag (ADR-0073 D5).
-window.WBSecurityDialog = { component: securityDialog, openFlag: "securityOpen" };
+export const WBSecurityDialog = { openFlag: "securityOpen" };
+// app.js, a classic script, still reads this name (ADR-0075 D9).
+if (typeof window !== "undefined") window.WBSecurityDialog = WBSecurityDialog;
+declare global {
+  interface Window {
+    WBSecurityDialog: typeof WBSecurityDialog;
+  }
+}
 
 if (typeof document !== "undefined" && document.addEventListener) {
   document.addEventListener("alpine:init", () => window.Alpine.data("wbSecurityDialog", securityDialog));

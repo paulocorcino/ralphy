@@ -2857,7 +2857,7 @@ function shell() {
     // --- release ----------------------------------------------------------
     // The release fact stays here, because the sidebar reads it. The About,
     // What's new and update dialogs are the component in
-    // wb-release-dialogs.js, and change it only through the two methods
+    // wb-release-dialogs.ts, and change it only through the two methods
     // after `loadRelease` (ADR-0073 D4).
     // The release view the daemon computed (ADR-0056 §7), seeded empty.
     release: (window.WBRelease && window.WBRelease.EMPTY) || {
@@ -2962,7 +2962,7 @@ function shell() {
       remoteImages: false,
       policy: "session", // overwritten by probeSession()
     },
-    // The Security dialog (wb-security-dialog.js) changes the security fact
+    // The Security dialog (wb-security-dialog.ts) changes the security fact
     // only here (ADR-0073 D4). `patch` holds fields of `security`.
     securityChanged(patch) {
       Object.assign(this.security, patch);

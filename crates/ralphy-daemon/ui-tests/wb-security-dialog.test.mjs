@@ -1,4 +1,4 @@
-// Unit tests for assets/ui/wb-security-dialog.js, the Security dialog's Alpine
+// Unit tests for assets/ui/wb-security-dialog.ts, the Security dialog's Alpine
 // component. It is built with `loadComponent`, so every test here also fails
 // when the component reads a shell() name it does not list in `uses`, assigns a
 // shell() field, or writes inside the security fact (ADR-0073 D4).

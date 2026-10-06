@@ -1,4 +1,4 @@
-// Unit tests for assets/ui/wb-add-project-dialog.js, the Add a project
+// Unit tests for assets/ui/wb-add-project-dialog.ts, the Add a project
 // dialog's Alpine component (#501). It is built with `loadComponent`, so every
 // test here also fails when the component reads a shell() name it does not list
 // in `uses`, or assigns a shell() field (ADR-0073 D4). The fold itself is tested

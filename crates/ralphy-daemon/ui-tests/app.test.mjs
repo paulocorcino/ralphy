@@ -742,7 +742,7 @@ test("logOff resets the remember box along with the credentials", async () => {
 });
 
 // The Security, Settings and What's new dialogs' open flags are their own
-// (wb-security-dialog.js, wb-settings-dialog.ts, wb-release-dialogs.js), so the
+// (wb-security-dialog.ts, wb-settings-dialog.ts, wb-release-dialogs.ts), so the
 // shortcuts ask the modal stack for them (ADR-0073 amendment of 2026-10-05).
 // They block in the same cases as the flag did: while the dialog is open, under
 // another modal too, and not once it closes.
