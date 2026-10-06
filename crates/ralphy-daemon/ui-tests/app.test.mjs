@@ -1310,6 +1310,32 @@ test("loadRepos keeps the head of a detached repo for the row title", async () =
   assert.equal(state.rowTitle(state.projects[0]), "o/r · abc1234");
 });
 
+// The sidebar dot says GitHub only when github.com is the remote's host.
+test("loadRepos marks a row github only for a remote hosted on github.com", async () => {
+  const { state } = loadShell();
+  state.loadFleet = () => {};
+  state.refreshLive = () => {};
+  state.loadChanges = () => {};
+  state.loadSync = () => {};
+  const row = (slug, remote) => ({ slug, path: "/" + slug, reachable: true, branch: "main", dirty: false, remote });
+  const rows = [
+    row("o/gh", "git@github.com:o/gh.git"),
+    row("o/fake", "https://github.com.evil.example/o/fake"),
+    row("o/none", null),
+  ];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, json: async () => rows });
+  try {
+    await state.loadRepos();
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.deepEqual(
+    state.projects.map((p) => [p.slug, p.remote]),
+    [["o/gh", "github"], ["o/fake", "local"], ["o/none", "local"]],
+  );
+});
+
 // --- ADR-0070 D2: a shown fact is read again on named events only ----------
 
 // Every URL the code under test fetched, answered with an empty 200. A bare
@@ -1538,6 +1564,21 @@ test("a failed board read after a good one keeps the cards, marked not current",
   assert.equal(state.boardIssues["o/r"].length, 1, "the cards stay");
   assert.equal(state.boardRead["o/r"].current, false);
   assert.match(state.boardError["o/r"], /Not current/);
+});
+
+// A label name is repo data: one named like an Object member (`constructor`)
+// still falls back to the seed color, not to the member.
+test("a label missing from the live list takes the seed color, whatever its name", async () => {
+  const state = observedShell([
+    { status: "ok", board: { issues: [], labels: [{ name: "bug", color: "d73a4a" }] } },
+  ]);
+  state.loadPlan = () => {};
+  state.kanbanSel = null;
+  await state.loadBoard();
+  assert.equal(state.labelColor("bug"), "#d73a4a");
+  for (const name of ["constructor", "toString", "__proto__"]) {
+    assert.equal(state.labelColor(name), globalThis.window.WBKanban.labelColor(name), name);
+  }
 });
 
 test("a failed runs read after a good one keeps the runs, marked not current", async () => {

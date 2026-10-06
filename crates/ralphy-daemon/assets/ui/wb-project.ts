@@ -94,11 +94,21 @@ function checkoutEntry(checkout: string | null | undefined, listing: Listing) {
 // and `git@github.com:owner/repo` — and a non-GitHub forge yields null rather
 // than a guessed URL, because a link that 404s is worse than no link.
 function issueUrl(remoteUrl: string | null | undefined, number: number) {
-  // The host is anchored: `github.com` must BE the host (after an optional
-  // scheme and user), not a part of another host's name or path.
-  const m = (remoteUrl || "").match(/^(?:[a-z+]+:\/\/)?(?:[^@/]+@)?github\.com[/:]([^/]+)\/(.+?)(?:\.git)?\/?$/);
+  const m = githubRemote(remoteUrl);
   if (!m) return null;
   return `https://github.com/${m[1]}/${m[2]}/issues/${number}`;
+}
+
+// The owner and repo of a GitHub remote, or `null`. The host is anchored:
+// `github.com` must BE the host (after an optional scheme and user), not a
+// part of another host's name or path.
+function githubRemote(remoteUrl: string | null | undefined) {
+  return (remoteUrl || "").match(/^(?:[a-z+]+:\/\/)?(?:[^@/]+@)?github\.com[/:]([^/]+)\/(.+?)(?:\.git)?\/?$/);
+}
+
+// Whether the remote is on GitHub: what the sidebar dot shows.
+function isGitHubRemote(remoteUrl: string | null | undefined) {
+  return githubRemote(remoteUrl) !== null;
 }
 
 // Whether the repo has a worktree at all — what shows the Files bar's
@@ -254,6 +264,7 @@ export const WBProject = {
   canSwitchBranch,
   branchChipTitle,
   issueUrl,
+  isGitHubRemote,
   hasWorktrees,
   worktreeCreateRow,
   worktreeNameProblem,

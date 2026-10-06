@@ -525,7 +525,7 @@ export function shell() {
             state: !x.reachable ? "offline" : before.get(x.slug)?.state === "offline" ? "idle" : before.get(x.slug)?.state || "idle",
             env: before.get(x.slug)?.env || "",
             daemonName: before.get(x.slug)?.daemonName || "",
-            remote: x.remote && x.remote.includes("github.com") ? "github" : "local",
+            remote: window.WBProject.isGitHubRemote(x.remote) ? "github" : "local",
             remoteUrl: x.remote || "",
             tree: [],
           }));
@@ -624,7 +624,7 @@ export function shell() {
             // The peer's OWN working-tree facts, same classification as `loadRepos`.
             dirty: !!x.dirty,
             state: x.reachable ? "idle" : "offline",
-            remote: x.remote && x.remote.includes("github.com") ? "github" : "local",
+            remote: window.WBProject.isGitHubRemote(x.remote) ? "github" : "local",
             remoteUrl: x.remote || "",
             tree: [],
             // What makes this a peer row.
@@ -2406,9 +2406,9 @@ export function shell() {
         }
         const board = reply.board || {};
         this.boardIssues[slug] = (board.issues || []).map((r: any) => this.boardRowToIssue(r));
-        const colors: Record<string, string> = {};
-        // Skip a blank color: a bare "#" is truthy and masks `labelColor`'s
-        // fallback.
+        // No prototype, so a label named `constructor` reads as missing. A blank
+        // color is skipped: a bare "#" is truthy and masks `labelColor`'s fallback.
+        const colors: Record<string, string> = Object.create(null);
         for (const l of board.labels || []) {
           if (!l.color) continue;
           colors[l.name] = "#" + String(l.color).replace(/^#/, "");
