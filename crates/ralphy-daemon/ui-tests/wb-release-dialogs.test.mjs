@@ -20,15 +20,6 @@ function dialogs(opts = {}) {
   return { state, data, shell, window };
 }
 
-// Alpine 3.14 runs a getter of the component with the merged scope as `this`
-// (`mergeProxies` passes the scope as the receiver of `Reflect.get`).
-// `loadComponent` reads an own getter with the component's data as `this`, so
-// a getter that calls a shell() method is read here the way Alpine reads it.
-const read = (data, state, name) => {
-  const d = Object.getOwnPropertyDescriptor(data, name);
-  return d?.get ? d.get.call(state) : state[name];
-};
-
 // Evaluate a markup expression the way Alpine does: names resolve on the
 // scope. `with` needs sloppy mode, which `new Function` gives.
 const evalIn = (scope, expr) => new Function("scope", `with (scope) { ${expr}; }`)(scope);
@@ -51,13 +42,13 @@ const menuRow = (label) => {
 };
 
 test("the What's new panel warns that the update closes the open consoles", () => {
-  const { state, data, shell } = dialogs();
+  const { state, shell } = dialogs();
   shell.liveSessions = [];
-  assert.equal(read(data, state, "releaseConsoleWarning"), "", "no console, no warning");
+  assert.equal(state.releaseConsoleWarning, "", "no console, no warning");
   shell.liveSessions = [{ id: "a" }];
-  assert.match(read(data, state, "releaseConsoleWarning"), /^1 console is open\. The update closes it/);
+  assert.match(state.releaseConsoleWarning, /^1 console is open\. The update closes it/);
   shell.liveSessions = [{ id: "a" }, { id: "b" }, { id: "c" }];
-  assert.match(read(data, state, "releaseConsoleWarning"), /^3 consoles are open\. The update closes them/);
+  assert.match(state.releaseConsoleWarning, /^3 consoles are open\. The update closes them/);
 });
 
 test("opening What's new counts the consoles again", () => {
@@ -72,7 +63,7 @@ test("opening What's new counts the consoles again", () => {
 // question open with the reason, and a daemon that comes back on the same build
 // after a gap has rolled back — the page must say so, not wait or reload.
 test("the question names the WSL peers the update takes after this daemon", async () => {
-  const { state, data, shell, window } = dialogs();
+  const { state, shell, window } = dialogs();
   window.fetch = async () => ({ ok: false });
   shell.refreshLive = async () => {};
   shell.fleetPeers = [
@@ -90,16 +81,16 @@ test("the question names the WSL peers the update takes after this daemon", asyn
   assert.equal(state.relUpdate.phase, "confirm");
   assert.deepEqual(state.relUpdate.peers, ["Ubuntu"], "only a peer reached through wsl.exe is updated");
   assert.deepEqual(state.relUpdate.consoles, ["app #1"], "only this daemon's consoles close for sure");
-  assert.match(read(data, state, "updatePeerText"), /If it takes a new version, its 2 consoles close as well\.$/);
+  assert.match(state.updatePeerText, /If it takes a new version, its 2 consoles close as well\.$/);
 });
 
 // `ralphy update` in a terminal restarts only this daemon, so a peer's
 // consoles are not in the warning.
 test("the console warning counts only the consoles this daemon hosts", () => {
-  const { state, data, shell } = dialogs();
+  const { state, shell } = dialogs();
   shell.fleetPeers = [{ daemon_id: "wsl-id", nudgeable: true }];
   shell.liveSessions = [{ daemon_id: "here" }, { daemon_id: "wsl-id" }, { daemon_id: "wsl-id" }];
-  assert.match(read(data, state, "releaseConsoleWarning"), /^1 console is open\./);
+  assert.match(state.releaseConsoleWarning, /^1 console is open\./);
 });
 
 test("a refused update keeps the question open and says why", async () => {
@@ -182,7 +173,7 @@ test("the dialogs list at most 12 shell() names, and shell() has each one", () =
 });
 
 test("every name the dialogs' markup reads is their own or in their uses list", () => {
-  const { state, data } = dialogs();
+  const { state } = dialogs();
   const markup = componentMarkup(HTML, "wbReleaseDialogs");
   const attrs = [...markup.matchAll(/\s(x-[\w:.-]+|[@:][\w:.-]+)="([^"]*)"/g)];
   // `x-for="entry in …"` names the loop's own variable.
@@ -192,7 +183,7 @@ test("every name the dialogs' markup reads is their own or in their uses list", 
     if (attr === "x-data") continue;
     for (const name of bindingNames(attr === "x-for" ? value.split(" in ").slice(1).join(" in ") : value)) {
       if (name.startsWith("$") || loop.has(name)) continue;
-      assert.doesNotThrow(() => read(data, state, name), `${attr}="${value}" reads ${name}`);
+      assert.doesNotThrow(() => state[name], `${attr}="${value}" reads ${name}`);
       names++;
     }
   }
