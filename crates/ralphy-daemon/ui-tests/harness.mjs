@@ -41,6 +41,7 @@ import { WBMonaco } from "../assets/ui/wb-monaco.ts";
 import { WBSessionRoute } from "../assets/ui/wb-session-route.ts";
 import { createDaemon } from "../assets/ui/wb-daemon.ts";
 import { createViewer } from "../assets/ui/wb-viewer.ts";
+import { createNotes } from "../assets/ui/wb-notes.ts";
 import { WB_SETTINGS, WB_TRISTATE, wbClientKeys, wbSettingsDefaults, wbQr } from "../assets/ui/wb-settings.ts";
 
 // The `window.WB*` names that a module sets in the browser because a classic
@@ -207,6 +208,7 @@ export function loadShell(opts = {}) {
   // One daemon door and one file pane per page, as the entry module makes them.
   window.WBDaemon = createDaemon(window, document, window.location);
   window.WBViewer = createViewer(window, document);
+  window.WBNotes = createNotes(window, document);
 
   const realBC = globalThis.BroadcastChannel;
   delete globalThis.BroadcastChannel;

@@ -33,6 +33,7 @@ import "./wb-monaco.ts";
 import { createDaemon } from "./wb-daemon.ts";
 import { WBDevice } from "./wb-device.ts";
 import { createViewer } from "./wb-viewer.ts";
+import { createNotes } from "./wb-notes.ts";
 import { iconDirective, shell, wire } from "./app.ts";
 
 window.Alpine = Alpine;
@@ -42,6 +43,8 @@ window.WBDaemon = createDaemon(window, document, location);
 WBDevice.report(window);
 // The file pane, before `wire`: `app.ts` reads `WBViewer`.
 window.WBViewer = createViewer(window, document);
+// The note cards, before `wire`: `wb-console.js` reads `WBNotes` inside functions.
+window.WBNotes = createNotes(window, document);
 wire(window, document);
 Alpine.directive("icon", iconDirective);
 // Each name is the `x-data` of one element in `index.html`.
