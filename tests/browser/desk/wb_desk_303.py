@@ -705,11 +705,16 @@ def main():
                 ".map((w) => w._term?.sessionId ?? w._dormantSession ?? w._wantsSession ?? null)"
             )
             launches = [u for u in reload_sockets if "/ws/session?" in u and "/ws/session?id=" not in u]
+            attached = f"/ws/session?id={records[1]['sessionId']}&"
             check(
                 "…still attached to their live sessions, not relaunched",
-                held == [r["sessionId"] for r in records] and not launches,
+                held == [r["sessionId"] for r in records]
+                and not launches
+                and any(attached in u for u in reload_sockets),
                 f"held={held} records={[r['sessionId'] for r in records]} launches={launches}",
             )
+            asleep = page.evaluate("() => document.querySelectorAll('.session-window')[0].classList.contains('dormant')")
+            check("…and the console under the maximized one comes back asleep", asleep is True, f"dormant={asleep}")
             # …and it still knows the box to un-maximize to, after the round trip.
             page.locator(".session-window").nth(1).locator(".session-max").click()
             page.wait_for_timeout(400)
@@ -726,9 +731,10 @@ def main():
                 pass
             woke = page.evaluate("() => document.querySelectorAll('.session-window')[0]._term?.sessionId ?? null")
             launches = [u for u in reload_sockets if "/ws/session?" in u and "/ws/session?id=" not in u]
+            attached = f"/ws/session?id={records[0]['sessionId']}&"
             check(
                 "…and the console under it wakes on its own session when it shows",
-                woke == records[0]["sessionId"] and not launches,
+                woke == records[0]["sessionId"] and not launches and any(attached in u for u in reload_sockets),
                 f"woke={woke} record={records[0]['sessionId']} launches={launches}",
             )
 
@@ -1104,7 +1110,7 @@ def main():
 
     # The count floor is load-bearing: an early `sys.exit` or a scenario that
     # never ran must not report success on a handful of passing checks.
-    ok = all(results) and len(results) >= 118
+    ok = all(results) and len(results) >= 119
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     if ok:
         print("CONSOLE DESK")

@@ -166,7 +166,7 @@ def main():
                 "an unreadable desk says so, with the reason",
                 shown
                 and "Could not read the saved desk: the file is damaged" in text
-                and "parsing desk layout" not in text,
+                and "parsing desk layout" not in page.inner_text("body"),
                 f"text={text!r}",
             )
             check(
