@@ -2663,6 +2663,18 @@ test("applyColumns writes the unmaximize of a console that stays a column, not f
   }
 });
 
+test("markRelaunch marks the id, and a take-down that throws clears the mark", () => {
+  const { markRelaunch, isRelaunching } = load();
+  assert.equal(isRelaunching("w-a"), false);
+  let seen = null;
+  markRelaunch("w-a", () => (seen = isRelaunching("w-a")));
+  assert.equal(seen, true, "marked before the take-down");
+  assert.equal(isRelaunching("w-a"), true, "still marked until the respawn");
+  assert.equal(isRelaunching("w-b"), false);
+  assert.throws(() => markRelaunch("w-b", () => { throw new Error("gone"); }), /gone/);
+  assert.equal(isRelaunching("w-b"), false, "a take-down that throws clears the mark");
+});
+
 // A relaunch takes the window off the stage and spawns a new one under the
 // same id; the shell's columns wait for an id marked in between. These paths
 // need a real DOM, so the wiring is pinned on the source.

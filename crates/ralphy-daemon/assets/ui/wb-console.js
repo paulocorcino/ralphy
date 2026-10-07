@@ -7790,6 +7790,7 @@ window.WBConsole = (function () {
     columnMeasure,
     applyColumns,
     isRelaunching,
+    markRelaunch,
     focusColumn,
     focusedId,
     deskRecords,
