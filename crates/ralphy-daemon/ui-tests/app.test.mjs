@@ -1699,6 +1699,102 @@ test("checkColumnDesk takes the consoles that left the desk out of the columns, 
   assert.deepEqual(order, ["columns", "drop x", "drop loose"]);
 });
 
+// ADR-0051 §5: when the shell's columns move the maximize, the move is written
+// to the desk. The torn-off fence window paints without `persist`.
+test("every shell path that paints the columns asks to write the maximize", () => {
+  const { state, window, document } = loadShell();
+  const calls = [];
+  const paints = [];
+  const realConsole = globalThis.WBConsole;
+  const realColumns = globalThis.WBColumns;
+  globalThis.WBColumns = window.WBColumns;
+  globalThis.WBConsole = {
+    ...window.WBConsole,
+    applyColumns: (painted, opts) => {
+      calls.push(opts);
+      paints.push(painted.map((p) => p.id));
+    },
+    columnMeasure: () => ({ viewport: 1920 }),
+    dropClosedElsewhere() {},
+    focusColumn() {},
+    focusedId: () => null,
+  };
+  const grid = () => [["a"], ["b"], ["c"]];
+  state.columnCap = () => 3;
+  const realAll = document.querySelectorAll;
+  // The stage holds only "b": the first console left, and one is left.
+  const lone = () => {
+    document.querySelectorAll = () => [{ _deskId: "b", classList: { contains: () => false } }];
+    state.paintColumns();
+  };
+  try {
+    // Each path, and how many paints it makes: its own, then `paintColumns`.
+    const paths = {
+      restoreColumn: [2, () => state.restoreColumn("a")],
+      swapColumn: [
+        2,
+        () => {
+          state.columnFrom = "b";
+          state.swapColumn("x");
+        },
+      ],
+      columnsFromFence: [
+        2,
+        () =>
+          state.columnsFromFence([
+            { id: "p", rect: { left: 0, top: 0, width: 100, height: 100 } },
+            { id: "q", rect: { left: 200, top: 0, width: 100, height: 100 } },
+          ]),
+      ],
+      leaveColumns: [1, () => state.leaveColumns(["a"])],
+      checkColumnDesk: [2, () => state.checkColumnDesk(["a"])],
+      paintColumns: [1, () => state.paintColumns()],
+      "paintColumns, a lone survivor": [1, lone],
+    };
+    for (const [name, [count, run]] of Object.entries(paths)) {
+      state.columns = grid();
+      calls.length = 0;
+      document.querySelectorAll = realAll;
+      run();
+      assert.equal(calls.length, count, `${name} paints the columns`);
+      for (const opts of calls) assert.equal(opts?.persist, true, `${name}: ${JSON.stringify(opts)}`);
+    }
+    // The lone-survivor case above took its own branch: it paints the survivor
+    // and ends the columns.
+    state.columns = grid();
+    paints.length = 0;
+    lone();
+    assert.deepEqual(paints, [["b"]], "the lone survivor is painted");
+    assert.deepEqual(state.columns, [], "the lone survivor ends the columns");
+    // A first console off the stage for a relaunch comes back under the same
+    // id: nothing is painted or stored until it is back.
+    globalThis.WBConsole.isRelaunching = (id) => id === "a";
+    state.columns = grid();
+    calls.length = 0;
+    lone();
+    assert.deepEqual([calls.length, state.columns], [0, grid()], "a relaunch gap paints nothing");
+    const stage = (...wins) => {
+      document.querySelectorAll = () =>
+        wins.map(([id, max]) => ({ _deskId: id, classList: { contains: (c) => max && c === "maximized" } }));
+    };
+    // The same with two consoles left: the grid path.
+    stage(["b"], ["c"]);
+    state.columns = grid();
+    calls.length = 0;
+    state.paintColumns();
+    assert.deepEqual([calls.length, state.columns], [0, grid()], "a relaunch gap on a grid paints nothing");
+    // A first console back on the stage paints, even while still marked.
+    stage(["a", true], ["b"], ["c"]);
+    calls.length = 0;
+    state.paintColumns();
+    assert.equal(calls.length, 1, "a first console back on the stage paints");
+  } finally {
+    document.querySelectorAll = realAll;
+    globalThis.WBConsole = realConsole;
+    globalThis.WBColumns = realColumns;
+  }
+});
+
 test("two fleet reads close together list each peer row once", async () => {
   const { state } = loadShell();
   state.projects = [{ slug: "a/b", tree: [] }];

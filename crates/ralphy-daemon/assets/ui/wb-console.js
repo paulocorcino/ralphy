@@ -1963,9 +1963,10 @@ window.WBConsole = (function () {
   // by `syncMaxPin`. Re-asserted after the class flip because `maxlock`
   // (`overflow:hidden`) drops the scrollbars, which can clamp the offsets.
   //
-  // `persist` is the operator's own toggle, the one act that writes `max`. A
-  // column (`applyColumns`) and a restore (`buildChrome`) write nothing: the
-  // columns are this client's view, and a restore already reads the record.
+  // `persist` writes `max`: the operator's own toggle, and the shell's columns
+  // moving the maximize to another console (ADR-0051 §5). A restore
+  // (`buildChrome`) and the torn-off fence window's columns write nothing: a
+  // restore already reads the record, and that window's grid is never stored.
   function setMax(win, on, persist = false) {
     if (win.classList.contains("maximized") === on) return;
     const ws = workspace();
@@ -2012,9 +2013,13 @@ window.WBConsole = (function () {
   // this module only paints the answer. It never reads `WBColumns`: the
   // detached-fence popup boots this file without it.
   //
-  // A column writes nothing to the desk: the painted box is CSS, `restoreRect`
-  // reads the inline rect under it, and the maximize a column sets on the
-  // first console is this client's view (ADR-0050 amendment 2026-10-04).
+  // A column writes no rect to the desk: the painted box is CSS, and
+  // `restoreRect` reads the inline rect under it. The first console is the one
+  // the desk records as maximized, so a move of the maximize is written when
+  // the caller passes `persist` (ADR-0051 §5). A reload that keeps the stored
+  // grid writes the desk to match it, so a console another device maximized
+  // inside the grid is written back as not maximized. Another page does not
+  // apply that `max` while it is open (ADR-0050 amendment 2026-10-04).
 
   // Pure. What one window is, given the painted consoles. `maximized: null`
   // means "not a column: leave its maximize alone". Two rows of one column
@@ -2048,17 +2053,19 @@ window.WBConsole = (function () {
   }
 
   // Paint `painted` (`WBColumns.painted`). `unmax` is the old first console
-  // after a restore: it stops being the maximized console.
+  // after a restore: it stops being the maximized console. `persist` writes
+  // each change of the maximize to the desk.
   function applyColumns(painted, opts) {
     const list = painted || [];
     const cap = opts?.cap ?? 1;
+    const persist = !!opts?.persist;
     for (const win of wins) {
       if (win.classList.contains("column") && !columnClasses(list, win._deskId).column) {
         clearColumn(win);
       }
     }
     const gone = opts?.unmax ? findWindow(opts.unmax) : null;
-    if (gone && !columnClasses(list, gone._deskId).column) setMax(gone, false);
+    if (gone && !columnClasses(list, gone._deskId).column) setMax(gone, false, persist);
     const shown = [];
     for (const p of list) {
       const win = findWindow(p.id);
@@ -2078,8 +2085,8 @@ window.WBConsole = (function () {
       }
       // The class is set FIRST: `restoreRect` must already read a column's
       // inline rect.
-      if (c.maximized && !win.classList.contains("maximized")) setMax(win, true);
-      else if (!c.maximized && win.classList.contains("maximized")) setMax(win, false);
+      if (c.maximized && !win.classList.contains("maximized")) setMax(win, true, persist);
+      else if (!c.maximized && win.classList.contains("maximized")) setMax(win, false, persist);
       paintMaxButton(win);
     }
     syncMaxLock();
@@ -6318,8 +6325,8 @@ window.WBConsole = (function () {
     const actions = document.createElement("span");
     actions.className = "session-actions";
     // Open another console beside this maximized one (ADR-0051 §5). Shown and
-    // enabled by `applyColumns`, which the shell alone calls: the popup never
-    // shows it.
+    // enabled by `applyColumns`. The torn-off fence window calls it too, and
+    // never shows the button: it boots without `autoBoot`.
     const colBtn = document.createElement("button");
     colBtn.className = "session-column";
     colBtn.title = "Slice";
@@ -6639,7 +6646,7 @@ window.WBConsole = (function () {
     const relaunchIn = (checkout) => {
       // A restart is the operator's act: an adopted console gets its record.
       const carry = { ...deskOf(win), unrecorded: false };
-      discard();
+      markRelaunch(carry.id, discard);
       // `win._deskKind`, not the local `kind`: a window reattached at load was
       // spawned with `{id, repo}` only. `~` is the daemon's repo-less label.
       const plain = win._deskKind === "console";
@@ -6961,11 +6968,33 @@ window.WBConsole = (function () {
   // Spawn an agent console — unless the worktree it asks for is gone, in which
   // case a placeholder SAYS so (#411). A console must never silently land on
   // the primary tree because its own vanished (the #409 gates).
-  async function spawnOrMissing(req, label, repo, carry) {
-    if (req.checkout && !(await checkoutStillThere(repo, req.checkout))) {
-      return spawnPlaceholder({ ...carry, checkout: req.checkout }, req.checkout);
+  // Desk ids whose window a relaunch took off the stage and has not put back
+  // yet: the shell's columns wait for them instead of dropping them.
+  const relaunching = new Set();
+  function isRelaunching(deskId) {
+    return relaunching.has(deskId);
+  }
+  // Marks `deskId`, then takes its window off the stage. `spawnOrMissing`
+  // clears the mark; a take-down that throws clears it here.
+  function markRelaunch(deskId, takeDown) {
+    relaunching.add(deskId);
+    try {
+      takeDown();
+    } catch (e) {
+      relaunching.delete(deskId);
+      throw e;
     }
-    return spawnWindow(req, label, repo, carry);
+  }
+
+  async function spawnOrMissing(req, label, repo, carry) {
+    try {
+      if (req.checkout && !(await checkoutStillThere(repo, req.checkout))) {
+        return spawnPlaceholder({ ...carry, checkout: req.checkout }, req.checkout);
+      }
+      return spawnWindow(req, label, repo, carry);
+    } finally {
+      relaunching.delete(carry?.id);
+    }
   }
 
   // The live session a placeholder should attach to, read NOW: the page was
@@ -7222,7 +7251,7 @@ window.WBConsole = (function () {
         return;
       }
       const carry = deskOf(win);
-      drop(true);
+      markRelaunch(carry.id, () => drop(true));
       // The agent menu's launch path, reusing this record's id, rect and
       // maximized state — in the recorded worktree unless that is the one that
       // is gone, in which case the button said "primary". For a local record
@@ -7760,6 +7789,8 @@ window.WBConsole = (function () {
     columnClasses,
     columnMeasure,
     applyColumns,
+    isRelaunching,
+    markRelaunch,
     focusColumn,
     focusedId,
     deskRecords,

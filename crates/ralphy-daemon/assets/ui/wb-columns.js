@@ -6,9 +6,10 @@
    columns are a GRID: a list of columns, each a list of console ids, one row
    per id, top to bottom. There are two levels and never more. The first id in
    reading order (column by column, top to bottom) is the maximized console,
-   and it is the only one the desk records as maximized. The grid is
-   per-client view state (ADR-0051 §8): no column writes a desk rect, a desk
-   field or a verb. An empty grid is a lone maximized console, or none.
+   and it is the only one the desk records as maximized: a move of the
+   maximize is written to the desk as an ordinary maximize. The grid itself
+   is per-client view state (ADR-0051 §8): no column writes a desk rect or a
+   verb. An empty grid is a lone maximized console, or none.
 
    Nothing here reads the DOM, the store or a module-scope binding: `app.js`
    holds the grid, feeds it through these functions, and `wb-console.js`
