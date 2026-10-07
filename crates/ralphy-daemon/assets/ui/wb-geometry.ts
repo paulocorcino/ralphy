@@ -16,7 +16,7 @@
    (CLAUDE.md: the public surface is stable by default). New callers should
    prefer `WBGeometry`.
 
-   `wb-console.ts` imports this module; `wb-notes.ts` reads it on `window`.
+   `wb-console.ts` and `wb-notes.ts` import this module.
    --------------------------------------------------------------------------- */
 export const WBGeometry = (function () {
   // ---- the stage extent --------------------------------------------------------

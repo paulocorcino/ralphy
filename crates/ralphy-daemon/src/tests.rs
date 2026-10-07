@@ -4355,6 +4355,69 @@ fn each_page_starts_from_one_entry_module() {
     );
 }
 
+/// The order inside each entry module is a load order: `app.ts` and the
+/// page modules read the instances on `window`, a torn-off page posts its
+/// "ready" message from its wire function (the opener's reply reads the
+/// instances at once), and the consoles boot after Alpine has started, as
+/// they did when `DOMContentLoaded` triggered the boot (ADR-0075 phase 5).
+/// No unit test runs an entry module, so the order is pinned here.
+#[test]
+fn each_entry_module_creates_the_instances_before_it_wires_the_page() {
+    for (entry, text, order) in [
+        (
+            "main.ts",
+            include_str!("../assets/ui/main.ts"),
+            &[
+                "window.WBConsole = createConsole(",
+                "window.WBDaemon = createDaemon(",
+                "window.WBViewer = createViewer(",
+                "window.WBNotes = createNotes(",
+                "wire(window, document);",
+                "Alpine.start();",
+                "window.WBConsole.boot();",
+            ][..],
+        ),
+        (
+            "detached-main.ts",
+            include_str!("../assets/ui/detached-main.ts"),
+            &[
+                "window.WBViewer = createViewer(",
+                "wireDetached(window, document);",
+            ][..],
+        ),
+        (
+            "detached-fence-main.ts",
+            include_str!("../assets/ui/detached-fence-main.ts"),
+            &[
+                "window.WBConsole = createConsole(",
+                "window.WBNotes = createNotes(",
+                "wireDetachedFence(window, document);",
+                "window.WBConsole.boot();",
+            ][..],
+        ),
+    ] {
+        let code: String = text
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join(
+                "
+",
+            );
+        let mut last = 0;
+        for step in order {
+            let at = code
+                .find(step)
+                .unwrap_or_else(|| panic!("{entry} must contain `{step}`"));
+            assert!(
+                at >= last,
+                "{entry}: `{step}` must come after the steps listed before it"
+            );
+            last = at;
+        }
+    }
+}
+
 /// #308 pins the editor swap where it can actually regress: the embedded
 /// asset tree. Monaco is vendored, CodeMirror is gone, and the four heavy
 /// language workers stay excluded (the exclusion rule is prefix-based
@@ -6493,8 +6556,8 @@ fn shell_stores_only_the_view_in_the_browser() {
 
     // Tree-wide, not just the two modules above: any non-vendor asset that
     // starts naming `localStorage` is a second store by definition. `.html`
-    // is swept too — both shells carry inline `<script>` blocks, so a store
-    // could grow there without touching a single `.js`.
+    // is swept too, so a store cannot come back as an inline `<script>`
+    // block without touching a single `.js`.
     for path in embedded_ui_paths() {
         let scanned = path.ends_with(".js") || path.ends_with(".html");
         if !scanned || path.starts_with("vendor/") || path == "wb-view.js" {
