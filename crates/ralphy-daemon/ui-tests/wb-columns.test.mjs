@@ -1,16 +1,11 @@
-// Unit tests for assets/ui/wb-columns.js — the columns beside a maximized
-// console (ADR-0051 §5). Runs the real source against an empty window: the
-// module is pure and touches nothing at load.
+// Unit tests for assets/ui/wb-columns.ts — the columns beside a maximized
+// console (ADR-0051 §5). The module is pure and touches nothing at load.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-
-const SRC = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../assets/ui/wb-columns.js"),
-  "utf8",
-);
+import { WBColumns } from "../assets/ui/wb-columns.ts";
 // The label builder the title uses; the column row must call the same one.
 const NAME_SRC = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "../assets/ui/wb-console-name.js"),
@@ -18,9 +13,7 @@ const NAME_SRC = readFileSync(
 );
 
 function load() {
-  const window = {};
-  new Function("window", SRC)(window);
-  return window.WBColumns;
+  return WBColumns;
 }
 
 // A grid of one row per column, from a flat list of ids.

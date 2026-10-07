@@ -11,7 +11,7 @@
    DOMPurify, mermaid, Wunderbaum, xterm + addons) would latch onto instead of
    exporting its global. The loader tag therefore comes AFTER all of them.
 --------------------------------------------------------------------------- */
-(function () {
+export const WBMonaco = (function () {
   // ADR-0035's warm-dark palette, as literal hex — Monaco's theme API takes no
   // CSS variables, so these mirror :root in styles.css. Keep them in lockstep
   // with the stylesheet: a drift here shows up as chrome that is a different
@@ -31,7 +31,7 @@
     consoleText: "#e8d9a8",
   };
 
-  function defineTheme(monaco) {
+  function defineTheme(monaco: any) {
     monaco.editor.defineTheme("wb", {
       base: "vs-dark",
       inherit: true,
@@ -94,7 +94,7 @@
     selectionRanges: false,
   };
 
-  function disableLanguageServices(monaco) {
+  function disableLanguageServices(monaco: any) {
     const langs = monaco.languages;
     langs.json?.jsonDefaults?.setModeConfiguration(NO_PROVIDERS);
     langs.json?.jsonDefaults?.setDiagnosticsOptions({ validate: false, schemaValidation: "ignore" });
@@ -107,7 +107,7 @@
     }
   }
 
-  let booting = null;
+  let booting: any = null;
 
   // One boot for the whole page. Resolves with the global `monaco`.
   function ready() {
@@ -144,7 +144,7 @@
   // margin, decorations — is ~60px, a tenth of a phone-width pane, so the
   // narrow shape trims it. The same options go through `updateOptions` when
   // a live pane crosses the threshold (a rotation, a split drag).
-  function gutterOptions(narrow) {
+  function gutterOptions(narrow: any) {
     return narrow
       ? { lineNumbersMinChars: 3, folding: false, lineDecorationsWidth: 4, glyphMargin: false }
       : { lineNumbersMinChars: 5, folding: true, lineDecorationsWidth: 10, glyphMargin: false };
@@ -153,7 +153,7 @@
   // The options every code editor shares, whether it owns its model (create)
   // or sits over another pane's (createOver): the two must render identically,
   // or a mirror would read as a different file.
-  function editorOptions({ wordWrap, narrow }) {
+  function editorOptions({ wordWrap, narrow }: any) {
     return {
       ...gutterOptions(narrow),
       theme: "wb",
@@ -177,7 +177,7 @@
     };
   }
 
-  function create(container, { value, path, uid, project, wordWrap, narrow }) {
+  function create(container: any, { value, path, uid, project, wordWrap, narrow }: any) {
     const monaco = window.monaco;
     const uri = monaco.Uri.file("/" + uid + "/" + project + "/" + path);
     return monaco.editor.create(container, {
@@ -192,7 +192,7 @@
   // one `onDidChangeModelContent`, no new model. The caller owns the model's
   // lifetime and MUST dispose this editor before it; an editor over a disposed
   // model throws on its next render.
-  function createOver(container, model, { wordWrap, narrow }) {
+  function createOver(container: any, model: any, { wordWrap, narrow }: any) {
     const monaco = window.monaco;
     return monaco.editor.create(container, { model, ...editorOptions({ wordWrap, narrow }) });
   }
@@ -205,9 +205,9 @@
   // `narrow` as in create(): a diff pane has TWO gutters, so the default
   // ~60px is a fifth of a phone-width pane, and `IDiffEditorOptions` extends
   // the editor's, so the same `gutterOptions` reach both sides.
-  function createDiff(container, { original, modified, path, uid, project, narrow }) {
+  function createDiff(container: any, { original, modified, path, uid, project, narrow }: any) {
     const monaco = window.monaco;
-    const at = (side) => monaco.Uri.file("/" + uid + "/" + side + "/" + project + "/" + path);
+    const at = (side: any) => monaco.Uri.file("/" + uid + "/" + side + "/" + project + "/" + path);
     const ed = monaco.editor.createDiffEditor(container, {
       ...gutterOptions(narrow),
       theme: "wb",
@@ -253,5 +253,17 @@
     return ed;
   }
 
-  window.WBMonaco = { ready, create, createOver, createDiff, gutterOptions, TOKENS };
+  return { ready, create, createOver, createDiff, gutterOptions, TOKENS };
 })();
+
+// `wb-viewer.js` still reads this name (ADR-0075 D9).
+if (typeof window !== "undefined") window.WBMonaco = WBMonaco;
+
+declare global {
+  interface Window {
+    WBMonaco: typeof WBMonaco;
+    /** The AMD loader of the vendored Monaco. */
+    require: any;
+    monaco: any;
+  }
+}

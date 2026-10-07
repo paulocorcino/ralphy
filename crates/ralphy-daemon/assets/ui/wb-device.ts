@@ -11,11 +11,13 @@
    login the route answers 401, and the `login` workbench action sends them
    again.
 
-   Load order: after `wb-session-route.js` (the tab's holder ID), before
-   `app.js`, on `index.html` only.
+   `main.ts` calls `report(window)` once, on `index.html` only. The page that
+   loads this module imports `wb-session-route.ts` for the tab's holder ID.
    --------------------------------------------------------------------------- */
-window.WBDevice = (function () {
-  async function attempt(fn) {
+import { WBSessionRoute } from "./wb-session-route.ts";
+
+export const WBDevice = (function () {
+  async function attempt(fn: any) {
     try {
       const v = await fn();
       return v === undefined ? null : v;
@@ -24,7 +26,7 @@ window.WBDevice = (function () {
     }
   }
 
-  function media(win, query) {
+  function media(win: any, query: any) {
     try {
       return win.matchMedia ? win.matchMedia(query).matches : null;
     } catch {
@@ -32,14 +34,14 @@ window.WBDevice = (function () {
     }
   }
 
-  function firstMatch(win, feature, values) {
+  function firstMatch(win: any, feature: any, values: any) {
     for (const v of values) {
       if (media(win, `(${feature}: ${v})`)) return v;
     }
     return null;
   }
 
-  function cssSupports(win, prop, value) {
+  function cssSupports(win: any, prop: any, value: any) {
     try {
       return win.CSS && win.CSS.supports ? win.CSS.supports(prop, value) : null;
     } catch {
@@ -50,13 +52,13 @@ window.WBDevice = (function () {
   // One context, read, then lost at once. The consoles hold at most 12
   // WebGL contexts (wb-console.js GPU_BUDGET) and Chrome drops the oldest
   // past 16, so one more for a moment takes no console's place.
-  function gpu(win) {
+  function gpu(win: any) {
     const doc = win.document;
     if (!doc) return null;
     const canvas = doc.createElement("canvas");
     const gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
     if (!gl) return null;
-    const out = { vendor: gl.getParameter(gl.VENDOR), renderer: gl.getParameter(gl.RENDERER) };
+    const out: Record<string, any> = { vendor: gl.getParameter(gl.VENDOR), renderer: gl.getParameter(gl.RENDERER) };
     const dbg = gl.getExtension("WEBGL_debug_renderer_info");
     if (dbg) {
       out.unmasked_vendor = gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL);
@@ -67,7 +69,7 @@ window.WBDevice = (function () {
     return out;
   }
 
-  function safeArea(win) {
+  function safeArea(win: any) {
     const doc = win.document;
     if (!doc || !doc.body || !win.getComputedStyle) return null;
     const el = doc.createElement("div");
@@ -88,11 +90,11 @@ window.WBDevice = (function () {
   // The count and the first few voices: the whole list ran to 324 entries
   // on Windows, past the route's size cap.
   const VOICE_SAMPLE = 5;
-  function voices(win) {
+  function voices(win: any) {
     const s = win.speechSynthesis;
     if (!s || !s.getVoices) return null;
     const read = () => {
-      const all = s.getVoices().map((v) => `${v.name}|${v.lang}|${v.localService ? 1 : 0}`);
+      const all = s.getVoices().map((v: any) => `${v.name}|${v.lang}|${v.localService ? 1 : 0}`);
       return { count: all.length, sample: all.slice(0, VOICE_SAMPLE) };
     };
     const now = read();
@@ -105,14 +107,14 @@ window.WBDevice = (function () {
     });
   }
 
-  function battery(nav) {
+  function battery(nav: any) {
     if (!nav.getBattery) return null;
-    return nav.getBattery().then((b) => ({ level: b.level, charging: b.charging }));
+    return nav.getBattery().then((b: any) => ({ level: b.level, charging: b.charging }));
   }
 
-  function keyboard(nav) {
+  function keyboard(nav: any) {
     if (!nav.keyboard || !nav.keyboard.getLayoutMap) return null;
-    return nav.keyboard.getLayoutMap().then((m) => ({
+    return nav.keyboard.getLayoutMap().then((m: any) => ({
       KeyQ: m.get("KeyQ"),
       Semicolon: m.get("Semicolon"),
       Backslash: m.get("Backslash"),
@@ -120,7 +122,7 @@ window.WBDevice = (function () {
     }));
   }
 
-  async function collect(win) {
+  async function collect(win: any): Promise<Record<string, any>> {
     const nav = win.navigator || {};
     const scr = win.screen || {};
     const uad = nav.userAgentData;
@@ -131,7 +133,7 @@ window.WBDevice = (function () {
         uad
           ? uad
               .getHighEntropyValues(["platformVersion", "model", "architecture", "bitness", "fullVersionList", "formFactors"])
-              .then((h) => ({ ...h, brands: uad.brands, mobile: uad.mobile, platform: uad.platform }))
+              .then((h: any) => ({ ...h, brands: uad.brands, mobile: uad.mobile, platform: uad.platform }))
           : null,
       ),
       platform: await attempt(() => nav.platform),
@@ -196,7 +198,7 @@ window.WBDevice = (function () {
       do_not_track: await attempt(() => nav.doNotTrack),
       storage: await attempt(() =>
         nav.storage && nav.storage.estimate
-          ? nav.storage.estimate().then((e) => ({ quota: e.quota, usage: e.usage }))
+          ? nav.storage.estimate().then((e: any) => ({ quota: e.quota, usage: e.usage }))
           : null,
       ),
       connection: await attempt(() => {
@@ -223,12 +225,12 @@ window.WBDevice = (function () {
 
   // Send once per page load. A 401 (no login yet) leaves it unsent, and the
   // `login` action sends it again. A 409 sends again a little later.
-  function report(win) {
+  function report(win: any) {
     let sent = false;
-    async function send(left) {
+    async function send(left: any) {
       if (sent) return;
       const facts = await collect(win);
-      facts.holder = (await attempt(() => win.WBSessionRoute.tabHolder())) ?? null;
+      facts.holder = (await attempt(() => WBSessionRoute.tabHolder())) ?? null;
       const res = await win.fetch("/api/device/facts", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -238,13 +240,11 @@ window.WBDevice = (function () {
       else if (res.status === 409 && left > 0) win.setTimeout(() => quiet(left - 1), RETRY_MS);
     }
     const quiet = (left = RETRIES) => send(left).catch(() => {});
-    win.document.addEventListener("workbench:action", (e) => {
+    win.document.addEventListener("workbench:action", (e: any) => {
       if (e.detail && e.detail.action === "login") quiet();
     });
     quiet();
   }
-
-  if (typeof window !== "undefined" && window.document && window.fetch) report(window);
 
   return { collect, report };
 })();

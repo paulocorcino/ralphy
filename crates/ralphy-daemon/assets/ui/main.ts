@@ -28,9 +28,17 @@ import { hostsDialog } from "./wb-hosts-dialog.ts";
 import "./wb-add-project.ts";
 import { addProjectDialog } from "./wb-add-project-dialog.ts";
 import { securityDialog } from "./wb-security-dialog.ts";
+import "./wb-columns.ts";
+import "./wb-monaco.ts";
+import { createDaemon } from "./wb-daemon.ts";
+import { WBDevice } from "./wb-device.ts";
 import { iconDirective, shell, wire } from "./app.ts";
 
 window.Alpine = Alpine;
+// The daemon door and the device facts, before `wire`: `app.ts` reads
+// `WBDaemon`, and the facts go out once per page load.
+window.WBDaemon = createDaemon(window, document, location);
+WBDevice.report(window);
 wire(window, document);
 Alpine.directive("icon", iconDirective);
 // Each name is the `x-data` of one element in `index.html`.

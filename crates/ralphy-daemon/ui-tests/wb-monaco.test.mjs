@@ -1,16 +1,10 @@
-// Unit tests for assets/ui/wb-monaco.js — the boot seam's two ways of making a
-// code editor. Runs the real source against a fake `window.monaco` that only
-// records what it was asked to build: the module touches nothing else at load.
+// Unit tests for assets/ui/wb-monaco.ts — the boot seam's two ways of making a
+// code editor. Runs the real module against a fake `window.monaco` that only
+// records what it was asked to build. The module reads `window` only inside its
+// functions, so each test sets the global before it calls.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
-
-const SRC = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../assets/ui/wb-monaco.js"),
-  "utf8",
-);
+import { WBMonaco } from "../assets/ui/wb-monaco.ts";
 
 function load() {
   const calls = { create: [], createModel: [] };
@@ -28,9 +22,8 @@ function load() {
       },
     },
   };
-  const window = { monaco };
-  new Function("window", "document", SRC)(window, {});
-  return { WBMonaco: window.WBMonaco, calls };
+  globalThis.window = { monaco };
+  return { WBMonaco, calls };
 }
 
 test("create builds its own model and hands it to one editor", () => {

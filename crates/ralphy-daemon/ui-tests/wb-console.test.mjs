@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { WBProject } from "../assets/ui/wb-project.ts";
 import { WBFleet } from "../assets/ui/wb-fleet.ts";
+import { WBColumns } from "../assets/ui/wb-columns.ts";
 
 const UI = join(dirname(fileURLToPath(import.meta.url)), "../assets/ui");
 const SRC = readFileSync(join(UI, "wb-console.js"), "utf8");
@@ -2346,13 +2347,10 @@ test("restoreRect on a maximized window still reads the pre-maximize inline rect
 });
 
 // --- columns: only the leftmost is the maximized console the desk records ----
-// `wb-console.js` never loads `wb-columns.js` (the popup boots without it), so
+// `wb-console.js` never loads `wb-columns.ts` (the popup boots without it), so
 // the harness runs the REAL fold beside it, as `app.ts` does in the browser.
-const COLUMNS_SRC = readFileSync(join(UI, "wb-columns.js"), "utf8");
 function loadColumns() {
-  const window = {};
-  new Function("window", COLUMNS_SRC)(window);
-  return window.WBColumns;
+  return WBColumns;
 }
 
 // `applyColumns` maximizes only where `columnClasses(...).maximized` is true,

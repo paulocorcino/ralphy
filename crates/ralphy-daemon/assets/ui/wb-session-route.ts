@@ -1,9 +1,5 @@
 /* Pure browser-session ownership rules, shared by the shell and Node coverage. */
-(function (root, factory) {
-  const api = factory();
-  if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.WBSessionRoute = api;
-})(typeof window === "undefined" ? null : window, function () {
+export const WBSessionRoute = (function () {
   // The tab's holder id (ADR-0051 §9 amendment 2026-09-22): what the writer slot
   // is claimed as, so this tab's reattach can reclaim a slot its own earlier
   // socket still holds half-open behind a tunnel. The daemon's rule, mirrored:
@@ -14,7 +10,7 @@
   // `sessionStorage` is per tab and survives a reload, which is the scope that
   // must keep the name. A storage that throws or is absent still yields a
   // holder; it just will not outlive the document.
-  function holder(storage, mint) {
+  function holder(storage: any, mint: any) {
     try {
       const kept = storage?.getItem(HOLDER_KEY);
       if (kept && HOLDER_RE.test(kept)) return kept;
@@ -30,7 +26,7 @@
   // Here, not in wb-console.js: the console module names no browser store
   // (#347). `getRandomValues`, not `randomUUID`: the latter exists only in a
   // secure context, and a LAN bind is plain HTTP.
-  let tabHolderMemo = null;
+  let tabHolderMemo: string | null = null;
   function tabHolder() {
     if (tabHolderMemo == null) {
       let storage = null;
@@ -46,7 +42,7 @@
     return tabHolderMemo;
   }
 
-  function url(origin, opts) {
+  function url(origin: any, opts: any) {
     let value = origin + "/ws/session?";
     if (opts.id != null) {
       value += "id=" + encodeURIComponent(opts.id);
@@ -83,23 +79,23 @@
   // The window record of a NEW launch: the daemon keeps one live session per
   // record, so a second page relaunching it joins the first one's session.
   // Validated like the holder, as the daemon validates both.
-  function recordParam(r) {
+  function recordParam(r: any) {
     return typeof r === "string" && HOLDER_RE.test(r) ? "&record=" + r : "";
   }
 
-  function holderParam(h) {
+  function holderParam(h: any) {
     return typeof h === "string" && HOLDER_RE.test(h) ? "&holder=" + h : "";
   }
 
-  function closeUrl(id, repo) {
+  function closeUrl(id: any, repo: any) {
     return `/api/sessions/close?id=${encodeURIComponent(id)}&repo=${encodeURIComponent(repo)}`;
   }
 
-  function closeSucceeded(status) {
+  function closeSucceeded(status: any) {
     return status === 200 || status === 404;
   }
 
-  function announcement(current, payload) {
+  function announcement(current: any, payload: any) {
     const announcedId = payload?.session_id ?? payload?.session;
     return {
       sessionId: announcedId == null ? current.sessionId : Number(announcedId),
@@ -114,7 +110,7 @@
     };
   }
 
-  function matchesRepo(session, repoRef) {
+  function matchesRepo(session: any, repoRef: any) {
     return session.repo === repoRef;
   }
 
@@ -122,7 +118,7 @@
   // peers the list did not hear from. Their sessions are UNKNOWN on this read,
   // not absent.
   const UNANSWERED_HEADER = "x-ralphy-unanswered";
-  function unanswered(value) {
+  function unanswered(value: any) {
     return new Set(
       String(value ?? "")
         .split(",")
@@ -142,4 +138,13 @@
     UNANSWERED_HEADER,
     unanswered,
   };
-});
+})();
+
+// `wb-console.js` and `app.ts` still read this name (ADR-0075 D9).
+if (typeof window !== "undefined") window.WBSessionRoute = WBSessionRoute;
+
+declare global {
+  interface Window {
+    WBSessionRoute: typeof WBSessionRoute;
+  }
+}

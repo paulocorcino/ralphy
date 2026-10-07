@@ -1,21 +1,12 @@
-// Unit tests for assets/ui/wb-session-route.js — runs the real source with no
+// Unit tests for assets/ui/wb-session-route.ts — the module has no
 // DOM. Lives OUTSIDE assets/ui on purpose: lib.rs embeds all of assets/ui into
 // the daemon binary via include_dir!, so a test there would ship.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
-
-const SRC = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../assets/ui/wb-session-route.js"),
-  "utf8",
-);
+import { WBSessionRoute } from "../assets/ui/wb-session-route.ts";
 
 function load() {
-  const window = {};
-  new Function("window", SRC)(window);
-  return window.WBSessionRoute;
+  return WBSessionRoute;
 }
 
 const OPEN = { sessionId: 1, daemonId: "d", environment: "Windows" };

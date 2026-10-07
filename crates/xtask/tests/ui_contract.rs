@@ -481,14 +481,14 @@ const MIRRORS: &[(&str, &str, &str, &str)] = &[
     ),
     ("wb-console.js", "TAG_COMMAND", "protocol.rs", "TAG_COMMAND"),
     (
-        "wb-daemon.js",
+        "wb-daemon.ts",
         "TAG_TERMINAL",
         "protocol.rs",
         "TAG_TERMINAL",
     ),
-    ("wb-daemon.js", "TAG_COMMAND", "protocol.rs", "TAG_COMMAND"),
+    ("wb-daemon.ts", "TAG_COMMAND", "protocol.rs", "TAG_COMMAND"),
     (
-        "wb-daemon.js",
+        "wb-daemon.ts",
         "TAG_PRESENCE",
         "protocol.rs",
         "TAG_PRESENCE",

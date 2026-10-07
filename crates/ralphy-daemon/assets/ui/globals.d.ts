@@ -13,11 +13,10 @@ type SpawnStatus =
   | { status: "error"; message?: string };
 
 interface Window {
-  WBDaemon: {
-    observe(verb: string, payload: object): Promise<DaemonReply>;
-    spawn(verb: string, payload: object, onStatus: (st: SpawnStatus) => void): number;
-    [member: string]: any;
-  };
+  /** The daemon door (`wb-daemon.ts`). `subscribeTree` is `any`: `app.ts` tests
+   * `window.WBDaemon?.subscribeTree`, then calls it through the bare name, and a
+   * typed function there is a TS2774 error until `app.ts` imports the module. */
+  WBDaemon: Omit<import("./wb-daemon.ts").WBDaemonApi, "subscribeTree"> & { subscribeTree: any };
   Alpine: {
     data(name: string, factory: () => object): void;
     directive(name: string, handler: (el: any, directive: any, utilities: any) => void): void;
@@ -45,19 +44,17 @@ interface Window {
   shell: () => object;
   getShell(): any;
   WBRuns: { output(text: string): void };
-  WBColumns: any;
   WBConsoleName: any;
   WBDeskSink: any;
   WBDetachLink: any;
   WBNotes: any;
-  WBSessionRoute: any;
   WBViewer: any;
   /** The vendored lucide (`vendor/lucide.js`). */
   lucide: any;
 }
 
 // Classic scripts and vendored libraries that app.js names bare.
-declare var WBColumns: any;
+declare var WBColumns: Window["WBColumns"];
 declare var WBConsole: Window["WBConsole"];
 declare var WBDaemon: Window["WBDaemon"];
 declare var WBViewer: any;

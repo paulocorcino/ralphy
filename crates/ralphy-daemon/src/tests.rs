@@ -3089,7 +3089,7 @@ fn the_console_terminal_is_themed_in_lockstep_with_the_stylesheet() {
     );
     assert!(
         js.contains("background: \"#000000\""),
-        "the terminal surface is pure black — the same exception wb-monaco.js makes for code"
+        "the terminal surface is pure black — the same exception wb-monaco.ts makes for code"
     );
     for (token, hex) in [
         ("--text", "#d4ccc0"),
@@ -4084,14 +4084,13 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
     //   boot path (#339).
     const BOTH: &[&str] = &["index.html", "detached-fence.html"];
     // (module, the module that reads it, the shells that must order them)
-    let orders: [(&str, &str, &[&str]); 8] = [
+    let orders: [(&str, &str, &[&str]); 7] = [
         ("wb-geometry.js", "wb-console.js", BOTH),
         ("wb-window-state.js", "wb-console.js", BOTH),
         ("wb-desk-sink.js", "wb-console.js", BOTH),
         ("wb-desk-sync.js", "wb-console.js", BOTH),
         ("wb-detach-link.js", "wb-console.js", BOTH),
         ("wb-console-name.js", "wb-console.js", BOTH),
-        ("wb-session-route.js", "wb-console.js", BOTH),
         ("wb-view.js", "wb-console.js", &["index.html"]),
     ];
     for (module, reader, shells) in orders {
@@ -4200,18 +4199,13 @@ fn every_ui_test_file_is_imported_by_the_barrel() {
 /// D9). A ratchet: a file leaves the list in the change that moves it, and
 /// nothing joins it.
 const CLASSIC_SCRIPTS: &[&str] = &[
-    "wb-columns.js",
     "wb-console.js",
     "wb-console-name.js",
-    "wb-daemon.js",
     "wb-desk-sink.js",
     "wb-desk-sync.js",
     "wb-detach-link.js",
-    "wb-device.js",
     "wb-geometry.js",
-    "wb-monaco.js",
     "wb-notes.js",
-    "wb-session-route.js",
     "wb-view.js",
     "wb-viewer.js",
     "wb-window-state.js",
@@ -4224,17 +4218,21 @@ const MODULE_WINDOW_NAMES: &[&str] = &[
     "WBAddProject",
     "WBAgents",
     "WBChanges",
+    "WBColumns",
+    "WBDaemon",
     "WBDeskHistory",
     "WBFail",
     "WBFileSearch",
     "WBFleet",
     "WBKanban",
+    "WBMonaco",
     "WBProject",
     "WBRelease",
     "WBReleaseDialogs",
     "WBRun",
     "WBRuns",
     "WBSecurityDialog",
+    "WBSessionRoute",
     "WBSettingsDialog",
     "WBSpend",
     "WBSplit",
@@ -4489,8 +4487,8 @@ fn monaco_replaced_codemirror_in_the_embedded_ui() {
     );
 
     assert!(
-        include_str!("../assets/ui/wb-monaco.js").contains("monaco.editor.create"),
-        "wb-monaco.js must build the editor through Monaco's own factory"
+        include_str!("../assets/ui/wb-monaco.ts").contains("monaco.editor.create"),
+        "wb-monaco.ts must build the editor through Monaco's own factory"
     );
 
     let viewer = include_str!("../assets/ui/wb-viewer.js");
@@ -7269,8 +7267,8 @@ fn the_runs_feed_is_contained_in_the_markup() {
     );
     // `verbLockTitle` and `exitNote` are driven by `ui-tests/wb-runs.test.mjs`.
     assert!(
-        include_str!("../assets/ui/wb-daemon.js").contains("runVerbFailed?.("),
-        "wb-daemon.js must route a terminal verb frame to the panel (#331)"
+        include_str!("../assets/ui/wb-daemon.ts").contains("runVerbFailed?.("),
+        "wb-daemon.ts must route a terminal verb frame to the panel (#331)"
     );
 }
 
@@ -7833,8 +7831,8 @@ fn no_selector_sets_one_property_twice() {
 #[test]
 fn the_run_completion_nudge_is_wired_through_the_ui_assets() {
     assert!(
-        include_str!("../assets/ui/wb-daemon.js").contains("subscribeChanges,"),
-        "wb-daemon.js must EXPORT subscribeChanges — app.ts guards on it (#310)"
+        include_str!("../assets/ui/wb-daemon.ts").contains("subscribeChanges,"),
+        "wb-daemon.ts must EXPORT subscribeChanges — app.ts guards on it (#310)"
     );
     assert!(
         include_str!("../assets/ui/app.ts")
