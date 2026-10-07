@@ -1759,11 +1759,20 @@ test("every shell path that paints the columns asks to write the maximize", () =
       assert.equal(calls.length, count, `${name} paints the columns`);
       for (const opts of calls) assert.equal(opts?.persist, true, `${name}: ${JSON.stringify(opts)}`);
     }
-    // The lone-survivor case above took its own branch: it paints the survivor.
+    // The lone-survivor case above took its own branch: it paints the survivor
+    // and ends the columns.
     state.columns = grid();
     paints.length = 0;
     lone();
     assert.deepEqual(paints, [["b"]], "the lone survivor is painted");
+    assert.deepEqual(state.columns, [], "the lone survivor ends the columns");
+    // A first console off the stage that keeps its record is being relaunched
+    // in place: nothing is painted or stored until it is back.
+    globalThis.WBConsole.deskRecords = () => [{ id: "a", max: true }];
+    state.columns = grid();
+    calls.length = 0;
+    lone();
+    assert.deepEqual([calls.length, state.columns], [0, grid()], "a relaunch gap paints nothing");
   } finally {
     document.querySelectorAll = realAll;
     globalThis.WBConsole = realConsole;

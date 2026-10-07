@@ -4964,6 +4964,8 @@ export function shell() {
         this.restoreColumn(head);
         return;
       }
+      // Off the stage with its record kept: a relaunch puts it back under the same id.
+      if (head && !headWin && WBConsole.deskRecords().some((r: any) => r.id === head)) return;
       const kept = WBColumns.keep(this.columns, new Set(byId.keys()));
       const keptIds = WBColumns.flat(kept);
       // The first console left the stage and one is left: it takes the maximize.
