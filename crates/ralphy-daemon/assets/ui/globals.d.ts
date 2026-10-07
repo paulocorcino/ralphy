@@ -48,7 +48,8 @@ interface Window {
   WBDeskSink: any;
   WBDetachLink: any;
   WBNotes: any;
-  WBViewer: any;
+  /** The file pane (`wb-viewer.ts`). */
+  WBViewer: ReturnType<typeof import("./wb-viewer.ts").createViewer>;
   /** The vendored lucide (`vendor/lucide.js`). */
   lucide: any;
 }
@@ -57,7 +58,7 @@ interface Window {
 declare var WBColumns: Window["WBColumns"];
 declare var WBConsole: Window["WBConsole"];
 declare var WBDaemon: Window["WBDaemon"];
-declare var WBViewer: any;
+declare var WBViewer: Window["WBViewer"];
 declare var marked: any;
 declare var DOMPurify: any;
 /** The vendored Wunderbaum (`vendor/wunderbaum`). */

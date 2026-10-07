@@ -2,8 +2,10 @@
 // the import sets the `window` name its classic scripts read (D9).
 import "./wb-fleet.ts";
 import "./wb-monaco.ts";
+import { createViewer } from "./wb-viewer.ts";
 import { wireDetached } from "./wb-detached.ts";
 
-// A module runs after every classic script, so the page posts "ready" only
-// once `WBViewer`, which the shell's answer reaches, exists.
+// The opener reads `popup.WBViewer`, and the page posts "ready" only once it
+// exists: the shell's answer reaches it.
+window.WBViewer = createViewer(window, document);
 wireDetached(window, document);

@@ -11,7 +11,7 @@
 
    Nothing here reads the DOM, the store or a module-scope binding: `app.js`
    holds `slot`/`splitRatio`/`lastLeft`, feeds them through `resolve` on every
-   `syncViewer`, and `wb-viewer.js` paints the answer. Same shape as
+   `syncViewer`, and `wb-viewer.ts` paints the answer. Same shape as
    `wb-geometry.js` → `wb-console.js`.
 
    Load order: BEFORE `app.js`; nothing else reads this namespace.

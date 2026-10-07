@@ -42,7 +42,7 @@
     </style>
   </head>
   <body>
-    <!-- wb-viewer.js mounts the single file pane here (reused verbatim from the
+    <!-- wb-viewer.ts mounts the single file pane here (reused verbatim from the
          shell); this popup runs its own Monaco / marked / mermaid. -->
     <div id="viewers"></div>
 
@@ -53,6 +53,5 @@
     <!-- Monaco's AMD loader installs a global `define`; it MUST come after the
          UMD vendors above (see index.html). -->
     <script src="vendor/monaco/vs/loader.js"></script>
-    <script src="wb-viewer.js"></script>
   </body>
 </html>

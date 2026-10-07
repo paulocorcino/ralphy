@@ -3010,7 +3010,7 @@ fn vendored_crepe_states_its_recipe() {
             "vendor-build/crepe/entry.js",
             include_str!("../vendor-build/crepe/entry.js"),
         ),
-        ("wb-viewer.js", include_str!("../assets/ui/wb-viewer.js")),
+        ("wb-viewer.ts", include_str!("../assets/ui/wb-viewer.ts")),
     ] {
         assert!(
             src.contains("htmlLabels: false"),
@@ -4119,7 +4119,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
 /// only works if the pane declares itself a container: drop the
 /// `container-type` and every rule inside the query goes silently inert,
 /// with nothing on the JS side to notice. Pinned here for that reason, and
-/// the threshold is pinned at ONE number because `wb-viewer.js` measures
+/// the threshold is pinned at ONE number because `wb-viewer.ts` measures
 /// the same 560 to trim Monaco's gutter — two numbers would fold the
 /// captions and the gutter at different widths.
 #[test]
@@ -4144,10 +4144,10 @@ fn the_narrow_pane_criterion_is_the_panes_own_width() {
             "the stylesheet must fold `{name}` at 560px: `{query}`"
         );
     }
-    let js = include_str!("../assets/ui/wb-viewer.js");
+    let js = include_str!("../assets/ui/wb-viewer.ts");
     assert!(
         js.contains("const NARROW_PX = 560;"),
-        "wb-viewer.js must trim the gutter at the SAME 560px the stylesheet folds the captions"
+        "wb-viewer.ts must trim the gutter at the SAME 560px the stylesheet folds the captions"
     );
 }
 
@@ -4207,7 +4207,6 @@ const CLASSIC_SCRIPTS: &[&str] = &[
     "wb-geometry.js",
     "wb-notes.js",
     "wb-view.js",
-    "wb-viewer.js",
     "wb-window-state.js",
 ];
 
@@ -4236,6 +4235,7 @@ const MODULE_WINDOW_NAMES: &[&str] = &[
     "WBSettingsDialog",
     "WBSpend",
     "WBSplit",
+    "WBViewer",
     "WB_SETTINGS",
     "WB_TRISTATE",
 ];
@@ -4491,23 +4491,23 @@ fn monaco_replaced_codemirror_in_the_embedded_ui() {
         "wb-monaco.ts must build the editor through Monaco's own factory"
     );
 
-    let viewer = include_str!("../assets/ui/wb-viewer.js");
+    let viewer = include_str!("../assets/ui/wb-viewer.ts");
     assert!(
         viewer.contains("WBMonaco.create"),
-        "wb-viewer.js must mount its editor through WBMonaco"
+        "wb-viewer.ts must mount its editor through WBMonaco"
     );
     // The mirror pane (ADR-0037 §3c) is a SECOND editor over the pane's
     // model, never a second model: `wb_monaco_308.py` counts models per
     // open pane and a mirror must not move that count.
     assert!(
         viewer.contains("WBMonaco.createOver"),
-        "wb-viewer.js must mount the mirror through WBMonaco.createOver"
+        "wb-viewer.ts must mount the mirror through WBMonaco.createOver"
     );
     // Built from parts so this pin cannot trip on its own source text.
     let outgoing = concat!("Code", "Mirror(");
     assert!(
         !viewer.contains(outgoing),
-        "wb-viewer.js must not construct a {outgoing} editor"
+        "wb-viewer.ts must not construct a {outgoing} editor"
     );
 }
 
@@ -4541,8 +4541,8 @@ fn the_changes_section_renders_a_status_marked_list() {
         "index.html must open a diff from a changes row"
     );
     assert!(
-        include_str!("../assets/ui/wb-viewer.js").contains("WBMonaco.createDiff"),
-        "wb-viewer.js must mount the diff through WBMonaco.createDiff"
+        include_str!("../assets/ui/wb-viewer.ts").contains("WBMonaco.createDiff"),
+        "wb-viewer.ts must mount the diff through WBMonaco.createDiff"
     );
 
     // The staged/unstaged split (#315): the row's two halves, the group
@@ -4722,8 +4722,8 @@ fn presence_staleness_is_derived_on_a_clock_not_inside_the_binding() {
 /// the script tags and the markup that must call it.
 #[test]
 fn the_workbench_never_titles_a_repo_with_its_routing_head() {
-    // The popups load `wb-viewer.js`/`wb-console.js`, which now call the
-    // fold — without the script tag the label silently falls back to the
+    // The popups load `wb-viewer.ts`/`wb-console.js`, which now call the
+    // fold — without the import or tag the label silently falls back to the
     // ref in exactly the two windows nobody tests by hand.
     for page in [
         include_str!("../assets/ui/detached.html"),

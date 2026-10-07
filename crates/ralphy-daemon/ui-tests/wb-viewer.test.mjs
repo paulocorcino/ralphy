@@ -1,25 +1,20 @@
-// Unit tests for assets/ui/wb-viewer.js — the link decision table behind a
+// Unit tests for assets/ui/wb-viewer.ts — the link decision table behind a
 // click in a rendered markdown document, and the two-pane paint behind the
-// slot (ADR-0037 §3c). The link tests run the real source against a DOM that
-// answers nothing: the module only touches `document` at load to find its
-// mount point, and `linkTarget` is pure. The slot tests give it a DOM that
+// slot (ADR-0037 §3c). The link tests run the real module against a DOM that
+// answers nothing: `createViewer` only touches `document` to find its mount
+// point, and `linkTarget` is pure. The slot tests give it a DOM that
 // remembers what was appended and a Monaco that boots.
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { createViewer } from "../assets/ui/wb-viewer.ts";
+import { WBMonaco } from "../assets/ui/wb-monaco.ts";
 
-const SRC = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../assets/ui/wb-viewer.js"),
-  "utf8",
-);
+const REAL_MONACO = { ...WBMonaco };
 
 function load() {
   const window = {};
   const document = { getElementById: () => null };
-  new Function("window", "document", SRC)(window, document);
-  return window.WBViewer;
+  return createViewer(window, document);
 }
 
 const DIR = "docs/analise";
@@ -160,7 +155,7 @@ function loadWithDom() {
     editor: { getModels: () => [] },
   };
   const models = [];
-  const WBMonaco = {
+  const stub = {
     ready: () => Promise.resolve(monacoStub),
     gutterOptions: () => ({}),
     create(container, { value, path }) {
@@ -175,8 +170,6 @@ function loadWithDom() {
   };
   const window = {
     WB: { emit() {} },
-    WBFleet: { refSlug: (p) => p },
-    WBMonaco,
     monaco: monacoStub,
     getShell: () => ({ _flashAction() {} }),
     addEventListener() {},
@@ -190,11 +183,12 @@ function loadWithDom() {
     addEventListener() {},
     dispatchEvent() {},
   };
-  new Function("window", "document", SRC)(window, document);
-  for (const k of ["WB", "WBMonaco"]) globalThis[k] = window[k];
-  return { viewer: window.WBViewer, mount, log, models };
+  // The pane imports the one `WBMonaco`: its boot is replaced for the test and
+  // put back by `after`.
+  Object.assign(WBMonaco, stub);
+  return { viewer: createViewer(window, document), mount, log, models };
 }
-after(() => ["WB", "WBMonaco"].forEach((k) => delete globalThis[k]));
+after(() => Object.assign(WBMonaco, REAL_MONACO));
 const settle = () => new Promise((r) => setTimeout(r, 5));
 const paneOf = (mount, id) => mount.children.find((c) => c.dataset.tabId === id);
 const mirrors = (mount) => mount.children.filter((c) => c.className.includes("mirror-viewer"));
