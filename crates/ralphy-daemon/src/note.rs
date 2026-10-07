@@ -31,7 +31,7 @@
 //! block at offset 0. It lives in the FILE and not in the desk record so that
 //! closing and reopening a card keeps the colour (ADR-0064 §2) — but the
 //! daemon does not PARSE it: this module stores the markdown verbatim and the
-//! card (`assets/ui/wb-notes.js`) is the one implementation of the rule. A
+//! card (`assets/ui/wb-notes.ts`) is the one implementation of the rule. A
 //! second parser here would be a copy with no caller, and the two had already
 //! drifted on whitespace before this was noticed.
 //!

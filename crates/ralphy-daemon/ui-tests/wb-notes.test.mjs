@@ -1,4 +1,4 @@
-// Unit tests for assets/ui/wb-notes.js — the note card (ADR-0064 §§2, 8).
+// Unit tests for assets/ui/wb-notes.ts — the note card (ADR-0064 §§2, 8).
 //
 // The folds only: what a note is CALLED, where it jumps to, what it is saved
 // as, and who may move it. The card's DOM is exercised in the browser (the
@@ -10,9 +10,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { createNotes } from "../assets/ui/wb-notes.ts";
 
 const UI = join(dirname(fileURLToPath(import.meta.url)), "../assets/ui");
-const SRC = readFileSync(join(UI, "wb-notes.js"), "utf8");
 const GEO = readFileSync(join(UI, "wb-geometry.js"), "utf8");
 
 // One window, and `wb-geometry.js` beside it: `lockedBy` asks `fenceOf` which
@@ -21,7 +21,7 @@ const GEO = readFileSync(join(UI, "wb-geometry.js"), "utf8");
 function load() {
   const window = { document: { getElementById: () => null } };
   new Function("window", GEO)(window);
-  new Function("window", "document", SRC)(window, window.document);
+  window.WBNotes = createNotes(window, window.document);
   return window.WBNotes;
 }
 
@@ -262,7 +262,7 @@ function withCards(cards, records, fences) {
     getElementById: (id) => (id === "stage" ? { querySelectorAll: () => cards } : null),
   };
   new Function("window", GEO)(window);
-  new Function("window", "document", SRC)(window, document);
+  window.WBNotes = createNotes(window, document);
   return window.WBNotes;
 }
 
@@ -473,7 +473,7 @@ test("the map says which card is on top, and which is in a detached popup", () =
     getElementById: (id) => (id === "stage" ? { querySelectorAll: () => cards } : null),
   };
   new Function("window", GEO)(window);
-  new Function("window", "document", SRC)(window, document);
+  window.WBNotes = createNotes(window, document);
   const rows = window.WBNotes.list();
   assert.deepEqual(
     rows.map((r) => [r.id, r.onTop, r.away]),
@@ -541,7 +541,7 @@ test("a card that handed its draft to a popup does not write the note", async ()
     querySelector: () => null,
   };
   new Function("window", GEO)(window);
-  new Function("window", "document", SRC)(window, document);
+  window.WBNotes = createNotes(window, document);
   const notes = window.WBNotes;
   // The control: without the hand-off the claimed name is written.
   await (notes.flushAll(), cards[0]._noteWrite);
@@ -571,13 +571,13 @@ test("a keystroke the editor holds but has not reported yet counts as unsaved", 
     getElementById: (id) => (id === "stage" ? { querySelectorAll: () => [card] } : null),
   };
   new Function("window", GEO)(window);
-  new Function("window", "document", SRC)(window, document);
+  window.WBNotes = createNotes(window, document);
   assert.equal(window.WBNotes.anyDirty(), true);
   // NEGATIVE CONTROL: an editor that holds the saved text is clean.
   const clean = { ...card, _noteDirty: false, _noteMarkdown: "saved\n", _noteEditor: { getMarkdown: () => "saved\n" } };
   const w2 = { WBConsole: { notes: () => [], fenceRecords: () => [] } };
   const d2 = { getElementById: (id) => (id === "stage" ? { querySelectorAll: () => [clean] } : null) };
   new Function("window", GEO)(w2);
-  new Function("window", "document", SRC)(w2, d2);
+  w2.WBNotes = createNotes(w2, d2);
   assert.equal(w2.WBNotes.anyDirty(), false);
 });

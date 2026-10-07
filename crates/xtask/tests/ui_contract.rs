@@ -500,7 +500,7 @@ const MIRRORS: &[(&str, &str, &str, &str)] = &[
         "tree/search.rs",
         "MIN_QUERY_CHARS",
     ),
-    ("wb-notes.js", "DEFAULT_DIR", "note.rs", "DIR"),
+    ("wb-notes.ts", "DEFAULT_DIR", "note.rs", "DIR"),
 ];
 
 /// The note exception to the write denylist, as a pair of functions

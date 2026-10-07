@@ -170,7 +170,7 @@ test("a click outside a modal does not close it", () => {
     const pointer = Object.keys(s.b).filter((k) => /^(@|x-on:)(click|mousedown|pointerdown)/.test(k));
     assert.deepEqual(pointer, [], `${s.path}: the scrim must not close on a click`);
   }
-  for (const file of ["wb-console.js", "wb-notes.js"]) {
+  for (const file of ["wb-console.js", "wb-notes.ts"]) {
     const src = readFileSync(join(UI, file), "utf8");
     assert.doesNotMatch(src, /\bscrim\.(addEventListener\(|on\w+\s*=)/, `${file}: a scrim with a listener`);
   }

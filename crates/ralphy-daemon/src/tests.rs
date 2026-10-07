@@ -2801,9 +2801,9 @@ fn the_explorer_opens_a_note_as_a_card() {
     // The card's own file actions go through the GENERIC byte-ops — there
     // is no `note.rename`/`note.delete`, and adding one would re-derive the
     // confinement the carve-out already gives.
-    let notes = include_str!("../assets/ui/wb-notes.js");
+    let notes = include_str!("../assets/ui/wb-notes.ts");
     for pin in [r#"write("file.rename""#, r#"write("file.delete""#] {
-        assert!(notes.contains(pin), "wb-notes.js must keep the pin {pin}");
+        assert!(notes.contains(pin), "wb-notes.ts must keep the pin {pin}");
     }
     // The native dialogs are pinned OUT for the reason `wb-console.js`
     // records: an automated browser dismisses them by default, which turns
@@ -2858,7 +2858,7 @@ fn the_explorer_opens_a_note_as_a_card() {
 /// second place to change one value.
 #[test]
 fn a_notes_hand_and_size_are_a_closed_set_on_both_sides() {
-    let notes = include_str!("../assets/ui/wb-notes.js");
+    let notes = include_str!("../assets/ui/wb-notes.ts");
     let css = include_str!("../assets/ui/styles/13-notes.css");
     assert!(
         notes.contains(r#"const FONTS = ["sans", "serif", "mono"]"#)
@@ -4205,7 +4205,6 @@ const CLASSIC_SCRIPTS: &[&str] = &[
     "wb-desk-sync.js",
     "wb-detach-link.js",
     "wb-geometry.js",
-    "wb-notes.js",
     "wb-view.js",
     "wb-window-state.js",
 ];
@@ -4225,6 +4224,7 @@ const MODULE_WINDOW_NAMES: &[&str] = &[
     "WBFleet",
     "WBKanban",
     "WBMonaco",
+    "WBNotes",
     "WBProject",
     "WBRelease",
     "WBReleaseDialogs",
@@ -5011,7 +5011,7 @@ fn shell_drags_only_past_a_threshold() {
     // And the card must actually PASS both hooks: the default is correct
     // for a window and wrong for a card, whose node has no `_deskLocked`
     // and whose rect belongs to another collection.
-    let notes_js = include_str!("../assets/ui/wb-notes.js");
+    let notes_js = include_str!("../assets/ui/wb-notes.ts");
     for pin in [
         "locked: () => !!el._noteLocked",
         "onDrop: () => persistCards(el)",
@@ -5077,7 +5077,7 @@ fn a_note_card_is_stacked_and_wears_the_console_chrome() {
     // Normalized: the pin below spans line ends, and a Windows checkout
     // (CI's included) embeds the asset with CRLF.
     let console = include_str!("../assets/ui/wb-console.js").replace("\r\n", "\n");
-    let notes = include_str!("../assets/ui/wb-notes.js");
+    let notes = include_str!("../assets/ui/wb-notes.ts");
     // The seam: a place in the tier WITHOUT focus, because a restore
     // focuses nothing and `focusWin` is the only other way to get one.
     assert!(
@@ -5894,9 +5894,9 @@ fn shell_detaches_a_fence() {
 #[test]
 fn the_shell_writes_the_desk_only_as_changes() {
     let console = include_str!("../assets/ui/wb-console.js");
-    let notes = include_str!("../assets/ui/wb-notes.js");
+    let notes = include_str!("../assets/ui/wb-notes.ts");
     let sync = include_str!("../assets/ui/wb-desk-sync.js");
-    for (name, js) in [("wb-console.js", console), ("wb-notes.js", notes)] {
+    for (name, js) in [("wb-console.js", console), ("wb-notes.ts", notes)] {
         for banned in [
             "persistWin(",
             "deskBody(",

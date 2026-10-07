@@ -47,7 +47,8 @@ interface Window {
   WBConsoleName: any;
   WBDeskSink: any;
   WBDetachLink: any;
-  WBNotes: any;
+  /** The note cards (`wb-notes.ts`). */
+  WBNotes: ReturnType<typeof import("./wb-notes.ts").createNotes>;
   /** The file pane (`wb-viewer.ts`). */
   WBViewer: ReturnType<typeof import("./wb-viewer.ts").createViewer>;
   /** The vendored lucide (`vendor/lucide.js`). */
