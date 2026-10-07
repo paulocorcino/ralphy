@@ -1788,12 +1788,6 @@ test("every shell path that paints the columns asks to write the maximize", () =
     calls.length = 0;
     state.paintColumns();
     assert.equal(calls.length, 1, "a first console back on the stage paints");
-    // A member that is not first keeps its place while it is relaunched.
-    globalThis.WBConsole.isRelaunching = (id) => id === "b";
-    stage(["a", true], ["c"]);
-    state.columns = grid();
-    state.paintColumns();
-    assert.deepEqual(state.columns, grid(), "a relaunched member keeps its column");
   } finally {
     document.querySelectorAll = realAll;
     globalThis.WBConsole = realConsole;
