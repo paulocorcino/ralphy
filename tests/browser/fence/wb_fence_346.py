@@ -1328,7 +1328,7 @@ def main():
 
     # The floor is the REAL count, not a loose lower bound: set under the total,
     # a whole scenario could stop running while the suite still exits 0.
-    ok = all(results) and len(results) == 57
+    ok = all(results) and len(results) == 58
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("A FENCE DETACHES INTO ITS OWN WINDOW, AND COMES HOME")

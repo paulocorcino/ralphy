@@ -363,13 +363,24 @@ def open_member(page, slug, index, centre):
     win = page.locator(".session-window").nth(before)
     win.locator(".xterm").wait_for(timeout=20000)
     page.wait_for_timeout(400)
-    # Size it first, so every member's box is the one this file names.
-    page.evaluate(
-        "([i, w, h]) => { const el = document.querySelectorAll('.session-window')[i];"
-        " el.style.width = w + 'px'; el.style.height = h + 'px'; }",
-        [before, MEMBER_BOX["width"], MEMBER_BOX["height"]],
+    # Size it first, so every member's box is the one this file names. A drag
+    # of the SE grip, not an inline style write: the page saves the rect at
+    # the end of a gesture, and puts the saved rect back on a window when the
+    # desk comes back, so an inline size is undone.
+    grip = page.evaluate(
+        "(i) => { const el = document.querySelectorAll('.session-window')[i];"
+        " const r = el.querySelector('.h-se').getBoundingClientRect();"
+        " return { x: r.left + r.width / 2, y: r.top + r.height / 2,"
+        "   w: el.offsetWidth, h: el.offsetHeight }; }",
+        before,
     )
-    page.wait_for_timeout(200)
+    drag(page, grip, MEMBER_BOX["width"] - grip["w"], MEMBER_BOX["height"] - grip["h"])
+    size = page.evaluate(
+        "(i) => { const el = document.querySelectorAll('.session-window')[i];"
+        " return { width: el.offsetWidth, height: el.offsetHeight }; }",
+        before,
+    )
+    check(f"console {before + 1} is sized by its grip", size == MEMBER_BOX, f"got={size}")
     here = page.evaluate(
         "(i) => { const el = document.querySelectorAll('.session-window')[i];"
         " return { x: el.offsetLeft + el.offsetWidth / 2, y: el.offsetTop + el.offsetHeight / 2 }; }",
@@ -683,14 +694,16 @@ def main():
 
             served = stored(desk_file, all_tiled)
             served_rects = {w["id"]: w["rect"] for w in served.get("windows", [])}
+            # The tile computes each rect and stores it as computed, half pixels
+            # included: the inline rect, not the rounded measured box.
             check(
                 "the daemon stores the TILED rects — tiling is a layout act, like a drag",
                 all(
-                    served_rects[i] == {k: float(v) for k, v in tiled[i]["box"].items()}
+                    all(abs(served_rects[i][k] - tiled[i]["inline"][k]) < 0.01 for k in tiled[i]["inline"])
                     for i in member_ids
                 ),
                 f"served={[served_rects.get(i) for i in member_ids]}"
-                f" boxes={[tiled[i]['box'] for i in member_ids]}",
+                f" inline={[tiled[i]['inline'] for i in member_ids]}",
             )
             check(
                 "…which are the TILED rects and not the pre-arrange ones — the defect this criterion names",
@@ -857,7 +870,7 @@ def main():
 
     # The floor is the REAL count, not a loose lower bound: set under the total,
     # a whole scenario could stop running while the suite still exits 0.
-    ok = all(results) and len(results) == 41
+    ok = all(results) and len(results) == 44
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("ARRANGE MOVES INTO THE FENCE")

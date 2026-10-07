@@ -123,11 +123,16 @@ def empty_env(daemon_dir):
 
 
 def make_fixture_repo():
-    """A throwaway git repo the daemon can open consoles in. It deliberately has
-    NO gemini configuration root, so an agent launch is refused before any spawn."""
+    """A throwaway git repo the daemon can open consoles in. A Gemini launch is
+    refused before any gemini CLI starts: the daemon prepares the Gemini configuration root
+    at `.ralphy/gemini-home` first, and a plain file there makes that fail. So
+    no gemini CLI starts and nothing is spent."""
     d = tempfile.mkdtemp(prefix="wb303_fixture_")
     p = Path(d)
     (p / "README.md").write_text("# fixture\n\nThe #303 console-desk fixture repo.\n", encoding="utf-8")
+    (p / ".gitignore").write_text(".ralphy/\n", encoding="utf-8")
+    (p / ".ralphy").mkdir()
+    (p / ".ralphy" / "gemini-home").write_text("not a folder\n", encoding="utf-8")
     for args in (
         ["git", "init"],
         ["git", "config", "user.email", "wb303@example.com"],
@@ -145,7 +150,9 @@ def register_fixture(daemon_dir, fixture_dir):
         [EXE, "daemon", "add", fixture_dir], env=env, check=True, capture_output=True, encoding="utf-8"
     )
     # stdout: "registered <slug> → <path>"; the arrow is U+2192, so decode utf-8.
-    return result.stdout.strip().split("registered ", 1)[1].split(" →")[0].strip()
+    # The path is what the page shows on hover for a repo with no remote.
+    slug, path = result.stdout.strip().split("registered ", 1)[1].split(" →", 1)
+    return slug.strip(), path.strip()
 
 
 def build():
@@ -429,7 +436,7 @@ def main():
     build()
     daemon_dir = tempfile.mkdtemp(prefix="wb303_reg_")
     fixture_dir = make_fixture_repo()
-    slug = register_fixture(daemon_dir, fixture_dir)
+    slug, repo_path = register_fixture(daemon_dir, fixture_dir)
 
     proc = launch(daemon_dir)
     try:
@@ -666,6 +673,8 @@ def main():
                 f"got={[r['id'] for r in records]}",
             )
 
+            reload_sockets = []
+            page.on("websocket", lambda ws: reload_sockets.append(ws.url))
             page.reload()
             page.wait_for_selector("[x-data]", timeout=8000)
             page.wait_for_function(
@@ -688,10 +697,31 @@ def main():
                 == [False, True],
                 "",
             )
+            # A console under the maximized one comes back asleep: it holds its
+            # session id and opens a terminal only when it shows. An attach
+            # socket names the session (`?id=`); a launch does not.
+            held = page.evaluate(
+                "() => [...document.querySelectorAll('.session-window')]"
+                ".map((w) => w._term?.sessionId ?? w._dormantSession ?? w._wantsSession ?? null)"
+            )
+            launches = [u for u in reload_sockets if "/ws/session?" in u and "/ws/session?id=" not in u]
+            attached = f"/ws/session?id={records[1]['sessionId']}&"
             check(
                 "…still attached to their live sessions, not relaunched",
-                page.evaluate("() => document.querySelectorAll('.session-window .xterm').length") == 2,
-                "",
+                held == [r["sessionId"] for r in records]
+                and not launches
+                and any(attached in u for u in reload_sockets),
+                f"held={held} records={[r['sessionId'] for r in records]} launches={launches}",
+            )
+            # Read last before it shows, after a second more: a console that
+            # wakes late while still covered is caught too.
+            page.wait_for_timeout(1000)
+            asleep = page.evaluate("() => document.querySelectorAll('.session-window')[0].classList.contains('dormant')")
+            early = [u for u in reload_sockets if f"/ws/session?id={records[0]['sessionId']}&" in u]
+            check(
+                "…and the console under the maximized one comes back asleep, with no socket yet",
+                asleep is True and not early,
+                f"dormant={asleep} sockets={early}",
             )
             # …and it still knows the box to un-maximize to, after the round trip.
             page.locator(".session-window").nth(1).locator(".session-max").click()
@@ -700,6 +730,20 @@ def main():
                 "a restored-then-un-maximized window returns to its pre-maximize box",
                 rect_of(page, 1) == pre_max,
                 f"want={pre_max} got={rect_of(page, 1)}",
+            )
+            # The console that came back asleep under it shows now: it wakes on
+            # its own session, and nothing is launched for it.
+            try:
+                page.locator(".session-window").nth(0).locator(".xterm").wait_for(timeout=15000)
+            except Exception:
+                pass
+            woke = page.evaluate("() => document.querySelectorAll('.session-window')[0]._term?.sessionId ?? null")
+            launches = [u for u in reload_sockets if "/ws/session?" in u and "/ws/session?id=" not in u]
+            attached = f"/ws/session?id={records[0]['sessionId']}&"
+            check(
+                "…and the console under it wakes on its own session when it shows",
+                woke == records[0]["sessionId"] and not launches and any(attached in u for u in reload_sockets),
+                f"woke={woke} record={records[0]['sessionId']} launches={launches}",
             )
 
             after_recs = desk_records(page)
@@ -743,9 +787,10 @@ def main():
 
             # --- scenarios 7 & 8: the desk survives a DAEMON restart ----------
             # Seed an agent console into the desk. Gemini, because this fixture
-            # repo has no owned configuration root: the daemon refuses the launch
-            # with 400 BEFORE any spawn, so the reconnect path is exercised
-            # end-to-end without starting a vendor CLI or spending quota.
+            # repo cannot hold its configuration root: the daemon refuses the
+            # launch with 400 before any gemini CLI starts, so the reconnect path is
+            # exercised end-to-end without starting a vendor CLI or spending
+            # quota.
             console_rec = desk_records(page)[0]
             # Seeded through the daemon; the shell picks it up on the reload
             # that the restart below forces (issue #327).
@@ -793,12 +838,23 @@ def main():
                 rect_of(page, 0) == before[0],
                 f"want={before[0]} got={rect_of(page, 0)}",
             )
-            # #479: the repo moved from the title to its tooltip.
+            # #479: the repo moved from the title to its tooltip. A repo with no
+            # remote is named there by its path, once the shell has handed the
+            # project names to the console module.
+            try:
+                page.wait_for_function(
+                    "(p) => (document.querySelector('.session-window.placeholder .session-title')?.title || '')"
+                    ".split('\\n')[0] === p",
+                    arg=repo_path,
+                    timeout=8000,
+                )
+            except Exception:
+                pass
             ph_title = ph.locator(".session-title").inner_text()
             ph_tip = ph.locator(".session-title").get_attribute("title") or ""
             check(
                 "the placeholder keeps its agent and its repo",
-                "(gemini)" in ph_title and ph_tip.split("\n")[0] == slug,
+                "(gemini)" in ph_title and ph_tip.split("\n")[0] == repo_path,
                 f"title={ph_title!r} tip={ph_tip!r}",
             )
             check(
@@ -898,10 +954,10 @@ def main():
             # --- scenario 10: the relaunch-on-load opt-in ---------------------
             # Seed a desk of ONE agent record whose session id no live session
             # can claim, so the verdict is unambiguous: a placeholder with the
-            # toggle off, a real launch with it on. Gemini has no configuration
-            # root in this fixture, so that launch is refused by the daemon
-            # before any spawn — the SOCKET is the evidence, and nothing is
-            # spent proving it.
+            # toggle off, a real launch with it on. Gemini cannot prepare its
+            # configuration root in this fixture, so that launch is refused by
+            # the daemon before any gemini CLI starts — the SOCKET is the evidence, and
+            # nothing is spent proving it.
             replace_windows(
                 page,
                 [
@@ -1062,7 +1118,7 @@ def main():
 
     # The count floor is load-bearing: an early `sys.exit` or a scenario that
     # never ran must not report success on a handful of passing checks.
-    ok = all(results) and len(results) >= 121
+    ok = all(results) and len(results) >= 119
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     if ok:
         print("CONSOLE DESK")

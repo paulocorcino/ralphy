@@ -352,7 +352,7 @@ def main():
             # --- Scenario 3: HTML dressed as an image is refused -----------------
             html_b64 = base64.b64encode(b"<html><script>x</script></html>").decode()
             claimed = paste_event(page, 0, "image/png", html_b64, name="evil.png")
-            refused = wait_for(lambda: "[paste refused — not an image]" in screen(page), 10000)
+            refused = wait_for(lambda: "[paste refused — the file is not an image]" in screen(page), 10000)
             check(
                 "3 HTML labelled image/png is refused as not an image, nothing lands",
                 claimed and refused and len(drops(fixture_dir)) == 1,

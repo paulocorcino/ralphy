@@ -148,6 +148,8 @@ def main():
             page = ctx.new_page()
             errors = []
             page.on("pageerror", lambda e: errors.append(str(e)))
+            logged = []
+            page.on("console", lambda m: logged.append(m.text))
             page.goto(BASE)
 
             # --- scenario 1: the desk failure and its one action -------------
@@ -158,10 +160,19 @@ def main():
             except Exception:
                 shown = False
             text = failure.inner_text() if shown else ""
+            # The page says what the failure means; the daemon's parser message
+            # is for a developer and goes to the browser console.
             check(
                 "an unreadable desk says so, with the reason",
-                shown and "Could not read the saved desk" in text and "parsing desk layout" in text,
+                shown
+                and "Could not read the saved desk: the file is damaged" in text
+                and "parsing desk layout" not in page.content(),
                 f"text={text!r}",
+            )
+            check(
+                "…and the daemon's own reason is in the browser console",
+                any("parsing desk layout" in line for line in logged),
+                f"console={logged!r}",
             )
             check("…and the file is untouched", desk_toml.read_bytes() == corrupt)
             shot(page, "desk-failure")
@@ -325,7 +336,7 @@ def main():
     finally:
         stop(proc)
 
-    ok = all(results) and len(results) == 20
+    ok = all(results) and len(results) == 21
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("ALL CHECKS PASSED")
