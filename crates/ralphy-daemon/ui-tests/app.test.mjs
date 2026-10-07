@@ -1342,7 +1342,10 @@ test("loadRepos marks a row github only for a remote hosted on github.com", asyn
 
 // Every URL the code under test fetched, answered with an empty 200. A bare
 // `fetch` in app.ts resolves to `globalThis.fetch`, not the harness window's.
-async function withFetchSpy(fn) {
+// `until`, when given, names a URL the read must reach: the spy waits for it
+// (up to 2 s) instead of a fixed number of event-loop turns, because a read
+// scheduled with `setTimeout` can land after any number of turns.
+async function withFetchSpy(fn, until = null) {
   const urls = [];
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (url) => {
@@ -1353,6 +1356,8 @@ async function withFetchSpy(fn) {
     await fn(urls);
     // Let the reads chained behind the first await land.
     for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
+    const deadline = Date.now() + 2000;
+    while (until && !urls.includes(until) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 5));
   } finally {
     globalThis.fetch = realFetch;
   }
@@ -1960,7 +1965,7 @@ const VISIBLE = { document: { visibilityState: "visible", hasFocus: () => true }
 test("sessions.dirty on a visible tab reads the sessions", async () => {
   const { state } = loadShell(VISIBLE);
   state.LIVE_SETTLE_MS = 0;
-  const urls = await withFetchSpy(() => state.onPresencePush("sessions.dirty", {}));
+  const urls = await withFetchSpy(() => state.onPresencePush("sessions.dirty", {}), "/api/sessions");
   assert.ok(urls.includes("/api/sessions"), urls.join(", "));
 });
 

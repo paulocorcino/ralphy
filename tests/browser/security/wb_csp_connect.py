@@ -199,9 +199,38 @@ def start_ngrok():
     return None, None
 
 
-def start_devtunnel():
+def create_devtunnel():
+    """Creates the tunnel this run hosts; returns its id, or None. The id is
+    what `delete_devtunnel` removes, so no other tunnel is ever touched."""
+    out = subprocess.run(
+        ["devtunnel", "create", "--allow-anonymous", "--json"], capture_output=True, encoding="utf-8", errors="replace"
+    )
+    text = (out.stdout or "") + (out.stderr or "")
+    if out.returncode != 0 or re.search(r"rate limit|too many tunnels|limit exceeded", text, re.I):
+        check("dev tunnel created", False, "the account's dev tunnel limit is the cause, not the CSP: " + text.strip()[:300])
+        return None
+    try:
+        # A welcome banner can come before the JSON.
+        tunnel_id = json.loads(out.stdout[out.stdout.index("{") :])["tunnel"]["tunnelId"]
+    except Exception as e:
+        check("dev tunnel created", False, f"no tunnel id in the output: {e!r} {text.strip()[:300]}")
+        return None
+    # `host` cannot add a port to an existing tunnel.
+    port = subprocess.run(["devtunnel", "port", "create", tunnel_id, "-p", str(PORT)], capture_output=True)
+    if port.returncode != 0:
+        check("dev tunnel port added", False, port.stdout.decode(errors="replace")[:300])
+        delete_devtunnel(tunnel_id)
+        return None
+    return tunnel_id
+
+
+def delete_devtunnel(tunnel_id):
+    subprocess.run(["devtunnel", "delete", tunnel_id, "-f"], capture_output=True, timeout=60)
+
+
+def start_devtunnel(tunnel_id):
     proc = subprocess.Popen(
-        ["devtunnel", "host", "-p", str(PORT), "--allow-anonymous"],
+        ["devtunnel", "host", tunnel_id],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         encoding="utf-8",
@@ -211,16 +240,20 @@ def start_devtunnel():
 
     def read():
         for line in proc.stdout:
+            if re.search(r"rate limit|too many tunnels|limit exceeded", line, re.I):
+                found["limit"] = line.strip()
             m = re.search(r"https://\S+-%d\.\S+devtunnels\.ms/?" % PORT, line)
             if m and "url" not in found:
                 found["url"] = m.group(0).rstrip("/")
 
     threading.Thread(target=read, daemon=True).start()
     deadline = time.time() + 45
-    while time.time() < deadline and "url" not in found:
+    while time.time() < deadline and "url" not in found and "limit" not in found:
         time.sleep(0.5)
     if "url" not in found:
         stop(proc)
+        if "limit" in found:
+            check("dev tunnel hosted", False, "the account's dev tunnel limit is the cause, not the CSP: " + found["limit"])
         return None, None
     return proc, found["url"]
 
@@ -278,6 +311,7 @@ def main():
     check("fixture registered", reg.returncode == 0)
 
     tunnels = []
+    devtunnel_id = None
     bases = []
     daemon = None
     try:
@@ -312,7 +346,8 @@ def main():
         check("the scratch daemon now refuses a request with no session", gated)
 
         if "devtunnel" in TARGETS:
-            proc, url = start_devtunnel()
+            devtunnel_id = create_devtunnel()
+            proc, url = start_devtunnel(devtunnel_id) if devtunnel_id else (None, None)
             check("dev tunnel started", url is not None, url or "")
             if url:
                 tunnels.append(proc)
@@ -332,6 +367,8 @@ def main():
         for t in tunnels:
             stop(t)
         stop(daemon)
+        if devtunnel_id:
+            delete_devtunnel(devtunnel_id)
 
     print(f"\n{sum(results)}/{len(results)} checks passed")
     sys.exit(0 if all(results) else 1)
