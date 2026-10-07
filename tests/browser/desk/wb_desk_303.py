@@ -714,7 +714,12 @@ def main():
                 f"held={held} records={[r['sessionId'] for r in records]} launches={launches}",
             )
             asleep = page.evaluate("() => document.querySelectorAll('.session-window')[0].classList.contains('dormant')")
-            check("…and the console under the maximized one comes back asleep", asleep is True, f"dormant={asleep}")
+            early = [u for u in reload_sockets if f"/ws/session?id={records[0]['sessionId']}&" in u]
+            check(
+                "…and the console under the maximized one comes back asleep, with no socket yet",
+                asleep is True and not early,
+                f"dormant={asleep} sockets={early}",
+            )
             # …and it still knows the box to un-maximize to, after the round trip.
             page.locator(".session-window").nth(1).locator(".session-max").click()
             page.wait_for_timeout(400)
