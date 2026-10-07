@@ -1,4 +1,4 @@
-// Unit tests for assets/ui/wb-daemon.js — runs the real source with no DOM.
+// Unit tests for assets/ui/wb-daemon.ts — runs the real module with no DOM.
 // This file lives OUTSIDE assets/ui on purpose: lib.rs embeds all of
 // assets/ui into the daemon binary via include_dir!, so a test there would ship.
 import { test } from "node:test";
@@ -10,7 +10,7 @@ import { WBProject } from "../assets/ui/wb-project.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const UI = join(HERE, "../assets/ui");
-const SRC = readFileSync(join(UI, "wb-daemon.js"), "utf8");
+import { createDaemon } from "../assets/ui/wb-daemon.ts";
 
 // A push the daemon produced, as its tests wrote it (`tests/support/golden.rs`).
 function fixture(name) {
@@ -25,8 +25,7 @@ function load() {
   const window = { addEventListener() {} };
   const document = { addEventListener() {} };
   const location = { protocol: "http:", host: "127.0.0.1:7431" };
-  new Function("window", "document", "location", SRC)(window, document, location);
-  return window.WBDaemon;
+  return createDaemon(window, document, location);
 }
 
 // --- resumeDecision: the resume rule, shared with wb-console.js ------------
@@ -238,8 +237,7 @@ function loadWithSocket(replyFor) {
   }
   const realWS = globalThis.WebSocket;
   globalThis.WebSocket = FakeSocket;
-  new Function("window", "document", "location", SRC)(window, document, location);
-  return { d: window.WBDaemon, restore: () => (globalThis.WebSocket = realWS) };
+  return { d: createDaemon(window, document, location), restore: () => (globalThis.WebSocket = realWS) };
 }
 
 test("observe fans out an unknown checkout to the registered listeners, after the reply", async () => {

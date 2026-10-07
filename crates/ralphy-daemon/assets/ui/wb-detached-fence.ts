@@ -1,8 +1,9 @@
 // The second page script of `detached-fence.html`, the torn-off fence window.
 // Importing it does nothing: `detached-fence-main.ts` calls
-// `wireDetachedFence` after the classic scripts ran, so `WBConsole`,
-// `WBColumns` and `WBNotes` exist when the shell answers "ready" (ADR-0075
+// `wireDetachedFence` after the classic scripts ran, so `WBConsole` and
+// `WBNotes` exist when the shell answers "ready" (ADR-0075
 // D5, D9).
+import { WBColumns } from "./wb-columns.ts";
 
 export function wireDetachedFence(window: Window, document: Document) {
   // Where this window will talk: the concrete origin, never `"*"`, as in the

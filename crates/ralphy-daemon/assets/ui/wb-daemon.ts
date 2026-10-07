@@ -9,7 +9,7 @@
    verb registry (dispatch.rs) builds the argv. Raw `status:"output"` chunks feed
    the Runs panel live (ADR-0032 §5, ADR-0036).
 --------------------------------------------------------------------------- */
-window.WBDaemon = (function () {
+export function createDaemon(window: any, document: any, location: any) {
   // The tagged-frame codec, mirrored from src/protocol.rs (see wb-console.js).
   const TAG_TERMINAL = 0x01;
   const TAG_COMMAND = 0x02;
@@ -24,7 +24,7 @@ window.WBDaemon = (function () {
 
   // Which `workbench:action`s reach the daemon, and as which verb. The generic
   // `command` action carries its verb in the event detail (triage/push).
-  const ACTION_TO_VERB = { "run-start": "run" };
+  const ACTION_TO_VERB: Record<string, string> = { "run-start": "run" };
 
   let nextId = 1;
 
@@ -39,7 +39,7 @@ window.WBDaemon = (function () {
   // (`app.js` `_lastHeartbeat`, already the "> 6000ms means dead" signal), which
   // is why an ordinary desktop tab switch churns nothing — the heartbeat is fresh
   // and every socket is left alone.
-  function resumeDecision({ readyState, stale, connectingMs }) {
+  function resumeDecision({ readyState, stale, connectingMs }: any) {
     // No socket at all: whatever held it is gone, so a reconnect is the only move.
     if (readyState == null) return "reconnect";
     // CONNECTING is already the reconnect — until it outlives the handshake
@@ -58,7 +58,7 @@ window.WBDaemon = (function () {
 
   // Fail a handshake that has not opened by the deadline. `close()` on a
   // CONNECTING socket fires `close`, so the caller's ordinary retry takes over.
-  function armHandshakeDeadline(ws) {
+  function armHandshakeDeadline(ws: any) {
     setTimeout(() => {
       if (ws.readyState !== 0) return;
       try {
@@ -76,7 +76,7 @@ window.WBDaemon = (function () {
   // Retire a socket so its pending events cannot reach us. `onmessage` matters as
   // much as `onclose`: a frame still queued on the outgoing socket would land
   // after the replacement is wired and be read as the NEW connection's news.
-  function detachSocket(ws) {
+  function detachSocket(ws: any) {
     if (!ws) return;
     ws.onclose = null;
     ws.onmessage = null;
@@ -87,7 +87,7 @@ window.WBDaemon = (function () {
     } catch {}
   }
 
-  function encodeCommand({ id, verb, payload }) {
+  function encodeCommand({ id, verb, payload }: any) {
     const body = new TextEncoder().encode(JSON.stringify({ id, verb, payload }));
     const out = new Uint8Array(1 + body.length);
     out[0] = TAG_COMMAND;
@@ -97,7 +97,7 @@ window.WBDaemon = (function () {
 
   // Open a fresh `/ws/command`, fire the verb, and stream each reply's `payload`
   // (which carries `status`) to `onStatus`; close on the terminal `exited`/`error`.
-  function spawn(verb, payload, onStatus) {
+  function spawn(verb: any, payload: any, onStatus: (st: SpawnStatus) => void) {
     const id = nextId++;
     const ws = new WebSocket(WS_ORIGIN + "/ws/command");
     ws.binaryType = "arraybuffer";
@@ -122,7 +122,7 @@ window.WBDaemon = (function () {
   // §2): a worktree NAME the daemon resolves under the repo's own root. Added
   // ONLY for a real name — with no selection the payload is byte-identical to
   // the pre-#406 one, so an older daemon never sees a key it does not know.
-  function withCheckout(payload, checkout) {
+  function withCheckout(payload: any, checkout: any) {
     const out = { ...payload };
     if (checkout) out.checkout = String(checkout);
     return out;
@@ -134,11 +134,11 @@ window.WBDaemon = (function () {
   // `(repo, name)`. This is the single path every Observe AND Write verb takes,
   // which is what "reset from any verb" asks for. A listener that throws must
   // never reject the read it rode on.
-  const unknownCheckout = [];
-  function onUnknownCheckout(fn) {
+  const unknownCheckout: any[] = [];
+  function onUnknownCheckout(fn: any) {
     unknownCheckout.push(fn);
   }
-  function noteUnknownCheckout(payload, reply) {
+  function noteUnknownCheckout(payload: any, reply: any) {
     if (!payload || !payload.checkout) return;
     if (window.WBProject?.checkoutAfter?.(payload.checkout, reply) !== null) return;
     for (const fn of unknownCheckout) {
@@ -151,8 +151,8 @@ window.WBDaemon = (function () {
   // Fire an Observe read (`tree.list`/`file.read`) and resolve with the single
   // reply payload — the daemon answers ONE frame on the same id and returns (no
   // spawn/stream). One socket per read, mirroring `spawn`'s per-call shape.
-  function observe(verb, payload) {
-    return new Promise((resolve, reject) => {
+  function observe(verb: any, payload: any) {
+    return new Promise<DaemonReply>((resolve, reject) => {
       const id = nextId++;
       const ws = new WebSocket(WS_ORIGIN + "/ws/command");
       ws.binaryType = "arraybuffer";
@@ -192,7 +192,7 @@ window.WBDaemon = (function () {
   // their own on this origin (§2). A refusal reason is reported through
   // `onRefused` rather than thrown, because every caller wants to keep going.
   // `checkout` names the worktree the bytes come from (#406), or nothing.
-  function readImage(repo, path, onRefused, checkout) {
+  function readImage(repo: any, path: any, onRefused: any, checkout: any) {
     return observe("file.image", withCheckout({ repo, path }, checkout)).then((reply) => {
       if (window.WBFail.isError(reply) || !reply.base64 || !reply.mediaType) {
         onRefused?.(window.WBFail.message(reply, "refused"));
@@ -206,7 +206,7 @@ window.WBDaemon = (function () {
   // `file.delete`, #197/#362) and resolve with the single reply payload. Same one-socket-one-reply
   // shape as `observe` — the daemon answers ONE frame on the id and returns (no
   // spawn/stream); a confinement refusal comes back as `{status:"error",reason}`.
-  function write(verb, payload) {
+  function write(verb: any, payload: any) {
     return observe(verb, payload);
   }
 
@@ -217,12 +217,12 @@ window.WBDaemon = (function () {
   // `onOpen(ws, reopened)` runs on every open; `reopened` is false on the FIRST
   // open only and stays true across a resume, so a caller's catch-up read rides
   // the reconnect with no second code path.
-  function persistentSocket(path, { onOpen, onMessage }) {
+  function persistentSocket(path: any, { onOpen, onMessage }: any) {
     let closed = false;
-    let ws = null;
+    let ws: any = null;
     let opened = false;
     let live = false;
-    let timer = null;
+    let timer: any = null;
     let lastResumeAt = 0;
     let connectingSince = 0;
     const connect = () => {
@@ -249,12 +249,12 @@ window.WBDaemon = (function () {
     return {
       // Send on the current socket if it is open; `false` means the frame was
       // not sent, and the caller's `onOpen` is what re-sends its state.
-      sendIfOpen: (frame) => {
+      sendIfOpen: (frame: any) => {
         if (!live) return false;
         ws.send(frame);
         return true;
       },
-      resume: (stale) => {
+      resume: (stale: any) => {
         if (closed) return false;
         const now = Date.now();
         if (now - lastResumeAt < RESUME_DEBOUNCE_MS) return false;
@@ -280,7 +280,7 @@ window.WBDaemon = (function () {
   }
 
   // Decode a `[0x02][JSON]` command frame, or `null` for anything else.
-  function commandFrame(ev) {
+  function commandFrame(ev: any) {
     const a = new Uint8Array(ev.data);
     if (a[0] !== TAG_COMMAND) return null;
     try {
@@ -308,9 +308,9 @@ window.WBDaemon = (function () {
   // the socket was down was never pushed (#484).
   // A `tree.failed` push says the daemon could not watch a dir of this tree:
   // `onFailed(reason)`. A reopen holds every dir again: `onFailed(null)`.
-  function subscribeTree(repo, onDirty, checkout, onHead, onFailed) {
+  function subscribeTree(repo: any, onDirty: any, checkout: any, onHead: any, onFailed: any) {
     const held = new Set();
-    const frame = (verb, path) =>
+    const frame = (verb: any, path: any) =>
       encodeCommand({ id: 0, verb, payload: withCheckout({ repo, path: path || "" }, checkout) });
     // Re-reads each held dir and the branch: a reopen does it, and so does a
     // tab that becomes visible or logs in (ADR-0070 D2 events 3, 4).
@@ -319,7 +319,7 @@ window.WBDaemon = (function () {
       onHead?.();
     };
     const sub = persistentSocket("/ws/tree", {
-      onOpen: (ws, reopened) => {
+      onOpen: (ws: any, reopened: any) => {
         if (onHead) ws.send(frame("head.watch", ""));
         for (const path of held) ws.send(frame("watch", path));
         if (reopened) {
@@ -328,7 +328,7 @@ window.WBDaemon = (function () {
           replay();
         }
       },
-      onMessage: (ev) => {
+      onMessage: (ev: any) => {
         const f = commandFrame(ev);
         if (!f || !["tree.dirty", "head.dirty", "tree.failed"].includes(f.verb)) return;
         const p = f.payload || {};
@@ -339,7 +339,7 @@ window.WBDaemon = (function () {
       },
     });
     return {
-      watch: (path) => {
+      watch: (path: any) => {
         const rel = path || "";
         if (held.has(rel)) return;
         held.add(rel);
@@ -347,7 +347,7 @@ window.WBDaemon = (function () {
       },
       // While disconnected the set is all there is to change: the next socket
       // never learns the dir.
-      unwatch: (path) => {
+      unwatch: (path: any) => {
         const rel = path || "";
         if (!held.delete(rel)) return;
         sub.sendIfOpen(frame("unwatch", rel));
@@ -369,13 +369,13 @@ window.WBDaemon = (function () {
   // a CLI, so the duplicate was the dominant cost of opening a project. Catching
   // up is for what arrived while we were DISCONNECTED, which the first connection
   // has no window for.
-  function subscribeRuns(repo, onDirty) {
+  function subscribeRuns(repo: any, onDirty: any) {
     const sub = persistentSocket("/ws/tree", {
-      onOpen: (ws, reopened) => {
+      onOpen: (ws: any, reopened: any) => {
         ws.send(encodeCommand({ id: 0, verb: "runs.watch", payload: { repo, path: "" } }));
         if (reopened) onDirty();
       },
-      onMessage: (ev) => {
+      onMessage: (ev: any) => {
         if (commandFrame(ev)?.verb === "runs.dirty") onDirty();
       },
     });
@@ -392,12 +392,12 @@ window.WBDaemon = (function () {
   // `sync.status` itself, and each of those spawns the `ralphy` CLI, which spawns
   // `git` — so the synthetic frame doubled the two most expensive reads of
   // opening a project.
-  function subscribeChanges(repo, onFrame) {
+  function subscribeChanges(repo: any, onFrame: any) {
     const sub = persistentSocket("/ws/tree", {
-      onOpen: (_ws, reopened) => {
+      onOpen: (_ws: any, reopened: any) => {
         if (reopened) onFrame({ verb: "changes.dirty", payload: { repo } });
       },
-      onMessage: (ev) => {
+      onMessage: (ev: any) => {
         const frame = commandFrame(ev);
         if (frame) onFrame(frame);
       },
@@ -415,10 +415,10 @@ window.WBDaemon = (function () {
   // (`sessions.dirty`, `desk.dirty`, `repos.dirty`, `peers.dirty`; ADR-0070
   // D2): each `[0x02]` frame goes to `onPush(verb, payload)`, and every open to
   // `onOpen(reopened)`, so a reopen reads again what a lost push would have said.
-  function subscribePresence(onPresence, { onPush, onOpen } = {}) {
+  function subscribePresence(onPresence: any, { onPush, onOpen }: any = {}) {
     const sub = persistentSocket("/ws", {
-      onOpen: (_ws, reopened) => onOpen?.(reopened),
-      onMessage: (ev) => {
+      onOpen: (_ws: any, reopened: any) => onOpen?.(reopened),
+      onMessage: (ev: any) => {
         const a = new Uint8Array(ev.data);
         if (a[0] === TAG_COMMAND) {
           const f = commandFrame(ev);
@@ -437,7 +437,7 @@ window.WBDaemon = (function () {
   // Turn a daemon-bound `workbench:action` into a Spawn call. `project`→`repo`
   // (the handler reads `payload.repo`); run params ride the payload as closed-enum
   // values the daemon validates.
-  document.addEventListener("workbench:action", (e) => {
+  document.addEventListener("workbench:action", (e: any) => {
     const d = e.detail || {};
     const verb = ACTION_TO_VERB[d.action] || (d.action === "command" ? d.verb : null);
     if (!verb) return;
@@ -463,10 +463,10 @@ window.WBDaemon = (function () {
     const PENDING_CAP = 4096;
     let lastLine = "";
     let pending = "";
-    const feedLines = (text) => {
+    const feedLines = (text: any) => {
       pending += text;
       const parts = pending.split(/\r\n|\n|\r/);
-      pending = parts.pop();
+      pending = parts.pop() as string;
       if (pending.length > PENDING_CAP) pending = pending.slice(-PENDING_CAP);
       for (const line of parts) if (line.trim() !== "") lastLine = line.trim();
     };
@@ -475,7 +475,7 @@ window.WBDaemon = (function () {
       pending = "";
       return lastLine;
     };
-    spawn(verb, payload, (s) => {
+    spawn(verb, payload, (s: any) => {
       if (s.status === "output") {
         const chunk = s.chunk || "";
         window.WBRuns?.output?.(chunk);
@@ -511,4 +511,7 @@ window.WBDaemon = (function () {
     TAG_COMMAND,
     TAG_PRESENCE,
   };
-})();
+}
+
+// A classic script, `app.ts` and the dialogs read this name (ADR-0075 D9).
+export type WBDaemonApi = ReturnType<typeof createDaemon>;

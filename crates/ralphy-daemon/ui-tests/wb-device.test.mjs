@@ -1,5 +1,5 @@
-// Unit tests for assets/ui/wb-device.js — the device facts a page reports for
-// the audit log (ADR-0074). Runs the real source against stub windows.
+// Unit tests for assets/ui/wb-device.ts — the device facts a page reports for
+// the audit log (ADR-0074). Runs the real module against stub windows.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -7,18 +7,15 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const SRC = readFileSync(join(HERE, "../assets/ui/wb-device.js"), "utf8");
+import { WBDevice } from "../assets/ui/wb-device.ts";
 
 function fixture(name) {
   return JSON.parse(readFileSync(join(HERE, "fixtures", name + ".json"), "utf8"));
 }
 
-// An empty window: no document, no fetch, so the module does not report at
-// load.
+// Importing the module sends nothing: only `report` does.
 function load() {
-  const window = {};
-  new Function("window", SRC)(window);
-  return window.WBDevice;
+  return WBDevice;
 }
 
 test("collect: a window with no API reports null facts and never throws", async () => {
@@ -58,7 +55,6 @@ test("report: a 401 before login waits for the login action, then sends once", a
         if (type === "workbench:action") onAction = fn;
       },
     },
-    WBSessionRoute: { tabHolder: () => "tab1" },
     fetch: async (url, init) => {
       bodies.push(JSON.parse(init.body));
       return { ok: statuses.shift() < 300 };
@@ -73,7 +69,8 @@ test("report: a 401 before login waits for the login action, then sends once", a
   onAction({ detail: { action: "login" } });
   await new Promise((r) => setTimeout(r, 20));
   assert.equal(bodies.length, 2, "the login sends again");
-  assert.equal(bodies[1].holder, "tab1");
+  assert.match(bodies[0].holder, /^[A-Za-z0-9_-]{1,64}$/, "the facts name the tab's holder");
+  assert.equal(bodies[1].holder, bodies[0].holder);
   onAction({ detail: { action: "login" } });
   await new Promise((r) => setTimeout(r, 20));
   assert.equal(bodies.length, 2, "a sent report is not sent again");
