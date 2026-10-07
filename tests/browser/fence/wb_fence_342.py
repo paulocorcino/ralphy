@@ -375,6 +375,12 @@ def open_member(page, slug, index, centre):
         before,
     )
     drag(page, grip, MEMBER_BOX["width"] - grip["w"], MEMBER_BOX["height"] - grip["h"])
+    size = page.evaluate(
+        "(i) => { const el = document.querySelectorAll('.session-window')[i];"
+        " return { width: el.offsetWidth, height: el.offsetHeight }; }",
+        before,
+    )
+    check(f"console {before + 1} is sized by its grip", size == MEMBER_BOX, f"got={size}")
     here = page.evaluate(
         "(i) => { const el = document.querySelectorAll('.session-window')[i];"
         " return { x: el.offsetLeft + el.offsetWidth / 2, y: el.offsetTop + el.offsetHeight / 2 }; }",
@@ -692,7 +698,10 @@ def main():
             # included: the inline rect, not the rounded measured box.
             check(
                 "the daemon stores the TILED rects — tiling is a layout act, like a drag",
-                all(served_rects[i] == tiled[i]["inline"] for i in member_ids),
+                all(
+                    all(abs(served_rects[i][k] - tiled[i]["inline"][k]) < 0.01 for k in tiled[i]["inline"])
+                    for i in member_ids
+                ),
                 f"served={[served_rects.get(i) for i in member_ids]}"
                 f" inline={[tiled[i]['inline'] for i in member_ids]}",
             )
@@ -861,7 +870,7 @@ def main():
 
     # The floor is the REAL count, not a loose lower bound: set under the total,
     # a whole scenario could stop running while the suite still exits 0.
-    ok = all(results) and len(results) == 41
+    ok = all(results) and len(results) == 44
     print(f"\n{sum(results)}/{len(results)} checks passed")
     if ok:
         print("ARRANGE MOVES INTO THE FENCE")

@@ -389,7 +389,7 @@ def main():
             # the tooltip.
             check(
                 "the tab is scoped to the open project",
-                pane["project"] == "spend-fixture" and pane["projectTitle"] == repo_path,
+                pane["project"] == Path(fixture).name and pane["projectTitle"] == repo_path,
                 "project={} title={}".format(pane["project"], pane["projectTitle"]),
             )
             # 1M input at $15/1M — the only priceable line in the fixture.

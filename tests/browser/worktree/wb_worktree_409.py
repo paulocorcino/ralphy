@@ -17,7 +17,7 @@ creates `wt-r` and later `wt-s`), registered through `ralphy daemon add`.
 Scenario 1  the daemon is listening
 Scenario 2  create `wt-r` from the picker → rows primary + wt-r, directory exists
 Scenario 3  select `wt-r`
-Scenario 4  `newConsole('claude')` titled `claude · wt-r · <slug> · <env>`,
+Scenario 4  `newConsole('claude')` titled `claude · wt-r · <folder> · <env>`,
             the child's `CWD:` inside `.ralphy/worktrees/wt-r`
 Scenario 5  remove refused: `has a live console` — a notice with ONE button
             (OK), rows still 2, directory stays, one session row, selection
@@ -450,7 +450,7 @@ def main():
             page.locator(".wb-confirm .btn.accent").click()
             page.wait_for_function(f"(t) => ({TITLES})()[0] === t", arg=expected_title, timeout=15000)
             titles = page.evaluate(TITLES)
-            check("the console title reads `claude · wt-r · <slug> · <env>` exactly", titles == [expected_title], f"got={titles!r}")
+            check("the console title reads `claude · wt-r · <folder> · <env>` exactly", titles == [expected_title], f"got={titles!r}")
             check("the child printed READY", wait_flat_contains(page, 0, READY))
             buf = flat(page, 0).replace("\\", "/")
             check("the child's CWD: line is the worktree", ".ralphy/worktrees/wt-r" in buf, f"buffer={buf[:200]!r}")

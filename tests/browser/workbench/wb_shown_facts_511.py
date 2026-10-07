@@ -164,7 +164,9 @@ def main():
             # is for a developer and goes to the browser console.
             check(
                 "an unreadable desk says so, with the reason",
-                shown and "Could not read the saved desk: the file is damaged" in text,
+                shown
+                and "Could not read the saved desk: the file is damaged" in text
+                and "parsing desk layout" not in text,
                 f"text={text!r}",
             )
             check(

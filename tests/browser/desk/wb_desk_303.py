@@ -124,7 +124,7 @@ def empty_env(daemon_dir):
 
 def make_fixture_repo():
     """A throwaway git repo the daemon can open consoles in. A Gemini launch is
-    refused before any spawn: the daemon prepares the Gemini configuration root
+    refused before any gemini CLI starts: the daemon prepares the Gemini configuration root
     at `.ralphy/gemini-home` first, and a plain file there makes that fail. So
     no gemini CLI starts and nothing is spent."""
     d = tempfile.mkdtemp(prefix="wb303_fixture_")
@@ -702,7 +702,7 @@ def main():
             # socket names the session (`?id=`); a launch does not.
             held = page.evaluate(
                 "() => [...document.querySelectorAll('.session-window')]"
-                ".map((w) => w._term?.sessionId ?? w._dormantSession ?? null)"
+                ".map((w) => w._term?.sessionId ?? w._dormantSession ?? w._wantsSession ?? null)"
             )
             launches = [u for u in reload_sockets if "/ws/session?" in u and "/ws/session?id=" not in u]
             check(
@@ -717,6 +717,19 @@ def main():
                 "a restored-then-un-maximized window returns to its pre-maximize box",
                 rect_of(page, 1) == pre_max,
                 f"want={pre_max} got={rect_of(page, 1)}",
+            )
+            # The console that came back asleep under it shows now: it wakes on
+            # its own session, and nothing is launched for it.
+            try:
+                page.locator(".session-window").nth(0).locator(".xterm").wait_for(timeout=15000)
+            except Exception:
+                pass
+            woke = page.evaluate("() => document.querySelectorAll('.session-window')[0]._term?.sessionId ?? null")
+            launches = [u for u in reload_sockets if "/ws/session?" in u and "/ws/session?id=" not in u]
+            check(
+                "…and the console under it wakes on its own session when it shows",
+                woke == records[0]["sessionId"] and not launches,
+                f"woke={woke} record={records[0]['sessionId']} launches={launches}",
             )
 
             after_recs = desk_records(page)
@@ -761,7 +774,7 @@ def main():
             # --- scenarios 7 & 8: the desk survives a DAEMON restart ----------
             # Seed an agent console into the desk. Gemini, because this fixture
             # repo cannot hold its configuration root: the daemon refuses the
-            # launch with 400 BEFORE any spawn, so the reconnect path is
+            # launch with 400 before any gemini CLI starts, so the reconnect path is
             # exercised end-to-end without starting a vendor CLI or spending
             # quota.
             console_rec = desk_records(page)[0]
@@ -814,7 +827,6 @@ def main():
             # #479: the repo moved from the title to its tooltip. A repo with no
             # remote is named there by its path, once the shell has handed the
             # project names to the console module.
-            ph_title = ph.locator(".session-title").inner_text()
             try:
                 page.wait_for_function(
                     "(p) => (document.querySelector('.session-window.placeholder .session-title')?.title || '')"
@@ -824,6 +836,7 @@ def main():
                 )
             except Exception:
                 pass
+            ph_title = ph.locator(".session-title").inner_text()
             ph_tip = ph.locator(".session-title").get_attribute("title") or ""
             check(
                 "the placeholder keeps its agent and its repo",
@@ -929,7 +942,7 @@ def main():
             # can claim, so the verdict is unambiguous: a placeholder with the
             # toggle off, a real launch with it on. Gemini cannot prepare its
             # configuration root in this fixture, so that launch is refused by
-            # the daemon before any spawn — the SOCKET is the evidence, and
+            # the daemon before any gemini CLI starts — the SOCKET is the evidence, and
             # nothing is spent proving it.
             replace_windows(
                 page,
@@ -1091,7 +1104,7 @@ def main():
 
     # The count floor is load-bearing: an early `sys.exit` or a scenario that
     # never ran must not report success on a handful of passing checks.
-    ok = all(results) and len(results) >= 117
+    ok = all(results) and len(results) >= 118
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     if ok:
         print("CONSOLE DESK")

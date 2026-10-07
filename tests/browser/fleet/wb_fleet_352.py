@@ -338,8 +338,8 @@ def main():
                 any(tip.split("\n")[:2] == [SLUG, PEER_ENV] for tip in tips),
                 f"tips={tips}",
             )
-            # The routing head is NOT a name: neither the title nor the
-            # tooltip carries the daemon_id.
+            # The routing head is NOT a name: the title never carries the
+            # daemon_id.
             check(
                 "no session title exposes the routing head",
                 all(PEER_ID not in title for title in titles),
@@ -348,6 +348,7 @@ def main():
             tips = page.locator(".session-title").evaluate_all(
                 "els => els.map(e => e.title)"
             )
+            # Nor does the tooltip: it names the repo.
             check(
                 "the peer console's tooltip names its repo, not its routing head",
                 all(PEER_ID not in tip for tip in tips)

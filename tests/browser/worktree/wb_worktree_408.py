@@ -6,7 +6,7 @@ One Playwright pass over a REAL daemon proving ADR-0063 §3 (as amended
 STILL opens the agent (the helper child, via `RALPHY_DAEMON_AGENT_OVERRIDE`)
 in the primary — its `CWD:` line says so — and the title's switcher is what
 moves it INSIDE the worktree: the title then reads `<agent> · <checkout> ·
-<slug> · <env>`, the `/api/sessions` row carries the name, and neither the
+<folder> · <env>`, the `/api/sessions` row carries the name, and neither the
 title nor the row moves when the Files selection changes; a reload
 re-announces it and a restart relaunches in the same tree. A console opened
 under `primary` carries nothing. The retired `console_worktree` key in
@@ -20,15 +20,15 @@ Fixture: a repo on `main` with `README.md`, one worktree `wt-a` made by
 Scenario 1  the daemon is listening
 Scenario 2  `wt-a` selected for Files
 Scenario 3  `newConsole('claude')` → one window titled
-            `claude · primary · <slug> · Windows`, CWD the primary, a row
+            `claude · primary · <folder> · Windows`, CWD the primary, a row
             with NO `checkout` — the selection is not where a console opens;
             then its switcher → `wt-a` (confirmed) → titled exactly
-            `claude · wt-a · <slug> · Windows`
+            `claude · wt-a · <folder> · Windows`
 Scenario 4  the child's `CWD:` line ends with `.ralphy/worktrees/wt-a`
 Scenario 5  `/api/sessions` has one row, `checkout == 'wt-a'`, `agent == 'claude'`
 Scenario 6  selecting `primary` leaves the title and the row unchanged
 Scenario 7  a reload restores the same title (the reattach re-announces it)
-Scenario 8  `newConsole('codex')` under `primary` → `codex · primary · <slug> · Windows`
+Scenario 8  `newConsole('codex')` under `primary` → `codex · primary · <folder> · Windows`
             (the `primary` segment is #412's switcher, present once a worktree exists)
             and a row with NO `checkout` key
 Scenario 9  `quit` in the claude console, then its restart control →
@@ -423,7 +423,7 @@ def main():
             page.locator(".wb-confirm .btn.accent").click()
             page.wait_for_function(f"(t) => ({TITLES})()[0] === t", arg=expected, timeout=15000)
             titles = page.evaluate(TITLES)
-            check("after the switch the console title reads `claude · wt-a · <slug> · Windows` exactly", titles == [expected], f"got={titles!r}")
+            check("after the switch the console title reads `claude · wt-a · <folder> · Windows` exactly", titles == [expected], f"got={titles!r}")
 
             # --- scenario 4: the child runs IN the worktree --------------------
             check("the child printed READY", wait_flat_contains(page, 0, "READY"))
@@ -459,7 +459,7 @@ def main():
             page.evaluate(f"() => {SH}.newConsole('codex')")
             page.wait_for_function(f"() => ({WINDOWS})() === 2", timeout=15000)
             page.wait_for_function(f"(t) => ({TITLES})().includes(t)", arg=expected_codex, timeout=15000)
-            check("a codex console opened under primary reads `codex · primary · <slug> · Windows`", True)
+            check("a codex console opened under primary reads `codex · primary · <folder> · Windows`", True)
             codex = wait_for_row(lambda r: r.get("agent") == "codex")
             check("its /api/sessions row has NO checkout key", codex is not None and "checkout" not in codex, f"row={codex!r}")
 
