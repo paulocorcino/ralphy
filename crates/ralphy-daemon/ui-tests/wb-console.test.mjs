@@ -2608,6 +2608,7 @@ function columnWin(id, maximized = false) {
   });
 }
 const colRecord = (id, max) => ({ ...SAVED, id, max, sessionId: null, checkout: null });
+const byId = (changes) => [...changes].sort((x, y) => x.id.localeCompare(y.id));
 
 // ADR-0051 §5: the console that becomes first in the columns is written to
 // the desk as an ordinary maximize, and the one that stops being first is
@@ -2628,13 +2629,47 @@ test("applyColumns writes the moved maximize to the desk when asked to persist",
     const r = C.restore([["w-a"], ["w-b"]], "w-a");
     page.wb.applyColumns(C.painted(r.columns, 2), { cap: 2, unmax: r.unmax, persist: true });
     await settle();
-    assert.deepEqual(changesOf(page.sent), [
+    assert.deepEqual(byId(changesOf(page.sent)), [
       { op: "set", type: "window", id: "w-a", fields: { max: false } },
       { op: "set", type: "window", id: "w-b", fields: { max: true } },
     ]);
   } finally {
     page.restore();
   }
+});
+
+// The old maximized console can stay in the grid, not first: a fence opened as
+// columns whose leftmost member is another console. No `unmax` names it.
+test("applyColumns writes the unmaximize of a console that stays a column, not first", async () => {
+  let dom = null;
+  const page = await deskPage(
+    { windows: [colRecord("w-a", true), colRecord("w-b", false)] },
+    {},
+    { getElementById: (id) => dom?.[id] ?? null, dispatchEvent() {} },
+  );
+  try {
+    const C = loadColumns();
+    const a = columnWin("w-a", true);
+    const b = columnWin("w-b");
+    dom = columnDom([a, b]);
+    page.wb.applyColumns(C.painted([["w-b"], ["w-a"]], 2), { cap: 2, unmax: null, persist: true });
+    await settle();
+    assert.deepEqual(byId(changesOf(page.sent)), [
+      { op: "set", type: "window", id: "w-a", fields: { max: false } },
+      { op: "set", type: "window", id: "w-b", fields: { max: true } },
+    ]);
+  } finally {
+    page.restore();
+  }
+});
+
+// The torn-off fence window's grid is never stored (ADR-0051 §8, amended
+// 2026-10-05), so its one call never asks to write the maximize.
+test("the torn-off fence window paints its columns without persist", () => {
+  const html = readFileSync(join(UI, "detached-fence.html"), "utf8");
+  const calls = html.match(/WBConsole\.applyColumns\([^;]*;/g) || [];
+  assert.equal(calls.length, 1, calls.join("\n"));
+  assert.ok(!/\bpersist\b/.test(html), "detached-fence.html names persist");
 });
 
 // The torn-off fence window paints its own grid and never stores it

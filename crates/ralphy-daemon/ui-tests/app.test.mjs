@@ -1702,7 +1702,7 @@ test("checkColumnDesk takes the consoles that left the desk out of the columns, 
 // ADR-0051 §5: when the shell's columns move the maximize, the move is written
 // to the desk. The torn-off fence window paints without `persist`.
 test("every shell path that paints the columns asks to write the maximize", () => {
-  const { state, window } = loadShell();
+  const { state, window, document } = loadShell();
   const calls = [];
   const realConsole = globalThis.WBConsole;
   const realColumns = globalThis.WBColumns;
@@ -1717,30 +1717,46 @@ test("every shell path that paints the columns asks to write the maximize", () =
   };
   const grid = () => [["a"], ["b"], ["c"]];
   state.columnCap = () => 3;
+  const realAll = document.querySelectorAll;
+  // The stage holds only "b": the first console left, and one is left.
+  const lone = () => {
+    document.querySelectorAll = () => [{ _deskId: "b", classList: { contains: () => false } }];
+    state.paintColumns();
+  };
   try {
+    // Each path, and how many paints it makes: its own, then `paintColumns`.
     const paths = {
-      restoreColumn: () => state.restoreColumn("a"),
-      swapColumn: () => {
-        state.columnFrom = "b";
-        state.swapColumn("x");
-      },
-      columnsFromFence: () =>
-        state.columnsFromFence([
-          { id: "p", rect: { left: 0, top: 0, width: 100, height: 100 } },
-          { id: "q", rect: { left: 200, top: 0, width: 100, height: 100 } },
-        ]),
-      leaveColumns: () => state.leaveColumns(["a"]),
-      checkColumnDesk: () => state.checkColumnDesk(["a"]),
-      paintColumns: () => state.paintColumns(),
+      restoreColumn: [2, () => state.restoreColumn("a")],
+      swapColumn: [
+        2,
+        () => {
+          state.columnFrom = "b";
+          state.swapColumn("x");
+        },
+      ],
+      columnsFromFence: [
+        2,
+        () =>
+          state.columnsFromFence([
+            { id: "p", rect: { left: 0, top: 0, width: 100, height: 100 } },
+            { id: "q", rect: { left: 200, top: 0, width: 100, height: 100 } },
+          ]),
+      ],
+      leaveColumns: [1, () => state.leaveColumns(["a"])],
+      checkColumnDesk: [2, () => state.checkColumnDesk(["a"])],
+      paintColumns: [1, () => state.paintColumns()],
+      "paintColumns, a lone survivor": [1, lone],
     };
-    for (const [name, run] of Object.entries(paths)) {
+    for (const [name, [count, run]] of Object.entries(paths)) {
       state.columns = grid();
       calls.length = 0;
+      document.querySelectorAll = realAll;
       run();
-      assert.ok(calls.length, `${name} paints the columns`);
+      assert.equal(calls.length, count, `${name} paints the columns`);
       for (const opts of calls) assert.equal(opts?.persist, true, `${name}: ${JSON.stringify(opts)}`);
     }
   } finally {
+    document.querySelectorAll = realAll;
     globalThis.WBConsole = realConsole;
     globalThis.WBColumns = realColumns;
   }

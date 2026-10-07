@@ -5104,7 +5104,7 @@ export function shell() {
       const r = WBColumns.restore(this.columns, id);
       const cap = r.columns.length ? this.columnCap() : 1;
       this.setColumns(r.ended ? [] : r.columns);
-      // The one call that may promote a lone survivor to the maximize.
+      // It may promote a lone survivor to the maximize.
       WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { cap, unmax: r.unmax, raise: true, persist: true });
       this.paintColumns();
     },

@@ -6323,8 +6323,8 @@ window.WBConsole = (function () {
     const actions = document.createElement("span");
     actions.className = "session-actions";
     // Open another console beside this maximized one (ADR-0051 §5). Shown and
-    // enabled by `applyColumns`, which the shell alone calls: the popup never
-    // shows it.
+    // enabled by `applyColumns`. The torn-off fence window calls it too, and
+    // never shows the button: it boots without `autoBoot`.
     const colBtn = document.createElement("button");
     colBtn.className = "session-column";
     colBtn.title = "Slice";
