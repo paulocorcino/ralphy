@@ -4964,9 +4964,10 @@ export function shell() {
         this.restoreColumn(head);
         return;
       }
-      // Off the stage for a relaunch, which puts it back under the same id.
+      // A console off the stage for a relaunch comes back under the same id.
       if (head && !headWin && WBConsole.isRelaunching(head)) return;
-      const kept = WBColumns.keep(this.columns, new Set(byId.keys()));
+      const away = this.columnIds().filter((id: any) => WBConsole.isRelaunching(id));
+      const kept = WBColumns.keep(this.columns, new Set([...byId.keys(), ...away]));
       const keptIds = WBColumns.flat(kept);
       // The first console left the stage and one is left: it takes the maximize.
       if (head && !headWin && keptIds.length === 1) {

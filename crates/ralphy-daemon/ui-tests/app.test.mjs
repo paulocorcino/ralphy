@@ -1773,6 +1773,27 @@ test("every shell path that paints the columns asks to write the maximize", () =
     calls.length = 0;
     lone();
     assert.deepEqual([calls.length, state.columns], [0, grid()], "a relaunch gap paints nothing");
+    const stage = (...wins) => {
+      document.querySelectorAll = () =>
+        wins.map(([id, max]) => ({ _deskId: id, classList: { contains: (c) => max && c === "maximized" } }));
+    };
+    // The same with two consoles left: the grid path.
+    stage(["b"], ["c"]);
+    state.columns = grid();
+    calls.length = 0;
+    state.paintColumns();
+    assert.deepEqual([calls.length, state.columns], [0, grid()], "a relaunch gap on a grid paints nothing");
+    // A first console back on the stage paints, even while still marked.
+    stage(["a", true], ["b"], ["c"]);
+    calls.length = 0;
+    state.paintColumns();
+    assert.equal(calls.length, 1, "a first console back on the stage paints");
+    // A member that is not first keeps its place while it is relaunched.
+    globalThis.WBConsole.isRelaunching = (id) => id === "b";
+    stage(["a", true], ["c"]);
+    state.columns = grid();
+    state.paintColumns();
+    assert.deepEqual(state.columns, grid(), "a relaunched member keeps its column");
   } finally {
     document.querySelectorAll = realAll;
     globalThis.WBConsole = realConsole;

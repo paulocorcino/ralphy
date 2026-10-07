@@ -6646,8 +6646,7 @@ window.WBConsole = (function () {
     const relaunchIn = (checkout) => {
       // A restart is the operator's act: an adopted console gets its record.
       const carry = { ...deskOf(win), unrecorded: false };
-      relaunching.add(carry.id);
-      discard();
+      markRelaunch(carry.id, discard);
       // `win._deskKind`, not the local `kind`: a window reattached at load was
       // spawned with `{id, repo}` only. `~` is the daemon's repo-less label.
       const plain = win._deskKind === "console";
@@ -6975,6 +6974,17 @@ window.WBConsole = (function () {
   function isRelaunching(deskId) {
     return relaunching.has(deskId);
   }
+  // Marks `deskId`, then takes its window off the stage. `spawnOrMissing`
+  // clears the mark; a take-down that throws clears it here.
+  function markRelaunch(deskId, takeDown) {
+    relaunching.add(deskId);
+    try {
+      takeDown();
+    } catch (e) {
+      relaunching.delete(deskId);
+      throw e;
+    }
+  }
 
   async function spawnOrMissing(req, label, repo, carry) {
     try {
@@ -7241,8 +7251,7 @@ window.WBConsole = (function () {
         return;
       }
       const carry = deskOf(win);
-      relaunching.add(carry.id);
-      drop(true);
+      markRelaunch(carry.id, () => drop(true));
       // The agent menu's launch path, reusing this record's id, rect and
       // maximized state — in the recorded worktree unless that is the one that
       // is gone, in which case the button said "primary". For a local record

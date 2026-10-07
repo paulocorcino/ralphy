@@ -2663,6 +2663,15 @@ test("applyColumns writes the unmaximize of a console that stays a column, not f
   }
 });
 
+// A relaunch takes the window off the stage and spawns a new one under the
+// same id; the shell's columns wait for an id marked in between. These paths
+// need a real DOM, so the wiring is pinned on the source.
+test("a restart and a placeholder's Launch mark the console as relaunching", () => {
+  assert.match(SRC, /markRelaunch\(carry\.id, discard\);/);
+  assert.match(SRC, /markRelaunch\(carry\.id, \(\) => drop\(true\)\);/);
+  assert.match(SRC, /\} finally \{\s*relaunching\.delete\(carry\?\.id\);/);
+});
+
 // The torn-off fence window's grid is never stored (ADR-0051 §8, amended
 // 2026-10-05), so its one call never asks to write the maximize.
 test("the torn-off fence window paints its columns without persist", () => {
