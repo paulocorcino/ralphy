@@ -2355,8 +2355,8 @@ function loadColumns() {
   return window.WBColumns;
 }
 
-// `setMax(win, true)` is what writes `max: true` to the desk, and
-// `applyColumns` calls it only where `columnClasses(...).maximized` is true.
+// `applyColumns` maximizes only where `columnClasses(...).maximized` is true,
+// and with `persist` that maximize is written to the desk.
 // NEGATIVE CONTROL: answering `maximized: true` for every entry fails the "b"
 // assertion below — that is two consoles recorded as maximized.
 test("columnClasses never marks a column right of the leftmost maximized", () => {
@@ -2574,6 +2574,92 @@ function deskWin(id, extra = {}) {
   };
 }
 const SAVED = { id: "w-1", repo: "o/r", agent: "console", kind: "console", rect: { left: 100, top: 100, width: 600, height: 400 }, max: false, sessionId: 7, checkout: "wt-a", consoleName: "r #1" };
+
+// The DOM that `applyColumns` paints: a stage whose windows match the few
+// selectors it queries, and a workspace with no scroll. The stage measures 0
+// wide, so the fence refresh after a write returns early.
+function columnDom(wins) {
+  const match = (w, sel) =>
+    sel.split(",").some((one) =>
+      one.trim().split(".").filter(Boolean).every((c) => w.classList.contains(c)),
+    );
+  const all = (sel) => wins.filter((w) => match(w, sel));
+  const one = (sel) => all(sel)[0] ?? null;
+  const stageEl = { offsetWidth: 0, offsetHeight: 0, style: {}, querySelectorAll: all, querySelector: one };
+  const workspaceEl = {
+    scrollLeft: 0,
+    scrollTop: 0,
+    classList: { toggle() {} },
+    querySelectorAll: all,
+    querySelector: one,
+  };
+  return { stage: stageEl, workspace: workspaceEl };
+}
+function columnWin(id, maximized = false) {
+  const classes = new Set(maximized ? ["session-window", "maximized"] : ["session-window"]);
+  return deskWin(id, {
+    classList: {
+      contains: (c) => classes.has(c),
+      add: (c) => classes.add(c),
+      remove: (c) => classes.delete(c),
+      toggle: (c, on) => (on ? classes.add(c) : classes.delete(c), on),
+    },
+    style: { setProperty() {}, removeProperty() {} },
+  });
+}
+const colRecord = (id, max) => ({ ...SAVED, id, max, sessionId: null, checkout: null });
+
+// ADR-0051 §5: the console that becomes first in the columns is written to
+// the desk as an ordinary maximize, and the one that stops being first is
+// written as not maximized. `WBColumns.fromStored` keeps the stored grid only
+// when the desk records its first console as maximized.
+test("applyColumns writes the moved maximize to the desk when asked to persist", async () => {
+  let dom = null;
+  const page = await deskPage(
+    { windows: [colRecord("w-a", true), colRecord("w-b", false)] },
+    {},
+    { getElementById: (id) => dom?.[id] ?? null, dispatchEvent() {} },
+  );
+  try {
+    const C = loadColumns();
+    const a = columnWin("w-a", true);
+    const b = columnWin("w-b");
+    dom = columnDom([a, b]);
+    const r = C.restore([["w-a"], ["w-b"]], "w-a");
+    page.wb.applyColumns(C.painted(r.columns, 2), { cap: 2, unmax: r.unmax, persist: true });
+    await settle();
+    assert.deepEqual(changesOf(page.sent), [
+      { op: "set", type: "window", id: "w-a", fields: { max: false } },
+      { op: "set", type: "window", id: "w-b", fields: { max: true } },
+    ]);
+  } finally {
+    page.restore();
+  }
+});
+
+// The torn-off fence window paints its own grid and never stores it
+// (ADR-0051 §8, amended 2026-10-05), so its maximize is not written.
+test("applyColumns writes nothing to the desk without persist", async () => {
+  let dom = null;
+  const page = await deskPage(
+    { windows: [colRecord("w-a", true), colRecord("w-b", false)] },
+    {},
+    { getElementById: (id) => dom?.[id] ?? null, dispatchEvent() {} },
+  );
+  try {
+    const C = loadColumns();
+    const a = columnWin("w-a", true);
+    const b = columnWin("w-b");
+    dom = columnDom([a, b]);
+    const r = C.restore([["w-a"], ["w-b"]], "w-a");
+    page.wb.applyColumns(C.painted(r.columns, 2), { cap: 2, unmax: r.unmax });
+    await settle();
+    assert.ok(b.classList.contains("maximized"), "the page still shows the move");
+    assert.deepEqual(page.sent, []);
+  } finally {
+    page.restore();
+  }
+});
 
 // Seven of the eleven old window writes were not about the rect, and each
 // wrote the rect anyway. A reconnect writes the session, only when it moved.

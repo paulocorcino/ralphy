@@ -1963,9 +1963,10 @@ window.WBConsole = (function () {
   // by `syncMaxPin`. Re-asserted after the class flip because `maxlock`
   // (`overflow:hidden`) drops the scrollbars, which can clamp the offsets.
   //
-  // `persist` is the operator's own toggle, the one act that writes `max`. A
-  // column (`applyColumns`) and a restore (`buildChrome`) write nothing: the
-  // columns are this client's view, and a restore already reads the record.
+  // `persist` writes `max`: the operator's own toggle, and the shell's columns
+  // moving the maximize to another console (ADR-0051 §5). A restore
+  // (`buildChrome`) and the torn-off fence window's columns write nothing: a
+  // restore already reads the record, and that window's grid is never stored.
   function setMax(win, on, persist = false) {
     if (win.classList.contains("maximized") === on) return;
     const ws = workspace();
@@ -2012,9 +2013,11 @@ window.WBConsole = (function () {
   // this module only paints the answer. It never reads `WBColumns`: the
   // detached-fence popup boots this file without it.
   //
-  // A column writes nothing to the desk: the painted box is CSS, `restoreRect`
-  // reads the inline rect under it, and the maximize a column sets on the
-  // first console is this client's view (ADR-0050 amendment 2026-10-04).
+  // A column writes no rect to the desk: the painted box is CSS, and
+  // `restoreRect` reads the inline rect under it. The first console is the one
+  // the desk records as maximized, so a move of the maximize is written when
+  // the caller passes `persist` (ADR-0051 §5). Another page does not apply
+  // that `max` while it is open (ADR-0050 amendment 2026-10-04).
 
   // Pure. What one window is, given the painted consoles. `maximized: null`
   // means "not a column: leave its maximize alone". Two rows of one column
@@ -2048,17 +2051,19 @@ window.WBConsole = (function () {
   }
 
   // Paint `painted` (`WBColumns.painted`). `unmax` is the old first console
-  // after a restore: it stops being the maximized console.
+  // after a restore: it stops being the maximized console. `persist` writes
+  // each change of the maximize to the desk.
   function applyColumns(painted, opts) {
     const list = painted || [];
     const cap = opts?.cap ?? 1;
+    const persist = !!opts?.persist;
     for (const win of wins) {
       if (win.classList.contains("column") && !columnClasses(list, win._deskId).column) {
         clearColumn(win);
       }
     }
     const gone = opts?.unmax ? findWindow(opts.unmax) : null;
-    if (gone && !columnClasses(list, gone._deskId).column) setMax(gone, false);
+    if (gone && !columnClasses(list, gone._deskId).column) setMax(gone, false, persist);
     const shown = [];
     for (const p of list) {
       const win = findWindow(p.id);
@@ -2078,8 +2083,8 @@ window.WBConsole = (function () {
       }
       // The class is set FIRST: `restoreRect` must already read a column's
       // inline rect.
-      if (c.maximized && !win.classList.contains("maximized")) setMax(win, true);
-      else if (!c.maximized && win.classList.contains("maximized")) setMax(win, false);
+      if (c.maximized && !win.classList.contains("maximized")) setMax(win, true, persist);
+      else if (!c.maximized && win.classList.contains("maximized")) setMax(win, false, persist);
       paintMaxButton(win);
     }
     syncMaxLock();

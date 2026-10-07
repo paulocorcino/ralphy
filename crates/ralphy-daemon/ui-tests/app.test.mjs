@@ -1699,6 +1699,53 @@ test("checkColumnDesk takes the consoles that left the desk out of the columns, 
   assert.deepEqual(order, ["columns", "drop x", "drop loose"]);
 });
 
+// ADR-0051 §5: when the shell's columns move the maximize, the move is written
+// to the desk. The torn-off fence window paints without `persist`.
+test("every shell path that paints the columns asks to write the maximize", () => {
+  const { state, window } = loadShell();
+  const calls = [];
+  const realConsole = globalThis.WBConsole;
+  const realColumns = globalThis.WBColumns;
+  globalThis.WBColumns = window.WBColumns;
+  globalThis.WBConsole = {
+    ...window.WBConsole,
+    applyColumns: (_painted, opts) => calls.push(opts),
+    columnMeasure: () => ({ viewport: 1920 }),
+    dropClosedElsewhere() {},
+    focusColumn() {},
+    focusedId: () => null,
+  };
+  const grid = () => [["a"], ["b"], ["c"]];
+  state.columnCap = () => 3;
+  try {
+    const paths = {
+      restoreColumn: () => state.restoreColumn("a"),
+      swapColumn: () => {
+        state.columnFrom = "b";
+        state.swapColumn("x");
+      },
+      columnsFromFence: () =>
+        state.columnsFromFence([
+          { id: "p", rect: { left: 0, top: 0, width: 100, height: 100 } },
+          { id: "q", rect: { left: 200, top: 0, width: 100, height: 100 } },
+        ]),
+      leaveColumns: () => state.leaveColumns(["a"]),
+      checkColumnDesk: () => state.checkColumnDesk(["a"]),
+      paintColumns: () => state.paintColumns(),
+    };
+    for (const [name, run] of Object.entries(paths)) {
+      state.columns = grid();
+      calls.length = 0;
+      run();
+      assert.ok(calls.length, `${name} paints the columns`);
+      for (const opts of calls) assert.equal(opts?.persist, true, `${name}: ${JSON.stringify(opts)}`);
+    }
+  } finally {
+    globalThis.WBConsole = realConsole;
+    globalThis.WBColumns = realColumns;
+  }
+});
+
 test("two fleet reads close together list each peer row once", async () => {
   const { state } = loadShell();
   state.projects = [{ slug: "a/b", tree: [] }];

@@ -4905,9 +4905,9 @@ export function shell() {
       return this.isMac ? "⌥⇧F<n>" : "Alt+Shift+F<n>";
     },
     // --- columns (ADR-0051 §5) --------------------------------------------
-    // INVARIANT: the shell never writes `max`. `WBConsole.applyColumns` does,
-    // through `setMax`, and only for the first console in reading order
-    // (`true`) or a console that stopped being first (`false`). `columns` is
+    // INVARIANT: the shell never writes `max` itself. Each `applyColumns` call
+    // passes `persist`, so `setMax` writes it for the first console in reading
+    // order (`true`) or one that stopped being first (`false`). `columns` is
     // the grid: a list of columns, each a list of ids (`wb-columns.js`).
     columnIds() {
       return WBColumns.flat(this.columns);
@@ -4970,7 +4970,7 @@ export function shell() {
       if (head && !headWin && keptIds.length === 1) {
         const cap = this.columnCap();
         this.setColumns([]);
-        WBConsole.applyColumns(WBColumns.painted(kept, cap), { cap, unmax: null });
+        WBConsole.applyColumns(WBColumns.painted(kept, cap), { cap, unmax: null, persist: true });
         return;
       }
       // The KEPT grid is stored, never the painted slice: a console the cap
@@ -4990,11 +4990,7 @@ export function shell() {
       // old z-index; raising the painted ones keeps it behind them.
       const moved = this.columnIds().length >= 2 && key !== this._paintedKey;
       this._paintedKey = key;
-      WBConsole.applyColumns(painted, {
-        cap,
-        unmax: null,
-        raise: !!opts?.raise || moved,
-      });
+      WBConsole.applyColumns(painted, { cap, unmax: null, raise: !!opts?.raise || moved, persist: true });
       // Only when the keys are not somewhere else (a search box, a modal).
       const el = document.activeElement;
       const keysFree = !el || el === document.body || !!el.closest?.(".session-window");
@@ -5009,7 +5005,7 @@ export function shell() {
       if (!r.changed) return;
       const cap = r.columns.length ? this.columnCap() : 1;
       this.setColumns(r.ended ? [] : r.columns);
-      WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { cap, unmax: r.unmax, raise: true });
+      WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { cap, unmax: r.unmax, raise: true, persist: true });
     },
     // Consoles whose records another client removed (`ids`, from the console
     // module after a desk read) leave the columns, then the stage. A session
@@ -5022,7 +5018,7 @@ export function shell() {
         const cap = r.columns.length ? this.columnCap() : 1;
         this.setColumns(r.ended ? [] : r.columns);
         // Painted BEFORE the drops, so a lone survivor is maximized first.
-        WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { cap, unmax: null, raise: true });
+        WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { cap, unmax: null, raise: true, persist: true });
       }
       for (const id of ids) WBConsole.dropClosedElsewhere(id);
       if (r.changed) this.paintColumns();
@@ -5100,7 +5096,7 @@ export function shell() {
       const cap = this.columnCap();
       this.setColumns(r.ended ? [] : r.columns);
       this.columnMenu = false;
-      WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { cap, unmax: r.unmax, raise: true });
+      WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { cap, unmax: r.unmax, raise: true, persist: true });
       this.paintColumns();
       WBConsole.focusColumn(id);
     },
@@ -5109,7 +5105,7 @@ export function shell() {
       const cap = r.columns.length ? this.columnCap() : 1;
       this.setColumns(r.ended ? [] : r.columns);
       // The one call that may promote a lone survivor to the maximize.
-      WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { cap, unmax: r.unmax, raise: true });
+      WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { cap, unmax: r.unmax, raise: true, persist: true });
       this.paintColumns();
     },
     // A fence opened as columns (ADR-0051 §5, 2026-09-30): the grid follows the
@@ -5126,6 +5122,7 @@ export function shell() {
         cap,
         unmax: old && !ids.includes(old) ? old : null,
         raise: true,
+        persist: true,
       });
       this.paintColumns();
       WBConsole.focusColumn(ids[0]);
