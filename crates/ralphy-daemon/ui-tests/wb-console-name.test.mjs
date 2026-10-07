@@ -1,21 +1,12 @@
-// Unit tests for assets/ui/wb-console-name.js — the console name (ADR-0066
+// Unit tests for assets/ui/wb-console-name.ts — the console name (ADR-0066
 // §§2–4). Runs the real source against an empty window: the module is pure
 // and touches nothing at load.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
-
-const SRC = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../assets/ui/wb-console-name.js"),
-  "utf8",
-);
+import { WBConsoleName } from "../assets/ui/wb-console-name.ts";
 
 function load() {
-  const window = {};
-  new Function("window", SRC)(window);
-  return window.WBConsoleName;
+  return WBConsoleName;
 }
 
 test("prefixOf: the last slug segment, home for no repo", () => {

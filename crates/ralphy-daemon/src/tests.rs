@@ -2679,8 +2679,8 @@ async fn get_local(path: &str) -> Response {
 }
 /// The security headers ride EVERY response (audit F3): the shell, an
 /// asset, an API answer and a refusal alike, from one layer over the
-/// router. The CSP allows the shell's own inline script by hash — the one
-/// spelling of `script-src` that admits no injected tag.
+/// router. The CSP's `script-src` admits no injected tag: no shell carries
+/// an inline script, so it names no hash and no `'unsafe-inline'`.
 #[tokio::test]
 async fn every_response_carries_the_security_headers() {
     for path in ["/", "/app.js", "/api/session", "/api/nope"] {
@@ -2692,7 +2692,7 @@ async fn every_response_carries_the_security_headers() {
         let csp = h[header::CONTENT_SECURITY_POLICY].to_str().unwrap();
         assert!(csp.contains("frame-ancestors 'none'"), "{path}: {csp}");
         assert!(
-            csp.contains("script-src 'self' 'unsafe-eval' 'sha256-"),
+            csp.contains("script-src 'self' 'unsafe-eval';"),
             "{path}: {csp}"
         );
         assert!(
@@ -2712,23 +2712,18 @@ async fn every_response_carries_the_security_headers() {
             "{path}: {accept_ch}"
         );
     }
-    // The hash in the header is the hash of the bytes the browser receives:
-    // recompute it from a served shell. The fence page carries an inline
-    // script (its console options); the desk page has none.
-    let shell = body_string(get_local("/fence").await).await;
-    let bodies = routes::inline_script_bodies(&shell);
-    assert!(
-        !bodies.is_empty(),
-        "detached-fence.html carries its console options inline"
-    );
-    let csp = routes::content_security_policy(false).to_str().unwrap();
-    for body in bodies {
-        let want = format!("'sha256-{}'", routes::script_hash(body));
-        assert!(
-            csp.contains(&want),
-            "served shell script not in the CSP: {want}"
+    // No served shell carries an inline script (ADR-0075: every page script
+    // is a module), so the header's hash list is empty.
+    for path in ["/", "/popup", "/fence"] {
+        let shell = body_string(get_local(path).await).await;
+        assert_eq!(
+            routes::inline_script_bodies(&shell),
+            Vec::<&str>::new(),
+            "{path} carries an inline script"
         );
     }
+    let csp = routes::content_security_policy(false).to_str().unwrap();
+    assert!(!csp.contains("'sha256-"), "{csp}");
 }
 
 /// The one inline form a hash cannot cover: an `on*=` event-handler
@@ -2805,7 +2800,7 @@ fn the_explorer_opens_a_note_as_a_card() {
     for pin in [r#"write("file.rename""#, r#"write("file.delete""#] {
         assert!(notes.contains(pin), "wb-notes.ts must keep the pin {pin}");
     }
-    // The native dialogs are pinned OUT for the reason `wb-console.js`
+    // The native dialogs are pinned OUT for the reason `wb-console.ts`
     // records: an automated browser dismisses them by default, which turns
     // a guarded click into a silently cancelled one.
     assert!(
@@ -3081,11 +3076,11 @@ async fn root_serves_the_vendored_crepe() {
 /// only.
 #[test]
 fn the_console_terminal_is_themed_in_lockstep_with_the_stylesheet() {
-    let js = include_str!("../assets/ui/wb-console.js");
+    let js = include_str!("../assets/ui/wb-console.ts");
     let css = served_css();
     assert!(
         js.contains("new Terminal({ convertEol: false, theme: TERMINAL_THEME })"),
-        "wb-console.js must hand xterm a theme — an unthemed Terminal is xterm's black default"
+        "wb-console.ts must hand xterm a theme — an unthemed Terminal is xterm's black default"
     );
     assert!(
         js.contains("background: \"#000000\""),
@@ -3102,7 +3097,7 @@ fn the_console_terminal_is_themed_in_lockstep_with_the_stylesheet() {
         );
         assert!(
             css.contains(&format!("{token}: {hex};")),
-            "styles.css must still define {token} as {hex} — wb-console.js mirrors it"
+            "styles.css must still define {token} as {hex} — wb-console.ts mirrors it"
         );
     }
 }
@@ -3117,7 +3112,7 @@ fn the_console_terminal_is_themed_in_lockstep_with_the_stylesheet() {
 /// copy; these are the invariants that are not.
 #[test]
 fn the_console_clipboard_is_write_only_and_refused_on_replay() {
-    let js = include_str!("../assets/ui/wb-console.js");
+    let js = include_str!("../assets/ui/wb-console.ts");
     for pin in [
         // The gap that made an agent announce a copy it never made.
         "registerOscHandler(52",
@@ -3134,7 +3129,7 @@ fn the_console_clipboard_is_write_only_and_refused_on_replay() {
     ] {
         assert!(
             js.contains(pin),
-            "wb-console.js must keep the console-clipboard pin {pin}"
+            "wb-console.ts must keep the console-clipboard pin {pin}"
         );
     }
     // The write callback that clears the replay gate once the replayed bytes
@@ -3143,7 +3138,7 @@ fn the_console_clipboard_is_write_only_and_refused_on_replay() {
     let flat: String = js.split_whitespace().collect();
     assert!(
         flat.contains("term.write(a.subarray(9),replaying?()=>{replaying=false;}:undefined"),
-        "wb-console.js must clear the replay gate in the replay's write callback"
+        "wb-console.ts must clear the replay gate in the replay's write callback"
     );
     // The read property. The clipboard is read only inside an operator's
     // gesture — the key bar's paste key and the right button under a TUI —
@@ -3156,7 +3151,7 @@ fn the_console_clipboard_is_write_only_and_refused_on_replay() {
         assert_eq!(
             js.matches(call).count(),
             want,
-            "wb-console.js reads the clipboard in readClipboard() only ({call})"
+            "wb-console.ts reads the clipboard in readClipboard() only ({call})"
         );
     }
     assert_eq!(
@@ -4034,13 +4029,11 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-detach-link.js",
                 "wb-session-route.js",
                 "wb-daemon.js",
-                // `wb-console.js` DESTRUCTURES `window.WBGeometry` and
-                // `window.WBWindowState` at module scope, so a popup without
-                // either tag throws on the console's first line rather than
-                // misbehaving later. Stated HERE because this set is a
-                // hardcoded floor: nothing derives the popup's needs from the
-                // tree, so a module added to the console and forgotten here
-                // breaks the second monitor with no other signal at all.
+                // `wb-console.ts` imports the geometry, the window state and
+                // the console name; the entry imports the console. Stated
+                // HERE because this set is a hardcoded floor: nothing derives
+                // the popup's needs from the tree, so an import dropped from
+                // the entry breaks the second monitor with no other signal.
                 "wb-geometry.js",
                 "wb-window-state.js",
                 "wb-console-name.js",
@@ -4068,48 +4061,6 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
             refs.iter().any(|r| r.starts_with("styles/")),
             "{shell} must load the stylesheet — an unstyled popup is a broken one"
         );
-    }
-
-    // The script ORDERS that are a hard dependency rather than a habit: the
-    // later module reads the earlier one's global at module scope or on its
-    // boot path, so a dropped or reordered tag throws out of the whole IIFE
-    // (or reads `undefined` on the first paint) while every source-text pin
-    // stays green. Asserted in every document that boots the reader — the
-    // fence popup is a second boot path, and the reason a union-wide check is
-    // not enough.
-    // - `wb-console.js` destructures `WBGeometry` and `WBWindowState`,
-    //   hard-dereferences `WBDeskSink.daemon()` (#346), `WBDeskSync` and
-    //   `WBDetachLink` (#347), names every console through `WBConsoleName` (ADR-0066 §2),
-    //   routes sessions through `WBSessionRoute`, and reads `WBView` on its
-    //   boot path (#339).
-    const BOTH: &[&str] = &["index.html", "detached-fence.html"];
-    // (module, the module that reads it, the shells that must order them)
-    let orders: [(&str, &str, &[&str]); 7] = [
-        ("wb-geometry.js", "wb-console.js", BOTH),
-        ("wb-window-state.js", "wb-console.js", BOTH),
-        ("wb-desk-sink.js", "wb-console.js", BOTH),
-        ("wb-desk-sync.js", "wb-console.js", BOTH),
-        ("wb-detach-link.js", "wb-console.js", BOTH),
-        ("wb-console-name.js", "wb-console.js", BOTH),
-        ("wb-view.js", "wb-console.js", &["index.html"]),
-    ];
-    for (module, reader, shells) in orders {
-        for shell in shells {
-            let (_, html) = SHELLS
-                .iter()
-                .find(|(name, _)| name == shell)
-                .expect("an ordered shell is one of SHELLS");
-            let refs = tag_references(html);
-            let at = |name: &str| {
-                refs.iter()
-                    .position(|r| r == name)
-                    .unwrap_or_else(|| panic!("{shell} must load {name}"))
-            };
-            assert!(
-                at(module) < at(reader),
-                "{shell} must load {module} BEFORE {reader} — the reader uses its global at load"
-            );
-        }
     }
 }
 
@@ -4197,31 +4148,27 @@ fn every_ui_test_file_is_imported_by_the_barrel() {
 
 /// The first-party classic scripts not yet moved to TypeScript (ADR-0075
 /// D9). A ratchet: a file leaves the list in the change that moves it, and
-/// nothing joins it.
-const CLASSIC_SCRIPTS: &[&str] = &[
-    "wb-console.js",
-    "wb-console-name.js",
-    "wb-desk-sink.js",
-    "wb-desk-sync.js",
-    "wb-detach-link.js",
-    "wb-geometry.js",
-    "wb-view.js",
-    "wb-window-state.js",
-];
+/// nothing joins it. Empty: every first-party `.js` file is refused.
+const CLASSIC_SCRIPTS: &[&str] = &[];
 
-/// The `window.WB*` names a module still sets, because a classic script
-/// reads them (ADR-0075 D9). A ratchet like `CLASSIC_SCRIPTS`.
+/// The `window.WB*` names a module still sets, because markup, `app.ts`,
+/// another module or a browser check reads them on `window` (ADR-0075 D9). A
+/// ratchet like `CLASSIC_SCRIPTS`.
 const MODULE_WINDOW_NAMES: &[&str] = &[
     "WB",
     "WBAddProject",
     "WBAgents",
     "WBChanges",
     "WBColumns",
+    "WBConsole",
+    "WBConsoleName",
     "WBDaemon",
     "WBDeskHistory",
+    "WBDeskSink",
     "WBFail",
     "WBFileSearch",
     "WBFleet",
+    "WBGeometry",
     "WBKanban",
     "WBMonaco",
     "WBNotes",
@@ -4235,6 +4182,7 @@ const MODULE_WINDOW_NAMES: &[&str] = &[
     "WBSettingsDialog",
     "WBSpend",
     "WBSplit",
+    "WBView",
     "WBViewer",
     "WB_SETTINGS",
     "WB_TRISTATE",
@@ -4722,7 +4670,7 @@ fn presence_staleness_is_derived_on_a_clock_not_inside_the_binding() {
 /// the script tags and the markup that must call it.
 #[test]
 fn the_workbench_never_titles_a_repo_with_its_routing_head() {
-    // The popups load `wb-viewer.ts`/`wb-console.js`, which now call the
+    // The popups load `wb-viewer.ts`/`wb-console.ts`, which now call the
     // fold — without the import or tag the label silently falls back to the
     // ref in exactly the two windows nobody tests by hand.
     for page in [
@@ -4771,7 +4719,7 @@ fn the_workbench_never_titles_a_repo_with_its_routing_head() {
     // The console name's prefix is the project name's last segment (ADR-0066
     // §2 and its 2026-10-02 amendment); an unnamed ref falls back to the
     // slug. Taken from the ref, a peer console would be named after its ULID.
-    let console = include_str!("../assets/ui/wb-console.js");
+    let console = include_str!("../assets/ui/wb-console.ts");
     assert!(
         console.contains("prefixOf(projectNameOf(repo))")
             && console.contains("WBFleet.refSlug(ref)"),
@@ -4785,7 +4733,7 @@ fn the_workbench_never_titles_a_repo_with_its_routing_head() {
 /// node suite renders no DOM or CSS, so this test holds that half.
 #[test]
 fn shell_draws_fences_below_the_windows() {
-    let js = include_str!("../assets/ui/wb-console.js");
+    let js = include_str!("../assets/ui/wb-console.ts");
     for pin in [
         "function renderFences(",
         "function renameFence(",
@@ -4793,7 +4741,7 @@ fn shell_draws_fences_below_the_windows() {
     ] {
         assert!(
             js.contains(pin),
-            "wb-console.js must keep the #340 pin {pin}"
+            "wb-console.ts must keep the #340 pin {pin}"
         );
     }
     // The plane is sized to windows AND fences (ADR-0051 §2) AND note cards
@@ -4853,7 +4801,7 @@ fn shell_draws_fences_below_the_windows() {
     );
     let squeezed: String = js.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
-        squeezed.contains(r#"name.addEventListener("mousedown", (e) => { if (name.readOnly) e.preventDefault(); });"#),
+        squeezed.contains(r#"name.addEventListener("mousedown", (e: any) => { if (name.readOnly) e.preventDefault(); });"#),
         "a single click on a read-only fence name must leave no trace at all"
     );
     // Enter is the ONLY commit. `change` fires on blur, so committing there
@@ -4901,7 +4849,7 @@ fn shell_draws_fences_below_the_windows() {
     let app_js = include_str!("../assets/ui/app.ts");
     let app: String = app_js.split_whitespace().collect::<Vec<_>>().join(" ");
     // The shell says why before the click and again if one gets through — the
-    // #318 idiom, since `wb-console.js` reaches no shell and can only refuse.
+    // #318 idiom, since `wb-console.ts` reaches no shell and can only refuse.
     assert!(
         app.contains(
             "if (WBConsole.createFence() === false) this._flashAction(this.fenceCapMessage());"
@@ -4960,11 +4908,11 @@ fn shell_draws_fences_below_the_windows() {
 /// consult.
 #[test]
 fn shell_drags_only_past_a_threshold() {
-    let js = include_str!("../assets/ui/wb-console.js");
+    let js = include_str!("../assets/ui/wb-console.ts");
     let body = |name: &str| -> String {
         let after = js
             .split_once(name)
-            .unwrap_or_else(|| panic!("wb-console.js must keep {name}"))
+            .unwrap_or_else(|| panic!("wb-console.ts must keep {name}"))
             .1;
         after[..after.find("\n  }").expect("the function must close")].to_string()
     };
@@ -5005,7 +4953,7 @@ fn shell_drags_only_past_a_threshold() {
     // `rect`/`locked` from the copy, would break `lockedBy`'s "fence"
     // verdict with nothing on either side to catch it.
     assert!(
-        body("function fenceRecords(").contains("fences.map((f) => ({ ...f }))"),
+        body("function fenceRecords(").contains("fences.map((f: any) => ({ ...f }))"),
         "fenceRecords must answer copies of the whole record (ADR-0064 §8)"
     );
     // And the card must actually PASS both hooks: the default is correct
@@ -5029,10 +4977,10 @@ fn shell_drags_only_past_a_threshold() {
 /// gestures themselves by `tests/browser/console/wb_console_touch.py`.
 #[test]
 fn titlebar_touch_double_taps_and_holds() {
-    let js = include_str!("../assets/ui/wb-console.js");
+    let js = include_str!("../assets/ui/wb-console.ts");
     let after = js
         .split_once("function wireTitleTouch(")
-        .expect("wb-console.js must keep wireTitleTouch")
+        .expect("wb-console.ts must keep wireTitleTouch")
         .1;
     let b = &after[..after.find("\n  }").expect("the function must close")];
     for pin in [
@@ -5076,13 +5024,13 @@ fn titlebar_touch_double_taps_and_holds() {
 fn a_note_card_is_stacked_and_wears_the_console_chrome() {
     // Normalized: the pin below spans line ends, and a Windows checkout
     // (CI's included) embeds the asset with CRLF.
-    let console = include_str!("../assets/ui/wb-console.js").replace("\r\n", "\n");
+    let console = include_str!("../assets/ui/wb-console.ts").replace("\r\n", "\n");
     let notes = include_str!("../assets/ui/wb-notes.ts");
     // The seam: a place in the tier WITHOUT focus, because a restore
     // focuses nothing and `focusWin` is the only other way to get one.
     assert!(
         console.contains("function stackWin(") && console.contains("\n    stackWin,\n"),
-        "wb-console.js must export stackWin, the tier a restored surface enters by"
+        "wb-console.ts must export stackWin, the tier a restored surface enters by"
     );
     assert!(
         notes.contains("window.WBConsole.stackWin?.(el)"),
@@ -5178,7 +5126,7 @@ fn a_note_card_is_stacked_and_wears_the_console_chrome() {
 /// drops the bands. Every pin is an expression, as above.
 #[test]
 fn shell_locks_consoles_and_fences() {
-    let js = include_str!("../assets/ui/wb-console.js");
+    let js = include_str!("../assets/ui/wb-console.ts");
     for pin in [
         "function fenceLocked(",
         "function isLocked(",
@@ -5192,13 +5140,13 @@ fn shell_locks_consoles_and_fences() {
     ] {
         assert!(
             js.contains(pin),
-            "wb-console.js must keep the lock pin {pin}"
+            "wb-console.ts must keep the lock pin {pin}"
         );
     }
     let body = |name: &str| -> String {
         let after = js
             .split_once(name)
-            .unwrap_or_else(|| panic!("wb-console.js must keep {name}"))
+            .unwrap_or_else(|| panic!("wb-console.ts must keep {name}"))
             .1;
         after[..after.find("\n  }").expect("the function must close")].to_string()
     };
@@ -5273,11 +5221,11 @@ fn shell_locks_consoles_and_fences() {
 /// suite runs no DOM and no CSS.
 #[test]
 fn shell_fences_are_a_group() {
-    let js = include_str!("../assets/ui/wb-console.js");
+    let js = include_str!("../assets/ui/wb-console.ts");
     for pin in ["function startFenceMove(", "function startFenceResize("] {
         assert!(
             js.contains(pin),
-            "wb-console.js must keep the #341 pin {pin}"
+            "wb-console.ts must keep the #341 pin {pin}"
         );
     }
     // Membership is DERIVED, never stored: the only fence id in the shell is
@@ -5285,7 +5233,7 @@ fn shell_fences_are_a_group() {
     // is exactly the state that can disagree with the geometry.
     let record = js
         .split_once("function recordOf(")
-        .expect("wb-console.js must keep recordOf")
+        .expect("wb-console.ts must keep recordOf")
         .1;
     assert!(
         !record[..record.find("\n  }").expect("recordOf must close")].contains("fence"),
@@ -5339,7 +5287,7 @@ fn shell_fences_are_a_group() {
 /// chrome and the CSS are pinned here, where a revert of either half fails.
 #[test]
 fn shell_arranges_into_the_fence() {
-    let js = include_str!("../assets/ui/wb-console.js");
+    let js = include_str!("../assets/ui/wb-console.ts");
     for pin in [
         "function arrangeFence(",
         "function refreshFenceChrome(",
@@ -5347,7 +5295,7 @@ fn shell_arranges_into_the_fence() {
     ] {
         assert!(
             js.contains(pin),
-            "wb-console.js must keep the #342 pin {pin}"
+            "wb-console.ts must keep the #342 pin {pin}"
         );
     }
     // The global act is GONE, not wrapped: a surviving entry point is a
@@ -5363,7 +5311,7 @@ fn shell_arranges_into_the_fence() {
     // invisible while it silently replaces the rect the restore reads back.
     let fence_arrange = js
         .split_once("function arrangeFence(")
-        .expect("wb-console.js must keep arrangeFence")
+        .expect("wb-console.ts must keep arrangeFence")
         .1;
     // The EXPRESSION, not the bare word: `"maximized"` alone is satisfied by
     // the comment that explains the rule, so deleting the filter leaves this
@@ -5422,11 +5370,11 @@ fn shell_arranges_into_the_fence() {
     ] {
         assert!(
             js.contains(konst),
-            "wb-console.js must mirror the window floor as {konst} (#342)"
+            "wb-console.ts must mirror the window floor as {konst} (#342)"
         );
         assert!(
             rule("\n.session-window {").contains(decl),
-            "styles.css's window floor must still be `{decl}` — wb-console.js mirrors it (#342)"
+            "styles.css's window floor must still be `{decl}` — wb-console.ts mirrors it (#342)"
         );
     }
 }
@@ -5441,8 +5389,8 @@ fn shell_arranges_into_the_fence() {
 /// over deleted code.
 #[test]
 fn shell_lists_the_fences() {
-    let js = include_str!("../assets/ui/wb-console.js");
-    let geometry = include_str!("../assets/ui/wb-geometry.js");
+    let js = include_str!("../assets/ui/wb-console.ts");
+    let geometry = include_str!("../assets/ui/wb-geometry.ts");
     for pin in [
         "function fenceList(",
         "function jumpToFence(",
@@ -5451,13 +5399,13 @@ fn shell_lists_the_fences() {
     ] {
         assert!(
             js.contains(pin),
-            "wb-console.js must keep the #343 pin {pin}"
+            "wb-console.ts must keep the #343 pin {pin}"
         );
     }
     let body = |name: &str| -> String {
         let after = js
             .split_once(name)
-            .unwrap_or_else(|| panic!("wb-console.js must keep {name}"))
+            .unwrap_or_else(|| panic!("wb-console.ts must keep {name}"))
             .1;
         after[..after.find("\n  }").expect("the function must close")].to_string()
     };
@@ -5578,7 +5526,7 @@ fn shell_lists_the_fences() {
     // the issue states for `bringIntoView`. Pinning only the definition
     // lets an inlined comparison sit beside it as exported dead code.
     // The two owners now live in two files — `fenceMembership` went to
-    // `wb-geometry.js` with the predicate it shares, the floor's hit test
+    // `wb-geometry.ts` with the predicate it shares, the floor's hit test
     // stayed with the DOM it reads — so the slicer is told which source to
     // carve. That is the whole change: the invariant ("one containment
     // predicate, two callers") is exactly what it was, and it is now stated
@@ -5586,7 +5534,7 @@ fn shell_lists_the_fences() {
     let geometry_body = |name: &str| -> String {
         let after = geometry
             .split_once(name)
-            .unwrap_or_else(|| panic!("wb-geometry.js must keep {name}"))
+            .unwrap_or_else(|| panic!("wb-geometry.ts must keep {name}"))
             .1;
         after[..after.find("\n  }").expect("the function must close")].to_string()
     };
@@ -5699,7 +5647,7 @@ fn a_detached_file_comes_home_when_its_popup_closes() {
 /// deleted code.
 #[test]
 fn shell_detaches_a_fence() {
-    let js = include_str!("../assets/ui/wb-console.js");
+    let js = include_str!("../assets/ui/wb-console.ts");
     for pin in [
         "function detachFence(",
         "function reattachFence(",
@@ -5709,13 +5657,13 @@ fn shell_detaches_a_fence() {
     ] {
         assert!(
             js.contains(pin),
-            "wb-console.js must keep the #346 pin {pin}"
+            "wb-console.ts must keep the #346 pin {pin}"
         );
     }
     let body = |name: &str| -> String {
         let after = js
             .split_once(name)
-            .unwrap_or_else(|| panic!("wb-console.js must keep {name}"))
+            .unwrap_or_else(|| panic!("wb-console.ts must keep {name}"))
             .1;
         after[..after.find("\n  }").expect("the function must close")].to_string()
     };
@@ -5739,12 +5687,12 @@ fn shell_detaches_a_fence() {
     // assertion alone.
     assert!(
         !js.contains(r#""/api/desk", {"#) && !js.contains(r#""/api/desk?tab=""#),
-        "the desk PUT must live only in wb-desk-sink.js (#346)"
+        "the desk PUT must live only in wb-desk-sink.ts (#346)"
     );
-    let sink = include_str!("../assets/ui/wb-desk-sink.js");
+    let sink = include_str!("../assets/ui/wb-desk-sink.ts");
     assert!(
         sink.contains(r#""/api/desk?tab=""#) && sink.contains("fetch(deskUrl(), {"),
-        "wb-desk-sink.js must still perform the desk PUT (#346)"
+        "wb-desk-sink.ts must still perform the desk PUT (#346)"
     );
     assert!(
         sink.contains("keepalive: true"),
@@ -5805,19 +5753,20 @@ fn shell_detaches_a_fence() {
     );
     // THE POPUP'S DENIED CAPABILITIES. Each is what stops a window holding a
     // FRAGMENT of the plane from writing the whole desk or the shell's view.
-    // The options are the page's inline script; the handshake is its page
-    // script module, `wb-detached-fence.ts`.
+    // The options are built by the page's entry module,
+    // `detached-fence-main.ts`; the handshake is `wb-detached-fence.ts`.
     let html = include_str!("../assets/ui/detached-fence.html");
+    let entry = include_str!("../assets/ui/detached-fence-main.ts");
     let page = include_str!("../assets/ui/wb-detached-fence.ts");
     for pin in [
-        "window.WBDeskSink.none()",
+        "WBDeskSink.none()",
         "autoBoot: false",
         "canLaunch: false",
         "read: () => null",
     ] {
         assert!(
-            html.contains(pin),
-            "detached-fence.html must keep the #346 pin {pin}"
+            entry.contains(pin),
+            "detached-fence-main.ts must keep the #346 pin {pin}"
         );
     }
     for pin in [
@@ -5831,7 +5780,9 @@ fn shell_detaches_a_fence() {
         );
     }
     assert!(
-        !html.contains("WBConsole.open(") && !page.contains("WBConsole.open("),
+        !html.contains("WBConsole.open(")
+            && !entry.contains("WBConsole.open(")
+            && !page.contains("WBConsole.open("),
         "the popup must expose no way to open a new console (#346)"
     );
     // The handshake's confidentiality control: a concrete targetOrigin, so a
@@ -5841,7 +5792,7 @@ fn shell_detaches_a_fence() {
     // would leave a noun pin green. Both scripts post to the opener, and
     // each has its own `PEER`.
     for (name, text) in [
-        ("detached-fence.html", html),
+        ("detached-fence-main.ts", entry),
         ("wb-detached-fence.ts", page),
     ] {
         assert!(
@@ -5863,7 +5814,10 @@ fn shell_detaches_a_fence() {
     // The tree-wide sweep in `shell_stores_only_the_view_in_the_browser`
     // scans .html too; keep this document out of the browser's stores.
     assert!(
-        !html.contains("localStorage") && !html.contains("sessionStorage"),
+        !html.contains("localStorage")
+            && !html.contains("sessionStorage")
+            && !entry.contains("localStorage")
+            && !entry.contains("sessionStorage"),
         "the popup must store nothing in the browser (#346)"
     );
     // `.fence-tools` and `.fence` are transparent to pointer events, so a
@@ -5893,10 +5847,10 @@ fn shell_detaches_a_fence() {
 /// one place that builds the body.
 #[test]
 fn the_shell_writes_the_desk_only_as_changes() {
-    let console = include_str!("../assets/ui/wb-console.js");
+    let console = include_str!("../assets/ui/wb-console.ts");
     let notes = include_str!("../assets/ui/wb-notes.ts");
-    let sync = include_str!("../assets/ui/wb-desk-sync.js");
-    for (name, js) in [("wb-console.js", console), ("wb-notes.ts", notes)] {
+    let sync = include_str!("../assets/ui/wb-desk-sync.ts");
+    for (name, js) in [("wb-console.ts", console), ("wb-notes.ts", notes)] {
         for banned in [
             "persistWin(",
             "deskBody(",
@@ -5918,7 +5872,7 @@ fn the_shell_writes_the_desk_only_as_changes() {
     );
     assert!(
         !console.contains("changes:") && sync.contains("changes: pending.slice(0, inflight.count)"),
-        "the upload body is built by wb-desk-sync.js alone"
+        "the upload body is built by wb-desk-sync.ts alone"
     );
 }
 
@@ -5928,11 +5882,11 @@ fn the_shell_writes_the_desk_only_as_changes() {
 /// of `relaunchIn`), or at birth (`buildChrome`, through the window inventory).
 #[test]
 fn console_name_rides_every_record_copy() {
-    let js = include_str!("../assets/ui/wb-console.js");
+    let js = include_str!("../assets/ui/wb-console.ts");
     let body = |name: &str| -> String {
         let after = js
             .split_once(name)
-            .unwrap_or_else(|| panic!("wb-console.js must keep {name}"))
+            .unwrap_or_else(|| panic!("wb-console.ts must keep {name}"))
             .1;
         after[..after.find("\n  }").expect("the function must close")].to_string()
     };
@@ -5947,7 +5901,7 @@ fn console_name_rides_every_record_copy() {
         );
     }
     assert!(
-        include_str!("../assets/ui/wb-window-state.js").contains("_deskConsoleName:"),
+        include_str!("../assets/ui/wb-window-state.ts").contains("_deskConsoleName:"),
         "the window inventory must declare the console name (#479)"
     );
 }
@@ -5958,10 +5912,10 @@ fn console_name_rides_every_record_copy() {
 /// node table covers the wiring in CI, so a deletion fails HERE (#480).
 #[test]
 fn spawn_window_sends_the_console_name_on_a_new_agent_launch() {
-    let js = include_str!("../assets/ui/wb-console.js");
+    let js = include_str!("../assets/ui/wb-console.ts");
     let after = js
         .split_once("function spawnWindow(")
-        .expect("wb-console.js must keep spawnWindow")
+        .expect("wb-console.ts must keep spawnWindow")
         .1;
     let body = squeeze(&after[..after.find("\n  }").expect("the function must close")]);
     // The guard of the statement that adds the name, whatever its layout
@@ -5987,14 +5941,15 @@ fn spawn_window_sends_the_console_name_on_a_new_agent_launch() {
 /// own explanatory comment satisfies a bare-noun pin over deleted code.
 #[test]
 fn shell_survives_a_reload_with_its_detach() {
-    let js = include_str!("../assets/ui/wb-console.js");
-    let link = include_str!("../assets/ui/wb-detach-link.js");
+    let js = include_str!("../assets/ui/wb-console.ts");
+    let link = include_str!("../assets/ui/wb-detach-link.ts");
     let html = include_str!("../assets/ui/detached-fence.html");
+    let entry = include_str!("../assets/ui/detached-fence-main.ts");
     let page = include_str!("../assets/ui/wb-detached-fence.ts");
     let body = |name: &str| -> String {
         let after = js
             .split_once(name)
-            .unwrap_or_else(|| panic!("wb-console.js must keep {name}"))
+            .unwrap_or_else(|| panic!("wb-console.ts must keep {name}"))
             .1;
         after[..after.find("\n  }").expect("the function must close")].to_string()
     };
@@ -6003,7 +5958,7 @@ fn shell_survives_a_reload_with_its_detach() {
     for pin in ["link.readRegistry()", "link.writeRegistry("] {
         assert!(
             js.contains(pin),
-            "wb-console.js must keep the #347 pin {pin}"
+            "wb-console.ts must keep the #347 pin {pin}"
         );
     }
     // THE STORE SEAM, with its NEGATIVE CONTROL: the console module must name
@@ -6011,7 +5966,7 @@ fn shell_survives_a_reload_with_its_detach() {
     // — deleting the store wholesale has to be red, not green.
     assert!(
         !js.contains("sessionStorage"),
-        "wb-console.js must reach the registry only through the injected link (#347)"
+        "wb-console.ts must reach the registry only through the injected link (#347)"
     );
     // The CALLS, not the bare nouns: this file's own prose names
     // `sessionStorage` three times, so a noun pin stays green over
@@ -6021,12 +5976,12 @@ fn shell_survives_a_reload_with_its_detach() {
         link.contains("sessionStorage.getItem(KEY)")
             && link.contains("sessionStorage.setItem(KEY,")
             && link.contains("new BroadcastChannel(CHANNEL)"),
-        "wb-detach-link.js IS the registry and the channel — deleting it is not how #347 stays green"
+        "wb-detach-link.ts IS the registry and the channel — deleting it is not how #347 stays green"
     );
     assert!(
         link.contains(r#"const KEY = "wb.detach.v1""#)
             && link.contains(r#"const CHANNEL = "wb.detach.v1""#),
-        "wb-detach-link.js must keep the one registry key and channel name (#347)"
+        "wb-detach-link.ts must keep the one registry key and channel name (#347)"
     );
     // The boot-ordering INVARIANT: a fence detached before the reload must
     // never have its members put back on the plane, for ANY verdict —
@@ -6075,14 +6030,14 @@ fn shell_survives_a_reload_with_its_detach() {
     );
     // THE POPUP'S FIFTH DENIED CAPABILITY, in its options.
     assert!(
-        html.contains("detachLink: window.WBDetachLink.none()"),
-        "detached-fence.html must keep the #347 pin detachLink: window.WBDetachLink.none()"
+        entry.contains("detachLink: WBDetachLink.none()"),
+        "detached-fence-main.ts must keep the #347 pin detachLink: WBDetachLink.none()"
     );
     // Its half of the lifecycle, in its page script.
     for pin in [
         // The channel-only factory: this document must reach no store, not
         // even to read the copy `window.open` handed it.
-        "window.WBDetachLink.channel()",
+        "WBDetachLink.channel()",
         "\"popup-here\"",
         "\"popup-gone\"",
         // The BEHAVIOUR, not the class name: `detached-lost` alone is
@@ -6106,6 +6061,8 @@ fn shell_survives_a_reload_with_its_detach() {
     assert!(
         !html.contains("localStorage")
             && !html.contains("sessionStorage")
+            && !entry.contains("localStorage")
+            && !entry.contains("sessionStorage")
             && !page.contains("localStorage")
             && !page.contains("sessionStorage"),
         "the popup must still store nothing in the browser (#346)"
@@ -6119,7 +6076,7 @@ fn shell_survives_a_reload_with_its_detach() {
 /// `wb-console.test.mjs`; this test holds the call sites that use them.
 #[test]
 fn workbench_session_assets_preserve_composite_repo_identity() {
-    let console = include_str!("../assets/ui/wb-console.js");
+    let console = include_str!("../assets/ui/wb-console.ts");
     for pin in [
         r#"connect({ id: currentSessionId, repo: currentRepo"#,
         r#"c.verb === "session-open""#,
@@ -6127,7 +6084,7 @@ fn workbench_session_assets_preserve_composite_repo_identity() {
         "WBSessionRoute.announcement(",
         "WBSessionRoute.closeUrl(",
     ] {
-        assert!(console.contains(pin), "wb-console.js must keep {pin}");
+        assert!(console.contains(pin), "wb-console.ts must keep {pin}");
     }
     assert!(include_str!("../assets/ui/app.ts").contains("WBSessionRoute.matchesRepo("));
 }
@@ -6138,7 +6095,7 @@ fn workbench_session_assets_preserve_composite_repo_identity() {
 /// stays deleted: a re-added clamp would pass every unit test in the tree.
 #[test]
 fn shell_has_no_clamp_and_carries_the_stage() {
-    let js = include_str!("../assets/ui/wb-console.js");
+    let js = include_str!("../assets/ui/wb-console.ts");
     assert!(
         !js.contains("clampAll"),
         "the clamp-and-refit is deleted, not renamed (#336)"
@@ -6178,7 +6135,7 @@ fn shell_has_no_clamp_and_carries_the_stage() {
 /// here, each inside the function that must hold it.
 #[test]
 fn shell_navigates_the_plane() {
-    let js = include_str!("../assets/ui/wb-console.js");
+    let js = include_str!("../assets/ui/wb-console.ts");
     for pin in [
         "function reveal(",
         "function onFloorDown(",
@@ -6190,7 +6147,7 @@ fn shell_navigates_the_plane() {
     ] {
         assert!(
             js.contains(pin),
-            "wb-console.js must keep the #337 pin {pin}"
+            "wb-console.ts must keep the #337 pin {pin}"
         );
     }
     // Scoped to each gesture: the file carries each of these statements
@@ -6199,7 +6156,7 @@ fn shell_navigates_the_plane() {
     let body = |name: &str| -> String {
         let after = js
             .split_once(name)
-            .unwrap_or_else(|| panic!("wb-console.js must keep {name}"))
+            .unwrap_or_else(|| panic!("wb-console.ts must keep {name}"))
             .1;
         squeeze(&after[..after.find("\n  }").expect("the function must close")])
     };
@@ -6332,7 +6289,7 @@ fn shell_pins_the_frame_chrome() {
     );
 
     // Whitespace-free text: the code, not its layout.
-    let js = squeeze(include_str!("../assets/ui/wb-console.js"));
+    let js = squeeze(include_str!("../assets/ui/wb-console.ts"));
     for pin in [
         "functionsyncMaxPin(",
         // The REGISTRATION, not the function: without it the pin is only
@@ -6346,7 +6303,7 @@ fn shell_pins_the_frame_chrome() {
     ] {
         assert!(
             js.contains(pin),
-            "wb-console.js must keep the #338 pin {pin}"
+            "wb-console.ts must keep the #338 pin {pin}"
         );
     }
     // The POSITIVE half of the `reveal()` change, in either operand order:
@@ -6393,7 +6350,7 @@ fn shell_pins_the_frame_chrome() {
 /// and CSS that no node test runs, so it fails here or nowhere.
 #[test]
 fn a_console_can_take_the_whole_screen() {
-    let js = include_str!("../assets/ui/wb-console.js");
+    let js = include_str!("../assets/ui/wb-console.ts");
     for pin in [
         "function toggleFull(",
         "function syncFullState(",
@@ -6412,7 +6369,7 @@ fn a_console_can_take_the_whole_screen() {
     ] {
         assert!(
             js.contains(pin),
-            "wb-console.js must keep the fullscreen pin {pin}"
+            "wb-console.ts must keep the fullscreen pin {pin}"
         );
     }
     // The guards that keep the inline rect honest while the top layer owns
@@ -6421,7 +6378,7 @@ fn a_console_can_take_the_whole_screen() {
     let fn_body = |name: &str| -> String {
         let after = js
             .split_once(name)
-            .unwrap_or_else(|| panic!("wb-console.js must keep {name}"))
+            .unwrap_or_else(|| panic!("wb-console.ts must keep {name}"))
             .1;
         squeeze(&after[..after.find("\n  }").expect("the function must close")])
     };
@@ -6517,28 +6474,28 @@ fn shell_stores_only_the_view_in_the_browser() {
     // through `WBView` — a direct write from either is how a second store
     // starts.
     for (name, src) in [
-        ("wb-console.js", include_str!("../assets/ui/wb-console.js")),
+        ("wb-console.ts", include_str!("../assets/ui/wb-console.ts")),
         ("app.ts", include_str!("../assets/ui/app.ts")),
     ] {
         assert!(
             !src.contains("localStorage"),
-            "{name} must not touch localStorage — wb-view.js owns the store (#339)"
+            "{name} must not touch localStorage — wb-view.ts owns the store (#339)"
         );
     }
 
-    let view = include_str!("../assets/ui/wb-view.js");
+    let view = include_str!("../assets/ui/wb-view.ts");
     // NEGATIVE CONTROL: deleting the store wholesale would satisfy every
     // "does not contain" assertion above. It must be red, not green.
     assert!(
         view.contains("localStorage"),
-        "wb-view.js IS the browser store — deleting it is not how #339 stays green"
+        "wb-view.ts IS the browser store — deleting it is not how #339 stays green"
     );
     assert!(
         view.contains(r#"const KEY = "wb.view.v1""#),
-        "wb-view.js must keep the one view key (#339)"
+        "wb-view.ts must keep the one view key (#339)"
     );
 
-    let js = include_str!("../assets/ui/wb-console.js");
+    let js = include_str!("../assets/ui/wb-console.ts");
     // `viewLanding` is driven by `ui-tests/wb-console.test.mjs`.
     for pin in [
         "function applyLanding(",
@@ -6548,7 +6505,7 @@ fn shell_stores_only_the_view_in_the_browser() {
     ] {
         assert!(
             js.contains(pin),
-            "wb-console.js must keep the #339 pin {pin}"
+            "wb-console.ts must keep the #339 pin {pin}"
         );
     }
 
@@ -6581,7 +6538,7 @@ fn shell_stores_only_the_view_in_the_browser() {
 #[test]
 fn a_quiet_detach_peer_is_challenged_before_it_is_buried() {
     // Whitespace-free text: the code, not its layout.
-    let js = squeeze(include_str!("../assets/ui/wb-console.js"));
+    let js = squeeze(include_str!("../assets/ui/wb-console.ts"));
     assert!(
         js.contains("functionstillThere("),
         "the origin must ask whether a quiet popup is really gone"
@@ -6634,7 +6591,7 @@ fn the_console_chrome_holds_its_three_rules() {
     // A fence name is read-only until asked for twice: its title bar is also
     // what the operator clicks to reach the fence, and an always-live input
     // turned every such slip into a rename.
-    let js = include_str!("../assets/ui/wb-console.js");
+    let js = include_str!("../assets/ui/wb-console.ts");
     assert!(
         js.contains("name.readOnly = true;") && js.contains(r#"name.addEventListener("dblclick""#),
         "the fence name must open on a double click and close on blur"
@@ -6644,17 +6601,17 @@ fn the_console_chrome_holds_its_three_rules() {
 /// The three clicks that ask first. Tiling a fence moves every console in
 /// it, removing a fence takes the region out from under them, and a
 /// console's × ends a live session — all one pixel from something harmless
-/// on the same title bar. The dialog is built in `wb-console.js` rather
+/// on the same title bar. The dialog is built in `wb-console.ts` rather
 /// than borrowed from the shell's Alpine one, because the module also runs
 /// in the detached-fence popup, which has neither; `window.confirm` is
 /// pinned OUT because an automated browser dismisses it by default, which
 /// would turn every guarded click into a silently cancelled one.
 #[test]
 fn the_destructive_console_clicks_confirm_first() {
-    let js = include_str!("../assets/ui/wb-console.js");
+    let js = include_str!("../assets/ui/wb-console.ts");
     assert!(
         js.contains("function askConfirm({"),
-        "wb-console.js must own a confirmation dialog of its own"
+        "wb-console.ts must own a confirmation dialog of its own"
     );
     assert!(
         !js.contains("window.confirm("),
@@ -6705,8 +6662,8 @@ fn the_destructive_console_clicks_confirm_first() {
     // The EXPORTED verbs stay unguarded: a caller that names `arrangeFence`
     // has already decided, and the dialog belongs to the accidental click.
     let verb = js
-        .split_once("\n  function removeFence(id) {")
-        .expect("wb-console.js must keep removeFence")
+        .split_once("\n  function removeFence(id: any) {")
+        .expect("wb-console.ts must keep removeFence")
         .1;
     assert!(
         !verb[..verb.find("\n  }").expect("removeFence must close")].contains("askConfirm"),
@@ -6730,7 +6687,7 @@ fn the_destructive_console_clicks_confirm_first() {
 #[test]
 fn relaunching_agent_consoles_on_load_is_opt_in() {
     // Every pin reads whitespace-free text: the code, not its layout.
-    let js = squeeze(include_str!("../assets/ui/wb-console.js"));
+    let js = squeeze(include_str!("../assets/ui/wb-console.ts"));
     assert!(
         js.contains(r#"record.kind==="console"||relaunchAgents?"relaunch":"placeholder""#),
         "the restore fold must relaunch an agent console ONLY under the opt-in"
@@ -7452,10 +7409,10 @@ fn a_refused_branch_change_reports_in_the_projects_panel() {
         !app_js.contains("pick primary before switching branches"),
         "the #406 client-side refusal is gone"
     );
-    // The create lives in the console's prompt (wb-console.js): an
+    // The create lives in the console's prompt (wb-console.ts): an
     // unanswered add re-opens it with the same honest line.
     assert!(
-        include_str!("../assets/ui/wb-console.js").contains(
+        include_str!("../assets/ui/wb-console.ts").contains(
             r#"error = "Could not reach the daemon. Check whether the worktree was created.";"#
         ),
         "an unanswered worktree create must not read as a completed one"
@@ -7484,18 +7441,18 @@ fn a_refused_branch_change_reports_in_the_projects_panel() {
 /// modal, so without it a remove is also a select-and-dismiss.
 #[test]
 fn the_worktree_row_remove_action_stops_the_selecting_click() {
-    // The rows are the checkout menu's (wb-console.js `checkoutMenu`),
+    // The rows are the checkout menu's (wb-console.ts `checkoutMenu`),
     // opened from the Files bar's chip with `onRemove` (ADR-0063
     // amendment 2026-09-16 b): the trash is its own element whose click
     // stops before the row's own pick, and the primary row never has one.
-    let console_js = include_str!("../assets/ui/wb-console.js");
+    let console_js = include_str!("../assets/ui/wb-console.ts");
     assert!(console_js.contains(r#"trash.className = "session-checkout-remove";"#));
     assert!(
         console_js.contains("if (onRemove && !row.primary) {"),
         "the primary tree has no remove action"
     );
     let trash_click = console_js
-        .find("trash.addEventListener(\"click\", (e) => {")
+        .find("trash.addEventListener(\"click\", (e: any) => {")
         .expect("the trash has a click handler");
     assert!(
         console_js[trash_click..trash_click + 200].contains("e.stopPropagation();"),
@@ -8344,7 +8301,7 @@ fn no_menu_or_key_sink_takes_a_template_string() {
     assert!(template_html_sinks("menu.innerHTML = \"\";").is_empty());
     for (name, src) in [
         ("app.ts", include_str!("../assets/ui/app.ts")),
-        ("wb-console.js", include_str!("../assets/ui/wb-console.js")),
+        ("wb-console.ts", include_str!("../assets/ui/wb-console.ts")),
     ] {
         let sinks = template_html_sinks(src);
         assert!(sinks.is_empty(), "{name}: {sinks:?}");

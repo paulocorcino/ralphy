@@ -1,25 +1,22 @@
-// Unit tests for assets/ui/wb-view.js — the per-client view record's read
+// Unit tests for assets/ui/wb-view.ts — the per-client view record's read
 // normalisation. Runs the real source against a `localStorage` that holds one
 // string: the module touches nothing else at load.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { WBView } from "../assets/ui/wb-view.ts";
 
-const SRC = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../assets/ui/wb-view.js"),
-  "utf8",
-);
+// The module reads the bare `localStorage` when `read` or `patch` runs, so
+// the fake is installed on `globalThis` for the calls that follow it.
+function useStorage(storage) {
+  Object.defineProperty(globalThis, "localStorage", { value: storage, configurable: true, writable: true });
+}
 
 function load(raw) {
-  const window = {};
-  const localStorage = {
+  useStorage({
     getItem: () => raw,
     setItem() {},
-  };
-  new Function("window", "localStorage", SRC)(window, localStorage);
-  return window.WBView;
+  });
+  return WBView;
 }
 const record = (split) => JSON.stringify({ v: 1, split });
 
@@ -100,17 +97,15 @@ test("columnDir reads right or down, anything else is null", () => {
 // The startup-command setting is gone: an old record's `command` is not read,
 // and the next write leaves it out.
 test("a legacy command is dropped on read and on the next patch", () => {
-  const window = {};
   let written = null;
-  const localStorage = {
+  useStorage({
     getItem: () => JSON.stringify({ v: 1, command: "htop", keys: "on" }),
     setItem: (_key, value) => {
       written = JSON.parse(value);
     },
-  };
-  new Function("window", "localStorage", SRC)(window, localStorage);
-  assert.equal("command" in window.WBView.read(), false);
-  window.WBView.patch({ relaunch: true });
+  });
+  assert.equal("command" in WBView.read(), false);
+  WBView.patch({ relaunch: true });
   assert.equal("command" in written, false);
   assert.equal(written.keys, "on", "the other fields survive");
 });

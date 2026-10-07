@@ -13,7 +13,6 @@
 // — which is documentation the module's own test should carry — and rewriting
 // them to route through a shared stub factory would trade that for a shared
 // object nobody reads. See ADR-0022's "smallest change that fits the seam".
-import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { shell, wire } from "../assets/ui/app.ts";
@@ -42,11 +41,16 @@ import { WBSessionRoute } from "../assets/ui/wb-session-route.ts";
 import { createDaemon } from "../assets/ui/wb-daemon.ts";
 import { createViewer } from "../assets/ui/wb-viewer.ts";
 import { createNotes } from "../assets/ui/wb-notes.ts";
+import { createConsole } from "../assets/ui/wb-console.ts";
+import { WBView } from "../assets/ui/wb-view.ts";
+import { WBDeskSink } from "../assets/ui/wb-desk-sink.ts";
+import { WBConsoleName } from "../assets/ui/wb-console-name.ts";
+import { WBGeometry } from "../assets/ui/wb-geometry.ts";
 import { WB_SETTINGS, WB_TRISTATE, wbClientKeys, wbSettingsDefaults, wbQr } from "../assets/ui/wb-settings.ts";
 
-// The `window.WB*` names that a module sets in the browser because a classic
-// script still reads them (ADR-0075 D9). A module ran once, at import, so the
-// loader sets these on each page's window itself.
+// The `window.WB*` names that a module sets in the browser because other code
+// still reads them on `window` (ADR-0075 D9). A module ran once, at import, so
+// the loader sets these on each page's window itself.
 const MODULE_NAMESPACES = {
   WBAgents,
   WBFileSearch,
@@ -72,6 +76,8 @@ const MODULE_NAMESPACES = {
   WBSettingsDialog,
   WBSecurityDialog,
   WBReleaseDialogs,
+  WBConsoleName,
+  WBGeometry,
 };
 
 // The Alpine components, by the name the markup gives `x-data`: `loadComponent`
@@ -87,8 +93,6 @@ const MODULE_COMPONENTS = {
 
 export const UI = join(dirname(fileURLToPath(import.meta.url)), "../assets/ui");
 
-const read = (name) => readFileSync(join(UI, name), "utf8");
-
 // A document's text with its `<!-- … -->` comments cut out, so a pin on markup
 // does not match the tags that comment prose quotes. Our own asset, not a
 // sanitizer: an unclosed comment drops the rest of the text.
@@ -102,26 +106,6 @@ export function withoutComments(text) {
     })
     .join("");
 }
-
-// The classic scripts index.html loads, in ITS order — DERIVED from the
-// document, never hand-listed. Order is not decoration: each one assigns its
-// namespace onto `window`, `wb-console.js` destructures `WBGeometry` at module
-// scope, and `shell()` reads several of them while it is still building its
-// state object.
-//
-// A hand-kept copy of this list drifts silently and nothing notices: its own
-// comment said "nineteen" while the array held twenty, and a module added to the
-// document but not to the array would leave `app.test.mjs` characterizing a boot
-// order the browser does not have. Reading the document removes the copy.
-export const SIBLINGS = readFileSync(join(UI, "index.html"), "utf8")
-  .split("\n")
-  .map((line) => line.match(/<script src="([^"]+)"><\/script>/))
-  .filter(Boolean)
-  .map((m) => m[1])
-  // Vendor bundles are third-party and none of them defines a `WB*` namespace;
-  // the seed loader is a template literal resolved at runtime and points outside
-  // the embedded tree.
-  .filter((src) => !src.startsWith("vendor/") && !src.includes("${"));
 
 // A DOM that answers, and answers NOTHING. Every query misses, every element is
 // absent: that is the honest state for a document whose body was never parsed,
@@ -183,17 +167,17 @@ function stubWindow() {
   };
 }
 
-// Evaluate the classic scripts the way the browser does, run app.ts's `wire`
+// Create this page's instances the way `main.ts` does, run app.ts's `wire`
 // on this page, and return a FRESH `shell()` state object.
 //
 // Fresh per call, never shared: `shell()` returns a mutable object with ~390
 // keys, and a test that mutated a shared one would leak into whichever test ran
 // next — the failure that reads as "passes alone, fails in the suite".
 //
-// `BroadcastChannel` is hidden for the load exactly as wb-console.test.mjs does
-// it: Node 22 ships a real one, `wb-console.js` subscribes at module scope, and
-// an open channel per load holds the event loop open so `node --test` never
-// exits.
+// `BroadcastChannel` is hidden while the console is created, exactly as
+// wb-console.test.mjs does it: Node 22 ships a real one, `createConsole`
+// subscribes, and an open channel per load holds the event loop open so
+// `node --test` never exits.
 //
 // `opts.document` overrides stub members for the one test that must HEAR a
 // listener the module registers at load (the write seam) — the stub's own
@@ -205,24 +189,25 @@ export function loadShell(opts = {}) {
   window.window = window;
   window.document = document;
   Object.assign(window, MODULE_NAMESPACES);
-  // One daemon door and one file pane per page, as the entry module makes them.
-  window.WBDaemon = createDaemon(window, document, window.location);
-  window.WBViewer = createViewer(window, document);
-  window.WBNotes = createNotes(window, document);
-
+  // A copy per page of the two namespaces tests replace members of, so a
+  // replaced member stays on its own page. The sink's hold lives once per
+  // document (the module), and each call is a new page, so it starts clear.
+  window.WBView = { ...WBView };
+  window.WBDeskSink = { ...WBDeskSink };
+  WBDeskSink.setHold(false);
+  // One console, one daemon door, one file pane and one set of note cards per
+  // page, in the order the entry module makes them. `boot` is not called: the
+  // stub document has no stage.
   const realBC = globalThis.BroadcastChannel;
   delete globalThis.BroadcastChannel;
   try {
-    for (const name of SIBLINGS) {
-      new Function("window", "document", "location", read(name))(
-        window,
-        document,
-        window.location,
-      );
-    }
+    window.WBConsole = createConsole(window, document, window.location, {});
   } finally {
     globalThis.BroadcastChannel = realBC;
   }
+  window.WBDaemon = createDaemon(window, document, window.location);
+  window.WBViewer = createViewer(window, document);
+  window.WBNotes = createNotes(window, document);
   // `shell()` reads the page's globals on the real `window` and `document`:
   // the last page loaded owns them, as in `loadComponent`.
   globalThis.window = window;

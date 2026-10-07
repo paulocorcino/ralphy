@@ -27,26 +27,14 @@ interface Window {
   WB: {
     emit(name: string, detail?: object): void;
   };
-  /** The view store (`wb-view.js`). */
-  WBView: {
-    read(): any;
-    patch(fields: object): void;
-  };
-  /** The consoles (`wb-console.js`). */
-  WBConsole: {
-    fontSize(): number;
-    stepFont(px: number, step: number): number;
-    setFont(px: number): number;
-    reloadForRestoredDesk(): void;
-    [member: string]: any;
-  };
+  /** The consoles (`wb-console.ts`). `list` is `any`: `app.ts` keeps its
+   * result in a `shell()` field that starts as `[]`, a TS2322 error until
+   * that field has a type. */
+  WBConsole: Omit<ReturnType<typeof import("./wb-console.ts").createConsole>, "list"> & { list(): any };
   /** app.js: `shell()`, and the live instance of it Alpine built. */
   shell: () => object;
   getShell(): any;
   WBRuns: { output(text: string): void };
-  WBConsoleName: any;
-  WBDeskSink: any;
-  WBDetachLink: any;
   /** The note cards (`wb-notes.ts`). */
   WBNotes: ReturnType<typeof import("./wb-notes.ts").createNotes>;
   /** The file pane (`wb-viewer.ts`). */
@@ -60,8 +48,14 @@ declare var WBColumns: Window["WBColumns"];
 declare var WBConsole: Window["WBConsole"];
 declare var WBDaemon: Window["WBDaemon"];
 declare var WBViewer: Window["WBViewer"];
+declare var WB: Window["WB"];
 declare var marked: any;
 declare var DOMPurify: any;
+/** The vendored xterm.js and its addons (`vendor/xterm*.js`). */
+declare var Terminal: any;
+declare var FitAddon: any;
+declare var WebglAddon: any;
+declare var WebLinksAddon: any;
 /** The vendored Wunderbaum (`vendor/wunderbaum`). */
 declare var mar10: any;
 

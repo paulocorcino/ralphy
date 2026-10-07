@@ -454,32 +454,32 @@ fn rust_corpus(root: &Path) -> String {
 /// `crates/ralphy-daemon/assets/ui/` and `crates/ralphy-daemon/src/`.
 ///
 /// Not here, because one side has no named value: the note size cap
-/// (`tree::MAX_READ_BYTES`, no JS copy), `FENCE_NAME_MAX` in wb-console.js
+/// (`tree::MAX_READ_BYTES`, no JS copy), `FENCE_NAME_MAX` in wb-console.ts
 /// (no Rust copy), and the file-search `MAX_HITS` (a field of the Rust
 /// `SearchBudget::default` literal, not a constant).
 const MIRRORS: &[(&str, &str, &str, &str)] = &[
-    ("wb-console.js", "DESK_MAX", "desk.rs", "DESK_MAX"),
-    ("wb-console.js", "FENCE_MAX", "desk.rs", "FENCE_MAX"),
-    ("wb-console.js", "NOTE_MAX", "desk.rs", "NOTE_MAX"),
+    ("wb-console.ts", "DESK_MAX", "desk.rs", "DESK_MAX"),
+    ("wb-console.ts", "FENCE_MAX", "desk.rs", "FENCE_MAX"),
+    ("wb-console.ts", "NOTE_MAX", "desk.rs", "NOTE_MAX"),
     (
-        "wb-console-name.js",
+        "wb-console-name.ts",
         "NAME_MAX",
         "desk.rs",
         "CONSOLE_NAME_MAX",
     ),
     (
-        "wb-console.js",
+        "wb-console.ts",
         "IMAGE_PASTE_MAX",
         "tree.rs",
         "MAX_IMAGE_BYTES",
     ),
     (
-        "wb-console.js",
+        "wb-console.ts",
         "TAG_TERMINAL",
         "protocol.rs",
         "TAG_TERMINAL",
     ),
-    ("wb-console.js", "TAG_COMMAND", "protocol.rs", "TAG_COMMAND"),
+    ("wb-console.ts", "TAG_COMMAND", "protocol.rs", "TAG_COMMAND"),
     (
         "wb-daemon.ts",
         "TAG_TERMINAL",

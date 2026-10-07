@@ -96,7 +96,7 @@
     </style>
   </head>
   <body>
-    <!-- The very ids `wb-console.js` resolves for the viewport and the plane, so
+    <!-- The very ids `wb-console.ts` resolves for the viewport and the plane, so
          this popup REUSES the consoles module rather than re-implementing it. -->
     <div id="workspace"><div id="stage"></div></div>
 
@@ -105,49 +105,6 @@
     <script src="vendor/xterm-addon-fit.js"></script>
     <script src="vendor/xterm-addon-webgl.js"></script>
     <script src="vendor/xterm-addon-web-links.js"></script>
-    <script src="wb-desk-sink.js"></script>
-    <script src="wb-desk-sync.js"></script>
-    <script src="wb-detach-link.js"></script>
-    <!-- A page script, not a module: `wb-console.js` reads `WBConsoleOpts`
-         while the page is parsed, and a module runs after every classic
-         script. -->
-    <script>
-      // Where this window will talk. `"*"` would broadcast this fence's contents
-      // to whatever opened us, so the concrete origin is both the
-      // confidentiality control and the authentication one: only the shell can
-      // hear us, and only the shell can answer.
-      const PEER = window.location.origin;
-
-      // The backend seam lives in the opener; forward every intent there over
-      // postMessage, so a detached fence is indistinguishable from an in-shell one.
-      window.WB = {
-        emit(action, detail) {
-          if (window.opener) window.opener.postMessage({ type: "wb-emit", action, detail }, PEER);
-          else console.log("[workbench:action]", { action, ...detail });
-        },
-      };
-
-      // THE FIVE CAPABILITIES THIS DOCUMENT DENIES ITSELF. This popup holds a
-      // FRAGMENT of the plane — one fence's members — so a desk write from here
-      // would replace the operator's whole layout with that fragment, and a view
-      // write would clobber the shell's stored viewport offset. The detach
-      // registry is the fifth: `window.open` handed this document a COPY of its
-      // opener's session storage, so a registry read here answers with a ghost
-      // that drifts the moment the real tab writes. Denying them by INJECTION
-      // rather than by a `detached` test at each call site is what makes the
-      // popup incapable rather than merely careful.
-      window.WBConsoleOpts = {
-        deskSink: window.WBDeskSink.none(),
-        viewStore: { read: () => null, patch: () => null },
-        autoBoot: false,
-        canLaunch: false,
-        detachLink: window.WBDetachLink.none(),
-      };
-    </script>
-    <script src="wb-geometry.js"></script>
-    <script src="wb-console-name.js"></script>
-    <script src="wb-window-state.js"></script>
-    <script src="wb-console.js"></script>
     <!-- The note card rides into a detached fence (ADR-0064 §8), so the popup
          builds one exactly as the shell does. -->
     <!-- A ```mermaid fence in a note DRAWS (ADR-0064 §15), in the popup as on

@@ -1,4 +1,4 @@
-// Unit tests for assets/ui/wb-desk-sync.js — runs the real source with no DOM.
+// Unit tests for assets/ui/wb-desk-sync.ts — runs the real source with no DOM.
 // The table of cases is the daemon's too (`desk::apply` tests): one rule in
 // two languages, held by one file.
 import { test } from "node:test";
@@ -6,14 +6,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { WBDeskSync } from "../assets/ui/wb-desk-sync.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const SRC = readFileSync(join(HERE, "../assets/ui/wb-desk-sync.js"), "utf8");
 
 function load() {
-  const window = {};
-  new Function("window", SRC)(window);
-  return window.WBDeskSync;
+  return WBDeskSync;
 }
 
 function fixture(name) {

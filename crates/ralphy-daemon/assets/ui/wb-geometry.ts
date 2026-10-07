@@ -2,25 +2,23 @@
    The workbench's plane geometry — every rect fold the desk performs, as pure
    functions of their arguments.
 
-   Lifted out of `wb-console.js` under ADR-0057. Nothing here reads the DOM, the
+   Lifted out of `wb-console.ts` under ADR-0057. Nothing here reads the DOM, the
    socket, the desk store or a module-scope binding: given the same rects it
    returns the same rects, on any thread, in any order. That is the whole
-   selection rule, and it is why this is the one seam `wb-console.js` had — the
+   selection rule, and it is why this is the one seam `wb-console.ts` had — the
    rest of that file is a web of reads and writes across twenty-one module-scope
    `let`s (ADR-0022 §5: a file with no existing seam is a design problem, not a
    split).
 
-   `wb-console.js` re-exports every FUNCTION below — not the constants, which had
+   `wb-console.ts` re-exports every FUNCTION below — not the constants, which had
    no outside callers — so `WBConsole.tileIntoRect` and friends keep working for
    the callers and the tests that already use them
    (CLAUDE.md: the public surface is stable by default). New callers should
    prefer `WBGeometry`.
 
-   Load order: BEFORE `wb-console.js`, in both `index.html` and
-   `detached-fence.html`. The console destructures this namespace at module
-   scope, so a later tag leaves it reading `undefined` on the first paint.
+   `wb-console.ts` imports this module; `wb-notes.ts` reads it on `window`.
    --------------------------------------------------------------------------- */
-window.WBGeometry = (function () {
+export const WBGeometry = (function () {
   // ---- the stage extent --------------------------------------------------------
   // How big the plane under the windows must be, as a pure function of the rects
   // and the viewport: the bbox of the windows plus a margin of drag room past
@@ -40,7 +38,7 @@ window.WBGeometry = (function () {
   // the viewport (right = 0 keeps the viewport leg on top).
   const STAGE_MARGIN = 200;
 
-  function stageExtent(rects, viewport, margin) {
+  function stageExtent(rects: any, viewport: any, margin: any) {
     const m = margin == null ? STAGE_MARGIN : margin;
     const mx = Math.max(m, viewport?.width || 0);
     const my = Math.max(m, viewport?.height || 0);
@@ -68,7 +66,7 @@ window.WBGeometry = (function () {
   const FENCE_GAP = 24;
   const FENCE_COLS = 2;
 
-  function fenceSpawnRect(offset, viewport, index) {
+  function fenceSpawnRect(offset: any, viewport: any, index: any) {
     const width = Math.max(
       FENCE_MIN.width,
       Math.min(FENCE_SIZE.width, (viewport?.width || 0) - 2 * FENCE_INSET),
@@ -88,7 +86,7 @@ window.WBGeometry = (function () {
     };
   }
 
-  function rectsOverlap(a, b) {
+  function rectsOverlap(a: any, b: any) {
     return (
       (a?.left || 0) < (b?.left || 0) + (b?.width || 0) &&
       (a?.left || 0) + (a?.width || 0) > (b?.left || 0) &&
@@ -103,7 +101,7 @@ window.WBGeometry = (function () {
   // disagree with the geometry. Containment is HALF-OPEN (`left <= cx < left +
   // width`) — fences may abut, and a closed test would put a centre sitting on a
   // shared border inside both of them, breaking "exactly one fence".
-  function rectCentre(rect) {
+  function rectCentre(rect: any) {
     return {
       x: (rect?.left || 0) + (rect?.width || 0) / 2,
       y: (rect?.top || 0) + (rect?.height || 0) / 2,
@@ -113,7 +111,7 @@ window.WBGeometry = (function () {
   // Does `rect` hold `point`? The half-open test above, extracted once (issue
   // #343) so membership and the floor's focus-clearing hit test can never drift
   // into two spellings of the same containment.
-  function rectHolds(rect, point) {
+  function rectHolds(rect: any, point: any) {
     const r = rect || {};
     const left = r.left || 0;
     const top = r.top || 0;
@@ -130,9 +128,9 @@ window.WBGeometry = (function () {
   // `break` is the second half of "exactly one": half-open containment makes the
   // fences disjoint as point sets, and this makes the fold's own answer so even
   // if a stored rect pair ever overlaps.
-  function fenceMembership(fences, windows) {
+  function fenceMembership(fences: any, windows: any) {
     const list = fences || [];
-    const out = {};
+    const out: any = {};
     for (const f of list) out[f.id] = [];
     for (const w of windows || []) {
       const c = rectCentre(w?.rect);
@@ -150,7 +148,7 @@ window.WBGeometry = (function () {
   // first-match rule as `fenceMembership`, so the two can never disagree about
   // whose a window is. `null` when no fence holds its centre. This is what a
   // gesture consults to ask "is the fence under this window locked?".
-  function fenceOf(fences, rect) {
+  function fenceOf(fences: any, rect: any) {
     const c = rectCentre(rect);
     for (const f of fences || []) {
       if (rectHolds(f.rect, c)) return f;
@@ -162,10 +160,10 @@ window.WBGeometry = (function () {
   // `rectsOverlap` the spawn rule uses, so abutting fences stay buildable and
   // one predicate answers for create, move and resize alike. A candidate is
   // never compared with itself — a move must not refuse its own start rect.
-  function fenceFits(fences, candidate) {
+  function fenceFits(fences: any, candidate: any) {
     const rect = candidate?.rect || {};
     return !(fences || []).some(
-      (f) => f.id !== candidate?.id && rectsOverlap(rect, f.rect || {}),
+      (f: any) => f.id !== candidate?.id && rectsOverlap(rect, f.rect || {}),
     );
   }
 
@@ -174,10 +172,10 @@ window.WBGeometry = (function () {
   // (issue #336) and grows right and down only, so a negative coordinate is not
   // a position — it is a lost window. The MEMBERS are in the fold too: one can
   // sit further left than the fence that carries it.
-  function fenceMoveDelta(delta, fenceRect, memberRects) {
+  function fenceMoveDelta(delta: any, fenceRect: any, memberRects: any) {
     const members = memberRects || [];
-    const minLeft = Math.min(fenceRect?.left || 0, ...members.map((r) => r?.left || 0));
-    const minTop = Math.min(fenceRect?.top || 0, ...members.map((r) => r?.top || 0));
+    const minLeft = Math.min(fenceRect?.left || 0, ...members.map((r: any) => r?.left || 0));
+    const minTop = Math.min(fenceRect?.top || 0, ...members.map((r: any) => r?.top || 0));
     return {
       dx: Math.max(delta?.dx || 0, -minLeft),
       dy: Math.max(delta?.dy || 0, -minTop),
@@ -200,19 +198,19 @@ window.WBGeometry = (function () {
   const TILE_GAP = 10;
   const TILE_MIN = 24;
 
-  function tileIntoRect(rect, members) {
+  function tileIntoRect(rect: any, members: any) {
     const n = (members || []).length;
     if (!n) return [];
     const cols = Math.ceil(Math.sqrt(n));
     const rows = Math.ceil(n / cols);
-    const axis = (extent, k) => {
+    const axis = (extent: any, k: any) => {
       const size = (extent - TILE_PAD * 2 - TILE_GAP * (k - 1)) / k;
       if (size >= TILE_MIN) return { pad: TILE_PAD, gap: TILE_GAP, size };
       return { pad: 0, gap: 0, size: extent / k };
     };
     const x = axis(rect?.width || 0, cols);
     const y = axis(rect?.height || 0, rows);
-    return (members || []).map((_, i) => ({
+    return (members || []).map((_: any, i: any) => ({
       left: (rect?.left || 0) + x.pad + (i % cols) * (x.size + x.gap),
       top: (rect?.top || 0) + y.pad + Math.floor(i / cols) * (y.size + y.gap),
       width: x.size,
@@ -229,7 +227,7 @@ window.WBGeometry = (function () {
   // edge stays put and the window does not slide under the cursor.
   const RESIZE_MIN = { width: 240, height: 150 }; // matches .session-window's CSS minimums
 
-  function resizeRect(dir, rect, delta, min, bounds) {
+  function resizeRect(dir: any, rect: any, delta: any, min: any, bounds: any) {
     let { left, top, width, height } = rect;
     const right = rect.left + rect.width;
     const bottom = rect.top + rect.height;
@@ -273,3 +271,12 @@ window.WBGeometry = (function () {
     resizeRect,
   };
 })();
+
+// `wb-notes.ts` reads this name (ADR-0075 D9).
+if (typeof window !== "undefined") window.WBGeometry = WBGeometry;
+
+declare global {
+  interface Window {
+    WBGeometry: typeof WBGeometry;
+  }
+}

@@ -186,19 +186,14 @@ mod tests {
     #[test]
     fn the_policy_hashes_every_inline_script_of_every_shell() {
         let csp = content_security_policy(false).to_str().unwrap();
-        let mut hashed = 0;
         for name in Shell::ALL.map(Shell::file) {
             let html = UI.get_file(name).unwrap().contents_utf8().unwrap();
             let bodies = inline_script_bodies(html);
-            hashed += bodies.len();
             for body in bodies {
                 let want = format!("'sha256-{}'", script_hash(body));
                 assert!(csp.contains(&want), "{name}: {want} missing from {csp}");
             }
         }
-        // The torn-off window pages carry inline scripts today; with none at
-        // all, the loop above would pass without checking anything.
-        assert!(hashed > 0, "no shell carries an inline script");
         assert!(
             !csp.split(';')
                 .any(|d| d.trim().starts_with("script-src") && d.contains("'unsafe-inline'")),

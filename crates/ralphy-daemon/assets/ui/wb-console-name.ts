@@ -7,33 +7,33 @@
    stays the key and `_deskAgent` stays the matching key.
 
    Nothing here reads the DOM, the store or a module-scope binding:
-   `wb-console.js` holds the desk and the windows, feeds them through these
+   `wb-console.ts` holds the desk and the windows, feeds them through these
    functions, and paints the answer. Same shape as `wb-columns.js`. The caller
    turns a repo ref into its slug (the routing head removed) before
    `prefixOf`, so this module never reads `WBFleet`.
 
-   Load order: BEFORE `wb-console.js`, on BOTH documents (`index.html` and
+   `wb-console.ts` imports this module, on both documents (`index.html` and
    `detached-fence.html`).
    --------------------------------------------------------------------------- */
-window.WBConsoleName = (function () {
+export const WBConsoleName = (function () {
   // The prefix of a console with no repo (`~`).
   const HOME = "home";
   // The longest name, in code points. The daemon cuts a longer one too.
   const NAME_MAX = 40;
 
   // The last segment of a repo slug; `home` for no repo.
-  function prefixOf(slug) {
+  function prefixOf(slug: any) {
     if (slug == null || slug === "" || slug === "~") return HOME;
     const last = String(slug).replace(/\/+$/, "").split("/").pop();
     return last || HOME;
   }
 
-  function escapeRegExp(s) {
+  function escapeRegExp(s: any) {
     return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
 
   // `<prefix> #<n>` with the lowest `n` that no name of that exact form uses.
-  function defaultName(prefix, names) {
+  function defaultName(prefix: any, names: any) {
     const form = new RegExp(`^${escapeRegExp(prefix)} #([1-9][0-9]*)$`);
     const used = new Set();
     for (const name of names || []) {
@@ -47,7 +47,7 @@ window.WBConsoleName = (function () {
 
   // What a rename stores: trimmed, cut to NAME_MAX code points, and the
   // default name again when empty. `names` excludes the renamed console.
-  function renameValue(raw, prefix, names) {
+  function renameValue(raw: any, prefix: any, names: any) {
     const cut = Array.from(String(raw ?? "").trim()).slice(0, NAME_MAX).join("");
     const trimmed = cut.trim();
     return trimmed || defaultName(prefix, names);
@@ -55,27 +55,27 @@ window.WBConsoleName = (function () {
 
   // The two boxes of the title: the name, and the label in parentheses. The
   // title keeps them apart so the label shrinks first.
-  function labelParts(name, label) {
+  function labelParts(name: any, label: any) {
     return { name, tag: `(${label})` };
   }
 
   // The one text that names a console on every surface.
-  function consoleLabel(name, label) {
+  function consoleLabel(name: any, label: any) {
     const p = labelParts(name, label);
     return `${p.name} ${p.tag}`;
   }
 
   // The title tooltip, one fact per line: the full repo ref, the environment,
   // the Claude session name. An empty fact is left out.
-  function tooltipLines(repo, environment, sessionName) {
+  function tooltipLines(repo: any, environment: any, sessionName: any) {
     return [repo === "~" ? null : repo, environment, sessionName].filter(Boolean);
   }
 
   // Give every unnamed record a default name, in desk order. Returns new
   // records and never mutates the input, so running it twice changes nothing.
-  function nameDesk(records, prefixOfRepo) {
-    const names = records.map((r) => r.consoleName).filter(Boolean);
-    return records.map((r) => {
+  function nameDesk(records: any, prefixOfRepo: any) {
+    const names = records.map((r: any) => r.consoleName).filter(Boolean);
+    return records.map((r: any) => {
       if (r.consoleName) return r;
       const consoleName = defaultName(prefixOfRepo(r.repo), names);
       names.push(consoleName);
@@ -94,3 +94,12 @@ window.WBConsoleName = (function () {
     nameDesk,
   };
 })();
+
+// `app.ts` and the `index.html` markup read this name (ADR-0075 D9).
+if (typeof window !== "undefined") window.WBConsoleName = WBConsoleName;
+
+declare global {
+  interface Window {
+    WBConsoleName: typeof WBConsoleName;
+  }
+}

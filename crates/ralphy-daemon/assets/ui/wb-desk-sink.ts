@@ -1,7 +1,7 @@
 /* ---------------------------------------------------------------------------
    ralphy workbench — the desk WRITE seam
 
-   `wb-console.js` owns the desk changes and decides WHEN to send them; this
+   `wb-console.ts` owns the desk changes and decides WHEN to send them; this
    module owns WHERE that write goes. Two implementations, one surface:
 
      daemon()  the shell's real write — `PUT /api/desk` (ADR-0050)
@@ -14,12 +14,16 @@
    the sink is what makes the popup INCAPABLE of writing, rather than merely
    guarded at each call site by a `detached` test that a later edit can forget.
 
-   Only the WRITE is injected. The GET stays in `wb-console.js` and DOES run in
-   the popup (`reloadDesk` is called at module load in every document), so the
+   Only the WRITE is injected. The GET stays in `wb-console.ts` and DOES run in
+   the popup (`reloadDesk` runs when each document creates its console), so the
    suppression rests entirely on the sink here — not on an unlifted `deskLoaded`
    permit. Reading is harmless; replacing the desk from a partial view is not.
 --------------------------------------------------------------------------- */
-window.WBDeskSink = (function () {
+// The tab id and `hold` stay at module scope (ADR-0075 D7 allows a value that
+// is loaded once): a browser runs a module once per document, which is the
+// scope both have, and the console and `app.ts` must see the same `hold`.
+// A test that loads a new page clears `hold` first, as a new document would.
+export const WBDeskSink = (function () {
   // One id per document. The daemon echoes it in the `desk.dirty` push its
   // PUT causes, so this tab does not read its own write again.
   const TAB =
@@ -31,7 +35,7 @@ window.WBDeskSink = (function () {
   // While this tab runs an older build than the daemon, it writes no desk
   // (ADR-0070 D6): its JavaScript may not know the daemon's records.
   let hold = false;
-  function setHold(on) {
+  function setHold(on: any) {
     hold = !!on;
   }
 
@@ -43,13 +47,13 @@ window.WBDeskSink = (function () {
   //   { kind: "refused", status, reply }  — the daemon answered with an error
   //   { kind: "network" }                 — the daemon could not be reached
   //   { kind: "held" }                    — this sink writes nothing now
-  // The caller decides which of them to send again (wb-console.js `flushed`).
+  // The caller decides which of them to send again (wb-console.ts `flushed`).
   function daemon() {
     // Chained on the previous write so two uploads cannot land out of order
     // over a LAN or a dev tunnel.
-    let inFlight = Promise.resolve();
+    let inFlight: Promise<unknown> = Promise.resolve();
     return {
-      put(body) {
+      put(body: any) {
         if (hold) return Promise.resolve({ kind: "held" });
         const sent = inFlight.then(() =>
           fetch(deskUrl(), {
@@ -70,7 +74,7 @@ window.WBDeskSink = (function () {
       // The tab is going away: `keepalive` lets the request outlive the
       // document. Deliberately NOT chained — there is no next flush to order
       // against, and awaiting one would be awaiting past the document's life.
-      putSync(body) {
+      putSync(body: any) {
         if (hold) return;
         try {
           fetch(deskUrl(), {
@@ -97,3 +101,12 @@ window.WBDeskSink = (function () {
 
   return { daemon, none, tabId, setHold };
 })();
+
+// `app.ts` reads this name (ADR-0075 D9).
+if (typeof window !== "undefined") window.WBDeskSink = WBDeskSink;
+
+declare global {
+  interface Window {
+    WBDeskSink: typeof WBDeskSink;
+  }
+}

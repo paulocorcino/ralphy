@@ -8,11 +8,21 @@
 
    Opening/closing a console spawns/closes a daemon-owned session; on load the
    live sessions re-open as windows, so a reload reattaches with scrollback.
+
+   Importing this module does nothing. Each entry module calls `createConsole`
+   once per page, sets `window.WBConsole`, and calls `boot` after the page has
+   started; each call starts with new state (ADR-0075 D7).
 --------------------------------------------------------------------------- */
-window.WBConsole = (function () {
-  // Plane geometry is `wb-geometry.js` (ADR-0057): pure folds over rects.
-  // Destructured, and with no `{}` fallback: a missing `<script>` tag throws
-  // here naming the module, not `stageExtent is not a function` at first drag.
+import { WBGeometry } from "./wb-geometry.ts";
+import { WBWindowState } from "./wb-window-state.ts";
+import { WBConsoleName } from "./wb-console-name.ts";
+import { WBDeskSink } from "./wb-desk-sink.ts";
+import { WBDeskSync } from "./wb-desk-sync.ts";
+import { WBDetachLink } from "./wb-detach-link.ts";
+import { WBView } from "./wb-view.ts";
+
+export function createConsole(window: any, document: any, location: any, opts: any) {
+  // Plane geometry is `wb-geometry.ts` (ADR-0057): pure folds over rects.
   const {
     STAGE_MARGIN,
     stageExtent,
@@ -27,11 +37,10 @@ window.WBConsole = (function () {
     tileIntoRect,
     RESIZE_MIN,
     resizeRect,
-  } = window.WBGeometry;
+  } = WBGeometry;
 
-  // What a console window IS and what it HOLDS (`wb-window-state.js`). No
-  // fallback, for the same reason as above.
-  const { initWindow, sessionIdOf, watchingOf, windowCheckout } = window.WBWindowState;
+  // What a console window IS and what it HOLDS (`wb-window-state.ts`).
+  const { initWindow, sessionIdOf, watchingOf, windowCheckout } = WBWindowState;
 
   // The viewport (the scrolling box) and the stage (the sized plane inside it).
   const workspace = () => document.getElementById("workspace");
@@ -45,17 +54,17 @@ window.WBConsole = (function () {
   // `wss://` over a TLS dev-tunnel/proxy, `ws://` for a plain-http localhost bind.
   const WS_ORIGIN =
     (location.protocol === "https:" ? "wss://" : "ws://") + location.host;
-  // Injection point, read ONCE at load. `index.html` sets nothing (every default
-  // below is the shell's behaviour); `detached-fence.html` overrides all five,
+  // Injection point, read once per instance. `main.ts` passes nothing (every
+  // default below is the shell's behaviour); `detached-fence-main.ts` overrides all five,
   // which is what makes the popup unable to author the desk or the viewport.
-  const OPTS = window.WBConsoleOpts || {};
-  const deskSink = OPTS.deskSink || window.WBDeskSink.daemon();
-  const viewStore = OPTS.viewStore || window.WBView;
+  const OPTS = opts || {};
+  const deskSink = OPTS.deskSink || WBDeskSink.daemon();
+  const viewStore = OPTS.viewStore || WBView;
   // Detach registry + lifecycle channel (#347). Denied in the popup: `window.open`
   // hands it a COPY of the opener's session-scoped store, so a read there drifts.
   // This module names no browser store of its own — pinned in lib.rs.
-  const link = OPTS.detachLink || window.WBDetachLink.link();
-  const wins = new Set();
+  const link = OPTS.detachLink || WBDetachLink.link();
+  const wins = new Set<any>();
 
   // ---- dormant consoles ----------------------------------------------------
   // Every console costs an xterm buffer, a ResizeObserver, a WebGL context
@@ -81,14 +90,14 @@ window.WBConsole = (function () {
   const DORMANT_MARGIN_PX = 300;
   // Built on first use: `#workspace` is not in the document when this module
   // evaluates. Without `IntersectionObserver` the feature is inert.
-  let dormancyObserver = null;
+  let dormancyObserver: any = null;
   function dormancyWatch() {
     if (dormancyObserver) return dormancyObserver;
     if (typeof IntersectionObserver !== "function") return null;
     const root = workspace();
     if (!root) return null;
     dormancyObserver = new IntersectionObserver(
-      (entries) => {
+      (entries: any) => {
         for (const entry of entries) {
           entry.target._visible = entry.isIntersecting;
           applyDormancy(entry.target);
@@ -98,7 +107,7 @@ window.WBConsole = (function () {
     );
     return dormancyObserver;
   }
-  function trackDormancy(win) {
+  function trackDormancy(win: any) {
     const watch = dormancyWatch();
     if (watch) watch.observe(win);
     else {
@@ -109,7 +118,7 @@ window.WBConsole = (function () {
   }
   // Paired with every `wins.delete`: the observer holds its targets, so a window
   // taken off the plane without this stays reachable for the life of the page.
-  function untrackDormancy(win) {
+  function untrackDormancy(win: any) {
     if (win._dormantTimer) {
       clearTimeout(win._dormantTimer);
       win._dormantTimer = null;
@@ -133,13 +142,13 @@ window.WBConsole = (function () {
   // window is {seen, covered, hasTerminal, z}: only a seen, uncovered window
   // with a terminal is a candidate, and the highest `z` win (focus raises a
   // window to the top). Ties keep the input order.
-  function gpuHolders(windows, budget) {
+  function gpuHolders(windows: any, budget: any) {
     return windows
-      .map((w, i) => ({ ...w, i }))
-      .filter((w) => w.seen && !w.covered && w.hasTerminal)
-      .sort((a, b) => b.z - a.z)
+      .map((w: any, i: any) => ({ ...w, i }))
+      .filter((w: any) => w.seen && !w.covered && w.hasTerminal)
+      .sort((a: any, b: any) => b.z - a.z)
       .slice(0, budget)
-      .map((w) => w.i);
+      .map((w: any) => w.i);
   }
 
   // Coalesced: a restore asks once per window, and the drops must run before
@@ -155,7 +164,7 @@ window.WBConsole = (function () {
   }
   function rebalanceGpu() {
     const list = [...wins];
-    const keep = new Set(
+    const keep = new Set<any>(
       gpuHolders(
         list.map((w) => ({
           // `=== true`, not the dormancy fold's reading: an unobserved window
@@ -166,7 +175,7 @@ window.WBConsole = (function () {
           z: parseInt(w.style.zIndex, 10) || 0,
         })),
         GPU_BUDGET,
-      ).map((i) => list[i]),
+      ).map((i: any) => list[i]),
     );
     for (const w of list) if (!keep.has(w)) w._term?.dropGpu();
     for (const w of keep) w._term.useGpu();
@@ -197,7 +206,7 @@ window.WBConsole = (function () {
   // thread, and an automated browser dismisses it by default — every guarded
   // click would silently cancel.
   // `notice: true` is the one-button form: OK alone, focused, Enter/Escape dismiss.
-  function askConfirm({ title, message, confirmLabel = "Confirm", danger = false, notice = false }) {
+  function askConfirm({ title, message, confirmLabel = "Confirm", danger = false, notice = false }: any) {
     const scrim = document.createElement("div");
     scrim.className = "modal-scrim wb-confirm";
     const modal = document.createElement("div");
@@ -241,14 +250,14 @@ window.WBConsole = (function () {
 
     return new Promise((resolve) => {
       let settled = false;
-      const done = (ok) => {
+      const done = (ok: any) => {
         if (settled) return;
         settled = true;
         document.removeEventListener("keydown", onKey, true);
         scrim.remove();
         resolve(ok);
       };
-      const onKey = (e) => {
+      const onKey = (e: any) => {
         if (e.key === "Escape") {
           e.stopPropagation();
           done(false);
@@ -266,7 +275,7 @@ window.WBConsole = (function () {
   }
 
   // A message with an OK and nothing else (a verb's refusal, verbatim).
-  function askNotice({ title, message, danger = true }) {
+  function askNotice({ title, message, danger = true }: any) {
     return askConfirm({ title, message, confirmLabel: "OK", danger, notice: true });
   }
 
@@ -278,10 +287,10 @@ window.WBConsole = (function () {
   //
   // DOM-built like `askConfirm` and appended to `document.body`, so it works in
   // the detached-fence popup too, which has no shell around it.
-  let toastEl = null;
-  let toastTimer = null;
+  let toastEl: any = null;
+  let toastTimer: any = null;
   const TOAST_MS = 6000;
-  function toast({ text, action, onAction, ms = TOAST_MS }) {
+  function toast({ text, action, onAction, ms = TOAST_MS }: any) {
     dismissToast();
     const el = document.createElement("div");
     el.className = "wb-toast";
@@ -323,7 +332,7 @@ window.WBConsole = (function () {
   // The tooltip of an agent-state dot: the Go-to menu, the checkout switcher
   // and the title bar all say it the same way. `waiting` carries the question
   // as its detail; `unknown` is a stale observation (agent_state.rs).
-  function agentStateTitle(state, detail) {
+  function agentStateTitle(state: any, detail?: any) {
     if (!state) return "";
     if (state === "unknown") return "Agent state unknown";
     return detail ? `Agent is ${state}: ${detail}` : `Agent is ${state}`;
@@ -336,25 +345,25 @@ window.WBConsole = (function () {
   // out ids from 1 again. The desk lives in the DAEMON (`GET`/`PUT /api/desk`,
   // ADR-0050), and a page writes it only as desk changes, each one carrying
   // the fields its act changed (ADR-0050 amendment 2026-10-04, changes, not
-  // the desk). `sync` (wb-desk-sync.js) holds the daemon's last desk and this
+  // the desk). `sync` (wb-desk-sync.ts) holds the daemon's last desk and this
   // page's unanswered changes; `desk`, `fences`, `notes` and `checkouts` are
   // its view, the SYNCHRONOUS source of truth every read below uses.
   const DESK_MAX = 30;
-  const sync = window.WBDeskSync.createSync();
-  let desk = [];
+  const sync = WBDeskSync.createSync();
+  let desk: any = [];
   // Second record type (#340): named rectangles on the floor tier.
   const FENCE_MAX = 12;
-  let fences = [];
+  let fences: any = [];
   // Third record type (ADR-0064 §2): note cards, PLACEMENT only — the note's
   // text and colour live in its `.note` file. The CARD itself (DOM, editor,
   // autosave) is `wb-notes.js`, which reaches this state through the exports
   // below.
   const NOTE_MAX = 32;
-  let notes = [];
+  let notes: any = [];
   // Fourth record type (#406, ADR-0063 §4): the selected checkout per repo ref,
   // `{ <ref>: <worktree name> }`. The reactive copy the chip and the tree
   // render lives in `app.js` (a closure variable here is invisible to Alpine).
-  let checkouts = {};
+  let checkouts: any = {};
   function refreshView() {
     const v = sync.view();
     desk = v.windows;
@@ -377,12 +386,12 @@ window.WBConsole = (function () {
     deskRestored = true;
     sync.restored();
     // The `pagehide` flush would send this page's changes on the way out.
-    window.WBDeskSink?.setHold(true);
+    WBDeskSink.setHold(true);
     window.location?.reload?.();
   }
 
   // ONE desk change: the view takes it at once, the daemon on the next flush.
-  function emitDesk(change) {
+  function emitDesk(change: any) {
     sync.emit(change);
     refreshView();
     scheduleDeskFlush();
@@ -392,7 +401,7 @@ window.WBConsole = (function () {
   // *pre-maximize* rect (the class drives the full-bleed via CSS), so `max`
   // restores the full-screen state while the stored rect still restores the
   // underlying box.
-  function recordOf(win) {
+  function recordOf(win: any) {
     return {
       id: win._deskId,
       repo: win._deskRepo,
@@ -410,7 +419,7 @@ window.WBConsole = (function () {
       consoleName: win._deskConsoleName || null,
     };
   }
-  function createRecord(win) {
+  function createRecord(win: any) {
     win._deskUnrecorded = false;
     emitDesk({ op: "create", type: "window", record: recordOf(win) });
   }
@@ -419,7 +428,7 @@ window.WBConsole = (function () {
   // operator's first act on it, in the same batch: until then the cascade
   // place it was given is not a place anybody chose, and must not be written
   // over the record another page may be writing.
-  function setWin(win, fields) {
+  function setWin(win: any, fields: any) {
     // A window taken off the page (a late pointerup after a close) must not
     // write.
     if (!win?._deskId || !win.isConnected) return;
@@ -428,7 +437,7 @@ window.WBConsole = (function () {
     // A moved window may have joined or left a region; membership is derived.
     refreshFenceChrome();
   }
-  function forgetRecord(deskId) {
+  function forgetRecord(deskId: any) {
     if (!deskId) return;
     emitDesk({ op: "remove", type: "window", id: deskId });
     refreshFenceChrome();
@@ -438,19 +447,19 @@ window.WBConsole = (function () {
   // records handed back (`saveFences`, `saveNotes`) becomes the changes that
   // tell it from the view: a create, a remove, or a set of the fields that
   // differ, and nothing for a record left as it was.
-  const rectOnly = (r) => (r ? { left: r.left, top: r.top, width: r.width, height: r.height } : null);
-  const SET_FIELDS = {
-    fence: (r) => ({ rect: rectOnly(r.rect), name: r.name ?? "", locked: !!r.locked }),
-    note: (r) => ({
+  const rectOnly = (r: any) => (r ? { left: r.left, top: r.top, width: r.width, height: r.height } : null);
+  const SET_FIELDS: any = {
+    fence: (r: any) => ({ rect: rectOnly(r.rect), name: r.name ?? "", locked: !!r.locked }),
+    note: (r: any) => ({
       rect: rectOnly(r.rect),
       locked: !!r.locked,
       file: { repo: r.repo, path: r.path ?? "", checkout: r.checkout ?? null },
     }),
   };
-  function commitList(type, before, next) {
-    const was = new Map(before.map((r) => [r.id, r]));
-    const kept = new Set(next.map((r) => r.id));
-    const changes = before.filter((r) => !kept.has(r.id)).map((r) => ({ op: "remove", type, id: r.id }));
+  function commitList(type: any, before: any, next: any) {
+    const was = new Map(before.map((r: any) => [r.id, r]));
+    const kept = new Set(next.map((r: any) => r.id));
+    const changes = before.filter((r: any) => !kept.has(r.id)).map((r: any) => ({ op: "remove", type, id: r.id }));
     for (const r of next) {
       const old = was.get(r.id);
       if (!old) {
@@ -459,7 +468,7 @@ window.WBConsole = (function () {
       }
       const a = SET_FIELDS[type](old);
       const b = SET_FIELDS[type](r);
-      const fields = {};
+      const fields: any = {};
       for (const k of Object.keys(b)) if (JSON.stringify(a[k]) !== JSON.stringify(b[k])) fields[k] = b[k];
       if (Object.keys(fields).length) changes.push({ op: "set", type, id: r.id, fields });
     }
@@ -470,19 +479,19 @@ window.WBConsole = (function () {
   }
   // The cap REFUSES a new fence or card before it is born (`atFenceCap`,
   // `atNoteCap`); nothing here drops a record to make room.
-  function saveFences(next) {
+  function saveFences(next: any) {
     commitList("fence", fences, next);
   }
-  function saveNotes(next) {
+  function saveNotes(next: any) {
     commitList("note", notes, next);
   }
 
   // A record without a name gets one, in desk order (ADR-0066 §2), so two
   // pages that read one desk agree, and the name is stored as a change.
   function nameUnnamed() {
-    const named = window.WBConsoleName.nameDesk(desk, consolePrefix);
+    const named = WBConsoleName.nameDesk(desk, consolePrefix);
     let emitted = false;
-    named.forEach((r, i) => {
+    named.forEach((r: any, i: any) => {
       if (desk[i].consoleName || !r.consoleName) return;
       sync.emit({ op: "set", type: "window", id: r.id, fields: { consoleName: r.consoleName } });
       emitted = true;
@@ -492,7 +501,7 @@ window.WBConsole = (function () {
     scheduleDeskFlush();
   }
 
-  function ingestDesk(payload) {
+  function ingestDesk(payload: any) {
     const verdict = sync.take(payload);
     if (verdict === "reload") {
       reloadForRestoredDesk();
@@ -509,7 +518,7 @@ window.WBConsole = (function () {
   // release: windows, fences, cards, and every member a fence move carries.
   // A desk this page takes never moves one of them.
   const gestures = new Set();
-  function inGesture(el) {
+  function inGesture(el: any) {
     return gestures.has(el);
   }
 
@@ -528,7 +537,7 @@ window.WBConsole = (function () {
     if (OPTS.autoBoot === false || !deskReconciled) return;
     const st = stage();
     if (!st) return;
-    const byId = new Map(desk.map((r) => [r.id, r]));
+    const byId = new Map<any, any>(desk.map((r: any) => [r.id, r]));
     for (const w of [...st.querySelectorAll(".session-window")]) {
       const r = byId.get(w._deskId);
       if (!r) {
@@ -551,8 +560,8 @@ window.WBConsole = (function () {
     applyExtent();
   }
 
-  function placeWindow(win, r) {
-    const at = (prop) => parseInt(win.style[prop], 10);
+  function placeWindow(win: any, r: any) {
+    const at = (prop: any) => parseInt(win.style[prop], 10);
     if (at("left") === Math.round(r.left) && at("top") === Math.round(r.top) &&
         at("width") === Math.round(r.width) && at("height") === Math.round(r.height)) return;
     win.style.left = r.left + "px";
@@ -566,8 +575,8 @@ window.WBConsole = (function () {
 
   // A card whose record another device removed, holding text not yet saved,
   // stays: what was typed here wins, so its record is created again.
-  function keepUnsavedCards(st) {
-    const listed = new Set(notes.map((n) => n.id));
+  function keepUnsavedCards(st: any) {
+    const listed = new Set(notes.map((n: any) => n.id));
     for (const el of st.querySelectorAll(".note-card")) {
       if (!el._noteDirty || !el._noteRecord || listed.has(el.dataset.noteId)) continue;
       emitDesk({ op: "create", type: "note", record: el._noteRecord });
@@ -581,7 +590,7 @@ window.WBConsole = (function () {
   // ends the session a moment before its record goes, and this page's socket
   // may not have heard yet.
   const recordChecks = new WeakSet();
-  function recordLeft(win) {
+  function recordLeft(win: any) {
     if (recordChecks.has(win)) return;
     if (win.classList.contains("placeholder") || win.classList.contains("ended") || sessionIdOf(win) == null) {
       leaveDesk([win._deskId]);
@@ -590,9 +599,9 @@ window.WBConsole = (function () {
     recordChecks.add(win);
     readSessions()
       .catch(() => null)
-      .then((read) => {
+      .then((read: any) => {
         recordChecks.delete(win);
-        if (!win.isConnected || desk.some((r) => r.id === win._deskId)) return;
+        if (!win.isConnected || desk.some((r: any) => r.id === win._deskId)) return;
         const sessions = read?.sessions;
         // Not known: the next desk this page takes asks again. A list that
         // did not hear from this window's peer does not know either.
@@ -606,11 +615,11 @@ window.WBConsole = (function () {
   // Windows whose records left the desk. The shell's hook takes them out of
   // the columns first (a lone survivor is maximized before the drops) and
   // calls `dropClosedElsewhere`; without a hook they are dropped here.
-  let onDeskGone = null;
-  function setDeskGoneHook(fn) {
+  let onDeskGone: any = null;
+  function setDeskGoneHook(fn: any) {
     onDeskGone = fn;
   }
-  function leaveDesk(ids) {
+  function leaveDesk(ids: any) {
     if (typeof onDeskGone === "function") onDeskGone(ids);
     else for (const id of ids) dropClosedElsewhere(id);
   }
@@ -620,11 +629,11 @@ window.WBConsole = (function () {
   // a pre-login 401 is not a broken desk, and must not offer a new one.
   let deskFailure = "";
   // The shell's hook for a desk failure found by a flush: no push says so.
-  let onDeskFailure = null;
+  let onDeskFailure: any = null;
   // The `409` reply of an unreadable desk, as the reason to show, or null.
   // The daemon's own text is a parser message for a developer: it goes to
   // the browser console, and the operator reads what it means.
-  async function unreadableDesk(r) {
+  async function unreadableDesk(r: any) {
     if (r.status !== 409) return null;
     const body = await r.json().catch(() => null);
     if (body?.state !== "unreadable") return null;
@@ -660,7 +669,7 @@ window.WBConsole = (function () {
   function currentDeskFailure() {
     return deskFailure;
   }
-  function setDeskFailureHook(fn) {
+  function setDeskFailureHook(fn: any) {
     onDeskFailure = fn;
   }
   // The one action on an unreadable desk: the daemon renames the old file
@@ -694,7 +703,7 @@ window.WBConsole = (function () {
   }
   // The desk as the column restore reads it (ADR-0051 §8): ids and `max` only.
   function deskRecords() {
-    return loadDesk().map((r) => ({ id: r.id, max: !!r.max }));
+    return loadDesk().map((r: any) => ({ id: r.id, max: !!r.max }));
   }
 
   // Whether a NEW console would be over the window cap — asked before it is
@@ -714,12 +723,12 @@ window.WBConsole = (function () {
     return notes.slice();
   }
   // The selected checkout for one repo ref, or `null` — the primary tree.
-  function checkoutOf(ref) {
+  function checkoutOf(ref: any) {
     return checkouts[ref] || null;
   }
   // Select (`name`) or clear (`null`) a project's checkout. A clear names the
   // tree it clears, so it never erases a tree another device picked since.
-  function setCheckout(ref, name) {
+  function setCheckout(ref: any, name: any) {
     if (name) emitDesk({ op: "checkout", repo: ref, name: String(name) });
     else if (checkouts[ref]) emitDesk({ op: "checkout-clear", repo: ref, ifName: checkouts[ref] });
   }
@@ -733,10 +742,10 @@ window.WBConsole = (function () {
   }
 
   // The upload, debounced. WHERE it goes is `deskSink`'s business
-  // (wb-desk-sink.js), which answers a typed result. One batch is on the wire
+  // (wb-desk-sink.ts), which answers a typed result. One batch is on the wire
   // at a time; a batch that failed in a way the daemon may still accept is
   // sent again with the same `seq`, later.
-  let deskFlush = null;
+  let deskFlush: any = null;
   let flushing = false;
   let flushBackoff = 1000;
   function scheduleDeskFlush(ms = 250) {
@@ -755,12 +764,12 @@ window.WBConsole = (function () {
     deskSink
       .put(JSON.stringify(body))
       .catch(() => ({ kind: "network" }))
-      .then((out) => {
+      .then((out: any) => {
         flushing = false;
         flushed(out);
       });
   }
-  function flushed(out) {
+  function flushed(out: any) {
     const kind = out?.kind;
     if (kind === "held") return;
     if (kind === "ok") {
@@ -842,7 +851,7 @@ window.WBConsole = (function () {
   // The verdict the probe gives, or — with no probe, which is the popup — how
   // long this document was hidden. `Infinity` for the network events: `online`
   // fires precisely because the link the sockets ran over is a different link now.
-  function isStale(hiddenMs) {
+  function isStale(hiddenMs: any) {
     if (staleProbe) {
       try {
         return staleProbe() === true;
@@ -853,7 +862,7 @@ window.WBConsole = (function () {
     return hiddenMs > RESUME_HIDDEN_MS;
   }
 
-  function resumeAll(stale) {
+  function resumeAll(stale: any) {
     let woke = 0;
     for (const w of wins) {
       // A placeholder has no terminal, and a window whose session ended latches
@@ -869,7 +878,7 @@ window.WBConsole = (function () {
   // The `.session-body` is REPLACED, not reused: `attachTerminal` registers its
   // touch handlers on the body node and `term.dispose()` does not remove them,
   // so attaching twice into one div would double every gesture.
-  function sleepWindow(win) {
+  function sleepWindow(win: any) {
     const t = win._term;
     if (!t) return false;
     // Carried across the gap, because the handle that knows them is about to go.
@@ -896,7 +905,7 @@ window.WBConsole = (function () {
   // with. NOT a takeover: the reattach is the ordinary one, so a session another
   // client claimed while this one slept parks visibly instead of being stolen
   // back (ADR-0051 §9).
-  function wakeWindow(win) {
+  function wakeWindow(win: any) {
     if (!win._dormant) return false;
     const body = win.querySelector(".session-body");
     const wiring = win._termWiring;
@@ -917,7 +926,7 @@ window.WBConsole = (function () {
   // Carry out `dormancyDecision` for one window. The fold owns the rule; this
   // owns the clock, and re-asks when the timer fires — the window may have been
   // focused, maximized or closed meanwhile.
-  function applyDormancy(win) {
+  function applyDormancy(win: any) {
     const verdict = dormancyDecision(dormancyInputs(win));
     if (win._dormantTimer) {
       clearTimeout(win._dormantTimer);
@@ -936,11 +945,11 @@ window.WBConsole = (function () {
 
   // Columns, a maximize and the physical screen each fill the whole viewport,
   // so every other console is under them.
-  function fillsViewport(win) {
+  function fillsViewport(win: any) {
     return win.classList.contains("maximized") || win.classList.contains("column") || isFull(win);
   }
 
-  function isCovered(win) {
+  function isCovered(win: any) {
     if (fillsViewport(win)) return false;
     for (const other of wins) if (other !== win && fillsViewport(other)) return true;
     return false;
@@ -958,7 +967,7 @@ window.WBConsole = (function () {
   }
 
   // The live reading of one window, handed to the pure fold.
-  function dormancyInputs(win) {
+  function dormancyInputs(win: any) {
     return {
       // Unobserved windows have never been told; treat them as visible, which
       // is the reading that changes nothing.
@@ -999,7 +1008,7 @@ window.WBConsole = (function () {
   // The key-bar setting changed. The shell re-emits every save on
   // `workbench:action`. A detached popup never receives it (its `WB.emit` posts
   // to the opener) and reads no store, so its bar stays on auto.
-  document.addEventListener("workbench:action", (e) => {
+  document.addEventListener("workbench:action", (e: any) => {
     if (e.detail?.action !== "setting-change" || e.detail.key !== "consoles.key_bar") return;
     for (const w of wins) applyKeyBar(w);
   });
@@ -1039,7 +1048,7 @@ window.WBConsole = (function () {
   }
 
 
-  function newId(prefix) {
+  function newId(prefix: any) {
     // `crypto.randomUUID` is undefined in a non-secure context and the daemon can
     // bind a plain-http LAN address (ADR-0032), so build the id by hand.
     return prefix + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
@@ -1059,11 +1068,11 @@ window.WBConsole = (function () {
   // 2026-09-09: a reload from a file tab wrote `0,0,0,0`, the next load rendered
   // the CSS floor 240×150 at the origin and stored THAT). The inline rect is
   // untouched by all three; it is what `buildChrome` wrote from the record.
-  function measurable(win) {
+  function measurable(win: any) {
     return !!(win.offsetWidth || win.offsetHeight);
   }
-  function restoreRect(win) {
-    const inline = (prop, fallback) => parseInt(win.style[prop], 10) || fallback;
+  function restoreRect(win: any) {
+    const inline = (prop: any, fallback: any) => parseInt(win.style[prop], 10) || fallback;
     const fromInline = () => ({
       left: inline("left", win.offsetLeft),
       top: inline("top", win.offsetTop),
@@ -1094,18 +1103,18 @@ window.WBConsole = (function () {
   // `relaunchAgents` is the operator's per-client opt-in (Settings → Consoles),
   // default OFF and passed in so the fold stays pure and the popup can never
   // turn it on.
-  function reconcileDesk({ layout, sessions, relaunchAgents = false }) {
+  function reconcileDesk({ layout, sessions, relaunchAgents = false }: any) {
     const live = sessions || [];
     const used = new Set();
-    const out = [];
+    const out: any = [];
     for (const record of layout || []) {
       // A session that names its record is that record's, whatever a stale
       // `sessionId` says, and never another record's (ADR-0050 amendment
       // 2026-10-04). The tuple below is for sessions from an older daemon.
-      let i = live.findIndex((s, idx) => !used.has(idx) && s.record === record.id);
+      let i = live.findIndex((s: any, idx: any) => !used.has(idx) && s.record === record.id);
       if (i < 0) {
         i = live.findIndex(
-          (s, idx) =>
+          (s: any, idx: any) =>
             !used.has(idx) &&
             s.record == null &&
             s.id === record.sessionId &&
@@ -1137,8 +1146,8 @@ window.WBConsole = (function () {
     // as two — or, for a shell, from spawning a SECOND PTY. Only with no such
     // record is it adopted into a fresh one, so it stays visible and closable.
     // The ids an adopted window may take: one window per record id.
-    const taken = new Set((layout || []).map((r) => r.id));
-    live.forEach((s, idx) => {
+    const taken = new Set((layout || []).map((r: any) => r.id));
+    live.forEach((s: any, idx: any) => {
       if (used.has(idx)) return;
       // A session that names a record this page has not read is adopted under
       // that id, so the page that launched it and this one write one record.
@@ -1149,7 +1158,7 @@ window.WBConsole = (function () {
         return;
       }
       const waiting = out.find(
-        ({ record, action }) =>
+        ({ record, action }: any) =>
           action !== "attach" &&
           // An `adopt` entry pushed for an earlier session has no record.
           record != null &&
@@ -1174,16 +1183,16 @@ window.WBConsole = (function () {
   // and written its new `sessionId` there. `held` lists the `{id, repo}` of the
   // sessions this page already shows: attaching one again would be a second
   // window on one session. Ids repeat across repos and peers, hence the pair.
-  function placeholderSession({ layout, sessions, recordId, held = [] }) {
-    const shown = (s) =>
+  function placeholderSession({ layout, sessions, recordId, held = [] }: any) {
+    const shown = (s: any) =>
       held.some(
-        (h) =>
+        (h: any) =>
           h.id === s.id && (h.repo === "~" ? !s.repo || s.repo === "~" : s.repo === h.repo),
       );
     const verdict = reconcileDesk({
       layout,
-      sessions: (sessions || []).filter((s) => s && !shown(s)),
-    }).find(({ record }) => record?.id === recordId);
+      sessions: (sessions || []).filter((s: any) => s && !shown(s)),
+    }).find(({ record }: any) => record?.id === recordId);
     return verdict?.action === "attach" ? verdict.session : null;
   }
 
@@ -1192,7 +1201,7 @@ window.WBConsole = (function () {
   // relaunches with no repo. An AGENT record asks for its vendor and worktree —
   // `{ console: true }` is the shell request. The checkout rides ONLY on the
   // agent request: the plain console stays on the primary (the `open` rule).
-  function relaunchRequest(record) {
+  function relaunchRequest(record: any) {
     const repo = record.repo === "~" ? undefined : record.repo;
     if (record.kind !== "agent") return { console: true, repo, command: consoleCommand(record.agent) };
     return { repo, agent: record.agent, checkout: record.checkout ?? null };
@@ -1201,7 +1210,7 @@ window.WBConsole = (function () {
   // The name a console box uses for the host of a peer project: the machine
   // name of a tunnel peer, else the environment (`WSL: Ubuntu`). `fallback` is
   // the environment the desk record kept, for a box drawn before the fleet list.
-  function peerHost(group, fallback) {
+  function peerHost(group: any, fallback: any) {
     return window.WBFleet.peerName(group) || fallback || "The other computer";
   }
 
@@ -1214,10 +1223,10 @@ window.WBConsole = (function () {
   //   "wait"  — the daemon is already opening the tunnel again;
   //   null    — no click here fixes it (a token, a version, a descriptor).
   // The daemon's diagnosis is the detail: it names the cause and the remedy.
-  function peerOfflineView(group, refusal, fallbackHost) {
+  function peerOfflineView(group: any, refusal: any, fallbackHost: any) {
     const host = peerHost(group, fallbackHost);
     const detail = (group && group.diagnosis) || (typeof refusal === "string" ? refusal.trim() : "");
-    const view = (text, action) => ({ text, detail, action });
+    const view = (text: any, action: any) => ({ text, detail, action });
     const wakeOrRetry = window.WBFleet.wakeable(group) ? "wake" : "retry";
     switch (group && group.state) {
       case "asleep":
@@ -1248,7 +1257,7 @@ window.WBConsole = (function () {
   // Only a peer this box SAW offline counts as back. A refused launch on a
   // peer the fleet still calls reachable would otherwise relaunch, be refused,
   // and relaunch again.
-  function peerReturnDecision({ kind, canLaunch, available, wasOffline }) {
+  function peerReturnDecision({ kind, canLaunch, available, wasOffline }: any) {
     if (!available || !wasOffline) return "stay";
     return kind === "console" && canLaunch ? "relaunch" : "offer";
   }
@@ -1260,7 +1269,7 @@ window.WBConsole = (function () {
   //                opens again, as a restore would have opened it;
   //   "offer"    — the same for an agent console: the click is the operator's;
   //   "stay"     — still not known (`undefined`): ask again on the next read.
-  function heldReturnDecision({ kind, canLaunch, session }) {
+  function heldReturnDecision({ kind, canLaunch, session }: any) {
     if (session === undefined) return "stay";
     if (session) return "attach";
     return kind === "console" && canLaunch ? "relaunch" : "offer";
@@ -1272,7 +1281,7 @@ window.WBConsole = (function () {
   // or forgets it (ADR-0050 amendment 2026-10-04).
   // Reads in flight at the same moment share one request: every held box
   // asks on the same fleet read, and each request asks every peer.
-  let sessionsRead = null;
+  let sessionsRead: any = null;
   function readSessions() {
     if (!sessionsRead) {
       sessionsRead = (async () => {
@@ -1289,14 +1298,14 @@ window.WBConsole = (function () {
     }
     return sessionsRead;
   }
-  function unheardRef(ref, unheard) {
+  function unheardRef(ref: any, unheard: any) {
     const daemon = window.WBFleet.refDaemon(ref);
     return !!daemon && !!unheard?.has(daemon);
   }
 
   // The fleet group of `ref`'s peer when that peer cannot serve it, else null:
   // a local ref, an unknown peer, and a reachable one all launch as usual.
-  function peerHeld(ref, groups) {
+  function peerHeld(ref: any, groups: any) {
     const daemon = window.WBFleet.refDaemon(ref);
     const group = daemon ? groups.get(daemon) : null;
     return group && !window.WBFleet.available(group) ? group : null;
@@ -1305,7 +1314,7 @@ window.WBConsole = (function () {
   // A console-kind session's `agent` label is its startup command, or the
   // literal `console` for the bare shell (the daemon labels it so on launch).
   // So the label alone says how to launch that console again.
-  function consoleCommand(label) {
+  function consoleCommand(label: any) {
     return label && label !== "console" ? label : undefined;
   }
 
@@ -1315,7 +1324,7 @@ window.WBConsole = (function () {
   // cheapest Observe read that takes a checkout (no spawn): the ONE reply that
   // means the tree is gone is `unknown checkout`. Anything else — an
   // unreachable daemon included — lets the launch decide.
-  async function checkoutStillThere(repo, checkout) {
+  async function checkoutStillThere(repo: any, checkout: any) {
     const daemon = window.WBDaemon;
     if (!checkout || !repo || typeof daemon?.observe !== "function") return true;
     let reply;
@@ -1326,7 +1335,7 @@ window.WBConsole = (function () {
     }
     return !isUnknownCheckout(reply);
   }
-  function isUnknownCheckout(reply) {
+  function isUnknownCheckout(reply: any) {
     return !!reply && reply.status === "error" && reply.message === "unknown checkout";
   }
 
@@ -1336,18 +1345,18 @@ window.WBConsole = (function () {
   // its slug, never to the ref: a peer ref carries a `<daemon_id>/` routing
   // head (ADR-0052 §5).
   const projectNames = new Map();
-  function projectNameOf(ref) {
+  function projectNameOf(ref: any) {
     const known = projectNames.get(ref);
     if (known) return known.name;
     return window.WBFleet ? window.WBFleet.refSlug(ref) : ref;
   }
-  function projectTitleOf(ref) {
+  function projectTitleOf(ref: any) {
     if (ref === "~") return ref;
     return projectNames.get(ref)?.title || projectNameOf(ref);
   }
   // `rows` is `[{ ref, name, title }]`. Titles and tooltips already drawn are
   // drawn again; a console NAME already given is the operator's and stays.
-  function ingestProjects(rows) {
+  function ingestProjects(rows: any) {
     projectNames.clear();
     for (const r of rows || []) {
       if (r && r.ref && r.name) projectNames.set(r.ref, { name: r.name, title: r.title || r.name });
@@ -1355,7 +1364,7 @@ window.WBConsole = (function () {
     for (const win of wins) {
       if (!win._title || !win._presentation) continue;
       const p = win._presentation;
-      p.tooltip = window.WBConsoleName.tooltipLines(projectTitleOf(win._deskRepo), p.environment, p.name).join("\n");
+      p.tooltip = WBConsoleName.tooltipLines(projectTitleOf(win._deskRepo), p.environment, p.name).join("\n");
       win._title.title = p.tooltip;
       renderTitle(win, win._title, p);
     }
@@ -1367,9 +1376,9 @@ window.WBConsole = (function () {
   // `readFleet` is the shell's fleet read on demand, for a window that saw
   // its peer fail.
   const peerGroups = new Map();
-  let wakePeer = null;
-  let readFleet = null;
-  function ingestFleet(groups, hooks) {
+  let wakePeer: any = null;
+  let readFleet: any = null;
+  function ingestFleet(groups: any, hooks: any) {
     peerGroups.clear();
     for (const g of groups || []) if (g && g.daemon && !g.local) peerGroups.set(g.daemon, g);
     if (typeof hooks?.wake === "function") wakePeer = hooks.wake;
@@ -1381,13 +1390,13 @@ window.WBConsole = (function () {
   // routing head never shows, a remoteless repo is named by its folder and not
   // its `path-<hash>` key, and the same repo on two environments shares one
   // count (ADR-0066 §2).
-  function consolePrefix(repo) {
-    return window.WBConsoleName.prefixOf(projectNameOf(repo));
+  function consolePrefix(repo: any) {
+    return WBConsoleName.prefixOf(projectNameOf(repo));
   }
   // Every console name in use: the desk mirror's and the stage's windows',
   // except `exceptId` (the console being renamed).
-  function takenNames(exceptId) {
-    const names = desk.filter((r) => r.id !== exceptId).map((r) => r.consoleName);
+  function takenNames(exceptId: any) {
+    const names = desk.filter((r: any) => r.id !== exceptId).map((r: any) => r.consoleName);
     const st = typeof document?.getElementById === "function" ? stage() : null;
     for (const w of st ? st.querySelectorAll(".session-window") : []) {
       if (w._deskId !== exceptId) names.push(w._deskConsoleName);
@@ -1398,7 +1407,7 @@ window.WBConsole = (function () {
   // The title is built by `renderTitle` from the window's console name and
   // label (ADR-0066 §4). The environment left the title for the tooltip
   // (ADR-0066 §5), after the full ref.
-  function sessionPresentation(label, repo, prior, owner) {
+  function sessionPresentation(label: any, repo: any, prior: any, owner: any) {
     const daemonId = owner?.daemon_id ?? prior?.daemonId ?? null;
     const environment = owner?.environment ?? prior?.environment ?? null;
     // The vendor's own session name (`--name`; Claude only). On the TOOLTIP, not
@@ -1415,7 +1424,7 @@ window.WBConsole = (function () {
       environment,
       name,
       checkout,
-      tooltip: window.WBConsoleName.tooltipLines(projectTitleOf(repo), environment, name).join("\n"),
+      tooltip: WBConsoleName.tooltipLines(projectTitleOf(repo), environment, name).join("\n"),
     };
   }
 
@@ -1426,9 +1435,9 @@ window.WBConsole = (function () {
   // reads for the picker) and, for a repo the picker never opened, by ONE read
   // of our own per ref at the first agent window — `worktree.list` is a git
   // spawn, so never per render and never periodic.
-  const worktreeListings = {};
+  const worktreeListings: any = {};
   const listingReads = new Map();
-  function ingestWorktrees(ref, listing) {
+  function ingestWorktrees(ref: any, listing: any) {
     if (!ref) return;
     worktreeListings[ref] = listing || null;
     for (const win of wins) {
@@ -1437,13 +1446,13 @@ window.WBConsole = (function () {
       }
     }
   }
-  function ensureListing(ref, force = false) {
+  function ensureListing(ref: any, force = false) {
     if (!ref || ref === "~" || (ref in worktreeListings && !force) || listingReads.has(ref)) return;
     const daemon = window.WBDaemon;
     if (typeof daemon?.observe !== "function" || OPTS.canLaunch === false) return;
     const read = daemon
       .observe("worktree.list", { repo: ref })
-      .then((reply) => {
+      .then((reply: any) => {
         ingestWorktrees(ref, reply && reply.status === "ok" ? reply.checkouts || null : null);
       })
       .catch(() => ingestWorktrees(ref, null))
@@ -1455,7 +1464,7 @@ window.WBConsole = (function () {
   // `checkout` and `agent_state`) each row also carries the agent's state in
   // that tree (ADR-0059 §5) via `WBProject.worktreeStates`. `primaryBranch`/
   // `primaryDirty` when the caller knows them (the shell does).
-  function checkoutMenuRows(listing, current, sessions, primaryBranch = "", primaryDirty = false) {
+  function checkoutMenuRows(listing: any, current: any, sessions: any, primaryBranch = "", primaryDirty = false) {
     const rows = [{ name: "primary", branch: String(primaryBranch || ""), dirty: primaryDirty === true, primary: true }];
     for (const w of listing?.worktrees || []) {
       rows.push({
@@ -1469,10 +1478,10 @@ window.WBConsole = (function () {
     return rows.map((r) => ({ ...r, current: (current ?? "primary") === r.name, state: states[r.name] || null }));
   }
   // The shell's last `/api/sessions` poll, kept for the menus' state dots.
-  let lastSessions = [];
-  function sessionsOfRepo(ref) {
+  let lastSessions: any = [];
+  function sessionsOfRepo(ref: any) {
     const route = window.WBSessionRoute;
-    return (lastSessions || []).filter((s) => s && (route ? route.matchesRepo(s, ref) : s.repo === ref));
+    return (lastSessions || []).filter((s: any) => s && (route ? route.matchesRepo(s, ref) : s.repo === ref));
   }
 
   // The title: `<console name> (<label>)`, then ` · <checkout>`, then
@@ -1482,7 +1491,7 @@ window.WBConsole = (function () {
   // worktree…`, so it cannot wait for one to exist (ADR-0063, amendment
   // 2026-09-16 b). Never on a plain shell (stays on the primary, #408), a
   // placeholder (no `_relaunchIn`) or the detached popup (`canLaunch === false`).
-  function renderTitle(win, title, presentation) {
+  function renderTitle(win: any, title: any, presentation: any) {
     win._presentation = presentation;
     // A rename in progress keeps its input; `endEdit` draws with the latest.
     if (title.querySelector(".session-name-input")) return;
@@ -1497,7 +1506,7 @@ window.WBConsole = (function () {
     // SPANS, not bare text nodes: they are what ellipsise when the bar is
     // narrow, the repo first (06-consoles.css `.session-repo`); a text node
     // inside an inline-flex box wraps instead.
-    const parts = window.WBConsoleName.labelParts(win._deskConsoleName || "", win._deskAgent || "console");
+    const parts = WBConsoleName.labelParts(win._deskConsoleName || "", win._deskAgent || "console");
     const nameSpan = document.createElement("span");
     nameSpan.className = "session-name";
     nameSpan.textContent = parts.name;
@@ -1520,7 +1529,7 @@ window.WBConsole = (function () {
   }
 
   // The checkout segment of the title: ` · <checkout> ▾`.
-  function appendCheckout(win, title, presentation) {
+  function appendCheckout(win: any, title: any, presentation: any) {
     const sep = document.createElement("span");
     sep.className = "session-title-sep";
     sep.textContent = "·";
@@ -1535,8 +1544,8 @@ window.WBConsole = (function () {
     const caret = document.createElement("i");
     caret.className = "bi bi-chevron-down";
     btn.append(caret);
-    btn.addEventListener("pointerdown", (e) => e.stopPropagation());
-    btn.addEventListener("click", (e) => {
+    btn.addEventListener("pointerdown", (e: any) => e.stopPropagation());
+    btn.addEventListener("click", (e: any) => {
       e.stopPropagation();
       openCheckoutMenu(win, btn);
     });
@@ -1553,21 +1562,21 @@ window.WBConsole = (function () {
   function canRename() {
     return OPTS.canLaunch !== false;
   }
-  function wireRename(win, span) {
+  function wireRename(win: any, span: any) {
     if (!canRename()) return;
-    span.addEventListener("dblclick", (e) => {
+    span.addEventListener("dblclick", (e: any) => {
       e.stopPropagation();
       // On touch a double tap maximizes, even on the name.
       if (win._lastPointerType !== "mouse") return;
       startRename(win, span);
     });
   }
-  function startRename(win, span) {
+  function startRename(win: any, span: any) {
     if (!span.isConnected) return;
     const input = document.createElement("input");
     input.className = "session-name-input";
     input.setAttribute("aria-label", "Console name");
-    input.maxLength = window.WBConsoleName.NAME_MAX;
+    input.maxLength = WBConsoleName.NAME_MAX;
     input.value = win._deskConsoleName || "";
     input.style.width = `${Math.max(span.offsetWidth + 16, 96)}px`;
     let editing = true;
@@ -1575,15 +1584,15 @@ window.WBConsole = (function () {
     // pan calls `preventDefault()` on mousedown, so focus does not move.
     // Also ends an edit whose window left the page: not every browser fires
     // `blur` on a removed input.
-    const stopOutside = (ev) => {
+    const stopOutside = (ev: any) => {
       if (ev.target !== input || !win.isConnected) endEdit(false);
     };
-    const endEdit = (commit) => {
+    const endEdit = (commit: any) => {
       if (!editing) return;
       editing = false; // first: removing the input fires `blur`, which re-enters
       document.removeEventListener("pointerdown", stopOutside, true);
       if (commit) {
-        win._deskConsoleName = window.WBConsoleName.renameValue(
+        win._deskConsoleName = WBConsoleName.renameValue(
           input.value,
           consolePrefix(win._deskRepo),
           takenNames(win._deskId),
@@ -1592,15 +1601,15 @@ window.WBConsole = (function () {
       } else {
         // A name another page gave while this edit was open was skipped by
         // `converge`; take it now.
-        const stored = desk.find((r) => r.id === win._deskId)?.consoleName;
+        const stored = desk.find((r: any) => r.id === win._deskId)?.consoleName;
         if (stored) win._deskConsoleName = stored;
       }
       input.remove();
       if (win._title && win._presentation) renderTitle(win, win._title, win._presentation);
     };
-    input.addEventListener("pointerdown", (ev) => ev.stopPropagation());
-    input.addEventListener("dblclick", (ev) => ev.stopPropagation());
-    input.addEventListener("keydown", (ev) => {
+    input.addEventListener("pointerdown", (ev: any) => ev.stopPropagation());
+    input.addEventListener("dblclick", (ev: any) => ev.stopPropagation());
+    input.addEventListener("keydown", (ev: any) => {
       // Held here so an Escape meant for this edit never reaches the plane.
       ev.stopPropagation();
       // An Enter that confirms an IME candidate is not a commit.
@@ -1620,7 +1629,7 @@ window.WBConsole = (function () {
   // `onPick(row)` for a non-current row; `onRemove(row)` adds a trash action per
   // worktree row; `onCreate()` adds `+ new worktree…`. One menu at a time;
   // closes on a pick, a click elsewhere, or Escape.
-  let openMenu = null;
+  let openMenu: any = null;
   function closeCheckoutMenu() {
     if (!openMenu) return;
     openMenu.el.remove();
@@ -1628,12 +1637,12 @@ window.WBConsole = (function () {
     document.removeEventListener("keydown", openMenu.key, true);
     openMenu = null;
   }
-  function checkoutMenu({ anchor, host, rows, onPick, onRemove, onCreate }) {
+  function checkoutMenu({ anchor, host, rows, onPick, onRemove, onCreate }: any) {
     if (openMenu?.anchor === anchor) return closeCheckoutMenu();
     closeCheckoutMenu();
     const menu = document.createElement("div");
     menu.className = "session-checkout-menu";
-    menu.addEventListener("pointerdown", (e) => e.stopPropagation());
+    menu.addEventListener("pointerdown", (e: any) => e.stopPropagation());
     for (const row of rows) {
       const item = document.createElement("button");
       item.type = "button";
@@ -1673,14 +1682,14 @@ window.WBConsole = (function () {
         trash.title = "Delete this worktree";
         trash.innerHTML = '<i class="bi bi-trash3"></i>';
         // The trash must not also PICK the row it sits on.
-        trash.addEventListener("click", (e) => {
+        trash.addEventListener("click", (e: any) => {
           e.stopPropagation();
           closeCheckoutMenu();
           onRemove(row);
         });
         item.append(trash);
       }
-      item.addEventListener("click", (e) => {
+      item.addEventListener("click", (e: any) => {
         e.stopPropagation();
         closeCheckoutMenu();
         if (!row.current) onPick(row);
@@ -1693,7 +1702,7 @@ window.WBConsole = (function () {
       create.className = "session-checkout-item create";
       create.innerHTML = '<i class="bi bi-folder-plus"></i><span class="session-checkout-name">New worktree…</span>';
       create.title = "Create a worktree and restart this console in it";
-      create.addEventListener("click", (e) => {
+      create.addEventListener("click", (e: any) => {
         e.stopPropagation();
         closeCheckoutMenu();
         onCreate();
@@ -1712,10 +1721,10 @@ window.WBConsole = (function () {
       menu.style.top = `${r.bottom - h.top + 2}px`;
     }
     host.append(menu);
-    const away = (e) => {
+    const away = (e: any) => {
       if (!menu.contains(e.target) && !anchor.contains(e.target)) closeCheckoutMenu();
     };
-    const key = (e) => {
+    const key = (e: any) => {
       if (e.key === "Escape") closeCheckoutMenu();
     };
     document.addEventListener("pointerdown", away, true);
@@ -1723,13 +1732,13 @@ window.WBConsole = (function () {
     openMenu = { anchor, el: menu, away, key };
     return menu;
   }
-  function openCheckoutMenu(win, anchor) {
+  function openCheckoutMenu(win: any, anchor: any) {
     const ref = win._deskRepo;
     checkoutMenu({
       anchor,
       host: win,
       rows: checkoutMenuRows(worktreeListings[ref], win._deskCheckout ?? null, sessionsOfRepo(ref)),
-      onPick: (row) => switchCheckout(win, row.primary ? null : row.name),
+      onPick: (row: any) => switchCheckout(win, row.primary ? null : row.name),
       onCreate: () => createWorktreeFor(win),
     });
   }
@@ -1737,7 +1746,7 @@ window.WBConsole = (function () {
   // Move a console to another checkout (#412): confirm (the session restarts
   // and its scrollback goes), then `moveTo`. The picker's per-repo selection is
   // never touched: that is what Files shows; this is where THIS console lives.
-  async function switchCheckout(win, checkout) {
+  async function switchCheckout(win: any, checkout: any) {
     if (typeof win._relaunchIn !== "function") return;
     const where = checkout ? `worktree ${checkout}` : "the primary tree";
     const ok = await askConfirm({
@@ -1754,7 +1763,7 @@ window.WBConsole = (function () {
   // built for an ended child, and moving a running one left the old session
   // alive with no window (measured 2026-09-16). A watcher holds no baton and
   // must not kill the child another operator drives; it just relaunches.
-  function moveTo(win, checkout) {
+  function moveTo(win: any, checkout: any) {
     const from = win._deskCheckout ?? null;
     win._deskCheckout = checkout;
     setWin(win, { checkout: checkout ?? null });
@@ -1765,7 +1774,7 @@ window.WBConsole = (function () {
   }
   // End this window's session on the daemon if it is still running, then `go`.
   // A DORMANT console still holds its session and must still close it.
-  function endLiveThen(win, go) {
+  function endLiveThen(win: any, go: any) {
     const id = sessionIdOf(win);
     const live = id != null && !win.classList.contains("ended") && !watchingOf(win);
     if (live && window.WBSessionRoute) {
@@ -1776,7 +1785,7 @@ window.WBConsole = (function () {
   }
   // The titlebar's restart: offered on a live session too, so it always asks
   // first — one click beside maximize must not tree-kill a working agent.
-  async function restartWin(win) {
+  async function restartWin(win: any) {
     if (typeof win._relaunchIn !== "function") return;
     const ended = win.classList.contains("ended");
     const ok = await askConfirm({
@@ -1795,7 +1804,7 @@ window.WBConsole = (function () {
   // the base branch. The name gate is `WBProject.worktreeCreateRow`; a refusal
   // the daemon DID send (`error`) re-opens with the message under the field.
   // Resolves `{name, base}` or `null` on cancel.
-  function askWorktree({ base, branches, listing, error = "", name = "" }) {
+  function askWorktree({ base, branches, listing, error = "", name = "" }: any): Promise<any> {
     const scrim = document.createElement("div");
     scrim.className = "modal-scrim wb-confirm";
     const modal = document.createElement("div");
@@ -1861,7 +1870,7 @@ window.WBConsole = (function () {
 
     return new Promise((resolve) => {
       let settled = false;
-      const done = (value) => {
+      const done = (value: any) => {
         if (settled) return;
         settled = true;
         document.removeEventListener("keydown", onKey, true);
@@ -1884,7 +1893,7 @@ window.WBConsole = (function () {
       // never shows, and there is no message. The caret stays after the
       // last kept character. The create stays disabled, without a message,
       // while the name is still one the daemon would refuse.
-      const mask = window.WBProject?.maskWorktreeName || ((s) => s);
+      const mask = window.WBProject?.maskWorktreeName || ((s: any) => s);
       nameInput.addEventListener("input", () => {
         const raw = nameInput.value;
         const masked = mask(raw);
@@ -1898,7 +1907,7 @@ window.WBConsole = (function () {
         go.disabled = !!problem();
       });
       go.disabled = !!problem();
-      const onKey = (e) => {
+      const onKey = (e: any) => {
         if (e.key === "Escape") {
           e.stopPropagation();
           done(null);
@@ -1917,7 +1926,7 @@ window.WBConsole = (function () {
   // `+ new worktree…` from a console's switcher: ask, `worktree.add`, tell the
   // shell, and move THIS console into it (the prompt already said it restarts).
   // Base list is `branch.list`, one read per prompt; unreadable → free text.
-  async function createWorktreeFor(win) {
+  async function createWorktreeFor(win: any) {
     const repo = win._deskRepo;
     if (!repo || repo === "~" || typeof win._relaunchIn !== "function") return;
     const daemon = window.WBDaemon;
@@ -1967,7 +1976,7 @@ window.WBConsole = (function () {
   // moving the maximize to another console (ADR-0051 §5). A restore
   // (`buildChrome`) and the torn-off fence window's columns write nothing: a
   // restore already reads the record, and that window's grid is never stored.
-  function setMax(win, on, persist = false) {
+  function setMax(win: any, on: any, persist = false) {
     if (win.classList.contains("maximized") === on) return;
     const ws = workspace();
     const offsets = ws ? { left: ws.scrollLeft, top: ws.scrollTop } : null;
@@ -1993,12 +2002,12 @@ window.WBConsole = (function () {
     if (persist) setWin(win, { max: on });
   }
 
-  function toggleMax(win) {
+  function toggleMax(win: any) {
     setMax(win, !win.classList.contains("maximized"), true);
   }
 
   // A column restores like a maximize, so it shows the same control.
-  function paintMaxButton(win) {
+  function paintMaxButton(win: any) {
     const btn = win._maxBtn;
     if (!btn) return;
     const on = win.classList.contains("maximized") || win.classList.contains("column");
@@ -2024,9 +2033,9 @@ window.WBConsole = (function () {
   // Pure. What one window is, given the painted consoles. `maximized: null`
   // means "not a column: leave its maximize alone". Two rows of one column
   // are columns too: what counts is how many consoles are painted.
-  function columnClasses(painted, id) {
+  function columnClasses(painted: any, id: any) {
     const list = painted || [];
-    const entry = list.find((p) => p.id === id);
+    const entry = list.find((p: any) => p.id === id);
     if (!entry) return { column: false, maximized: null };
     return { column: list.length >= 2, maximized: entry.index === 0 && !entry.row };
   }
@@ -2036,7 +2045,7 @@ window.WBConsole = (function () {
     return { viewport: workspace()?.clientWidth || 0 };
   }
 
-  function clearColumn(win) {
+  function clearColumn(win: any) {
     win.classList.remove("column");
     win.style.removeProperty("--col-index");
     win.style.removeProperty("--col-count");
@@ -2055,7 +2064,7 @@ window.WBConsole = (function () {
   // Paint `painted` (`WBColumns.painted`). `unmax` is the old first console
   // after a restore: it stops being the maximized console. `persist` writes
   // each change of the maximize to the desk.
-  function applyColumns(painted, opts) {
+  function applyColumns(painted: any, opts: any) {
     const list = painted || [];
     const cap = opts?.cap ?? 1;
     const persist = !!opts?.persist;
@@ -2112,7 +2121,7 @@ window.WBConsole = (function () {
 
   // A console whose record another client removed: off this stage. Its
   // session is not touched here, and its record is already gone.
-  function dropClosedElsewhere(id) {
+  function dropClosedElsewhere(id: any) {
     const win = findWindow(id);
     if (!win) return;
     tearDownMember(win, "window-closed");
@@ -2123,7 +2132,7 @@ window.WBConsole = (function () {
     return stage()?.querySelector(".session-window.focused")?._deskId ?? null;
   }
 
-  function focusColumn(id) {
+  function focusColumn(id: any) {
     const win = findWindow(id);
     if (!win) return;
     focusWin(win);
@@ -2135,21 +2144,21 @@ window.WBConsole = (function () {
   function columnRoster() {
     const st = stage();
     if (!st) return { rows: [], fences: [], membership: {}, detached: {} };
-    const out = {};
+    const out: any = {};
     for (const [id, entry] of fencePopups) {
       out[id] = (entry.members || [])
-        .filter((m) => m && m.id && m.kind !== "note")
-        .map((m) => ({
+        .filter((m: any) => m && m.id && m.kind !== "note")
+        .map((m: any) => ({
           id: m.id,
           agent: m.agent,
-          name: desk.find((r) => r.id === m.id)?.consoleName ?? m.consoleName ?? null,
+          name: desk.find((r: any) => r.id === m.id)?.consoleName ?? m.consoleName ?? null,
           repo: m.repo === "~" ? null : (m.repo ?? null),
           kind: m.kind,
         }));
     }
     return {
       rows: list(),
-      fences: fenceList().map(({ id, name }) => ({ id, name })),
+      fences: fenceList().map(({ id, name }: any) => ({ id, name })),
       membership: fenceMembership(readFenceRects(st), readWindowRects(st)),
       detached: out,
     };
@@ -2164,7 +2173,7 @@ window.WBConsole = (function () {
   // per-window ResizeObserver refits the terminal.
   // The live browser fact, not our class: the guards must hold in the instant
   // between the state change and the event that mirrors it.
-  function isFull(win) {
+  function isFull(win: any) {
     return document.fullscreenElement === win;
   }
 
@@ -2173,10 +2182,10 @@ window.WBConsole = (function () {
   // handlers consult it and refuse; nothing else changes (maximize, fullscreen
   // and close do not rewrite the rect). A console is locked by its own record
   // OR by the fence holding its centre — the same `fenceOf` fold as membership.
-  function fenceLocked(id) {
-    return !!fences.find((f) => f.id === id)?.locked;
+  function fenceLocked(id: any) {
+    return !!fences.find((f: any) => f.id === id)?.locked;
   }
-  function isLocked(win) {
+  function isLocked(win: any) {
     if (win._deskLocked) return true;
     return heldByFence(win);
   }
@@ -2186,14 +2195,14 @@ window.WBConsole = (function () {
   // match a console to whatever fence covers the translated point. A detached
   // fence's members move freely there; the fence's lock holds again on the
   // stage when they come home. Note cards follow the same rule.
-  function fenceHolds(records, rect, popup) {
+  function fenceHolds(records: any, rect: any, popup: any) {
     return !popup && !!fenceOf(records, rect)?.locked;
   }
-  function heldByFence(el) {
+  function heldByFence(el: any) {
     return fenceHolds(fences, restoreRect(el), OPTS.autoBoot === false);
   }
   // The one place a window's own lock is set: flag, class, glyph.
-  function applyLock(win, locked) {
+  function applyLock(win: any, locked: any) {
     win._deskLocked = !!locked;
     win.classList.toggle("locked", !!locked);
     paintLockGlyph(win);
@@ -2202,7 +2211,7 @@ window.WBConsole = (function () {
   // closed like its fence. Held-only, the button is disabled — its own toggle
   // would change nothing the operator can see; the fence's lock is the one to
   // open.
-  function paintLockGlyph(win) {
+  function paintLockGlyph(win: any) {
     const btn = win.querySelector(".session-lock");
     if (!btn) return;
     const own = !!win._deskLocked;
@@ -2213,13 +2222,13 @@ window.WBConsole = (function () {
     btn.setAttribute("aria-pressed", locked ? "true" : "false");
     btn.disabled = held;
   }
-  function toggleLock(win) {
+  function toggleLock(win: any) {
     applyLock(win, !win._deskLocked);
     setWin(win, { locked: !!win._deskLocked });
   }
   // Same for a fence: the class, the glyph, and the tile button, which is a
   // no-op on a locked fence and says so by being disabled.
-  function paintFenceLock(el, locked) {
+  function paintFenceLock(el: any, locked: any) {
     el.classList.toggle("locked", !!locked);
     const btn = el.querySelector(".fence-lock");
     if (btn) {
@@ -2230,12 +2239,12 @@ window.WBConsole = (function () {
     const tile = el.querySelector(".fence-arrange");
     if (tile) tile.disabled = !!locked;
   }
-  function setFenceLock(id, locked) {
-    saveFences(fences.map((x) => (x.id === id ? { ...x, locked: !!locked } : x)));
+  function setFenceLock(id: any, locked: any) {
+    saveFences(fences.map((x: any) => (x.id === id ? { ...x, locked: !!locked } : x)));
     renderFences();
   }
 
-  function toggleFull(win) {
+  function toggleFull(win: any) {
     if (document.fullscreenElement === win) {
       // The promise rejects if we are already leaving; there is nothing to
       // recover, and `syncFullState` runs off the event either way.
@@ -2245,7 +2254,7 @@ window.WBConsole = (function () {
     focusWin(win);
     // Requesting while ANOTHER element is fullscreen is a legal swap — browsers
     // move the top layer without a round trip through the exit.
-    win.requestFullscreen().catch((err) => {
+    win.requestFullscreen().catch((err: any) => {
       // The browser refusing (no user gesture, a policy header). Say so; the
       // console is still usable maximized.
       console.warn("fullscreen refused", err);
@@ -2282,7 +2291,7 @@ window.WBConsole = (function () {
     const st = stage();
     if (!st) return;
     // Columns are a maximize too (ADR-0051 §5): all of them, in reading order.
-    const at = (w, v) => parseInt(w.style.getPropertyValue(v), 10) || 0;
+    const at = (w: any, v: any) => parseInt(w.style.getPropertyValue(v), 10) || 0;
     const cols = [...st.querySelectorAll(".session-window.column")].sort(
       (a, b) => at(a, "--col-index") - at(b, "--col-index") || at(a, "--row-index") - at(b, "--row-index"),
     );
@@ -2342,7 +2351,7 @@ window.WBConsole = (function () {
   // recompute runs on mouseup.
   // INVARIANT: every path that creates, moves, resizes, closes or restores a
   // window ends here.
-  function applyExtent(opts) {
+  function applyExtent(opts?: any) {
     const ws = workspace();
     const st = stage();
     if (!ws || !st) return;
@@ -2384,7 +2393,7 @@ window.WBConsole = (function () {
   // `applyLanding` that CAN measure, AHEAD of the stored offset. Measured:
   // a reveal requested on the same synchronous stack as `activate` runs before
   // Alpine's `x-show` flip, which lands a microtask later.
-  let pendingReveal = null;
+  let pendingReveal: any = null;
   // Whether `restoreDesk` has finished on ANY of its exits (a failed fetch
   // included): distinguishes "empty because nothing restored
   // YET" from "empty because there is nothing to restore".
@@ -2428,8 +2437,8 @@ window.WBConsole = (function () {
   // until the landing has been applied: `applyExtent` and the `x-show` flip both
   // fire `scroll` before the restore, so an unguarded listener would persist 0,0
   // over the operator's stored pan on every boot.
-  let offsetFlush = null;
-  let pendingOffset = null;
+  let offsetFlush: any = null;
+  let pendingOffset: any = null;
   function flushOffset() {
     // Writes the offset CAPTURED at schedule time, never a fresh read: a file
     // tab switched to inside the 250 ms hides `.consoles-tab` (`x-show`), and
@@ -2458,7 +2467,7 @@ window.WBConsole = (function () {
   // deaf where something did, because the click landed on the terminal's
   // canvas and the keystrokes went to the shell. A surface on the plane is in
   // the tier or it is under it; there is no third state.
-  function stackWin(win) {
+  function stackWin(win: any) {
     if (win.style.zIndex) return;
     // At the ceiling the counter stops and the newcomers tie: a tie among
     // cards is a stacking order, while a number past the ceiling would put a
@@ -2467,7 +2476,7 @@ window.WBConsole = (function () {
     win.style.zIndex = z;
   }
 
-  function focusWin(win) {
+  function focusWin(win: any) {
     z += 1;
     if (z > Z_CEIL) {
       // Renormalize: re-stack the existing windows by their current z, resetting
@@ -2519,13 +2528,13 @@ window.WBConsole = (function () {
   // The session the window holds, on a `/api/sessions` listing: the daemon's
   // id AND the repo ref, because a restarted daemon hands out ids from 1
   // again and a peer's id 1 is not this daemon's (the ref carries the peer).
-  function sessionRowFor(win, sessions) {
+  function sessionRowFor(win: any, sessions: any) {
     const id = sessionIdOf(win);
     if (id == null) return null;
     const ref = win._deskRepo;
     return (
       (sessions || []).find(
-        (s) => s && s.id === id && (ref === "~" ? !s.repo || s.repo === "~" : s.repo === ref),
+        (s: any) => s && s.id === id && (ref === "~" ? !s.repo || s.repo === "~" : s.repo === ref),
       ) || null
     );
   }
@@ -2533,7 +2542,7 @@ window.WBConsole = (function () {
   // The agent-state dot per window, from the shell's `/api/sessions` poll
   // (ADR-0059 §5): the state word as a class, hidden when the row says
   // nothing. A placeholder has no session and keeps no dot.
-  function ingestSessions(sessions) {
+  function ingestSessions(sessions: any) {
     lastSessions = Array.isArray(sessions) ? sessions : [];
     for (const win of wins) {
       const dot = win._stateDot;
@@ -2550,7 +2559,7 @@ window.WBConsole = (function () {
   // The "one action" that reaches a window far from the current view (ADR-0051
   // §4): focus it and slide the viewport so it is centred. Returns the element,
   // or null when no window carries that desk id.
-  function reveal(deskId) {
+  function reveal(deskId: any) {
     const ws = workspace();
     const it = findWindow(deskId);
     if (!it) return null;
@@ -2563,7 +2572,7 @@ window.WBConsole = (function () {
     return it;
   }
 
-  function findWindow(deskId) {
+  function findWindow(deskId: any) {
     const st = stage();
     if (!st) return null;
     return (
@@ -2572,7 +2581,7 @@ window.WBConsole = (function () {
   }
 
   // The centring half, on a viewport that is known to measure.
-  function revealNow(deskId) {
+  function revealNow(deskId: any) {
     const ws = workspace();
     const st = stage();
     if (!ws || !st) return null;
@@ -2614,11 +2623,11 @@ window.WBConsole = (function () {
   // gesture — threshold, auto-pan, Escape, the lot — but it is locked by its
   // own record and persisted into `notes`, not into `desk`. Absent, the two
   // hooks are the window's, which is every existing caller.
-  function makeDraggable(win, handle, opts) {
+  function makeDraggable(win: any, handle: any, opts?: any) {
     const heldFast = opts?.locked || (() => isLocked(win));
     // The rect at the end of the drag, computed at the act.
     const persist = opts?.onDrop || (() => setWin(win, { rect: restoreRect(win) }));
-    handle.addEventListener("pointerdown", (e) => {
+    handle.addEventListener("pointerdown", (e: any) => {
       if (e.target.closest("button, .session-name-input")) return;
       // Primary button only: a right/middle press is followed by `contextmenu`
       // (or no `pointerup`), stranding `onMove` on the document. `isPrimary` is
@@ -2644,7 +2653,7 @@ window.WBConsole = (function () {
       // Put the window under `pointer` (a CLIENT point). Read the stage LIVE:
       // `applyExtent({grow:true})` widens it, and a wheel or auto-pan mid-drag
       // shifts its origin under a cached rect.
-      const place = (pointer) => {
+      const place = (pointer: any) => {
         const st = stage();
         const origin = st.getBoundingClientRect();
         const x = pointer.x - origin.left - offX;
@@ -2656,7 +2665,7 @@ window.WBConsole = (function () {
       // Holding the window against the viewport edge scrolls the plane under it.
       // A window closed mid-drag ends the loop: nothing is left to carry.
       const pan = autoPan(win, place);
-      const onMove = (ev) => {
+      const onMove = (ev: any) => {
         // Another pointer's stream (a second finger, the mouse during a touch drag).
         if (ev.pointerId !== pointerId) return;
         // `pointerup` is NOT guaranteed: a native context menu mid-drag or an
@@ -2676,7 +2685,7 @@ window.WBConsole = (function () {
       };
       // Escape ends the drag where the window sits — no revert: a keyboard exit
       // from a loop whose mouseup may never arrive.
-      const onKey = (ev) => {
+      const onKey = (ev: any) => {
         if (ev.key === "Escape") onUp();
       };
       const onUp = () => {
@@ -2715,19 +2724,19 @@ window.WBConsole = (function () {
   // turns two taps into a `dblclick` (Chrome on Android) does not act twice.
   // The rename opens on the RELEASE after the hold, not when the timer fires:
   // iOS raises the keyboard only for a `focus()` inside an input event.
-  function wireTitleTouch(win, titlebar, onDoubleTap) {
+  function wireTitleTouch(win: any, titlebar: any, onDoubleTap: any) {
     // Seen on an iPhone (2026-10-03): the double tap that maximized also
     // zoomed the page, although the bar has `touch-action: none`. Safari does
     // not zoom on a double tap whose `touchend` is cancelled. A button's
     // `touchend` is not cancelled: it is what makes the button's `click`.
     titlebar.addEventListener(
       "touchend",
-      (e) => {
+      (e: any) => {
         if (!e.target.closest("button, .session-name-input")) e.preventDefault();
       },
       { passive: false },
     );
-    titlebar.addEventListener("pointerdown", (e) => {
+    titlebar.addEventListener("pointerdown", (e: any) => {
       win._lastPointerType = e.pointerType;
       if (e.pointerType === "mouse" || !e.isPrimary) return;
       if (e.target.closest("button, .session-name-input")) return;
@@ -2740,13 +2749,13 @@ window.WBConsole = (function () {
       const span = canRename() ? e.target.closest(".session-name") : null;
       let moved = false;
       let held = false;
-      let timer = span
+      let timer: any = span
         ? setTimeout(() => {
             timer = null;
             held = true;
           }, HOLD_MS)
         : null;
-      const onMove = (ev) => {
+      const onMove = (ev: any) => {
         if (ev.pointerId !== pointerId) return;
         // `pointerup` is not guaranteed (see `makeDraggable`).
         if (ev.buttons === 0) {
@@ -2760,15 +2769,15 @@ window.WBConsole = (function () {
           timer = null;
         }
       };
-      const onUp = (ev) => {
+      const onUp = (ev: any) => {
         if (ev.pointerId === pointerId) finish(ev);
       };
-      const onCancel = (ev) => {
+      const onCancel = (ev: any) => {
         if (ev.pointerId === pointerId) finish(null);
       };
       // Android fires `contextmenu` on a held finger; its menu is not ours.
-      const onMenu = (ev) => ev.preventDefault();
-      const finish = (up) => {
+      const onMenu = (ev: any) => ev.preventDefault();
+      const finish = (up: any) => {
         clearTimeout(timer);
         timer = null;
         document.removeEventListener("pointermove", onMove);
@@ -2808,8 +2817,8 @@ window.WBConsole = (function () {
 
   // The repos a fence's members belong to, for the fence's chrome. Deduped,
   // sorted (DOM order is not stable), `"~"` rendered as `home` like `list()`.
-  function fenceRepos(members) {
-    const names = new Set((members || []).map((m) => (m?.repo === "~" ? "home" : m?.repo)));
+  function fenceRepos(members: any) {
+    const names = new Set((members || []).map((m: any) => (m?.repo === "~" ? "home" : m?.repo)));
     names.delete(undefined);
     names.delete(null);
     names.delete("");
@@ -2820,13 +2829,13 @@ window.WBConsole = (function () {
   // `[{id, name, rect}]` + `[{id, repo, rect}]` in, one entry per fence IN ORDER
   // out. Folding membership here is what makes "the list and the fence never
   // disagree" a property of the code.
-  function fenceSummaries(fences, windows) {
+  function fenceSummaries(fences: any, windows: any) {
     const list = fences || [];
     const all = windows || [];
-    const byId = new Map(all.map((w) => [w?.id, w]));
+    const byId = new Map(all.map((w: any) => [w?.id, w]));
     const membership = fenceMembership(list, all);
-    return list.map((f) => {
-      const members = (membership[f.id] || []).map((wid) => byId.get(wid));
+    return list.map((f: any) => {
+      const members = (membership[f.id] || []).map((wid: any) => byId.get(wid));
       return {
         id: f.id,
         name: f.name || "",
@@ -2844,12 +2853,12 @@ window.WBConsole = (function () {
   // first `taken.length + 1` slots while free plane sits below. `-1` means
   // nowhere, and the caller refuses rather than nudging into a gap.
   const FENCE_SLOT_SCAN = 64;
-  function nextFenceSlot(rects, offset, viewport) {
+  function nextFenceSlot(rects: any, offset: any, viewport: any) {
     const taken = rects || [];
     const cap = Math.max(taken.length, FENCE_SLOT_SCAN);
     for (let i = 0; i <= cap; i++) {
       const candidate = fenceSpawnRect(offset, viewport, i);
-      if (!taken.some((t) => rectsOverlap(candidate, t))) return i;
+      if (!taken.some((t: any) => rectsOverlap(candidate, t))) return i;
     }
     return -1;
   }
@@ -2865,7 +2874,7 @@ window.WBConsole = (function () {
   // at the pinned origin (no negative coordinate, ADR-0051 §2).
   const FENCE_DIRS = DIRS;
 
-  function buildFence(f) {
+  function buildFence(f: any) {
     const el = document.createElement("div");
     el.className = "fence";
     el.dataset.fenceId = f.id;
@@ -2898,10 +2907,10 @@ window.WBConsole = (function () {
     // A document-level pointerdown, not just `blur`: the plane's pan handler
     // calls `preventDefault()` on mousedown, so pressing the stage does NOT move
     // focus (MEASURED). Capture phase, before the floor's handler swallows it.
-    const stopOutside = (e) => {
+    const stopOutside = (e: any) => {
       if (e.target !== name) endEdit(false);
     };
-    const endEdit = (commit) => {
+    const endEdit = (commit: any) => {
       if (!editing) return;
       editing = false; // first: the `blur()` below re-enters through the handler
       document.removeEventListener("pointerdown", stopOutside, true);
@@ -2920,7 +2929,7 @@ window.WBConsole = (function () {
     // nor starts a selection. `dblclick` still arrives (cancelling a mousedown
     // default does not cancel the click pair). Once editing, the guard steps
     // aside.
-    name.addEventListener("mousedown", (e) => {
+    name.addEventListener("mousedown", (e: any) => {
       if (name.readOnly) e.preventDefault();
     });
     name.addEventListener("dblclick", () => {
@@ -2933,7 +2942,7 @@ window.WBConsole = (function () {
       // Attached here, so the pointerdown that OPENED the edit is already past.
       document.addEventListener("pointerdown", stopOutside, true);
     });
-    name.addEventListener("keydown", (e) => {
+    name.addEventListener("keydown", (e: any) => {
       if (e.key !== "Enter" && e.key !== "Escape") return;
       // Held at the field so an Escape meant for this edit never also reaches the
       // plane's own key handlers.
@@ -3064,7 +3073,7 @@ window.WBConsole = (function () {
   // starting inside its 600 ms window can CANCEL it: otherwise the timer strips
   // a `fence-invalid` the gesture put there, and with the cursor at rest no
   // move re-adds it.
-  let fenceFlash = null;
+  let fenceFlash: any = null;
   function clearFenceFlash() {
     if (fenceFlash == null) return;
     clearTimeout(fenceFlash.timer);
@@ -3072,7 +3081,7 @@ window.WBConsole = (function () {
     fenceFlash = null;
   }
 
-  function fenceEl(id) {
+  function fenceEl(id: any) {
     const st = stage();
     if (!st) return null;
     for (const el of st.querySelectorAll(".fence")) {
@@ -3081,8 +3090,8 @@ window.WBConsole = (function () {
     return null;
   }
 
-  function startFenceMove(el, f) {
-    return (e) => {
+  function startFenceMove(el: any, f: any) {
+    return (e: any) => {
       if (e.button !== 0 || !e.isPrimary) return; // primary button only — see makeDraggable
       if (fenceLocked(f.id)) return;
       const st = stage();
@@ -3108,7 +3117,7 @@ window.WBConsole = (function () {
       // The FULL fence list, not a singleton: the fold's `break` decides an
       // overlapping pair (reachable via a hand-edited `desk.toml`), and a
       // singleton bypasses it.
-      const live = fences.map((x) => (x.id === f.id ? { id: x.id, rect: start } : x));
+      const live = fences.map((x: any) => (x.id === f.id ? { id: x.id, rect: start } : x));
       const ids = new Set(fenceMembership(live, all)[f.id] || []);
       const carried = all.filter((m) => ids.has(m.id));
       gestures.add(el);
@@ -3129,7 +3138,7 @@ window.WBConsole = (function () {
       const threshold = dragThreshold(e.pointerType);
       let armed = false;
       clearFenceFlash();
-      const place = (pointer) => {
+      const place = (pointer: any) => {
         const origin = st.getBoundingClientRect();
         const d = fenceMoveDelta(
           {
@@ -3164,7 +3173,7 @@ window.WBConsole = (function () {
       // Holding the fence against a viewport edge scrolls the plane under it. A
       // fence re-rendered or removed mid-drag ends the loop.
       const pan = autoPan(el, place);
-      const onMove = (ev) => {
+      const onMove = (ev: any) => {
         if (ev.pointerId !== pointerId) return; // a second finger is not this gesture
         if (ev.buttons === 0) {
           onUp();
@@ -3207,7 +3216,7 @@ window.WBConsole = (function () {
           return;
         }
         saveFences(
-          fences.map((x) =>
+          fences.map((x: any) =>
             x.id === f.id
               ? { ...x, rect: { ...start, left: start.left + delta.dx, top: start.top + delta.dy } }
               : x,
@@ -3238,9 +3247,9 @@ window.WBConsole = (function () {
   // outside the new rect stops being reported by `fenceMembership`. That holds
   // for WEST and NORTH too — the opposite edge is anchored, so it is a resize,
   // not the §6 move that carries members.
-  function startFenceResize(el, f, dir) {
+  function startFenceResize(el: any, f: any, dir: any) {
     const way = FENCE_DIRS.includes(dir) ? dir : "se";
-    return (e) => {
+    return (e: any) => {
       if (e.button !== 0 || !e.isPrimary) return;
       if (fenceLocked(f.id)) return;
       const st = stage();
@@ -3260,7 +3269,7 @@ window.WBConsole = (function () {
       let armed = false;
       clearFenceFlash();
       gestures.add(el);
-      const onMove = (ev) => {
+      const onMove = (ev: any) => {
         if (ev.pointerId !== pointerId) return; // a second finger is not this gesture
         if (ev.buttons === 0) {
           onUp();
@@ -3307,7 +3316,7 @@ window.WBConsole = (function () {
           applyExtent();
           return;
         }
-        saveFences(fences.map((x) => (x.id === f.id ? { ...x, rect } : x)));
+        saveFences(fences.map((x: any) => (x.id === f.id ? { ...x, rect } : x)));
         renderFences();
         applyExtent();
       };
@@ -3361,7 +3370,7 @@ window.WBConsole = (function () {
     // derivation there would match a card to whatever fence happens to cover
     // the translated point.
     for (const el of OPTS.autoBoot === false ? [] : st.querySelectorAll(".note-card")) {
-      const own = notes.find((n) => n.id === el.dataset.noteId);
+      const own = notes.find((n: any) => n.id === el.dataset.noteId);
       const held = !own?.locked && !!fenceOf(fences, restoreRect(el))?.locked;
       el.classList.toggle("held", held);
       window.WBNotes?.applyLock(el, !!own?.locked || held);
@@ -3382,7 +3391,7 @@ window.WBConsole = (function () {
   // The two DOM reads `refreshFenceChrome` and `fenceList` share: the stage is
   // where a fence and a window ARE, and membership is derived from those live
   // rects, never from `fences` or `wins`.
-  function readFenceRects(st) {
+  function readFenceRects(st: any) {
     return [...st.querySelectorAll(".fence")].map((el) => ({
       id: el.dataset.fenceId,
       name: el.querySelector(".fence-name")?.value || "",
@@ -3390,7 +3399,7 @@ window.WBConsole = (function () {
     }));
   }
 
-  function readWindowRects(st) {
+  function readWindowRects(st: any) {
     return [...st.querySelectorAll(".session-window")].map((w) => ({
       id: w._deskId,
       repo: w._deskRepo,
@@ -3403,7 +3412,7 @@ window.WBConsole = (function () {
   // The fence RECORDS (id, name, rect, locked), not the chrome summaries: the
   // note card derives its lock from the fence holding it and needs the rects.
   function fenceRecords() {
-    return fences.map((f) => ({ ...f }));
+    return fences.map((f: any) => ({ ...f }));
   }
 
   // The cards, rendered by `wb-notes.js`. Called wherever `renderFences` is —
@@ -3426,7 +3435,7 @@ window.WBConsole = (function () {
   // a row: side-by-side fences are never pixel-aligned on `top`.
   const FENCE_BAND = 120;
 
-  function fenceOrder(fences) {
+  function fenceOrder(fences: any) {
     return [...(fences || [])].sort((a, b) => {
       const at = Math.floor((a?.rect?.top || 0) / FENCE_BAND);
       const bt = Math.floor((b?.rect?.top || 0) / FENCE_BAND);
@@ -3443,7 +3452,7 @@ window.WBConsole = (function () {
   // `null` when there is nothing to walk. With no fence in hand the step decides
   // which end to enter from, so the first Alt+Shift+→ lands on the top-left
   // fence and the first Alt+Shift+← on the bottom-right one.
-  function fenceCycle(fences, currentId, step) {
+  function fenceCycle(fences: any, currentId: any, step: any) {
     const order = fenceOrder(fences);
     if (!order.length) return null;
     const d = step < 0 ? -1 : 1;
@@ -3461,7 +3470,7 @@ window.WBConsole = (function () {
   // mutated: a new array comes back, so the caller commits only once the
   // effects have run (a popup the browser blocked leaves the registry as was).
   // Three events: detach, reattach, focus. A new event is a new case here.
-  function detachFold(registry, event) {
+  function detachFold(registry: any, event: any) {
     const reg = Array.isArray(registry) ? registry : [];
     const id = event?.fenceId;
     const held = reg.includes(id);
@@ -3494,7 +3503,7 @@ window.WBConsole = (function () {
   // Loss is TERMINAL: a beat after `lost` does not resurrect — the caller turns
   // the effect into a `window.close()` or a `reattachFence`, neither undoable.
   // Loss is STRICT (`> windowMs`), so the boundary tick is still alive.
-  function peerFold(state, event, windowMs) {
+  function peerFold(state: any, event: any, windowMs: any) {
     const seen = typeof state?.seen === "number" ? state.seen : null;
     const lost = !!state?.lost;
     const same = { seen, lost };
@@ -3523,18 +3532,18 @@ window.WBConsole = (function () {
   // session-scoped storage behind `link` (ADR-0051 §8), which carries a detach
   // across an F5 and kills it with the tab. Every transition goes through
   // `commitDetached` so the two never disagree.
-  let detached = [];
+  let detached: any = [];
   const fencePopups = new Map(); // fenceId -> { handle, members, fence, poll, peer }
-  const PEER_WINDOW = window.WBDetachLink.PEER_WINDOW_MS;
-  const HEARTBEAT = window.WBDetachLink.HEARTBEAT_MS;
+  const PEER_WINDOW = WBDetachLink.PEER_WINDOW_MS;
+  const HEARTBEAT = WBDetachLink.HEARTBEAT_MS;
 
-  function isDetached(id) {
+  function isDetached(id: any) {
     return detached.includes(id);
   }
 
   // A popup entry with no popup behind it yet — the shape both the boot restore
   // and an unheralded `popup-here` start from.
-  function newPopupEntry(memberIds) {
+  function newPopupEntry(memberIds?: any): any {
     return {
       handle: null,
       members: [],
@@ -3558,11 +3567,11 @@ window.WBConsole = (function () {
   // popup ended a real daemon session; re-attaching it would wire a window to a
   // gone session, so its desk RECORD goes too. Both `popup-members` and
   // `popup-here` arrive here, so the two never prune differently.
-  function adoptMembers(id, members) {
+  function adoptMembers(id: any, members: any) {
     const entry = fencePopups.get(id);
     if (!entry || !Array.isArray(members)) return;
     const alive = new Set(members.map((m) => m?.id).filter(Boolean));
-    const dropped = [...(entry.members || []).map((m) => m?.id), ...(entry.memberIds || [])].filter(
+    const dropped = [...(entry.members || []).map((m: any) => m?.id), ...(entry.memberIds || [])].filter(
       (wid) => wid && !alive.has(wid),
     );
     entry.members = members;
@@ -3577,10 +3586,10 @@ window.WBConsole = (function () {
   // The member ids each detached fence holds, for the registry: the live
   // snapshot, else the ids restored from the last write.
   function detachedMembers() {
-    const out = {};
+    const out: any = {};
     for (const id of detached) {
       const entry = fencePopups.get(id);
-      const live = (entry?.members || []).map((m) => m.id).filter(Boolean);
+      const live = (entry?.members || []).map((m: any) => m.id).filter(Boolean);
       // `adopted` is what lets an EMPTY live list mean empty: the popup answered
       // and holds nothing. Without it the fallback below would re-persist the
       // very consoles the operator just closed in there.
@@ -3592,7 +3601,7 @@ window.WBConsole = (function () {
   // THE ONE PLACE `detached` CHANGES. INVARIANT on every return path: the
   // mirror and the stored registry hold the same ids, and no heartbeat timer
   // runs while nothing is detached.
-  function commitDetached(next) {
+  function commitDetached(next: any) {
     detached = next;
     link.writeRegistry(detached, detachedMembers());
     if (detached.length) startBeat();
@@ -3607,7 +3616,7 @@ window.WBConsole = (function () {
   // synchronously, when this document opened the popup), then a PROBE (message
   // delivery is not throttled; one unheard probe is death). A handle-less
   // entry (this tab reloaded) has only the second.
-  function stillThere(id, entry) {
+  function stillThere(id: any, entry: any) {
     if (entry.handle && !entry.handle.closed) {
       entry.peer = { seen: Date.now(), lost: false };
       entry.probed = false;
@@ -3622,7 +3631,7 @@ window.WBConsole = (function () {
 
   // The origin's heartbeat: one interval for ALL entries, so the cost does not
   // scale with the cap. It both announces this tab and ages every peer.
-  let beat = null;
+  let beat: any = null;
   function startBeat() {
     if (beat) return;
     beat = setInterval(() => {
@@ -3649,7 +3658,7 @@ window.WBConsole = (function () {
   // The origin's half of the lifecycle channel. The channel is browser-WIDE:
   // the `tab` filter keeps a SECOND tab's popups out of this registry, the
   // `origin-` prefix drop keeps this tab from consuming its own broadcasts.
-  link.onMessage((m) => {
+  link.onMessage((m: any) => {
     if (!m || typeof m.type !== "string") return;
     if (link.tab == null || m.tab !== link.tab) return;
     if (m.type.startsWith("origin-")) return;
@@ -3736,12 +3745,12 @@ window.WBConsole = (function () {
   // which arrives before the popup's own `wb-fence-reattach`, and over the
   // channel, which still reaches this tab after a reload. The second one is
   // refused because the record already has its path.
-  function recordNoteName(id, m) {
+  function recordNoteName(id: any, m: any) {
     const entry = fencePopups.get(id);
-    const record = notes.find((n) => n.id === m.noteId);
+    const record = notes.find((n: any) => n.id === m.noteId);
     if (!isDetached(id) || !noteNameOk(entry, record, m)) return;
-    saveNotes(notes.map((n) => (n.id === m.noteId ? { ...n, path: m.path } : n)));
-    entry.members = entry.members.map((x) => {
+    saveNotes(notes.map((n: any) => (n.id === m.noteId ? { ...n, path: m.path } : n)));
+    entry.members = entry.members.map((x: any) => {
       if (x.kind !== "note" || x.id !== m.noteId) return x;
       const { draft, claim, ...rest } = x;
       return { ...rest, path: m.path };
@@ -3752,11 +3761,11 @@ window.WBConsole = (function () {
   // and never on the desk (a path on the desk says a file is there). If the
   // popup closes with that write in flight, no name report follows, and a
   // re-attach reads or writes this name instead of choosing a second one.
-  function recordNoteClaim(id, m) {
+  function recordNoteClaim(id: any, m: any) {
     const entry = fencePopups.get(id);
-    const record = notes.find((n) => n.id === m.noteId);
+    const record = notes.find((n: any) => n.id === m.noteId);
     if (!isDetached(id) || !noteNameOk(entry, record, { noteId: m.noteId, path: m.claim })) return;
-    entry.members = entry.members.map((x) =>
+    entry.members = entry.members.map((x: any) =>
       x.kind === "note" && x.id === m.noteId ? { ...x, claim: m.claim } : x,
     );
   }
@@ -3764,8 +3773,8 @@ window.WBConsole = (function () {
   // Is a popup's note-name report one this tab may record? Pure. The
   // note must be a card the popup holds, its desk record must have no path
   // yet (a name is given once, ADR-0064 §4), and the path must name a note.
-  function noteNameOk(entry, record, msg) {
-    const held = (entry?.members || []).some((x) => x?.kind === "note" && x.id === msg?.noteId);
+  function noteNameOk(entry: any, record: any, msg: any) {
+    const held = (entry?.members || []).some((x: any) => x?.kind === "note" && x.id === msg?.noteId);
     if (!held || !record || record.id !== msg.noteId || record.path) return false;
     const path = msg.path;
     // Relative to the repo: no parent step, no root, no drive letter.
@@ -3790,7 +3799,7 @@ window.WBConsole = (function () {
   // popup's `pid` is given at detach and rides every message it sends. An
   // entry restored after a reload has no `pid` until the popup's first
   // `popup-here`, and until then it hears any popup of its fence.
-  function popupMatches(entry, m) {
+  function popupMatches(entry: any, m: any) {
     if (!entry) return false;
     if (entry.pid == null) return true;
     return m?.pid === entry.pid;
@@ -3798,7 +3807,7 @@ window.WBConsole = (function () {
 
   // A refused fence verb, said ON the fence. Cleared on a timer so a stale
   // refusal cannot outlive the gesture that caused it.
-  function fenceNotice(id, text) {
+  function fenceNotice(id: any, text: any) {
     const el = fenceEl(id)?.querySelector(".fence-notice");
     if (!el) return;
     el.textContent = text;
@@ -3808,7 +3817,7 @@ window.WBConsole = (function () {
     }, 2600);
   }
 
-  function showDetachGlyph(id, on) {
+  function showDetachGlyph(id: any, on: any) {
     const away = fenceEl(id)?.querySelector(".fence-detached");
     if (away) away.hidden = !on;
   }
@@ -3817,16 +3826,16 @@ window.WBConsole = (function () {
   // restores from, plus the live session id. Rects are measured HERE,
   // untranslated — the popup translates for its own viewport and never sends
   // them back, so a re-attach returns every console to its original box.
-  function fenceSnapshot(id) {
+  function fenceSnapshot(id: any) {
     const st = stage();
     if (!st) return [];
     const all = [...st.querySelectorAll(".session-window")];
     const byId = new Map(all.map((w) => [w._deskId, w]));
     const ids = fenceMembership(readFenceRects(st), readWindowRects(st))[id] || [];
     const windows = ids
-      .map((wid) => byId.get(wid))
+      .map((wid: any) => byId.get(wid))
       .filter(Boolean)
-      .map((win) => ({
+      .map((win: any) => ({
         ...deskOf(win),
         session: sessionIdOf(win),
       }));
@@ -3838,8 +3847,8 @@ window.WBConsole = (function () {
     // must open in this click, before a first save could land. The draft
     // lives in this snapshot only, never in the desk (ADR-0064 §8, #475).
     const cards = notes
-      .filter((n) => fenceOf(fences, n.rect || {})?.id === id)
-      .map((n) => ({ ...n, ...window.WBNotes?.draftOf?.(n.id), kind: "note" }));
+      .filter((n: any) => fenceOf(fences, n.rect || {})?.id === id)
+      .map((n: any) => ({ ...n, ...window.WBNotes?.draftOf?.(n.id), kind: "note" }));
     return windows.concat(cards);
   }
 
@@ -3847,7 +3856,7 @@ window.WBConsole = (function () {
   // state a second client still renders) and WITHOUT closing its daemon
   // session: `dispose()` closing the socket is the writer-slot release the
   // popup then re-acquires (ADR-0051 §9).
-  function tearDownMember(win, reason) {
+  function tearDownMember(win: any, reason: any) {
     win._term?.dispose(reason);
     win.remove();
     untrackDormancy(win);
@@ -3855,13 +3864,13 @@ window.WBConsole = (function () {
     changed();
   }
 
-  function stopPoll(entry) {
+  function stopPoll(entry: any) {
     if (entry?.poll) clearInterval(entry.poll);
     if (entry?.rescue) clearTimeout(entry.rescue);
   }
 
-  function detachFence(id) {
-    const out = detachFold(detached, { type: "detach", fenceId: id });
+  function detachFence(id: any) {
+    const out: any = detachFold(detached, { type: "detach", fenceId: id });
     for (const effect of out.effects) {
       if (effect.type === "focus") {
         // Raising a popup that already holds this fence — the ONLY way to raise
@@ -3879,7 +3888,7 @@ window.WBConsole = (function () {
         return; // the registry is NOT committed
       }
     }
-    if (!out.effects.some((e) => e.type === "open")) return;
+    if (!out.effects.some((e: any) => e.type === "open")) return;
 
     const st = stage();
     const fence = st ? readFenceRects(st).find((f) => f.id === id) : null;
@@ -3900,10 +3909,10 @@ window.WBConsole = (function () {
     document.dispatchEvent(new CustomEvent("workbench:columns-leave", { detail: { ids: leaving } }));
     const members = fenceSnapshot(id);
 
-    const entry = {
+    const entry: any = {
       handle,
       members,
-      memberIds: members.map((m) => m.id).filter(Boolean),
+      memberIds: members.map((m: any) => m.id).filter(Boolean),
       fence: fence || { id, name: "", rect: null },
       // This popup's identity, on every lifecycle message both ways (#476).
       pid: newPid(),
@@ -3950,7 +3959,7 @@ window.WBConsole = (function () {
   // signals arrive DOUBLED. A click is an instruction that must land even when
   // the state behind the glyph is wrong. Forcing is safe against the doubled
   // signal for the same reason the fold is: the entry is deleted here.
-  function reattachFence(id, opts = {}) {
+  function reattachFence(id: any, opts: any = {}) {
     const out = detachFold(detached, { type: "reattach", fenceId: id });
     const held = out.effects.some((e) => e.type === "close");
     if (!held && !opts.force) return;
@@ -3971,7 +3980,7 @@ window.WBConsole = (function () {
       // `renderNotes` puts back every card whose fence is no longer detached.
       // A draft whose popup closed before its first save comes home with it.
       if (m.kind === "note") {
-        const record = notes.find((n) => n.id === m.id);
+        const record = notes.find((n: any) => n.id === m.id);
         if (typeof m.draft === "string" && record && !record.path) {
           window.WBNotes?.adoptDraft?.(m.id, m.draft, m.claim);
         }
@@ -3982,7 +3991,7 @@ window.WBConsole = (function () {
       if (m.id && [...wins].some((w) => w._deskId === m.id)) continue;
       // The name comes from the desk, not the snapshot: a rename on another page
       // while the fence was away must not be undone (ADR-0066 §3).
-      const rec = loadDesk().find((r) => r.id === m.id);
+      const rec = loadDesk().find((r: any) => r.id === m.id);
       const member = rec?.consoleName ? { ...m, consoleName: rec.consoleName } : m;
       if (member.session != null) {
         spawnWindow({ id: member.session, repo: member.repo }, member.agent || "console", member.repo, member);
@@ -4004,14 +4013,14 @@ window.WBConsole = (function () {
   // believes (raising a buried popup is the head's detach button). Close the
   // window by handle or by channel — both is fine, `origin-close` is
   // idempotent — and put the members back.
-  function glyphClick(id) {
+  function glyphClick(id: any) {
     reattachFence(id, { force: true });
   }
 
   // The POPUP's side: render the members the opener handed over, translated by
   // the fence origin to sit near this window's top-left. The untranslated
   // snapshot stays in the OPENER — nothing measured here ever goes back.
-  function mountDetached(fence, members) {
+  function mountDetached(fence: any, members: any) {
     const originLeft = fence?.rect?.left || 0;
     const originTop = fence?.rect?.top || 0;
     for (const m of members || []) {
@@ -4042,7 +4051,7 @@ window.WBConsole = (function () {
   // The opener's half of the handshake, guarded as `app.js` guards the detached
   // FILE viewer's: answered only from this origin AND from a window this tab
   // itself opened.
-  window.addEventListener("message", (e) => {
+  window.addEventListener("message", (e: any) => {
     if (e.origin !== location.origin) return;
     let owner = null;
     for (const [id, entry] of fencePopups) if (entry.handle === e.source) owner = id;
@@ -4076,7 +4085,7 @@ window.WBConsole = (function () {
 
   // The verb the shortcut calls: walk one step and jump. Returns the id landed
   // on, or null when there is no fence (so the shell leaves the key unswallowed).
-  function stepFence(step) {
+  function stepFence(step: any) {
     const st = stage();
     if (!st) return null;
     const id = fenceCycle(readFenceRects(st), focusedFence, step);
@@ -4131,8 +4140,8 @@ window.WBConsole = (function () {
     return fences.length >= FENCE_MAX;
   }
   const FENCE_NAME_RE = /^Fence (\d+)$/;
-  function nextFenceName(existing) {
-    const highest = (existing || []).reduce((max, f) => {
+  function nextFenceName(existing: any) {
+    const highest = (existing || []).reduce((max: any, f: any) => {
       const m = FENCE_NAME_RE.exec(String(f?.name ?? ""));
       return m ? Math.max(max, Number(m[1])) : max;
     }, 0);
@@ -4149,7 +4158,7 @@ window.WBConsole = (function () {
     const offset = { left: ws?.scrollLeft || 0, top: ws?.scrollTop || 0 };
     const viewport = { width: ws?.clientWidth || 0, height: ws?.clientHeight || 0 };
     const slot = nextFenceSlot(
-      fences.map((f) => f.rect),
+      fences.map((f: any) => f.rect),
       offset,
       viewport,
     );
@@ -4157,7 +4166,7 @@ window.WBConsole = (function () {
     // a gap the operator never chose.
     if (slot < 0) {
       const blocked = fenceSpawnRect(offset, viewport, 0);
-      const hit = fences.find((x) => rectsOverlap(blocked, x.rect || {}));
+      const hit = fences.find((x: any) => rectsOverlap(blocked, x.rect || {}));
       const el = hit && fenceEl(hit.id);
       if (el) {
         clearFenceFlash();
@@ -4193,9 +4202,9 @@ window.WBConsole = (function () {
     return true;
   }
 
-  function renameFence(id, name) {
+  function renameFence(id: any, name: any) {
     saveFences(
-      fences.map((f) =>
+      fences.map((f: any) =>
         f.id === id
           ? { ...f, name: String(name == null ? "" : name).slice(0, FENCE_NAME_MAX) }
           : f,
@@ -4204,7 +4213,7 @@ window.WBConsole = (function () {
     renderFences();
   }
 
-  function removeFence(id) {
+  function removeFence(id: any) {
     // Removing a DETACHED fence would destroy the glyph that brings its consoles
     // home (ADR-0051 §7a) while the registry kept a `DETACH_MAX` slot. Refuse.
     if (detached.includes(id)) {
@@ -4212,7 +4221,7 @@ window.WBConsole = (function () {
       WB.emit("fence-remove-refused", { fence: id, reason: "detached" });
       return;
     }
-    saveFences(fences.filter((f) => f.id !== id));
+    saveFences(fences.filter((f: any) => f.id !== id));
     renderFences();
     applyExtent();
   }
@@ -4225,7 +4234,7 @@ window.WBConsole = (function () {
   // ONE clamp per axis: the final `Math.max(0, …)` stops a viewport bigger than
   // the extent asking for a negative offset. Flooring the ceiling too would
   // make that floor unfalsifiable by the table's negative control.
-  function clampOffset(offset, viewport, extent) {
+  function clampOffset(offset: any, viewport: any, extent: any) {
     const maxLeft = (extent?.width || 0) - (viewport?.width || 0);
     const maxTop = (extent?.height || 0) - (viewport?.height || 0);
     return {
@@ -4234,7 +4243,7 @@ window.WBConsole = (function () {
     };
   }
 
-  function bringIntoView(target, viewport, extent) {
+  function bringIntoView(target: any, viewport: any, extent: any) {
     const vw = viewport?.width || 0;
     const vh = viewport?.height || 0;
     const left = (target?.left || 0) + (target?.width || 0) / 2 - vw / 2;
@@ -4248,7 +4257,7 @@ window.WBConsole = (function () {
   // keeps CENTRING for the Go-to picker (#337 pins it).
   const VIEW_INSET = 24;
 
-  function anchorIntoView(target, viewport, extent, inset) {
+  function anchorIntoView(target: any, viewport: any, extent: any, inset: any) {
     const pad = inset == null ? VIEW_INSET : inset;
     return clampOffset(
       { left: (target?.left || 0) - pad, top: (target?.top || 0) - pad },
@@ -4261,13 +4270,13 @@ window.WBConsole = (function () {
   // The focused fence is PER-CLIENT transient state: never written to the desk,
   // never to `WBView`. The desk is shared last-write-wins (ADR-0051 §8), so a
   // stored focus would move where the OTHER operator's next console is born.
-  let focusedFence = null;
+  let focusedFence: any = null;
 
   function focusedFenceId() {
     return focusedFence;
   }
 
-  function focusFence(id) {
+  function focusFence(id: any) {
     focusedFence = id;
     const st = stage();
     if (!st) return;
@@ -4288,7 +4297,7 @@ window.WBConsole = (function () {
   // INVARIANT: the tween is a VIEW effect only — `slideTo` runs after the
   // destination is stored, so a dropped tween never loses the jump.
   const SLIDE_MS = 260;
-  let slideRaf = null;
+  let slideRaf: any = null;
 
   function cancelSlide() {
     if (slideRaf == null) return;
@@ -4305,12 +4314,12 @@ window.WBConsole = (function () {
   }
 
   // Ease-out cubic on a 0..1 clock: fast off the mark, settling into the target.
-  function slideEase(t) {
+  function slideEase(t: any) {
     const x = Math.min(1, Math.max(0, t));
     return 1 - Math.pow(1 - x, 3);
   }
 
-  function slideTo(ws, to) {
+  function slideTo(ws: any, to: any) {
     cancelSlide();
     const from = { left: ws.scrollLeft, top: ws.scrollTop };
     const dx = to.left - from.left;
@@ -4323,7 +4332,7 @@ window.WBConsole = (function () {
       return;
     }
     const t0 = performance.now();
-    const step = (now) => {
+    const step = (now: any) => {
       slideRaf = null;
       // The viewport was torn out mid-flight (tab swapped, page reloading).
       if (!ws.isConnected) return;
@@ -4337,7 +4346,7 @@ window.WBConsole = (function () {
 
   // One click on a fence's name slides the viewport to it — the map's anchor.
   // Returns the fence element, or null when no fence carries that id.
-  function jumpToFence(id) {
+  function jumpToFence(id: any) {
     const el = fenceEl(id);
     if (!el) return null;
     focusFence(id);
@@ -4353,7 +4362,7 @@ window.WBConsole = (function () {
   // The note card's jump (ADR-0064 §10): the same slide, but a card is a POINT
   // OF INTEREST like a window in the Go-to picker, so it is CENTRED — the ADR
   // draws that contrast with the fence explicitly.
-  function jumpToNote(id) {
+  function jumpToNote(id: any) {
     const el = window.WBNotes?.cardEl(id);
     if (!el) return null;
     focusWin(el);
@@ -4364,7 +4373,7 @@ window.WBConsole = (function () {
   // jumps' own focus rule and their own fold, shared because the second
   // surface (a card) must not re-derive the stored-offset invariant the first
   // one learned the hard way.
-  function jumpToEl(el, fold) {
+  function jumpToEl(el: any, fold: any) {
     const ws = workspace();
     const st = stage();
     // A viewport measuring 0 is a tab still `display:none`; centring would
@@ -4391,7 +4400,7 @@ window.WBConsole = (function () {
 
   // The bounding box of a set of stage-relative rects; all zeros for none, so an
   // empty desk centres on the pinned origin rather than on nothing.
-  function bboxOf(rects) {
+  function bboxOf(rects: any) {
     const list = rects || [];
     if (!list.length) return { left: 0, top: 0, width: 0, height: 0 };
     let left = Infinity;
@@ -4412,8 +4421,8 @@ window.WBConsole = (function () {
   // placed there); otherwise the bbox landing. The clamp comes BEFORE the test:
   // an offset saved on a bigger screen is a legitimate view pulled into this
   // extent.
-  function viewLanding(stored, rects, viewport, extent) {
-    const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  function viewLanding(stored: any, rects: any, viewport: any, extent: any) {
+    const num = (v: any) => (typeof v === "number" && Number.isFinite(v) ? v : null);
     const left = num(stored?.left);
     const top = num(stored?.top);
     if (left !== null && top !== null) {
@@ -4421,7 +4430,7 @@ window.WBConsole = (function () {
       const vw = viewport?.width || 0;
       const vh = viewport?.height || 0;
       const shows = (rects || []).some(
-        (r) =>
+        (r: any) =>
           (r.left || 0) < at.left + vw &&
           (r.left || 0) + (r.width || 0) > at.left &&
           (r.top || 0) < at.top + vh &&
@@ -4444,11 +4453,11 @@ window.WBConsole = (function () {
   // point. Each edge contributes a pressure in `[0, band]` and the axis takes
   // their DIFFERENCE — deliberately, so a viewport narrower than two bands
   // cancels instead of oscillating between its own two edges.
-  function panNudge(pointer, viewport, band, step) {
+  function panNudge(pointer: any, viewport: any, band: any, step: any) {
     const b = band == null ? PAN_BAND : band;
     const s = step == null ? PAN_STEP : step;
-    const press = (v) => Math.max(0, Math.min(v, b));
-    const axis = (near, far) => Math.round((s * (far - near)) / b);
+    const press = (v: any) => Math.max(0, Math.min(v, b));
+    const axis = (near: any, far: any) => Math.round((s * (far - near)) / b);
     return {
       dx: axis(
         press(b - ((pointer?.x || 0) - (viewport?.left || 0))),
@@ -4465,9 +4474,9 @@ window.WBConsole = (function () {
   // edge, the plane scrolls under it each frame, and `place(pointer)` in the tick
   // keeps the drop correct in stage coordinates. The gesture calls `follow`
   // after each of its own `place`, and `stop` when it ends.
-  function autoPan(node, place) {
-    let panRaf = null;
-    let last = null;
+  function autoPan(node: any, place: any) {
+    let panRaf: any = null;
+    let last: any = null;
     // INVARIANT: an uncancelled loop pans the plane forever after the button
     // is released, so `stop` is the FIRST statement of each gesture's `onUp`.
     const stop = () => {
@@ -4495,7 +4504,7 @@ window.WBConsole = (function () {
       place(last);
       panRaf = requestAnimationFrame(tick);
     };
-    const follow = (pointer) => {
+    const follow = (pointer: any) => {
       last = pointer;
       if (panRaf != null) return;
       const { dx, dy } = nudge();
@@ -4508,11 +4517,11 @@ window.WBConsole = (function () {
   // exit path (mouseup anywhere on the document) drops BOTH listeners and
   // persists exactly once.
   // Same seam as `makeDraggable`'s, for the same second caller.
-  function startResize(win, dir, opts) {
+  function startResize(win: any, dir: any, opts?: any) {
     const heldFast = opts?.locked || (() => isLocked(win));
     const persist = opts?.onDrop || (() => setWin(win, { rect: restoreRect(win) }));
     const min = opts?.min || RESIZE_MIN;
-    return (e) => {
+    return (e: any) => {
       if (e.button !== 0 || !e.isPrimary) return; // see makeDraggable
       const pointerId = e.pointerId;
       focusWin(win);
@@ -4535,7 +4544,7 @@ window.WBConsole = (function () {
       // See makeDraggable: a press under the threshold is a tap on the band.
       const threshold = dragThreshold(e.pointerType);
       let armed = false;
-      const onMove = (ev) => {
+      const onMove = (ev: any) => {
         // A second finger opens its own stream and is not this gesture.
         if (ev.pointerId !== pointerId) return;
         if (!armed) {
@@ -4580,7 +4589,7 @@ window.WBConsole = (function () {
   const TAG_COMMAND = 0x02;
   const SESSION_ID = 1;
 
-  function encodeTerminal(str) {
+  function encodeTerminal(str: any) {
     const data = new TextEncoder().encode(str);
     const out = new Uint8Array(1 + 8 + data.length);
     out[0] = TAG_TERMINAL;
@@ -4589,7 +4598,7 @@ window.WBConsole = (function () {
     return out;
   }
 
-  function encodeCommand(verb, payload) {
+  function encodeCommand(verb: any, payload: any) {
     const body = new TextEncoder().encode(JSON.stringify({ id: 0, verb, payload }));
     const out = new Uint8Array(1 + body.length);
     out[0] = TAG_COMMAND;
@@ -4597,7 +4606,7 @@ window.WBConsole = (function () {
     return out;
   }
 
-  function encodeResize(rows, cols) {
+  function encodeResize(rows: any, cols: any) {
     return encodeCommand("resize", { rows, cols });
   }
 
@@ -4605,12 +4614,12 @@ window.WBConsole = (function () {
   // close metadata does not survive the trip (#334), and the peer relay
   // forwards data frames unchanged. The daemon only logs it. One of
   // `dormant`, `reconnect`, `window-closed`.
-  function encodeDetach(reason) {
+  function encodeDetach(reason: any) {
     return encodeCommand("detach", { reason });
   }
 
   // Announce `reason` on an open socket. A socket still connecting cannot send.
-  function announceDetach(ws, reason) {
+  function announceDetach(ws: any, reason: any) {
     if (reason && ws && ws.readyState === 1) ws.send(encodeDetach(reason));
   }
 
@@ -4640,7 +4649,7 @@ window.WBConsole = (function () {
   // `visibilitychange` and `online` both land on one iOS resume; without the
   // probe seam the popup would have no verdict at all.
   let staleProbe = OPTS.isStale || null;
-  function setStaleProbe(fn) {
+  function setStaleProbe(fn: any) {
     staleProbe = typeof fn === "function" ? fn : null;
   }
 
@@ -4648,7 +4657,7 @@ window.WBConsole = (function () {
   // as much as `onclose`: a frame still queued lands AFTER this returns, when
   // `ws` names the replacement. Local, not `WBDaemon`'s: this module loads on
   // its own in the node harness and the popup.
-  function detachSocket(ws, reason) {
+  function detachSocket(ws: any, reason: any) {
     if (!ws) return;
     ws.onclose = null;
     ws.onmessage = null;
@@ -4663,13 +4672,13 @@ window.WBConsole = (function () {
   // The engine, not the brand: WebKit answers "Apple Computer, Inc." in every
   // browser on iPadOS; Chromium "Google Inc."; Firefox "". Pure so the string
   // table is the contract.
-  function isWebKit(vendor) {
+  function isWebKit(vendor: any) {
     return typeof vendor === "string" && vendor.startsWith("Apple");
   }
 
   // Whether this engine must render in the DOM instead of on the GPU: the WebGL
   // addon draws scrolled rows twice on WebKit.
-  function prefersDomRenderer(vendor) {
+  function prefersDomRenderer(vendor: any) {
     return isWebKit(vendor);
   }
 
@@ -4677,7 +4686,7 @@ window.WBConsole = (function () {
   // sandboxed frame and a standalone PWA. On WebKit it is true but iOS drops
   // out of fullscreen the moment a text field takes focus, so on an iPad the
   // first keystroke would cancel it; maximize is the honest control there.
-  function fullscreenOffered(enabled, vendor) {
+  function fullscreenOffered(enabled: any, vendor: any) {
     return enabled === true && !isWebKit(vendor);
   }
 
@@ -4688,7 +4697,7 @@ window.WBConsole = (function () {
   // forwards `wheel` in JS. Upstream: xterm.js #3613, #594, #5377.
   // Pure: pixels dragged → lines, at the cell height, sign flipped. A
   // zero/absent cell height yields 0, not Infinity.
-  function touchScrollLines(dyPx, cellHeight) {
+  function touchScrollLines(dyPx: any, cellHeight: any) {
     if (!Number.isFinite(dyPx) || !Number.isFinite(cellHeight) || cellHeight <= 0) return 0;
     return -dyPx / cellHeight;
   }
@@ -4699,7 +4708,7 @@ window.WBConsole = (function () {
   // the plain case — under a TUI the viewport's history is stale frames
   // ("ghost" text). `mode` is `term.modes.mouseTrackingMode`; `bufferType` is
   // `term.buffer.active.type`.
-  function touchScrollTarget(mode, bufferType) {
+  function touchScrollTarget(mode: any, bufferType: any) {
     if (typeof mode === "string" && mode !== "none") return "app";
     if (bufferType === "alternate") return "app";
     return "viewport";
@@ -4710,7 +4719,7 @@ window.WBConsole = (function () {
   // the pan is given back here through the same `scrollLeft/Top` writes the
   // mouse pan makes. Under `maxlock` there is nowhere to pan. Three are the
   // system's.
-  function touchGesture(fingers, maxlock) {
+  function touchGesture(fingers: any, maxlock: any) {
     if (fingers === 1) return "terminal";
     if (fingers === 2 && !maxlock) return "canvas";
     return "none";
@@ -4718,8 +4727,8 @@ window.WBConsole = (function () {
 
   // The point between the fingers, which is what a two-finger pan tracks: the
   // fingers can drift apart or together without the plane jumping.
-  function touchCentroid(touches) {
-    const list = Array.from(touches ?? []);
+  function touchCentroid(touches: any) {
+    const list: any[] = Array.from(touches ?? []);
     if (!list.length) return { x: 0, y: 0 };
     let x = 0;
     let y = 0;
@@ -4737,10 +4746,10 @@ window.WBConsole = (function () {
   // grab offset taken at pointerdown. An unknown pointer type gets the
   // finger's number.
   const DRAG_THRESHOLD = { mouse: 4, touch: 10 };
-  function dragThreshold(pointerType) {
+  function dragThreshold(pointerType: any) {
     return pointerType === "mouse" ? DRAG_THRESHOLD.mouse : DRAG_THRESHOLD.touch;
   }
-  function dragBegins(start, pointer, threshold) {
+  function dragBegins(start: any, pointer: any, threshold: any) {
     const dx = (pointer?.x || 0) - (start?.x || 0);
     const dy = (pointer?.y || 0) - (start?.y || 0);
     return Math.hypot(dx, dy) >= threshold;
@@ -4752,7 +4761,7 @@ window.WBConsole = (function () {
   // turn two taps on a `touch-action: none` bar into one. `prev` and `tap`
   // are `{ t, x, y }` (ms, client px); `prev` is null after a double tap.
   const DOUBLE_TAP_MS = 300;
-  function isDoubleTap(prev, tap) {
+  function isDoubleTap(prev: any, tap: any) {
     if (!prev || !tap) return false;
     const gap = tap.t - prev.t;
     return gap >= 0 && gap <= DOUBLE_TAP_MS && !dragBegins(prev, tap, DRAG_THRESHOLD.touch);
@@ -4767,7 +4776,7 @@ window.WBConsole = (function () {
   // being motion and starts being drift, so it is cut rather than eased.
   const FLING_DECAY = 0.94;
   const FLING_MIN = 0.02; // px/ms
-  function flingStep(velocity, ms) {
+  function flingStep(velocity: any, ms: any) {
     if (!Number.isFinite(velocity) || !Number.isFinite(ms) || ms <= 0) {
       return { dy: 0, velocity: 0 };
     }
@@ -4803,7 +4812,7 @@ window.WBConsole = (function () {
   // (CBT, which Claude Code cycles its modes on), and an arrow takes the
   // modifier parameter 2 in both cursor modes. Esc, Enter, / and ^C have no
   // Shift form here, so they are sent unchanged.
-  function keySequence(name, appCursor, shift) {
+  function keySequence(name: any, appCursor: any, shift: any) {
     if (shift && name === "tab") return "\x1b[Z";
     const literal = KEY_BYTES[name];
     if (typeof literal === "string") return literal;
@@ -4816,7 +4825,7 @@ window.WBConsole = (function () {
   // One key-bar tap under the Shift latch. `shift` toggles the latch and sends
   // nothing. A key that sends bytes uses the latch once and clears it; a key
   // that sends nothing leaves it set.
-  function barKey(name, appCursor, latched) {
+  function barKey(name: any, appCursor: any, latched: any) {
     if (name === "shift") return { seq: "", latched: !latched };
     const seq = keySequence(name, appCursor, latched);
     return { seq, latched: seq ? false : latched };
@@ -4826,7 +4835,7 @@ window.WBConsole = (function () {
   // the NEXT character is folded. Only a single printable character folds — `d`
   // can be a whole paste or a bracketed-paste burst, and masking its first byte
   // would corrupt it. Anything else passes through WITH the latch still set.
-  function applyCtrlLatch(latched, d) {
+  function applyCtrlLatch(latched: any, d: any) {
     if (!latched || typeof d !== "string" || d.length !== 1) return { out: d, latched };
     const code = d.toUpperCase().charCodeAt(0);
     if (code < 0x40 || code > 0x5f) return { out: d, latched };
@@ -4843,14 +4852,14 @@ window.WBConsole = (function () {
   // the replay lasts a moment, so that collision is accepted.
   const TERMINAL_REPLY =
     /^\x1b(?:\[(?:[?>]?[\d;]*[Rnc]|\??[\d;]+\$y|[\d;]+t|\?\d*u)|P[\s\S]*\x1b\\|\]\d+;[\s\S]*(?:\x07|\x1b\\))$/;
-  function isTerminalReply(d) {
+  function isTerminalReply(d: any) {
     return typeof d === "string" && TERMINAL_REPLY.test(d);
   }
 
   // Whether a window shows the bar. `mode` is "on", "off", or absent for auto
   // (has a touch surface). `any-pointer` rather than `pointer`: an iPad with a
   // Magic Keyboard reports a FINE primary pointer and is still a tablet.
-  function keyBarVisible(mode, coarse) {
+  function keyBarVisible(mode: any, coarse: any) {
     if (mode === "on") return true;
     if (mode === "off") return false;
     return !!coarse;
@@ -4865,12 +4874,12 @@ window.WBConsole = (function () {
   }
 
   // Per browser profile (wb-settings.js `scope: client`, stored by
-  // `wb-view.js`). Absent — the popup reads nothing — means auto.
+  // `wb-view.ts`). Absent — the popup reads nothing — means auto.
   function keyBarMode() {
     return viewStore?.read()?.keys ?? null;
   }
 
-  function applyKeyBar(win) {
+  function applyKeyBar(win: any) {
     win.classList.toggle("keys", keyBarVisible(keyBarMode(), hasTouchSurface()));
     win._applyInputMode?.();
   }
@@ -4880,14 +4889,14 @@ window.WBConsole = (function () {
   // field focused, so the bar keys, a paste and a hardware keyboard still
   // type, with no virtual keyboard on screen. Without the bar the attribute
   // is absent and the browser decides. Pure.
-  function terminalInputMode(barShown, keyboardOpen) {
+  function terminalInputMode(barShown: any, keyboardOpen: any) {
     return barShown && !keyboardOpen ? "none" : null;
   }
 
   // Whether the key bar offers a PASTE button. `readText` exists only in a
   // secure context, and unlike the write there is no `execCommand` fallback
   // for a read. Pure: takes the clipboard object (or `undefined`).
-  function pasteOffered(clipboard) {
+  function pasteOffered(clipboard: any) {
     return !!clipboard && typeof clipboard.readText === "function";
   }
 
@@ -4898,7 +4907,7 @@ window.WBConsole = (function () {
   // to copy erased the text first. With a selection it copies; without one it
   // pastes; where the clipboard cannot be read (an insecure origin) it does
   // nothing, and Ctrl+V still pastes. Pure.
-  function rightClickAction(hasSelection, canPaste) {
+  function rightClickAction(hasSelection: any, canPaste: any) {
     if (hasSelection) return "copy";
     return canPaste ? "paste" : "none";
   }
@@ -4910,7 +4919,7 @@ window.WBConsole = (function () {
   // it reaches the child as the click it was. A press with any modifier keeps
   // xterm's own routing, so Alt+drag still gives the drag to the child. Pure:
   // `mode` is `term.modes.mouseTrackingMode`.
-  function pressRoute(mode, button, modified) {
+  function pressRoute(mode: any, button: any, modified: any) {
     if (typeof mode !== "string" || mode === "none") return "pass";
     return button === 0 && !modified ? "hold" : "pass";
   }
@@ -4919,14 +4928,14 @@ window.WBConsole = (function () {
   // (`shouldForceSelection`): Option on macOS, which needs
   // `macOptionClickForcesSelection`, and Shift elsewhere. Alt is NOT set
   // outside macOS: there it asks for a column selection. Pure.
-  function forceSelectionKeys(platform) {
+  function forceSelectionKeys(platform: any) {
     return /Mac|iPhone|iPad/.test(platform || "") ? { altKey: true } : { shiftKey: true };
   }
 
   // A move with no button pressed is a report too (mode "any", DECSET 1003)
   // and clears the selection the same way: moving the pointer to the right
   // button would erase it. Held back while a selection exists. Pure.
-  function holdMoveReport(mode, hasSelection, buttons) {
+  function holdMoveReport(mode: any, hasSelection: any, buttons: any) {
     return typeof mode === "string" && mode !== "none" && !!hasSelection && buttons === 0;
   }
 
@@ -4936,7 +4945,7 @@ window.WBConsole = (function () {
   // same number. Width, not pointer: an iPad keeps its chrome. 560px is the
   // workbench's phone breakpoint (04-canvas.css, 11-appended.css).
   const PHONE_MAX_WIDTH = 560;
-  function phoneBleed(maxed, viewportWidth) {
+  function phoneBleed(maxed: any, viewportWidth: any) {
     return !!maxed && Number.isFinite(viewportWidth) && viewportWidth <= PHONE_MAX_WIDTH;
   }
 
@@ -4944,7 +4953,7 @@ window.WBConsole = (function () {
   // takes buffer-absolute rows, hence `viewportY`. Clamped to the screen so a
   // finger that slid off the bottom selects to the last row; a zero/NaN cell
   // height answers the top row, not NaN.
-  function selectionRow(clientY, screenTop, cellHeight, rows, viewportY) {
+  function selectionRow(clientY: any, screenTop: any, cellHeight: any, rows: any, viewportY: any) {
     const base = Number.isFinite(viewportY) ? viewportY : 0;
     if (!Number.isFinite(cellHeight) || cellHeight <= 0 || !Number.isFinite(clientY)) return base;
     const last = Math.max(0, (Number.isFinite(rows) ? rows : 1) - 1);
@@ -4958,7 +4967,7 @@ window.WBConsole = (function () {
   const FONT_MAX = 28;
   const FONT_DEFAULT = 15;
 
-  function stepFont(current, delta) {
+  function stepFont(current: any, delta: any) {
     const from = Number.isFinite(current) ? current : FONT_DEFAULT;
     return Math.min(FONT_MAX, Math.max(FONT_MIN, Math.round(from) + delta));
   }
@@ -4969,7 +4978,7 @@ window.WBConsole = (function () {
 
   // Every window at once. `fit` is required: the BOX does not change, so the
   // ResizeObserver never fires and the daemon would never learn the new size.
-  function setFont(px) {
+  function setFont(px: any) {
     viewStore?.patch({ font: px });
     for (const w of wins) {
       const t = w._term;
@@ -4990,7 +4999,7 @@ window.WBConsole = (function () {
   //            viewport itself, so this reads ~0 and the CSS var path is inert.
   // A pinch is not a keyboard: `scale` gates it off.
   const ZOOM_EPSILON = 0.01;
-  function keyboardInset({ innerHeight, height, offsetTop, scale }) {
+  function keyboardInset({ innerHeight, height, offsetTop, scale }: any) {
     if (typeof scale === "number" && Math.abs(scale - 1) > ZOOM_EPSILON) return 0;
     const inset = (innerHeight || 0) - (height || 0) - (offsetTop || 0);
     if (!Number.isFinite(inset) || inset <= 0) return 0;
@@ -5000,7 +5009,7 @@ window.WBConsole = (function () {
   // Pure, tabled like `reconnectDecision`. CONNECTING is already the reconnect —
   // closing it only restarts the handshake a round-trip later — until it
   // outlives the handshake deadline, whose timer froze along with the tab.
-  function resumeDecision({ readyState, stale, connectingMs }) {
+  function resumeDecision({ readyState, stale, connectingMs }: any) {
     if (readyState == null) return "reconnect";
     if (readyState === 0) return connectingMs >= CONNECT_TIMEOUT_MS ? "reconnect" : "none";
     if (readyState === 1) return stale ? "reconnect" : "none";
@@ -5017,7 +5026,7 @@ window.WBConsole = (function () {
   //   "attach"  — build the terminal and open the socket now.
   // A launch has no id to wake to (`dormancyDecision` D5), and without an
   // observer nothing would ever wake the window.
-  function birthDecision({ id, observed }) {
+  function birthDecision({ id, observed }: any) {
     return id != null && observed ? "dormant" : "attach";
   }
 
@@ -5036,7 +5045,7 @@ window.WBConsole = (function () {
     hasTerminal,
     ended,
     sessionId,
-  }) {
+  }: any) {
     // Visible outranks everything. A window under a full bleed is inside the
     // viewport but nobody sees it: the observer reports geometry, not paint.
     if (intersecting && !covered) return dormant ? "wake" : "hold";
@@ -5069,9 +5078,9 @@ window.WBConsole = (function () {
   //   "watched"     — an image, but this window only watches: refuse visibly;
   //   "too-large"   — an image past the cap: refuse without sending;
   //   "drop"        — an image to hand to `image.write`.
-  function pasteDecision({ types, size, watching }) {
+  function pasteDecision({ types, size, watching }: any) {
     const hasImage = (types || []).some(
-      (t) => typeof t === "string" && t.startsWith("image/"),
+      (t: any) => typeof t === "string" && t.startsWith("image/"),
     );
     if (!hasImage) return "passthrough";
     if (watching) return "watched";
@@ -5082,7 +5091,7 @@ window.WBConsole = (function () {
   // The last line a console prints when it gives up. A launch the daemon
   // refused names the reason; the browser cannot read it anywhere else,
   // because a refused launch never had a session to show.
-  function endNotice(announced, message) {
+  function endNotice(announced: any, message: any) {
     if (announced !== "refused") return "[session closed]";
     const why = typeof message === "string" ? message.trim() : "";
     return why ? `[could not start: ${why}]` : "[could not start]";
@@ -5101,7 +5110,7 @@ window.WBConsole = (function () {
     announced,
     idKnown,
     failedReopens,
-  }) {
+  }: any) {
     // R1: no id is nothing to reattach TO; reconnecting would spawn a SECOND
     // session.
     if (!idKnown) return "give-up";
@@ -5128,7 +5137,7 @@ window.WBConsole = (function () {
   // `reconnectDecision`'s answer. Returns it unchanged, or "hold".
   // No group (a local project, the popup, a fleet not read yet) changes
   // nothing, and a launch (no id) is held by its placeholder (`peerHeld`).
-  function peerGate({ decision, group, id }) {
+  function peerGate({ decision, group, id }: any) {
     if (id == null || !group || decision === "give-up") return decision;
     return window.WBFleet.available(group) ? decision : "hold";
   }
@@ -5155,7 +5164,7 @@ window.WBConsole = (function () {
   // NEWLINE turns a mis-paste into an execution (`curl … | sh\n`), and an
   // escape sequence reaches the terminal it is pasted into. A code-point test
   // so the source carries no control-character escapes of its own.
-  function scrubClipboard(text) {
+  function scrubClipboard(text: any) {
     let out = "";
     for (const ch of text.replace(/\r\n/g, "\n")) {
       const c = ch.codePointAt(0);
@@ -5171,7 +5180,7 @@ window.WBConsole = (function () {
   // best-effort and SILENT: `writeText` rejects with "Document is not focused"
   // whenever the workbench is not the focused window, and Chrome can refuse
   // `execCommand` outside a user gesture; the copy is dropped, not queued.
-  function writeClipboard(text, term) {
+  function writeClipboard(text: any, term: any) {
     if (!text) return;
     // The fallback moves focus to the textarea; without giving it back, the
     // operator's next keystroke goes nowhere and the console looks dead.
@@ -5220,10 +5229,10 @@ window.WBConsole = (function () {
 
   // Pure over `ClipboardItem`s: the first image wins over text, as in the
   // keyboard `paste` event (ADR-0055).
-  async function clipboardContent(items) {
-    const list = Array.from(items || []);
+  async function clipboardContent(items: any) {
+    const list: any[] = Array.from(items || []);
     for (const item of list) {
-      const type = (item.types || []).find((t) => t.startsWith("image/"));
+      const type = (item.types || []).find((t: any) => t.startsWith("image/"));
       if (type) return { image: await item.getType(type) };
     }
     for (const item of list) {
@@ -5239,7 +5248,7 @@ window.WBConsole = (function () {
   // (a NEW free-console launch — home dir when `repo` absent), or
   // {id[, takeover][, watch]} (a REATTACH; `watch` is read-only). Returns a
   // handle so the window chrome can refit, take the baton, and close it.
-  function attachTerminal(body, opts) {
+  function attachTerminal(body: any, opts: any) {
     const term = new Terminal({ convertEol: false, theme: TERMINAL_THEME });
     // Set rather than passed: the constructor literal is pinned in lib.rs as
     // the theme contract; the size is a per-profile preference.
@@ -5257,10 +5266,10 @@ window.WBConsole = (function () {
     // gesture). Every browser on iPadOS is WebKit.
     // The terminal starts on the DOM renderer; the page decides which windows
     // hold a context (`rebalanceGpu`) and calls `useGpu`/`dropGpu`.
-    let webgl = null;
+    let webgl: any = null;
     // The canvases the addon added, so `dropGpu` asks only them for a context:
     // `getContext` on a canvas that has none would create one.
-    let gpuCanvases = [];
+    let gpuCanvases: any = [];
     // A browser that cannot give a context is not asked again.
     let gpuBroken = false;
     function useGpu() {
@@ -5298,7 +5307,7 @@ window.WBConsole = (function () {
     // The touch gesture this terminal owns (`touchScrollLines`). Single finger
     // only; the stylesheet's `touch-action: none` already told the browser the
     // console is not a pan surface, and A+/A− is a terminal's zoom.
-    let touchY = null;
+    let touchY: any = null;
     let touchX = 0;
     let touchLastY = 0;
     let touchAccum = 0;
@@ -5311,13 +5320,13 @@ window.WBConsole = (function () {
     // buffer lines (`selectLines` is the public API; cell-precise is not), and
     // lifting the finger disarms it, leaving the selection for the copy button.
     let selecting = false;
-    let selStart = null;
-    const setSelecting = (on) => {
+    let selStart: any = null;
+    const setSelecting = (on: any) => {
       selecting = !!on;
       selStart = null;
       if (typeof opts.onSelecting === "function") opts.onSelecting(selecting);
     };
-    const rowAt = (clientY) => {
+    const rowAt = (clientY: any) => {
       const screen = term.element?.querySelector(".xterm-screen");
       const top = screen ? screen.getBoundingClientRect().top : 0;
       return selectionRow(clientY, top, cellHeight(), term.rows, term.buffer.active.viewportY);
@@ -5336,7 +5345,7 @@ window.WBConsole = (function () {
     // wheel events — one per line, so `consumeWheelEvent` neither dampens nor
     // batches them — at the finger's coordinates (a mouse report carries the
     // cell). xterm then does what it does for the trackpad.
-    const wheelToApp = (lines) => {
+    const wheelToApp = (lines: any) => {
       const el = term.element;
       if (!el) return;
       const deltaY = Math.sign(lines);
@@ -5363,7 +5372,7 @@ window.WBConsole = (function () {
       if (touchScrollTarget(term.modes.mouseTrackingMode, term.buffer.active.type) === "app") wheelToApp(whole);
       else term.scrollLines(whole);
     };
-    const scrollByPixels = (dy) => {
+    const scrollByPixels = (dy: any) => {
       touchAccum += touchScrollLines(dy, cellHeight());
       if (!scrollRaf) scrollRaf = requestAnimationFrame(flushScroll);
     };
@@ -5384,7 +5393,7 @@ window.WBConsole = (function () {
     };
     // A two-finger pan of the plane, live until either finger lifts. The
     // remaining finger does NOT resume a scroll: it never had a `touchstart`.
-    let pan = null;
+    let pan: any = null;
     const stopPan = () => {
       if (!pan) return;
       pan = null;
@@ -5392,7 +5401,7 @@ window.WBConsole = (function () {
     };
     body.addEventListener(
       "touchstart",
-      (e) => {
+      (e: any) => {
         stopFling();
         // Armed selection. Prevented so the synthesized click never reaches
         // xterm's mousedown, which would clear the selection; the textarea
@@ -5438,7 +5447,7 @@ window.WBConsole = (function () {
     );
     body.addEventListener(
       "touchmove",
-      (e) => {
+      (e: any) => {
         if (selecting && selStart != null) {
           if (e.touches.length === 1) {
             const row = rowAt(e.touches[0].clientY);
@@ -5474,7 +5483,7 @@ window.WBConsole = (function () {
       },
       { passive: false },
     );
-    const endTouch = (e) => {
+    const endTouch = (e: any) => {
       // The selection stays (the copy button reads it); the arming does not.
       if (selecting) {
         if (e.touches.length === 0) setSelecting(false);
@@ -5494,7 +5503,7 @@ window.WBConsole = (function () {
       }
       let v = touchVelocity;
       let last = performance.now();
-      const glide = (now) => {
+      const glide = (now: any) => {
         const step = flingStep(v, now - last);
         last = now;
         v = step.velocity;
@@ -5518,7 +5527,7 @@ window.WBConsole = (function () {
     // newline either way. Text falls through untouched. The gate mirrors
     // `onData`: a watcher SEES the refusal, and nothing leaves its window.
     // Returns whether the paste was taken (false = let the text through).
-    const dropImage = (types, file) => {
+    const dropImage = (types: any, file: any) => {
       const decision = pasteDecision({ types, size: file ? file.size : -1, watching });
       if (decision === "passthrough") return false;
       if (decision === "watched") {
@@ -5541,7 +5550,7 @@ window.WBConsole = (function () {
         const base64 = String(reader.result).replace(/^data:[^,]*,/, "");
         daemon
           .write("image.write", { repo: currentRepo, base64 })
-          .then((reply) => {
+          .then((reply: any) => {
             if (window.WBFail.isError(reply) || !reply.path) {
               const why = window.WBFail.why(reply, "the daemon refused it");
               term.write(`\r\n[paste refused — ${why}]\r\n`);
@@ -5551,7 +5560,7 @@ window.WBConsole = (function () {
             term.focus();
           })
           // The socket closed with no reply: say what the browser saw.
-          .catch((err) => {
+          .catch((err: any) => {
             const why = (err && err.message) || "connection unavailable";
             term.write(`\r\n[paste refused — ${why}]\r\n`);
           });
@@ -5559,8 +5568,8 @@ window.WBConsole = (function () {
       reader.readAsDataURL(file);
       return true;
     };
-    term.textarea.addEventListener("paste", (e) => {
-      const items = Array.from(e.clipboardData?.items ?? []);
+    term.textarea.addEventListener("paste", (e: any) => {
+      const items: any[] = Array.from(e.clipboardData?.items ?? []);
       const image = items.find((i) => i.type.startsWith("image/"));
       const file = image ? image.getAsFile() : null;
       if (dropImage(items.map((i) => i.type), file)) e.preventDefault();
@@ -5577,7 +5586,7 @@ window.WBConsole = (function () {
     //   the window whose operator asked owns the clipboard. (Copying BY HAND
     //   in a watcher stays allowed — the #335 gate is about writing to the
     //   child.)
-    term.parser.registerOscHandler(52, (data) => {
+    term.parser.registerOscHandler(52, (data: any) => {
       // NEVER return the clipboard promise: `OscHandler.end` PAUSES the parser
       // on a promise, and a rejected write (unfocused document) would stall
       // the terminal.
@@ -5603,7 +5612,7 @@ window.WBConsole = (function () {
     // Ctrl+Insert copies the selection. NOT Ctrl+Shift+C: on Chrome/Edge that
     // is the DevTools accelerator and a page cannot take it back. Ctrl+C
     // belongs to the child.
-    term.attachCustomKeyEventHandler((e) => {
+    term.attachCustomKeyEventHandler((e: any) => {
       // Alt+Shift+arrows in a column walk the columns and their rows (ADR-0051
       // §5): xterm must not send them to the child, and the shell's document
       // listener takes them.
@@ -5642,7 +5651,7 @@ window.WBConsole = (function () {
     // calls run inside the press, a user gesture.
     body.addEventListener(
       "mousedown",
-      (e) => {
+      (e: any) => {
         if (e.button !== 2) return;
         const rightTaken = rightClickAction(term.hasSelection(), pasteOffered(navigator.clipboard));
         e.stopPropagation();
@@ -5654,7 +5663,7 @@ window.WBConsole = (function () {
           term.clearSelection();
         } else if (rightTaken === "paste") {
           readClipboard()
-            .then(({ image, text }) => {
+            .then(({ image, text }: any) => {
               if (image) dropImage([image.type], image);
               else if (text) term.paste(text);
             })
@@ -5665,7 +5674,7 @@ window.WBConsole = (function () {
     );
     body.addEventListener(
       "contextmenu",
-      (e) => {
+      (e: any) => {
         e.preventDefault();
         e.stopPropagation();
       },
@@ -5678,7 +5687,7 @@ window.WBConsole = (function () {
     // is stopped: xterm adds its `mouseup` listener to the document during the
     // replayed press, and the real release would report a second time.
     const replayed = new WeakSet();
-    const replay = (target, type, from, keys) => {
+    const replay = (target: any, type: any, from: any, keys: any) => {
       const ev = new MouseEvent(type, {
         bubbles: true,
         cancelable: true,
@@ -5698,7 +5707,7 @@ window.WBConsole = (function () {
     };
     body.addEventListener(
       "mousedown",
-      (e) => {
+      (e: any) => {
         if (replayed.has(e) || !term.element?.contains(e.target)) return;
         const modified = e.shiftKey || e.altKey || e.ctrlKey || e.metaKey;
         if (pressRoute(term.modes.mouseTrackingMode, e.button, modified) !== "hold") return;
@@ -5711,7 +5720,7 @@ window.WBConsole = (function () {
           doc.removeEventListener("mousemove", onMove, true);
           doc.removeEventListener("mouseup", onUp, true);
         };
-        const onMove = (m) => {
+        const onMove = (m: any) => {
           if (!dragBegins(start, { x: m.clientX, y: m.clientY }, dragThreshold("mouse"))) return;
           end();
           // The selection service is disabled under tracking, so it does not
@@ -5719,7 +5728,7 @@ window.WBConsole = (function () {
           term.clearSelection();
           replay(e.target, "mousedown", e, forceSelectionKeys(navigator.platform || navigator.userAgent));
         };
-        const onUp = (u) => {
+        const onUp = (u: any) => {
           end();
           u.stopPropagation();
           replay(e.target, "mousedown", e, {});
@@ -5732,7 +5741,7 @@ window.WBConsole = (function () {
     );
     body.addEventListener(
       "mousemove",
-      (e) => {
+      (e: any) => {
         if (holdMoveReport(term.modes.mouseTrackingMode, term.hasSelection(), e.buttons)) {
           e.stopPropagation();
         }
@@ -5750,8 +5759,8 @@ window.WBConsole = (function () {
 
     let currentSessionId = opts.id ?? null;
     let currentRepo = opts.repo ?? null;
-    let currentDaemonId = null;
-    let currentEnvironment = null;
+    let currentDaemonId: any = null;
+    let currentEnvironment: any = null;
     let leaving = false;
 
     // A dropped socket does NOT end the session: the daemon keeps the child
@@ -5766,14 +5775,14 @@ window.WBConsole = (function () {
     // owns the choice; this carries it out.
     const RECONNECT_BASE = 1000;
     const RECONNECT_MAX = 15000;
-    let ws = null;
+    let ws: any = null;
     let opened = false; // has the CURRENT socket opened
     let everOpened = false; // has ANY socket of this window opened
     // True on EVERY path into the watcher role (the park below, or `{id,
     // watch}` from the start). The `term.onData` gate reads this flag.
     let watching = !!opts.watch;
-    let announced = null; // the daemon's reason, when it named one before closing
-    let refusal = null; // the daemon's words when that reason is "refused"
+    let announced: any = null; // the daemon's reason, when it named one before closing
+    let refusal: any = null; // the daemon's words when that reason is "refused"
     let switching = false; // an intentional close on the way to a takeover
     let firstConnect = true;
     // True while the scrollback replay is being parsed. The replay is RAW BYTES
@@ -5782,7 +5791,7 @@ window.WBConsole = (function () {
     // `term.write` returns: xterm parses ASYNCHRONOUSLY.
     let replaying = false;
     let retryDelay = 0;
-    let retryTimer = null;
+    let retryTimer: any = null;
     let failedReopens = 0;
     let connectingSince = 0;
     // This window is done. Without the latch a resume would reconnect a dead
@@ -5794,7 +5803,7 @@ window.WBConsole = (function () {
     let held = false;
     const peerGroup = () => (typeof opts.peerGroup === "function" ? opts.peerGroup() : null);
 
-    function hold(group) {
+    function hold(group: any) {
       held = true;
       if (retryTimer) {
         clearTimeout(retryTimer);
@@ -5832,7 +5841,7 @@ window.WBConsole = (function () {
       }, wait);
     }
 
-    function connect(connOpts) {
+    function connect(connOpts: any) {
       opened = false;
       announced = null;
       refusal = null;
@@ -5874,7 +5883,7 @@ window.WBConsole = (function () {
         fit.fit();
         ws.send(encodeResize(term.rows, term.cols));
       };
-      ws.onmessage = (ev) => {
+      ws.onmessage = (ev: any) => {
         const a = new Uint8Array(ev.data);
         if (a[0] === TAG_TERMINAL) {
           if (currentSessionId == null) {
@@ -5929,7 +5938,7 @@ window.WBConsole = (function () {
       };
       // Swallow the error event; onclose drives recovery in every case.
       ws.onerror = () => {};
-      ws.onclose = (event) => {
+      ws.onclose = (event: any) => {
         if (leaving || switching) return;
         if (!opened) failedReopens += 1;
         const decision = reconnectDecision({
@@ -5972,7 +5981,7 @@ window.WBConsole = (function () {
     // key bar, paste), so the watched gate and the Ctrl latch apply to all.
     let ctrlLatched = false;
     let shiftLatched = false;
-    function sendInput(raw) {
+    function sendInput(raw: any) {
       const folded = applyCtrlLatch(ctrlLatched, raw);
       ctrlLatched = folded.latched;
       if (typeof opts.onCtrlLatch === "function") opts.onCtrlLatch(ctrlLatched);
@@ -5992,11 +6001,11 @@ window.WBConsole = (function () {
 
     // The backlog's old queries are answered again during a replay; those
     // answers would reach the child as typed input.
-    term.onData((d) => {
+    term.onData((d: any) => {
       if (replaying && isTerminalReply(d)) return;
       sendInput(d);
     });
-    term.onResize(({ rows, cols }) => {
+    term.onResize(({ rows, cols }: any) => {
       if (ws && ws.readyState === WebSocket.OPEN)
         ws.send(encodeResize(rows, cols));
     });
@@ -6028,7 +6037,7 @@ window.WBConsole = (function () {
       // keystroke, and `Ctrl` then `c` folds through the same latch.
       // The Shift latch lives here, not in `sendInput`: the virtual keyboard
       // has its own Shift, so only the next BAR key consumes it.
-      sendKey(name) {
+      sendKey(name: any) {
         if (name === "ctrl") {
           ctrlLatched = !ctrlLatched;
           if (typeof opts.onCtrlLatch === "function") opts.onCtrlLatch(ctrlLatched);
@@ -6052,7 +6061,7 @@ window.WBConsole = (function () {
       // a selection is a read, and a watcher may copy what it sees.
       setSelecting,
       // The paste key's image: the same drop as a keyboard paste, same gate.
-      pasteImage(blob) {
+      pasteImage(blob: any) {
         return dropImage([blob.type], blob);
       },
       get selecting() {
@@ -6062,7 +6071,7 @@ window.WBConsole = (function () {
       // it acted. The `currentSessionId == null` bail is load-bearing: a window
       // not yet told its id would compose a LAUNCH url and spawn a second
       // vendor CLI (`reconnectDecision` R1, `takeOver`).
-      resume(stale) {
+      resume(stale: any) {
         if (leaving || ended || currentSessionId == null) return false;
         // Held: the fleet decides, so ask it rather than dial a peer it calls
         // down. Its answer reaches `peerRefresh`.
@@ -6127,7 +6136,7 @@ window.WBConsole = (function () {
         if (retryTimer && gate === "hold") hold(group);
       },
       // `reason` (see `encodeDetach`) tells the daemon why the socket closes.
-      dispose(reason) {
+      dispose(reason: any) {
         leaving = true;
         if (held) {
           held = false;
@@ -6170,7 +6179,7 @@ window.WBConsole = (function () {
   const SPAWN_PAD = 12;
   const SPAWN_STEP = 24;
 
-  function spawnRectIn(fence, index, headH) {
+  function spawnRectIn(fence: any, index: any, headH: any) {
     const f = fence || {};
     const fl = f.left || 0;
     const ft = f.top || 0;
@@ -6200,12 +6209,12 @@ window.WBConsole = (function () {
   // centre a locked fence holds (the `fenceHolds` fold); when every slot is
   // held, the box moves right of the fence that holds it until one is free.
   // `moved` says the box left the viewport's cascade, so the caller reveals it.
-  function freeSpawnRect(view, index, fences) {
+  function freeSpawnRect(view: any, index: any, fences: any) {
     const v = view || {};
     // An unmeasurable viewport is a tab still `display:none`: plain caps.
     const width = v.width ? Math.max(WIN_MIN_W, Math.min(560, Math.round(v.width * 0.62))) : 560;
     const height = v.height ? Math.max(WIN_MIN_H, Math.min(340, Math.round(v.height * 0.6))) : 340;
-    const at = (k) => ({
+    const at = (k: any) => ({
       left: Math.max(0, v.left || 0) + 30 + (k % 8) * SPAWN_STEP,
       top: Math.max(0, v.top || 0) + 20 + (k % 8) * SPAWN_STEP,
       width,
@@ -6231,11 +6240,11 @@ window.WBConsole = (function () {
   // rect (from a desk record, else cascaded), titlebar, body, eight resize
   // handles. `desk` is a record (or a partial carrying at least `kind`);
   // everything the record needs later is hung off the element.
-  function buildChrome(label, repo, desk, kind) {
+  function buildChrome(label: any, repo: any, desk: any, kind: any) {
     const win = document.createElement("div");
     win.className = "session-window";
     // Every field this element will carry is written HERE, by the module that
-    // declares them (wb-window-state.js): a field nothing seeds reads as its
+    // declares them (wb-window-state.ts): a field nothing seeds reads as its
     // declared default, not `undefined`.
     initWindow(win, {
       _deskId: desk?.id || newDeskId(),
@@ -6252,7 +6261,7 @@ window.WBConsole = (function () {
       // The console name (ADR-0066 §2): a carried record keeps its own; a new
       // console takes the lowest free number of its prefix.
       _deskConsoleName:
-        desk?.consoleName || window.WBConsoleName.defaultName(consolePrefix(repo), takenNames(null)),
+        desk?.consoleName || WBConsoleName.defaultName(consolePrefix(repo), takenNames(null)),
     });
     const rect = desk?.rect;
     // Set when the free cascade had to leave the viewport (`freeSpawnRect`).
@@ -6397,11 +6406,11 @@ window.WBConsole = (function () {
       toggleMax(win);
       document.dispatchEvent(new CustomEvent("workbench:columns-stale"));
     };
-    maxBtn.addEventListener("click", (e) => {
+    maxBtn.addEventListener("click", (e: any) => {
       e.stopPropagation();
       maxOrRestore();
     });
-    titlebar.addEventListener("dblclick", (e) => {
+    titlebar.addEventListener("dblclick", (e: any) => {
       // Fullscreen hides the maximize control; a double-click must not toggle
       // it unseen underneath.
       // Nor may a double-click on the name, which renames (ADR-0066 §3).
@@ -6411,7 +6420,7 @@ window.WBConsole = (function () {
       maxOrRestore();
     });
     wireTitleTouch(win, titlebar, maxOrRestore);
-    colBtn.addEventListener("click", (e) => {
+    colBtn.addEventListener("click", (e: any) => {
       e.stopPropagation();
       document.dispatchEvent(
         new CustomEvent("workbench:column-open", {
@@ -6419,12 +6428,12 @@ window.WBConsole = (function () {
         }),
       );
     });
-    lockBtn.addEventListener("click", (e) => {
+    lockBtn.addEventListener("click", (e: any) => {
       e.stopPropagation();
       toggleLock(win);
     });
     applyLock(win, !!desk?.locked);
-    fullBtn.addEventListener("click", (e) => {
+    fullBtn.addEventListener("click", (e: any) => {
       e.stopPropagation();
       toggleFull(win);
     });
@@ -6440,7 +6449,7 @@ window.WBConsole = (function () {
   // Build the chrome and attach a live terminal. Shared by `open()` and the
   // load-time restore; `termOpts` is the `attachTerminal` opts, `desk` the
   // record this window continues (absent for a fresh launch).
-  function spawnWindow(termOpts, label, repo, desk) {
+  function spawnWindow(termOpts: any, label: any, repo: any, desk?: any) {
     const kind = termOpts.console ? "console" : "agent";
     const { win, body, title, restartBtn, closeBtn } = buildChrome(label, repo, desk, kind);
     // Read at launch, never later: a rename reaches the next restart and never
@@ -6456,13 +6465,13 @@ window.WBConsole = (function () {
 
     // The terminal owns the Ctrl and Shift latches and the selection arming;
     // the key-bar buttons (assigned below) only REFLECT them.
-    let ctrlBtn = null;
-    let shiftBtn = null;
-    let selBtn = null;
+    let ctrlBtn: any = null;
+    let shiftBtn: any = null;
+    let selBtn: any = null;
 
     // Debounced nudge for a keystroke typed into a parked window (#335):
     // repeated typing EXTENDS the pulse rather than stacking timers.
-    let nudgeTimer = null;
+    let nudgeTimer: any = null;
     function clearNudge() {
       if (nudgeTimer) {
         clearTimeout(nudgeTimer);
@@ -6479,8 +6488,8 @@ window.WBConsole = (function () {
     // the daemon's diagnosis under Details. Built once, then reworded on each
     // fleet read.
     const peerDaemon = window.WBFleet?.refDaemon(repo) || "";
-    const PEER_BUTTON = { wake: "Wake", retry: "Try again" };
-    const showPeerDown = (group) => {
+    const PEER_BUTTON: any = { wake: "Wake", retry: "Try again" };
+    const showPeerDown = (group: any) => {
       let strip = win.querySelector(".session-peer-down");
       if (!strip) {
         strip = document.createElement("div");
@@ -6494,7 +6503,7 @@ window.WBConsole = (function () {
         detail.append(summary, document.createElement("p"));
         const btn = document.createElement("button");
         btn.className = "session-reconnect";
-        btn.addEventListener("click", (e) => {
+        btn.addEventListener("click", (e: any) => {
           e.stopPropagation();
           if (btn.dataset.act === "wake") wakePeer?.(peerDaemon);
           else readFleet?.();
@@ -6518,17 +6527,17 @@ window.WBConsole = (function () {
     // `win`, never a particular terminal.
     const termWiring = {
       ...termOpts,
-      onCtrlLatch: (on) => {
+      onCtrlLatch: (on: any) => {
         if (ctrlBtn) ctrlBtn.setAttribute("aria-pressed", on ? "true" : "false");
       },
-      onShiftLatch: (on) => {
+      onShiftLatch: (on: any) => {
         if (shiftBtn) shiftBtn.setAttribute("aria-pressed", on ? "true" : "false");
       },
-      onSelecting: (on) => {
+      onSelecting: (on: any) => {
         if (selBtn) selBtn.setAttribute("aria-pressed", on ? "true" : "false");
       },
       // The daemon assigned/echoed this window's session id: record it.
-      onSession: (_id, owner) => {
+      onSession: (_id: any, owner: any) => {
         const presentation = sessionPresentation(label, repo, desk, owner);
         win._sessionCheckout = presentation.checkout;
         win._deskDaemonId = presentation.daemonId;
@@ -6558,7 +6567,7 @@ window.WBConsole = (function () {
         btn.className = "session-reconnect";
         btn.dataset.act = "take-over";
         btn.textContent = "Take over";
-        btn.addEventListener("click", (e) => {
+        btn.addEventListener("click", (e: any) => {
           e.stopPropagation();
           win._term?.takeOver();
         });
@@ -6589,7 +6598,7 @@ window.WBConsole = (function () {
       // agent said) and the restart control is tinted as the next action.
       // A launch a PEER refused becomes that peer's placeholder, which says why
       // in words and comes back when the peer does.
-      onEnded: (announced, refusal) => {
+      onEnded: (announced: any, refusal: any) => {
         clearNudge();
         win.querySelector(".session-parked")?.remove();
         if (announced === "refused" && window.WBFleet?.refDaemon(repo)) {
@@ -6607,7 +6616,7 @@ window.WBConsole = (function () {
             readFleet: () => readFleet?.(),
           }
         : {}),
-      onPeerHold: (group) => showPeerDown(group),
+      onPeerHold: (group: any) => showPeerDown(group),
       onPeerBack: () => win.querySelector(".session-peer-down")?.remove(),
     };
     win._termWiring = termWiring;
@@ -6643,7 +6652,7 @@ window.WBConsole = (function () {
       wins.delete(win);
       applyExtent();
     };
-    const relaunchIn = (checkout) => {
+    const relaunchIn = (checkout: any) => {
       // A restart is the operator's act: an adopted console gets its record.
       const carry = { ...deskOf(win), unrecorded: false };
       markRelaunch(carry.id, discard);
@@ -6667,7 +6676,7 @@ window.WBConsole = (function () {
       WB.emit("console-restart", { repo: at || null, agent: plain ? null : label });
     };
     win._relaunchIn = relaunchIn;
-    restartBtn.addEventListener("click", (e) => {
+    restartBtn.addEventListener("click", (e: any) => {
       e.stopPropagation();
       restartWin(win);
     });
@@ -6684,13 +6693,13 @@ window.WBConsole = (function () {
       // The strip refuses focus: on iOS losing the textarea's caret dismisses
       // the keyboard. `pointerdown` + `mousedown`; `touchstart` is NOT
       // prevented — that would suppress the synthesized click.
-      const holdFocus = (e) => e.preventDefault();
+      const holdFocus = (e: any) => e.preventDefault();
       bar.addEventListener("pointerdown", holdFocus);
       bar.addEventListener("mousedown", holdFocus);
 
       // `icon` (a Bootstrap Icons class) draws the key as that glyph; without
       // it the key shows `text`.
-      const key = (name, text, title, cls, icon) => {
+      const key = (name: any, text: any, title: any, cls?: any, icon?: any) => {
         const b = document.createElement("button");
         b.type = "button";
         // Not in the tab order: a keyboard user already has these keys.
@@ -6725,7 +6734,7 @@ window.WBConsole = (function () {
         else field.removeAttribute("inputmode");
       };
       win._applyInputMode = applyInputMode;
-      const toggleKeyboard = (field) => {
+      const toggleKeyboard = (field: any) => {
         keyboardOpen = !keyboardOpen;
         applyInputMode();
         // iOS reads `inputmode` only when the field takes focus. The click
@@ -6769,7 +6778,7 @@ window.WBConsole = (function () {
       // The one piece of chrome bound to a PARTICULAR terminal:
       // `onSelectionChange` is on the xterm instance, so a woken console's new
       // instance needs it again.
-      win._rewire = (t) => {
+      win._rewire = (t: any) => {
         t.term.onSelectionChange(syncCopy);
         syncCopy();
         t.term.textarea?.addEventListener("blur", () => {
@@ -6790,7 +6799,7 @@ window.WBConsole = (function () {
       key("font-down", "A−", "Smaller text");
       key("font-up", "A+", "Larger text");
 
-      bar.addEventListener("click", (e) => {
+      bar.addEventListener("click", (e: any) => {
         const btn = e.target.closest("button[data-key]");
         if (!btn) return;
         e.stopPropagation();
@@ -6805,7 +6814,7 @@ window.WBConsole = (function () {
         focusWin(win);
         if (read) {
           read
-            .then(({ image, text }) => {
+            .then(({ image, text }: any) => {
               if (image) win._term.pasteImage(image);
               else if (text) win._term.term.paste(text);
             })
@@ -6891,10 +6900,10 @@ window.WBConsole = (function () {
   // record lacked) — never its rect, which came from the record. A window
   // carried from an adopted, unrecorded one stays unrecorded. Any other
   // window is a new console: its record is created.
-  function recordBirth(win, carry) {
-    const r = desk.find((x) => x.id === win._deskId);
+  function recordBirth(win: any, carry: any) {
+    const r = desk.find((x: any) => x.id === win._deskId);
     if (r) {
-      const fields = {};
+      const fields: any = {};
       if ((r.checkout ?? null) !== (win._deskCheckout ?? null)) fields.checkout = win._deskCheckout ?? null;
       if (win._deskConsoleName && r.consoleName !== win._deskConsoleName) {
         fields.consoleName = win._deskConsoleName;
@@ -6914,22 +6923,22 @@ window.WBConsole = (function () {
   // it writes. A launch and its create land within a second; a console whose
   // record no page will write (another device removed it) still gets one.
   const ADOPT_GRACE_MS = 10000;
-  function adoptOrphan(win) {
+  function adoptOrphan(win: any) {
     if (!win.isConnected || !win._deskUnrecorded) return;
     // A fresh read first: the record may have landed without a push here.
     reloadDesk().then(() => {
       if (!win.isConnected || !win._deskUnrecorded) return;
-      if (desk.some((r) => r.id === win._deskId)) return;
+      if (desk.some((r: any) => r.id === win._deskId)) return;
       recordLeft(win);
     });
   }
 
   // The session the daemon announced, and the worktree with it, written only
   // when they differ from the record: a reconnect changes nothing else.
-  function recordSession(win) {
-    const r = desk.find((x) => x.id === win._deskId);
+  function recordSession(win: any) {
+    const r = desk.find((x: any) => x.id === win._deskId);
     if (!r) return;
-    const fields = {};
+    const fields: any = {};
     const session = {
       sessionId: sessionIdOf(win),
       daemonId: win._deskDaemonId ?? null,
@@ -6948,7 +6957,7 @@ window.WBConsole = (function () {
 
   // The window's placement as a desk record, to carry identity and box across
   // a rebuild (takeover, placeholder → live console).
-  function deskOf(win) {
+  function deskOf(win: any) {
     return {
       unrecorded: !!win._deskUnrecorded,
       id: win._deskId,
@@ -6971,12 +6980,12 @@ window.WBConsole = (function () {
   // Desk ids whose window a relaunch took off the stage and has not put back
   // yet: the shell's columns wait for them instead of dropping them.
   const relaunching = new Set();
-  function isRelaunching(deskId) {
+  function isRelaunching(deskId: any) {
     return relaunching.has(deskId);
   }
   // Marks `deskId`, then takes its window off the stage. `spawnOrMissing`
   // clears the mark; a take-down that throws clears it here.
-  function markRelaunch(deskId, takeDown) {
+  function markRelaunch(deskId: any, takeDown: any) {
     relaunching.add(deskId);
     try {
       takeDown();
@@ -6986,7 +6995,7 @@ window.WBConsole = (function () {
     }
   }
 
-  async function spawnOrMissing(req, label, repo, carry) {
+  async function spawnOrMissing(req: any, label: any, repo: any, carry: any) {
     try {
       if (req.checkout && !(await checkoutStillThere(repo, req.checkout))) {
         return spawnPlaceholder({ ...carry, checkout: req.checkout }, req.checkout);
@@ -7002,7 +7011,7 @@ window.WBConsole = (function () {
   // nor the load-time session list knows it. `null` when the list says it does
   // not run; `undefined` when that is not known — the list cannot be read, or
   // it did not hear from the record's peer.
-  async function liveSessionFor(win, record) {
+  async function liveSessionFor(win: any, record: any) {
     await reloadDesk();
     let sessions;
     try {
@@ -7014,7 +7023,7 @@ window.WBConsole = (function () {
     }
     const layout = loadDesk();
     // Deleted by another page: this window still stands for it.
-    if (!layout.some((rec) => rec.id === win._deskId)) {
+    if (!layout.some((rec: any) => rec.id === win._deskId)) {
       layout.push({ ...record, id: win._deskId, sessionId: null });
     }
     const held = [...wins]
@@ -7028,7 +7037,7 @@ window.WBConsole = (function () {
   // window. ATTACH only — a resume must never launch a vendor CLI. One at a
   // time, so an attach counts as `held` for the next placeholder; one pass at a
   // time, because `visibilitychange` and `online` land together on an iOS resume.
-  let reviving = null;
+  let reviving: any = null;
   function revivePlaceholders() {
     if (reviving) return reviving;
     reviving = (async () => {
@@ -7050,7 +7059,7 @@ window.WBConsole = (function () {
   // what its peer's fleet state is, and redraws on every fleet read.
   // `held.unheard`: restored while the session list did not hear from its
   // peer, so whether it runs is not known; it asks again on each fleet read.
-  function spawnPlaceholder(record, missing, refused, held) {
+  function spawnPlaceholder(record: any, missing?: any, refused?: any, held?: any) {
     const { win, body, restartBtn, closeBtn } = buildChrome(
       record.agent,
       record.repo,
@@ -7080,13 +7089,13 @@ window.WBConsole = (function () {
     // "relaunch"); the box starts as "not running" until the fleet says more.
     const daemon = window.WBFleet?.refDaemon(record.repo) || "";
     const canLaunch = OPTS.canLaunch !== false;
-    const BUTTON = { wake: "Wake", retry: "Try again", relaunch: "Relaunch" };
+    const BUTTON: any = { wake: "Wake", retry: "Try again", relaunch: "Relaunch" };
     let peerAction = "relaunch";
     let wasOffline = false;
-    let shown = null;
-    let detail = null;
-    let detailText = null;
-    const show = (view) => {
+    let shown: any = null;
+    let detail: any = null;
+    let detailText: any = null;
+    const show = (view: any) => {
       shown = view;
       text.textContent = view.text;
       peerAction = view.action;
@@ -7165,7 +7174,7 @@ window.WBConsole = (function () {
     };
     win._peerRefresh = showPeer;
 
-    const markMissing = (name) => {
+    const markMissing = (name: any) => {
       missing = name;
       win.classList.add("missing-checkout");
       text.textContent = `Worktree ${name} no longer exists.`;
@@ -7183,7 +7192,7 @@ window.WBConsole = (function () {
     // `respawn`: the same desk id comes back at once, and the spawn announces
     // it. Announcing the gap would take the console out of its column
     // (ADR-0051 §5) and promote the next one to the maximize.
-    const drop = (respawn) => {
+    const drop = (respawn?: any) => {
       win.remove();
       untrackDormancy(win);
       wins.delete(win);
@@ -7192,7 +7201,7 @@ window.WBConsole = (function () {
     };
     // The attach `restoreDesk` makes, into this record's id and rect. A session
     // another window drives parks this one as a watcher (`reconnectDecision`).
-    const attach = (session) => {
+    const attach = (session: any) => {
       const carry = deskOf(win);
       drop(true);
       spawnWindow(
@@ -7203,7 +7212,7 @@ window.WBConsole = (function () {
       );
     };
     // One check at a time: a click and a resume can arrive together.
-    let checking = null;
+    let checking: any = null;
     const check = () => {
       if (!checking) {
         checking = liveSessionFor(win, record)
@@ -7218,7 +7227,7 @@ window.WBConsole = (function () {
       const session = await check();
       if (session && win.isConnected) attach(session);
     };
-    btn.addEventListener("click", async (e) => {
+    btn.addEventListener("click", async (e: any) => {
       e.stopPropagation();
       if (btn.disabled) return;
       btn.disabled = true;
@@ -7292,7 +7301,7 @@ window.WBConsole = (function () {
   // is no agent — a normal shell in the repo dir, labelled "console", or, with
   // `command`, a shell running that command and labelled by it (the same label
   // the daemon gives the session, so the desk record relaunches it as such).
-  function open({ repo, agent, plain, checkout, command }) {
+  function open({ repo, agent, plain, checkout, command }: any) {
     if (atDeskCap()) {
       toast({ text: `You can have at most ${DESK_MAX} consoles. Close one first.` });
       return false;
@@ -7372,7 +7381,7 @@ window.WBConsole = (function () {
             // The fallback snapshot, so a popup that never answers still has
             // somewhere to come home to. `popup-here` supersedes this.
             const entry = fencePopups.get(away.get(record.id));
-            if (entry && !entry.members.some((m) => m.id === record.id)) {
+            if (entry && !entry.members.some((m: any) => m.id === record.id)) {
               entry.members.push({ ...record, session: record.sessionId ?? null });
             }
             continue;
@@ -7447,7 +7456,7 @@ window.WBConsole = (function () {
   // ---- the plane's own gestures ------------------------------------------------
   // Pan by dragging the BARE FLOOR. Calls neither `applyExtent` nor a desk
   // write nor `focusWin`: panning moves the view, not the rects.
-  function onFloorDown(e) {
+  function onFloorDown(e: any) {
     // Primary button only — see makeDraggable.
     if (e.button !== 0) return;
     const ws = workspace();
@@ -7471,7 +7480,7 @@ window.WBConsole = (function () {
     const startLeft = ws.scrollLeft;
     const startTop = ws.scrollTop;
     st.classList.add("panning");
-    const onMove = (ev) => {
+    const onMove = (ev: any) => {
       // A swallowed mouseup (native context menu, alt-tab) would leave a sticky
       // pan.
       if (ev.buttons === 0) {
@@ -7497,7 +7506,7 @@ window.WBConsole = (function () {
 
   // The wheel. The VERTICAL axis is native `overflow:auto`; this adds only the
   // horizontal reach where the platform does not provide it.
-  function onWheel(e) {
+  function onWheel(e: any) {
     // The terminal owns its wheel. Its scrollback is reached by CSS
     // (`overscroll-behavior: contain`), never by `preventDefault`, which would
     // cancel the terminal's own scroll too.
@@ -7557,21 +7566,17 @@ window.WBConsole = (function () {
   }
 
   // `autoBoot: false` is the popup, which renders only the members
-  // its opener hands over.
+  // its opener hands over. The entry module calls this once, after its page
+  // has started.
   function boot() {
     wireStage();
     restoreDetached();
     if (OPTS.autoBoot !== false) restoreDesk();
   }
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", boot);
-  } else {
-    boot();
-  }
 
   // Refit every open console. Called when the Consoles tab returns to view: a
   // terminal opened/reattached while the tab was display:none measured 0×0.
-  function refitAll(attempt) {
+  function refitAll(attempt?: any) {
     // Alpine's `$nextTick` fires BEFORE `x-show` applies the flip (MEASURED):
     // `.consoles-tab` is still `display:none` and everything measures 0.
     // Refitting there collapses the stage to the bare margin (3200×2080 →
@@ -7607,7 +7612,7 @@ window.WBConsole = (function () {
   // the head band and the SE `.fence-grip` sit BELOW every window, so a member
   // parked on either makes the fence's controls unhittable.
   const FENCE_GRIP = 14;
-  function arrangeFence(id) {
+  function arrangeFence(id: any) {
     // Detached: tiling the empty box would rewrite the rects the popup will
     // restore from (ADR-0051 §7a).
     if (detached.includes(id)) return;
@@ -7624,7 +7629,7 @@ window.WBConsole = (function () {
     }));
     // The FULL fence list with this fence's LIVE rect: the fold's `break`
     // decides an overlapping pair, and a singleton bypasses it.
-    const live = fences.map((x) => (x.id === id ? { id: x.id, rect } : x));
+    const live = fences.map((x: any) => (x.id === id ? { id: x.id, rect } : x));
     const ids = new Set(fenceMembership(live, all)[id] || []);
     // A maximized console is NOT tiled: a tile rect written onto it is
     // invisible while it REPLACES the pre-maximize rect. Filtered before the
@@ -7710,6 +7715,7 @@ window.WBConsole = (function () {
   }
 
   return {
+    boot,
     open,
     relaunchRequest,
     ingestWorktrees,
@@ -7876,5 +7882,4 @@ window.WBConsole = (function () {
     agentStateTitle,
     renderNotes,
   };
-})();
-
+}

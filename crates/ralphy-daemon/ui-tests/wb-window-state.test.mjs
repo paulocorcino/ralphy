@@ -1,22 +1,13 @@
-// Unit tests for assets/ui/wb-window-state.js — runs the real source with no DOM.
+// Unit tests for assets/ui/wb-window-state.ts — runs the real source with no DOM.
 // Lives OUTSIDE assets/ui on purpose: lib.rs embeds all of assets/ui into the
 // daemon binary via include_dir!, so a test there would ship.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { WBWindowState } from "../assets/ui/wb-window-state.ts";
 
-const SRC = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../assets/ui/wb-window-state.js"),
-  "utf8",
-);
-
-// The module's only load-time global is `window`, which it assigns onto.
+// The module touches nothing when it is imported.
 function load() {
-  const window = {};
-  new Function("window", SRC)(window);
-  return window.WBWindowState;
+  return WBWindowState;
 }
 
 // The shapes a window is actually found in, named once so each table below

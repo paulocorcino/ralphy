@@ -3,7 +3,7 @@
 
    It imports the parts of the page, registers each Alpine component and
    directive, and starts Alpine once. A module tag runs after the classic
-   scripts, so every classic name is in place when Alpine starts.
+   vendor scripts, so every vendor name is in place when Alpine starts.
    --------------------------------------------------------------------------- */
 import Alpine from "./vendor/alpine.esm.js";
 // In the order of the page's old module tags. A module sets the `window` name
@@ -34,16 +34,20 @@ import { createDaemon } from "./wb-daemon.ts";
 import { WBDevice } from "./wb-device.ts";
 import { createViewer } from "./wb-viewer.ts";
 import { createNotes } from "./wb-notes.ts";
+import { createConsole } from "./wb-console.ts";
 import { iconDirective, shell, wire } from "./app.ts";
 
 window.Alpine = Alpine;
+// The consoles first, before `wire`: `app.ts` and the markup read `WBConsole`.
+// Creating them starts the desk read; `boot` comes once Alpine has started.
+window.WBConsole = createConsole(window, document, location, {});
 // The daemon door and the device facts, before `wire`: `app.ts` reads
 // `WBDaemon`, and the facts go out once per page load.
 window.WBDaemon = createDaemon(window, document, location);
 WBDevice.report(window);
 // The file pane, before `wire`: `app.ts` reads `WBViewer`.
 window.WBViewer = createViewer(window, document);
-// The note cards, before `wire`: `wb-console.js` reads `WBNotes` inside functions.
+// The note cards, before `wire`: `wb-console.ts` reads `WBNotes` inside functions.
 window.WBNotes = createNotes(window, document);
 wire(window, document);
 Alpine.directive("icon", iconDirective);
@@ -56,3 +60,5 @@ Alpine.data("wbReleaseDialogs", releaseDialogs);
 Alpine.data("wbAddProjectDialog", addProjectDialog);
 Alpine.data("wbHostsDialog", hostsDialog);
 Alpine.start();
+// The consoles boot on a page whose shell Alpine has built (ADR-0075 D7).
+window.WBConsole.boot();

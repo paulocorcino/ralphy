@@ -9,8 +9,8 @@ import { dirname, join } from "node:path";
 import { WBProject } from "../assets/ui/wb-project.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const UI = join(HERE, "../assets/ui");
 import { createDaemon } from "../assets/ui/wb-daemon.ts";
+import { createConsole } from "../assets/ui/wb-console.ts";
 
 // A push the daemon produced, as its tests wrote it (`tests/support/golden.rs`).
 function fixture(name) {
@@ -28,7 +28,7 @@ function load() {
   return createDaemon(window, document, location);
 }
 
-// --- resumeDecision: the resume rule, shared with wb-console.js ------------
+// --- resumeDecision: the resume rule, shared with wb-console.ts ------------
 // A tablet suspends the tab: no JS runs while the link is torn down, so the
 // sockets come back reporting OPEN with nothing ever arriving on them again.
 // The fixed 3s retry only helps the ones that actually heard their close.
@@ -104,19 +104,13 @@ test("a handshake that never opens is closed at the deadline, and nothing else i
 // they ever disagree, one half of the page comes back and the other does not.
 test("the console and the daemon door answer the resume question identically", () => {
   const { resumeDecision } = load();
-  const consoleSrc = readFileSync(join(UI, "wb-console.js"), "utf8");
   const window = { addEventListener() {} };
   const document = { readyState: "loading", addEventListener() {} };
   const location = { protocol: "http:", host: "127.0.0.1:7431" };
-  new Function("window", readFileSync(join(UI, "wb-geometry.js"), "utf8"))(window);
-  new Function("window", readFileSync(join(UI, "wb-window-state.js"), "utf8"))(window);
-  new Function("window", readFileSync(join(UI, "wb-desk-sink.js"), "utf8"))(window);
-  new Function("window", readFileSync(join(UI, "wb-desk-sync.js"), "utf8"))(window);
-  new Function("window", readFileSync(join(UI, "wb-detach-link.js"), "utf8"))(window);
   const realBC = globalThis.BroadcastChannel;
   delete globalThis.BroadcastChannel;
   try {
-    new Function("window", "document", "location", consoleSrc)(window, document, location);
+    window.WBConsole = createConsole(window, document, location, {});
   } finally {
     globalThis.BroadcastChannel = realBC;
   }
