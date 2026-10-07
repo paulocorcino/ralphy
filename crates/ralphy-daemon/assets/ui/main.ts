@@ -32,6 +32,7 @@ import "./wb-columns.ts";
 import "./wb-monaco.ts";
 import { createDaemon } from "./wb-daemon.ts";
 import { WBDevice } from "./wb-device.ts";
+import { createViewer } from "./wb-viewer.ts";
 import { iconDirective, shell, wire } from "./app.ts";
 
 window.Alpine = Alpine;
@@ -39,6 +40,8 @@ window.Alpine = Alpine;
 // `WBDaemon`, and the facts go out once per page load.
 window.WBDaemon = createDaemon(window, document, location);
 WBDevice.report(window);
+// The file pane, before `wire`: `app.ts` reads `WBViewer`.
+window.WBViewer = createViewer(window, document);
 wire(window, document);
 Alpine.directive("icon", iconDirective);
 // Each name is the `x-data` of one element in `index.html`.

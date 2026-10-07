@@ -183,18 +183,14 @@ test("a refusal the operator declines to repair leaves the pane unsaved", async 
   assert.equal(viewer.lastAck.reason, "unencodable");
 });
 
-// --- the pane's side (wb-viewer.js) ---------------------------------------
+// --- the pane's side (wb-viewer.ts) ---------------------------------------
 // The record behind a pane is the fold: what it carries into a save and a
 // detach descriptor, and what a refusal does to it. The DOM here is a fake
 // that accepts any structure and answers any selector with a fresh node.
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { createViewer } from "../assets/ui/wb-viewer.ts";
+import { WBMonaco } from "../assets/ui/wb-monaco.ts";
 
-const VIEWER_SRC = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../assets/ui/wb-viewer.js"),
-  "utf8",
-);
+const REAL_MONACO = { ...WBMonaco };
 
 function fakeNode() {
   const node = {
@@ -221,8 +217,6 @@ function loadViewer() {
   const emitted = [];
   const window = {
     WB: { emit: (action, detail) => emitted.push({ action, ...detail }) },
-    WBFleet: { refSlug: (p) => p },
-    WBMonaco: { ready: () => new Promise(() => {}) }, // never boots: no editor
     getShell: () => ({ _flashAction() {}, closeTab() {} }),
     addEventListener() {},
     matchMedia: () => ({ matches: false, addEventListener() {} }),
@@ -235,12 +229,12 @@ function loadViewer() {
     createElement: () => fakeNode(),
     addEventListener() {},
   };
-  new Function("window", "document", VIEWER_SRC)(window, document);
-  // The bare names the module uses, mirrored the way the shell tests do it.
-  for (const k of ["WB", "WBMonaco"]) globalThis[k] = window[k];
-  return { viewer: window.WBViewer, emitted, window };
+  // The pane imports the one `WBMonaco`: it never boots here, so no editor
+  // mounts. `after` puts the real boot back.
+  WBMonaco.ready = () => new Promise(() => {});
+  return { viewer: createViewer(window, document), emitted, window };
 }
-after(() => ["WBMonaco"].forEach((k) => delete globalThis[k]));
+after(() => Object.assign(WBMonaco, REAL_MONACO));
 
 test("a pane carries its encoding into the save and the detach descriptor", () => {
   const { viewer, emitted } = loadViewer();

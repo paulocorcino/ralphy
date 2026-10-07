@@ -256,7 +256,7 @@ export const WBMonaco = (function () {
   return { ready, create, createOver, createDiff, gutterOptions, TOKENS };
 })();
 
-// `wb-viewer.js` still reads this name (ADR-0075 D9).
+// A browser check still reads this name (ADR-0075 D9).
 if (typeof window !== "undefined") window.WBMonaco = WBMonaco;
 
 declare global {

@@ -1417,7 +1417,7 @@
           </section>
         </section>
 
-        <!-- file-viewer panes are appended here by wb-viewer.js, one per file
+        <!-- file-viewer panes are appended here by wb-viewer.ts, one per file
              tab (code = Monaco, markdown = rendered+mermaid). impl: a seed
              synthesises file bytes — fetch the real file; a Save emits a `save`
              intent (workbench:action) carrying the new content to persist. -->
@@ -3241,7 +3241,6 @@
     <script src="wb-console.js"></script>
     <script src="vendor/crepe/crepe.js"></script>
     <script src="wb-notes.js"></script>
-    <script src="wb-viewer.js"></script>
     <!-- The page's one module (ADR-0075 D5). It runs after the classic scripts
          above, imports the rest of the page, and starts Alpine. -->
     <script type="module" src="main.js"></script>

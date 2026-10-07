@@ -14,7 +14,12 @@
    Editing is allowed but never touches disk: a Save emits a `save` intent on the
    `workbench:action` seam carrying the new content, for a backend to persist.
 --------------------------------------------------------------------------- */
-(function () {
+import { WBMonaco } from "./wb-monaco.ts";
+import { WBSplit } from "./wb-split.ts";
+import { WBFail } from "./wb-fail.ts";
+import { WBFleet } from "./wb-fleet.ts";
+
+export function createViewer(window: any, document: any) {
   let mermaidReady = false;
   function initMermaid() {
     if (mermaidReady || !window.mermaid) return;
@@ -48,7 +53,7 @@
   // never mount an orphan editor. Liveness is `map.get(rec.id) === rec`, NOT
   // `has`: tab ids are stable per file, so a close+reopen inside the boot
   // window puts a DIFFERENT record under the same key.
-  const alive = (rec) => map.get(rec.id) === rec;
+  const alive = (rec: any) => map.get(rec.id) === rec;
 
   // --- the secondary pane: the slot (ADR-0037 §3c) ---------------------------
   // What is on screen: the active pane and, beside it, the slot the shell
@@ -58,14 +63,14 @@
   // reload restores the slot while its bytes are in flight) — the next
   // `setActive`/`refresh` converges, the same rule the shell's late opener
   // follows.
-  let shown = { id: null, slot: null };
+  let shown: { id: any; slot: any } = { id: null, slot: null };
   // The mirror: a second Monaco editor over the active pane's model, in a
   // sibling `.viewer` of its own so the grid, the toolbar and the narrow-pane
   // container query all see one more pane. At most one, ever. It owns its
   // EDITOR only — the model is the mirrored pane's, and `disposeEditor` closes
   // the mirror before the model on every path.
-  let mirror = null; // { rec, el, ed, ro }
-  let divider = null;
+  let mirror: any = null; // { rec, el, ed, ro }
+  let divider: any = null;
 
   function refresh() {
     paint();
@@ -117,9 +122,9 @@
     }
   }
 
-  const ratioPct = (ratio) => `${((Number.isFinite(ratio) ? ratio : 0.5) * 100).toFixed(2)}%`;
+  const ratioPct = (ratio: any) => `${((Number.isFinite(ratio) ? ratio : 0.5) * 100).toFixed(2)}%`;
 
-  function ensureMirror(rec) {
+  function ensureMirror(rec: any) {
     if (mirror?.rec === rec) {
       mirror.el.style.display = "flex";
       return;
@@ -178,15 +183,15 @@
     divider.innerHTML =
       '<button class="slot-close" title="Close the second pane" aria-label="Close the second pane"><i class="bi bi-x-lg"></i></button>';
     divider.querySelector(".slot-close").onclick = () => window.getShell?.()?.clearSlot?.();
-    divider.addEventListener("pointerdown", (e) => {
+    divider.addEventListener("pointerdown", (e: any) => {
       if (e.button !== 0 || !e.isPrimary || e.target.closest(".slot-close")) return;
       e.preventDefault();
       const pointerId = e.pointerId;
       const box = viewers.getBoundingClientRect();
-      let ratio = null;
-      const onMove = (ev) => {
+      let ratio: any = null;
+      const onMove = (ev: any) => {
         if (ev.pointerId !== pointerId) return;
-        ratio = window.WBSplit.clampRatio(ev.clientX - box.left, box.width);
+        ratio = WBSplit.clampRatio(ev.clientX - box.left, box.width);
         viewers.style.setProperty("--wb-split", ratioPct(ratio));
       };
       const onUp = () => {
@@ -213,12 +218,12 @@
     }).observe(viewers);
   }
 
-  function mountEditor(rec, container, opts) {
+  function mountEditor(rec: any, container: any, opts: any) {
     const path = (opts && opts.path) || rec.path;
     if (rec.mounting || rec.mountFailed) return Promise.resolve();
     rec.mounting = true;
     return WBMonaco.ready()
-      .catch((err) => {
+      .catch((err: any) => {
         // The AMD loader did not boot — degrade to read-only bytes rather
         // than leave an empty pane (#308).
         // Only a BOOT failure lands here; a throw from create()/wiring below
@@ -234,7 +239,7 @@
         console.warn("[workbench] monaco did not boot; read-only fallback", err);
         return null;
       })
-      .then((monaco) => {
+      .then((monaco: any) => {
         rec.mounting = false;
         if (!monaco || !alive(rec)) return;
         const ed = WBMonaco.create(container, {
@@ -266,7 +271,7 @@
         // restores the slot while the bytes are still in flight): paint now.
         if (shown.slot?.mirror && shown.slot.id === rec.id) refresh();
       })
-      .catch((err) => {
+      .catch((err: any) => {
         // A create()/wiring failure is NOT a boot failure: the pane would look
         // editable while nothing is wired, so say so instead of degrading.
         rec.mounting = false;
@@ -283,8 +288,8 @@
   // it is Monaco's own `automaticLayout` business. The observer is the pane's,
   // not the editor's: `disposeEditor` ends it with the editor it feeds.
   const NARROW_PX = 560;
-  const isNarrow = (el) => !!el && el.clientWidth > 0 && el.clientWidth <= NARROW_PX;
-  function watchNarrow(rec, ed) {
+  const isNarrow = (el: any) => !!el && el.clientWidth > 0 && el.clientWidth <= NARROW_PX;
+  function watchNarrow(rec: any, ed: any) {
     if (!rec.el || typeof ResizeObserver !== "function") return;
     let narrow = isNarrow(rec.el);
     rec.ro = new ResizeObserver(() => {
@@ -302,7 +307,7 @@
   // service, so with two editors on screen the last one registered would take
   // every Ctrl+S. The disposable is kept: Monaco does not tie it to the editor's
   // own lifetime, and a binding that outlives its editor holds `rec` forever.
-  function bindSave(ed, rec) {
+  function bindSave(ed: any, rec: any) {
     const monaco = window.monaco;
     return ed.addAction({
       id: "wb.save",
@@ -312,7 +317,7 @@
     });
   }
 
-  function disposeEditor(rec) {
+  function disposeEditor(rec: any) {
     // The mirror sits over THIS pane's model: its editor goes before the model
     // does, on every path — an editor over a disposed model throws on render.
     if (mirror?.rec === rec) closeMirror();
@@ -338,11 +343,11 @@
   }
 
   // --- a diff tab (read-only, two-sided) ----------------------------------
-  function mountDiff(rec, container) {
+  function mountDiff(rec: any, container: any) {
     if (rec.mounting || rec.mountFailed) return Promise.resolve();
     rec.mounting = true;
     return WBMonaco.ready()
-      .then((monaco) => {
+      .then((monaco: any) => {
         rec.mounting = false;
         // Same record-identity liveness rule as mountEditor: a diff tab closed
         // inside the boot window must mount nothing on its detached container.
@@ -359,7 +364,7 @@
         watchNarrow(rec, ed);
         if (rec.visible) ed.layout();
       })
-      .catch((err) => {
+      .catch((err: any) => {
         // No `<pre>` degrade here: two texts side by side have no honest
         // single-pane fallback, and one of them rendered alone would read as
         // "no changes". Say it failed and close the tab (#311).
@@ -371,7 +376,7 @@
       });
   }
 
-  function buildDiff(rec) {
+  function buildDiff(rec: any) {
     const el = document.createElement("div");
     el.className = "viewer diff-viewer";
     el.dataset.tabId = rec.id;
@@ -400,7 +405,7 @@
   }
 
   // --- a source-code editor tab ------------------------------------------
-  function buildCode(rec) {
+  function buildCode(rec: any) {
     const el = document.createElement("div");
     el.className = "viewer code-viewer";
     el.dataset.tabId = rec.id;
@@ -443,7 +448,7 @@
     mountEditor(rec, el.querySelector(".viewer-body"), {});
   }
 
-  function save(rec) {
+  function save(rec: any) {
     // A diff and an image are read-only: a `save` intent from either would be a
     // mutation those surfaces forbid, so it never reaches the action seam. (An
     // image's `content` is a `data:` URL, not the file's bytes — saving it would
@@ -460,7 +465,7 @@
     // came from, whatever the project's selection is by now. `encoding`/`bom`
     // are what the read reported (or a "save with…" chose), so the bytes go
     // back the way they came (ADR-0036 amendment 2026-09-22).
-    WB.emit("save", {
+    window.WB.emit("save", {
       project: rec.project,
       path: rec.path,
       bytes: content.length,
@@ -474,13 +479,13 @@
 
   // The inline "not saved" line beside the Save button: a write refusal must
   // be read from the pane it concerns, not from a flash in another panel.
-  function showSaveError(rec, text) {
+  function showSaveError(rec: any, text: any) {
     const el = rec.el?.querySelector(".viewer-save-err");
     if (!el) return;
     el.textContent = text;
     el.style.display = "";
   }
-  function clearSaveError(rec) {
+  function clearSaveError(rec: any) {
     const el = rec.el?.querySelector(".viewer-save-err");
     if (el) el.style.display = "none";
   }
@@ -488,7 +493,7 @@
   // The pane's current bytes, whether shown as source (Monaco) or as a rendered
   // markdown preview. Before Monaco finishes booting `rec.ed` is undefined and
   // `rec.content` is still authoritative.
-  function contentOf(rec) {
+  function contentOf(rec: any) {
     if (rec.kind === "diff") return rec.content;
     if (rec.ed && (rec.kind === "code" || rec.editing)) return rec.ed.getValue();
     return rec.content;
@@ -498,7 +503,7 @@
   // detached popup), carrying the *current* (possibly edited) content.
   // The pin rides the descriptor (#406): a detached pane saves and reloads
   // against the tree its bytes came from, and re-attaches pinned to it.
-  function descOf(rec) {
+  function descOf(rec: any) {
     return {
       project: rec.project,
       label: rec.label,
@@ -514,14 +519,14 @@
   // Reload discards local edits and reloads from source. Daemon-backed repos
   // re-read the REAL file via `file.read` (#197). The apply step is shared via
   // `applyFresh`. With no daemon client loaded (a unit test) it does nothing.
-  function reloadFile(rec) {
+  function reloadFile(rec: any) {
     const daemonBacked = !!window.WBDaemon?.observe;
     if (daemonBacked) {
       // Daemon mode: a non-ok reply or a transport drop must NOT regenerate
       // synthetic bytes (C1). The tab stays — the operator's bytes are still
       // the best answer the pane has — and the reason lands in the pane.
-      const fail = (reply) => {
-        showSaveError(rec, window.WBFail.failed(reply, "Could not reload the file: the daemon gave no reason."));
+      const fail = (reply?: any) => {
+        showSaveError(rec, WBFail.failed(reply, "Could not reload the file: the daemon gave no reason."));
         window.getShell?.()?._flashAction?.("Could not reload the file.");
       };
       // An image reloads through its own verb (ADR-0049): `file.read` refuses
@@ -549,7 +554,7 @@
   // `file.read` for this pane, with `encoding` as the hint: a tab's encoding is
   // sticky once opened (the daemon's detection, or a "reopen with…"), so a
   // reload never silently re-detects it.
-  function readWith(rec, encoding) {
+  function readWith(rec: any, encoding: any) {
     const payload = WBDaemon.withCheckout({ repo: rec.project, path: rec.path }, rec.checkout);
     if (encoding) payload.encoding = encoding;
     return WBDaemon.observe("file.read", payload);
@@ -558,15 +563,15 @@
   // A pane that opened refused now has bytes: rebuild it as the pane its
   // kind deserves. `open` returns early on a known id, so the record is
   // replaced under the same id — the tab in the shell is untouched.
-  function reopenRefused(rec, reply) {
+  function reopenRefused(rec: any, reply: any) {
     const desc = { ...descOf(rec), content: reply.content, encoding: reply.encoding, bom: !!reply.bom };
     API.close(rec.id);
     API.open({ id: rec.id, ...desc, detached: rec.detached });
     if (rec.visible) refresh();
-    WB.emit("reload", { project: rec.project, path: rec.path });
+    window.WB.emit("reload", { project: rec.project, path: rec.path });
   }
 
-  function applyFresh(rec, fresh) {
+  function applyFresh(rec: any, fresh: any) {
     // A diff pane has no single "fresh bytes" to apply: reloading it means
     // re-resolving BOTH sides, which is a reopen, not a refresh.
     if (rec.kind === "diff") return;
@@ -591,16 +596,16 @@
     rec.dirty = false;
     rec.saveBtn?.classList.remove("dirty");
     hideDiskBadge(rec);
-    WB.emit("reload", { project: rec.project, path: rec.path });
+    window.WB.emit("reload", { project: rec.project, path: rec.path });
   }
 
   // The "changed on disk" badge: shown when an EXTERNAL write lands on a DIRTY
   // tab (never auto-applied — the operator's unsaved edits win until they click).
-  function showDiskBadge(rec) {
+  function showDiskBadge(rec: any) {
     const b = rec.el?.querySelector(".viewer-disk-badge");
     if (b) b.style.display = "";
   }
-  function hideDiskBadge(rec) {
+  function hideDiskBadge(rec: any) {
     rec.pendingDisk = undefined;
     const b = rec.el?.querySelector(".viewer-disk-badge");
     if (b) b.style.display = "none";
@@ -617,7 +622,7 @@
   // same bytes under another encoding (the daemon re-decodes; the operator
   // judges by the glyphs), or SAVE the text under another one (a deliberate
   // conversion — the daemon never converts on its own).
-  const ENCODINGS = [
+  const ENCODINGS: any[] = [
     ["UTF-8", "utf-8", false],
     ["UTF-8 BOM", "utf-8", true],
     ["UTF-16 LE", "utf-16le", true],
@@ -638,29 +643,29 @@
   // The pill's text: the daemon's canonical name made readable (`UTF-16LE`
   // → `UTF-16 LE`, `windows-1252` → `Windows-1252`), plus ` BOM` when one
   // was read and will be written back.
-  function encodingLabel(name, bom) {
+  function encodingLabel(name: any, bom: any) {
     let text = String(name || "UTF-8");
     text = text.replace(/^utf-16(le|be)$/i, (_, e) => `UTF-16 ${e.toUpperCase()}`);
     text = text.replace(/^windows-/i, "Windows-");
     return bom ? `${text} BOM` : text;
   }
 
-  function encodingBtnHtml(rec) {
+  function encodingBtnHtml(rec: any) {
     return `<button class="vbtn viewer-enc" data-act="encoding" title="Encoding — reopen or save with another" aria-label="Encoding"><span class="viewer-enc-label">${encodingLabel(rec.encoding, rec.bom)}</span></button>`;
   }
 
-  function refreshEncodingPill(rec) {
+  function refreshEncodingPill(rec: any) {
     const label = rec.el?.querySelector(".viewer-enc-label");
     if (label) label.textContent = encodingLabel(rec.encoding, rec.bom);
   }
 
-  function wireEncodingMenu(rec, el) {
+  function wireEncodingMenu(rec: any, el: any) {
     const btn = el.querySelector('[data-act="encoding"]');
     if (!btn) return;
     const menu = document.createElement("div");
     menu.className = "enc-menu";
     menu.style.display = "none";
-    const group = (head, act) =>
+    const group = (head: any, act: any) =>
       `<div class="dropdown-head">${head}</div>` +
       ENCODINGS.map(
         ([label, name, bom], i) =>
@@ -674,13 +679,13 @@
       document.removeEventListener("click", onOutside, true);
       document.removeEventListener("keydown", onKey, true);
     };
-    const onOutside = (ev) => {
+    const onOutside = (ev: any) => {
       if (!menu.contains(ev.target) && ev.target !== btn) close();
     };
-    const onKey = (ev) => {
+    const onKey = (ev: any) => {
       if (ev.key === "Escape") close();
     };
-    btn.onclick = (ev) => {
+    btn.onclick = (ev: any) => {
       ev.stopPropagation();
       if (menu.style.display !== "none") return close();
       markCurrentEncoding(rec, menu);
@@ -688,7 +693,7 @@
       document.addEventListener("click", onOutside, true);
       document.addEventListener("keydown", onKey, true);
     };
-    menu.onclick = (ev) => {
+    menu.onclick = (ev: any) => {
       const item = ev.target.closest?.(".enc-item");
       if (!item) return;
       ev.stopPropagation();
@@ -698,7 +703,7 @@
     };
   }
 
-  function markCurrentEncoding(rec, menu) {
+  function markCurrentEncoding(rec: any, menu: any) {
     for (const item of menu.querySelectorAll(".enc-item")) {
       const i = Number(item.dataset.reopen ?? item.dataset.savewith);
       const [, name, bom] = ENCODINGS[i];
@@ -710,13 +715,13 @@
 
   // Reopen: the same bytes, decoded as `name`. Unsaved edits would be lost
   // to the re-read, so a dirty pane asks first.
-  function reopenWith(rec, [label, name]) {
+  function reopenWith(rec: any, [label, name]: any[]) {
     const shell = window.getShell?.();
     const go = () => {
       readWith(rec, name)
         .then((reply) => {
           if (!reply || reply.status !== "ok") {
-            showSaveError(rec, window.WBFail.failed(reply, `Could not reopen as ${label}: the daemon gave no reason.`));
+            showSaveError(rec, WBFail.failed(reply, `Could not reopen as ${label}: the daemon gave no reason.`));
             return;
           }
           rec.encoding = reply.encoding || name;
@@ -738,19 +743,19 @@
           danger: true,
         })
       : Promise.resolve(window.confirm(`Reopen as ${label}? Unsaved changes are discarded.`));
-    ask.then((ok) => ok && go());
+    ask.then((ok: any) => ok && go());
   }
 
   // Save with: the text as it is, written under `name` — the conversion the
   // operator asked for, by name.
-  function saveWith(rec, [, name, bom]) {
+  function saveWith(rec: any, [, name, bom]: any[]) {
     rec.encoding = name;
     rec.bom = bom;
     refreshEncodingPill(rec);
     save(rec);
   }
 
-  function detachBtnHtml(rec) {
+  function detachBtnHtml(rec: any) {
     return rec.detached
       ? '<button class="vbtn" data-act="detach" title="Re-attach" aria-label="Re-attach"><i class="bi bi-box-arrow-in-down-left"></i><span class="vbtn-label">Re-attach</span></button>'
       : '<button class="vbtn" data-act="detach" title="Detach" aria-label="Detach"><i class="bi bi-box-arrow-up-right"></i><span class="vbtn-label">Detach</span></button>';
@@ -758,7 +763,7 @@
 
   // The mirror toggle (ADR-0037 §3c) is the attached canvas's: a detached
   // popup has one pane and no slot to put a second editor in.
-  function mirrorBtnHtml(rec) {
+  function mirrorBtnHtml(rec: any) {
     return rec.detached
       ? ""
       : '<button class="vbtn" data-act="mirror" title="Mirror" aria-label="Mirror"><i class="bi bi-files"></i><span class="vbtn-label">Mirror</span></button>';
@@ -768,7 +773,7 @@
   // already name the file and the repo). A DETACHED pane keeps the full label;
   // the full form always rides the `title`. `dir` / `file` are split so the
   // CSS ellipsises the directory first.
-  function pathLabel(rec) {
+  function pathLabel(rec: any) {
     const suffix = rec.kind === "diff" ? " ↔ HEAD" : "";
     const full = `${rec.label} / ${rec.path}${suffix}`;
     const cut = rec.path.lastIndexOf("/") + 1;
@@ -776,7 +781,7 @@
     return { dir: head + rec.path.slice(0, cut), file: rec.path.slice(cut) + suffix, full };
   }
 
-  function setPathLabel(el, rec) {
+  function setPathLabel(el: any, rec: any) {
     const span = el.querySelector(".viewer-path");
     const { dir, file, full } = pathLabel(rec);
     span.textContent = "";
@@ -792,14 +797,14 @@
 
   // A caption swap keeps the button's shape: icon, then the label span a narrow
   // pane hides, and the same words in `title`/`aria-label` for when it does.
-  function setCaption(btn, icon, caption) {
+  function setCaption(btn: any, icon: any, caption: any) {
     btn.innerHTML = `<i class="bi ${icon}"></i><span class="vbtn-label"></span>`;
     btn.querySelector(".vbtn-label").textContent = caption;
     btn.title = caption;
     btn.setAttribute("aria-label", caption);
   }
 
-  function detachClick(rec) {
+  function detachClick(rec: any) {
     const evt = rec.detached ? "workbench:reattach-request" : "workbench:detach-request";
     document.dispatchEvent(new CustomEvent(evt, { detail: descOf(rec) }));
   }
@@ -808,7 +813,7 @@
   // `rec.content` is a `data:` URL the daemon's verified media type built
   // (ADR-0049 §2), so this pane never decides what bytes are. Read-only: no
   // Save, no Edit — the Write class is untouched by images.
-  function buildImage(rec) {
+  function buildImage(rec: any) {
     const el = document.createElement("div");
     el.className = "viewer image-viewer";
     el.dataset.tabId = rec.id;
@@ -835,7 +840,7 @@
     img.onerror = () => (meta.textContent = "Image could not be displayed.");
     img.src = rec.content;
 
-    el.querySelector('[data-act="zoom"]').onclick = (ev) => {
+    el.querySelector('[data-act="zoom"]').onclick = (ev: any) => {
       // Two states only: fit-to-pane (default) and 1:1 with scrollbars. A zoom
       // slider is a feature this pane does not need to read a screenshot.
       const actual = el.classList.toggle("actual-size");
@@ -851,21 +856,20 @@
   // encoding it cannot name) used to close the tab under the click with a
   // flash nobody saw. The tab now holds its place, names the reason in the
   // pane, and Reload retries (the file may have been converted meanwhile).
-  const REFUSAL_TEXT = {
+  const REFUSAL_TEXT: Record<string, string> = {
     binary: "This file is binary and cannot be shown as text.",
     "too large": "This file is larger than 2 MiB. The workbench shows files up to 2 MiB.",
     "not an image": "This file is not an image the workbench can display.",
     "unknown encoding": "That encoding is not one the workbench knows.",
     unencodable: "This file cannot be decoded with that encoding.",
   };
-  function refusalText(reason) {
+  function refusalText(reason: any) {
     if (REFUSAL_TEXT[reason]) return REFUSAL_TEXT[reason];
     // `detached.html` loads no `wb-fail.js`.
-    if (!window.WBFail) return "Could not open the file.";
-    return window.WBFail.failed({ message: reason }, "Could not open the file: the daemon gave no reason.");
+    return WBFail.failed({ message: reason }, "Could not open the file: the daemon gave no reason.");
   }
 
-  function buildRefused(rec) {
+  function buildRefused(rec: any) {
     const el = document.createElement("div");
     el.className = "viewer refused-viewer";
     el.dataset.tabId = rec.id;
@@ -894,7 +898,7 @@
   }
 
   // --- a Markdown tab -----------------------------------------------------
-  function buildMarkdown(rec) {
+  function buildMarkdown(rec: any) {
     const el = document.createElement("div");
     el.className = "viewer md-viewer";
     el.dataset.tabId = rec.id;
@@ -939,7 +943,7 @@
     // a tap on the article closes it — the index is a way in, not a fixture.
     const split = el.querySelector(".md-split");
     el.querySelector('[data-act="outline"]').onclick = () => split.classList.toggle("toc-open");
-    el.querySelector(".md-outline").addEventListener("click", (ev) => {
+    el.querySelector(".md-outline").addEventListener("click", (ev: any) => {
       if (ev.target.closest(".outline-item")) split.classList.remove("toc-open");
     });
     el.querySelector(".md-scroll").addEventListener("pointerdown", () => split.classList.remove("toc-open"));
@@ -959,7 +963,7 @@
       input.select();
     };
     input.addEventListener("input", () => mdSearch(rec, input.value));
-    input.addEventListener("keydown", (e) => {
+    input.addEventListener("keydown", (e: any) => {
       if (e.key === "Enter") mdSearchStep(rec, e.shiftKey ? -1 : 1);
       if (e.key === "Escape") mdSearchClose(rec);
     });
@@ -968,12 +972,12 @@
     el.querySelector('[data-find="close"]').onclick = () => mdSearchClose(rec);
     // Links inside the rendered article: one delegated listener for the pane's
     // lifetime, so a re-render (reload, edit→preview) never re-wires anything.
-    el.querySelector(".md-body").addEventListener("click", (ev) => linkClick(rec, ev));
+    el.querySelector(".md-body").addEventListener("click", (ev: any) => linkClick(rec, ev));
 
     renderMarkdown(rec);
   }
 
-  function renderMarkdown(rec) {
+  function renderMarkdown(rec: any) {
     const article = rec.el.querySelector(".md-body");
     const html = DOMPurify.sanitize(marked.parse(rec.content));
     article.innerHTML = html;
@@ -981,7 +985,7 @@
     // mermaid fences: marked emits <pre><code class="language-mermaid">. Defer
     // the actual draw to first paint (a hidden container measures as 0).
     rec.mermaidPending = [];
-    article.querySelectorAll("code.language-mermaid").forEach((code, i) => {
+    article.querySelectorAll("code.language-mermaid").forEach((code: any, i: any) => {
       const holder = document.createElement("div");
       holder.className = "mermaid";
       holder.dataset.src = code.textContent;
@@ -1003,10 +1007,10 @@
   // loads, and `blockedImage` explains a refusal; a source that REFUSES is left alone
   // too — a broken image is an honest rendering of a broken link, and a
   // placeholder would fabricate.
-  function resolveImages(rec, article) {
+  function resolveImages(rec: any, article: any) {
     if (!window.WBDaemon?.readImage) return;
     const dir = rec.path.includes("/") ? rec.path.slice(0, rec.path.lastIndexOf("/")) : "";
-    article.querySelectorAll("img[src]").forEach((img) => {
+    article.querySelectorAll("img[src]").forEach((img: any) => {
       const src = img.getAttribute("src") || "";
       // Anything carrying a scheme (`data:`, `https:`) or rooted at `/` is not
       // ours to resolve.
@@ -1028,9 +1032,9 @@
   // with no element (measured), so the article's images are matched by URL.
   // Built with `textContent`, never `innerHTML`: the alt text is document
   // content.
-  function blockedImage(ev) {
+  function blockedImage(ev: any) {
     if (ev.effectiveDirective !== "img-src" || !ev.blockedURI) return;
-    document.querySelectorAll(".md-body img").forEach((img) => {
+    document.querySelectorAll(".md-body img").forEach((img: any) => {
       if (img.src !== ev.blockedURI) return;
       const note = document.createElement("span");
       note.className = "md-img-blocked";
@@ -1047,7 +1051,7 @@
   // `text` that keeps a row of badges one row, and the `reason` for its
   // tooltip. A plain-`http:` image stays blocked even with remote images on
   // (the policy admits `https:` only), so it gets its own reason.
-  function remoteImageNotice(src, alt) {
+  function remoteImageNotice(src: any, alt: any) {
     let url = null;
     try {
       url = new URL(src);
@@ -1068,7 +1072,7 @@
   // markdown spelling of a space), `.`/`..` segments resolved. Returns `null`
   // for anything that climbs OUT of the repo — the daemon would refuse it
   // anyway, and not asking is the honest way to spell "not ours".
-  function repoRelative(dir, src) {
+  function repoRelative(dir: any, src: any) {
     let clean = src.split(/[?#]/)[0];
     try {
       clean = decodeURIComponent(clean);
@@ -1097,7 +1101,7 @@
   //   • anything else          → { kind: "file", path, fragment } — a repo file,
   //     folded against the document's own directory like an `<img src>`
   //   • climbs out of the repo → null — not ours, and the daemon would refuse it
-  function linkTarget(dir, href) {
+  function linkTarget(dir: any, href: any) {
     if (!href) return null;
     if (href.startsWith("#")) return { kind: "fragment", fragment: href.slice(1) };
     if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("/")) return { kind: "external" };
@@ -1110,7 +1114,7 @@
   // A click on a rendered `<a>`: a raw `href` would navigate the WHOLE
   // window. A repo file becomes an open REQUEST to the shell; external links
   // open in a new tab so the workbench is not what gets replaced.
-  function linkClick(rec, ev) {
+  function linkClick(rec: any, ev: any) {
     const a = ev.target.closest?.("a[href]");
     if (!a || !rec.el.contains(a)) return;
     const dir = rec.path.includes("/") ? rec.path.slice(0, rec.path.lastIndexOf("/")) : "";
@@ -1144,14 +1148,14 @@
   // Scroll a rendered document to the heading a `#fragment` names. `marked`
   // emits no heading ids (the outline assigns positional ones), so the match is
   // by GitHub-style slug of the heading text — the spelling authors write.
-  function slugOf(text) {
+  function slugOf(text: any) {
     return text
       .trim()
       .toLowerCase()
       .replace(/[^\p{L}\p{N}\s-]/gu, "")
       .replace(/\s+/g, "-");
   }
-  function jumpTo(rec, fragment) {
+  function jumpTo(rec: any, fragment: any) {
     if (!fragment) return;
     let want = fragment;
     try {
@@ -1169,20 +1173,20 @@
     }
   }
 
-  function drawMermaid(rec) {
+  function drawMermaid(rec: any) {
     if (!rec.mermaidPending || !rec.mermaidPending.length) return;
     initMermaid();
     const pending = rec.mermaidPending;
     rec.mermaidPending = [];
-    pending.forEach((holder) => {
+    pending.forEach((holder: any) => {
       window.mermaid
         .render(holder.id + "-svg", holder.dataset.src)
         // The fence source is re-read RAW above (DOMPurify escaped it in the
         // markdown pass), so the rendered SVG is the one string on this path that
         // never met the sanitizer. Sanitize on insert. `foreignobject` is already
         // in DOMPurify's SVG allowlist, so mermaid's HTML labels survive.
-        .then(({ svg }) => (holder.innerHTML = DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true, html: true } })))
-        .catch((err) => {
+        .then(({ svg }: any) => (holder.innerHTML = DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true, html: true } })))
+        .catch((err: any) => {
           holder.classList.add("mermaid-error");
           holder.textContent = "Mermaid error: " + (err?.message || err);
         });
@@ -1190,7 +1194,7 @@
   }
 
   // Heading outline: the jump index, one entry per heading, indented by level.
-  function buildOutline(rec, article) {
+  function buildOutline(rec: any, article: any) {
     const nav = rec.el.querySelector(".md-outline");
     nav.innerHTML = "";
     const heads = article.querySelectorAll("h1, h2, h3, h4");
@@ -1198,7 +1202,7 @@
       nav.innerHTML = '<div class="outline-empty">No headings</div>';
       return;
     }
-    heads.forEach((h, i) => {
+    heads.forEach((h: any, i: any) => {
       const id = `h-${rec.uid}-${i}`;
       h.id = id;
       const a = document.createElement("a");
@@ -1211,8 +1215,8 @@
   }
 
   // --- in-page find over rendered markdown -------------------------------
-  function clearHits(rec) {
-    (rec.hits || []).forEach((mk) => {
+  function clearHits(rec: any) {
+    (rec.hits || []).forEach((mk: any) => {
       const t = document.createTextNode(mk.textContent);
       mk.replaceWith(t);
     });
@@ -1225,7 +1229,7 @@
   // find widget seeded with it, so F3/Enter walks the rest — the content
   // search's "jump to line", done with what Monaco already has. Literal and
   // case-insensitive, like the search that produced the hit.
-  function findInEditor(rec, term) {
+  function findInEditor(rec: any, term: any) {
     const ed = rec.ed;
     if (!ed || !term) return;
     // The pane must be laid out BEFORE the widget opens: Monaco keeps the
@@ -1251,7 +1255,7 @@
   }
 
   // The markdown pane's equivalent: its own find bar, opened and seeded.
-  function findInMarkdown(rec, term) {
+  function findInMarkdown(rec: any, term: any) {
     const find = rec.el?.querySelector(".md-find");
     const input = rec.el?.querySelector(".md-find-input");
     if (!find || !input) return;
@@ -1260,7 +1264,7 @@
     mdSearch(rec, term);
   }
 
-  function mdSearch(rec, term) {
+  function mdSearch(rec: any, term: any) {
     clearHits(rec);
     const count = rec.el.querySelector(".md-find-count");
     if (!term) {
@@ -1269,7 +1273,7 @@
     }
     const article = rec.el.querySelector(".md-body");
     const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT, {
-      acceptNode: (n) =>
+      acceptNode: (n: any) =>
         n.nodeValue.trim() && !n.parentElement.closest("svg, script, style")
           ? NodeFilter.FILTER_ACCEPT
           : NodeFilter.FILTER_REJECT,
@@ -1305,7 +1309,7 @@
     if (hits.length) mdSearchStep(rec, 1);
   }
 
-  function mdSearchStep(rec, dir) {
+  function mdSearchStep(rec: any, dir: any) {
     if (!rec.hits || !rec.hits.length) return;
     if (rec.hitIdx >= 0) rec.hits[rec.hitIdx].classList.remove("current");
     rec.hitIdx = (rec.hitIdx + dir + rec.hits.length) % rec.hits.length;
@@ -1315,7 +1319,7 @@
     rec.el.querySelector(".md-find-count").textContent = `${rec.hitIdx + 1}/${rec.hits.length}`;
   }
 
-  function mdSearchClose(rec) {
+  function mdSearchClose(rec: any) {
     clearHits(rec);
     rec.el.querySelector(".md-find").classList.remove("open");
     rec.el.querySelector(".md-find-count").textContent = "";
@@ -1323,7 +1327,7 @@
   }
 
   // Swap the markdown pane between rendered preview and a raw-source editor.
-  function toggleEdit(rec) {
+  function toggleEdit(rec: any) {
     const split = rec.el.querySelector(".md-split");
     const editor = rec.el.querySelector(".md-editor");
     const toggle = rec.el.querySelector('[data-act="toggle"]');
@@ -1369,9 +1373,9 @@
     // they came; absent (a diff) is UTF-8 without a BOM. `refused` is
     // the daemon's reason for serving nothing: the pane says so and keeps the
     // tab, instead of the tab closing under the click.
-    open({ id, project, label, path, ftype, content, original, detached, checkout, encoding, bom, refused }) {
+    open({ id, project, label, path, ftype, content, original, detached, checkout, encoding, bom, refused }: any) {
       if (map.has(id)) return;
-      const shown = label || (window.WBFleet ? window.WBFleet.refSlug(project) : project);
+      const shown = label || (WBFleet ? WBFleet.refSlug(project) : project);
       const rec = {
         id, project, label: shown, path, kind: ftype, content, original, uid: ++uidSeq,
         editing: false, visible: false, detached: !!detached, checkout: checkout || null,
@@ -1389,14 +1393,14 @@
     // waits for; `saveFailed` puts the mark back and names the reason in the
     // pane. `reply` rides along so an `unencodable` refusal can say which
     // character (`char_index`) the encoding could not take.
-    saveDone(id) {
+    saveDone(id: any) {
       const rec = map.get(id);
       if (!rec) return;
       rec.dirty = false;
       rec.saveBtn?.classList.remove("dirty");
       clearSaveError(rec);
     },
-    saveFailed(id, reason, reply) {
+    saveFailed(id: any, reason: any, reply: any) {
       const rec = map.get(id);
       if (!rec) return;
       rec.dirty = true;
@@ -1404,17 +1408,17 @@
       const text =
         reason === "unencodable"
           ? `Could not save: character ${Number(reply?.char_index ?? 0) + 1} cannot be written in ${rec.encoding}.`
-          : window.WBFail.failed(reply || { reason }, "Could not save: the daemon gave no reason.");
+          : WBFail.failed(reply || { reason }, "Could not save: the daemon gave no reason.");
       showSaveError(rec, text);
     },
 
     // The encoding a pane will save with, and the change of it (a "save
     // with…" or the `unencodable` dialog's "save as UTF-8").
-    encodingOf(id) {
+    encodingOf(id: any) {
       const rec = map.get(id);
       return rec ? { encoding: rec.encoding, bom: !!rec.bom } : null;
     },
-    setEncoding(id, encoding, bom) {
+    setEncoding(id: any, encoding: any, bom: any) {
       const rec = map.get(id);
       if (!rec) return;
       rec.encoding = encoding;
@@ -1429,7 +1433,7 @@
 
     // The shell never calls it — a detach goes through the pane's own button.
     // detached.html reads it on unload, to send the edited bytes home.
-    descOf(id) {
+    descOf(id: any) {
       const rec = map.get(id);
       return rec ? descOf(rec) : null;
     },
@@ -1438,7 +1442,7 @@
     // the slot the shell resolved (ADR-0037 §3c): `{ id, mirror, focus, ratio }`
     // or nothing. One argument is the single pane every caller had; the
     // detached popup never passes a second.
-    setActive(id, slot) {
+    setActive(id: any, slot?: any) {
       shown = { id, slot: slot || null };
       paint();
     },
@@ -1453,7 +1457,7 @@
     // operator's unsaved edits, and `open` returns early on a known id, so a
     // naive reopen is a silent no-op. A diff tab is skipped — its id comes from
     // the changes panel, not from this path.
-    repath(oldId, { id, path }) {
+    repath(oldId: any, { id, path }: any) {
       const rec = map.get(oldId);
       if (!rec || map.has(id) || rec.kind === "diff") return;
       map.delete(oldId);
@@ -1464,7 +1468,7 @@
       if (rec.el) setPathLabel(rec.el, rec);
     },
 
-    close(id) {
+    close(id: any) {
       const rec = map.get(id);
       if (!rec) return;
       // Delete from the map FIRST: a pending mountEditor() checks membership
@@ -1475,7 +1479,7 @@
     },
 
     // Scroll an open markdown pane to a `#fragment`, once the bytes landed.
-    jumpTo(id, fragment) {
+    jumpTo(id: any, fragment: any) {
       const rec = map.get(id);
       if (rec && rec.kind === "markdown") jumpTo(rec, fragment);
     },
@@ -1484,7 +1488,7 @@
     // A code pane whose editor has not mounted yet remembers the term and
     // acts once it has; a rendered markdown pane uses its own find bar; a
     // diff or an image has nothing to find in.
-    find(id, term) {
+    find(id: any, term: any) {
       const rec = map.get(id);
       if (!rec || !term) return;
       if (rec.kind === "diff" || rec.kind === "image") return;
@@ -1507,7 +1511,7 @@
     // auto-refreshes; a DIRTY tab stashes them and shows the "changed on disk"
     // badge, NEVER clobbering unsaved edits. Equal bytes are a no-op (our own
     // save round-trips through the same nudge).
-    externalChange(id, content) {
+    externalChange(id: any, content: any) {
       const rec = map.get(id);
       if (!rec) return;
       // A diff tab never auto-refreshes: it is a two-sided read, and a
@@ -1523,7 +1527,7 @@
       }
     },
   };
-  window.WBViewer = API;
   // One listener for every markdown pane; a test's stub document has none.
   document.addEventListener?.("securitypolicyviolation", blockedImage);
-})();
+  return API;
+}

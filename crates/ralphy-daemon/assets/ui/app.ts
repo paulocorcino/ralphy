@@ -4,7 +4,7 @@
    The sidebar is a project accordion (Alpine); the file tree is a Wunderbaum
    instance. The canvas is a tabbed workspace: "Consoles" is fixed and hosts
    the floating console windows (wb-console.js); every opened file is its own
-   closable tab rendered by a viewer (wb-viewer.js).
+   closable tab rendered by a viewer (wb-viewer.ts).
 
    Every user gesture becomes one CustomEvent, `workbench:action`, on
    `document`. That event IS the seam: a backend subscribes and does the work.
