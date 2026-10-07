@@ -178,10 +178,13 @@ change: `bootstrap-icons.min.css` keeps only the `woff2` font in its
 `@font-face` list, and `devicon.min.css` keeps only the `woff` font, because
 only those font files are vendored.
 
-Alpine is the ES module build (`dist/module.esm.min.js` of the npm package,
-vendored as `alpine.esm.min.js`). It does not start itself and sets no
-global: `main.ts` imports it, sets `window.Alpine`, and starts it.
-`alpine.esm.min.d.ts` next to it is ours: the types `main.ts` imports with
+Alpine is the ES module build (`dist/module.esm.js` of the npm package,
+vendored as `alpine.esm.js`). It does not start itself and sets no
+global: `main.ts` imports it, sets `window.Alpine`, and starts it. Do not
+take `dist/module.esm.min.js`: in the alpinejs 3.14.x tarballs it is built
+from 3.13.10. The test `vendored_alpine_is_the_manifest_version` compares
+the version inside the file with the manifest.
+`alpine.esm.d.ts` next to it is ours: the types `main.ts` imports with
 it. The build does not serve a `.d.ts` file, so the manifest does not list it.
 
 ## The console clipboard

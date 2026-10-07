@@ -333,3 +333,15 @@ D5 is now checked by `each_page_starts_from_one_entry_module`
 entry it names; only `main.ts` calls `Alpine.start`, `Alpine.data` and
 `Alpine.directive`; and `main.ts` registers exactly the `x-data` names of
 `index.html`.
+
+## Amendment (2026-10-07): the vendored Alpine file
+
+The phase 4 amendment names `./vendor/alpine.esm.min.js`, the
+`dist/module.esm.min.js` file of alpinejs 3.14.1. Measured on the npm
+tarballs of 3.14.1 and 3.14.9: that file is built from 3.13.10, and throws
+`u is not a function` when a nested `x-show` element is hidden twice while
+its parent is being hidden (#579). The vendored file is now
+`./vendor/alpine.esm.js`, the `dist/module.esm.js` file of the same tarball,
+which is 3.14.1. Its types are in `vendor/alpine.esm.d.ts`.
+`vendored_alpine_is_the_manifest_version` checks that the version inside the
+file is the manifest's.
