@@ -48,6 +48,7 @@ interface Window {
   WBColumns: any;
   WBConsoleName: any;
   WBDeskSink: any;
+  WBDetachLink: any;
   WBNotes: any;
   WBSessionRoute: any;
   WBViewer: any;
