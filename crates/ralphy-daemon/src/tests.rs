@@ -4373,7 +4373,7 @@ fn each_page_starts_from_one_entry_module() {
         .and_then(|f| f.contents_utf8())
         .expect("main.js is embedded UTF-8");
     assert!(
-        main.contains(r#"import Alpine from "./vendor/alpine.esm.min.js";"#),
+        main.contains(r#"import Alpine from "./vendor/alpine.esm.js";"#),
         "main.js imports the vendored Alpine ES module build, at its own path"
     );
     for path in embedded_ui_paths() {
@@ -8416,6 +8416,40 @@ fn vendored_files_match_the_manifest() {
         check_manifest(missing, &manifest),
         vec![format!("{}: in the manifest, but not vendored", files[0].0)]
     );
+}
+
+/// The vendored Alpine is the version its manifest entry names. The hash
+/// check cannot see this: the npm tarballs of alpinejs 3.14.0 to 3.14.9 ship
+/// a `dist/module.esm.min.js` built from 3.13.10 (measured on 3.14.1 and
+/// 3.14.9), which throws `u is not a function` when an `x-show` element is
+/// hidden twice inside a parent that is being hidden (issue #579).
+#[test]
+fn vendored_alpine_is_the_manifest_version() {
+    let manifest: serde_json::Value = serde_json::from_slice(
+        UI.get_file("vendor/manifest.json")
+            .expect("vendor/manifest.json is embedded")
+            .contents(),
+    )
+    .expect("vendor/manifest.json is JSON");
+    let lib = manifest["libraries"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|l| l["npm"] == "alpinejs")
+        .expect("the manifest lists alpinejs");
+    let path = lib["files"][0]["path"]
+        .as_str()
+        .expect("the alpinejs entry names its file");
+    let text = UI
+        .get_file(format!("vendor/{path}"))
+        .and_then(|f| f.contents_utf8())
+        .unwrap_or_else(|| panic!("vendor/{path} is embedded UTF-8"));
+    let built = text
+        .split_once("version: \"")
+        .or_else(|| text.split_once("version:\""))
+        .and_then(|(_, rest)| rest.split_once('"'))
+        .map(|(v, _)| v);
+    assert_eq!(built, lib["version"].as_str(), "vendor/{path}");
 }
 
 /// The desk history routes (ADR-0050 amendment 2026-10-04).

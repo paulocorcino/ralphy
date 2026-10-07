@@ -48,6 +48,7 @@ Run: python tests/browser/worktree/wb_worktree_406.py   (exit 0 = all pass)
 
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -69,6 +70,8 @@ SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 
 results = []
+# Every temp folder the script makes; removed after the daemon stops.
+TEMP_DIRS = []
 
 
 def check(name, ok, detail=""):
@@ -95,10 +98,33 @@ def stop(proc):
         proc.kill()
 
 
+def rmtree_retry(path, tries=40):
+    """Windows refuses to delete a folder that is a running process's working
+    directory. A daemon read runs `git -C <checkout>` and ends by itself
+    (measured 2026-10-07: wt-a was held once, and free again within 2 s).
+    Git writes its objects read-only, so those are made writable first."""
+
+    def writable(func, p, _exc):
+        os.chmod(p, stat.S_IWRITE)
+        func(p)
+
+    for attempt in range(tries):
+        try:
+            shutil.rmtree(path, onerror=writable)
+            return
+        except FileNotFoundError:
+            return
+        except PermissionError:
+            if attempt == tries - 1:
+                raise
+            time.sleep(0.25)
+
+
 def empty_env(daemon_dir):
     """A scratch registry + empty vendor stores: the operator's own daemon dir
     (and its login policy) is never touched, and the usage scan finds nothing."""
     empty = tempfile.mkdtemp(prefix="wb406_empty_")
+    TEMP_DIRS.append(empty)
     return dict(
         os.environ,
         RALPHY_DAEMON_DIR=daemon_dir,
@@ -119,7 +145,9 @@ def seed(parent_prefix, name):
     """A committed git repo on `main` at a CHOSEN directory name, `.ralphy/`
     gitignored so a worktree under it never dirties the primary tree, with a
     file only the primary holds."""
-    d = Path(tempfile.mkdtemp(prefix=parent_prefix)) / name
+    parent = tempfile.mkdtemp(prefix=parent_prefix)
+    TEMP_DIRS.append(parent)
+    d = Path(parent) / name
     d.mkdir()
     (d / ".gitignore").write_text(".ralphy/\n", encoding="utf-8")
     (d / "README.md").write_text(f"# {name}\n\nThe #406 select fixture repo.\n", encoding="utf-8")
@@ -296,6 +324,7 @@ def main():
     os.makedirs(SHOT_DIR, exist_ok=True)
     build()
     daemon_dir = tempfile.mkdtemp(prefix="wb406_reg_")
+    TEMP_DIRS.append(daemon_dir)
     fixture = seed("wb406_", "plain")
     wt = add_worktree(fixture)
     slug = register_fixture(daemon_dir, str(fixture))
@@ -465,11 +494,16 @@ def main():
             page.evaluate(f"(s) => {SH}.closeTab('file:' + s + '@wt-a:only-in-wt.txt')", arg=slug)
             click_row(page, "wt-a", slug)
             page.wait_for_function(TITLES_INCLUDE, arg="only-in-wt.txt", timeout=15000)
+            # The selection starts `changes.list` and `sync.status`, which run
+            # git inside wt-a; let them land before the folder is deleted.
+            page.wait_for_function(
+                f"(s) => !!({SH}.changesRead[s] && {SH}.syncRead[s])", arg=slug, timeout=15000
+            )
 
             # --- scenario 9: unknown checkout resets the selection ------------
             # The pointer file goes with the directory: the daemon's next read
             # answers `unknown checkout`, which is the one reply that drops it.
-            shutil.rmtree(wt)
+            rmtree_retry(wt)
             page.evaluate(f"() => {SH}.fetchTreeLevel('').catch(() => null)")
             page.wait_for_function(f"(s) => {SH}.checkouts[s] === undefined", arg=slug, timeout=15000)
             page.wait_for_function(CHIP_IS, arg="main", timeout=10000)
@@ -483,6 +517,8 @@ def main():
             browser.close()
     finally:
         stop(proc)
+        for d in TEMP_DIRS:
+            rmtree_retry(d)
 
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     # A deleted scenario must not silently shrink the suite (#339 trap).

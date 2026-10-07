@@ -7,9 +7,9 @@
       "source": "https://registry.npmjs.org/alpinejs/-/alpinejs-3.14.1.tgz",
       "files": [
         {
-          "path": "alpine.esm.min.js",
-          "sha256": "f00594ce50655463ddfda0de294457e8c0fad36f1896182f66f6cea7db36b93c",
-          "note": "dist/module.esm.min.js: the ES module build, which does not start itself"
+          "path": "alpine.esm.js",
+          "sha256": "696bde2fae60bd07fbfaf4b950738badc988e04426c78957931d706f596d2521",
+          "note": "dist/module.esm.js: the ES module build, which does not start itself. Not dist/module.esm.min.js: in this tarball it is built from 3.13.10"
         }
       ]
     },

@@ -5,7 +5,7 @@
    directive, and starts Alpine once. A module tag runs after the classic
    scripts, so every classic name is in place when Alpine starts.
    --------------------------------------------------------------------------- */
-import Alpine from "./vendor/alpine.esm.min.js";
+import Alpine from "./vendor/alpine.esm.js";
 // In the order of the page's old module tags. A module sets the `window` name
 // that a classic script still reads (D9), so a bare import is not dead code.
 import "./wb-fail.ts";
