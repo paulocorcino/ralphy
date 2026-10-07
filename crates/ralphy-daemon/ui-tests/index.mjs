@@ -18,6 +18,8 @@ import "./wb-desk-sink.test.mjs";
 import "./wb-encoding.test.mjs";
 import "./wb-detach-file.test.mjs";
 import "./wb-detach-link.test.mjs";
+import "./wb-detached.test.mjs";
+import "./wb-detached-fence.test.mjs";
 import "./wb-fail.test.mjs";
 import "./wb-file-search.test.mjs";
 import "./wb-fleet.test.mjs";

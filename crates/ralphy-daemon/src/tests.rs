@@ -2713,13 +2713,13 @@ async fn every_response_carries_the_security_headers() {
         );
     }
     // The hash in the header is the hash of the bytes the browser receives:
-    // recompute it from a served shell. The fence page carries inline scripts;
-    // the desk page has none.
+    // recompute it from a served shell. The fence page carries an inline
+    // script (its console options); the desk page has none.
     let shell = body_string(get_local("/fence").await).await;
     let bodies = routes::inline_script_bodies(&shell);
     assert!(
         !bodies.is_empty(),
-        "detached-fence.html carries its handshake inline"
+        "detached-fence.html carries its console options inline"
     );
     let csp = routes::content_security_policy(false).to_str().unwrap();
     for body in bodies {
@@ -3987,8 +3987,14 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
     // A module reached by an `import` needs no tag of its own (ADR-0075 D5).
     let index = SHELLS[0].1;
     let index_refs = with_module_imports(tag_references(index));
-    // A popup's entry module is the one asset only its own page loads.
-    let popup_entries = ["detached-main.js", "detached-fence-main.js"];
+    // A popup's entry module, and the page script that entry calls, are the
+    // assets only their own page loads.
+    let popup_entries = [
+        "detached-main.js",
+        "wb-detached.js",
+        "detached-fence-main.js",
+        "wb-detached-fence.js",
+    ];
     for path in embedded_ui_paths() {
         if path.starts_with("vendor/") || popup_entries.contains(&path.as_str()) {
             continue;
@@ -4010,13 +4016,19 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
     for (shell, required) in [
         (
             "detached.html",
-            &["wb-fleet.js", "wb-monaco.js", "wb-viewer.js"][..],
+            &[
+                "wb-fleet.js",
+                "wb-detached.js",
+                "wb-monaco.js",
+                "wb-viewer.js",
+            ][..],
         ),
         (
             "detached-fence.html",
             &[
                 "wb-fleet.js",
                 "wb-fail.js",
+                "wb-detached-fence.js",
                 "wb-desk-sink.js",
                 "wb-desk-sync.js",
                 "wb-detach-link.js",
@@ -5651,11 +5663,12 @@ fn shell_lists_the_fences() {
 
 /// A detached file comes home however its popup closes: the popup sends its
 /// edited bytes on unload, and the shell polls `closed` for one that dies
-/// without an unload. The popup's inline script runs in no node test, so a
-/// deletion fails HERE or nowhere. Pins are expressions, not nouns (#342).
+/// without an unload. No node test fires an unload on the popup's page
+/// script (`wb-detached.ts`), so a deletion fails HERE or nowhere. Pins are
+/// expressions, not nouns (#342).
 #[test]
 fn a_detached_file_comes_home_when_its_popup_closes() {
-    let popup = include_str!("../assets/ui/detached.html");
+    let popup = include_str!("../assets/ui/wb-detached.ts");
     for pin in [
         r#"window.addEventListener("beforeunload", sendHome)"#,
         r#"window.addEventListener("pagehide", sendHome)"#,
@@ -5663,7 +5676,7 @@ fn a_detached_file_comes_home_when_its_popup_closes() {
     ] {
         assert!(
             popup.contains(pin),
-            "detached.html must keep the unload re-attach {pin}"
+            "wb-detached.ts must keep the unload re-attach {pin}"
         );
     }
     let app = include_str!("../assets/ui/app.ts");
@@ -5794,36 +5807,52 @@ fn shell_detaches_a_fence() {
     );
     // THE POPUP'S DENIED CAPABILITIES. Each is what stops a window holding a
     // FRAGMENT of the plane from writing the whole desk or the shell's view.
+    // The options are the page's inline script; the handshake is its page
+    // script module, `wb-detached-fence.ts`.
     let html = include_str!("../assets/ui/detached-fence.html");
+    let page = include_str!("../assets/ui/wb-detached-fence.ts");
     for pin in [
         "window.WBDeskSink.none()",
         "autoBoot: false",
         "canLaunch: false",
         "read: () => null",
-        "WBConsole.mountDetached(",
-        "wb-fence-ready",
-        "wb-fence-reattach",
     ] {
         assert!(
             html.contains(pin),
             "detached-fence.html must keep the #346 pin {pin}"
         );
     }
+    for pin in [
+        "WBConsole.mountDetached(",
+        "wb-fence-ready",
+        "wb-fence-reattach",
+    ] {
+        assert!(
+            page.contains(pin),
+            "wb-detached-fence.ts must keep the #346 pin {pin}"
+        );
+    }
     assert!(
-        !html.contains("WBConsole.open("),
+        !html.contains("WBConsole.open(") && !page.contains("WBConsole.open("),
         "the popup must expose no way to open a new console (#346)"
     );
     // The handshake's confidentiality control: a concrete targetOrigin, so a
     // page on any other origin never receives this fence's members. Pinned as
     // the ASSIGNMENT, not the bare noun — `window.location.origin` also
     // appears in the inbound guard below it, so rewriting `PEER` to `"*"`
-    // would leave a noun pin green.
+    // would leave a noun pin green. Both scripts post to the opener, and
+    // each has its own `PEER`.
+    for (name, text) in [
+        ("detached-fence.html", html),
+        ("wb-detached-fence.ts", page),
+    ] {
+        assert!(
+            text.contains("const PEER = window.location.origin;"),
+            "{name}: the popup's PEER must resolve to a concrete origin (#346)"
+        );
+    }
     assert!(
-        html.contains("const PEER = window.location.origin;"),
-        "the popup's PEER must resolve to a concrete origin (#346)"
-    );
-    assert!(
-        !html.contains(r#"postMessage({ type: "wb-fence-ready" }, "*")"#),
+        !page.contains(r#"postMessage({ type: "wb-fence-ready" }, "*")"#),
         "the popup must never broadcast its handshake to \"*\" (#346)"
     );
     // The opener's reply has the same control as the popup's PEER: a concrete
@@ -5963,6 +5992,7 @@ fn shell_survives_a_reload_with_its_detach() {
     let js = include_str!("../assets/ui/wb-console.js");
     let link = include_str!("../assets/ui/wb-detach-link.js");
     let html = include_str!("../assets/ui/detached-fence.html");
+    let page = include_str!("../assets/ui/wb-detached-fence.ts");
     let body = |name: &str| -> String {
         let after = js
             .split_once(name)
@@ -6045,34 +6075,41 @@ fn shell_survives_a_reload_with_its_detach() {
         js.contains("deskSink.putSync("),
         "the pagehide flush must survive the popup-close deletion (#347)"
     );
-    // THE POPUP'S FIFTH DENIED CAPABILITY and its half of the lifecycle.
+    // THE POPUP'S FIFTH DENIED CAPABILITY, in its options.
+    assert!(
+        html.contains("detachLink: window.WBDetachLink.none()"),
+        "detached-fence.html must keep the #347 pin detachLink: window.WBDetachLink.none()"
+    );
+    // Its half of the lifecycle, in its page script.
     for pin in [
-        "detachLink: window.WBDetachLink.none()",
         // The channel-only factory: this document must reach no store, not
         // even to read the copy `window.open` handed it.
         "window.WBDetachLink.channel()",
         "\"popup-here\"",
         "\"popup-gone\"",
         // The BEHAVIOUR, not the class name: `detached-lost` alone is
-        // satisfied by the CSS rule in this file's own <style> block, so
+        // satisfied by the CSS rule in the page's own <style> block, so
         // deleting `lost()` outright would keep a bare-noun pin green.
         r#"'<p class="detached-lost">"#,
         "window.close()",
         "WBConsole.peerFold(",
     ] {
         assert!(
-            html.contains(pin),
-            "detached-fence.html must keep the #347 pin {pin}"
+            page.contains(pin),
+            "wb-detached-fence.ts must keep the #347 pin {pin}"
         );
     }
     // #346's confidentiality control is UNCHANGED: the channel carries only
     // lifecycle chatter, the members still ride the concrete-origin handshake.
     assert!(
-        html.contains("const PEER = window.location.origin;"),
+        page.contains("const PEER = window.location.origin;"),
         "the initial handover must keep its concrete targetOrigin (#346, #347)"
     );
     assert!(
-        !html.contains("localStorage") && !html.contains("sessionStorage"),
+        !html.contains("localStorage")
+            && !html.contains("sessionStorage")
+            && !page.contains("localStorage")
+            && !page.contains("sessionStorage"),
         "the popup must still store nothing in the browser (#346)"
     );
 }
@@ -6559,7 +6596,7 @@ fn a_quiet_detach_peer_is_challenged_before_it_is_buried() {
         js.contains(r#"m.type==="popup-ping""#) && js.contains(r#"type:"origin-here""#),
         "the origin must answer a probe from its MESSAGE handler, not a timer"
     );
-    let popup = squeeze(include_str!("../assets/ui/detached-fence.html"));
+    let popup = squeeze(include_str!("../assets/ui/wb-detached-fence.ts"));
     assert!(
         popup.contains("!window.opener||window.opener.closed"),
         "the popup's verdict is the opener HANDLE, which owes nothing to a timer"

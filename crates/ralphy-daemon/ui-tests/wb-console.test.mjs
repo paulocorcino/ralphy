@@ -2687,10 +2687,12 @@ test("a restart and a placeholder's Launch mark the console as relaunching", () 
 // The torn-off fence window's grid is never stored (ADR-0051 §8, amended
 // 2026-10-05), so its one call never asks to write the maximize.
 test("the torn-off fence window paints its columns without persist", () => {
-  const html = readFileSync(join(UI, "detached-fence.html"), "utf8");
+  // The page and its page script module.
+  const html =
+    readFileSync(join(UI, "detached-fence.html"), "utf8") + readFileSync(join(UI, "wb-detached-fence.ts"), "utf8");
   const calls = html.match(/WBConsole\.applyColumns\([^;]*;/g) || [];
   assert.equal(calls.length, 1, calls.join("\n"));
-  assert.ok(!/\bpersist\b/.test(html), "detached-fence.html names persist");
+  assert.ok(!/\bpersist\b/.test(html), "the torn-off fence window names persist");
 });
 
 // The torn-off fence window paints its own grid and never stores it
