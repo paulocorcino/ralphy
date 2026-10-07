@@ -6646,6 +6646,7 @@ window.WBConsole = (function () {
     const relaunchIn = (checkout) => {
       // A restart is the operator's act: an adopted console gets its record.
       const carry = { ...deskOf(win), unrecorded: false };
+      relaunching.add(carry.id);
       discard();
       // `win._deskKind`, not the local `kind`: a window reattached at load was
       // spawned with `{id, repo}` only. `~` is the daemon's repo-less label.
@@ -6968,11 +6969,22 @@ window.WBConsole = (function () {
   // Spawn an agent console — unless the worktree it asks for is gone, in which
   // case a placeholder SAYS so (#411). A console must never silently land on
   // the primary tree because its own vanished (the #409 gates).
+  // Desk ids whose window a relaunch took off the stage and has not put back
+  // yet: the shell's columns wait for them instead of dropping them.
+  const relaunching = new Set();
+  function isRelaunching(deskId) {
+    return relaunching.has(deskId);
+  }
+
   async function spawnOrMissing(req, label, repo, carry) {
-    if (req.checkout && !(await checkoutStillThere(repo, req.checkout))) {
-      return spawnPlaceholder({ ...carry, checkout: req.checkout }, req.checkout);
+    try {
+      if (req.checkout && !(await checkoutStillThere(repo, req.checkout))) {
+        return spawnPlaceholder({ ...carry, checkout: req.checkout }, req.checkout);
+      }
+      return spawnWindow(req, label, repo, carry);
+    } finally {
+      relaunching.delete(carry?.id);
     }
-    return spawnWindow(req, label, repo, carry);
   }
 
   // The live session a placeholder should attach to, read NOW: the page was
@@ -7229,6 +7241,7 @@ window.WBConsole = (function () {
         return;
       }
       const carry = deskOf(win);
+      relaunching.add(carry.id);
       drop(true);
       // The agent menu's launch path, reusing this record's id, rect and
       // maximized state — in the recorded worktree unless that is the one that
@@ -7767,6 +7780,7 @@ window.WBConsole = (function () {
     columnClasses,
     columnMeasure,
     applyColumns,
+    isRelaunching,
     focusColumn,
     focusedId,
     deskRecords,

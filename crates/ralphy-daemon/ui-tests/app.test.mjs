@@ -1766,9 +1766,9 @@ test("every shell path that paints the columns asks to write the maximize", () =
     lone();
     assert.deepEqual(paints, [["b"]], "the lone survivor is painted");
     assert.deepEqual(state.columns, [], "the lone survivor ends the columns");
-    // A first console off the stage that keeps its record is being relaunched
-    // in place: nothing is painted or stored until it is back.
-    globalThis.WBConsole.deskRecords = () => [{ id: "a", max: true }];
+    // A first console off the stage for a relaunch comes back under the same
+    // id: nothing is painted or stored until it is back.
+    globalThis.WBConsole.isRelaunching = (id) => id === "a";
     state.columns = grid();
     calls.length = 0;
     lone();
