@@ -6,8 +6,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { WBProject } from "../assets/ui/wb-project.ts";
-import { WBFleet } from "../assets/ui/wb-fleet.ts";
 import { WBColumns } from "../assets/ui/wb-columns.ts";
 import { createConsole } from "../assets/ui/wb-console.ts";
 import { WBDeskSink } from "../assets/ui/wb-desk-sink.ts";
@@ -17,10 +15,9 @@ const UI = join(dirname(fileURLToPath(import.meta.url)), "../assets/ui");
 const SRC = readFileSync(join(UI, "wb-console.ts"), "utf8");
 
 // `extras` is merged into the stub `window` BEFORE the console is created, so
-// a test can supply a sibling module (`WBFleet`) that index.html loads first.
-// The default is no siblings: that is the honest shape for the boot order
-// where a sibling has not loaded, and several tests pin the fallback it
-// produces. `opts` is what an entry module passes `createConsole`.
+// a test can supply a browser global (`matchMedia`) or a page instance that
+// the entry module creates. The default has no `WBNotes` and no `WBDaemon`,
+// and several tests pin the fallback that produces. `opts` is what an entry module passes `createConsole`.
 function load(extras = {}, docExtras = {}, opts = {}) {
   // The three globals the console touches when it is created:
   // `window.addEventListener` (the pagehide flush), `document.addEventListener`
@@ -32,7 +29,6 @@ function load(extras = {}, docExtras = {}, opts = {}) {
   const window = { addEventListener() {}, ...extras };
   const document = { readyState: "loading", addEventListener() {}, ...docExtras };
   const location = { protocol: "http:", host: "127.0.0.1:7431" };
-  window.WBFleet = WBFleet;
   // The sink's hold lives once per document (the module), and each `load()` is
   // a new page: a hold an earlier test set must not hold this page's writes.
   WBDeskSink.setHold(false);
@@ -296,8 +292,8 @@ test("checkoutMenuRows puts primary first and marks the console's own tree", () 
 // (ADR-0059 §5): `primary` is the sessions with no checkout, a worktree row
 // its own; `waiting` outranks `working`; a tree with no session says nothing.
 test("checkoutMenuRows carries the agent state per tree when given sessions", () => {
-  // The fold is `WBProject.worktreeStates`, the real module.
-  const wb = load({ WBProject });
+  // The fold is `WBProject.worktreeStates`, the real module the console imports.
+  const wb = load();
   const listing = { primary: "/p", worktrees: [{ name: "wt-a" }, { name: "wt-b" }] };
   const sessions = [
     { id: 1, repo: "o/r", agent_state: { state: "working" } },

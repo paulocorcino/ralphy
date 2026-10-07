@@ -3,7 +3,7 @@
 
    Four flavours, each opening as its own tab after the fixed Consoles tab:
      • source code — Monaco: syntax highlight, in-place editing, and its own
-       find widget. Binaries never reach here (app.js refuses them).
+       find widget. Binaries never reach here (app.ts refuses them).
      • Markdown  — rendered with `marked`, sanitized with DOMPurify, mermaid
        fences drawn as diagrams (Cursor-style), a heading outline to jump around,
        an in-page find, and an edit/preview toggle over the raw source.
@@ -174,7 +174,7 @@ export function createViewer(window: any, document: any) {
 
   // The divider between the two columns: a drag moves the split, the × clears
   // the slot. Pointer-driven the way the desk's resize bands are
-  // (`wb-console.js`): every exit path drops all three listeners, and the
+  // (`wb-console.ts`): every exit path drops all three listeners, and the
   // ratio is announced ONCE, on release, for the shell to keep.
   function ensureDivider() {
     if (divider) return;
@@ -613,7 +613,7 @@ export function createViewer(window: any, document: any) {
 
   // The Detach/Re-attach button. A file tab detaches into a standalone popup
   // (watch an agent in the main window, read the file in another); a detached
-  // pane folds back in. wb-viewer only *requests* it — the shell (app.js) opens
+  // pane folds back in. wb-viewer only *requests* it — the shell (app.ts) opens
   // the popup, and the popup (detached.html) folds back — so this module stays
   // agnostic to windows/tabs.
   // --- the encoding pill and its menu ---------------------------------------
@@ -865,7 +865,7 @@ export function createViewer(window: any, document: any) {
   };
   function refusalText(reason: any) {
     if (REFUSAL_TEXT[reason]) return REFUSAL_TEXT[reason];
-    // `detached.html` loads no `wb-fail.js`.
+    // `detached.html` loads no `wb-fail.ts`.
     return WBFail.failed({ message: reason }, "Could not open the file: the daemon gave no reason.");
   }
 

@@ -87,12 +87,13 @@ flowchart LR
 | Peer daemon | daemon | Synchronous, versioned peer protocol ([ADR-0052](./adr/0052-local-fleet-federation.md), [ADR-0067](./adr/0067-peers-on-other-machines-through-ssh.md)) |
 | Console CLI | daemon | A byte stream on a PTY; lives and dies with the daemon |
 
-Inside the browser workbench, the script is moving from classic scripts to
-TypeScript modules, one file at a time
+Inside the browser workbench, the first-party script is TypeScript
+modules; only the vendored libraries are classic scripts
 ([ADR-0075](./adr/0075-the-workbench-script-is-written-in-typescript.md)).
 The daemon's `build.rs` removes the types and the binary embeds the
-result. A classic script sets one `window.WB<Name>` namespace; a module
-exports. Each page loads one entry module, which imports the rest
+result. A module exports, and sets a `window.WB<Name>` name only while
+markup, another page or a browser check reads it there. Each page loads one
+entry module, which imports the rest and creates the page's instances
 (`main.ts` for the workbench). The `shell()` Alpine
 component in `app.ts` holds the page layout and, for now, most features. A
 feature with its own state moves out of it into an Alpine component in its
@@ -197,11 +198,11 @@ panel adds its row here before it adds code.
 | Token usage | the ledger (`~/.ralphy/usage/`) for runs; the **Usage scan** for interactive use | `ralphy usage`; `/api/usage`, `/api/spend` | a stored USD value | 3, 4 |
 | Price of a model | `ralphy-pricing`, applied at read time | `ralphy usage`, the Spend view | a price written into the ledger | with token usage |
 | Settings | `ralphy-core::settings` (`.ralphy/settings.json`) | `ralphy config get --json`; verb `config.get` | a new reparse in the daemon (three exist, each pinned by a test) | 3, 4, 5 |
-| Desk layout | the daemon (`desk.rs`; a PUT is a list of **desk changes** applied by `desk/apply.rs`, and each reply carries `rev`) | `GET` / `PUT /api/desk`; the browser sends changes only through `wb-desk-sync.js` | browser storage (only the per-client view lives there, `wb-view.js`); a whole record or a whole desk in a PUT | 1 `desk.dirty`, 2–5 |
+| Desk layout | the daemon (`desk.rs`; a PUT is a list of **desk changes** applied by `desk/apply.rs`, and each reply carries `rev`) | `GET` / `PUT /api/desk`; the browser sends changes only through `wb-desk-sync.ts` | browser storage (only the per-client view lives there, `wb-view.ts`); a whole record or a whole desk in a PUT | 1 `desk.dirty`, 2–5 |
 | **Desk history** | the daemon (`desk/history.rs`) | `GET` / `POST /api/desk/history` | a copy of the desk kept in the browser | when the Settings section opens; 5 |
 | Consoles, console agent state | the daemon (`session/`, `agent_state.rs`) | `/api/sessions` (its header `x-ralphy-unanswered` names the peers the list did not hear from), the presence socket | a peer missing from the list read as "no sessions there" | 1 `sessions.dirty`, 2–4; 6 every 30 s while a peer is listed (peers do not push their sessions); a `working` that ages into `unknown` pushes too |
 | Projects, peers and their state; the project name | the daemon (`registry.rs`, `peer/`, `fleet.rs`); the name is `registry::project_name` | `/api/repos`, `/api/fleet`; the field `name` | a name worked out in the UI from the slug or the path | 1 `repos.dirty` / `peers.dirty` (the daemon stats its stores every 2 s), 2–5; 6 every 30 s while a peer is listed (peer reachability); 7 a read of a peer project failed (peer reachability) |
-| **Devices** and the **audit log** | the daemon (`audit.rs`, `device.rs`) | `GET /api/audit/devices`, `GET /api/audit/events`; the `/ws/command` verbs that change state, and the console launches and take-overs on `/ws/session`, are recorded by the daemon itself; the page reports its facts once per load to `POST /api/device/facts` (`wb-device.js`) | a device list kept in the browser; an address lookup service (ADR-0074 D7) | when the Settings section opens; 4 |
+| **Devices** and the **audit log** | the daemon (`audit.rs`, `device.rs`) | `GET /api/audit/devices`, `GET /api/audit/events`; the `/ws/command` verbs that change state, and the console launches and take-overs on `/ws/session`, are recorded by the daemon itself; the page reports its facts once per load to `POST /api/device/facts` (`wb-device.ts`) | a device list kept in the browser; an address lookup service (ADR-0074 D7) | when the Settings section opens; 4 |
 | Ralphy release version | `ralphy-release` | `/api/release`; the build id in the presence frame (ADR-0070 D6) | — | 3; a build id that differs reloads the tab (D6) |
 
 ## 8. Fitness functions
@@ -222,7 +223,7 @@ any code, including code that does not exist yet. A behaviour test is not one.
 | UI written voice | `cargo run -p xtask -- ui-copy --check` (ADR-0065) |
 | Changelog fragments parse | `cargo run -p xtask -- changelog --check` (ADR-0056) |
 | UI asset contract | `node --test crates/ralphy-daemon/ui-tests`, oxlint (ADR-0057) |
-| Workbench modules type-check, and no first-party classic script is added | `tsc --noEmit -p crates/ralphy-daemon/assets/ui`; `first_party_scripts_move_to_typescript_and_never_back` (`crates/ralphy-daemon/src/tests.rs`), a ratchet on `CLASSIC_SCRIPTS` (ADR-0075) |
+| Workbench modules type-check, and no first-party classic script comes back | `tsc --noEmit -p crates/ralphy-daemon/assets/ui`; `first_party_scripts_move_to_typescript_and_never_back` (`crates/ralphy-daemon/src/tests.rs`), with `CLASSIC_SCRIPTS` empty and `MODULE_WINDOW_NAMES` as ratchets (ADR-0075) |
 | UI settings mirror matches the Rust keys | the `WB_SETTINGS` test in `crates/ralphy-daemon/src/tests.rs` |
 | Core names no vendor crate; no adapter depends on another; `ralphy-pricing` and `ralphy-release` are leaf crates | `core_and_adapters_keep_their_dependency_edges` (`crates/xtask/tests/crate_dependencies.rs`) |
 | `git`, `gh` and `ssh` are spawned only by their owners (§6) | `spawn_sites_match_the_baseline` (`crates/xtask/tests/ratchets.rs`), a ratchet on literal `Command::new("git" \| "gh" \| "ssh")` sites |

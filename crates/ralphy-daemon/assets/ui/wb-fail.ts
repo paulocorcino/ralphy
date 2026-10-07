@@ -162,12 +162,3 @@ export const WBFail = {
   notCurrent,
   CAUSE,
 };
-
-// A classic script still reads this name (ADR-0075 D9).
-if (typeof window !== "undefined") window.WBFail = WBFail;
-
-declare global {
-  interface Window {
-    WBFail: typeof WBFail;
-  }
-}

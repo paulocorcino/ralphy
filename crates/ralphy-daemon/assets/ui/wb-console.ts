@@ -20,6 +20,10 @@ import { WBDeskSink } from "./wb-desk-sink.ts";
 import { WBDeskSync } from "./wb-desk-sync.ts";
 import { WBDetachLink } from "./wb-detach-link.ts";
 import { WBView } from "./wb-view.ts";
+import { WBFail } from "./wb-fail.ts";
+import { WBFleet } from "./wb-fleet.ts";
+import { WBProject } from "./wb-project.ts";
+import { WBSessionRoute } from "./wb-session-route.ts";
 
 export function createConsole(window: any, document: any, location: any, opts: any) {
   // Plane geometry is `wb-geometry.ts` (ADR-0057): pure folds over rects.
@@ -50,7 +54,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // handles a null stage.
   const stage = () =>
     typeof document?.getElementById === "function" ? document.getElementById("stage") : null;
-  // Scheme-match the session socket to the page (see wb-daemon.js WS_ORIGIN):
+  // Scheme-match the session socket to the page (see wb-daemon.ts WS_ORIGIN):
   // `wss://` over a TLS dev-tunnel/proxy, `ws://` for a plain-http localhost bind.
   const WS_ORIGIN =
     (location.protocol === "https:" ? "wss://" : "ws://") + location.host;
@@ -356,13 +360,13 @@ export function createConsole(window: any, document: any, location: any, opts: a
   let fences: any = [];
   // Third record type (ADR-0064 §2): note cards, PLACEMENT only — the note's
   // text and colour live in its `.note` file. The CARD itself (DOM, editor,
-  // autosave) is `wb-notes.js`, which reaches this state through the exports
+  // autosave) is `wb-notes.ts`, which reaches this state through the exports
   // below.
   const NOTE_MAX = 32;
   let notes: any = [];
   // Fourth record type (#406, ADR-0063 §4): the selected checkout per repo ref,
   // `{ <ref>: <worktree name> }`. The reactive copy the chip and the tree
-  // render lives in `app.js` (a closure variable here is invisible to Alpine).
+  // render lives in `app.ts` (a closure variable here is invisible to Alpine).
   let checkouts: any = {};
   function refreshView() {
     const v = sync.view();
@@ -717,7 +721,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   function atNoteCap() {
     return notes.length >= NOTE_MAX;
   }
-  // The card records, as a copy: `wb-notes.js` reads them and hands a NEW
+  // The card records, as a copy: `wb-notes.ts` reads them and hands a NEW
   // array back to `saveNotes`, never mutates this one.
   function loadNotes() {
     return notes.slice();
@@ -736,7 +740,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
     return { ...checkouts };
   }
   // Resolves once the boot desk load has settled (landed OR refused) — what
-  // `app.js` awaits before copying the view into its reactive map.
+  // `app.ts` awaits before copying the view into its reactive map.
   function whenDeskLoaded() {
     return deskReady;
   }
@@ -1211,11 +1215,11 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // name of a tunnel peer, else the environment (`WSL: Ubuntu`). `fallback` is
   // the environment the desk record kept, for a box drawn before the fleet list.
   function peerHost(group: any, fallback: any) {
-    return window.WBFleet.peerName(group) || fallback || "The other computer";
+    return WBFleet.peerName(group) || fallback || "The other computer";
   }
 
   // What a console box says about a project whose peer cannot serve it, from
-  // that peer's fleet state. `group` is its fleet group (wb-fleet.js), or null
+  // that peer's fleet state. `group` is its fleet group (wb-fleet.ts), or null
   // before the fleet list arrived; `refusal` is the daemon's sentence from a
   // refused launch. `action` is one of
   //   "wake"  — a nudge can answer this state: wake the peer, then relaunch;
@@ -1227,7 +1231,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
     const host = peerHost(group, fallbackHost);
     const detail = (group && group.diagnosis) || (typeof refusal === "string" ? refusal.trim() : "");
     const view = (text: any, action: any) => ({ text, detail, action });
-    const wakeOrRetry = window.WBFleet.wakeable(group) ? "wake" : "retry";
+    const wakeOrRetry = WBFleet.wakeable(group) ? "wake" : "retry";
     switch (group && group.state) {
       case "asleep":
         return view(`${host} is asleep.`, wakeOrRetry);
@@ -1287,7 +1291,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
       sessionsRead = (async () => {
         const r = await fetch("/api/sessions");
         if (!r.ok) throw new Error("sessions unavailable");
-        const route = window.WBSessionRoute;
+        const route = WBSessionRoute;
         return {
           sessions: await r.json(),
           unheard: route.unanswered(r.headers?.get?.(route.UNANSWERED_HEADER)),
@@ -1299,16 +1303,16 @@ export function createConsole(window: any, document: any, location: any, opts: a
     return sessionsRead;
   }
   function unheardRef(ref: any, unheard: any) {
-    const daemon = window.WBFleet.refDaemon(ref);
+    const daemon = WBFleet.refDaemon(ref);
     return !!daemon && !!unheard?.has(daemon);
   }
 
   // The fleet group of `ref`'s peer when that peer cannot serve it, else null:
   // a local ref, an unknown peer, and a reachable one all launch as usual.
   function peerHeld(ref: any, groups: any) {
-    const daemon = window.WBFleet.refDaemon(ref);
+    const daemon = WBFleet.refDaemon(ref);
     const group = daemon ? groups.get(daemon) : null;
-    return group && !window.WBFleet.available(group) ? group : null;
+    return group && !WBFleet.available(group) ? group : null;
   }
 
   // A console-kind session's `agent` label is its startup command, or the
@@ -1348,7 +1352,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   function projectNameOf(ref: any) {
     const known = projectNames.get(ref);
     if (known) return known.name;
-    return window.WBFleet ? window.WBFleet.refSlug(ref) : ref;
+    return WBFleet ? WBFleet.refSlug(ref) : ref;
   }
   function projectTitleOf(ref: any) {
     if (ref === "~") return ref;
@@ -1474,13 +1478,13 @@ export function createConsole(window: any, document: any, location: any, opts: a
         primary: false,
       });
     }
-    const states = sessions && window.WBProject?.worktreeStates ? window.WBProject.worktreeStates(rows, sessions) : {};
+    const states = sessions && WBProject?.worktreeStates ? WBProject.worktreeStates(rows, sessions) : {};
     return rows.map((r) => ({ ...r, current: (current ?? "primary") === r.name, state: states[r.name] || null }));
   }
   // The shell's last `/api/sessions` poll, kept for the menus' state dots.
   let lastSessions: any = [];
   function sessionsOfRepo(ref: any) {
-    const route = window.WBSessionRoute;
+    const route = WBSessionRoute;
     return (lastSessions || []).filter((s: any) => s && (route ? route.matchesRepo(s, ref) : s.repo === ref));
   }
 
@@ -1777,8 +1781,8 @@ export function createConsole(window: any, document: any, location: any, opts: a
   function endLiveThen(win: any, go: any) {
     const id = sessionIdOf(win);
     const live = id != null && !win.classList.contains("ended") && !watchingOf(win);
-    if (live && window.WBSessionRoute) {
-      fetch(window.WBSessionRoute.closeUrl(id, win._deskRepo), { method: "POST" }).then(go, go);
+    if (live && WBSessionRoute) {
+      fetch(WBSessionRoute.closeUrl(id, win._deskRepo), { method: "POST" }).then(go, go);
     } else {
       go();
     }
@@ -1845,7 +1849,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
     }
     const note = document.createElement("p");
     note.className = "wb-worktree-note";
-    note.textContent = `${window.WBProject?.CARRY_OVER_NOTE || ""} The console restarts in the new worktree. You lose the text in this console.`;
+    note.textContent = `${WBProject?.CARRY_OVER_NOTE || ""} The console restarts in the new worktree. You lose the text in this console.`;
     const err = document.createElement("p");
     err.className = "prompt-error";
     err.textContent = error;
@@ -1878,9 +1882,9 @@ export function createConsole(window: any, document: any, location: any, opts: a
         resolve(value);
       };
       const problem = () =>
-        window.WBProject?.worktreeNameProblem?.(listing || { worktrees: [] }, nameInput.value) || "";
+        WBProject?.worktreeNameProblem?.(listing || { worktrees: [] }, nameInput.value) || "";
       const submit = () => {
-        const row = window.WBProject?.worktreeCreateRow?.(listing || { worktrees: [] }, baseInput.value, nameInput.value);
+        const row = WBProject?.worktreeCreateRow?.(listing || { worktrees: [] }, baseInput.value, nameInput.value);
         if (!row) {
           err.textContent = problem() || "Choose a branch to start from.";
           err.hidden = false;
@@ -1893,7 +1897,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
       // never shows, and there is no message. The caret stays after the
       // last kept character. The create stays disabled, without a message,
       // while the name is still one the daemon would refuse.
-      const mask = window.WBProject?.maskWorktreeName || ((s: any) => s);
+      const mask = WBProject?.maskWorktreeName || ((s: any) => s);
       nameInput.addEventListener("input", () => {
         const raw = nameInput.value;
         const masked = mask(raw);
@@ -1954,7 +1958,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
         continue;
       }
       if (!reply || reply.status !== "ok") {
-        error = window.WBFail.failed(reply, "Could not create the worktree: the daemon gave no reason.");
+        error = WBFail.failed(reply, "Could not create the worktree: the daemon gave no reason.");
         continue;
       }
       ensureListing(repo, true);
@@ -2018,7 +2022,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   }
 
   // ---- columns (ADR-0051 §5) --------------------------------------------------
-  // The shell (`app.js`) owns the column list and folds it with `WBColumns`;
+  // The shell (`app.ts`) owns the column list and folds it with `WBColumns`;
   // this module only paints the answer. It never reads `WBColumns`: the
   // detached-fence popup boots this file without it.
   //
@@ -3415,7 +3419,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
     return fences.map((f: any) => ({ ...f }));
   }
 
-  // The cards, rendered by `wb-notes.js`. Called wherever `renderFences` is —
+  // The cards, rendered by `wb-notes.ts`. Called wherever `renderFences` is —
   // the two collections go on the plane together or the extent is folded over
   // half of them.
   function renderNotes() {
@@ -4048,7 +4052,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
     applyExtent();
   }
 
-  // The opener's half of the handshake, guarded as `app.js` guards the detached
+  // The opener's half of the handshake, guarded as `app.ts` guards the detached
   // FILE viewer's: answered only from this origin AND from a window this tab
   // itself opened.
   window.addEventListener("message", (e: any) => {
@@ -4151,7 +4155,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   function createFence() {
     // AT THE CAP, REFUSE: the daemon refuses a fence past it too.
     // Refusing and SAYING SO are two jobs: this module knows no Alpine, so it
-    // answers `false` and `newFence()` in app.js does the talking; `atFenceCap`
+    // answers `false` and `newFence()` in app.ts does the talking; `atFenceCap`
     // is exported so the row can be disabled BEFORE the click.
     if (atFenceCap()) return false;
     const ws = workspace();
@@ -4873,7 +4877,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
     }
   }
 
-  // Per browser profile (wb-settings.js `scope: client`, stored by
+  // Per browser profile (wb-settings.ts `scope: client`, stored by
   // `wb-view.ts`). Absent — the popup reads nothing — means auto.
   function keyBarMode() {
     return viewStore?.read()?.keys ?? null;
@@ -5139,15 +5143,15 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // nothing, and a launch (no id) is held by its placeholder (`peerHeld`).
   function peerGate({ decision, group, id }: any) {
     if (id == null || !group || decision === "give-up") return decision;
-    return window.WBFleet.available(group) ? decision : "hold";
+    return WBFleet.available(group) ? decision : "hold";
   }
 
   // The terminal's surface, ADR-0035's palette. xterm.js takes no CSS variables
   // (WebGL paints the glyphs), so these mirror :root in styles.css and must
-  // move with it — the lockstep `wb-monaco.js` keeps.
+  // move with it — the lockstep `wb-monaco.ts` keeps.
   // Base colours ONLY: the 16 ANSI slots stay xterm's defaults, the palette
   // every vendor TUI picked its colours against. The background is pure black,
-  // not `--log-bg` — the same exception `wb-monaco.js` makes.
+  // not `--log-bg` — the same exception `wb-monaco.ts` makes.
   const TERMINAL_THEME = {
     background: "#000000",
     foreground: "#d4ccc0", // --text
@@ -5551,8 +5555,8 @@ export function createConsole(window: any, document: any, location: any, opts: a
         daemon
           .write("image.write", { repo: currentRepo, base64 })
           .then((reply: any) => {
-            if (window.WBFail.isError(reply) || !reply.path) {
-              const why = window.WBFail.why(reply, "the daemon refused it");
+            if (WBFail.isError(reply) || !reply.path) {
+              const why = WBFail.why(reply, "the daemon refused it");
               term.write(`\r\n[paste refused — ${why}]\r\n`);
               return;
             }
@@ -5850,9 +5854,9 @@ export function createConsole(window: any, document: any, location: any, opts: a
       // first LIVE frame clears it.
       replaying = connOpts.id != null;
       ws = new WebSocket(
-        window.WBSessionRoute.url(WS_ORIGIN, {
+        WBSessionRoute.url(WS_ORIGIN, {
           ...connOpts,
-          holder: window.WBSessionRoute.tabHolder(),
+          holder: WBSessionRoute.tabHolder(),
         }),
       );
       ws.binaryType = "arraybuffer";
@@ -5910,7 +5914,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
             c = JSON.parse(new TextDecoder().decode(a.subarray(1)));
           } catch {}
           if (c && c.verb === "session-open") {
-            const owner = window.WBSessionRoute.announcement(
+            const owner = WBSessionRoute.announcement(
               {
                 sessionId: currentSessionId,
                 daemonId: currentDaemonId,
@@ -6487,7 +6491,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
     // A held window's strip: the fleet's sentence for the peer, its action, and
     // the daemon's diagnosis under Details. Built once, then reworded on each
     // fleet read.
-    const peerDaemon = window.WBFleet?.refDaemon(repo) || "";
+    const peerDaemon = WBFleet?.refDaemon(repo) || "";
     const PEER_BUTTON: any = { wake: "Wake", retry: "Try again" };
     const showPeerDown = (group: any) => {
       let strip = win.querySelector(".session-peer-down");
@@ -6601,7 +6605,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
       onEnded: (announced: any, refusal: any) => {
         clearNudge();
         win.querySelector(".session-parked")?.remove();
-        if (announced === "refused" && window.WBFleet?.refDaemon(repo)) {
+        if (announced === "refused" && WBFleet?.refDaemon(repo)) {
           const carry = deskOf(win);
           discard();
           spawnPlaceholder(carry, null, { message: refusal });
@@ -6871,11 +6875,11 @@ export function createConsole(window: any, document: any, location: any, opts: a
       // closes only its own window: `/api/sessions/close` tree-kills the child
       // another operator is driving.
       if (id != null && !watching) {
-        fetch(window.WBSessionRoute.closeUrl(id, win._deskRepo), {
+        fetch(WBSessionRoute.closeUrl(id, win._deskRepo), {
           method: "POST",
         }).then(
           (response) => {
-            if (window.WBSessionRoute.closeSucceeded(response.status)) finish();
+            if (WBSessionRoute.closeSucceeded(response.status)) finish();
             else
               win._term?.term.write(
                 `\r\n[close failed — the daemon refused it]\r\n`,
@@ -7087,7 +7091,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
 
     // The peer's words. `peerAction` is the button's action ("wake", "retry",
     // "relaunch"); the box starts as "not running" until the fleet says more.
-    const daemon = window.WBFleet?.refDaemon(record.repo) || "";
+    const daemon = WBFleet?.refDaemon(record.repo) || "";
     const canLaunch = OPTS.canLaunch !== false;
     const BUTTON: any = { wake: "Wake", retry: "Try again", relaunch: "Relaunch" };
     let peerAction = "relaunch";
@@ -7118,7 +7122,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
       if (!daemon || missing || btn.disabled || !win.isConnected) return;
       const group = peerGroups.get(daemon);
       if (!group) return;
-      const available = window.WBFleet.available(group);
+      const available = WBFleet.available(group);
       // The fleet may call the peer available while its session list timed
       // out: a held box asks the list itself, and never waits for `wasOffline`.
       if (unheard && available) {
@@ -7858,7 +7862,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
     renameFence,
     removeFence,
     // The note card's seam (ADR-0064 §2): the desk state lives here, the card
-    // lives in `wb-notes.js`, and these are everything it needs.
+    // lives in `wb-notes.ts`, and these are everything it needs.
     notes: loadNotes,
     saveNotes,
     atNoteCap,

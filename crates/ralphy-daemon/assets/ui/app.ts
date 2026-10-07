@@ -3,7 +3,7 @@
 
    The sidebar is a project accordion (Alpine); the file tree is a Wunderbaum
    instance. The canvas is a tabbed workspace: "Consoles" is fixed and hosts
-   the floating console windows (wb-console.js); every opened file is its own
+   the floating console windows (wb-console.ts); every opened file is its own
    closable tab rendered by a viewer (wb-viewer.ts).
 
    Every user gesture becomes one CustomEvent, `workbench:action`, on
@@ -11,6 +11,20 @@
 --------------------------------------------------------------------------- */
 import type { AlpineMagics } from "./wb-alpine.ts";
 import { WBFail } from "./wb-fail.ts";
+import { WBAgents } from "./wb-agents.ts";
+import { WBChanges } from "./wb-changes.ts";
+import { WBColumns } from "./wb-columns.ts";
+import { WBDeskSink } from "./wb-desk-sink.ts";
+import { WBFileSearch } from "./wb-file-search.ts";
+import { WBFleet } from "./wb-fleet.ts";
+import { WBProject } from "./wb-project.ts";
+import { WBRelease } from "./wb-release.ts";
+import { WBReleaseDialogs } from "./wb-release-dialogs.ts";
+import { WBRun } from "./wb-runs.ts";
+import { WBSecurityDialog } from "./wb-security-dialog.ts";
+import { WBSessionRoute } from "./wb-session-route.ts";
+import { WBSettingsDialog } from "./wb-settings-dialog.ts";
+import { WBSplit } from "./wb-split.ts";
 
 /** A peer of `/api/fleet`. */
 export type FleetPeer = {
@@ -265,7 +279,7 @@ export function shell() {
       // would otherwise never show what that poll found.
       this.loadRelease();
       // The board's two time-driven refresh triggers (#301), registered ONCE;
-      // the predicate (wb-kanban.js) decides.
+      // the predicate (wb-kanban.ts) decides.
       document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") this.onTabVisible();
       });
@@ -379,7 +393,7 @@ export function shell() {
         }, this.LIVE_SETTLE_MS);
       } else if (verb === "desk.dirty") {
         // This tab's own write: it already holds the result.
-        if (payload?.tab && payload.tab === window.WBDeskSink?.tabId?.()) return;
+        if (payload?.tab && payload.tab === WBDeskSink?.tabId?.()) return;
         this.rereadDesk();
       } else if (verb === "repos.dirty" || verb === "peers.dirty") {
         // The change set and the branch have their own pushes.
@@ -475,15 +489,15 @@ export function shell() {
       if (repo === undefined) repo = this.openSlug;
       const seq = ++this._agentsSeq;
       try {
-        const r = await fetch(window.WBAgents.rosterUrl(repo));
+        const r = await fetch(WBAgents.rosterUrl(repo));
         if (!r.ok) throw new Error(`/api/agents ${r.status}`);
-        const state = window.WBAgents.rosterState(await r.json(), repo);
+        const state = WBAgents.rosterState(await r.json(), repo);
         if (seq !== this._agentsSeq) return;
         this.roster = state.roster;
         this.agents = state.agents;
       } catch {
         if (seq !== this._agentsSeq) return;
-        const state = window.WBAgents.rosterState([], repo);
+        const state = WBAgents.rosterState([], repo);
         this.roster = state.roster;
         this.agents = state.agents;
       }
@@ -525,14 +539,14 @@ export function shell() {
             state: !x.reachable ? "offline" : before.get(x.slug)?.state === "offline" ? "idle" : before.get(x.slug)?.state || "idle",
             env: before.get(x.slug)?.env || "",
             daemonName: before.get(x.slug)?.daemonName || "",
-            remote: window.WBProject.isGitHubRemote(x.remote) ? "github" : "local",
+            remote: WBProject.isGitHubRemote(x.remote) ? "github" : "local",
             remoteUrl: x.remote || "",
             tree: [],
           }));
           this.projects = local.concat(this._fleetRows);
           this.shareProjectNames();
           this.reposError = "";
-          this.reposRead = window.WBFail.readFold(this.reposRead, { ok: true, value: true, at: Date.now() });
+          this.reposRead = WBFail.readFold(this.reposRead, { ok: true, value: true, at: Date.now() });
           // Deliberately NOT awaited: a down peer costs `/api/fleet` its 2 s
           // per-peer timeout, and holding `reposLoading` open for that would make
           // a peer's absence stall the LOCAL sidebar's spinner and live dots.
@@ -557,9 +571,9 @@ export function shell() {
     // A failed `/api/repos` (ADR-0070 D3). After a good read the list stays,
     // marked not current. Before one, the list is empty and says why.
     reposFailed(reason: any) {
-      this.reposRead = window.WBFail.readFold(this.reposRead, { ok: false, reason, at: Date.now() });
+      this.reposRead = WBFail.readFold(this.reposRead, { ok: false, reason, at: Date.now() });
       if (this.reposRead.goodAt) {
-        this.reposError = window.WBFail.notCurrent(this.reposRead, (ms) => this.fmtClock(ms));
+        this.reposError = WBFail.notCurrent(this.reposRead, (ms) => this.fmtClock(ms));
         return;
       }
       this.projects = [];
@@ -624,7 +638,7 @@ export function shell() {
             // The peer's OWN working-tree facts, same classification as `loadRepos`.
             dirty: !!x.dirty,
             state: x.reachable ? "idle" : "offline",
-            remote: window.WBProject.isGitHubRemote(x.remote) ? "github" : "local",
+            remote: WBProject.isGitHubRemote(x.remote) ? "github" : "local",
             remoteUrl: x.remote || "",
             tree: [],
             // What makes this a peer row.
@@ -638,21 +652,21 @@ export function shell() {
         this.shareProjectNames();
         this.shareFleet();
         this.filesFollowFleet();
-        this.fleetRead = window.WBFail.readFold(this.fleetRead, { ok: true, value: true, at: Date.now() });
+        this.fleetRead = WBFail.readFold(this.fleetRead, { ok: true, value: true, at: Date.now() });
         this.fleetError = "";
       } catch (e: any) {
         if (seq !== this._fleetSeq) return;
         // After a good read the peers and their rows stay, marked not current
         // (ADR-0070 D3); `loadRepos` rebuilt the list without them.
         const reason = String(e?.message || "").startsWith("the daemon") ? e.message : "the daemon did not answer";
-        this.fleetRead = window.WBFail.readFold(this.fleetRead, { ok: false, reason, at: Date.now() });
+        this.fleetRead = WBFail.readFold(this.fleetRead, { ok: false, reason, at: Date.now() });
         if (this.fleetRead.goodAt) {
           this.projects = localRows().concat(this._fleetRows);
           this.shareProjectNames();
         } else {
           this.fleetPeers = [];
         }
-        this.fleetError = window.WBFail.notCurrent(this.fleetRead, (ms) => this.fmtClock(ms));
+        this.fleetError = WBFail.notCurrent(this.fleetRead, (ms) => this.fmtClock(ms));
       }
     },
     _fleetSeq: 0,
@@ -693,14 +707,14 @@ export function shell() {
         if (!r.ok || !reply.ready) {
           // The daemon's own sentence names the environment and what is wrong.
           this._flashAction(
-            window.WBFail.failed({ message: reply.diagnosis || reply.error }, "Could not wake the peer: the peer did not answer."),
+            WBFail.failed({ message: reply.diagnosis || reply.error }, "Could not wake the peer: the peer did not answer."),
           );
           return false;
         }
         // `loadRepos`, not `loadFleet`: the latter CONCATENATES peer rows.
         await this.loadRepos();
         // A row opened against the sleeping peer has an empty tree: remount.
-        if (window.WBFleet.refDaemon(this.openSlug) === daemonId) {
+        if (WBFleet.refDaemon(this.openSlug) === daemonId) {
           this.destroyTree();
           this.mountTree();
         }
@@ -715,50 +729,50 @@ export function shell() {
 
     // Opening a row on a sleeping peer wakes it. A no-op for every other row.
     wakePeerFor(ref: any) {
-      const daemon = window.WBFleet.refDaemon(ref);
+      const daemon = WBFleet.refDaemon(ref);
       if (!daemon) return;
       const group = this.fleetGroups().find((g) => g.daemon === daemon);
-      if (window.WBFleet.wakeable(group)) this.wakePeer(daemon);
+      if (WBFleet.wakeable(group)) this.wakePeer(daemon);
     },
 
     peerWakeable(g: any) {
-      return window.WBFleet.wakeable(g);
+      return WBFleet.wakeable(g);
     },
     peerAvailable(g: any) {
-      return window.WBFleet.available(g);
+      return WBFleet.available(g);
     },
     refAvailable(ref: any) {
-      const daemon = window.WBFleet.refDaemon(ref);
+      const daemon = WBFleet.refDaemon(ref);
       if (!daemon) return true;
-      return window.WBFleet.available(this.fleetGroups().find((g) => g.daemon === daemon));
+      return WBFleet.available(this.fleetGroups().find((g) => g.daemon === daemon));
     },
     peerIcon(g: any) {
-      return window.WBFleet.stateIcon(g);
+      return WBFleet.stateIcon(g);
     },
     peerFault(g: any) {
-      return window.WBFleet.stateFault(g);
+      return WBFleet.stateFault(g);
     },
     groupTitle(g: any) {
-      return window.WBFleet.groupTitle(g);
+      return WBFleet.groupTitle(g);
     },
     groupLabel(g: any) {
-      return window.WBFleet.groupLabel(g);
+      return WBFleet.groupLabel(g);
     },
     groupHost(g: any) {
-      return window.WBFleet.groupHost(g);
+      return WBFleet.groupHost(g);
     },
     // `x` is a fleet group or a peer of `/api/fleet`: both carry `os` and
     // `environment`.
     osOf(x: any) {
-      return window.WBFleet.system(x && x.os, x && x.environment);
+      return WBFleet.system(x && x.os, x && x.environment);
     },
 
-    // Local rows first, then one group per peer environment (wb-fleet.js).
+    // Local rows first, then one group per peer environment (wb-fleet.ts).
     fleetGroups() {
-      return window.WBFleet.fleetGroups(this.filteredProjects(), this.fleetPeers);
+      return WBFleet.fleetGroups(this.filteredProjects(), this.fleetPeers);
     },
     repoRef(p: any) {
-      return window.WBFleet.repoRef(p);
+      return WBFleet.repoRef(p);
     },
     // Each project's `live` dot from `/api/sessions` (#204). Never overrides
     // `offline`; a transport throw leaves the states untouched.
@@ -774,7 +788,7 @@ export function shell() {
         }
         const sessions = await r.json();
         if (seq !== this._liveSeq) return;
-        this.sessionsRead = window.WBFail.readFold(this.sessionsRead, { ok: true, value: true, at: Date.now() });
+        this.sessionsRead = WBFail.readFold(this.sessionsRead, { ok: true, value: true, at: Date.now() });
         // The console menu's fold reads this (#304).
         this.liveSessions = sessions;
         // The console windows read their own row off the same poll (ADR-0059).
@@ -782,12 +796,12 @@ export function shell() {
         for (const p of this.projects) {
           if (p.state === "offline") continue;
           const mine = sessions.filter((s: any) =>
-            window.WBSessionRoute.matchesRepo(s, this.repoRef(p)),
+            WBSessionRoute.matchesRepo(s, this.repoRef(p)),
           );
           // A `waiting` agent outranks `live` on the dot (ADR-0059).
           p.state = !mine.length
             ? "idle"
-            : window.WBProject.agentStateOf(mine) === "waiting"
+            : WBProject.agentStateOf(mine) === "waiting"
               ? "waiting"
               : "live";
         }
@@ -799,10 +813,10 @@ export function shell() {
     // A failed `/api/sessions` keeps the last list and the live dots, marked
     // not current in the console menu (ADR-0070 D3).
     sessionsFailed(reason: any) {
-      this.sessionsRead = window.WBFail.readFold(this.sessionsRead, { ok: false, reason, at: Date.now() });
+      this.sessionsRead = WBFail.readFold(this.sessionsRead, { ok: false, reason, at: Date.now() });
     },
     sessionsError() {
-      return window.WBFail.notCurrent(this.sessionsRead, (ms) => this.fmtClock(ms));
+      return WBFail.notCurrent(this.sessionsRead, (ms) => this.fmtClock(ms));
     },
 
     // --- chrome panels ----------------------------------------------------
@@ -848,7 +862,7 @@ export function shell() {
     // The change indicator for one row. Only slugs whose count was READ render
     // one: a `changes.list` per repo would be N git subprocesses on open.
     projectBadge(slug: any) {
-      return window.WBChanges.projectBadge(this.changesCount, slug);
+      return WBChanges.projectBadge(this.changesCount, slug);
     },
 
     // Case-insensitive slug/branch/label filter. The sidebar count keeps
@@ -870,9 +884,9 @@ export function shell() {
       );
     },
 
-    // Sidebar row label: the repo name, UPPERCASED (wb-project.js).
+    // Sidebar row label: the repo name, UPPERCASED (wb-project.ts).
     repoLabel(p: any) {
-      return window.WBProject.repoLabel(p);
+      return WBProject.repoLabel(p);
     },
 
     // What every surface OUTSIDE the sidebar prints for a repo ref. A peer ref
@@ -883,18 +897,18 @@ export function shell() {
     projectLabel(ref: any) {
       if (!ref) return "";
       const row = this.projects.find((p) => this.repoRef(p) === ref);
-      if (!row) return window.WBFleet.refLabel(ref);
-      const name = window.WBProject.projectName(row);
+      if (!row) return WBFleet.refLabel(ref);
+      const name = WBProject.projectName(row);
       return row.daemon && row.env ? `${name} · ${row.env}` : name;
     },
     // The consoles name their project too (title, tooltip, default name), and
-    // `wb-console.js` has no project list of its own.
+    // `wb-console.ts` has no project list of its own.
     shareProjectNames() {
       window.WBConsole?.ingestProjects?.(
         this.projects.map((p) => ({
           ref: this.repoRef(p),
-          name: window.WBProject.projectName(p),
-          title: window.WBProject.projectTitle(p),
+          name: WBProject.projectName(p),
+          title: WBProject.projectTitle(p),
         })),
       );
     },
@@ -902,7 +916,7 @@ export function shell() {
     // back when the peer does. Every project, not the filtered list: a search
     // in the sidebar must not change what a console says.
     shareFleet() {
-      window.WBConsole?.ingestFleet?.(window.WBFleet.fleetGroups(this.projects, this.fleetPeers), {
+      window.WBConsole?.ingestFleet?.(WBFleet.fleetGroups(this.projects, this.fleetPeers), {
         wake: (daemonId: any) => this.wakePeer(daemonId),
         read: () => this.readFleetNow(),
       });
@@ -913,8 +927,8 @@ export function shell() {
     projectTitle(ref: any) {
       if (!ref) return "";
       const row = this.projects.find((p) => this.repoRef(p) === ref);
-      if (!row) return window.WBFleet.refLabel(ref);
-      const who = window.WBProject.projectTitle(row);
+      if (!row) return WBFleet.refLabel(ref);
+      const who = WBProject.projectTitle(row);
       return row.daemon && row.env ? `${who} · ${row.env}` : who;
     },
 
@@ -938,7 +952,7 @@ export function shell() {
       }
     },
     toggleKanban() {
-      // The tasks board (wb-kanban.js): an overlay flip over the canvas.
+      // The tasks board (wb-kanban.ts): an overlay flip over the canvas.
       this.kanbanOpen = !this.kanbanOpen;
       if (this.kanbanOpen) {
         this.kanbanSel = null;
@@ -976,7 +990,7 @@ export function shell() {
     // Only when the daemon can reach the repo on disk. NOT gated on `remote`:
     // a local-only repo still has branches.
     canSwitchBranch(p: any) {
-      return window.WBProject.canSwitchBranch(p);
+      return WBProject.canSwitchBranch(p);
     },
 
     // The branch chip lives on the Files bar (#332), which only the OPEN
@@ -993,9 +1007,9 @@ export function shell() {
     },
     // A row on a host that cannot answer: why it does not open.
     unavailableTitle(g: any) {
-      const host = window.WBFleet.peerName(g);
+      const host = WBFleet.peerName(g);
       const head = `${host} is not available (${this.peerStateWord(g.state)}).`;
-      if (window.WBFleet.wakeable(g)) return `${head} Click to wake it.`;
+      if (WBFleet.wakeable(g)) return `${head} Click to wake it.`;
       return `${head} Its projects open when it connects again.`;
     },
     // The checkout chip of a project row: which tree Files, Changes and
@@ -1014,7 +1028,7 @@ export function shell() {
       const ref = this.repoRef(p);
       const ok = await this.askConfirm({
         title: "Remove project",
-        message: `Remove “${window.WBProject.projectName(p)}” from Ralphy? Files on disk are kept.`,
+        message: `Remove “${WBProject.projectName(p)}” from Ralphy? Files on disk are kept.`,
         confirmLabel: "Remove",
         danger: true,
       });
@@ -1029,9 +1043,9 @@ export function shell() {
         });
         // `unknown repo` means already gone: the state this click asks for.
         const gone =
-          !window.WBFail.isError(reply) || window.WBFail.message(reply, "") === "unknown repo";
+          !WBFail.isError(reply) || WBFail.message(reply, "") === "unknown repo";
         if (!gone) {
-          this._flashAction(window.WBFail.failed(reply, "Could not remove the project: the daemon gave no reason."));
+          this._flashAction(WBFail.failed(reply, "Could not remove the project: the daemon gave no reason."));
           return;
         }
         // Identity is `repoRef`, not the slug: a peer can list the same slug.
@@ -1044,16 +1058,16 @@ export function shell() {
     },
 
     rowTitle(p: any) {
-      return window.WBProject.rowTitle(p);
+      return WBProject.rowTitle(p);
     },
 
     branchChipTitle(p: any) {
       const ref = this.repoRef(p);
-      return window.WBProject.branchChipTitle(p, this.checkoutOf(ref), this.worktreeListings[ref] || null);
+      return WBProject.branchChipTitle(p, this.checkoutOf(ref), this.worktreeListings[ref] || null);
     },
     chipDirty(p: any) {
       const ref = this.repoRef(p);
-      return window.WBProject.chipDirty(p, this.checkoutOf(ref), this.worktreeListings[ref] || null);
+      return WBProject.chipDirty(p, this.checkoutOf(ref), this.worktreeListings[ref] || null);
     },
     // The row's branch chip. Collapsed it is only the change count, and the
     // click falls through to `.project-head`'s toggle; open it is the switcher,
@@ -1140,15 +1154,15 @@ export function shell() {
         );
         if (seq !== this._changesSeq) return; // superseded → the newer read owns it
         if (!reply || reply.status !== "ok") {
-          this.changesFailed(slug, window.WBFail.why(reply, "the daemon gave no reason"));
+          this.changesFailed(slug, WBFail.why(reply, "the daemon gave no reason"));
           return;
         }
-        const folded = window.WBChanges.fold(reply);
+        const folded = WBChanges.fold(reply);
         this.changesCount[slug] = folded.count;
         this.changesStaged[slug] = folded.staged;
         this.changesUnstaged[slug] = folded.unstaged;
         this.changesReadError[slug] = "";
-        this.changesRead[slug] = window.WBFail.readFold(this.changesRead[slug], { ok: true, value: true, at: Date.now() });
+        this.changesRead[slug] = WBFail.readFold(this.changesRead[slug], { ok: true, value: true, at: Date.now() });
       } catch {
         if (seq === this._changesSeq) {
           this.changesFailed(slug, "the daemon did not answer");
@@ -1159,10 +1173,10 @@ export function shell() {
     // the count stay, marked not current; before one, the count is absent
     // (`—`), never another repo's number or a clean tree.
     changesFailed(slug: any, reason: any) {
-      const read = window.WBFail.readFold(this.changesRead[slug], { ok: false, reason, at: Date.now() });
+      const read = WBFail.readFold(this.changesRead[slug], { ok: false, reason, at: Date.now() });
       this.changesRead[slug] = read;
       if (read.goodAt) {
-        this.changesReadError[slug] = window.WBFail.notCurrent(read, (ms) => this.fmtClock(ms));
+        this.changesReadError[slug] = WBFail.notCurrent(read, (ms) => this.fmtClock(ms));
         return;
       }
       this.changesCount[slug] = null;
@@ -1184,18 +1198,18 @@ export function shell() {
         );
         if (seq !== this._syncSeq) return; // superseded → the newer read owns it
         if (!reply || reply.status !== "ok") {
-          this.syncFailed(slug, window.WBFail.why(reply, "the daemon gave no reason"));
+          this.syncFailed(slug, WBFail.why(reply, "the daemon gave no reason"));
           return;
         }
-        const sync = window.WBChanges.foldSync(reply);
+        const sync = WBChanges.foldSync(reply);
         this.syncByProject[slug] = sync;
-        this.syncRead[slug] = window.WBFail.readFold(this.syncRead[slug], { ok: true, value: true, at: Date.now() });
+        this.syncRead[slug] = WBFail.readFold(this.syncRead[slug], { ok: true, value: true, at: Date.now() });
         // Under a selected worktree the read is THAT tree's HEAD, and
         // `p.branch` is the primary's (#407), so only a primary read moves it.
-        const branch = window.WBChanges.headBranch(sync);
+        const branch = WBChanges.headBranch(sync);
         const p = this.checkoutOf(slug) ? null : this.projects.find((x) => this.repoRef(x) === slug);
         if (p && branch !== null && p.branch !== branch) p.branch = branch;
-        const head = window.WBChanges.headOf(sync);
+        const head = WBChanges.headOf(sync);
         if (p && head !== null) p.head = head;
       } catch {
         if (seq === this._syncSeq) {
@@ -1206,14 +1220,14 @@ export function shell() {
     // A failed `sync.status` (ADR-0070 D3). After a good read the row stays,
     // and its note says it is not current; before one, the state is unknown.
     syncFailed(slug: any, reason: any) {
-      const read = window.WBFail.readFold(this.syncRead[slug], { ok: false, reason, at: Date.now() });
+      const read = WBFail.readFold(this.syncRead[slug], { ok: false, reason, at: Date.now() });
       this.syncRead[slug] = read;
       const prev = this.syncByProject[slug];
       if (read.goodAt && prev && prev.state !== "unknown") {
-        this.syncByProject[slug] = { ...prev, note: window.WBFail.notCurrent(read, (ms) => this.fmtClock(ms)) };
+        this.syncByProject[slug] = { ...prev, note: WBFail.notCurrent(read, (ms) => this.fmtClock(ms)) };
         return;
       }
-      this.syncByProject[slug] = { ...window.WBChanges.foldSync(null), note: `Could not read the branch: ${reason}` };
+      this.syncByProject[slug] = { ...WBChanges.foldSync(null), note: `Could not read the branch: ${reason}` };
     },
 
     // Fetch from the upstream — the operator's act, never a timer's. A refusal
@@ -1227,9 +1241,9 @@ export function shell() {
           "sync.fetch",
           window.WBDaemon.withCheckout({ repo: slug }, this.checkoutOf(slug)),
         );
-        if (window.WBFail.isError(reply)) {
+        if (WBFail.isError(reply)) {
           this._changesRefused(
-            window.WBFail.failed(reply, "Could not fetch: the daemon gave no reason."),
+            WBFail.failed(reply, "Could not fetch: the daemon gave no reason."),
           );
         }
       } catch {
@@ -1253,9 +1267,9 @@ export function shell() {
           "sync.pull",
           window.WBDaemon.withCheckout({ repo: slug }, this.checkoutOf(slug)),
         );
-        if (window.WBFail.isError(reply)) {
+        if (WBFail.isError(reply)) {
           this._changesRefused(
-            window.WBFail.failed(reply, "Could not pull: the daemon gave no reason."),
+            WBFail.failed(reply, "Could not pull: the daemon gave no reason."),
           );
         } else {
           moved = true;
@@ -1282,9 +1296,9 @@ export function shell() {
           "sync.push",
           window.WBDaemon.withCheckout({ repo: slug }, this.checkoutOf(slug)),
         );
-        if (window.WBFail.isError(reply)) {
+        if (WBFail.isError(reply)) {
           this._changesRefused(
-            window.WBFail.failed(reply, "Could not push: the daemon gave no reason."),
+            WBFail.failed(reply, "Could not push: the daemon gave no reason."),
           );
         }
       } catch {
@@ -1330,8 +1344,8 @@ export function shell() {
           repo: this.openSlug,
           runid,
         });
-        if (window.WBFail.isError(reply)) {
-          this.runVerbFailed(window.WBFail.failed(reply, "Could not stop the run."));
+        if (WBFail.isError(reply)) {
+          this.runVerbFailed(WBFail.failed(reply, "Could not stop the run."));
         } else {
           this._flashAction("Stop requested. The run is stopping.");
         }
@@ -1363,7 +1377,7 @@ export function shell() {
       if (this.runsRead[slug]?.current === false) {
         return "The runs shown are not current. Wait for the next read, or reload the page.";
       }
-      return window.WBChanges.writeLockReason(this.runsByProject[slug]);
+      return WBChanges.writeLockReason(this.runsByProject[slug]);
     },
     BUILD_SKEW_LOCK: "This page is older than Ralphy. Save your work, and the page loads the new version.",
     // The build this page was served with (`<meta name="ralphy-build">`);
@@ -1384,7 +1398,7 @@ export function shell() {
         // The desk changes held back while the work was saved (a new note's
         // path among them) go out with the page's last write; the daemon
         // merges them per record.
-        window.WBDeskSink?.setHold?.(false);
+        WBDeskSink?.setHold?.(false);
         // A detached file window would outlive the reload with no tab that
         // hears its Save; closing it sends the file home as a tab.
         detached.close();
@@ -1394,12 +1408,12 @@ export function shell() {
       // A hidden tab writes no desk until it reloads: its JavaScript may not
       // know the daemon's desk.
       if (!unsaved) {
-        window.WBDeskSink?.setHold?.(true);
+        WBDeskSink?.setHold?.(true);
         return;
       }
       if (!this.buildSkew) {
         this.buildSkew = true;
-        window.WBDeskSink?.setHold?.(true);
+        WBDeskSink?.setHold?.(true);
       }
     },
     // True while this tab runs an older build than the daemon and holds unsaved
@@ -1415,7 +1429,7 @@ export function shell() {
       if (this.boardRead[this.openSlug]?.current === false) {
         return "The board shown is not current. Wait for the next read.";
       }
-      return window.WBChanges.writeLockReason(
+      return WBChanges.writeLockReason(
         this.runsByProject[this.openSlug],
         "You can edit labels again when it finishes.",
       );
@@ -1428,7 +1442,7 @@ export function shell() {
       return this.writeLocked();
     },
     verbTitle(verb: any) {
-      return window.WBRun.verbLockTitle(verb, this.writeLockReason());
+      return WBRun.verbLockTitle(verb, this.writeLockReason());
     },
     // The flash after a no-arg verb is sent: `Triage requested.`
     verbRequestedText(verb: any) {
@@ -1451,10 +1465,10 @@ export function shell() {
       );
     },
     pushAct() {
-      return window.WBChanges.pushAct(this.syncByProject[this.openSlug]);
+      return WBChanges.pushAct(this.syncByProject[this.openSlug]);
     },
     pullBlocked() {
-      return window.WBChanges.pullBlocked(this.syncByProject[this.openSlug]);
+      return WBChanges.pullBlocked(this.syncByProject[this.openSlug]);
     },
     // The remote bar's title while an act is out: the busy act names itself,
     // the other two name what they are waiting on.
@@ -1464,14 +1478,14 @@ export function shell() {
       return ({ fetch: "Fetching…", pull: "Pulling…", push: "Pushing…" } as Record<string, string>)[verb] || "";
     },
     groupNote(group: any) {
-      return window.WBChanges.groupDiscardNote(group);
+      return WBChanges.groupDiscardNote(group);
     },
     commitTarget() {
-      return window.WBChanges.commitTarget(this.syncByProject[this.openSlug]);
+      return WBChanges.commitTarget(this.syncByProject[this.openSlug]);
     },
-    // `withOriginal` only on the UNSTAGE direction — see `wb-changes.js`.
+    // `withOriginal` only on the UNSTAGE direction — see `wb-changes.ts`.
     groupPaths(list: any, withOriginal: any) {
-      return window.WBChanges.groupPaths(list, withOriginal);
+      return WBChanges.groupPaths(list, withOriginal);
     },
     commitTitle() {
       const locked = this.writeLockReason();
@@ -1501,9 +1515,9 @@ export function shell() {
           "changes.stage",
           window.WBDaemon.withCheckout({ repo: slug, paths }, this.checkoutOf(slug)),
         );
-        if (window.WBFail.isError(reply)) {
+        if (WBFail.isError(reply)) {
           this._changesRefused(
-            window.WBFail.failed(reply, "Could not stage: the daemon gave no reason."),
+            WBFail.failed(reply, "Could not stage: the daemon gave no reason."),
           );
         }
       } catch {
@@ -1522,9 +1536,9 @@ export function shell() {
           "changes.unstage",
           window.WBDaemon.withCheckout({ repo: slug, paths }, this.checkoutOf(slug)),
         );
-        if (window.WBFail.isError(reply)) {
+        if (WBFail.isError(reply)) {
           this._changesRefused(
-            window.WBFail.failed(reply, "Could not unstage: the daemon gave no reason."),
+            WBFail.failed(reply, "Could not unstage: the daemon gave no reason."),
           );
         }
       } catch {
@@ -1538,7 +1552,7 @@ export function shell() {
     // only one confirmed (`discardConfirm`). A cancel makes NO daemon call.
     async discardRow(slug: any, entry: any) {
       if (!slug || !entry || !entry.path || this.writeLocked()) return;
-      const c = window.WBChanges.discardConfirm(entry);
+      const c = WBChanges.discardConfirm(entry);
       const ok = await this.askConfirm({
         title: c.title,
         message: c.message,
@@ -1554,9 +1568,9 @@ export function shell() {
           "changes.discard",
           window.WBDaemon.withCheckout({ repo: slug, paths: [entry.path] }, this.checkoutOf(slug)),
         );
-        if (window.WBFail.isError(reply)) {
+        if (WBFail.isError(reply)) {
           this._changesRefused(
-            window.WBFail.failed(reply, "Could not discard: the daemon gave no reason."),
+            WBFail.failed(reply, "Could not discard: the daemon gave no reason."),
           );
         }
       } catch {
@@ -1577,9 +1591,9 @@ export function shell() {
           "changes.commit",
           window.WBDaemon.withCheckout({ repo: slug, message }, this.checkoutOf(slug)),
         );
-        if (window.WBFail.isError(reply)) {
+        if (WBFail.isError(reply)) {
           this._changesRefused(
-            window.WBFail.failed(reply, "Could not commit: the daemon gave no reason."),
+            WBFail.failed(reply, "Could not commit: the daemon gave no reason."),
           );
         } else {
           // Cleared on success ONLY: a refused commit must not eat the message.
@@ -1605,12 +1619,12 @@ export function shell() {
     // once the repo has a worktree; a pick sets the #406 selection (what
     // Files, Changes, diff and Find show), never where a console is launched.
     hasWorktrees(p: any) {
-      return window.WBProject.hasWorktrees(this.worktreeListings[this.repoRef(p)] || null);
+      return WBProject.hasWorktrees(this.worktreeListings[this.repoRef(p)] || null);
     },
     openCheckoutChip(p: any, anchor: any) {
       const ref = this.repoRef(p);
       const listing = this.worktreeListings[ref] || null;
-      const mine = (this.liveSessions || []).filter((s) => window.WBSessionRoute.matchesRepo(s, ref));
+      const mine = (this.liveSessions || []).filter((s) => WBSessionRoute.matchesRepo(s, ref));
       window.WBConsole.checkoutMenu({
         anchor,
         host: document.body,
@@ -1626,7 +1640,7 @@ export function shell() {
     },
     chipLabel(p: any) {
       const ref = this.repoRef(p);
-      return window.WBProject.chipLabel(p, this.checkoutOf(ref), this.worktreeListings[ref] || null);
+      return WBProject.chipLabel(p, this.checkoutOf(ref), this.worktreeListings[ref] || null);
     },
     // The reactive map is REPLACED so Alpine sees it; persistence goes to the
     // desk mirror; an open tree is remounted (cache key, watch and rows are
@@ -1784,8 +1798,8 @@ export function shell() {
         window.WBConsole.askNotice({ title: `Could not delete worktree ${w.name}`, message });
       try {
         const reply = await window.WBDaemon.observe("worktree.remove", { repo: slug, name: w.name });
-        if (window.WBFail.isError(reply)) {
-          refused(window.WBFail.cause(reply, "The daemon refused to delete the worktree."));
+        if (WBFail.isError(reply)) {
+          refused(WBFail.cause(reply, "The daemon refused to delete the worktree."));
         } else {
           this._flashAction(`Worktree ${w.name} deleted`);
         }
@@ -1794,7 +1808,7 @@ export function shell() {
       } finally {
         await this.ensureWorktreeListing(slug, true);
         const ck = this.checkoutOf(slug);
-        if (ck && window.WBProject.checkoutAfterListing(ck, this.worktreeListings[slug]) === null) {
+        if (ck && WBProject.checkoutAfterListing(ck, this.worktreeListings[slug]) === null) {
           this.checkoutGone(slug, ck);
         }
         // Cleared last: no entry means the re-read landed too.
@@ -1815,10 +1829,10 @@ export function shell() {
           verb,
           WBDaemon.withCheckout({ repo: slug, name }, this.checkoutOf(slug)),
         );
-        if (window.WBFail.isError(reply)) {
+        if (WBFail.isError(reply)) {
           revert();
           this._branchRefused(
-            window.WBFail.failed(
+            WBFail.failed(
               reply,
               verb === "branch.create"
                 ? "Could not create the branch: the daemon gave no reason."
@@ -1846,7 +1860,7 @@ export function shell() {
 
     // --- Runs panel -------------------------------------------------------
     // One entry per `runid`: issue queue + per-issue status, live phase, the
-    // current issue's plan.md (helpers in wb-runs.js, `window.WBRun`).
+    // current issue's plan.md (helpers in wb-runs.ts, `WBRun`).
     runsByProject: {} as Record<string, any>,
     // An error must never render as "No active runs": an empty project and an
     // unreadable one are different facts (ADR-0047 §6).
@@ -1876,12 +1890,12 @@ export function shell() {
         // Superseded while in flight: the newer hydration owns the state.
         if (seq !== this._runsSeq || this.openSlug !== slug) return;
         if (reply?.status !== "ok") {
-          this.runsFailed(slug, window.WBFail.why(reply, "the daemon gave no reason"));
+          this.runsFailed(slug, WBFail.why(reply, "the daemon gave no reason"));
           return;
         }
-        this.runsRead[slug] = window.WBFail.readFold(this.runsRead[slug], { ok: true, value: true, at: Date.now() });
+        this.runsRead[slug] = WBFail.readFold(this.runsRead[slug], { ok: true, value: true, at: Date.now() });
         this.runsByProject[slug] = (reply.runs || []).map((d: any) => {
-          const run = window.WBRun.fromSnapshot(d);
+          const run = WBRun.fromSnapshot(d);
           // A push arrives on every snapshot write (~every few hundred ms);
           // re-fetching an unchanged plan would blank the viewer each time.
           const prev = prevRuns.find((p: any) => p.runid === run.runid);
@@ -1907,16 +1921,16 @@ export function shell() {
       } catch (err: any) {
         if (seq !== this._runsSeq || this.openSlug !== slug) return;
         // A transport failure is a read failure, not an idle project.
-        this.runsFailed(slug, window.WBFail.why({ message: err?.message }, "the daemon did not answer"));
+        this.runsFailed(slug, WBFail.why({ message: err?.message }, "the daemon did not answer"));
       }
     },
     // A failed `runs.list` (ADR-0070 D3). After a good read the runs stay,
     // marked not current; before one, there are none and the panel says why.
     runsFailed(slug: any, reason: any) {
-      const read = window.WBFail.readFold(this.runsRead[slug], { ok: false, reason, at: Date.now() });
+      const read = WBFail.readFold(this.runsRead[slug], { ok: false, reason, at: Date.now() });
       this.runsRead[slug] = read;
       if (read.goodAt) {
-        this.runsError = window.WBFail.notCurrent(read, (ms) => this.fmtClock(ms));
+        this.runsError = WBFail.notCurrent(read, (ms) => this.fmtClock(ms));
         return;
       }
       this.runsByProject[slug] = [];
@@ -1972,19 +1986,19 @@ export function shell() {
       this.loadRunPlan();
     },
 
-    // Thin delegations to the faithful helpers in wb-runs.js.
+    // Thin delegations to the faithful helpers in wb-runs.ts.
     runPhaseLabel(run: any) {
-      return run ? window.WBRun.runPhaseLabel(run) : "";
+      return run ? WBRun.runPhaseLabel(run) : "";
     },
     runTitle(run: any) {
-      return window.WBRun.runTitle(run);
+      return WBRun.runTitle(run);
     },
     runIdentity(run: any) {
-      return window.WBRun.runIdentity(run);
+      return WBRun.runIdentity(run);
     },
     // Reading `nowMs` subscribes this binding to the 1 s tick.
     runClock(run: any) {
-      return window.WBRun.phaseClock(run, this.nowMs);
+      return WBRun.phaseClock(run, this.nowMs);
     },
     // When this phase began, and the run's whole elapsed time.
     clockTitle(run: any) {
@@ -2002,20 +2016,20 @@ export function shell() {
       return parts.join(" · ");
     },
     issueState(run: any, iss: any) {
-      return window.WBRun.issueState(run, iss);
+      return WBRun.issueState(run, iss);
     },
     issueGlyph(run: any, iss: any) {
-      return window.WBRun.glyph(run, iss);
+      return WBRun.glyph(run, iss);
     },
     sleepLabel(run: any) {
-      return window.WBRun.sleepText(run?.sleep);
+      return WBRun.sleepText(run?.sleep);
     },
     nodeTitle(run: any, iss: any) {
       if (!run || !iss) return "";
-      const st = window.WBRun.issueState(run, iss);
-      let t = `#${iss.number} — ${iss.title} · ${window.WBRun.LABEL[st] || st}`;
+      const st = WBRun.issueState(run, iss);
+      let t = `#${iss.number} — ${iss.title} · ${WBRun.LABEL[st] || st}`;
       // Per-issue: tier routing gives two issues of one run different models.
-      const seg = window.WBRun.modelEffort(iss.model, iss.effort);
+      const seg = WBRun.modelEffort(iss.model, iss.effort);
       if (seg) t += ` · ${seg}`;
       if (iss.blockedBy?.length) t += ` (blocked by ${iss.blockedBy.map((n: any) => "#" + n).join(", ")})`;
       return t;
@@ -2061,22 +2075,22 @@ export function shell() {
     // the key the block would render the PREVIOUS issue's plan. Unkeyed prose
     // (a half-written plan) stays empty.
     planProseIssue(run: any) {
-      return window.WBRun.planTrailerIssue(run?.planMd);
+      return WBRun.planTrailerIssue(run?.planMd);
     },
     planProseIsCurrent(run: any) {
-      return window.WBRun.planBelongsTo(run?.planMd, this.planIssueWanted(run));
+      return WBRun.planBelongsTo(run?.planMd, this.planIssueWanted(run));
     },
     // Every `##` section except Steps (its own block); none while the prose
     // belongs to another issue.
     planHeadings(run: any) {
       if (!this.planProseIsCurrent(run)) return [];
-      return window.WBRun.headings(run?.planMd).filter((h) => h.toLowerCase() !== "steps");
+      return WBRun.headings(run?.planMd).filter((h) => h.toLowerCase() !== "steps");
     },
     // Render one `##` section as sanitized HTML. Steps render from the
     // snapshot document, not from here (#330).
     renderPlanSection(run: any, name: any) {
       if (!run || !name || !this.planProseIsCurrent(run)) return "";
-      const body = window.WBRun.section(run?.planMd, name);
+      const body = WBRun.section(run?.planMd, name);
       return DOMPurify.sanitize(marked.parse(body || "_(empty)_"));
     },
 
@@ -2085,13 +2099,13 @@ export function shell() {
       return this.currentRun()?.steps || [];
     },
     stepGlyph(status: any) {
-      return window.WBRun.stepGlyph(status);
+      return WBRun.stepGlyph(status);
     },
     stepLabel(status: any) {
-      return window.WBRun.stepLabel(status);
+      return WBRun.stepLabel(status);
     },
     stepClass(status: any) {
-      return window.WBRun.stepClass(status);
+      return WBRun.stepClass(status);
     },
     // Why the step list is empty — an unexplained blank block reads as a bug.
     stepsNote() {
@@ -2133,7 +2147,7 @@ export function shell() {
     // A CLI refusal, held until the next verb click (#331). Distinct from the
     // 2.6 s `runsActionMsg` flash.
     verbError: "",
-    // Phase 1 raw merged output of the last daemon-spawned run (wb-daemon.js).
+    // Phase 1 raw merged output of the last daemon-spawned run (wb-daemon.ts).
     rawFeed: "",
     // COLLAPSED by default and re-collapsed by every reset: a feed that opens
     // itself takes up to 30vh on every verb click. Opt-IN, not hidden.
@@ -2198,7 +2212,7 @@ export function shell() {
       window.WB.emit("command", { project: this.openSlug, verb });
       this._flashAction(this.verbRequestedText(verb));
     },
-    // From wb-daemon.js on a TERMINAL frame only; an empty note is a no-op.
+    // From wb-daemon.ts on a TERMINAL frame only; an empty note is a no-op.
     runVerbFailed(msg: any) {
       if (msg) this.verbError = msg;
     },
@@ -2265,7 +2279,7 @@ export function shell() {
         // A refusal is the ORDINARY case (no plan sitting around): it clears
         // the entry rather than raising an error.
         const md = reply?.status === "ok" ? reply.content || "" : "";
-        this.planByProject[slug] = md ? { md, summary: window.WBRun.planSummary(md) } : null;
+        this.planByProject[slug] = md ? { md, summary: WBRun.planSummary(md) } : null;
       } catch {
         this.planByProject[slug] = null;
       }
@@ -2291,11 +2305,11 @@ export function shell() {
     },
     planPillLabel(number: any) {
       const held = this.planFor(number);
-      return held ? window.WBRun.planPillLabel(held.summary, this.planIssueIsOpen()) : "";
+      return held ? WBRun.planPillLabel(held.summary, this.planIssueIsOpen()) : "";
     },
     planPillWarns(number: any) {
       const held = this.planFor(number);
-      return !!held && window.WBRun.planPillWarns(held.summary, this.planIssueIsOpen());
+      return !!held && WBRun.planPillWarns(held.summary, this.planIssueIsOpen());
     },
     // The head chip: for a plan whose issue is filtered out of the board or
     // absent from the fold, which would otherwise be invisible AND
@@ -2303,7 +2317,7 @@ export function shell() {
     planChipLabel() {
       const held = this.openPlan();
       if (!held) return "";
-      return `#${held.summary.issue} · ${window.WBRun.planPillLabel(held.summary, this.planIssueIsOpen())}`;
+      return `#${held.summary.issue} · ${WBRun.planPillLabel(held.summary, this.planIssueIsOpen())}`;
     },
     openPlanModal() {
       const held = this.openPlan();
@@ -2355,8 +2369,8 @@ export function shell() {
       const slug = this.openSlug;
       try {
         const reply = await window.WBDaemon.write("plan.discard", { repo: slug });
-        if (window.WBFail.isError(reply)) {
-          this._flashAction(window.WBFail.failed(reply, "Could not discard the plan."));
+        if (WBFail.isError(reply)) {
+          this._flashAction(WBFail.failed(reply, "Could not discard the plan."));
           return;
         }
         this._flashAction(`Plan for #${held.summary.issue} discarded.`);
@@ -2398,8 +2412,8 @@ export function shell() {
             setTimeout(() => rej(new Error("board fold timed out")), this.BOARD_FOLD_TIMEOUT_MS),
           ),
         ]);
-        if (window.WBFail.isError(reply)) {
-          const msg = window.WBFail.failed(reply, "Could not load the board.");
+        if (WBFail.isError(reply)) {
+          const msg = WBFail.failed(reply, "Could not load the board.");
           this.boardFailed(slug, msg);
           this._flashAction?.(msg);
           return;
@@ -2415,7 +2429,7 @@ export function shell() {
         }
         this.boardLabels[slug] = colors;
         this.boardError[slug] = null;
-        this.boardRead[slug] = window.WBFail.readFold(this.boardRead[slug], { ok: true, value: true, at: Date.now() });
+        this.boardRead[slug] = WBFail.readFold(this.boardRead[slug], { ok: true, value: true, at: Date.now() });
         // Fold rows carry `body: ""`: re-merge the open drawer's detail or it
         // goes blank on every refresh.
         if (this.kanbanSel != null) this.loadIssueDetail(this.kanbanSel);
@@ -2438,10 +2452,10 @@ export function shell() {
     // under a banner that says they are not current; before one, there are no
     // cards and the banner says why. Moving a card is locked meanwhile.
     boardFailed(slug: any, msg: any) {
-      const read = window.WBFail.readFold(this.boardRead[slug], { ok: false, reason: msg, at: Date.now() });
+      const read = WBFail.readFold(this.boardRead[slug], { ok: false, reason: msg, at: Date.now() });
       this.boardRead[slug] = read;
       if (read.goodAt) {
-        this.boardError[slug] = window.WBFail.notCurrent(read, (ms) => this.fmtClock(ms));
+        this.boardError[slug] = WBFail.notCurrent(read, (ms) => this.fmtClock(ms));
         return;
       }
       this.boardIssues[slug] = [];
@@ -2449,7 +2463,7 @@ export function shell() {
     },
 
     // The one door every refresh trigger goes through (#301): the predicate
-    // (wb-kanban.js) decides.
+    // (wb-kanban.ts) decides.
     maybeRefreshBoard(trigger: any) {
       const ok = window.WBKanban.shouldRefresh({
         trigger,
@@ -2469,7 +2483,7 @@ export function shell() {
       this.maybeRefreshBoard("backstop");
     },
 
-    // A CLI fold row → the issue shape `wb-kanban.js` expects. Body + comments
+    // A CLI fold row → the issue shape `wb-kanban.ts` expects. Body + comments
     // are absent from the fold (`issue.show` fills them on open).
     boardRowToIssue(row: any) {
       return {
@@ -2527,10 +2541,10 @@ export function shell() {
     },
     // A run state as the Runs panel words it (`sleep` → "usage limit — sleeping").
     runStateWord(state: any) {
-      return (state && window.WBRun?.LABEL?.[state]) || state || "";
+      return (state && WBRun?.LABEL?.[state]) || state || "";
     },
     peerStateWord(state: any) {
-      return window.WBFleet.stateWord(state);
+      return WBFleet.stateWord(state);
     },
 
     // Thin delegations to the faithful helpers (used in the template).
@@ -2591,8 +2605,8 @@ export function shell() {
       };
       try {
         const reply = await window.WBDaemon.observe("issue.show", { repo: slug, number });
-        if (window.WBFail.isError(reply)) {
-          fail(window.WBFail.failed(reply, "Could not load the issue."));
+        if (WBFail.isError(reply)) {
+          fail(WBFail.failed(reply, "Could not load the issue."));
           return;
         }
         if (!reply || reply.status !== "ok" || !reply.issue || typeof reply.issue !== "object") {
@@ -2623,7 +2637,7 @@ export function shell() {
     // (#204); `null` with no GitHub remote. Only the lookup stays here.
     githubUrl(number: any) {
       const p = this.projects.find((x) => this.repoRef(x) === this.openSlug);
-      return window.WBProject.issueUrl(p && p.remoteUrl, number);
+      return WBProject.issueUrl(p && p.remoteUrl, number);
     },
 
     // The selected issue's blockers, each with its live open/closed state.
@@ -2678,9 +2692,9 @@ export function shell() {
             label,
             op,
           });
-          if (window.WBFail.isError(reply)) {
+          if (WBFail.isError(reply)) {
             iss.labels = prev;
-            this._flashAction(window.WBFail.failed(reply, "Could not change the labels: the daemon gave no reason."));
+            this._flashAction(WBFail.failed(reply, "Could not change the labels: the daemon gave no reason."));
             return; // a refused write changed nothing to re-read
           }
           // Re-fold so the column reflects the server, not the optimistic
@@ -2879,7 +2893,7 @@ export function shell() {
     // wb-release-dialogs.ts, and change it only through the two methods
     // after `loadRelease` (ADR-0073 D4).
     // The release view the daemon computed (ADR-0056 §7), seeded empty.
-    release: (window.WBRelease && window.WBRelease.EMPTY) || {
+    release: (WBRelease && WBRelease.EMPTY) || {
       current: "",
       channel: "rc",
       standing: "unknown",
@@ -2893,15 +2907,15 @@ export function shell() {
     releaseSeen: false,
 
     get releaseHasNews() {
-      return !!window.WBRelease && window.WBRelease.hasNews(this.release);
+      return !!WBRelease && WBRelease.hasNews(this.release);
     },
     // What the rail draws: an urgent release ignores the dismissal.
     get releaseUnread() {
       if (!this.releaseHasNews) return false;
-      return !this.releaseSeen || window.WBRelease.isSticky(this.release);
+      return !this.releaseSeen || WBRelease.isSticky(this.release);
     },
     get releaseSummary() {
-      return window.WBRelease ? window.WBRelease.gapSummary(this.release) : "";
+      return WBRelease ? WBRelease.gapSummary(this.release) : "";
     },
     // Every console on this daemon is its child, so the update's restart ends
     // them all, the agents inside included. `/api/sessions` lists them.
@@ -2940,14 +2954,14 @@ export function shell() {
     },
     releaseRead: null as any,
     releaseStale() {
-      return window.WBFail.notCurrent(this.releaseRead, (ms) => this.fmtClock(ms));
+      return WBFail.notCurrent(this.releaseRead, (ms) => this.fmtClock(ms));
     },
     async loadRelease() {
-      if (!window.WBRelease) return;
-      const view = await window.WBRelease.read();
+      if (!WBRelease) return;
+      const view = await WBRelease.read();
       // A failed read keeps what the page last knew (ADR-0056 §6), marked
       // not current (ADR-0070 D3).
-      this.releaseRead = window.WBFail.readFold(this.releaseRead, {
+      this.releaseRead = WBFail.readFold(this.releaseRead, {
         ok: !!view,
         value: true,
         reason: "the daemon did not answer",
@@ -3383,7 +3397,7 @@ export function shell() {
         lazyLoad: (e: any) =>
           this.loadTreeLevel(this.relPath(e.node)).catch((err: any) => {
             this.treeWentStale(err);
-            if (window.WBFleet.refDaemon(this.openSlug || "")) this.readFleetNow();
+            if (WBFleet.refDaemon(this.openSlug || "")) this.readFleetNow();
             setTimeout(() => e.node.setExpanded(false));
             return false;
           }),
@@ -3556,7 +3570,7 @@ export function shell() {
       );
       return WBDaemon.observe("tree.list", payload).then((reply) => {
         if (!reply || reply.status !== "ok" || !Array.isArray(reply.entries)) {
-          throw new Error(window.WBFail.message(reply, ""));
+          throw new Error(WBFail.message(reply, ""));
         }
         this.treeFresh();
         this.pruneTreeCache(rel, reply.entries);
@@ -3639,7 +3653,7 @@ export function shell() {
     // every row alone. Cleared by `treeFresh`.
     treeWentStale(err: any) {
       if (!this.useDaemonTree()) return;
-      const failure = window.WBFail.failed({ message: err?.message }, "Could not refresh the file list: the daemon gave no reason.");
+      const failure = WBFail.failed({ message: err?.message }, "Could not refresh the file list: the daemon gave no reason.");
       this.treeStale = `${failure} The list shown is the last one read.`;
     },
 
@@ -3651,21 +3665,21 @@ export function shell() {
     // The fleet group of the open project's peer while the fleet calls that
     // peer down, else null. FILES takes this fact from the fleet, its owner.
     openPeerDown() {
-      const daemon = window.WBFleet.refDaemon(this.openSlug || "");
+      const daemon = WBFleet.refDaemon(this.openSlug || "");
       if (!daemon) return null;
       const group = this.fleetGroups().find((g) => g.daemon === daemon);
-      return group && !window.WBFleet.available(group) ? group : null;
+      return group && !WBFleet.available(group) ? group : null;
     },
     peerDownText(g: any) {
-      return `${window.WBFleet.peerName(g)} is not connected. The list shown is the last one read.`;
+      return `${WBFleet.peerName(g)} is not connected. The list shown is the last one read.`;
     },
     peerDownAction(g: any) {
-      return window.WBFleet.wakeable(g) ? "Wake" : "Try again";
+      return WBFleet.wakeable(g) ? "Wake" : "Try again";
     },
     peerDownAct() {
       const g = this.openPeerDown();
       if (!g) return;
-      if (window.WBFleet.wakeable(g)) this.wakePeer(g.daemon);
+      if (WBFleet.wakeable(g)) this.wakePeer(g.daemon);
       else this.readFleetNow();
     },
 
@@ -3733,12 +3747,12 @@ export function shell() {
     // A keystroke arms the debounce; a query under the floor clears instead.
     fileSearchTyped() {
       clearTimeout(this._fileSearchTimer);
-      if (!window.WBFileSearch.worthSearching(this.fileSearch.query)) {
+      if (!WBFileSearch.worthSearching(this.fileSearch.query)) {
         this.fileSearch.seq++;
         this.clearFileSearch();
         return;
       }
-      this._fileSearchTimer = setTimeout(() => this.fileSearchNow(), window.WBFileSearch.DEBOUNCE_MS);
+      this._fileSearchTimer = setTimeout(() => this.fileSearchNow(), WBFileSearch.DEBOUNCE_MS);
     },
 
     // One Observe read, dated by `seq`: a reply that is not the newest, or
@@ -3746,7 +3760,7 @@ export function shell() {
     fileSearchNow() {
       clearTimeout(this._fileSearchTimer);
       const query = String(this.fileSearch.query ?? "").trim();
-      if (!window.WBFileSearch.worthSearching(query)) {
+      if (!WBFileSearch.worthSearching(query)) {
         return this.clearFileSearch();
       }
       const seq = ++this.fileSearch.seq;
@@ -3755,22 +3769,22 @@ export function shell() {
         return Promise.resolve();
       }
       const slug = this.openSlug;
-      const verb = window.WBFileSearch.verbFor(this.fileSearch.mode);
+      const verb = WBFileSearch.verbFor(this.fileSearch.mode);
       this.fileSearch.note = "searching…";
       // Find and grep walk the SELECTED tree (#406).
       const payload = window.WBDaemon.withCheckout({ repo: slug, query }, this.checkoutOf(slug));
       return window.WBDaemon.observe(verb, payload)
         .then((reply) => {
           if (seq !== this.fileSearch.seq || slug !== this.openSlug) return;
-          if (window.WBFail.isError(reply) || !Array.isArray(reply?.hits)) {
-            this.fileSearch.note = window.WBFail.failed(reply, "Could not search: the daemon gave no reason.");
+          if (WBFail.isError(reply) || !Array.isArray(reply?.hits)) {
+            this.fileSearch.note = WBFail.failed(reply, "Could not search: the daemon gave no reason.");
             return;
           }
           return this.applyFileSearch(reply.hits, !!reply.truncated, seq);
         })
         .catch((err: any) => {
           if (seq !== this.fileSearch.seq) return;
-          this.fileSearch.note = window.WBFail.failed({ message: err?.message }, "Could not search: the daemon did not answer.");
+          this.fileSearch.note = WBFail.failed({ message: err?.message }, "Could not search: the daemon did not answer.");
         });
     },
 
@@ -3802,7 +3816,7 @@ export function shell() {
       this.treeMem();
       this.fileSearch.hits = hits;
       this.fileSearch.truncated = truncated;
-      this.fileSearch.note = window.WBFileSearch.note({ hits, truncated });
+      this.fileSearch.note = WBFileSearch.note({ hits, truncated });
       const tree = this.rawTree();
       if (!tree) return;
       if (this.fileSearch.expandedBefore === null) this.fileSearch.expandedBefore = this.expandedRels();
@@ -3812,14 +3826,14 @@ export function shell() {
       this._restoringExpansion = true;
       tree.enableUpdate(false);
       try {
-        for (const dir of window.WBFileSearch.dirsToLoad(hits)) {
+        for (const dir of WBFileSearch.dirsToLoad(hits)) {
           // A newer search, or a torn-down tree, owns the screen now.
           if (seq !== this.fileSearch.seq || tree !== this.rawTree()) return;
           const f = tree.findFirst((n: any) => this.relPath(n) === dir);
           if (f && this.isFolder(f) && !f.expanded) await f.setExpanded(true);
         }
         if (seq !== this.fileSearch.seq || tree !== this.rawTree()) return;
-        this._fileHits = window.WBFileSearch.hitMap(hits);
+        this._fileHits = WBFileSearch.hitMap(hits);
         // `autoExpand: false`: the extension would also open every MATCHED
         // folder, a burst of lazy loads.
         tree.filterNodes((n: any) => this._fileHits.has(this.relPath(n)), {
@@ -3856,7 +3870,7 @@ export function shell() {
       tree.enableUpdate(false);
       try {
         if (tree.isFilterActive?.()) tree.clearFilter();
-        const fold = window.WBFileSearch.toCollapse(before, this.expandedRels());
+        const fold = WBFileSearch.toCollapse(before, this.expandedRels());
         for (const rel of fold) {
           if (tree !== this.rawTree()) return;
           const f = tree.findFirst((n: any) => this.relPath(n) === rel);
@@ -3892,7 +3906,7 @@ export function shell() {
     fetchContent(project: any, path: any, ftype: any, checkout: any) {
       const refuse = (reason: any) => {
         window.WB.emit("open-refused", { project, path, reason });
-        this._flashAction?.(window.WBFail.failed({ reason }, "Could not open the file: the daemon gave no reason."));
+        this._flashAction?.(WBFail.failed({ reason }, "Could not open the file: the daemon gave no reason."));
         if (reason === "not found" || reason === "transport") {
           this.closeTab(fileTabId(project, path, checkout));
           return null;
@@ -3908,10 +3922,10 @@ export function shell() {
       }
       return WBDaemon.observe("file.read", WBDaemon.withCheckout({ repo: project, path }, checkout))
         .then((reply) => {
-          if (!window.WBFail.isError(reply)) {
+          if (!WBFail.isError(reply)) {
             return { content: reply.content, encoding: reply.encoding, bom: !!reply.bom };
           }
-          return refuse(window.WBFail.message(reply, "refused"));
+          return refuse(WBFail.message(reply, "refused"));
         })
         .catch(() => refuse("transport"));
     },
@@ -4184,9 +4198,9 @@ export function shell() {
       if (!window.WBDaemon?.subscribeChanges || !this.openSlug) return;
       this._changesSub = window.WBDaemon.subscribeChanges(this.openSlug, (frame: any) => {
         if (this.tabHidden()) return;
-        // Optional-chained: a frame without wb-changes.js must not throw
+        // Optional-chained: a frame without wb-changes.ts must not throw
         // inside `onmessage`.
-        if (window.WBChanges?.shouldReload?.(frame, this.openSlug)) {
+        if (WBChanges?.shouldReload?.(frame, this.openSlug)) {
           this.loadChanges(this.openSlug);
           this.loadSync(this.openSlug);
         }
@@ -4348,7 +4362,7 @@ export function shell() {
         return;
       }
       // Pinned to the selection at open (#407): both sides read `t.checkout`.
-      const t = window.WBChanges.diffTarget(entry, project, this.checkoutOf(project));
+      const t = WBChanges.diffTarget(entry, project, this.checkoutOf(project));
       if (this.tabs.some((x) => x.id === t.id)) {
         this.activate(t.id);
         return;
@@ -4371,7 +4385,7 @@ export function shell() {
         const refuse = (reason: any) => {
           if (refused) return null;
           refused = true;
-          this._flashAction?.(window.WBFail.failed({ message: reason }, "Could not open the diff: the daemon gave no reason."));
+          this._flashAction?.(WBFail.failed({ message: reason }, "Could not open the diff: the daemon gave no reason."));
           this.closeTab(t.id);
           return null;
         };
@@ -4425,7 +4439,7 @@ export function shell() {
         "blob.read",
         WBDaemon.withCheckout({ repo: project, revision: "head", path: t.headPath }, t.checkout),
       ).then((reply) => {
-        if (window.WBFail.isError(reply)) return refuse(window.WBFail.message(reply, "refused"));
+        if (WBFail.isError(reply)) return refuse(WBFail.message(reply, "refused"));
         const blob = reply.blob || {};
         if (blob.status === "present") return blob.content;
         if (blob.status === "absent") return "";
@@ -4443,8 +4457,8 @@ export function shell() {
         "file.read",
         WBDaemon.withCheckout({ repo: project, path: t.workingPath }, t.checkout),
       ).then((reply) => {
-        if (!window.WBFail.isError(reply)) return reply.content;
-        const reason = window.WBFail.message(reply, "refused");
+        if (!WBFail.isError(reply)) return reply.content;
+        const reason = WBFail.message(reply, "refused");
         return reason === "not found" ? "" : refuse(reason);
       });
     },
@@ -4485,7 +4499,7 @@ export function shell() {
     // Paneless tabs map to `null`; the slot waits in state while one is up.
     PANELESS_TABS: ["consoles", "spend"],
     syncViewer() {
-      const r = window.WBSplit.resolve({
+      const r = WBSplit.resolve({
         active: this.active,
         slot: this.slot,
         tabs: this.tabs,
@@ -4522,7 +4536,7 @@ export function shell() {
     // Whether the canvas is wide enough for two panes right now: the tab menu
     // greys its slot items below the floor rather than pinning into nothing.
     splitAvailable() {
-      return window.WBSplit.available(WBViewer.width());
+      return WBSplit.available(WBViewer.width());
     },
 
     closeTab(id: any) {
@@ -4530,7 +4544,7 @@ export function shell() {
       const tab = this.tabs[idx];
       if (!tab || !tab.closable) return; // Consoles never closes
       // A closed tab takes its pin with it (a mirror follows the active tab).
-      this.slot = window.WBSplit.afterClose(this.slot, id);
+      this.slot = WBSplit.afterClose(this.slot, id);
       if (this.lastLeft === id) this.lastLeft = null;
       WBViewer.close(id);
       this.tabs.splice(idx, 1);
@@ -4546,7 +4560,7 @@ export function shell() {
     },
 
     // --- the per-client view: the open file tabs (issue #339) ----------------
-    // The tabs half of `wb.view.v1` (`wb-console.js` owns the offset half;
+    // The tabs half of `wb.view.v1` (`wb-console.ts` owns the offset half;
     // `patch` merges). Only `file:` tabs are stored: a `diff:` tab's sides are
     // LIVE git state.
     // Set while `restoreView` opens the stored tabs: `fetchContent` closes a
@@ -4574,7 +4588,7 @@ export function shell() {
         active: alive ? this.active : "consoles",
         // ALWAYS written, null included: `patch` is read-modify-write, and a
         // key left out would let a stale pin outlive the tab it named.
-        split: window.WBSplit.toStored(this.slot, this.splitRatio, this.tabs),
+        split: WBSplit.toStored(this.slot, this.splitRatio, this.tabs),
       });
     },
 
@@ -4600,7 +4614,7 @@ export function shell() {
         }
         // After the tab entries exist (the panes land async; the viewer
         // paints single until they do) and before the activation that paints.
-        this.slot = window.WBSplit.fromStored(stored.split, this.tabs);
+        this.slot = WBSplit.fromStored(stored.split, this.tabs);
         this.splitRatio = stored.split?.ratio ?? null;
         const want = stored.active;
         this.activate(want && this.tabs.some((t) => t.id === want) ? want : "consoles");
@@ -4614,7 +4628,7 @@ export function shell() {
     },
 
     // --- consoles (the Consoles tab) ----------------------------------------
-    // The "New console" menu (wb-agents.js): the roster folded against the
+    // The "New console" menu (wb-agents.ts): the roster folded against the
     // live sessions, plus a plain console pinned LAST. Each row carries an
     // Alt+Shift+<digit> accelerator, matched by physical key (e.code) so it
     // fires regardless of layout. Console is Alt+Shift+0; Alt+Shift+R opens the
@@ -4626,7 +4640,7 @@ export function shell() {
     consoleRunOpen: false,
     consoleRunText: "",
     consoleItems() {
-      return window.WBAgents.menuRows({
+      return WBAgents.menuRows({
         roster: this.roster,
         sessions: this.liveSessions,
         openSlug: this.openSlug,
@@ -4644,13 +4658,13 @@ export function shell() {
     consoleMenuRepoName() {
       if (!this.openSlug) return "";
       const row = this.projects.find((p) => this.repoRef(p) === this.openSlug);
-      const name = row ? window.WBProject.projectName(row) : window.WBFleet.refSlug(this.openSlug);
+      const name = row ? WBProject.projectName(row) : WBFleet.refSlug(this.openSlug);
       return name.split("/").pop() || name;
     },
     // Every row is a launch (the menu is "New console"); `opts.tryAnyway` is
     // the unavailable row's escape hatch.
     openConsoleItem(item: any, opts: any = {}) {
-      if (!window.WBAgents.consoleIntent(item, opts)) return;
+      if (!WBAgents.consoleIntent(item, opts)) return;
       if (item.plain) this.newPlainConsole(item.command);
       else this.newConsole(item.kind);
       this.agentMenu = false;
@@ -4684,7 +4698,7 @@ export function shell() {
     },
     // A blank line is not a launch: the field stays open for the typing.
     runConsoleCommand() {
-      const command = window.WBAgents.runCommand(this.consoleRunText);
+      const command = WBAgents.runCommand(this.consoleRunText);
       if (!command) return;
       this.newPlainConsole(command);
       this.agentMenu = false;
@@ -4705,8 +4719,8 @@ export function shell() {
     // column walk); xterm's input is a TEXTAREA.
     consoleShortcutsBlocked(allowTerminal = false) {
       if (!this.authed) return true;
-      if (this.modalOpen(window.WBSettingsDialog.openFlag) || this.modalOpen(window.WBSecurityDialog.openFlag) || this.runOpen || this.branchOpen) return true;
-      if (this.modalOpen(window.WBReleaseDialogs.whatsNewFlag)) return true;
+      if (this.modalOpen(WBSettingsDialog.openFlag) || this.modalOpen(WBSecurityDialog.openFlag) || this.runOpen || this.branchOpen) return true;
+      if (this.modalOpen(WBReleaseDialogs.whatsNewFlag)) return true;
       const el: any = document.activeElement;
       if (allowTerminal && el?.closest?.(".xterm")) return false;
       return !!(
@@ -4734,7 +4748,7 @@ export function shell() {
       // The menu closes BEFORE the fence is drawn, or its list goes stale.
       this.fenceMenu = false;
       // The module decides; `false` is its refusal at the cap, and saying so is
-      // this layer's job (`wb-console.js` reaches no shell).
+      // this layer's job (`wb-console.ts` reaches no shell).
       if (WBConsole.createFence() === false) this._flashAction(this.fenceCapMessage());
     },
 
@@ -4908,7 +4922,7 @@ export function shell() {
     // INVARIANT: the shell never writes `max` itself. Each `applyColumns` call
     // passes `persist`, so `setMax` writes it for the first console in reading
     // order (`true`) or one that stopped being first (`false`). `columns` is
-    // the grid: a list of columns, each a list of ids (`wb-columns.js`).
+    // the grid: a list of columns, each a list of ids (`wb-columns.ts`).
     columnIds() {
       return WBColumns.flat(this.columns);
     },
@@ -5058,7 +5072,7 @@ export function shell() {
     // each console runs, and the list is about telling the consoles apart.
     columnRepoLabel(ref: any) {
       const row = this.projects.find((p) => this.repoRef(p) === ref);
-      return row ? window.WBProject.projectName(row) : window.WBFleet.refLabel(ref);
+      return row ? WBProject.projectName(row) : WBFleet.refLabel(ref);
     },
     columnView() {
       return WBColumns.filterGroups(this.columnGroups, this.columnFilter, (ref: any) => this.columnRepoLabel(ref));
@@ -5316,7 +5330,7 @@ export function shell() {
       if (!reply || WBFail.isError(reply)) {
         this._flashAction?.(
           reply
-            ? window.WBFail.failed(reply, "Could not duplicate the file: the daemon gave no reason.")
+            ? WBFail.failed(reply, "Could not duplicate the file: the daemon gave no reason.")
             : "Could not duplicate the file: the daemon did not answer.",
         );
         return;
@@ -5642,13 +5656,13 @@ export function shell() {
   });
 }
 
-// Everything the page wires at load: the window names classic scripts call,
+// Everything the page wires at load: the window names other code reads,
 // the document and window listeners, and the state of detached windows.
 // `window` and `document` are parameters so a test passes its own stubs, and
 // each call starts from fresh state (ADR-0075 D7).
 export function wire(window: Window, document: Document) {
   // The one exit point: every gesture becomes a `workbench:action` event.
-  // A classic script still reads these names (ADR-0075 D9).
+  // Each page sets its own `window.WB`, and its modules read it (ADR-0075 D9).
   window.WB = {
     emit(action: any, detail: any = {}) {
       const full = { action, ...detail, at: new Date().toISOString() };
@@ -5740,7 +5754,7 @@ export function wire(window: Window, document: Document) {
   document.addEventListener("workbench:canvas-resize", (e: any) => {
     const sh = window.getShell();
     if (!sh) return;
-    const wide = window.WBSplit.available(e.detail.width);
+    const wide = WBSplit.available(e.detail.width);
     if (wide === wbCanvasWide) return;
     wbCanvasWide = wide;
     if (sh.slot) sh.syncViewer();
@@ -5851,7 +5865,7 @@ export function wire(window: Window, document: Document) {
     const call = (verb: any, payload: any, okMsg?: any) => {
       WBDaemon.write(verb, payload)
         .then((reply: any) => {
-          if (window.WBFail.isError(reply)) flash(window.WBFail.failed(reply, "Could not rename: the daemon gave no reason."));
+          if (WBFail.isError(reply)) flash(WBFail.failed(reply, "Could not rename: the daemon gave no reason."));
           else if (okMsg) flash(okMsg);
         })
         .catch(() => flash("Could not rename: the daemon did not answer."));
@@ -5883,15 +5897,15 @@ export function wire(window: Window, document: Document) {
           const send = (p: any) =>
             WBDaemon.write("file.write", aimed(p))
               .then((reply: any) => {
-                if (!window.WBFail.isError(reply)) return viewer()?.saveDone?.(id);
-                const reason = window.WBFail.message(reply, "the daemon gave no reason");
+                if (!WBFail.isError(reply)) return viewer()?.saveDone?.(id);
+                const reason = WBFail.message(reply, "the daemon gave no reason");
                 viewer()?.saveFailed?.(id, reason, reply);
                 // UTF-8 represents everything; a refusal under it is not a
                 // conversion question, and asking again would loop.
                 if (reason === "unencodable" && !/^utf-?8$/i.test(p.encoding || "utf-8")) {
                   return offerUtf8(p, reply);
                 }
-                flash(window.WBFail.failed(reply, "Could not save: the daemon gave no reason."));
+                flash(WBFail.failed(reply, "Could not save: the daemon gave no reason."));
               })
               .catch(() => {
                 viewer()?.saveFailed?.(id, "the daemon did not answer");
@@ -5925,7 +5939,7 @@ export function wire(window: Window, document: Document) {
           // the add had to say.
           const c = window.getShell();
           c?.ensureWorktreeListing?.(repo, true);
-          if (d.message) c?._flashAction?.(d.message.split("\n").map(window.WBFail.sentence).filter(Boolean).join(" "));
+          if (d.message) c?._flashAction?.(d.message.split("\n").map(WBFail.sentence).filter(Boolean).join(" "));
           break;
         }
         case "create": {
@@ -5946,7 +5960,7 @@ export function wire(window: Window, document: Document) {
           const path = d.path ? `${d.path}/${name}` : name;
           const reply = await WBDaemon.write("file.create", aimed({ repo, path, dir: folder })).catch(() => null);
           if (!reply) return flash(`Could not create ${name}: the daemon did not answer.`);
-          if (window.WBFail.isError(reply)) return flash(window.WBFail.failed(reply, `Could not create ${name}: the daemon gave no reason.`));
+          if (WBFail.isError(reply)) return flash(WBFail.failed(reply, `Could not create ${name}: the daemon gave no reason.`));
           flash(`${name} created.`);
           if (!folder) c?.openTab({ project: repo, path, title: name, ftype: classify(name) });
           // Reveal AFTER the level has settled, so `setActive()` is the last
@@ -5974,9 +5988,9 @@ export function wire(window: Window, document: Document) {
           if (!ok) return;
           const reply = await WBDaemon.write("file.delete", aimed({ repo, path: d.path })).catch(() => null);
           if (!reply) return flash("Could not delete: the daemon did not answer.");
-          if (!window.WBFail.isError(reply)) return flash(`${name} deleted.`);
-          const reason = window.WBFail.message(reply, "the daemon gave no reason");
-          flash(window.WBFail.failed(reply, "Could not delete: the daemon gave no reason."));
+          if (!WBFail.isError(reply)) return flash(`${name} deleted.`);
+          const reason = WBFail.message(reply, "the daemon gave no reason");
+          flash(WBFail.failed(reply, "Could not delete: the daemon gave no reason."));
           // "not found" on a delete says the ROW is the lie: re-list the parent
           // so the ghost ends up off the screen.
           if (/not found/i.test(reason)) await c?.onTreeDirty(parentRel(d.path));
@@ -5996,7 +6010,7 @@ export function wire(window: Window, document: Document) {
   // action as a click. Matched on `e.code` so layout does not matter. R is no
   // row: it opens the menu on the console row's command field, so the digits
   // stay a sequence of rows. They work from inside a terminal too: its xterm
-  // hands them over (wb-console.js).
+  // hands them over (wb-console.ts).
   document.addEventListener("keydown", (e) => {
     if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
     if (!/^(?:Digit\d|KeyR)$/.test(e.code)) return;
@@ -6065,7 +6079,7 @@ export function wire(window: Window, document: Document) {
     if (e.key !== "F" && e.key !== "f") return;
     const c = window.getShell();
     if (!c || !c.authed || !c.openSlug) return;
-    if (c.modalOpen(window.WBSettingsDialog.openFlag) || c.modalOpen(window.WBSecurityDialog.openFlag) || c.runOpen || c.branchOpen || c.modalOpen(window.WBReleaseDialogs.whatsNewFlag)) return;
+    if (c.modalOpen(WBSettingsDialog.openFlag) || c.modalOpen(WBSecurityDialog.openFlag) || c.runOpen || c.branchOpen || c.modalOpen(WBReleaseDialogs.whatsNewFlag)) return;
     e.preventDefault();
     c.openFileSearch();
   });

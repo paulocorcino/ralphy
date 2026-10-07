@@ -9,8 +9,12 @@
    verb registry (dispatch.rs) builds the argv. Raw `status:"output"` chunks feed
    the Runs panel live (ADR-0032 §5, ADR-0036).
 --------------------------------------------------------------------------- */
+import { WBFail } from "./wb-fail.ts";
+import { WBProject } from "./wb-project.ts";
+import { WBRun } from "./wb-runs.ts";
+
 export function createDaemon(window: any, document: any, location: any) {
-  // The tagged-frame codec, mirrored from src/protocol.rs (see wb-console.js).
+  // The tagged-frame codec, mirrored from src/protocol.rs (see wb-console.ts).
   const TAG_TERMINAL = 0x01;
   const TAG_COMMAND = 0x02;
   const TAG_PRESENCE = 0x03;
@@ -29,14 +33,14 @@ export function createDaemon(window: any, document: any, location: any) {
   let nextId = 1;
 
   // RESUME (not "wake" — that verb already means nudging a sleeping peer daemon,
-  // `app.js` wakePeer / WBFleet.wakeable). A tablet suspends the tab: no JS runs,
+  // `app.ts` wakePeer / WBFleet.wakeable). A tablet suspends the tab: no JS runs,
   // and the link is dropped without the courtesy of a close frame, so the socket
   // comes back reporting OPEN while nothing will ever arrive on it again. The
   // fixed 3s retry below only helps the sockets that DID hear their close.
   //
   // Pure so the table is testable. `stale` is the caller's liveness verdict, not
   // a clock this module keeps: the shell derives it from the presence heartbeat
-  // (`app.js` `_lastHeartbeat`, already the "> 6000ms means dead" signal), which
+  // (`app.ts` `_lastHeartbeat`, already the "> 6000ms means dead" signal), which
   // is why an ordinary desktop tab switch churns nothing — the heartbeat is fresh
   // and every socket is left alone.
   function resumeDecision({ readyState, stale, connectingMs }: any) {
@@ -140,7 +144,7 @@ export function createDaemon(window: any, document: any, location: any) {
   }
   function noteUnknownCheckout(payload: any, reply: any) {
     if (!payload || !payload.checkout) return;
-    if (window.WBProject?.checkoutAfter?.(payload.checkout, reply) !== null) return;
+    if (WBProject?.checkoutAfter?.(payload.checkout, reply) !== null) return;
     for (const fn of unknownCheckout) {
       try {
         fn(payload.repo, payload.checkout);
@@ -194,8 +198,8 @@ export function createDaemon(window: any, document: any, location: any) {
   // `checkout` names the worktree the bytes come from (#406), or nothing.
   function readImage(repo: any, path: any, onRefused: any, checkout: any) {
     return observe("file.image", withCheckout({ repo, path }, checkout)).then((reply) => {
-      if (window.WBFail.isError(reply) || !reply.base64 || !reply.mediaType) {
-        onRefused?.(window.WBFail.message(reply, "refused"));
+      if (WBFail.isError(reply) || !reply.base64 || !reply.mediaType) {
+        onRefused?.(WBFail.message(reply, "refused"));
         return null;
       }
       return `data:${reply.mediaType};base64,${reply.base64}`;
@@ -480,12 +484,12 @@ export function createDaemon(window: any, document: any, location: any) {
         const chunk = s.chunk || "";
         window.WBRuns?.output?.(chunk);
         feedLines(chunk);
-      } else if (window.WBFail.isError(s)) {
-        const msg = window.WBFail.failed(s, "Could not start: the daemon gave no reason.");
+      } else if (WBFail.isError(s)) {
+        const msg = WBFail.failed(s, "Could not start: the daemon gave no reason.");
         window.getShell()?._flashAction?.(msg);
         window.getShell()?.runVerbFailed?.(msg);
       } else if (s.status === "exited") {
-        window.getShell()?.runVerbFailed?.(window.WBRun.exitNote(verb, s.code, finalLine()));
+        window.getShell()?.runVerbFailed?.(WBRun.exitNote(verb, s.code, finalLine()));
       }
     });
   });
@@ -513,5 +517,6 @@ export function createDaemon(window: any, document: any, location: any) {
   };
 }
 
-// A classic script, `app.ts` and the dialogs read this name (ADR-0075 D9).
+// The type of the `window.WBDaemon` instance that `app.ts` and the dialogs read
+// (ADR-0075 D9).
 export type WBDaemonApi = ReturnType<typeof createDaemon>;

@@ -68,12 +68,3 @@ export const WBDeskHistory = {
   parseUpload,
   VERSION_KIND,
 };
-
-// A classic script still reads this name (ADR-0075 D9).
-if (typeof window !== "undefined") window.WBDeskHistory = WBDeskHistory;
-
-declare global {
-  interface Window {
-    WBDeskHistory: typeof WBDeskHistory;
-  }
-}

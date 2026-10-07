@@ -372,7 +372,7 @@ def open_plain_console(page):
     before = page.locator(".session-window").count()
     close_menus(page)
     # `:has-text('Consoles')` also matches the Settings nav item of the same
-    # name (wb-settings.js, commit 4e892a10) — scope to the toolbar's own
+    # name (wb-settings.ts, commit 4e892a10) — scope to the toolbar's own
     # button by its title, which the nav item does not carry.
     page.locator("button[title='Open a console']").click()
     page.locator(".dropdown-item.is-console:visible").click()

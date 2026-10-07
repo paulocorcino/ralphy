@@ -10,7 +10,7 @@ import { loadShell } from "./harness.mjs";
 
 // app.ts names its siblings bare, which Node resolves through `globalThis`:
 // mirror the fakes there, and take them down after this file.
-const GLOBALS = ["WBDaemon", "WBViewer", "WBChanges"];
+const GLOBALS = ["WBDaemon", "WBViewer"];
 after(() => GLOBALS.forEach((k) => delete globalThis[k]));
 
 function shell() {

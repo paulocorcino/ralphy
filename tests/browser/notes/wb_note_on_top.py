@@ -445,7 +445,7 @@ def main():
 
             # T14
             # A double-click on `.session-name` renames instead of toggling
-            # maximize (ADR-0066 §3, wb-console.js ~5873), so the click lands
+            # maximize (ADR-0066 §3, wb-console.ts ~5873), so the click lands
             # on blank titlebar space: right of the name, left of the actions.
             blank = page.evaluate(
                 "() => { const tb = document.querySelector('.session-window .session-titlebar');"

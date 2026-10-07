@@ -15,6 +15,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadShell, UI } from "./harness.mjs";
+import { WBDeskSink } from "../assets/ui/wb-desk-sink.ts";
+import { WBRelease } from "../assets/ui/wb-release.ts";
+import { WBReleaseDialogs } from "../assets/ui/wb-release-dialogs.ts";
+import { WBSecurityDialog } from "../assets/ui/wb-security-dialog.ts";
+import { WBSettingsDialog } from "../assets/ui/wb-settings-dialog.ts";
 
 // One load, many reads. `loadShell()` is ~20ms of evaluation and every test in
 // this file only READS from the state, so they share one. A test that mutates
@@ -754,9 +759,9 @@ test("the shortcuts are blocked while the Security, Settings or What's new dialo
   assert.deepEqual(searches, expected);
 
   for (const flag of [
-    window.WBSecurityDialog.openFlag,
-    window.WBSettingsDialog.openFlag,
-    window.WBReleaseDialogs.whatsNewFlag,
+    WBSecurityDialog.openFlag,
+    WBSettingsDialog.openFlag,
+    WBReleaseDialogs.whatsNewFlag,
   ]) {
     state.modalOpened(flag, scrimEl);
     assert.equal(state.consoleShortcutsBlocked(), true, `${flag} open: blocked`);
@@ -782,25 +787,25 @@ test("the shortcuts are blocked while the Security, Settings or What's new dialo
 // These pin the two rules that make a repeated read safe: a failed read keeps
 // what the page knew, and a newer release undoes the dismissal of an older one.
 test("loadRelease keeps the last view when the read fails", async () => {
-  const { state, window } = loadShell();
-  const known = { ...window.WBRelease.EMPTY, latest: "v0.1.0-rc.26", severity: "notable", gap: [{}] };
+  const { state } = loadShell();
+  const known = { ...WBRelease.EMPTY, latest: "v0.1.0-rc.26", severity: "notable", gap: [{}] };
   state.release = known;
-  window.WBRelease.read = async () => null;
+  WBRelease.read = async () => null;
   await state.loadRelease();
   assert.equal(state.release, known);
 });
 
 test("loadRelease shows a newer release again after the older one was dismissed", async () => {
-  const { state, window } = loadShell();
-  const view = (latest) => ({ ...window.WBRelease.EMPTY, latest, severity: "notable", gap: [{}] });
-  window.WBRelease.read = async () => view("v0.1.0-rc.26");
+  const { state } = loadShell();
+  const view = (latest) => ({ ...WBRelease.EMPTY, latest, severity: "notable", gap: [{}] });
+  WBRelease.read = async () => view("v0.1.0-rc.26");
   await state.loadRelease();
   state.releaseSeen = true;
 
   await state.loadRelease();
   assert.equal(state.releaseSeen, true, "the same release stays dismissed");
 
-  window.WBRelease.read = async () => view("v0.1.0-rc.27");
+  WBRelease.read = async () => view("v0.1.0-rc.27");
   await state.loadRelease();
   assert.equal(state.releaseSeen, false, "a newer release is news again");
   assert.equal(state.releaseUnread, true);
@@ -843,12 +848,10 @@ test("resumeSockets resumes the file tree socket with the others", () => {
 // are open, and the fences otherwise. The listener itself is a sink in the
 // harness; the decision lives in `arrowStep`.
 function arrowShell() {
-  const { state, window } = loadShell();
+  const { state } = loadShell();
   const calls = [];
   const box = { focused: null };
   const realConsole = globalThis.WBConsole;
-  const realColumns = globalThis.WBColumns;
-  globalThis.WBColumns = window.WBColumns;
   globalThis.WBConsole = {
     stepFence: (s) => (calls.push(["fence", s]), { id: "f" }),
     focusedId: () => box.focused,
@@ -858,7 +861,6 @@ function arrowShell() {
   };
   const done = () => {
     globalThis.WBConsole = realConsole;
-    globalThis.WBColumns = realColumns;
   };
   return { state, calls, box, done };
 }
@@ -1372,7 +1374,7 @@ test("a presence frame reads nothing", async () => {
 
 test("a hidden tab reads nothing on a push, and reads when it becomes visible", async () => {
   const { state, document } = loadShell({ document: { visibilityState: "hidden", hasFocus: () => true } });
-  // `WBColumns` is a page global the harness does not define.
+  // The column check after a desk read is not under test here.
   state.checkColumnDesk = async () => {};
   // No settle delay, so a `sessions.dirty` read would land inside the spy.
   state.LIVE_SETTLE_MS = 0;
@@ -1401,14 +1403,14 @@ test("peers.dirty and repos.dirty read the project list", async () => {
 
 test("desk.dirty from this tab is ignored, and from another tab reads the desk", () => {
   const { state, window } = loadShell({ document: { visibilityState: "visible", hasFocus: () => true } });
-  // `WBColumns` is a page global the harness does not define.
+  // The column check after a desk read is not under test here.
   state.checkColumnDesk = async () => {};
   let reads = 0;
   window.WBConsole.reloadDesk = () => {
     reads += 1;
     return Promise.resolve();
   };
-  state.onPresencePush("desk.dirty", { tab: window.WBDeskSink.tabId() });
+  state.onPresencePush("desk.dirty", { tab: WBDeskSink.tabId() });
   assert.equal(reads, 0, "this tab's own write");
   state.onPresencePush("desk.dirty", { tab: "another-tab" });
   assert.equal(reads, 1);
@@ -1416,7 +1418,7 @@ test("desk.dirty from this tab is ignored, and from another tab reads the desk",
 
 test("a reopened presence socket reads sessions, projects and the desk; the first open reads nothing", async () => {
   const { state } = loadShell({ document: { visibilityState: "visible", hasFocus: () => true } });
-  // `WBColumns` is a page global the harness does not define.
+  // The column check after a desk read is not under test here.
   state.checkColumnDesk = async () => {};
   const first = await withFetchSpy(() => state.onPresenceOpen(false));
   assert.deepEqual(first, []);
@@ -1676,11 +1678,9 @@ test("a page with no build id never reloads for a build", () => {
 // columns lose them first, then the stage does — every one of them, a console
 // outside the columns too.
 test("checkColumnDesk takes the consoles that left the desk out of the columns, then off the stage", () => {
-  const { state, window } = loadShell();
+  const { state } = loadShell();
   const order = [];
   const realConsole = globalThis.WBConsole;
-  const realColumns = globalThis.WBColumns;
-  globalThis.WBColumns = window.WBColumns;
   globalThis.WBConsole = {
     applyColumns: () => order.push("columns"),
     dropClosedElsewhere: (id) => order.push(`drop ${id}`),
@@ -1693,7 +1693,6 @@ test("checkColumnDesk takes the consoles that left the desk out of the columns, 
     state.checkColumnDesk(["x", "loose"]);
   } finally {
     globalThis.WBConsole = realConsole;
-    globalThis.WBColumns = realColumns;
   }
   assert.deepEqual(state.columns, [["y"], ["z"]]);
   assert.deepEqual(order, ["columns", "drop x", "drop loose"]);
@@ -1706,8 +1705,6 @@ test("every shell path that paints the columns asks to write the maximize", () =
   const calls = [];
   const paints = [];
   const realConsole = globalThis.WBConsole;
-  const realColumns = globalThis.WBColumns;
-  globalThis.WBColumns = window.WBColumns;
   globalThis.WBConsole = {
     ...window.WBConsole,
     applyColumns: (painted, opts) => {
@@ -1791,7 +1788,6 @@ test("every shell path that paints the columns asks to write the maximize", () =
   } finally {
     document.querySelectorAll = realAll;
     globalThis.WBConsole = realConsole;
-    globalThis.WBColumns = realColumns;
   }
 });
 
@@ -2077,22 +2073,29 @@ test("the desk hold ends right before the build reload, so the saved work's desk
   const { state, window } = loadShell(VISIBLE);
   const events = [];
   window.location.reload = () => events.push("reload");
-  window.WBDeskSink.setHold = (on) => events.push(`hold:${on}`);
-  let dirty = true;
-  window.WBViewer.anyDirty = () => dirty;
-  window.WBNotes.anyDirty = () => false;
-  let beat = null;
-  window.WBDaemon.subscribePresence = (onPresence) => {
-    beat = onPresence;
-    return { resume() {}, close() {} };
-  };
-  state.pageBuild = "A";
-  state.subscribePresence();
-  beat({ uptime_secs: 1, build: "B" });
-  assert.deepEqual(events, ["hold:true"], "unsaved work: held, no reload");
-  dirty = false;
-  beat({ uptime_secs: 3, build: "B" });
-  assert.deepEqual(events, ["hold:true", "hold:false", "reload"]);
+  // The sink is one module per document: its `setHold` is replaced for this
+  // test only.
+  const realSetHold = WBDeskSink.setHold;
+  WBDeskSink.setHold = (on) => events.push(`hold:${on}`);
+  try {
+    let dirty = true;
+    window.WBViewer.anyDirty = () => dirty;
+    window.WBNotes.anyDirty = () => false;
+    let beat = null;
+    window.WBDaemon.subscribePresence = (onPresence) => {
+      beat = onPresence;
+      return { resume() {}, close() {} };
+    };
+    state.pageBuild = "A";
+    state.subscribePresence();
+    beat({ uptime_secs: 1, build: "B" });
+    assert.deepEqual(events, ["hold:true"], "unsaved work: held, no reload");
+    dirty = false;
+    beat({ uptime_secs: 3, build: "B" });
+    assert.deepEqual(events, ["hold:true", "hold:false", "reload"]);
+  } finally {
+    WBDeskSink.setHold = realSetHold;
+  }
 });
 
 test("a failed first change-set or branch read says why", async () => {

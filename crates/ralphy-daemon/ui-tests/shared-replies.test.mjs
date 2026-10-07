@@ -9,6 +9,9 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { loadShell } from "./harness.mjs";
 import * as WBHosts from "../assets/ui/wb-hosts.ts";
+import { WBChanges } from "../assets/ui/wb-changes.ts";
+import { WBFail } from "../assets/ui/wb-fail.ts";
+import { WBAddProject } from "../assets/ui/wb-add-project.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -19,9 +22,8 @@ function fixture(name) {
 const NOW = Date.parse("2026-07-03T12:00:00Z");
 
 test("changes.list: the change-set fold reads every row the CLI wrote", () => {
-  const { window } = loadShell();
   const reply = fixture("changes.list");
-  const folded = window.WBChanges.fold(reply);
+  const folded = WBChanges.fold(reply);
   assert.ok(folded.count > 0, "the fixture holds a change");
   assert.equal(folded.count, reply.changes.changes.length);
   assert.deepEqual(
@@ -34,8 +36,7 @@ test("changes.list: the change-set fold reads every row the CLI wrote", () => {
 });
 
 test("sync.status: the sync fold reads branch, upstream and counts", () => {
-  const { window } = loadShell();
-  const s = window.WBChanges.foldSync(fixture("sync.status"), NOW);
+  const s = WBChanges.foldSync(fixture("sync.status"), NOW);
   assert.equal(s.state, "tracking");
   assert.equal(s.branch, "main");
   assert.equal(s.upstream, "origin/main");
@@ -45,15 +46,13 @@ test("sync.status: the sync fold reads branch, upstream and counts", () => {
 });
 
 test("sync.status: a detached HEAD shows its sha", () => {
-  const { window } = loadShell();
-  const s = window.WBChanges.foldSync(fixture("sync.status--detached"), NOW);
+  const s = WBChanges.foldSync(fixture("sync.status--detached"), NOW);
   assert.equal(s.state, "detached");
   assert.equal(s.branch, "<sha>");
 });
 
 test("sync.status: no upstream is its own state", () => {
-  const { window } = loadShell();
-  const s = window.WBChanges.foldSync(fixture("sync.status--no-upstream"), NOW);
+  const s = WBChanges.foldSync(fixture("sync.status--no-upstream"), NOW);
   assert.equal(s.state, "no-upstream");
   assert.equal(s.counts, "");
 });
@@ -118,8 +117,7 @@ test("host.key: an unknown key moves the form to the identity step", () => {
 });
 
 test("project.remove: the unknown-repo refusal has its own cause", () => {
-  const { window } = loadShell();
-  const said = window.WBFail.failed(
+  const said = WBFail.failed(
     fixture("project.remove--unknown-repo"),
     "Could not remove the project: the daemon gave no reason.",
   );
@@ -144,8 +142,7 @@ test("project.remove: the unknown-repo refusal means the project is already gone
 });
 
 test("dir.list: the dialog fold reads the entry bits the daemon wrote", () => {
-  const { window } = loadShell();
-  const P = window.WBAddProject;
+  const P = WBAddProject;
   let s = P.next(P.initial(), { type: "open" });
   s = P.next(s, { type: "text", text: "<path>/peer-repo", peers: [] });
   s = P.next(s, { type: "sent", seq: 1 });

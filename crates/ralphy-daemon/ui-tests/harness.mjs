@@ -17,27 +17,13 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { shell, wire } from "../assets/ui/app.ts";
 import { hostsDialog } from "../assets/ui/wb-hosts-dialog.ts";
-import { settingsDialog, WBSettingsDialog } from "../assets/ui/wb-settings-dialog.ts";
+import { settingsDialog } from "../assets/ui/wb-settings-dialog.ts";
 import { devices } from "../assets/ui/wb-devices.ts";
-import { securityDialog, WBSecurityDialog } from "../assets/ui/wb-security-dialog.ts";
-import { releaseDialogs, WBReleaseDialogs } from "../assets/ui/wb-release-dialogs.ts";
+import { securityDialog } from "../assets/ui/wb-security-dialog.ts";
+import { releaseDialogs } from "../assets/ui/wb-release-dialogs.ts";
 import { addProjectDialog } from "../assets/ui/wb-add-project-dialog.ts";
-import { WBAgents } from "../assets/ui/wb-agents.ts";
-import { WBFileSearch } from "../assets/ui/wb-file-search.ts";
-import { WBRelease } from "../assets/ui/wb-release.ts";
 import { WBSpend } from "../assets/ui/wb-spend.ts";
-import { WBRun } from "../assets/ui/wb-runs.ts";
 import { WBKanban } from "../assets/ui/wb-kanban.ts";
-import { WBChanges } from "../assets/ui/wb-changes.ts";
-import { WBAddProject } from "../assets/ui/wb-add-project.ts";
-import { WBDeskHistory } from "../assets/ui/wb-desk-history.ts";
-import { WBProject } from "../assets/ui/wb-project.ts";
-import { WBSplit } from "../assets/ui/wb-split.ts";
-import { WBFail } from "../assets/ui/wb-fail.ts";
-import { WBFleet } from "../assets/ui/wb-fleet.ts";
-import { WBColumns } from "../assets/ui/wb-columns.ts";
-import { WBMonaco } from "../assets/ui/wb-monaco.ts";
-import { WBSessionRoute } from "../assets/ui/wb-session-route.ts";
 import { createDaemon } from "../assets/ui/wb-daemon.ts";
 import { createViewer } from "../assets/ui/wb-viewer.ts";
 import { createNotes } from "../assets/ui/wb-notes.ts";
@@ -45,39 +31,16 @@ import { createConsole } from "../assets/ui/wb-console.ts";
 import { WBView } from "../assets/ui/wb-view.ts";
 import { WBDeskSink } from "../assets/ui/wb-desk-sink.ts";
 import { WBConsoleName } from "../assets/ui/wb-console-name.ts";
-import { WBGeometry } from "../assets/ui/wb-geometry.ts";
-import { WB_SETTINGS, WB_TRISTATE, wbClientKeys, wbSettingsDefaults, wbQr } from "../assets/ui/wb-settings.ts";
 
-// The `window.WB*` names that a module sets in the browser because other code
-// still reads them on `window` (ADR-0075 D9). A module ran once, at import, so
-// the loader sets these on each page's window itself.
+// The `window.WB*` names a module sets in the browser because a reader outside
+// the modules reads them there (ADR-0075 D9): `WBKanban` and `WBSpend` for
+// browser checks, `WBConsoleName` for the `index.html` markup. `app.ts` reads
+// all three on `window`. A module ran once, at import, so the loader sets these
+// on each page's window itself.
 const MODULE_NAMESPACES = {
-  WBAgents,
-  WBFileSearch,
-  WBRelease,
   WBSpend,
-  WBRun,
   WBKanban,
-  WBChanges,
-  WBAddProject,
-  WBDeskHistory,
-  WBProject,
-  WBSplit,
-  WBFail,
-  WBFleet,
-  WBColumns,
-  WBMonaco,
-  WBSessionRoute,
-  WB_SETTINGS,
-  WB_TRISTATE,
-  wbClientKeys,
-  wbSettingsDefaults,
-  wbQr,
-  WBSettingsDialog,
-  WBSecurityDialog,
-  WBReleaseDialogs,
   WBConsoleName,
-  WBGeometry,
 };
 
 // The Alpine components, by the name the markup gives `x-data`: `loadComponent`
@@ -189,11 +152,10 @@ export function loadShell(opts = {}) {
   window.window = window;
   window.document = document;
   Object.assign(window, MODULE_NAMESPACES);
-  // A copy per page of the two namespaces tests replace members of, so a
-  // replaced member stays on its own page. The sink's hold lives once per
-  // document (the module), and each call is a new page, so it starts clear.
+  // A copy per page of `WBView`, whose members tests replace, so a replaced
+  // member stays on its own page. The sink's hold lives once per document
+  // (the module), and each call is a new page, so it starts clear.
   window.WBView = { ...WBView };
-  window.WBDeskSink = { ...WBDeskSink };
   WBDeskSink.setHold(false);
   // One console, one daemon door, one file pane and one set of note cards per
   // page, in the order the entry module makes them. `boot` is not called: the

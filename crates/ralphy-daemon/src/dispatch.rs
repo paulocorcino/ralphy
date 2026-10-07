@@ -648,7 +648,7 @@ mod tests {
         // Non-vacuous first: app.ts delegates its request URL to the roster
         // module, whose repo-specific and local forms both name the endpoint.
         assert!(
-            js.contains("window.WBAgents.rosterUrl(repo)")
+            js.contains("WBAgents.rosterUrl(repo)")
                 && agents_js.contains("/api/agents?repo=")
                 && agents_js.contains("\"/api/agents\""),
             "app.ts must render the menu from the daemon's roster endpoint"

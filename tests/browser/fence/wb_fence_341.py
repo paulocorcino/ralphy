@@ -798,7 +798,7 @@ def main():
 
             # ===== scenario 6: a blanket fence pushes the new one BELOW it ====
             # `nextFenceSlot` scans 64 grid slots rather than refusing outright
-            # (wb-console.js ~2517-2532, commit 1edd37c3): a fence covering the
+            # (wb-console.ts ~2517-2532, commit 1edd37c3): a fence covering the
             # whole viewport still has free plane below it, so a new fence
             # spills there instead of being nudged into a gap INSIDE the
             # blocker. `ui-tests/wb-console.test.mjs` ("nextFenceSlot: a fence

@@ -9,6 +9,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { bindingNames, componentMarkup, loadComponent, loadShell, UI, withoutComments } from "./harness.mjs";
+import { WBRelease } from "../assets/ui/wb-release.ts";
+import { WBReleaseDialogs } from "../assets/ui/wb-release-dialogs.ts";
 
 const HTML = readFileSync(join(UI, "index.html"), "utf8");
 
@@ -94,15 +96,15 @@ test("the console warning counts only the consoles this daemon hosts", () => {
 });
 
 test("a refused update keeps the question open and says why", async () => {
-  const { state, window } = dialogs();
+  const { state } = dialogs();
   state.relUpdate = { phase: "confirm", code: "123456", needCode: true, consoles: [], error: "" };
-  window.WBRelease.update = async () => ({ ok: false, status: 401, message: "invalid credentials" });
+  WBRelease.update = async () => ({ ok: false, status: 401, message: "invalid credentials" });
   await state.confirmUpdate();
   assert.equal(state.relUpdate.phase, "confirm");
   assert.match(state.relUpdate.error, /Code rejected/);
   assert.equal(state.relUpdate.code, "", "a rejected code is not offered again");
 
-  window.WBRelease.update = async () => ({ ok: false, status: 500, message: "Error: checksum mismatch" });
+  WBRelease.update = async () => ({ ok: false, status: 500, message: "Error: checksum mismatch" });
   state.relUpdate.code = "654321";
   await state.confirmUpdate();
   assert.equal(state.relUpdate.error, "Error: checksum mismatch", "the update's own words reach the page");
@@ -110,9 +112,9 @@ test("a refused update keeps the question open and says why", async () => {
 
 test("the same build after a gap is a rollback, and a new build reloads the page", async () => {
   const { state, window } = dialogs();
-  const view = (current) => ({ ...window.WBRelease.EMPTY, current });
+  const view = (current) => ({ ...WBRelease.EMPTY, current });
   let reads = [null, view("v0.1.0-rc.30")];
-  window.WBRelease.read = async () => reads.shift();
+  WBRelease.read = async () => reads.shift();
   let reloaded = false;
   Object.defineProperty(window, "location", { value: { reload: () => (reloaded = true) }, configurable: true });
   await state.awaitNewBuild("v0.1.0-rc.30", 0);
@@ -129,7 +131,7 @@ test("the same build after a gap is a rollback, and a new build reloads the page
 // because the sidebar reads it. The dialogs read it, and change it only
 // through two shell() methods.
 test("the dialogs change the release fact only through markReleaseSeen and releaseWatchChanged", async () => {
-  const { state, shell, window } = dialogs();
+  const { state, shell } = dialogs();
   shell.refreshLive = () => {};
   assert.throws(
     () => {
@@ -147,7 +149,7 @@ test("the dialogs change the release fact only through markReleaseSeen and relea
   assert.equal(shell.releaseSeen, true, "opening the panel dismisses the release it shows");
 
   const watched = [];
-  window.WBRelease.setWatch = async (enable) => watched.push(enable);
+  WBRelease.setWatch = async (enable) => watched.push(enable);
   await state.setReleaseWatch(false);
   assert.deepEqual(watched, [false]);
   assert.equal(shell.release.disabled, true);
@@ -155,7 +157,7 @@ test("the dialogs change the release fact only through markReleaseSeen and relea
   assert.equal(shell.release.disabled, false);
 
   // A refused preference leaves the fact as it was: the next read says what took.
-  window.WBRelease.setWatch = async () => {
+  WBRelease.setWatch = async () => {
     throw new Error("offline");
   };
   await state.setReleaseWatch(false);
@@ -229,9 +231,8 @@ test("the account menu closes itself and asks the dialogs to open with their eve
 // `app.ts` asks the modal stack with this path; it must be the path the panel
 // gives to `scrim()`, or the shortcuts would never see the panel open.
 test("whatsNewFlag is the path the What's new panel gives to scrim()", () => {
-  const { window } = dialogs();
   const markup = componentMarkup(HTML, "wbReleaseDialogs");
   const paths = [...markup.matchAll(/x-bind="scrim\('([^']+)'/g)].map((m) => m[1]);
   assert.deepEqual(paths, ["whatsNewOpen", "aboutOpen"]);
-  assert.equal(window.WBReleaseDialogs.whatsNewFlag, paths[0]);
+  assert.equal(WBReleaseDialogs.whatsNewFlag, paths[0]);
 });

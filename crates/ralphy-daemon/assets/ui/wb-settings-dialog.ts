@@ -225,10 +225,3 @@ export function settingsDialog() {
 // Code outside the component asks the modal stack with it (`modalOpen`), and
 // never reads the flag (ADR-0073 D5).
 export const WBSettingsDialog = { openFlag: "settingsOpen" };
-// app.js, a classic script, still reads this name (ADR-0075 D9).
-if (typeof window !== "undefined") window.WBSettingsDialog = WBSettingsDialog;
-declare global {
-  interface Window {
-    WBSettingsDialog: typeof WBSettingsDialog;
-  }
-}

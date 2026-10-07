@@ -9,7 +9,7 @@
 // thing entirely.
 //
 // Loaded by the shell AND by the two detached popups, and required by the node
-// table — hence the UMD wrapper `wb-session-route.js` already uses.
+// table — hence the UMD wrapper `wb-session-route.ts` already uses.
 
 // A row this daemon owns. Peer rows carry `daemon` (the peer's daemon_id);
 // local rows never do, which is what makes "local" a property of the data
@@ -276,12 +276,3 @@ export const WBFleet = {
   groupHost: groupHost,
   peerName: peerName,
 };
-
-// A classic script still reads this name (ADR-0075 D9).
-if (typeof window !== "undefined") window.WBFleet = WBFleet;
-
-declare global {
-  interface Window {
-    WBFleet: typeof WBFleet;
-  }
-}

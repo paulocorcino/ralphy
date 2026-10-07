@@ -470,7 +470,7 @@ def type_line(page, i, text):
     """Feed one line through xterm's own data path, as ONE onData event.
 
     Waits for the window's SOCKET first. `term.onData` drops every keystroke
-    unless `ws.readyState === OPEN` (wb-console.js:3013) — deliberately, so a
+    unless `ws.readyState === OPEN` (wb-console.ts:3013) — deliberately, so a
     reconnecting console shows the refusal instead of swallowing it server-side.
     A console that just came home from a popup is still reconnecting for a beat,
     and typing into that window is a line the child never sees, with no later
@@ -547,7 +547,7 @@ def open_plain_console(page):
     before = page.locator(".session-window").count()
     close_menus(page)
     # `:has-text('Consoles')` also matches the Settings nav item of the same
-    # name (wb-settings.js, commit 4e892a10) — scope to the toolbar's own
+    # name (wb-settings.ts, commit 4e892a10) — scope to the toolbar's own
     # button by its title, which the nav item does not carry.
     page.locator("button[title='Open a console']").click()
     page.locator(".dropdown-item.is-console:visible").click()

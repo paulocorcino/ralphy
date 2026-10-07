@@ -1,7 +1,7 @@
-// The classic scripts a module may read on `window` (ADR-0075 D9), and the
-// vendored Alpine. Each surface lists only what a module calls. `any` marks a
-// value the classic script does not type yet; it narrows when that script
-// moves to TypeScript.
+// The names a module reads on `window` or bare (ADR-0075 D9): the instances
+// an entry module creates for its page, the event bus, and the vendored
+// libraries. Each surface lists only what a module calls. `any` marks a value
+// that has no type yet.
 
 /** A `/ws/command` reply: `status` is "ok" or the reason it is not. */
 type DaemonReply = { status: string } & Record<string, any>;
@@ -15,7 +15,7 @@ type SpawnStatus =
 interface Window {
   /** The daemon door (`wb-daemon.ts`). `subscribeTree` is `any`: `app.ts` tests
    * `window.WBDaemon?.subscribeTree`, then calls it through the bare name, and a
-   * typed function there is a TS2774 error until `app.ts` imports the module. */
+   * typed function there is a TS2774 error. */
   WBDaemon: Omit<import("./wb-daemon.ts").WBDaemonApi, "subscribeTree"> & { subscribeTree: any };
   Alpine: {
     data(name: string, factory: () => object): void;
@@ -23,7 +23,7 @@ interface Window {
     start(): void;
     [member: string]: any;
   };
-  /** The event bus of app.js. */
+  /** The event bus of `app.ts`, or the opener bridge of a torn-off page. */
   WB: {
     emit(name: string, detail?: object): void;
   };
@@ -31,7 +31,7 @@ interface Window {
    * result in a `shell()` field that starts as `[]`, a TS2322 error until
    * that field has a type. */
   WBConsole: Omit<ReturnType<typeof import("./wb-console.ts").createConsole>, "list"> & { list(): any };
-  /** app.js: `shell()`, and the live instance of it Alpine built. */
+  /** `app.ts`: `shell()`, and the live instance of it Alpine built. */
   shell: () => object;
   getShell(): any;
   WBRuns: { output(text: string): void };
@@ -43,8 +43,7 @@ interface Window {
   lucide: any;
 }
 
-// Classic scripts and vendored libraries that app.js names bare.
-declare var WBColumns: Window["WBColumns"];
+// The page instances and vendored libraries that modules name bare.
 declare var WBConsole: Window["WBConsole"];
 declare var WBDaemon: Window["WBDaemon"];
 declare var WBViewer: Window["WBViewer"];

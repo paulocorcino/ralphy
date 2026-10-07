@@ -20,22 +20,22 @@ UI module in `crates/ralphy-daemon/assets/ui/` where one exists.
 
 | Folder | What it checks | UI module |
 |---|---|---|
-| `agents/` | the console menu's agent roster, the agent state dot | `wb-agents.js` |
-| `board/` | the issue board, the issue drawer, labels, a ready plan | `wb-kanban.js` |
-| `changes/` | Changes, the diff, sync, push | `wb-changes.js` |
-| `columns/` | consoles as columns and rows | `wb-columns.js` |
-| `console/` | one console: clipboard, paste, names, touch, sessions | `wb-console.js` |
-| `desk/` | the desk: windows, plane, pan, frame, panes, scrollbars | `wb-view.js`, `wb-split.js` |
-| `fence/` | fences and their detached window | `wb-detach-link.js` |
-| `files/` | the file tree, search, viewers, Monaco, encoding | `wb-viewer.js`, `wb-monaco.js` |
-| `fleet/` | the federated sidebar and fleet surfaces | `wb-fleet.js` |
-| `hosts/` | hosts and peer tunnels | `wb-hosts.js` |
-| `notes/` | notes on the stage | `wb-notes.js` |
-| `projects/` | the Projects list | `wb-project.js` |
-| `release/` | the release badge and What's new | `wb-release.js` |
-| `runs/` | the Runs panel | `wb-runs.js` |
-| `security/` | security headers, the CSP, the audit log of devices | `wb-device.js`, `wb-devices.ts` |
-| `spend/` | the Spend tab | `wb-spend.js` |
+| `agents/` | the console menu's agent roster, the agent state dot | `wb-agents.ts` |
+| `board/` | the issue board, the issue drawer, labels, a ready plan | `wb-kanban.ts` |
+| `changes/` | Changes, the diff, sync, push | `wb-changes.ts` |
+| `columns/` | consoles as columns and rows | `wb-columns.ts` |
+| `console/` | one console: clipboard, paste, names, touch, sessions | `wb-console.ts` |
+| `desk/` | the desk: windows, plane, pan, frame, panes, scrollbars | `wb-view.ts`, `wb-split.ts` |
+| `fence/` | fences and their detached window | `wb-detach-link.ts` |
+| `files/` | the file tree, search, viewers, Monaco, encoding | `wb-viewer.ts`, `wb-monaco.ts` |
+| `fleet/` | the federated sidebar and fleet surfaces | `wb-fleet.ts` |
+| `hosts/` | hosts and peer tunnels | `wb-hosts.ts` |
+| `notes/` | notes on the stage | `wb-notes.ts` |
+| `projects/` | the Projects list | `wb-project.ts` |
+| `release/` | the release badge and What's new | `wb-release.ts` |
+| `runs/` | the Runs panel | `wb-runs.ts` |
+| `security/` | security headers, the CSP, the audit log of devices | `wb-device.ts`, `wb-devices.ts` |
+| `spend/` | the Spend tab | `wb-spend.ts` |
 | `workbench/` | rules for the whole page: shown facts, icons, modals, cost | `app.ts` |
 | `worktree/` | worktrees and the checkout switcher | — |
 

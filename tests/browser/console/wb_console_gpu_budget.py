@@ -43,7 +43,7 @@ T.PORT = PORT
 T.BASE = BASE = f"http://127.0.0.1:{PORT}/"
 VIEW = {"width": 1920, "height": 1080}
 COUNT = 20
-# `GPU_BUDGET` in wb-console.js.
+# `GPU_BUDGET` in wb-console.ts.
 BUDGET = 12
 # The addon waits 3 s for a lost context to come back before it gives up.
 LOSS_WAIT_MS = 3500

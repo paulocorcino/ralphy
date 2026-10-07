@@ -31,7 +31,7 @@
        a label filter, and a sort control — a flat, compact list.
 
    Running signal: an issue that is the *active* node of a live run (see
-   wb-runs.js) carries a run pill on its card — the agent's face + the
+   wb-runs.ts) carries a run pill on its card — the agent's face + the
    live status glyph + the phase — so "what's executing right now" reads at a
    glance, in whichever column the issue sits.
 
@@ -40,12 +40,12 @@
                     cross-ref, label metadata, filter/sort).
    Faithful sources: labels + colors = the repo's `gh label list`; close reasons
    = GitHub `stateReason`; graph order = ralphy-core/src/blocked.rs; run glyphs =
-   window.WBRun (wb-runs.js).
+   WBRun (wb-runs.ts).
 --------------------------------------------------------------------------- */
 import { WBRun } from "./wb-runs.ts";
 
 
-/** One issue of the board, as `boardRowToIssue` shapes it (app.js). Not typed
+/** One issue of the board, as `boardRowToIssue` shapes it (app.ts). Not typed
  * field by field yet (ADR-0075, the last phase narrows it). */
 type Issue = any;
 
@@ -187,7 +187,7 @@ export const WBKanban = {
     return out;
   },
 
-  // --- running cross-ref (against the CALLER's runs, via window.WBRun) ----
+  // --- running cross-ref (against the CALLER's runs, via WBRun) ----
   // `projectRuns` is whatever the panel holds: the live run snapshots.
   // If `number` is the *active* node of one of the project's live runs, return a
   // descriptor for the card's run pill; else null. Only the actively-worked
@@ -291,7 +291,7 @@ export const WBKanban = {
   },
 };
 
-// A classic script still reads this name (ADR-0075 D9).
+// `app.ts` and a browser check read this name (ADR-0075 D9).
 if (typeof window !== "undefined") window.WBKanban = WBKanban;
 
 declare global {

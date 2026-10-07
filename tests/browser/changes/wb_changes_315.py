@@ -233,7 +233,7 @@ def open_project(page, slug, expected):
     page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug)
     page.wait_for_function(f"(s) => {SH}.openSlug === s", arg=slug, timeout=15000)
     if expected == "0":
-        # A count of 0 never renders a badge (wb-changes.js projectBadge): wait
+        # A count of 0 never renders a badge (wb-changes.ts projectBadge): wait
         # on the READ, not a DOM element that is never going to appear.
         page.wait_for_function(
             f"(s) => {SH}.changesCount[s] === 0", arg=slug, timeout=15000
@@ -596,7 +596,7 @@ def main():
                 and clean_state["rows"] == 0,
                 f"got={clean_state}",
             )
-            # A count of 0 shows no badge at all (#317, wb-changes.js projectBadge).
+            # A count of 0 shows no badge at all (#317, wb-changes.ts projectBadge).
             check("the clean badge shows no count, not a bare 0", badge_text(page) is None)
 
             ctx.close()

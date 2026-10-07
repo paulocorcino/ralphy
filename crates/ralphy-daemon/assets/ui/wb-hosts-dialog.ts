@@ -12,6 +12,8 @@
 import type { FleetPeer } from "./app.ts";
 import { component } from "./wb-alpine.ts";
 import * as WBHosts from "./wb-hosts.ts";
+import { WBFail } from "./wb-fail.ts";
+import { WBFleet } from "./wb-fleet.ts";
 
 type RemoveHost = {
   open: boolean;
@@ -95,7 +97,7 @@ export function hostsDialog() {
       // A fault keeps the daemon's diagnosis: it says what to do.
       hostRowTitle(h: FleetPeer) {
         if (h.state === "reachable") return "Connected";
-        return h.diagnosis || window.WBFleet.groupTitle({ state: h.state, local: false });
+        return h.diagnosis || WBFleet.groupTitle({ state: h.state, local: false });
       },
       addHostPick(alias: string) {
         this.addHostStep({ type: "pick", alias });
@@ -177,7 +179,7 @@ export function hostsDialog() {
         }
         this.addHostStep({ type: "busy", value: false });
         if (reply?.status !== "ok") {
-          this.addHostFailed(window.WBFail.failed(reply, "Could not read the host key: the daemon did not answer."));
+          this.addHostFailed(WBFail.failed(reply, "Could not read the host key: the daemon did not answer."));
           return;
         }
         this.addHostStep({ type: "key", key: reply.key });
@@ -196,7 +198,7 @@ export function hostsDialog() {
         }
         this.addHostStep({ type: "busy", value: false });
         if (reply?.status !== "ok") {
-          this.addHostFailed(window.WBFail.failed(reply, "Could not trust the host key: the daemon did not answer."));
+          this.addHostFailed(WBFail.failed(reply, "Could not trust the host key: the daemon did not answer."));
           return;
         }
         this.addHostStep({ type: "trusted" });
@@ -256,7 +258,7 @@ export function hostsDialog() {
               this.addHostInstall();
             }
           } else if (st.status === "error") {
-            this.addHostFailed(window.WBFail.failed(st, "Could not reach the host: the daemon did not start the command."));
+            this.addHostFailed(WBFail.failed(st, "Could not reach the host: the daemon did not start the command."));
             this.addHostStep({ type: "busy", value: false });
           }
         });
@@ -302,7 +304,7 @@ export function hostsDialog() {
                 event: {
                   event: "failed",
                   kind: "other",
-                  message: window.WBFail.failed(st, "Could not remove the host: the daemon did not start the command."),
+                  message: WBFail.failed(st, "Could not remove the host: the daemon did not start the command."),
                 },
               });
             }

@@ -390,10 +390,3 @@ export function securityDialog() {
 // Code outside the component asks the modal stack with it (`modalOpen`), and
 // never reads the flag (ADR-0073 D5).
 export const WBSecurityDialog = { openFlag: "securityOpen" };
-// app.js, a classic script, still reads this name (ADR-0075 D9).
-if (typeof window !== "undefined") window.WBSecurityDialog = WBSecurityDialog;
-declare global {
-  interface Window {
-    WBSecurityDialog: typeof WBSecurityDialog;
-  }
-}

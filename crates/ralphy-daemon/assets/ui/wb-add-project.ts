@@ -5,6 +5,8 @@
 // sends `dir.list` and `project.add` and feeds the replies to `next`; the
 // button label, the help line and the WSL path mapping come out of here.
 
+import { WBFail } from "./wb-fail.ts";
+
 /** The Add a project dialog's state. */
 export type State = {
   open: boolean;
@@ -277,7 +279,7 @@ function help(state: State) {
     return "Update Ralphy on this computer to see its folders.";
   }
   if (state.failure && state.failure !== "this folder does not exist") {
-    return window.WBFail.cause({ message: state.failure }, "Could not list this folder.");
+    return WBFail.cause({ message: state.failure }, "Could not list this folder.");
   }
   return target(state).help;
 }
@@ -436,12 +438,3 @@ export const WBAddProject = {
   mapWsl: mapWsl,
   sepOf: sepOf,
 };
-
-// A classic script still reads this name (ADR-0075 D9).
-if (typeof window !== "undefined") window.WBAddProject = WBAddProject;
-
-declare global {
-  interface Window {
-    WBAddProject: typeof WBAddProject;
-  }
-}

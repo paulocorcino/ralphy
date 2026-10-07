@@ -112,12 +112,3 @@ export const WBRelease = {
   update,
   EMPTY,
 };
-
-// A classic script still reads this name (ADR-0075 D9).
-if (typeof window !== "undefined") window.WBRelease = WBRelease;
-
-declare global {
-  interface Window {
-    WBRelease: typeof WBRelease;
-  }
-}

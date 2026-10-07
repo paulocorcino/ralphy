@@ -1,7 +1,7 @@
 /* ---------------------------------------------------------------------------
    ralphy workbench shell — settings schema + security helpers
 
-   Two things live here, kept out of app.js so the Alpine component stays small:
+   Two things live here, kept out of app.ts so the Alpine component stays small:
 
    1. WB_SETTINGS — a data-driven description of ralphy's real configuration
       surface (mirrors the persisted `ralphy config` keys plus the daemon /
@@ -47,7 +47,7 @@ const TRISTATE = ["unset", "on", "off"];
 // service (shared across every project); "project" settings are persisted per
 // repo in <repo>/.ralphy/settings.json, so they follow whichever project is
 // open; "client" settings are this BROWSER profile's own, held in the view
-// store (wb-view.js) and never sent to the daemon.
+// store (wb-view.ts) and never sent to the daemon.
 /** The three stores a setting can live in; see the paragraph above. */
 type Scope = "daemon" | "project" | "client";
 /** One control of a section. */
@@ -180,7 +180,7 @@ export const WB_SETTINGS: Section[] = [
     ],
   },
   // No items: the section has its own body in index.html, and the list it
-  // shows is read from the daemon (wb-desk-history.js).
+  // shows is read from the daemon (wb-desk-history.ts).
   {
     id: "desk-history",
     title: "Desk history",
@@ -438,24 +438,5 @@ export function wbQr(uri: string): string {
     return qr.createImgTag(4, 8); // cellSize 4px, margin 8 modules
   } catch (e) {
     return '<div class="qr-fail">could not render QR</div>';
-  }
-}
-
-// Classic scripts still read these names (ADR-0075 D9).
-if (typeof window !== "undefined") {
-  window.WB_SETTINGS = WB_SETTINGS;
-  window.WB_TRISTATE = WB_TRISTATE;
-  window.wbClientKeys = wbClientKeys;
-  window.wbSettingsDefaults = wbSettingsDefaults;
-  window.wbQr = wbQr;
-}
-
-declare global {
-  interface Window {
-    WB_SETTINGS: typeof WB_SETTINGS;
-    WB_TRISTATE: typeof WB_TRISTATE;
-    wbClientKeys: typeof wbClientKeys;
-    wbSettingsDefaults: typeof wbSettingsDefaults;
-    wbQr: typeof wbQr;
   }
 }

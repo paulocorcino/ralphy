@@ -469,7 +469,7 @@ def main():
             # The local image decodes; the remote one is left to the browser's
             # CSP (remote images are opt-in, commit 4a1b1e77), which fires its
             # own `securitypolicyviolation` and swaps it for a `.md-img-blocked`
-            # notice (wb-viewer.js `blockedImage`) — so only ONE `<img>` is ever
+            # notice (wb-viewer.ts `blockedImage`) — so only ONE `<img>` is ever
             # left in `.md-body`.
             page.wait_for_function(
                 "(id) => { const el = document.querySelector(`.md-viewer[data-tab-id=\"${id}\"]`);"

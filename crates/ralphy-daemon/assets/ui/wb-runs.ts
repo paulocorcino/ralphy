@@ -359,7 +359,7 @@ export const WBRun = {
   // --- the run-snapshot wire shape (ADR-0047) ---------------------------
   // The daemon's `runs.list` answers with the snapshot documents verbatim. The
   // panel's run shape predates them (it was seeded), so one mapper bridges the
-  // two — kept here, beside the vocabulary it speaks, rather than in app.js.
+  // two — kept here, beside the vocabulary it speaks, rather than in app.ts.
 
   // A run's avatar. The document carries no face (it is the panel's chrome, not
   // the run's state), so it is derived from the runid — deterministic, so a run
@@ -454,12 +454,3 @@ export const WBRun = {
     return `${note}: ${tail}`;
   },
 };
-
-// A classic script still reads this name (ADR-0075 D9).
-if (typeof window !== "undefined") window.WBRun = WBRun;
-
-declare global {
-  interface Window {
-    WBRun: typeof WBRun;
-  }
-}

@@ -2,9 +2,9 @@
    How a project reads in the sidebar — the label, the row's tooltip, whether
    its branch can be switched, and the forge URL for one of its issues.
 
-   Lifted out of `app.js` under ADR-0057, and every one of these is a pure
+   Lifted out of `app.ts` under ADR-0057, and every one of these is a pure
    function of a project record: no `this`, no fetch, no DOM. `shell()` keeps a
-   one-line method per fold that forwards here, which is the idiom `app.js`
+   one-line method per fold that forwards here, which is the idiom `app.ts`
    already uses for `WBFleet`, `WBChanges` and `WBRun` — a fold with a real
    domain lives in a module, and the component delegates.
 
@@ -19,7 +19,7 @@
 // Sidebar row label: just the repo name (last segment), UPPERCASED. The
 // full `owner/repo` already shows in the top crumb, so trimming the owner here
 // declutters the accordion.
-/** A project row of the sidebar (app.js `loadRepos`). Not typed field by
+/** A project row of the sidebar (app.ts `loadRepos`). Not typed field by
  * field yet (ADR-0075, the last phase narrows it). */
 type Project = any;
 /** A `worktree.list` reply for one repo. */
@@ -275,12 +275,3 @@ export const WBProject = {
   checkoutAfter,
   checkoutAfterListing,
 };
-
-// A classic script still reads this name (ADR-0075 D9).
-if (typeof window !== "undefined") window.WBProject = WBProject;
-
-declare global {
-  interface Window {
-    WBProject: typeof WBProject;
-  }
-}
