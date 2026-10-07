@@ -4925,7 +4925,7 @@ export function shell() {
       window.WBView?.patch({ columns: WBColumns.toStored(next) });
     },
     // Once, on `workbench:desk-restored`. A list the desk does not confirm is
-    // ignored and cleared from the store.
+    // ignored and cleared from the store; a kept one is painted with `persist`.
     restoreColumns() {
       if (this._columnsRestored) return;
       this._columnsRestored = true;
@@ -4970,7 +4970,7 @@ export function shell() {
       if (head && !headWin && keptIds.length === 1) {
         const cap = this.columnCap();
         this.setColumns([]);
-        WBConsole.applyColumns(WBColumns.painted(kept, cap), { cap, unmax: null, persist: true });
+        WBConsole.applyColumns(WBColumns.painted(kept, cap), { cap, unmax: head, persist: true });
         return;
       }
       // The KEPT grid is stored, never the painted slice: a console the cap
@@ -4990,7 +4990,7 @@ export function shell() {
       // old z-index; raising the painted ones keeps it behind them.
       const moved = this.columnIds().length >= 2 && key !== this._paintedKey;
       this._paintedKey = key;
-      WBConsole.applyColumns(painted, { cap, unmax: null, raise: !!opts?.raise || moved, persist: true });
+      WBConsole.applyColumns(painted, { cap, unmax: headWin ? null : head, raise: !!opts?.raise || moved, persist: true });
       // Only when the keys are not somewhere else (a search box, a modal).
       const el = document.activeElement;
       const keysFree = !el || el === document.body || !!el.closest?.(".session-window");

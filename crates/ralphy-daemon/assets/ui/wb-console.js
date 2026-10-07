@@ -2016,8 +2016,10 @@ window.WBConsole = (function () {
   // A column writes no rect to the desk: the painted box is CSS, and
   // `restoreRect` reads the inline rect under it. The first console is the one
   // the desk records as maximized, so a move of the maximize is written when
-  // the caller passes `persist` (ADR-0051 §5). Another page does not apply
-  // that `max` while it is open (ADR-0050 amendment 2026-10-04).
+  // the caller passes `persist` (ADR-0051 §5). A reload that keeps the stored
+  // grid writes the desk to match it, so a console another device maximized
+  // inside the grid is written back as not maximized. Another page does not
+  // apply that `max` while it is open (ADR-0050 amendment 2026-10-04).
 
   // Pure. What one window is, given the painted consoles. `maximized: null`
   // means "not a column: leave its maximize alone". Two rows of one column
@@ -2050,6 +2052,11 @@ window.WBConsole = (function () {
     } catch {}
   }
 
+  function unmaxRecord(deskId) {
+    if (!loadDesk().some((r) => r.id === deskId && r.max)) return;
+    emitDesk({ op: "set", type: "window", id: deskId, fields: { max: false } });
+  }
+
   // Paint `painted` (`WBColumns.painted`). `unmax` is the old first console
   // after a restore: it stops being the maximized console. `persist` writes
   // each change of the maximize to the desk.
@@ -2064,6 +2071,9 @@ window.WBConsole = (function () {
     }
     const gone = opts?.unmax ? findWindow(opts.unmax) : null;
     if (gone && !columnClasses(list, gone._deskId).column) setMax(gone, false, persist);
+    // A watcher's × takes the window off this page and keeps its record, so the
+    // old first console's `max` is written by id: the desk records one.
+    if (!gone && opts?.unmax && persist) unmaxRecord(opts.unmax);
     const shown = [];
     for (const p of list) {
       const win = findWindow(p.id);

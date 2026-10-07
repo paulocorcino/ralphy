@@ -1755,6 +1755,17 @@ test("every shell path that paints the columns asks to write the maximize", () =
       assert.equal(calls.length, count, `${name} paints the columns`);
       for (const opts of calls) assert.equal(opts?.persist, true, `${name}: ${JSON.stringify(opts)}`);
     }
+    // A head that left the stage is named, so its record stops being maximized.
+    state.columns = grid();
+    calls.length = 0;
+    lone();
+    assert.deepEqual(state.columns, [], "the lone survivor ends the columns");
+    assert.equal(calls[0]?.unmax, "a", JSON.stringify(calls));
+    state.columns = grid();
+    calls.length = 0;
+    document.querySelectorAll = () => ["b", "c"].map((id) => ({ _deskId: id, classList: { contains: () => false } }));
+    state.paintColumns();
+    assert.equal(calls[0]?.unmax, "a", JSON.stringify(calls));
   } finally {
     document.querySelectorAll = realAll;
     globalThis.WBConsole = realConsole;
