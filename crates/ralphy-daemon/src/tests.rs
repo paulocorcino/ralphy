@@ -4030,7 +4030,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-session-route.js",
                 "wb-daemon.js",
                 // `wb-console.ts` imports the geometry, the window state, the session folds,
-                // the console name and the input folds; the entry imports the
+                // the desk folds, the console name and the input folds; the entry imports the
                 // console. Stated HERE because this set is a hardcoded floor:
                 // nothing derives the popup's needs from the tree, so an
                 // import dropped from the entry breaks the second monitor
@@ -4040,6 +4040,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-console-name.js",
                 "wb-console-input.js",
                 "wb-console-session.js",
+                "wb-desk-folds.js",
                 "wb-console.js",
             ][..],
         ),
@@ -5534,8 +5535,13 @@ fn shell_lists_the_fences() {
     }
     // The keyboard walk, and the rule that makes it a sweep rather than a
     // teleport: READING ORDER off the geometry, not the desk array's order.
+    let desk_folds = include_str!("../assets/ui/wb-desk-folds.ts");
+    let cycle = desk_folds
+        .split_once("function fenceCycle(")
+        .expect("wb-desk-folds.ts must keep fenceCycle")
+        .1;
     assert!(
-        body("function fenceCycle(").contains("fenceOrder("),
+        cycle[..cycle.find("\n}").expect("the function must close")].contains("fenceOrder("),
         "the walk must step through the reading-order fold, not the desk array (§7)"
     );
     assert!(
@@ -6047,7 +6053,8 @@ fn shell_survives_a_reload_with_its_detach() {
     // swallowing `.catch`, costing every fence and every glyph on any boot
     // carrying a live session no record claims.
     assert!(
-        js.contains(r#"out.push({ record: null, session: s, action: "adopt", id: null })"#),
+        include_str!("../assets/ui/wb-desk-folds.ts")
+            .contains(r#"out.push({ record: null, session: s, action: "adopt", id: null })"#),
         "the adopt verdict's null record is what the guard above exists for (#347)"
     );
     // The registry carries the MEMBER IDS, not just the fence ids: a
@@ -6740,14 +6747,15 @@ fn the_destructive_console_clicks_confirm_first() {
 fn relaunching_agent_consoles_on_load_is_opt_in() {
     // Every pin reads whitespace-free text: the code, not its layout.
     let js = squeeze(include_str!("../assets/ui/wb-console.ts"));
+    let folds = squeeze(include_str!("../assets/ui/wb-desk-folds.ts"));
     assert!(
-        js.contains(r#"record.kind==="console"||relaunchAgents?"relaunch":"placeholder""#),
+        folds.contains(r#"record.kind==="console"||relaunchAgents?"relaunch":"placeholder""#),
         "the restore fold must relaunch an agent console ONLY under the opt-in"
     );
     // The DEFAULT is the whole guard: a caller that omits the option — the
     // fold's own tests, a later call site — must get the parked placeholder.
     assert!(
-        js.contains("relaunchAgents=false}"),
+        folds.contains("relaunchAgents=false}"),
         "an omitted `relaunchAgents` must default to false, never to launching"
     );
     // The relaunch verdict must ask for the record's OWN kind. `{ console:
