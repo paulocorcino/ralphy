@@ -460,31 +460,6 @@ test("a touch surface with no stored preference starts at the same size", () => 
   assert.equal(c.fontSize(), c.FONT_DEFAULT);
 });
 
-// --- gpuHolders: which windows hold one of the page's WebGL contexts ---------
-// Chrome keeps 16 live contexts per renderer process and drops the oldest past
-// that, so a cascade of 20 seen consoles lost four. The page hands out a
-// budget, to the seen, uncovered windows on top.
-
-test("gpuHolders gives the budget to the seen, uncovered windows on top", () => {
-  const { gpuHolders } = load();
-  const win = (z, more = {}) => ({ seen: true, covered: false, hasTerminal: true, z, ...more });
-  // [case, windows, budget, expected indexes]
-  const rows = [
-    ["the highest z first, cut at the budget", [win(1), win(5), win(3), win(4)], 2, [1, 3]],
-    ["fewer candidates than the budget: all of them", [win(1), win(2)], 12, [1, 0]],
-    [
-      "a window not seen, covered or without a terminal never holds one, even on top",
-      [win(9, { seen: false }), win(8, { covered: true }), win(7, { hasTerminal: false }), win(1)],
-      2,
-      [3],
-    ],
-    ["ties keep the input order", [win(2), win(2), win(2)], 2, [0, 1]],
-  ];
-  for (const [name, windows, budget, want] of rows) {
-    assert.deepEqual(gpuHolders(windows, budget), want, name);
-  }
-});
-
 // --- restoreRect: a window nobody can measure is read from its inline rect ----
 // `restoreDesk` runs on load whatever tab is showing, and the Consoles tab is
 // `display:none` under any other — so a restored window measured 0×0 at 0,0

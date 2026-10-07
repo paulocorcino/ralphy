@@ -285,7 +285,11 @@ The workbench is used from iPads and Android tablets and phones.
   OPEN; `visibilitychange` and `online` call `resumeAll`. The term is
   CONTEXT.md → *Resume*.
 
-The pure rules are tested in `ui-tests/wb-console.test.mjs`; the browser
+The pure rules are in their own modules: `wb-console-input.ts` (touch, keys,
+paste, font), `wb-console-session.ts`, `wb-desk-folds.ts` and `wb-geometry.ts`;
+the dormancy watch and the GPU budget are `wb-console-gpu.ts`. Each is tested
+in `ui-tests/<module>.test.mjs`, and the rules that need a whole console in
+`ui-tests/wb-console.test.mjs`. The browser
 checks are `tests/browser/console/wb_console_touch.py` and `tests/browser/console/wb_console_phone.py`.
 
 ## Kanban: the assignee scope is not applied yet

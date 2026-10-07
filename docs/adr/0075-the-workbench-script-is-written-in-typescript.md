@@ -417,3 +417,60 @@ The other 21 names that a module set during the migration are gone, with
 14,975. The two page scripts are now `wb-detached.ts` (94 lines) and
 `wb-detached-fence.ts` (336 lines): `detached.html` went from 150 to 57
 lines, and `detached-fence.html` from 490 to 117.
+
+## Amendment (2026-10-07): phase 5 cuts, as measured
+
+After the moves, `createConsole` in `wb-console.ts` held the console state
+and about 280 functions, 7,889 lines at `0d52318e`. The second half of
+phase 5 is the ADR-0073 D7 track (#551 to #555, folded into #576), done
+with plain imports. It made five cuts, in six steps (#576):
+
+| Cut | Target module | What moved |
+|---|---|---|
+| Plane folds | `wb-geometry.ts` (273 to 485 lines) | bring into view, landing, pan, spawn rects, fence holds |
+| Input folds | `wb-console-input.ts` (new, 363 lines) | touch, drag, keys, paste, clipboard, font |
+| Session folds | `wb-console-session.ts` (new, 309 lines) | the wire codec, reconnect, resume, dormancy and peer rules |
+| Desk folds | `wb-desk-folds.ts` (new, 287 lines) | the restore decision, the fence readouts and walk, the detach registry, the popup rules |
+| GPU budget | `wb-console-gpu.ts` (new, 150 lines) | the dormancy watch and the GPU budget |
+
+**A fold moves when its result depends only on its arguments.** A function
+left `createConsole` when it reads no closure `let`, no DOM, no clock, no
+random value, no timer and no `window`, and changes none of its arguments.
+Reading `WBFleet`, which has no state, is allowed. The new module exports it,
+`wb-console.ts` imports it, and the `WBConsole` member keeps its name and
+points at the import: the member list is the same as at `0d52318e`. The
+tests of a moved fold call it directly, in `ui-tests/<module>.test.mjs`.
+
+**What stays in `createConsole`, and why.** The console state (the windows,
+the stack, the desk), everything that reads the DOM (the chrome, the
+terminals, the measures), the network (the session sockets, the desk
+upload), and the clock (timers, ids). Measured not pure and kept:
+`inGesture`, `keyBarMode`, `fontSize`, `resumeAll`, `sessionPresentation`,
+`consolePrefix`, `allCheckouts`, `projectNameOf`, `projectTitleOf`,
+`canRename`, `unreadableDesk`, `checkoutStillThere`, the id makers,
+`measurable`, `columnMeasure`, `renderNotes`, `count`. Sleeping and waking a
+window (`applyDormancy`, `wakeWindow`, `sleepWindow`) and the covered rule
+(`isCovered`) stay too: they reach the terminal factory.
+
+**State leaves through a typed `deps` parameter.** ADR-0073 D7 planned one
+shared state object, and #555 a `needs` list for each factory. Under this
+ADR the same contract is a TypeScript type. `createGpuBudget(deps)` owns its
+own state (the observer and the queued rebalance), so each console gets new
+state (D7). `GpuBudgetDeps` lists everything the budget reads from the
+console: the live windows, the viewport, `isCovered`, `applyDormancy`, and
+the page's `IntersectionObserver` and `queueMicrotask`. `tsc` refuses a read
+outside that type, and a test gives the budget its own observer and queue.
+This replaces the shared state object and the `needs` list. A later cut of
+state takes the same form.
+
+**One rule, one copy.** `wb-daemon.ts` had its own copy of the resume rule
+and of its two deadlines. It now imports them from `wb-console-session.ts`.
+
+**Two test fixes came first.** The `app.test.mjs` test "sessions.dirty on a
+visible tab reads the sessions" now waits for the read it checks, not a
+fixed number of turns (#588). The `wb_csp_connect.py` browser check creates
+its dev tunnel and deletes it at the end, so the account does not fill up
+(#589).
+
+**Lines.** `wb-console.ts` went from 7,889 to 6,789 lines. The four new
+modules have 1,109 lines, and `wb-geometry.ts` gained 212.

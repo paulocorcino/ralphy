@@ -4030,8 +4030,8 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-session-route.js",
                 "wb-daemon.js",
                 // `wb-console.ts` imports the geometry, the window state, the session folds,
-                // the desk folds, the console name and the input folds; the entry imports the
-                // console. Stated HERE because this set is a hardcoded floor:
+                // the desk folds, the GPU budget, the console name and the input folds; the
+                // entry imports the console. Stated HERE because this set is a hardcoded floor:
                 // nothing derives the popup's needs from the tree, so an
                 // import dropped from the entry breaks the second monitor
                 // with no other signal.
@@ -4041,6 +4041,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-console-input.js",
                 "wb-console-session.js",
                 "wb-desk-folds.js",
+                "wb-console-gpu.js",
                 "wb-console.js",
             ][..],
         ),
