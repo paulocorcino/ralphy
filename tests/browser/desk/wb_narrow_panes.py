@@ -178,7 +178,10 @@ def register_fixture(daemon_dir, fixture_dir):
     result = subprocess.run(
         [EXE, "daemon", "add", fixture_dir], env=env, check=True, capture_output=True, encoding="utf-8"
     )
-    return result.stdout.strip().split("registered ", 1)[1].split(" →")[0].strip()
+    # stdout: "registered <slug> → <path>". The path is what the page shows on
+    # hover for a repo with no remote.
+    slug, path = result.stdout.strip().split("registered ", 1)[1].split(" →", 1)
+    return slug.strip(), path.strip()
 
 
 def build():
@@ -220,6 +223,12 @@ def display(page, selector):
     return page.evaluate(
         "(s) => { const e = document.querySelector(s); return e ? getComputedStyle(e).display : null; }", selector
     )
+
+
+def wait_project(page, slug):
+    """The project list is read after the page loads. A tab opened before it
+    arrives has no project name to show, and names its project by the key."""
+    page.wait_for_function(f"(s) => {SH}.projects.some((p) => p.slug === s)", arg=slug, timeout=15000)
 
 
 def open_tab(page, slug, path):
@@ -264,7 +273,8 @@ def main():
     build()
     daemon_dir = tempfile.mkdtemp(prefix="wbnarrow_reg_")
     fixture_dir = make_fixture_repo()
-    slug = register_fixture(daemon_dir, fixture_dir)
+    slug, repo_path = register_fixture(daemon_dir, fixture_dir)
+    folder = os.path.basename(fixture_dir)
 
     proc = launch(daemon_dir)
     try:
@@ -283,6 +293,7 @@ def main():
             page.on("pageerror", lambda e: errors.append(str(e)))
             page.goto(BASE)
             page.wait_for_selector("[x-data]", timeout=8000)
+            wait_project(page, slug)
             page.evaluate(f"() => {SH}.toggle('{slug}')")
             page.wait_for_timeout(600)
             # The phone in the report had the sidebar folded (the rail's Projects
@@ -301,7 +312,7 @@ def main():
             f = page.locator(f"{v} .viewer-file").text_content()
             check("the label is the path alone: dir + file", (d, f) == ("docs/", "COMPARATIVO.md"), f"{d!r} {f!r}")
             title = page.get_attribute(f"{v} .viewer-path", "title")
-            check("the full `repo / path` form rides the title", title == f"{slug} / docs/COMPARATIVO.md", repr(title))
+            check("the full `repo / path` form rides the title", title == f"{folder} / docs/COMPARATIVO.md", repr(title))
             check("captions are folded", display(page, f"{v} [data-act='save'] .vbtn-label") == "none")
             tb = rect(page, f"{v} .viewer-toolbar")
             save = rect(page, f"{v} [data-act='save']")
@@ -441,11 +452,13 @@ def main():
                 " return e ? { cut: e.scrollWidth > e.clientWidth + 1, ellipsis: getComputedStyle(e).textOverflow, tip: t.title,"
                 "   fits: t.scrollWidth <= t.clientWidth + 1 } : null; }"
             )
-            # #479: the title is `<name> (<label>) · <slug>`; when it does not
-            # fit a phone, the slug is what takes the ellipsis.
-            check("console: the title fits, or its slug ellipsizes",
+            # #479: the title is `<name> (<label>) · <project>`; when it does
+            # not fit a phone, the project is what takes the ellipsis. A repo
+            # with no remote is named by its folder, and its tooltip holds
+            # its path.
+            check("console: the title fits, or its project ellipsizes",
                   tail and tail["ellipsis"] == "ellipsis" and (tail["cut"] or tail["fits"]), f"{tail}")
-            check("console: the tooltip carries the whole title", tail and slug in tail["tip"], f"{tail}")
+            check("console: the tooltip carries the project's path", tail and repo_path in tail["tip"], f"{tail}")
             page.screenshot(path=os.path.join(SHOT_DIR, "narrow-console-2026-09-20.png"))
             # Closed for real (session ended, record forgotten): scenario 6d
             # counts windows, and a live console left here would be restored
@@ -479,6 +492,7 @@ def main():
             page_a.on("pageerror", lambda e: errors.append(str(e)))
             page_a.goto(BASE)
             page_a.wait_for_selector("[x-data]", timeout=8000)
+            wait_project(page_a, slug)
             page_a.evaluate(f"() => {SH}.toggle('{slug}')")
             page_a.wait_for_timeout(800)
             before = page_a.locator(".session-window").count()
@@ -546,6 +560,7 @@ def main():
             page.on("pageerror", lambda e: errors.append(str(e)))
             page.goto(BASE)
             page.wait_for_selector("[x-data]", timeout=8000)
+            wait_project(page, slug)
             page.evaluate(f"() => {SH}.toggle('{slug}')")
             page.wait_for_timeout(600)
             open_tab(page, slug, "docs/COMPARATIVO.md")

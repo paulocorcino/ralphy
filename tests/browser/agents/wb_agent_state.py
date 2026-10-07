@@ -470,7 +470,7 @@ def main():
             page.evaluate(f"() => {SH}.newConsole('claude')")
             page.wait_for_function(f"() => ({WINDOWS})() === 2", timeout=15000)
             check("the second child printed READY", wait_flat_contains(page, 1, READY))
-            create_via_switcher(page, 1, "wt-a", f"(claude) · wt-a · {slug}")
+            create_via_switcher(page, 1, "wt-a", f"(claude) · wt-a · {fixture.name}")
             page.wait_for_function("() => fetch('/api/sessions').then(r => r.json()).then(l => l.some(s => s.checkout === 'wt-a'))", timeout=15000)
             check("the second console restarted in wt-a", wait_flat_contains(page, 1, READY))
             sid2 = [s["id"] for s in sessions() if s.get("checkout") == "wt-a"][0]

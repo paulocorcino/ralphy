@@ -181,7 +181,9 @@ def register_fixture(daemon_dir, fixture_dir):
         [EXE, "daemon", "add", fixture_dir], env=env, check=True, capture_output=True, encoding="utf-8"
     )
     # stdout: "registered <slug> → <path>"; the arrow is U+2192, so decode utf-8.
-    return result.stdout.strip().split("registered ", 1)[1].split(" →")[0].strip()
+    # The path is what the page shows on hover for a repo with no remote.
+    slug, path = result.stdout.strip().split("registered ", 1)[1].split(" →", 1)
+    return slug.strip(), path.strip()
 
 
 def build():
@@ -229,6 +231,7 @@ PANE = """
     visible: laid(pane),
     bar: laid(document.querySelector('.spend-tab .spend-bar')),
     project: txt('.spend-tab .spend-project'),
+    projectTitle: document.querySelector('.spend-tab .spend-project')?.title ?? null,
     blankTitle: txt('.spend-tab .spend-blank-title'),
     blankHint: txt('.spend-tab .spend-blank-hint'),
     figure: txt('.spend-tab .spend-figure'),
@@ -300,7 +303,7 @@ def main():
     usage_dir = tempfile.mkdtemp(prefix="wb358_usage_")
     pricing_file = seed_pricing(tempfile.mkdtemp(prefix="wb358_pricing_"))
     fixture = seed_repo()
-    slug = register_fixture(daemon_dir, fixture)
+    slug, repo_path = register_fixture(daemon_dir, fixture)
     seed_ledger(usage_dir, slug)
 
     proc = launch(empty_env(daemon_dir, usage_dir, pricing_file))
@@ -382,10 +385,12 @@ def main():
                 timeout=15000,
             )
             pane = page.evaluate(PANE)
+            # A repo with no remote is named by its folder, and its path is
+            # the tooltip.
             check(
                 "the tab is scoped to the open project",
-                pane["project"] == slug,
-                "project={}".format(pane["project"]),
+                pane["project"] == "spend-fixture" and pane["projectTitle"] == repo_path,
+                "project={} title={}".format(pane["project"], pane["projectTitle"]),
             )
             # 1M input at $15/1M — the only priceable line in the fixture.
             check(

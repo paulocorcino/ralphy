@@ -365,11 +365,11 @@ def main():
     fixture = seed("wb408_", "plain")
     add_worktree(fixture)
     slug = register_fixture(daemon_dir, str(fixture))
-    expected = f"(claude) · wt-a · {slug}"
-    expected_primary = f"(claude) · primary · {slug}"
+    expected = f"(claude) · wt-a · {fixture.name}"
+    expected_primary = f"(claude) · primary · {fixture.name}"
     # With a worktree in the repo the title's segment exists and reads
     # `primary` for a console on the primary tree — it is the switcher (#412).
-    expected_codex = f"(codex) · primary · {slug}"
+    expected_codex = f"(codex) · primary · {fixture.name}"
 
     # The retired key, hand-appended to the ONLY entry's table.
     registry = Path(daemon_dir, "repos.toml")

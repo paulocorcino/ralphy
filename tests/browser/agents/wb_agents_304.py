@@ -137,7 +137,9 @@ def register_fixture(daemon_dir, fixture_dir):
         [EXE, "daemon", "add", fixture_dir], env=env, check=True, capture_output=True, encoding="utf-8"
     )
     # stdout: "registered <slug> → <path>"; the arrow is U+2192, so decode utf-8.
-    return result.stdout.strip().split("registered ", 1)[1].split(" →")[0].strip()
+    # The path is what the page shows on hover for a repo with no remote.
+    slug, path = result.stdout.strip().split("registered ", 1)[1].split(" →", 1)
+    return slug.strip(), path.strip()
 
 
 def build():
@@ -183,7 +185,7 @@ def main():
     build()
     daemon_dir = tempfile.mkdtemp(prefix="wb304_reg_")
     fixture_dir = make_fixture_repo()
-    slug = register_fixture(daemon_dir, fixture_dir)
+    slug, repo_path = register_fixture(daemon_dir, fixture_dir)
 
     proc = launch(daemon_dir)
     try:
@@ -459,9 +461,9 @@ def main():
             open_menu(page)
             head = page.locator(f"{MENU} .dropdown-head")
             check(
-                "the head names the repo by its bare name, the full ref on hover",
-                head.locator("span").inner_text() == slug.split("/")[-1]
-                and head.get_attribute("title") == slug,
+                "the head names the repo by its folder name, its path on hover",
+                head.locator("span").inner_text() == os.path.basename(fixture_dir)
+                and head.get_attribute("title") == repo_path,
                 f"got={head.locator('span').inner_text()!r} title={head.get_attribute('title')!r}",
             )
             check(

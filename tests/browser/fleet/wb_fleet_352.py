@@ -322,7 +322,8 @@ def main():
                 "() => document.querySelectorAll('.session-window').length === 2"
             )
             # #479: the environment moved from the title to its tooltip, after
-            # the full ref.
+            # the project. A project is named by its repo, never by the
+            # routing head, on a peer too.
             page.wait_for_function(
                 "(env) => [...document.querySelectorAll('.session-title')].some(e => e.title.includes(env))",
                 arg=PEER_ENV,
@@ -334,11 +335,11 @@ def main():
             )
             check(
                 "peer free-console tooltip names its effective environment",
-                any(tip.split("\n")[:2] == [PEER_REF, PEER_ENV] for tip in tips),
+                any(tip.split("\n")[:2] == [SLUG, PEER_ENV] for tip in tips),
                 f"tips={tips}",
             )
-            # The routing head is NOT a name: the title never carries the
-            # daemon_id — it stays reachable as the element's tooltip.
+            # The routing head is NOT a name: neither the title nor the
+            # tooltip carries the daemon_id.
             check(
                 "no session title exposes the routing head",
                 all(PEER_ID not in title for title in titles),
@@ -348,8 +349,9 @@ def main():
                 "els => els.map(e => e.title)"
             )
             check(
-                "the peer console keeps its full ref as a tooltip",
-                any(tip.split("\n")[0] == PEER_REF for tip in tips),
+                "the peer console's tooltip names its repo, not its routing head",
+                all(PEER_ID not in tip for tip in tips)
+                and sum(tip.split("\n")[0] == SLUG for tip in tips) == 2,
                 f"tips={tips}",
             )
 
