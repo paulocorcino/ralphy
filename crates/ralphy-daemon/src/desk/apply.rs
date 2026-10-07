@@ -3,7 +3,7 @@
 //! [`apply`], which applies them to the stored desk in the order they arrive.
 //!
 //! Pure: the clock and the slug aliases are arguments. The browser draws its
-//! pending changes with the same rules (`wb-desk-sync.js` `applyChange`); one
+//! pending changes with the same rules (`wb-desk-sync.ts` `applyChange`); one
 //! table of cases, `ui-tests/fixtures/api-desk--apply-cases.json`, runs on both
 //! sides.
 

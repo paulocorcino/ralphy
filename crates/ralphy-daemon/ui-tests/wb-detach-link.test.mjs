@@ -1,25 +1,16 @@
-// Unit tests for assets/ui/wb-detach-link.js — runs the real source with no DOM.
+// Unit tests for assets/ui/wb-detach-link.ts — runs the real source with no DOM.
 // Lives OUTSIDE assets/ui on purpose: lib.rs embeds all of assets/ui into the
 // daemon binary via include_dir!, so a test there would ship.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { WBDetachLink } from "../assets/ui/wb-detach-link.ts";
 
-const SRC = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../assets/ui/wb-detach-link.js"),
-  "utf8",
-);
-
-// The module's only load-time global is `window`, which it assigns onto — the
-// storage and the channel are reached as BARE globals, exactly as the browser
-// resolves them and exactly as `wb-desk-sink.js` reaches `fetch`. So the fakes
-// below are installed on `globalThis`, like that module's `spyFetch`.
+// The module touches nothing when it is imported — the storage and the
+// channel are reached as BARE globals, exactly as the browser resolves them
+// and exactly as `wb-desk-sink.ts` reaches `fetch`. So the fakes below are
+// installed on `globalThis`, like that module's `spyFetch`.
 function load() {
-  const window = {};
-  new Function("window", SRC)(window);
-  return window.WBDetachLink;
+  return WBDetachLink;
 }
 
 // One tab's session-scoped store. A SEPARATE instance is a SEPARATE tab, which

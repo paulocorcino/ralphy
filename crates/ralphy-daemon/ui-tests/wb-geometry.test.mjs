@@ -1,4 +1,4 @@
-// Unit tests for assets/ui/wb-geometry.js — the workbench's plane geometry.
+// Unit tests for assets/ui/wb-geometry.ts — the workbench's plane geometry.
 //
 // These tests came over from wb-console.test.mjs with the code they exercise
 // (ADR-0022 §3, restated for assets as ADR-0057 D4). Not one assertion was
@@ -8,21 +8,14 @@
 // which is what "pure" bought.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { WBGeometry } from "../assets/ui/wb-geometry.ts";
 
-const UI = join(dirname(fileURLToPath(import.meta.url)), "../assets/ui");
-const SRC = readFileSync(join(UI, "wb-geometry.js"), "utf8");
-
-// ONE global, and it is only the assignment target. Compare with the loader in
-// wb-console.test.mjs, which needs a window, a document, a location, two real
-// sibling modules and a hidden BroadcastChannel — that gap is the argument for
-// the extraction, stated as code.
+// No global at all: the module exports its namespace. Compare with the loader
+// in wb-console.test.mjs, which needs a window, a document, a location and a
+// hidden BroadcastChannel — that gap is the argument for the extraction,
+// stated as code.
 function load() {
-  const window = {};
-  new Function("window", SRC)(window);
-  return window.WBGeometry;
+  return WBGeometry;
 }
 
 const MARGIN = 200;
@@ -304,7 +297,7 @@ for (const row of TILES) {
 }
 
 // ---- came over from wb-console.test.mjs: the WBGeometry tables ------------
-// wb-console.js re-exports these functions; they are tested here, against
+// wb-console.ts re-exports these functions; they are tested here, against
 // the module that owns them.
 const VIEWPORT = { width: 1000, height: 700 };
 

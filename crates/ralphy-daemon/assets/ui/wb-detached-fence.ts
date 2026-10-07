@@ -4,6 +4,7 @@
 // `WBNotes` exist when the shell answers "ready" (ADR-0075
 // D5, D9).
 import { WBColumns } from "./wb-columns.ts";
+import { WBDetachLink } from "./wb-detach-link.ts";
 
 export function wireDetachedFence(window: Window, document: Document) {
   // Where this window will talk: the concrete origin, never `"*"`, as in the
@@ -77,7 +78,7 @@ export function wireDetachedFence(window: Window, document: Document) {
   // ---- columns and a note on top (ADR-0051 §8, amended 2026-10-05) ----
   // The fence head's "as columns", for this window. The grid lives
   // here, as `app.js` holds it for the shell, and is never stored: the
-  // popup's layout is throwaway. `wb-console.js` paints it.
+  // popup's layout is throwaway. `wb-console.ts` paints it.
   let grid: any[] = [];
   const consoles = () => [...stageEl().querySelectorAll(".session-window")];
   const capNow = () => WBColumns.cap(WBConsole.columnMeasure().viewport, WBConsole.PHONE_MAX_WIDTH);
@@ -163,7 +164,7 @@ export function wireDetachedFence(window: Window, document: Document) {
     // channel and NO store at all. `window.open` handed it a COPY of its
     // opener's session storage, so every registry answer it could give is
     // a ghost that drifts the moment the real tab writes.
-    const LINK = window.WBDetachLink.channel();
+    const LINK = WBDetachLink.channel();
     let peer = { seen: Date.now(), lost: false };
     let closing = false;
     // Only `popup-here` carries the snapshot: it is the re-adoption

@@ -23,7 +23,7 @@
 // Three writers share the key (the console's offset, the shell's tabs, the
 // settings toggle), which is why `patch` is read-modify-write: any one of them
 // writing the whole record would clobber the others'.
-window.WBView = (function () {
+export const WBView = (function () {
   const KEY = "wb.view.v1";
 
   // A disabled store (private mode, a blocked third-party context, a full quota)
@@ -77,8 +77,8 @@ window.WBView = (function () {
         // checks them against the desk on restore.
         columns: Array.isArray(parsed.columns)
           ? parsed.columns
-              .map((c) => (Array.isArray(c) ? c.filter((s) => typeof s === "string") : c))
-              .filter((c) => typeof c === "string" || Array.isArray(c))
+              .map((c: any) => (Array.isArray(c) ? c.filter((s) => typeof s === "string") : c))
+              .filter((c: any) => typeof c === "string" || Array.isArray(c))
           : null,
         // Where "Slice" opens, as last picked in this browser.
         columnDir: parsed.columnDir === "right" || parsed.columnDir === "down" ? parsed.columnDir : null,
@@ -88,7 +88,7 @@ window.WBView = (function () {
     }
   }
 
-  function splitOf(raw) {
+  function splitOf(raw: any) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
     const ratio = typeof raw.ratio === "number" && raw.ratio >= 0.2 && raw.ratio <= 0.8 ? raw.ratio : null;
     if (raw.kind === "mirror") return { kind: "mirror", ratio };
@@ -104,7 +104,7 @@ window.WBView = (function () {
     return null;
   }
 
-  function patch(part) {
+  function patch(part: any) {
     try {
       const next = { ...read(), ...part, v: 1 };
       localStorage.setItem(KEY, JSON.stringify(next));
@@ -116,3 +116,12 @@ window.WBView = (function () {
 
   return { KEY, read, patch };
 })();
+
+// `app.ts`, the Settings dialog and browser checks read this name (ADR-0075 D9).
+if (typeof window !== "undefined") window.WBView = WBView;
+
+declare global {
+  interface Window {
+    WBView: typeof WBView;
+  }
+}

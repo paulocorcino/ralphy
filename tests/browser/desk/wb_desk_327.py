@@ -19,7 +19,7 @@ Scenario 5   no DESK in browser storage — the only permitted key is the per-cl
              §8 narrows ADR-0050 §3 to allow: that rejection was of a second copy
              of the DESK, authoritative in no mode. The stored record's shape, the
              absence of every desk word, and the absence of every id the daemon is
-             actually serving are all asserted; `wb-console.js` still names the
+             actually serving are all asserted; `wb-console.ts` still names the
              browser store zero times, which now means "the desk module never
              touches it" (issue #339)
 Scenario 6   a CORRUPT `desk.toml` answers 409 unreadable, not a startup failure
@@ -54,7 +54,7 @@ BASE = f"http://127.0.0.1:{PORT}/"
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
-CONSOLE_JS = os.path.join(REPO_ROOT, "crates", "ralphy-daemon", "assets", "ui", "wb-console.js")
+CONSOLE_JS = os.path.join(REPO_ROOT, "crates", "ralphy-daemon", "assets", "ui", "wb-console.ts")
 # The ONE browser key ADR-0051 §8 permits (issue #339) — the per-client view, not
 # a second copy of the desk. Scenario 5 is the assertion of exactly that line.
 VIEW_KEY = "wb.view.v1"

@@ -1,4 +1,4 @@
-// Unit tests for assets/ui/wb-console.js — runs the real source with no DOM.
+// Unit tests for assets/ui/wb-console.ts — runs the real source with no DOM.
 // This file lives OUTSIDE assets/ui on purpose: lib.rs embeds all of
 // assets/ui into the daemon binary via include_dir!, so a test there would ship.
 import { test } from "node:test";
@@ -9,70 +9,41 @@ import { dirname, join } from "node:path";
 import { WBProject } from "../assets/ui/wb-project.ts";
 import { WBFleet } from "../assets/ui/wb-fleet.ts";
 import { WBColumns } from "../assets/ui/wb-columns.ts";
+import { createConsole } from "../assets/ui/wb-console.ts";
+import { WBDeskSink } from "../assets/ui/wb-desk-sink.ts";
 
 const UI = join(dirname(fileURLToPath(import.meta.url)), "../assets/ui");
-const SRC = readFileSync(join(UI, "wb-console.js"), "utf8");
-// The module reads `window.WBDeskSink.daemon()` at load, exactly as it does in
-// the browser — so the harness runs the REAL sink source first, mirroring
-// index.html's script order. A stub here would hide a broken script tag.
-const SINK_SRC = readFileSync(join(UI, "wb-desk-sink.js"), "utf8");
-// The desk's changes and view (`wb-desk-sync.js`): `wb-console.js` builds its
-// state from `window.WBDeskSync` at load, so the real source runs first here.
-const SYNC_SRC = readFileSync(join(UI, "wb-desk-sync.js"), "utf8");
-// Same reasoning for the detach link: `wb-console.js` reads
-// `window.WBDetachLink.link()` at load, so the harness runs the REAL source in
-// the same script order both documents use. It touches neither `sessionStorage`
-// nor `BroadcastChannel` at load, so neither needs to exist here.
-const LINK_SRC = readFileSync(join(UI, "wb-detach-link.js"), "utf8");
-// The plane geometry (ADR-0057). `wb-console.js` DESTRUCTURES this namespace at
-// module scope, so a harness without it throws on the first line of the IIFE —
-// which is the intended failure, and the reason it is the real source here too.
-const GEOM_SRC = readFileSync(join(UI, "wb-geometry.js"), "utf8");
-// `wb-fleet.ts` is on the window of both documents that carry the console
-// (index.html, detached-fence.html) before the console boots, so the harness
-// gives the REAL module rather than leaving the namespace absent. Leaving it
-// out made `sessionPresentation` take its `window.WBFleet ? … : repo`
-// fallback, and the test then pinned a title the product explicitly forbids —
-// the peer ref printed whole, which is the defect wb-fleet was written to fix.
-// The window field inventory and its accessors (`initWindow`, `sessionIdOf`,
-// `watchingOf`, `checkoutOf`). DESTRUCTURED at module scope exactly like the
-// geometry above, so the real source runs here for the same reason: a harness
-// without it throws inside the IIFE, which is the intended failure.
-const WINSTATE_SRC = readFileSync(join(UI, "wb-window-state.js"), "utf8");
-// The console name (ADR-0066). Loaded before `wb-console.js` by both
-// documents; the tooltip and every new console's name come from it.
-const NAME_SRC = readFileSync(join(UI, "wb-console-name.js"), "utf8");
+// The console's source text, for the few pins on how it is written.
+const SRC = readFileSync(join(UI, "wb-console.ts"), "utf8");
 
-// `extras` is merged into the stub `window` BEFORE the module is evaluated, so a
-// test can supply a sibling module (`WBFleet`) that index.html loads first. The
-// default is no siblings: that is the honest shape for the boot order where a
-// sibling has not loaded, and several tests pin the fallback it produces.
-function load(extras = {}, docExtras = {}) {
-  // The three globals the module touches at LOAD time: `window.addEventListener`
-  // (the pagehide flush), `document.readyState`/`addEventListener` (the boot
-  // hooks — "loading" parks them on a no-op listener instead of running them
-  // against a DOM that does not exist) and `location.protocol`/`host`
-  // (WS_ORIGIN). No `ResizeObserver` is injected ON PURPOSE: the surviving one
-  // lives inside `attachTerminal`, which this harness never reaches, so a
-  // module-scope observer re-added alongside a clamp fails LOUDLY here.
+// `extras` is merged into the stub `window` BEFORE the console is created, so
+// a test can supply a sibling module (`WBFleet`) that index.html loads first.
+// The default is no siblings: that is the honest shape for the boot order
+// where a sibling has not loaded, and several tests pin the fallback it
+// produces. `opts` is what an entry module passes `createConsole`.
+function load(extras = {}, docExtras = {}, opts = {}) {
+  // The three globals the console touches when it is created:
+  // `window.addEventListener` (the pagehide flush), `document.addEventListener`
+  // and `location.protocol`/`host` (WS_ORIGIN). `boot` is not called: the
+  // stub document has no stage. No `ResizeObserver` is injected ON PURPOSE:
+  // the surviving one lives inside `attachTerminal`, which this harness never
+  // reaches, so an observer created with the console alongside a clamp fails
+  // LOUDLY here.
   const window = { addEventListener() {}, ...extras };
   const document = { readyState: "loading", addEventListener() {}, ...docExtras };
   const location = { protocol: "http:", host: "127.0.0.1:7431" };
   window.WBFleet = WBFleet;
-  new Function("window", GEOM_SRC)(window);
-  new Function("window", WINSTATE_SRC)(window);
-  new Function("window", NAME_SRC)(window);
-  new Function("window", SINK_SRC)(window);
-  new Function("window", SYNC_SRC)(window);
-  new Function("window", LINK_SRC)(window);
-  // Node 22 ships a REAL `BroadcastChannel`, and `wb-console.js` subscribes at
-  // module load — an open channel per `load()` holds the event loop open and
-  // `node --test` never exits. Hidden for the load only; the channel's own
-  // behaviour is covered against a fake in wb-detach-link.test.mjs.
+  // The sink's hold lives once per document (the module), and each `load()` is
+  // a new page: a hold an earlier test set must not hold this page's writes.
+  WBDeskSink.setHold(false);
+  // Node 22 ships a REAL `BroadcastChannel`, and `createConsole` subscribes —
+  // an open channel per `load()` holds the event loop open and `node --test`
+  // never exits. Hidden for the call only; the channel's own behaviour is
+  // covered against a fake in wb-detach-link.test.mjs.
   const realBC = globalThis.BroadcastChannel;
   delete globalThis.BroadcastChannel;
   try {
-    new Function("window", "document", "location", SRC)(window, document, location);
+    window.WBConsole = createConsole(window, document, location, opts);
   } finally {
     globalThis.BroadcastChannel = realBC;
   }
@@ -1289,9 +1260,7 @@ test("the fence cap is a number the shell can state, and the plane is at it from
     const realFetch = globalThis.fetch;
     globalThis.fetch = async () => ({ ok: true, json: async () => ({ windows: [], fences }) });
     try {
-      const wb = load({
-        WBConsoleOpts: { deskSink: { put: () => Promise.resolve({ kind: "held" }), putSync() {} } },
-      });
+      const wb = load({}, {}, { deskSink: { put: () => Promise.resolve({ kind: "held" }), putSync() {} } });
       await wb.whenDeskLoaded();
       assert.equal(wb.fenceRecords().length, n, "the desk landed");
       return wb;
@@ -2022,7 +1991,7 @@ test("stepFont walks one px at a time and stops at both ends", () => {
   assert.equal(c.stepFont(c.FONT_MAX, 1), c.FONT_MAX);
   assert.equal(c.stepFont(c.FONT_MIN, -1), c.FONT_MIN);
   // Past the ends from outside the range — a store hand-edited before the
-  // normalisation in wb-view.js was added.
+  // normalisation in wb-view.ts was added.
   assert.equal(c.stepFont(400, 1), c.FONT_MAX);
   assert.equal(c.stepFont(1, -1), c.FONT_MIN);
 });
@@ -2347,7 +2316,7 @@ test("restoreRect on a maximized window still reads the pre-maximize inline rect
 });
 
 // --- columns: only the leftmost is the maximized console the desk records ----
-// `wb-console.js` never loads `wb-columns.ts` (the popup boots without it), so
+// `wb-console.ts` never loads `wb-columns.ts` (the popup boots without it), so
 // the harness runs the REAL fold beside it, as `app.ts` does in the browser.
 function loadColumns() {
   return WBColumns;
@@ -2425,23 +2394,17 @@ async function deskPage(served = {}, extras = {}, docExtras = {}) {
   };
   const sent = [];
   const answers = extras.answers || [];
-  const wb = load(
-    {
-      WBConsoleOpts: {
-        deskSink: {
-          put(body) {
-            sent.push(JSON.parse(body));
-            return Promise.resolve(answers.shift() || { kind: "ok", reply: null });
-          },
-          putSync(body) {
-            sent.push({ closing: true, ...JSON.parse(body) });
-          },
-        },
+  const wb = load({ ...extras.window }, { getElementById: () => null, ...docExtras }, {
+    deskSink: {
+      put(body) {
+        sent.push(JSON.parse(body));
+        return Promise.resolve(answers.shift() || { kind: "ok", reply: null });
       },
-      ...extras.window,
+      putSync(body) {
+        sent.push({ closing: true, ...JSON.parse(body) });
+      },
     },
-    { getElementById: () => null, ...docExtras },
-  );
+  });
   await wb.whenDeskLoaded();
   return { wb, sent, gets, restore: () => (globalThis.fetch = realFetch) };
 }
@@ -3208,9 +3171,7 @@ test("atDeskCap is true once the desk holds the cap", async () => {
   });
   try {
     globalThis.fetch = async () => ({ ok: true, json: async () => desk(29) });
-    const wb = load({
-      WBConsoleOpts: { deskSink: { put: () => Promise.resolve({ kind: "held" }), putSync() {} } },
-    });
+    const wb = load({}, {}, { deskSink: { put: () => Promise.resolve({ kind: "held" }), putSync() {} } });
     await wb.whenDeskLoaded();
     assert.equal(wb.DESK_MAX, 30);
     assert.equal(wb.atDeskCap(), false, "29 records leave room for one more");

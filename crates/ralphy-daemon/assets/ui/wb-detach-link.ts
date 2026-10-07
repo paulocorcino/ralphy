@@ -1,7 +1,7 @@
 /* ---------------------------------------------------------------------------
    ralphy workbench — the detach LINK seam
 
-   `wb-console.js` decides WHICH fences are detached and WHEN a peer is lost;
+   `wb-console.ts` decides WHICH fences are detached and WHEN a peer is lost;
    this module owns the two browser facilities that carry those facts across a
    reload and between two documents:
 
@@ -12,7 +12,7 @@
                     `targetOrigin` of its own; the initial handover keeps
                     #346's concrete-`targetOrigin` postMessage handshake
 
-   Two implementations, one surface, exactly as `wb-desk-sink.js`:
+   Two implementations, one surface, exactly as `wb-desk-sink.ts`:
 
      link()   the shell's real link — storage + channel + a tab identity
      none()   inert, `tab: null`, an empty registry that never writes
@@ -33,7 +33,7 @@
    `BroadcastChannel` or a timer. The node harness loads this file with neither
    present, and so does a browser in private mode.
 --------------------------------------------------------------------------- */
-window.WBDetachLink = (function () {
+export const WBDetachLink = (function () {
   const KEY = "wb.detach.v1";
   const CHANNEL = "wb.detach.v1";
   // One beat per second, six seconds of silence before a peer is declared lost.
@@ -51,14 +51,14 @@ window.WBDetachLink = (function () {
       if (!raw) return null;
       const rec = JSON.parse(raw);
       if (!rec || rec.v !== 1) return null;
-      const members = {};
+      const members: any = {};
       for (const [id, ids] of Object.entries(rec.members || {})) {
         if (Array.isArray(ids)) members[id] = ids.filter((w) => typeof w === "string");
       }
       return {
         v: 1,
         tab: typeof rec.tab === "string" ? rec.tab : null,
-        fences: Array.isArray(rec.fences) ? rec.fences.filter((f) => typeof f === "string") : [],
+        fences: Array.isArray(rec.fences) ? rec.fences.filter((f: any) => typeof f === "string") : [],
         members,
       };
     } catch {
@@ -66,14 +66,14 @@ window.WBDetachLink = (function () {
     }
   }
 
-  function writeRecord(rec) {
+  function writeRecord(rec: any) {
     try {
       sessionStorage.setItem(KEY, JSON.stringify(rec));
     } catch {}
   }
 
   function newTabId() {
-    // Same hand-rolled shape as `wb-console.js`'s `newId`: `crypto.randomUUID`
+    // Same hand-rolled shape as `wb-console.ts`'s `newId`: `crypto.randomUUID`
     // is undefined in a non-secure context and the daemon can bind plain http.
     return "t-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
   }
@@ -82,15 +82,15 @@ window.WBDetachLink = (function () {
   // unavailable — created on FIRST USE so the module load stays free of every
   // browser facility.
   function makeChannel() {
-    let chan;
-    const listeners = [];
+    let chan: any;
+    const listeners: any = [];
     function open() {
       if (chan !== undefined) return chan;
       chan = null;
       if (typeof BroadcastChannel !== "undefined") {
         try {
           chan = new BroadcastChannel(CHANNEL);
-          chan.onmessage = (e) => {
+          chan.onmessage = (e: any) => {
             for (const fn of listeners.slice()) {
               try {
                 fn(e.data);
@@ -104,14 +104,14 @@ window.WBDetachLink = (function () {
       return chan;
     }
     return {
-      post(msg) {
+      post(msg: any) {
         const c = open();
         if (!c) return;
         try {
           c.postMessage(msg);
         } catch {}
       },
-      onMessage(fn) {
+      onMessage(fn: any) {
         if (typeof fn !== "function") return;
         listeners.push(fn);
         open();
@@ -165,7 +165,7 @@ window.WBDetachLink = (function () {
       readMembers() {
         return readRecord()?.members || {};
       },
-      writeRegistry(ids, members) {
+      writeRegistry(ids: any, members: any) {
         writeRecord({
           v: 1,
           tab,

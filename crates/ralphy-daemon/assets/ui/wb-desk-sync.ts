@@ -2,19 +2,14 @@
 // the desk): the daemon's last desk, the desk changes this page made that the
 // daemon has not answered yet, and the view that draws the two together.
 //
-// PURE: data in, data out. No DOM, no fetch, no timers. `wb-console.js` emits
+// PURE: data in, data out. No DOM, no fetch, no timers. `wb-console.ts` emits
 // a change for each act, sends `nextBatch()` through the desk sink, and hands
 // every desk the daemon serves to `take`.
 //
 // `applyChange` is the daemon's `desk::apply` rule, in JavaScript. One table
 // of cases, `ui-tests/fixtures/api-desk--apply-cases.json`, runs on both
 // sides, so the two cannot drift apart.
-(function (root, factory) {
-  const api = factory();
-  if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.WBDeskSync = api;
-})(typeof window === "undefined" ? null : window, function () {
-  "use strict";
+export const WBDeskSync = (function () {
 
   // The record types; each lives in the collection named by its plural.
   const TYPES = new Set(["window", "fence", "note"]);
@@ -25,8 +20,8 @@
 
   // A served desk as the four collections, each a fresh array: a page never
   // mutates what the daemon sent.
-  function deskOf(payload) {
-    const list = (v) => (Array.isArray(v) ? v.slice() : []);
+  function deskOf(payload: any) {
+    const list = (v: any) => (Array.isArray(v) ? v.slice() : []);
     const map = payload?.checkouts;
     return {
       windows: list(payload?.windows),
@@ -38,8 +33,8 @@
 
   // Absent, `null` and `false` are one value on the daemon (an `Option` or a
   // `bool` that is not serialised), so they are one value here.
-  const none = (v) => v == null || v === false;
-  function same(a, b) {
+  const none = (v: any) => v == null || v === false;
+  function same(a: any, b: any) {
     if (none(a) || none(b)) return none(a) && none(b);
     if (typeof a === "object" || typeof b === "object") {
       return JSON.stringify(a) === JSON.stringify(b);
@@ -49,19 +44,19 @@
 
   // Set `key` on `rec` (a copy) to `value`; whether it changed. `null` and
   // `false` delete the key, the shape the daemon serves.
-  function put(rec, key, value) {
+  function put(rec: any, key: any, value: any) {
     if (same(rec[key], value)) return false;
     if (value == null || value === false) delete rec[key];
     else rec[key] = value;
     return true;
   }
 
-  function rectOf(r) {
+  function rectOf(r: any) {
     return { left: r.left, top: r.top, width: r.width, height: r.height };
   }
 
   // The fields of one `set`, per record type. The daemon refuses any other.
-  function setFields(type, rec, fields) {
+  function setFields(type: any, rec: any, fields: any) {
     let did = false;
     if (fields.rect) {
       const r = rectOf(fields.rect);
@@ -114,7 +109,7 @@
   }
 
   // One change onto a desk: `{ desk, changed }`, never mutating `desk`.
-  function applyChange(desk, change) {
+  function applyChange(desk: any, change: any) {
     const unchanged = { desk, changed: false };
     const op = change?.op;
     if (op === "checkout" || op === "checkout-clear") {
@@ -129,7 +124,7 @@
     const key = `${change.type}s`;
     const list = desk[key];
     const id = op === "create" ? change.record?.id : change.id;
-    const at = list.findIndex((r) => r.id === id);
+    const at = list.findIndex((r: any) => r.id === id);
     let next;
     if (op === "create") {
       if (at < 0) {
@@ -155,7 +150,7 @@
       next[at] = rec;
     } else if (op === "remove") {
       if (at < 0) return unchanged;
-      next = list.filter((r) => r.id !== id);
+      next = list.filter((r: any) => r.id !== id);
     } else {
       return unchanged;
     }
@@ -163,8 +158,8 @@
   }
 
   // The daemon's desk with this page's pending changes on top.
-  function overlay(server, pending) {
-    return pending.reduce((d, c) => applyChange(d, c).desk, server);
+  function overlay(server: any, pending: any) {
+    return pending.reduce((d: any, c: any) => applyChange(d, c).desk, server);
   }
 
   // The state of one page's desk. `phase` is one of
@@ -175,14 +170,14 @@
   //                reloads and sends nothing more.
   function createSync() {
     let phase = "loading";
-    let rev = null;
-    let generation = null;
+    let rev: any = null;
+    let generation: any = null;
     let seq = 0;
-    let server = emptyDesk();
+    let server: any = emptyDesk();
     // Unanswered changes, in order. The first `inflight.count` are the batch
     // the daemon has not answered yet; a resend reuses its `seq`.
-    let pending = [];
-    let inflight = null;
+    let pending: any = [];
+    let inflight: any = null;
 
     return {
       phase: () => phase,
@@ -194,7 +189,7 @@
       // Returns "taken", "stale" (an older `rev` than one already taken),
       // "reload" (a restore happened since this page read the desk) or
       // "ignored" (the page is reloading).
-      take(payload) {
+      take(payload: any) {
         if (phase === "restored") return "ignored";
         const gen = Number(payload?.generation) || 0;
         if (generation != null && gen > generation) {
@@ -215,7 +210,7 @@
       restored() {
         phase = "restored";
       },
-      emit(change) {
+      emit(change: any) {
         pending.push(change);
       },
       // The body to send now: the batch in flight again (same `seq`), else
@@ -232,7 +227,7 @@
         };
       },
       // The daemon answered the batch in flight with `reply`, its desk.
-      acked(reply) {
+      acked(reply: any) {
         if (inflight) pending.splice(0, inflight.count);
         inflight = null;
         return reply ? this.take(reply) : "taken";
@@ -253,4 +248,4 @@
   }
 
   return { applyChange, overlay, createSync, emptyDesk };
-});
+})();

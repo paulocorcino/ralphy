@@ -2,15 +2,9 @@
 // console (ADR-0051 §5). The module is pure and touches nothing at load.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
 import { WBColumns } from "../assets/ui/wb-columns.ts";
 // The label builder the title uses; the column row must call the same one.
-const NAME_SRC = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../assets/ui/wb-console-name.js"),
-  "utf8",
-);
+import { WBConsoleName } from "../assets/ui/wb-console-name.ts";
 
 function load() {
   return WBColumns;
@@ -226,9 +220,7 @@ test("listFold: a group is its fence and its rows, with no shared repo", () => {
 
 test("rowLabel: the console label builder, as in the title", () => {
   const C = load();
-  const window = {};
-  new Function("window", NAME_SRC)(window);
-  const N = window.WBConsoleName;
+  const N = WBConsoleName;
   assert.equal(C.rowLabel({ name: "fincal #1", agent: "claude", repo: "o/r" }, N.consoleLabel), "fincal #1 (claude)");
   assert.equal(C.rowLabel({ name: "home #2", agent: "console", repo: null }, N.consoleLabel), "home #2 (console)");
 });

@@ -495,7 +495,7 @@ mod tests {
 
     #[test]
     fn a_detach_command_names_the_leave() {
-        // The bytes `encodeDetach` in wb-console.js produces (its node test).
+        // The bytes `encodeDetach` in wb-console.ts produces (its node test).
         let dormant = command(r#"{"id":0,"verb":"detach","payload":{"reason":"dormant"}}"#);
         assert_eq!(Leave::from_command(&dormant), Some(Leave::Dormant));
         let reconnect = command(r#"{"id":0,"verb":"detach","payload":{"reason":"reconnect"}}"#);

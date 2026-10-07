@@ -1,22 +1,13 @@
-// Unit tests for assets/ui/wb-desk-sink.js — runs the real source with no DOM.
+// Unit tests for assets/ui/wb-desk-sink.ts — runs the real source with no DOM.
 // Lives OUTSIDE assets/ui on purpose: lib.rs embeds all of assets/ui into the
 // daemon binary via include_dir!, so a test there would ship.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { WBDeskSink } from "../assets/ui/wb-desk-sink.ts";
 
-const SRC = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../assets/ui/wb-desk-sink.js"),
-  "utf8",
-);
-
-// The module's only load-time global is `window`, which it assigns onto.
+// The module touches nothing when it is imported.
 function load() {
-  const window = {};
-  new Function("window", SRC)(window);
-  return window.WBDeskSink;
+  return WBDeskSink;
 }
 
 // A counting `fetch` spy installed on the global, which is what the module's

@@ -46,7 +46,7 @@ pub(crate) use api_usage::*;
 pub(crate) use audit_layer::*;
 pub(crate) use guard::*;
 #[cfg(test)]
-pub(crate) use headers::{content_security_policy, inline_script_bodies, script_hash};
+pub(crate) use headers::{content_security_policy, inline_script_bodies};
 pub(crate) use presence::*;
 pub(crate) use ui_asset::*;
 pub(crate) use ws_command::*;

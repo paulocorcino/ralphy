@@ -21,16 +21,16 @@
    plus `initWindow` as the one place a window is born with it) and the
    ACCESSORS for the three questions that had more than one source. It is
    deliberately NOT a lifecycle state machine: of 45 fix commits on
-   `wb-console.js` in twelve months, 11 were layout-state and 10 were
+   `wb-console.ts` in twelve months, 11 were layout-state and 10 were
    gesture/renderer, so a lifecycle fold would target the minority and the
    guards that closed those are already in the code.
 
    NOTHING here may reach for the browser's own per-origin store — "window
    state" is a name that invites exactly that mistake, and that store belongs
-   to `wb-view.js` alone (ADR-0050: the desk layout is daemon state, and #339
+   to `wb-view.ts` alone (ADR-0050: the desk layout is daemon state, and #339
    sweeps the whole tree for a second one).
 --------------------------------------------------------------------------- */
-window.WBWindowState = (function () {
+export const WBWindowState = (function () {
   // THE INVENTORY. Every property a `.session-window` may carry, with the value
   // it is born holding. Grouped by who owns the write, because that is the
   // question a reader actually arrives with.
@@ -98,8 +98,8 @@ window.WBWindowState = (function () {
   // any window sees the whole set rather than whichever subset a code path
   // happened to reach — and a `seed` key that is not in the inventory throws
   // rather than quietly adding a twenty-seventh field nothing declares.
-  function initWindow(win, seed) {
-    for (const name of NAMES) win[name] = FIELDS[name];
+  function initWindow(win: any, seed: any) {
+    for (const name of NAMES) win[name] = (FIELDS as any)[name];
     if (seed) {
       for (const name of Object.keys(seed)) {
         if (!(name in FIELDS)) {
@@ -119,7 +119,7 @@ window.WBWindowState = (function () {
   //      the first terminal frame, and the daemon skips the replay frame for a
   //      session that has printed nothing, so a brand-new console reads null
   //      from (1) for as long as it stays silent.
-  function sessionIdOf(win) {
+  function sessionIdOf(win: any) {
     if (!win) return null;
     return win._term?.sessionId ?? win._dormantSession ?? win._wantsSession ?? null;
   }
@@ -128,7 +128,7 @@ window.WBWindowState = (function () {
   // no writer slot (ADR-0051 §9)? Same shape as `sessionIdOf`: the live handle
   // first, the flag carried across dormancy second. A window with neither has
   // no session to watch, so `false` is the honest answer, not `undefined`.
-  function watchingOf(win) {
+  function watchingOf(win: any) {
     if (!win) return false;
     if (win._term) return !!win._term.watching;
     return !!win._dormantWatch;
@@ -140,11 +140,11 @@ window.WBWindowState = (function () {
   // target is NOT part of this chain — that is the caller overriding the
   // question, not answering it, and it stays at the call site.
   //
-  // Named for the window on purpose: `wb-console.js` has long had a
+  // Named for the window on purpose: `wb-console.ts` has long had a
   // `checkoutOf(ref)` that answers a DIFFERENT question — which checkout a
   // repo ref is currently pointed at, which is a project-wide selection rather
   // than a fact about one console.
-  function windowCheckout(win, asked) {
+  function windowCheckout(win: any, asked: any) {
     if (!win) return asked ?? null;
     return win._sessionCheckout ?? asked ?? win._deskCheckout ?? null;
   }
