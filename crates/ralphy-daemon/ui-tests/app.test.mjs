@@ -1704,12 +1704,16 @@ test("checkColumnDesk takes the consoles that left the desk out of the columns, 
 test("every shell path that paints the columns asks to write the maximize", () => {
   const { state, window, document } = loadShell();
   const calls = [];
+  const paints = [];
   const realConsole = globalThis.WBConsole;
   const realColumns = globalThis.WBColumns;
   globalThis.WBColumns = window.WBColumns;
   globalThis.WBConsole = {
     ...window.WBConsole,
-    applyColumns: (_painted, opts) => calls.push(opts),
+    applyColumns: (painted, opts) => {
+      calls.push(opts);
+      paints.push(painted.map((p) => p.id));
+    },
     columnMeasure: () => ({ viewport: 1920 }),
     dropClosedElsewhere() {},
     focusColumn() {},
@@ -1755,17 +1759,11 @@ test("every shell path that paints the columns asks to write the maximize", () =
       assert.equal(calls.length, count, `${name} paints the columns`);
       for (const opts of calls) assert.equal(opts?.persist, true, `${name}: ${JSON.stringify(opts)}`);
     }
-    // A head that left the stage is named, so its record stops being maximized.
+    // The lone-survivor case above took its own branch: it paints the survivor.
     state.columns = grid();
-    calls.length = 0;
+    paints.length = 0;
     lone();
-    assert.deepEqual(state.columns, [], "the lone survivor ends the columns");
-    assert.equal(calls[0]?.unmax, "a", JSON.stringify(calls));
-    state.columns = grid();
-    calls.length = 0;
-    document.querySelectorAll = () => ["b", "c"].map((id) => ({ _deskId: id, classList: { contains: () => false } }));
-    state.paintColumns();
-    assert.equal(calls[0]?.unmax, "a", JSON.stringify(calls));
+    assert.deepEqual(paints, [["b"]], "the lone survivor is painted");
   } finally {
     document.querySelectorAll = realAll;
     globalThis.WBConsole = realConsole;

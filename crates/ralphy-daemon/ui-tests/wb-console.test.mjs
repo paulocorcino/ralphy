@@ -2663,32 +2663,6 @@ test("applyColumns writes the unmaximize of a console that stays a column, not f
   }
 });
 
-// A watcher's × removes the first console's window and keeps its record: the
-// record is written as not maximized by id, so the desk records one console.
-test("applyColumns unmaximizes the record of a first console that left the page", async () => {
-  let dom = null;
-  const page = await deskPage(
-    { windows: [colRecord("w-a", true), colRecord("w-b", false), colRecord("w-c", false)] },
-    {},
-    { getElementById: (id) => dom?.[id] ?? null, dispatchEvent() {} },
-  );
-  try {
-    const C = loadColumns();
-    const b = columnWin("w-b");
-    const c = columnWin("w-c");
-    dom = columnDom([b, c]);
-    page.wb.applyColumns(C.painted([["w-b"], ["w-c"]], 2), { cap: 2, unmax: "w-a", persist: true });
-    page.wb.applyColumns(C.painted([["w-b"], ["w-c"]], 2), { cap: 2, unmax: "w-gone", persist: true });
-    await settle();
-    assert.deepEqual(byId(changesOf(page.sent)), [
-      { op: "set", type: "window", id: "w-a", fields: { max: false } },
-      { op: "set", type: "window", id: "w-b", fields: { max: true } },
-    ]);
-  } finally {
-    page.restore();
-  }
-});
-
 // The torn-off fence window's grid is never stored (ADR-0051 §8, amended
 // 2026-10-05), so its one call never asks to write the maximize.
 test("the torn-off fence window paints its columns without persist", () => {

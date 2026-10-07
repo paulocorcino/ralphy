@@ -2052,11 +2052,6 @@ window.WBConsole = (function () {
     } catch {}
   }
 
-  function unmaxRecord(deskId) {
-    if (!loadDesk().some((r) => r.id === deskId && r.max)) return;
-    emitDesk({ op: "set", type: "window", id: deskId, fields: { max: false } });
-  }
-
   // Paint `painted` (`WBColumns.painted`). `unmax` is the old first console
   // after a restore: it stops being the maximized console. `persist` writes
   // each change of the maximize to the desk.
@@ -2071,9 +2066,6 @@ window.WBConsole = (function () {
     }
     const gone = opts?.unmax ? findWindow(opts.unmax) : null;
     if (gone && !columnClasses(list, gone._deskId).column) setMax(gone, false, persist);
-    // A watcher's × takes the window off this page and keeps its record, so the
-    // old first console's `max` is written by id: the desk records one.
-    if (!gone && opts?.unmax && persist) unmaxRecord(opts.unmax);
     const shown = [];
     for (const p of list) {
       const win = findWindow(p.id);
