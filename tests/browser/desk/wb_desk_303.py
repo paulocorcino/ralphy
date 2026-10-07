@@ -713,6 +713,9 @@ def main():
                 and any(attached in u for u in reload_sockets),
                 f"held={held} records={[r['sessionId'] for r in records]} launches={launches}",
             )
+            # Read last before it shows, after a second more: a console that
+            # wakes late while still covered is caught too.
+            page.wait_for_timeout(1000)
             asleep = page.evaluate("() => document.querySelectorAll('.session-window')[0].classList.contains('dormant')")
             early = [u for u in reload_sockets if f"/ws/session?id={records[0]['sessionId']}&" in u]
             check(
