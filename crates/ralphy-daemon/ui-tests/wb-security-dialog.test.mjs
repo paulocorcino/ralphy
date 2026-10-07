@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { bindingNames, componentMarkup, loadComponent, loadShell, UI, withoutComments } from "./harness.mjs";
+import { WBSecurityDialog } from "../assets/ui/wb-security-dialog.ts";
 
 const HTML = readFileSync(join(UI, "index.html"), "utf8");
 
@@ -248,9 +249,8 @@ test("log off closes the dialog with the workbench:log-off event", async () => {
 // `app.ts` asks the modal stack with this path; it must be the path the dialog
 // gives to `scrim()`, or the shortcuts would never see the dialog open.
 test("openFlag is the path the Security dialog gives to scrim()", () => {
-  const { window } = dialog();
   const markup = componentMarkup(HTML, "wbSecurityDialog");
   const paths = [...markup.matchAll(/x-bind="scrim\('([^']+)'/g)].map((m) => m[1]);
   assert.deepEqual(paths, ["securityOpen"]);
-  assert.equal(window.WBSecurityDialog.openFlag, paths[0]);
+  assert.equal(WBSecurityDialog.openFlag, paths[0]);
 });

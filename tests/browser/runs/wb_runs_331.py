@@ -21,7 +21,7 @@ Scenario 6  run/triage/push disabled while locked, each stating the reason in it
 Scenario 7  the verbs re-enable within 15 s of the lock being released
 Scenario 8  a click path that is not gate-guarded reaches the CLI, and the CLI's
             refusal is surfaced as a panel line that outlives the 2.6 s action
-            flash (see app.js `verbLocked` on what the gate does and does not do)
+            flash (see app.ts `verbLocked` on what the gate does and does not do)
 
 Boots a Localhost daemon on 7421 over a SCRATCH `RALPHY_DAEMON_DIR`, so the
 operator's own daemon registry and login policy are untouched. The daemon is
@@ -195,7 +195,7 @@ def open_panel(page, slug):
 
 
 def feed(page, text):
-    """Push a raw chunk through the SAME door wb-daemon.js uses for run stdout."""
+    """Push a raw chunk through the SAME door wb-daemon.ts uses for run stdout."""
     page.evaluate("(t) => window.WBRuns.output(t)", text)
 
 

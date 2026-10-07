@@ -1,6 +1,6 @@
 // The Spend tab's model, folded from the daemon's `/api/spend` summary document
 // (PRD #355, tracer bullet #358). Pure: no DOM, no fetch — the fetch and the
-// rendering live in app.js/index.html, exactly as `wb-changes.js` splits them.
+// rendering live in app.ts/index.html, exactly as `wb-changes.ts` splits them.
 //
 // This module COMPUTES NOTHING NUMERIC. Every figure on screen — the total
 // (`$2,350.59+`), the `token_meter` (`↑12.4k ⚡184k ❄8.1k ↓3.2k`), each volume
@@ -271,7 +271,7 @@ const PERIODS = [
   { key: "90d", label: "Last 90 days" },
 ];
 
-// The whole pane, from the four things app.js knows: the open project, the
+// The whole pane, from the four things app.ts knows: the open project, the
 // in-flight/failed state of the fetch, the document the daemon returned, and
 // whatever issues the board already holds.
 //
@@ -586,7 +586,7 @@ export const WBSpend = {
   state,
 };
 
-// A classic script still reads this name (ADR-0075 D9).
+// `app.ts` and a browser check read this name (ADR-0075 D9).
 if (typeof window !== "undefined") window.WBSpend = WBSpend;
 
 declare global {

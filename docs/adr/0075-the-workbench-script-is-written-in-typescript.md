@@ -345,3 +345,75 @@ its parent is being hidden (#579). The vendored file is now
 which is 3.14.1. Its types are in `vendor/alpine.esm.d.ts`.
 `vendored_alpine_is_the_manifest_version` checks that the version inside the
 file is the manifest's.
+
+## Amendment (2026-10-07): phase 5, as measured
+
+Phase 5 moved the last 15 classic scripts and the page scripts of the two
+torn-off window pages to TypeScript, in six steps (#576). `CLASSIC_SCRIPTS`
+is empty, no page has an inline script, and the only `.js` files in
+`assets/ui/` are under `vendor/`: D10 is met.
+
+**The order follows the reads at load.** A module runs after every classic
+script, so a file that a classic script read while the page was parsed could
+not move before its reader. Three facts fixed the order:
+
+- `wb-console.js` read seven files at load: `WBGeometry`, `WBWindowState`,
+  `WBConsoleOpts`, `WBDeskSink`, `WBView`, `WBDetachLink` and `WBDeskSync`.
+  These eight files moved together, last.
+- `wb-console.js` started `fetch("/api/desk")` at load. Its `.then` reads
+  `WBDeskSink.setHold` and `WBConsoleName`, and the reply can arrive before
+  the module scripts run. So a read inside that `.then` counts as a read at
+  load.
+- Each torn-off page posts its "ready" message to the opener while it is
+  parsed, and the opener's reply runs code that reads `WBViewer`,
+  `WBConsole`, `WBColumns` and `WBNotes`. Once one of those is a module, the
+  reply can arrive before it has run. So the page scripts moved first, while
+  every name they read was still classic.
+
+The steps were: the torn-off page scripts (`wb-detached.ts`,
+`wb-detached-fence.ts`); the files no classic script read at load
+(`wb-columns`, `wb-monaco`, `wb-daemon`, `wb-session-route`, `wb-device`);
+`wb-viewer`; `wb-notes`; `wb-console` with its seven inputs; and the window
+names.
+
+**Importing a module does nothing but define.** A module that does work for
+its page at load (listeners, a `fetch`, a timer, reading `location` or
+`sessionStorage`) exports `create<Name>(window, document, …)`, which returns
+the instance, or `wire<Name>(window, document)`. The parameters have the
+names of the globals they replace, so the old body did not change, and each
+call starts with new state (D7): `createConsole`, `createDaemon`,
+`createViewer`, `createNotes`, `wireDetached`, `wireDetachedFence`. Two
+values stay at module scope, because each is once per document: the Monaco
+loader promise and the tab holder of `wb-session-route.ts`. The tab id and
+the hold of `wb-desk-sink.ts` are once per document too; the test loaders
+clear the hold for each new page.
+
+**The boot order of the consoles.** The classic `wb-console.js` tag ran
+before every module, and its `boot()` waited for `DOMContentLoaded`, which
+fires after the module scripts. Now `main.ts` creates the consoles first,
+then the daemon door, the file pane and the note cards, sets each on
+`window`, calls `wire(window, document)`, calls `Alpine.start()`, and then
+calls `WBConsole.boot()`. `detached-fence-main.ts` holds what the page's
+inline script did (the five options the popup denies), creates the consoles,
+the daemon door and the note cards, calls `wireDetachedFence`, and calls
+`boot()` last. `detached-main.ts` creates the file pane before
+`wireDetached`. An instance exists before its page posts "ready".
+
+**The names that stay on `window`.** A module reads another module's export
+by `import`. A module sets a `window.WB<Name>` name only while a reader
+outside the modules reads it there. `MODULE_WINDOW_NAMES` lists ten:
+
+- `WB`, `WBConsole`, `WBDaemon`, `WBNotes`, `WBViewer`: the page instances.
+  The entry module creates them for its page, and the modules read them on
+  `window`. Browser checks read the last four, the opener reads
+  `popup.WBViewer`, and the `index.html` markup reads `WBConsole`.
+- `WBConsoleName`: the `index.html` markup reads it.
+- `WBView`, `WBKanban`, `WBSpend`, `WBRuns`: browser checks read them.
+
+The other 21 names that a module set during the migration are gone, with
+`wbClientKeys`, `wbSettingsDefaults` and `wbQr`.
+
+**Lines.** The 15 classic files had 14,932 lines; the 15 modules have
+14,975. The two page scripts are now `wb-detached.ts` (94 lines) and
+`wb-detached-fence.ts` (336 lines): `detached.html` went from 150 to 57
+lines, and `detached-fence.html` from 490 to 117.

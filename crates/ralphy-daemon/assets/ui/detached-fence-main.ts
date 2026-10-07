@@ -1,9 +1,5 @@
 // The entry module of `detached-fence.html` (ADR-0075 D5). The page has no
-// Alpine: each import sets the `window` name the page's code reads (D9).
-import "./wb-fleet.ts";
-import "./wb-fail.ts";
-import "./wb-session-route.ts";
-import "./wb-columns.ts";
+// Alpine.
 import { WBDeskSink } from "./wb-desk-sink.ts";
 import { WBDetachLink } from "./wb-detach-link.ts";
 import { createConsole } from "./wb-console.ts";

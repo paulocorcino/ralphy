@@ -4,7 +4,7 @@
    hits needs loaded before the tree can narrow to them, what the gutter says
    about a reply, and which folders to fold back when the search is cleared.
 
-   No `this`, no tree, no socket: `app.js` owns the Wunderbaum instance and the
+   No `this`, no tree, no socket: `app.ts` owns the Wunderbaum instance and the
    `WBDaemon.observe` call and delegates every decision here, so the decisions
    are testable without a browser (ADR-0057 D4). The tree is what is filtered;
    there is no results panel, so nothing here builds one.
@@ -84,12 +84,3 @@ export const WBFileSearch = {
   toCollapse,
   hitMap,
 };
-
-// A classic script still reads this name (ADR-0075 D9).
-if (typeof window !== "undefined") window.WBFileSearch = WBFileSearch;
-
-declare global {
-  interface Window {
-    WBFileSearch: typeof WBFileSearch;
-  }
-}

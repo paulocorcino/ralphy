@@ -11,9 +11,9 @@
    is per-client view state (ADR-0051 §8): no column writes a desk rect or a
    verb. An empty grid is a lone maximized console, or none.
 
-   Nothing here reads the DOM, the store or a module-scope binding: `app.js`
-   holds the grid, feeds it through these functions, and `wb-console.js`
-   paints the answer. Same shape as `wb-split.js`.
+   Nothing here reads the DOM, the store or a module-scope binding: `app.ts`
+   holds the grid, feeds it through these functions, and `wb-console.ts`
+   paints the answer. Same shape as `wb-split.ts`.
 
    Imported by the workbench entry module BEFORE `app.ts` runs. The detached-fence
    popup imports it too, for its own grid, which it never stores (ADR-0051 §8,
@@ -366,12 +366,3 @@ export const WBColumns = (function () {
     filterGroups,
   };
 })();
-
-// `app.ts` and the detached fence page read this name (ADR-0075 D9).
-if (typeof window !== "undefined") window.WBColumns = WBColumns;
-
-declare global {
-  interface Window {
-    WBColumns: typeof WBColumns;
-  }
-}

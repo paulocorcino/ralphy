@@ -101,12 +101,3 @@ export const WBDeskSink = (function () {
 
   return { daemon, none, tabId, setHold };
 })();
-
-// `app.ts` reads this name (ADR-0075 D9).
-if (typeof window !== "undefined") window.WBDeskSink = WBDeskSink;
-
-declare global {
-  interface Window {
-    WBDeskSink: typeof WBDeskSink;
-  }
-}

@@ -256,12 +256,9 @@ export const WBMonaco = (function () {
   return { ready, create, createOver, createDiff, gutterOptions, TOKENS };
 })();
 
-// A browser check still reads this name (ADR-0075 D9).
-if (typeof window !== "undefined") window.WBMonaco = WBMonaco;
 
 declare global {
   interface Window {
-    WBMonaco: typeof WBMonaco;
     /** The AMD loader of the vendored Monaco. */
     require: any;
     monaco: any;

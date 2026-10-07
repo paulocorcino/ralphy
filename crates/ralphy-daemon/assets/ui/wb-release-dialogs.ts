@@ -13,6 +13,7 @@
    `main.ts` registers it as `wbReleaseDialogs` (ADR-0075 D5).
    --------------------------------------------------------------------------- */
 import { component } from "./wb-alpine.ts";
+import { WBRelease } from "./wb-release.ts";
 
 export function releaseDialogs() {
   // Every `shell()` member this component's code or markup reads or calls.
@@ -117,7 +118,7 @@ export function releaseDialogs() {
       this.relUpdate = { ...u, phase: "running", error: "" };
       let result;
       try {
-        result = await window.WBRelease.update(u.needCode ? code : "");
+        result = await WBRelease.update(u.needCode ? code : "");
       } catch (e) {
         result = { ok: false, status: 0, message: "" };
       }
@@ -145,7 +146,7 @@ export function releaseDialogs() {
       let sawGap = false;
       while (Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, pause));
-        const view = await window.WBRelease.read();
+        const view = await WBRelease.read();
         if (!view) {
           sawGap = true;
           continue;
@@ -170,9 +171,9 @@ export function releaseDialogs() {
       };
     },
     async setReleaseWatch(enable: boolean) {
-      if (!window.WBRelease) return;
+      if (!WBRelease) return;
       try {
-        await window.WBRelease.setWatch(enable);
+        await WBRelease.setWatch(enable);
         this.releaseWatchChanged(enable);
       } catch (e) {
         // A preference: the next read reports what actually took.
@@ -210,10 +211,3 @@ export function releaseDialogs() {
 // to `scrim()`. Code outside the component asks the modal stack with it
 // (`modalOpen`), and never reads the flag (ADR-0073 D5).
 export const WBReleaseDialogs = { whatsNewFlag: "whatsNewOpen" };
-// app.js, a classic script, still reads this name (ADR-0075 D9).
-if (typeof window !== "undefined") window.WBReleaseDialogs = WBReleaseDialogs;
-declare global {
-  interface Window {
-    WBReleaseDialogs: typeof WBReleaseDialogs;
-  }
-}

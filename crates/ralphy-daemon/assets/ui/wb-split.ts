@@ -9,12 +9,12 @@
    never a tree of groups; the arrangement is per-client view state
    (ADR-0051 §8), never desk state.
 
-   Nothing here reads the DOM, the store or a module-scope binding: `app.js`
+   Nothing here reads the DOM, the store or a module-scope binding: `app.ts`
    holds `slot`/`splitRatio`/`lastLeft`, feeds them through `resolve` on every
    `syncViewer`, and `wb-viewer.ts` paints the answer. Same shape as
-   `wb-geometry.js` → `wb-console.js`.
+   `wb-geometry.ts` → `wb-console.ts`.
 
-   Load order: BEFORE `app.js`; nothing else reads this namespace.
+   Load order: BEFORE `app.ts`; nothing else reads this namespace.
    --------------------------------------------------------------------------- */
 // Below this canvas width the split is unavailable — single pane, the slot
 // kept but not painted. Two 280px editors plus the divider is the floor at
@@ -84,7 +84,7 @@ function afterClose(slot: Slot, closedId: string) {
 
 // The left column's share of the canvas after a divider drag: the pointer's
 // x over the width, held so neither pane drops under `MIN_PANE` nor under a
-// fifth of the canvas — the range `wb-view.js` accepts back from the store.
+// fifth of the canvas — the range `wb-view.ts` accepts back from the store.
 const MIN_RATIO = 0.2;
 function clampRatio(px: number, width: number, minPane = MIN_PANE) {
   if (!Number.isFinite(width) || width <= 0) return DEFAULT_RATIO;
@@ -135,12 +135,3 @@ export const WBSplit = {
   toStored,
   fromStored,
 };
-
-// A classic script still reads this name (ADR-0075 D9).
-if (typeof window !== "undefined") window.WBSplit = WBSplit;
-
-declare global {
-  interface Window {
-    WBSplit: typeof WBSplit;
-  }
-}

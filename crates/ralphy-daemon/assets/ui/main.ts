@@ -6,30 +6,16 @@
    vendor scripts, so every vendor name is in place when Alpine starts.
    --------------------------------------------------------------------------- */
 import Alpine from "./vendor/alpine.esm.js";
-// In the order of the page's old module tags. A module sets the `window` name
-// that a classic script still reads (D9), so a bare import is not dead code.
-import "./wb-fail.ts";
-import "./wb-agents.ts";
-import "./wb-changes.ts";
-import "./wb-fleet.ts";
-import "./wb-project.ts";
-import "./wb-file-search.ts";
+// In the order of the page's old module tags. The two bare imports set the
+// `window` names `app.ts` and browser checks read (D9): not dead code.
 import { devices } from "./wb-devices.ts";
-import "./wb-split.ts";
-import "./wb-settings.ts";
 import { settingsDialog } from "./wb-settings-dialog.ts";
-import "./wb-desk-history.ts";
-import "./wb-runs.ts";
 import "./wb-kanban.ts";
 import "./wb-spend.ts";
-import "./wb-release.ts";
 import { releaseDialogs } from "./wb-release-dialogs.ts";
 import { hostsDialog } from "./wb-hosts-dialog.ts";
-import "./wb-add-project.ts";
 import { addProjectDialog } from "./wb-add-project-dialog.ts";
 import { securityDialog } from "./wb-security-dialog.ts";
-import "./wb-columns.ts";
-import "./wb-monaco.ts";
 import { createDaemon } from "./wb-daemon.ts";
 import { WBDevice } from "./wb-device.ts";
 import { createViewer } from "./wb-viewer.ts";

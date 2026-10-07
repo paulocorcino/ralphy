@@ -6,7 +6,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { WBProject } from "../assets/ui/wb-project.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 import { createDaemon } from "../assets/ui/wb-daemon.ts";
@@ -211,8 +210,6 @@ function loadWithSocket(replyFor) {
   const window = { addEventListener() {} };
   const document = { addEventListener() {} };
   const location = { protocol: "http:", host: "127.0.0.1:7431" };
-  // `checkoutAfter`'s real rule, from the real module.
-  window.WBProject = WBProject;
   class FakeSocket {
     constructor() {
       this.binaryType = "";

@@ -700,10 +700,10 @@ def main():
                 # are what actually enforce it: no desk vocabulary, no desk ids.
                 # The console preferences (keys, font) and the column grid
                 # (columns, columnDir, ADR-0051 §8 amendment) joined the record
-                # after this check was written; `wb-view.js read()` normalises
+                # after this check was written; `wb-view.ts read()` normalises
                 # every field it knows, so `patch` writes them all back. `command`
                 # — the free console's stored startup command — was DROPPED from
-                # the record (wb-view.js ~40-43).
+                # the record (wb-view.ts ~40-43).
                 "…whose shape carries only the view: v, off, tabs, active, relaunch,"
                 " keys, font, split, columns, columnDir",
                 set(stored.keys())

@@ -1302,13 +1302,13 @@ fn the_release_badge_and_panel_are_pinned_in_the_served_assets() {
         "the shell reads it at init"
     );
     assert!(
-        app.contains("window.WBRelease.isSticky(this.release)"),
+        app.contains("WBRelease.isSticky(this.release)"),
         "an urgent release must survive a dismissal"
     );
     // The panel's flag is in wb-release-dialogs.ts; the shortcuts ask the
     // modal stack by its path (ADR-0073 D5).
     assert!(
-        app.contains("if (this.modalOpen(window.WBReleaseDialogs.whatsNewFlag)) return true;"),
+        app.contains("if (this.modalOpen(WBReleaseDialogs.whatsNewFlag)) return true;"),
         "the panel must join the focus trap"
     );
     assert!(
@@ -4151,47 +4151,29 @@ fn every_ui_test_file_is_imported_by_the_barrel() {
 /// nothing joins it. Empty: every first-party `.js` file is refused.
 const CLASSIC_SCRIPTS: &[&str] = &[];
 
-/// The `window.WB*` names a module still sets, because markup, `app.ts`,
-/// another module or a browser check reads them on `window` (ADR-0075 D9). A
-/// ratchet like `CLASSIC_SCRIPTS`.
+/// The `window.WB*` names a module still sets. A name stays only while a
+/// reader outside the modules reads it on `window`: the `index.html` markup,
+/// another page's code (`popup.WBViewer`), or a browser check. A module reads
+/// a module's export by `import`; a page instance (`WB`, `WBConsole`,
+/// `WBDaemon`, `WBNotes`, `WBViewer`) is the entry module's to set (ADR-0075
+/// D9). A ratchet like `CLASSIC_SCRIPTS`.
 const MODULE_WINDOW_NAMES: &[&str] = &[
     "WB",
-    "WBAddProject",
-    "WBAgents",
-    "WBChanges",
-    "WBColumns",
     "WBConsole",
     "WBConsoleName",
     "WBDaemon",
-    "WBDeskHistory",
-    "WBDeskSink",
-    "WBFail",
-    "WBFileSearch",
-    "WBFleet",
-    "WBGeometry",
     "WBKanban",
-    "WBMonaco",
     "WBNotes",
-    "WBProject",
-    "WBRelease",
-    "WBReleaseDialogs",
-    "WBRun",
     "WBRuns",
-    "WBSecurityDialog",
-    "WBSessionRoute",
-    "WBSettingsDialog",
     "WBSpend",
-    "WBSplit",
     "WBView",
     "WBViewer",
-    "WB_SETTINGS",
-    "WB_TRISTATE",
 ];
 
 /// ADR-0075 D1, D2, D8 and D10: first-party workbench code is TypeScript. A
 /// `.js` file in the source tree is a vendored file or a classic script on the
-/// list that only gets shorter; a module sets no `window.WB*` name a classic
-/// script does not need; the `file://` demo does not come back.
+/// list that only gets shorter; a module sets no `window.WB*` name that no
+/// reader outside the modules needs; the `file://` demo does not come back.
 #[test]
 fn first_party_scripts_move_to_typescript_and_never_back() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/ui");
@@ -4232,7 +4214,7 @@ fn first_party_scripts_move_to_typescript_and_never_back() {
             if rest[ident.len()..].trim_start().starts_with("= ") {
                 assert!(
                     MODULE_WINDOW_NAMES.contains(&ident.as_str()),
-                    "{name} sets window.{ident}: a module exports; it sets a window name only while a classic script reads it"
+                    "{name} sets window.{ident}: a module exports; it sets a window name only while markup, another page or a browser check reads it"
                 );
             }
         }
@@ -6895,7 +6877,7 @@ fn the_run_picker_names_the_model_and_clocks_the_phase() {
     // is what subscribes the binding to it — a `Date.now()` inside `runClock`
     // would leave the clock frozen with every pin above still green.
     assert!(
-        app.contains("return window.WBRun.phaseClock(run, this.nowMs);"),
+        app.contains("return WBRun.phaseClock(run, this.nowMs);"),
         "runClock must read the reactive `nowMs`, not the clock directly"
     );
     // The GUARD and the period, not the whole interval body: the tick is a
@@ -7024,7 +7006,7 @@ fn the_label_editor_is_unclipped_and_closed_under_a_live_run() {
     // beside it start disagreeing. The sentence itself is driven by
     // `ui-tests/wb-changes.test.mjs`.
     assert!(
-        js_method_body(app_js, "labelLockReason() {").contains("window.WBChanges.writeLockReason("),
+        js_method_body(app_js, "labelLockReason() {").contains("WBChanges.writeLockReason("),
         "the label reason must reuse writeLockReason, not parallel it"
     );
     assert!(
@@ -7426,7 +7408,7 @@ fn a_refused_branch_change_reports_in_the_projects_panel() {
     // The revert is on the REFUSAL arm only: a throw may have landed, and
     // reverting a switch that happened would put a lie in the chip.
     assert!(
-        mutate.contains("revert();this._branchRefused(window.WBFail.failed(reply,"),
+        mutate.contains("revert();this._branchRefused(WBFail.failed(reply,"),
         "only a refusal reverts the optimistic chip, and it reports"
     );
 
@@ -7467,9 +7449,7 @@ fn the_worktree_row_remove_action_stops_the_selecting_click() {
     );
     let app_js = include_str!("../assets/ui/app.ts");
     assert!(
-        app_js.contains(
-            "window.WBProject.checkoutAfterListing(ck, this.worktreeListings[slug]) === null"
-        ),
+        app_js.contains("WBProject.checkoutAfterListing(ck, this.worktreeListings[slug]) === null"),
         "the selection resets from the re-read listing, never from the reply's status"
     );
     let remove = app_js
@@ -7793,7 +7773,7 @@ fn the_run_completion_nudge_is_wired_through_the_ui_assets() {
     );
     assert!(
         include_str!("../assets/ui/app.ts")
-            .contains("window.WBChanges?.shouldReload?.(frame, this.openSlug)"),
+            .contains("WBChanges?.shouldReload?.(frame, this.openSlug)"),
         "app.ts must filter each nudge through shouldReload (#310)"
     );
 }

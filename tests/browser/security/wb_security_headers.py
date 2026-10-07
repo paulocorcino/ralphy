@@ -1,7 +1,7 @@
 """Security audit 2026-09-21 F3 browser acceptance: the CSP breaks nothing.
 
 One Playwright pass over a REAL daemon proving the response headers ride every
-answer and that the Content-Security-Policy — hash-allowed inline scripts,
+answer and that the Content-Security-Policy — module scripts from self,
 `'unsafe-eval'` for Alpine, `blob:` workers for Monaco, `data:` images for the
 QR — produces ZERO `securitypolicyviolation` events across the surfaces that
 need each allowance.
@@ -12,7 +12,7 @@ Scenario 2  the shell boots (Alpine evaluates) with no violation
 Scenario 3  a .rs tab mounts Monaco — its language worker is a blob: worker
 Scenario 4  a markdown tab with a mermaid block renders the SVG (inline styles)
 Scenario 5  the Security modal enrols TOTP and shows the QR (`data:` image)
-Scenario 6  detached.html and detached-fence.html boot their inline scripts
+Scenario 6  detached.html and detached-fence.html boot their entry modules
 Scenario 7  opening a project dials /ws/tree — a refused ws: would be a violation
 
 Boots a Localhost daemon on 7409 over a SCRATCH `RALPHY_DAEMON_DIR`, so the
@@ -223,7 +223,7 @@ def main():
             page.screenshot(path=os.path.join(SHOT_DIR, "sec-audit-f3-csp-2026-09-21.png"))
             page.evaluate(f"{SEC}.cancelEnroll()")
 
-            # ── 6. the popups' inline scripts are hash-allowed ────────────
+            # ── 6. the popups boot their entry modules ────────────────────
             for popup in ("detached.html", "detached-fence.html"):
                 p2 = ctx.new_page()
                 p2.goto(BASE + popup)

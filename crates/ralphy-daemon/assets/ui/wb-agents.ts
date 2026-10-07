@@ -129,12 +129,3 @@ export const WBAgents = {
   NEEDS_REPO,
   NOT_INSTALLED,
 };
-
-// A classic script still reads this name (ADR-0075 D9).
-if (typeof window !== "undefined") window.WBAgents = WBAgents;
-
-declare global {
-  interface Window {
-    WBAgents: typeof WBAgents;
-  }
-}

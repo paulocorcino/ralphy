@@ -370,12 +370,3 @@ export const WBChanges = {
   discardConfirm,
   groupDiscardNote,
 };
-
-// A classic script still reads this name (ADR-0075 D9).
-if (typeof window !== "undefined") window.WBChanges = WBChanges;
-
-declare global {
-  interface Window {
-    WBChanges: typeof WBChanges;
-  }
-}

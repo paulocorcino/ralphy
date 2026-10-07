@@ -46,7 +46,7 @@ PORT = 7465
 T.PORT = PORT
 T.BASE = BASE = f"http://127.0.0.1:{PORT}/"
 VIEW = {"width": 1600, "height": 900}
-# `DORMANT_AFTER_MS` in wb-console.js, plus the time to close and log.
+# `DORMANT_AFTER_MS` in wb-console.ts, plus the time to close and log.
 SLEEP_WAIT_S = 25
 FLOOR = 11  # every check above the floor check; pinned after the first green run
 

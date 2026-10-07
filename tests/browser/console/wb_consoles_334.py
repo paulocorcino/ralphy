@@ -305,7 +305,7 @@ WS_SPY = """
   }
   Spy.prototype = Native.prototype;
   // The client reads `WebSocket.OPEN`; without these the readyState guards in
-  // wb-console.js compare against `undefined` and every send is dropped.
+  // wb-console.ts compare against `undefined` and every send is dropped.
   Spy.CONNECTING = Native.CONNECTING;
   Spy.OPEN = Native.OPEN;
   Spy.CLOSING = Native.CLOSING;

@@ -271,12 +271,3 @@ export const WBGeometry = (function () {
     resizeRect,
   };
 })();
-
-// `wb-notes.ts` reads this name (ADR-0075 D9).
-if (typeof window !== "undefined") window.WBGeometry = WBGeometry;
-
-declare global {
-  interface Window {
-    WBGeometry: typeof WBGeometry;
-  }
-}

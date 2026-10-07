@@ -8,7 +8,7 @@
 
    Nothing here reads the DOM, the store or a module-scope binding:
    `wb-console.ts` holds the desk and the windows, feeds them through these
-   functions, and paints the answer. Same shape as `wb-columns.js`. The caller
+   functions, and paints the answer. Same shape as `wb-columns.ts`. The caller
    turns a repo ref into its slug (the routing head removed) before
    `prefixOf`, so this module never reads `WBFleet`.
 
@@ -95,7 +95,7 @@ export const WBConsoleName = (function () {
   };
 })();
 
-// `app.ts` and the `index.html` markup read this name (ADR-0075 D9).
+// The `index.html` markup and `app.ts` read this name (ADR-0075 D9).
 if (typeof window !== "undefined") window.WBConsoleName = WBConsoleName;
 
 declare global {

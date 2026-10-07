@@ -5,7 +5,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadShell, UI, withoutComments } from "./harness.mjs";
+import { UI, withoutComments } from "./harness.mjs";
+import { WB_SETTINGS } from "../assets/ui/wb-settings.ts";
 
 // A password field is kept out of the DOM while its modal is closed (the
 // browser's password manager pairs any `type="password"` in the document with
@@ -42,8 +43,7 @@ test("each modal's password fields render when THAT modal is open", () => {
 // row declares it read-only and the toggle that renders it is disabled: a
 // checkbox that takes a click and answers "refused" is the failure.
 test("the read-every-comment toggle is read-only and rendered disabled", () => {
-  const { window } = loadShell();
-  const item = window.WB_SETTINGS.flatMap((s) => s.items).find(
+  const item = WB_SETTINGS.flatMap((s) => s.items).find(
     (it) => it.key === "queue.trust_all_comments",
   );
   assert.equal(item.type, "toggle");

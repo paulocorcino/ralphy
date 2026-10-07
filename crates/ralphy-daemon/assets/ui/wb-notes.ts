@@ -1,6 +1,6 @@
 // The note CARD: a note's view on the consoles stage (ADR-0064 §§2, 7–14).
 //
-// The split this file rests on: `wb-console.js` owns the desk — the `notes`
+// The split this file rests on: `wb-console.ts` owns the desk — the `notes`
 // records, the flush, the fold against other pages — and this file owns the
 // card: its DOM, its gestures' bindings, its editor, its autosave. Nothing here
 // touches `/api/desk`; every placement change goes through
@@ -13,8 +13,11 @@
 //
 // Loaded in the shell AND in the detached-fence popup, so: no module-scope DOM
 // read, no `fetch`, no timer at load (the ui-tests evaluate this file under a
-// stub document), and no browser store of its own — `wb-view.js` holds the one
+// stub document), and no browser store of its own — `wb-view.ts` holds the one
 // there is (#339).
+import { WBFail } from "./wb-fail.ts";
+import { WBGeometry } from "./wb-geometry.ts";
+
 export function createNotes(window: any, document: any) {
   // The card's floor. Below a console's minimum on purpose: a note is often a
   // three-line reminder, and forcing it to a console's footprint would make
@@ -417,7 +420,7 @@ export function createNotes(window: any, document: any) {
   // is why the fence's lock is NOT copied onto the record.
   function lockedBy(record: any, fences: any) {
     if (record?.locked) return "self";
-    const held = window.WBGeometry?.fenceOf?.(fences || [], record?.rect || {});
+    const held = WBGeometry?.fenceOf?.(fences || [], record?.rect || {});
     return held?.locked ? "fence" : null;
   }
 
@@ -453,7 +456,7 @@ export function createNotes(window: any, document: any) {
     if (!fences || !fences.length) return first;
     for (let i = 0; i < SPAWN_SLOTS; i++) {
       const rect = at(start + i);
-      if (!window.WBGeometry?.fenceOf?.(fences, rect)) return rect;
+      if (!WBGeometry?.fenceOf?.(fences, rect)) return rect;
     }
     return first;
   }
@@ -585,7 +588,7 @@ export function createNotes(window: any, document: any) {
     el.classList.toggle("locked", !!locked);
     const btn = el.querySelector(".note-lock");
     if (btn) {
-      // The console's own two glyphs, verbatim (`wb-console.js`'s `applyLock`):
+      // The console's own two glyphs, verbatim (`wb-console.ts`'s `applyLock`):
       // one lock on the plane, not one per surface.
       btn.innerHTML = locked ? '<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-unlock"></i>';
       btn.title = locked ? "Unlock this note" : "Lock this note in place";
@@ -857,7 +860,7 @@ export function createNotes(window: any, document: any) {
     // The rename field (ADR-0064 §11), in the footer beside the path it
     // replaces while an edit is open. An INPUT and not `window.prompt`: the
     // native dialog is dismissed by default in an automated browser, which is
-    // exactly the objection `wb-console.js` records against `window.confirm`.
+    // exactly the objection `wb-console.ts` records against `window.confirm`.
     const rename = document.createElement("input");
     rename.className = "note-rename";
     rename.setAttribute("aria-label", "New file name for this note");
@@ -1060,8 +1063,8 @@ export function createNotes(window: any, document: any) {
       window.WBDaemon.withCheckout({ repo: record.repo, path: record.path }, record.checkout),
     )
       .then((reply: any) => {
-        if (window.WBFail.isError(reply)) {
-          const reason = window.WBFail.message(reply, "Could not read the file.");
+        if (WBFail.isError(reply)) {
+          const reason = WBFail.message(reply, "Could not read the file.");
           // A file that is not ours is not a missing note — it is someone
           // else's file under our extension (ADR-0064 §11). The card goes and
           // the shell says so; keeping it would put an editor over bytes and
@@ -1086,7 +1089,7 @@ export function createNotes(window: any, document: any) {
           // The reason in the footer, beside the path that footer already
           // shows — and the whole of it on hover, because `.note-state` is a
           // narrow box and "not found" alone is the half that matters.
-          const said = window.WBFail.why(reply, "the file could not be read");
+          const said = WBFail.why(reply, "the file could not be read");
           paintMissing(el, said, `${record.path} — ${said}`);
           // An editor over what the card still holds — the unsaved text if
           // there is any, and an empty document if the read is all this card
@@ -1109,7 +1112,7 @@ export function createNotes(window: any, document: any) {
         return mountEditor(el, reply.markdown || "");
       })
       .catch((err: any) => {
-        paintMissing(el, window.WBFail.cause({ message: err?.message }, "The daemon did not answer."));
+        paintMissing(el, WBFail.cause({ message: err?.message }, "The daemon did not answer."));
         return null;
       });
   }
@@ -1194,7 +1197,7 @@ export function createNotes(window: any, document: any) {
   // debounce, `focusout`, `Ctrl+S`, `flushAll`). Two overlapping writes can
   // land oldest-last, and the newer reply has already cleared the dirty flag —
   // the card would then show text the file does not hold, with nothing
-  // scheduled to fix it. `wb-desk-sink.js` chains its writes for exactly
+  // scheduled to fix it. `wb-desk-sink.ts` chains its writes for exactly
   // this reason and this is the same shape.
   function flush(el: any) {
     clearTimeout(el._noteTimer);
@@ -1249,11 +1252,11 @@ export function createNotes(window: any, document: any) {
       )
         .then((reply: any) => {
           el._noteInFlight = false;
-          if (window.WBFail.isError(reply)) {
+          if (WBFail.isError(reply)) {
             // The text stays in the editor and the card stays dirty: the next
             // keystroke schedules another attempt, and nothing was lost.
             el.classList.add("danger");
-            paintState(el, window.WBFail.failed(reply, "Could not save: the daemon gave no reason."));
+            paintState(el, WBFail.failed(reply, "Could not save: the daemon gave no reason."));
             return;
           }
           el.classList.remove("danger");
@@ -1293,7 +1296,7 @@ export function createNotes(window: any, document: any) {
         .catch((err: any) => {
           el._noteInFlight = false;
           el.classList.add("danger");
-          paintState(el, window.WBFail.cause({ message: err?.message }, "The daemon did not answer."));
+          paintState(el, WBFail.cause({ message: err?.message }, "The daemon did not answer."));
         });
     });
   }
@@ -1337,7 +1340,7 @@ export function createNotes(window: any, document: any) {
         // A dropped socket mid-probe must not leave the card unable to ever
         // name itself: clear the memo and say why.
         el._noteNaming = null;
-        paintState(el, window.WBFail.cause({ message: err?.message }, "The daemon did not answer."));
+        paintState(el, WBFail.cause({ message: err?.message }, "The daemon did not answer."));
         return null;
       });
     return el._noteNaming;
@@ -1354,7 +1357,7 @@ export function createNotes(window: any, document: any) {
       "note.read",
       window.WBDaemon.withCheckout({ repo: record.repo, path }, record.checkout),
     ).then((reply: any) => {
-      const reason = window.WBFail.isError(reply) ? window.WBFail.message(reply, "") : null;
+      const reason = WBFail.isError(reply) ? WBFail.message(reply, "") : null;
       // Only "not found" means free: "not a note" is a file that exists and is
       // something else, and writing over it would destroy it.
       if (reason === "not found") return path;
@@ -1564,7 +1567,7 @@ export function createNotes(window: any, document: any) {
         // The SCHEME is an allowlist, and that is a security control, not
         // tidiness. The viewer's `linkTarget` answers "external" for ANY
         // scheme and leaves it to the browser — safe there only because the
-        // viewer's markdown went through DOMPurify first (wb-viewer.js), which
+        // viewer's markdown went through DOMPurify first (wb-viewer.ts), which
         // drops a `javascript:` href. A note's markdown never meets that pass:
         // Crepe renders the link straight into the document, so a `.note` file
         // — repo bytes, which an agent may have written — could otherwise run
@@ -1602,7 +1605,7 @@ export function createNotes(window: any, document: any) {
     return SAFE_SCHEMES.includes(scheme[1].toLowerCase() + ":");
   }
 
-  // The detached-fence popup loads no `wb-viewer.js`, so without this every
+  // The detached-fence popup loads no `wb-viewer.ts`, so without this every
   // link in a note there would fall into the `!target` branch and silently do
   // nothing. A repo-relative link still cannot be opened from a popup that has
   // no explorer — that one stays inert, and says so by doing nothing.
@@ -1825,7 +1828,7 @@ export function createNotes(window: any, document: any) {
   // not an owner), so a reload works this out again from the fence registry
   // instead of restoring a set that died with the document.
   function isAway(record: any, fences: any) {
-    const held = window.WBGeometry?.fenceOf?.(fences || [], record?.rect || {});
+    const held = WBGeometry?.fenceOf?.(fences || [], record?.rect || {});
     return !!held && !!window.WBConsole?.isDetached?.(held.id);
   }
 
@@ -1969,14 +1972,14 @@ export function createNotes(window: any, document: any) {
     )
       .then((reply: any) => {
         if (el._noteGone) return null;
-        if (!window.WBFail.isError(reply)) {
+        if (!WBFail.isError(reply)) {
           el._noteClaim = null;
           patch(record.id, { path: home.claim });
           el._noteSavedAt = Number(reply.modified) || null;
           return mountEditor(el, reply.markdown || "");
         }
         // "not a note" is someone else's file under that name: step past it.
-        if (window.WBFail.message(reply, "") !== "not found") {
+        if (WBFail.message(reply, "") !== "not found") {
           el._noteClaim = null;
           paintPath(el, "");
         }
@@ -2163,7 +2166,7 @@ export function createNotes(window: any, document: any) {
         }
         const delta = { dx: at.x - from.x, dy: at.y - from.y };
         const box = dir
-          ? window.WBGeometry.resizeRect(dir, start, delta, NOTE_MIN, vp)
+          ? WBGeometry.resizeRect(dir, start, delta, NOTE_MIN, vp)
           : onTopClamp({ ...start, left: start.left + delta.dx, top: start.top + delta.dy }, vp);
         placeOnTop(el, box);
       };
@@ -2425,7 +2428,7 @@ export function createNotes(window: any, document: any) {
   // chip — so the table drops it and this line carries it instead.
   const MARKDOWN_HELP_NOTE = "Type a space after a mark to apply it.";
 
-  // Borrowed from `wb-console.js`'s `askConfirm`: the shell's modal CLASSES
+  // Borrowed from `wb-console.ts`'s `askConfirm`: the shell's modal CLASSES
   // over DOM this module builds itself, so the card keeps working in the
   // detached-fence popup, which has no Alpine and no modal markup.
   function markdownHelp() {
@@ -2577,15 +2580,15 @@ export function createNotes(window: any, document: any) {
     const to = (dir ? dir + "/" : "") + name;
     window.WBDaemon.write("file.rename", { repo: record.repo, path: record.path, to })
       .then((reply: any) => {
-        if (window.WBFail.isError(reply)) {
-          paintState(el, window.WBFail.failed(reply, "Could not rename: the daemon gave no reason."));
+        if (WBFail.isError(reply)) {
+          paintState(el, WBFail.failed(reply, "Could not rename: the daemon gave no reason."));
           return;
         }
         patch(record.id, { path: to });
         paintPath(el, to);
         paintState(el, "Renamed");
       })
-      .catch((err: any) => paintState(el, window.WBFail.cause({ message: err?.message }, "The daemon did not answer.")));
+      .catch((err: any) => paintState(el, WBFail.cause({ message: err?.message }, "The daemon did not answer.")));
   }
 
   // Delete the file — a SEPARATE act from closing the card (§11), confirmed,
@@ -2602,8 +2605,8 @@ export function createNotes(window: any, document: any) {
       if (!ok) return;
       window.WBDaemon.write("file.delete", { repo: record.repo, path: record.path })
         .then((reply: any) => {
-          if (window.WBFail.isError(reply)) {
-            paintState(el, window.WBFail.failed(reply, "Could not delete: the daemon gave no reason."));
+          if (WBFail.isError(reply)) {
+            paintState(el, WBFail.failed(reply, "Could not delete: the daemon gave no reason."));
             return;
           }
           // The record goes without a toast: an undo that cannot put the file
@@ -2614,7 +2617,7 @@ export function createNotes(window: any, document: any) {
           );
           render();
         })
-        .catch((err: any) => paintState(el, window.WBFail.cause({ message: err?.message }, "The daemon did not answer.")));
+        .catch((err: any) => paintState(el, WBFail.cause({ message: err?.message }, "The daemon did not answer.")));
     });
   }
 
@@ -2668,7 +2671,7 @@ export function createNotes(window: any, document: any) {
     return (window.WBConsole?.notes?.() || []).map((record: any) => {
       const el = cardEl(record.id);
       const markdown = el?._noteMarkdown || "";
-      const fence = window.WBGeometry?.fenceOf?.(fences, record.rect || {});
+      const fence = WBGeometry?.fenceOf?.(fences, record.rect || {});
       return {
         id: record.id,
         title: titleOf(markdown, "Untitled note"),
@@ -2697,7 +2700,7 @@ export function createNotes(window: any, document: any) {
 
   // Every card writes what it holds before the page goes. A best effort by
   // definition — the socket may not finish — but an 800 ms debounce loses a
-  // sentence without it, and this is the same bargain `wb-console.js` takes
+  // sentence without it, and this is the same bargain `wb-console.ts` takes
   // for the desk on `pagehide`.
   function flushAll() {
     const st = stage();

@@ -1,6 +1,6 @@
 // The page script of `detached.html`, the torn-off file window. Importing it
-// does nothing: `detached-main.ts` calls `wireDetached` after the classic
-// scripts ran, so `WBViewer` exists when the shell answers "ready" (ADR-0075
+// does nothing: `detached-main.ts` calls `wireDetached` after it created the
+// file pane, so `WBViewer` exists when the shell answers "ready" (ADR-0075
 // D5, D9).
 
 export function wireDetached(window: Window, document: Document) {

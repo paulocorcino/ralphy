@@ -27,13 +27,13 @@ are in [TESTING-TRAPS.md](TESTING-TRAPS.md#the-workbench-page-in-a-browser).
 A gesture (open, rename, delete, save, console-open, branch-switch,
 setting-change) becomes one `workbench:action` event through `WB.emit(action,
 detail)` in `app.ts`. The page itself does not touch the file system, git or an
-agent. `wb-daemon.js` turns an action into a daemon verb (`ACTION_TO_VERB`) and
+agent. `wb-daemon.ts` turns an action into a daemon verb (`ACTION_TO_VERB`) and
 routes the daemon's pushes back into the page.
 
 The live list of actions is the code:
 
 ```sh
-grep -rn "WB.emit(" crates/ralphy-daemon/assets/ui/*.ts crates/ralphy-daemon/assets/ui/*.js
+grep -rn "WB.emit(" crates/ralphy-daemon/assets/ui/*.ts
 ```
 
 An action name and its payload keys are a wire contract. Change both sides in
@@ -41,28 +41,42 @@ the same commit, or leave both unchanged.
 
 ## TypeScript modules
 
-The page code moves from classic scripts to `.ts` ES modules, one file at a
-time. The classic scripts not moved yet are listed in `CLASSIC_SCRIPTS` in
-`crates/ralphy-daemon/src/tests.rs`; a new file is always a module.
+The page code is `.ts` ES modules. No first-party classic script is left:
+`CLASSIC_SCRIPTS` in `crates/ralphy-daemon/src/tests.rs` is empty, and a
+first-party `.js` file in `assets/ui/` fails that test. Only the vendored
+libraries are classic scripts.
 
 - **The build.** `build.rs` copies `assets/ui/` to `$OUT_DIR/ui`, and the
   binary embeds that copy. A `.ts` file is written as a `.js` file with its
   types replaced by spaces, so the browser shows the same lines and columns
   as the source. `tsconfig.json` and the `.d.ts` files are not served.
 - **The entry module.** Each page has one `<script type="module">` tag,
-  after its classic scripts: `main.ts` for `index.html`, and
-  `<page>-main.ts` for each torn-off window page. `main.ts` imports the
-  page's modules, registers each Alpine component and the `x-icon`
-  directive, and calls `Alpine.start()` once. A new module is imported by
-  `main.ts`, not given a tag of its own.
+  after its vendored classic scripts: `main.ts` for `index.html`, and
+  `<page>-main.ts` for each torn-off window page. No page has an inline
+  script. `main.ts` imports the page's modules, creates the page instances,
+  registers each Alpine component and the `x-icon` directive, and calls
+  `Alpine.start()` once. A new module is imported by the module that uses
+  it, not given a tag of its own.
+- **Importing does nothing but define.** A module that does work for its
+  page (listeners, a `fetch`, a timer, reading `location`) exports a
+  `create<Name>(window, document, …)` factory that returns the instance, or a
+  `wire<Name>(window, document)` function. The entry module calls it, in
+  page order: the consoles first, then the daemon door, the file pane and the
+  note cards, then `wire`, then `Alpine.start()`, then `WBConsole.boot()`.
+  Each call starts with new state, so a test calls it again for each case.
 - **Imports.** A module imports a sibling by its `.ts` name
   (`./wb-hosts.ts`); the build changes it to `.js`. A vendored ES module is
   imported by its own path under `./vendor/`, which the build keeps. A type is imported with
   `import type`, because the build cannot tell a type from a value. No
   `enum`, `namespace` or parameter property: the build only removes types.
-- **Classic globals.** A module may read a classic script's `window.WB*`
-  name; `globals.d.ts` types the part it reads. A module sets a `window.WB*`
-  name only while a classic script still reads it.
+- **Window names.** A module reads another module's export by `import`.
+  A module sets a `window.WB*` name only while a reader outside the modules
+  reads it there: the `index.html` markup, another page's code
+  (`popup.WBViewer`), or a browser check. The page instances (`WB`,
+  `WBConsole`, `WBDaemon`, `WBNotes`, `WBViewer`) are on `window` because
+  the entry module creates them for its page; `globals.d.ts` types them.
+  `MODULE_WINDOW_NAMES` in `crates/ralphy-daemon/src/tests.rs` lists every
+  name a module may set.
 - **Components.** `component(uses, data)` in `wb-alpine.ts` types the
   component's `this` from its `uses` list, against the type of the real
   `shell()` (`Shell` in `app.ts`). A component module exports its factory,
@@ -106,7 +120,7 @@ AMD build), with these exclusions:
 | `language/**` | a second, 7.7 MB copy of the four LSP modes |
 | `nls/**` | localizations |
 | `*.d.ts`, `*.map` | types and sourcemaps |
-| `assets/{css,html,json,ts}.worker-*.js` | the four language workers (8.8 MB, `ts.worker` alone 7.0 MB). Language services are out of scope, and `wb-monaco.js` disables all four mode configurations at boot |
+| `assets/{css,html,json,ts}.worker-*.js` | the four language workers (8.8 MB, `ts.worker` alone 7.0 MB). Language services are out of scope, and `wb-monaco.ts` disables all four mode configurations at boot |
 
 The embed-pin test `monaco_replaced_codemirror_in_the_embedded_ui`
 (`crates/ralphy-daemon/src/tests.rs`) checks these rows by prefix.
@@ -144,7 +158,7 @@ checks it.
 `@xterm/addon-fit` 0.11.0, `@xterm/addon-web-links` 0.12.0 and
 `@xterm/addon-webgl` 0.19.0, copied from the `lib/` directory of each tarball
 under the old `xterm-addon-*.js` names. OSC 52 is written by hand in
-`wb-console.js` (`term.parser.registerOscHandler(52, …)`) instead of with
+`wb-console.ts` (`term.parser.registerOscHandler(52, …)`) instead of with
 `@xterm/addon-clipboard`.
 
 After a bump, check the four upstream behaviours the console depends on:
@@ -279,7 +293,7 @@ checks are `tests/browser/console/wb_console_touch.py` and `tests/browser/consol
 The board must show only the issues an AFK agent may act on: issues with no
 assignee, plus, when `queue.assignee` is set, issues assigned to that login.
 This is a union. It differs from `ralphy run --assignee`, which shows only that
-login, and from the runner's default, which does not filter. `wb-kanban.js`
+login, and from the runner's default, which does not filter. `wb-kanban.ts`
 does not apply it yet.
 
 ## Keep this guide current

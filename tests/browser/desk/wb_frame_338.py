@@ -60,7 +60,7 @@ FIX_B = {"left": 700, "top": 300, "width": 600, "height": 380}
 
 
 def stage_extent_oracle(viewport, rects_, margin=200):
-    """The extent `WBGeometry.stageExtent` owes for these rects (wb-geometry.js
+    """The extent `WBGeometry.stageExtent` owes for these rects (wb-geometry.ts
     ~41-57, commit df475a45): a margin of drag room PAST the furthest edge,
     floored at the viewport's own size on each axis — not the old fixed 200px.
     `viewport` is `#workspace`'s own clientWidth/clientHeight, not the outer

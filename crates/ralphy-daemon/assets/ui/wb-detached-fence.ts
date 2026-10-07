@@ -1,7 +1,7 @@
 // The second page script of `detached-fence.html`, the torn-off fence window.
 // Importing it does nothing: `detached-fence-main.ts` calls
-// `wireDetachedFence` after the classic scripts ran, so `WBConsole` and
-// `WBNotes` exist when the shell answers "ready" (ADR-0075
+// `wireDetachedFence` after it created the consoles and the note cards, so
+// `WBConsole` and `WBNotes` exist when the shell answers "ready" (ADR-0075
 // D5, D9).
 import { WBColumns } from "./wb-columns.ts";
 import { WBDetachLink } from "./wb-detach-link.ts";
@@ -77,7 +77,7 @@ export function wireDetachedFence(window: Window, document: Document) {
 
   // ---- columns and a note on top (ADR-0051 §8, amended 2026-10-05) ----
   // The fence head's "as columns", for this window. The grid lives
-  // here, as `app.js` holds it for the shell, and is never stored: the
+  // here, as `app.ts` holds it for the shell, and is never stored: the
   // popup's layout is throwaway. `wb-console.ts` paints it.
   let grid: any[] = [];
   const consoles = () => [...stageEl().querySelectorAll(".session-window")];

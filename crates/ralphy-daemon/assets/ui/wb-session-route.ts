@@ -23,7 +23,7 @@ export const WBSessionRoute = (function () {
   }
 
   // This document's holder, resolved on the first connect and never at load.
-  // Here, not in wb-console.js: the console module names no browser store
+  // Here, not in wb-console.ts: the console module names no browser store
   // (#347). `getRandomValues`, not `randomUUID`: the latter exists only in a
   // secure context, and a LAN bind is plain HTTP.
   let tabHolderMemo: string | null = null;
@@ -139,12 +139,3 @@ export const WBSessionRoute = (function () {
     unanswered,
   };
 })();
-
-// `wb-console.js` and `app.ts` still read this name (ADR-0075 D9).
-if (typeof window !== "undefined") window.WBSessionRoute = WBSessionRoute;
-
-declare global {
-  interface Window {
-    WBSessionRoute: typeof WBSessionRoute;
-  }
-}

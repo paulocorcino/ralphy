@@ -50,7 +50,7 @@ export const WBDevice = (function () {
   }
 
   // One context, read, then lost at once. The consoles hold at most 12
-  // WebGL contexts (wb-console.js GPU_BUDGET) and Chrome drops the oldest
+  // WebGL contexts (wb-console.ts GPU_BUDGET) and Chrome drops the oldest
   // past 16, so one more for a moment takes no console's place.
   function gpu(win: any) {
     const doc = win.document;

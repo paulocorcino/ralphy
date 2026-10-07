@@ -399,7 +399,7 @@ fn missing_literals(found: &[(String, String)], corpus: &str) -> Vec<String> {
 }
 
 /// `(file name, text)` of every UI script, without the vendored libraries:
-/// the classic `.js` scripts and the `.ts` modules (ADR-0075), not the `.d.ts`
+/// the `.ts` modules (ADR-0075) and any first-party `.js` file, not the `.d.ts`
 /// type files.
 fn ui_sources(root: &Path) -> Vec<(String, String)> {
     let dir = root.join("crates/ralphy-daemon/assets/ui");
