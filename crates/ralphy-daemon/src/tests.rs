@@ -4029,14 +4029,16 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-detach-link.js",
                 "wb-session-route.js",
                 "wb-daemon.js",
-                // `wb-console.ts` imports the geometry, the window state and
-                // the console name; the entry imports the console. Stated
-                // HERE because this set is a hardcoded floor: nothing derives
-                // the popup's needs from the tree, so an import dropped from
-                // the entry breaks the second monitor with no other signal.
+                // `wb-console.ts` imports the geometry, the window state,
+                // the console name and the input folds; the entry imports the
+                // console. Stated HERE because this set is a hardcoded floor:
+                // nothing derives the popup's needs from the tree, so an
+                // import dropped from the entry breaks the second monitor
+                // with no other signal.
                 "wb-geometry.js",
                 "wb-window-state.js",
                 "wb-console-name.js",
+                "wb-console-input.js",
                 "wb-console.js",
             ][..],
         ),
@@ -4948,7 +4950,7 @@ fn shell_draws_fences_below_the_windows() {
 /// A press is a DRAG only past a threshold (4px mouse, 10px finger): a tap
 /// on a titlebar, a resize band or a fence handle moves nothing and persists
 /// nothing. The threshold folds (`dragThreshold`, `dragBegins`) are driven by
-/// `ui-tests/wb-console.test.mjs`; the four gesture handlers are DOM wiring
+/// `ui-tests/wb-console-input.test.mjs`; the four gesture handlers are DOM wiring
 /// that no node test runs, so they are pinned here on the predicate they
 /// consult.
 #[test]
@@ -5017,7 +5019,7 @@ fn shell_drags_only_past_a_threshold() {
 }
 
 /// A finger on a console's titlebar: two taps maximize, a hold on the name
-/// renames. `isDoubleTap` is driven by `ui-tests/wb-console.test.mjs`; the
+/// renames. `isDoubleTap` is driven by `ui-tests/wb-console-input.test.mjs`; the
 /// wiring is DOM that no node test runs, so it is pinned here, and the
 /// gestures themselves by `tests/browser/console/wb_console_touch.py`.
 #[test]

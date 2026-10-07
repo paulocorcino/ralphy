@@ -11,6 +11,7 @@ import "./wb-agents.test.mjs";
 import "./wb-changes.test.mjs";
 import "./wb-changes-open.test.mjs";
 import "./wb-columns.test.mjs";
+import "./wb-console-input.test.mjs";
 import "./wb-console-name.test.mjs";
 import "./wb-console.test.mjs";
 import "./wb-daemon.test.mjs";

@@ -468,7 +468,7 @@ const MIRRORS: &[(&str, &str, &str, &str)] = &[
         "CONSOLE_NAME_MAX",
     ),
     (
-        "wb-console.ts",
+        "wb-console-input.ts",
         "IMAGE_PASTE_MAX",
         "tree.rs",
         "MAX_IMAGE_BYTES",
