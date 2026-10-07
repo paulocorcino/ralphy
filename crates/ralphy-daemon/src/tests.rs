@@ -5414,8 +5414,8 @@ fn shell_arranges_into_the_fence() {
         ("WIN_MIN_H = 150", "min-height: 150px"),
     ] {
         assert!(
-            js.contains(konst),
-            "wb-console.ts must mirror the window floor as {konst} (#342)"
+            include_str!("../assets/ui/wb-geometry.ts").contains(konst),
+            "wb-geometry.ts must mirror the window floor as {konst} (#342)"
         );
         assert!(
             rule("\n.session-window {").contains(decl),
@@ -5507,9 +5507,13 @@ fn shell_lists_the_fences() {
         ("function anchorIntoView(", "anchor-into-view"),
     ] {
         assert_eq!(
-            js.matches(name).count(),
+            geometry.matches(name).count(),
             1,
-            "there may be exactly ONE {what} implementation (#343)"
+            "there may be exactly ONE {what} implementation, in wb-geometry.ts (#343)"
+        );
+        assert!(
+            !js.contains(name),
+            "wb-console.ts must not define {what} again (#343)"
         );
     }
     // The slide is a VIEW effect layered on top, never a substitute for the
