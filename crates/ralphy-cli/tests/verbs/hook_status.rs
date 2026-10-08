@@ -3,7 +3,7 @@
 //! written or not; one newline-terminated JSON line appended per call; and a
 //! no-op with `RALPHY_STATUS_FILE` unset.
 
-use std::io::Write;
+use std::io::{BufRead, Read, Write};
 use std::process::{Command, Stdio};
 
 fn run(env: Option<&std::path::Path>, payload: &str) -> (i32, String) {
@@ -21,6 +21,30 @@ fn run(env: Option<&std::path::Path>, payload: &str) -> (i32, String) {
         }
     }
     let mut child = cmd.spawn().expect("spawning ralphy hook status");
+    if env.is_none() {
+        // With the variable unset the hook still has to read its stdin: after
+        // it prints `{}` it must keep waiting for the payload, or the write
+        // below can hit a closed pipe.
+        let mut stdout = std::io::BufReader::new(child.stdout.take().expect("piped stdout"));
+        let mut first = String::new();
+        stdout.read_line(&mut first).expect("reading the answer");
+        assert_eq!(first.trim(), "{}");
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        assert!(
+            child.try_wait().expect("polling the hook").is_none(),
+            "the hook exited before it read its stdin"
+        );
+        child
+            .stdin
+            .take()
+            .expect("piped stdin")
+            .write_all(payload.as_bytes())
+            .expect("writing the payload");
+        let status = child.wait().expect("waiting for the hook");
+        let mut rest = String::new();
+        stdout.read_to_string(&mut rest).expect("reading the rest");
+        return (status.code().unwrap_or(-1), first.trim().to_string());
+    }
     child
         .stdin
         .take()
