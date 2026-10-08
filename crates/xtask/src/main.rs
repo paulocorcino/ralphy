@@ -18,6 +18,7 @@ mod changelog;
 mod oversized;
 mod release_cmds;
 mod ui_copy;
+mod ui_groups;
 mod vendor_lock;
 
 use std::collections::BTreeMap;
@@ -79,6 +80,7 @@ fn main() -> Result<()> {
         Some("bump") => release_cmds::bump_cmd(&args[1..]),
         Some("asset-pins") => asset_pins::asset_pins_cmd(&args[1..]),
         Some("ui-copy") => ui_copy::ui_copy_cmd(&args[1..]),
+        Some("ui-groups") => ui_groups::ui_groups_cmd(&args[1..]),
         Some("capabilities") => capabilities::capabilities_cmd(&args[1..]),
         Some("vendor-lock") => vendor_lock::vendor_lock_cmd(&args[1..]),
         Some("oversized") => oversized::oversized_cmd(&args[1..]),
@@ -91,6 +93,7 @@ fn main() -> Result<()> {
                  bump <version>\n  \
                  asset-pins [--root <repo>] [--verbose]\n  \
                  ui-copy [--root <repo>] [--json | --check]\n  \
+                 ui-groups [--root <repo>] [--verbose]\n  \
                  capabilities --base <rev> [--head <rev>] [--repo <path>] [--github] [--check]\n  \
                  vendor-lock <out>\n  \
                  oversized"

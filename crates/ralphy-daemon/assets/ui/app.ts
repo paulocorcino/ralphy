@@ -155,7 +155,6 @@ export function shell() {
     // The adapter roster comes from `/api/agents`, never a list here:
     // onboarding a vendor must not need a frontend change (#304).
     agents: [] as any[],
-    openSlug: null as any,
     // A failed `/api/repos` (#202): a visible error.
     reposError: "",
     // The read state of the shown facts this sidebar shows (ADR-0070 D3):
@@ -179,17 +178,6 @@ export function shell() {
     // Peers with a wake in flight, keyed by daemon_id: a cold WSL boot takes
     // seconds, and the key stops a second click sending a second nudge.
     waking: {} as Record<string, any>,
-    // Working-tree change count per slug (#307). `null` until a load succeeds,
-    // so a failed read never reads like a clean tree; `changesReadError`
-    // carries the reason into the Changes view's title.
-    changesCount: {} as Record<string, any>,
-    boardRead: {} as Record<string, any>,
-    runsRead: {} as Record<string, any>,
-    // The commit message being composed (#318). One box, but it belongs to
-    // `commitMsgSlug` ONLY: a message typed for repo A must never land as repo
-    // B's commit. Cleared on success only.
-    commitMsg: "",
-    commitMsgSlug: null,
     // The last refusal from the Changes panel, held until the next act. NOT
     // `runsActionMsg`: that renders only inside `aside.runs`, which is closed
     // by default. One string, not per-project: switching projects is itself
@@ -210,20 +198,6 @@ export function shell() {
     // binding on `_lastHeartbeat`. Writing the same boolean is inert under
     // Alpine, so the steady state costs one comparison a second.
     presenceStale: false,
-    // A refused `branch.switch`/`branch.create`, held until the next branch act
-    // or a project switch. Not `treeError` (the tree is fine) and not
-    // `changesError` (the chip lives in THIS panel).
-    branchError: "",
-    _treeSub: null as any, // the live `/ws/tree` subscription for the open project, if any
-    // Tree memory, all three lazily created so they stay plain collections
-    // outside Alpine's reactive data (a proxied Map is a trap):
-    //   _treeCache     directory levels already shown, keyed `repo\nrel`.
-    //                  Survives closing a project. Memory only.
-    //   _treeValidated cached levels re-read against the disk during THIS open.
-    //                  Cleared on every mount.
-    //   _treeExpanded  folders expanded when a project was last closed, by repo.
-    _runsSub: null as any, // the live run-snapshot subscription for the open project, if any
-    _changesSub: null as any, // the run-completion nudge subscription for the open project (#310)
     _presenceSub: null as any, // the `/ws` heartbeat subscription, kept so a resume can re-open it
 
     // Alpine lifecycle.
@@ -778,6 +752,320 @@ export function shell() {
       return WBFail.notCurrent(this.sessionsRead, (ms) => this.fmtClock(ms));
     },
 
+    _flashAction(msg: any) {
+      this.runsActionMsg = msg;
+      clearTimeout(this._actionTimer);
+      this._actionTimer = setTimeout(() => (this.runsActionMsg = ""), 2600);
+    },
+
+    // --- modal stack ------------------------------------------------------
+    // The open modals, oldest first: `{ path, opener }`. Only the last one
+    // answers Escape, and each returns focus to its opener on close.
+    _modalStack: [] as any[],
+    // The confirm dialog (replaces window.confirm); `askConfirm` opens it.
+    confirmModal: {
+      open: false,
+      title: "",
+      message: "",
+      confirmLabel: "Confirm",
+      cancelLabel: "Cancel",
+      danger: false,
+    },
+    _confirmResolve: null as any,
+    // The prompt dialog (replaces window.prompt, which is suppressible
+    // per-origin and never appears in an unfocused popup). `askPrompt`
+    // resolves the typed string, or null.
+    promptModal: {
+      open: false,
+      title: "",
+      message: "",
+      value: "",
+      placeholder: "",
+      confirmLabel: "Create",
+      error: "",
+    },
+    _promptResolve: null as any,
+    // The Escape keydown a modal has already answered.
+    _escapeEvent: null,
+    // The one binding every `.modal-scrim` in index.html uses:
+    // `x-bind="scrim('runOpen', () => closeRunModal())"`. `path` names the open
+    // flag, dotted for a nested one (`confirmModal.open`). Alpine evaluates the
+    // object once per scrim, so `was` lives as long as the element.
+    // A click on the scrim closes nothing: a stray click must not throw away
+    // what a modal holds. Only its own buttons and Escape close it.
+    scrim(path: any, close: any) {
+      const isOpen = () => path.split(".").reduce((o: any, k: any) => o?.[k], this);
+      let was = false;
+      const self = this;
+      return {
+        "x-show": () => isOpen(),
+        // Every open scrim hears the same window keydown; only the top one acts,
+        // so a confirm raised over another modal closes alone. The event is
+        // marked because the browser runs Alpine's effects between two
+        // listeners: the close pops the stack before the next scrim is asked,
+        // and the modal under it would read as the top.
+        "@keydown.escape.window": (e: any) => {
+          if (self._escapeEvent === e) return;
+          if (isOpen() && self.isTopModal(path)) {
+            self._escapeEvent = e;
+            close();
+          }
+        },
+        // Watches the flag, not the close methods: `logOff()` clears flags
+        // directly, and that close must still pop the stack.
+        "x-effect"(this: any) {
+          const open = !!isOpen();
+          if (open === was) return;
+          was = open;
+          if (open) self.modalOpened(path, this.$el);
+          else self.modalClosed(path);
+        },
+      };
+    },
+    isTopModal(path: any) {
+      return this._modalStack.at(-1)?.path === path;
+    },
+    // Whether the modal with this open-flag path is open, at any depth. Code
+    // outside a dialog's component asks this, never the flag (ADR-0073 D5).
+    modalOpen(path: any) {
+      return this._modalStack.some((m) => m.path === path);
+    },
+    modalOpened(path: any, scrimEl: any) {
+      this._modalStack.push({ path, opener: document.activeElement });
+      // One frame later: `x-show` has flipped by then, and a modal that focuses
+      // its own field on open (Branch, Prompt) has already done so.
+      window.requestAnimationFrame(() => {
+        const dialog = scrimEl.querySelector('[role="dialog"], [role="alertdialog"]') || scrimEl;
+        if (dialog.contains(document.activeElement)) return;
+        const controls = Array.from<any>(
+          dialog.querySelectorAll(
+            'button, input, select, textarea, [href], [tabindex]:not([tabindex="-1"])',
+          ),
+        ).filter((el) => !el.disabled && el.getClientRects().length > 0);
+        // The header ✕ is the last resort: it leads every modal, and the
+        // operator came for the content.
+        (controls.find((el) => !el.classList.contains("modal-x")) || controls[0])?.focus();
+      });
+    },
+    modalClosed(path: any) {
+      const i = this._modalStack.findLastIndex((m) => m.path === path);
+      if (i < 0) return;
+      const [{ opener }] = this._modalStack.splice(i, 1);
+      if (opener?.isConnected) opener.focus();
+    },
+    // Resolve `true`/`false` on the operator's choice. A pending dialog is
+    // settled `false` first so a second call never strands its promise.
+    askConfirm(opts: any = {}) {
+      if (this._confirmResolve) this.confirmRespond(false);
+      this.confirmModal = {
+        open: true,
+        title: opts.title || "Confirm",
+        message: opts.message || "",
+        confirmLabel: opts.confirmLabel || "Confirm",
+        cancelLabel: opts.cancelLabel || "Cancel",
+        danger: opts.danger || false,
+      };
+      return new Promise((resolve) => {
+        this._confirmResolve = resolve;
+      });
+    },
+    // Close the dialog and settle its promise with the choice.
+    confirmRespond(ok: any) {
+      this.confirmModal.open = false;
+      const resolve = this._confirmResolve;
+      this._confirmResolve = null;
+      if (resolve) resolve(ok);
+    },
+    // Resolve the typed string, or `null`. Mirrors askConfirm.
+    askPrompt(opts: any = {}) {
+      if (this._promptResolve) this.promptRespond(null);
+      this.promptModal = {
+        open: true,
+        title: opts.title || "Name",
+        message: opts.message || "",
+        value: opts.value || "",
+        placeholder: opts.placeholder || "",
+        confirmLabel: opts.confirmLabel || "Create",
+        error: "",
+      };
+      // Focus after Alpine has painted; caret at the end, not selected.
+      queueMicrotask(() => {
+        const el = document.getElementById("prompt-input") as HTMLInputElement | null;
+        if (!el) return;
+        el.focus();
+        el.setSelectionRange(el.value.length, el.value.length);
+      });
+      return new Promise((resolve) => {
+        this._promptResolve = resolve;
+      });
+    },
+    // A name that cannot be a single directory entry is refused HERE, dialog
+    // open. The daemon confines every path regardless (`confine_write`); this
+    // says *which* character was wrong.
+    promptSubmit() {
+      const name = this.promptModal.value.trim();
+      const bad = !name
+        ? "name is required"
+        : /[\\/]/.test(name)
+          ? "name cannot contain / or \\"
+          : name === "." || name === ".."
+            ? "name cannot be . or .."
+            : "";
+      if (bad) {
+        this.promptModal.error = bad;
+        return;
+      }
+      this.promptRespond(name);
+    },
+    // Close the dialog and settle its promise with `name` (null = cancelled).
+    promptRespond(name: any) {
+      this.promptModal.open = false;
+      const resolve = this._promptResolve;
+      this._promptResolve = null;
+      if (resolve) resolve(name);
+    },
+
+    // --- the open project -------------------------------------------------
+    openSlug: null as any,
+    // `loadRepos()` fills this at init.
+    projects: [] as any[],
+    toggle(ref: any, row?: any) {
+      // A row on a host that cannot answer stays closed. The click still wakes
+      // a sleeping host: that is the act the operator asked for.
+      if (this.openSlug !== ref && !this.refAvailable(ref)) {
+        this.wakePeerFor(ref);
+        return;
+      }
+      this.openSlug = this.openSlug === ref ? null : ref;
+      // Refusal notes name an act against the project that WAS open.
+      this.changesError = "";
+      this.branchError = "";
+      // NOT awaited: the accordion must not sit behind a cold WSL boot.
+      if (this.openSlug === ref) this.wakePeerFor(ref);
+      this.loadAgents(this.openSlug);
+      // The chip's `<branch> · <name>` needs the listing (#406).
+      if (this.openSlug === ref) this.ensureWorktreeListing(ref);
+      this.refreshSpend();
+      // Everything scoped to the project that WAS open is dropped: the drawer
+      // selection, the trail marker, an unsent commit message (#318) and a verb
+      // refusal (#331, whose terminal frame can land long after the click).
+      this.kanbanSel = null;
+      this.trailFocus = null;
+      if (this.commitMsgSlug !== this.openSlug) {
+        this.commitMsg = "";
+        this.commitMsgSlug = this.openSlug;
+      }
+      this.verbError = "";
+      this.$nextTick(() => {
+        this.destroyTree();
+        if (this.openSlug) this.mountTree();
+        // The runs (#300) and changes-nudge (#310) sockets follow the tree's
+        // open/close path.
+        this.destroyRunsSub();
+        this.mountRunsSub();
+        this.destroyChangesSub();
+        this.mountChangesSub();
+        // Only when the board is OPEN (#301): the fold spawns a tracker CLI.
+        if (this.openSlug && this.kanbanOpen) this.loadBoard();
+        this.currentRunId = this.projectRuns()[0]?.runid || null;
+        this.planSection = this.planHeadings(this.currentRun())[0] || "";
+        if (this.openSlug) this.hydrateRuns();
+        if (this.openSlug) this.loadChanges(this.openSlug);
+        if (this.openSlug) this.loadSync(this.openSlug);
+      });
+    },
+    // The current git branch of the open project (for the "current" mode blurb).
+    // The open project's row, for the panels scoped to `openSlug` that reuse a
+    // per-row control (the Changes head's checkout chip).
+    openProject() {
+      return this.projects.find((p) => this.repoRef(p) === this.openSlug) || null;
+    },
+    openProjectBranch() {
+      return this.projects.find((p) => this.repoRef(p) === this.openSlug)?.branch || "current";
+    },
+    // The branch chip lives on the Files bar (#332), which only the OPEN
+    // project renders. `.project-slug` carries the ADR-0008 D7 identity in
+    // `data-slug`, which is how the browser tests find a row.
+    rowOpen(p: any) {
+      return this.openSlug === this.repoRef(p);
+    },
+    // A sleeping peer's wake button. Its two sentences keep their order here,
+    // not in a `+` chain inside the markup (ADR-0065 §9).
+    wakeTitle(g: any) {
+      if (this.waking[g.daemon]) return `Waking ${g.environment}…`;
+      return `Wake ${g.environment}. ${g.diagnosis}`;
+    },
+    // A row on a host that cannot answer: why it does not open.
+    unavailableTitle(g: any) {
+      const host = WBFleet.peerName(g);
+      const head = `${host} is not available (${this.peerStateWord(g.state)}).`;
+      if (WBFleet.wakeable(g)) return `${head} Click to wake it.`;
+      return `${head} Its projects open when it connects again.`;
+    },
+    rowTitle(p: any) {
+      return WBProject.rowTitle(p);
+    },
+    // Drop a project from the daemon's registry (#363); the disk is NOT
+    // touched. The confirm is awaited BEFORE any `WBDaemon` call: cancel must
+    // open no socket.
+    async removeProject(p: any) {
+      const ref = this.repoRef(p);
+      const ok = await this.askConfirm({
+        title: "Remove project",
+        message: `Remove “${WBProject.projectName(p)}” from Ralphy? Files on disk are kept.`,
+        confirmLabel: "Remove",
+        danger: true,
+      });
+      if (!ok) return;
+      try {
+        const reply = await window.WBDaemon.observe("project.remove", {
+          // The envelope routes on a REGISTERED repo before dispatch: `repo` is
+          // the cwd, `slug` what is unregistered (the split keeps the peer
+          // proxy working).
+          repo: ref,
+          slug: p.slug,
+        });
+        // `unknown repo` means already gone: the state this click asks for.
+        const gone =
+          !WBFail.isError(reply) || WBFail.message(reply, "") === "unknown repo";
+        if (!gone) {
+          this._flashAction(WBFail.failed(reply, "Could not remove the project: the daemon gave no reason."));
+          return;
+        }
+        // Identity is `repoRef`, not the slug: a peer can list the same slug.
+        this.projects = this.projects.filter((x) => this.repoRef(x) !== ref);
+        if (this.openSlug === ref) this.openSlug = null;
+        this.loadRepos();
+      } catch {
+        this._flashAction("remove unavailable: no daemon");
+      }
+    },
+    // The status dot: live → green, idle → grey, offline → red (unreachable
+    // path), waiting → yellow (an agent is asking for you, ADR-0059).
+    // Orthogonal to `remote`.
+    // The project dot's tooltip, in words; the class keeps the state code.
+    dotTitle(state: any) {
+      return (
+        ({
+          live: "A console is open",
+          waiting: "An agent is waiting for you",
+          offline: "The folder cannot be reached",
+        } as Record<string, string>)[state] || "No console is open"
+      );
+    },
+    dotClass(state: any) {
+      return state === "live"
+        ? "live"
+        : state === "waiting"
+          ? "waiting"
+          : state === "offline"
+            ? "offline"
+            : "";
+    },
+    peerStateWord(state: any) {
+      return WBFleet.stateWord(state);
+    },
+
     // --- chrome panels ----------------------------------------------------
     // Sidebar, Runs panel and Kanban board: each a layout flip on a body class.
     // A phone opens with the sidebar closed: there it floats over the canvas.
@@ -965,25 +1253,6 @@ export function shell() {
       return WBProject.canSwitchBranch(p);
     },
 
-    // The branch chip lives on the Files bar (#332), which only the OPEN
-    // project renders. `.project-slug` carries the ADR-0008 D7 identity in
-    // `data-slug`, which is how the browser tests find a row.
-    rowOpen(p: any) {
-      return this.openSlug === this.repoRef(p);
-    },
-    // A sleeping peer's wake button. Its two sentences keep their order here,
-    // not in a `+` chain inside the markup (ADR-0065 §9).
-    wakeTitle(g: any) {
-      if (this.waking[g.daemon]) return `Waking ${g.environment}…`;
-      return `Wake ${g.environment}. ${g.diagnosis}`;
-    },
-    // A row on a host that cannot answer: why it does not open.
-    unavailableTitle(g: any) {
-      const host = WBFleet.peerName(g);
-      const head = `${host} is not available (${this.peerStateWord(g.state)}).`;
-      if (WBFleet.wakeable(g)) return `${head} Click to wake it.`;
-      return `${head} Its projects open when it connects again.`;
-    },
     // The checkout chip of a project row: which tree Files, Changes and
     // search read, and that a click chooses another.
     checkoutTitle(p: any) {
@@ -991,46 +1260,6 @@ export function shell() {
       return name
         ? `Files, changes and search show worktree “${name}”. Click to choose another one.`
         : "Files, changes and search show the primary tree. Click to choose a worktree.";
-    },
-
-    // Drop a project from the daemon's registry (#363); the disk is NOT
-    // touched. The confirm is awaited BEFORE any `WBDaemon` call: cancel must
-    // open no socket.
-    async removeProject(p: any) {
-      const ref = this.repoRef(p);
-      const ok = await this.askConfirm({
-        title: "Remove project",
-        message: `Remove “${WBProject.projectName(p)}” from Ralphy? Files on disk are kept.`,
-        confirmLabel: "Remove",
-        danger: true,
-      });
-      if (!ok) return;
-      try {
-        const reply = await window.WBDaemon.observe("project.remove", {
-          // The envelope routes on a REGISTERED repo before dispatch: `repo` is
-          // the cwd, `slug` what is unregistered (the split keeps the peer
-          // proxy working).
-          repo: ref,
-          slug: p.slug,
-        });
-        // `unknown repo` means already gone: the state this click asks for.
-        const gone =
-          !WBFail.isError(reply) || WBFail.message(reply, "") === "unknown repo";
-        if (!gone) {
-          this._flashAction(WBFail.failed(reply, "Could not remove the project: the daemon gave no reason."));
-          return;
-        }
-        // Identity is `repoRef`, not the slug: a peer can list the same slug.
-        this.projects = this.projects.filter((x) => this.repoRef(x) !== ref);
-        if (this.openSlug === ref) this.openSlug = null;
-        this.loadRepos();
-      } catch {
-        this._flashAction("remove unavailable: no daemon");
-      }
-    },
-
-    rowTitle(p: any) {
-      return WBProject.rowTitle(p);
     },
 
     branchChipTitle(p: any) {
@@ -1281,51 +1510,34 @@ export function shell() {
       this.loadSync(slug);
     },
 
-    // The runid whose stop is in flight: a double-click must not dispatch two
-    // `ralphy stop` children.
-    runStopping: null,
-
-    // Whether the open project has a live run: flips the toolbar between `run`
-    // and `stop` (ADR-0054). Derived from the SAME list `writeLockReason`
-    // reads, so the two agree, and self-clearing via `runs.dirty`.
-    runIsLive() {
-      return this.projectRuns().length > 0;
-    },
-
-    // Ask a live run to stop (ADR-0054). This does NOT kill anything: it
-    // dispatches `ralphy stop`, which writes a request the run acts on; the
-    // daemon never signals a dispatched child (ADR-0032 §5/§6). No wait: the
-    // reply says the request was written; the run leaves the panel via
-    // `runs.dirty` when it exits.
-    async stopRun(runid: any) {
-      // No runid: the run left the panel between the render and the click.
-      if (!runid || this.runStopping) return;
-      // ADR-0032 §6 asks for a strong confirmation. The shell's OWN dialog,
-      // not `window.confirm` (blocks the page, ignores the theme).
-      const ok = await this.askConfirm({
-        title: "Stop this run?",
-        message:
-          "Stops the current issue. Commits already made are kept.",
-        confirmLabel: "Stop",
-        danger: true,
-      });
-      if (!ok) return;
-      this.runStopping = runid;
-      try {
-        const reply = await window.WBDaemon.observe("run.stop", {
-          repo: this.openSlug,
-          runid,
-        });
-        if (WBFail.isError(reply)) {
-          this.runVerbFailed(WBFail.failed(reply, "Could not stop the run."));
-        } else {
-          this._flashAction("Stop requested. The run is stopping.");
+    // Working-tree change count per slug (#307). `null` until a load succeeds,
+    // so a failed read never reads like a clean tree; `changesReadError`
+    // carries the reason into the Changes view's title.
+    changesCount: {} as Record<string, any>,
+    // A refused `branch.switch`/`branch.create`, held until the next branch act
+    // or a project switch. Not `treeError` (the tree is fine) and not
+    // `changesError` (the chip lives in THIS panel).
+    branchError: "",
+    _changesSub: null as any, // the run-completion nudge subscription for the open project (#310)
+    // The run-completion subscription (#310, ADR-0036 amendment). The socket
+    // carries EVERY repo's nudge, so the filter is here.
+    mountChangesSub() {
+      if (!window.WBDaemon?.subscribeChanges || !this.openSlug) return;
+      this._changesSub = window.WBDaemon.subscribeChanges(this.openSlug, (frame: any) => {
+        if (this.tabHidden()) return;
+        // Optional-chained: a frame without wb-changes.ts must not throw
+        // inside `onmessage`.
+        if (WBChanges?.shouldReload?.(frame, this.openSlug)) {
+          this.loadChanges(this.openSlug);
+          this.loadSync(this.openSlug);
         }
-      } catch {
-        this._flashAction("Could not stop the run: the daemon is not connected.");
-      } finally {
-        this.runStopping = null;
-      }
+      });
+    },
+    destroyChangesSub() {
+      try {
+        this._changesSub?.close();
+      } catch {}
+      this._changesSub = null;
     },
 
     // ---- write controls (#318) ------------------------------------------
@@ -1603,6 +1815,12 @@ export function shell() {
       });
     },
 
+    // The commit message being composed (#318). One box, but it belongs to
+    // `commitMsgSlug` ONLY: a message typed for repo A must never land as repo
+    // B's commit. Cleared on success only.
+    commitMsg: "",
+    commitMsgSlug: null,
+
     // --- the selected checkout (#406, ADR-0063 §4) ----------------------------
     // A `worktree.remove` in flight, per repo ref: the chip's menu greys the
     // row and a second click is ignored until the re-read lands.
@@ -1751,7 +1969,6 @@ export function shell() {
       });
       this.closeBranchModal();
     },
-
 
     // The chip menu's trash action: `worktree.remove` (#409). The listing is
     // the truth on every path (a `branch kept` reply is an error whose
@@ -2043,6 +2260,70 @@ export function shell() {
       );
     },
 
+    runsRead: {} as Record<string, any>,
+    _runsSub: null as any, // the live run-snapshot subscription for the open project, if any
+    // The runid whose stop is in flight: a double-click must not dispatch two
+    // `ralphy stop` children.
+    runStopping: null,
+    // Whether the open project has a live run: flips the toolbar between `run`
+    // and `stop` (ADR-0054). Derived from the SAME list `writeLockReason`
+    // reads, so the two agree, and self-clearing via `runs.dirty`.
+    runIsLive() {
+      return this.projectRuns().length > 0;
+    },
+    // Ask a live run to stop (ADR-0054). This does NOT kill anything: it
+    // dispatches `ralphy stop`, which writes a request the run acts on; the
+    // daemon never signals a dispatched child (ADR-0032 §5/§6). No wait: the
+    // reply says the request was written; the run leaves the panel via
+    // `runs.dirty` when it exits.
+    async stopRun(runid: any) {
+      // No runid: the run left the panel between the render and the click.
+      if (!runid || this.runStopping) return;
+      // ADR-0032 §6 asks for a strong confirmation. The shell's OWN dialog,
+      // not `window.confirm` (blocks the page, ignores the theme).
+      const ok = await this.askConfirm({
+        title: "Stop this run?",
+        message:
+          "Stops the current issue. Commits already made are kept.",
+        confirmLabel: "Stop",
+        danger: true,
+      });
+      if (!ok) return;
+      this.runStopping = runid;
+      try {
+        const reply = await window.WBDaemon.observe("run.stop", {
+          repo: this.openSlug,
+          runid,
+        });
+        if (WBFail.isError(reply)) {
+          this.runVerbFailed(WBFail.failed(reply, "Could not stop the run."));
+        } else {
+          this._flashAction("Stop requested. The run is stopping.");
+        }
+      } catch {
+        this._flashAction("Could not stop the run: the daemon is not connected.");
+      } finally {
+        this.runStopping = null;
+      }
+    },
+    // The open project's run-snapshot subscription (#300, ADR-0047 §9).
+    mountRunsSub() {
+      if (!window.WBDaemon?.subscribeRuns || !this.openSlug) return;
+      // A snapshot change means the tracker may have moved, so the same push
+      // nudges the board (#301); the predicate coalesces it.
+      this._runsSub = window.WBDaemon.subscribeRuns(this.openSlug, () => {
+        if (this.tabHidden()) return;
+        this.hydrateRuns();
+        this.maybeRefreshBoard("runs");
+      });
+    },
+    destroyRunsSub() {
+      try {
+        this._runsSub?.close();
+      } catch {}
+      this._runsSub = null;
+    },
+
     // --- plan viewer ------------------------------------------------------
     // The issue whose plan this panel is showing: the snapshot's `plan.issue`
     // when it has one, else the run's active issue.
@@ -2121,7 +2402,7 @@ export function shell() {
     // --- run / triage / push (the daemon verbs) ---------------------------
     // The remote-trigger verbs (dispatch.rs), scoped to the open project.
     // `triage`/`push` are no-arg; `run` opens a modal for --agent,
-    // --plan-agent and --branch-mode new|current.
+    // the --plan-agent and --branch-mode new|current flags.
     runOpen: false,
     runsActionMsg: "",
     // A CLI refusal, held until the next verb click (#331). Distinct from the
@@ -2141,15 +2422,6 @@ export function shell() {
     },
     closeRunModal() {
       this.runOpen = false;
-    },
-    // The current git branch of the open project (for the "current" mode blurb).
-    // The open project's row, for the panels scoped to `openSlug` that reuse a
-    // per-row control (the Changes head's checkout chip).
-    openProject() {
-      return this.projects.find((p) => this.repoRef(p) === this.openSlug) || null;
-    },
-    openProjectBranch() {
-      return this.projects.find((p) => this.repoRef(p) === this.openSlug)?.branch || "current";
     },
     // The faithful `ralphy run …` line the chosen options map to.
     runCommandPreview() {
@@ -2195,11 +2467,6 @@ export function shell() {
     // From wb-daemon.ts on a TERMINAL frame only; an empty note is a no-op.
     runVerbFailed(msg: any) {
       if (msg) this.verbError = msg;
-    },
-    _flashAction(msg: any) {
-      this.runsActionMsg = msg;
-      clearTimeout(this._actionTimer);
-      this._actionTimer = setTimeout(() => (this.runsActionMsg = ""), 2600);
     },
     // A refusal from the CHANGES panel lands in that panel and STAYS; the flash
     // is kept beside it. `runs-verb-error`'s counterpart (#331).
@@ -2517,9 +2784,6 @@ export function shell() {
     runStateWord(state: any) {
       return (state && WBRun?.LABEL?.[state]) || state || "";
     },
-    peerStateWord(state: any) {
-      return WBFleet.stateWord(state);
-    },
 
     // Thin delegations to the faithful helpers (used in the template).
     kanbanColumnOf(i: any) {
@@ -2545,6 +2809,8 @@ export function shell() {
     kfmtDate(iso: any) {
       return window.WBKanban.fmtDate(iso);
     },
+
+    boardRead: {} as Record<string, any>,
 
     // --- detail drawer ----------------------------------------------------
     // The open drawer's detail-fetch failure (#302). One string: exactly one
@@ -2979,6 +3245,12 @@ export function shell() {
       Object.assign(this.security, patch);
     },
 
+    toggleAvatarMenu() {
+      const was = this.avatarMenu;
+      this.closeMenus();
+      this.avatarMenu = !was;
+    },
+
     // --- login gate -------------------------------------------------------
     // An opaque overlay covers the shell while locked (`body.locked`).
     authed: true,
@@ -3140,37 +3412,6 @@ export function shell() {
     },
 
     // --- canvas tabs ------------------------------------------------------
-    // The FILES panel's states: "no files", "still looking" and "refused" must
-    // not be one blank.
-    treeLoading: false,
-    treeError: "",
-    // The tree shows a listing the daemon could not confirm (a refusal, a
-    // dropped socket). Distinct from `treeError`: rows are on screen, but stale.
-    treeStale: "",
-    // The daemon could not keep watching this tree: the rows are right now,
-    // but a change on disk will not show until the project is opened again.
-    treeNotLive: "",
-    // The FILES search (ADR-0036 amendment 2026-09-15). `seq` dates each
-    // request so a slow reply never paints over a newer one; `expandedBefore`
-    // is the expansion snapshot `clearFileSearch` folds the tree back to
-    // (`null` = nothing expanded yet).
-    fileSearch: {
-      open: false,
-      mode: "name",
-      query: "",
-      seq: 0,
-      hits: [] as any[],
-      truncated: false,
-      note: "",
-      expandedBefore: null as string[] | null,
-    },
-    _tree: null as any, // the live Wunderbaum instance, if any
-    roster: [] as any[],
-    // The stage extent, for the footer pill (#338).
-    stageW: 0,
-    stageH: 0,
-    // The Escape keydown a modal has already answered.
-    _escapeEvent: null,
     // The SAME terminal glyph as the New-console button and its menu rows.
     tabs: [{ id: "consoles", kind: "consoles", title: "Consoles", icon: "bi bi-terminal", closable: false }] as any[],
     active: "consoles",
@@ -3184,78 +3425,7 @@ export function shell() {
     splitRatio: null,
     lastLeft: null as any,
 
-    // `loadRepos()` fills this at init.
-    projects: [] as any[],
-
     // --- accordion --------------------------------------------------------
-    toggle(ref: any, row?: any) {
-      // A row on a host that cannot answer stays closed. The click still wakes
-      // a sleeping host: that is the act the operator asked for.
-      if (this.openSlug !== ref && !this.refAvailable(ref)) {
-        this.wakePeerFor(ref);
-        return;
-      }
-      this.openSlug = this.openSlug === ref ? null : ref;
-      // Refusal notes name an act against the project that WAS open.
-      this.changesError = "";
-      this.branchError = "";
-      // NOT awaited: the accordion must not sit behind a cold WSL boot.
-      if (this.openSlug === ref) this.wakePeerFor(ref);
-      this.loadAgents(this.openSlug);
-      // The chip's `<branch> · <name>` needs the listing (#406).
-      if (this.openSlug === ref) this.ensureWorktreeListing(ref);
-      this.refreshSpend();
-      // Everything scoped to the project that WAS open is dropped: the drawer
-      // selection, the trail marker, an unsent commit message (#318) and a verb
-      // refusal (#331, whose terminal frame can land long after the click).
-      this.kanbanSel = null;
-      this.trailFocus = null;
-      if (this.commitMsgSlug !== this.openSlug) {
-        this.commitMsg = "";
-        this.commitMsgSlug = this.openSlug;
-      }
-      this.verbError = "";
-      this.$nextTick(() => {
-        this.destroyTree();
-        if (this.openSlug) this.mountTree();
-        // The runs (#300) and changes-nudge (#310) sockets follow the tree's
-        // open/close path.
-        this.destroyRunsSub();
-        this.mountRunsSub();
-        this.destroyChangesSub();
-        this.mountChangesSub();
-        // Only when the board is OPEN (#301): the fold spawns a tracker CLI.
-        if (this.openSlug && this.kanbanOpen) this.loadBoard();
-        this.currentRunId = this.projectRuns()[0]?.runid || null;
-        this.planSection = this.planHeadings(this.currentRun())[0] || "";
-        if (this.openSlug) this.hydrateRuns();
-        if (this.openSlug) this.loadChanges(this.openSlug);
-        if (this.openSlug) this.loadSync(this.openSlug);
-      });
-    },
-
-    // The status dot: live → green, idle → grey, offline → red (unreachable
-    // path), waiting → yellow (an agent is asking for you, ADR-0059).
-    // Orthogonal to `remote`.
-    // The project dot's tooltip, in words; the class keeps the state code.
-    dotTitle(state: any) {
-      return (
-        ({
-          live: "A console is open",
-          waiting: "An agent is waiting for you",
-          offline: "The folder cannot be reached",
-        } as Record<string, string>)[state] || "No console is open"
-      );
-    },
-    dotClass(state: any) {
-      return state === "live"
-        ? "live"
-        : state === "waiting"
-          ? "waiting"
-          : state === "offline"
-            ? "offline"
-            : "";
-    },
 
     // Wunderbaum copies source keys it does not define into `node.data`, so
     // `folder:true` lands at `node.data.folder` and `node.folder` is forever
@@ -3648,6 +3818,26 @@ export function shell() {
         ? `The file list no longer updates by itself: ${reason}. Reopen the project to try again.`
         : "";
     },
+
+    _treeSub: null as any, // the live `/ws/tree` subscription for the open project, if any
+    // Tree memory, all three lazily created so they stay plain collections
+    // outside Alpine's reactive data (a proxied Map is a trap):
+    //   _treeCache     directory levels already shown, keyed `repo\nrel`.
+    //                  Survives closing a project. Memory only.
+    //   _treeValidated cached levels re-read against the disk during THIS open.
+    //                  Cleared on every mount.
+    //   _treeExpanded  folders expanded when a project was last closed, by repo.
+    // The FILES panel's states: "no files", "still looking" and "refused" must
+    // not be one blank.
+    treeLoading: false,
+    treeError: "",
+    // The tree shows a listing the daemon could not confirm (a refusal, a
+    // dropped socket). Distinct from `treeError`: rows are on screen, but stale.
+    treeStale: "",
+    // The daemon could not keep watching this tree: the rows are right now,
+    // but a change on disk will not show until the project is opened again.
+    treeNotLive: "",
+    _tree: null as any, // the live Wunderbaum instance, if any
 
     // --- the FILES search (ADR-0036 amendment 2026-09-15) -----------------
     // The daemon answers with the hits' rel paths, every hit's ancestors are
@@ -4117,45 +4307,6 @@ export function shell() {
       return this.rawTree()?.findFirst((n: any) => this.isFolder(n) && this.relPath(n) === rel) || null;
     },
 
-    // The open project's run-snapshot subscription (#300, ADR-0047 §9).
-    mountRunsSub() {
-      if (!window.WBDaemon?.subscribeRuns || !this.openSlug) return;
-      // A snapshot change means the tracker may have moved, so the same push
-      // nudges the board (#301); the predicate coalesces it.
-      this._runsSub = window.WBDaemon.subscribeRuns(this.openSlug, () => {
-        if (this.tabHidden()) return;
-        this.hydrateRuns();
-        this.maybeRefreshBoard("runs");
-      });
-    },
-    destroyRunsSub() {
-      try {
-        this._runsSub?.close();
-      } catch {}
-      this._runsSub = null;
-    },
-
-    // The run-completion subscription (#310, ADR-0036 amendment). The socket
-    // carries EVERY repo's nudge, so the filter is here.
-    mountChangesSub() {
-      if (!window.WBDaemon?.subscribeChanges || !this.openSlug) return;
-      this._changesSub = window.WBDaemon.subscribeChanges(this.openSlug, (frame: any) => {
-        if (this.tabHidden()) return;
-        // Optional-chained: a frame without wb-changes.ts must not throw
-        // inside `onmessage`.
-        if (WBChanges?.shouldReload?.(frame, this.openSlug)) {
-          this.loadChanges(this.openSlug);
-          this.loadSync(this.openSlug);
-        }
-      });
-    },
-    destroyChangesSub() {
-      try {
-        this._changesSub?.close();
-      } catch {}
-      this._changesSub = null;
-    },
-
     destroyTree() {
       try {
         this._treeSub?.close();
@@ -4175,6 +4326,21 @@ export function shell() {
       // A search describes THIS tree; the field stays open.
       this.resetFileSearch();
       this.hideMenu();
+    },
+
+    // The FILES search (ADR-0036 amendment 2026-09-15). `seq` dates each
+    // request so a slow reply never paints over a newer one; `expandedBefore`
+    // is the expansion snapshot `clearFileSearch` folds the tree back to
+    // (`null` = nothing expanded yet).
+    fileSearch: {
+      open: false,
+      mode: "name",
+      query: "",
+      seq: 0,
+      hits: [] as any[],
+      truncated: false,
+      note: "",
+      expandedBefore: null as string[] | null,
     },
 
     // --- opening a file into a tab ----------------------------------------
@@ -4731,11 +4897,6 @@ export function shell() {
       this.closeMenus();
       this.agentMenu = !was;
     },
-    toggleAvatarMenu() {
-      const was = this.avatarMenu;
-      this.closeMenus();
-      this.avatarMenu = !was;
-    },
     toggleWindowMenu() {
       this.windowList = WBConsole.list();
       const was = this.windowMenu;
@@ -4881,6 +5042,12 @@ export function shell() {
     fenceShortcutHint() {
       return this.isMac ? "⌥⇧F<n>" : "Alt+Shift+F<n>";
     },
+
+    roster: [] as any[],
+    // The stage extent, for the footer pill (#338).
+    stageW: 0,
+    stageH: 0,
+
     // --- columns (ADR-0051 §5) --------------------------------------------
     columnDir: "right",
     _columnsRestored: false,
@@ -5309,33 +5476,7 @@ export function shell() {
       await this.revealRel(to);
     },
 
-    // --- move (issue #364) ------------------------------------------------
-    // The open modals, oldest first: `{ path, opener }`. Only the last one
-    // answers Escape, and each returns focus to its opener on close.
-    _modalStack: [] as any[],
-    // The confirm dialog (replaces window.confirm); `askConfirm` opens it.
-    confirmModal: {
-      open: false,
-      title: "",
-      message: "",
-      confirmLabel: "Confirm",
-      cancelLabel: "Cancel",
-      danger: false,
-    },
-    _confirmResolve: null as any,
-    // The prompt dialog (replaces window.prompt, which is suppressible
-    // per-origin and never appears in an unfocused popup). `askPrompt`
-    // resolves the typed string, or null.
-    promptModal: {
-      open: false,
-      title: "",
-      message: "",
-      value: "",
-      placeholder: "",
-      confirmLabel: "Create",
-      error: "",
-    },
-    _promptResolve: null as any,
+    // --- move and create in the Files tree (issue #364) ---------------------
     // The move destination picker (#364): browses one level at a time through
     // `tree.list`. `from` is the FULL rel path; `dir` the browsed directory
     // ("" is the repo root).
@@ -5512,147 +5653,6 @@ export function shell() {
       });
     },
 
-    // The one binding every `.modal-scrim` in index.html uses:
-    // `x-bind="scrim('runOpen', () => closeRunModal())"`. `path` names the open
-    // flag, dotted for a nested one (`confirmModal.open`). Alpine evaluates the
-    // object once per scrim, so `was` lives as long as the element.
-    // A click on the scrim closes nothing: a stray click must not throw away
-    // what a modal holds. Only its own buttons and Escape close it.
-    scrim(path: any, close: any) {
-      const isOpen = () => path.split(".").reduce((o: any, k: any) => o?.[k], this);
-      let was = false;
-      const self = this;
-      return {
-        "x-show": () => isOpen(),
-        // Every open scrim hears the same window keydown; only the top one acts,
-        // so a confirm raised over another modal closes alone. The event is
-        // marked because the browser runs Alpine's effects between two
-        // listeners: the close pops the stack before the next scrim is asked,
-        // and the modal under it would read as the top.
-        "@keydown.escape.window": (e: any) => {
-          if (self._escapeEvent === e) return;
-          if (isOpen() && self.isTopModal(path)) {
-            self._escapeEvent = e;
-            close();
-          }
-        },
-        // Watches the flag, not the close methods: `logOff()` clears flags
-        // directly, and that close must still pop the stack.
-        "x-effect"(this: any) {
-          const open = !!isOpen();
-          if (open === was) return;
-          was = open;
-          if (open) self.modalOpened(path, this.$el);
-          else self.modalClosed(path);
-        },
-      };
-    },
-    isTopModal(path: any) {
-      return this._modalStack.at(-1)?.path === path;
-    },
-    // Whether the modal with this open-flag path is open, at any depth. Code
-    // outside a dialog's component asks this, never the flag (ADR-0073 D5).
-    modalOpen(path: any) {
-      return this._modalStack.some((m) => m.path === path);
-    },
-    modalOpened(path: any, scrimEl: any) {
-      this._modalStack.push({ path, opener: document.activeElement });
-      // One frame later: `x-show` has flipped by then, and a modal that focuses
-      // its own field on open (Branch, Prompt) has already done so.
-      window.requestAnimationFrame(() => {
-        const dialog = scrimEl.querySelector('[role="dialog"], [role="alertdialog"]') || scrimEl;
-        if (dialog.contains(document.activeElement)) return;
-        const controls = Array.from<any>(
-          dialog.querySelectorAll(
-            'button, input, select, textarea, [href], [tabindex]:not([tabindex="-1"])',
-          ),
-        ).filter((el) => !el.disabled && el.getClientRects().length > 0);
-        // The header ✕ is the last resort: it leads every modal, and the
-        // operator came for the content.
-        (controls.find((el) => !el.classList.contains("modal-x")) || controls[0])?.focus();
-      });
-    },
-    modalClosed(path: any) {
-      const i = this._modalStack.findLastIndex((m) => m.path === path);
-      if (i < 0) return;
-      const [{ opener }] = this._modalStack.splice(i, 1);
-      if (opener?.isConnected) opener.focus();
-    },
-
-    // Resolve `true`/`false` on the operator's choice. A pending dialog is
-    // settled `false` first so a second call never strands its promise.
-    askConfirm(opts: any = {}) {
-      if (this._confirmResolve) this.confirmRespond(false);
-      this.confirmModal = {
-        open: true,
-        title: opts.title || "Confirm",
-        message: opts.message || "",
-        confirmLabel: opts.confirmLabel || "Confirm",
-        cancelLabel: opts.cancelLabel || "Cancel",
-        danger: opts.danger || false,
-      };
-      return new Promise((resolve) => {
-        this._confirmResolve = resolve;
-      });
-    },
-    // Close the dialog and settle its promise with the choice.
-    confirmRespond(ok: any) {
-      this.confirmModal.open = false;
-      const resolve = this._confirmResolve;
-      this._confirmResolve = null;
-      if (resolve) resolve(ok);
-    },
-
-    // Resolve the typed string, or `null`. Mirrors askConfirm.
-    askPrompt(opts: any = {}) {
-      if (this._promptResolve) this.promptRespond(null);
-      this.promptModal = {
-        open: true,
-        title: opts.title || "Name",
-        message: opts.message || "",
-        value: opts.value || "",
-        placeholder: opts.placeholder || "",
-        confirmLabel: opts.confirmLabel || "Create",
-        error: "",
-      };
-      // Focus after Alpine has painted; caret at the end, not selected.
-      queueMicrotask(() => {
-        const el = document.getElementById("prompt-input") as HTMLInputElement | null;
-        if (!el) return;
-        el.focus();
-        el.setSelectionRange(el.value.length, el.value.length);
-      });
-      return new Promise((resolve) => {
-        this._promptResolve = resolve;
-      });
-    },
-
-    // A name that cannot be a single directory entry is refused HERE, dialog
-    // open. The daemon confines every path regardless (`confine_write`); this
-    // says *which* character was wrong.
-    promptSubmit() {
-      const name = this.promptModal.value.trim();
-      const bad = !name
-        ? "name is required"
-        : /[\\/]/.test(name)
-          ? "name cannot contain / or \\"
-          : name === "." || name === ".."
-            ? "name cannot be . or .."
-            : "";
-      if (bad) {
-        this.promptModal.error = bad;
-        return;
-      }
-      this.promptRespond(name);
-    },
-
-    // Close the dialog and settle its promise with `name` (null = cancelled).
-    promptRespond(name: any) {
-      this.promptModal.open = false;
-      const resolve = this._promptResolve;
-      this._promptResolve = null;
-      if (resolve) resolve(name);
-    },
   });
 }
 
