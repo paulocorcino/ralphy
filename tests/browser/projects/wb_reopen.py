@@ -262,7 +262,7 @@ def main():
             thrown = []
             page.on("pageerror", lambda e: thrown.append(str(e)))
             page.goto(BASE)
-            page.wait_for_function(f"() => !!{SH} && {SH}.projects.length >= 2", timeout=20000)
+            page.wait_for_function(f"() => !!{SH} && Alpine.store('projects').projects.length >= 2", timeout=20000)
             page.evaluate(INSTRUMENT)
 
             # --- scenario a: one read each, not two ---------------------------
@@ -335,7 +335,7 @@ def main():
             )
             check("a folder expanded before the close shows its children", True)
             toggle(page, slug_a)  # close
-            page.wait_for_function(f"() => {SH}.openSlug === null", timeout=10000)
+            page.wait_for_function(f"() => Alpine.store('projects').openSlug === null", timeout=10000)
 
             # Stop the daemon. From here nothing can be read: rows that appear were
             # painted from the browser's own memory, which is the whole claim.

@@ -229,7 +229,7 @@ def main():
             )
 
             # --- scenario 2: the menu renders from it, disabled with no repo --
-            page.evaluate(f"() => {{ {SH}.openSlug = null; }}")
+            page.evaluate(f"() => {{ Alpine.store('projects').setOpen(null); }}")
             page.wait_for_timeout(200)
             rows = open_menu(page)
             labels = rows.locator("span:not(.row-live):not(.row-new)").all_inner_texts()
@@ -266,7 +266,7 @@ def main():
 
             # --- scenario 3: selecting a repo enables them --------------------
             close_menu(page)
-            page.evaluate(f"() => {{ {SH}.openSlug = '{slug}'; {SH}.active = 'consoles'; }}")
+            page.evaluate(f"() => {{ Alpine.store('projects').setOpen('{slug}'); {SH}.active = 'consoles'; }}")
             page.wait_for_timeout(300)
             open_menu(page)
             enabled = page.evaluate(
@@ -408,7 +408,7 @@ def main():
             )
 
             # --- scenario 8: a DISABLED row's accelerator is inert -------------
-            page.evaluate(f"() => {{ {SH}.openSlug = null; }}")
+            page.evaluate(f"() => {{ Alpine.store('projects').setOpen(null); }}")
             page.wait_for_timeout(300)
             mark = len([u for u in sockets if "/ws/session" in u])
             windows_before = page.locator(".session-window").count()
@@ -421,7 +421,7 @@ def main():
                 and page.locator(".session-window").count() == windows_before,
                 f"sessions={len(sessions_of(page))}",
             )
-            page.evaluate(f"() => {{ {SH}.openSlug = '{slug}'; }}")
+            page.evaluate(f"() => {{ Alpine.store('projects').setOpen('{slug}'); }}")
             page.wait_for_timeout(200)
 
             # --- scenario 9: a FAILED /api/agents in DAEMON mode shows nothing -

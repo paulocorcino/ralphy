@@ -210,8 +210,8 @@ def open_changes(page, slug):
     # registered from a Windows path carries backslashes a string literal would
     # swallow as escapes, silently opening nothing (#316).
     # `toggle` is a TOGGLE: calling it on the already-open project closes it.
-    page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug)
-    page.wait_for_function(f"(s) => {SH}.openSlug === s", arg=slug, timeout=15000)
+    page.evaluate(f"(s) => {{ if (Alpine.store('projects').openSlug !== s) {SH}.toggle(s); }}", arg=slug)
+    page.wait_for_function(f"(s) => Alpine.store('projects').openSlug === s", arg=slug, timeout=15000)
     page.evaluate(
         f"() => {{ const v = {VIEW};"
         f" if (!v || v.offsetParent === null) document.querySelector('{RAIL_CHANGES}').click(); }}"
@@ -351,7 +351,7 @@ def main():
             page.on("pageerror", lambda e: thrown.append(str(e)))
             page.goto(BASE)
             page.wait_for_selector("[x-data]", timeout=8000)
-            page.wait_for_function(f"() => {SH}.projects.length === 4", timeout=15000)
+            page.wait_for_function(f"() => Alpine.store('projects').projects.length === 4", timeout=15000)
 
             # --- scenario 1: the rail switches the sidebar's view --------------
             # Direct children only: `nav.rail button` also matches the account
@@ -504,7 +504,7 @@ def main():
             # with NO project open. Closing it is also what proves the badge
             # survives on a project that is merely "previously opened".
             page.evaluate(f"(s) => {SH}.toggle(s)", arg=slug_b)
-            page.wait_for_function(f"() => !{SH}.openSlug", timeout=15000)
+            page.wait_for_function(f"() => !Alpine.store('projects').openSlug", timeout=15000)
             page.wait_for_function(
                 f"(s) => {{ const b = {BADGE_EXPR}; return !!b && b.shown && b.text !== ''; }}",
                 arg=slug_a,

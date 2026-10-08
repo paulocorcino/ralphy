@@ -200,7 +200,7 @@ def wait_badge(page, expected, timeout=15000):
 def open_rows(page, slug, expected_count):
     show_view(page, "projects")
     # `toggle` is a TOGGLE: calling it on the already-open project closes it.
-    page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug)
+    page.evaluate(f"(s) => {{ if (Alpine.store('projects').openSlug !== s) {SH}.toggle(s); }}", arg=slug)
     wait_badge(page, str(expected_count))
     show_view(page, "changes")
     page.wait_for_function(
@@ -254,7 +254,7 @@ def main():
             page = ctx.new_page()
             page.goto(BASE)
             page.wait_for_selector("[x-data]", timeout=8000)
-            page.wait_for_function(f"() => {SH}.projects.length === 1", timeout=15000)
+            page.wait_for_function(f"() => Alpine.store('projects').projects.length === 1", timeout=15000)
 
             # 4 changed paths: README.md, brand-new.txt, gone.txt, doc.pdf.
             open_rows(page, slug, 4)

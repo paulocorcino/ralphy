@@ -4,11 +4,13 @@
 // member is a type error. The markup is not type-checked, so the harness's
 // `loadComponent` still checks the names the markup reads.
 import type { Shell } from "./app.ts";
+import type { ProjectsStore } from "./wb-projects-store.ts";
 
 /** The Alpine magics a component or `shell()` calls. */
 export interface AlpineMagics {
   $nextTick(callback?: () => void): Promise<void>;
   $refs: Record<string, HTMLElement | undefined>;
+  $store: { projects: ProjectsStore };
 }
 
 export function component<U extends keyof Shell, T extends object>(

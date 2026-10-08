@@ -43,7 +43,7 @@ function dialog(opts = {}) {
   // What a real reload brings back after an add: the new tunnel peer's group.
   shell.loadRepos = async () => {
     reloads.push(1);
-    shell.projects = [{ key: VPS_ID + "/me/app", slug: "me/app", path: "/srv/app", daemon: VPS_ID }];
+    shell.$store.projects.setProjects([{ key: VPS_ID + "/me/app", slug: "me/app", path: "/srv/app", daemon: VPS_ID }]);
     shell.fleetPeers = [
       { daemon_id: VPS_ID, name: "vps", environment: "Linux", state: "reachable", tunnel: true },
     ];
@@ -329,14 +329,14 @@ test("dialog: a removed host leaves the list before the fleet read answers", () 
   const other = { daemon_id: "01OTHERPEER000000000000000", name: "mac", tunnel: true };
   shell.fleetPeers = [{ daemon_id: VPS_ID, name: "vps", tunnel: true }, other];
   shell._fleetRows = [{ key: VPS_ID + "/me/app", slug: "me/app", daemon: VPS_ID }];
-  shell.projects = [{ key: "me/local", slug: "me/local" }, ...shell._fleetRows];
+  shell.$store.projects.setProjects([{ key: "me/local", slug: "me/local" }, ...shell._fleetRows]);
   // The fleet read has not answered yet: the reload changes nothing.
   shell.loadRepos = async () => {};
   scripts["host.remove"] = [{ status: "exited", code: 0 }];
   state.openRemoveHost({ daemon_id: VPS_ID, name: "vps", tunnel: true });
   state.confirmRemoveHost();
   assert.deepEqual(state.sshHosts().map((h) => h.name), ["mac"]);
-  assert.deepEqual(shell.projects.map((p) => p.slug), ["me/local"]);
+  assert.deepEqual(shell.$store.projects.projects.map((p) => p.slug), ["me/local"]);
   assert.deepEqual(shell._fleetRows, []);
 });
 
@@ -478,8 +478,8 @@ test("every name the dialog's markup reads is its own or in its uses list", () =
 // Every test above runs on this scope, so these two refusals cover them all.
 test("the dialog's scope refuses a shell() name outside uses, and any shell() write", () => {
   const { state, shell } = dialog();
-  assert.ok("projects" in shell);
-  assert.throws(() => state.projects, /reads projects/);
+  assert.ok("toggle" in shell);
+  assert.throws(() => state.toggle, /reads toggle/);
   assert.throws(() => {
     state.fleetPeers = [];
   }, /assigns fleetPeers/);

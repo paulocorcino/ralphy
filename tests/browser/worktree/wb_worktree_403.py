@@ -160,8 +160,8 @@ ROWS_EXPR = (
 def open_picker(page, slug):
     # The slug rides as an ARGUMENT, never interpolated: a repo registered from
     # a Windows path carries backslashes a string literal would swallow (#316).
-    page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug)
-    page.wait_for_function(f"(s) => {SH}.openSlug === s", arg=slug, timeout=15000)
+    page.evaluate(f"(s) => {{ if (Alpine.store('projects').openSlug !== s) {SH}.toggle(s); }}", arg=slug)
+    page.wait_for_function(f"(s) => Alpine.store('projects').openSlug === s", arg=slug, timeout=15000)
     page.wait_for_function(
         "() => { const c = document.querySelector('li.project.open .project-head .branch-chip');"
         "  return !!c && c.offsetParent !== null && c.clientWidth > 0; }",
@@ -176,7 +176,7 @@ def open_picker(page, slug):
 def close_picker(page, slug):
     page.evaluate(f"() => {{ {SH}.branchOpen = false; }}")
     page.evaluate(f"(s) => {SH}.toggle(s)", arg=slug)
-    page.wait_for_function(f"() => {SH}.openSlug === null", timeout=10000)
+    page.wait_for_function(f"() => Alpine.store('projects').openSlug === null", timeout=10000)
 
 
 # --- the Files bar's checkout chip and its menu (ADR-0063 amendment 2026-09-16 b) ---
@@ -200,8 +200,8 @@ CHIP_ROWS = (
 def open_project(page, slug):
     # The slug rides as an ARGUMENT, never interpolated: a repo registered from
     # a Windows path carries backslashes a string literal would swallow (#316).
-    page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug)
-    page.wait_for_function(f"(s) => {SH}.openSlug === s", arg=slug, timeout=15000)
+    page.evaluate(f"(s) => {{ if (Alpine.store('projects').openSlug !== s) {SH}.toggle(s); }}", arg=slug)
+    page.wait_for_function(f"(s) => Alpine.store('projects').openSlug === s", arg=slug, timeout=15000)
 
 
 def open_chip(page, slug):
@@ -229,7 +229,7 @@ def chip_rows(page, slug):
 
 def click_row(page, name, slug=None):
     """Pick a checkout from the chip's menu (the menu closes on the pick)."""
-    open_chip(page, slug or page.evaluate(f"() => {SH}.openSlug"))
+    open_chip(page, slug or page.evaluate(f"() => Alpine.store('projects').openSlug"))
     page.wait_for_function(f"(n) => !!({CHIP_ITEM})(n)", arg=name, timeout=15000)
     page.evaluate(f"(n) => ({CHIP_ITEM})(n).click()", arg=name)
     page.wait_for_function(f"() => !({CHIP_MENU_OPEN})()", timeout=5000)
@@ -237,7 +237,7 @@ def click_row(page, name, slug=None):
 
 def click_remove(page, name, slug=None):
     """The trash on a row of the chip's menu; waits for the re-read to land."""
-    open_chip(page, slug or page.evaluate(f"() => {SH}.openSlug"))
+    open_chip(page, slug or page.evaluate(f"() => Alpine.store('projects').openSlug"))
     page.wait_for_function(f"(n) => !!({CHIP_ITEM})(n)", arg=name, timeout=15000)
     page.evaluate(f"(n) => ({CHIP_ITEM})(n).querySelector('.session-checkout-remove').click()", arg=name)
     page.wait_for_function(f"() => !({CHIP_MENU_OPEN})()", timeout=5000)
@@ -272,7 +272,7 @@ def main():
             page.on("pageerror", lambda e: thrown.append(str(e)))
             page.goto(BASE)
             page.wait_for_selector("[x-data]", timeout=8000)
-            page.wait_for_function(f"() => {SH}.projects.length === 2", timeout=15000)
+            page.wait_for_function(f"() => Alpine.store('projects').projects.length === 2", timeout=15000)
             page.wait_for_function(
                 "() => Array.from(document.querySelectorAll('li.project'))"
                 "  .filter(e => e.offsetParent !== null).length === 2",
@@ -320,14 +320,14 @@ def main():
             # #406 this pinned the click as inert; the select path has its own
             # suite, wb_worktree_406.py.)
             branch_before = page.evaluate(
-                f"(s) => ({SH}.projects.find(p => {SH}.repoRef(p) === s) || {{}}).branch", arg=slug_a
+                f"(s) => (Alpine.store('projects').projects.find(p => Alpine.store('projects').repoRef(p) === s) || {{}}).branch", arg=slug_a
             )
             page.evaluate(f"(n) => ({CHIP_ITEM})(n).click()", arg="wt-a")
             page.wait_for_function(f"() => !({CHIP_MENU_OPEN})()", timeout=5000)
             selected = page.evaluate(f"(s) => {SH}.checkoutOf(s)", arg=slug_a)
             page.wait_for_function(f"() => document.querySelector('{CHIP} .checkout-chip-name').textContent.trim() === 'wt-a'", timeout=5000)
             branch_after = page.evaluate(
-                f"(s) => ({SH}.projects.find(p => {SH}.repoRef(p) === s) || {{}}).branch", arg=slug_a
+                f"(s) => (Alpine.store('projects').projects.find(p => Alpine.store('projects').repoRef(p) === s) || {{}}).branch", arg=slug_a
             )
             check(
                 "clicking a worktree row selects it (the chip reads wt-a), closes the menu and leaves the branch unchanged",

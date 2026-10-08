@@ -24,7 +24,7 @@ export function settingsDialog() {
   // Every `shell()` member this component's code or markup reads or calls.
   // `loadComponent` in ui-tests/harness.mjs fails on any other name, and the
   // type check fails on a name the code reads.
-  return component(["_flashAction", "askConfirm", "openSlug", "projectLabel", "scrim"], {
+  return component(["_flashAction", "askConfirm", "scrim"], {
     // Data-driven (schema in wb-settings.ts); the daemon persists via
     // `config.set`/`config.unset`.
     SETTINGS: WB_SETTINGS,
@@ -51,8 +51,8 @@ export function settingsDialog() {
     // The open repo's resolved config (`config.get`), merged over the schema
     // defaults; with no repo open the project groups are disabled.
     readSettings() {
-      if (this.openSlug) {
-        window.WBDaemon.observe("config.get", { repo: this.openSlug })
+      if (this.$store.projects.openSlug) {
+        window.WBDaemon.observe("config.get", { repo: this.$store.projects.openSlug })
           .then((reply) => {
             const cfg = reply && reply.status === "ok" ? reply.config : null;
             // The defaults must not pass as the project's values (ADR-0070 D3).
@@ -197,15 +197,15 @@ export function settingsDialog() {
       }
       // The run-lock-aware config Mutates; an empty/"unset" value clears the
       // key. `observe` (not `spawn`) so a run-lock refusal surfaces (#207).
-      if (this.openSlug && this.settingsError) {
+      if (this.$store.projects.openSlug && this.settingsError) {
         this._flashAction("Could not change the setting: the settings were not read. Open the settings again.");
         return;
       }
-      if (this.openSlug) {
+      if (this.$store.projects.openSlug) {
         const empty = value === "" || value === "unset" || value == null;
         try {
           const reply = await window.WBDaemon.observe(empty ? "config.unset" : "config.set", {
-            repo: this.openSlug,
+            repo: this.$store.projects.openSlug,
             key,
             value: String(value),
           });
@@ -216,7 +216,7 @@ export function settingsDialog() {
           // No daemon reachable — leave the optimistic setting in place.
         }
       }
-      window.WB.emit("setting-change", { project: this.openSlug, key, value });
+      window.WB.emit("setting-change", { project: this.$store.projects.openSlug, key, value });
     },
   });
 }

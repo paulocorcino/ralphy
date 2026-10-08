@@ -236,7 +236,7 @@ def main():
             page.on("pageerror", lambda e: thrown.append(str(e)))
             page.goto(BASE)
             page.wait_for_selector("[x-data]", timeout=8000)
-            page.wait_for_function(f"() => {SH}.projects.length === 3", timeout=15000)
+            page.wait_for_function(f"() => Alpine.store('projects').projects.length === 3", timeout=15000)
             # The rows exist; give Alpine's x-for one frame to place them.
             page.wait_for_function(
                 "() => Array.from(document.querySelectorAll('li.project'))"
@@ -357,8 +357,8 @@ def main():
             # The slug rides as an ARGUMENT, never interpolated: a repo
             # registered from a Windows path carries backslashes a string
             # literal would swallow as escapes (#316).
-            page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug_c)
-            page.wait_for_function(f"(s) => {SH}.openSlug === s", arg=slug_c, timeout=15000)
+            page.evaluate(f"(s) => {{ if (Alpine.store('projects').openSlug !== s) {SH}.toggle(s); }}", arg=slug_c)
+            page.wait_for_function(f"(s) => Alpine.store('projects').openSlug === s", arg=slug_c, timeout=15000)
             page.wait_for_function(
                 "() => { const c = document.querySelector('li.project.open .project-head .branch-chip');"
                 "  return !!c && c.offsetParent !== null && c.clientWidth > 0; }",
@@ -392,7 +392,7 @@ def main():
             )
             page.evaluate(f"() => {{ {SH}.branchOpen = false; }}")
             page.evaluate(f"(s) => {SH}.toggle(s)", arg=slug_c)
-            page.wait_for_function(f"() => {SH}.openSlug === null", timeout=10000)
+            page.wait_for_function(f"() => Alpine.store('projects').openSlug === null", timeout=10000)
 
             # --- scenario 8: the same under a squeezed sidebar ----------------
             set_side_w(page, SQUEEZED_SIDE_W)

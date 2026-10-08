@@ -22,6 +22,7 @@ import { devices } from "../assets/ui/wb-devices.ts";
 import { securityDialog } from "../assets/ui/wb-security-dialog.ts";
 import { releaseDialogs } from "../assets/ui/wb-release-dialogs.ts";
 import { addProjectDialog } from "../assets/ui/wb-add-project-dialog.ts";
+import { projectsStore } from "../assets/ui/wb-projects-store.ts";
 import { WBSpend } from "../assets/ui/wb-spend.ts";
 import { WBKanban } from "../assets/ui/wb-kanban.ts";
 import { createDaemon } from "../assets/ui/wb-daemon.ts";
@@ -146,8 +147,14 @@ function stubWindow() {
 // listener the module registers at load (the write seam) — the stub's own
 // `addEventListener` is a sink. `opts.window` does the same for the window
 // (the detached popups' `message` listener and their `closed` poll).
+//
+// The Alpine store `projects` is a real `projectsStore()`, one per page, or
+// `opts.projects`. `shell()` reads it as `this.$store.projects`, and the
+// window bridge as `Alpine.store("projects")`, so both are set here.
 export function loadShell(opts = {}) {
   const window = Object.assign(stubWindow(), opts.window || {});
+  const projects = opts.projects || projectsStore();
+  window.Alpine = { store: (name) => (name === "projects" ? projects : undefined) };
   const document = Object.assign(stubDocument(), opts.document || {});
   window.window = window;
   window.document = document;
@@ -176,6 +183,7 @@ export function loadShell(opts = {}) {
   globalThis.document = document;
   wire(window, document);
   const state = shell();
+  state.$store = { projects };
   return { state, window, document };
 }
 
@@ -200,9 +208,10 @@ export function loadShell(opts = {}) {
 // the page's globals on the real `window` and `document`, so both are set to
 // this page's stubs: the last component built owns them, and node --test
 // runs each file in its own process. `opts.magics` gives the `$` magics
-// (`$nextTick`) that Alpine would add. `opts.from` is a `loadShell()` result
-// to nest the component in, so several components share one page; without
-// it the other `opts` go to a new `loadShell`.
+// (`$nextTick`) that Alpine would add; `$store` is the page's stores.
+// `opts.from` is a `loadShell()` result to nest the component in, so several
+// components share one page; without it the other `opts` go to a new
+// `loadShell`.
 export function loadComponent(alpineName, opts = {}) {
   const { state: shell, window, document } = opts.from || loadShell(opts);
   const factory = MODULE_COMPONENTS[alpineName];
@@ -216,7 +225,7 @@ export function loadComponent(alpineName, opts = {}) {
   for (const name of uses) {
     if (!(name in shell)) throw new Error(`${alpineName} lists ${name} in uses, and shell() has no such member`);
   }
-  const magics = Object.assign({}, opts.magics);
+  const magics = Object.assign({ $store: shell.$store }, opts.magics);
   const own = (k) => Object.prototype.hasOwnProperty.call(data, k);
 
   // Alpine's merged scope: the component first, then `shell()`.

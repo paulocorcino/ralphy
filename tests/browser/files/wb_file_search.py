@@ -186,10 +186,10 @@ def main():
             page.on("pageerror", lambda e: thrown.append(str(e)))
             page.goto(BASE)
             page.wait_for_selector("[x-data]", timeout=8000)
-            page.wait_for_function(f"() => {SH}.projects.length === 1", timeout=15000)
+            page.wait_for_function(f"() => Alpine.store('projects').projects.length === 1", timeout=15000)
 
             page.evaluate(f"(s) => {SH}.toggle(s)", arg=slug)
-            page.wait_for_function(f"(s) => {SH}.openSlug === s", arg=slug, timeout=15000)
+            page.wait_for_function(f"(s) => Alpine.store('projects').openSlug === s", arg=slug, timeout=15000)
             page.wait_for_function(
                 "() => [...document.querySelectorAll('.wb-host .wb-row')].some("
                 "r => r.offsetParent !== null && r.clientWidth > 0 && "
@@ -233,7 +233,7 @@ def main():
             )
             check(
                 "…and the remembered expansion never learned the search's expands",
-                page.evaluate(f"() => ({SH}._treeExpanded?.get({SH}.openSlug) || []).length") == 0,
+                page.evaluate(f"() => ({SH}._treeExpanded?.get(Alpine.store('projects').openSlug) || []).length") == 0,
             )
 
             # --- scenario c: a CONTENT search honours gitignore, keeps .ralphy --

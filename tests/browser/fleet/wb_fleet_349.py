@@ -385,7 +385,7 @@ def main():
             # The collision case, read from the app's own state: the same slug on
             # two daemons must be two DISTINCT keys with two distinct paths.
             keyed = page.evaluate(
-                f"() => {SH}.projects.map(p => ({{ key: p.key || null, slug: p.slug, path: p.path, daemon: p.daemon || null }}))"
+                f"() => Alpine.store('projects').projects.map(p => ({{ key: p.key || null, slug: p.slug, path: p.path, daemon: p.daemon || null }}))"
             )
             shared = [r for r in keyed if r["slug"] == SHARED_SLUG]
             keys = {r["key"] for r in shared}
@@ -406,7 +406,7 @@ def main():
                 }"""
             )
             page.wait_for_timeout(300)
-            opened = page.evaluate(f"() => {SH}.openSlug")
+            opened = page.evaluate(f"() => Alpine.store('projects').openSlug")
             check(
                 "the control: clicking a LOCAL row does open that project",
                 opened == SHARED_SLUG,
@@ -430,7 +430,7 @@ def main():
                 }"""
             )
             page.wait_for_timeout(300)
-            open_slug = page.evaluate(f"() => {SH}.openSlug")
+            open_slug = page.evaluate(f"() => Alpine.store('projects').openSlug")
             check(
                 "clicking a peer row opens it, keyed by daemon id and slug",
                 open_slug == f"{PEER_ID}/{SHARED_SLUG}",

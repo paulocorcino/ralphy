@@ -203,8 +203,8 @@ def main():
             page = ctx.new_page()
             page.goto(BASE)
             page.wait_for_selector("[x-data]", timeout=8000)
-            page.wait_for_function(f"() => {SH}.projects.length === 1", timeout=15000)
-            page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug)
+            page.wait_for_function(f"() => Alpine.store('projects').projects.length === 1", timeout=15000)
+            page.evaluate(f"(s) => {{ if (Alpine.store('projects').openSlug !== s) {SH}.toggle(s); }}", arg=slug)
 
             # --- scenario 1: the cp1252 markdown opens ---------------------------
             cp_id = f"file:{slug}:spike-cp1252.md"

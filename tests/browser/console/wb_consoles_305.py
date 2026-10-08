@@ -164,7 +164,7 @@ def main():
             )
 
             # --- scenario 3: a file tab rides in after it, closable -------------
-            page.evaluate(f"() => {{ {SH}.openSlug = '{slug}'; }}")
+            page.evaluate(f"() => {{ Alpine.store('projects').setOpen('{slug}'); }}")
             page.wait_for_timeout(200)
             page.evaluate(
                 f"""() => {{

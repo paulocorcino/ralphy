@@ -160,7 +160,7 @@
       <button :class="{ active: modalOpen('settingsOpen') }" @click="avatarMenu = false; $dispatch('workbench:settings-open')" title="Settings"><svg x-icon="'settings'"></svg></button>
     </nav>
 
-    <!-- sidebar: project accordion. impl: `projects` comes from the daemon
+    <!-- sidebar: project accordion. impl: `$store.projects.projects` comes from the daemon
          (mirror of /api/repos) — slug, branch, state (reachability), remote
          (github|local), and a file `tree`. Opening one lifts it to the top and
          mounts its tree; only one open at a time. -->
@@ -190,8 +190,8 @@
         <button class="side-refresh side-add-host" @click="$dispatch('workbench:hosts-open')" title="Hosts" aria-label="Hosts">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="10" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/><path d="M18 15v6"/><path d="M15 18h6"/></svg>
         </button>
-        <!-- count of located projects, at a glance (projects.length) -->
-        <span class="count" x-text="projects.length" title="Number of projects"></span>
+        <!-- count of located projects, at a glance ($store.projects.projects.length) -->
+        <span class="count" x-text="$store.projects.projects.length" title="Number of projects"></span>
       </div>
       <!-- daemon-mode repos-load failure (M5, #202): honest error, not seed. -->
       <div class="side-error" x-show="reposError" x-text="reposError" x-cloak></div>
@@ -201,7 +201,7 @@
       <div class="side-error" x-show="fleetRejectNote" x-text="fleetRejectNote" x-cloak></div>
       <!-- No project yet: say what to do first (#501). A failed read shows its
            error above instead. -->
-      <div class="side-empty projects-empty" x-show="!projects.length && !reposError && !reposLoading" x-cloak>
+      <div class="side-empty projects-empty" x-show="!$store.projects.projects.length && !reposError && !reposLoading" x-cloak>
         <p>No projects yet</p>
         <button class="btn accent" @click="$dispatch('workbench:add-project-open')"><svg x-icon="'folder-plus'"></svg> Add a project</button>
       </div>
@@ -210,7 +210,7 @@
            open: `has-open` hides every other row, so there is nothing for it
            to filter, and a search box that is visible but does nothing is
            the one an operator types a file name into. -->
-      <div class="side-search" x-show="!openSlug">
+      <div class="side-search" x-show="!$store.projects.openSlug">
         <svg x-icon="'search'"></svg>
         <input
           placeholder="Search projects…  /"
@@ -222,7 +222,7 @@
 
       <ul
         class="projects"
-        :class="{ 'has-open': openSlug }"
+        :class="{ 'has-open': $store.projects.openSlug }"
       >
         <!-- The federated sidebar (#349): one group per environment, local
              first. `.env-block` is `display: contents`, so every `li.project`
@@ -270,7 +270,7 @@
               </span>
             </div>
             <template x-for="p in g.rows" :key="p.key || p.slug">
-              <li class="project" :class="{ open: rowOpen(p), peer: !!p.daemon, unavailable: !peerAvailable(g) }">
+              <li class="project" :class="{ open: $store.projects.rowOpen(p), peer: !!p.daemon, unavailable: !peerAvailable(g) }">
             <!-- click toggles the project open/closed (mounts/destroys tree) -->
             <!-- `rowTitle` is what a COLLAPSED row can no longer show: the
                  branch chip moved to the Files bar below, which only the open
@@ -278,7 +278,7 @@
                  `.project-slug`: the name's own title still wins when the
                  pointer is over the name. The slug, the ADR-0008 D7 identity,
                  rides `data-slug` for the browser tests. -->
-            <div class="project-head" tabindex="-1" @click="toggle(repoRef(p), p)" :title="peerAvailable(g) ? rowTitle(p) : unavailableTitle(g)">
+            <div class="project-head" tabindex="-1" @click="toggle($store.projects.repoRef(p), p)" :title="peerAvailable(g) ? rowTitle(p) : unavailableTitle(g)">
               <span class="chevron"><svg x-icon="'chevron-right'"></svg></span>
               <!-- status dot: the project's daemon-reachability *right now* —
                    green = live (session/daemon active there), grey = idle
@@ -294,7 +294,7 @@
                 :class="p.remote === 'github' ? 'bi bi-github' : 'bi bi-hdd'"
                 :title="p.remote === 'github' ? 'On GitHub' : 'Local only'"
               ></i>
-              <span class="project-slug" x-text="repoLabel(p)" :title="projectTitle(repoRef(p))" :data-slug="p.slug"></span>
+              <span class="project-slug" x-text="repoLabel(p)" :title="$store.projects.projectTitle($store.projects.repoRef(p))" :data-slug="p.slug"></span>
               <!-- The branch chip carries the change count. Collapsed, only the
                    count shows — the branch is in `rowTitle` — so a closed row
                    costs the name nothing (#332); open, the chip grows its branch
@@ -304,13 +304,13 @@
                    inert — its click falls through to the row's toggle. -->
               <button
                 class="branch-chip"
-                x-show="rowOpen(p) || projectBadge(repoRef(p)).show"
-                :class="{ dirty: chipDirty(p), disabled: !canSwitchBranch(p), collapsed: !rowOpen(p) }"
-                :tabindex="rowOpen(p) ? 0 : -1"
+                x-show="$store.projects.rowOpen(p) || projectBadge($store.projects.repoRef(p)).show"
+                :class="{ dirty: chipDirty(p), disabled: !canSwitchBranch(p), collapsed: !$store.projects.rowOpen(p) }"
+                :tabindex="$store.projects.rowOpen(p) ? 0 : -1"
                 @click="branchChipClick(p, $event)"
-                :title="rowOpen(p) ? branchChipTitle(p) : projectBadge(repoRef(p)).title"
+                :title="$store.projects.rowOpen(p) ? branchChipTitle(p) : projectBadge($store.projects.repoRef(p)).title"
               >
-                <span class="branch-chip-ref" x-show="rowOpen(p)">
+                <span class="branch-chip-ref" x-show="$store.projects.rowOpen(p)">
                   <svg x-icon="'git-branch'"></svg>
                   <span class="branch-chip-name" x-text="chipLabel(p)"></span>
                 </span>
@@ -322,11 +322,11 @@
                      dirty signal. -->
                 <span
                   class="chg-badge"
-                  x-show="projectBadge(repoRef(p)).show"
-                  x-text="projectBadge(repoRef(p)).text"
+                  x-show="projectBadge($store.projects.repoRef(p)).show"
+                  x-text="projectBadge($store.projects.repoRef(p)).text"
                 ></span>
                 <span class="branch-chip-dot"
-                      x-show="rowOpen(p) && !projectBadge(repoRef(p)).show && chipDirty(p) && canSwitchBranch(p)"></span>
+                      x-show="$store.projects.rowOpen(p) && !projectBadge($store.projects.repoRef(p)).show && chipDirty(p) && canSwitchBranch(p)"></span>
               </button>
               <!-- Unregister, never delete (#363). `@click.stop` because the
                    whole `.project-head` toggles the project open — the removal
@@ -353,7 +353,7 @@
                  The branch chip is NOT here: it sits on the open row above,
                  merged with the change count, which leaves this bar to the
                  checkout chip — a worktree name needs the width. -->
-            <div class="side-head files-sec" x-show="rowOpen(p)">
+            <div class="side-head files-sec" x-show="$store.projects.rowOpen(p)">
               <span>Files</span>
               <!-- the read is in flight. It sits in the bar, not over the
                    tree, because a re-open paints from the level cache and only
@@ -371,8 +371,8 @@
                 @click.stop="openCheckoutChip(p, $event.currentTarget)"
                 :title="checkoutTitle(p)"
               >
-                <i class="bi" :class="checkoutOf(repoRef(p)) ? 'bi-folder2' : 'bi-house-door'"></i>
-                <span class="checkout-chip-name" x-text="checkoutOf(repoRef(p)) || 'primary'"></span>
+                <i class="bi" :class="checkoutOf($store.projects.repoRef(p)) ? 'bi-folder2' : 'bi-house-door'"></i>
+                <span class="checkout-chip-name" x-text="checkoutOf($store.projects.repoRef(p)) || 'primary'"></span>
                 <i class="bi bi-chevron-down"></i>
               </button>
               <span class="spacer"></span>
@@ -398,7 +398,7 @@
                  no other options: one operator, one answer. The result is the
                  tree itself, narrowed to the hits and their ancestors — there
                  is no results panel. -->
-            <div class="files-search" x-show="rowOpen(p) && fileSearch.open" x-cloak>
+            <div class="files-search" x-show="$store.projects.rowOpen(p) && fileSearch.open" x-cloak>
               <!-- `type="text"`, not `search`: the browser's own clear button
                    is drawn in its palette, not the design system's. The clear
                    is the `head-act` beside it, shown once there is something
@@ -425,7 +425,7 @@
             <!-- What the search could not show: "searching…", the 200-hit cap,
                  "no matches", a refused verb. Same muted gutter as `treeStale`,
                  because the rows on screen are right — only incomplete. -->
-            <div class="files-stale" x-show="rowOpen(p) && fileSearch.open && fileSearch.note"
+            <div class="files-stale" x-show="$store.projects.rowOpen(p) && fileSearch.open && fileSearch.note"
                  x-text="fileSearch.note"></div>
             <!-- A refused branch switch/create, under the chip that asked for
                  it. `_mutateBranch` reverts the optimistic chip on a refusal,
@@ -435,26 +435,26 @@
                  closed by default. Its OWN state, not `treeError`: a branch that
                  was refused says nothing about the tree, and dressing it as a
                  failed read would make a working project look broken. -->
-            <div class="files-error branch-error" x-show="rowOpen(p) && branchError"
+            <div class="files-error branch-error" x-show="$store.projects.rowOpen(p) && branchError"
                  x-text="branchError"></div>
             <!-- the file tree (Wunderbaum) mounts here when the project opens.
                  impl: replace the in-memory `tree` with fetch of the repo tree
                  and lazy-load subfolders; gestures already emit workbench:action. -->
-            <div class="wb-host" x-show="rowOpen(p)" :class="{ 'peer-down': rowOpen(p) && openPeerDown() }"></div>
+            <div class="wb-host" x-show="$store.projects.rowOpen(p)" :class="{ 'peer-down': $store.projects.rowOpen(p) && openPeerDown() }"></div>
             <!-- a refused or dropped read. Without this the failure was
                  indistinguishable from an empty repository. -->
-            <div class="files-error" x-show="rowOpen(p) && treeError" x-text="treeError"></div>
+            <div class="files-error" x-show="$store.projects.rowOpen(p) && treeError" x-text="treeError"></div>
             <!-- Rows ARE on screen; this says they could not be confirmed. Same
                  gutter as the failed-read line, muted rather than red: stale is
                  not broken. -->
             <div
               class="files-stale"
-              x-show="rowOpen(p) && !treeError && treeStale && !openPeerDown()"
+              x-show="$store.projects.rowOpen(p) && !treeError && treeStale && !openPeerDown()"
               x-text="treeStale"
             ></div>
             <!-- The fleet calls this project's peer down: one sentence from the
                  fleet, its action, and the daemon's diagnosis under Details. -->
-            <template x-if="rowOpen(p) && openPeerDown()">
+            <template x-if="$store.projects.rowOpen(p) && openPeerDown()">
               <div class="files-stale files-peer-down">
                 <span x-text="peerDownText(openPeerDown())"></span>
                 <button type="button" class="btn" @click="peerDownAct()" x-text="peerDownAction(openPeerDown())"></button>
@@ -467,7 +467,7 @@
             <!-- The rows are right, but the daemon stopped watching this tree. -->
             <div
               class="files-stale"
-              x-show="rowOpen(p) && !treeError && treeNotLive"
+              x-show="$store.projects.rowOpen(p) && !treeError && treeNotLive"
               x-text="treeNotLive"
             ></div>
               </li>
@@ -480,7 +480,7 @@
       <!-- Changes: a rail VIEW, not a section under the project row (#317).
            PRD #297 recorded the trigger — "if Changes ever grows its own
            toolbar it outgrows a section" — and PRD #314's write controls fire
-           it. Scoped to `openSlug` alone; the per-project count lives on the
+           it. Scoped to `$store.projects.openSlug` alone; the per-project count lives on the
            Projects row above, so it stays reachable with no navigation. -->
       <div class="changes-view" x-show="sideView === 'changes'">
         <div class="side-head">
@@ -492,12 +492,12 @@
                not share a name. Present once the repo has a worktree. -->
           <button
             class="checkout-chip"
-            x-show="openProject() && hasWorktrees(openProject())"
-            @click.stop="openCheckoutChip(openProject(), $event.currentTarget)"
-            :title="openProject() ? checkoutTitle(openProject()) : ''"
+            x-show="$store.projects.openProject() && hasWorktrees($store.projects.openProject())"
+            @click.stop="openCheckoutChip($store.projects.openProject(), $event.currentTarget)"
+            :title="$store.projects.openProject() ? checkoutTitle($store.projects.openProject()) : ''"
           >
-            <i class="bi" :class="checkoutOf(openSlug) ? 'bi-folder2' : 'bi-house-door'"></i>
-            <span class="checkout-chip-name" x-text="checkoutOf(openSlug) || 'primary'"></span>
+            <i class="bi" :class="checkoutOf($store.projects.openSlug) ? 'bi-folder2' : 'bi-house-door'"></i>
+            <span class="checkout-chip-name" x-text="checkoutOf($store.projects.openSlug) || 'primary'"></span>
             <i class="bi bi-chevron-down"></i>
           </button>
           <span class="spacer"></span>
@@ -505,9 +505,9 @@
                broken daemon read exactly like a clean tree. -->
           <span
             class="count"
-            :class="{ zero: changesCount[openSlug] === 0 }"
-            x-text="openSlug ? (changesCount[openSlug] ?? '—') : ''"
-            :title="changesReadError[openSlug] || 'Working-tree changes'"
+            :class="{ zero: changesCount[$store.projects.openSlug] === 0 }"
+            x-text="$store.projects.openSlug ? (changesCount[$store.projects.openSlug] ?? '—') : ''"
+            :title="changesReadError[$store.projects.openSlug] || 'Working-tree changes'"
           ></span>
         </div>
         <!-- The toolbar ships with the one act that exists today. It is sized
@@ -516,16 +516,16 @@
         <div class="chg-toolbar">
           <button
             class="head-act"
-            :disabled="!openSlug"
-            @click="loadChanges(openSlug); loadSync(openSlug)"
+            :disabled="!$store.projects.openSlug"
+            @click="loadChanges($store.projects.openSlug); loadSync($store.projects.openSlug)"
             title="Refresh changes"
             aria-label="Refresh changes"
           >
             <svg x-icon="'refresh-cw'"></svg>
           </button>
         </div>
-        <div class="side-empty" x-show="!openSlug">Open a project to see its changes</div>
-        <div class="chg-body" x-show="openSlug">
+        <div class="side-empty" x-show="!$store.projects.openSlug">Open a project to see its changes</div>
+        <div class="chg-body" x-show="$store.projects.openSlug">
           <!-- Two groups, each header AND its list gated on that group's
                length, so a clean tree renders neither headline (#315). The
                `:key` is prefixed per group so the two rows a
@@ -538,31 +538,31 @@
                  row's width no longer has to be shared between what the branch
                  says and what the operator can do to it. -->
             <div class="sync-row">
-              <span class="sync-branch" x-text="(syncByProject[openSlug] || {}).branch"></span>
+              <span class="sync-branch" x-text="(syncByProject[$store.projects.openSlug] || {}).branch"></span>
               <!-- The counts are meaningless without the ref they measure
                    against, and the row has no width for it — so the upstream
                    rides the hover title. -->
-              <span class="sync-counts" x-text="(syncByProject[openSlug] || {}).counts"
-                    :title="(syncByProject[openSlug] || {}).upstream"></span>
-              <span class="sync-note" x-text="(syncByProject[openSlug] || {}).note"></span>
-              <span class="sync-fetched" x-text="(syncByProject[openSlug] || {}).fetched"></span>
+              <span class="sync-counts" x-text="(syncByProject[$store.projects.openSlug] || {}).counts"
+                    :title="(syncByProject[$store.projects.openSlug] || {}).upstream"></span>
+              <span class="sync-note" x-text="(syncByProject[$store.projects.openSlug] || {}).note"></span>
+              <span class="sync-fetched" x-text="(syncByProject[$store.projects.openSlug] || {}).fetched"></span>
             </div>
             <!-- The row action is a real button in the flow, never a
                  hover-revealed affordance: the panel has to be operable on a
                  touch screen, where there is no hover to reveal anything. A
                  group action expands in the BROWSER to the paths the daemon
                  already sent (`groupPaths`), so no pattern is ever composed. -->
-            <div class="chg-group-head" x-show="(changesStaged[openSlug] || []).length">
+            <div class="chg-group-head" x-show="(changesStaged[$store.projects.openSlug] || []).length">
               <span class="chg-group-label">Staged changes</span>
               <span class="chg-group-note" x-text="groupNote('staged')" :title="groupNote('staged')"></span>
               <button class="chg-act" data-act="unstage-all" :disabled="writeLocked()"
                       :title="rowActTitle('unstage', true)" aria-label="Unstage all changes"
-                      @click.stop="unstagePaths(openSlug, groupPaths(changesStaged[openSlug], true))">−</button>
+                      @click.stop="unstagePaths($store.projects.openSlug, groupPaths(changesStaged[$store.projects.openSlug], true))">−</button>
             </div>
-            <ul class="chg-group" x-show="(changesStaged[openSlug] || []).length">
-              <template x-for="c in (changesStaged[openSlug] || [])" :key="'s:' + c.path">
+            <ul class="chg-group" x-show="(changesStaged[$store.projects.openSlug] || []).length">
+              <template x-for="c in (changesStaged[$store.projects.openSlug] || [])" :key="'s:' + c.path">
                 <li class="chg-row" :title="c.title" role="button" tabindex="0"
-                    @click="openDiff(openSlug, c)" @keydown.enter="openDiff(openSlug, c)">
+                    @click="openDiff($store.projects.openSlug, c)" @keydown.enter="openDiff($store.projects.openSlug, c)">
                   <span class="chg-face">
                     <span class="chg-mark" :class="c.cls" x-text="c.mark"></span>
                     <span class="chg-name" x-text="c.name"></span>
@@ -571,21 +571,21 @@
                   </span>
                   <button class="chg-act" data-act="unstage" :disabled="writeLocked()"
                           :title="rowActTitle('unstage')" aria-label="Unstage changes"
-                          @click.stop="unstagePaths(openSlug, [c.path, c.originalPath].filter(Boolean))">−</button>
+                          @click.stop="unstagePaths($store.projects.openSlug, [c.path, c.originalPath].filter(Boolean))">−</button>
                 </li>
               </template>
             </ul>
-            <div class="chg-group-head" x-show="(changesUnstaged[openSlug] || []).length">
+            <div class="chg-group-head" x-show="(changesUnstaged[$store.projects.openSlug] || []).length">
               <span class="chg-group-label">Changes</span>
               <span class="chg-group-note" x-text="groupNote('unstaged')" :title="groupNote('unstaged')"></span>
               <button class="chg-act" data-act="stage-all" :disabled="writeLocked()"
                       :title="rowActTitle('stage', true)" aria-label="Stage all changes"
-                      @click.stop="stagePaths(openSlug, groupPaths(changesUnstaged[openSlug]))">+</button>
+                      @click.stop="stagePaths($store.projects.openSlug, groupPaths(changesUnstaged[$store.projects.openSlug]))">+</button>
             </div>
-            <ul class="chg-group" x-show="(changesUnstaged[openSlug] || []).length">
-              <template x-for="c in (changesUnstaged[openSlug] || [])" :key="'u:' + c.path">
+            <ul class="chg-group" x-show="(changesUnstaged[$store.projects.openSlug] || []).length">
+              <template x-for="c in (changesUnstaged[$store.projects.openSlug] || [])" :key="'u:' + c.path">
                 <li class="chg-row" :title="c.title" role="button" tabindex="0"
-                    @click="openDiff(openSlug, c)" @keydown.enter="openDiff(openSlug, c)">
+                    @click="openDiff($store.projects.openSlug, c)" @keydown.enter="openDiff($store.projects.openSlug, c)">
                   <span class="chg-face">
                     <span class="chg-mark" :class="c.cls" x-text="c.mark"></span>
                     <span class="chg-name" x-text="c.name"></span>
@@ -594,7 +594,7 @@
                   </span>
                   <button class="chg-act" data-act="stage" :disabled="writeLocked()"
                           :title="rowActTitle('stage')" aria-label="Stage changes"
-                          @click.stop="stagePaths(openSlug, [c.path])">+</button>
+                          @click.stop="stagePaths($store.projects.openSlug, [c.path])">+</button>
                   <!-- Unstaged rows ONLY: `restore --worktree` does not touch the
                        index, so a discard offered on a staged row would claim to
                        throw away something it keeps. And NOT on a conflicted row:
@@ -604,7 +604,7 @@
                   <button class="chg-act chg-discard" data-act="discard" x-show="c.status !== 'conflicted'"
                           :disabled="writeLocked()"
                           :title="rowActTitle('discard')" aria-label="Discard changes"
-                          @click.stop="discardRow(openSlug, c)">×</button>
+                          @click.stop="discardRow($store.projects.openSlug, c)">×</button>
                 </li>
               </template>
             </ul>
@@ -618,7 +618,7 @@
             <textarea
               class="chg-msg"
               x-model="commitMsg"
-              @input="commitMsgSlug = openSlug"
+              @input="commitMsgSlug = $store.projects.openSlug"
               :disabled="writeLocked()"
               placeholder="Message"
               :title="commitTitle()"
@@ -629,7 +629,7 @@
               :disabled="!canCommit()"
               :title="commitTitle()"
               x-text="commitTarget().label"
-              @click="commitStaged(openSlug)"
+              @click="commitStaged($store.projects.openSlug)"
             ></button>
           </div>
           <!-- The authority's answer to an act dispatched from THIS panel. It
@@ -660,7 +660,7 @@
             <button class="bar-act" data-act="fetch" :disabled="writeLocked() || !!syncBusy"
                     :class="{ busy: syncBusy === 'fetch' }"
                     :title="syncBusyTitle('fetch') || writeLockReason() || 'Fetch from the upstream'"
-                    @click.stop="syncFetch(openSlug)">
+                    @click.stop="syncFetch($store.projects.openSlug)">
               <svg x-icon="'radar'"></svg><span class="bar-spinner" aria-hidden="true"></span><span class="bar-label">Fetch</span>
             </button>
             <!-- Pull is hidden, not dimmed, on a branch with no upstream: it is
@@ -671,12 +671,12 @@
                     x-show="!pullBlocked()"
                     :class="{ busy: syncBusy === 'pull' }"
                     :title="syncBusyTitle('pull') || pullBlocked() || writeLockReason() || 'Pull from the upstream (fast-forward only)'"
-                    @click.stop="syncPull(openSlug)">
+                    @click.stop="syncPull($store.projects.openSlug)">
               <svg x-icon="'cloud-download'"></svg><span class="bar-spinner" aria-hidden="true"></span><span class="bar-label">Pull</span>
             </button>
             <button class="bar-act bar-push" data-act="push" :disabled="writeLocked() || !!syncBusy"
                     :class="{ busy: syncBusy === 'push' }"
-                    :title="pushTitle()" @click.stop="syncPush(openSlug)">
+                    :title="pushTitle()" @click.stop="syncPush($store.projects.openSlug)">
               <svg x-icon="'cloud-upload'"></svg><span class="bar-spinner" aria-hidden="true"></span><span class="bar-label" x-text="pushAct().label">Push</span>
             </button>
           </div>
@@ -721,7 +721,7 @@
         <!-- console controls, only meaningful on the Consoles tab -->
         <div class="canvas-tools" x-show="active === 'consoles'">
           <!-- Consoles: pick an agent → spawns a floating console for the
-               selected repo (openSlug), or the home dir if none. impl: this is
+               selected repo ($store.projects.openSlug), or the home dir if none. impl: this is
                where a real session/PTY is launched (agent × repo), like the
                daemon's /ws/session. -->
           <div class="menu-wrap">
@@ -740,8 +740,8 @@
                    owner and the environment are the sidebar's; the prefix
                    never varies, so each row below carries only its digit
                    (the Fence menu's rule). -->
-              <div class="dropdown-head" :title="openSlug ? projectTitle(openSlug) : ''">
-                <span x-text="openSlug ? consoleMenuRepoName() : 'Home (no project open)'"></span>
+              <div class="dropdown-head" :title="$store.projects.openSlug ? $store.projects.projectTitle($store.projects.openSlug) : ''">
+                <span x-text="$store.projects.openSlug ? consoleMenuRepoName() : 'Home (no project open)'"></span>
                 <kbd class="kbd" x-text="consoleShortcutHint()"></kbd>
               </div>
               <p class="side-error" x-show="sessionsError()" x-text="sessionsError()"></p>
@@ -871,7 +871,7 @@
             </button>
             <div class="dropdown note-menu" x-show="noteMenu" @click.outside="noteMenu = false" x-cloak>
               <button class="note-item note-new" :title="noteCapReason()"
-                      :disabled="noteAtCap() || !openSlug"
+                      :disabled="noteAtCap() || !$store.projects.openSlug"
                       @click="newNote()">
                 <i class="bi bi-plus-square"></i>
                 <span class="row-name">New note</span>
@@ -1015,13 +1015,13 @@
                read as broken in exactly the state that is not. -->
           <header class="spend-bar">
             <span class="spend-eyebrow">Spend</span>
-            <span class="spend-sep" x-show="openSlug">/</span>
-            <span class="spend-project" x-text="projectLabel(openSlug)" :title="projectTitle(openSlug)" x-show="openSlug"></span>
+            <span class="spend-sep" x-show="$store.projects.openSlug">/</span>
+            <span class="spend-project" x-text="$store.projects.projectLabel($store.projects.openSlug)" :title="$store.projects.projectTitle($store.projects.openSlug)" x-show="$store.projects.openSlug"></span>
             <!-- Overview | Ledger · two readings of ONE project, so they are two
                  panes of one tab and not two tabs. The Ledger side is what the
                  removed Usage modal did, with columns and scoped to the project
                  the summary above it is already about. -->
-            <div class="spend-pane-toggle" x-show="openSlug" role="group" aria-label="Spend pane">
+            <div class="spend-pane-toggle" x-show="$store.projects.openSlug" role="group" aria-label="Spend pane">
               <button data-pane="overview" :class="{ active: spendPane === 'overview' }"
                       :aria-pressed="spendPane === 'overview'" @click="setSpendPane('overview')">Overview</button>
               <button data-pane="ledger" :class="{ active: spendPane === 'ledger' }"
@@ -1034,7 +1034,7 @@
             <!-- Overview only: the window scopes the SUMMARY's figures, and a
                  "last 7 days" label above an all-time grid is exactly the
                  misread the closed vocabulary exists to prevent. -->
-            <select class="spend-period-select" x-show="openSlug && spendPane === 'overview'" aria-label="Spend period"
+            <select class="spend-period-select" x-show="$store.projects.openSlug && spendPane === 'overview'" aria-label="Spend period"
                     @change="setSpendPeriod($event.target.value)">
               <template x-for="p in spendModel.periods.list" :key="p.key">
                 <option :value="p.key" :selected="p.key === spendModel.periods.key" x-text="p.label"></option>
@@ -1045,7 +1045,7 @@
                  two different reads of the ledger, and a button that re-fetched
                  the invisible one would read as broken. -->
             <button class="side-refresh" :class="{ spinning: spend.loading || ledger.loading }"
-                    :disabled="spend.loading || ledger.loading || !openSlug"
+                    :disabled="spend.loading || ledger.loading || !$store.projects.openSlug"
                     @click="spendPane === 'ledger' ? (ledger.slug = null, loadLedger()) : loadSpend()"
                     title="Refresh" aria-label="Refresh spend">
               <svg x-icon="'refresh-cw'"></svg>
@@ -1435,7 +1435,7 @@
       <section class="kanban" x-show="kanbanOpen" x-cloak aria-label="Kanban board">
         <div class="kanban-head">
           <span class="kanban-title"><svg x-icon="'square-kanban'"></svg> Board</span>
-          <span class="kanban-scope" x-text="openSlug ? projectLabel(openSlug) : 'No project open'" :title="projectTitle(openSlug)"></span>
+          <span class="kanban-scope" x-text="$store.projects.openSlug ? $store.projects.projectLabel($store.projects.openSlug) : 'No project open'" :title="$store.projects.projectTitle($store.projects.openSlug)"></span>
           <span class="spacer"></span>
           <!-- board-wide search + label filter (apply to every column) -->
           <div class="kanban-search">
@@ -1468,23 +1468,23 @@
           <button class="kanban-close" @click="toggleKanban()" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
 
-        <div class="kanban-empty" x-show="!openSlug">Open a project to see its board.</div>
+        <div class="kanban-empty" x-show="!$store.projects.openSlug">Open a project to see its board.</div>
         <!-- A whole-tracker fold is several `gh` calls; until it lands there are
              no rows, and the empty state below would otherwise assert "no issues"
              about a board nobody has read yet. The spinner outranks it. -->
-        <div class="kanban-loading" x-show="openSlug && boardRefreshing && projectIssues().length === 0">
+        <div class="kanban-loading" x-show="$store.projects.openSlug && boardRefreshing && projectIssues().length === 0">
           <span class="kanban-spinner" aria-hidden="true"></span>
-          Loading the board for <b x-text="projectLabel(openSlug)"></b>…
+          Loading the board for <b x-text="$store.projects.projectLabel($store.projects.openSlug)"></b>…
         </div>
         <div class="kanban-empty"
-             x-show="openSlug && !boardRefreshing && !boardError[openSlug] && projectIssues().length === 0">
-          No issues in <b x-text="projectLabel(openSlug)"></b>.
+             x-show="$store.projects.openSlug && !boardRefreshing && !boardError[$store.projects.openSlug] && projectIssues().length === 0">
+          No issues in <b x-text="$store.projects.projectLabel($store.projects.openSlug)"></b>.
         </div>
-        <div class="kanban-error" x-show="openSlug && boardError[openSlug]">
-          <svg x-icon="'alert-triangle'"></svg> <span x-text="boardError[openSlug]"></span>
+        <div class="kanban-error" x-show="$store.projects.openSlug && boardError[$store.projects.openSlug]">
+          <svg x-icon="'alert-triangle'"></svg> <span x-text="boardError[$store.projects.openSlug]"></span>
         </div>
 
-        <div class="kanban-cols" x-show="openSlug && projectIssues().length">
+        <div class="kanban-cols" x-show="$store.projects.openSlug && projectIssues().length">
           <template x-for="col in KANBAN.COLUMNS" :key="col.id">
             <section class="kanban-col" :class="'col-' + col.id">
               <div class="kanban-col-head">
@@ -1687,7 +1687,7 @@
     <aside class="runs" x-show="runsOpen" aria-label="Runs">
       <div class="runs-head">
         <span>Runs</span>
-        <span class="runs-count" x-show="openSlug && projectRuns().length" x-text="projectRuns().length" title="Active runs"></span>
+        <span class="runs-count" x-show="$store.projects.openSlug && projectRuns().length" x-text="projectRuns().length" title="Active runs"></span>
         <span class="spacer"></span>
         <button class="runs-close" @click="toggleRuns()" title="Close"><i class="bi bi-x"></i></button>
       </div>
@@ -1696,7 +1696,7 @@
            project. `run` opens a modal to pick agent(s) + branch mode; `triage`
            and `push` are blessed no-arg invocations, fired straight onto the
            seam (the client never composes a command line). -->
-      <div class="runs-actions" x-show="openSlug">
+      <div class="runs-actions" x-show="$store.projects.openSlug">
         <!-- ONE control, two states (docs/adr/0054). While a run is live this
              slot is the only thing an operator wants there — starting a second
              run is exactly what the lock refuses — so `run` becomes `stop` and
@@ -1762,16 +1762,16 @@
         <pre class="runs-raw" x-show="rawFeedOpen" x-text="rawFeed"></pre>
       </div>
 
-      <div class="runs-empty" x-show="!openSlug">Open a project to see its runs.</div>
+      <div class="runs-empty" x-show="!$store.projects.openSlug">Open a project to see its runs.</div>
       <!-- a failed read is its own state: an unreadable project must never be
            rendered as an idle one (ADR-0047 §6). -->
       <div class="runs-error" x-show="runsError" x-text="runsError"></div>
-      <div class="runs-empty" x-show="openSlug && projectRuns().length === 0 && !runsError">
-        No active runs in <b x-text="projectLabel(openSlug)"></b>. Click <b>“Run”</b> to start one.
+      <div class="runs-empty" x-show="$store.projects.openSlug && projectRuns().length === 0 && !runsError">
+        No active runs in <b x-text="$store.projects.projectLabel($store.projects.openSlug)"></b>. Click <b>“Run”</b> to start one.
       </div>
 
       <!-- the panel proper renders only when the open project has a live run -->
-      <template x-if="openSlug && projectRuns().length">
+      <template x-if="$store.projects.openSlug && projectRuns().length">
         <div class="runs-body">
           <!-- ZONE 1 · run picker — a project can host several concurrent runs
                (one per `runid`); pick which to inspect. -->
@@ -1799,7 +1799,7 @@
               <svg x-icon="'chevron-down'"></svg>
             </button>
             <div class="dropdown run-menu" x-show="runMenu" @click.outside="runMenu = false" x-cloak>
-              <div class="dropdown-head" x-text="'Active runs · ' + projectLabel(openSlug)"></div>
+              <div class="dropdown-head" x-text="'Active runs · ' + $store.projects.projectLabel($store.projects.openSlug)"></div>
               <template x-for="r in projectRuns()" :key="r.runid">
                 <button class="dropdown-item run-menu-item" :class="{ active: r.runid === currentRunId }"
                         @click="selectRun(r.runid); runMenu = false">
@@ -1938,16 +1938,16 @@
             <!-- project group: these settings belong to the open repo, persisted
                  in <repo>/.ralphy/settings.json -->
             <div class="settings-navgroup project">
-              <i class="bi" :class="openSlug ? 'bi-folder2-open' : 'bi-folder2'"></i>
-              <span x-text="openSlug ? ('Project · ' + projectLabel(openSlug)) : 'Project · none open'"></span>
+              <i class="bi" :class="$store.projects.openSlug ? 'bi-folder2-open' : 'bi-folder2'"></i>
+              <span x-text="$store.projects.openSlug ? ('Project · ' + $store.projects.projectLabel($store.projects.openSlug)) : 'Project · none open'"></span>
             </div>
             <template x-for="sec in SETTINGS.filter((s) => s.scope === 'project')" :key="sec.id">
               <button
                 class="settings-navitem"
                 :class="{ active: settingsSection === sec.id }"
                 @click="settingsSection = sec.id"
-                :disabled="!openSlug"
-                :title="!openSlug ? 'Open a project to edit its settings' : ''"
+                :disabled="!$store.projects.openSlug"
+                :title="!$store.projects.openSlug ? 'Open a project to edit its settings' : ''"
               >
                 <i class="bi" :class="sec.icon"></i><span x-text="sec.title"></span>
               </button>
@@ -1962,16 +1962,16 @@
                   <span class="scope-chip" :class="sec.scope"
                         x-text="sec.scope === 'client' ? 'This browser only'
                                 : sec.scope === 'daemon' ? 'Daemon · all projects'
-                                : (openSlug ? ('Project · ' + projectLabel(openSlug)) : 'Project · none open')"></span>
+                                : ($store.projects.openSlug ? ('Project · ' + $store.projects.projectLabel($store.projects.openSlug)) : 'Project · none open')"></span>
                 </div>
                 <p class="settings-blurb" x-text="sec.blurb"></p>
                 <!-- per-project sections need an open repo to write into -->
-                <p class="settings-noproject" x-show="sec.scope === 'project' && !openSlug">
+                <p class="settings-noproject" x-show="sec.scope === 'project' && !$store.projects.openSlug">
                   <i class="bi bi-info-circle"></i> Open a project to edit its settings. They are saved in
                   <code>&lt;repo&gt;/.ralphy/settings.json</code>.
                 </p>
                 <template x-for="it in sec.items" :key="it.key">
-                  <div class="set-row" x-show="sec.scope !== 'project' || openSlug">
+                  <div class="set-row" x-show="sec.scope !== 'project' || $store.projects.openSlug">
                     <div class="set-main">
                       <label class="set-label" x-text="it.label"></label>
                       <!-- control, chosen by type -->
@@ -2510,7 +2510,7 @@
         <div class="modal-head">
           <svg x-icon="'git-branch'"></svg>
           <span class="modal-title">Switch branch</span>
-          <span class="modal-sub" x-text="projectLabel(branchModal.slug)" :title="projectTitle(branchModal.slug)"></span>
+          <span class="modal-sub" x-text="$store.projects.projectLabel(branchModal.slug)" :title="$store.projects.projectTitle(branchModal.slug)"></span>
           <span class="sec-badge off" x-show="branchModal.checkoutDirty"
                 title="The working tree has uncommitted changes">uncommitted</span>
           <span class="spacer"></span>
@@ -2664,7 +2664,7 @@
           <span class="spacer"></span>
           <button class="modal-x" @click="movePickCancel()" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
-        <p class="move-crumb" x-text="movePick.dir || projectLabel(openSlug) + ' (project root)'"></p>
+        <p class="move-crumb" x-text="movePick.dir || $store.projects.projectLabel($store.projects.openSlug) + ' (project root)'"></p>
         <div class="move-list">
           <button class="move-row up" x-show="movePick.dir" @click="movePickUp()">
             <i class="bi bi-arrow-90deg-up"></i><span>..</span>
@@ -2700,7 +2700,7 @@
         <div class="modal-head">
           <svg x-icon="'scroll-text'"></svg>
           <span class="modal-title" x-text="'Plan · #' + (openPlan()?.summary?.issue ?? '')"></span>
-          <span class="modal-sub" x-text="projectLabel(openSlug)" :title="projectTitle(openSlug)"></span>
+          <span class="modal-sub" x-text="$store.projects.projectLabel($store.projects.openSlug)" :title="$store.projects.projectTitle($store.projects.openSlug)"></span>
           <span class="spacer"></span>
           <button class="modal-x" @click="closePlanModal()" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
@@ -2748,7 +2748,7 @@
         <div class="modal-head">
           <svg x-icon="'play'"></svg>
           <span class="modal-title">Start a run</span>
-          <span class="modal-sub" x-text="projectLabel(openSlug)" :title="projectTitle(openSlug)"></span>
+          <span class="modal-sub" x-text="$store.projects.projectLabel($store.projects.openSlug)" :title="$store.projects.projectTitle($store.projects.openSlug)"></span>
           <span class="spacer"></span>
           <button class="modal-x" @click="closeRunModal()" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
@@ -2794,7 +2794,7 @@
             </div>
             <p class="run-help" x-text="runCfg.branchMode === 'new'
               ? 'Creates an afk/run-… branch from the base and commits there.'
-              : ('Commits on the current branch (' + openProjectBranch() + ').')"></p>
+              : ('Commits on the current branch (' + $store.projects.openProjectBranch() + ').')"></p>
           </div>
 
           <!-- live command preview -->

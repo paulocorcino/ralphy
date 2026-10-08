@@ -4240,14 +4240,18 @@ fn first_party_scripts_move_to_typescript_and_never_back() {
 /// ADR-0073 D3: an Alpine component can be built without Alpine. Each
 /// component `main.ts` registers is the exported factory of an ES module
 /// (ADR-0075 D2), and that module has its own `ui-tests/<file>.test.mjs`,
-/// where `loadComponent` checks the `uses` list of ADR-0073 D4.
+/// where `loadComponent` checks the `uses` list of ADR-0073 D4. An Alpine
+/// store (D6) is built the same way.
 #[test]
 fn every_alpine_component_can_be_built_and_has_a_test() {
     let tests = Path::new(env!("CARGO_MANIFEST_DIR")).join("ui-tests");
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/ui");
     let main = include_str!("../assets/ui/main.ts");
     let mut found = 0;
-    for (name, factory) in alpine_data_calls(main) {
+    for (name, factory) in alpine_data_calls(main)
+        .into_iter()
+        .chain(alpine_store_calls(main))
+    {
         if name == "shell" {
             continue;
         }
@@ -4272,9 +4276,21 @@ fn every_alpine_component_can_be_built_and_has_a_test() {
         );
     }
     assert!(
-        found >= 6,
-        "expected at least the six dialog and section components, found {found}"
+        found >= 7,
+        "expected at least the six dialog and section components and the projects store, found {found}"
     );
+}
+
+/// The `(name, factory)` of each `Alpine.store("name", factory());` line.
+fn alpine_store_calls(js: &str) -> Vec<(&str, &str)> {
+    js.lines()
+        .filter_map(|l| {
+            l.trim()
+                .strip_prefix("Alpine.store(\"")?
+                .strip_suffix("());")
+        })
+        .filter_map(|l| l.split_once("\", "))
+        .collect()
 }
 
 /// The `(name, factory)` of each `Alpine.data("name", factory);` line.
@@ -4542,7 +4558,7 @@ fn the_changes_section_renders_a_status_marked_list() {
     // The diff tab (#311): the row's click wiring and the diff editor's
     // factory.
     assert!(
-        html.contains("openDiff(openSlug, c)"),
+        html.contains("openDiff($store.projects.openSlug, c)"),
         "index.html must open a diff from a changes row"
     );
     assert!(
@@ -4633,7 +4649,7 @@ fn the_discard_control_is_pinned_in_the_markup() {
         r#"class="chg-group-note""#,
         "groupNote('unstaged')",
         "groupNote('staged')",
-        "discardRow(openSlug, c)",
+        "discardRow($store.projects.openSlug, c)",
     ] {
         assert!(
             html.contains(pin),
@@ -4739,22 +4755,22 @@ fn the_workbench_never_titles_a_repo_with_its_routing_head() {
             "a detached popup must load the fold it calls"
         );
     }
-    let app = include_str!("../assets/ui/app.ts");
+    let store = include_str!("../assets/ui/wb-projects-store.ts");
     assert!(
-        app.contains("projectLabel(ref: any) {"),
-        "app.ts must keep the label helper the shell binds to"
+        store.contains("projectLabel(ref: any) {"),
+        "wb-projects-store.ts must keep the label helper the markup binds to"
     );
     // The crumb is the surface that STARTED this, and it no longer exists:
     // it went with the top bar, because the sidebar already names the open
     // project on its top row. So the pin moves to the surfaces that still
     // put the project's name on screen. It is deliberately NOT
-    // `contains("projectLabel(openSlug)")` any more — ten call sites satisfy
+    // `contains("$store.projects.projectLabel($store.projects.openSlug)")` any more — ten call sites satisfy
     // that substring, so it would stay green with every one of these
     // surfaces reverted to the raw ref.
     let html = include_str!("../assets/ui/index.html");
     for pin in [
-        r#"<span class="kanban-scope" x-text="openSlug ? projectLabel(openSlug) : 'No project open'""#,
-        r#"<span class="spend-project" x-text="projectLabel(openSlug)""#,
+        r#"<span class="kanban-scope" x-text="$store.projects.openSlug ? $store.projects.projectLabel("#,
+        r#"<span class="spend-project" x-text="$store.projects.projectLabel($store.projects.openSlug)""#,
     ] {
         assert!(
             html.contains(pin),
@@ -4765,8 +4781,8 @@ fn the_workbench_never_titles_a_repo_with_its_routing_head() {
     // the regression that named this test can never return by that route)
     // and the bare binding any new surface would reach for first.
     for anti in [
-        r#"x-text="openSlug ?? 'no project'""#,
-        r#"x-text="openSlug""#,
+        r#"x-text="$store.projects.openSlug ?? 'no project'""#,
+        r#"x-text="$store.projects.openSlug""#,
     ] {
         assert!(
             !html.contains(anti),
@@ -7442,7 +7458,7 @@ fn a_refused_branch_change_reports_in_the_projects_panel() {
     let html = include_str!("../assets/ui/index.html");
     for pin in [
         r#"class="files-error branch-error""#,
-        r#"x-show="rowOpen(p) && branchError""#,
+        r#"x-show="$store.projects.rowOpen(p) && branchError""#,
         r#"x-text="branchError""#,
     ] {
         assert!(html.contains(pin), "index.html must keep the pin {pin}");
@@ -7876,7 +7892,7 @@ fn the_run_completion_nudge_is_wired_through_the_ui_assets() {
     );
     assert!(
         include_str!("../assets/ui/app.ts")
-            .contains("WBChanges?.shouldReload?.(frame, this.openSlug)"),
+            .contains("WBChanges?.shouldReload?.(frame, this.$store.projects.openSlug)"),
         "app.ts must filter each nudge through shouldReload (#310)"
     );
 }
@@ -8215,7 +8231,7 @@ fn the_branch_chip_carries_the_change_count_on_the_project_row() {
         r#"class="branch-chip""#,
         r#"class="chg-badge""#,
         "branchChipClick(p, $event)",
-        r#"x-show="rowOpen(p)""#,
+        r#"x-show="$store.projects.rowOpen(p)""#,
     ] {
         assert!(
             row.contains(needle),

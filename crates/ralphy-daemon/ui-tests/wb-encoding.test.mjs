@@ -62,7 +62,7 @@ function shellWith(reply) {
   window.WB = { emit: (action, detail) => emitted.push({ action, ...detail }) };
   GLOBALS.forEach((k) => (globalThis[k] = window[k]));
   state.$nextTick = (fn) => fn();
-  state.openSlug = "owner/repo";
+  state.$store.projects.setOpen("owner/repo");
   state.checkouts = {};
   state.syncViewer = () => {};
   const fire = (detail) => listeners.forEach((fn) => fn({ detail }));

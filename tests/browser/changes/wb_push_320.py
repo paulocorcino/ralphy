@@ -182,8 +182,8 @@ OPEN_VIEW = (
 def open_changes(page, slug):
     # The slug rides as an ARGUMENT, never interpolated into the source: a slug
     # carrying Windows backslashes would be swallowed as escapes by a literal.
-    page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug)
-    page.wait_for_function(f"(s) => {SH}.openSlug === s", arg=slug, timeout=15000)
+    page.evaluate(f"(s) => {{ if (Alpine.store('projects').openSlug !== s) {SH}.toggle(s); }}", arg=slug)
+    page.wait_for_function(f"(s) => Alpine.store('projects').openSlug === s", arg=slug, timeout=15000)
     page.evaluate(
         "() => { const v = document.querySelector('.changes-view');"
         " if (!v || v.offsetParent === null)"
@@ -240,7 +240,7 @@ def main():
             page.on("pageerror", lambda e: thrown.append(str(e)))
             page.goto(BASE)
             page.wait_for_selector("[x-data]", timeout=8000)
-            page.wait_for_function(f"() => {SH}.projects.length === 1", timeout=15000)
+            page.wait_for_function(f"() => Alpine.store('projects').projects.length === 1", timeout=15000)
 
             # --- scenario a: publishing an unpublished branch -----------------
             git(ours, "checkout", "--quiet", "-b", "feat/publish-me")

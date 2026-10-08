@@ -183,12 +183,12 @@ def main():
             cdp = page.context.new_cdp_session(page)
             cdp.send("Performance.enable")
             page.goto(BASE)
-            page.wait_for_function(f"() => {SH}.projects.length === 2", timeout=30000)
+            page.wait_for_function(f"() => Alpine.store('projects').projects.length === 2", timeout=30000)
             page.evaluate(REPLAY)
 
             # Open A with its board, its spend document and its ledger loaded.
             page.evaluate(f"(s) => {SH}.toggle(s)", arg=slug_a)
-            page.wait_for_function(f"(s) => {SH}.openSlug === s", arg=slug_a, timeout=30000)
+            page.wait_for_function(f"(s) => Alpine.store('projects').openSlug === s", arg=slug_a, timeout=30000)
             page.evaluate(f"() => {SH}.toggleKanban()")
             page.wait_for_function(f"(s) => ({SH}.boardIssues[s] || []).length > 0", arg=slug_a, timeout=180000)
             load_spend(page, slug_a)
@@ -197,7 +197,7 @@ def main():
             page.wait_for_function(f"(s) => ({SH}.boardIssues[s] !== undefined)", arg=slug_b, timeout=180000)
             page.wait_for_function(f"() => !{SH}.boardRefreshing", timeout=180000)
             page.evaluate(f"(s) => {SH}.toggle(s)", arg=slug_a)
-            page.wait_for_function(f"(s) => {SH}.openSlug === s", arg=slug_a, timeout=30000)
+            page.wait_for_function(f"(s) => Alpine.store('projects').openSlug === s", arg=slug_a, timeout=30000)
             idle(page, 1500)
 
             facts = page.evaluate(
@@ -217,7 +217,7 @@ def main():
             # outside a cross-origin-isolated page, so a single short call
             # reads as 0 ms.
             load_spend(page, slug_a)
-            page.evaluate(f"() => {{ {SH}.kanbanSel = ({SH}.boardIssues[{SH}.openSlug] || [])[0]?.number ?? null; }}")
+            page.evaluate(f"() => {{ {SH}.kanbanSel = ({SH}.boardIssues[Alpine.store('projects').openSlug] || [])[0]?.number ?? null; }}")
             per_call = page.evaluate(
                 f"() => {{ const sh = {SH}; const out = {{}};"
                 "  for (const m of ['spendView', 'ledgerView', 'kanbanColumns', 'selectedIssue', 'currentRun']) {"
