@@ -186,10 +186,7 @@ pub(crate) async fn session_ws(
             }
             recv = attach.rx.recv() => match recv {
                 Ok(bytes) => {
-                    let frame = Frame::Terminal { session: id, data: bytes };
-                    let encoded = protocol::encode(&frame);
-                    traffic.live(encoded.len());
-                    if socket.send(Message::Binary(encoded.into())).await.is_err() {
+                    if send_output(&mut socket, id, bytes, &mut traffic).await.is_err() {
                         break;
                     }
                 }
@@ -263,6 +260,13 @@ pub(crate) async fn session_ws(
     // `drop(attach)` — and the session's scrollback ring with it — indefinitely.
     if let Some(reason) = end {
         let _ = tokio::time::timeout(Duration::from_secs(5), async {
+            // The child's last output is sent before its end is named. Only a
+            // child end drains: a takeover leaves the stream to the new owner,
+            // whose replay already holds those bytes, and the old client is
+            // about to be told it lost the session.
+            if reason == session::EndReason::ChildExited {
+                send_queued(&mut socket, id, &mut attach.rx, &mut traffic).await;
+            }
             send_command(
                 &mut socket,
                 0,
@@ -282,4 +286,176 @@ pub(crate) async fn session_ws(
     // Detach, do NOT close: dropping `attach` releases the single-writer slot; the
     // session (and its child) live on for a later reattach.
     drop(attach);
+}
+
+/// Send one chunk of session output to the client as a `Terminal` frame.
+async fn send_output(
+    socket: &mut WebSocket,
+    id: session::SessionId,
+    bytes: Vec<u8>,
+    traffic: &mut Traffic,
+) -> Result<(), axum::Error> {
+    let frame = Frame::Terminal {
+        session: id,
+        data: bytes,
+    };
+    let encoded = protocol::encode(&frame);
+    traffic.live(encoded.len());
+    socket.send(Message::Binary(encoded.into())).await
+}
+
+/// Send every chunk already queued on `rx` when the loop ended. The pump
+/// broadcasts the child's last output and only then fires the eviction, so
+/// both can be ready together, and the loop's `select!` may take the eviction
+/// first. Bounded by the count queued now: on a `close` the eviction fires
+/// before the kill, and the child can still print while this drains.
+async fn send_queued(
+    socket: &mut WebSocket,
+    id: session::SessionId,
+    rx: &mut tokio::sync::broadcast::Receiver<Vec<u8>>,
+    traffic: &mut Traffic,
+) {
+    use tokio::sync::broadcast::error::TryRecvError;
+    for _ in 0..rx.len() {
+        match rx.try_recv() {
+            Ok(bytes) => {
+                if send_output(socket, id, bytes, traffic).await.is_err() {
+                    return;
+                }
+            }
+            Err(TryRecvError::Lagged(skipped)) => traffic.lagged(skipped),
+            Err(TryRecvError::Empty | TryRecvError::Closed) => return,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    use axum::extract::ws::WebSocketUpgrade;
+    use futures_util::StreamExt;
+    use tokio_tungstenite::tungstenite;
+
+    /// A child that exits leaves its last output queued on the attachment
+    /// while the eviction is already signalled. Every queued chunk reaches the
+    /// client before `session-end`. With both arms ready, an unbiased select
+    /// takes the eviction about half the time, so a loop that drops queued
+    /// output keeps all 32 chunks with a chance near 2^-32.
+    #[tokio::test]
+    async fn queued_output_reaches_the_client_before_the_session_end() {
+        let manager = Arc::new(session::SessionManager::new());
+        let spec = session::console_spec(std::env::temp_dir(), 24, 80, None);
+        let (id, mut attach) = manager
+            .spawn_attached(
+                "~".to_string(),
+                "console".to_string(),
+                "console".to_string(),
+                None,
+                None,
+                None,
+                spec,
+            )
+            .expect("the platform shell must spawn — the free console depends on it");
+        // The test owns the output stream, so the queue holds exactly these
+        // chunks and nothing the shell prints.
+        let (tx, rx) = tokio::sync::broadcast::channel::<Vec<u8>>(64);
+        attach.rx = rx;
+        let chunks: Vec<Vec<u8>> = (0..32)
+            .map(|n| format!("line {n}\r\n").into_bytes())
+            .collect();
+        for chunk in &chunks {
+            tx.send(chunk.clone())
+                .expect("the attachment holds a receiver");
+        }
+        assert!(manager.close(id), "the session was live");
+        assert_eq!(
+            attach.evict.reason(),
+            Some(session::EndReason::ChildExited),
+            "the eviction is signalled before the bridge starts"
+        );
+
+        let slot = Arc::new(Mutex::new(Some(attach)));
+        let (_stop, shutdown) = tokio::sync::watch::channel(false);
+        let app = axum::Router::new().route(
+            "/",
+            axum::routing::get(move |ws: WebSocketUpgrade| {
+                let attach = slot
+                    .lock()
+                    .expect("slot mutex")
+                    .take()
+                    .expect("one client connects");
+                let shutdown = shutdown.clone();
+                async move {
+                    ws.on_upgrade(move |socket| {
+                        session_ws(
+                            socket,
+                            attach,
+                            id,
+                            "daemon".to_string(),
+                            "test".to_string(),
+                            SessionLabels {
+                                name: None,
+                                checkout: None,
+                                watching: false,
+                            },
+                            Tab {
+                                holder: None,
+                                device: None,
+                            },
+                            shutdown,
+                        )
+                    })
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind a loopback port");
+        let addr = listener
+            .local_addr()
+            .expect("a bound listener has an address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await });
+
+        let (mut client, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/"))
+            .await
+            .expect("the bridge accepts the socket");
+        let mut received: Vec<u8> = Vec::new();
+        let mut ended_after: Option<usize> = None;
+        let read = async {
+            // The bridge drops the socket right after its Close frame, so the
+            // read that follows the Close can fail: stop at the Close.
+            while let Some(Ok(message)) = client.next().await {
+                let bytes = match message {
+                    tungstenite::Message::Binary(bytes) => bytes,
+                    tungstenite::Message::Close(_) => break,
+                    _ => continue,
+                };
+                match protocol::decode(&bytes).expect("a well-formed frame") {
+                    Frame::Terminal { data, .. } => {
+                        assert!(ended_after.is_none(), "output arrived after session-end");
+                        received.extend_from_slice(&data);
+                    }
+                    Frame::Command(cmd) if cmd.verb == "session-end" => {
+                        assert_eq!(cmd.payload["reason"], "child-exited");
+                        ended_after = Some(received.len());
+                    }
+                    _ => {}
+                }
+            }
+        };
+        tokio::time::timeout(Duration::from_secs(10), read)
+            .await
+            .expect("the bridge closes the socket after session-end");
+        drop(tx);
+        server.abort();
+
+        assert_eq!(
+            String::from_utf8_lossy(&received),
+            String::from_utf8_lossy(&chunks.concat()),
+            "every queued chunk reaches the client"
+        );
+        assert!(ended_after.is_some(), "the end is announced");
+    }
 }
