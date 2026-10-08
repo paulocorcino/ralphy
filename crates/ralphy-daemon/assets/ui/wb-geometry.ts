@@ -247,6 +247,201 @@ export const WBGeometry = (function () {
     return { left, top, width, height };
   }
 
+  // ---- navigating the plane ----------------------------------------------------
+  // The scroll offsets that bring `target` (a STAGE-relative rect) into the
+  // viewport, pure: centre it, then clamp to `[0, extent - viewport]`. ALWAYS
+  // centres. Callers: `reveal` (the Go-to picker, #337) and ADR-0051 §7's fence
+  // jump.
+  // ONE clamp per axis: the final `Math.max(0, …)` stops a viewport bigger than
+  // the extent asking for a negative offset. Flooring the ceiling too would
+  // make that floor unfalsifiable by the table's negative control.
+  function clampOffset(offset: any, viewport: any, extent: any) {
+    const maxLeft = (extent?.width || 0) - (viewport?.width || 0);
+    const maxTop = (extent?.height || 0) - (viewport?.height || 0);
+    return {
+      left: Math.max(0, Math.min(offset?.left || 0, maxLeft)),
+      top: Math.max(0, Math.min(offset?.top || 0, maxTop)),
+    };
+  }
+
+  function bringIntoView(target: any, viewport: any, extent: any) {
+    const vw = viewport?.width || 0;
+    const vh = viewport?.height || 0;
+    const left = (target?.left || 0) + (target?.width || 0) / 2 - vw / 2;
+    const top = (target?.top || 0) + (target?.height || 0) / 2 - vh / 2;
+    return clampOffset({ left, top }, viewport, extent);
+  }
+
+  // The other anchoring: the target's TOP-LEFT corner, one inset in from the
+  // viewport's. A fence is a region the operator works inside, not a point of
+  // interest — centring it wastes the screen above and left. `bringIntoView`
+  // keeps CENTRING for the Go-to picker (#337 pins it).
+  const VIEW_INSET = 24;
+
+  function anchorIntoView(target: any, viewport: any, extent: any, inset: any) {
+    const pad = inset == null ? VIEW_INSET : inset;
+    return clampOffset(
+      { left: (target?.left || 0) - pad, top: (target?.top || 0) - pad },
+      viewport,
+      extent,
+    );
+  }
+
+
+  // Ease-out cubic on a 0..1 clock: fast off the mark, settling into the target.
+  function slideEase(t: any) {
+    const x = Math.min(1, Math.max(0, t));
+    return 1 - Math.pow(1 - x, 3);
+  }
+
+  // The bounding box of a set of stage-relative rects; all zeros for none, so an
+  // empty desk centres on the pinned origin rather than on nothing.
+  function bboxOf(rects: any) {
+    const list = rects || [];
+    if (!list.length) return { left: 0, top: 0, width: 0, height: 0 };
+    let left = Infinity;
+    let top = Infinity;
+    let right = -Infinity;
+    let bottom = -Infinity;
+    for (const r of list) {
+      left = Math.min(left, r.left || 0);
+      top = Math.min(top, r.top || 0);
+      right = Math.max(right, (r.left || 0) + (r.width || 0));
+      bottom = Math.max(bottom, (r.top || 0) + (r.height || 0));
+    }
+    return { left, top, width: right - left, height: bottom - top };
+  }
+
+  // Where the viewport lands on load (#339), pure. The stored per-client offset
+  // wins only while it still SHOWS work (some window intersects the viewport
+  // placed there); otherwise the bbox landing. The clamp comes BEFORE the test:
+  // an offset saved on a bigger screen is a legitimate view pulled into this
+  // extent.
+  function viewLanding(stored: any, rects: any, viewport: any, extent: any) {
+    const num = (v: any) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+    const left = num(stored?.left);
+    const top = num(stored?.top);
+    if (left !== null && top !== null) {
+      const at = clampOffset({ left, top }, viewport, extent);
+      const vw = viewport?.width || 0;
+      const vh = viewport?.height || 0;
+      const shows = (rects || []).some(
+        (r: any) =>
+          (r.left || 0) < at.left + vw &&
+          (r.left || 0) + (r.width || 0) > at.left &&
+          (r.top || 0) < at.top + vh &&
+          (r.top || 0) + (r.height || 0) > at.top,
+      );
+      if (shows) return at;
+    }
+    return bringIntoView(bboxOf(rects), viewport, extent);
+  }
+
+  // How far the plane scrolls per frame while a window is dragged against the
+  // viewport edge, and how wide the pressure band at each edge is.
+  const PAN_BAND = 48;
+  const PAN_STEP = 24;
+  // The auto-pan rule, pure. `viewport` is a CLIENT rect; `pointer` is a client
+  // point. Each edge contributes a pressure in `[0, band]` and the axis takes
+  // their DIFFERENCE — deliberately, so a viewport narrower than two bands
+  // cancels instead of oscillating between its own two edges.
+  function panNudge(pointer: any, viewport: any, band: any, step: any) {
+    const b = band == null ? PAN_BAND : band;
+    const s = step == null ? PAN_STEP : step;
+    const press = (v: any) => Math.max(0, Math.min(v, b));
+    const axis = (near: any, far: any) => Math.round((s * (far - near)) / b);
+    return {
+      dx: axis(
+        press(b - ((pointer?.x || 0) - (viewport?.left || 0))),
+        press(b - ((viewport?.right || 0) - (pointer?.x || 0))),
+      ),
+      dy: axis(
+        press(b - ((pointer?.y || 0) - (viewport?.top || 0))),
+        press(b - ((viewport?.bottom || 0) - (pointer?.y || 0))),
+      ),
+    };
+  }
+
+  // Is this console held by a LOCKED fence? Never in the popup (`autoBoot:
+  // false`): `mountDetached` re-origins the members' rects into that window
+  // while `fences` keeps the shell's stage coordinates, so the fold would
+  // match a console to whatever fence covers the translated point. A detached
+  // fence's members move freely there; the fence's lock holds again on the
+  // stage when they come home. Note cards follow the same rule.
+  function fenceHolds(records: any, rect: any, popup: any) {
+    return !popup && !!fenceOf(records, rect)?.locked;
+  }
+  // `.session-window`'s CSS floor (`styles.css`, pinned by
+  // `shell_arranges_into_the_fence`). It OUTRANKS an inline width (MEASURED: a
+  // 176x116 cell rendered 240x150, 52 px past its fence).
+  const WIN_MIN_W = 240;
+  const WIN_MIN_H = 150;
+
+  // Where a console born into a focused fence lands (#343), pure: fence rect,
+  // cascade index and head-band height in, one box out. The box may shrink
+  // BELOW the CSS floor for a small fence; the caller relaxes
+  // `minWidth`/`minHeight` for exactly those axes. `roomX`/`roomY` cap the
+  // cascade offset: a bare `k * step` walks out of a small fence.
+  const SPAWN_PAD = 12;
+  const SPAWN_STEP = 24;
+
+  function spawnRectIn(fence: any, index: any, headH: any) {
+    const f = fence || {};
+    const fl = f.left || 0;
+    const ft = f.top || 0;
+    const fw = f.width || 0;
+    const fh = f.height || 0;
+    const head = headH || 0;
+    const width = Math.max(1, Math.min(560, fw - SPAWN_PAD * 2));
+    const height = Math.max(1, Math.min(340, fh - head - SPAWN_PAD * 2));
+    const k = (index || 0) % 8;
+    const roomX = Math.max(0, fw - SPAWN_PAD * 2 - width);
+    const roomY = Math.max(0, fh - head - SPAWN_PAD * 2 - height);
+    // The outer `Math.min` is for the DEGENERATE fence narrower than the pad
+    // pair: the pad alone would push the box past the far edge, and the
+    // centre-based fold would report the newborn console in NO fence.
+    const offX = Math.min(SPAWN_PAD + Math.min(k * SPAWN_STEP, roomX), Math.max(0, fw - width));
+    const offY = Math.min(
+      head + SPAWN_PAD + Math.min(k * SPAWN_STEP, roomY),
+      Math.max(0, fh - height),
+    );
+    return { left: fl + offX, top: ft + offY, width, height };
+  }
+
+  // Where a console born OUTSIDE a fence lands, pure: viewport (offset and
+  // size), cascade index and the fence records in, one box out. A console is
+  // never born held by a LOCKED fence: it would wear that lock at once, and
+  // the operator could not drag it out. The cascade steps past a slot whose
+  // centre a locked fence holds (the `fenceHolds` fold); when every slot is
+  // held, the box moves right of the fence that holds it until one is free.
+  // `moved` says the box left the viewport's cascade, so the caller reveals it.
+  function freeSpawnRect(view: any, index: any, fences: any) {
+    const v = view || {};
+    // An unmeasurable viewport is a tab still `display:none`: plain caps.
+    const width = v.width ? Math.max(WIN_MIN_W, Math.min(560, Math.round(v.width * 0.62))) : 560;
+    const height = v.height ? Math.max(WIN_MIN_H, Math.min(340, Math.round(v.height * 0.6))) : 340;
+    const at = (k: any) => ({
+      left: Math.max(0, v.left || 0) + 30 + (k % 8) * SPAWN_STEP,
+      top: Math.max(0, v.top || 0) + 20 + (k % 8) * SPAWN_STEP,
+      width,
+      height,
+    });
+    const start = index || 0;
+    for (let i = 0; i < 8; i++) {
+      const rect = at(start + i);
+      if (!fenceHolds(fences, rect, false)) return { rect, moved: false };
+    }
+    const rect = at(start);
+    // Each step leaves one fence behind for good, so the walk ends within one
+    // step per fence.
+    for (let i = 0; i <= (fences || []).length; i++) {
+      const held = fenceOf(fences, rect);
+      if (!held?.locked) break;
+      rect.left = (held.rect?.left || 0) + (held.rect?.width || 0) + SPAWN_PAD;
+    }
+    return { rect, moved: true };
+  }
+
   return {
     STAGE_MARGIN,
     stageExtent,
@@ -269,5 +464,22 @@ export const WBGeometry = (function () {
     tileIntoRect,
     RESIZE_MIN,
     resizeRect,
+    clampOffset,
+    bringIntoView,
+    anchorIntoView,
+    slideEase,
+    bboxOf,
+    viewLanding,
+    panNudge,
+    spawnRectIn,
+    freeSpawnRect,
+    fenceHolds,
+    VIEW_INSET,
+    PAN_BAND,
+    PAN_STEP,
+    SPAWN_PAD,
+    SPAWN_STEP,
+    WIN_MIN_W,
+    WIN_MIN_H,
   };
 })();
