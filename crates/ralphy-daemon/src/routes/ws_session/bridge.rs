@@ -358,10 +358,11 @@ mod tests {
                 spec,
             )
             .expect("the platform shell must spawn — the free console depends on it");
-        // The test owns the output stream, so the queue holds exactly these
-        // chunks and nothing the shell prints.
+        // The test owns the output stream and empties the replay, so the client
+        // receives exactly these chunks and nothing the shell prints.
         let (tx, rx) = tokio::sync::broadcast::channel::<Vec<u8>>(64);
         attach.rx = rx;
+        attach.snapshot.clear();
         let chunks: Vec<Vec<u8>> = (0..32)
             .map(|n| format!("line {n}\r\n").into_bytes())
             .collect();
