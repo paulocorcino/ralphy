@@ -458,9 +458,9 @@ fn rust_corpus(root: &Path) -> String {
 /// (no Rust copy), and the file-search `MAX_HITS` (a field of the Rust
 /// `SearchBudget::default` literal, not a constant).
 const MIRRORS: &[(&str, &str, &str, &str)] = &[
-    ("wb-console.ts", "DESK_MAX", "desk.rs", "DESK_MAX"),
-    ("wb-console.ts", "FENCE_MAX", "desk.rs", "FENCE_MAX"),
-    ("wb-console.ts", "NOTE_MAX", "desk.rs", "NOTE_MAX"),
+    ("wb-desk-folds.ts", "DESK_MAX", "desk.rs", "DESK_MAX"),
+    ("wb-desk-folds.ts", "FENCE_MAX", "desk.rs", "FENCE_MAX"),
+    ("wb-desk-folds.ts", "NOTE_MAX", "desk.rs", "NOTE_MAX"),
     (
         "wb-console-name.ts",
         "NAME_MAX",
