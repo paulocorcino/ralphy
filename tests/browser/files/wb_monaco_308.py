@@ -216,7 +216,7 @@ def main():
             page = ctx.new_page()
             page.goto(BASE)
             page.wait_for_selector("[x-data]", timeout=8000)
-            page.wait_for_function(f"() => {SH}.projects.length === 1", timeout=15000)
+            page.wait_for_function(f"() => Alpine.store('projects').projects.length === 1", timeout=15000)
 
             # The AMD loader's global `define` must not have eaten the UMD
             # vendors loaded before it (index.html load-order invariant).

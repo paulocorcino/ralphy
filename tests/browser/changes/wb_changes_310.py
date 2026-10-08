@@ -239,7 +239,7 @@ def main():
             page.add_init_script(INSTRUMENT)
             page.goto(BASE)
             page.wait_for_selector("[x-data]", timeout=8000)
-            page.wait_for_function(f"() => {SH}.projects.length === 2", timeout=15000)
+            page.wait_for_function(f"() => Alpine.store('projects').projects.length === 2", timeout=15000)
 
             # --- scenario 1: the open project's count ------------------------
             page.evaluate(f"() => {SH}.toggle('{slug_a}')")

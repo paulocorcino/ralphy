@@ -47,7 +47,7 @@ function dialog(opts = {}) {
   const toggled = [];
   shell.toggle = (ref) => {
     toggled.push(ref);
-    shell.openSlug = ref;
+    shell.$store.projects.setOpen(ref);
   };
   return { state, data, shell, window, calls, replies, reloads, toggled };
 }
@@ -63,7 +63,7 @@ test("dialog: an add selects the new project after the list reloads", async () =
   const { state, shell, calls, replies, reloads, toggled } = dialog();
   ready(state, "C:\\Dev\\fincal");
   replies["project.add"] = { status: "ok", slug: "o/fincal", path: "C:/Dev/fincal" };
-  shell.projects = [{ slug: "o/fincal" }];
+  shell.$store.projects.setProjects([{ slug: "o/fincal" }]);
   await state.addProjectSubmit();
   assert.deepEqual(calls, [["project.add", { daemon: "", path: "C:\\Dev\\fincal", init: false }]]);
   assert.deepEqual(reloads, ["repos"]);
@@ -76,7 +76,7 @@ test("dialog: a peer add selects the peer's row", async () => {
   ready(state, "C:\\Dev\\fincal");
   state.addProject.daemon = WSL_ID;
   replies["project.add"] = { status: "ok", slug: "o/fincal", path: "/home/me/fincal" };
-  shell.projects = [{ slug: "o/fincal", key: `${WSL_ID}/o/fincal`, daemon: WSL_ID }];
+  shell.$store.projects.setProjects([{ slug: "o/fincal", key: `${WSL_ID}/o/fincal`, daemon: WSL_ID }]);
   await state.addProjectSubmit();
   assert.deepEqual(reloads, ["repos", "fleet"]);
   assert.deepEqual(toggled, [`${WSL_ID}/o/fincal`]);
@@ -165,7 +165,7 @@ test("the Add a project button comes before Hosts, after refresh", () => {
 test("the empty state offers Add a project", () => {
   const at = HTML.indexOf('class="side-empty projects-empty"');
   const block = HTML.slice(at, HTML.indexOf("</div>", at));
-  assert.match(block, /x-show="!projects\.length && !reposError && !reposLoading"/);
+  assert.match(block, /x-show="!\$store\.projects\.projects\.length && !reposError && !reposLoading"/);
   assert.match(block, /No projects yet/);
   assert.match(block, /@click="\$dispatch\('workbench:add-project-open'\)"/);
 });
@@ -245,7 +245,7 @@ test("both openers ask the dialog to open with workbench:add-project-open", () =
 test("the shared reply of project.add selects the slug the reply names", async () => {
   const { state, shell, replies, toggled } = dialog();
   replies["project.add"] = fixture("project.add");
-  shell.projects = [{ slug: "o/alpha" }];
+  shell.$store.projects.setProjects([{ slug: "o/alpha" }]);
   state.addProject = Object.assign(state.addProject, { open: true });
   state.addProjectStep({ type: "text", text: "/srv/alpha/", peers: [] });
   state.addProjectStep({ type: "sent", seq: 1 });

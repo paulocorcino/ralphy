@@ -218,6 +218,11 @@ export function shell() {
       });
       // A tablet resumes on a different link; its sockets died without a close.
       window.addEventListener("online", () => this.resumeSockets(true));
+      // The open project changed (ADR-0073 amendment of 2026-10-08, decision 4).
+      // In the order `toggle` ran them: the tree, the board, then git.
+      window.addEventListener("workbench:project-changed", () => this.filesFollowProject());
+      window.addEventListener("workbench:project-changed", () => this.boardFollowProject());
+      window.addEventListener("workbench:project-changed", (e: any) => this.gitFollowProject(e.detail.slug));
       // The console module cannot know whether THIS document's connection is
       // alive; hand it the heartbeat verdict, or its hidden-time fallback
       // resets every console after a minute on another tab.
@@ -351,7 +356,7 @@ export function shell() {
       this.loadRepos();
       this.rereadDesk();
       this.maybeRefreshBoard("reopen");
-      if (this.openSlug) this.hydrateRuns();
+      if (this.$store.projects.openSlug) this.hydrateRuns();
     },
 
     // Read the desk again. The console module puts it on the stage, and says
@@ -419,7 +424,7 @@ export function shell() {
     // EMPTY rather than showing adapters this daemon may not have.
     _agentsSeq: 0,
     async loadAgents(repo?: any) {
-      if (repo === undefined) repo = this.openSlug;
+      if (repo === undefined) repo = this.$store.projects.openSlug;
       const seq = ++this._agentsSeq;
       try {
         const r = await fetch(WBAgents.rosterUrl(repo));
@@ -450,7 +455,7 @@ export function shell() {
           // The rows this read replaces: their live dot and their environment
           // stay until `refreshLive` and `loadFleet` answer, and the peer rows
           // stay until the fleet read replaces them.
-          const before = new Map(this.projects.filter((p) => !p.daemon).map((p) => [p.slug, p]));
+          const before = new Map(this.$store.projects.projects.filter((p) => !p.daemon).map((p) => [p.slug, p]));
           const local = repos.map((x: any) => ({
             slug: x.slug,
             // What the operator calls the project; the SLUG stays the identity
@@ -476,7 +481,7 @@ export function shell() {
             remoteUrl: x.remote || "",
             tree: [],
           }));
-          this.projects = local.concat(this._fleetRows);
+          this.$store.projects.setProjects(local.concat(this._fleetRows));
           this.shareProjectNames();
           this.reposError = "";
           this.reposRead = WBFail.readFold(this.reposRead, { ok: true, value: true, at: Date.now() });
@@ -496,8 +501,8 @@ export function shell() {
         // answered: the live dots and the console menu come from them.
         this.refreshLive();
         // The sidebar refresh button is the Changes count's manual reload (#307).
-        if (git && this.openSlug) this.loadChanges(this.openSlug);
-        if (git && this.openSlug) this.loadSync(this.openSlug);
+        if (git && this.$store.projects.openSlug) this.loadChanges(this.$store.projects.openSlug);
+        if (git && this.$store.projects.openSlug) this.loadSync(this.$store.projects.openSlug);
       }
     },
 
@@ -509,7 +514,7 @@ export function shell() {
         this.reposError = WBFail.notCurrent(this.reposRead, (ms) => this.fmtClock(ms));
         return;
       }
-      this.projects = [];
+      this.$store.projects.setProjects([]);
       this.reposError = `Could not load the projects from the daemon: ${reason}.`;
     },
 
@@ -532,7 +537,7 @@ export function shell() {
       // socket reopen) must not both append the peers: the newest read owns
       // the peer rows, and they replace, never add to, what is there.
       const seq = ++this._fleetSeq;
-      const localRows = () => this.projects.filter((p) => !p.daemon);
+      const localRows = () => this.$store.projects.projects.filter((p) => !p.daemon);
       try {
         const r = await fetch("/api/fleet");
         if (seq !== this._fleetSeq) return;
@@ -553,7 +558,7 @@ export function shell() {
         // and name; the local rows are stamped with it here.
         const mine = rows.find((x: any) => x.local);
         if (mine) {
-          for (const p of this.projects) {
+          for (const p of this.$store.projects.projects) {
             p.env = mine.environment || "";
             p.os = mine.os || "";
             p.daemonName = mine.daemon_name || "";
@@ -581,7 +586,7 @@ export function shell() {
             os: x.os || "",
             peerState: x.peer_state || "",
           }));
-        this.projects = localRows().concat(this._fleetRows);
+        this.$store.projects.setProjects(localRows().concat(this._fleetRows));
         this.shareProjectNames();
         this.shareFleet();
         this.filesFollowFleet();
@@ -594,7 +599,7 @@ export function shell() {
         const reason = String(e?.message || "").startsWith("the daemon") ? e.message : "the daemon did not answer";
         this.fleetRead = WBFail.readFold(this.fleetRead, { ok: false, reason, at: Date.now() });
         if (this.fleetRead.goodAt) {
-          this.projects = localRows().concat(this._fleetRows);
+          this.$store.projects.setProjects(localRows().concat(this._fleetRows));
           this.shareProjectNames();
         } else {
           this.fleetPeers = [];
@@ -622,7 +627,7 @@ export function shell() {
     hostRemoved(daemon: any) {
       this.fleetPeers = (this.fleetPeers || []).filter((p) => p.daemon_id !== daemon);
       this._fleetRows = this._fleetRows.filter((r) => r.daemon !== daemon);
-      this.projects = this.projects.filter((r) => r.daemon !== daemon);
+      this.$store.projects.setProjects(this.$store.projects.projects.filter((r) => r.daemon !== daemon));
     },
 
     // Wake a sleeping peer. The operator's action is the consent (as push,
@@ -647,7 +652,7 @@ export function shell() {
         // `loadRepos`, not `loadFleet`: the latter CONCATENATES peer rows.
         await this.loadRepos();
         // A row opened against the sleeping peer has an empty tree: remount.
-        if (WBFleet.refDaemon(this.openSlug) === daemonId) {
+        if (WBFleet.refDaemon(this.$store.projects.openSlug) === daemonId) {
           this.destroyTree();
           this.mountTree();
         }
@@ -704,9 +709,6 @@ export function shell() {
     fleetGroups() {
       return WBFleet.fleetGroups(this.filteredProjects(), this.fleetPeers);
     },
-    repoRef(p: any) {
-      return WBFleet.repoRef(p);
-    },
     // Each project's `live` dot from `/api/sessions` (#204). Never overrides
     // `offline`; a transport throw leaves the states untouched.
     async refreshLive() {
@@ -726,10 +728,10 @@ export function shell() {
         this.liveSessions = sessions;
         // The console windows read their own row off the same poll (ADR-0059).
         window.WBConsole?.ingestSessions?.(sessions);
-        for (const p of this.projects) {
+        for (const p of this.$store.projects.projects) {
           if (p.state === "offline") continue;
           const mine = sessions.filter((s: any) =>
-            WBSessionRoute.matchesRepo(s, this.repoRef(p)),
+            WBSessionRoute.matchesRepo(s, this.$store.projects.repoRef(p)),
           );
           // A `waiting` agent outranks `live` on the dot (ADR-0059).
           p.state = !mine.length
@@ -926,68 +928,30 @@ export function shell() {
     },
 
     // --- the open project -------------------------------------------------
-    openSlug: null as any,
-    // `loadRepos()` fills this at init.
-    projects: [] as any[],
+    // The fact itself is the Alpine store `projects` (wb-projects-store.ts).
     toggle(ref: any, row?: any) {
+      const previous = this.$store.projects.openSlug;
       // A row on a host that cannot answer stays closed. The click still wakes
       // a sleeping host: that is the act the operator asked for.
-      if (this.openSlug !== ref && !this.refAvailable(ref)) {
+      if (previous !== ref && !this.refAvailable(ref)) {
         this.wakePeerFor(ref);
         return;
       }
-      this.openSlug = this.openSlug === ref ? null : ref;
-      // Refusal notes name an act against the project that WAS open.
-      this.changesError = "";
-      this.branchError = "";
+      this.$store.projects.setOpen(previous === ref ? null : ref);
+      const slug = this.$store.projects.openSlug;
       // NOT awaited: the accordion must not sit behind a cold WSL boot.
-      if (this.openSlug === ref) this.wakePeerFor(ref);
-      this.loadAgents(this.openSlug);
+      if (slug === ref) this.wakePeerFor(ref);
+      this.loadAgents(slug);
       // The chip's `<branch> · <name>` needs the listing (#406).
-      if (this.openSlug === ref) this.ensureWorktreeListing(ref);
+      if (slug === ref) this.ensureWorktreeListing(ref);
       this.refreshSpend();
-      // Everything scoped to the project that WAS open is dropped: the drawer
-      // selection, the trail marker, an unsent commit message (#318) and a verb
-      // refusal (#331, whose terminal frame can land long after the click).
-      this.kanbanSel = null;
-      this.trailFocus = null;
-      if (this.commitMsgSlug !== this.openSlug) {
-        this.commitMsg = "";
-        this.commitMsgSlug = this.openSlug;
-      }
-      this.verbError = "";
-      this.$nextTick(() => {
-        this.destroyTree();
-        if (this.openSlug) this.mountTree();
-        // The runs (#300) and changes-nudge (#310) sockets follow the tree's
-        // open/close path.
-        this.destroyRunsSub();
-        this.mountRunsSub();
-        this.destroyChangesSub();
-        this.mountChangesSub();
-        // Only when the board is OPEN (#301): the fold spawns a tracker CLI.
-        if (this.openSlug && this.kanbanOpen) this.loadBoard();
-        this.currentRunId = this.projectRuns()[0]?.runid || null;
-        this.planSection = this.planHeadings(this.currentRun())[0] || "";
-        if (this.openSlug) this.hydrateRuns();
-        if (this.openSlug) this.loadChanges(this.openSlug);
-        if (this.openSlug) this.loadSync(this.openSlug);
-      });
+      this.projectChanged(previous);
     },
-    // The current git branch of the open project (for the "current" mode blurb).
-    // The open project's row, for the panels scoped to `openSlug` that reuse a
-    // per-row control (the Changes head's checkout chip).
-    openProject() {
-      return this.projects.find((p) => this.repoRef(p) === this.openSlug) || null;
-    },
-    openProjectBranch() {
-      return this.projects.find((p) => this.repoRef(p) === this.openSlug)?.branch || "current";
-    },
-    // The branch chip lives on the Files bar (#332), which only the OPEN
-    // project renders. `.project-slug` carries the ADR-0008 D7 identity in
-    // `data-slug`, which is how the browser tests find a row.
-    rowOpen(p: any) {
-      return this.openSlug === this.repoRef(p);
+    // The files, the board and the git part each drop what was scoped to the
+    // project that WAS open (ADR-0073 amendment of 2026-10-08, decision 4).
+    projectChanged(previous: any) {
+      const slug = this.$store.projects.openSlug;
+      window.dispatchEvent(new CustomEvent("workbench:project-changed", { detail: { slug, previous } }));
     },
     // A sleeping peer's wake button. Its two sentences keep their order here,
     // not in a `+` chain inside the markup (ADR-0065 §9).
@@ -1009,7 +973,7 @@ export function shell() {
     // touched. The confirm is awaited BEFORE any `WBDaemon` call: cancel must
     // open no socket.
     async removeProject(p: any) {
-      const ref = this.repoRef(p);
+      const ref = this.$store.projects.repoRef(p);
       const ok = await this.askConfirm({
         title: "Remove project",
         message: `Remove “${WBProject.projectName(p)}” from Ralphy? Files on disk are kept.`,
@@ -1033,8 +997,11 @@ export function shell() {
           return;
         }
         // Identity is `repoRef`, not the slug: a peer can list the same slug.
-        this.projects = this.projects.filter((x) => this.repoRef(x) !== ref);
-        if (this.openSlug === ref) this.openSlug = null;
+        this.$store.projects.setProjects(this.$store.projects.projects.filter((x) => this.$store.projects.repoRef(x) !== ref));
+        if (this.$store.projects.openSlug === ref) {
+          this.$store.projects.setOpen(null);
+          this.projectChanged(ref);
+        }
         this.loadRepos();
       } catch {
         this._flashAction("remove unavailable: no daemon");
@@ -1096,10 +1063,10 @@ export function shell() {
     // Re-read the working tree, only while the Changes panel is on screen: both
     // reads are local but each is a subprocess.
     refreshChanges() {
-      if (!this.sideOpen || this.sideView !== "changes" || !this.openSlug) return;
+      if (!this.sideOpen || this.sideView !== "changes" || !this.$store.projects.openSlug) return;
       if (document.visibilityState !== "visible") return;
-      this.loadChanges(this.openSlug);
-      this.loadSync(this.openSlug);
+      this.loadChanges(this.$store.projects.openSlug);
+      this.loadSync(this.$store.projects.openSlug);
     },
 
     // The change indicator for one row. Only slugs whose count was READ render
@@ -1112,15 +1079,15 @@ export function shell() {
     // showing `projects.length`.
     filteredProjects() {
       const q = this.projectQuery.trim().toLowerCase();
-      if (!q) return this.projects;
+      if (!q) return this.$store.projects.projects;
       // The filter must never fail to match what the row DOES print (the
       // label, #332); the raw `path` is not matched.
       // INVARIANT: the OPEN row always passes. Its `<li>` hosts the file tree
       // and the `/ws/tree` subscription, and an `x-for` rebuild that drops it
       // is an unmount nobody asked for (`destroyTree` never runs).
-      return this.projects.filter(
+      return this.$store.projects.projects.filter(
         (p) =>
-          this.rowOpen(p) ||
+          this.$store.projects.rowOpen(p) ||
           p.slug.toLowerCase().includes(q) ||
           p.branch.toLowerCase().includes(q) ||
           this.repoLabel(p).toLowerCase().includes(q)
@@ -1132,24 +1099,12 @@ export function shell() {
       return WBProject.repoLabel(p);
     },
 
-    // What every surface OUTSIDE the sidebar prints for a repo ref. A peer ref
-    // is `<daemon_id>/<owner>/<repo>`: the ULID is how the fleet ROUTES
-    // (ADR-0052 §5), so the environment is printed in its place. The ref itself
-    // is untouched on the wire, the desk and the tab ids. Row lookup by
-    // `repoRef`, not slug: the same `owner/repo` on two daemons is two rows.
-    projectLabel(ref: any) {
-      if (!ref) return "";
-      const row = this.projects.find((p) => this.repoRef(p) === ref);
-      if (!row) return WBFleet.refLabel(ref);
-      const name = WBProject.projectName(row);
-      return row.daemon && row.env ? `${name} · ${row.env}` : name;
-    },
     // The consoles name their project too (title, tooltip, default name), and
     // `wb-console.ts` has no project list of its own.
     shareProjectNames() {
       window.WBConsole?.ingestProjects?.(
-        this.projects.map((p) => ({
-          ref: this.repoRef(p),
+        this.$store.projects.projects.map((p) => ({
+          ref: this.$store.projects.repoRef(p),
           name: WBProject.projectName(p),
           title: WBProject.projectTitle(p),
         })),
@@ -1159,20 +1114,10 @@ export function shell() {
     // back when the peer does. Every project, not the filtered list: a search
     // in the sidebar must not change what a console says.
     shareFleet() {
-      window.WBConsole?.ingestFleet?.(WBFleet.fleetGroups(this.projects, this.fleetPeers), {
+      window.WBConsole?.ingestFleet?.(WBFleet.fleetGroups(this.$store.projects.projects, this.fleetPeers), {
         wake: (daemonId: any) => this.wakePeer(daemonId),
         read: () => this.readFleetNow(),
       });
-    },
-    // The tooltip twin of `projectLabel`: `owner/repo`, or the full folder of
-    // a remoteless repo, plus the environment of a peer. Never a hash key or
-    // a daemon id.
-    projectTitle(ref: any) {
-      if (!ref) return "";
-      const row = this.projects.find((p) => this.repoRef(p) === ref);
-      if (!row) return WBFleet.refLabel(ref);
-      const who = WBProject.projectTitle(row);
-      return row.daemon && row.env ? `${who} · ${row.env}` : who;
     },
 
     // The global `/` shortcut.
@@ -1256,18 +1201,18 @@ export function shell() {
     // The checkout chip of a project row: which tree Files, Changes and
     // search read, and that a click chooses another.
     checkoutTitle(p: any) {
-      const name = this.checkoutOf(this.repoRef(p));
+      const name = this.checkoutOf(this.$store.projects.repoRef(p));
       return name
         ? `Files, changes and search show worktree “${name}”. Click to choose another one.`
         : "Files, changes and search show the primary tree. Click to choose a worktree.";
     },
 
     branchChipTitle(p: any) {
-      const ref = this.repoRef(p);
+      const ref = this.$store.projects.repoRef(p);
       return WBProject.branchChipTitle(p, this.checkoutOf(ref), this.worktreeListings[ref] || null);
     },
     chipDirty(p: any) {
-      const ref = this.repoRef(p);
+      const ref = this.$store.projects.repoRef(p);
       return WBProject.chipDirty(p, this.checkoutOf(ref), this.worktreeListings[ref] || null);
     },
     // The row's branch chip. Collapsed it is only the change count, and the
@@ -1276,7 +1221,7 @@ export function shell() {
     // reachability, not on remote (`canSwitchBranch`): an unreachable chip
     // stays inert — informational — but still swallows the click.
     branchChipClick(p: any, ev: any) {
-      if (!this.rowOpen(p)) return;
+      if (!this.$store.projects.rowOpen(p)) return;
       ev.stopPropagation();
       this.openBranchModal(p);
     },
@@ -1285,7 +1230,7 @@ export function shell() {
       if (!this.canSwitchBranch(p)) return;
       // Reaching for the picker IS the next branch act.
       this.branchError = "";
-      const ref = this.repoRef(p);
+      const ref = this.$store.projects.repoRef(p);
       // Under a selection "current" is the WORKTREE's branch (#407).
       const ck = this.checkoutOf(ref);
       const wt = ck ? (this.worktreeListings[ref]?.worktrees || []).find((w: any) => w && w.name === ck) : null;
@@ -1408,7 +1353,7 @@ export function shell() {
         // Under a selected worktree the read is THAT tree's HEAD, and
         // `p.branch` is the primary's (#407), so only a primary read moves it.
         const branch = WBChanges.headBranch(sync);
-        const p = this.checkoutOf(slug) ? null : this.projects.find((x) => this.repoRef(x) === slug);
+        const p = this.checkoutOf(slug) ? null : this.$store.projects.projects.find((x) => this.$store.projects.repoRef(x) === slug);
         if (p && branch !== null && p.branch !== branch) p.branch = branch;
         const head = WBChanges.headOf(sync);
         if (p && head !== null) p.head = head;
@@ -1522,14 +1467,14 @@ export function shell() {
     // The run-completion subscription (#310, ADR-0036 amendment). The socket
     // carries EVERY repo's nudge, so the filter is here.
     mountChangesSub() {
-      if (!window.WBDaemon?.subscribeChanges || !this.openSlug) return;
-      this._changesSub = window.WBDaemon.subscribeChanges(this.openSlug, (frame: any) => {
+      if (!window.WBDaemon?.subscribeChanges || !this.$store.projects.openSlug) return;
+      this._changesSub = window.WBDaemon.subscribeChanges(this.$store.projects.openSlug, (frame: any) => {
         if (this.tabHidden()) return;
         // Optional-chained: a frame without wb-changes.ts must not throw
         // inside `onmessage`.
-        if (WBChanges?.shouldReload?.(frame, this.openSlug)) {
-          this.loadChanges(this.openSlug);
-          this.loadSync(this.openSlug);
+        if (WBChanges?.shouldReload?.(frame, this.$store.projects.openSlug)) {
+          this.loadChanges(this.$store.projects.openSlug);
+          this.loadSync(this.$store.projects.openSlug);
         }
       });
     },
@@ -1538,6 +1483,24 @@ export function shell() {
         this._changesSub?.close();
       } catch {}
       this._changesSub = null;
+    },
+    // On `workbench:project-changed`. Refusal notes name an act against the
+    // project that WAS open, and an unsent commit message (#318) is dropped.
+    // After the paint, the changes-nudge socket (#310) follows the tree's
+    // open/close path, and the open project's changes are read.
+    gitFollowProject(slug: any) {
+      this.changesError = "";
+      this.branchError = "";
+      if (this.commitMsgSlug !== slug) {
+        this.commitMsg = "";
+        this.commitMsgSlug = slug;
+      }
+      this.$nextTick(() => {
+        this.destroyChangesSub();
+        this.mountChangesSub();
+        if (this.$store.projects.openSlug) this.loadChanges(this.$store.projects.openSlug);
+        if (this.$store.projects.openSlug) this.loadSync(this.$store.projects.openSlug);
+      });
     },
 
     // ---- write controls (#318) ------------------------------------------
@@ -1553,7 +1516,7 @@ export function shell() {
       return !!this.writeLockReason();
     },
     writeLockReason() {
-      const slug = this.openSlug;
+      const slug = this.$store.projects.openSlug;
       if (this.buildSkew) return this.BUILD_SKEW_LOCK;
       if (this.changesRead[slug]?.current === false || this.syncRead[slug]?.current === false) {
         return "The changes shown are not current. Wait for the next read, or reload the page.";
@@ -1607,11 +1570,11 @@ export function shell() {
     },
     labelLockReason() {
       if (this.buildSkew) return this.BUILD_SKEW_LOCK;
-      if (this.boardRead[this.openSlug]?.current === false) {
+      if (this.boardRead[this.$store.projects.openSlug]?.current === false) {
         return "The board shown is not current. Wait for the next read.";
       }
       return WBChanges.writeLockReason(
-        this.runsByProject[this.openSlug],
+        this.runsByProject[this.$store.projects.openSlug],
         "You can edit labels again when it finishes.",
       );
     },
@@ -1646,10 +1609,10 @@ export function shell() {
       );
     },
     pushAct() {
-      return WBChanges.pushAct(this.syncByProject[this.openSlug]);
+      return WBChanges.pushAct(this.syncByProject[this.$store.projects.openSlug]);
     },
     pullBlocked() {
-      return WBChanges.pullBlocked(this.syncByProject[this.openSlug]);
+      return WBChanges.pullBlocked(this.syncByProject[this.$store.projects.openSlug]);
     },
     // The remote bar's title while an act is out: the busy act names itself,
     // the other two name what they are waiting on.
@@ -1662,7 +1625,7 @@ export function shell() {
       return WBChanges.groupDiscardNote(group);
     },
     commitTarget() {
-      return WBChanges.commitTarget(this.syncByProject[this.openSlug]);
+      return WBChanges.commitTarget(this.syncByProject[this.$store.projects.openSlug]);
     },
     // `withOriginal` only on the UNSTAGE direction — see `wb-changes.ts`.
     groupPaths(list: any, withOriginal: any) {
@@ -1671,7 +1634,7 @@ export function shell() {
     commitTitle() {
       const locked = this.writeLockReason();
       if (locked) return locked;
-      if (!(this.changesStaged[this.openSlug] || []).length) {
+      if (!(this.changesStaged[this.$store.projects.openSlug] || []).length) {
         return "Stage a change first";
       }
       if (!this.commitMsg.trim()) return "Write a commit message first";
@@ -1680,9 +1643,9 @@ export function shell() {
     canCommit() {
       return (
         !this.writeLocked() &&
-        this.commitMsgSlug === this.openSlug &&
+        this.commitMsgSlug === this.$store.projects.openSlug &&
         !!this.commitMsg.trim() &&
-        !!(this.changesStaged[this.openSlug] || []).length
+        !!(this.changesStaged[this.$store.projects.openSlug] || []).length
       );
     },
 
@@ -1800,10 +1763,10 @@ export function shell() {
     // once the repo has a worktree; a pick sets the #406 selection (what
     // Files, Changes, diff and Find show), never where a console is launched.
     hasWorktrees(p: any) {
-      return WBProject.hasWorktrees(this.worktreeListings[this.repoRef(p)] || null);
+      return WBProject.hasWorktrees(this.worktreeListings[this.$store.projects.repoRef(p)] || null);
     },
     openCheckoutChip(p: any, anchor: any) {
-      const ref = this.repoRef(p);
+      const ref = this.$store.projects.repoRef(p);
       const listing = this.worktreeListings[ref] || null;
       const mine = (this.liveSessions || []).filter((s) => WBSessionRoute.matchesRepo(s, ref));
       window.WBConsole.checkoutMenu({
@@ -1834,7 +1797,7 @@ export function shell() {
       return this.checkouts[ref] || null;
     },
     chipLabel(p: any) {
-      const ref = this.repoRef(p);
+      const ref = this.$store.projects.repoRef(p);
       return WBProject.chipLabel(p, this.checkoutOf(ref), this.worktreeListings[ref] || null);
     },
     // The reactive map is REPLACED so Alpine sees it; persistence goes to the
@@ -1846,7 +1809,7 @@ export function shell() {
       else delete next[ref];
       this.checkouts = next;
       window.WBConsole?.setCheckout?.(ref, name || null);
-      if (this.openSlug === ref && this._treeCheckout !== (name || null)) {
+      if (this.$store.projects.openSlug === ref && this._treeCheckout !== (name || null)) {
         this.destroyTree();
         this.mountTree();
       }
@@ -1855,7 +1818,7 @@ export function shell() {
       // D3): its reads start over.
       delete this.changesRead[ref];
       delete this.syncRead[ref];
-      if (this.openSlug === ref) {
+      if (this.$store.projects.openSlug === ref) {
         this.loadChanges(ref);
         this.loadSync(ref);
       }
@@ -1889,19 +1852,19 @@ export function shell() {
     // has landed (boot, and again after a login under the `Session` policy),
     // and bring an already-open tree in line with what it now says.
     adoptDeskCheckouts() {
-      const before = this.openSlug ? this.checkoutOf(this.openSlug) : null;
+      const before = this.$store.projects.openSlug ? this.checkoutOf(this.$store.projects.openSlug) : null;
       this.checkouts = window.WBConsole?.checkouts?.() || {};
-      if (this.openSlug && this._treeCheckout !== this.checkoutOf(this.openSlug)) {
+      if (this.$store.projects.openSlug && this._treeCheckout !== this.checkoutOf(this.$store.projects.openSlug)) {
         this.destroyTree();
         this.mountTree();
       }
-      if (this.openSlug) {
-        this.ensureWorktreeListing(this.openSlug);
+      if (this.$store.projects.openSlug) {
+        this.ensureWorktreeListing(this.$store.projects.openSlug);
         // The desk can land AFTER the open's own reads: re-read under the
         // restored selection, only when it differs (two git spawns otherwise).
-        if (this.checkoutOf(this.openSlug) !== before) {
-          this.loadChanges(this.openSlug);
-          this.loadSync(this.openSlug);
+        if (this.checkoutOf(this.$store.projects.openSlug) !== before) {
+          this.loadChanges(this.$store.projects.openSlug);
+          this.loadSync(this.$store.projects.openSlug);
         }
       }
     },
@@ -1931,7 +1894,7 @@ export function shell() {
       if (name !== this.branchModal.current) {
         const slug = this.branchModal.slug;
         const checkout = this.checkoutOf(slug);
-        const p = checkout ? null : this.projects.find((x) => this.repoRef(x) === slug);
+        const p = checkout ? null : this.$store.projects.projects.find((x) => this.$store.projects.repoRef(x) === slug);
         const prev = p ? p.branch : null;
         if (p) p.branch = name; // optimistic — the chip updates immediately
         window.WB.emit("branch-switch", { project: slug, branch: name, checkout });
@@ -1953,7 +1916,7 @@ export function shell() {
       const from = this.branchModal.current;
       const slug = this.branchModal.slug;
       const checkout = this.checkoutOf(slug);
-      const p = checkout ? null : this.projects.find((x) => this.repoRef(x) === slug);
+      const p = checkout ? null : this.$store.projects.projects.find((x) => this.$store.projects.repoRef(x) === slug);
       const prevBranch = p ? p.branch : null;
       const prevBranches = p ? [...(p.branches || [])] : null;
       if (p) {
@@ -2076,7 +2039,7 @@ export function shell() {
     // Hydrate from `runs.list` (ADR-0047 §9), by REPLACEMENT — a snapshot is
     // state, not a log. On panel open and project change.
     async hydrateRuns() {
-      const slug = this.openSlug;
+      const slug = this.$store.projects.openSlug;
       // Clear FIRST: a stale error must not outlive its project.
       this.runsError = "";
       if (!slug) return;
@@ -2085,7 +2048,7 @@ export function shell() {
       try {
         const reply = await window.WBDaemon.observe("runs.list", { repo: slug });
         // Superseded while in flight: the newer hydration owns the state.
-        if (seq !== this._runsSeq || this.openSlug !== slug) return;
+        if (seq !== this._runsSeq || this.$store.projects.openSlug !== slug) return;
         if (reply?.status !== "ok") {
           this.runsFailed(slug, WBFail.why(reply, "the daemon gave no reason"));
           return;
@@ -2116,7 +2079,7 @@ export function shell() {
         // Only while showing: a whole-plan `file.read` nobody can see is cost.
         if (this.runsOpen) await this.loadRunPlan();
       } catch (err: any) {
-        if (seq !== this._runsSeq || this.openSlug !== slug) return;
+        if (seq !== this._runsSeq || this.$store.projects.openSlug !== slug) return;
         // A transport failure is a read failure, not an idle project.
         this.runsFailed(slug, WBFail.why({ message: err?.message }, "the daemon did not answer"));
       }
@@ -2144,7 +2107,7 @@ export function shell() {
       if (!run?.planPath) return;
       try {
         const reply = await window.WBDaemon.observe("file.read", {
-          repo: this.openSlug,
+          repo: this.$store.projects.openSlug,
           path: run.planPath,
         });
         if (reply?.status === "ok") {
@@ -2166,7 +2129,7 @@ export function shell() {
 
     // The open project's runs (the panel is project-scoped).
     projectRuns() {
-      return this.runsByProject[this.openSlug] || [];
+      return this.runsByProject[this.$store.projects.openSlug] || [];
     },
     // The selected run, falling back to the first when the id is stale (e.g. the
     // project changed).
@@ -2235,7 +2198,7 @@ export function shell() {
     // panel closes first (`z-index: 150`, sharing the drawer's right edge).
     // `toggleKanban()` resets `kanbanSel`, so it runs BEFORE `openIssue`.
     focusIssue(number: any) {
-      window.WB.emit("run-issue-focus", { project: this.openSlug, runid: this.currentRun()?.runid, issue: number });
+      window.WB.emit("run-issue-focus", { project: this.$store.projects.openSlug, runid: this.currentRun()?.runid, issue: number });
       this.runsOpen = false;
       this.trailFocus = null;
       if (!this.kanbanOpen) this.toggleKanban();
@@ -2292,7 +2255,7 @@ export function shell() {
       this.runStopping = runid;
       try {
         const reply = await window.WBDaemon.observe("run.stop", {
-          repo: this.openSlug,
+          repo: this.$store.projects.openSlug,
           runid,
         });
         if (WBFail.isError(reply)) {
@@ -2308,10 +2271,10 @@ export function shell() {
     },
     // The open project's run-snapshot subscription (#300, ADR-0047 §9).
     mountRunsSub() {
-      if (!window.WBDaemon?.subscribeRuns || !this.openSlug) return;
+      if (!window.WBDaemon?.subscribeRuns || !this.$store.projects.openSlug) return;
       // A snapshot change means the tracker may have moved, so the same push
       // nudges the board (#301); the predicate coalesces it.
-      this._runsSub = window.WBDaemon.subscribeRuns(this.openSlug, () => {
+      this._runsSub = window.WBDaemon.subscribeRuns(this.$store.projects.openSlug, () => {
         if (this.tabHidden()) return;
         this.hydrateRuns();
         this.maybeRefreshBoard("runs");
@@ -2322,6 +2285,24 @@ export function shell() {
         this._runsSub?.close();
       } catch {}
       this._runsSub = null;
+    },
+    // On `workbench:project-changed`. The drawer selection, the trail marker
+    // and a verb refusal (#331, whose terminal frame can land long after the
+    // click) of the project that WAS open are dropped. After the paint, the
+    // runs socket (#300) follows the tree's open/close path.
+    boardFollowProject() {
+      this.kanbanSel = null;
+      this.trailFocus = null;
+      this.verbError = "";
+      this.$nextTick(() => {
+        this.destroyRunsSub();
+        this.mountRunsSub();
+        // Only when the board is OPEN (#301): the fold spawns a tracker CLI.
+        if (this.$store.projects.openSlug && this.kanbanOpen) this.loadBoard();
+        this.currentRunId = this.projectRuns()[0]?.runid || null;
+        this.planSection = this.planHeadings(this.currentRun())[0] || "";
+        if (this.$store.projects.openSlug) this.hydrateRuns();
+      });
     },
 
     // --- plan viewer ------------------------------------------------------
@@ -2448,7 +2429,7 @@ export function shell() {
       const c = this.runCfg;
       const planAgent = c.split && c.planAgent !== c.agent ? c.planAgent : null;
       window.WB.emit("run-start", {
-        project: this.openSlug,
+        project: this.$store.projects.openSlug,
         agent: c.agent,
         planAgent,
         branchMode: c.branchMode,
@@ -2461,7 +2442,7 @@ export function shell() {
     // composes a command line.
     fireVerb(verb: any) {
       this._resetVerbSurface();
-      window.WB.emit("command", { project: this.openSlug, verb });
+      window.WB.emit("command", { project: this.$store.projects.openSlug, verb });
       this._flashAction(this.verbRequestedText(verb));
     },
     // From wb-daemon.ts on a TERMINAL frame only; an empty note is a no-op.
@@ -2528,7 +2509,7 @@ export function shell() {
     // The open project's plan, or null. No trailer (`summary.issue` null) is a
     // plan still being written: not offered.
     openPlan() {
-      const held = this.planByProject[this.openSlug];
+      const held = this.planByProject[this.$store.projects.openSlug];
       return held && held.summary.issue != null ? held : null;
     },
     // The plan for ONE card: only ever shown against the issue it names.
@@ -2607,7 +2588,7 @@ export function shell() {
         danger: true,
       });
       if (!ok) return;
-      const slug = this.openSlug;
+      const slug = this.$store.projects.openSlug;
       try {
         const reply = await window.WBDaemon.write("plan.discard", { repo: slug });
         if (WBFail.isError(reply)) {
@@ -2626,13 +2607,13 @@ export function shell() {
 
     // The open project's issues (#198). Empty until `loadBoard()` populates it.
     projectIssues() {
-      return this.boardIssues[this.openSlug] || [];
+      return this.boardIssues[this.$store.projects.openSlug] || [];
     },
 
     // The whole-tracker board fold via `board.list`, cached under the slug. No
     // daemon or a transport error leaves the board empty.
     async loadBoard() {
-      const slug = this.openSlug;
+      const slug = this.$store.projects.openSlug;
       if (!slug) return;
       // A fold in flight: remember the trigger. Dropping it loses a project
       // switch and a label write (an older fold reverts the optimistic edit).
@@ -2645,7 +2626,7 @@ export function shell() {
       this._boardLoadedAt = Date.now();
       // The ready plan rides every board trigger. NOT awaited: a plan read
       // must never delay the rows.
-      this.loadPlan(this.openSlug);
+      this.loadPlan(this.$store.projects.openSlug);
       try {
         const reply: any = await Promise.race([
           window.WBDaemon.observe("board.list", { repo: slug }),
@@ -2682,9 +2663,9 @@ export function shell() {
         // Exactly ONE follow-up for whatever was coalesced away, or for a
         // project that changed underneath this fold. `_boardPending` is cleared
         // by the recursive call before it awaits, so this settles.
-        if (this._boardPending || this.openSlug !== slug) {
+        if (this._boardPending || this.$store.projects.openSlug !== slug) {
           this._boardPending = false;
-          if (this.openSlug && this.kanbanOpen) this.loadBoard();
+          if (this.$store.projects.openSlug && this.kanbanOpen) this.loadBoard();
         }
       }
     },
@@ -2791,7 +2772,7 @@ export function shell() {
     },
     labelColor(l: any) {
       // The repo's real label hex, else the seed vocabulary.
-      return this.boardLabels[this.openSlug]?.get(l) || window.WBKanban.labelColor(l);
+      return this.boardLabels[this.$store.projects.openSlug]?.get(l) || window.WBKanban.labelColor(l);
     },
     labelInk(l: any) {
       return window.WBKanban.labelInk(l);
@@ -2830,7 +2811,7 @@ export function shell() {
     },
 
     async loadIssueDetail(number: any) {
-      const slug = this.openSlug;
+      const slug = this.$store.projects.openSlug;
       this.issueError = null;
       // Set BEFORE the first await so the markup never paints `_(empty)_` for
       // a body still on the wire; cleared only by the NEWEST fetch.
@@ -2841,7 +2822,7 @@ export function shell() {
       // on every refresh, and two projects routinely carry the same number.
       const gen = (this._issueDetailGen = (this._issueDetailGen || 0) + 1);
       const stale = () =>
-        gen !== this._issueDetailGen || this.openSlug !== slug || this.kanbanSel !== number;
+        gen !== this._issueDetailGen || this.$store.projects.openSlug !== slug || this.kanbanSel !== number;
       const fail = (msg: any) => {
         if (stale()) return;
         this.issueError = msg;
@@ -2880,7 +2861,7 @@ export function shell() {
     // The GitHub URL of an issue on the OPEN project, from its `remoteUrl`
     // (#204); `null` with no GitHub remote. Only the lookup stays here.
     githubUrl(number: any) {
-      const p = this.projects.find((x) => this.repoRef(x) === this.openSlug);
+      const p = this.$store.projects.projects.find((x) => this.$store.projects.repoRef(x) === this.$store.projects.openSlug);
       return WBProject.issueUrl(p && p.remoteUrl, number);
     },
 
@@ -2925,7 +2906,7 @@ export function shell() {
       const op = has ? "remove" : "add";
       const prev = [...(iss.labels || [])];
       iss.labels = has ? iss.labels.filter((l: any) => l !== label) : [...(iss.labels || []), label];
-      const slug = this.openSlug;
+      const slug = this.$store.projects.openSlug;
       window.WB.emit("issue-label-change", { project: slug, number: iss.number, label, op });
       // The run-lock-aware `label.set` Mutate (#199): refusal → revert + flash.
       (async () => {
@@ -2962,15 +2943,15 @@ export function shell() {
     // a project drops the pane to its empty state.
     spendView() {
       return window.WBSpend.state({
-        project: this.openSlug,
+        project: this.$store.projects.openSlug,
         loading: this.spend.loading,
         error: this.spend.error,
         // A document for a project no longer open is stale by definition.
-        doc: this.spend.slug === this.openSlug ? this.spend.doc : null,
+        doc: this.spend.slug === this.$store.projects.openSlug ? this.spend.doc : null,
         period: this.spendPeriod,
         // Titles ride whatever the board ALREADY holds; never a load
         // (`loadBoard` spawns a throttled tracker CLI).
-        issues: this.boardIssues[this.openSlug] || [],
+        issues: this.boardIssues[this.$store.projects.openSlug] || [],
       });
     },
     // The window is a server-side filter: assign, then re-read.
@@ -2998,7 +2979,7 @@ export function shell() {
       this.loadSpend();
     },
     async loadSpend() {
-      const slug = this.openSlug;
+      const slug = this.$store.projects.openSlug;
       // No project open is not a failure: the pane says so itself.
       if (!slug) {
         this.spend = { loading: false, error: "", doc: null, slug: null };
@@ -3020,7 +3001,7 @@ export function shell() {
         error = "Could not load spend: the daemon did not answer.";
       }
       // The project changed while in flight: one cost under another's name.
-      if (this.openSlug !== slug) return;
+      if (this.$store.projects.openSlug !== slug) return;
       this.spend = { loading: false, error, doc, slug };
     },
     // Re-read on activation and when the accordion opens or closes a project.
@@ -3060,9 +3041,9 @@ export function shell() {
     ledgerView() {
       // Rows for a project no longer open are stale (as `spendView()`); the
       // peer banner is gated with them.
-      const fresh = this.ledger.slug === this.openSlug;
+      const fresh = this.ledger.slug === this.$store.projects.openSlug;
       return window.WBSpend.ledger({
-        project: this.openSlug,
+        project: this.$store.projects.openSlug,
         loading: this.ledger.loading,
         error: this.ledger.error,
         records: fresh ? this.ledger.records : [],
@@ -3084,7 +3065,7 @@ export function shell() {
       this.setSpendPane("ledger");
     },
     async loadLedger() {
-      const slug = this.openSlug;
+      const slug = this.$store.projects.openSlug;
       // With no project open there are still PEERS to report: an empty
       // `project=` scopes the rows to none while the daemon answers `missing`.
       const want = slug || "";
@@ -3116,7 +3097,7 @@ export function shell() {
         error = "Could not load the ledger: the daemon did not answer.";
       }
       // The operator switched projects while this was in flight.
-      if ((this.openSlug || "") !== want) {
+      if ((this.$store.projects.openSlug || "") !== want) {
         this.ledger = { ...this.ledger, loading: false };
         return;
       }
@@ -3467,9 +3448,17 @@ export function shell() {
     },
 
     // --- Wunderbaum mount / teardown --------------------------------------
+    // On `workbench:project-changed`: after the paint, the tree of the open
+    // project is mounted in its row.
+    filesFollowProject() {
+      this.$nextTick(() => {
+        this.destroyTree();
+        if (this.$store.projects.openSlug) this.mountTree();
+      });
+    },
     mountTree() {
       const host = document.querySelector(".project.open .wb-host");
-      const project = this.projects.find((p) => this.repoRef(p) === this.openSlug);
+      const project = this.$store.projects.projects.find((p) => this.$store.projects.repoRef(p) === this.$store.projects.openSlug);
       if (!host || !project) return;
       this.treeMem();
       // Freshness is per-open: the watch that kept a level honest died with
@@ -3482,7 +3471,7 @@ export function shell() {
       this.treeNotLive = "";
       // The checkout this tree is built for (#406): cache key, every level
       // read and the watch carry it.
-      this._treeCheckout = this.checkoutOf(this.openSlug);
+      this._treeCheckout = this.checkoutOf(this.$store.projects.openSlug);
       // A mount generation: a root read failing AFTER this tree was replaced
       // must not paint its error onto the fresh mount.
       const gen = (this._treeGen = (this._treeGen || 0) + 1);
@@ -3510,7 +3499,7 @@ export function shell() {
         lazyLoad: (e: any) =>
           this.loadTreeLevel(this.relPath(e.node)).catch((err: any) => {
             this.treeWentStale(err);
-            if (WBFleet.refDaemon(this.openSlug || "")) this.readFleetNow();
+            if (WBFleet.refDaemon(this.$store.projects.openSlug || "")) this.readFleetNow();
             setTimeout(() => e.node.setExpanded(false));
             return false;
           }),
@@ -3580,7 +3569,7 @@ export function shell() {
       // `head.dirty` push re-reads the branch.
       if (this.useDaemonTree() && window.WBDaemon?.subscribeTree) {
         this._treeSub = WBDaemon.subscribeTree(
-          this.openSlug,
+          this.$store.projects.openSlug,
           (rel: any) => {
             if (!this.tabHidden()) this.onTreeDirty(rel);
           },
@@ -3608,20 +3597,20 @@ export function shell() {
     rememberExpansion() {
       // A restore expands nodes itself; recording a half-restored tree would
       // truncate the list being replayed.
-      if (this._restoringExpansion || !this._tree || !this.openSlug) return;
+      if (this._restoringExpansion || !this._tree || !this.$store.projects.openSlug) return;
       this.treeMem();
       const rels: any[] = [];
       this.rawTree().root.visit((n: any) => {
         if (this.isFolder(n) && n.expanded) rels.push(this.relPath(n));
       });
-      this._treeExpanded.set(this.openSlug, rels);
+      this._treeExpanded.set(this.$store.projects.openSlug, rels);
     },
 
     // Re-expand the folders this project was left with, shallow-first (a
     // child cannot be found before its parent loads). Each level comes from
     // `_treeCache`; every expand still re-registers the daemon watch.
     async restoreExpansion() {
-      const slug = this.openSlug;
+      const slug = this.$store.projects.openSlug;
       this.treeMem();
       const rels = this._treeExpanded.get(slug) || [];
       if (!rels.length || !this._tree) return;
@@ -3629,7 +3618,7 @@ export function shell() {
       try {
         for (const rel of [...rels].sort((a, b) => a.split("/").length - b.split("/").length)) {
           // A project switch mid-replay: this list no longer describes the tree.
-          if (slug !== this.openSlug || !this._tree) return;
+          if (slug !== this.$store.projects.openSlug || !this._tree) return;
           const node = this.rawTree().findFirst((n: any) => this.relPath(n) === rel);
           if (node && !node.expanded) await node.setExpanded(true);
         }
@@ -3678,8 +3667,8 @@ export function shell() {
       this.treeMem();
       const key = this.treeKey(rel);
       const payload = WBDaemon.withCheckout(
-        { repo: this.openSlug, path: rel },
-        this.checkoutOf(this.openSlug),
+        { repo: this.$store.projects.openSlug, path: rel },
+        this.checkoutOf(this.$store.projects.openSlug),
       );
       return WBDaemon.observe("tree.list", payload).then((reply) => {
         if (!reply || reply.status !== "ok" || !Array.isArray(reply.entries)) {
@@ -3725,7 +3714,7 @@ export function shell() {
 
     // Cache key, scoped by REPO and by CHECKOUT (#406).
     treeKey(rel: any) {
-      return `${this.openSlug}\n${this.checkoutOf(this.openSlug) || ""}\n${rel}`;
+      return `${this.$store.projects.openSlug}\n${this.checkoutOf(this.$store.projects.openSlug) || ""}\n${rel}`;
     },
 
     // Daemon entries → fresh Wunderbaum node specs, rebuilt on every call: the
@@ -3749,11 +3738,11 @@ export function shell() {
       this.treeMem();
       const key = this.treeKey(rel);
       const before = JSON.stringify(this._treeCache.get(key) ?? null);
-      const slug = this.openSlug;
+      const slug = this.$store.projects.openSlug;
       return this.fetchTreeLevel(rel)
         .then(() => {
           // A project switch in flight: another project's tree.
-          if (slug !== this.openSlug || !this._tree) return;
+          if (slug !== this.$store.projects.openSlug || !this._tree) return;
           if (JSON.stringify(this._treeCache.get(key) ?? null) === before) return;
           const node = rel === "" ? this.rawTree().root : this.findFolderByRel(rel);
           if (node) return this.reconcileLevel(node, rel);
@@ -3778,7 +3767,7 @@ export function shell() {
     // The fleet group of the open project's peer while the fleet calls that
     // peer down, else null. FILES takes this fact from the fleet, its owner.
     openPeerDown() {
-      const daemon = WBFleet.refDaemon(this.openSlug || "");
+      const daemon = WBFleet.refDaemon(this.$store.projects.openSlug || "");
       if (!daemon) return null;
       const group = this.fleetGroups().find((g) => g.daemon === daemon);
       return group && !WBFleet.available(group) ? group : null;
@@ -3800,14 +3789,14 @@ export function shell() {
     // back reads again the levels the tree shows.
     filesFollowFleet() {
       const down = !!this.openPeerDown();
-      if (!down && this._filesPeerDown && this._filesPeerDown === this.openSlug && this._tree) {
+      if (!down && this._filesPeerDown && this._filesPeerDown === this.$store.projects.openSlug && this._tree) {
         this.treeFresh();
         this.revalidateLevel("");
         this.rawTree().root.visit((n: any) => {
           if (this.isFolder(n) && n.expanded) this.revalidateLevel(this.relPath(n));
         });
       }
-      this._filesPeerDown = down ? this.openSlug : null;
+      this._filesPeerDown = down ? this.$store.projects.openSlug : null;
     },
     _filesPeerDown: null,
 
@@ -3849,7 +3838,7 @@ export function shell() {
     },
 
     openFileSearch() {
-      if (!this.openSlug) return;
+      if (!this.$store.projects.openSlug) return;
       this.fileSearch.open = true;
       this.$nextTick(() => this.$refs.fileSearch?.focus?.());
     },
@@ -3901,14 +3890,14 @@ export function shell() {
         this.fileSearch.note = "search needs a daemon";
         return Promise.resolve();
       }
-      const slug = this.openSlug;
+      const slug = this.$store.projects.openSlug;
       const verb = WBFileSearch.verbFor(this.fileSearch.mode);
       this.fileSearch.note = "searching…";
       // Find and grep walk the SELECTED tree (#406).
       const payload = window.WBDaemon.withCheckout({ repo: slug, query }, this.checkoutOf(slug));
       return window.WBDaemon.observe(verb, payload)
         .then((reply) => {
-          if (seq !== this.fileSearch.seq || slug !== this.openSlug) return;
+          if (seq !== this.fileSearch.seq || slug !== this.$store.projects.openSlug) return;
           if (WBFail.isError(reply) || !Array.isArray(reply?.hits)) {
             this.fileSearch.note = WBFail.failed(reply, "Could not search: the daemon gave no reason.");
             return;
@@ -4070,7 +4059,7 @@ export function shell() {
     onHeadMoved() {
       clearTimeout(this._headTimer);
       this._headTimer = setTimeout(() => {
-        const ref = this.openSlug;
+        const ref = this.$store.projects.openSlug;
         if (!ref) return;
         this.loadChanges(ref);
         this.loadSync(ref);
@@ -4248,7 +4237,7 @@ export function shell() {
       };
       const reads: any[] = [];
       for (const t of this.tabs) {
-        if (t.project !== this.openSlug || dirOf(t.path) !== rel) continue;
+        if (t.project !== this.$store.projects.openSlug || dirOf(t.path) !== rel) continue;
         // A tab pinned to another checkout (#406) is not this nudge's.
         if ((t.checkout ?? null) !== (this._treeCheckout ?? null)) continue;
         // An image tab re-reads through its OWN verb (ADR-0049 §1). A text
@@ -4357,14 +4346,14 @@ export function shell() {
       if (ftype === "binary") {
         // Flash it too: a click that silently does nothing reads as a broken
         // tree.
-        window.WB.emit("open-refused", { project: this.openSlug, path, reason: "binary" });
+        window.WB.emit("open-refused", { project: this.$store.projects.openSlug, path, reason: "binary" });
         this._flashAction?.("Cannot open binary files.");
         return;
       }
       // Out of a CONTENT search: the tab lands on the first occurrence
       // (ADR-0036 amendment 2026-09-15).
       const find = this.fileSearchFindTerm();
-      this.openTab({ project: this.openSlug, path, title: node.title, ftype, find });
+      this.openTab({ project: this.$store.projects.openSlug, path, title: node.title, ftype, find });
     },
 
     // The term to land on: the live query, only while the CONTENT filter is on.
@@ -4440,7 +4429,7 @@ export function shell() {
           WBViewer.open({
             id,
             project,
-            label: this.projectLabel(project),
+            label: this.$store.projects.projectLabel(project),
             path,
             ftype,
             content: body.content,
@@ -4509,7 +4498,7 @@ export function shell() {
               id: t.id,
               project,
               checkout: t.checkout,
-              label: this.projectLabel(project),
+              label: this.$store.projects.projectLabel(project),
               path: t.workingPath,
               ftype: "diff",
               content: work,
@@ -4594,7 +4583,7 @@ export function shell() {
     activate(id: any) {
       this.active = id;
       // The Spend tab's subject can change while it sits in the background.
-      if (id === "spend" && this.spend.slug !== this.openSlug) this.refreshSpend();
+      if (id === "spend" && this.spend.slug !== this.$store.projects.openSlug) this.refreshSpend();
       this.$nextTick(() => {
         this.syncViewer();
         // A console opened while another tab was active measured 0×0.
@@ -4772,7 +4761,7 @@ export function shell() {
       return WBAgents.menuRows({
         roster: this.roster,
         sessions: this.liveSessions,
-        openSlug: this.openSlug,
+        openSlug: this.$store.projects.openSlug,
       });
     },
     isMac: /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || ""),
@@ -4785,9 +4774,9 @@ export function shell() {
     // environment are the sidebar's to say, and neither changes which agent to
     // pick. The full ref rides the head's title.
     consoleMenuRepoName() {
-      if (!this.openSlug) return "";
-      const row = this.projects.find((p) => this.repoRef(p) === this.openSlug);
-      const name = row ? WBProject.projectName(row) : WBFleet.refSlug(this.openSlug);
+      if (!this.$store.projects.openSlug) return "";
+      const row = this.$store.projects.projects.find((p) => this.$store.projects.repoRef(p) === this.$store.projects.openSlug);
+      const name = row ? WBProject.projectName(row) : WBFleet.refSlug(this.$store.projects.openSlug);
       return name.split("/").pop() || name;
     },
     // Every row is a launch (the menu is "New console"); `opts.tryAnyway` is
@@ -4801,11 +4790,11 @@ export function shell() {
 
     newConsole(agent: any) {
       // The accelerator path calls this directly: refuse with no repo here too.
-      if (!this.openSlug) return;
+      if (!this.$store.projects.openSlug) return;
       if (this.active !== "consoles") this.activate("consoles");
       // Always the primary: only the console's own title switcher moves it
       // (ADR-0063, amendment 2026-09-16 b).
-      WBConsole.open({ repo: this.openSlug, agent, checkout: null });
+      WBConsole.open({ repo: this.$store.projects.openSlug, agent, checkout: null });
       this.consoleCount = WBConsole.count();
     },
     // a bare shell in the repo dir (no agent) — the daemon's per-repo console;
@@ -4813,7 +4802,7 @@ export function shell() {
     // ends with it (the console row's "Run…" field)
     newPlainConsole(command: any) {
       if (this.active !== "consoles") this.activate("consoles");
-      WBConsole.open({ repo: this.openSlug, plain: true, command: command || undefined });
+      WBConsole.open({ repo: this.$store.projects.openSlug, plain: true, command: command || undefined });
       this.consoleCount = WBConsole.count();
     },
     openConsoleRun() {
@@ -4917,7 +4906,7 @@ export function shell() {
       return this.noteItems.length >= 32;
     },
     noteCapReason() {
-      if (!this.openSlug) return "Open a project first. A note is saved in its checkout.";
+      if (!this.$store.projects.openSlug) return "Open a project first. A note is saved in its checkout.";
       if (this.noteAtCap()) return "Maximum of 32 notes. Close one to add another.";
       return "Write a note on the stage";
     },
@@ -4931,7 +4920,7 @@ export function shell() {
     // what the operator is looking at, in the project's selected checkout —
     // where the file will be written is a field in the card's own footer.
     newNote() {
-      if (!this.openSlug) return;
+      if (!this.$store.projects.openSlug) return;
       if (this.active !== "consoles") this.activate("consoles");
       this.noteMenu = false;
       // AFTER the tab is laid out, as `revealWindow`: a `display:none` tab
@@ -4939,8 +4928,8 @@ export function shell() {
       this.$nextTick(() => {
         const ws = document.getElementById("workspace");
         window.WBNotes.create({
-          repo: this.openSlug,
-          checkout: window.WBConsole.checkoutOf(this.openSlug),
+          repo: this.$store.projects.openSlug,
+          checkout: window.WBConsole.checkoutOf(this.$store.projects.openSlug),
           viewport: { width: ws?.clientWidth || 0, height: ws?.clientHeight || 0 },
           offset: { left: ws?.scrollLeft || 0, top: ws?.scrollTop || 0 },
         });
@@ -4951,7 +4940,7 @@ export function shell() {
     // is a jump to a card already on the plane or a new one; this layer only
     // puts the operator on the tab that holds the stage.
     openNote(path: any, project?: any, checkout?: any) {
-      const repo = project || this.openSlug;
+      const repo = project || this.$store.projects.openSlug;
       if (!repo) return;
       if (this.active !== "consoles") this.activate("consoles");
       const tree = checkout === undefined ? window.WBConsole.checkoutOf(repo) : checkout;
@@ -5208,7 +5197,7 @@ export function shell() {
     // `owner/repo` without the environment: the operator already knows where
     // each console runs, and the list is about telling the consoles apart.
     columnRepoLabel(ref: any) {
-      const row = this.projects.find((p) => this.repoRef(p) === ref);
+      const row = this.$store.projects.projects.find((p) => this.$store.projects.repoRef(p) === ref);
       return row ? WBProject.projectName(row) : WBFleet.refLabel(ref);
     },
     columnView() {
@@ -5416,7 +5405,7 @@ export function shell() {
     // insecure non-loopback origin, so the call is optional-chained.
     copyPath(node: any, full = false) {
       const rel = this.relPath(node);
-      const root = full ? this.projects.find((p) => p.slug === this.openSlug)?.root : "";
+      const root = full ? this.$store.projects.projects.find((p) => p.slug === this.$store.projects.openSlug)?.root : "";
       let path = rel;
       if (root) {
         // Windows by SHAPE (drive letter or UNC lead), not by "contains a
@@ -5445,10 +5434,10 @@ export function shell() {
 
       // The tree's gestures speak the tree's checkout (#406); a refusal beats
       // a primary-aimed copy that silently misfires.
-      const checkout = this.checkoutOf(this.openSlug);
+      const checkout = this.checkoutOf(this.$store.projects.openSlug);
       const listing = await WBDaemon.observe(
         "tree.list",
-        WBDaemon.withCheckout({ repo: this.openSlug, path: parent }, checkout),
+        WBDaemon.withCheckout({ repo: this.$store.projects.openSlug, path: parent }, checkout),
       ).catch(() => null);
       // A refused listing must NOT degrade to an empty `taken` set.
       if (!listing || WBFail.isError(listing) || !Array.isArray(listing.entries)) {
@@ -5462,7 +5451,7 @@ export function shell() {
 
       const reply = await WBDaemon.write(
         "file.copy",
-        WBDaemon.withCheckout({ repo: this.openSlug, path: rel, to }, checkout),
+        WBDaemon.withCheckout({ repo: this.$store.projects.openSlug, path: rel, to }, checkout),
       ).catch(() => null);
       if (!reply || WBFail.isError(reply)) {
         this._flashAction?.(
@@ -5506,7 +5495,7 @@ export function shell() {
       // Same checkout as the tree the row came from (#406).
       const listing = await WBDaemon.observe(
         "tree.list",
-        WBDaemon.withCheckout({ repo: this.openSlug, path: dir }, this.checkoutOf(this.openSlug)),
+        WBDaemon.withCheckout({ repo: this.$store.projects.openSlug, path: dir }, this.checkoutOf(this.$store.projects.openSlug)),
       ).catch(() => null);
       if (seq !== this._movePickSeq) return;
       this.movePick.busy = false;
@@ -5574,8 +5563,8 @@ export function shell() {
       const reply = await WBDaemon.write(
         "file.rename",
         WBDaemon.withCheckout(
-          { repo: this.openSlug, path: from, to },
-          this.checkoutOf(this.openSlug),
+          { repo: this.$store.projects.openSlug, path: from, to },
+          this.checkoutOf(this.$store.projects.openSlug),
         ),
       ).catch(() => null);
       if (!reply) {
@@ -5598,7 +5587,7 @@ export function shell() {
     repathTabs(from: any, to: any) {
       // Snapshot: the collision branch CLOSES a tab, which mutates `this.tabs`.
       for (const t of [...this.tabs]) {
-        if (t.kind === "diff" || t.project !== this.openSlug) continue;
+        if (t.kind === "diff" || t.project !== this.$store.projects.openSlug) continue;
         if (t.path !== from && !t.path?.startsWith(`${from}/`)) continue;
         const newPath = to + t.path.slice(from.length);
         const newId = fileTabId(t.project, newPath, t.checkout);
@@ -5622,7 +5611,7 @@ export function shell() {
 
     // A `create` intent carries the DIRECTORY, already resolved (`createDir`).
     emitCreate(node: any, kind: any) {
-      window.WB.emit("create", { project: this.openSlug, path: this.createDir(node), kind, isFolder: true });
+      window.WB.emit("create", { project: this.$store.projects.openSlug, path: this.createDir(node), kind, isFolder: true });
     },
 
     // The directory a create addressed at `node` lands in: the folder itself,
@@ -5645,7 +5634,7 @@ export function shell() {
     // Node-shaped gestures funnel through the shared WB.emit.
     emit(action: any, node: any, extra: any = {}) {
       window.WB.emit(action, {
-        project: this.openSlug,
+        project: this.$store.projects.openSlug,
         path: this.relPath(node),
         title: node.title,
         isFolder: this.isFolder(node),
@@ -6068,7 +6057,7 @@ export function wire(window: Window, document: Document) {
     const c = window.getShell();
     if (!c || c.consoleShortcutsBlocked()) return;
     e.preventDefault();
-    if (c.openSlug) c.openFileSearch();
+    if (window.Alpine.store("projects").openSlug) c.openFileSearch();
     else c.focusProjectSearch();
   });
 
@@ -6078,7 +6067,7 @@ export function wire(window: Window, document: Document) {
     if (!(e.ctrlKey || e.metaKey) || !e.shiftKey || e.altKey) return;
     if (e.key !== "F" && e.key !== "f") return;
     const c = window.getShell();
-    if (!c || !c.authed || !c.openSlug) return;
+    if (!c || !c.authed || !window.Alpine.store("projects").openSlug) return;
     if (c.modalOpen(WBSettingsDialog.openFlag) || c.modalOpen(WBSecurityDialog.openFlag) || c.runOpen || c.branchOpen || c.modalOpen(WBReleaseDialogs.whatsNewFlag)) return;
     e.preventDefault();
     c.openFileSearch();

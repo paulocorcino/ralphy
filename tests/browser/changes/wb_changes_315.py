@@ -230,8 +230,8 @@ def wait_badge(page, expected, timeout=15000):
 def open_project(page, slug, expected):
     show_view(page, "projects")
     # `toggle` is a TOGGLE: calling it on the already-open project closes it.
-    page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug)
-    page.wait_for_function(f"(s) => {SH}.openSlug === s", arg=slug, timeout=15000)
+    page.evaluate(f"(s) => {{ if (Alpine.store('projects').openSlug !== s) {SH}.toggle(s); }}", arg=slug)
+    page.wait_for_function(f"(s) => Alpine.store('projects').openSlug === s", arg=slug, timeout=15000)
     if expected == "0":
         # A count of 0 never renders a badge (wb-changes.ts projectBadge): wait
         # on the READ, not a DOM element that is never going to appear.
@@ -365,7 +365,7 @@ def main():
             page = ctx.new_page()
             page.goto(BASE)
             page.wait_for_selector("[x-data]", timeout=8000)
-            page.wait_for_function(f"() => {SH}.projects.length === 2", timeout=15000)
+            page.wait_for_function(f"() => Alpine.store('projects').projects.length === 2", timeout=15000)
 
             open_project(page, slug_a, "4")
             show_view(page, "changes")

@@ -196,7 +196,7 @@ def added_and_selected(page, path, name):
     slug = entry["slug"]
     try:
         page.wait_for_function(
-            "(slug) => " + SH + ".openSlug === slug"
+            "(slug) => " + "Alpine.store('projects').openSlug === slug"
             " && document.activeElement?.closest('li.project.open') !== null",
             arg=slug,
             timeout=15000,

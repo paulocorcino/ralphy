@@ -361,8 +361,8 @@ def main():
             check("an erroring fold still counts as a load", mid == before + 1, f"{before} -> {mid}")
             check(
                 "…and raises the board error state",
-                page.evaluate(f"() => !!{SH}.boardError[{SH}.openSlug]") is True,
-                f"boardError={page.evaluate(f'() => {SH}.boardError[{SH}.openSlug]')!r}",
+                page.evaluate(f"() => !!{SH}.boardError[Alpine.store('projects').openSlug]") is True,
+                f"boardError={page.evaluate(f'() => {SH}.boardError[Alpine.store(`projects`).openSlug]')!r}",
             )
             page.evaluate(f"() => {SH}.maybeRefreshBoard('runs')")
             page.wait_for_timeout(400)
@@ -373,7 +373,7 @@ def main():
             page.wait_for_timeout(400)
             check(
                 "the board recovers from the error state on the next good fold",
-                page.evaluate(f"() => {SH}.boardError[{SH}.openSlug]") in (None, ""),
+                page.evaluate(f"() => {SH}.boardError[Alpine.store('projects').openSlug]") in (None, ""),
                 "",
             )
 

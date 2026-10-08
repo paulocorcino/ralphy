@@ -205,7 +205,7 @@ def wait_badge(page, expected, timeout=15000):
 def open_project(page, slug, expected):
     show_view(page, "projects")
     # `toggle` is a TOGGLE: calling it on the already-open project closes it.
-    page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug)
+    page.evaluate(f"(s) => {{ if (Alpine.store('projects').openSlug !== s) {SH}.toggle(s); }}", arg=slug)
     wait_badge(page, expected)
 
 
@@ -261,7 +261,7 @@ def main():
             page = ctx.new_page()
             page.goto(BASE)
             page.wait_for_selector("[x-data]", timeout=8000)
-            page.wait_for_function(f"() => {SH}.projects.length === 2", timeout=15000)
+            page.wait_for_function(f"() => Alpine.store('projects').projects.length === 2", timeout=15000)
 
             # --- scenario 1: collapsed on load; a click renders 5 rows --------
             open_project(page, slug_a, "5")

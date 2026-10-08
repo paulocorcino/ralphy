@@ -19,7 +19,7 @@ export function releaseDialogs() {
   // Every `shell()` member this component's code or markup reads or calls.
   // `loadComponent` in ui-tests/harness.mjs fails on any other name, and the
   // type check fails on a name the code reads.
-  return component(["release", "releaseSummary", "releaseStale", "markReleaseSeen", "releaseWatchChanged", "refreshLive", "localSessions", "peerSessions", "fleetPeers", "projectLabel", "identityMark", "scrim"], {
+  return component(["release", "releaseSummary", "releaseStale", "markReleaseSeen", "releaseWatchChanged", "refreshLive", "localSessions", "peerSessions", "fleetPeers", "identityMark", "scrim"], {
     // --- about (read-only) ------------------------------------------------
     // The product card from `/api/about`; these defaults show until it answers.
     aboutOpen: false,
@@ -88,7 +88,7 @@ export function releaseDialogs() {
       // The list as it is now, not as the last poll left it.
       await this.refreshLive();
       const consoles = this.localSessions().map(
-        (s) => s.name || (s.repo && s.repo !== "~" ? this.projectLabel(s.repo) : "home"),
+        (s) => s.name || (s.repo && s.repo !== "~" ? this.$store.projects.projectLabel(s.repo) : "home"),
       );
       // A peer that can be woken through `wsl.exe` is the one the update takes
       // after this daemon (ADR-0056 §11). Its consoles close only if it takes a

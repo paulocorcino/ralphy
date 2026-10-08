@@ -305,12 +305,12 @@ def main():
             page.on("pageerror", lambda e: thrown.append(str(e)))
             page.goto(BASE)
             page.wait_for_selector("[x-data]", timeout=8000)
-            page.wait_for_function(f"() => {SH}.projects.length === 1", timeout=15000)
+            page.wait_for_function(f"() => Alpine.store('projects').projects.length === 1", timeout=15000)
 
             # The slug rides as an ARGUMENT, never interpolated: a repo registered
             # from a Windows path carries backslashes a literal would swallow.
             page.evaluate(f"(s) => {SH}.toggle(s)", arg=slug)
-            page.wait_for_function(f"(s) => {SH}.openSlug === s", arg=slug, timeout=15000)
+            page.wait_for_function(f"(s) => Alpine.store('projects').openSlug === s", arg=slug, timeout=15000)
             page.wait_for_function(
                 "() => [...document.querySelectorAll('.wb-host .wb-row')].some("
                 "r => r.offsetParent !== null && r.clientWidth > 0 && "

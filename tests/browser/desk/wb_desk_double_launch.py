@@ -233,7 +233,7 @@ def main():
             page_c = ctx_c.new_page()
             page_c.goto(BASE)
             open_consoles_tab(page_c)
-            page_c.evaluate(f"() => {{ {SH}.openSlug = {json.dumps(slug)}; }}")
+            page_c.evaluate(f"() => {{ Alpine.store('projects').setOpen({json.dumps(slug)}); }}")
             page_c.wait_for_timeout(2500)
             opened = page_c.evaluate(
                 f"() => window.WBConsole.open({{ repo: {json.dumps(slug)}, plain: true }})"

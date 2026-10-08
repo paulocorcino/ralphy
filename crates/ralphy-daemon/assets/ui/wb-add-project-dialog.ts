@@ -18,7 +18,7 @@ export function addProjectDialog() {
   // Every `shell()` member this component's code or markup reads or calls.
   // `loadComponent` in ui-tests/harness.mjs fails on any other name, and the
   // type check fails on a name the code reads.
-  return component(["fleetPeers", "loadFleet", "loadRepos", "openSlug", "projects", "repoRef", "toggle", "scrim"], {
+  return component(["fleetPeers", "loadFleet", "loadRepos", "toggle", "scrim"], {
     // The Add a project dialog (#501): its whole state is the wb-add-project.ts fold.
     addProject: WBAddProject.initial(),
     // The debounce and "Loading…" timers of its folder list.
@@ -141,8 +141,8 @@ export function addProjectDialog() {
       if (stillOpen) this.selectAddedProject(payload.daemon ? `${payload.daemon}/${reply.slug}` : reply.slug);
     },
     selectAddedProject(ref: string) {
-      if (!this.projects.some((p) => this.repoRef(p) === ref)) return;
-      if (this.openSlug !== ref) this.toggle(ref);
+      if (!this.$store.projects.projects.some((p) => this.$store.projects.repoRef(p) === ref)) return;
+      if (this.$store.projects.openSlug !== ref) this.toggle(ref);
       this.$nextTick(() => {
         const head = document.querySelector<HTMLElement>("li.project.open .project-head");
         if (!head) return;

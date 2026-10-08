@@ -218,7 +218,7 @@ def main():
 
             peer_row = page.locator("li.project.peer").first
             peer_row.locator(".project-head").click()
-            page.wait_for_function(f"(ref) => {SHELL}.openSlug === ref", arg=PEER_REF)
+            page.wait_for_function(f"(ref) => Alpine.store('projects').openSlug === ref", arg=PEER_REF)
             page.wait_for_function(
                 f"() => {SHELL}.roster.some(r => r.id === 'opencode' && r.available === false)",
                 timeout=10000,

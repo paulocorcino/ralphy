@@ -185,7 +185,7 @@ def main():
 
             # ── 7. the sockets (connect-src ws:) — a refused `ws://` would land
             #      in the violation list every later check reads.
-            page.evaluate(f"{SH}.openProject && {SH}.openProject('{slug}')")
+            page.evaluate(f"Alpine.store('projects').openProject && Alpine.store('projects').openProject('{slug}')")
             page.wait_for_timeout(2000)
             check("opening a project (its /ws/tree socket) with no CSP violation", violations(page) == [], violations(page))
 

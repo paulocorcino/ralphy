@@ -22,6 +22,7 @@ import { createViewer } from "./wb-viewer.ts";
 import { createNotes } from "./wb-notes.ts";
 import { createConsole } from "./wb-console.ts";
 import { iconDirective, shell, wire } from "./app.ts";
+import { projectsStore } from "./wb-projects-store.ts";
 
 window.Alpine = Alpine;
 // The consoles first, before `wire`: `app.ts` and the markup read `WBConsole`.
@@ -37,6 +38,8 @@ window.WBViewer = createViewer(window, document);
 window.WBNotes = createNotes(window, document);
 wire(window, document);
 Alpine.directive("icon", iconDirective);
+// The open project, before the components that read it (ADR-0073 D6).
+Alpine.store("projects", projectsStore());
 // Each name is the `x-data` of one element in `index.html`.
 Alpine.data("shell", shell);
 Alpine.data("wbSettingsDialog", settingsDialog);

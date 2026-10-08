@@ -38,7 +38,7 @@ async function withDialog(run) {
     },
   };
   // A repo must be open or the fold skips the daemon entirely.
-  shell.openSlug = "owner/repo";
+  shell.$store.projects.setOpen("owner/repo");
   return await run(state, calls);
 }
 
@@ -137,7 +137,7 @@ test("a failed settings read says so, and a project setting is not written", asy
     return verb === "config.get" ? { status: "error", message: "settings.json is not JSON" } : { status: "ok" };
   };
   window.WBView.read = () => ({});
-  shell.openSlug = "o/r";
+  shell.$store.projects.setOpen("o/r");
   shell._flashAction = () => {};
   state.openSettings();
   for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));

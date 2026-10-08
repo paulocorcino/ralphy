@@ -256,7 +256,7 @@ def main():
             page.on("pageerror", lambda e: thrown.append(str(e)))
             page.goto(BASE)
             page.wait_for_selector("[x-data]", timeout=8000)
-            page.wait_for_function(f"() => {SH}.projects.length === 2", timeout=15000)
+            page.wait_for_function(f"() => Alpine.store('projects').projects.length === 2", timeout=15000)
 
             # --- scenario a: the control is on the row ------------------------
             page.wait_for_function(

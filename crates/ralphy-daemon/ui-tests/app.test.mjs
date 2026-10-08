@@ -84,27 +84,27 @@ test("githubUrl resolves the OPEN project's remote, and refuses when it cannot",
   // ref — and it lost its coverage in the move: a lookup regression would hand
   // back a link to another repo's issue with the whole suite green.
   const own = loadShell().state;
-  own.projects = [
+  own.$store.projects.setProjects([
     { slug: "owner/a", remoteUrl: "https://github.com/owner/a.git" },
     { slug: "owner/b", remoteUrl: "https://github.com/owner/b.git" },
-  ];
+  ]);
 
-  own.openSlug = own.repoRef(own.projects[1]);
+  own.$store.projects.setOpen(own.$store.projects.repoRef(own.$store.projects.projects[1]));
   assert.equal(own.githubUrl(42), "https://github.com/owner/b/issues/42");
-  own.openSlug = own.repoRef(own.projects[0]);
+  own.$store.projects.setOpen(own.$store.projects.repoRef(own.$store.projects.projects[0]));
   assert.equal(own.githubUrl(42), "https://github.com/owner/a/issues/42");
 
   // NEGATIVE CONTROL: no project matches, so there is nothing honest to link to
   // — and emphatically not the first project in the list.
-  own.openSlug = "owner/never-registered";
+  own.$store.projects.setOpen("owner/never-registered");
   assert.equal(own.githubUrl(42), null);
-  own.openSlug = null;
+  own.$store.projects.setOpen(null);
   assert.equal(own.githubUrl(42), null);
 });
 
 test("issueBlockers resolves each blocker it can see and admits the ones it cannot", () => {
   const own = loadShell().state;
-  own.openSlug = "owner/repo";
+  own.$store.projects.setOpen("owner/repo");
   // `projectIssues()` reads the BOARD's fold, not the run's issue list.
   own.boardIssues = {
     "owner/repo": [
@@ -195,9 +195,9 @@ test("rowOpen compares by composite ref, not by slug", () => {
   // apart, and the open-row highlight is where conflating them shows.
   const own = loadShell().state;
   const a = { slug: "owner/repo", daemon: false };
-  own.openSlug = own.repoRef(a);
-  assert.equal(own.rowOpen(a), true);
-  assert.equal(own.rowOpen({ slug: "owner/other", daemon: false }), false);
+  own.$store.projects.setOpen(own.$store.projects.repoRef(a));
+  assert.equal(own.$store.projects.rowOpen(a), true);
+  assert.equal(own.$store.projects.rowOpen({ slug: "owner/other", daemon: false }), false);
 });
 
 test("planHeadings drops Steps and stays empty when the prose is for another issue", () => {
@@ -240,7 +240,7 @@ test("planHeadings drops Steps and stays empty when the prose is for another iss
 
 test("a fresh listing evicts the levels it contradicts — a reused folder name is not the old folder", () => {
   const own = loadShell().state;
-  own.openSlug = "me/vc-stress";
+  own.$store.projects.setOpen("me/vc-stress");
   own.treeMem();
   const seed = (rel, entries) => own._treeCache.set(own.treeKey(rel), entries);
   // The key is `<slug>\n<checkout>\n<rel>` (#406 added the middle segment);
@@ -295,8 +295,8 @@ test("filteredProjects keeps the open project whatever the query", () => {
   const own = loadShell().state;
   const a = { slug: "owner/alpha", branch: "main", path: "C:\\src\\alpha" };
   const b = { slug: "owner/beta", branch: "main", path: "C:\\src\\beta" };
-  own.projects = [a, b];
-  own.openSlug = own.repoRef(a);
+  own.$store.projects.setProjects([a, b]);
+  own.$store.projects.setOpen(own.$store.projects.repoRef(a));
 
   // The open row's `<li>` hosts the file tree; a query that matches nothing
   // must not unmount it.
@@ -310,7 +310,7 @@ test("filteredProjects keeps the open project whatever the query", () => {
 
   // NEGATIVE CONTROL: the pin is the open row, not a change to matching — with
   // nothing open the same query filters everything out.
-  own.openSlug = null;
+  own.$store.projects.setOpen(null);
   own.projectQuery = "zzz-matches-nothing";
   assert.deepEqual(own.filteredProjects(), []);
 });
@@ -332,7 +332,7 @@ async function withSearchShell(run, reply = { status: "ok", hits: [], truncated:
     withCheckout: (payload, checkout) =>
       checkout ? { ...payload, checkout: String(checkout) } : { ...payload },
   };
-  state.openSlug = "owner/repo";
+  state.$store.projects.setOpen("owner/repo");
   state.$refs = {};
   state.$nextTick = (f) => f();
   return await run(state, calls, (a) => (answer = a));
@@ -440,7 +440,7 @@ test("openTab pins the tab to the selected checkout and keys the tab by it", () 
   const { state, window } = loadShell();
   window.WBView = { patch() {}, read: () => null };
   state.$nextTick = () => {};
-  state.openSlug = "owner/repo";
+  state.$store.projects.setOpen("owner/repo");
   state.checkouts = { "owner/repo": "wt-a" };
 
   state.openTab({ project: "owner/repo", path: "README.md", title: "README.md", ftype: "markdown", content: "x" });
@@ -467,7 +467,7 @@ test("persistView stores the pin and restoreView hands it back explicitly", () =
   let stored = null;
   window.WBView = { patch: (v) => (stored = v), read: () => stored };
   state.$nextTick = () => {};
-  state.openSlug = "owner/repo";
+  state.$store.projects.setOpen("owner/repo");
   state.checkouts = { "owner/repo": "wt-a" };
   state.openTab({ project: "owner/repo", path: "a.txt", title: "a.txt", ftype: "code", content: "a" });
   state.openTab({ project: "owner/repo", path: "b.txt", title: "b.txt", ftype: "code", content: "b", checkout: null });
@@ -497,7 +497,7 @@ function slotShell(width = 1280, seed = null) {
   let stored = seed;
   window.WBView = { patch: (v) => (stored = { ...stored, ...v }), read: () => stored };
   state.$nextTick = (fn) => fn();
-  state.openSlug = "o/r";
+  state.$store.projects.setOpen("o/r");
   const painted = [];
   const real = globalThis.WBViewer;
   globalThis.WBViewer = {
@@ -689,7 +689,7 @@ test("newConsole opens the agent in the primary even under a selected checkout",
   globalThis.WBConsole = { open: (o) => calls.push(o), count: () => 0 };
   try {
     state.active = "consoles";
-    state.openSlug = "o/r";
+    state.$store.projects.setOpen("o/r");
     state.checkouts = { "o/r": "wt-a" };
     state.newConsole("claude");
     state.checkouts = {};
@@ -746,7 +746,7 @@ test("the shortcuts are blocked while the Security, Settings or What's new dialo
   assert.ok(filesKey, "app.ts registers the Ctrl+Shift+F listener at load");
   const searches = [];
   state.authed = true;
-  state.openSlug = "o/r";
+  state.$store.projects.setOpen("o/r");
   state.openFileSearch = () => searches.push("files");
   window.getShell = () => state;
   const press = () =>
@@ -970,15 +970,33 @@ test("keeping a card on top from another tab opens the Consoles tab first", () =
   assert.deepEqual(calls, ["activate:consoles", "keepOnTop:a"]);
 });
 
-// A shell whose `toggle` side effects are recorders: each method `toggle`
-// reaches is replaced, so the test sees the calls `toggle` itself makes.
+// A shell whose `toggle` side effects are recorders: each method `toggle` and
+// the `workbench:project-changed` listeners reach is replaced, so the test
+// sees the calls they make. The window hears the events it is sent, and
+// `init()` registers the listeners, as on the page.
 function toggleShell() {
-  const { state } = loadShell();
+  const listeners = {};
+  const events = [];
+  const { state, window } = loadShell({
+    window: {
+      addEventListener: (type, fn) => (listeners[type] ||= []).push(fn),
+      dispatchEvent: (e) => {
+        events.push(e);
+        for (const fn of listeners[e.type] || []) fn(e);
+        return true;
+      },
+    },
+  });
   const calls = [];
   const record = (name) => (...args) => {
     calls.push([name, ...args]);
   };
   for (const name of [
+    "probeSession",
+    "loadRepos",
+    "subscribePresence",
+    "loadIdentity",
+    "loadRelease",
     "wakePeerFor",
     "loadAgents",
     "ensureWorktreeListing",
@@ -1000,7 +1018,16 @@ function toggleShell() {
   state.planHeadings = () => [];
   state.currentRun = () => null;
   state.$nextTick = (fn) => fn();
-  return { state, calls, named: (name) => calls.filter((c) => c[0] === name) };
+  // `init()` starts its clocks on the global timers; here they never tick.
+  const realSetInterval = globalThis.setInterval;
+  globalThis.setInterval = () => 0;
+  try {
+    state.init();
+  } finally {
+    globalThis.setInterval = realSetInterval;
+  }
+  calls.length = 0;
+  return { state, window, calls, events, named: (name) => calls.filter((c) => c[0] === name) };
 }
 
 test("opening a row asks to wake its peer, and closing it does not", () => {
@@ -1009,7 +1036,7 @@ test("opening a row asks to wake its peer, and closing it does not", () => {
   assert.deepEqual(named("wakePeerFor"), [["wakePeerFor", "peer:wsl/owner/repo"]]);
   // CONTROL: the same row again closes it, and a closing row wakes nothing.
   state.toggle("peer:wsl/owner/repo");
-  assert.equal(state.openSlug, null);
+  assert.equal(state.$store.projects.openSlug, null);
   assert.equal(named("wakePeerFor").length, 1);
 });
 
@@ -1020,13 +1047,13 @@ test("a row on a host that cannot answer stays closed, and still wakes it", () =
   let groups = [{ daemon: peer, local: false, state: "unreachable" }];
   state.fleetGroups = () => groups;
   state.toggle(ref);
-  assert.equal(state.openSlug, null);
+  assert.equal(state.$store.projects.openSlug, null);
   assert.equal(named("mountTree").length, 0);
   assert.deepEqual(named("wakePeerFor"), [["wakePeerFor", ref]]);
   // CONTROL: once the host answers, the same click opens the row.
   groups = [{ daemon: peer, local: false, state: "reachable" }];
   state.toggle(ref);
-  assert.equal(state.openSlug, ref);
+  assert.equal(state.$store.projects.openSlug, ref);
   assert.equal(named("mountTree").length, 1);
 });
 
@@ -1041,11 +1068,120 @@ test("opening a row remounts the run-completion subscription", () => {
   assert.deepEqual(changes, ["destroyChangesSub", "mountChangesSub"]);
 });
 
+// `toggle` changes the store and sends `workbench:project-changed` on the
+// window; the files, the board and the git part each listen to it (ADR-0073
+// amendment of 2026-10-08, decision 4).
+test("toggle sends workbench:project-changed with the project now open and the one that was", () => {
+  const { state, events } = toggleShell();
+  state.toggle("owner/a");
+  state.toggle("owner/b");
+  state.toggle("owner/b");
+  assert.deepEqual(
+    events.filter((e) => e.type === "workbench:project-changed").map((e) => e.detail),
+    [
+      { slug: "owner/a", previous: null },
+      { slug: "owner/b", previous: "owner/a" },
+      { slug: null, previous: "owner/b" },
+    ],
+  );
+});
+
+test("toggle writes no field of the git or the board part", () => {
+  // The default page: the window hears nothing, so no listener runs.
+  const { state } = loadShell();
+  for (const name of ["wakePeerFor", "loadAgents", "ensureWorktreeListing", "refreshSpend"]) state[name] = () => {};
+  const held = {
+    changesError: "a refusal",
+    branchError: "a branch refusal",
+    commitMsg: "unsent",
+    commitMsgSlug: "owner/a",
+    kanbanSel: 7,
+    trailFocus: 3,
+    currentRunId: "run-1",
+    planSection: "Stage 1",
+    verbError: "a verb refusal",
+  };
+  Object.assign(state, held);
+  state.toggle("owner/b");
+  assert.equal(state.$store.projects.openSlug, "owner/b");
+  assert.deepEqual(Object.fromEntries(Object.keys(held).map((k) => [k, state[k]])), held);
+});
+
+test("the listeners run in the order toggle ran them: the tree, the board, then git", () => {
+  const { state, calls } = toggleShell();
+  state.kanbanOpen = true;
+  state.toggle("owner/repo");
+  const after = ["destroyTree", "mountTree", "destroyRunsSub", "mountRunsSub", "loadBoard", "hydrateRuns",
+    "destroyChangesSub", "mountChangesSub", "loadChanges", "loadSync"];
+  assert.deepEqual(calls.map((c) => c[0]).filter((n) => after.includes(n)), after);
+});
+
+test("the git part drops the refusals and the commit message of the project that was open", () => {
+  const { state, named } = toggleShell();
+  state.$store.projects.setOpen("owner/b");
+  Object.assign(state, { changesError: "x", branchError: "y", commitMsg: "unsent", commitMsgSlug: "owner/a" });
+  state.gitFollowProject("owner/b");
+  assert.deepEqual(
+    [state.changesError, state.branchError, state.commitMsg, state.commitMsgSlug],
+    ["", "", "", "owner/b"],
+  );
+  assert.deepEqual(named("loadChanges"), [["loadChanges", "owner/b"]]);
+  assert.deepEqual(named("loadSync"), [["loadSync", "owner/b"]]);
+  // CONTROL: a message written for the project now open stays.
+  state.commitMsg = "kept";
+  state.gitFollowProject("owner/b");
+  assert.equal(state.commitMsg, "kept");
+});
+
+test("the board part drops the selection, the trail and the verb refusal of the project that was open", () => {
+  const { state, named } = toggleShell();
+  state.$store.projects.setOpen("owner/b");
+  state.projectRuns = () => [{ runid: "run-2" }];
+  state.planHeadings = () => ["Stage 1"];
+  Object.assign(state, { kanbanSel: 7, trailFocus: 3, verbError: "z", currentRunId: "run-1", planSection: "" });
+  state.boardFollowProject();
+  assert.deepEqual(
+    [state.kanbanSel, state.trailFocus, state.verbError, state.currentRunId, state.planSection],
+    [null, null, "", "run-2", "Stage 1"],
+  );
+  assert.equal(named("hydrateRuns").length, 1);
+  // The board is read only while it is open.
+  assert.equal(named("loadBoard").length, 0);
+});
+
+test("the files part mounts the tree of the open project, and only unmounts when none is open", () => {
+  const { state, named } = toggleShell();
+  state.$store.projects.setOpen("owner/b");
+  state.filesFollowProject();
+  assert.deepEqual([named("destroyTree").length, named("mountTree").length], [1, 1]);
+  state.$store.projects.setOpen(null);
+  state.filesFollowProject();
+  assert.deepEqual([named("destroyTree").length, named("mountTree").length], [2, 1]);
+});
+
+test("removing the open project closes it and sends workbench:project-changed", async () => {
+  const { state, events, window } = toggleShell();
+  window.WBDaemon.observe = async () => ({ status: "ok" });
+  state.askConfirm = async () => true;
+  const a = { slug: "owner/a" };
+  const b = { slug: "owner/b" };
+  state.$store.projects.setProjects([a, b]);
+  state.$store.projects.setOpen("owner/a");
+  // CONTROL: a project that is not open goes without the event.
+  await state.removeProject(b);
+  assert.equal(events.length, 0);
+  await state.removeProject(a);
+  assert.equal(state.$store.projects.openSlug, null);
+  assert.deepEqual(events.map((e) => [e.type, e.detail]), [
+    ["workbench:project-changed", { slug: null, previous: "owner/a" }],
+  ]);
+});
+
 test("emitCreate sends the directory the create lands in", () => {
   const { state, window } = loadShell();
   const emitted = [];
   window.WB = { emit: (action, detail) => emitted.push({ action, ...detail }) };
-  state.openSlug = "owner/repo";
+  state.$store.projects.setOpen("owner/repo");
   const root = { title: "root", parent: null };
   const src = { title: "src", parent: root, data: { folder: true } };
   const file = { title: "main.rs", parent: src, data: {} };
@@ -1276,11 +1412,11 @@ test("spendView shows the spend document only for the project that is open", () 
   const own = loadShell().state;
   own.spend = { loading: false, error: "", doc: { total: "~$1.00" }, slug: "owner/a" };
   assert.equal(own.spendView().kind, "empty", "no project open");
-  own.openSlug = "owner/a";
+  own.$store.projects.setOpen("owner/a");
   assert.equal(own.spendView().kind, "ready");
   assert.equal(own.spendView().total, "~$1.00");
   // A document read for another project is stale: the pane waits for its own.
-  own.openSlug = "owner/b";
+  own.$store.projects.setOpen("owner/b");
   assert.equal(own.spendView().kind, "loading");
 });
 
@@ -1308,8 +1444,8 @@ test("loadRepos keeps the head of a detached repo for the row title", async () =
   } finally {
     globalThis.fetch = realFetch;
   }
-  assert.equal(state.projects.length, 1);
-  assert.equal(state.rowTitle(state.projects[0]), "o/r · abc1234");
+  assert.equal(state.$store.projects.projects.length, 1);
+  assert.equal(state.rowTitle(state.$store.projects.projects[0]), "o/r · abc1234");
 });
 
 // The sidebar dot says GitHub only when github.com is the remote's host.
@@ -1333,7 +1469,7 @@ test("loadRepos marks a row github only for a remote hosted on github.com", asyn
     globalThis.fetch = realFetch;
   }
   assert.deepEqual(
-    state.projects.map((p) => [p.slug, p.remote]),
+    state.$store.projects.projects.map((p) => [p.slug, p.remote]),
     [["o/gh", "github"], ["o/fake", "local"], ["o/none", "local"]],
   );
 });
@@ -1489,8 +1625,8 @@ test("a failed project read after a good one keeps the list, marked not current"
   } finally {
     restore();
   }
-  assert.equal(state.projects.length, 1);
-  assert.equal(state.projects[0].slug, "a/b");
+  assert.equal(state.$store.projects.projects.length, 1);
+  assert.equal(state.$store.projects.projects[0].slug, "a/b");
   assert.match(state.reposError, /Not current: the daemon answered 500/);
 });
 
@@ -1503,7 +1639,7 @@ test("a failed first project read is empty and says why", async () => {
   } finally {
     restore();
   }
-  assert.deepEqual(state.projects, []);
+  assert.deepEqual(state.$store.projects.projects, []);
   assert.equal(state.reposError, "Could not load the projects from the daemon: the daemon answered 500.");
 });
 
@@ -1519,13 +1655,13 @@ test("a failed fleet read after a good one keeps the peers and their rows", asyn
   ]);
   try {
     await state.loadFleet();
-    state.projects = state.projects.filter((p) => !p.daemon);
+    state.$store.projects.setProjects(state.$store.projects.projects.filter((p) => !p.daemon));
     await state.loadFleet();
   } finally {
     restore();
   }
   assert.equal(state.fleetPeers.length, 1);
-  assert.equal(state.projects.filter((p) => p.daemon === "p1").length, 1);
+  assert.equal(state.$store.projects.projects.filter((p) => p.daemon === "p1").length, 1);
   assert.match(state.fleetError, /Not current: the daemon answered 502/);
 });
 
@@ -1549,7 +1685,7 @@ test("a failed session read after a good one keeps the list, marked not current"
 function observedShell(replies) {
   const { state, window } = loadShell();
   window.WBDaemon.observe = async () => replies.shift() ?? null;
-  state.openSlug = "o/r";
+  state.$store.projects.setOpen("o/r");
   state._flashAction = () => {};
   return state;
 }
@@ -1810,7 +1946,7 @@ test("every shell path that paints the columns asks to write the maximize", () =
 
 test("two fleet reads close together list each peer row once", async () => {
   const { state } = loadShell();
-  state.projects = [{ slug: "a/b", tree: [] }];
+  state.$store.projects.setProjects([{ slug: "a/b", tree: [] }]);
   const fleet = {
     peers: [{ daemon_id: "p1", name: "wsl", environment: "WSL: U", state: "reachable" }],
     repos: [{ key: "p1/o/r", slug: "o/r", daemon_id: "p1", reachable: true }],
@@ -1822,13 +1958,13 @@ test("two fleet reads close together list each peer row once", async () => {
   } finally {
     globalThis.fetch = realFetch;
   }
-  assert.equal(state.projects.filter((p) => p.daemon === "p1").length, 1);
-  assert.equal(state.projects.filter((p) => !p.daemon).length, 1);
+  assert.equal(state.$store.projects.projects.filter((p) => p.daemon === "p1").length, 1);
+  assert.equal(state.$store.projects.projects.filter((p) => !p.daemon).length, 1);
 });
 
 test("fleet reads asked now share the read in flight, and a later ask reads again", async () => {
   const { state } = loadShell();
-  state.projects = [];
+  state.$store.projects.setProjects([]);
   let reads = 0;
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (url) => {
@@ -1868,9 +2004,9 @@ const FILES_REF = `${FILES_PEER}/o/r`;
 function peerFilesShell(state) {
   const loaded = loadShell();
   const s = loaded.state;
-  s.projects = [];
+  s.$store.projects.setProjects([]);
   s.fleetPeers = [{ daemon_id: FILES_PEER, name: "corcino-mac", environment: "macOS 15", tunnel: true, state, diagnosis: `diagnosis of ${state}` }];
-  s.openSlug = FILES_REF;
+  s.$store.projects.setOpen(FILES_REF);
   s.treeMem();
   return loaded;
 }
@@ -1888,7 +2024,7 @@ function mountedTreeOptions(s, window, document) {
   };
   const host = { addEventListener() {} };
   document.querySelector = (sel) => (sel === ".project.open .wb-host" ? host : null);
-  s.projects = [{ key: FILES_REF, slug: "o/r", daemon: FILES_PEER, tree: [] }];
+  s.$store.projects.setProjects([{ key: FILES_REF, slug: "o/r", daemon: FILES_PEER, tree: [] }]);
   s.useDaemonTree = () => true;
   s.loadTreeLevel = () => Promise.resolve([]);
   try {
@@ -1987,7 +2123,7 @@ test("a tab that becomes visible reads the runs with the Runs panel closed, so a
   state.loadChanges = async () => {};
   state.loadSync = async () => {};
   window.WBDaemon.observe = async (verb) => (verb === "runs.list" ? { status: "ok", runs: [] } : null);
-  state.openSlug = "o/r";
+  state.$store.projects.setOpen("o/r");
   state.runsOpen = false;
   state.runsByProject["o/r"] = [{ runid: "r1" }];
   assert.equal(state.writeLocked(), true, "the run seen before the tab was hidden locks");
@@ -2000,7 +2136,7 @@ test("a reopened socket reads the board and the runs", () => {
   const calls = [];
   for (const name of ["loadRepos", "rereadDesk", "hydrateRuns"]) state[name] = () => calls.push(name);
   state.maybeRefreshBoard = (why) => calls.push(`board:${why}`);
-  state.openSlug = "o/r";
+  state.$store.projects.setOpen("o/r");
   state.onPresenceOpen(true);
   assert.ok(calls.includes("board:reopen"), calls.join(", "));
   assert.ok(calls.includes("hydrateRuns"), calls.join(", "));
@@ -2041,7 +2177,7 @@ test("the peer tick and a project-list push read no change set and no branch", a
   const git = [];
   state.loadChanges = async () => git.push("changes");
   state.loadSync = async () => git.push("sync");
-  state.openSlug = "o/r";
+  state.$store.projects.setOpen("o/r");
   state.fleetPeers = [{ daemon_id: "d" }];
   await withFetchSpy(async () => {
     state.peerTick();
@@ -2057,7 +2193,7 @@ test("the peer tick and a project-list push read no change set and no branch", a
 test("a project read keeps the peer rows and the live dots until the fleet and the sessions answer", async () => {
   const { state } = loadShell(VISIBLE);
   const peer = { key: "d/x", slug: "x", daemon: "d", state: "idle" };
-  state.projects = [{ slug: "a", state: "working", env: "wsl" }, peer];
+  state.$store.projects.setProjects([{ slug: "a", state: "working", env: "wsl" }, peer]);
   state._fleetRows = [peer];
   const realFetch = globalThis.fetch;
   // `/api/repos` answers; the fleet and the sessions never do.
@@ -2071,12 +2207,12 @@ test("a project read keeps the peer rows and the live dots until the fleet and t
     globalThis.fetch = realFetch;
   }
   assert.deepEqual(
-    state.projects.map((p) => p.slug),
+    state.$store.projects.projects.map((p) => p.slug),
     ["a", "x"],
     "the peer row stays",
   );
-  assert.equal(state.projects[0].state, "working", "the live dot stays");
-  assert.equal(state.projects[0].env, "wsl");
+  assert.equal(state.$store.projects.projects[0].state, "working", "the live dot stays");
+  assert.equal(state.$store.projects.projects[0].env, "wsl");
 });
 
 test("a commit draft does not hold the build reload", () => {
@@ -2133,7 +2269,7 @@ test("every change-set write is refused while the change set is not current", as
     verbs.push(verb);
     return replies.shift() ?? { status: "ok" };
   };
-  state.openSlug = "o/r";
+  state.$store.projects.setOpen("o/r");
   state._flashAction = () => {};
   state.runsByProject["o/r"] = [];
   await state.loadChanges("o/r");
@@ -2174,7 +2310,7 @@ test("every change-set write reaches the daemon while the change set is current"
       verbs.push(verb);
       return replies.shift() ?? { status: "ok" };
     };
-    state.openSlug = "o/r";
+    state.$store.projects.setOpen("o/r");
     state._flashAction = () => {};
     state.runsByProject["o/r"] = [];
     await state.loadChanges("o/r");
@@ -2201,7 +2337,7 @@ test("a reopened socket refreshes an open board, as the tab becoming visible doe
 // says so instead of showing a fleet with that peer missing.
 test("a peer the daemon could not read is named in the sidebar", async () => {
   const { state } = loadShell(VISIBLE);
-  state.projects = [];
+  state.$store.projects.setProjects([]);
   const restore = scriptedFetch([
     {
       status: 200,
@@ -2291,20 +2427,20 @@ test("Remove project names a remoteless repo by its folder, not its path- slug",
 
 test("projectLabel and projectTitle never print a path- key or a daemon id", () => {
   const { state } = loadShell();
-  state.projects = [
+  state.$store.projects.setProjects([
     { slug: "path-8ee0b8b587ea7891", name: "widget", path: "C:/Dev/widget" },
     { key: "01KYPEER/path-1234", slug: "path-1234", name: "gadget", path: "/home/me/gadget", daemon: "01KYPEER", env: "WSL: Ubuntu" },
     { slug: "owner/repo", name: "owner/repo", path: "C:/Dev/repo" },
-  ];
-  const ref = (p) => state.repoRef(p);
-  const [local, peer, forge] = state.projects;
-  assert.equal(state.projectLabel(ref(local)), "widget");
-  assert.equal(state.projectTitle(ref(local)), "C:/Dev/widget");
-  assert.equal(state.projectLabel(ref(peer)), "gadget · WSL: Ubuntu");
-  assert.equal(state.projectTitle(ref(peer)), "/home/me/gadget · WSL: Ubuntu");
-  assert.equal(state.projectLabel(ref(forge)), "owner/repo");
-  assert.equal(state.projectTitle(ref(forge)), "owner/repo");
-  state.openSlug = ref(local);
+  ]);
+  const ref = (p) => state.$store.projects.repoRef(p);
+  const [local, peer, forge] = state.$store.projects.projects;
+  assert.equal(state.$store.projects.projectLabel(ref(local)), "widget");
+  assert.equal(state.$store.projects.projectTitle(ref(local)), "C:/Dev/widget");
+  assert.equal(state.$store.projects.projectLabel(ref(peer)), "gadget · WSL: Ubuntu");
+  assert.equal(state.$store.projects.projectTitle(ref(peer)), "/home/me/gadget · WSL: Ubuntu");
+  assert.equal(state.$store.projects.projectLabel(ref(forge)), "owner/repo");
+  assert.equal(state.$store.projects.projectTitle(ref(forge)), "owner/repo");
+  state.$store.projects.setOpen(ref(local));
   assert.equal(state.consoleMenuRepoName(), "widget");
   assert.equal(state.columnRepoLabel(ref(peer)), "gadget");
 });

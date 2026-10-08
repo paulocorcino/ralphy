@@ -228,7 +228,7 @@ def display(page, selector):
 def wait_project(page, slug):
     """The project list is read after the page loads. A tab opened before it
     arrives has no project name to show, and names its project by the key."""
-    page.wait_for_function(f"(s) => {SH}.projects.some((p) => p.slug === s)", arg=slug, timeout=15000)
+    page.wait_for_function(f"(s) => Alpine.store('projects').projects.some((p) => p.slug === s)", arg=slug, timeout=15000)
 
 
 def open_tab(page, slug, path):

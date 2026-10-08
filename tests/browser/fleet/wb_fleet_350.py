@@ -209,15 +209,15 @@ def main():
             )
 
             open_row(page, True)
-            page.wait_for_function(f"(ref) => {SH}.openSlug === ref", arg=PEER_REF)
+            page.wait_for_function(f"(ref) => Alpine.store('projects').openSlug === ref", arg=PEER_REF)
             wait_tree(page, "note.txt")
             check(
                 "clicking the peer row opens its file tree",
-                page.evaluate(f"() => {SH}.openSlug") == PEER_REF,
+                page.evaluate(f"() => Alpine.store('projects').openSlug") == PEER_REF,
             )
 
             page.evaluate(
-                f"(ref) => {SH}.openBranchModal({SH}.projects.find(p => {SH}.repoRef(p) === ref))",
+                f"(ref) => {SH}.openBranchModal(Alpine.store('projects').projects.find(p => Alpine.store('projects').repoRef(p) === ref))",
                 PEER_REF,
             )
             page.wait_for_function(
@@ -331,7 +331,7 @@ def main():
                 timeout=20000,
             )
             page.locator("li.project:not(.peer)").first.locator(".project-head").click()
-            page.wait_for_function(f"(slug) => {SH}.openSlug === slug", arg=SLUG)
+            page.wait_for_function(f"(slug) => Alpine.store('projects').openSlug === slug", arg=SLUG)
             wait_tree(page, "note.txt")
             open_file(page, "note.txt")
             page.wait_for_function(

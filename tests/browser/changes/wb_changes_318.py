@@ -183,8 +183,8 @@ def open_changes(page, slug):
     # The slug rides as an ARGUMENT, never interpolated: a repo registered from a
     # Windows path carries backslashes a string literal would swallow (#316).
     # `toggle` is a TOGGLE: calling it on the already-open project closes it.
-    page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug)
-    page.wait_for_function(f"(s) => {SH}.openSlug === s", arg=slug, timeout=15000)
+    page.evaluate(f"(s) => {{ if (Alpine.store('projects').openSlug !== s) {SH}.toggle(s); }}", arg=slug)
+    page.wait_for_function(f"(s) => Alpine.store('projects').openSlug === s", arg=slug, timeout=15000)
     page.evaluate(
         f"() => {{ const v = {VIEW};"
         f" if (!v || v.offsetParent === null) document.querySelector('{RAIL_CHANGES}').click(); }}"
@@ -323,7 +323,7 @@ def main():
             page.on("pageerror", lambda e: thrown.append(str(e)))
             page.goto(BASE)
             page.wait_for_selector("[x-data]", timeout=8000)
-            page.wait_for_function(f"() => {SH}.projects.length === 1", timeout=15000)
+            page.wait_for_function(f"() => Alpine.store('projects').projects.length === 1", timeout=15000)
 
             open_changes(page, slug)
             # 3 paths: README.md (unstaged), fresh.txt (untracked), renamed.txt

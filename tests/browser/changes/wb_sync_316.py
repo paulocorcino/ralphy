@@ -211,8 +211,8 @@ def open_and_expand(page, slug):
     # of a local path is registered under a slug carrying Windows backslashes,
     # which a string literal would swallow as escapes and silently open nothing.
     # `toggle` is a TOGGLE — calling it on the already-open project closes it.
-    page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug)
-    page.wait_for_function(f"(s) => {SH}.openSlug === s", arg=slug, timeout=15000)
+    page.evaluate(f"(s) => {{ if (Alpine.store('projects').openSlug !== s) {SH}.toggle(s); }}", arg=slug)
+    page.wait_for_function(f"(s) => Alpine.store('projects').openSlug === s", arg=slug, timeout=15000)
     # Reaching the change set is now a rail click, not an accordion expand (#317);
     # clicking the rail button of the view already showing would COLLAPSE the
     # sidebar, so this is guarded on the view's own visibility.
@@ -256,7 +256,7 @@ def main():
             page.on("pageerror", lambda e: thrown.append(str(e)))
             page.goto(BASE)
             page.wait_for_selector("[x-data]", timeout=8000)
-            page.wait_for_function(f"() => {SH}.projects.length === 3", timeout=15000)
+            page.wait_for_function(f"() => Alpine.store('projects').projects.length === 3", timeout=15000)
 
             # --- scenario a: the counts arrive, and NOTHING fetched ------------
             check(

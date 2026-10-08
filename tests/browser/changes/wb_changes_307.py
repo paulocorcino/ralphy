@@ -176,7 +176,7 @@ def wait_badge(page, expected, timeout=15000):
 
 def open_project(page, slug, expected):
     # `toggle` is a TOGGLE: calling it on the already-open project closes it.
-    page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug)
+    page.evaluate(f"(s) => {{ if (Alpine.store('projects').openSlug !== s) {SH}.toggle(s); }}", arg=slug)
     wait_badge(page, expected)
 
 
@@ -208,7 +208,7 @@ def main():
             page = ctx.new_page()
             page.goto(BASE)
             page.wait_for_selector("[x-data]", timeout=8000)
-            page.wait_for_function(f"() => {SH}.projects.length === 3", timeout=15000)
+            page.wait_for_function(f"() => Alpine.store('projects').projects.length === 3", timeout=15000)
 
             # --- scenario 1: the count is there without a click ---------------
             check("no Changes section before a project is open", badge_text(page) is None)
@@ -242,7 +242,7 @@ def main():
             check("switching projects re-scopes the count to 1", badge_text(page) == "1")
 
             # --- scenario 2: a clean tree shows no badge -----------------------
-            page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug_c)
+            page.evaluate(f"(s) => {{ if (Alpine.store('projects').openSlug !== s) {SH}.toggle(s); }}", arg=slug_c)
             # Wait on the READ, not the DOM: an unread row also shows no badge.
             page.wait_for_function(
                 f"(s) => {SH}.changesCount[s] === 0", arg=slug_c, timeout=15000

@@ -43,7 +43,7 @@ function shell() {
   const flashed = [];
   state._flashAction = (msg) => flashed.push(msg);
   state.$nextTick = (fn) => fn();
-  state.openSlug = "owner/repo";
+  state.$store.projects.setOpen("owner/repo");
   state.checkouts = {};
   state.syncViewer = () => {};
   return { state, observed, images, opened, emitted, flashed };

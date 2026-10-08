@@ -190,7 +190,7 @@ ROW_COUNT_IS = (
     "(n) => Array.from(document.querySelectorAll('.branch-modal .worktree-item'))"
     "  .filter(e => e.offsetParent !== null && e.clientWidth > 0).length === n"
 )
-WORKTREE_COUNT_IS = f"(n) => (({SH}.worktreeListings[{SH}.openSlug] || {{}}).worktrees || []).length === n"
+WORKTREE_COUNT_IS = f"(n) => (({SH}.worktreeListings[Alpine.store('projects').openSlug] || {{}}).worktrees || []).length === n"
 CHIP_TEXT = (
     "() => ((document.querySelector('li.project.open .project-head .branch-chip-name') || {}).textContent || '')"
     "  .trim()"
@@ -213,7 +213,7 @@ NOTICE_STATE = (
 
 def wait_shell(page):
     page.wait_for_selector("[x-data]", timeout=8000)
-    page.wait_for_function(f"() => {SH}.projects.length === 1", timeout=15000)
+    page.wait_for_function(f"() => Alpine.store('projects').projects.length === 1", timeout=15000)
     page.wait_for_function(
         "() => Array.from(document.querySelectorAll('li.project'))"
         "  .filter(e => e.offsetParent !== null).length === 1",
@@ -243,8 +243,8 @@ def open_project(page, slug):
     show_view(page, "projects")
     # The slug rides as an ARGUMENT, never interpolated: a repo registered from
     # a Windows path carries backslashes a string literal would swallow (#316).
-    page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug)
-    page.wait_for_function(f"(s) => {SH}.openSlug === s", arg=slug, timeout=15000)
+    page.evaluate(f"(s) => {{ if (Alpine.store('projects').openSlug !== s) {SH}.toggle(s); }}", arg=slug)
+    page.wait_for_function(f"(s) => Alpine.store('projects').openSlug === s", arg=slug, timeout=15000)
     page.wait_for_function(
         "() => { const c = document.querySelector('li.project.open .project-head .branch-chip');"
         "  return !!c && c.offsetParent !== null && c.clientWidth > 0; }",
@@ -280,8 +280,8 @@ CK_ROWS = (
 def open_chip(page, slug):
     """Open the project and its checkout chip's menu; the chip exists once the
     listing answered with a worktree, so the wait is the listing's."""
-    page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug)
-    page.wait_for_function(f"(s) => {SH}.openSlug === s", arg=slug, timeout=15000)
+    page.evaluate(f"(s) => {{ if (Alpine.store('projects').openSlug !== s) {SH}.toggle(s); }}", arg=slug)
+    page.wait_for_function(f"(s) => Alpine.store('projects').openSlug === s", arg=slug, timeout=15000)
     page.wait_for_function(CK_VISIBLE, timeout=15000)
     if not page.evaluate(CK_MENU_OPEN):
         page.evaluate(f"() => document.querySelector('{CK_CHIP}').click()")
@@ -303,7 +303,7 @@ def chip_rows(page, slug):
 
 def click_row(page, name, slug=None):
     """Pick a checkout from the chip's menu (the menu closes on the pick)."""
-    open_chip(page, slug or page.evaluate(f"() => {SH}.openSlug"))
+    open_chip(page, slug or page.evaluate(f"() => Alpine.store('projects').openSlug"))
     page.wait_for_function(f"(n) => !!({CK_ITEM})(n)", arg=name, timeout=15000)
     page.evaluate(f"(n) => ({CK_ITEM})(n).click()", arg=name)
     page.wait_for_function(f"() => !({CK_MENU_OPEN})()", timeout=5000)
@@ -311,7 +311,7 @@ def click_row(page, name, slug=None):
 
 def click_remove(page, name, slug=None):
     """The trash on a row of the chip's menu; waits for the re-read to land."""
-    open_chip(page, slug or page.evaluate(f"() => {SH}.openSlug"))
+    open_chip(page, slug or page.evaluate(f"() => Alpine.store('projects').openSlug"))
     page.wait_for_function(f"(n) => !!({CK_ITEM})(n)", arg=name, timeout=15000)
     page.evaluate(f"(n) => ({CK_ITEM})(n).querySelector('.session-checkout-remove').click()", arg=name)
     page.wait_for_function(f"() => !({CK_MENU_OPEN})()", timeout=5000)
@@ -347,7 +347,7 @@ def add_worktree(page, fixture, slug, name):
     subprocess.run([EXE, "worktree", "add", name], cwd=str(fixture), check=True, capture_output=True)
     page.evaluate(f"(s) => {SH}.ensureWorktreeListing(s, true)", arg=slug)
     page.wait_for_function(
-        f"(n) => (({SH}.worktreeListings[{SH}.openSlug] || {{}}).worktrees || []).some(w => w.name === n)",
+        f"(n) => (({SH}.worktreeListings[Alpine.store('projects').openSlug] || {{}}).worktrees || []).some(w => w.name === n)",
         arg=name, timeout=15000,
     )
 

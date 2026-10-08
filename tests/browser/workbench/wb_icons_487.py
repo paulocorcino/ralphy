@@ -183,7 +183,7 @@ def main():
             page.on("console", lambda m: "x-icon:" in m.text and unknown.append(m.text))
             page.goto(BASE)
             page.wait_for_selector("[x-data]", timeout=8000)
-            page.wait_for_function(f"() => {SH}.projects.length === 2", timeout=15000)
+            page.wait_for_function(f"() => Alpine.store('projects').projects.length === 2", timeout=15000)
             page.wait_for_function(
                 "() => Array.from(document.querySelectorAll('li.project'))"
                 "  .filter((e) => e.offsetParent !== null).length === 2",
@@ -203,11 +203,11 @@ def main():
             # The empty Spend view means "no project open". Opening a project
             # tears that `x-if` down; closing it again builds a NEW branch.
             page.evaluate(f"(s) => {SH}.toggle(s)", arg=slug_a)
-            page.wait_for_function(f"(s) => {SH}.openSlug === s", arg=slug_a, timeout=15000)
+            page.wait_for_function(f"(s) => Alpine.store('projects').openSlug === s", arg=slug_a, timeout=15000)
             page.wait_for_function("() => document.querySelector('.spend-blank-icon') === null", timeout=5000)
             check("2 the empty Spend view leaves the DOM while a project is open", True)
             page.evaluate(f"(s) => {SH}.toggle(s)", arg=slug_a)
-            page.wait_for_function(f"() => {SH}.openSlug === null", timeout=15000)
+            page.wait_for_function(f"() => Alpine.store('projects').openSlug === null", timeout=15000)
             page.evaluate(f"() => {{ {SH}.active = 'spend'; }}")
             page.wait_for_selector(".spend-blank-icon", timeout=5000)
             settle(page)
@@ -261,7 +261,7 @@ def main():
 
             # --- scenario 5: a sweep over every surface -----------------------
             page.evaluate(f"(s) => {SH}.toggle(s)", arg=slug_a)
-            page.wait_for_function(f"(s) => {SH}.openSlug === s", arg=slug_a, timeout=15000)
+            page.wait_for_function(f"(s) => Alpine.store('projects').openSlug === s", arg=slug_a, timeout=15000)
             views = [
                 ("spend", f"{SH}.openSpend()"),
                 ("consoles", f"{SH}.active = 'consoles'"),

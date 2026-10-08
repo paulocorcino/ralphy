@@ -222,7 +222,7 @@ def main():
             page.on("pageerror", lambda e: thrown.append(str(e)))
             page.goto(BASE)
             page.wait_for_selector("[x-data]", timeout=8000)
-            page.wait_for_function(f"() => {SH}.projects.length === 1", timeout=15000)
+            page.wait_for_function(f"() => Alpine.store('projects').projects.length === 1", timeout=15000)
 
             # --- scenario 1: Settings from the keyboard ----------------------
             gear = page.locator('button[title="Settings"]').first
@@ -323,8 +323,8 @@ def main():
             check("2 the modal stack is empty after Settings", page.evaluate(f"() => {SH}._modalStack.length") == 0)
 
             # --- scenario 3: Branch and Prompt keep their own field -----------
-            page.evaluate(f"(s) => {{ if ({SH}.openSlug !== s) {SH}.toggle(s); }}", arg=slug)
-            page.wait_for_function(f"(s) => {SH}.openSlug === s", arg=slug, timeout=15000)
+            page.evaluate(f"(s) => {{ if (Alpine.store('projects').openSlug !== s) {SH}.toggle(s); }}", arg=slug)
+            page.wait_for_function(f"(s) => Alpine.store('projects').openSlug === s", arg=slug, timeout=15000)
             page.wait_for_function(
                 "() => { const c = document.querySelector('li.project.open .project-head .branch-chip');"
                 "  return !!c && c.offsetParent !== null; }",
