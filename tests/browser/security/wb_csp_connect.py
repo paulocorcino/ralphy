@@ -201,31 +201,43 @@ def start_ngrok():
 
 def create_devtunnel():
     """Creates the tunnel this run hosts; returns its id, or None. The id is
-    what `delete_devtunnel` removes, so no other tunnel is ever touched."""
+    what `delete_devtunnel` removes, so no other tunnel is ever touched. A
+    tunnel that exists but whose JSON cannot be parsed is still returned when
+    its id can be read from the text, so the caller deletes it."""
     out = subprocess.run(
         ["devtunnel", "create", "--allow-anonymous", "--json"], capture_output=True, encoding="utf-8", errors="replace"
     )
     text = (out.stdout or "") + (out.stderr or "")
-    if out.returncode != 0 or re.search(r"rate limit|too many tunnels|limit exceeded", text, re.I):
-        check("dev tunnel created", False, "the account's dev tunnel limit is the cause, not the CSP: " + text.strip()[:300])
+    if out.returncode != 0:
+        if re.search(r"rate limit|too many tunnels|limit exceeded", text, re.I):
+            check("dev tunnel created", False, "the account's dev tunnel limit is the cause, not the CSP: " + text.strip()[:300])
+        else:
+            check("dev tunnel created", False, text.strip()[:300])
         return None
     try:
         # A welcome banner can come before the JSON.
-        tunnel_id = json.loads(out.stdout[out.stdout.index("{") :])["tunnel"]["tunnelId"]
+        return json.loads(out.stdout[out.stdout.index("{") :])["tunnel"]["tunnelId"]
     except Exception as e:
+        found = re.search(r'"tunnelId"\s*:\s*"([^"]+)"', text)
         check("dev tunnel created", False, f"no tunnel id in the output: {e!r} {text.strip()[:300]}")
-        return None
-    # `host` cannot add a port to an existing tunnel.
+        return found.group(1) if found else None
+
+
+def add_devtunnel_port(tunnel_id):
+    """`host` cannot add a port to an existing tunnel."""
     port = subprocess.run(["devtunnel", "port", "create", tunnel_id, "-p", str(PORT)], capture_output=True)
-    if port.returncode != 0:
-        check("dev tunnel port added", False, port.stdout.decode(errors="replace")[:300])
-        delete_devtunnel(tunnel_id)
-        return None
-    return tunnel_id
+    ok = port.returncode == 0
+    check("dev tunnel port added", ok, "" if ok else port.stdout.decode(errors="replace")[:300])
+    return ok
 
 
 def delete_devtunnel(tunnel_id):
-    subprocess.run(["devtunnel", "delete", tunnel_id, "-f"], capture_output=True, timeout=60)
+    try:
+        done = subprocess.run(["devtunnel", "delete", tunnel_id, "-f"], capture_output=True, timeout=60)
+        ok, detail = done.returncode == 0, done.stdout.decode(errors="replace")[:300]
+    except Exception as e:
+        ok, detail = False, repr(e)
+    check("dev tunnel deleted", ok, "" if ok else f"tunnel {tunnel_id} may be left behind: {detail}")
 
 
 def start_devtunnel(tunnel_id):
@@ -346,8 +358,10 @@ def main():
         check("the scratch daemon now refuses a request with no session", gated)
 
         if "devtunnel" in TARGETS:
+            # Held before the port call, so `finally` deletes it on any failure.
             devtunnel_id = create_devtunnel()
-            proc, url = start_devtunnel(devtunnel_id) if devtunnel_id else (None, None)
+            ready = bool(devtunnel_id) and add_devtunnel_port(devtunnel_id)
+            proc, url = start_devtunnel(devtunnel_id) if ready else (None, None)
             check("dev tunnel started", url is not None, url or "")
             if url:
                 tunnels.append(proc)

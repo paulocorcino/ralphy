@@ -17,6 +17,7 @@ import { WBGeometry } from "./wb-geometry.ts";
 import * as WBConsoleInput from "./wb-console-input.ts";
 import * as WBConsoleSession from "./wb-console-session.ts";
 import * as WBDeskFolds from "./wb-desk-folds.ts";
+import { createGpuBudget, gpuHolders, DORMANT_AFTER_MS, DORMANT_MARGIN_PX } from "./wb-console-gpu.ts";
 import { WBWindowState } from "./wb-window-state.ts";
 import { WBConsoleName } from "./wb-console-name.ts";
 import { WBDeskSink } from "./wb-desk-sink.ts";
@@ -174,120 +175,19 @@ export function createConsole(window: any, document: any, location: any, opts: a
   const link = OPTS.detachLink || WBDetachLink.link();
   const wins = new Set<any>();
 
-  // ---- dormant consoles ----------------------------------------------------
-  // Every console costs an xterm buffer, a ResizeObserver, a WebGL context
-  // while it holds one (`rebalanceGpu`), and the parse+paint of every byte the
-  // daemon sends, visible or not.
-  //
-  // So a window off the viewport long enough disposes its terminal and closes
-  // its socket, and rebuilds on return. A window under columns, a maximize or
-  // the physical screen counts as off the viewport (ADR-0051 §9, covered
-  // amendment). The SESSION is untouched — child, PTY and
-  // scrollback are the daemon's (session.rs) and the reattach replays them; same
-  // "dispose the terminal, keep the record" as `tearDownMember`, releasing the
-  // writer slot the same way. A dormant console wakes by the ORDINARY attach and
-  // never sends `takeover`, so a session claimed meanwhile lands in the parked
-  // state of ADR-0051 §9.
-  //
-  // Dormancy is runtime state of THIS client only: never persisted, never on the
-  // desk record (ADR-0050), never told to the daemon.
-  //
-  // One-sided on purpose: slow to sleep, instant to wake, and the margin brings a
-  // window back a screenful before it could be seen — panning stays free.
-  const DORMANT_AFTER_MS = 15000;
-  const DORMANT_MARGIN_PX = 300;
-  // Built on first use: `#workspace` is not in the document when this module
-  // evaluates. Without `IntersectionObserver` the feature is inert.
-  let dormancyObserver: any = null;
-  function dormancyWatch() {
-    if (dormancyObserver) return dormancyObserver;
-    if (typeof IntersectionObserver !== "function") return null;
-    const root = workspace();
-    if (!root) return null;
-    dormancyObserver = new IntersectionObserver(
-      (entries: any) => {
-        for (const entry of entries) {
-          entry.target._visible = entry.isIntersecting;
-          applyDormancy(entry.target);
-        }
-      },
-      { root, rootMargin: `${DORMANT_MARGIN_PX}px`, threshold: 0 },
-    );
-    return dormancyObserver;
-  }
-  function trackDormancy(win: any) {
-    const watch = dormancyWatch();
-    if (watch) watch.observe(win);
-    else {
-      // Nothing will ever report this window seen.
-      win._visible = true;
-      scheduleGpu();
-    }
-  }
-  // Paired with every `wins.delete`: the observer holds its targets, so a window
-  // taken off the plane without this stays reachable for the life of the page.
-  function untrackDormancy(win: any) {
-    if (win._dormantTimer) {
-      clearTimeout(win._dormantTimer);
-      win._dormantTimer = null;
-    }
-    dormancyObserver?.unobserve(win);
-    // Its context, if it had one, goes to the next window in line.
-    scheduleGpu();
-  }
-
-  // ---- the GPU budget ------------------------------------------------------
-  // LIMIT: Chrome keeps 16 live WebGL contexts per renderer process and drops
-  // the oldest past it. A desk restored as a cascade has every console seen
-  // and uncovered at once (measured: 20 consoles, 4 contexts lost, Chrome on
-  // Windows, 2026-10-04). So the page hands out at most GPU_BUDGET contexts,
-  // to the windows on top; the others draw with the DOM renderer. The budget
-  // is under 16 because the detached-fence popup has its own budget and can
-  // share the renderer process.
-  const GPU_BUDGET = 12;
-
-  // The indexes of the windows that hold a context, pure and tabled. Each
-  // window is {seen, covered, hasTerminal, z}: only a seen, uncovered window
-  // with a terminal is a candidate, and the highest `z` win (focus raises a
-  // window to the top). Ties keep the input order.
-  function gpuHolders(windows: any, budget: any) {
-    return windows
-      .map((w: any, i: any) => ({ ...w, i }))
-      .filter((w: any) => w.seen && !w.covered && w.hasTerminal)
-      .sort((a: any, b: any) => b.z - a.z)
-      .slice(0, budget)
-      .map((w: any) => w.i);
-  }
-
-  // Coalesced: a restore asks once per window, and the drops must run before
-  // the loads so the page never holds more than the budget.
-  let gpuQueued = false;
-  function scheduleGpu() {
-    if (gpuQueued) return;
-    gpuQueued = true;
-    queueMicrotask(() => {
-      gpuQueued = false;
-      rebalanceGpu();
-    });
-  }
-  function rebalanceGpu() {
-    const list = [...wins];
-    const keep = new Set<any>(
-      gpuHolders(
-        list.map((w) => ({
-          // `=== true`, not the dormancy fold's reading: an unobserved window
-          // is not yet seen.
-          seen: w._visible === true,
-          covered: isCovered(w),
-          hasTerminal: !!w._term,
-          z: parseInt(w.style.zIndex, 10) || 0,
-        })),
-        GPU_BUDGET,
-      ).map((i: any) => list[i]),
-    );
-    for (const w of list) if (!keep.has(w)) w._term?.dropGpu();
-    for (const w of keep) w._term.useGpu();
-  }
+  // ---- dormant consoles and the GPU budget ---------------------------------
+  // The watch, its constants and the GPU budget are `wb-console-gpu.ts`; this
+  // console keeps sleeping and waking a window (`applyDormancy`) and the
+  // covered rule (`isCovered`), and hands them to its budget.
+  const budget = createGpuBudget({
+    wins,
+    workspace,
+    isCovered,
+    applyDormancy,
+    IntersectionObserver:
+      typeof IntersectionObserver === "function" ? IntersectionObserver : undefined,
+    queueMicrotask: (task) => queueMicrotask(task),
+  });
 
   // Focus stacking. `z` climbs each time a window is raised; when it reaches the
   // ceiling the whole stack is renormalized back down (preserving order) so the
@@ -1038,7 +938,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
       win._dormantTimer = null;
     }
     if (verdict === "wake") wakeWindow(win);
-    scheduleGpu();
+    budget.scheduleGpu();
     if (verdict === "sleep") {
       win._dormantTimer = setTimeout(() => {
         win._dormantTimer = null;
@@ -2382,7 +2282,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
     win.classList.add("focused");
     // On top now, so first in line for a context. The `applyDormancy` above
     // asks too, but not when the focus came from a note card.
-    scheduleGpu();
+    budget.scheduleGpu();
   }
 
   // Every window on the plane, for the Go-to picker. Reads the DOM, not `wins`:
@@ -3582,7 +3482,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   function tearDownMember(win: any, reason: any) {
     win._term?.dispose(reason);
     win.remove();
-    untrackDormancy(win);
+    budget.untrackDormancy(win);
     wins.delete(win);
     changed();
   }
@@ -4342,7 +4242,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
     // #3357, #5816; reproduced with the scrollbar, so the renderer, not our
     // gesture). Every browser on iPadOS is WebKit.
     // The terminal starts on the DOM renderer; the page decides which windows
-    // hold a context (`rebalanceGpu`) and calls `useGpu`/`dropGpu`.
+    // hold a context (`rebalanceGpu`, wb-console-gpu.ts) and calls `useGpu`/`dropGpu`.
     let webgl: any = null;
     // The canvases the addon added, so `dropGpu` asks only them for a context:
     // `getContext` on a canvas that has none would create one.
@@ -5627,7 +5527,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
     // The fleet reaches a live window here; `wakeWindow` replaces `_term`, so
     // it is read at each call. A dormant window has none, and its wake asks.
     win._peerRefresh = () => win._term?.peerRefresh();
-    if (birthDecision({ id: termOpts.id, observed: !!dormancyWatch() }) === "dormant") {
+    if (birthDecision({ id: termOpts.id, observed: !!budget.dormancyWatch() }) === "dormant") {
       // The state `sleepWindow` leaves. `_visible` is false until the observer
       // reports: a window not yet reported reads as visible, and any
       // `applyDormancy` before the report would wake it.
@@ -5652,7 +5552,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
       closeCheckoutMenu();
       win._term?.dispose("window-closed");
       win.remove();
-      untrackDormancy(win);
+      budget.untrackDormancy(win);
       wins.delete(win);
       applyExtent();
     };
@@ -5865,7 +5765,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
         // its record stays on the desk.
         if (!watching) forgetRecord(win._deskId);
         win.remove();
-        untrackDormancy(win);
+        budget.untrackDormancy(win);
         wins.delete(win);
         applyExtent();
         WB.emit("console-close", { repo: repo || null, agent: label });
@@ -5893,7 +5793,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
     };
 
     wins.add(win);
-    trackDormancy(win);
+    budget.trackDormancy(win);
     changed();
     recordBirth(win, desk);
     return win;
@@ -6198,7 +6098,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
     // (ADR-0051 §5) and promote the next one to the maximize.
     const drop = (respawn?: any) => {
       win.remove();
-      untrackDormancy(win);
+      budget.untrackDormancy(win);
       wins.delete(win);
       applyExtent();
       if (!respawn) changed();
@@ -6294,7 +6194,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
     };
 
     wins.add(win);
-    trackDormancy(win);
+    budget.trackDormancy(win);
     changed();
     recordBirth(win, record);
     showPeer();

@@ -27,6 +27,11 @@ const PROMPT_GH_ISSUE_VIEW: usize = 20;
 /// 6134 since ADR-0075 phase 5: 14 `import` lines replaced `window.WB*`
 /// reads; no logic was added.
 const APP_TS_LINES: usize = 6134;
+/// Lines of `crates/ralphy-daemon/assets/ui/wb-console.ts`, the console
+/// factory (ADR-0073 D8, which starts this ratchet with the first fold move).
+/// 6789 since ADR-0075 phase 5 moved its pure folds and its GPU budget into
+/// their own modules.
+const WB_CONSOLE_TS_LINES: usize = 6789;
 
 const SPAWNED: [&str; 3] = ["git", "gh", "ssh"];
 
@@ -179,6 +184,21 @@ fn the_workbench_script_matches_the_line_baseline() {
         "lines of crates/ralphy-daemon/assets/ui/app.ts: {APP_TS_LINES} -> {lines}; \
          a lower count lowers APP_TS_LINES in the same change, and new code goes \
          into a component file instead"
+    );
+}
+
+/// ADR-0073 D8: the console factory never grows back. A change that adds a
+/// line to `wb-console.ts` fails here, and a change that removes lines lowers
+/// the constant.
+#[test]
+fn the_console_script_matches_the_line_baseline() {
+    let path = workspace_root().join("crates/ralphy-daemon/assets/ui/wb-console.ts");
+    let lines = read(&path).lines().count();
+    assert!(
+        lines == WB_CONSOLE_TS_LINES,
+        "lines of crates/ralphy-daemon/assets/ui/wb-console.ts: {WB_CONSOLE_TS_LINES} -> {lines}; \
+         a lower count lowers WB_CONSOLE_TS_LINES in the same change, and new code goes \
+         into a module of its own instead"
     );
 }
 
