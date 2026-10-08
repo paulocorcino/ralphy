@@ -12,6 +12,8 @@
 import { WBFail } from "./wb-fail.ts";
 import { WBProject } from "./wb-project.ts";
 import { WBRun } from "./wb-runs.ts";
+// The resume rule and the two deadlines are the console's: one copy, in the session folds.
+import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-console-session.ts";
 
 export function createDaemon(window: any, document: any, location: any) {
   // The tagged-frame codec, mirrored from src/protocol.rs (see wb-console.ts).
@@ -32,34 +34,6 @@ export function createDaemon(window: any, document: any, location: any) {
 
   let nextId = 1;
 
-  // RESUME (not "wake" — that verb already means nudging a sleeping peer daemon,
-  // `app.ts` wakePeer / WBFleet.wakeable). A tablet suspends the tab: no JS runs,
-  // and the link is dropped without the courtesy of a close frame, so the socket
-  // comes back reporting OPEN while nothing will ever arrive on it again. The
-  // fixed 3s retry below only helps the sockets that DID hear their close.
-  //
-  // Pure so the table is testable. `stale` is the caller's liveness verdict, not
-  // a clock this module keeps: the shell derives it from the presence heartbeat
-  // (`app.ts` `_lastHeartbeat`, already the "> 6000ms means dead" signal), which
-  // is why an ordinary desktop tab switch churns nothing — the heartbeat is fresh
-  // and every socket is left alone.
-  function resumeDecision({ readyState, stale, connectingMs }: any) {
-    // No socket at all: whatever held it is gone, so a reconnect is the only move.
-    if (readyState == null) return "reconnect";
-    // CONNECTING is already the reconnect — until it outlives the handshake
-    // deadline. Closing a young one would only restart the handshake one
-    // round-trip later. An old one was opened before the suspend, or onto a link
-    // that was not up yet, and its deadline timer froze along with the tab.
-    if (readyState === 0) return connectingMs >= CONNECT_TIMEOUT_MS ? "reconnect" : "none";
-    if (readyState === 1) return stale ? "reconnect" : "none";
-    return "reconnect";
-  }
-
-  // A handshake gets this long to open. Without a deadline a socket opened onto
-  // a link that is not up yet (an iPhone back from a call) sits in CONNECTING
-  // until the OS abandons TCP/TLS, and every resume leaves it alone meanwhile.
-  const CONNECT_TIMEOUT_MS = 8000;
-
   // Fail a handshake that has not opened by the deadline. `close()` on a
   // CONNECTING socket fires `close`, so the caller's ordinary retry takes over.
   function armHandshakeDeadline(ws: any) {
@@ -70,12 +44,6 @@ export function createDaemon(window: any, document: any, location: any) {
       } catch {}
     }, CONNECT_TIMEOUT_MS);
   }
-
-  // Two resume triggers (`visibilitychange` and `online`) land within the same
-  // millisecond on an iOS resume. Without this the second one tears down the
-  // socket the first one just opened, and on a link that has not re-associated
-  // yet each teardown counts as another failed attempt.
-  const RESUME_DEBOUNCE_MS = 1500;
 
   // Retire a socket so its pending events cannot reach us. `onmessage` matters as
   // much as `onclose`: a frame still queued on the outgoing socket would land

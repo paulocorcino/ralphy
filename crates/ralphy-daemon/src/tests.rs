@@ -4029,7 +4029,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-detach-link.js",
                 "wb-session-route.js",
                 "wb-daemon.js",
-                // `wb-console.ts` imports the geometry, the window state,
+                // `wb-console.ts` imports the geometry, the window state, the session folds,
                 // the console name and the input folds; the entry imports the
                 // console. Stated HERE because this set is a hardcoded floor:
                 // nothing derives the popup's needs from the tree, so an
@@ -4039,6 +4039,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-window-state.js",
                 "wb-console-name.js",
                 "wb-console-input.js",
+                "wb-console-session.js",
                 "wb-console.js",
             ][..],
         ),
@@ -6755,10 +6756,11 @@ fn relaunching_agent_consoles_on_load_is_opt_in() {
     // box (measured in `wb_desk_303.py` scenario 10 before this line).
     // Since #411 the request is `relaunchRequest`'s, which also carries
     // the worktree the record was in; the fold is pinned by
-    // `ui-tests/wb-console.test.mjs`, and what stays here is that the
+    // `ui-tests/wb-console-session.test.mjs`, and what stays here is that the
     // restore path goes through it and nothing else.
+    let session = squeeze(include_str!("../assets/ui/wb-console-session.ts"));
     assert!(
-        js.contains(
+        session.contains(
             r#"if(record.kind!=="agent")return{console:true,repo,command:consoleCommand(record.agent)};"#
         ),
         "a relaunched agent console must be requested by its vendor, not as a shell"

@@ -474,12 +474,17 @@ const MIRRORS: &[(&str, &str, &str, &str)] = &[
         "MAX_IMAGE_BYTES",
     ),
     (
-        "wb-console.ts",
+        "wb-console-session.ts",
         "TAG_TERMINAL",
         "protocol.rs",
         "TAG_TERMINAL",
     ),
-    ("wb-console.ts", "TAG_COMMAND", "protocol.rs", "TAG_COMMAND"),
+    (
+        "wb-console-session.ts",
+        "TAG_COMMAND",
+        "protocol.rs",
+        "TAG_COMMAND",
+    ),
     (
         "wb-daemon.ts",
         "TAG_TERMINAL",

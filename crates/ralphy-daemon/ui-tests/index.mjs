@@ -13,6 +13,7 @@ import "./wb-changes-open.test.mjs";
 import "./wb-columns.test.mjs";
 import "./wb-console-input.test.mjs";
 import "./wb-console-name.test.mjs";
+import "./wb-console-session.test.mjs";
 import "./wb-console.test.mjs";
 import "./wb-daemon.test.mjs";
 import "./wb-desk-sink.test.mjs";

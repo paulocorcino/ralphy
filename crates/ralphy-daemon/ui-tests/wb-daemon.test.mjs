@@ -9,7 +9,7 @@ import { dirname, join } from "node:path";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 import { createDaemon } from "../assets/ui/wb-daemon.ts";
-import { createConsole } from "../assets/ui/wb-console.ts";
+import { CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS, resumeDecision } from "../assets/ui/wb-console-session.ts";
 
 // A push the daemon produced, as its tests wrote it (`tests/support/golden.rs`).
 function fixture(name) {
@@ -26,43 +26,6 @@ function load() {
   const location = { protocol: "http:", host: "127.0.0.1:7431" };
   return createDaemon(window, document, location);
 }
-
-// --- resumeDecision: the resume rule, shared with wb-console.ts ------------
-// A tablet suspends the tab: no JS runs while the link is torn down, so the
-// sockets come back reporting OPEN with nothing ever arriving on them again.
-// The fixed 3s retry only helps the ones that actually heard their close.
-
-test("resumeDecision reconnects exactly the sockets the resume must replace", () => {
-  const { resumeDecision, CONNECT_TIMEOUT_MS: T } = load();
-  // [case, socket, the stale verdicts it is asked under, expected]
-  const rows = [
-    // A socket that is gone reconnects, whatever the verdict.
-    ["gone (null)", { readyState: null }, [true, false], "reconnect"],
-    ["gone (undefined)", { readyState: undefined }, [true, false], "reconnect"],
-    ["CLOSING", { readyState: 2 }, [true, false], "reconnect"],
-    ["CLOSED", { readyState: 3 }, [true, false], "reconnect"],
-    // A young CONNECTING socket is left alone — it IS the reconnect.
-    ["young CONNECTING", { readyState: 0 }, [true, false], "none"],
-    ["CONNECTING for 0 ms", { readyState: 0, connectingMs: 0 }, [true, false], "none"],
-    [
-      "CONNECTING just before the deadline",
-      { readyState: 0, connectingMs: T - 1 },
-      [true, false],
-      "none",
-    ],
-    // Opened before the suspend, or onto a link that was not up yet: its
-    // deadline timer froze with the tab, so the resume is what retires it.
-    ["CONNECTING at the deadline", { readyState: 0, connectingMs: T }, [true, false], "reconnect"],
-    // An OPEN socket churns only when the caller says it is stale.
-    ["OPEN and stale", { readyState: 1 }, [true], "reconnect"],
-    ["OPEN and not stale", { readyState: 1 }, [false], "none"],
-  ];
-  for (const [name, socket, stales, want] of rows) {
-    for (const stale of stales) {
-      assert.equal(resumeDecision({ ...socket, stale }), want, `${name}, stale=${stale}`);
-    }
-  }
-});
 
 test("a handshake that never opens is closed at the deadline, and nothing else is", async () => {
   const d = load();
@@ -99,34 +62,13 @@ test("a handshake that never opens is closed at the deadline, and nothing else i
   );
 });
 
-// The two modules run the same rule because they resume on the same event. If
-// they ever disagree, one half of the page comes back and the other does not.
-test("the console and the daemon door answer the resume question identically", () => {
-  const { resumeDecision } = load();
-  const window = { addEventListener() {} };
-  const document = { readyState: "loading", addEventListener() {} };
-  const location = { protocol: "http:", host: "127.0.0.1:7431" };
-  const realBC = globalThis.BroadcastChannel;
-  delete globalThis.BroadcastChannel;
-  try {
-    window.WBConsole = createConsole(window, document, location, {});
-  } finally {
-    globalThis.BroadcastChannel = realBC;
-  }
-  const other = window.WBConsole.resumeDecision;
-  const { CONNECT_TIMEOUT_MS } = load();
-  assert.equal(window.WBConsole.CONNECT_TIMEOUT_MS, CONNECT_TIMEOUT_MS);
-  for (const readyState of [null, 0, 1, 2, 3]) {
-    for (const stale of [true, false]) {
-      for (const connectingMs of [undefined, 0, CONNECT_TIMEOUT_MS - 1, CONNECT_TIMEOUT_MS]) {
-        assert.equal(
-          resumeDecision({ readyState, stale, connectingMs }),
-          other({ readyState, stale, connectingMs }),
-          `readyState=${readyState} stale=${stale} connectingMs=${connectingMs}`,
-        );
-      }
-    }
-  }
+// The shell's door and the console run one resume rule, because they resume on
+// the same event; the rule lives in wb-console-session.ts and the door imports it.
+test("the daemon door uses the session folds' resume rule and deadlines", () => {
+  const door = load();
+  assert.equal(door.resumeDecision, resumeDecision);
+  assert.equal(door.CONNECT_TIMEOUT_MS, CONNECT_TIMEOUT_MS);
+  assert.equal(door.RESUME_DEBOUNCE_MS, RESUME_DEBOUNCE_MS);
 });
 
 // --- detachSocket: retiring a socket so its queued events cannot reach us ---
