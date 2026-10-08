@@ -474,4 +474,6 @@ its dev tunnel and deletes it at the end, so the account does not fill up
 (#589).
 
 **Lines.** `wb-console.ts` went from 7,889 to 6,789 lines. The four new
-modules have 1,109 lines, and `wb-geometry.ts` gained 212.
+modules have 1,109 lines, and `wb-geometry.ts` gained 212. The ADR-0073 D8
+ratchet on `wb-console.ts` now exists: `the_console_script_matches_the_line_baseline`
+(`crates/xtask/tests/ratchets.rs`) holds it at 6,789 lines.
