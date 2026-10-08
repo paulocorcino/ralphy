@@ -133,6 +133,9 @@ tower = { version = "0.5", features = ["util"] }
 tempfile.workspace = true
 # Seed an `opencode.db` fixture for the OpenCode interactive-usage integration test.
 rusqlite.workspace = true
+# Paused time (`start_paused`) for tests of time limits, so they do not wait
+# in real time. Cargo merges these features with the normal tokio entry.
+tokio = { version = "1", features = ["test-util"] }
 
 [build-dependencies]
 # `build/ui.rs` writes the served workbench tree (ADR-0075 D3): it removes the
