@@ -477,3 +477,10 @@ its dev tunnel and deletes it at the end, so the account does not fill up
 modules have 1,109 lines, and `wb-geometry.ts` gained 212. The ADR-0073 D8
 ratchet on `wb-console.ts` now exists: `the_console_script_matches_the_line_baseline`
 (`crates/xtask/tests/ratchets.rs`) holds it at 6,789 lines.
+
+**The terminal is cut as `createTerminal(deps)` (#597).** `attachTerminal`,
+`detachSocket` and `announceDetach` are in `wb-console-terminal.ts`, and
+`TerminalDeps` lists what they read from the console: the page `window`, the
+socket origin, the font size, the stage and the viewport, `cancelSlide`, and
+the two clipboard calls. After this cut `wb-console.ts` has 5,842 lines, and
+the ratchet holds it there.

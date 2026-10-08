@@ -2762,14 +2762,14 @@ async fn root_serves_vendored_xterm() {
         "the shell HTML must load the vendored xterm"
     );
 
-    let console = body_string(get_local("/wb-console.js").await).await;
+    let terminal = body_string(get_local("/wb-console-terminal.js").await).await;
     assert!(
-        console.contains("new Terminal("),
-        "wb-console.js must construct a real xterm terminal"
+        terminal.contains("new Terminal("),
+        "wb-console-terminal.js must construct a real xterm terminal"
     );
     assert!(
-        console.contains("/ws/session"),
-        "wb-console.js must open the session WebSocket"
+        terminal.contains("/ws/session"),
+        "wb-console-terminal.js must open the session WebSocket"
     );
 }
 
@@ -3076,11 +3076,11 @@ async fn root_serves_the_vendored_crepe() {
 /// only.
 #[test]
 fn the_console_terminal_is_themed_in_lockstep_with_the_stylesheet() {
-    let js = include_str!("../assets/ui/wb-console.ts");
+    let js = include_str!("../assets/ui/wb-console-terminal.ts");
     let css = served_css();
     assert!(
         js.contains("new Terminal({ convertEol: false, theme: TERMINAL_THEME })"),
-        "wb-console.ts must hand xterm a theme — an unthemed Terminal is xterm's black default"
+        "wb-console-terminal.ts must hand xterm a theme — an unthemed Terminal is xterm's black default"
     );
     assert!(
         js.contains("background: \"#000000\""),
@@ -3097,7 +3097,7 @@ fn the_console_terminal_is_themed_in_lockstep_with_the_stylesheet() {
         );
         assert!(
             css.contains(&format!("{token}: {hex};")),
-            "styles.css must still define {token} as {hex} — wb-console.ts mirrors it"
+            "styles.css must still define {token} as {hex} — wb-console-terminal.ts mirrors it"
         );
     }
 }
@@ -3112,7 +3112,13 @@ fn the_console_terminal_is_themed_in_lockstep_with_the_stylesheet() {
 /// copy; these are the invariants that are not.
 #[test]
 fn the_console_clipboard_is_write_only_and_refused_on_replay() {
-    let js = include_str!("../assets/ui/wb-console.ts");
+    // The console and its terminal, as one text: the clipboard calls live in
+    // the console, the OSC 52 handler and the right button in the terminal.
+    let js = [
+        include_str!("../assets/ui/wb-console.ts"),
+        include_str!("../assets/ui/wb-console-terminal.ts"),
+    ]
+    .concat();
     for pin in [
         // The gap that made an agent announce a copy it never made.
         "registerOscHandler(52",
@@ -3129,7 +3135,7 @@ fn the_console_clipboard_is_write_only_and_refused_on_replay() {
     ] {
         assert!(
             js.contains(pin),
-            "wb-console.ts must keep the console-clipboard pin {pin}"
+            "the console must keep the console-clipboard pin {pin}"
         );
     }
     // The write callback that clears the replay gate once the replayed bytes
@@ -3138,7 +3144,7 @@ fn the_console_clipboard_is_write_only_and_refused_on_replay() {
     let flat: String = js.split_whitespace().collect();
     assert!(
         flat.contains("term.write(a.subarray(9),replaying?()=>{replaying=false;}:undefined"),
-        "wb-console.ts must clear the replay gate in the replay's write callback"
+        "the terminal must clear the replay gate in the replay's write callback"
     );
     // The read property. The clipboard is read only inside an operator's
     // gesture — the key bar's paste key and the right button under a TUI —
@@ -3151,7 +3157,7 @@ fn the_console_clipboard_is_write_only_and_refused_on_replay() {
         assert_eq!(
             js.matches(call).count(),
             want,
-            "wb-console.ts reads the clipboard in readClipboard() only ({call})"
+            "the console reads the clipboard in readClipboard() only ({call})"
         );
     }
     assert_eq!(
@@ -4030,8 +4036,8 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-session-route.js",
                 "wb-daemon.js",
                 // `wb-console.ts` imports the geometry, the window state, the session folds,
-                // the desk folds, the GPU budget, the console name and the input folds; the
-                // entry imports the console. Stated HERE because this set is a hardcoded floor:
+                // the desk folds, the GPU budget, the terminal, the console name and the input
+                // folds; the entry imports the console. Stated HERE because this set is a hardcoded floor:
                 // nothing derives the popup's needs from the tree, so an
                 // import dropped from the entry breaks the second monitor
                 // with no other signal.
@@ -4042,6 +4048,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-console-session.js",
                 "wb-desk-folds.js",
                 "wb-console-gpu.js",
+                "wb-console-terminal.js",
                 "wb-console.js",
             ][..],
         ),
@@ -6024,7 +6031,8 @@ fn shell_survives_a_reload_with_its_detach() {
     // no browser store at all, and the link module must be the one that does
     // — deleting the store wholesale has to be red, not green.
     assert!(
-        !js.contains("sessionStorage"),
+        !js.contains("sessionStorage")
+            && !include_str!("../assets/ui/wb-console-terminal.ts").contains("sessionStorage"),
         "wb-console.ts must reach the registry only through the injected link (#347)"
     );
     // The CALLS, not the bare nouns: this file's own prose names
@@ -6136,7 +6144,13 @@ fn shell_survives_a_reload_with_its_detach() {
 /// `wb-console.test.mjs`; this test holds the call sites that use them.
 #[test]
 fn workbench_session_assets_preserve_composite_repo_identity() {
-    let console = include_str!("../assets/ui/wb-console.ts");
+    // The console and its terminal: the terminal reconnects and reads the
+    // announcement, the console closes.
+    let console = [
+        include_str!("../assets/ui/wb-console.ts"),
+        include_str!("../assets/ui/wb-console-terminal.ts"),
+    ]
+    .concat();
     for pin in [
         r#"connect({ id: currentSessionId, repo: currentRepo"#,
         r#"c.verb === "session-open""#,
@@ -6144,7 +6158,7 @@ fn workbench_session_assets_preserve_composite_repo_identity() {
         "WBSessionRoute.announcement(",
         "WBSessionRoute.closeUrl(",
     ] {
-        assert!(console.contains(pin), "wb-console.ts must keep {pin}");
+        assert!(console.contains(pin), "the console must keep {pin}");
     }
     assert!(include_str!("../assets/ui/app.ts").contains("WBSessionRoute.matchesRepo("));
 }
@@ -6155,7 +6169,12 @@ fn workbench_session_assets_preserve_composite_repo_identity() {
 /// stays deleted: a re-added clamp would pass every unit test in the tree.
 #[test]
 fn shell_has_no_clamp_and_carries_the_stage() {
-    let js = include_str!("../assets/ui/wb-console.ts");
+    // The console and its terminal, which holds the fit observer.
+    let js = [
+        include_str!("../assets/ui/wb-console.ts"),
+        include_str!("../assets/ui/wb-console-terminal.ts"),
+    ]
+    .concat();
     assert!(
         !js.contains("clampAll"),
         "the clamp-and-refit is deleted, not renamed (#336)"
@@ -6535,6 +6554,10 @@ fn shell_stores_only_the_view_in_the_browser() {
     // starts.
     for (name, src) in [
         ("wb-console.ts", include_str!("../assets/ui/wb-console.ts")),
+        (
+            "wb-console-terminal.ts",
+            include_str!("../assets/ui/wb-console-terminal.ts"),
+        ),
         ("app.ts", include_str!("../assets/ui/app.ts")),
     ] {
         assert!(
