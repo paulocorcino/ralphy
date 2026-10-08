@@ -165,6 +165,11 @@ ubiquitous language, and each crate is roughly one bounded context.
 - **Make the smallest change that fits the existing crate boundaries.** A new
   trait, generic, crate, or layer of indirection needs a real second caller or
   an ADR that decides it — never "for flexibility" (`anti-over-abstraction`).
+  A closed set of variants is a Rust `enum` or a TypeScript union of string
+  literals, matched exhaustively (`match`; `switch` with a `never` default),
+  so the compiler lists every place a new variant must change. A trait or an
+  interface is for an open set, such as the agent adapters. TypeScript `enum`
+  does not build here (`erasableSyntaxOnly`).
 - **Duplication: merge one rule, keep two rules apart.** DRY is about
   knowledge, not text. Before two pieces of code become one helper, ask if
   they change for the *same reason*. An age limit and a stock quantity can
@@ -173,7 +178,7 @@ ubiquitous language, and each crate is roughly one bounded context.
   becomes one function or constant, even inside one crate.
 - **Your task sets the scope of your fixes.** The task is what you were asked
   to do, plus any extra work the person asking names. Fix a code defect inside
-  the code your change edits; the Rust baseline below applies there. For a
+  the code your change edits; the baselines below apply there. For a
   code defect you see elsewhere, write in your final report its `file:line`,
   what is wrong, and the rule it breaks; a human decides whether it becomes an
   issue. A ratchet (docs/ARCHITECTURE.md §8) is part of your task whenever
@@ -194,7 +199,7 @@ ubiquitous language, and each crate is roughly one bounded context.
 - **Commit on the current branch.** Create a branch, push, or open a PR only
   when someone asks you to. A human reviews and merges.
 
-## Rust baseline (applies to every change)
+## Rust baseline (applies to every Rust change)
 
 The full `/rust-skills` set (179 rules) is for reviewing non-trivial code or a
 specific concern; invoke it when you need it. The rules below apply to every
@@ -217,6 +222,13 @@ already denies a `std::sync` lock guard held across an `.await`.
 - **Signatures.** A fixed set of values or a domain identity is an `enum` or
   newtype, not a `String` — this is how the CONTEXT.md vocabulary shows up in
   the types (`anti-stringly-typed`).
+
+## TypeScript baseline (applies to every workbench change)
+
+- **Errors.** A `catch` handles the error or throws it again. An empty
+  `catch {}` is only for a failure that nothing reads, such as closing a
+  socket that is already gone, and a comment on it says so. The lint allows
+  every empty `catch`, so this rule is not checked.
 
 ## Where things live
 
