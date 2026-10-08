@@ -5,8 +5,8 @@
 //! Windows and Unix, no shell-script children (house convention).
 //!
 //! Behavior:
-//! - On start: print `CWD:<current_dir>` then `READY` — the first proves the child
-//!   was spawned in the session's working directory.
+//! - On start: set raw input, then print `CWD:<current_dir>` then `READY` — the
+//!   first proves the child was spawned in the session's working directory.
 //! - A 50ms poll thread reads [`terminal_size::terminal_size`] and prints
 //!   `SIZE <cols>x<rows>` on the first read and on every change, so a PTY resize
 //!   is observable from the captured output.
@@ -43,13 +43,16 @@ fn main() {
         return;
     }
 
+    // Raw BEFORE `READY`: a test sends its 0x03 as soon as it reads `READY`,
+    // and on Linux a 0x03 that reaches the PTY while `ISIG` is still on becomes
+    // SIGINT instead of a byte this loop reads.
+    configure_raw_input();
     let cwd = std::env::current_dir()
         .map(|p| p.display().to_string())
         .unwrap_or_default();
     println!("{CWD_MARKER}{cwd}");
     println!("READY");
     let _ = std::io::stdout().flush();
-    configure_raw_input();
 
     // Poll the terminal size every 50ms and print it on change, so a resize made
     // through the PTY master shows up in the captured stream.

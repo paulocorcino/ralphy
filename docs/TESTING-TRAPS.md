@@ -19,6 +19,11 @@ Leave the count of nudges for one create unasserted.
 and exits on ETX. The test then proves that the daemon delivered a raw Ctrl+C
 to the native child, and not a kill from the server.
 
+**On Linux, a `0x03` that reaches the PTY before the child sets raw mode
+becomes SIGINT.** The line discipline still has `ISIG` on, so the child dies
+and never reads the byte. A test child sets raw mode before it prints that it
+is ready.
+
 ## In-process Axum server with WebSockets
 
 **Aborting an in-process Axum `serve` task leaves running the WebSocket upgrade
