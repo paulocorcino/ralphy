@@ -143,6 +143,18 @@ let detached = { watch: (_win: any, _desc: any) => {}, dirty: () => false, close
 
 export function shell() {
   return shellData({
+    // The slow backstop: the `/ws/tree` nudge (#310) only reports what a RUN
+    // did; an operator's own editor produces no event. Two git subprocesses per
+    // minute, only while the panel is open and the tab in front.
+    CHANGES_POLL_MS: 50000,
+    // The build this page was served with (`<meta name="ralphy-build">`);
+    // "" with no such tag, and then the page never reloads for a build.
+    pageBuild: document.querySelector<HTMLMetaElement>('meta[name="ralphy-build"]')?.content || "",
+    _boardBackstop: null as any,
+    _changesBackstop: null as any,
+    // The adapter roster comes from `/api/agents`, never a list here:
+    // onboarding a vendor must not need a frontend change (#304).
+    agents: [] as any[],
     openSlug: null as any,
     // A failed `/api/repos` (#202): a visible error.
     reposError: "",
@@ -171,24 +183,8 @@ export function shell() {
     // so a failed read never reads like a clean tree; `changesReadError`
     // carries the reason into the Changes view's title.
     changesCount: {} as Record<string, any>,
-    // Per slug, named apart from the shell-wide `changesError` below: a
-    // duplicate key in this literal is a silent no-op.
-    changesReadError: {} as Record<string, any>,
-    // Per slug, the read state of the change set, the branch (sync), the board
-    // and the runs (`WBFail.readFold`, ADR-0070 D3). A write is locked while
-    // its fact is not current.
-    changesRead: {} as Record<string, any>,
-    syncRead: {} as Record<string, any>,
     boardRead: {} as Record<string, any>,
     runsRead: {} as Record<string, any>,
-    // The two rendered groups (#315). INVARIANT: every path that sets one must
-    // set the OTHER in the SAME statement — a stale group left behind renders
-    // rows under a headline while the badge already reads `—`.
-    changesStaged: {} as Record<string, any>,
-    changesUnstaged: {} as Record<string, any>,
-    // The sync row per project (#316): the fold of `sync.status`. Same three
-    // triggers as the change set, never a timer.
-    syncByProject: {} as Record<string, any>,
     // The commit message being composed (#318). One box, but it belongs to
     // `commitMsgSlug` ONLY: a message typed for repo A must never land as repo
     // B's commit. Cleared on success only.
@@ -199,11 +195,6 @@ export function shell() {
     // by default. One string, not per-project: switching projects is itself
     // the next act.
     changesError: "",
-    // The remote act in flight (`"fetch"` | `"pull"` | `"push"`), or null. One
-    // slot for the whole bar: the three acts share the upstream, so a second
-    // click while one is out would race it against the first — and a push's
-    // round trip is long enough that a silent button reads as a dead one.
-    syncBusy: null as any,
     // A repo refresh in flight. The list does NOT auto-refresh (only the live
     // dots do, via the heartbeat); the button picks up a new repo or a
     // branch/dirty change.
@@ -219,35 +210,10 @@ export function shell() {
     // binding on `_lastHeartbeat`. Writing the same boolean is inert under
     // Alpine, so the steady state costs one comparison a second.
     presenceStale: false,
-    // The FILES panel's states: "no files", "still looking" and "refused" must
-    // not be one blank.
-    treeLoading: false,
-    treeError: "",
-    // The tree shows a listing the daemon could not confirm (a refusal, a
-    // dropped socket). Distinct from `treeError`: rows are on screen, but stale.
-    treeStale: "",
-    // The daemon could not keep watching this tree: the rows are right now,
-    // but a change on disk will not show until the project is opened again.
-    treeNotLive: "",
     // A refused `branch.switch`/`branch.create`, held until the next branch act
     // or a project switch. Not `treeError` (the tree is fine) and not
     // `changesError` (the chip lives in THIS panel).
     branchError: "",
-    // The FILES search (ADR-0036 amendment 2026-09-15). `seq` dates each
-    // request so a slow reply never paints over a newer one; `expandedBefore`
-    // is the expansion snapshot `clearFileSearch` folds the tree back to
-    // (`null` = nothing expanded yet).
-    fileSearch: {
-      open: false,
-      mode: "name",
-      query: "",
-      seq: 0,
-      hits: [] as any[],
-      truncated: false,
-      note: "",
-      expandedBefore: null as string[] | null,
-    },
-    _tree: null as any, // the live Wunderbaum instance, if any
     _treeSub: null as any, // the live `/ws/tree` subscription for the open project, if any
     // Tree memory, all three lazily created so they stay plain collections
     // outside Alpine's reactive data (a proxied Map is a trap):
@@ -259,13 +225,6 @@ export function shell() {
     _runsSub: null as any, // the live run-snapshot subscription for the open project, if any
     _changesSub: null as any, // the run-completion nudge subscription for the open project (#310)
     _presenceSub: null as any, // the `/ws` heartbeat subscription, kept so a resume can re-open it
-    // Monotonic hydration token: overlapping `runs.list` replies can land OUT
-    // OF ORDER; only the newest hydration commits.
-    _runsSeq: 0,
-    // Same token for the Changes count (#310's nudge overlaps the open's read)
-    // and for the sync row.
-    _changesSeq: 0,
-    _syncSeq: 0,
 
     // Alpine lifecycle.
     init() {
@@ -854,10 +813,6 @@ export function shell() {
       this.loadChanges(this.openSlug);
       this.loadSync(this.openSlug);
     },
-    // The slow backstop: the `/ws/tree` nudge (#310) only reports what a RUN
-    // did; an operator's own editor produces no event. Two git subprocesses per
-    // minute, only while the panel is open and the tab in front.
-    CHANGES_POLL_MS: 50000,
 
     // The change indicator for one row. Only slugs whose count was READ render
     // one: a `changes.list` per repo would be N git subprocesses on open.
@@ -963,6 +918,31 @@ export function shell() {
     },
 
     // --- branch switcher --------------------------------------------------
+    // Per slug, named apart from the shell-wide `changesError` below: a
+    // duplicate key in this literal is a silent no-op.
+    changesReadError: {} as Record<string, any>,
+    // Per slug, the read state of the change set, the branch (sync), the board
+    // and the runs (`WBFail.readFold`, ADR-0070 D3). A write is locked while
+    // its fact is not current.
+    changesRead: {} as Record<string, any>,
+    syncRead: {} as Record<string, any>,
+    // The two rendered groups (#315). INVARIANT: every path that sets one must
+    // set the OTHER in the SAME statement — a stale group left behind renders
+    // rows under a headline while the badge already reads `—`.
+    changesStaged: {} as Record<string, any>,
+    changesUnstaged: {} as Record<string, any>,
+    // The sync row per project (#316): the fold of `sync.status`. Same three
+    // triggers as the change set, never a timer.
+    syncByProject: {} as Record<string, any>,
+    // The remote act in flight (`"fetch"` | `"pull"` | `"push"`), or null. One
+    // slot for the whole bar: the three acts share the upstream, so a second
+    // click while one is out would race it against the first — and a push's
+    // round trip is long enough that a silent button reads as a dead one.
+    syncBusy: null as any,
+    // Same token for the Changes count (#310's nudge overlaps the open's read)
+    // and for the sync row.
+    _changesSeq: 0,
+    _syncSeq: 0,
     // The branch chip opens a filtered picker; switching or creating goes
     // through the daemon's `branch.*` verbs. The header reflects the pick
     // optimistically.
@@ -976,14 +956,6 @@ export function shell() {
       dirty: false,
       checkoutDirty: false,
     },
-    // A `worktree.remove` in flight, per repo ref: the chip's menu greys the
-    // row and a second click is ignored until the re-read lands.
-    worktreeRemoving: {} as Record<string, any>,
-    // The selected checkout per repo ref (#406, ADR-0063 §4): the REACTIVE copy
-    // of `WBConsole`'s desk mirror (a closure variable there is invisible to
-    // Alpine). `worktreeListings` is the last `worktree.list` reply per ref;
-    // `_treeCheckout` is the checkout the mounted tree was built for.
-    checkouts: {} as Record<string, any>,
     worktreeListings: {} as Record<string, any>,
     _treeCheckout: null,
 
@@ -1380,9 +1352,6 @@ export function shell() {
       return WBChanges.writeLockReason(this.runsByProject[slug]);
     },
     BUILD_SKEW_LOCK: "This page is older than Ralphy. Save your work, and the page loads the new version.",
-    // The build this page was served with (`<meta name="ralphy-build">`);
-    // "" with no such tag, and then the page never reloads for a build.
-    pageBuild: document.querySelector<HTMLMetaElement>('meta[name="ralphy-build"]')?.content || "",
     // The daemon runs another build than this page (ADR-0070 D6). With no
     // unsaved work the tab reloads. With unsaved work it waits: the notice
     // stays, only saving that work is allowed, and each heartbeat asks again.
@@ -1635,6 +1604,14 @@ export function shell() {
     },
 
     // --- the selected checkout (#406, ADR-0063 §4) ----------------------------
+    // A `worktree.remove` in flight, per repo ref: the chip's menu greys the
+    // row and a second click is ignored until the re-read lands.
+    worktreeRemoving: {} as Record<string, any>,
+    // The selected checkout per repo ref (#406, ADR-0063 §4): the REACTIVE copy
+    // of `WBConsole`'s desk mirror (a closure variable there is invisible to
+    // Alpine). `worktreeListings` is the last `worktree.list` reply per ref;
+    // `_treeCheckout` is the checkout the mounted tree was built for.
+    checkouts: {} as Record<string, any>,
     checkoutOf(ref: any) {
       return this.checkouts[ref] || null;
     },
@@ -1859,6 +1836,9 @@ export function shell() {
     },
 
     // --- Runs panel -------------------------------------------------------
+    // Monotonic hydration token: overlapping `runs.list` replies can land OUT
+    // OF ORDER; only the newest hydration commits.
+    _runsSeq: 0,
     // One entry per `runid`: issue queue + per-issue status, live phase, the
     // current issue's plan.md (helpers in wb-runs.ts, `WBRun`).
     runsByProject: {} as Record<string, any>,
@@ -2235,33 +2215,27 @@ export function shell() {
     // Fed by `board.list` (#198): rows adapted to the issue shape, and the
     // repo's name→color label map. Empty until `loadBoard()` resolves.
     boardIssues: {} as Record<string, any>,
-    boardLabels: {} as Record<string, Map<string, string>>,
-    // A `board.list` failure (#207): a broken tracker connection must never
-    // read as "no work to do".
-    boardError: {} as Record<string, any>,
-    // The open drawer's detail-fetch failure (#302). One string: exactly one
-    // drawer is open at a time.
-    issueError: null,
-    issueLoading: false,
     // Refresh bookkeeping (#301). `_boardLoadedAt` is stamped at fold START,
     // before any await, so the min-gap measures spacing between STARTS and an
     // erroring board throttles like a healthy one. `_boardPending` COALESCES a
     // trigger that arrived mid-fold into one follow-up load.
     _boardLoadedAt: 0,
+    kanbanSel: null, // the selected issue number → opens the detail drawer
+
+    // --- the repo's ready plan, on the board -------------------------------
+    boardLabels: {} as Record<string, Map<string, string>>,
+    // A `board.list` failure (#207): a broken tracker connection must never
+    // read as "no work to do".
+    boardError: {} as Record<string, any>,
     _boardPending: false,
-    _boardBackstop: null as any,
-    _changesBackstop: null as any,
     boardRefreshing: false,
     // The daemon awaits the board CLI with no timeout of its own; a wedged `gh`
     // must not disable the board for the page's life. Generous: a real fold
     // makes several calls.
     BOARD_FOLD_TIMEOUT_MS: 90000,
-    kanbanSel: null, // the selected issue number → opens the detail drawer
     kanbanFilter: "", // search box (title / #num / body / label)
     kanbanLabel: "__all", // label filter: __all | __none | <label>
     kanbanSort: "num-desc", // Backlog sort (Ready columns keep graph order)
-
-    // --- the repo's ready plan, on the board -------------------------------
     // A FINALIZED `.ralphy/plan.md` is executed by the next run (the trailer is
     // the resume signal, `WBRun.planTrailerIssue`), so the board shows it and
     // can throw it away. `planByProject[slug] = { md, summary }`, replaced on
@@ -2573,6 +2547,10 @@ export function shell() {
     },
 
     // --- detail drawer ----------------------------------------------------
+    // The open drawer's detail-fetch failure (#302). One string: exactly one
+    // drawer is open at a time.
+    issueError: null,
+    issueLoading: false,
     // Selection is by number, so a label move (which can change the card's
     // column) keeps the drawer pointed at the same issue.
     selectedIssue() {
@@ -3162,72 +3140,37 @@ export function shell() {
     },
 
     // --- canvas tabs ------------------------------------------------------
-    // The adapter roster comes from `/api/agents`, never a list here:
-    // onboarding a vendor must not need a frontend change (#304).
-    agents: [] as any[],
+    // The FILES panel's states: "no files", "still looking" and "refused" must
+    // not be one blank.
+    treeLoading: false,
+    treeError: "",
+    // The tree shows a listing the daemon could not confirm (a refusal, a
+    // dropped socket). Distinct from `treeError`: rows are on screen, but stale.
+    treeStale: "",
+    // The daemon could not keep watching this tree: the rows are right now,
+    // but a change on disk will not show until the project is opened again.
+    treeNotLive: "",
+    // The FILES search (ADR-0036 amendment 2026-09-15). `seq` dates each
+    // request so a slow reply never paints over a newer one; `expandedBefore`
+    // is the expansion snapshot `clearFileSearch` folds the tree back to
+    // (`null` = nothing expanded yet).
+    fileSearch: {
+      open: false,
+      mode: "name",
+      query: "",
+      seq: 0,
+      hits: [] as any[],
+      truncated: false,
+      note: "",
+      expandedBefore: null as string[] | null,
+    },
+    _tree: null as any, // the live Wunderbaum instance, if any
     roster: [] as any[],
-    agentMenu: false,
-    // The Go-to picker (#337) and the fence picker (#343): SNAPSHOTS taken
-    // when the menu opens, because the windows and fences live in the DOM.
-    windowMenu: false,
-    windowList: [],
-    fenceMenu: false,
-    fenceItems: [],
-    // Columns beside a maximized console (ADR-0051 §5): per-client view
-    // state, never desk state. The ids left to right; empty whenever fewer
-    // than two remain, so a lone survivor is an ordinary maximize again.
-    columns: [],
-    columnDir: "right",
-    _columnsRestored: false,
-    _paintedKey: "",
-    columnMenu: false,
-    columnGroups: [] as any[],
-    columnFilter: "",
-    columnFrom: null,
-    columnMenuAt: { top: 0, right: 0, maxWidth: 400, maxHeight: 400 },
-    // The note picker (ADR-0064 §§9–10): a SNAPSHOT on open, like the two
-    // above — the cards live in the DOM and the desk, not in Alpine state.
-    noteMenu: false,
-    noteItems: [],
-    // Which notes have their `##` sections open in the menu, by id. Collapsed
-    // is the default: a note is a document, and every heading of every note at
-    // once is a wall, not a map.
-    consoleCount: 0,
     // The stage extent, for the footer pill (#338).
     stageW: 0,
     stageH: 0,
-    // The open modals, oldest first: `{ path, opener }`. Only the last one
-    // answers Escape, and each returns focus to its opener on close.
-    _modalStack: [] as any[],
     // The Escape keydown a modal has already answered.
     _escapeEvent: null,
-    // The confirm dialog (replaces window.confirm); `askConfirm` opens it.
-    confirmModal: {
-      open: false,
-      title: "",
-      message: "",
-      confirmLabel: "Confirm",
-      cancelLabel: "Cancel",
-      danger: false,
-    },
-    _confirmResolve: null as any,
-    // The prompt dialog (replaces window.prompt, which is suppressible
-    // per-origin and never appears in an unfocused popup). `askPrompt`
-    // resolves the typed string, or null.
-    promptModal: {
-      open: false,
-      title: "",
-      message: "",
-      value: "",
-      placeholder: "",
-      confirmLabel: "Create",
-      error: "",
-    },
-    _promptResolve: null as any,
-    // The move destination picker (#364): browses one level at a time through
-    // `tree.list`. `from` is the FULL rel path; `dir` the browsed directory
-    // ("" is the repo root).
-    movePick: { open: false, from: "", isFolder: false, dir: "", entries: [], busy: false, error: "" } as any,
     // The SAME terminal glyph as the New-console button and its menu rows.
     tabs: [{ id: "consoles", kind: "consoles", title: "Consoles", icon: "bi bi-terminal", closable: false }] as any[],
     active: "consoles",
@@ -4628,6 +4571,26 @@ export function shell() {
     },
 
     // --- consoles (the Consoles tab) ----------------------------------------
+    agentMenu: false,
+    // The Go-to picker (#337) and the fence picker (#343): SNAPSHOTS taken
+    // when the menu opens, because the windows and fences live in the DOM.
+    windowMenu: false,
+    windowList: [],
+    fenceMenu: false,
+    fenceItems: [],
+    // Columns beside a maximized console (ADR-0051 §5): per-client view
+    // state, never desk state. The ids left to right; empty whenever fewer
+    // than two remain, so a lone survivor is an ordinary maximize again.
+    columns: [],
+    columnMenu: false,
+    // The note picker (ADR-0064 §§9–10): a SNAPSHOT on open, like the two
+    // above — the cards live in the DOM and the desk, not in Alpine state.
+    noteMenu: false,
+    noteItems: [],
+    // Which notes have their `##` sections open in the menu, by id. Collapsed
+    // is the default: a note is a document, and every heading of every note at
+    // once is a wall, not a map.
+    consoleCount: 0,
     // The "New console" menu (wb-agents.ts): the roster folded against the
     // live sessions, plus a plain console pinned LAST. Each row carries an
     // Alt+Shift+<digit> accelerator, matched by physical key (e.code) so it
@@ -4919,6 +4882,13 @@ export function shell() {
       return this.isMac ? "⌥⇧F<n>" : "Alt+Shift+F<n>";
     },
     // --- columns (ADR-0051 §5) --------------------------------------------
+    columnDir: "right",
+    _columnsRestored: false,
+    _paintedKey: "",
+    columnGroups: [] as any[],
+    columnFilter: "",
+    columnFrom: null,
+    columnMenuAt: { top: 0, right: 0, maxWidth: 400, maxHeight: 400 },
     // INVARIANT: the shell never writes `max` itself. Each `applyColumns` call
     // passes `persist`, so `setMax` writes it for the first console in reading
     // order (`true`) or one that stopped being first (`false`). `columns` is
@@ -5340,6 +5310,36 @@ export function shell() {
     },
 
     // --- move (issue #364) ------------------------------------------------
+    // The open modals, oldest first: `{ path, opener }`. Only the last one
+    // answers Escape, and each returns focus to its opener on close.
+    _modalStack: [] as any[],
+    // The confirm dialog (replaces window.confirm); `askConfirm` opens it.
+    confirmModal: {
+      open: false,
+      title: "",
+      message: "",
+      confirmLabel: "Confirm",
+      cancelLabel: "Cancel",
+      danger: false,
+    },
+    _confirmResolve: null as any,
+    // The prompt dialog (replaces window.prompt, which is suppressible
+    // per-origin and never appears in an unfocused popup). `askPrompt`
+    // resolves the typed string, or null.
+    promptModal: {
+      open: false,
+      title: "",
+      message: "",
+      value: "",
+      placeholder: "",
+      confirmLabel: "Create",
+      error: "",
+    },
+    _promptResolve: null as any,
+    // The move destination picker (#364): browses one level at a time through
+    // `tree.list`. `from` is the FULL rel path; `dir` the browsed directory
+    // ("" is the repo root).
+    movePick: { open: false, from: "", isFolder: false, dir: "", entries: [], busy: false, error: "" } as any,
     // The destination is PICKED, never typed: the picker browses real
     // directories through `tree.list`.
     moveNode(node: any) {
