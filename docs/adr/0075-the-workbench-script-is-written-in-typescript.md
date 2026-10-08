@@ -484,3 +484,10 @@ ratchet on `wb-console.ts` now exists: `the_console_script_matches_the_line_base
 socket origin, the font size, the stage and the viewport, `cancelSlide`, and
 the two clipboard calls. After this cut `wb-console.ts` has 5,842 lines, and
 the ratchet holds it there.
+
+**The window chrome is cut as `createChrome(deps)` (#609).** `buildChrome`,
+`makeDraggable`, `wireTitleTouch` and `startResize` are in
+`wb-console-chrome.ts`, with the free cascade. The elements under a gesture
+have one owner there, `createGestures()`, which the chrome and the fence
+gestures take through their `deps`. After this cut `wb-console.ts` has 5,396
+lines, and the ratchet holds it there.
