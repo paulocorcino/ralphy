@@ -169,14 +169,14 @@ pub fn run_post_hook() -> Result<()> {
 /// is still 0.
 pub fn run_status_hook() -> Result<()> {
     println!("{{}}");
+    // Read stdin before every return: a vendor that writes the payload into a
+    // hook that already exited gets a broken pipe.
+    let mut payload = String::new();
+    let read = std::io::stdin().read_to_string(&mut payload);
     let Ok(path) = std::env::var("RALPHY_STATUS_FILE") else {
         return Ok(());
     };
-    if path.is_empty() {
-        return Ok(());
-    }
-    let mut payload = String::new();
-    if std::io::stdin().read_to_string(&mut payload).is_err() {
+    if path.is_empty() || read.is_err() {
         return Ok(());
     }
     let line = status_line(&payload, &chrono::Local::now().to_rfc3339());
@@ -240,15 +240,14 @@ fn append_line(path: &Path, line: &str) -> std::io::Result<()> {
 /// write the flag file named by `$RALPHY_FLAG_FILE`. No-op when that env var is
 /// unset. Always returns `Ok` — the hook must never fail the session.
 pub fn run_stop_hook() -> Result<()> {
+    // Read stdin before every return, so a caller that writes the payload
+    // never gets a broken pipe.
+    let mut payload = String::new();
+    let read = std::io::stdin().read_to_string(&mut payload);
     let Ok(flag) = std::env::var("RALPHY_FLAG_FILE") else {
         return Ok(());
     };
-    if flag.is_empty() {
-        return Ok(());
-    }
-
-    let mut payload = String::new();
-    if std::io::stdin().read_to_string(&mut payload).is_err() {
+    if flag.is_empty() || read.is_err() {
         return Ok(());
     }
 
