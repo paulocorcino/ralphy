@@ -29,9 +29,9 @@ const PROMPT_GH_ISSUE_VIEW: usize = 20;
 const APP_TS_LINES: usize = 6134;
 /// Lines of `crates/ralphy-daemon/assets/ui/wb-console.ts`, the console
 /// factory (ADR-0073 D8, which starts this ratchet with the first fold move).
-/// 6789 since ADR-0075 phase 5 moved its pure folds and its GPU budget into
-/// their own modules.
-const WB_CONSOLE_TS_LINES: usize = 6789;
+/// 5842 since ADR-0075 phase 5 moved its pure folds, its GPU budget and its
+/// terminal into their own modules (#597).
+const WB_CONSOLE_TS_LINES: usize = 5842;
 
 const SPAWNED: [&str; 3] = ["git", "gh", "ssh"];
 

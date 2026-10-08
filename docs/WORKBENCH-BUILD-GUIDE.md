@@ -158,8 +158,8 @@ checks it.
 `@xterm/addon-fit` 0.11.0, `@xterm/addon-web-links` 0.12.0 and
 `@xterm/addon-webgl` 0.19.0, copied from the `lib/` directory of each tarball
 under the old `xterm-addon-*.js` names. OSC 52 is written by hand in
-`wb-console.ts` (`term.parser.registerOscHandler(52, …)`) instead of with
-`@xterm/addon-clipboard`.
+`wb-console-terminal.ts` (`term.parser.registerOscHandler(52, …)`) instead
+of with `@xterm/addon-clipboard`.
 
 After a bump, check the four upstream behaviours the console depends on:
 `parser.registerOscHandler`, `attachCustomKeyEventHandler`, the `contextmenu` →
