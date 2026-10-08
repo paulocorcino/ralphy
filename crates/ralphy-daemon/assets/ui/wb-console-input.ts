@@ -334,14 +334,16 @@ export function pasteDecision({ types, size, watching }: any) {
 
 // What an agent put on the clipboard is pasted into a shell: a TRAILING
 // NEWLINE turns a mis-paste into an execution (`curl … | sh\n`), and an
-// escape sequence reaches the terminal it is pasted into. A code-point test
+// escape sequence reaches the terminal it is pasted into. The C1 controls
+// (U+0080 to U+009F) go too: U+009B is a one-character CSI, so a terminal that
+// reads C1 runs it like an escape sequence. A code-point test
 // so the source carries no control-character escapes of its own.
 export function scrubClipboard(text: any) {
   let out = "";
   for (const ch of text.replace(/\r\n/g, "\n")) {
     const c = ch.codePointAt(0);
-    // Keep tab (9) and newline (10); drop the rest of C0 and DEL (127).
-    if (c === 9 || c === 10 || (c >= 32 && c !== 127)) out += ch;
+    // Keep tab (9) and newline (10); drop the rest of C0, DEL (127) and C1.
+    if (c === 9 || c === 10 || (c >= 32 && c !== 127 && !(c >= 0x80 && c <= 0x9f))) out += ch;
   }
   return out.replace(/\n+$/, "");
 }

@@ -219,7 +219,7 @@ The clipboard rules protect the operator from a remote agent.
   the console history on attach (the replay is raw bytes, so an old copy would
   rewrite the clipboard on every reconnect, takeover and reattach), and in a
   watching window (the window that holds the baton owns the clipboard). Control
-  bytes and a trailing newline are removed from the text, so a wrong paste
+  characters (C0, DEL and C1) and a trailing newline are removed from the text, so a wrong paste
   cannot run a command.
 
 `tests/browser/console/wb_console_clipboard.py` covers this end to end.
