@@ -116,6 +116,10 @@ test("a tracked window is observed from the viewport, and a report wakes the dor
   assert.equal(win._visible, true);
   assert.deepEqual(asked, [win], "the report asks the dormancy rule");
 
+  observer.callback([{ target: win, isIntersecting: false }]);
+  assert.equal(win._visible, false, "a report that leaves the viewport marks it unseen");
+  assert.deepEqual(asked, [win, win], "that report asks the dormancy rule too");
+
   budget.untrackDormancy(win);
   assert.ok(!observer.targets.has(win), "an untracked window is no longer held");
 });
@@ -162,7 +166,9 @@ test("many scheduleGpu calls in one turn give one rebalance", () => {
   assert.equal(tasks.length, 1, "after it ran, the next call queues again");
 });
 
-test("a budget reads nothing outside its deps", () => {
+// The page globals are the reads `tsc` cannot see; it guards every other read
+// through the `GpuBudgetDeps` type.
+test("a budget uses its deps, not the page's IntersectionObserver or queueMicrotask", () => {
   const savedObserver = globalThis.IntersectionObserver;
   const savedMicrotask = globalThis.queueMicrotask;
   let globalReads = 0;

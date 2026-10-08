@@ -449,8 +449,9 @@ upload), and the clock (timers, ids). Measured not pure and kept:
 `consolePrefix`, `allCheckouts`, `projectNameOf`, `projectTitleOf`,
 `canRename`, `unreadableDesk`, `checkoutStillThere`, the id makers,
 `measurable`, `columnMeasure`, `renderNotes`, `count`. Sleeping and waking a
-window (`applyDormancy`, `wakeWindow`, `sleepWindow`) and the covered rule
-(`isCovered`) stay too: they reach the terminal factory.
+window (`applyDormancy`, `wakeWindow`, `sleepWindow`) stay too: they reach
+the terminal factory. The covered rule (`isCovered`) stays because it reads
+the window set and the DOM (`fillsViewport`).
 
 **State leaves through a typed `deps` parameter.** ADR-0073 D7 planned one
 shared state object, and #555 a `needs` list for each factory. Under this
