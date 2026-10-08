@@ -31,8 +31,10 @@ const APP_TS_LINES: usize = 6123;
 /// factory (ADR-0073 D8, which starts this ratchet with the first fold move).
 /// 5842 since ADR-0075 phase 5 moved its pure folds, its GPU budget and its
 /// terminal into their own modules (#597); 5396 since its window chrome and
-/// the owner of its gestures moved to `wb-console-chrome.ts` (#609).
-const WB_CONSOLE_TS_LINES: usize = 5396;
+/// the owner of its gestures moved to `wb-console-chrome.ts` (#609); 4780
+/// since its popup registry moved to `wb-console-popups.ts` and its fences to
+/// `wb-console-fences.ts` (#610).
+const WB_CONSOLE_TS_LINES: usize = 4780;
 
 const SPAWNED: [&str; 3] = ["git", "gh", "ssh"];
 
