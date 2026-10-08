@@ -4039,7 +4039,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-daemon.js",
                 // `wb-console.ts` imports the geometry, the window state, the session folds,
                 // the desk folds, the GPU budget, the terminal, the window chrome, the popup
-                // registry, the fences, the console name and the input folds; the entry
+                // registry, the fences, the desk, the console name and the input folds; the entry
                 // imports the console. Stated HERE because this set is a hardcoded floor:
                 // nothing derives the popup's needs from the tree, so an
                 // import dropped from the entry breaks the second monitor
@@ -4055,6 +4055,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-console-chrome.js",
                 "wb-console-popups.js",
                 "wb-console-fences.js",
+                "wb-console-desk.js",
                 "wb-console.js",
             ][..],
         ),
@@ -5774,11 +5775,13 @@ fn a_detached_file_comes_home_when_its_popup_closes() {
 /// deleted code.
 #[test]
 fn shell_detaches_a_fence() {
-    // The console and its fences, as one text: the detach lives in the
-    // fences, the re-attach and the lifecycle channel in the console.
+    // The console, its fences and its desk, as one text: the detach lives in
+    // the fences, the popup's mount and the upload in the desk, the re-attach
+    // and the lifecycle channel in the console.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
         include_str!("../assets/ui/wb-console-fences.ts"),
+        include_str!("../assets/ui/wb-console-desk.ts"),
     ]
     .concat();
     for pin in [
@@ -6080,13 +6083,14 @@ fn spawn_window_sends_the_console_name_on_a_new_agent_launch() {
 /// own explanatory comment satisfies a bare-noun pin over deleted code.
 #[test]
 fn shell_survives_a_reload_with_its_detach() {
-    // The console, its popup registry and its fences, as one text: the
-    // registry write lives in the registry, the detach in the fences, the
-    // restore and the lifecycle channel in the console.
+    // The console, its popup registry, its fences and its desk, as one text:
+    // the registry write lives in the registry, the detach in the fences, the
+    // restore in the desk, and the lifecycle channel in the console.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
         include_str!("../assets/ui/wb-console-popups.ts"),
         include_str!("../assets/ui/wb-console-fences.ts"),
+        include_str!("../assets/ui/wb-console-desk.ts"),
     ]
     .concat();
     let link = include_str!("../assets/ui/wb-detach-link.ts");
@@ -6666,6 +6670,10 @@ fn shell_stores_only_the_view_in_the_browser() {
             "wb-console-fences.ts",
             include_str!("../assets/ui/wb-console-fences.ts"),
         ),
+        (
+            "wb-console-desk.ts",
+            include_str!("../assets/ui/wb-console-desk.ts"),
+        ),
         ("app.ts", include_str!("../assets/ui/app.ts")),
     ] {
         assert!(
@@ -6884,8 +6892,9 @@ fn the_destructive_console_clicks_confirm_first() {
 /// this is the gate CI can see.
 #[test]
 fn relaunching_agent_consoles_on_load_is_opt_in() {
-    // Every pin reads whitespace-free text: the code, not its layout.
-    let js = squeeze(include_str!("../assets/ui/wb-console.ts"));
+    // Every pin reads whitespace-free text: the code, not its layout. The
+    // restore is in the console's desk.
+    let js = squeeze(include_str!("../assets/ui/wb-console-desk.ts"));
     let folds = squeeze(include_str!("../assets/ui/wb-desk-folds.ts"));
     assert!(
         folds.contains(r#"record.kind==="console"||relaunchAgents?"relaunch":"placeholder""#),
@@ -8511,6 +8520,10 @@ fn no_menu_or_key_sink_takes_a_template_string() {
         (
             "wb-console-fences.ts",
             include_str!("../assets/ui/wb-console-fences.ts"),
+        ),
+        (
+            "wb-console-desk.ts",
+            include_str!("../assets/ui/wb-console-desk.ts"),
         ),
     ] {
         let sinks = template_html_sinks(src);

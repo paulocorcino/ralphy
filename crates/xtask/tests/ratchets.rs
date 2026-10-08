@@ -33,8 +33,9 @@ const APP_TS_LINES: usize = 6123;
 /// terminal into their own modules (#597); 5396 since its window chrome and
 /// the owner of its gestures moved to `wb-console-chrome.ts` (#609); 4780
 /// since its popup registry moved to `wb-console-popups.ts` and its fences to
-/// `wb-console-fences.ts` (#610).
-const WB_CONSOLE_TS_LINES: usize = 4780;
+/// `wb-console-fences.ts` (#610); 4599 since its desk moved to
+/// `wb-console-desk.ts` (#611).
+const WB_CONSOLE_TS_LINES: usize = 4599;
 
 const SPAWNED: [&str; 3] = ["git", "gh", "ssh"];
 
