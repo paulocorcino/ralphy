@@ -305,3 +305,82 @@ input, session, desk, and plane geometry. The plane geometry goes into
 not change (D7). The ratchet of D8 starts on `wb-console.js` with the first of
 these moves. The D7 pilot comes after them. It takes the GPU budget and the
 dormant consoles (about 130 lines, with two module `let`s of their own).
+
+## Amendment (2026-10-08): the order of the shell() cuts, the projects Alpine store, and the project-changed event
+
+Phase 4 starts here. Moving code inside `app.ts` did not make it smaller
+(issue #550), so a part leaves `shell()` only when the state it shares has one
+owner. This amendment records the order of the cuts and the decisions they need
+before code. It was measured on `8fa01411` (the section map is in the 2026-10-08
+measure of #605; `cargo run -q -p xtask -- ui-groups` prints it again).
+`app.ts` has 6,134 lines, and `shell()` has 544 members in 35 sections. In
+`index.html`, 901 bindings are in `shell()` scope, and 635 of them name a
+member. 65 of these bindings mix two groups, and none mixes two feature groups.
+Members per group: core 188, git 77, files 82, board 120, consoles 77. (The
+first measure had core 173 and files 97. The 15 members of the canvas tabs
+are counted in core, by decision 2.)
+
+1. **The order of the cuts.**
+   1. The open project becomes the Alpine store `projects` (decision 3), with
+      the event of decision 4.
+   2. The consoles become a component.
+   3. The board and the runs become components.
+   4. Git becomes a component.
+   5. Files are measured again, then planned.
+
+   The cuts of `wb-console.ts` (#597) follow their own plan and can run in
+   parallel. Each step is written after the step before it has merged, from a
+   new measure.
+
+2. **The canvas tabs stay in `shell()` as layout.** `tabs`, `active` and `slot`
+   are read by the layout core, the consoles and the window bridge, so D2
+   holds: they are layout. The group "files and tabs" is now called "files".
+   They do not become an Alpine store.
+
+3. **The open project is the Alpine store `projects`**, in
+   `wb-projects-store.ts`. Its members are `openSlug`, `projects`, `repoRef`,
+   `openProject` and the project-label helpers (`projectLabel`,
+   `projectTitle`, `projectBadge`, `rowOpen`). Measured, only the layout core
+   writes this fact: `openSlug` only in `toggle` and `removeProject`, and
+   `projects` in `loadRepos`, `reposFailed`, the fleet path and
+   `removeProject`. Every group, the window bridge and four dialogs read it.
+   - **One writer.** The store changes only through its own methods. No other
+     code assigns its fields (D4 applies to the store too).
+   - **How each part reads it.** `shell()` code reads
+     `this.$store.projects`. Markup reads `$store.projects`. A component reads
+     it through the Alpine `$store` magic, and its name leaves the `uses` list.
+     Code outside Alpine (the window bridge) reads `Alpine.store("projects")`.
+   - **A helper that needs `shell()` state too** stays in `shell()` and reads
+     the store. The store holds only what it owns.
+   - The store follows D6: it is named for the fact, and the test harness
+     builds it without Alpine, as a component.
+
+4. **`toggle` sends `workbench:project-changed`.** The event goes on `window`
+   (D5) with the detail `{ slug, previous }`. Today `toggle` writes fields of other groups
+   (git: `commitMsg`, `commitMsgSlug`, `branchError`; board: `kanbanSel`,
+   `trailFocus`, `currentRunId`, `planSection`, `verbError`; and
+   `changesError`, which only the Changes view reads) and restarts their
+   sockets and reads. Git, board and files listen to the
+   event and reset their own fields, restart their own sockets, and read again,
+   in the order `toggle` uses today. `toggle` writes the store and sends the
+   event; it writes no field of another group.
+
+5. **Modal flags read across groups become `modalOpen()` questions** when
+   their group moves, as the 2026-10-05 amendment says. `branchOpen` (git) and
+   `runOpen` (board) are read by the consoles (`consoleShortcutsBlocked`) and by
+   the window bridge. `planModal` (board) is read by the layout core. No other
+   modal flag is read across groups in this measure.
+
+6. **Small shared facts follow one rule.** The facts are the runs
+   (`hydrateRuns`), the board read state (`loadBoard`), the change count
+   (`loadChanges`), the agent roster (`loadAgents`), and the live sessions and
+   the login (`refreshLive`, `probeSession`). A fact stays in `shell()` until
+   its last reader outside its owner group has moved. Then it moves with its
+   owner. If two components still read it, it moves into an Alpine store (D6)
+   instead. The writer is always one method.
+
+7. **Pins follow the text.** A cut runs `cargo run -q -p xtask -- asset-pins`
+   before and after. Each pin on moved text reads the new file and protects the
+   same claim, or a unit test or a browser check replaces it. A pin is never
+   deleted without a replacement. The pull request shows the count before and
+   after.
