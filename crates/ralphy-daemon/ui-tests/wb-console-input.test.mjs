@@ -677,6 +677,11 @@ test("scrubClipboard drops escape sequences and other control characters", () =>
   assert.equal(scrubClipboard("a\x00b\x07c\x7fd"), "abcd");
 });
 
+test("scrubClipboard drops the C1 controls, such as the one-character CSI U+009B", () => {
+  assert.equal(scrubClipboard("a\u009b31mb\u0080c\u009fd"), "a31mbcd");
+  assert.equal(scrubClipboard("\u00a0\u00e9"), "\u00a0\u00e9", "U+00A0 and above stay");
+});
+
 test("scrubClipboard keeps tabs, inner newlines and non-ASCII text", () => {
   assert.equal(scrubClipboard("a\tb\r\nc"), "a\tb\nc");
   assert.equal(scrubClipboard("café \u{1f600}"), "café \u{1f600}");

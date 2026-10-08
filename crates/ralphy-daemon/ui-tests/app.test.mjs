@@ -1381,13 +1381,25 @@ test("a hidden tab reads nothing on a push, and reads when it becomes visible", 
   const { state, document } = loadShell({ document: { visibilityState: "hidden", hasFocus: () => true } });
   // The column check after a desk read is not under test here.
   state.checkColumnDesk = async () => {};
-  // No settle delay, so a `sessions.dirty` read would land inside the spy.
-  state.LIVE_SETTLE_MS = 0;
+  // app.ts schedules the settle read with Node's global `setTimeout`. Catch
+  // the timers here and run them inside the spy, so a read that the timer
+  // would make is seen on every run and not only when it fires early.
+  const timers = [];
+  const realSetTimeout = globalThis.setTimeout;
   const hidden = await withFetchSpy(() => {
-    state.onPresencePush("sessions.dirty", {});
-    state.onPresencePush("repos.dirty", {});
-    state.onPresencePush("desk.dirty", { tab: "other" });
-    state.onPresenceOpen(true);
+    globalThis.setTimeout = (fn) => {
+      timers.push(fn);
+      return timers.length;
+    };
+    try {
+      state.onPresencePush("sessions.dirty", {});
+      state.onPresencePush("repos.dirty", {});
+      state.onPresencePush("desk.dirty", { tab: "other" });
+      state.onPresenceOpen(true);
+    } finally {
+      globalThis.setTimeout = realSetTimeout;
+    }
+    for (const run of timers) run();
   });
   assert.deepEqual(hidden, []);
   document.visibilityState = "visible";
