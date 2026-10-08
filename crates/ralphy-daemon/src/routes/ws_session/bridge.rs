@@ -20,6 +20,11 @@ pub(crate) struct Liveness {
     pub(crate) silent_after: Duration,
 }
 
+/// The share of the 5 s end window that the queued output may use. The
+/// remaining second is for `session-end` and `Close`, which must always be
+/// sent (#334): a full queue on a slow link can otherwise use the whole window.
+const DRAIN_LIMIT: Duration = Duration::from_secs(4);
+
 /// Test seam, like `RALPHY_DAEMON_AGENT_OVERRIDE`: the ping period in
 /// milliseconds. A test cannot wait out the production window.
 const PING_MS_ENV: &str = "RALPHY_DAEMON_WS_PING_MS";
@@ -264,8 +269,17 @@ pub(crate) async fn session_ws(
             // child end drains: a takeover leaves the stream to the new owner,
             // whose replay already holds those bytes, and the old client is
             // about to be told it lost the session.
-            if reason == session::EndReason::ChildExited {
-                send_queued(&mut socket, id, &mut attach.rx, &mut traffic).await;
+            if reason == session::EndReason::ChildExited
+                && tokio::time::timeout(
+                    DRAIN_LIMIT,
+                    send_queued(&mut socket, id, &mut attach.rx, &mut traffic),
+                )
+                .await
+                .is_err()
+            {
+                // A client that cannot take the queue in time loses the rest of
+                // it from this socket; the scrollback keeps it for a later view.
+                tracing::debug!("the queued output did not drain in time; naming the end");
             }
             send_command(
                 &mut socket,
@@ -338,13 +352,13 @@ mod tests {
     use futures_util::StreamExt;
     use tokio_tungstenite::tungstenite;
 
-    /// A child that exits leaves its last output queued on the attachment
-    /// while the eviction is already signalled. Every queued chunk reaches the
-    /// client before `session-end`. With both arms ready, an unbiased select
-    /// takes the eviction about half the time, so a loop that drops queued
-    /// output keeps all 32 chunks with a chance near 2^-32.
-    #[tokio::test]
-    async fn queued_output_reaches_the_client_before_the_session_end() {
+    /// A console whose child has exited: the eviction is signalled and the
+    /// attachment's output stream is the test's own, holding `chunks`, so the
+    /// client receives exactly these and nothing the shell prints.
+    fn exited_session(
+        chunks: &[Vec<u8>],
+        capacity: usize,
+    ) -> (session::SessionId, session::Attachment) {
         let manager = Arc::new(session::SessionManager::new());
         let spec = session::console_spec(std::env::temp_dir(), 24, 80, None);
         let (id, mut attach) = manager
@@ -358,15 +372,10 @@ mod tests {
                 spec,
             )
             .expect("the platform shell must spawn — the free console depends on it");
-        // The test owns the output stream and empties the replay, so the client
-        // receives exactly these chunks and nothing the shell prints.
-        let (tx, rx) = tokio::sync::broadcast::channel::<Vec<u8>>(64);
+        let (tx, rx) = tokio::sync::broadcast::channel::<Vec<u8>>(capacity);
         attach.rx = rx;
         attach.snapshot.clear();
-        let chunks: Vec<Vec<u8>> = (0..32)
-            .map(|n| format!("line {n}\r\n").into_bytes())
-            .collect();
-        for chunk in &chunks {
+        for chunk in chunks {
             tx.send(chunk.clone())
                 .expect("the attachment holds a receiver");
         }
@@ -376,9 +385,17 @@ mod tests {
             Some(session::EndReason::ChildExited),
             "the eviction is signalled before the bridge starts"
         );
+        (id, attach)
+    }
 
+    /// Serve `session_ws` for one client on `listener`.
+    fn serve_bridge(
+        listener: tokio::net::TcpListener,
+        id: session::SessionId,
+        attach: session::Attachment,
+    ) -> tokio::task::JoinHandle<std::io::Result<()>> {
         let slot = Arc::new(Mutex::new(Some(attach)));
-        let (_stop, shutdown) = tokio::sync::watch::channel(false);
+        let (stop, shutdown) = tokio::sync::watch::channel(false);
         let app = axum::Router::new().route(
             "/",
             axum::routing::get(move |ws: WebSocketUpgrade| {
@@ -411,52 +428,143 @@ mod tests {
                 }
             }),
         );
+        tokio::spawn(async move {
+            // The sender stays alive as long as the server runs.
+            let _stop = stop;
+            axum::serve(listener, app).await
+        })
+    }
+
+    /// What a client saw: the output, where `session-end` came in it, and
+    /// whether the `Close` frame followed.
+    struct Seen {
+        received: Vec<u8>,
+        ended_after: Option<usize>,
+        closed: bool,
+    }
+
+    /// Read until the `Close` frame, pausing `pause` after every message.
+    async fn read_until_close(
+        client: &mut (impl futures_util::Stream<Item = Result<tungstenite::Message, tungstenite::Error>>
+                  + Unpin),
+        pause: Duration,
+    ) -> Seen {
+        let mut seen = Seen {
+            received: Vec::new(),
+            ended_after: None,
+            closed: false,
+        };
+        // The bridge drops the socket right after its Close frame, so the
+        // read that follows the Close can fail: stop at the Close.
+        while let Some(Ok(message)) = client.next().await {
+            let bytes = match message {
+                tungstenite::Message::Binary(bytes) => bytes,
+                tungstenite::Message::Close(_) => {
+                    seen.closed = true;
+                    break;
+                }
+                _ => continue,
+            };
+            match protocol::decode(&bytes).expect("a well-formed frame") {
+                Frame::Terminal { data, .. } => {
+                    assert!(
+                        seen.ended_after.is_none(),
+                        "output arrived after session-end"
+                    );
+                    seen.received.extend_from_slice(&data);
+                }
+                Frame::Command(cmd) if cmd.verb == "session-end" => {
+                    assert_eq!(cmd.payload["reason"], "child-exited");
+                    seen.ended_after = Some(seen.received.len());
+                }
+                _ => {}
+            }
+            tokio::time::sleep(pause).await;
+        }
+        seen
+    }
+
+    /// A child that exits leaves its last output queued on the attachment
+    /// while the eviction is already signalled. Every queued chunk reaches the
+    /// client before `session-end`. With both arms ready, an unbiased select
+    /// takes the eviction about half the time, so a loop that drops queued
+    /// output keeps all 32 chunks with a chance near 2^-32.
+    #[tokio::test]
+    async fn queued_output_reaches_the_client_before_the_session_end() {
+        let chunks: Vec<Vec<u8>> = (0..32)
+            .map(|n| format!("line {n}\r\n").into_bytes())
+            .collect();
+        let (id, attach) = exited_session(&chunks, 64);
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .expect("bind a loopback port");
         let addr = listener
             .local_addr()
             .expect("a bound listener has an address");
-        let server = tokio::spawn(async move { axum::serve(listener, app).await });
+        let server = serve_bridge(listener, id, attach);
 
         let (mut client, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/"))
             .await
             .expect("the bridge accepts the socket");
-        let mut received: Vec<u8> = Vec::new();
-        let mut ended_after: Option<usize> = None;
-        let read = async {
-            // The bridge drops the socket right after its Close frame, so the
-            // read that follows the Close can fail: stop at the Close.
-            while let Some(Ok(message)) = client.next().await {
-                let bytes = match message {
-                    tungstenite::Message::Binary(bytes) => bytes,
-                    tungstenite::Message::Close(_) => break,
-                    _ => continue,
-                };
-                match protocol::decode(&bytes).expect("a well-formed frame") {
-                    Frame::Terminal { data, .. } => {
-                        assert!(ended_after.is_none(), "output arrived after session-end");
-                        received.extend_from_slice(&data);
-                    }
-                    Frame::Command(cmd) if cmd.verb == "session-end" => {
-                        assert_eq!(cmd.payload["reason"], "child-exited");
-                        ended_after = Some(received.len());
-                    }
-                    _ => {}
-                }
-            }
-        };
-        tokio::time::timeout(Duration::from_secs(10), read)
-            .await
-            .expect("the bridge closes the socket after session-end");
-        drop(tx);
+        let seen = tokio::time::timeout(
+            Duration::from_secs(10),
+            read_until_close(&mut client, Duration::ZERO),
+        )
+        .await
+        .expect("the bridge closes the socket after session-end");
         server.abort();
 
         assert_eq!(
-            String::from_utf8_lossy(&received),
+            String::from_utf8_lossy(&seen.received),
             String::from_utf8_lossy(&chunks.concat()),
             "every queued chunk reaches the client"
         );
-        assert!(ended_after.is_some(), "the end is announced");
+        assert!(seen.ended_after.is_some(), "the end is announced");
+    }
+
+    /// A client that takes the queue too slowly cannot hold back the end:
+    /// the drain stops at its own limit, so `session-end` and `Close` are
+    /// still sent inside the 5 s end window. Both socket buffers are small
+    /// and the client reads one chunk per 100 ms, so 100 chunks need about
+    /// 10 s. This runs in real time: the daemon's tokio has no `test-util`.
+    #[tokio::test]
+    async fn a_drain_that_cannot_finish_still_sends_the_end_and_the_close() {
+        let chunks: Vec<Vec<u8>> = (0..100u8).map(|n| vec![n; 64 * 1024]).collect();
+        let (id, attach) = exited_session(&chunks, 128);
+        let socket = tokio::net::TcpSocket::new_v4().expect("a loopback socket");
+        socket
+            .set_send_buffer_size(4096)
+            .expect("the send buffer is settable");
+        socket
+            .bind("127.0.0.1:0".parse().expect("a socket address"))
+            .expect("bind a loopback port");
+        let listener = socket.listen(1).expect("listen on the loopback port");
+        let addr = listener
+            .local_addr()
+            .expect("a bound listener has an address");
+        let server = serve_bridge(listener, id, attach);
+
+        let socket = tokio::net::TcpSocket::new_v4().expect("a loopback socket");
+        socket
+            .set_recv_buffer_size(4096)
+            .expect("the receive buffer is settable");
+        let stream = socket.connect(addr).await.expect("the bridge accepts");
+        let (mut client, _) = tokio_tungstenite::client_async(format!("ws://{addr}/"), stream)
+            .await
+            .expect("the bridge upgrades the socket");
+        let seen = tokio::time::timeout(
+            Duration::from_secs(15),
+            read_until_close(&mut client, Duration::from_millis(100)),
+        )
+        .await
+        .expect("the bridge closes the socket inside its end window");
+        server.abort();
+
+        assert!(seen.ended_after.is_some(), "the end is announced");
+        assert!(seen.closed, "the Close frame follows the end");
+        assert!(
+            seen.received.len() < chunks.concat().len(),
+            "the drain stopped at its limit instead of sending everything"
+        );
     }
 }
