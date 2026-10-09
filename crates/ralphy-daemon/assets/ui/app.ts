@@ -4055,7 +4055,7 @@ export function wire(window: Window, document: Document) {
           // A detached window's pane is `detached` in its own viewer; a tab's is
           // its tab id in this one.
           const viewer = () => (d.fromWindow ? d.fromWindow.WBViewer : window.WBViewer);
-          const id = d.fromWindow ? "detached" : fileTabId(repo, d.path, checkout);
+          const id = d.fromWindow ? "detached" : fileTabId(repo, d.path as string, checkout);
           const payload: any = { repo, path: d.path, content: d.content || "" };
           if (d.encoding) payload.encoding = d.encoding;
           if (d.bom) payload.bom = true;
@@ -4116,7 +4116,7 @@ export function wire(window: Window, document: Document) {
             ? await c.askPrompt({
                 // No placeholder: a plausible filename in an empty field reads as
                 // a name already chosen, and operators pressed Enter on it.
-                title: newEntryTitle(folder ? "folder" : "file", d.path),
+                title: newEntryTitle(folder ? "folder" : "file", d.path as string),
                 message: "",
                 placeholder: "",
               })
@@ -4156,7 +4156,7 @@ export function wire(window: Window, document: Document) {
           // "not found" on a delete says the ROW is the lie: re-list the parent
           // so the ghost ends up off the screen.
           if (/not found/i.test(reason)) {
-            sendWindow(window, "workbench:tree-dirty", { rel: parentRel(d.path) });
+            sendWindow(window, "workbench:tree-dirty", { rel: parentRel(d.path as string) });
           }
           break;
         }

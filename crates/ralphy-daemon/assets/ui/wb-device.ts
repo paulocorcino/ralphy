@@ -16,8 +16,33 @@
    --------------------------------------------------------------------------- */
 import { WBSessionRoute } from "./wb-session-route.ts";
 
+/** The window `collect` reads: the page's own, or a test's. */
+type Win = Window & typeof globalThis;
+
+/** The `navigator` members this module reads. A browser may lack any of them. */
+type NavigatorFacts = Partial<Navigator> & {
+  userAgentData?: {
+    brands: { brand: string; version: string }[];
+    mobile: boolean;
+    platform: string;
+    getHighEntropyValues(hints: string[]): Promise<{ [hint: string]: JsonValue }>;
+  };
+  getBattery?(): Promise<{ level: number; charging: boolean }>;
+  deviceMemory?: number;
+  /** iOS only. */
+  standalone?: boolean;
+  connection?: { type?: string; effectiveType?: string; rtt?: number; downlink?: number; saveData?: boolean };
+  keyboard?: { getLayoutMap?(): Promise<{ get(code: string): string | undefined }> };
+};
+
+/** The `screen` members this module reads. */
+type ScreenFacts = Partial<Screen> & { isExtended?: boolean };
+
+/** What `collect` returns: one field per fact. */
+type Facts = { [fact: string]: JsonValue | undefined };
+
 export const WBDevice = (function () {
-  async function attempt(fn: any) {
+  async function attempt<T>(fn: () => T | Promise<T>): Promise<T | null> {
     try {
       const v = await fn();
       return v === undefined ? null : v;
@@ -26,7 +51,7 @@ export const WBDevice = (function () {
     }
   }
 
-  function media(win: any, query: any) {
+  function media(win: Win, query: string) {
     try {
       return win.matchMedia ? win.matchMedia(query).matches : null;
     } catch {
@@ -34,14 +59,14 @@ export const WBDevice = (function () {
     }
   }
 
-  function firstMatch(win: any, feature: any, values: any) {
+  function firstMatch(win: Win, feature: string, values: string[]) {
     for (const v of values) {
       if (media(win, `(${feature}: ${v})`)) return v;
     }
     return null;
   }
 
-  function cssSupports(win: any, prop: any, value: any) {
+  function cssSupports(win: Win, prop: string, value: string) {
     try {
       return win.CSS && win.CSS.supports ? win.CSS.supports(prop, value) : null;
     } catch {
@@ -52,13 +77,13 @@ export const WBDevice = (function () {
   // One context, read, then lost at once. The consoles hold at most 12
   // WebGL contexts (wb-console.ts GPU_BUDGET) and Chrome drops the oldest
   // past 16, so one more for a moment takes no console's place.
-  function gpu(win: any) {
+  function gpu(win: Win) {
     const doc = win.document;
     if (!doc) return null;
     const canvas = doc.createElement("canvas");
-    const gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+    const gl = (canvas.getContext("webgl") || canvas.getContext("experimental-webgl")) as WebGLRenderingContext | null;
     if (!gl) return null;
-    const out: Record<string, any> = { vendor: gl.getParameter(gl.VENDOR), renderer: gl.getParameter(gl.RENDERER) };
+    const out: Record<string, string> = { vendor: gl.getParameter(gl.VENDOR), renderer: gl.getParameter(gl.RENDERER) };
     const dbg = gl.getExtension("WEBGL_debug_renderer_info");
     if (dbg) {
       out.unmasked_vendor = gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL);
@@ -69,7 +94,7 @@ export const WBDevice = (function () {
     return out;
   }
 
-  function safeArea(win: any) {
+  function safeArea(win: Win) {
     const doc = win.document;
     if (!doc || !doc.body || !win.getComputedStyle) return null;
     const el = doc.createElement("div");
@@ -90,31 +115,31 @@ export const WBDevice = (function () {
   // The count and the first few voices: the whole list ran to 324 entries
   // on Windows, past the route's size cap.
   const VOICE_SAMPLE = 5;
-  function voices(win: any) {
+  function voices(win: Win) {
     const s = win.speechSynthesis;
     if (!s || !s.getVoices) return null;
     const read = () => {
-      const all = s.getVoices().map((v: any) => `${v.name}|${v.lang}|${v.localService ? 1 : 0}`);
+      const all = s.getVoices().map((v) => `${v.name}|${v.lang}|${v.localService ? 1 : 0}`);
       return { count: all.length, sample: all.slice(0, VOICE_SAMPLE) };
     };
     const now = read();
     if (now.count || !s.addEventListener) return Promise.resolve(now);
     // Chromium fills the list a moment after the first call.
-    return new Promise((resolve) => {
+    return new Promise<ReturnType<typeof read>>((resolve) => {
       const done = () => resolve(read());
       s.addEventListener("voiceschanged", done, { once: true });
       setTimeout(done, 800);
     });
   }
 
-  function battery(nav: any) {
+  function battery(nav: NavigatorFacts) {
     if (!nav.getBattery) return null;
-    return nav.getBattery().then((b: any) => ({ level: b.level, charging: b.charging }));
+    return nav.getBattery().then((b) => ({ level: b.level, charging: b.charging }));
   }
 
-  function keyboard(nav: any) {
+  function keyboard(nav: NavigatorFacts) {
     if (!nav.keyboard || !nav.keyboard.getLayoutMap) return null;
-    return nav.keyboard.getLayoutMap().then((m: any) => ({
+    return nav.keyboard.getLayoutMap().then((m) => ({
       KeyQ: m.get("KeyQ"),
       Semicolon: m.get("Semicolon"),
       Backslash: m.get("Backslash"),
@@ -122,9 +147,9 @@ export const WBDevice = (function () {
     }));
   }
 
-  async function collect(win: any): Promise<Record<string, any>> {
-    const nav = win.navigator || {};
-    const scr = win.screen || {};
+  async function collect(win: Win): Promise<Facts> {
+    const nav: NavigatorFacts = win.navigator || {};
+    const scr: ScreenFacts = win.screen || {};
     const uad = nav.userAgentData;
     const intl = await attempt(() => win.Intl.DateTimeFormat().resolvedOptions());
     return {
@@ -133,7 +158,7 @@ export const WBDevice = (function () {
         uad
           ? uad
               .getHighEntropyValues(["platformVersion", "model", "architecture", "bitness", "fullVersionList", "formFactors"])
-              .then((h: any) => ({ ...h, brands: uad.brands, mobile: uad.mobile, platform: uad.platform }))
+              .then((h) => ({ ...h, brands: uad.brands, mobile: uad.mobile, platform: uad.platform }))
           : null,
       ),
       platform: await attempt(() => nav.platform),
@@ -198,7 +223,7 @@ export const WBDevice = (function () {
       do_not_track: await attempt(() => nav.doNotTrack),
       storage: await attempt(() =>
         nav.storage && nav.storage.estimate
-          ? nav.storage.estimate().then((e: any) => ({ quota: e.quota, usage: e.usage }))
+          ? nav.storage.estimate().then((e) => ({ quota: e.quota, usage: e.usage }))
           : null,
       ),
       connection: await attempt(() => {
@@ -225,9 +250,9 @@ export const WBDevice = (function () {
 
   // Send once per page load. A 401 (no login yet) leaves it unsent, and the
   // `login` action sends it again. A 409 sends again a little later.
-  function report(win: any) {
+  function report(win: Win) {
     let sent = false;
-    async function send(left: any) {
+    async function send(left: number) {
       if (sent) return;
       const facts = await collect(win);
       facts.holder = (await attempt(() => WBSessionRoute.tabHolder())) ?? null;

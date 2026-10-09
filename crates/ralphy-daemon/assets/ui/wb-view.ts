@@ -77,8 +77,8 @@ export const WBView = (function () {
         // checks them against the desk on restore.
         columns: Array.isArray(parsed.columns)
           ? parsed.columns
-              .map((c: any) => (Array.isArray(c) ? c.filter((s) => typeof s === "string") : c))
-              .filter((c: any) => typeof c === "string" || Array.isArray(c))
+              .map((c: unknown) => (Array.isArray(c) ? c.filter((s) => typeof s === "string") : c))
+              .filter((c: unknown) => typeof c === "string" || Array.isArray(c))
           : null,
         // Where "Slice" opens, as last picked in this browser.
         columnDir: parsed.columnDir === "right" || parsed.columnDir === "down" ? parsed.columnDir : null,
@@ -88,7 +88,7 @@ export const WBView = (function () {
     }
   }
 
-  function splitOf(raw: any) {
+  function splitOf(raw: Record<string, unknown> | null | undefined) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
     const ratio = typeof raw.ratio === "number" && raw.ratio >= 0.2 && raw.ratio <= 0.8 ? raw.ratio : null;
     if (raw.kind === "mirror") return { kind: "mirror", ratio };
@@ -104,7 +104,7 @@ export const WBView = (function () {
     return null;
   }
 
-  function patch(part: any) {
+  function patch(part: Partial<NonNullable<ReturnType<typeof read>>>) {
     try {
       const next = { ...read(), ...part, v: 1 };
       localStorage.setItem(KEY, JSON.stringify(next));

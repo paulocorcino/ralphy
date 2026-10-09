@@ -12,6 +12,7 @@
    --------------------------------------------------------------------------- */
 import { component } from "./wb-alpine.ts";
 import { WBAddProject } from "./wb-add-project.ts";
+import type { Step } from "./wb-add-project.ts";
 import { WBFail } from "./wb-fail.ts";
 
 export function addProjectDialog() {
@@ -30,7 +31,7 @@ export function addProjectDialog() {
     // --- Add a project (#501) -----------------------------------------------
     // Thin calls: every state change goes through `WBAddProject.next`, and
     // the daemon that owns the folder lists it and runs `ralphy daemon add`.
-    addProjectStep(ev: any) {
+    addProjectStep(ev: Step) {
       this.addProject = WBAddProject.next(this.addProject, ev);
     },
     openAddProject() {
@@ -73,7 +74,7 @@ export function addProjectDialog() {
     // is dropped: by then the list may show the folder the first one opened.
     // A touch does not focus the field: on a phone that opens the keyboard,
     // and iOS Safari zooms into an input with text under 16px.
-    addProjectPick(entry: any, ev?: any) {
+    addProjectPick(entry: ReturnType<typeof WBAddProject.entries>[number], ev?: MouseEvent) {
       if (entry.error || (ev && ev.detail > 1)) return;
       this.addProjectStep({ type: "pick", name: entry.name, up: !!entry.up });
       this.addProjectList(0);
@@ -81,7 +82,7 @@ export function addProjectDialog() {
     },
     // Arrows move in the list; Enter or Tab on a highlighted folder goes down
     // one level; Enter with none highlighted adds.
-    addProjectKey(ev: any) {
+    addProjectKey(ev: KeyboardEvent) {
       const list = this.addProjectEntries();
       if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
         ev.preventDefault();
@@ -121,8 +122,8 @@ export function addProjectDialog() {
       let reply;
       try {
         reply = await window.WBDaemon.observe("project.add", payload);
-      } catch (e: any) {
-        reply = { status: "error", message: String(e.message || e) };
+      } catch (e) {
+        reply = { status: "error", message: String((e as Error).message || e) };
       }
       if (reply?.status !== "ok") {
         this.addProjectStep({

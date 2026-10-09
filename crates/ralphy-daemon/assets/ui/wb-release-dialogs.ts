@@ -130,7 +130,7 @@ export function releaseDialogs() {
       this.awaitNewBuild(this.release.current);
     },
     // The line under the question when the daemon refused or the update failed.
-    updateRefusal(result: any) {
+    updateRefusal(result: { ok: boolean; status?: number; retryAfter?: string | null; message?: string }) {
       if (result.status === 401) return "Code rejected. Enter the current code from your authenticator app.";
       if (result.status === 429) {
         return `Too many attempts. Wait ${result.retryAfter || "a few"} seconds and try again.`;
