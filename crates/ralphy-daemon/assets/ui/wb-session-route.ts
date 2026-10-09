@@ -1,4 +1,39 @@
 /* Pure browser-session ownership rules, shared by the shell and Node coverage. */
+// What a `/ws/session` url is built from: a reattach (`id`), a free console,
+// or an agent launch.
+type SessionUrlOpts =
+  | { id: number; repo?: string; takeover?: boolean; watch?: boolean; holder?: string }
+  | { id?: null; console: true; repo?: string; command?: string; record?: string; holder?: string }
+  | {
+      id?: null;
+      console?: false;
+      repo: string;
+      agent: string;
+      checkout?: string | null;
+      name?: string | null;
+      record?: string;
+      holder?: string;
+    };
+
+// The owner of a session as a terminal knows it.
+type SessionOwner = {
+  sessionId: number | null;
+  daemonId: string | null;
+  environment: string | null;
+  name?: string | null;
+  checkout?: string | null;
+};
+
+// The payload of the daemon's `session-open` announcement.
+type SessionOpen = {
+  session?: number;
+  session_id?: number;
+  daemon_id?: string;
+  environment?: string;
+  name?: string | null;
+  checkout?: string | null;
+};
+
 export const WBSessionRoute = (function () {
   // The tab's holder id (ADR-0051 §9 amendment 2026-09-22): what the writer slot
   // is claimed as, so this tab's reattach can reclaim a slot its own earlier
@@ -10,7 +45,7 @@ export const WBSessionRoute = (function () {
   // `sessionStorage` is per tab and survives a reload, which is the scope that
   // must keep the name. A storage that throws or is absent still yields a
   // holder; it just will not outlive the document.
-  function holder(storage: any, mint: any) {
+  function holder(storage: Storage | null | undefined, mint: () => string) {
     try {
       const kept = storage?.getItem(HOLDER_KEY);
       if (kept && HOLDER_RE.test(kept)) return kept;
@@ -42,7 +77,7 @@ export const WBSessionRoute = (function () {
     return tabHolderMemo;
   }
 
-  function url(origin: any, opts: any) {
+  function url(origin: string, opts: SessionUrlOpts) {
     let value = origin + "/ws/session?";
     if (opts.id != null) {
       value += "id=" + encodeURIComponent(opts.id);
@@ -79,23 +114,23 @@ export const WBSessionRoute = (function () {
   // The window record of a NEW launch: the daemon keeps one live session per
   // record, so a second page relaunching it joins the first one's session.
   // Validated like the holder, as the daemon validates both.
-  function recordParam(r: any) {
+  function recordParam(r: string | undefined) {
     return typeof r === "string" && HOLDER_RE.test(r) ? "&record=" + r : "";
   }
 
-  function holderParam(h: any) {
+  function holderParam(h: string | undefined) {
     return typeof h === "string" && HOLDER_RE.test(h) ? "&holder=" + h : "";
   }
 
-  function closeUrl(id: any, repo: any) {
+  function closeUrl(id: number, repo: string) {
     return `/api/sessions/close?id=${encodeURIComponent(id)}&repo=${encodeURIComponent(repo)}`;
   }
 
-  function closeSucceeded(status: any) {
+  function closeSucceeded(status: number) {
     return status === 200 || status === 404;
   }
 
-  function announcement(current: any, payload: any) {
+  function announcement(current: SessionOwner, payload: SessionOpen | null | undefined) {
     const announcedId = payload?.session_id ?? payload?.session;
     return {
       sessionId: announcedId == null ? current.sessionId : Number(announcedId),
@@ -110,7 +145,7 @@ export const WBSessionRoute = (function () {
     };
   }
 
-  function matchesRepo(session: any, repoRef: any) {
+  function matchesRepo(session: { repo: string }, repoRef: string) {
     return session.repo === repoRef;
   }
 
@@ -118,7 +153,7 @@ export const WBSessionRoute = (function () {
   // peers the list did not hear from. Their sessions are UNKNOWN on this read,
   // not absent.
   const UNANSWERED_HEADER = "x-ralphy-unanswered";
-  function unanswered(value: any) {
+  function unanswered(value: string | null | undefined) {
     return new Set(
       String(value ?? "")
         .split(",")

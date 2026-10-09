@@ -11,8 +11,39 @@
    `window.WBConsole` under their own name.
    --------------------------------------------------------------------------- */
 import { WBGeometry } from "./wb-geometry.ts";
+import type { Rect, Offset, Size, DeskRecord, DeskFence, DeskNote } from "./wb-types.d.ts";
 
 const { fenceMembership, fenceSpawnRect, rectsOverlap } = WBGeometry;
+
+// A row of the live session list (`/api/sessions`), as the restore reads it.
+// The folds are generic over the row, so a caller gets its own row back.
+type LiveSession = {
+  id: number;
+  repo: string;
+  agent: string;
+  kind: string;
+  daemon_id?: string;
+  environment?: string;
+  checkout?: string | null;
+  record?: string | null;
+};
+
+// One restore verdict: what to do with one record, or with one session no
+// record claims (`adopt`, with the record id it names, if it is free).
+type DeskVerdict<S> =
+  | { record: DeskRecord; session: S; action: "attach"; id?: undefined }
+  | { record: DeskRecord; session: null; action: "relaunch"; id?: undefined }
+  | { record: DeskRecord; session: null; action: "placeholder"; id?: undefined }
+  | { record: null; session: S; action: "adopt"; id: string | null };
+
+// A window of the desk as a fence readout reads it.
+type WindowRect = { id: string; repo?: string; rect: Rect };
+
+// One event of the detach registry, and one effect it asks for.
+type DetachEvent = { type: "detach" | "reattach" | "focus"; fenceId: string };
+type DetachEffect =
+  | { type: "focus" | "open" | "close"; fenceId: string }
+  | { type: "refuse"; fenceId: string; reason: "cap" };
 
 // The caps of the desk's record types: consoles, fences (#340) and note cards
 // (ADR-0064 §2). The daemon refuses a record past each one too.
@@ -28,18 +59,23 @@ export const NOTE_MAX = 32;
 // `relaunchAgents` is the operator's per-client opt-in (Settings → Consoles),
 // default OFF and passed in so the fold stays pure and the popup can never
 // turn it on.
-export function reconcileDesk({ layout, sessions, relaunchAgents = false }: any) {
+type ReconcileInput<S> = {
+  layout: readonly DeskRecord[] | null | undefined;
+  sessions: readonly S[] | null | undefined;
+  relaunchAgents?: boolean;
+};
+export function reconcileDesk<S extends LiveSession>({ layout, sessions, relaunchAgents = false }: ReconcileInput<S>) {
   const live = sessions || [];
-  const used = new Set();
-  const out: any = [];
+  const used = new Set<number>();
+  const out: DeskVerdict<S>[] = [];
   for (const record of layout || []) {
     // A session that names its record is that record's, whatever a stale
     // `sessionId` says, and never another record's (ADR-0050 amendment
     // 2026-10-04). The tuple below is for sessions from an older daemon.
-    let i = live.findIndex((s: any, idx: any) => !used.has(idx) && s.record === record.id);
+    let i = live.findIndex((s, idx) => !used.has(idx) && s.record === record.id);
     if (i < 0) {
       i = live.findIndex(
-        (s: any, idx: any) =>
+        (s, idx) =>
           !used.has(idx) &&
           s.record == null &&
           s.id === record.sessionId &&
@@ -71,8 +107,8 @@ export function reconcileDesk({ layout, sessions, relaunchAgents = false }: any)
   // as two — or, for a shell, from spawning a SECOND PTY. Only with no such
   // record is it adopted into a fresh one, so it stays visible and closable.
   // The ids an adopted window may take: one window per record id.
-  const taken = new Set((layout || []).map((r: any) => r.id));
-  live.forEach((s: any, idx: any) => {
+  const taken = new Set((layout || []).map((r) => r.id));
+  live.forEach((s, idx) => {
     if (used.has(idx)) return;
     // A session that names a record this page has not read is adopted under
     // that id, so the page that launched it and this one write one record.
@@ -82,8 +118,9 @@ export function reconcileDesk({ layout, sessions, relaunchAgents = false }: any)
       out.push({ record: null, session: s, action: "adopt", id });
       return;
     }
-    const waiting = out.find(
-      ({ record, action }: any) =>
+    // Widened to write: a `relaunch` or `placeholder` verdict becomes `attach`.
+    const waiting: { session: S | null; action: DeskVerdict<S>["action"] } | undefined = out.find(
+      ({ record, action }) =>
         action !== "attach" &&
         // An `adopt` entry pushed for an earlier session has no record.
         record != null &&
@@ -108,37 +145,50 @@ export function reconcileDesk({ layout, sessions, relaunchAgents = false }: any)
 // and written its new `sessionId` there. `held` lists the `{id, repo}` of the
 // sessions this page already shows: attaching one again would be a second
 // window on one session. Ids repeat across repos and peers, hence the pair.
-export function placeholderSession({ layout, sessions, recordId, held = [] }: any) {
-  const shown = (s: any) =>
+export function placeholderSession<S extends LiveSession>({
+  layout,
+  sessions,
+  recordId,
+  held = [],
+}: {
+  layout: readonly DeskRecord[] | null | undefined;
+  sessions: readonly S[] | null | undefined;
+  recordId: string;
+  held?: readonly { id: number | null; repo: string }[];
+}) {
+  const shown = (s: S) =>
     held.some(
-      (h: any) =>
+      (h) =>
         h.id === s.id && (h.repo === "~" ? !s.repo || s.repo === "~" : s.repo === h.repo),
     );
   const verdict = reconcileDesk({
     layout,
-    sessions: (sessions || []).filter((s: any) => s && !shown(s)),
-  }).find(({ record }: any) => record?.id === recordId);
+    sessions: (sessions || []).filter((s) => s && !shown(s)),
+  }).find(({ record }) => record?.id === recordId);
   return verdict?.action === "attach" ? verdict.session : null;
 }
 
-export function isUnknownCheckout(reply: any) {
+export function isUnknownCheckout(reply: { status: string; message?: string } | null | undefined) {
   return !!reply && reply.status === "error" && reply.message === "unknown checkout";
 }
 
 // Pure. What one window is, given the painted consoles. `maximized: null`
 // means "not a column: leave its maximize alone". Two rows of one column
 // are columns too: what counts is how many consoles are painted.
-export function columnClasses(painted: any, id: any) {
+export function columnClasses(
+  painted: readonly { id: string; index: number; row?: number }[] | null | undefined,
+  id: string,
+) {
   const list = painted || [];
-  const entry = list.find((p: any) => p.id === id);
+  const entry = list.find((p) => p.id === id);
   if (!entry) return { column: false, maximized: null };
   return { column: list.length >= 2, maximized: entry.index === 0 && !entry.row };
 }
 
 // The repos a fence's members belong to, for the fence's chrome. Deduped,
 // sorted (DOM order is not stable), `"~"` rendered as `home` like `list()`.
-export function fenceRepos(members: any) {
-  const names = new Set((members || []).map((m: any) => (m?.repo === "~" ? "home" : m?.repo)));
+export function fenceRepos(members: readonly ({ repo?: string } | undefined)[]) {
+  const names = new Set<string | null | undefined>((members || []).map((m) => (m?.repo === "~" ? "home" : m?.repo)));
   names.delete(undefined);
   names.delete(null);
   names.delete("");
@@ -149,13 +199,13 @@ export function fenceRepos(members: any) {
 // `[{id, name, rect}]` + `[{id, repo, rect}]` in, one entry per fence IN ORDER
 // out. Folding membership here is what makes "the list and the fence never
 // disagree" a property of the code.
-export function fenceSummaries(fences: any, windows: any) {
+export function fenceSummaries(fences: readonly DeskFence[], windows: readonly WindowRect[]) {
   const list = fences || [];
   const all = windows || [];
-  const byId = new Map(all.map((w: any) => [w?.id, w]));
+  const byId = new Map(all.map((w): [string, WindowRect] => [w?.id, w]));
   const membership = fenceMembership(list, all);
-  return list.map((f: any) => {
-    const members = (membership[f.id] || []).map((wid: any) => byId.get(wid));
+  return list.map((f) => {
+    const members = (membership[f.id] || []).map((wid) => byId.get(wid));
     return {
       id: f.id,
       name: f.name || "",
@@ -173,12 +223,12 @@ export function fenceSummaries(fences: any, windows: any) {
 // first `taken.length + 1` slots while free plane sits below. `-1` means
 // nowhere, and the caller refuses rather than nudging into a gap.
 const FENCE_SLOT_SCAN = 64;
-export function nextFenceSlot(rects: any, offset: any, viewport: any) {
+export function nextFenceSlot(rects: readonly Rect[], offset: Offset, viewport: Size) {
   const taken = rects || [];
   const cap = Math.max(taken.length, FENCE_SLOT_SCAN);
   for (let i = 0; i <= cap; i++) {
     const candidate = fenceSpawnRect(offset, viewport, i);
-    if (!taken.some((t: any) => rectsOverlap(candidate, t))) return i;
+    if (!taken.some((t) => rectsOverlap(candidate, t))) return i;
   }
   return -1;
 }
@@ -190,7 +240,7 @@ export function nextFenceSlot(rects: any, offset: any, viewport: any) {
 // a row: side-by-side fences are never pixel-aligned on `top`.
 const FENCE_BAND = 120;
 
-function fenceOrder(fences: any) {
+function fenceOrder(fences: readonly { id: string; rect: Rect }[]) {
   return [...(fences || [])].sort((a, b) => {
     const at = Math.floor((a?.rect?.top || 0) / FENCE_BAND);
     const bt = Math.floor((b?.rect?.top || 0) / FENCE_BAND);
@@ -207,7 +257,11 @@ function fenceOrder(fences: any) {
 // `null` when there is nothing to walk. With no fence in hand the step decides
 // which end to enter from, so the first Alt+Shift+→ lands on the top-left
 // fence and the first Alt+Shift+← on the bottom-right one.
-export function fenceCycle(fences: any, currentId: any, step: any) {
+export function fenceCycle(
+  fences: readonly { id: string; rect: Rect }[],
+  currentId: string | null | undefined,
+  step: number,
+) {
   const order = fenceOrder(fences);
   if (!order.length) return null;
   const d = step < 0 ? -1 : 1;
@@ -225,7 +279,10 @@ export const DETACH_MAX = 4;
 // mutated: a new array comes back, so the caller commits only once the
 // effects have run (a popup the browser blocked leaves the registry as was).
 // Three events: detach, reattach, focus. A new event is a new case here.
-export function detachFold(registry: any, event: any) {
+export function detachFold(
+  registry: string[],
+  event: DetachEvent,
+): { registry: string[]; effects: DetachEffect[] } {
   const reg = Array.isArray(registry) ? registry : [];
   const id = event?.fenceId;
   const held = reg.includes(id);
@@ -253,8 +310,13 @@ export function detachFold(registry: any, event: any) {
 // Is a popup's note-name report one this tab may record? Pure. The
 // note must be a card the popup holds, its desk record must have no path
 // yet (a name is given once, ADR-0064 §4), and the path must name a note.
-export function noteNameOk(entry: any, record: any, msg: any) {
-  const held = (entry?.members || []).some((x: any) => x?.kind === "note" && x.id === msg?.noteId);
+// `msg` comes from the popup: `path` is checked below before it is used.
+export function noteNameOk(
+  entry: { members?: readonly { kind?: string; id?: string }[] } | null | undefined,
+  record: DeskNote | null | undefined,
+  msg: { noteId?: unknown; path?: unknown },
+) {
+  const held = (entry?.members || []).some((x) => x?.kind === "note" && x.id === msg?.noteId);
   if (!held || !record || record.id !== msg.noteId || record.path) return false;
   const path = msg.path;
   // Relative to the repo: no parent step, no root, no drive letter.
@@ -271,15 +333,19 @@ export function noteNameOk(entry: any, record: any, msg: any) {
 // popup's `pid` is given at detach and rides every message it sends. An
 // entry restored after a reload has no `pid` until the popup's first
 // `popup-here`, and until then it hears any popup of its fence.
-export function popupMatches(entry: any, m: any) {
+// `m` is a message from a popup: its `pid` is only compared.
+export function popupMatches(
+  entry: { pid?: string | null } | null | undefined,
+  m: { pid?: unknown } | null | undefined,
+) {
   if (!entry) return false;
   if (entry.pid == null) return true;
   return m?.pid === entry.pid;
 }
 
 const FENCE_NAME_RE = /^Fence (\d+)$/;
-export function nextFenceName(existing: any) {
-  const highest = (existing || []).reduce((max: any, f: any) => {
+export function nextFenceName(existing: readonly { name?: string }[]) {
+  const highest = (existing || []).reduce((max: number, f) => {
     const m = FENCE_NAME_RE.exec(String(f?.name ?? ""));
     return m ? Math.max(max, Number(m[1])) : max;
   }, 0);

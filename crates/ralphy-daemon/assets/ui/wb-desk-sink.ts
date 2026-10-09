@@ -35,7 +35,7 @@ export const WBDeskSink = (function () {
   // While this tab runs an older build than the daemon, it writes no desk
   // (ADR-0070 D6): its JavaScript may not know the daemon's records.
   let hold = false;
-  function setHold(on: any) {
+  function setHold(on: boolean) {
     hold = !!on;
   }
 
@@ -53,7 +53,7 @@ export const WBDeskSink = (function () {
     // over a LAN or a dev tunnel.
     let inFlight: Promise<unknown> = Promise.resolve();
     return {
-      put(body: any) {
+      put(body: string) {
         if (hold) return Promise.resolve({ kind: "held" });
         const sent = inFlight.then(() =>
           fetch(deskUrl(), {
@@ -74,7 +74,7 @@ export const WBDeskSink = (function () {
       // The tab is going away: `keepalive` lets the request outlive the
       // document. Deliberately NOT chained — there is no next flush to order
       // against, and awaiting one would be awaiting past the document's life.
-      putSync(body: any) {
+      putSync(body: string) {
         if (hold) return;
         try {
           fetch(deskUrl(), {

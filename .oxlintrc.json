@@ -55,10 +55,6 @@
         "**/assets/ui/wb-console.ts",
         "**/assets/ui/wb-consoles-tab.ts",
         "**/assets/ui/wb-daemon.ts",
-        "**/assets/ui/wb-desk-folds.ts",
-        "**/assets/ui/wb-desk-history.ts",
-        "**/assets/ui/wb-desk-sink.ts",
-        "**/assets/ui/wb-desk-sync.ts",
         "**/assets/ui/wb-detach-link.ts",
         "**/assets/ui/wb-detached-fence.ts",
         "**/assets/ui/wb-detached.ts",
@@ -68,7 +64,6 @@
         "**/assets/ui/wb-file-paths.ts",
         "**/assets/ui/wb-files.ts",
         "**/assets/ui/wb-fleet.ts",
-        "**/assets/ui/wb-geometry.ts",
         "**/assets/ui/wb-kanban.ts",
         "**/assets/ui/wb-monaco.ts",
         "**/assets/ui/wb-move-dialog.ts",
@@ -78,11 +73,9 @@
         "**/assets/ui/wb-release-dialogs.ts",
         "**/assets/ui/wb-runs.ts",
         "**/assets/ui/wb-security-dialog.ts",
-        "**/assets/ui/wb-session-route.ts",
         "**/assets/ui/wb-spend.ts",
         "**/assets/ui/wb-view.ts",
         "**/assets/ui/wb-viewer.ts",
-        "**/assets/ui/wb-window-state.ts"
       ],
       "rules": { "typescript/no-explicit-any": "off" }
     }

@@ -84,10 +84,6 @@ const ANY_BASELINE: &[(&str, usize)] = &[
     ("wb-console.ts", 192),
     ("wb-consoles-tab.ts", 47),
     ("wb-daemon.ts", 59),
-    ("wb-desk-folds.ts", 45),
-    ("wb-desk-history.ts", 1),
-    ("wb-desk-sink.ts", 3),
-    ("wb-desk-sync.ts", 28),
     ("wb-detach-link.ts", 10),
     ("wb-detached-fence.ts", 15),
     ("wb-detached.ts", 1),
@@ -97,7 +93,6 @@ const ANY_BASELINE: &[(&str, usize)] = &[
     ("wb-file-paths.ts", 12),
     ("wb-files.ts", 112),
     ("wb-fleet.ts", 3),
-    ("wb-geometry.ts", 70),
     ("wb-kanban.ts", 2),
     ("wb-monaco.ts", 15),
     ("wb-move-dialog.ts", 4),
@@ -107,11 +102,9 @@ const ANY_BASELINE: &[(&str, usize)] = &[
     ("wb-release-dialogs.ts", 1),
     ("wb-runs.ts", 8),
     ("wb-security-dialog.ts", 2),
-    ("wb-session-route.ts", 14),
     ("wb-spend.ts", 15),
     ("wb-view.ts", 4),
     ("wb-viewer.ts", 144),
-    ("wb-window-state.ts", 7),
 ];
 
 const SPAWNED: [&str; 3] = ["git", "gh", "ssh"];

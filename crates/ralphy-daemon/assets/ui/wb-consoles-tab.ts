@@ -30,7 +30,7 @@ export function wbConsoleMenus() {
     windowMenu: false,
     windowList: [],
     fenceMenu: false,
-    fenceItems: [],
+    fenceItems: [] as ReturnType<typeof WBConsole.fenceList>,
     // The note picker (ADR-0064 §§9–10): a SNAPSHOT on open, like the two
     // above — the cards live in the DOM and the desk, not in Alpine state.
     noteMenu: false,

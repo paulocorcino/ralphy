@@ -17,6 +17,17 @@ const REASON_TEXT: Record<string, string> = {
   upload: "Uploaded",
 };
 
+// One row of `/api/desk/history`: the daemon's `history::VersionInfo`.
+type VersionInfo = {
+  id: number;
+  startedAt: number;
+  savedAt: number;
+  reason: string;
+  windows: number;
+  fences: number;
+  notes: number;
+};
+
 function plural(n: number, one: string, many: string) {
   return `${n} ${n === 1 ? one : many}`;
 }
@@ -25,7 +36,7 @@ function plural(n: number, one: string, many: string) {
 // epoch ms into the time shown; the shell passes the browser's locale.
 function rows(list: unknown, when: (ms: number) => string) {
   if (!Array.isArray(list)) return [];
-  return list.map((v: any) => ({
+  return list.map((v: VersionInfo) => ({
     id: v.id,
     when: when(v.savedAt),
     reason: REASON_TEXT[v.reason] || v.reason,
