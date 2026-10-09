@@ -506,3 +506,44 @@ change an entry. Then `buildFence`, `startFenceMove`, `startFenceResize`,
 `mountDetached` are in `wb-console-desk.ts`, which owns the desk flush state
 and is the only place it changes; `DeskDeps` gives it the popup registry.
 After this cut `wb-console.ts` has 4,599 lines, and the ratchet holds it there.
+
+## Amendment (2026-10-09): wb-console.ts ends near 500 lines
+
+The goal of issue #621 (a part of #605) is that `wb-console.ts` ends near 500
+lines. After the desk cut it has 4,599 lines at `f9d0aae3`, and `createConsole`
+has 4,476. This amendment records the goal and the wiring decisions the cuts
+need.
+
+1. **`createConsole` only builds.** It builds the factories, passes their
+   `deps`, and returns the API. Every theme becomes a `wb-console-*.ts`
+   factory, with typed `deps` as `TerminalDeps` is. Plan 1 cuts four: the
+   title, the console names and the worktree switcher (`wb-console-title.ts`,
+   about 545 lines); the fence list (`wb-console-fence-list.ts`, about 285);
+   the detach opener side (`wb-console-detach.ts`, about 335); and the view
+   (`wb-console-view.ts`, about 350). After them `wb-console.ts` has about
+   3,050 lines. Later plans cut the rest: maximize, columns, lock, extent and
+   focus; the desk records and read; the dialogs and toasts; sessions and
+   fleet; touch, font and clipboard; dormancy. The window lifecycle goes last.
+
+2. **The `WBConsole` API object is built outside `createConsole`** with the
+   same member list. A test that compares the member list with the list at
+   `f9d0aae3` protects it.
+
+3. **A factory that uses many members of another factory takes the whole
+   object as one dep** (`popups`, `fenceList`, `view`), not one dep line for
+   each member. A dep for one or two members stays a single line.
+
+4. **The construction order rule.** The outputs of a factory are `const`
+   values, and they are not hoisted. A factory that takes them directly in
+   `deps` throws a temporal dead zone error if it is built earlier. So a
+   factory is built before the factories that take its outputs. A real cycle
+   is broken with a lazy arrow, for example `isDeskSettled: () =>
+   isDeskSettled()`. The order for plan 1 is: popups, title, fence list,
+   detach, view, terminal, chrome, fences, desk.
+
+5. **Why about 500 needs decisions 2 and 3.** What stays in the file at the
+   end is a fixed floor of about 320 lines: the imports, the pure
+   destructures of the factory outputs, and the API object. Without decision
+   2 the API object stays inside `createConsole`. Without decision 3 each
+   factory adds one dep line for every member it reads, and the `deps`
+   blocks grow back to the size of the code they replace.
