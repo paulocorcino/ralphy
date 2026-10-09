@@ -3112,11 +3112,13 @@ fn the_console_terminal_is_themed_in_lockstep_with_the_stylesheet() {
 /// copy; these are the invariants that are not.
 #[test]
 fn the_console_clipboard_is_write_only_and_refused_on_replay() {
-    // The console and its terminal, as one text: the clipboard calls live in
-    // the console, the OSC 52 handler and the right button in the terminal.
+    // The console, its terminal and its window chrome, as one text: the
+    // clipboard calls live in the console, the OSC 52 handler and the right
+    // button in the terminal, and no read may enter the chrome.
     let js = [
         include_str!("../assets/ui/wb-console.ts"),
         include_str!("../assets/ui/wb-console-terminal.ts"),
+        include_str!("../assets/ui/wb-console-chrome.ts"),
     ]
     .concat();
     for pin in [
@@ -4036,8 +4038,8 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-session-route.js",
                 "wb-daemon.js",
                 // `wb-console.ts` imports the geometry, the window state, the session folds,
-                // the desk folds, the GPU budget, the terminal, the console name and the input
-                // folds; the entry imports the console. Stated HERE because this set is a hardcoded floor:
+                // the desk folds, the GPU budget, the terminal, the window chrome, the console
+                // name and the input folds; the entry imports the console. Stated HERE because this set is a hardcoded floor:
                 // nothing derives the popup's needs from the tree, so an
                 // import dropped from the entry breaks the second monitor
                 // with no other signal.
@@ -4049,6 +4051,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-desk-folds.js",
                 "wb-console-gpu.js",
                 "wb-console-terminal.js",
+                "wb-console-chrome.js",
                 "wb-console.js",
             ][..],
         ),
@@ -4981,11 +4984,17 @@ fn shell_draws_fences_below_the_windows() {
 /// consult.
 #[test]
 fn shell_drags_only_past_a_threshold() {
-    let js = include_str!("../assets/ui/wb-console.ts");
+    // The console and its window chrome, as one text: the window gestures live in the
+    // chrome, the fence gestures in the console.
+    let js = &[
+        include_str!("../assets/ui/wb-console.ts"),
+        include_str!("../assets/ui/wb-console-chrome.ts"),
+    ]
+    .concat();
     let body = |name: &str| -> String {
         let after = js
             .split_once(name)
-            .unwrap_or_else(|| panic!("wb-console.ts must keep {name}"))
+            .unwrap_or_else(|| panic!("the console must keep {name}"))
             .1;
         after[..after.find("\n  }").expect("the function must close")].to_string()
     };
@@ -5050,10 +5059,16 @@ fn shell_drags_only_past_a_threshold() {
 /// gestures themselves by `tests/browser/console/wb_console_touch.py`.
 #[test]
 fn titlebar_touch_double_taps_and_holds() {
-    let js = include_str!("../assets/ui/wb-console.ts");
+    // The console and its window chrome, as one text: the titlebar lives in the chrome, the
+    // name's double-click in the console.
+    let js = &[
+        include_str!("../assets/ui/wb-console.ts"),
+        include_str!("../assets/ui/wb-console-chrome.ts"),
+    ]
+    .concat();
     let after = js
         .split_once("function wireTitleTouch(")
-        .expect("wb-console.ts must keep wireTitleTouch")
+        .expect("the console must keep wireTitleTouch")
         .1;
     let b = &after[..after.find("\n  }").expect("the function must close")];
     for pin in [
@@ -5199,7 +5214,13 @@ fn a_note_card_is_stacked_and_wears_the_console_chrome() {
 /// drops the bands. Every pin is an expression, as above.
 #[test]
 fn shell_locks_consoles_and_fences() {
-    let js = include_str!("../assets/ui/wb-console.ts");
+    // The console and its window chrome, as one text: the lock lives in the console, the
+    // lock button and the window gestures in the chrome.
+    let js = &[
+        include_str!("../assets/ui/wb-console.ts"),
+        include_str!("../assets/ui/wb-console-chrome.ts"),
+    ]
+    .concat();
     for pin in [
         "function fenceLocked(",
         "function isLocked(",
@@ -5211,15 +5232,12 @@ fn shell_locks_consoles_and_fences() {
         "actions.append(colBtn, fullBtn, maxBtn, restartBtn, lockBtn, closeBtn)",
         "tools.append(tile, columns, lock, detach, drop)",
     ] {
-        assert!(
-            js.contains(pin),
-            "wb-console.ts must keep the lock pin {pin}"
-        );
+        assert!(js.contains(pin), "the console must keep the lock pin {pin}");
     }
     let body = |name: &str| -> String {
         let after = js
             .split_once(name)
-            .unwrap_or_else(|| panic!("wb-console.ts must keep {name}"))
+            .unwrap_or_else(|| panic!("the console must keep {name}"))
             .1;
         after[..after.find("\n  }").expect("the function must close")].to_string()
     };
@@ -5462,7 +5480,13 @@ fn shell_arranges_into_the_fence() {
 /// over deleted code.
 #[test]
 fn shell_lists_the_fences() {
-    let js = include_str!("../assets/ui/wb-console.ts");
+    // The console and its window chrome, as one text: the fence list lives in the console,
+    // the birth in the focused fence in the chrome.
+    let js = &[
+        include_str!("../assets/ui/wb-console.ts"),
+        include_str!("../assets/ui/wb-console-chrome.ts"),
+    ]
+    .concat();
     let geometry = include_str!("../assets/ui/wb-geometry.ts");
     for pin in [
         "function fenceList(",
@@ -5470,15 +5494,12 @@ fn shell_lists_the_fences() {
         "function focusFence(",
         "function clearFenceFocus(",
     ] {
-        assert!(
-            js.contains(pin),
-            "wb-console.ts must keep the #343 pin {pin}"
-        );
+        assert!(js.contains(pin), "the console must keep the #343 pin {pin}");
     }
     let body = |name: &str| -> String {
         let after = js
             .split_once(name)
-            .unwrap_or_else(|| panic!("wb-console.ts must keep {name}"))
+            .unwrap_or_else(|| panic!("the console must keep {name}"))
             .1;
         after[..after.find("\n  }").expect("the function must close")].to_string()
     };
@@ -5964,11 +5985,17 @@ fn the_shell_writes_the_desk_only_as_changes() {
 /// of `relaunchIn`), or at birth (`buildChrome`, through the window inventory).
 #[test]
 fn console_name_rides_every_record_copy() {
-    let js = include_str!("../assets/ui/wb-console.ts");
+    // The console and its window chrome, as one text: the record copies live in the console,
+    // the birth in the chrome.
+    let js = &[
+        include_str!("../assets/ui/wb-console.ts"),
+        include_str!("../assets/ui/wb-console-chrome.ts"),
+    ]
+    .concat();
     let body = |name: &str| -> String {
         let after = js
             .split_once(name)
-            .unwrap_or_else(|| panic!("wb-console.ts must keep {name}"))
+            .unwrap_or_else(|| panic!("the console must keep {name}"))
             .1;
         after[..after.find("\n  }").expect("the function must close")].to_string()
     };
@@ -6048,7 +6075,8 @@ fn shell_survives_a_reload_with_its_detach() {
     // — deleting the store wholesale has to be red, not green.
     assert!(
         !js.contains("sessionStorage")
-            && !include_str!("../assets/ui/wb-console-terminal.ts").contains("sessionStorage"),
+            && !include_str!("../assets/ui/wb-console-terminal.ts").contains("sessionStorage")
+            && !include_str!("../assets/ui/wb-console-chrome.ts").contains("sessionStorage"),
         "wb-console.ts must reach the registry only through the injected link (#347)"
     );
     // The CALLS, not the bare nouns: this file's own prose names
@@ -6160,11 +6188,12 @@ fn shell_survives_a_reload_with_its_detach() {
 /// `wb-console.test.mjs`; this test holds the call sites that use them.
 #[test]
 fn workbench_session_assets_preserve_composite_repo_identity() {
-    // The console and its terminal: the terminal reconnects and reads the
-    // announcement, the console closes.
+    // The console, its terminal and its window chrome: the terminal
+    // reconnects and reads the announcement, the console closes.
     let console = [
         include_str!("../assets/ui/wb-console.ts"),
         include_str!("../assets/ui/wb-console-terminal.ts"),
+        include_str!("../assets/ui/wb-console-chrome.ts"),
     ]
     .concat();
     for pin in [
@@ -6185,10 +6214,12 @@ fn workbench_session_assets_preserve_composite_repo_identity() {
 /// stays deleted: a re-added clamp would pass every unit test in the tree.
 #[test]
 fn shell_has_no_clamp_and_carries_the_stage() {
-    // The console and its terminal, which holds the fit observer.
+    // The console, its terminal (which holds the fit observer) and its
+    // window chrome.
     let js = [
         include_str!("../assets/ui/wb-console.ts"),
         include_str!("../assets/ui/wb-console-terminal.ts"),
+        include_str!("../assets/ui/wb-console-chrome.ts"),
     ]
     .concat();
     assert!(
@@ -6230,7 +6261,13 @@ fn shell_has_no_clamp_and_carries_the_stage() {
 /// here, each inside the function that must hold it.
 #[test]
 fn shell_navigates_the_plane() {
-    let js = include_str!("../assets/ui/wb-console.ts");
+    // The console and its window chrome, as one text: the plane lives in the console, the
+    // window drag in the chrome.
+    let js = &[
+        include_str!("../assets/ui/wb-console.ts"),
+        include_str!("../assets/ui/wb-console-chrome.ts"),
+    ]
+    .concat();
     for pin in [
         "function reveal(",
         "function onFloorDown(",
@@ -6240,10 +6277,7 @@ fn shell_navigates_the_plane() {
         // be deleted with this gate still green.
         r#"addEventListener("wheel", onWheel, { passive: false })"#,
     ] {
-        assert!(
-            js.contains(pin),
-            "wb-console.ts must keep the #337 pin {pin}"
-        );
+        assert!(js.contains(pin), "the console must keep the #337 pin {pin}");
     }
     // Scoped to each gesture: the file carries each of these statements
     // several times, so a whole-file match stays green when one gesture
@@ -6251,7 +6285,7 @@ fn shell_navigates_the_plane() {
     let body = |name: &str| -> String {
         let after = js
             .split_once(name)
-            .unwrap_or_else(|| panic!("wb-console.ts must keep {name}"))
+            .unwrap_or_else(|| panic!("the console must keep {name}"))
             .1;
         squeeze(&after[..after.find("\n  }").expect("the function must close")])
     };
@@ -6445,7 +6479,13 @@ fn shell_pins_the_frame_chrome() {
 /// and CSS that no node test runs, so it fails here or nowhere.
 #[test]
 fn a_console_can_take_the_whole_screen() {
-    let js = include_str!("../assets/ui/wb-console.ts");
+    // The console and its window chrome, as one text: the full-screen state lives in the
+    // console, its button and the gesture guards in the chrome.
+    let js = &[
+        include_str!("../assets/ui/wb-console.ts"),
+        include_str!("../assets/ui/wb-console-chrome.ts"),
+    ]
+    .concat();
     for pin in [
         "function toggleFull(",
         "function syncFullState(",
@@ -6464,7 +6504,7 @@ fn a_console_can_take_the_whole_screen() {
     ] {
         assert!(
             js.contains(pin),
-            "wb-console.ts must keep the fullscreen pin {pin}"
+            "the console must keep the fullscreen pin {pin}"
         );
     }
     // The guards that keep the inline rect honest while the top layer owns
@@ -6473,7 +6513,7 @@ fn a_console_can_take_the_whole_screen() {
     let fn_body = |name: &str| -> String {
         let after = js
             .split_once(name)
-            .unwrap_or_else(|| panic!("wb-console.ts must keep {name}"))
+            .unwrap_or_else(|| panic!("the console must keep {name}"))
             .1;
         squeeze(&after[..after.find("\n  }").expect("the function must close")])
     };
@@ -6573,6 +6613,10 @@ fn shell_stores_only_the_view_in_the_browser() {
         (
             "wb-console-terminal.ts",
             include_str!("../assets/ui/wb-console-terminal.ts"),
+        ),
+        (
+            "wb-console-chrome.ts",
+            include_str!("../assets/ui/wb-console-chrome.ts"),
         ),
         ("app.ts", include_str!("../assets/ui/app.ts")),
     ] {
@@ -8401,6 +8445,10 @@ fn no_menu_or_key_sink_takes_a_template_string() {
     for (name, src) in [
         ("app.ts", include_str!("../assets/ui/app.ts")),
         ("wb-console.ts", include_str!("../assets/ui/wb-console.ts")),
+        (
+            "wb-console-chrome.ts",
+            include_str!("../assets/ui/wb-console-chrome.ts"),
+        ),
     ] {
         let sinks = template_html_sinks(src);
         assert!(sinks.is_empty(), "{name}: {sinks:?}");
