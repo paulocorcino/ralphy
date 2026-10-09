@@ -34,9 +34,8 @@ const { detachFold, DETACH_MAX } = WBDeskFolds;
 type Carried = {
   el: HTMLElement & { _noteShadow?: HTMLElement };
   id: string;
-  kind: "window" | "note";
   rect: Rect;
-};
+} & ({ kind: "window"; el: ConsoleWin } | { kind: "note" });
 
 // What the fences read from the console, and nothing else.
 export type FenceDeps = {
@@ -88,7 +87,7 @@ export type FenceDeps = {
   // An element's rect read from the DOM.
   restoreRect: (el: HTMLElement) => Rect;
   // Writes a window's fields to the desk.
-  setWin: (win: HTMLElement, fields: DeskWindowFields) => void;
+  setWin: (win: ConsoleWin, fields: DeskWindowFields) => void;
   // Takes a member off the stage without closing its session.
   tearDownMember: (win: ConsoleWin, reason: DetachReason) => void;
 };

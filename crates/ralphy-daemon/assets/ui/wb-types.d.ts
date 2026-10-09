@@ -4,6 +4,10 @@
 // `import type`, on one line (#613).
 import type { createTerminal } from "./wb-console-terminal.ts";
 import type { createTitle } from "./wb-console-title.ts";
+import type { DeskDeps } from "./wb-console-desk.ts";
+import type { DetachDeps } from "./wb-console-detach.ts";
+import type { PopupRegistryDeps } from "./wb-console-popups.ts";
+import type { ViewDeps } from "./wb-console-view.ts";
 
 // ---- the plane ---------------------------------------------------------------
 
@@ -106,6 +110,12 @@ export type Desk = {
   /** The selected worktree per repo ref. Not sent when it is empty. */
   checkouts?: Record<string, string>;
 };
+
+/**
+ * The reply to a desk `PUT`: the desk after the changes, the changes it
+ * refused one by one, or why it refused the whole batch (`state`, `error`).
+ */
+export type DeskReply = Partial<Desk> & { refused?: { error: string }[]; state?: string; error?: string };
 
 /** The three record types a desk change names. */
 export type DeskRecordType = "window" | "fence" | "note";
@@ -210,7 +220,7 @@ export type ConsoleWinFields = {
   /** Asleep: its renderer is gone and the fields below carry its session. */
   _dormant: boolean;
   _dormantSession: number | null;
-  _dormantWatch: boolean;
+  _dormantWatch: boolean | undefined;
   _dormantTimer: ReturnType<typeof setTimeout> | null;
 };
 
@@ -229,3 +239,39 @@ export type ConsoleWin = HTMLElement &
     _lastPointerType?: string;
     _lastTap?: Tap | null;
   };
+
+/**
+ * What an entry module hands `createConsole`. The shell passes nothing; the
+ * detached fence page passes all but `isStale`, so it cannot write the desk,
+ * the stored view or the detach registry.
+ */
+export type ConsoleOpts = {
+  /** Where the desk changes go (`wb-desk-sink.ts`). */
+  deskSink?: DeskDeps["deskSink"];
+  /** The per-client view (`WBView`). */
+  viewStore?: ViewDeps["viewStore"];
+  /** `false`: the page restores no desk and has no fences of its own. */
+  autoBoot?: boolean;
+  /** `false`: the page launches no session by itself. */
+  canLaunch?: boolean;
+  /** The detach registry and the lifecycle channel (`wb-detach-link.ts`). */
+  detachLink?: DetachDeps["link"] & PopupRegistryDeps["link"];
+  /** Whether the sockets are stale after a resume. */
+  isStale?: () => boolean;
+};
+
+/**
+ * An element whose `style.zIndex` is written as a number: the DOM turns the
+ * number into a string, and a read gives the string.
+ */
+export type Stacked = Omit<HTMLElement, "style"> & {
+  style: Omit<CSSStyleDeclaration, "zIndex"> & { get zIndex(): string; set zIndex(value: string | number) };
+};
+
+/** A `.note-card` element, with the fields the console reads on it. */
+export type NoteCard = HTMLElement & {
+  /** The card holds text not yet saved. */
+  _noteDirty?: boolean;
+  /** The card's desk record. */
+  _noteRecord?: DeskNote;
+};

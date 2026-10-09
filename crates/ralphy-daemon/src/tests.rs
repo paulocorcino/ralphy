@@ -4951,7 +4951,7 @@ fn shell_draws_fences_below_the_windows() {
     // green while a fence or a card past the last window becomes
     // unreachable — the stage never grows to hold it.
     assert!(
-        js.contains(r#"querySelectorAll(".session-window, .fence, .note-card")"#),
+        js.contains(r#"querySelectorAll<HTMLElement>(".session-window, .fence, .note-card")"#),
         "applyExtent must fold the fences and the cards into the stage extent (#340, ADR-0064)"
     );
     let tab = include_str!("../assets/ui/wb-consoles-tab.ts");

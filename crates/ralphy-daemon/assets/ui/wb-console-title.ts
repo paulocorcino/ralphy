@@ -126,10 +126,10 @@ export function createTitle(deps: TitleDeps) {
   // label (ADR-0066 §4). The environment left the title for the tooltip
   // (ADR-0066 §5), after the full ref.
   function sessionPresentation(
-    label: string | null,
+    label: string | null | undefined,
     repo: string | null | undefined,
     prior: { daemonId?: string | null; environment?: string | null } | null | undefined,
-    owner: HostedSession | null | undefined,
+    owner: { daemon_id?: string; environment?: string; name?: string | null; checkout?: string | null } | null | undefined,
   ) {
     const daemonId = owner?.daemon_id ?? prior?.daemonId ?? null;
     const environment = owner?.environment ?? prior?.environment ?? null;
@@ -169,7 +169,7 @@ export function createTitle(deps: TitleDeps) {
       }
     }
   }
-  function ensureListing(ref: string, force = false) {
+  function ensureListing(ref: string | null | undefined, force = false) {
     if (!ref || ref === "~" || (ref in worktreeListings && !force) || listingReads.has(ref)) return;
     const daemon = window.WBDaemon;
     if (typeof daemon?.observe !== "function" || OPTS.canLaunch === false) return;
