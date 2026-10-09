@@ -34,8 +34,9 @@ const APP_TS_LINES: usize = 6123;
 /// the owner of its gestures moved to `wb-console-chrome.ts` (#609); 4780
 /// since its popup registry moved to `wb-console-popups.ts` and its fences to
 /// `wb-console-fences.ts` (#610); 4599 since its desk moved to
-/// `wb-console-desk.ts` (#611).
-const WB_CONSOLE_TS_LINES: usize = 4599;
+/// `wb-console-desk.ts` (#611); 4057 since its title, console names and
+/// worktree switcher moved to `wb-console-title.ts` (#621).
+const WB_CONSOLE_TS_LINES: usize = 4057;
 
 const SPAWNED: [&str; 3] = ["git", "gh", "ssh"];
 

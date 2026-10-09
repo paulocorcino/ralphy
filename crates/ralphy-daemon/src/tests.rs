@@ -4038,8 +4038,9 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-session-route.js",
                 "wb-daemon.js",
                 // `wb-console.ts` imports the geometry, the window state, the session folds,
-                // the desk folds, the GPU budget, the terminal, the window chrome, the popup
-                // registry, the fences, the desk, the console name and the input folds; the entry
+                // the desk folds, the GPU budget, the terminal, the title, the window chrome,
+                // the popup registry, the fences, the desk, the console name and the input
+                // folds; the entry
                 // imports the console. Stated HERE because this set is a hardcoded floor:
                 // nothing derives the popup's needs from the tree, so an
                 // import dropped from the entry breaks the second monitor
@@ -4052,6 +4053,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-desk-folds.js",
                 "wb-console-gpu.js",
                 "wb-console-terminal.js",
+                "wb-console-title.js",
                 "wb-console-chrome.js",
                 "wb-console-popups.js",
                 "wb-console-fences.js",
@@ -4799,10 +4801,10 @@ fn the_workbench_never_titles_a_repo_with_its_routing_head() {
     // The console name's prefix is the project name's last segment (ADR-0066
     // §2 and its 2026-10-02 amendment); an unnamed ref falls back to the
     // slug. Taken from the ref, a peer console would be named after its ULID.
-    let console = include_str!("../assets/ui/wb-console.ts");
+    // The prefix is in the title, the fallback in the console.
     assert!(
-        console.contains("prefixOf(projectNameOf(repo))")
-            && console.contains("WBFleet.refSlug(ref)"),
+        include_str!("../assets/ui/wb-console-title.ts").contains("prefixOf(projectNameOf(repo))")
+            && include_str!("../assets/ui/wb-console.ts").contains("WBFleet.refSlug(ref)"),
         "a console name prefix must come from the project name or the slug, not the ref"
     );
 }
@@ -4813,11 +4815,13 @@ fn the_workbench_never_titles_a_repo_with_its_routing_head() {
 /// node suite renders no DOM or CSS, so this test holds that half.
 #[test]
 fn shell_draws_fences_below_the_windows() {
-    // The console and its fences, as one text: the fence element lives in
-    // the fences, the fence list and its rendering in the console.
+    // The console, its fences and its title, as one text: the fence element
+    // lives in the fences, the fence list and its rendering in the console,
+    // the console rename in the title.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
         include_str!("../assets/ui/wb-console-fences.ts"),
+        include_str!("../assets/ui/wb-console-title.ts"),
     ]
     .concat();
     for pin in [
@@ -5070,11 +5074,12 @@ fn shell_drags_only_past_a_threshold() {
 /// gestures themselves by `tests/browser/console/wb_console_touch.py`.
 #[test]
 fn titlebar_touch_double_taps_and_holds() {
-    // The console and its window chrome, as one text: the titlebar lives in the chrome, the
-    // name's double-click in the console.
+    // The console, its window chrome and its title, as one text: the titlebar lives in the
+    // chrome, the name's double-click in the title.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
         include_str!("../assets/ui/wb-console-chrome.ts"),
+        include_str!("../assets/ui/wb-console-title.ts"),
     ]
     .concat();
     let after = js
@@ -6118,7 +6123,8 @@ fn shell_survives_a_reload_with_its_detach() {
     assert!(
         !js.contains("sessionStorage")
             && !include_str!("../assets/ui/wb-console-terminal.ts").contains("sessionStorage")
-            && !include_str!("../assets/ui/wb-console-chrome.ts").contains("sessionStorage"),
+            && !include_str!("../assets/ui/wb-console-chrome.ts").contains("sessionStorage")
+            && !include_str!("../assets/ui/wb-console-title.ts").contains("sessionStorage"),
         "wb-console.ts must reach the registry only through the injected link (#347)"
     );
     // The CALLS, not the bare nouns: this file's own prose names
@@ -6663,6 +6669,10 @@ fn shell_stores_only_the_view_in_the_browser() {
             include_str!("../assets/ui/wb-console-chrome.ts"),
         ),
         (
+            "wb-console-title.ts",
+            include_str!("../assets/ui/wb-console-title.ts"),
+        ),
+        (
             "wb-console-popups.ts",
             include_str!("../assets/ui/wb-console-popups.ts"),
         ),
@@ -6807,12 +6817,13 @@ fn the_console_chrome_holds_its_three_rules() {
 /// would turn every guarded click into a silently cancelled one.
 #[test]
 fn the_destructive_console_clicks_confirm_first() {
-    // The console and its fences, as one text: the dialog and the
-    // console's × live in the console, the fence's tile and remove in the
-    // fences.
+    // The console, its fences and its title, as one text: the dialog and
+    // the console's × live in the console, the fence's tile and remove in
+    // the fences, the two restarts in the title.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
         include_str!("../assets/ui/wb-console-fences.ts"),
+        include_str!("../assets/ui/wb-console-title.ts"),
     ]
     .concat();
     assert!(
@@ -7618,10 +7629,10 @@ fn a_refused_branch_change_reports_in_the_projects_panel() {
         !app_js.contains("pick primary before switching branches"),
         "the #406 client-side refusal is gone"
     );
-    // The create lives in the console's prompt (wb-console.ts): an
+    // The create lives in the console's prompt (wb-console-title.ts): an
     // unanswered add re-opens it with the same honest line.
     assert!(
-        include_str!("../assets/ui/wb-console.ts").contains(
+        include_str!("../assets/ui/wb-console-title.ts").contains(
             r#"error = "Could not reach the daemon. Check whether the worktree was created.";"#
         ),
         "an unanswered worktree create must not read as a completed one"
@@ -7650,11 +7661,11 @@ fn a_refused_branch_change_reports_in_the_projects_panel() {
 /// modal, so without it a remove is also a select-and-dismiss.
 #[test]
 fn the_worktree_row_remove_action_stops_the_selecting_click() {
-    // The rows are the checkout menu's (wb-console.ts `checkoutMenu`),
+    // The rows are the checkout menu's (wb-console-title.ts `checkoutMenu`),
     // opened from the Files bar's chip with `onRemove` (ADR-0063
     // amendment 2026-09-16 b): the trash is its own element whose click
     // stops before the row's own pick, and the primary row never has one.
-    let console_js = include_str!("../assets/ui/wb-console.ts");
+    let console_js = include_str!("../assets/ui/wb-console-title.ts");
     assert!(console_js.contains(r#"trash.className = "session-checkout-remove";"#));
     assert!(
         console_js.contains("if (onRemove && !row.primary) {"),
@@ -8512,6 +8523,10 @@ fn no_menu_or_key_sink_takes_a_template_string() {
         (
             "wb-console-chrome.ts",
             include_str!("../assets/ui/wb-console-chrome.ts"),
+        ),
+        (
+            "wb-console-title.ts",
+            include_str!("../assets/ui/wb-console-title.ts"),
         ),
         (
             "wb-console-popups.ts",
