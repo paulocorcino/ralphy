@@ -484,8 +484,8 @@ export function createTerminal(deps: TerminalDeps) {
     // belongs to the child.
     term.attachCustomKeyEventHandler((e: any) => {
       // Alt+Shift+arrows in a column walk the columns and their rows (ADR-0051
-      // §5): xterm must not send them to the child, and the shell's document
-      // listener takes them.
+      // §5): xterm must not send them to the child, and the document listener
+      // of the columns (wb-consoles-tab.ts) takes them.
       if (
         e.altKey &&
         e.shiftKey &&
@@ -497,7 +497,8 @@ export function createTerminal(deps: TerminalDeps) {
         return false;
       }
       // Alt+Shift+R and Alt+Shift+<digit> open a console from inside a
-      // terminal too. Only where the shell's document listener exists: a
+      // terminal too. Only where the console menus' document listener exists
+      // (wb-consoles-tab.ts, on the page with a shell): a
       // detached popup has none, so its terminal keeps the key.
       if (
         e.altKey &&

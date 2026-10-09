@@ -24,9 +24,9 @@ const PROMPT_GH_ISSUE_VIEW: usize = 20;
 
 /// Lines of `crates/ralphy-daemon/assets/ui/app.ts`, the `shell()` script that
 /// ADR-0073 cuts into components (D8). Each cut lowers it in the same change.
-/// 6123 since the open project became the Alpine store `projects`
-/// (`wb-projects-store.ts`, #608).
-const APP_TS_LINES: usize = 6123;
+/// 5512 since the consoles group became the components of
+/// `wb-consoles-tab.ts` (#621).
+const APP_TS_LINES: usize = 5512;
 /// Lines of `crates/ralphy-daemon/assets/ui/wb-console.ts`, the console
 /// factory (ADR-0073 D8, which starts this ratchet with the first fold move).
 /// 5842 since ADR-0075 phase 5 moved its pure folds, its GPU budget and its

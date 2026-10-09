@@ -4842,10 +4842,10 @@ fn shell_draws_fences_below_the_windows() {
         js.contains(r#"querySelectorAll(".session-window, .fence, .note-card")"#),
         "applyExtent must fold the fences and the cards into the stage extent (#340, ADR-0064)"
     );
-    let app = include_str!("../assets/ui/app.ts");
+    let tab = include_str!("../assets/ui/wb-consoles-tab.ts");
     assert!(
-        app.contains("newFence("),
-        "app.ts must wire the toolbar act"
+        tab.contains("newFence("),
+        "wb-consoles-tab.ts must wire the toolbar act"
     );
     let html = include_str!("../assets/ui/index.html");
     assert!(
@@ -4936,9 +4936,10 @@ fn shell_draws_fences_below_the_windows() {
         "numbering by the fence COUNT collides at the cap — measured"
     );
 
-    let app_js = include_str!("../assets/ui/app.ts");
-    let app: String = app_js.split_whitespace().collect::<Vec<_>>().join(" ");
-    // The shell says why before the click and again if one gets through — the
+    // The console menus (wb-consoles-tab.ts) hold the toolbar acts and keys.
+    let tab_js = include_str!("../assets/ui/wb-consoles-tab.ts");
+    let app: String = tab_js.split_whitespace().collect::<Vec<_>>().join(" ");
+    // The toolbar says why before the click and again if one gets through — the
     // #318 idiom, since `wb-console.ts` reaches no shell and can only refuse.
     assert!(
         app.contains(
@@ -5702,9 +5703,12 @@ fn shell_lists_the_fences() {
         body("function refreshFenceChrome(").contains("fenceSummaries("),
         "the fence chrome must read the same fold the list does (#343)"
     );
-    let app = include_str!("../assets/ui/app.ts");
+    let tab = include_str!("../assets/ui/wb-consoles-tab.ts");
     for pin in ["jumpFence(", "fenceList()"] {
-        assert!(app.contains(pin), "app.ts must keep the #343 pin {pin}");
+        assert!(
+            tab.contains(pin),
+            "wb-consoles-tab.ts must keep the #343 pin {pin}"
+        );
     }
     let html = include_str!("../assets/ui/index.html");
     // `class="fence-item"`, not the bare noun: the markup's own comment
@@ -6395,11 +6399,14 @@ fn shell_navigates_the_plane() {
         "the stage itself must advertise the grab cursor (#337)"
     );
 
-    // The picker's wiring lives in app.ts; without this the `@click`
-    // handlers in index.html can go dangling with every test still green.
-    let app = include_str!("../assets/ui/app.ts");
+    // The picker's wiring lives in wb-consoles-tab.ts; without this the
+    // `@click` handlers in index.html can go dangling with every test still green.
+    let tab = include_str!("../assets/ui/wb-consoles-tab.ts");
     for pin in ["toggleWindowMenu(", "revealWindow(", "windowList"] {
-        assert!(app.contains(pin), "app.ts must keep the #337 pin {pin}");
+        assert!(
+            tab.contains(pin),
+            "wb-consoles-tab.ts must keep the #337 pin {pin}"
+        );
     }
 
     let html = include_str!("../assets/ui/index.html");
@@ -6776,13 +6783,22 @@ fn a_quiet_detach_peer_is_challenged_before_it_is_buried() {
 #[test]
 fn the_console_chrome_holds_its_three_rules() {
     let app = include_str!("../assets/ui/app.ts");
+    let tab = include_str!("../assets/ui/wb-consoles-tab.ts");
     let html = include_str!("../assets/ui/index.html");
-    // ONE dropdown at a time. Every toggler goes through `closeMenus`, which
-    // enumerates the four in ONE place — the account menu and the toolbar's
+    // ONE dropdown at a time. Every toggler sends ONE event,
+    // `workbench:menus-close`, and the shell and the two consoles components
+    // each close their own menus on it — the account menu and the toolbar's
     // pickers used to enumerate each other and left both open, overlapping.
+    // wb-consoles-tab.test.mjs and app.test.mjs drive the event.
+    let close = r#"window.dispatchEvent(new CustomEvent("workbench:menus-close"));"#;
+    let hear = r#"addEventListener("workbench:menus-close", "#;
     assert!(
-        app.contains("closeMenus() {") && app.contains("this.avatarMenu = false;"),
-        "app.ts must close every menu from one place"
+        app.contains(close) && app.contains(hear) && app.contains("this.avatarMenu = false;"),
+        "app.ts must close the account menu on the one menus event, and send it"
+    );
+    assert!(
+        tab.matches(close).count() == 2 && tab.matches(hear).count() == 2,
+        "both consoles components must send the one menus event and hear it"
     );
     for pin in ["toggleAvatarMenu()", "toggleAgentMenu()"] {
         assert!(html.contains(pin), "index.html must toggle through {pin}");

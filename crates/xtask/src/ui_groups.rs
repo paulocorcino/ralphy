@@ -60,23 +60,17 @@ const APP: &str = "crates/ralphy-daemon/assets/ui/app.ts";
 const HTML: &str = "crates/ralphy-daemon/assets/ui/index.html";
 
 /// The groups `shell()` is cut by (#605). Layout core is what `shell()` keeps.
+/// The consoles group left `shell()` for `wb-consoles-tab.ts` (#621).
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 enum Group {
     Core,
     Git,
     Files,
     Board,
-    Consoles,
 }
 
 impl Group {
-    const ALL: [Group; 5] = [
-        Group::Core,
-        Group::Git,
-        Group::Files,
-        Group::Board,
-        Group::Consoles,
-    ];
+    const ALL: [Group; 4] = [Group::Core, Group::Git, Group::Files, Group::Board];
 
     fn label(self) -> &'static str {
         match self {
@@ -84,7 +78,6 @@ impl Group {
             Group::Git => "git of the open project",
             Group::Files => "files",
             Group::Board => "board and runs",
-            Group::Consoles => "consoles",
         }
     }
 
@@ -94,7 +87,6 @@ impl Group {
             Group::Git => "git",
             Group::Files => "files",
             Group::Board => "board",
-            Group::Consoles => "consoles",
         }
     }
 }
@@ -134,8 +126,6 @@ const SECTIONS: &[(&str, Group)] = &[
     ("opening a file", Group::Files),
     ("opening a Changes row", Group::Files),
     ("move and create in the Files tree", Group::Files),
-    ("consoles (the Consoles", Group::Consoles),
-    ("columns", Group::Consoles),
     ("context menu", Group::Core),
     ("the backend seam", Group::Core),
 ];

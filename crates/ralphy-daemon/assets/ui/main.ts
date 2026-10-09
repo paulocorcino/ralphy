@@ -16,6 +16,7 @@ import { releaseDialogs } from "./wb-release-dialogs.ts";
 import { hostsDialog } from "./wb-hosts-dialog.ts";
 import { addProjectDialog } from "./wb-add-project-dialog.ts";
 import { securityDialog } from "./wb-security-dialog.ts";
+import { wbColumns, wbConsoleMenus } from "./wb-consoles-tab.ts";
 import { createDaemon } from "./wb-daemon.ts";
 import { WBDevice } from "./wb-device.ts";
 import { createViewer } from "./wb-viewer.ts";
@@ -48,6 +49,8 @@ Alpine.data("wbSecurityDialog", securityDialog);
 Alpine.data("wbReleaseDialogs", releaseDialogs);
 Alpine.data("wbAddProjectDialog", addProjectDialog);
 Alpine.data("wbHostsDialog", hostsDialog);
+Alpine.data("wbConsoleMenus", wbConsoleMenus);
+Alpine.data("wbColumns", wbColumns);
 Alpine.start();
 // The consoles boot on a page whose shell Alpine has built (ADR-0075 D7).
 window.WBConsole.boot();

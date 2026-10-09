@@ -66,6 +66,10 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Consoles tab's menus and the columns are Alpine components of their
+# own (wb-consoles-tab.ts): a check reads them through their root.
+MENUS = "Alpine.$data(document.querySelector('[x-data=\"wbConsoleMenus\"]'))"
+COLS = "Alpine.$data(document.querySelector('[x-data=\"wbColumns\"]'))"
 VIEW = {"width": 2400, "height": 1000}
 SLUG = "owner/fincal"
 FLOOR = 54  # every check above the floor check; pinned after the first green run
@@ -476,7 +480,7 @@ def main():
 
             # 10: the column list and Go-to -------------------------------
             page.evaluate("() => __W('w-6').querySelector('.session-column').click()")
-            page.wait_for_function(f"() => {SH}.columnMenu === true", timeout=5000)
+            page.wait_for_function(f"() => {COLS}.columnMenu === true", timeout=5000)
             page.wait_for_timeout(200)
             s10 = page.evaluate(
                 "() => ({ repoHeads: document.querySelectorAll('.column-menu .column-group-repo').length,"
@@ -494,7 +498,7 @@ def main():
 
             def filtered(q):
                 return page.evaluate(
-                    f"(q) => {{ {SH}.columnFilter = q; return {SH}.columnView().flatMap((g) => g.rows.map((r) => r.id)); }}",
+                    f"(q) => {{ {COLS}.columnFilter = q; return {COLS}.columnView().flatMap((g) => g.rows.map((r) => r.id)); }}",
                     q,
                 )
 
@@ -502,7 +506,7 @@ def main():
             check("10 the filter matches the label", "w-3" in filtered("claude") and "w-1" not in filtered("claude"))
             check("10 the filter matches the repo", "w-1" in filtered("owner/fincal") and "w-2" not in filtered("owner/fincal"))
             check("10 the filter matches the fence name", filtered("away") == ["w-7"], str(filtered("away")))
-            page.evaluate(f"() => {{ {SH}.columnFilter = ''; }}")
+            page.evaluate(f"() => {{ {COLS}.columnFilter = ''; }}")
             page.locator(".column-menu .column-item[data-id='w-2']").click()
             page.wait_for_timeout(600)
             col = page.evaluate("() => __W('w-2').classList.contains('column')")
@@ -512,7 +516,7 @@ def main():
             page.wait_for_timeout(400)
             page.evaluate("() => __W('w-2').classList.contains('maximized') && __W('w-2').querySelector('.session-max').click()")
             page.wait_for_timeout(400)
-            page.evaluate(f"() => {SH}.toggleWindowMenu()")
+            page.evaluate(f"() => {MENUS}.toggleWindowMenu()")
             page.wait_for_timeout(300)
             g = page.evaluate(
                 "() => ({ hidden: getComputedStyle(document.querySelector('.window-menu').closest('.menu-wrap')).display,"
@@ -525,7 +529,7 @@ def main():
             check("10 the Go-to menu stays hidden", g["hidden"] == "none", g["hidden"])
             check("10 each Go-to row says what its title says, with the title's tooltip",
                   g["rows"] == g["titles"] and len(g["rows"]) >= len(WINDOWS), json.dumps(g)[:600])
-            page.evaluate(f"() => {{ {SH}.windowMenu = false; }}")
+            page.evaluate(f"() => {{ {MENUS}.windowMenu = false; }}")
 
             # 9: Restart keeps the name -----------------------------------
             page.evaluate("() => __W('w-1').querySelector('.session-restart').click()")

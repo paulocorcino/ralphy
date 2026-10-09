@@ -63,6 +63,9 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT = os.path.join(REPO_ROOT, ".ralphy", "screenshots", "473-columns-2026-09-26.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The columns are an Alpine component of their own (wb-consoles-tab.ts):
+# a check reads them through their root.
+COLS = "Alpine.$data(document.querySelector('[x-data=\"wbColumns\"]'))"
 # The Settings dialog's own component, nested in shell().
 SET = "Alpine.$data(document.querySelector('.settings-dialog'))"
 VIEW = {"width": 2400, "height": 1000}
@@ -263,7 +266,7 @@ def ids(page):
 
 
 def shell_cols(page):
-    return page.evaluate(f"() => {SH}.columns.flat()")
+    return page.evaluate(f"() => {COLS}.columns.flat()")
 
 
 def stored(page):
@@ -297,7 +300,7 @@ def reload(page, want=5):
 def open_menu(page, from_id):
     page.evaluate("(id) => __colBtn(id).click()", from_id)
     page.wait_for_function(
-        f"() => {SH}.columnMenu === true && document.querySelector('.column-menu').getClientRects().length > 0",
+        f"() => {COLS}.columnMenu === true && document.querySelector('.column-menu').getClientRects().length > 0",
         timeout=5000,
     )
     page.wait_for_timeout(150)
@@ -372,7 +375,7 @@ def main():
             ctx.add_init_script(
                 "if (window.opener && location.href === 'about:blank') setTimeout(() => {"
                 " try { const o = window.opener;"
-                "   window.__openerCols = o.Alpine.$data(o.document.querySelector('[x-data]')).columns.flat();"
+                "   window.__openerCols = o.Alpine.$data(o.document.querySelector('[x-data=\"wbColumns\"]')).columns.flat();"
                 "   window.__openerAt = location.href;"
                 " } catch (e) { window.__openerCols = 'error: ' + e; } }, 0);"
             )
@@ -391,7 +394,7 @@ def main():
             check("probe: shells are live, agent records are placeholders", ok, str(probe))
             if not ok:
                 return
-            cap = page.evaluate(f"() => {SH}.columnCap()")
+            cap = page.evaluate(f"() => {COLS}.columnCap()")
             check("wider than a phone the columns have no limit", cap == float("inf"), f"cap={cap}")
             check("boot writes no column list", stored(page) is None, str(stored(page)))
 
@@ -402,7 +405,7 @@ def main():
             # R1 -------------------------------------------------------------
             reload(page)
             try:
-                page.wait_for_function(f"() => {SH}.columns.flat().length === 3", timeout=8000)
+                page.wait_for_function(f"() => {COLS}.columns.flat().length === 3", timeout=8000)
             except Exception:
                 pass
             check("R1 after a reload the list comes back", shell_cols(page) == ["w-a", "w-b", "w-c"],
@@ -441,7 +444,7 @@ def main():
             page.evaluate("() => WBView.patch({ columns: ['w-a', 'w-gone', 'w-b'] })")
             reload(page)
             try:
-                page.wait_for_function(f"() => {SH}.columns.flat().length === 2", timeout=8000)
+                page.wait_for_function(f"() => {COLS}.columns.flat().length === 2", timeout=8000)
             except Exception:
                 pass
             check("R4 a stored id no longer on the desk is dropped", shell_cols(page) == ["w-a", "w-b"],
@@ -640,11 +643,11 @@ def main():
             gone_b = poll_desk(lambda d: "w-c" not in d)
             check("X2 setup: the other client closed w-c on the desk", gone_b is not None and "w-c" not in gone_b)
             try:
-                page.wait_for_function(f"() => !{SH}.columns.flat().includes('w-c')", timeout=8000)
+                page.wait_for_function(f"() => !{COLS}.columns.flat().includes('w-c')", timeout=8000)
             except Exception:
                 pass
             page.wait_for_timeout(500)
-            x2 = page.evaluate(f"() => ({{ list: {SH}.columns.flat(), win: !!__W('w-c'), cols: __columns() }})")
+            x2 = page.evaluate(f"() => ({{ list: {COLS}.columns.flat(), win: !!__W('w-c'), cols: __columns() }})")
             check("X2 the closed console leaves the columns", x2["list"] == ["w-a", "w-b"], str(x2["list"]))
             check("X2 …and this stage", not x2["win"])
             check("X2 the others widen", equal_fill(x2["cols"], ws_w), str(x2["cols"]))
@@ -660,7 +663,7 @@ def main():
             # rest of `detachFence` and before the popup document can load.
             page.evaluate(
                 "() => { const open = window.open; window.open = (...a) => { const h = open.apply(window, a);"
-                " queueMicrotask(() => { window.__afterOpen = { cols: " + SH + ".columns.flat(),"
+                " queueMicrotask(() => { window.__afterOpen = { cols: " + COLS + ".columns.flat(),"
                 "   onStage: !!__W('w-f'), popup: h ? h.location.href : null }; });"
                 " window.open = open; return h; }; }"
             )

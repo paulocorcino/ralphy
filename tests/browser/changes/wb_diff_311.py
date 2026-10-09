@@ -51,6 +51,9 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Consoles tab's menus and the columns are Alpine components of their
+# own (wb-consoles-tab.ts): a check reads them through their root.
+MENUS = "Alpine.$data(document.querySelector('[x-data=\"wbConsoleMenus\"]'))"
 
 results = []
 
@@ -491,7 +494,7 @@ def main():
             )
 
             # --- scenario 4: closing a diff tab never disturbs the consoles ----
-            page.evaluate(f"() => {SH}.newPlainConsole()")
+            page.evaluate(f"() => {MENUS}.newPlainConsole()")
             consoles_before = page.wait_for_function(
                 "() => { const n = document.querySelectorAll('#workspace .session-window').length;"
                 " return n > 0 ? n : false; }",

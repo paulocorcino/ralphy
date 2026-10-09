@@ -56,6 +56,9 @@ EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if WIN else "ralph
 CHILD = os.path.join(REPO_ROOT, "target", "debug", "session_test_child.exe" if WIN else "session_test_child")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Consoles tab's menus and the columns are Alpine components of their
+# own (wb-consoles-tab.ts): a check reads them through their root.
+MENUS = "Alpine.$data(document.querySelector('[x-data=\"wbConsoleMenus\"]'))"
 # The account dropdown reuses `.dropdown-item`, so every menu query is scoped.
 MENU = ".console-menu"
 
@@ -161,14 +164,14 @@ def launch(daemon_dir):
 
 def open_menu(page):
     """Open the New console dropdown and return its rendered rows."""
-    if not page.evaluate(f"() => {SH}.agentMenu"):
-        page.evaluate(f"() => {{ {SH}.agentMenu = true; }}")
+    if not page.evaluate(f"() => {MENUS}.agentMenu"):
+        page.evaluate(f"() => {{ {MENUS}.agentMenu = true; }}")
     page.wait_for_timeout(250)
     return page.locator(f"{MENU} .dropdown-item")
 
 
 def close_menu(page):
-    page.evaluate(f"() => {{ {SH}.agentMenu = false; }}")
+    page.evaluate(f"() => {{ {MENUS}.agentMenu = false; }}")
     page.wait_for_timeout(150)
 
 
@@ -451,7 +454,7 @@ def main():
             page.evaluate(f"async () => {SH}.refreshLive()")
             page.wait_for_timeout(300)
             keys = page.evaluate(
-                f"() => {SH}.consoleItems().map((r) => Object.keys(r).sort().join(','))"
+                f"() => {MENUS}.consoleItems().map((r) => Object.keys(r).sort().join(','))"
             )
             check(
                 "no row carries an action or a session id — a row is a launch",

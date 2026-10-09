@@ -66,6 +66,9 @@ EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt"
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "343-the-fence-list-is-the-map-2026-07-27.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Consoles tab's menus and the columns are Alpine components of their
+# own (wb-consoles-tab.ts): a check reads them through their root.
+MENUS = "Alpine.$data(document.querySelector('[x-data=\"wbConsoleMenus\"]'))"
 
 VIEW = {"width": 1400, "height": 900}
 
@@ -321,7 +324,7 @@ def fence_counts(page):
 
 
 def close_menus(page):
-    page.evaluate(f"() => {{ const s = {SH}; s.fenceMenu = false; s.agentMenu = false; s.windowMenu = false; }}")
+    page.evaluate(f"() => {{ const s = {MENUS}; s.fenceMenu = false; s.agentMenu = false; s.windowMenu = false; }}")
     page.wait_for_timeout(150)
 
 
@@ -590,7 +593,7 @@ def main():
             )
             # The row's one readout: the key that reaches this fence WITHOUT the
             # menu, numbered by the row's own position in the list.
-            mac = page.evaluate(f"() => {SH}.isMac")
+            mac = page.evaluate(f"() => {MENUS}.isMac")
             check(
                 "every row advertises its own key, and only its own",
                 [r["kbd"] for r in rows] == ["F1", "F2", "F3"],
@@ -1187,15 +1190,15 @@ def main():
             # `.btn.accent` no longer singles out the Consoles button: the three
             # toolbar buttons read as one row of equals now (index.html, near the
             # Consoles button's own comment) — scope by its title instead.
-            page.evaluate(f"() => {SH}.closeMenus()")
+            page.evaluate(f"() => {MENUS}.closeMenus()")
             page.locator("button[title='Open a console']").click()
             page.wait_for_timeout(200)
             page.locator(".avatar-btn").click()
             page.wait_for_timeout(200)
             open_menus = page.evaluate(
-                f"() => {{ const s = {SH};"
-                " return ['agentMenu', 'windowMenu', 'fenceMenu', 'avatarMenu']"
-                "   .filter((k) => s[k]); }"
+                f"() => {{ const s = {SH}; const m = {MENUS};"
+                " return ['agentMenu', 'windowMenu', 'fenceMenu'].filter((k) => m[k])"
+                "   .concat(s.avatarMenu ? ['avatarMenu'] : []); }"
             )
             check(
                 "opening the account menu closes the console picker — one dropdown at a time",
@@ -1210,16 +1213,16 @@ def main():
             page.evaluate("() => document.querySelector(\"button[title='Open a console']\").click()")
             page.wait_for_timeout(200)
             open_menus = page.evaluate(
-                f"() => {{ const s = {SH};"
-                " return ['agentMenu', 'windowMenu', 'fenceMenu', 'avatarMenu']"
-                "   .filter((k) => s[k]); }"
+                f"() => {{ const s = {SH}; const m = {MENUS};"
+                " return ['agentMenu', 'windowMenu', 'fenceMenu'].filter((k) => m[k])"
+                "   .concat(s.avatarMenu ? ['avatarMenu'] : []); }"
             )
             check(
                 "…and the console picker closes the account menu",
                 open_menus == ["agentMenu"],
                 f"open={open_menus}",
             )
-            page.evaluate(f"() => {SH}.closeMenus()")
+            page.evaluate(f"() => {MENUS}.closeMenus()")
 
             check("no page error was raised by the whole pass", errors == [], f"pageerrors={errors}")
             ctx.close()

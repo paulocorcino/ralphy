@@ -59,6 +59,9 @@ CHILD = os.path.join(TARGET, "session_test_child.exe" if os.name == "nt" else "s
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = "agent-state-dots-2026-09-15" + ("" if os.name == "nt" else "-linux") + ".png"
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Consoles tab's menus and the columns are Alpine components of their
+# own (wb-consoles-tab.ts): a check reads them through their root.
+MENUS = "Alpine.$data(document.querySelector('[x-data=\"wbConsoleMenus\"]'))"
 # The local environment label, as `peer::environment_label` spells it.
 _distro = os.environ.get("WSL_DISTRO_NAME")
 ENV_LABEL = f"WSL: {_distro}" if _distro else ("Windows" if os.name == "nt" else "Linux")
@@ -432,7 +435,7 @@ def main():
 
             # --- scenario 2: a console, no dot yet ---------------------------------
             open_project(page, slug)
-            page.evaluate(f"() => {SH}.newConsole('claude')")
+            page.evaluate(f"() => {MENUS}.newConsole('claude')")
             page.wait_for_function(f"() => ({WINDOWS})() === 1", timeout=15000)
             check("the child printed READY", wait_flat_contains(page, 0, READY))
             sid = sessions()[0]["id"]
@@ -448,11 +451,11 @@ def main():
             wait_console_dot(page, 0, "working")
             check("a UserPromptSubmit line paints the console dot working", True)
             check("…the project dot stays live", page.evaluate(PROJECT_DOT) == "dot live", f"got={page.evaluate(PROJECT_DOT)!r}")
-            page.evaluate(f"() => {{ {SH}.windowMenu = true; {SH}.windowList = WBConsole.list(); }}")
+            page.evaluate(f"() => {{ {MENUS}.windowMenu = true; {MENUS}.windowList = WBConsole.list(); }}")
             page.wait_for_timeout(200)
             states = page.evaluate(GOTO_STATES)
             check("the Go-to row carries the state", states == ["working"], f"got={states!r}")
-            page.evaluate(f"() => {{ {SH}.windowMenu = false; }}")
+            page.evaluate(f"() => {{ {MENUS}.windowMenu = false; }}")
 
             # --- scenario 4: waiting -----------------------------------------------
             hook(daemon_dir, sid, "PreToolUse", "AskUserQuestion", {"questions": [{"question": "which port?"}]})
@@ -467,7 +470,7 @@ def main():
             # --- scenario 5: a worktree row ----------------------------------------
             # A second console, born on the primary, cuts wt-a from its own
             # switcher and restarts inside it.
-            page.evaluate(f"() => {SH}.newConsole('claude')")
+            page.evaluate(f"() => {MENUS}.newConsole('claude')")
             page.wait_for_function(f"() => ({WINDOWS})() === 2", timeout=15000)
             check("the second child printed READY", wait_flat_contains(page, 1, READY))
             create_via_switcher(page, 1, "wt-a", f"(claude) · wt-a · {fixture.name}")

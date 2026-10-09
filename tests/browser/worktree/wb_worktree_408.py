@@ -71,6 +71,9 @@ CHILD = os.path.join(TARGET, "session_test_child.exe" if os.name == "nt" else "s
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = "408-console-worktree-2026-09-15.png"
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Consoles tab's menus and the columns are Alpine components of their
+# own (wb-consoles-tab.ts): a check reads them through their root.
+MENUS = "Alpine.$data(document.querySelector('[x-data=\"wbConsoleMenus\"]'))"
 # The local environment label: `WSL_DISTRO_NAME` is unset on this host.
 ENV_LABEL = "Windows"
 
@@ -401,7 +404,7 @@ def main():
             check("wt-a is the selected checkout", True)
 
             # --- scenario 3: born in the primary; the switcher moves it ---------
-            page.evaluate(f"() => {SH}.newConsole('claude')")
+            page.evaluate(f"() => {MENUS}.newConsole('claude')")
             page.wait_for_function(f"() => ({WINDOWS})() === 1", timeout=15000)
             # The title lands on `session-open`, not on window creation.
             page.wait_for_function(f"(t) => ({TITLES})()[0] === t", arg=expected_primary, timeout=15000)
@@ -456,7 +459,7 @@ def main():
 
             # --- scenario 8: a console under primary carries nothing -----------
             open_project(page, slug)
-            page.evaluate(f"() => {SH}.newConsole('codex')")
+            page.evaluate(f"() => {MENUS}.newConsole('codex')")
             page.wait_for_function(f"() => ({WINDOWS})() === 2", timeout=15000)
             page.wait_for_function(f"(t) => ({TITLES})().includes(t)", arg=expected_codex, timeout=15000)
             check("a codex console opened under primary reads `(codex) · primary · <folder>`", True)

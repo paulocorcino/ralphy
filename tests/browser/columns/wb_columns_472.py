@@ -67,6 +67,9 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT = os.path.join(REPO_ROOT, ".ralphy", "screenshots", "472-columns-2026-09-26.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The columns are an Alpine component of their own (wb-consoles-tab.ts):
+# a check reads them through their root.
+COLS = "Alpine.$data(document.querySelector('[x-data=\"wbColumns\"]'))"
 VIEW = {"width": 2400, "height": 1000}
 FLOOR = 63  # every check above the floor check; pinned after the first green run
 
@@ -243,7 +246,7 @@ HELPERS = """() => {
 def open_menu(page, from_id):
     page.evaluate("(id) => __colBtn(id).click()", from_id)
     page.wait_for_function(
-        f"() => {SH}.columnMenu === true && document.querySelector('.column-menu').getClientRects().length > 0",
+        f"() => {COLS}.columnMenu === true && document.querySelector('.column-menu').getClientRects().length > 0",
         timeout=5000,
     )
     page.wait_for_timeout(150)
@@ -279,7 +282,7 @@ def column_ids(page):
 
 
 def close_menu(page):
-    page.evaluate(f"() => {{ {SH}.columnMenu = false; }}")
+    page.evaluate(f"() => {{ {COLS}.columnMenu = false; }}")
     page.wait_for_timeout(100)
 
 
@@ -352,7 +355,7 @@ def main():
             if not ok:
                 return
             page.wait_for_timeout(600)
-            cap = page.evaluate(f"() => {SH}.columnCap()")
+            cap = page.evaluate(f"() => {COLS}.columnCap()")
             print("cap at", VIEW, "=", cap, flush=True)
             check("wider than a phone the columns have no limit", cap == float("inf"), f"cap={cap}")
 
@@ -402,7 +405,7 @@ def main():
             # 2b: a long list opens with a filter box, focused
             open_menu(page, "w-a")
             page.evaluate(
-                f"() => {{ const sh = {SH}; const g = sh.columnGroups;"
+                f"() => {{ const sh = {COLS}; const g = sh.columnGroups;"
                 " sh.columnGroups = [...g, ...g.map((x) => ({ ...x, fence: x.fence ? { ...x.fence, id: x.fence.id + '-2' } : { id: 'copy', name: 'copy' },"
                 "   rows: x.rows.map((r) => ({ ...r, id: r.id + '-2' })) }))]; }"
             )
@@ -415,7 +418,7 @@ def main():
             close_menu(page)
             open_menu(page, "w-a")
             page.evaluate(
-                f"() => {{ const sh = {SH}; const long = 'owner/' + 'a-very-long-repository-name-'.repeat(3);"
+                f"() => {{ const sh = {COLS}; const long = 'owner/' + 'a-very-long-repository-name-'.repeat(3);"
                 " const rows = Array.from({ length: 12 }, (_, i) => ({ id: 'long-' + i, agent: 'claude', repo: long + i,"
                 "   kind: 'agent', state: null, running: true, enabled: true, reason: null, swappable: true }));"
                 " sh.columnGroups = [{ fence: null, rows, shared: false, repo: null }]; }"
@@ -441,7 +444,7 @@ def main():
             page.wait_for_timeout(300)
             open_menu(page, "w-a")
             page.evaluate(
-                f"() => {{ const sh = {SH}; const g = sh.columnGroups;"
+                f"() => {{ const sh = {COLS}; const g = sh.columnGroups;"
                 " sh.columnGroups = [...g, ...g.map((x) => ({ ...x, fence: x.fence ? { ...x.fence, id: x.fence.id + '-2' } : { id: 'copy', name: 'copy' },"
                 "   rows: x.rows.map((r) => ({ ...r, id: r.id + '-2' })) }))]; }"
             )
@@ -456,7 +459,7 @@ def main():
                   page.evaluate("() => __visible(document.querySelector('.column-empty'))"))
             page.locator(".column-filter").press("Escape")
             page.wait_for_timeout(100)
-            check("2b Escape closes the list", page.evaluate(f"() => {SH}.columnMenu === false"))
+            check("2b Escape closes the list", page.evaluate(f"() => {COLS}.columnMenu === false"))
 
             # 3 --------------------------------------------------------------
             cols_before = page.evaluate("() => __W('w-a')._term.term.cols")
@@ -585,7 +588,7 @@ def main():
             press_max(page, "w-c")
             s9 = page.evaluate("() => ({ columns: document.querySelectorAll('.session-window.column').length,"
                                " bMax: __W('w-b').classList.contains('maximized'),"
-                               " shell: " + SH + ".columns.flat().length })")
+                               " shell: " + COLS + ".columns.flat().length })")
             check("9 restore the last column: an ordinary maximized console",
                   s9["columns"] == 0 and s9["bMax"] and s9["shell"] == 0, str(s9))
             check("9 the survivor keeps the column button", page.evaluate("() => __visible(__colBtn('w-b'))"))
@@ -637,7 +640,7 @@ def main():
             press_max(page, "w-a")
             page.evaluate("() => WBConsole.setFont(28)")
             page.wait_for_timeout(500)
-            s12 = page.evaluate("() => ({ shown: __visible(__colBtn('w-a')), cap: " + SH + ".columnCap() })")
+            s12 = page.evaluate("() => ({ shown: __visible(__colBtn('w-a')), cap: " + COLS + ".columnCap() })")
             check("12 font 28 keeps the button", s12["shown"], str(s12))
             page.evaluate("() => WBConsole.setFont(15)")
             page.wait_for_timeout(500)
@@ -647,12 +650,12 @@ def main():
             page.set_viewport_size({"width": 390, "height": 844})
             page.wait_for_timeout(500)
             s13a = page.evaluate("() => ({ columns: document.querySelectorAll('.session-window.column').length,"
-                                 " list: " + SH + ".columns.flat() })")
+                                 " list: " + COLS + ".columns.flat() })")
             check("13 at a phone width only the leftmost is painted; the list is kept",
                   s13a["columns"] == 0 and s13a["list"] == ["w-a", "w-b"], str(s13a))
             press_max(page, "w-a")
             s13b = page.evaluate("() => ({ a: __W('w-a').classList.contains('maximized'),"
-                                 " b: __W('w-b').classList.contains('maximized'), list: " + SH + ".columns.flat().length })")
+                                 " b: __W('w-b').classList.contains('maximized'), list: " + COLS + ".columns.flat().length })")
             check("13 Restore on that leftmost restores it, and the next takes the maximize",
                   not s13b["a"] and s13b["b"] and s13b["list"] == 0, str(s13b))
             desk = poll_desk(lambda d: d["w-a"]["max"] is False and d["w-b"]["max"] is True)
