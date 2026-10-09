@@ -268,10 +268,72 @@ export type Stacked = Omit<HTMLElement, "style"> & {
   style: Omit<CSSStyleDeclaration, "zIndex"> & { get zIndex(): string; set zIndex(value: string | number) };
 };
 
-/** A `.note-card` element, with the fields the console reads on it. */
+/** The five closed-set fields of a note card's look (`applyLook`, `lookOf`). */
+export type NoteLook = { tone: string; fill: string; ink: string; font: string; size: string };
+
+/** The editor a note card mounts (`window.CrepeLean.create` resolves with it). */
+export type NoteEditor = {
+  getMarkdown(): string;
+  setReadonly(value: boolean): void;
+  destroy(): void;
+  /** The ProseMirror root, or `null` when the view is gone. */
+  dom(): HTMLElement | null;
+  redrawDiagrams(): void;
+};
+
+/**
+ * The record a note card is built from: a desk record, or a detached fence's
+ * member. A never-saved note in a popup carries its text in `draft` and the
+ * name it chose in `claim`.
+ */
+export type NoteSource = DeskNote & { draft?: string; claim?: string | null };
+
+/**
+ * A `.note-card` element, with the fields the card keeps on it. `buildCard`
+ * sets the first group on every card; the others appear as the card is used.
+ */
 export type NoteCard = HTMLElement & {
+  _noteTone: string;
+  _noteFill: string;
+  _noteInk: string;
+  _noteFont: string;
+  _noteSize: string;
+  /** The text of the document, with its front matter. */
+  _noteMarkdown: string;
   /** The card holds text not yet saved. */
-  _noteDirty?: boolean;
+  _noteDirty: boolean;
+  /** A write is in flight. */
+  _noteInFlight: boolean;
+  _noteTimer: ReturnType<typeof setTimeout> | null;
+  /** When the file last landed, in Unix milliseconds. */
+  _noteSavedAt: number | null;
+  /** The session half of the veil: shown since the card opened. */
+  _noteRevealed: boolean;
   /** The card's desk record. */
   _noteRecord?: DeskNote;
+  /** The record of a card whose record left the desk, or the popup's snapshot. */
+  _noteOrphan?: NoteSource;
+  _noteLocked?: boolean;
+  _noteEditor?: NoteEditor | null;
+  _noteAsleep?: boolean;
+  /** Set on teardown, so a late editor is destroyed. */
+  _noteGone?: boolean;
+  _noteFocusOnMount?: boolean;
+  /** A draft was handed to a detach popup: that card is the only writer. */
+  _noteHandedOff?: boolean;
+  /** The name this card chose and has not written yet. */
+  _noteClaim?: string | null;
+  _noteClaimSent?: string;
+  /** The naming probe in flight. */
+  _noteNaming?: Promise<string | null> | null;
+  /** The write chain of this card. */
+  _noteWrite?: Promise<void>;
+  /** The rename field aims the card at another file. */
+  _notePointing?: boolean;
+  /** Built from the stage's records by `render`. */
+  _noteListed?: boolean;
+  /** The floating box while the card is on top, in viewport pixels. */
+  _noteOnTop?: Rect | null;
+  /** The card's place on the plane while it floats. */
+  _noteShadow?: HTMLElement | null;
 };

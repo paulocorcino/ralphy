@@ -23,7 +23,7 @@ import type { Group } from "./wb-fleet.ts";
 import type { OpenerLink } from "./wb-console-detach.ts";
 import type { TerminalOpts } from "./wb-console-terminal.ts";
 import type { PopupMember, PopupRegistry } from "./wb-console-popups.ts";
-import type { ConsoleWin, DeskChange, DeskFence, DeskRecord, ExtentOpts, Rect, SpawnCarry } from "./wb-types.d.ts";
+import type { ConsoleWin, DeskChange, DeskFence, DeskRecord, ExtentOpts, NoteSource, Rect, SpawnCarry } from "./wb-types.d.ts";
 
 const { fenceMembership } = WBGeometry;
 const { unheardRef, peerHeld, relaunchRequest } = WBConsoleSession;
@@ -364,7 +364,7 @@ export function createDesk(deps: DeskDeps) {
         },
       };
       if (m.kind === "note") {
-        window.WBNotes?.mountDetached(record);
+        window.WBNotes?.mountDetached(record as NoteSource);
       } else if (m.session != null) {
         spawnWindow(
           { id: m.session, repo: m.repo },

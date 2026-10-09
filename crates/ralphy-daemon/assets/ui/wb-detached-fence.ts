@@ -127,7 +127,7 @@ export function wireDetachedFence(window: Window, document: Document) {
   // Each press keeps the next note of this window on top; the card's
   // own Put back takes it off. One card on top at a time.
   function nextNoteOnTop() {
-    const ids = [...stageEl().querySelectorAll<HTMLElement>(".note-card")].map((el) => el.dataset.noteId);
+    const ids: (string | null | undefined)[] = [...stageEl().querySelectorAll<HTMLElement>(".note-card")].map((el) => el.dataset.noteId);
     const now = window.WBNotes?.onTopNow();
     if (!ids.length || (now && ids.length === 1)) return;
     window.WBNotes.keepOnTop(ids[(ids.indexOf(now) + 1) % ids.length]);

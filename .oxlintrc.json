@@ -35,7 +35,6 @@
       "files": [
         "**/assets/ui/app.ts",
         "**/assets/ui/wb-files.ts",
-        "**/assets/ui/wb-notes.ts",
         "**/assets/ui/wb-projects-store.ts",
         "**/assets/ui/wb-viewer.ts",
       ],

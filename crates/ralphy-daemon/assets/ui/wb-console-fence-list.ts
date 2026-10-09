@@ -16,7 +16,7 @@ import { WBGeometry } from "./wb-geometry.ts";
 import * as WBConsoleInput from "./wb-console-input.ts";
 import * as WBDeskFolds from "./wb-desk-folds.ts";
 import type { PopupRegistry } from "./wb-console-popups.ts";
-import type { ConsoleWin, DeskFence, DeskNote, ExtentOpts, Rect } from "./wb-types.d.ts";
+import type { ConsoleWin, DeskFence, DeskNote, ExtentOpts, NoteCard, Rect } from "./wb-types.d.ts";
 
 const { PHONE_MAX_WIDTH } = WBConsoleInput;
 const { fenceSpawnRect, rectsOverlap, fenceOf, fenceHolds } = WBGeometry;
@@ -157,7 +157,7 @@ export function createFenceList(deps: FenceListDeps) {
     // window while `fences` still holds the shell's stage coordinates, so the
     // derivation there would match a card to whatever fence happens to cover
     // the translated point.
-    for (const el of OPTS.autoBoot === false ? [] : st.querySelectorAll<HTMLElement>(".note-card")) {
+    for (const el of OPTS.autoBoot === false ? [] : st.querySelectorAll<NoteCard>(".note-card")) {
       const own = notes().find((n: DeskNote) => n.id === el.dataset.noteId);
       const held = !own?.locked && !!fenceOf(fences(), restoreRect(el))?.locked;
       el.classList.toggle("held", held);
