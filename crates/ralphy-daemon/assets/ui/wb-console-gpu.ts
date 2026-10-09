@@ -11,6 +11,7 @@
    `gpuHolders` and the constants are members of `window.WBConsole` under
    their own name.
    --------------------------------------------------------------------------- */
+import type { ConsoleWin } from "./wb-types.d.ts";
 
 // ---- dormant consoles ----------------------------------------------------
 // Every console costs an xterm buffer, a ResizeObserver, a WebGL context
@@ -49,24 +50,27 @@ export const GPU_BUDGET = 12;
 // window is {seen, covered, hasTerminal, z}: only a seen, uncovered window
 // with a terminal is a candidate, and the highest `z` win (focus raises a
 // window to the top). Ties keep the input order.
-export function gpuHolders(windows: any, budget: any) {
+export function gpuHolders(windows: GpuCandidate[], budget: number) {
   return windows
-    .map((w: any, i: any) => ({ ...w, i }))
-    .filter((w: any) => w.seen && !w.covered && w.hasTerminal)
-    .sort((a: any, b: any) => b.z - a.z)
+    .map((w, i) => ({ ...w, i }))
+    .filter((w) => w.seen && !w.covered && w.hasTerminal)
+    .sort((a, b) => b.z - a.z)
     .slice(0, budget)
-    .map((w: any) => w.i);
+    .map((w) => w.i);
 }
+
+// What `gpuHolders` reads of one window.
+export type GpuCandidate = { seen: boolean; covered: boolean; hasTerminal: boolean; z: number };
 
 // What the budget reads from the console, and nothing else.
 export type GpuBudgetDeps = {
   // The live windows on the plane.
-  wins: ReadonlySet<any>;
+  wins: ReadonlySet<ConsoleWin>;
   // The viewport, the observer's root; null before the page has it.
-  workspace: () => any;
-  isCovered: (win: any) => boolean;
+  workspace: () => HTMLElement | null;
+  isCovered: (win: ConsoleWin) => boolean;
   // Stays in the console: it reaches `wakeWindow` and the terminal factory.
-  applyDormancy: (win: any) => unknown;
+  applyDormancy: (win: ConsoleWin) => unknown;
   // The page's; absent in a page without it, and then the watch is inert.
   IntersectionObserver: typeof IntersectionObserver | undefined;
   queueMicrotask: (task: () => void) => void;
@@ -77,7 +81,7 @@ export function createGpuBudget(deps: GpuBudgetDeps) {
 
   // Built on first use: `#workspace` is not in the document when this module
   // evaluates. Without `IntersectionObserver` the feature is inert.
-  let dormancyObserver: any = null;
+  let dormancyObserver: IntersectionObserver | null = null;
   function dormancyWatch() {
     if (dormancyObserver) return dormancyObserver;
     const IntersectionObserver = deps.IntersectionObserver;
@@ -85,17 +89,17 @@ export function createGpuBudget(deps: GpuBudgetDeps) {
     const root = workspace();
     if (!root) return null;
     dormancyObserver = new IntersectionObserver(
-      (entries: any) => {
+      (entries) => {
         for (const entry of entries) {
-          entry.target._visible = entry.isIntersecting;
-          applyDormancy(entry.target);
+          (entry.target as ConsoleWin)._visible = entry.isIntersecting;
+          applyDormancy(entry.target as ConsoleWin);
         }
       },
       { root, rootMargin: `${DORMANT_MARGIN_PX}px`, threshold: 0 },
     );
     return dormancyObserver;
   }
-  function trackDormancy(win: any) {
+  function trackDormancy(win: ConsoleWin) {
     const watch = dormancyWatch();
     if (watch) watch.observe(win);
     else {
@@ -106,7 +110,7 @@ export function createGpuBudget(deps: GpuBudgetDeps) {
   }
   // Paired with every `wins.delete`: the observer holds its targets, so a window
   // taken off the plane without this stays reachable for the life of the page.
-  function untrackDormancy(win: any) {
+  function untrackDormancy(win: ConsoleWin) {
     if (win._dormantTimer) {
       clearTimeout(win._dormantTimer);
       win._dormantTimer = null;
@@ -129,7 +133,7 @@ export function createGpuBudget(deps: GpuBudgetDeps) {
   }
   function rebalanceGpu() {
     const list = [...wins];
-    const keep = new Set<any>(
+    const keep = new Set<ConsoleWin>(
       gpuHolders(
         list.map((w) => ({
           // `=== true`, not the dormancy fold's reading: an unobserved window
@@ -140,10 +144,10 @@ export function createGpuBudget(deps: GpuBudgetDeps) {
           z: parseInt(w.style.zIndex, 10) || 0,
         })),
         GPU_BUDGET,
-      ).map((i: any) => list[i]),
+      ).map((i) => list[i]),
     );
     for (const w of list) if (!keep.has(w)) w._term?.dropGpu();
-    for (const w of keep) w._term.useGpu();
+    for (const w of keep) w._term!.useGpu();
   }
 
   return { trackDormancy, untrackDormancy, scheduleGpu, dormancyWatch };

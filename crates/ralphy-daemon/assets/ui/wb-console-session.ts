@@ -13,7 +13,9 @@
    `window.WBConsole` under their own name.
    --------------------------------------------------------------------------- */
 import { WBFleet } from "./wb-fleet.ts";
+import type { Group } from "./wb-fleet.ts";
 import { WBWindowState } from "./wb-window-state.ts";
+import type { ConsoleWin } from "./wb-types.d.ts";
 
 const { sessionIdOf } = WBWindowState;
 
@@ -25,7 +27,7 @@ export const TAG_TERMINAL = 0x01;
 export const TAG_COMMAND = 0x02;
 const SESSION_ID = 1;
 
-export function encodeTerminal(str: any) {
+export function encodeTerminal(str: string) {
   const data = new TextEncoder().encode(str);
   const out = new Uint8Array(1 + 8 + data.length);
   out[0] = TAG_TERMINAL;
@@ -34,7 +36,7 @@ export function encodeTerminal(str: any) {
   return out;
 }
 
-export function encodeCommand(verb: any, payload: any) {
+export function encodeCommand(verb: string, payload: { [field: string]: JsonValue | undefined }) {
   const body = new TextEncoder().encode(JSON.stringify({ id: 0, verb, payload }));
   const out = new Uint8Array(1 + body.length);
   out[0] = TAG_COMMAND;
@@ -42,7 +44,7 @@ export function encodeCommand(verb: any, payload: any) {
   return out;
 }
 
-export function encodeResize(rows: any, cols: any) {
+export function encodeResize(rows: number, cols: number) {
   return encodeCommand("resize", { rows, cols });
 }
 
@@ -50,7 +52,8 @@ export function encodeResize(rows: any, cols: any) {
 // close metadata does not survive the trip (#334), and the peer relay
 // forwards data frames unchanged. The daemon only logs it. One of
 // `dormant`, `reconnect`, `window-closed`.
-export function encodeDetach(reason: any) {
+export type DetachReason = "dormant" | "reconnect" | "window-closed";
+export function encodeDetach(reason: DetachReason) {
   return encodeCommand("detach", { reason });
 }
 
@@ -75,7 +78,7 @@ export const RESUME_HIDDEN_MS = 60000;
 //   "attach"  — build the terminal and open the socket now.
 // A launch has no id to wake to (`dormancyDecision` D5), and without an
 // observer nothing would ever wake the window.
-export function birthDecision({ id, observed }: any) {
+export function birthDecision({ id, observed }: { id: number | null | undefined; observed: boolean }) {
   return id != null && observed ? "dormant" : "attach";
 }
 
@@ -84,6 +87,18 @@ export function birthDecision({ id, observed }: any) {
 //   "sleep" — dispose this window's terminal and release its socket;
 //   "wake"  — rebuild the terminal and reattach;
 //   "hold"  — leave it exactly as it is.
+// What the dormancy rule reads of one window.
+type DormancyInput = {
+  intersecting: boolean;
+  covered: boolean;
+  dormant: boolean;
+  maximized: boolean;
+  fullscreen: boolean;
+  focused: boolean;
+  hasTerminal: boolean;
+  ended: boolean;
+  sessionId: number | null | undefined;
+};
 export function dormancyDecision({
   intersecting,
   covered,
@@ -94,7 +109,7 @@ export function dormancyDecision({
   hasTerminal,
   ended,
   sessionId,
-}: any) {
+}: DormancyInput) {
   // Visible outranks everything. A window under a full bleed is inside the
   // viewport but nobody sees it: the observer reports geometry, not paint.
   if (intersecting && !covered) return dormant ? "wake" : "hold";
@@ -119,7 +134,7 @@ export function dormancyDecision({
 // The last line a console prints when it gives up. A launch the daemon
 // refused names the reason; the browser cannot read it anywhere else,
 // because a refused launch never had a session to show.
-export function endNotice(announced: any, message: any) {
+export function endNotice(announced: string | null, message: string | null | undefined) {
   if (announced !== "refused") return "[session closed]";
   const why = typeof message === "string" ? message.trim() : "";
   return why ? `[could not start: ${why}]` : "[could not start]";
@@ -133,12 +148,19 @@ export function endNotice(announced: any, message: any) {
 // null. It is the only trustworthy signal of a deliberate end: the browser
 // reports 1005/wasClean=false even for a served Close frame, so an
 // unannounced dirty close is read as a flaky link.
+// What the reconnect rule reads of one socket that closed.
+type ReconnectInput = {
+  everOpened: boolean;
+  announced: string | null;
+  idKnown: boolean;
+  failedReopens: number;
+};
 export function reconnectDecision({
   everOpened,
   announced,
   idKnown,
   failedReopens,
-}: any) {
+}: ReconnectInput) {
   // R1: no id is nothing to reattach TO; reconnecting would spawn a SECOND
   // session.
   if (!idKnown) return "give-up";
@@ -165,7 +187,10 @@ export function reconnectDecision({
 // `reconnectDecision`'s answer. Returns it unchanged, or "hold".
 // No group (a local project, the popup, a fleet not read yet) changes
 // nothing, and a launch (no id) is held by its placeholder (`peerHeld`).
-export function peerGate({ decision, group, id }: any) {
+// The answers a socket decision can have, and "hold" for a peer that is down.
+export type PeerDecision = "connect" | "reconnect" | "park-as-watcher" | "give-up" | "hold";
+type PeerGateInput = { decision: PeerDecision; group: Group | null | undefined; id: number | null | undefined };
+export function peerGate({ decision, group, id }: PeerGateInput): PeerDecision {
   if (id == null || !group || decision === "give-up") return decision;
   return WBFleet.available(group) ? decision : "hold";
 }
@@ -175,7 +200,14 @@ export function peerGate({ decision, group, id }: any) {
 // relaunches with no repo. An AGENT record asks for its vendor and worktree —
 // `{ console: true }` is the shell request. The checkout rides ONLY on the
 // agent request: the plain console stays on the primary (the `open` rule).
-export function relaunchRequest(record: any) {
+// What `relaunchRequest` reads of a desk record.
+type RelaunchRecord = {
+  repo?: string | null;
+  kind?: string | null;
+  agent?: string | null;
+  checkout?: string | null;
+};
+export function relaunchRequest(record: RelaunchRecord) {
   const repo = record.repo === "~" ? undefined : record.repo;
   if (record.kind !== "agent") return { console: true, repo, command: consoleCommand(record.agent) };
   return { repo, agent: record.agent, checkout: record.checkout ?? null };
@@ -184,7 +216,7 @@ export function relaunchRequest(record: any) {
 // The name a console box uses for the host of a peer project: the machine
 // name of a tunnel peer, else the environment (`WSL: Ubuntu`). `fallback` is
 // the environment the desk record kept, for a box drawn before the fleet list.
-export function peerHost(group: any, fallback: any) {
+export function peerHost(group: Group | null | undefined, fallback: string | null | undefined) {
   return WBFleet.peerName(group) || fallback || "The other computer";
 }
 
@@ -197,11 +229,17 @@ export function peerHost(group: any, fallback: any) {
 //   "wait"  — the daemon is already opening the tunnel again;
 //   null    — no click here fixes it (a token, a version, a descriptor).
 // The daemon's diagnosis is the detail: it names the cause and the remedy.
-export function peerOfflineView(group: any, refusal: any, fallbackHost: any) {
+// What a click on a peer box does: see `peerOfflineView`.
+type PeerAction = "wake" | "retry" | "wait" | null;
+export function peerOfflineView(
+  group: Group | null | undefined,
+  refusal: string | null | undefined,
+  fallbackHost: string | null | undefined,
+) {
   const host = peerHost(group, fallbackHost);
   const detail = (group && group.diagnosis) || (typeof refusal === "string" ? refusal.trim() : "");
-  const view = (text: any, action: any) => ({ text, detail, action });
-  const wakeOrRetry = WBFleet.wakeable(group) ? "wake" : "retry";
+  const view = (text: string, action: PeerAction) => ({ text, detail, action });
+  const wakeOrRetry: PeerAction = WBFleet.wakeable(group) ? "wake" : "retry";
   switch (group && group.state) {
     case "asleep":
       return view(`${host} is asleep.`, wakeOrRetry);
@@ -231,7 +269,13 @@ export function peerOfflineView(group: any, refusal: any, fallbackHost: any) {
 // Only a peer this box SAW offline counts as back. A refused launch on a
 // peer the fleet still calls reachable would otherwise relaunch, be refused,
 // and relaunch again.
-export function peerReturnDecision({ kind, canLaunch, available, wasOffline }: any) {
+type PeerReturnInput = {
+  kind: string | null | undefined;
+  canLaunch: boolean;
+  available: boolean;
+  wasOffline: boolean;
+};
+export function peerReturnDecision({ kind, canLaunch, available, wasOffline }: PeerReturnInput) {
   if (!available || !wasOffline) return "stay";
   return kind === "console" && canLaunch ? "relaunch" : "offer";
 }
@@ -243,20 +287,25 @@ export function peerReturnDecision({ kind, canLaunch, available, wasOffline }: a
 //                opens again, as a restore would have opened it;
 //   "offer"    — the same for an agent console: the click is the operator's;
 //   "stay"     — still not known (`undefined`): ask again on the next read.
-export function heldReturnDecision({ kind, canLaunch, session }: any) {
+type HeldReturnInput = {
+  kind: string | null | undefined;
+  canLaunch: boolean;
+  session: HostedSession | null | undefined;
+};
+export function heldReturnDecision({ kind, canLaunch, session }: HeldReturnInput) {
   if (session === undefined) return "stay";
   if (session) return "attach";
   return kind === "console" && canLaunch ? "relaunch" : "offer";
 }
 
-export function unheardRef(ref: any, unheard: any) {
+export function unheardRef(ref: string | null | undefined, unheard: ReadonlySet<string> | null | undefined) {
   const daemon = WBFleet.refDaemon(ref);
   return !!daemon && !!unheard?.has(daemon);
 }
 
 // The fleet group of `ref`'s peer when that peer cannot serve it, else null:
 // a local ref, an unknown peer, and a reachable one all launch as usual.
-export function peerHeld(ref: any, groups: any) {
+export function peerHeld(ref: string | null | undefined, groups: ReadonlyMap<string, Group>) {
   const daemon = WBFleet.refDaemon(ref);
   const group = daemon ? groups.get(daemon) : null;
   return group && !WBFleet.available(group) ? group : null;
@@ -265,20 +314,20 @@ export function peerHeld(ref: any, groups: any) {
 // A console-kind session's `agent` label is its startup command, or the
 // literal `console` for the bare shell (the daemon labels it so on launch).
 // So the label alone says how to launch that console again.
-export function consoleCommand(label: any) {
+export function consoleCommand(label: string | null | undefined) {
   return label && label !== "console" ? label : undefined;
 }
 
 // The session the window holds, on a `/api/sessions` listing: the daemon's
 // id AND the repo ref, because a restarted daemon hands out ids from 1
 // again and a peer's id 1 is not this daemon's (the ref carries the peer).
-export function sessionRowFor(win: any, sessions: any) {
+export function sessionRowFor(win: ConsoleWin, sessions: readonly HostedSession[] | null | undefined) {
   const id = sessionIdOf(win);
   if (id == null) return null;
   const ref = win._deskRepo;
   return (
     (sessions || []).find(
-      (s: any) => s && s.id === id && (ref === "~" ? !s.repo || s.repo === "~" : s.repo === ref),
+      (s) => s && s.id === id && (ref === "~" ? !s.repo || s.repo === "~" : s.repo === ref),
     ) || null
   );
 }

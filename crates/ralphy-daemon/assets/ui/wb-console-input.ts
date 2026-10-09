@@ -11,17 +11,18 @@
    `wb-console.ts` imports this module, on both documents (`index.html` and
    `detached-fence.html`).
    --------------------------------------------------------------------------- */
+import type { Point, Tap } from "./wb-types.d.ts";
 
 // The engine, not the brand: WebKit answers "Apple Computer, Inc." in every
 // browser on iPadOS; Chromium "Google Inc."; Firefox "". Pure so the string
 // table is the contract.
-export function isWebKit(vendor: any) {
+export function isWebKit(vendor: string) {
   return typeof vendor === "string" && vendor.startsWith("Apple");
 }
 
 // Whether this engine must render in the DOM instead of on the GPU: the WebGL
 // addon draws scrolled rows twice on WebKit.
-export function prefersDomRenderer(vendor: any) {
+export function prefersDomRenderer(vendor: string) {
   return isWebKit(vendor);
 }
 
@@ -29,7 +30,7 @@ export function prefersDomRenderer(vendor: any) {
 // sandboxed frame and a standalone PWA. On WebKit it is true but iOS drops
 // out of fullscreen the moment a text field takes focus, so on an iPad the
 // first keystroke would cancel it; maximize is the honest control there.
-export function fullscreenOffered(enabled: any, vendor: any) {
+export function fullscreenOffered(enabled: boolean, vendor: string) {
   return enabled === true && !isWebKit(vendor);
 }
 
@@ -40,7 +41,7 @@ export function fullscreenOffered(enabled: any, vendor: any) {
 // forwards `wheel` in JS. Upstream: xterm.js #3613, #594, #5377.
 // Pure: pixels dragged → lines, at the cell height, sign flipped. A
 // zero/absent cell height yields 0, not Infinity.
-export function touchScrollLines(dyPx: any, cellHeight: any) {
+export function touchScrollLines(dyPx: number, cellHeight: number) {
   if (!Number.isFinite(dyPx) || !Number.isFinite(cellHeight) || cellHeight <= 0) return 0;
   return -dyPx / cellHeight;
 }
@@ -51,7 +52,7 @@ export function touchScrollLines(dyPx: any, cellHeight: any) {
 // the plain case — under a TUI the viewport's history is stale frames
 // ("ghost" text). `mode` is `term.modes.mouseTrackingMode`; `bufferType` is
 // `term.buffer.active.type`.
-export function touchScrollTarget(mode: any, bufferType: any) {
+export function touchScrollTarget(mode: string, bufferType: string) {
   if (typeof mode === "string" && mode !== "none") return "app";
   if (bufferType === "alternate") return "app";
   return "viewport";
@@ -62,7 +63,7 @@ export function touchScrollTarget(mode: any, bufferType: any) {
 // the pan is given back here through the same `scrollLeft/Top` writes the
 // mouse pan makes. Under `maxlock` there is nowhere to pan. Three are the
 // system's.
-export function touchGesture(fingers: any, maxlock: any) {
+export function touchGesture(fingers: number, maxlock: boolean) {
   if (fingers === 1) return "terminal";
   if (fingers === 2 && !maxlock) return "canvas";
   return "none";
@@ -70,8 +71,8 @@ export function touchGesture(fingers: any, maxlock: any) {
 
 // The point between the fingers, which is what a two-finger pan tracks: the
 // fingers can drift apart or together without the plane jumping.
-export function touchCentroid(touches: any) {
-  const list: any[] = Array.from(touches ?? []);
+export function touchCentroid(touches: TouchList | null | undefined) {
+  const list: Touch[] = Array.from(touches ?? []);
   if (!list.length) return { x: 0, y: 0 };
   let x = 0;
   let y = 0;
@@ -89,10 +90,10 @@ export function touchCentroid(touches: any) {
 // grab offset taken at pointerdown. An unknown pointer type gets the
 // finger's number.
 const DRAG_THRESHOLD = { mouse: 4, touch: 10 };
-export function dragThreshold(pointerType: any) {
+export function dragThreshold(pointerType: string) {
   return pointerType === "mouse" ? DRAG_THRESHOLD.mouse : DRAG_THRESHOLD.touch;
 }
-export function dragBegins(start: any, pointer: any, threshold: any) {
+export function dragBegins(start: Point | null | undefined, pointer: Point | null | undefined, threshold: number) {
   const dx = (pointer?.x || 0) - (start?.x || 0);
   const dy = (pointer?.y || 0) - (start?.y || 0);
   return Math.hypot(dx, dy) >= threshold;
@@ -104,7 +105,7 @@ export function dragBegins(start: any, pointer: any, threshold: any) {
 // turn two taps on a `touch-action: none` bar into one. `prev` and `tap`
 // are `{ t, x, y }` (ms, client px); `prev` is null after a double tap.
 export const DOUBLE_TAP_MS = 300;
-export function isDoubleTap(prev: any, tap: any) {
+export function isDoubleTap(prev: Tap | null | undefined, tap: Tap | null | undefined) {
   if (!prev || !tap) return false;
   const gap = tap.t - prev.t;
   return gap >= 0 && gap <= DOUBLE_TAP_MS && !dragBegins(prev, tap, DRAG_THRESHOLD.touch);
@@ -119,7 +120,7 @@ export const HOLD_MS = 500;
 // being motion and starts being drift, so it is cut rather than eased.
 const FLING_DECAY = 0.94;
 export const FLING_MIN = 0.02; // px/ms
-export function flingStep(velocity: any, ms: any) {
+export function flingStep(velocity: number, ms: number) {
   if (!Number.isFinite(velocity) || !Number.isFinite(ms) || ms <= 0) {
     return { dy: 0, velocity: 0 };
   }
@@ -135,7 +136,7 @@ export function flingStep(velocity: any, ms: any) {
 // scrolls nothing. `appCursor` is read live off `term.modes`.
 // Null-prototype: a plain literal answers `"toString"` with a function, and
 // the name comes off a `data-key` attribute — a string from the DOM.
-const KEY_BYTES = Object.assign(Object.create(null), {
+const KEY_BYTES: Record<string, string | undefined> = Object.assign(Object.create(null), {
   esc: "\x1b",
   tab: "\t",
   // CR, what a real Return key sends. Lets a menu be answered with the bar
@@ -145,7 +146,7 @@ const KEY_BYTES = Object.assign(Object.create(null), {
   slash: "/",
   "ctrl-c": "\x03",
 });
-const ARROW_FINAL = Object.assign(Object.create(null), {
+const ARROW_FINAL: Record<string, string | undefined> = Object.assign(Object.create(null), {
   up: "A",
   down: "B",
   right: "C",
@@ -155,7 +156,7 @@ const ARROW_FINAL = Object.assign(Object.create(null), {
 // (CBT, which Claude Code cycles its modes on), and an arrow takes the
 // modifier parameter 2 in both cursor modes. Esc, Enter, / and ^C have no
 // Shift form here, so they are sent unchanged.
-export function keySequence(name: any, appCursor: any, shift: any) {
+export function keySequence(name: string, appCursor: boolean, shift: boolean) {
   if (shift && name === "tab") return "\x1b[Z";
   const literal = KEY_BYTES[name];
   if (typeof literal === "string") return literal;
@@ -168,7 +169,7 @@ export function keySequence(name: any, appCursor: any, shift: any) {
 // One key-bar tap under the Shift latch. `shift` toggles the latch and sends
 // nothing. A key that sends bytes uses the latch once and clears it; a key
 // that sends nothing leaves it set.
-export function barKey(name: any, appCursor: any, latched: any) {
+export function barKey(name: string, appCursor: boolean, latched: boolean) {
   if (name === "shift") return { seq: "", latched: !latched };
   const seq = keySequence(name, appCursor, latched);
   return { seq, latched: seq ? false : latched };
@@ -178,7 +179,7 @@ export function barKey(name: any, appCursor: any, latched: any) {
 // the NEXT character is folded. Only a single printable character folds — `d`
 // can be a whole paste or a bracketed-paste burst, and masking its first byte
 // would corrupt it. Anything else passes through WITH the latch still set.
-export function applyCtrlLatch(latched: any, d: any) {
+export function applyCtrlLatch(latched: boolean, d: string) {
   if (!latched || typeof d !== "string" || d.length !== 1) return { out: d, latched };
   const code = d.toUpperCase().charCodeAt(0);
   if (code < 0x40 || code > 0x5f) return { out: d, latched };
@@ -195,14 +196,14 @@ export function applyCtrlLatch(latched: any, d: any) {
 // the replay lasts a moment, so that collision is accepted.
 const TERMINAL_REPLY =
   /^\x1b(?:\[(?:[?>]?[\d;]*[Rnc]|\??[\d;]+\$y|[\d;]+t|\?\d*u)|P[\s\S]*\x1b\\|\]\d+;[\s\S]*(?:\x07|\x1b\\))$/;
-export function isTerminalReply(d: any) {
+export function isTerminalReply(d: string) {
   return typeof d === "string" && TERMINAL_REPLY.test(d);
 }
 
 // Whether a window shows the bar. `mode` is "on", "off", or absent for auto
 // (has a touch surface). `any-pointer` rather than `pointer`: an iPad with a
 // Magic Keyboard reports a FINE primary pointer and is still a tablet.
-export function keyBarVisible(mode: any, coarse: any) {
+export function keyBarVisible(mode: string | null | undefined, coarse: boolean) {
   if (mode === "on") return true;
   if (mode === "off") return false;
   return !!coarse;
@@ -213,14 +214,14 @@ export function keyBarVisible(mode: any, coarse: any) {
 // field focused, so the bar keys, a paste and a hardware keyboard still
 // type, with no virtual keyboard on screen. Without the bar the attribute
 // is absent and the browser decides. Pure.
-export function terminalInputMode(barShown: any, keyboardOpen: any) {
+export function terminalInputMode(barShown: boolean, keyboardOpen: boolean) {
   return barShown && !keyboardOpen ? "none" : null;
 }
 
 // Whether the key bar offers a PASTE button. `readText` exists only in a
 // secure context, and unlike the write there is no `execCommand` fallback
 // for a read. Pure: takes the clipboard object (or `undefined`).
-export function pasteOffered(clipboard: any) {
+export function pasteOffered(clipboard: Clipboard | undefined) {
   return !!clipboard && typeof clipboard.readText === "function";
 }
 
@@ -231,7 +232,7 @@ export function pasteOffered(clipboard: any) {
 // to copy erased the text first. With a selection it copies; without one it
 // pastes; where the clipboard cannot be read (an insecure origin) it does
 // nothing, and Ctrl+V still pastes. Pure.
-export function rightClickAction(hasSelection: any, canPaste: any) {
+export function rightClickAction(hasSelection: boolean, canPaste: boolean) {
   if (hasSelection) return "copy";
   return canPaste ? "paste" : "none";
 }
@@ -243,7 +244,7 @@ export function rightClickAction(hasSelection: any, canPaste: any) {
 // it reaches the child as the click it was. A press with any modifier keeps
 // xterm's own routing, so Alt+drag still gives the drag to the child. Pure:
 // `mode` is `term.modes.mouseTrackingMode`.
-export function pressRoute(mode: any, button: any, modified: any) {
+export function pressRoute(mode: string, button: number, modified: boolean) {
   if (typeof mode !== "string" || mode === "none") return "pass";
   return button === 0 && !modified ? "hold" : "pass";
 }
@@ -252,14 +253,14 @@ export function pressRoute(mode: any, button: any, modified: any) {
 // (`shouldForceSelection`): Option on macOS, which needs
 // `macOptionClickForcesSelection`, and Shift elsewhere. Alt is NOT set
 // outside macOS: there it asks for a column selection. Pure.
-export function forceSelectionKeys(platform: any) {
+export function forceSelectionKeys(platform: string | undefined) {
   return /Mac|iPhone|iPad/.test(platform || "") ? { altKey: true } : { shiftKey: true };
 }
 
 // A move with no button pressed is a report too (mode "any", DECSET 1003)
 // and clears the selection the same way: moving the pointer to the right
 // button would erase it. Held back while a selection exists. Pure.
-export function holdMoveReport(mode: any, hasSelection: any, buttons: any) {
+export function holdMoveReport(mode: string, hasSelection: boolean, buttons: number) {
   return typeof mode === "string" && mode !== "none" && !!hasSelection && buttons === 0;
 }
 
@@ -269,7 +270,7 @@ export function holdMoveReport(mode: any, hasSelection: any, buttons: any) {
 // same number. Width, not pointer: an iPad keeps its chrome. 560px is the
 // workbench's phone breakpoint (04-canvas.css, 11-appended.css).
 export const PHONE_MAX_WIDTH = 560;
-export function phoneBleed(maxed: any, viewportWidth: any) {
+export function phoneBleed(maxed: boolean, viewportWidth: number) {
   return !!maxed && Number.isFinite(viewportWidth) && viewportWidth <= PHONE_MAX_WIDTH;
 }
 
@@ -277,7 +278,7 @@ export function phoneBleed(maxed: any, viewportWidth: any) {
 // takes buffer-absolute rows, hence `viewportY`. Clamped to the screen so a
 // finger that slid off the bottom selects to the last row; a zero/NaN cell
 // height answers the top row, not NaN.
-export function selectionRow(clientY: any, screenTop: any, cellHeight: any, rows: any, viewportY: any) {
+export function selectionRow(clientY: number, screenTop: number, cellHeight: number, rows: number, viewportY: number) {
   const base = Number.isFinite(viewportY) ? viewportY : 0;
   if (!Number.isFinite(cellHeight) || cellHeight <= 0 || !Number.isFinite(clientY)) return base;
   const last = Math.max(0, (Number.isFinite(rows) ? rows : 1) - 1);
@@ -291,7 +292,7 @@ export const FONT_MIN = 10;
 export const FONT_MAX = 28;
 export const FONT_DEFAULT = 15;
 
-export function stepFont(current: any, delta: any) {
+export function stepFont(current: number, delta: number) {
   const from = Number.isFinite(current) ? current : FONT_DEFAULT;
   return Math.min(FONT_MAX, Math.max(FONT_MIN, Math.round(from) + delta));
 }
@@ -304,7 +305,9 @@ export function stepFont(current: any, delta: any) {
 //            viewport itself, so this reads ~0 and the CSS var path is inert.
 // A pinch is not a keyboard: `scale` gates it off.
 const ZOOM_EPSILON = 0.01;
-export function keyboardInset({ innerHeight, height, offsetTop, scale }: any) {
+// What `keyboardInset` reads of `window` and `visualViewport`.
+type KeyboardMetrics = { innerHeight: number; height: number; offsetTop: number; scale?: number };
+export function keyboardInset({ innerHeight, height, offsetTop, scale }: KeyboardMetrics) {
   if (typeof scale === "number" && Math.abs(scale - 1) > ZOOM_EPSILON) return 0;
   const inset = (innerHeight || 0) - (height || 0) - (offsetTop || 0);
   if (!Number.isFinite(inset) || inset <= 0) return 0;
@@ -322,9 +325,11 @@ export const IMAGE_PASTE_MAX = 4 * 1024 * 1024;
 //   "watched"     — an image, but this window only watches: refuse visibly;
 //   "too-large"   — an image past the cap: refuse without sending;
 //   "drop"        — an image to hand to `image.write`.
-export function pasteDecision({ types, size, watching }: any) {
+// What `pasteDecision` reads of a paste.
+type PasteInput = { types: readonly string[] | null | undefined; size: number; watching: boolean };
+export function pasteDecision({ types, size, watching }: PasteInput) {
   const hasImage = (types || []).some(
-    (t: any) => typeof t === "string" && t.startsWith("image/"),
+    (t) => typeof t === "string" && t.startsWith("image/"),
   );
   if (!hasImage) return "passthrough";
   if (watching) return "watched";
@@ -338,10 +343,11 @@ export function pasteDecision({ types, size, watching }: any) {
 // (U+0080 to U+009F) go too: U+009B is a one-character CSI, so a terminal that
 // reads C1 runs it like an escape sequence. A code-point test
 // so the source carries no control-character escapes of its own.
-export function scrubClipboard(text: any) {
+export function scrubClipboard(text: string) {
   let out = "";
   for (const ch of text.replace(/\r\n/g, "\n")) {
-    const c = ch.codePointAt(0);
+    // A `for…of` over a string yields non-empty code points.
+    const c = ch.codePointAt(0)!;
     // Keep tab (9) and newline (10); drop the rest of C0, DEL (127) and C1.
     if (c === 9 || c === 10 || (c >= 32 && c !== 127 && !(c >= 0x80 && c <= 0x9f))) out += ch;
   }
@@ -350,10 +356,10 @@ export function scrubClipboard(text: any) {
 
 // Pure over `ClipboardItem`s: the first image wins over text, as in the
 // keyboard `paste` event (ADR-0055).
-export async function clipboardContent(items: any) {
-  const list: any[] = Array.from(items || []);
+export async function clipboardContent(items: readonly ClipboardItem[] | null | undefined) {
+  const list: ClipboardItem[] = Array.from(items || []);
   for (const item of list) {
-    const type = (item.types || []).find((t: any) => t.startsWith("image/"));
+    const type = (item.types || []).find((t) => t.startsWith("image/"));
     if (type) return { image: await item.getType(type) };
   }
   for (const item of list) {

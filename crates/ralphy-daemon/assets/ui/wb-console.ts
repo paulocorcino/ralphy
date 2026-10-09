@@ -2047,8 +2047,8 @@ export function createConsole(window: any, document: any, location: any, opts: a
       detail.hidden = !view.detail;
       const btn = strip.querySelector(".session-reconnect");
       btn.dataset.act = view.action || "";
-      btn.hidden = !PEER_BUTTON[view.action];
-      if (PEER_BUTTON[view.action]) btn.textContent = PEER_BUTTON[view.action];
+      btn.hidden = !PEER_BUTTON[view.action as string];
+      if (PEER_BUTTON[view.action as string]) btn.textContent = PEER_BUTTON[view.action as string];
     };
 
     // NAMED, not inline: a dormant console rebuilds its terminal (`wakeWindow`)

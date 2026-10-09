@@ -14,6 +14,8 @@ import { WBFail } from "./wb-fail.ts";
 import * as WBConsoleInput from "./wb-console-input.ts";
 import * as WBConsoleSession from "./wb-console-session.ts";
 import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
+import type { DetachReason } from "./wb-console-session.ts";
+import type { Group } from "./wb-fleet.ts";
 
 const {
   prefersDomRenderer,
@@ -71,19 +73,72 @@ const OSC52_MAX_B64 = 128 * 1024;
 export type TerminalDeps = {
   // The console's page: `WBDaemon` (the image paste) and `getShell` (whether
   // the shell's key listener exists).
-  window: any;
+  window: Pick<Window, "WBDaemon" | "getShell">;
   // The session socket's origin, scheme-matched to the page.
   WS_ORIGIN: string;
   // The stored font size, read when a terminal is made.
   fontSize: () => number;
   // The plane and the viewport; null before the page has them.
-  stage: () => any;
-  workspace: () => any;
+  stage: () => HTMLElement | null;
+  workspace: () => HTMLElement | null;
   // Stops a jump of the viewport in flight: a two-finger pan outranks it.
   cancelSlide: () => void;
   // The system clipboard. They stay in the console: the key bar uses them too.
-  writeClipboard: (text: any, term: any) => void;
-  readClipboard: () => Promise<any>;
+  writeClipboard: (text: string, term: XtermTerminal) => void;
+  readClipboard: () => Promise<ClipboardRead>;
+};
+
+// What a clipboard read gives: an image, or else text (`clipboardContent`).
+type ClipboardRead = { image?: Blob; text?: string };
+
+// What a `/ws/session` connection is asked for, one of: {repo, agent} (a NEW
+// agent launch), {console: true[, repo]} (a NEW free-console launch) or
+// {id[, takeover][, watch]} (a reattach). One bag here; `WBSessionRoute.url`
+// takes it as the union it is built from.
+type ConnectOpts = {
+  id?: number | null;
+  repo?: string | null;
+  agent?: string | null;
+  console?: boolean;
+  command?: string;
+  checkout?: string | null;
+  name?: string | null;
+  record?: string;
+  takeover?: boolean;
+  watch?: boolean;
+};
+
+// The payload of the daemon's `session-end` and `session-open` frames.
+type FramePayload = NonNullable<Parameters<typeof WBSessionRoute.announcement>[1]> & {
+  reason?: string;
+  message?: unknown;
+  watch?: boolean;
+};
+
+// A command frame the daemon pushes on the session socket.
+type SessionFrame = { verb?: string; payload?: FramePayload };
+
+// What `attachTerminal` is built with, and what the chrome hands back to
+// rebuild a terminal after sleep (`TermWiring`).
+export type TerminalOpts = ConnectOpts & {
+  // Arms or disarms the key bar's line-selection button.
+  onSelecting?: (on: boolean) => void;
+  // A key or a paste was refused because this window only watches.
+  onWatchedInput?: () => void;
+  onCtrlLatch?: (on: boolean) => void;
+  onShiftLatch?: (on: boolean) => void;
+  // The session's id, and the daemon's announcement when it came with one.
+  onSession?: (id: number | null, announced?: FramePayload) => void;
+  // This window parked as a watcher: `announced` is the daemon's reason.
+  onPark?: (announced: string | null) => void;
+  onEnded?: (announced: string | null, refusal: string | null) => void;
+  // The baton came back to this window.
+  onResume?: () => void;
+  // The peer's fleet group, or null for a local project.
+  peerGroup?: () => Group | null;
+  onPeerHold?: (group: Group | null) => void;
+  onPeerBack?: () => void;
+  readFleet?: () => void;
 };
 
 export function createTerminal(deps: TerminalDeps) {
@@ -91,7 +146,7 @@ export function createTerminal(deps: TerminalDeps) {
     deps;
 
   // Announce `reason` on an open socket. A socket still connecting cannot send.
-  function announceDetach(ws: any, reason: any) {
+  function announceDetach(ws: WebSocket | null, reason: DetachReason | undefined) {
     if (reason && ws && ws.readyState === 1) ws.send(encodeDetach(reason));
   }
 
@@ -99,7 +154,7 @@ export function createTerminal(deps: TerminalDeps) {
   // as much as `onclose`: a frame still queued lands AFTER this returns, when
   // `ws` names the replacement. Local, not `WBDaemon`'s: this module loads on
   // its own in the node harness and the popup.
-  function detachSocket(ws: any, reason: any) {
+  function detachSocket(ws: WebSocket | null, reason: DetachReason | undefined) {
     if (!ws) return;
     ws.onclose = null;
     ws.onmessage = null;
@@ -116,7 +171,7 @@ export function createTerminal(deps: TerminalDeps) {
   // (a NEW free-console launch — home dir when `repo` absent), or
   // {id[, takeover][, watch]} (a REATTACH; `watch` is read-only). Returns a
   // handle so the window chrome can refit, take the baton, and close it.
-  function attachTerminal(body: any, opts: any) {
+  function attachTerminal(body: HTMLElement, opts: TerminalOpts) {
     const term = new Terminal({ convertEol: false, theme: TERMINAL_THEME });
     // Set rather than passed: the constructor literal is pinned in lib.rs as
     // the theme contract; the size is a per-profile preference.
@@ -134,10 +189,10 @@ export function createTerminal(deps: TerminalDeps) {
     // gesture). Every browser on iPadOS is WebKit.
     // The terminal starts on the DOM renderer; the page decides which windows
     // hold a context (`rebalanceGpu`, wb-console-gpu.ts) and calls `useGpu`/`dropGpu`.
-    let webgl: any = null;
+    let webgl: XtermWebglAddon | null = null;
     // The canvases the addon added, so `dropGpu` asks only them for a context:
     // `getContext` on a canvas that has none would create one.
-    let gpuCanvases: any = [];
+    let gpuCanvases: HTMLCanvasElement[] = [];
     // A browser that cannot give a context is not asked again.
     let gpuBroken = false;
     function useGpu() {
@@ -175,7 +230,7 @@ export function createTerminal(deps: TerminalDeps) {
     // The touch gesture this terminal owns (`touchScrollLines`). Single finger
     // only; the stylesheet's `touch-action: none` already told the browser the
     // console is not a pan surface, and A+/A− is a terminal's zoom.
-    let touchY: any = null;
+    let touchY: number | null = null;
     let touchX = 0;
     let touchLastY = 0;
     let touchAccum = 0;
@@ -188,13 +243,13 @@ export function createTerminal(deps: TerminalDeps) {
     // buffer lines (`selectLines` is the public API; cell-precise is not), and
     // lifting the finger disarms it, leaving the selection for the copy button.
     let selecting = false;
-    let selStart: any = null;
-    const setSelecting = (on: any) => {
+    let selStart: number | null = null;
+    const setSelecting = (on: boolean) => {
       selecting = !!on;
       selStart = null;
       if (typeof opts.onSelecting === "function") opts.onSelecting(selecting);
     };
-    const rowAt = (clientY: any) => {
+    const rowAt = (clientY: number) => {
       const screen = term.element?.querySelector(".xterm-screen");
       const top = screen ? screen.getBoundingClientRect().top : 0;
       return selectionRow(clientY, top, cellHeight(), term.rows, term.buffer.active.viewportY);
@@ -213,7 +268,7 @@ export function createTerminal(deps: TerminalDeps) {
     // wheel events — one per line, so `consumeWheelEvent` neither dampens nor
     // batches them — at the finger's coordinates (a mouse report carries the
     // cell). xterm then does what it does for the trackpad.
-    const wheelToApp = (lines: any) => {
+    const wheelToApp = (lines: number) => {
       const el = term.element;
       if (!el) return;
       const deltaY = Math.sign(lines);
@@ -240,7 +295,7 @@ export function createTerminal(deps: TerminalDeps) {
       if (touchScrollTarget(term.modes.mouseTrackingMode, term.buffer.active.type) === "app") wheelToApp(whole);
       else term.scrollLines(whole);
     };
-    const scrollByPixels = (dy: any) => {
+    const scrollByPixels = (dy: number) => {
       touchAccum += touchScrollLines(dy, cellHeight());
       if (!scrollRaf) scrollRaf = requestAnimationFrame(flushScroll);
     };
@@ -261,7 +316,7 @@ export function createTerminal(deps: TerminalDeps) {
     };
     // A two-finger pan of the plane, live until either finger lifts. The
     // remaining finger does NOT resume a scroll: it never had a `touchstart`.
-    let pan: any = null;
+    let pan: { x: number; y: number; left: number; top: number } | null = null;
     const stopPan = () => {
       if (!pan) return;
       pan = null;
@@ -269,7 +324,7 @@ export function createTerminal(deps: TerminalDeps) {
     };
     body.addEventListener(
       "touchstart",
-      (e: any) => {
+      (e: TouchEvent) => {
         stopFling();
         // Armed selection. Prevented so the synthesized click never reaches
         // xterm's mousedown, which would clear the selection; the textarea
@@ -293,7 +348,7 @@ export function createTerminal(deps: TerminalDeps) {
           // The operator's hand outranks a jump in flight (as `onFloorDown`).
           cancelSlide();
           const c = touchCentroid(e.touches);
-          pan = { x: c.x, y: c.y, left: ws.scrollLeft, top: ws.scrollTop };
+          pan = { x: c.x, y: c.y, left: ws!.scrollLeft, top: ws!.scrollTop };
           stage()?.classList.add("panning");
           return;
         }
@@ -315,7 +370,7 @@ export function createTerminal(deps: TerminalDeps) {
     );
     body.addEventListener(
       "touchmove",
-      (e: any) => {
+      (e: TouchEvent) => {
         if (selecting && selStart != null) {
           if (e.touches.length === 1) {
             const row = rowAt(e.touches[0].clientY);
@@ -351,7 +406,7 @@ export function createTerminal(deps: TerminalDeps) {
       },
       { passive: false },
     );
-    const endTouch = (e: any) => {
+    const endTouch = (e: TouchEvent) => {
       // The selection stays (the copy button reads it); the arming does not.
       if (selecting) {
         if (e.touches.length === 0) setSelecting(false);
@@ -371,7 +426,7 @@ export function createTerminal(deps: TerminalDeps) {
       }
       let v = touchVelocity;
       let last = performance.now();
-      const glide = (now: any) => {
+      const glide = (now: number) => {
         const step = flingStep(v, now - last);
         last = now;
         v = step.velocity;
@@ -395,7 +450,7 @@ export function createTerminal(deps: TerminalDeps) {
     // newline either way. Text falls through untouched. The gate mirrors
     // `onData`: a watcher SEES the refusal, and nothing leaves its window.
     // Returns whether the paste was taken (false = let the text through).
-    const dropImage = (types: any, file: any) => {
+    const dropImage = (types: string[], file: Blob | null) => {
       const decision = pasteDecision({ types, size: file ? file.size : -1, watching });
       if (decision === "passthrough") return false;
       if (decision === "watched") {
@@ -418,7 +473,7 @@ export function createTerminal(deps: TerminalDeps) {
         const base64 = String(reader.result).replace(/^data:[^,]*,/, "");
         daemon
           .write("image.write", { repo: currentRepo, base64 })
-          .then((reply: any) => {
+          .then((reply) => {
             if (WBFail.isError(reply) || !reply.path) {
               const why = WBFail.why(reply, "the daemon refused it");
               term.write(`\r\n[paste refused — ${why}]\r\n`);
@@ -428,16 +483,17 @@ export function createTerminal(deps: TerminalDeps) {
             term.focus();
           })
           // The socket closed with no reply: say what the browser saw.
-          .catch((err: any) => {
+          .catch((err: { message?: string } | null | undefined) => {
             const why = (err && err.message) || "connection unavailable";
             term.write(`\r\n[paste refused — ${why}]\r\n`);
           });
       };
-      reader.readAsDataURL(file);
+      // `file` is set: a missing one has size -1, and `pasteDecision` refuses it.
+      reader.readAsDataURL(file!);
       return true;
     };
-    term.textarea.addEventListener("paste", (e: any) => {
-      const items: any[] = Array.from(e.clipboardData?.items ?? []);
+    term.textarea.addEventListener("paste", (e: ClipboardEvent) => {
+      const items: DataTransferItem[] = Array.from(e.clipboardData?.items ?? []);
       const image = items.find((i) => i.type.startsWith("image/"));
       const file = image ? image.getAsFile() : null;
       if (dropImage(items.map((i) => i.type), file)) e.preventDefault();
@@ -454,7 +510,7 @@ export function createTerminal(deps: TerminalDeps) {
     //   the window whose operator asked owns the clipboard. (Copying BY HAND
     //   in a watcher stays allowed — the #335 gate is about writing to the
     //   child.)
-    term.parser.registerOscHandler(52, (data: any) => {
+    term.parser.registerOscHandler(52, (data: string) => {
       // NEVER return the clipboard promise: `OscHandler.end` PAUSES the parser
       // on a promise, and a rejected write (unfocused document) would stall
       // the terminal.
@@ -465,7 +521,7 @@ export function createTerminal(deps: TerminalDeps) {
       // `?` reads and `!` clears; both are no-ops.
       if (payload === "?" || payload === "!") return true;
       if (payload.length > OSC52_MAX_B64) return true;
-      let text;
+      let text: string;
       try {
         const bin = atob(payload);
         text = new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
@@ -480,7 +536,7 @@ export function createTerminal(deps: TerminalDeps) {
     // Ctrl+Insert copies the selection. NOT Ctrl+Shift+C: on Chrome/Edge that
     // is the DevTools accelerator and a page cannot take it back. Ctrl+C
     // belongs to the child.
-    term.attachCustomKeyEventHandler((e: any) => {
+    term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
       // Alt+Shift+arrows in a column walk the columns and their rows (ADR-0051
       // §5): xterm must not send them to the child, and the document listener
       // of the columns (wb-consoles-tab.ts) takes them.
@@ -520,7 +576,7 @@ export function createTerminal(deps: TerminalDeps) {
     // calls run inside the press, a user gesture.
     body.addEventListener(
       "mousedown",
-      (e: any) => {
+      (e: MouseEvent) => {
         if (e.button !== 2) return;
         const rightTaken = rightClickAction(term.hasSelection(), pasteOffered(navigator.clipboard));
         e.stopPropagation();
@@ -532,7 +588,7 @@ export function createTerminal(deps: TerminalDeps) {
           term.clearSelection();
         } else if (rightTaken === "paste") {
           readClipboard()
-            .then(({ image, text }: any) => {
+            .then(({ image, text }) => {
               if (image) dropImage([image.type], image);
               else if (text) term.paste(text);
             })
@@ -543,7 +599,7 @@ export function createTerminal(deps: TerminalDeps) {
     );
     body.addEventListener(
       "contextmenu",
-      (e: any) => {
+      (e: Event) => {
         e.preventDefault();
         e.stopPropagation();
       },
@@ -555,8 +611,8 @@ export function createTerminal(deps: TerminalDeps) {
     // replays are marked so this listener lets them through. The real release
     // is stopped: xterm adds its `mouseup` listener to the document during the
     // replayed press, and the real release would report a second time.
-    const replayed = new WeakSet();
-    const replay = (target: any, type: any, from: any, keys: any) => {
+    const replayed = new WeakSet<Event>();
+    const replay = (target: EventTarget | null, type: string, from: MouseEvent, keys: { altKey?: boolean; shiftKey?: boolean }) => {
       const ev = new MouseEvent(type, {
         bubbles: true,
         cancelable: true,
@@ -572,12 +628,13 @@ export function createTerminal(deps: TerminalDeps) {
         ...keys,
       });
       replayed.add(ev);
-      target.dispatchEvent(ev);
+      // The press came from a node inside the terminal (the `contains` test).
+      target!.dispatchEvent(ev);
     };
     body.addEventListener(
       "mousedown",
-      (e: any) => {
-        if (replayed.has(e) || !term.element?.contains(e.target)) return;
+      (e: MouseEvent) => {
+        if (replayed.has(e) || !term.element?.contains(e.target as Node)) return;
         const modified = e.shiftKey || e.altKey || e.ctrlKey || e.metaKey;
         if (pressRoute(term.modes.mouseTrackingMode, e.button, modified) !== "hold") return;
         e.stopPropagation();
@@ -589,7 +646,7 @@ export function createTerminal(deps: TerminalDeps) {
           doc.removeEventListener("mousemove", onMove, true);
           doc.removeEventListener("mouseup", onUp, true);
         };
-        const onMove = (m: any) => {
+        const onMove = (m: MouseEvent) => {
           if (!dragBegins(start, { x: m.clientX, y: m.clientY }, dragThreshold("mouse"))) return;
           end();
           // The selection service is disabled under tracking, so it does not
@@ -597,7 +654,7 @@ export function createTerminal(deps: TerminalDeps) {
           term.clearSelection();
           replay(e.target, "mousedown", e, forceSelectionKeys(navigator.platform || navigator.userAgent));
         };
-        const onUp = (u: any) => {
+        const onUp = (u: MouseEvent) => {
           end();
           u.stopPropagation();
           replay(e.target, "mousedown", e, {});
@@ -610,7 +667,7 @@ export function createTerminal(deps: TerminalDeps) {
     );
     body.addEventListener(
       "mousemove",
-      (e: any) => {
+      (e: MouseEvent) => {
         if (holdMoveReport(term.modes.mouseTrackingMode, term.hasSelection(), e.buttons)) {
           e.stopPropagation();
         }
@@ -628,8 +685,8 @@ export function createTerminal(deps: TerminalDeps) {
 
     let currentSessionId = opts.id ?? null;
     let currentRepo = opts.repo ?? null;
-    let currentDaemonId: any = null;
-    let currentEnvironment: any = null;
+    let currentDaemonId: string | null = null;
+    let currentEnvironment: string | null = null;
     let leaving = false;
 
     // A dropped socket does NOT end the session: the daemon keeps the child
@@ -644,14 +701,14 @@ export function createTerminal(deps: TerminalDeps) {
     // owns the choice; this carries it out.
     const RECONNECT_BASE = 1000;
     const RECONNECT_MAX = 15000;
-    let ws: any = null;
+    let ws: WebSocket | null = null;
     let opened = false; // has the CURRENT socket opened
     let everOpened = false; // has ANY socket of this window opened
     // True on EVERY path into the watcher role (the park below, or `{id,
     // watch}` from the start). The `term.onData` gate reads this flag.
     let watching = !!opts.watch;
-    let announced: any = null; // the daemon's reason, when it named one before closing
-    let refusal: any = null; // the daemon's words when that reason is "refused"
+    let announced: string | null = null; // the daemon's reason, when it named one before closing
+    let refusal: string | null = null; // the daemon's words when that reason is "refused"
     let switching = false; // an intentional close on the way to a takeover
     let firstConnect = true;
     // True while the scrollback replay is being parsed. The replay is RAW BYTES
@@ -660,7 +717,7 @@ export function createTerminal(deps: TerminalDeps) {
     // `term.write` returns: xterm parses ASYNCHRONOUSLY.
     let replaying = false;
     let retryDelay = 0;
-    let retryTimer: any = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let failedReopens = 0;
     let connectingSince = 0;
     // This window is done. Without the latch a resume would reconnect a dead
@@ -672,7 +729,7 @@ export function createTerminal(deps: TerminalDeps) {
     let held = false;
     const peerGroup = () => (typeof opts.peerGroup === "function" ? opts.peerGroup() : null);
 
-    function hold(group: any) {
+    function hold(group: Group | null) {
       held = true;
       if (retryTimer) {
         clearTimeout(retryTimer);
@@ -710,7 +767,7 @@ export function createTerminal(deps: TerminalDeps) {
       }, wait);
     }
 
-    function connect(connOpts: any) {
+    function connect(connOpts: ConnectOpts) {
       opened = false;
       announced = null;
       refusal = null;
@@ -722,7 +779,7 @@ export function createTerminal(deps: TerminalDeps) {
         WBSessionRoute.url(WS_ORIGIN, {
           ...connOpts,
           holder: WBSessionRoute.tabHolder(),
-        }),
+        } as Parameters<typeof WBSessionRoute.url>[1]),
       );
       ws.binaryType = "arraybuffer";
       connectingSince = Date.now();
@@ -750,9 +807,9 @@ export function createTerminal(deps: TerminalDeps) {
           term.write("\r\n[read-only: another window has control]\r\n");
         }
         fit.fit();
-        ws.send(encodeResize(term.rows, term.cols));
+        ws!.send(encodeResize(term.rows, term.cols));
       };
-      ws.onmessage = (ev: any) => {
+      ws.onmessage = (ev: MessageEvent) => {
         const a = new Uint8Array(ev.data);
         if (a[0] === TAG_TERMINAL) {
           if (currentSessionId == null) {
@@ -774,7 +831,7 @@ export function createTerminal(deps: TerminalDeps) {
         } else if (a[0] === TAG_COMMAND) {
           // The daemon's deliberate-end announcement, sent as DATA before the
           // Close frame: the close metadata does not survive the trip (#334).
-          let c = null;
+          let c: SessionFrame | null = null;
           try {
             c = JSON.parse(new TextDecoder().decode(a.subarray(1)));
           } catch {}
@@ -807,7 +864,7 @@ export function createTerminal(deps: TerminalDeps) {
       };
       // Swallow the error event; onclose drives recovery in every case.
       ws.onerror = () => {};
-      ws.onclose = (event: any) => {
+      ws.onclose = (event: CloseEvent) => {
         if (leaving || switching) return;
         if (!opened) failedReopens += 1;
         const decision = reconnectDecision({
@@ -850,7 +907,7 @@ export function createTerminal(deps: TerminalDeps) {
     // key bar, paste), so the watched gate and the Ctrl latch apply to all.
     let ctrlLatched = false;
     let shiftLatched = false;
-    function sendInput(raw: any) {
+    function sendInput(raw: string) {
       const folded = applyCtrlLatch(ctrlLatched, raw);
       ctrlLatched = folded.latched;
       if (typeof opts.onCtrlLatch === "function") opts.onCtrlLatch(ctrlLatched);
@@ -870,11 +927,11 @@ export function createTerminal(deps: TerminalDeps) {
 
     // The backlog's old queries are answered again during a replay; those
     // answers would reach the child as typed input.
-    term.onData((d: any) => {
+    term.onData((d) => {
       if (replaying && isTerminalReply(d)) return;
       sendInput(d);
     });
-    term.onResize(({ rows, cols }: any) => {
+    term.onResize(({ rows, cols }) => {
       if (ws && ws.readyState === WebSocket.OPEN)
         ws.send(encodeResize(rows, cols));
     });
@@ -906,7 +963,7 @@ export function createTerminal(deps: TerminalDeps) {
       // keystroke, and `Ctrl` then `c` folds through the same latch.
       // The Shift latch lives here, not in `sendInput`: the virtual keyboard
       // has its own Shift, so only the next BAR key consumes it.
-      sendKey(name: any) {
+      sendKey(name: string) {
         if (name === "ctrl") {
           ctrlLatched = !ctrlLatched;
           if (typeof opts.onCtrlLatch === "function") opts.onCtrlLatch(ctrlLatched);
@@ -930,7 +987,7 @@ export function createTerminal(deps: TerminalDeps) {
       // a selection is a read, and a watcher may copy what it sees.
       setSelecting,
       // The paste key's image: the same drop as a keyboard paste, same gate.
-      pasteImage(blob: any) {
+      pasteImage(blob: Blob) {
         return dropImage([blob.type], blob);
       },
       get selecting() {
@@ -940,7 +997,7 @@ export function createTerminal(deps: TerminalDeps) {
       // it acted. The `currentSessionId == null` bail is load-bearing: a window
       // not yet told its id would compose a LAUNCH url and spawn a second
       // vendor CLI (`reconnectDecision` R1, `takeOver`).
-      resume(stale: any) {
+      resume(stale: boolean) {
         if (leaving || ended || currentSessionId == null) return false;
         // Held: the fleet decides, so ask it rather than dial a peer it calls
         // down. Its answer reaches `peerRefresh`.
@@ -1005,7 +1062,7 @@ export function createTerminal(deps: TerminalDeps) {
         if (retryTimer && gate === "hold") hold(group);
       },
       // `reason` (see `encodeDetach`) tells the daemon why the socket closes.
-      dispose(reason: any) {
+      dispose(reason: DetachReason) {
         leaving = true;
         if (held) {
           held = false;
