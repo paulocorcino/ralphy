@@ -20,6 +20,7 @@ import "./wb-console-name.test.mjs";
 import "./wb-console-popups.test.mjs";
 import "./wb-console-session.test.mjs";
 import "./wb-console-terminal.test.mjs";
+import "./wb-console-title.test.mjs";
 import "./wb-console.test.mjs";
 import "./wb-daemon.test.mjs";
 import "./wb-desk-sink.test.mjs";

@@ -547,3 +547,8 @@ need.
    2 the API object stays inside `createConsole`. Without decision 3 each
    factory adds one dep line for every member it reads, and the `deps`
    blocks grow back to the size of the code they replace.
+
+**The title is cut as `createTitle(deps)` (#621).** The console name and its
+rename, the title's text and the worktree switcher are in
+`wb-console-title.ts`, built before the chrome; after this cut `wb-console.ts`
+has 4,057 lines, and the ratchet holds it there.
