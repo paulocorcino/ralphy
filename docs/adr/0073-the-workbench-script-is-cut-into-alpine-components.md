@@ -385,3 +385,56 @@ are counted in core, by decision 2.)
    same claim, or a unit test or a browser check replaces it. A pin is never
    deleted without a replacement. The pull request shows the count before and
    after.
+
+## Amendment (2026-10-09): app.ts ends near 500 lines
+
+The goal of issue #621 (a part of #605) is that `app.ts` ends near 500 lines
+and stops owning features. It only builds and connects the parts. This
+amendment records the goal, the order of the cuts, and the decisions the cuts
+need before code. It was measured on `f9d0aae3`: `app.ts` has 6,123 lines.
+The consoles group is 77 members (about 554 lines), and the files group is 83
+members (1,385 lines). `cargo run -q -p xtask -- ui-groups` prints the map
+again.
+
+1. **The goal.** `shell()` keeps only the side panel, the canvas tabs and the
+   slot, with the tab operations (`openTab`, `openDiff`, `activate`,
+   `repathTabs`, `syncViewer`, `detachFile`), the shared facts that still have
+   readers in two parts, and the `init` that starts the parts. Every other
+   part of the layout core becomes an Alpine component or an Alpine store.
+   This narrows D2: layout is the canvas tabs and the slot, not the whole core.
+
+2. **The order of the cuts.**
+   1. Plan 1: the consoles (two components) and the files (one component and
+      the move dialog).
+   2. Plan 2: an Alpine store `runs` first, then the runs panel, the board with
+      the plan and run dialogs, then git. The board and the runs wait for the
+      store, because their markup is four separate regions with only `body` as
+      the common parent.
+   3. Plan 3: the core parts: the connection and presence, the modal stack,
+      release, account, login and TOTP, spend and Ledger, the chrome panels,
+      the context menu and the backend seam, `wire()` and the file helpers.
+
+   Each plan is written after the plan before it has merged, from a new
+   measure. The cuts of `wb-console.ts` follow
+   [ADR-0075](./0075-the-workbench-script-is-written-in-typescript.md) and
+   run in the same plans.
+
+3. **A component's markup root is a `<div x-data="wbX">`.** A part whose
+   markup sits inside an `x-for` row does not get one instance for each row.
+   It gets one sibling element, shown for the open row. Files is the case: one
+   `wbFiles` element in `ul.projects`, shown for the open project.
+
+4. **The order of the `workbench:project-changed` listeners is not a
+   contract.** Each part resets only its own state. The test that checks "the
+   tree, the board, then git" changes to check that each part reacts.
+
+5. **A browser check reads a component through its root.** The shell data
+   stack does not hold a member that moved into a component, so a check reads
+   it with `Alpine.$data(document.querySelector('[x-data="wbX"]'))`. A cut
+   updates the checks that read the members it moves.
+
+6. **A component declares every field it assigns.** In Alpine 3.14,
+   `mergeProxies` writes a key that no scope owns to the last object in the
+   data stack, which is the shell. A field created later is declared as
+   `null` first. A component never assigns a shell field (D4): it calls a
+   shell method listed in `uses`, or it sends a `workbench:<verb>` event.
