@@ -116,6 +116,14 @@ STATE = """() => [...document.querySelectorAll('#stage .session-window')].map((w
 }))"""
 
 
+OLD_SOCKETS = """() => { window.__oldSockets = [...document.querySelectorAll('#stage .session-window')]
+  .map((w) => w._term?.ws).filter(Boolean); }"""
+
+NEW_SOCKET_OPEN = """() => [...document.querySelectorAll('#stage .session-window')]
+  .filter((w) => !w.classList.contains('dormant'))
+  .every((w) => w._term?.ws && !window.__oldSockets.includes(w._term.ws) && w._term.ws.readyState === 1)"""
+
+
 def sessions_since(log_path, n):
     out = []
     for line in traffic_lines(log_path)[n:]:
@@ -174,6 +182,7 @@ def main():
             )
 
             # D2 ---------------------------------------------------------------
+            page.evaluate(OLD_SOCKETS)
             page.evaluate("() => window.WBConsole.resumeAll(true)")
             check(
                 "D2 a stale resume reopens the awake console and says reconnect",
@@ -188,6 +197,10 @@ def main():
             check("no page errors", not errors, str(errors[:3]))
 
             # D3 ---------------------------------------------------------------
+            # The resume opens a NEW socket. Closed while it still connects, it
+            # ends `dropped` (no Close frame), and closed before it exists, it
+            # logs nothing: measured, 7 passes in 14 runs without this wait.
+            page.wait_for_function(NEW_SOCKET_OPEN, timeout=10000)
             browser.close()
         check(
             "D3 closing the page says client-closed",
