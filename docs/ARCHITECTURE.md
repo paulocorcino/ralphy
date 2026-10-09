@@ -224,6 +224,7 @@ any code, including code that does not exist yet. A behaviour test is not one.
 | Changelog fragments parse | `cargo run -p xtask -- changelog --check` (ADR-0056) |
 | UI asset contract | `node --test crates/ralphy-daemon/ui-tests`, oxlint (ADR-0057) |
 | Workbench modules type-check, and no first-party classic script comes back | `tsc --noEmit -p crates/ralphy-daemon/assets/ui`; `first_party_scripts_move_to_typescript_and_never_back` (`crates/ralphy-daemon/src/tests.rs`), with `CLASSIC_SCRIPTS` empty and `MODULE_WINDOW_NAMES` as ratchets (ADR-0075) |
+| No new explicit `any` in the workbench modules | oxlint `typescript/no-explicit-any` (`.oxlintrc.json`), with the modules that still have one listed in an override; a ratchet: the list only gets shorter (ADR-0075 D6) |
 | UI settings mirror matches the Rust keys | the `WB_SETTINGS` test in `crates/ralphy-daemon/src/tests.rs` |
 | Core names no vendor crate; no adapter depends on another; `ralphy-pricing` and `ralphy-release` are leaf crates | `core_and_adapters_keep_their_dependency_edges` (`crates/xtask/tests/crate_dependencies.rs`) |
 | `git`, `gh` and `ssh` are spawned only by their owners (§6) | `spawn_sites_match_the_baseline` (`crates/xtask/tests/ratchets.rs`), a ratchet on literal `Command::new("git" \| "gh" \| "ssh")` sites |
