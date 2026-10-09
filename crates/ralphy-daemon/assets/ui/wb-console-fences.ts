@@ -7,8 +7,8 @@
    `startFenceResize`, `arrangeFence` and `detachFence` for one console
    (ADR-0075 D7). They read the console only through `deps`, and `FenceDeps`
    lists every read, so `tsc` refuses a read outside it. `wb-console.ts`
-   creates one per console and keeps the fence list, the desk and the
-   lifecycle channel. A gesture begins and ends through the gestures owner,
+   creates one per console and keeps the desk and the lifecycle channel; the
+   fence list is `wb-console-fence-list.ts`. A gesture begins and ends through the gestures owner,
    and a detach changes the popup registry only through its calls.
    --------------------------------------------------------------------------- */
 import { WBGeometry } from "./wb-geometry.ts";
@@ -17,6 +17,7 @@ import * as WBDeskFolds from "./wb-desk-folds.ts";
 import { DIRS } from "./wb-console-chrome.ts";
 import type { Gestures } from "./wb-console-chrome.ts";
 import type { PopupRegistry } from "./wb-console-popups.ts";
+import type { FenceList } from "./wb-console-fence-list.ts";
 
 const { dragThreshold, dragBegins } = WBConsoleInput;
 const { FENCE_MIN, fenceMembership, fenceFits, fenceMoveDelta, tileIntoRect, resizeRect, WIN_MIN_W, WIN_MIN_H } =
@@ -42,6 +43,11 @@ export type FenceDeps = {
   // The fence records; the console reassigns the list, so it is read when a
   // gesture or a tiling needs it.
   fences: () => any[];
+  // The fence list: a fence's element, lock and refusal, the refusal flash,
+  // the detach glyph, the fences and windows as the stage has them now, the
+  // fence chrome, the fence verbs that change the desk, and the render of
+  // the fences and the cards.
+  fenceFloor: FenceList;
   // The plane; null before the page has it.
   stage: () => any;
   // Grows or fits the stage to the windows on it.
@@ -50,37 +56,18 @@ export type FenceDeps = {
   askConfirm: (opts: any) => Promise<unknown>;
   // The auto-pan loop of a drag at a viewport edge.
   autoPan: (node: any, place: any) => { follow: (pointer: any) => void; stop: () => void };
-  // Cancels the refusal flash a new fence shows.
-  clearFenceFlash: () => void;
-  // A fence's element and lock, by id.
-  fenceEl: (id: any) => any;
-  fenceLocked: (id: any) => boolean;
-  // A refusal, said on the fence.
-  fenceNotice: (id: any, text: any) => void;
   // What a popup is handed: the fence's members, measured on this stage.
   fenceSnapshot: (id: any) => any[];
   // Raises a window.
   focusWin: (win: any) => void;
-  // The detach glyph's click, and its painting.
+  // The detach glyph's click.
   glyphClick: (id: any) => void;
-  showDetachGlyph: (id: any, on: any) => void;
   // A new popup id.
   newPid: () => string;
-  // The fences and the windows as the stage has them now.
-  readFenceRects: (st: any) => any[];
-  readWindowRects: (st: any) => any[];
   // Brings a detached fence's consoles home.
   reattachFence: (id: any, opts?: any) => void;
-  // Repaints the count, columns and lock of every fence.
-  refreshFenceChrome: () => void;
-  // The fence verbs that change the desk.
-  removeFence: (id: any) => void;
-  renameFence: (id: any, name: any) => void;
-  setFenceLock: (id: any, locked: any) => void;
+  // Writes the fence records to the desk.
   saveFences: (next: any) => void;
-  // Puts the fences and the cards back on the stage.
-  renderFences: () => void;
-  renderNotes: () => void;
   // An element's rect read from the DOM.
   restoreRect: (el: any) => any;
   // Writes a window's fields to the desk.
@@ -98,33 +85,36 @@ export function createFences(deps: FenceDeps) {
     link,
     wins,
     fences,
+    fenceFloor,
     stage,
     applyExtent,
     askConfirm,
     autoPan,
-    clearFenceFlash,
-    fenceEl,
-    fenceLocked,
-    fenceNotice,
     fenceSnapshot,
     focusWin,
     glyphClick,
-    showDetachGlyph,
     newPid,
-    readFenceRects,
-    readWindowRects,
     reattachFence,
-    refreshFenceChrome,
-    removeFence,
-    renameFence,
-    setFenceLock,
     saveFences,
-    renderFences,
-    renderNotes,
     restoreRect,
     setWin,
     tearDownMember,
   } = deps;
+  const {
+    clearFenceFlash,
+    fenceEl,
+    fenceLocked,
+    fenceNotice,
+    showDetachGlyph,
+    readFenceRects,
+    readWindowRects,
+    refreshFenceChrome,
+    removeFence,
+    renameFence,
+    setFenceLock,
+    renderFences,
+    renderNotes,
+  } = fenceFloor;
 
   // Reuses `DIRS` so `resizeRect` answers all eight; its west/north legs clamp
   // at the pinned origin (no negative coordinate, ADR-0051 §2).

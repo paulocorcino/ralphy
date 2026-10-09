@@ -557,3 +557,9 @@ has 4,057 lines, and the ratchet holds it there.
 offset, the reveal, the slide, the auto-pan and the plane's pan and wheel are
 in `wb-console-view.ts`, built before the terminal; `refitAll` stays in the
 console. After this cut `wb-console.ts` has 3,708 lines.
+
+**The fence list is cut as `createFenceList(deps)` (#621).** The fence
+records' count, columns and lock chrome, the fence verbs that change the desk,
+the refusal said on a fence, the detach glyph and the focused fence are in
+`wb-console-fence-list.ts`, built before the view; the fences take it as one
+object. After this cut `wb-console.ts` has 3,423 lines.

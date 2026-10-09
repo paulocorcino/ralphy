@@ -4045,7 +4045,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-session-route.js",
                 "wb-daemon.js",
                 // `wb-console.ts` imports the geometry, the window state, the session folds,
-                // the desk folds, the GPU budget, the title, the view, the terminal, the
+                // the desk folds, the GPU budget, the title, the fence list, the view, the terminal, the
                 // window chrome, the popup registry, the fences, the desk, the console name
                 // and the input folds; the entry
                 // imports the console. Stated HERE because this set is a hardcoded floor:
@@ -4061,6 +4061,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-console-gpu.js",
                 "wb-console-terminal.js",
                 "wb-console-title.js",
+                "wb-console-fence-list.js",
                 "wb-console-view.js",
                 "wb-console-chrome.js",
                 "wb-console-popups.js",
@@ -4823,11 +4824,12 @@ fn the_workbench_never_titles_a_repo_with_its_routing_head() {
 /// node suite renders no DOM or CSS, so this test holds that half.
 #[test]
 fn shell_draws_fences_below_the_windows() {
-    // The console, its fences and its title, as one text: the fence element
-    // lives in the fences, the fence list and its rendering in the console,
-    // the console rename in the title.
+    // The console, its fence list, its fences and its title, as one text: the
+    // fence element lives in the fences, the fence list and its rendering in
+    // the fence list, the console rename in the title.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
+        include_str!("../assets/ui/wb-console-fence-list.ts"),
         include_str!("../assets/ui/wb-console-fences.ts"),
         include_str!("../assets/ui/wb-console-title.ts"),
     ]
@@ -4936,11 +4938,12 @@ fn shell_draws_fences_below_the_windows() {
     // plane's map (there is no minimap, and the Alt+Shift+F<n> rows are picked
     // out by name).
     assert!(
-        squeezed.contains("name: nextFenceName(fences),"),
+        squeezed.contains("name: nextFenceName(fences()),"),
         "a new fence must be numbered from the names present, not from the count"
     );
     assert!(
-        !squeezed.contains("name: `Fence ${fences.length + 1}`"),
+        !squeezed.contains("name: `Fence ${fences.length + 1}`")
+            && !squeezed.contains("name: `Fence ${fences().length + 1}`"),
         "numbering by the fence COUNT collides at the cap — measured"
     );
 
@@ -5007,10 +5010,12 @@ fn shell_draws_fences_below_the_windows() {
 /// consult.
 #[test]
 fn shell_drags_only_past_a_threshold() {
-    // The console, its window chrome and its fences, as one text: the
-    // window gestures live in the chrome, the fence gestures in the fences.
+    // The console, its fence list, its window chrome and its fences, as one
+    // text: the window gestures live in the chrome, the fence gestures in the
+    // fences, the fence records in the fence list.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
+        include_str!("../assets/ui/wb-console-fence-list.ts"),
         include_str!("../assets/ui/wb-console-chrome.ts"),
         include_str!("../assets/ui/wb-console-fences.ts"),
     ]
@@ -5059,7 +5064,7 @@ fn shell_drags_only_past_a_threshold() {
     // `rect`/`locked` from the copy, would break `lockedBy`'s "fence"
     // verdict with nothing on either side to catch it.
     assert!(
-        body("function fenceRecords(").contains("fences.map((f: any) => ({ ...f }))"),
+        body("function fenceRecords(").contains("fences().map((f: any) => ({ ...f }))"),
         "fenceRecords must answer copies of the whole record (ADR-0064 §8)"
     );
     // And the card must actually PASS both hooks: the default is correct
@@ -5239,11 +5244,13 @@ fn a_note_card_is_stacked_and_wears_the_console_chrome() {
 /// drops the bands. Every pin is an expression, as above.
 #[test]
 fn shell_locks_consoles_and_fences() {
-    // The console, its window chrome and its fences, as one text: the lock
-    // lives in the console, the lock button and the window gestures in the
-    // chrome, the fence's lock button and gestures in the fences.
+    // The console, its fence list, its window chrome and its fences, as one
+    // text: the lock lives in the console, the fence's lock in the fence list,
+    // the lock button and the window gestures in the chrome, the fence's lock
+    // button and gestures in the fences.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
+        include_str!("../assets/ui/wb-console-fence-list.ts"),
         include_str!("../assets/ui/wb-console-chrome.ts"),
         include_str!("../assets/ui/wb-console-fences.ts"),
     ]
@@ -5411,10 +5418,11 @@ fn shell_fences_are_a_group() {
 /// chrome and the CSS are pinned here, where a revert of either half fails.
 #[test]
 fn shell_arranges_into_the_fence() {
-    // The console and its fences, as one text: tiling lives in the fences,
-    // the fence chrome readout in the console.
+    // The console, its fence list and its fences, as one text: tiling lives
+    // in the fences, the fence chrome readout in the fence list.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
+        include_str!("../assets/ui/wb-console-fence-list.ts"),
         include_str!("../assets/ui/wb-console-fences.ts"),
     ]
     .concat();
@@ -5519,11 +5527,12 @@ fn shell_arranges_into_the_fence() {
 /// over deleted code.
 #[test]
 fn shell_lists_the_fences() {
-    // The console, its window chrome and its view, as one text: the fence list lives in the
-    // console, the birth in the focused fence in the chrome, the jumps and the slide in the
-    // view.
+    // The console, its fence list, its window chrome and its view, as one text: the fence
+    // list and the focused fence live in the fence list, the birth in the focused fence in the
+    // chrome, the jumps and the slide in the view.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
+        include_str!("../assets/ui/wb-console-fence-list.ts"),
         include_str!("../assets/ui/wb-console-chrome.ts"),
         include_str!("../assets/ui/wb-console-view.ts"),
     ]
@@ -5794,11 +5803,13 @@ fn a_detached_file_comes_home_when_its_popup_closes() {
 /// deleted code.
 #[test]
 fn shell_detaches_a_fence() {
-    // The console, its fences and its desk, as one text: the detach lives in
-    // the fences, the popup's mount and the upload in the desk, the re-attach
-    // and the lifecycle channel in the console.
+    // The console, its fence list, its fences and its desk, as one text: the
+    // detach lives in the fences, the popup's mount and the upload in the
+    // desk, the re-attach and the lifecycle channel in the console, the
+    // refused remove in the fence list.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
+        include_str!("../assets/ui/wb-console-fence-list.ts"),
         include_str!("../assets/ui/wb-console-fences.ts"),
         include_str!("../assets/ui/wb-console-desk.ts"),
     ]
@@ -6139,7 +6150,8 @@ fn shell_survives_a_reload_with_its_detach() {
             && !include_str!("../assets/ui/wb-console-terminal.ts").contains("sessionStorage")
             && !include_str!("../assets/ui/wb-console-chrome.ts").contains("sessionStorage")
             && !include_str!("../assets/ui/wb-console-title.ts").contains("sessionStorage")
-            && !include_str!("../assets/ui/wb-console-view.ts").contains("sessionStorage"),
+            && !include_str!("../assets/ui/wb-console-view.ts").contains("sessionStorage")
+            && !include_str!("../assets/ui/wb-console-fence-list.ts").contains("sessionStorage"),
         "wb-console.ts must reach the registry only through the injected link (#347)"
     );
     // The CALLS, not the bare nouns: this file's own prose names
@@ -6707,6 +6719,10 @@ fn shell_stores_only_the_view_in_the_browser() {
             include_str!("../assets/ui/wb-console-view.ts"),
         ),
         (
+            "wb-console-fence-list.ts",
+            include_str!("../assets/ui/wb-console-fence-list.ts"),
+        ),
+        (
             "wb-console-popups.ts",
             include_str!("../assets/ui/wb-console-popups.ts"),
         ),
@@ -6861,11 +6877,13 @@ fn the_console_chrome_holds_its_three_rules() {
 /// would turn every guarded click into a silently cancelled one.
 #[test]
 fn the_destructive_console_clicks_confirm_first() {
-    // The console, its fences and its title, as one text: the dialog and
-    // the console's × live in the console, the fence's tile and remove in
-    // the fences, the two restarts in the title.
+    // The console, its fence list, its fences and its title, as one text:
+    // the dialog and the console's × live in the console, the fence's tile
+    // and remove buttons in the fences, the remove verb in the fence list,
+    // the two restarts in the title.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
+        include_str!("../assets/ui/wb-console-fence-list.ts"),
         include_str!("../assets/ui/wb-console-fences.ts"),
         include_str!("../assets/ui/wb-console-title.ts"),
     ]
@@ -8576,6 +8594,10 @@ fn no_menu_or_key_sink_takes_a_template_string() {
         (
             "wb-console-view.ts",
             include_str!("../assets/ui/wb-console-view.ts"),
+        ),
+        (
+            "wb-console-fence-list.ts",
+            include_str!("../assets/ui/wb-console-fence-list.ts"),
         ),
         (
             "wb-console-popups.ts",
