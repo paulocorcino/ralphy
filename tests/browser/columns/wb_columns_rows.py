@@ -49,6 +49,9 @@ PORT = 7474
 T.PORT = PORT
 T.BASE = BASE = f"http://127.0.0.1:{PORT}/"
 SH = T.SH
+# The columns are an Alpine component of their own (wb-consoles-tab.ts):
+# a check reads them through their root.
+COLS = "Alpine.$data(document.querySelector('[x-data=\"wbColumns\"]'))"
 SHOT = os.path.join(T.REPO_ROOT, ".ralphy", "screenshots", "rows-in-columns-2026-09-29.png")
 SHOT_MENU = os.path.join(T.REPO_ROOT, ".ralphy", "screenshots", "rows-in-columns-menu-2026-09-29.png")
 VIEW = {"width": 2000, "height": 1000}
@@ -77,7 +80,7 @@ BOXES = """() => {
 
 
 def grid(page):
-    return page.evaluate(f"() => JSON.parse(JSON.stringify({SH}.columns))")
+    return page.evaluate(f"() => JSON.parse(JSON.stringify({COLS}.columns))")
 
 
 def boxes(page):
@@ -146,7 +149,7 @@ def main():
             os.makedirs(os.path.dirname(SHOT_MENU), exist_ok=True)
             page.screenshot(path=SHOT_MENU)
             page.keyboard.press("Escape")
-            page.evaluate(f"() => {{ {SH}.columnMenu = false; }}")
+            page.evaluate(f"() => {{ {COLS}.columnMenu = false; }}")
             page.wait_for_timeout(150)
 
             # D2 -------------------------------------------------------------
@@ -160,7 +163,7 @@ def main():
             ok = a_ and b_ and near(a_["top"], 0) and near(a_["height"], H / 2) and near(b_["top"], H / 2) and near(b_["height"], H / 2)
             check("D2 …with equal heights that fill the viewport", ok, str(b))
             check("D2 only the top row is maximized", a_ and a_["max"] and b_ and not b_["max"], str(b))
-            dir_now = page.evaluate(f"() => {SH}.columnDir")
+            dir_now = page.evaluate(f"() => {COLS}.columnDir")
             check("D2 the choice is kept", dir_now == "down", str(dir_now))
 
             # D3 -------------------------------------------------------------
@@ -218,11 +221,11 @@ def main():
             check("D8 setup", before == [["w-c", "w-a"], ["w-b"]], str(before))
             T.reload(page)
             try:
-                page.wait_for_function(f"() => {SH}.columns.flat().length === 3", timeout=8000)
+                page.wait_for_function(f"() => {COLS}.columns.flat().length === 3", timeout=8000)
             except Exception:
                 pass
             check("D8 after a reload the grid comes back", grid(page) == before, str(grid(page)))
-            check("D8 …with the Down choice", page.evaluate(f"() => {SH}.columnDir") == "down")
+            check("D8 …with the Down choice", page.evaluate(f"() => {COLS}.columnDir") == "down")
             b = boxes(page)
             ok = near(b.get("w-a", {}).get("top", -1), H / 2) and near(b.get("w-a", {}).get("left", -1), 0)
             check("D8 …painted as rows", ok, str(b))
@@ -254,7 +257,7 @@ def main():
             page.evaluate("() => WBView.patch({ columns: ['w-c', 'w-gone', 'w-b'] })")
             T.reload(page)
             try:
-                page.wait_for_function(f"() => {SH}.columns.flat().length === 2", timeout=8000)
+                page.wait_for_function(f"() => {COLS}.columns.flat().length === 2", timeout=8000)
             except Exception:
                 pass
             check("D9 a flat stored list reads as one row per column",

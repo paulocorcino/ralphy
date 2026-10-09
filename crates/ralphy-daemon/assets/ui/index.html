@@ -719,7 +719,7 @@
         </div>
 
         <!-- console controls, only meaningful on the Consoles tab -->
-        <div class="canvas-tools" x-show="active === 'consoles'">
+        <div class="canvas-tools" x-data="wbConsoleMenus" x-show="active === 'consoles'">
           <!-- Consoles: pick an agent → spawns a floating console for the
                selected repo ($store.projects.openSlug), or the home dir if none. impl: this is
                where a real session/PTY is launched (agent × repo), like the
@@ -899,6 +899,9 @@
             </div>
           </div>
         </div>
+        <!-- ===================================================================
+             The end of the console menus (wbConsoleMenus, wb-consoles-tab.ts).
+             =================================================================== -->
       </div>
 
       <div class="tabbody">
@@ -916,6 +919,10 @@
             <button class="btn" @click="startNewDesk()"
                     title="The old desk file is kept with a new name.">Start a new desk</button>
           </div>
+          <!-- The footer pills and the columns list are the state of
+               wbColumns (wb-consoles-tab.ts). The wrapper is not positioned,
+               so both still resolve against `.consoles-tab`. -->
+          <div x-data="wbColumns">
           <!-- FRAME chrome (issue #338, ADR-0051 §5): siblings of `#workspace`,
                never children of `#stage`. Inside the plane they would pan away
                with the content; here they resolve against `.consoles-tab` and
@@ -983,6 +990,7 @@
               </template>
               <div class="column-empty" x-show="columnFilter && !columnView().length">No console matches</div>
             </div>
+          </div>
           </div>
         </section>
 

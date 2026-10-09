@@ -83,6 +83,9 @@ CHILD = os.path.join(TARGET, "session_test_child.exe" if os.name == "nt" else "s
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "346-a-fence-detaches-into-its-own-window-2026-07-27.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Consoles tab's menus and the columns are Alpine components of their
+# own (wb-consoles-tab.ts): a check reads them through their root.
+MENUS = "Alpine.$data(document.querySelector('[x-data=\"wbConsoleMenus\"]'))"
 
 VIEW = {"width": 1400, "height": 900}
 
@@ -426,7 +429,7 @@ def open_fence_list(page):
 
 def close_menus(page):
     page.evaluate(
-        f"() => {{ const s = {SH}; s.fenceMenu = false; s.agentMenu = false; s.windowMenu = false; }}"
+        f"() => {{ const s = {MENUS}; s.fenceMenu = false; s.agentMenu = false; s.windowMenu = false; }}"
     )
     page.wait_for_timeout(150)
 

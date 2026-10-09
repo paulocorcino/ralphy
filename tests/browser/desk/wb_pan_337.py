@@ -48,6 +48,9 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Consoles tab's menus and the columns are Alpine components of their
+# own (wb-consoles-tab.ts): a check reads them through their root.
+MENUS = "Alpine.$data(document.querySelector('[x-data=\"wbConsoleMenus\"]'))"
 
 # The fixture desk. B sits at 1600,1200 — off-view at 1400x900, which is what
 # scenario 7 has to reach. bbox = 2200 x 1580.
@@ -795,7 +798,7 @@ def main():
             # state and verb are untouched, so this drives them directly: the
             # subject here is `reveal`'s pan, not the button that reached it.
             rows = page.evaluate(
-                f"() => {{ const s = {SH}; s.toggleWindowMenu();"
+                f"() => {{ const s = {MENUS}; s.toggleWindowMenu();"
                 " return s.windowList.map((w) => w.agent + ' · ' + (w.repo || 'home')); }"
             )
             check(
@@ -803,7 +806,7 @@ def main():
                 len(rows) == 2 and all("console" in r for r in rows),
                 f"rows={rows}",
             )
-            page.evaluate(f"() => {{ const s = {SH}; s.revealWindow(s.windowList[1].id); }}")
+            page.evaluate(f"() => {{ const s = {MENUS}; s.revealWindow(s.windowList[1].id); }}")
             page.wait_for_timeout(500)
             revealed = page.evaluate(
                 "() => { const ws = document.getElementById('workspace');"

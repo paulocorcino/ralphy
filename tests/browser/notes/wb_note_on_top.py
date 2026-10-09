@@ -59,6 +59,9 @@ PORT = 7481
 T.PORT = PORT
 T.BASE = BASE = f"http://127.0.0.1:{PORT}/"
 SH = T.SH
+# The Consoles tab's menus and the columns are Alpine components of their
+# own (wb-consoles-tab.ts): a check reads them through their root.
+MENUS = "Alpine.$data(document.querySelector('[x-data=\"wbConsoleMenus\"]'))"
 SHOT = os.path.join(T.REPO_ROOT, ".ralphy", "screenshots", "note-on-top-2026-09-26.png")
 SHOT_BAND = os.path.join(T.REPO_ROOT, ".ralphy", "screenshots", "note-on-top-band-2026-09-26.png")
 VIEW = {"width": 1600, "height": 1000}
@@ -166,11 +169,11 @@ def move_note(page, nid, rect):
 
 
 def row_top(page, nid):
-    page.evaluate(f"() => {{ {SH}.toggleNoteMenu(); }}")
-    page.wait_for_function(f"() => {SH}.noteMenu === true", timeout=3000)
+    page.evaluate(f"() => {{ {MENUS}.toggleNoteMenu(); }}")
+    page.wait_for_function(f"() => {MENUS}.noteMenu === true", timeout=3000)
     page.wait_for_timeout(150)
     rows = page.locator(".note-menu .note-row")
-    titles = page.evaluate(f"() => {SH}.noteItems.map((n) => n.id)")
+    titles = page.evaluate(f"() => {MENUS}.noteItems.map((n) => n.id)")
     return rows.nth(titles.index(nid)).locator(".note-top")
 
 
@@ -214,7 +217,7 @@ def main():
                 str(box),
             )
             check("T1 over the maximized console", page.evaluate("(id) => __hit(__card(id))", a))
-            check("T1 the menu closed", page.evaluate(f"() => {SH}.noteMenu") is False)
+            check("T1 the menu closed", page.evaluate(f"() => {MENUS}.noteMenu") is False)
             page.screenshot(path=SHOT)
             row_top(page, a)
             check(
@@ -222,7 +225,7 @@ def main():
                 page.locator(".note-menu .note-top.on").count() == 1
                 and page.evaluate("(id) => WBNotes.list().find((n) => n.id === id).onTop", a) is True,
             )
-            page.evaluate(f"() => {{ {SH}.noteMenu = false; }}")
+            page.evaluate(f"() => {{ {MENUS}.noteMenu = false; }}")
             page.wait_for_timeout(100)
 
             # T2

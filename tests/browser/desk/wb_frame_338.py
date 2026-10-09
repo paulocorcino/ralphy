@@ -54,6 +54,9 @@ EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt"
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "338-frame-chrome-2026-07-27.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Consoles tab's menus and the columns are Alpine components of their
+# own (wb-consoles-tab.ts): a check reads them through their root.
+MENUS = "Alpine.$data(document.querySelector('[x-data=\"wbConsoleMenus\"]'))"
 
 FIX_A = {"left": 40, "top": 40, "width": 600, "height": 380}
 FIX_B = {"left": 700, "top": 300, "width": 600, "height": 380}
@@ -517,10 +520,10 @@ def main():
             # hides its menu's rows too — so the picker is driven through its own
             # state and verb. The subject is `reveal` under `maxlock`, unchanged.
             rows_seen = page.evaluate(
-                f"() => {{ const s = {SH}; s.toggleWindowMenu(); return s.windowList.length; }}"
+                f"() => {{ const s = {MENUS}; s.toggleWindowMenu(); return s.windowList.length; }}"
             )
             check("the Go-to menu lists both windows", rows_seen == 2, f"got={rows_seen}")
-            page.evaluate(f"() => {{ const s = {SH}; s.revealWindow(s.windowList[1].id); }}")
+            page.evaluate(f"() => {{ const s = {MENUS}; s.revealWindow(s.windowList[1].id); }}")
             page.wait_for_function(
                 "() => document.getElementById('workspace').scrollLeft !== 250",
                 timeout=8000,
@@ -551,7 +554,7 @@ def main():
             # itself maximized already fills the frame, so it must not slide the
             # plane out from under the operator.
             held = f4["scrollLeft"]
-            page.evaluate(f"() => {{ const s = {SH}; s.revealWindow(s.windowList[0].id); }}")
+            page.evaluate(f"() => {{ const s = {MENUS}; s.revealWindow(s.windowList[0].id); }}")
             page.wait_for_timeout(600)
             f4b = frame_fill(page, 0)
             check(

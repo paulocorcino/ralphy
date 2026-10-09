@@ -68,6 +68,9 @@ CHILD = os.path.join(TARGET, "session_test_child.exe" if os.name == "nt" else "s
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = "409-worktree-remove-2026-09-15" + ("" if os.name == "nt" else "-linux") + ".png"
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Consoles tab's menus and the columns are Alpine components of their
+# own (wb-consoles-tab.ts): a check reads them through their root.
+MENUS = "Alpine.$data(document.querySelector('[x-data=\"wbConsoleMenus\"]'))"
 # The local environment label, as `peer::environment_label` spells it.
 _distro = os.environ.get("WSL_DISTRO_NAME")
 ENV_LABEL = f"WSL: {_distro}" if _distro else ("Windows" if os.name == "nt" else "Linux")
@@ -437,7 +440,7 @@ def main():
             # --- scenario 4: a console moved into wt-r by its switcher ----------
             # (a console is born in the primary; the Files selection is not
             # where it opens — ADR-0063 amendment 2026-09-16 b)
-            page.evaluate(f"() => {SH}.newConsole('claude')")
+            page.evaluate(f"() => {MENUS}.newConsole('claude')")
             page.wait_for_function(f"() => ({WINDOWS})() === 1", timeout=15000)
             check("the child printed READY on the primary", wait_flat_contains(page, 0, READY))
             page.evaluate("() => document.querySelector('.session-window .session-checkout').click()")

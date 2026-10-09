@@ -675,34 +675,6 @@ test("under the width floor the shell paints single and keeps the slot for a wid
   }
 });
 
-// ADR-0063 §3: a NEW console opens in the checkout selected at the moment of
-// the click, and in the primary when none is — the console keeps it afterwards
-// (the title comes from the daemon's announcement, never from this selection).
-// A console is born in the primary whatever the Files chip shows (ADR-0063,
-// amendment 2026-09-16 b): the selection is what the panels LOOK at; only the
-// console's own title switcher moves it.
-test("newConsole opens the agent in the primary even under a selected checkout", () => {
-  const { state } = loadShell();
-  const calls = [];
-  const real = globalThis.WBConsole;
-  // `app.ts` reaches `WBConsole` as a bare global; the real one needs a DOM.
-  globalThis.WBConsole = { open: (o) => calls.push(o), count: () => 0 };
-  try {
-    state.active = "consoles";
-    state.$store.projects.setOpen("o/r");
-    state.checkouts = { "o/r": "wt-a" };
-    state.newConsole("claude");
-    state.checkouts = {};
-    state.newConsole("codex");
-  } finally {
-    globalThis.WBConsole = real;
-  }
-  assert.deepEqual(calls, [
-    { repo: "o/r", agent: "claude", checkout: null },
-    { repo: "o/r", agent: "codex", checkout: null },
-  ]);
-});
-
 // The login body is a pure fold over `login` + `security`, extracted so the
 // "keep me signed in" box (ADR-0032 amendment 2026-09-16) can be asserted here:
 // the daemon treats an absent `remember` as a standard session, so the box
@@ -783,6 +755,19 @@ test("the shortcuts are blocked while the Security, Settings or What's new dialo
   }
 });
 
+// The run and the branch dialogs are asked through the modal stack too, as
+// the other dialogs are (ADR-0073 D5): no reader outside a dialog reads its flag.
+test("the shortcuts are blocked while the run or the branch dialog is on the modal stack", () => {
+  const { state } = loadShell();
+  const scrimEl = { querySelector: () => null };
+  for (const flag of ["runOpen", "branchOpen"]) {
+    state.modalOpened(flag, scrimEl);
+    assert.equal(state.consoleShortcutsBlocked(), true, `${flag} open: blocked`);
+    state.modalClosed(flag);
+    assert.equal(state.consoleShortcutsBlocked(), false, `${flag} closed: not blocked`);
+  }
+});
+
 // The release view is read again each time the tab comes back (ADR-0056 §7).
 // These pin the two rules that make a repeated read safe: a failed read keeps
 // what the page knew, and a newer release undoes the dismissal of an older one.
@@ -843,133 +828,6 @@ test("resumeSockets resumes the file tree socket with the others", () => {
     ["_treeSub", true],
   ]);
 });
-
-// ADR-0051 §5: the same chord walks the columns while two or more consoles
-// are open, and the fences otherwise. The listener itself is a sink in the
-// harness; the decision lives in `arrowStep`.
-function arrowShell() {
-  const { state } = loadShell();
-  const calls = [];
-  const box = { focused: null };
-  const realConsole = globalThis.WBConsole;
-  globalThis.WBConsole = {
-    stepFence: (s) => (calls.push(["fence", s]), { id: "f" }),
-    focusedId: () => box.focused,
-    focusColumn: (id) => calls.push(["col", id]),
-    columnMeasure: () => ({ viewport: 2000 }),
-    PHONE_MAX_WIDTH: 560,
-  };
-  const done = () => {
-    globalThis.WBConsole = realConsole;
-  };
-  return { state, calls, box, done };
-}
-
-test("Alt+Shift+←/→ walks the columns while they are open and the fences otherwise", () => {
-  const { state, calls, box, done } = arrowShell();
-  try {
-    state.active = "consoles";
-    state.columns = [];
-    assert.ok(state.arrowStep("x", 1));
-    assert.deepEqual(calls, [["fence", 1]]);
-    calls.length = 0;
-    state.columns = [["a"], ["b"], ["c"]];
-    box.focused = "c";
-    assert.ok(state.arrowStep("x", 1));
-    assert.deepEqual(calls, [["col", "a"]], "wraps right");
-    calls.length = 0;
-    box.focused = "a";
-    assert.ok(state.arrowStep("x", -1));
-    assert.deepEqual(calls, [["col", "c"]], "wraps left");
-    assert.ok(!calls.some((c) => c[0] === "fence"), "no fence step while columns are open");
-  } finally {
-    done();
-  }
-});
-
-// Rows (ADR-0051 §5): ↑/↓ walk the rows of one column, and one column of two
-// rows is enough. With nothing open, ↑/↓ apply nothing, so the key is not
-// swallowed.
-test("Alt+Shift+↑/↓ walks the rows of a column, and applies nothing with no columns", () => {
-  const { state, calls, box, done } = arrowShell();
-  try {
-    state.active = "consoles";
-    state.columns = [];
-    assert.equal(state.arrowStep("y", 1), false);
-    assert.deepEqual(calls, [], "no fence step for ↑/↓");
-    state.columns = [["a", "b"]];
-    box.focused = "a";
-    assert.ok(state.arrowStep("y", 1));
-    assert.deepEqual(calls, [["col", "b"]]);
-  } finally {
-    done();
-  }
-});
-
-test("the Note menu keeps a card on top, puts it back, and refuses a card in a popup", () => {
-  const { state, window } = loadShell();
-  const calls = [];
-  window.WBNotes = {
-    putBack: () => calls.push("putBack"),
-    keepOnTop: (id) => calls.push("keepOnTop:" + id),
-    list: () => [{ id: "a", onTop: false, away: false }],
-  };
-  state.$nextTick = (fn) => fn();
-  state.active = "consoles";
-  state.noteMenu = true;
-
-  // Putting back keeps the menu open and redraws the rows.
-  state.toggleOnTop({ id: "a", onTop: true, away: false });
-  assert.deepEqual(calls, ["putBack"]);
-  assert.equal(state.noteMenu, true);
-  assert.deepEqual(state.noteItems, [{ id: "a", onTop: false, away: false }]);
-
-  // Keeping on top closes the menu, so the card is in view.
-  state.toggleOnTop({ id: "a", onTop: false, away: false });
-  assert.deepEqual(calls, ["putBack", "keepOnTop:a"]);
-  assert.equal(state.noteMenu, false);
-
-  // A card in a detached popup: nothing happens.
-  state.toggleOnTop({ id: "b", onTop: false, away: true });
-  assert.equal(calls.length, 2);
-});
-
-test("Alt+Shift+R from another tab opens the Consoles tab and its menu", () => {
-  const { state } = loadShell();
-  const calls = [];
-  state.$nextTick = () => {};
-  state.activate = (tab) => {
-    calls.push("activate:" + tab);
-    state.active = tab;
-  };
-  state.active = "code";
-
-  state.openConsoleRunMenu();
-  // The menu sits in the Consoles tab's toolbar: on another tab it is hidden.
-  assert.deepEqual(calls, ["activate:consoles"]);
-  assert.equal(state.agentMenu, true);
-  assert.equal(state.consoleRunOpen, true);
-});
-
-test("keeping a card on top from another tab opens the Consoles tab first", () => {
-  const { state, window } = loadShell();
-  const calls = [];
-  window.WBNotes = { keepOnTop: (id) => calls.push("keepOnTop:" + id) };
-  const ticks = [];
-  state.$nextTick = (fn) => ticks.push(fn);
-  state.activate = (tab) => {
-    calls.push("activate:" + tab);
-    state.active = tab;
-  };
-  state.active = "code";
-
-  state.toggleOnTop({ id: "a", onTop: false, away: false });
-  // The card is placed only after the tab is shown: a hidden tab measures 0×0.
-  assert.deepEqual(calls, ["activate:consoles"]);
-  ticks.forEach((fn) => fn());
-  assert.deepEqual(calls, ["activate:consoles", "keepOnTop:a"]);
-});
-
 // A shell whose `toggle` side effects are recorders: each method `toggle` and
 // the `workbench:project-changed` listeners reach is replaced, so the test
 // sees the calls they make. The window hears the events it is sent, and
@@ -1071,6 +929,20 @@ test("opening a row remounts the run-completion subscription", () => {
 // `toggle` changes the store and sends `workbench:project-changed` on the
 // window; the files, the board and the git part each listen to it (ADR-0073
 // amendment of 2026-10-08, decision 4).
+// ONE dropdown at a time: every menu trigger sends `workbench:menus-close`,
+// and the shell closes the account menu when it hears one.
+test("the account menu closes on workbench:menus-close, and opening it sends one", () => {
+  const { state, window, events } = toggleShell();
+  state.toggleAvatarMenu();
+  assert.equal(state.avatarMenu, true);
+  assert.deepEqual(
+    events.map((e) => e.type).filter((t) => t === "workbench:menus-close"),
+    ["workbench:menus-close"],
+  );
+  window.dispatchEvent(new CustomEvent("workbench:menus-close"));
+  assert.equal(state.avatarMenu, false);
+});
+
 test("toggle sends workbench:project-changed with the project now open and the one that was", () => {
   const { state, events } = toggleShell();
   state.toggle("owner/a");
@@ -1827,123 +1699,6 @@ test("a page with no build id never reloads for a build", () => {
 
 // --- review fixes (#511) ----------------------------------------------------
 
-// The console module names the consoles whose records left the desk; the
-// columns lose them first, then the stage does — every one of them, a console
-// outside the columns too.
-test("checkColumnDesk takes the consoles that left the desk out of the columns, then off the stage", () => {
-  const { state } = loadShell();
-  const order = [];
-  const realConsole = globalThis.WBConsole;
-  globalThis.WBConsole = {
-    applyColumns: () => order.push("columns"),
-    dropClosedElsewhere: (id) => order.push(`drop ${id}`),
-  };
-  state.columns = [["x"], ["y"], ["z"]];
-  state.columnCap = () => 3;
-  state.setColumns = (c) => (state.columns = c);
-  state.paintColumns = () => {};
-  try {
-    state.checkColumnDesk(["x", "loose"]);
-  } finally {
-    globalThis.WBConsole = realConsole;
-  }
-  assert.deepEqual(state.columns, [["y"], ["z"]]);
-  assert.deepEqual(order, ["columns", "drop x", "drop loose"]);
-});
-
-// ADR-0051 §5: when the shell's columns move the maximize, the move is written
-// to the desk. The torn-off fence window paints without `persist`.
-test("every shell path that paints the columns asks to write the maximize", () => {
-  const { state, window, document } = loadShell();
-  const calls = [];
-  const paints = [];
-  const realConsole = globalThis.WBConsole;
-  globalThis.WBConsole = {
-    ...window.WBConsole,
-    applyColumns: (painted, opts) => {
-      calls.push(opts);
-      paints.push(painted.map((p) => p.id));
-    },
-    columnMeasure: () => ({ viewport: 1920 }),
-    dropClosedElsewhere() {},
-    focusColumn() {},
-    focusedId: () => null,
-  };
-  const grid = () => [["a"], ["b"], ["c"]];
-  state.columnCap = () => 3;
-  const realAll = document.querySelectorAll;
-  // The stage holds only "b": the first console left, and one is left.
-  const lone = () => {
-    document.querySelectorAll = () => [{ _deskId: "b", classList: { contains: () => false } }];
-    state.paintColumns();
-  };
-  try {
-    // Each path, and how many paints it makes: its own, then `paintColumns`.
-    const paths = {
-      restoreColumn: [2, () => state.restoreColumn("a")],
-      swapColumn: [
-        2,
-        () => {
-          state.columnFrom = "b";
-          state.swapColumn("x");
-        },
-      ],
-      columnsFromFence: [
-        2,
-        () =>
-          state.columnsFromFence([
-            { id: "p", rect: { left: 0, top: 0, width: 100, height: 100 } },
-            { id: "q", rect: { left: 200, top: 0, width: 100, height: 100 } },
-          ]),
-      ],
-      leaveColumns: [1, () => state.leaveColumns(["a"])],
-      checkColumnDesk: [2, () => state.checkColumnDesk(["a"])],
-      paintColumns: [1, () => state.paintColumns()],
-      "paintColumns, a lone survivor": [1, lone],
-    };
-    for (const [name, [count, run]] of Object.entries(paths)) {
-      state.columns = grid();
-      calls.length = 0;
-      document.querySelectorAll = realAll;
-      run();
-      assert.equal(calls.length, count, `${name} paints the columns`);
-      for (const opts of calls) assert.equal(opts?.persist, true, `${name}: ${JSON.stringify(opts)}`);
-    }
-    // The lone-survivor case above took its own branch: it paints the survivor
-    // and ends the columns.
-    state.columns = grid();
-    paints.length = 0;
-    lone();
-    assert.deepEqual(paints, [["b"]], "the lone survivor is painted");
-    assert.deepEqual(state.columns, [], "the lone survivor ends the columns");
-    // A first console off the stage for a relaunch comes back under the same
-    // id: nothing is painted or stored until it is back.
-    globalThis.WBConsole.isRelaunching = (id) => id === "a";
-    state.columns = grid();
-    calls.length = 0;
-    lone();
-    assert.deepEqual([calls.length, state.columns], [0, grid()], "a relaunch gap paints nothing");
-    const stage = (...wins) => {
-      document.querySelectorAll = () =>
-        wins.map(([id, max]) => ({ _deskId: id, classList: { contains: (c) => max && c === "maximized" } }));
-    };
-    // The same with two consoles left: the grid path.
-    stage(["b"], ["c"]);
-    state.columns = grid();
-    calls.length = 0;
-    state.paintColumns();
-    assert.deepEqual([calls.length, state.columns], [0, grid()], "a relaunch gap on a grid paints nothing");
-    // A first console back on the stage paints, even while still marked.
-    stage(["a", true], ["b"], ["c"]);
-    calls.length = 0;
-    state.paintColumns();
-    assert.equal(calls.length, 1, "a first console back on the stage paints");
-  } finally {
-    document.querySelectorAll = realAll;
-    globalThis.WBConsole = realConsole;
-  }
-});
-
 test("two fleet reads close together list each peer row once", async () => {
   const { state } = loadShell();
   state.$store.projects.setProjects([{ slug: "a/b", tree: [] }]);
@@ -2440,9 +2195,6 @@ test("projectLabel and projectTitle never print a path- key or a daemon id", () 
   assert.equal(state.$store.projects.projectTitle(ref(peer)), "/home/me/gadget · WSL: Ubuntu");
   assert.equal(state.$store.projects.projectLabel(ref(forge)), "owner/repo");
   assert.equal(state.$store.projects.projectTitle(ref(forge)), "owner/repo");
-  state.$store.projects.setOpen(ref(local));
-  assert.equal(state.consoleMenuRepoName(), "widget");
-  assert.equal(state.columnRepoLabel(ref(peer)), "gadget");
 });
 
 test("a read failure shows the words for a daemon code, never the code", async () => {

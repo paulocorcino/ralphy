@@ -50,6 +50,9 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "tmp")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The columns are an Alpine component of their own (wb-consoles-tab.ts):
+# a check reads them through their root.
+COLS = "Alpine.$data(document.querySelector('[x-data=\"wbColumns\"]'))"
 VIEW = {"width": 2400, "height": 1100}
 FLOOR = 17  # every check above the floor check; pinned after the first green run
 
@@ -264,9 +267,9 @@ def main():
                   not geom["disabled"] and geom["emptyDisabled"], str(geom))
 
             # 2 --------------------------------------------------------------
-            page.evaluate(f"() => {{ {SH}.columnFrom = 'w-x'; {SH}.openColumn('w-y'); }}")
+            page.evaluate(f"() => {{ {COLS}.columnFrom = 'w-x'; {COLS}.openColumn('w-y'); }}")
             page.wait_for_timeout(500)
-            s2a = page.evaluate(f"() => {SH}.columns")
+            s2a = page.evaluate(f"() => {COLS}.columns")
             check("2 the loose consoles are open as columns first", s2a == [["w-x"], ["w-y"]], str(s2a))
             page.screenshot(path=os.path.join(SHOT_DIR, "fence-columns-before.png"))
             page.evaluate("() => { WBConsole.jumpToFence?.('f-grid'); }")
@@ -275,7 +278,7 @@ def main():
             # real use, but the button must still act when it is reached.
             page.evaluate("() => __btn('f-grid').click()")
             page.wait_for_timeout(700)
-            s2 = page.evaluate(f"() => {SH}.columns")
+            s2 = page.evaluate(f"() => {COLS}.columns")
             check("2 the fence button replaces them with the fence's grid", s2 == GRID, str(s2))
             page.screenshot(path=os.path.join(SHOT_DIR, "fence-columns-after.png"))
 
@@ -305,7 +308,7 @@ def main():
             for wid in ("w-d", "w-b", "w-a", "w-c"):
                 page.evaluate("(id) => __W(id).querySelector('.session-max').click()", wid)
                 page.wait_for_timeout(400)
-                left.append(page.evaluate(f"() => {SH}.columns.flat().length"))
+                left.append(page.evaluate(f"() => {COLS}.columns.flat().length"))
             s4 = page.evaluate(
                 "() => [...document.querySelectorAll('.session-window')]"
                 "  .filter((w) => w.classList.contains('column') || w.classList.contains('maximized')).map((w) => w._deskId)"
@@ -331,7 +334,7 @@ def main():
             check("4b a click reaches the button (elementFromPoint)", box["hit"], str(box))
             page.mouse.click(box["x"], box["y"])
             page.wait_for_timeout(700)
-            s4b = page.evaluate(f"() => {SH}.columns")
+            s4b = page.evaluate(f"() => {COLS}.columns")
             check("4b a real click opens the fence's grid", s4b == GRID, str(s4b))
 
             # 5 --------------------------------------------------------------
