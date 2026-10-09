@@ -295,7 +295,8 @@ export function createDetach(deps: DetachDeps) {
     const record = notes().find((n: any) => n.id === m.noteId);
     if (!isDetached(id) || !noteNameOk(entry, record, m)) return;
     saveNotes(notes().map((n: any) => (n.id === m.noteId ? { ...n, path: m.path } : n)));
-    entry.members = entry.members.map((x: any) => {
+    // `noteNameOk` is false for an entry that does not exist.
+    entry!.members = entry!.members.map((x: any) => {
       if (x.kind !== "note" || x.id !== m.noteId) return x;
       const { draft, claim, ...rest } = x;
       return { ...rest, path: m.path };
@@ -310,7 +311,7 @@ export function createDetach(deps: DetachDeps) {
     const entry = popups.entry(id);
     const record = notes().find((n: any) => n.id === m.noteId);
     if (!isDetached(id) || !noteNameOk(entry, record, { noteId: m.noteId, path: m.claim })) return;
-    entry.members = entry.members.map((x: any) =>
+    entry!.members = entry!.members.map((x: any) =>
       x.kind === "note" && x.id === m.noteId ? { ...x, claim: m.claim } : x,
     );
   }
@@ -444,7 +445,7 @@ export function createDetach(deps: DetachDeps) {
     const m = e.data;
     if (!m) return;
     if (m.type === "wb-fence-ready") {
-      const entry = popups.entry(owner);
+      const entry = popups.entry(owner)!;
       entry.greeted = true;
       if (entry.rescue) {
         clearTimeout(entry.rescue);

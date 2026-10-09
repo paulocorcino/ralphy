@@ -14,36 +14,78 @@ import { WBFail } from "./wb-fail.ts";
 import { WBProject } from "./wb-project.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
 import { WBWindowState } from "./wb-window-state.ts";
+import type { Listing } from "./wb-project.ts";
+import type { ConsoleWin, DeskRecord, DeskWindowFields, Presentation } from "./wb-types.d.ts";
 
 const { sessionIdOf, watchingOf } = WBWindowState;
+
+// What the console's confirmation dialog takes.
+export type ConfirmOptions = {
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  danger?: boolean;
+  notice?: boolean;
+};
+
+// A row of the checkout menu: a tree, its dirty flag, the agent state in it,
+// and whether it is the one the console is in.
+export type CheckoutRow = {
+  name: string;
+  branch: string;
+  dirty: boolean;
+  primary: boolean;
+  current: boolean;
+  state: string | null;
+};
+
+// What `checkoutMenu` is built from. `host` is where the element lands.
+export type CheckoutMenuOptions = {
+  anchor: HTMLElement;
+  host: HTMLElement;
+  rows: CheckoutRow[];
+  onPick: (row: CheckoutRow) => void;
+  onRemove?: (row: CheckoutRow) => void;
+  onCreate?: () => void;
+};
+
+// What the new worktree prompt is opened with, and what it answers.
+type WorktreeAsk = {
+  base: string;
+  branches: string[];
+  listing: Listing | null | undefined;
+  error?: string;
+  name?: string;
+};
+type WorktreeAnswer = { name: string; base: string } | null;
 
 // What the title reads from the console, and nothing else.
 export type TitleDeps = {
   // The console's page: the daemon client (`window.WBDaemon`) the listing
   // read and the worktree create go through.
-  window: any;
+  window: Window;
   // The page the title builds its elements in and listens on.
-  document: any;
+  document: Document;
   // The console's options: the detached popup cannot launch, so it has no
   // switcher, no listing read and no rename.
   OPTS: { canLaunch?: boolean };
   // The console windows on this page.
-  wins: Set<any>;
+  wins: Set<ConsoleWin>;
   // The plane; null before the page has it.
-  stage: () => any;
+  stage: () => HTMLElement | null;
   // The desk mirror and the shell's last sessions poll: the console
   // reassigns both, so they are read at each use.
-  desk: () => any[];
-  lastSessions: () => any[];
+  desk: () => DeskRecord[];
+  lastSessions: () => HostedSession[];
   // The words for an agent state, the same as the console's dot.
-  agentStateTitle: (state: any, detail?: any) => string;
+  agentStateTitle: (state: string, detail?: string) => string;
   // The console's own confirmation dialog.
-  askConfirm: (opts: any) => Promise<unknown>;
+  askConfirm: (opts: ConfirmOptions) => Promise<unknown>;
   // A repo ref's project name, and its tooltip text.
-  projectNameOf: (ref: any) => any;
-  projectTitleOf: (ref: any) => any;
+  projectNameOf: (ref: string | null | undefined) => string;
+  projectTitleOf: (ref: string | null | undefined) => string;
   // Writes the window's fields to the desk.
-  setWin: (win: any, fields: any) => void;
+  setWin: (win: ConsoleWin, fields: DeskWindowFields) => void;
 };
 
 export function createTitle(deps: TitleDeps) {
@@ -66,15 +108,15 @@ export function createTitle(deps: TitleDeps) {
   // routing head never shows, a remoteless repo is named by its folder and not
   // its `path-<hash>` key, and the same repo on two environments shares one
   // count (ADR-0066 §2).
-  function consolePrefix(repo: any) {
+  function consolePrefix(repo: string | null | undefined) {
     return WBConsoleName.prefixOf(projectNameOf(repo));
   }
   // Every console name in use: the desk mirror's and the stage's windows',
   // except `exceptId` (the console being renamed).
-  function takenNames(exceptId: any) {
-    const names = desk().filter((r: any) => r.id !== exceptId).map((r: any) => r.consoleName);
+  function takenNames(exceptId: string | null) {
+    const names = desk().filter((r) => r.id !== exceptId).map((r) => r.consoleName);
     const st = typeof document?.getElementById === "function" ? stage() : null;
-    for (const w of st ? st.querySelectorAll(".session-window") : []) {
+    for (const w of st ? st.querySelectorAll<ConsoleWin>(".session-window") : []) {
       if (w._deskId !== exceptId) names.push(w._deskConsoleName);
     }
     return names.filter(Boolean);
@@ -83,7 +125,12 @@ export function createTitle(deps: TitleDeps) {
   // The title is built by `renderTitle` from the window's console name and
   // label (ADR-0066 §4). The environment left the title for the tooltip
   // (ADR-0066 §5), after the full ref.
-  function sessionPresentation(label: any, repo: any, prior: any, owner: any) {
+  function sessionPresentation(
+    label: string | null,
+    repo: string | null | undefined,
+    prior: { daemonId?: string | null; environment?: string | null } | null | undefined,
+    owner: HostedSession | null | undefined,
+  ) {
     const daemonId = owner?.daemon_id ?? prior?.daemonId ?? null;
     const environment = owner?.environment ?? prior?.environment ?? null;
     // The vendor's own session name (`--name`; Claude only). On the TOOLTIP, not
@@ -111,9 +158,9 @@ export function createTitle(deps: TitleDeps) {
   // reads for the picker) and, for a repo the picker never opened, by ONE read
   // of our own per ref at the first agent window — `worktree.list` is a git
   // spawn, so never per render and never periodic.
-  const worktreeListings: any = {};
-  const listingReads = new Map();
-  function ingestWorktrees(ref: any, listing: any) {
+  const worktreeListings: Record<string, Listing | null> = {};
+  const listingReads = new Map<string, Promise<void>>();
+  function ingestWorktrees(ref: string, listing: Listing | null | undefined) {
     if (!ref) return;
     worktreeListings[ref] = listing || null;
     for (const win of wins) {
@@ -122,13 +169,13 @@ export function createTitle(deps: TitleDeps) {
       }
     }
   }
-  function ensureListing(ref: any, force = false) {
+  function ensureListing(ref: string, force = false) {
     if (!ref || ref === "~" || (ref in worktreeListings && !force) || listingReads.has(ref)) return;
     const daemon = window.WBDaemon;
     if (typeof daemon?.observe !== "function" || OPTS.canLaunch === false) return;
     const read = daemon
       .observe("worktree.list", { repo: ref })
-      .then((reply: any) => {
+      .then((reply) => {
         ingestWorktrees(ref, reply && reply.status === "ok" ? reply.checkouts || null : null);
       })
       .catch(() => ingestWorktrees(ref, null))
@@ -140,8 +187,16 @@ export function createTitle(deps: TitleDeps) {
   // `checkout` and `agent_state`) each row also carries the agent's state in
   // that tree (ADR-0059 §5) via `WBProject.worktreeStates`. `primaryBranch`/
   // `primaryDirty` when the caller knows them (the shell does).
-  function checkoutMenuRows(listing: any, current: any, sessions: any, primaryBranch = "", primaryDirty = false) {
-    const rows = [{ name: "primary", branch: String(primaryBranch || ""), dirty: primaryDirty === true, primary: true }];
+  function checkoutMenuRows(
+    listing: Listing | null | undefined,
+    current: string | null | undefined,
+    sessions: HostedSession[] | null | undefined,
+    primaryBranch = "",
+    primaryDirty = false,
+  ): CheckoutRow[] {
+    const rows: { name: string; branch: string; dirty: boolean; primary: boolean }[] = [
+      { name: "primary", branch: String(primaryBranch || ""), dirty: primaryDirty === true, primary: true },
+    ];
     for (const w of listing?.worktrees || []) {
       rows.push({
         name: String(w.name || ""),
@@ -153,9 +208,9 @@ export function createTitle(deps: TitleDeps) {
     const states = sessions && WBProject?.worktreeStates ? WBProject.worktreeStates(rows, sessions) : {};
     return rows.map((r) => ({ ...r, current: (current ?? "primary") === r.name, state: states[r.name] || null }));
   }
-  function sessionsOfRepo(ref: any) {
+  function sessionsOfRepo(ref: string) {
     const route = WBSessionRoute;
-    return (lastSessions() || []).filter((s: any) => s && (route ? route.matchesRepo(s, ref) : s.repo === ref));
+    return (lastSessions() || []).filter((s) => s && (route ? route.matchesRepo(s, ref) : s.repo === ref));
   }
 
   // The title: `<console name> (<label>)`, then ` · <checkout>`, then
@@ -165,7 +220,7 @@ export function createTitle(deps: TitleDeps) {
   // worktree…`, so it cannot wait for one to exist (ADR-0063, amendment
   // 2026-09-16 b). Never on a plain shell (stays on the primary, #408), a
   // placeholder (no `_relaunchIn`) or the detached popup (`canLaunch === false`).
-  function renderTitle(win: any, title: any, presentation: any) {
+  function renderTitle(win: ConsoleWin, title: HTMLElement, presentation: Presentation) {
     win._presentation = presentation;
     // A rename in progress keeps its input; `endEdit` draws with the latest.
     if (title.querySelector(".session-name-input")) return;
@@ -203,7 +258,7 @@ export function createTitle(deps: TitleDeps) {
   }
 
   // The checkout segment of the title: ` · <checkout> ▾`.
-  function appendCheckout(win: any, title: any, presentation: any) {
+  function appendCheckout(win: ConsoleWin, title: HTMLElement, presentation: Presentation) {
     const sep = document.createElement("span");
     sep.className = "session-title-sep";
     sep.textContent = "·";
@@ -218,8 +273,8 @@ export function createTitle(deps: TitleDeps) {
     const caret = document.createElement("i");
     caret.className = "bi bi-chevron-down";
     btn.append(caret);
-    btn.addEventListener("pointerdown", (e: any) => e.stopPropagation());
-    btn.addEventListener("click", (e: any) => {
+    btn.addEventListener("pointerdown", (e) => e.stopPropagation());
+    btn.addEventListener("click", (e) => {
       e.stopPropagation();
       openCheckoutMenu(win, btn);
     });
@@ -236,16 +291,16 @@ export function createTitle(deps: TitleDeps) {
   function canRename() {
     return OPTS.canLaunch !== false;
   }
-  function wireRename(win: any, span: any) {
+  function wireRename(win: ConsoleWin, span: HTMLElement) {
     if (!canRename()) return;
-    span.addEventListener("dblclick", (e: any) => {
+    span.addEventListener("dblclick", (e) => {
       e.stopPropagation();
       // On touch a double tap maximizes, even on the name.
       if (win._lastPointerType !== "mouse") return;
       startRename(win, span);
     });
   }
-  function startRename(win: any, span: any) {
+  function startRename(win: ConsoleWin, span: HTMLElement) {
     if (!span.isConnected) return;
     const input = document.createElement("input");
     input.className = "session-name-input";
@@ -258,10 +313,10 @@ export function createTitle(deps: TitleDeps) {
     // pan calls `preventDefault()` on mousedown, so focus does not move.
     // Also ends an edit whose window left the page: not every browser fires
     // `blur` on a removed input.
-    const stopOutside = (ev: any) => {
+    const stopOutside = (ev: PointerEvent) => {
       if (ev.target !== input || !win.isConnected) endEdit(false);
     };
-    const endEdit = (commit: any) => {
+    const endEdit = (commit: boolean) => {
       if (!editing) return;
       editing = false; // first: removing the input fires `blur`, which re-enters
       document.removeEventListener("pointerdown", stopOutside, true);
@@ -275,15 +330,15 @@ export function createTitle(deps: TitleDeps) {
       } else {
         // A name another page gave while this edit was open was skipped by
         // `converge`; take it now.
-        const stored = desk().find((r: any) => r.id === win._deskId)?.consoleName;
+        const stored = desk().find((r) => r.id === win._deskId)?.consoleName;
         if (stored) win._deskConsoleName = stored;
       }
       input.remove();
       if (win._title && win._presentation) renderTitle(win, win._title, win._presentation);
     };
-    input.addEventListener("pointerdown", (ev: any) => ev.stopPropagation());
-    input.addEventListener("dblclick", (ev: any) => ev.stopPropagation());
-    input.addEventListener("keydown", (ev: any) => {
+    input.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+    input.addEventListener("dblclick", (ev) => ev.stopPropagation());
+    input.addEventListener("keydown", (ev) => {
       // Held here so an Escape meant for this edit never reaches the plane.
       ev.stopPropagation();
       // An Enter that confirms an IME candidate is not a commit.
@@ -303,7 +358,12 @@ export function createTitle(deps: TitleDeps) {
   // `onPick(row)` for a non-current row; `onRemove(row)` adds a trash action per
   // worktree row; `onCreate()` adds `+ new worktree…`. One menu at a time;
   // closes on a pick, a click elsewhere, or Escape.
-  let openMenu: any = null;
+  let openMenu: {
+    anchor: HTMLElement;
+    el: HTMLElement;
+    away: (e: PointerEvent) => void;
+    key: (e: KeyboardEvent) => void;
+  } | null = null;
   function closeCheckoutMenu() {
     if (!openMenu) return;
     openMenu.el.remove();
@@ -311,12 +371,12 @@ export function createTitle(deps: TitleDeps) {
     document.removeEventListener("keydown", openMenu.key, true);
     openMenu = null;
   }
-  function checkoutMenu({ anchor, host, rows, onPick, onRemove, onCreate }: any) {
+  function checkoutMenu({ anchor, host, rows, onPick, onRemove, onCreate }: CheckoutMenuOptions) {
     if (openMenu?.anchor === anchor) return closeCheckoutMenu();
     closeCheckoutMenu();
     const menu = document.createElement("div");
     menu.className = "session-checkout-menu";
-    menu.addEventListener("pointerdown", (e: any) => e.stopPropagation());
+    menu.addEventListener("pointerdown", (e) => e.stopPropagation());
     for (const row of rows) {
       const item = document.createElement("button");
       item.type = "button";
@@ -356,14 +416,14 @@ export function createTitle(deps: TitleDeps) {
         trash.title = "Delete this worktree";
         trash.innerHTML = '<i class="bi bi-trash3"></i>';
         // The trash must not also PICK the row it sits on.
-        trash.addEventListener("click", (e: any) => {
+        trash.addEventListener("click", (e) => {
           e.stopPropagation();
           closeCheckoutMenu();
           onRemove(row);
         });
         item.append(trash);
       }
-      item.addEventListener("click", (e: any) => {
+      item.addEventListener("click", (e) => {
         e.stopPropagation();
         closeCheckoutMenu();
         if (!row.current) onPick(row);
@@ -376,7 +436,7 @@ export function createTitle(deps: TitleDeps) {
       create.className = "session-checkout-item create";
       create.innerHTML = '<i class="bi bi-folder-plus"></i><span class="session-checkout-name">New worktree…</span>';
       create.title = "Create a worktree and restart this console in it";
-      create.addEventListener("click", (e: any) => {
+      create.addEventListener("click", (e) => {
         e.stopPropagation();
         closeCheckoutMenu();
         onCreate();
@@ -395,10 +455,10 @@ export function createTitle(deps: TitleDeps) {
       menu.style.top = `${r.bottom - h.top + 2}px`;
     }
     host.append(menu);
-    const away = (e: any) => {
-      if (!menu.contains(e.target) && !anchor.contains(e.target)) closeCheckoutMenu();
+    const away = (e: PointerEvent) => {
+      if (!menu.contains(e.target as Node) && !anchor.contains(e.target as Node)) closeCheckoutMenu();
     };
-    const key = (e: any) => {
+    const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") closeCheckoutMenu();
     };
     document.addEventListener("pointerdown", away, true);
@@ -406,13 +466,13 @@ export function createTitle(deps: TitleDeps) {
     openMenu = { anchor, el: menu, away, key };
     return menu;
   }
-  function openCheckoutMenu(win: any, anchor: any) {
+  function openCheckoutMenu(win: ConsoleWin, anchor: HTMLElement) {
     const ref = win._deskRepo;
     checkoutMenu({
       anchor,
       host: win,
       rows: checkoutMenuRows(worktreeListings[ref], win._deskCheckout ?? null, sessionsOfRepo(ref)),
-      onPick: (row: any) => switchCheckout(win, row.primary ? null : row.name),
+      onPick: (row) => switchCheckout(win, row.primary ? null : row.name),
       onCreate: () => createWorktreeFor(win),
     });
   }
@@ -420,7 +480,7 @@ export function createTitle(deps: TitleDeps) {
   // Move a console to another checkout (#412): confirm (the session restarts
   // and its scrollback goes), then `moveTo`. The picker's per-repo selection is
   // never touched: that is what Files shows; this is where THIS console lives.
-  async function switchCheckout(win: any, checkout: any) {
+  async function switchCheckout(win: ConsoleWin, checkout: string | null) {
     if (typeof win._relaunchIn !== "function") return;
     const where = checkout ? `worktree ${checkout}` : "the primary tree";
     const ok = await askConfirm({
@@ -437,18 +497,19 @@ export function createTitle(deps: TitleDeps) {
   // built for an ended child, and moving a running one left the old session
   // alive with no window (measured 2026-09-16). A watcher holds no baton and
   // must not kill the child another operator drives; it just relaunches.
-  function moveTo(win: any, checkout: any) {
+  function moveTo(win: ConsoleWin, checkout: string | null) {
     const from = win._deskCheckout ?? null;
     win._deskCheckout = checkout;
     setWin(win, { checkout: checkout ?? null });
     endLiveThen(win, () => {
-      win._relaunchIn(checkout);
+      // Both callers checked that `_relaunchIn` is a function.
+      win._relaunchIn!(checkout);
       WB.emit("console-switch-checkout", { repo: win._deskRepo, from, to: checkout });
     });
   }
   // End this window's session on the daemon if it is still running, then `go`.
   // A DORMANT console still holds its session and must still close it.
-  function endLiveThen(win: any, go: any) {
+  function endLiveThen(win: ConsoleWin, go: () => void) {
     const id = sessionIdOf(win);
     const live = id != null && !win.classList.contains("ended") && !watchingOf(win);
     if (live && WBSessionRoute) {
@@ -459,7 +520,7 @@ export function createTitle(deps: TitleDeps) {
   }
   // The titlebar's restart: offered on a live session too, so it always asks
   // first — one click beside maximize must not tree-kill a working agent.
-  async function restartWin(win: any) {
+  async function restartWin(win: ConsoleWin) {
     if (typeof win._relaunchIn !== "function") return;
     const ended = win.classList.contains("ended");
     const ok = await askConfirm({
@@ -471,14 +532,14 @@ export function createTitle(deps: TitleDeps) {
       danger: !ended,
     });
     if (!ok) return;
-    endLiveThen(win, () => win._relaunchIn(undefined));
+    endLiveThen(win, () => win._relaunchIn!(undefined));
   }
 
   // The "new worktree" prompt: a name (worktree AND branch, ADR-0063 §2) and
   // the base branch. The name gate is `WBProject.worktreeCreateRow`; a refusal
   // the daemon DID send (`error`) re-opens with the message under the field.
   // Resolves `{name, base}` or `null` on cancel.
-  function askWorktree({ base, branches, listing, error = "", name = "" }: any): Promise<any> {
+  function askWorktree({ base, branches, listing, error = "", name = "" }: WorktreeAsk): Promise<WorktreeAnswer> {
     const scrim = document.createElement("div");
     scrim.className = "modal-scrim wb-confirm";
     const modal = document.createElement("div");
@@ -515,7 +576,7 @@ export function createTitle(deps: TitleDeps) {
       baseInput.value = branches.includes(base) ? base : branches[0];
     } else {
       baseInput.value = base || "";
-      baseInput.placeholder = "Branch to start from";
+      (baseInput as HTMLInputElement).placeholder = "Branch to start from";
     }
     const note = document.createElement("p");
     note.className = "wb-worktree-note";
@@ -544,7 +605,7 @@ export function createTitle(deps: TitleDeps) {
 
     return new Promise((resolve) => {
       let settled = false;
-      const done = (value: any) => {
+      const done = (value: WorktreeAnswer) => {
         if (settled) return;
         settled = true;
         document.removeEventListener("keydown", onKey, true);
@@ -567,7 +628,7 @@ export function createTitle(deps: TitleDeps) {
       // never shows, and there is no message. The caret stays after the
       // last kept character. The create stays disabled, without a message,
       // while the name is still one the daemon would refuse.
-      const mask = WBProject?.maskWorktreeName || ((s: any) => s);
+      const mask = WBProject?.maskWorktreeName || ((s: string) => s);
       nameInput.addEventListener("input", () => {
         const raw = nameInput.value;
         const masked = mask(raw);
@@ -581,7 +642,7 @@ export function createTitle(deps: TitleDeps) {
         go.disabled = !!problem();
       });
       go.disabled = !!problem();
-      const onKey = (e: any) => {
+      const onKey = (e: KeyboardEvent) => {
         if (e.key === "Escape") {
           e.stopPropagation();
           done(null);
@@ -600,12 +661,12 @@ export function createTitle(deps: TitleDeps) {
   // `+ new worktree…` from a console's switcher: ask, `worktree.add`, tell the
   // shell, and move THIS console into it (the prompt already said it restarts).
   // Base list is `branch.list`, one read per prompt; unreadable → free text.
-  async function createWorktreeFor(win: any) {
+  async function createWorktreeFor(win: ConsoleWin) {
     const repo = win._deskRepo;
     if (!repo || repo === "~" || typeof win._relaunchIn !== "function") return;
     const daemon = window.WBDaemon;
     if (typeof daemon?.observe !== "function") return;
-    let branches = [];
+    let branches: string[] = [];
     let base = "";
     try {
       const reply = await daemon.observe("branch.list", { repo });

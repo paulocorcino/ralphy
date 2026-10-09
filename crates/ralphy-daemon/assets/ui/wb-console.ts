@@ -2019,9 +2019,9 @@ export function createConsole(window: any, document: any, location: any, opts: a
     const peerDaemon = WBFleet?.refDaemon(repo) || "";
     const PEER_BUTTON: any = { wake: "Wake", retry: "Try again" };
     const showPeerDown = (group: any) => {
-      let strip = win.querySelector(".session-peer-down");
+      let strip: HTMLElement | null = win.querySelector<HTMLElement>(".session-peer-down");
       if (!strip) {
-        strip = document.createElement("div");
+        strip = document.createElement("div") as HTMLElement;
         strip.className = "session-peer-down";
         const text = document.createElement("span");
         text.className = "session-peer-down-text";
@@ -2041,11 +2041,11 @@ export function createConsole(window: any, document: any, location: any, opts: a
         win.insertBefore(strip, body);
       }
       const view = peerOfflineView(group, null, win._deskEnvironment);
-      strip.querySelector(".session-peer-down-text").textContent = view.text;
-      const detail = strip.querySelector(".session-detail");
-      detail.querySelector("p").textContent = view.detail || "";
+      strip.querySelector(".session-peer-down-text")!.textContent = view.text;
+      const detail = strip.querySelector<HTMLElement>(".session-detail")!;
+      detail.querySelector("p")!.textContent = view.detail || "";
       detail.hidden = !view.detail;
-      const btn = strip.querySelector(".session-reconnect");
+      const btn = strip.querySelector<HTMLElement>(".session-reconnect")!;
       btn.dataset.act = view.action || "";
       btn.hidden = !PEER_BUTTON[view.action as string];
       if (PEER_BUTTON[view.action as string]) btn.textContent = PEER_BUTTON[view.action as string];
@@ -2344,11 +2344,11 @@ export function createConsole(window: any, document: any, location: any, opts: a
         if (read) {
           read
             .then(({ image, text }: any) => {
-              if (image) win._term.pasteImage(image);
-              else if (text) win._term.term.paste(text);
+              if (image) win._term!.pasteImage(image);
+              else if (text) win._term!.term.paste(text);
             })
             .catch(() => {})
-            .finally(() => win._term.term.focus());
+            .finally(() => win._term!.term.focus());
         } else if (name === "keyboard") {
           toggleKeyboard(win._term.term.textarea);
         } else if (name === "copy") {

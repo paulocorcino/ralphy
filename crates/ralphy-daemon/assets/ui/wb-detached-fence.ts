@@ -4,7 +4,11 @@
 // `WBConsole` and `WBNotes` exist when the shell answers "ready" (ADR-0075
 // D5, D9).
 import { WBColumns } from "./wb-columns.ts";
+import type { Grid } from "./wb-columns.ts";
 import { WBDetachLink } from "./wb-detach-link.ts";
+import type { DetachMessage } from "./wb-detach-link.ts";
+import type { PopupMember } from "./wb-console-popups.ts";
+import type { ConsoleWin } from "./wb-types.d.ts";
 
 export function wireDetachedFence(window: Window, document: Document) {
   // Where this window will talk: the concrete origin, never `"*"`, as in the
@@ -22,18 +26,18 @@ export function wireDetachedFence(window: Window, document: Document) {
   // opener, or a foreign one, means no fence — and we say so rather than
   // rendering anything.
   let mounted = false;
-  let fenceId: any = null;
+  let fenceId: string | null = null;
   // The opener's tab identity, learned from the HANDOVER and never from
   // this document's own storage (a copy of the opener's, which drifts).
   // It scopes every message on a browser-WIDE channel: a second tab of the
   // same origin hears them all and must ignore every one of ours.
-  let TAB: any = null;
+  let TAB: string | null = null;
   // This window's identity, given by the opener at the handover (#476).
   // Every lifecycle message carries it, so the opener can tell this
   // window from an earlier popup of the same fence.
   let PID: string | null = null;
-  let MEMBERS: any[] = [];
-  const stageEl = (): any => document.getElementById("stage");
+  let MEMBERS: PopupMember[] = [];
+  const stageEl = () => document.getElementById("stage")!;
   const empty = (why: string) => {
     stageEl().innerHTML = '<p class="detached-empty">Nothing to show. ' + why + ".</p>";
   };
@@ -79,10 +83,10 @@ export function wireDetachedFence(window: Window, document: Document) {
   // The fence head's "as columns", for this window. The grid lives
   // here, as `app.ts` holds it for the shell, and is never stored: the
   // popup's layout is throwaway. `wb-console.ts` paints it.
-  let grid: any[] = [];
-  const consoles = () => [...stageEl().querySelectorAll(".session-window")];
+  let grid: Grid = [];
+  const consoles = () => [...stageEl().querySelectorAll<ConsoleWin>(".session-window")];
   const capNow = () => WBColumns.cap(WBConsole.columnMeasure().viewport, WBConsole.PHONE_MAX_WIDTH);
-  const paintGrid = (g: any, opts?: any) => {
+  const paintGrid = (g: Grid, opts?: { unmax?: string | null; raise?: boolean }) => {
     const cap = WBColumns.flat(g).length >= 2 ? capNow() : 1;
     WBConsole.applyColumns(WBColumns.painted(g, cap), { cap, unmax: null, raise: false, ...opts });
   };
@@ -90,12 +94,12 @@ export function wireDetachedFence(window: Window, document: Document) {
     const all = WBColumns.fromRects(consoles().map((w) => ({ id: w._deskId, rect: WBConsole.restoreRect(w) })));
     const ids = WBColumns.flat(all);
     if (!ids.length) return;
-    const old = WBColumns.flat(grid)[0] ?? stageEl().querySelector(".session-window.maximized")?._deskId;
+    const old = WBColumns.flat(grid)[0] ?? stageEl().querySelector<ConsoleWin>(".session-window.maximized")?._deskId;
     grid = ids.length >= 2 ? all : [];
     paintGrid(all, { unmax: old && !ids.includes(old) ? old : null, raise: true });
     WBConsole.focusColumn(ids[0]);
   }
-  function restoreColumn(id: any) {
+  function restoreColumn(id: string) {
     const r = WBColumns.restore(grid, id);
     grid = r.ended ? [] : r.columns;
     paintGrid(r.columns, { unmax: r.unmax, raise: true });
@@ -123,7 +127,7 @@ export function wireDetachedFence(window: Window, document: Document) {
   // Each press keeps the next note of this window on top; the card's
   // own Put back takes it off. One card on top at a time.
   function nextNoteOnTop() {
-    const ids = [...stageEl().querySelectorAll(".note-card")].map((el) => el.dataset.noteId);
+    const ids = [...stageEl().querySelectorAll<HTMLElement>(".note-card")].map((el) => el.dataset.noteId);
     const now = window.WBNotes?.onTopNow();
     if (!ids.length || (now && ids.length === 1)) return;
     window.WBNotes.keepOnTop(ids[(ids.indexOf(now) + 1) % ids.length]);
@@ -192,7 +196,7 @@ export function wireDetachedFence(window: Window, document: Document) {
     // only, and the opener needs the note members to check a name
     // report and to bring a draft home.
     const syncMembers = () => {
-      const alive = new Set(WBConsole.list().map((w: any) => w.id));
+      const alive = new Set(WBConsole.list().map((w) => w.id));
       const next = MEMBERS.filter((m) => m.kind === "note" || alive.has(m.id));
       if (next.length === MEMBERS.length) return;
       MEMBERS = next;
@@ -285,8 +289,8 @@ export function wireDetachedFence(window: Window, document: Document) {
 
     // An order with no `pid` comes from an opener that reloaded and has
     // not adopted this window yet, and it is still for this window.
-    const mine = (m: any) => m.pid == null || m.pid === PID;
-    LINK.onMessage((m: any) => {
+    const mine = (m: DetachMessage) => m.pid == null || m.pid === PID;
+    LINK.onMessage((m) => {
       if (!m || typeof m.type !== "string") return;
       if (TAB == null || m.tab !== TAB) return;
       // A window that is unloading answers nothing: its `popup-here`
@@ -315,7 +319,7 @@ export function wireDetachedFence(window: Window, document: Document) {
       say("popup-beat");
       const out = WBConsole.peerFold(peer, { type: "tick", at: Date.now() }, LINK.PEER_WINDOW_MS);
       peer = out.state;
-      if (out.effects.some((x: any) => x.type === "peer-lost")) silent();
+      if (out.effects.some((x) => x.type === "peer-lost")) silent();
     }, LINK.HEARTBEAT_MS);
 
     // BOTH, deliberately: `beforeunload` is the one a `window.close()` from

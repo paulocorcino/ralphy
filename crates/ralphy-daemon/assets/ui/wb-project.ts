@@ -150,7 +150,7 @@ function hasWorktrees(listing: Listing | null | undefined) {
 // take (one path segment, not a flag), one a worktree already has, a
 // detached base (`HEAD`: no branch to cut from), or before the listing
 // ever answered.
-function worktreeCreateRow(listing: Listing | null | undefined, base: string, name: string) {
+function worktreeCreateRow(listing: Pick<Listing, "worktrees"> | null | undefined, base: string, name: string) {
   if (!listing || !Array.isArray(listing.worktrees)) return null;
   base = String(base || "");
   if (!base || base === "HEAD") return null;
@@ -174,7 +174,7 @@ function maskWorktreeName(raw: string) {
 // Why the daemon would refuse `name` as a new worktree, or "" when it would
 // take it. The rules are the daemon's `well_shaped_ref` (dispatch/argv.rs)
 // plus one path segment (no "/"), so the prompt refuses before any send.
-function worktreeNameProblem(listing: Listing | null | undefined, name: string) {
+function worktreeNameProblem(listing: Pick<Listing, "worktrees"> | null | undefined, name: string) {
   name = String(name || "").trim();
   if (!name) return "Enter a name.";
   if (name.startsWith("-")) return "The name cannot start with “-”.";

@@ -42,7 +42,8 @@ type DetachRecord = { v: 1; tab: string | null; fences: string[]; members: Recor
 export type DetachMessage = {
   type: string;
   tab: string | null;
-  fenceId?: string;
+  /** `null` in a popup that has not been handed its fence yet. */
+  fenceId?: string | null;
   pid?: string | null;
   /** `popup-here`: the popup's snapshot of its members. */
   members?: { id: string; kind?: string; path?: string }[];
