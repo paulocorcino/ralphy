@@ -500,3 +500,9 @@ change an entry. Then `buildFence`, `startFenceMove`, `startFenceResize`,
 `arrangeFence` and `detachFence` are in `wb-console-fences.ts`, and
 `FenceDeps` gives them the gestures owner and the registry. After this cut
 `wb-console.ts` has 4,780 lines, and the ratchet holds it there.
+
+**The desk is cut as `createDesk(deps)` (#611).** `emitDesk`,
+`scheduleDeskFlush`, `flushDesk`, `restoreDesk`, `restoreDetached` and
+`mountDetached` are in `wb-console-desk.ts`, which owns the desk flush state
+and is the only place it changes; `DeskDeps` gives it the popup registry.
+After this cut `wb-console.ts` has 4,599 lines, and the ratchet holds it there.

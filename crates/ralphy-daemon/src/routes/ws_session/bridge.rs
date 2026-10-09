@@ -278,7 +278,7 @@ pub(crate) async fn session_ws(
                 .is_err()
             {
                 // A client that cannot take the queue in time loses the rest of
-                // it from this socket; the scrollback keeps it for a later view.
+                // it. The session is already gone, so nothing sends it later.
                 tracing::debug!("the queued output did not drain in time; naming the end");
             }
             send_command(
@@ -388,12 +388,37 @@ mod tests {
         (id, attach)
     }
 
+    /// One in-memory connection, accepted once. The bytes move between tasks
+    /// without the kernel, so paused time cannot move forward while bytes
+    /// are still on their way, as it can with a loopback socket.
+    struct OneConnection(Option<tokio::io::DuplexStream>);
+
+    impl axum::serve::Listener for OneConnection {
+        type Io = tokio::io::DuplexStream;
+        type Addr = ();
+
+        async fn accept(&mut self) -> (Self::Io, Self::Addr) {
+            match self.0.take() {
+                Some(io) => (io, ()),
+                None => std::future::pending().await,
+            }
+        }
+
+        fn local_addr(&self) -> std::io::Result<Self::Addr> {
+            Ok(())
+        }
+    }
+
     /// Serve `session_ws` for one client on `listener`.
-    fn serve_bridge(
-        listener: tokio::net::TcpListener,
+    fn serve_bridge<L>(
+        listener: L,
         id: session::SessionId,
         attach: session::Attachment,
-    ) -> tokio::task::JoinHandle<std::io::Result<()>> {
+    ) -> tokio::task::JoinHandle<std::io::Result<()>>
+    where
+        L: axum::serve::Listener,
+        L::Addr: std::fmt::Debug,
+    {
         let slot = Arc::new(Mutex::new(Some(attach)));
         let (stop, shutdown) = tokio::sync::watch::channel(false);
         let app = axum::Router::new().route(
@@ -524,34 +549,21 @@ mod tests {
 
     /// A client that takes the queue too slowly cannot hold back the end:
     /// the drain stops at its own limit, so `session-end` and `Close` are
-    /// still sent inside the 5 s end window. Both socket buffers are small
+    /// still sent inside the 5 s end window. The connection is a 4 KiB pipe
     /// and the client reads one chunk per 100 ms, so 100 chunks need about
-    /// 10 s. This runs in real time: the daemon's tokio has no `test-util`.
-    #[tokio::test]
+    /// 10 s. Time is paused: tokio moves the clock forward only while every
+    /// task waits, so the limits are measured in test time, not in the speed
+    /// of the machine.
+    #[tokio::test(start_paused = true)]
     async fn a_drain_that_cannot_finish_still_sends_the_end_and_the_close() {
         let chunks: Vec<Vec<u8>> = (0..100u8).map(|n| vec![n; 64 * 1024]).collect();
         let (id, attach) = exited_session(&chunks, 128);
-        let socket = tokio::net::TcpSocket::new_v4().expect("a loopback socket");
-        socket
-            .set_send_buffer_size(4096)
-            .expect("the send buffer is settable");
-        socket
-            .bind("127.0.0.1:0".parse().expect("a socket address"))
-            .expect("bind a loopback port");
-        let listener = socket.listen(1).expect("listen on the loopback port");
-        let addr = listener
-            .local_addr()
-            .expect("a bound listener has an address");
-        let server = serve_bridge(listener, id, attach);
+        let (server_io, client_io) = tokio::io::duplex(4096);
+        let server = serve_bridge(OneConnection(Some(server_io)), id, attach);
 
-        let socket = tokio::net::TcpSocket::new_v4().expect("a loopback socket");
-        socket
-            .set_recv_buffer_size(4096)
-            .expect("the receive buffer is settable");
-        let stream = socket.connect(addr).await.expect("the bridge accepts");
-        let (mut client, _) = tokio_tungstenite::client_async(format!("ws://{addr}/"), stream)
+        let (mut client, _) = tokio_tungstenite::client_async("ws://localhost/", client_io)
             .await
-            .expect("the bridge upgrades the socket");
+            .expect("the bridge upgrades the connection");
         let seen = tokio::time::timeout(
             Duration::from_secs(15),
             read_until_close(&mut client, Duration::from_millis(100)),

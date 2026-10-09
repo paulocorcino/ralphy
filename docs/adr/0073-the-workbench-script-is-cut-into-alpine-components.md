@@ -340,7 +340,8 @@ are counted in core, by decision 2.)
 3. **The open project is the Alpine store `projects`**, in
    `wb-projects-store.ts`. Its members are `openSlug`, `projects`, `repoRef`,
    `openProject` and the project-label helpers (`projectLabel`,
-   `projectTitle`, `projectBadge`, `rowOpen`). Measured, only the layout core
+   `projectTitle`, `rowOpen`). `projectBadge` stays in `shell()`, because it
+   also reads the change count of the git part. Measured, only the layout core
    writes this fact: `openSlug` only in `toggle` and `removeProject`, and
    `projects` in `loadRepos`, `reposFailed`, the fleet path and
    `removeProject`. Every group, the window bridge and four dialogs read it.
