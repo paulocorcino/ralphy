@@ -12,6 +12,7 @@
 import { component } from "./wb-alpine.ts";
 import { WBFail } from "./wb-fail.ts";
 import { isProtectedDir, parentRel } from "./wb-file-paths.ts";
+import { sendWindow } from "./wb-events.ts";
 
 export function wbMoveDialog() {
   // Every `shell()` member this component's code or markup reads or calls.
@@ -105,7 +106,7 @@ export function wbMoveDialog() {
       this.movePick.open = false;
       // The files move it (`performMove`, wb-files.ts).
       const to = dir ? `${dir}/${leaf}` : leaf;
-      window.dispatchEvent(new CustomEvent("workbench:move-confirmed", { detail: { from, to } }));
+      sendWindow(window, "workbench:move-confirmed", { from, to });
     },
   });
 }

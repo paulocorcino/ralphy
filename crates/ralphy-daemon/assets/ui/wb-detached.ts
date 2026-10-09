@@ -22,7 +22,7 @@ export function wireDetached(window: Window, document: Document) {
 
   // A markdown link to another repo file: tabs live in the shell, so the
   // request rides over to it and the file opens there, next to the others.
-  document.addEventListener("workbench:open-request", (e: any) => {
+  document.addEventListener("workbench:open-request", (e) => {
     if (window.opener) window.opener.postMessage({ type: "wb-open-request", detail: e.detail }, PEER);
   });
 

@@ -46,6 +46,7 @@ import { WBDetachLink } from "./wb-detach-link.ts";
 import { WBView } from "./wb-view.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
+import { sendDocument } from "./wb-events.ts";
 
 // The input folds are `wb-console-input.ts`: pure functions of their arguments.
 const {
@@ -434,7 +435,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
     // A close takes a full bleed away without moving the windows under it, so
     // the observer has nothing to report.
     refreshCover();
-    document.dispatchEvent(new CustomEvent("workbench:consoles-changed", { detail: { count: wins.size } }));
+    sendDocument(document, "workbench:consoles-changed", { count: wins.size });
   }
 
   // Ask before a click that cannot be taken back: tiling moves every console in
@@ -1247,7 +1248,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // The key-bar setting changed. The shell re-emits every save on
   // `workbench:action`. A detached popup never receives it (its `WB.emit` posts
   // to the opener) and reads no store, so its bar stays on auto.
-  document.addEventListener("workbench:action", (e: any) => {
+  document.addEventListener("workbench:action", (e: DocumentEventMap["workbench:action"]) => {
     if (e.detail?.action !== "setting-change" || e.detail.key !== "consoles.key_bar") return;
     for (const w of wins) applyKeyBar(w);
   });
@@ -1789,9 +1790,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
     // drag folds the extent per mousemove and would re-render Alpine per frame.
     if (width !== lastExtent.width || height !== lastExtent.height) {
       lastExtent = { width, height };
-      document.dispatchEvent(
-        new CustomEvent("workbench:stage-extent", { detail: { width, height } }),
-      );
+      sendDocument(document, "workbench:stage-extent", { width, height });
     }
   }
 
@@ -2883,7 +2882,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
     // LAST, after `applyExtent`: `x-show` threw the stored offset away.
     applyLanding();
     // The first frame that can measure the column cap.
-    document.dispatchEvent(new CustomEvent("workbench:columns-stale"));
+    sendDocument(document, "workbench:columns-stale");
   }
 
   function count() {

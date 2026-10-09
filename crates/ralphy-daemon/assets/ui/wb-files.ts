@@ -21,6 +21,7 @@ import { WBFail } from "./wb-fail.ts";
 import { WBFileSearch } from "./wb-file-search.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { classify, newEntryTitle, parentRel, underProtectedDir } from "./wb-file-paths.ts";
+import { sendWindow } from "./wb-events.ts";
 
 // The tree hosts that already carry the context-menu listener (`mountTree`).
 // A raw DOM element, kept outside the component: Alpine's Proxy would wrap it.
@@ -668,7 +669,7 @@ export function wbFiles() {
       this._headTimer = setTimeout(() => {
         const ref = this.$store.projects.openSlug;
         if (!ref) return;
-        window.dispatchEvent(new CustomEvent("workbench:head-moved", { detail: { ref } }));
+        sendWindow(window, "workbench:head-moved", { ref });
       }, this.HEAD_SETTLE_MS);
     },
     HEAD_SETTLE_MS: 250,
@@ -1104,7 +1105,7 @@ export function wbFiles() {
     moveNode(node: any) {
       const rel = this.relPath(node);
       if (!rel) return;
-      window.dispatchEvent(new CustomEvent("workbench:move-open", { detail: { from: rel } }));
+      sendWindow(window, "workbench:move-open", { from: rel });
     },
 
     // Through `WBDaemon.write`, not the fire-and-forget `window.WB.emit("rename")`:
@@ -1170,20 +1171,20 @@ export function wbFiles() {
     init() {
       window.addEventListener("workbench:project-changed", () => this.filesFollowProject());
       window.addEventListener("workbench:fleet-read", () => this.filesFollowFleet());
-      window.addEventListener("workbench:peer-woken", (e: any) => this.filesFollowWake(e.detail.daemon));
+      window.addEventListener("workbench:peer-woken", (e) => this.filesFollowWake(e.detail.daemon));
       window.addEventListener("workbench:checkout-changed", () => this.filesFollowCheckout());
       // `resumeSockets`: the shell's heartbeat verdict, for this socket too.
-      window.addEventListener("workbench:sockets-resume", (e: any) => this._treeSub?.resume?.(e.detail.stale));
+      window.addEventListener("workbench:sockets-resume", (e) => this._treeSub?.resume?.(e.detail.stale));
       // The tab became visible, or a login: the socket sends what it missed.
       window.addEventListener("workbench:panels-reread", () => this._treeSub?.replay?.());
       // `/` and Ctrl/Cmd+Shift+F (`wire()` in app.ts).
       window.addEventListener("workbench:file-search-open", () => this.openFileSearch());
-      window.addEventListener("workbench:move-confirmed", (e: any) => this.performMove(e.detail.from, e.detail.to));
+      window.addEventListener("workbench:move-confirmed", (e) => this.performMove(e.detail.from, e.detail.to));
       // A create or a delete of the write seam (`wire()` in app.ts): re-list the
       // level, THEN reveal, so `setActive()` is the last write. `revealRel`
       // expands the ancestors: a nudge for a COLLAPSED dir is dropped, so a
       // nudge alone would leave a new entry invisible.
-      window.addEventListener("workbench:tree-dirty", async (e: any) => {
+      window.addEventListener("workbench:tree-dirty", async (e) => {
         await this.onTreeDirty(e.detail.rel);
         if (e.detail.reveal) await this.revealRel(e.detail.reveal);
       });

@@ -37,7 +37,7 @@ const PROMPT_GH_ISSUE_VIEW: usize = 20;
 /// ADR-0073 cuts into components (D8). Each cut lowers it in the same change.
 /// 4246 since the files group became the components of `wb-files.ts` and
 /// `wb-move-dialog.ts` (#621).
-const APP_TS_LINES: usize = 4246;
+const APP_TS_LINES: usize = 4243;
 /// Lines of `crates/ralphy-daemon/assets/ui/wb-console.ts`, the console
 /// factory (ADR-0073 D8, which starts this ratchet with the first fold move).
 /// 5842 since ADR-0075 phase 5 moved its pure folds, its GPU budget and its
@@ -50,7 +50,7 @@ const APP_TS_LINES: usize = 4246;
 /// view moved to `wb-console-view.ts` (#621); 3423 since its fence list moved
 /// to `wb-console-fence-list.ts` (#621); 3084 since the opener's side of its
 /// detach moved to `wb-console-detach.ts` (#621).
-const WB_CONSOLE_TS_LINES: usize = 3082;
+const WB_CONSOLE_TS_LINES: usize = 3081;
 
 /// The served workbench modules, from the repo root. `vendor/` and
 /// `ui-tests/` are not read.
@@ -62,7 +62,7 @@ const UI_DIR: &str = "crates/ralphy-daemon/assets/ui";
 /// the `.oxlintrc.json` override) in the same change, and a new module is
 /// not in it.
 const ANY_BASELINE: &[(&str, usize)] = &[
-    ("app.ts", 340),
+    ("app.ts", 333),
     ("wb-add-project-dialog.ts", 5),
     ("wb-add-project.ts", 5),
     ("wb-columns.ts", 74),
@@ -79,14 +79,13 @@ const ANY_BASELINE: &[(&str, usize)] = &[
     ("wb-console-terminal.ts", 61),
     ("wb-console-title.ts", 76),
     ("wb-console-view.ts", 34),
-    ("wb-console.ts", 192),
-    ("wb-consoles-tab.ts", 47),
+    ("wb-console.ts", 191),
+    ("wb-consoles-tab.ts", 41),
     ("wb-detach-link.ts", 10),
-    ("wb-detached-fence.ts", 15),
-    ("wb-detached.ts", 1),
-    ("wb-device.ts", 25),
+    ("wb-detached-fence.ts", 12),
+    ("wb-device.ts", 24),
     ("wb-file-paths.ts", 12),
-    ("wb-files.ts", 112),
+    ("wb-files.ts", 108),
     ("wb-move-dialog.ts", 4),
     ("wb-notes.ts", 224),
     ("wb-projects-store.ts", 1),

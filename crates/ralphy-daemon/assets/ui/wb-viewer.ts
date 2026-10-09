@@ -18,6 +18,7 @@ import { WBMonaco } from "./wb-monaco.ts";
 import { WBSplit } from "./wb-split.ts";
 import { WBFail } from "./wb-fail.ts";
 import { WBFleet } from "./wb-fleet.ts";
+import { sendDocument } from "./wb-events.ts";
 
 export function createViewer(window: any, document: any) {
   let mermaidReady = false;
@@ -199,7 +200,7 @@ export function createViewer(window: any, document: any) {
         document.removeEventListener("pointerup", onUp);
         document.removeEventListener("pointercancel", onUp);
         if (ratio != null)
-          document.dispatchEvent(new CustomEvent("workbench:split-ratio", { detail: { ratio } }));
+          sendDocument(document, "workbench:split-ratio", { ratio });
       };
       document.addEventListener("pointermove", onMove);
       document.addEventListener("pointerup", onUp);
@@ -212,9 +213,7 @@ export function createViewer(window: any, document: any) {
   // it holds the slot, this module only paints what it was last told.
   if (viewers && typeof ResizeObserver === "function") {
     new ResizeObserver(() => {
-      document.dispatchEvent(
-        new CustomEvent("workbench:canvas-resize", { detail: { width: viewers.clientWidth } }),
-      );
+      sendDocument(document, "workbench:canvas-resize", { width: viewers.clientWidth });
     }).observe(viewers);
   }
 
@@ -806,7 +805,7 @@ export function createViewer(window: any, document: any) {
 
   function detachClick(rec: any) {
     const evt = rec.detached ? "workbench:reattach-request" : "workbench:detach-request";
-    document.dispatchEvent(new CustomEvent(evt, { detail: descOf(rec) }));
+    sendDocument(document, evt, descOf(rec));
   }
 
   // --- an image tab (read-only) -------------------------------------------
@@ -1103,12 +1102,12 @@ export function createViewer(window: any, document: any) {
   //   • climbs out of the repo → null — not ours, and the daemon would refuse it
   function linkTarget(dir: any, href: any) {
     if (!href) return null;
-    if (href.startsWith("#")) return { kind: "fragment", fragment: href.slice(1) };
-    if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("/")) return { kind: "external" };
+    if (href.startsWith("#")) return { kind: "fragment" as const, fragment: href.slice(1) };
+    if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("/")) return { kind: "external" as const };
     const path = repoRelative(dir, href);
     if (!path) return null;
     const hash = href.indexOf("#");
-    return { kind: "file", path, fragment: hash < 0 ? "" : href.slice(hash + 1) };
+    return { kind: "file" as const, path, fragment: hash < 0 ? "" : href.slice(hash + 1) };
   }
 
   // A click on a rendered `<a>`: a raw `href` would navigate the WHOLE
@@ -1133,16 +1132,12 @@ export function createViewer(window: any, document: any) {
       jumpTo(rec, target.fragment);
       return;
     }
-    document.dispatchEvent(
-      new CustomEvent("workbench:open-request", {
-        detail: {
-          project: rec.project,
-          path: target.path,
-          fragment: target.fragment,
-          checkout: rec.checkout ?? null,
-        },
-      }),
-    );
+    sendDocument(document, "workbench:open-request", {
+      project: rec.project,
+      path: target.path,
+      fragment: target.fragment,
+      checkout: rec.checkout ?? null,
+    });
   }
 
   // Scroll a rendered document to the heading a `#fragment` names. `marked`
@@ -1400,7 +1395,7 @@ export function createViewer(window: any, document: any) {
       rec.saveBtn?.classList.remove("dirty");
       clearSaveError(rec);
     },
-    saveFailed(id: any, reason: any, reply: any) {
+    saveFailed(id: any, reason: any, reply?: any) {
       const rec = map.get(id);
       if (!rec) return;
       rec.dirty = true;

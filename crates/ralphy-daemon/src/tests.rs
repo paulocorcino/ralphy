@@ -4031,6 +4031,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-detached.js",
                 "wb-monaco.js",
                 "wb-viewer.js",
+                "wb-events.js",
             ][..],
         ),
         (
@@ -4045,6 +4046,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-session-route.js",
                 "wb-resume.js",
                 "wb-daemon.js",
+                "wb-events.js",
                 // `wb-console.ts` imports the geometry, the window state, the session folds,
                 // the desk folds, the GPU budget, the title, the fence list, the detach, the view, the
                 // terminal, the window chrome, the popup registry, the fences, the desk, the console name
@@ -4255,6 +4257,104 @@ fn first_party_scripts_move_to_typescript_and_never_back() {
         !src.join("wb-mode.js").exists() && !src.parent().expect("assets").join("ui-demo").exists(),
         "the file:// demo is archived under the tag workbench-demo-archive"
     );
+}
+
+/// The `workbench:*` names written in `text`: each `workbench:` followed by a
+/// lowercase name. `workbench:*` and the prose "the workbench: a …" name none.
+fn workbench_event_names(text: &str) -> Vec<String> {
+    text.match_indices("workbench:")
+        .map(|(at, tag)| {
+            text[at + tag.len()..]
+                .chars()
+                .take_while(|c| c.is_ascii_lowercase() || *c == '-')
+                .collect::<String>()
+        })
+        .filter(|name| name.starts_with(|c: char| c.is_ascii_lowercase()))
+        .collect()
+}
+
+/// The names `globals.d.ts` lists in `interface <map> { … }`, one
+/// `"workbench:<name>": CustomEvent<…>;` line each.
+fn typed_event_names(globals: &str, map: &str) -> std::collections::BTreeSet<String> {
+    let open = format!("interface {map} {{");
+    let start = globals
+        .find(&open)
+        .unwrap_or_else(|| panic!("globals.d.ts must declare {open}"));
+    let body = &globals[start + open.len()..];
+    let body = &body[..body.find("\n}").expect("the interface closes")];
+    body.lines()
+        .filter_map(|line| line.trim().strip_prefix("\"workbench:"))
+        .filter_map(|rest| rest.split_once("\":").map(|(name, _)| name.to_string()))
+        .collect()
+}
+
+/// #633: the `workbench:*` events are one typed list, in `globals.d.ts`. A
+/// send through `wb-events.ts` with a name not in it fails `tsc`; a listener,
+/// a `$dispatch` in the markup or a `.window` listener does not, so every
+/// name in a module and in `index.html` is read here, both names of a ternary
+/// included.
+#[test]
+fn every_workbench_event_name_is_in_the_typed_list() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/ui");
+    let globals =
+        std::fs::read_to_string(src.join("globals.d.ts")).expect("globals.d.ts is readable");
+    let window = typed_event_names(&globals, "WindowEventMap");
+    let document = typed_event_names(&globals, "DocumentEventMap");
+    // NEGATIVE CONTROL: the lists are read. An empty list would pass nothing,
+    // and a parser that read nothing would report every name.
+    assert!(
+        window.contains("project-changed") && document.contains("action"),
+        "the typed lists were not read from globals.d.ts: {window:?} {document:?}"
+    );
+    let mut used = std::collections::BTreeSet::new();
+    let mut unknown = Vec::new();
+    for entry in std::fs::read_dir(&src).expect("assets/ui is readable") {
+        let name = entry
+            .expect("an entry of assets/ui")
+            .file_name()
+            .to_string_lossy()
+            .into_owned();
+        let module = name.ends_with(".ts") && !name.ends_with(".d.ts");
+        if !module && name != "index.html" {
+            continue;
+        }
+        let text = std::fs::read_to_string(src.join(&name)).expect("a module is readable");
+        for event in workbench_event_names(&text) {
+            if !window.contains(&event) && !document.contains(&event) {
+                unknown.push(format!("{name}: workbench:{event}"));
+            }
+            used.insert(event);
+        }
+    }
+    assert!(
+        unknown.is_empty(),
+        "a workbench event name that globals.d.ts does not list (WindowEventMap or DocumentEventMap):\n{}",
+        unknown.join("\n")
+    );
+    let unused: Vec<_> = window
+        .iter()
+        .chain(&document)
+        .filter(|n| !used.contains(*n))
+        .collect();
+    assert!(
+        unused.is_empty(),
+        "globals.d.ts lists workbench events that no module and no markup uses: {unused:?}"
+    );
+    // A dialog hears its `-open` event with `.window`: that name is a window event.
+    let html = include_str!("../assets/ui/index.html");
+    for (at, _) in html.match_indices("@workbench:") {
+        let rest = &html[at + 1..];
+        let event = workbench_event_names(rest)
+            .into_iter()
+            .next()
+            .unwrap_or_default();
+        if rest["workbench:".len() + event.len()..].starts_with(".window") {
+            assert!(
+                window.contains(&event),
+                "index.html hears workbench:{event} on the window, and WindowEventMap does not list it"
+            );
+        }
+    }
 }
 
 /// ADR-0073 D3: an Alpine component can be built without Alpine. Each
@@ -6845,7 +6945,7 @@ fn the_console_chrome_holds_its_three_rules() {
     // each close their own menus on it — the account menu and the toolbar's
     // pickers used to enumerate each other and left both open, overlapping.
     // wb-consoles-tab.test.mjs and app.test.mjs drive the event.
-    let close = r#"window.dispatchEvent(new CustomEvent("workbench:menus-close"));"#;
+    let close = r#"sendWindow(window, "workbench:menus-close");"#;
     let hear = r#"addEventListener("workbench:menus-close", "#;
     assert!(
         app.contains(close) && app.contains(hear) && app.contains("this.avatarMenu = false;"),

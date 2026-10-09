@@ -17,6 +17,7 @@
 // there is (#339).
 import { WBFail } from "./wb-fail.ts";
 import { WBGeometry } from "./wb-geometry.ts";
+import { sendDocument } from "./wb-events.ts";
 
 export function createNotes(window: any, document: any) {
   // The card's floor. Below a console's minimum on purpose: a note is often a
@@ -1074,16 +1075,12 @@ export function createNotes(window: any, document: any) {
               (window.WBConsole.notes() || []).filter((n: any) => n.id !== record.id),
             );
             render();
-            document.dispatchEvent(
-              new CustomEvent("workbench:open-request", {
-                detail: {
-                  project: record.repo,
-                  path: record.path,
-                  checkout: record.checkout ?? null,
-                  as: "bytes",
-                },
-              }),
-            );
+            sendDocument(document, "workbench:open-request", {
+              project: record.repo,
+              path: record.path,
+              checkout: record.checkout ?? null,
+              as: "bytes",
+            });
             return null;
           }
           // The reason in the footer, beside the path that footer already
@@ -1241,9 +1238,7 @@ export function createNotes(window: any, document: any) {
       // follows, and the opener must write to this same name on re-attach.
       if (fragment && !record.path && el._noteClaimSent !== path) {
         el._noteClaimSent = path;
-        document.dispatchEvent(
-          new CustomEvent("workbench:note-claimed", { detail: { id: record.id, claim: path } }),
-        );
+        sendDocument(document, "workbench:note-claimed", { id: record.id, claim: path });
       }
       el._noteInFlight = true;
       return window.WBDaemon.write(
@@ -1276,9 +1271,7 @@ export function createNotes(window: any, document: any) {
             // leaves this document. The popup reports the name instead, and
             // the shell records it (ADR-0064 §8, amended for #475).
             if (fragment) {
-              document.dispatchEvent(
-                new CustomEvent("workbench:note-named", { detail: { id: record.id, path } }),
-              );
+              sendDocument(document, "workbench:note-named", { id: record.id, path });
             }
           }
           // Only for the bytes that landed: a keystroke during the write leaves
@@ -1581,16 +1574,12 @@ export function createNotes(window: any, document: any) {
         return;
       }
       ev.preventDefault();
-      document.dispatchEvent(
-        new CustomEvent("workbench:open-request", {
-          detail: {
-            project: record?.repo || null,
-            path: target.path,
-            fragment: target.fragment,
-            checkout: record?.checkout ?? null,
-          },
-        }),
-      );
+      sendDocument(document, "workbench:open-request", {
+        project: record?.repo || null,
+        path: target.path,
+        fragment: target.fragment,
+        checkout: record?.checkout ?? null,
+      });
     });
   }
 

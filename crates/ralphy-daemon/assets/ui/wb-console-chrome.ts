@@ -17,6 +17,7 @@ import { WBGeometry } from "./wb-geometry.ts";
 import { WBWindowState } from "./wb-window-state.ts";
 import { WBConsoleName } from "./wb-console-name.ts";
 import * as WBConsoleInput from "./wb-console-input.ts";
+import { sendDocument } from "./wb-events.ts";
 
 const { fullscreenOffered, dragThreshold, dragBegins, isDoubleTap, HOLD_MS } = WBConsoleInput;
 const { RESIZE_MIN, resizeRect, spawnRectIn, freeSpawnRect, WIN_MIN_W, WIN_MIN_H } = WBGeometry;
@@ -563,13 +564,11 @@ export function createChrome(deps: ChromeDeps) {
     // a column's restore is its decision.
     const maxOrRestore = () => {
       if (win.classList.contains("column")) {
-        document.dispatchEvent(
-          new CustomEvent("workbench:column-restore", { detail: { id: win._deskId } }),
-        );
+        sendDocument(document, "workbench:column-restore", { id: win._deskId });
         return;
       }
       toggleMax(win);
-      document.dispatchEvent(new CustomEvent("workbench:columns-stale"));
+      sendDocument(document, "workbench:columns-stale");
     };
     maxBtn.addEventListener("click", (e: any) => {
       e.stopPropagation();
@@ -587,11 +586,7 @@ export function createChrome(deps: ChromeDeps) {
     wireTitleTouch(win, titlebar, maxOrRestore);
     colBtn.addEventListener("click", (e: any) => {
       e.stopPropagation();
-      document.dispatchEvent(
-        new CustomEvent("workbench:column-open", {
-          detail: { id: win._deskId, rect: colBtn.getBoundingClientRect() },
-        }),
-      );
+      sendDocument(document, "workbench:column-open", { id: win._deskId, rect: colBtn.getBoundingClientRect() });
     });
     lockBtn.addEventListener("click", (e: any) => {
       e.stopPropagation();
