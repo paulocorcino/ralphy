@@ -491,3 +491,12 @@ the ratchet holds it there.
 have one owner there, `createGestures()`, which the chrome and the fence
 gestures take through their `deps`. After this cut `wb-console.ts` has 5,396
 lines, and the ratchet holds it there.
+
+**The fences are cut as `createFences(deps)` (#610).** The fences this tab
+detached and their popup entries have one owner first,
+`createPopupRegistry(deps)` in `wb-console-popups.ts`: `commitDetached` is the
+one place the ids change, and `put` and `remove` are the only calls that
+change an entry. Then `buildFence`, `startFenceMove`, `startFenceResize`,
+`arrangeFence` and `detachFence` are in `wb-console-fences.ts`, and
+`FenceDeps` gives them the gestures owner and the registry. After this cut
+`wb-console.ts` has 4,780 lines, and the ratchet holds it there.
