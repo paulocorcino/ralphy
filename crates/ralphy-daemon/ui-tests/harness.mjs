@@ -23,6 +23,8 @@ import { securityDialog } from "../assets/ui/wb-security-dialog.ts";
 import { releaseDialogs } from "../assets/ui/wb-release-dialogs.ts";
 import { addProjectDialog } from "../assets/ui/wb-add-project-dialog.ts";
 import { wbColumns, wbConsoleMenus } from "../assets/ui/wb-consoles-tab.ts";
+import { wbFiles } from "../assets/ui/wb-files.ts";
+import { wbMoveDialog } from "../assets/ui/wb-move-dialog.ts";
 import { projectsStore } from "../assets/ui/wb-projects-store.ts";
 import { WBSpend } from "../assets/ui/wb-spend.ts";
 import { WBKanban } from "../assets/ui/wb-kanban.ts";
@@ -56,6 +58,8 @@ const MODULE_COMPONENTS = {
   wbAddProjectDialog: addProjectDialog,
   wbConsoleMenus,
   wbColumns,
+  wbFiles,
+  wbMoveDialog,
 };
 
 export const UI = join(dirname(fileURLToPath(import.meta.url)), "../assets/ui");

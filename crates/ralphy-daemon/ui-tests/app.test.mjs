@@ -14,7 +14,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadShell, UI } from "./harness.mjs";
+import { loadComponent, loadShell, UI } from "./harness.mjs";
 import { WBDeskSink } from "../assets/ui/wb-desk-sink.ts";
 import { WBRelease } from "../assets/ui/wb-release.ts";
 import { WBReleaseDialogs } from "../assets/ui/wb-release-dialogs.ts";
@@ -238,59 +238,6 @@ test("planHeadings drops Steps and stays empty when the prose is for another iss
   assert.deepEqual(own.planHeadings({}), []);
 });
 
-test("a fresh listing evicts the levels it contradicts — a reused folder name is not the old folder", () => {
-  const own = loadShell().state;
-  own.$store.projects.setOpen("me/vc-stress");
-  own.treeMem();
-  const seed = (rel, entries) => own._treeCache.set(own.treeKey(rel), entries);
-  // The key is `<slug>\n<checkout>\n<rel>` (#406 added the middle segment);
-  // the rel is its LAST segment.
-  const cached = () =>
-    [...own._treeCache.keys()].map((k) => k.split("\n").at(-1)).sort();
-
-  // The tree as it stood: `ideias/` holding `dossie/`, itself holding a file.
-  seed("", [{ name: "ideias", dir: true }, { name: "README.md", dir: false }]);
-  seed("ideias", [{ name: "dossie", dir: true }]);
-  seed("ideias/dossie", [{ name: "nota.md", dir: false }]);
-  // A sibling that shares the PREFIX but not the path: `ideias_vbforge` must
-  // survive a prune of `ideias`, or the fix trades one ghost for a blank folder.
-  seed("ideias_vbforge", [{ name: "dossie", dir: true }]);
-  own._treeValidated.add(own.treeKey("ideias"));
-
-  // The rename lands: the root no longer lists `ideias`, so everything
-  // remembered UNDER it is a statement about a directory that is gone.
-  own.pruneTreeCache("", [
-    { name: "ideias_vbforge", dir: true },
-    { name: "README.md", dir: false },
-  ]);
-  assert.deepEqual(cached(), ["", "ideias_vbforge"]);
-  // Evicted from BOTH: a key left in `_treeValidated` is the half that made the
-  // ghost immortal — the level would be painted from a later cache entry and
-  // never re-read.
-  assert.equal(own._treeValidated.has(own.treeKey("ideias")), false);
-
-  // A name that came back as a FILE is contradicted just as hard as one that
-  // vanished — a file has no children to remember.
-  seed("ideias", [{ name: "dossie", dir: true }]);
-  own.pruneTreeCache("", [{ name: "ideias", dir: false }]);
-  assert.equal(own._treeCache.has(own.treeKey("ideias")), false);
-
-  // NEGATIVE CONTROL: a listing that still names its subdirectory evicts
-  // nothing, including the level being replaced (its own key is the caller's to
-  // overwrite, not this fold's to drop).
-  seed("ideias", [{ name: "dossie", dir: true }]);
-  seed("ideias/dossie", [{ name: "nota.md", dir: false }]);
-  own.pruneTreeCache("ideias", [{ name: "dossie", dir: true }]);
-  assert.ok(own._treeCache.has(own.treeKey("ideias")));
-  assert.ok(own._treeCache.has(own.treeKey("ideias/dossie")));
-
-  // Scoped by REPO, like every other key read: another project's `ideias/` is
-  // not this listing's business.
-  own._treeCache.set("other/repo\nideias", [{ name: "dossie", dir: true }]);
-  own.pruneTreeCache("", [{ name: "README.md", dir: false }]);
-  assert.ok(own._treeCache.has("other/repo\nideias"));
-});
-
 test("filteredProjects keeps the open project whatever the query", () => {
   const own = loadShell().state;
   const a = { slug: "owner/alpha", branch: "main", path: "C:\\src\\alpha" };
@@ -298,8 +245,8 @@ test("filteredProjects keeps the open project whatever the query", () => {
   own.$store.projects.setProjects([a, b]);
   own.$store.projects.setOpen(own.$store.projects.repoRef(a));
 
-  // The open row's `<li>` hosts the file tree; a query that matches nothing
-  // must not unmount it.
+  // The open project's files sit under the open row; a query that matches
+  // nothing must not drop that row.
   own.projectQuery = "zzz-matches-nothing";
   assert.deepEqual(own.filteredProjects(), [a]);
 
@@ -313,123 +260,6 @@ test("filteredProjects keeps the open project whatever the query", () => {
   own.$store.projects.setOpen(null);
   own.projectQuery = "zzz-matches-nothing";
   assert.deepEqual(own.filteredProjects(), []);
-});
-
-// The FILES search (ADR-0036 amendment 2026-09-15): the shell's half, driven
-// with `WBDaemon.observe` stubbed and no tree mounted — the folds that decide
-// what is sent and which reply is believed run without Wunderbaum.
-async function withSearchShell(run, reply = { status: "ok", hits: [], truncated: false }) {
-  const { state, window } = loadShell();
-  const calls = [];
-  let answer = reply;
-  window.WBDaemon = {
-    observe: async (verb, payload) => {
-      calls.push({ verb, payload });
-      return typeof answer === "function" ? answer() : answer;
-    },
-    // The real door's rule (wb-daemon.test.mjs pins it): the key only for a
-    // real name, so a no-selection payload is the pre-#406 one.
-    withCheckout: (payload, checkout) =>
-      checkout ? { ...payload, checkout: String(checkout) } : { ...payload },
-  };
-  state.$store.projects.setOpen("owner/repo");
-  state.$refs = {};
-  state.$nextTick = (f) => f();
-  return await run(state, calls, (a) => (answer = a));
-}
-
-test("fileSearchNow sends the mode's verb with the trimmed query", async () => {
-  await withSearchShell(async (s, calls) => {
-    s.fileSearch.open = true;
-    s.fileSearch.query = "  plan ";
-    await s.fileSearchNow();
-    assert.deepEqual(calls.at(-1), { verb: "tree.find", payload: { repo: "owner/repo", query: "plan" } });
-    await s.setFileSearchMode("content");
-    assert.deepEqual(calls.at(-1), { verb: "tree.grep", payload: { repo: "owner/repo", query: "plan" } });
-    // NEGATIVE CONTROL: under the floor nothing is sent and the note is clear.
-    s.fileSearch.query = "p";
-    await s.fileSearchNow();
-    assert.equal(calls.length, 2);
-    assert.equal(s.fileSearch.note, "");
-  });
-});
-
-test("a reply that is not the newest is dropped, never painted", async () => {
-  await withSearchShell(async (s, calls, answer) => {
-    s.fileSearch.open = true;
-    let release;
-    answer(() => new Promise((r) => (release = r)));
-    s.fileSearch.query = "old";
-    const slow = s.fileSearchNow();
-    // A newer search lands first.
-    answer({ status: "ok", hits: [{ path: "new.md" }], truncated: false });
-    s.fileSearch.query = "new";
-    await s.fileSearchNow();
-    assert.deepEqual(s.fileSearch.hits, [{ path: "new.md" }]);
-    // …then the slow one resolves with its stale hits: ignored.
-    release({ status: "ok", hits: [{ path: "old.md" }], truncated: false });
-    await slow;
-    assert.deepEqual(s.fileSearch.hits, [{ path: "new.md" }]);
-    assert.equal(calls.length, 2);
-  });
-});
-
-test("the gutter says what the tree cannot: the cap, a miss, a refusal", async () => {
-  await withSearchShell(async (s, calls, answer) => {
-    s.fileSearch.open = true;
-    s.fileSearch.query = "task";
-    // [case, the daemon's reply, the note under the search box]
-    const rows = [
-      [
-        "the cap",
-        { status: "ok", hits: [{ path: "a" }], truncated: true },
-        "First 200 matches. Narrow the search to see more.",
-      ],
-      ["a miss", { status: "ok", hits: [], truncated: false }, "No matches"],
-      [
-        "a refusal",
-        { status: "error", reason: "unknown verb" },
-        "Could not search: the daemon does not know that command.",
-      ],
-    ];
-    for (const [name, reply, note] of rows) {
-      answer(reply);
-      await s.fileSearchNow();
-      assert.equal(s.fileSearch.note, note, name);
-    }
-  });
-});
-
-test("only a live CONTENT search lends its term to a tab opened from the tree", async () => {
-  await withSearchShell(async (s, calls, answer) => {
-    s.fileSearch.open = true;
-    s.fileSearch.query = "needle";
-    answer({ status: "ok", hits: [{ path: "a.md", count: 2 }], truncated: false });
-    await s.setFileSearchMode("content");
-    assert.equal(s.fileSearchFindTerm(), "needle");
-    // NEGATIVE CONTROLS: a name search, or a closed field, says nothing about
-    // what is inside a file.
-    await s.setFileSearchMode("name");
-    assert.equal(s.fileSearchFindTerm(), null);
-    await s.setFileSearchMode("content");
-    s.fileSearch.open = false;
-    assert.equal(s.fileSearchFindTerm(), null);
-  });
-});
-
-test("closing the search forgets the query and the hits", async () => {
-  await withSearchShell(async (s, calls, answer) => {
-    s.fileSearch.open = true;
-    s.fileSearch.query = "task";
-    answer({ status: "ok", hits: [{ path: "a" }], truncated: false });
-    await s.fileSearchNow();
-    await s.closeFileSearch();
-    assert.equal(s.fileSearch.open, false);
-    assert.equal(s.fileSearch.query, "");
-    assert.deepEqual(s.fileSearch.hits, []);
-    assert.equal(s.fileSearch.note, "");
-    assert.equal(s.fileSearch.expandedBefore, null);
-  });
 });
 
 // The viewer pin (#406): a tab is pinned to the checkout it was opened in, the
@@ -714,12 +544,12 @@ test("the shortcuts are blocked while the Security, Settings or What's new dialo
     document: { addEventListener: (type, fn) => type === "keydown" && keydowns.push(fn) },
   });
   // The Ctrl/Cmd+Shift+F listener: the one that opens the files search.
-  const filesKey = keydowns.find((fn) => /shiftKey/.test(String(fn)) && /openFileSearch/.test(String(fn)));
+  const filesKey = keydowns.find((fn) => /shiftKey/.test(String(fn)) && /file-search-open/.test(String(fn)));
   assert.ok(filesKey, "app.ts registers the Ctrl+Shift+F listener at load");
   const searches = [];
   state.authed = true;
   state.$store.projects.setOpen("o/r");
-  state.openFileSearch = () => searches.push("files");
+  window.dispatchEvent = (e) => e.type === "workbench:file-search-open" && searches.push("files");
   window.getShell = () => state;
   const press = () =>
     filesKey({ key: "F", ctrlKey: true, metaKey: false, shiftKey: true, altKey: false, preventDefault() {} });
@@ -815,17 +645,20 @@ test("returning to the tab reads the release view again", () => {
 });
 
 test("resumeSockets resumes the file tree socket with the others", () => {
-  const { state } = loadShell();
   const resumed = [];
-  for (const name of ["_runsSub", "_changesSub", "_presenceSub", "_treeSub"]) {
+  const { state } = loadShell({
+    window: { dispatchEvent: (e) => resumed.push([e.type, e.detail.stale]) },
+  });
+  for (const name of ["_runsSub", "_changesSub", "_presenceSub"]) {
     state[name] = { resume: (stale) => resumed.push([name, stale]) };
   }
   state.resumeSockets(true);
+  // The file tree's socket is the files' (wb-files.test.mjs hears the event).
   assert.deepEqual(resumed, [
     ["_runsSub", true],
     ["_changesSub", true],
     ["_presenceSub", true],
-    ["_treeSub", true],
+    ["workbench:sockets-resume", true],
   ]);
 });
 // A shell whose `toggle` side effects are recorders: each method `toggle` and
@@ -835,7 +668,7 @@ test("resumeSockets resumes the file tree socket with the others", () => {
 function toggleShell() {
   const listeners = {};
   const events = [];
-  const { state, window } = loadShell({
+  const loaded = loadShell({
     window: {
       addEventListener: (type, fn) => (listeners[type] ||= []).push(fn),
       dispatchEvent: (e) => {
@@ -845,6 +678,7 @@ function toggleShell() {
       },
     },
   });
+  const { state, window } = loaded;
   const calls = [];
   const record = (name) => (...args) => {
     calls.push([name, ...args]);
@@ -859,8 +693,6 @@ function toggleShell() {
     "loadAgents",
     "ensureWorktreeListing",
     "refreshSpend",
-    "destroyTree",
-    "mountTree",
     "destroyRunsSub",
     "mountRunsSub",
     "destroyChangesSub",
@@ -885,7 +717,7 @@ function toggleShell() {
     globalThis.setInterval = realSetInterval;
   }
   calls.length = 0;
-  return { state, window, calls, events, named: (name) => calls.filter((c) => c[0] === name) };
+  return { state, window, loaded, calls, events, named: (name) => calls.filter((c) => c[0] === name) };
 }
 
 test("opening a row asks to wake its peer, and closing it does not", () => {
@@ -899,20 +731,21 @@ test("opening a row asks to wake its peer, and closing it does not", () => {
 });
 
 test("a row on a host that cannot answer stays closed, and still wakes it", () => {
-  const { state, named } = toggleShell();
+  const { state, named, events } = toggleShell();
   const peer = "01KY0000000000000000000000";
   const ref = `${peer}/owner/repo`;
   let groups = [{ daemon: peer, local: false, state: "unreachable" }];
   state.fleetGroups = () => groups;
+  const opened = () => events.filter((e) => e.type === "workbench:project-changed").length;
   state.toggle(ref);
   assert.equal(state.$store.projects.openSlug, null);
-  assert.equal(named("mountTree").length, 0);
+  assert.equal(opened(), 0);
   assert.deepEqual(named("wakePeerFor"), [["wakePeerFor", ref]]);
   // CONTROL: once the host answers, the same click opens the row.
   groups = [{ daemon: peer, local: false, state: "reachable" }];
   state.toggle(ref);
   assert.equal(state.$store.projects.openSlug, ref);
-  assert.equal(named("mountTree").length, 1);
+  assert.equal(opened(), 1);
 });
 
 test("opening a row remounts the run-completion subscription", () => {
@@ -979,13 +812,25 @@ test("toggle writes no field of the git or the board part", () => {
   assert.deepEqual(Object.fromEntries(Object.keys(held).map((k) => [k, state[k]])), held);
 });
 
-test("the listeners run in the order toggle ran them: the tree, the board, then git", () => {
-  const { state, calls } = toggleShell();
+// Each part resets only its own state, so the order of the listeners is not
+// a contract: each part reacts, in its own order.
+test("the tree, the board and git each react to the project toggle opens", () => {
+  const { state, loaded, calls } = toggleShell();
+  const files = loadComponent("wbFiles", { from: loaded, magics: { $nextTick: (fn) => fn() } }).scope;
+  files.destroyTree = () => calls.push(["destroyTree"]);
+  files.mountTree = () => calls.push(["mountTree"]);
+  files.init();
   state.kanbanOpen = true;
   state.toggle("owner/repo");
-  const after = ["destroyTree", "mountTree", "destroyRunsSub", "mountRunsSub", "loadBoard", "hydrateRuns",
-    "destroyChangesSub", "mountChangesSub", "loadChanges", "loadSync"];
-  assert.deepEqual(calls.map((c) => c[0]).filter((n) => after.includes(n)), after);
+  const seen = calls.map((c) => c[0]);
+  const parts = {
+    tree: ["destroyTree", "mountTree"],
+    board: ["destroyRunsSub", "mountRunsSub", "loadBoard", "hydrateRuns"],
+    git: ["destroyChangesSub", "mountChangesSub", "loadChanges", "loadSync"],
+  };
+  for (const [part, names] of Object.entries(parts)) {
+    assert.deepEqual(seen.filter((n) => names.includes(n)), names, part);
+  }
 });
 
 test("the git part drops the refusals and the commit message of the project that was open", () => {
@@ -1021,16 +866,6 @@ test("the board part drops the selection, the trail and the verb refusal of the 
   assert.equal(named("loadBoard").length, 0);
 });
 
-test("the files part mounts the tree of the open project, and only unmounts when none is open", () => {
-  const { state, named } = toggleShell();
-  state.$store.projects.setOpen("owner/b");
-  state.filesFollowProject();
-  assert.deepEqual([named("destroyTree").length, named("mountTree").length], [1, 1]);
-  state.$store.projects.setOpen(null);
-  state.filesFollowProject();
-  assert.deepEqual([named("destroyTree").length, named("mountTree").length], [2, 1]);
-});
-
 test("removing the open project closes it and sends workbench:project-changed", async () => {
   const { state, events, window } = toggleShell();
   window.WBDaemon.observe = async () => ({ status: "ok" });
@@ -1039,35 +874,15 @@ test("removing the open project closes it and sends workbench:project-changed", 
   const b = { slug: "owner/b" };
   state.$store.projects.setProjects([a, b]);
   state.$store.projects.setOpen("owner/a");
+  const changed = () => events.filter((e) => e.type === "workbench:project-changed");
   // CONTROL: a project that is not open goes without the event.
   await state.removeProject(b);
-  assert.equal(events.length, 0);
+  assert.equal(changed().length, 0);
   await state.removeProject(a);
   assert.equal(state.$store.projects.openSlug, null);
-  assert.deepEqual(events.map((e) => [e.type, e.detail]), [
+  assert.deepEqual(changed().map((e) => [e.type, e.detail]), [
     ["workbench:project-changed", { slug: null, previous: "owner/a" }],
   ]);
-});
-
-test("emitCreate sends the directory the create lands in", () => {
-  const { state, window } = loadShell();
-  const emitted = [];
-  window.WB = { emit: (action, detail) => emitted.push({ action, ...detail }) };
-  state.$store.projects.setOpen("owner/repo");
-  const root = { title: "root", parent: null };
-  const src = { title: "src", parent: root, data: { folder: true } };
-  const file = { title: "main.rs", parent: src, data: {} };
-  state.emitCreate(file, "file");
-  state.emitCreate(src, "folder");
-  state.emitCreate(null, "file");
-  assert.deepEqual(
-    emitted.map((e) => [e.action, e.project, e.path, e.kind]),
-    [
-      ["create", "owner/repo", "src", "file"],
-      ["create", "owner/repo", "src", "folder"],
-      ["create", "owner/repo", "", "file"],
-    ],
-  );
 });
 
 test("the create action asks for the name through the shell's prompt", async () => {
@@ -1140,49 +955,6 @@ test("askPrompt settles with the trimmed name the prompt submits", async () => {
 });
 
 // ---- folds the tree, the Changes panel and the plan viewer rely on ----------
-
-test("isFolder reads Wunderbaum's data bag, a lazy flag or a child list", () => {
-  // Wunderbaum copies a source key it does not define into `node.data`, so the
-  // listing's `folder: true` arrives there, and a lazy folder has no children
-  // until it is read.
-  const rows = [
-    ["a collapsed folder from the listing", { data: { folder: true }, children: null }, true],
-    ["a lazy folder not read yet", { data: {}, lazy: true, children: null }, true],
-    ["an expanded folder", { data: {}, children: [] }, true],
-    ["a file", { data: {}, children: null }, false],
-    ["no node (empty tree space)", null, false],
-  ];
-  for (const [why, node, want] of rows) assert.equal(s.isFolder(node), want, why);
-});
-
-test("the Move item is withheld inside .git and .ralphy, except for a note in the notes directory", () => {
-  // The context menu is where the UI's mirror of the daemon's carve-out
-  // (`fswrite::is_note_in_notes_dir`) decides what to offer: exactly
-  // `.ralphy/notes/<name>.note`, nothing deeper or differently named.
-  const own = loadShell().state;
-  let items = null;
-  own.renderMenu = (_x, _y, list) => {
-    items = list;
-  };
-  const node = (rel) =>
-    rel.split("/").reduce((parent, title) => ({ title, parent, data: {}, children: null }), {
-      title: "root",
-    });
-  const offersMove = (rel) => {
-    own.showMenu(0, 0, node(rel));
-    return items.some((i) => i.label?.startsWith("Move"));
-  };
-  const rows = [
-    [".ralphy/notes/idea.note", true],
-    ["src/app.js", true],
-    [".ralphy/notes/sub/idea.note", false],
-    [".ralphy/notes/.note", false],
-    [".ralphy/notes/idea.md", false],
-    [".ralphy/drafts/idea.note", false],
-    [".git/notes/idea.note", false],
-  ];
-  for (const [rel, want] of rows) assert.equal(offersMove(rel), want, rel);
-});
 
 // Every act the Changes panel dispatches, each answering with a refusal.
 const CHANGE_ACTS = [
@@ -1454,13 +1226,22 @@ test("a reopened presence socket reads sessions, projects and the desk; the firs
 });
 
 test("login reads the board, the runs and the tree again", () => {
-  const { state } = loadShell();
+  const listeners = {};
+  const loaded = loadShell({
+    window: {
+      addEventListener: (type, fn) => (listeners[type] ||= []).push(fn),
+      dispatchEvent: (e) => ((listeners[e.type] || []).forEach((fn) => fn(e)), true),
+    },
+  });
+  const { state } = loaded;
+  const files = loadComponent("wbFiles", { from: loaded }).scope;
+  files.init();
   const calls = [];
   for (const name of ["loadRepos", "loadIdentity", "loadAgents", "restoreView", "hydrateRuns"]) {
     state[name] = () => calls.push(name);
   }
   state.maybeRefreshBoard = (why) => calls.push(`board:${why}`);
-  state._treeSub = { replay: () => calls.push("tree") };
+  files._treeSub = { replay: () => calls.push("tree") };
   // Closed: the runs lock the writes whether the panel shows them or not.
   state.runsOpen = false;
   state.rehydrateAfterAuth();
@@ -1750,106 +1531,6 @@ test("the consoles get the shell's fleet read with the fleet", () => {
   assert.equal(asked, 1);
 });
 
-// --- FILES while the open project's peer is down ---------------------------
-
-const FILES_PEER = "01ARZ3NDEKTSV4RRFFQ69G5FAZ";
-const FILES_REF = `${FILES_PEER}/o/r`;
-
-// A shell with the peer project open and the peer in the given fleet state.
-function peerFilesShell(state) {
-  const loaded = loadShell();
-  const s = loaded.state;
-  s.$store.projects.setProjects([]);
-  s.fleetPeers = [{ daemon_id: FILES_PEER, name: "corcino-mac", environment: "macOS 15", tunnel: true, state, diagnosis: `diagnosis of ${state}` }];
-  s.$store.projects.setOpen(FILES_REF);
-  s.treeMem();
-  return loaded;
-}
-
-// The options `mountTree` gives Wunderbaum, from a stand-in that keeps them.
-function mountedTreeOptions(s, window, document) {
-  let options = null;
-  // No `/ws/tree` subscription: this checks the tree's own options.
-  window.WBDaemon = {};
-  const realMar10 = globalThis.mar10;
-  globalThis.mar10 = {
-    Wunderbaum: function (o) {
-      options = o;
-    },
-  };
-  const host = { addEventListener() {} };
-  document.querySelector = (sel) => (sel === ".project.open .wb-host" ? host : null);
-  s.$store.projects.setProjects([{ key: FILES_REF, slug: "o/r", daemon: FILES_PEER, tree: [] }]);
-  s.useDaemonTree = () => true;
-  s.loadTreeLevel = () => Promise.resolve([]);
-  try {
-    s.mountTree();
-  } finally {
-    globalThis.mar10 = realMar10;
-  }
-  return options;
-}
-
-test("a tree level that fails to load draws no error row, closes, and asks the fleet", async () => {
-  const { state, window, document } = peerFilesShell("reachable");
-  const options = mountedTreeOptions(state, window, document);
-  state.loadTreeLevel = () => Promise.reject(new Error("macOS 15 did not answer: os error 10054. Start its daemon."));
-  let fleetReads = 0;
-  state.readFleetNow = () => {
-    fleetReads += 1;
-    return Promise.resolve();
-  };
-  const closed = [];
-  const node = { title: "src", data: {}, lazy: true, parent: null, setExpanded: (flag) => closed.push(flag) };
-  state.relPath = () => "src";
-  const result = await options.lazyLoad({ node });
-  await new Promise((r) => setTimeout(r, 0));
-  assert.equal(result, false, "a rethrow makes Wunderbaum draw an error row");
-  assert.deepEqual(closed, [false]);
-  assert.equal(fleetReads, 1);
-  assert.ok(state.treeStale.endsWith("The list shown is the last one read."), state.treeStale);
-});
-
-test("while the peer is down, only a folder read before opens", () => {
-  const { state, window, document } = peerFilesShell("unreachable");
-  const options = mountedTreeOptions(state, window, document);
-  state.relPath = (n) => n.rel;
-  state._treeCache.set(state.treeKey("read"), []);
-  const folder = (rel) => ({ rel, children: null });
-  assert.equal(options.beforeExpand({ flag: true, node: folder("never") }), false);
-  assert.equal(options.beforeExpand({ flag: true, node: folder("read") }), undefined);
-  assert.equal(options.beforeExpand({ flag: false, node: folder("never") }), undefined);
-  state.fleetPeers[0].state = "reachable";
-  assert.equal(options.beforeExpand({ flag: true, node: folder("never") }), undefined);
-});
-
-test("FILES names the down peer from the fleet, and the read that calls it back re-reads the tree", () => {
-  const { state } = peerFilesShell("tunnel-silent");
-  const down = state.openPeerDown();
-  assert.equal(down?.daemon, FILES_PEER);
-  assert.equal(state.peerDownText(down), "corcino-mac is not connected. The list shown is the last one read.");
-  assert.equal(state.peerDownAction(down), "Try again");
-  const reread = [];
-  state.revalidateLevel = (rel) => reread.push(rel);
-  state._tree = {};
-  const folders = [
-    { rel: "src", expanded: true },
-    { rel: "docs", expanded: false },
-  ];
-  state.rawTree = () => ({ root: { visit: (fn) => folders.forEach(fn) } });
-  state.isFolder = () => true;
-  state.relPath = (n) => n.rel;
-  state.treeStale = "Could not refresh the file list.";
-  state.filesFollowFleet();
-  assert.deepEqual(reread, [], "the peer is still down");
-  state.fleetPeers[0].state = "reachable";
-  state.filesFollowFleet();
-  assert.deepEqual(reread, ["", "src"]);
-  assert.equal(state.treeStale, "");
-  state.filesFollowFleet();
-  assert.deepEqual(reread, ["", "src"], "only the read that calls the peer back");
-});
-
 test("a new checkout's change set does not inherit the old tree's last read", () => {
   const { state } = loadShell();
   state.loadChanges = () => {};
@@ -1859,6 +1540,74 @@ test("a new checkout's change set does not inherit the old tree's last read", ()
   state.setCheckout("o/r", "wt-a");
   assert.equal(state.changesRead["o/r"], undefined);
   assert.equal(state.syncRead["o/r"], undefined);
+});
+
+// --- the shell and the files (wb-files.ts) talk through events ---------------
+
+// A shell whose window records every event it is sent.
+function eventShell(opts = {}) {
+  const events = [];
+  const loaded = loadShell({ ...opts, window: { dispatchEvent: (e) => (events.push(e), true) } });
+  const sent = (type) => events.filter((e) => e.type === type).map((e) => e.detail ?? null);
+  return { ...loaded, events, sent };
+}
+
+test("a good fleet read and a new checkout of the open project are sent to the files", async () => {
+  const { state, sent } = eventShell();
+  state.loadChanges = () => {};
+  state.loadSync = () => {};
+  state.$store.projects.setOpen("o/r");
+  state.setCheckout("other/repo", "wt-a");
+  assert.deepEqual(sent("workbench:checkout-changed"), [], "not the open project");
+  state.setCheckout("o/r", "wt-a");
+  assert.deepEqual(sent("workbench:checkout-changed"), [null]);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ peers: [], repos: [] }) });
+  try {
+    await state.loadFleet();
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.deepEqual(sent("workbench:fleet-read"), [null]);
+});
+
+test("a moved HEAD re-reads the change set and the sync row, and the listing under a selection", () => {
+  const listeners = {};
+  const { state } = loadShell({ window: { addEventListener: (type, fn) => (listeners[type] ||= []).push(fn) } });
+  const calls = [];
+  for (const name of ["loadChanges", "loadSync"]) state[name] = (ref) => calls.push(`${name} ${ref}`);
+  state.ensureWorktreeListing = (ref, force) => calls.push(`listing ${ref} ${force}`);
+  const realSetInterval = globalThis.setInterval;
+  globalThis.setInterval = () => 0;
+  try {
+    state.init();
+  } finally {
+    globalThis.setInterval = realSetInterval;
+  }
+  const moved = (ref) => listeners["workbench:head-moved"].forEach((fn) => fn({ detail: { ref } }));
+  moved("o/r");
+  assert.deepEqual(calls, ["loadChanges o/r", "loadSync o/r"]);
+  state.checkouts = { "o/r": "wt-a" };
+  calls.length = 0;
+  moved("o/r");
+  assert.deepEqual(calls, ["loadChanges o/r", "loadSync o/r", "listing o/r true"]);
+});
+
+test("a create through the write seam asks the files to re-list the folder and reveal the entry", async () => {
+  const listeners = [];
+  const { window, sent } = eventShell({
+    document: { addEventListener: (type, fn) => type === "workbench:action" && listeners.push(fn) },
+  });
+  window.WBDaemon = { write: async () => ({ status: "ok" }), withCheckout: (p) => p };
+  const realDaemon = globalThis.WBDaemon;
+  globalThis.WBDaemon = window.WBDaemon;
+  window.getShell = () => ({ askPrompt: async () => "x.txt", checkoutOf: () => null, openTab() {}, _flashAction() {} });
+  try {
+    for (const fn of listeners) await fn({ detail: { action: "create", project: "o/r", path: "src", kind: "file" } });
+  } finally {
+    globalThis.WBDaemon = realDaemon;
+  }
+  assert.deepEqual(sent("workbench:tree-dirty"), [{ rel: "src", reveal: "src/x.txt" }]);
 });
 
 // --- second review of #511 ---------------------------------------------------

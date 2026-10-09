@@ -498,7 +498,12 @@ const MIRRORS: &[(&str, &str, &str, &str)] = &[
         "protocol.rs",
         "TAG_PRESENCE",
     ),
-    ("app.ts", "PROTECTED_DIRS", "fswrite.rs", "PROTECTED_DIRS"),
+    (
+        "wb-file-paths.ts",
+        "PROTECTED_DIRS",
+        "fswrite.rs",
+        "PROTECTED_DIRS",
+    ),
     (
         "wb-file-search.ts",
         "MIN_CHARS",
@@ -512,7 +517,7 @@ const MIRRORS: &[(&str, &str, &str, &str)] = &[
 /// `(js file, js function, rust file, rust function)`: both bodies must hold
 /// the same path words.
 const NOTE_EXCEPTION: (&str, &str, &str, &str) = (
-    "app.ts",
+    "wb-file-paths.ts",
     "isNoteInNotesDir",
     "fswrite.rs",
     "is_note_in_notes_dir",

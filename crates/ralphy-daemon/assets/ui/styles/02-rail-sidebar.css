@@ -385,11 +385,20 @@
   overflow: hidden; /* Wunderbaum scrolls its own viewport */
   padding: 0.15rem 0 0.5rem;
 }
-.project.open {
+/* The open project's files (`wbFiles`): one element after the rows. The same
+   `order` as the open row, and later in the document, so it sits right under
+   that row and fills the rest of the column. The open row keeps only its
+   head, so the border under the files closes the open project. */
+.files-pane {
+  order: -1;
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
+  border-bottom: 1px solid var(--border);
+}
+.project.open {
+  border-bottom: none;
 }
 
 /* Wunderbaum, themed to the warm-dark palette (ADR-0035) via its CSS vars,

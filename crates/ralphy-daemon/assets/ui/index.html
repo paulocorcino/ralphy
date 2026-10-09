@@ -343,137 +343,145 @@
                 <svg x-icon="'x'"></svg>
               </button>
             </div>
-            <!-- Files header: the DISCOVERABLE way to create. The tree's own
-                 context menu can do it too, but only if you already know to
-                 right-click — and right-clicking empty space (the repo root) is
-                 an invisible affordance. These two buttons target the selected
-                 folder, the selected file's folder, or the repo root when
-                 nothing is selected; the title says which, live.
-
-                 The branch chip is NOT here: it sits on the open row above,
-                 merged with the change count, which leaves this bar to the
-                 checkout chip — a worktree name needs the width. -->
-            <div class="side-head files-sec" x-show="$store.projects.rowOpen(p)">
-              <span>Files</span>
-              <!-- the read is in flight. It sits in the bar, not over the
-                   tree, because a re-open paints from the level cache and only
-                   the FIRST read of a level actually waits — an overlay would
-                   cover a tree that is already there and readable. -->
-              <span class="files-spinner" x-show="treeLoading" title="Reading this project's files…"></span>
-              <!-- WHICH TREE the panels show (Files, Changes, diff, Find): the
-                   #406 selection as a chip, present once the repo has a worktree
-                   (ADR-0063 amendment 2026-09-16 b). Its menu is the console
-                   switcher's, with the remove action per worktree row (#409).
-                   Never where a console is launched. -->
-              <button
-                class="checkout-chip"
-                x-show="hasWorktrees(p)"
-                @click.stop="openCheckoutChip(p, $event.currentTarget)"
-                :title="checkoutTitle(p)"
-              >
-                <i class="bi" :class="checkoutOf($store.projects.repoRef(p)) ? 'bi-folder2' : 'bi-house-door'"></i>
-                <span class="checkout-chip-name" x-text="checkoutOf($store.projects.repoRef(p)) || 'primary'"></span>
-                <i class="bi bi-chevron-down"></i>
-              </button>
-              <span class="spacer"></span>
-              <button class="head-act" @click.stop="createHere('file')" :title="createTitle('file')">
-                <i class="bi bi-file-earmark-plus"></i>
-              </button>
-              <button class="head-act" @click.stop="createHere('folder')" :title="createTitle('folder')">
-                <i class="bi bi-folder-plus"></i>
-              </button>
-              <!-- File search lives HERE, not in the project box above: that
-                   one filters projects, and a field whose meaning depends on
-                   what is open is the confusion that sent an operator typing a
-                   file name into it (2026-09-10). -->
-              <button class="head-act" :class="{ on: fileSearch.open }" @click.stop="toggleFileSearch()"
-                      title="Search files (Ctrl+Shift+F)">
-                <i class="bi bi-search"></i>
-              </button>
-            </div>
-            <!-- The search row (ADR-0036 amendment 2026-09-15). One field, one
-                 toggle: NAME matches entries the way the tree lists them,
-                 CONTENT matches inside text files with `.gitignore` honoured
-                 (`.ralphy/` always searched). Literal and case-insensitive,
-                 no other options: one operator, one answer. The result is the
-                 tree itself, narrowed to the hits and their ancestors — there
-                 is no results panel. -->
-            <div class="files-search" x-show="$store.projects.rowOpen(p) && fileSearch.open" x-cloak>
-              <!-- `type="text"`, not `search`: the browser's own clear button
-                   is drawn in its palette, not the design system's. The clear
-                   is the `head-act` beside it, shown once there is something
-                   to clear. -->
-              <span class="files-search-field">
-                <input
-                  x-ref="fileSearch"
-                  type="text"
-                  placeholder="Search files…"
-                  x-model="fileSearch.query"
-                  @input="fileSearchTyped()"
-                  @keydown.escape.stop="closeFileSearch()"
-                  @keydown.enter.prevent="fileSearchNow()"
-                />
-                <button class="head-act clear" x-show="fileSearch.query" @click="clearFileSearchQuery()" title="Clear">
-                  <i class="bi bi-x"></i>
-                </button>
-              </span>
-              <span class="seg" role="group" aria-label="Search by">
-                <button :class="{ on: fileSearch.mode === 'name' }" @click="setFileSearchMode('name')">Name</button>
-                <button :class="{ on: fileSearch.mode === 'content' }" @click="setFileSearchMode('content')">Content</button>
-              </span>
-            </div>
-            <!-- What the search could not show: "searching…", the 200-hit cap,
-                 "no matches", a refused verb. Same muted gutter as `treeStale`,
-                 because the rows on screen are right — only incomplete. -->
-            <div class="files-stale" x-show="$store.projects.rowOpen(p) && fileSearch.open && fileSearch.note"
-                 x-text="fileSearch.note"></div>
-            <!-- A refused branch switch/create, under the chip that asked for
-                 it. `_mutateBranch` reverts the optimistic chip on a refusal,
-                 which on its own reads as a click that bounced for no reason —
-                 the reason (a held run.lock, per ADR-0036 §6) went to
-                 `_flashAction`, whose only renderer lives in `aside.runs` and is
-                 closed by default. Its OWN state, not `treeError`: a branch that
-                 was refused says nothing about the tree, and dressing it as a
-                 failed read would make a working project look broken. -->
-            <div class="files-error branch-error" x-show="$store.projects.rowOpen(p) && branchError"
-                 x-text="branchError"></div>
-            <!-- the file tree (Wunderbaum) mounts here when the project opens.
-                 impl: replace the in-memory `tree` with fetch of the repo tree
-                 and lazy-load subfolders; gestures already emit workbench:action. -->
-            <div class="wb-host" x-show="$store.projects.rowOpen(p)" :class="{ 'peer-down': $store.projects.rowOpen(p) && openPeerDown() }"></div>
-            <!-- a refused or dropped read. Without this the failure was
-                 indistinguishable from an empty repository. -->
-            <div class="files-error" x-show="$store.projects.rowOpen(p) && treeError" x-text="treeError"></div>
-            <!-- Rows ARE on screen; this says they could not be confirmed. Same
-                 gutter as the failed-read line, muted rather than red: stale is
-                 not broken. -->
-            <div
-              class="files-stale"
-              x-show="$store.projects.rowOpen(p) && !treeError && treeStale && !openPeerDown()"
-              x-text="treeStale"
-            ></div>
-            <!-- The fleet calls this project's peer down: one sentence from the
-                 fleet, its action, and the daemon's diagnosis under Details. -->
-            <template x-if="$store.projects.rowOpen(p) && openPeerDown()">
-              <div class="files-stale files-peer-down">
-                <span x-text="peerDownText(openPeerDown())"></span>
-                <button type="button" class="btn" @click="peerDownAct()" x-text="peerDownAction(openPeerDown())"></button>
-                <details class="session-detail" x-show="openPeerDown().diagnosis">
-                  <summary>Details</summary>
-                  <p x-text="openPeerDown().diagnosis"></p>
-                </details>
-              </div>
-            </template>
-            <!-- The rows are right, but the daemon stopped watching this tree. -->
-            <div
-              class="files-stale"
-              x-show="$store.projects.rowOpen(p) && !treeError && treeNotLive"
-              x-text="treeNotLive"
-            ></div>
               </li>
             </template>
           </div>
         </template>
+        <!-- The open project's files (wb-files.ts): ONE element after the
+             rows, shown for the open project. Its flex `order` puts it right
+             under the open row (02-rail-sidebar.css). -->
+        <div class="files-pane" x-data="wbFiles" x-show="$store.projects.openProject()">
+          <!-- Files header: the DISCOVERABLE way to create. The tree's own
+               context menu can do it too, but only if you already know to
+               right-click — and right-clicking empty space (the repo root) is
+               an invisible affordance. These two buttons target the selected
+               folder, the selected file's folder, or the repo root when
+               nothing is selected; the title says which, live.
+
+               The branch chip is NOT here: it sits on the open row above,
+               merged with the change count, which leaves this bar to the
+               checkout chip — a worktree name needs the width. -->
+          <div class="side-head files-sec">
+            <span>Files</span>
+            <!-- the read is in flight. It sits in the bar, not over the
+                 tree, because a re-open paints from the level cache and only
+                 the FIRST read of a level actually waits — an overlay would
+                 cover a tree that is already there and readable. -->
+            <span class="files-spinner" x-show="treeLoading" title="Reading this project's files…"></span>
+            <!-- WHICH TREE the panels show (Files, Changes, diff, Find): the
+                 #406 selection as a chip, present once the repo has a worktree
+                 (ADR-0063 amendment 2026-09-16 b). Its menu is the console
+                 switcher's, with the remove action per worktree row (#409).
+                 Never where a console is launched. -->
+            <button
+              class="checkout-chip"
+              x-show="$store.projects.openProject() && hasWorktrees($store.projects.openProject())"
+              @click.stop="openCheckoutChip($store.projects.openProject(), $event.currentTarget)"
+              :title="$store.projects.openProject() ? checkoutTitle($store.projects.openProject()) : ''"
+            >
+              <i class="bi" :class="checkoutOf($store.projects.openSlug) ? 'bi-folder2' : 'bi-house-door'"></i>
+              <span class="checkout-chip-name" x-text="checkoutOf($store.projects.openSlug) || 'primary'"></span>
+              <i class="bi bi-chevron-down"></i>
+            </button>
+            <span class="spacer"></span>
+            <button class="head-act" @click.stop="createHere('file')" :title="createTitle('file')">
+              <i class="bi bi-file-earmark-plus"></i>
+            </button>
+            <button class="head-act" @click.stop="createHere('folder')" :title="createTitle('folder')">
+              <i class="bi bi-folder-plus"></i>
+            </button>
+            <!-- File search lives HERE, not in the project box above: that
+                 one filters projects, and a field whose meaning depends on
+                 what is open is the confusion that sent an operator typing a
+                 file name into it (2026-09-10). -->
+            <button class="head-act" :class="{ on: fileSearch.open }" @click.stop="toggleFileSearch()"
+                    title="Search files (Ctrl+Shift+F)">
+              <i class="bi bi-search"></i>
+            </button>
+          </div>
+          <!-- The search row (ADR-0036 amendment 2026-09-15). One field, one
+               toggle: NAME matches entries the way the tree lists them,
+               CONTENT matches inside text files with `.gitignore` honoured
+               (`.ralphy/` always searched). Literal and case-insensitive,
+               no other options: one operator, one answer. The result is the
+               tree itself, narrowed to the hits and their ancestors — there
+               is no results panel. -->
+          <div class="files-search" x-show="fileSearch.open" x-cloak>
+            <!-- `type="text"`, not `search`: the browser's own clear button
+                 is drawn in its palette, not the design system's. The clear
+                 is the `head-act` beside it, shown once there is something
+                 to clear. -->
+            <span class="files-search-field">
+              <input
+                x-ref="fileSearch"
+                type="text"
+                placeholder="Search files…"
+                x-model="fileSearch.query"
+                @input="fileSearchTyped()"
+                @keydown.escape.stop="closeFileSearch()"
+                @keydown.enter.prevent="fileSearchNow()"
+              />
+              <button class="head-act clear" x-show="fileSearch.query" @click="clearFileSearchQuery()" title="Clear">
+                <i class="bi bi-x"></i>
+              </button>
+            </span>
+            <span class="seg" role="group" aria-label="Search by">
+              <button :class="{ on: fileSearch.mode === 'name' }" @click="setFileSearchMode('name')">Name</button>
+              <button :class="{ on: fileSearch.mode === 'content' }" @click="setFileSearchMode('content')">Content</button>
+            </span>
+          </div>
+          <!-- What the search could not show: "searching…", the 200-hit cap,
+               "no matches", a refused verb. Same muted gutter as `treeStale`,
+               because the rows on screen are right — only incomplete. -->
+          <div class="files-stale" x-show="fileSearch.open && fileSearch.note"
+               x-text="fileSearch.note"></div>
+          <!-- A refused branch switch/create, under the chip that asked for
+               it. `_mutateBranch` reverts the optimistic chip on a refusal,
+               which on its own reads as a click that bounced for no reason —
+               the reason (a held run.lock, per ADR-0036 §6) went to
+               `_flashAction`, whose only renderer lives in `aside.runs` and is
+               closed by default. Its OWN state, not `treeError`: a branch that
+               was refused says nothing about the tree, and dressing it as a
+               failed read would make a working project look broken. -->
+          <div class="files-error branch-error" x-show="branchError"
+               x-text="branchError"></div>
+          <!-- the file tree (Wunderbaum) mounts here when the project opens.
+               impl: replace the in-memory `tree` with fetch of the repo tree
+               and lazy-load subfolders; gestures already emit workbench:action. -->
+          <div class="wb-host" :class="{ 'peer-down': openPeerDown() }"></div>
+          <!-- a refused or dropped read. Without this the failure was
+               indistinguishable from an empty repository. -->
+          <div class="files-error" x-show="treeError" x-text="treeError"></div>
+          <!-- Rows ARE on screen; this says they could not be confirmed. Same
+               gutter as the failed-read line, muted rather than red: stale is
+               not broken. -->
+          <div
+            class="files-stale"
+            x-show="!treeError && treeStale && !openPeerDown()"
+            x-text="treeStale"
+          ></div>
+          <!-- The fleet calls this project's peer down: one sentence from the
+               fleet, its action, and the daemon's diagnosis under Details. -->
+          <template x-if="openPeerDown()">
+            <div class="files-stale files-peer-down">
+              <span x-text="peerDownText(openPeerDown())"></span>
+              <button type="button" class="btn" @click="peerDownAct()" x-text="peerDownAction(openPeerDown())"></button>
+              <details class="session-detail" x-show="openPeerDown().diagnosis">
+                <summary>Details</summary>
+                <p x-text="openPeerDown().diagnosis"></p>
+              </details>
+            </div>
+          </template>
+          <!-- The rows are right, but the daemon stopped watching this tree. -->
+          <div
+            class="files-stale"
+            x-show="!treeError && treeNotLive"
+            x-text="treeNotLive"
+          ></div>
+        </div>
+        <!-- ===================================================================
+             The end of the FILES tree of the open project (wbFiles).
+        ==================================================================== -->
       </ul>
       </div>
 
@@ -2654,10 +2662,12 @@
     <!-- ===================================================================
          Move destination picker (issue #364) — browses real directories one
          level at a time through `tree.list`, so the destination of a move is
-         PICKED, never typed. Driven by `movePick` + `moveNode()` /
-         `movePickLoad()` / `movePickConfirm()` (app.js). The moved folder and
-         its own subtree are absent from the rows by construction.
+         PICKED, never typed. wb-move-dialog.ts is the component that owns it:
+         the files open it with `workbench:move-open`, and it answers with
+         `workbench:move-confirmed`. The moved folder and its own subtree are
+         absent from the rows by construction.
     ==================================================================== -->
+    <div class="move-dialog" x-data="wbMoveDialog" @workbench:move-open.window="openMove($event.detail.from)">
     <div class="modal-scrim" x-cloak x-bind="scrim('movePick.open', () => movePickCancel())">
       <div
         class="modal move-picker"
@@ -2692,6 +2702,7 @@
           <button class="btn accent" @click="movePickConfirm()" :disabled="movePickBlocked()">Move here</button>
         </div>
       </div>
+    </div>
     </div>
 
     <!-- ===================================================================

@@ -60,23 +60,22 @@ const APP: &str = "crates/ralphy-daemon/assets/ui/app.ts";
 const HTML: &str = "crates/ralphy-daemon/assets/ui/index.html";
 
 /// The groups `shell()` is cut by (#605). Layout core is what `shell()` keeps.
-/// The consoles group left `shell()` for `wb-consoles-tab.ts` (#621).
+/// The consoles group left `shell()` for `wb-consoles-tab.ts`, and the files
+/// group for `wb-files.ts` and `wb-move-dialog.ts` (#621).
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 enum Group {
     Core,
     Git,
-    Files,
     Board,
 }
 
 impl Group {
-    const ALL: [Group; 4] = [Group::Core, Group::Git, Group::Files, Group::Board];
+    const ALL: [Group; 3] = [Group::Core, Group::Git, Group::Board];
 
     fn label(self) -> &'static str {
         match self {
             Group::Core => "layout core",
             Group::Git => "git of the open project",
-            Group::Files => "files",
             Group::Board => "board and runs",
         }
     }
@@ -85,7 +84,6 @@ impl Group {
         match self {
             Group::Core => "core",
             Group::Git => "git",
-            Group::Files => "files",
             Group::Board => "board",
         }
     }
@@ -115,19 +113,14 @@ const SECTIONS: &[(&str, Group)] = &[
     ("login gate", Group::Core),
     ("TOTP digit boxes", Group::Core),
     // The canvas tabs (`tabs`, `active`, `slot`) are layout that `shell()`
-    // keeps (ADR-0073 D2), and so are the slot and the per-client view.
+    // keeps (ADR-0073 D2), and so are the slot, the per-client view, and
+    // opening a file or a Changes row into a tab.
     ("canvas tabs", Group::Core),
+    ("opening a file", Group::Core),
+    ("opening a Changes row", Group::Core),
     ("the slot", Group::Core),
     ("the per-client view", Group::Core),
-    ("accordion", Group::Files),
-    ("file-type icons", Group::Files),
-    ("Wunderbaum mount", Group::Files),
-    ("the FILES search", Group::Files),
-    ("opening a file", Group::Files),
-    ("opening a Changes row", Group::Files),
-    ("move and create in the Files tree", Group::Files),
     ("context menu", Group::Core),
-    ("the backend seam", Group::Core),
 ];
 
 /// Calls that change the value they are called on.

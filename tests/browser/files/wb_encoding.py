@@ -47,6 +47,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+FILES = "Alpine.$data(document.querySelector('[x-data=\"wbFiles\"]'))"
 
 # The fixtures, as bytes: what the three Windows writers produce.
 CP1252_TEXT = "# Spike §6\r\n\r\n240×180 cards — ok\r\n"
@@ -138,9 +139,9 @@ def tab_ids(page):
 
 def open_from_tree(page, title):
     page.wait_for_function(
-        f"(t) => !!{SH}._tree && !!{SH}._tree.findFirst(n => n.title === t)", arg=title, timeout=20000
+        f"(t) => !!{FILES}._tree && !!{FILES}._tree.findFirst(n => n.title === t)", arg=title, timeout=20000
     )
-    page.evaluate(f"(t) => {SH}.openFile({SH}._tree.findFirst(n => n.title === t))", arg=title)
+    page.evaluate(f"(t) => {FILES}.openFile({FILES}._tree.findFirst(n => n.title === t))", arg=title)
 
 
 def wait_pane(page, tab_id, cls, timeout=20000):

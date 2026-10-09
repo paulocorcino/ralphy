@@ -180,8 +180,8 @@ def close_picker(page, slug):
 
 
 # --- the Files bar's checkout chip and its menu (ADR-0063 amendment 2026-09-16 b) ---
-CHIP = "li.project.open .files-sec .checkout-chip"
-CHIP_VISIBLE = "() => { const c = document.querySelector('li.project.open .files-sec .checkout-chip'); return !!c && c.offsetParent !== null && c.clientWidth > 0; }"
+CHIP = ".files-pane .files-sec .checkout-chip"
+CHIP_VISIBLE = "() => { const c = document.querySelector('.files-pane .files-sec .checkout-chip'); return !!c && c.offsetParent !== null && c.clientWidth > 0; }"
 CHIP_MENU_OPEN = "() => !!document.querySelector('.session-checkout-menu')"
 CHIP_ITEM = (
     "(n) => [...document.querySelectorAll('.session-checkout-menu .session-checkout-item:not(.create)')]"

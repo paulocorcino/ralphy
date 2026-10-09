@@ -41,7 +41,8 @@ REPO_ROOT = os.path.dirname(
 )
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
-TREE = f"{SH}.rawTree()"
+TREE_FILES = "Alpine.$data(document.querySelector('[x-data=\"wbFiles\"]'))"
+TREE = f"{TREE_FILES}.rawTree()"
 FILES = 80
 
 results = []
@@ -171,7 +172,7 @@ def main():
 
             # Select a row near the TOP, then scroll to the bottom: a restore
             # of the selection that scrolls to it is half of the bug.
-            page.evaluate(f"async () => await {SH}.revealRel('f001.txt')")
+            page.evaluate(f"async () => await {TREE_FILES}.revealRel('f001.txt')")
             page.evaluate(f"() => {{ const el = {TREE}.element; el.scrollTop = el.scrollHeight; }}")
             page.wait_for_function(f"() => ({ROW_TITLES})().includes('f{FILES - 1:03}.txt')", timeout=5000)
             bottom = page.evaluate(SCROLL_TOP)
@@ -179,7 +180,7 @@ def main():
 
             # --- scenario a: an unchanged listing rebuilds nothing -------------
             page.evaluate(f"() => {{ window.__firstRow = {TREE}.root.children[0]; }}")
-            page.evaluate(f"async () => await {SH}.onTreeDirty('')")
+            page.evaluate(f"async () => await {TREE_FILES}.onTreeDirty('')")
             same_rows = page.evaluate(f"() => {TREE}.root.children[0] === window.__firstRow")
             top_a = page.evaluate(SCROLL_TOP)
             check("an unchanged listing keeps the same rows", same_rows)
@@ -187,10 +188,10 @@ def main():
 
             # --- scenario b: a real change keeps the offset and selection ------
             (fixture / "g-new.txt").write_text("new\n", encoding="utf-8")
-            page.evaluate(f"async () => await {SH}.onTreeDirty('')")
+            page.evaluate(f"async () => await {TREE_FILES}.onTreeDirty('')")
             titles = [n for n in page.evaluate(f"() => {TREE}.root.children.map(n => n.title)")]
             top_b = page.evaluate(SCROLL_TOP)
-            active = page.evaluate(f"() => {SH}.relPath({TREE}.getActiveNode())")
+            active = page.evaluate(f"() => {TREE_FILES}.relPath({TREE}.getActiveNode())")
             check("a new entry is shown", "g-new.txt" in titles, f"titles[-3:]={titles[-3:]}")
             check("…the scroll offset stays", abs(top_b - bottom) <= 1, f"before={bottom} after={top_b}")
             check("…and the selection stays", active == "f001.txt", f"active={active!r}")

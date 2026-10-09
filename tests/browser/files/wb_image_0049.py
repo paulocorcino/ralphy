@@ -64,6 +64,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+FILES = "Alpine.$data(document.querySelector('[x-data=\"wbFiles\"]'))"
 
 LOGO_W, LOGO_H = 64, 48
 INNER_W, INNER_H = 32, 24
@@ -231,12 +232,12 @@ def open_from_tree(page, title):
     """Open a file the way a double-click does — through `openFile(node)`, so
     `classify` and its refusal are exercised, not bypassed by `openTab`."""
     page.wait_for_function(
-        f"(t) => !!{SH}._tree && !!{SH}._tree.findFirst(n => n.title === t)",
+        f"(t) => !!{FILES}._tree && !!{FILES}._tree.findFirst(n => n.title === t)",
         arg=title,
         timeout=20000,
     )
     page.evaluate(
-        f"(t) => {SH}.openFile({SH}._tree.findFirst(n => n.title === t))", arg=title
+        f"(t) => {FILES}.openFile({FILES}._tree.findFirst(n => n.title === t))", arg=title
     )
 
 

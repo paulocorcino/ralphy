@@ -38,6 +38,7 @@ REPO_ROOT = os.path.dirname(
 )
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+FILES = "Alpine.$data(document.querySelector('[x-data=\"wbFiles\"]'))"
 
 results = []
 
@@ -195,7 +196,7 @@ def main():
 
             # --- scenario b: inside an ignored folder ---------------------------
             page.evaluate(
-                f"async () => {{ const t = {SH}.rawTree();"
+                f"async () => {{ const t = {FILES}.rawTree();"
                 "  await t.findFirst(n => n.title === 'dist').setExpanded(true);"
                 "  await t.findFirst(n => n.title === 'src').setExpanded(true); }"
             )

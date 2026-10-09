@@ -47,6 +47,7 @@ REPO_ROOT = os.path.dirname(
 )
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+FILES = "Alpine.$data(document.querySelector('[x-data=\"wbFiles\"]'))"
 
 results = []
 
@@ -155,7 +156,7 @@ ROW_BADGES = (
 )
 
 NOTE_TEXT = (
-    "() => { const els = [...document.querySelectorAll('.project.open .files-stale')]"
+    "() => { const els = [...document.querySelectorAll('.files-pane .files-stale')]"
     "  .filter(el => el.offsetParent !== null);"
     "  return els.map(el => el.textContent.trim()).join(' | '); }"
 )
@@ -205,9 +206,9 @@ def main():
 
             # --- scenario a: a NAME search narrows the tree -------------------
             page.keyboard.press("Control+Shift+F")
-            page.wait_for_function(f"() => {SH}.fileSearch.open === true", timeout=5000)
-            page.evaluate(f"() => {{ {SH}.fileSearch.query = 'task_l'; }}")
-            page.evaluate(f"async () => await {SH}.fileSearchNow()")
+            page.wait_for_function(f"() => {FILES}.fileSearch.open === true", timeout=5000)
+            page.evaluate(f"() => {{ {FILES}.fileSearch.query = 'task_l'; }}")
+            page.evaluate(f"async () => await {FILES}.fileSearchNow()")
             page.wait_for_function(
                 f"() => ({ROW_TITLES})().includes('task_list.md')", timeout=10000
             )
@@ -220,7 +221,7 @@ def main():
             page.screenshot(path=os.path.join(REPO_ROOT, ".ralphy", "screenshots", "file-search-name.png"))
 
             # --- scenario b: Escape puts the tree back -------------------------
-            page.evaluate(f"async () => await {SH}.closeFileSearch()")
+            page.evaluate(f"async () => await {FILES}.closeFileSearch()")
             page.wait_for_function(
                 f"() => JSON.stringify(({ROW_TITLES})()) === JSON.stringify({before!r})",
                 timeout=10000,
@@ -233,13 +234,13 @@ def main():
             )
             check(
                 "…and the remembered expansion never learned the search's expands",
-                page.evaluate(f"() => ({SH}._treeExpanded?.get(Alpine.store('projects').openSlug) || []).length") == 0,
+                page.evaluate(f"() => ({FILES}._treeExpanded?.get(Alpine.store('projects').openSlug) || []).length") == 0,
             )
 
             # --- scenario c: a CONTENT search honours gitignore, keeps .ralphy --
-            page.evaluate(f"() => {SH}.openFileSearch()")
-            page.evaluate(f"() => {{ {SH}.fileSearch.query = 'needle'; }}")
-            page.evaluate(f"async () => await {SH}.setFileSearchMode('content')")
+            page.evaluate(f"() => {FILES}.openFileSearch()")
+            page.evaluate(f"() => {{ {FILES}.fileSearch.query = 'needle'; }}")
+            page.evaluate(f"async () => await {FILES}.setFileSearchMode('content')")
             page.wait_for_function(
                 f"() => ({ROW_TITLES})().includes('plan.md')", timeout=10000
             )
@@ -259,7 +260,7 @@ def main():
 
             # --- scenario d: opening a content hit lands on the term ----------
             page.evaluate(
-                f"() => {{ const n = window.Alpine.raw({SH}._tree).findFirst(x => x.title === 'main.rs'); {SH}.openFile(n); }}"
+                f"() => {{ const n = window.Alpine.raw({FILES}._tree).findFirst(x => x.title === 'main.rs'); {FILES}.openFile(n); }}"
             )
             page.wait_for_function(
                 "() => !!document.querySelector('.code-viewer .monaco-editor')", timeout=20000
@@ -276,7 +277,7 @@ def main():
 
             # --- scenario e: a reconcile under the filter keeps it narrowed ----
             (fixture / "src" / "extra.txt").write_text("nothing\n", encoding="utf-8")
-            page.evaluate(f"async () => await {SH}.onTreeDirty('src')")
+            page.evaluate(f"async () => await {FILES}.onTreeDirty('src')")
             time.sleep(0.3)
             rows = page.evaluate(ROW_TITLES)
             check(
@@ -286,17 +287,17 @@ def main():
             )
 
             # --- scenario f: slow typing, then erasing, on a scrolling tree --
-            page.evaluate(f"async () => await {SH}.closeFileSearch()")
-            page.wait_for_function(f"() => !({SH}._tree.isFilterActive())", timeout=5000)
-            page.evaluate(f"() => {SH}.openFileSearch()")
-            page.evaluate(f"async () => await {SH}.setFileSearchMode('name')")
-            page.click(".project.open .files-search input")
+            page.evaluate(f"async () => await {FILES}.closeFileSearch()")
+            page.wait_for_function(f"() => !({FILES}._tree.isFilterActive())", timeout=5000)
+            page.evaluate(f"() => {FILES}.openFileSearch()")
+            page.evaluate(f"async () => await {FILES}.setFileSearchMode('name')")
+            page.click(".files-pane .files-search input")
             for ch in "task":
                 page.keyboard.type(ch)
                 time.sleep(1.2)  # past the debounce: every letter from the 2nd is a search
             time.sleep(3)
             painted = page.evaluate(
-                f"() => {{ const t = window.Alpine.raw({SH}._tree);"
+                f"() => {{ const t = window.Alpine.raw({FILES}._tree);"
                 "  return { rows: t.nodeListElement.childNodes.length, total: t.treeRowCount,"
                 "    fit: Math.floor(t.element.clientHeight / t.options.rowHeightPx) }; }"
             )

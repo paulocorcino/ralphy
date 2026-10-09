@@ -2783,16 +2783,23 @@ async fn root_serves_vendored_xterm() {
 /// gestures the daemon now accepts there.
 #[test]
 fn the_explorer_opens_a_note_as_a_card() {
-    let app = include_str!("../assets/ui/app.ts");
+    let paths = include_str!("../assets/ui/wb-file-paths.ts");
     assert!(
-        app.contains(r#"if (ext === "note") return "note";"#),
+        paths.contains(r#"if (ext === "note") return "note";"#),
         "classify must name a `.note` (ADR-0064 §11)"
     );
-    for pin in ["openNote(path)", "WBNotes.openFromExplorer("] {
-        assert!(app.contains(pin), "app.ts must keep the ADR-0064 pin {pin}");
-    }
+    let files = include_str!("../assets/ui/wb-files.ts");
+    assert!(
+        files.contains("this.openNote(path)"),
+        "wb-files.ts must keep the ADR-0064 pin openNote(path)"
+    );
+    let app = include_str!("../assets/ui/app.ts");
+    assert!(
+        app.contains("WBNotes.openFromExplorer("),
+        "app.ts must keep the ADR-0064 pin WBNotes.openFromExplorer("
+    );
     // The UI's mirror of the denylist carve-out (`isNoteInNotesDir`) is
-    // driven through the context menu by `ui-tests/app.test.mjs`.
+    // driven through the context menu by `ui-tests/wb-files.test.mjs`.
     // The card's own file actions go through the GENERIC byte-ops — there
     // is no `note.rename`/`note.delete`, and adding one would re-derive the
     // confinement the carve-out already gives.
@@ -7614,7 +7621,7 @@ fn a_refused_branch_change_reports_in_the_projects_panel() {
     let html = include_str!("../assets/ui/index.html");
     for pin in [
         r#"class="files-error branch-error""#,
-        r#"x-show="$store.projects.rowOpen(p) && branchError""#,
+        r#"class="files-error branch-error" x-show="branchError""#,
         r#"x-text="branchError""#,
     ] {
         assert!(html.contains(pin), "index.html must keep the pin {pin}");
@@ -8108,10 +8115,10 @@ fn the_peer_wake_is_wired_through_the_ui_assets() {
 /// context handler must NOT bail on a missing node, or a top-level file is
 /// uncreatable. The Files header carries the same two actions, because
 /// right-clicking empty space is an affordance nothing on screen advertises.
-/// The directory `emitCreate` sends is driven by `app.test.mjs`.
+/// The directory `emitCreate` sends is driven by `wb-files.test.mjs`.
 #[test]
 fn the_explorer_can_create_at_every_target_including_the_repo_root() {
-    let js = include_str!("../assets/ui/app.ts");
+    let js = include_str!("../assets/ui/wb-files.ts");
     assert!(
         js.contains("this.showMenu(ev.clientX, ev.clientY, node || null)"),
         "the tree's contextmenu handler must open the menu for a NULL node \
@@ -8119,7 +8126,7 @@ fn the_explorer_can_create_at_every_target_including_the_repo_root() {
     );
     assert!(
         js.contains("createHere(kind: any) {"),
-        "app.ts must keep createHere(kind) — the Files header calls it"
+        "wb-files.ts must keep createHere(kind) — the Files header calls it"
     );
     let html = include_str!("../assets/ui/index.html");
     for symbol in ["createHere('file')", "createHere('folder')"] {
@@ -8556,6 +8563,7 @@ fn no_menu_or_key_sink_takes_a_template_string() {
     assert!(template_html_sinks("menu.innerHTML = \"\";").is_empty());
     for (name, src) in [
         ("app.ts", include_str!("../assets/ui/app.ts")),
+        ("wb-files.ts", include_str!("../assets/ui/wb-files.ts")),
         ("wb-console.ts", include_str!("../assets/ui/wb-console.ts")),
         (
             "wb-console-chrome.ts",
