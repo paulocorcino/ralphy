@@ -263,8 +263,9 @@ export function createFences(deps: FenceDeps) {
     lock.type = "button";
     lock.addEventListener("click", () => setFenceLock(f.id, !fenceLocked(f.id)));
     // Every member as columns, in a grid that follows the stage (ADR-0051 §5,
-    // 2026-09-30). The shell owns the columns, so this only names the members
-    // and their stage rects. `refreshFenceChrome` paints disabled and hidden.
+    // 2026-09-30). `wbColumns` (wb-consoles-tab.ts) owns the columns, so this
+    // only names the members and their stage rects. `refreshFenceChrome`
+    // paints disabled and hidden.
     const columns = document.createElement("button");
     columns.className = "fence-columns";
     columns.type = "button";

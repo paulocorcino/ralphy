@@ -1431,8 +1431,8 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // by `syncMaxPin`. Re-asserted after the class flip because `maxlock`
   // (`overflow:hidden`) drops the scrollbars, which can clamp the offsets.
   //
-  // `persist` writes `max`: the operator's own toggle, and the shell's columns
-  // moving the maximize to another console (ADR-0051 §5). A restore
+  // `persist` writes `max`: the operator's own toggle, and the columns
+  // (`wbColumns`) moving the maximize to another console (ADR-0051 §5). A restore
   // (`buildChrome`) and the torn-off fence window's columns write nothing: a
   // restore already reads the record, and that window's grid is never stored.
   function setMax(win: any, on: any, persist = false) {
@@ -1477,9 +1477,9 @@ export function createConsole(window: any, document: any, location: any, opts: a
   }
 
   // ---- columns (ADR-0051 §5) --------------------------------------------------
-  // The shell (`app.ts`) owns the column list and folds it with `WBColumns`;
-  // this module only paints the answer. It never reads `WBColumns`: the
-  // detached-fence popup boots this file without it.
+  // `wbColumns` (wb-consoles-tab.ts) owns the column list and folds it with
+  // `WBColumns`; this module only paints the answer and never reads
+  // `WBColumns`: the detached-fence popup boots this file without it.
   //
   // A column writes no rect to the desk: the painted box is CSS, and
   // `restoreRect` reads the inline rect under it. The first console is the one
@@ -2510,7 +2510,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // case a placeholder SAYS so (#411). A console must never silently land on
   // the primary tree because its own vanished (the #409 gates).
   // Desk ids whose window a relaunch took off the stage and has not put back
-  // yet: the shell's columns wait for them instead of dropping them.
+  // yet: the columns (`wbColumns`) wait for them instead of dropping them.
   const relaunching = new Set();
   function isRelaunching(deskId: any) {
     return relaunching.has(deskId);

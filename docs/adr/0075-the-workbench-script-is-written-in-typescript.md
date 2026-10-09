@@ -530,16 +530,18 @@ need.
    `f9d0aae3` protects it.
 
 3. **A factory that uses many members of another factory takes the whole
-   object as one dep** (`popups`, `fenceList`, `view`), not one dep line for
-   each member. A dep for one or two members stays a single line.
+   object as one dep** (`popups`, `fenceFloor`, `view`), not one dep line for
+   each member. A dep for one or two members stays a single line. The fence
+   list object is named `fenceFloor`, because `fenceList()` is already a
+   member of the API.
 
 4. **The construction order rule.** The outputs of a factory are `const`
    values, and they are not hoisted. A factory that takes them directly in
    `deps` throws a temporal dead zone error if it is built earlier. So a
    factory is built before the factories that take its outputs. A real cycle
    is broken with a lazy arrow, for example `isDeskSettled: () =>
-   isDeskSettled()`. The order for plan 1 is: popups, title, fence list,
-   detach, view, terminal, chrome, fences, desk.
+   isDeskSettled()`. The order for plan 1 is: title, popups, fence list,
+   GPU budget, detach, view, terminal, gestures, chrome, fences, desk.
 
 5. **Why about 500 needs decisions 2 and 3.** What stays in the file at the
    end is a fixed floor of about 320 lines: the imports, the pure

@@ -8592,6 +8592,14 @@ fn no_menu_or_key_sink_takes_a_template_string() {
     for (name, src) in [
         ("app.ts", include_str!("../assets/ui/app.ts")),
         ("wb-files.ts", include_str!("../assets/ui/wb-files.ts")),
+        (
+            "wb-move-dialog.ts",
+            include_str!("../assets/ui/wb-move-dialog.ts"),
+        ),
+        (
+            "wb-consoles-tab.ts",
+            include_str!("../assets/ui/wb-consoles-tab.ts"),
+        ),
         ("wb-console.ts", include_str!("../assets/ui/wb-console.ts")),
         (
             "wb-console-chrome.ts",

@@ -22,6 +22,10 @@ import { WBFileSearch } from "./wb-file-search.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { classify, newEntryTitle, parentRel, underProtectedDir } from "./wb-file-paths.ts";
 
+// The tree hosts that already carry the context-menu listener (`mountTree`).
+// A raw DOM element, kept outside the component: Alpine's Proxy would wrap it.
+const menuHosts = new WeakSet<Element>();
+
 export function wbFiles() {
   // Every `shell()` member this component's code or markup reads or calls.
   return component(["_flashAction", "checkoutOf", "fleetGroups", "readFleetNow", "wakePeer", "tabHidden", "hideMenu", "renderMenu", "openNote", "openTab", "repathTabs", "tabs", "hasWorktrees", "openCheckoutChip", "checkoutTitle", "branchError"], {
@@ -203,12 +207,18 @@ export function wbFiles() {
 
       // Right-click → our own context menu. Empty space below the rows is the
       // repo root: the only gesture that can create a top-level entry.
-      host.addEventListener("contextmenu", (ev: any) => {
-        const node = mar10.Wunderbaum.getNode(ev);
-        ev.preventDefault();
-        node?.setActive();
-        this.showMenu(ev.clientX, ev.clientY, node || null);
-      });
+      // INVARIANT: one listener per host. The host outlives every mount
+      // (`destroyTree` only empties it), so a second add would run the menu
+      // once more per mount.
+      if (!menuHosts.has(host)) {
+        menuHosts.add(host);
+        host.addEventListener("contextmenu", (ev: any) => {
+          const node = mar10.Wunderbaum.getNode(ev);
+          ev.preventDefault();
+          node?.setActive();
+          this.showMenu(ev.clientX, ev.clientY, node || null);
+        });
+      }
     },
 
     // Snapshot which folders are open, on every expand/collapse rather than
