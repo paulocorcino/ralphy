@@ -492,6 +492,36 @@ function mountedTreeOptions(s, window, document) {
   return options;
 }
 
+// The one files host outlives every mount: a project switch, a checkout
+// change and a woken peer each mount the tree again on the same element.
+test("a right-click on the tree opens the menu once, however often the tree was mounted", () => {
+  const { state, window, document } = peerFilesShell("reachable");
+  window.WBDaemon = {};
+  const listeners = [];
+  const host = { addEventListener: (type, fn) => type === "contextmenu" && listeners.push(fn) };
+  document.querySelector = (sel) => (sel === ".files-pane .wb-host" ? host : null);
+  state.$store.projects.setProjects([{ key: FILES_REF, slug: "o/r", daemon: FILES_PEER, tree: [] }]);
+  state.useDaemonTree = () => true;
+  state.loadTreeLevel = () => Promise.resolve([]);
+  const menus = [];
+  state.showMenu = (x, y, node) => menus.push([x, y, node]);
+  const realMar10 = globalThis.mar10;
+  globalThis.mar10 = { Wunderbaum: Object.assign(function () {}, { getNode: () => null }) };
+  const rightClick = () => listeners.forEach((fn) => fn({ clientX: 7, clientY: 9, preventDefault() {} }));
+  try {
+    state.mountTree();
+    rightClick();
+    assert.deepEqual(menus, [[7, 9, null]], "the first mount wires the menu");
+    state.mountTree();
+    state.mountTree();
+    menus.length = 0;
+    rightClick();
+  } finally {
+    globalThis.mar10 = realMar10;
+  }
+  assert.deepEqual(menus, [[7, 9, null]]);
+});
+
 test("a tree level that fails to load draws no error row, closes, and asks the fleet", async () => {
   const { state, shell, window, document } = peerFilesShell("reachable");
   const options = mountedTreeOptions(state, window, document);

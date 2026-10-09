@@ -4045,8 +4045,8 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-session-route.js",
                 "wb-daemon.js",
                 // `wb-console.ts` imports the geometry, the window state, the session folds,
-                // the desk folds, the GPU budget, the title, the fence list, the view, the terminal, the
-                // window chrome, the popup registry, the fences, the desk, the console name
+                // the desk folds, the GPU budget, the title, the fence list, the detach, the view, the
+                // terminal, the window chrome, the popup registry, the fences, the desk, the console name
                 // and the input folds; the entry
                 // imports the console. Stated HERE because this set is a hardcoded floor:
                 // nothing derives the popup's needs from the tree, so an
@@ -4062,6 +4062,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-console-terminal.js",
                 "wb-console-title.js",
                 "wb-console-fence-list.js",
+                "wb-console-detach.js",
                 "wb-console-view.js",
                 "wb-console-chrome.js",
                 "wb-console-popups.js",
@@ -5803,15 +5804,16 @@ fn a_detached_file_comes_home_when_its_popup_closes() {
 /// deleted code.
 #[test]
 fn shell_detaches_a_fence() {
-    // The console, its fence list, its fences and its desk, as one text: the
-    // detach lives in the fences, the popup's mount and the upload in the
-    // desk, the re-attach and the lifecycle channel in the console, the
-    // refused remove in the fence list.
+    // The console, its fence list, its fences, its desk and its detach, as
+    // one text: the detach lives in the fences, the popup's mount and the
+    // upload in the desk, the re-attach and the lifecycle channel in the
+    // opener's side of the detach, the refused remove in the fence list.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
         include_str!("../assets/ui/wb-console-fence-list.ts"),
         include_str!("../assets/ui/wb-console-fences.ts"),
         include_str!("../assets/ui/wb-console-desk.ts"),
+        include_str!("../assets/ui/wb-console-detach.ts"),
     ]
     .concat();
     for pin in [
@@ -6113,14 +6115,16 @@ fn spawn_window_sends_the_console_name_on_a_new_agent_launch() {
 /// own explanatory comment satisfies a bare-noun pin over deleted code.
 #[test]
 fn shell_survives_a_reload_with_its_detach() {
-    // The console, its popup registry, its fences and its desk, as one text:
-    // the registry write lives in the registry, the detach in the fences, the
-    // restore in the desk, and the lifecycle channel in the console.
+    // The console, its popup registry, its fences, its desk and its detach,
+    // as one text: the registry write lives in the registry, the detach in
+    // the fences, the restore in the desk, and the lifecycle channel in the
+    // opener's side of the detach.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
         include_str!("../assets/ui/wb-console-popups.ts"),
         include_str!("../assets/ui/wb-console-fences.ts"),
         include_str!("../assets/ui/wb-console-desk.ts"),
+        include_str!("../assets/ui/wb-console-detach.ts"),
     ]
     .concat();
     let link = include_str!("../assets/ui/wb-detach-link.ts");
@@ -6151,7 +6155,8 @@ fn shell_survives_a_reload_with_its_detach() {
             && !include_str!("../assets/ui/wb-console-chrome.ts").contains("sessionStorage")
             && !include_str!("../assets/ui/wb-console-title.ts").contains("sessionStorage")
             && !include_str!("../assets/ui/wb-console-view.ts").contains("sessionStorage")
-            && !include_str!("../assets/ui/wb-console-fence-list.ts").contains("sessionStorage"),
+            && !include_str!("../assets/ui/wb-console-fence-list.ts").contains("sessionStorage")
+            && !include_str!("../assets/ui/wb-console-detach.ts").contains("sessionStorage"),
         "wb-console.ts must reach the registry only through the injected link (#347)"
     );
     // The CALLS, not the bare nouns: this file's own prose names
@@ -6723,6 +6728,10 @@ fn shell_stores_only_the_view_in_the_browser() {
             include_str!("../assets/ui/wb-console-fence-list.ts"),
         ),
         (
+            "wb-console-detach.ts",
+            include_str!("../assets/ui/wb-console-detach.ts"),
+        ),
+        (
             "wb-console-popups.ts",
             include_str!("../assets/ui/wb-console-popups.ts"),
         ),
@@ -6797,8 +6806,9 @@ fn shell_stores_only_the_view_in_the_browser() {
 /// answers. `wb_fence_347.py` scenario 5c drives it; this is CI's view.
 #[test]
 fn a_quiet_detach_peer_is_challenged_before_it_is_buried() {
-    // Whitespace-free text: the code, not its layout.
-    let js = squeeze(include_str!("../assets/ui/wb-console.ts"));
+    // Whitespace-free text: the code, not its layout. The opener's side of
+    // the detach is `wb-console-detach.ts`.
+    let js = squeeze(include_str!("../assets/ui/wb-console-detach.ts"));
     assert!(
         js.contains("functionstillThere("),
         "the origin must ask whether a quiet popup is really gone"
@@ -8582,6 +8592,14 @@ fn no_menu_or_key_sink_takes_a_template_string() {
     for (name, src) in [
         ("app.ts", include_str!("../assets/ui/app.ts")),
         ("wb-files.ts", include_str!("../assets/ui/wb-files.ts")),
+        (
+            "wb-move-dialog.ts",
+            include_str!("../assets/ui/wb-move-dialog.ts"),
+        ),
+        (
+            "wb-consoles-tab.ts",
+            include_str!("../assets/ui/wb-consoles-tab.ts"),
+        ),
         ("wb-console.ts", include_str!("../assets/ui/wb-console.ts")),
         (
             "wb-console-chrome.ts",
@@ -8598,6 +8616,10 @@ fn no_menu_or_key_sink_takes_a_template_string() {
         (
             "wb-console-fence-list.ts",
             include_str!("../assets/ui/wb-console-fence-list.ts"),
+        ),
+        (
+            "wb-console-detach.ts",
+            include_str!("../assets/ui/wb-console-detach.ts"),
         ),
         (
             "wb-console-popups.ts",

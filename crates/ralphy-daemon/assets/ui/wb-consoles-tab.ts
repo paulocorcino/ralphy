@@ -330,7 +330,7 @@ export function wbColumns() {
     columnFilter: "",
     columnFrom: null,
     columnMenuAt: { top: 0, right: 0, maxWidth: 400, maxHeight: 400 },
-    // INVARIANT: the shell never writes `max` itself. Each `applyColumns` call
+    // INVARIANT: the columns never write `max` themselves. Each `applyColumns` call
     // passes `persist`, so `setMax` writes it for the first console in reading
     // order (`true`) or one that stopped being first (`false`). `columns` is
     // the grid: a list of columns, each a list of ids (`wb-columns.ts`).

@@ -14,6 +14,7 @@ import "./wb-columns.test.mjs";
 import "./wb-console-chrome.test.mjs";
 import "./wb-console-desk.test.mjs";
 import "./wb-console-fence-list.test.mjs";
+import "./wb-console-detach.test.mjs";
 import "./wb-console-fences.test.mjs";
 import "./wb-console-gpu.test.mjs";
 import "./wb-console-input.test.mjs";

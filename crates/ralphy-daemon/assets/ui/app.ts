@@ -282,9 +282,9 @@ export function shell() {
       if (this.$store.projects.openSlug) this.hydrateRuns();
     },
 
-    // Read the desk again. The console module puts it on the stage, and says
-    // which consoles left it (`checkColumnDesk`); the selected checkouts are
-    // copied, since another client may have picked a tree.
+    // Read the desk again. The console module puts it on the stage, and tells
+    // the columns (wb-consoles-tab.ts) which consoles left it; the selected
+    // checkouts are copied, since another client may have picked a tree.
     rereadDesk() {
       const read = window.WBConsole?.reloadDesk?.();
       if (!read?.then) return;

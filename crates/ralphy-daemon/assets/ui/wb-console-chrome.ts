@@ -559,8 +559,8 @@ export function createChrome(deps: ChromeDeps) {
     win.addEventListener("pointerdown", () => focusWin(win));
     makeDraggable(win, titlebar);
     // Maximize/restore: the button, a double-click on the titlebar, or a
-    // double tap on it. The shell owns the columns, so a column's restore is
-    // its decision.
+    // double tap on it. `wbColumns` (wb-consoles-tab.ts) owns the columns, so
+    // a column's restore is its decision.
     const maxOrRestore = () => {
       if (win.classList.contains("column")) {
         document.dispatchEvent(
