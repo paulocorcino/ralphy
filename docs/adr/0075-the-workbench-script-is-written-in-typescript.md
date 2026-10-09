@@ -563,3 +563,9 @@ records' count, columns and lock chrome, the fence verbs that change the desk,
 the refusal said on a fence, the detach glyph and the focused fence are in
 `wb-console-fence-list.ts`, built before the view; the fences take it as one
 object. After this cut `wb-console.ts` has 3,423 lines.
+
+**The opener's side of the detach is cut as `createDetach(deps)` (#621).**
+The heartbeat, the probe of a quiet popup, the re-attach and the two
+listeners that hear the popups are in `wb-console-detach.ts`, built after the
+GPU budget and before the view; the popup registry reaches its heartbeat
+through lazy arrows. After this cut `wb-console.ts` has 3,084 lines.
