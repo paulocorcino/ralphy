@@ -47,7 +47,7 @@ export type ViewDeps = {
   syncFullState: () => void;
   syncMaxPin: () => void;
   // A fence's element by id, and the focused fence (set, cleared, read). The
-  // console reassigns the focused fence, so it is read at each use.
+  // fence list reassigns the focused fence, so it is read at each use.
   fenceEl: (id: any) => any;
   focusFence: (id: any) => void;
   clearFenceFocus: () => void;

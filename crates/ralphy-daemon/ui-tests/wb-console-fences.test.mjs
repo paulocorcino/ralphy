@@ -55,8 +55,9 @@ function fakeDocument() {
 }
 
 // Every member of `FenceDeps`, with one fence `f` on an empty stage. The
-// calls that change the desk are recorded in `calls`.
-function fakeDeps(more = {}) {
+// calls that change the desk are recorded in `calls`. `floor` replaces
+// members of the fake fence list.
+function fakeDeps(more = {}, floor = {}) {
   const calls = [];
   const plane = fakeElement();
   plane.querySelectorAll = () => [];
@@ -72,29 +73,32 @@ function fakeDeps(more = {}) {
     link: { tab: "t1", post: record("post") },
     wins: new Set(),
     fences: () => [{ id: "f", name: "A", rect: RECT }],
+    fenceFloor: {
+      clearFenceFlash() {},
+      fenceEl: () => null,
+      fenceLocked: () => false,
+      fenceNotice: record("fenceNotice"),
+      showDetachGlyph() {},
+      readFenceRects: () => [{ id: "f", name: "A", rect: RECT }],
+      readWindowRects: () => [],
+      refreshFenceChrome() {},
+      removeFence: record("removeFence"),
+      renameFence: record("renameFence"),
+      setFenceLock: record("setFenceLock"),
+      renderFences() {},
+      renderNotes() {},
+      ...floor,
+    },
     stage: () => plane,
     applyExtent() {},
     askConfirm: async () => true,
     autoPan: () => ({ follow() {}, stop() {} }),
-    clearFenceFlash() {},
-    fenceEl: () => null,
-    fenceLocked: () => false,
-    fenceNotice: record("fenceNotice"),
     fenceSnapshot: () => [{ id: "w1", repo: "r" }],
     focusWin() {},
     glyphClick() {},
-    showDetachGlyph() {},
     newPid: () => "p1",
-    readFenceRects: () => [{ id: "f", name: "A", rect: RECT }],
-    readWindowRects: () => [],
     reattachFence: record("reattachFence"),
-    refreshFenceChrome() {},
-    removeFence: record("removeFence"),
-    renameFence: record("renameFence"),
-    setFenceLock: record("setFenceLock"),
     saveFences: record("saveFences"),
-    renderFences() {},
-    renderNotes() {},
     restoreRect: () => ({ ...RECT }),
     setWin: record("setWin"),
     tearDownMember: record("tearDownMember"),
@@ -196,7 +200,7 @@ test("tiling a detached fence changes no console", (t) => {
   const win = fakeElement();
   win._deskId = "w1";
   const fence = fakeElement();
-  const { deps, calls } = fakeDeps({ fenceEl: () => fence });
+  const { deps, calls } = fakeDeps({}, { fenceEl: () => fence });
   deps.stage().querySelectorAll = (sel) => (sel === ".session-window" ? [win] : []);
   const { arrangeFence } = createFences(deps);
   deps.popups.put("f", deps.popups.newPopupEntry());

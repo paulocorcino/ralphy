@@ -61,8 +61,8 @@ export type ChromeDeps = {
   // The plane and the viewport; null before the page has them.
   stage: () => any;
   workspace: () => any;
-  // The fences on the stage, and the focused fence's id: the console
-  // reassigns both, so they are read when a window is built.
+  // The fences on the stage, and the focused fence's id: the console and
+  // the fence list reassign them, so they are read when a window is built.
   fences: () => any[];
   focusedFence: () => any;
   // Grows or fits the stage to the windows on it.
