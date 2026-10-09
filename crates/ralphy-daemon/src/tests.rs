@@ -4043,6 +4043,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-desk-sync.js",
                 "wb-detach-link.js",
                 "wb-session-route.js",
+                "wb-resume.js",
                 "wb-daemon.js",
                 // `wb-console.ts` imports the geometry, the window state, the session folds,
                 // the desk folds, the GPU budget, the title, the fence list, the detach, the view, the

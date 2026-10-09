@@ -60,35 +60,10 @@ export function encodeDetach(reason: any) {
 const MAX_FAILED_REOPENS = 10;
 const WATCH_AFTER = 3;
 
-// RESUME — the tablet case. A suspended tab runs no JS while the link is torn
-// down, so it comes back holding sockets that report OPEN and never deliver
-// another byte. Named `resume`, never `wake`: waking is for a peer daemon
-// (CONTEXT.md).
-//
-// `stale` is the caller's verdict: the shell feeds it from the presence
-// heartbeat (`setStaleProbe`); the popup, with none, falls back to how long
-// it was hidden — so an ordinary desktop tab switch churns nothing.
+// How long a popup, which has no presence heartbeat to ask, counts as hidden
+// before its sockets are taken as stale on resume (the rule is `wb-resume.ts`).
+// An ordinary desktop tab switch stays below it and churns nothing.
 export const RESUME_HIDDEN_MS = 60000;
-// Two resume triggers (`visibilitychange` and `online`) land within the same
-// millisecond on an iOS resume. Without a debounce the second one tears down
-// the socket the first one just opened.
-export const RESUME_DEBOUNCE_MS = 1500;
-
-// A handshake gets this long to open (`wb-daemon.ts` reads the same value).
-// Without a deadline a reattach opened onto a link that is not up yet (an iPhone back from a
-// call) sits in CONNECTING until the OS abandons TCP/TLS, under a
-// "[connection lost — reconnecting…]" that no resume will touch.
-export const CONNECT_TIMEOUT_MS = 8000;
-
-// Pure, tabled like `reconnectDecision`. CONNECTING is already the reconnect —
-// closing it only restarts the handshake a round-trip later — until it
-// outlives the handshake deadline, whose timer froze along with the tab.
-export function resumeDecision({ readyState, stale, connectingMs }: any) {
-  if (readyState == null) return "reconnect";
-  if (readyState === 0) return connectingMs >= CONNECT_TIMEOUT_MS ? "reconnect" : "none";
-  if (readyState === 1) return stale ? "reconnect" : "none";
-  return "reconnect";
-}
 
 // Whether a new window attaches at once or starts asleep. A window that
 // reattaches to a known session starts asleep, and the observer's first

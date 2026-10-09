@@ -50,7 +50,7 @@ const APP_TS_LINES: usize = 4246;
 /// view moved to `wb-console-view.ts` (#621); 3423 since its fence list moved
 /// to `wb-console-fence-list.ts` (#621); 3084 since the opener's side of its
 /// detach moved to `wb-console-detach.ts` (#621).
-const WB_CONSOLE_TS_LINES: usize = 3084;
+const WB_CONSOLE_TS_LINES: usize = 3082;
 
 /// The served workbench modules, from the repo root. `vendor/` and
 /// `ui-tests/` are not read.
@@ -77,7 +77,7 @@ const ANY_BASELINE: &[(&str, usize)] = &[
     ("wb-console-input.ts", 59),
     ("wb-console-name.ts", 18),
     ("wb-console-popups.ts", 18),
-    ("wb-console-session.ts", 31),
+    ("wb-console-session.ts", 30),
     ("wb-console-terminal.ts", 61),
     ("wb-console-title.ts", 76),
     ("wb-console-view.ts", 34),

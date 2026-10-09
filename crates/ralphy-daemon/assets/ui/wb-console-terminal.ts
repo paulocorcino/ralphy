@@ -13,6 +13,7 @@ import { WBSessionRoute } from "./wb-session-route.ts";
 import { WBFail } from "./wb-fail.ts";
 import * as WBConsoleInput from "./wb-console-input.ts";
 import * as WBConsoleSession from "./wb-console-session.ts";
+import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
 
 const {
   prefersDomRenderer,
@@ -41,14 +42,11 @@ const {
   encodeTerminal,
   encodeResize,
   encodeDetach,
-  resumeDecision,
   endNotice,
   reconnectDecision,
   peerGate,
   TAG_TERMINAL,
   TAG_COMMAND,
-  RESUME_DEBOUNCE_MS,
-  CONNECT_TIMEOUT_MS,
 } = WBConsoleSession;
 
 // The terminal's surface, ADR-0035's palette. xterm.js takes no CSS variables
