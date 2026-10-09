@@ -552,3 +552,8 @@ need.
 rename, the title's text and the worktree switcher are in
 `wb-console-title.ts`, built before the chrome; after this cut `wb-console.ts`
 has 4,057 lines, and the ratchet holds it there.
+
+**The view is cut as `createView(deps)` (#621).** The landing and the stored
+offset, the reveal, the slide, the auto-pan and the plane's pan and wheel are
+in `wb-console-view.ts`, built before the terminal; `refitAll` stays in the
+console. After this cut `wb-console.ts` has 3,708 lines.

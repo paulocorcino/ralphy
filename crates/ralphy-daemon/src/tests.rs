@@ -4038,9 +4038,9 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-session-route.js",
                 "wb-daemon.js",
                 // `wb-console.ts` imports the geometry, the window state, the session folds,
-                // the desk folds, the GPU budget, the terminal, the title, the window chrome,
-                // the popup registry, the fences, the desk, the console name and the input
-                // folds; the entry
+                // the desk folds, the GPU budget, the title, the view, the terminal, the
+                // window chrome, the popup registry, the fences, the desk, the console name
+                // and the input folds; the entry
                 // imports the console. Stated HERE because this set is a hardcoded floor:
                 // nothing derives the popup's needs from the tree, so an
                 // import dropped from the entry breaks the second monitor
@@ -4054,6 +4054,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-console-gpu.js",
                 "wb-console-terminal.js",
                 "wb-console-title.js",
+                "wb-console-view.js",
                 "wb-console-chrome.js",
                 "wb-console-popups.js",
                 "wb-console-fences.js",
@@ -5511,11 +5512,13 @@ fn shell_arranges_into_the_fence() {
 /// over deleted code.
 #[test]
 fn shell_lists_the_fences() {
-    // The console and its window chrome, as one text: the fence list lives in the console,
-    // the birth in the focused fence in the chrome.
+    // The console, its window chrome and its view, as one text: the fence list lives in the
+    // console, the birth in the focused fence in the chrome, the jumps and the slide in the
+    // view.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
         include_str!("../assets/ui/wb-console-chrome.ts"),
+        include_str!("../assets/ui/wb-console-view.ts"),
     ]
     .concat();
     let geometry = include_str!("../assets/ui/wb-geometry.ts");
@@ -6128,7 +6131,8 @@ fn shell_survives_a_reload_with_its_detach() {
         !js.contains("sessionStorage")
             && !include_str!("../assets/ui/wb-console-terminal.ts").contains("sessionStorage")
             && !include_str!("../assets/ui/wb-console-chrome.ts").contains("sessionStorage")
-            && !include_str!("../assets/ui/wb-console-title.ts").contains("sessionStorage"),
+            && !include_str!("../assets/ui/wb-console-title.ts").contains("sessionStorage")
+            && !include_str!("../assets/ui/wb-console-view.ts").contains("sessionStorage"),
         "wb-console.ts must reach the registry only through the injected link (#347)"
     );
     // The CALLS, not the bare nouns: this file's own prose names
@@ -6313,13 +6317,14 @@ fn shell_has_no_clamp_and_carries_the_stage() {
 /// here, each inside the function that must hold it.
 #[test]
 fn shell_navigates_the_plane() {
-    // The console, its window chrome and its fences, as one text: the plane
-    // lives in the console, the window drag in the chrome, the fence drag
-    // in the fences.
+    // The console, its window chrome, its fences and its view, as one text:
+    // the plane lives in the console, the window drag in the chrome, the
+    // fence drag in the fences, the reveal, the pan and the wheel in the view.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
         include_str!("../assets/ui/wb-console-chrome.ts"),
         include_str!("../assets/ui/wb-console-fences.ts"),
+        include_str!("../assets/ui/wb-console-view.ts"),
     ]
     .concat();
     for pin in [
@@ -6474,8 +6479,17 @@ fn shell_pins_the_frame_chrome() {
         "the empty-stage caption is not to come back"
     );
 
-    // Whitespace-free text: the code, not its layout.
-    let js = squeeze(include_str!("../assets/ui/wb-console.ts"));
+    // Whitespace-free text: the code, not its layout. The console and its
+    // view, as one text: the pin and the maximize lock live in the console,
+    // the scroll registration and the reveal in the view, so the negative
+    // pin below covers both.
+    let js = squeeze(
+        &[
+            include_str!("../assets/ui/wb-console.ts"),
+            include_str!("../assets/ui/wb-console-view.ts"),
+        ]
+        .concat(),
+    );
     for pin in [
         "functionsyncMaxPin(",
         // The REGISTRATION, not the function: without it the pin is only
@@ -6489,7 +6503,7 @@ fn shell_pins_the_frame_chrome() {
     ] {
         assert!(
             js.contains(pin),
-            "wb-console.ts must keep the #338 pin {pin}"
+            "wb-console.ts or wb-console-view.ts must keep the #338 pin {pin}"
         );
     }
     // The POSITIVE half of the `reveal()` change, in either operand order:
@@ -6536,11 +6550,13 @@ fn shell_pins_the_frame_chrome() {
 /// and CSS that no node test runs, so it fails here or nowhere.
 #[test]
 fn a_console_can_take_the_whole_screen() {
-    // The console and its window chrome, as one text: the full-screen state lives in the
-    // console, its button and the gesture guards in the chrome.
+    // The console, its window chrome and its view, as one text: the full-screen state lives
+    // in the console, its button and the gesture guards in the chrome, the registration of
+    // the browser's event in the view.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
         include_str!("../assets/ui/wb-console-chrome.ts"),
+        include_str!("../assets/ui/wb-console-view.ts"),
     ]
     .concat();
     for pin in [
@@ -6680,6 +6696,10 @@ fn shell_stores_only_the_view_in_the_browser() {
             include_str!("../assets/ui/wb-console-title.ts"),
         ),
         (
+            "wb-console-view.ts",
+            include_str!("../assets/ui/wb-console-view.ts"),
+        ),
+        (
             "wb-console-popups.ts",
             include_str!("../assets/ui/wb-console-popups.ts"),
         ),
@@ -6711,8 +6731,9 @@ fn shell_stores_only_the_view_in_the_browser() {
         "wb-view.ts must keep the one view key (#339)"
     );
 
-    let js = include_str!("../assets/ui/wb-console.ts");
-    // `viewLanding` is driven by `ui-tests/wb-console.test.mjs`.
+    let js = include_str!("../assets/ui/wb-console-view.ts");
+    // `viewLanding` is driven by `ui-tests/wb-geometry.test.mjs`, the landing
+    // by `ui-tests/wb-console-view.test.mjs`.
     for pin in [
         "function applyLanding(",
         // The REGISTRATION, not the function: without it the offset is never
@@ -6721,7 +6742,7 @@ fn shell_stores_only_the_view_in_the_browser() {
     ] {
         assert!(
             js.contains(pin),
-            "wb-console.ts must keep the #339 pin {pin}"
+            "wb-console-view.ts must keep the #339 pin {pin}"
         );
     }
 
@@ -8543,6 +8564,10 @@ fn no_menu_or_key_sink_takes_a_template_string() {
         (
             "wb-console-title.ts",
             include_str!("../assets/ui/wb-console-title.ts"),
+        ),
+        (
+            "wb-console-view.ts",
+            include_str!("../assets/ui/wb-console-view.ts"),
         ),
         (
             "wb-console-popups.ts",

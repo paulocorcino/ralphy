@@ -21,6 +21,7 @@ import "./wb-console-popups.test.mjs";
 import "./wb-console-session.test.mjs";
 import "./wb-console-terminal.test.mjs";
 import "./wb-console-title.test.mjs";
+import "./wb-console-view.test.mjs";
 import "./wb-console.test.mjs";
 import "./wb-consoles-tab.test.mjs";
 import "./wb-daemon.test.mjs";
