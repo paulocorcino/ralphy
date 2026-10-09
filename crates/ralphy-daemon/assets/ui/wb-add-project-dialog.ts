@@ -140,7 +140,7 @@ export function addProjectDialog() {
       // is selected, shown and focused, so work on it can start at once.
       if (stillOpen) this.selectAddedProject(payload.daemon ? `${payload.daemon}/${reply.slug}` : reply.slug);
     },
-    selectAddedProject(ref: string) {
+    selectAddedProject(ref: string | undefined) {
       if (!this.$store.projects.projects.some((p) => this.$store.projects.repoRef(p) === ref)) return;
       if (this.$store.projects.openSlug !== ref) this.toggle(ref);
       this.$nextTick(() => {

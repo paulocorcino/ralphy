@@ -1834,7 +1834,7 @@ export function shell() {
         window.WB.emit("branch-switch", { project: slug, branch: name, checkout });
         // The run-lock-aware `branch.switch` Mutate (#199): refusal → revert.
         this._mutateBranch("branch.switch", slug, name, () => {
-          if (p) p.branch = prev;
+          if (p) p.branch = prev!;
         });
       }
       this.closeBranchModal();
@@ -1860,8 +1860,8 @@ export function shell() {
       window.WB.emit("branch-create", { project: slug, name, from, checkout });
       this._mutateBranch("branch.create", slug, name, () => {
         if (p) {
-          p.branch = prevBranch;
-          p.branches = prevBranches;
+          p.branch = prevBranch!;
+          p.branches = prevBranches!;
         }
       });
       this.closeBranchModal();
@@ -1959,7 +1959,7 @@ export function shell() {
     // An error must never render as "No active runs": an empty project and an
     // unreadable one are different facts (ADR-0047 §6).
     runsError: "",
-    currentRunId: null,
+    currentRunId: null as string | null,
     // The clock's "now", advanced by the tick in `init` while the panel is
     // open. STATE, not `Date.now()` in the getter: Alpine only re-renders what
     // it can observe changing.
@@ -4062,7 +4062,7 @@ export function wire(window: Window, document: Document) {
           const payload: any = { repo, path: d.path, content: d.content || "" };
           if (d.encoding) payload.encoding = d.encoding;
           if (d.bom) payload.bom = true;
-          const send = (p: any) =>
+          const send = (p: any): Promise<void> =>
             WBDaemon.write("file.write", aimed(p))
               .then((reply: any) => {
                 if (!WBFail.isError(reply)) return viewer()?.saveDone?.(id);

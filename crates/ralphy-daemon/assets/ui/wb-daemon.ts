@@ -14,7 +14,31 @@ import { WBProject } from "./wb-project.ts";
 import { WBRun } from "./wb-runs.ts";
 import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
 
-export function createDaemon(window: any, document: any, location: any) {
+/** What a persistent socket's owner hears: each open, and each frame. */
+type SocketHandlers = {
+  /** `reopened` is false on the first open only. */
+  onOpen?: (ws: WebSocket, reopened: boolean) => void;
+  onMessage: (ev: MessageEvent) => void;
+};
+
+/** What the presence socket's owner hears besides the heartbeat. */
+type PresenceHandlers = {
+  onPush?: (verb: string, payload: PushPayload) => void;
+  onOpen?: (reopened: boolean) => void;
+};
+
+/** The detail of a `workbench:action` that may reach the daemon. */
+type ActionDetail = {
+  action: string;
+  /** The verb of a `command` action. */
+  verb?: string;
+  project?: string;
+  agent?: string;
+  planAgent?: string;
+  branchMode?: string;
+};
+
+export function createDaemon(window: Window, document: Document, location: Location) {
   // The tagged-frame codec, mirrored from src/protocol.rs (see wb-console.ts).
   const TAG_TERMINAL = 0x01;
   const TAG_COMMAND = 0x02;
@@ -35,7 +59,7 @@ export function createDaemon(window: any, document: any, location: any) {
 
   // Fail a handshake that has not opened by the deadline. `close()` on a
   // CONNECTING socket fires `close`, so the caller's ordinary retry takes over.
-  function armHandshakeDeadline(ws: any) {
+  function armHandshakeDeadline(ws: WebSocket) {
     setTimeout(() => {
       if (ws.readyState !== 0) return;
       try {
@@ -47,7 +71,7 @@ export function createDaemon(window: any, document: any, location: any) {
   // Retire a socket so its pending events cannot reach us. `onmessage` matters as
   // much as `onclose`: a frame still queued on the outgoing socket would land
   // after the replacement is wired and be read as the NEW connection's news.
-  function detachSocket(ws: any) {
+  function detachSocket(ws: WebSocket | null) {
     if (!ws) return;
     ws.onclose = null;
     ws.onmessage = null;
@@ -58,7 +82,7 @@ export function createDaemon(window: any, document: any, location: any) {
     } catch {}
   }
 
-  function encodeCommand({ id, verb, payload }: any) {
+  function encodeCommand({ id, verb, payload }: { id: number; verb: string; payload: CommandPayload }) {
     const body = new TextEncoder().encode(JSON.stringify({ id, verb, payload }));
     const out = new Uint8Array(1 + body.length);
     out[0] = TAG_COMMAND;
@@ -68,7 +92,7 @@ export function createDaemon(window: any, document: any, location: any) {
 
   // Open a fresh `/ws/command`, fire the verb, and stream each reply's `payload`
   // (which carries `status`) to `onStatus`; close on the terminal `exited`/`error`.
-  function spawn(verb: any, payload: any, onStatus: (st: SpawnStatus) => void) {
+  function spawn(verb: string, payload: CommandPayload, onStatus: (st: SpawnStatus) => void) {
     const id = nextId++;
     const ws = new WebSocket(WS_ORIGIN + "/ws/command");
     ws.binaryType = "arraybuffer";
@@ -93,7 +117,7 @@ export function createDaemon(window: any, document: any, location: any) {
   // §2): a worktree NAME the daemon resolves under the repo's own root. Added
   // ONLY for a real name — with no selection the payload is byte-identical to
   // the pre-#406 one, so an older daemon never sees a key it does not know.
-  function withCheckout(payload: any, checkout: any) {
+  function withCheckout(payload: CommandPayload, checkout: string | null | undefined): CommandPayload {
     const out = { ...payload };
     if (checkout) out.checkout = String(checkout);
     return out;
@@ -105,11 +129,11 @@ export function createDaemon(window: any, document: any, location: any) {
   // `(repo, name)`. This is the single path every Observe AND Write verb takes,
   // which is what "reset from any verb" asks for. A listener that throws must
   // never reject the read it rode on.
-  const unknownCheckout: any[] = [];
-  function onUnknownCheckout(fn: any) {
+  const unknownCheckout: ((repo: string | undefined, name: string) => void)[] = [];
+  function onUnknownCheckout(fn: (repo: string | undefined, name: string) => void) {
     unknownCheckout.push(fn);
   }
-  function noteUnknownCheckout(payload: any, reply: any) {
+  function noteUnknownCheckout(payload: CommandPayload, reply: DaemonReply) {
     if (!payload || !payload.checkout) return;
     if (WBProject?.checkoutAfter?.(payload.checkout, reply) !== null) return;
     for (const fn of unknownCheckout) {
@@ -122,8 +146,8 @@ export function createDaemon(window: any, document: any, location: any) {
   // Fire an Observe read (`tree.list`/`file.read`) and resolve with the single
   // reply payload — the daemon answers ONE frame on the same id and returns (no
   // spawn/stream). One socket per read, mirroring `spawn`'s per-call shape.
-  function observe(verb: any, payload: any) {
-    return new Promise<DaemonReply>((resolve, reject) => {
+  function observe<V extends string>(verb: V, payload: CommandPayload) {
+    return new Promise<ReplyOf<V>>((resolve, reject) => {
       const id = nextId++;
       const ws = new WebSocket(WS_ORIGIN + "/ws/command");
       ws.binaryType = "arraybuffer";
@@ -163,7 +187,12 @@ export function createDaemon(window: any, document: any, location: any) {
   // their own on this origin (§2). A refusal reason is reported through
   // `onRefused` rather than thrown, because every caller wants to keep going.
   // `checkout` names the worktree the bytes come from (#406), or nothing.
-  function readImage(repo: any, path: any, onRefused: any, checkout: any) {
+  function readImage(
+    repo: string,
+    path: string,
+    onRefused: ((reason: string) => void) | undefined,
+    checkout: string | null | undefined,
+  ) {
     return observe("file.image", withCheckout({ repo, path }, checkout)).then((reply) => {
       if (WBFail.isError(reply) || !reply.base64 || !reply.mediaType) {
         onRefused?.(WBFail.message(reply, "refused"));
@@ -177,7 +206,7 @@ export function createDaemon(window: any, document: any, location: any) {
   // `file.delete`, #197/#362) and resolve with the single reply payload. Same one-socket-one-reply
   // shape as `observe` — the daemon answers ONE frame on the id and returns (no
   // spawn/stream); a confinement refusal comes back as `{status:"error",reason}`.
-  function write(verb: any, payload: any) {
+  function write<V extends string>(verb: V, payload: CommandPayload) {
     return observe(verb, payload);
   }
 
@@ -188,12 +217,12 @@ export function createDaemon(window: any, document: any, location: any) {
   // `onOpen(ws, reopened)` runs on every open; `reopened` is false on the FIRST
   // open only and stays true across a resume, so a caller's catch-up read rides
   // the reconnect with no second code path.
-  function persistentSocket(path: any, { onOpen, onMessage }: any) {
+  function persistentSocket(path: string, { onOpen, onMessage }: SocketHandlers) {
     let closed = false;
-    let ws: any = null;
+    let ws: WebSocket | null = null;
     let opened = false;
     let live = false;
-    let timer: any = null;
+    let timer: number | null = null;
     let lastResumeAt = 0;
     let connectingSince = 0;
     const connect = () => {
@@ -220,12 +249,13 @@ export function createDaemon(window: any, document: any, location: any) {
     return {
       // Send on the current socket if it is open; `false` means the frame was
       // not sent, and the caller's `onOpen` is what re-sends its state.
-      sendIfOpen: (frame: any) => {
+      sendIfOpen: (frame: Uint8Array) => {
         if (!live) return false;
-        ws.send(frame);
+        // `live` is set only on the open socket, so `ws` is that socket.
+        ws!.send(frame);
         return true;
       },
-      resume: (stale: any) => {
+      resume: (stale: boolean) => {
         if (closed) return false;
         const now = Date.now();
         if (now - lastResumeAt < RESUME_DEBOUNCE_MS) return false;
@@ -251,7 +281,7 @@ export function createDaemon(window: any, document: any, location: any) {
   }
 
   // Decode a `[0x02][JSON]` command frame, or `null` for anything else.
-  function commandFrame(ev: any) {
+  function commandFrame(ev: MessageEvent): PushFrame | null {
     const a = new Uint8Array(ev.data);
     if (a[0] !== TAG_COMMAND) return null;
     try {
@@ -279,9 +309,15 @@ export function createDaemon(window: any, document: any, location: any) {
   // the socket was down was never pushed (#484).
   // A `tree.failed` push says the daemon could not watch a dir of this tree:
   // `onFailed(reason)`. A reopen holds every dir again: `onFailed(null)`.
-  function subscribeTree(repo: any, onDirty: any, checkout: any, onHead: any, onFailed: any) {
-    const held = new Set();
-    const frame = (verb: any, path: any) =>
+  function subscribeTree(
+    repo: string,
+    onDirty: (path: string) => void,
+    checkout: string | null | undefined,
+    onHead: (() => void) | undefined,
+    onFailed: ((reason: string | null) => void) | undefined,
+  ) {
+    const held = new Set<string>();
+    const frame = (verb: string, path: string) =>
       encodeCommand({ id: 0, verb, payload: withCheckout({ repo, path: path || "" }, checkout) });
     // Re-reads each held dir and the branch: a reopen does it, and so does a
     // tab that becomes visible or logs in (ADR-0070 D2 events 3, 4).
@@ -290,7 +326,7 @@ export function createDaemon(window: any, document: any, location: any) {
       onHead?.();
     };
     const sub = persistentSocket("/ws/tree", {
-      onOpen: (ws: any, reopened: any) => {
+      onOpen: (ws: WebSocket, reopened: boolean) => {
         if (onHead) ws.send(frame("head.watch", ""));
         for (const path of held) ws.send(frame("watch", path));
         if (reopened) {
@@ -299,7 +335,7 @@ export function createDaemon(window: any, document: any, location: any) {
           replay();
         }
       },
-      onMessage: (ev: any) => {
+      onMessage: (ev: MessageEvent) => {
         const f = commandFrame(ev);
         if (!f || !["tree.dirty", "head.dirty", "tree.failed"].includes(f.verb)) return;
         const p = f.payload || {};
@@ -310,7 +346,7 @@ export function createDaemon(window: any, document: any, location: any) {
       },
     });
     return {
-      watch: (path: any) => {
+      watch: (path: string) => {
         const rel = path || "";
         if (held.has(rel)) return;
         held.add(rel);
@@ -318,7 +354,7 @@ export function createDaemon(window: any, document: any, location: any) {
       },
       // While disconnected the set is all there is to change: the next socket
       // never learns the dir.
-      unwatch: (path: any) => {
+      unwatch: (path: string) => {
         const rel = path || "";
         if (!held.delete(rel)) return;
         sub.sendIfOpen(frame("unwatch", rel));
@@ -340,13 +376,13 @@ export function createDaemon(window: any, document: any, location: any) {
   // a CLI, so the duplicate was the dominant cost of opening a project. Catching
   // up is for what arrived while we were DISCONNECTED, which the first connection
   // has no window for.
-  function subscribeRuns(repo: any, onDirty: any) {
+  function subscribeRuns(repo: string, onDirty: () => void) {
     const sub = persistentSocket("/ws/tree", {
-      onOpen: (ws: any, reopened: any) => {
+      onOpen: (ws: WebSocket, reopened: boolean) => {
         ws.send(encodeCommand({ id: 0, verb: "runs.watch", payload: { repo, path: "" } }));
         if (reopened) onDirty();
       },
-      onMessage: (ev: any) => {
+      onMessage: (ev: MessageEvent) => {
         if (commandFrame(ev)?.verb === "runs.dirty") onDirty();
       },
     });
@@ -363,12 +399,12 @@ export function createDaemon(window: any, document: any, location: any) {
   // `sync.status` itself, and each of those spawns the `ralphy` CLI, which spawns
   // `git` — so the synthetic frame doubled the two most expensive reads of
   // opening a project.
-  function subscribeChanges(repo: any, onFrame: any) {
+  function subscribeChanges(repo: string, onFrame: (frame: PushFrame) => void) {
     const sub = persistentSocket("/ws/tree", {
-      onOpen: (_ws: any, reopened: any) => {
+      onOpen: (_ws: WebSocket, reopened: boolean) => {
         if (reopened) onFrame({ verb: "changes.dirty", payload: { repo } });
       },
-      onMessage: (ev: any) => {
+      onMessage: (ev: MessageEvent) => {
         const frame = commandFrame(ev);
         if (frame) onFrame(frame);
       },
@@ -386,10 +422,10 @@ export function createDaemon(window: any, document: any, location: any) {
   // (`sessions.dirty`, `desk.dirty`, `repos.dirty`, `peers.dirty`; ADR-0070
   // D2): each `[0x02]` frame goes to `onPush(verb, payload)`, and every open to
   // `onOpen(reopened)`, so a reopen reads again what a lost push would have said.
-  function subscribePresence(onPresence: any, { onPush, onOpen }: any = {}) {
+  function subscribePresence(onPresence: (presence: Presence) => void, { onPush, onOpen }: PresenceHandlers = {}) {
     const sub = persistentSocket("/ws", {
-      onOpen: (_ws: any, reopened: any) => onOpen?.(reopened),
-      onMessage: (ev: any) => {
+      onOpen: (_ws: WebSocket, reopened: boolean) => onOpen?.(reopened),
+      onMessage: (ev: MessageEvent) => {
         const a = new Uint8Array(ev.data);
         if (a[0] === TAG_COMMAND) {
           const f = commandFrame(ev);
@@ -408,8 +444,9 @@ export function createDaemon(window: any, document: any, location: any) {
   // Turn a daemon-bound `workbench:action` into a Spawn call. `project`→`repo`
   // (the handler reads `payload.repo`); run params ride the payload as closed-enum
   // values the daemon validates.
-  document.addEventListener("workbench:action", (e: any) => {
-    const d = e.detail || {};
+  document.addEventListener("workbench:action", (e: Event) => {
+    // A `workbench:action` always carries its `action`; a bare event names none.
+    const d = (e as CustomEvent<ActionDetail | null>).detail || ({} as ActionDetail);
     const verb = ACTION_TO_VERB[d.action] || (d.action === "command" ? d.verb : null);
     if (!verb) return;
     const payload =
@@ -434,7 +471,7 @@ export function createDaemon(window: any, document: any, location: any) {
     const PENDING_CAP = 4096;
     let lastLine = "";
     let pending = "";
-    const feedLines = (text: any) => {
+    const feedLines = (text: string) => {
       pending += text;
       const parts = pending.split(/\r\n|\n|\r/);
       pending = parts.pop() as string;
@@ -446,7 +483,7 @@ export function createDaemon(window: any, document: any, location: any) {
       pending = "";
       return lastLine;
     };
-    spawn(verb, payload, (s: any) => {
+    spawn(verb, payload, (s: SpawnStatus) => {
       if (s.status === "output") {
         const chunk = s.chunk || "";
         window.WBRuns?.output?.(chunk);

@@ -13,20 +13,21 @@
    --------------------------------------------------------------------------- */
 import { WBFleet } from "./wb-fleet.ts";
 import { WBProject } from "./wb-project.ts";
+import type { Project } from "./wb-project.ts";
 
 export function projectsStore() {
   return {
     // The ref of the open project (`repoRef`), or null.
     openSlug: null as any,
     // `loadRepos()` fills this at init.
-    projects: [] as any[],
-    setOpen(slug: any) {
+    projects: [] as Project[],
+    setOpen(slug: string | null) {
       this.openSlug = slug;
     },
-    setProjects(list: any[]) {
+    setProjects(list: Project[]) {
       this.projects = list;
     },
-    repoRef(p: any) {
+    repoRef(p: Project) {
       return WBFleet.repoRef(p);
     },
     // The open project's row, for the panels scoped to `openSlug` that reuse a
@@ -41,7 +42,7 @@ export function projectsStore() {
     // The branch chip lives on the Files bar (#332), which only the OPEN
     // project renders. `.project-slug` carries the ADR-0008 D7 identity in
     // `data-slug`, which is how the browser tests find a row.
-    rowOpen(p: any) {
+    rowOpen(p: Project) {
       return this.openSlug === this.repoRef(p);
     },
     // What every surface OUTSIDE the sidebar prints for a repo ref. A peer ref
@@ -49,7 +50,7 @@ export function projectsStore() {
     // (ADR-0052 §5), so the environment is printed in its place. The ref itself
     // is untouched on the wire, the desk and the tab ids. Row lookup by
     // `repoRef`, not slug: the same `owner/repo` on two daemons is two rows.
-    projectLabel(ref: any) {
+    projectLabel(ref: string | null | undefined) {
       if (!ref) return "";
       const row = this.projects.find((p) => this.repoRef(p) === ref);
       if (!row) return WBFleet.refLabel(ref);
@@ -59,7 +60,7 @@ export function projectsStore() {
     // The tooltip twin of `projectLabel`: `owner/repo`, or the full folder of
     // a remoteless repo, plus the environment of a peer. Never a hash key or
     // a daemon id.
-    projectTitle(ref: any) {
+    projectTitle(ref: string | null | undefined) {
       if (!ref) return "";
       const row = this.projects.find((p) => this.repoRef(p) === ref);
       if (!row) return WBFleet.refLabel(ref);

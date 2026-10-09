@@ -22,11 +22,81 @@
    Glyphs are the union of the Telegram sink + terminal presenter tables.
 --------------------------------------------------------------------------- */
 
-/** A run of the panel, mapped from its snapshot (`fromSnapshot`). Not typed
- * field by field yet (ADR-0075, the last phase narrows it). */
-type Run = any;
+/** One `runs.list` document: a run's snapshot (crates/ralphy-run-snapshot
+ * `RunSnapshot`). The daemon sends it as the run wrote it. */
+export type RunSnapshot = {
+  v: number;
+  runid: string;
+  pid?: number;
+  title?: string;
+  repo?: string;
+  branch?: string;
+  plan_agent?: string;
+  exec_agent?: string;
+  started_at?: string;
+  plan_path?: string;
+  queue?: { total?: number; order?: number[]; stop_before?: number | null };
+  issues?: {
+    number: number;
+    title?: string;
+    status: string;
+    kind?: string | null;
+    blocked_by?: number[];
+    model?: string | null;
+    effort?: string | null;
+    budget_min?: number | null;
+  }[];
+  phase?: {
+    active?: number | null;
+    state?: string;
+    since?: string | null;
+    sleep?: RunSleep | null;
+    final_summary?: string | null;
+  };
+  plan?: { issue?: number | null; steps?: { text?: string; status?: string }[] };
+};
+
+/** A usage-limit wait: `target_epoch` is the wake time in Unix seconds. */
+export type RunSleep = { reset?: string | null; target_epoch?: number };
+
+/** A run of the panel, mapped from its snapshot (`fromSnapshot`). */
+export type Run = {
+  runid: string;
+  face: string;
+  agent: string;
+  branch: string;
+  base: string;
+  phase: string;
+  active: number | null;
+  since: string;
+  startedAt: string;
+  completed: number;
+  queueTotal: number;
+  sleep: RunSleep | null;
+  planPath: string;
+  planMd: string;
+  steps: PlanStep[];
+  planIssue: number | null;
+  planReadFailed: boolean;
+  issues: Issue[];
+};
+
 /** One issue of a run's queue. */
-type Issue = any;
+export type Issue = {
+  number: number;
+  title: string;
+  status: string;
+  blockedBy: number[];
+  model: string | null;
+  effort: string | null;
+  budgetMin: number | null;
+};
+
+/** One `- [ ]`/`- [x]` step of a plan. */
+export type PlanStep = { text: string; status: string };
+
+/** The two verdicts of `planSummary` the plan pill reads. */
+type PlanVerdict = { infeasible: boolean; needsSplit: boolean };
 
 export const WBRun = {
   // per-status glyph, matching notifier.rs status_emoji + render.rs scroll glyphs.
@@ -208,7 +278,8 @@ export const WBRun = {
     // a few seconds of skew must read as 0:00, never as a negative clock.
     const elapsed = this.fmtClock(Math.max(0, (nowMs || 0) - since));
     const budget = run.phase === "executing" ? this.activeIssue(run)?.budgetMin : null;
-    return budget > 0 ? `${elapsed} / ${this.fmtClock(budget * 60 * 1000)}` : elapsed;
+    // `null > 0` is false: a run with no budget shows the clock alone.
+    return budget! > 0 ? `${elapsed} / ${this.fmtClock(budget! * 60 * 1000)}` : elapsed;
   },
 
   // --- plan.md section slicing ------------------------------------------
@@ -329,7 +400,7 @@ export const WBRun = {
   // The pill's words. `open` is whether the ISSUE is still open: a plan left over
   // from a closed issue is not "ready", it is residue, and saying so is the
   // difference between an invitation and a warning.
-  planPillLabel(summary: any, open: boolean = true) {
+  planPillLabel(summary: PlanVerdict | null | undefined, open: boolean = true) {
     if (!summary) return "";
     if (!open) return "leftover plan";
     if (summary.needsSplit) return "needs split";
@@ -338,13 +409,13 @@ export const WBRun = {
   },
   // Whether the pill is a warning rather than an invitation — the one thing the
   // operator must not have to open a modal to notice.
-  planPillWarns(summary: any, open: boolean = true) {
+  planPillWarns(summary: PlanVerdict | null | undefined, open: boolean = true) {
     return !!summary && (!open || summary.infeasible);
   },
 
   // A human sleep line from the wake anchor: "waiting for reset ~20:15 · resumes
   // in ~2h 3m" (mirrors notifier.rs sleep formatting).
-  sleepText(sleep: any) {
+  sleepText(sleep: RunSleep | null | undefined) {
     if (!sleep) return "waiting for reset";
     const rem = Math.max(0, (sleep.target_epoch || 0) - Math.floor(Date.now() / 1000));
     const h = Math.floor(rem / 3600);
@@ -374,8 +445,8 @@ export const WBRun = {
   // One `runs.list` document → the panel's run shape. `planMd` starts empty:
   // the document carries the plan's PATH, and the panel reads it through the
   // confined `file.read` verb (ADR-0047 §5).
-  fromSnapshot(doc: any) {
-    const issues = (doc.issues || []).map((i: any) => ({
+  fromSnapshot(doc: RunSnapshot): Run {
+    const issues = (doc.issues || []).map((i) => ({
       number: i.number,
       title: i.title || "",
       status: i.status,
@@ -409,7 +480,7 @@ export const WBRun = {
       planMd: "",
       // Steps come from the DOCUMENT, not from a plan.md read: they survive a
       // deleted/unreadable plan and are already accumulated when the panel opens.
-      steps: (doc.plan?.steps || []).map((s: any) => ({ text: s.text || "", status: s.status || "open" })),
+      steps: (doc.plan?.steps || []).map((s) => ({ text: s.text || "", status: s.status || "open" })),
       planIssue: doc.plan?.issue ?? null,
       planReadFailed: false,
       issues,

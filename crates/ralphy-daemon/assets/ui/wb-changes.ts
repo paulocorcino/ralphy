@@ -2,16 +2,41 @@
 // reply (`reply.changes.changes` — the CLI's `{changes:[…]}` nested under the
 // verb's reply field). Pure: no DOM, no fetch — unit-tested in
 // ui-tests/wb-changes.test.mjs.
+import type { Run } from "./wb-runs.ts";
 
 // Closed marker vocabulary for the producer's six-value status enum
 // (`ralphy-core/src/changes.rs` `ChangeStatus`, `#[serde(rename_all =
 // "snake_case")]`) — anything outside it renders as `?`/`st-unknown` so a
 // future seventh variant stays legible instead of blank.
-/** One path of `changes.list`, as `fold` shapes it. Not typed field by field
- * yet (ADR-0075, the last phase narrows it). */
-type ChangeEntry = any;
+/** One path of a `changes.list` reply, as the CLI prints it. */
+export type ChangeRow = {
+  path: string;
+  original_path?: string | null;
+  status?: string;
+  index_status?: string | null;
+  worktree_status?: string | null;
+};
+/** One path of `changes.list`, as `fold` shapes it. */
+export type ChangeEntry = {
+  path: string;
+  originalPath: string | null;
+  status: string;
+  mark: string;
+  cls: string;
+  title: string;
+  indexStatus: string | null;
+  worktreeStatus: string | null;
+  name: string;
+  dir: string;
+};
+/** The `sync` of a `sync.status` reply, as the CLI prints it. */
+export type SyncBody = {
+  head: { kind: string; name?: string; sha?: string } | null;
+  last_fetch?: string | null;
+  tracking?: { upstream?: string; ahead?: number; behind?: number } | null;
+};
 /** The `sync.status` fold (`foldSync`). */
-type Sync = any;
+export type Sync = ReturnType<typeof foldSync>;
 
 const MARKS: Record<string, string> = {
   modified: "M",
@@ -37,7 +62,7 @@ function splitPath(path: string) {
     : { name: path.slice(cut + 1), dir: path.slice(0, cut) };
 }
 
-function fold(reply: any) {
+function fold(reply: ReplyOf<"changes.list"> | null | undefined) {
   // A non-ok reply can still carry a `changes` body (an error frame the daemon
   // built over a partial read); folding it would report a count nobody proved.
   const empty = { count: 0, entries: [], staged: [], unstaged: [] };
@@ -88,7 +113,7 @@ function fold(reply: any) {
 // `changes.dirty` to EVERY `/ws/tree` connection with no subscription verb, so
 // the repo match happens HERE — a nudge for a repo this browser does not have
 // open must change nothing on screen.
-function shouldReload(frame: any, openSlug: string | null | undefined) {
+function shouldReload(frame: PushFrame | null | undefined, openSlug: string | null | undefined) {
   return !!(
     frame &&
     frame.verb === "changes.dirty" &&
@@ -127,7 +152,7 @@ function diffTarget(entry: ChangeEntry, project: string, checkout: string | null
 // absent upstream rendered as `↑0 ↓0` would assert the branch is in sync with
 // something it does not track. `now` is injected so the staleness label is
 // testable; it defaults to the wall clock.
-function foldSync(reply: any, now?: number) {
+function foldSync(reply: ReplyOf<"sync.status"> | null | undefined, now?: number) {
   const unknown = {
     state: "unknown",
     branch: "",
@@ -180,7 +205,7 @@ function foldSync(reply: any, now?: number) {
 // for an unknown read: a failed read says nothing about HEAD, so the row
 // keeps what it holds. A switch made outside the workbench reaches the
 // row's chip this way, because `/api/repos` is read only on load.
-function headBranch(sync: Sync) {
+function headBranch(sync: Sync | null | undefined) {
   if (!sync || sync.state === "unknown") return null;
   if (sync.state === "detached") return "";
   return sync.branch || null;
@@ -188,7 +213,7 @@ function headBranch(sync: Sync) {
 
 // The project row's `head` as a folded sync read reports it, in the shape of
 // `/api/repos`. `null` for an unknown read, as in `headBranch`.
-function headOf(sync: Sync) {
+function headOf(sync: Sync | null | undefined) {
   if (!sync || sync.state === "unknown") return null;
   if (sync.state === "detached") return { kind: "detached", sha: sync.branch || "" };
   return { kind: "branch", name: sync.branch || "" };
@@ -256,7 +281,7 @@ function groupPaths(entries: ChangeEntry[], withOriginal: boolean) {
 // `sync.push` sets one (`--set-upstream` in the core), so the button names
 // that act: a plain "Push" beside the "No upstream" note reads as a
 // contradiction.
-function pushAct(sync: Sync) {
+function pushAct(sync: Sync | null | undefined) {
   if (sync && sync.state === "no-upstream") {
     return {
       label: "Publish branch",
@@ -268,7 +293,7 @@ function pushAct(sync: Sync) {
 
 // Why Pull cannot run, or "" when it can. A branch with no upstream has
 // nothing to pull from, and the core refuses that pull anyway.
-function pullBlocked(sync: Sync) {
+function pullBlocked(sync: Sync | null | undefined) {
   if (sync && sync.state === "no-upstream") {
     return "This branch has no upstream. Publish it first.";
   }
@@ -279,7 +304,7 @@ function pullBlocked(sync: Sync) {
 // the operator is composing a commit in a sidebar, with no prompt to read it
 // off. A detached HEAD says so instead of naming a sha as if it were a branch,
 // and an unknown sync fold says the least it can rather than guessing.
-function commitTarget(sync: Sync) {
+function commitTarget(sync: Sync | null | undefined) {
   if (!sync || typeof sync !== "object" || !sync.state || sync.state === "unknown") {
     return { label: "Commit", branch: "", detached: false };
   }
@@ -303,7 +328,7 @@ function commitTarget(sync: Sync) {
 // the board's label editor is refused by the same guard (`mutate.rs`'s
 // `guard_run_lock(&ws, "label set", …)`) and needs the same sentence with a
 // different subject. One predicate, two subjects — never two predicates.
-function writeLockReason(runs: any[] | null | undefined, tail = "These controls work again when it finishes.") {
+function writeLockReason(runs: Run[] | null | undefined, tail = "These controls work again when it finishes.") {
   if (!Array.isArray(runs) || runs.length === 0) return "";
   return `A run is active in this project. ${tail}`;
 }

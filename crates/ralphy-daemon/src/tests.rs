@@ -4777,7 +4777,7 @@ fn the_workbench_never_titles_a_repo_with_its_routing_head() {
     }
     let store = include_str!("../assets/ui/wb-projects-store.ts");
     assert!(
-        store.contains("projectLabel(ref: any) {"),
+        store.contains("projectLabel(ref: string | null | undefined) {"),
         "wb-projects-store.ts must keep the label helper the markup binds to"
     );
     // The crumb is the surface that STARTED this, and it no longer exists:

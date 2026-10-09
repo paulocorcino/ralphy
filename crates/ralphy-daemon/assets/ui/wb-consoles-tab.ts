@@ -28,7 +28,7 @@ export function wbConsoleMenus() {
     // The Go-to picker (#337) and the fence picker (#343): SNAPSHOTS taken
     // when the menu opens, because the windows and fences live in the DOM.
     windowMenu: false,
-    windowList: [],
+    windowList: [] as ReturnType<typeof WBConsole.list>,
     fenceMenu: false,
     fenceItems: [] as ReturnType<typeof WBConsole.fenceList>,
     // The note picker (ADR-0064 §§9–10): a SNAPSHOT on open, like the two

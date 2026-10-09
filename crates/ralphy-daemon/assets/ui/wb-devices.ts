@@ -15,9 +15,42 @@
 import { component } from "./wb-alpine.ts";
 
 /** A device of `GET /api/audit/devices`. */
-type Device = any;
-/** A line of `GET /api/audit/events`. */
-type AuditEvent = any;
+type Device = {
+  device: string;
+  this?: boolean;
+  os?: string;
+  os_version?: string;
+  browser?: string;
+  browser_version?: string;
+  form?: string;
+  model?: string;
+  gpu?: string;
+  ip?: string;
+  first_seen?: string;
+  last_seen: string;
+  events: number;
+};
+/** A line of `GET /api/audit/events` (the daemon's audit `Event`). */
+type AuditEvent = {
+  at: string;
+  event: string;
+  device?: string;
+  actor?: string;
+  reason?: string;
+  method?: string;
+  path?: string;
+  status?: number;
+  verb?: string;
+  repo?: string;
+  /** The project name the registry gives `repo`. */
+  repo_name?: string;
+  ip?: string;
+  server?: { real_ip?: string };
+  agent?: string;
+  changed?: string[];
+};
+/** An `action` line: an HTTP request that changed something. */
+type ActionEvent = AuditEvent & { method: string; path: string; status: number };
 
 const OS_NAMES: Record<string, string> = {
   windows: "Windows",
@@ -65,7 +98,7 @@ const ACTION_NAMES: Record<string, string> = {
   "POST /api/security/totp/revoke": "Removed the authenticator app",
 };
 
-function actionLine(e: AuditEvent) {
+function actionLine(e: ActionEvent) {
   const name = ACTION_NAMES[`${e.method} ${e.path}`];
   if (!name) return `${e.method} ${e.path} (${e.status})`;
   return e.status >= 200 && e.status < 300 ? name : `${name} (refused: ${e.status})`;
@@ -84,7 +117,7 @@ export function deviceName(d: Device) {
   return parts.length ? parts.join(" · ") : "A device that sent no facts yet";
 }
 
-export function rows(reply: { devices?: Device[] }, when: (at: any) => string) {
+export function rows(reply: { devices?: Device[] }, when: (at: string) => string) {
   return (reply.devices || []).map((d) => ({
     device: d.device,
     this: d.this === true,
@@ -112,7 +145,7 @@ export function eventLine(e: AuditEvent) {
     case "device_profile_changed":
       return `Its device facts changed: ${(e.changed || []).map((c: string) => CHANGED_NAMES[c] || c).join(", ")}`;
     case "action":
-      return actionLine(e);
+      return actionLine(e as ActionEvent);
     case "command":
       return repo ? `Command ${e.verb} in ${repo}` : `Command ${e.verb}`;
     case "console_launch": {
@@ -129,7 +162,7 @@ export function eventLine(e: AuditEvent) {
 // Newest first. Lines in a row that say the same thing from the same
 // address are one row with a count, at the time of the newest; the log
 // file keeps each line.
-export function eventRows(reply: { events?: AuditEvent[] }, when: (at: any) => string) {
+export function eventRows(reply: { events?: AuditEvent[] }, when: (at: string) => string) {
   const out: { when: string; text: string; ip: string; line: string; count: number }[] = [];
   for (const e of reply.events || []) {
     const text = eventLine(e);
@@ -176,10 +209,10 @@ export function devices() {
       try {
         this.devices = rows(await readJson("/api/audit/devices"), when);
         this.loaded = true;
-      } catch (e: any) {
+      } catch (e) {
         this.loaded = false;
         this.devices = [];
-        this.error = `Could not read the devices: ${e.message}.`;
+        this.error = `Could not read the devices: ${(e as Error).message}.`;
       }
     },
     async toggle(d: { device: string }) {
@@ -195,8 +228,8 @@ export function devices() {
         const reply = await readJson(`/api/audit/events?device=${encodeURIComponent(d.device)}&limit=50`);
         this.events = eventRows(reply, when);
         this.raw = JSON.stringify(reply.events, null, 2);
-      } catch (e: any) {
-        this.eventsError = `Could not read the activity of this device: ${e.message}.`;
+      } catch (e) {
+        this.eventsError = `Could not read the activity of this device: ${(e as Error).message}.`;
       }
     },
   });

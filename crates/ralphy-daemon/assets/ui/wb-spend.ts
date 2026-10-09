@@ -9,18 +9,120 @@
 // per client. What lives here is which STATE the pane is in and the explanatory
 // COPY for each unpriced cause: decisions and words, never arithmetic.
 
+// The documents this module folds, as the daemon sends them (spend.rs and its
+// modules). Every field is optional: a daemon of an older build sends fewer,
+// and each read here has its default.
+/** The `/api/spend` summary document (`SpendSummary`). */
+type SpendDoc = {
+  project?: string;
+  usd?: number | null;
+  floor?: boolean;
+  total?: string;
+  tokens?: Tokens;
+  unpriced?: Unpriced;
+  period?: { key?: string; label?: string; since?: string | null };
+  deliveries?: Delivery[];
+  deliveries_truncated?: number;
+  overhead?: Overhead;
+  kpis?: Kpis;
+  models?: ModelRow[];
+  activity?: ActivityDay[];
+};
+/** The summary's token meter (`TokenMeter`). */
+type Tokens = {
+  total?: number;
+  label?: string;
+  meter?: string;
+  parts?: { key: string; glyph?: string; name?: string; tokens: number; label?: string; share?: number; share_label?: string }[];
+};
+/** The `unpriced` part of the summary (`Unpriced`). */
+type Unpriced = {
+  tokens?: number;
+  label?: string;
+  share?: number;
+  share_label?: string;
+  priced?: number;
+  priced_label?: string;
+  priced_share?: number;
+  priced_share_label?: string;
+  causes?: { key: string; tokens?: number; label?: string; share?: number; share_label?: string }[];
+  unmetered_sessions?: number;
+};
+/** One delivery row (`DeliveryRow`). */
+type Delivery = {
+  issue: number;
+  total?: string;
+  floor?: boolean;
+  attempts?: number;
+  tokens_label?: string;
+  share?: number;
+  share_label?: string;
+};
+/** What the summary spent outside the deliveries (`Overhead`). */
+type Overhead = {
+  deliveries_total?: string;
+  deliveries_floor?: boolean;
+  interactive_total?: string;
+  interactive_floor?: boolean;
+  interactive_sessions?: number;
+  consolidation_total?: string;
+  consolidation_floor?: boolean;
+};
+/** The headline figures (`Kpis`). */
+type Kpis = {
+  deliveries?: number;
+  cost_per_delivery_median_label?: string;
+  cost_per_delivery_mean_label?: string;
+  cost_per_delivery_floor?: boolean;
+  retry_burn_label?: string;
+  retry_burn_floor?: boolean;
+  cache_hit_label?: string;
+};
+/** One model row (`ModelRow`). */
+type ModelRow = {
+  model: string;
+  total?: string;
+  floor?: boolean;
+  share?: number;
+  share_label?: string;
+  tokens_label?: string;
+  priced?: boolean;
+};
+/** One day of the activity band (`ActivityDay`). */
+type ActivityDay = {
+  date: string;
+  usd: number;
+  usd_label?: string;
+  usd_share?: number;
+  deliveries: number;
+  deliveries_share?: number;
+};
+/** One run record of the `/api/usage` ledger, or one interactive record. */
+type SpendRecord = {
+  daemon_id?: string;
+  issue?: number;
+  phase?: string;
+  agent?: string;
+  model?: string;
+  outcome?: string;
+  actor_name?: string;
+  actor_email?: string;
+  ralphy_version?: string;
+  ts?: string;
+  first_ts?: string;
+  last_ts?: string;
+  /** The four counts, or `null` when the vendor keeps no count. */
+  tokens?: { [part: string]: number | null | undefined } | null;
+  lower_bound?: boolean;
+  unpriced_cause?: string;
+};
+/** A peer whose usage did not arrive (`/api/usage` `missing`). */
+type MissingUsage = { daemon_id: string; environment?: string; why?: string };
+/** An issue of the board, for a delivery's title. */
+type TitledIssue = { number: number; title?: string };
+
 // The four states the pane can be in, named so the markup branches on a word
 // instead of on a combination of falsy fields.
-// The documents this module folds, as the daemon sends them. They are not
-// typed field by field yet (ADR-0075, the last phase narrows them):
-/** The `/api/spend` summary document (spend.rs). */
-type SpendDoc = any;
-/** One run record of the ledger, or one interactive record. */
-type SpendRecord = any;
-/** A `{ parts, … }` token meter, or `null` when the vendor keeps no count. */
-type Tokens = any;
-/** The `unpriced` part of the summary: `{ causes, tokens, … }`. */
-type Unpriced = any;
 
 const EMPTY = "empty"; // no project open — the operator is told to open one
 const LOADING = "loading";
@@ -71,7 +173,7 @@ function localTime(ts: string | null | undefined): string {
 // quieter than it is.
 function causes(unpriced: Unpriced) {
   const rows = (unpriced && unpriced.causes) || [];
-  return rows.map((c: any) => ({
+  return rows.map((c) => ({
     key: c.key,
     title: CAUSE_COPY[c.key]?.title || c.key,
     hint: CAUSE_COPY[c.key]?.hint || "",
@@ -103,8 +205,8 @@ const PART_NAME: Record<string, string> = {
 
 function meterRows(tokens: Tokens) {
   const parts = (tokens && tokens.parts) || [];
-  const peak = parts.reduce((m: number, p: any) => Math.max(m, p.tokens || 0), 0);
-  return parts.map((p: any) => ({
+  const peak = parts.reduce((m: number, p) => Math.max(m, p.tokens || 0), 0);
+  return parts.map((p) => ({
     key: p.key,
     glyph: p.glyph,
     name: PART_NAME[p.key] || p.name,
@@ -170,13 +272,13 @@ function tiles(doc: SpendDoc) {
 // title is an ADORNMENT, so a cold board renders `#251` with no title and
 // NOTHING here reaches for one: the board fold spawns a CLI that makes tracker
 // calls, and a cost page must never pay it.
-function deliveryRows(doc: SpendDoc, issues: any) {
+function deliveryRows(doc: SpendDoc, issues: TitledIssue[] | null | undefined) {
   const titles = new Map();
   for (const i of issues || []) {
     if (i && i.number != null) titles.set(i.number, i.title || "");
   }
-  const peak = (doc.deliveries || []).reduce((m: number, d: any) => Math.max(m, d.share || 0), 0);
-  return (doc.deliveries || []).map((d: any) => ({
+  const peak = (doc.deliveries || []).reduce((m: number, d) => Math.max(m, d.share || 0), 0);
+  return (doc.deliveries || []).map((d) => ({
     issue: d.issue,
     label: "#" + d.issue,
     title: titles.get(d.issue) || "",
@@ -195,8 +297,8 @@ function deliveryRows(doc: SpendDoc, issues: any) {
 // cheap engine — the daemon already says which by carrying `priced`.
 function modelRows(doc: SpendDoc) {
   const rows = doc.models || [];
-  const peak = rows.reduce((m: number, r: any) => Math.max(m, r.share || 0), 0);
-  return rows.map((r: any) => ({
+  const peak = rows.reduce((m: number, r) => Math.max(m, r.share || 0), 0);
+  return rows.map((r) => ({
     key: r.model,
     model: r.model,
     value: r.total,
@@ -246,7 +348,7 @@ function band(doc: SpendDoc) {
   const days = doc.activity || [];
   return {
     show: days.length > 0,
-    days: days.map((d: any) => ({
+    days: days.map((d) => ({
       key: d.date,
       date: d.date,
       // `2026-07-30` → `07-30`: the year is the same on every column of a
@@ -285,7 +387,14 @@ function state({
   doc,
   issues,
   period,
-}: { project?: string | null; loading?: boolean; error?: string; doc?: SpendDoc; issues?: any; period?: string } = {}) {
+}: {
+  project?: string | null;
+  loading?: boolean;
+  error?: string;
+  doc?: SpendDoc | null;
+  issues?: TitledIssue[] | null;
+  period?: string;
+} = {}) {
   const periods = { list: PERIODS, key: period || "all" };
   if (!project) {
     return {
@@ -428,7 +537,7 @@ function boundNote(lowerBound: unknown): string {
 // One row's four counts as strings. `tokens: null` is the scan's way of saying
 // the vendor keeps no count anywhere (ADR-0042 D11), which must never render as
 // `0` — that would claim a measurement nobody made.
-function counts(tokens: Tokens, lowerBound: unknown) {
+function counts(tokens: SpendRecord["tokens"], lowerBound: unknown) {
   if (!tokens) return { input: NONE, cache_read: NONE, cache_creation: NONE, output: NONE };
   const at = (key: string) =>
     boundMark(
@@ -521,7 +630,7 @@ function ledger({
   error?: string;
   records?: SpendRecord[];
   interactive?: SpendRecord[];
-  missing?: any;
+  missing?: MissingUsage[];
   unpricedOnly?: boolean;
   daemonId?: string | null;
 } = {}) {
