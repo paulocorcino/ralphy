@@ -229,6 +229,15 @@ already denies a `std::sync` lock guard held across an `.await`.
   `catch {}` is only for a failure that nothing reads, such as closing a
   socket that is already gone, and a comment on it says so. The lint allows
   every empty `catch`, so this rule is not checked.
+- **No new explicit `any`.** `explicit_any_matches_the_baseline` in
+  `crates/xtask/tests/ratchets.rs` holds the `any` count of each module in
+  `ANY_BASELINE`, and a new module starts at zero. When it fails, give the
+  value its real type; when your change removed some, lower the count in
+  `ANY_BASELINE` (a module at zero leaves it and the `.oxlintrc.json`
+  override). `unknown` is only for data from outside (a JSON reply,
+  `postMessage`, `localStorage`), narrowed right after. No `as unknown as`
+  and no `@ts-ignore`, `@ts-expect-error` or `@ts-nocheck`
+  (`no_escape_hatch_in_the_workbench`).
 
 ## Where things live
 
