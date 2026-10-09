@@ -54,6 +54,7 @@ EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt"
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "362-explorer-2026-07-30.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+FILES = "Alpine.$data(document.querySelector('[x-data=\"wbFiles\"]'))"
 
 results = []
 
@@ -193,7 +194,7 @@ def open_menu_on(page, rel):
     Alpine method keeps the menu's CONTENTS the subject — a mouse right-click over
     a virtual-scrolled row would be testing hit geometry instead."""
     return page.evaluate(
-        "(rel) => { const c = " + SH + ";"
+        "(rel) => { const c = " + FILES + ";"
         "  const n = c._tree.findFirst(x => c.relPath(x) === rel);"
         "  if (!n) return false; n.setActive(); c.showMenu(120, 120, n); return true; }",
         arg=rel,
@@ -290,8 +291,8 @@ def main():
             # --- the reveal primitive is ONE named function --------------------
             check(
                 "revealRel exists as a named function on the live component",
-                page.evaluate(f"() => typeof {SH}.revealRel") == "function",
-                "typeof={}".format(page.evaluate(f"() => typeof {SH}.revealRel")),
+                page.evaluate(f"() => typeof {FILES}.revealRel") == "function",
+                "typeof={}".format(page.evaluate(f"() => typeof {FILES}.revealRel")),
             )
             # BEHAVIOUR, not source text: stub `revealRel` and prove a reconcile
             # routes its re-activation through it. A source-substring pin would red
@@ -299,13 +300,16 @@ def main():
             # `_reconcileOnce` is a style rule, not this issue's criterion.
             routed = page.evaluate(
                 """
-                async () => { const c = Alpine.$data(document.querySelector('[x-data]'));
+                async () => { const c = Alpine.$data(document.querySelector('[x-data="wbFiles"]'));
                   const orig = c.revealRel.bind(c);
                   const seen = [];
                   c.revealRel = async (rel, opts) => { seen.push({ rel, opts: opts || {} }); return orig(rel, opts); };
                   try {
                     const n = c._tree.findFirst(x => c.relPath(x) === 'a.txt');
                     n.setActive();
+                    // A level that already shows the listing is left alone, so
+                    // one row goes first: the reconcile then rebuilds the level.
+                    c.rawTree().findFirst(x => c.relPath(x) === 'deep').remove();
                     await c.onTreeDirty('');
                     return seen;
                   } finally { c.revealRel = orig; }
@@ -320,7 +324,7 @@ def main():
 
             # --- scenario a: right-clicking a tab must not close it ------------
             page.evaluate(
-                "(rel) => { const c = " + SH + ";"
+                "(rel) => { const c = " + FILES + ";"
                 "  const n = c._tree.findFirst(x => c.relPath(x) === rel); c.openFile(n); }",
                 arg="a.txt",
             )
@@ -373,7 +377,7 @@ def main():
 
             # …and so does the × button, which this issue did not touch.
             page.evaluate(
-                "(rel) => { const c = " + SH + ";"
+                "(rel) => { const c = " + FILES + ";"
                 "  const n = c._tree.findFirst(x => c.relPath(x) === rel); c.openFile(n); }",
                 arg="a.txt",
             )
@@ -455,13 +459,13 @@ def main():
 
             # --- scenario c: create a folder under a COLLAPSED parent ----------
             collapsed = page.evaluate(
-                "() => { const c = " + SH + ";"
+                "() => { const c = " + FILES + ";"
                 "  const n = c._tree.findFirst(x => c.relPath(x) === 'deep');"
                 "  return !!n && !n.expanded; }"
             )
             check("the fixture's `deep/` really is collapsed before the create", collapsed)
             page.evaluate(
-                "(rel) => { const c = " + SH + ";"
+                "(rel) => { const c = " + FILES + ";"
                 "  const n = c._tree.findFirst(x => c.relPath(x) === rel); c.emitCreate(n, 'folder'); }",
                 arg="deep",
             )
@@ -503,7 +507,7 @@ def main():
             )
 
             # --- creating a FILE still opens its tab --------------------------
-            page.evaluate(f"() => {SH}.emitCreate(null, 'file')")
+            page.evaluate(f"() => {FILES}.emitCreate(null, 'file')")
             answer_prompt(page, "made.txt")
             page.wait_for_function(
                 "() => [...document.querySelectorAll('.tabstrip .tab')].some("
@@ -545,13 +549,13 @@ def main():
             # for the same directory lands after the write, and the selection
             # converges once that pass settles. The end state is the criterion.
             page.wait_for_function(
-                f"() => {SH}.relPath({SH}._tree.getActiveNode()) === 'a copy.txt'",
+                f"() => {FILES}.relPath({FILES}._tree.getActiveNode()) === 'a copy.txt'",
                 timeout=10000,
             )
             check(
                 "…and the copy is the selected node once the watcher pass settles",
-                page.evaluate(f"() => {SH}.relPath({SH}._tree.getActiveNode())") == "a copy.txt",
-                "active={}".format(page.evaluate(f"() => {SH}.relPath({SH}._tree.getActiveNode())")),
+                page.evaluate(f"() => {FILES}.relPath({FILES}._tree.getActiveNode())") == "a copy.txt",
+                "active={}".format(page.evaluate(f"() => {FILES}.relPath({FILES}._tree.getActiveNode())")),
             )
             # The painted row catches up to the model; waiting for the class IS the
             # assertion (a timeout reds the suite), so it gets no `check()` of its

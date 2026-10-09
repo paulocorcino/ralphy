@@ -252,8 +252,8 @@ def open_picker(page, slug):
 
 
 # --- the Files bar's checkout chip and its menu (ADR-0063 amendment 2026-09-16 b) ---
-CK_CHIP = "li.project.open .files-sec .checkout-chip"
-CK_VISIBLE = "() => { const c = document.querySelector('li.project.open .files-sec .checkout-chip'); return !!c && c.offsetParent !== null && c.clientWidth > 0; }"
+CK_CHIP = ".files-pane .files-sec .checkout-chip"
+CK_VISIBLE = "() => { const c = document.querySelector('.files-pane .files-sec .checkout-chip'); return !!c && c.offsetParent !== null && c.clientWidth > 0; }"
 CK_MENU_OPEN = "() => !!document.querySelector('.session-checkout-menu')"
 CK_ITEM = (
     "(n) => [...document.querySelectorAll('.session-checkout-menu .session-checkout-item:not(.create)')]"

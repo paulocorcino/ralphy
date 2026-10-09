@@ -52,14 +52,14 @@ def check(name, ok, detail=""):
 
 FILES = """
 () => {
-  const host = document.querySelector('.project.open .wb-host');
+  const host = document.querySelector('.files-pane .wb-host');
   const rows = host ? [...host.querySelectorAll('.wb-row')].map(r => ({
     title: (r.querySelector('.wb-title') || {}).textContent?.trim() || '',
     error: r.classList.contains('wb-error') || r.classList.contains('wb-status'),
     expanded: r.classList.contains('wb-expanded'),
   })) : [];
-  const line = document.querySelector('.project.open .files-peer-down');
-  const stale = [...document.querySelectorAll('.project.open .files-stale:not(.files-peer-down)')]
+  const line = document.querySelector('.files-pane .files-peer-down');
+  const stale = [...document.querySelectorAll('.files-pane .files-stale:not(.files-peer-down)')]
     .filter(el => el.offsetParent !== null).map(el => el.textContent.trim());
   const det = line && line.querySelector('details.session-detail');
   return {
@@ -93,7 +93,7 @@ def wait_files(page, pred, timeout):
 def click_expander(page, title):
     page.evaluate(
         """(title) => {
-          const row = [...document.querySelectorAll('.project.open .wb-host .wb-row')]
+          const row = [...document.querySelectorAll('.files-pane .wb-host .wb-row')]
             .find(r => r.querySelector('.wb-title')?.textContent.trim() === title);
           row.querySelector('.wb-expander').dispatchEvent(new MouseEvent('click', { bubbles: true }));
         }""",

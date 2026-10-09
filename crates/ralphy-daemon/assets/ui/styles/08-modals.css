@@ -113,6 +113,7 @@
    scrim. It draws no box of its own, so the page layout stays as it was. */
 .hosts-dialog,
 .add-project-dialog,
+.move-dialog,
 .security-dialog,
 .settings-dialog,
 .release-dialogs {

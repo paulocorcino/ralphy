@@ -59,9 +59,12 @@ BASE = f"http://127.0.0.1:{PORT}/"
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 APP_TS = os.path.join(REPO_ROOT, "crates", "ralphy-daemon", "assets", "ui", "app.ts")
+FILES_TS = os.path.join(REPO_ROOT, "crates", "ralphy-daemon", "assets", "ui", "wb-files.ts")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "364-move-2026-07-30.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+FILES = "Alpine.$data(document.querySelector('[x-data=\"wbFiles\"]'))"
+MOVE = "Alpine.$data(document.querySelector('[x-data=\"wbMoveDialog\"]'))"
 
 results = []
 
@@ -165,7 +168,7 @@ def launch(daemon_dir):
 # out is excluded, so "it is on screen" cannot pass on a zero-height row.
 REL_PATHS = """
 () => {
-  const c = Alpine.$data(document.querySelector('[x-data]'));
+  const c = Alpine.$data(document.querySelector('[x-data="wbFiles"]'));
   return [...document.querySelectorAll('.wb-host .wb-row')]
     .filter(r => r.offsetParent !== null && r.clientWidth > 0)
     .map(r => mar10.Wunderbaum.getNode(r))
@@ -186,7 +189,7 @@ MENU_LABELS = (
 # The picker's visible rows and its Move-here button state.
 PICK_STATE = """
 () => {
-  const c = Alpine.$data(document.querySelector('[x-data]'));
+  const c = Alpine.$data(document.querySelector('[x-data="wbMoveDialog"]'));
   const modal = document.querySelector('.move-picker');
   const rows = [...document.querySelectorAll('.move-picker .move-row')]
     .filter(r => r.offsetParent !== null && r.clientWidth > 0)
@@ -215,7 +218,7 @@ def open_menu_on(page, rel):
     Alpine method keeps the menu's CONTENTS the subject — a mouse right-click over
     a virtual-scrolled row would be testing hit geometry instead."""
     return page.evaluate(
-        "(rel) => { const c = " + SH + ";"
+        "(rel) => { const c = " + FILES + ";"
         "  const n = c._tree.findFirst(x => c.relPath(x) === rel);"
         "  if (!n) return false; n.setActive(); c.showMenu(120, 120, n); return true; }",
         arg=rel,
@@ -234,7 +237,7 @@ def wait_picker_open(page):
     """Gate on the modal being LAID OUT, not merely on the flag: Alpine's x-show
     display flip lands after the property write, so sampling on `open === true`
     reads a box that measures zero everywhere (the $nextTick trap)."""
-    page.wait_for_function(f"() => {SH}.movePick.open === true", timeout=10000)
+    page.wait_for_function(f"() => {MOVE}.movePick.open === true", timeout=10000)
     page.wait_for_function(
         "() => { const m = document.querySelector('.move-picker');"
         "  return !!m && m.offsetParent !== null && m.clientWidth > 0; }",
@@ -242,7 +245,7 @@ def wait_picker_open(page):
     )
     # …and for the first listing to LAND: the rows are a `tree.list` round trip,
     # so a state read on the open flag alone samples an empty picker.
-    page.wait_for_function(f"() => {SH}.movePick.busy === false", timeout=10000)
+    page.wait_for_function(f"() => {MOVE}.movePick.busy === false", timeout=10000)
 
 
 def pick_into(page, name):
@@ -261,7 +264,7 @@ def pick_into(page, name):
         arg=name,
     )
     page.wait_for_function(
-        "(name) => { const c = " + SH + ";"
+        "(name) => { const c = " + MOVE + ";"
         "  return !c.movePick.busy && (c.movePick.dir === name || c.movePick.dir.endsWith('/' + name)); }",
         arg=name,
         timeout=10000,
@@ -277,7 +280,7 @@ def click_move_here(page):
 
 def open_file(page, rel):
     page.evaluate(
-        "(rel) => { const c = " + SH + ";"
+        "(rel) => { const c = " + FILES + ";"
         "  const n = c._tree.findFirst(x => c.relPath(x) === rel); c.openFile(n); }",
         arg=rel,
     )
@@ -337,7 +340,8 @@ def main():
                 "const to = parent ?" not in rename_arm and "parentOf(" not in src,
                 "arm={!r}".format(rename_arm.strip()[:120]),
             )
-            perform = src.split("async performMove(from: any, to: any) {", 1)[1].split("\n    },", 1)[0]
+            files_src = Path(FILES_TS).read_text(encoding="utf-8")
+            perform = files_src.split("async performMove(from: any, to: any) {", 1)[1].split("\n    },", 1)[0]
             check(
                 "performMove reveals through the named revealRel primitive",
                 "revealRel(" in perform,
@@ -408,7 +412,7 @@ def main():
             )
             click_move_here(page)
             page.wait_for_function(
-                f"() => {SH}.relPath({SH}._tree.getActiveNode()) === 'dst/a.txt'",
+                f"() => {FILES}.relPath({FILES}._tree.getActiveNode()) === 'dst/a.txt'",
                 timeout=15000,
             )
             check(
@@ -423,8 +427,8 @@ def main():
             # A bounded wait already proved it above; the read is the end state.
             check(
                 "…and the tree selects the node at its DESTINATION",
-                page.evaluate(f"() => {SH}.relPath({SH}._tree.getActiveNode())") == "dst/a.txt",
-                "active={}".format(page.evaluate(f"() => {SH}.relPath({SH}._tree.getActiveNode())")),
+                page.evaluate(f"() => {FILES}.relPath({FILES}._tree.getActiveNode())") == "dst/a.txt",
+                "active={}".format(page.evaluate(f"() => {FILES}.relPath({FILES}._tree.getActiveNode())")),
             )
 
             # --- scenario f: the open tab followed the file --------------------
@@ -482,9 +486,9 @@ def main():
             # without it the branch can be deleted with every check still green.
             # `src/` is lazy, so its child does not exist as a node until the
             # reveal expands it — `findFirst` alone would return null.
-            page.evaluate(f"() => {SH}.revealRel('src/inner.txt')")
+            page.evaluate(f"() => {FILES}.revealRel('src/inner.txt')")
             page.wait_for_function(
-                "() => { const c = " + SH + ";"
+                "() => { const c = " + FILES + ";"
                 "  return !!c._tree.findFirst(x => c.relPath(x) === 'src/inner.txt'); }",
                 timeout=15000,
             )
@@ -504,7 +508,7 @@ def main():
             pick_into(page, "dst")
             click_move_here(page)
             page.wait_for_function(
-                f"() => {SH}.relPath({SH}._tree.getActiveNode()) === 'dst/src'",
+                f"() => {FILES}.relPath({FILES}._tree.getActiveNode()) === 'dst/src'",
                 timeout=15000,
             )
             check(
@@ -562,8 +566,8 @@ def main():
             check("the menu opens over `dst/a.txt` for the protected-dir move", open_menu_on(page, "dst/a.txt"))
             click_menu_row(page, "Move to…")
             wait_picker_open(page)
-            page.evaluate(f"() => {SH}.movePickUp()")
-            page.wait_for_function(f"() => {SH}.movePick.dir === '' && !{SH}.movePick.busy", timeout=10000)
+            page.evaluate(f"() => {MOVE}.movePickUp()")
+            page.wait_for_function(f"() => {MOVE}.movePick.dir === '' && !{MOVE}.movePick.busy", timeout=10000)
             ralphy_listed = page.evaluate(PICK_STATE)
             check(
                 "the picker drops `.ralphy` although the tree still lists it",
@@ -571,18 +575,18 @@ def main():
                 and ".ralphy" in page.evaluate(REL_PATHS),
                 "pickerRows={} treeRels={}".format(ralphy_listed["rows"], page.evaluate(REL_PATHS)),
             )
-            page.evaluate(f"() => {SH}.movePickCancel()")
-            page.wait_for_function(f"() => {SH}.movePick.open === false", timeout=10000)
+            page.evaluate(f"() => {MOVE}.movePickCancel()")
+            page.wait_for_function(f"() => {MOVE}.movePick.open === false", timeout=10000)
             check(
                 "Cancel closes the picker and moves nothing",
-                page.evaluate(f"() => {SH}.movePick.open") is False
+                page.evaluate(f"() => {MOVE}.movePick.open") is False
                 and Path(fixture, "dst", "a.txt").exists(),
             )
             # …and a node INSIDE a protected dir is offered no move at all: every
             # such move is refused on the SOURCE, so the row would be a dead end.
-            page.evaluate(f"() => {SH}.revealRel('.ralphy/keep.txt')")
+            page.evaluate(f"() => {FILES}.revealRel('.ralphy/keep.txt')")
             page.wait_for_function(
-                "() => { const c = " + SH + ";"
+                "() => { const c = " + FILES + ";"
                 "  return !!c._tree.findFirst(x => c.relPath(x) === '.ralphy/keep.txt'); }",
                 timeout=15000,
             )
@@ -598,7 +602,7 @@ def main():
             # so both protected destinations are driven straight at `performMove`
             # — the picker can express neither, and neither may land.
             page.evaluate(f"() => {SH}.__flash = ''")
-            page.evaluate(f"() => {SH}.performMove('dst/a.txt', '.ralphy/a.txt')")
+            page.evaluate(f"() => {FILES}.performMove('dst/a.txt', '.ralphy/a.txt')")
             page.wait_for_function(f"() => {SH}.__flash === 'Could not move: the daemon refused it.'", timeout=15000)
             check(
                 "a move INTO `.ralphy` is refused by the daemon, with its own reason",
@@ -608,7 +612,7 @@ def main():
                 "flash={!r}".format(page.evaluate(f"() => {SH}.__flash")),
             )
             page.evaluate(f"() => {SH}.__flash = ''")
-            page.evaluate(f"() => {SH}.performMove('dst/a.txt', '../escaped.txt')")
+            page.evaluate(f"() => {FILES}.performMove('dst/a.txt', '../escaped.txt')")
             page.wait_for_function(f"() => {SH}.__flash === 'Could not move: the daemon refused it.'", timeout=15000)
             check(
                 "a destination outside the repo root is refused, and nothing lands beside it",
@@ -628,7 +632,7 @@ def main():
             # the destination. Only the rel path can tell the two apart.
             # Re-reveal first: the later `.ralphy` navigation left `dst/`
             # collapsed, and a collapsed folder's children are simply not rows.
-            page.evaluate(f"() => {SH}.revealRel('dst/a.txt')")
+            page.evaluate(f"() => {FILES}.revealRel('dst/a.txt')")
             # Wait for the painted ROW, not merely for the node to exist: the
             # tree model gains the child a frame or more before Wunderbaum lays
             # it out, and `REL_PATHS` reads only laid-out rows.

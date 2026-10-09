@@ -217,7 +217,7 @@ def main():
             visible = page.evaluate(
                 f"() => {{ const el = {VISIBLE_SECS}[0];"
                 " return !!el && el.offsetParent !== null"
-                "   && !!el.closest('li.project').querySelector('.wb-host'); }"
+                "   && !!el.closest('li.project.open'); }"
             )
             check("the badge is visible on the project row, with no click", visible)
 

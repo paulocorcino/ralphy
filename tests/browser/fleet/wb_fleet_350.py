@@ -23,6 +23,7 @@ B_ID = "01ARZ3NDEKTSV4RRFFQ69G5FAW"
 SLUG = "ralphy-lab/shared-repo"
 PEER_REF = f"{B_ID}/{SLUG}"
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+FILES = "Alpine.$data(document.querySelector('[x-data=\"wbFiles\"]'))"
 results = []
 
 
@@ -142,7 +143,7 @@ def open_row(page, peer):
 
 def wait_tree(page, title):
     page.wait_for_function(
-        f"(t) => !!{SH}._tree && !!{SH}._tree.findFirst(n => n.title === t)",
+        f"(t) => !!{FILES}._tree && !!{FILES}._tree.findFirst(n => n.title === t)",
         arg=title,
         timeout=20000,
     )
@@ -151,7 +152,7 @@ def wait_tree(page, title):
 def open_file(page, title):
     wait_tree(page, title)
     page.evaluate(
-        f"(t) => {SH}.openFile({SH}._tree.findFirst(n => n.title === t))",
+        f"(t) => {FILES}.openFile({FILES}._tree.findFirst(n => n.title === t))",
         arg=title,
     )
 
@@ -321,7 +322,7 @@ def main():
             check(
                 "peer create refreshes the open tree without reload",
                 page.evaluate(
-                    f"() => !!{SH}._tree.findFirst(n => n.title === 'fresh.txt')"
+                    f"() => !!{FILES}._tree.findFirst(n => n.title === 'fresh.txt')"
                 ),
             )
 

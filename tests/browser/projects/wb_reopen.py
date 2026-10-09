@@ -66,6 +66,7 @@ EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt"
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "reopen-cache-2026-08-02.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+FILES = "Alpine.$data(document.querySelector('[x-data=\"wbFiles\"]'))"
 
 results = []
 
@@ -229,7 +230,7 @@ def toggle(page, slug):
 def expand(page, slug, rel):
     """Expand a folder through the tree's own API and wait for its children."""
     page.evaluate(
-        "async (rel) => { const c = " + SH + ";"
+        "async (rel) => { const c = " + FILES + ";"
         "  const n = c._tree.findFirst(x => c.relPath(x) === rel);"
         "  if (n) await n.setExpanded(true); }",
         arg=rel,
@@ -301,27 +302,27 @@ def main():
             # Close, clear the cache, and re-open with the reply held back: this is
             # the first-read path, the only one that waits.
             toggle(page, slug_a)
-            page.evaluate(f"() => {SH}._treeCache.clear()")
+            page.evaluate(f"() => {FILES}._treeCache.clear()")
             page.evaluate("() => { window.__delayMs = 1500; }")
             toggle(page, slug_a)
-            page.wait_for_function(f"() => {SH}.treeLoading === true", timeout=10000)
+            page.wait_for_function(f"() => {FILES}.treeLoading === true", timeout=10000)
             # Alpine applies `x-show` a tick after the flag flips, so reading the
             # spinner once right after `treeLoading === true` races it. Poll inside
             # the 1.5s delay window the test itself set above.
             page.wait_for_function(
                 "(sel) => { const e = document.querySelector(sel);"
                 "  return !!e && e.offsetParent !== null && e.clientWidth > 0; }",
-                arg=".project.open .files-spinner",
+                arg=".files-pane .files-spinner",
                 timeout=3000,
             )
-            spin = page.evaluate(LAID, ".project.open .files-spinner")
+            spin = page.evaluate(LAID, ".files-pane .files-spinner")
             check(
                 "the FILES panel shows a laid-out spinner while the read is in flight",
                 spin["laid"],
                 f"spinner={spin}",
             )
-            page.wait_for_function(f"() => {SH}.treeLoading === false", timeout=20000)
-            spin = page.evaluate(LAID, ".project.open .files-spinner")
+            page.wait_for_function(f"() => {FILES}.treeLoading === false", timeout=20000)
+            spin = page.evaluate(LAID, ".files-pane .files-spinner")
             check("…and the spinner is gone once the tree is there", not spin["laid"], f"spinner={spin}")
             page.evaluate("() => { window.__delayMs = 0; }")
 
@@ -374,8 +375,8 @@ def main():
             )
             check(
                 "…and the panel reports no error: a level that failed to revalidate is stale, not broken",
-                page.evaluate(f"() => {SH}.treeError") == "",
-                "error={}".format(page.evaluate(f"() => {SH}.treeError")),
+                page.evaluate(f"() => {FILES}.treeError") == "",
+                "error={}".format(page.evaluate(f"() => {FILES}.treeError")),
             )
             # The revalidation was ATTEMPTED — otherwise the cache would be a
             # blindfold rather than a head start.
@@ -390,11 +391,11 @@ def main():
             # --- scenario d: an unreadable tree is not an empty one -----------
             toggle(page, slug_a)  # close A
             toggle(page, slug_b)  # open a project that was NEVER opened
-            page.wait_for_function(f"() => {SH}.treeError !== ''", timeout=25000)
+            page.wait_for_function(f"() => {FILES}.treeError !== ''", timeout=25000)
             # `.files-error` alone also matches `.files-error.branch-error`, a
             # separate line for a refused branch switch (index.html ~432); the
             # tree's own error line excludes that class.
-            err = page.evaluate(LAID, ".project.open .files-error:not(.branch-error)")
+            err = page.evaluate(LAID, ".files-pane .files-error:not(.branch-error)")
             check(
                 "a project with nothing cached, opened against a dead daemon, says the read failed",
                 err["laid"] and "Could not read" in err["text"],

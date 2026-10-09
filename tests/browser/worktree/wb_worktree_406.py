@@ -68,6 +68,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+FILES = "Alpine.$data(document.querySelector('[x-data=\"wbFiles\"]'))"
 
 results = []
 # Every temp folder the script makes; removed after the daemon stops.
@@ -205,12 +206,12 @@ def launch(daemon_dir):
 
 # Every LAID-OUT tree row's title (the wb_explorer_362.py probe).
 ROW_TITLES = (
-    "() => [...document.querySelectorAll('.project.open .wb-host .wb-row')]"
+    "() => [...document.querySelectorAll('.files-pane .wb-host .wb-row')]"
     "  .filter(r => r.offsetParent !== null && r.clientWidth > 0)"
     "  .map(r => r.querySelector('.wb-title')?.textContent.trim())"
 )
 TITLES_INCLUDE = (
-    "(t) => [...document.querySelectorAll('.project.open .wb-host .wb-row')]"
+    "(t) => [...document.querySelectorAll('.files-pane .wb-host .wb-row')]"
     "  .filter(r => r.offsetParent !== null && r.clientWidth > 0)"
     "  .some(r => r.querySelector('.wb-title')?.textContent.trim() === t)"
 )
@@ -258,8 +259,8 @@ def open_picker(page, slug):
 
 
 # --- the Files bar's checkout chip and its menu (ADR-0063 amendment 2026-09-16 b) ---
-CK_CHIP = "li.project.open .files-sec .checkout-chip"
-CK_VISIBLE = "() => { const c = document.querySelector('li.project.open .files-sec .checkout-chip'); return !!c && c.offsetParent !== null && c.clientWidth > 0; }"
+CK_CHIP = ".files-pane .files-sec .checkout-chip"
+CK_VISIBLE = "() => { const c = document.querySelector('.files-pane .files-sec .checkout-chip'); return !!c && c.offsetParent !== null && c.clientWidth > 0; }"
 CK_MENU_OPEN = "() => !!document.querySelector('.session-checkout-menu')"
 CK_ITEM = (
     "(n) => [...document.querySelectorAll('.session-checkout-menu .session-checkout-item:not(.create)')]"
@@ -504,7 +505,7 @@ def main():
             # The pointer file goes with the directory: the daemon's next read
             # answers `unknown checkout`, which is the one reply that drops it.
             rmtree_retry(wt)
-            page.evaluate(f"() => {SH}.fetchTreeLevel('').catch(() => null)")
+            page.evaluate(f"() => {FILES}.fetchTreeLevel('').catch(() => null)")
             page.wait_for_function(f"(s) => {SH}.checkouts[s] === undefined", arg=slug, timeout=15000)
             page.wait_for_function(CHIP_IS, arg="main", timeout=10000)
             page.wait_for_function(TITLES_INCLUDE, arg="only-in-primary.txt", timeout=15000)

@@ -45,6 +45,7 @@ REPO_ROOT = os.path.dirname(
 )
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+FILES = "Alpine.$data(document.querySelector('[x-data=\"wbFiles\"]'))"
 
 results = []
 
@@ -133,7 +134,7 @@ ROW_TITLES = (
 
 # The gutter notice, only if it is actually laid out.
 STALE_TEXT = (
-    "() => { const el = document.querySelector('.project.open .files-stale[x-text=treeStale]');"
+    "() => { const el = document.querySelector('.files-pane .files-stale[x-text=treeStale]');"
     "  return el && el.offsetParent !== null ? el.textContent.trim() : ''; }"
 )
 
@@ -151,7 +152,7 @@ REFUSE_TREE_LIST = """
 # The notice, LAID OUT and carrying its text. `clientWidth > 0` keeps a
 # zero-width element from passing this vacuously (CONTEXT.md).
 STALE_VISIBLE = (
-    "() => { const el = document.querySelector('.project.open .files-stale[x-text=treeStale]');"
+    "() => { const el = document.querySelector('.files-pane .files-stale[x-text=treeStale]');"
     "  return !!(el && el.offsetParent !== null && el.clientWidth > 0"
     "    && el.textContent.includes('The list shown is the last one read')); }"
 )
@@ -198,7 +199,7 @@ def main():
 
             # --- scenario a: a refused re-read keeps every row -----------------
             page.evaluate(REFUSE_TREE_LIST)
-            page.evaluate(f"async () => await {SH}.onTreeDirty('')")
+            page.evaluate(f"async () => await {FILES}.onTreeDirty('')")
             after = page.evaluate(ROW_TITLES)
             check(
                 "a refused reconcile leaves the rows exactly as they were",
@@ -218,7 +219,7 @@ def main():
 
             # --- scenario b: a read that lands clears the notice ---------------
             page.evaluate(RESTORE_OBSERVE)
-            page.evaluate(f"async () => await {SH}.onTreeDirty('')")
+            page.evaluate(f"async () => await {FILES}.onTreeDirty('')")
             cleared = True
             try:
                 page.wait_for_function(f"() => ({STALE_TEXT})() === ''", timeout=5000)
@@ -235,7 +236,7 @@ def main():
             # "rows never go away" — otherwise the tree stops telling the truth
             # in the other direction.
             (fixture / "doomed.txt").unlink()
-            page.evaluate(f"async () => await {SH}.onTreeDirty('')")
+            page.evaluate(f"async () => await {FILES}.onTreeDirty('')")
             titles = page.evaluate(ROW_TITLES)
             check(
                 "a file that really went away still leaves the tree",

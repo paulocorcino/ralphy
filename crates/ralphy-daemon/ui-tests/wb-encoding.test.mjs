@@ -6,7 +6,7 @@
 // `WBDaemon`; the viewer is a recorder, since the pane's DOM is not the fold.
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { loadShell } from "./harness.mjs";
+import { loadComponent, loadShell } from "./harness.mjs";
 
 // app.ts names its siblings bare (`WBDaemon`, `WBViewer`), which the browser
 // resolves through `window` and Node through `globalThis`: mirror the fakes
@@ -116,12 +116,14 @@ test("a re-attached popup's bytes come back with their encoding", async () => {
 });
 
 test("a nudge re-reads a tab with its own encoding as the hint", async () => {
-  const { state, observed, viewer } = shellWith({ status: "ok", content: "x", encoding: "Shift_JIS", bom: false });
+  const { state, window, document, observed, viewer } = shellWith({ status: "ok", content: "x", encoding: "Shift_JIS", bom: false });
+  // The nudge is the files' (wb-files.ts); the tab is the shell's.
+  const files = loadComponent("wbFiles", { from: { state, window, document } }).scope;
   state.openTab({ project: "owner/repo", path: "docs/j.txt", title: "j.txt", ftype: "code" });
   await tick();
   viewer.encodings = { "file:owner/repo:docs/j.txt": { encoding: "Shift_JIS", bom: false } };
   observed.length = 0;
-  await state.refreshOpenViewers("docs");
+  await files.refreshOpenViewers("docs");
   assert.equal(observed.length, 1);
   assert.equal(observed[0].payload.encoding, "Shift_JIS", "the hint is the tab's encoding");
 });
