@@ -169,7 +169,7 @@ export function wireDetachedFence(window: Window, document: Document) {
     // opener's session storage, so every registry answer it could give is
     // a ghost that drifts the moment the real tab writes.
     const LINK = WBDetachLink.channel();
-    let peer = { seen: Date.now(), lost: false };
+    let peer: { seen: number | null; lost: boolean } = { seen: Date.now(), lost: false };
     let closing = false;
     // Only `popup-here` carries the snapshot: it is the re-adoption
     // payload, and cloning every member record once a second would be a

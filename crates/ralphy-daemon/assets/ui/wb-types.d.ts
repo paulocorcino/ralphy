@@ -22,6 +22,36 @@ export type Size = { width: number; height: number };
 /** A pointer move, in pixels. */
 export type Delta = { dx: number; dy: number };
 
+/** What `applyExtent` may be asked: `grow` never shrinks the stage mid-gesture. */
+export type ExtentOpts = { grow?: boolean };
+
+// ---- what a window is spawned from -------------------------------------------
+
+/**
+ * The record a console window continues when it is spawned: a desk record, a
+ * popup's member, or a live session no record claims (`unrecorded`). Every
+ * field may be missing, because each source fills a different part.
+ */
+export type SpawnCarry = {
+  id?: string;
+  repo?: string | null;
+  agent?: string | null;
+  kind?: string | null;
+  rect?: Partial<Rect>;
+  max?: boolean;
+  locked?: boolean;
+  consoleName?: string | null;
+  checkout?: string | null;
+  daemonId?: string | null;
+  environment?: string | null;
+  unrecorded?: boolean;
+  /** The live session id; `null` when the window has none. */
+  session?: number | null;
+};
+
+/** A window as the desk and a popup's snapshot read it (`deskOf`). */
+export type WindowSnapshot = SpawnCarry & { id: string; rect: Rect };
+
 // ---- the desk layout ---------------------------------------------------------
 // The JSON of `crates/ralphy-daemon/src/desk.rs`. A field with a serde default
 // is optional, because a page may leave it out; an `Option` the daemon does

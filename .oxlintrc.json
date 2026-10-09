@@ -34,11 +34,6 @@
       // keeps the count of each listed module from growing (#613).
       "files": [
         "**/assets/ui/app.ts",
-        "**/assets/ui/wb-console-desk.ts",
-        "**/assets/ui/wb-console-detach.ts",
-        "**/assets/ui/wb-console-fence-list.ts",
-        "**/assets/ui/wb-console-fences.ts",
-        "**/assets/ui/wb-console-view.ts",
         "**/assets/ui/wb-console.ts",
         "**/assets/ui/wb-files.ts",
         "**/assets/ui/wb-notes.ts",

@@ -16,37 +16,49 @@ import { WBGeometry } from "./wb-geometry.ts";
 import * as WBConsoleSession from "./wb-console-session.ts";
 import * as WBDeskFolds from "./wb-desk-folds.ts";
 import { sendDocument } from "./wb-events.ts";
-import type { PopupRegistry } from "./wb-console-popups.ts";
+import type { WBDeskSink } from "./wb-desk-sink.ts";
+import type { WBDeskSync } from "./wb-desk-sync.ts";
+import type { WBView } from "./wb-view.ts";
+import type { Group } from "./wb-fleet.ts";
+import type { OpenerLink } from "./wb-console-detach.ts";
+import type { TerminalOpts } from "./wb-console-terminal.ts";
+import type { PopupMember, PopupRegistry } from "./wb-console-popups.ts";
+import type { ConsoleWin, DeskChange, DeskFence, DeskRecord, ExtentOpts, Rect, SpawnCarry } from "./wb-types.d.ts";
 
 const { fenceMembership } = WBGeometry;
 const { unheardRef, peerHeld, relaunchRequest } = WBConsoleSession;
 const { reconcileDesk } = WBDeskFolds;
 
+// Where an upload goes, and what it answers: the sink never rejects, and a
+// network failure is one more answer.
+type DeskSink = Pick<ReturnType<typeof WBDeskSink.daemon>, "put" | "putSync">;
+type DeskUpload = Awaited<ReturnType<DeskSink["put"]>> | { kind: "network" };
+
 // What the desk reads from the console, and nothing else.
 export type DeskDeps = {
   // The console's page: a detached note card mounts through it.
-  window: any;
+  window: Window;
   // The page the restore tells that every stored window is on the stage.
-  document: any;
+  document: Document;
   // The console's options: whether it may launch a session.
-  OPTS: any;
+  OPTS: { canLaunch?: boolean };
   // Where an upload goes (`wb-desk-sink.ts`).
-  deskSink: any;
+  deskSink: DeskSink;
   // The desk view and the changes not yet sent (`wb-desk-sync.ts`).
-  sync: any;
+  sync: ReturnType<typeof WBDeskSync.createSync>;
   // The per-client view: whether a restore relaunches agents.
-  viewStore: any;
+  viewStore: Pick<typeof WBView, "read">;
   // This tab's stored detach registry and the lifecycle channel.
-  link: any;
+  link: OpenerLink;
   // The fences this tab detached and their popup entries.
   popups: PopupRegistry;
   // The console windows on the stage.
-  wins: Set<any>;
+  wins: Set<ConsoleWin>;
   // The fence records; the console reassigns the list, so it is read when
   // the restore needs it.
-  fences: () => any[];
+  fences: () => DeskFence[];
   // The fleet's last answer, grouped by peer, for the held rule.
-  peerGroups: () => Map<any, any>;
+  peerGroups: () => Map<string, Group>;
   // Whether the page has read the desk, and why the daemon cannot read it
   // ("" when it can).
   deskLoaded: () => boolean;
@@ -58,21 +70,36 @@ export type DeskDeps = {
   // The view takes the changes `sync` holds.
   refreshView: () => void;
   // The answer to one upload.
-  flushed: (out: any) => void;
+  flushed: (out: DeskUpload) => void;
   // The window records, as a copy.
-  loadDesk: () => any[];
+  loadDesk: () => DeskRecord[];
   // The daemon's live sessions, and the peers that did not answer.
-  readSessions: () => Promise<any>;
+  readSessions: () => Promise<{ sessions: HostedSession[]; unheard: ReadonlySet<string> }>;
   // Puts a window, a missing worktree or a placeholder on the stage.
-  spawnWindow: (termOpts: any, label: any, repo: any, desk?: any) => any;
-  spawnOrMissing: (req: any, label: any, repo: any, carry: any) => Promise<any>;
-  spawnPlaceholder: (record: any, missing?: any, refused?: any, held?: any) => any;
+  spawnWindow: (
+    termOpts: TerminalOpts,
+    label: string | null | undefined,
+    repo: string | null | undefined,
+    desk?: SpawnCarry,
+  ) => ConsoleWin;
+  spawnOrMissing: (
+    req: TerminalOpts,
+    label: string | null | undefined,
+    repo: string | null | undefined,
+    carry: SpawnCarry,
+  ) => Promise<ConsoleWin>;
+  spawnPlaceholder: (
+    record: SpawnCarry,
+    missing?: string | null,
+    refused?: { message: string } | null,
+    held?: { unheard?: boolean },
+  ) => ConsoleWin;
   // Puts the fences and the cards on the stage, and lights a detach glyph.
   renderFences: () => void;
   renderNotes: () => void;
-  showDetachGlyph: (id: any, on: any) => void;
+  showDetachGlyph: (id: string, on: boolean) => void;
   // Grows or fits the stage to the windows on it.
-  applyExtent: (opts?: any) => void;
+  applyExtent: (opts?: ExtentOpts) => void;
   // Raises the maximized windows over the others.
   raiseMaximized: () => void;
   // Scrolls the viewport to its landing place.
@@ -112,7 +139,7 @@ export function createDesk(deps: DeskDeps) {
   } = deps;
   const { commitDetached, newPopupEntry } = popups;
   // ONE desk change: the view takes it at once, the daemon on the next flush.
-  function emitDesk(change: any) {
+  function emitDesk(change: DeskChange) {
     sync.emit(change);
     refreshView();
     scheduleDeskFlush();
@@ -122,7 +149,7 @@ export function createDesk(deps: DeskDeps) {
   // (wb-desk-sink.ts), which answers a typed result. One batch is on the wire
   // at a time; a batch that failed in a way the daemon may still accept is
   // sent again with the same `seq`, later.
-  let deskFlush: any = null;
+  let deskFlush: ReturnType<typeof setTimeout> | null = null;
   let flushing = false;
   function scheduleDeskFlush(ms = 250) {
     clearTimeout(deskFlush);
@@ -140,7 +167,7 @@ export function createDesk(deps: DeskDeps) {
     deskSink
       .put(JSON.stringify(body))
       .catch(() => ({ kind: "network" }))
-      .then((out: any) => {
+      .then((out) => {
         flushing = false;
         flushed(out);
       });
@@ -201,7 +228,7 @@ export function createDesk(deps: DeskDeps) {
         // while its members kept their old records, so the fold alone answers
         // "no members".
         const membership = fenceMembership(fences(), loadDesk());
-        const away = new Map(); // window id -> the detached fence holding it
+        const away = new Map<string, string>(); // window id -> the detached fence holding it
         for (const id of popups.detachedIds()) {
           const entry = popups.entry(id);
           for (const wid of entry?.memberIds || []) away.set(wid, id);
@@ -213,7 +240,7 @@ export function createDesk(deps: DeskDeps) {
         const onPlane = new Set([...wins].map((w) => w._deskId));
         // A relaunch into a recorded worktree first asks whether the tree is
         // still there; the stage is sized only once every such window landed.
-        const pending = [];
+        const pending: Promise<ConsoleWin>[] = [];
         for (const { record, session, action, id } of reconcileDesk({
           layout: loadDesk(),
           sessions,
@@ -227,8 +254,8 @@ export function createDesk(deps: DeskDeps) {
           if (record && away.has(record.id)) {
             // The fallback snapshot, so a popup that never answers still has
             // somewhere to come home to. `popup-here` supersedes this.
-            const entry = popups.entry(away.get(record.id));
-            if (entry && !entry.members.some((m: any) => m.id === record.id)) {
+            const entry = popups.entry(away.get(record.id)!);
+            if (entry && !entry.members.some((m) => m.id === record.id)) {
               entry.members.push({ ...record, session: record.sessionId ?? null });
             }
             continue;
@@ -321,7 +348,10 @@ export function createDesk(deps: DeskDeps) {
   // The POPUP's side: render the members the opener handed over, translated by
   // the fence origin to sit near this window's top-left. The untranslated
   // snapshot stays in the OPENER — nothing measured here ever goes back.
-  function mountDetached(fence: any, members: any) {
+  function mountDetached(
+    fence: { rect?: Partial<Rect> | null } | null | undefined,
+    members: PopupMember[] | null | undefined,
+  ) {
     const originLeft = fence?.rect?.left || 0;
     const originTop = fence?.rect?.top || 0;
     for (const m of members || []) {

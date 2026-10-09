@@ -46,7 +46,7 @@ export type DetachMessage = {
   fenceId?: string | null;
   pid?: string | null;
   /** `popup-here`: the popup's snapshot of its members. */
-  members?: { id: string; kind?: string; path?: string }[];
+  members?: { id: string; kind?: string | null; path?: string }[];
   noteId?: string;
   path?: string;
   claim?: string;

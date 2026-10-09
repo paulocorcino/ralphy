@@ -312,7 +312,7 @@ export function detachFold(
 // yet (a name is given once, ADR-0064 §4), and the path must name a note.
 // `msg` comes from the popup: `path` is checked below before it is used.
 export function noteNameOk(
-  entry: { members?: readonly { kind?: string; id?: string }[] } | null | undefined,
+  entry: { members?: readonly { kind?: string | null; id?: string }[] } | null | undefined,
   record: DeskNote | null | undefined,
   msg: { noteId?: unknown; path?: unknown },
 ) {
