@@ -19,11 +19,12 @@ import { WBFail } from "./wb-fail.ts";
 import { WBGeometry } from "./wb-geometry.ts";
 import { addNote, removeNote, NOTE_MAX } from "./wb-desk-folds.ts";
 import { DEFAULT_DIR, DEFAULT_FILL, DEFAULT_FONT, DEFAULT_INK, DEFAULT_SIZE, DEFAULT_TONE, FILLS, FONTS, INKS, NEW_NOTE_STYLE, NOTE_DEFAULT, NOTE_MIN, ON_TOP_BAND_BELOW, ON_TOP_FLOOR, ON_TOP_TOP, SAVE_AFTER_MS, SIZES, SWATCH_NAME, TONES, anchorsOf, applyLook, baseName, bodyOf, colorOf, dirName, fillOf, fontOf, inkOf, isSafeScheme, lockedBy, lookOf, noCredential, noteDormancyDecision, noteSlug, onTopClamp, onTopRect, popupLinkTarget, savedLabel, sizeOf, spawnRect, stampName, styleOf, titleFieldOf, titleOf, toneOf, veiledOf, withStyle, withTitle, withVeil } from "./wb-notes-folds.ts";
-import type { FloatBox } from "./wb-notes-folds.ts";
 import { sendDocument } from "./wb-events.ts";
 import { DORMANT_AFTER_MS, DORMANT_MARGIN_PX } from "./wb-console-gpu.ts";
-import { dragThreshold, dragBegins } from "./wb-console-input.ts";
 import { createNoteEditor } from "./wb-notes-editor.ts";
+import { createNoteOnTop } from "./wb-notes-on-top.ts";
+import { createNoteVeil } from "./wb-notes-veil.ts";
+import { createNoteMap } from "./wb-notes-map.ts";
 import type { CrepeLean } from "./wb-notes-editor.ts";
 import type { Messages } from "./wb-messages.ts";
 import type { Gestures, Stack } from "./wb-stage-stack.ts";
@@ -490,6 +491,19 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     return el;
   }
 
+  // ---- the veil (in `wb-notes-veil.ts`) ----------------------------------------
+
+  // The editor is built after the veil and the veil acts through it, so the
+  // editor's names reach the veil as arrows.
+  const { veiledNow, veilPanel, paintVeil, toggleReveal, setMarked } = createNoteVeil({
+    document,
+    recordOf,
+    loadInto: (el, record) => loadInto(el, record),
+    syncFromEditor: (el) => syncFromEditor(el),
+    markDirty: (el) => markDirty(el),
+    flush: (el) => flush(el),
+  });
+
   // ---- the editor (in `wb-notes-editor.ts`) ------------------------------------
 
   const { mountEditor, loadInto, paintTitle, paintState, syncFromEditor, markDirty, flush, paintPath } =
@@ -799,7 +813,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
       }
       const verdict = noteDormancyDecision({
         visible: seen.visible,
-        onTop: el.dataset.noteId === onTopId,
+        onTop: el.dataset.noteId === onTopNow(),
         dirty: !!el._noteDirty,
         inFlight: !!el._noteInFlight,
         asleep: !!el._noteAsleep,
@@ -982,7 +996,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
       // other flush on the way. A NAMED note only: an unnamed one would be
       // named here while a detach popup opens the same record with no path,
       // and the two would write two files.
-      if (id === onTopId) putBack();
+      if (id === onTopNow()) putBack();
       if (el._noteRecord?.path) {
         el._noteOrphan = el._noteRecord;
         flush(el).catch(() => {});
@@ -1104,187 +1118,11 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     });
   }
 
-  // ---- a card on top (ADR-0064, 2026-09-26 amendment) ---------------------------
+  // ---- a card on top (in `wb-notes-on-top.ts`) ---------------------------------
 
-  // The one card on top in THIS tab, or null. Memory only: the desk, the
-  // per-client view and a reload never see it, so a reload finds the card in
-  // its place.
-  let onTopId: string | null = null;
-
-  function onTop(el: NoteCard) {
-    return el.classList.contains("on-top");
-  }
-
-  function viewportSize() {
-    const ws = document.getElementById("workspace");
-    return { width: ws?.clientWidth || 0, height: ws?.clientHeight || 0 };
-  }
-
-  // The floating box lives in CSS variables and NEVER in the inline rect: the
-  // inline rect stays the desk rect, as a maximized window's does, so a fence
-  // move, membership and `persistCards` keep reading the card's place.
-  // `--ws-*` is the viewport's box on the screen: the card is `position:
-  // fixed` (no ancestor of the stage has a transform, a filter or `contain`),
-  // so a scroll of the stage never has to move it and it does not shake
-  // during a pan.
-  function placeOnTop(el: NoteCard, box: FloatBox) {
-    const ws = document.getElementById("workspace");
-    if (ws) {
-      const r = ws.getBoundingClientRect();
-      el.style.setProperty("--ws-x", r.left + ws.clientLeft + "px");
-      el.style.setProperty("--ws-y", r.top + ws.clientTop + "px");
-      el.style.setProperty("--ws-w", ws.clientWidth + "px");
-      el.style.setProperty("--ws-h", ws.clientHeight + "px");
-    }
-    el.classList.toggle("band", !!box.band);
-    if (box.band) {
-      el._noteOnTop = null;
-      return;
-    }
-    el._noteOnTop = { left: box.left, top: box.top, width: box.width, height: box.height };
-    el.style.setProperty("--ot-x", box.left + "px");
-    el.style.setProperty("--ot-y", box.top + "px");
-    el.style.setProperty("--ot-w", box.width + "px");
-    el.style.setProperty("--ot-h", box.height + "px");
-  }
-
-  // The card's place while it floats: the desk rect, the tone and the title,
-  // and no editor. A click on it puts the card back.
-  function paintShadow(el: NoteCard) {
-    let sh = el._noteShadow;
-    if (!sh) {
-      sh = document.createElement("div");
-      sh.className = "note-shadow";
-      sh.title = "Kept on top. Click to put back.";
-      const name = document.createElement("span");
-      name.className = "note-shadow-title";
-      sh.append(name);
-      sh.addEventListener("click", () => putBack());
-      stage()?.append(sh);
-      el._noteShadow = sh;
-    }
-    for (const side of ["left", "top", "width", "height"] as const) sh.style[side] = el.style[side];
-    sh.style.setProperty("--note-tone", getComputedStyle(el).getPropertyValue("--note-tone"));
-    sh.firstChild!.textContent = titleOf(el._noteMarkdown, "Untitled note");
-  }
-
-  // Float the card in front of the windows (decisions 1–4). One card at a
-  // time: another card on top goes back first. Refused for a card that is in
-  // a detached fence's popup (`isAway`). Inside the popup itself the card is
-  // on top of that window (ADR-0064 §7, amended 2026-10-05); its record may be
-  // the orphan `mountDetached` kept, when this window's desk does not hold it.
-  function keepOnTop(id: string | null | undefined) {
-    const el = cardEl(id);
-    const record = recordOf(id) || (fragment ? el?._noteOrphan : null);
-    if (!record || !el) return false;
-    if (isAway(record, consoleHost?.fenceRecords?.() || [])) return false;
-    if (onTopId === id) return true;
-    putBack();
-    wakeCard(el);
-    onTopId = id!;
-    el.classList.add("on-top");
-    placeOnTop(el, onTopRect(record.rect || NOTE_DEFAULT, viewportSize()));
-    paintShadow(el);
-    watchViewport();
-    stack?.focusWin(el);
-    return true;
-  }
-
-  // Back to the desk rect, which the inline style never stopped holding.
-  function putBack() {
-    const id = onTopId;
-    onTopId = null;
-    const el = id ? cardEl(id) : null;
-    if (!el) return;
-    el.classList.remove("on-top", "band");
-    for (const v of ["--ot-x", "--ot-y", "--ot-w", "--ot-h", "--ws-x", "--ws-y", "--ws-w", "--ws-h"]) {
-      el.style.removeProperty(v);
-    }
-    el._noteOnTop = null;
-    el._noteShadow?.remove();
-    el._noteShadow = null;
-    viewportWatch?.disconnect();
-    viewportWatch = null;
-    // Back on the plane the card keeps the z it was last focused with, which
-    // is above a maximized console that covered its place before it floated.
-    consoleHost?.raiseMaximized?.();
-  }
-
-  function onTopNow() {
-    return onTopId;
-  }
-
-  // A change of the viewport's size — a window resize, a side panel that
-  // opens, the tab coming back — keeps the floating card inside the view and
-  // moves it in and out of the band. Observed only while a card is on top.
-  let viewportWatch: ResizeObserver | null = null;
-  function watchViewport() {
-    if (viewportWatch || typeof window.ResizeObserver !== "function") return;
-    const ws = document.getElementById("workspace");
-    if (!ws) return;
-    viewportWatch = new ResizeObserver(refitOnTop);
-    viewportWatch.observe(ws);
-  }
-  function refitOnTop() {
-    const el = onTopId ? cardEl(onTopId) : null;
-    if (!el) return;
-    const vp = viewportSize();
-    // A hidden Consoles tab measures 0×0, which would read as a phone.
-    if (!vp.width || !vp.height) return;
-    const record = recordOf(onTopId);
-    placeOnTop(
-      el,
-      el._noteOnTop ? onTopClamp(el._noteOnTop, vp) : onTopRect(record?.rect || NOTE_DEFAULT, vp),
-    );
-  }
-  // The observer sees the viewport's SIZE; a window resize can also move it.
-  window.addEventListener?.("resize", refitOnTop);
-
-  // Drag (`dir` null) or resize the floating box. The plane's own gestures
-  // cannot do this: they write the inline rect and persist it. Nothing here is
-  // persisted — the floating box is thrown away when the card goes back.
-  function floatGesture(el: NoteCard, dir: string | null) {
-    return (e: PointerEvent) => {
-      if (!onTop(el) || el.classList.contains("band") || !el._noteOnTop) return;
-      if (e.button !== 0 || !e.isPrimary) return;
-      if (!dir && (e.target as Element).closest("button, input")) return;
-      const start = { ...el._noteOnTop };
-      const vp = viewportSize();
-      const from = { x: e.clientX, y: e.clientY };
-      const pointerId = e.pointerId;
-      const threshold = dragThreshold(e.pointerType);
-      let armed = false;
-      const onMove = (ev: PointerEvent) => {
-        if (ev.pointerId !== pointerId) return;
-        if (ev.buttons === 0) {
-          onUp();
-          return;
-        }
-        const at = { x: ev.clientX, y: ev.clientY };
-        if (!armed) {
-          if (!dragBegins(from, at, threshold)) return;
-          armed = true;
-        }
-        const delta = { dx: at.x - from.x, dy: at.y - from.y };
-        const box = dir
-          ? WBGeometry.resizeRect(dir, start, delta, NOTE_MIN, vp)
-          : onTopClamp({ ...start, left: start.left + delta.dx, top: start.top + delta.dy }, vp);
-        placeOnTop(el, box);
-      };
-      const onUp = () => {
-        document.removeEventListener("pointermove", onMove);
-        document.removeEventListener("pointerup", onUp);
-        document.removeEventListener("pointercancel", onUp);
-        window.removeEventListener("blur", onUp);
-      };
-      document.addEventListener("pointermove", onMove);
-      document.addEventListener("pointerup", onUp);
-      document.addEventListener("pointercancel", onUp);
-      window.addEventListener("blur", onUp);
-      e.preventDefault();
-      if (dir) e.stopPropagation();
-    };
-  }
+  const { onTop, keepOnTop, putBack, onTopNow, paintShadow, floatGesture } = createNoteOnTop({
+    window, document, consoleHost, stack, stage, cardEl, recordOf, isAway, wakeCard, fragment: () => fragment,
+  });
 
   // ---- the file actions (ADR-0064 §11) ------------------------------------------
 
@@ -1397,98 +1235,6 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     if (openMenu && !openMenu.contains(ev.target as Node | null) && !(ev.target as Element | null)?.closest?.(openMenuTrigger)) {
       closeMenu();
     }
-  }
-
-  // ---- the veil (ADR-0064 §8 as amended) ----------------------------------------
-
-  // Is this card showing nothing RIGHT NOW? The mark is the file's and the
-  // reveal is the session's; a card is veiled when it carries the first and
-  // has not been given the second.
-  function veiledNow(el: NoteCard) {
-    return veiledOf(el._noteMarkdown) && !el._noteRevealed;
-  }
-
-  // What the body holds instead of an editor. Says what it is and what opens
-  // it — a card that is simply blank reads as one that failed to load.
-  // A VEILED CARD SHOWS ONE GLYPH AND NO SENTENCE (asked 2026-09-22). The line
-  // it replaces named the control that opens it — "the eye above shows it" —
-  // which is instruction for a gesture the operator has already learnt, printed
-  // on every hidden note forever. The point of the veil is that nothing about
-  // the note is on screen; a caption is the one thing still talking.
-  //
-  // The glyph keeps its `title`, so the answer is still a hover away.
-  function veilPanel() {
-    const p = document.createElement("p");
-    p.className = "note-veiled";
-    p.title = "This note is hidden. Click the eye button to show it.";
-    p.innerHTML = '<i class="bi bi-eye-slash"></i>';
-    return p;
-  }
-
-  // The eye: on EVERY card, and its glyph is the ACT it offers, not the state
-  // it is in. Three states, two acts — hide this note (a write), show it, put
-  // it away again (both session-only). Unmarking stays in the `⋯` menu, which
-  // is where the other writes to the file live.
-  function paintVeil(el: NoteCard) {
-    const btn = el.querySelector<HTMLElement>(".note-veil");
-    if (!btn) return;
-    const marked = veiledOf(el._noteMarkdown);
-    const shown = marked && !!el._noteRevealed;
-    const hides = !marked || shown;
-    btn.innerHTML = hides ? '<i class="bi bi-eye-slash"></i>' : '<i class="bi bi-eye"></i>';
-    btn.title = !marked ? "Hide this note" : shown ? "Hide this note again" : "Show this note";
-    el.classList.toggle("veiled", veiledNow(el));
-  }
-
-  // Show it, or put it away again. Writes NOTHING: the mark stays whatever the
-  // file says, so a note shown once is veiled again on the next open.
-  function toggleReveal(el: NoteCard) {
-    if (!veiledOf(el._noteMarkdown)) return;
-    const record = recordOf(el.dataset.noteId);
-    if (!record) return;
-    if (el._noteRevealed) {
-      // Away first, THEN the teardown: `loadInto` reads the file again, and
-      // the card must not be left holding a body it is no longer showing.
-      el._noteRevealed = false;
-      loadInto(el, record);
-      return;
-    }
-    el._noteRevealed = true;
-    loadInto(el, record);
-  }
-
-  // Mark the note as one that opens veiled, or stop. A DOCUMENT write, so it
-  // goes through the same autosave every other edit does — and marking puts
-  // the card away in the same gesture, because marking a note you are looking
-  // at and leaving it on screen is half an act.
-  function setMarked(el: NoteCard, marked: boolean) {
-    // A VEILED CARD HOLDS ONLY ITS HEADER — `mountEditor` cuts the body out
-    // rather than put it in a document nobody is looking at — so unmarking
-    // straight from `_noteMarkdown` would write that bare header OVER the note
-    // and the text would be gone. MEASURED against the code path, not guessed:
-    // `withVeil` rebuilds from `bodyOf`, and the body it would find is `""`.
-    // So the file is read back FIRST and the unmark rides the load out, the
-    // same door `toggleReveal` opens.
-    if (!marked && veiledNow(el)) {
-      const record = recordOf(el.dataset.noteId);
-      if (!record) return;
-      el._noteRevealed = true;
-      loadInto(el, record).then(() => setMarked(el, false));
-      return;
-    }
-    // Through the editor first: a character typed a frame ago is not in
-    // `_noteMarkdown` yet, and this rewrites the whole document.
-    syncFromEditor(el);
-    el._noteMarkdown = withVeil(el._noteMarkdown, marked);
-    el._noteRevealed = !marked;
-    markDirty(el);
-    paintVeil(el);
-    // The write lands first; only then does the body go, or the flush would
-    // find an editor that had already been taken away from under it.
-    flush(el).then(() => {
-      const record = recordOf(el.dataset.noteId);
-      if (record) loadInto(el, record);
-    });
   }
 
   // ---- the cheat sheet ----------------------------------------------------------
@@ -1731,37 +1477,9 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     return window.WBNotes.jump(record.id);
   }
 
-  // ---- the map (ADR-0064 §10) ---------------------------------------------------
+  // ---- the map (in `wb-notes-map.ts`) ------------------------------------------
 
-  // The notes on the plane, in desk order: what the `Note` menu draws. The
-  // title comes from the LIVE card (the text is the card's, not
-  // the desk's), so a note edited since it was opened lists what it says now.
-  // A card that is away in a detached fence is still listed — the row jumps
-  // this window's viewport to where the fence is, which is where it will be
-  // when it comes home.
-  function list() {
-    const fences = consoleHost?.fenceRecords?.() || [];
-    return (consoleHost?.notes?.() || []).map((record) => {
-      const el = cardEl(record.id);
-      const markdown = el?._noteMarkdown || "";
-      const fence = WBGeometry?.fenceOf?.(fences, record.rect || {});
-      return {
-        id: record.id,
-        title: titleOf(markdown, "Untitled note"),
-        tone: toneOf(el?._noteTone),
-        path: record.path || "",
-        fence: fence?.name || "",
-        onTop: record.id === onTopId,
-        // The row's `Keep on top` is refused for a card in the popup.
-        away: isAway(record, fences),
-      };
-    });
-  }
-
-  // Jump to a card: the plane moves to it and it takes the focus.
-  function jump(id: string) {
-    return consoleHost?.jumpToNote?.(id) ?? null;
-  }
+  const { list, jump } = createNoteMap({ consoleHost, cardEl, isAway, onTopNow });
 
   function reducedMotion() {
     try {

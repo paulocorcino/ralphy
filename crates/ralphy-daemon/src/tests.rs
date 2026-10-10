@@ -5261,6 +5261,7 @@ fn a_note_card_is_stacked_and_wears_the_console_chrome() {
     let console = include_str!("../assets/ui/wb-console.ts").replace("\r\n", "\n");
     let stack = include_str!("../assets/ui/wb-stage-stack.ts");
     let notes = include_str!("../assets/ui/wb-notes.ts");
+    let veil = include_str!("../assets/ui/wb-notes-veil.ts");
     // The seam: a place in the tier WITHOUT focus, because a restore
     // focuses nothing and `focusWin` is the only other way to get one.
     assert!(
@@ -5323,8 +5324,12 @@ fn a_note_card_is_stacked_and_wears_the_console_chrome() {
     // UNMARK is not a duplicate of anything — the eye can mark and reveal
     // but never unmark — so it stays, shown only in the state it undoes.
     assert!(
-        notes.matches(r#""Hide this note""#).count() == 1
-            && notes.contains(r#"btn.title = !marked ? "Hide this note""#),
+        [notes, veil]
+            .iter()
+            .map(|f| f.matches(r#""Hide this note""#).count())
+            .sum::<usize>()
+            == 1
+            && veil.contains(r#"btn.title = !marked ? "Hide this note""#),
         "the eye is how a note is hidden; the menu must not offer it twice"
     );
     assert!(
@@ -5335,7 +5340,7 @@ fn a_note_card_is_stacked_and_wears_the_console_chrome() {
     // A veiled card holds only its header, so unmarking straight from it
     // would write that header over the note. The file is read back first.
     assert!(
-        notes.contains("if (!marked && veiledNow(el))"),
+        veil.contains("if (!marked && veiledNow(el))"),
         "unmarking a veiled card must re-read the file, not write its bare header"
     );
     // The title is `flex: 1` and therefore most of the HEAD, which is the
