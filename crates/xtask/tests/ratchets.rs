@@ -73,8 +73,9 @@ const APP_TS_LINES: usize = 4209;
 /// 3083 since it reads its daemon replies through `wb-api.ts` (#653); 3086
 /// since its two peer buttons read their label once, typed by the peer's
 /// action (#653); 2958 since its confirm, notice and toast moved to the door
-/// for operator messages, `wb-messages.ts` (#623).
-const WB_CONSOLE_TS_LINES: usize = 2958;
+/// for operator messages, `wb-messages.ts` (#623); 2713 since its maximize, lock,
+/// full screen, extent and restore box moved to `wb-stage-window.ts` (#623).
+const WB_CONSOLE_TS_LINES: usize = 2713;
 /// Lines of `crates/ralphy-daemon/assets/ui/wb-notes.ts`, the note cards
 /// (ADR-0073 D8, started by its 2026-10-10 amendment). 2828 at 823cc84c, before
 /// its first cut (#623); 2835 since the cards take the console as a typed dep
