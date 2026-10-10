@@ -36,13 +36,14 @@ export const WBWindowState = (function () {
   // THE INVENTORY. Every property a `.session-window` may carry, with the value
   // it is born holding. Grouped by who owns the write, because that is the
   // question a reader actually arrives with.
-  const FIELDS = {
+  const FIELDS: ConsoleWinFields = {
     // The desk record this window IS (ADR-0050). Seeded from a restored record
-    // so a window carries its identity before any socket answers.
-    _deskId: null,
+    // so a window carries its identity before any socket answers. `buildChrome`
+    // seeds every one of the four below; "" names no record, agent or kind.
+    _deskId: "",
     _deskRepo: "~",
-    _deskAgent: null,
-    _deskKind: null,
+    _deskAgent: "",
+    _deskKind: "",
     _deskDaemonId: null,
     _deskEnvironment: null,
     _deskCheckout: null,
@@ -92,31 +93,20 @@ export const WBWindowState = (function () {
     _dormantSession: null,
     _dormantWatch: false,
     _dormantTimer: null,
-  } satisfies Record<keyof ConsoleWinFields, unknown>;
-
-  // `Object.keys` answers `string[]`; `satisfies` above holds the keys to the
-  // declared set.
-  const NAMES = Object.keys(FIELDS) as (keyof ConsoleWinFields)[];
+  };
 
   // The one place a console window is born. Writes EVERY field, so a reader of
   // any window sees the whole set rather than whichever subset a code path
   // happened to reach — and a `seed` key that is not in the inventory throws
   // rather than quietly adding a twenty-seventh field nothing declares.
-  function initWindow(
-    win: HTMLElement & Partial<Record<keyof ConsoleWinFields, unknown>>,
-    seed?: Partial<ConsoleWinFields>,
-  ) {
-    for (const name of NAMES) win[name] = FIELDS[name];
-    if (seed) {
-      for (const name of Object.keys(seed) as (keyof ConsoleWinFields)[]) {
-        if (!(name in FIELDS)) {
-          throw new Error(`wb-window-state: unknown window field ${name}`);
-        }
-        win[name] = seed[name];
+  function initWindow(win: HTMLElement, seed?: Partial<ConsoleWinFields>) {
+    const born = Object.assign(win, FIELDS);
+    for (const name of Object.keys(seed || {})) {
+      if (!(name in FIELDS)) {
+        throw new Error(`wb-window-state: unknown window field ${name}`);
       }
     }
-    // Every declared field is written above: the element is a console window.
-    return win as ConsoleWin;
+    return Object.assign(born, seed);
   }
 
   // THE question, with one answer. In precedence order:

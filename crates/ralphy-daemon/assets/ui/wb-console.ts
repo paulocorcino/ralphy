@@ -689,8 +689,8 @@ export function createConsole(window: Window, document: Document, location: Pick
     return {
       id: win._deskId,
       repo: win._deskRepo,
-      agent: win._deskAgent!,
-      kind: win._deskKind!,
+      agent: win._deskAgent,
+      kind: win._deskKind,
       rect: restoreRect(win),
       max: win.classList.contains("maximized"),
       // A DORMANT window has no handle; `null` here would demote its record to

@@ -232,17 +232,25 @@ interface WunderbaumNode {
 /** One row a tree level is loaded from. */
 type WunderbaumSource = { title: string; folder?: boolean; lazy?: boolean; icon?: string; classes?: string };
 
-/** What a Wunderbaum event handler gets. */
+/** What every Wunderbaum event handler gets. */
 interface WunderbaumEvent {
   tree: WunderbaumTree;
   node: WunderbaumNode;
-  /** The row's element (`render`). */
+}
+/** `render`: the row's element. */
+interface WunderbaumRenderEvent extends WunderbaumEvent {
   nodeElem: HTMLElement;
-  /** The new expanded state (`expand`, `beforeExpand`). */
+}
+/** `expand` and `beforeExpand`: the new expanded state. */
+interface WunderbaumExpandEvent extends WunderbaumEvent {
   flag: boolean;
-  /** Set when the first load failed (`init`). */
+}
+/** `init`: set when the first load failed. */
+interface WunderbaumInitEvent extends WunderbaumEvent {
   error?: Error;
-  /** The title before and after an edit (`edit.apply`). */
+}
+/** `edit.apply`: the title before and after the edit. */
+interface WunderbaumEditEvent extends WunderbaumEvent {
   oldValue: string;
   newValue: string;
 }
@@ -256,24 +264,19 @@ interface WunderbaumOptions {
   /** `false`: the level stays unloaded. */
   lazyLoad(e: WunderbaumEvent): Promise<WunderbaumSource[] | false>;
   /** `false` keeps the folder closed. */
-  beforeExpand(e: WunderbaumEvent): false | undefined;
+  beforeExpand(e: WunderbaumExpandEvent): false | undefined;
   load(e: WunderbaumEvent): void;
-  render(e: WunderbaumEvent): void;
-  init(e: WunderbaumEvent): void;
-  edit: { trigger: string[]; apply(e: WunderbaumEvent): boolean };
-  expand(e: WunderbaumEvent): void;
+  render(e: WunderbaumRenderEvent): void;
+  init(e: WunderbaumInitEvent): void;
+  edit: { trigger: string[]; apply(e: WunderbaumEditEvent): boolean };
+  expand(e: WunderbaumExpandEvent): void;
   /** `false` stops the default action. */
   dblclick(e: WunderbaumEvent): boolean;
 }
 
 interface Window {
-  /** The daemon door (`wb-daemon.ts`). `subscribeTree` may be absent:
-   * `wb-files.ts` tests `window.WBDaemon?.subscribeTree` and then calls it
-   * through the bare name, and a function that is always there is a TS2774
-   * error at that test. The bare `WBDaemon` below has it. */
-  WBDaemon: Omit<import("./wb-daemon.ts").WBDaemonApi, "subscribeTree"> & {
-    subscribeTree: import("./wb-daemon.ts").WBDaemonApi["subscribeTree"] | undefined;
-  };
+  /** The daemon door (`wb-daemon.ts`). */
+  WBDaemon: import("./wb-daemon.ts").WBDaemonApi;
   Alpine: {
     data(name: string, factory: () => object): void;
     directive(
@@ -474,9 +477,7 @@ interface DocumentEventMap {
 
 // The page instances and vendored libraries that modules name bare.
 declare var WBConsole: Window["WBConsole"];
-// `const`, not `var`: a `var` is also a member of `window`, and the two types
-// would merge into one `subscribeTree` that is always there.
-declare const WBDaemon: import("./wb-daemon.ts").WBDaemonApi;
+declare var WBDaemon: Window["WBDaemon"];
 declare var WBViewer: Window["WBViewer"];
 declare var WB: Window["WB"];
 /** The vendored marked (`vendor/marked.min.js`). */

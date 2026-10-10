@@ -185,8 +185,10 @@ export type ConsoleWinFields = {
   _deskId: string;
   /** The repo ref; `"~"` is the home directory. */
   _deskRepo: string;
-  _deskAgent: string | null;
-  _deskKind: string | null;
+  /** The agent; "" when the console names none. */
+  _deskAgent: string;
+  /** `console` or `agent`. */
+  _deskKind: string;
   _deskDaemonId: string | null;
   _deskEnvironment: string | null;
   /** The worktree, from the record, the launch request or the switcher. */

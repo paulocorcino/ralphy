@@ -140,7 +140,7 @@ export function wbFiles() {
         // no level read before does not open: its read would fail. A level
         // read before opens from memory. A restore of the expanded folders
         // stops here too.
-        beforeExpand: (e: WunderbaumEvent) => {
+        beforeExpand: (e: WunderbaumExpandEvent) => {
           if (!e.flag || !this.openPeerDown() || e.node.children) return undefined;
           return this._treeCache!.has(this.treeKey(this.relPath(e.node))) ? undefined : false;
         },
@@ -151,7 +151,7 @@ export function wbFiles() {
         },
         // The content-search badge: hit count beside the title; nothing once
         // the filter is gone (the map is empty by then).
-        render: (e: WunderbaumEvent) => {
+        render: (e: WunderbaumRenderEvent) => {
           const count = this._fileHits?.get(this.relPath(e.node));
           const old = e.nodeElem.querySelector(".wb-hits");
           if (typeof count !== "number") {
@@ -164,7 +164,7 @@ export function wbFiles() {
           if (!old) e.nodeElem.querySelector(".wb-title")?.after(badge);
         },
         // The root level has settled: put the expanded folders back.
-        init: (e: WunderbaumEvent) => {
+        init: (e: WunderbaumInitEvent) => {
           if (gen !== this._treeGen) return;
           this.treeLoading = false;
           if (e.error) this.treeError = "Could not read the files of this project.";
@@ -172,7 +172,7 @@ export function wbFiles() {
         },
         edit: {
           trigger: ["F2", "macEnter"],
-          apply: (e: WunderbaumEvent) => {
+          apply: (e: WunderbaumEditEvent) => {
             // The shared listener takes full rel paths.
             const parent = parentRel(this.relPath(e.node));
             window.WB.emit("rename", {
@@ -184,7 +184,7 @@ export function wbFiles() {
           },
         },
         // Live watch-set (#196): the daemon watches only the expanded set.
-        expand: (e: WunderbaumEvent) => {
+        expand: (e: WunderbaumExpandEvent) => {
           if (!this.isFolder(e.node)) return;
           const rel = this.relPath(e.node);
           if (e.flag) this._treeSub?.watch(rel);
@@ -202,7 +202,7 @@ export function wbFiles() {
       // watched. A `tree.dirty` push refetches only the affected subtree; a
       // `head.dirty` push re-reads the branch.
       if (this.useDaemonTree() && window.WBDaemon?.subscribeTree) {
-        this._treeSub = WBDaemon.subscribeTree(
+        this._treeSub = window.WBDaemon.subscribeTree(
           this.$store.projects.openSlug!,
           (rel: string) => {
             if (!this.tabHidden()) this.onTreeDirty(rel);
