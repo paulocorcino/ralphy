@@ -51,12 +51,11 @@ import { WBFleet } from "./wb-fleet.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
 import { createMessages } from "./wb-messages.ts";
 import { apiFetch } from "./wb-api.ts";
-import type { ApiRefusal } from "./wb-api.ts";
 import { sendDocument } from "./wb-events.ts";
 import type { TerminalDeps, TerminalOpts } from "./wb-console-terminal.ts";
 import type { Group } from "./wb-fleet.ts";
 import type { DetachReason } from "./wb-console-session.ts";
-import type { ConsoleOpts, ConsoleTerm, ConsoleWin, DeskChange, DeskFence, DeskNote, DeskRecord, DeskReply, DeskWindowFields, NoteCard, Rect, SpawnCarry, WindowSnapshot } from "./wb-types.d.ts";
+import type { ConsoleOpts, ConsoleTerm, ConsoleWin, DeskChange, DeskFence, DeskWindowFields, SpawnCarry, WindowSnapshot } from "./wb-types.d.ts";
 
 // The input folds are `wb-console-input.ts`: pure functions of their arguments.
 const {
@@ -157,8 +156,6 @@ export function createConsole(window: Window, document: Document, location: Pick
     spawnRectIn,
     freeSpawnRect,
     fenceHolds,
-    WIN_MIN_W,
-    WIN_MIN_H,
   } = WBGeometry;
 
   // What a console window IS and what it HOLDS (`wb-window-state.ts`).
@@ -200,8 +197,8 @@ export function createConsole(window: Window, document: Document, location: Pick
 
   // ---- the desk records -------------------------------------------------------
   // The writes of the desk records and the checkout reads are `wb-desk.ts`
-  // (`createDeskRecords`); this console keeps the desk view they read, which
-  // is declared below, and the sync it fills. Built first: the title, the
+  // (`createDeskRecords`); the desk view they read is `createDesk`'s, built
+  // below, and this console keeps the sync both fill. Built first: the title, the
   // window states, the fence list and the chrome take `setWin` and
   // `saveFences`. What is built later goes in as lazy arrows.
   const sync = WBDeskSync.createSync();
@@ -222,10 +219,10 @@ export function createConsole(window: Window, document: Document, location: Pick
     allCheckouts,
   } = createDeskRecords({
     sync,
-    desk: () => desk,
-    fences: () => fences,
-    notes: () => notes,
-    checkouts: () => checkouts,
+    desk: () => currentDesk(),
+    fences: () => currentFences(),
+    notes: () => currentNotes(),
+    checkouts: () => currentCheckouts(),
     refreshView: () => refreshView(),
     emitDesk: (change: DeskChange) => emitDesk(change),
     scheduleDeskFlush: () => scheduleDeskFlush(),
@@ -258,7 +255,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     OPTS,
     wins,
     stage,
-    desk: () => desk,
+    desk: () => currentDesk(),
     lastSessions: () => lastSessions,
     agentStateTitle,
     askConfirm,
@@ -319,7 +316,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     workspace,
     stage,
     popups,
-    desk: () => desk,
+    desk: () => currentDesk(),
     focusWin,
     setMax,
     paintMaxButton,
@@ -343,8 +340,8 @@ export function createConsole(window: Window, document: Document, location: Pick
     document,
     OPTS,
     popups,
-    fences: () => fences,
-    notes: () => notes,
+    fences: () => currentFences(),
+    notes: () => currentNotes(),
     stage,
     workspace,
     restoreRect,
@@ -406,8 +403,8 @@ export function createConsole(window: Window, document: Document, location: Pick
     popups,
     wins,
     budget,
-    fences: () => fences,
-    notes: () => notes,
+    fences: () => currentFences(),
+    notes: () => currentNotes(),
     stage,
     changed,
     applyExtent,
@@ -417,7 +414,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     spawnWindow,
     spawnPlaceholder,
     deskOf,
-    whenDeskLoaded,
+    whenDeskLoaded: () => whenDeskLoaded(),
     fenceFloor,
   });
   const { peerFold, newPid, fenceSnapshot, tearDownMember, reattachFence, glyphClick } = detach;
@@ -480,7 +477,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     gestures,
     stage,
     workspace,
-    fences: () => fences,
+    fences: () => currentFences(),
     focusedFence: focusedFenceId,
     applyExtent,
     applyLock,
@@ -516,7 +513,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     popups,
     link,
     wins,
-    fences: () => fences,
+    fences: () => currentFences(),
     fenceFloor,
     applyExtent,
     askConfirm,
@@ -561,67 +558,38 @@ export function createConsole(window: Window, document: Document, location: Pick
     return detail ? `Agent is ${state}: ${detail}` : `Agent is ${state}`;
   }
 
-  // ---- the desk layout ---------------------------------------------------------
-  // What was open, not merely where a session sat: one record per window keyed
-  // by a STABLE client-side id (repo, agent, session kind, rect, maximized).
-  // The daemon's session id is a volatile ATTRIBUTE — a restarted daemon hands
-  // out ids from 1 again. The desk lives in the DAEMON (`GET`/`PUT /api/desk`,
-  // ADR-0050), and a page writes it only as desk changes, each one carrying
-  // the fields its act changed (ADR-0050 amendment 2026-10-04, changes, not
-  // the desk). `sync` (wb-desk-sync.ts) holds the daemon's last desk and this
-  // page's unanswered changes; `desk`, `fences`, `notes` and `checkouts` are
-  // its view, the SYNCHRONOUS source of truth every read below uses.
-  let desk: DeskRecord[] = [];
-  // Second record type (#340): named rectangles on the floor tier.
-  let fences: DeskFence[] = [];
-  // Third record type (ADR-0064 §2): note cards, PLACEMENT only — the note's
-  // text and colour live in its `.note` file. The CARD itself (DOM, editor,
-  // autosave) is `wb-notes.ts`, which reaches this state through the exports
-  // below.
-  let notes: DeskNote[] = [];
-  // Fourth record type (#406, ADR-0063 §4): the selected checkout per repo ref,
-  // `{ <ref>: <worktree name> }`. The reactive copy the chip and the tree
-  // render lives in `app.ts` (a closure variable here is invisible to Alpine).
-  let checkouts: Record<string, string> = {};
-  function refreshView() {
-    const v = sync.view();
-    desk = v.windows;
-    fences = v.fences;
-    notes = v.notes;
-    checkouts = v.checkouts;
-  }
-  // The page has read the desk.
-  // Nothing is sent before: a page that never read the desk does not know its
-  // generation. Under the `Session` policy the pre-login GET answers 401, so
-  // this stays false until `reloadDesk()` succeeds after login.
-  let deskLoaded = false;
-
-  // A restore from the desk history since this page read the desk (ADR-0050
-  // amendment 2026-10-04, desk history): the daemon refuses this page's next
-  // write, and the page reloads to show the restored desk.
-  let deskRestored = false;
-  function reloadForRestoredDesk() {
-    if (deskRestored) return;
-    deskRestored = true;
-    sync.restored();
-    // The `pagehide` flush would send this page's changes on the way out.
-    WBDeskSink.setHold(true);
-    window.location?.reload?.();
+  // A desk this page takes never moves an element under a gesture.
+  function inGesture(el: HTMLElement) {
+    return gestures.active(el);
   }
 
-  // Sending the desk changes and restoring the desk layout are
-  // `wb-desk.ts`, which owns the desk flush state; this console keeps
-  // the desk view, the desk read (`reloadDesk`) and the answer to an upload
-  // (`flushed`), and hands them to it.
+  // ---- the desk ----------------------------------------------------------------
+  // The desk view, the desk read and what follows it (the converge, the answer
+  // to an upload, the `pagehide` flush), sending the desk changes and
+  // restoring the desk layout are `wb-desk.ts`, which owns the desk state.
+  // `createDesk` starts the desk read at once: `restoreDesk` and
+  // `whenDeskLoaded` wait for it.
   const {
     emitDesk,
     scheduleDeskFlush,
-    flushDeskOnClose,
     restoreDesk,
     restoreDetached,
     mountDetached,
-    isDeskReconciled,
     isDeskSettled,
+    refreshView,
+    reloadForRestoredDesk,
+    recordLeft,
+    reloadDesk,
+    currentDeskFailure,
+    setDeskFailureHook,
+    setDeskGoneHook,
+    startNewDesk,
+    whenDeskLoaded,
+    isDeskLoaded,
+    currentDesk,
+    currentFences,
+    currentNotes,
+    currentCheckouts,
   } = createDesk({
     window,
     document,
@@ -632,14 +600,8 @@ export function createConsole(window: Window, document: Document, location: Pick
     link,
     popups,
     wins,
-    fences: () => fences,
+    stage,
     peerGroups: () => peerGroups,
-    deskLoaded: () => deskLoaded,
-    currentDeskFailure,
-    whenDeskLoaded,
-    reloadDesk,
-    refreshView,
-    flushed,
     loadDesk,
     readSessions,
     spawnWindow,
@@ -651,276 +613,13 @@ export function createConsole(window: Window, document: Document, location: Pick
     applyExtent,
     raiseMaximized,
     applyLanding,
-  });
-
-
-  function ingestDesk(payload: Parameters<typeof sync.take>[0]) {
-    const verdict = sync.take(payload);
-    if (verdict === "reload") {
-      reloadForRestoredDesk();
-      return;
-    }
-    if (verdict !== "taken") return;
-    deskLoaded = true;
-    refreshView();
-    nameUnnamed();
-    converge();
-  }
-
-  // A desk this page takes never moves an element under a gesture.
-  function inGesture(el: HTMLElement) {
-    return gestures.active(el);
-  }
-
-  // The screens converge (ADR-0050 amendment 2026-10-04): every desk this page
-  // takes puts each window's rect, lock and name, and each fence and card, on
-  // the stage. The view already holds this page's own unanswered changes, so
-  // a value this page set and the daemon has not answered yet stays. `max` is
-  // left alone: a phone that maximizes a console must not maximize it on the
-  // PC. A console opened on another device appears at the next load: opening
-  // it here would attach or start a process with no act on this page.
-  //
-  // Only on a stage `restoreDesk` has filled: before that, it puts every
-  // record on the stage itself. Never in the popup, whose stage holds one
-  // fence's members at translated places.
-  function converge() {
-    if (OPTS.autoBoot === false || !isDeskReconciled()) return;
-    const st = stage();
-    if (!st) return;
-    const byId = new Map<string, DeskRecord>(desk.map((r) => [r.id, r]));
-    for (const w of [...st.querySelectorAll<ConsoleWin>(".session-window")]) {
-      const r = byId.get(w._deskId);
-      if (!r) {
-        if (!w._deskUnrecorded) recordLeft(w);
-        continue;
-      }
-      // Another page wrote this adopted console's record: it is recorded now,
-      // and takes the place written there.
-      w._deskUnrecorded = false;
-      if (r.rect && !inGesture(w)) placeWindow(w, r.rect);
-      if (!!r.locked !== !!w._deskLocked) applyLock(w, !!r.locked);
-      if (r.consoleName && r.consoleName !== w._deskConsoleName && !w.querySelector(".session-name-input")) {
-        w._deskConsoleName = r.consoleName;
-        if (w._title && w._presentation) renderTitle(w, w._title, w._presentation);
-      }
-    }
-    keepUnsavedCards(st);
-    renderFences();
-    renderNotes();
-    applyExtent();
-  }
-
-  function placeWindow(win: HTMLElement, r: Rect) {
-    const at = (prop: "left" | "top" | "width" | "height") => parseInt(win.style[prop], 10);
-    if (at("left") === Math.round(r.left) && at("top") === Math.round(r.top) &&
-        at("width") === Math.round(r.width) && at("height") === Math.round(r.height)) return;
-    win.style.left = r.left + "px";
-    win.style.top = r.top + "px";
-    win.style.width = r.width + "px";
-    win.style.height = r.height + "px";
-    // A tile below the CSS floor (`arrangeFence`): relaxed to the cell.
-    win.style.minWidth = r.width < WIN_MIN_W ? r.width + "px" : "";
-    win.style.minHeight = r.height < WIN_MIN_H ? r.height + "px" : "";
-  }
-
-  // A card whose record another device removed, holding text not yet saved,
-  // stays: what was typed here wins, so its record is created again.
-  function keepUnsavedCards(st: HTMLElement) {
-    const listed = new Set<string | undefined>(notes.map((n) => n.id));
-    for (const el of st.querySelectorAll<NoteCard>(".note-card")) {
-      if (!el._noteDirty || !el._noteRecord || listed.has(el.dataset.noteId)) continue;
-      emitDesk({ op: "create", type: "note", record: el._noteRecord });
-    }
-  }
-
-  // Another device removed this window's record. A placeholder or an ended
-  // console leaves this page too. A running console keeps its window and gets
-  // its record back, because a running console always has one. Whether it
-  // runs is asked of the daemon, not of the socket: a close on another device
-  // ends the session a moment before its record goes, and this page's socket
-  // may not have heard yet.
-  const recordChecks = new WeakSet();
-  function recordLeft(win: ConsoleWin) {
-    if (recordChecks.has(win)) return;
-    if (win.classList.contains("placeholder") || win.classList.contains("ended") || sessionIdOf(win) == null) {
-      leaveDesk([win._deskId]);
-      return;
-    }
-    recordChecks.add(win);
-    readSessions()
-      .catch(() => null)
-      .then((read) => {
-        recordChecks.delete(win);
-        if (!win.isConnected || desk.some((r) => r.id === win._deskId)) return;
-        const sessions = read?.sessions;
-        // Not known: the next desk this page takes asks again. A list that
-        // did not hear from this window's peer does not know either.
-        if (!Array.isArray(sessions) || unheardRef(win._deskRepo, read!.unheard)) return;
-        const live = sessions.some((s) => s?.record === win._deskId) || !!sessionRowFor(win, sessions);
-        if (live) createRecord(win);
-        else leaveDesk([win._deskId]);
-      });
-  }
-
-  // Windows whose records left the desk. The shell's hook takes them out of
-  // the columns first (a lone survivor is maximized before the drops) and
-  // calls `dropClosedElsewhere`; without a hook they are dropped here.
-  let onDeskGone: ((ids: string[]) => void) | null = null;
-  function setDeskGoneHook(fn: (ids: string[]) => void) {
-    onDeskGone = fn;
-  }
-  function leaveDesk(ids: string[]) {
-    if (typeof onDeskGone === "function") onDeskGone(ids);
-    else for (const id of ids) dropClosedElsewhere(id);
-  }
-
-  // Why the daemon cannot read the saved desk, or "" (ADR-0070 D4). Set only
-  // by the daemon's own `409 {"state":"unreadable"}`: a transport failure or
-  // a pre-login 401 is not a broken desk, and must not offer a new one.
-  let deskFailure = "";
-  // The shell's hook for a desk failure found by a flush: no push says so.
-  let onDeskFailure: (() => void) | null = null;
-  // The `409` reply of an unreadable desk, as the reason to show, or null.
-  // The daemon's own text is a parser message for a developer: it goes to
-  // the browser console, and the operator reads what it means.
-  async function unreadableDesk(r: ApiRefusal<"GET /api/desk">) {
-    if (r.status !== 409) return null;
-    const body = await r.json().catch(() => null);
-    if (body?.state !== "unreadable") return null;
-    if (body.error) console.warn("saved desk:", body.error);
-    return "the file is damaged";
-  }
-
-  // Load (or re-load, after a login or a push) the daemon's desk. Never
-  // rejects: an unreachable daemon leaves the page as it was. An unreadable
-  // desk sets `deskFailure` and stops the sending.
-  function reloadDesk() {
-    return apiFetch("GET /api/desk")
-      .then(async (r) => {
-        if (r.ok) return r.json();
-        const why = await unreadableDesk(r);
-        if (why) {
-          deskFailure = why;
-          deskLoaded = false;
-          sync.fail();
-          return null;
-        }
-        throw new Error("desk unavailable");
-      })
-      .then((payload) => {
-        if (!payload) return;
-        deskFailure = "";
-        ingestDesk(payload);
-        // Changes kept while the daemon could not be reached go now.
-        if (sync.hasPending()) scheduleDeskFlush();
-      })
-      .catch(() => {});
-  }
-  function currentDeskFailure() {
-    return deskFailure;
-  }
-  function setDeskFailureHook(fn: () => void) {
-    onDeskFailure = fn;
-  }
-  // The one action on an unreadable desk: the daemon renames the old file
-  // aside and starts an empty desk; this page then reads and restores it.
-  function startNewDesk() {
-    return apiFetch("POST /api/desk/new")
-      .then(async (r) => {
-        if (r.ok) return;
-        // 409 "readable": another tab started the new desk first. The desk is
-        // readable, so this tab reads it like any other.
-        const body = r.status === 409 ? await r.json().catch(() => null) : null;
-        if (body && "state" in body && body.state === "readable") return;
-        throw new Error(`the daemon answered ${r.status}`);
-      })
-      .then(() => reloadDesk())
-      .then(() => {
-        if (!deskLoaded) return;
-        // Consoles opened over the unreadable desk queued their records: they
-        // go on this flush. With none up, the boot restore never ran, so it
-        // runs now.
-        if (wins.size) scheduleDeskFlush();
-        else restoreDesk();
-      });
-  }
-  // `restoreDesk` awaits this before reconciling, so the layout is never
-  // reconciled against a desk that has not landed.
-  const deskReady = reloadDesk();
-
-  // Resolves once the boot desk load has settled (landed OR refused) — what
-  // `app.ts` awaits before copying the view into its reactive map.
-  function whenDeskLoaded() {
-    return deskReady;
-  }
-
-  // The answer to one upload (`flushDesk`, `wb-desk.ts`): a batch
-  // that failed in a way the daemon may still accept is sent again with the
-  // same `seq`, later.
-  let flushBackoff = 1000;
-  function flushed(out: { kind: string; status?: number; reply?: DeskReply | null }) {
-    const kind = out?.kind;
-    if (kind === "held") return;
-    if (kind === "ok") {
-      flushBackoff = 1000;
-      for (const r of out.reply?.refused || []) console.warn("desk change refused:", r.error);
-      const verdict = sync.acked(out.reply);
-      if (verdict === "reload") {
-        reloadForRestoredDesk();
-        return;
-      }
-      if (verdict === "taken") {
-        refreshView();
-        converge();
-      }
-      if (sync.hasPending()) scheduleDeskFlush();
-      return;
-    }
-    if (kind === "refused") {
-      const state = out.reply?.state;
-      if (out.status === 409 && state === "restored") {
-        reloadForRestoredDesk();
-        return;
-      }
-      // The daemon will never accept this batch.
-      if (out.status === 400 || out.status === 422) {
-        console.warn("desk changes refused:", out.reply?.error);
-        sync.dropped();
-        if (sync.hasPending()) scheduleDeskFlush();
-        return;
-      }
-      // The daemon refuses a write over a desk it cannot read; the page shows
-      // the failure and sends nothing until the desk reads again.
-      if (out.status === 409 && state === "unreadable") {
-        if (out.reply?.error) console.warn("saved desk:", out.reply.error);
-        deskFailure = "the file is damaged";
-        deskLoaded = false;
-        sync.fail();
-        onDeskFailure?.();
-        return;
-      }
-    }
-    // A network failure, a 401 before a login, a 5xx: kept, and sent again.
-    scheduleDeskFlush(flushBackoff);
-    flushBackoff = Math.min(flushBackoff * 2, 30000);
-  }
-  // A mutation in the last 250 ms before the tab closes would otherwise be
-  // dropped. The sink's `putSync` rides `keepalive`, which outlives the document.
-  window.addEventListener("pagehide", () => {
-    // The per-client view first, and NOT behind the desk guard: `WBView`'s store
-    // is synchronous and `deskLoaded` says nothing about it — gating it would
-    // drop the last pan of every pre-login page.
-    flushPendingOffset();
-    // Every dirty note, too (ADR-0064 §7): the autosave debounce is 800 ms, so
-    // without this the last sentence typed before a close is gone. A best
-    // effort — the socket may not finish — for the same reason and with the
-    // same bargain as the desk's own last flush below.
-    window.WBNotes?.flushAll();
-    // NOTHING closes a detached popup here: `pagehide` fires on a RELOAD exactly
-    // as on a close, with no reliable discriminator (#347). The popup declares
-    // its peer lost after `PEER_WINDOW_MS` without a beat and closes itself,
-    // which covers a clean close and a force-kill alike (ADR-0051 §8).
-    flushDeskOnClose();
+    inGesture,
+    nameUnnamed,
+    createRecord,
+    applyLock,
+    renderTitle,
+    dropClosedElsewhere,
+    flushPendingOffset,
   });
 
   // Coming back from a suspend. Registered in EVERY document that runs this
@@ -1807,7 +1506,7 @@ export function createConsole(window: Window, document: Document, location: Pick
   // carried from an adopted, unrecorded one stays unrecorded. Any other
   // window is a new console: its record is created.
   function recordBirth(win: ConsoleWin, carry: SpawnCarry | undefined) {
-    const r = desk.find((x) => x.id === win._deskId);
+    const r = currentDesk().find((x) => x.id === win._deskId);
     if (r) {
       const fields: DeskWindowFields = {};
       if ((r.checkout ?? null) !== (win._deskCheckout ?? null)) fields.checkout = win._deskCheckout ?? null;
@@ -1834,7 +1533,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     // A fresh read first: the record may have landed without a push here.
     reloadDesk().then(() => {
       if (!win.isConnected || !win._deskUnrecorded) return;
-      if (desk.some((r) => r.id === win._deskId)) return;
+      if (currentDesk().some((r) => r.id === win._deskId)) return;
       recordLeft(win);
     });
   }
@@ -1842,7 +1541,7 @@ export function createConsole(window: Window, document: Document, location: Pick
   // The session the daemon announced, and the worktree with it, written only
   // when they differ from the record: a reconnect changes nothing else.
   function recordSession(win: ConsoleWin) {
-    const r = desk.find((x) => x.id === win._deskId);
+    const r = currentDesk().find((x) => x.id === win._deskId);
     if (!r) return;
     const fields: DeskWindowFields = {};
     const session = {
@@ -2275,14 +1974,14 @@ export function createConsole(window: Window, document: Document, location: Pick
       // `popups.size()` counts as "windows already up": detaching every
       // fence drives `wins.size` to 0, and a `restoreDesk` would respawn the
       // popups' members.
-      if (deskLoaded && wins.size === 0 && popups.size() === 0) {
+      if (isDeskLoaded() && wins.size === 0 && popups.size() === 0) {
         restoreDesk();
         return;
       }
       // Windows already up: nothing else would put the just-loaded fences on
       // the stage. Gated on the permit: a REFUSED load leaves `fences` as
       // whatever this page drew.
-      if (!deskLoaded) return;
+      if (!isDeskLoaded()) return;
       renderFences();
       renderNotes();
       applyExtent();
