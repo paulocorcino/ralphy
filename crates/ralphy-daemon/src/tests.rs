@@ -1316,7 +1316,7 @@ fn the_release_badge_and_panel_are_pinned_in_the_served_assets() {
         "the flag path the shortcuts ask is the one the panel gives to scrim()"
     );
 
-    assert!(module.contains("fetch('/api/release'"));
+    assert!(module.contains("apiFetch('GET /api/release'"));
     assert!(
         module.contains("view.severity !== 'none'"),
         "loudness is the daemon's answer, not a browser-side derivation"
@@ -5957,12 +5957,12 @@ fn shell_detaches_a_fence() {
     // NEGATIVE CONTROL: deleting the write wholesale would satisfy the first
     // assertion alone.
     assert!(
-        !js.contains(r#""/api/desk", {"#) && !js.contains(r#""/api/desk?tab=""#),
+        !js.contains(r#""/api/desk", {"#) && !js.contains(r#""PUT /api/desk""#),
         "the desk PUT must live only in wb-desk-sink.ts (#346)"
     );
     let sink = include_str!("../assets/ui/wb-desk-sink.ts");
     assert!(
-        sink.contains(r#""/api/desk?tab=""#) && sink.contains("fetch(deskUrl(), {"),
+        sink.contains(r#"apiFetch("PUT /api/desk", {"#) && sink.contains("query: { tab: TAB },"),
         "wb-desk-sink.ts must still perform the desk PUT (#346)"
     );
     assert!(
@@ -6926,7 +6926,7 @@ fn a_quiet_detach_peer_is_challenged_before_it_is_buried() {
     );
     let popup = squeeze(include_str!("../assets/ui/wb-detached-fence.ts"));
     assert!(
-        popup.contains("!window.opener||window.opener.closed"),
+        popup.contains("constopenerGone=()=>opener()?.closed??true;"),
         "the popup's verdict is the opener HANDLE, which owes nothing to a timer"
     );
     assert!(
@@ -8201,11 +8201,11 @@ fn the_run_completion_nudge_is_wired_through_the_ui_assets() {
 fn the_peer_wake_is_wired_through_the_ui_assets() {
     let app_js = include_str!("../assets/ui/app.ts");
     for symbol in [
-        "/api/fleet/nudge?daemon_id=",
+        r#"apiFetch("POST /api/fleet/nudge", { query: { daemon_id: daemonId } })"#,
         "async wakePeer(",
         // Readiness, not the spawn: a caller that acted on `nudged` would be
         // back to reporting a peer as woken while it is still booting.
-        "reply.ready",
+        "woke?.ready",
     ] {
         assert!(
             app_js.contains(symbol),
@@ -8256,7 +8256,7 @@ fn the_explorer_can_create_at_every_target_including_the_repo_root() {
          (empty space = the repo root), not return early"
     );
     assert!(
-        js.contains("createHere(kind: string) {"),
+        js.contains("createHere(kind: \"file\" | \"folder\") {"),
         "wb-files.ts must keep createHere(kind) — the Files header calls it"
     );
     let html = include_str!("../assets/ui/index.html");

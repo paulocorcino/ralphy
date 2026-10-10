@@ -13,7 +13,7 @@
 // modules). Every field is optional: a daemon of an older build sends fewer,
 // and each read here has its default.
 /** The `/api/spend` summary document (`SpendSummary`). */
-type SpendDoc = {
+export type SpendDoc = {
   project?: string;
   usd?: number | null;
   floor?: boolean;
@@ -98,7 +98,7 @@ type ActivityDay = {
   deliveries_share?: number;
 };
 /** One run record of the `/api/usage` ledger, or one interactive record. */
-type SpendRecord = {
+export type SpendRecord = {
   daemon_id?: string;
   issue?: number;
   phase?: string;
@@ -117,7 +117,7 @@ type SpendRecord = {
   unpriced_cause?: string;
 };
 /** A peer whose usage did not arrive (`/api/usage` `missing`). */
-type MissingUsage = { daemon_id: string; environment?: string; why?: string };
+export type MissingUsage = { daemon_id: string; environment: string; why: string };
 /** An issue of the board, for a delivery's title. */
 type TitledIssue = { number: number; title?: string };
 

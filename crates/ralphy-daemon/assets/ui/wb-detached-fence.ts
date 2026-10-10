@@ -7,13 +7,42 @@ import { WBColumns } from "./wb-columns.ts";
 import type { Grid } from "./wb-columns.ts";
 import { WBDetachLink } from "./wb-detach-link.ts";
 import type { DetachMessage } from "./wb-detach-link.ts";
+import { isPartialRect, isPopupMember } from "./wb-console-popups.ts";
 import type { PopupMember } from "./wb-console-popups.ts";
-import type { ConsoleWin } from "./wb-types.d.ts";
+import { isNullableString, isOptionalString, isRecord } from "./wb-api.ts";
+import { openerOf } from "./wb-events.ts";
+import type { ConsoleWin, Rect } from "./wb-types.d.ts";
+
+/** The opener's answer to "ready": the fence, its members, and the ids of
+ * the tab and of this window. */
+type FenceOpen = {
+  type: "wb-fence-open";
+  fence: { id: string; name?: string; rect?: Partial<Rect> | null };
+  members?: PopupMember[];
+  tab?: string | null;
+  pid?: unknown;
+};
+
+/** Whether `v` is the opener's answer to "ready". The opener can be an older
+ * build than this page, which the daemon served when the window opened. */
+export function isFenceOpen(v: unknown): v is FenceOpen {
+  if (!isRecord(v) || v.type !== "wb-fence-open") return false;
+  const fence = v.fence;
+  return (
+    isRecord(fence) &&
+    typeof fence.id === "string" &&
+    isOptionalString(fence.name) &&
+    (fence.rect == null || isPartialRect(fence.rect)) &&
+    (v.members === undefined || (Array.isArray(v.members) && v.members.every(isPopupMember))) &&
+    (v.tab === undefined || isNullableString(v.tab))
+  );
+}
 
 export function wireDetachedFence(window: Window, document: Document) {
   // Where this window will talk: the concrete origin, never `"*"`, as in the
   // page's own script that builds the console options.
   const PEER = window.location.origin;
+  const opener = () => openerOf(window);
 
   // Boot: ASK the shell for this fence and its members. They do not ride in
   // the URL, because a URL is composed by whoever sends the link — a
@@ -41,15 +70,16 @@ export function wireDetachedFence(window: Window, document: Document) {
   const empty = (why: string) => {
     stageEl().innerHTML = '<p class="detached-empty">Nothing to show. ' + why + ".</p>";
   };
-  if (!window.opener) {
+  const shell = opener();
+  if (!shell) {
     empty("Detach a fence from the workbench first");
     return;
   }
   window.addEventListener("message", (e) => {
     if (e.origin !== window.location.origin) return;
-    if (e.source !== window.opener) return;
-    const m = e.data;
-    if (!m || m.type !== "wb-fence-open" || !m.fence) return;
+    if (e.source !== opener()) return;
+    const m: unknown = e.data;
+    if (!isFenceOpen(m)) return;
     if (mounted) return;
     mounted = true;
     fenceId = m.fence.id;
@@ -64,7 +94,7 @@ export function wireDetachedFence(window: Window, document: Document) {
     addTools();
     openLink();
   });
-  window.opener.postMessage({ type: "wb-fence-ready" }, PEER);
+  shell.postMessage({ type: "wb-fence-ready" }, PEER);
   // A shell that never answers (a foreign opener, or one that closed
   // mid-handover) leaves the plane empty rather than pending forever.
   setTimeout(() => {
@@ -74,9 +104,8 @@ export function wireDetachedFence(window: Window, document: Document) {
   // also polls `handle.closed`, because a force-closed popup fires no
   // unload — and its fold makes the doubled signal a no-op.
   window.addEventListener("beforeunload", () => {
-    if (window.opener && fenceId) {
-      window.opener.postMessage({ type: "wb-fence-reattach", fenceId }, PEER);
-    }
+    const to = opener();
+    if (to && fenceId) to.postMessage({ type: "wb-fence-reattach", fenceId }, PEER);
   });
 
   // ---- columns and a note on top (ADR-0051 §8, amended 2026-10-05) ----
@@ -219,7 +248,7 @@ export function wireDetachedFence(window: Window, document: Document) {
         const { draft, claim, ...rest } = m;
         return { ...rest, path };
       });
-      if (window.opener) window.opener.postMessage({ type: "wb-note-named", noteId, path }, PEER);
+      opener()?.postMessage({ type: "wb-note-named", noteId, path }, PEER);
       LINK.post({ type: "popup-note-named", tab: TAB, fenceId, pid: PID, noteId, path });
     });
     // The name chosen BEFORE the first write, by the same two routes. If
@@ -230,7 +259,7 @@ export function wireDetachedFence(window: Window, document: Document) {
       const claim = e.detail?.claim;
       if (!noteId || typeof claim !== "string") return;
       MEMBERS = MEMBERS.map((m) => (m.kind === "note" && m.id === noteId ? { ...m, claim } : m));
-      if (window.opener) window.opener.postMessage({ type: "wb-note-claimed", noteId, claim }, PEER);
+      opener()?.postMessage({ type: "wb-note-claimed", noteId, claim }, PEER);
       LINK.post({ type: "popup-note-claimed", tab: TAB, fenceId, pid: PID, noteId, claim });
     });
 
@@ -250,7 +279,7 @@ export function wireDetachedFence(window: Window, document: Document) {
     // Message delivery is not timer-throttled, so a merely slow opener
     // still answers.
     let probed = false;
-    const openerGone = () => !window.opener || window.opener.closed;
+    const openerGone = () => opener()?.closed ?? true;
     const silent = () => {
       if (openerGone()) return lost();
       // The handle says the tab is open, so the only way it is really

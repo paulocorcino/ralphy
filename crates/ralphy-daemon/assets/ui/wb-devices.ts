@@ -13,25 +13,27 @@
    `main.ts` registers it as `wbDevices` (ADR-0075 D5).
    --------------------------------------------------------------------------- */
 import { component } from "./wb-alpine.ts";
+import { apiFetch } from "./wb-api.ts";
 
 /** A device of `GET /api/audit/devices`. */
-type Device = {
+export type Device = {
   device: string;
-  this?: boolean;
-  os?: string;
-  os_version?: string;
-  browser?: string;
-  browser_version?: string;
-  form?: string;
-  model?: string;
-  gpu?: string;
-  ip?: string;
-  first_seen?: string;
+  /** The device that asked. */
+  this: boolean;
+  os: string | null;
+  os_version: string | null;
+  browser: string | null;
+  browser_version: string | null;
+  form: string | null;
+  model: string | null;
+  gpu: string | null;
+  ip: string | null;
+  first_seen: string;
   last_seen: string;
   events: number;
 };
 /** A line of `GET /api/audit/events` (the daemon's audit `Event`). */
-type AuditEvent = {
+export type AuditEvent = {
   at: string;
   event: string;
   device?: string;
@@ -104,7 +106,7 @@ function actionLine(e: ActionEvent) {
   return e.status >= 200 && e.status < 300 ? name : `${name} (refused: ${e.status})`;
 }
 
-function withVersion(name: string, version?: string) {
+function withVersion(name: string, version: string | null) {
   return version ? `${name} ${version}` : name;
 }
 
@@ -183,11 +185,16 @@ function when(at: string) {
   return Number.isNaN(t.getTime()) ? at : t.toLocaleString();
 }
 
-async function readJson(url: string) {
-  const res = await fetch(url);
-  const body = await res.json().catch(() => null);
-  if (!res.ok) throw new Error((body && body.error) || `the daemon answered ${res.status}`);
-  return body;
+async function readJson<K extends "GET /api/audit/devices" | "GET /api/audit/events">(
+  route: K,
+  query?: Record<string, string | number>,
+) {
+  const res = await apiFetch(route, { query });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error || `the daemon answered ${res.status}`);
+  }
+  return res.json();
 }
 
 // The Alpine component. `loaded` is set only by a list the daemon served,
@@ -207,7 +214,7 @@ export function devices() {
     async load() {
       this.error = "";
       try {
-        this.devices = rows(await readJson("/api/audit/devices"), when);
+        this.devices = rows(await readJson("GET /api/audit/devices"), when);
         this.loaded = true;
       } catch (e) {
         this.loaded = false;
@@ -225,7 +232,7 @@ export function devices() {
       this.raw = "";
       this.eventsError = "";
       try {
-        const reply = await readJson(`/api/audit/events?device=${encodeURIComponent(d.device)}&limit=50`);
+        const reply = await readJson("GET /api/audit/events", { device: d.device, limit: 50 });
         this.events = eventRows(reply, when);
         this.raw = JSON.stringify(reply.events, null, 2);
       } catch (e) {

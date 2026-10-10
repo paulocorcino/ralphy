@@ -27,6 +27,7 @@ import {
   keyBarVisible,
   keySequence,
   keyboardInset,
+  pasteAfterRead,
   pasteDecision,
   pasteOffered,
   phoneBleed,
@@ -371,6 +372,43 @@ test("clipboardContent prefers an image, then text, then nothing", async () => {
   assert.deepEqual(await clipboardContent([item({ "text/plain": text })]), { text: "hello" });
   assert.deepEqual(await clipboardContent([item({ "text/html": text })]), { text: "" });
   assert.deepEqual(await clipboardContent([]), { text: "" });
+});
+
+// --- pasteAfterRead: the paste key once its clipboard read settles ---------
+
+test("pasteAfterRead pastes only into the terminal still attached when the read settles", async () => {
+  const fakeTerm = (log) => ({
+    pasteImage: (blob) => log.push(["image", blob.type]),
+    term: { paste: (text) => log.push(["text", text]), focus: () => log.push(["focus"]) },
+  });
+  const png = { type: "image/png" };
+  // [case, what the read gives, what happens to `_term` while it waits,
+  //  what the pressed terminal gets, what a new terminal gets]
+  const rows = [
+    ["text, still attached", { text: "ls" }, "keep", [["text", "ls"], ["focus"]], []],
+    ["image, still attached", { image: png }, "keep", [["image", "image/png"], ["focus"]], []],
+    ["a refused read, still attached", null, "keep", [["focus"]], []],
+    ["asleep while the read waits", { text: "ls" }, "sleep", [], []],
+    ["another terminal attached while the read waits", { text: "ls" }, "replace", [], []],
+  ];
+  for (const [name, content, during, wantPressed, wantOther] of rows) {
+    const pressedLog = [];
+    const otherLog = [];
+    const pressed = fakeTerm(pressedLog);
+    const win = { _term: pressed };
+    let settle;
+    const read = new Promise((resolve, reject) => {
+      settle = () => (content ? resolve(content) : reject(new Error("NotAllowedError")));
+    });
+    const done = pasteAfterRead(win, pressed, read);
+    if (during === "sleep") win._term = null;
+    if (during === "replace") win._term = fakeTerm(otherLog);
+    settle();
+    // A rejection here is the unhandled error the key bar would leave behind.
+    await done;
+    assert.deepEqual(pressedLog, wantPressed, name);
+    assert.deepEqual(otherLog, wantOther, name);
+  }
 });
 
 // --- phoneBleed: when a maximized console folds the chrome away ------------

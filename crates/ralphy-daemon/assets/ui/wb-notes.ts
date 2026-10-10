@@ -466,7 +466,7 @@ export function createNotes(window: NotesWindow, document: Document) {
   // is why the fence's lock is NOT copied onto the record.
   function lockedBy(record: Pick<NoteSource, "locked" | "rect"> | null | undefined, fences: DeskFence[] | null | undefined) {
     if (record?.locked) return "self";
-    const held = WBGeometry?.fenceOf?.(fences || [], record?.rect || ({} as Rect));
+    const held = WBGeometry?.fenceOf?.(fences || [], record?.rect);
     return held?.locked ? "fence" : null;
   }
 
@@ -1862,7 +1862,7 @@ export function createNotes(window: NotesWindow, document: Document) {
   // not an owner), so a reload works this out again from the fence registry
   // instead of restoring a set that died with the document.
   function isAway(record: Pick<NoteSource, "rect"> | null | undefined, fences: DeskFence[] | null | undefined) {
-    const held = WBGeometry?.fenceOf?.(fences || [], record?.rect || ({} as Rect));
+    const held = WBGeometry?.fenceOf?.(fences || [], record?.rect);
     return !!held && !!window.WBConsole?.isDetached?.(held.id);
   }
 

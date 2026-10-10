@@ -17,7 +17,7 @@ import type { Project } from "./wb-project.ts";
 // local rows never do, which is what makes "local" a property of the data
 // rather than a flag someone has to remember to set.
 /** What the fold reads of a project row (`Project` in `wb-project.ts`). */
-type Row = { daemon?: string; key?: string; slug: string };
+type Row = Pick<Project, "daemon" | "key" | "slug" | "env" | "os" | "daemonName" | "peerState">;
 /** A peer of `/api/fleet` (`PeerView` in `routes/api_fleet.rs`). */
 export type FleetPeer = {
   daemon_id: string;
@@ -82,9 +82,9 @@ function isPeerRef(ref: string | null | undefined) {
 //
 // Order: local first, then peers by environment then name — stable, so the
 // sidebar does not reshuffle between polls.
-function fleetGroups(repos: unknown, peers: unknown) {
-  const rows = Array.isArray(repos) ? repos : [];
-  const peerList = Array.isArray(peers) ? peers : [];
+function fleetGroups(repos: readonly Project[] | null | undefined, peers: readonly FleetPeer[] | null | undefined) {
+  const rows = repos || [];
+  const peerList = peers || [];
 
   const groups = new Map<string, Group>();
   const ensure = (key: string, seed: GroupSeed) => {
@@ -98,7 +98,7 @@ function fleetGroups(repos: unknown, peers: unknown) {
     const g = ensure(key, {
       environment: row.env || "",
       os: row.os || "",
-      daemon: isLocal(row) ? "" : row.daemon,
+      daemon: row.daemon || "",
       // A local group has no entry in the peer list below, so its name has to
       // come off the row — which `loadFleet` stamps from `/api/fleet`.
       name: isLocal(row) ? row.daemonName || "" : "",
@@ -147,12 +147,12 @@ function fleetGroups(repos: unknown, peers: unknown) {
   // The header names the environment. The daemon's name only tells two
   // daemons in ONE environment apart; anywhere else it restates the
   // environment in other words (`WSL: Ubuntu-22.04 wsl-ubuntu`).
-  const perEnv = new Map();
+  const perEnv = new Map<string, number>();
   for (const g of out) perEnv.set(g.environment, (perEnv.get(g.environment) || 0) + 1);
   for (const g of out) {
     g.header = header;
     // A tunnel peer's header already carries its name (`groupHost`).
-    g.showName = !g.tunnel && !!g.name && perEnv.get(g.environment) > 1;
+    g.showName = !g.tunnel && !!g.name && (perEnv.get(g.environment) || 0) > 1;
   }
   return out;
 }

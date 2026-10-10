@@ -21,6 +21,12 @@ export function projectsStore() {
     openSlug: null as string | null,
     // `loadRepos()` fills this at init.
     projects: [] as Project[],
+    // The open project's ref as the key of a per-project record. With no
+    // project open the key is "null", which no project ref is, so a read
+    // finds nothing.
+    openKey() {
+      return String(this.openSlug);
+    },
     setOpen(slug: string | null) {
       this.openSlug = slug;
     },

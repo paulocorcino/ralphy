@@ -15,6 +15,8 @@ import { WBGeometry } from "./wb-geometry.ts";
 import * as WBDeskFolds from "./wb-desk-folds.ts";
 import { WBWindowState } from "./wb-window-state.ts";
 import { WBDetachLink } from "./wb-detach-link.ts";
+import { forwardAction } from "./wb-events.ts";
+import { isOptionalString, isRecord } from "./wb-api.ts";
 import type { PopupEntry, PopupMember, PopupRegistry } from "./wb-console-popups.ts";
 import type { DetachReason } from "./wb-console-session.ts";
 import type { FenceList } from "./wb-console-fence-list.ts";
@@ -42,6 +44,31 @@ type PeerEvent = { type: "beat" | "tick" | "gone"; at?: number };
 
 // What a popup says about a card's file: the card's id and the name it gave.
 type NoteReport = Pick<DetachMessage, "noteId" | "path" | "claim">;
+
+/** A message a detached fence window sends its opener (`wb-detached-fence.ts`). */
+type FencePopupMessage =
+  | { type: "wb-fence-ready" }
+  | { type: "wb-emit"; action: unknown; detail?: unknown }
+  | ({ type: "wb-note-named" } & NoteReport)
+  | ({ type: "wb-note-claimed" } & NoteReport)
+  | { type: "wb-fence-reattach" };
+
+/** Whether `v` is a message a detached fence window sends. The daemon serves
+ * the popup's page when it opens, so it can be a newer build than this tab. */
+export function isFencePopupMessage(v: unknown): v is FencePopupMessage {
+  if (!isRecord(v)) return false;
+  switch (v.type) {
+    case "wb-fence-ready":
+    case "wb-emit":
+    case "wb-fence-reattach":
+      return true;
+    case "wb-note-named":
+    case "wb-note-claimed":
+      return isOptionalString(v.noteId) && isOptionalString(v.path) && isOptionalString(v.claim);
+    default:
+      return false;
+  }
+}
 
 // What the opener's side reads from the console, and nothing else.
 export type DetachDeps = {
@@ -362,12 +389,10 @@ export function createDetach(deps: DetachDeps) {
     const all = [...st.querySelectorAll<ConsoleWin>(".session-window")];
     const byId = new Map(all.map((w): [string, ConsoleWin] => [w._deskId, w]));
     const ids = fenceMembership(readFenceRects(st), readWindowRects(st))[id] || [];
-    const windows: PopupMember[] = (ids.map((wid) => byId.get(wid)).filter(Boolean) as ConsoleWin[]).map(
-      (win) => ({
-        ...deskOf(win),
-        session: sessionIdOf(win),
-      }),
-    );
+    const windows: PopupMember[] = ids
+      .map((wid) => byId.get(wid))
+      .filter(Boolean)
+      .map((win) => ({ ...deskOf(win), session: sessionIdOf(win) }));
     // The cards the fence holds ride along (ADR-0064 §8), tagged so the popup
     // and the re-attach can tell them from a console. Their RECORDS travel,
     // not their DOM: a card is rebuilt in the popup from the same desk record
@@ -469,8 +494,8 @@ export function createDetach(deps: DetachDeps) {
     let owner: string | null = null;
     for (const [id, entry] of popups.entries()) if (entry.handle === e.source) owner = id;
     if (owner == null) return;
-    const m = e.data;
-    if (!m) return;
+    const m: unknown = e.data;
+    if (!isFencePopupMessage(m)) return;
     if (m.type === "wb-fence-ready") {
       const entry = popups.entry(owner)!;
       entry.greeted = true;
@@ -484,7 +509,7 @@ export function createDetach(deps: DetachDeps) {
         location.origin,
       );
     } else if (m.type === "wb-emit") {
-      WB.emit(m.action, m.detail);
+      forwardAction(WB, m.action, m.detail);
     } else if (m.type === "wb-note-named") {
       recordNoteName(owner, m);
     } else if (m.type === "wb-note-claimed") {

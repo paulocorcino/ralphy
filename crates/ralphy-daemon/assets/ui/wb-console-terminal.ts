@@ -11,10 +11,12 @@
    --------------------------------------------------------------------------- */
 import { WBSessionRoute } from "./wb-session-route.ts";
 import { WBFail } from "./wb-fail.ts";
+import { socketFrame } from "./wb-api.ts";
 import * as WBConsoleInput from "./wb-console-input.ts";
 import * as WBConsoleSession from "./wb-console-session.ts";
 import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
 import type { DetachReason } from "./wb-console-session.ts";
+import type { SessionRequest } from "./wb-session-route.ts";
 import type { Group } from "./wb-fleet.ts";
 
 const {
@@ -91,23 +93,6 @@ export type TerminalDeps = {
 // What a clipboard read gives: an image, or else text (`clipboardContent`).
 type ClipboardRead = { image?: Blob; text?: string };
 
-// What a `/ws/session` connection is asked for, one of: {repo, agent} (a NEW
-// agent launch), {console: true[, repo]} (a NEW free-console launch) or
-// {id[, takeover][, watch]} (a reattach). One bag here; `WBSessionRoute.url`
-// takes it as the union it is built from.
-type ConnectOpts = {
-  id?: number | null;
-  repo?: string | null;
-  agent?: string | null;
-  console?: boolean;
-  command?: string;
-  checkout?: string | null;
-  name?: string | null;
-  record?: string;
-  takeover?: boolean;
-  watch?: boolean;
-};
-
 // The payload of the daemon's `session-end` and `session-open` frames.
 type FramePayload = NonNullable<Parameters<typeof WBSessionRoute.announcement>[1]> & {
   reason?: string;
@@ -120,7 +105,7 @@ type SessionFrame = { verb?: string; payload?: FramePayload };
 
 // What `attachTerminal` is built with, and what the chrome hands back to
 // rebuild a terminal after sleep (`TermWiring`).
-export type TerminalOpts = ConnectOpts & {
+export type TerminalOpts = SessionRequest & {
   // Arms or disarms the key bar's line-selection button.
   onSelecting?: (on: boolean) => void;
   // A key or a paste was refused because this window only watches.
@@ -767,7 +752,7 @@ export function createTerminal(deps: TerminalDeps) {
       }, wait);
     }
 
-    function connect(connOpts: ConnectOpts) {
+    function connect(connOpts: SessionRequest) {
       opened = false;
       announced = null;
       refusal = null;
@@ -776,10 +761,7 @@ export function createTerminal(deps: TerminalDeps) {
       // first LIVE frame clears it.
       replaying = connOpts.id != null;
       ws = new WebSocket(
-        WBSessionRoute.url(WS_ORIGIN, {
-          ...connOpts,
-          holder: WBSessionRoute.tabHolder(),
-        } as Parameters<typeof WBSessionRoute.url>[1]),
+        WBSessionRoute.url(WS_ORIGIN, WBSessionRoute.requestOpts(connOpts, WBSessionRoute.tabHolder())),
       );
       ws.binaryType = "arraybuffer";
       connectingSince = Date.now();
@@ -833,7 +815,7 @@ export function createTerminal(deps: TerminalDeps) {
           // Close frame: the close metadata does not survive the trip (#334).
           let c: SessionFrame | null = null;
           try {
-            c = JSON.parse(new TextDecoder().decode(a.subarray(1)));
+            c = socketFrame<SessionFrame>(a);
           } catch {}
           if (c && c.verb === "session-open") {
             const owner = WBSessionRoute.announcement(

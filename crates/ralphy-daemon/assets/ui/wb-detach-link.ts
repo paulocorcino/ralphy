@@ -33,6 +33,7 @@
    `BroadcastChannel` or a timer. The node harness loads this file with neither
    present, and so does a browser in private mode.
 --------------------------------------------------------------------------- */
+import { isNullableString, isOptionalString, isRecord } from "./wb-api.ts";
 /** What the registry keeps for a tab: the id, the detached fences, and the
  * member ids each one held. */
 type DetachRecord = { v: 1; tab: string | null; fences: string[]; members: Record<string, string[]> };
@@ -52,6 +53,24 @@ export type DetachMessage = {
   claim?: string;
 };
 
+/** Whether `v` is a message of the lifecycle channel. Every window of this
+ * origin hears the channel, and one of them can be a page of another build
+ * (a popup the daemon served after an update). */
+export function isDetachMessage(v: unknown): v is DetachMessage {
+  if (!isRecord(v) || typeof v.type !== "string" || !isNullableString(v.tab)) return false;
+  const members = v.members;
+  return (
+    (v.fenceId === undefined || isNullableString(v.fenceId)) &&
+    (v.pid === undefined || isNullableString(v.pid)) &&
+    (members === undefined ||
+      (Array.isArray(members) &&
+        members.every((m) => isRecord(m) && typeof m.id === "string" && (m.kind == null || typeof m.kind === "string") && isOptionalString(m.path)))) &&
+    isOptionalString(v.noteId) &&
+    isOptionalString(v.path) &&
+    isOptionalString(v.claim)
+  );
+}
+
 export const WBDetachLink = (function () {
   const KEY = "wb.detach.v1";
   const CHANNEL = "wb.detach.v1";
@@ -68,16 +87,16 @@ export const WBDetachLink = (function () {
     try {
       const raw = sessionStorage.getItem(KEY);
       if (!raw) return null;
-      const rec = JSON.parse(raw);
-      if (!rec || rec.v !== 1) return null;
+      const rec: unknown = JSON.parse(raw);
+      if (!isRecord(rec) || rec.v !== 1) return null;
       const members: Record<string, string[]> = {};
-      for (const [id, ids] of Object.entries(rec.members || {})) {
-        if (Array.isArray(ids)) members[id] = ids.filter((w) => typeof w === "string");
+      for (const [id, ids] of Object.entries(isRecord(rec.members) ? rec.members : {})) {
+        if (Array.isArray(ids)) members[id] = ids.filter((w): w is string => typeof w === "string");
       }
       return {
         v: 1,
         tab: typeof rec.tab === "string" ? rec.tab : null,
-        fences: Array.isArray(rec.fences) ? rec.fences.filter((f: unknown) => typeof f === "string") : [],
+        fences: Array.isArray(rec.fences) ? rec.fences.filter((f): f is string => typeof f === "string") : [],
         members,
       };
     } catch {
@@ -109,10 +128,12 @@ export const WBDetachLink = (function () {
       if (typeof BroadcastChannel !== "undefined") {
         try {
           chan = new BroadcastChannel(CHANNEL);
-          chan.onmessage = (e: MessageEvent<DetachMessage>) => {
+          chan.onmessage = (e: MessageEvent<unknown>) => {
+            const m = e.data;
+            if (!isDetachMessage(m)) return;
             for (const fn of listeners.slice()) {
               try {
-                fn(e.data);
+                fn(m);
               } catch {}
             }
           };

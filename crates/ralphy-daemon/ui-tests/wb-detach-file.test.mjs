@@ -10,6 +10,7 @@ import { loadShell } from "./harness.mjs";
 const ORIGIN = "http://127.0.0.1:7431";
 const DESC = {
   project: "owner/repo",
+  label: "a.md",
   path: "docs/a.md",
   ftype: "markdown",
   content: "at detach",
@@ -57,6 +58,7 @@ function detached() {
   state.detachFile(DESC);
   return {
     popup,
+    state,
     urls,
     opened,
     tick: () => poll?.(),
@@ -108,4 +110,26 @@ test("a re-attach from a window the shell did not open is ignored", () => {
   const d = detached();
   d.send(fakePopup(), { type: "wb-reattach", desc: { ...DESC, content: "forged" } });
   assert.equal(d.opened.length, 0);
+});
+
+// The daemon serves the popup's page when it opens, so the popup can be a
+// newer build than the shell. A message of a shape the shell does not know is
+// dropped: no tab opens, no link is followed, and the popup stays detached.
+test("a popup message of another shape is dropped", () => {
+  const d = detached();
+  const links = [];
+  d.state.openLink = (r) => links.push(r);
+  for (const data of [
+    { type: "wb-reattach", desc: { ...DESC, path: 7 } },
+    { type: "wb-open-request", detail: "docs/b.md" },
+    "wb-reattach",
+  ]) {
+    d.send(d.popup, data);
+  }
+  assert.deepEqual([d.opened.length, links.length, d.popup.closeCalls], [0, 0, 0]);
+  // CONTROL: the same two messages in the shape the popup sends.
+  d.send(d.popup, { type: "wb-open-request", detail: { project: "owner/repo", path: "docs/b.md", checkout: null } });
+  d.send(d.popup, { type: "wb-reattach", desc: DESC });
+  assert.deepEqual(links, [{ project: "owner/repo", path: "docs/b.md", fragment: undefined, checkout: null }]);
+  assert.equal(d.opened.length, 1);
 });

@@ -46,7 +46,13 @@ import { WBDetachLink } from "./wb-detach-link.ts";
 import { WBView } from "./wb-view.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
+import { apiFetch } from "./wb-api.ts";
+import type { ApiRefusal } from "./wb-api.ts";
 import { sendDocument } from "./wb-events.ts";
+import type { DetachedMember, Painted } from "./wb-columns.ts";
+import type { TerminalDeps, TerminalOpts } from "./wb-console-terminal.ts";
+import type { ConfirmOptions } from "./wb-console-title.ts";
+import type { Group } from "./wb-fleet.ts";
 import type { ConsoleOpts, ConsoleTerm, ConsoleWin, DeskChange, DeskFence, DeskNote, DeskRecord, DeskReply, DeskWindowFields, ExtentOpts, NoteCard, Rect, SpawnCarry, Stacked, WindowSnapshot } from "./wb-types.d.ts";
 
 // The input folds are `wb-console-input.ts`: pure functions of their arguments.
@@ -69,6 +75,7 @@ const {
   keyBarVisible,
   terminalInputMode,
   pasteOffered,
+  pasteAfterRead,
   rightClickAction,
   pressRoute,
   forceSelectionKeys,
@@ -449,7 +456,7 @@ export function createConsole(window: Window, document: Document, location: Pick
   // thread, and an automated browser dismisses it by default — every guarded
   // click would silently cancel.
   // `notice: true` is the one-button form: OK alone, focused, Enter/Escape dismiss.
-  function askConfirm({ title, message, confirmLabel = "Confirm", danger = false, notice = false }: import("./wb-console-title.ts").ConfirmOptions) {
+  function askConfirm({ title, message, confirmLabel = "Confirm", danger = false, notice = false }: ConfirmOptions) {
     const scrim = document.createElement("div");
     scrim.className = "modal-scrim wb-confirm";
     const modal = document.createElement("div");
@@ -682,8 +689,8 @@ export function createConsole(window: Window, document: Document, location: Pick
     return {
       id: win._deskId,
       repo: win._deskRepo,
-      agent: win._deskAgent!,
-      kind: win._deskKind!,
+      agent: win._deskAgent,
+      kind: win._deskKind,
       rect: restoreRect(win),
       max: win.classList.contains("maximized"),
       // A DORMANT window has no handle; `null` here would demote its record to
@@ -907,7 +914,7 @@ export function createConsole(window: Window, document: Document, location: Pick
   // The `409` reply of an unreadable desk, as the reason to show, or null.
   // The daemon's own text is a parser message for a developer: it goes to
   // the browser console, and the operator reads what it means.
-  async function unreadableDesk(r: Response) {
+  async function unreadableDesk(r: ApiRefusal<"GET /api/desk">) {
     if (r.status !== 409) return null;
     const body = await r.json().catch(() => null);
     if (body?.state !== "unreadable") return null;
@@ -919,7 +926,7 @@ export function createConsole(window: Window, document: Document, location: Pick
   // rejects: an unreachable daemon leaves the page as it was. An unreadable
   // desk sets `deskFailure` and stops the sending.
   function reloadDesk() {
-    return fetch("/api/desk")
+    return apiFetch("GET /api/desk")
       .then(async (r) => {
         if (r.ok) return r.json();
         const why = await unreadableDesk(r);
@@ -949,13 +956,13 @@ export function createConsole(window: Window, document: Document, location: Pick
   // The one action on an unreadable desk: the daemon renames the old file
   // aside and starts an empty desk; this page then reads and restores it.
   function startNewDesk() {
-    return fetch("/api/desk/new", { method: "POST" })
+    return apiFetch("POST /api/desk/new")
       .then(async (r) => {
         if (r.ok) return;
         // 409 "readable": another tab started the new desk first. The desk is
         // readable, so this tab reads it like any other.
         const body = r.status === 409 ? await r.json().catch(() => null) : null;
-        if (body?.state === "readable") return;
+        if (body && "state" in body && body.state === "readable") return;
         throw new Error(`the daemon answered ${r.status}`);
       })
       .then(() => reloadDesk())
@@ -1342,7 +1349,7 @@ export function createConsole(window: Window, document: Document, location: Pick
   function readSessions() {
     if (!sessionsRead) {
       sessionsRead = (async () => {
-        const r = await fetch("/api/sessions");
+        const r = await apiFetch("GET /api/sessions");
         if (!r.ok) throw new Error("sessions unavailable");
         const route = WBSessionRoute;
         return {
@@ -1408,10 +1415,10 @@ export function createConsole(window: Window, document: Document, location: Pick
   // this is only its last answer, for the placeholders of peer projects.
   // `readFleet` is the shell's fleet read on demand, for a window that saw
   // its peer fail.
-  const peerGroups = new Map<string, import("./wb-fleet.ts").Group>();
+  const peerGroups = new Map<string, Group>();
   let wakePeer: ((daemon: string) => Promise<boolean>) | null = null;
   let readFleet: (() => void) | null = null;
-  function ingestFleet(groups: import("./wb-fleet.ts").Group[] | null | undefined, hooks: { wake?: (daemon: string) => Promise<boolean>; read?: () => void } | null | undefined) {
+  function ingestFleet(groups: Group[] | null | undefined, hooks: { wake?: (daemon: string) => Promise<boolean>; read?: () => void } | null | undefined) {
     peerGroups.clear();
     for (const g of groups || []) if (g && g.daemon && !g.local) peerGroups.set(g.daemon, g);
     if (typeof hooks?.wake === "function") wakePeer = hooks.wake;
@@ -1512,7 +1519,7 @@ export function createConsole(window: Window, document: Document, location: Pick
   // Paint `painted` (`WBColumns.painted`). `unmax` is the old first console
   // after a restore: it stops being the maximized console. `persist` writes
   // each change of the maximize to the desk.
-  function applyColumns(painted: import("./wb-columns.ts").Painted[] | null | undefined, opts?: { cap?: number; unmax?: string | null; raise?: boolean; persist?: boolean }) {
+  function applyColumns(painted: Painted[] | null | undefined, opts?: { cap?: number; unmax?: string | null; raise?: boolean; persist?: boolean }) {
     const list = painted || [];
     const cap = opts?.cap ?? 1;
     const persist = !!opts?.persist;
@@ -1592,16 +1599,16 @@ export function createConsole(window: Window, document: Document, location: Pick
   function columnRoster() {
     const st = stage();
     if (!st) return { rows: [], fences: [], membership: {}, detached: {} };
-    const out: Record<string, { id: string; agent: string | null; name: string | null; repo: string | null; kind: string | null }[]> = {};
+    const out: Record<string, DetachedMember[]> = {};
     for (const [id, entry] of popups.entries()) {
       out[id] = (entry.members || [])
         .filter((m) => m && m.id && m.kind !== "note")
         .map((m) => ({
           id: m.id,
-          agent: m.agent as string | null,
+          agent: m.agent ?? null,
           name: desk.find((r) => r.id === m.id)?.consoleName ?? m.consoleName ?? null,
           repo: m.repo === "~" ? null : (m.repo ?? null),
-          kind: m.kind as string | null,
+          kind: m.kind ?? null,
         }));
     }
     return {
@@ -1963,7 +1970,7 @@ export function createConsole(window: Window, document: Document, location: Pick
   // synchronously. `read()` first, because `readText()` resolves "" for an
   // image-only clipboard (an iOS screenshot). ONE call: each read raises
   // Safari's "Paste" callout, so a text fallback would ask twice.
-  function readClipboard(): ReturnType<import("./wb-console-terminal.ts").TerminalDeps["readClipboard"]> {
+  function readClipboard(): ReturnType<TerminalDeps["readClipboard"]> {
     try {
       const clip = navigator.clipboard;
       if (typeof clip.read !== "function") {
@@ -1978,7 +1985,7 @@ export function createConsole(window: Window, document: Document, location: Pick
   // Build the chrome and attach a live terminal. Shared by `open()` and the
   // load-time restore; `termOpts` is the `attachTerminal` opts, `desk` the
   // record this window continues (absent for a fresh launch).
-  function spawnWindow(termOpts: import("./wb-console-terminal.ts").TerminalOpts, label: string | null | undefined, repo: string | null | undefined, desk?: SpawnCarry) {
+  function spawnWindow(termOpts: TerminalOpts, label: string | null | undefined, repo: string | null | undefined, desk?: SpawnCarry) {
     const kind = termOpts.console ? "console" : "agent";
     const { win, body, title, restartBtn, closeBtn } = buildChrome(label, repo, desk, kind);
     // Read at launch, never later: a rename reaches the next restart and never
@@ -2017,8 +2024,8 @@ export function createConsole(window: Window, document: Document, location: Pick
     // the daemon's diagnosis under Details. Built once, then reworded on each
     // fleet read.
     const peerDaemon = WBFleet?.refDaemon(repo) || "";
-    const PEER_BUTTON: Record<string, string> = { wake: "Wake", retry: "Try again" };
-    const showPeerDown = (group: import("./wb-fleet.ts").Group | null) => {
+    const PEER_BUTTON: Partial<Record<NonNullable<WBConsoleSession.PeerAction>, string>> = { wake: "Wake", retry: "Try again" };
+    const showPeerDown = (group: Group | null) => {
       let strip: HTMLElement | null = win.querySelector<HTMLElement>(".session-peer-down");
       if (!strip) {
         strip = document.createElement("div") as HTMLElement;
@@ -2047,14 +2054,15 @@ export function createConsole(window: Window, document: Document, location: Pick
       detail.hidden = !view.detail;
       const btn = strip.querySelector<HTMLElement>(".session-reconnect")!;
       btn.dataset.act = view.action || "";
-      btn.hidden = !PEER_BUTTON[view.action as string];
-      if (PEER_BUTTON[view.action as string]) btn.textContent = PEER_BUTTON[view.action as string];
+      const label = view.action && PEER_BUTTON[view.action];
+      btn.hidden = !label;
+      if (label) btn.textContent = label;
     };
 
     // NAMED, not inline: a dormant console rebuilds its terminal (`wakeWindow`)
     // and the rebuild must be wired to the same chrome. Everything closes over
     // `win`, never a particular terminal.
-    const termWiring: import("./wb-console-terminal.ts").TerminalOpts = {
+    const termWiring: TerminalOpts = {
       ...termOpts,
       onCtrlLatch: (on) => {
         if (ctrlBtn) ctrlBtn.setAttribute("aria-pressed", on ? "true" : "false");
@@ -2339,16 +2347,11 @@ export function createConsole(window: Window, document: Document, location: Pick
         // like a keystroke. A refused or empty read is dropped silently.
         // Dormant: the terminal is off and every branch below speaks to one.
         if (!win._term) return;
+        const pressed = win._term;
         const read = name === "paste" ? readClipboard() : null;
         focusWin(win);
         if (read) {
-          read
-            .then(({ image, text }) => {
-              if (image) win._term!.pasteImage(image);
-              else if (text) win._term!.term.paste(text);
-            })
-            .catch(() => {})
-            .finally(() => win._term!.term.focus());
+          void pasteAfterRead(win, pressed, read);
         } else if (name === "keyboard") {
           toggleKeyboard(win._term.term.textarea);
         } else if (name === "copy") {
@@ -2524,7 +2527,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     }
   }
 
-  async function spawnOrMissing(req: import("./wb-console-terminal.ts").TerminalOpts, label: string | null | undefined, repo: string | null | undefined, carry: SpawnCarry) {
+  async function spawnOrMissing(req: TerminalOpts, label: string | null | undefined, repo: string | null | undefined, carry: SpawnCarry) {
     try {
       if (req.checkout && !(await checkoutStillThere(repo, req.checkout))) {
         return spawnPlaceholder({ ...carry, checkout: req.checkout }, req.checkout);
@@ -2550,10 +2553,10 @@ export function createConsole(window: Window, document: Document, location: Pick
     } catch {
       return undefined;
     }
-    const layout = loadDesk();
+    const layout: WBDeskFolds.FoldRecord[] = loadDesk();
     // Deleted by another page: this window still stands for it.
     if (!layout.some((rec) => rec.id === win._deskId)) {
-      layout.push({ ...record, id: win._deskId, sessionId: null } as DeskRecord);
+      layout.push({ ...record, id: win._deskId, sessionId: null });
     }
     const held = [...wins]
       .filter((w) => w !== win && !w.classList.contains("placeholder"))
@@ -2618,18 +2621,20 @@ export function createConsole(window: Window, document: Document, location: Pick
     // "relaunch"); the box starts as "not running" until the fleet says more.
     const daemon = WBFleet?.refDaemon(record.repo) || "";
     const canLaunch = OPTS.canLaunch !== false;
-    const BUTTON: Record<string, string> = { wake: "Wake", retry: "Try again", relaunch: "Relaunch" };
-    let peerAction: string | null = "relaunch";
+    type BoxAction = WBConsoleSession.PeerAction | "relaunch";
+    const BUTTON: Partial<Record<NonNullable<BoxAction>, string>> = { wake: "Wake", retry: "Try again", relaunch: "Relaunch" };
+    let peerAction: BoxAction = "relaunch";
     let wasOffline = false;
     let shown: Parameters<typeof show>[0] | null = null;
     let detail: HTMLDetailsElement | null = null;
     let detailText: HTMLParagraphElement | null = null;
-    const show = (view: { text: string; detail: string; action: string | null }) => {
+    const show = (view: { text: string; detail: string; action: BoxAction }) => {
       shown = view;
       text.textContent = view.text;
       peerAction = view.action;
-      btn.hidden = !BUTTON[view.action as string];
-      if (BUTTON[view.action as string]) btn.textContent = BUTTON[view.action as string];
+      const label = view.action && BUTTON[view.action];
+      btn.hidden = !label;
+      if (label) btn.textContent = label;
       if (!detail) {
         detail = document.createElement("details");
         detail.className = "session-detail";

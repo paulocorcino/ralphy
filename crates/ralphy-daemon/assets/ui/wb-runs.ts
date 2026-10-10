@@ -278,8 +278,8 @@ export const WBRun = {
     // a few seconds of skew must read as 0:00, never as a negative clock.
     const elapsed = this.fmtClock(Math.max(0, (nowMs || 0) - since));
     const budget = run.phase === "executing" ? this.activeIssue(run)?.budgetMin : null;
-    // `null > 0` is false: a run with no budget shows the clock alone.
-    return budget! > 0 ? `${elapsed} / ${this.fmtClock(budget! * 60 * 1000)}` : elapsed;
+    // A run with no budget shows the clock alone.
+    return budget != null && budget > 0 ? `${elapsed} / ${this.fmtClock(budget * 60 * 1000)}` : elapsed;
   },
 
   // --- plan.md section slicing ------------------------------------------

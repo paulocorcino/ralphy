@@ -3,7 +3,7 @@
 // and the document.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sendDocument, sendWindow } from "../assets/ui/wb-events.ts";
+import { forwardAction, sendDocument, sendWindow } from "../assets/ui/wb-events.ts";
 
 // A target that keeps every event it is sent.
 function recorder() {
@@ -43,4 +43,20 @@ test("an event with no detail carries null, as `new CustomEvent(name)` does", ()
       ["workbench:columns-stale", null],
     ],
   );
+});
+
+test("forwardAction sends a gesture name with the popup as fromWindow, and drops any other name", () => {
+  const calls = [];
+  const wb = { emit: (...args) => calls.push(args) };
+  const popup = { name: "popup" };
+  // `constructor` is on every object's prototype, not a gesture.
+  assert.deepEqual(
+    ["file.write", "constructor", 7, undefined].map((action) => forwardAction(wb, action, { path: "a.rs" }, popup)),
+    [false, false, false, false],
+  );
+  assert.equal(calls.length, 0);
+  // CONTROL: a gesture name goes through, with the popup.
+  assert.equal(forwardAction(wb, "save", { path: "a.rs" }, popup), true);
+  assert.deepEqual(calls, [["save", { path: "a.rs", fromWindow: popup }]]);
+  assert.equal(calls[0][1].fromWindow, popup);
 });

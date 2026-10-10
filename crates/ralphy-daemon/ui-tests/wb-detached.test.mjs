@@ -2,7 +2,7 @@
 // file window, on stub `window` and `document` objects.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { wireDetached } from "../assets/ui/wb-detached.ts";
+import { isDetachOpen, wireDetached } from "../assets/ui/wb-detached.ts";
 
 const ORIGIN = "https://daemon.test";
 
@@ -53,4 +53,19 @@ test("the file window with no opener says so and asks nobody", (t) => {
   wireDetached(p.window, p.document);
   assert.match(p.viewers.innerHTML, /Nothing to show\. Open a file in the workbench, then detach it\./);
   assert.ok(!p.log.some(([kind, type]) => kind === "window" && type === "message"), JSON.stringify(p.log));
+});
+
+// The shell can be an older build than this page: its answer is read only in
+// the shape this page knows.
+test("the shell's answer opens a file only when it carries one", () => {
+  const desc = { project: "o/r", label: "a.md", path: "a.md", ftype: "markdown", content: "x", checkout: null, bom: false };
+  assert.equal(isDetachOpen({ type: "wb-detach-open", desc }), true);
+  for (const bad of [
+    { type: "wb-detach-open" },
+    { type: "wb-detach-open", desc: { ...desc, path: null } },
+    { type: "wb-fence-open", desc },
+    null,
+  ]) {
+    assert.equal(isDetachOpen(bad), false, JSON.stringify(bad));
+  }
 });

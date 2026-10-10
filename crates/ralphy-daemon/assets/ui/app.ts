@@ -12,6 +12,7 @@
 import type { AlpineMagics } from "./wb-alpine.ts";
 import { WBFail } from "./wb-fail.ts";
 import { WBAgents } from "./wb-agents.ts";
+import { apiFetch } from "./wb-api.ts";
 import { WBChanges } from "./wb-changes.ts";
 import { WBDeskSink } from "./wb-desk-sink.ts";
 import { classify, fileTabId, newEntryTitle, parentRel } from "./wb-file-paths.ts";
@@ -24,8 +25,9 @@ import { WBSecurityDialog } from "./wb-security-dialog.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
 import { WBSettingsDialog } from "./wb-settings-dialog.ts";
 import { WBSplit } from "./wb-split.ts";
-import { sendDocument, sendWindow } from "./wb-events.ts";
-import type { BoardIssue, BoardRow, CanvasTab, ChangeEntry, CheckoutRow, ConfirmAsk, DiffTarget, FilePopupMessage, FleetPeer, FleetReply, Group, LedgerMissing, LedgerRecord, Listing, MenuItem, ModalEntry, Project, PromptAsk, Read, ReadState, ReadyPlan, RepoRow, RosterRow, Run, RunIssue, RunPill, SavePayload, SecurityFact, ShellLate, Slot, SpendDoc, Subscription, Sync, TabBody, TabOpen, Timer } from "./wb-types.d.ts";
+import { isFilePopupMessage } from "./wb-detached.ts";
+import { createEmitter, forwardAction, sendWindow } from "./wb-events.ts";
+import type { BoardIssue, BoardRow, CanvasTab, ChangeEntry, CheckoutRow, ConfirmAsk, DiffTarget, FleetPeer, Group, LedgerMissing, LedgerRecord, Listing, MenuItem, ModalEntry, Project, PromptAsk, Read, ReadState, ReadyPlan, RosterRow, Run, RunIssue, RunPill, SavePayload, SecurityFact, ShellLate, Slot, SpendDoc, Subscription, Sync, TabBody, TabOpen, Timer } from "./wb-shell-types.d.ts";
 
 // A phone in either orientation: its SHORT side is under the workbench's phone
 // breakpoint (560px). Landscape iPhone is ~750 wide but ~340 tall; an iPad's
@@ -138,7 +140,7 @@ export function shell() {
       window.WBConsole?.setStaleProbe?.(() => this.socketsAreStale());
       // The selected checkouts (#406): the ONE hook for `unknown checkout`, and
       // the copy of the desk mirror once the boot desk lands.
-      window.WBDaemon?.onUnknownCheckout?.((repo, name) => this.checkoutGone(repo as string, name));
+      window.WBDaemon?.onUnknownCheckout?.((repo, name) => repo != null && this.checkoutGone(repo, name));
       window.WBConsole?.whenDeskLoaded?.().then(() => {
         this.adoptDeskCheckouts();
         this.syncDeskFailure();
@@ -174,7 +176,7 @@ export function shell() {
     // fetch leaves the fields empty.
     async loadIdentity() {
       try {
-        const r = await fetch("/api/identity");
+        const r = await apiFetch("GET /api/identity");
         if (r.ok) {
           const id = await r.json();
           this.identityName = id.name || "";
@@ -307,7 +309,7 @@ export function shell() {
     // keeps `authed` at its default.
     async probeSession() {
       try {
-        const r = await fetch("/api/session");
+        const r = await apiFetch("GET /api/session");
         if (r.ok) {
           const s = await r.json();
           this.authed = s.authed;
@@ -335,7 +337,7 @@ export function shell() {
       if (repo === undefined) repo = this.$store.projects.openSlug;
       const seq = ++this._agentsSeq;
       try {
-        const r = await fetch(WBAgents.rosterUrl(repo));
+        const r = await apiFetch("GET /api/agents", { query: repo ? { repo } : {} });
         if (!r.ok) throw new Error(`/api/agents ${r.status}`);
         const state = WBAgents.rosterState(await r.json(), repo);
         if (seq !== this._agentsSeq) return;
@@ -357,9 +359,9 @@ export function shell() {
     async loadRepos({ git = true } = {}) {
       this.reposLoading = true;
       try {
-        const r = await fetch("/api/repos");
+        const r = await apiFetch("GET /api/repos");
         if (r.ok) {
-          const repos: RepoRow[] = await r.json();
+          const repos = await r.json();
           // The rows this read replaces: their live dot and their environment
           // stay until `refreshLive` and `loadFleet` answer, and the peer rows
           // stay until the fleet read replaces them.
@@ -447,7 +449,7 @@ export function shell() {
       const seq = ++this._fleetSeq;
       const localRows = () => this.$store.projects.projects.filter((p) => !p.daemon);
       try {
-        const r = await fetch("/api/fleet");
+        const r = await apiFetch("GET /api/fleet");
         if (seq !== this._fleetSeq) return;
         if (r.status === 404) {
           // A daemon older than the fleet: a fleet of one, not a failure.
@@ -457,7 +459,7 @@ export function shell() {
           return;
         }
         if (!r.ok) throw new Error(`the daemon answered ${r.status}`);
-        const fleet: FleetReply = await r.json();
+        const fleet = await r.json();
         if (seq !== this._fleetSeq) return;
         this.fleetPeers = Array.isArray(fleet.peers) ? fleet.peers : [];
         this.fleetRejectNote = this.fleetRejectText(this.fleetPeers);
@@ -547,14 +549,13 @@ export function shell() {
       if (!daemonId || this.waking[daemonId]) return false;
       this.waking[daemonId] = true;
       try {
-        const r = await fetch(`/api/fleet/nudge?daemon_id=${encodeURIComponent(daemonId)}`, {
-          method: "POST",
-        });
-        const reply = await r.json().catch(() => ({}));
-        if (!r.ok || !reply.ready) {
+        const r = await apiFetch("POST /api/fleet/nudge", { query: { daemon_id: daemonId } });
+        const woke = r.ok ? await r.json().catch(() => null) : null;
+        if (!woke?.ready) {
           // The daemon's own sentence names the environment and what is wrong.
+          const refusal = r.ok ? null : await r.json().catch(() => null);
           this._flashAction(
-            WBFail.failed({ message: reply.diagnosis || reply.error }, "Could not wake the peer: the peer did not answer."),
+            WBFail.failed({ message: woke?.diagnosis || refusal?.error }, "Could not wake the peer: the peer did not answer."),
           );
           return false;
         }
@@ -620,13 +621,13 @@ export function shell() {
       // Reads close together can answer out of order: the newest owns the list.
       const seq = ++this._liveSeq;
       try {
-        const r = await fetch("/api/sessions");
+        const r = await apiFetch("GET /api/sessions");
         if (seq !== this._liveSeq) return;
         if (!r.ok) {
           this.sessionsFailed(`the daemon answered ${r.status}`);
           return;
         }
-        const sessions: HostedSession[] = await r.json();
+        const sessions = await r.json();
         if (seq !== this._liveSeq) return;
         this.sessionsRead = WBFail.readFold(this.sessionsRead, { ok: true, value: true, at: Date.now() });
         // The console menu's fold reads this (#304).
@@ -1443,7 +1444,7 @@ export function shell() {
       return !!this.writeLockReason();
     },
     writeLockReason() {
-      const slug = this.$store.projects.openSlug!;
+      const slug = this.$store.projects.openKey();
       if (this.buildSkew) return this.BUILD_SKEW_LOCK;
       if (this.changesRead[slug]?.current === false || this.syncRead[slug]?.current === false) {
         return "The changes shown are not current. Wait for the next read, or reload the page.";
@@ -1497,11 +1498,11 @@ export function shell() {
     },
     labelLockReason() {
       if (this.buildSkew) return this.BUILD_SKEW_LOCK;
-      if (this.boardRead[this.$store.projects.openSlug!]?.current === false) {
+      if (this.boardRead[this.$store.projects.openKey()]?.current === false) {
         return "The board shown is not current. Wait for the next read.";
       }
       return WBChanges.writeLockReason(
-        this.runsByProject[this.$store.projects.openSlug!],
+        this.runsByProject[this.$store.projects.openKey()],
         "You can edit labels again when it finishes.",
       );
     },
@@ -1536,10 +1537,10 @@ export function shell() {
       );
     },
     pushAct() {
-      return WBChanges.pushAct(this.syncByProject[this.$store.projects.openSlug!]);
+      return WBChanges.pushAct(this.syncByProject[this.$store.projects.openKey()]);
     },
     pullBlocked() {
-      return WBChanges.pullBlocked(this.syncByProject[this.$store.projects.openSlug!]);
+      return WBChanges.pullBlocked(this.syncByProject[this.$store.projects.openKey()]);
     },
     // The remote bar's title while an act is out: the busy act names itself,
     // the other two name what they are waiting on.
@@ -1552,7 +1553,7 @@ export function shell() {
       return WBChanges.groupDiscardNote(group);
     },
     commitTarget() {
-      return WBChanges.commitTarget(this.syncByProject[this.$store.projects.openSlug!]);
+      return WBChanges.commitTarget(this.syncByProject[this.$store.projects.openKey()]);
     },
     // `withOriginal` only on the UNSTAGE direction — see `wb-changes.ts`.
     groupPaths(list: ChangeEntry[], withOriginal: boolean) {
@@ -1561,7 +1562,7 @@ export function shell() {
     commitTitle() {
       const locked = this.writeLockReason();
       if (locked) return locked;
-      if (!(this.changesStaged[this.$store.projects.openSlug!] || []).length) {
+      if (!(this.changesStaged[this.$store.projects.openKey()] || []).length) {
         return "Stage a change first";
       }
       if (!this.commitMsg.trim()) return "Write a commit message first";
@@ -1572,7 +1573,7 @@ export function shell() {
         !this.writeLocked() &&
         this.commitMsgSlug === this.$store.projects.openSlug &&
         !!this.commitMsg.trim() &&
-        !!(this.changesStaged[this.$store.projects.openSlug!] || []).length
+        !!(this.changesStaged[this.$store.projects.openKey()] || []).length
       );
     },
 
@@ -1720,7 +1721,7 @@ export function shell() {
     // Alpine). `worktreeListings` is the last `worktree.list` reply per ref.
     checkouts: {} as Record<string, string>,
     checkoutOf(ref: string | null | undefined) {
-      return this.checkouts[ref as string] || null;
+      return (ref != null && this.checkouts[ref]) || null;
     },
     chipLabel(p: Project) {
       const ref = this.$store.projects.repoRef(p);
@@ -2048,7 +2049,7 @@ export function shell() {
 
     // The open project's runs (the panel is project-scoped).
     projectRuns() {
-      return this.runsByProject[this.$store.projects.openSlug!] || [];
+      return this.runsByProject[this.$store.projects.openKey()] || [];
     },
     // The selected run, falling back to the first when the id is stale (e.g. the
     // project changed).
@@ -2428,7 +2429,7 @@ export function shell() {
     // The open project's plan, or null. No trailer (`summary.issue` null) is a
     // plan still being written: not offered.
     openPlan() {
-      const held = this.planByProject[this.$store.projects.openSlug!];
+      const held = this.planByProject[this.$store.projects.openKey()];
       return held && held.summary.issue != null ? held : null;
     },
     // The plan for ONE card: only ever shown against the issue it names.
@@ -2526,7 +2527,7 @@ export function shell() {
 
     // The open project's issues (#198). Empty until `loadBoard()` populates it.
     projectIssues() {
-      return this.boardIssues[this.$store.projects.openSlug!] || [];
+      return this.boardIssues[this.$store.projects.openKey()] || [];
     },
 
     // The whole-tracker board fold via `board.list`, cached under the slug. No
@@ -2691,7 +2692,7 @@ export function shell() {
     },
     labelColor(l: string) {
       // The repo's real label hex, else the seed vocabulary.
-      return this.boardLabels[this.$store.projects.openSlug!]?.get(l) || window.WBKanban.labelColor(l);
+      return this.boardLabels[this.$store.projects.openKey()]?.get(l) || window.WBKanban.labelColor(l);
     },
     labelInk(l: string) {
       return window.WBKanban.labelInk(l);
@@ -2870,7 +2871,7 @@ export function shell() {
         period: this.spendPeriod,
         // Titles ride whatever the board ALREADY holds; never a load
         // (`loadBoard` spawns a throttled tracker CLI).
-        issues: this.boardIssues[this.$store.projects.openSlug!] || [],
+        issues: this.boardIssues[this.$store.projects.openKey()] || [],
       });
     },
     // The window is a server-side filter: assign, then re-read.
@@ -2908,12 +2909,7 @@ export function shell() {
       let doc: SpendDoc = null;
       let error = "";
       try {
-        const r = await fetch(
-          "/api/spend?project=" +
-            encodeURIComponent(slug) +
-            "&period=" +
-            encodeURIComponent(this.spendPeriod || "all"),
-        );
+        const r = await apiFetch("GET /api/spend", { query: { project: slug, period: this.spendPeriod || "all" } });
         if (r.ok) doc = await r.json();
         else error = "Could not load spend: the daemon did not answer.";
       } catch {
@@ -2999,12 +2995,7 @@ export function shell() {
       let daemonId: string | null = null;
       let error = "";
       try {
-        const r = await fetch(
-          "/api/usage?project=" +
-            encodeURIComponent(want) +
-            "&period=" +
-            encodeURIComponent(this.spendPeriod || "all"),
-        );
+        const r = await apiFetch("GET /api/usage", { query: { project: want, period: this.spendPeriod || "all" } });
         if (r.ok) {
           const data = await r.json();
           records = Array.isArray(data.records) ? data.records : [];
@@ -3176,7 +3167,7 @@ export function shell() {
         this.authed = false;
         this.login = { code: "", digits: ["", "", "", "", "", ""], password: "", remember: false, error: "", passwordRequired: this.login.passwordRequired };
       }
-      window.WB.emit("logoff", {});
+      window.WB.emit("logoff");
     },
 
     // Re-fetch the endpoints that returned 401 while gated; the presence
@@ -3292,7 +3283,7 @@ export function shell() {
           this.authed = true;
           this.forgetLoginSecrets();
           this.rehydrateAfterAuth();
-          window.WB.emit("login", {});
+          window.WB.emit("login");
         } else {
           this.login.error = "Invalid code or password.";
         }
@@ -3378,8 +3369,8 @@ export function shell() {
       }
       return WBDaemon.observe("file.read", WBDaemon.withCheckout({ repo: project, path }, checkout))
         .then((reply) => {
-          if (!WBFail.isError(reply)) {
-            return { content: reply.content, encoding: reply.encoding, bom: !!reply.bom };
+          if (reply.status === "ok") {
+            return { content: reply.content, encoding: reply.encoding, bom: reply.bom };
           }
           return refuse(WBFail.message(reply, "refused"));
         })
@@ -3455,11 +3446,8 @@ export function shell() {
             label: this.$store.projects.projectLabel(project),
             path,
             ftype,
-            content: body.content!,
-            encoding: body.encoding,
-            bom: body.bom,
-            refused: body.refused,
             checkout: ck,
+            ...body,
           });
           // NOT `setActive(id)`: `restoreView` opens N tabs in one burst and
           // THEN activates the stored one, so the last read to answer must not
@@ -3605,7 +3593,7 @@ export function shell() {
         "file.read",
         WBDaemon.withCheckout({ repo: project, path: t.workingPath }, t.checkout),
       ).then((reply) => {
-        if (!WBFail.isError(reply)) return reply.content;
+        if (reply.status === "ok") return reply.content;
         const reason = WBFail.message(reply, "refused");
         return reason === "not found" ? "" : refuse(reason);
       });
@@ -3862,14 +3850,7 @@ export function shell() {
 export function wire(window: Window, document: Document) {
   // The one exit point: every gesture becomes a `workbench:action` event.
   // Each page sets its own `window.WB`, and its modules read it (ADR-0075 D9).
-  window.WB = {
-    emit(action: string, detail: object = {}) {
-      const full = { action, ...detail, at: new Date().toISOString() };
-      sendDocument(document, "workbench:action", full);
-      // eslint-disable-next-line no-console
-      console.log("[workbench:action]", full);
-    },
-  };
+  window.WB = createEmitter(document);
   window.shell = shell;
 
   // The live Alpine component instance. On `window` explicitly: two other
@@ -3968,7 +3949,7 @@ export function wire(window: Window, document: Document) {
     detachedWindows.delete(win);
     detachedClosedSeen.delete(win);
     if (!detachedWindows.size) {
-      window.clearInterval(detachedPoll!);
+      window.clearInterval(detachedPoll);
       detachedPoll = null;
     }
     if (!win.closed) win.close();
@@ -3981,14 +3962,14 @@ export function wire(window: Window, document: Document) {
   window.addEventListener("message", (e) => {
     if (e.origin !== window.location.origin) return;
     if (!detachedWindows.has(e.source as Window)) return;
-    const m: FilePopupMessage | null = e.data;
-    if (!m || typeof m !== "object") return;
+    const m: unknown = e.data;
+    if (!isFilePopupMessage(m)) return;
     if (m.type === "wb-detach-ready") {
       // The popup booted and is asking for its file.
       (e.source as Window).postMessage({ type: "wb-detach-open", desc: detachedWindows.get(e.source as Window) }, window.location.origin);
     } else if (m.type === "wb-emit") {
       // `fromWindow` lets a save's answer reach the pane that sent it.
-      window.WB.emit(m.action, { ...m.detail, fromWindow: e.source as Window });
+      forwardAction(window.WB, m.action, m.detail, e.source as Window);
     } else if (m.type === "wb-open-request" && m.detail) {
       // A link clicked inside a detached pane; `openLink` re-classifies, so the
       // popup decides nothing about what opens.
@@ -4022,14 +4003,15 @@ export function wire(window: Window, document: Document) {
 
     document.addEventListener("workbench:action", async (e) => {
       if (!daemonBacked()) return;
-      const d = e.detail || {};
+      const d = e.detail;
+      if (!d || !("project" in d)) return;
       const repo = d.project;
       if (!repo) return;
       // Every Write carries the checkout it is aimed at (#406): a Save says its
       // tab's PIN (explicit `null` = the primary, never the selection), a tree
       // gesture says the current selection.
       const checkout =
-        d.checkout !== undefined ? d.checkout : (window.getShell()?.checkoutOf?.(repo) ?? null);
+        "checkout" in d && d.checkout !== undefined ? d.checkout : (window.getShell()?.checkoutOf?.(repo) ?? null);
       const aimed = (payload: CommandPayload) => WBDaemon.withCheckout(payload, checkout);
       switch (d.action) {
         case "save": {
@@ -4039,7 +4021,7 @@ export function wire(window: Window, document: Document) {
           // A detached window's pane is `detached` in its own viewer; a tab's is
           // its tab id in this one.
           const viewer = () => (d.fromWindow ? d.fromWindow.WBViewer : window.WBViewer);
-          const id = d.fromWindow ? "detached" : fileTabId(repo, d.path as string, checkout);
+          const id = d.fromWindow ? "detached" : fileTabId(repo, d.path, checkout);
           const payload: SavePayload = { repo, path: d.path, content: d.content || "" };
           if (d.encoding) payload.encoding = d.encoding;
           if (d.bom) payload.bom = true;
@@ -4100,7 +4082,7 @@ export function wire(window: Window, document: Document) {
             ? await c.askPrompt({
                 // No placeholder: a plausible filename in an empty field reads as
                 // a name already chosen, and operators pressed Enter on it.
-                title: newEntryTitle(folder ? "folder" : "file", d.path as string),
+                title: newEntryTitle(folder ? "folder" : "file", d.path),
                 message: "",
                 placeholder: "",
               })
@@ -4123,7 +4105,7 @@ export function wire(window: Window, document: Document) {
         }
         case "delete": {
           // Irreversible (a folder removes recursively): confirm first.
-          const name = d.title || d.path!.split("/").pop() || d.path;
+          const name = d.title || d.path.split("/").pop() || d.path;
           const message = d.isFolder
             ? `Delete folder “${name}” and its contents? This cannot be undone.`
             : `Delete “${name}”? This cannot be undone.`;
@@ -4140,7 +4122,7 @@ export function wire(window: Window, document: Document) {
           // "not found" on a delete says the ROW is the lie: re-list the parent
           // so the ghost ends up off the screen.
           if (/not found/i.test(reason)) {
-            sendWindow(window, "workbench:tree-dirty", { rel: parentRel(d.path as string) });
+            sendWindow(window, "workbench:tree-dirty", { rel: parentRel(d.path) });
           }
           break;
         }

@@ -26,15 +26,13 @@ are in [TESTING-TRAPS.md](TESTING-TRAPS.md#the-workbench-page-in-a-browser).
 
 A gesture (open, rename, delete, save, console-open, branch-switch,
 setting-change) becomes one `workbench:action` event through `WB.emit(action,
-detail)` in `app.ts`. The page itself does not touch the file system, git or an
-agent. `wb-daemon.ts` turns an action into a daemon verb (`ACTION_TO_VERB`) and
-routes the daemon's pushes back into the page.
+detail)` (`createEmitter` in `wb-events.ts`). The page itself does not touch
+the file system, git or an agent. `wb-daemon.ts` turns an action into a daemon
+verb (`ACTION_TO_VERB`) and routes the daemon's pushes back into the page.
 
-The live list of actions is the code:
-
-```sh
-grep -rn "WB.emit(" crates/ralphy-daemon/assets/ui/*.ts
-```
+`WorkbenchActions` in `globals.d.ts` lists every action and its detail, and
+`tsc` checks each `WB.emit` call against it. A popup window posts its actions
+to the opener, which forwards only the names in that list (`forwardAction`).
 
 An action name and its payload keys are a wire contract. Change both sides in
 the same commit, or leave both unchanged.
@@ -81,6 +79,24 @@ libraries are classic scripts.
   component's `this` from its `uses` list, against the type of the real
   `shell()` (`Shell` in `app.ts`). A component module exports its factory,
   and `main.ts` registers it under the name its `x-data` uses.
+- **Data from outside.** A JSON reply of the daemon goes through `apiFetch`
+  in `wb-api.ts`. `ApiRoutes` there lists each route once, with the type of
+  its reply, and that type follows the route's handler in
+  `crates/ralphy-daemon/src/routes/`. The daemon and the page ship in one
+  build, so the reply is not checked at run time. A socket frame is read
+  through `socketFrame` in the same module, for the same reason: a frame or
+  a reply that a peer daemon wrote reaches the page only from a peer that
+  speaks this daemon's peer protocol version. The same version means the
+  same reply shapes: the test
+  `peer_reply_types_are_pinned_to_the_protocol_version` in
+  `crates/xtask/tests/ratchets.rs` pins the page types that read a peer's
+  reply to `PEER_PROTOCOL_VERSION`. A change to one of those types raises
+  the version (the default), or declares each new field optional and keeps
+  the version; the commit says why. Any other data from outside
+  (a message from another window, data from browser storage, an uploaded
+  file) is `unknown`, and is narrowed right after it is read. Another
+  window can be a page of another build: the daemon serves a popup's page
+  when the popup opens.
 - **Tests.** A test imports the `.ts` module. `ui-tests/harness.mjs` builds a
   module component from its export (`MODULE_COMPONENTS`).
 - **Type check.** `tsc --noEmit -p crates/ralphy-daemon/assets/ui`, in the

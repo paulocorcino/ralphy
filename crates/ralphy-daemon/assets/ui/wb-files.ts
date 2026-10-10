@@ -29,9 +29,6 @@ import type { Group } from "./wb-fleet.ts";
 /** What a failed read hands back: a thrown error, or whatever a socket rejected with. */
 type Failure = { message?: string } | null | undefined;
 
-/** The fields a node gesture adds to its `workbench:action` detail. */
-type NodeExtra = { [field: string]: string | boolean };
-
 /** The live `/ws/tree` subscription of the open project. */
 type TreeSub = ReturnType<WBDaemonApi["subscribeTree"]>;
 
@@ -143,7 +140,7 @@ export function wbFiles() {
         // no level read before does not open: its read would fail. A level
         // read before opens from memory. A restore of the expanded folders
         // stops here too.
-        beforeExpand: (e: WunderbaumEvent) => {
+        beforeExpand: (e: WunderbaumExpandEvent) => {
           if (!e.flag || !this.openPeerDown() || e.node.children) return undefined;
           return this._treeCache!.has(this.treeKey(this.relPath(e.node))) ? undefined : false;
         },
@@ -154,7 +151,7 @@ export function wbFiles() {
         },
         // The content-search badge: hit count beside the title; nothing once
         // the filter is gone (the map is empty by then).
-        render: (e: WunderbaumEvent) => {
+        render: (e: WunderbaumRenderEvent) => {
           const count = this._fileHits?.get(this.relPath(e.node));
           const old = e.nodeElem.querySelector(".wb-hits");
           if (typeof count !== "number") {
@@ -167,7 +164,7 @@ export function wbFiles() {
           if (!old) e.nodeElem.querySelector(".wb-title")?.after(badge);
         },
         // The root level has settled: put the expanded folders back.
-        init: (e: WunderbaumEvent) => {
+        init: (e: WunderbaumInitEvent) => {
           if (gen !== this._treeGen) return;
           this.treeLoading = false;
           if (e.error) this.treeError = "Could not read the files of this project.";
@@ -175,10 +172,11 @@ export function wbFiles() {
         },
         edit: {
           trigger: ["F2", "macEnter"],
-          apply: (e: WunderbaumEvent) => {
+          apply: (e: WunderbaumEditEvent) => {
             // The shared listener takes full rel paths.
             const parent = parentRel(this.relPath(e.node));
-            this.emit("rename", e.node, {
+            window.WB.emit("rename", {
+              ...this.nodeDetail(e.node),
               from: parent ? `${parent}/${e.oldValue}` : e.oldValue,
               to: parent ? `${parent}/${e.newValue}` : e.newValue,
             });
@@ -186,7 +184,7 @@ export function wbFiles() {
           },
         },
         // Live watch-set (#196): the daemon watches only the expanded set.
-        expand: (e: WunderbaumEvent) => {
+        expand: (e: WunderbaumExpandEvent) => {
           if (!this.isFolder(e.node)) return;
           const rel = this.relPath(e.node);
           if (e.flag) this._treeSub?.watch(rel);
@@ -204,8 +202,8 @@ export function wbFiles() {
       // watched. A `tree.dirty` push refetches only the affected subtree; a
       // `head.dirty` push re-reads the branch.
       if (this.useDaemonTree() && window.WBDaemon?.subscribeTree) {
-        this._treeSub = WBDaemon.subscribeTree(
-          this.$store.projects.openSlug!,
+        this._treeSub = window.WBDaemon.subscribeTree(
+          this.$store.projects.repoRef(project),
           (rel: string) => {
             if (!this.tabHidden()) this.onTreeDirty(rel);
           },
@@ -958,24 +956,27 @@ export function wbFiles() {
     openFile(node: WunderbaumNode) {
       const path = this.relPath(node);
       const ftype = classify(node.title);
-      this.emit("open", node, { ftype });
+      window.WB.emit("open", { ...this.nodeDetail(node), ftype });
       // A note opens as a CARD, not as a tab (ADR-0064 §11): on the stage if
       // it is not there yet, and by a jump if it is.
       if (ftype === "note") {
         this.openNote(path);
         return;
       }
+      // No tree is mounted without an open project.
+      const slug = this.$store.projects.openSlug;
+      if (!slug) return;
       if (ftype === "binary") {
         // Flash it too: a click that silently does nothing reads as a broken
         // tree.
-        window.WB.emit("open-refused", { project: this.$store.projects.openSlug, path, reason: "binary" });
+        window.WB.emit("open-refused", { project: slug, path, reason: "binary" });
         this._flashAction?.("Cannot open binary files.");
         return;
       }
       // Out of a CONTENT search: the tab lands on the first occurrence
       // (ADR-0036 amendment 2026-09-15).
       const find = this.fileSearchFindTerm();
-      this.openTab({ project: this.$store.projects.openSlug!, path, title: node.title, ftype, find });
+      this.openTab({ project: slug, path, title: node.title, ftype, find });
     },
 
     // The term to land on: the live query, only while the CONTENT filter is on.
@@ -1028,7 +1029,7 @@ export function wbFiles() {
         { label: "New file…", icon: "bi-file-earmark-plus", run: () => this.emitCreate(node, "file") },
         { label: "New folder…", icon: "bi-folder-plus", run: () => this.emitCreate(node, "folder") },
         node && { sep: true as const },
-        node && { label: "Delete", icon: "bi-trash", danger: true, run: () => this.emit("delete", node) },
+        node && { label: "Delete", icon: "bi-trash", danger: true, run: () => window.WB.emit("delete", this.nodeDetail(node)) },
       ].filter(Boolean);
       this.renderMenu(x, y, items);
     },
@@ -1062,7 +1063,7 @@ export function wbFiles() {
         path = base + sep + rel.split("/").join(sep);
       }
       navigator.clipboard?.writeText(path).catch(() => {});
-      this.emit("copy-path", node, { path });
+      window.WB.emit("copy-path", { ...this.nodeDetail(node), path });
     },
 
     // Duplicate a file beside itself, NO prompt. `file.copy` refuses an
@@ -1147,8 +1148,8 @@ export function wbFiles() {
     },
 
     // A `create` intent carries the DIRECTORY, already resolved (`createDir`).
-    emitCreate(node: WunderbaumNode | null, kind: string) {
-      window.WB.emit("create", { project: this.$store.projects.openSlug, path: this.createDir(node), kind, isFolder: true });
+    emitCreate(node: WunderbaumNode | null, kind: "file" | "folder") {
+      window.WB.emit("create", { project: this.$store.projects.openSlug, path: this.createDir(node), kind });
     },
 
     // The directory a create addressed at `node` lands in: the folder itself,
@@ -1159,7 +1160,7 @@ export function wbFiles() {
     },
 
     // The Files-header buttons create relative to the tree's active node.
-    createHere(kind: string) {
+    createHere(kind: "file" | "folder") {
       this.emitCreate(this.rawTree()?.getActiveNode() || null, kind);
     },
 
@@ -1168,15 +1169,14 @@ export function wbFiles() {
       return newEntryTitle(kind, this.createDir(this.rawTree()?.getActiveNode() || null));
     },
 
-    // Node-shaped gestures funnel through the shared WB.emit.
-    emit(action: string, node: WunderbaumNode, extra: NodeExtra = {}) {
-      window.WB.emit(action, {
+    // The fields every gesture on one node sends.
+    nodeDetail(node: WunderbaumNode): WorkbenchNodeDetail {
+      return {
         project: this.$store.projects.openSlug,
         path: this.relPath(node),
         title: node.title,
         isFolder: this.isFolder(node),
-        ...extra,
-      });
+      };
     },
 
     // The listeners, added once when Alpine builds the files.

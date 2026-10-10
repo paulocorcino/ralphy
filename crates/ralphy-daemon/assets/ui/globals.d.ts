@@ -24,8 +24,12 @@ type DaemonReply = { status: string; message?: string; reason?: string };
 type TreeEntry = { name: string; dir: boolean; ignored?: boolean };
 
 /** A `file.read` reply: the text, the encoding it was decoded with, and
- * whether the file starts with a byte order mark. */
-type FileReadReply = DaemonReply & { content?: string; encoding?: string; bom?: boolean };
+ * whether the file starts with a byte order mark; or why the daemon read
+ * nothing. The daemon sends no other `status` for this verb. */
+type FileReadReply = FileReadOk | (DaemonReply & { status: "error" });
+
+/** A `file.read` reply with the file's text. */
+type FileReadOk = { status: "ok"; content: string; encoding: string; bom: boolean };
 
 /** A file Write verb's reply: a refused encoding names the first character it
  * could not take. */
@@ -228,17 +232,25 @@ interface WunderbaumNode {
 /** One row a tree level is loaded from. */
 type WunderbaumSource = { title: string; folder?: boolean; lazy?: boolean; icon?: string; classes?: string };
 
-/** What a Wunderbaum event handler gets. */
+/** What every Wunderbaum event handler gets. */
 interface WunderbaumEvent {
   tree: WunderbaumTree;
   node: WunderbaumNode;
-  /** The row's element (`render`). */
+}
+/** `render`: the row's element. */
+interface WunderbaumRenderEvent extends WunderbaumEvent {
   nodeElem: HTMLElement;
-  /** The new expanded state (`expand`, `beforeExpand`). */
+}
+/** `expand` and `beforeExpand`: the new expanded state. */
+interface WunderbaumExpandEvent extends WunderbaumEvent {
   flag: boolean;
-  /** Set when the first load failed (`init`). */
+}
+/** `init`: set when the first load failed. */
+interface WunderbaumInitEvent extends WunderbaumEvent {
   error?: Error;
-  /** The title before and after an edit (`edit.apply`). */
+}
+/** `edit.apply`: the title before and after the edit. */
+interface WunderbaumEditEvent extends WunderbaumEvent {
   oldValue: string;
   newValue: string;
 }
@@ -252,24 +264,21 @@ interface WunderbaumOptions {
   /** `false`: the level stays unloaded. */
   lazyLoad(e: WunderbaumEvent): Promise<WunderbaumSource[] | false>;
   /** `false` keeps the folder closed. */
-  beforeExpand(e: WunderbaumEvent): false | undefined;
+  beforeExpand(e: WunderbaumExpandEvent): false | undefined;
   load(e: WunderbaumEvent): void;
-  render(e: WunderbaumEvent): void;
-  init(e: WunderbaumEvent): void;
-  edit: { trigger: string[]; apply(e: WunderbaumEvent): boolean };
-  expand(e: WunderbaumEvent): void;
+  render(e: WunderbaumRenderEvent): void;
+  init(e: WunderbaumInitEvent): void;
+  edit: { trigger: string[]; apply(e: WunderbaumEditEvent): boolean };
+  expand(e: WunderbaumExpandEvent): void;
   /** `false` stops the default action. */
   dblclick(e: WunderbaumEvent): boolean;
 }
 
 interface Window {
-  /** The daemon door (`wb-daemon.ts`). `subscribeTree` may be absent:
-   * `wb-files.ts` tests `window.WBDaemon?.subscribeTree` and then calls it
-   * through the bare name, and a function that is always there is a TS2774
-   * error at that test. The bare `WBDaemon` below has it. */
-  WBDaemon: Omit<import("./wb-daemon.ts").WBDaemonApi, "subscribeTree"> & {
-    subscribeTree: import("./wb-daemon.ts").WBDaemonApi["subscribeTree"] | undefined;
-  };
+  /** As the global `clearInterval` below: a `null` id clears nothing. */
+  clearInterval(id: number | null | undefined): void;
+  /** The daemon door (`wb-daemon.ts`). */
+  WBDaemon: import("./wb-daemon.ts").WBDaemonApi;
   Alpine: {
     data(name: string, factory: () => object): void;
     directive(
@@ -283,7 +292,7 @@ interface Window {
   };
   /** The event bus of `app.ts`, or the opener bridge of a torn-off page. */
   WB: {
-    emit(name: string, detail?: object): void;
+    emit<K extends WorkbenchActionName>(action: K, ...detail: WorkbenchEmitArgs<K>): void;
   };
   /** The consoles (`wb-console.ts`). */
   WBConsole: ReturnType<typeof import("./wb-console.ts").createConsole>;
@@ -302,38 +311,83 @@ interface Window {
   };
 }
 
+/** The fields of a file-tree gesture on one node (`wb-files.ts`). */
+type WorkbenchNodeDetail = { project: string | null; path: string; title: string; isFolder: boolean };
+
+/** Every gesture `WB.emit` sends, and the detail its senders give. `null`: the
+ * gesture has no detail. `wb-events.ts` lists the same names at run time, for
+ * the popup bridges. `wb-daemon.ts` forwards `run-start` and `command` to the
+ * daemon; the page itself handles the others. */
+interface WorkbenchActions {
+  "kanban-toggle": { open: boolean };
+  /** `checkout`: the checkout the gesture aims at; `null` is the primary tree. */
+  "branch-switch": { project: string | null; branch: string; checkout: string | null };
+  /** `from`: the branch the new one starts from. */
+  "branch-create": { project: string | null; name: string; from: string; checkout: string | null };
+  "run-issue-focus": { project: string | null; runid: string | undefined; issue: number };
+  /** The daemon refuses a missing `agent` or `branchMode`. A `null`
+   * `planAgent` means the agent also plans. */
+  "run-start": { project: string | null; agent: string; planAgent: string | null; branchMode: string; command: string };
+  /** A run verb with no parameter (triage, push). */
+  command: { project: string | null; verb: string };
+  "issue-label-change": { project: string | null; number: number; label: string; op: "add" | "remove" };
+  login: null;
+  logoff: null;
+  "open-refused": { project: string | null; path: string; reason: string };
+  "open-diff": { project: string; path: string; checkout: string | null };
+  "detach-blocked": { project: string; path: string };
+  detach: { project: string; path: string };
+  /** `agent`: `null` for a plain console. */
+  "console-open": { repo: string | null; agent: string | null; plain: boolean };
+  "console-close": { repo: string | null; agent: string | null | undefined };
+  "console-restart": { repo: string | null; agent: string | null | undefined };
+  /** `from`, `to`: `null` is the primary tree. */
+  "console-switch-checkout": { repo: string | null; from: string | null; to: string | null };
+  "worktree-created": { project: string; name: string; message: string };
+  "fence-reattach": { fence: string };
+  "fence-focus": { fence: string };
+  "fence-detach": { fence: string };
+  "fence-detach-blocked": { fence: string };
+  "fence-detach-refused": { fence: string; reason: string };
+  "fence-remove-refused": { fence: string; reason: string };
+  /** `from`, `to`: the full rel paths before and after. */
+  rename: WorkbenchNodeDetail & { from: string; to: string };
+  open: WorkbenchNodeDetail & { ftype: string };
+  delete: WorkbenchNodeDetail;
+  "copy-path": WorkbenchNodeDetail;
+  /** `path`: the directory the new entry goes in. */
+  create: { project: string | null; path: string; kind: "file" | "folder" };
+  /** `project`: `null` for a setting of this browser. */
+  "setting-change": { project: string | null; key: string; value: unknown };
+  /** The pane's text, its encoding and its byte order mark. */
+  save: {
+    project: string;
+    path: string;
+    bytes: number;
+    content: string;
+    checkout: string | null;
+    encoding: string | undefined;
+    bom: boolean;
+  };
+  reload: { project: string; path: string };
+}
+
+type WorkbenchActionName = keyof WorkbenchActions;
+
+/** The arguments of `WB.emit` after the action name. A popup bridge adds the
+ * popup as `fromWindow`. */
+type WorkbenchEmitArgs<K extends WorkbenchActionName> = [WorkbenchActions[K]] extends [null]
+  ? []
+  : [detail: WorkbenchActions[K] & { fromWindow?: Window }];
+
 /** The detail of `workbench:action`: the gesture (`action`), the fields its
  * sender gave, and when it was sent (`at`). A gesture a popup sent carries the
- * popup in `fromWindow`. Each gesture gives only its own fields. */
+ * popup in `fromWindow`. */
 type WorkbenchAction = {
-  action: string;
-  at: string;
-  project?: string | null;
-  /** The checkout the gesture aims at; `null` is the primary tree. */
-  checkout?: string | null;
-  path?: string;
-  title?: string;
-  /** `rename`: the full rel paths before and after. */
-  from?: string;
-  to?: string;
-  /** `create`: `folder` or `file`. */
-  kind?: string;
-  isFolder?: boolean;
-  /** `save`: the pane's text, its encoding and its byte order mark. */
-  content?: string;
-  encoding?: string;
-  bom?: boolean;
-  message?: string;
-  /** `setting-change`: the setting's key. */
-  key?: string;
-  /** `command`: the verb. */
-  verb?: string;
-  /** `run-start`: the run parameters. */
-  agent?: string;
-  planAgent?: string;
-  branchMode?: string;
-  fromWindow?: Window;
-};
+  [K in WorkbenchActionName]: { action: K; at: string; fromWindow?: Window } & (WorkbenchActions[K] extends null
+    ? unknown
+    : WorkbenchActions[K]);
+}[WorkbenchActionName];
 
 /** A file a pane can reopen anywhere, a tab or a detached popup, with its
  * current content (`descOf` in `wb-viewer.ts`). */
@@ -425,9 +479,7 @@ interface DocumentEventMap {
 
 // The page instances and vendored libraries that modules name bare.
 declare var WBConsole: Window["WBConsole"];
-// `const`, not `var`: a `var` is also a member of `window`, and the two types
-// would merge into one `subscribeTree` that is always there.
-declare const WBDaemon: import("./wb-daemon.ts").WBDaemonApi;
+declare var WBDaemon: Window["WBDaemon"];
 declare var WBViewer: Window["WBViewer"];
 declare var WB: Window["WB"];
 /** The vendored marked (`vendor/marked.min.js`). */
@@ -453,6 +505,7 @@ declare var mar10: {
 // A timer the page may not have set yet is `null`, and clearing it does
 // nothing: the HTML timer API turns the id into a number, `null` into 0.
 declare function clearTimeout(id: number | null | undefined): void;
+declare function clearInterval(id: number | null | undefined): void;
 
 /** The vendored qrcode-generator (`vendor/qrcode.js`). */
 declare function qrcode(

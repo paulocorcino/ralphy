@@ -6,6 +6,9 @@
 // `/api/desk/history`, hands the reply to `rows`, and sends what `parseUpload`
 // accepts back to the same route.
 
+import { isRecord } from "./wb-api.ts";
+import type { Desk } from "./wb-types.d.ts";
+
 // The `kind` of a version file; the daemon's `history::VERSION_KIND`.
 const VERSION_KIND = "ralphy-desk-version";
 
@@ -18,7 +21,7 @@ const REASON_TEXT: Record<string, string> = {
 };
 
 // One row of `/api/desk/history`: the daemon's `history::VersionInfo`.
-type VersionInfo = {
+export type VersionInfo = {
   id: number;
   startedAt: number;
   savedAt: number;
@@ -28,15 +31,26 @@ type VersionInfo = {
   notes: number;
 };
 
+// A saved version of the desk: the daemon's `history::Version`.
+export type DeskVersion = {
+  kind: string;
+  id: number;
+  startedAt: number;
+  savedAt: number;
+  reason: string;
+  desk: Desk;
+};
+
 function plural(n: number, one: string, many: string) {
   return `${n} ${n === 1 ? one : many}`;
 }
 
 // One row per version, in the reply's order (newest first). `when` turns an
-// epoch ms into the time shown; the shell passes the browser's locale.
-function rows(list: unknown, when: (ms: number) => string) {
+// epoch ms into the time shown; the shell passes the browser's locale. The
+// reply of `apiFetch("GET /api/desk/history")`, or `null` when it was not read.
+function rows(list: VersionInfo[] | null | undefined, when: (ms: number) => string) {
   if (!Array.isArray(list)) return [];
-  return list.map((v: VersionInfo) => ({
+  return list.map((v) => ({
     id: v.id,
     when: when(v.savedAt),
     reason: REASON_TEXT[v.reason] || v.reason,
@@ -58,16 +72,17 @@ function fileName(version: { savedAt: number }) {
 }
 
 // The text of an uploaded file, as `{ version }`, or `{ cause }` for the
-// failure line "Could not upload the desk layout: <cause>."
+// failure line "Could not upload the desk layout: <cause>." The file may come
+// from any build, so only its kind and its desk are checked here; the daemon
+// checks the rest when it restores the version.
 function parseUpload(text: string) {
-  let parsed;
+  let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
     return { cause: "the file is not JSON" };
   }
-  const desk = parsed?.desk;
-  if (parsed?.kind !== VERSION_KIND || !desk || typeof desk !== "object") {
+  if (!isRecord(parsed) || parsed.kind !== VERSION_KIND || !isRecord(parsed.desk)) {
     return { cause: "the file is not a desk layout saved by Ralphy" };
   }
   return { version: parsed };

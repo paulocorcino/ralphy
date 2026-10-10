@@ -109,3 +109,15 @@ test("a legacy command is dropped on read and on the next patch", () => {
   assert.equal("command" in written, false);
   assert.equal(written.keys, "on", "the other fields survive");
 });
+
+// A record an older build wrote may hold a tab of another shape: only a tab
+// that names its file comes back, and `active` is a string or null.
+test("tabs read as the file tabs the shell stored; active as a string or null", () => {
+  const tab = { project: "o/r", path: "a.md", title: "a.md", kind: "markdown", checkout: null };
+  const read = (fields) => load(JSON.stringify({ v: 1, ...fields })).read();
+  const stored = read({ tabs: [tab, { ...tab, path: 3 }, { ...tab, kind: undefined }, "a.md", null], active: "file:o/r:a.md" });
+  assert.deepEqual(stored.tabs, [tab]);
+  assert.equal(stored.active, "file:o/r:a.md");
+  assert.deepEqual(read({ tabs: "a.md", active: 4 }).tabs, []);
+  assert.equal(read({ active: 4 }).active, null);
+});

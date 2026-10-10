@@ -439,8 +439,8 @@ export function createChrome(deps: ChromeDeps) {
     initWindow(win, {
       _deskId: desk?.id || newDeskId(),
       _deskRepo: repo || "~",
-      _deskAgent: label,
-      _deskKind: desk?.kind || kind,
+      _deskAgent: label || "",
+      _deskKind: desk?.kind || kind || "",
       _deskDaemonId: desk?.daemonId ?? null,
       _deskEnvironment: desk?.environment ?? null,
       // The worktree (#411), seeded from the record; the launch request and

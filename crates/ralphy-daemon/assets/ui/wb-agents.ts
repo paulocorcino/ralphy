@@ -100,10 +100,6 @@ function consoleIntent(row: MenuRow | null | undefined, { tryAnyway = false }: {
   return canLaunch(row, tryAnyway) ? "launch" : null;
 }
 
-function rosterUrl(repo: string | null | undefined): string {
-  return repo ? `/api/agents?repo=${encodeURIComponent(repo)}` : "/api/agents";
-}
-
 function runRows(roster: RosterRow[] | null | undefined) {
   return (roster || []).map((row) => ({
     id: row.id,
@@ -123,7 +119,6 @@ export const WBAgents = {
   runCommand,
   canLaunch,
   consoleIntent,
-  rosterUrl,
   rosterState,
   runRows,
   NEEDS_REPO,

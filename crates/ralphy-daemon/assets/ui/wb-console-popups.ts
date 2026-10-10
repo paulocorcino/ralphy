@@ -12,6 +12,7 @@
    peer state belong to the entry, and only which entries exist belongs here.
    --------------------------------------------------------------------------- */
 
+import { isOptionalString, isRecord } from "./wb-api.ts";
 import type { Rect } from "./wb-types.d.ts";
 
 // One member a popup holds: a console's record or a note card's, as the
@@ -30,6 +31,27 @@ export type PopupMember = {
   draft?: string;
   claim?: string | null;
 };
+
+const RECT_SIDES = ["left", "top", "width", "height"] as const;
+
+/** Whether `v` is a rect whose sides are numbers or absent. */
+export function isPartialRect(v: unknown): v is Partial<Rect> {
+  return isRecord(v) && RECT_SIDES.every((k) => v[k] === undefined || typeof v[k] === "number");
+}
+
+/** Whether `v` has the shape of a `PopupMember`. A popup and the tab that
+ * opened it post members to each other, and either one can be a page of
+ * another build: the daemon serves the popup's page when it opens. */
+export function isPopupMember(v: unknown): v is PopupMember {
+  if (!isRecord(v) || typeof v.id !== "string") return false;
+  return (
+    [v.kind, v.agent, v.repo, v.consoleName, v.claim].every((f) => f == null || typeof f === "string") &&
+    isOptionalString(v.path) &&
+    isOptionalString(v.draft) &&
+    (v.session == null || typeof v.session === "number") &&
+    (v.rect === undefined || isPartialRect(v.rect))
+  );
+}
 
 // One popup of the registry. `pid` is the popup's identity on every lifecycle
 // message, set when this tab opened it; `adopted` and `probed` start false.

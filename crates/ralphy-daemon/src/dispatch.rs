@@ -643,14 +643,12 @@ mod tests {
     #[test]
     fn app_js_holds_no_vendor_list() {
         let js = include_str!("../assets/ui/app.ts");
-        let agents_js = include_str!("../assets/ui/wb-agents.ts");
+        let api_js = include_str!("../assets/ui/wb-api.ts");
 
-        // Non-vacuous first: app.ts delegates its request URL to the roster
-        // module, whose repo-specific and local forms both name the endpoint.
+        // Non-vacuous first: app.ts reads the roster route, which the route
+        // list of `wb-api.ts` declares.
         assert!(
-            js.contains("WBAgents.rosterUrl(repo)")
-                && agents_js.contains("/api/agents?repo=")
-                && agents_js.contains("\"/api/agents\""),
+            js.contains("apiFetch(\"GET /api/agents\"") && api_js.contains("\"GET /api/agents\": "),
             "app.ts must render the menu from the daemon's roster endpoint"
         );
 

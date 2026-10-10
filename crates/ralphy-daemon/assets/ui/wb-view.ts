@@ -23,6 +23,24 @@
 // Three writers share the key (the console's offset, the shell's tabs, the
 // settings toggle), which is why `patch` is read-modify-write: any one of them
 // writing the whole record would clobber the others'.
+import { isNullableString, isOptionalString, isRecord } from "./wb-api.ts";
+
+/** A stored file tab: what `persistView` in `app.ts` writes. */
+export type StoredTab = { project: string; path: string; title?: string; kind: string; checkout?: string | null };
+
+// A record written by an older build may hold a tab of another shape: such a
+// tab is not restored.
+function isStoredTab(v: unknown): v is StoredTab {
+  return (
+    isRecord(v) &&
+    typeof v.project === "string" &&
+    typeof v.path === "string" &&
+    isOptionalString(v.title) &&
+    typeof v.kind === "string" &&
+    (v.checkout === undefined || isNullableString(v.checkout))
+  );
+}
+
 export const WBView = (function () {
   const KEY = "wb.view.v1";
 
@@ -33,8 +51,8 @@ export const WBView = (function () {
     try {
       const raw = localStorage.getItem(KEY);
       if (!raw) return null;
-      const parsed = JSON.parse(raw);
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+      const parsed: unknown = JSON.parse(raw);
+      if (!isRecord(parsed)) return null;
       // A record from a future (or corrupt) version is not ours to interpret.
       if (parsed.v !== 1) return null;
       // `command` was the free console's stored startup command. The command is
@@ -47,7 +65,9 @@ export const WBView = (function () {
       // try/catch exists to prevent, one level down.
       return {
         ...stored,
-        tabs: Array.isArray(parsed.tabs) ? parsed.tabs : [],
+        tabs: Array.isArray(parsed.tabs) ? parsed.tabs.filter(isStoredTab) : [],
+        // The tab that was active: a file tab's id, or "consoles".
+        active: typeof parsed.active === "string" ? parsed.active : null,
         // Read STRICTLY: anything that is not a stored `true` means "do not
         // launch". A truthy coercion here would turn a corrupt or half-written
         // record into permission to spawn a vendor CLI per saved console.
@@ -59,13 +79,10 @@ export const WBView = (function () {
         // The terminal font size, in px. Clamped to the same range the buttons
         // step through: a hand-edited 400 would paint one glyph per console.
         font:
-          Number.isInteger(parsed.font) && parsed.font >= 10 && parsed.font <= 28
+          typeof parsed.font === "number" && Number.isInteger(parsed.font) && parsed.font >= 10 && parsed.font <= 28
             ? parsed.font
             : null,
-        off:
-          parsed.off && typeof parsed.off === "object" && !Array.isArray(parsed.off)
-            ? parsed.off
-            : null,
+        off: isRecord(parsed.off) ? parsed.off : null,
         // The secondary pane (ADR-0037 §3c): a pin names a file the way `tabs`
         // does; a mirror names nothing. The ratio is the left column's share,
         // held to the range the divider drag can produce. Anything else is
@@ -76,9 +93,10 @@ export const WBView = (function () {
         // list stored before rows. `WBColumns.fromStored` folds both and
         // checks them against the desk on restore.
         columns: Array.isArray(parsed.columns)
-          ? parsed.columns
-              .map((c: unknown) => (Array.isArray(c) ? c.filter((s) => typeof s === "string") : c))
-              .filter((c: unknown) => typeof c === "string" || Array.isArray(c))
+          ? parsed.columns.flatMap((c: unknown): (string | string[])[] => {
+              if (typeof c === "string") return [c];
+              return Array.isArray(c) ? [c.filter((s): s is string => typeof s === "string")] : [];
+            })
           : null,
         // Where "Slice" opens, as last picked in this browser.
         columnDir: parsed.columnDir === "right" || parsed.columnDir === "down" ? parsed.columnDir : null,
@@ -88,8 +106,8 @@ export const WBView = (function () {
     }
   }
 
-  function splitOf(raw: Record<string, unknown> | null | undefined) {
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  function splitOf(raw: unknown) {
+    if (!isRecord(raw)) return null;
     const ratio = typeof raw.ratio === "number" && raw.ratio >= 0.2 && raw.ratio <= 0.8 ? raw.ratio : null;
     if (raw.kind === "mirror") return { kind: "mirror", ratio };
     if (raw.kind === "pin" && typeof raw.project === "string" && typeof raw.path === "string") {
@@ -104,7 +122,8 @@ export const WBView = (function () {
     return null;
   }
 
-  function patch(part: Partial<NonNullable<ReturnType<typeof read>>>) {
+  // A writer passes the value it holds: `read` checks each field on the way back.
+  function patch(part: { [K in keyof NonNullable<ReturnType<typeof read>>]?: unknown }) {
     try {
       const next = { ...read(), ...part, v: 1 };
       localStorage.setItem(KEY, JSON.stringify(next));

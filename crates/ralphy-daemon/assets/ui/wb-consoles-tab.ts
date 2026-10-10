@@ -206,7 +206,8 @@ export function wbConsoleMenus() {
     // what the operator is looking at, in the project's selected checkout —
     // where the file will be written is a field in the card's own footer.
     newNote() {
-      if (!this.$store.projects.openSlug) return;
+      const slug = this.$store.projects.openSlug;
+      if (!slug) return;
       if (this.active !== "consoles") this.activate("consoles");
       this.noteMenu = false;
       // AFTER the tab is laid out, as `revealWindow`: a `display:none` tab
@@ -214,8 +215,8 @@ export function wbConsoleMenus() {
       this.$nextTick(() => {
         const ws = document.getElementById("workspace");
         window.WBNotes.create({
-          repo: this.$store.projects.openSlug,
-          checkout: window.WBConsole.checkoutOf(this.$store.projects.openSlug!),
+          repo: slug,
+          checkout: window.WBConsole.checkoutOf(slug),
           viewport: { width: ws?.clientWidth || 0, height: ws?.clientHeight || 0 },
           offset: { left: ws?.scrollLeft || 0, top: ws?.scrollTop || 0 },
         });

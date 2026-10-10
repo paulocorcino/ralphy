@@ -6,7 +6,7 @@
 // remembers what was appended and a Monaco that boots.
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { createViewer } from "../assets/ui/wb-viewer.ts";
+import { createViewer, isFileDescriptor, isOpenRequest } from "../assets/ui/wb-viewer.ts";
 import { WBMonaco } from "../assets/ui/wb-monaco.ts";
 
 const REAL_MONACO = { ...WBMonaco };
@@ -186,7 +186,7 @@ function loadWithDom() {
   // The pane imports the one `WBMonaco`: its boot is replaced for the test and
   // put back by `after`.
   Object.assign(WBMonaco, stub);
-  return { viewer: createViewer(window, document), mount, log, models };
+  return { viewer: createViewer(window, document), mount, log, models, document };
 }
 after(() => Object.assign(WBMonaco, REAL_MONACO));
 const settle = () => new Promise((r) => setTimeout(r, 5));
@@ -362,5 +362,64 @@ test("remoteImageNotice names what was refused, where from, and why", () => {
     const notice = remoteImageNotice(src, alt);
     const got = Object.fromEntries(Object.keys(want).map((k) => [k, notice[k]]));
     assert.deepEqual(got, want, name);
+  }
+});
+
+// --- mermaid in a rendered document ----------------------------------------
+// `marked` and `DOMPurify` are page globals; here they pass the HTML through,
+// and the article answers the two mermaid `code` elements the HTML would hold:
+// a fence inside a <pre>, and inline raw HTML with no <pre> around it.
+test("an inline mermaid code element stays as code; a fenced one becomes a diagram holder", () => {
+  const { viewer, mount, document } = loadWithDom();
+  const html = '<pre><code class="language-mermaid">graph TD</code></pre><p><code class="language-mermaid">x</code></p>';
+  const replaced = [];
+  const pre = { replaceWith: (holder) => replaced.push(holder) };
+  const fenced = { textContent: "graph TD", closest: (s) => (s === "pre" ? pre : null) };
+  const inline = { textContent: "x", closest: () => null };
+  const article = fakeEl("article");
+  article.querySelectorAll = (s) => (s === "code.language-mermaid" ? [fenced, inline] : []);
+  const createElement = document.createElement;
+  document.createElement = (tag) => {
+    const el = createElement(tag);
+    const query = el.querySelector;
+    el.querySelector = (s) => (s === ".md-body" ? article : query(s));
+    return el;
+  };
+  globalThis.marked = { parse: (src) => (src === "# doc" ? html : "") };
+  globalThis.DOMPurify = { sanitize: (h) => h };
+  try {
+    viewer.open({ id: "m", project: "p", path: "doc.md", ftype: "markdown", content: "# doc" });
+  } finally {
+    delete globalThis.marked;
+    delete globalThis.DOMPurify;
+  }
+  assert.ok(paneOf(mount, "m"), "the markdown pane is mounted");
+  assert.equal(article.innerHTML, html);
+  assert.equal(replaced.length, 1);
+  assert.equal(replaced[0].className, "mermaid");
+  assert.equal(replaced[0].dataset.src, "graph TD");
+});
+
+// Another window posts these two shapes, and it can be a page of another
+// build: each field the readers use is checked.
+test("a file descriptor and an open request from another window are read only in their own shape", () => {
+  const desc = { project: "o/r", label: "a.md", path: "a.md", ftype: "markdown", content: "x", checkout: null, encoding: "utf-8", bom: false };
+  const open = { project: "o/r", path: "b.md", checkout: "wt", fragment: "top" };
+  // [check, value, expected]
+  const rows = [
+    [isFileDescriptor, desc, true],
+    [isFileDescriptor, { ...desc, checkout: "wt", encoding: undefined }, true],
+    [isFileDescriptor, { ...desc, bom: "no" }, false],
+    [isFileDescriptor, { ...desc, content: undefined }, false],
+    [isFileDescriptor, { ...desc, checkout: undefined }, false],
+    [isFileDescriptor, [desc], false],
+    [isOpenRequest, open, true],
+    [isOpenRequest, { project: null, path: "b.md", checkout: null, as: "bytes" }, true],
+    [isOpenRequest, { ...open, path: 3 }, false],
+    [isOpenRequest, { ...open, as: "text" }, false],
+    [isOpenRequest, null, false],
+  ];
+  for (const [check, value, expected] of rows) {
+    assert.equal(check(value), expected, `${check.name} ${JSON.stringify(value)}`);
   }
 });

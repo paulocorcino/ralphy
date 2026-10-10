@@ -201,7 +201,6 @@ test("repo-specific roster state replaces old rows and signals run-picker availa
       title: "Not installed here.",
     },
   ]);
-  assert.equal(api.rosterUrl("peer/repo"), "/api/agents?repo=peer%2Frepo");
 });
 
 test("menuRows mutates neither argument", () => {

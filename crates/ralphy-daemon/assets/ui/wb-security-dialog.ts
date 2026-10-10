@@ -12,6 +12,7 @@
    `main.ts` registers it as `wbSecurityDialog` (ADR-0075 D5).
    --------------------------------------------------------------------------- */
 import { component } from "./wb-alpine.ts";
+import { apiFetch } from "./wb-api.ts";
 import { wbQr } from "./wb-settings.ts";
 
 /** The change of a toggle: the checkbox, which the handler puts back in sync. */
@@ -55,7 +56,7 @@ export function securityDialog() {
       this.securityOpen = true;
       // The REAL daemon auth state (GET /api/security/state).
       try {
-        const r = await fetch("/api/security/state");
+        const r = await apiFetch("GET /api/security/state");
         if (r.ok) {
           const s = await r.json();
           this.securityChanged({
@@ -140,7 +141,7 @@ export function securityDialog() {
       // A PENDING seed (mint-once); NOT armed until `confirmTotp()` proves
       // possession.
       try {
-        const r = await fetch("/api/security/totp/enroll", { method: "POST" });
+        const r = await apiFetch("POST /api/security/totp/enroll");
         if (!r.ok) return;
         const { uri } = await r.json();
         this.securityForm.pendingEnroll = true;
@@ -157,8 +158,7 @@ export function securityDialog() {
       const code = this.securityForm.confirmCode.trim();
       if (code.length !== 6) return;
       try {
-        const r = await fetch("/api/security/totp/confirm", {
-          method: "POST",
+        const r = await apiFetch("POST /api/security/totp/confirm", {
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
           body: "code=" + encodeURIComponent(code),
         });
@@ -244,8 +244,7 @@ export function securityDialog() {
       if (this.security.passwordSet && !this.securityForm.passwordCurrent) return;
       this.securityForm.stepUpError = "";
       try {
-        const r = await fetch("/api/security/password", {
-          method: "POST",
+        const r = await apiFetch("POST /api/security/password", {
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
           body: this.passwordBody(pw),
         });

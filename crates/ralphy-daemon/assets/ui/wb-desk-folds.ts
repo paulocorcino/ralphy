@@ -30,10 +30,10 @@ type LiveSession = {
 
 // One restore verdict: what to do with one record, or with one session no
 // record claims (`adopt`, with the record id it names, if it is free).
-type DeskVerdict<S> =
-  | { record: DeskRecord; session: S; action: "attach"; id?: undefined }
-  | { record: DeskRecord; session: null; action: "relaunch"; id?: undefined }
-  | { record: DeskRecord; session: null; action: "placeholder"; id?: undefined }
+type DeskVerdict<S, R> =
+  | { record: R; session: S; action: "attach"; id?: undefined }
+  | { record: R; session: null; action: "relaunch"; id?: undefined }
+  | { record: R; session: null; action: "placeholder"; id?: undefined }
   | { record: null; session: S; action: "adopt"; id: string | null };
 
 // A window of the desk as a fence readout reads it.
@@ -59,15 +59,22 @@ export const NOTE_MAX = 32;
 // `relaunchAgents` is the operator's per-client opt-in (Settings → Consoles),
 // default OFF and passed in so the fold stays pure and the popup can never
 // turn it on.
-type ReconcileInput<S> = {
-  layout: readonly DeskRecord[] | null | undefined;
+type ReconcileInput<S, R> = {
+  layout: readonly R[] | null | undefined;
   sessions: readonly S[] | null | undefined;
   relaunchAgents?: boolean;
 };
-export function reconcileDesk<S extends LiveSession>({ layout, sessions, relaunchAgents = false }: ReconcileInput<S>) {
+// What the fold reads of a record. A placeholder whose record another page
+// deleted stands in with the record it was spawned from, which has no rect.
+export type FoldRecord = Pick<DeskRecord, "id" | "sessionId" | "checkout"> & {
+  repo?: string | null;
+  agent?: string | null;
+  kind?: string | null;
+};
+export function reconcileDesk<S extends LiveSession, R extends FoldRecord = DeskRecord>({ layout, sessions, relaunchAgents = false }: ReconcileInput<S, R>) {
   const live = sessions || [];
   const used = new Set<number>();
-  const out: DeskVerdict<S>[] = [];
+  const out: DeskVerdict<S, R>[] = [];
   for (const record of layout || []) {
     // A session that names its record is that record's, whatever a stale
     // `sessionId` says, and never another record's (ADR-0050 amendment
@@ -119,7 +126,7 @@ export function reconcileDesk<S extends LiveSession>({ layout, sessions, relaunc
       return;
     }
     // Widened to write: a `relaunch` or `placeholder` verdict becomes `attach`.
-    const waiting: { session: S | null; action: DeskVerdict<S>["action"] } | undefined = out.find(
+    const waiting: { session: S | null; action: DeskVerdict<S, R>["action"] } | undefined = out.find(
       ({ record, action }) =>
         action !== "attach" &&
         // An `adopt` entry pushed for an earlier session has no record.
@@ -151,7 +158,7 @@ export function placeholderSession<S extends LiveSession>({
   recordId,
   held = [],
 }: {
-  layout: readonly DeskRecord[] | null | undefined;
+  layout: readonly FoldRecord[] | null | undefined;
   sessions: readonly S[] | null | undefined;
   recordId: string;
   held?: readonly { id: number | null; repo: string }[];

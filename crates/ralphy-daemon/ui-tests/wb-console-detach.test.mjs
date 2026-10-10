@@ -4,7 +4,7 @@
 // browser.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createDetach } from "../assets/ui/wb-console-detach.ts";
+import { createDetach, isFencePopupMessage } from "../assets/ui/wb-console-detach.ts";
 import { createPopupRegistry } from "../assets/ui/wb-console-popups.ts";
 import { WBDetachLink } from "../assets/ui/wb-detach-link.ts";
 
@@ -154,4 +154,44 @@ test("a handshake message from another origin is ignored", (t) => {
   assert.equal(popups.isDetached("f"), true);
   message(ORIGIN);
   assert.equal(popups.isDetached("f"), false);
+});
+
+test("a popup's wb-emit reaches WB only when it names a gesture", (t) => {
+  const emitted = withWB(t);
+  const { listeners, detachFence } = harness();
+  const handle = { closed: false, close() {}, postMessage() {} };
+  detachFence("f", { handle });
+  const post = (data) => listeners.message({ origin: ORIGIN, source: handle, data });
+  try {
+    post({ type: "wb-emit", action: "file.delete", detail: { repo: "o/r", path: "a" } });
+    post({ type: "wb-emit", action: "toString", detail: {} });
+    // CONTROL: a gesture name is forwarded with its detail.
+    post({ type: "wb-emit", action: "console-open", detail: { repo: "o/r", agent: null, plain: true } });
+    assert.deepEqual(emitted, [{ type: "console-open", detail: { repo: "o/r", agent: null, plain: true } }]);
+  } finally {
+    // Bring the fence home, so the heartbeat of the detach stops.
+    post({ type: "wb-fence-reattach" });
+  }
+});
+
+// The daemon serves the popup's page when it opens, so a popup can be a newer
+// build than this tab: a message is read only in the shape this tab knows.
+test("a fence popup's message is read only in its own shape", () => {
+  for (const ok of [
+    { type: "wb-fence-ready" },
+    { type: "wb-emit", action: "save", detail: {} },
+    { type: "wb-note-named", noteId: "n1", path: "notes/a.md" },
+    { type: "wb-note-claimed", noteId: "n1", claim: "notes/b.md" },
+    { type: "wb-fence-reattach" },
+  ]) {
+    assert.equal(isFencePopupMessage(ok), true, JSON.stringify(ok));
+  }
+  for (const bad of [
+    { type: "wb-note-named", noteId: 1, path: "notes/a.md" },
+    { type: "wb-note-claimed", noteId: "n1", claim: ["notes/b.md"] },
+    { type: "wb-detach-ready" },
+    "wb-fence-ready",
+  ]) {
+    assert.equal(isFencePopupMessage(bad), false, JSON.stringify(bad));
+  }
 });

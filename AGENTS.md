@@ -233,8 +233,11 @@ already denies a `std::sync` lock guard held across an `.await`.
   refuses one (`typescript/no-explicit-any` in `.oxlintrc.json`, no
   override), and so does `explicit_any_matches_the_baseline` in
   `crates/xtask/tests/ratchets.rs` (`ANY_BASELINE` is empty). Give the value
-  its real type. `unknown` is only for data from outside (a JSON reply,
-  `postMessage`, `localStorage`), narrowed right after. No `as unknown as`
+  its real type. A JSON reply of the daemon is read through `apiFetch`
+  (`wb-api.ts`), which types it by route, and a socket frame through
+  `socketFrame` in the same module. `unknown` is only for other data from
+  outside (`postMessage`, `localStorage`, an uploaded file), narrowed
+  right after. No `as unknown as`
   and no `@ts-ignore`, `@ts-expect-error` or `@ts-nocheck`
   (`no_escape_hatch_in_the_workbench`).
 
