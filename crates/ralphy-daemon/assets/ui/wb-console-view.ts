@@ -11,6 +11,8 @@
    its terminal, and keeps the stage's extent and `refitAll`.
    --------------------------------------------------------------------------- */
 import { WBGeometry } from "./wb-geometry.ts";
+import type { WBView } from "./wb-view.ts";
+import type { ConsoleWin, Offset, Point, Rect, Size } from "./wb-types.d.ts";
 
 // Plane geometry is `wb-geometry.ts` (ADR-0057): pure folds over rects.
 const {
@@ -28,30 +30,30 @@ const {
 export type ViewDeps = {
   // The console's page: the reduced-motion query, the notes (`WBNotes`) and
   // the `blur` that ends a floor pan.
-  window: any;
+  window: Window;
   // The page the floor pan and the fullscreen change are heard on.
-  document: any;
+  document: Document;
   // The viewport (the scrolling box) and the stage (the plane inside it);
   // null before the page has them.
-  workspace: () => any;
-  stage: () => any;
+  workspace: () => HTMLElement | null;
+  stage: () => HTMLElement | null;
   // The per-client view store (`WBView`): it reads and patches the stored
   // offset. The popup's store reads nothing.
-  viewStore: any;
+  viewStore: Pick<typeof WBView, "read" | "patch">;
   // A window's or a fence's rect, as the desk stores it.
-  restoreRect: (el: any) => any;
+  restoreRect: (el: HTMLElement) => Rect;
   // Raises and focuses a window or a note card.
-  focusWin: (el: any) => void;
+  focusWin: (el: HTMLElement) => void;
   // The fullscreen control's look, and the maximize pin: both derived from
   // the page's own events, which `wireStage` registers.
   syncFullState: () => void;
   syncMaxPin: () => void;
   // A fence's element by id, and the focused fence (set, cleared, read). The
   // fence list reassigns the focused fence, so it is read at each use.
-  fenceEl: (id: any) => any;
-  focusFence: (id: any) => void;
+  fenceEl: (id: string | null) => HTMLElement | null;
+  focusFence: (id: string | null) => void;
   clearFenceFocus: () => void;
-  focusedFence: () => any;
+  focusedFence: () => string | null;
   // The desk restore has settled (landed or refused). The desk is built after
   // the view, so this is a lazy arrow.
   isDeskSettled: () => boolean;
@@ -88,7 +90,7 @@ export function createView(deps: ViewDeps) {
   // `applyLanding` that CAN measure, AHEAD of the stored offset. Measured:
   // a reveal requested on the same synchronous stack as `activate` runs before
   // Alpine's `x-show` flip, which lands a microtask later.
-  let pendingReveal: any = null;
+  let pendingReveal: string | null = null;
   function applyLanding() {
     const ws = workspace();
     const st = stage();
@@ -96,7 +98,7 @@ export function createView(deps: ViewDeps) {
     // A hidden tab measures a 0×0 viewport, where every landing centres on
     // nothing — and `saveOffset` would then persist that nothing.
     if (!ws.clientWidth || !ws.clientHeight) return;
-    const rects = [...st.querySelectorAll(".session-window")].map(restoreRect);
+    const rects = [...st.querySelectorAll<ConsoleWin>(".session-window")].map(restoreRect);
     // A parked reveal outranks the stored offset: this is the frame it was
     // waiting for, and the operator's last act was asking for that window.
     if (pendingReveal != null) {
@@ -128,8 +130,8 @@ export function createView(deps: ViewDeps) {
   // until the landing has been applied: `applyExtent` and the `x-show` flip both
   // fire `scroll` before the restore, so an unguarded listener would persist 0,0
   // over the operator's stored pan on every boot.
-  let offsetFlush: any = null;
-  let pendingOffset: any = null;
+  let offsetFlush: ReturnType<typeof setTimeout> | null = null;
+  let pendingOffset: Offset | null = null;
   function flushOffset() {
     // Writes the offset CAPTURED at schedule time, never a fresh read: a file
     // tab switched to inside the 250 ms hides `.consoles-tab` (`x-show`), and
@@ -163,7 +165,7 @@ export function createView(deps: ViewDeps) {
   // The "one action" that reaches a window far from the current view (ADR-0051
   // §4): focus it and slide the viewport so it is centred. Returns the element,
   // or null when no window carries that desk id.
-  function reveal(deskId: any) {
+  function reveal(deskId: string) {
     const ws = workspace();
     const it = findWindow(deskId);
     if (!it) return null;
@@ -176,16 +178,16 @@ export function createView(deps: ViewDeps) {
     return it;
   }
 
-  function findWindow(deskId: any) {
+  function findWindow(deskId: string) {
     const st = stage();
     if (!st) return null;
     return (
-      [...st.querySelectorAll(".session-window")].find((w) => w._deskId === deskId) || null
+      [...st.querySelectorAll<ConsoleWin>(".session-window")].find((w) => w._deskId === deskId) || null
     );
   }
 
   // The centring half, on a viewport that is known to measure.
-  function revealNow(deskId: any) {
+  function revealNow(deskId: string) {
     const ws = workspace();
     const st = stage();
     if (!ws || !st) return null;
@@ -224,7 +226,7 @@ export function createView(deps: ViewDeps) {
   // INVARIANT: the tween is a VIEW effect only — `slideTo` runs after the
   // destination is stored, so a dropped tween never loses the jump.
   const SLIDE_MS = 260;
-  let slideRaf: any = null;
+  let slideRaf: number | null = null;
 
   function cancelSlide() {
     if (slideRaf == null) return;
@@ -240,7 +242,7 @@ export function createView(deps: ViewDeps) {
     }
   }
 
-  function slideTo(ws: any, to: any) {
+  function slideTo(ws: HTMLElement, to: Offset) {
     cancelSlide();
     const from = { left: ws.scrollLeft, top: ws.scrollTop };
     const dx = to.left - from.left;
@@ -253,7 +255,7 @@ export function createView(deps: ViewDeps) {
       return;
     }
     const t0 = performance.now();
-    const step = (now: any) => {
+    const step = (now: number) => {
       slideRaf = null;
       // The viewport was torn out mid-flight (tab swapped, page reloading).
       if (!ws.isConnected) return;
@@ -267,7 +269,7 @@ export function createView(deps: ViewDeps) {
 
   // One click on a fence's name slides the viewport to it — the map's anchor.
   // Returns the fence element, or null when no fence carries that id.
-  function jumpToFence(id: any) {
+  function jumpToFence(id: string) {
     const el = fenceEl(id);
     if (!el) return null;
     focusFence(id);
@@ -283,7 +285,7 @@ export function createView(deps: ViewDeps) {
   // The note card's jump (ADR-0064 §10): the same slide, but a card is a POINT
   // OF INTEREST like a window in the Go-to picker, so it is CENTRED — the ADR
   // draws that contrast with the fence explicitly.
-  function jumpToNote(id: any) {
+  function jumpToNote(id: string) {
     const el = window.WBNotes?.cardEl(id);
     if (!el) return null;
     focusWin(el);
@@ -294,7 +296,7 @@ export function createView(deps: ViewDeps) {
   // jumps' own focus rule and their own fold, shared because the second
   // surface (a card) must not re-derive the stored-offset invariant the first
   // one learned the hard way.
-  function jumpToEl(el: any, fold: any) {
+  function jumpToEl(el: HTMLElement, fold: (rect: Rect, view: Size, ext: Size) => Offset) {
     const ws = workspace();
     const st = stage();
     // A viewport measuring 0 is a tab still `display:none`; centring would
@@ -328,9 +330,9 @@ export function createView(deps: ViewDeps) {
   // edge, the plane scrolls under it each frame, and `place(pointer)` in the tick
   // keeps the drop correct in stage coordinates. The gesture calls `follow`
   // after each of its own `place`, and `stop` when it ends.
-  function autoPan(node: any, place: any) {
-    let panRaf: any = null;
-    let last: any = null;
+  function autoPan(node: HTMLElement, place: (pointer: Point) => void) {
+    let panRaf: number | null = null;
+    let last: Point | null = null;
     // INVARIANT: an uncancelled loop pans the plane forever after the button
     // is released, so `stop` is the FIRST statement of each gesture's `onUp`.
     const stop = () => {
@@ -352,13 +354,14 @@ export function createView(deps: ViewDeps) {
       }
       const { dx, dy } = nudge();
       if (!dx && !dy) return; // leaving the band ENDS the loop
-      const ws = workspace();
+      // `nudge` answers zero without a viewport or a pointer, so both are here.
+      const ws = workspace()!;
       ws.scrollLeft += dx;
       ws.scrollTop += dy;
-      place(last);
+      place(last!);
       panRaf = requestAnimationFrame(tick);
     };
-    const follow = (pointer: any) => {
+    const follow = (pointer: Point) => {
       last = pointer;
       if (panRaf != null) return;
       const { dx, dy } = nudge();
@@ -370,7 +373,7 @@ export function createView(deps: ViewDeps) {
   // ---- the plane's own gestures ------------------------------------------------
   // Pan by dragging the BARE FLOOR. Calls neither `applyExtent` nor a desk
   // write nor `focusWin`: panning moves the view, not the rects.
-  function onFloorDown(e: any) {
+  function onFloorDown(e: MouseEvent) {
     // Primary button only — see makeDraggable.
     if (e.button !== 0) return;
     const ws = workspace();
@@ -394,7 +397,7 @@ export function createView(deps: ViewDeps) {
     const startLeft = ws.scrollLeft;
     const startTop = ws.scrollTop;
     st.classList.add("panning");
-    const onMove = (ev: any) => {
+    const onMove = (ev: MouseEvent) => {
       // A swallowed mouseup (native context menu, alt-tab) would leave a sticky
       // pan.
       if (ev.buttons === 0) {
@@ -420,11 +423,11 @@ export function createView(deps: ViewDeps) {
 
   // The wheel. The VERTICAL axis is native `overflow:auto`; this adds only the
   // horizontal reach where the platform does not provide it.
-  function onWheel(e: any) {
+  function onWheel(e: WheelEvent) {
     // The terminal owns its wheel. Its scrollback is reached by CSS
     // (`overscroll-behavior: contain`), never by `preventDefault`, which would
     // cancel the terminal's own scroll too.
-    if (e.target?.closest?.(".session-window")) return;
+    if ((e.target as Partial<Element> | null)?.closest?.(".session-window")) return;
     // Any wheel reaching the PLANE abandons a jump in flight — the vertical
     // one too, which is why this sits above the horizontal-only guard.
     cancelSlide();

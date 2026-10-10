@@ -20,8 +20,8 @@ import type { Rect } from "./wb-types.d.ts";
 // `claim`.
 export type PopupMember = {
   id: string;
-  kind?: string;
-  agent?: string;
+  kind?: string | null;
+  agent?: string | null;
   repo?: string | null;
   consoleName?: string | null;
   path?: string;
@@ -43,7 +43,7 @@ export type PopupEntry = {
   greeted: boolean;
   rescue: ReturnType<typeof setTimeout> | null;
   adopted?: boolean;
-  peer: { seen: number; lost: boolean };
+  peer: { seen: number | null; lost: boolean };
   probed?: boolean;
 };
 

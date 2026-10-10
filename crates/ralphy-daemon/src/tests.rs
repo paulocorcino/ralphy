@@ -5003,7 +5003,7 @@ fn shell_draws_fences_below_the_windows() {
     );
     let squeezed: String = js.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
-        squeezed.contains(r#"name.addEventListener("mousedown", (e: any) => { if (name.readOnly) e.preventDefault(); });"#),
+        squeezed.contains(r#"name.addEventListener("mousedown", (e: MouseEvent) => { if (name.readOnly) e.preventDefault(); });"#),
         "a single click on a read-only fence name must leave no trace at all"
     );
     // Enter is the ONLY commit. `change` fires on blur, so committing there
@@ -5168,7 +5168,7 @@ fn shell_drags_only_past_a_threshold() {
     // `rect`/`locked` from the copy, would break `lockedBy`'s "fence"
     // verdict with nothing on either side to catch it.
     assert!(
-        body("function fenceRecords(").contains("fences().map((f: any) => ({ ...f }))"),
+        body("function fenceRecords(").contains("fences().map((f: DeskFence) => ({ ...f }))"),
         "fenceRecords must answer copies of the whole record (ADR-0064 §8)"
     );
     // And the card must actually PASS both hooks: the default is correct
@@ -7054,7 +7054,7 @@ fn the_destructive_console_clicks_confirm_first() {
     // The EXPORTED verbs stay unguarded: a caller that names `arrangeFence`
     // has already decided, and the dialog belongs to the accidental click.
     let verb = js
-        .split_once("\n  function removeFence(id: any) {")
+        .split_once("\n  function removeFence(id: string) {")
         .expect("wb-console.ts must keep removeFence")
         .1;
     assert!(

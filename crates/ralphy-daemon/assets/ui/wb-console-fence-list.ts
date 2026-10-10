@@ -16,17 +16,24 @@ import { WBGeometry } from "./wb-geometry.ts";
 import * as WBConsoleInput from "./wb-console-input.ts";
 import * as WBDeskFolds from "./wb-desk-folds.ts";
 import type { PopupRegistry } from "./wb-console-popups.ts";
+import type { ConsoleWin, DeskFence, DeskNote, ExtentOpts, Rect } from "./wb-types.d.ts";
 
 const { PHONE_MAX_WIDTH } = WBConsoleInput;
 const { fenceSpawnRect, rectsOverlap, fenceOf, fenceHolds } = WBGeometry;
 const { fenceSummaries, nextFenceSlot, nextFenceName, fenceCycle, FENCE_MAX } = WBDeskFolds;
 
+// A fence element: `buildFence` always sets its `data-fence-id`.
+export type FenceElement = HTMLElement & { dataset: { fenceId: string } };
+
+// The refusal span of a fence, with the timer that clears it.
+type FenceNotice = HTMLElement & { _noticeTimer?: ReturnType<typeof setTimeout> };
+
 // What the fence list reads from the console, and nothing else.
 export type FenceListDeps = {
   // The console's page: the note cards (`WBNotes`).
-  window: any;
+  window: Window;
   // The page: a fence name is not written while it has the focus.
-  document: any;
+  document: Document;
   // The console's options: the torn-off fence window boots without
   // `autoBoot`, and derives no lock from a fence.
   OPTS: { autoBoot?: boolean };
@@ -35,31 +42,31 @@ export type FenceListDeps = {
   popups: PopupRegistry;
   // The fence records and the note cards; the console reassigns both lists,
   // so they are read at each use.
-  fences: () => any[];
-  notes: () => any[];
+  fences: () => DeskFence[];
+  notes: () => DeskNote[];
   // The plane and the viewport; null before the page has them.
-  stage: () => any;
-  workspace: () => any;
+  stage: () => HTMLElement | null;
+  workspace: () => HTMLElement | null;
   // An element's rect read from the DOM.
-  restoreRect: (el: any) => any;
+  restoreRect: (el: HTMLElement) => Rect;
   // Grows or fits the stage to the windows on it.
-  applyExtent: (opts?: any) => void;
+  applyExtent: (opts?: ExtentOpts) => void;
   // The viewport width the columns rule reads.
   columnMeasure: () => { viewport: number };
   // An element under a gesture of the operator keeps its rect.
-  inGesture: (el: any) => boolean;
+  inGesture: (el: HTMLElement) => boolean;
   // A new fence id.
   newFenceId: () => string;
   // Paints a console's lock glyph (its own lock or its fence's).
-  paintLockGlyph: (win: any) => void;
+  paintLockGlyph: (win: ConsoleWin) => void;
   // Writes the fence records to the desk.
-  saveFences: (next: any) => void;
+  saveFences: (next: DeskFence[]) => void;
   // Slides the viewport to a fence. The view is built after the fence list,
   // so this is a lazy arrow.
-  jumpToFence: (id: any) => any;
+  jumpToFence: (id: string) => HTMLElement | null;
   // Builds a fence element. The fences are built after the fence list, so
   // this is a lazy arrow.
-  buildFence: (f: any) => any;
+  buildFence: (f: DeskFence) => HTMLElement;
 };
 
 export function createFenceList(deps: FenceListDeps) {
@@ -93,7 +100,7 @@ export function createFenceList(deps: FenceListDeps) {
   // starting inside its 600 ms window can CANCEL it: otherwise the timer strips
   // a `fence-invalid` the gesture put there, and with the cursor at rest no
   // move re-adds it.
-  let fenceFlash: any = null;
+  let fenceFlash: { el: HTMLElement; timer: ReturnType<typeof setTimeout> } | null = null;
   function clearFenceFlash() {
     if (fenceFlash == null) return;
     clearTimeout(fenceFlash.timer);
@@ -101,10 +108,10 @@ export function createFenceList(deps: FenceListDeps) {
     fenceFlash = null;
   }
 
-  function fenceEl(id: any) {
+  function fenceEl(id: string | null) {
     const st = stage();
     if (!st) return null;
-    for (const el of st.querySelectorAll(".fence")) {
+    for (const el of st.querySelectorAll<FenceElement>(".fence")) {
       if (el.dataset.fenceId === id) return el;
     }
     return null;
@@ -121,8 +128,8 @@ export function createFenceList(deps: FenceListDeps) {
     // there writes `0 consoles` onto every fence. `refitAll` calls this again
     // on the first frame that can measure.
     if (!st || !st.offsetWidth || !st.offsetHeight) return;
-    const els = new Map();
-    for (const el of st.querySelectorAll(".fence")) els.set(el.dataset.fenceId, el);
+    const els = new Map<string, FenceElement>();
+    for (const el of st.querySelectorAll<FenceElement>(".fence")) els.set(el.dataset.fenceId, el);
     // A DETACHED fence's consoles are in a popup, so the membership fold
     // answers zero — but the fence is emptied, not empty (ADR-0051 §7a). Take
     // the count from the registry for those; the fold stays pure.
@@ -132,15 +139,15 @@ export function createFenceList(deps: FenceListDeps) {
       if (!el) continue;
       const n = away[s.id] ? away[s.id].length : s.count;
       // Parenthesised: it trails the name field and reads as an aside to it.
-      const count = el.querySelector(".fence-count");
+      const count = el.querySelector<HTMLElement>(".fence-count");
       if (count) count.textContent = `(${n} console${n === 1 ? "" : "s"})`;
-      const cols = el.querySelector(".fence-columns");
+      const cols = el.querySelector<HTMLButtonElement>(".fence-columns");
       if (cols) cols.disabled = s.count === 0;
     }
     paintFenceColumns();
     // A console HELD by a locked fence wears the fence's lock (the class drops
     // its bands and grab cursor). Derived here with membership, from live rects.
-    for (const w of st.querySelectorAll(".session-window")) {
+    for (const w of st.querySelectorAll<ConsoleWin>(".session-window")) {
       w.classList.toggle("held", !w._deskLocked && heldByFence(w));
       paintLockGlyph(w);
     }
@@ -150,8 +157,8 @@ export function createFenceList(deps: FenceListDeps) {
     // window while `fences` still holds the shell's stage coordinates, so the
     // derivation there would match a card to whatever fence happens to cover
     // the translated point.
-    for (const el of OPTS.autoBoot === false ? [] : st.querySelectorAll(".note-card")) {
-      const own = notes().find((n: any) => n.id === el.dataset.noteId);
+    for (const el of OPTS.autoBoot === false ? [] : st.querySelectorAll<HTMLElement>(".note-card")) {
+      const own = notes().find((n: DeskNote) => n.id === el.dataset.noteId);
       const held = !own?.locked && !!fenceOf(fences(), restoreRect(el))?.locked;
       el.classList.toggle("held", held);
       window.WBNotes?.applyLock(el, !!own?.locked || held);
@@ -163,8 +170,8 @@ export function createFenceList(deps: FenceListDeps) {
   // `applyColumns`, which runs on every resize.
   function paintFenceColumns() {
     const narrow = columnMeasure().viewport <= PHONE_MAX_WIDTH;
-    for (const el of stage()?.querySelectorAll(".fence") || []) {
-      const btn = el.querySelector(".fence-columns");
+    for (const el of stage()?.querySelectorAll<FenceElement>(".fence") || []) {
+      const btn = el.querySelector<HTMLButtonElement>(".fence-columns");
       if (btn) btn.hidden = narrow || isDetached(el.dataset.fenceId);
     }
   }
@@ -172,16 +179,16 @@ export function createFenceList(deps: FenceListDeps) {
   // The two DOM reads `refreshFenceChrome` and `fenceList` share: the stage is
   // where a fence and a window ARE, and membership is derived from those live
   // rects, never from `fences` or `wins`.
-  function readFenceRects(st: any) {
-    return [...st.querySelectorAll(".fence")].map((el) => ({
+  function readFenceRects(st: HTMLElement) {
+    return [...st.querySelectorAll<FenceElement>(".fence")].map((el) => ({
       id: el.dataset.fenceId,
-      name: el.querySelector(".fence-name")?.value || "",
+      name: el.querySelector<HTMLInputElement>(".fence-name")?.value || "",
       rect: restoreRect(el),
     }));
   }
 
-  function readWindowRects(st: any) {
-    return [...st.querySelectorAll(".session-window")].map((w) => ({
+  function readWindowRects(st: HTMLElement) {
+    return [...st.querySelectorAll<ConsoleWin>(".session-window")].map((w) => ({
       id: w._deskId,
       repo: w._deskRepo,
       rect: restoreRect(w),
@@ -193,7 +200,7 @@ export function createFenceList(deps: FenceListDeps) {
   // The fence RECORDS (id, name, rect, locked), not the chrome summaries: the
   // note card derives its lock from the fence holding it and needs the rects.
   function fenceRecords() {
-    return fences().map((f: any) => ({ ...f }));
+    return fences().map((f: DeskFence) => ({ ...f }));
   }
 
   // The cards, rendered by `wb-notes.ts`. Called wherever `renderFences` is —
@@ -211,34 +218,34 @@ export function createFenceList(deps: FenceListDeps) {
 
   // A fence's own lock, and a console held by a locked fence: the same
   // `fenceOf` fold as membership.
-  function fenceLocked(id: any) {
-    return !!fences().find((f: any) => f.id === id)?.locked;
+  function fenceLocked(id: string | null) {
+    return !!fences().find((f: DeskFence) => f.id === id)?.locked;
   }
-  function heldByFence(el: any) {
+  function heldByFence(el: HTMLElement) {
     return fenceHolds(fences(), restoreRect(el), OPTS.autoBoot === false);
   }
   // A fence's lock, painted: the class, the glyph, and the tile button, which is a
   // no-op on a locked fence and says so by being disabled.
-  function paintFenceLock(el: any, locked: any) {
+  function paintFenceLock(el: HTMLElement, locked: boolean) {
     el.classList.toggle("locked", !!locked);
-    const btn = el.querySelector(".fence-lock");
+    const btn = el.querySelector<HTMLButtonElement>(".fence-lock");
     if (btn) {
       btn.innerHTML = locked ? '<i class="bi bi-lock-fill"></i>' : '<i class="bi bi-unlock"></i>';
       btn.title = locked ? "Unlock this fence" : "Lock this fence in place";
       btn.setAttribute("aria-pressed", locked ? "true" : "false");
     }
-    const tile = el.querySelector(".fence-arrange");
+    const tile = el.querySelector<HTMLButtonElement>(".fence-arrange");
     if (tile) tile.disabled = !!locked;
   }
-  function setFenceLock(id: any, locked: any) {
-    saveFences(fences().map((x: any) => (x.id === id ? { ...x, locked: !!locked } : x)));
+  function setFenceLock(id: string, locked: boolean) {
+    saveFences(fences().map((x: DeskFence) => (x.id === id ? { ...x, locked: !!locked } : x)));
     renderFences();
   }
 
   // A refused fence verb, said ON the fence. Cleared on a timer so a stale
   // refusal cannot outlive the gesture that caused it.
-  function fenceNotice(id: any, text: any) {
-    const el = fenceEl(id)?.querySelector(".fence-notice");
+  function fenceNotice(id: string, text: string) {
+    const el = fenceEl(id)?.querySelector<FenceNotice>(".fence-notice");
     if (!el) return;
     el.textContent = text;
     clearTimeout(el._noticeTimer);
@@ -247,14 +254,14 @@ export function createFenceList(deps: FenceListDeps) {
     }, 2600);
   }
 
-  function showDetachGlyph(id: any, on: any) {
-    const away = fenceEl(id)?.querySelector(".fence-detached");
+  function showDetachGlyph(id: string, on: boolean) {
+    const away = fenceEl(id)?.querySelector<HTMLElement>(".fence-detached");
     if (away) away.hidden = !on;
   }
 
   // The verb the shortcut calls: walk one step and jump. Returns the id landed
   // on, or null when there is no fence (so the shell leaves the key unswallowed).
-  function stepFence(step: any) {
+  function stepFence(step: number) {
     const st = stage();
     if (!st) return null;
     const id = fenceCycle(readFenceRects(st), focusedFence, step);
@@ -271,9 +278,9 @@ export function createFenceList(deps: FenceListDeps) {
     // Index the DOM by id rather than building an attribute SELECTOR: an id is
     // daemon data (a hand-edited `desk.toml` can carry any string), and one
     // quote in it would throw a SyntaxError out of the whole restore.
-    const nodes = new Map();
-    for (const el of st.querySelectorAll(".fence")) nodes.set(el.dataset.fenceId, el);
-    const seen = new Set();
+    const nodes = new Map<string, FenceElement>();
+    for (const el of st.querySelectorAll<FenceElement>(".fence")) nodes.set(el.dataset.fenceId, el);
+    const seen = new Set<string>();
     for (const f of fences()) {
       seen.add(f.id);
       const el = nodes.get(f.id) || buildFence(f);
@@ -284,7 +291,7 @@ export function createFenceList(deps: FenceListDeps) {
         el.style.width = (r.width || 0) + "px";
         el.style.height = (r.height || 0) + "px";
       }
-      const name = el.querySelector(".fence-name");
+      const name = el.querySelector<HTMLInputElement>(".fence-name");
       if (name && name !== document.activeElement) name.value = f.name || "";
       paintFenceLock(el, !!f.locked);
     }
@@ -318,7 +325,7 @@ export function createFenceList(deps: FenceListDeps) {
     const offset = { left: ws?.scrollLeft || 0, top: ws?.scrollTop || 0 };
     const viewport = { width: ws?.clientWidth || 0, height: ws?.clientHeight || 0 };
     const slot = nextFenceSlot(
-      fences().map((f: any) => f.rect),
+      fences().map((f: DeskFence) => f.rect),
       offset,
       viewport,
     );
@@ -326,7 +333,7 @@ export function createFenceList(deps: FenceListDeps) {
     // a gap the operator never chose.
     if (slot < 0) {
       const blocked = fenceSpawnRect(offset, viewport, 0);
-      const hit = fences().find((x: any) => rectsOverlap(blocked, x.rect || {}));
+      const hit = fences().find((x: DeskFence) => rectsOverlap(blocked, x.rect || {}));
       const el = hit && fenceEl(hit.id);
       if (el) {
         clearFenceFlash();
@@ -362,9 +369,9 @@ export function createFenceList(deps: FenceListDeps) {
     return true;
   }
 
-  function renameFence(id: any, name: any) {
+  function renameFence(id: string, name: string | null | undefined) {
     saveFences(
-      fences().map((f: any) =>
+      fences().map((f: DeskFence) =>
         f.id === id
           ? { ...f, name: String(name == null ? "" : name).slice(0, FENCE_NAME_MAX) }
           : f,
@@ -373,7 +380,7 @@ export function createFenceList(deps: FenceListDeps) {
     renderFences();
   }
 
-  function removeFence(id: any) {
+  function removeFence(id: string) {
     // Removing a DETACHED fence would destroy the glyph that brings its consoles
     // home (ADR-0051 §7a) while the registry kept a `DETACH_MAX` slot. Refuse.
     if (isDetached(id)) {
@@ -381,7 +388,7 @@ export function createFenceList(deps: FenceListDeps) {
       WB.emit("fence-remove-refused", { fence: id, reason: "detached" });
       return;
     }
-    saveFences(fences().filter((f: any) => f.id !== id));
+    saveFences(fences().filter((f: DeskFence) => f.id !== id));
     renderFences();
     applyExtent();
   }
@@ -391,17 +398,17 @@ export function createFenceList(deps: FenceListDeps) {
   // The focused fence is PER-CLIENT transient state: never written to the desk,
   // never to `WBView`. The desk is shared last-write-wins (ADR-0051 §8), so a
   // stored focus would move where the OTHER operator's next console is born.
-  let focusedFence: any = null;
+  let focusedFence: string | null = null;
 
   function focusedFenceId() {
     return focusedFence;
   }
 
-  function focusFence(id: any) {
+  function focusFence(id: string | null) {
     focusedFence = id;
     const st = stage();
     if (!st) return;
-    for (const el of st.querySelectorAll(".fence")) {
+    for (const el of st.querySelectorAll<FenceElement>(".fence")) {
       el.classList.toggle("is-focused", el.dataset.fenceId === id);
     }
   }

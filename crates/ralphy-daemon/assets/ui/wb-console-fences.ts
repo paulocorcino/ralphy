@@ -17,64 +17,80 @@ import * as WBDeskFolds from "./wb-desk-folds.ts";
 import { DIRS } from "./wb-console-chrome.ts";
 import { sendDocument } from "./wb-events.ts";
 import type { Gestures } from "./wb-console-chrome.ts";
-import type { PopupRegistry } from "./wb-console-popups.ts";
+import type { PopupEntry, PopupMember, PopupRegistry } from "./wb-console-popups.ts";
 import type { FenceList } from "./wb-console-fence-list.ts";
+import type { OpenerLink } from "./wb-console-detach.ts";
+import type { ConfirmOptions } from "./wb-console-title.ts";
+import type { DetachReason } from "./wb-console-session.ts";
+import type { ConsoleWin, DeskFence, DeskWindowFields, ExtentOpts, Point, Rect } from "./wb-types.d.ts";
 
 const { dragThreshold, dragBegins } = WBConsoleInput;
 const { FENCE_MIN, fenceMembership, fenceFits, fenceMoveDelta, tileIntoRect, resizeRect, WIN_MIN_W, WIN_MIN_H } =
   WBGeometry;
 const { detachFold, DETACH_MAX } = WBDeskFolds;
 
+// A surface a fence carries: a console window or a note card. A card on top
+// floats elsewhere, and its place is the `_noteShadow`.
+type Carried = {
+  el: HTMLElement & { _noteShadow?: HTMLElement };
+  id: string;
+  kind: "window" | "note";
+  rect: Rect;
+};
+
 // What the fences read from the console, and nothing else.
 export type FenceDeps = {
   // The console's page: `detachFence` opens the popup from it, and a gesture
   // ends on a `blur` of it.
-  window: any;
+  window: Window;
   // The page the fences build their elements in and listen on.
-  document: any;
+  document: Document;
   // The elements under a gesture; shared with the window chrome.
   gestures: Gestures;
   // The fences this tab detached and their popup entries.
   popups: PopupRegistry;
   // The lifecycle channel to the popups: raises a popup this tab no longer
   // holds a handle to.
-  link: any;
+  link: OpenerLink;
   // The console windows on the stage.
-  wins: Set<any>;
+  wins: Set<ConsoleWin>;
   // The fence records; the console reassigns the list, so it is read when a
   // gesture or a tiling needs it.
-  fences: () => any[];
+  fences: () => DeskFence[];
   // The fence list: a fence's element, lock and refusal, the refusal flash,
   // the detach glyph, the fences and windows as the stage has them now, the
   // fence chrome, the fence verbs that change the desk, and the render of
   // the fences and the cards.
   fenceFloor: FenceList;
   // The plane; null before the page has it.
-  stage: () => any;
+  stage: () => HTMLElement | null;
   // Grows or fits the stage to the windows on it.
-  applyExtent: (opts?: any) => void;
+  applyExtent: (opts?: ExtentOpts) => void;
   // The console's own question dialog.
-  askConfirm: (opts: any) => Promise<unknown>;
+  askConfirm: (opts: ConfirmOptions) => Promise<unknown>;
   // The auto-pan loop of a drag at a viewport edge.
-  autoPan: (node: any, place: any) => { follow: (pointer: any) => void; stop: () => void };
+  autoPan: (
+    node: HTMLElement,
+    place: (pointer: Point) => void,
+  ) => { follow: (pointer: Point) => void; stop: () => void };
   // What a popup is handed: the fence's members, measured on this stage.
-  fenceSnapshot: (id: any) => any[];
+  fenceSnapshot: (id: string) => PopupMember[];
   // Raises a window.
-  focusWin: (win: any) => void;
+  focusWin: (win: HTMLElement) => void;
   // The detach glyph's click.
-  glyphClick: (id: any) => void;
+  glyphClick: (id: string) => void;
   // A new popup id.
   newPid: () => string;
   // Brings a detached fence's consoles home.
-  reattachFence: (id: any, opts?: any) => void;
+  reattachFence: (id: string, opts?: { force?: boolean }) => void;
   // Writes the fence records to the desk.
-  saveFences: (next: any) => void;
+  saveFences: (next: DeskFence[]) => void;
   // An element's rect read from the DOM.
-  restoreRect: (el: any) => any;
+  restoreRect: (el: HTMLElement) => Rect;
   // Writes a window's fields to the desk.
-  setWin: (win: any, fields: any) => void;
+  setWin: (win: HTMLElement, fields: DeskWindowFields) => void;
   // Takes a member off the stage without closing its session.
-  tearDownMember: (win: any, reason: any) => void;
+  tearDownMember: (win: ConsoleWin, reason: DetachReason) => void;
 };
 
 export function createFences(deps: FenceDeps) {
@@ -126,7 +142,7 @@ export function createFences(deps: FenceDeps) {
   // focus click" holds by construction and `onFloorDown`'s `e.target !== st`
   // test keeps panning alive inside a fence. Only the name field, the two tool
   // buttons and the eight resize bands opt back in.
-  function buildFence(f: any) {
+  function buildFence(f: DeskFence) {
     const el = document.createElement("div");
     el.className = "fence";
     el.dataset.fenceId = f.id;
@@ -159,10 +175,10 @@ export function createFences(deps: FenceDeps) {
     // A document-level pointerdown, not just `blur`: the plane's pan handler
     // calls `preventDefault()` on mousedown, so pressing the stage does NOT move
     // focus (MEASURED). Capture phase, before the floor's handler swallows it.
-    const stopOutside = (e: any) => {
+    const stopOutside = (e: PointerEvent) => {
       if (e.target !== name) endEdit(false);
     };
-    const endEdit = (commit: any) => {
+    const endEdit = (commit: boolean) => {
       if (!editing) return;
       editing = false; // first: the `blur()` below re-enters through the handler
       document.removeEventListener("pointerdown", stopOutside, true);
@@ -181,7 +197,7 @@ export function createFences(deps: FenceDeps) {
     // nor starts a selection. `dblclick` still arrives (cancelling a mousedown
     // default does not cancel the click pair). Once editing, the guard steps
     // aside.
-    name.addEventListener("mousedown", (e: any) => {
+    name.addEventListener("mousedown", (e: MouseEvent) => {
       if (name.readOnly) e.preventDefault();
     });
     name.addEventListener("dblclick", () => {
@@ -194,7 +210,7 @@ export function createFences(deps: FenceDeps) {
       // Attached here, so the pointerdown that OPENED the edit is already past.
       document.addEventListener("pointerdown", stopOutside, true);
     });
-    name.addEventListener("keydown", (e: any) => {
+    name.addEventListener("keydown", (e: KeyboardEvent) => {
       if (e.key !== "Enter" && e.key !== "Escape") return;
       // Held at the field so an Escape meant for this edit never also reaches the
       // plane's own key handlers.
@@ -322,8 +338,8 @@ export function createFences(deps: FenceDeps) {
   // finalized EXACTLY ONCE, accepted or refused. `done` makes a doubled exit
   // a no-op.
 
-  function startFenceMove(el: any, f: any) {
-    return (e: any) => {
+  function startFenceMove(el: HTMLElement, f: DeskFence) {
+    return (e: PointerEvent) => {
       if (e.button !== 0 || !e.isPrimary) return; // primary button only — see makeDraggable
       if (fenceLocked(f.id)) return;
       const st = stage();
@@ -336,10 +352,10 @@ export function createFences(deps: FenceDeps) {
       // Windows AND cards: a fence carries every surface whose centre it holds
       // (ADR-0064 §8). The ids are NAMESPACED because the two collections are
       // keyed independently and `fenceMembership` sees one flat list.
-      const all = [...st.querySelectorAll(".session-window")]
-        .map((w) => ({ el: w, id: "w:" + w._deskId, kind: "window", rect: restoreRect(w) }))
+      const all = [...st.querySelectorAll<ConsoleWin>(".session-window")]
+        .map((w): Carried => ({ el: w, id: "w:" + w._deskId, kind: "window", rect: restoreRect(w) }))
         .concat(
-          [...st.querySelectorAll(".note-card")].map((el) => ({
+          [...st.querySelectorAll<HTMLElement>(".note-card")].map((el): Carried => ({
             el,
             id: "n:" + el.dataset.noteId,
             kind: "note",
@@ -349,7 +365,7 @@ export function createFences(deps: FenceDeps) {
       // The FULL fence list, not a singleton: the fold's `break` decides an
       // overlapping pair (reachable via a hand-edited `desk.toml`), and a
       // singleton bypasses it.
-      const live = fences().map((x: any) => (x.id === f.id ? { id: x.id, rect: start } : x));
+      const live = fences().map((x) => (x.id === f.id ? { id: x.id, rect: start } : x));
       const ids = new Set(fenceMembership(live, all)[f.id] || []);
       const carried = all.filter((m) => ids.has(m.id));
       gestures.begin(el);
@@ -370,7 +386,7 @@ export function createFences(deps: FenceDeps) {
       const threshold = dragThreshold(e.pointerType);
       let armed = false;
       clearFenceFlash();
-      const place = (pointer: any) => {
+      const place = (pointer: Point) => {
         const origin = st.getBoundingClientRect();
         const d = fenceMoveDelta(
           {
@@ -405,7 +421,7 @@ export function createFences(deps: FenceDeps) {
       // Holding the fence against a viewport edge scrolls the plane under it. A
       // fence re-rendered or removed mid-drag ends the loop.
       const pan = autoPan(el, place);
-      const onMove = (ev: any) => {
+      const onMove = (ev: PointerEvent) => {
         if (ev.pointerId !== pointerId) return; // a second finger is not this gesture
         if (ev.buttons === 0) {
           onUp();
@@ -448,7 +464,7 @@ export function createFences(deps: FenceDeps) {
           return;
         }
         saveFences(
-          fences().map((x: any) =>
+          fences().map((x) =>
             x.id === f.id
               ? { ...x, rect: { ...start, left: start.left + delta.dx, top: start.top + delta.dy } }
               : x,
@@ -479,9 +495,9 @@ export function createFences(deps: FenceDeps) {
   // outside the new rect stops being reported by `fenceMembership`. That holds
   // for WEST and NORTH too — the opposite edge is anchored, so it is a resize,
   // not the §6 move that carries members.
-  function startFenceResize(el: any, f: any, dir: any) {
+  function startFenceResize(el: HTMLElement, f: DeskFence, dir: string) {
     const way = FENCE_DIRS.includes(dir) ? dir : "se";
-    return (e: any) => {
+    return (e: PointerEvent) => {
       if (e.button !== 0 || !e.isPrimary) return;
       if (fenceLocked(f.id)) return;
       const st = stage();
@@ -501,7 +517,7 @@ export function createFences(deps: FenceDeps) {
       let armed = false;
       clearFenceFlash();
       gestures.begin(el);
-      const onMove = (ev: any) => {
+      const onMove = (ev: PointerEvent) => {
         if (ev.pointerId !== pointerId) return; // a second finger is not this gesture
         if (ev.buttons === 0) {
           onUp();
@@ -548,7 +564,7 @@ export function createFences(deps: FenceDeps) {
           applyExtent();
           return;
         }
-        saveFences(fences().map((x: any) => (x.id === f.id ? { ...x, rect } : x)));
+        saveFences(fences().map((x) => (x.id === f.id ? { ...x, rect } : x)));
         renderFences();
         applyExtent();
       };
@@ -561,8 +577,8 @@ export function createFences(deps: FenceDeps) {
     };
   }
 
-  function detachFence(id: any) {
-    const out: any = detachFold(popups.detachedIds(), { type: "detach", fenceId: id });
+  function detachFence(id: string) {
+    const out = detachFold(popups.detachedIds(), { type: "detach", fenceId: id });
     for (const effect of out.effects) {
       if (effect.type === "focus") {
         // Raising a popup that already holds this fence — the ONLY way to raise
@@ -580,7 +596,7 @@ export function createFences(deps: FenceDeps) {
         return; // the registry is NOT committed
       }
     }
-    if (!out.effects.some((e: any) => e.type === "open")) return;
+    if (!out.effects.some((e) => e.type === "open")) return;
 
     const st = stage();
     const fence = st ? readFenceRects(st).find((f) => f.id === id) : null;
@@ -601,10 +617,10 @@ export function createFences(deps: FenceDeps) {
     sendDocument(document, "workbench:columns-leave", { ids: leaving });
     const members = fenceSnapshot(id);
 
-    const entry: any = {
+    const entry: PopupEntry & { handle: Window } = {
       handle,
       members,
-      memberIds: members.map((m: any) => m.id).filter(Boolean),
+      memberIds: members.map((m) => m.id).filter(Boolean),
       fence: fence || { id, name: "", rect: null },
       // This popup's identity, on every lifecycle message both ways (#476).
       pid: newPid(),
@@ -651,7 +667,7 @@ export function createFences(deps: FenceDeps) {
   // the head band and the SE `.fence-grip` sit BELOW every window, so a member
   // parked on either makes the fence's controls unhittable.
   const FENCE_GRIP = 14;
-  function arrangeFence(id: any) {
+  function arrangeFence(id: string) {
     // Detached: tiling the empty box would rewrite the rects the popup will
     // restore from (ADR-0051 §7a).
     if (popups.isDetached(id)) return;
@@ -661,14 +677,14 @@ export function createFences(deps: FenceDeps) {
     const el = fenceEl(id);
     if (!st || !el) return;
     const rect = restoreRect(el);
-    const all = [...st.querySelectorAll(".session-window")].map((w) => ({
+    const all = [...st.querySelectorAll<ConsoleWin>(".session-window")].map((w) => ({
       el: w,
       id: w._deskId,
       rect: restoreRect(w),
     }));
     // The FULL fence list with this fence's LIVE rect: the fold's `break`
     // decides an overlapping pair, and a singleton bypasses it.
-    const live = fences().map((x: any) => (x.id === id ? { id: x.id, rect } : x));
+    const live = fences().map((x) => (x.id === id ? { id: x.id, rect } : x));
     const ids = new Set(fenceMembership(live, all)[id] || []);
     // A maximized console is NOT tiled: a tile rect written onto it is
     // invisible while it REPLACES the pre-maximize rect. Filtered before the
@@ -684,7 +700,7 @@ export function createFences(deps: FenceDeps) {
       .map((m) => m.el);
     // An empty fence is a NO-OP, not an error.
     if (!members.length) return;
-    const headH = el.querySelector(".fence-head")?.offsetHeight || 28;
+    const headH = el.querySelector<HTMLElement>(".fence-head")?.offsetHeight || 28;
     const tiles = tileIntoRect(
       {
         left: rect.left,
