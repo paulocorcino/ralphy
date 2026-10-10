@@ -203,7 +203,7 @@ export function wbFiles() {
       // `head.dirty` push re-reads the branch.
       if (this.useDaemonTree() && window.WBDaemon?.subscribeTree) {
         this._treeSub = window.WBDaemon.subscribeTree(
-          this.$store.projects.openSlug!,
+          this.$store.projects.repoRef(project),
           (rel: string) => {
             if (!this.tabHidden()) this.onTreeDirty(rel);
           },
@@ -963,17 +963,20 @@ export function wbFiles() {
         this.openNote(path);
         return;
       }
+      // No tree is mounted without an open project.
+      const slug = this.$store.projects.openSlug;
+      if (!slug) return;
       if (ftype === "binary") {
         // Flash it too: a click that silently does nothing reads as a broken
         // tree.
-        window.WB.emit("open-refused", { project: this.$store.projects.openSlug, path, reason: "binary" });
+        window.WB.emit("open-refused", { project: slug, path, reason: "binary" });
         this._flashAction?.("Cannot open binary files.");
         return;
       }
       // Out of a CONTENT search: the tab lands on the first occurrence
       // (ADR-0036 amendment 2026-09-15).
       const find = this.fileSearchFindTerm();
-      this.openTab({ project: this.$store.projects.openSlug!, path, title: node.title, ftype, find });
+      this.openTab({ project: slug, path, title: node.title, ftype, find });
     },
 
     // The term to land on: the live query, only while the CONTENT filter is on.
