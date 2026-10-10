@@ -77,8 +77,9 @@ const APP_TS_LINES: usize = 4209;
 /// full screen, extent and restore box moved to `wb-stage-window.ts` (#623);
 /// 2674 since its z stack moved to `wb-stage-stack.ts`, built once per
 /// document by the entry module (#623); 2565 since its column paint moved to
-/// `wb-stage-columns.ts` (#623).
-const WB_CONSOLE_TS_LINES: usize = 2565;
+/// `wb-stage-columns.ts` (#623); 2460 since the desk record writes moved to
+/// `wb-desk.ts` (#623).
+const WB_CONSOLE_TS_LINES: usize = 2460;
 /// Lines of `crates/ralphy-daemon/assets/ui/wb-notes.ts`, the note cards
 /// (ADR-0073 D8, started by its 2026-10-10 amendment). 2828 at 823cc84c, before
 /// its first cut (#623); 2835 since the cards take the console as a typed dep

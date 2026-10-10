@@ -5371,6 +5371,7 @@ fn shell_locks_consoles_and_fences() {
         include_str!("../assets/ui/wb-stage-fence-list.ts"),
         include_str!("../assets/ui/wb-stage-chrome.ts"),
         include_str!("../assets/ui/wb-stage-fences.ts"),
+        include_str!("../assets/ui/wb-desk.ts"),
     ]
     .concat();
     for pin in [
@@ -5464,11 +5465,12 @@ fn shell_locks_consoles_and_fences() {
 /// suite runs no DOM and no CSS.
 #[test]
 fn shell_fences_are_a_group() {
-    // The console and its fences, as one text: the two gestures live in
-    // the fences, the fence records in the console.
+    // The console, its fences and its desk records, as one text: the two
+    // gestures live in the fences, the window record in the desk.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
         include_str!("../assets/ui/wb-stage-fences.ts"),
+        include_str!("../assets/ui/wb-desk.ts"),
     ]
     .concat();
     for pin in ["function startFenceMove(", "function startFenceResize("] {
@@ -6133,9 +6135,14 @@ fn shell_detaches_a_fence() {
 #[test]
 fn the_shell_writes_the_desk_only_as_changes() {
     let console = include_str!("../assets/ui/wb-console.ts");
+    let desk = include_str!("../assets/ui/wb-desk.ts");
     let notes = include_str!("../assets/ui/wb-notes.ts");
     let sync = include_str!("../assets/ui/wb-desk-sync.ts");
-    for (name, js) in [("wb-console.ts", console), ("wb-notes.ts", notes)] {
+    for (name, js) in [
+        ("wb-console.ts", console),
+        ("wb-desk.ts", desk),
+        ("wb-notes.ts", notes),
+    ] {
         for banned in [
             "persistWin(",
             "deskBody(",
@@ -6150,13 +6157,15 @@ fn the_shell_writes_the_desk_only_as_changes() {
         }
     }
     // Every window write names its fields, and the body is built in one place.
-    let squeezed = squeeze(console);
+    let squeezed = squeeze(desk);
     assert!(
         squeezed.contains(r#"emitDesk({op:"set",type:"window",id:win._deskId,fields});"#),
         "setWin must send the fields it was handed, and nothing else"
     );
     assert!(
-        !console.contains("changes:") && sync.contains("changes: pending.slice(0, inflight.count)"),
+        !console.contains("changes:")
+            && !desk.contains("changes:")
+            && sync.contains("changes: pending.slice(0, inflight.count)"),
         "the upload body is built by wb-desk-sync.ts alone"
     );
 }
@@ -6167,10 +6176,11 @@ fn the_shell_writes_the_desk_only_as_changes() {
 /// of `relaunchIn`), or at birth (`buildChrome`, through the window inventory).
 #[test]
 fn console_name_rides_every_record_copy() {
-    // The console and its window chrome, as one text: the record copies live in the console,
-    // the birth in the chrome.
+    // The console, its desk records and its window chrome, as one text: the
+    // record copies live in the console and the desk, the birth in the chrome.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
+        include_str!("../assets/ui/wb-desk.ts"),
         include_str!("../assets/ui/wb-stage-chrome.ts"),
     ]
     .concat();
