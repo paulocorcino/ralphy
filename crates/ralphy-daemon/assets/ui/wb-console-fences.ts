@@ -22,7 +22,7 @@ import type { FenceList } from "./wb-console-fence-list.ts";
 import type { OpenerLink } from "./wb-console-detach.ts";
 import type { ConfirmOptions } from "./wb-console-title.ts";
 import type { DetachReason } from "./wb-console-session.ts";
-import type { ConsoleWin, DeskFence, DeskWindowFields, ExtentOpts, Point, Rect } from "./wb-types.d.ts";
+import type { ConsoleWin, DeskFence, DeskWindowFields, ExtentOpts, NoteCard, Point, Rect } from "./wb-types.d.ts";
 
 const { dragThreshold, dragBegins } = WBConsoleInput;
 const { FENCE_MIN, fenceMembership, fenceFits, fenceMoveDelta, tileIntoRect, resizeRect, WIN_MIN_W, WIN_MIN_H } =
@@ -32,10 +32,10 @@ const { detachFold, DETACH_MAX } = WBDeskFolds;
 // A surface a fence carries: a console window or a note card. A card on top
 // floats elsewhere, and its place is the `_noteShadow`.
 type Carried = {
-  el: HTMLElement & { _noteShadow?: HTMLElement };
+  el: HTMLElement & { _noteShadow?: HTMLElement | null };
   id: string;
   rect: Rect;
-} & ({ kind: "window"; el: ConsoleWin } | { kind: "note" });
+} & ({ kind: "window"; el: ConsoleWin } | { kind: "note"; el: NoteCard });
 
 // What the fences read from the console, and nothing else.
 export type FenceDeps = {
@@ -354,7 +354,7 @@ export function createFences(deps: FenceDeps) {
       const all = [...st.querySelectorAll<ConsoleWin>(".session-window")]
         .map((w): Carried => ({ el: w, id: "w:" + w._deskId, kind: "window", rect: restoreRect(w) }))
         .concat(
-          [...st.querySelectorAll<HTMLElement>(".note-card")].map((el): Carried => ({
+          [...st.querySelectorAll<NoteCard>(".note-card")].map((el): Carried => ({
             el,
             id: "n:" + el.dataset.noteId,
             kind: "note",
