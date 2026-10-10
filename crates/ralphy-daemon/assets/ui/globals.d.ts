@@ -275,6 +275,8 @@ interface WunderbaumOptions {
 }
 
 interface Window {
+  /** As the global `clearInterval` below: a `null` id clears nothing. */
+  clearInterval(id: number | null | undefined): void;
   /** The daemon door (`wb-daemon.ts`). */
   WBDaemon: import("./wb-daemon.ts").WBDaemonApi;
   Alpine: {
@@ -503,6 +505,7 @@ declare var mar10: {
 // A timer the page may not have set yet is `null`, and clearing it does
 // nothing: the HTML timer API turns the id into a number, `null` into 0.
 declare function clearTimeout(id: number | null | undefined): void;
+declare function clearInterval(id: number | null | undefined): void;
 
 /** The vendored qrcode-generator (`vendor/qrcode.js`). */
 declare function qrcode(

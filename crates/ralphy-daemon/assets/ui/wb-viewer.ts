@@ -234,10 +234,10 @@ export function createViewer(window: ViewerWindow, document: Document) {
     }
     ensureDivider();
     viewers.style.setProperty("--wb-split", ratioPct(slot!.ratio));
-    if (slot!.mirror) ensureMirror(slotRec!);
+    if (slot!.mirror) ensureMirror(slotRec);
     else closeMirror();
     if (slot!.focus) {
-      const target = slot!.mirror ? mirror?.ed : (slotRec!.ed as MonacoEditor | undefined);
+      const target = slot!.mirror ? mirror?.ed : (slotRec.ed as MonacoEditor | undefined);
       setTimeout(() => target?.focus(), 0);
     }
   }
@@ -362,7 +362,7 @@ export function createViewer(window: ViewerWindow, document: Document) {
         if (!monaco || !alive(rec)) return;
         const ed = WBMonaco.create(container, {
           value: rec.content,
-          path: path!,
+          path,
           uid: rec.uid,
           project: rec.project,
           wordWrap: opts && opts.wordWrap,
@@ -1284,7 +1284,7 @@ export function createViewer(window: ViewerWindow, document: Document) {
     want = want.toLowerCase();
     const heads = rec.el!.querySelectorAll(".md-body h1, .md-body h2, .md-body h3, .md-body h4, .md-body h5, .md-body h6");
     for (const h of heads) {
-      if (slugOf(h.textContent!) === want) {
+      if (slugOf(h.textContent) === want) {
         h.scrollIntoView({ behavior: "smooth", block: "start" });
         return;
       }
@@ -1335,7 +1335,7 @@ export function createViewer(window: ViewerWindow, document: Document) {
   // --- in-page find over rendered markdown -------------------------------
   function clearHits(rec: ViewerRecord) {
     (rec.hits || []).forEach((mk) => {
-      const t = document.createTextNode(mk.textContent!);
+      const t = document.createTextNode(mk.textContent);
       mk.replaceWith(t);
     });
     rec.el!.querySelector(".md-body")!.normalize();

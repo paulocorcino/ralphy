@@ -74,6 +74,11 @@ const UI_DIR: &str = "crates/ralphy-daemon/assets/ui";
 /// none since #613. The table is empty and stays empty: every module has zero.
 const ANY_BASELINE: &[(&str, usize)] = &[];
 
+/// `(module, count)` of every cast written over another cast (`x as A as B`)
+/// under `UI_DIR`: each is a new element typed as a console window or a note
+/// card (#653). Exact, as `ANY_BASELINE` is.
+const CHAINED_CAST_BASELINE: &[(&str, usize)] = &[("wb-console-chrome.ts", 1), ("wb-notes.ts", 1)];
+
 const SPAWNED: [&str; 3] = ["git", "gh", "ssh"];
 
 /// `(file, program, sites)` of every literal git/gh/ssh spawn in production
@@ -257,11 +262,13 @@ fn explicit_any_matches_the_baseline() {
     );
 }
 
-/// #613: the ways around a type check stay at zero in the workbench.
+/// #613: the ways around a type check stay at zero in the workbench, and the
+/// chained casts stay at `CHAINED_CAST_BASELINE` (#653).
 #[test]
 fn no_escape_hatch_in_the_workbench() {
     let ui = workspace_root().join(UI_DIR);
     let mut errors = Vec::new();
+    let mut chained = BTreeMap::new();
     for path in ts_modules(&ui) {
         let text = read(&path);
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
@@ -273,11 +280,17 @@ fn no_escape_hatch_in_the_workbench() {
         if directives > 0 {
             errors.push(format!("{name}: {directives} `@ts-` directive(s)"));
         }
+        let n = chained_casts(&text);
+        if n > 0 {
+            chained.insert(name.to_string(), n);
+        }
     }
+    errors.extend(chained_cast_errors(&chained, CHAINED_CAST_BASELINE));
     assert!(
         errors.is_empty(),
-        "the workbench has no `as unknown as` and no `@ts-ignore`, `@ts-expect-error` \
-         or `@ts-nocheck`; type the value instead:\n{}",
+        "the workbench has no `as unknown as`, no `@ts-ignore`, `@ts-expect-error` \
+         or `@ts-nocheck`, and no chained cast (`x as A as B`) past \
+         CHAINED_CAST_BASELINE; type the value instead:\n{}",
         errors.join("\n")
     );
 }
@@ -300,6 +313,26 @@ fn explicit_any_counts_types_and_skips_names() {
         ts_directives("// @ts-ignore\n/* @ts-expect-error */ // @ts-nocheck\n"),
         3
     );
+}
+
+/// The chained cast count reads code, not comments or strings, and its
+/// baseline is exact (#653).
+#[test]
+fn chained_casts_count_a_cast_over_a_cast() {
+    assert_eq!(
+        chained_casts(
+            "const a = b as HTMLElement as Win;\n\
+             const c = d as M.T<string>[] as U; // e as A as B\n\
+             const f = g as T; const h = i as T, j = k as V;\n\
+             const s = \"l as A as B\";\n"
+        ),
+        2
+    );
+    let baseline = [("a.ts", 1)];
+    let one = |file: &str, n| BTreeMap::from([(file.to_string(), n)]);
+    assert!(chained_cast_errors(&one("a.ts", 1), &baseline).is_empty());
+    assert_eq!(chained_cast_errors(&one("a.ts", 2), &baseline).len(), 1);
+    assert_eq!(chained_cast_errors(&one("b.ts", 1), &baseline).len(), 2);
 }
 
 #[test]
@@ -462,6 +495,91 @@ fn double_casts(src: &str) -> usize {
         }
     }
     count
+}
+
+/// The casts in `src` written over another cast: `as` a type, then `as`
+/// again. The type is a dotted name with optional type arguments and `[]`
+/// suffixes, which is every cast type the workbench writes. Comments and
+/// strings are not read; the code inside a template hole is.
+fn chained_casts(src: &str) -> usize {
+    let toks = lex::lex(src, 1);
+    let mut count = 0;
+    for (i, t) in toks.iter().enumerate() {
+        if t.ident() == Some("as") {
+            let end = cast_type_end(&toks, i + 1);
+            if end > i + 1 && toks.get(end).and_then(|t| t.ident()) == Some("as") {
+                count += 1;
+            }
+        }
+        if let lex::Tok::Tpl(pieces) = &t.tok {
+            for piece in pieces {
+                if let lex::Piece::Expr(code) = piece {
+                    count += chained_casts(code);
+                }
+            }
+        }
+    }
+    count
+}
+
+/// The index after the cast type that starts at `start`, or `start` when no
+/// name starts there.
+fn cast_type_end(toks: &[lex::Token], start: usize) -> usize {
+    let name = |k: usize| toks.get(k).and_then(|t| t.ident()).is_some();
+    let punct = |k: usize, p: &str| toks.get(k).is_some_and(|t| t.is(p));
+    if !name(start) {
+        return start;
+    }
+    let mut j = start + 1;
+    loop {
+        let member = punct(j, ".") && name(j + 1);
+        let array = punct(j, "[") && punct(j + 1, "]");
+        if member || array {
+            j += 2;
+        } else if punct(j, "<") {
+            let mut depth = 0usize;
+            while let Some(t) = toks.get(j) {
+                if t.is("<") {
+                    depth += 1;
+                } else if t.is(">") {
+                    depth = depth.saturating_sub(1);
+                }
+                j += 1;
+                if depth == 0 {
+                    break;
+                }
+            }
+        } else {
+            return j;
+        }
+    }
+}
+
+/// One line per workbench module whose chained cast count is not the
+/// baseline's.
+fn chained_cast_errors(
+    actual: &BTreeMap<String, usize>,
+    baseline: &[(&str, usize)],
+) -> Vec<String> {
+    let baseline = baseline
+        .iter()
+        .map(|(file, n)| (file.to_string(), *n))
+        .collect();
+    ratchet_errors(
+        actual,
+        &baseline,
+        |file, n| {
+            format!(
+                "{file}: {n} chained cast(s) in a module that has none in CHAINED_CAST_BASELINE"
+            )
+        },
+        |file, expected, found| {
+            format!(
+                "{file}: chained cast count changed {expected} -> {found}; \
+                 if it went down, lower CHAINED_CAST_BASELINE in this change"
+            )
+        },
+    )
 }
 
 /// The `@ts-ignore`, `@ts-expect-error` and `@ts-nocheck` directives in

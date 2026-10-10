@@ -86,7 +86,7 @@ export const WBConsoleName = (function () {
   // Give every unnamed record a default name, in desk order. Returns new
   // records and never mutates the input, so running it twice changes nothing.
   function nameDesk<R extends NamedRecord>(records: R[], prefixOfRepo: (repo: R["repo"]) => string): R[] {
-    const names = records.map((r) => r.consoleName).filter(Boolean) as string[];
+    const names = records.map((r) => r.consoleName).filter(Boolean);
     return records.map((r) => {
       if (r.consoleName) return r;
       const consoleName = defaultName(prefixOfRepo(r.repo), names);

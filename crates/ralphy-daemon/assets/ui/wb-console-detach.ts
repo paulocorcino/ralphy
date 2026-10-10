@@ -389,12 +389,10 @@ export function createDetach(deps: DetachDeps) {
     const all = [...st.querySelectorAll<ConsoleWin>(".session-window")];
     const byId = new Map(all.map((w): [string, ConsoleWin] => [w._deskId, w]));
     const ids = fenceMembership(readFenceRects(st), readWindowRects(st))[id] || [];
-    const windows: PopupMember[] = (ids.map((wid) => byId.get(wid)).filter(Boolean) as ConsoleWin[]).map(
-      (win) => ({
-        ...deskOf(win),
-        session: sessionIdOf(win),
-      }),
-    );
+    const windows: PopupMember[] = ids
+      .map((wid) => byId.get(wid))
+      .filter(Boolean)
+      .map((win) => ({ ...deskOf(win), session: sessionIdOf(win) }));
     // The cards the fence holds ride along (ADR-0064 §8), tagged so the popup
     // and the re-attach can tell them from a console. Their RECORDS travel,
     // not their DOM: a card is rebuilt in the popup from the same desk record

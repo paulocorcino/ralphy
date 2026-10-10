@@ -46,10 +46,11 @@ function plural(n: number, one: string, many: string) {
 }
 
 // One row per version, in the reply's order (newest first). `when` turns an
-// epoch ms into the time shown; the shell passes the browser's locale.
-function rows(list: unknown, when: (ms: number) => string) {
+// epoch ms into the time shown; the shell passes the browser's locale. The
+// reply of `apiFetch("GET /api/desk/history")`, or `null` when it was not read.
+function rows(list: VersionInfo[] | null | undefined, when: (ms: number) => string) {
   if (!Array.isArray(list)) return [];
-  return list.map((v: VersionInfo) => ({
+  return list.map((v) => ({
     id: v.id,
     when: when(v.savedAt),
     reason: REASON_TEXT[v.reason] || v.reason,

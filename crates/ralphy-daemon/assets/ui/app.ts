@@ -3952,7 +3952,7 @@ export function wire(window: Window, document: Document) {
     detachedWindows.delete(win);
     detachedClosedSeen.delete(win);
     if (!detachedWindows.size) {
-      window.clearInterval(detachedPoll!);
+      window.clearInterval(detachedPoll);
       detachedPoll = null;
     }
     if (!win.closed) win.close();
