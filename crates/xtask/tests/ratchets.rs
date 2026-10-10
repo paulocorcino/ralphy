@@ -90,8 +90,10 @@ const WB_CONSOLE_TS_LINES: usize = 2159;
 /// (#623); 2833 since the add, remove and cap rules of the cards are folds in
 /// `wb-desk-folds.ts` (#623); 2292 since the note constants, folds and front
 /// matter moved to `wb-notes-folds.ts` (#623); 1867 since the editor moved to
-/// `wb-notes-editor.ts` (#623).
-const WB_NOTES_TS_LINES: usize = 1867;
+/// `wb-notes-editor.ts` (#623); 1585 since the card on top, the veil and the
+/// map moved to `wb-notes-on-top.ts`, `wb-notes-veil.ts` and
+/// `wb-notes-map.ts` (#623).
+const WB_NOTES_TS_LINES: usize = 1585;
 
 /// Uses of the name `WBConsole` in the code of `wb-notes.ts`: 49 at 823cc84c,
 /// when the cards reached the console through `window.WBConsole`. 0 since the
@@ -407,7 +409,9 @@ fn the_card_host_lists_the_decided_names() {
     let names = card_host_names(&read(&path));
     assert!(
         names == Some(CARD_HOST_NAMES),
-        "names in CardHost of crates/ralphy-daemon/assets/ui/wb-types.d.ts:          {CARD_HOST_NAMES} -> {names:?}; a change to the list lowers or raises CARD_HOST_NAMES          in the same change, and a raise is a design decision"
+        "names in CardHost of crates/ralphy-daemon/assets/ui/wb-types.d.ts: \
+         {CARD_HOST_NAMES} -> {names:?}; a change to the list lowers or raises \
+         CARD_HOST_NAMES in the same change, and a raise is a design decision"
     );
 }
 
