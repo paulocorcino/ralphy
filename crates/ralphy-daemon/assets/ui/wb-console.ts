@@ -47,6 +47,7 @@ import { WBView } from "./wb-view.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
 import { sendDocument } from "./wb-events.ts";
+import type { ConsoleOpts, ConsoleTerm, ConsoleWin, DeskChange, DeskFence, DeskNote, DeskRecord, DeskReply, DeskWindowFields, ExtentOpts, NoteCard, Rect, SpawnCarry, Stacked, WindowSnapshot } from "./wb-types.d.ts";
 
 // The input folds are `wb-console-input.ts`: pure functions of their arguments.
 const {
@@ -128,7 +129,7 @@ const {
   DETACH_MAX,
 } = WBDeskFolds;
 
-export function createConsole(window: any, document: any, location: any, opts: any) {
+export function createConsole(window: Window, document: Document, location: Pick<Location, "protocol" | "host" | "origin">, opts: ConsoleOpts) {
   // Plane geometry is `wb-geometry.ts` (ADR-0057): pure folds over rects.
   const {
     STAGE_MARGIN,
@@ -176,7 +177,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // hands it a COPY of the opener's session-scoped store, so a read there drifts.
   // This module names no browser store of its own — pinned in lib.rs.
   const link = OPTS.detachLink || WBDetachLink.link();
-  const wins = new Set<any>();
+  const wins = new Set<ConsoleWin>();
 
   // ---- the title -------------------------------------------------------------
   // The console name, the title's text and the worktree switcher are
@@ -242,8 +243,8 @@ export function createConsole(window: any, document: any, location: any, opts: a
     newFenceId,
     paintLockGlyph,
     saveFences,
-    jumpToFence: (id: any) => jumpToFence(id),
-    buildFence: (f: any) => buildFence(f),
+    jumpToFence: (id: string) => jumpToFence(id),
+    buildFence: (f: DeskFence) => buildFence(f),
   });
   const {
     fenceLocked,
@@ -448,7 +449,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // thread, and an automated browser dismisses it by default — every guarded
   // click would silently cancel.
   // `notice: true` is the one-button form: OK alone, focused, Enter/Escape dismiss.
-  function askConfirm({ title, message, confirmLabel = "Confirm", danger = false, notice = false }: any) {
+  function askConfirm({ title, message, confirmLabel = "Confirm", danger = false, notice = false }: import("./wb-console-title.ts").ConfirmOptions) {
     const scrim = document.createElement("div");
     scrim.className = "modal-scrim wb-confirm";
     const modal = document.createElement("div");
@@ -490,16 +491,16 @@ export function createConsole(window: any, document: any, location: any, opts: a
     if (notice) go.focus();
     else cancel.focus();
 
-    return new Promise((resolve) => {
+    return new Promise<boolean>((resolve) => {
       let settled = false;
-      const done = (ok: any) => {
+      const done = (ok: boolean) => {
         if (settled) return;
         settled = true;
         document.removeEventListener("keydown", onKey, true);
         scrim.remove();
         resolve(ok);
       };
-      const onKey = (e: any) => {
+      const onKey = (e: KeyboardEvent) => {
         if (e.key === "Escape") {
           e.stopPropagation();
           done(false);
@@ -517,7 +518,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   }
 
   // A message with an OK and nothing else (a verb's refusal, verbatim).
-  function askNotice({ title, message, danger = true }: any) {
+  function askNotice({ title, message, danger = true }: { title: string; message: string; danger?: boolean }) {
     return askConfirm({ title, message, confirmLabel: "OK", danger, notice: true });
   }
 
@@ -529,10 +530,10 @@ export function createConsole(window: any, document: any, location: any, opts: a
   //
   // DOM-built like `askConfirm` and appended to `document.body`, so it works in
   // the detached-fence popup too, which has no shell around it.
-  let toastEl: any = null;
-  let toastTimer: any = null;
+  let toastEl: HTMLElement | null = null;
+  let toastTimer: ReturnType<typeof setTimeout> | null = null;
   const TOAST_MS = 6000;
-  function toast({ text, action, onAction, ms = TOAST_MS }: any) {
+  function toast({ text, action, onAction, ms = TOAST_MS }: { text: string; action?: string; onAction?: () => void; ms?: number }) {
     dismissToast();
     const el = document.createElement("div");
     el.className = "wb-toast";
@@ -574,7 +575,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // The tooltip of an agent-state dot: the Go-to menu, the checkout switcher
   // and the title bar all say it the same way. `waiting` carries the question
   // as its detail; `unknown` is a stale observation (agent_state.rs).
-  function agentStateTitle(state: any, detail?: any) {
+  function agentStateTitle(state: string | null | undefined, detail?: string) {
     if (!state) return "";
     if (state === "unknown") return "Agent state unknown";
     return detail ? `Agent is ${state}: ${detail}` : `Agent is ${state}`;
@@ -591,18 +592,18 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // page's unanswered changes; `desk`, `fences`, `notes` and `checkouts` are
   // its view, the SYNCHRONOUS source of truth every read below uses.
   const sync = WBDeskSync.createSync();
-  let desk: any = [];
+  let desk: DeskRecord[] = [];
   // Second record type (#340): named rectangles on the floor tier.
-  let fences: any = [];
+  let fences: DeskFence[] = [];
   // Third record type (ADR-0064 §2): note cards, PLACEMENT only — the note's
   // text and colour live in its `.note` file. The CARD itself (DOM, editor,
   // autosave) is `wb-notes.ts`, which reaches this state through the exports
   // below.
-  let notes: any = [];
+  let notes: DeskNote[] = [];
   // Fourth record type (#406, ADR-0063 §4): the selected checkout per repo ref,
   // `{ <ref>: <worktree name> }`. The reactive copy the chip and the tree
   // render lives in `app.ts` (a closure variable here is invisible to Alpine).
-  let checkouts: any = {};
+  let checkouts: Record<string, string> = {};
   function refreshView() {
     const v = sync.view();
     desk = v.windows;
@@ -677,12 +678,12 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // *pre-maximize* rect (the class drives the full-bleed via CSS), so `max`
   // restores the full-screen state while the stored rect still restores the
   // underlying box.
-  function recordOf(win: any) {
+  function recordOf(win: ConsoleWin) {
     return {
       id: win._deskId,
       repo: win._deskRepo,
-      agent: win._deskAgent,
-      kind: win._deskKind,
+      agent: win._deskAgent!,
+      kind: win._deskKind!,
       rect: restoreRect(win),
       max: win.classList.contains("maximized"),
       // A DORMANT window has no handle; `null` here would demote its record to
@@ -695,7 +696,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
       consoleName: win._deskConsoleName || null,
     };
   }
-  function createRecord(win: any) {
+  function createRecord(win: ConsoleWin) {
     win._deskUnrecorded = false;
     emitDesk({ op: "create", type: "window", record: recordOf(win) });
   }
@@ -704,7 +705,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // operator's first act on it, in the same batch: until then the cascade
   // place it was given is not a place anybody chose, and must not be written
   // over the record another page may be writing.
-  function setWin(win: any, fields: any) {
+  function setWin(win: ConsoleWin, fields: DeskWindowFields) {
     // A window taken off the page (a late pointerup after a close) must not
     // write.
     if (!win?._deskId || !win.isConnected) return;
@@ -713,7 +714,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
     // A moved window may have joined or left a region; membership is derived.
     refreshFenceChrome();
   }
-  function forgetRecord(deskId: any) {
+  function forgetRecord(deskId: string) {
     if (!deskId) return;
     emitDesk({ op: "remove", type: "window", id: deskId });
     refreshFenceChrome();
@@ -723,30 +724,30 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // records handed back (`saveFences`, `saveNotes`) becomes the changes that
   // tell it from the view: a create, a remove, or a set of the fields that
   // differ, and nothing for a record left as it was.
-  const rectOnly = (r: any) => (r ? { left: r.left, top: r.top, width: r.width, height: r.height } : null);
-  const SET_FIELDS: any = {
-    fence: (r: any) => ({ rect: rectOnly(r.rect), name: r.name ?? "", locked: !!r.locked }),
-    note: (r: any) => ({
+  const rectOnly = (r: Rect | undefined) => (r ? { left: r.left, top: r.top, width: r.width, height: r.height } : null);
+  const SET_FIELDS: Record<"fence" | "note", (r: Partial<DeskFence & DeskNote>) => { [field: string]: JsonValue | undefined }> = {
+    fence: (r) => ({ rect: rectOnly(r.rect), name: r.name ?? "", locked: !!r.locked }),
+    note: (r) => ({
       rect: rectOnly(r.rect),
       locked: !!r.locked,
       file: { repo: r.repo, path: r.path ?? "", checkout: r.checkout ?? null },
     }),
   };
-  function commitList(type: any, before: any, next: any) {
-    const was = new Map(before.map((r: any) => [r.id, r]));
-    const kept = new Set(next.map((r: any) => r.id));
-    const changes = before.filter((r: any) => !kept.has(r.id)).map((r: any) => ({ op: "remove", type, id: r.id }));
+  function commitList(type: "fence" | "note", before: (DeskFence | DeskNote)[], next: (DeskFence | DeskNote)[]) {
+    const was = new Map<string, DeskFence | DeskNote>(before.map((r) => [r.id, r]));
+    const kept = new Set(next.map((r) => r.id));
+    const changes = before.filter((r) => !kept.has(r.id)).map((r): DeskChange => ({ op: "remove", type, id: r.id }));
     for (const r of next) {
       const old = was.get(r.id);
       if (!old) {
-        changes.push({ op: "create", type, record: r });
+        changes.push({ op: "create", type, record: r } as DeskChange);
         continue;
       }
       const a = SET_FIELDS[type](old);
       const b = SET_FIELDS[type](r);
-      const fields: any = {};
+      const fields: { [field: string]: JsonValue | undefined } = {};
       for (const k of Object.keys(b)) if (JSON.stringify(a[k]) !== JSON.stringify(b[k])) fields[k] = b[k];
-      if (Object.keys(fields).length) changes.push({ op: "set", type, id: r.id, fields });
+      if (Object.keys(fields).length) changes.push({ op: "set", type, id: r.id, fields } as DeskChange);
     }
     if (!changes.length) return;
     for (const c of changes) sync.emit(c);
@@ -755,10 +756,10 @@ export function createConsole(window: any, document: any, location: any, opts: a
   }
   // The cap REFUSES a new fence or card before it is born (`atFenceCap`,
   // `atNoteCap`); nothing here drops a record to make room.
-  function saveFences(next: any) {
+  function saveFences(next: DeskFence[]) {
     commitList("fence", fences, next);
   }
-  function saveNotes(next: any) {
+  function saveNotes(next: DeskNote[]) {
     commitList("note", notes, next);
   }
 
@@ -767,7 +768,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   function nameUnnamed() {
     const named = WBConsoleName.nameDesk(desk, consolePrefix);
     let emitted = false;
-    named.forEach((r: any, i: any) => {
+    named.forEach((r, i) => {
       if (desk[i].consoleName || !r.consoleName) return;
       sync.emit({ op: "set", type: "window", id: r.id, fields: { consoleName: r.consoleName } });
       emitted = true;
@@ -777,7 +778,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
     scheduleDeskFlush();
   }
 
-  function ingestDesk(payload: any) {
+  function ingestDesk(payload: Parameters<typeof sync.take>[0]) {
     const verdict = sync.take(payload);
     if (verdict === "reload") {
       reloadForRestoredDesk();
@@ -791,7 +792,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   }
 
   // A desk this page takes never moves an element under a gesture.
-  function inGesture(el: any) {
+  function inGesture(el: HTMLElement) {
     return gestures.active(el);
   }
 
@@ -810,8 +811,8 @@ export function createConsole(window: any, document: any, location: any, opts: a
     if (OPTS.autoBoot === false || !isDeskReconciled()) return;
     const st = stage();
     if (!st) return;
-    const byId = new Map<any, any>(desk.map((r: any) => [r.id, r]));
-    for (const w of [...st.querySelectorAll(".session-window")]) {
+    const byId = new Map<string, DeskRecord>(desk.map((r) => [r.id, r]));
+    for (const w of [...st.querySelectorAll<ConsoleWin>(".session-window")]) {
       const r = byId.get(w._deskId);
       if (!r) {
         if (!w._deskUnrecorded) recordLeft(w);
@@ -833,8 +834,8 @@ export function createConsole(window: any, document: any, location: any, opts: a
     applyExtent();
   }
 
-  function placeWindow(win: any, r: any) {
-    const at = (prop: any) => parseInt(win.style[prop], 10);
+  function placeWindow(win: HTMLElement, r: Rect) {
+    const at = (prop: "left" | "top" | "width" | "height") => parseInt(win.style[prop], 10);
     if (at("left") === Math.round(r.left) && at("top") === Math.round(r.top) &&
         at("width") === Math.round(r.width) && at("height") === Math.round(r.height)) return;
     win.style.left = r.left + "px";
@@ -848,9 +849,9 @@ export function createConsole(window: any, document: any, location: any, opts: a
 
   // A card whose record another device removed, holding text not yet saved,
   // stays: what was typed here wins, so its record is created again.
-  function keepUnsavedCards(st: any) {
-    const listed = new Set(notes.map((n: any) => n.id));
-    for (const el of st.querySelectorAll(".note-card")) {
+  function keepUnsavedCards(st: HTMLElement) {
+    const listed = new Set<string | undefined>(notes.map((n) => n.id));
+    for (const el of st.querySelectorAll<NoteCard>(".note-card")) {
       if (!el._noteDirty || !el._noteRecord || listed.has(el.dataset.noteId)) continue;
       emitDesk({ op: "create", type: "note", record: el._noteRecord });
     }
@@ -863,7 +864,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // ends the session a moment before its record goes, and this page's socket
   // may not have heard yet.
   const recordChecks = new WeakSet();
-  function recordLeft(win: any) {
+  function recordLeft(win: ConsoleWin) {
     if (recordChecks.has(win)) return;
     if (win.classList.contains("placeholder") || win.classList.contains("ended") || sessionIdOf(win) == null) {
       leaveDesk([win._deskId]);
@@ -872,13 +873,13 @@ export function createConsole(window: any, document: any, location: any, opts: a
     recordChecks.add(win);
     readSessions()
       .catch(() => null)
-      .then((read: any) => {
+      .then((read) => {
         recordChecks.delete(win);
-        if (!win.isConnected || desk.some((r: any) => r.id === win._deskId)) return;
+        if (!win.isConnected || desk.some((r) => r.id === win._deskId)) return;
         const sessions = read?.sessions;
         // Not known: the next desk this page takes asks again. A list that
         // did not hear from this window's peer does not know either.
-        if (!Array.isArray(sessions) || unheardRef(win._deskRepo, read.unheard)) return;
+        if (!Array.isArray(sessions) || unheardRef(win._deskRepo, read!.unheard)) return;
         const live = sessions.some((s) => s?.record === win._deskId) || !!sessionRowFor(win, sessions);
         if (live) createRecord(win);
         else leaveDesk([win._deskId]);
@@ -888,11 +889,11 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // Windows whose records left the desk. The shell's hook takes them out of
   // the columns first (a lone survivor is maximized before the drops) and
   // calls `dropClosedElsewhere`; without a hook they are dropped here.
-  let onDeskGone: any = null;
-  function setDeskGoneHook(fn: any) {
+  let onDeskGone: ((ids: string[]) => void) | null = null;
+  function setDeskGoneHook(fn: (ids: string[]) => void) {
     onDeskGone = fn;
   }
-  function leaveDesk(ids: any) {
+  function leaveDesk(ids: string[]) {
     if (typeof onDeskGone === "function") onDeskGone(ids);
     else for (const id of ids) dropClosedElsewhere(id);
   }
@@ -902,11 +903,11 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // a pre-login 401 is not a broken desk, and must not offer a new one.
   let deskFailure = "";
   // The shell's hook for a desk failure found by a flush: no push says so.
-  let onDeskFailure: any = null;
+  let onDeskFailure: (() => void) | null = null;
   // The `409` reply of an unreadable desk, as the reason to show, or null.
   // The daemon's own text is a parser message for a developer: it goes to
   // the browser console, and the operator reads what it means.
-  async function unreadableDesk(r: any) {
+  async function unreadableDesk(r: Response) {
     if (r.status !== 409) return null;
     const body = await r.json().catch(() => null);
     if (body?.state !== "unreadable") return null;
@@ -942,7 +943,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   function currentDeskFailure() {
     return deskFailure;
   }
-  function setDeskFailureHook(fn: any) {
+  function setDeskFailureHook(fn: () => void) {
     onDeskFailure = fn;
   }
   // The one action on an unreadable desk: the daemon renames the old file
@@ -976,7 +977,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   }
   // The desk as the column restore reads it (ADR-0051 §8): ids and `max` only.
   function deskRecords() {
-    return loadDesk().map((r: any) => ({ id: r.id, max: !!r.max }));
+    return loadDesk().map((r) => ({ id: r.id, max: !!r.max }));
   }
 
   // Whether a NEW console would be over the window cap — asked before it is
@@ -996,12 +997,12 @@ export function createConsole(window: any, document: any, location: any, opts: a
     return notes.slice();
   }
   // The selected checkout for one repo ref, or `null` — the primary tree.
-  function checkoutOf(ref: any) {
+  function checkoutOf(ref: string) {
     return checkouts[ref] || null;
   }
   // Select (`name`) or clear (`null`) a project's checkout. A clear names the
   // tree it clears, so it never erases a tree another device picked since.
-  function setCheckout(ref: any, name: any) {
+  function setCheckout(ref: string, name: string | null | undefined) {
     if (name) emitDesk({ op: "checkout", repo: ref, name: String(name) });
     else if (checkouts[ref]) emitDesk({ op: "checkout-clear", repo: ref, ifName: checkouts[ref] });
   }
@@ -1018,7 +1019,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // that failed in a way the daemon may still accept is sent again with the
   // same `seq`, later.
   let flushBackoff = 1000;
-  function flushed(out: any) {
+  function flushed(out: { kind: string; status?: number; reply?: DeskReply | null }) {
     const kind = out?.kind;
     if (kind === "held") return;
     if (kind === "ok") {
@@ -1091,7 +1092,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // The verdict the probe gives, or — with no probe, which is the popup — how
   // long this document was hidden. `Infinity` for the network events: `online`
   // fires precisely because the link the sockets ran over is a different link now.
-  function isStale(hiddenMs: any) {
+  function isStale(hiddenMs: number) {
     if (staleProbe) {
       try {
         return staleProbe() === true;
@@ -1102,7 +1103,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
     return hiddenMs > RESUME_HIDDEN_MS;
   }
 
-  function resumeAll(stale: any) {
+  function resumeAll(stale: boolean) {
     let woke = 0;
     for (const w of wins) {
       // A placeholder has no terminal, and a window whose session ended latches
@@ -1118,7 +1119,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // The `.session-body` is REPLACED, not reused: `attachTerminal` registers its
   // touch handlers on the body node and `term.dispose()` does not remove them,
   // so attaching twice into one div would double every gesture.
-  function sleepWindow(win: any) {
+  function sleepWindow(win: ConsoleWin) {
     const t = win._term;
     if (!t) return false;
     // Carried across the gap, because the handle that knows them is about to go.
@@ -1145,9 +1146,9 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // with. NOT a takeover: the reattach is the ordinary one, so a session another
   // client claimed while this one slept parks visibly instead of being stolen
   // back (ADR-0051 §9).
-  function wakeWindow(win: any) {
+  function wakeWindow(win: ConsoleWin) {
     if (!win._dormant) return false;
-    const body = win.querySelector(".session-body");
+    const body = win.querySelector<HTMLElement>(".session-body");
     const wiring = win._termWiring;
     if (!body || !wiring || win._dormantSession == null) return false;
     win._dormant = false;
@@ -1166,7 +1167,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // Carry out `dormancyDecision` for one window. The fold owns the rule; this
   // owns the clock, and re-asks when the timer fires — the window may have been
   // focused, maximized or closed meanwhile.
-  function applyDormancy(win: any) {
+  function applyDormancy(win: ConsoleWin) {
     const verdict = dormancyDecision(dormancyInputs(win));
     if (win._dormantTimer) {
       clearTimeout(win._dormantTimer);
@@ -1185,11 +1186,11 @@ export function createConsole(window: any, document: any, location: any, opts: a
 
   // Columns, a maximize and the physical screen each fill the whole viewport,
   // so every other console is under them.
-  function fillsViewport(win: any) {
+  function fillsViewport(win: ConsoleWin) {
     return win.classList.contains("maximized") || win.classList.contains("column") || isFull(win);
   }
 
-  function isCovered(win: any) {
+  function isCovered(win: ConsoleWin) {
     if (fillsViewport(win)) return false;
     for (const other of wins) if (other !== win && fillsViewport(other)) return true;
     return false;
@@ -1207,7 +1208,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   }
 
   // The live reading of one window, handed to the pure fold.
-  function dormancyInputs(win: any) {
+  function dormancyInputs(win: ConsoleWin) {
     return {
       // Unobserved windows have never been told; treat them as visible, which
       // is the reading that changes nothing.
@@ -1284,8 +1285,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
     document.addEventListener("focusout", () => setTimeout(publishInset, 250));
   }
 
-
-  function newId(prefix: any) {
+  function newId(prefix: string) {
     // `crypto.randomUUID` is undefined in a non-secure context and the daemon can
     // bind a plain-http LAN address (ADR-0032), so build the id by hand.
     return prefix + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
@@ -1305,11 +1305,11 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // 2026-09-09: a reload from a file tab wrote `0,0,0,0`, the next load rendered
   // the CSS floor 240×150 at the origin and stored THAT). The inline rect is
   // untouched by all three; it is what `buildChrome` wrote from the record.
-  function measurable(win: any) {
+  function measurable(win: HTMLElement) {
     return !!(win.offsetWidth || win.offsetHeight);
   }
-  function restoreRect(win: any) {
-    const inline = (prop: any, fallback: any) => parseInt(win.style[prop], 10) || fallback;
+  function restoreRect(win: HTMLElement) {
+    const inline = (prop: "left" | "top" | "width" | "height", fallback: number) => parseInt(win.style[prop], 10) || fallback;
     const fromInline = () => ({
       left: inline("left", win.offsetLeft),
       top: inline("top", win.offsetTop),
@@ -1338,7 +1338,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // or forgets it (ADR-0050 amendment 2026-10-04).
   // Reads in flight at the same moment share one request: every held box
   // asks on the same fleet read, and each request asks every peer.
-  let sessionsRead: any = null;
+  let sessionsRead: Promise<{ sessions: HostedSession[]; unheard: ReadonlySet<string> }> | null = null;
   function readSessions() {
     if (!sessionsRead) {
       sessionsRead = (async () => {
@@ -1361,7 +1361,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // cheapest Observe read that takes a checkout (no spawn): the ONE reply that
   // means the tree is gone is `unknown checkout`. Anything else — an
   // unreachable daemon included — lets the launch decide.
-  async function checkoutStillThere(repo: any, checkout: any) {
+  async function checkoutStillThere(repo: string | null | undefined, checkout: string | null | undefined) {
     const daemon = window.WBDaemon;
     if (!checkout || !repo || typeof daemon?.observe !== "function") return true;
     let reply;
@@ -1377,19 +1377,19 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // named yet (the detached popup, a desk read before the list) falls back to
   // its slug, never to the ref: a peer ref carries a `<daemon_id>/` routing
   // head (ADR-0052 §5).
-  const projectNames = new Map();
-  function projectNameOf(ref: any) {
+  const projectNames = new Map<string | null | undefined, { name: string; title: string }>();
+  function projectNameOf(ref: string | null | undefined) {
     const known = projectNames.get(ref);
     if (known) return known.name;
-    return WBFleet ? WBFleet.refSlug(ref) : ref;
+    return WBFleet ? WBFleet.refSlug(ref) : ref!;
   }
-  function projectTitleOf(ref: any) {
+  function projectTitleOf(ref: string | null | undefined) {
     if (ref === "~") return ref;
     return projectNames.get(ref)?.title || projectNameOf(ref);
   }
   // `rows` is `[{ ref, name, title }]`. Titles and tooltips already drawn are
   // drawn again; a console NAME already given is the operator's and stays.
-  function ingestProjects(rows: any) {
+  function ingestProjects(rows: { ref: string; name: string; title?: string }[] | null | undefined) {
     projectNames.clear();
     for (const r of rows || []) {
       if (r && r.ref && r.name) projectNames.set(r.ref, { name: r.name, title: r.title || r.name });
@@ -1408,10 +1408,10 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // this is only its last answer, for the placeholders of peer projects.
   // `readFleet` is the shell's fleet read on demand, for a window that saw
   // its peer fail.
-  const peerGroups = new Map();
-  let wakePeer: any = null;
-  let readFleet: any = null;
-  function ingestFleet(groups: any, hooks: any) {
+  const peerGroups = new Map<string, import("./wb-fleet.ts").Group>();
+  let wakePeer: ((daemon: string) => Promise<boolean>) | null = null;
+  let readFleet: (() => void) | null = null;
+  function ingestFleet(groups: import("./wb-fleet.ts").Group[] | null | undefined, hooks: { wake?: (daemon: string) => Promise<boolean>; read?: () => void } | null | undefined) {
     peerGroups.clear();
     for (const g of groups || []) if (g && g.daemon && !g.local) peerGroups.set(g.daemon, g);
     if (typeof hooks?.wake === "function") wakePeer = hooks.wake;
@@ -1420,7 +1420,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   }
 
   // The shell's last `/api/sessions` poll, kept for the menus' state dots.
-  let lastSessions: any = [];
+  let lastSessions: HostedSession[] = [];
 
   // Toggle a console between its floating rect and a full-VIEWPORT bleed. The
   // pre-maximize rect stays in the inline styles, so restoring drops the class.
@@ -1434,7 +1434,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // (`wbColumns`) moving the maximize to another console (ADR-0051 §5). A restore
   // (`buildChrome`) and the torn-off fence window's columns write nothing: a
   // restore already reads the record, and that window's grid is never stored.
-  function setMax(win: any, on: any, persist = false) {
+  function setMax(win: ConsoleWin, on: boolean, persist = false) {
     if (win.classList.contains("maximized") === on) return;
     const ws = workspace();
     const offsets = ws ? { left: ws.scrollLeft, top: ws.scrollTop } : null;
@@ -1460,12 +1460,12 @@ export function createConsole(window: any, document: any, location: any, opts: a
     if (persist) setWin(win, { max: on });
   }
 
-  function toggleMax(win: any) {
+  function toggleMax(win: ConsoleWin) {
     setMax(win, !win.classList.contains("maximized"), true);
   }
 
   // A column restores like a maximize, so it shows the same control.
-  function paintMaxButton(win: any) {
+  function paintMaxButton(win: ConsoleWin) {
     const btn = win._maxBtn;
     if (!btn) return;
     const on = win.classList.contains("maximized") || win.classList.contains("column");
@@ -1493,7 +1493,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
     return { viewport: workspace()?.clientWidth || 0 };
   }
 
-  function clearColumn(win: any) {
+  function clearColumn(win: ConsoleWin) {
     win.classList.remove("column");
     win.style.removeProperty("--col-index");
     win.style.removeProperty("--col-count");
@@ -1512,7 +1512,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // Paint `painted` (`WBColumns.painted`). `unmax` is the old first console
   // after a restore: it stops being the maximized console. `persist` writes
   // each change of the maximize to the desk.
-  function applyColumns(painted: any, opts: any) {
+  function applyColumns(painted: import("./wb-columns.ts").Painted[] | null | undefined, opts?: { cap?: number; unmax?: string | null; raise?: boolean; persist?: boolean }) {
     const list = painted || [];
     const cap = opts?.cap ?? 1;
     const persist = !!opts?.persist;
@@ -1569,7 +1569,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
 
   // A console whose record another client removed: off this stage. Its
   // session is not touched here, and its record is already gone.
-  function dropClosedElsewhere(id: any) {
+  function dropClosedElsewhere(id: string) {
     const win = findWindow(id);
     if (!win) return;
     tearDownMember(win, "window-closed");
@@ -1577,10 +1577,10 @@ export function createConsole(window: any, document: any, location: any, opts: a
   }
 
   function focusedId() {
-    return stage()?.querySelector(".session-window.focused")?._deskId ?? null;
+    return stage()?.querySelector<ConsoleWin>(".session-window.focused")?._deskId ?? null;
   }
 
-  function focusColumn(id: any) {
+  function focusColumn(id: string) {
     const win = findWindow(id);
     if (!win) return;
     focusWin(win);
@@ -1592,21 +1592,21 @@ export function createConsole(window: any, document: any, location: any, opts: a
   function columnRoster() {
     const st = stage();
     if (!st) return { rows: [], fences: [], membership: {}, detached: {} };
-    const out: any = {};
+    const out: Record<string, { id: string; agent: string | null; name: string | null; repo: string | null; kind: string | null }[]> = {};
     for (const [id, entry] of popups.entries()) {
       out[id] = (entry.members || [])
-        .filter((m: any) => m && m.id && m.kind !== "note")
-        .map((m: any) => ({
+        .filter((m) => m && m.id && m.kind !== "note")
+        .map((m) => ({
           id: m.id,
-          agent: m.agent,
-          name: desk.find((r: any) => r.id === m.id)?.consoleName ?? m.consoleName ?? null,
+          agent: m.agent as string | null,
+          name: desk.find((r) => r.id === m.id)?.consoleName ?? m.consoleName ?? null,
           repo: m.repo === "~" ? null : (m.repo ?? null),
-          kind: m.kind,
+          kind: m.kind as string | null,
         }));
     }
     return {
       rows: list(),
-      fences: fenceList().map(({ id, name }: any) => ({ id, name })),
+      fences: fenceList().map(({ id, name }) => ({ id, name })),
       membership: fenceMembership(readFenceRects(st), readWindowRects(st)),
       detached: out,
     };
@@ -1621,7 +1621,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // per-window ResizeObserver refits the terminal.
   // The live browser fact, not our class: the guards must hold in the instant
   // between the state change and the event that mirrors it.
-  function isFull(win: any) {
+  function isFull(win: HTMLElement) {
     return document.fullscreenElement === win;
   }
 
@@ -1630,12 +1630,12 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // handlers consult it and refuse; nothing else changes (maximize, fullscreen
   // and close do not rewrite the rect). A console is locked by its own record
   // OR by the fence holding its centre — the same `fenceOf` fold as membership.
-  function isLocked(win: any) {
+  function isLocked(win: ConsoleWin) {
     if (win._deskLocked) return true;
     return heldByFence(win);
   }
   // The one place a window's own lock is set: flag, class, glyph.
-  function applyLock(win: any, locked: any) {
+  function applyLock(win: ConsoleWin, locked: boolean) {
     win._deskLocked = !!locked;
     win.classList.toggle("locked", !!locked);
     paintLockGlyph(win);
@@ -1644,8 +1644,8 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // closed like its fence. Held-only, the button is disabled — its own toggle
   // would change nothing the operator can see; the fence's lock is the one to
   // open.
-  function paintLockGlyph(win: any) {
-    const btn = win.querySelector(".session-lock");
+  function paintLockGlyph(win: ConsoleWin) {
+    const btn = win.querySelector<HTMLButtonElement>(".session-lock");
     if (!btn) return;
     const own = !!win._deskLocked;
     const held = !own && heldByFence(win);
@@ -1655,12 +1655,12 @@ export function createConsole(window: any, document: any, location: any, opts: a
     btn.setAttribute("aria-pressed", locked ? "true" : "false");
     btn.disabled = held;
   }
-  function toggleLock(win: any) {
+  function toggleLock(win: ConsoleWin) {
     applyLock(win, !win._deskLocked);
     setWin(win, { locked: !!win._deskLocked });
   }
 
-  function toggleFull(win: any) {
+  function toggleFull(win: ConsoleWin) {
     if (document.fullscreenElement === win) {
       // The promise rejects if we are already leaving; there is nothing to
       // recover, and `syncFullState` runs off the event either way.
@@ -1670,7 +1670,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
     focusWin(win);
     // Requesting while ANOTHER element is fullscreen is a legal swap — browsers
     // move the top layer without a round trip through the exit.
-    win.requestFullscreen().catch((err: any) => {
+    win.requestFullscreen().catch((err) => {
       // The browser refusing (no user gesture, a policy header). Say so; the
       // console is still usable maximized.
       console.warn("fullscreen refused", err);
@@ -1683,7 +1683,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // prompt), and on a tablet a stale "exit" button is the only exit there is.
   function syncFullState() {
     const el = document.fullscreenElement;
-    for (const btn of document.querySelectorAll(".session-full")) {
+    for (const btn of document.querySelectorAll<HTMLElement>(".session-full")) {
       const win = btn.closest(".session-window");
       const on = !!win && el === win;
       btn.title = on ? "Exit full screen" : "Full screen";
@@ -1707,8 +1707,8 @@ export function createConsole(window: any, document: any, location: any, opts: a
     const st = stage();
     if (!st) return;
     // Columns are a maximize too (ADR-0051 §5): all of them, in reading order.
-    const at = (w: any, v: any) => parseInt(w.style.getPropertyValue(v), 10) || 0;
-    const cols = [...st.querySelectorAll(".session-window.column")].sort(
+    const at = (w: HTMLElement, v: string) => parseInt(w.style.getPropertyValue(v), 10) || 0;
+    const cols = [...st.querySelectorAll<HTMLElement>(".session-window.column")].sort(
       (a, b) => at(a, "--col-index") - at(b, "--col-index") || at(a, "--row-index") - at(b, "--row-index"),
     );
     if (cols.length) {
@@ -1717,7 +1717,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
     }
     // The LAST one, if a desk somehow carries two: it is the one whose record
     // was written most recently, and exactly one window can usefully be on top.
-    const all = st.querySelectorAll(".session-window.maximized");
+    const all = st.querySelectorAll<HTMLElement>(".session-window.maximized");
     const win = all[all.length - 1];
     if (win) focusWin(win);
   }
@@ -1750,7 +1750,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
     const ws = workspace();
     const st = stage();
     if (!ws || !st) return;
-    for (const win of st.querySelectorAll(".session-window.maximized, .session-window.column")) {
+    for (const win of st.querySelectorAll<HTMLElement>(".session-window.maximized, .session-window.column")) {
       win.style.setProperty("--max-left", ws.scrollLeft + "px");
       win.style.setProperty("--max-top", ws.scrollTop + "px");
     }
@@ -1767,7 +1767,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // recompute runs on mouseup.
   // INVARIANT: every path that creates, moves, resizes, closes or restores a
   // window ends here.
-  function applyExtent(opts?: any) {
+  function applyExtent(opts?: ExtentOpts) {
     const ws = workspace();
     const st = stage();
     if (!ws || !st) return;
@@ -1776,7 +1776,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
     // Read the DOM, not `wins`: a window is on the stage from `buildChrome`'s
     // append (before `spawnWindow` registers it) to its removal. Fences count
     // too — ADR-0051 §2 sizes the plane to windows AND fences.
-    const rects = [...st.querySelectorAll(".session-window, .fence, .note-card")].map(restoreRect);
+    const rects = [...st.querySelectorAll<HTMLElement>(".session-window, .fence, .note-card")].map(restoreRect);
     const ext = stageExtent(
       rects,
       { width: ws.clientWidth, height: ws.clientHeight },
@@ -1802,7 +1802,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // deaf where something did, because the click landed on the terminal's
   // canvas and the keystrokes went to the shell. A surface on the plane is in
   // the tier or it is under it; there is no third state.
-  function stackWin(win: any) {
+  function stackWin(win: Stacked) {
     if (win.style.zIndex) return;
     // At the ceiling the counter stops and the newcomers tie: a tie among
     // cards is a stacking order, while a number past the ceiling would put a
@@ -1811,12 +1811,12 @@ export function createConsole(window: any, document: any, location: any, opts: a
     win.style.zIndex = z;
   }
 
-  function focusWin(win: any) {
+  function focusWin(win: Stacked) {
     z += 1;
     if (z > Z_CEIL) {
       // Renormalize: re-stack the existing windows by their current z, resetting
       // the counter so focus never pushes a console over the overlay/tabbar tier.
-      const ordered = [...workspace().querySelectorAll(".session-window, .note-card")].sort(
+      const ordered = [...workspace()!.querySelectorAll<Stacked>(".session-window, .note-card")].sort(
         (a, b) => (parseInt(a.style.zIndex, 10) || 0) - (parseInt(b.style.zIndex, 10) || 0),
       );
       z = Z_BASE;
@@ -1828,7 +1828,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
       z += 1;
     }
     win.style.zIndex = z;
-    for (const w of workspace().querySelectorAll(".session-window.focused, .note-card.focused")) {
+    for (const w of workspace()!.querySelectorAll<ConsoleWin>(".session-window.focused, .note-card.focused")) {
       if (w === win) continue;
       w.classList.remove("focused");
       // Focus held it awake (`dormancyDecision` D2); the observer will not
@@ -1846,7 +1846,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   function list() {
     const st = stage();
     if (!st) return [];
-    return [...st.querySelectorAll(".session-window")].map((w) => ({
+    return [...st.querySelectorAll<ConsoleWin>(".session-window")].map((w) => ({
       id: w._deskId,
       agent: w._deskAgent,
       name: w._deskConsoleName ?? null,
@@ -1863,7 +1863,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // The agent-state dot per window, from the shell's `/api/sessions` poll
   // (ADR-0059 §5): the state word as a class, hidden when the row says
   // nothing. A placeholder has no session and keeps no dot.
-  function ingestSessions(sessions: any) {
+  function ingestSessions(sessions: HostedSession[] | null | undefined) {
     lastSessions = Array.isArray(sessions) ? sessions : [];
     for (const win of wins) {
       const dot = win._stateDot;
@@ -1880,7 +1880,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // `visibilitychange` and `online` both land on one iOS resume; without the
   // probe seam the popup would have no verdict at all.
   let staleProbe = OPTS.isStale || null;
-  function setStaleProbe(fn: any) {
+  function setStaleProbe(fn: (() => boolean) | null) {
     staleProbe = typeof fn === "function" ? fn : null;
   }
 
@@ -1898,7 +1898,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
     return viewStore?.read()?.keys ?? null;
   }
 
-  function applyKeyBar(win: any) {
+  function applyKeyBar(win: ConsoleWin) {
     win.classList.toggle("keys", keyBarVisible(keyBarMode(), hasTouchSurface()));
     win._applyInputMode?.();
   }
@@ -1909,7 +1909,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
 
   // Every window at once. `fit` is required: the BOX does not change, so the
   // ResizeObserver never fires and the daemon would never learn the new size.
-  function setFont(px: any) {
+  function setFont(px: number) {
     viewStore?.patch({ font: px });
     for (const w of wins) {
       const t = w._term;
@@ -1928,7 +1928,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // best-effort and SILENT: `writeText` rejects with "Document is not focused"
   // whenever the workbench is not the focused window, and Chrome can refuse
   // `execCommand` outside a user gesture; the copy is dropped, not queued.
-  function writeClipboard(text: any, term: any) {
+  function writeClipboard(text: string, term: XtermTerminal) {
     if (!text) return;
     // The fallback moves focus to the textarea; without giving it back, the
     // operator's next keystroke goes nowhere and the console looks dead.
@@ -1963,7 +1963,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // synchronously. `read()` first, because `readText()` resolves "" for an
   // image-only clipboard (an iOS screenshot). ONE call: each read raises
   // Safari's "Paste" callout, so a text fallback would ask twice.
-  function readClipboard() {
+  function readClipboard(): ReturnType<import("./wb-console-terminal.ts").TerminalDeps["readClipboard"]> {
     try {
       const clip = navigator.clipboard;
       if (typeof clip.read !== "function") {
@@ -1978,7 +1978,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // Build the chrome and attach a live terminal. Shared by `open()` and the
   // load-time restore; `termOpts` is the `attachTerminal` opts, `desk` the
   // record this window continues (absent for a fresh launch).
-  function spawnWindow(termOpts: any, label: any, repo: any, desk?: any) {
+  function spawnWindow(termOpts: import("./wb-console-terminal.ts").TerminalOpts, label: string | null | undefined, repo: string | null | undefined, desk?: SpawnCarry) {
     const kind = termOpts.console ? "console" : "agent";
     const { win, body, title, restartBtn, closeBtn } = buildChrome(label, repo, desk, kind);
     // Read at launch, never later: a rename reaches the next restart and never
@@ -1994,13 +1994,13 @@ export function createConsole(window: any, document: any, location: any, opts: a
 
     // The terminal owns the Ctrl and Shift latches and the selection arming;
     // the key-bar buttons (assigned below) only REFLECT them.
-    let ctrlBtn: any = null;
-    let shiftBtn: any = null;
-    let selBtn: any = null;
+    let ctrlBtn: HTMLButtonElement | null = null;
+    let shiftBtn: HTMLButtonElement | null = null;
+    let selBtn: HTMLButtonElement | null = null;
 
     // Debounced nudge for a keystroke typed into a parked window (#335):
     // repeated typing EXTENDS the pulse rather than stacking timers.
-    let nudgeTimer: any = null;
+    let nudgeTimer: ReturnType<typeof setTimeout> | null = null;
     function clearNudge() {
       if (nudgeTimer) {
         clearTimeout(nudgeTimer);
@@ -2017,8 +2017,8 @@ export function createConsole(window: any, document: any, location: any, opts: a
     // the daemon's diagnosis under Details. Built once, then reworded on each
     // fleet read.
     const peerDaemon = WBFleet?.refDaemon(repo) || "";
-    const PEER_BUTTON: any = { wake: "Wake", retry: "Try again" };
-    const showPeerDown = (group: any) => {
+    const PEER_BUTTON: Record<string, string> = { wake: "Wake", retry: "Try again" };
+    const showPeerDown = (group: import("./wb-fleet.ts").Group | null) => {
       let strip: HTMLElement | null = win.querySelector<HTMLElement>(".session-peer-down");
       if (!strip) {
         strip = document.createElement("div") as HTMLElement;
@@ -2032,7 +2032,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
         detail.append(summary, document.createElement("p"));
         const btn = document.createElement("button");
         btn.className = "session-reconnect";
-        btn.addEventListener("click", (e: any) => {
+        btn.addEventListener("click", (e: MouseEvent) => {
           e.stopPropagation();
           if (btn.dataset.act === "wake") wakePeer?.(peerDaemon);
           else readFleet?.();
@@ -2054,19 +2054,19 @@ export function createConsole(window: any, document: any, location: any, opts: a
     // NAMED, not inline: a dormant console rebuilds its terminal (`wakeWindow`)
     // and the rebuild must be wired to the same chrome. Everything closes over
     // `win`, never a particular terminal.
-    const termWiring = {
+    const termWiring: import("./wb-console-terminal.ts").TerminalOpts = {
       ...termOpts,
-      onCtrlLatch: (on: any) => {
+      onCtrlLatch: (on) => {
         if (ctrlBtn) ctrlBtn.setAttribute("aria-pressed", on ? "true" : "false");
       },
-      onShiftLatch: (on: any) => {
+      onShiftLatch: (on) => {
         if (shiftBtn) shiftBtn.setAttribute("aria-pressed", on ? "true" : "false");
       },
-      onSelecting: (on: any) => {
+      onSelecting: (on) => {
         if (selBtn) selBtn.setAttribute("aria-pressed", on ? "true" : "false");
       },
       // The daemon assigned/echoed this window's session id: record it.
-      onSession: (_id: any, owner: any) => {
+      onSession: (_id, owner) => {
         const presentation = sessionPresentation(label, repo, desk, owner);
         win._sessionCheckout = presentation.checkout;
         win._deskDaemonId = presentation.daemonId;
@@ -2096,7 +2096,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
         btn.className = "session-reconnect";
         btn.dataset.act = "take-over";
         btn.textContent = "Take over";
-        btn.addEventListener("click", (e: any) => {
+        btn.addEventListener("click", (e: MouseEvent) => {
           e.stopPropagation();
           win._term?.takeOver();
         });
@@ -2127,7 +2127,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
       // agent said) and the restart control is tinted as the next action.
       // A launch a PEER refused becomes that peer's placeholder, which says why
       // in words and comes back when the peer does.
-      onEnded: (announced: any, refusal: any) => {
+      onEnded: (announced, refusal) => {
         clearNudge();
         win.querySelector(".session-parked")?.remove();
         if (announced === "refused" && WBFleet?.refDaemon(repo)) {
@@ -2145,7 +2145,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
             readFleet: () => readFleet?.(),
           }
         : {}),
-      onPeerHold: (group: any) => showPeerDown(group),
+      onPeerHold: (group) => showPeerDown(group),
       onPeerBack: () => win.querySelector(".session-peer-down")?.remove(),
     };
     win._termWiring = termWiring;
@@ -2156,7 +2156,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
       // The state `sleepWindow` leaves. `_visible` is false until the observer
       // reports: a window not yet reported reads as visible, and any
       // `applyDormancy` before the report would wake it.
-      win._dormantSession = termOpts.id;
+      win._dormantSession = termOpts.id!;
       win._dormantWatch = termOpts.watch;
       win._dormant = true;
       win._visible = false;
@@ -2181,7 +2181,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
       wins.delete(win);
       applyExtent();
     };
-    const relaunchIn = (checkout: any) => {
+    const relaunchIn = (checkout: string | null | undefined) => {
       // A restart is the operator's act: an adopted console gets its record.
       const carry = { ...deskOf(win), unrecorded: false };
       markRelaunch(carry.id, discard);
@@ -2205,7 +2205,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
       WB.emit("console-restart", { repo: at || null, agent: plain ? null : label });
     };
     win._relaunchIn = relaunchIn;
-    restartBtn.addEventListener("click", (e: any) => {
+    restartBtn.addEventListener("click", (e: MouseEvent) => {
       e.stopPropagation();
       restartWin(win);
     });
@@ -2222,13 +2222,13 @@ export function createConsole(window: any, document: any, location: any, opts: a
       // The strip refuses focus: on iOS losing the textarea's caret dismisses
       // the keyboard. `pointerdown` + `mousedown`; `touchstart` is NOT
       // prevented — that would suppress the synthesized click.
-      const holdFocus = (e: any) => e.preventDefault();
+      const holdFocus = (e: Event) => e.preventDefault();
       bar.addEventListener("pointerdown", holdFocus);
       bar.addEventListener("mousedown", holdFocus);
 
       // `icon` (a Bootstrap Icons class) draws the key as that glyph; without
       // it the key shows `text`.
-      const key = (name: any, text: any, title: any, cls?: any, icon?: any) => {
+      const key = (name: string, text: string, title: string, cls?: string, icon?: string) => {
         const b = document.createElement("button");
         b.type = "button";
         // Not in the tab order: a keyboard user already has these keys.
@@ -2263,7 +2263,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
         else field.removeAttribute("inputmode");
       };
       win._applyInputMode = applyInputMode;
-      const toggleKeyboard = (field: any) => {
+      const toggleKeyboard = (field: HTMLTextAreaElement) => {
         keyboardOpen = !keyboardOpen;
         applyInputMode();
         // iOS reads `inputmode` only when the field takes focus. The click
@@ -2307,7 +2307,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
       // The one piece of chrome bound to a PARTICULAR terminal:
       // `onSelectionChange` is on the xterm instance, so a woken console's new
       // instance needs it again.
-      win._rewire = (t: any) => {
+      win._rewire = (t: ConsoleTerm) => {
         t.term.onSelectionChange(syncCopy);
         syncCopy();
         t.term.textarea?.addEventListener("blur", () => {
@@ -2328,8 +2328,8 @@ export function createConsole(window: any, document: any, location: any, opts: a
       key("font-down", "A−", "Smaller text");
       key("font-up", "A+", "Larger text");
 
-      bar.addEventListener("click", (e: any) => {
-        const btn = e.target.closest("button[data-key]");
+      bar.addEventListener("click", (e: MouseEvent) => {
+        const btn = (e.target as Element).closest<HTMLButtonElement>("button[data-key]");
         if (!btn) return;
         e.stopPropagation();
         const name = btn.dataset.key;
@@ -2343,7 +2343,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
         focusWin(win);
         if (read) {
           read
-            .then(({ image, text }: any) => {
+            .then(({ image, text }) => {
               if (image) win._term!.pasteImage(image);
               else if (text) win._term!.term.paste(text);
             })
@@ -2358,7 +2358,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
         } else if (name === "font-up" || name === "font-down") {
           setFont(stepFont(fontSize(), name === "font-up" ? 1 : -1));
         } else {
-          win._term.sendKey(name);
+          win._term.sendKey(name!);
         }
         // Back to the terminal, inside the gesture, so an open keyboard stays up.
         win._term.term.focus();
@@ -2429,10 +2429,10 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // record lacked) — never its rect, which came from the record. A window
   // carried from an adopted, unrecorded one stays unrecorded. Any other
   // window is a new console: its record is created.
-  function recordBirth(win: any, carry: any) {
-    const r = desk.find((x: any) => x.id === win._deskId);
+  function recordBirth(win: ConsoleWin, carry: SpawnCarry | undefined) {
+    const r = desk.find((x) => x.id === win._deskId);
     if (r) {
-      const fields: any = {};
+      const fields: DeskWindowFields = {};
       if ((r.checkout ?? null) !== (win._deskCheckout ?? null)) fields.checkout = win._deskCheckout ?? null;
       if (win._deskConsoleName && r.consoleName !== win._deskConsoleName) {
         fields.consoleName = win._deskConsoleName;
@@ -2452,22 +2452,22 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // it writes. A launch and its create land within a second; a console whose
   // record no page will write (another device removed it) still gets one.
   const ADOPT_GRACE_MS = 10000;
-  function adoptOrphan(win: any) {
+  function adoptOrphan(win: ConsoleWin) {
     if (!win.isConnected || !win._deskUnrecorded) return;
     // A fresh read first: the record may have landed without a push here.
     reloadDesk().then(() => {
       if (!win.isConnected || !win._deskUnrecorded) return;
-      if (desk.some((r: any) => r.id === win._deskId)) return;
+      if (desk.some((r) => r.id === win._deskId)) return;
       recordLeft(win);
     });
   }
 
   // The session the daemon announced, and the worktree with it, written only
   // when they differ from the record: a reconnect changes nothing else.
-  function recordSession(win: any) {
-    const r = desk.find((x: any) => x.id === win._deskId);
+  function recordSession(win: ConsoleWin) {
+    const r = desk.find((x) => x.id === win._deskId);
     if (!r) return;
-    const fields: any = {};
+    const fields: DeskWindowFields = {};
     const session = {
       sessionId: sessionIdOf(win),
       daemonId: win._deskDaemonId ?? null,
@@ -2486,7 +2486,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
 
   // The window's placement as a desk record, to carry identity and box across
   // a rebuild (takeover, placeholder → live console).
-  function deskOf(win: any) {
+  function deskOf(win: ConsoleWin): WindowSnapshot {
     return {
       unrecorded: !!win._deskUnrecorded,
       id: win._deskId,
@@ -2508,13 +2508,13 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // the primary tree because its own vanished (the #409 gates).
   // Desk ids whose window a relaunch took off the stage and has not put back
   // yet: the columns (`wbColumns`) wait for them instead of dropping them.
-  const relaunching = new Set();
-  function isRelaunching(deskId: any) {
+  const relaunching = new Set<string | undefined>();
+  function isRelaunching(deskId: string) {
     return relaunching.has(deskId);
   }
   // Marks `deskId`, then takes its window off the stage. `spawnOrMissing`
   // clears the mark; a take-down that throws clears it here.
-  function markRelaunch(deskId: any, takeDown: any) {
+  function markRelaunch(deskId: string, takeDown: () => void) {
     relaunching.add(deskId);
     try {
       takeDown();
@@ -2524,7 +2524,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
     }
   }
 
-  async function spawnOrMissing(req: any, label: any, repo: any, carry: any) {
+  async function spawnOrMissing(req: import("./wb-console-terminal.ts").TerminalOpts, label: string | null | undefined, repo: string | null | undefined, carry: SpawnCarry) {
     try {
       if (req.checkout && !(await checkoutStillThere(repo, req.checkout))) {
         return spawnPlaceholder({ ...carry, checkout: req.checkout }, req.checkout);
@@ -2540,7 +2540,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // nor the load-time session list knows it. `null` when the list says it does
   // not run; `undefined` when that is not known — the list cannot be read, or
   // it did not hear from the record's peer.
-  async function liveSessionFor(win: any, record: any) {
+  async function liveSessionFor(win: ConsoleWin, record: SpawnCarry) {
     await reloadDesk();
     let sessions;
     try {
@@ -2552,8 +2552,8 @@ export function createConsole(window: any, document: any, location: any, opts: a
     }
     const layout = loadDesk();
     // Deleted by another page: this window still stands for it.
-    if (!layout.some((rec: any) => rec.id === win._deskId)) {
-      layout.push({ ...record, id: win._deskId, sessionId: null });
+    if (!layout.some((rec) => rec.id === win._deskId)) {
+      layout.push({ ...record, id: win._deskId, sessionId: null } as DeskRecord);
     }
     const held = [...wins]
       .filter((w) => w !== win && !w.classList.contains("placeholder"))
@@ -2566,7 +2566,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // window. ATTACH only — a resume must never launch a vendor CLI. One at a
   // time, so an attach counts as `held` for the next placeholder; one pass at a
   // time, because `visibilitychange` and `online` land together on an iOS resume.
-  let reviving: any = null;
+  let reviving: Promise<void> | null = null;
   function revivePlaceholders() {
     if (reviving) return reviving;
     reviving = (async () => {
@@ -2588,7 +2588,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // what its peer's fleet state is, and redraws on every fleet read.
   // `held.unheard`: restored while the session list did not hear from its
   // peer, so whether it runs is not known; it asks again on each fleet read.
-  function spawnPlaceholder(record: any, missing?: any, refused?: any, held?: any) {
+  function spawnPlaceholder(record: SpawnCarry, missing?: string | null, refused?: { message: string | null } | null, held?: { unheard?: boolean }) {
     const { win, body, restartBtn, closeBtn } = buildChrome(
       record.agent,
       record.repo,
@@ -2618,18 +2618,18 @@ export function createConsole(window: any, document: any, location: any, opts: a
     // "relaunch"); the box starts as "not running" until the fleet says more.
     const daemon = WBFleet?.refDaemon(record.repo) || "";
     const canLaunch = OPTS.canLaunch !== false;
-    const BUTTON: any = { wake: "Wake", retry: "Try again", relaunch: "Relaunch" };
-    let peerAction = "relaunch";
+    const BUTTON: Record<string, string> = { wake: "Wake", retry: "Try again", relaunch: "Relaunch" };
+    let peerAction: string | null = "relaunch";
     let wasOffline = false;
-    let shown: any = null;
-    let detail: any = null;
-    let detailText: any = null;
-    const show = (view: any) => {
+    let shown: Parameters<typeof show>[0] | null = null;
+    let detail: HTMLDetailsElement | null = null;
+    let detailText: HTMLParagraphElement | null = null;
+    const show = (view: { text: string; detail: string; action: string | null }) => {
       shown = view;
       text.textContent = view.text;
       peerAction = view.action;
-      btn.hidden = !BUTTON[view.action];
-      if (BUTTON[view.action]) btn.textContent = BUTTON[view.action];
+      btn.hidden = !BUTTON[view.action as string];
+      if (BUTTON[view.action as string]) btn.textContent = BUTTON[view.action as string];
       if (!detail) {
         detail = document.createElement("details");
         detail.className = "session-detail";
@@ -2639,7 +2639,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
         detail.append(summary, detailText);
         note.append(detail);
       }
-      detailText.textContent = view.detail || "";
+      detailText!.textContent = view.detail || "";
       detail.hidden = !view.detail;
     };
     const showPeer = () => {
@@ -2694,7 +2694,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
           return;
         }
         unheard = false;
-        if (turn === "attach") attach(session);
+        if (turn === "attach") attach(session!);
         else if (turn === "relaunch") btn.click();
         else show({ text: `${peerHost(peerGroups.get(daemon), record.environment)} is back.`, detail: "", action: "relaunch" });
       } finally {
@@ -2703,7 +2703,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
     };
     win._peerRefresh = showPeer;
 
-    const markMissing = (name: any) => {
+    const markMissing = (name: string | null | undefined) => {
       missing = name;
       win.classList.add("missing-checkout");
       text.textContent = `Worktree ${name} no longer exists.`;
@@ -2721,7 +2721,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
     // `respawn`: the same desk id comes back at once, and the spawn announces
     // it. Announcing the gap would take the console out of its column
     // (ADR-0051 §5) and promote the next one to the maximize.
-    const drop = (respawn?: any) => {
+    const drop = (respawn?: boolean) => {
       win.remove();
       budget.untrackDormancy(win);
       wins.delete(win);
@@ -2730,7 +2730,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
     };
     // The attach `restoreDesk` makes, into this record's id and rect. A session
     // another window drives parks this one as a watcher (`reconnectDecision`).
-    const attach = (session: any) => {
+    const attach = (session: HostedSession) => {
       const carry = deskOf(win);
       drop(true);
       spawnWindow(
@@ -2741,7 +2741,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
       );
     };
     // One check at a time: a click and a resume can arrive together.
-    let checking: any = null;
+    let checking: Promise<HostedSession | null | undefined> | null = null;
     const check = () => {
       if (!checking) {
         checking = liveSessionFor(win, record)
@@ -2756,7 +2756,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
       const session = await check();
       if (session && win.isConnected) attach(session);
     };
-    btn.addEventListener("click", async (e: any) => {
+    btn.addEventListener("click", async (e: MouseEvent) => {
       e.stopPropagation();
       if (btn.disabled) return;
       btn.disabled = true;
@@ -2768,7 +2768,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
         if (!win.isConnected) return;
         if (!woke) {
           btn.disabled = false;
-          show(shown);
+          show(shown!);
           showPeer();
           return;
         }
@@ -2830,7 +2830,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
   // is no agent — a normal shell in the repo dir, labelled "console", or, with
   // `command`, a shell running that command and labelled by it (the same label
   // the daemon gives the session, so the desk record relaunches it as such).
-  function open({ repo, agent, plain, checkout, command }: any) {
+  function open({ repo, agent, plain, checkout, command }: { repo?: string | null; agent?: string | null; plain?: boolean; checkout?: string | null; command?: string }) {
     if (atDeskCap()) {
       toast({ text: `You can have at most ${DESK_MAX} consoles. Close one first.` });
       return false;
@@ -2854,7 +2854,7 @@ export function createConsole(window: any, document: any, location: any, opts: a
 
   // Refit every open console. Called when the Consoles tab returns to view: a
   // terminal opened/reattached while the tab was display:none measured 0×0.
-  function refitAll(attempt?: any) {
+  function refitAll(attempt?: number) {
     // Alpine's `$nextTick` fires BEFORE `x-show` applies the flip (MEASURED):
     // `.consoles-tab` is still `display:none` and everything measures 0.
     // Refitting there collapses the stage to the bare margin (3200×2080 →

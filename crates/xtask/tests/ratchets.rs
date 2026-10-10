@@ -63,7 +63,6 @@ const UI_DIR: &str = "crates/ralphy-daemon/assets/ui";
 /// not in it.
 const ANY_BASELINE: &[(&str, usize)] = &[
     ("app.ts", 333),
-    ("wb-console.ts", 191),
     ("wb-files.ts", 108),
     ("wb-notes.ts", 224),
     ("wb-projects-store.ts", 1),

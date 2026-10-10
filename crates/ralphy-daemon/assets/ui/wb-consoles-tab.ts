@@ -431,7 +431,7 @@ export function wbColumns() {
       // Only when the keys are not somewhere else (a search box, a modal).
       const el = document.activeElement;
       const keysFree = !el || el === document.body || !!el.closest?.(".session-window");
-      if (this.active === "consoles" && keysFree && this.columnIds().includes(before)) {
+      if (this.active === "consoles" && keysFree && (this.columnIds() as readonly (string | null)[]).includes(before)) {
         const want = WBColumns.focusAfter(ids, before);
         if (want && (want !== before || moved)) WBConsole.focusColumn(want);
       }

@@ -113,7 +113,7 @@ export const WBColumns = (function () {
   }
 
   // [column, row] of `id`, or null.
-  function where(grid: Grid, id: string): [number, number] | null {
+  function where(grid: readonly (readonly (string | null)[])[], id: string | null): [number, number] | null {
     for (let c = 0; c < grid.length; c++) {
       const r = grid[c].indexOf(id);
       if (r >= 0) return [c, r];
@@ -266,7 +266,7 @@ export const WBColumns = (function () {
   // Where the focus goes when the painted set changes: it stays on a painted
   // console, or moves to the last painted one. A key never goes to a console
   // that is not painted.
-  function focusAfter(ids: string[], focusedId: string): string | null {
+  function focusAfter(ids: readonly (string | null)[], focusedId: string | null): string | null {
     if (ids.includes(focusedId)) return focusedId;
     return ids[ids.length - 1] ?? null;
   }
@@ -276,7 +276,7 @@ export const WBColumns = (function () {
   // a shorter column; "y" walks the rows of one column. Both wrap at the ends;
   // from outside the grid, a forward step takes the first console and a
   // backward step the last.
-  function focusMove(paintedList: Painted[], focusedId: string, axis: string, step: number): string | null {
+  function focusMove(paintedList: Painted[], focusedId: string | null, axis: string, step: number): string | null {
     if (!paintedList.length) return null;
     const cols: Grid = [];
     for (const p of paintedList) (cols[p.index] ||= []).push(p.id);

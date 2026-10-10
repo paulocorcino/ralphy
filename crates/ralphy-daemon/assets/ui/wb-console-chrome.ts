@@ -57,7 +57,7 @@ export type ResizeHooks = GestureHooks & { min?: Size };
 
 // What `buildChrome` seeds a window from: a desk record, or a partial of one
 // that carries at least `kind`.
-export type ChromeRecord = Partial<DeskRecord> | null | undefined;
+export type ChromeRecord = Partial<DeskRecord> | import("./wb-types.d.ts").SpawnCarry | null | undefined;
 
 // What the chrome reads from the console, and nothing else.
 export type ChromeDeps = {
@@ -112,7 +112,7 @@ export type ChromeDeps = {
   restoreRect: (el: HTMLElement) => Rect;
   // The title: what it says, and its painting.
   sessionPresentation: (
-    label: string | null,
+    label: string | null | undefined,
     repo: string | null | undefined,
     prior: ChromeRecord,
     owner: HostedSession | null | undefined,
@@ -430,7 +430,7 @@ export function createChrome(deps: ChromeDeps) {
   // rect (from a desk record, else cascaded), titlebar, body, eight resize
   // handles. `desk` is a record (or a partial carrying at least `kind`);
   // everything the record needs later is hung off the element.
-  function buildChrome(label: string | null, repo: string | null | undefined, desk: ChromeRecord, kind: string) {
+  function buildChrome(label: string | null | undefined, repo: string | null | undefined, desk: ChromeRecord, kind: string | null | undefined) {
     const win = document.createElement("div") as HTMLElement as ConsoleWin;
     win.className = "session-window";
     // Every field this element will carry is written HERE, by the module that
