@@ -12,8 +12,7 @@
 import { WBFail } from "./wb-fail.ts";
 import { WBProject } from "./wb-project.ts";
 import { WBRun } from "./wb-runs.ts";
-// The resume rule and the two deadlines are the console's: one copy, in the session folds.
-import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-console-session.ts";
+import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
 
 export function createDaemon(window: any, document: any, location: any) {
   // The tagged-frame codec, mirrored from src/protocol.rs (see wb-console.ts).

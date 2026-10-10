@@ -26,6 +26,7 @@
 import { WBGeometry } from "./wb-geometry.ts";
 import * as WBConsoleInput from "./wb-console-input.ts";
 import * as WBConsoleSession from "./wb-console-session.ts";
+import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
 import * as WBDeskFolds from "./wb-desk-folds.ts";
 import { createGpuBudget, gpuHolders, DORMANT_AFTER_MS, DORMANT_MARGIN_PX } from "./wb-console-gpu.ts";
 import { createTitle } from "./wb-console-title.ts";
@@ -83,12 +84,11 @@ const {
   FONT_DEFAULT,
 } = WBConsoleInput;
 
-// The session folds are `wb-console-session.ts`: the wire codec, the reconnect,
-// resume and dormancy rules, and the peer rules, pure functions of their arguments.
+// The session folds are `wb-console-session.ts`: the wire codec, the reconnect
+// and dormancy rules, and the peer rules, pure functions of their arguments.
 const {
   encodeResize,
   encodeDetach,
-  resumeDecision,
   birthDecision,
   dormancyDecision,
   endNotice,
@@ -104,8 +104,6 @@ const {
   consoleCommand,
   sessionRowFor,
   RESUME_HIDDEN_MS,
-  RESUME_DEBOUNCE_MS,
-  CONNECT_TIMEOUT_MS,
 } = WBConsoleSession;
 
 // The desk and fence folds are `wb-desk-folds.ts`: the restore decision, the fence
