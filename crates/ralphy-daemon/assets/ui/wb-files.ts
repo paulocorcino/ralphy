@@ -22,6 +22,18 @@ import { WBFileSearch } from "./wb-file-search.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { classify, newEntryTitle, parentRel, underProtectedDir } from "./wb-file-paths.ts";
 import { sendWindow } from "./wb-events.ts";
+import type { WBDaemonApi } from "./wb-daemon.ts";
+import type { Hit } from "./wb-file-search.ts";
+import type { Group } from "./wb-fleet.ts";
+
+/** What a failed read hands back: a thrown error, or whatever a socket rejected with. */
+type Failure = { message?: string } | null | undefined;
+
+/** The fields a node gesture adds to its `workbench:action` detail. */
+type NodeExtra = { [field: string]: string | boolean };
+
+/** The live `/ws/tree` subscription of the open project. */
+type TreeSub = ReturnType<WBDaemonApi["subscribeTree"]>;
 
 // The tree hosts that already carry the context-menu listener (`mountTree`).
 // A raw DOM element, kept outside the component: Alpine's Proxy would wrap it.
@@ -36,16 +48,16 @@ export function wbFiles() {
     // `folder:true` lands at `node.data.folder` and `node.folder` is forever
     // `undefined`; `node.children` is `null` on a lazy or empty folder. Either
     // alone made EVERY collapsed folder answer "file".
-    isFolder(node: any) {
+    isFolder(node: WunderbaumNode | null | undefined) {
       if (!node) return false;
       return !!(node.data?.folder || node.lazy || Array.isArray(node.children));
     },
 
     // --- file-type icons (Devicon font; folders use Wunderbaum defaults) ---
-    fileIcon(title: any) {
+    fileIcon(title: string) {
       const name = title.toLowerCase();
       if (name.endsWith("lock") || name === "package-lock.json") return "devicon-json-plain colored";
-      const ext = name.includes(".") ? name.split(".").pop() : "";
+      const ext = name.includes(".") ? name.split(".").pop()! : "";
       const map: Record<string, string> = {
         ts: "devicon-typescript-plain colored",
         tsx: "devicon-typescript-plain colored",
@@ -81,13 +93,13 @@ export function wbFiles() {
       });
     },
     mountTree() {
-      const host = document.querySelector(".files-pane .wb-host");
+      const host = document.querySelector<HTMLElement>(".files-pane .wb-host");
       const project = this.$store.projects.projects.find((p) => this.$store.projects.repoRef(p) === this.$store.projects.openSlug);
       if (!host || !project) return;
       this.treeMem();
       // Freshness is per-open: the watch that kept a level honest died with
       // the last close.
-      this._treeValidated.clear();
+      this._treeValidated!.clear();
       // The spinner is armed only when the root has to come off the daemon; a
       // re-open paints from memory in the same frame.
       this.treeError = "";
@@ -99,7 +111,7 @@ export function wbFiles() {
       // A mount generation: a root read failing AFTER this tree was replaced
       // must not paint its error onto the fresh mount.
       const gen = (this._treeGen = (this._treeGen || 0) + 1);
-      this.treeLoading = this.useDaemonTree() && !this._treeCache.has(this.treeKey(""));
+      this.treeLoading = this.useDaemonTree() && !this._treeCache!.has(this.treeKey(""));
 
       this._tree = new mar10.Wunderbaum({
         element: host,
@@ -120,8 +132,8 @@ export function wbFiles() {
         // unloaded, so the next expand reads it again, and draws no row for
         // the failure. A rethrow drew an "Error (…)" row inside the folder.
         // The footer says why; the folder closes, because it shows nothing.
-        lazyLoad: (e: any) =>
-          this.loadTreeLevel(this.relPath(e.node)).catch((err: any) => {
+        lazyLoad: (e: WunderbaumEvent) =>
+          this.loadTreeLevel(this.relPath(e.node)).catch((err) => {
             this.treeWentStale(err);
             if (WBFleet.refDaemon(this.$store.projects.openSlug || "")) this.readFleetNow();
             setTimeout(() => e.node.setExpanded(false));
@@ -131,18 +143,18 @@ export function wbFiles() {
         // no level read before does not open: its read would fail. A level
         // read before opens from memory. A restore of the expanded folders
         // stops here too.
-        beforeExpand: (e: any) => {
+        beforeExpand: (e: WunderbaumEvent) => {
           if (!e.flag || !this.openPeerDown() || e.node.children) return undefined;
-          return this._treeCache.has(this.treeKey(this.relPath(e.node))) ? undefined : false;
+          return this._treeCache!.has(this.treeKey(this.relPath(e.node))) ? undefined : false;
         },
         // A level (re)loaded while a search is on carries no match marks, and
         // in `hide` mode an unmarked row is not painted.
-        load: (e: any) => {
+        load: (e: WunderbaumEvent) => {
           if (e.tree.isFilterActive?.()) e.tree.updateFilter();
         },
         // The content-search badge: hit count beside the title; nothing once
         // the filter is gone (the map is empty by then).
-        render: (e: any) => {
+        render: (e: WunderbaumEvent) => {
           const count = this._fileHits?.get(this.relPath(e.node));
           const old = e.nodeElem.querySelector(".wb-hits");
           if (typeof count !== "number") {
@@ -155,7 +167,7 @@ export function wbFiles() {
           if (!old) e.nodeElem.querySelector(".wb-title")?.after(badge);
         },
         // The root level has settled: put the expanded folders back.
-        init: (e: any) => {
+        init: (e: WunderbaumEvent) => {
           if (gen !== this._treeGen) return;
           this.treeLoading = false;
           if (e.error) this.treeError = "Could not read the files of this project.";
@@ -163,7 +175,7 @@ export function wbFiles() {
         },
         edit: {
           trigger: ["F2", "macEnter"],
-          apply: (e: any) => {
+          apply: (e: WunderbaumEvent) => {
             // The shared listener takes full rel paths.
             const parent = parentRel(this.relPath(e.node));
             this.emit("rename", e.node, {
@@ -174,7 +186,7 @@ export function wbFiles() {
           },
         },
         // Live watch-set (#196): the daemon watches only the expanded set.
-        expand: (e: any) => {
+        expand: (e: WunderbaumEvent) => {
           if (!this.isFolder(e.node)) return;
           const rel = this.relPath(e.node);
           if (e.flag) this._treeSub?.watch(rel);
@@ -182,7 +194,7 @@ export function wbFiles() {
           this.rememberExpansion();
         },
         // Double-click / Enter on a leaf = "open this file".
-        dblclick: (e: any) => {
+        dblclick: (e: WunderbaumEvent) => {
           if (!this.isFolder(e.node)) this.openFile(e.node);
           return false;
         },
@@ -194,14 +206,14 @@ export function wbFiles() {
       if (this.useDaemonTree() && window.WBDaemon?.subscribeTree) {
         this._treeSub = WBDaemon.subscribeTree(
           this.$store.projects.openSlug,
-          (rel: any) => {
+          (rel: string) => {
             if (!this.tabHidden()) this.onTreeDirty(rel);
           },
           this._treeCheckout,
           () => {
             if (!this.tabHidden()) this.onHeadMoved();
           },
-          (reason: any) => this.treeWatchFailed(reason),
+          (reason: string | null) => this.treeWatchFailed(reason),
         );
         this._treeSub.watch("");
       }
@@ -213,7 +225,7 @@ export function wbFiles() {
       // once more per mount.
       if (!menuHosts.has(host)) {
         menuHosts.add(host);
-        host.addEventListener("contextmenu", (ev: any) => {
+        host.addEventListener("contextmenu", (ev: MouseEvent) => {
           const node = mar10.Wunderbaum.getNode(ev);
           ev.preventDefault();
           node?.setActive();
@@ -229,11 +241,11 @@ export function wbFiles() {
       // truncate the list being replayed.
       if (this._restoringExpansion || !this._tree || !this.$store.projects.openSlug) return;
       this.treeMem();
-      const rels: any[] = [];
-      this.rawTree().root.visit((n: any) => {
+      const rels: string[] = [];
+      this.rawTree()!.root.visit((n: WunderbaumNode) => {
         if (this.isFolder(n) && n.expanded) rels.push(this.relPath(n));
       });
-      this._treeExpanded.set(this.$store.projects.openSlug, rels);
+      this._treeExpanded!.set(this.$store.projects.openSlug, rels);
     },
 
     // Re-expand the folders this project was left with, shallow-first (a
@@ -242,14 +254,14 @@ export function wbFiles() {
     async restoreExpansion() {
       const slug = this.$store.projects.openSlug;
       this.treeMem();
-      const rels = this._treeExpanded.get(slug) || [];
+      const rels = this._treeExpanded!.get(slug) || [];
       if (!rels.length || !this._tree) return;
       this._restoringExpansion = true;
       try {
         for (const rel of [...rels].sort((a, b) => a.split("/").length - b.split("/").length)) {
           // A project switch mid-replay: this list no longer describes the tree.
           if (slug !== this.$store.projects.openSlug || !this._tree) return;
-          const node = this.rawTree().findFirst((n: any) => this.relPath(n) === rel);
+          const node = this.rawTree()!.findFirst((n: WunderbaumNode) => this.relPath(n) === rel);
           if (node && !node.expanded) await node.setExpanded(true);
         }
       } finally {
@@ -267,14 +279,14 @@ export function wbFiles() {
     // re-read in the BACKGROUND, touching the DOM only when the directory
     // changed. Nothing is cached on the daemon (ADR-0036); the revalidation
     // is not optional, since the watch is dropped when the project closes.
-    loadTreeLevel(rel: any) {
+    loadTreeLevel(rel: string): Promise<WunderbaumSource[]> {
       this.treeMem();
       const key = this.treeKey(rel);
-      const hit = this._treeCache.get(key);
+      const hit = this._treeCache!.get(key);
       if (!hit) return this.fetchTreeLevel(rel);
       // Revalidate once per level per open, deferred so the paint happens first.
-      if (!this._treeValidated.has(key)) {
-        this._treeValidated.add(key);
+      if (!this._treeValidated!.has(key)) {
+        this._treeValidated!.add(key);
         setTimeout(() => this.revalidateLevel(rel), 0);
       }
       return Promise.resolve(this.treeNodes(hit));
@@ -293,7 +305,7 @@ export function wbFiles() {
     // corrects would validate itself. INVARIANT: a read that FAILED throws; it
     // does NOT resolve `[]`, which is the real statement "no entries" every
     // caller acts on by replacing what is on screen.
-    fetchTreeLevel(rel: any) {
+    fetchTreeLevel(rel: string): Promise<WunderbaumSource[]> {
       this.treeMem();
       const key = this.treeKey(rel);
       const payload = WBDaemon.withCheckout(
@@ -306,8 +318,8 @@ export function wbFiles() {
         }
         this.treeFresh();
         this.pruneTreeCache(rel, reply.entries);
-        this._treeCache.set(key, reply.entries);
-        this._treeValidated.add(key);
+        this._treeCache!.set(key, reply.entries);
+        this._treeValidated!.add(key);
         return this.treeNodes(reply.entries);
       });
     },
@@ -316,34 +328,34 @@ export function wbFiles() {
     // cache key is a path, not an identity, so a renamed-then-recreated
     // directory would inherit the old one's children. A name no longer among
     // the subdirectories cannot have children, so its remembered subtree goes.
-    pruneTreeCache(rel: any, entries: any) {
+    pruneTreeCache(rel: string, entries: TreeEntry[]) {
       this.treeMem();
-      const dirs = new Set(entries.filter((en: any) => en.dir).map((en: any) => en.name));
+      const dirs = new Set(entries.filter((en) => en.dir).map((en) => en.name));
       // The keys DESCENDING from `rel`; its own key (empty `child`) is what
       // this listing replaces.
       const prefix = this.treeKey(rel === "" ? "" : `${rel}/`);
-      for (const key of [...this._treeCache.keys()]) {
+      for (const key of [...this._treeCache!.keys()]) {
         if (!key.startsWith(prefix)) continue;
         const child = key.slice(prefix.length).split("/")[0];
         if (!child || dirs.has(child)) continue;
-        this._treeCache.delete(key);
-        this._treeValidated.delete(key);
+        this._treeCache!.delete(key);
+        this._treeValidated!.delete(key);
       }
     },
 
     // Mark every cached level BELOW `rel` as not validated, so the next
     // `loadTreeLevel` of each paints from the cache and re-reads it.
-    forgetValidatedBelow(rel: any) {
+    forgetValidatedBelow(rel: string) {
       this.treeMem();
       const prefix = this.treeKey(rel === "" ? "" : `${rel}/`);
       const own = this.treeKey(rel);
-      for (const key of [...this._treeValidated]) {
-        if (key !== own && key.startsWith(prefix)) this._treeValidated.delete(key);
+      for (const key of [...this._treeValidated!]) {
+        if (key !== own && key.startsWith(prefix)) this._treeValidated!.delete(key);
       }
     },
 
     // Cache key, scoped by REPO and by CHECKOUT (#406).
-    treeKey(rel: any) {
+    treeKey(rel: string) {
       return `${this.$store.projects.openSlug}\n${this.checkoutOf(this.$store.projects.openSlug) || ""}\n${rel}`;
     },
 
@@ -351,9 +363,9 @@ export function wbFiles() {
     // tree OWNS and mutates the objects it is given. An ignored entry carries
     // `wb-ignored`, set once when the row is created. An older peer sends no
     // `ignored`, and its rows are simply not dimmed.
-    treeNodes(entries: any) {
-      return entries.map((en: any) => {
-        const node: any = en.dir
+    treeNodes(entries: TreeEntry[]): WunderbaumSource[] {
+      return entries.map((en) => {
+        const node: WunderbaumSource = en.dir
           ? { title: en.name, folder: true, lazy: true }
           : { title: en.name, icon: this.fileIcon(en.name) };
         if (en.ignored) node.classes = "wb-ignored";
@@ -363,27 +375,27 @@ export function wbFiles() {
 
     // Re-read a level painted from cache and reconcile ONLY if the directory
     // changed: the common case costs one read and zero DOM work.
-    revalidateLevel(rel: any) {
+    revalidateLevel(rel: string) {
       if (!this._tree || !this.useDaemonTree()) return Promise.resolve();
       this.treeMem();
       const key = this.treeKey(rel);
-      const before = JSON.stringify(this._treeCache.get(key) ?? null);
+      const before = JSON.stringify(this._treeCache!.get(key) ?? null);
       const slug = this.$store.projects.openSlug;
       return this.fetchTreeLevel(rel)
         .then(() => {
           // A project switch in flight: another project's tree.
           if (slug !== this.$store.projects.openSlug || !this._tree) return;
-          if (JSON.stringify(this._treeCache.get(key) ?? null) === before) return;
-          const node = rel === "" ? this.rawTree().root : this.findFolderByRel(rel);
+          if (JSON.stringify(this._treeCache!.get(key) ?? null) === before) return;
+          const node = rel === "" ? this.rawTree()!.root : this.findFolderByRel(rel);
           if (node) return this.reconcileLevel(node, rel);
         })
         // A dropped read leaves the cached level on screen, but says so.
-        .catch((err: any) => this.treeWentStale(err));
+        .catch((err) => this.treeWentStale(err));
     },
 
     // The tree shows a listing it could not confirm: record the reason, leave
     // every row alone. Cleared by `treeFresh`.
-    treeWentStale(err: any) {
+    treeWentStale(err: Failure) {
       if (!this.useDaemonTree()) return;
       const failure = WBFail.failed({ message: err?.message }, "Could not refresh the file list: the daemon gave no reason.");
       this.treeStale = `${failure} The list shown is the last one read.`;
@@ -402,10 +414,10 @@ export function wbFiles() {
       const group = this.fleetGroups().find((g) => g.daemon === daemon);
       return group && !WBFleet.available(group) ? group : null;
     },
-    peerDownText(g: any) {
+    peerDownText(g: Group) {
       return `${WBFleet.peerName(g)} is not connected. The list shown is the last one read.`;
     },
-    peerDownAction(g: any) {
+    peerDownAction(g: Group) {
       return WBFleet.wakeable(g) ? "Wake" : "Try again";
     },
     peerDownAct() {
@@ -422,7 +434,7 @@ export function wbFiles() {
       if (!down && this._filesPeerDown && this._filesPeerDown === this.$store.projects.openSlug && this._tree) {
         this.treeFresh();
         this.revalidateLevel("");
-        this.rawTree().root.visit((n: any) => {
+        this.rawTree()!.root.visit((n: WunderbaumNode) => {
           if (this.isFolder(n) && n.expanded) this.revalidateLevel(this.relPath(n));
         });
       }
@@ -432,13 +444,13 @@ export function wbFiles() {
 
     // The daemon says it could not watch a dir of this tree (`reason`), or
     // `null` when a new socket holds every dir again.
-    treeWatchFailed(reason: any) {
+    treeWatchFailed(reason: string | null) {
       this.treeNotLive = reason
         ? `The file list no longer updates by itself: ${reason}. Reopen the project to try again.`
         : "";
     },
 
-    _treeSub: null as any, // the live `/ws/tree` subscription for the open project, if any
+    _treeSub: null as TreeSub | null, // the live `/ws/tree` subscription for the open project, if any
     // Tree memory, `null` until `treeMem` creates it:
     //   _treeCache     directory levels already shown, keyed `repo\nrel`.
     //                  Survives closing a project. Memory only.
@@ -446,12 +458,12 @@ export function wbFiles() {
     //                  Cleared on every mount.
     //   _treeExpanded  folders expanded when a project was last closed, by repo.
     //   _fileHits      what the FILES search filter reads (`treeMem`).
-    _treeCache: null as any,
-    _treeValidated: null as any,
-    _treeExpanded: null as any,
-    _fileHits: null as any,
+    _treeCache: null as Map<string, TreeEntry[]> | null,
+    _treeValidated: null as Set<string> | null,
+    _treeExpanded: null as Map<string, string[]> | null,
+    _fileHits: null as Map<string, number | true> | null,
     // The checkout this tree was built for (#406): `mountTree` sets it.
-    _treeCheckout: null as any,
+    _treeCheckout: null as string | null,
     // The mount generation (`mountTree`).
     _treeGen: 0,
     // Set while a restore or a search expands folders itself.
@@ -466,7 +478,7 @@ export function wbFiles() {
     // The daemon could not keep watching this tree: the rows are right now,
     // but a change on disk will not show until the project is opened again.
     treeNotLive: "",
-    _tree: null as any, // the live Wunderbaum instance, if any
+    _tree: null as WunderbaumTree | null, // the live Wunderbaum instance, if any
 
     // --- the FILES search (ADR-0036 amendment 2026-09-15) -----------------
     // The daemon answers with the hits' rel paths, every hit's ancestors are
@@ -499,14 +511,14 @@ export function wbFiles() {
       return this.clearFileSearch();
     },
 
-    setFileSearchMode(mode: any) {
+    setFileSearchMode(mode: string) {
       if (this.fileSearch.mode === mode) return Promise.resolve();
       this.fileSearch.mode = mode;
       this.$refs.fileSearch?.focus?.();
       return this.fileSearchNow();
     },
 
-    _fileSearchTimer: null as any,
+    _fileSearchTimer: null as ReturnType<typeof setTimeout> | null,
     // A keystroke arms the debounce; a query under the floor clears instead.
     fileSearchTyped() {
       clearTimeout(this._fileSearchTimer);
@@ -545,7 +557,7 @@ export function wbFiles() {
           }
           return this.applyFileSearch(reply.hits, !!reply.truncated, seq);
         })
-        .catch((err: any) => {
+        .catch((err) => {
           if (seq !== this.fileSearch.seq) return;
           this.fileSearch.note = WBFail.failed({ message: err?.message }, "Could not search: the daemon did not answer.");
         });
@@ -564,8 +576,8 @@ export function wbFiles() {
 
     // The rels of every expanded folder — the tree's current shape.
     expandedRels() {
-      const rels: any[] = [];
-      this.rawTree()?.root?.visit((n: any) => {
+      const rels: string[] = [];
+      this.rawTree()?.root?.visit((n: WunderbaumNode) => {
         if (this.isFolder(n) && n.expanded) rels.push(this.relPath(n));
       });
       return rels;
@@ -575,7 +587,7 @@ export function wbFiles() {
     // session, load every ancestor level (shallow-first), then filter. The
     // expands run under `_restoringExpansion`: the remembered expansion must
     // not learn them.
-    async applyFileSearch(hits: any, truncated: any, seq: any) {
+    async applyFileSearch(hits: Hit[], truncated: boolean, seq: number) {
       this.treeMem();
       this.fileSearch.hits = hits;
       this.fileSearch.truncated = truncated;
@@ -592,14 +604,14 @@ export function wbFiles() {
         for (const dir of WBFileSearch.dirsToLoad(hits)) {
           // A newer search, or a torn-down tree, owns the screen now.
           if (seq !== this.fileSearch.seq || tree !== this.rawTree()) return;
-          const f = tree.findFirst((n: any) => this.relPath(n) === dir);
+          const f = tree.findFirst((n: WunderbaumNode) => this.relPath(n) === dir);
           if (f && this.isFolder(f) && !f.expanded) await f.setExpanded(true);
         }
         if (seq !== this.fileSearch.seq || tree !== this.rawTree()) return;
         this._fileHits = WBFileSearch.hitMap(hits);
         // `autoExpand: false`: the extension would also open every MATCHED
         // folder, a burst of lazy loads.
-        tree.filterNodes((n: any) => this._fileHits.has(this.relPath(n)), {
+        tree.filterNodes((n: WunderbaumNode) => this._fileHits!.has(this.relPath(n)), {
           mode: "hide",
           autoExpand: false,
           matchBranch: false,
@@ -636,7 +648,7 @@ export function wbFiles() {
         const fold = WBFileSearch.toCollapse(before, this.expandedRels());
         for (const rel of fold) {
           if (tree !== this.rawTree()) return;
-          const f = tree.findFirst((n: any) => this.relPath(n) === rel);
+          const f = tree.findFirst((n: WunderbaumNode) => this.relPath(n) === rel);
           if (f && f.expanded) await f.setExpanded(false);
         }
       } finally {
@@ -673,11 +685,11 @@ export function wbFiles() {
       }, this.HEAD_SETTLE_MS);
     },
     HEAD_SETTLE_MS: 250,
-    _headTimer: null as any,
+    _headTimer: null as ReturnType<typeof setTimeout> | null,
 
     // A `tree.dirty` nudge for `rel`: refetch that level IF it is on screen. A
     // nudge for a collapsed/absent dir is DROPPED (ADR-0036 §4).
-    onTreeDirty(rel: any) {
+    onTreeDirty(rel: string) {
       const tree = this.rawTree();
       if (!tree) return;
       const node = rel === "" ? tree.root : this.findFolderByRel(rel);
@@ -687,8 +699,8 @@ export function wbFiles() {
       // reconcile failure leaves every row in place (`_reconcileOnce` resolves
       // the listing BEFORE touching the tree) and must still refresh viewers.
       return this.reconcileLevel(node, rel)
-        .catch((err: any) => this.treeWentStale(err))
-        .then((): any => this.refreshOpenViewers(rel));
+        .catch((err) => this.treeWentStale(err))
+        .then(() => this.refreshOpenViewers(rel));
     },
 
     // Re-list one level WITHOUT duplicating nodes, preserving descendant
@@ -696,10 +708,10 @@ export function wbFiles() {
     // `removeChildren()` first, then re-expand and re-activate by captured rel.
     // The reconcile passes in flight, those to run again, and the callers
     // waiting on each, by rel: `null` until the first pass.
-    _reconciling: null as any,
-    _reconcilePending: null as any,
-    _reconcileWaiters: null as any,
-    async reconcileLevel(node: any, rel: any) {
+    _reconciling: null as Set<string> | null,
+    _reconcilePending: null as Set<string> | null,
+    _reconcileWaiters: null as Map<string, (() => void)[]> | null,
+    async reconcileLevel(node: WunderbaumNode, rel: string): Promise<void> {
       // Reentrancy guard: overlapping removeChildren()+load() passes double
       // the children. A pass in flight for `rel` re-runs once when it finishes.
       this._reconciling ||= new Set();
@@ -711,8 +723,8 @@ export function wbFiles() {
       if (this._reconciling.has(rel)) {
         this._reconcilePending.add(rel);
         return new Promise((resolve) => {
-          if (!this._reconcileWaiters.has(rel)) this._reconcileWaiters.set(rel, []);
-          this._reconcileWaiters.get(rel).push(resolve);
+          if (!this._reconcileWaiters!.has(rel)) this._reconcileWaiters!.set(rel, []);
+          this._reconcileWaiters!.get(rel)!.push(resolve);
         });
       }
       this._reconciling.add(rel);
@@ -738,8 +750,8 @@ export function wbFiles() {
       }
     },
 
-    async _reconcileOnce(nodeAtCall: any, rel: any) {
-      let node = nodeAtCall;
+    async _reconcileOnce(nodeAtCall: WunderbaumNode, rel: string) {
+      let node: WunderbaumNode | undefined = nodeAtCall;
       // The selection restored is a SNAPSHOT; a reveal landing mid-pass must
       // not be undone by it. `_revealSeq` dates the snapshot.
       const seq = this._revealSeq || 0;
@@ -756,10 +768,10 @@ export function wbFiles() {
       // teardown under an in-flight load doubles the children.
       if (!node.tree) {
         const raw = this.rawTree();
-        node = rel === "" ? raw?.root : raw?.findFirst((n: any) => this.relPath(n) === rel);
+        node = rel === "" ? raw?.root : raw?.findFirst((n: WunderbaumNode) => this.relPath(n) === rel);
         if (!node || node.isLoading?.()) return;
       }
-      const hasGitignore = source.some((n: any) => !n.folder && n.title === ".gitignore");
+      const hasGitignore = source.some((n) => !n.folder && n.title === ".gitignore");
       // A write to a file already listed nudges its directory too. When the
       // rows on screen already match the fresh listing, the teardown would
       // change nothing but the operator's scroll position.
@@ -769,8 +781,8 @@ export function wbFiles() {
       }
       // Read AFTER the fetch, right before the teardown: read before it, the
       // snapshot missed every folder a FILES search opened meanwhile.
-      const expandedRels: any[] = [];
-      node.visit((n: any) => {
+      const expandedRels: string[] = [];
+      node.visit((n: WunderbaumNode) => {
         if (this.isFolder(n) && n.expanded) expandedRels.push(this.relPath(n));
       });
       const activeRel = this.relPath(this.rawTree()?.getActiveNode?.() || null) || null;
@@ -793,7 +805,7 @@ export function wbFiles() {
       // reloaded folder has neither `folder` nor loaded `children` yet.
       expandedRels.sort((a, b) => a.split("/").length - b.split("/").length);
       for (const r of expandedRels) {
-        const f = this.rawTree()?.findFirst((n: any) => this.relPath(n) === r);
+        const f = this.rawTree()?.findFirst((n: WunderbaumNode) => this.relPath(n) === r);
         if (f && !f.expanded) await f.setExpanded(true);
       }
       const target = (this._revealSeq || 0) > seq ? this._revealedRel : activeRel;
@@ -812,10 +824,10 @@ export function wbFiles() {
     // Whether the rows under `node` already show `specs` (from `treeNodes`):
     // the same names, kinds and ignore marks, in the same order. A level still
     // loading has a status row, so it never matches.
-    levelShows(node: any, specs: any) {
+    levelShows(node: WunderbaumNode, specs: WunderbaumSource[]) {
       const rows = node.children;
       if (!Array.isArray(rows) || rows.length !== specs.length) return false;
-      return specs.every((spec: any, i: any) => {
+      return specs.every((spec, i) => {
         const row = rows[i];
         return (
           row.title === spec.title &&
@@ -828,23 +840,23 @@ export function wbFiles() {
     // An unchanged level with a `.gitignore` may still have changed the ignore
     // marks of the levels below it: re-read each expanded one, which repaints
     // only a level whose listing changed.
-    revalidateBelow(node: any, rel: any) {
+    revalidateBelow(node: WunderbaumNode, rel: string) {
       this.forgetValidatedBelow(rel);
-      node.visit((n: any) => {
+      node.visit((n: WunderbaumNode) => {
         if (this.isFolder(n) && n.expanded) this.revalidateLevel(this.relPath(n));
       });
     },
 
     // After a directory nudge, re-read any open tab whose file lives in `rel`
     // and push the bytes to its viewer. A failure keeps the tab's bytes.
-    refreshOpenViewers(rel: any) {
+    refreshOpenViewers(rel: string): Promise<void | void[]> {
       if (!this.useDaemonTree()) return Promise.resolve();
-      const dirOf = (p: any) => {
+      const dirOf = (p: string | undefined) => {
         if (typeof p !== "string") return null;
         const i = p.lastIndexOf("/");
         return i < 0 ? "" : p.slice(0, i);
       };
-      const reads: any[] = [];
+      const reads: Promise<void>[] = [];
       for (const t of this.tabs) {
         if (t.project !== this.$store.projects.openSlug || dirOf(t.path) !== rel) continue;
         // A tab pinned to another checkout (#406) is not this nudge's.
@@ -855,7 +867,7 @@ export function wbFiles() {
         const payload = WBDaemon.withCheckout({ repo: t.project, path: t.path }, t.checkout);
         const enc = WBViewer.encodingOf?.(t.id)?.encoding;
         if (enc) payload.encoding = enc;
-        const fresh =
+        const fresh: Promise<string | null | undefined> =
           t.kind === "image"
             ? WBDaemon.readImage(t.project, t.path, undefined, t.checkout)
             : WBDaemon.observe("file.read", payload).then((reply) =>
@@ -863,7 +875,7 @@ export function wbFiles() {
               );
         reads.push(
           fresh
-            .then((content: any) => {
+            .then((content) => {
               if (content != null) WBViewer.externalChange(t.id, content);
             })
             .catch(() => {}),
@@ -880,8 +892,8 @@ export function wbFiles() {
     // re-activation: it must NOT bump `_revealSeq`, or a stale pass would date
     // its restore as newer than the reveal it undoes.
     _revealSeq: 0,
-    _revealedRel: null as any,
-    async revealRel(rel: any, opts: any = {}) {
+    _revealedRel: null as string | null,
+    async revealRel(rel: string, opts: { restore?: boolean } = {}) {
       const tree = this.rawTree();
       if (!tree || typeof rel !== "string" || rel === "") return null;
       if (!opts.restore) {
@@ -892,19 +904,19 @@ export function wbFiles() {
       // Ancestors only: a revealed FILE has nothing to expand.
       for (let i = 1; i < parts.length; i++) {
         const prefix = parts.slice(0, i).join("/");
-        const f = tree.findFirst((n: any) => this.relPath(n) === prefix);
+        const f = tree.findFirst((n: WunderbaumNode) => this.relPath(n) === prefix);
         if (!f) return null; // an unmounted ancestor: nothing to reveal
         if (!f.expanded) await f.setExpanded(true);
       }
-      const node = tree.findFirst((n: any) => this.relPath(n) === rel);
+      const node = tree.findFirst((n: WunderbaumNode) => this.relPath(n) === rel);
       if (!node) return null;
       node.setActive();
       return node;
     },
 
     // The folder node whose rel path is `rel`, or `null` if none is mounted.
-    findFolderByRel(rel: any) {
-      return this.rawTree()?.findFirst((n: any) => this.isFolder(n) && this.relPath(n) === rel) || null;
+    findFolderByRel(rel: string) {
+      return this.rawTree()?.findFirst((n: WunderbaumNode) => this.isFolder(n) && this.relPath(n) === rel) || null;
     },
 
     destroyTree() {
@@ -937,13 +949,13 @@ export function wbFiles() {
       mode: "name",
       query: "",
       seq: 0,
-      hits: [] as any[],
+      hits: [] as Hit[],
       truncated: false,
       note: "",
       expandedBefore: null as string[] | null,
     },
 
-    openFile(node: any) {
+    openFile(node: WunderbaumNode) {
       const path = this.relPath(node);
       const ftype = classify(node.title);
       this.emit("open", node, { ftype });
@@ -985,7 +997,7 @@ export function wbFiles() {
     },
     // On `workbench:peer-woken`: a row opened against the sleeping peer has an
     // empty tree: remount.
-    filesFollowWake(daemon: any) {
+    filesFollowWake(daemon: string) {
       if (WBFleet.refDaemon(this.$store.projects.openSlug) === daemon) {
         this.destroyTree();
         this.mountTree();
@@ -994,7 +1006,7 @@ export function wbFiles() {
 
     // `node` is null for empty tree space, which addresses the repo root: the
     // create items apply, the per-node items drop out.
-    showMenu(x: any, y: any, node: any) {
+    showMenu(x: number, y: number, node: WunderbaumNode | null) {
       const isFolder = this.isFolder(node);
       const items = [
         node && !isFolder && { label: "Open", icon: "bi-box-arrow-up-right", run: () => this.openFile(node) },
@@ -1023,8 +1035,8 @@ export function wbFiles() {
 
     // --- the backend seam -------------------------------------------------
     // Build the repo-relative path by walking parent titles.
-    relPath(node: any) {
-      const parts: any[] = [];
+    relPath(node: WunderbaumNode | null) {
+      const parts: string[] = [];
       let n = node;
       while (n && n.title && n.parent) {
         parts.unshift(n.title);
@@ -1037,7 +1049,7 @@ export function wbFiles() {
     // ROOT's own separator, so it pastes into a native shell; the rel path
     // when no root is known. `navigator.clipboard` is undefined on an
     // insecure non-loopback origin, so the call is optional-chained.
-    copyPath(node: any, full = false) {
+    copyPath(node: WunderbaumNode, full = false) {
       const rel = this.relPath(node);
       const root = full ? this.$store.projects.projects.find((p) => p.slug === this.$store.projects.openSlug)?.root : "";
       let path = rel;
@@ -1056,7 +1068,7 @@ export function wbFiles() {
     // Duplicate a file beside itself, NO prompt. `file.copy` refuses an
     // existing dst, so the free-name search happens HERE: the first of `<stem>
     // copy<ext>`, `<stem> copy 2<ext>`, … not taken.
-    async duplicateNode(node: any) {
+    async duplicateNode(node: WunderbaumNode) {
       const rel = this.relPath(node);
       if (!rel) return;
       const parent = parentRel(rel);
@@ -1102,7 +1114,7 @@ export function wbFiles() {
     // The destination is PICKED, never typed: the move dialog
     // (wb-move-dialog.ts) browses real directories through `tree.list` and
     // answers with `workbench:move-confirmed`.
-    moveNode(node: any) {
+    moveNode(node: WunderbaumNode) {
       const rel = this.relPath(node);
       if (!rel) return;
       sendWindow(window, "workbench:move-open", { from: rel });
@@ -1111,7 +1123,7 @@ export function wbFiles() {
     // Through `WBDaemon.write`, not the fire-and-forget `window.WB.emit("rename")`:
     // the reveal, the flash and the tab re-path need the reply. INVARIANT: no
     // tab is re-pathed and no reveal happens on a refusal.
-    async performMove(from: any, to: any) {
+    async performMove(from: string, to: string) {
       const reply = await WBDaemon.write(
         "file.rename",
         WBDaemon.withCheckout(
@@ -1135,29 +1147,29 @@ export function wbFiles() {
     },
 
     // A `create` intent carries the DIRECTORY, already resolved (`createDir`).
-    emitCreate(node: any, kind: any) {
+    emitCreate(node: WunderbaumNode | null, kind: string) {
       window.WB.emit("create", { project: this.$store.projects.openSlug, path: this.createDir(node), kind, isFolder: true });
     },
 
     // The directory a create addressed at `node` lands in: the folder itself,
     // the folder CONTAINING a file, or the repo root ("") for no node at all.
-    createDir(node: any) {
+    createDir(node: WunderbaumNode | null) {
       const rel = node ? this.relPath(node) : "";
       return !node || this.isFolder(node) ? rel : parentRel(rel);
     },
 
     // The Files-header buttons create relative to the tree's active node.
-    createHere(kind: any) {
+    createHere(kind: string) {
       this.emitCreate(this.rawTree()?.getActiveNode() || null, kind);
     },
 
     // The header buttons' tooltip: the directory a create lands in.
-    createTitle(kind: any) {
+    createTitle(kind: string) {
       return newEntryTitle(kind, this.createDir(this.rawTree()?.getActiveNode() || null));
     },
 
     // Node-shaped gestures funnel through the shared WB.emit.
-    emit(action: any, node: any, extra: any = {}) {
+    emit(action: string, node: WunderbaumNode, extra: NodeExtra = {}) {
       window.WB.emit(action, {
         project: this.$store.projects.openSlug,
         path: this.relPath(node),

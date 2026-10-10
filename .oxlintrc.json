@@ -34,9 +34,7 @@
       // keeps the count of each listed module from growing (#613).
       "files": [
         "**/assets/ui/app.ts",
-        "**/assets/ui/wb-files.ts",
         "**/assets/ui/wb-projects-store.ts",
-        "**/assets/ui/wb-viewer.ts",
       ],
       "rules": { "typescript/no-explicit-any": "off" }
     }
