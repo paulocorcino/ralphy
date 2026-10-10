@@ -9,6 +9,14 @@ import type { DetachDeps } from "./wb-console-detach.ts";
 import type { PopupRegistryDeps } from "./wb-console-popups.ts";
 import type { ViewDeps } from "./wb-console-view.ts";
 
+// Types the shell names, re-exported so `app.ts` has one import line for them.
+export type { RosterRow } from "./wb-agents.ts";
+export type { ChangeEntry, Sync } from "./wb-changes.ts";
+export type { CheckoutRow } from "./wb-console-title.ts";
+export type { Read } from "./wb-fail.ts";
+export type { Group } from "./wb-fleet.ts";
+export type { Listing, Project } from "./wb-project.ts";
+
 // ---- the plane ---------------------------------------------------------------
 
 /** A box in stage pixels: the daemon's `DeskRect`. */
@@ -337,3 +345,69 @@ export type NoteCard = HTMLElement & {
   /** The card's place on the plane while it floats. */
   _noteShadow?: HTMLElement | null;
 };
+
+// ---- the shell (`app.ts`) ------------------------------------------------------
+
+/** A timer id kept in a field, or `null` while none runs. */
+export type Timer = ReturnType<typeof setInterval> | null;
+
+/** The read state of a shown fact (`WBFail.readFold`); `null` before the first read. */
+export type ReadState = import("./wb-fail.ts").Read | null;
+
+/** An open modal: the flag path it answers to, and the element that gets focus back. */
+export type ModalEntry = { path: string; opener: HTMLElement | null };
+
+/** What `askConfirm` takes; each field has a default. */
+export type ConfirmAsk = {
+  title?: string;
+  message?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  danger?: boolean;
+};
+
+/** What `askPrompt` takes; each field has a default. */
+export type PromptAsk = {
+  title?: string;
+  message?: string;
+  value?: string;
+  placeholder?: string;
+  confirmLabel?: string;
+};
+
+/** A repo of `/api/repos`. */
+export type RepoRow = {
+  slug: string;
+  name?: string;
+  path?: string;
+  root?: string;
+  branch?: string | null;
+  head?: { kind: string; name?: string; sha?: string } | null;
+  dirty?: boolean;
+  reachable: boolean;
+  remote?: string | null;
+};
+
+/** A repo of `/api/fleet`: the local ones (`local`) and each peer's. */
+export type FleetRepoRow = {
+  key: string;
+  slug: string;
+  name?: string;
+  path?: string;
+  branch?: string | null;
+  dirty?: boolean | null;
+  reachable: boolean;
+  remote?: string | null;
+  local: boolean;
+  daemon_id: string;
+  daemon_name?: string;
+  environment?: string;
+  os?: string;
+  peer_state?: string;
+};
+
+/** The reply of `/api/fleet`. */
+export type FleetReply = { peers?: import("./app.ts").FleetPeer[]; repos?: FleetRepoRow[] };
+
+/** A persistent socket the shell keeps: `resume` re-opens it after a suspend. */
+export type Subscription = ReturnType<import("./wb-daemon.ts").WBDaemonApi["subscribePresence"]>;

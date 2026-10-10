@@ -103,8 +103,9 @@ type SpawnStatus =
 /** A `[0x02][JSON]` frame the daemon pushes on a subscription socket. */
 type PushFrame = { verb: string; payload?: PushPayload };
 
-/** What a push names: the repo, and the dir or the reason for a tree push. */
-type PushPayload = { repo?: string; path?: string; checkout?: string | null; reason?: string };
+/** What a push names: the repo, and the dir or the reason for a tree push, or
+ * the `tab` that wrote the desk. */
+type PushPayload = { repo?: string; path?: string; checkout?: string | null; reason?: string; tab?: string };
 
 /** The `/ws` heartbeat: who the daemon is and how long it has been up. */
 type Presence = { name: string | null; avatar: string | null; uptime_secs: number; build?: string };

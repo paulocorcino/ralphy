@@ -143,7 +143,7 @@ export function addProjectDialog() {
     },
     selectAddedProject(ref: string | undefined) {
       if (!this.$store.projects.projects.some((p) => this.$store.projects.repoRef(p) === ref)) return;
-      if (this.$store.projects.openSlug !== ref) this.toggle(ref);
+      if (this.$store.projects.openSlug !== ref) this.toggle(ref as string);
       this.$nextTick(() => {
         const head = document.querySelector<HTMLElement>("li.project.open .project-head");
         if (!head) return;
