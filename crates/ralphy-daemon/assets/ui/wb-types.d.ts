@@ -418,7 +418,7 @@ export type FleetReply = { peers?: FleetPeer[]; repos?: FleetRepoRow[] };
 /** A persistent socket the shell keeps: `resume` re-opens it after a suspend. */
 export type Subscription = ReturnType<import("./wb-daemon.ts").WBDaemonApi["subscribePresence"]>;
 
-// ---- the shell's own types (read by pp.ts only) ---------------------------
+// ---- the shell's own types (read by `app.ts` only) ---------------------------
 
 /** The shell fields its methods set on first use: none is in the literal. */
 export type ShellLate = {
