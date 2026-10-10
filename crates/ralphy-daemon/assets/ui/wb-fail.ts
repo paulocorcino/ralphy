@@ -25,6 +25,8 @@
 export type Read = { value: unknown; goodAt: number; error: string; current: boolean };
 /** What one read attempt answered. */
 export type Outcome = { ok: boolean; value?: unknown; reason?: string; at: number };
+/** A verb's reply, a `spawn` frame, or nothing: what a failure is read from. */
+type Reply = { status?: string; message?: string; reason?: string } | null | undefined;
 
 const CAUSE: Record<string, string> = {
   "not found": "it does not exist",
@@ -52,10 +54,10 @@ const CAUSE: Record<string, string> = {
   "a run is not federated yet": "a run on a peer is not available yet",
 };
 
-function isError(reply: any) {
+function isError(reply: Reply) {
   return !reply || reply.status === "error";
 }
-function message(reply: any, fallback: string) {
+function message(reply: Reply, fallback: string) {
   return (reply && (reply.message || reply.reason)) || fallback || "refused";
 }
 
@@ -85,7 +87,7 @@ function oneLine(text: string) {
 // that is already a sentence comes back as { sentence }.
 type Parts = { sentence: string } | { cause: string; rest: string[] };
 
-function parts(reply: any): Parts | null {
+function parts(reply: Reply): Parts | null {
   const raw = String((reply && (reply.message || reply.reason)) || "").trim();
   if (!raw) return null;
   if (Object.hasOwn(CAUSE, raw)) return { cause: CAUSE[raw], rest: [] };
@@ -99,7 +101,7 @@ const tail = (rest: string[]) => rest.map((r) => ` ${capital(r)}.`).join("");
 
 // `Could not <act>: <cause>.` The act comes from `fallback`, a whole
 // sentence of the same shape that is shown when the reply says nothing.
-function failed(reply: any, fallback: string) {
+function failed(reply: Reply, fallback: string) {
   const p = parts(reply);
   if (!p) return fallback;
   if ("sentence" in p) return p.sentence;
@@ -109,7 +111,7 @@ function failed(reply: any, fallback: string) {
 
 // The cause alone, as a sentence, for a place whose title already names
 // the act.
-function cause(reply: any, fallback: string) {
+function cause(reply: Reply, fallback: string) {
   const p = parts(reply);
   if (!p) return fallback;
   if ("sentence" in p) return p.sentence;
@@ -118,7 +120,7 @@ function cause(reply: any, fallback: string) {
 
 // The cause alone, to follow `Could not <act>: ` in a line the caller
 // builds: lowercase, no final period. A code never shows as it is.
-function why(reply: any, fallback: string) {
+function why(reply: Reply, fallback: string) {
   const p = parts(reply);
   if (!p) return fallback;
   if ("sentence" in p) return bare(p.sentence);

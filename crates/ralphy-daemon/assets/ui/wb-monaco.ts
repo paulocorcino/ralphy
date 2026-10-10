@@ -11,6 +11,150 @@
    DOMPurify, mermaid, Wunderbaum, xterm + addons) would latch onto instead of
    exporting its global. The loader tag therefore comes AFTER all of them.
 --------------------------------------------------------------------------- */
+/** A Monaco model URI (`monaco.Uri.file`). */
+type MonacoUri = { readonly path: string };
+
+/** A span of a model's text. */
+export type MonacoRange = { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number };
+
+/** A Monaco text model. */
+export interface MonacoModel {
+  findNextMatch(
+    searchString: string,
+    searchStart: { lineNumber: number; column: number },
+    isRegex: boolean,
+    matchCase: boolean,
+    wordSeparators: string | null,
+    captureMatches: boolean,
+  ): { range: MonacoRange } | null;
+  dispose(): void;
+}
+
+/** What a Monaco `on…`/`add…` call returns. */
+export interface MonacoDisposable {
+  dispose(): void;
+}
+
+/** The options the workbench gives a code editor (`editorOptions`). */
+export type EditorOptions = {
+  lineNumbersMinChars?: number;
+  folding?: boolean;
+  lineDecorationsWidth?: number;
+  glyphMargin?: boolean;
+  theme?: string;
+  automaticLayout?: boolean;
+  readOnly?: boolean;
+  minimap?: { enabled: boolean };
+  wordBasedSuggestions?: string;
+  quickSuggestions?: boolean;
+  wordWrap?: string;
+  fontFamily?: string;
+  fontSize?: number;
+  lineNumbers?: string;
+  renderLineHighlight?: string;
+  matchBrackets?: string;
+  scrollBeyondLastLine?: boolean;
+  model?: MonacoModel;
+};
+
+/** The options of the diff pane (`createDiff`). */
+type DiffEditorOptions = EditorOptions & {
+  originalEditable?: boolean;
+  renderSideBySide?: boolean;
+  useInlineViewWhenSpaceIsLimited?: boolean;
+  renderMarginRevert?: boolean;
+  hideUnchangedRegions?: { enabled: boolean };
+};
+
+/** A Monaco code editor. */
+export interface MonacoEditor {
+  getModel(): MonacoModel | null;
+  getValue(): string;
+  setValue(value: string): void;
+  updateOptions(options: EditorOptions): void;
+  layout(): void;
+  focus(): void;
+  dispose(): void;
+  onDidChangeModelContent(listener: () => void): MonacoDisposable;
+  addAction(action: { id: string; label: string; keybindings: number[]; run: () => void }): MonacoDisposable;
+  setSelection(range: MonacoRange): void;
+  revealRangeInCenter(range: MonacoRange): void;
+  trigger(source: string, handlerId: string, payload: { searchString: string; isRegex: boolean; matchCase: boolean }): void;
+  getAction(id: string): { run(): Promise<void> } | null;
+}
+
+/** A Monaco diff editor: the HEAD side and the working side. */
+export interface MonacoDiffEditor {
+  setModel(model: { original: MonacoModel; modified: MonacoModel }): void;
+  getModel(): { original: MonacoModel; modified: MonacoModel } | null;
+  getModifiedEditor(): MonacoEditor;
+  updateOptions(options: EditorOptions): void;
+  layout(): void;
+  dispose(): void;
+}
+
+/** The provider switches of a language's defaults. */
+type ModeConfiguration = { [provider: string]: boolean };
+
+/** A language's defaults: which providers it runs. */
+interface LanguageDefaults {
+  setModeConfiguration(configuration: ModeConfiguration): void;
+}
+
+/** The vendored Monaco (`vendor/monaco`): the global `monaco` once it booted. */
+export interface Monaco {
+  editor: {
+    defineTheme(
+      name: string,
+      theme: {
+        base: string;
+        inherit: boolean;
+        colors: { [color: string]: string };
+        rules: { token: string; foreground: string; fontStyle?: string }[];
+      },
+    ): void;
+    create(container: HTMLElement, options: EditorOptions): MonacoEditor;
+    createDiffEditor(container: HTMLElement, options: DiffEditorOptions): MonacoDiffEditor;
+    createModel(value: string, language: string | undefined, uri: MonacoUri): MonacoModel;
+  };
+  Uri: { file(path: string): MonacoUri };
+  KeyMod: { CtrlCmd: number };
+  KeyCode: { KeyS: number };
+  languages: {
+    register(language: { id: string; extensions: string[] }): void;
+    json?: {
+      jsonDefaults?: LanguageDefaults & {
+        setDiagnosticsOptions(options: { validate: boolean; schemaValidation: string }): void;
+      };
+    };
+    css?: { cssDefaults?: LanguageDefaults & { setOptions(options: { validate: boolean }): void } };
+    html?: { htmlDefaults?: LanguageDefaults };
+    typescript?: {
+      typescriptDefaults?: TypescriptDefaults;
+      javascriptDefaults?: TypescriptDefaults;
+    };
+  };
+}
+
+/** The TypeScript and JavaScript defaults. */
+interface TypescriptDefaults extends LanguageDefaults {
+  setDiagnosticsOptions(options: {
+    noSemanticValidation: boolean;
+    noSyntaxValidation: boolean;
+    noSuggestionDiagnostics: boolean;
+  }): void;
+}
+
+/** What `create` builds a code editor from. */
+type CreateSpec = {
+  value: string;
+  path: string;
+  uid: number;
+  project: string;
+  wordWrap?: string;
+  narrow: boolean;
+};
+
 export const WBMonaco = (function () {
   // ADR-0035's warm-dark palette, as literal hex — Monaco's theme API takes no
   // CSS variables, so these mirror :root in styles.css. Keep them in lockstep
@@ -31,7 +175,7 @@ export const WBMonaco = (function () {
     consoleText: "#e8d9a8",
   };
 
-  function defineTheme(monaco: any) {
+  function defineTheme(monaco: Monaco) {
     monaco.editor.defineTheme("wb", {
       base: "vs-dark",
       inherit: true,
@@ -94,7 +238,7 @@ export const WBMonaco = (function () {
     selectionRanges: false,
   };
 
-  function disableLanguageServices(monaco: any) {
+  function disableLanguageServices(monaco: Monaco) {
     const langs = monaco.languages;
     langs.json?.jsonDefaults?.setModeConfiguration(NO_PROVIDERS);
     langs.json?.jsonDefaults?.setDiagnosticsOptions({ validate: false, schemaValidation: "ignore" });
@@ -107,12 +251,12 @@ export const WBMonaco = (function () {
     }
   }
 
-  let booting: any = null;
+  let booting: Promise<Monaco> | null = null;
 
   // One boot for the whole page. Resolves with the global `monaco`.
   function ready() {
     if (booting) return booting;
-    booting = new Promise((resolve, reject) => {
+    booting = new Promise<Monaco>((resolve, reject) => {
       if (typeof window.require !== "function" || !window.require.config) {
         reject(new Error("monaco AMD loader is not on the page"));
         return;
@@ -144,7 +288,7 @@ export const WBMonaco = (function () {
   // margin, decorations — is ~60px, a tenth of a phone-width pane, so the
   // narrow shape trims it. The same options go through `updateOptions` when
   // a live pane crosses the threshold (a rotation, a split drag).
-  function gutterOptions(narrow: any) {
+  function gutterOptions(narrow: boolean) {
     return narrow
       ? { lineNumbersMinChars: 3, folding: false, lineDecorationsWidth: 4, glyphMargin: false }
       : { lineNumbersMinChars: 5, folding: true, lineDecorationsWidth: 10, glyphMargin: false };
@@ -153,7 +297,7 @@ export const WBMonaco = (function () {
   // The options every code editor shares, whether it owns its model (create)
   // or sits over another pane's (createOver): the two must render identically,
   // or a mirror would read as a different file.
-  function editorOptions({ wordWrap, narrow }: any) {
+  function editorOptions({ wordWrap, narrow }: { wordWrap?: string; narrow: boolean }) {
     return {
       ...gutterOptions(narrow),
       theme: "wb",
@@ -177,7 +321,7 @@ export const WBMonaco = (function () {
     };
   }
 
-  function create(container: any, { value, path, uid, project, wordWrap, narrow }: any) {
+  function create(container: HTMLElement, { value, path, uid, project, wordWrap, narrow }: CreateSpec) {
     const monaco = window.monaco;
     const uri = monaco.Uri.file("/" + uid + "/" + project + "/" + path);
     return monaco.editor.create(container, {
@@ -192,7 +336,7 @@ export const WBMonaco = (function () {
   // one `onDidChangeModelContent`, no new model. The caller owns the model's
   // lifetime and MUST dispose this editor before it; an editor over a disposed
   // model throws on its next render.
-  function createOver(container: any, model: any, { wordWrap, narrow }: any) {
+  function createOver(container: HTMLElement, model: MonacoModel, { wordWrap, narrow }: { wordWrap?: string; narrow: boolean }) {
     const monaco = window.monaco;
     return monaco.editor.create(container, { model, ...editorOptions({ wordWrap, narrow }) });
   }
@@ -205,9 +349,12 @@ export const WBMonaco = (function () {
   // `narrow` as in create(): a diff pane has TWO gutters, so the default
   // ~60px is a fifth of a phone-width pane, and `IDiffEditorOptions` extends
   // the editor's, so the same `gutterOptions` reach both sides.
-  function createDiff(container: any, { original, modified, path, uid, project, narrow }: any) {
+  function createDiff(
+    container: HTMLElement,
+    { original, modified, path, uid, project, narrow }: Omit<CreateSpec, "value" | "wordWrap"> & { original: string; modified: string },
+  ) {
     const monaco = window.monaco;
-    const at = (side: any) => monaco.Uri.file("/" + uid + "/" + side + "/" + project + "/" + path);
+    const at = (side: string) => monaco.Uri.file("/" + uid + "/" + side + "/" + project + "/" + path);
     const ed = monaco.editor.createDiffEditor(container, {
       ...gutterOptions(narrow),
       theme: "wb",
@@ -260,7 +407,10 @@ export const WBMonaco = (function () {
 declare global {
   interface Window {
     /** The AMD loader of the vendored Monaco. */
-    require: any;
-    monaco: any;
+    require: {
+      (modules: string[], onLoad: () => void, onError: (error: Error) => void): void;
+      config(options: { paths: { [prefix: string]: string } }): void;
+    };
+    monaco: Monaco;
   }
 }

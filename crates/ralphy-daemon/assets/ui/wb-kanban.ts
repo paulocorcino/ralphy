@@ -43,11 +43,56 @@
    WBRun (wb-runs.ts).
 --------------------------------------------------------------------------- */
 import { WBRun } from "./wb-runs.ts";
+import type { Run } from "./wb-runs.ts";
 
 
-/** One issue of the board, as `boardRowToIssue` shapes it (app.ts). Not typed
- * field by field yet (ADR-0075, the last phase narrows it). */
-type Issue = any;
+/** One issue of a `board.list` reply (the CLI's board fold). */
+export type BoardRow = {
+  number: number;
+  title?: string;
+  state?: string;
+  reason?: string | null;
+  state_reason?: string | null;
+  labels?: string[];
+  assignees?: string[];
+  blocked_by?: number[];
+  blockedBy?: number[];
+  created?: string;
+  updated?: string;
+};
+
+/** A label of the repo, with its color (`board.list`). */
+export type BoardLabel = { name: string; color?: string };
+
+/** A comment of an issue (`issue.show`). */
+export type IssueComment = { at: string; author: string; body: string };
+
+/** The `issue` of an `issue.show` reply. */
+export type IssueDetail = {
+  number: number;
+  title?: string;
+  body?: string;
+  labels?: string[];
+  comments?: IssueComment[];
+  blocked_by?: number[];
+};
+
+/** One issue of the board, as `boardRowToIssue` shapes it (app.ts). */
+export type Issue = {
+  number: number;
+  title: string;
+  state: string;
+  reason: string | null;
+  labels: string[];
+  assignees: string[];
+  blockedBy: number[];
+  created: string;
+  updated: string;
+  body: string;
+  comments: IssueComment[];
+  /** The bundle issue this one stands in for (`## Parent`). */
+  parent?: number | null;
+};
 
 export const WBKanban = {
   // GitHub label vocabulary → { color, short }. This is only the FALLBACK seed:
@@ -193,9 +238,9 @@ export const WBKanban = {
   // descriptor for the card's run pill; else null. Only the actively-worked
   // issue (planning / executing / sleeping) is flagged — a run's pending or
   // already-terminal members don't clutter the board.
-  runningFor(number: number, projectRuns: any[] | null | undefined) {
+  runningFor(number: number, projectRuns: Run[] | null | undefined) {
     for (const r of projectRuns || []) {
-      const iss = (r.issues || []).find((x: Issue) => x.number === number);
+      const iss = (r.issues || []).find((x) => x.number === number);
       if (!iss) continue;
       const st = WBRun.issueState(r, iss);
       if (st === "planning" || st === "executing" || st === "sleep") {
@@ -257,7 +302,7 @@ export const WBKanban = {
       (iss.labels || []).some((l: string) => l.toLowerCase().includes(s))
     );
   },
-  hasLabelFilter(iss: Issue, label: string | null | undefined) {
+  hasLabelFilter(iss: Issue, label: string) {
     if (label === "__all") return true;
     if (label === "__none") return (iss.labels || []).length === 0;
     return (iss.labels || []).includes(label);

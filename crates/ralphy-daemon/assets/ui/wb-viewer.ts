@@ -148,7 +148,7 @@ export function createViewer(window: any, document: any) {
     setPathLabel(el, rec);
     el.querySelector('[data-act="mirror"]').onclick = () => window.getShell?.()?.toggleMirror?.();
     viewers.append(el);
-    const holder = { rec, el, ed: null, ro: undefined, saveKey: undefined };
+    const holder = { rec, el, ed: null as ReturnType<typeof WBMonaco.createOver> | null, ro: undefined, saveKey: undefined };
     const ed = WBMonaco.createOver(el.querySelector(".viewer-body"), rec.ed.getModel(), {
       narrow: isNarrow(el),
     });

@@ -19,11 +19,37 @@
 // Sidebar row label: just the repo name (last segment), UPPERCASED. The
 // full `owner/repo` already shows in the top crumb, so trimming the owner here
 // declutters the accordion.
-/** A project row of the sidebar (app.ts `loadRepos`). Not typed field by
- * field yet (ADR-0075, the last phase narrows it). */
-type Project = any;
-/** A `worktree.list` reply for one repo. */
-type Listing = any;
+/** A project row of the sidebar: a local repo (app.ts `loadRepos`) or a
+ * peer's (`loadFleet`). */
+export type Project = {
+  slug: string;
+  /** `<daemon_id>/<slug>`: the ref of a peer's row. */
+  key?: string;
+  name: string;
+  path: string;
+  /** The absolute native root of a local repo. */
+  root?: string;
+  branch: string;
+  branches: string[];
+  /** `null` when the daemon has no answer. */
+  head?: { kind: string; name?: string; sha?: string } | null;
+  dirty: boolean;
+  /** `idle`, `live`, `waiting` or `offline`. */
+  state: string;
+  env: string;
+  os?: string;
+  daemonName: string;
+  /** The daemon id of a peer's row; absent on a local row. */
+  daemon?: string;
+  peerState?: string;
+  /** `github` or `local`. */
+  remote: string;
+  remoteUrl: string;
+};
+/** One worktree of a `worktree.list` reply (crates/ralphy-core `Checkout`). */
+export type Worktree = { name: string; path: string; branch: string; base: string; dirty: boolean };
+/** The `checkouts` of a `worktree.list` reply for one repo. */
+export type Listing = { primary: string; worktrees: Worktree[] };
 
 function repoLabel(p: Project) {
   return (projectName(p).split("/").pop() || p.slug).toUpperCase();
@@ -74,7 +100,7 @@ function canSwitchBranch(p: Project) {
 // Under a selected checkout (#407) the tooltip describes the WORKTREE the
 // switch will land in — its branch and its dirtiness from the listing — never
 // the primary's branch beside a worktree name.
-function branchChipTitle(p: Project, checkout: string | null | undefined, listing: Listing) {
+function branchChipTitle(p: Project, checkout: string | null | undefined, listing: Listing | null | undefined) {
   if (!canSwitchBranch(p)) return "Could not switch the branch: the project cannot be reached.";
   const dirty = chipDirty(p, checkout, listing);
   // The tooltip has room the chip does not: `<branch> · <worktree>`.
@@ -84,9 +110,9 @@ function branchChipTitle(p: Project, checkout: string | null | undefined, listin
 
 // The `worktree.list` entry of the selected checkout, or `null` when there is
 // no selection or the listing has not landed.
-function checkoutEntry(checkout: string | null | undefined, listing: Listing) {
+function checkoutEntry(checkout: string | null | undefined, listing: Listing | null | undefined) {
   if (!checkout || !listing || !Array.isArray(listing.worktrees)) return null;
-  return listing.worktrees.find((w: any) => w && w.name === checkout) || null;
+  return listing.worktrees.find((w) => w && w.name === checkout) || null;
 }
 
 // The forge link for one issue, or `null` when there is nothing honest to
@@ -113,7 +139,7 @@ function isGitHubRemote(remoteUrl: string | null | undefined) {
 
 // Whether the repo has a worktree at all — what shows the Files bar's
 // checkout chip, and nothing else (ADR-0063 amendment 2026-09-16 b).
-function hasWorktrees(listing: Listing) {
+function hasWorktrees(listing: Listing | null | undefined) {
   return !!listing && Array.isArray(listing.worktrees) && listing.worktrees.length > 0;
 }
 
@@ -124,7 +150,7 @@ function hasWorktrees(listing: Listing) {
 // take (one path segment, not a flag), one a worktree already has, a
 // detached base (`HEAD`: no branch to cut from), or before the listing
 // ever answered.
-function worktreeCreateRow(listing: Listing, base: string, name: string) {
+function worktreeCreateRow(listing: Listing | null | undefined, base: string, name: string) {
   if (!listing || !Array.isArray(listing.worktrees)) return null;
   base = String(base || "");
   if (!base || base === "HEAD") return null;
@@ -148,7 +174,7 @@ function maskWorktreeName(raw: string) {
 // Why the daemon would refuse `name` as a new worktree, or "" when it would
 // take it. The rules are the daemon's `well_shaped_ref` (dispatch/argv.rs)
 // plus one path segment (no "/"), so the prompt refuses before any send.
-function worktreeNameProblem(listing: Listing, name: string) {
+function worktreeNameProblem(listing: Listing | null | undefined, name: string) {
   name = String(name || "").trim();
   if (!name) return "Enter a name.";
   if (name.startsWith("-")) return "The name cannot start with “-”.";
@@ -165,7 +191,7 @@ function worktreeNameProblem(listing: Listing, name: string) {
   if (name === "@") return "The name cannot be “@”.";
   if (name.startsWith(".") || name.endsWith(".")) return "The name cannot start or end with “.”.";
   if (name.endsWith(".lock")) return "The name cannot end with “.lock”.";
-  if (listing && Array.isArray(listing.worktrees) && listing.worktrees.some((w: any) => w && w.name === name)) {
+  if (listing && Array.isArray(listing.worktrees) && listing.worktrees.some((w) => w && w.name === name)) {
     return `A worktree named “${name}” already exists.`;
   }
   return "";
@@ -184,7 +210,7 @@ const CARRY_OVER_NOTE = "Ignored files are copied only when worktree.copy or wor
 // the only hint), and the project's own branch with no selection. NEVER
 // the primary's branch under a selection — that would name a branch the
 // tree is not on.
-function chipLabel(p: Project, checkout: string | null | undefined, listing: Listing) {
+function chipLabel(p: Project, checkout: string | null | undefined, listing: Listing | null | undefined) {
   if (!checkout) return headLabel(p);
   const entry = checkoutEntry(checkout, listing);
   if (!entry) return checkout;
@@ -193,7 +219,7 @@ function chipLabel(p: Project, checkout: string | null | undefined, listing: Lis
 
 // The chip's dirty dot: the selected worktree's dirtiness when one is
 // selected (the tree the act lands in), the primary's otherwise (#407).
-function chipDirty(p: Project, checkout: string | null | undefined, listing: Listing) {
+function chipDirty(p: Project, checkout: string | null | undefined, listing: Listing | null | undefined) {
   if (!checkout) return !!p.dirty;
   const entry = checkoutEntry(checkout, listing);
   return !!entry && entry.dirty === true;
@@ -208,7 +234,7 @@ function chipDirty(p: Project, checkout: string | null | undefined, listing: Lis
 // green that aged out) beats `done`. `null` when no session says anything —
 // a vendor without hooks, a shell console, a peer on an older build.
 const STATE_RANK: Record<string, number> = { waiting: 4, working: 3, unknown: 2, done: 1, blocked: 4 };
-function agentStateOf(sessions: any[] | null | undefined) {
+function agentStateOf(sessions: HostedSession[] | null | undefined) {
   let best = null;
   for (const s of sessions || []) {
     const state = s && s.agent_state && s.agent_state.state;
@@ -221,10 +247,10 @@ function agentStateOf(sessions: any[] | null | undefined) {
 // The dot per worktree row: the sessions living in that checkout (`primary`
 // is the sessions with no checkout), folded by `agentStateOf`. `mine` is
 // the repo's own sessions — the caller has already matched the repo ref.
-function worktreeStates(rows: any[] | null | undefined, mine: any) {
+function worktreeStates(rows: { name: string; primary: boolean }[] | null | undefined, mine: HostedSession[] | null | undefined) {
   const out: Record<string, string> = {};
   for (const row of rows || []) {
-    const here = (mine || []).filter((s: any) =>
+    const here = (mine || []).filter((s) =>
       row.primary ? !s.checkout : s.checkout === row.name,
     );
     const state = agentStateOf(here);
@@ -237,7 +263,7 @@ function worktreeStates(rows: any[] | null | undefined, mine: any) {
 // means the worktree is gone (`unknown checkout` — the daemon resolves the
 // name against the pointer file on every read), the same name on anything
 // else. A refused write or a missing file is not a reason to drop it.
-function checkoutAfter(checkout: string | null | undefined, reply: any) {
+function checkoutAfter(checkout: string | null | undefined, reply: DaemonReply | null | undefined) {
   if (!checkout) return null;
   const unknown = reply && reply.status === "error" && reply.message === "unknown checkout";
   return unknown ? null : checkout;
@@ -247,10 +273,10 @@ function checkoutAfter(checkout: string | null | undefined, reply: any) {
 // selected name is absent from a listing that ANSWERED — the directory is
 // gone whatever the remove reply said (`branch kept` is an error with the
 // directory gone). A `null` listing says nothing and keeps it.
-function checkoutAfterListing(checkout: string | null | undefined, listing: Listing) {
+function checkoutAfterListing(checkout: string | null | undefined, listing: Listing | null | undefined) {
   if (!checkout) return null;
   if (!listing || !Array.isArray(listing.worktrees)) return checkout;
-  return listing.worktrees.some((w: any) => w && w.name === checkout) ? checkout : null;
+  return listing.worktrees.some((w) => w && w.name === checkout) ? checkout : null;
 }
 
 export const WBProject = {

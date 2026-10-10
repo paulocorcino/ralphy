@@ -11,21 +11,52 @@
 // Loaded by the shell AND by the two detached popups, and required by the node
 // table — hence the UMD wrapper `wb-session-route.ts` already uses.
 
+import type { Project } from "./wb-project.ts";
+
 // A row this daemon owns. Peer rows carry `daemon` (the peer's daemon_id);
 // local rows never do, which is what makes "local" a property of the data
 // rather than a flag someone has to remember to set.
-/** A project row or a fleet peer, as the sidebar groups them. Not typed
- * field by field yet (ADR-0075, the last phase narrows it). */
-type Row = any;
+/** What the fold reads of a project row (`Project` in `wb-project.ts`). */
+type Row = { daemon?: string; key?: string; slug: string };
+/** A peer of `/api/fleet`. */
+export type FleetPeer = {
+  daemon_id: string;
+  environment?: string;
+  os?: string;
+  name?: string;
+  state?: string;
+  diagnosis?: string;
+  nudgeable?: boolean;
+  tunnel?: boolean;
+};
+/** What a group knows of its environment before its rows. */
+type GroupSeed = {
+  environment: string;
+  os: string;
+  daemon: string;
+  name: string;
+  state: string;
+  diagnosis: string;
+  nudgeable: boolean;
+  tunnel: boolean;
+  local: boolean;
+};
 /** A sidebar group: the local rows or one peer environment. */
-type Group = any;
+export type Group = GroupSeed & {
+  key: string;
+  rows: Project[];
+  /** Set once every group is built. */
+  header?: boolean;
+  showName?: boolean;
+};
 
 function isLocal(row: Row) {
   return !row.daemon;
 }
 
 function groupKey(row: Row) {
-  return isLocal(row) ? "local" : row.daemon;
+  // Not local, so `daemon` names the peer.
+  return isLocal(row) ? "local" : row.daemon!;
 }
 
 function repoRef(row: Row) {
@@ -51,10 +82,11 @@ function fleetGroups(repos: unknown, peers: unknown) {
   const rows = Array.isArray(repos) ? repos : [];
   const peerList = Array.isArray(peers) ? peers : [];
 
-  const groups = new Map<string, any>();
-  const ensure = (key: string, seed: object) => {
-    if (!groups.has(key)) groups.set(key, Object.assign({ key: key, rows: [] }, seed));
-    return groups.get(key);
+  const groups = new Map<string, Group>();
+  const ensure = (key: string, seed: GroupSeed) => {
+    if (!groups.has(key)) groups.set(key, Object.assign({ key: key, rows: [] as Project[] }, seed));
+    // Set just above when it was missing.
+    return groups.get(key)!;
   };
 
   for (const row of rows) {
@@ -125,18 +157,18 @@ function fleetGroups(repos: unknown, peers: unknown) {
 // (`svrapp · Ubuntu 24.04`): the release alone would not say which machine
 // it is. "" for every other group: a WSL peer's environment already names
 // its distro, and the local group is the machine the operator sits at.
-function groupHost(group: Group) {
+function groupHost(group: Group | null | undefined) {
   return group && group.tunnel && group.name ? group.name : "";
 }
 
 // The name a sentence uses for a peer: its machine name when it has one,
 // else its environment. "" for no group.
-function peerName(group: Group) {
+function peerName(group: Group | null | undefined) {
   return groupHost(group) || (group && group.environment) || "";
 }
 
 // The header's environment: the OS release, or `WSL: <distro>`.
-function groupLabel(group: Group) {
+function groupLabel(group: Group | null | undefined) {
   return group ? group.environment : "";
 }
 
@@ -145,7 +177,7 @@ function groupLabel(group: Group) {
 // (an inline glyph in index.html); every other state — asleep, unreachable, unauthorized,
 // version-mismatch, refused, malformed — is `unplug`, and the state's word
 // moves to the tooltip, where `groupTitle` puts it.
-function stateIcon(group: Group) {
+function stateIcon(group: Group | null | undefined) {
   if (!group || group.local) return "";
   return group.state === "reachable" ? "plugged" : "unplug";
 }
@@ -178,7 +210,7 @@ function stateWord(state: string | null | undefined) {
   return (state && STATE_WORD[state]) || state || "";
 }
 
-function groupTitle(group: Group) {
+function groupTitle(group: Partial<Group> | null | undefined) {
   if (!group) return "";
   const parts = [];
   if (group.name) parts.push(group.name);
@@ -229,7 +261,7 @@ function refLabel(ref: string | null | undefined, environment?: string | null) {
 // `version-mismatch` is an upgrade, `refused` is a bad descriptor, `malformed`
 // is not a peer at all — and offering to wake them would promise a fix that
 // cannot arrive.
-function wakeable(group: Group) {
+function wakeable(group: Group | null | undefined) {
   if (!group || group.local || !group.nudgeable) return false;
   return group.state === "asleep" || group.state === "unreachable";
 }
@@ -238,7 +270,7 @@ function wakeable(group: Group) {
 // `reachable` cannot serve a tree, so its rows are shown but stay closed. A
 // peer with no state yet (the fleet list has not arrived) counts as
 // available, so the sidebar does not grey out on every page load.
-function available(group: Group) {
+function available(group: Group | null | undefined) {
   if (!group || group.local) return true;
   return !group.state || group.state === "reachable";
 }
