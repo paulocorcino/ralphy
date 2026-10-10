@@ -6926,7 +6926,7 @@ fn a_quiet_detach_peer_is_challenged_before_it_is_buried() {
     );
     let popup = squeeze(include_str!("../assets/ui/wb-detached-fence.ts"));
     assert!(
-        popup.contains("!window.opener||window.opener.closed"),
+        popup.contains("constopenerGone=()=>opener()?.closed??true;"),
         "the popup's verdict is the opener HANDLE, which owes nothing to a timer"
     );
     assert!(

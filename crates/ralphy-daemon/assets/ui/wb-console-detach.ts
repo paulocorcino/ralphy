@@ -16,6 +16,7 @@ import * as WBDeskFolds from "./wb-desk-folds.ts";
 import { WBWindowState } from "./wb-window-state.ts";
 import { WBDetachLink } from "./wb-detach-link.ts";
 import { forwardAction } from "./wb-events.ts";
+import { isOptionalString, isRecord } from "./wb-api.ts";
 import type { PopupEntry, PopupMember, PopupRegistry } from "./wb-console-popups.ts";
 import type { DetachReason } from "./wb-console-session.ts";
 import type { FenceList } from "./wb-console-fence-list.ts";
@@ -51,6 +52,23 @@ type FencePopupMessage =
   | ({ type: "wb-note-named" } & NoteReport)
   | ({ type: "wb-note-claimed" } & NoteReport)
   | { type: "wb-fence-reattach" };
+
+/** Whether `v` is a message a detached fence window sends. The daemon serves
+ * the popup's page when it opens, so it can be a newer build than this tab. */
+export function isFencePopupMessage(v: unknown): v is FencePopupMessage {
+  if (!isRecord(v)) return false;
+  switch (v.type) {
+    case "wb-fence-ready":
+    case "wb-emit":
+    case "wb-fence-reattach":
+      return true;
+    case "wb-note-named":
+    case "wb-note-claimed":
+      return isOptionalString(v.noteId) && isOptionalString(v.path) && isOptionalString(v.claim);
+    default:
+      return false;
+  }
+}
 
 // What the opener's side reads from the console, and nothing else.
 export type DetachDeps = {
@@ -478,8 +496,8 @@ export function createDetach(deps: DetachDeps) {
     let owner: string | null = null;
     for (const [id, entry] of popups.entries()) if (entry.handle === e.source) owner = id;
     if (owner == null) return;
-    const m: FencePopupMessage | null = e.data;
-    if (!m || typeof m !== "object") return;
+    const m: unknown = e.data;
+    if (!isFencePopupMessage(m)) return;
     if (m.type === "wb-fence-ready") {
       const entry = popups.entry(owner)!;
       entry.greeted = true;

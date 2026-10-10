@@ -5,6 +5,7 @@ import { WBDetachLink } from "./wb-detach-link.ts";
 import { createConsole } from "./wb-console.ts";
 import { createDaemon } from "./wb-daemon.ts";
 import { createNotes } from "./wb-notes.ts";
+import { openerOf } from "./wb-events.ts";
 import { wireDetachedFence } from "./wb-detached-fence.ts";
 
 // Where this window will talk. `"*"` would broadcast this fence's contents
@@ -17,7 +18,8 @@ const PEER = window.location.origin;
 // postMessage, so a detached fence is indistinguishable from an in-shell one.
 window.WB = {
   emit(action, ...detail) {
-    if (window.opener) window.opener.postMessage({ type: "wb-emit", action, detail: detail[0] }, PEER);
+    const to = openerOf(window);
+    if (to) to.postMessage({ type: "wb-emit", action, detail: detail[0] }, PEER);
     else console.log("[workbench:action]", { action, ...detail[0] });
   },
 };

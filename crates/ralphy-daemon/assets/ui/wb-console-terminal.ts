@@ -11,6 +11,7 @@
    --------------------------------------------------------------------------- */
 import { WBSessionRoute } from "./wb-session-route.ts";
 import { WBFail } from "./wb-fail.ts";
+import { socketFrame } from "./wb-api.ts";
 import * as WBConsoleInput from "./wb-console-input.ts";
 import * as WBConsoleSession from "./wb-console-session.ts";
 import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
@@ -833,7 +834,7 @@ export function createTerminal(deps: TerminalDeps) {
           // Close frame: the close metadata does not survive the trip (#334).
           let c: SessionFrame | null = null;
           try {
-            c = JSON.parse(new TextDecoder().decode(a.subarray(1)));
+            c = socketFrame<SessionFrame>(a);
           } catch {}
           if (c && c.verb === "session-open") {
             const owner = WBSessionRoute.announcement(

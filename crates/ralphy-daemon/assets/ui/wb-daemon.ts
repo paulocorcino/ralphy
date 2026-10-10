@@ -10,6 +10,7 @@
    the Runs panel live (ADR-0032 §5, ADR-0036).
 --------------------------------------------------------------------------- */
 import { WBFail } from "./wb-fail.ts";
+import { socketFrame } from "./wb-api.ts";
 import { WBProject } from "./wb-project.ts";
 import { WBRun } from "./wb-runs.ts";
 import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
@@ -89,9 +90,9 @@ export function createDaemon(window: Window, document: Document, location: Locat
     ws.onmessage = (ev) => {
       const a = new Uint8Array(ev.data);
       if (a[0] !== TAG_COMMAND) return;
-      let frame;
+      let frame: { payload: SpawnStatus };
       try {
-        frame = JSON.parse(new TextDecoder().decode(a.subarray(1)));
+        frame = socketFrame(a);
       } catch {
         return;
       }
@@ -145,7 +146,7 @@ export function createDaemon(window: Window, document: Document, location: Locat
         const a = new Uint8Array(ev.data);
         if (a[0] !== TAG_COMMAND) return;
         try {
-          const reply = JSON.parse(new TextDecoder().decode(a.subarray(1))).payload;
+          const reply = socketFrame<{ payload: ReplyOf<V> }>(a).payload;
           resolve(reply);
           // AFTER the resolve, on a later task: a listener that remounts the
           // tree must not run before the read that failed has settled its whole
@@ -274,7 +275,7 @@ export function createDaemon(window: Window, document: Document, location: Locat
     const a = new Uint8Array(ev.data);
     if (a[0] !== TAG_COMMAND) return null;
     try {
-      return JSON.parse(new TextDecoder().decode(a.subarray(1)));
+      return socketFrame<PushFrame>(a);
     } catch {
       return null;
     }
@@ -423,7 +424,7 @@ export function createDaemon(window: Window, document: Document, location: Locat
         }
         if (a[0] !== TAG_PRESENCE) return;
         try {
-          onPresence(JSON.parse(new TextDecoder().decode(a.subarray(1))));
+          onPresence(socketFrame<Presence>(a));
         } catch {}
       },
     });

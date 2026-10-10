@@ -88,6 +88,13 @@ export function createEmitter(document: Document): Window["WB"] {
   };
 }
 
+/** The window that opened `w`, or `null`. The DOM types `opener` as `any`
+ * because a script may assign any value to it; no script of the workbench
+ * does, so it is the opening window or `null`. */
+export function openerOf(w: Window): Window | null {
+  return w.opener ?? null;
+}
+
 /** Whether `v` names a `workbench:action` gesture. */
 export function isWorkbenchActionName(v: unknown): v is WorkbenchActionName {
   return typeof v === "string" && Object.hasOwn(ACTION_NAMES, v);

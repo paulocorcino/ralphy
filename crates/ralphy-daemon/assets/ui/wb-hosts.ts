@@ -5,6 +5,7 @@
 // runs the `host.*` verbs and feeds what they answer to `next`; the progress of
 // `host check|add|remove` arrives as raw output chunks of JSON lines (the CLI's
 // `--json` mode), which `feed` splits into events.
+import { isRecord } from "./wb-api.ts";
 
 /** An SSH config host the form can pick (`host.aliases`). */
 export type Alias = { alias: string; hostname?: string; user?: string; port?: number | string };
@@ -174,14 +175,16 @@ export function feed(buf: unknown, chunk: unknown): { rest: string; events: Prog
   for (const raw of parts) {
     const line = raw.trim();
     if (!line) continue;
-    let parsed;
+    let parsed: unknown;
     try {
       parsed = JSON.parse(line);
     } catch {
       continue;
     }
-    if (parsed && typeof parsed === "object" && typeof parsed.event === "string") {
-      events.push(parsed);
+    // The one unchecked step: the daemon runs its own `ralphy` executable,
+    // so a line is an event of the same build, as a reply of `apiFetch` is.
+    if (isRecord(parsed) && typeof parsed.event === "string") {
+      events.push(parsed as Progress);
     }
   }
   return { rest: rest, events: events };

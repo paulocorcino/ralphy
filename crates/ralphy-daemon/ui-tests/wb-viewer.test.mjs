@@ -6,7 +6,7 @@
 // remembers what was appended and a Monaco that boots.
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { createViewer } from "../assets/ui/wb-viewer.ts";
+import { createViewer, isFileDescriptor, isOpenRequest } from "../assets/ui/wb-viewer.ts";
 import { WBMonaco } from "../assets/ui/wb-monaco.ts";
 
 const REAL_MONACO = { ...WBMonaco };
@@ -398,4 +398,28 @@ test("an inline mermaid code element stays as code; a fenced one becomes a diagr
   assert.equal(replaced.length, 1);
   assert.equal(replaced[0].className, "mermaid");
   assert.equal(replaced[0].dataset.src, "graph TD");
+});
+
+// Another window posts these two shapes, and it can be a page of another
+// build: each field the readers use is checked.
+test("a file descriptor and an open request from another window are read only in their own shape", () => {
+  const desc = { project: "o/r", label: "a.md", path: "a.md", ftype: "markdown", content: "x", checkout: null, encoding: "utf-8", bom: false };
+  const open = { project: "o/r", path: "b.md", checkout: "wt", fragment: "top" };
+  // [check, value, expected]
+  const rows = [
+    [isFileDescriptor, desc, true],
+    [isFileDescriptor, { ...desc, checkout: "wt", encoding: undefined }, true],
+    [isFileDescriptor, { ...desc, bom: "no" }, false],
+    [isFileDescriptor, { ...desc, content: undefined }, false],
+    [isFileDescriptor, { ...desc, checkout: undefined }, false],
+    [isFileDescriptor, [desc], false],
+    [isOpenRequest, open, true],
+    [isOpenRequest, { project: null, path: "b.md", checkout: null, as: "bytes" }, true],
+    [isOpenRequest, { ...open, path: 3 }, false],
+    [isOpenRequest, { ...open, as: "text" }, false],
+    [isOpenRequest, null, false],
+  ];
+  for (const [check, value, expected] of rows) {
+    assert.equal(check(value), expected, `${check.name} ${JSON.stringify(value)}`);
+  }
 });

@@ -126,12 +126,5 @@ export type MenuItem =
   | { sep: true }
   | { sep?: false; label: string; icon: string; run: () => void; danger?: boolean; disabled?: boolean; title?: string };
 
-/** A message a detached file window sends the shell (`wb-detached.ts`). */
-export type FilePopupMessage =
-  | { type: "wb-detach-ready" }
-  | { type: "wb-emit"; action: unknown; detail?: unknown }
-  | { type: "wb-open-request"; detail?: OpenRequest }
-  | { type: "wb-reattach"; desc?: FileDescriptor };
-
 /** A `file.write` payload: the pane's text, its encoding and its byte order mark. */
 export type SavePayload = CommandPayload & { encoding?: string; bom?: boolean };

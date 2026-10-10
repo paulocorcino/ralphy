@@ -83,9 +83,14 @@ libraries are classic scripts.
   in `wb-api.ts`. `ApiRoutes` there lists each route once, with the type of
   its reply, and that type follows the route's handler in
   `crates/ralphy-daemon/src/routes/`. The daemon and the page ship in one
-  build, so the reply is not checked at run time. Any other data from
-  outside (a message from another window, data from browser storage, a
-  frame from a peer) is `unknown`, and is narrowed right after it is read.
+  build, so the reply is not checked at run time. A socket frame is read
+  through `socketFrame` in the same module, for the same reason: a frame or
+  a reply that a peer daemon wrote reaches the page only from a peer that
+  speaks this daemon's peer protocol version. Any other data from outside
+  (a message from another window, data from browser storage, an uploaded
+  file) is `unknown`, and is narrowed right after it is read. Another
+  window can be a page of another build: the daemon serves a popup's page
+  when the popup opens.
 - **Tests.** A test imports the `.ts` module. `ui-tests/harness.mjs` builds a
   module component from its export (`MODULE_COMPONENTS`).
 - **Type check.** `tsc --noEmit -p crates/ralphy-daemon/assets/ui`, in the

@@ -4,7 +4,7 @@
 // browser.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createPopupRegistry } from "../assets/ui/wb-console-popups.ts";
+import { createPopupRegistry, isPopupMember } from "../assets/ui/wb-console-popups.ts";
 
 // A registry over a store that records each write, and a heartbeat that
 // records each start and stop.
@@ -88,4 +88,25 @@ test("detachedMembers reads the popup's members once it answered, an empty answe
   entry.members = [];
   entry.adopted = true;
   assert.deepEqual(popups.detachedMembers(), { f1: [] });
+});
+
+// A popup and its opener post members to each other, and either one can be a
+// page of another build: a member is read only in the shape this page knows.
+test("a member from another window is read only in its own shape", () => {
+  const win = { id: "w1", kind: null, agent: "claude", repo: "o/r", consoleName: null, session: 4, rect: { left: 1, top: 2, width: 3, height: 4 } };
+  const note = { id: "n1", kind: "note", path: "notes/a.md", draft: "text", claim: null, rect: { left: 1 } };
+  assert.equal(isPopupMember(win), true);
+  assert.equal(isPopupMember(note), true);
+  assert.equal(isPopupMember({ id: "w2" }), true, "every field but the id may be absent");
+  for (const bad of [
+    { ...win, id: 7 },
+    { ...win, session: "4" },
+    { ...win, agent: 1 },
+    { ...win, rect: { left: "1" } },
+    { ...note, path: null },
+    { ...note, draft: 3 },
+    [win],
+  ]) {
+    assert.equal(isPopupMember(bad), false, JSON.stringify(bad));
+  }
 });

@@ -19,6 +19,7 @@ import { WBSplit } from "./wb-split.ts";
 import { WBFail } from "./wb-fail.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { sendDocument } from "./wb-events.ts";
+import { isNullableString, isOptionalString, isRecord } from "./wb-api.ts";
 import type { MonacoDiffEditor, MonacoDisposable, MonacoEditor } from "./wb-monaco.ts";
 
 /** The vendored mermaid (`vendor/mermaid`): the members this module calls. */
@@ -108,6 +109,35 @@ type Mirror = {
 
 /** The ENCODINGS rows: the label, the daemon's name, and whether a BOM is written. */
 type Encoding = [label: string, name: string, bom: boolean];
+
+/** Whether `v` has the shape `descOf` gives a file: what one window posts to
+ * another when a file pane is detached or comes home. */
+export function isFileDescriptor(v: unknown): v is FileDescriptor {
+  return (
+    isRecord(v) &&
+    typeof v.project === "string" &&
+    typeof v.label === "string" &&
+    typeof v.path === "string" &&
+    typeof v.ftype === "string" &&
+    typeof v.content === "string" &&
+    isNullableString(v.checkout) &&
+    isOptionalString(v.encoding) &&
+    typeof v.bom === "boolean"
+  );
+}
+
+/** Whether `v` has the shape of the `workbench:open-request` detail this
+ * module sends: the file a rendered link asks to open. */
+export function isOpenRequest(v: unknown): v is OpenRequest {
+  return (
+    isRecord(v) &&
+    isNullableString(v.project) &&
+    typeof v.path === "string" &&
+    isNullableString(v.checkout) &&
+    isOptionalString(v.fragment) &&
+    (v.as === undefined || v.as === "bytes")
+  );
+}
 
 export function createViewer(window: ViewerWindow, document: Document) {
   let mermaidReady = false;

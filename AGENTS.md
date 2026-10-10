@@ -234,8 +234,9 @@ already denies a `std::sync` lock guard held across an `.await`.
   override), and so does `explicit_any_matches_the_baseline` in
   `crates/xtask/tests/ratchets.rs` (`ANY_BASELINE` is empty). Give the value
   its real type. A JSON reply of the daemon is read through `apiFetch`
-  (`wb-api.ts`), which types it by route. `unknown` is only for other data
-  from outside (`postMessage`, `localStorage`, a peer's frame), narrowed
+  (`wb-api.ts`), which types it by route, and a socket frame through
+  `socketFrame` in the same module. `unknown` is only for other data from
+  outside (`postMessage`, `localStorage`, an uploaded file), narrowed
   right after. No `as unknown as`
   and no `@ts-ignore`, `@ts-expect-error` or `@ts-nocheck`
   (`no_escape_hatch_in_the_workbench`).

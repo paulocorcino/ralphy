@@ -52,6 +52,9 @@ test("an upload must be a desk version file", () => {
   assert.deepEqual(H.parseUpload(JSON.stringify({ kind: H.VERSION_KIND })), {
     cause: "the file is not a desk layout saved by Ralphy",
   });
+  assert.deepEqual(H.parseUpload(JSON.stringify({ kind: H.VERSION_KIND, desk: [] })), {
+    cause: "the file is not a desk layout saved by Ralphy",
+  });
   const file = { kind: H.VERSION_KIND, id: 1, desk: { windows: [] } };
   assert.deepEqual(H.parseUpload(JSON.stringify(file)), { version: file });
 });

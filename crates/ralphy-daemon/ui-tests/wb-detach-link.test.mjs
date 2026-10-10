@@ -3,7 +3,7 @@
 // daemon binary via include_dir!, so a test there would ship.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { WBDetachLink } from "../assets/ui/wb-detach-link.ts";
+import { WBDetachLink, isDetachMessage } from "../assets/ui/wb-detach-link.ts";
 
 // The module touches nothing when it is imported — the storage and the
 // channel are reached as BARE globals, exactly as the browser resolves them
@@ -174,6 +174,10 @@ test("post reaches every other link on the channel", () => {
     b.onMessage((m) => heard.push(m));
     a.post({ type: "origin-beat", tab: a.tab });
     assert.deepEqual(heard, [{ type: "origin-beat", tab: a.tab }]);
+    // Every window of the origin can post here: a message of another shape
+    // is not handed on.
+    a.post({ type: "origin-beat", tab: 7 });
+    assert.equal(heard.length, 1, "a message of another shape is dropped");
     assert.equal(buses.get("wb.detach.v1").size, 2, "the channel name is wb.detach.v1");
     b.close();
     a.post({ type: "origin-beat", tab: a.tab });
@@ -274,3 +278,18 @@ test("channel() reaches the channel and no store at all", () => {
   });
 });
 
+test("a lifecycle message is read only in its own shape", () => {
+  const here = { type: "popup-here", tab: "t1", fenceId: "f1", pid: "p1", members: [{ id: "w1", kind: null }, { id: "n1", kind: "note", path: "a.md" }] };
+  assert.equal(isDetachMessage(here), true);
+  assert.equal(isDetachMessage({ type: "popup-ping", tab: null, fenceId: null }), true);
+  for (const bad of [
+    { ...here, type: 1 },
+    { type: "popup-ping" },
+    { ...here, fenceId: 3 },
+    { ...here, members: [{ kind: "note" }] },
+    { ...here, members: [{ id: "n1", path: 2 }] },
+    { type: "popup-note-named", tab: "t1", noteId: 1 },
+  ]) {
+    assert.equal(isDetachMessage(bad), false, JSON.stringify(bad));
+  }
+});

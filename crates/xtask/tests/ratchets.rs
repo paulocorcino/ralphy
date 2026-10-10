@@ -40,9 +40,11 @@ const PROMPT_GH_ISSUE_VIEW: usize = 20;
 /// typed list sent through `wb-events.ts` (#633); 4227 since the shell's types
 /// moved to a `.d.ts` file and `FleetPeer` to `wb-fleet.ts` (#613); 4221 since
 /// the shell's `WB.emit` moved to `wb-events.ts` (#651); 4211 since its daemon
-/// replies are read through `wb-api.ts` (#653). Its shell-only types are in
-/// `wb-shell-types.d.ts` and it imports them on one line (#653).
-const APP_TS_LINES: usize = 4211;
+/// replies are read through `wb-api.ts` (#653); 4212 since it imports the
+/// check of a detached file window's message from `wb-detached.ts` (#653).
+/// Its shell-only types are in `wb-shell-types.d.ts` and it imports them on
+/// one line (#653).
+const APP_TS_LINES: usize = 4212;
 /// Lines of `crates/ralphy-daemon/assets/ui/wb-console.ts`, the console
 /// factory (ADR-0073 D8, which starts this ratchet with the first fold move).
 /// 5842 since ADR-0075 phase 5 moved its pure folds, its GPU budget and its

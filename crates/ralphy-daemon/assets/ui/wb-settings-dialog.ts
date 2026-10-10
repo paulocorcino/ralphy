@@ -42,9 +42,9 @@ export function settingsDialog() {
       this.settingsOpen = true;
       this.settingsError = "";
       // Client-scoped keys come from the view store; `config.get` has none.
-      const view = window.WBView.read() || {};
-      this.settings["consoles.relaunch_on_load"] = view.relaunch === true;
-      this.settings["consoles.key_bar"] = view.keys ?? "unset";
+      const view = window.WBView.read();
+      this.settings["consoles.relaunch_on_load"] = view?.relaunch === true;
+      this.settings["consoles.key_bar"] = view?.keys ?? "unset";
       // The size the consoles show now: the key bar's A−/A+ write the same field.
       this.settings["consoles.font_size"] = window.WBConsole?.fontSize() ?? this.settings["consoles.font_size"];
       this.readSettings();

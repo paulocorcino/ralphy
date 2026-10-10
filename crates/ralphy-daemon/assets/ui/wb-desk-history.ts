@@ -6,6 +6,7 @@
 // `/api/desk/history`, hands the reply to `rows`, and sends what `parseUpload`
 // accepts back to the same route.
 
+import { isRecord } from "./wb-api.ts";
 import type { Desk } from "./wb-types.d.ts";
 
 // The `kind` of a version file; the daemon's `history::VERSION_KIND`.
@@ -70,16 +71,17 @@ function fileName(version: { savedAt: number }) {
 }
 
 // The text of an uploaded file, as `{ version }`, or `{ cause }` for the
-// failure line "Could not upload the desk layout: <cause>."
+// failure line "Could not upload the desk layout: <cause>." The file may come
+// from any build, so only its kind and its desk are checked here; the daemon
+// checks the rest when it restores the version.
 function parseUpload(text: string) {
-  let parsed;
+  let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
     return { cause: "the file is not JSON" };
   }
-  const desk = parsed?.desk;
-  if (parsed?.kind !== VERSION_KIND || !desk || typeof desk !== "object") {
+  if (!isRecord(parsed) || parsed.kind !== VERSION_KIND || !isRecord(parsed.desk)) {
     return { cause: "the file is not a desk layout saved by Ralphy" };
   }
   return { version: parsed };

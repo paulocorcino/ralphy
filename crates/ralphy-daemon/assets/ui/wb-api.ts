@@ -15,8 +15,9 @@
    is a path whose reply depends on that query parameter
    (`GET /api/desk/history?id`): the caller passes it in `query`.
 
-   Data that does not come from this daemon (another window's message, stored
-   data, a peer's frame) is `unknown`, and is narrowed where it is read.
+   A socket frame is read through `socketFrame`, for the same reason. Other
+   data from outside (another window's message, stored data, an uploaded
+   file) is `unknown`, and is narrowed where it is read.
    --------------------------------------------------------------------------- */
 import type { FleetPeer } from "./wb-fleet.ts";
 import type { Desk, DeskReply } from "./wb-types.d.ts";
@@ -155,4 +156,31 @@ export function apiFetch<K extends ApiRoute>(route: K, init: ApiInit = {}): Prom
   // The one unchecked step: the reply comes from the daemon of the same
   // build, whose handler `ApiRoutes` follows.
   return fetch(url, { ...rest, method }) as Promise<ApiResponse<K>>;
+}
+
+/** The JSON after the tag byte of a `[tag][JSON]` frame on a socket of this
+ * daemon (`src/protocol.rs`). It throws on bytes that are not JSON. */
+export function socketFrame<T>(bytes: Uint8Array): T {
+  // The one unchecked step for a frame, as the `fetch` above is for a reply.
+  // The daemon of the same build writes the frame. A frame or a reply that a
+  // peer daemon wrote is relayed only from a peer that speaks this daemon's
+  // peer protocol version: the daemon refuses a peer of another version.
+  return JSON.parse(new TextDecoder().decode(bytes.subarray(1)));
+}
+
+// The checks that narrow data from outside, shared by the modules that read it.
+
+/** Whether `v` is a JSON object: not `null`, not an array. */
+export function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/** Whether `v` is a string or absent. */
+export function isOptionalString(v: unknown): v is string | undefined {
+  return v === undefined || typeof v === "string";
+}
+
+/** Whether `v` is a string or `null`. */
+export function isNullableString(v: unknown): v is string | null {
+  return v === null || typeof v === "string";
 }
