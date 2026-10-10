@@ -9,11 +9,22 @@
 //! The forge ratchet reads `github::` paths as text. It does not see an alias
 //! (`github as gh`), a root re-export (`ralphy_core::GhTracker`) or a name
 //! after a nested group (`github::{a::{b}, c}`).
+//!
+//! The `any` ratchet reads the workbench modules through the `ui-copy` lexer,
+//! so a comment or a string that says `any` is not counted. It counts what
+//! oxlint's `typescript/no-explicit-any` reports, file by file (#613).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use regex::Regex;
+
+// The `ui-copy` lexer, compiled here a third time: xtask has no `[lib]`, and
+// one lexer means the ratchet and `ui-copy` drop comments and strings by the
+// same rule. The ratchets read only part of its API.
+#[allow(dead_code)]
+#[path = "../src/ui_copy/lex.rs"]
+mod lex;
 
 /// Distinct `github::<item>` names used by `crates/ralphy-cli/src`. 26 since
 /// ADR-0017 A2: triage `--yes` reads each comment's trust (`IssueThread`,
@@ -40,6 +51,68 @@ const APP_TS_LINES: usize = 4246;
 /// to `wb-console-fence-list.ts` (#621); 3084 since the opener's side of its
 /// detach moved to `wb-console-detach.ts` (#621).
 const WB_CONSOLE_TS_LINES: usize = 3084;
+
+/// The served workbench modules, from the repo root. `vendor/` and
+/// `ui-tests/` are not read.
+const UI_DIR: &str = "crates/ralphy-daemon/assets/ui";
+
+/// `(module, count)` of every explicit `any` under `UI_DIR`, the count oxlint's
+/// `typescript/no-explicit-any` reports: 2122 in 50 modules on e75f2394 (#613).
+/// The table is exact and only gets shorter: a module at zero leaves it (and
+/// the `.oxlintrc.json` override) in the same change, and a new module is
+/// not in it.
+const ANY_BASELINE: &[(&str, usize)] = &[
+    ("app.ts", 340),
+    ("globals.d.ts", 16),
+    ("wb-add-project-dialog.ts", 5),
+    ("wb-add-project.ts", 5),
+    ("wb-changes.ts", 6),
+    ("wb-columns.ts", 74),
+    ("wb-console-chrome.ts", 79),
+    ("wb-console-desk.ts", 38),
+    ("wb-console-detach.ts", 58),
+    ("wb-console-fence-list.ts", 44),
+    ("wb-console-fences.ts", 49),
+    ("wb-console-gpu.ts", 18),
+    ("wb-console-input.ts", 59),
+    ("wb-console-name.ts", 18),
+    ("wb-console-popups.ts", 18),
+    ("wb-console-session.ts", 31),
+    ("wb-console-terminal.ts", 61),
+    ("wb-console-title.ts", 76),
+    ("wb-console-view.ts", 34),
+    ("wb-console.ts", 192),
+    ("wb-consoles-tab.ts", 47),
+    ("wb-daemon.ts", 59),
+    ("wb-desk-folds.ts", 45),
+    ("wb-desk-history.ts", 1),
+    ("wb-desk-sink.ts", 3),
+    ("wb-desk-sync.ts", 28),
+    ("wb-detach-link.ts", 10),
+    ("wb-detached-fence.ts", 15),
+    ("wb-detached.ts", 1),
+    ("wb-device.ts", 25),
+    ("wb-devices.ts", 6),
+    ("wb-fail.ts", 6),
+    ("wb-file-paths.ts", 12),
+    ("wb-files.ts", 112),
+    ("wb-fleet.ts", 3),
+    ("wb-geometry.ts", 70),
+    ("wb-kanban.ts", 2),
+    ("wb-monaco.ts", 15),
+    ("wb-move-dialog.ts", 4),
+    ("wb-notes.ts", 224),
+    ("wb-project.ts", 10),
+    ("wb-projects-store.ts", 8),
+    ("wb-release-dialogs.ts", 1),
+    ("wb-runs.ts", 8),
+    ("wb-security-dialog.ts", 2),
+    ("wb-session-route.ts", 14),
+    ("wb-spend.ts", 15),
+    ("wb-view.ts", 4),
+    ("wb-viewer.ts", 144),
+    ("wb-window-state.ts", 7),
+];
 
 const SPAWNED: [&str; 3] = ["git", "gh", "ssh"];
 
@@ -74,7 +147,7 @@ fn spawn_sites_match_the_baseline() {
             actual.insert((rel_path(&root, path), program.to_string()), sites);
         }
     }
-    let errors = ratchet_errors(&actual, SPAWN_BASELINE);
+    let errors = spawn_errors(&actual, SPAWN_BASELINE);
     assert!(
         errors.is_empty(),
         "git, gh and ssh are spawned only by their owners — see docs/ARCHITECTURE.md §6:\n{}",
@@ -116,7 +189,7 @@ fn a_new_file_or_a_changed_count_fails_the_ratchet() {
         (key("a.rs", "gh"), 1),
         (key("b.rs", "gh"), 1),
     ]);
-    let errors = ratchet_errors(&grown, &baseline);
+    let errors = spawn_errors(&grown, &baseline);
     assert_eq!(errors.len(), 3, "{errors:#?}");
     assert!(errors.iter().any(|e| e.contains("b.rs")), "{errors:#?}");
     assert!(
@@ -128,10 +201,10 @@ fn a_new_file_or_a_changed_count_fails_the_ratchet() {
     assert!(errors.iter().any(|e| e.contains("1 -> 2")), "{errors:#?}");
 
     let same = BTreeMap::from([(key("a.rs", "git"), 1)]);
-    assert!(ratchet_errors(&same, &baseline).is_empty());
+    assert!(spawn_errors(&same, &baseline).is_empty());
 
     let gone = BTreeMap::new();
-    let errors = ratchet_errors(&gone, &baseline);
+    let errors = spawn_errors(&gone, &baseline);
     assert!(
         errors.len() == 1 && errors[0].contains("1 -> 0"),
         "{errors:#?}"
@@ -210,6 +283,104 @@ fn the_console_script_matches_the_line_baseline() {
     );
 }
 
+/// #613: no module gets a new explicit `any`, and a count that went down
+/// stays down. oxlint (`typescript/no-explicit-any`) reports the same `any`s
+/// per file; it guards only the modules outside its override.
+#[test]
+fn explicit_any_matches_the_baseline() {
+    let actual = any_counts(&workspace_root().join(UI_DIR));
+    let errors = any_errors(&actual, ANY_BASELINE);
+    assert!(
+        errors.is_empty(),
+        "explicit `any` in {UI_DIR}: give the value its real type, or, when a change \
+         removed some, lower ANY_BASELINE in crates/xtask/tests/ratchets.rs:\n{}",
+        errors.join("\n")
+    );
+}
+
+/// #613: the ways around a type check stay at zero in the workbench.
+#[test]
+fn no_escape_hatch_in_the_workbench() {
+    let ui = workspace_root().join(UI_DIR);
+    let mut errors = Vec::new();
+    for path in ts_modules(&ui) {
+        let text = read(&path);
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        let casts = double_casts(&text);
+        if casts > 0 {
+            errors.push(format!("{name}: {casts} `as unknown as`"));
+        }
+        let directives = ts_directives(&text);
+        if directives > 0 {
+            errors.push(format!("{name}: {directives} `@ts-` directive(s)"));
+        }
+    }
+    assert!(
+        errors.is_empty(),
+        "the workbench has no `as unknown as` and no `@ts-ignore`, `@ts-expect-error` \
+         or `@ts-nocheck`; type the value instead:\n{}",
+        errors.join("\n")
+    );
+}
+
+#[test]
+fn explicit_any_counts_types_and_skips_names() {
+    let src = "// any in a comment\n\
+               const s = \"any\";\n\
+               function f(a: any, b: Array<any>): any { return a as any; }\n\
+               const t = `${xs.map((x: any) => x.any)}`;\n\
+               const o = { any: 1, other: 2 };\n\
+               type K = { any?: string };\n\
+               type C<T> = T extends string ? any : never;\n";
+    assert_eq!(explicit_any(src), 6);
+    assert_eq!(
+        double_casts("const x = y as unknown as Z; // as unknown as\n"),
+        1
+    );
+    assert_eq!(
+        ts_directives("// @ts-ignore\n/* @ts-expect-error */ // @ts-nocheck\n"),
+        3
+    );
+}
+
+#[test]
+fn a_new_module_or_a_changed_any_count_fails_the_ratchet() {
+    let baseline = [("a.ts", 2), ("b.ts", 1)];
+    let actual = |pairs: &[(&str, usize)]| -> BTreeMap<String, usize> {
+        pairs.iter().map(|(f, n)| (f.to_string(), *n)).collect()
+    };
+
+    assert!(any_errors(&actual(&[("a.ts", 2), ("b.ts", 1)]), &baseline).is_empty());
+
+    let errors = any_errors(&actual(&[("a.ts", 3), ("b.ts", 1), ("c.ts", 1)]), &baseline);
+    assert_eq!(errors.len(), 2, "{errors:#?}");
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.starts_with("c.ts: 1 explicit `any`")),
+        "{errors:#?}"
+    );
+    assert!(
+        errors.iter().any(|e| e.contains("went up 2 -> 3")),
+        "{errors:#?}"
+    );
+
+    let errors = any_errors(&actual(&[("a.ts", 1)]), &baseline);
+    assert_eq!(errors.len(), 2, "{errors:#?}");
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.contains("a.ts") && e.contains("went down 2 -> 1")),
+        "{errors:#?}"
+    );
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.contains("b.ts") && e.contains("went down 1 -> 0")),
+        "{errors:#?}"
+    );
+}
+
 #[test]
 fn forge_items_count_brace_groups_and_skip_tests() {
     let src = "use ralphy_core::{github, git};\n\
@@ -279,29 +450,182 @@ fn spawn_sites(text: &str) -> BTreeMap<&'static str, usize> {
         .collect()
 }
 
-/// One line per `(file, program)` whose count is not the baseline's.
-fn ratchet_errors(
+/// The `.ts` modules directly under `ui`: `vendor/` is not read.
+fn ts_modules(ui: &Path) -> Vec<PathBuf> {
+    let entries = std::fs::read_dir(ui).unwrap_or_else(|e| panic!("reading {}: {e}", ui.display()));
+    let mut modules = Vec::new();
+    for entry in entries {
+        let path = entry
+            .unwrap_or_else(|e| panic!("reading an entry of {}: {e}", ui.display()))
+            .path();
+        let is_ts = path.extension().is_some_and(|ext| ext == "ts");
+        if path.is_file() && is_ts {
+            modules.push(path);
+        }
+    }
+    assert!(
+        modules.len() > 10,
+        "expected the workbench modules under {}, found {}",
+        ui.display(),
+        modules.len()
+    );
+    modules
+}
+
+/// The explicit `any` count of each workbench module that has one.
+fn any_counts(ui: &Path) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    for path in ts_modules(ui) {
+        let n = explicit_any(&read(&path));
+        if n > 0 {
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            counts.insert(name.to_string(), n);
+        }
+    }
+    counts
+}
+
+/// The `as unknown as` casts in the code of `src`, template holes included.
+fn double_casts(src: &str) -> usize {
+    let toks = lex::lex(src, 1);
+    let mut count = 0;
+    for (i, t) in toks.iter().enumerate() {
+        let words: Vec<_> = toks[i..].iter().take(3).map(|t| t.ident()).collect();
+        if words == [Some("as"), Some("unknown"), Some("as")] {
+            count += 1;
+        }
+        if let lex::Tok::Tpl(pieces) = &t.tok {
+            for piece in pieces {
+                if let lex::Piece::Expr(code) = piece {
+                    count += double_casts(code);
+                }
+            }
+        }
+    }
+    count
+}
+
+/// The `@ts-ignore`, `@ts-expect-error` and `@ts-nocheck` directives in
+/// `src`. A directive lives in a comment, which the lexer drops, so this
+/// reads the text.
+fn ts_directives(src: &str) -> usize {
+    ["@ts-ignore", "@ts-expect-error", "@ts-nocheck"]
+        .iter()
+        .map(|directive| src.matches(directive).count())
+        .sum()
+}
+
+/// The `any` type names in `src`, the ones oxlint's
+/// `typescript/no-explicit-any` reports. The lexer drops comments and
+/// strings; the code inside a template hole (`${xs.map((x: any) => x)}`) is
+/// lexed again. A member (`x.any`) and a key (`{ any: 1 }`, `any?: 1`) are
+/// names, not types; `T extends U ? any : never` is a type.
+fn explicit_any(src: &str) -> usize {
+    let toks = lex::lex(src, 1);
+    let mut count = 0;
+    for (i, t) in toks.iter().enumerate() {
+        match &t.tok {
+            lex::Tok::Ident(name) if name == "any" => {
+                let prev = i.checked_sub(1).map(|k| &toks[k]);
+                let next = toks.get(i + 1);
+                let member = prev.is_some_and(|p| p.is(".") || p.is("?."));
+                let optional =
+                    next.is_some_and(|n| n.is("?")) && toks.get(i + 2).is_some_and(|n| n.is(":"));
+                let key = (next.is_some_and(|n| n.is(":")) || optional)
+                    && !prev.is_some_and(|p| p.is("?"));
+                if !member && !key {
+                    count += 1;
+                }
+            }
+            lex::Tok::Tpl(pieces) => {
+                for piece in pieces {
+                    if let lex::Piece::Expr(code) = piece {
+                        count += explicit_any(code);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    count
+}
+
+/// One line per `(file, program)` whose spawn count is not the baseline's.
+fn spawn_errors(
     actual: &BTreeMap<(String, String), usize>,
     baseline: &[(&str, &str, usize)],
 ) -> Vec<String> {
-    let mut errors = Vec::new();
-    for ((file, program), sites) in actual {
-        if !baseline.iter().any(|(f, p, _)| f == file && p == program) {
-            errors.push(format!(
+    let baseline = baseline
+        .iter()
+        .map(|(file, program, sites)| ((file.to_string(), program.to_string()), *sites))
+        .collect();
+    ratchet_errors(
+        actual,
+        &baseline,
+        |(file, program), sites| {
+            format!(
                 "{file}: new spawn site for {program} ({sites}); spawn through its owner instead"
-            ));
-        }
-    }
-    for (file, program, expected) in baseline {
-        let found = actual
-            .get(&(file.to_string(), program.to_string()))
-            .copied()
-            .unwrap_or(0);
-        if found != *expected {
-            errors.push(format!(
+            )
+        },
+        |(file, program), expected, found| {
+            format!(
                 "{file}: {program} count changed {expected} -> {found}; \
                  if it went down, lower the table in this change"
-            ));
+            )
+        },
+    )
+}
+
+/// One line per workbench module whose explicit `any` count is not the
+/// baseline's.
+fn any_errors(actual: &BTreeMap<String, usize>, baseline: &[(&str, usize)]) -> Vec<String> {
+    let baseline = baseline
+        .iter()
+        .map(|(file, n)| (file.to_string(), *n))
+        .collect();
+    ratchet_errors(
+        actual,
+        &baseline,
+        |file, n| {
+            format!(
+                "{file}: {n} explicit `any` in a module that has none in ANY_BASELINE; \
+                 type the values (a new module starts at zero)"
+            )
+        },
+        |file, expected, found| {
+            if found > expected {
+                format!(
+                    "{file}: explicit `any` count went up {expected} -> {found}; type the value"
+                )
+            } else {
+                format!(
+                    "{file}: explicit `any` count went down {expected} -> {found}; \
+                     lower ANY_BASELINE in this change (remove the entry at zero)"
+                )
+            }
+        },
+    )
+}
+
+/// One line per key whose count is not the baseline's: a key the baseline
+/// does not have, or a count that moved in either direction. A baseline is
+/// exact, so a count that went down cannot grow back later.
+fn ratchet_errors<K: Ord>(
+    actual: &BTreeMap<K, usize>,
+    baseline: &BTreeMap<K, usize>,
+    new: impl Fn(&K, usize) -> String,
+    changed: impl Fn(&K, usize, usize) -> String,
+) -> Vec<String> {
+    let mut errors = Vec::new();
+    for (key, count) in actual {
+        if !baseline.contains_key(key) {
+            errors.push(new(key, *count));
+        }
+    }
+    for (key, expected) in baseline {
+        let found = actual.get(key).copied().unwrap_or(0);
+        if found != *expected {
+            errors.push(changed(key, *expected, found));
         }
     }
     errors

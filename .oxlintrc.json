@@ -29,8 +29,9 @@
     {
       // The modules that had an explicit `any` when the rule was turned on.
       // The list only gets shorter: a module leaves it when its last `any`
-      // goes. A module cut out of a listed one may join it, with the `any`s
-      // it carried.
+      // goes. A new module starts at zero and is never added here.
+      // `explicit_any_matches_the_baseline` (crates/xtask/tests/ratchets.rs)
+      // keeps the count of each listed module from growing (#613).
       "files": [
         "**/assets/ui/app.ts",
         "**/assets/ui/globals.d.ts",
