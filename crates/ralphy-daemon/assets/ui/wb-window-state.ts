@@ -30,6 +30,8 @@
    to `wb-view.ts` alone (ADR-0050: the desk layout is daemon state, and #339
    sweeps the whole tree for a second one).
 --------------------------------------------------------------------------- */
+import type { ConsoleWin, ConsoleWinFields } from "./wb-types.d.ts";
+
 export const WBWindowState = (function () {
   // THE INVENTORY. Every property a `.session-window` may carry, with the value
   // it is born holding. Grouped by who owns the write, because that is the
@@ -90,25 +92,31 @@ export const WBWindowState = (function () {
     _dormantSession: null,
     _dormantWatch: false,
     _dormantTimer: null,
-  };
+  } satisfies Record<keyof ConsoleWinFields, unknown>;
 
-  const NAMES = Object.keys(FIELDS);
+  // `Object.keys` answers `string[]`; `satisfies` above holds the keys to the
+  // declared set.
+  const NAMES = Object.keys(FIELDS) as (keyof ConsoleWinFields)[];
 
   // The one place a console window is born. Writes EVERY field, so a reader of
   // any window sees the whole set rather than whichever subset a code path
   // happened to reach — and a `seed` key that is not in the inventory throws
   // rather than quietly adding a twenty-seventh field nothing declares.
-  function initWindow(win: any, seed: any) {
-    for (const name of NAMES) win[name] = (FIELDS as any)[name];
+  function initWindow(
+    win: HTMLElement & Partial<Record<keyof ConsoleWinFields, unknown>>,
+    seed?: Partial<ConsoleWinFields>,
+  ) {
+    for (const name of NAMES) win[name] = FIELDS[name];
     if (seed) {
-      for (const name of Object.keys(seed)) {
+      for (const name of Object.keys(seed) as (keyof ConsoleWinFields)[]) {
         if (!(name in FIELDS)) {
           throw new Error(`wb-window-state: unknown window field ${name}`);
         }
         win[name] = seed[name];
       }
     }
-    return win;
+    // Every declared field is written above: the element is a console window.
+    return win as ConsoleWin;
   }
 
   // THE question, with one answer. In precedence order:
@@ -119,7 +127,7 @@ export const WBWindowState = (function () {
   //      the first terminal frame, and the daemon skips the replay frame for a
   //      session that has printed nothing, so a brand-new console reads null
   //      from (1) for as long as it stays silent.
-  function sessionIdOf(win: any) {
+  function sessionIdOf(win: ConsoleWin | null | undefined) {
     if (!win) return null;
     return win._term?.sessionId ?? win._dormantSession ?? win._wantsSession ?? null;
   }
@@ -128,7 +136,7 @@ export const WBWindowState = (function () {
   // no writer slot (ADR-0051 §9)? Same shape as `sessionIdOf`: the live handle
   // first, the flag carried across dormancy second. A window with neither has
   // no session to watch, so `false` is the honest answer, not `undefined`.
-  function watchingOf(win: any) {
+  function watchingOf(win: ConsoleWin | null | undefined) {
     if (!win) return false;
     if (win._term) return !!win._term.watching;
     return !!win._dormantWatch;
@@ -144,7 +152,7 @@ export const WBWindowState = (function () {
   // `checkoutOf(ref)` that answers a DIFFERENT question — which checkout a
   // repo ref is currently pointed at, which is a project-wide selection rather
   // than a fact about one console.
-  function windowCheckout(win: any, asked: any) {
+  function windowCheckout(win: ConsoleWin | null | undefined, asked: string | null | undefined) {
     if (!win) return asked ?? null;
     return win._sessionCheckout ?? asked ?? win._deskCheckout ?? null;
   }

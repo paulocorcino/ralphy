@@ -18,6 +18,13 @@
 
    `wb-console.ts` and `wb-notes.ts` import this module.
    --------------------------------------------------------------------------- */
+import type { Rect, Point, Offset, Size, Delta, DeskFence } from "./wb-types.d.ts";
+
+// A rect with an id: a fence or a window, as the membership folds read it.
+type Placed = { id: string; rect: Rect };
+// A client rect: `getBoundingClientRect()`.
+type ClientBox = { left: number; top: number; right: number; bottom: number };
+
 export const WBGeometry = (function () {
   // ---- the stage extent --------------------------------------------------------
   // How big the plane under the windows must be, as a pure function of the rects
@@ -38,7 +45,7 @@ export const WBGeometry = (function () {
   // the viewport (right = 0 keeps the viewport leg on top).
   const STAGE_MARGIN = 200;
 
-  function stageExtent(rects: any, viewport: any, margin: any) {
+  function stageExtent(rects: readonly Rect[], viewport: Size, margin?: number | null) {
     const m = margin == null ? STAGE_MARGIN : margin;
     const mx = Math.max(m, viewport?.width || 0);
     const my = Math.max(m, viewport?.height || 0);
@@ -66,7 +73,7 @@ export const WBGeometry = (function () {
   const FENCE_GAP = 24;
   const FENCE_COLS = 2;
 
-  function fenceSpawnRect(offset: any, viewport: any, index: any) {
+  function fenceSpawnRect(offset: Offset, viewport: Size, index: number) {
     const width = Math.max(
       FENCE_MIN.width,
       Math.min(FENCE_SIZE.width, (viewport?.width || 0) - 2 * FENCE_INSET),
@@ -86,7 +93,7 @@ export const WBGeometry = (function () {
     };
   }
 
-  function rectsOverlap(a: any, b: any) {
+  function rectsOverlap(a: Partial<Rect>, b: Partial<Rect>) {
     return (
       (a?.left || 0) < (b?.left || 0) + (b?.width || 0) &&
       (a?.left || 0) + (a?.width || 0) > (b?.left || 0) &&
@@ -101,7 +108,7 @@ export const WBGeometry = (function () {
   // disagree with the geometry. Containment is HALF-OPEN (`left <= cx < left +
   // width`) — fences may abut, and a closed test would put a centre sitting on a
   // shared border inside both of them, breaking "exactly one fence".
-  function rectCentre(rect: any) {
+  function rectCentre(rect: Rect | undefined) {
     return {
       x: (rect?.left || 0) + (rect?.width || 0) / 2,
       y: (rect?.top || 0) + (rect?.height || 0) / 2,
@@ -111,7 +118,7 @@ export const WBGeometry = (function () {
   // Does `rect` hold `point`? The half-open test above, extracted once (issue
   // #343) so membership and the floor's focus-clearing hit test can never drift
   // into two spellings of the same containment.
-  function rectHolds(rect: any, point: any) {
+  function rectHolds(rect: Partial<Rect> | null | undefined, point: Point) {
     const r = rect || {};
     const left = r.left || 0;
     const top = r.top || 0;
@@ -128,9 +135,9 @@ export const WBGeometry = (function () {
   // `break` is the second half of "exactly one": half-open containment makes the
   // fences disjoint as point sets, and this makes the fold's own answer so even
   // if a stored rect pair ever overlaps.
-  function fenceMembership(fences: any, windows: any) {
+  function fenceMembership(fences: readonly Placed[], windows: readonly Placed[]) {
     const list = fences || [];
-    const out: any = {};
+    const out: Record<string, string[]> = {};
     for (const f of list) out[f.id] = [];
     for (const w of windows || []) {
       const c = rectCentre(w?.rect);
@@ -148,7 +155,7 @@ export const WBGeometry = (function () {
   // first-match rule as `fenceMembership`, so the two can never disagree about
   // whose a window is. `null` when no fence holds its centre. This is what a
   // gesture consults to ask "is the fence under this window locked?".
-  function fenceOf(fences: any, rect: any) {
+  function fenceOf(fences: readonly DeskFence[], rect: Rect) {
     const c = rectCentre(rect);
     for (const f of fences || []) {
       if (rectHolds(f.rect, c)) return f;
@@ -160,10 +167,10 @@ export const WBGeometry = (function () {
   // `rectsOverlap` the spawn rule uses, so abutting fences stay buildable and
   // one predicate answers for create, move and resize alike. A candidate is
   // never compared with itself — a move must not refuse its own start rect.
-  function fenceFits(fences: any, candidate: any) {
+  function fenceFits(fences: readonly Placed[], candidate: Placed) {
     const rect = candidate?.rect || {};
     return !(fences || []).some(
-      (f: any) => f.id !== candidate?.id && rectsOverlap(rect, f.rect || {}),
+      (f) => f.id !== candidate?.id && rectsOverlap(rect, f.rect || {}),
     );
   }
 
@@ -172,10 +179,10 @@ export const WBGeometry = (function () {
   // (issue #336) and grows right and down only, so a negative coordinate is not
   // a position — it is a lost window. The MEMBERS are in the fold too: one can
   // sit further left than the fence that carries it.
-  function fenceMoveDelta(delta: any, fenceRect: any, memberRects: any) {
+  function fenceMoveDelta(delta: Delta, fenceRect: Rect, memberRects: readonly Rect[]) {
     const members = memberRects || [];
-    const minLeft = Math.min(fenceRect?.left || 0, ...members.map((r: any) => r?.left || 0));
-    const minTop = Math.min(fenceRect?.top || 0, ...members.map((r: any) => r?.top || 0));
+    const minLeft = Math.min(fenceRect?.left || 0, ...members.map((r) => r?.left || 0));
+    const minTop = Math.min(fenceRect?.top || 0, ...members.map((r) => r?.top || 0));
     return {
       dx: Math.max(delta?.dx || 0, -minLeft),
       dy: Math.max(delta?.dy || 0, -minTop),
@@ -198,19 +205,20 @@ export const WBGeometry = (function () {
   const TILE_GAP = 10;
   const TILE_MIN = 24;
 
-  function tileIntoRect(rect: any, members: any) {
+  // `members` is only counted: no item of it is read.
+  function tileIntoRect(rect: Rect, members: readonly unknown[]) {
     const n = (members || []).length;
     if (!n) return [];
     const cols = Math.ceil(Math.sqrt(n));
     const rows = Math.ceil(n / cols);
-    const axis = (extent: any, k: any) => {
+    const axis = (extent: number, k: number) => {
       const size = (extent - TILE_PAD * 2 - TILE_GAP * (k - 1)) / k;
       if (size >= TILE_MIN) return { pad: TILE_PAD, gap: TILE_GAP, size };
       return { pad: 0, gap: 0, size: extent / k };
     };
     const x = axis(rect?.width || 0, cols);
     const y = axis(rect?.height || 0, rows);
-    return (members || []).map((_: any, i: any) => ({
+    return (members || []).map((_, i) => ({
       left: (rect?.left || 0) + x.pad + (i % cols) * (x.size + x.gap),
       top: (rect?.top || 0) + y.pad + Math.floor(i / cols) * (y.size + y.gap),
       width: x.size,
@@ -227,7 +235,7 @@ export const WBGeometry = (function () {
   // edge stays put and the window does not slide under the cursor.
   const RESIZE_MIN = { width: 240, height: 150 }; // matches .session-window's CSS minimums
 
-  function resizeRect(dir: any, rect: any, delta: any, min: any, bounds: any) {
+  function resizeRect(dir: string, rect: Rect, delta: Delta, min: Size, bounds: Size) {
     let { left, top, width, height } = rect;
     const right = rect.left + rect.width;
     const bottom = rect.top + rect.height;
@@ -255,7 +263,7 @@ export const WBGeometry = (function () {
   // ONE clamp per axis: the final `Math.max(0, …)` stops a viewport bigger than
   // the extent asking for a negative offset. Flooring the ceiling too would
   // make that floor unfalsifiable by the table's negative control.
-  function clampOffset(offset: any, viewport: any, extent: any) {
+  function clampOffset(offset: Offset, viewport: Size, extent: Size) {
     const maxLeft = (extent?.width || 0) - (viewport?.width || 0);
     const maxTop = (extent?.height || 0) - (viewport?.height || 0);
     return {
@@ -264,7 +272,7 @@ export const WBGeometry = (function () {
     };
   }
 
-  function bringIntoView(target: any, viewport: any, extent: any) {
+  function bringIntoView(target: Rect, viewport: Size, extent: Size) {
     const vw = viewport?.width || 0;
     const vh = viewport?.height || 0;
     const left = (target?.left || 0) + (target?.width || 0) / 2 - vw / 2;
@@ -278,7 +286,7 @@ export const WBGeometry = (function () {
   // keeps CENTRING for the Go-to picker (#337 pins it).
   const VIEW_INSET = 24;
 
-  function anchorIntoView(target: any, viewport: any, extent: any, inset: any) {
+  function anchorIntoView(target: Offset, viewport: Size, extent: Size, inset?: number | null) {
     const pad = inset == null ? VIEW_INSET : inset;
     return clampOffset(
       { left: (target?.left || 0) - pad, top: (target?.top || 0) - pad },
@@ -289,14 +297,14 @@ export const WBGeometry = (function () {
 
 
   // Ease-out cubic on a 0..1 clock: fast off the mark, settling into the target.
-  function slideEase(t: any) {
+  function slideEase(t: number) {
     const x = Math.min(1, Math.max(0, t));
     return 1 - Math.pow(1 - x, 3);
   }
 
   // The bounding box of a set of stage-relative rects; all zeros for none, so an
   // empty desk centres on the pinned origin rather than on nothing.
-  function bboxOf(rects: any) {
+  function bboxOf(rects: readonly Rect[]) {
     const list = rects || [];
     if (!list.length) return { left: 0, top: 0, width: 0, height: 0 };
     let left = Infinity;
@@ -317,8 +325,15 @@ export const WBGeometry = (function () {
   // placed there); otherwise the bbox landing. The clamp comes BEFORE the test:
   // an offset saved on a bigger screen is a legitimate view pulled into this
   // extent.
-  function viewLanding(stored: any, rects: any, viewport: any, extent: any) {
-    const num = (v: any) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  // `stored` is the offset this client kept in its own storage: each value is
+  // checked before it is used.
+  function viewLanding(
+    stored: { left?: unknown; top?: unknown } | null | undefined,
+    rects: readonly Rect[],
+    viewport: Size,
+    extent: Size,
+  ) {
+    const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
     const left = num(stored?.left);
     const top = num(stored?.top);
     if (left !== null && top !== null) {
@@ -326,7 +341,7 @@ export const WBGeometry = (function () {
       const vw = viewport?.width || 0;
       const vh = viewport?.height || 0;
       const shows = (rects || []).some(
-        (r: any) =>
+        (r) =>
           (r.left || 0) < at.left + vw &&
           (r.left || 0) + (r.width || 0) > at.left &&
           (r.top || 0) < at.top + vh &&
@@ -345,11 +360,11 @@ export const WBGeometry = (function () {
   // point. Each edge contributes a pressure in `[0, band]` and the axis takes
   // their DIFFERENCE — deliberately, so a viewport narrower than two bands
   // cancels instead of oscillating between its own two edges.
-  function panNudge(pointer: any, viewport: any, band: any, step: any) {
+  function panNudge(pointer: Point, viewport: ClientBox, band?: number | null, step?: number | null) {
     const b = band == null ? PAN_BAND : band;
     const s = step == null ? PAN_STEP : step;
-    const press = (v: any) => Math.max(0, Math.min(v, b));
-    const axis = (near: any, far: any) => Math.round((s * (far - near)) / b);
+    const press = (v: number) => Math.max(0, Math.min(v, b));
+    const axis = (near: number, far: number) => Math.round((s * (far - near)) / b);
     return {
       dx: axis(
         press(b - ((pointer?.x || 0) - (viewport?.left || 0))),
@@ -368,7 +383,7 @@ export const WBGeometry = (function () {
   // match a console to whatever fence covers the translated point. A detached
   // fence's members move freely there; the fence's lock holds again on the
   // stage when they come home. Note cards follow the same rule.
-  function fenceHolds(records: any, rect: any, popup: any) {
+  function fenceHolds(records: readonly DeskFence[], rect: Rect, popup: boolean) {
     return !popup && !!fenceOf(records, rect)?.locked;
   }
   // `.session-window`'s CSS floor (`styles.css`, pinned by
@@ -385,7 +400,7 @@ export const WBGeometry = (function () {
   const SPAWN_PAD = 12;
   const SPAWN_STEP = 24;
 
-  function spawnRectIn(fence: any, index: any, headH: any) {
+  function spawnRectIn(fence: Partial<Rect> | null | undefined, index: number, headH: number) {
     const f = fence || {};
     const fl = f.left || 0;
     const ft = f.top || 0;
@@ -415,12 +430,12 @@ export const WBGeometry = (function () {
   // centre a locked fence holds (the `fenceHolds` fold); when every slot is
   // held, the box moves right of the fence that holds it until one is free.
   // `moved` says the box left the viewport's cascade, so the caller reveals it.
-  function freeSpawnRect(view: any, index: any, fences: any) {
+  function freeSpawnRect(view: Partial<Rect> | null | undefined, index: number, fences: readonly DeskFence[]) {
     const v = view || {};
     // An unmeasurable viewport is a tab still `display:none`: plain caps.
     const width = v.width ? Math.max(WIN_MIN_W, Math.min(560, Math.round(v.width * 0.62))) : 560;
     const height = v.height ? Math.max(WIN_MIN_H, Math.min(340, Math.round(v.height * 0.6))) : 340;
-    const at = (k: any) => ({
+    const at = (k: number) => ({
       left: Math.max(0, v.left || 0) + 30 + (k % 8) * SPAWN_STEP,
       top: Math.max(0, v.top || 0) + 20 + (k % 8) * SPAWN_STEP,
       width,
