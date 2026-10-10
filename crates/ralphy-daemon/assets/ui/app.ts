@@ -25,23 +25,7 @@ import { WBSessionRoute } from "./wb-session-route.ts";
 import { WBSettingsDialog } from "./wb-settings-dialog.ts";
 import { WBSplit } from "./wb-split.ts";
 import { sendDocument, sendWindow } from "./wb-events.ts";
-import type { BoardIssue, BoardRow, CanvasTab, ChangeEntry, CheckoutRow, ConfirmAsk, DiffTarget, FilePopupMessage, FleetReply, Group, LedgerMissing, LedgerRecord, Listing, MenuItem, ModalEntry, Project, PromptAsk, Read, ReadState, ReadyPlan, RepoRow, RosterRow, Run, RunIssue, RunPill, SavePayload, SecurityFact, ShellLate, Slot, SpendDoc, Subscription, Sync, TabBody, TabOpen, Timer } from "./wb-types.d.ts";
-
-/** A peer of `/api/fleet`. */
-export type FleetPeer = {
-  daemon_id: string;
-  name: string;
-  state: string;
-  diagnosis?: string;
-  destination?: string;
-  identity_file?: string;
-  /** Set when the peer is paired over SSH. */
-  tunnel?: unknown;
-  os?: string;
-  environment?: string;
-  /** The update can wake it through `wsl.exe`. */
-  nudgeable?: boolean;
-};
+import type { BoardIssue, BoardRow, CanvasTab, ChangeEntry, CheckoutRow, ConfirmAsk, DiffTarget, FilePopupMessage, FleetPeer, FleetReply, Group, LedgerMissing, LedgerRecord, Listing, MenuItem, ModalEntry, Project, PromptAsk, Read, ReadState, ReadyPlan, RepoRow, RosterRow, Run, RunIssue, RunPill, SavePayload, SecurityFact, ShellLate, Slot, SpendDoc, Subscription, Sync, TabBody, TabOpen, Timer } from "./wb-types.d.ts";
 
 // A phone in either orientation: its SHORT side is under the workbench's phone
 // breakpoint (560px). Landscape iPhone is ~750 wide but ~340 tall; an iPad's

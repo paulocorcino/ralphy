@@ -1,5 +1,7 @@
 // The shapes more than one workbench module reads: a rect on the stage, the
-// desk layout's records and changes, and a console window. Types only: the
+// desk layout's records and changes, and a console window. It also holds the
+// shell's own types and the re-exports `app.ts` imports. They live here
+// because `app.ts` has a line ratchet and must not grow. Types only: the
 // build skips a `.d.ts` file, so a module imports from here with
 // `import type`, on one line (#613).
 import type { createTerminal } from "./wb-console-terminal.ts";
@@ -8,13 +10,14 @@ import type { DeskDeps } from "./wb-console-desk.ts";
 import type { DetachDeps } from "./wb-console-detach.ts";
 import type { PopupRegistryDeps } from "./wb-console-popups.ts";
 import type { ViewDeps } from "./wb-console-view.ts";
+import type { FleetPeer } from "./wb-fleet.ts";
 
 // Types the shell names, re-exported so `app.ts` has one import line for them.
 export type { RosterRow } from "./wb-agents.ts";
 export type { ChangeEntry, Sync } from "./wb-changes.ts";
 export type { CheckoutRow } from "./wb-console-title.ts";
 export type { Read } from "./wb-fail.ts";
-export type { Group } from "./wb-fleet.ts";
+export type { FleetPeer, Group } from "./wb-fleet.ts";
 export type { Listing, Project } from "./wb-project.ts";
 export type { BoardRow, Issue as BoardIssue } from "./wb-kanban.ts";
 export type { Run, Issue as RunIssue } from "./wb-runs.ts";
@@ -410,10 +413,12 @@ export type FleetRepoRow = {
 };
 
 /** The reply of `/api/fleet`. */
-export type FleetReply = { peers?: import("./app.ts").FleetPeer[]; repos?: FleetRepoRow[] };
+export type FleetReply = { peers?: FleetPeer[]; repos?: FleetRepoRow[] };
 
 /** A persistent socket the shell keeps: `resume` re-opens it after a suspend. */
 export type Subscription = ReturnType<import("./wb-daemon.ts").WBDaemonApi["subscribePresence"]>;
+
+// ---- the shell's own types (read by pp.ts only) ---------------------------
 
 /** The shell fields its methods set on first use: none is in the literal. */
 export type ShellLate = {

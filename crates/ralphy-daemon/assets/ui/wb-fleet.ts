@@ -18,16 +18,20 @@ import type { Project } from "./wb-project.ts";
 // rather than a flag someone has to remember to set.
 /** What the fold reads of a project row (`Project` in `wb-project.ts`). */
 type Row = { daemon?: string; key?: string; slug: string };
-/** A peer of `/api/fleet`. */
+/** A peer of `/api/fleet` (`PeerView` in `routes/api_fleet.rs`). */
 export type FleetPeer = {
   daemon_id: string;
-  environment?: string;
-  os?: string;
-  name?: string;
-  state?: string;
-  diagnosis?: string;
-  nudgeable?: boolean;
-  tunnel?: boolean;
+  name: string;
+  avatar: string;
+  environment: string;
+  os: string;
+  state: string;
+  diagnosis: string;
+  nudgeable: boolean;
+  /** Set when this daemon reaches the peer through an `ssh` tunnel it holds. */
+  tunnel: boolean;
+  destination?: string;
+  identity_file?: string;
 };
 /** What a group knows of its environment before its rows. */
 type GroupSeed = {

@@ -324,9 +324,10 @@ which the build does not serve.
 `ReturnType<typeof shell>`, exported by `app.ts`, and replaces the
 hand-written `shell.d.ts`. `app.ts` was converted mechanically: a parameter
 with no obvious type is `any`, and `strict` stays on. Narrowing the `any`s is
-later work, one area at a time. Since #613, `explicit_any_matches_the_baseline`
-(`crates/xtask/tests/ratchets.rs`) holds the count of each module, a count
-only goes down, and the goal is zero `any` in every module. Everything `app.js` did at load is in the
+later work, one area at a time. That work is done (#613): no module has an
+explicit `any`, `ANY_BASELINE` in `crates/xtask/tests/ratchets.rs` is empty,
+and `typescript/no-explicit-any` holds for every module with no override.
+Everything `app.js` did at load is in the
 exported `wire(window, document)`, so a test runs it on its own stubs and
 each call starts with new state (D7).
 
