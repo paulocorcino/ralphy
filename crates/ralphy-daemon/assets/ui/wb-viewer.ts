@@ -1071,14 +1071,18 @@ export function createViewer(window: ViewerWindow, document: Document) {
     article.innerHTML = html;
 
     // mermaid fences: marked emits <pre><code class="language-mermaid">. Defer
-    // the actual draw to first paint (a hidden container measures as 0).
+    // the actual draw to first paint (a hidden container measures as 0). An
+    // inline `<code class="language-mermaid">` from raw HTML has no <pre> and
+    // stays as code.
     rec.mermaidPending = [];
     article.querySelectorAll("code.language-mermaid").forEach((code, i) => {
+      const pre = code.closest("pre");
+      if (!pre) return;
       const holder = document.createElement("div");
       holder.className = "mermaid";
       holder.dataset.src = code.textContent;
       holder.id = `mmd-${rec.uid}-${i}`;
-      code.closest("pre")!.replaceWith(holder);
+      pre.replaceWith(holder);
       rec.mermaidPending!.push(holder);
     });
 

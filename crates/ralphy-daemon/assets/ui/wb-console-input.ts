@@ -225,6 +225,32 @@ export function pasteOffered(clipboard: Clipboard | undefined) {
   return !!clipboard && typeof clipboard.readText === "function";
 }
 
+// The PASTE key, after its clipboard read. The read can wait on a permission
+// prompt, and meanwhile the window can fall asleep (`_term` becomes null) or
+// wake with another terminal: the content goes only to `t`, the terminal the
+// key was pressed on, and only while it is still attached. Otherwise the paste
+// is dropped. A refused read is dropped too. Not pure like the folds above: it
+// acts on `t`, and it reads `win._term` when the read settles.
+type PasteTerm = { pasteImage(image: Blob): unknown; term: { paste(text: string): void; focus(): void } };
+export function pasteAfterRead<T extends PasteTerm>(
+  win: { _term: T | null },
+  t: T,
+  read: Promise<{ image?: Blob; text?: string }>,
+) {
+  const attached = () => win._term === t;
+  return read
+    .then(({ image, text }) => {
+      if (!attached()) return;
+      if (image) t.pasteImage(image);
+      else if (text) t.term.paste(text);
+    })
+    // The key bar shows nothing for a refused or failed read.
+    .catch(() => {})
+    .finally(() => {
+      if (attached()) t.term.focus();
+    });
+}
+
 // THE RIGHT BUTTON is copy or paste, and the browser menu never opens over a
 // console. It is never reported to the child either: a child that asked for
 // mouse events gets each press as a report, and xterm clears the selection

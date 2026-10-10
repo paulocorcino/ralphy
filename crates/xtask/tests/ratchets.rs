@@ -49,8 +49,9 @@ const APP_TS_LINES: usize = 4227;
 /// worktree switcher moved to `wb-console-title.ts` (#621); 3708 since its
 /// view moved to `wb-console-view.ts` (#621); 3423 since its fence list moved
 /// to `wb-console-fence-list.ts` (#621); 3084 since the opener's side of its
-/// detach moved to `wb-console-detach.ts` (#621).
-const WB_CONSOLE_TS_LINES: usize = 3081;
+/// detach moved to `wb-console-detach.ts` (#621); 3077 since the paste key's
+/// work after its clipboard read moved to `wb-console-input.ts` (#652).
+const WB_CONSOLE_TS_LINES: usize = 3077;
 
 /// The served workbench modules, from the repo root. `vendor/` and
 /// `ui-tests/` are not read.

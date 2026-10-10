@@ -69,6 +69,7 @@ const {
   keyBarVisible,
   terminalInputMode,
   pasteOffered,
+  pasteAfterRead,
   rightClickAction,
   pressRoute,
   forceSelectionKeys,
@@ -2339,16 +2340,11 @@ export function createConsole(window: Window, document: Document, location: Pick
         // like a keystroke. A refused or empty read is dropped silently.
         // Dormant: the terminal is off and every branch below speaks to one.
         if (!win._term) return;
+        const pressed = win._term;
         const read = name === "paste" ? readClipboard() : null;
         focusWin(win);
         if (read) {
-          read
-            .then(({ image, text }) => {
-              if (image) win._term!.pasteImage(image);
-              else if (text) win._term!.term.paste(text);
-            })
-            .catch(() => {})
-            .finally(() => win._term!.term.focus());
+          void pasteAfterRead(win, pressed, read);
         } else if (name === "keyboard") {
           toggleKeyboard(win._term.term.textarea);
         } else if (name === "copy") {
