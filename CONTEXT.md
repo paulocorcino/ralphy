@@ -272,6 +272,15 @@ A canvas tab that shows a document the daemon serves, with no file behind it
 and nothing to save, such as the Spend tab. (ADR-0037)
 _Avoid_: dashboard, modal, overlay.
 
+**Operator message**:
+A short message the workbench shows the operator, in one of four forms: a
+confirm (a question with two answers), a notice (one OK button), a toast (a
+short text at the bottom of the page, with one action or none), or a flash
+(a line of text in a panel). A toast and a flash go away by themselves.
+(ADR-0073)
+_Avoid_: notification (the operating system's), alert, popup (the **detached
+fence**'s window), event (a `workbench:*` event is a different thing).
+
 **Stage / viewport**:
 The **stage** is the plane on the **Consoles tab** that the console windows,
 **fences** and **cards** live on. The **viewport** is the fixed box the

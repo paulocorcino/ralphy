@@ -14,6 +14,11 @@
 //! so a comment or a string that says `any` is not counted. It counts what
 //! oxlint's `typescript/no-explicit-any` reports, file by file (#613).
 //!
+//! The workbench coupling ratchets (#623) read the modules through the same
+//! lexer: the uses of `WBConsole` in `wb-notes.ts`, the uses of the shell's
+//! `_flashAction` in the `wb-*.ts` modules, and the one owner of each column
+//! paint function.
+//!
 //! The peer reply pin is not a count. It ties the page types that read a
 //! reply a peer daemon wrote to the peer protocol version (#653), through the
 //! same lexer, so a comment or a layout change does not move it.
@@ -69,6 +74,42 @@ const APP_TS_LINES: usize = 4209;
 /// since its two peer buttons read their label once, typed by the peer's
 /// action (#653).
 const WB_CONSOLE_TS_LINES: usize = 3086;
+/// Lines of `crates/ralphy-daemon/assets/ui/wb-notes.ts`, the note cards
+/// (ADR-0073 D8, started by its 2026-10-10 amendment). 2828 at 823cc84c, before
+/// its first cut (#623).
+const WB_NOTES_TS_LINES: usize = 2828;
+
+/// Uses of the name `WBConsole` in the code of `wb-notes.ts`: the cards reach
+/// the console through `window.WBConsole`, with no import and no type that
+/// lists what they read. 49 at 823cc84c (#623). The target is 0: the cards
+/// take the console as a typed dep (ADR-0073, the 2026-10-10 amendment).
+const NOTES_CONSOLE_REACH: usize = 49;
+
+/// `(module, count)` of every use of `_flashAction`, a private member of
+/// `shell()`, in a `wb-*.ts` module: a call, or a name in a component's
+/// `uses` list. `app.ts` owns it and is not read. Exact, as `ANY_BASELINE`
+/// is. 19 in 6 modules at 823cc84c (#623). The target is an empty table:
+/// every operator message goes through one door (ADR-0073, the 2026-10-10
+/// amendment).
+const SHELL_FLASH_REACH: &[(&str, usize)] = &[
+    ("wb-consoles-tab.ts", 4),
+    ("wb-daemon.ts", 1),
+    ("wb-files.ts", 6),
+    ("wb-hosts-dialog.ts", 2),
+    ("wb-settings-dialog.ts", 3),
+    ("wb-viewer.ts", 3),
+];
+
+/// The functions that paint the columns on the stage. Each is declared in one
+/// module only: `wb-console.ts` at 823cc84c (#623).
+const COLUMN_PAINT: [&str; 6] = [
+    "applyColumns",
+    "columnMeasure",
+    "clearColumn",
+    "focusColumn",
+    "focusedId",
+    "columnRoster",
+];
 
 /// The served workbench modules, from the repo root. `vendor/` and
 /// `ui-tests/` are not read.
@@ -309,6 +350,119 @@ fn the_console_script_matches_the_line_baseline() {
          a lower count lowers WB_CONSOLE_TS_LINES in the same change, and new code goes \
          into a module of its own instead"
     );
+}
+
+/// ADR-0073 D8: the note cards never grow back. A change that adds a line to
+/// `wb-notes.ts` fails here, and a change that removes lines lowers the
+/// constant.
+#[test]
+fn the_notes_script_matches_the_line_baseline() {
+    let path = workspace_root().join("crates/ralphy-daemon/assets/ui/wb-notes.ts");
+    let lines = read(&path).lines().count();
+    assert!(
+        lines == WB_NOTES_TS_LINES,
+        "lines of crates/ralphy-daemon/assets/ui/wb-notes.ts: {WB_NOTES_TS_LINES} -> {lines}; \
+         a lower count lowers WB_NOTES_TS_LINES in the same change, and new code goes \
+         into a module of its own instead"
+    );
+}
+
+/// #623: the note cards do not reach the console through `window` more than
+/// they do today.
+#[test]
+fn the_notes_reach_the_console_as_measured() {
+    let path = workspace_root().join("crates/ralphy-daemon/assets/ui/wb-notes.ts");
+    let uses = name_uses(&read(&path), "WBConsole");
+    assert!(
+        uses == NOTES_CONSOLE_REACH,
+        "uses of WBConsole in crates/ralphy-daemon/assets/ui/wb-notes.ts: \
+         {NOTES_CONSOLE_REACH} -> {uses}; the cards take what they need from the console \
+         as a typed dep, and a lower count lowers NOTES_CONSOLE_REACH in the same change"
+    );
+}
+
+/// #623: no module calls the shell's private flash more than it does today.
+#[test]
+fn shell_flash_reach_matches_the_baseline() {
+    let ui = workspace_root().join(UI_DIR);
+    let mut actual = BTreeMap::new();
+    for path in ts_modules(&ui) {
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if !name.starts_with("wb-") {
+            continue;
+        }
+        let n = name_uses(&read(&path), "_flashAction");
+        if n > 0 {
+            actual.insert(name.to_string(), n);
+        }
+    }
+    let errors = flash_errors(&actual, SHELL_FLASH_REACH);
+    assert!(
+        errors.is_empty(),
+        "uses of the shell's `_flashAction` in {UI_DIR}/wb-*.ts: tell the operator through \
+         the one door for operator messages, or, when a change removed some, lower \
+         SHELL_FLASH_REACH in crates/xtask/tests/ratchets.rs:\n{}",
+        errors.join("\n")
+    );
+}
+
+/// #623: each function that paints the columns has one owner module.
+#[test]
+fn the_column_paint_has_one_owner() {
+    let ui = workspace_root().join(UI_DIR);
+    let mut owners: BTreeMap<&str, Vec<String>> = BTreeMap::new();
+    for path in ts_modules(&ui) {
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        let text = read(&path);
+        for function in COLUMN_PAINT {
+            if declared_functions(&text, function) > 0 {
+                owners.entry(function).or_default().push(name.to_string());
+            }
+        }
+    }
+    let errors = column_owner_errors(&owners, &COLUMN_PAINT);
+    assert!(
+        errors.is_empty(),
+        "each column paint function is declared (`function name(`) in exactly one module \
+         under {UI_DIR}:\n{}",
+        errors.join("\n")
+    );
+}
+
+/// The coupling counts read code, not comments, and their baselines are
+/// exact (#623).
+#[test]
+fn coupling_counts_read_code_and_are_exact() {
+    let src = "// WBConsole in a comment\n\
+               window.WBConsole.toast({ text: `${window.WBConsole.NOTE_MAX}` });\n\
+               const uses = [\"_flashAction\", \"WBConsole\"]; const WBConsoleX = 1;\n";
+    assert_eq!(name_uses(src, "WBConsole"), 3);
+    assert_eq!(name_uses(src, "_flashAction"), 1);
+
+    let baseline = [("a.ts", 2)];
+    let one = |file: &str, n| BTreeMap::from([(file.to_string(), n)]);
+    assert!(flash_errors(&one("a.ts", 2), &baseline).is_empty());
+    assert_eq!(flash_errors(&one("a.ts", 1), &baseline).len(), 1);
+    assert_eq!(flash_errors(&one("a.ts", 3), &baseline).len(), 1);
+    assert_eq!(flash_errors(&one("b.ts", 1), &baseline).len(), 2);
+
+    let decls = "function focusedId() {}\n\
+                 // function focusedId() {}\n\
+                 const x = focusedId(); const clearColumn = () => 1;\n\
+                 async function applyColumns(a) {}\n";
+    assert_eq!(declared_functions(decls, "focusedId"), 1);
+    assert_eq!(declared_functions(decls, "clearColumn"), 0);
+    assert_eq!(declared_functions(decls, "applyColumns"), 1);
+
+    let names = ["a", "b", "c"];
+    let owners = BTreeMap::from([
+        ("a", vec!["x.ts".to_string()]),
+        ("b", vec!["x.ts".to_string(), "y.ts".to_string()]),
+    ]);
+    let errors = column_owner_errors(&owners, &names);
+    assert_eq!(errors.len(), 2, "{errors:?}");
+    assert!(errors.iter().any(|e| e.starts_with("b: ")), "{errors:?}");
+    assert!(errors.iter().any(|e| e.starts_with("c: ")), "{errors:?}");
 }
 
 /// #613: no module has an explicit `any`. oxlint (`typescript/no-explicit-any`)
@@ -758,6 +912,73 @@ fn explicit_any(src: &str) -> usize {
         }
     }
     count
+}
+
+/// Uses of `name` in the code of `src`: an identifier or a string whose text
+/// is `name`, the code inside a template hole included. The lexer drops
+/// comments, and a longer name (`WBConsoleX`) is another identifier.
+fn name_uses(src: &str, name: &str) -> usize {
+    let mut count = 0;
+    for t in lex::lex(src, 1) {
+        match &t.tok {
+            lex::Tok::Ident(text) | lex::Tok::Str(text) if text == name => count += 1,
+            lex::Tok::Tpl(pieces) => {
+                for piece in pieces {
+                    if let lex::Piece::Expr(code) = piece {
+                        count += name_uses(code, name);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    count
+}
+
+/// The `function name(` declarations in the code of `src`. An arrow function
+/// bound to the name is not read: the column paint declares no such one.
+fn declared_functions(src: &str, name: &str) -> usize {
+    let toks = lex::lex(src, 1);
+    toks.windows(3)
+        .filter(|w| w[0].ident() == Some("function") && w[1].ident() == Some(name) && w[2].is("("))
+        .count()
+}
+
+/// One line per module whose `_flashAction` count is not the baseline's.
+fn flash_errors(actual: &BTreeMap<String, usize>, baseline: &[(&str, usize)]) -> Vec<String> {
+    let baseline = baseline
+        .iter()
+        .map(|(file, n)| (file.to_string(), *n))
+        .collect();
+    ratchet_errors(
+        actual,
+        &baseline,
+        |file, n| {
+            format!("{file}: {n} use(s) of `_flashAction` in a module that has none in SHELL_FLASH_REACH")
+        },
+        |file, expected, found| {
+            format!(
+                "{file}: `_flashAction` count changed {expected} -> {found}; \
+                 if it went down, lower SHELL_FLASH_REACH in this change"
+            )
+        },
+    )
+}
+
+/// One line per name that is not declared in exactly one module.
+fn column_owner_errors(owners: &BTreeMap<&str, Vec<String>>, names: &[&str]) -> Vec<String> {
+    names
+        .iter()
+        .filter_map(|name| {
+            let modules = owners.get(name).map(Vec::as_slice).unwrap_or(&[]);
+            (modules.len() != 1).then(|| {
+                format!(
+                    "{name}: declared in {} module(s) {modules:?}",
+                    modules.len()
+                )
+            })
+        })
+        .collect()
 }
 
 /// One line per `(file, program)` whose spawn count is not the baseline's.
