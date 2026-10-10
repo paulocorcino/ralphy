@@ -164,7 +164,11 @@ export function socketFrame<T>(bytes: Uint8Array): T {
   // The one unchecked step for a frame, as the `fetch` above is for a reply.
   // The daemon of the same build writes the frame. A frame or a reply that a
   // peer daemon wrote is relayed only from a peer that speaks this daemon's
-  // peer protocol version: the daemon refuses a peer of another version.
+  // peer protocol version, and the daemon refuses a peer of another version.
+  // The same version means the same reply shapes, because a change to a type
+  // that reads a peer's reply fails `peer_reply_types_are_pinned_to_the_protocol_version`
+  // (crates/xtask/tests/ratchets.rs) until the version is raised, or until
+  // each change is a new field declared optional (#653).
   return JSON.parse(new TextDecoder().decode(bytes.subarray(1)));
 }
 

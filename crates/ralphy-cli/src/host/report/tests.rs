@@ -119,7 +119,7 @@ fn json_connected_fixed_added_and_linger_lines() {
         environment: "Linux".to_string(),
         os: String::new(),
         token: String::new(),
-        protocol_version: 3,
+        protocol_version: ralphy_daemon::peer::PEER_PROTOCOL_VERSION,
         nudge: None,
         tunnel: None,
     };

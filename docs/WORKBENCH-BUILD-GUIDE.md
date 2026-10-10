@@ -86,7 +86,13 @@ libraries are classic scripts.
   build, so the reply is not checked at run time. A socket frame is read
   through `socketFrame` in the same module, for the same reason: a frame or
   a reply that a peer daemon wrote reaches the page only from a peer that
-  speaks this daemon's peer protocol version. Any other data from outside
+  speaks this daemon's peer protocol version. The same version means the
+  same reply shapes: the test
+  `peer_reply_types_are_pinned_to_the_protocol_version` in
+  `crates/xtask/tests/ratchets.rs` pins the page types that read a peer's
+  reply to `PEER_PROTOCOL_VERSION`. A change to one of those types raises
+  the version (the default), or declares each new field optional and keeps
+  the version; the commit says why. Any other data from outside
   (a message from another window, data from browser storage, an uploaded
   file) is `unknown`, and is narrowed right after it is read. Another
   window can be a page of another build: the daemon serves a popup's page

@@ -490,3 +490,45 @@ cost the peer its sessions. That restart ends the old daemon with a tree kill,
 so the keepalive that daemon spawned ends too. The peer keeps its sessions only
 because the new daemon opens a keepalive within seconds of starting, well inside
 `vmIdleTimeout`.
+
+
+## Amendment (2026-10-10): the reply shapes belong to the protocol version
+
+§3 makes the protocol version the compatibility gate, and the daemon compares
+only that number, not the build. The local daemon passes many peer replies on
+to the page as the peer wrote them: the one-reply verbs of a peer repo, the
+registry verbs that name a peer, the frames of a spawn verb, the
+`/ws/session` frames, and `GET /api/agents?repo=`. The page reads them through
+its own types and does not check them at run time. So the gate holds only if
+the same version means the same reply shapes. Under version 3 it did not.
+About 27 changes went in with no raise, for example: `file.read` got
+`encoding` and `bom`, a refused write got `char_index`, `tree.list` entries
+got `ignored`, `session-open` got `name`, `checkout`, `watch` and `replay`,
+and new verbs (`tree.find`, `note.read`, `dir.list`, `project.add`…) were
+added. A version-3 peer of an older build sends replies that the page types
+call impossible, or answers "unknown verb". The full list is in the commit
+that raised the version to 4.
+
+**Decision.** The shape of a reply that a peer can answer belongs to the
+protocol version.
+
+- **The default is a raise.** A change to such a reply (a field added,
+  removed, renamed, or given another type) raises `PEER_PROTOCOL_VERSION`. The
+  page types stay strict: a field the daemon always sends is required.
+- **The exception is a new optional field.** A change may keep the version
+  when each change is a new field that the page reads as optional, and the
+  page is correct when an older peer does not send it. The commit says why.
+  ADR-0067 M3 (`socket` in `describe`) is this case. A Rust reader of a peer's
+  reply keeps `serde(default)` on such a field (`HostedSessionInfo` in
+  `routes/api_sessions.rs`, `store_from_repos_json` in `fleet.rs`).
+- **A test makes the choice visible.** The test
+  `peer_reply_types_are_pinned_to_the_protocol_version` in
+  `crates/xtask/tests/ratchets.rs` hashes the page types that read a reply a
+  peer wrote (`PEER_REPLY_TYPES`) and compares the hash and
+  `PEER_PROTOCOL_VERSION` with a pinned pair. A changed type fails it until
+  the pin names the new hash, with a new version or with the same one. A raise
+  with no changed type also fails it until the pin names the new version. A
+  type that a listed type names must be listed too.
+
+Version 4 pays for the version-3 changes above. A version-3 peer is refused
+until it is updated, with the message §3 already gives.
