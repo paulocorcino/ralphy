@@ -556,14 +556,12 @@ def main():
 
             # T17
             page.evaluate("(id) => __card(id).querySelector('.ProseMirror')?.blur()", a)
-            page.evaluate("() => { WBConsole.DORMANT_AFTER_MS = 0; }")
-            page.wait_for_timeout(6500)  # one sweep (SWEEP_MS 5 s) past the timeout
+            page.wait_for_timeout(21000)  # the 15 s timeout, one 5 s sweep, and a margin
             awake = page.evaluate(
                 "(id) => ({ onTop: WBNotes.onTopNow() === id, asleep: !!__card(id)._noteAsleep,"
                 " editor: !!__card(id)._noteEditor })",
                 a,
             )
-            page.evaluate("() => { WBConsole.DORMANT_AFTER_MS = 15000; }")
             check("T17 an idle card on top keeps its editor", awake == {"onTop": True, "asleep": False, "editor": True},
                   str(awake))
             page.evaluate("() => WBNotes.putBack()")

@@ -409,7 +409,9 @@ fn the_card_host_lists_the_decided_names() {
     let names = card_host_names(&read(&path));
     assert!(
         names == Some(CARD_HOST_NAMES),
-        "names in CardHost of crates/ralphy-daemon/assets/ui/wb-types.d.ts:          {CARD_HOST_NAMES} -> {names:?}; a change to the list lowers or raises CARD_HOST_NAMES          in the same change, and a raise is a design decision"
+        "names in CardHost of crates/ralphy-daemon/assets/ui/wb-types.d.ts: \
+         {CARD_HOST_NAMES} -> {names:?}; a change to the list lowers or raises \
+         CARD_HOST_NAMES in the same change, and a raise is a design decision"
     );
 }
 
