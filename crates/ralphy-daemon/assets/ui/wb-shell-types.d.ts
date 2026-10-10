@@ -116,7 +116,7 @@ export type TabOpen = {
 
 /** What a file tab opens with: the bytes, or why the daemon served none.
  * `null`: there is nothing to show, and the tab is closed. */
-export type TabBody = { content?: string; encoding?: string; bom?: boolean; refused?: string } | null;
+export type TabBody = { content: string; encoding?: string; bom?: boolean } | { refused: string } | null;
 
 /** A diff tab's two sides (`WBChanges.diffTarget`). */
 export type DiffTarget = ReturnType<typeof import("./wb-changes.ts").WBChanges.diffTarget>;

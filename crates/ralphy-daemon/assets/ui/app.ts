@@ -3446,11 +3446,8 @@ export function shell() {
             label: this.$store.projects.projectLabel(project),
             path,
             ftype,
-            content: body.content!,
-            encoding: body.encoding,
-            bom: body.bom,
-            refused: body.refused,
             checkout: ck,
+            ...body,
           });
           // NOT `setActive(id)`: `restoreView` opens N tabs in one burst and
           // THEN activates the stored one, so the last read to answer must not

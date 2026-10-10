@@ -41,13 +41,12 @@ type ViewerWindow = Window & { mermaid?: Mermaid };
  * pane is used. `ed` is a diff editor on a `diff` pane and a code editor on
  * every other.
  */
-type ViewerRecord = {
+type PaneRecord = {
   id: string;
   project: string;
   label: string;
   path: string;
   kind: string;
-  content: string;
   original: string | undefined;
   uid: number;
   editing: boolean;
@@ -56,8 +55,6 @@ type ViewerRecord = {
   checkout: string | null;
   encoding: string;
   bom: boolean;
-  /** The daemon's reason for serving no bytes, or `null`. */
-  refused: string | null;
   el?: HTMLElement;
   ed?: MonacoEditor | MonacoDiffEditor;
   dirty?: boolean;
@@ -78,22 +75,27 @@ type ViewerRecord = {
   hitIdx?: number;
 };
 
-/** What `open` takes: the fields of a `FileDescriptor` and the reasons a pane may have no bytes. */
+/** A pane over the file's bytes. A record never changes between the two
+ * kinds: a refused pane that gets bytes is replaced (`reopenRefused`). */
+type BytesRecord = PaneRecord & { content: string; refused: null };
+/** A pane that holds the daemon's reason for serving no bytes. */
+type RefusedRecord = PaneRecord & { refused: string };
+type ViewerRecord = BytesRecord | RefusedRecord;
+
+/** What `open` takes: the fields of a `FileDescriptor`, or the reason a pane has no bytes. */
 type OpenSpec = {
   id: string;
   project: string;
   label?: string;
   path: string;
   ftype: string;
-  content: string;
   /** The diff's HEAD side. */
   original?: string;
   detached?: boolean;
   checkout?: string | null;
   encoding?: string;
   bom?: boolean;
-  refused?: string | null;
-};
+} & ({ content: string; refused?: undefined } | { content?: undefined; refused: string });
 
 /** The second pane the shell resolved (`WBSplit.resolve`). */
 type ViewerSlot = { id: string; mirror?: boolean; focus?: boolean; ratio: number | null };
@@ -336,7 +338,7 @@ export function createViewer(window: ViewerWindow, document: Document) {
     }).observe(viewers);
   }
 
-  function mountEditor(rec: ViewerRecord, container: HTMLElement, opts: { path?: string; wordWrap?: string }) {
+  function mountEditor(rec: BytesRecord, container: HTMLElement, opts: { path?: string; wordWrap?: string }) {
     const path = (opts && opts.path) || rec.path;
     if (rec.mounting || rec.mountFailed) return Promise.resolve();
     rec.mounting = true;
@@ -461,7 +463,7 @@ export function createViewer(window: ViewerWindow, document: Document) {
   }
 
   // --- a diff tab (read-only, two-sided) ----------------------------------
-  function mountDiff(rec: ViewerRecord, container: HTMLElement) {
+  function mountDiff(rec: BytesRecord, container: HTMLElement) {
     if (rec.mounting || rec.mountFailed) return Promise.resolve();
     rec.mounting = true;
     return WBMonaco.ready()
@@ -494,7 +496,7 @@ export function createViewer(window: ViewerWindow, document: Document) {
       });
   }
 
-  function buildDiff(rec: ViewerRecord) {
+  function buildDiff(rec: BytesRecord) {
     const el = document.createElement("div");
     el.className = "viewer diff-viewer";
     el.dataset.tabId = rec.id;
@@ -523,7 +525,7 @@ export function createViewer(window: ViewerWindow, document: Document) {
   }
 
   // --- a source-code editor tab ------------------------------------------
-  function buildCode(rec: ViewerRecord) {
+  function buildCode(rec: BytesRecord) {
     const el = document.createElement("div");
     el.className = "viewer code-viewer";
     el.dataset.tabId = rec.id;
@@ -571,7 +573,7 @@ export function createViewer(window: ViewerWindow, document: Document) {
     // mutation those surfaces forbid, so it never reaches the action seam. (An
     // image's `content` is a `data:` URL, not the file's bytes — saving it would
     // write the URL over the image.) A refused pane has no bytes to save.
-    if (rec.kind === "diff" || rec.kind === "image" || rec.refused) return;
+    if (rec.kind === "diff" || rec.kind === "image" || rec.refused !== null) return;
     const content = contentOf(rec);
     rec.content = content;
     hideDiskBadge(rec);
@@ -611,7 +613,7 @@ export function createViewer(window: ViewerWindow, document: Document) {
   // The pane's current bytes, whether shown as source (Monaco) or as a rendered
   // markdown preview. Before Monaco finishes booting `rec.ed` is undefined and
   // `rec.content` is still authoritative.
-  function contentOf(rec: ViewerRecord) {
+  function contentOf(rec: BytesRecord) {
     if (rec.kind === "diff") return rec.content;
     if (rec.ed && (rec.kind === "code" || rec.editing)) return (rec.ed as MonacoEditor).getValue();
     return rec.content;
@@ -621,7 +623,7 @@ export function createViewer(window: ViewerWindow, document: Document) {
   // detached popup), carrying the *current* (possibly edited) content.
   // The pin rides the descriptor (#406): a detached pane saves and reloads
   // against the tree its bytes came from, and re-attaches pinned to it.
-  function descOf(rec: ViewerRecord): FileDescriptor {
+  function descOf(rec: BytesRecord): FileDescriptor {
     return {
       project: rec.project,
       label: rec.label,
@@ -652,7 +654,7 @@ export function createViewer(window: ViewerWindow, document: Document) {
       // "reload failed".
       if (rec.kind === "image") {
         WBDaemon.readImage(rec.project, rec.path, undefined, rec.checkout)
-          .then((url) => (url ? applyFresh(rec, url) : fail()))
+          .then((url) => (!url ? fail() : rec.refused !== null ? reopenRefused(rec, { content: url }) : applyFresh(rec, url)))
           .catch(() => fail());
         return;
       }
@@ -662,7 +664,7 @@ export function createViewer(window: ViewerWindow, document: Document) {
           rec.bom = !!reply.bom;
           if (reply.encoding) rec.encoding = reply.encoding;
           refreshEncodingPill(rec);
-          if (rec.refused) return reopenRefused(rec, reply);
+          if (rec.refused !== null) return reopenRefused(rec, reply);
           applyFresh(rec, reply.content);
         })
         .catch(() => fail());
@@ -681,15 +683,15 @@ export function createViewer(window: ViewerWindow, document: Document) {
   // A pane that opened refused now has bytes: rebuild it as the pane its
   // kind deserves. `open` returns early on a known id, so the record is
   // replaced under the same id — the tab in the shell is untouched.
-  function reopenRefused(rec: ViewerRecord, reply: FileReadOk) {
-    const desc = { ...descOf(rec), content: reply.content, encoding: reply.encoding, bom: reply.bom };
-    API.close(rec.id);
-    API.open({ id: rec.id, ...desc, detached: rec.detached });
+  function reopenRefused(rec: RefusedRecord, bytes: { content: string; encoding?: string; bom?: boolean }) {
+    const { id, project, label, path, kind, checkout, detached } = rec;
+    API.close(id);
+    API.open({ id, project, label, path, ftype: kind, checkout, detached, content: bytes.content, encoding: bytes.encoding, bom: bytes.bom });
     if (rec.visible) refresh();
     window.WB.emit("reload", { project: rec.project, path: rec.path });
   }
 
-  function applyFresh(rec: ViewerRecord, fresh: string) {
+  function applyFresh(rec: BytesRecord, fresh: string) {
     // A diff pane has no single "fresh bytes" to apply: reloading it means
     // re-resolving BOTH sides, which is a reopen, not a refresh.
     if (rec.kind === "diff") return;
@@ -845,7 +847,7 @@ export function createViewer(window: ViewerWindow, document: Document) {
           rec.encoding = reply.encoding || name;
           rec.bom = !!reply.bom;
           refreshEncodingPill(rec);
-          if (rec.refused) return reopenRefused(rec, reply);
+          if (rec.refused !== null) return reopenRefused(rec, reply);
           applyFresh(rec, reply.content);
         })
         .catch(() => showSaveError(rec, `Could not reopen as ${label}: the daemon did not answer.`));
@@ -922,7 +924,7 @@ export function createViewer(window: ViewerWindow, document: Document) {
     btn.setAttribute("aria-label", caption);
   }
 
-  function detachClick(rec: ViewerRecord) {
+  function detachClick(rec: BytesRecord) {
     const evt = rec.detached ? "workbench:reattach-request" : "workbench:detach-request";
     sendDocument(document, evt, descOf(rec));
   }
@@ -931,7 +933,7 @@ export function createViewer(window: ViewerWindow, document: Document) {
   // `rec.content` is a `data:` URL the daemon's verified media type built
   // (ADR-0049 §2), so this pane never decides what bytes are. Read-only: no
   // Save, no Edit — the Write class is untouched by images.
-  function buildImage(rec: ViewerRecord) {
+  function buildImage(rec: BytesRecord) {
     const el = document.createElement("div");
     el.className = "viewer image-viewer";
     el.dataset.tabId = rec.id;
@@ -987,7 +989,7 @@ export function createViewer(window: ViewerWindow, document: Document) {
     return WBFail.failed({ message: reason }, "Could not open the file: the daemon gave no reason.");
   }
 
-  function buildRefused(rec: ViewerRecord) {
+  function buildRefused(rec: RefusedRecord) {
     const el = document.createElement("div");
     el.className = "viewer refused-viewer";
     el.dataset.tabId = rec.id;
@@ -1005,7 +1007,7 @@ export function createViewer(window: ViewerWindow, document: Document) {
         <p class="refused-hint"></p>
       </div>`;
     setPathLabel(el, rec);
-    el.querySelector(".refused-text")!.textContent = refusalText(rec.refused!);
+    el.querySelector(".refused-text")!.textContent = refusalText(rec.refused);
     if (rec.refused === "binary") {
       el.querySelector(".refused-hint")!.textContent =
         "This file may be text in an older encoding. Set the fallback encoding in “Settings”, or reopen the file with another encoding.";
@@ -1016,7 +1018,7 @@ export function createViewer(window: ViewerWindow, document: Document) {
   }
 
   // --- a Markdown tab -----------------------------------------------------
-  function buildMarkdown(rec: ViewerRecord) {
+  function buildMarkdown(rec: BytesRecord) {
     const el = document.createElement("div");
     el.className = "viewer md-viewer";
     el.dataset.tabId = rec.id;
@@ -1095,7 +1097,7 @@ export function createViewer(window: ViewerWindow, document: Document) {
     renderMarkdown(rec);
   }
 
-  function renderMarkdown(rec: ViewerRecord) {
+  function renderMarkdown(rec: BytesRecord) {
     const article = rec.el!.querySelector(".md-body")!;
     const html = DOMPurify.sanitize(marked.parse(rec.content));
     article.innerHTML = html;
@@ -1445,7 +1447,7 @@ export function createViewer(window: ViewerWindow, document: Document) {
   }
 
   // Swap the markdown pane between rendered preview and a raw-source editor.
-  function toggleEdit(rec: ViewerRecord) {
+  function toggleEdit(rec: BytesRecord) {
     const split = rec.el!.querySelector(".md-split")!;
     const editor = rec.el!.querySelector<HTMLElement>(".md-editor")!;
     const toggle = rec.el!.querySelector<HTMLElement>('[data-act="toggle"]')!;
@@ -1491,17 +1493,24 @@ export function createViewer(window: ViewerWindow, document: Document) {
     // they came; absent (a diff) is UTF-8 without a BOM. `refused` is
     // the daemon's reason for serving nothing: the pane says so and keeps the
     // tab, instead of the tab closing under the click.
-    open({ id, project, label, path, ftype, content, original, detached, checkout, encoding, bom, refused }: OpenSpec) {
+    open(spec: OpenSpec) {
+      const { id, project, label, path, ftype, original, detached, checkout, encoding, bom } = spec;
       if (map.has(id)) return;
       const shown = label || (WBFleet ? WBFleet.refSlug(project) : project);
-      const rec: ViewerRecord = {
-        id, project, label: shown, path, kind: ftype, content, original, uid: ++uidSeq,
+      const pane: PaneRecord = {
+        id, project, label: shown, path, kind: ftype, original, uid: ++uidSeq,
         editing: false, visible: false, detached: !!detached, checkout: checkout || null,
-        encoding: encoding || "UTF-8", bom: !!bom, refused: refused || null,
+        encoding: encoding || "UTF-8", bom: !!bom,
       };
+      if (spec.refused !== undefined) {
+        const refused: RefusedRecord = { ...pane, refused: spec.refused };
+        map.set(id, refused);
+        buildRefused(refused);
+        return;
+      }
+      const rec: BytesRecord = { ...pane, content: spec.content, refused: null };
       map.set(id, rec);
-      if (rec.refused) buildRefused(rec);
-      else if (ftype === "markdown") buildMarkdown(rec);
+      if (ftype === "markdown") buildMarkdown(rec);
       else if (ftype === "diff") buildDiff(rec);
       else if (ftype === "image") buildImage(rec);
       else buildCode(rec);
@@ -1550,10 +1559,11 @@ export function createViewer(window: ViewerWindow, document: Document) {
     encodingLabel,
 
     // The shell never calls it — a detach goes through the pane's own button.
-    // detached.html reads it on unload, to send the edited bytes home.
+    // detached.html reads it on unload, to send the edited bytes home. A
+    // refused pane has no bytes to describe.
     descOf(id: string) {
       const rec = map.get(id);
-      return rec ? descOf(rec) : null;
+      return rec && rec.refused === null ? descOf(rec) : null;
     },
 
     // Show one pane (or none, when the Consoles tab is active), and beside it
@@ -1635,7 +1645,7 @@ export function createViewer(window: ViewerWindow, document: Document) {
       // A diff tab never auto-refreshes: it is a two-sided read, and a
       // single-side update would silently misrepresent the comparison. A
       // refused pane has no bytes to compare; its Reload is the retry.
-      if (rec.kind === "diff" || rec.refused) return;
+      if (rec.kind === "diff" || rec.refused !== null) return;
       if (content === rec.content) return;
       if (!rec.dirty) {
         applyFresh(rec, content);

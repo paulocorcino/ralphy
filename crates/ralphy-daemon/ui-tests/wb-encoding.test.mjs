@@ -188,13 +188,14 @@ test("a refusal the operator declines to repair leaves the pane unsaved", async 
 // --- the pane's side (wb-viewer.ts) ---------------------------------------
 // The record behind a pane is the fold: what it carries into a save and a
 // detach descriptor, and what a refusal does to it. The DOM here is a fake
-// that accepts any structure and answers any selector with a fresh node.
+// that accepts any structure and answers each selector with one node of its own.
 import { createViewer } from "../assets/ui/wb-viewer.ts";
 import { WBMonaco } from "../assets/ui/wb-monaco.ts";
 
 const REAL_MONACO = { ...WBMonaco };
 
 function fakeNode() {
+  const found = new Map();
   const node = {
     style: {},
     dataset: {},
@@ -207,7 +208,7 @@ function fakeNode() {
       node.children.push(k);
     },
     remove() {},
-    querySelector: () => fakeNode(),
+    querySelector: (sel) => found.get(sel) ?? found.set(sel, fakeNode()).get(sel),
     querySelectorAll: () => [],
     addEventListener() {},
     focus() {},
@@ -234,7 +235,7 @@ function loadViewer() {
   // The pane imports the one `WBMonaco`: it never boots here, so no editor
   // mounts. `after` puts the real boot back.
   WBMonaco.ready = () => new Promise(() => {});
-  return { viewer: createViewer(window, document), emitted, window };
+  return { viewer: createViewer(window, document), emitted, window, mount };
 }
 after(() => Object.assign(WBMonaco, REAL_MONACO));
 
@@ -289,11 +290,26 @@ test("the dirty mark waits for the daemon's ack and comes back on a refusal", ()
 test("a refused open builds a pane that saves nothing and ignores nudges", () => {
   const { viewer, emitted } = loadViewer();
   viewer.open({ id: "t4", project: "o/r", path: "d.bin", ftype: "code", refused: "binary" });
-  const desc = viewer.descOf("t4");
-  assert.equal(desc.content, undefined, "no bytes");
+  assert.equal(viewer.descOf("t4"), null, "no bytes, so nothing to describe");
   viewer.externalChange("t4", "bytes arrived");
-  assert.equal(viewer.descOf("t4").content, undefined, "a nudge does not fill a refused pane");
-  assert.equal(emitted.length, 0);
-  viewer.close("t4");
-  assert.equal(viewer.descOf("t4"), null);
+  assert.deepEqual(emitted, [], "a nudge does not fill a refused pane: no reload");
+  // Control: the same nudge refreshes a pane that has bytes.
+  viewer.open({ id: "t5", project: "o/r", path: "e.txt", ftype: "code", content: "old" });
+  viewer.externalChange("t5", "bytes arrived");
+  assert.deepEqual(emitted, [{ action: "reload", project: "o/r", path: "e.txt" }]);
+});
+
+test("Reload of a refused image that is an image now rebuilds it as an image pane", async () => {
+  const { viewer, emitted, window, mount } = loadViewer();
+  const url = "data:image/png;base64,AA==";
+  window.WBDaemon = { observe() {} };
+  globalThis.WBDaemon = { withCheckout: (p) => p, readImage: () => Promise.resolve(url) };
+  viewer.open({ id: "i1", project: "o/r", label: "r", path: "a.png", ftype: "image", refused: "not an image" });
+  assert.equal(viewer.descOf("i1"), null);
+  mount.children[0].querySelector('[data-act="reload"]').onclick();
+  await tick();
+  assert.deepEqual(viewer.descOf("i1"), {
+    project: "o/r", label: "r", path: "a.png", ftype: "image", content: url, checkout: null, encoding: "UTF-8", bom: false,
+  });
+  assert.deepEqual(emitted, [{ action: "reload", project: "o/r", path: "a.png" }]);
 });
