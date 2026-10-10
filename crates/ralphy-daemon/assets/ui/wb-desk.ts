@@ -39,7 +39,7 @@ import type { ConsoleWin, DeskChange, DeskFence, DeskNote, DeskRecord, DeskReply
 
 const { fenceMembership, WIN_MIN_W, WIN_MIN_H } = WBGeometry;
 const { unheardRef, peerHeld, relaunchRequest, sessionRowFor } = WBConsoleSession;
-const { reconcileDesk, DESK_MAX, NOTE_MAX } = WBDeskFolds;
+const { reconcileDesk, atCap, DESK_MAX, NOTE_MAX } = WBDeskFolds;
 const { sessionIdOf } = WBWindowState;
 
 // Where an upload goes. The sink never rejects, and a network failure is one
@@ -900,12 +900,12 @@ export function createDeskRecords(deps: DeskRecordsDeps) {
   // born, so the open is refused instead of cutting a record in silence
   // (ADR-0050 amendment 2026-10-04).
   function atDeskCap() {
-    return desk().length >= DESK_MAX;
+    return atCap(desk(), DESK_MAX);
   }
   // Whether another card would be over the cap — asked before a card is born,
   // so the open is refused instead of quietly evicting one that is on screen.
   function atNoteCap() {
-    return notes().length >= NOTE_MAX;
+    return atCap(notes(), NOTE_MAX);
   }
   // The card records, as a copy: `wb-notes.ts` reads them and hands a NEW
   // array back to `saveNotes`, never mutates this one.

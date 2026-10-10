@@ -568,3 +568,19 @@ test("a keystroke the editor holds but has not reported yet counts as unsaved", 
   w2.WBNotes = createNotes(w2, d2, { console: stub });
   assert.equal(w2.WBNotes.anyDirty(), false);
 });
+
+// The cap refuses a new card, it does not evict one, and says why (#623: one
+// cap rule for `create` and `openFromExplorer`).
+test("a card is refused at the cap, with a toast and no write", () => {
+  const records = Array.from({ length: 32 }, (_, i) => ({ id: `n${i}`, repo: "r", path: `${i}.note`, rect: {} }));
+  const saved = [];
+  const toasts = [];
+  const window = {};
+  const stub = { notes: () => records, fenceRecords: () => [], saveNotes: (next) => saved.push(next) };
+  const document = { getElementById: () => null };
+  window.WBNotes = createNotes(window, document, { console: stub, messages: { toast: (t) => toasts.push(t.text) } });
+  assert.equal(window.WBNotes.create({ repo: "r" }), null);
+  assert.equal(window.WBNotes.openFromExplorer({ repo: "r", path: "new.note" }), null);
+  assert.deepEqual(saved, []);
+  assert.deepEqual(toasts, Array(2).fill("You can have at most 32 notes. Close one first."));
+});
