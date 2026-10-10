@@ -205,7 +205,7 @@ export function wbFiles() {
       // `head.dirty` push re-reads the branch.
       if (this.useDaemonTree() && window.WBDaemon?.subscribeTree) {
         this._treeSub = WBDaemon.subscribeTree(
-          this.$store.projects.openSlug,
+          this.$store.projects.openSlug!,
           (rel: string) => {
             if (!this.tabHidden()) this.onTreeDirty(rel);
           },
@@ -254,7 +254,7 @@ export function wbFiles() {
     async restoreExpansion() {
       const slug = this.$store.projects.openSlug;
       this.treeMem();
-      const rels = this._treeExpanded!.get(slug) || [];
+      const rels = this._treeExpanded!.get(slug!) || [];
       if (!rels.length || !this._tree) return;
       this._restoringExpansion = true;
       try {
@@ -440,7 +440,7 @@ export function wbFiles() {
       }
       this._filesPeerDown = down ? this.$store.projects.openSlug : null;
     },
-    _filesPeerDown: null,
+    _filesPeerDown: null as string | null,
 
     // The daemon says it could not watch a dir of this tree (`reason`), or
     // `null` when a new socket holds every dir again.
@@ -869,7 +869,7 @@ export function wbFiles() {
         if (enc) payload.encoding = enc;
         const fresh: Promise<string | null | undefined> =
           t.kind === "image"
-            ? WBDaemon.readImage(t.project, t.path, undefined, t.checkout)
+            ? WBDaemon.readImage(t.project, t.path!, undefined, t.checkout)
             : WBDaemon.observe("file.read", payload).then((reply) =>
                 reply?.status === "ok" ? reply.content : null,
               );
@@ -975,7 +975,7 @@ export function wbFiles() {
       // Out of a CONTENT search: the tab lands on the first occurrence
       // (ADR-0036 amendment 2026-09-15).
       const find = this.fileSearchFindTerm();
-      this.openTab({ project: this.$store.projects.openSlug, path, title: node.title, ftype, find });
+      this.openTab({ project: this.$store.projects.openSlug!, path, title: node.title, ftype, find });
     },
 
     // The term to land on: the live query, only while the CONTENT filter is on.
@@ -1022,12 +1022,12 @@ export function wbFiles() {
           icon: "bi-arrow-right-square",
           run: () => this.moveNode(node),
         },
-        node && { sep: true },
+        node && { sep: true as const },
         // Creating targets the folder itself, or the folder CONTAINING the
         // clicked file.
         { label: "New file…", icon: "bi-file-earmark-plus", run: () => this.emitCreate(node, "file") },
         { label: "New folder…", icon: "bi-folder-plus", run: () => this.emitCreate(node, "folder") },
-        node && { sep: true },
+        node && { sep: true as const },
         node && { label: "Delete", icon: "bi-trash", danger: true, run: () => this.emit("delete", node) },
       ].filter(Boolean);
       this.renderMenu(x, y, items);

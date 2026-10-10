@@ -25,23 +25,7 @@ import { WBSessionRoute } from "./wb-session-route.ts";
 import { WBSettingsDialog } from "./wb-settings-dialog.ts";
 import { WBSplit } from "./wb-split.ts";
 import { sendDocument, sendWindow } from "./wb-events.ts";
-import type { ChangeEntry, CheckoutRow, ConfirmAsk, FleetReply, Group, Listing, ModalEntry, Project, PromptAsk, Read, ReadState, RepoRow, RosterRow, Subscription, Sync, Timer } from "./wb-types.d.ts";
-
-/** A peer of `/api/fleet`. */
-export type FleetPeer = {
-  daemon_id: string;
-  name: string;
-  state: string;
-  diagnosis?: string;
-  destination?: string;
-  identity_file?: string;
-  /** Set when the peer is paired over SSH. */
-  tunnel?: unknown;
-  os?: string;
-  environment?: string;
-  /** The update can wake it through `wsl.exe`. */
-  nudgeable?: boolean;
-};
+import type { BoardIssue, BoardRow, CanvasTab, ChangeEntry, CheckoutRow, ConfirmAsk, DiffTarget, FilePopupMessage, FleetPeer, FleetReply, Group, LedgerMissing, LedgerRecord, Listing, MenuItem, ModalEntry, Project, PromptAsk, Read, ReadState, ReadyPlan, RepoRow, RosterRow, Run, RunIssue, RunPill, SavePayload, SecurityFact, ShellLate, Slot, SpendDoc, Subscription, Sync, TabBody, TabOpen, Timer } from "./wb-types.d.ts";
 
 // A phone in either orientation: its SHORT side is under the workbench's phone
 // breakpoint (560px). Landscape iPhone is ~750 wide but ~340 tall; an iPad's
@@ -50,9 +34,9 @@ export type FleetPeer = {
 const PHONE_QUERY = "(max-width: 560px), (pointer: coarse) and (max-height: 560px)";
 
 // The `this` of `shell()`'s members: its own members, the Alpine magics, and
-// any other name as `any` until its fields are typed one by one. The type a
+// the fields a method sets on first use (`ShellLate`). The type a
 // component checks its `uses` against is the literal itself (`Shell`).
-function shellData<T extends object>(data: T & ThisType<T & AlpineMagics & Record<string, any>>): T {
+function shellData<T extends object>(data: T & ThisType<T & AlpineMagics & ShellLate>): T {
   return data;
 }
 
@@ -1459,7 +1443,7 @@ export function shell() {
       return !!this.writeLockReason();
     },
     writeLockReason() {
-      const slug = this.$store.projects.openSlug;
+      const slug = this.$store.projects.openSlug!;
       if (this.buildSkew) return this.BUILD_SKEW_LOCK;
       if (this.changesRead[slug]?.current === false || this.syncRead[slug]?.current === false) {
         return "The changes shown are not current. Wait for the next read, or reload the page.";
@@ -1513,11 +1497,11 @@ export function shell() {
     },
     labelLockReason() {
       if (this.buildSkew) return this.BUILD_SKEW_LOCK;
-      if (this.boardRead[this.$store.projects.openSlug]?.current === false) {
+      if (this.boardRead[this.$store.projects.openSlug!]?.current === false) {
         return "The board shown is not current. Wait for the next read.";
       }
       return WBChanges.writeLockReason(
-        this.runsByProject[this.$store.projects.openSlug],
+        this.runsByProject[this.$store.projects.openSlug!],
         "You can edit labels again when it finishes.",
       );
     },
@@ -1552,10 +1536,10 @@ export function shell() {
       );
     },
     pushAct() {
-      return WBChanges.pushAct(this.syncByProject[this.$store.projects.openSlug]);
+      return WBChanges.pushAct(this.syncByProject[this.$store.projects.openSlug!]);
     },
     pullBlocked() {
-      return WBChanges.pullBlocked(this.syncByProject[this.$store.projects.openSlug]);
+      return WBChanges.pullBlocked(this.syncByProject[this.$store.projects.openSlug!]);
     },
     // The remote bar's title while an act is out: the busy act names itself,
     // the other two name what they are waiting on.
@@ -1568,7 +1552,7 @@ export function shell() {
       return WBChanges.groupDiscardNote(group);
     },
     commitTarget() {
-      return WBChanges.commitTarget(this.syncByProject[this.$store.projects.openSlug]);
+      return WBChanges.commitTarget(this.syncByProject[this.$store.projects.openSlug!]);
     },
     // `withOriginal` only on the UNSTAGE direction — see `wb-changes.ts`.
     groupPaths(list: ChangeEntry[], withOriginal: boolean) {
@@ -1577,7 +1561,7 @@ export function shell() {
     commitTitle() {
       const locked = this.writeLockReason();
       if (locked) return locked;
-      if (!(this.changesStaged[this.$store.projects.openSlug] || []).length) {
+      if (!(this.changesStaged[this.$store.projects.openSlug!] || []).length) {
         return "Stage a change first";
       }
       if (!this.commitMsg.trim()) return "Write a commit message first";
@@ -1588,7 +1572,7 @@ export function shell() {
         !this.writeLocked() &&
         this.commitMsgSlug === this.$store.projects.openSlug &&
         !!this.commitMsg.trim() &&
-        !!(this.changesStaged[this.$store.projects.openSlug] || []).length
+        !!(this.changesStaged[this.$store.projects.openSlug!] || []).length
       );
     },
 
@@ -1956,7 +1940,7 @@ export function shell() {
     _runsSeq: 0,
     // One entry per `runid`: issue queue + per-issue status, live phase, the
     // current issue's plan.md (helpers in wb-runs.ts, `WBRun`).
-    runsByProject: {} as Record<string, any>,
+    runsByProject: {} as Record<string, Run[]>,
     // An error must never render as "No active runs": an empty project and an
     // unreadable one are different facts (ADR-0047 §6).
     runsError: "",
@@ -1967,7 +1951,7 @@ export function shell() {
     nowMs: Date.now(),
     // The trail node the operator arrived at from the board (#301): a marker,
     // not a selection.
-    trailFocus: null,
+    trailFocus: null as number | null,
     runMenu: false,
     planSection: "",
 
@@ -1989,11 +1973,11 @@ export function shell() {
           return;
         }
         this.runsRead[slug] = WBFail.readFold(this.runsRead[slug], { ok: true, value: true, at: Date.now() });
-        this.runsByProject[slug] = (reply.runs || []).map((d: any) => {
+        this.runsByProject[slug] = (reply.runs || []).map((d) => {
           const run = WBRun.fromSnapshot(d);
           // A push arrives on every snapshot write (~every few hundred ms);
           // re-fetching an unchanged plan would blank the viewer each time.
-          const prev = prevRuns.find((p: any) => p.runid === run.runid);
+          const prev = prevRuns.find((p) => p.runid === run.runid);
           if (prev && prev.planPath === run.planPath) {
             run.planMd = prev.planMd;
             run.planReadFailed = prev.planReadFailed;
@@ -2008,15 +1992,15 @@ export function shell() {
           : "";
         // Keep the selected run while it is still listed.
         const listed = this.projectRuns();
-        this.currentRunId = listed.some((r: any) => r.runid === this.currentRunId)
+        this.currentRunId = listed.some((r) => r.runid === this.currentRunId)
           ? this.currentRunId
           : listed[0]?.runid || null;
         // Only while showing: a whole-plan `file.read` nobody can see is cost.
         if (this.runsOpen) await this.loadRunPlan();
-      } catch (err: any) {
+      } catch (err) {
         if (seq !== this._runsSeq || this.$store.projects.openSlug !== slug) return;
         // A transport failure is a read failure, not an idle project.
-        this.runsFailed(slug, WBFail.why({ message: err?.message }, "the daemon did not answer"));
+        this.runsFailed(slug, WBFail.why({ message: (err as Error | undefined)?.message }, "the daemon did not answer"));
       }
     },
     // A failed `runs.list` (ADR-0070 D3). After a good read the runs stay,
@@ -2064,13 +2048,13 @@ export function shell() {
 
     // The open project's runs (the panel is project-scoped).
     projectRuns() {
-      return this.runsByProject[this.$store.projects.openSlug] || [];
+      return this.runsByProject[this.$store.projects.openSlug!] || [];
     },
     // The selected run, falling back to the first when the id is stale (e.g. the
     // project changed).
     currentRun() {
       const runs = this.projectRuns();
-      return runs.find((r: any) => r.runid === this.currentRunId) || runs[0] || null;
+      return runs.find((r) => r.runid === this.currentRunId) || runs[0] || null;
     },
     selectRun(runid: string) {
       this.currentRunId = runid;
@@ -2082,24 +2066,24 @@ export function shell() {
     },
 
     // Thin delegations to the faithful helpers in wb-runs.ts.
-    runPhaseLabel(run: any) {
+    runPhaseLabel(run: Run | null) {
       return run ? WBRun.runPhaseLabel(run) : "";
     },
-    runTitle(run: any) {
+    runTitle(run: Run) {
       return WBRun.runTitle(run);
     },
-    runIdentity(run: any) {
+    runIdentity(run: Run) {
       return WBRun.runIdentity(run);
     },
     // Reading `nowMs` subscribes this binding to the 1 s tick.
-    runClock(run: any) {
+    runClock(run: Run) {
       return WBRun.phaseClock(run, this.nowMs);
     },
     // When this phase began, and the run's whole elapsed time.
-    clockTitle(run: any) {
+    clockTitle(run: Run | null) {
       if (!run) return "";
-      const parts: any[] = [];
-      const at = (iso: any) =>
+      const parts: string[] = [];
+      const at = (iso: string) =>
         new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
       if (run.since) parts.push(`phase since ${at(run.since)}`);
       if (run.startedAt) {
@@ -2110,29 +2094,29 @@ export function shell() {
       }
       return parts.join(" · ");
     },
-    issueState(run: any, iss: any) {
+    issueState(run: Run, iss: RunIssue) {
       return WBRun.issueState(run, iss);
     },
-    issueGlyph(run: any, iss: any) {
+    issueGlyph(run: Run, iss: RunIssue) {
       return WBRun.glyph(run, iss);
     },
-    sleepLabel(run: any) {
+    sleepLabel(run: Run | null) {
       return WBRun.sleepText(run?.sleep);
     },
-    nodeTitle(run: any, iss: any) {
+    nodeTitle(run: Run | null, iss: RunIssue | null) {
       if (!run || !iss) return "";
       const st = WBRun.issueState(run, iss);
       let t = `#${iss.number} — ${iss.title} · ${WBRun.LABEL[st] || st}`;
       // Per-issue: tier routing gives two issues of one run different models.
       const seg = WBRun.modelEffort(iss.model, iss.effort);
       if (seg) t += ` · ${seg}`;
-      if (iss.blockedBy?.length) t += ` (blocked by ${iss.blockedBy.map((n: any) => "#" + n).join(", ")})`;
+      if (iss.blockedBy?.length) t += ` (blocked by ${iss.blockedBy.map((n) => "#" + n).join(", ")})`;
       return t;
     },
     // Run → board (#301): a trail node opens that issue's detail. The Runs
     // panel closes first (`z-index: 150`, sharing the drawer's right edge).
     // `toggleKanban()` resets `kanbanSel`, so it runs BEFORE `openIssue`.
-    focusIssue(number: any) {
+    focusIssue(number: number) {
       window.WB.emit("run-issue-focus", { project: this.$store.projects.openSlug, runid: this.currentRun()?.runid, issue: number });
       this.runsOpen = false;
       this.trailFocus = null;
@@ -2142,7 +2126,7 @@ export function shell() {
 
     // Board → run (#301): the card's run pill opens the Runs panel on THAT run,
     // marking the issue in the trail. The board stays open behind it.
-    openRunFor(number: any) {
+    openRunFor(number: number) {
       const hit = window.WBKanban.runningFor(number, this.projectRuns());
       if (!hit) return;
       this.currentRunId = hit.runid;
@@ -2243,7 +2227,7 @@ export function shell() {
     // --- plan viewer ------------------------------------------------------
     // The issue whose plan this panel is showing: the snapshot's `plan.issue`
     // when it has one, else the run's active issue.
-    planIssueWanted(run: any) {
+    planIssueWanted(run: Run | null) {
       return run?.planIssue ?? run?.active ?? null;
     },
     // The issue the PROSE belongs to, from the plan's own trailer. The steps
@@ -2251,21 +2235,21 @@ export function shell() {
     // `.ralphy/plan.md`, and a failed read KEEPS the last text (#330): without
     // the key the block would render the PREVIOUS issue's plan. Unkeyed prose
     // (a half-written plan) stays empty.
-    planProseIssue(run: any) {
+    planProseIssue(run: Run | null) {
       return WBRun.planTrailerIssue(run?.planMd);
     },
-    planProseIsCurrent(run: any) {
+    planProseIsCurrent(run: Run | null) {
       return WBRun.planBelongsTo(run?.planMd, this.planIssueWanted(run));
     },
     // Every `##` section except Steps (its own block); none while the prose
     // belongs to another issue.
-    planHeadings(run: any) {
+    planHeadings(run: Run | null) {
       if (!this.planProseIsCurrent(run)) return [];
       return WBRun.headings(run?.planMd).filter((h) => h.toLowerCase() !== "steps");
     },
     // Render one `##` section as sanitized HTML. Steps render from the
     // snapshot document, not from here (#330).
-    renderPlanSection(run: any, name: any) {
+    renderPlanSection(run: Run | null, name: string) {
       if (!run || !name || !this.planProseIsCurrent(run)) return "";
       const body = WBRun.section(run?.planMd, name);
       return DOMPurify.sanitize(marked.parse(body || "_(empty)_"));
@@ -2397,19 +2381,19 @@ export function shell() {
     KANBAN: window.WBKanban,
     // Fed by `board.list` (#198): rows adapted to the issue shape, and the
     // repo's name→color label map. Empty until `loadBoard()` resolves.
-    boardIssues: {} as Record<string, any>,
+    boardIssues: {} as Record<string, BoardIssue[]>,
     // Refresh bookkeeping (#301). `_boardLoadedAt` is stamped at fold START,
     // before any await, so the min-gap measures spacing between STARTS and an
     // erroring board throttles like a healthy one. `_boardPending` COALESCES a
     // trigger that arrived mid-fold into one follow-up load.
     _boardLoadedAt: 0,
-    kanbanSel: null, // the selected issue number → opens the detail drawer
+    kanbanSel: null as number | null, // the selected issue number → opens the detail drawer
 
     // --- the repo's ready plan, on the board -------------------------------
     boardLabels: {} as Record<string, Map<string, string>>,
     // A `board.list` failure (#207): a broken tracker connection must never
     // read as "no work to do".
-    boardError: {} as Record<string, any>,
+    boardError: {} as Record<string, string | null>,
     _boardPending: false,
     boardRefreshing: false,
     // The daemon awaits the board CLI with no timeout of its own; a wedged `gh`
@@ -2423,10 +2407,10 @@ export function shell() {
     // the resume signal, `WBRun.planTrailerIssue`), so the board shows it and
     // can throw it away. `planByProject[slug] = { md, summary }`, replaced on
     // every board load via the same confined `file.read`. Daemon-only (#300).
-    planByProject: {} as Record<string, any>,
-    planModal: { open: false, issue: null },
+    planByProject: {} as Record<string, ReadyPlan | null>,
+    planModal: { open: false, issue: null as number | null },
 
-    async loadPlan(slug: any) {
+    async loadPlan(slug: string | null) {
       if (!slug) return;
       try {
         const reply = await window.WBDaemon.observe("file.read", {
@@ -2444,11 +2428,11 @@ export function shell() {
     // The open project's plan, or null. No trailer (`summary.issue` null) is a
     // plan still being written: not offered.
     openPlan() {
-      const held = this.planByProject[this.$store.projects.openSlug];
+      const held = this.planByProject[this.$store.projects.openSlug!];
       return held && held.summary.issue != null ? held : null;
     },
     // The plan for ONE card: only ever shown against the issue it names.
-    planFor(number: any) {
+    planFor(number: number) {
       const held = this.openPlan();
       return held && held.summary.issue === number ? held : null;
     },
@@ -2456,15 +2440,15 @@ export function shell() {
     planIssueIsOpen() {
       const held = this.openPlan();
       if (!held) return true;
-      const iss = this.projectIssues().find((i: any) => i.number === held.summary.issue);
+      const iss = this.projectIssues().find((i) => i.number === held.summary.issue);
       // Absent from the fold (filtered or cold): assume open.
       return !iss || iss.state !== "closed";
     },
-    planPillLabel(number: any) {
+    planPillLabel(number: number) {
       const held = this.planFor(number);
       return held ? WBRun.planPillLabel(held.summary, this.planIssueIsOpen()) : "";
     },
-    planPillWarns(number: any) {
+    planPillWarns(number: number) {
       const held = this.planFor(number);
       return !!held && WBRun.planPillWarns(held.summary, this.planIssueIsOpen());
     },
@@ -2542,7 +2526,7 @@ export function shell() {
 
     // The open project's issues (#198). Empty until `loadBoard()` populates it.
     projectIssues() {
-      return this.boardIssues[this.$store.projects.openSlug] || [];
+      return this.boardIssues[this.$store.projects.openSlug!] || [];
     },
 
     // The whole-tracker board fold via `board.list`, cached under the slug. No
@@ -2563,9 +2547,9 @@ export function shell() {
       // must never delay the rows.
       this.loadPlan(this.$store.projects.openSlug);
       try {
-        const reply: any = await Promise.race([
+        const reply = await Promise.race([
           window.WBDaemon.observe("board.list", { repo: slug }),
-          new Promise((_, rej) =>
+          new Promise<never>((_, rej) =>
             setTimeout(() => rej(new Error("board fold timed out")), this.BOARD_FOLD_TIMEOUT_MS),
           ),
         ]);
@@ -2576,7 +2560,7 @@ export function shell() {
           return;
         }
         const board = reply.board || {};
-        this.boardIssues[slug] = (board.issues || []).map((r: any) => this.boardRowToIssue(r));
+        this.boardIssues[slug] = (board.issues || []).map((r) => this.boardRowToIssue(r));
         // A Map, so a label named `constructor` reads as missing. A blank
         // color is skipped: a bare "#" is truthy and masks `labelColor`'s fallback.
         const colors = new Map<string, string>();
@@ -2608,7 +2592,7 @@ export function shell() {
     // A failed `board.list` (ADR-0070 D3). After a good read the cards stay,
     // under a banner that says they are not current; before one, there are no
     // cards and the banner says why. Moving a card is locked meanwhile.
-    boardFailed(slug: any, msg: any) {
+    boardFailed(slug: string, msg: string) {
       const read = WBFail.readFold(this.boardRead[slug], { ok: false, reason: msg, at: Date.now() });
       this.boardRead[slug] = read;
       if (read.goodAt) {
@@ -2621,7 +2605,7 @@ export function shell() {
 
     // The one door every refresh trigger goes through (#301): the predicate
     // (wb-kanban.ts) decides.
-    maybeRefreshBoard(trigger: any) {
+    maybeRefreshBoard(trigger: string) {
       const ok = window.WBKanban.shouldRefresh({
         trigger,
         sinceMs: Date.now() - this._boardLoadedAt,
@@ -2642,7 +2626,7 @@ export function shell() {
 
     // A CLI fold row → the issue shape `wb-kanban.ts` expects. Body + comments
     // are absent from the fold (`issue.show` fills them on open).
-    boardRowToIssue(row: any) {
+    boardRowToIssue(row: BoardRow) {
       return {
         number: row.number,
         title: row.title || "",
@@ -2663,8 +2647,8 @@ export function shell() {
     kanbanColumns() {
       const all = this.projectIssues();
       const K = window.WBKanban;
-      const shown = all.filter((i: any) => K.matches(i, this.kanbanFilter) && K.hasLabelFilter(i, this.kanbanLabel));
-      const bucket: Record<string, any[]> = { backlog: [], agent: [], human: [], closed: [] };
+      const shown = all.filter((i) => K.matches(i, this.kanbanFilter) && K.hasLabelFilter(i, this.kanbanLabel));
+      const bucket: Record<string, BoardIssue[]> = { backlog: [], agent: [], human: [], closed: [] };
       for (const i of shown) bucket[K.columnOf(i)].push(i);
       return {
         backlog: K.sortBacklog(bucket.backlog, this.kanbanSort),
@@ -2678,8 +2662,8 @@ export function shell() {
       };
     },
     // Per-column live count (post-filter), for the column header badge.
-    kanbanCount(colId: any) {
-      return (this.kanbanColumns() as Record<string, any[]>)[colId].length;
+    kanbanCount(colId: string) {
+      return (this.kanbanColumns() as Record<string, BoardIssue[]>)[colId].length;
     },
     // The label set present in the project, for the filter dropdown.
     kanbanLabelOptions() {
@@ -2689,63 +2673,63 @@ export function shell() {
     },
 
     // The run pill for a card (the actively-worked issue of a live run).
-    issueRunning(number: any) {
+    issueRunning(number: number) {
       return window.WBKanban.runningFor(number, this.projectRuns());
     },
     // The issue drawer's run line: `Running · executing (claude)`.
-    issueRunningLabel(run: any) {
+    issueRunningLabel(run: RunPill) {
       return `Running · ${this.runStateWord(run?.state)} (${run?.agent || ""})`;
     },
     // A run state as the Runs panel words it (`sleep` → "usage limit — sleeping").
-    runStateWord(state: any) {
+    runStateWord(state: string | undefined) {
       return (state && WBRun?.LABEL?.[state]) || state || "";
     },
 
     // Thin delegations to the faithful helpers (used in the template).
-    kanbanColumnOf(i: any) {
+    kanbanColumnOf(i: BoardIssue) {
       return window.WBKanban.columnOf(i);
     },
-    labelColor(l: any) {
+    labelColor(l: string) {
       // The repo's real label hex, else the seed vocabulary.
-      return this.boardLabels[this.$store.projects.openSlug]?.get(l) || window.WBKanban.labelColor(l);
+      return this.boardLabels[this.$store.projects.openSlug!]?.get(l) || window.WBKanban.labelColor(l);
     },
-    labelInk(l: any) {
+    labelInk(l: string) {
       return window.WBKanban.labelInk(l);
     },
-    labelShort(l: any) {
+    labelShort(l: string) {
       return window.WBKanban.labelMeta(l).short;
     },
-    closeLabel(i: any) {
+    closeLabel(i: BoardIssue) {
       return window.WBKanban.closeLabel(i);
     },
-    kanbanColumnTitle(i: any) {
+    kanbanColumnTitle(i: BoardIssue) {
       const id = window.WBKanban.columnOf(i);
       return (window.WBKanban.COLUMNS.find((c) => c.id === id) || {}).title || id;
     },
-    kfmtDate(iso: any) {
+    kfmtDate(iso: string | null | undefined) {
       return window.WBKanban.fmtDate(iso);
     },
 
-    boardRead: {} as Record<string, any>,
+    boardRead: {} as Record<string, Read>,
 
     // --- detail drawer ----------------------------------------------------
     // The open drawer's detail-fetch failure (#302). One string: exactly one
     // drawer is open at a time.
-    issueError: null,
+    issueError: null as string | null,
     issueLoading: false,
     // Selection is by number, so a label move (which can change the card's
     // column) keeps the drawer pointed at the same issue.
     selectedIssue() {
       if (this.kanbanSel == null) return null;
-      return this.projectIssues().find((i: any) => i.number === this.kanbanSel) || null;
+      return this.projectIssues().find((i) => i.number === this.kanbanSel) || null;
     },
-    openIssue(number: any) {
+    openIssue(number: number) {
       this.kanbanSel = number;
       // `issue.show` merges body + comments + blockers into the cached row.
       this.loadIssueDetail(number);
     },
 
-    async loadIssueDetail(number: any) {
+    async loadIssueDetail(number: number) {
       const slug = this.$store.projects.openSlug;
       this.issueError = null;
       // Set BEFORE the first await so the markup never paints `_(empty)_` for
@@ -2758,7 +2742,7 @@ export function shell() {
       const gen = (this._issueDetailGen = (this._issueDetailGen || 0) + 1);
       const stale = () =>
         gen !== this._issueDetailGen || this.$store.projects.openSlug !== slug || this.kanbanSel !== number;
-      const fail = (msg: any) => {
+      const fail = (msg: string) => {
         if (stale()) return;
         this.issueError = msg;
         this._flashAction?.(msg);
@@ -2774,7 +2758,7 @@ export function shell() {
           return;
         }
         const detail = reply.issue;
-        const iss = (this.boardIssues[slug] || []).find((i: any) => i.number === number);
+        const iss = (this.boardIssues[slug!] || []).find((i) => i.number === number);
         if (!iss || stale()) return;
         if (typeof detail.body === "string") iss.body = detail.body;
         if (Array.isArray(detail.comments)) iss.comments = detail.comments;
@@ -2795,23 +2779,23 @@ export function shell() {
     },
     // The GitHub URL of an issue on the OPEN project, from its `remoteUrl`
     // (#204); `null` with no GitHub remote. Only the lookup stays here.
-    githubUrl(number: any) {
+    githubUrl(number: number) {
       const p = this.$store.projects.projects.find((x) => this.$store.projects.repoRef(x) === this.$store.projects.openSlug);
       return WBProject.issueUrl(p && p.remoteUrl, number);
     },
 
     // The selected issue's blockers, each with its live open/closed state.
-    issueBlockers(iss: any) {
+    issueBlockers(iss: BoardIssue | null) {
       if (!iss || !iss.blockedBy?.length) return [];
       const all = this.projectIssues();
-      return iss.blockedBy.map((n: any) => {
-        const b = all.find((x: any) => x.number === n);
+      return iss.blockedBy.map((n) => {
+        const b = all.find((x) => x.number === n);
         return { number: n, open: b ? b.state === "open" : false, known: !!b, title: b?.title || "" };
       });
     },
 
     // An issue body / comment as sanitized markdown.
-    renderIssueMd(src: any) {
+    renderIssueMd(src: string | null | undefined) {
       return DOMPurify.sanitize(marked.parse(src || "_(empty)_"));
     },
 
@@ -2829,10 +2813,10 @@ export function shell() {
         document.querySelector(".kd-label-menu")?.scrollIntoView({ block: "nearest", inline: "nearest" }),
       );
     },
-    hasLabel(iss: any, label: any) {
+    hasLabel(iss: BoardIssue | null, label: string) {
       return !!iss && (iss.labels || []).includes(label);
     },
-    toggleLabel(iss: any, label: any) {
+    toggleLabel(iss: BoardIssue | null, label: string) {
       if (!iss) return;
       // Defence in depth: a `:disabled` button is still reachable by keyboard
       // in some browsers.
@@ -2840,7 +2824,7 @@ export function shell() {
       const has = this.hasLabel(iss, label);
       const op = has ? "remove" : "add";
       const prev = [...(iss.labels || [])];
-      iss.labels = has ? iss.labels.filter((l: any) => l !== label) : [...(iss.labels || []), label];
+      iss.labels = has ? iss.labels.filter((l) => l !== label) : [...(iss.labels || []), label];
       const slug = this.$store.projects.openSlug;
       window.WB.emit("issue-label-change", { project: slug, number: iss.number, label, op });
       // The run-lock-aware `label.set` Mutate (#199): refusal → revert + flash.
@@ -2870,7 +2854,7 @@ export function shell() {
     // A canvas tab (ADR-0037 amendment: a closable tab may be a daemon view),
     // scoped to the open project. Everything numeric is rendered by the daemon
     // (`/api/spend`); `WBSpend` folds only which state the pane is in.
-    spend: { loading: false, error: "", doc: null, slug: null },
+    spend: { loading: false, error: "", doc: null as SpendDoc, slug: null as string | null },
     // The window the operator picked, echoed back by the daemon; the pane
     // renders the document's own key, never this one.
     spendPeriod: "all",
@@ -2886,11 +2870,11 @@ export function shell() {
         period: this.spendPeriod,
         // Titles ride whatever the board ALREADY holds; never a load
         // (`loadBoard` spawns a throttled tracker CLI).
-        issues: this.boardIssues[this.$store.projects.openSlug] || [],
+        issues: this.boardIssues[this.$store.projects.openSlug!] || [],
       });
     },
     // The window is a server-side filter: assign, then re-read.
-    setSpendPeriod(key: any) {
+    setSpendPeriod(key: string) {
       if (this.spendPeriod === key) return;
       this.spendPeriod = key;
       this.loadSpend();
@@ -2921,7 +2905,7 @@ export function shell() {
         return;
       }
       this.spend = { ...this.spend, loading: true, error: "" };
-      let doc: any = null;
+      let doc: SpendDoc = null;
       let error = "";
       try {
         const r = await fetch(
@@ -2960,11 +2944,11 @@ export function shell() {
     ledger: {
       loading: false,
       error: "",
-      records: [],
-      interactive: [],
-      missing: [],
-      daemonId: null,
-      slug: null,
+      records: [] as LedgerRecord[],
+      interactive: [] as LedgerRecord[],
+      missing: [] as LedgerMissing[],
+      daemonId: null as string | null,
+      slug: null as string | null,
     },
     // What the Spend tab shows, computed ONCE per change by the `x-effect` on
     // `.spend-tab` and on `.ledger-pane`; the markup reads these, never the
@@ -2990,7 +2974,7 @@ export function shell() {
     },
     // Deferred to the first switch: the ledger is the one response that grows
     // with the project's history.
-    setSpendPane(key: any) {
+    setSpendPane(key: string) {
       this.spendPane = key;
       if (key === "ledger") this.loadLedger();
     },
@@ -3009,10 +2993,10 @@ export function shell() {
       if (this.ledger.loading) return;
       if (this.ledger.slug === want) return;
       this.ledger = { ...this.ledger, loading: true, error: "" };
-      let records = [];
-      let interactive = [];
-      let missing = [];
-      let daemonId: any = null;
+      let records: LedgerRecord[] = [];
+      let interactive: LedgerRecord[] = [];
+      let missing: LedgerMissing[] = [];
+      let daemonId: string | null = null;
       let error = "";
       try {
         const r = await fetch(
@@ -3086,7 +3070,7 @@ export function shell() {
       return (this.liveSessions || []).filter((s) => !peers.has(s.daemon_id));
     },
     // The consoles a peer hosts, by the peer's `daemon_id`.
-    peerSessions(daemonId: any) {
+    peerSessions(daemonId: string) {
       return (this.liveSessions || []).filter((s) => s.daemon_id === daemonId);
     },
 
@@ -3111,7 +3095,7 @@ export function shell() {
       sendWindow(window, "workbench:panels-reread");
       if (this.tabs.some((t) => t.id === "spend")) this.loadSpend();
     },
-    releaseRead: null as any,
+    releaseRead: null as ReadState,
     releaseStale() {
       return WBFail.notCurrent(this.releaseRead, (ms) => this.fmtClock(ms));
     },
@@ -3136,7 +3120,7 @@ export function shell() {
       this.releaseSeen = true;
     },
     // The operator turned the release watch on or off.
-    releaseWatchChanged(enable: any) {
+    releaseWatchChanged(enable: boolean) {
       this.release = { ...this.release, disabled: !enable };
     },
 
@@ -3156,7 +3140,7 @@ export function shell() {
     },
     // The Security dialog (wb-security-dialog.ts) changes the security fact
     // only here (ADR-0073 D4). `patch` holds fields of `security`.
-    securityChanged(patch: any) {
+    securityChanged(patch: Partial<SecurityFact>) {
       Object.assign(this.security, patch);
     },
 
@@ -3223,8 +3207,8 @@ export function shell() {
     // One input per digit; a paste or OTP autofill landing all 6 in the first
     // box is spread. `login.code` is the joined string.
 
-    _otpBoxes(el: any) {
-      return el.closest(".login-otp").querySelectorAll("input");
+    _otpBoxes(el: HTMLElement) {
+      return el.closest(".login-otp")!.querySelectorAll("input");
     },
 
     _otpSync() {
@@ -3232,15 +3216,15 @@ export function shell() {
     },
 
     // Once the 6th digit lands: the password field if required, else submit.
-    _otpAdvancePastLast(el: any) {
+    _otpAdvancePastLast(el: HTMLElement) {
       if (this.security.passwordSet || this.login.passwordRequired) {
         this.$refs.loginPassword?.focus();
       } else {
-        el.closest("form")?.querySelector(".login-btn")?.focus();
+        el.closest("form")?.querySelector<HTMLElement>(".login-btn")?.focus();
       }
     },
 
-    _otpFill(text: any, el: any) {
+    _otpFill(text: string, el: HTMLElement) {
       const chars = text.replace(/\D/g, "").slice(0, 6).split("");
       for (let j = 0; j < 6; j++) this.login.digits[j] = chars[j] || "";
       this._otpSync();
@@ -3249,7 +3233,7 @@ export function shell() {
       else boxes[chars.length].focus();
     },
 
-    otpInput(i: any, e: any) {
+    otpInput(i: number, e: Event & { target: HTMLInputElement }) {
       const v = e.target.value.replace(/\D/g, "");
       if (v.length > 1) {
         this._otpFill(v, e.target);
@@ -3263,7 +3247,7 @@ export function shell() {
       else this._otpAdvancePastLast(e.target);
     },
 
-    otpKeydown(i: any, e: any) {
+    otpKeydown(i: number, e: KeyboardEvent & { target: HTMLInputElement }) {
       const boxes = this._otpBoxes(e.target);
       if (e.key === "Backspace" && !e.target.value && i > 0) {
         e.preventDefault();
@@ -3279,7 +3263,7 @@ export function shell() {
       }
     },
 
-    otpPaste(e: any) {
+    otpPaste(e: ClipboardEvent & { target: HTMLInputElement }) {
       const text = e.clipboardData?.getData("text") || "";
       this._otpFill(text, e.target);
     },
@@ -3332,7 +3316,7 @@ export function shell() {
 
     // --- canvas tabs ------------------------------------------------------
     // The SAME terminal glyph as the New-console button and its menu rows.
-    tabs: [{ id: "consoles", kind: "consoles", title: "Consoles", icon: "bi bi-terminal", closable: false }] as any[],
+    tabs: [{ id: "consoles", kind: "consoles", title: "Consoles", icon: "bi bi-terminal", closable: false }] as CanvasTab[],
     active: "consoles",
     // The secondary pane (ADR-0037 §3c): `{ kind: "pin", id }` shows that tab
     // beside whichever is active, `{ kind: "mirror" }` shows the active code
@@ -3340,14 +3324,14 @@ export function shell() {
     // in `syncViewer`. `splitRatio` is the left column's share (null = half);
     // `lastLeft` the tab last read on the left, so activating the pinned tab
     // itself keeps its neighbour rather than emptying the canvas.
-    slot: null as any,
+    slot: null as Slot,
     splitRatio: null as number | null,
-    lastLeft: null as any,
+    lastLeft: null as string | null,
 
     // Open a `.note` as a card (ADR-0064 §11). The module decides whether this
     // is a jump to a card already on the plane or a new one; this layer only
     // puts the operator on the tab that holds the stage.
-    openNote(path: any, project?: any, checkout?: any) {
+    openNote(path: string, project?: string | null, checkout?: string | null) {
       const repo = project || this.$store.projects.openSlug;
       if (!repo) return;
       if (this.active !== "consoles") this.activate("consoles");
@@ -3375,8 +3359,8 @@ export function shell() {
     // large`, …) — the tab KEEPS its place and says so — or `null` when there
     // is nothing to hold a tab open for (`not found`, a transport drop): the
     // tab closes. `checkout` is the tab's PINNED checkout (#406).
-    fetchContent(project: any, path: any, ftype: any, checkout: any) {
-      const refuse = (reason: any) => {
+    fetchContent(project: string, path: string, ftype: string, checkout: string | null | undefined): Promise<TabBody> {
+      const refuse = (reason: string) => {
         window.WB.emit("open-refused", { project, path, reason });
         this._flashAction?.(WBFail.failed({ reason }, "Could not open the file: the daemon gave no reason."));
         if (reason === "not found" || reason === "transport") {
@@ -3387,9 +3371,9 @@ export function shell() {
       };
       // An image is `file.image` (ADR-0049): a `data:` URL. Same refusal shape.
       if (ftype === "image") {
-        let refusal: any = null;
-        return WBDaemon.readImage(project, path, (reason: any) => (refusal = refuse(reason)), checkout)
-          .then((url: any) => (url == null ? refusal : { content: url }))
+        let refusal: TabBody = null;
+        return WBDaemon.readImage(project, path, (reason) => (refusal = refuse(reason)), checkout)
+          .then((url) => (url == null ? refusal : { content: url }))
           .catch(() => refuse("transport"));
       }
       return WBDaemon.observe("file.read", WBDaemon.withCheckout({ repo: project, path }, checkout))
@@ -3411,8 +3395,8 @@ export function shell() {
     // card, and classifying it again would be the loop the card just escaped.
     // The viewer serves text and images and refuses anything else, so what is
     // honest here is the refusal, named — not a pane that would show nothing.
-    openLink({ project, path, fragment, checkout, as }: any) {
-      const title = path.split("/").pop();
+    openLink({ project, path, fragment, checkout, as }: OpenRequest) {
+      const title = path.split("/").pop()!;
       if (as === "bytes") {
         window.WB.emit("open-refused", { project, path, reason: "not a note" });
         this._flashAction?.(`${path} is not a note.`);
@@ -3430,7 +3414,7 @@ export function shell() {
         this._flashAction?.("Cannot open binary files.");
         return;
       }
-      this.openTab({ project, path, title, ftype, fragment, checkout });
+      this.openTab({ project: project!, path, title, ftype, fragment, checkout });
     },
 
     // `content`: a re-attached popup passes its (possibly edited) bytes back.
@@ -3439,7 +3423,7 @@ export function shell() {
     // a Save from a tab showing worktree bytes must never land on the primary.
     // `encoding`/`bom` come back with a re-attached popup's bytes, so the
     // reattached pane saves the way the detached one would have.
-    openTab({ project, path, title, ftype, content, fragment, find, checkout, encoding, bom }: any) {
+    openTab({ project, path, title, ftype, content, fragment, find, checkout, encoding, bom }: TabOpen) {
       const ck = checkout !== undefined ? checkout : this.checkoutOf(project);
       const id = fileTabId(project, path, ck);
       if (this.tabs.some((t) => t.id === id)) {
@@ -3459,11 +3443,11 @@ export function shell() {
       this.persistView();
       this.$nextTick(() => {
         // A re-attach passes bytes in; a fresh open reads `file.read`.
-        const bytes =
+        const bytes: Promise<TabBody> =
           content != null
             ? Promise.resolve({ content, encoding, bom })
             : this.fetchContent(project, path, ftype, ck);
-        bytes.then((body: any) => {
+        bytes.then((body) => {
           if (body == null) return; // nothing to show: fetchContent closed the tab
           WBViewer.open({
             id,
@@ -3471,7 +3455,7 @@ export function shell() {
             label: this.$store.projects.projectLabel(project),
             path,
             ftype,
-            content: body.content,
+            content: body.content!,
             encoding: body.encoding,
             bom: body.bom,
             refused: body.refused,
@@ -3489,7 +3473,7 @@ export function shell() {
 
     // Re-point every open tab under the moved path: a tab's id IS its path,
     // and saves would write to the old location.
-    repathTabs(from: any, to: any) {
+    repathTabs(from: string, to: string) {
       // Snapshot: the collision branch CLOSES a tab, which mutates `this.tabs`.
       for (const t of [...this.tabs]) {
         if (t.kind === "diff" || t.project !== this.$store.projects.openSlug) continue;
@@ -3517,10 +3501,10 @@ export function shell() {
     // --- opening a Changes row into a diff tab ----------------------------
     // HEAD on one side, the working tree on the other (#311). Read-only;
     // Monaco computes the diff, nothing produces a patch.
-    openDiff(project: any, entry: any) {
+    openDiff(project: string, entry: ChangeEntry) {
       // Both diff sides read text, and a binary side closes the tab again: an
       // image or other binary path never reaches the diff.
-      const ftype = classify(entry.path.split("/").pop());
+      const ftype = classify(entry.path.split("/").pop()!);
       if (ftype === "image" || ftype === "binary") {
         this.openChangedBinary(project, entry, ftype);
         return;
@@ -3546,7 +3530,7 @@ export function shell() {
       this.$nextTick(() => {
         // Latched: a path refused on BOTH sides would flash twice.
         let refused = false;
-        const refuse = (reason: any) => {
+        const refuse = (reason: string) => {
           if (refused) return null;
           refused = true;
           this._flashAction?.(WBFail.failed({ message: reason }, "Could not open the diff: the daemon gave no reason."));
@@ -3580,7 +3564,7 @@ export function shell() {
     // A Changes row that names an image or other binary. An image shows its
     // working copy in the image pane (ADR-0049); a deleted one has no working
     // copy, and `blob.read` serves text only, so it is refused like a binary.
-    openChangedBinary(project: any, entry: any, ftype: any) {
+    openChangedBinary(project: string, entry: ChangeEntry, ftype: string) {
       const path = entry.path;
       if (ftype === "binary") {
         window.WB.emit("open-refused", { project, path, reason: "binary" });
@@ -3592,12 +3576,12 @@ export function shell() {
         this._flashAction?.("This image was deleted, so there is nothing to show.");
         return;
       }
-      const title = path.split("/").pop();
+      const title = path.split("/").pop()!;
       this.openTab({ project, path, title, ftype, checkout: this.checkoutOf(project) });
     },
 
     // The diff's HEAD side; an added/untracked path diffs against emptiness.
-    diffHeadSide(project: any, t: any, refuse: any) {
+    diffHeadSide(project: string, t: DiffTarget, refuse: (reason: string) => null) {
       if (t.headAbsent) return Promise.resolve("");
       return WBDaemon.observe(
         "blob.read",
@@ -3613,7 +3597,7 @@ export function shell() {
 
     // The diff's working side. `not found` is NOT a refusal: a stale row
     // (deleted between the list and the click) diffs against emptiness.
-    diffWorkSide(project: any, t: any, refuse: any) {
+    diffWorkSide(project: string, t: DiffTarget, refuse: (reason: string) => null) {
       if (t.workingAbsent) return Promise.resolve("");
       // NOT `fetchContent`: it collapses every refusal to `null` and closes
       // the `file:` tab id rather than this diff's.
@@ -3628,7 +3612,7 @@ export function shell() {
     },
 
     // Pop a file tab out into a standalone popup; the in-app tab closes.
-    detachFile(desc: any) {
+    detachFile(desc: FileDescriptor) {
       const id = fileTabId(desc.project, desc.path, desc.checkout);
       // The descriptor is handed over by postMessage with `targetOrigin =
       // location.origin`, NOT in the URL hash: a hash let anyone render content
@@ -3646,7 +3630,7 @@ export function shell() {
       this.activate("consoles");
     },
 
-    activate(id: any) {
+    activate(id: string) {
       this.active = id;
       // The Spend tab's subject can change while it sits in the background.
       if (id === "spend" && this.spend.slug !== this.$store.projects.openSlug) this.refreshSpend();
@@ -3681,7 +3665,7 @@ export function shell() {
     },
 
     // --- the slot: pin a tab beside the active one, or mirror the active one --
-    pinTab(id: any) {
+    pinTab(id: string) {
       this.slot = { kind: "pin", id };
       this.syncLater();
     },
@@ -3703,7 +3687,7 @@ export function shell() {
       return WBSplit.available(WBViewer.width());
     },
 
-    closeTab(id: any) {
+    closeTab(id: string) {
       const idx = this.tabs.findIndex((t) => t.id === id);
       const tab = this.tabs[idx];
       if (!tab || !tab.closable) return; // Consoles never closes
@@ -3746,7 +3730,7 @@ export function shell() {
       // the canvas blank: degrade to Consoles.
       const alive =
         this.active === "consoles" ||
-        files.some((f) => fileTabId(f.project, f.path, f.checkout) === this.active);
+        files.some((f) => fileTabId(f.project!, f.path!, f.checkout) === this.active);
       window.WBView?.patch({
         tabs: files,
         active: alive ? this.active : "consoles",
@@ -3793,7 +3777,7 @@ export function shell() {
     // --- context menu -----------------------------------------------------
     // A tab's menu (ADR-0037 §3c): the slot's two entry points and Close.
     // Consoles and Spend have no pane to put beside another, so no menu.
-    showTabMenu(x: any, y: any, t: any) {
+    showTabMenu(x: number, y: number, t: CanvasTab) {
       if (!t?.closable) return;
       const pinned = this.slot?.kind === "pin" && this.slot.id === t.id;
       const mirrored = this.slot?.kind === "mirror";
@@ -3822,7 +3806,7 @@ export function shell() {
                   this.toggleMirror();
                 },
               }),
-        { sep: true },
+        { sep: true as const },
         { label: "Close", icon: "bi-x-lg", run: () => this.closeTab(t.id) },
       ].filter(Boolean);
       this.renderMenu(x, y, items);
@@ -3830,7 +3814,7 @@ export function shell() {
 
     // Paint `items` into the one `#ctxmenu` and keep it on-screen. An item is
     // `{ label, icon, run }` with optional `sep`, `danger`, `disabled`, `title`.
-    renderMenu(x: any, y: any, items: any) {
+    renderMenu(x: number, y: number, items: MenuItem[]) {
       const menu = document.getElementById("ctxmenu") as HTMLElement;
       menu.innerHTML = "";
       for (const it of items) {
@@ -3879,7 +3863,7 @@ export function wire(window: Window, document: Document) {
   // The one exit point: every gesture becomes a `workbench:action` event.
   // Each page sets its own `window.WB`, and its modules read it (ADR-0075 D9).
   window.WB = {
-    emit(action: any, detail: any = {}) {
+    emit(action: string, detail: object = {}) {
       const full = { action, ...detail, at: new Date().toISOString() };
       sendDocument(document, "workbench:action", full);
       // eslint-disable-next-line no-console
@@ -3892,7 +3876,7 @@ export function wire(window: Window, document: Document) {
   // modules call it, and a bare declaration reaches them only by accident of
   // global scope.
   window.getShell = function getShell() {
-    const root = document.querySelector<any>("[x-data]");
+    const root = document.querySelector<HTMLElement & { _x_dataStack?: Shell[] }>("[x-data]");
     return root && root._x_dataStack ? root._x_dataStack[0] : null;
   };
 
@@ -3915,7 +3899,7 @@ export function wire(window: Window, document: Document) {
 
   // The canvas resized. Only a crossing of the split's width floor changes what
   // is painted, so the fold reruns on the crossing alone — not per pixel.
-  let wbCanvasWide: any = null;
+  let wbCanvasWide: boolean | null = null;
   document.addEventListener("workbench:canvas-resize", (e) => {
     const sh = window.getShell();
     if (!sh) return;
@@ -3927,17 +3911,17 @@ export function wire(window: Window, document: Document) {
 
   // The popups this shell opened. Membership is the authorisation for every
   // message below.
-  const detachedWindows = new Map();
+  const detachedWindows = new Map<Window, FileDescriptor>();
 
   // A popup that closes sends its bytes home on unload (`wb-reattach`). One that
   // dies without an unload event (a crashed or killed renderer) is found by this
   // poll and comes home with the descriptor it was detached with. The poll acts
   // on the SECOND tick that sees it closed: the unload message carries the
   // edited bytes and must win over the detach-time copy.
-  const detachedClosedSeen = new Set();
-  let detachedPoll: any = null;
+  const detachedClosedSeen = new Set<Window>();
+  let detachedPoll: number | null = null;
 
-  function watchDetached(win: any, desc: any) {
+  function watchDetached(win: Window, desc: FileDescriptor) {
     detachedWindows.set(win, desc);
     if (!detachedPoll) detachedPoll = window.setInterval(pollDetached, 500);
   }
@@ -3969,12 +3953,12 @@ export function wire(window: Window, document: Document) {
   // The one way a detached file comes home: the button, the popup's unload and
   // the poll all end here. Closing the popup matters after an F5 inside it: the
   // unload sent the file home, and the reloaded page has nothing left to show.
-  function reattachFile(win: any, desc: any) {
+  function reattachFile(win: Window, desc: FileDescriptor) {
     // The pin comes home with the bytes (#406): explicit `null` is the primary.
     window.getShell()?.openTab({
       project: desc.project,
       path: desc.path,
-      title: desc.path.split("/").pop(),
+      title: desc.path.split("/").pop()!,
       ftype: desc.ftype,
       content: desc.content,
       checkout: desc.checkout ?? null,
@@ -3984,7 +3968,7 @@ export function wire(window: Window, document: Document) {
     detachedWindows.delete(win);
     detachedClosedSeen.delete(win);
     if (!detachedWindows.size) {
-      window.clearInterval(detachedPoll);
+      window.clearInterval(detachedPoll!);
       detachedPoll = null;
     }
     if (!win.closed) win.close();
@@ -3994,17 +3978,17 @@ export function wire(window: Window, document: Document) {
   // page on another origin, `e.source` a same-origin window we did not open.
   // Without them this listener accepted `file.write` from anyone holding a
   // handle to this window.
-  window.addEventListener("message", (e: any) => {
+  window.addEventListener("message", (e) => {
     if (e.origin !== window.location.origin) return;
-    if (!detachedWindows.has(e.source)) return;
-    const m = e.data;
+    if (!detachedWindows.has(e.source as Window)) return;
+    const m: FilePopupMessage | null = e.data;
     if (!m || typeof m !== "object") return;
     if (m.type === "wb-detach-ready") {
       // The popup booted and is asking for its file.
-      e.source.postMessage({ type: "wb-detach-open", desc: detachedWindows.get(e.source) }, window.location.origin);
+      (e.source as Window).postMessage({ type: "wb-detach-open", desc: detachedWindows.get(e.source as Window) }, window.location.origin);
     } else if (m.type === "wb-emit") {
       // `fromWindow` lets a save's answer reach the pane that sent it.
-      window.WB.emit(m.action, { ...m.detail, fromWindow: e.source });
+      window.WB.emit(m.action, { ...m.detail, fromWindow: e.source as Window });
     } else if (m.type === "wb-open-request" && m.detail) {
       // A link clicked inside a detached pane; `openLink` re-classifies, so the
       // popup decides nothing about what opens.
@@ -4017,7 +4001,7 @@ export function wire(window: Window, document: Document) {
     } else if (m.type === "wb-reattach" && m.desc) {
       // A second `wb-reattach` from the same popup (the button, then its own
       // unload) never gets here: the guard above drops a window no longer held.
-      reattachFile(e.source, m.desc);
+      reattachFile(e.source as Window, m.desc);
     }
   });
 
@@ -4026,10 +4010,10 @@ export function wire(window: Window, document: Document) {
   // the full rel path.
   (function wireWriteVerbs() {
     const daemonBacked = () => !!window.WBDaemon?.write;
-    const flash = (msg: any) => window.getShell()?._flashAction?.(msg);
-    const call = (verb: any, payload: any, okMsg?: any) => {
+    const flash = (msg: string) => window.getShell()?._flashAction?.(msg);
+    const call = (verb: string, payload: CommandPayload, okMsg?: string) => {
       WBDaemon.write(verb, payload)
-        .then((reply: any) => {
+        .then((reply) => {
           if (WBFail.isError(reply)) flash(WBFail.failed(reply, "Could not rename: the daemon gave no reason."));
           else if (okMsg) flash(okMsg);
         })
@@ -4046,7 +4030,7 @@ export function wire(window: Window, document: Document) {
       // gesture says the current selection.
       const checkout =
         d.checkout !== undefined ? d.checkout : (window.getShell()?.checkoutOf?.(repo) ?? null);
-      const aimed = (payload: any) => WBDaemon.withCheckout(payload, checkout);
+      const aimed = (payload: CommandPayload) => WBDaemon.withCheckout(payload, checkout);
       switch (d.action) {
         case "save": {
           // The pane's encoding rides the write (ADR-0036 amendment 2026-09-22)
@@ -4056,12 +4040,12 @@ export function wire(window: Window, document: Document) {
           // its tab id in this one.
           const viewer = () => (d.fromWindow ? d.fromWindow.WBViewer : window.WBViewer);
           const id = d.fromWindow ? "detached" : fileTabId(repo, d.path as string, checkout);
-          const payload: any = { repo, path: d.path, content: d.content || "" };
+          const payload: SavePayload = { repo, path: d.path, content: d.content || "" };
           if (d.encoding) payload.encoding = d.encoding;
           if (d.bom) payload.bom = true;
-          const send = (p: any): Promise<void> =>
+          const send = (p: SavePayload): Promise<void> =>
             WBDaemon.write("file.write", aimed(p))
-              .then((reply: any) => {
+              .then((reply) => {
                 if (!WBFail.isError(reply)) return viewer()?.saveDone?.(id);
                 const reason = WBFail.message(reply, "the daemon gave no reason");
                 viewer()?.saveFailed?.(id, reason, reply);
@@ -4079,7 +4063,7 @@ export function wire(window: Window, document: Document) {
           // The daemon wrote nothing (a round-trip or a refusal, never a `?`):
           // the one repair the browser can offer is a DELIBERATE conversion,
           // named to the operator and made only on their yes.
-          const offerUtf8 = (p: any, reply: any) => {
+          const offerUtf8 = (p: SavePayload, reply: WriteReply) => {
             const shell = window.getShell();
             // No shell, no dialog: the pane already says "Could not save" and why.
             if (!shell?.askConfirm) return;
@@ -4089,7 +4073,7 @@ export function wire(window: Window, document: Document) {
               message: `Character ${at} is not representable in ${p.encoding}. Save the file as UTF-8 instead?`,
               confirmLabel: "Save as UTF-8",
             });
-            return ask.then((ok: any) => {
+            return ask.then((ok) => {
               if (!ok) return;
               viewer()?.setEncoding?.(id, "UTF-8", false);
               const { bom: _bom, ...rest } = p;
@@ -4202,8 +4186,8 @@ export function wire(window: Window, document: Document) {
   };
 }
 
-const pascal = (name: any) =>
-  name.replace(/(\w)(\w*)(_|-|\s*)/g, (_: any, first: any, rest: any) => first.toUpperCase() + rest.toLowerCase());
+const pascal = (name: string) =>
+  name.replace(/(\w)(\w*)(_|-|\s*)/g, (_: string, first: string, rest: string) => first.toUpperCase() + rest.toLowerCase());
 
 // `x-icon="'name'"` draws a lucide icon INTO its own `<svg>`. It never swaps the
 // element (lucide's `createIcons` replaces it), so it is still the node Alpine
@@ -4212,12 +4196,12 @@ const pascal = (name: any) =>
 // output matches `createIcons` (lucide 0.460.0): the icon's default attributes
 // where the markup set none, `data-lucide` (the stylesheets select on it), and
 // the `lucide lucide-<name>` classes.
-export function iconDirective(el: any, { expression }: any, { evaluateLater, effect }: any) {
+export function iconDirective(el: HTMLElement, { expression }: AlpineDirective, { evaluateLater, effect }: AlpineDirectiveUtilities) {
   const read = evaluateLater(expression);
   const authored = new Set(el.getAttributeNames());
-  let drawn: any = null;
+  let drawn: string | null = null;
   effect(() =>
-    read((name: any) => {
+    read((name) => {
       if (name === drawn) return;
       if (drawn) el.classList.remove(`lucide-${drawn}`);
       drawn = name;
@@ -4234,7 +4218,7 @@ export function iconDirective(el: any, { expression }: any, { evaluateLater, eff
       }
       el.setAttribute("data-lucide", name);
       el.classList.add("lucide", `lucide-${name}`);
-      el.replaceChildren(...children.map((child: any) => window.lucide.createElement(child)));
+      el.replaceChildren(...children.map((child) => window.lucide.createElement(child)));
     }),
   );
 }

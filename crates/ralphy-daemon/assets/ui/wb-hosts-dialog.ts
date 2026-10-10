@@ -9,7 +9,7 @@
 
    `main.ts` registers it as `wbHostsDialog` (ADR-0075 D5).
    --------------------------------------------------------------------------- */
-import type { FleetPeer } from "./app.ts";
+import type { FleetPeer } from "./wb-fleet.ts";
 import { component } from "./wb-alpine.ts";
 import * as WBHosts from "./wb-hosts.ts";
 import { WBFail } from "./wb-fail.ts";
