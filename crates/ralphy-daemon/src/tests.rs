@@ -4055,7 +4055,8 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 // the desk folds, the GPU budget, the title, the fence list, the detach, the view, the
                 // terminal, the window chrome, the popup registry, the fences, the desk, the console name
                 // and the input folds; the entry
-                // imports the console and the door for operator messages. Stated HERE because this set is a hardcoded floor:
+                // imports the console, the door for operator messages, and the z stack and
+                // the gestures. Stated HERE because this set is a hardcoded floor:
                 // nothing derives the popup's needs from the tree, so an
                 // import dropped from the entry breaks the second monitor
                 // with no other signal.
@@ -4075,6 +4076,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-desk-popups.js",
                 "wb-stage-fences.js",
                 "wb-stage-window.js",
+                "wb-stage-stack.js",
                 "wb-desk.js",
                 "wb-console.js",
                 "wb-messages.js",
@@ -5255,15 +5257,17 @@ fn a_note_card_is_stacked_and_wears_the_console_chrome() {
     // Normalized: the pin below spans line ends, and a Windows checkout
     // (CI's included) embeds the asset with CRLF.
     let console = include_str!("../assets/ui/wb-console.ts").replace("\r\n", "\n");
+    let stack = include_str!("../assets/ui/wb-stage-stack.ts");
     let notes = include_str!("../assets/ui/wb-notes.ts");
     // The seam: a place in the tier WITHOUT focus, because a restore
     // focuses nothing and `focusWin` is the only other way to get one.
     assert!(
-        console.contains("function stackWin(") && console.contains("\n    stackWin,\n"),
-        "wb-console.ts must export stackWin, the tier a restored surface enters by"
+        stack.contains("function stackWin(") && console.contains("\n    stackWin,\n"),
+        "wb-stage-stack.ts must declare stackWin and wb-console.ts must export it, \
+         the tier a restored surface enters by"
     );
     assert!(
-        notes.contains("consoleHost?.stackWin?.(el)"),
+        notes.contains("stack?.stackWin(el)"),
         "a card must enter the window tier when it is built (ADR-0064 §8 amendment)"
     );
     // One titlebar vocabulary on the plane: the card's controls are the

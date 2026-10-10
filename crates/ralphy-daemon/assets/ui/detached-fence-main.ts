@@ -4,6 +4,7 @@ import { WBDeskSink } from "./wb-desk-sink.ts";
 import { WBDetachLink } from "./wb-detach-link.ts";
 import { createConsole } from "./wb-console.ts";
 import { createMessages } from "./wb-messages.ts";
+import { createStack, createGestures } from "./wb-stage-stack.ts";
 import { createDaemon } from "./wb-daemon.ts";
 import { createNotes } from "./wb-notes.ts";
 import { openerOf } from "./wb-events.ts";
@@ -37,9 +38,15 @@ window.WB = {
 // The door for operator messages: this page has no shell, so the dialog and
 // the toast are the DOM ones, and a flash shows nothing.
 const messages = createMessages(window, document, { shell: () => null });
+// The z stack and the gestures of this document, not the opener's: the
+// consoles and the cards here share them.
+const stack = createStack(document);
+const gestures = createGestures();
 
 const consoleOpts = {
   messages,
+  stack,
+  gestures,
   deskSink: WBDeskSink.none(),
   viewStore: { read: () => null, patch: () => null },
   autoBoot: false,
@@ -55,7 +62,7 @@ window.WBConsole = createConsole(window, document, location, consoleOpts);
 // `window.WBDaemon` exactly as it does in the workbench.
 window.WBDaemon = createDaemon(window, document, location, { messages });
 // The note cards, before `wireDetachedFence` posts "ready".
-window.WBNotes = createNotes(window, document, { console: window.WBConsole, messages });
+window.WBNotes = createNotes(window, document, { console: window.WBConsole, messages, stack, gestures });
 wireDetachedFence(window, document);
 // Last: the console boots once the page has started.
 window.WBConsole.boot();

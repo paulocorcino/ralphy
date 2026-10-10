@@ -18,7 +18,10 @@
 import { WBFail } from "./wb-fail.ts";
 import { WBGeometry } from "./wb-geometry.ts";
 import { sendDocument } from "./wb-events.ts";
+import { DORMANT_AFTER_MS, DORMANT_MARGIN_PX } from "./wb-console-gpu.ts";
+import { dragThreshold, dragBegins } from "./wb-console-input.ts";
 import type { Messages } from "./wb-messages.ts";
+import type { Gestures, Stack } from "./wb-stage-stack.ts";
 import type { CardHost, DeskFence, DeskNote, NoteCard, NoteEditor, NoteLook, NoteSource, Offset, Point, Rect, Size } from "./wb-types.d.ts";
 
 // The one surface `vendor-build/crepe/entry.js` exports. It is set by a script
@@ -71,11 +74,17 @@ export type NotesDeps = {
   console: CardHost | null;
   /** The page's door for operator messages; null where a test has none. */
   messages: Messages | null;
+  /** The document's z stack, shared with the consoles; null where a test has none. */
+  stack: Stack | null;
+  /** The document's gestures, shared with the consoles; null where a test has none. */
+  gestures: Gestures | null;
 };
 
 export function createNotes(window: NotesWindow, document: Document, deps: NotesDeps) {
   const consoleHost = deps.console;
   const messages = deps.messages;
+  const stack = deps.stack;
+  const gestures = deps.gestures;
   // The card's floor. Below a console's minimum on purpose: a note is often a
   // three-line reminder, and forcing it to a console's footprint would make
   // the stage unreadable.
@@ -954,7 +963,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     // the tools, later siblings win, so the interactive clusters go last.
     const palette = buildPalette(el);
     el.append(...handles, head, body, foot, tools, menu, anchors, palette);
-    el.addEventListener("pointerdown", () => consoleHost?.focusWin(el), true);
+    el.addEventListener("pointerdown", () => stack?.focusWin(el), true);
     // The plane's gestures write the inline rect, which is the DESK rect; a
     // card on top moves its floating box instead, through `floatGesture`.
     consoleHost?.makeDraggable(el, head, {
@@ -998,8 +1007,8 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     stage()?.append(el);
     // In the WINDOW tier from the moment it exists. A card built by a restore
     // is never focused, so without this it kept `z-index: auto` and every
-    // console painted over it — see the console's `stackWin`.
-    consoleHost?.stackWin?.(el);
+    // console painted over it — see the stack's `stackWin`.
+    stack?.stackWin(el);
     return el;
   }
 
@@ -1706,7 +1715,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
             if (entry.isIntersecting) wakeCard(entry.target as NoteCard);
           }
         },
-        { root, rootMargin: `${consoleHost?.DORMANT_MARGIN_PX ?? 300}px` },
+        { root, rootMargin: `${DORMANT_MARGIN_PX}px` },
       );
     }
     if (sweeper == null) sweeper = setInterval(sweepDormancy, SWEEP_MS);
@@ -1742,7 +1751,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     el.remove();
   }
   function sweepDormancy() {
-    const after = consoleHost?.DORMANT_AFTER_MS ?? 15000;
+    const after = DORMANT_AFTER_MS;
     for (const [el, seen] of [...watched]) {
       if (!el.isConnected) {
         untrackDormancy(el);
@@ -1822,7 +1831,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     render();
     const el = cardEl(record.id);
     if (el) {
-      consoleHost?.focusWin(el);
+      stack?.focusWin(el);
       // "already in edit with the cursor placed" (ADR-0064 §9) — the editor
       // mounts a tick later, so the intent is left on the card and honoured by
       // `mountEditor`. Without it the first act after "New note" is a click
@@ -1940,7 +1949,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
   function paint(el: NoteCard, record: NoteSource, fences: DeskFence[]) {
     el._noteRecord = record;
     const r = record.rect || {};
-    if (!consoleHost?.inGesture?.(el)) {
+    if (!gestures?.active(el)) {
       el.style.left = (r.left || 0) + "px";
       el.style.top = (r.top || 0) + "px";
       el.style.width = (r.width || NOTE_DEFAULT.width) + "px";
@@ -2130,7 +2139,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     placeOnTop(el, onTopRect(record.rect || NOTE_DEFAULT, viewportSize()));
     paintShadow(el);
     watchViewport();
-    consoleHost?.focusWin(el);
+    stack?.focusWin(el);
     return true;
   }
 
@@ -2196,7 +2205,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
       const vp = viewportSize();
       const from = { x: e.clientX, y: e.clientY };
       const pointerId = e.pointerId;
-      const threshold = consoleHost?.dragThreshold(e.pointerType);
+      const threshold = dragThreshold(e.pointerType);
       let armed = false;
       const onMove = (ev: PointerEvent) => {
         if (ev.pointerId !== pointerId) return;
@@ -2206,7 +2215,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
         }
         const at = { x: ev.clientX, y: ev.clientY };
         if (!armed) {
-          if (!consoleHost?.dragBegins(from, at, threshold ?? 0)) return;
+          if (!dragBegins(from, at, threshold)) return;
           armed = true;
         }
         const delta = { dx: at.x - from.x, dy: at.y - from.y };

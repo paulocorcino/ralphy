@@ -14,6 +14,7 @@ import "./wb-changes.test.mjs";
 import "./wb-changes-open.test.mjs";
 import "./wb-columns.test.mjs";
 import "./wb-stage-chrome.test.mjs";
+import "./wb-stage-stack.test.mjs";
 import "./wb-desk.test.mjs";
 import "./wb-stage-fence-list.test.mjs";
 import "./wb-desk-detach.test.mjs";

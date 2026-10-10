@@ -7,17 +7,15 @@
    `wireTitleTouch` and `startResize` for one console (ADR-0075 D7). They read
    the console only through `deps`, and `ChromeDeps` lists every read, so
    `tsc` refuses a read outside it. `wb-console.ts` creates one per console
-   and keeps the window state, the fences and the plane.
-
-   `createGestures()` owns the elements under a gesture of the operator. The
-   chrome and the fence gestures both begin and end gestures, so the set has
-   its own owner that each takes through its `deps`, and not one of them.
+   and keeps the window state, the fences and the plane. The owner of the
+   gestures is `wb-stage-stack.ts`.
    --------------------------------------------------------------------------- */
 import { WBGeometry } from "./wb-geometry.ts";
 import { WBWindowState } from "./wb-window-state.ts";
 import { WBConsoleName } from "./wb-console-name.ts";
 import * as WBConsoleInput from "./wb-console-input.ts";
 import { sendDocument } from "./wb-events.ts";
+import type { Gestures } from "./wb-stage-stack.ts";
 import type { ConsoleWin, DeskFence, DeskRecord, DeskWindowFields, Point, Presentation, Rect, Size } from "./wb-types.d.ts";
 
 const { fullscreenOffered, dragThreshold, dragBegins, isDoubleTap, HOLD_MS } = WBConsoleInput;
@@ -30,24 +28,8 @@ const { initWindow } = WBWindowState;
 // size, so the OPPOSITE edge stays put.
 export const DIRS = ["n", "s", "e", "w", "ne", "nw", "se", "sw"];
 
-// The elements under a gesture of the operator, from the press to the
-// release: windows, fences, cards, and every member a fence move carries.
-// `begin` at the press, `end` at the release; `active` is the question a desk
-// this page takes asks before it moves an element.
-export function createGestures() {
-  const gestures = new Set<HTMLElement>();
-  return {
-    begin: (el: HTMLElement) => {
-      gestures.add(el);
-    },
-    end: (el: HTMLElement) => {
-      gestures.delete(el);
-    },
-    active: (el: HTMLElement) => gestures.has(el),
-  };
-}
-
-export type Gestures = ReturnType<typeof createGestures>;
+// The fences take the gestures' type from here too.
+export type { Gestures };
 
 // The hooks of a gesture that is not a console window's: a note card drags and
 // resizes by the same gesture (ADR-0064 §8), locked by its own record and
