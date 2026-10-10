@@ -14,6 +14,9 @@
 import { component } from "./wb-alpine.ts";
 import { wbQr } from "./wb-settings.ts";
 
+/** The change of a toggle: the checkbox, which the handler puts back in sync. */
+type CheckboxChange = { target: HTMLInputElement | null };
+
 export function securityDialog() {
   // Every `shell()` member this component's code or markup reads or calls.
   // `loadComponent` in ui-tests/harness.mjs fails on any other name, and the
@@ -311,7 +314,7 @@ export function securityDialog() {
       if (this.security.policy === "session") this.logOff();
     },
 
-    async toggleRequireLogin(ev: any) {
+    async toggleRequireLogin(ev?: CheckboxChange) {
       // Only meaningful once TOTP is enrolled; the server refuses (400) an
       // enable with no seed, the client guard just avoids the round-trip.
       const want = !this.security.requireLogin;
@@ -355,7 +358,7 @@ export function securityDialog() {
       }
     },
 
-    async toggleRemoteImages(ev: any) {
+    async toggleRemoteImages(ev?: CheckboxChange) {
       // Turning it ON loosens the CSP, so that direction costs a fresh code
       // once a seed is armed; turning it off stays free.
       const want = !this.security.remoteImages;

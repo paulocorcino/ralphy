@@ -7,6 +7,33 @@
 
 import { WBFail } from "./wb-fail.ts";
 
+/** A peer of `/api/fleet`, as far as this dialog reads it. */
+type Peer = { daemon_id: string; name: string; environment?: string; state?: string; diagnosis?: string };
+
+/** What the folder the text names would do when it is added. */
+type Target = { action: string; label: string; help: string; path: string; init: boolean; create?: boolean };
+
+/** The newest `dir.list` reply, as the daemon sent it. */
+type Listing = DaemonReplies["dir.list"];
+
+/** A row of the folder list: a listed folder, or the `..` row that goes up. */
+type Row = { name: string; repo: boolean; added: boolean; error?: string; up?: boolean };
+
+/** What the dialog tells the fold. */
+export type Step =
+  | { type: "open"; daemon?: string }
+  | { type: "close" }
+  | { type: "where"; daemon?: string }
+  | { type: "text"; text: string; peers?: Peer[] }
+  | { type: "sent"; seq: number }
+  | { type: "slow"; seq: number }
+  | { type: "reply"; seq: number; reply: Listing }
+  | { type: "move"; by: number }
+  | { type: "pick"; name: string; up?: boolean }
+  | { type: "adding" }
+  | { type: "added" }
+  | { type: "addFailed"; message?: string };
+
 /** The Add a project dialog's state. */
 export type State = {
   open: boolean;
@@ -17,7 +44,7 @@ export type State = {
   seq: number;
   answered: number;
   /** The newest `dir.list` reply, as the daemon sent it. */
-  listing: any;
+  listing: Listing | null;
   listedText: string | null;
   sentText: string | null;
   failure: string;
@@ -92,7 +119,7 @@ function collapseDots(text: string) {
 // A pasted `\\wsl.localhost\<distro>\…` or `\\wsl$\<distro>\…` path. `null`
 // when the text is not one; else the peer's id and the Linux path, or the
 // distro that has no peer.
-function mapWsl(text: string, peers: any[] | null | undefined) {
+function mapWsl(text: string, peers: Peer[] | null | undefined) {
   const m = /^[\\/]{2}(?:wsl\.localhost|wsl\$)[\\/]([^\\/]+)([\\/].*)?$/i.exec(text || "");
   if (!m) return null;
   const distro = m[1];
@@ -107,7 +134,7 @@ function mapWsl(text: string, peers: any[] | null | undefined) {
 
 // The Where choices: this computer, then every peer. A peer that does not
 // answer is shown but cannot be chosen.
-function places(peers: any[] | null | undefined) {
+function places(peers: Peer[] | null | undefined) {
   const list = [{ id: "", label: "This computer", disabled: false, reason: "" }];
   for (const p of peers || []) {
     const reachable = p.state === "reachable";
@@ -143,7 +170,7 @@ function basename(path: string) {
 }
 
 // The folders the daemon listed.
-function listed(state: State) {
+function listed(state: State): Row[] {
   return (state.listing && state.listing.entries) || [];
 }
 
@@ -162,7 +189,7 @@ function upText(state: State) {
 // above, then the listed folders.
 function entries(state: State) {
   const rows = listed(state);
-  return upText(state) === null ? rows : [{ name: "..", up: true, repo: false, added: false }].concat(rows);
+  return upText(state) === null ? rows : ([{ name: "..", up: true, repo: false, added: false }] as Row[]).concat(rows);
 }
 
 function sameName(a: string, b: string, sep: string) {
@@ -180,7 +207,7 @@ function samePath(a: string, b: string, sep: string) {
 // The folder the text names and what adding it would do:
 // `{ action, label, help, path, init, create }`, where `action` is "add",
 // "init", "create", "root", "added", "missing", "unreadable" or "none".
-function target(state: State) {
+function target(state: State): Target {
   const sep = sepOf(state);
   const none = { action: "none", label: "Add project", help: "", path: "", init: false };
   if (state.wslMissing) return none;
@@ -205,7 +232,7 @@ function target(state: State) {
     if (dir.root && !repo) inside = dir.root;
   } else {
     const name = lastName(text);
-    const entry = listed(state).find((e: any) => sameName(e.name, name, sep));
+    const entry = listed(state).find((e) => sameName(e.name, name, sep));
     // The parent folder exists: the last name can be created there. Not
     // inside a repo, where a new repository would sit in another one.
     if (!entry && !dir.root && name.trim()) {
@@ -318,7 +345,7 @@ function reset(state: State, patch: Partial<State>) {
   }, patch);
 }
 
-function next(state: State, ev: any) {
+function next(state: State, ev: Step) {
   switch (ev.type) {
     case "open":
       return reset(initial(), { open: true, daemon: ev.daemon || "" });

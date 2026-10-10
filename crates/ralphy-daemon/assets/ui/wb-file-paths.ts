@@ -20,9 +20,9 @@ const BINARY_EXT = new Set([
   "woff2", "ttf", "eot", "otf",
 ]);
 
-function extOf(name: any) {
+function extOf(name: string) {
   const n = name.toLowerCase();
-  return n.includes(".") ? n.split(".").pop() : "";
+  return n.includes(".") ? (n.split(".").pop() as string) : "";
 }
 
 // The directories the daemon's Write path refuses (`fswrite::PROTECTED_DIRS`),
@@ -30,7 +30,7 @@ function extOf(name: any) {
 // Case-insensitive: NTFS resolves `.GIT` to `.git`.
 const PROTECTED_DIRS = [".git", ".ralphy"];
 
-export function isProtectedDir(name: any) {
+export function isProtectedDir(name: string) {
   return PROTECTED_DIRS.some((p) => name.toLowerCase() === p);
 }
 
@@ -39,11 +39,11 @@ export function isProtectedDir(name: any) {
 // landing directory IS writable (ADR-0064 §5), so the tree may offer rename
 // and delete on it. Exactly `.ralphy/notes/<name>.note`, spelled that way —
 // the same narrow shape `fswrite::is_note_in_notes_dir` opens.
-function isNoteInNotesDir(rel: any) {
+function isNoteInNotesDir(rel: string) {
   // `.` and empty segments are dropped first: `Path::components()` on the
   // daemon's side collapses them, so `.ralphy/./notes/x.note` is one path
   // there and would be two different answers here.
-  const parts = rel.split("/").filter((p: any) => p && p !== ".");
+  const parts = rel.split("/").filter((p) => p && p !== ".");
   return (
     parts.length === 3 &&
     parts[0] === ".ralphy" &&
@@ -53,19 +53,19 @@ function isNoteInNotesDir(rel: any) {
   );
 }
 
-export function underProtectedDir(rel: any) {
+export function underProtectedDir(rel: string) {
   if (isNoteInNotesDir(rel)) return false;
   return rel.split("/").some(isProtectedDir);
 }
 
 // The title of a create gesture, one sentence with its word order kept
 // whole (ADR-0065 §9). `dir` is "" for the top of the project.
-export function newEntryTitle(kind: any, dir: any) {
+export function newEntryTitle(kind: string, dir: string) {
   return `New ${kind} in ${dir || "the project root"}`;
 }
 
 // The directory containing `rel`; "" for a top-level entry (the repo root).
-export function parentRel(rel: any) {
+export function parentRel(rel: string) {
   const i = rel.lastIndexOf("/");
   return i < 0 ? "" : rel.slice(0, i);
 }
@@ -73,7 +73,7 @@ export function parentRel(rel: any) {
 // A file tab's identity (#406): project, path and — ONLY under a selected
 // worktree — the checkout, so the same rel in two trees is two tabs (the
 // primary's id is the pre-#406 spelling, byte for byte).
-export function fileTabId(project: any, path: any, checkout: any) {
+export function fileTabId(project: string, path: string, checkout: string | null | undefined) {
   return checkout ? `file:${project}@${checkout}:${path}` : `file:${project}:${path}`;
 }
 
@@ -81,7 +81,7 @@ export function fileTabId(project: any, path: any, checkout: any) {
 // a note → its CARD on the consoles stage (ADR-0064 §11, never a tab: two
 // editors over one file is the thing that decision exists to prevent), other
 // binaries refused, everything else source code.
-export function classify(name: any) {
+export function classify(name: string) {
   const ext = extOf(name);
   if (ext === "note") return "note";
   if (ext === "md" || ext === "markdown") return "markdown";

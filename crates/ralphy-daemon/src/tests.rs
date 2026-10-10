@@ -5088,7 +5088,7 @@ fn shell_draws_fences_below_the_windows() {
     // varies across the twelve rows, and spelling it in each one crowded the
     // panel until the name wrapped mid-word beside `Alt+Shift+F10`.
     assert!(
-        app.contains("fenceShortcutLabel(n: any) { return `F${n}`; }"),
+        app.contains("fenceShortcutLabel(n: number) { return `F${n}`; }"),
         "a fence row's label must be the bare key"
     );
     assert!(

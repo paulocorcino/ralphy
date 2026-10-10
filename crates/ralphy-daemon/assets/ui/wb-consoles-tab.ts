@@ -18,9 +18,18 @@
 import { component } from "./wb-alpine.ts";
 import { WBAgents } from "./wb-agents.ts";
 import { WBColumns } from "./wb-columns.ts";
+import type { ColumnGroup, ColumnRow, Grid } from "./wb-columns.ts";
+import type { ConsoleWin } from "./wb-types.d.ts";
+import type { MenuRow } from "./wb-agents.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { WBProject } from "./wb-project.ts";
 import { sendWindow } from "./wb-events.ts";
+
+/** A row of the Note menu (`WBNotes.list`). */
+type NoteItem = ReturnType<Window["WBNotes"]["list"]>[number];
+
+/** The consoles a fence opens as columns, at their stage rects. */
+type FenceColumnItems = DocumentEventMap["workbench:fence-columns"]["detail"]["items"];
 
 export function wbConsoleMenus() {
   // Every `shell()` member this component's code or markup reads or calls.
@@ -35,7 +44,7 @@ export function wbConsoleMenus() {
     // The note picker (ADR-0064 §§9–10): a SNAPSHOT on open, like the two
     // above — the cards live in the DOM and the desk, not in Alpine state.
     noteMenu: false,
-    noteItems: [],
+    noteItems: [] as NoteItem[],
     // Which notes have their `##` sections open in the menu, by id. Collapsed
     // is the default: a note is a document, and every heading of every note at
     // once is a wall, not a map.
@@ -73,14 +82,14 @@ export function wbConsoleMenus() {
     },
     // Every row is a launch (the menu is "New console"); `opts.tryAnyway` is
     // the unavailable row's escape hatch.
-    openConsoleItem(item: any, opts: any = {}) {
+    openConsoleItem(item: MenuRow & { command?: string }, opts: { tryAnyway?: boolean } = {}) {
       if (!WBAgents.consoleIntent(item, opts)) return;
       if (item.plain) this.newPlainConsole(item.command);
       else this.newConsole(item.kind);
       this.agentMenu = false;
     },
 
-    newConsole(agent: any) {
+    newConsole(agent: string) {
       // The accelerator path calls this directly: refuse with no repo here too.
       if (!this.$store.projects.openSlug) return;
       if (this.active !== "consoles") this.activate("consoles");
@@ -91,7 +100,7 @@ export function wbConsoleMenus() {
     // a bare shell in the repo dir (no agent) — the daemon's per-repo console;
     // with `command`, the shell runs it instead of a prompt and the session
     // ends with it (the console row's "Run…" field)
-    newPlainConsole(command: any) {
+    newPlainConsole(command: string | null | undefined) {
       if (this.active !== "consoles") this.activate("consoles");
       WBConsole.open({ repo: this.$store.projects.openSlug, plain: true, command: command || undefined });
     },
@@ -169,7 +178,7 @@ export function wbConsoleMenus() {
       this.closeMenus();
       this.windowMenu = !was;
     },
-    revealWindow(id: any) {
+    revealWindow(id: string) {
       if (this.active !== "consoles") this.activate("consoles");
       this.windowMenu = false;
       // AFTER the tab is laid out: a `display:none` tab measures 0.
@@ -215,7 +224,7 @@ export function wbConsoleMenus() {
 
     // The note list is the map too (ADR-0064 §10): the row slides the plane to
     // the card.
-    jumpNote(id: any) {
+    jumpNote(id: string) {
       if (this.active !== "consoles") this.activate("consoles");
       this.noteMenu = false;
       // As `revealWindow`: a `display:none` tab measures a 0×0 viewport.
@@ -224,7 +233,7 @@ export function wbConsoleMenus() {
     // Keep a card on top, or put it back (ADR-0064, 2026-09-26 amendment).
     // The menu closes on the way on top so the card is in view; putting back
     // keeps it open and redraws the rows.
-    toggleOnTop(n: any) {
+    toggleOnTop(n: NoteItem) {
       if (n.away) return;
       if (n.onTop) {
         window.WBNotes.putBack();
@@ -244,7 +253,7 @@ export function wbConsoleMenus() {
       this.closeMenus();
       this.fenceMenu = !was;
     },
-    jumpFence(id: any) {
+    jumpFence(id: string) {
       if (this.active !== "consoles") this.activate("consoles");
       this.fenceMenu = false;
       // As `revealWindow`: a `display:none` tab measures 0.
@@ -255,7 +264,7 @@ export function wbConsoleMenus() {
     // `Shift+F10`, F11 and F12 want their exact combo, and Alt takes this out
     // of their way. The ROW carries only its own key; the modifier pair is a
     // legend in the head.
-    fenceShortcutLabel(n: any) {
+    fenceShortcutLabel(n: number) {
       return `F${n}`;
     },
     fenceShortcutHint() {
@@ -264,7 +273,7 @@ export function wbConsoleMenus() {
 
     // Ordinal, not id: the row's position in `fenceList()`, read LIVE (the
     // menu's snapshot may be stale). Returns whether it landed.
-    jumpFenceAt(n: any) {
+    jumpFenceAt(n: number) {
       if (this.active !== "consoles") return false;
       const f = WBConsole.fenceList()[n - 1];
       if (!f) return false;
@@ -290,7 +299,7 @@ export function wbConsoleMenus() {
           this.openConsoleRunMenu();
           return;
         }
-        const row = this.consoleItems().find((it: any) => e.code === "Digit" + it.digit);
+        const row = this.consoleItems().find((it) => e.code === "Digit" + it.digit);
         // No row, or a disabled one: inert, and the key is not swallowed.
         if (!row || row.disabled) return;
         e.preventDefault();
@@ -318,7 +327,7 @@ export function wbColumns() {
     // Columns beside a maximized console (ADR-0051 §5): per-client view
     // state, never desk state. The ids left to right; empty whenever fewer
     // than two remain, so a lone survivor is an ordinary maximize again.
-    columns: [],
+    columns: [] as Grid,
     columnMenu: false,
     consoleCount: 0,
     // The stage extent, for the footer pill (#338).
@@ -327,9 +336,9 @@ export function wbColumns() {
     columnDir: "right",
     _columnsRestored: false,
     _paintedKey: "",
-    columnGroups: [] as any[],
+    columnGroups: [] as ColumnGroup[],
     columnFilter: "",
-    columnFrom: null,
+    columnFrom: null as string | null,
     columnMenuAt: { top: 0, right: 0, maxWidth: 400, maxHeight: 400 },
     // INVARIANT: the columns never write `max` themselves. Each `applyColumns` call
     // passes `persist`, so `setMax` writes it for the first console in reading
@@ -345,7 +354,7 @@ export function wbColumns() {
     // changes: `paintColumns` runs on every `consoles-changed` during boot with
     // an empty grid, and an unconditional write would erase the stored grid
     // before `restoreColumns` reads it.
-    setColumns(next: any) {
+    setColumns(next: Grid) {
       if (JSON.stringify(next) === JSON.stringify(this.columns)) return;
       this.columns = next;
       window.WBView?.patch({ columns: WBColumns.toStored(next) });
@@ -368,19 +377,19 @@ export function wbColumns() {
       if (!next.length && raw !== null) window.WBView?.patch({ columns: null });
       if (next.length) this.paintColumns({ raise: true });
     },
-    effectiveColumns(fromId: any) {
+    effectiveColumns(fromId: string): Grid {
       return this.columnIds().includes(fromId) ? this.columns : [[fromId]];
     },
     // The Right | Down choice at the top of the list, kept in this browser.
-    setColumnDir(dir: any) {
+    setColumnDir(dir: string | null | undefined) {
       this.columnDir = WBColumns.dirOf(dir);
       window.WBView?.patch({ columnDir: this.columnDir });
     },
     // Re-derive what is painted from the list and the current cap. A console
     // that left the stage (closed, detached) leaves the list.
-    paintColumns(opts?: any) {
+    paintColumns(opts?: { raise?: boolean }) {
       const byId = new Map(
-        [...document.querySelectorAll<any>("#stage .session-window")].map((w) => [w._deskId, w]),
+        [...document.querySelectorAll<ConsoleWin>("#stage .session-window")].map((w) => [w._deskId, w]),
       );
       const head = this.columnIds()[0];
       const headWin = head ? byId.get(head) : null;
@@ -405,14 +414,14 @@ export function wbColumns() {
       // hides comes back when the cap grows again.
       this.setColumns(keptIds.length >= 2 ? kept : []);
       const left =
-        this.columnIds()[0] ?? document.querySelector<any>("#stage .session-window.maximized")?._deskId;
+        this.columnIds()[0] ?? document.querySelector<ConsoleWin>("#stage .session-window.maximized")?._deskId;
       // A hidden consoles tab measures 0 wide, which reads as a cap of 1: keep
       // the painted columns as they are until the tab shows again.
       if (left && !WBConsole.columnMeasure().viewport) return;
       const cap = left ? this.columnCap() : 1;
       const before = WBConsole.focusedId();
       const painted = WBColumns.painted(this.columns, cap);
-      const ids = painted.map((p: any) => p.id);
+      const ids = painted.map((p) => p.id);
       const key = ids.join(" ");
       // A column that stops being painted falls back to its plane rect with its
       // old z-index; raising the painted ones keeps it behind them.
@@ -428,7 +437,7 @@ export function wbColumns() {
       }
     },
     // A fence detached to a popup takes its consoles out of the columns.
-    leaveColumns(ids: any) {
+    leaveColumns(ids: string[]) {
       const r = WBColumns.external(this.columns, { type: "detached", ids });
       if (!r.changed) return;
       const cap = r.columns.length ? this.columnCap() : 1;
@@ -439,8 +448,8 @@ export function wbColumns() {
     // module after a desk read) leave the columns, then the stage. A session
     // that ended, a remote maximize and a remote rect or fence change need
     // nothing here: `WBColumns.external` names them as no-ops.
-    checkColumnDesk(ids: any) {
-      const gone = this.columnIds().filter((id: any) => ids.includes(id));
+    checkColumnDesk(ids: string[]) {
+      const gone = this.columnIds().filter((id) => ids.includes(id));
       const r = WBColumns.external(this.columns, { type: "closed", ids: gone });
       if (r.changed) {
         const cap = r.columns.length ? this.columnCap() : 1;
@@ -451,7 +460,7 @@ export function wbColumns() {
       for (const id of ids) WBConsole.dropClosedElsewhere(id);
       if (r.changed) this.paintColumns();
     },
-    toggleColumnMenu(id: any, rect: any) {
+    toggleColumnMenu(id: string, rect: DOMRect | undefined) {
       const was = this.columnMenu && this.columnFrom === id;
       const ids = WBColumns.flat(this.effectiveColumns(id));
       this.columnGroups = WBColumns.listFold({
@@ -482,26 +491,26 @@ export function wbColumns() {
     },
     // `owner/repo` without the environment: the operator already knows where
     // each console runs, and the list is about telling the consoles apart.
-    columnRepoLabel(ref: any) {
+    columnRepoLabel(ref: string) {
       const row = this.$store.projects.projects.find((p) => this.$store.projects.repoRef(p) === ref);
       return row ? WBProject.projectName(row) : WBFleet.refLabel(ref);
     },
     columnView() {
-      return WBColumns.filterGroups(this.columnGroups, this.columnFilter, (ref: any) => this.columnRepoLabel(ref));
+      return WBColumns.filterGroups(this.columnGroups, this.columnFilter, (ref) => this.columnRepoLabel(ref));
     },
-    columnRowLabel(r: any) {
+    columnRowLabel(r: ColumnRow) {
       return WBColumns.rowLabel(r, window.WBConsoleName.consoleLabel);
     },
     // Enter in the filter opens the first row that can be opened; at the cap,
     // it swaps in the first row that can be swapped.
     openFirstColumn() {
-      const rows = this.columnView().flatMap((g: any) => g.rows);
-      const open = rows.find((r: any) => r.enabled);
+      const rows = this.columnView().flatMap((g) => g.rows);
+      const open = rows.find((r) => r.enabled);
       if (open) return this.openColumn(open.id);
-      const swap = rows.find((r: any) => r.swappable);
+      const swap = rows.find((r) => r.swappable);
       if (swap) this.swapColumn(swap.id);
     },
-    openColumn(id: any) {
+    openColumn(id: string) {
       const from = this.columnFrom;
       if (!from) return;
       const cols = this.effectiveColumns(from);
@@ -516,7 +525,7 @@ export function wbColumns() {
       WBConsole.focusColumn(id);
     },
     // Put `id` in the row that opened the list (ADR-0051 §5, swap).
-    swapColumn(id: any) {
+    swapColumn(id: string) {
       const from = this.columnFrom;
       if (!from) return;
       const r = WBColumns.swap(this.effectiveColumns(from), from, id);
@@ -528,7 +537,7 @@ export function wbColumns() {
       this.paintColumns();
       WBConsole.focusColumn(id);
     },
-    restoreColumn(id: any) {
+    restoreColumn(id: string) {
       const r = WBColumns.restore(this.columns, id);
       const cap = r.columns.length ? this.columnCap() : 1;
       this.setColumns(r.ended ? [] : r.columns);
@@ -538,12 +547,12 @@ export function wbColumns() {
     },
     // A fence opened as columns (ADR-0051 §5, 2026-09-30): the grid follows the
     // members' stage rects and replaces the columns that are open.
-    columnsFromFence(items: any) {
+    columnsFromFence(items: FenceColumnItems) {
       const grid = WBColumns.fromRects(items);
       const ids = WBColumns.flat(grid);
       if (!ids.length) return;
       const old =
-        this.columnIds()[0] ?? document.querySelector<any>("#stage .session-window.maximized")?._deskId;
+        this.columnIds()[0] ?? document.querySelector<ConsoleWin>("#stage .session-window.maximized")?._deskId;
       const cap = ids.length >= 2 ? this.columnCap() : 1;
       this.setColumns(ids.length >= 2 ? grid : []);
       WBConsole.applyColumns(WBColumns.painted(grid, cap), {
@@ -559,13 +568,13 @@ export function wbColumns() {
     // Alt+Shift+←/→. Returns the fence landed on, or null when the plane has
     // none (the shortcut decides whether to swallow the key). Runs against the
     // LIVE stage.
-    stepFence(step: any) {
+    stepFence(step: number) {
       if (this.active !== "consoles") return null;
       return WBConsole.stepFence(step);
     },
     // Alt+Shift+arrows among the painted consoles: "x" across the columns,
     // "y" along the rows of one column. Returns whether it applied.
-    stepColumn(axis: any, step: any) {
+    stepColumn(axis: string, step: number) {
       if (this.active !== "consoles" || this.columnIds().length < 2) return false;
       const painted = WBColumns.painted(this.columns, this.columnCap());
       const to = WBColumns.focusMove(painted, WBConsole.focusedId(), axis, step);
@@ -574,7 +583,7 @@ export function wbColumns() {
     },
     // The columns while they are open, the fences otherwise (ADR-0051 §5). The
     // fences have no "y": ↑/↓ with no columns open applies nothing.
-    arrowStep(axis: any, step: any) {
+    arrowStep(axis: string, step: number) {
       if (this.columnIds().length >= 2) return this.stepColumn(axis, step);
       return axis === "x" && !!this.stepFence(step);
     },
@@ -592,7 +601,7 @@ export function wbColumns() {
       window.addEventListener("workbench:menus-close", () => this.closeOwnMenus());
       // A console whose record another client removed leaves the columns
       // before it leaves the stage.
-      window.WBConsole?.setDeskGoneHook?.((ids: any) => this.checkColumnDesk(ids));
+      window.WBConsole?.setDeskGoneHook?.((ids: string[]) => this.checkColumnDesk(ids));
 
       // The Alpine mirror of the live console count.
       document.addEventListener("workbench:consoles-changed", (e) => {
@@ -645,7 +654,7 @@ export function wbColumns() {
         ArrowLeft: ["x", -1],
         ArrowDown: ["y", 1],
         ArrowUp: ["y", -1],
-      };
+      } as const;
       document.addEventListener("keydown", (e) => {
         if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
         const move = ARROW_STEPS[e.code as keyof typeof ARROW_STEPS];

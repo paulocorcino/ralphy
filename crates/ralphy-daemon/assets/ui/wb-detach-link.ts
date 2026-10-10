@@ -33,6 +33,24 @@
    `BroadcastChannel` or a timer. The node harness loads this file with neither
    present, and so does a browser in private mode.
 --------------------------------------------------------------------------- */
+/** What the registry keeps for a tab: the id, the detached fences, and the
+ * member ids each one held. */
+type DetachRecord = { v: 1; tab: string | null; fences: string[]; members: Record<string, string[]> };
+
+/** A message of the lifecycle channel. Every message names the acting tab; the
+ * other fields depend on `type`. */
+export type DetachMessage = {
+  type: string;
+  tab: string | null;
+  fenceId?: string;
+  pid?: string | null;
+  /** `popup-here`: the popup's snapshot of its members. */
+  members?: { id: string; kind?: string; path?: string }[];
+  noteId?: string;
+  path?: string;
+  claim?: string;
+};
+
 export const WBDetachLink = (function () {
   const KEY = "wb.detach.v1";
   const CHANNEL = "wb.detach.v1";
@@ -45,20 +63,20 @@ export const WBDetachLink = (function () {
   // Every storage touch is wrapped: private mode throws on `getItem`, a full
   // quota throws on `setItem`, and a hand-edited value parses to anything at
   // all. A detach registry is never worth an exception on a boot path.
-  function readRecord() {
+  function readRecord(): DetachRecord | null {
     try {
       const raw = sessionStorage.getItem(KEY);
       if (!raw) return null;
       const rec = JSON.parse(raw);
       if (!rec || rec.v !== 1) return null;
-      const members: any = {};
+      const members: Record<string, string[]> = {};
       for (const [id, ids] of Object.entries(rec.members || {})) {
         if (Array.isArray(ids)) members[id] = ids.filter((w) => typeof w === "string");
       }
       return {
         v: 1,
         tab: typeof rec.tab === "string" ? rec.tab : null,
-        fences: Array.isArray(rec.fences) ? rec.fences.filter((f: any) => typeof f === "string") : [],
+        fences: Array.isArray(rec.fences) ? rec.fences.filter((f: unknown) => typeof f === "string") : [],
         members,
       };
     } catch {
@@ -66,7 +84,7 @@ export const WBDetachLink = (function () {
     }
   }
 
-  function writeRecord(rec: any) {
+  function writeRecord(rec: DetachRecord) {
     try {
       sessionStorage.setItem(KEY, JSON.stringify(rec));
     } catch {}
@@ -82,15 +100,15 @@ export const WBDetachLink = (function () {
   // unavailable — created on FIRST USE so the module load stays free of every
   // browser facility.
   function makeChannel() {
-    let chan: any;
-    const listeners: any = [];
+    let chan: BroadcastChannel | null | undefined;
+    const listeners: ((msg: DetachMessage) => void)[] = [];
     function open() {
       if (chan !== undefined) return chan;
       chan = null;
       if (typeof BroadcastChannel !== "undefined") {
         try {
           chan = new BroadcastChannel(CHANNEL);
-          chan.onmessage = (e: any) => {
+          chan.onmessage = (e: MessageEvent<DetachMessage>) => {
             for (const fn of listeners.slice()) {
               try {
                 fn(e.data);
@@ -104,14 +122,14 @@ export const WBDetachLink = (function () {
       return chan;
     }
     return {
-      post(msg: any) {
+      post(msg: DetachMessage) {
         const c = open();
         if (!c) return;
         try {
           c.postMessage(msg);
         } catch {}
       },
-      onMessage(fn: any) {
+      onMessage(fn: (msg: DetachMessage) => void) {
         if (typeof fn !== "function") return;
         listeners.push(fn);
         open();
@@ -165,7 +183,7 @@ export const WBDetachLink = (function () {
       readMembers() {
         return readRecord()?.members || {};
       },
-      writeRegistry(ids: any, members: any) {
+      writeRegistry(ids: string[], members: Record<string, string[]>) {
         writeRecord({
           v: 1,
           tab,

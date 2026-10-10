@@ -14,18 +14,29 @@ import { WBFail } from "./wb-fail.ts";
 import { isProtectedDir, parentRel } from "./wb-file-paths.ts";
 import { sendWindow } from "./wb-events.ts";
 
+/** The picker's state: the row being moved and the folder it browses. */
+type MovePick = {
+  open: boolean;
+  from: string;
+  isFolder?: boolean;
+  dir: string;
+  entries: TreeEntry[];
+  busy: boolean;
+  error: string;
+};
+
 export function wbMoveDialog() {
   // Every `shell()` member this component's code or markup reads or calls.
   return component(["checkoutOf", "scrim"], {
     // The move destination picker (#364): browses one level at a time through
     // `tree.list`. `from` is the FULL rel path; `dir` the browsed directory
     // ("" is the repo root).
-    movePick: { open: false, from: "", isFolder: false, dir: "", entries: [], busy: false, error: "" } as any,
+    movePick: { open: false, from: "", isFolder: false, dir: "", entries: [], busy: false, error: "" } as MovePick,
     _movePickSeq: 0,
     // The destination is PICKED, never typed: the picker browses real
     // directories through `tree.list`. On `workbench:move-open`, which the
     // files send with the full rel path of the row.
-    openMove(from: any) {
+    openMove(from: string) {
       this.movePick = {
         open: true,
         from,
@@ -38,7 +49,7 @@ export function wbMoveDialog() {
       this.movePickLoad(parentRel(from));
     },
 
-    async movePickLoad(dir: any) {
+    async movePickLoad(dir: string) {
       // Stamp the request: two quick clicks would settle out of order.
       const seq = (this._movePickSeq = (this._movePickSeq || 0) + 1);
       this.movePick.busy = true;
@@ -70,7 +81,7 @@ export function wbMoveDialog() {
         .filter((e) => !isProtectedDir(e.name));
     },
 
-    movePickInto(name: any) {
+    movePickInto(name: string) {
       this.movePickLoad(this.movePick.dir ? `${this.movePick.dir}/${name}` : name);
     },
 

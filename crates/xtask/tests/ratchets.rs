@@ -63,9 +63,6 @@ const UI_DIR: &str = "crates/ralphy-daemon/assets/ui";
 /// not in it.
 const ANY_BASELINE: &[(&str, usize)] = &[
     ("app.ts", 333),
-    ("wb-add-project-dialog.ts", 5),
-    ("wb-add-project.ts", 5),
-    ("wb-columns.ts", 74),
     ("wb-console-chrome.ts", 79),
     ("wb-console-desk.ts", 38),
     ("wb-console-detach.ts", 58),
@@ -80,18 +77,10 @@ const ANY_BASELINE: &[(&str, usize)] = &[
     ("wb-console-title.ts", 76),
     ("wb-console-view.ts", 34),
     ("wb-console.ts", 191),
-    ("wb-consoles-tab.ts", 41),
-    ("wb-detach-link.ts", 10),
     ("wb-detached-fence.ts", 12),
-    ("wb-device.ts", 24),
-    ("wb-file-paths.ts", 12),
     ("wb-files.ts", 108),
-    ("wb-move-dialog.ts", 4),
     ("wb-notes.ts", 224),
     ("wb-projects-store.ts", 1),
-    ("wb-release-dialogs.ts", 1),
-    ("wb-security-dialog.ts", 2),
-    ("wb-view.ts", 4),
     ("wb-viewer.ts", 144),
 ];
 

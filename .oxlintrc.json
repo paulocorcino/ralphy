@@ -34,9 +34,6 @@
       // keeps the count of each listed module from growing (#613).
       "files": [
         "**/assets/ui/app.ts",
-        "**/assets/ui/wb-add-project-dialog.ts",
-        "**/assets/ui/wb-add-project.ts",
-        "**/assets/ui/wb-columns.ts",
         "**/assets/ui/wb-console-chrome.ts",
         "**/assets/ui/wb-console-desk.ts",
         "**/assets/ui/wb-console-detach.ts",
@@ -51,18 +48,10 @@
         "**/assets/ui/wb-console-title.ts",
         "**/assets/ui/wb-console-view.ts",
         "**/assets/ui/wb-console.ts",
-        "**/assets/ui/wb-consoles-tab.ts",
-        "**/assets/ui/wb-detach-link.ts",
         "**/assets/ui/wb-detached-fence.ts",
-        "**/assets/ui/wb-device.ts",
-        "**/assets/ui/wb-file-paths.ts",
         "**/assets/ui/wb-files.ts",
-        "**/assets/ui/wb-move-dialog.ts",
         "**/assets/ui/wb-notes.ts",
         "**/assets/ui/wb-projects-store.ts",
-        "**/assets/ui/wb-release-dialogs.ts",
-        "**/assets/ui/wb-security-dialog.ts",
-        "**/assets/ui/wb-view.ts",
         "**/assets/ui/wb-viewer.ts",
       ],
       "rules": { "typescript/no-explicit-any": "off" }
