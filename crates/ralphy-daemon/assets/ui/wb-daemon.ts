@@ -14,6 +14,7 @@ import { socketFrame } from "./wb-api.ts";
 import { WBProject } from "./wb-project.ts";
 import { WBRun } from "./wb-runs.ts";
 import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
+import type { Messages } from "./wb-messages.ts";
 
 /** What a persistent socket's owner hears: each open, and each frame. */
 type SocketHandlers = {
@@ -28,7 +29,14 @@ type PresenceHandlers = {
   onOpen?: (reopened: boolean) => void;
 };
 
-export function createDaemon(window: Window, document: Document, location: Location) {
+/** What the entry module hands the daemon door. */
+export type DaemonDeps = {
+  /** The page's door for operator messages: a verb that could not start is flashed. */
+  messages: Messages;
+};
+
+export function createDaemon(window: Window, document: Document, location: Location, deps: DaemonDeps) {
+  const { messages } = deps;
   // The tagged-frame codec, mirrored from src/protocol.rs (see wb-console.ts).
   const TAG_TERMINAL = 0x01;
   const TAG_COMMAND = 0x02;
@@ -481,7 +489,7 @@ export function createDaemon(window: Window, document: Document, location: Locat
         feedLines(chunk);
       } else if (WBFail.isError(s)) {
         const msg = WBFail.failed(s, "Could not start: the daemon gave no reason.");
-        window.getShell()?._flashAction?.(msg);
+        messages.flash(msg);
         window.getShell()?.runVerbFailed?.(msg);
       } else if (s.status === "exited") {
         window.getShell()?.runVerbFailed?.(WBRun.exitNote(verb, s.code, finalLine()));

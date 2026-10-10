@@ -72,13 +72,15 @@ const APP_TS_LINES: usize = 4209;
 /// `import type` line that names the owner module, not written inline (#653);
 /// 3083 since it reads its daemon replies through `wb-api.ts` (#653); 3086
 /// since its two peer buttons read their label once, typed by the peer's
-/// action (#653).
-const WB_CONSOLE_TS_LINES: usize = 3086;
+/// action (#653); 2958 since its confirm, notice and toast moved to the door
+/// for operator messages, `wb-messages.ts` (#623).
+const WB_CONSOLE_TS_LINES: usize = 2958;
 /// Lines of `crates/ralphy-daemon/assets/ui/wb-notes.ts`, the note cards
 /// (ADR-0073 D8, started by its 2026-10-10 amendment). 2828 at 823cc84c, before
 /// its first cut (#623); 2835 since the cards take the console as a typed dep
+/// (#623); 2839 since they take the door for operator messages as a dep
 /// (#623).
-const WB_NOTES_TS_LINES: usize = 2835;
+const WB_NOTES_TS_LINES: usize = 2839;
 
 /// Uses of the name `WBConsole` in the code of `wb-notes.ts`: 49 at 823cc84c,
 /// when the cards reached the console through `window.WBConsole`. 0 since the
@@ -89,22 +91,16 @@ const NOTES_CONSOLE_REACH: usize = 0;
 /// The console members a note card may read: the names in the `CardHost`
 /// union of `wb-types.d.ts`. Exact, like the other ratchets: a new name is a
 /// new thing a card reads of the console, and it is a design decision (#623).
-const CARD_HOST_NAMES: usize = 20;
+/// 18 since `toast` and `askConfirm` are the door's, `deps.messages` (#623).
+const CARD_HOST_NAMES: usize = 18;
 
 /// `(module, count)` of every use of `_flashAction`, a private member of
 /// `shell()`, in a `wb-*.ts` module: a call, or a name in a component's
 /// `uses` list. `app.ts` owns it and is not read. Exact, as `ANY_BASELINE`
-/// is. 19 in 6 modules at 823cc84c (#623). The target is an empty table:
-/// every operator message goes through one door (ADR-0073, the 2026-10-10
-/// amendment).
-const SHELL_FLASH_REACH: &[(&str, usize)] = &[
-    ("wb-consoles-tab.ts", 4),
-    ("wb-daemon.ts", 1),
-    ("wb-files.ts", 6),
-    ("wb-hosts-dialog.ts", 2),
-    ("wb-settings-dialog.ts", 3),
-    ("wb-file-viewer.ts", 3),
-];
+/// is. 19 in 6 modules at 823cc84c (#623). Empty since every operator
+/// message goes through one door, `wb-messages.ts` (ADR-0073, the 2026-10-10
+/// amendment); the table stays empty.
+const SHELL_FLASH_REACH: &[(&str, usize)] = &[];
 
 /// The functions that paint the columns on the stage. Each is declared in one
 /// module only: `wb-console.ts` at 823cc84c (#623).

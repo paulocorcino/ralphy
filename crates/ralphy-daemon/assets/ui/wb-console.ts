@@ -46,12 +46,12 @@ import { WBDetachLink } from "./wb-detach-link.ts";
 import { WBView } from "./wb-client-view.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
+import { createMessages } from "./wb-messages.ts";
 import { apiFetch } from "./wb-api.ts";
 import type { ApiRefusal } from "./wb-api.ts";
 import { sendDocument } from "./wb-events.ts";
 import type { DetachedMember, Painted } from "./wb-columns.ts";
 import type { TerminalDeps, TerminalOpts } from "./wb-console-terminal.ts";
-import type { ConfirmOptions } from "./wb-console-title.ts";
 import type { Group } from "./wb-fleet.ts";
 import type { ConsoleOpts, ConsoleTerm, ConsoleWin, DeskChange, DeskFence, DeskNote, DeskRecord, DeskReply, DeskWindowFields, ExtentOpts, NoteCard, Rect, SpawnCarry, Stacked, WindowSnapshot } from "./wb-types.d.ts";
 
@@ -174,12 +174,17 @@ export function createConsole(window: Window, document: Document, location: Pick
   // `wss://` over a TLS dev-tunnel/proxy, `ws://` for a plain-http localhost bind.
   const WS_ORIGIN =
     (location.protocol === "https:" ? "wss://" : "ws://") + location.host;
-  // Injection point, read once per instance. `main.ts` passes nothing (every
-  // default below is the shell's behaviour); `detached-fence-main.ts` overrides all five,
+  // Injection point, read once per instance. `main.ts` passes only the door
+  // for operator messages (every other default below is the shell's
+  // behaviour); `detached-fence-main.ts` overrides all five,
   // which is what makes the popup unable to author the desk or the viewport.
   const OPTS = opts || {};
   const deskSink = OPTS.deskSink || WBDeskSink.daemon();
   const viewStore = OPTS.viewStore || WBView;
+  // The confirm, the notice and the toast are the door's (`wb-messages.ts`);
+  // a page that passes no door gets one with no shell.
+  const messages = OPTS.messages || createMessages(window, document, { shell: () => null });
+  const { askConfirm, askNotice, toast, dismissToast } = messages;
   // Detach registry + lifecycle channel (#347). Denied in the popup: `window.open`
   // hands it a COPY of the opener's session-scoped store, so a read there drifts.
   // This module names no browser store of its own — pinned in lib.rs.
@@ -444,139 +449,6 @@ export function createConsole(window: Window, document: Document, location: Pick
     // the observer has nothing to report.
     refreshCover();
     sendDocument(document, "workbench:consoles-changed", { count: wins.size });
-  }
-
-  // Ask before a click that cannot be taken back: tiling moves every console in
-  // a fence, removing a fence takes the region out from under them, a console's
-  // × ends a live session — each one pixel from something harmless.
-  //
-  // Not the shell's Alpine dialog: this module also runs in the detached-fence
-  // popup, which has no Alpine and no modal markup. It borrows the shell's
-  // CLASSES (styles.css is loaded in both). Not `window.confirm`: it blocks the
-  // thread, and an automated browser dismisses it by default — every guarded
-  // click would silently cancel.
-  // `notice: true` is the one-button form: OK alone, focused, Enter/Escape dismiss.
-  function askConfirm({ title, message, confirmLabel = "Confirm", danger = false, notice = false }: ConfirmOptions) {
-    const scrim = document.createElement("div");
-    scrim.className = "modal-scrim wb-confirm";
-    const modal = document.createElement("div");
-    modal.className = "modal confirm-modal";
-    modal.setAttribute("role", "alertdialog");
-    modal.setAttribute("aria-modal", "true");
-    modal.setAttribute("aria-label", title);
-    const head = document.createElement("div");
-    head.className = "modal-head";
-    const mark = document.createElement("i");
-    mark.className = "bi " + (danger ? "bi-exclamation-triangle" : "bi-question-circle");
-    if (danger) mark.style.color = "var(--danger)";
-    head.append(mark);
-    const heading = document.createElement("span");
-    heading.className = "modal-title";
-    heading.textContent = title;
-    head.append(heading);
-    const body = document.createElement("p");
-    body.className = "confirm-body";
-    body.textContent = message;
-    const foot = document.createElement("div");
-    foot.className = "modal-foot";
-    const cancel = document.createElement("button");
-    cancel.className = "btn";
-    cancel.type = "button";
-    cancel.textContent = "Cancel";
-    const go = document.createElement("button");
-    go.className = danger ? "btn danger" : "btn accent";
-    go.type = "button";
-    go.textContent = confirmLabel;
-    if (notice) foot.append(go);
-    else foot.append(cancel, go);
-    modal.append(head, body, foot);
-    scrim.append(modal);
-    document.body.append(scrim);
-    // CANCEL takes the keyboard: the dialog exists because a click went astray,
-    // and a destructive button under a stray Enter would repeat the slip. A
-    // notice has nothing to protect: OK takes the focus.
-    if (notice) go.focus();
-    else cancel.focus();
-
-    return new Promise<boolean>((resolve) => {
-      let settled = false;
-      const done = (ok: boolean) => {
-        if (settled) return;
-        settled = true;
-        document.removeEventListener("keydown", onKey, true);
-        scrim.remove();
-        resolve(ok);
-      };
-      const onKey = (e: KeyboardEvent) => {
-        if (e.key === "Escape") {
-          e.stopPropagation();
-          done(false);
-        } else if (e.key === "Enter" && document.activeElement === go) {
-          e.stopPropagation();
-          done(true);
-        }
-      };
-      // CAPTURE: a console's terminal swallows keystrokes, and Escape is one it
-      // forwards to the child — the dialog must hear it first.
-      document.addEventListener("keydown", onKey, true);
-      cancel.addEventListener("click", () => done(false));
-      go.addEventListener("click", () => done(true));
-    });
-  }
-
-  // A message with an OK and nothing else (a verb's refusal, verbatim).
-  function askNotice({ title, message, danger = true }: { title: string; message: string; danger?: boolean }) {
-    return askConfirm({ title, message, confirmLabel: "OK", danger, notice: true });
-  }
-
-  // A transient line with ONE optional verb — the undo a close needs (ADR-0064
-  // §11). Not a dialog: it asks nothing, takes no focus and never blocks the
-  // stage, because the act it reports already happened and the file it reports
-  // on is still there. One at a time: a second replaces the first, so a burst
-  // of closes cannot stack a column over the plane.
-  //
-  // DOM-built like `askConfirm` and appended to `document.body`, so it works in
-  // the detached-fence popup too, which has no shell around it.
-  let toastEl: HTMLElement | null = null;
-  let toastTimer: ReturnType<typeof setTimeout> | null = null;
-  const TOAST_MS = 6000;
-  function toast({ text, action, onAction, ms = TOAST_MS }: { text: string; action?: string; onAction?: () => void; ms?: number }) {
-    dismissToast();
-    const el = document.createElement("div");
-    el.className = "wb-toast";
-    el.setAttribute("role", "status");
-    const line = document.createElement("span");
-    line.className = "wb-toast-text";
-    line.textContent = text;
-    el.append(line);
-    if (action && onAction) {
-      const btn = document.createElement("button");
-      btn.className = "wb-toast-action";
-      btn.type = "button";
-      btn.textContent = action;
-      btn.addEventListener("click", () => {
-        dismissToast();
-        onAction();
-      });
-      el.append(btn);
-    }
-    const close = document.createElement("button");
-    close.className = "wb-toast-close";
-    close.type = "button";
-    close.title = "Dismiss";
-    close.textContent = "×";
-    close.addEventListener("click", dismissToast);
-    el.append(close);
-    document.body.append(el);
-    toastEl = el;
-    toastTimer = setTimeout(dismissToast, ms);
-    return el;
-  }
-  function dismissToast() {
-    if (toastTimer != null) clearTimeout(toastTimer);
-    toastTimer = null;
-    toastEl?.remove();
-    toastEl = null;
   }
 
   // The tooltip of an agent-state dot: the Go-to menu, the checkout switcher

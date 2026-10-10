@@ -32,6 +32,7 @@ import { createDaemon } from "../assets/ui/wb-daemon.ts";
 import { createViewer } from "../assets/ui/wb-file-viewer.ts";
 import { createNotes } from "../assets/ui/wb-notes.ts";
 import { createConsole } from "../assets/ui/wb-console.ts";
+import { createMessages } from "../assets/ui/wb-messages.ts";
 import { WBView } from "../assets/ui/wb-client-view.ts";
 import { WBDeskSink } from "../assets/ui/wb-desk-sink.ts";
 import { WBConsoleName } from "../assets/ui/wb-console-name.ts";
@@ -171,25 +172,29 @@ export function loadShell(opts = {}) {
   // (the module), and each call is a new page, so it starts clear.
   window.WBView = { ...WBView };
   WBDeskSink.setHold(false);
-  // One console, one daemon door, one file pane and one set of note cards per
-  // page, in the order the entry module makes them. `boot` is not called: the
-  // stub document has no stage.
+  // One message door, one console, one daemon door, one file pane and one set
+  // of note cards per page, in the order the entry module makes them. `boot`
+  // is not called: the stub document has no stage. The stub document has no
+  // `[x-data]` root, so `getShell` finds no shell: the door falls back to this
+  // page's `shell()` state, the shell the browser would find.
+  let state = null;
+  const messages = createMessages(window, document, { shell: () => window.getShell?.() ?? state });
   const realBC = globalThis.BroadcastChannel;
   delete globalThis.BroadcastChannel;
   try {
-    window.WBConsole = createConsole(window, document, window.location, {});
+    window.WBConsole = createConsole(window, document, window.location, { messages });
   } finally {
     globalThis.BroadcastChannel = realBC;
   }
-  window.WBDaemon = createDaemon(window, document, window.location);
-  window.WBViewer = createViewer(window, document);
-  window.WBNotes = createNotes(window, document, { console: window.WBConsole });
+  window.WBDaemon = createDaemon(window, document, window.location, { messages });
+  window.WBViewer = createViewer(window, document, { messages });
+  window.WBNotes = createNotes(window, document, { console: window.WBConsole, messages });
   // `shell()` reads the page's globals on the real `window` and `document`:
   // the last page loaded owns them, as in `loadComponent`.
   globalThis.window = window;
   globalThis.document = document;
-  wire(window, document);
-  const state = shell();
+  wire(window, document, { messages });
+  state = shell();
   state.$store = { projects };
   return { state, window, document };
 }

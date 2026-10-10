@@ -24,7 +24,7 @@ function load() {
   const window = { addEventListener() {} };
   const document = { addEventListener() {} };
   const location = { protocol: "http:", host: "127.0.0.1:7431" };
-  return createDaemon(window, document, location);
+  return createDaemon(window, document, location, { messages: { flash() {} } });
 }
 
 test("a handshake that never opens is closed at the deadline, and nothing else is", async () => {
@@ -170,7 +170,7 @@ function loadWithSocket(replyFor) {
   }
   const realWS = globalThis.WebSocket;
   globalThis.WebSocket = FakeSocket;
-  return { d: createDaemon(window, document, location), restore: () => (globalThis.WebSocket = realWS) };
+  return { d: createDaemon(window, document, location, { messages: { flash() {} } }), restore: () => (globalThis.WebSocket = realWS) };
 }
 
 test("observe fans out an unknown checkout to the registered listeners, after the reply", async () => {

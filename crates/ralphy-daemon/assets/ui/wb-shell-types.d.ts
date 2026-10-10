@@ -38,6 +38,12 @@ export type ConfirmAsk = {
   danger?: boolean;
 };
 
+/** What the entry module hands `wire` (`app.ts`). */
+export type WireDeps = {
+  /** The page's door for operator messages. */
+  messages: import("./wb-messages.ts").Messages;
+};
+
 /** What `askPrompt` takes; each field has a default. */
 export type PromptAsk = {
   title?: string;

@@ -87,7 +87,7 @@ pub(super) fn scan(src: &str, first_line: usize, fns: CopyFns, out: &mut Vec<Fou
             {
                 let kind = match stack.last().and_then(|s| s.1) {
                     Some("toast") => Kind::Toast,
-                    Some("askConfirm" | "askNotice" | "askPrompt") => Kind::Confirm,
+                    Some("askConfirm" | "askNotice" | "askPrompt" | "askInShell") => Kind::Confirm,
                     _ => Kind::Property,
                 };
                 let end = sc.expr_end(i + 2, true);
