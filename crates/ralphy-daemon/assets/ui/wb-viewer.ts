@@ -19,8 +19,97 @@ import { WBSplit } from "./wb-split.ts";
 import { WBFail } from "./wb-fail.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { sendDocument } from "./wb-events.ts";
+import type { MonacoDiffEditor, MonacoDisposable, MonacoEditor } from "./wb-monaco.ts";
 
-export function createViewer(window: any, document: any) {
+/** The vendored mermaid (`vendor/mermaid`): the members this module calls. */
+type Mermaid = {
+  initialize(config: {
+    startOnLoad: boolean;
+    securityLevel: string;
+    theme: string;
+    htmlLabels: boolean;
+    flowchart: { htmlLabels: boolean };
+  }): void;
+  render(id: string, source: string): Promise<{ svg: string }>;
+};
+
+type ViewerWindow = Window & { mermaid?: Mermaid };
+
+/**
+ * One open file pane. `open` fills the first group; the rest appear as the
+ * pane is used. `ed` is a diff editor on a `diff` pane and a code editor on
+ * every other.
+ */
+type ViewerRecord = {
+  id: string;
+  project: string;
+  label: string;
+  path: string;
+  kind: string;
+  content: string;
+  original: string | undefined;
+  uid: number;
+  editing: boolean;
+  visible: boolean;
+  detached: boolean;
+  checkout: string | null;
+  encoding: string;
+  bom: boolean;
+  /** The daemon's reason for serving no bytes, or `null`. */
+  refused: string | null;
+  el?: HTMLElement;
+  ed?: MonacoEditor | MonacoDiffEditor;
+  dirty?: boolean;
+  mounting?: boolean;
+  mountFailed?: boolean;
+  fallbackEl?: HTMLElement;
+  saveBtn?: HTMLElement | null;
+  mirrorBtn?: HTMLElement | null;
+  saveKey?: MonacoDisposable;
+  ro?: ResizeObserver;
+  encMenu?: HTMLElement;
+  /** A find asked for while the editor was not mounted or the pane was off screen. */
+  pendingFind?: string | null;
+  /** The bytes of an external write a dirty pane has not taken yet. */
+  pendingDisk?: string;
+  mermaidPending?: HTMLElement[];
+  hits?: HTMLElement[];
+  hitIdx?: number;
+};
+
+/** What `open` takes: the fields of a `FileDescriptor` and the reasons a pane may have no bytes. */
+type OpenSpec = {
+  id: string;
+  project: string;
+  label?: string;
+  path: string;
+  ftype: string;
+  content: string;
+  /** The diff's HEAD side. */
+  original?: string;
+  detached?: boolean;
+  checkout?: string | null;
+  encoding?: string;
+  bom?: boolean;
+  refused?: string | null;
+};
+
+/** The second pane the shell resolved (`WBSplit.resolve`). */
+type ViewerSlot = { id: string; mirror?: boolean; focus?: boolean; ratio: number | null };
+
+/** The mirror: a second editor over a pane's model, in a `.viewer` of its own. */
+type Mirror = {
+  rec: ViewerRecord;
+  el: HTMLElement;
+  ed: MonacoEditor | null;
+  ro: ResizeObserver | undefined;
+  saveKey: MonacoDisposable | undefined;
+};
+
+/** The ENCODINGS rows: the label, the daemon's name, and whether a BOM is written. */
+type Encoding = [label: string, name: string, bom: boolean];
+
+export function createViewer(window: ViewerWindow, document: Document) {
   let mermaidReady = false;
   function initMermaid() {
     if (mermaidReady || !window.mermaid) return;
@@ -46,7 +135,7 @@ export function createViewer(window: any, document: any) {
   }
 
   const viewers = document.getElementById("viewers");
-  const map = new Map(); // tab id → viewer record
+  const map = new Map<string, ViewerRecord>(); // tab id → viewer record
 
   // Monaco boots through an AMD loader, so an editor is created
   // asynchronously. INVARIANTS across that gap: `rec.content` is the single
@@ -54,7 +143,7 @@ export function createViewer(window: any, document: any) {
   // never mount an orphan editor. Liveness is `map.get(rec.id) === rec`, NOT
   // `has`: tab ids are stable per file, so a close+reopen inside the boot
   // window puts a DIFFERENT record under the same key.
-  const alive = (rec: any) => map.get(rec.id) === rec;
+  const alive = (rec: ViewerRecord) => map.get(rec.id) === rec;
 
   // --- the secondary pane: the slot (ADR-0037 §3c) ---------------------------
   // What is on screen: the active pane and, beside it, the slot the shell
@@ -64,14 +153,14 @@ export function createViewer(window: any, document: any) {
   // reload restores the slot while its bytes are in flight) — the next
   // `setActive`/`refresh` converges, the same rule the shell's late opener
   // follows.
-  let shown: { id: any; slot: any } = { id: null, slot: null };
+  let shown: { id: string | null; slot: ViewerSlot | null } = { id: null, slot: null };
   // The mirror: a second Monaco editor over the active pane's model, in a
   // sibling `.viewer` of its own so the grid, the toolbar and the narrow-pane
   // container query all see one more pane. At most one, ever. It owns its
   // EDITOR only — the model is the mirrored pane's, and `disposeEditor` closes
   // the mirror before the model on every path.
-  let mirror: any = null; // { rec, el, ed, ro }
-  let divider: any = null;
+  let mirror: Mirror | null = null;
+  let divider: HTMLElement | null = null;
 
   function refresh() {
     paint();
@@ -83,18 +172,18 @@ export function createViewer(window: any, document: any) {
     const { id, slot } = shown;
     const slotRec = slot ? map.get(slot.id) : null;
     // A mirror needs an editor to mirror; a pin needs its pane open.
-    const split = !!slotRec && (!slot.mirror || (slotRec.kind === "code" && !!slotRec.ed));
+    const split = !!slotRec && (!slot!.mirror || (slotRec.kind === "code" && !!slotRec.ed));
     for (const rec of map.values()) {
-      const on = rec.id === id || (split && rec.id === slot.id);
-      rec.el.style.display = on ? "flex" : "none";
-      rec.el.style.gridColumn = on && split ? (rec.id === id ? "1" : "3") : "";
+      const on = rec.id === id || (split && rec.id === slot!.id);
+      rec.el!.style.display = on ? "flex" : "none";
+      rec.el!.style.gridColumn = on && split ? (rec.id === id ? "1" : "3") : "";
       rec.visible = on;
       if (on) {
         setTimeout(() => {
           rec.ed?.layout();
           // A find asked for while the pane was off screen (see findInEditor).
           if (rec.pendingFind && rec.ed) {
-            const term = rec.pendingFind;
+            const term: string = rec.pendingFind;
             rec.pendingFind = null;
             findInEditor(rec, term);
           }
@@ -114,18 +203,18 @@ export function createViewer(window: any, document: any) {
       return;
     }
     ensureDivider();
-    viewers.style.setProperty("--wb-split", ratioPct(slot.ratio));
-    if (slot.mirror) ensureMirror(slotRec);
+    viewers.style.setProperty("--wb-split", ratioPct(slot!.ratio));
+    if (slot!.mirror) ensureMirror(slotRec!);
     else closeMirror();
-    if (slot.focus) {
-      const target = slot.mirror ? mirror?.ed : slotRec.ed;
+    if (slot!.focus) {
+      const target = slot!.mirror ? mirror?.ed : (slotRec!.ed as MonacoEditor | undefined);
       setTimeout(() => target?.focus(), 0);
     }
   }
 
-  const ratioPct = (ratio: any) => `${((Number.isFinite(ratio) ? ratio : 0.5) * 100).toFixed(2)}%`;
+  const ratioPct = (ratio: number | null) => `${((Number.isFinite(ratio) ? ratio! : 0.5) * 100).toFixed(2)}%`;
 
-  function ensureMirror(rec: any) {
+  function ensureMirror(rec: ViewerRecord) {
     if (mirror?.rec === rec) {
       mirror.el.style.display = "flex";
       return;
@@ -147,10 +236,10 @@ export function createViewer(window: any, document: any) {
       </div>
       <div class="viewer-body"></div>`;
     setPathLabel(el, rec);
-    el.querySelector('[data-act="mirror"]').onclick = () => window.getShell?.()?.toggleMirror?.();
-    viewers.append(el);
-    const holder = { rec, el, ed: null as ReturnType<typeof WBMonaco.createOver> | null, ro: undefined, saveKey: undefined };
-    const ed = WBMonaco.createOver(el.querySelector(".viewer-body"), rec.ed.getModel(), {
+    el.querySelector<HTMLElement>('[data-act="mirror"]')!.onclick = () => window.getShell?.()?.toggleMirror?.();
+    viewers!.append(el);
+    const holder: Mirror = { rec, el, ed: null, ro: undefined, saveKey: undefined };
+    const ed = WBMonaco.createOver(el.querySelector<HTMLElement>(".viewer-body")!, (rec.ed as MonacoEditor).getModel()!, {
       narrow: isNarrow(el),
     });
     // No content listener: the model is shared, so the pane's own listener
@@ -183,17 +272,17 @@ export function createViewer(window: any, document: any) {
     divider.className = "viewers-divider";
     divider.innerHTML =
       '<button class="slot-close" title="Close the second pane" aria-label="Close the second pane"><i class="bi bi-x-lg"></i></button>';
-    divider.querySelector(".slot-close").onclick = () => window.getShell?.()?.clearSlot?.();
-    divider.addEventListener("pointerdown", (e: any) => {
-      if (e.button !== 0 || !e.isPrimary || e.target.closest(".slot-close")) return;
+    divider.querySelector<HTMLElement>(".slot-close")!.onclick = () => window.getShell?.()?.clearSlot?.();
+    divider.addEventListener("pointerdown", (e: PointerEvent) => {
+      if (e.button !== 0 || !e.isPrimary || (e.target as Element).closest(".slot-close")) return;
       e.preventDefault();
       const pointerId = e.pointerId;
-      const box = viewers.getBoundingClientRect();
-      let ratio: any = null;
-      const onMove = (ev: any) => {
+      const box = viewers!.getBoundingClientRect();
+      let ratio: number | null = null;
+      const onMove = (ev: PointerEvent) => {
         if (ev.pointerId !== pointerId) return;
         ratio = WBSplit.clampRatio(ev.clientX - box.left, box.width);
-        viewers.style.setProperty("--wb-split", ratioPct(ratio));
+        viewers!.style.setProperty("--wb-split", ratioPct(ratio));
       };
       const onUp = () => {
         document.removeEventListener("pointermove", onMove);
@@ -206,7 +295,7 @@ export function createViewer(window: any, document: any) {
       document.addEventListener("pointerup", onUp);
       document.addEventListener("pointercancel", onUp);
     });
-    viewers.append(divider);
+    viewers!.append(divider);
   }
 
   // The canvas crossing the split's width floor is the shell's to re-decide:
@@ -217,12 +306,12 @@ export function createViewer(window: any, document: any) {
     }).observe(viewers);
   }
 
-  function mountEditor(rec: any, container: any, opts: any) {
+  function mountEditor(rec: ViewerRecord, container: HTMLElement, opts: { path?: string; wordWrap?: string }) {
     const path = (opts && opts.path) || rec.path;
     if (rec.mounting || rec.mountFailed) return Promise.resolve();
     rec.mounting = true;
     return WBMonaco.ready()
-      .catch((err: any) => {
+      .catch((err) => {
         // The AMD loader did not boot — degrade to read-only bytes rather
         // than leave an empty pane (#308).
         // Only a BOOT failure lands here; a throw from create()/wiring below
@@ -238,12 +327,12 @@ export function createViewer(window: any, document: any) {
         console.warn("[workbench] monaco did not boot; read-only fallback", err);
         return null;
       })
-      .then((monaco: any) => {
+      .then((monaco) => {
         rec.mounting = false;
         if (!monaco || !alive(rec)) return;
         const ed = WBMonaco.create(container, {
           value: rec.content,
-          path,
+          path: path!,
           uid: rec.uid,
           project: rec.project,
           wordWrap: opts && opts.wordWrap,
@@ -262,7 +351,7 @@ export function createViewer(window: any, document: any) {
         // A content-search open asked for a term before there was an editor
         // to ask; now there is one.
         if (rec.pendingFind) {
-          const term = rec.pendingFind;
+          const term: string = rec.pendingFind;
           rec.pendingFind = null;
           findInEditor(rec, term);
         }
@@ -270,7 +359,7 @@ export function createViewer(window: any, document: any) {
         // restores the slot while the bytes are still in flight): paint now.
         if (shown.slot?.mirror && shown.slot.id === rec.id) refresh();
       })
-      .catch((err: any) => {
+      .catch((err) => {
         // A create()/wiring failure is NOT a boot failure: the pane would look
         // editable while nothing is wired, so say so instead of degrading.
         rec.mounting = false;
@@ -287,8 +376,8 @@ export function createViewer(window: any, document: any) {
   // it is Monaco's own `automaticLayout` business. The observer is the pane's,
   // not the editor's: `disposeEditor` ends it with the editor it feeds.
   const NARROW_PX = 560;
-  const isNarrow = (el: any) => !!el && el.clientWidth > 0 && el.clientWidth <= NARROW_PX;
-  function watchNarrow(rec: any, ed: any) {
+  const isNarrow = (el: HTMLElement | undefined) => !!el && el.clientWidth > 0 && el.clientWidth <= NARROW_PX;
+  function watchNarrow(rec: { el?: HTMLElement; ro?: ResizeObserver }, ed: MonacoEditor | MonacoDiffEditor) {
     if (!rec.el || typeof ResizeObserver !== "function") return;
     let narrow = isNarrow(rec.el);
     rec.ro = new ResizeObserver(() => {
@@ -306,7 +395,7 @@ export function createViewer(window: any, document: any) {
   // service, so with two editors on screen the last one registered would take
   // every Ctrl+S. The disposable is kept: Monaco does not tie it to the editor's
   // own lifetime, and a binding that outlives its editor holds `rec` forever.
-  function bindSave(ed: any, rec: any) {
+  function bindSave(ed: MonacoEditor, rec: ViewerRecord) {
     const monaco = window.monaco;
     return ed.addAction({
       id: "wb.save",
@@ -316,7 +405,7 @@ export function createViewer(window: any, document: any) {
     });
   }
 
-  function disposeEditor(rec: any) {
+  function disposeEditor(rec: ViewerRecord) {
     // The mirror sits over THIS pane's model: its editor goes before the model
     // does, on every path — an editor over a disposed model throws on render.
     if (mirror?.rec === rec) closeMirror();
@@ -330,29 +419,29 @@ export function createViewer(window: any, document: any) {
       // path — disposing the editor does NOT (the leak is only visible in
       // `monaco.editor.getModels()`, which wb_diff_311.py counts). The EDITOR
       // goes first: a model disposed while attached raises a page error (#407).
-      const m = rec.ed.getModel();
+      const m = (rec.ed as MonacoDiffEditor).getModel();
       rec.ed.dispose();
       m?.original?.dispose();
       m?.modified?.dispose();
     } else {
-      rec.ed.getModel()?.dispose();
+      (rec.ed as MonacoEditor).getModel()?.dispose();
       rec.ed.dispose();
     }
     rec.ed = undefined;
   }
 
   // --- a diff tab (read-only, two-sided) ----------------------------------
-  function mountDiff(rec: any, container: any) {
+  function mountDiff(rec: ViewerRecord, container: HTMLElement) {
     if (rec.mounting || rec.mountFailed) return Promise.resolve();
     rec.mounting = true;
     return WBMonaco.ready()
-      .then((monaco: any) => {
+      .then((monaco) => {
         rec.mounting = false;
         // Same record-identity liveness rule as mountEditor: a diff tab closed
         // inside the boot window must mount nothing on its detached container.
         if (!monaco || !alive(rec)) return;
         const ed = WBMonaco.createDiff(container, {
-          original: rec.original,
+          original: rec.original!,
           modified: rec.content,
           path: rec.path,
           uid: rec.uid,
@@ -363,7 +452,7 @@ export function createViewer(window: any, document: any) {
         watchNarrow(rec, ed);
         if (rec.visible) ed.layout();
       })
-      .catch((err: any) => {
+      .catch((err) => {
         // No `<pre>` degrade here: two texts side by side have no honest
         // single-pane fallback, and one of them rendered alone would read as
         // "no changes". Say it failed and close the tab (#311).
@@ -375,7 +464,7 @@ export function createViewer(window: any, document: any) {
       });
   }
 
-  function buildDiff(rec: any) {
+  function buildDiff(rec: ViewerRecord) {
     const el = document.createElement("div");
     el.className = "viewer diff-viewer";
     el.dataset.tabId = rec.id;
@@ -392,19 +481,19 @@ export function createViewer(window: any, document: any) {
       </div>
       <div class="viewer-body"></div>`;
     setPathLabel(el, rec);
-    viewers.append(el);
+    viewers!.append(el);
 
-    el.querySelector('[data-act="find"]').onclick = () => {
-      const mod = rec.ed?.getModifiedEditor();
+    el.querySelector<HTMLElement>('[data-act="find"]')!.onclick = () => {
+      const mod = (rec.ed as MonacoDiffEditor | undefined)?.getModifiedEditor();
       mod?.focus();
       mod?.getAction("actions.find")?.run();
     };
     rec.el = el;
-    mountDiff(rec, el.querySelector(".viewer-body"));
+    mountDiff(rec, el.querySelector<HTMLElement>(".viewer-body")!);
   }
 
   // --- a source-code editor tab ------------------------------------------
-  function buildCode(rec: any) {
+  function buildCode(rec: ViewerRecord) {
     const el = document.createElement("div");
     el.className = "viewer code-viewer";
     el.dataset.tabId = rec.id;
@@ -424,30 +513,30 @@ export function createViewer(window: any, document: any) {
       </div>
       <div class="viewer-body"></div>`;
     setPathLabel(el, rec);
-    viewers.append(el);
+    viewers!.append(el);
     wireEncodingMenu(rec, el);
 
-    const saveBtn = el.querySelector('[data-act="save"]');
-    el.querySelector('[data-act="find"]').onclick = () => {
-      rec.ed?.focus();
-      rec.ed?.getAction("actions.find")?.run();
+    const saveBtn = el.querySelector<HTMLElement>('[data-act="save"]')!;
+    el.querySelector<HTMLElement>('[data-act="find"]')!.onclick = () => {
+      (rec.ed as MonacoEditor | undefined)?.focus();
+      (rec.ed as MonacoEditor | undefined)?.getAction("actions.find")?.run();
     };
-    const mirrorBtn = el.querySelector('[data-act="mirror"]');
+    const mirrorBtn = el.querySelector<HTMLElement>('[data-act="mirror"]');
     if (mirrorBtn) mirrorBtn.onclick = () => window.getShell?.()?.toggleMirror?.();
     saveBtn.onclick = () => save(rec);
-    el.querySelector('[data-act="reload"]').onclick = () => reloadFile(rec);
-    el.querySelector('[data-act="disk"]').onclick = () => {
-      applyFresh(rec, rec.pendingDisk);
+    el.querySelector<HTMLElement>('[data-act="reload"]')!.onclick = () => reloadFile(rec);
+    el.querySelector<HTMLElement>('[data-act="disk"]')!.onclick = () => {
+      applyFresh(rec, rec.pendingDisk!);
       hideDiskBadge(rec);
     };
-    el.querySelector('[data-act="detach"]').onclick = () => detachClick(rec);
+    el.querySelector<HTMLElement>('[data-act="detach"]')!.onclick = () => detachClick(rec);
     rec.el = el;
     rec.saveBtn = saveBtn;
     rec.mirrorBtn = mirrorBtn;
-    mountEditor(rec, el.querySelector(".viewer-body"), {});
+    mountEditor(rec, el.querySelector<HTMLElement>(".viewer-body")!, {});
   }
 
-  function save(rec: any) {
+  function save(rec: ViewerRecord) {
     // A diff and an image are read-only: a `save` intent from either would be a
     // mutation those surfaces forbid, so it never reaches the action seam. (An
     // image's `content` is a `data:` URL, not the file's bytes — saving it would
@@ -478,23 +567,23 @@ export function createViewer(window: any, document: any) {
 
   // The inline "not saved" line beside the Save button: a write refusal must
   // be read from the pane it concerns, not from a flash in another panel.
-  function showSaveError(rec: any, text: any) {
-    const el = rec.el?.querySelector(".viewer-save-err");
+  function showSaveError(rec: ViewerRecord, text: string) {
+    const el = rec.el?.querySelector<HTMLElement>(".viewer-save-err");
     if (!el) return;
     el.textContent = text;
     el.style.display = "";
   }
-  function clearSaveError(rec: any) {
-    const el = rec.el?.querySelector(".viewer-save-err");
+  function clearSaveError(rec: ViewerRecord) {
+    const el = rec.el?.querySelector<HTMLElement>(".viewer-save-err");
     if (el) el.style.display = "none";
   }
 
   // The pane's current bytes, whether shown as source (Monaco) or as a rendered
   // markdown preview. Before Monaco finishes booting `rec.ed` is undefined and
   // `rec.content` is still authoritative.
-  function contentOf(rec: any) {
+  function contentOf(rec: ViewerRecord) {
     if (rec.kind === "diff") return rec.content;
-    if (rec.ed && (rec.kind === "code" || rec.editing)) return rec.ed.getValue();
+    if (rec.ed && (rec.kind === "code" || rec.editing)) return (rec.ed as MonacoEditor).getValue();
     return rec.content;
   }
 
@@ -502,7 +591,7 @@ export function createViewer(window: any, document: any) {
   // detached popup), carrying the *current* (possibly edited) content.
   // The pin rides the descriptor (#406): a detached pane saves and reloads
   // against the tree its bytes came from, and re-attaches pinned to it.
-  function descOf(rec: any) {
+  function descOf(rec: ViewerRecord): FileDescriptor {
     return {
       project: rec.project,
       label: rec.label,
@@ -518,13 +607,13 @@ export function createViewer(window: any, document: any) {
   // Reload discards local edits and reloads from source. Daemon-backed repos
   // re-read the REAL file via `file.read` (#197). The apply step is shared via
   // `applyFresh`. With no daemon client loaded (a unit test) it does nothing.
-  function reloadFile(rec: any) {
+  function reloadFile(rec: ViewerRecord) {
     const daemonBacked = !!window.WBDaemon?.observe;
     if (daemonBacked) {
       // Daemon mode: a non-ok reply or a transport drop must NOT regenerate
       // synthetic bytes (C1). The tab stays — the operator's bytes are still
       // the best answer the pane has — and the reason lands in the pane.
-      const fail = (reply?: any) => {
+      const fail = (reply?: DaemonReply) => {
         showSaveError(rec, WBFail.failed(reply, "Could not reload the file: the daemon gave no reason."));
         window.getShell?.()?._flashAction?.("Could not reload the file.");
       };
@@ -544,7 +633,7 @@ export function createViewer(window: any, document: any) {
           if (reply.encoding) rec.encoding = reply.encoding;
           refreshEncodingPill(rec);
           if (rec.refused) return reopenRefused(rec, reply);
-          applyFresh(rec, reply.content);
+          applyFresh(rec, reply.content!);
         })
         .catch(() => fail());
     }
@@ -553,7 +642,7 @@ export function createViewer(window: any, document: any) {
   // `file.read` for this pane, with `encoding` as the hint: a tab's encoding is
   // sticky once opened (the daemon's detection, or a "reopen with…"), so a
   // reload never silently re-detects it.
-  function readWith(rec: any, encoding: any) {
+  function readWith(rec: ViewerRecord, encoding: string | undefined) {
     const payload = WBDaemon.withCheckout({ repo: rec.project, path: rec.path }, rec.checkout);
     if (encoding) payload.encoding = encoding;
     return WBDaemon.observe("file.read", payload);
@@ -562,15 +651,15 @@ export function createViewer(window: any, document: any) {
   // A pane that opened refused now has bytes: rebuild it as the pane its
   // kind deserves. `open` returns early on a known id, so the record is
   // replaced under the same id — the tab in the shell is untouched.
-  function reopenRefused(rec: any, reply: any) {
-    const desc = { ...descOf(rec), content: reply.content, encoding: reply.encoding, bom: !!reply.bom };
+  function reopenRefused(rec: ViewerRecord, reply: FileReadReply) {
+    const desc = { ...descOf(rec), content: reply.content!, encoding: reply.encoding, bom: !!reply.bom };
     API.close(rec.id);
     API.open({ id: rec.id, ...desc, detached: rec.detached });
     if (rec.visible) refresh();
     window.WB.emit("reload", { project: rec.project, path: rec.path });
   }
 
-  function applyFresh(rec: any, fresh: any) {
+  function applyFresh(rec: ViewerRecord, fresh: string) {
     // A diff pane has no single "fresh bytes" to apply: reloading it means
     // re-resolving BOTH sides, which is a reopen, not a refresh.
     if (rec.kind === "diff") return;
@@ -581,10 +670,10 @@ export function createViewer(window: any, document: any) {
     if (rec.kind === "image") {
       // A fresh `data:` URL repaints the pane; the `onload` handler re-reads the
       // intrinsic size, which an overwritten image may well have changed.
-      const img = rec.el?.querySelector(".img-canvas");
+      const img = rec.el?.querySelector<HTMLImageElement>(".img-canvas");
       if (img) img.src = fresh;
     } else if (rec.kind === "code" || rec.editing) {
-      if (rec.ed) rec.ed.setValue(fresh);
+      if (rec.ed) (rec.ed as MonacoEditor).setValue(fresh);
       // In the read-only fallback there is no editor to update, and leaving the
       // <pre> stale would show bytes that no longer match rec.content.
       else if (rec.fallbackEl) rec.fallbackEl.textContent = fresh;
@@ -600,13 +689,13 @@ export function createViewer(window: any, document: any) {
 
   // The "changed on disk" badge: shown when an EXTERNAL write lands on a DIRTY
   // tab (never auto-applied — the operator's unsaved edits win until they click).
-  function showDiskBadge(rec: any) {
-    const b = rec.el?.querySelector(".viewer-disk-badge");
+  function showDiskBadge(rec: ViewerRecord) {
+    const b = rec.el?.querySelector<HTMLElement>(".viewer-disk-badge");
     if (b) b.style.display = "";
   }
-  function hideDiskBadge(rec: any) {
+  function hideDiskBadge(rec: ViewerRecord) {
     rec.pendingDisk = undefined;
-    const b = rec.el?.querySelector(".viewer-disk-badge");
+    const b = rec.el?.querySelector<HTMLElement>(".viewer-disk-badge");
     if (b) b.style.display = "none";
   }
 
@@ -621,7 +710,7 @@ export function createViewer(window: any, document: any) {
   // same bytes under another encoding (the daemon re-decodes; the operator
   // judges by the glyphs), or SAVE the text under another one (a deliberate
   // conversion — the daemon never converts on its own).
-  const ENCODINGS: any[] = [
+  const ENCODINGS: Encoding[] = [
     ["UTF-8", "utf-8", false],
     ["UTF-8 BOM", "utf-8", true],
     ["UTF-16 LE", "utf-16le", true],
@@ -642,29 +731,29 @@ export function createViewer(window: any, document: any) {
   // The pill's text: the daemon's canonical name made readable (`UTF-16LE`
   // → `UTF-16 LE`, `windows-1252` → `Windows-1252`), plus ` BOM` when one
   // was read and will be written back.
-  function encodingLabel(name: any, bom: any) {
+  function encodingLabel(name: string | null | undefined, bom: boolean) {
     let text = String(name || "UTF-8");
-    text = text.replace(/^utf-16(le|be)$/i, (_, e) => `UTF-16 ${e.toUpperCase()}`);
+    text = text.replace(/^utf-16(le|be)$/i, (_, e: string) => `UTF-16 ${e.toUpperCase()}`);
     text = text.replace(/^windows-/i, "Windows-");
     return bom ? `${text} BOM` : text;
   }
 
-  function encodingBtnHtml(rec: any) {
+  function encodingBtnHtml(rec: ViewerRecord) {
     return `<button class="vbtn viewer-enc" data-act="encoding" title="Encoding — reopen or save with another" aria-label="Encoding"><span class="viewer-enc-label">${encodingLabel(rec.encoding, rec.bom)}</span></button>`;
   }
 
-  function refreshEncodingPill(rec: any) {
-    const label = rec.el?.querySelector(".viewer-enc-label");
+  function refreshEncodingPill(rec: ViewerRecord) {
+    const label = rec.el?.querySelector<HTMLElement>(".viewer-enc-label");
     if (label) label.textContent = encodingLabel(rec.encoding, rec.bom);
   }
 
-  function wireEncodingMenu(rec: any, el: any) {
-    const btn = el.querySelector('[data-act="encoding"]');
+  function wireEncodingMenu(rec: ViewerRecord, el: HTMLElement) {
+    const btn = el.querySelector<HTMLElement>('[data-act="encoding"]');
     if (!btn) return;
     const menu = document.createElement("div");
     menu.className = "enc-menu";
     menu.style.display = "none";
-    const group = (head: any, act: any) =>
+    const group = (head: string, act: string) =>
       `<div class="dropdown-head">${head}</div>` +
       ENCODINGS.map(
         ([label, name, bom], i) =>
@@ -678,13 +767,13 @@ export function createViewer(window: any, document: any) {
       document.removeEventListener("click", onOutside, true);
       document.removeEventListener("keydown", onKey, true);
     };
-    const onOutside = (ev: any) => {
-      if (!menu.contains(ev.target) && ev.target !== btn) close();
+    const onOutside = (ev: MouseEvent) => {
+      if (!menu.contains(ev.target as Node) && ev.target !== btn) close();
     };
-    const onKey = (ev: any) => {
+    const onKey = (ev: KeyboardEvent) => {
       if (ev.key === "Escape") close();
     };
-    btn.onclick = (ev: any) => {
+    btn.onclick = (ev: MouseEvent) => {
       ev.stopPropagation();
       if (menu.style.display !== "none") return close();
       markCurrentEncoding(rec, menu);
@@ -692,8 +781,8 @@ export function createViewer(window: any, document: any) {
       document.addEventListener("click", onOutside, true);
       document.addEventListener("keydown", onKey, true);
     };
-    menu.onclick = (ev: any) => {
-      const item = ev.target.closest?.(".enc-item");
+    menu.onclick = (ev: MouseEvent) => {
+      const item = (ev.target as Element).closest?.<HTMLElement>(".enc-item");
       if (!item) return;
       ev.stopPropagation();
       close();
@@ -702,8 +791,8 @@ export function createViewer(window: any, document: any) {
     };
   }
 
-  function markCurrentEncoding(rec: any, menu: any) {
-    for (const item of menu.querySelectorAll(".enc-item")) {
+  function markCurrentEncoding(rec: ViewerRecord, menu: HTMLElement) {
+    for (const item of menu.querySelectorAll<HTMLElement>(".enc-item")) {
       const i = Number(item.dataset.reopen ?? item.dataset.savewith);
       const [, name, bom] = ENCODINGS[i];
       const current =
@@ -714,7 +803,7 @@ export function createViewer(window: any, document: any) {
 
   // Reopen: the same bytes, decoded as `name`. Unsaved edits would be lost
   // to the re-read, so a dirty pane asks first.
-  function reopenWith(rec: any, [label, name]: any[]) {
+  function reopenWith(rec: ViewerRecord, [label, name]: Encoding) {
     const shell = window.getShell?.();
     const go = () => {
       readWith(rec, name)
@@ -727,7 +816,7 @@ export function createViewer(window: any, document: any) {
           rec.bom = !!reply.bom;
           refreshEncodingPill(rec);
           if (rec.refused) return reopenRefused(rec, reply);
-          applyFresh(rec, reply.content);
+          applyFresh(rec, reply.content!);
         })
         .catch(() => showSaveError(rec, `Could not reopen as ${label}: the daemon did not answer.`));
     };
@@ -742,19 +831,19 @@ export function createViewer(window: any, document: any) {
           danger: true,
         })
       : Promise.resolve(window.confirm(`Reopen as ${label}? Unsaved changes are discarded.`));
-    ask.then((ok: any) => ok && go());
+    ask.then((ok) => ok && go());
   }
 
   // Save with: the text as it is, written under `name` — the conversion the
   // operator asked for, by name.
-  function saveWith(rec: any, [, name, bom]: any[]) {
+  function saveWith(rec: ViewerRecord, [, name, bom]: Encoding) {
     rec.encoding = name;
     rec.bom = bom;
     refreshEncodingPill(rec);
     save(rec);
   }
 
-  function detachBtnHtml(rec: any) {
+  function detachBtnHtml(rec: ViewerRecord) {
     return rec.detached
       ? '<button class="vbtn" data-act="detach" title="Re-attach" aria-label="Re-attach"><i class="bi bi-box-arrow-in-down-left"></i><span class="vbtn-label">Re-attach</span></button>'
       : '<button class="vbtn" data-act="detach" title="Detach" aria-label="Detach"><i class="bi bi-box-arrow-up-right"></i><span class="vbtn-label">Detach</span></button>';
@@ -762,7 +851,7 @@ export function createViewer(window: any, document: any) {
 
   // The mirror toggle (ADR-0037 §3c) is the attached canvas's: a detached
   // popup has one pane and no slot to put a second editor in.
-  function mirrorBtnHtml(rec: any) {
+  function mirrorBtnHtml(rec: ViewerRecord) {
     return rec.detached
       ? ""
       : '<button class="vbtn" data-act="mirror" title="Mirror" aria-label="Mirror"><i class="bi bi-files"></i><span class="vbtn-label">Mirror</span></button>';
@@ -772,7 +861,7 @@ export function createViewer(window: any, document: any) {
   // already name the file and the repo). A DETACHED pane keeps the full label;
   // the full form always rides the `title`. `dir` / `file` are split so the
   // CSS ellipsises the directory first.
-  function pathLabel(rec: any) {
+  function pathLabel(rec: ViewerRecord) {
     const suffix = rec.kind === "diff" ? " ↔ HEAD" : "";
     const full = `${rec.label} / ${rec.path}${suffix}`;
     const cut = rec.path.lastIndexOf("/") + 1;
@@ -780,8 +869,8 @@ export function createViewer(window: any, document: any) {
     return { dir: head + rec.path.slice(0, cut), file: rec.path.slice(cut) + suffix, full };
   }
 
-  function setPathLabel(el: any, rec: any) {
-    const span = el.querySelector(".viewer-path");
+  function setPathLabel(el: HTMLElement, rec: ViewerRecord) {
+    const span = el.querySelector<HTMLElement>(".viewer-path")!;
     const { dir, file, full } = pathLabel(rec);
     span.textContent = "";
     const d = document.createElement("span");
@@ -796,14 +885,14 @@ export function createViewer(window: any, document: any) {
 
   // A caption swap keeps the button's shape: icon, then the label span a narrow
   // pane hides, and the same words in `title`/`aria-label` for when it does.
-  function setCaption(btn: any, icon: any, caption: any) {
+  function setCaption(btn: HTMLElement, icon: string, caption: string) {
     btn.innerHTML = `<i class="bi ${icon}"></i><span class="vbtn-label"></span>`;
-    btn.querySelector(".vbtn-label").textContent = caption;
+    btn.querySelector(".vbtn-label")!.textContent = caption;
     btn.title = caption;
     btn.setAttribute("aria-label", caption);
   }
 
-  function detachClick(rec: any) {
+  function detachClick(rec: ViewerRecord) {
     const evt = rec.detached ? "workbench:reattach-request" : "workbench:detach-request";
     sendDocument(document, evt, descOf(rec));
   }
@@ -812,7 +901,7 @@ export function createViewer(window: any, document: any) {
   // `rec.content` is a `data:` URL the daemon's verified media type built
   // (ADR-0049 §2), so this pane never decides what bytes are. Read-only: no
   // Save, no Edit — the Write class is untouched by images.
-  function buildImage(rec: any) {
+  function buildImage(rec: ViewerRecord) {
     const el = document.createElement("div");
     el.className = "viewer image-viewer";
     el.dataset.tabId = rec.id;
@@ -828,10 +917,10 @@ export function createViewer(window: any, document: any) {
       </div>
       <div class="viewer-body img-scroll"><img class="img-canvas" alt="" /></div>`;
     setPathLabel(el, rec);
-    viewers.append(el);
+    viewers!.append(el);
 
-    const img = el.querySelector(".img-canvas");
-    const meta = el.querySelector(".img-meta");
+    const img = el.querySelector<HTMLImageElement>(".img-canvas")!;
+    const meta = el.querySelector(".img-meta")!;
     // The intrinsic size is only known once the bytes decode, and a decode
     // failure is worth saying out loud: the daemon verified the type, so a
     // browser that still cannot paint it means an unsupported/corrupt file.
@@ -839,14 +928,14 @@ export function createViewer(window: any, document: any) {
     img.onerror = () => (meta.textContent = "Image could not be displayed.");
     img.src = rec.content;
 
-    el.querySelector('[data-act="zoom"]').onclick = (ev: any) => {
+    el.querySelector<HTMLElement>('[data-act="zoom"]')!.onclick = (ev: MouseEvent) => {
       // Two states only: fit-to-pane (default) and 1:1 with scrollbars. A zoom
       // slider is a feature this pane does not need to read a screenshot.
       const actual = el.classList.toggle("actual-size");
-      setCaption(ev.currentTarget, actual ? "bi-arrows-angle-contract" : "bi-arrows-angle-expand", actual ? "Fit" : "Actual size");
+      setCaption(ev.currentTarget as HTMLElement, actual ? "bi-arrows-angle-contract" : "bi-arrows-angle-expand", actual ? "Fit" : "Actual size");
     };
-    el.querySelector('[data-act="reload"]').onclick = () => reloadFile(rec);
-    el.querySelector('[data-act="detach"]').onclick = () => detachClick(rec);
+    el.querySelector<HTMLElement>('[data-act="reload"]')!.onclick = () => reloadFile(rec);
+    el.querySelector<HTMLElement>('[data-act="detach"]')!.onclick = () => detachClick(rec);
     rec.el = el;
   }
 
@@ -862,13 +951,13 @@ export function createViewer(window: any, document: any) {
     "unknown encoding": "That encoding is not one the workbench knows.",
     unencodable: "This file cannot be decoded with that encoding.",
   };
-  function refusalText(reason: any) {
+  function refusalText(reason: string) {
     if (REFUSAL_TEXT[reason]) return REFUSAL_TEXT[reason];
     // `detached.html` loads no `wb-fail.ts`.
     return WBFail.failed({ message: reason }, "Could not open the file: the daemon gave no reason.");
   }
 
-  function buildRefused(rec: any) {
+  function buildRefused(rec: ViewerRecord) {
     const el = document.createElement("div");
     el.className = "viewer refused-viewer";
     el.dataset.tabId = rec.id;
@@ -886,18 +975,18 @@ export function createViewer(window: any, document: any) {
         <p class="refused-hint"></p>
       </div>`;
     setPathLabel(el, rec);
-    el.querySelector(".refused-text").textContent = refusalText(rec.refused);
+    el.querySelector(".refused-text")!.textContent = refusalText(rec.refused!);
     if (rec.refused === "binary") {
-      el.querySelector(".refused-hint").textContent =
+      el.querySelector(".refused-hint")!.textContent =
         "This file may be text in an older encoding. Set the fallback encoding in “Settings”, or reopen the file with another encoding.";
     }
-    viewers.append(el);
-    el.querySelector('[data-act="reload"]').onclick = () => reloadFile(rec);
+    viewers!.append(el);
+    el.querySelector<HTMLElement>('[data-act="reload"]')!.onclick = () => reloadFile(rec);
     rec.el = el;
   }
 
   // --- a Markdown tab -----------------------------------------------------
-  function buildMarkdown(rec: any) {
+  function buildMarkdown(rec: ViewerRecord) {
     const el = document.createElement("div");
     el.className = "viewer md-viewer";
     el.dataset.tabId = rec.id;
@@ -929,68 +1018,68 @@ export function createViewer(window: any, document: any) {
         <div class="md-editor" style="display:none"></div>
       </div>`;
     setPathLabel(el, rec);
-    viewers.append(el);
+    viewers!.append(el);
     wireEncodingMenu(rec, el);
     rec.el = el;
-    rec.saveBtn = el.querySelector('[data-act="save"]');
+    rec.saveBtn = el.querySelector<HTMLElement>('[data-act="save"]');
 
     // edit / preview toggle
-    el.querySelector('[data-act="toggle"]').onclick = () => toggleEdit(rec);
+    el.querySelector<HTMLElement>('[data-act="toggle"]')!.onclick = () => toggleEdit(rec);
     // The heading outline on a NARROW pane: the same <nav>, laid over the
     // article by CSS while `.md-split` carries `toc-open` (on a wide pane the
     // button is not shown and the nav is the column it always was). A jump or
     // a tap on the article closes it — the index is a way in, not a fixture.
-    const split = el.querySelector(".md-split");
-    el.querySelector('[data-act="outline"]').onclick = () => split.classList.toggle("toc-open");
-    el.querySelector(".md-outline").addEventListener("click", (ev: any) => {
-      if (ev.target.closest(".outline-item")) split.classList.remove("toc-open");
+    const split = el.querySelector(".md-split")!;
+    el.querySelector<HTMLElement>('[data-act="outline"]')!.onclick = () => split.classList.toggle("toc-open");
+    el.querySelector(".md-outline")!.addEventListener("click", (ev) => {
+      if ((ev.target as Element).closest(".outline-item")) split.classList.remove("toc-open");
     });
-    el.querySelector(".md-scroll").addEventListener("pointerdown", () => split.classList.remove("toc-open"));
-    el.querySelector('[data-act="save"]').onclick = () => save(rec);
-    el.querySelector('[data-act="reload"]').onclick = () => reloadFile(rec);
-    el.querySelector('[data-act="disk"]').onclick = () => {
-      applyFresh(rec, rec.pendingDisk);
+    el.querySelector(".md-scroll")!.addEventListener("pointerdown", () => split.classList.remove("toc-open"));
+    el.querySelector<HTMLElement>('[data-act="save"]')!.onclick = () => save(rec);
+    el.querySelector<HTMLElement>('[data-act="reload"]')!.onclick = () => reloadFile(rec);
+    el.querySelector<HTMLElement>('[data-act="disk"]')!.onclick = () => {
+      applyFresh(rec, rec.pendingDisk!);
       hideDiskBadge(rec);
     };
-    el.querySelector('[data-act="detach"]').onclick = () => detachClick(rec);
+    el.querySelector<HTMLElement>('[data-act="detach"]')!.onclick = () => detachClick(rec);
     // in-page find over the rendered article
-    const find = el.querySelector(".md-find");
-    const input = el.querySelector(".md-find-input");
-    el.querySelector('[data-act="find"]').onclick = () => {
+    const find = el.querySelector(".md-find")!;
+    const input = el.querySelector<HTMLInputElement>(".md-find-input")!;
+    el.querySelector<HTMLElement>('[data-act="find"]')!.onclick = () => {
       find.classList.add("open");
       input.focus();
       input.select();
     };
     input.addEventListener("input", () => mdSearch(rec, input.value));
-    input.addEventListener("keydown", (e: any) => {
+    input.addEventListener("keydown", (e: KeyboardEvent) => {
       if (e.key === "Enter") mdSearchStep(rec, e.shiftKey ? -1 : 1);
       if (e.key === "Escape") mdSearchClose(rec);
     });
-    el.querySelector('[data-find="next"]').onclick = () => mdSearchStep(rec, 1);
-    el.querySelector('[data-find="prev"]').onclick = () => mdSearchStep(rec, -1);
-    el.querySelector('[data-find="close"]').onclick = () => mdSearchClose(rec);
+    el.querySelector<HTMLElement>('[data-find="next"]')!.onclick = () => mdSearchStep(rec, 1);
+    el.querySelector<HTMLElement>('[data-find="prev"]')!.onclick = () => mdSearchStep(rec, -1);
+    el.querySelector<HTMLElement>('[data-find="close"]')!.onclick = () => mdSearchClose(rec);
     // Links inside the rendered article: one delegated listener for the pane's
     // lifetime, so a re-render (reload, edit→preview) never re-wires anything.
-    el.querySelector(".md-body").addEventListener("click", (ev: any) => linkClick(rec, ev));
+    el.querySelector(".md-body")!.addEventListener("click", (ev) => linkClick(rec, ev));
 
     renderMarkdown(rec);
   }
 
-  function renderMarkdown(rec: any) {
-    const article = rec.el.querySelector(".md-body");
+  function renderMarkdown(rec: ViewerRecord) {
+    const article = rec.el!.querySelector(".md-body")!;
     const html = DOMPurify.sanitize(marked.parse(rec.content));
     article.innerHTML = html;
 
     // mermaid fences: marked emits <pre><code class="language-mermaid">. Defer
     // the actual draw to first paint (a hidden container measures as 0).
     rec.mermaidPending = [];
-    article.querySelectorAll("code.language-mermaid").forEach((code: any, i: any) => {
+    article.querySelectorAll("code.language-mermaid").forEach((code, i) => {
       const holder = document.createElement("div");
       holder.className = "mermaid";
       holder.dataset.src = code.textContent;
       holder.id = `mmd-${rec.uid}-${i}`;
-      code.closest("pre").replaceWith(holder);
-      rec.mermaidPending.push(holder);
+      code.closest("pre")!.replaceWith(holder);
+      rec.mermaidPending!.push(holder);
     });
 
     resolveImages(rec, article);
@@ -1006,10 +1095,10 @@ export function createViewer(window: any, document: any) {
   // loads, and `blockedImage` explains a refusal; a source that REFUSES is left alone
   // too — a broken image is an honest rendering of a broken link, and a
   // placeholder would fabricate.
-  function resolveImages(rec: any, article: any) {
+  function resolveImages(rec: ViewerRecord, article: Element) {
     if (!window.WBDaemon?.readImage) return;
     const dir = rec.path.includes("/") ? rec.path.slice(0, rec.path.lastIndexOf("/")) : "";
-    article.querySelectorAll("img[src]").forEach((img: any) => {
+    article.querySelectorAll<HTMLImageElement>("img[src]").forEach((img) => {
       const src = img.getAttribute("src") || "";
       // Anything carrying a scheme (`data:`, `https:`) or rooted at `/` is not
       // ours to resolve.
@@ -1031,9 +1120,9 @@ export function createViewer(window: any, document: any) {
   // with no element (measured), so the article's images are matched by URL.
   // Built with `textContent`, never `innerHTML`: the alt text is document
   // content.
-  function blockedImage(ev: any) {
+  function blockedImage(ev: SecurityPolicyViolationEvent) {
     if (ev.effectiveDirective !== "img-src" || !ev.blockedURI) return;
-    document.querySelectorAll(".md-body img").forEach((img: any) => {
+    document.querySelectorAll<HTMLImageElement>(".md-body img").forEach((img) => {
       if (img.src !== ev.blockedURI) return;
       const note = document.createElement("span");
       note.className = "md-img-blocked";
@@ -1050,8 +1139,8 @@ export function createViewer(window: any, document: any) {
   // `text` that keeps a row of badges one row, and the `reason` for its
   // tooltip. A plain-`http:` image stays blocked even with remote images on
   // (the policy admits `https:` only), so it gets its own reason.
-  function remoteImageNotice(src: any, alt: any) {
-    let url = null;
+  function remoteImageNotice(src: string, alt: string) {
+    let url: URL | null = null;
     try {
       url = new URL(src);
     } catch {
@@ -1071,7 +1160,7 @@ export function createViewer(window: any, document: any) {
   // markdown spelling of a space), `.`/`..` segments resolved. Returns `null`
   // for anything that climbs OUT of the repo — the daemon would refuse it
   // anyway, and not asking is the honest way to spell "not ours".
-  function repoRelative(dir: any, src: any) {
+  function repoRelative(dir: string, src: string) {
     let clean = src.split(/[?#]/)[0];
     try {
       clean = decodeURIComponent(clean);
@@ -1079,7 +1168,7 @@ export function createViewer(window: any, document: any) {
       // A malformed escape is not a path we can resolve; use it verbatim and let
       // the daemon refuse it.
     }
-    const out = [];
+    const out: string[] = [];
     for (const part of (dir ? dir.split("/") : []).concat(clean.split("/"))) {
       if (!part || part === ".") continue;
       if (part === "..") {
@@ -1100,7 +1189,7 @@ export function createViewer(window: any, document: any) {
   //   • anything else          → { kind: "file", path, fragment } — a repo file,
   //     folded against the document's own directory like an `<img src>`
   //   • climbs out of the repo → null — not ours, and the daemon would refuse it
-  function linkTarget(dir: any, href: any) {
+  function linkTarget(dir: string, href: string | null) {
     if (!href) return null;
     if (href.startsWith("#")) return { kind: "fragment" as const, fragment: href.slice(1) };
     if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("/")) return { kind: "external" as const };
@@ -1113,9 +1202,9 @@ export function createViewer(window: any, document: any) {
   // A click on a rendered `<a>`: a raw `href` would navigate the WHOLE
   // window. A repo file becomes an open REQUEST to the shell; external links
   // open in a new tab so the workbench is not what gets replaced.
-  function linkClick(rec: any, ev: any) {
-    const a = ev.target.closest?.("a[href]");
-    if (!a || !rec.el.contains(a)) return;
+  function linkClick(rec: ViewerRecord, ev: Event) {
+    const a = (ev.target as Element).closest?.<HTMLAnchorElement>("a[href]");
+    if (!a || !rec.el!.contains(a)) return;
     const dir = rec.path.includes("/") ? rec.path.slice(0, rec.path.lastIndexOf("/")) : "";
     const target = linkTarget(dir, a.getAttribute("href"));
     if (!target) {
@@ -1143,14 +1232,14 @@ export function createViewer(window: any, document: any) {
   // Scroll a rendered document to the heading a `#fragment` names. `marked`
   // emits no heading ids (the outline assigns positional ones), so the match is
   // by GitHub-style slug of the heading text — the spelling authors write.
-  function slugOf(text: any) {
+  function slugOf(text: string) {
     return text
       .trim()
       .toLowerCase()
       .replace(/[^\p{L}\p{N}\s-]/gu, "")
       .replace(/\s+/g, "-");
   }
-  function jumpTo(rec: any, fragment: any) {
+  function jumpTo(rec: ViewerRecord, fragment: string) {
     if (!fragment) return;
     let want = fragment;
     try {
@@ -1159,29 +1248,29 @@ export function createViewer(window: any, document: any) {
       // A malformed escape still names SOMETHING; match it as written.
     }
     want = want.toLowerCase();
-    const heads = rec.el.querySelectorAll(".md-body h1, .md-body h2, .md-body h3, .md-body h4, .md-body h5, .md-body h6");
+    const heads = rec.el!.querySelectorAll(".md-body h1, .md-body h2, .md-body h3, .md-body h4, .md-body h5, .md-body h6");
     for (const h of heads) {
-      if (slugOf(h.textContent) === want) {
+      if (slugOf(h.textContent!) === want) {
         h.scrollIntoView({ behavior: "smooth", block: "start" });
         return;
       }
     }
   }
 
-  function drawMermaid(rec: any) {
+  function drawMermaid(rec: ViewerRecord) {
     if (!rec.mermaidPending || !rec.mermaidPending.length) return;
     initMermaid();
     const pending = rec.mermaidPending;
     rec.mermaidPending = [];
-    pending.forEach((holder: any) => {
-      window.mermaid
-        .render(holder.id + "-svg", holder.dataset.src)
+    pending.forEach((holder) => {
+      window.mermaid!
+        .render(holder.id + "-svg", holder.dataset.src!)
         // The fence source is re-read RAW above (DOMPurify escaped it in the
         // markdown pass), so the rendered SVG is the one string on this path that
         // never met the sanitizer. Sanitize on insert. `foreignobject` is already
         // in DOMPurify's SVG allowlist, so mermaid's HTML labels survive.
-        .then(({ svg }: any) => (holder.innerHTML = DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true, html: true } })))
-        .catch((err: any) => {
+        .then(({ svg }) => (holder.innerHTML = DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true, html: true } })))
+        .catch((err) => {
           holder.classList.add("mermaid-error");
           holder.textContent = "Mermaid error: " + (err?.message || err);
         });
@@ -1189,15 +1278,15 @@ export function createViewer(window: any, document: any) {
   }
 
   // Heading outline: the jump index, one entry per heading, indented by level.
-  function buildOutline(rec: any, article: any) {
-    const nav = rec.el.querySelector(".md-outline");
+  function buildOutline(rec: ViewerRecord, article: Element) {
+    const nav = rec.el!.querySelector(".md-outline")!;
     nav.innerHTML = "";
     const heads = article.querySelectorAll("h1, h2, h3, h4");
     if (!heads.length) {
       nav.innerHTML = '<div class="outline-empty">No headings</div>';
       return;
     }
-    heads.forEach((h: any, i: any) => {
+    heads.forEach((h, i) => {
       const id = `h-${rec.uid}-${i}`;
       h.id = id;
       const a = document.createElement("a");
@@ -1210,12 +1299,12 @@ export function createViewer(window: any, document: any) {
   }
 
   // --- in-page find over rendered markdown -------------------------------
-  function clearHits(rec: any) {
-    (rec.hits || []).forEach((mk: any) => {
-      const t = document.createTextNode(mk.textContent);
+  function clearHits(rec: ViewerRecord) {
+    (rec.hits || []).forEach((mk) => {
+      const t = document.createTextNode(mk.textContent!);
       mk.replaceWith(t);
     });
-    rec.el.querySelector(".md-body").normalize();
+    rec.el!.querySelector(".md-body")!.normalize();
     rec.hits = [];
     rec.hitIdx = -1;
   }
@@ -1224,8 +1313,8 @@ export function createViewer(window: any, document: any) {
   // find widget seeded with it, so F3/Enter walks the rest — the content
   // search's "jump to line", done with what Monaco already has. Literal and
   // case-insensitive, like the search that produced the hit.
-  function findInEditor(rec: any, term: any) {
-    const ed = rec.ed;
+  function findInEditor(rec: ViewerRecord, term: string) {
+    const ed = rec.ed as MonacoEditor | undefined;
     if (!ed || !term) return;
     // The pane must be laid out BEFORE the widget opens: Monaco keeps the
     // widest "N of M" measurement in a module-wide maximum, and one taken in a
@@ -1250,36 +1339,36 @@ export function createViewer(window: any, document: any) {
   }
 
   // The markdown pane's equivalent: its own find bar, opened and seeded.
-  function findInMarkdown(rec: any, term: any) {
+  function findInMarkdown(rec: ViewerRecord, term: string) {
     const find = rec.el?.querySelector(".md-find");
-    const input = rec.el?.querySelector(".md-find-input");
+    const input = rec.el?.querySelector<HTMLInputElement>(".md-find-input");
     if (!find || !input) return;
     find.classList.add("open");
     input.value = term;
     mdSearch(rec, term);
   }
 
-  function mdSearch(rec: any, term: any) {
+  function mdSearch(rec: ViewerRecord, term: string) {
     clearHits(rec);
-    const count = rec.el.querySelector(".md-find-count");
+    const count = rec.el!.querySelector(".md-find-count")!;
     if (!term) {
       count.textContent = "";
       return;
     }
-    const article = rec.el.querySelector(".md-body");
+    const article = rec.el!.querySelector(".md-body")!;
     const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT, {
-      acceptNode: (n: any) =>
-        n.nodeValue.trim() && !n.parentElement.closest("svg, script, style")
+      acceptNode: (n) =>
+        n.nodeValue!.trim() && !n.parentElement!.closest("svg, script, style")
           ? NodeFilter.FILTER_ACCEPT
           : NodeFilter.FILTER_REJECT,
     });
-    const targets = [];
+    const targets: Text[] = [];
     let node;
-    while ((node = walker.nextNode())) targets.push(node);
+    while ((node = walker.nextNode())) targets.push(node as Text);
     const needle = term.toLowerCase();
-    const hits = [];
+    const hits: HTMLElement[] = [];
     for (const text of targets) {
-      const val = text.nodeValue;
+      const val = text.nodeValue!;
       const lower = val.toLowerCase();
       let idx = lower.indexOf(needle);
       if (idx < 0) continue;
@@ -1304,28 +1393,28 @@ export function createViewer(window: any, document: any) {
     if (hits.length) mdSearchStep(rec, 1);
   }
 
-  function mdSearchStep(rec: any, dir: any) {
+  function mdSearchStep(rec: ViewerRecord, dir: number) {
     if (!rec.hits || !rec.hits.length) return;
-    if (rec.hitIdx >= 0) rec.hits[rec.hitIdx].classList.remove("current");
-    rec.hitIdx = (rec.hitIdx + dir + rec.hits.length) % rec.hits.length;
+    if (rec.hitIdx! >= 0) rec.hits[rec.hitIdx!].classList.remove("current");
+    rec.hitIdx = (rec.hitIdx! + dir + rec.hits.length) % rec.hits.length;
     const mk = rec.hits[rec.hitIdx];
     mk.classList.add("current");
     mk.scrollIntoView({ block: "center", behavior: "smooth" });
-    rec.el.querySelector(".md-find-count").textContent = `${rec.hitIdx + 1}/${rec.hits.length}`;
+    rec.el!.querySelector(".md-find-count")!.textContent = `${rec.hitIdx + 1}/${rec.hits.length}`;
   }
 
-  function mdSearchClose(rec: any) {
+  function mdSearchClose(rec: ViewerRecord) {
     clearHits(rec);
-    rec.el.querySelector(".md-find").classList.remove("open");
-    rec.el.querySelector(".md-find-count").textContent = "";
-    rec.el.querySelector(".md-find-input").value = "";
+    rec.el!.querySelector(".md-find")!.classList.remove("open");
+    rec.el!.querySelector(".md-find-count")!.textContent = "";
+    rec.el!.querySelector<HTMLInputElement>(".md-find-input")!.value = "";
   }
 
   // Swap the markdown pane between rendered preview and a raw-source editor.
-  function toggleEdit(rec: any) {
-    const split = rec.el.querySelector(".md-split");
-    const editor = rec.el.querySelector(".md-editor");
-    const toggle = rec.el.querySelector('[data-act="toggle"]');
+  function toggleEdit(rec: ViewerRecord) {
+    const split = rec.el!.querySelector(".md-split")!;
+    const editor = rec.el!.querySelector<HTMLElement>(".md-editor")!;
+    const toggle = rec.el!.querySelector<HTMLElement>('[data-act="toggle"]')!;
     rec.editing = !rec.editing;
     if (rec.editing) {
       split.classList.add("editing");
@@ -1334,14 +1423,14 @@ export function createViewer(window: any, document: any) {
       if (!rec.ed) {
         mountEditor(rec, editor, { wordWrap: "on" });
       } else {
-        rec.ed.setValue(rec.content);
+        (rec.ed as MonacoEditor).setValue(rec.content);
       }
       setCaption(toggle, "bi-eye", "Preview");
       setTimeout(() => rec.ed?.layout(), 0);
     } else {
       // `rec.editing` is already false here, so read the editor directly —
       // contentOf() would hand back the pre-edit bytes.
-      if (rec.ed) rec.content = rec.ed.getValue();
+      if (rec.ed) rec.content = (rec.ed as MonacoEditor).getValue();
       split.classList.remove("editing");
       editor.style.display = "none";
       setCaption(toggle, "bi-pencil", "Edit");
@@ -1368,10 +1457,10 @@ export function createViewer(window: any, document: any) {
     // they came; absent (a diff) is UTF-8 without a BOM. `refused` is
     // the daemon's reason for serving nothing: the pane says so and keeps the
     // tab, instead of the tab closing under the click.
-    open({ id, project, label, path, ftype, content, original, detached, checkout, encoding, bom, refused }: any) {
+    open({ id, project, label, path, ftype, content, original, detached, checkout, encoding, bom, refused }: OpenSpec) {
       if (map.has(id)) return;
       const shown = label || (WBFleet ? WBFleet.refSlug(project) : project);
-      const rec = {
+      const rec: ViewerRecord = {
         id, project, label: shown, path, kind: ftype, content, original, uid: ++uidSeq,
         editing: false, visible: false, detached: !!detached, checkout: checkout || null,
         encoding: encoding || "UTF-8", bom: !!bom, refused: refused || null,
@@ -1388,14 +1477,14 @@ export function createViewer(window: any, document: any) {
     // waits for; `saveFailed` puts the mark back and names the reason in the
     // pane. `reply` rides along so an `unencodable` refusal can say which
     // character (`char_index`) the encoding could not take.
-    saveDone(id: any) {
+    saveDone(id: string) {
       const rec = map.get(id);
       if (!rec) return;
       rec.dirty = false;
       rec.saveBtn?.classList.remove("dirty");
       clearSaveError(rec);
     },
-    saveFailed(id: any, reason: any, reply?: any) {
+    saveFailed(id: string, reason: string, reply?: WriteReply) {
       const rec = map.get(id);
       if (!rec) return;
       rec.dirty = true;
@@ -1409,11 +1498,11 @@ export function createViewer(window: any, document: any) {
 
     // The encoding a pane will save with, and the change of it (a "save
     // with…" or the `unencodable` dialog's "save as UTF-8").
-    encodingOf(id: any) {
+    encodingOf(id: string) {
       const rec = map.get(id);
       return rec ? { encoding: rec.encoding, bom: !!rec.bom } : null;
     },
-    setEncoding(id: any, encoding: any, bom: any) {
+    setEncoding(id: string, encoding: string, bom: boolean) {
       const rec = map.get(id);
       if (!rec) return;
       rec.encoding = encoding;
@@ -1428,7 +1517,7 @@ export function createViewer(window: any, document: any) {
 
     // The shell never calls it — a detach goes through the pane's own button.
     // detached.html reads it on unload, to send the edited bytes home.
-    descOf(id: any) {
+    descOf(id: string) {
       const rec = map.get(id);
       return rec ? descOf(rec) : null;
     },
@@ -1437,7 +1526,7 @@ export function createViewer(window: any, document: any) {
     // the slot the shell resolved (ADR-0037 §3c): `{ id, mirror, focus, ratio }`
     // or nothing. One argument is the single pane every caller had; the
     // detached popup never passes a second.
-    setActive(id: any, slot?: any) {
+    setActive(id: string | null, slot?: ViewerSlot | "" | null) {
       shown = { id, slot: slot || null };
       paint();
     },
@@ -1452,7 +1541,7 @@ export function createViewer(window: any, document: any) {
     // operator's unsaved edits, and `open` returns early on a known id, so a
     // naive reopen is a silent no-op. A diff tab is skipped — its id comes from
     // the changes panel, not from this path.
-    repath(oldId: any, { id, path }: any) {
+    repath(oldId: string, { id, path }: { id: string; path: string }) {
       const rec = map.get(oldId);
       if (!rec || map.has(id) || rec.kind === "diff") return;
       map.delete(oldId);
@@ -1463,18 +1552,18 @@ export function createViewer(window: any, document: any) {
       if (rec.el) setPathLabel(rec.el, rec);
     },
 
-    close(id: any) {
+    close(id: string) {
       const rec = map.get(id);
       if (!rec) return;
       // Delete from the map FIRST: a pending mountEditor() checks membership
       // before touching the DOM, so a tab closed mid-boot mounts nothing.
       map.delete(id);
       disposeEditor(rec);
-      rec.el.remove();
+      rec.el!.remove();
     },
 
     // Scroll an open markdown pane to a `#fragment`, once the bytes landed.
-    jumpTo(id: any, fragment: any) {
+    jumpTo(id: string, fragment: string) {
       const rec = map.get(id);
       if (rec && rec.kind === "markdown") jumpTo(rec, fragment);
     },
@@ -1483,7 +1572,7 @@ export function createViewer(window: any, document: any) {
     // A code pane whose editor has not mounted yet remembers the term and
     // acts once it has; a rendered markdown pane uses its own find bar; a
     // diff or an image has nothing to find in.
-    find(id: any, term: any) {
+    find(id: string, term: string) {
       const rec = map.get(id);
       if (!rec || !term) return;
       if (rec.kind === "diff" || rec.kind === "image") return;
@@ -1506,7 +1595,7 @@ export function createViewer(window: any, document: any) {
     // auto-refreshes; a DIRTY tab stashes them and shows the "changed on disk"
     // badge, NEVER clobbering unsaved edits. Equal bytes are a no-op (our own
     // save round-trips through the same nudge).
-    externalChange(id: any, content: any) {
+    externalChange(id: string, content: string) {
       const rec = map.get(id);
       if (!rec) return;
       // A diff tab never auto-refreshes: it is a two-sided read, and a

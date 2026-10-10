@@ -191,6 +191,7 @@ interface WunderbaumTree {
   clearFilter(): void;
   enableUpdate(flag: boolean): void;
   updatePendingModifications(): void;
+  destroy(): void;
 }
 
 /** A row of a Wunderbaum tree. Wunderbaum copies a source key it does not
@@ -205,10 +206,12 @@ interface WunderbaumNode {
   lazy: boolean;
   expanded: boolean;
   classes: string;
-  tree: WunderbaumTree;
+  /** `null` once a reload of an ancestor has unregistered the node. */
+  tree: WunderbaumTree | null;
   setExpanded(flag: boolean): Promise<void>;
   setActive(): void;
   visit(callback: (node: WunderbaumNode) => void): void;
+  hasClass(name: string): boolean;
   removeChildren(): void;
   load(source: WunderbaumSource[]): Promise<void>;
   isLoading(): boolean;
