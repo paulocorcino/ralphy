@@ -25,6 +25,7 @@ import { WBSessionRoute } from "./wb-session-route.ts";
 import { WBSettingsDialog } from "./wb-settings-dialog.ts";
 import { WBSplit } from "./wb-split.ts";
 import { sendDocument, sendWindow } from "./wb-events.ts";
+import type { ChangeEntry, CheckoutRow, ConfirmAsk, FleetReply, Group, Listing, ModalEntry, Project, PromptAsk, Read, ReadState, RepoRow, RosterRow, Subscription, Sync, Timer } from "./wb-types.d.ts";
 
 /** A peer of `/api/fleet`. */
 export type FleetPeer = {
@@ -48,7 +49,6 @@ export type FleetPeer = {
 // 05-workspace.css gate on the same query.
 const PHONE_QUERY = "(max-width: 560px), (pointer: coarse) and (max-height: 560px)";
 
-
 // The `this` of `shell()`'s members: its own members, the Alpine magics, and
 // any other name as `any` until its fields are typed one by one. The type a
 // component checks its `uses` against is the literal itself (`Shell`).
@@ -58,7 +58,7 @@ function shellData<T extends object>(data: T & ThisType<T & AlpineMagics & Recor
 
 // The popups `wire` opened, as `shell()` reaches them. `wire` sets this, so
 // each call starts with no popup.
-let detached = { watch: (_win: any, _desc: any) => {}, dirty: () => false, close: () => {} };
+let detached = { watch: (_win: Window, _desc: FileDescriptor) => {}, dirty: () => false, close: () => {} };
 
 export function shell() {
   return shellData({
@@ -69,38 +69,38 @@ export function shell() {
     // The build this page was served with (`<meta name="ralphy-build">`);
     // "" with no such tag, and then the page never reloads for a build.
     pageBuild: document.querySelector<HTMLMetaElement>('meta[name="ralphy-build"]')?.content || "",
-    _boardBackstop: null as any,
-    _changesBackstop: null as any,
+    _boardBackstop: null as Timer,
+    _changesBackstop: null as Timer,
     // The adapter roster comes from `/api/agents`, never a list here:
     // onboarding a vendor must not need a frontend change (#304).
-    agents: [] as any[],
-    roster: [] as any[],
+    agents: [] as ReturnType<typeof WBAgents.runRows>,
+    roster: [] as RosterRow[],
     // A failed `/api/repos` (#202): a visible error.
     reposError: "",
     // The read state of the shown facts this sidebar shows (ADR-0070 D3):
     // `WBFail.readFold` results, `null` before the first read.
-    reposRead: null as any,
-    fleetRead: null as any,
+    reposRead: null as ReadState,
+    fleetRead: null as ReadState,
     fleetError: "",
     // The peers the daemon could not read (a peer file it cannot parse, or a
     // peer store it cannot list): they list no project, so the sidebar says
     // so instead of showing an empty fleet (ADR-0070 D4).
     fleetRejectNote: "",
-    sessionsRead: null as any,
+    sessionsRead: null as ReadState,
     // The live sessions: the New-console menu, the release dialogs and the
     // checkout chip read them.
-    liveSessions: [] as any[],
+    liveSessions: [] as HostedSession[],
     // Why the daemon cannot read the saved desk, or "" (ADR-0070 D4); a copy
     // of `WBConsole.deskFailure()` so the page can show it.
     deskFailure: "",
     // The peer rows of the last good `/api/fleet`, kept when a read fails.
-    _fleetRows: [] as any[],
+    _fleetRows: [] as Project[],
     // The local fleet's peers (ADR-0052 §5, #349), from `/api/fleet`. Empty: a
     // fleet of one, or a daemon too old to serve the route.
     fleetPeers: [] as FleetPeer[],
     // Peers with a wake in flight, keyed by daemon_id: a cold WSL boot takes
     // seconds, and the key stops a second click sending a second nudge.
-    waking: {} as Record<string, any>,
+    waking: {} as Record<string, boolean>,
     // The last refusal from the Changes panel, held until the next act. NOT
     // `runsActionMsg`: that renders only inside `aside.runs`, which is closed
     // by default. One string, not per-project: switching projects is itself
@@ -121,7 +121,7 @@ export function shell() {
     // binding on `_lastHeartbeat`. Writing the same boolean is inert under
     // Alpine, so the steady state costs one comparison a second.
     presenceStale: false,
-    _presenceSub: null as any, // the `/ws` heartbeat subscription, kept so a resume can re-open it
+    _presenceSub: null as Subscription | null, // the `/ws` heartbeat subscription, kept so a resume can re-open it
 
     // Alpine lifecycle.
     init() {
@@ -154,7 +154,7 @@ export function shell() {
       window.WBConsole?.setStaleProbe?.(() => this.socketsAreStale());
       // The selected checkouts (#406): the ONE hook for `unknown checkout`, and
       // the copy of the desk mirror once the boot desk lands.
-      window.WBDaemon?.onUnknownCheckout?.((repo: any, name: any) => this.checkoutGone(repo, name));
+      window.WBDaemon?.onUnknownCheckout?.((repo, name) => this.checkoutGone(repo as string, name));
       window.WBConsole?.whenDeskLoaded?.().then(() => {
         this.adoptDeskCheckouts();
         this.syncDeskFailure();
@@ -208,7 +208,7 @@ export function shell() {
 
     // Bring the long-lived subscriptions back after a suspend. Each decides for
     // itself (`resumeDecision`) and debounces.
-    resumeSockets(stale?: any) {
+    resumeSockets(stale?: boolean) {
       const verdict = stale === undefined ? this.socketsAreStale() : stale;
       this._runsSub?.resume?.(verdict);
       this._changesSub?.resume?.(verdict);
@@ -224,7 +224,7 @@ export function shell() {
     subscribePresence() {
       if (!window.WBDaemon?.subscribePresence) return;
       this._presenceSub = window.WBDaemon.subscribePresence(
-        (p: any) => {
+        (p) => {
           this._lastHeartbeat = Date.now();
           this.uptimeText = "Running for " + this.fmtUptime(p.uptime_secs);
           if (p.name) this.identityName = p.name;
@@ -232,8 +232,8 @@ export function shell() {
           if (p.build && this.pageBuild && p.build !== this.pageBuild) this.onBuildSkew();
         },
         {
-          onPush: (verb: any, payload: any) => this.onPresencePush(verb, payload),
-          onOpen: (reopened: any) => this.onPresenceOpen(reopened),
+          onPush: (verb, payload) => this.onPresencePush(verb, payload),
+          onOpen: (reopened) => this.onPresenceOpen(reopened),
         },
       );
     },
@@ -245,7 +245,7 @@ export function shell() {
     },
 
     // A push from the daemon for a fact it owns (ADR-0070 D2 event 1).
-    onPresencePush(verb: any, payload: any) {
+    onPresencePush(verb: string, payload: PushPayload) {
       if (this.tabHidden()) return;
       if (verb === "sessions.dirty") {
         // A spawn and its first agent state arrive together: one read.
@@ -269,13 +269,13 @@ export function shell() {
     },
     LIVE_SETTLE_MS: 250,
     PEER_READ_MS: 30000,
-    _liveTimer: null as any,
-    _peerTick: null as any,
+    _liveTimer: null as ReturnType<typeof setTimeout> | null,
+    _peerTick: null as Timer,
 
     // The presence socket opened again: a push may have been lost while it
     // was down (ADR-0070 D2 event 2). The first open reads nothing: `init`
     // already did.
-    onPresenceOpen(reopened: any) {
+    onPresenceOpen(reopened: boolean) {
       if (!reopened || this.tabHidden()) return;
       this.loadRepos();
       this.rereadDesk();
@@ -301,14 +301,14 @@ export function shell() {
     startNewDesk() {
       window.WBConsole?.startNewDesk?.()
         .then(() => this.syncDeskFailure())
-        .catch((e: any) => {
+        .catch((e) => {
           const why = String(e?.message || "").startsWith("the daemon") ? e.message : "the daemon did not answer";
           this._flashAction(`Could not start a new desk: ${why}.`);
         });
     },
 
     // Seconds → a compact `1d 2h`, `2h 14m`, `5m`, `12s` uptime string.
-    fmtUptime(secs: any) {
+    fmtUptime(secs: number | undefined) {
       const s = Math.max(0, Math.floor(secs || 0));
       const d = Math.floor(s / 86400);
       const h = Math.floor((s % 86400) / 3600);
@@ -347,7 +347,7 @@ export function shell() {
     // The daemon's adapter roster (#304). A failed fetch leaves the roster
     // EMPTY rather than showing adapters this daemon may not have.
     _agentsSeq: 0,
-    async loadAgents(repo?: any) {
+    async loadAgents(repo?: string | null) {
       if (repo === undefined) repo = this.$store.projects.openSlug;
       const seq = ++this._agentsSeq;
       try {
@@ -375,12 +375,12 @@ export function shell() {
       try {
         const r = await fetch("/api/repos");
         if (r.ok) {
-          const repos = await r.json();
+          const repos: RepoRow[] = await r.json();
           // The rows this read replaces: their live dot and their environment
           // stay until `refreshLive` and `loadFleet` answer, and the peer rows
           // stay until the fleet read replaces them.
           const before = new Map(this.$store.projects.projects.filter((p) => !p.daemon).map((p) => [p.slug, p]));
-          const local = repos.map((x: any) => ({
+          const local: Project[] = repos.map((x) => ({
             slug: x.slug,
             // What the operator calls the project; the SLUG stays the identity
             // (ADR-0008 D7), and for a remoteless repo it is a hash key.
@@ -432,7 +432,7 @@ export function shell() {
 
     // A failed `/api/repos` (ADR-0070 D3). After a good read the list stays,
     // marked not current. Before one, the list is empty and says why.
-    reposFailed(reason: any) {
+    reposFailed(reason: string) {
       this.reposRead = WBFail.readFold(this.reposRead, { ok: false, reason, at: Date.now() });
       if (this.reposRead.goodAt) {
         this.reposError = WBFail.notCurrent(this.reposRead, (ms) => this.fmtClock(ms));
@@ -443,18 +443,18 @@ export function shell() {
     },
 
     // A time of day, `14:02`, for "Read at …".
-    fmtClock(ms: any) {
+    fmtClock(ms: number) {
       return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     },
 
     // The local fleet (ADR-0052 §5, #349): append every PEER's repos after the
     // local `/api/repos` pass, plus the peer list the group headers render.
     // INVARIANT: a `/api/fleet` failure leaves the LOCAL list exactly as it was.
-    fleetRejectText(peers: any) {
-      const bad = peers.filter((p: any) => p.state === "malformed");
+    fleetRejectText(peers: FleetPeer[]) {
+      const bad = peers.filter((p) => p.state === "malformed");
       if (!bad.length) return "";
       const what = bad.length === 1 ? "a peer" : `${bad.length} peers`;
-      return `Could not read ${what}: ${bad.map((p: any) => p.diagnosis || p.name).join("; ")}`;
+      return `Could not read ${what}: ${bad.map((p) => p.diagnosis || p.name).join("; ")}`;
     },
     async loadFleet() {
       // Two project reads close together (a wake fires the visible tab and the
@@ -473,14 +473,14 @@ export function shell() {
           return;
         }
         if (!r.ok) throw new Error(`the daemon answered ${r.status}`);
-        const fleet = await r.json();
+        const fleet: FleetReply = await r.json();
         if (seq !== this._fleetSeq) return;
         this.fleetPeers = Array.isArray(fleet.peers) ? fleet.peers : [];
         this.fleetRejectNote = this.fleetRejectText(this.fleetPeers);
         const rows = Array.isArray(fleet.repos) ? fleet.repos : [];
         // `/api/fleet` is the ONLY source of this daemon's own environment label
         // and name; the local rows are stamped with it here.
-        const mine = rows.find((x: any) => x.local);
+        const mine = rows.find((x) => x.local);
         if (mine) {
           for (const p of this.$store.projects.projects) {
             p.env = mine.environment || "";
@@ -488,8 +488,8 @@ export function shell() {
             p.daemonName = mine.daemon_name || "";
           }
         }
-        const peerRows = rows.filter((x: any) => !x.local);
-        this._fleetRows = peerRows.map((x: any) => ({
+        const peerRows = rows.filter((x) => !x.local);
+        this._fleetRows = peerRows.map((x) => ({
             // `<daemon_id>/<slug>`: the same `owner/repo` on two daemons is two rows.
             key: x.key,
             slug: x.slug,
@@ -517,11 +517,11 @@ export function shell() {
         sendWindow(window, "workbench:fleet-read");
         this.fleetRead = WBFail.readFold(this.fleetRead, { ok: true, value: true, at: Date.now() });
         this.fleetError = "";
-      } catch (e: any) {
+      } catch (e) {
         if (seq !== this._fleetSeq) return;
         // After a good read the peers and their rows stay, marked not current
         // (ADR-0070 D3); `loadRepos` rebuilt the list without them.
-        const reason = String(e?.message || "").startsWith("the daemon") ? e.message : "the daemon did not answer";
+        const reason = String((e as Error)?.message || "").startsWith("the daemon") ? (e as Error).message : "the daemon did not answer";
         this.fleetRead = WBFail.readFold(this.fleetRead, { ok: false, reason, at: Date.now() });
         if (this.fleetRead.goodAt) {
           this.$store.projects.setProjects(localRows().concat(this._fleetRows));
@@ -545,11 +545,11 @@ export function shell() {
       }
       return this._fleetNow;
     },
-    _fleetNow: null as any,
+    _fleetNow: null as Promise<void> | null,
 
     // The fleet read that confirms a removed host waits up to 2 s for the
     // peer that is now down: until then its row would come back.
-    hostRemoved(daemon: any) {
+    hostRemoved(daemon: string) {
       this.fleetPeers = (this.fleetPeers || []).filter((p) => p.daemon_id !== daemon);
       this._fleetRows = this._fleetRows.filter((r) => r.daemon !== daemon);
       this.$store.projects.setProjects(this.$store.projects.projects.filter((r) => r.daemon !== daemon));
@@ -559,7 +559,7 @@ export function shell() {
     // ADR-0046), which is why this lives in the workbench: a daemon nudging on
     // every probe would be supervising by accident (ADR-0052 §4).
     // `/api/fleet/nudge` resolves when the environment is USABLE.
-    async wakePeer(daemonId: any) {
+    async wakePeer(daemonId: string) {
       if (!daemonId || this.waking[daemonId]) return false;
       this.waking[daemonId] = true;
       try {
@@ -587,42 +587,42 @@ export function shell() {
     },
 
     // Opening a row on a sleeping peer wakes it. A no-op for every other row.
-    wakePeerFor(ref: any) {
+    wakePeerFor(ref: string | null | undefined) {
       const daemon = WBFleet.refDaemon(ref);
       if (!daemon) return;
       const group = this.fleetGroups().find((g) => g.daemon === daemon);
       if (WBFleet.wakeable(group)) this.wakePeer(daemon);
     },
 
-    peerWakeable(g: any) {
+    peerWakeable(g: Group) {
       return WBFleet.wakeable(g);
     },
-    peerAvailable(g: any) {
+    peerAvailable(g: Group) {
       return WBFleet.available(g);
     },
-    refAvailable(ref: any) {
+    refAvailable(ref: string | null | undefined) {
       const daemon = WBFleet.refDaemon(ref);
       if (!daemon) return true;
       return WBFleet.available(this.fleetGroups().find((g) => g.daemon === daemon));
     },
-    peerIcon(g: any) {
+    peerIcon(g: Group) {
       return WBFleet.stateIcon(g);
     },
-    peerFault(g: any) {
+    peerFault(g: Group) {
       return WBFleet.stateFault(g);
     },
-    groupTitle(g: any) {
+    groupTitle(g: Group) {
       return WBFleet.groupTitle(g);
     },
-    groupLabel(g: any) {
+    groupLabel(g: Group) {
       return WBFleet.groupLabel(g);
     },
-    groupHost(g: any) {
+    groupHost(g: Group) {
       return WBFleet.groupHost(g);
     },
     // `x` is a fleet group or a peer of `/api/fleet`: both carry `os` and
     // `environment`.
-    osOf(x: any) {
+    osOf(x: { os?: string; environment?: string } | null | undefined) {
       return WBFleet.system(x && x.os, x && x.environment);
     },
 
@@ -642,7 +642,7 @@ export function shell() {
           this.sessionsFailed(`the daemon answered ${r.status}`);
           return;
         }
-        const sessions = await r.json();
+        const sessions: HostedSession[] = await r.json();
         if (seq !== this._liveSeq) return;
         this.sessionsRead = WBFail.readFold(this.sessionsRead, { ok: true, value: true, at: Date.now() });
         // The console menu's fold reads this (#304).
@@ -651,7 +651,7 @@ export function shell() {
         window.WBConsole?.ingestSessions?.(sessions);
         for (const p of this.$store.projects.projects) {
           if (p.state === "offline") continue;
-          const mine = sessions.filter((s: any) =>
+          const mine = sessions.filter((s) =>
             WBSessionRoute.matchesRepo(s, this.$store.projects.repoRef(p)),
           );
           // A `waiting` agent outranks `live` on the dot (ADR-0059).
@@ -668,14 +668,14 @@ export function shell() {
     _liveSeq: 0,
     // A failed `/api/sessions` keeps the last list and the live dots, marked
     // not current in the console menu (ADR-0070 D3).
-    sessionsFailed(reason: any) {
+    sessionsFailed(reason: string) {
       this.sessionsRead = WBFail.readFold(this.sessionsRead, { ok: false, reason, at: Date.now() });
     },
     sessionsError() {
       return WBFail.notCurrent(this.sessionsRead, (ms) => this.fmtClock(ms));
     },
 
-    _flashAction(msg: any) {
+    _flashAction(msg: string) {
       this.runsActionMsg = msg;
       clearTimeout(this._actionTimer);
       this._actionTimer = setTimeout(() => (this.runsActionMsg = ""), 2600);
@@ -684,7 +684,7 @@ export function shell() {
     // --- modal stack ------------------------------------------------------
     // The open modals, oldest first: `{ path, opener }`. Only the last one
     // answers Escape, and each returns focus to its opener on close.
-    _modalStack: [] as any[],
+    _modalStack: [] as ModalEntry[],
     // The confirm dialog (replaces window.confirm); `askConfirm` opens it.
     confirmModal: {
       open: false,
@@ -694,7 +694,7 @@ export function shell() {
       cancelLabel: "Cancel",
       danger: false,
     },
-    _confirmResolve: null as any,
+    _confirmResolve: null as ((ok: boolean) => void) | null,
     // The prompt dialog (replaces window.prompt, which is suppressible
     // per-origin and never appears in an unfocused popup). `askPrompt`
     // resolves the typed string, or null.
@@ -707,17 +707,17 @@ export function shell() {
       confirmLabel: "Create",
       error: "",
     },
-    _promptResolve: null as any,
+    _promptResolve: null as ((name: string | null) => void) | null,
     // The Escape keydown a modal has already answered.
-    _escapeEvent: null,
+    _escapeEvent: null as Event | null,
     // The one binding every `.modal-scrim` in index.html uses:
     // `x-bind="scrim('runOpen', () => closeRunModal())"`. `path` names the open
     // flag, dotted for a nested one (`confirmModal.open`). Alpine evaluates the
     // object once per scrim, so `was` lives as long as the element.
     // A click on the scrim closes nothing: a stray click must not throw away
     // what a modal holds. Only its own buttons and Escape close it.
-    scrim(path: any, close: any) {
-      const isOpen = () => path.split(".").reduce((o: any, k: any) => o?.[k], this);
+    scrim(path: string, close: () => void) {
+      const isOpen = () => path.split(".").reduce<unknown>((o, k) => (o as Record<string, unknown> | undefined)?.[k], this);
       let was = false;
       const self = this;
       return {
@@ -727,7 +727,7 @@ export function shell() {
         // marked because the browser runs Alpine's effects between two
         // listeners: the close pops the stack before the next scrim is asked,
         // and the modal under it would read as the top.
-        "@keydown.escape.window": (e: any) => {
+        "@keydown.escape.window": (e: Event) => {
           if (self._escapeEvent === e) return;
           if (isOpen() && self.isTopModal(path)) {
             self._escapeEvent = e;
@@ -736,7 +736,7 @@ export function shell() {
         },
         // Watches the flag, not the close methods: `logOff()` clears flags
         // directly, and that close must still pop the stack.
-        "x-effect"(this: any) {
+        "x-effect"(this: { $el: Element }) {
           const open = !!isOpen();
           if (open === was) return;
           was = open;
@@ -745,23 +745,23 @@ export function shell() {
         },
       };
     },
-    isTopModal(path: any) {
+    isTopModal(path: string) {
       return this._modalStack.at(-1)?.path === path;
     },
     // Whether the modal with this open-flag path is open, at any depth. Code
     // outside a dialog's component asks this, never the flag (ADR-0073 D5).
-    modalOpen(path: any) {
+    modalOpen(path: string) {
       return this._modalStack.some((m) => m.path === path);
     },
-    modalOpened(path: any, scrimEl: any) {
-      this._modalStack.push({ path, opener: document.activeElement });
+    modalOpened(path: string, scrimEl: Element) {
+      this._modalStack.push({ path, opener: document.activeElement as HTMLElement | null });
       // One frame later: `x-show` has flipped by then, and a modal that focuses
       // its own field on open (Branch, Prompt) has already done so.
       window.requestAnimationFrame(() => {
         const dialog = scrimEl.querySelector('[role="dialog"], [role="alertdialog"]') || scrimEl;
         if (dialog.contains(document.activeElement)) return;
-        const controls = Array.from<any>(
-          dialog.querySelectorAll(
+        const controls = Array.from(
+          dialog.querySelectorAll<HTMLElement & { disabled?: boolean }>(
             'button, input, select, textarea, [href], [tabindex]:not([tabindex="-1"])',
           ),
         ).filter((el) => !el.disabled && el.getClientRects().length > 0);
@@ -770,7 +770,7 @@ export function shell() {
         (controls.find((el) => !el.classList.contains("modal-x")) || controls[0])?.focus();
       });
     },
-    modalClosed(path: any) {
+    modalClosed(path: string) {
       const i = this._modalStack.findLastIndex((m) => m.path === path);
       if (i < 0) return;
       const [{ opener }] = this._modalStack.splice(i, 1);
@@ -783,7 +783,7 @@ export function shell() {
       if (!this.authed) return true;
       if (this.modalOpen(WBSettingsDialog.openFlag) || this.modalOpen(WBSecurityDialog.openFlag) || this.modalOpen("runOpen") || this.modalOpen("branchOpen")) return true;
       if (this.modalOpen(WBReleaseDialogs.whatsNewFlag)) return true;
-      const el: any = document.activeElement;
+      const el = document.activeElement as HTMLElement | null;
       if (allowTerminal && el?.closest?.(".xterm")) return false;
       return !!(
         el &&
@@ -792,7 +792,7 @@ export function shell() {
     },
     // Resolve `true`/`false` on the operator's choice. A pending dialog is
     // settled `false` first so a second call never strands its promise.
-    askConfirm(opts: any = {}) {
+    askConfirm(opts: ConfirmAsk = {}) {
       if (this._confirmResolve) this.confirmRespond(false);
       this.confirmModal = {
         open: true,
@@ -807,14 +807,14 @@ export function shell() {
       });
     },
     // Close the dialog and settle its promise with the choice.
-    confirmRespond(ok: any) {
+    confirmRespond(ok: boolean) {
       this.confirmModal.open = false;
       const resolve = this._confirmResolve;
       this._confirmResolve = null;
       if (resolve) resolve(ok);
     },
     // Resolve the typed string, or `null`. Mirrors askConfirm.
-    askPrompt(opts: any = {}) {
+    askPrompt(opts: PromptAsk = {}) {
       if (this._promptResolve) this.promptRespond(null);
       this.promptModal = {
         open: true,
@@ -855,7 +855,7 @@ export function shell() {
       this.promptRespond(name);
     },
     // Close the dialog and settle its promise with `name` (null = cancelled).
-    promptRespond(name: any) {
+    promptRespond(name: string | null) {
       this.promptModal.open = false;
       const resolve = this._promptResolve;
       this._promptResolve = null;
@@ -864,7 +864,7 @@ export function shell() {
 
     // --- the open project -------------------------------------------------
     // The fact itself is the Alpine store `projects` (wb-projects-store.ts).
-    toggle(ref: any, row?: any) {
+    toggle(ref: string, row?: Project) {
       const previous = this.$store.projects.openSlug;
       // A row on a host that cannot answer stays closed. The click still wakes
       // a sleeping host: that is the act the operator asked for.
@@ -884,30 +884,30 @@ export function shell() {
     },
     // The files, the board and the git part each drop what was scoped to the
     // project that WAS open (ADR-0073 amendment of 2026-10-08, decision 4).
-    projectChanged(previous: any) {
+    projectChanged(previous: string | null) {
       const slug = this.$store.projects.openSlug;
       sendWindow(window, "workbench:project-changed", { slug, previous });
     },
     // A sleeping peer's wake button. Its two sentences keep their order here,
     // not in a `+` chain inside the markup (ADR-0065 §9).
-    wakeTitle(g: any) {
+    wakeTitle(g: Group) {
       if (this.waking[g.daemon]) return `Waking ${g.environment}…`;
       return `Wake ${g.environment}. ${g.diagnosis}`;
     },
     // A row on a host that cannot answer: why it does not open.
-    unavailableTitle(g: any) {
+    unavailableTitle(g: Group) {
       const host = WBFleet.peerName(g);
       const head = `${host} is not available (${this.peerStateWord(g.state)}).`;
       if (WBFleet.wakeable(g)) return `${head} Click to wake it.`;
       return `${head} Its projects open when it connects again.`;
     },
-    rowTitle(p: any) {
+    rowTitle(p: Project) {
       return WBProject.rowTitle(p);
     },
     // Drop a project from the daemon's registry (#363); the disk is NOT
     // touched. The confirm is awaited BEFORE any `WBDaemon` call: cancel must
     // open no socket.
-    async removeProject(p: any) {
+    async removeProject(p: Project) {
       const ref = this.$store.projects.repoRef(p);
       const ok = await this.askConfirm({
         title: "Remove project",
@@ -946,7 +946,7 @@ export function shell() {
     // path), waiting → yellow (an agent is asking for you, ADR-0059).
     // Orthogonal to `remote`.
     // The project dot's tooltip, in words; the class keeps the state code.
-    dotTitle(state: any) {
+    dotTitle(state: string) {
       return (
         ({
           live: "A console is open",
@@ -955,7 +955,7 @@ export function shell() {
         } as Record<string, string>)[state] || "No console is open"
       );
     },
-    dotClass(state: any) {
+    dotClass(state: string) {
       return state === "live"
         ? "live"
         : state === "waiting"
@@ -964,7 +964,7 @@ export function shell() {
             ? "offline"
             : "";
     },
-    peerStateWord(state: any) {
+    peerStateWord(state: string | null | undefined) {
       return WBFleet.stateWord(state);
     },
 
@@ -983,7 +983,7 @@ export function shell() {
     },
 
     // Clicking the rail button of the view already showing collapses the sidebar.
-    showSideView(view: any) {
+    showSideView(view: string) {
       if (this.sideOpen && this.sideView === view) {
         this.sideOpen = false;
         return;
@@ -1006,7 +1006,7 @@ export function shell() {
 
     // The change indicator for one row. Only slugs whose count was READ render
     // one: a `changes.list` per repo would be N git subprocesses on open.
-    projectBadge(slug: any) {
+    projectBadge(slug: string) {
       return WBChanges.projectBadge(this.changesCount, slug);
     },
 
@@ -1030,7 +1030,7 @@ export function shell() {
     },
 
     // Sidebar row label: the repo name, UPPERCASED (wb-project.ts).
-    repoLabel(p: any) {
+    repoLabel(p: Project) {
       return WBProject.repoLabel(p);
     },
 
@@ -1050,7 +1050,7 @@ export function shell() {
     // in the sidebar must not change what a console says.
     shareFleet() {
       window.WBConsole?.ingestFleet?.(WBFleet.fleetGroups(this.$store.projects.projects, this.fleetPeers), {
-        wake: (daemonId: any) => this.wakePeer(daemonId),
+        wake: (daemonId) => this.wakePeer(daemonId),
         read: () => this.readFleetNow(),
       });
     },
@@ -1088,25 +1088,25 @@ export function shell() {
     // --- branch switcher --------------------------------------------------
     // Per slug, named apart from the shell-wide `changesError` below: a
     // duplicate key in this literal is a silent no-op.
-    changesReadError: {} as Record<string, any>,
+    changesReadError: {} as Record<string, string>,
     // Per slug, the read state of the change set, the branch (sync), the board
     // and the runs (`WBFail.readFold`, ADR-0070 D3). A write is locked while
     // its fact is not current.
-    changesRead: {} as Record<string, any>,
-    syncRead: {} as Record<string, any>,
+    changesRead: {} as Record<string, Read>,
+    syncRead: {} as Record<string, Read>,
     // The two rendered groups (#315). INVARIANT: every path that sets one must
     // set the OTHER in the SAME statement — a stale group left behind renders
     // rows under a headline while the badge already reads `—`.
-    changesStaged: {} as Record<string, any>,
-    changesUnstaged: {} as Record<string, any>,
+    changesStaged: {} as Record<string, ChangeEntry[]>,
+    changesUnstaged: {} as Record<string, ChangeEntry[]>,
     // The sync row per project (#316): the fold of `sync.status`. Same three
     // triggers as the change set, never a timer.
-    syncByProject: {} as Record<string, any>,
+    syncByProject: {} as Record<string, Sync>,
     // The remote act in flight (`"fetch"` | `"pull"` | `"push"`), or null. One
     // slot for the whole bar: the three acts share the upstream, so a second
     // click while one is out would race it against the first — and a push's
     // round trip is long enough that a silent button reads as a dead one.
-    syncBusy: null as any,
+    syncBusy: null as "fetch" | "pull" | "push" | null,
     // Same token for the Changes count (#310's nudge overlaps the open's read)
     // and for the sync row.
     _changesSeq: 0,
@@ -1124,28 +1124,28 @@ export function shell() {
       dirty: false,
       checkoutDirty: false,
     },
-    worktreeListings: {} as Record<string, any>,
+    worktreeListings: {} as Record<string, Listing | null>,
 
     // Only when the daemon can reach the repo on disk. NOT gated on `remote`:
     // a local-only repo still has branches.
-    canSwitchBranch(p: any) {
+    canSwitchBranch(p: Project) {
       return WBProject.canSwitchBranch(p);
     },
 
     // The checkout chip of a project row: which tree Files, Changes and
     // search read, and that a click chooses another.
-    checkoutTitle(p: any) {
+    checkoutTitle(p: Project) {
       const name = this.checkoutOf(this.$store.projects.repoRef(p));
       return name
         ? `Files, changes and search show worktree “${name}”. Click to choose another one.`
         : "Files, changes and search show the primary tree. Click to choose a worktree.";
     },
 
-    branchChipTitle(p: any) {
+    branchChipTitle(p: Project) {
       const ref = this.$store.projects.repoRef(p);
       return WBProject.branchChipTitle(p, this.checkoutOf(ref), this.worktreeListings[ref] || null);
     },
-    chipDirty(p: any) {
+    chipDirty(p: Project) {
       const ref = this.$store.projects.repoRef(p);
       return WBProject.chipDirty(p, this.checkoutOf(ref), this.worktreeListings[ref] || null);
     },
@@ -1154,20 +1154,20 @@ export function shell() {
     // and must not ALSO collapse the row it sits on. Switching is gated on
     // reachability, not on remote (`canSwitchBranch`): an unreachable chip
     // stays inert — informational — but still swallows the click.
-    branchChipClick(p: any, ev: any) {
+    branchChipClick(p: Project, ev: Event) {
       if (!this.$store.projects.rowOpen(p)) return;
       ev.stopPropagation();
       this.openBranchModal(p);
     },
 
-    openBranchModal(p: any) {
+    openBranchModal(p: Project) {
       if (!this.canSwitchBranch(p)) return;
       // Reaching for the picker IS the next branch act.
       this.branchError = "";
       const ref = this.$store.projects.repoRef(p);
       // Under a selection "current" is the WORKTREE's branch (#407).
       const ck = this.checkoutOf(ref);
-      const wt = ck ? (this.worktreeListings[ref]?.worktrees || []).find((w: any) => w && w.name === ck) : null;
+      const wt = ck ? (this.worktreeListings[ref]?.worktrees || []).find((w) => w && w.name === ck) : null;
       this.branchModal = {
         slug: ref,
         filter: "",
@@ -1190,7 +1190,7 @@ export function shell() {
 
     // The repo's real local branches via `branch.list` (#199). A failed read
     // empties the list (M5).
-    async loadBranches(slug: any) {
+    async loadBranches(slug: string) {
       try {
         const reply = await window.WBDaemon.observe(
           "branch.list",
@@ -1223,7 +1223,7 @@ export function shell() {
     // The open project's change count (#307) via `changes.list`: reloads on
     // open, sidebar refresh and run-completion nudge (#310), never on a
     // repo-wide watch. The SELECTED checkout's (#407, ADR-0063 §2).
-    async loadChanges(slug: any) {
+    async loadChanges(slug: string | null | undefined) {
       if (!slug) return;
       // Overlapping reads can return OUT OF ORDER (as `_runsSeq`).
       const seq = ++this._changesSeq;
@@ -1252,7 +1252,7 @@ export function shell() {
     // A failed `changes.list` (ADR-0070 D3). After a good read the groups and
     // the count stay, marked not current; before one, the count is absent
     // (`—`), never another repo's number or a clean tree.
-    changesFailed(slug: any, reason: any) {
+    changesFailed(slug: string, reason: string) {
       const read = WBFail.readFold(this.changesRead[slug], { ok: false, reason, at: Date.now() });
       this.changesRead[slug] = read;
       if (read.goodAt) {
@@ -1268,7 +1268,7 @@ export function shell() {
     // The open project's sync state (#316) via `sync.status`, which makes NO
     // network call. No timer: a launcher holding N repos must never become a
     // scheduled network client.
-    async loadSync(slug: any) {
+    async loadSync(slug: string | null | undefined) {
       if (!slug) return;
       const seq = ++this._syncSeq;
       try {
@@ -1299,7 +1299,7 @@ export function shell() {
     },
     // A failed `sync.status` (ADR-0070 D3). After a good read the row stays,
     // and its note says it is not current; before one, the state is unknown.
-    syncFailed(slug: any, reason: any) {
+    syncFailed(slug: string, reason: string) {
       const read = WBFail.readFold(this.syncRead[slug], { ok: false, reason, at: Date.now() });
       this.syncRead[slug] = read;
       const prev = this.syncByProject[slug];
@@ -1312,7 +1312,7 @@ export function shell() {
 
     // Fetch from the upstream — the operator's act, never a timer's. A refusal
     // is `{status:"error"}` whose message IS the core's prose.
-    async syncFetch(slug: any) {
+    async syncFetch(slug: string) {
       if (this.syncBusy || this.writeLocked()) return;
       this.syncBusy = "fetch";
       this.changesError = "";
@@ -1337,7 +1337,7 @@ export function shell() {
 
     // Fast-forward from the upstream. A successful pull moves the working tree,
     // so the change set is reloaded beside the counts.
-    async syncPull(slug: any) {
+    async syncPull(slug: string) {
       if (this.syncBusy || this.writeLocked()) return;
       this.syncBusy = "pull";
       this.changesError = "";
@@ -1367,7 +1367,7 @@ export function shell() {
     // opt-in flag, ADR-0046 amendment); a refusal's message IS the core's
     // prose. No credential UI, by decision. Push moves no file, so only the
     // counts reload.
-    async syncPush(slug: any) {
+    async syncPush(slug: string) {
       if (this.syncBusy || this.writeLocked()) return;
       this.syncBusy = "push";
       this.changesError = "";
@@ -1392,17 +1392,17 @@ export function shell() {
     // Working-tree change count per slug (#307). `null` until a load succeeds,
     // so a failed read never reads like a clean tree; `changesReadError`
     // carries the reason into the Changes view's title.
-    changesCount: {} as Record<string, any>,
+    changesCount: {} as Record<string, number | null>,
     // A refused `branch.switch`/`branch.create`, held until the next branch act
     // or a project switch. Not `treeError` (the tree is fine) and not
     // `changesError` (the chip lives in THIS panel).
     branchError: "",
-    _changesSub: null as any, // the run-completion nudge subscription for the open project (#310)
+    _changesSub: null as Subscription | null, // the run-completion nudge subscription for the open project (#310)
     // The run-completion subscription (#310, ADR-0036 amendment). The socket
     // carries EVERY repo's nudge, so the filter is here.
     mountChangesSub() {
       if (!window.WBDaemon?.subscribeChanges || !this.$store.projects.openSlug) return;
-      this._changesSub = window.WBDaemon.subscribeChanges(this.$store.projects.openSlug, (frame: any) => {
+      this._changesSub = window.WBDaemon.subscribeChanges(this.$store.projects.openSlug, (frame) => {
         if (this.tabHidden()) return;
         // Optional-chained: a frame without wb-changes.ts must not throw
         // inside `onmessage`.
@@ -1422,7 +1422,7 @@ export function shell() {
     // project that WAS open, and an unsent commit message (#318) is dropped.
     // After the paint, the changes-nudge socket (#310) follows the tree's
     // open/close path, and the open project's changes are read.
-    gitFollowProject(slug: any) {
+    gitFollowProject(slug: string | null) {
       this.changesError = "";
       this.branchError = "";
       if (this.commitMsgSlug !== slug) {
@@ -1438,7 +1438,7 @@ export function shell() {
     },
     // On `workbench:head-moved` (the files' socket heard `head.dirty`): re-read
     // what the branch drives: the chip, the sync row and the Changes count.
-    gitFollowHead(ref: any) {
+    gitFollowHead(ref: string) {
       this.loadChanges(ref);
       this.loadSync(ref);
       // Under a selection the chip reads the worktree's branch from the
@@ -1528,15 +1528,15 @@ export function shell() {
     verbLocked() {
       return this.writeLocked();
     },
-    verbTitle(verb: any) {
+    verbTitle(verb: string) {
       return WBRun.verbLockTitle(verb, this.writeLockReason());
     },
     // The flash after a no-arg verb is sent: `Triage requested.`
-    verbRequestedText(verb: any) {
+    verbRequestedText(verb: string) {
       return `${verb.charAt(0).toUpperCase()}${verb.slice(1)} requested.`;
     },
     // `all` is the group head's button, which acts on every row of the group.
-    rowActTitle(verb: any, all = false) {
+    rowActTitle(verb: string, all = false) {
       const locked = this.writeLockReason();
       if (locked) return locked;
       if (verb === "stage") return all ? "Stage all changes" : "Stage changes";
@@ -1559,19 +1559,19 @@ export function shell() {
     },
     // The remote bar's title while an act is out: the busy act names itself,
     // the other two name what they are waiting on.
-    syncBusyTitle(verb: any) {
+    syncBusyTitle(verb: string) {
       if (!this.syncBusy) return "";
       if (this.syncBusy !== verb) return `Waiting for the ${this.syncBusy} to finish`;
       return ({ fetch: "Fetching…", pull: "Pulling…", push: "Pushing…" } as Record<string, string>)[verb] || "";
     },
-    groupNote(group: any) {
+    groupNote(group: string) {
       return WBChanges.groupDiscardNote(group);
     },
     commitTarget() {
       return WBChanges.commitTarget(this.syncByProject[this.$store.projects.openSlug]);
     },
     // `withOriginal` only on the UNSTAGE direction — see `wb-changes.ts`.
-    groupPaths(list: any, withOriginal: any) {
+    groupPaths(list: ChangeEntry[], withOriginal: boolean) {
       return WBChanges.groupPaths(list, withOriginal);
     },
     commitTitle() {
@@ -1594,7 +1594,7 @@ export function shell() {
 
     // Stage / unstage / commit, each in `syncFetch`'s shape, re-reading the
     // list on EVERY path. The list is never moved optimistically.
-    async stagePaths(slug: any, paths: any) {
+    async stagePaths(slug: string, paths: string[]) {
       if (!slug || !paths || !paths.length || this.writeLocked()) return;
       this.changesError = "";
       try {
@@ -1615,7 +1615,7 @@ export function shell() {
       this.loadSync(slug);
     },
 
-    async unstagePaths(slug: any, paths: any) {
+    async unstagePaths(slug: string, paths: string[]) {
       if (!slug || !paths || !paths.length || this.writeLocked()) return;
       this.changesError = "";
       try {
@@ -1637,7 +1637,7 @@ export function shell() {
 
     // Discard ONE row's changes (#319) — the only irreversible act here, so the
     // only one confirmed (`discardConfirm`). A cancel makes NO daemon call.
-    async discardRow(slug: any, entry: any) {
+    async discardRow(slug: string, entry: ChangeEntry) {
       if (!slug || !entry || !entry.path || this.writeLocked()) return;
       const c = WBChanges.discardConfirm(entry);
       const ok = await this.askConfirm({
@@ -1667,7 +1667,7 @@ export function shell() {
       this.loadSync(slug);
     },
 
-    async commitStaged(slug: any) {
+    async commitStaged(slug: string) {
       // Never commit a draft composed for another project.
       if (this.commitMsgSlug !== slug || this.writeLocked()) return;
       const message = this.commitMsg.trim();
@@ -1705,10 +1705,10 @@ export function shell() {
     // The Files bar's checkout chip (ADR-0063 amendment 2026-09-16 b): shown
     // once the repo has a worktree; a pick sets the #406 selection (what
     // Files, Changes, diff and Find show), never where a console is launched.
-    hasWorktrees(p: any) {
+    hasWorktrees(p: Project) {
       return WBProject.hasWorktrees(this.worktreeListings[this.$store.projects.repoRef(p)] || null);
     },
-    openCheckoutChip(p: any, anchor: any) {
+    openCheckoutChip(p: Project, anchor: HTMLElement) {
       const ref = this.$store.projects.repoRef(p);
       const listing = this.worktreeListings[ref] || null;
       const mine = (this.liveSessions || []).filter((s) => WBSessionRoute.matchesRepo(s, ref));
@@ -1716,8 +1716,8 @@ export function shell() {
         anchor,
         host: document.body,
         rows: window.WBConsole.checkoutMenuRows(listing, this.checkoutOf(ref), mine, p.branch, !!p.dirty),
-        onPick: (row: any) => this.setCheckout(ref, row.primary ? null : row.name),
-        onRemove: (row: any) => this.removeWorktree(ref, row),
+        onPick: (row) => this.setCheckout(ref, row.primary ? null : row.name),
+        onRemove: (row) => this.removeWorktree(ref, row),
       });
     },
 
@@ -1725,26 +1725,26 @@ export function shell() {
     // `commitMsgSlug` ONLY: a message typed for repo A must never land as repo
     // B's commit. Cleared on success only.
     commitMsg: "",
-    commitMsgSlug: null,
+    commitMsgSlug: null as string | null,
 
     // --- the selected checkout (#406, ADR-0063 §4) ----------------------------
     // A `worktree.remove` in flight, per repo ref: the chip's menu greys the
     // row and a second click is ignored until the re-read lands.
-    worktreeRemoving: {} as Record<string, any>,
+    worktreeRemoving: {} as Record<string, string>,
     // The selected checkout per repo ref (#406, ADR-0063 §4): the REACTIVE copy
     // of `WBConsole`'s desk mirror (a closure variable there is invisible to
     // Alpine). `worktreeListings` is the last `worktree.list` reply per ref.
-    checkouts: {} as Record<string, any>,
-    checkoutOf(ref: any) {
-      return this.checkouts[ref] || null;
+    checkouts: {} as Record<string, string>,
+    checkoutOf(ref: string | null | undefined) {
+      return this.checkouts[ref as string] || null;
     },
-    chipLabel(p: any) {
+    chipLabel(p: Project) {
       const ref = this.$store.projects.repoRef(p);
       return WBProject.chipLabel(p, this.checkoutOf(ref), this.worktreeListings[ref] || null);
     },
     // The reactive map is REPLACED so Alpine sees it; persistence goes to the
     // desk mirror; the files remount an open tree built for another checkout.
-    setCheckout(ref: any, name: any) {
+    setCheckout(ref: string, name: string | null) {
       const next = { ...this.checkouts };
       if (name) next[ref] = String(name);
       else delete next[ref];
@@ -1763,7 +1763,7 @@ export function shell() {
     },
     // The daemon answered `unknown checkout` for `name`: drop the selection —
     // unless it already moved on, in which case a late reply says nothing.
-    checkoutGone(ref: any, name: any) {
+    checkoutGone(ref: string, name: string) {
       if (this.checkoutOf(ref) !== name) return;
       this.setCheckout(ref, null);
       this._flashAction(`Worktree ${name} no longer exists. Showing the primary tree.`);
@@ -1772,10 +1772,10 @@ export function shell() {
     // one read per ref, `force` re-reads (after a branch act the chip
     // converges from this reply, #407). A forced re-read that fails DROPS the
     // cached entry rather than showing the pre-act branch. Newest read wins.
-    async ensureWorktreeListing(ref: any, force = false) {
+    async ensureWorktreeListing(ref: string | null | undefined, force = false) {
       if (!ref || ref === "~" || (this.worktreeListings[ref] && !force)) return;
       const seq = (this._listingSeq = (this._listingSeq || 0) + 1);
-      let listing: any = null;
+      let listing: Listing | null = null;
       try {
         const reply = await window.WBDaemon.observe("worktree.list", { repo: ref });
         if (reply && reply.status === "ok") listing = reply.checkouts || null;
@@ -1820,7 +1820,7 @@ export function shell() {
     // Under a selected worktree (#407) the act lands on THAT tree's HEAD:
     // `p.branch` is the primary's and must not move, so no optimistic update —
     // the chip converges from `_mutateBranch`'s forced `worktree.list` re-read.
-    switchBranch(name: any) {
+    switchBranch(name: string) {
       if (this.writeLocked()) {
         this._flashAction(this.writeLockReason());
         this.closeBranchModal();
@@ -1874,7 +1874,7 @@ export function shell() {
     // (`checkoutAfterListing`), never from the reply's status. A refusal lands
     // verbatim in a notice with one OK: the menu it came from has closed.
     // A cancel makes NO daemon call.
-    async removeWorktree(slug: any, w: any) {
+    async removeWorktree(slug: string, w: CheckoutRow) {
       if (!slug || !w || w.primary || this.worktreeRemoving[slug]) return;
       const ok = await this.askConfirm({
         title: `Delete worktree ${w.name}?`,
@@ -1886,7 +1886,7 @@ export function shell() {
       });
       if (!ok || this.worktreeRemoving[slug]) return;
       this.worktreeRemoving = { ...this.worktreeRemoving, [slug]: w.name };
-      const refused = (message: any) =>
+      const refused = (message: string) =>
         window.WBConsole.askNotice({ title: `Could not delete worktree ${w.name}`, message });
       try {
         const reply = await window.WBDaemon.observe("worktree.remove", { repo: slug, name: w.name });
@@ -1915,7 +1915,7 @@ export function shell() {
     // the chip AND in the runs flash (the aside is closed by default). Carries
     // the selected checkout (#407): the worktree's HEAD moves, never the
     // primary's.
-    async _mutateBranch(verb: any, slug: any, name: any, revert: any) {
+    async _mutateBranch(verb: string, slug: string | null, name: string, revert: () => void) {
       try {
         const reply = await window.WBDaemon.observe(
           verb,
@@ -1945,7 +1945,7 @@ export function shell() {
       }
     },
     // The Projects panel's counterpart to `_changesRefused`.
-    _branchRefused(msg: any) {
+    _branchRefused(msg: string) {
       this.branchError = msg || "";
       this._flashAction(msg);
     },
@@ -2021,7 +2021,7 @@ export function shell() {
     },
     // A failed `runs.list` (ADR-0070 D3). After a good read the runs stay,
     // marked not current; before one, there are none and the panel says why.
-    runsFailed(slug: any, reason: any) {
+    runsFailed(slug: string, reason: string) {
       const read = WBFail.readFold(this.runsRead[slug], { ok: false, reason, at: Date.now() });
       this.runsRead[slug] = read;
       if (read.goodAt) {
@@ -2072,7 +2072,7 @@ export function shell() {
       const runs = this.projectRuns();
       return runs.find((r: any) => r.runid === this.currentRunId) || runs[0] || null;
     },
-    selectRun(runid: any) {
+    selectRun(runid: string) {
       this.currentRunId = runid;
       this.trailFocus = null; // the arrival marker belonged to the run we left
       // reset the section dropdown to the new run's first non-Steps heading
@@ -2158,11 +2158,11 @@ export function shell() {
       );
     },
 
-    runsRead: {} as Record<string, any>,
-    _runsSub: null as any, // the live run-snapshot subscription for the open project, if any
+    runsRead: {} as Record<string, Read>,
+    _runsSub: null as Subscription | null, // the live run-snapshot subscription for the open project, if any
     // The runid whose stop is in flight: a double-click must not dispatch two
     // `ralphy stop` children.
-    runStopping: null,
+    runStopping: null as string | null,
     // Whether the open project has a live run: flips the toolbar between `run`
     // and `stop` (ADR-0054). Derived from the SAME list `writeLockReason`
     // reads, so the two agree, and self-clearing via `runs.dirty`.
@@ -2174,7 +2174,7 @@ export function shell() {
     // daemon never signals a dispatched child (ADR-0032 §5/§6). No wait: the
     // reply says the request was written; the run leaves the panel via
     // `runs.dirty` when it exits.
-    async stopRun(runid: any) {
+    async stopRun(runid: string | null | undefined) {
       // No runid: the run left the panel between the render and the click.
       if (!runid || this.runStopping) return;
       // ADR-0032 §6 asks for a strong confirmation. The shell's OWN dialog,
@@ -2275,13 +2275,13 @@ export function shell() {
     planSteps() {
       return this.currentRun()?.steps || [];
     },
-    stepGlyph(status: any) {
+    stepGlyph(status: string) {
       return WBRun.stepGlyph(status);
     },
-    stepLabel(status: any) {
+    stepLabel(status: string) {
       return WBRun.stepLabel(status);
     },
-    stepClass(status: any) {
+    stepClass(status: string) {
       return WBRun.stepClass(status);
     },
     // Why the step list is empty — an unexplained blank block reads as a bug.
@@ -2375,18 +2375,18 @@ export function shell() {
     },
     // triage / push: the verb name is the whole intent; the client never
     // composes a command line.
-    fireVerb(verb: any) {
+    fireVerb(verb: string) {
       this._resetVerbSurface();
       window.WB.emit("command", { project: this.$store.projects.openSlug, verb });
       this._flashAction(this.verbRequestedText(verb));
     },
     // From wb-daemon.ts on a TERMINAL frame only; an empty note is a no-op.
-    runVerbFailed(msg: any) {
+    runVerbFailed(msg: string) {
       if (msg) this.verbError = msg;
     },
     // A refusal from the CHANGES panel lands in that panel and STAYS; the flash
     // is kept beside it. `runs-verb-error`'s counterpart (#331).
-    _changesRefused(msg: any) {
+    _changesRefused(msg: string) {
       this.changesError = msg || "";
       this._flashAction(msg);
     },

@@ -7774,7 +7774,7 @@ fn a_refused_branch_change_reports_in_the_projects_panel() {
     let app_js = include_str!("../assets/ui/app.ts");
     for pin in [
         "branchError: \"\"",
-        "_branchRefused(msg: any) {",
+        "_branchRefused(msg: string) {",
         "this.branchError = msg || \"\";",
     ] {
         assert!(app_js.contains(pin), "app.ts must keep the pin {pin}");
@@ -7788,7 +7788,7 @@ fn a_refused_branch_change_reports_in_the_projects_panel() {
     // act is SENT with the checkout.
     let mutate = squeeze(js_method_body(
         app_js,
-        "async _mutateBranch(verb: any, slug: any, name: any, revert: any) {",
+        "async _mutateBranch(verb: string, slug: string | null, name: string, revert: () => void) {",
     ));
     assert!(
         mutate.contains(
@@ -7857,7 +7857,7 @@ fn the_worktree_row_remove_action_stops_the_selecting_click() {
     assert!(
         html.contains(r#"onRemove: (row) => this.removeWorktree(ref, row),"#)
             || include_str!("../assets/ui/app.ts")
-                .contains("onRemove: (row: any) => this.removeWorktree(ref, row),"),
+                .contains("onRemove: (row) => this.removeWorktree(ref, row),"),
         "the Files chip's menu wires the remove action"
     );
     let app_js = include_str!("../assets/ui/app.ts");
@@ -7866,7 +7866,7 @@ fn the_worktree_row_remove_action_stops_the_selecting_click() {
         "the selection resets from the re-read listing, never from the reply's status"
     );
     let remove = app_js
-        .find("async removeWorktree(slug: any, w: any) {")
+        .find("async removeWorktree(slug: string, w: CheckoutRow) {")
         .expect("removeWorktree exists");
     let body = &app_js[remove..];
     let ask = body
@@ -8584,7 +8584,10 @@ fn the_branch_chip_carries_the_change_count_on_the_project_row() {
     );
 
     let js = include_str!("../assets/ui/app.ts");
-    for pin in ["rowTitle(p: any) {", "branchChipClick(p: any, ev: any) {"] {
+    for pin in [
+        "rowTitle(p: Project) {",
+        "branchChipClick(p: Project, ev: Event) {",
+    ] {
         assert!(js.contains(pin), "app.ts must define {pin}");
     }
 }

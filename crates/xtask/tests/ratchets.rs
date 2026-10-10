@@ -61,7 +61,7 @@ const UI_DIR: &str = "crates/ralphy-daemon/assets/ui";
 /// The table is exact and only gets shorter: a module at zero leaves it (and
 /// the `.oxlintrc.json` override) in the same change, and a new module is
 /// not in it.
-const ANY_BASELINE: &[(&str, usize)] = &[("app.ts", 333), ("wb-projects-store.ts", 1)];
+const ANY_BASELINE: &[(&str, usize)] = &[("app.ts", 164), ("wb-projects-store.ts", 1)];
 
 const SPAWNED: [&str; 3] = ["git", "gh", "ssh"];
 
