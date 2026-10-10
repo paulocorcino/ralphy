@@ -438,3 +438,124 @@ again.
    data stack, which is the shell. A field created later is declared as
    `null` first. A component never assigns a shell field (D4): it calls a
    shell method listed in `uses`, or it sends a `workbench:<verb>` event.
+
+## Amendment (2026-10-10): owners for the stage, the desk cards and operator messages; one prefix per domain
+
+Issue #623 (a part of #605, next to #621) found three boundaries that the cuts
+above do not cover: the **stage** has no owner, the cards reach the console
+through `window.WBConsole`, and there are two ways to tell the operator
+something. This amendment records where those boundaries are, and the file
+names of each domain, before any code moves. It was measured on `823cc84c`:
+`app.ts` has 4,209 lines, `wb-console.ts` 3,086, and `wb-notes.ts` 2,828.
+`wb-notes.ts` names `WBConsole` 49 times in its code, for 22 members. Six
+`wb-*.ts` modules name the shell's private `_flashAction` 19 times.
+
+1. **One prefix per domain, and no subfolders.** A module's name starts with
+   the domain it belongs to: `wb-stage-*` for the **stage**, `wb-desk-*` for
+   the **desk layout**, `wb-notes-*` for the cards, and `wb-console-*` only for
+   the console itself (`-terminal`, `-session`, `-input`, `-gpu`, `-name`,
+   `-title`). This narrows decision 1 of the ADR-0075 amendment of 2026-10-09,
+   which said that every theme of `createConsole` becomes a `wb-console-*.ts`
+   factory: a factory still leaves `createConsole`, but its file takes the
+   prefix of its domain. Nine modules are renamed in one change, before the
+   cuts, so each cut moves code into a file that already has its final name:
+
+   | Today | New name | Domain |
+   |---|---|---|
+   | `wb-console-chrome.ts` | `wb-stage-chrome.ts` | stage |
+   | `wb-console-view.ts` | `wb-stage-view.ts` | stage |
+   | `wb-console-fences.ts` | `wb-stage-fences.ts` | stage |
+   | `wb-console-fence-list.ts` | `wb-stage-fence-list.ts` | stage |
+   | `wb-console-desk.ts` | `wb-desk.ts` | desk layout |
+   | `wb-console-popups.ts` | `wb-desk-popups.ts` | desk layout |
+   | `wb-console-detach.ts` | `wb-desk-detach.ts` | desk layout |
+   | `wb-view.ts` | `wb-client-view.ts` | per-client view |
+   | `wb-viewer.ts` | `wb-file-viewer.ts` | canvas and files |
+
+   A rename changes the file, its test file and the import lines. The names on
+   `window` (`WBView`, `WBViewer`, and the others) do not change. Every module
+   keeps the `wb-` prefix and stays directly in `assets/ui/`, because
+   `xtask ui-copy` reads only those files. Subfolders need four build changes
+   and an amendment of their own.
+
+2. **The stage has two owners: one for each document, and one inside the
+   console.**
+   - **The z stack and the gestures are once per document.** Console windows,
+     fences and cards share one z counter today, and `focusWin` orders
+     `.session-window` and `.note-card` together. `createStack(document)` in
+     `wb-stage-stack.ts` holds the z counter, `focusWin` and `stackWin`. The
+     console's own work on a focus change (dormancy on blur, the GPU schedule)
+     goes in through a hook on the instance. `createGestures()` is built next to
+     it. Each entry module (`main.ts`, `detached-fence-main.ts`) builds both and
+     passes them to the console options and to the cards. The popup has its own
+     document, so it builds its own. Nothing is kept at module scope
+     (ADR-0075 D7).
+   - **The window states stay inside `createConsole`.** Maximize, lock, full
+     screen, the extent, `restoreRect` and the column paint read the windows,
+     `setWin`, the fences and the GPU budget. They become `wb-stage-*`
+     factories with typed `deps`, built inside `createConsole`:
+     `wb-stage-window.ts` (maximize, lock, full screen, extent, `restoreRect`)
+     and `wb-stage-columns.ts` (the column paint). The column grid keeps its one
+     writer, `wbColumns` in `wb-consoles-tab.ts`, and its fold, `wb-columns.ts`.
+
+3. **The desk layout stays inside `createConsole`, and the desk module owns the
+   record operations.** One document holds windows, fences and cards with one
+   `WBDeskSync`. The popup is protected by the desk sink passed in the console
+   options, as today. The record operations (create, set, forget, commit, save,
+   checkouts, the caps, then the desk read, reload, converge, flush and
+   `pagehide`) move from `wb-console.ts` to `wb-desk.ts`. The order of
+   construction does not change: the desk read still starts while
+   `createConsole` is built.
+
+4. **The cards take the console as a typed dep.** `createNotes(window,
+   document, deps)` gets `deps.console: CardHost | null`. `CardHost` is a
+   `Pick` of the console instance type that lists the members a card uses. The
+   entry modules pass `window.WBConsole`, and a unit test passes `null` or a
+   stub. `wb-notes.ts` then names `WBConsole` 0 times. The cards get no new
+   console member: the add, remove and cap logic that `wb-notes.ts` writes two
+   and three times becomes pure folds in `wb-desk-folds.ts`, which the desk and
+   the cards import. A card still writes through `saveNotes`.
+
+5. **One door for operator messages, with two drawings.** An **operator
+   message** (CONTEXT.md) is a confirm, a notice, a toast or a flash. One
+   module, `wb-messages.ts`, owns all four, and every module calls only it.
+   Each entry module builds it with `createMessages(window, document,
+   { shell })`. `main.ts` passes `() => window.getShell?.() ?? null`, and the
+   popup passes `() => null`. Inside, the door draws with the shell's Alpine
+   modal when the shell exists, and with the DOM dialog in the detached-fence
+   popup, which has no shell. The DOM dialog uses the shell's classes, so the
+   operator sees no change. The console's `askConfirm`, `askNotice`, `toast`
+   and `dismissToast` members stay, and pass the call to the door. No
+   `wb-*.ts` module names `_flashAction` after this cut.
+
+6. **The `WBConsole` and `WBNotes` member lists do not change.** Browser
+   checks call `WBConsole.notes`, `saveNotes`, `focusWin`, `focusedId`,
+   `WBNotes.cardEl`, `keepOnTop`, `onTopNow` and `flushAll` directly. A member
+   whose last internal user leaves stays, as a delegate. The test
+   `ui-tests/wb-api-members.test.mjs` compares both lists, with the type of
+   each value, with the lists at `823cc84c` (159 and 62 members). This is the
+   test that decision 2 of the ADR-0075 amendment of 2026-10-09 asks for. A
+   member list changes only by a design decision.
+
+7. **`wb-notes.ts` gets the D8 line ratchet, and is cut after the stage
+   owner.** `the_notes_script_matches_the_line_baseline` holds it at 2,828
+   lines from now on. It is cut in this order, after the cards take their
+   typed deps and the card folds are shared: the folds and the front matter
+   (`wb-notes-folds.ts`); the editor (`wb-notes-editor.ts`); then the card on
+   top, the veil and the map (`wb-notes-on-top.ts`, `wb-notes-veil.ts`,
+   `wb-notes-map.ts`).
+
+8. **Three coupling ratchets hold the boundaries.** Each is exact, as the line
+   ratchets are: a change that lowers a count lowers its baseline. They read
+   the modules through the `ui-copy` lexer, so a comment does not count.
+
+   | Ratchet | At `823cc84c` | Target |
+   |---|---|---|
+   | `NOTES_CONSOLE_REACH`: uses of `WBConsole` in `wb-notes.ts` | 49 | 0, when the cards take `CardHost` (decision 4) |
+   | `SHELL_FLASH_REACH`: uses of `_flashAction` in each `wb-*.ts` module (`app.ts` owns it) | 19 in 6 modules | an empty table, when the door exists (decision 5) |
+   | `the_column_paint_has_one_owner`: each column paint function is declared in one module | `wb-console.ts` | `wb-stage-columns.ts` (decision 2) |
+
+The order of the work: the renames, the cards' typed deps, the message door,
+the window states, the z stack and the gestures, the column paint, the desk
+records, the card folds, then the cuts of `wb-notes.ts`. The `app.ts` cuts of
+#621, other than the message door, are not part of this work.

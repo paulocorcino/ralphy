@@ -4,6 +4,10 @@ Status: accepted
 Kind: structural
 Protects: extensibility, testability
 
+Amended by ADR-0073 (2026-10-10): decision 1 of the amendment of 2026-10-09 is
+narrowed. A factory that leaves `createConsole` takes the file prefix of its
+domain (`wb-stage-*`, `wb-desk-*`), not always `wb-console-*`.
+
 ## Context
 
 The workbench script is 38 first-party classic scripts in

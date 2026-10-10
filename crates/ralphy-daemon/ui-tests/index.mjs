@@ -9,6 +9,7 @@ import "./wb-add-project-dialog.test.mjs";
 import "./shared-replies.test.mjs";
 import "./wb-agents.test.mjs";
 import "./wb-api.test.mjs";
+import "./wb-api-members.test.mjs";
 import "./wb-changes.test.mjs";
 import "./wb-changes-open.test.mjs";
 import "./wb-columns.test.mjs";
