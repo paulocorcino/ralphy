@@ -16,9 +16,9 @@ const PEER = window.location.origin;
 // The backend seam lives in the opener; forward every intent there over
 // postMessage, so a detached fence is indistinguishable from an in-shell one.
 window.WB = {
-  emit(action: string, detail?: object) {
-    if (window.opener) window.opener.postMessage({ type: "wb-emit", action, detail }, PEER);
-    else console.log("[workbench:action]", { action, ...detail });
+  emit(action, ...detail) {
+    if (window.opener) window.opener.postMessage({ type: "wb-emit", action, detail: detail[0] }, PEER);
+    else console.log("[workbench:action]", { action, ...detail[0] });
   },
 };
 

@@ -24,7 +24,7 @@ import { WBSecurityDialog } from "./wb-security-dialog.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
 import { WBSettingsDialog } from "./wb-settings-dialog.ts";
 import { WBSplit } from "./wb-split.ts";
-import { sendDocument, sendWindow } from "./wb-events.ts";
+import { createEmitter, forwardAction, sendWindow } from "./wb-events.ts";
 import type { BoardIssue, BoardRow, CanvasTab, ChangeEntry, CheckoutRow, ConfirmAsk, DiffTarget, FilePopupMessage, FleetPeer, FleetReply, Group, LedgerMissing, LedgerRecord, Listing, MenuItem, ModalEntry, Project, PromptAsk, Read, ReadState, ReadyPlan, RepoRow, RosterRow, Run, RunIssue, RunPill, SavePayload, SecurityFact, ShellLate, Slot, SpendDoc, Subscription, Sync, TabBody, TabOpen, Timer } from "./wb-types.d.ts";
 
 // A phone in either orientation: its SHORT side is under the workbench's phone
@@ -3176,7 +3176,7 @@ export function shell() {
         this.authed = false;
         this.login = { code: "", digits: ["", "", "", "", "", ""], password: "", remember: false, error: "", passwordRequired: this.login.passwordRequired };
       }
-      window.WB.emit("logoff", {});
+      window.WB.emit("logoff");
     },
 
     // Re-fetch the endpoints that returned 401 while gated; the presence
@@ -3292,7 +3292,7 @@ export function shell() {
           this.authed = true;
           this.forgetLoginSecrets();
           this.rehydrateAfterAuth();
-          window.WB.emit("login", {});
+          window.WB.emit("login");
         } else {
           this.login.error = "Invalid code or password.";
         }
@@ -3862,14 +3862,7 @@ export function shell() {
 export function wire(window: Window, document: Document) {
   // The one exit point: every gesture becomes a `workbench:action` event.
   // Each page sets its own `window.WB`, and its modules read it (ADR-0075 D9).
-  window.WB = {
-    emit(action: string, detail: object = {}) {
-      const full = { action, ...detail, at: new Date().toISOString() };
-      sendDocument(document, "workbench:action", full);
-      // eslint-disable-next-line no-console
-      console.log("[workbench:action]", full);
-    },
-  };
+  window.WB = createEmitter(document);
   window.shell = shell;
 
   // The live Alpine component instance. On `window` explicitly: two other
@@ -3988,7 +3981,7 @@ export function wire(window: Window, document: Document) {
       (e.source as Window).postMessage({ type: "wb-detach-open", desc: detachedWindows.get(e.source as Window) }, window.location.origin);
     } else if (m.type === "wb-emit") {
       // `fromWindow` lets a save's answer reach the pane that sent it.
-      window.WB.emit(m.action, { ...m.detail, fromWindow: e.source as Window });
+      forwardAction(window.WB, m.action, m.detail, e.source as Window);
     } else if (m.type === "wb-open-request" && m.detail) {
       // A link clicked inside a detached pane; `openLink` re-classifies, so the
       // popup decides nothing about what opens.
@@ -4022,14 +4015,15 @@ export function wire(window: Window, document: Document) {
 
     document.addEventListener("workbench:action", async (e) => {
       if (!daemonBacked()) return;
-      const d = e.detail || {};
+      const d = e.detail;
+      if (!d || !("project" in d)) return;
       const repo = d.project;
       if (!repo) return;
       // Every Write carries the checkout it is aimed at (#406): a Save says its
       // tab's PIN (explicit `null` = the primary, never the selection), a tree
       // gesture says the current selection.
       const checkout =
-        d.checkout !== undefined ? d.checkout : (window.getShell()?.checkoutOf?.(repo) ?? null);
+        "checkout" in d && d.checkout !== undefined ? d.checkout : (window.getShell()?.checkoutOf?.(repo) ?? null);
       const aimed = (payload: CommandPayload) => WBDaemon.withCheckout(payload, checkout);
       switch (d.action) {
         case "save": {
@@ -4039,7 +4033,7 @@ export function wire(window: Window, document: Document) {
           // A detached window's pane is `detached` in its own viewer; a tab's is
           // its tab id in this one.
           const viewer = () => (d.fromWindow ? d.fromWindow.WBViewer : window.WBViewer);
-          const id = d.fromWindow ? "detached" : fileTabId(repo, d.path as string, checkout);
+          const id = d.fromWindow ? "detached" : fileTabId(repo, d.path, checkout);
           const payload: SavePayload = { repo, path: d.path, content: d.content || "" };
           if (d.encoding) payload.encoding = d.encoding;
           if (d.bom) payload.bom = true;
@@ -4100,7 +4094,7 @@ export function wire(window: Window, document: Document) {
             ? await c.askPrompt({
                 // No placeholder: a plausible filename in an empty field reads as
                 // a name already chosen, and operators pressed Enter on it.
-                title: newEntryTitle(folder ? "folder" : "file", d.path as string),
+                title: newEntryTitle(folder ? "folder" : "file", d.path),
                 message: "",
                 placeholder: "",
               })
@@ -4123,7 +4117,7 @@ export function wire(window: Window, document: Document) {
         }
         case "delete": {
           // Irreversible (a folder removes recursively): confirm first.
-          const name = d.title || d.path!.split("/").pop() || d.path;
+          const name = d.title || d.path.split("/").pop() || d.path;
           const message = d.isFolder
             ? `Delete folder “${name}” and its contents? This cannot be undone.`
             : `Delete “${name}”? This cannot be undone.`;
@@ -4140,7 +4134,7 @@ export function wire(window: Window, document: Document) {
           // "not found" on a delete says the ROW is the lie: re-list the parent
           // so the ghost ends up off the screen.
           if (/not found/i.test(reason)) {
-            sendWindow(window, "workbench:tree-dirty", { rel: parentRel(d.path as string) });
+            sendWindow(window, "workbench:tree-dirty", { rel: parentRel(d.path) });
           }
           break;
         }

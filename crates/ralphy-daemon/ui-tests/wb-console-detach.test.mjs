@@ -155,3 +155,21 @@ test("a handshake message from another origin is ignored", (t) => {
   message(ORIGIN);
   assert.equal(popups.isDetached("f"), false);
 });
+
+test("a popup's wb-emit reaches WB only when it names a gesture", (t) => {
+  const emitted = withWB(t);
+  const { listeners, detachFence } = harness();
+  const handle = { closed: false, close() {}, postMessage() {} };
+  detachFence("f", { handle });
+  const post = (data) => listeners.message({ origin: ORIGIN, source: handle, data });
+  try {
+    post({ type: "wb-emit", action: "file.delete", detail: { repo: "o/r", path: "a" } });
+    post({ type: "wb-emit", action: "toString", detail: {} });
+    // CONTROL: a gesture name is forwarded with its detail.
+    post({ type: "wb-emit", action: "console-open", detail: { repo: "o/r", agent: null, plain: true } });
+    assert.deepEqual(emitted, [{ type: "console-open", detail: { repo: "o/r", agent: null, plain: true } }]);
+  } finally {
+    // Bring the fence home, so the heartbeat of the detach stops.
+    post({ type: "wb-fence-reattach" });
+  }
+});

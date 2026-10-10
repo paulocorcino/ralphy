@@ -14,9 +14,9 @@ export function wireDetached(window: Window, document: Document) {
   // there over postMessage, so a detached window is indistinguishable from
   // an in-shell tab.
   window.WB = {
-    emit(action, detail) {
-      if (window.opener) window.opener.postMessage({ type: "wb-emit", action, detail }, PEER);
-      else console.log("[workbench:action]", { action, ...detail });
+    emit(action, ...detail) {
+      if (window.opener) window.opener.postMessage({ type: "wb-emit", action, detail: detail[0] }, PEER);
+      else console.log("[workbench:action]", { action, ...detail[0] });
     },
   };
 

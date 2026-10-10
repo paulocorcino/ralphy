@@ -15,6 +15,7 @@ import { WBGeometry } from "./wb-geometry.ts";
 import * as WBDeskFolds from "./wb-desk-folds.ts";
 import { WBWindowState } from "./wb-window-state.ts";
 import { WBDetachLink } from "./wb-detach-link.ts";
+import { forwardAction } from "./wb-events.ts";
 import type { PopupEntry, PopupMember, PopupRegistry } from "./wb-console-popups.ts";
 import type { DetachReason } from "./wb-console-session.ts";
 import type { FenceList } from "./wb-console-fence-list.ts";
@@ -42,6 +43,14 @@ type PeerEvent = { type: "beat" | "tick" | "gone"; at?: number };
 
 // What a popup says about a card's file: the card's id and the name it gave.
 type NoteReport = Pick<DetachMessage, "noteId" | "path" | "claim">;
+
+/** A message a detached fence window sends its opener (`wb-detached-fence.ts`). */
+type FencePopupMessage =
+  | { type: "wb-fence-ready" }
+  | { type: "wb-emit"; action: unknown; detail?: unknown }
+  | ({ type: "wb-note-named" } & NoteReport)
+  | ({ type: "wb-note-claimed" } & NoteReport)
+  | { type: "wb-fence-reattach" };
 
 // What the opener's side reads from the console, and nothing else.
 export type DetachDeps = {
@@ -469,8 +478,8 @@ export function createDetach(deps: DetachDeps) {
     let owner: string | null = null;
     for (const [id, entry] of popups.entries()) if (entry.handle === e.source) owner = id;
     if (owner == null) return;
-    const m = e.data;
-    if (!m) return;
+    const m: FencePopupMessage | null = e.data;
+    if (!m || typeof m !== "object") return;
     if (m.type === "wb-fence-ready") {
       const entry = popups.entry(owner)!;
       entry.greeted = true;
@@ -484,7 +493,7 @@ export function createDetach(deps: DetachDeps) {
         location.origin,
       );
     } else if (m.type === "wb-emit") {
-      WB.emit(m.action, m.detail);
+      forwardAction(WB, m.action, m.detail);
     } else if (m.type === "wb-note-named") {
       recordNoteName(owner, m);
     } else if (m.type === "wb-note-claimed") {

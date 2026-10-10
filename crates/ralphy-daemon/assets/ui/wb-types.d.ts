@@ -499,7 +499,7 @@ export type MenuItem =
 /** A message a detached file window sends the shell (`wb-detached.ts`). */
 export type FilePopupMessage =
   | { type: "wb-detach-ready" }
-  | { type: "wb-emit"; action: string; detail?: object }
+  | { type: "wb-emit"; action: unknown; detail?: unknown }
   | { type: "wb-open-request"; detail?: OpenRequest }
   | { type: "wb-reattach"; desc?: FileDescriptor };
 

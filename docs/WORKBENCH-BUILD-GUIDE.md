@@ -26,15 +26,13 @@ are in [TESTING-TRAPS.md](TESTING-TRAPS.md#the-workbench-page-in-a-browser).
 
 A gesture (open, rename, delete, save, console-open, branch-switch,
 setting-change) becomes one `workbench:action` event through `WB.emit(action,
-detail)` in `app.ts`. The page itself does not touch the file system, git or an
-agent. `wb-daemon.ts` turns an action into a daemon verb (`ACTION_TO_VERB`) and
-routes the daemon's pushes back into the page.
+detail)` (`createEmitter` in `wb-events.ts`). The page itself does not touch
+the file system, git or an agent. `wb-daemon.ts` turns an action into a daemon
+verb (`ACTION_TO_VERB`) and routes the daemon's pushes back into the page.
 
-The live list of actions is the code:
-
-```sh
-grep -rn "WB.emit(" crates/ralphy-daemon/assets/ui/*.ts
-```
+`WorkbenchActions` in `globals.d.ts` lists every action and its detail, and
+`tsc` checks each `WB.emit` call against it. A popup window posts its actions
+to the opener, which forwards only the names in that list (`forwardAction`).
 
 An action name and its payload keys are a wire contract. Change both sides in
 the same commit, or leave both unchanged.

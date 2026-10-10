@@ -283,7 +283,7 @@ interface Window {
   };
   /** The event bus of `app.ts`, or the opener bridge of a torn-off page. */
   WB: {
-    emit(name: string, detail?: object): void;
+    emit<K extends WorkbenchActionName>(action: K, ...detail: WorkbenchEmitArgs<K>): void;
   };
   /** The consoles (`wb-console.ts`). */
   WBConsole: ReturnType<typeof import("./wb-console.ts").createConsole>;
@@ -302,38 +302,83 @@ interface Window {
   };
 }
 
+/** The fields of a file-tree gesture on one node (`wb-files.ts`). */
+type WorkbenchNodeDetail = { project: string | null; path: string; title: string; isFolder: boolean };
+
+/** Every gesture `WB.emit` sends, and the detail its senders give. `null`: the
+ * gesture has no detail. `wb-events.ts` lists the same names at run time, for
+ * the popup bridges. `wb-daemon.ts` forwards `run-start` and `command` to the
+ * daemon; the page itself handles the others. */
+interface WorkbenchActions {
+  "kanban-toggle": { open: boolean };
+  /** `checkout`: the checkout the gesture aims at; `null` is the primary tree. */
+  "branch-switch": { project: string | null; branch: string; checkout: string | null };
+  /** `from`: the branch the new one starts from. */
+  "branch-create": { project: string | null; name: string; from: string; checkout: string | null };
+  "run-issue-focus": { project: string | null; runid: string | undefined; issue: number };
+  /** The daemon refuses a missing `agent` or `branchMode`. A `null`
+   * `planAgent` means the agent also plans. */
+  "run-start": { project: string | null; agent: string; planAgent: string | null; branchMode: string; command: string };
+  /** A run verb with no parameter (triage, push). */
+  command: { project: string | null; verb: string };
+  "issue-label-change": { project: string | null; number: number; label: string; op: "add" | "remove" };
+  login: null;
+  logoff: null;
+  "open-refused": { project: string | null; path: string; reason: string };
+  "open-diff": { project: string; path: string; checkout: string | null };
+  "detach-blocked": { project: string; path: string };
+  detach: { project: string; path: string };
+  /** `agent`: `null` for a plain console. */
+  "console-open": { repo: string | null; agent: string | null; plain: boolean };
+  "console-close": { repo: string | null; agent: string | null | undefined };
+  "console-restart": { repo: string | null; agent: string | null | undefined };
+  /** `from`, `to`: `null` is the primary tree. */
+  "console-switch-checkout": { repo: string | null; from: string | null; to: string | null };
+  "worktree-created": { project: string; name: string; message: string };
+  "fence-reattach": { fence: string };
+  "fence-focus": { fence: string };
+  "fence-detach": { fence: string };
+  "fence-detach-blocked": { fence: string };
+  "fence-detach-refused": { fence: string; reason: string };
+  "fence-remove-refused": { fence: string; reason: string };
+  /** `from`, `to`: the full rel paths before and after. */
+  rename: WorkbenchNodeDetail & { from: string; to: string };
+  open: WorkbenchNodeDetail & { ftype: string };
+  delete: WorkbenchNodeDetail;
+  "copy-path": WorkbenchNodeDetail;
+  /** `path`: the directory the new entry goes in. */
+  create: { project: string | null; path: string; kind: string; isFolder: boolean };
+  /** `project`: `null` for a setting of this browser. */
+  "setting-change": { project: string | null; key: string; value: unknown };
+  /** The pane's text, its encoding and its byte order mark. */
+  save: {
+    project: string;
+    path: string;
+    bytes: number;
+    content: string;
+    checkout: string | null;
+    encoding: string | undefined;
+    bom: boolean;
+  };
+  reload: { project: string; path: string };
+}
+
+type WorkbenchActionName = keyof WorkbenchActions;
+
+/** The arguments of `WB.emit` after the action name. A popup bridge adds the
+ * popup as `fromWindow`. */
+type WorkbenchEmitArgs<K extends WorkbenchActionName> = [WorkbenchActions[K]] extends [null]
+  ? []
+  : [detail: WorkbenchActions[K] & { fromWindow?: Window }];
+
 /** The detail of `workbench:action`: the gesture (`action`), the fields its
  * sender gave, and when it was sent (`at`). A gesture a popup sent carries the
- * popup in `fromWindow`. Each gesture gives only its own fields. */
+ * popup in `fromWindow`. */
 type WorkbenchAction = {
-  action: string;
-  at: string;
-  project?: string | null;
-  /** The checkout the gesture aims at; `null` is the primary tree. */
-  checkout?: string | null;
-  path?: string;
-  title?: string;
-  /** `rename`: the full rel paths before and after. */
-  from?: string;
-  to?: string;
-  /** `create`: `folder` or `file`. */
-  kind?: string;
-  isFolder?: boolean;
-  /** `save`: the pane's text, its encoding and its byte order mark. */
-  content?: string;
-  encoding?: string;
-  bom?: boolean;
-  message?: string;
-  /** `setting-change`: the setting's key. */
-  key?: string;
-  /** `command`: the verb. */
-  verb?: string;
-  /** `run-start`: the run parameters. */
-  agent?: string;
-  planAgent?: string;
-  branchMode?: string;
-  fromWindow?: Window;
-};
+  [K in WorkbenchActionName]: { action: K; at: string; fromWindow?: Window } & (WorkbenchActions[K] extends null
+    ? unknown
+    : WorkbenchActions[K]);
+}[WorkbenchActionName];
 
 /** A file a pane can reopen anywhere, a tab or a detached popup, with its
  * current content (`descOf` in `wb-viewer.ts`). */

@@ -42,7 +42,7 @@ export function createDaemon(window: Window, document: Document, location: Locat
 
   // Which `workbench:action`s reach the daemon, and as which verb. The generic
   // `command` action carries its verb in the event detail (triage/push).
-  const ACTION_TO_VERB: Record<string, string> = { "run-start": "run" };
+  const ACTION_TO_VERB: Partial<Record<WorkbenchActionName, string>> = { "run-start": "run" };
 
   let nextId = 1;
 
@@ -435,13 +435,14 @@ export function createDaemon(window: Window, document: Document, location: Locat
   // values the daemon validates.
   document.addEventListener("workbench:action", (e) => {
     // A `workbench:action` always carries its `action`; a bare event names none.
-    const d = e.detail || ({} as WorkbenchAction);
+    const d = e.detail;
+    if (!d) return;
     const verb = ACTION_TO_VERB[d.action] || (d.action === "command" ? d.verb : null);
     if (!verb) return;
     const payload =
       d.action === "run-start"
         ? { repo: d.project, agent: d.agent, planAgent: d.planAgent, branchMode: d.branchMode }
-        : { repo: d.project };
+        : { repo: "project" in d ? d.project : undefined };
     // The CLI refuses by EXITING NON-ZERO after streaming its complaint to
     // stdout — `WBFail.isError` never fires for that shape, which is why a
     // refusal used to live only in the raw feed (#331). Both terminal paths

@@ -29,9 +29,6 @@ import type { Group } from "./wb-fleet.ts";
 /** What a failed read hands back: a thrown error, or whatever a socket rejected with. */
 type Failure = { message?: string } | null | undefined;
 
-/** The fields a node gesture adds to its `workbench:action` detail. */
-type NodeExtra = { [field: string]: string | boolean };
-
 /** The live `/ws/tree` subscription of the open project. */
 type TreeSub = ReturnType<WBDaemonApi["subscribeTree"]>;
 
@@ -178,7 +175,8 @@ export function wbFiles() {
           apply: (e: WunderbaumEvent) => {
             // The shared listener takes full rel paths.
             const parent = parentRel(this.relPath(e.node));
-            this.emit("rename", e.node, {
+            window.WB.emit("rename", {
+              ...this.nodeDetail(e.node),
               from: parent ? `${parent}/${e.oldValue}` : e.oldValue,
               to: parent ? `${parent}/${e.newValue}` : e.newValue,
             });
@@ -958,7 +956,7 @@ export function wbFiles() {
     openFile(node: WunderbaumNode) {
       const path = this.relPath(node);
       const ftype = classify(node.title);
-      this.emit("open", node, { ftype });
+      window.WB.emit("open", { ...this.nodeDetail(node), ftype });
       // A note opens as a CARD, not as a tab (ADR-0064 §11): on the stage if
       // it is not there yet, and by a jump if it is.
       if (ftype === "note") {
@@ -1028,7 +1026,7 @@ export function wbFiles() {
         { label: "New file…", icon: "bi-file-earmark-plus", run: () => this.emitCreate(node, "file") },
         { label: "New folder…", icon: "bi-folder-plus", run: () => this.emitCreate(node, "folder") },
         node && { sep: true as const },
-        node && { label: "Delete", icon: "bi-trash", danger: true, run: () => this.emit("delete", node) },
+        node && { label: "Delete", icon: "bi-trash", danger: true, run: () => window.WB.emit("delete", this.nodeDetail(node)) },
       ].filter(Boolean);
       this.renderMenu(x, y, items);
     },
@@ -1062,7 +1060,7 @@ export function wbFiles() {
         path = base + sep + rel.split("/").join(sep);
       }
       navigator.clipboard?.writeText(path).catch(() => {});
-      this.emit("copy-path", node, { path });
+      window.WB.emit("copy-path", { ...this.nodeDetail(node), path });
     },
 
     // Duplicate a file beside itself, NO prompt. `file.copy` refuses an
@@ -1168,15 +1166,14 @@ export function wbFiles() {
       return newEntryTitle(kind, this.createDir(this.rawTree()?.getActiveNode() || null));
     },
 
-    // Node-shaped gestures funnel through the shared WB.emit.
-    emit(action: string, node: WunderbaumNode, extra: NodeExtra = {}) {
-      window.WB.emit(action, {
+    // The fields every gesture on one node sends.
+    nodeDetail(node: WunderbaumNode): WorkbenchNodeDetail {
+      return {
         project: this.$store.projects.openSlug,
         path: this.relPath(node),
         title: node.title,
         isFolder: this.isFolder(node),
-        ...extra,
-      });
+      };
     },
 
     // The listeners, added once when Alpine builds the files.
