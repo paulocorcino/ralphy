@@ -47,6 +47,10 @@ import { WBView } from "./wb-view.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
 import { sendDocument } from "./wb-events.ts";
+import type { Painted } from "./wb-columns.ts";
+import type { TerminalDeps, TerminalOpts } from "./wb-console-terminal.ts";
+import type { ConfirmOptions } from "./wb-console-title.ts";
+import type { Group } from "./wb-fleet.ts";
 import type { ConsoleOpts, ConsoleTerm, ConsoleWin, DeskChange, DeskFence, DeskNote, DeskRecord, DeskReply, DeskWindowFields, ExtentOpts, NoteCard, Rect, SpawnCarry, Stacked, WindowSnapshot } from "./wb-types.d.ts";
 
 // The input folds are `wb-console-input.ts`: pure functions of their arguments.
@@ -450,7 +454,7 @@ export function createConsole(window: Window, document: Document, location: Pick
   // thread, and an automated browser dismisses it by default — every guarded
   // click would silently cancel.
   // `notice: true` is the one-button form: OK alone, focused, Enter/Escape dismiss.
-  function askConfirm({ title, message, confirmLabel = "Confirm", danger = false, notice = false }: import("./wb-console-title.ts").ConfirmOptions) {
+  function askConfirm({ title, message, confirmLabel = "Confirm", danger = false, notice = false }: ConfirmOptions) {
     const scrim = document.createElement("div");
     scrim.className = "modal-scrim wb-confirm";
     const modal = document.createElement("div");
@@ -1409,10 +1413,10 @@ export function createConsole(window: Window, document: Document, location: Pick
   // this is only its last answer, for the placeholders of peer projects.
   // `readFleet` is the shell's fleet read on demand, for a window that saw
   // its peer fail.
-  const peerGroups = new Map<string, import("./wb-fleet.ts").Group>();
+  const peerGroups = new Map<string, Group>();
   let wakePeer: ((daemon: string) => Promise<boolean>) | null = null;
   let readFleet: (() => void) | null = null;
-  function ingestFleet(groups: import("./wb-fleet.ts").Group[] | null | undefined, hooks: { wake?: (daemon: string) => Promise<boolean>; read?: () => void } | null | undefined) {
+  function ingestFleet(groups: Group[] | null | undefined, hooks: { wake?: (daemon: string) => Promise<boolean>; read?: () => void } | null | undefined) {
     peerGroups.clear();
     for (const g of groups || []) if (g && g.daemon && !g.local) peerGroups.set(g.daemon, g);
     if (typeof hooks?.wake === "function") wakePeer = hooks.wake;
@@ -1513,7 +1517,7 @@ export function createConsole(window: Window, document: Document, location: Pick
   // Paint `painted` (`WBColumns.painted`). `unmax` is the old first console
   // after a restore: it stops being the maximized console. `persist` writes
   // each change of the maximize to the desk.
-  function applyColumns(painted: import("./wb-columns.ts").Painted[] | null | undefined, opts?: { cap?: number; unmax?: string | null; raise?: boolean; persist?: boolean }) {
+  function applyColumns(painted: Painted[] | null | undefined, opts?: { cap?: number; unmax?: string | null; raise?: boolean; persist?: boolean }) {
     const list = painted || [];
     const cap = opts?.cap ?? 1;
     const persist = !!opts?.persist;
@@ -1964,7 +1968,7 @@ export function createConsole(window: Window, document: Document, location: Pick
   // synchronously. `read()` first, because `readText()` resolves "" for an
   // image-only clipboard (an iOS screenshot). ONE call: each read raises
   // Safari's "Paste" callout, so a text fallback would ask twice.
-  function readClipboard(): ReturnType<import("./wb-console-terminal.ts").TerminalDeps["readClipboard"]> {
+  function readClipboard(): ReturnType<TerminalDeps["readClipboard"]> {
     try {
       const clip = navigator.clipboard;
       if (typeof clip.read !== "function") {
@@ -1979,7 +1983,7 @@ export function createConsole(window: Window, document: Document, location: Pick
   // Build the chrome and attach a live terminal. Shared by `open()` and the
   // load-time restore; `termOpts` is the `attachTerminal` opts, `desk` the
   // record this window continues (absent for a fresh launch).
-  function spawnWindow(termOpts: import("./wb-console-terminal.ts").TerminalOpts, label: string | null | undefined, repo: string | null | undefined, desk?: SpawnCarry) {
+  function spawnWindow(termOpts: TerminalOpts, label: string | null | undefined, repo: string | null | undefined, desk?: SpawnCarry) {
     const kind = termOpts.console ? "console" : "agent";
     const { win, body, title, restartBtn, closeBtn } = buildChrome(label, repo, desk, kind);
     // Read at launch, never later: a rename reaches the next restart and never
@@ -2019,7 +2023,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     // fleet read.
     const peerDaemon = WBFleet?.refDaemon(repo) || "";
     const PEER_BUTTON: Record<string, string> = { wake: "Wake", retry: "Try again" };
-    const showPeerDown = (group: import("./wb-fleet.ts").Group | null) => {
+    const showPeerDown = (group: Group | null) => {
       let strip: HTMLElement | null = win.querySelector<HTMLElement>(".session-peer-down");
       if (!strip) {
         strip = document.createElement("div") as HTMLElement;
@@ -2055,7 +2059,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     // NAMED, not inline: a dormant console rebuilds its terminal (`wakeWindow`)
     // and the rebuild must be wired to the same chrome. Everything closes over
     // `win`, never a particular terminal.
-    const termWiring: import("./wb-console-terminal.ts").TerminalOpts = {
+    const termWiring: TerminalOpts = {
       ...termOpts,
       onCtrlLatch: (on) => {
         if (ctrlBtn) ctrlBtn.setAttribute("aria-pressed", on ? "true" : "false");
@@ -2520,7 +2524,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     }
   }
 
-  async function spawnOrMissing(req: import("./wb-console-terminal.ts").TerminalOpts, label: string | null | undefined, repo: string | null | undefined, carry: SpawnCarry) {
+  async function spawnOrMissing(req: TerminalOpts, label: string | null | undefined, repo: string | null | undefined, carry: SpawnCarry) {
     try {
       if (req.checkout && !(await checkoutStillThere(repo, req.checkout))) {
         return spawnPlaceholder({ ...carry, checkout: req.checkout }, req.checkout);

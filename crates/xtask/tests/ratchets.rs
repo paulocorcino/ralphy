@@ -36,8 +36,11 @@ const PROMPT_GH_ISSUE_VIEW: usize = 20;
 /// Lines of `crates/ralphy-daemon/assets/ui/app.ts`, the `shell()` script that
 /// ADR-0073 cuts into components (D8). Each cut lowers it in the same change.
 /// 4246 since the files group became the components of `wb-files.ts` and
-/// `wb-move-dialog.ts` (#621); 4221 since the shell's `WB.emit` moved to
-/// `wb-events.ts` (#651).
+/// `wb-move-dialog.ts` (#621); 4243 since the workbench events became one
+/// typed list sent through `wb-events.ts` (#633); 4227 since the shell's types
+/// moved to a `.d.ts` file and `FleetPeer` to `wb-fleet.ts` (#613); 4221 since
+/// the shell's `WB.emit` moved to `wb-events.ts` (#651). Its shell-only types
+/// are in `wb-shell-types.d.ts` and it imports them on one line (#653).
 const APP_TS_LINES: usize = 4221;
 /// Lines of `crates/ralphy-daemon/assets/ui/wb-console.ts`, the console
 /// factory (ADR-0073 D8, which starts this ratchet with the first fold move).
@@ -51,8 +54,10 @@ const APP_TS_LINES: usize = 4221;
 /// view moved to `wb-console-view.ts` (#621); 3423 since its fence list moved
 /// to `wb-console-fence-list.ts` (#621); 3084 since the opener's side of its
 /// detach moved to `wb-console-detach.ts` (#621); 3077 since the paste key's
-/// work after its clipboard read moved to `wb-console-input.ts` (#652).
-const WB_CONSOLE_TS_LINES: usize = 3077;
+/// work after its clipboard read moved to `wb-console-input.ts` (#652); 3081
+/// since each type it reads from another module is imported on an
+/// `import type` line that names the owner module, not written inline (#653).
+const WB_CONSOLE_TS_LINES: usize = 3081;
 
 /// The served workbench modules, from the repo root. `vendor/` and
 /// `ui-tests/` are not read.
