@@ -2815,7 +2815,7 @@ fn the_explorer_opens_a_note_as_a_card() {
         "a note's file actions must use the workbench's own dialog and field"
     );
     assert!(
-        notes.contains("WBConsole.askConfirm({"),
+        notes.contains("consoleHost?.askConfirm({"),
         "deleting a note's FILE must ask first (ADR-0064 §11)"
     );
     // THE LOCK PINS THE CARD AND NOTHING ELSE (ADR-0064, amendment
@@ -5258,7 +5258,7 @@ fn a_note_card_is_stacked_and_wears_the_console_chrome() {
         "wb-console.ts must export stackWin, the tier a restored surface enters by"
     );
     assert!(
-        notes.contains("window.WBConsole.stackWin?.(el)"),
+        notes.contains("consoleHost?.stackWin?.(el)"),
         "a card must enter the window tier when it is built (ADR-0064 §8 amendment)"
     );
     // One titlebar vocabulary on the plane: the card's controls are the

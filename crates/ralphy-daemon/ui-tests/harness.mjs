@@ -183,7 +183,7 @@ export function loadShell(opts = {}) {
   }
   window.WBDaemon = createDaemon(window, document, window.location);
   window.WBViewer = createViewer(window, document);
-  window.WBNotes = createNotes(window, document);
+  window.WBNotes = createNotes(window, document, { console: window.WBConsole });
   // `shell()` reads the page's globals on the real `window` and `document`:
   // the last page loaded owns them, as in `loadComponent`.
   globalThis.window = window;
