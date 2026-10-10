@@ -115,7 +115,7 @@ export function wireDetachedFence(window: Window, document: Document) {
     grid = WBColumns.flat(kept).length >= 2 ? kept : [];
     paintGrid(kept);
   }
-  document.addEventListener("workbench:column-restore", (e: any) => restoreColumn(e.detail.id));
+  document.addEventListener("workbench:column-restore", (e) => restoreColumn(e.detail.id));
   document.addEventListener("workbench:columns-stale", repaintColumns);
   document.addEventListener("workbench:consoles-changed", repaintColumns);
   window.addEventListener("resize", repaintColumns);
@@ -206,7 +206,7 @@ export function wireDetachedFence(window: Window, document: Document) {
     // before this window's own `wb-fence-reattach`, and the channel
     // still reaches the opener after it reloads. `MEMBERS` learns the
     // name too, because it is what `popup-here` hands back.
-    document.addEventListener("workbench:note-named", (e: any) => {
+    document.addEventListener("workbench:note-named", (e) => {
       const noteId = e.detail?.id;
       const path = e.detail?.path;
       if (!noteId || typeof path !== "string") return;
@@ -221,7 +221,7 @@ export function wireDetachedFence(window: Window, document: Document) {
     // The name chosen BEFORE the first write, by the same two routes. If
     // this window closes with that write in flight, the opener knows
     // which file to read on re-attach.
-    document.addEventListener("workbench:note-claimed", (e: any) => {
+    document.addEventListener("workbench:note-claimed", (e) => {
       const noteId = e.detail?.id;
       const claim = e.detail?.claim;
       if (!noteId || typeof claim !== "string") return;

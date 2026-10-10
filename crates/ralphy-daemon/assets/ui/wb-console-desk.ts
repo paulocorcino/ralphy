@@ -15,6 +15,7 @@
 import { WBGeometry } from "./wb-geometry.ts";
 import * as WBConsoleSession from "./wb-console-session.ts";
 import * as WBDeskFolds from "./wb-desk-folds.ts";
+import { sendDocument } from "./wb-events.ts";
 import type { PopupRegistry } from "./wb-console-popups.ts";
 
 const { fenceMembership } = WBGeometry;
@@ -287,7 +288,7 @@ export function createDesk(deps: DeskDeps) {
         raiseMaximized();
         // Every stored id that can be on this stage is on it now: the shell
         // restores the columns from here, once.
-        document.dispatchEvent(new CustomEvent("workbench:desk-restored"));
+        sendDocument(document, "workbench:desk-restored");
         deskSettled = true;
         applyLanding();
       })

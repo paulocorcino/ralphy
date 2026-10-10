@@ -240,7 +240,7 @@ export const WBDevice = (function () {
       else if (res.status === 409 && left > 0) win.setTimeout(() => quiet(left - 1), RETRY_MS);
     }
     const quiet = (left = RETRIES) => send(left).catch(() => {});
-    win.document.addEventListener("workbench:action", (e: any) => {
+    win.document.addEventListener("workbench:action", (e: DocumentEventMap["workbench:action"]) => {
       if (e.detail && e.detail.action === "login") quiet();
     });
     quiet();

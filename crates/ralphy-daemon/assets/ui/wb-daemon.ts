@@ -27,17 +27,6 @@ type PresenceHandlers = {
   onOpen?: (reopened: boolean) => void;
 };
 
-/** The detail of a `workbench:action` that may reach the daemon. */
-type ActionDetail = {
-  action: string;
-  /** The verb of a `command` action. */
-  verb?: string;
-  project?: string;
-  agent?: string;
-  planAgent?: string;
-  branchMode?: string;
-};
-
 export function createDaemon(window: Window, document: Document, location: Location) {
   // The tagged-frame codec, mirrored from src/protocol.rs (see wb-console.ts).
   const TAG_TERMINAL = 0x01;
@@ -129,8 +118,8 @@ export function createDaemon(window: Window, document: Document, location: Locat
   // `(repo, name)`. This is the single path every Observe AND Write verb takes,
   // which is what "reset from any verb" asks for. A listener that throws must
   // never reject the read it rode on.
-  const unknownCheckout: ((repo: string | undefined, name: string) => void)[] = [];
-  function onUnknownCheckout(fn: (repo: string | undefined, name: string) => void) {
+  const unknownCheckout: ((repo: string | null | undefined, name: string) => void)[] = [];
+  function onUnknownCheckout(fn: (repo: string | null | undefined, name: string) => void) {
     unknownCheckout.push(fn);
   }
   function noteUnknownCheckout(payload: CommandPayload, reply: DaemonReply) {
@@ -444,9 +433,9 @@ export function createDaemon(window: Window, document: Document, location: Locat
   // Turn a daemon-bound `workbench:action` into a Spawn call. `project`→`repo`
   // (the handler reads `payload.repo`); run params ride the payload as closed-enum
   // values the daemon validates.
-  document.addEventListener("workbench:action", (e: Event) => {
+  document.addEventListener("workbench:action", (e) => {
     // A `workbench:action` always carries its `action`; a bare event names none.
-    const d = (e as CustomEvent<ActionDetail | null>).detail || ({} as ActionDetail);
+    const d = e.detail || ({} as WorkbenchAction);
     const verb = ACTION_TO_VERB[d.action] || (d.action === "command" ? d.verb : null);
     if (!verb) return;
     const payload =

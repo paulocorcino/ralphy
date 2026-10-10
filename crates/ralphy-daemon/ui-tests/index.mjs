@@ -30,6 +30,7 @@ import "./wb-daemon.test.mjs";
 import "./wb-resume.test.mjs";
 import "./wb-desk-sink.test.mjs";
 import "./wb-encoding.test.mjs";
+import "./wb-events.test.mjs";
 import "./wb-detach-file.test.mjs";
 import "./wb-detach-link.test.mjs";
 import "./wb-detached.test.mjs";

@@ -20,6 +20,7 @@ import { WBAgents } from "./wb-agents.ts";
 import { WBColumns } from "./wb-columns.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { WBProject } from "./wb-project.ts";
+import { sendWindow } from "./wb-events.ts";
 
 export function wbConsoleMenus() {
   // Every `shell()` member this component's code or markup reads or calls.
@@ -148,7 +149,7 @@ export function wbConsoleMenus() {
     // before toggling its own. The shell, this toolbar and the columns list
     // each hear it and close their own menus.
     closeMenus() {
-      window.dispatchEvent(new CustomEvent("workbench:menus-close"));
+      sendWindow(window, "workbench:menus-close");
     },
     closeOwnMenus() {
       this.agentMenu = false;
@@ -583,7 +584,7 @@ export function wbColumns() {
     },
     // ONE dropdown at a time (see `wbConsoleMenus`).
     closeMenus() {
-      window.dispatchEvent(new CustomEvent("workbench:menus-close"));
+      sendWindow(window, "workbench:menus-close");
     },
 
     // The listeners, added once when Alpine builds the consoles tab.
@@ -594,26 +595,26 @@ export function wbColumns() {
       window.WBConsole?.setDeskGoneHook?.((ids: any) => this.checkColumnDesk(ids));
 
       // The Alpine mirror of the live console count.
-      document.addEventListener("workbench:consoles-changed", (e: any) => {
+      document.addEventListener("workbench:consoles-changed", (e) => {
         this.consoleCount = e.detail.count;
         this.paintColumns();
       });
 
       // A console's title bar asked for the columns list, or to restore a column;
       // or something changed the cap (maximize, first measurable frame).
-      document.addEventListener("workbench:column-open", (e: any) => {
+      document.addEventListener("workbench:column-open", (e) => {
         this.toggleColumnMenu(e.detail.id, e.detail.rect);
       });
-      document.addEventListener("workbench:column-restore", (e: any) => {
+      document.addEventListener("workbench:column-restore", (e) => {
         this.restoreColumn(e.detail.id);
       });
       document.addEventListener("workbench:columns-stale", () => {
         this.paintColumns();
       });
-      document.addEventListener("workbench:columns-leave", (e: any) => {
+      document.addEventListener("workbench:columns-leave", (e) => {
         this.leaveColumns(e.detail.ids);
       });
-      document.addEventListener("workbench:fence-columns", (e: any) => {
+      document.addEventListener("workbench:fence-columns", (e) => {
         this.columnsFromFence(e.detail.items);
       });
       document.addEventListener("workbench:desk-restored", () => {
@@ -630,7 +631,7 @@ export function wbColumns() {
       });
 
       // …and of the stage extent, for the footer pill (#338).
-      document.addEventListener("workbench:stage-extent", (e: any) => {
+      document.addEventListener("workbench:stage-extent", (e) => {
         this.stageW = e.detail.width;
         this.stageH = e.detail.height;
       });

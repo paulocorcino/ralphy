@@ -24,6 +24,7 @@ import { WBSecurityDialog } from "./wb-security-dialog.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
 import { WBSettingsDialog } from "./wb-settings-dialog.ts";
 import { WBSplit } from "./wb-split.ts";
+import { sendDocument, sendWindow } from "./wb-events.ts";
 
 /** A peer of `/api/fleet`. */
 export type FleetPeer = {
@@ -144,9 +145,9 @@ export function shell() {
       // Each part resets only its own state, so the order is not a contract;
       // the files hear it in `wb-files.ts`.
       window.addEventListener("workbench:project-changed", () => this.boardFollowProject());
-      window.addEventListener("workbench:project-changed", (e: any) => this.gitFollowProject(e.detail.slug));
+      window.addEventListener("workbench:project-changed", (e) => this.gitFollowProject(e.detail.slug));
       // The open checkout's HEAD moved (the files' `/ws/tree` socket says so).
-      window.addEventListener("workbench:head-moved", (e: any) => this.gitFollowHead(e.detail.ref));
+      window.addEventListener("workbench:head-moved", (e) => this.gitFollowHead(e.detail.ref));
       // The console module cannot know whether THIS document's connection is
       // alive; hand it the heartbeat verdict, or its hidden-time fallback
       // resets every console after a minute on another tab.
@@ -213,7 +214,7 @@ export function shell() {
       this._changesSub?.resume?.(verdict);
       this._presenceSub?.resume?.(verdict);
       // The files' `/ws/tree` socket (wb-files.ts).
-      window.dispatchEvent(new CustomEvent("workbench:sockets-resume", { detail: { stale: verdict } }));
+      sendWindow(window, "workbench:sockets-resume", { stale: verdict });
     },
 
     // The `/ws` presence heartbeat (daemon mode). Each tick stamps
@@ -513,7 +514,7 @@ export function shell() {
         this.shareProjectNames();
         this.shareFleet();
         // The files compare the peer of the open project with this read.
-        window.dispatchEvent(new CustomEvent("workbench:fleet-read"));
+        sendWindow(window, "workbench:fleet-read");
         this.fleetRead = WBFail.readFold(this.fleetRead, { ok: true, value: true, at: Date.now() });
         this.fleetError = "";
       } catch (e: any) {
@@ -575,7 +576,7 @@ export function shell() {
         }
         // `loadRepos`, not `loadFleet`: the latter CONCATENATES peer rows.
         await this.loadRepos();
-        window.dispatchEvent(new CustomEvent("workbench:peer-woken", { detail: { daemon: daemonId } }));
+        sendWindow(window, "workbench:peer-woken", { daemon: daemonId });
         return true;
       } catch {
         this._flashAction("Could not wake the peer: the daemon is not connected.");
@@ -831,7 +832,7 @@ export function shell() {
         el.focus();
         el.setSelectionRange(el.value.length, el.value.length);
       });
-      return new Promise((resolve) => {
+      return new Promise<string | null>((resolve) => {
         this._promptResolve = resolve;
       });
     },
@@ -885,7 +886,7 @@ export function shell() {
     // project that WAS open (ADR-0073 amendment of 2026-10-08, decision 4).
     projectChanged(previous: any) {
       const slug = this.$store.projects.openSlug;
-      window.dispatchEvent(new CustomEvent("workbench:project-changed", { detail: { slug, previous } }));
+      sendWindow(window, "workbench:project-changed", { slug, previous });
     },
     // A sleeping peer's wake button. Its two sentences keep their order here,
     // not in a `+` chain inside the markup (ADR-0065 §9).
@@ -1749,7 +1750,7 @@ export function shell() {
       else delete next[ref];
       this.checkouts = next;
       window.WBConsole?.setCheckout?.(ref, name || null);
-      if (this.$store.projects.openSlug === ref) window.dispatchEvent(new CustomEvent("workbench:checkout-changed"));
+      if (this.$store.projects.openSlug === ref) sendWindow(window, "workbench:checkout-changed");
       // The Changes panel and the sync row are the SELECTED checkout's (#407).
       // Another tree's change set is not this tree's "last value" (ADR-0070
       // D3): its reads start over.
@@ -1791,7 +1792,7 @@ export function shell() {
     adoptDeskCheckouts() {
       const before = this.$store.projects.openSlug ? this.checkoutOf(this.$store.projects.openSlug) : null;
       this.checkouts = window.WBConsole?.checkouts?.() || {};
-      if (this.$store.projects.openSlug) window.dispatchEvent(new CustomEvent("workbench:checkout-changed"));
+      if (this.$store.projects.openSlug) sendWindow(window, "workbench:checkout-changed");
       if (this.$store.projects.openSlug) {
         this.ensureWorktreeListing(this.$store.projects.openSlug);
         // The desk can land AFTER the open's own reads: re-read under the
@@ -3107,7 +3108,7 @@ export function shell() {
     // Settings dialog hears the event and reads again only when it is open
     // (ADR-0073 D5).
     rereadOpenPanels() {
-      window.dispatchEvent(new CustomEvent("workbench:panels-reread"));
+      sendWindow(window, "workbench:panels-reread");
       if (this.tabs.some((t) => t.id === "spend")) this.loadSpend();
     },
     releaseRead: null as any,
@@ -3166,7 +3167,7 @@ export function shell() {
     },
     toggleAvatarMenu() {
       const was = this.avatarMenu;
-      window.dispatchEvent(new CustomEvent("workbench:menus-close"));
+      sendWindow(window, "workbench:menus-close");
       this.avatarMenu = !was;
     },
 
@@ -3179,7 +3180,7 @@ export function shell() {
 
     async logOff() {
       this.avatarMenu = false;
-      window.dispatchEvent(new CustomEvent("workbench:log-off"));
+      sendWindow(window, "workbench:log-off");
       // The session cookie is HttpOnly — only the server can clear it. The
       // route needs a live session (audit F5): a 401 here means the cookie
       // was already invalid, which is the same place this lands anyway.
@@ -3340,7 +3341,7 @@ export function shell() {
     // `lastLeft` the tab last read on the left, so activating the pinned tab
     // itself keeps its neighbour rather than emptying the canvas.
     slot: null as any,
-    splitRatio: null,
+    splitRatio: null as number | null,
     lastLeft: null as any,
 
     // Open a `.note` as a card (ADR-0064 §11). The module decides whether this
@@ -3880,7 +3881,7 @@ export function wire(window: Window, document: Document) {
   window.WB = {
     emit(action: any, detail: any = {}) {
       const full = { action, ...detail, at: new Date().toISOString() };
-      document.dispatchEvent(new CustomEvent("workbench:action", { detail: full }));
+      sendDocument(document, "workbench:action", full);
       // eslint-disable-next-line no-console
       console.log("[workbench:action]", full);
     },
@@ -3896,17 +3897,13 @@ export function wire(window: Window, document: Document) {
   };
 
   // A viewer asked to detach → open the popup and close the tab.
-  document.addEventListener("workbench:detach-request", (e: any) => {
-    window.getShell()?.detachFile(e.detail);
-  });
+  document.addEventListener("workbench:detach-request", (e) => window.getShell()?.detachFile(e.detail));
 
   // A rendered markdown link asked for a repo file → open (or focus) its tab.
-  document.addEventListener("workbench:open-request", (e: any) => {
-    window.getShell()?.openLink(e.detail);
-  });
+  document.addEventListener("workbench:open-request", (e) => window.getShell()?.openLink(e.detail));
 
   // The divider between the two panes was dragged: the ratio is view state.
-  document.addEventListener("workbench:split-ratio", (e: any) => {
+  document.addEventListener("workbench:split-ratio", (e) => {
     const sh = window.getShell();
     if (!sh) return;
     sh.splitRatio = e.detail.ratio;
@@ -3919,7 +3916,7 @@ export function wire(window: Window, document: Document) {
   // The canvas resized. Only a crossing of the split's width floor changes what
   // is painted, so the fold reruns on the crossing alone — not per pixel.
   let wbCanvasWide: any = null;
-  document.addEventListener("workbench:canvas-resize", (e: any) => {
+  document.addEventListener("workbench:canvas-resize", (e) => {
     const sh = window.getShell();
     if (!sh) return;
     const wide = WBSplit.available(e.detail.width);
@@ -4039,7 +4036,7 @@ export function wire(window: Window, document: Document) {
         .catch(() => flash("Could not rename: the daemon did not answer."));
     };
 
-    document.addEventListener("workbench:action", async (e: any) => {
+    document.addEventListener("workbench:action", async (e) => {
       if (!daemonBacked()) return;
       const d = e.detail || {};
       const repo = d.project;
@@ -4132,7 +4129,7 @@ export function wire(window: Window, document: Document) {
           flash(`${name} created.`);
           if (!folder) c?.openTab({ project: repo, path, title: name, ftype: classify(name) });
           // The files re-list the level, then reveal the new entry (wb-files.ts).
-          window.dispatchEvent(new CustomEvent("workbench:tree-dirty", { detail: { rel: d.path || "", reveal: path } }));
+          sendWindow(window, "workbench:tree-dirty", { rel: d.path || "", reveal: path });
           break;
         }
         case "rename": {
@@ -4142,7 +4139,7 @@ export function wire(window: Window, document: Document) {
         }
         case "delete": {
           // Irreversible (a folder removes recursively): confirm first.
-          const name = d.title || d.path.split("/").pop() || d.path;
+          const name = d.title || d.path!.split("/").pop() || d.path;
           const message = d.isFolder
             ? `Delete folder “${name}” and its contents? This cannot be undone.`
             : `Delete “${name}”? This cannot be undone.`;
@@ -4159,7 +4156,7 @@ export function wire(window: Window, document: Document) {
           // "not found" on a delete says the ROW is the lie: re-list the parent
           // so the ghost ends up off the screen.
           if (/not found/i.test(reason)) {
-            window.dispatchEvent(new CustomEvent("workbench:tree-dirty", { detail: { rel: parentRel(d.path) } }));
+            sendWindow(window, "workbench:tree-dirty", { rel: parentRel(d.path) });
           }
           break;
         }
@@ -4180,7 +4177,7 @@ export function wire(window: Window, document: Document) {
     const c = window.getShell();
     if (!c || c.consoleShortcutsBlocked()) return;
     e.preventDefault();
-    if (window.Alpine.store("projects").openSlug) window.dispatchEvent(new CustomEvent("workbench:file-search-open"));
+    if (window.Alpine.store("projects").openSlug) sendWindow(window, "workbench:file-search-open");
     else c.focusProjectSearch();
   });
 
@@ -4193,7 +4190,7 @@ export function wire(window: Window, document: Document) {
     if (!c || !c.authed || !window.Alpine.store("projects").openSlug) return;
     if (c.modalOpen(WBSettingsDialog.openFlag) || c.modalOpen(WBSecurityDialog.openFlag) || c.runOpen || c.branchOpen || c.modalOpen(WBReleaseDialogs.whatsNewFlag)) return;
     e.preventDefault();
-    window.dispatchEvent(new CustomEvent("workbench:file-search-open"));
+    sendWindow(window, "workbench:file-search-open");
   });
 
   window.WBRuns = {

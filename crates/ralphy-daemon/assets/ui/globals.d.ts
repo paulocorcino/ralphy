@@ -8,7 +8,7 @@
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue | undefined };
 
 /** The `payload` of a `/ws/command` command: the verb's arguments. */
-type CommandPayload = { repo?: string; checkout?: string; [field: string]: JsonValue | undefined };
+type CommandPayload = { repo?: string | null; checkout?: string; [field: string]: JsonValue | undefined };
 
 /** A `/ws/command` reply: `status` is "ok" or the reason it is not. A refusal
  * says why in `message` or `reason`. */
@@ -290,6 +290,127 @@ interface Window {
     icons: Record<string, LucideIcon | undefined>;
     createElement(node: LucideNode): SVGElement;
   };
+}
+
+/** The detail of `workbench:action`: the gesture (`action`), the fields its
+ * sender gave, and when it was sent (`at`). A gesture a popup sent carries the
+ * popup in `fromWindow`. Each gesture gives only its own fields. */
+type WorkbenchAction = {
+  action: string;
+  at: string;
+  project?: string | null;
+  /** The checkout the gesture aims at; `null` is the primary tree. */
+  checkout?: string | null;
+  path?: string;
+  title?: string;
+  /** `rename`: the full rel paths before and after. */
+  from?: string;
+  to?: string;
+  /** `create`: `folder` or `file`. */
+  kind?: string;
+  isFolder?: boolean;
+  /** `save`: the pane's text, its encoding and its byte order mark. */
+  content?: string;
+  encoding?: string;
+  bom?: boolean;
+  message?: string;
+  /** `setting-change`: the setting's key. */
+  key?: string;
+  /** `command`: the verb. */
+  verb?: string;
+  /** `run-start`: the run parameters. */
+  agent?: string;
+  planAgent?: string;
+  branchMode?: string;
+  fromWindow?: Window;
+};
+
+/** A file a pane can reopen anywhere, a tab or a detached popup, with its
+ * current content (`descOf` in `wb-viewer.ts`). */
+type FileDescriptor = {
+  project: string;
+  label: string;
+  path: string;
+  ftype: string;
+  content: string;
+  checkout: string | null;
+  encoding?: string;
+  bom: boolean;
+};
+
+/** A repo file a rendered markdown link asks to open. `as: "bytes"`: the file
+ * is not a note, and opens as a file. */
+type OpenRequest = {
+  project: string | null;
+  path: string;
+  checkout: string | null;
+  fragment?: string;
+  as?: "bytes";
+};
+
+// The `workbench:*` events (#633): every name a module sends or hears, and its
+// `detail`. An event with no detail has `null`, as `new CustomEvent(name)`
+// gives. `wb-events.ts` sends them; `src/tests.rs` fails on a `workbench:`
+// name in a module or in `index.html` that is not listed here.
+
+/** The `workbench:*` events sent on `window`. The `-open` events that
+ * `index.html` sends with `$dispatch` reach the window, where a dialog hears
+ * them with `.window`. */
+interface WindowEventMap {
+  /** The open project changed: the project now open and the one that was. */
+  "workbench:project-changed": CustomEvent<{ slug: string | null; previous: string | null }>;
+  /** The open checkout's HEAD moved. */
+  "workbench:head-moved": CustomEvent<{ ref: string }>;
+  "workbench:menus-close": CustomEvent<null>;
+  /** Re-open the sockets; `stale` is the heartbeat verdict. */
+  "workbench:sockets-resume": CustomEvent<{ stale: boolean }>;
+  "workbench:fleet-read": CustomEvent<null>;
+  /** A sleeping peer woke. */
+  "workbench:peer-woken": CustomEvent<{ daemon: string }>;
+  "workbench:checkout-changed": CustomEvent<null>;
+  "workbench:panels-reread": CustomEvent<null>;
+  "workbench:log-off": CustomEvent<null>;
+  /** Re-list the directory `rel`, then show `reveal`. */
+  "workbench:tree-dirty": CustomEvent<{ rel: string; reveal?: string }>;
+  "workbench:file-search-open": CustomEvent<null>;
+  /** Ask where to move the row at the full rel path `from`. */
+  "workbench:move-open": CustomEvent<{ from: string }>;
+  "workbench:move-confirmed": CustomEvent<{ from: string; to: string }>;
+  "workbench:whats-new-open": CustomEvent<null>;
+  "workbench:security-open": CustomEvent<null>;
+  "workbench:about-open": CustomEvent<null>;
+  "workbench:settings-open": CustomEvent<null>;
+  "workbench:add-project-open": CustomEvent<null>;
+  "workbench:hosts-open": CustomEvent<null>;
+}
+
+/** The `workbench:*` events sent on `document`. */
+interface DocumentEventMap {
+  /** A gesture, for the daemon door and the shell. */
+  "workbench:action": CustomEvent<WorkbenchAction>;
+  "workbench:open-request": CustomEvent<OpenRequest>;
+  "workbench:detach-request": CustomEvent<FileDescriptor>;
+  "workbench:reattach-request": CustomEvent<FileDescriptor>;
+  /** The divider between the two panes moved. */
+  "workbench:split-ratio": CustomEvent<{ ratio: number }>;
+  "workbench:canvas-resize": CustomEvent<{ width: number }>;
+  /** How many consoles are open. */
+  "workbench:consoles-changed": CustomEvent<{ count: number }>;
+  "workbench:stage-extent": CustomEvent<import("./wb-types.d.ts").Size>;
+  "workbench:columns-stale": CustomEvent<null>;
+  /** A console's title bar asks to restore its column. */
+  "workbench:column-restore": CustomEvent<{ id: string }>;
+  /** A console's title bar asks for the columns list, under `rect`. */
+  "workbench:column-open": CustomEvent<{ id: string; rect: DOMRect }>;
+  /** A fence asks to open its consoles as columns. */
+  "workbench:fence-columns": CustomEvent<{ items: { id: string; rect: import("./wb-types.d.ts").Rect }[] }>;
+  /** These consoles leave the columns. */
+  "workbench:columns-leave": CustomEvent<{ ids: string[] }>;
+  "workbench:desk-restored": CustomEvent<null>;
+  /** A card chose the file name of a never-saved note, before its first write. */
+  "workbench:note-claimed": CustomEvent<{ id: string; claim: string }>;
+  /** A card gave a never-saved note its file. */
+  "workbench:note-named": CustomEvent<{ id: string; path: string }>;
 }
 
 // The page instances and vendored libraries that modules name bare.

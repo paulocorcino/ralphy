@@ -15,6 +15,7 @@ import { WBGeometry } from "./wb-geometry.ts";
 import * as WBConsoleInput from "./wb-console-input.ts";
 import * as WBDeskFolds from "./wb-desk-folds.ts";
 import { DIRS } from "./wb-console-chrome.ts";
+import { sendDocument } from "./wb-events.ts";
 import type { Gestures } from "./wb-console-chrome.ts";
 import type { PopupRegistry } from "./wb-console-popups.ts";
 import type { FenceList } from "./wb-console-fence-list.ts";
@@ -278,7 +279,7 @@ export function createFences(deps: FenceDeps) {
       const ids = new Set(fenceMembership(readFenceRects(st), all)[f.id] || []);
       const items = all.filter((w) => ids.has(w.id)).map((w) => ({ id: w.id, rect: w.rect }));
       if (!items.length) return;
-      document.dispatchEvent(new CustomEvent("workbench:fence-columns", { detail: { items } }));
+      sendDocument(document, "workbench:fence-columns", { items });
     });
     // BETWEEN arrange and close: close stays the OUTERMOST control
     // (wb_fence_342.py asserts exactly that).
@@ -597,7 +598,7 @@ export function createFences(deps: FenceDeps) {
     // that left travels with `max: false` and no terminal shows in two places.
     // Synchronous: the popup document loads later.
     const leaving = st ? fenceMembership(readFenceRects(st), readWindowRects(st))[id] || [] : [];
-    document.dispatchEvent(new CustomEvent("workbench:columns-leave", { detail: { ids: leaving } }));
+    sendDocument(document, "workbench:columns-leave", { ids: leaving });
     const members = fenceSnapshot(id);
 
     const entry: any = {
