@@ -14,6 +14,7 @@
    --------------------------------------------------------------------------- */
 import { component } from "./wb-alpine.ts";
 import { WBRelease } from "./wb-release.ts";
+import { apiFetch } from "./wb-api.ts";
 
 export function releaseDialogs() {
   // Every `shell()` member this component's code or markup reads or calls.
@@ -79,7 +80,7 @@ export function releaseDialogs() {
     async beginUpdate() {
       let needCode = false;
       try {
-        const r = await fetch("/api/security/state");
+        const r = await apiFetch("GET /api/security/state");
         if (r.ok) needCode = (await r.json()).totp_enrolled === true;
       } catch (e) {
         // The daemon asks for the code anyway; the page then shows its refusal.
@@ -185,7 +186,7 @@ export function releaseDialogs() {
       this.aboutOpen = true;
       this.about.error = "";
       try {
-        const r = await fetch("/api/about");
+        const r = await apiFetch("GET /api/about");
         if (r.ok) {
           const data = await r.json();
           // Merge onto the seed so any missing field keeps its fallback.

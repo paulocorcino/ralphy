@@ -24,8 +24,12 @@ type DaemonReply = { status: string; message?: string; reason?: string };
 type TreeEntry = { name: string; dir: boolean; ignored?: boolean };
 
 /** A `file.read` reply: the text, the encoding it was decoded with, and
- * whether the file starts with a byte order mark. */
-type FileReadReply = DaemonReply & { content?: string; encoding?: string; bom?: boolean };
+ * whether the file starts with a byte order mark; or why the daemon read
+ * nothing. The daemon sends no other `status` for this verb. */
+type FileReadReply = FileReadOk | (DaemonReply & { status: "error" });
+
+/** A `file.read` reply with the file's text. */
+type FileReadOk = { status: "ok"; content: string; encoding: string; bom: boolean };
 
 /** A file Write verb's reply: a refused encoding names the first character it
  * could not take. */

@@ -79,6 +79,13 @@ libraries are classic scripts.
   component's `this` from its `uses` list, against the type of the real
   `shell()` (`Shell` in `app.ts`). A component module exports its factory,
   and `main.ts` registers it under the name its `x-data` uses.
+- **Data from outside.** A JSON reply of the daemon goes through `apiFetch`
+  in `wb-api.ts`. `ApiRoutes` there lists each route once, with the type of
+  its reply, and that type follows the route's handler in
+  `crates/ralphy-daemon/src/routes/`. The daemon and the page ship in one
+  build, so the reply is not checked at run time. Any other data from
+  outside (a message from another window, data from browser storage, a
+  frame from a peer) is `unknown`, and is narrowed right after it is read.
 - **Tests.** A test imports the `.ts` module. `ui-tests/harness.mjs` builds a
   module component from its export (`MODULE_COMPONENTS`).
 - **Type check.** `tsc --noEmit -p crates/ralphy-daemon/assets/ui`, in the

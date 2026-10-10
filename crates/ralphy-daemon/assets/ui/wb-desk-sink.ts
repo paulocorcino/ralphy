@@ -19,6 +19,8 @@
    suppression rests entirely on the sink here — not on an unlifted `deskLoaded`
    permit. Reading is harmless; replacing the desk from a partial view is not.
 --------------------------------------------------------------------------- */
+import { apiFetch } from "./wb-api.ts";
+
 // The tab id and `hold` stay at module scope (ADR-0075 D7 allows a value that
 // is loaded once): a browser runs a module once per document, which is the
 // scope both have, and the console and `app.ts` must see the same `hold`.
@@ -31,7 +33,6 @@ export const WBDeskSink = (function () {
   function tabId() {
     return TAB;
   }
-  const deskUrl = () => "/api/desk?tab=" + encodeURIComponent(TAB);
   // While this tab runs an older build than the daemon, it writes no desk
   // (ADR-0070 D6): its JavaScript may not know the daemon's records.
   let hold = false;
@@ -56,8 +57,8 @@ export const WBDeskSink = (function () {
       put(body: string) {
         if (hold) return Promise.resolve({ kind: "held" });
         const sent = inFlight.then(() =>
-          fetch(deskUrl(), {
-            method: "PUT",
+          apiFetch("PUT /api/desk", {
+            query: { tab: TAB },
             headers: { "Content-Type": "application/json" },
             body,
           }).then(
@@ -77,8 +78,8 @@ export const WBDeskSink = (function () {
       putSync(body: string) {
         if (hold) return;
         try {
-          fetch(deskUrl(), {
-            method: "PUT",
+          apiFetch("PUT /api/desk", {
+            query: { tab: TAB },
             headers: { "Content-Type": "application/json" },
             body,
             keepalive: true,

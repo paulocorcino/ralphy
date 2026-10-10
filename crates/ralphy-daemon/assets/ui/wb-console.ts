@@ -46,6 +46,8 @@ import { WBDetachLink } from "./wb-detach-link.ts";
 import { WBView } from "./wb-view.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
+import { apiFetch } from "./wb-api.ts";
+import type { ApiRefusal } from "./wb-api.ts";
 import { sendDocument } from "./wb-events.ts";
 import type { Painted } from "./wb-columns.ts";
 import type { TerminalDeps, TerminalOpts } from "./wb-console-terminal.ts";
@@ -912,7 +914,7 @@ export function createConsole(window: Window, document: Document, location: Pick
   // The `409` reply of an unreadable desk, as the reason to show, or null.
   // The daemon's own text is a parser message for a developer: it goes to
   // the browser console, and the operator reads what it means.
-  async function unreadableDesk(r: Response) {
+  async function unreadableDesk(r: ApiRefusal<"GET /api/desk">) {
     if (r.status !== 409) return null;
     const body = await r.json().catch(() => null);
     if (body?.state !== "unreadable") return null;
@@ -924,7 +926,7 @@ export function createConsole(window: Window, document: Document, location: Pick
   // rejects: an unreachable daemon leaves the page as it was. An unreadable
   // desk sets `deskFailure` and stops the sending.
   function reloadDesk() {
-    return fetch("/api/desk")
+    return apiFetch("GET /api/desk")
       .then(async (r) => {
         if (r.ok) return r.json();
         const why = await unreadableDesk(r);
@@ -954,13 +956,13 @@ export function createConsole(window: Window, document: Document, location: Pick
   // The one action on an unreadable desk: the daemon renames the old file
   // aside and starts an empty desk; this page then reads and restores it.
   function startNewDesk() {
-    return fetch("/api/desk/new", { method: "POST" })
+    return apiFetch("POST /api/desk/new")
       .then(async (r) => {
         if (r.ok) return;
         // 409 "readable": another tab started the new desk first. The desk is
         // readable, so this tab reads it like any other.
         const body = r.status === 409 ? await r.json().catch(() => null) : null;
-        if (body?.state === "readable") return;
+        if (body && "state" in body && body.state === "readable") return;
         throw new Error(`the daemon answered ${r.status}`);
       })
       .then(() => reloadDesk())
@@ -1347,7 +1349,7 @@ export function createConsole(window: Window, document: Document, location: Pick
   function readSessions() {
     if (!sessionsRead) {
       sessionsRead = (async () => {
-        const r = await fetch("/api/sessions");
+        const r = await apiFetch("GET /api/sessions");
         if (!r.ok) throw new Error("sessions unavailable");
         const route = WBSessionRoute;
         return {

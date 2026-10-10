@@ -12,6 +12,7 @@
 import type { AlpineMagics } from "./wb-alpine.ts";
 import { WBFail } from "./wb-fail.ts";
 import { WBAgents } from "./wb-agents.ts";
+import { apiFetch } from "./wb-api.ts";
 import { WBChanges } from "./wb-changes.ts";
 import { WBDeskSink } from "./wb-desk-sink.ts";
 import { classify, fileTabId, newEntryTitle, parentRel } from "./wb-file-paths.ts";
@@ -25,7 +26,7 @@ import { WBSessionRoute } from "./wb-session-route.ts";
 import { WBSettingsDialog } from "./wb-settings-dialog.ts";
 import { WBSplit } from "./wb-split.ts";
 import { createEmitter, forwardAction, sendWindow } from "./wb-events.ts";
-import type { BoardIssue, BoardRow, CanvasTab, ChangeEntry, CheckoutRow, ConfirmAsk, DiffTarget, FilePopupMessage, FleetPeer, FleetReply, Group, LedgerMissing, LedgerRecord, Listing, MenuItem, ModalEntry, Project, PromptAsk, Read, ReadState, ReadyPlan, RepoRow, RosterRow, Run, RunIssue, RunPill, SavePayload, SecurityFact, ShellLate, Slot, SpendDoc, Subscription, Sync, TabBody, TabOpen, Timer } from "./wb-shell-types.d.ts";
+import type { BoardIssue, BoardRow, CanvasTab, ChangeEntry, CheckoutRow, ConfirmAsk, DiffTarget, FilePopupMessage, FleetPeer, Group, LedgerMissing, LedgerRecord, Listing, MenuItem, ModalEntry, Project, PromptAsk, Read, ReadState, ReadyPlan, RosterRow, Run, RunIssue, RunPill, SavePayload, SecurityFact, ShellLate, Slot, SpendDoc, Subscription, Sync, TabBody, TabOpen, Timer } from "./wb-shell-types.d.ts";
 
 // A phone in either orientation: its SHORT side is under the workbench's phone
 // breakpoint (560px). Landscape iPhone is ~750 wide but ~340 tall; an iPad's
@@ -174,7 +175,7 @@ export function shell() {
     // fetch leaves the fields empty.
     async loadIdentity() {
       try {
-        const r = await fetch("/api/identity");
+        const r = await apiFetch("GET /api/identity");
         if (r.ok) {
           const id = await r.json();
           this.identityName = id.name || "";
@@ -307,7 +308,7 @@ export function shell() {
     // keeps `authed` at its default.
     async probeSession() {
       try {
-        const r = await fetch("/api/session");
+        const r = await apiFetch("GET /api/session");
         if (r.ok) {
           const s = await r.json();
           this.authed = s.authed;
@@ -335,7 +336,7 @@ export function shell() {
       if (repo === undefined) repo = this.$store.projects.openSlug;
       const seq = ++this._agentsSeq;
       try {
-        const r = await fetch(WBAgents.rosterUrl(repo));
+        const r = await apiFetch("GET /api/agents", { query: repo ? { repo } : {} });
         if (!r.ok) throw new Error(`/api/agents ${r.status}`);
         const state = WBAgents.rosterState(await r.json(), repo);
         if (seq !== this._agentsSeq) return;
@@ -357,9 +358,9 @@ export function shell() {
     async loadRepos({ git = true } = {}) {
       this.reposLoading = true;
       try {
-        const r = await fetch("/api/repos");
+        const r = await apiFetch("GET /api/repos");
         if (r.ok) {
-          const repos: RepoRow[] = await r.json();
+          const repos = await r.json();
           // The rows this read replaces: their live dot and their environment
           // stay until `refreshLive` and `loadFleet` answer, and the peer rows
           // stay until the fleet read replaces them.
@@ -447,7 +448,7 @@ export function shell() {
       const seq = ++this._fleetSeq;
       const localRows = () => this.$store.projects.projects.filter((p) => !p.daemon);
       try {
-        const r = await fetch("/api/fleet");
+        const r = await apiFetch("GET /api/fleet");
         if (seq !== this._fleetSeq) return;
         if (r.status === 404) {
           // A daemon older than the fleet: a fleet of one, not a failure.
@@ -457,7 +458,7 @@ export function shell() {
           return;
         }
         if (!r.ok) throw new Error(`the daemon answered ${r.status}`);
-        const fleet: FleetReply = await r.json();
+        const fleet = await r.json();
         if (seq !== this._fleetSeq) return;
         this.fleetPeers = Array.isArray(fleet.peers) ? fleet.peers : [];
         this.fleetRejectNote = this.fleetRejectText(this.fleetPeers);
@@ -547,14 +548,13 @@ export function shell() {
       if (!daemonId || this.waking[daemonId]) return false;
       this.waking[daemonId] = true;
       try {
-        const r = await fetch(`/api/fleet/nudge?daemon_id=${encodeURIComponent(daemonId)}`, {
-          method: "POST",
-        });
-        const reply = await r.json().catch(() => ({}));
-        if (!r.ok || !reply.ready) {
+        const r = await apiFetch("POST /api/fleet/nudge", { query: { daemon_id: daemonId } });
+        const woke = r.ok ? await r.json().catch(() => null) : null;
+        if (!woke?.ready) {
           // The daemon's own sentence names the environment and what is wrong.
+          const refusal = r.ok ? null : await r.json().catch(() => null);
           this._flashAction(
-            WBFail.failed({ message: reply.diagnosis || reply.error }, "Could not wake the peer: the peer did not answer."),
+            WBFail.failed({ message: woke?.diagnosis || refusal?.error }, "Could not wake the peer: the peer did not answer."),
           );
           return false;
         }
@@ -620,13 +620,13 @@ export function shell() {
       // Reads close together can answer out of order: the newest owns the list.
       const seq = ++this._liveSeq;
       try {
-        const r = await fetch("/api/sessions");
+        const r = await apiFetch("GET /api/sessions");
         if (seq !== this._liveSeq) return;
         if (!r.ok) {
           this.sessionsFailed(`the daemon answered ${r.status}`);
           return;
         }
-        const sessions: HostedSession[] = await r.json();
+        const sessions = await r.json();
         if (seq !== this._liveSeq) return;
         this.sessionsRead = WBFail.readFold(this.sessionsRead, { ok: true, value: true, at: Date.now() });
         // The console menu's fold reads this (#304).
@@ -2908,12 +2908,7 @@ export function shell() {
       let doc: SpendDoc = null;
       let error = "";
       try {
-        const r = await fetch(
-          "/api/spend?project=" +
-            encodeURIComponent(slug) +
-            "&period=" +
-            encodeURIComponent(this.spendPeriod || "all"),
-        );
+        const r = await apiFetch("GET /api/spend", { query: { project: slug, period: this.spendPeriod || "all" } });
         if (r.ok) doc = await r.json();
         else error = "Could not load spend: the daemon did not answer.";
       } catch {
@@ -2999,12 +2994,7 @@ export function shell() {
       let daemonId: string | null = null;
       let error = "";
       try {
-        const r = await fetch(
-          "/api/usage?project=" +
-            encodeURIComponent(want) +
-            "&period=" +
-            encodeURIComponent(this.spendPeriod || "all"),
-        );
+        const r = await apiFetch("GET /api/usage", { query: { project: want, period: this.spendPeriod || "all" } });
         if (r.ok) {
           const data = await r.json();
           records = Array.isArray(data.records) ? data.records : [];
@@ -3378,8 +3368,8 @@ export function shell() {
       }
       return WBDaemon.observe("file.read", WBDaemon.withCheckout({ repo: project, path }, checkout))
         .then((reply) => {
-          if (!WBFail.isError(reply)) {
-            return { content: reply.content, encoding: reply.encoding, bom: !!reply.bom };
+          if (reply.status === "ok") {
+            return { content: reply.content, encoding: reply.encoding, bom: reply.bom };
           }
           return refuse(WBFail.message(reply, "refused"));
         })
@@ -3605,7 +3595,7 @@ export function shell() {
         "file.read",
         WBDaemon.withCheckout({ repo: project, path: t.workingPath }, t.checkout),
       ).then((reply) => {
-        if (!WBFail.isError(reply)) return reply.content;
+        if (reply.status === "ok") return reply.content;
         const reason = WBFail.message(reply, "refused");
         return reason === "not found" ? "" : refuse(reason);
       });

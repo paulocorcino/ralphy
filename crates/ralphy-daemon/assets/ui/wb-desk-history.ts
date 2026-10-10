@@ -6,6 +6,8 @@
 // `/api/desk/history`, hands the reply to `rows`, and sends what `parseUpload`
 // accepts back to the same route.
 
+import type { Desk } from "./wb-types.d.ts";
+
 // The `kind` of a version file; the daemon's `history::VERSION_KIND`.
 const VERSION_KIND = "ralphy-desk-version";
 
@@ -18,7 +20,7 @@ const REASON_TEXT: Record<string, string> = {
 };
 
 // One row of `/api/desk/history`: the daemon's `history::VersionInfo`.
-type VersionInfo = {
+export type VersionInfo = {
   id: number;
   startedAt: number;
   savedAt: number;
@@ -26,6 +28,16 @@ type VersionInfo = {
   windows: number;
   fences: number;
   notes: number;
+};
+
+// A saved version of the desk: the daemon's `history::Version`.
+export type DeskVersion = {
+  kind: string;
+  id: number;
+  startedAt: number;
+  savedAt: number;
+  reason: string;
+  desk: Desk;
 };
 
 function plural(n: number, one: string, many: string) {

@@ -6,7 +6,6 @@
 // imports a type from the module that declares it. Types only: the build
 // skips a `.d.ts` file, so `app.ts` imports from here with `import type`
 // (#653).
-import type { FleetPeer } from "./wb-fleet.ts";
 
 // Types of other modules that the shell names.
 export type { RosterRow } from "./wb-agents.ts";
@@ -47,40 +46,6 @@ export type PromptAsk = {
   placeholder?: string;
   confirmLabel?: string;
 };
-
-/** A repo of `/api/repos`. */
-export type RepoRow = {
-  slug: string;
-  name?: string;
-  path?: string;
-  root?: string;
-  branch?: string | null;
-  head?: { kind: string; name?: string; sha?: string } | null;
-  dirty?: boolean;
-  reachable: boolean;
-  remote?: string | null;
-};
-
-/** A repo of `/api/fleet`: the local ones (`local`) and each peer's. */
-export type FleetRepoRow = {
-  key: string;
-  slug: string;
-  name?: string;
-  path?: string;
-  branch?: string | null;
-  dirty?: boolean | null;
-  reachable: boolean;
-  remote?: string | null;
-  local: boolean;
-  daemon_id: string;
-  daemon_name?: string;
-  environment?: string;
-  os?: string;
-  peer_state?: string;
-};
-
-/** The reply of `/api/fleet`. */
-export type FleetReply = { peers?: FleetPeer[]; repos?: FleetRepoRow[] };
 
 /** A persistent socket the shell keeps: `resume` re-opens it after a suspend. */
 export type Subscription = ReturnType<import("./wb-daemon.ts").WBDaemonApi["subscribePresence"]>;

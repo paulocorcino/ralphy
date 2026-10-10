@@ -633,7 +633,7 @@ export function createViewer(window: ViewerWindow, document: Document) {
           if (reply.encoding) rec.encoding = reply.encoding;
           refreshEncodingPill(rec);
           if (rec.refused) return reopenRefused(rec, reply);
-          applyFresh(rec, reply.content!);
+          applyFresh(rec, reply.content);
         })
         .catch(() => fail());
     }
@@ -651,8 +651,8 @@ export function createViewer(window: ViewerWindow, document: Document) {
   // A pane that opened refused now has bytes: rebuild it as the pane its
   // kind deserves. `open` returns early on a known id, so the record is
   // replaced under the same id — the tab in the shell is untouched.
-  function reopenRefused(rec: ViewerRecord, reply: FileReadReply) {
-    const desc = { ...descOf(rec), content: reply.content!, encoding: reply.encoding, bom: !!reply.bom };
+  function reopenRefused(rec: ViewerRecord, reply: FileReadOk) {
+    const desc = { ...descOf(rec), content: reply.content, encoding: reply.encoding, bom: reply.bom };
     API.close(rec.id);
     API.open({ id: rec.id, ...desc, detached: rec.detached });
     if (rec.visible) refresh();
@@ -816,7 +816,7 @@ export function createViewer(window: ViewerWindow, document: Document) {
           rec.bom = !!reply.bom;
           refreshEncodingPill(rec);
           if (rec.refused) return reopenRefused(rec, reply);
-          applyFresh(rec, reply.content!);
+          applyFresh(rec, reply.content);
         })
         .catch(() => showSaveError(rec, `Could not reopen as ${label}: the daemon did not answer.`));
     };

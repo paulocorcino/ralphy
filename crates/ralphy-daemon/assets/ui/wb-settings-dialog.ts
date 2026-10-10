@@ -13,6 +13,7 @@
    `main.ts` registers it as `wbSettingsDialog` (ADR-0075 D5).
    --------------------------------------------------------------------------- */
 import { component } from "./wb-alpine.ts";
+import { apiFetch } from "./wb-api.ts";
 import { WBDeskHistory } from "./wb-desk-history.ts";
 import { WBFail } from "./wb-fail.ts";
 import { WB_SETTINGS, WB_TRISTATE, wbClientKeys, wbSettingsDefaults } from "./wb-settings.ts";
@@ -92,12 +93,13 @@ export function settingsDialog() {
     async loadDeskHistory() {
       this.deskHistory.error = "";
       try {
-        const r = await fetch("/api/desk/history");
-        const reply = await r.json().catch(() => null);
-        if (!r.ok || !Array.isArray(reply)) {
+        const r = await apiFetch("GET /api/desk/history");
+        const reply = r.ok ? await r.json().catch(() => null) : null;
+        if (!Array.isArray(reply)) {
+          const refusal = r.ok ? null : await r.json().catch(() => null);
           this.deskHistory.loaded = false;
           this.deskHistory.rows = [];
-          this.deskHistory.error = `Could not read the desk history: ${reply?.error || "the daemon gave no reason"}.`;
+          this.deskHistory.error = `Could not read the desk history: ${refusal?.error || "the daemon gave no reason"}.`;
           return;
         }
         const when = (ms: number) => new Date(ms).toLocaleString();
@@ -113,8 +115,7 @@ export function settingsDialog() {
     // live window from the desk, so a reload is how the restored layout shows.
     async postDeskRestore(body: object, failLine: string) {
       try {
-        const r = await fetch("/api/desk/history", {
-          method: "POST",
+        const r = await apiFetch("POST /api/desk/history", {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
@@ -141,10 +142,11 @@ export function settingsDialog() {
     },
     async downloadDeskVersion(row: DeskRow) {
       try {
-        const r = await fetch("/api/desk/history?id=" + encodeURIComponent(row.id));
-        const version = await r.json().catch(() => null);
-        if (!r.ok || !version) {
-          this.deskHistory.error = `Could not download the desk layout: ${version?.error || "the daemon gave no reason"}.`;
+        const r = await apiFetch("GET /api/desk/history?id", { query: { id: row.id } });
+        const version = r.ok ? await r.json().catch(() => null) : null;
+        if (!version) {
+          const refusal = r.ok ? null : await r.json().catch(() => null);
+          this.deskHistory.error = `Could not download the desk layout: ${refusal?.error || "the daemon gave no reason"}.`;
           return;
         }
         const blob = new Blob([JSON.stringify(version, null, 2)], { type: "application/json" });

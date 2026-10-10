@@ -9,6 +9,8 @@
  * renders it: `none` shows nothing at all, `quiet` a dot, `notable` a badge,
  * `urgent` a badge that does not go away when dismissed.
  */
+import { apiFetch } from './wb-api.ts';
+
 /** The release view of `/api/release` (ADR-0056 §7). */
 export type ReleaseView = {
   current: string;
@@ -37,7 +39,7 @@ const EMPTY: ReleaseView = {
  * restarting must not erase what the page already knew. */
 async function read(): Promise<ReleaseView | null> {
   try {
-    const resp = await fetch('/api/release', { headers: { Accept: 'application/json' } });
+    const resp = await apiFetch('GET /api/release', { headers: { Accept: 'application/json' } });
     if (!resp.ok) return null;
     const view = await resp.json();
     // A daemon that answers something unexpected is treated as no answer
@@ -73,8 +75,7 @@ function gapSummary(view: ReleaseView | null): string {
 
 async function setWatch(enable: boolean) {
   const body = new URLSearchParams({ enable: enable ? 'true' : 'false' });
-  const resp = await fetch('/api/release/watch', {
-    method: 'POST',
+  const resp = await apiFetch('POST /api/release/watch', {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body,
   });
