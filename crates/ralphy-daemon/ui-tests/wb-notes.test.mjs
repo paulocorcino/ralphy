@@ -14,7 +14,7 @@ import { createNotes } from "../assets/ui/wb-notes.ts";
 // uses, which is the point of the assertion below.
 function load() {
   const window = { document: { getElementById: () => null } };
-  window.WBNotes = createNotes(window, window.document);
+  window.WBNotes = createNotes(window, window.document, { console: null });
   return window.WBNotes;
 }
 
@@ -245,16 +245,15 @@ test("a card with unsaved text never sleeps", () => {
 // three properties deep, which is exactly what the fold touches — anything
 // more would be testing the DOM instead of the fold.
 function withCards(cards, records, fences) {
-  const window = {
-    WBConsole: {
-      notes: () => records,
-      fenceRecords: () => fences || [],
-    },
+  const window = {};
+  const stub = {
+    notes: () => records,
+    fenceRecords: () => fences || [],
   };
   const document = {
     getElementById: (id) => (id === "stage" ? { querySelectorAll: () => cards } : null),
   };
-  window.WBNotes = createNotes(window, document);
+  window.WBNotes = createNotes(window, document, { console: stub });
   return window.WBNotes;
 }
 
@@ -451,12 +450,11 @@ test("the map says which card is on top, and which is in a detached popup", () =
     { id: "away", path: "b.note", rect: { left: 10, top: 10, width: 100, height: 100 } },
   ];
   const fences = [{ id: "f", name: "popup", rect: { left: 0, top: 0, width: 200, height: 200 } }];
-  const window = {
-    WBConsole: {
-      notes: () => records,
-      fenceRecords: () => fences,
-      isDetached: (id) => id === "f",
-    },
+  const window = {};
+  const stub = {
+    notes: () => records,
+    fenceRecords: () => fences,
+    isDetached: (id) => id === "f",
   };
   // The card IS on this stage, so the refusal below is the popup rule and not
   // a missing node.
@@ -464,7 +462,7 @@ test("the map says which card is on top, and which is in a detached popup", () =
   const document = {
     getElementById: (id) => (id === "stage" ? { querySelectorAll: () => cards } : null),
   };
-  window.WBNotes = createNotes(window, document);
+  window.WBNotes = createNotes(window, document, { console: stub });
   const rows = window.WBNotes.list();
   assert.deepEqual(
     rows.map((r) => [r.id, r.onTop, r.away]),
@@ -517,7 +515,6 @@ test("a card that handed its draft to a popup does not write the note", async ()
     },
   ];
   const window = {
-    WBConsole: { notes: () => [record], fenceRecords: () => [], saveNotes() {} },
     WBDaemon: {
       withCheckout: (args) => args,
       write: (verb, args) => {
@@ -530,7 +527,9 @@ test("a card that handed its draft to a popup does not write the note", async ()
     getElementById: (id) => (id === "stage" ? { querySelectorAll: () => cards } : null),
     querySelector: () => null,
   };
-  window.WBNotes = createNotes(window, document);
+  window.WBNotes = createNotes(window, document, {
+    console: { notes: () => [record], fenceRecords: () => [], saveNotes() {} },
+  });
   const notes = window.WBNotes;
   // The control: without the hand-off the claimed name is written.
   await (notes.flushAll(), cards[0]._noteWrite);
@@ -555,16 +554,17 @@ test("a keystroke the editor holds but has not reported yet counts as unsaved", 
     _noteEditor: { getMarkdown: () => "saved plus a key\n" },
     querySelector: () => null,
   };
-  const window = { WBConsole: { notes: () => [], fenceRecords: () => [] } };
+  const window = {};
+  const stub = { notes: () => [], fenceRecords: () => [] };
   const document = {
     getElementById: (id) => (id === "stage" ? { querySelectorAll: () => [card] } : null),
   };
-  window.WBNotes = createNotes(window, document);
+  window.WBNotes = createNotes(window, document, { console: stub });
   assert.equal(window.WBNotes.anyDirty(), true);
   // NEGATIVE CONTROL: an editor that holds the saved text is clean.
   const clean = { ...card, _noteDirty: false, _noteMarkdown: "saved\n", _noteEditor: { getMarkdown: () => "saved\n" } };
-  const w2 = { WBConsole: { notes: () => [], fenceRecords: () => [] } };
+  const w2 = {};
   const d2 = { getElementById: (id) => (id === "stage" ? { querySelectorAll: () => [clean] } : null) };
-  w2.WBNotes = createNotes(w2, d2);
+  w2.WBNotes = createNotes(w2, d2, { console: stub });
   assert.equal(w2.WBNotes.anyDirty(), false);
 });

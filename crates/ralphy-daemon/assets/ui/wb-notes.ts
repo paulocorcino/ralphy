@@ -4,7 +4,7 @@
 // records, the flush, the fold against other pages — and this file owns the
 // card: its DOM, its gestures' bindings, its editor, its autosave. Nothing here
 // touches `/api/desk`; every placement change goes through
-// `WBConsole.saveNotes`, and every byte through `note.read`/`note.write`.
+// the console's `saveNotes`, and every byte through `note.read`/`note.write`.
 //
 // The editor is Milkdown Crepe, vendored lean (ADR-0064 §6) and reached through
 // the ONE surface `vendor-build/crepe/entry.js` exports — `window.CrepeLean`.
@@ -18,7 +18,7 @@
 import { WBFail } from "./wb-fail.ts";
 import { WBGeometry } from "./wb-geometry.ts";
 import { sendDocument } from "./wb-events.ts";
-import type { DeskFence, DeskNote, NoteCard, NoteEditor, NoteLook, NoteSource, Offset, Point, Rect, Size } from "./wb-types.d.ts";
+import type { CardHost, DeskFence, DeskNote, NoteCard, NoteEditor, NoteLook, NoteSource, Offset, Point, Rect, Size } from "./wb-types.d.ts";
 
 // The one surface `vendor-build/crepe/entry.js` exports. It is set by a script
 // the shell and the detached fence page load, so it may not be there.
@@ -64,7 +64,14 @@ type NewNote = {
 /** A draft that came home with a re-attach: the text and the name it chose. */
 type Home = { draft: string; claim: string | null };
 
-export function createNotes(window: NotesWindow, document: Document) {
+/** What the entry module hands the cards. */
+export type NotesDeps = {
+  /** The page's consoles, built before the cards; null where a test has none. */
+  console: CardHost | null;
+};
+
+export function createNotes(window: NotesWindow, document: Document, deps: NotesDeps) {
+  const consoleHost = deps.console;
   // The card's floor. Below a console's minimum on purpose: a note is often a
   // three-line reminder, and forcing it to a console's footprint would make
   // the stage unreadable.
@@ -585,24 +592,24 @@ export function createNotes(window: NotesWindow, document: Document) {
   }
 
   function recordOf(id: string | null | undefined) {
-    return (window.WBConsole?.notes?.() || []).find((n) => n.id === id) || null;
+    return (consoleHost?.notes?.() || []).find((n) => n.id === id) || null;
   }
 
   // Write one card's record back, keeping the rest of the collection.
   // `saveNotes` sends only the fields that differ (ADR-0050 amendment
   // 2026-10-04, changes, not the desk).
   function patch(id: string | null | undefined, fields: Partial<DeskNote>) {
-    const next = (window.WBConsole?.notes?.() || []).map((n) =>
+    const next = (consoleHost?.notes?.() || []).map((n) =>
       n.id === id ? { ...n, ...fields } : n,
     );
-    window.WBConsole?.saveNotes(next);
+    consoleHost?.saveNotes(next);
   }
 
   // The rect as the DOM holds it — the shape the desk record wants. A card on
   // top paints its floating box over the inline rect, which is still the desk
   // rect, so a fence move persists the place and not the box.
   function rectOf(el: NoteCard) {
-    if (el.classList?.contains("on-top")) return window.WBConsole.restoreRect(el);
+    if (el.classList?.contains("on-top")) return consoleHost?.restoreRect(el);
     return {
       left: el.offsetLeft,
       top: el.offsetTop,
@@ -617,10 +624,10 @@ export function createNotes(window: NotesWindow, document: Document) {
     const list = Array.isArray(els) ? els : [els];
     const moved = new Map(list.filter(Boolean).map((el) => [el.dataset.noteId, rectOf(el)]));
     if (!moved.size) return;
-    const next = (window.WBConsole?.notes?.() || []).map((n) =>
+    const next = (consoleHost?.notes?.() || []).map((n) =>
       moved.has(n.id) ? { ...n, rect: moved.get(n.id)! } : n,
     );
-    window.WBConsole?.saveNotes(next);
+    consoleHost?.saveNotes(next);
   }
 
   // Paint the lock. A locked card cannot be MOVED or RESIZED, and that is the
@@ -929,11 +936,11 @@ export function createNotes(window: NotesWindow, document: Document) {
       h.dataset.dir = d;
       h.addEventListener(
         "pointerdown",
-        window.WBConsole.startResize(el, d, {
+        consoleHost?.startResize(el, d, {
           locked: () => !!el._noteLocked || onTop(el),
           onDrop: () => persistCards(el),
           min: NOTE_MIN,
-        }),
+        }) ?? (() => {}),
       );
       h.addEventListener("pointerdown", floatGesture(el, d));
       return h;
@@ -943,10 +950,10 @@ export function createNotes(window: NotesWindow, document: Document) {
     // the tools, later siblings win, so the interactive clusters go last.
     const palette = buildPalette(el);
     el.append(...handles, head, body, foot, tools, menu, anchors, palette);
-    el.addEventListener("pointerdown", () => window.WBConsole.focusWin(el), true);
+    el.addEventListener("pointerdown", () => consoleHost?.focusWin(el), true);
     // The plane's gestures write the inline rect, which is the DESK rect; a
     // card on top moves its floating box instead, through `floatGesture`.
-    window.WBConsole.makeDraggable(el, head, {
+    consoleHost?.makeDraggable(el, head, {
       locked: () => !!el._noteLocked || onTop(el),
       onDrop: () => persistCards(el),
     });
@@ -987,8 +994,8 @@ export function createNotes(window: NotesWindow, document: Document) {
     stage()?.append(el);
     // In the WINDOW tier from the moment it exists. A card built by a restore
     // is never focused, so without this it kept `z-index: auto` and every
-    // console painted over it — see `WBConsole.stackWin`.
-    window.WBConsole.stackWin?.(el);
+    // console painted over it — see the console's `stackWin`.
+    consoleHost?.stackWin?.(el);
     return el;
   }
 
@@ -1116,8 +1123,8 @@ export function createNotes(window: NotesWindow, document: Document) {
           // the shell says so; keeping it would put an editor over bytes and
           // the first autosave would overwrite them.
           if (reason === "not a note") {
-            window.WBConsole.saveNotes(
-              (window.WBConsole.notes() || []).filter((n) => n.id !== record.id),
+            consoleHost?.saveNotes(
+              (consoleHost?.notes() || []).filter((n) => n.id !== record.id),
             );
             render();
             sendDocument(document, "workbench:open-request", {
@@ -1695,7 +1702,7 @@ export function createNotes(window: NotesWindow, document: Document) {
             if (entry.isIntersecting) wakeCard(entry.target as NoteCard);
           }
         },
-        { root, rootMargin: `${window.WBConsole?.DORMANT_MARGIN_PX ?? 300}px` },
+        { root, rootMargin: `${consoleHost?.DORMANT_MARGIN_PX ?? 300}px` },
       );
     }
     if (sweeper == null) sweeper = setInterval(sweepDormancy, SWEEP_MS);
@@ -1731,7 +1738,7 @@ export function createNotes(window: NotesWindow, document: Document) {
     el.remove();
   }
   function sweepDormancy() {
-    const after = window.WBConsole?.DORMANT_AFTER_MS ?? 15000;
+    const after = consoleHost?.DORMANT_AFTER_MS ?? 15000;
     for (const [el, seen] of [...watched]) {
       if (!el.isConnected) {
         untrackDormancy(el);
@@ -1788,11 +1795,11 @@ export function createNotes(window: NotesWindow, document: Document) {
   function create({ repo, checkout, viewport, offset }: NewNote = {}) {
     if (!repo) return null;
     // The cap refuses, it does not evict (see `saveNotes`).
-    if (window.WBConsole?.atNoteCap?.()) {
-      window.WBConsole.toast({ text: `You can have at most ${window.WBConsole.NOTE_MAX} notes. Close one first.` });
+    if (consoleHost?.atNoteCap?.()) {
+      consoleHost?.toast({ text: `You can have at most ${consoleHost?.NOTE_MAX} notes. Close one first.` });
       return null;
     }
-    const records = window.WBConsole?.notes?.() || [];
+    const records = consoleHost?.notes?.() || [];
     const record = {
       id: `note-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
       repo,
@@ -1802,16 +1809,16 @@ export function createNotes(window: NotesWindow, document: Document) {
         viewport || { width: 0, height: 0 },
         offset || { left: 0, top: 0 },
         records.length,
-        window.WBConsole?.fenceRecords?.() || [],
+        consoleHost?.fenceRecords?.() || [],
       ),
       locked: false,
       ts: Date.now(),
     };
-    window.WBConsole.saveNotes(records.concat([record]));
+    consoleHost?.saveNotes(records.concat([record]));
     render();
     const el = cardEl(record.id);
     if (el) {
-      window.WBConsole.focusWin(el);
+      consoleHost?.focusWin(el);
       // "already in edit with the cursor placed" (ADR-0064 §9) — the editor
       // mounts a tick later, so the intent is left on the card and honoured by
       // `mountEditor`. Without it the first act after "New note" is a click
@@ -1841,16 +1848,16 @@ export function createNotes(window: NotesWindow, document: Document) {
       // its first save, and the path the undo must restore is the one that
       // save just chose — the pre-flush snapshot aims at nothing.
       const saved = recordOf(id) || record;
-      window.WBConsole.saveNotes((window.WBConsole.notes() || []).filter((n) => n.id !== id));
+      consoleHost?.saveNotes((consoleHost?.notes() || []).filter((n) => n.id !== id));
       render();
-      window.WBConsole.toast({
+      consoleHost?.toast({
         // The path IS the sentence: "note closed · <path> kept" said the same
         // thing twice, and `kept` was reassuring nobody about the file the
         // `✕` never touches (asked 2026-09-22).
         text: saved.path ? `Note ${saved.path} closed` : "Note closed",
         action: "Undo",
         onAction: () => {
-          window.WBConsole.saveNotes((window.WBConsole.notes() || []).concat([saved]));
+          consoleHost?.saveNotes((consoleHost?.notes() || []).concat([saved]));
           render();
         },
       });
@@ -1863,7 +1870,7 @@ export function createNotes(window: NotesWindow, document: Document) {
   // instead of restoring a set that died with the document.
   function isAway(record: Pick<NoteSource, "rect"> | null | undefined, fences: DeskFence[] | null | undefined) {
     const held = WBGeometry?.fenceOf?.(fences || [], record?.rect);
-    return !!held && !!window.WBConsole?.isDetached?.(held.id);
+    return !!held && !!consoleHost?.isDetached?.(held.id);
   }
 
   // This document holds a FRAGMENT of the plane — one detached fence's members
@@ -1879,8 +1886,8 @@ export function createNotes(window: NotesWindow, document: Document) {
   function render() {
     const st = stage();
     if (!st) return;
-    const records = window.WBConsole?.notes?.() || [];
-    const fences = window.WBConsole?.fenceRecords?.() || [];
+    const records = consoleHost?.notes?.() || [];
+    const fences = consoleHost?.fenceRecords?.() || [];
     const nodes = new Map();
     for (const el of st.querySelectorAll<NoteCard>(".note-card")) nodes.set(el.dataset.noteId, el);
     const seen = new Set();
@@ -1929,7 +1936,7 @@ export function createNotes(window: NotesWindow, document: Document) {
   function paint(el: NoteCard, record: NoteSource, fences: DeskFence[]) {
     el._noteRecord = record;
     const r = record.rect || {};
-    if (!window.WBConsole?.inGesture?.(el)) {
+    if (!consoleHost?.inGesture?.(el)) {
       el.style.left = (r.left || 0) + "px";
       el.style.top = (r.top || 0) + "px";
       el.style.width = (r.width || NOTE_DEFAULT.width) + "px";
@@ -2110,7 +2117,7 @@ export function createNotes(window: NotesWindow, document: Document) {
     const el = cardEl(id);
     const record = recordOf(id) || (fragment ? el?._noteOrphan : null);
     if (!record || !el) return false;
-    if (isAway(record, window.WBConsole?.fenceRecords?.() || [])) return false;
+    if (isAway(record, consoleHost?.fenceRecords?.() || [])) return false;
     if (onTopId === id) return true;
     putBack();
     wakeCard(el);
@@ -2119,7 +2126,7 @@ export function createNotes(window: NotesWindow, document: Document) {
     placeOnTop(el, onTopRect(record.rect || NOTE_DEFAULT, viewportSize()));
     paintShadow(el);
     watchViewport();
-    window.WBConsole.focusWin(el);
+    consoleHost?.focusWin(el);
     return true;
   }
 
@@ -2140,7 +2147,7 @@ export function createNotes(window: NotesWindow, document: Document) {
     viewportWatch = null;
     // Back on the plane the card keeps the z it was last focused with, which
     // is above a maximized console that covered its place before it floated.
-    window.WBConsole?.raiseMaximized?.();
+    consoleHost?.raiseMaximized?.();
   }
 
   function onTopNow() {
@@ -2185,7 +2192,7 @@ export function createNotes(window: NotesWindow, document: Document) {
       const vp = viewportSize();
       const from = { x: e.clientX, y: e.clientY };
       const pointerId = e.pointerId;
-      const threshold = window.WBConsole.dragThreshold(e.pointerType);
+      const threshold = consoleHost?.dragThreshold(e.pointerType);
       let armed = false;
       const onMove = (ev: PointerEvent) => {
         if (ev.pointerId !== pointerId) return;
@@ -2195,7 +2202,7 @@ export function createNotes(window: NotesWindow, document: Document) {
         }
         const at = { x: ev.clientX, y: ev.clientY };
         if (!armed) {
-          if (!window.WBConsole.dragBegins(from, at, threshold)) return;
+          if (!consoleHost?.dragBegins(from, at, threshold ?? 0)) return;
           armed = true;
         }
         const delta = { dx: at.x - from.x, dy: at.y - from.y };
@@ -2589,7 +2596,7 @@ export function createNotes(window: NotesWindow, document: Document) {
       // the one gesture that could break it: two cards over one file would be
       // two editors autosaving it, each overwriting the other with stale text
       // and neither told.
-      const taken = (window.WBConsole?.notes?.() || []).find(
+      const taken = (consoleHost?.notes?.() || []).find(
         (n) =>
           n.id !== record.id &&
           n.repo === record.repo &&
@@ -2630,7 +2637,7 @@ export function createNotes(window: NotesWindow, document: Document) {
   function deleteNote(el: NoteCard) {
     const record = recordOf(el.dataset.noteId);
     if (!record?.path || record.checkout) return;
-    window.WBConsole.askConfirm({
+    consoleHost?.askConfirm({
       title: "Delete this note's file?",
       message: `${record.path} is deleted from the checkout. This cannot be undone.`,
       confirmLabel: "Delete",
@@ -2646,8 +2653,8 @@ export function createNotes(window: NotesWindow, document: Document) {
           // The record goes without a toast: an undo that cannot put the file
           // back would be a lie.
           el._noteDirty = false;
-          window.WBConsole.saveNotes(
-            (window.WBConsole.notes() || []).filter((n) => n.id !== record.id),
+          consoleHost?.saveNotes(
+            (consoleHost?.notes() || []).filter((n) => n.id !== record.id),
           );
           render();
         })
@@ -2664,15 +2671,15 @@ export function createNotes(window: NotesWindow, document: Document) {
   function openFromExplorer({ repo, checkout, path, viewport, offset }: NewNote & { path?: string | null }) {
     if (!repo || !path) return null;
     const tree = checkout ?? null;
-    const already = (window.WBConsole?.notes?.() || []).find(
+    const already = (consoleHost?.notes?.() || []).find(
       (n) => n.repo === repo && (n.checkout ?? null) === tree && n.path === path,
     );
     if (already) return window.WBNotes.jump(already.id);
-    if (window.WBConsole?.atNoteCap?.()) {
-      window.WBConsole.toast({ text: `You can have at most ${window.WBConsole.NOTE_MAX} notes. Close one first.` });
+    if (consoleHost?.atNoteCap?.()) {
+      consoleHost?.toast({ text: `You can have at most ${consoleHost?.NOTE_MAX} notes. Close one first.` });
       return null;
     }
-    const records = window.WBConsole?.notes?.() || [];
+    const records = consoleHost?.notes?.() || [];
     const record = {
       id: `note-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
       repo,
@@ -2682,12 +2689,12 @@ export function createNotes(window: NotesWindow, document: Document) {
         viewport || { width: 0, height: 0 },
         offset || { left: 0, top: 0 },
         records.length,
-        window.WBConsole?.fenceRecords?.() || [],
+        consoleHost?.fenceRecords?.() || [],
       ),
       locked: false,
       ts: Date.now(),
     };
-    window.WBConsole.saveNotes(records.concat([record]));
+    consoleHost?.saveNotes(records.concat([record]));
     render();
     return window.WBNotes.jump(record.id);
   }
@@ -2701,8 +2708,8 @@ export function createNotes(window: NotesWindow, document: Document) {
   // this window's viewport to where the fence is, which is where it will be
   // when it comes home.
   function list() {
-    const fences = window.WBConsole?.fenceRecords?.() || [];
-    return (window.WBConsole?.notes?.() || []).map((record) => {
+    const fences = consoleHost?.fenceRecords?.() || [];
+    return (consoleHost?.notes?.() || []).map((record) => {
       const el = cardEl(record.id);
       const markdown = el?._noteMarkdown || "";
       const fence = WBGeometry?.fenceOf?.(fences, record.rect || {});
@@ -2721,7 +2728,7 @@ export function createNotes(window: NotesWindow, document: Document) {
 
   // Jump to a card: the plane moves to it and it takes the focus.
   function jump(id: string) {
-    return window.WBConsole?.jumpToNote?.(id) ?? null;
+    return consoleHost?.jumpToNote?.(id) ?? null;
   }
 
   function reducedMotion() {

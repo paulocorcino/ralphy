@@ -49,7 +49,7 @@ window.WBConsole = createConsole(window, document, location, consoleOpts);
 // `window.WBDaemon` exactly as it does in the workbench.
 window.WBDaemon = createDaemon(window, document, location);
 // The note cards, before `wireDetachedFence` posts "ready".
-window.WBNotes = createNotes(window, document);
+window.WBNotes = createNotes(window, document, { console: window.WBConsole });
 wireDetachedFence(window, document);
 // Last: the console boots once the page has started.
 window.WBConsole.boot();

@@ -38,7 +38,7 @@ WBDevice.report(window);
 // The file pane, before `wire`: `app.ts` reads `WBViewer`.
 window.WBViewer = createViewer(window, document);
 // The note cards, before `wire`: `wb-console.ts` reads `WBNotes` inside functions.
-window.WBNotes = createNotes(window, document);
+window.WBNotes = createNotes(window, document, { console: window.WBConsole });
 wire(window, document);
 Alpine.directive("icon", iconDirective);
 // The open project, before the components that read it (ADR-0073 D6).

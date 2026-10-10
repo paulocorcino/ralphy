@@ -76,14 +76,20 @@ const APP_TS_LINES: usize = 4209;
 const WB_CONSOLE_TS_LINES: usize = 3086;
 /// Lines of `crates/ralphy-daemon/assets/ui/wb-notes.ts`, the note cards
 /// (ADR-0073 D8, started by its 2026-10-10 amendment). 2828 at 823cc84c, before
-/// its first cut (#623).
-const WB_NOTES_TS_LINES: usize = 2828;
+/// its first cut (#623); 2835 since the cards take the console as a typed dep
+/// (#623).
+const WB_NOTES_TS_LINES: usize = 2835;
 
-/// Uses of the name `WBConsole` in the code of `wb-notes.ts`: the cards reach
-/// the console through `window.WBConsole`, with no import and no type that
-/// lists what they read. 49 at 823cc84c (#623). The target is 0: the cards
-/// take the console as a typed dep (ADR-0073, the 2026-10-10 amendment).
-const NOTES_CONSOLE_REACH: usize = 49;
+/// Uses of the name `WBConsole` in the code of `wb-notes.ts`: 49 at 823cc84c,
+/// when the cards reached the console through `window.WBConsole`. 0 since the
+/// cards take the console as a typed dep, `deps.console` (#623, ADR-0073, the
+/// 2026-10-10 amendment). The name never comes back.
+const NOTES_CONSOLE_REACH: usize = 0;
+
+/// The console members a note card may read: the names in the `CardHost`
+/// union of `wb-types.d.ts`. Exact, like the other ratchets: a new name is a
+/// new thing a card reads of the console, and it is a design decision (#623).
+const CARD_HOST_NAMES: usize = 20;
 
 /// `(module, count)` of every use of `_flashAction`, a private member of
 /// `shell()`, in a `wb-*.ts` module: a call, or a name in a component's
@@ -367,8 +373,8 @@ fn the_notes_script_matches_the_line_baseline() {
     );
 }
 
-/// #623: the note cards do not reach the console through `window` more than
-/// they do today.
+/// #623: the note cards do not name `WBConsole`; they take the console as a
+/// typed dep.
 #[test]
 fn the_notes_reach_the_console_as_measured() {
     let path = workspace_root().join("crates/ralphy-daemon/assets/ui/wb-notes.ts");
@@ -379,6 +385,28 @@ fn the_notes_reach_the_console_as_measured() {
          {NOTES_CONSOLE_REACH} -> {uses}; the cards take what they need from the console \
          as a typed dep, and a lower count lowers NOTES_CONSOLE_REACH in the same change"
     );
+}
+
+/// #623: the console members a card reads are the names of `CardHost`, and
+/// that list does not grow without a decision.
+#[test]
+fn the_card_host_lists_the_decided_names() {
+    let path = workspace_root().join(UI_DIR).join("wb-types.d.ts");
+    let names = card_host_names(&read(&path));
+    assert!(
+        names == Some(CARD_HOST_NAMES),
+        "names in CardHost of crates/ralphy-daemon/assets/ui/wb-types.d.ts:          {CARD_HOST_NAMES} -> {names:?}; a change to the list lowers or raises CARD_HOST_NAMES          in the same change, and a raise is a design decision"
+    );
+}
+
+#[test]
+fn card_host_names_count_the_members_and_not_the_module_path() {
+    let src =
+        "export type CardHost = Pick<ReturnType<typeof import(\"./a.ts\").make>, \"x\" | \"y\">;
+               export type Other = Pick<T, \"z\">;
+";
+    assert_eq!(card_host_names(src), Some(2));
+    assert_eq!(card_host_names("export type Other = 1;"), None);
 }
 
 /// #623: no module calls the shell's private flash more than it does today.
@@ -933,6 +961,19 @@ fn name_uses(src: &str, name: &str) -> usize {
         }
     }
     count
+}
+
+/// The member names in `type CardHost = Pick<…, "a" | "b">`: the string
+/// tokens of the declaration that are not a module path.
+fn card_host_names(src: &str) -> Option<usize> {
+    let toks = lex::lex(src, 1);
+    let decl = type_declaration(&toks, "CardHost")?;
+    Some(
+        toks[decl]
+            .iter()
+            .filter(|t| matches!(&t.tok, lex::Tok::Str(text) if !text.starts_with('.')))
+            .count(),
+    )
 }
 
 /// The `function name(` declarations in the code of `src`. An arrow function

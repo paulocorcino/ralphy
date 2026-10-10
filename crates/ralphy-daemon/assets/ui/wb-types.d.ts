@@ -340,3 +340,32 @@ export type NoteCard = HTMLElement & {
   /** The card's place on the plane while it floats. */
   _noteShadow?: HTMLElement | null;
 };
+
+/**
+ * What a note card reads of the consoles: the desk records, the stage's window
+ * tier and gestures, the operator messages and two facts about the page. The
+ * entry module passes it as `deps.console` of `createNotes`.
+ */
+export type CardHost = Pick<
+  ReturnType<typeof import("./wb-console.ts").createConsole>,
+  | "notes"
+  | "saveNotes"
+  | "fenceRecords"
+  | "atNoteCap"
+  | "NOTE_MAX"
+  | "focusWin"
+  | "stackWin"
+  | "restoreRect"
+  | "startResize"
+  | "makeDraggable"
+  | "inGesture"
+  | "raiseMaximized"
+  | "dragThreshold"
+  | "dragBegins"
+  | "DORMANT_MARGIN_PX"
+  | "DORMANT_AFTER_MS"
+  | "toast"
+  | "askConfirm"
+  | "isDetached"
+  | "jumpToNote"
+>;
