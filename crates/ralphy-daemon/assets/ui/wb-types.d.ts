@@ -16,6 +16,9 @@ export type { CheckoutRow } from "./wb-console-title.ts";
 export type { Read } from "./wb-fail.ts";
 export type { Group } from "./wb-fleet.ts";
 export type { Listing, Project } from "./wb-project.ts";
+export type { BoardRow, Issue as BoardIssue } from "./wb-kanban.ts";
+export type { Run, Issue as RunIssue } from "./wb-runs.ts";
+export type { Slot } from "./wb-split.ts";
 
 // ---- the plane ---------------------------------------------------------------
 
@@ -411,3 +414,89 @@ export type FleetReply = { peers?: import("./app.ts").FleetPeer[]; repos?: Fleet
 
 /** A persistent socket the shell keeps: `resume` re-opens it after a suspend. */
 export type Subscription = ReturnType<import("./wb-daemon.ts").WBDaemonApi["subscribePresence"]>;
+
+/** The shell fields its methods set on first use: none is in the literal. */
+export type ShellLate = {
+  _clockTick?: Timer;
+  _actionTimer?: Timer;
+  /** Counts the `worktree.list` reads; only the newest one is kept. */
+  _listingSeq?: number;
+  /** Counts the `issue.show` reads; only the newest one is kept. */
+  _issueDetailGen?: number;
+};
+
+/** The repo's ready plan on the board: its text and `WBRun.planSummary` of it. */
+export type ReadyPlan = { md: string; summary: ReturnType<typeof import("./wb-runs.ts").WBRun.planSummary> };
+
+/** The run pill of a board card (`WBKanban.runningFor`), or `null`. */
+export type RunPill = ReturnType<typeof import("./wb-kanban.ts").WBKanban.runningFor>;
+
+type SpendInput = NonNullable<Parameters<typeof import("./wb-spend.ts").WBSpend.state>[0]>;
+type LedgerInput = NonNullable<Parameters<typeof import("./wb-spend.ts").WBSpend.ledger>[0]>;
+
+/** The `/api/spend` document, or `null` before a read. */
+export type SpendDoc = SpendInput["doc"];
+
+/** A record of the `/api/usage` ledger. */
+export type LedgerRecord = NonNullable<LedgerInput["records"]>[number];
+
+/** A peer whose usage did not arrive (`/api/usage` `missing`). */
+export type LedgerMissing = NonNullable<LedgerInput["missing"]>[number];
+
+/** The daemon's auth model as the shell holds it; `probeSession` fills it. */
+export type SecurityFact = {
+  tokenSet: boolean;
+  passwordSet: boolean;
+  totpEnrolled: boolean;
+  requireLogin: boolean;
+  remoteImages: boolean;
+  policy: string;
+};
+
+/** A tab of the canvas. A file or diff tab names its file and its checkout. */
+export type CanvasTab = {
+  id: string;
+  kind: string;
+  title: string;
+  icon: string;
+  closable: boolean;
+  path?: string;
+  project?: string;
+  checkout?: string | null;
+};
+
+/** What `openTab` takes. `content` is the bytes a re-attached popup brings back. */
+export type TabOpen = {
+  project: string;
+  path: string;
+  title: string;
+  ftype: string;
+  content?: string;
+  fragment?: string;
+  find?: string | null;
+  checkout?: string | null;
+  encoding?: string;
+  bom?: boolean;
+};
+
+/** What a file tab opens with: the bytes, or why the daemon served none.
+ * `null`: there is nothing to show, and the tab is closed. */
+export type TabBody = { content?: string; encoding?: string; bom?: boolean; refused?: string } | null;
+
+/** A diff tab's two sides (`WBChanges.diffTarget`). */
+export type DiffTarget = ReturnType<typeof import("./wb-changes.ts").WBChanges.diffTarget>;
+
+/** A row of the context menu: a separator, or an action. */
+export type MenuItem =
+  | { sep: true }
+  | { sep?: false; label: string; icon: string; run: () => void; danger?: boolean; disabled?: boolean; title?: string };
+
+/** A message a detached file window sends the shell (`wb-detached.ts`). */
+export type FilePopupMessage =
+  | { type: "wb-detach-ready" }
+  | { type: "wb-emit"; action: string; detail?: object }
+  | { type: "wb-open-request"; detail?: OpenRequest }
+  | { type: "wb-reattach"; desc?: FileDescriptor };
+
+/** A `file.write` payload: the pane's text, its encoding and its byte order mark. */
+export type SavePayload = CommandPayload & { encoding?: string; bom?: boolean };

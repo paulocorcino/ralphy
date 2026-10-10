@@ -215,7 +215,7 @@ export function wbConsoleMenus() {
         const ws = document.getElementById("workspace");
         window.WBNotes.create({
           repo: this.$store.projects.openSlug,
-          checkout: window.WBConsole.checkoutOf(this.$store.projects.openSlug),
+          checkout: window.WBConsole.checkoutOf(this.$store.projects.openSlug!),
           viewport: { width: ws?.clientWidth || 0, height: ws?.clientHeight || 0 },
           offset: { left: ws?.scrollLeft || 0, top: ws?.scrollTop || 0 },
         });

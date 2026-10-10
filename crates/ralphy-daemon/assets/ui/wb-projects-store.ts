@@ -18,7 +18,7 @@ import type { Project } from "./wb-project.ts";
 export function projectsStore() {
   return {
     // The ref of the open project (`repoRef`), or null.
-    openSlug: null as any,
+    openSlug: null as string | null,
     // `loadRepos()` fills this at init.
     projects: [] as Project[],
     setOpen(slug: string | null) {

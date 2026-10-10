@@ -37,7 +37,7 @@ const single = (left: string | null) => ({ left, right: null, mirror: false, foc
 // gone, a mirror of a pane that is not code: single, slot kept, converging on
 // the next call once the world changes.
 /** The split slot: a pinned tab, or the mirror of the active code pane. */
-type Slot = { kind: "pin"; id: string } | { kind: "mirror" } | null | undefined;
+export type Slot = { kind: "pin"; id: string } | { kind: "mirror"; id?: undefined } | null | undefined;
 /** A tab as the split reads it. */
 type Tab = { id: string; kind?: string; closable?: boolean; project?: string; path?: string; checkout?: string | null };
 
@@ -108,7 +108,7 @@ function toStored(slot: Slot, ratio: number | null | undefined, tabs: Tab[] | nu
   return { kind: "pin", project: t.project, path: t.path, checkout: t.checkout ?? null, ratio: r };
 }
 
-function fromStored(raw: unknown, tabs: Tab[] | null | undefined) {
+function fromStored(raw: unknown, tabs: Tab[] | null | undefined): Slot {
   if (!raw || typeof raw !== "object") return null;
   // The browser's store: any shape may come back, so each field is checked.
   const stored = raw as { kind?: unknown; project?: unknown; path?: unknown; checkout?: unknown };

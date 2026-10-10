@@ -57,11 +57,9 @@ const WB_CONSOLE_TS_LINES: usize = 3081;
 const UI_DIR: &str = "crates/ralphy-daemon/assets/ui";
 
 /// `(module, count)` of every explicit `any` under `UI_DIR`, the count oxlint's
-/// `typescript/no-explicit-any` reports: 2122 in 50 modules on e75f2394 (#613).
-/// The table is exact and only gets shorter: a module at zero leaves it (and
-/// the `.oxlintrc.json` override) in the same change, and a new module is
-/// not in it.
-const ANY_BASELINE: &[(&str, usize)] = &[("app.ts", 164), ("wb-projects-store.ts", 1)];
+/// `typescript/no-explicit-any` reports: 2122 in 50 modules on e75f2394, and
+/// none since #613. The table is empty and stays empty: every module has zero.
+const ANY_BASELINE: &[(&str, usize)] = &[];
 
 const SPAWNED: [&str; 3] = ["git", "gh", "ssh"];
 
@@ -232,9 +230,8 @@ fn the_console_script_matches_the_line_baseline() {
     );
 }
 
-/// #613: no module gets a new explicit `any`, and a count that went down
-/// stays down. oxlint (`typescript/no-explicit-any`) reports the same `any`s
-/// per file; it guards only the modules outside its override.
+/// #613: no module has an explicit `any`. oxlint (`typescript/no-explicit-any`)
+/// reports the same `any`s per file, for every module.
 #[test]
 fn explicit_any_matches_the_baseline() {
     let actual = any_counts(&workspace_root().join(UI_DIR));

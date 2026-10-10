@@ -17,26 +17,15 @@
     // `catch {}` is used where the failure has no reader, such as closing a
     // socket that is already gone.
     "no-empty": ["error", { "allowEmptyCatch": true }],
-    // A new `any` is refused. The modules that still have one are listed in the
-    // override below (ADR-0075 D6: narrowing them is later work).
+    // No `any` in any module, with no exception (ADR-0075 D6, #613).
+    // `explicit_any_matches_the_baseline` (crates/xtask/tests/ratchets.rs)
+    // fails on a new one too.
     "typescript/no-explicit-any": "error",
     // `scrim()` in app.ts keeps `this` as `self`: Alpine calls `x-effect` with
     // its own `this`, so the arrow-function fix does not apply there.
     "typescript/no-this-alias": "off"
   },
   "overrides": [
-    { "files": ["**/ui-tests/**"], "env": { "node": true } },
-    {
-      // The modules that had an explicit `any` when the rule was turned on.
-      // The list only gets shorter: a module leaves it when its last `any`
-      // goes. A new module starts at zero and is never added here.
-      // `explicit_any_matches_the_baseline` (crates/xtask/tests/ratchets.rs)
-      // keeps the count of each listed module from growing (#613).
-      "files": [
-        "**/assets/ui/app.ts",
-        "**/assets/ui/wb-projects-store.ts",
-      ],
-      "rules": { "typescript/no-explicit-any": "off" }
-    }
+    { "files": ["**/ui-tests/**"], "env": { "node": true } }
   ]
 }

@@ -10,6 +10,12 @@ type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string
 /** The `payload` of a `/ws/command` command: the verb's arguments. */
 type CommandPayload = { repo?: string | null; checkout?: string; [field: string]: JsonValue | undefined };
 
+// `filter(Boolean)` keeps only the truthy items, but the lib's own type for it
+// keeps the falsy members in the item type.
+interface Array<T> {
+  filter(predicate: BooleanConstructor): Exclude<T, false | 0 | "" | null | undefined>[];
+}
+
 /** A `/ws/command` reply: `status` is "ok" or the reason it is not. A refusal
  * says why in `message` or `reason`. */
 type DaemonReply = { status: string; message?: string; reason?: string };

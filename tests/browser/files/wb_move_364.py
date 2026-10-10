@@ -341,7 +341,7 @@ def main():
                 "arm={!r}".format(rename_arm.strip()[:120]),
             )
             files_src = Path(FILES_TS).read_text(encoding="utf-8")
-            perform = files_src.split("async performMove(from: any, to: any) {", 1)[1].split("\n    },", 1)[0]
+            perform = files_src.split("async performMove(from: string, to: string) {", 1)[1].split("\n    },", 1)[0]
             check(
                 "performMove reveals through the named revealRel primitive",
                 "revealRel(" in perform,
