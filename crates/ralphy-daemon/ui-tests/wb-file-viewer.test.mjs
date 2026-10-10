@@ -1,4 +1,4 @@
-// Unit tests for assets/ui/wb-viewer.ts — the link decision table behind a
+// Unit tests for assets/ui/wb-file-viewer.ts — the link decision table behind a
 // click in a rendered markdown document, and the two-pane paint behind the
 // slot (ADR-0037 §3c). The link tests run the real module against a DOM that
 // answers nothing: `createViewer` only touches `document` to find its mount
@@ -6,7 +6,7 @@
 // remembers what was appended and a Monaco that boots.
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { createViewer, isFileDescriptor, isOpenRequest } from "../assets/ui/wb-viewer.ts";
+import { createViewer, isFileDescriptor, isOpenRequest } from "../assets/ui/wb-file-viewer.ts";
 import { WBMonaco } from "../assets/ui/wb-monaco.ts";
 
 const REAL_MONACO = { ...WBMonaco };

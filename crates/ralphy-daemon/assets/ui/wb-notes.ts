@@ -13,7 +13,7 @@
 //
 // Loaded in the shell AND in the detached-fence popup, so: no module-scope DOM
 // read, no `fetch`, no timer at load (the ui-tests evaluate this file under a
-// stub document), and no browser store of its own — `wb-view.ts` holds the one
+// stub document), and no browser store of its own — `wb-client-view.ts` holds the one
 // there is (#339).
 import { WBFail } from "./wb-fail.ts";
 import { WBGeometry } from "./wb-geometry.ts";
@@ -1605,7 +1605,7 @@ export function createNotes(window: NotesWindow, document: Document) {
         // The SCHEME is an allowlist, and that is a security control, not
         // tidiness. The viewer's `linkTarget` answers "external" for ANY
         // scheme and leaves it to the browser — safe there only because the
-        // viewer's markdown went through DOMPurify first (wb-viewer.ts), which
+        // viewer's markdown went through DOMPurify first (wb-file-viewer.ts), which
         // drops a `javascript:` href. A note's markdown never meets that pass:
         // Crepe renders the link straight into the document, so a `.note` file
         // — repo bytes, which an agent may have written — could otherwise run
@@ -1639,7 +1639,7 @@ export function createNotes(window: NotesWindow, document: Document) {
     return SAFE_SCHEMES.includes(scheme[1].toLowerCase() + ":");
   }
 
-  // The detached-fence popup loads no `wb-viewer.ts`, so without this every
+  // The detached-fence popup loads no `wb-file-viewer.ts`, so without this every
   // link in a note there would fall into the `!target` branch and silently do
   // nothing. A repo-relative link still cannot be opened from a popup that has
   // no explorer — that one stays inert, and says so by doing nothing.

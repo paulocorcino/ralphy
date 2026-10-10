@@ -347,7 +347,7 @@ fn a_ui_literal_no_rust_code_produces_is_reported() {
 
 /// The strings a UI file compares with a reply's `reason`, `message` or
 /// `state`, plus the keys of the `CAUSE` (wb-fail.ts) and `REFUSAL_TEXT`
-/// (wb-viewer.ts) tables.
+/// (wb-file-viewer.ts) tables.
 fn ui_literals(js: &str) -> BTreeSet<String> {
     // A bare `reason`/`message` or one read off `reply`. Not `typeof x ===
     // "string"`, and not another object's field: `iss.reason` is the forge's

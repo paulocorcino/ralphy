@@ -1,11 +1,11 @@
-// Unit tests for assets/ui/wb-console-desk.ts — the console's desk: sending
+// Unit tests for assets/ui/wb-desk.ts — the console's desk: sending
 // the desk changes and restoring the desk layout. `createDesk` is driven with
 // fake `deps` (a fake sync, sink, store and stage), with no console and no
 // browser. The popup registry is the real one over a fake store.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createDesk } from "../assets/ui/wb-console-desk.ts";
-import { createPopupRegistry } from "../assets/ui/wb-console-popups.ts";
+import { createDesk } from "../assets/ui/wb-desk.ts";
+import { createPopupRegistry } from "../assets/ui/wb-desk-popups.ts";
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 

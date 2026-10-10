@@ -302,8 +302,8 @@ interface Window {
   WBRuns: { output(text: string): void };
   /** The note cards (`wb-notes.ts`). */
   WBNotes: ReturnType<typeof import("./wb-notes.ts").createNotes>;
-  /** The file pane (`wb-viewer.ts`). */
-  WBViewer: ReturnType<typeof import("./wb-viewer.ts").createViewer>;
+  /** The file pane (`wb-file-viewer.ts`). */
+  WBViewer: ReturnType<typeof import("./wb-file-viewer.ts").createViewer>;
   /** The vendored lucide (`vendor/lucide.js`). */
   lucide: {
     icons: Record<string, LucideIcon | undefined>;
@@ -390,7 +390,7 @@ type WorkbenchAction = {
 }[WorkbenchActionName];
 
 /** A file a pane can reopen anywhere, a tab or a detached popup, with its
- * current content (`descOf` in `wb-viewer.ts`). */
+ * current content (`descOf` in `wb-file-viewer.ts`). */
 type FileDescriptor = {
   project: string;
   label: string;

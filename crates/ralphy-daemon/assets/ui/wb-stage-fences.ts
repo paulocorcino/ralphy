@@ -8,18 +8,18 @@
    (ADR-0075 D7). They read the console only through `deps`, and `FenceDeps`
    lists every read, so `tsc` refuses a read outside it. `wb-console.ts`
    creates one per console and keeps the desk and the lifecycle channel; the
-   fence list is `wb-console-fence-list.ts`. A gesture begins and ends through the gestures owner,
+   fence list is `wb-stage-fence-list.ts`. A gesture begins and ends through the gestures owner,
    and a detach changes the popup registry only through its calls.
    --------------------------------------------------------------------------- */
 import { WBGeometry } from "./wb-geometry.ts";
 import * as WBConsoleInput from "./wb-console-input.ts";
 import * as WBDeskFolds from "./wb-desk-folds.ts";
-import { DIRS } from "./wb-console-chrome.ts";
+import { DIRS } from "./wb-stage-chrome.ts";
 import { sendDocument } from "./wb-events.ts";
-import type { Gestures } from "./wb-console-chrome.ts";
-import type { PopupEntry, PopupMember, PopupRegistry } from "./wb-console-popups.ts";
-import type { FenceList } from "./wb-console-fence-list.ts";
-import type { OpenerLink } from "./wb-console-detach.ts";
+import type { Gestures } from "./wb-stage-chrome.ts";
+import type { PopupEntry, PopupMember, PopupRegistry } from "./wb-desk-popups.ts";
+import type { FenceList } from "./wb-stage-fence-list.ts";
+import type { OpenerLink } from "./wb-desk-detach.ts";
 import type { ConfirmOptions } from "./wb-console-title.ts";
 import type { DetachReason } from "./wb-console-session.ts";
 import type { ConsoleWin, DeskFence, DeskWindowFields, ExtentOpts, NoteCard, Point, Rect } from "./wb-types.d.ts";

@@ -27,7 +27,7 @@
 
    NOTHING here may reach for the browser's own per-origin store — "window
    state" is a name that invites exactly that mistake, and that store belongs
-   to `wb-view.ts` alone (ADR-0050: the desk layout is daemon state, and #339
+   to `wb-client-view.ts` alone (ADR-0050: the desk layout is daemon state, and #339
    sweeps the whole tree for a second one).
 --------------------------------------------------------------------------- */
 import type { ConsoleWin, ConsoleWinFields } from "./wb-types.d.ts";

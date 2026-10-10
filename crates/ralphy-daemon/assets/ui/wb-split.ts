@@ -11,7 +11,7 @@
 
    Nothing here reads the DOM, the store or a module-scope binding: `app.ts`
    holds `slot`/`splitRatio`/`lastLeft`, feeds them through `resolve` on every
-   `syncViewer`, and `wb-viewer.ts` paints the answer. Same shape as
+   `syncViewer`, and `wb-file-viewer.ts` paints the answer. Same shape as
    `wb-geometry.ts` → `wb-console.ts`.
 
    Load order: BEFORE `app.ts`; nothing else reads this namespace.
@@ -84,7 +84,7 @@ function afterClose(slot: Slot, closedId: string) {
 
 // The left column's share of the canvas after a divider drag: the pointer's
 // x over the width, held so neither pane drops under `MIN_PANE` nor under a
-// fifth of the canvas — the range `wb-view.ts` accepts back from the store.
+// fifth of the canvas — the range `wb-client-view.ts` accepts back from the store.
 const MIN_RATIO = 0.2;
 function clampRatio(px: number, width: number, minPane = MIN_PANE) {
   if (!Number.isFinite(width) || width <= 0) return DEFAULT_RATIO;

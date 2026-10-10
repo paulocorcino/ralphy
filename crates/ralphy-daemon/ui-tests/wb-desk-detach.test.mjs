@@ -1,11 +1,11 @@
-// Unit tests for assets/ui/wb-console-detach.ts — the opener's side of a
+// Unit tests for assets/ui/wb-desk-detach.ts — the opener's side of a
 // detached fence. `createDetach` is driven with fake `deps`, a fake
 // lifecycle channel and the real popup registry, with no console and no
 // browser.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createDetach, isFencePopupMessage } from "../assets/ui/wb-console-detach.ts";
-import { createPopupRegistry } from "../assets/ui/wb-console-popups.ts";
+import { createDetach, isFencePopupMessage } from "../assets/ui/wb-desk-detach.ts";
+import { createPopupRegistry } from "../assets/ui/wb-desk-popups.ts";
 import { WBDetachLink } from "../assets/ui/wb-detach-link.ts";
 
 const ORIGIN = "http://127.0.0.1:7800";

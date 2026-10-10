@@ -733,7 +733,7 @@ export function createViewer(window: ViewerWindow, document: Document) {
 
   // The Detach/Re-attach button. A file tab detaches into a standalone popup
   // (watch an agent in the main window, read the file in another); a detached
-  // pane folds back in. wb-viewer only *requests* it — the shell (app.ts) opens
+  // pane folds back in. wb-file-viewer only *requests* it — the shell (app.ts) opens
   // the popup, and the popup (detached.html) folds back — so this module stays
   // agnostic to windows/tabs.
   // --- the encoding pill and its menu ---------------------------------------

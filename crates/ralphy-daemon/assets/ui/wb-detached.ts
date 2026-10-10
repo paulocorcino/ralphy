@@ -4,7 +4,7 @@
 // D5, D9).
 import { isRecord } from "./wb-api.ts";
 import { openerOf } from "./wb-events.ts";
-import { isFileDescriptor, isOpenRequest } from "./wb-viewer.ts";
+import { isFileDescriptor, isOpenRequest } from "./wb-file-viewer.ts";
 
 /** A message this window sends the shell. */
 export type FilePopupMessage =

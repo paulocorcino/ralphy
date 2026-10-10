@@ -47,7 +47,7 @@ const TRISTATE = ["unset", "on", "off"];
 // service (shared across every project); "project" settings are persisted per
 // repo in <repo>/.ralphy/settings.json, so they follow whichever project is
 // open; "client" settings are this BROWSER profile's own, held in the view
-// store (wb-view.ts) and never sent to the daemon.
+// store (wb-client-view.ts) and never sent to the daemon.
 /** The three stores a setting can live in; see the paragraph above. */
 type Scope = "daemon" | "project" | "client";
 /** One control of a section. */

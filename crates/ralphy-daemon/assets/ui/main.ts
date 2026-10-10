@@ -21,7 +21,7 @@ import { wbFiles } from "./wb-files.ts";
 import { wbMoveDialog } from "./wb-move-dialog.ts";
 import { createDaemon } from "./wb-daemon.ts";
 import { WBDevice } from "./wb-device.ts";
-import { createViewer } from "./wb-viewer.ts";
+import { createViewer } from "./wb-file-viewer.ts";
 import { createNotes } from "./wb-notes.ts";
 import { createConsole } from "./wb-console.ts";
 import { iconDirective, shell, wire } from "./app.ts";

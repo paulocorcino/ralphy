@@ -1,5 +1,5 @@
 // The entry module of `detached.html` (ADR-0075 D5). The page has no Alpine.
-import { createViewer } from "./wb-viewer.ts";
+import { createViewer } from "./wb-file-viewer.ts";
 import { wireDetached } from "./wb-detached.ts";
 
 // The opener reads `popup.WBViewer`, and the page posts "ready" only once it

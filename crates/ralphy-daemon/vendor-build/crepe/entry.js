@@ -393,7 +393,7 @@ export function create({ root, value, readonly, placeholder: hint, titleLabels, 
 // ---- the mermaid node view (ADR-0064 §15) ------------------------------------
 
 // The page's own `mermaid` and `DOMPurify` — the same two the file viewer
-// draws with (`wb-viewer.js`), so a diagram looks identical in a note and in a
+// draws with (`wb-file-viewer.js`), so a diagram looks identical in a note and in a
 // README, and the SVG meets the same sanitizer. Absent (a shell that loaded
 // neither), a mermaid fence stays a code block and nothing throws.
 let mermaidReady = false;
@@ -564,7 +564,7 @@ function drawMermaid(host, source, tries) {
     return;
   }
   if (!mermaidReady) {
-    // `strict`, not `loose`, and the reason is `wb-viewer.js`'s verbatim: a
+    // `strict`, not `loose`, and the reason is `wb-file-viewer.js`'s verbatim: a
     // diagram's source is repo bytes, and `loose` skips mermaid's own sanitize
     // pass, turning a `click A "javascript:…"` directive into a live link.
     // Initialised HERE rather than borrowed from the viewer because this

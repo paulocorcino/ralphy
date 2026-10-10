@@ -17,9 +17,9 @@ import { WBWindowState } from "./wb-window-state.ts";
 import { WBDetachLink } from "./wb-detach-link.ts";
 import { forwardAction } from "./wb-events.ts";
 import { isOptionalString, isRecord } from "./wb-api.ts";
-import type { PopupEntry, PopupMember, PopupRegistry } from "./wb-console-popups.ts";
+import type { PopupEntry, PopupMember, PopupRegistry } from "./wb-desk-popups.ts";
 import type { DetachReason } from "./wb-console-session.ts";
-import type { FenceList } from "./wb-console-fence-list.ts";
+import type { FenceList } from "./wb-stage-fence-list.ts";
 import type { DetachMessage } from "./wb-detach-link.ts";
 import type { TerminalOpts } from "./wb-console-terminal.ts";
 import type { ConsoleWin, DeskFence, DeskNote, DeskRecord, ExtentOpts, SpawnCarry, WindowSnapshot } from "./wb-types.d.ts";
@@ -182,7 +182,7 @@ export function createDetach(deps: DetachDeps) {
 
   // ---- detaching a fence into its own window (issues #346, #347) ---------------
   // The popup registry, `detached` and `fencePopups`, is `popups`
-  // (`wb-console-popups.ts`): every change to either goes through it.
+  // (`wb-desk-popups.ts`): every change to either goes through it.
   const PEER_WINDOW = WBDetachLink.PEER_WINDOW_MS;
   const HEARTBEAT = WBDetachLink.HEARTBEAT_MS;
 

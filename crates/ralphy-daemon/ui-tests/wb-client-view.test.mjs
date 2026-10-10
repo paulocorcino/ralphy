@@ -1,9 +1,9 @@
-// Unit tests for assets/ui/wb-view.ts — the per-client view record's read
+// Unit tests for assets/ui/wb-client-view.ts — the per-client view record's read
 // normalisation. Runs the real source against a `localStorage` that holds one
 // string: the module touches nothing else at load.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { WBView } from "../assets/ui/wb-view.ts";
+import { WBView } from "../assets/ui/wb-client-view.ts";
 
 // The module reads the bare `localStorage` when `read` or `patch` runs, so
 // the fake is installed on `globalThis` for the calls that follow it.

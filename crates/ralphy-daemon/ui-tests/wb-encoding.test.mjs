@@ -185,11 +185,11 @@ test("a refusal the operator declines to repair leaves the pane unsaved", async 
   assert.equal(viewer.lastAck.reason, "unencodable");
 });
 
-// --- the pane's side (wb-viewer.ts) ---------------------------------------
+// --- the pane's side (wb-file-viewer.ts) ---------------------------------------
 // The record behind a pane is the fold: what it carries into a save and a
 // detach descriptor, and what a refusal does to it. The DOM here is a fake
 // that accepts any structure and answers each selector with one node of its own.
-import { createViewer } from "../assets/ui/wb-viewer.ts";
+import { createViewer } from "../assets/ui/wb-file-viewer.ts";
 import { WBMonaco } from "../assets/ui/wb-monaco.ts";
 
 const REAL_MONACO = { ...WBMonaco };

@@ -5,10 +5,10 @@
 // `import type` (#613).
 import type { createTerminal } from "./wb-console-terminal.ts";
 import type { createTitle } from "./wb-console-title.ts";
-import type { DeskDeps } from "./wb-console-desk.ts";
-import type { DetachDeps } from "./wb-console-detach.ts";
-import type { PopupRegistryDeps } from "./wb-console-popups.ts";
-import type { ViewDeps } from "./wb-console-view.ts";
+import type { DeskDeps } from "./wb-desk.ts";
+import type { DetachDeps } from "./wb-desk-detach.ts";
+import type { PopupRegistryDeps } from "./wb-desk-popups.ts";
+import type { ViewDeps } from "./wb-stage-view.ts";
 
 // ---- the plane ---------------------------------------------------------------
 

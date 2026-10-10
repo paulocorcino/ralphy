@@ -1,10 +1,10 @@
-// Unit tests for assets/ui/wb-console-view.ts — the landing and the stored
+// Unit tests for assets/ui/wb-stage-view.ts — the landing and the stored
 // offset, the reveal, the slide and the plane's wheel. `createView` is driven
 // with fake `deps`, a fake viewport and a fake stage, with no console and no
 // browser.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createView } from "../assets/ui/wb-console-view.ts";
+import { createView } from "../assets/ui/wb-stage-view.ts";
 import { WBGeometry } from "../assets/ui/wb-geometry.ts";
 
 // Something on the page that keeps its listeners, so a test can fire them.

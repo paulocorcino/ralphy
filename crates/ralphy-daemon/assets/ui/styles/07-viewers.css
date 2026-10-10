@@ -352,7 +352,7 @@
 /* Narrow: the outline is a SHEET over the article, not a column beside it —
    190px of index leaves a phone-width pane 330px of prose. Same <nav>, same
    items; `toc-open` on `.md-split` shows it, a jump or a tap on the article
-   takes it away (wb-viewer.js). `:not(.editing)` keeps the rule above
+   takes it away (wb-file-viewer.js). `:not(.editing)` keeps the rule above
    winning: the raw editor never has an index over it. */
 @container viewer (max-width: 560px) {
   .md-outline {

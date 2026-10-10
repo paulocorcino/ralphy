@@ -1,10 +1,10 @@
-// Unit tests for assets/ui/wb-console-popups.ts — the popup registry: the
+// Unit tests for assets/ui/wb-desk-popups.ts — the popup registry: the
 // fences this tab detached and their popup entries. `createPopupRegistry` is
 // driven with a fake store and a fake heartbeat, with no console and no
 // browser.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createPopupRegistry, isPopupMember } from "../assets/ui/wb-console-popups.ts";
+import { createPopupRegistry, isPopupMember } from "../assets/ui/wb-desk-popups.ts";
 
 // A registry over a store that records each write, and a heartbeat that
 // records each start and stop.

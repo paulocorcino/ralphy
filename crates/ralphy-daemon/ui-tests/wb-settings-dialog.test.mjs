@@ -83,7 +83,7 @@ test("a client-scoped key never reaches the daemon", async () => {
 });
 
 // The console text size is the same `font` field the key bar's A−/A+ write, so
-// the setting and the buttons never disagree. `wb-view.js` reads a BARE
+// the setting and the buttons never disagree. `wb-client-view.js` reads a BARE
 // `localStorage`; a Map-backed one stands in for the browser's for this test.
 test("the console text size is saved to the view store, held to the key bar's range", async () => {
   const real = globalThis.localStorage;

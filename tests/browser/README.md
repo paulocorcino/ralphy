@@ -25,9 +25,9 @@ UI module in `crates/ralphy-daemon/assets/ui/` where one exists.
 | `changes/` | Changes, the diff, sync, push | `wb-changes.ts` |
 | `columns/` | consoles as columns and rows | `wb-columns.ts` |
 | `console/` | one console: clipboard, paste, names, touch, sessions | `wb-console.ts` |
-| `desk/` | the desk: windows, plane, pan, frame, panes, scrollbars | `wb-view.ts`, `wb-split.ts` |
+| `desk/` | the desk: windows, plane, pan, frame, panes, scrollbars | `wb-client-view.ts`, `wb-split.ts` |
 | `fence/` | fences and their detached window | `wb-detach-link.ts` |
-| `files/` | the file tree, search, viewers, Monaco, encoding | `wb-viewer.ts`, `wb-monaco.ts` |
+| `files/` | the file tree, search, viewers, Monaco, encoding | `wb-file-viewer.ts`, `wb-monaco.ts` |
 | `fleet/` | the federated sidebar and fleet surfaces | `wb-fleet.ts` |
 | `hosts/` | hosts and peer tunnels | `wb-hosts.ts` |
 | `notes/` | notes on the stage | `wb-notes.ts` |

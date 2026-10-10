@@ -1,9 +1,9 @@
-// Unit tests for assets/ui/wb-console-chrome.ts — the console's window chrome
+// Unit tests for assets/ui/wb-stage-chrome.ts — the console's window chrome
 // and the owner of the elements under a gesture. `createChrome` is driven with
 // fake `deps` and a fake document, with no console and no browser.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createChrome, createGestures } from "../assets/ui/wb-console-chrome.ts";
+import { createChrome, createGestures } from "../assets/ui/wb-stage-chrome.ts";
 
 // An element with the few DOM members the chrome uses. Listeners are kept so a
 // test can fire them.
