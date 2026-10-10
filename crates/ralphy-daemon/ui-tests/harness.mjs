@@ -29,10 +29,10 @@ import { projectsStore } from "../assets/ui/wb-projects-store.ts";
 import { WBSpend } from "../assets/ui/wb-spend.ts";
 import { WBKanban } from "../assets/ui/wb-kanban.ts";
 import { createDaemon } from "../assets/ui/wb-daemon.ts";
-import { createViewer } from "../assets/ui/wb-viewer.ts";
+import { createViewer } from "../assets/ui/wb-file-viewer.ts";
 import { createNotes } from "../assets/ui/wb-notes.ts";
 import { createConsole } from "../assets/ui/wb-console.ts";
-import { WBView } from "../assets/ui/wb-view.ts";
+import { WBView } from "../assets/ui/wb-client-view.ts";
 import { WBDeskSink } from "../assets/ui/wb-desk-sink.ts";
 import { WBConsoleName } from "../assets/ui/wb-console-name.ts";
 

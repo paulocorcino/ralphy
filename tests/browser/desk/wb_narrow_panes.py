@@ -3,7 +3,7 @@
 One Playwright pass over a REAL daemon on a scratch `RALPHY_DAEMON_DIR` (own
 port, own registry — the operator's own desk and login policy are untouched).
 
-The pure rule (`pathLabel`) is tabled in `ui-tests/wb-viewer.test.mjs` and the
+The pure rule (`pathLabel`) is tabled in `ui-tests/wb-file-viewer.test.mjs` and the
 container declarations are pinned in `lib.rs`; this script proves what neither
 can: that the `@container` rules FIRE at 390px and stay silent at 1280px, that
 the controls a phone clipped are reachable, and that the overlay index and the

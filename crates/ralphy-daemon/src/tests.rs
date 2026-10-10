@@ -3012,7 +3012,10 @@ fn vendored_crepe_states_its_recipe() {
             "vendor-build/crepe/entry.js",
             include_str!("../vendor-build/crepe/entry.js"),
         ),
-        ("wb-viewer.ts", include_str!("../assets/ui/wb-viewer.ts")),
+        (
+            "wb-file-viewer.ts",
+            include_str!("../assets/ui/wb-file-viewer.ts"),
+        ),
     ] {
         assert!(
             src.contains("htmlLabels: false"),
@@ -3125,7 +3128,7 @@ fn the_console_clipboard_is_write_only_and_refused_on_replay() {
     let js = [
         include_str!("../assets/ui/wb-console.ts"),
         include_str!("../assets/ui/wb-console-terminal.ts"),
-        include_str!("../assets/ui/wb-console-chrome.ts"),
+        include_str!("../assets/ui/wb-stage-chrome.ts"),
     ]
     .concat();
     for pin in [
@@ -4030,7 +4033,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-fleet.js",
                 "wb-detached.js",
                 "wb-monaco.js",
-                "wb-viewer.js",
+                "wb-file-viewer.js",
                 "wb-events.js",
             ][..],
         ),
@@ -4064,13 +4067,13 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-console-gpu.js",
                 "wb-console-terminal.js",
                 "wb-console-title.js",
-                "wb-console-fence-list.js",
-                "wb-console-detach.js",
-                "wb-console-view.js",
-                "wb-console-chrome.js",
-                "wb-console-popups.js",
-                "wb-console-fences.js",
-                "wb-console-desk.js",
+                "wb-stage-fence-list.js",
+                "wb-desk-detach.js",
+                "wb-stage-view.js",
+                "wb-stage-chrome.js",
+                "wb-desk-popups.js",
+                "wb-stage-fences.js",
+                "wb-desk.js",
                 "wb-console.js",
             ][..],
         ),
@@ -4104,7 +4107,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
 /// only works if the pane declares itself a container: drop the
 /// `container-type` and every rule inside the query goes silently inert,
 /// with nothing on the JS side to notice. Pinned here for that reason, and
-/// the threshold is pinned at ONE number because `wb-viewer.ts` measures
+/// the threshold is pinned at ONE number because `wb-file-viewer.ts` measures
 /// the same 560 to trim Monaco's gutter — two numbers would fold the
 /// captions and the gutter at different widths.
 #[test]
@@ -4129,10 +4132,10 @@ fn the_narrow_pane_criterion_is_the_panes_own_width() {
             "the stylesheet must fold `{name}` at 560px: `{query}`"
         );
     }
-    let js = include_str!("../assets/ui/wb-viewer.ts");
+    let js = include_str!("../assets/ui/wb-file-viewer.ts");
     assert!(
         js.contains("const NARROW_PX = 560;"),
-        "wb-viewer.ts must trim the gutter at the SAME 560px the stylesheet folds the captions"
+        "wb-file-viewer.ts must trim the gutter at the SAME 560px the stylesheet folds the captions"
     );
 }
 
@@ -4632,23 +4635,23 @@ fn monaco_replaced_codemirror_in_the_embedded_ui() {
         "wb-monaco.ts must build the editor through Monaco's own factory"
     );
 
-    let viewer = include_str!("../assets/ui/wb-viewer.ts");
+    let viewer = include_str!("../assets/ui/wb-file-viewer.ts");
     assert!(
         viewer.contains("WBMonaco.create"),
-        "wb-viewer.ts must mount its editor through WBMonaco"
+        "wb-file-viewer.ts must mount its editor through WBMonaco"
     );
     // The mirror pane (ADR-0037 §3c) is a SECOND editor over the pane's
     // model, never a second model: `wb_monaco_308.py` counts models per
     // open pane and a mirror must not move that count.
     assert!(
         viewer.contains("WBMonaco.createOver"),
-        "wb-viewer.ts must mount the mirror through WBMonaco.createOver"
+        "wb-file-viewer.ts must mount the mirror through WBMonaco.createOver"
     );
     // Built from parts so this pin cannot trip on its own source text.
     let outgoing = concat!("Code", "Mirror(");
     assert!(
         !viewer.contains(outgoing),
-        "wb-viewer.ts must not construct a {outgoing} editor"
+        "wb-file-viewer.ts must not construct a {outgoing} editor"
     );
 }
 
@@ -4682,8 +4685,8 @@ fn the_changes_section_renders_a_status_marked_list() {
         "index.html must open a diff from a changes row"
     );
     assert!(
-        include_str!("../assets/ui/wb-viewer.ts").contains("WBMonaco.createDiff"),
-        "wb-viewer.ts must mount the diff through WBMonaco.createDiff"
+        include_str!("../assets/ui/wb-file-viewer.ts").contains("WBMonaco.createDiff"),
+        "wb-file-viewer.ts must mount the diff through WBMonaco.createDiff"
     );
 
     // The staged/unstaged split (#315): the row's two halves, the group
@@ -4863,7 +4866,7 @@ fn presence_staleness_is_derived_on_a_clock_not_inside_the_binding() {
 /// the script tags and the markup that must call it.
 #[test]
 fn the_workbench_never_titles_a_repo_with_its_routing_head() {
-    // The popups load `wb-viewer.ts`/`wb-console.ts`, which now call the
+    // The popups load `wb-file-viewer.ts`/`wb-console.ts`, which now call the
     // fold — without the import or tag the label silently falls back to the
     // ref in exactly the two windows nobody tests by hand.
     for page in [
@@ -4931,8 +4934,8 @@ fn shell_draws_fences_below_the_windows() {
     // the fence list, the console rename in the title.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
-        include_str!("../assets/ui/wb-console-fence-list.ts"),
-        include_str!("../assets/ui/wb-console-fences.ts"),
+        include_str!("../assets/ui/wb-stage-fence-list.ts"),
+        include_str!("../assets/ui/wb-stage-fences.ts"),
         include_str!("../assets/ui/wb-console-title.ts"),
     ]
     .concat();
@@ -5117,9 +5120,9 @@ fn shell_drags_only_past_a_threshold() {
     // fences, the fence records in the fence list.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
-        include_str!("../assets/ui/wb-console-fence-list.ts"),
-        include_str!("../assets/ui/wb-console-chrome.ts"),
-        include_str!("../assets/ui/wb-console-fences.ts"),
+        include_str!("../assets/ui/wb-stage-fence-list.ts"),
+        include_str!("../assets/ui/wb-stage-chrome.ts"),
+        include_str!("../assets/ui/wb-stage-fences.ts"),
     ]
     .concat();
     let body = |name: &str| -> String {
@@ -5196,7 +5199,7 @@ fn titlebar_touch_double_taps_and_holds() {
     // chrome, the name's double-click in the title.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
-        include_str!("../assets/ui/wb-console-chrome.ts"),
+        include_str!("../assets/ui/wb-stage-chrome.ts"),
         include_str!("../assets/ui/wb-console-title.ts"),
     ]
     .concat();
@@ -5354,9 +5357,9 @@ fn shell_locks_consoles_and_fences() {
     // button and gestures in the fences.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
-        include_str!("../assets/ui/wb-console-fence-list.ts"),
-        include_str!("../assets/ui/wb-console-chrome.ts"),
-        include_str!("../assets/ui/wb-console-fences.ts"),
+        include_str!("../assets/ui/wb-stage-fence-list.ts"),
+        include_str!("../assets/ui/wb-stage-chrome.ts"),
+        include_str!("../assets/ui/wb-stage-fences.ts"),
     ]
     .concat();
     for pin in [
@@ -5454,7 +5457,7 @@ fn shell_fences_are_a_group() {
     // the fences, the fence records in the console.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
-        include_str!("../assets/ui/wb-console-fences.ts"),
+        include_str!("../assets/ui/wb-stage-fences.ts"),
     ]
     .concat();
     for pin in ["function startFenceMove(", "function startFenceResize("] {
@@ -5526,8 +5529,8 @@ fn shell_arranges_into_the_fence() {
     // in the fences, the fence chrome readout in the fence list.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
-        include_str!("../assets/ui/wb-console-fence-list.ts"),
-        include_str!("../assets/ui/wb-console-fences.ts"),
+        include_str!("../assets/ui/wb-stage-fence-list.ts"),
+        include_str!("../assets/ui/wb-stage-fences.ts"),
     ]
     .concat();
     for pin in [
@@ -5636,9 +5639,9 @@ fn shell_lists_the_fences() {
     // chrome, the jumps and the slide in the view.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
-        include_str!("../assets/ui/wb-console-fence-list.ts"),
-        include_str!("../assets/ui/wb-console-chrome.ts"),
-        include_str!("../assets/ui/wb-console-view.ts"),
+        include_str!("../assets/ui/wb-stage-fence-list.ts"),
+        include_str!("../assets/ui/wb-stage-chrome.ts"),
+        include_str!("../assets/ui/wb-stage-view.ts"),
     ]
     .concat();
     let geometry = include_str!("../assets/ui/wb-geometry.ts");
@@ -5913,10 +5916,10 @@ fn shell_detaches_a_fence() {
     // opener's side of the detach, the refused remove in the fence list.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
-        include_str!("../assets/ui/wb-console-fence-list.ts"),
-        include_str!("../assets/ui/wb-console-fences.ts"),
-        include_str!("../assets/ui/wb-console-desk.ts"),
-        include_str!("../assets/ui/wb-console-detach.ts"),
+        include_str!("../assets/ui/wb-stage-fence-list.ts"),
+        include_str!("../assets/ui/wb-stage-fences.ts"),
+        include_str!("../assets/ui/wb-desk.ts"),
+        include_str!("../assets/ui/wb-desk-detach.ts"),
     ]
     .concat();
     for pin in [
@@ -6157,7 +6160,7 @@ fn console_name_rides_every_record_copy() {
     // the birth in the chrome.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
-        include_str!("../assets/ui/wb-console-chrome.ts"),
+        include_str!("../assets/ui/wb-stage-chrome.ts"),
     ]
     .concat();
     let body = |name: &str| -> String {
@@ -6224,10 +6227,10 @@ fn shell_survives_a_reload_with_its_detach() {
     // opener's side of the detach.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
-        include_str!("../assets/ui/wb-console-popups.ts"),
-        include_str!("../assets/ui/wb-console-fences.ts"),
-        include_str!("../assets/ui/wb-console-desk.ts"),
-        include_str!("../assets/ui/wb-console-detach.ts"),
+        include_str!("../assets/ui/wb-desk-popups.ts"),
+        include_str!("../assets/ui/wb-stage-fences.ts"),
+        include_str!("../assets/ui/wb-desk.ts"),
+        include_str!("../assets/ui/wb-desk-detach.ts"),
     ]
     .concat();
     let link = include_str!("../assets/ui/wb-detach-link.ts");
@@ -6255,11 +6258,11 @@ fn shell_survives_a_reload_with_its_detach() {
     assert!(
         !js.contains("sessionStorage")
             && !include_str!("../assets/ui/wb-console-terminal.ts").contains("sessionStorage")
-            && !include_str!("../assets/ui/wb-console-chrome.ts").contains("sessionStorage")
+            && !include_str!("../assets/ui/wb-stage-chrome.ts").contains("sessionStorage")
             && !include_str!("../assets/ui/wb-console-title.ts").contains("sessionStorage")
-            && !include_str!("../assets/ui/wb-console-view.ts").contains("sessionStorage")
-            && !include_str!("../assets/ui/wb-console-fence-list.ts").contains("sessionStorage")
-            && !include_str!("../assets/ui/wb-console-detach.ts").contains("sessionStorage"),
+            && !include_str!("../assets/ui/wb-stage-view.ts").contains("sessionStorage")
+            && !include_str!("../assets/ui/wb-stage-fence-list.ts").contains("sessionStorage")
+            && !include_str!("../assets/ui/wb-desk-detach.ts").contains("sessionStorage"),
         "wb-console.ts must reach the registry only through the injected link (#347)"
     );
     // The CALLS, not the bare nouns: this file's own prose names
@@ -6376,7 +6379,7 @@ fn workbench_session_assets_preserve_composite_repo_identity() {
     let console = [
         include_str!("../assets/ui/wb-console.ts"),
         include_str!("../assets/ui/wb-console-terminal.ts"),
-        include_str!("../assets/ui/wb-console-chrome.ts"),
+        include_str!("../assets/ui/wb-stage-chrome.ts"),
     ]
     .concat();
     for pin in [
@@ -6402,7 +6405,7 @@ fn shell_has_no_clamp_and_carries_the_stage() {
     let js = [
         include_str!("../assets/ui/wb-console.ts"),
         include_str!("../assets/ui/wb-console-terminal.ts"),
-        include_str!("../assets/ui/wb-console-chrome.ts"),
+        include_str!("../assets/ui/wb-stage-chrome.ts"),
     ]
     .concat();
     assert!(
@@ -6449,9 +6452,9 @@ fn shell_navigates_the_plane() {
     // fence drag in the fences, the reveal, the pan and the wheel in the view.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
-        include_str!("../assets/ui/wb-console-chrome.ts"),
-        include_str!("../assets/ui/wb-console-fences.ts"),
-        include_str!("../assets/ui/wb-console-view.ts"),
+        include_str!("../assets/ui/wb-stage-chrome.ts"),
+        include_str!("../assets/ui/wb-stage-fences.ts"),
+        include_str!("../assets/ui/wb-stage-view.ts"),
     ]
     .concat();
     for pin in [
@@ -6613,7 +6616,7 @@ fn shell_pins_the_frame_chrome() {
     let js = squeeze(
         &[
             include_str!("../assets/ui/wb-console.ts"),
-            include_str!("../assets/ui/wb-console-view.ts"),
+            include_str!("../assets/ui/wb-stage-view.ts"),
         ]
         .concat(),
     );
@@ -6630,7 +6633,7 @@ fn shell_pins_the_frame_chrome() {
     ] {
         assert!(
             js.contains(pin),
-            "wb-console.ts or wb-console-view.ts must keep the #338 pin {pin}"
+            "wb-console.ts or wb-stage-view.ts must keep the #338 pin {pin}"
         );
     }
     // The POSITIVE half of the `reveal()` change, in either operand order:
@@ -6682,8 +6685,8 @@ fn a_console_can_take_the_whole_screen() {
     // the browser's event in the view.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
-        include_str!("../assets/ui/wb-console-chrome.ts"),
-        include_str!("../assets/ui/wb-console-view.ts"),
+        include_str!("../assets/ui/wb-stage-chrome.ts"),
+        include_str!("../assets/ui/wb-stage-view.ts"),
     ]
     .concat();
     for pin in [
@@ -6815,60 +6818,57 @@ fn shell_stores_only_the_view_in_the_browser() {
             include_str!("../assets/ui/wb-console-terminal.ts"),
         ),
         (
-            "wb-console-chrome.ts",
-            include_str!("../assets/ui/wb-console-chrome.ts"),
+            "wb-stage-chrome.ts",
+            include_str!("../assets/ui/wb-stage-chrome.ts"),
         ),
         (
             "wb-console-title.ts",
             include_str!("../assets/ui/wb-console-title.ts"),
         ),
         (
-            "wb-console-view.ts",
-            include_str!("../assets/ui/wb-console-view.ts"),
+            "wb-stage-view.ts",
+            include_str!("../assets/ui/wb-stage-view.ts"),
         ),
         (
-            "wb-console-fence-list.ts",
-            include_str!("../assets/ui/wb-console-fence-list.ts"),
+            "wb-stage-fence-list.ts",
+            include_str!("../assets/ui/wb-stage-fence-list.ts"),
         ),
         (
-            "wb-console-detach.ts",
-            include_str!("../assets/ui/wb-console-detach.ts"),
+            "wb-desk-detach.ts",
+            include_str!("../assets/ui/wb-desk-detach.ts"),
         ),
         (
-            "wb-console-popups.ts",
-            include_str!("../assets/ui/wb-console-popups.ts"),
+            "wb-desk-popups.ts",
+            include_str!("../assets/ui/wb-desk-popups.ts"),
         ),
         (
-            "wb-console-fences.ts",
-            include_str!("../assets/ui/wb-console-fences.ts"),
+            "wb-stage-fences.ts",
+            include_str!("../assets/ui/wb-stage-fences.ts"),
         ),
-        (
-            "wb-console-desk.ts",
-            include_str!("../assets/ui/wb-console-desk.ts"),
-        ),
+        ("wb-desk.ts", include_str!("../assets/ui/wb-desk.ts")),
         ("app.ts", include_str!("../assets/ui/app.ts")),
     ] {
         assert!(
             !src.contains("localStorage"),
-            "{name} must not touch localStorage — wb-view.ts owns the store (#339)"
+            "{name} must not touch localStorage — wb-client-view.ts owns the store (#339)"
         );
     }
 
-    let view = include_str!("../assets/ui/wb-view.ts");
+    let view = include_str!("../assets/ui/wb-client-view.ts");
     // NEGATIVE CONTROL: deleting the store wholesale would satisfy every
     // "does not contain" assertion above. It must be red, not green.
     assert!(
         view.contains("localStorage"),
-        "wb-view.ts IS the browser store — deleting it is not how #339 stays green"
+        "wb-client-view.ts IS the browser store — deleting it is not how #339 stays green"
     );
     assert!(
         view.contains(r#"const KEY = "wb.view.v1""#),
-        "wb-view.ts must keep the one view key (#339)"
+        "wb-client-view.ts must keep the one view key (#339)"
     );
 
-    let js = include_str!("../assets/ui/wb-console-view.ts");
+    let js = include_str!("../assets/ui/wb-stage-view.ts");
     // `viewLanding` is driven by `ui-tests/wb-geometry.test.mjs`, the landing
-    // by `ui-tests/wb-console-view.test.mjs`.
+    // by `ui-tests/wb-stage-view.test.mjs`.
     for pin in [
         "function applyLanding(",
         // The REGISTRATION, not the function: without it the offset is never
@@ -6877,7 +6877,7 @@ fn shell_stores_only_the_view_in_the_browser() {
     ] {
         assert!(
             js.contains(pin),
-            "wb-console-view.ts must keep the #339 pin {pin}"
+            "wb-stage-view.ts must keep the #339 pin {pin}"
         );
     }
 
@@ -6887,7 +6887,7 @@ fn shell_stores_only_the_view_in_the_browser() {
     // block without touching a single `.js`.
     for path in embedded_ui_paths() {
         let scanned = path.ends_with(".js") || path.ends_with(".html");
-        if !scanned || path.starts_with("vendor/") || path == "wb-view.js" {
+        if !scanned || path.starts_with("vendor/") || path == "wb-client-view.js" {
             continue;
         }
         let src = UI
@@ -6896,7 +6896,7 @@ fn shell_stores_only_the_view_in_the_browser() {
             .unwrap_or_else(|| panic!("{path} must be embedded as UTF-8"));
         assert!(
             !src.contains("localStorage"),
-            "{path} must not touch localStorage — wb-view.js is the only store (#339)"
+            "{path} must not touch localStorage — wb-client-view.js is the only store (#339)"
         );
     }
 }
@@ -6910,8 +6910,8 @@ fn shell_stores_only_the_view_in_the_browser() {
 #[test]
 fn a_quiet_detach_peer_is_challenged_before_it_is_buried() {
     // Whitespace-free text: the code, not its layout. The opener's side of
-    // the detach is `wb-console-detach.ts`.
-    let js = squeeze(include_str!("../assets/ui/wb-console-detach.ts"));
+    // the detach is `wb-desk-detach.ts`.
+    let js = squeeze(include_str!("../assets/ui/wb-desk-detach.ts"));
     assert!(
         js.contains("functionstillThere("),
         "the origin must ask whether a quiet popup is really gone"
@@ -6973,7 +6973,7 @@ fn the_console_chrome_holds_its_three_rules() {
     // A fence name is read-only until asked for twice: its title bar is also
     // what the operator clicks to reach the fence, and an always-live input
     // turned every such slip into a rename.
-    let js = include_str!("../assets/ui/wb-console-fences.ts");
+    let js = include_str!("../assets/ui/wb-stage-fences.ts");
     assert!(
         js.contains("name.readOnly = true;") && js.contains(r#"name.addEventListener("dblclick""#),
         "the fence name must open on a double click and close on blur"
@@ -6996,8 +6996,8 @@ fn the_destructive_console_clicks_confirm_first() {
     // the two restarts in the title.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
-        include_str!("../assets/ui/wb-console-fence-list.ts"),
-        include_str!("../assets/ui/wb-console-fences.ts"),
+        include_str!("../assets/ui/wb-stage-fence-list.ts"),
+        include_str!("../assets/ui/wb-stage-fences.ts"),
         include_str!("../assets/ui/wb-console-title.ts"),
     ]
     .concat();
@@ -7080,7 +7080,7 @@ fn the_destructive_console_clicks_confirm_first() {
 fn relaunching_agent_consoles_on_load_is_opt_in() {
     // Every pin reads whitespace-free text: the code, not its layout. The
     // restore is in the console's desk.
-    let js = squeeze(include_str!("../assets/ui/wb-console-desk.ts"));
+    let js = squeeze(include_str!("../assets/ui/wb-desk.ts"));
     let folds = squeeze(include_str!("../assets/ui/wb-desk-folds.ts"));
     assert!(
         folds.contains(r#"record.kind==="console"||relaunchAgents?"relaunch":"placeholder""#),
@@ -8708,37 +8708,34 @@ fn no_menu_or_key_sink_takes_a_template_string() {
         ),
         ("wb-console.ts", include_str!("../assets/ui/wb-console.ts")),
         (
-            "wb-console-chrome.ts",
-            include_str!("../assets/ui/wb-console-chrome.ts"),
+            "wb-stage-chrome.ts",
+            include_str!("../assets/ui/wb-stage-chrome.ts"),
         ),
         (
             "wb-console-title.ts",
             include_str!("../assets/ui/wb-console-title.ts"),
         ),
         (
-            "wb-console-view.ts",
-            include_str!("../assets/ui/wb-console-view.ts"),
+            "wb-stage-view.ts",
+            include_str!("../assets/ui/wb-stage-view.ts"),
         ),
         (
-            "wb-console-fence-list.ts",
-            include_str!("../assets/ui/wb-console-fence-list.ts"),
+            "wb-stage-fence-list.ts",
+            include_str!("../assets/ui/wb-stage-fence-list.ts"),
         ),
         (
-            "wb-console-detach.ts",
-            include_str!("../assets/ui/wb-console-detach.ts"),
+            "wb-desk-detach.ts",
+            include_str!("../assets/ui/wb-desk-detach.ts"),
         ),
         (
-            "wb-console-popups.ts",
-            include_str!("../assets/ui/wb-console-popups.ts"),
+            "wb-desk-popups.ts",
+            include_str!("../assets/ui/wb-desk-popups.ts"),
         ),
         (
-            "wb-console-fences.ts",
-            include_str!("../assets/ui/wb-console-fences.ts"),
+            "wb-stage-fences.ts",
+            include_str!("../assets/ui/wb-stage-fences.ts"),
         ),
-        (
-            "wb-console-desk.ts",
-            include_str!("../assets/ui/wb-console-desk.ts"),
-        ),
+        ("wb-desk.ts", include_str!("../assets/ui/wb-desk.ts")),
     ] {
         let sinks = template_html_sinks(src);
         assert!(sinks.is_empty(), "{name}: {sinks:?}");

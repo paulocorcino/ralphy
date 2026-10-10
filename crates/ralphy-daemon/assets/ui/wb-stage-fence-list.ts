@@ -15,7 +15,7 @@
 import { WBGeometry } from "./wb-geometry.ts";
 import * as WBConsoleInput from "./wb-console-input.ts";
 import * as WBDeskFolds from "./wb-desk-folds.ts";
-import type { PopupRegistry } from "./wb-console-popups.ts";
+import type { PopupRegistry } from "./wb-desk-popups.ts";
 import type { ConsoleWin, DeskFence, DeskNote, ExtentOpts, NoteCard, Rect } from "./wb-types.d.ts";
 
 const { PHONE_MAX_WIDTH } = WBConsoleInput;
@@ -93,7 +93,7 @@ export function createFenceList(deps: FenceListDeps) {
 
   // ---- the fence floor ---------------------------------------------------------
   // The fence element, its two gestures, tiling and detaching are
-  // `wb-console-fences.ts`.
+  // `wb-stage-fences.ts`.
   const FENCE_NAME_MAX = 60;
 
   // The refusal flash `createFence` schedules. Module scope so a gesture

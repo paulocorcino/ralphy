@@ -1,11 +1,11 @@
-// Unit tests for assets/ui/wb-console-fences.ts — the console's fences.
+// Unit tests for assets/ui/wb-stage-fences.ts — the console's fences.
 // `createFences` is driven with fake `deps`, a fake document and the real
 // gestures owner and popup registry, with no console and no browser.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createFences } from "../assets/ui/wb-console-fences.ts";
-import { createGestures } from "../assets/ui/wb-console-chrome.ts";
-import { createPopupRegistry } from "../assets/ui/wb-console-popups.ts";
+import { createFences } from "../assets/ui/wb-stage-fences.ts";
+import { createGestures } from "../assets/ui/wb-stage-chrome.ts";
+import { createPopupRegistry } from "../assets/ui/wb-desk-popups.ts";
 
 const RECT = { left: 100, top: 100, width: 600, height: 400 };
 

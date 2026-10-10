@@ -1,11 +1,11 @@
-// Unit tests for assets/ui/wb-console-fence-list.ts — the fence records'
+// Unit tests for assets/ui/wb-stage-fence-list.ts — the fence records'
 // chrome, the fence verbs and the focused fence. `createFenceList` is driven
 // with fake `deps`, a fake stage and the real popup registry, with no console
 // and no browser.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createFenceList } from "../assets/ui/wb-console-fence-list.ts";
-import { createPopupRegistry } from "../assets/ui/wb-console-popups.ts";
+import { createFenceList } from "../assets/ui/wb-stage-fence-list.ts";
+import { createPopupRegistry } from "../assets/ui/wb-desk-popups.ts";
 
 // A fence element with the few DOM members the fence list uses. `parts`
 // holds its children by selector (`.fence-name`, `.fence-notice`, ...).

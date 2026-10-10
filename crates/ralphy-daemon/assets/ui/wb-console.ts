@@ -4,15 +4,15 @@
    Consoles are draggable, resizable windows on the STAGE, a plane the VIEWPORT
    (`#workspace`, `overflow:auto`) scrolls over. This module owns the window
    state (tiling, the stage's extent); the titlebar, the drag and the resize
-   are `wb-console-chrome.ts`; the console name, the title's text and the
+   are `wb-stage-chrome.ts`; the console name, the title's text and the
    worktree switcher are `wb-console-title.ts`; the fence records' chrome, the
-   fence verbs and the focused fence are `wb-console-fence-list.ts`; the
-   fences are `wb-console-fences.ts`, the
-   fences this tab detached are `wb-console-popups.ts`, and the opener's
-   side of a detached fence is `wb-console-detach.ts`; sending the desk
-   changes and restoring the desk layout are `wb-console-desk.ts`; the
+   fence verbs and the focused fence are `wb-stage-fence-list.ts`; the
+   fences are `wb-stage-fences.ts`, the
+   fences this tab detached are `wb-desk-popups.ts`, and the opener's
+   side of a detached fence is `wb-desk-detach.ts`; sending the desk
+   changes and restoring the desk layout are `wb-desk.ts`; the
    landing, the reveal, the slide and the plane's pan are
-   `wb-console-view.ts`; the body
+   `wb-stage-view.ts`; the body
    is a live xterm.js on a PTY over the daemon's `/ws/session` WebSocket,
    made by `wb-console-terminal.ts`.
 
@@ -30,20 +30,20 @@ import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-res
 import * as WBDeskFolds from "./wb-desk-folds.ts";
 import { createGpuBudget, gpuHolders, DORMANT_AFTER_MS, DORMANT_MARGIN_PX } from "./wb-console-gpu.ts";
 import { createTitle } from "./wb-console-title.ts";
-import { createFenceList } from "./wb-console-fence-list.ts";
-import { createDetach } from "./wb-console-detach.ts";
-import { createView } from "./wb-console-view.ts";
+import { createFenceList } from "./wb-stage-fence-list.ts";
+import { createDetach } from "./wb-desk-detach.ts";
+import { createView } from "./wb-stage-view.ts";
 import { createTerminal } from "./wb-console-terminal.ts";
-import { createChrome, createGestures } from "./wb-console-chrome.ts";
-import { createPopupRegistry } from "./wb-console-popups.ts";
-import { createFences } from "./wb-console-fences.ts";
-import { createDesk } from "./wb-console-desk.ts";
+import { createChrome, createGestures } from "./wb-stage-chrome.ts";
+import { createPopupRegistry } from "./wb-desk-popups.ts";
+import { createFences } from "./wb-stage-fences.ts";
+import { createDesk } from "./wb-desk.ts";
 import { WBWindowState } from "./wb-window-state.ts";
 import { WBConsoleName } from "./wb-console-name.ts";
 import { WBDeskSink } from "./wb-desk-sink.ts";
 import { WBDeskSync } from "./wb-desk-sync.ts";
 import { WBDetachLink } from "./wb-detach-link.ts";
-import { WBView } from "./wb-view.ts";
+import { WBView } from "./wb-client-view.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
 import { apiFetch } from "./wb-api.ts";
@@ -231,7 +231,7 @@ export function createConsole(window: Window, document: Document, location: Pick
   });
   const { isDetached } = popups;
   // The fence records' chrome, the fence verbs and the focused fence are
-  // `wb-console-fence-list.ts`; this console keeps the fence records and hands
+  // `wb-stage-fence-list.ts`; this console keeps the fence records and hands
   // them to it. Built before the view and the fences, which it reaches
   // through lazy arrows.
   const fenceFloor = createFenceList({
@@ -292,7 +292,7 @@ export function createConsole(window: Window, document: Document, location: Pick
 
   // ---- the opener's side of the detach ----------------------------------------
   // The heartbeat, the probe of a quiet popup, the re-attach and the two
-  // listeners that hear the popups are `wb-console-detach.ts`; this console
+  // listeners that hear the popups are `wb-desk-detach.ts`; this console
   // keeps the desk and the windows, and hands them to it. Built after the
   // GPU budget and before the fences, which take five of its functions.
   const detach = createDetach({
@@ -320,7 +320,7 @@ export function createConsole(window: Window, document: Document, location: Pick
 
   // ---- the view -------------------------------------------------------------
   // The landing and the stored offset, the reveal, the slide, the auto-pan and
-  // the plane's own pan and wheel are `wb-console-view.ts`; this console keeps
+  // the plane's own pan and wheel are `wb-stage-view.ts`; this console keeps
   // the stage's extent and `refitAll`, and hands it the window state. Built
   // before the terminal, which takes `cancelSlide`.
   const {
@@ -370,7 +370,7 @@ export function createConsole(window: Window, document: Document, location: Pick
   // `createGestures`: the chrome's drag and resize and the fence gestures
   // begin and end them, and a desk this page takes asks it (`inGesture`).
   // The titlebar, the drag, the resize and the free cascade are
-  // `wb-console-chrome.ts`; this console hands it the window state.
+  // `wb-stage-chrome.ts`; this console hands it the window state.
   const gestures = createGestures();
   const { buildChrome, makeDraggable, startResize } = createChrome({
     window,
@@ -407,7 +407,7 @@ export function createConsole(window: Window, document: Document, location: Pick
 
   // ---- the fences -------------------------------------------------------------
   // The fence element, its gestures, tiling and detaching are
-  // `wb-console-fences.ts`; they take the fence list as one object.
+  // `wb-stage-fences.ts`; they take the fence list as one object.
   const { buildFence, arrangeFence, detachFence } = createFences({
     window,
     document,
@@ -638,7 +638,7 @@ export function createConsole(window: Window, document: Document, location: Pick
   }
 
   // Sending the desk changes and restoring the desk layout are
-  // `wb-console-desk.ts`, which owns the desk flush state; this console keeps
+  // `wb-desk.ts`, which owns the desk flush state; this console keeps
   // the desk view, the desk read (`reloadDesk`) and the answer to an upload
   // (`flushed`), and hands them to it.
   const {
@@ -1022,7 +1022,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     return deskReady;
   }
 
-  // The answer to one upload (`flushDesk`, `wb-console-desk.ts`): a batch
+  // The answer to one upload (`flushDesk`, `wb-desk.ts`): a batch
   // that failed in a way the daemon may still accept is sent again with the
   // same `seq`, later.
   let flushBackoff = 1000;
@@ -1900,7 +1900,7 @@ export function createConsole(window: Window, document: Document, location: Pick
   }
 
   // Per browser profile (wb-settings.ts `scope: client`, stored by
-  // `wb-view.ts`). Absent — the popup reads nothing — means auto.
+  // `wb-client-view.ts`). Absent — the popup reads nothing — means auto.
   function keyBarMode() {
     return viewStore?.read()?.keys ?? null;
   }

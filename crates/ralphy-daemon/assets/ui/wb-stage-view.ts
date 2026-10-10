@@ -11,7 +11,7 @@
    its terminal, and keeps the stage's extent and `refitAll`.
    --------------------------------------------------------------------------- */
 import { WBGeometry } from "./wb-geometry.ts";
-import type { WBView } from "./wb-view.ts";
+import type { WBView } from "./wb-client-view.ts";
 import type { ConsoleWin, Offset, Point, Rect, Size } from "./wb-types.d.ts";
 
 // Plane geometry is `wb-geometry.ts` (ADR-0057): pure folds over rects.

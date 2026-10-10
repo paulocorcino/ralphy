@@ -1433,7 +1433,7 @@
           </section>
         </section>
 
-        <!-- file-viewer panes are appended here by wb-viewer.ts, one per file
+        <!-- file-viewer panes are appended here by wb-file-viewer.ts, one per file
              tab (code = Monaco, markdown = rendered+mermaid). impl: a seed
              synthesises file bytes — fetch the real file; a Save emits a `save`
              intent (workbench:action) carrying the new content to persist. -->
@@ -1929,7 +1929,7 @@
         <div class="settings-body">
           <nav class="settings-nav">
             <!-- client group: this browser profile's own, held in the view
-                 store (wb-view.js) and never sent to the daemon -->
+                 store (wb-client-view.js) and never sent to the daemon -->
             <div class="settings-navgroup"><i class="bi bi-window-stack"></i> Workbench · this browser</div>
             <template x-for="sec in SETTINGS.filter((s) => s.scope === 'client')" :key="sec.id">
               <button

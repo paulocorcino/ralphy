@@ -182,7 +182,7 @@ fn comments_and_regex_literals_do_not_derail_the_lexer() {
       el.textContent = "After the regex";
 "#;
     assert_eq!(
-        seen(&rows("wb-viewer.js", js)),
+        seen(&rows("wb-file-viewer.js", js)),
         vec![("js:text-content", "After the regex")]
     );
 }
@@ -472,7 +472,7 @@ fn an_inner_html_toolbar_gives_one_row_per_element() {
       </div>`;
     btn.innerHTML = '<i class="bi bi-x"></i> Close all';
 "#;
-    let out = rows("wb-viewer.js", js);
+    let out = rows("wb-file-viewer.js", js);
     assert_eq!(
         out.iter()
             .map(|r| (r.line, r.kind.label(), r.text.as_str(), r.concatenated))

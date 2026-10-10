@@ -59,14 +59,14 @@ const APP_TS_LINES: usize = 4209;
 /// factory (ADR-0073 D8, which starts this ratchet with the first fold move).
 /// 5842 since ADR-0075 phase 5 moved its pure folds, its GPU budget and its
 /// terminal into their own modules (#597); 5396 since its window chrome and
-/// the owner of its gestures moved to `wb-console-chrome.ts` (#609); 4780
-/// since its popup registry moved to `wb-console-popups.ts` and its fences to
-/// `wb-console-fences.ts` (#610); 4599 since its desk moved to
-/// `wb-console-desk.ts` (#611); 4057 since its title, console names and
+/// the owner of its gestures moved to `wb-stage-chrome.ts` (#609); 4780
+/// since its popup registry moved to `wb-desk-popups.ts` and its fences to
+/// `wb-stage-fences.ts` (#610); 4599 since its desk moved to
+/// `wb-desk.ts` (#611); 4057 since its title, console names and
 /// worktree switcher moved to `wb-console-title.ts` (#621); 3708 since its
-/// view moved to `wb-console-view.ts` (#621); 3423 since its fence list moved
-/// to `wb-console-fence-list.ts` (#621); 3084 since the opener's side of its
-/// detach moved to `wb-console-detach.ts` (#621); 3077 since the paste key's
+/// view moved to `wb-stage-view.ts` (#621); 3423 since its fence list moved
+/// to `wb-stage-fence-list.ts` (#621); 3084 since the opener's side of its
+/// detach moved to `wb-desk-detach.ts` (#621); 3077 since the paste key's
 /// work after its clipboard read moved to `wb-console-input.ts` (#652); 3081
 /// since each type it reads from another module is imported on an
 /// `import type` line that names the owner module, not written inline (#653);
@@ -97,7 +97,7 @@ const SHELL_FLASH_REACH: &[(&str, usize)] = &[
     ("wb-files.ts", 6),
     ("wb-hosts-dialog.ts", 2),
     ("wb-settings-dialog.ts", 3),
-    ("wb-viewer.ts", 3),
+    ("wb-file-viewer.ts", 3),
 ];
 
 /// The functions that paint the columns on the stage. Each is declared in one
@@ -123,7 +123,7 @@ const ANY_BASELINE: &[(&str, usize)] = &[];
 /// `(module, count)` of every cast written over another cast (`x as A as B`)
 /// under `UI_DIR`: each is a new element typed as a console window or a note
 /// card (#653). Exact, as `ANY_BASELINE` is.
-const CHAINED_CAST_BASELINE: &[(&str, usize)] = &[("wb-console-chrome.ts", 1), ("wb-notes.ts", 1)];
+const CHAINED_CAST_BASELINE: &[(&str, usize)] = &[("wb-stage-chrome.ts", 1), ("wb-notes.ts", 1)];
 
 /// `(module under UI_DIR, type)` of each page type that reads a reply a peer
 /// daemon wrote. The local daemon passes these replies on as the peer wrote

@@ -469,7 +469,7 @@ test("stepFont walks one px at a time and stops at both ends", () => {
   assert.equal(stepFont(FONT_MAX, 1), FONT_MAX);
   assert.equal(stepFont(FONT_MIN, -1), FONT_MIN);
   // Past the ends from outside the range — a store hand-edited before the
-  // normalisation in wb-view.ts was added.
+  // normalisation in wb-client-view.ts was added.
   assert.equal(stepFont(400, 1), FONT_MAX);
   assert.equal(stepFont(1, -1), FONT_MIN);
 });
