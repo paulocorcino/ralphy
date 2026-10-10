@@ -88,8 +88,9 @@ const WB_CONSOLE_TS_LINES: usize = 2159;
 /// (#623); 2839 since they take the door for operator messages as a dep
 /// (#623); 2848 since they take the document's z stack and gestures as deps
 /// (#623); 2833 since the add, remove and cap rules of the cards are folds in
-/// `wb-desk-folds.ts` (#623).
-const WB_NOTES_TS_LINES: usize = 2833;
+/// `wb-desk-folds.ts` (#623); 2292 since the note constants, folds and front
+/// matter moved to `wb-notes-folds.ts` (#623).
+const WB_NOTES_TS_LINES: usize = 2292;
 
 /// Uses of the name `WBConsole` in the code of `wb-notes.ts`: 49 at 823cc84c,
 /// when the cards reached the console through `window.WBConsole`. 0 since the
