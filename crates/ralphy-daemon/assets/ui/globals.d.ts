@@ -356,7 +356,7 @@ interface WorkbenchActions {
   delete: WorkbenchNodeDetail;
   "copy-path": WorkbenchNodeDetail;
   /** `path`: the directory the new entry goes in. */
-  create: { project: string | null; path: string; kind: string; isFolder: boolean };
+  create: { project: string | null; path: string; kind: "file" | "folder" };
   /** `project`: `null` for a setting of this browser. */
   "setting-change": { project: string | null; key: string; value: unknown };
   /** The pane's text, its encoding and its byte order mark. */

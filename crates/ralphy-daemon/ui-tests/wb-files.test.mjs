@@ -313,10 +313,10 @@ test("the Move item is withheld inside .git and .ralphy, except for a note in th
   for (const [rel, want] of rows) assert.equal(offersMove(rel), want, rel);
 });
 
-test("emitCreate sends the directory the create lands in", () => {
+test("emitCreate sends the directory the create lands in, and only what the listener reads", () => {
   const { scope: state, window } = loadComponent("wbFiles");
   const emitted = [];
-  window.WB = { emit: (action, detail) => emitted.push({ action, ...detail }) };
+  window.WB = { emit: (action, detail) => emitted.push([action, detail]) };
   state.$store.projects.setOpen("owner/repo");
   const root = { title: "root", parent: null };
   const src = { title: "src", parent: root, data: { folder: true } };
@@ -324,14 +324,11 @@ test("emitCreate sends the directory the create lands in", () => {
   state.emitCreate(file, "file");
   state.emitCreate(src, "folder");
   state.emitCreate(null, "file");
-  assert.deepEqual(
-    emitted.map((e) => [e.action, e.project, e.path, e.kind]),
-    [
-      ["create", "owner/repo", "src", "file"],
-      ["create", "owner/repo", "src", "folder"],
-      ["create", "owner/repo", "", "file"],
-    ],
-  );
+  assert.deepEqual(emitted, [
+    ["create", { project: "owner/repo", path: "src", kind: "file" }],
+    ["create", { project: "owner/repo", path: "src", kind: "folder" }],
+    ["create", { project: "owner/repo", path: "", kind: "file" }],
+  ]);
 });
 
 // ---- the FILES search (ADR-0036 amendment 2026-09-15) --------------------------

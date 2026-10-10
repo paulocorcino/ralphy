@@ -8256,7 +8256,7 @@ fn the_explorer_can_create_at_every_target_including_the_repo_root() {
          (empty space = the repo root), not return early"
     );
     assert!(
-        js.contains("createHere(kind: string) {"),
+        js.contains("createHere(kind: \"file\" | \"folder\") {"),
         "wb-files.ts must keep createHere(kind) — the Files header calls it"
     );
     let html = include_str!("../assets/ui/index.html");

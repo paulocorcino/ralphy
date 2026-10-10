@@ -1148,8 +1148,8 @@ export function wbFiles() {
     },
 
     // A `create` intent carries the DIRECTORY, already resolved (`createDir`).
-    emitCreate(node: WunderbaumNode | null, kind: string) {
-      window.WB.emit("create", { project: this.$store.projects.openSlug, path: this.createDir(node), kind, isFolder: true });
+    emitCreate(node: WunderbaumNode | null, kind: "file" | "folder") {
+      window.WB.emit("create", { project: this.$store.projects.openSlug, path: this.createDir(node), kind });
     },
 
     // The directory a create addressed at `node` lands in: the folder itself,
@@ -1160,7 +1160,7 @@ export function wbFiles() {
     },
 
     // The Files-header buttons create relative to the tree's active node.
-    createHere(kind: string) {
+    createHere(kind: "file" | "folder") {
       this.emitCreate(this.rawTree()?.getActiveNode() || null, kind);
     },
 
