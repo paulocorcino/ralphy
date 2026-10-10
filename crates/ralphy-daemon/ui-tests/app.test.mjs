@@ -1601,7 +1601,7 @@ test("a create through the write seam asks the files to re-list the folder and r
   window.WBDaemon = { write: async () => ({ status: "ok" }), withCheckout: (p) => p };
   const realDaemon = globalThis.WBDaemon;
   globalThis.WBDaemon = window.WBDaemon;
-  window.getShell = () => ({ askPrompt: async () => "x.txt", checkoutOf: () => null, openTab() {}, _flashAction() {} });
+  window.getShell = () => ({ askPrompt: async () => "x.txt", checkoutOf: () => null, openTab() {}, flash() {} });
   try {
     for (const fn of listeners) await fn({ detail: { action: "create", project: "o/r", path: "src", kind: "file" } });
   } finally {

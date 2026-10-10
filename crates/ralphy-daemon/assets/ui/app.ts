@@ -27,7 +27,7 @@ import { WBSettingsDialog } from "./wb-settings-dialog.ts";
 import { WBSplit } from "./wb-split.ts";
 import { isFilePopupMessage } from "./wb-detached.ts";
 import { createEmitter, forwardAction, sendWindow } from "./wb-events.ts";
-import type { BoardIssue, BoardRow, CanvasTab, ChangeEntry, CheckoutRow, ConfirmAsk, DiffTarget, FleetPeer, Group, LedgerMissing, LedgerRecord, Listing, MenuItem, ModalEntry, Project, PromptAsk, Read, ReadState, ReadyPlan, RosterRow, Run, RunIssue, RunPill, SavePayload, SecurityFact, ShellLate, Slot, SpendDoc, Subscription, Sync, TabBody, TabOpen, Timer } from "./wb-shell-types.d.ts";
+import type { BoardIssue, BoardRow, CanvasTab, ChangeEntry, CheckoutRow, ConfirmAsk, DiffTarget, FleetPeer, Group, LedgerMissing, LedgerRecord, Listing, MenuItem, ModalEntry, Project, PromptAsk, Read, ReadState, ReadyPlan, RosterRow, Run, RunIssue, RunPill, SavePayload, SecurityFact, ShellLate, Slot, SpendDoc, Subscription, Sync, TabBody, TabOpen, Timer, WireDeps } from "./wb-shell-types.d.ts";
 
 // A phone in either orientation: its SHORT side is under the workbench's phone
 // breakpoint (560px). Landscape iPhone is ~750 wide but ~340 tall; an iPad's
@@ -665,6 +665,8 @@ export function shell() {
       clearTimeout(this._actionTimer);
       this._actionTimer = setTimeout(() => (this.runsActionMsg = ""), 2600);
     },
+    // The message door (`wb-messages.ts`) and the nested components flash here.
+    flash(msg: string) { this._flashAction(msg); },
 
     // --- modal stack ------------------------------------------------------
     // The open modals, oldest first: `{ path, opener }`. Only the last one
@@ -3847,7 +3849,8 @@ export function shell() {
 // the document and window listeners, and the state of detached windows.
 // `window` and `document` are parameters so a test passes its own stubs, and
 // each call starts from fresh state (ADR-0075 D7).
-export function wire(window: Window, document: Document) {
+export function wire(window: Window, document: Document, deps: WireDeps) {
+  const { messages } = deps;
   // The one exit point: every gesture becomes a `workbench:action` event.
   // Each page sets its own `window.WB`, and its modules read it (ADR-0075 D9).
   window.WB = createEmitter(document);
@@ -3991,7 +3994,7 @@ export function wire(window: Window, document: Document) {
   // the full rel path.
   (function wireWriteVerbs() {
     const daemonBacked = () => !!window.WBDaemon?.write;
-    const flash = (msg: string) => window.getShell()?._flashAction?.(msg);
+    const flash = (msg: string) => messages.flash(msg);
     const call = (verb: string, payload: CommandPayload, okMsg?: string) => {
       WBDaemon.write(verb, payload)
         .then((reply) => {
@@ -4046,15 +4049,14 @@ export function wire(window: Window, document: Document) {
           // the one repair the browser can offer is a DELIBERATE conversion,
           // named to the operator and made only on their yes.
           const offerUtf8 = (p: SavePayload, reply: WriteReply) => {
-            const shell = window.getShell();
-            // No shell, no dialog: the pane already says "Could not save" and why.
-            if (!shell?.askConfirm) return;
             const at = Number(reply?.char_index ?? 0) + 1;
-            const ask = shell.askConfirm({
+            const ask = messages.askInShell({
               title: `Could not save as ${p.encoding}`,
               message: `Character ${at} is not representable in ${p.encoding}. Save the file as UTF-8 instead?`,
               confirmLabel: "Save as UTF-8",
             });
+            // No shell, no dialog: the pane already says "Could not save" and why.
+            if (!ask) return;
             return ask.then((ok) => {
               if (!ok) return;
               viewer()?.setEncoding?.(id, "UTF-8", false);
@@ -4070,7 +4072,7 @@ export function wire(window: Window, document: Document) {
           // the add had to say.
           const c = window.getShell();
           c?.ensureWorktreeListing?.(repo, true);
-          if (d.message) c?._flashAction?.(d.message.split("\n").map(WBFail.sentence).filter(Boolean).join(" "));
+          if (d.message) flash(d.message.split("\n").map(WBFail.sentence).filter(Boolean).join(" "));
           break;
         }
         case "create": {
@@ -4109,10 +4111,8 @@ export function wire(window: Window, document: Document) {
           const message = d.isFolder
             ? `Delete folder “${name}” and its contents? This cannot be undone.`
             : `Delete “${name}”? This cannot be undone.`;
-          const c = window.getShell();
-          const ok = c
-            ? await c.askConfirm({ title: "Delete", message, confirmLabel: "Delete", danger: true })
-            : window.confirm(message);
+          const ask = messages.askInShell({ title: "Delete", message, confirmLabel: "Delete", danger: true });
+          const ok = ask ? await ask : window.confirm(message);
           if (!ok) return;
           const reply = await WBDaemon.write("file.delete", aimed({ repo, path: d.path })).catch(() => null);
           if (!reply) return flash("Could not delete: the daemon did not answer.");

@@ -21,6 +21,7 @@ import { WBFleet } from "./wb-fleet.ts";
 import { sendDocument } from "./wb-events.ts";
 import { isNullableString, isOptionalString, isRecord } from "./wb-api.ts";
 import type { MonacoDiffEditor, MonacoDisposable, MonacoEditor } from "./wb-monaco.ts";
+import type { Messages } from "./wb-messages.ts";
 
 /** The vendored mermaid (`vendor/mermaid`): the members this module calls. */
 type Mermaid = {
@@ -141,7 +142,14 @@ export function isOpenRequest(v: unknown): v is OpenRequest {
   );
 }
 
-export function createViewer(window: ViewerWindow, document: Document) {
+/** What the entry module hands the file pane. */
+export type ViewerDeps = {
+  /** The page's door for operator messages. */
+  messages: Messages;
+};
+
+export function createViewer(window: ViewerWindow, document: Document, deps: ViewerDeps) {
+  const { messages } = deps;
   let mermaidReady = false;
   function initMermaid() {
     if (mermaidReady || !window.mermaid) return;
@@ -396,7 +404,7 @@ export function createViewer(window: ViewerWindow, document: Document) {
         // editable while nothing is wired, so say so instead of degrading.
         rec.mounting = false;
         console.error("[workbench] monaco editor failed to mount", err);
-        window.getShell?.()?._flashAction?.("Could not open the editor.");
+        messages.flash("Could not open the editor.");
       });
   }
 
@@ -491,7 +499,7 @@ export function createViewer(window: ViewerWindow, document: Document) {
         rec.mounting = false;
         rec.mountFailed = true;
         console.error("[workbench] monaco diff failed to mount", err);
-        window.getShell?.()?._flashAction?.("Could not open the editor.");
+        messages.flash("Could not open the editor.");
         window.getShell?.()?.closeTab(rec.id);
       });
   }
@@ -647,7 +655,7 @@ export function createViewer(window: ViewerWindow, document: Document) {
       // the best answer the pane has — and the reason lands in the pane.
       const fail = (reply?: DaemonReply) => {
         showSaveError(rec, WBFail.failed(reply, "Could not reload the file: the daemon gave no reason."));
-        window.getShell?.()?._flashAction?.("Could not reload the file.");
+        messages.flash("Could not reload the file.");
       };
       // An image reloads through its own verb (ADR-0049): `file.read` refuses
       // its bytes, so routing it here would turn every image Reload into a
@@ -836,7 +844,6 @@ export function createViewer(window: ViewerWindow, document: Document) {
   // Reopen: the same bytes, decoded as `name`. Unsaved edits would be lost
   // to the re-read, so a dirty pane asks first.
   function reopenWith(rec: ViewerRecord, [label, name]: Encoding) {
-    const shell = window.getShell?.();
     const go = () => {
       readWith(rec, name)
         .then((reply) => {
@@ -855,14 +862,13 @@ export function createViewer(window: ViewerWindow, document: Document) {
     if (!rec.dirty) return go();
     // The design-system dialog where there is a shell; `window.confirm` only
     // in a detached popup, which has no shell and no other dialog.
-    const ask = shell?.askConfirm
-      ? shell.askConfirm({
-          title: `Reopen as ${label}?`,
-          message: "Unsaved changes in this tab are discarded.",
-          confirmLabel: "Reopen",
-          danger: true,
-        })
-      : Promise.resolve(window.confirm(`Reopen as ${label}? Unsaved changes are discarded.`));
+    const ask =
+      messages.askInShell({
+        title: `Reopen as ${label}?`,
+        message: "Unsaved changes in this tab are discarded.",
+        confirmLabel: "Reopen",
+        danger: true,
+      }) ?? Promise.resolve(window.confirm(`Reopen as ${label}? Unsaved changes are discarded.`));
     ask.then((ok) => ok && go());
   }
 

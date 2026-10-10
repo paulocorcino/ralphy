@@ -220,7 +220,7 @@ function loadViewer() {
   const emitted = [];
   const window = {
     WB: { emit: (action, detail) => emitted.push({ action, ...detail }) },
-    getShell: () => ({ _flashAction() {}, closeTab() {} }),
+    getShell: () => ({ closeTab() {} }),
     addEventListener() {},
     matchMedia: () => ({ matches: false, addEventListener() {} }),
     setTimeout: () => 0,
@@ -235,7 +235,7 @@ function loadViewer() {
   // The pane imports the one `WBMonaco`: it never boots here, so no editor
   // mounts. `after` puts the real boot back.
   WBMonaco.ready = () => new Promise(() => {});
-  return { viewer: createViewer(window, document), emitted, window, mount };
+  return { viewer: createViewer(window, document, { messages: { flash() {} } }), emitted, window, mount };
 }
 after(() => Object.assign(WBMonaco, REAL_MONACO));
 

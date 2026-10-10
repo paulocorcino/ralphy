@@ -44,6 +44,7 @@ import "./wb-fleet.test.mjs";
 import "./wb-geometry.test.mjs";
 import "./wb-hosts.test.mjs";
 import "./wb-hosts-dialog.test.mjs";
+import "./wb-messages.test.mjs";
 import "./wb-modals.test.mjs";
 import "./wb-monaco.test.mjs";
 import "./wb-move-dialog.test.mjs";

@@ -18,6 +18,7 @@
 import { WBFail } from "./wb-fail.ts";
 import { WBGeometry } from "./wb-geometry.ts";
 import { sendDocument } from "./wb-events.ts";
+import type { Messages } from "./wb-messages.ts";
 import type { CardHost, DeskFence, DeskNote, NoteCard, NoteEditor, NoteLook, NoteSource, Offset, Point, Rect, Size } from "./wb-types.d.ts";
 
 // The one surface `vendor-build/crepe/entry.js` exports. It is set by a script
@@ -68,10 +69,13 @@ type Home = { draft: string; claim: string | null };
 export type NotesDeps = {
   /** The page's consoles, built before the cards; null where a test has none. */
   console: CardHost | null;
+  /** The page's door for operator messages; null where a test has none. */
+  messages: Messages | null;
 };
 
 export function createNotes(window: NotesWindow, document: Document, deps: NotesDeps) {
   const consoleHost = deps.console;
+  const messages = deps.messages;
   // The card's floor. Below a console's minimum on purpose: a note is often a
   // three-line reminder, and forcing it to a console's footprint would make
   // the stage unreadable.
@@ -913,7 +917,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     // The rename field (ADR-0064 §11), in the footer beside the path it
     // replaces while an edit is open. An INPUT and not `window.prompt`: the
     // native dialog is dismissed by default in an automated browser, which is
-    // exactly the objection `wb-console.ts` records against `window.confirm`.
+    // exactly the objection `wb-messages.ts` records against `window.confirm`.
     const rename = document.createElement("input");
     rename.className = "note-rename";
     rename.setAttribute("aria-label", "New file name for this note");
@@ -1796,7 +1800,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     if (!repo) return null;
     // The cap refuses, it does not evict (see `saveNotes`).
     if (consoleHost?.atNoteCap?.()) {
-      consoleHost?.toast({ text: `You can have at most ${consoleHost?.NOTE_MAX} notes. Close one first.` });
+      messages?.toast({ text: `You can have at most ${consoleHost?.NOTE_MAX} notes. Close one first.` });
       return null;
     }
     const records = consoleHost?.notes?.() || [];
@@ -1850,7 +1854,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
       const saved = recordOf(id) || record;
       consoleHost?.saveNotes((consoleHost?.notes() || []).filter((n) => n.id !== id));
       render();
-      consoleHost?.toast({
+      messages?.toast({
         // The path IS the sentence: "note closed · <path> kept" said the same
         // thing twice, and `kept` was reassuring nobody about the file the
         // `✕` never touches (asked 2026-09-22).
@@ -2469,7 +2473,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
   // chip — so the table drops it and this line carries it instead.
   const MARKDOWN_HELP_NOTE = "Type a space after a mark to apply it.";
 
-  // Borrowed from `wb-console.ts`'s `askConfirm`: the shell's modal CLASSES
+  // Borrowed from `wb-messages.ts`'s `askConfirm`: the shell's modal CLASSES
   // over DOM this module builds itself, so the card keeps working in the
   // detached-fence popup, which has no Alpine and no modal markup.
   function markdownHelp() {
@@ -2637,7 +2641,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
   function deleteNote(el: NoteCard) {
     const record = recordOf(el.dataset.noteId);
     if (!record?.path || record.checkout) return;
-    consoleHost?.askConfirm({
+    messages?.askConfirm({
       title: "Delete this note's file?",
       message: `${record.path} is deleted from the checkout. This cannot be undone.`,
       confirmLabel: "Delete",
@@ -2676,7 +2680,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     );
     if (already) return window.WBNotes.jump(already.id);
     if (consoleHost?.atNoteCap?.()) {
-      consoleHost?.toast({ text: `You can have at most ${consoleHost?.NOTE_MAX} notes. Close one first.` });
+      messages?.toast({ text: `You can have at most ${consoleHost?.NOTE_MAX} notes. Close one first.` });
       return null;
     }
     const records = consoleHost?.notes?.() || [];

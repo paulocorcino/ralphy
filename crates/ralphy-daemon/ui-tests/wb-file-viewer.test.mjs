@@ -14,7 +14,7 @@ const REAL_MONACO = { ...WBMonaco };
 function load() {
   const window = {};
   const document = { getElementById: () => null };
-  return createViewer(window, document);
+  return createViewer(window, document, { messages: { flash() {} } });
 }
 
 const DIR = "docs/analise";
@@ -171,7 +171,6 @@ function loadWithDom() {
   const window = {
     WB: { emit() {} },
     monaco: monacoStub,
-    getShell: () => ({ _flashAction() {} }),
     addEventListener() {},
     matchMedia: () => ({ matches: false, addEventListener() {} }),
   };
@@ -186,7 +185,7 @@ function loadWithDom() {
   // The pane imports the one `WBMonaco`: its boot is replaced for the test and
   // put back by `after`.
   Object.assign(WBMonaco, stub);
-  return { viewer: createViewer(window, document), mount, log, models, document };
+  return { viewer: createViewer(window, document, { messages: { flash() {} } }), mount, log, models, document };
 }
 after(() => Object.assign(WBMonaco, REAL_MONACO));
 const settle = () => new Promise((r) => setTimeout(r, 5));

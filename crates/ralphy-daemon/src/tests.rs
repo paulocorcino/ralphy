@@ -2807,7 +2807,7 @@ fn the_explorer_opens_a_note_as_a_card() {
     for pin in [r#"write("file.rename""#, r#"write("file.delete""#] {
         assert!(notes.contains(pin), "wb-notes.ts must keep the pin {pin}");
     }
-    // The native dialogs are pinned OUT for the reason `wb-console.ts`
+    // The native dialogs are pinned OUT for the reason `wb-messages.ts`
     // records: an automated browser dismisses them by default, which turns
     // a guarded click into a silently cancelled one.
     assert!(
@@ -2815,7 +2815,7 @@ fn the_explorer_opens_a_note_as_a_card() {
         "a note's file actions must use the workbench's own dialog and field"
     );
     assert!(
-        notes.contains("consoleHost?.askConfirm({"),
+        notes.contains("messages?.askConfirm({"),
         "deleting a note's FILE must ask first (ADR-0064 §11)"
     );
     // THE LOCK PINS THE CARD AND NOTHING ELSE (ADR-0064, amendment
@@ -4035,6 +4035,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-monaco.js",
                 "wb-file-viewer.js",
                 "wb-events.js",
+                "wb-messages.js",
             ][..],
         ),
         (
@@ -4054,7 +4055,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 // the desk folds, the GPU budget, the title, the fence list, the detach, the view, the
                 // terminal, the window chrome, the popup registry, the fences, the desk, the console name
                 // and the input folds; the entry
-                // imports the console. Stated HERE because this set is a hardcoded floor:
+                // imports the console and the door for operator messages. Stated HERE because this set is a hardcoded floor:
                 // nothing derives the popup's needs from the tree, so an
                 // import dropped from the entry breaks the second monitor
                 // with no other signal.
@@ -4075,6 +4076,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-stage-fences.js",
                 "wb-desk.js",
                 "wb-console.js",
+                "wb-messages.js",
             ][..],
         ),
     ] {
@@ -4519,11 +4521,12 @@ fn each_entry_module_creates_the_instances_before_it_wires_the_page() {
             "main.ts",
             include_str!("../assets/ui/main.ts"),
             &[
+                "const messages = createMessages(",
                 "window.WBConsole = createConsole(",
                 "window.WBDaemon = createDaemon(",
                 "window.WBViewer = createViewer(",
                 "window.WBNotes = createNotes(",
-                "wire(window, document);",
+                "wire(window, document, { messages });",
                 "Alpine.start();",
                 "window.WBConsole.boot();",
             ][..],
@@ -4532,6 +4535,7 @@ fn each_entry_module_creates_the_instances_before_it_wires_the_page() {
             "detached-main.ts",
             include_str!("../assets/ui/detached-main.ts"),
             &[
+                "const messages = createMessages(",
                 "window.WBViewer = createViewer(",
                 "wireDetached(window, document);",
             ][..],
@@ -4540,6 +4544,7 @@ fn each_entry_module_creates_the_instances_before_it_wires_the_page() {
             "detached-fence-main.ts",
             include_str!("../assets/ui/detached-fence-main.ts"),
             &[
+                "const messages = createMessages(",
                 "window.WBConsole = createConsole(",
                 "window.WBNotes = createNotes(",
                 "wireDetachedFence(window, document);",
@@ -5058,9 +5063,7 @@ fn shell_draws_fences_below_the_windows() {
     // The toolbar says why before the click and again if one gets through — the
     // #318 idiom, since `wb-console.ts` reaches no shell and can only refuse.
     assert!(
-        app.contains(
-            "if (WBConsole.createFence() === false) this._flashAction(this.fenceCapMessage());"
-        ),
+        app.contains("if (WBConsole.createFence() === false) this.flash(this.fenceCapMessage());"),
         "newFence must let the module refuse, and say so when it does"
     );
     // The dimming reads the REACTIVE snapshot, not the module's array. MEASURED:
@@ -6990,20 +6993,22 @@ fn the_console_chrome_holds_its_three_rules() {
 /// would turn every guarded click into a silently cancelled one.
 #[test]
 fn the_destructive_console_clicks_confirm_first() {
-    // The console, its fence list, its fences and its title, as one text:
-    // the dialog and the console's × live in the console, the fence's tile
-    // and remove buttons in the fences, the remove verb in the fence list,
-    // the two restarts in the title.
+    // The console, its fence list, its fences, its title and the door for
+    // operator messages, as one text: the console's × lives in the console,
+    // the fence's tile and remove buttons in the fences, the remove verb in
+    // the fence list, the two restarts in the title, and the dialog in the
+    // door.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
         include_str!("../assets/ui/wb-stage-fence-list.ts"),
         include_str!("../assets/ui/wb-stage-fences.ts"),
         include_str!("../assets/ui/wb-console-title.ts"),
+        include_str!("../assets/ui/wb-messages.ts"),
     ]
     .concat();
     assert!(
         js.contains("function askConfirm({"),
-        "wb-console.ts must own a confirmation dialog of its own"
+        "wb-messages.ts must own a confirmation dialog of its own"
     );
     assert!(
         !js.contains("window.confirm("),

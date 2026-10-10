@@ -7,6 +7,7 @@ import type { createTerminal } from "./wb-console-terminal.ts";
 import type { createTitle } from "./wb-console-title.ts";
 import type { DeskDeps } from "./wb-desk.ts";
 import type { DetachDeps } from "./wb-desk-detach.ts";
+import type { Messages } from "./wb-messages.ts";
 import type { PopupRegistryDeps } from "./wb-desk-popups.ts";
 import type { ViewDeps } from "./wb-stage-view.ts";
 
@@ -261,6 +262,8 @@ export type ConsoleOpts = {
   detachLink?: DetachDeps["link"] & PopupRegistryDeps["link"];
   /** Whether the sockets are stale after a resume. */
   isStale?: () => boolean;
+  /** The page's door for operator messages (`wb-messages.ts`). */
+  messages?: Messages;
 };
 
 /**
@@ -343,7 +346,7 @@ export type NoteCard = HTMLElement & {
 
 /**
  * What a note card reads of the consoles: the desk records, the stage's window
- * tier and gestures, the operator messages and two facts about the page. The
+ * tier and gestures, and two facts about the page. The
  * entry module passes it as `deps.console` of `createNotes`.
  */
 export type CardHost = Pick<
@@ -364,8 +367,6 @@ export type CardHost = Pick<
   | "dragBegins"
   | "DORMANT_MARGIN_PX"
   | "DORMANT_AFTER_MS"
-  | "toast"
-  | "askConfirm"
   | "isDetached"
   | "jumpToNote"
 >;

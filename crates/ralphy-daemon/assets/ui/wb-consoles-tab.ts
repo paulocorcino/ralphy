@@ -33,7 +33,7 @@ type FenceColumnItems = DocumentEventMap["workbench:fence-columns"]["detail"]["i
 
 export function wbConsoleMenus() {
   // Every `shell()` member this component's code or markup reads or calls.
-  return component(["active", "activate", "_flashAction", "roster", "liveSessions", "sessionsError", "consoleShortcutsBlocked"], {
+  return component(["active", "activate", "flash", "roster", "liveSessions", "sessionsError", "consoleShortcutsBlocked"], {
     agentMenu: false,
     // The Go-to picker (#337) and the fence picker (#343): SNAPSHOTS taken
     // when the menu opens, because the windows and fences live in the DOM.
@@ -151,7 +151,7 @@ export function wbConsoleMenus() {
       this.fenceMenu = false;
       // The module decides; `false` is its refusal at the cap, and saying so is
       // this layer's job (`wb-console.ts` reaches no shell).
-      if (WBConsole.createFence() === false) this._flashAction(this.fenceCapMessage());
+      if (WBConsole.createFence() === false) this.flash(this.fenceCapMessage());
     },
 
     // ONE dropdown at a time: each trigger sends `workbench:menus-close`
@@ -324,7 +324,7 @@ export function wbConsoleMenus() {
 
 export function wbColumns() {
   // Every `shell()` member this component's code or markup reads or calls.
-  return component(["active", "_flashAction", "consoleShortcutsBlocked"], {
+  return component(["active", "flash", "consoleShortcutsBlocked"], {
     // Columns beside a maximized console (ADR-0051 §5): per-client view
     // state, never desk state. The ids left to right; empty whenever fewer
     // than two remain, so a lone survivor is an ordinary maximize again.
@@ -517,7 +517,7 @@ export function wbColumns() {
       const cols = this.effectiveColumns(from);
       const out = WBColumns.open(cols, from, id, this.columnCap(), this.columnDir);
       if (!out.ok) {
-        if (out.reason) this._flashAction(out.reason);
+        if (out.reason) this.flash(out.reason);
         return;
       }
       this.setColumns(out.columns);

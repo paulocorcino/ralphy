@@ -25,7 +25,7 @@ export function settingsDialog() {
   // Every `shell()` member this component's code or markup reads or calls.
   // `loadComponent` in ui-tests/harness.mjs fails on any other name, and the
   // type check fails on a name the code reads.
-  return component(["_flashAction", "askConfirm", "scrim"], {
+  return component(["flash", "askConfirm", "scrim"], {
     // Data-driven (schema in wb-settings.ts); the daemon persists via
     // `config.set`/`config.unset`.
     SETTINGS: WB_SETTINGS,
@@ -200,7 +200,7 @@ export function settingsDialog() {
       // The run-lock-aware config Mutates; an empty/"unset" value clears the
       // key. `observe` (not `spawn`) so a run-lock refusal surfaces (#207).
       if (this.$store.projects.openSlug && this.settingsError) {
-        this._flashAction("Could not change the setting: the settings were not read. Open the settings again.");
+        this.flash("Could not change the setting: the settings were not read. Open the settings again.");
         return;
       }
       if (this.$store.projects.openSlug) {
@@ -212,7 +212,7 @@ export function settingsDialog() {
             value: String(value),
           });
           if (WBFail.isError(reply)) {
-            this._flashAction(WBFail.failed(reply, "Could not change the setting: the daemon gave no reason."));
+            this.flash(WBFail.failed(reply, "Could not change the setting: the daemon gave no reason."));
           }
         } catch {
           // No daemon reachable — leave the optimistic setting in place.

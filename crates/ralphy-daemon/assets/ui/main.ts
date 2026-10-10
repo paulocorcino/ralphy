@@ -24,22 +24,27 @@ import { WBDevice } from "./wb-device.ts";
 import { createViewer } from "./wb-file-viewer.ts";
 import { createNotes } from "./wb-notes.ts";
 import { createConsole } from "./wb-console.ts";
+import { createMessages } from "./wb-messages.ts";
 import { iconDirective, shell, wire } from "./app.ts";
 import { projectsStore } from "./wb-projects-store.ts";
 
 window.Alpine = Alpine;
-// The consoles first, before `wire`: `app.ts` and the markup read `WBConsole`.
+// The door for operator messages first: the consoles, the cards and the
+// modules after them tell the operator through it. The shell is read at each
+// call, so it may be built later.
+const messages = createMessages(window, document, { shell: () => window.getShell?.() ?? null });
+// The consoles, before `wire`: `app.ts` and the markup read `WBConsole`.
 // Creating them starts the desk read; `boot` comes once Alpine has started.
-window.WBConsole = createConsole(window, document, location, {});
+window.WBConsole = createConsole(window, document, location, { messages });
 // The daemon door and the device facts, before `wire`: `app.ts` reads
 // `WBDaemon`, and the facts go out once per page load.
-window.WBDaemon = createDaemon(window, document, location);
+window.WBDaemon = createDaemon(window, document, location, { messages });
 WBDevice.report(window);
 // The file pane, before `wire`: `app.ts` reads `WBViewer`.
-window.WBViewer = createViewer(window, document);
+window.WBViewer = createViewer(window, document, { messages });
 // The note cards, before `wire`: `wb-console.ts` reads `WBNotes` inside functions.
-window.WBNotes = createNotes(window, document, { console: window.WBConsole });
-wire(window, document);
+window.WBNotes = createNotes(window, document, { console: window.WBConsole, messages });
+wire(window, document, { messages });
 Alpine.directive("icon", iconDirective);
 // The open project, before the components that read it (ADR-0073 D6).
 Alpine.store("projects", projectsStore());
