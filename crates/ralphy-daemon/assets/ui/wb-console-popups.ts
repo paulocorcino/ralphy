@@ -12,10 +12,45 @@
    peer state belong to the entry, and only which entries exist belongs here.
    --------------------------------------------------------------------------- */
 
+import type { Rect } from "./wb-types.d.ts";
+
+// One member a popup holds: a console's record or a note card's, as the
+// snapshot `fenceSnapshot` hands over. A card is tagged `kind: "note"`, and a
+// never-saved one carries its unsaved text in `draft` and its chosen name in
+// `claim`.
+export type PopupMember = {
+  id: string;
+  kind?: string;
+  agent?: string;
+  repo?: string | null;
+  consoleName?: string | null;
+  path?: string;
+  session?: number | null;
+  rect?: Partial<Rect>;
+  draft?: string;
+  claim?: string | null;
+};
+
+// One popup of the registry. `pid` is the popup's identity on every lifecycle
+// message, set when this tab opened it; `adopted` and `probed` start false.
+export type PopupEntry = {
+  handle: Window | null;
+  members: PopupMember[];
+  memberIds: string[];
+  fence: { id: string; name?: string; rect: Rect | null } | null;
+  pid?: string;
+  poll: ReturnType<typeof setInterval> | null;
+  greeted: boolean;
+  rescue: ReturnType<typeof setTimeout> | null;
+  adopted?: boolean;
+  peer: { seen: number; lost: boolean };
+  probed?: boolean;
+};
+
 // What the registry reads from the console, and nothing else.
 export type PopupRegistryDeps = {
   // The session-scoped store of this tab's registry.
-  link: { writeRegistry: (ids: any, members: any) => void };
+  link: { writeRegistry: (ids: string[], members: Record<string, string[]>) => void };
   // The origin's heartbeat: it runs while a fence is detached.
   startBeat: () => void;
   stopBeat: () => void;
@@ -28,24 +63,24 @@ export function createPopupRegistry(deps: PopupRegistryDeps) {
   // session-scoped storage behind `link` (ADR-0051 §8), which carries a detach
   // across an F5 and kills it with the tab. Every transition goes through
   // `commitDetached` so the two never disagree.
-  let detached: any = [];
-  const fencePopups = new Map(); // fenceId -> { handle, members, fence, poll, peer }
+  let detached: string[] = [];
+  const fencePopups = new Map<string, PopupEntry>(); // fenceId -> { handle, members, fence, poll, peer }
 
-  function isDetached(id: any) {
+  function isDetached(id: string) {
     return detached.includes(id);
   }
 
   // The detached fence ids, as a copy: they change only in `commitDetached`.
-  function detachedIds(): any[] {
+  function detachedIds(): string[] {
     return detached.slice();
   }
 
   // The popup entry of a fence, or `undefined`.
-  function entry(id: any): any {
+  function entry(id: string): PopupEntry | undefined {
     return fencePopups.get(id);
   }
 
-  function has(id: any) {
+  function has(id: string) {
     return fencePopups.has(id);
   }
 
@@ -55,23 +90,23 @@ export function createPopupRegistry(deps: PopupRegistryDeps) {
 
   // Every [fence id, entry] pair, as a copy: a caller may remove an entry
   // while it walks the list (`reattachFence` from the heartbeat).
-  function entries(): [any, any][] {
+  function entries(): [string, PopupEntry][] {
     return [...fencePopups];
   }
 
   // Adds or replaces a fence's popup entry. The ids do not change here: the
   // caller commits them, after the entry, so `detachedMembers` can read it.
-  function put(id: any, popup: any) {
+  function put(id: string, popup: PopupEntry) {
     fencePopups.set(id, popup);
   }
 
-  function remove(id: any) {
+  function remove(id: string) {
     fencePopups.delete(id);
   }
 
   // A popup entry with no popup behind it yet — the shape both the boot restore
   // and an unheralded `popup-here` start from.
-  function newPopupEntry(memberIds?: any): any {
+  function newPopupEntry(memberIds?: string[]): PopupEntry {
     return {
       handle: null,
       members: [],
@@ -94,10 +129,10 @@ export function createPopupRegistry(deps: PopupRegistryDeps) {
   // The member ids each detached fence holds, for the registry: the live
   // snapshot, else the ids restored from the last write.
   function detachedMembers() {
-    const out: any = {};
+    const out: Record<string, string[]> = {};
     for (const id of detached) {
       const entry = fencePopups.get(id);
-      const live = (entry?.members || []).map((m: any) => m.id).filter(Boolean);
+      const live = (entry?.members || []).map((m) => m.id).filter(Boolean);
       // `adopted` is what lets an EMPTY live list mean empty: the popup answered
       // and holds nothing. Without it the fallback below would re-persist the
       // very consoles the operator just closed in there.
@@ -109,7 +144,7 @@ export function createPopupRegistry(deps: PopupRegistryDeps) {
   // THE ONE PLACE `detached` CHANGES. INVARIANT on every return path: the
   // mirror and the stored registry hold the same ids, and no heartbeat timer
   // runs while nothing is detached.
-  function commitDetached(next: any) {
+  function commitDetached(next: string[]) {
     detached = next;
     link.writeRegistry(detached, detachedMembers());
     if (detached.length) startBeat();

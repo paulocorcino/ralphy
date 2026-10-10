@@ -18,6 +18,7 @@ import { WBWindowState } from "./wb-window-state.ts";
 import { WBConsoleName } from "./wb-console-name.ts";
 import * as WBConsoleInput from "./wb-console-input.ts";
 import { sendDocument } from "./wb-events.ts";
+import type { ConsoleWin, DeskFence, DeskRecord, DeskWindowFields, Point, Presentation, Rect, Size } from "./wb-types.d.ts";
 
 const { fullscreenOffered, dragThreshold, dragBegins, isDoubleTap, HOLD_MS } = WBConsoleInput;
 const { RESIZE_MIN, resizeRect, spawnRectIn, freeSpawnRect, WIN_MIN_W, WIN_MIN_H } = WBGeometry;
@@ -34,71 +35,91 @@ export const DIRS = ["n", "s", "e", "w", "ne", "nw", "se", "sw"];
 // `begin` at the press, `end` at the release; `active` is the question a desk
 // this page takes asks before it moves an element.
 export function createGestures() {
-  const gestures = new Set<any>();
+  const gestures = new Set<HTMLElement>();
   return {
-    begin: (el: any) => {
+    begin: (el: HTMLElement) => {
       gestures.add(el);
     },
-    end: (el: any) => {
+    end: (el: HTMLElement) => {
       gestures.delete(el);
     },
-    active: (el: any) => gestures.has(el),
+    active: (el: HTMLElement) => gestures.has(el),
   };
 }
 
 export type Gestures = ReturnType<typeof createGestures>;
 
+// The hooks of a gesture that is not a console window's: a note card drags and
+// resizes by the same gesture (ADR-0064 §8), locked by its own record and
+// persisted into the notes. `min` is the smallest size of a resize.
+export type GestureHooks = { locked?: () => boolean; onDrop?: () => void };
+export type ResizeHooks = GestureHooks & { min?: Size };
+
+// What `buildChrome` seeds a window from: a desk record, or a partial of one
+// that carries at least `kind`.
+export type ChromeRecord = Partial<DeskRecord> | null | undefined;
+
 // What the chrome reads from the console, and nothing else.
 export type ChromeDeps = {
   // The console's page: the drag ends on a `blur` of its window.
-  window: any;
+  window: Window;
   // The page the chrome builds its elements in and listens on.
-  document: any;
+  document: Document;
   // The console's options: the torn-off fence window boots without
   // `autoBoot` (no fences for the free cascade) and cannot launch.
   OPTS: { autoBoot?: boolean; canLaunch?: boolean };
   // The elements under a gesture; shared with the fence gestures.
   gestures: Gestures;
-  // The plane and the viewport; null before the page has them.
-  stage: () => any;
-  workspace: () => any;
+  // The plane and the viewport; null before the page has them. A gesture and
+  // `buildChrome` run only on a page that has the stage, and read it with `!`.
+  stage: () => HTMLElement | null;
+  workspace: () => HTMLElement | null;
   // The fences on the stage, and the focused fence's id: the console and
   // the fence list reassign them, so they are read when a window is built.
-  fences: () => any[];
-  focusedFence: () => any;
+  fences: () => DeskFence[];
+  focusedFence: () => string | null;
   // Grows or fits the stage to the windows on it.
-  applyExtent: (opts?: any) => void;
+  applyExtent: (opts?: { grow?: boolean }) => void;
   // A window's lock, painted and toggled; `isLocked` also counts its fence.
-  applyLock: (win: any, locked: any) => void;
-  isLocked: (win: any) => boolean;
-  toggleLock: (win: any) => void;
+  applyLock: (win: ConsoleWin, locked: boolean) => void;
+  isLocked: (win: ConsoleWin) => boolean;
+  toggleLock: (win: ConsoleWin) => void;
   // The auto-pan loop of a drag at a viewport edge.
-  autoPan: (node: any, place: any) => { follow: (pointer: any) => void; stop: () => void };
+  autoPan: (
+    node: HTMLElement,
+    place: (pointer: Point) => void,
+  ) => { follow: (pointer: Point) => void; stop: () => void };
   // The console name: its prefix, the names taken, whether a rename is
   // allowed here, and the rename itself.
-  consolePrefix: (repo: any) => any;
-  takenNames: (exceptId: any) => any;
+  consolePrefix: (repo: string | null | undefined) => string;
+  takenNames: (exceptId: string | null) => (string | null | undefined)[];
   canRename: () => boolean;
-  startRename: (win: any, span: any) => void;
+  startRename: (win: ConsoleWin, span: HTMLElement) => void;
   // A fence's element and lock, for a window born into the focused fence.
-  fenceEl: (id: any) => any;
-  fenceLocked: (id: any) => boolean;
-  // Raises a window, and slides the viewport to one out of view.
-  focusWin: (win: any) => void;
-  reveal: (deskId: any) => any;
+  fenceEl: (id: string | null) => HTMLElement | null;
+  fenceLocked: (id: string | null) => boolean;
+  // Raises a window or a card, and slides the viewport to one out of view.
+  focusWin: (win: HTMLElement) => void;
+  reveal: (deskId: string) => void;
   // Full screen, maximize, and their toggles.
-  isFull: (win: any) => boolean;
-  toggleFull: (win: any) => void;
-  setMax: (win: any, on: any, persist?: boolean) => void;
-  toggleMax: (win: any) => void;
-  // A new desk record id, and the window's rect read from the DOM.
+  isFull: (win: HTMLElement) => boolean;
+  toggleFull: (win: ConsoleWin) => void;
+  setMax: (win: ConsoleWin, on: boolean, persist?: boolean) => void;
+  toggleMax: (win: ConsoleWin) => void;
+  // A new desk record id, and the box of a window, a fence or a card read from
+  // the DOM.
   newDeskId: () => string;
-  restoreRect: (win: any) => any;
+  restoreRect: (el: HTMLElement) => Rect;
   // The title: what it says, and its painting.
-  sessionPresentation: (label: any, repo: any, prior: any, owner: any) => any;
-  renderTitle: (win: any, title: any, presentation: any) => void;
+  sessionPresentation: (
+    label: string | null,
+    repo: string | null | undefined,
+    prior: ChromeRecord,
+    owner: HostedSession | null | undefined,
+  ) => Presentation;
+  renderTitle: (win: ConsoleWin, title: HTMLElement, presentation: Presentation) => void;
   // Writes the window's fields to the desk.
-  setWin: (win: any, fields: any) => void;
+  setWin: (win: ConsoleWin, fields: DeskWindowFields) => void;
 };
 
 export function createChrome(deps: ChromeDeps) {
@@ -149,12 +170,13 @@ export function createChrome(deps: ChromeDeps) {
   // gesture — threshold, auto-pan, Escape, the lot — but it is locked by its
   // own record and persisted into `notes`, not into `desk`. Absent, the two
   // hooks are the window's, which is every existing caller.
-  function makeDraggable(win: any, handle: any, opts?: any) {
-    const heldFast = opts?.locked || (() => isLocked(win));
+  function makeDraggable(win: HTMLElement, handle: HTMLElement, opts?: GestureHooks) {
+    // Without `opts` the element is a console window.
+    const heldFast = opts?.locked || (() => isLocked(win as ConsoleWin));
     // The rect at the end of the drag, computed at the act.
-    const persist = opts?.onDrop || (() => setWin(win, { rect: restoreRect(win) }));
-    handle.addEventListener("pointerdown", (e: any) => {
-      if (e.target.closest("button, .session-name-input")) return;
+    const persist = opts?.onDrop || (() => setWin(win as ConsoleWin, { rect: restoreRect(win) }));
+    handle.addEventListener("pointerdown", (e) => {
+      if ((e.target as HTMLElement).closest("button, .session-name-input")) return;
       // Primary button only: a right/middle press is followed by `contextmenu`
       // (or no `pointerup`), stranding `onMove` on the document. `isPrimary` is
       // the touch half: a second finger opens its own stream.
@@ -179,8 +201,8 @@ export function createChrome(deps: ChromeDeps) {
       // Put the window under `pointer` (a CLIENT point). Read the stage LIVE:
       // `applyExtent({grow:true})` widens it, and a wheel or auto-pan mid-drag
       // shifts its origin under a cached rect.
-      const place = (pointer: any) => {
-        const st = stage();
+      const place = (pointer: Point) => {
+        const st = stage()!;
         const origin = st.getBoundingClientRect();
         const x = pointer.x - origin.left - offX;
         const y = pointer.y - origin.top - offY;
@@ -191,7 +213,7 @@ export function createChrome(deps: ChromeDeps) {
       // Holding the window against the viewport edge scrolls the plane under it.
       // A window closed mid-drag ends the loop: nothing is left to carry.
       const pan = autoPan(win, place);
-      const onMove = (ev: any) => {
+      const onMove = (ev: PointerEvent) => {
         // Another pointer's stream (a second finger, the mouse during a touch drag).
         if (ev.pointerId !== pointerId) return;
         // `pointerup` is NOT guaranteed: a native context menu mid-drag or an
@@ -211,7 +233,7 @@ export function createChrome(deps: ChromeDeps) {
       };
       // Escape ends the drag where the window sits — no revert: a keyboard exit
       // from a loop whose mouseup may never arrive.
-      const onKey = (ev: any) => {
+      const onKey = (ev: KeyboardEvent) => {
         if (ev.key === "Escape") onUp();
       };
       const onUp = () => {
@@ -250,38 +272,38 @@ export function createChrome(deps: ChromeDeps) {
   // turns two taps into a `dblclick` (Chrome on Android) does not act twice.
   // The rename opens on the RELEASE after the hold, not when the timer fires:
   // iOS raises the keyboard only for a `focus()` inside an input event.
-  function wireTitleTouch(win: any, titlebar: any, onDoubleTap: any) {
+  function wireTitleTouch(win: ConsoleWin, titlebar: HTMLElement, onDoubleTap: () => void) {
     // Seen on an iPhone (2026-10-03): the double tap that maximized also
     // zoomed the page, although the bar has `touch-action: none`. Safari does
     // not zoom on a double tap whose `touchend` is cancelled. A button's
     // `touchend` is not cancelled: it is what makes the button's `click`.
     titlebar.addEventListener(
       "touchend",
-      (e: any) => {
-        if (!e.target.closest("button, .session-name-input")) e.preventDefault();
+      (e) => {
+        if (!(e.target as HTMLElement).closest("button, .session-name-input")) e.preventDefault();
       },
       { passive: false },
     );
-    titlebar.addEventListener("pointerdown", (e: any) => {
+    titlebar.addEventListener("pointerdown", (e) => {
       win._lastPointerType = e.pointerType;
       if (e.pointerType === "mouse" || !e.isPrimary) return;
-      if (e.target.closest("button, .session-name-input")) return;
+      if ((e.target as HTMLElement).closest("button, .session-name-input")) return;
       // No compatibility mouse events: a `mousedown` after the release would
       // take focus from the new name input, and its `blur` ends the edit.
       e.preventDefault();
       const pointerId = e.pointerId;
       const pressed = { x: e.clientX, y: e.clientY };
       const threshold = dragThreshold(e.pointerType);
-      const span = canRename() ? e.target.closest(".session-name") : null;
+      const span = canRename() ? (e.target as HTMLElement).closest<HTMLElement>(".session-name") : null;
       let moved = false;
       let held = false;
-      let timer: any = span
+      let timer: ReturnType<typeof setTimeout> | null = span
         ? setTimeout(() => {
             timer = null;
             held = true;
           }, HOLD_MS)
         : null;
-      const onMove = (ev: any) => {
+      const onMove = (ev: PointerEvent) => {
         if (ev.pointerId !== pointerId) return;
         // `pointerup` is not guaranteed (see `makeDraggable`).
         if (ev.buttons === 0) {
@@ -295,15 +317,15 @@ export function createChrome(deps: ChromeDeps) {
           timer = null;
         }
       };
-      const onUp = (ev: any) => {
+      const onUp = (ev: PointerEvent) => {
         if (ev.pointerId === pointerId) finish(ev);
       };
-      const onCancel = (ev: any) => {
+      const onCancel = (ev: PointerEvent) => {
         if (ev.pointerId === pointerId) finish(null);
       };
       // Android fires `contextmenu` on a held finger; its menu is not ours.
-      const onMenu = (ev: any) => ev.preventDefault();
-      const finish = (up: any) => {
+      const onMenu = (ev: MouseEvent) => ev.preventDefault();
+      const finish = (up: PointerEvent | null) => {
         clearTimeout(timer);
         timer = null;
         document.removeEventListener("pointermove", onMove);
@@ -316,7 +338,8 @@ export function createChrome(deps: ChromeDeps) {
         }
         if (held) {
           win._lastTap = null;
-          startRename(win, span);
+          // `held` is set only by the timer, which exists only with a `span`.
+          startRename(win, span!);
           return;
         }
         const tap = { t: up.timeStamp, x: up.clientX, y: up.clientY };
@@ -338,11 +361,12 @@ export function createChrome(deps: ChromeDeps) {
   // exit path (mouseup anywhere on the document) drops BOTH listeners and
   // persists exactly once.
   // Same seam as `makeDraggable`'s, for the same second caller.
-  function startResize(win: any, dir: any, opts?: any) {
-    const heldFast = opts?.locked || (() => isLocked(win));
-    const persist = opts?.onDrop || (() => setWin(win, { rect: restoreRect(win) }));
+  function startResize(win: HTMLElement, dir: string, opts?: ResizeHooks) {
+    // Without `opts` the element is a console window.
+    const heldFast = opts?.locked || (() => isLocked(win as ConsoleWin));
+    const persist = opts?.onDrop || (() => setWin(win as ConsoleWin, { rect: restoreRect(win) }));
     const min = opts?.min || RESIZE_MIN;
-    return (e: any) => {
+    return (e: PointerEvent) => {
       if (e.button !== 0 || !e.isPrimary) return; // see makeDraggable
       const pointerId = e.pointerId;
       focusWin(win);
@@ -358,14 +382,14 @@ export function createChrome(deps: ChromeDeps) {
       // The STAGE is the bound (ADR-0051 §5). Captured ONCE: a live re-read
       // feeds back on itself — the extent this gesture grows becomes the bound
       // of its next move, inflating the window ~one margin per mousemove.
-      const st = stage();
+      const st = stage()!;
       const bounds = { width: st.offsetWidth, height: st.offsetHeight };
       const startX = e.clientX;
       const startY = e.clientY;
       // See makeDraggable: a press under the threshold is a tap on the band.
       const threshold = dragThreshold(e.pointerType);
       let armed = false;
-      const onMove = (ev: any) => {
+      const onMove = (ev: PointerEvent) => {
         // A second finger opens its own stream and is not this gesture.
         if (ev.pointerId !== pointerId) return;
         if (!armed) {
@@ -406,8 +430,8 @@ export function createChrome(deps: ChromeDeps) {
   // rect (from a desk record, else cascaded), titlebar, body, eight resize
   // handles. `desk` is a record (or a partial carrying at least `kind`);
   // everything the record needs later is hung off the element.
-  function buildChrome(label: any, repo: any, desk: any, kind: any) {
-    const win = document.createElement("div");
+  function buildChrome(label: string | null, repo: string | null | undefined, desk: ChromeRecord, kind: string) {
+    const win = document.createElement("div") as HTMLElement as ConsoleWin;
     win.className = "session-window";
     // Every field this element will carry is written HERE, by the module that
     // declares them (wb-window-state.ts): a field nothing seeds reads as its
@@ -451,7 +475,7 @@ export function createChrome(deps: ChromeDeps) {
       const el = focusedFence() && !fenceLocked(focusedFence()) && fenceEl(focusedFence());
       const host = el && el.offsetWidth && el.offsetHeight ? el : null;
       if (host) {
-        const headH = host.querySelector(".fence-head")?.offsetHeight || 28;
+        const headH = host.querySelector<HTMLElement>(".fence-head")?.offsetHeight || 28;
         const box = spawnRectIn(restoreRect(host), cascade, headH);
         win.style.left = box.left + "px";
         win.style.top = box.top + "px";
@@ -553,7 +577,7 @@ export function createChrome(deps: ChromeDeps) {
       h.addEventListener("pointerdown", startResize(win, dir));
       win.append(h);
     }
-    stage().append(win);
+    stage()!.append(win);
     applyExtent();
 
     // Pointer: a touch raises the window on contact, not after the tap resolves.
@@ -570,30 +594,30 @@ export function createChrome(deps: ChromeDeps) {
       toggleMax(win);
       sendDocument(document, "workbench:columns-stale");
     };
-    maxBtn.addEventListener("click", (e: any) => {
+    maxBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       maxOrRestore();
     });
-    titlebar.addEventListener("dblclick", (e: any) => {
+    titlebar.addEventListener("dblclick", (e) => {
       // Fullscreen hides the maximize control; a double-click must not toggle
       // it unseen underneath.
       // Nor may a double-click on the name, which renames (ADR-0066 §3).
-      if (e.target.closest("button, .session-name, .session-name-input") || isFull(win)) return;
+      if ((e.target as HTMLElement).closest("button, .session-name, .session-name-input") || isFull(win)) return;
       // A finger's double tap is `wireTitleTouch`'s.
       if (win._lastPointerType !== "mouse") return;
       maxOrRestore();
     });
     wireTitleTouch(win, titlebar, maxOrRestore);
-    colBtn.addEventListener("click", (e: any) => {
+    colBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       sendDocument(document, "workbench:column-open", { id: win._deskId, rect: colBtn.getBoundingClientRect() });
     });
-    lockBtn.addEventListener("click", (e: any) => {
+    lockBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       toggleLock(win);
     });
     applyLock(win, !!desk?.locked);
-    fullBtn.addEventListener("click", (e: any) => {
+    fullBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       toggleFull(win);
     });

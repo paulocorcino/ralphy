@@ -5156,7 +5156,9 @@ fn shell_drags_only_past_a_threshold() {
             "{handler} must persist only an armed gesture"
         );
         assert!(
-            b.contains("opts?.onDrop || (() => setWin(win, { rect: restoreRect(win) }))"),
+            b.contains(
+                "opts?.onDrop || (() => setWin(win as ConsoleWin, { rect: restoreRect(win) }))"
+            ),
             "{handler}'s drop hook must default to writing the window's rect"
         );
     }
@@ -5209,12 +5211,12 @@ fn titlebar_touch_double_taps_and_holds() {
         // Without it a `mousedown` after the hold blurs the new name input.
         "e.preventDefault();",
         // Without it iOS Safari zooms the page on the double tap.
-        r#"if (!e.target.closest("button, .session-name-input")) e.preventDefault();"#,
+        r#"if (!(e.target as HTMLElement).closest("button, .session-name-input")) e.preventDefault();"#,
         "{ passive: false }",
         "dragBegins(pressed,",
         "HOLD_MS)",
         "isDoubleTap(win._lastTap, tap) && !isFull(win)",
-        "startRename(win, span);",
+        "startRename(win, span!);",
         r#"document.addEventListener("pointercancel", onCancel);"#,
         r#"document.removeEventListener("pointercancel", onCancel);"#,
     ] {
@@ -5383,7 +5385,7 @@ fn shell_locks_consoles_and_fences() {
         let b = body(handler);
         assert!(
             b.contains("if (heldFast()) return")
-                && b.contains("opts?.locked || (() => isLocked(win))"),
+                && b.contains("opts?.locked || (() => isLocked(win as ConsoleWin))"),
             "{handler} must refuse a locked console"
         );
     }
@@ -7845,7 +7847,7 @@ fn the_worktree_row_remove_action_stops_the_selecting_click() {
         "the primary tree has no remove action"
     );
     let trash_click = console_js
-        .find("trash.addEventListener(\"click\", (e: any) => {")
+        .find("trash.addEventListener(\"click\", (e) => {")
         .expect("the trash has a click handler");
     assert!(
         console_js[trash_click..trash_click + 200].contains("e.stopPropagation();"),
