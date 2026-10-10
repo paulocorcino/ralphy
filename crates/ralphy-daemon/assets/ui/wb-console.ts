@@ -49,7 +49,7 @@ import { WBSessionRoute } from "./wb-session-route.ts";
 import { apiFetch } from "./wb-api.ts";
 import type { ApiRefusal } from "./wb-api.ts";
 import { sendDocument } from "./wb-events.ts";
-import type { Painted } from "./wb-columns.ts";
+import type { DetachedMember, Painted } from "./wb-columns.ts";
 import type { TerminalDeps, TerminalOpts } from "./wb-console-terminal.ts";
 import type { ConfirmOptions } from "./wb-console-title.ts";
 import type { Group } from "./wb-fleet.ts";
@@ -1599,16 +1599,16 @@ export function createConsole(window: Window, document: Document, location: Pick
   function columnRoster() {
     const st = stage();
     if (!st) return { rows: [], fences: [], membership: {}, detached: {} };
-    const out: Record<string, { id: string; agent: string | null; name: string | null; repo: string | null; kind: string | null }[]> = {};
+    const out: Record<string, DetachedMember[]> = {};
     for (const [id, entry] of popups.entries()) {
       out[id] = (entry.members || [])
         .filter((m) => m && m.id && m.kind !== "note")
         .map((m) => ({
           id: m.id,
-          agent: m.agent as string | null,
+          agent: m.agent ?? null,
           name: desk.find((r) => r.id === m.id)?.consoleName ?? m.consoleName ?? null,
           repo: m.repo === "~" ? null : (m.repo ?? null),
-          kind: m.kind as string | null,
+          kind: m.kind ?? null,
         }));
     }
     return {
@@ -2024,7 +2024,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     // the daemon's diagnosis under Details. Built once, then reworded on each
     // fleet read.
     const peerDaemon = WBFleet?.refDaemon(repo) || "";
-    const PEER_BUTTON: Record<string, string> = { wake: "Wake", retry: "Try again" };
+    const PEER_BUTTON: Partial<Record<NonNullable<WBConsoleSession.PeerAction>, string>> = { wake: "Wake", retry: "Try again" };
     const showPeerDown = (group: Group | null) => {
       let strip: HTMLElement | null = win.querySelector<HTMLElement>(".session-peer-down");
       if (!strip) {
@@ -2054,8 +2054,9 @@ export function createConsole(window: Window, document: Document, location: Pick
       detail.hidden = !view.detail;
       const btn = strip.querySelector<HTMLElement>(".session-reconnect")!;
       btn.dataset.act = view.action || "";
-      btn.hidden = !PEER_BUTTON[view.action as string];
-      if (PEER_BUTTON[view.action as string]) btn.textContent = PEER_BUTTON[view.action as string];
+      const label = view.action && PEER_BUTTON[view.action];
+      btn.hidden = !label;
+      if (label) btn.textContent = label;
     };
 
     // NAMED, not inline: a dormant console rebuilds its terminal (`wakeWindow`)
@@ -2552,10 +2553,10 @@ export function createConsole(window: Window, document: Document, location: Pick
     } catch {
       return undefined;
     }
-    const layout = loadDesk();
+    const layout: WBDeskFolds.FoldRecord[] = loadDesk();
     // Deleted by another page: this window still stands for it.
     if (!layout.some((rec) => rec.id === win._deskId)) {
-      layout.push({ ...record, id: win._deskId, sessionId: null } as DeskRecord);
+      layout.push({ ...record, id: win._deskId, sessionId: null });
     }
     const held = [...wins]
       .filter((w) => w !== win && !w.classList.contains("placeholder"))
@@ -2620,18 +2621,20 @@ export function createConsole(window: Window, document: Document, location: Pick
     // "relaunch"); the box starts as "not running" until the fleet says more.
     const daemon = WBFleet?.refDaemon(record.repo) || "";
     const canLaunch = OPTS.canLaunch !== false;
-    const BUTTON: Record<string, string> = { wake: "Wake", retry: "Try again", relaunch: "Relaunch" };
-    let peerAction: string | null = "relaunch";
+    type BoxAction = WBConsoleSession.PeerAction | "relaunch";
+    const BUTTON: Partial<Record<NonNullable<BoxAction>, string>> = { wake: "Wake", retry: "Try again", relaunch: "Relaunch" };
+    let peerAction: BoxAction = "relaunch";
     let wasOffline = false;
     let shown: Parameters<typeof show>[0] | null = null;
     let detail: HTMLDetailsElement | null = null;
     let detailText: HTMLParagraphElement | null = null;
-    const show = (view: { text: string; detail: string; action: string | null }) => {
+    const show = (view: { text: string; detail: string; action: BoxAction }) => {
       shown = view;
       text.textContent = view.text;
       peerAction = view.action;
-      btn.hidden = !BUTTON[view.action as string];
-      if (BUTTON[view.action as string]) btn.textContent = BUTTON[view.action as string];
+      const label = view.action && BUTTON[view.action];
+      btn.hidden = !label;
+      if (label) btn.textContent = label;
       if (!detail) {
         detail = document.createElement("details");
         detail.className = "session-detail";

@@ -47,19 +47,11 @@ export type ColumnFence = { id: string; name: string };
 /** The rows of one fence, or the rows outside every fence (`fence: null`). */
 export type ColumnGroup = { fence: ColumnFence | null; rows: ColumnRow[] };
 
-/** A console the list is folded from: a window on this stage. */
-type RosterRow = {
-  id: string;
-  agent: string | null;
-  name?: string | null;
-  repo?: string | null;
-  kind: string | null;
-  state?: string | null;
-  running?: boolean;
-};
+/** A console the list names: a member a detached fence's popup told us about. */
+export type DetachedMember = { id: string; agent: string | null; name?: string | null; repo?: string | null; kind: string | null };
 
-/** What a detached fence's popup told us about a member. */
-type DetachedMember = { id: string; agent: string | null; name?: string | null; repo?: string | null; kind: string | null };
+/** A console the list is folded from: a window on this stage. */
+type RosterRow = DetachedMember & { state?: string | null; running?: boolean };
 
 /** The input of `listFold`. */
 type ListFoldInput = {

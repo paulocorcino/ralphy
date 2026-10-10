@@ -140,7 +140,7 @@ export function shell() {
       window.WBConsole?.setStaleProbe?.(() => this.socketsAreStale());
       // The selected checkouts (#406): the ONE hook for `unknown checkout`, and
       // the copy of the desk mirror once the boot desk lands.
-      window.WBDaemon?.onUnknownCheckout?.((repo, name) => this.checkoutGone(repo as string, name));
+      window.WBDaemon?.onUnknownCheckout?.((repo, name) => repo != null && this.checkoutGone(repo, name));
       window.WBConsole?.whenDeskLoaded?.().then(() => {
         this.adoptDeskCheckouts();
         this.syncDeskFailure();
@@ -1444,7 +1444,7 @@ export function shell() {
       return !!this.writeLockReason();
     },
     writeLockReason() {
-      const slug = this.$store.projects.openSlug!;
+      const slug = this.$store.projects.openKey();
       if (this.buildSkew) return this.BUILD_SKEW_LOCK;
       if (this.changesRead[slug]?.current === false || this.syncRead[slug]?.current === false) {
         return "The changes shown are not current. Wait for the next read, or reload the page.";
@@ -1498,11 +1498,11 @@ export function shell() {
     },
     labelLockReason() {
       if (this.buildSkew) return this.BUILD_SKEW_LOCK;
-      if (this.boardRead[this.$store.projects.openSlug!]?.current === false) {
+      if (this.boardRead[this.$store.projects.openKey()]?.current === false) {
         return "The board shown is not current. Wait for the next read.";
       }
       return WBChanges.writeLockReason(
-        this.runsByProject[this.$store.projects.openSlug!],
+        this.runsByProject[this.$store.projects.openKey()],
         "You can edit labels again when it finishes.",
       );
     },
@@ -1537,10 +1537,10 @@ export function shell() {
       );
     },
     pushAct() {
-      return WBChanges.pushAct(this.syncByProject[this.$store.projects.openSlug!]);
+      return WBChanges.pushAct(this.syncByProject[this.$store.projects.openKey()]);
     },
     pullBlocked() {
-      return WBChanges.pullBlocked(this.syncByProject[this.$store.projects.openSlug!]);
+      return WBChanges.pullBlocked(this.syncByProject[this.$store.projects.openKey()]);
     },
     // The remote bar's title while an act is out: the busy act names itself,
     // the other two name what they are waiting on.
@@ -1553,7 +1553,7 @@ export function shell() {
       return WBChanges.groupDiscardNote(group);
     },
     commitTarget() {
-      return WBChanges.commitTarget(this.syncByProject[this.$store.projects.openSlug!]);
+      return WBChanges.commitTarget(this.syncByProject[this.$store.projects.openKey()]);
     },
     // `withOriginal` only on the UNSTAGE direction — see `wb-changes.ts`.
     groupPaths(list: ChangeEntry[], withOriginal: boolean) {
@@ -1562,7 +1562,7 @@ export function shell() {
     commitTitle() {
       const locked = this.writeLockReason();
       if (locked) return locked;
-      if (!(this.changesStaged[this.$store.projects.openSlug!] || []).length) {
+      if (!(this.changesStaged[this.$store.projects.openKey()] || []).length) {
         return "Stage a change first";
       }
       if (!this.commitMsg.trim()) return "Write a commit message first";
@@ -1573,7 +1573,7 @@ export function shell() {
         !this.writeLocked() &&
         this.commitMsgSlug === this.$store.projects.openSlug &&
         !!this.commitMsg.trim() &&
-        !!(this.changesStaged[this.$store.projects.openSlug!] || []).length
+        !!(this.changesStaged[this.$store.projects.openKey()] || []).length
       );
     },
 
@@ -1721,7 +1721,7 @@ export function shell() {
     // Alpine). `worktreeListings` is the last `worktree.list` reply per ref.
     checkouts: {} as Record<string, string>,
     checkoutOf(ref: string | null | undefined) {
-      return this.checkouts[ref as string] || null;
+      return (ref != null && this.checkouts[ref]) || null;
     },
     chipLabel(p: Project) {
       const ref = this.$store.projects.repoRef(p);
@@ -2049,7 +2049,7 @@ export function shell() {
 
     // The open project's runs (the panel is project-scoped).
     projectRuns() {
-      return this.runsByProject[this.$store.projects.openSlug!] || [];
+      return this.runsByProject[this.$store.projects.openKey()] || [];
     },
     // The selected run, falling back to the first when the id is stale (e.g. the
     // project changed).
@@ -2429,7 +2429,7 @@ export function shell() {
     // The open project's plan, or null. No trailer (`summary.issue` null) is a
     // plan still being written: not offered.
     openPlan() {
-      const held = this.planByProject[this.$store.projects.openSlug!];
+      const held = this.planByProject[this.$store.projects.openKey()];
       return held && held.summary.issue != null ? held : null;
     },
     // The plan for ONE card: only ever shown against the issue it names.
@@ -2527,7 +2527,7 @@ export function shell() {
 
     // The open project's issues (#198). Empty until `loadBoard()` populates it.
     projectIssues() {
-      return this.boardIssues[this.$store.projects.openSlug!] || [];
+      return this.boardIssues[this.$store.projects.openKey()] || [];
     },
 
     // The whole-tracker board fold via `board.list`, cached under the slug. No
@@ -2692,7 +2692,7 @@ export function shell() {
     },
     labelColor(l: string) {
       // The repo's real label hex, else the seed vocabulary.
-      return this.boardLabels[this.$store.projects.openSlug!]?.get(l) || window.WBKanban.labelColor(l);
+      return this.boardLabels[this.$store.projects.openKey()]?.get(l) || window.WBKanban.labelColor(l);
     },
     labelInk(l: string) {
       return window.WBKanban.labelInk(l);
@@ -2871,7 +2871,7 @@ export function shell() {
         period: this.spendPeriod,
         // Titles ride whatever the board ALREADY holds; never a load
         // (`loadBoard` spawns a throttled tracker CLI).
-        issues: this.boardIssues[this.$store.projects.openSlug!] || [],
+        issues: this.boardIssues[this.$store.projects.openKey()] || [],
       });
     },
     // The window is a server-side filter: assign, then re-read.

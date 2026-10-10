@@ -43,6 +43,8 @@ test("consoleLabel and labelParts: one builder, name then label", () => {
   const N = load();
   assert.equal(N.consoleLabel("fincal #1", "claude"), "fincal #1 (claude)");
   assert.deepEqual(N.labelParts("home #1", "console"), { name: "home #1", tag: "(console)" });
+  // A member a detached fence's popup sent with no agent.
+  assert.equal(N.consoleLabel("home #2", null), "home #2 (console)");
 });
 
 test("tooltipLines: ref, environment, session name, empty ones left out", () => {

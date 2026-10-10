@@ -154,8 +154,9 @@ export const WBGeometry = (function () {
   // The fence that holds `rect` — the SAME half-open test and the SAME
   // first-match rule as `fenceMembership`, so the two can never disagree about
   // whose a window is. `null` when no fence holds its centre. This is what a
-  // gesture consults to ask "is the fence under this window locked?".
-  function fenceOf(fences: readonly DeskFence[], rect: Rect) {
+  // gesture consults to ask "is the fence under this window locked?". A missing
+  // rect is read at the origin, as `rectCentre` reads it.
+  function fenceOf(fences: readonly DeskFence[], rect: Rect | undefined) {
     const c = rectCentre(rect);
     for (const f of fences || []) {
       if (rectHolds(f.rect, c)) return f;

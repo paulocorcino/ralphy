@@ -60,8 +60,10 @@ const APP_TS_LINES: usize = 4212;
 /// work after its clipboard read moved to `wb-console-input.ts` (#652); 3081
 /// since each type it reads from another module is imported on an
 /// `import type` line that names the owner module, not written inline (#653);
-/// 3083 since it reads its daemon replies through `wb-api.ts` (#653).
-const WB_CONSOLE_TS_LINES: usize = 3083;
+/// 3083 since it reads its daemon replies through `wb-api.ts` (#653); 3086
+/// since its two peer buttons read their label once, typed by the peer's
+/// action (#653).
+const WB_CONSOLE_TS_LINES: usize = 3086;
 
 /// The served workbench modules, from the repo root. `vendor/` and
 /// `ui-tests/` are not read.

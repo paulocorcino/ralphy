@@ -230,7 +230,7 @@ export function peerHost(group: Group | null | undefined, fallback: string | nul
 //   null    — no click here fixes it (a token, a version, a descriptor).
 // The daemon's diagnosis is the detail: it names the cause and the remedy.
 // What a click on a peer box does: see `peerOfflineView`.
-type PeerAction = "wake" | "retry" | "wait" | null;
+export type PeerAction = "wake" | "retry" | "wait" | null;
 export function peerOfflineView(
   group: Group | null | undefined,
   refusal: string | null | undefined,

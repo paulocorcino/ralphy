@@ -61,9 +61,10 @@ export const WBConsoleName = (function () {
   }
 
   // The two boxes of the title: the name, and the label in parentheses. The
-  // title keeps them apart so the label shrinks first.
+  // title keeps them apart so the label shrinks first. A console with no
+  // agent is labelled `console`.
   function labelParts(name: string, label: string | null) {
-    return { name, tag: `(${label})` };
+    return { name, tag: `(${label || "console"})` };
   }
 
   // The one text that names a console on every surface.

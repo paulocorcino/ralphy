@@ -235,7 +235,7 @@ export function createTitle(deps: TitleDeps) {
     // SPANS, not bare text nodes: they are what ellipsise when the bar is
     // narrow, the repo first (06-consoles.css `.session-repo`); a text node
     // inside an inline-flex box wraps instead.
-    const parts = WBConsoleName.labelParts(win._deskConsoleName || "", win._deskAgent || "console");
+    const parts = WBConsoleName.labelParts(win._deskConsoleName || "", win._deskAgent);
     const nameSpan = document.createElement("span");
     nameSpan.className = "session-name";
     nameSpan.textContent = parts.name;

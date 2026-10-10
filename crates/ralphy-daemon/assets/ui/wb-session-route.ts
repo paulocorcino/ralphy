@@ -15,6 +15,20 @@ type SessionUrlOpts =
       holder?: string;
     };
 
+// What one connect of a terminal asks for, before it is one of the shapes
+// above: `id` set is a reattach, `console` a free console, else an agent launch.
+export type SessionRequest = {
+  id?: number | null;
+  repo?: string | null;
+  agent?: string | null;
+  console?: boolean;
+  command?: string;
+  checkout?: string | null;
+  name?: string | null;
+  record?: string;
+  takeover?: boolean;
+  watch?: boolean;
+};
 // The owner of a session as a terminal knows it.
 type SessionOwner = {
   sessionId: number | null;
@@ -111,6 +125,16 @@ export const WBSessionRoute = (function () {
     return value;
   }
 
+  // The url options of one connect, in the shape its kind reads. An agent
+  // launch with no repo or no agent sends the value empty, never `null`: the
+  // daemon refuses it as an unknown repo or agent.
+  function requestOpts(req: SessionRequest, holder: string): SessionUrlOpts {
+    const repo = req.repo ?? undefined;
+    if (req.id != null) return { id: req.id, repo, takeover: req.takeover, watch: req.watch, holder };
+    if (req.console) return { console: true, repo, command: req.command, record: req.record, holder };
+    const { agent, checkout, name, record } = req;
+    return { repo: req.repo ?? "", agent: agent ?? "", checkout, name, record, holder };
+  }
   // The window record of a NEW launch: the daemon keeps one live session per
   // record, so a second page relaunching it joins the first one's session.
   // Validated like the holder, as the daemon validates both.
@@ -164,6 +188,7 @@ export const WBSessionRoute = (function () {
 
   return {
     url,
+    requestOpts,
     holder,
     tabHolder,
     closeUrl,

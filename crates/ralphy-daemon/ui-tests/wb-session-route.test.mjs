@@ -30,6 +30,19 @@ test("url appends the checkout only on a new agent launch that names one", () =>
   assert.ok(!url("ws://h", { console: true, repo: "o/r", checkout: "wt-a" }).includes("checkout"));
 });
 
+test("requestOpts builds each kind of connect, and never sends null as a value", () => {
+  const { url, requestOpts } = load();
+  const at = (req) => url("ws://h", requestOpts(req, "h1"));
+  const rows = [
+    [{ repo: "o/r", agent: "claude", checkout: "wt-a", record: "r1" }, "repo=o%2Fr&agent=claude&checkout=wt-a&record=r1&holder=h1"],
+    [{ repo: null, agent: "claude" }, "repo=&agent=claude&holder=h1"],
+    [{ id: 3, repo: null, watch: true }, "id=3&watch=1"],
+    [{ id: 3, repo: "o/r", takeover: true }, "id=3&repo=o%2Fr&takeover=1&holder=h1"],
+    [{ console: true, repo: null, command: "ls" }, "console=1&command=ls&holder=h1"],
+  ];
+  for (const [req, query] of rows) assert.equal(at(req), "ws://h/ws/session?" + query, JSON.stringify(req));
+});
+
 test("url sends the console name only on a new agent launch", () => {
   const { url } = load();
   assert.equal(
