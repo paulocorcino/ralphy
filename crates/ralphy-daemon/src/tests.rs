@@ -2861,10 +2861,11 @@ fn the_explorer_opens_a_note_as_a_card() {
 #[test]
 fn a_notes_hand_and_size_are_a_closed_set_on_both_sides() {
     let notes = include_str!("../assets/ui/wb-notes.ts");
+    let folds = include_str!("../assets/ui/wb-notes-folds.ts");
     let css = include_str!("../assets/ui/styles/13-notes.css");
     assert!(
-        notes.contains(r#"const FONTS = ["sans", "serif", "mono"]"#)
-            && notes.contains(r#"const SIZES = ["xs", "s", "m", "l", "xl"]"#),
+        folds.contains(r#"const FONTS = ["sans", "serif", "mono"]"#)
+            && folds.contains(r#"const SIZES = ["xs", "s", "m", "l", "xl"]"#),
         "the hand and the size must be closed sets, not a free font-family string"
     );
     for name in ["serif", "mono"] {
@@ -2926,8 +2927,8 @@ fn a_notes_hand_and_size_are_a_closed_set_on_both_sides() {
     // Written to the FILE, so a note keeps its face when the card is
     // closed and opened again — the look is the note's, not the desk's.
     assert!(
-        notes.contains("lines.push(`font: ${font}`)")
-            && notes.contains("lines.push(`size: ${size}`)"),
+        folds.contains("lines.push(`font: ${font}`)")
+            && folds.contains("lines.push(`size: ${size}`)"),
         "the hand and the size belong in the note's front matter (ADR-0064 §8)"
     );
 }
@@ -5352,7 +5353,7 @@ fn a_note_card_is_stacked_and_wears_the_console_chrome() {
         "the rename must open on a press that did not move (ADR-0064 §8 amendment)"
     );
     // The look's closed sets and the omitted defaults are driven by
-    // `ui-tests/wb-notes.test.mjs` (`withStyle`).
+    // `ui-tests/wb-notes-folds.test.mjs` (`withStyle`).
 }
 
 /// A console and a fence can be LOCKED in place (ADR-0050 / ADR-0051 lock
@@ -6137,11 +6138,13 @@ fn the_shell_writes_the_desk_only_as_changes() {
     let console = include_str!("../assets/ui/wb-console.ts");
     let desk = include_str!("../assets/ui/wb-desk.ts");
     let notes = include_str!("../assets/ui/wb-notes.ts");
+    let folds = include_str!("../assets/ui/wb-notes-folds.ts");
     let sync = include_str!("../assets/ui/wb-desk-sync.ts");
     for (name, js) in [
         ("wb-console.ts", console),
         ("wb-desk.ts", desk),
         ("wb-notes.ts", notes),
+        ("wb-notes-folds.ts", folds),
     ] {
         for banned in [
             "persistWin(",
