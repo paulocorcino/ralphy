@@ -108,7 +108,7 @@ The component names are CONTEXT.md terms.
 
 | Component | Crate / module |
 |---|---|
-| Queue, Run, Planner / Executor, Verify gate | `ralphy-core` (`runner`, `blocked`, `verify`, `plan`, `handoff`) |
+| Queue, Run, Planner / Executor, Verify gate; the Review gate (planned, [ADR-0077](./adr/0077-a-reviewer-can-only-veto-a-green-issue.md)) | `ralphy-core` (`runner`, `blocked`, `verify`, `plan`, `handoff`) |
 | Agent contract (the port) | `ralphy-core::agent` |
 | Adapter | one `ralphy-agent-*` crate per vendor |
 | Adapter support, Outcome classifier | `ralphy-adapter-support` |
@@ -200,6 +200,7 @@ panel adds its row here before it adds code.
 | Settings | `ralphy-core::settings` (`.ralphy/settings.json`) | `ralphy config get --json`; verb `config.get` | a new reparse in the daemon (three exist, each pinned by a test) | 3, 4, 5 |
 | Desk layout | the daemon (`desk.rs`; a PUT is a list of **desk changes** applied by `desk/apply.rs`, and each reply carries `rev`) | `GET` / `PUT /api/desk`; the browser sends changes only through `wb-desk-sync.ts` | browser storage (only the per-client view lives there, `wb-client-view.ts`); a whole record or a whole desk in a PUT | 1 `desk.dirty`, 2–5 |
 | **Desk history** | the daemon (`desk/history.rs`) | `GET` / `POST /api/desk/history` | a copy of the desk kept in the browser | when the Settings section opens; 5 |
+| **Fence** membership (the squad) | today the browser computes it from the desk rects (`fenceMembership` in `wb-geometry.ts`); [ADR-0076](./adr/0076-agents-in-a-fence-form-a-squad.md) D2 (proposed) makes the daemon desk the owner of the squad fact; the browser keeps the same rule only for gestures, held to the daemon by one shared fixture | the desk layout | a squad decision taken from the browser's own answer | with the desk layout |
 | Consoles, console agent state | the daemon (`session/`, `agent_state.rs`) | `/api/sessions` (its header `x-ralphy-unanswered` names the peers the list did not hear from), the presence socket | a peer missing from the list read as "no sessions there" | 1 `sessions.dirty`, 2–4; 6 every 30 s while a peer is listed (peers do not push their sessions); a `working` that ages into `unknown` pushes too |
 | Projects, peers and their state; the project name; the open project | the daemon (`registry.rs`, `peer/`, `fleet.rs`); the name is `registry::project_name`. In the page, the Alpine store `projects` holds the list and the open project: it is written only by its own methods and read by every part of the page (ADR-0073) | `/api/repos`, `/api/fleet`; the field `name` | a name worked out in the UI from the slug or the path | 1 `repos.dirty` / `peers.dirty` (the daemon stats its stores every 2 s), 2–5; 6 every 30 s while a peer is listed (peer reachability); 7 a read of a peer project failed (peer reachability) |
 | **Devices** and the **audit log** | the daemon (`audit.rs`, `device.rs`) | `GET /api/audit/devices`, `GET /api/audit/events`; the `/ws/command` verbs that change state, and the console launches and take-overs on `/ws/session`, are recorded by the daemon itself; the page reports its facts once per load to `POST /api/device/facts` (`wb-device.ts`) | a device list kept in the browser; an address lookup service (ADR-0074 D7) | when the Settings section opens; 4 |
@@ -262,6 +263,7 @@ boundary.
 | Workbench → audit log | **Device facts** the page reports about itself | A fixed shape with a size cap (`routes/api_audit.rs`); facts are recorded with source `client` and no access decision reads them | ADR-0074 |
 | Workbench → repo | Verbs from the browser | The verb registry and argv shape checks (`dispatch.rs`, `dispatch/argv.rs`); path confinement (`confine.rs`, `fswrite.rs`) | ADR-0036 |
 | Peer daemon → daemon | Verbs and sessions from a peer | The peer's bearer token, dialled on loopback or through `ssh -L` only | ADR-0052, ADR-0067 |
+| Agent in a squad → daemon (planned) | Letters and squad tool calls over MCP | A console token per agent console, scoped to its fence, required on loopback too | ADR-0076 |
 | Forge → prompt | Issue body, comments, attachments | The label gate; the comment trust filter (`ralphy-core/src/github/comments.rs`); the charters | ADR-0032 (H), ADR-0072 D5 |
 | Agent → repo and forge | Tool calls of the vendor CLI | The guard hook (`ralphy-cli/src/guard.rs`) or the vendor's deny policy; the verify gate | ADR-0072 D6, ADR-0011, the adapter's ADR |
 | Ralphy → child process | Environment and argv | The environment scrub of each spawn site | ADR-0072 D7 |

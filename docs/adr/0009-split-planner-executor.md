@@ -2,6 +2,8 @@
 
 Status: accepted.
 
+Amended by ADR-0077 (proposed: a split run can carry a third adapter, the reviewer).
+
 Amended by ADR-0030 D3: auto-resume is now the default for every agent, so the example below of an OpenCode executor that stops on a limit no longer holds.
 
 A run may use different adapters for planning and execution: `--agent` selects

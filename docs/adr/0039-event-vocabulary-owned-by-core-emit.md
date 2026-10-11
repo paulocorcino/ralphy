@@ -5,6 +5,8 @@
 **Refines:** ADR-0007 D6 (the decoder contract gains an owned emit side)
 **Evidence base:** `docs/spike/evidence/audits/audit-events-2026-07-19.md` (§2–§3, findings F1/F5)
 
+Extended by ADR-0077 (proposed: two events, the review verdict and a rejected issue).
+
 ## Context
 
 Every consumer of the run's lifecycle — console presenter, Telegram notifier,

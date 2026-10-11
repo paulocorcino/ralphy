@@ -2,6 +2,8 @@
 
 Status: accepted.
 
+Amended by ADR-0077 (proposed: an optional review gate runs after this gate and before close-on-green; it can only veto).
+
 Today **green = the agent emitted `RALPHY_DONE_EXIT`** — a self-report. The runner
 closes the issue on the agent's word ([runner.rs](../../crates/ralphy-core/src/runner.rs)
 `if outcome == Outcome::Done`). For a tool that closes issues unattended overnight,

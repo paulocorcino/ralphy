@@ -4,6 +4,8 @@ Status: **accepted** (2026-07-24, issue #298, under PRD #296) — decided and
 implemented. This ADR gates the run-state track: the implementation issues under
 #296 build what is written here.
 
+Extended by ADR-0077 (proposed: the snapshot phase state `reviewing`).
+
 Amended by ADR-0059 (§5: `PhaseBlock` gains an additive `agent` block; `v` stays 1).
 
 _Extends [ADR-0024](./0024-unified-delivery-worker-seam.md) with a third

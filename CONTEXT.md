@@ -25,6 +25,10 @@ An issue whose execution finished cleanly, as opposed to one that stopped as blo
 **The cycle / close-on-green**:
 The runner closing a green queue issue so that it leaves the queue, while the human still merges the branch.
 
+**Review gate**:
+An optional step after the verify gate and before close-on-green. In it, the *reviewer* reads the issue, the plan and the diff, and answers *approve* or *changes requested*. It can keep an issue from being green, but it can never make an issue green. One round of changes goes back to the executor; after that the issue stays open for a human. Not built yet (ADR-0077).
+_Avoid_: code review, PR review (both are the human's review of the branch).
+
 **Acceptance ledger**:
 The per-issue list that pairs each acceptance criterion of an issue with a verdict (*verified* or *review-only*) and the evidence behind it. It is the record of how the delivered work maps back to what the issue asked (ADR-0011).
 _Avoid_: acceptance check (sounds like a gate), checklist.
@@ -67,9 +71,13 @@ _Avoid_: "checkout" for switching a branch (that is a **branch switch**).
 The unit that holds everything specific to one agent CLI vendor, behind the core's agent contract (ADR-0002).
 _Avoid_: driver, plugin, backend.
 
-**Planner / Executor (phase roles)**:
-The two roles an **adapter** fills in a run: the *planner* writes the plan from the issue, and the *executor* carries out the plan and commits.
-_Avoid_: stage, role (overloaded with triage roles).
+**Phase roles (triager / planner / executor / reviewer)**:
+The closed set of jobs an **adapter** fills on one issue: the *triager* decides if the issue can enter the queue, the *planner* writes the plan, the *executor* carries out the plan and commits, and the *reviewer* checks the executor's change with a fresh context. The reviewer is not built yet (ADR-0077). One-shot tasks (diagnose, draft, consolidate) are not phase roles.
+_Avoid_: stage, role (overloaded with triage roles), agent type.
+
+**Role artifact**:
+A file that one **phase role** writes for the next one: the plan, the review findings, the handoff. Phase roles talk to each other only through role artifacts, at points the runner controls. They never send live messages to each other.
+_Avoid_: message, note (a workbench **Note** is a different thing).
 
 **Split run**:
 A run whose **planner** and **executor** are different **adapters** (ADR-0009).
@@ -291,8 +299,58 @@ infinite canvas (the stage is finite).
 **Fence**:
 A named rectangle on the **stage** that gives a region of the plane a meaning,
 such as "backend" or "planning". It is part of the **desk layout** and is
-never bound to a project. (ADR-0051)
-_Avoid_: group, zone, region, container, swimlane, project fence.
+never bound to a project. (ADR-0051) A fence is also a **squad**: the agents
+in one fence may send live messages to each other. An agent outside every
+fence gets messages only from the operator. The squad part is not built yet.
+_Avoid_: group, zone, region, container, swimlane, project fence, team.
+
+**Duty**:
+The job the operator gives one agent console in a **fence**, such as lead,
+reviewer or tester. A duty has a *charter* (the text the agent gets when the
+console starts) and a *description* (one line the other agents in the fence
+see). A duty belongs to the console, like the **console name**. A fence has
+at most one *lead*, and the lead is the first to hear that the squad is
+stuck. Not built yet.
+_Avoid_: label (a forge label), role (a **phase role** is the unattended
+mode's closed set), persona, mode.
+
+**Letter**:
+A message from one agent to another agent in the same **fence**, kept by the
+daemon. The receiver reads it through a tool, marked as coming from another
+agent, never as the operator's words. Letters are the one way agents in a
+squad talk, whatever their vendor. Not built yet.
+_Avoid_: message without a qualifier, mail, signal, note (a **Note** is the
+operator's document).
+
+**Doorbell**:
+A fixed text that Ralphy writes into an agent's session to say that a
+**letter** is waiting. It never carries the letter's content. Each vendor
+gets it by its own documented way in (a hook, a queue command, a server
+call). Not built yet.
+_Avoid_: notification (the operating system's), ping, nudge (a **nudge** wakes
+a daemon).
+
+**Console token**:
+A secret the daemon gives one agent console in a **fence** when its session
+starts. It tells the daemon which console is calling, and it opens only the
+squad's tools for that console's fence. It dies with the session. Not built
+yet. (ADR-0076)
+_Avoid_: daemon token (the access token of the whole daemon), session
+token, API key.
+
+**Attention request**:
+One thing a human must decide now, such as an agent waiting for an answer
+or a stuck squad. The daemon works out the list of attention requests from
+their sources; one ends when its source ends. Not built yet.
+_Avoid_: alert, notification, inbox, task.
+
+**Operating mode (unattended / supervised)**:
+The two ways agents work in Ralphy. In *unattended* mode, a **run** works the
+queue: the runner moves an issue between **phase roles**, and the roles talk
+only through **role artifacts**. In *supervised* mode, the operator puts agent
+consoles in a **fence** and runs the work; the agents in that fence may send
+live messages to each other.
+_Avoid_: AFK mode (AFK is a **queue label**), autopilot, manual mode.
 
 **Locked**:
 The state of a console window or a **fence** that the operator pinned in

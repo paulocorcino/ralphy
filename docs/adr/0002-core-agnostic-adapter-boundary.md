@@ -2,6 +2,8 @@
 
 Status: accepted.
 
+Amended by ADR-0077 (proposed: the agent port gains a fourth method, `review`).
+
 The Ralphy rewrite (Rust workspace) splits into a `ralphy-core` that knows the
 *method* — queue, run lifecycle, branch policy, stop-at-non-green, close-on-green —
 and one **adapter** per agent CLI vendor (Claude Code today; Codex, OpenCode later).
