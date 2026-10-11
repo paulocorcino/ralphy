@@ -22,12 +22,8 @@
    once per page, sets `window.WBConsole`, and calls `boot` after the page has
    started; each call starts with new state (ADR-0075 D7).
 --------------------------------------------------------------------------- */
-import { WBGeometry } from "./wb-geometry.ts";
-import * as WBConsoleInput from "./wb-console-input.ts";
-import * as WBConsoleSession from "./wb-console-session.ts";
-import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
-import * as WBDeskFolds from "./wb-desk-folds.ts";
-import { createGpuBudget, gpuHolders, DORMANT_AFTER_MS, DORMANT_MARGIN_PX } from "./wb-console-gpu.ts";
+import { DESK_MAX } from "./wb-desk-folds.ts";
+import { createGpuBudget } from "./wb-console-gpu.ts";
 import { createTitle } from "./wb-console-title.ts";
 import { createFenceList } from "./wb-stage-fence-list.ts";
 import { createDetach } from "./wb-desk-detach.ts";
@@ -51,107 +47,13 @@ import { WBDeskSync } from "./wb-desk-sync.ts";
 import { WBDetachLink } from "./wb-detach-link.ts";
 import { WBView } from "./wb-client-view.ts";
 import { createMessages } from "./wb-messages.ts";
+import { buildConsoleApi } from "./wb-console-api.ts";
 import { sendDocument } from "./wb-events.ts";
 import type { TerminalOpts } from "./wb-console-terminal.ts";
 import type { DetachReason } from "./wb-console-session.ts";
 import type { ConsoleOpts, ConsoleWin, DeskChange, DeskFence } from "./wb-types.d.ts";
 
-// The input folds are `wb-console-input.ts`: pure functions of their arguments.
-const {
-  isWebKit,
-  prefersDomRenderer,
-  fullscreenOffered,
-  touchScrollLines,
-  touchScrollTarget,
-  touchGesture,
-  touchCentroid,
-  dragThreshold,
-  dragBegins,
-  isDoubleTap,
-  flingStep,
-  keySequence,
-  barKey,
-  applyCtrlLatch,
-  isTerminalReply,
-  keyBarVisible,
-  terminalInputMode,
-  pasteOffered,
-  rightClickAction,
-  pressRoute,
-  forceSelectionKeys,
-  holdMoveReport,
-  phoneBleed,
-  selectionRow,
-  stepFont,
-  keyboardInset,
-  pasteDecision,
-  clipboardContent,
-  DOUBLE_TAP_MS,
-  PHONE_MAX_WIDTH,
-  FONT_MIN,
-  FONT_MAX,
-  FONT_DEFAULT,
-} = WBConsoleInput;
-
-// The session folds are `wb-console-session.ts`: the wire codec, the reconnect
-// and dormancy rules, and the peer rules, pure functions of their arguments.
-const {
-  encodeResize,
-  encodeDetach,
-  birthDecision,
-  dormancyDecision,
-  endNotice,
-  reconnectDecision,
-  heldReturnDecision,
-  peerGate,
-  peerOfflineView,
-  peerReturnDecision,
-  peerHeld,
-  relaunchRequest,
-  sessionRowFor,
-  RESUME_HIDDEN_MS,
-} = WBConsoleSession;
-
-// The desk and fence folds are `wb-desk-folds.ts`: the restore decision, the fence
-// readouts and walk, the detach registry and the popup rules, pure functions.
-const {
-  reconcileDesk,
-  placeholderSession,
-  fenceRepos,
-  fenceSummaries,
-  nextFenceSlot,
-  detachFold,
-  popupMatches,
-  nextFenceName,
-  columnClasses,
-  fenceCycle,
-  noteNameOk,
-  DESK_MAX,
-  FENCE_MAX,
-  NOTE_MAX,
-  DETACH_MAX,
-} = WBDeskFolds;
-
 export function createConsole(window: Window, document: Document, location: Pick<Location, "protocol" | "host" | "origin">, opts: ConsoleOpts) {
-  // Plane geometry is `wb-geometry.ts` (ADR-0057): pure folds over rects.
-  const {
-    stageExtent,
-    fenceSpawnRect,
-    rectHolds,
-    fenceMembership,
-    fenceFits,
-    fenceMoveDelta,
-    tileIntoRect,
-    resizeRect,
-    bringIntoView,
-    anchorIntoView,
-    viewLanding,
-    panNudge,
-    spawnRectIn,
-    freeSpawnRect,
-    fenceHolds,
-  } = WBGeometry;
-
   // The viewport (the scrolling box) and the stage (the sized plane inside it).
   const workspace = () => document.getElementById("workspace");
   // Defensive about the DOM ITSELF, not just about the element: the ui-tests
@@ -174,11 +76,11 @@ export function createConsole(window: Window, document: Document, location: Pick
   // The confirm, the notice and the toast are the door's (`wb-messages.ts`);
   // a page that passes no door gets one with no shell.
   const messages = OPTS.messages || createMessages(window, document, { shell: () => null });
-  const { askConfirm, askNotice, toast, dismissToast } = messages;
+  const { askConfirm, toast } = messages;
   // The z stack and the gestures are the document's (`wb-stage-stack.ts`),
   // shared with the note cards; a page that passes none gets its own.
   const stack = OPTS.stack || createStack(document);
-  const { focusWin, stackWin } = stack;
+  const { focusWin } = stack;
   const gestures = OPTS.gestures || createGestures();
   // Detach registry + lifecycle channel (#347). Denied in the popup: `window.open`
   // hands it a COPY of the opener's session-scoped store, so a read there drifts.
@@ -189,22 +91,7 @@ export function createConsole(window: Window, document: Document, location: Pick
   // ---- the desk records: `wb-desk-records.ts` ----------------------------------
   // Built first: the title, window states, fence list and chrome take `setWin` and `saveFences`.
   const sync = WBDeskSync.createSync();
-  const {
-    createRecord,
-    setWin,
-    forgetRecord,
-    saveFences,
-    saveNotes,
-    nameUnnamed,
-    loadDesk,
-    deskRecords,
-    atDeskCap,
-    atNoteCap,
-    loadNotes,
-    checkoutOf,
-    setCheckout,
-    allCheckouts,
-  } = createDeskRecords({
+  const records = createDeskRecords({
     sync,
     desk: () => currentDesk(),
     fences: () => currentFences(),
@@ -217,49 +104,22 @@ export function createConsole(window: Window, document: Document, location: Pick
     refreshFenceChrome: () => refreshFenceChrome(),
     consolePrefix: (repo: string | null | undefined) => consolePrefix(repo),
   });
+  const { createRecord, setWin, forgetRecord, saveFences, saveNotes, nameUnnamed, loadDesk, atDeskCap } = records;
 
   // ---- the feeds: `wb-console-feeds.ts` ----------------------------------------
   // Built before the title, which takes the project names and the session list.
-  const {
-    newDeskId,
-    newFenceId,
-    readSessions,
-    projectNameOf,
-    projectTitleOf,
-    ingestProjects,
-    peerGroups,
-    ingestFleet,
-    ingestSessions,
-    list,
-    setStaleProbe,
-    lastSessions,
-    wakePeerNow,
-    readFleetNow,
-    staleProbeNow,
-  } = createFeeds({
+  const feeds = createFeeds({
     OPTS,
     wins,
     stage,
     agentStateTitle,
     renderTitle: (win, title, presentation) => renderTitle(win, title, presentation),
   });
+  const { newDeskId, newFenceId, readSessions, projectNameOf, projectTitleOf, peerGroups, list, lastSessions, wakePeerNow, readFleetNow, staleProbeNow } = feeds;
 
   // ---- the title: `wb-console-title.ts` ----------------------------------------
   // Built before the chrome, which takes six of its functions.
-  const {
-    consolePrefix,
-    takenNames,
-    sessionPresentation,
-    ingestWorktrees,
-    ensureListing,
-    checkoutMenuRows,
-    renderTitle,
-    canRename,
-    startRename,
-    closeCheckoutMenu,
-    checkoutMenu,
-    restartWin,
-  } = createTitle({
+  const title = createTitle({
     window,
     document,
     OPTS,
@@ -273,6 +133,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     projectTitleOf,
     setWin,
   });
+  const { consolePrefix, takenNames, sessionPresentation, ensureListing, renderTitle, canRename, startRename, closeCheckoutMenu, restartWin } = title;
 
   // ---- the popup registry: `wb-desk-popups.ts` ---------------------------------
   // The one owner of the detached fences: everything else reads and changes
@@ -282,7 +143,6 @@ export function createConsole(window: Window, document: Document, location: Pick
     startBeat: () => detach.startBeat(),
     stopBeat: () => detach.stopBeat(),
   });
-  const { isDetached } = popups;
   // ---- dormancy and resume: `wb-console-dormancy.ts` ---------------------------
   // Built before the window states, which take `refreshCover`. Its listeners
   // wait for `listen()`.
@@ -300,28 +160,10 @@ export function createConsole(window: Window, document: Document, location: Pick
     scheduleDeskFlush: (ms?: number) => scheduleDeskFlush(ms),
     revivePlaceholders: () => revivePlaceholders(),
   });
-  const { isCovered, applyDormancy, refreshCover, resumeAll } = dormancy;
+  const { isCovered, applyDormancy, refreshCover } = dormancy;
   // ---- the window states: `wb-stage-window.ts` ---------------------------------
   // Built before the fence list, which takes three of its functions.
-  const {
-    fillsViewport,
-    restoreRect,
-    setMax,
-    toggleMax,
-    paintMaxButton,
-    isFull,
-    isLocked,
-    applyLock,
-    paintLockGlyph,
-    toggleLock,
-    toggleFull,
-    syncFullState,
-    raiseMaximized,
-    syncMaxLock,
-    syncMaxPin,
-    applyExtent,
-    resetExtentEdge,
-  } = createStageWindow({
+  const stageWindow = createStageWindow({
     document,
     workspace,
     stage,
@@ -330,9 +172,10 @@ export function createConsole(window: Window, document: Document, location: Pick
     heldByFence: (win: HTMLElement) => heldByFence(win),
     refreshCover,
   });
+  const { fillsViewport, restoreRect, setMax, toggleMax, paintMaxButton, isFull, isLocked, applyLock, paintLockGlyph, toggleLock, toggleFull, syncFullState, raiseMaximized, syncMaxLock, syncMaxPin, applyExtent, resetExtentEdge } = stageWindow;
   // ---- the column paint: `wb-stage-columns.ts` (ADR-0051 §5) -------------
   // Built before the fence list, which takes `columnMeasure`.
-  const { columnMeasure, applyColumns, dropClosedElsewhere, focusedId, focusColumn, columnRoster } = createStageColumns({
+  const columns = createStageColumns({
     OPTS,
     wins,
     workspace,
@@ -353,6 +196,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     findWindow: (id: string) => findWindow(id),
     tearDownMember: (win: ConsoleWin, reason: DetachReason) => tearDownMember(win, reason),
   });
+  const { columnMeasure, dropClosedElsewhere } = columns;
   // ---- the fence list: `wb-stage-fence-list.ts` --------------------------------
   // Built before the view and the fences, which it reaches through lazy arrows.
   const fenceFloor = createFenceList({
@@ -374,28 +218,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     jumpToFence: (id: string) => jumpToFence(id),
     buildFence: (f: DeskFence) => buildFence(f),
   });
-  const {
-    fenceLocked,
-    heldByFence,
-    fenceEl,
-    refreshFenceChrome,
-    paintFenceColumns,
-    readFenceRects,
-    readWindowRects,
-    fenceRecords,
-    renderNotes,
-    fenceList,
-    stepFence,
-    renderFences,
-    atFenceCap,
-    createFence,
-    renameFence,
-    removeFence,
-    focusedFenceId,
-    focusFence,
-    clearFenceFocus,
-    showDetachGlyph,
-  } = fenceFloor;
+  const { fenceLocked, heldByFence, fenceEl, refreshFenceChrome, paintFenceColumns, readFenceRects, readWindowRects, renderNotes, fenceList, renderFences, focusedFenceId, focusFence, clearFenceFocus, showDetachGlyph } = fenceFloor;
 
   // ---- the GPU budget: `wb-console-gpu.ts` -------------------------------------
   const budget = createGpuBudget({
@@ -432,21 +255,11 @@ export function createConsole(window: Window, document: Document, location: Pick
     whenDeskLoaded: () => whenDeskLoaded(),
     fenceFloor,
   });
-  const { peerFold, newPid, fenceSnapshot, tearDownMember, reattachFence, glyphClick } = detach;
+  const { newPid, fenceSnapshot, tearDownMember, reattachFence, glyphClick } = detach;
 
   // ---- the view: `wb-stage-view.ts` --------------------------------------------
   // Built before the terminal, which takes `cancelSlide`.
-  const {
-    applyLanding,
-    flushPendingOffset,
-    reveal,
-    findWindow,
-    jumpToFence,
-    jumpToNote,
-    cancelSlide,
-    autoPan,
-    wireStage,
-  } = createView({
+  const view = createView({
     window,
     document,
     workspace,
@@ -462,15 +275,17 @@ export function createConsole(window: Window, document: Document, location: Pick
     focusedFence: focusedFenceId,
     isDeskSettled: () => isDeskSettled(),
   });
+  const { applyLanding, flushPendingOffset, reveal, findWindow, jumpToFence, cancelSlide, autoPan, wireStage } = view;
 
   // ---- the key bar: `wb-console-keys.ts` ---------------------------------------
-  const { fontSize, setFont, writeClipboard, readClipboard, applyKeyBar, buildKeyBar } = createConsoleKeys({
+  const keys = createConsoleKeys({
     window,
     document,
     viewStore,
     wins,
     focusWin,
   });
+  const { fontSize, writeClipboard, readClipboard, applyKeyBar, buildKeyBar } = keys;
 
   // ---- the terminal: `wb-console-terminal.ts` ----------------------------------
   const { attachTerminal } = createTerminal({
@@ -485,7 +300,7 @@ export function createConsole(window: Window, document: Document, location: Pick
   });
 
   // ---- the window chrome: `wb-stage-chrome.ts` ---------------------------------
-  const { buildChrome, makeDraggable, startResize } = createChrome({
+  const chrome = createChrome({
     window,
     document,
     OPTS,
@@ -517,9 +332,10 @@ export function createConsole(window: Window, document: Document, location: Pick
     toggleLock,
     toggleMax,
   });
+  const { buildChrome } = chrome;
 
   // ---- the fences: `wb-stage-fences.ts` ----------------------------------------
-  const { buildFence, arrangeFence, detachFence } = createFences({
+  const fences = createFences({
     window,
     document,
     gestures,
@@ -542,6 +358,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     stage,
     tearDownMember,
   });
+  const { buildFence } = fences;
 
   // This console's work when the stack moves the focus.
   stack.setFocusHook({
@@ -579,28 +396,7 @@ export function createConsole(window: Window, document: Document, location: Pick
   // ---- the desk: `wb-desk.ts` --------------------------------------------------
   // `createDesk` starts the desk read at once: `restoreDesk` and
   // `whenDeskLoaded` wait for it.
-  const {
-    emitDesk,
-    scheduleDeskFlush,
-    restoreDesk,
-    restoreDetached,
-    mountDetached,
-    isDeskSettled,
-    refreshView,
-    reloadForRestoredDesk,
-    recordLeft,
-    reloadDesk,
-    currentDeskFailure,
-    setDeskFailureHook,
-    setDeskGoneHook,
-    startNewDesk,
-    whenDeskLoaded,
-    isDeskLoaded,
-    currentDesk,
-    currentFences,
-    currentNotes,
-    currentCheckouts,
-  } = createDesk({
+  const desk = createDesk({
     window,
     document,
     OPTS,
@@ -631,13 +427,14 @@ export function createConsole(window: Window, document: Document, location: Pick
     dropClosedElsewhere,
     flushPendingOffset,
   });
+  const { emitDesk, scheduleDeskFlush, restoreDesk, restoreDetached, isDeskSettled, refreshView, recordLeft, reloadDesk, whenDeskLoaded, isDeskLoaded, currentDesk, currentFences, currentNotes, currentCheckouts } = desk;
 
   dormancy.listen();
 
   // ---- the window birth: `wb-console-spawn.ts` ---------------------------------
   // Built after the desk; the desk and the detach take `spawnWindow` (and the
   // detach `deskOf`) before it, as lazy arrows.
-  const { spawnWindow, recordBirth, recordSession, deskOf } = createSpawn({
+  const spawn = createSpawn({
     document,
     wins,
     peerGroups,
@@ -667,12 +464,13 @@ export function createConsole(window: Window, document: Document, location: Pick
     spawnOrMissing: (...args: Parameters<SpawnOrMissing>) => spawnOrMissing(...args),
     markRelaunch: (deskId: string, takeDown: () => void) => markRelaunch(deskId, takeDown),
   });
+  const { spawnWindow, recordBirth, deskOf } = spawn;
   type SpawnWindow = typeof spawnWindow;
 
   // ---- the placeholder: `wb-console-placeholder.ts` ----------------------------
   // Built after the window birth; the spawn, the desk, the detach and the
   // dormancy take its functions before it, as lazy arrows.
-  const { isRelaunching, markRelaunch, spawnOrMissing, revivePlaceholders, spawnPlaceholder } = createPlaceholders({
+  const placeholders = createPlaceholders({
     window,
     document,
     OPTS,
@@ -692,6 +490,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     applyExtent,
     changed,
   });
+  const { markRelaunch, spawnOrMissing, revivePlaceholders, spawnPlaceholder } = placeholders;
   type SpawnOrMissing = typeof spawnOrMissing;
   type SpawnPlaceholder = typeof spawnPlaceholder;
 
@@ -779,172 +578,31 @@ export function createConsole(window: Window, document: Document, location: Pick
     });
   }
 
-  return {
+  return buildConsoleApi({
+    records,
+    feeds,
+    title,
+    popups,
+    dormancy,
+    stageWindow,
+    columns,
+    fenceFloor,
+    detach,
+    view,
+    keys,
+    fences,
+    desk,
+    spawn,
+    placeholders,
+    chrome,
+    messages,
+    stack,
     boot,
     open,
-    relaunchRequest,
-    ingestWorktrees,
-    ingestSessions,
-    ingestProjects,
-    ingestFleet,
-    peerOfflineView,
-    peerReturnDecision,
-    heldReturnDecision,
-    peerHeld,
-    sessionRowFor,
-    arrangeFence,
     count,
     refitAll,
-    resizeRect,
-    stageExtent,
-    bringIntoView,
-    anchorIntoView,
-    viewLanding,
-    panNudge,
-    autoPan,
-    reconnectDecision,
-    peerGate,
-    endNotice,
-    resumeDecision,
-    resumeAll,
-    dormancyDecision,
-    birthDecision,
-    encodeDetach,
-    encodeResize,
-    DORMANT_AFTER_MS,
-    DORMANT_MARGIN_PX,
-    keyboardInset,
-    raiseMaximized,
-    touchScrollLines,
-    touchScrollTarget,
-    touchGesture,
-    touchCentroid,
-    dragThreshold,
-    dragBegins,
-    isDoubleTap,
-    DOUBLE_TAP_MS,
-    prefersDomRenderer,
-    gpuHolders,
-    isWebKit,
-    fullscreenOffered,
-    flingStep,
-    keySequence,
-    barKey,
-    applyCtrlLatch,
-    terminalInputMode,
-    isTerminalReply,
-    keyBarVisible,
-    pasteOffered,
-    rightClickAction,
-    pressRoute,
-    forceSelectionKeys,
-    holdMoveReport,
-    clipboardContent,
-    phoneBleed,
-    PHONE_MAX_WIDTH,
-    selectionRow,
-    stepFont,
-    setFont,
-    fontSize,
-    FONT_MIN,
-    FONT_MAX,
-    FONT_DEFAULT,
-    setStaleProbe,
-    RESUME_HIDDEN_MS,
-    RESUME_DEBOUNCE_MS,
-    CONNECT_TIMEOUT_MS,
-    pasteDecision,
-    reconcileDesk,
-    placeholderSession,
-    restoreRect,
-    columnClasses,
-    columnMeasure,
-    applyColumns,
-    isRelaunching,
-    markRelaunch,
-    focusColumn,
-    focusedId,
-    deskRecords,
-    reloadDesk,
-    deskFailure: currentDeskFailure,
-    setDeskFailureHook,
-    setDeskGoneHook,
-    startNewDesk,
-    reloadForRestoredDesk,
-    dropClosedElsewhere,
-    columnRoster,
-    sessionPresentation,
-    consolePrefix,
-    list,
-    reveal,
     afterLogin,
-    checkoutOf,
-    setCheckout,
-    checkouts: allCheckouts,
-    checkoutMenu,
-    checkoutMenuRows,
-    ensureListing,
-    askNotice,
-    // The note card asks the same question the stage's own verbs do (ADR-0064
-    // §11's delete), so there is one dialog in this workbench and not two.
-    askConfirm,
-    whenDeskLoaded,
-    fenceSpawnRect,
-    nextFenceSlot,
-    rectHolds,
-    fenceMembership,
-    fenceSummaries,
-    fenceFits,
-    fenceMoveDelta,
-    tileIntoRect,
-    fenceRepos,
-    fenceList,
-    fenceCycle,
-    fenceHolds,
-    detachFold,
-    peerFold,
-    DETACH_MAX,
-    detachFence,
-    reattachFence,
-    isDetached,
-    mountDetached,
-    noteNameOk,
-    popupMatches,
-    stepFence,
-    jumpToFence,
-    jumpToNote,
-    focusedFence: focusedFenceId,
-    spawnRectIn,
-    freeSpawnRect,
-    createFence,
-    atFenceCap,
-    nextFenceName,
-    FENCE_MAX,
-    renameFence,
-    removeFence,
-    // The note card's seam (ADR-0064 §2): the desk state lives here, the card
-    // lives in `wb-notes.ts`, and these are everything it needs.
-    notes: loadNotes,
-    saveNotes,
-    atNoteCap,
-    NOTE_MAX,
-    atDeskCap,
-    DESK_MAX,
-    fenceRecords,
-    inGesture,
-    // The window writes that are not a gesture (a birth, a reconnect, a first
-    // act on an adopted console), for the ui-test: each must send only the
-    // fields it changed.
-    recordBirth,
-    recordSession,
-    setWin,
-    makeDraggable,
-    startResize,
-    focusWin,
-    stackWin,
-    toast,
-    dismissToast,
     agentStateTitle,
-    renderNotes,
-  };
+    inGesture,
+  });
 }

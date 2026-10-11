@@ -3719,6 +3719,10 @@ fn squeeze(src: &str) -> String {
 const CONSOLE_FAMILY: &[(&str, &str)] = &[
     ("wb-console.ts", include_str!("../assets/ui/wb-console.ts")),
     (
+        "wb-console-api.ts",
+        include_str!("../assets/ui/wb-console-api.ts"),
+    ),
+    (
         "wb-console-checkout.ts",
         include_str!("../assets/ui/wb-console-checkout.ts"),
     ),
@@ -4353,8 +4357,10 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-resume.js",
                 "wb-daemon.js",
                 "wb-events.js",
-                // `wb-console.ts` imports the geometry, the session folds,
-                // the desk folds, the GPU budget, the title, the fence list, the detach, the view, the
+                // `wb-console.ts` imports the desk folds, the GPU budget, the
+                // object that names its members (`wb-console-api.ts`, which
+                // imports the geometry, the session folds, the input folds
+                // and the resume rule), the title, the fence list, the detach, the view, the
                 // terminal, the window chrome, the popup registry, the fences, the desk and its records and
                 // restore, the console name,
                 // the input folds, the key bar, the feeds, the dormancy, the window birth and the
@@ -4369,6 +4375,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-geometry.js",
                 "wb-window-state.js",
                 "wb-console-name.js",
+                "wb-console-api.js",
                 "wb-console-input.js",
                 "wb-console-keys.js",
                 "wb-console-feeds.js",
@@ -5576,15 +5583,16 @@ fn titlebar_touch_double_taps_and_holds() {
 fn a_note_card_is_stacked_and_wears_the_console_chrome() {
     // Normalized: the pin below spans line ends, and a Windows checkout
     // (CI's included) embeds the asset with CRLF.
-    let console = include_str!("../assets/ui/wb-console.ts").replace("\r\n", "\n");
+    let console = include_str!("../assets/ui/wb-console-api.ts").replace("\r\n", "\n");
     let stack = include_str!("../assets/ui/wb-stage-stack.ts");
     let notes = include_str!("../assets/ui/wb-notes.ts");
     let veil = include_str!("../assets/ui/wb-notes-veil.ts");
     // The seam: a place in the tier WITHOUT focus, because a restore
     // focuses nothing and `focusWin` is the only other way to get one.
     assert!(
-        stack.contains("function stackWin(") && console.contains("\n    stackWin,\n"),
-        "wb-stage-stack.ts must declare stackWin and wb-console.ts must export it, \
+        stack.contains("function stackWin(")
+            && console.contains("\n    stackWin: stack.stackWin,\n"),
+        "wb-stage-stack.ts must declare stackWin and wb-console-api.ts must export it, \
          the tier a restored surface enters by"
     );
     assert!(
