@@ -117,15 +117,16 @@ test("each workbench event reaches the board", () => {
 
 test("the Spend view takes the titles the board already holds, and loads nothing", () => {
   const { loaded, shell, board } = page();
+  const { scope: spend } = loadComponent("wbSpend", { from: loaded });
   shell.$store.projects.setOpen("o/r");
   board.loadBoard = () => assert.fail("the Spend view must not load the board");
   // The board answers during the send, with the open project's issues only.
   board.boardIssues = { "o/r": [{ number: 251, title: "the retry" }], "o/x": [{ number: 9, title: "other" }] };
   loaded.window.WBSpend = { state: (view) => view };
-  assert.deepEqual(shell.spendView().issues, [{ number: 251, title: "the retry" }]);
+  assert.deepEqual(spend.spendView().issues, [{ number: 251, title: "the retry" }]);
   // CONTROL: a board that holds nothing for the project gives no titles.
   board.boardIssues = {};
-  assert.deepEqual(shell.spendView().issues, []);
+  assert.deepEqual(spend.spendView().issues, []);
 });
 
 test("opening the board reads it and drops the selection; closing it reads nothing", () => {

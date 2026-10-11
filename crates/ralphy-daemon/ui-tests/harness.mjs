@@ -27,6 +27,7 @@ import { wbFiles } from "../assets/ui/wb-files.ts";
 import { wbMoveDialog } from "../assets/ui/wb-move-dialog.ts";
 import { wbRuns } from "../assets/ui/wb-runs-panel.ts";
 import { wbBoard } from "../assets/ui/wb-board.ts";
+import { wbSpend } from "../assets/ui/wb-spend-panel.ts";
 import { wbChanges } from "../assets/ui/wb-changes-panel.ts";
 import { wbBranchDialog } from "../assets/ui/wb-branch-dialog.ts";
 import { projectsStore } from "../assets/ui/wb-projects-store.ts";
@@ -81,6 +82,7 @@ const MODULE_COMPONENTS = {
   wbBoard,
   wbChanges,
   wbBranchDialog,
+  wbSpend,
 };
 
 export const UI = join(dirname(fileURLToPath(import.meta.url)), "../assets/ui");

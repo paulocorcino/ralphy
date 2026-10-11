@@ -41,6 +41,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 TARGET = os.environ.get("RALPHY_WB_TARGET") or os.path.join(REPO_ROOT, "target", "debug")
 EXE = os.path.join(TARGET, "ralphy.exe" if os.name == "nt" else "ralphy")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+SPEND = "Alpine.$data(document.querySelector('[x-data=\"wbSpend\"]'))"
 # The board is the component `wbBoard` (wb-board.ts).
 BOARD = "Alpine.$data(document.querySelector('[x-data=\"wbBoard\"]'))"
 
@@ -122,13 +123,13 @@ def idle(page, ms=400):
 
 def load_spend(page, slug):
     """Open the Spend tab on `slug` and wait for its document and its ledger."""
-    page.evaluate(f"() => {SH}.openSpend()")
+    page.evaluate(f"() => {SPEND}.openSpend()")
     page.wait_for_function(
-        f"(s) => {SH}.spend.slug === s && !{SH}.spend.loading && !!{SH}.spend.doc", arg=slug, timeout=180000
+        f"(s) => {SPEND}.spend.slug === s && !{SPEND}.spend.loading && !!{SPEND}.spend.doc", arg=slug, timeout=180000
     )
-    page.evaluate(f"() => {SH}.setSpendPane('ledger')")
-    page.wait_for_function(f"(s) => {SH}.ledger.slug === s && !{SH}.ledger.loading", arg=slug, timeout=180000)
-    page.evaluate(f"() => {SH}.setSpendPane('overview')")
+    page.evaluate(f"() => {SPEND}.setSpendPane('ledger')")
+    page.wait_for_function(f"(s) => {SPEND}.ledger.slug === s && !{SPEND}.ledger.loading", arg=slug, timeout=180000)
+    page.evaluate(f"() => {SPEND}.setSpendPane('overview')")
 
 
 def script_s(cdp):
@@ -207,9 +208,9 @@ def main():
 
             facts = page.evaluate(
                 f"(s) => ({{ issues: ({BOARD}.boardIssues[s] || []).length,"
-                f"  deliveries: ({SH}.spend.doc?.deliveries || []).length,"
-                f"  records: ({SH}.ledger.records || []).length,"
-                f"  interactive: ({SH}.ledger.interactive || []).length,"
+                f"  deliveries: ({SPEND}.spend.doc?.deliveries || []).length,"
+                f"  records: ({SPEND}.ledger.records || []).length,"
+                f"  interactive: ({SPEND}.ledger.interactive || []).length,"
                 f"  runs: (Alpine.store('runs').runsByProject[s] || []).length }})",
                 arg=slug_a,
             )
@@ -224,10 +225,10 @@ def main():
             load_spend(page, slug_a)
             page.evaluate(f"() => {{ {BOARD}.kanbanSel = ({BOARD}.boardIssues[Alpine.store('projects').openSlug] || [])[0]?.number ?? null; }}")
             per_call = page.evaluate(
-                f"() => {{ const sh = {SH}; const board = {BOARD}; const out = {{}};"
+                f"() => {{ const spend = {SPEND}; const board = {BOARD}; const out = {{}};"
                 "  for (const m of ['spendView', 'ledgerView', 'kanbanColumns', 'selectedIssue', 'currentRun']) {"
                 "    const t0 = performance.now();"
-                "    const o = m === 'currentRun' ? Alpine.store('runs') : m === 'kanbanColumns' || m === 'selectedIssue' ? board : sh;"
+                "    const o = m === 'currentRun' ? Alpine.store('runs') : m === 'kanbanColumns' || m === 'selectedIssue' ? board : spend;"
                 "    for (let i = 0; i < 200; i++) o[m]();"
                 "    out[m] = (performance.now() - t0) / 200; }"
                 "  return out; }"

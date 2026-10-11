@@ -60,6 +60,7 @@ EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt"
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "360-spend-ledger-2026-07-31.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+SPEND = "Alpine.$data(document.querySelector('[x-data=\"wbSpend\"]'))"
 
 OPUS = "claude-opus-4-8"
 # A REAL model id that is deliberately ABSENT from the price table written below:
@@ -304,7 +305,7 @@ def main():
             # from a Windows path carries backslashes a literal would swallow.
             page.evaluate(f"(s) => {SH}.toggle(s)", arg=slug)
             page.wait_for_function(f"(s) => Alpine.store('projects').openSlug === s", arg=slug, timeout=15000)
-            page.evaluate(f"() => {SH}.openSpend()")
+            page.evaluate(f"() => {SPEND}.openSpend()")
             page.wait_for_function(f"() => {SH}.active === 'spend'", timeout=10000)
             page.wait_for_function(OVERVIEW_READY, timeout=15000)
 
@@ -423,7 +424,7 @@ def main():
                 timeout=15000,
             )
             drilled = page.evaluate(PANE)
-            pane = page.evaluate(f"() => {SH}.spendPane")
+            pane = page.evaluate(f"() => {SPEND}.spendPane")
             check(
                 "clicking the unpriced figure lands on the Ledger pane",
                 pane == "ledger" and drilled["gridLaid"],

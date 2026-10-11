@@ -154,7 +154,7 @@
       <!-- Spend opens a CANVAS TAB (ADR-0037 §3, amended by #358: a closable tab
            may be a daemon view, not only an open file), so `active` tracks the
            canvas rather than a panel of its own. -->
-      <button :class="{ active: active === 'spend' }" @click="openSpend()" title="Spend (cost of this project)"><svg x-icon="'coins'"></svg></button>
+      <button :class="{ active: active === 'spend' }" @click="$dispatch('workbench:spend-open')" title="Spend (cost of this project)"><svg x-icon="'coins'"></svg></button>
       <!-- spacer pushes the settings gear to the bottom of the rail -->
       <span class="rail-spacer"></span>
       <button :class="{ active: modalOpen('settingsOpen') }" @click="avatarMenu = false; $dispatch('workbench:settings-open')" title="Settings"><svg x-icon="'settings'"></svg></button>
@@ -1027,7 +1027,7 @@
              is still actionable, terracotta for what is lost. Everything else
              is the grey ramp, and length does the rest of the work.
              ================================================================ -->
-        <section class="spend-tab" x-show="active === 'spend'" x-cloak x-effect="spendModel = spendView()">
+        <section class="spend-tab" x-data="wbSpend" @workbench:spend-open.window="openSpend()" x-show="active === 'spend'" x-cloak x-effect="spendModel = spendView()">
           <!-- The strip is OUTSIDE the state branches: the operator must be able
                to tell a Spend tab with nothing to show from a tab that failed to
                load, and a header that disappears with its content makes the pane
@@ -1334,8 +1334,7 @@
             </div>
           </template>
 
-          <!-- ================================================================
-               THE LEDGER PANE (#360) · the raw per-phase grid — what the removed
+          <!-- THE LEDGER PANE (#360) · the raw per-phase grid — what the removed
                Usage modal did, with columns. Everything here is a `.ledger-*`
                class and nothing reuses `.spend-panel*`: a sibling `.spend-panel`
                has already silently retargeted an earlier suite's unscoped
@@ -1344,7 +1343,7 @@
                One row per ledger line, capped: the grid is DOM that grows with
                the project's history, while every FIGURE on the Overview is folded
                server-side over every row. The cap bounds the list, never a total.
-               ================================================================ -->
+               -->
           <section class="ledger-pane" x-show="spendPane === 'ledger'" x-cloak x-effect="ledgerModel = ledgerView()">
             <!-- A peer whose usage never arrived. It lives HERE and not on the
                  Overview because it is a statement about COMPLETENESS of the raw

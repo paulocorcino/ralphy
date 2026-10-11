@@ -57,10 +57,11 @@ const PROMPT_GH_ISSUE_VIEW: usize = 20;
 /// 3300 since the board moved to the component `wbBoard` (#621); 2864 since
 /// the Changes view moved to the component `wbChanges` (#621); 2512 since
 /// the branch dialog moved to the component `wbBranchDialog` and the checkouts
-/// to the Alpine store `checkouts` (#621).
+/// to the Alpine store `checkouts` (#621); 2344 since the Spend and Ledger
+/// panes moved to the component `wbSpend` (#621).
 /// Its shell-only types are in `wb-shell-types.d.ts` and it imports them on
 /// one line (#653).
-const APP_TS_LINES: usize = 2512;
+const APP_TS_LINES: usize = 2344;
 /// Lines of `crates/ralphy-daemon/assets/ui/wb-console.ts`, the console
 /// factory (ADR-0073 D8, which starts this ratchet with the first fold move).
 /// 5842 since ADR-0075 phase 5 moved its pure folds, its GPU budget and its

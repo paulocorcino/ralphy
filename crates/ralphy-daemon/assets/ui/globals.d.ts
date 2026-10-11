@@ -473,6 +473,14 @@ interface WindowEventMap {
   /** Open the checkout menu of this project under `anchor` (wb-branch-dialog.ts). */
   "workbench:checkout-menu": CustomEvent<{ project: import("./wb-project.ts").Project; anchor: HTMLElement }>;
   "workbench:panels-reread": CustomEvent<null>;
+  /** Add a canvas tab once and bring it to the front. */
+  "workbench:tab-open": CustomEvent<{ tab: import("./wb-shell-types.d.ts").CanvasTab }>;
+  /** Open the Spend tab. */
+  "workbench:spend-open": CustomEvent<null>;
+  /** Read the Spend tab again: the open project changed. */
+  "workbench:spend-refresh": CustomEvent<null>;
+  /** The Spend tab came to the front. */
+  "workbench:spend-shown": CustomEvent<null>;
   "workbench:log-off": CustomEvent<null>;
   /** Re-list the directory `rel`, then show `reveal`. */
   "workbench:tree-dirty": CustomEvent<{ rel: string; reveal?: string }>;

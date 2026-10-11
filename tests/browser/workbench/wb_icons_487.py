@@ -40,6 +40,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 TARGET = os.environ.get("RALPHY_WB_TARGET") or os.path.join(REPO_ROOT, "target", "debug")
 EXE = os.path.join(TARGET, "ralphy.exe" if os.name == "nt" else "ralphy")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+SPEND = "Alpine.$data(document.querySelector('[x-data=\"wbSpend\"]'))"
 # The Runs panel and the run modal: the component `wbRuns`.
 RUNS = "Alpine.$data(document.querySelector('[x-data=\"wbRuns\"]'))"
 # The board is the component `wbBoard` (wb-board.ts).
@@ -267,7 +268,7 @@ def main():
             page.evaluate(f"(s) => {SH}.toggle(s)", arg=slug_a)
             page.wait_for_function(f"(s) => Alpine.store('projects').openSlug === s", arg=slug_a, timeout=15000)
             views = [
-                ("spend", f"{SH}.openSpend()"),
+                ("spend", f"{SPEND}.openSpend()"),
                 ("consoles", f"{SH}.active = 'consoles'"),
                 ("kanban", f"{SH}.toggleKanban()"),
                 ("runs", f"{SH}.toggleRuns()"),

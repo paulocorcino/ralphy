@@ -30,6 +30,7 @@ SLUG = "ralphy-lab/shared-repo"
 PEER_REF = f"{PEER_ID}/{SLUG}"
 PEER_ENV = "WSL: Ubuntu-22.04"
 SHELL = "Alpine.$data(document.querySelector('[x-data]'))"
+SPEND = "Alpine.$data(document.querySelector('[x-data=\"wbSpend\"]'))"
 # The Runs panel and the run modal: the component `wbRuns`.
 RUNS = "Alpine.$data(document.querySelector('[x-data=\"wbRuns\"]'))"
 results = []
@@ -372,8 +373,8 @@ def main():
             # #360 moved this surface: the Usage modal is gone and the
             # missing-contributions banner lives in the Spend tab's Ledger pane,
             # the only place the RAW rows are read.
-            page.evaluate(f"() => {SHELL}.openSpend()")
-            page.evaluate(f"async () => await {SHELL}.setSpendPane('ledger')")
+            page.evaluate(f"() => {SPEND}.openSpend()")
+            page.evaluate(f"async () => await {SPEND}.setSpendPane('ledger')")
             page.wait_for_function(
                 "(env) => [...document.querySelectorAll('.ledger-missing strong')].some(e => e.textContent.includes(env))",
                 arg=PEER_ENV,

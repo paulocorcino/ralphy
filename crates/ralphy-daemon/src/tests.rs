@@ -3965,6 +3965,10 @@ const SHELL_FAMILY: &[(&str, &str)] = &[
         "wb-settings-dialog.ts",
         include_str!("../assets/ui/wb-settings-dialog.ts"),
     ),
+    (
+        "wb-spend-panel.ts",
+        include_str!("../assets/ui/wb-spend-panel.ts"),
+    ),
 ];
 
 /// The texts of `SHELL_FAMILY`, joined in its order. A pin on shell text reads

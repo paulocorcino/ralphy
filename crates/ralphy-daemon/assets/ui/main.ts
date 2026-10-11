@@ -23,6 +23,7 @@ import { wbRuns } from "./wb-runs-panel.ts";
 import { wbBoard } from "./wb-board.ts";
 import { wbChanges } from "./wb-changes-panel.ts";
 import { wbBranchDialog } from "./wb-branch-dialog.ts";
+import { wbSpend } from "./wb-spend-panel.ts";
 import { createDaemon } from "./wb-daemon.ts";
 import { WBDevice } from "./wb-device.ts";
 import { createViewer } from "./wb-file-viewer.ts";
@@ -80,6 +81,7 @@ Alpine.data("wbRuns", wbRuns);
 Alpine.data("wbBoard", wbBoard);
 Alpine.data("wbChanges", wbChanges);
 Alpine.data("wbBranchDialog", wbBranchDialog);
+Alpine.data("wbSpend", wbSpend);
 Alpine.start();
 // The consoles boot on a page whose shell Alpine has built (ADR-0075 D7).
 window.WBConsole.boot();

@@ -27,7 +27,7 @@ import { WBSettingsDialog } from "./wb-settings-dialog.ts";
 import { WBSplit } from "./wb-split.ts";
 import { isFilePopupMessage } from "./wb-detached.ts";
 import { createEmitter, forwardAction, sendWindow } from "./wb-events.ts";
-import type { BoardIssue, CanvasTab, ChangeEntry, ConfirmAsk, DiffTarget, FleetPeer, Group, LedgerMissing, LedgerRecord, MenuItem, ModalEntry, Project, PromptAsk, ReadState, RosterRow, SavePayload, SecurityFact, ShellLate, Slot, SpendDoc, Subscription, TabBody, TabOpen, Timer, WireDeps } from "./wb-shell-types.d.ts";
+import type { CanvasTab, ChangeEntry, ConfirmAsk, DiffTarget, FleetPeer, Group, MenuItem, ModalEntry, Project, PromptAsk, ReadState, RosterRow, SavePayload, SecurityFact, ShellLate, Slot, Subscription, TabBody, TabOpen, Timer, WireDeps } from "./wb-shell-types.d.ts";
 
 // A phone in either orientation: its SHORT side is under the workbench's phone
 // breakpoint (560px). Landscape iPhone is ~750 wide but ~340 tall; an iPad's
@@ -136,6 +136,13 @@ export function shell() {
       // A flush can be the read that finds the desk unreadable; no push says so.
       window.WBConsole?.setDeskFailureHook?.(() => this.syncDeskFailure());
       window.addEventListener("workbench:menus-close", () => this.closeAvatarMenu());
+      // A canvas tab that a component asks for (the Spend tab): added once,
+      // then brought to the front.
+      window.addEventListener("workbench:tab-open", (e) => {
+        const tab = e.detail.tab;
+        if (!this.tabs.some((t) => t.id === tab.id)) this.tabs.push(tab);
+        this.activate(tab.id);
+      });
       // A peer pushes neither its reachability nor its sessions, so they are
       // read every 30 s while a peer is listed and the tab is visible
       // (ADR-0070 D2 event 6). `loadRepos` reads the fleet and the sessions.
@@ -846,7 +853,7 @@ export function shell() {
       this.loadAgents(slug);
       // The chip's `<branch> · <name>` needs the listing (#406).
       if (slug === ref) this.$store.checkouts.ensureWorktreeListing(ref);
-      this.refreshSpend();
+      sendWindow(window, "workbench:spend-refresh");
       this.projectChanged(previous);
     },
     // The files, the board and the git part each drop what was scoped to the
@@ -1155,180 +1162,6 @@ export function shell() {
     // The Runs panel's flash line; `_flashAction` writes it.
     runsActionMsg: "",
 
-    // --- spend (the Spend tab, #358) ---------------------------------------
-    // A canvas tab (ADR-0037 amendment: a closable tab may be a daemon view),
-    // scoped to the open project. Everything numeric is rendered by the daemon
-    // (`/api/spend`); `WBSpend` folds only which state the pane is in.
-    spend: { loading: false, error: "", doc: null as SpendDoc, slug: null as string | null },
-    // The window the operator picked, echoed back by the daemon; the pane
-    // renders the document's own key, never this one.
-    spendPeriod: "all",
-    // The tab's view model. `openSlug` is read HERE and not stashed, so closing
-    // a project drops the pane to its empty state.
-    spendView() {
-      // Titles ride whatever the board ALREADY holds; never a load
-      // (`loadBoard` spawns a throttled tracker CLI). The board (wb-board.ts)
-      // fills `issues`.
-      const board = { issues: [] as BoardIssue[] };
-      sendWindow(window, "workbench:board-issues", board);
-      return window.WBSpend.state({
-        project: this.$store.projects.openSlug,
-        loading: this.spend.loading,
-        error: this.spend.error,
-        // A document for a project no longer open is stale by definition.
-        doc: this.spend.slug === this.$store.projects.openSlug ? this.spend.doc : null,
-        period: this.spendPeriod,
-        issues: board.issues,
-      });
-    },
-    // The window is a server-side filter: assign, then re-read.
-    setSpendPeriod(key: string) {
-      if (this.spendPeriod === key) return;
-      this.spendPeriod = key;
-      this.loadSpend();
-      // The Ledger is scoped to the SAME window: a period change invalidates
-      // its rows too.
-      this.ledger.slug = null;
-      if (this.spendPane === "ledger") this.loadLedger();
-    },
-    openSpend() {
-      if (!this.tabs.some((t) => t.id === "spend")) {
-        // Bootstrap's cash-stack: the strip renders `t.icon` as a class.
-        this.tabs.push({
-          id: "spend",
-          kind: "spend",
-          title: "Spend",
-          icon: "bi bi-cash-stack",
-          closable: true,
-        });
-      }
-      this.activate("spend");
-      this.loadSpend();
-    },
-    async loadSpend() {
-      const slug = this.$store.projects.openSlug;
-      // No project open is not a failure: the pane says so itself.
-      if (!slug) {
-        this.spend = { loading: false, error: "", doc: null, slug: null };
-        return;
-      }
-      this.spend = { ...this.spend, loading: true, error: "" };
-      let doc: SpendDoc = null;
-      let error = "";
-      try {
-        const r = await apiFetch("GET /api/spend", { query: { project: slug, period: this.spendPeriod || "all" } });
-        if (r.ok) doc = await r.json();
-        else error = "Could not load spend: the daemon did not answer.";
-      } catch {
-        error = "Could not load spend: the daemon did not answer.";
-      }
-      // The project changed while in flight: one cost under another's name.
-      if (this.$store.projects.openSlug !== slug) return;
-      this.spend = { loading: false, error, doc, slug };
-    },
-    // Re-read on activation and when the accordion opens or closes a project.
-    refreshSpend() {
-      if (!this.tabs.some((t) => t.id === "spend")) return;
-      // Dropping the slug makes the next switch to the Ledger re-read. The
-      // unpriced filter goes with it: it answered the PREVIOUS project's gap.
-      this.ledger.slug = null;
-      this.spendLedgerUnpricedOnly = false;
-      this.loadSpend();
-      if (this.spendPane === "ledger") this.loadLedger();
-    },
-
-    // --- the Ledger pane (#360) --------------------------------------------
-    // `Overview | Ledger` inside the ONE Spend tab: two readings of the same
-    // project. The Ledger is the raw per-phase grid with the daemon's unpriced
-    // verdict per row (`/api/usage?project=`).
-    spendPane: "overview",
-    // Set by the click-through from the Overview's unpriced figure.
-    spendLedgerUnpricedOnly: false,
-    ledger: {
-      loading: false,
-      error: "",
-      records: [] as LedgerRecord[],
-      interactive: [] as LedgerRecord[],
-      missing: [] as LedgerMissing[],
-      daemonId: null as string | null,
-      slug: null as string | null,
-    },
-    // What the Spend tab shows, computed ONCE per change by the `x-effect` on
-    // `.spend-tab` and on `.ledger-pane`; the markup reads these, never the
-    // methods. Alpine caches nothing: each of the ~40 reads ran the whole view
-    // again, and the tab is `x-show`, so a board refresh paid it with the tab
-    // hidden (wb_perf_487.py: 43 calls, 12 ms per refresh on a real ledger).
-    spendModel: window.WBSpend.state(),
-    ledgerModel: window.WBSpend.ledger(),
-    ledgerView() {
-      // Rows for a project no longer open are stale (as `spendView()`); the
-      // peer banner is gated with them.
-      const fresh = this.ledger.slug === this.$store.projects.openSlug;
-      return window.WBSpend.ledger({
-        project: this.$store.projects.openSlug,
-        loading: this.ledger.loading,
-        error: this.ledger.error,
-        records: fresh ? this.ledger.records : [],
-        interactive: fresh ? this.ledger.interactive : [],
-        missing: fresh ? this.ledger.missing : [],
-        daemonId: this.ledger.daemonId,
-        unpricedOnly: this.spendLedgerUnpricedOnly,
-      });
-    },
-    // Deferred to the first switch: the ledger is the one response that grows
-    // with the project's history.
-    setSpendPane(key: string) {
-      this.spendPane = key;
-      if (key === "ledger") this.loadLedger();
-    },
-    // The Overview's unpriced figure drills into the offending rows (#355).
-    showUnpricedLedger() {
-      this.spendLedgerUnpricedOnly = true;
-      this.setSpendPane("ledger");
-    },
-    async loadLedger() {
-      const slug = this.$store.projects.openSlug;
-      // With no project open there are still PEERS to report: an empty
-      // `project=` scopes the rows to none while the daemon answers `missing`.
-      const want = slug || "";
-      // `loading` stops a second click duplicating the heaviest request on the
-      // page; `slug` is written only when the fetch lands.
-      if (this.ledger.loading) return;
-      if (this.ledger.slug === want) return;
-      this.ledger = { ...this.ledger, loading: true, error: "" };
-      let records: LedgerRecord[] = [];
-      let interactive: LedgerRecord[] = [];
-      let missing: LedgerMissing[] = [];
-      let daemonId: string | null = null;
-      let error = "";
-      try {
-        const r = await apiFetch("GET /api/usage", { query: { project: want, period: this.spendPeriod || "all" } });
-        if (r.ok) {
-          const data = await r.json();
-          records = Array.isArray(data.records) ? data.records : [];
-          interactive = Array.isArray(data.interactive) ? data.interactive : [];
-          missing = Array.isArray(data.missing) ? data.missing : [];
-          daemonId = data.daemon_id || null;
-        } else error = "Could not load the ledger: the daemon did not answer.";
-      } catch {
-        error = "Could not load the ledger: the daemon did not answer.";
-      }
-      // The operator switched projects while this was in flight.
-      if ((this.$store.projects.openSlug || "") !== want) {
-        this.ledger = { ...this.ledger, loading: false };
-        return;
-      }
-      this.ledger = {
-        loading: false,
-        error,
-        records,
-        interactive,
-        missing,
-        daemonId,
-        slug: slug || null,
-      };
-    },
-
     // --- release ----------------------------------------------------------
     // The release fact stays here, because the sidebar reads it. The About,
     // What's new and update dialogs are the component in
@@ -1391,7 +1224,6 @@ export function shell() {
     // (ADR-0073 D5).
     rereadOpenPanels() {
       sendWindow(window, "workbench:panels-reread");
-      if (this.tabs.some((t) => t.id === "spend")) this.loadSpend();
     },
     releaseRead: null as ReadState,
     releaseStale() {
@@ -1928,7 +1760,7 @@ export function shell() {
     activate(id: string) {
       this.active = id;
       // The Spend tab's subject can change while it sits in the background.
-      if (id === "spend" && this.spend.slug !== this.$store.projects.openSlug) this.refreshSpend();
+      if (id === "spend") sendWindow(window, "workbench:spend-shown");
       this.$nextTick(() => {
         this.syncViewer();
         // A console opened while another tab was active measured 0×0.

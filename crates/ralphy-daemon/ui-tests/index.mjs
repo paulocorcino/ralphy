@@ -5,6 +5,7 @@
 // (see https://nodejs.org/api/test.html#test-runner-execution-model).
 import "./app.test.mjs";
 import "./wb-board.test.mjs";
+import "./wb-spend-panel.test.mjs";
 import "./harness.test.mjs";
 import "./wb-add-project.test.mjs";
 import "./wb-add-project-dialog.test.mjs";

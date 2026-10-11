@@ -542,7 +542,6 @@ function toggleShell() {
     "loadRelease",
     "wakePeerFor",
     "loadAgents",
-    "refreshSpend",
   ]) {
     state[name] = record(name);
   }
@@ -573,6 +572,22 @@ test("opening a row asks to wake its peer, and closing it does not", () => {
   state.toggle("peer:wsl/owner/repo");
   assert.equal(state.$store.projects.openSlug, null);
   assert.equal(named("wakePeerFor").length, 1);
+});
+
+test("a component's tab request adds the tab once and brings it to the front", () => {
+  const { state, window } = toggleShell();
+  const tab = { id: "spend", kind: "spend", title: "Spend", icon: "bi bi-cash-stack", closable: true };
+  state.activate = (id) => (state.active = id);
+  window.dispatchEvent({ type: "workbench:tab-open", detail: { tab } });
+  window.dispatchEvent({ type: "workbench:tab-open", detail: { tab } });
+  assert.equal(state.tabs.filter((t) => t.id === "spend").length, 1);
+  assert.equal(state.active, "spend");
+});
+
+test("opening a project row asks the Spend tab to read again", () => {
+  const { state, events } = toggleShell();
+  state.toggle("owner/repo");
+  assert.equal(events.filter((e) => e.type === "workbench:spend-refresh").length, 1);
 });
 
 test("a row on a host that cannot answer stays closed, and still wakes it", () => {
@@ -628,7 +643,7 @@ test("toggle sends workbench:project-changed with the project now open and the o
 test("toggle writes no field of the git part", () => {
   // The default page: the window hears nothing, so no listener runs.
   const { state } = loadShell();
-  for (const name of ["wakePeerFor", "loadAgents", "refreshSpend"]) state[name] = () => {};
+  for (const name of ["wakePeerFor", "loadAgents"]) state[name] = () => {};
   state.$store.checkouts.ensureWorktreeListing = () => {};
   state.$store.checkouts.branchRefused("a branch refusal");
   state.$store.runs.setCurrentRun("run-1");
@@ -768,18 +783,6 @@ test("askPrompt settles with the trimmed name the prompt submits", async () => {
 });
 
 // ---- folds the tree, the Changes panel and the plan viewer rely on ----------
-
-test("spendView shows the spend document only for the project that is open", () => {
-  const own = loadShell().state;
-  own.spend = { loading: false, error: "", doc: { total: "~$1.00" }, slug: "owner/a" };
-  assert.equal(own.spendView().kind, "empty", "no project open");
-  own.$store.projects.setOpen("owner/a");
-  assert.equal(own.spendView().kind, "ready");
-  assert.equal(own.spendView().total, "~$1.00");
-  // A document read for another project is stale: the pane waits for its own.
-  own.$store.projects.setOpen("owner/b");
-  assert.equal(own.spendView().kind, "loading");
-});
 
 // `/api/repos` carries `head` beside `branch` (#510): a detached HEAD has no
 // branch, and the row must still name its commit.
@@ -1264,7 +1267,7 @@ test("a reopened socket reads the board and the runs", () => {
   assert.ok(calls.includes("hydrateRuns"), calls.join(", "));
 });
 
-test("visible and login ask the open panels to read again, and read the open Spend view", () => {
+test("visible and login ask the open panels to read again", () => {
   // The Settings dialog hears the event and reads only when it is open
   // (wb-settings-dialog.test.mjs); here the shell sends it each time.
   const events = [];
@@ -1272,24 +1275,14 @@ test("visible and login ask the open panels to read again, and read the open Spe
     ...VISIBLE,
     window: { dispatchEvent: (e) => events.push(e.type) },
   });
-  const calls = [];
   for (const name of ["loadRepos", "rereadDesk", "hydrateRuns", "loadRelease", "resumeSockets", "loadIdentity", "loadAgents", "restoreView"]) {
     state[name] = () => {};
   }
-  state.loadSpend = () => calls.push("spend");
   const rereads = () => events.filter((t) => t === "workbench:panels-reread").length;
-  state.tabs = state.tabs.filter((t) => t.id !== "spend");
   state.onTabVisible();
-  assert.deepEqual(calls, [], "a closed Spend view reads nothing");
   assert.equal(rereads(), 1, "the tab becoming visible asks the open panels");
-  state.tabs.push({ id: "spend", kind: "spend" });
-  state.onTabVisible();
-  assert.deepEqual(calls, ["spend"]);
-  assert.equal(rereads(), 2);
-  calls.length = 0;
   state.rehydrateAfterAuth();
-  assert.deepEqual(calls, ["spend"]);
-  assert.equal(rereads(), 3, "a login asks the open panels too");
+  assert.equal(rereads(), 2, "a login asks the open panels too");
 });
 
 test("the peer tick and a project-list push read no change set and no branch", async () => {

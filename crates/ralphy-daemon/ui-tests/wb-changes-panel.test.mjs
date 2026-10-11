@@ -166,7 +166,7 @@ test("opening a row remounts the run-completion subscription", () => {
   changes.mountChangesSub = () => calls.push("mountChangesSub");
   changes.loadChanges = () => {};
   changes.loadSync = () => {};
-  for (const name of ["wakePeerFor", "loadAgents", "refreshSpend"]) shell[name] = () => {};
+  for (const name of ["wakePeerFor", "loadAgents"]) shell[name] = () => {};
   shell.$store.checkouts.ensureWorktreeListing = () => {};
   shell.toggle("owner/repo");
   // The old socket closes before the new one opens, so a nudge for the
