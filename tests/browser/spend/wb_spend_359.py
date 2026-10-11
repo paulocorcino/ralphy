@@ -67,6 +67,8 @@ EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt"
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "359-spend-2026-07-31.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The board is the component `wbBoard` (wb-board.ts).
+BOARD = "Alpine.$data(document.querySelector('[x-data=\"wbBoard\"]'))"
 
 OPUS = "claude-opus-4-8"
 HAIKU = "claude-haiku-4-5"
@@ -560,7 +562,7 @@ def main():
             # --- scenario g (second half) · the title, once the board holds it --
             # ONE deliberate board fold. Whether it succeeds against a remoteless
             # fixture is not this suite's subject; that it is the ONLY frame is.
-            page.evaluate(f"() => {SH}.loadBoard()")
+            page.evaluate(f"() => {BOARD}.loadBoard()")
             page.wait_for_function(
                 "() => (window.__verbs || []).includes('board.list')", timeout=15000
             )
@@ -569,7 +571,7 @@ def main():
             # directly, because a fixture repo seeded with plain `git init` is
             # remoteless and its real fold has no tracker to answer it.
             page.evaluate(
-                f"(s) => {{ {SH}.boardIssues[s] = [{{ number: 251, title: 'the retry that cost $30' }}]; }}",
+                f"(s) => {{ {BOARD}.boardIssues[s] = [{{ number: 251, title: 'the retry that cost $30' }}]; }}",
                 arg=slug,
             )
             page.evaluate(f"() => {SH}.setSpendPeriod('all')")

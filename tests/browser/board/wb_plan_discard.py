@@ -57,6 +57,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The board is the component `wbBoard` (wb-board.ts).
+BOARD = "Alpine.$data(document.querySelector('[x-data=\"wbBoard\"]'))"
 
 RUN_A = "01PLANDISCARDAAAAAAAAA"
 
@@ -267,7 +269,7 @@ def head_chip(page):
 
 def reload_plan(page, slug):
     """Re-read the plan the way every board trigger does, then settle."""
-    page.evaluate(f"(s) => {SH}.loadPlan(s)", slug)
+    page.evaluate(f"(s) => {BOARD}.loadPlan(s)", slug)
     page.wait_for_timeout(350)
 
 

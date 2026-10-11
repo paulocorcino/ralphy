@@ -53,10 +53,11 @@ const PROMPT_GH_ISSUE_VIEW: usize = 20;
 /// check of a detached file window's message from `wb-detached.ts` (#653);
 /// 4209 since a file tab passes its bytes or its refusal to the viewer as one
 /// value (#653); 4121 since the runs moved to the Alpine store `runs` (#621);
-/// 3803 since the Runs panel moved to the component `wbRuns` (#621).
+/// 3803 since the Runs panel moved to the component `wbRuns` (#621);
+/// 3300 since the board moved to the component `wbBoard` (#621).
 /// Its shell-only types are in `wb-shell-types.d.ts` and it imports them on
 /// one line (#653).
-const APP_TS_LINES: usize = 3803;
+const APP_TS_LINES: usize = 3300;
 /// Lines of `crates/ralphy-daemon/assets/ui/wb-console.ts`, the console
 /// factory (ADR-0073 D8, which starts this ratchet with the first fold move).
 /// 5842 since ADR-0075 phase 5 moved its pure folds, its GPU budget and its

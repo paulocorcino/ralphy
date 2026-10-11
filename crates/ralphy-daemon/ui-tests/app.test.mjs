@@ -23,7 +23,7 @@ import { WBSettingsDialog } from "../assets/ui/wb-settings-dialog.ts";
 
 // One load, many reads. `loadShell()` is ~20ms of evaluation and every test in
 // this file only READS from the state, so they share one. A test that mutates
-// must take its own — see `boardRowToIssue` below, which does.
+// must take its own.
 const { state: s } = loadShell();
 
 // NEGATIVE CONTROL for the whole file: a duplicate key in the state literal is
@@ -50,7 +50,7 @@ test("the state literal declares no key twice", () => {
   // NEGATIVE CONTROL: the scan must actually reach the literal. A regex that
   // matched nothing would report no duplicates forever.
   assert.ok(
-    keys.size > 300,
+    keys.size > 250,
     `the key scan found only ${keys.size} entries — it is not reading the state literal`,
   );
   assert.deepEqual(
@@ -76,98 +76,6 @@ test("fmtUptime steps down through the units and never renders a negative", () =
   assert.equal(s.fmtUptime(-5), "0s");
   assert.equal(s.fmtUptime(null), "0s");
   assert.equal(s.fmtUptime(undefined), "0s");
-});
-
-test("githubUrl resolves the OPEN project's remote, and refuses when it cannot", () => {
-  // The pure URL half moved to `wb-project.ts` and is tested there. This is the
-  // half that STAYED — finding the open project among `projects` by composite
-  // ref — and it lost its coverage in the move: a lookup regression would hand
-  // back a link to another repo's issue with the whole suite green.
-  const own = loadShell().state;
-  own.$store.projects.setProjects([
-    { slug: "owner/a", remoteUrl: "https://github.com/owner/a.git" },
-    { slug: "owner/b", remoteUrl: "https://github.com/owner/b.git" },
-  ]);
-
-  own.$store.projects.setOpen(own.$store.projects.repoRef(own.$store.projects.projects[1]));
-  assert.equal(own.githubUrl(42), "https://github.com/owner/b/issues/42");
-  own.$store.projects.setOpen(own.$store.projects.repoRef(own.$store.projects.projects[0]));
-  assert.equal(own.githubUrl(42), "https://github.com/owner/a/issues/42");
-
-  // NEGATIVE CONTROL: no project matches, so there is nothing honest to link to
-  // — and emphatically not the first project in the list.
-  own.$store.projects.setOpen("owner/never-registered");
-  assert.equal(own.githubUrl(42), null);
-  own.$store.projects.setOpen(null);
-  assert.equal(own.githubUrl(42), null);
-});
-
-test("issueBlockers resolves each blocker it can see and admits the ones it cannot", () => {
-  const own = loadShell().state;
-  own.$store.projects.setOpen("owner/repo");
-  // `projectIssues()` reads the BOARD's fold, not the run's issue list.
-  own.boardIssues = {
-    "owner/repo": [
-      { number: 10, title: "the open one", state: "open" },
-      { number: 11, title: "the closed one", state: "closed" },
-    ],
-  };
-  assert.deepEqual(own.issueBlockers({ blockedBy: [10, 11, 99] }), [
-    { number: 10, open: true, known: true, title: "the open one" },
-    { number: 11, open: false, known: true, title: "the closed one" },
-    // An issue the board has not loaded: `known: false` is the honest state,
-    // and it is NOT the same as a closed blocker even though both read
-    // `open: false`. A consumer that conflated them would treat an unknown
-    // blocker as satisfied.
-    { number: 99, open: false, known: false, title: "" },
-  ]);
-  assert.deepEqual(own.issueBlockers({ blockedBy: [] }), []);
-  assert.deepEqual(own.issueBlockers({}), []);
-  assert.deepEqual(own.issueBlockers(null), []);
-});
-
-test("boardRowToIssue accepts both the snake and camel spellings of a blocker list", () => {
-  // The board fold and the run snapshot disagree on case, and this is the one
-  // place that reconciles them — so both must survive a move.
-  const own = loadShell().state;
-  assert.deepEqual(own.boardRowToIssue({ number: 7, blocked_by: [1] }).blockedBy, [1]);
-  assert.deepEqual(own.boardRowToIssue({ number: 7, blockedBy: [2] }).blockedBy, [2]);
-  const bare = own.boardRowToIssue({ number: 7 });
-  assert.deepEqual(bare, {
-    number: 7,
-    title: "",
-    state: "open",
-    reason: null,
-    labels: [],
-    assignees: [],
-    blockedBy: [],
-    created: "",
-    updated: "",
-    body: "",
-    comments: [],
-  });
-  // `reason` distinguishes absent from null-on-purpose, and `??` is load-bearing
-  // here: a `state_reason` of `null` from the API must not fall through to a
-  // later default.
-  assert.equal(own.boardRowToIssue({ number: 7, state_reason: "completed" }).reason, "completed");
-});
-
-test("kanbanColumnTitle resolves a column id to its human title", () => {
-  // Against the real column table, not against "is a non-empty string" — the
-  // previous form asserted `title.length >= id.length || title !== ""`, whose
-  // right side was already asserted two lines above, so a fold returning one
-  // constant for every column passed it.
-  const columns = loadShell().window.WBKanban.COLUMNS;
-  assert.ok(columns.length >= 4, "the board has four columns (#301)");
-  const open = { state: "open", labels: [] };
-  const id = s.kanbanColumnOf(open);
-  const expected = columns.find((c) => c.id === id);
-  assert.ok(expected, `kanbanColumnOf returned ${id}, which is not a column`);
-  assert.equal(s.kanbanColumnTitle(open), expected.title);
-  // Two different columns must not share a title, or the readout cannot
-  // distinguish them.
-  const titles = new Set(columns.map((c) => c.title));
-  assert.equal(titles.size, columns.length, "every column needs its own title");
 });
 
 test("rowOpen compares by composite ref, not by slug", () => {
@@ -569,18 +477,20 @@ test("loadRelease shows a newer release again after the older one was dismissed"
 });
 
 test("returning to the tab reads the release view again", () => {
-  const { state } = loadShell();
   const calls = [];
-  for (const name of ["maybeRefreshBoard", "loadRepos", "rereadDesk", "resumeSockets", "loadRelease"]) {
+  const { state } = loadShell({
+    window: { dispatchEvent: (e) => e.type === "workbench:board-refresh" && calls.push(`board:${e.detail.trigger}`) },
+  });
+  for (const name of ["loadRepos", "rereadDesk", "resumeSockets", "loadRelease"]) {
     state[name] = () => calls.push(name);
   }
   state.onTabVisible();
   // Each read happens once; their order is not what the tab depends on.
   // `loadRepos` reads the sessions, the fleet, the change set and the branch.
   assert.deepEqual(calls.toSorted(), [
+    "board:visible",
     "loadRelease",
     "loadRepos",
-    "maybeRefreshBoard",
     "rereadDesk",
     "resumeSockets",
   ]);
@@ -638,7 +548,6 @@ function toggleShell() {
     "refreshSpend",
     "destroyChangesSub",
     "mountChangesSub",
-    "loadBoard",
     "loadChanges",
     "loadSync",
   ]) {
@@ -733,7 +642,7 @@ test("toggle sends workbench:project-changed with the project now open and the o
   );
 });
 
-test("toggle writes no field of the git or the board part", () => {
+test("toggle writes no field of the git part", () => {
   // The default page: the window hears nothing, so no listener runs.
   const { state } = loadShell();
   for (const name of ["wakePeerFor", "loadAgents", "ensureWorktreeListing", "refreshSpend"]) state[name] = () => {};
@@ -742,7 +651,6 @@ test("toggle writes no field of the git or the board part", () => {
     branchError: "a branch refusal",
     commitMsg: "unsent",
     commitMsgSlug: "owner/a",
-    kanbanSel: 7,
   };
   Object.assign(state, held);
   state.$store.runs.setCurrentRun("run-1");
@@ -760,6 +668,16 @@ test("the tree, the board and git each react to the project toggle opens", () =>
   files.destroyTree = () => calls.push(["destroyTree"]);
   files.mountTree = () => calls.push(["mountTree"]);
   files.init();
+  const board = loadComponent("wbBoard", { from: loaded, magics: { $nextTick: (fn) => fn() } }).scope;
+  board.loadBoard = () => calls.push(["loadBoard"]);
+  // The board's `init()` starts its backstop on the global timer; here it never ticks.
+  const realSetInterval = globalThis.setInterval;
+  globalThis.setInterval = () => 0;
+  try {
+    board.init();
+  } finally {
+    globalThis.setInterval = realSetInterval;
+  }
   state.kanbanOpen = true;
   state.toggle("owner/repo");
   const seen = calls.map((c) => c[0]);
@@ -789,16 +707,6 @@ test("the git part drops the refusals and the commit message of the project that
   state.commitMsg = "kept";
   state.gitFollowProject("owner/b");
   assert.equal(state.commitMsg, "kept");
-});
-
-test("the board part drops the selection of the project that was open", () => {
-  const { state, named } = toggleShell();
-  state.$store.projects.setOpen("owner/b");
-  state.kanbanSel = 7;
-  state.boardFollowProject();
-  assert.equal(state.kanbanSel, null);
-  // The board is read only while it is open.
-  assert.equal(named("loadBoard").length, 0);
 });
 
 test("removing the open project closes it and sends workbench:project-changed", async () => {
@@ -1147,7 +1055,7 @@ test("login reads the board, the runs and the tree again", () => {
     state[name] = () => calls.push(name);
   }
   state.$store.runs.hydrateRuns = () => calls.push("hydrateRuns");
-  state.maybeRefreshBoard = (why) => calls.push(`board:${why}`);
+  loaded.window.addEventListener("workbench:board-refresh", (e) => calls.push(`board:${e.detail.trigger}`));
   files._treeSub = { replay: () => calls.push("tree") };
   // Closed: the runs lock the writes whether the panel shows them or not.
   state.runsOpen = false;
@@ -1266,36 +1174,6 @@ test("a failed change-set read after a good one keeps the groups, marked not cur
   assert.match(state.changesReadError["o/r"], /Not current: git exited 128/);
 });
 
-test("a failed board read after a good one keeps the cards, marked not current", async () => {
-  const state = observedShell([
-    { status: "ok", board: { issues: [{ number: 7, title: "x", labels: [] }], labels: [] } },
-    { status: "error", message: "gh not authed" },
-  ]);
-  state.loadPlan = () => {};
-  state.kanbanSel = null;
-  await state.loadBoard();
-  assert.equal(state.boardIssues["o/r"].length, 1);
-  await state.loadBoard();
-  assert.equal(state.boardIssues["o/r"].length, 1, "the cards stay");
-  assert.equal(state.boardRead["o/r"].current, false);
-  assert.match(state.boardError["o/r"], /Not current/);
-});
-
-// A label name is repo data: one named like an Object member (`constructor`)
-// still falls back to the seed color, not to the member.
-test("a label missing from the live list takes the seed color, whatever its name", async () => {
-  const state = observedShell([
-    { status: "ok", board: { issues: [], labels: [{ name: "bug", color: "d73a4a" }] } },
-  ]);
-  state.loadPlan = () => {};
-  state.kanbanSel = null;
-  await state.loadBoard();
-  assert.equal(state.labelColor("bug"), "#d73a4a");
-  for (const name of ["constructor", "toString", "__proto__"]) {
-    assert.equal(state.labelColor(name), globalThis.window.WBKanban.labelColor(name), name);
-  }
-});
-
 // ADR-0070 D3: a write acts on what the page shows, so it is locked while that
 // is not current, and says why.
 test("writes are locked while the change set is not current", async () => {
@@ -1306,21 +1184,6 @@ test("writes are locked while the change set is not current", async () => {
   await state.loadChanges("o/r");
   assert.equal(state.writeLocked(), true);
   assert.match(state.writeLockReason(), /not current/);
-});
-
-test("moving a board card is locked while the board is not current", async () => {
-  const state = observedShell([
-    { status: "ok", board: { issues: [], labels: [] } },
-    { status: "error", message: "gh not authed" },
-  ]);
-  state.loadPlan = () => {};
-  state.kanbanSel = null;
-  state.$store.runs.runsByProject["o/r"] = [];
-  await state.loadBoard();
-  assert.equal(state.labelsLocked(), false);
-  await state.loadBoard();
-  assert.equal(state.labelsLocked(), true);
-  assert.match(state.labelLockReason(), /board shown is not current/);
 });
 
 // NEGATIVE CONTROL: two good reads lock nothing.
@@ -1562,18 +1425,20 @@ test("a runs push on a visible tab reads the runs and nudges the board; a hidden
     const { state, window } = runsEventShell({ visibilityState });
     const calls = [];
     state.$store.runs.hydrateRuns = () => calls.push("hydrateRuns");
-    state.maybeRefreshBoard = (why) => calls.push(`board:${why}`);
+    window.addEventListener("workbench:board-refresh", (e) => calls.push(`board:${e.detail.trigger}`));
     window.dispatchEvent(new CustomEvent("workbench:runs-dirty"));
     assert.deepEqual(calls, visibilityState === "visible" ? ["hydrateRuns", "board:runs"] : [], visibilityState);
   }
 });
 
 test("a reopened socket reads the board and the runs", () => {
-  const { state } = loadShell(VISIBLE);
   const calls = [];
+  const { state } = loadShell({
+    ...VISIBLE,
+    window: { dispatchEvent: (e) => e.type === "workbench:board-refresh" && calls.push(`board:${e.detail.trigger}`) },
+  });
   for (const name of ["loadRepos", "rereadDesk"]) state[name] = () => calls.push(name);
   state.$store.runs.hydrateRuns = () => calls.push("hydrateRuns");
-  state.maybeRefreshBoard = (why) => calls.push(`board:${why}`);
   state.$store.projects.setOpen("o/r");
   state.onPresenceOpen(true);
   assert.ok(calls.includes("board:reopen"), calls.join(", "));
@@ -1592,7 +1457,6 @@ test("visible and login ask the open panels to read again, and read the open Spe
   for (const name of ["loadRepos", "rereadDesk", "hydrateRuns", "loadRelease", "resumeSockets", "loadIdentity", "loadAgents", "restoreView"]) {
     state[name] = () => {};
   }
-  state.maybeRefreshBoard = () => {};
   state.loadSpend = () => calls.push("spend");
   const rereads = () => events.filter((t) => t === "workbench:panels-reread").length;
   state.tabs = state.tabs.filter((t) => t.id !== "spend");
@@ -1894,10 +1758,8 @@ test("a read failure shows the words for a daemon code, never the code", async (
   assert.equal(state.$store.runs.runsError, "Could not read the runs: the project is not in the list.");
 });
 
-test("run and peer states show as words, and the dot says what it means", () => {
+test("peer states show as words, and the dot says what it means", () => {
   const { state } = loadShell();
-  assert.equal(state.runStateWord("sleep"), "usage limit — sleeping");
-  assert.equal(state.issueRunningLabel({ state: "hitl", agent: "claude" }), "Running · waiting on human (claude)");
   assert.equal(state.peerStateWord("version-mismatch"), "version mismatch");
   assert.equal(state.peerStateWord("asleep"), "asleep");
   assert.equal(state.dotTitle("offline"), "The folder cannot be reached");

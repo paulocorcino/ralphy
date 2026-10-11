@@ -3914,6 +3914,7 @@ const SHELL_FAMILY: &[(&str, &str)] = &[
         "wb-add-project-dialog.ts",
         include_str!("../assets/ui/wb-add-project-dialog.ts"),
     ),
+    ("wb-board.ts", include_str!("../assets/ui/wb-board.ts")),
     (
         "wb-consoles-tab.ts",
         include_str!("../assets/ui/wb-consoles-tab.ts"),

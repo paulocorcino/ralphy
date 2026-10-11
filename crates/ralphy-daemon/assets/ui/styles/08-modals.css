@@ -117,7 +117,8 @@
 .security-dialog,
 .settings-dialog,
 .release-dialogs,
-.runs-panel {
+.runs-panel,
+.board-panel {
   display: contents;
 }
 /* The two dialogs a MODAL can raise (`askConfirm` / `askPrompt`) sit one tier

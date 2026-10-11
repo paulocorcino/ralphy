@@ -42,6 +42,8 @@ EXE = os.path.join(TARGET, "ralphy.exe" if os.name == "nt" else "ralphy")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 # The Runs panel and the run modal: the component `wbRuns`.
 RUNS = "Alpine.$data(document.querySelector('[x-data=\"wbRuns\"]'))"
+# The board is the component `wbBoard` (wb-board.ts).
+BOARD = "Alpine.$data(document.querySelector('[x-data=\"wbBoard\"]'))"
 # The Settings dialog's own component, nested in shell().
 SET = "Alpine.$data(document.querySelector('.settings-dialog'))"
 # The About, What's new and update dialogs' own component, nested in shell().
@@ -247,7 +249,7 @@ def main():
             head = "document.querySelector('.kanban-col-head svg[x-icon]')"
             read_head = f"() => ({{ cls: {head}.getAttribute('class') || '', body: {head}.innerHTML }})"
             before = page.evaluate(read_head)
-            page.evaluate(f"() => {{ {SH}.KANBAN.COLUMNS[0].lucide = 'star'; }}")
+            page.evaluate(f"() => {{ {BOARD}.KANBAN.COLUMNS[0].lucide = 'star'; }}")
             settle(page)
             after = page.evaluate(read_head)
             check(
@@ -259,7 +261,7 @@ def main():
                 and after["body"] != "",
                 f"before={before['cls']} after={after['cls']}",
             )
-            page.evaluate(f"() => {{ {SH}.KANBAN.COLUMNS[0].lucide = 'inbox'; }}")
+            page.evaluate(f"() => {{ {BOARD}.KANBAN.COLUMNS[0].lucide = 'inbox'; }}")
 
             # --- scenario 5: a sweep over every surface -----------------------
             page.evaluate(f"(s) => {SH}.toggle(s)", arg=slug_a)

@@ -93,6 +93,7 @@ const pressEscape = (bound) => {
 test("Escape closes every modal, Settings and Security included", () => {
   const paths = SCRIMS.map((s) => s.path);
   assert.deepEqual(paths, [
+    "planModal.open",
     "runOpen",
     "settingsOpen",
     "securityOpen",
@@ -102,7 +103,6 @@ test("Escape closes every modal, Settings and Security included", () => {
     "confirmModal.open",
     "promptModal.open",
     "movePick.open",
-    "planModal.open",
     "addProject.open",
     "addHost.open",
   ]);
@@ -111,6 +111,7 @@ test("Escape closes every modal, Settings and Security included", () => {
   assert.deepEqual(
     Object.fromEntries(SCRIMS.filter((s) => s.component).map((s) => [s.path, s.component])),
     {
+      "planModal.open": "wbBoard",
       runOpen: "wbRuns",
       settingsOpen: "wbSettingsDialog",
       securityOpen: "wbSecurityDialog",
@@ -136,10 +137,10 @@ test("Escape closes every modal, Settings and Security included", () => {
   }
 });
 
-// Two rows because the window asks the scrims in document order: Plan is asked
-// after the confirm, Settings before it.
+// Three rows because the window asks the scrims in document order: Plan and
+// Settings are asked before the confirm, Move after it.
 test("one Escape closes only the top modal", async () => {
-  for (const under of ["planModal.open", "settingsOpen"]) {
+  for (const under of ["planModal.open", "settingsOpen", "movePick.open"]) {
     const view = page();
     const { state } = view;
     const bound = bindAll(view);

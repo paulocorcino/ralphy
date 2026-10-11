@@ -59,6 +59,8 @@ BASE = f"http://127.0.0.1:{PORT}/"
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The board is the component `wbBoard` (wb-board.ts).
+BOARD = "Alpine.$data(document.querySelector('[x-data=\"wbBoard\"]'))"
 # The Settings dialog's own component, nested in shell().
 SET = "Alpine.$data(document.querySelector('.settings-dialog'))"
 
@@ -245,7 +247,7 @@ def main():
             page.wait_for_timeout(500)
             page.evaluate(f"() => {SH}.toggleKanban()")
             page.wait_for_timeout(400)
-            page.evaluate(f"() => {SH}.openIssue(1)")
+            page.evaluate(f"() => {BOARD}.openIssue(1)")
             page.wait_for_timeout(300)
             page.evaluate(f"() => {SET}.settingsOpen = true")
             page.wait_for_timeout(500)

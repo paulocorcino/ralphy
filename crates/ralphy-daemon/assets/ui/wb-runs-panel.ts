@@ -16,12 +16,13 @@
    --------------------------------------------------------------------------- */
 import { component } from "./wb-alpine.ts";
 import { WBFail } from "./wb-fail.ts";
+import { sendWindow } from "./wb-events.ts";
 import { WBRun } from "./wb-runs.ts";
 import type { Run, RunIssue } from "./wb-shell-types.d.ts";
 
 export function wbRuns() {
   // Every `shell()` member this component's code or markup reads or calls.
-  return component(["runsOpen", "toggleRuns", "nowMs", "runsActionMsg", "flash", "askConfirm", "scrim", "agents", "verbLocked", "verbTitle", "verbRequestedText", "kanbanOpen", "toggleKanban", "openIssue"], {
+  return component(["runsOpen", "toggleRuns", "nowMs", "runsActionMsg", "flash", "askConfirm", "scrim", "agents", "verbLocked", "verbTitle", "verbRequestedText", "kanbanOpen", "toggleKanban"], {
     // The trail node the operator arrived at from the board (#301): a marker,
     // not a selection.
     trailFocus: null as number | null,
@@ -116,13 +117,14 @@ export function wbRuns() {
     },
     // Run → board (#301): a trail node opens that issue's detail. The Runs
     // panel closes first (`z-index: 150`, sharing the drawer's right edge).
-    // `toggleKanban()` resets `kanbanSel`, so it runs BEFORE `openIssue`.
+    // `toggleKanban()` resets `kanbanSel`, so it runs BEFORE the issue opens
+    // (wb-board.ts).
     focusIssue(number: number) {
       window.WB.emit("run-issue-focus", { project: this.$store.projects.openSlug, runid: this.$store.runs.currentRun()?.runid, issue: number });
       if (this.runsOpen) this.toggleRuns();
       this.trailFocus = null;
       if (!this.kanbanOpen) this.toggleKanban();
-      this.openIssue(number);
+      sendWindow(window, "workbench:issue-open", { issue: number });
     },
 
     // Board → run (#301): the card's run pill opens the Runs panel on THAT run,

@@ -57,6 +57,8 @@ SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 # The Runs panel and the run modal: the component `wbRuns`.
 RUNS = "Alpine.$data(document.querySelector('[x-data=\"wbRuns\"]'))"
+# The board is the component `wbBoard` (wb-board.ts).
+BOARD = "Alpine.$data(document.querySelector('[x-data=\"wbBoard\"]'))"
 
 RUN_A = "01RUNAAAAAAAAAAAAAAAAA"
 
@@ -238,7 +240,7 @@ SPY_JS = """
   // Attribute each ACCEPTED load to the trigger that asked for it: the recorded
   // `board.list` payload is `{repo}` for all five, so a count delta alone cannot
   // tell a `visible` refresh from a stray `runs` push.
-  const d = Alpine.$data(document.querySelector('[x-data]'));
+  const d = Alpine.$data(document.querySelector('[x-data="wbBoard"]'));
   const realMaybe = d.maybeRefreshBoard.bind(d);
   d.maybeRefreshBoard = (trigger) => {
     const before = window.__boardCalls.length;
@@ -312,7 +314,7 @@ def main():
             # --- scenario 4: a label mutation reply refreshes ------------------
             before = board_calls(page)
             page.evaluate(
-                f"async () => {{ const d = {SH};"
+                f"async () => {{ const d = {BOARD};"
                 f" d.toggleLabel(d.projectIssues().find(i => i.number === 72), 'AFK');"
                 f" await new Promise(r => setTimeout(r, 300)); }}"
             )
@@ -325,7 +327,7 @@ def main():
             page.evaluate("() => { window.__labelMode = 'error'; }")
             before = board_calls(page)
             page.evaluate(
-                f"async () => {{ const d = {SH};"
+                f"async () => {{ const d = {BOARD};"
                 f" d.toggleLabel(d.projectIssues().find(i => i.number === 71), 'AFK');"
                 f" await new Promise(r => setTimeout(r, 300)); }}"
             )
@@ -337,7 +339,7 @@ def main():
             # --- scenario 5: a run snapshot change refreshes -------------------
             # Back-date the load clock past REFRESH_MIN_GAP_MS: the coalescing
             # itself is pinned by scenario 1's table, this pins the WIRING.
-            page.evaluate(f"() => {{ {SH}._boardLoadedAt = Date.now() - 10000; }}")
+            page.evaluate(f"() => {{ {BOARD}._boardLoadedAt = Date.now() - 10000; }}")
             before = board_calls(page)
             doc_a.write_text(json.dumps(snapshot(RUN_A, "executing", "executing")), encoding="utf-8")
             page.wait_for_function(f"() => Alpine.store('runs').projectRuns().length === 1", timeout=15000)
@@ -355,35 +357,35 @@ def main():
             # `_boardLoadedAt` is stamped before the await, so a refused fold must
             # not leave the board un-throttled and re-folding on every push.
             page.evaluate("() => { window.__boardMode = 'error'; }")
-            page.evaluate(f"() => {{ {SH}._boardLoadedAt = Date.now() - 10000; }}")
+            page.evaluate(f"() => {{ {BOARD}._boardLoadedAt = Date.now() - 10000; }}")
             before = board_calls(page)
-            page.evaluate(f"() => {SH}.refreshBoard()")
+            page.evaluate(f"() => {BOARD}.refreshBoard()")
             page.wait_for_timeout(400)
             mid = board_calls(page)
             check("an erroring fold still counts as a load", mid == before + 1, f"{before} -> {mid}")
             check(
                 "…and raises the board error state",
-                page.evaluate(f"() => !!{SH}.boardError[Alpine.store('projects').openSlug]") is True,
-                f"boardError={page.evaluate(f'() => {SH}.boardError[Alpine.store(`projects`).openSlug]')!r}",
+                page.evaluate(f"() => !!{BOARD}.boardError[Alpine.store('projects').openSlug]") is True,
+                f"boardError={page.evaluate(f'() => {BOARD}.boardError[Alpine.store(`projects`).openSlug]')!r}",
             )
-            page.evaluate(f"() => {SH}.maybeRefreshBoard('runs')")
+            page.evaluate(f"() => {BOARD}.maybeRefreshBoard('runs')")
             page.wait_for_timeout(400)
             n = board_calls(page)
             check("…so the next push inside the min gap is throttled away", n == mid, f"{mid} -> {n}")
             page.evaluate("() => { window.__boardMode = 'ok'; }")
-            page.evaluate(f"() => {SH}.refreshBoard()")
+            page.evaluate(f"() => {BOARD}.refreshBoard()")
             page.wait_for_timeout(400)
             check(
                 "the board recovers from the error state on the next good fold",
-                page.evaluate(f"() => {SH}.boardError[Alpine.store('projects').openSlug]") in (None, ""),
+                page.evaluate(f"() => {BOARD}.boardError[Alpine.store('projects').openSlug]") in (None, ""),
                 "",
             )
 
             # --- a fold in flight COALESCES the next trigger, never drops it ---
             page.evaluate("() => { window.__boardMode = 'defer'; window.__deferred = null; }")
-            page.evaluate(f"() => {{ {SH}._boardLoadedAt = Date.now() - 10000; }}")
+            page.evaluate(f"() => {{ {BOARD}._boardLoadedAt = Date.now() - 10000; }}")
             before = board_calls(page)
-            page.evaluate(f"() => {SH}.refreshBoard()")
+            page.evaluate(f"() => {BOARD}.refreshBoard()")
             page.wait_for_timeout(300)
             check("a deferred fold is in flight", board_calls(page) == before + 1, "")
             check(
@@ -392,7 +394,7 @@ def main():
                 "",
             )
             # A second trigger while it is in flight must NOT spawn a second fold…
-            page.evaluate(f"() => {SH}.refreshBoard()")
+            page.evaluate(f"() => {BOARD}.refreshBoard()")
             page.wait_for_timeout(300)
             check("…a concurrent trigger spawns no second fold", board_calls(page) == before + 1, "")
             # …but must not be lost either: releasing the first replays it once.
@@ -439,7 +441,7 @@ def main():
             # A hidden tab reads nothing on a push (ADR-0070 D2, commit c7ee39f6;
             # crates/ralphy-daemon/ui-tests/app.test.mjs covers the read itself),
             # so this write is left unread until the tab becomes visible in 6b.
-            page.evaluate(f"() => {{ {SH}._boardLoadedAt = Date.now() - 10000; }}")
+            page.evaluate(f"() => {{ {BOARD}._boardLoadedAt = Date.now() - 10000; }}")
             before = board_calls(page)
             doc_a.write_text(json.dumps(snapshot(RUN_A, "planning", "planning")), encoding="utf-8")
             page.wait_for_timeout(600)
@@ -447,7 +449,7 @@ def main():
             check("a hidden tab never refreshes the board", n == before, f"{before} -> {n}")
 
             # --- scenario 6b: becoming visible again reads the push it missed --
-            page.evaluate(f"() => {{ {SH}._boardLoadedAt = Date.now() - 10000; }}")
+            page.evaluate(f"() => {{ {BOARD}._boardLoadedAt = Date.now() - 10000; }}")
             before = board_calls(page)
             if vis != "hidden":
                 page.evaluate("() => { delete document.visibilityState; }")
@@ -467,14 +469,14 @@ def main():
             )
 
             # --- scenario 7: the slow backstop --------------------------------
-            page.evaluate(f"() => {{ {SH}._boardLoadedAt = Date.now() - 130000; }}")
+            page.evaluate(f"() => {{ {BOARD}._boardLoadedAt = Date.now() - 130000; }}")
             before = board_calls(page)
-            page.evaluate(f"() => {SH}.boardBackstopTick()")
+            page.evaluate(f"() => {BOARD}.boardBackstopTick()")
             page.wait_for_timeout(400)
             n = board_calls(page)
             check("a backstop tick past its window reloads the board", n == before + 1, f"{before} -> {n}")
 
-            page.evaluate(f"() => {SH}.boardBackstopTick()")
+            page.evaluate(f"() => {BOARD}.boardBackstopTick()")
             page.wait_for_timeout(400)
             n2 = board_calls(page)
             check("the very next backstop tick coalesces away", n2 == n, f"{n} -> {n2}")
@@ -530,8 +532,8 @@ def main():
             # The pill must NOT also open the detail drawer (`@click.stop`).
             check(
                 "the pill click did not fall through to the card",
-                page.evaluate(f"() => {SH}.kanbanSel") is None,
-                f"kanbanSel={page.evaluate(f'() => {SH}.kanbanSel')!r}",
+                page.evaluate(f"() => {BOARD}.kanbanSel") is None,
+                f"kanbanSel={page.evaluate(f'() => {BOARD}.kanbanSel')!r}",
             )
 
             # --- scenario 10: trail node -> the issue detail -------------------
@@ -546,7 +548,7 @@ def main():
             page.wait_for_timeout(600)
             check("clicking a trail node keeps the board open", page.evaluate(f"() => {SH}.kanbanOpen") is True)
             check("…and closes the Runs panel", page.evaluate(f"() => {SH}.runsOpen") is False)
-            sel = page.evaluate(f"() => {SH}.kanbanSel")
+            sel = page.evaluate(f"() => {BOARD}.kanbanSel")
             check("…selecting that issue", sel == 73, f"got={sel!r}")
             drawer = page.locator(".kanban-detail.open")
             check(

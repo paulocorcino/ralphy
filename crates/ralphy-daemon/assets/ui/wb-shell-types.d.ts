@@ -62,8 +62,6 @@ export type ShellLate = {
   _actionTimer?: Timer;
   /** Counts the `worktree.list` reads; only the newest one is kept. */
   _listingSeq?: number;
-  /** Counts the `issue.show` reads; only the newest one is kept. */
-  _issueDetailGen?: number;
 };
 
 /** The repo's ready plan on the board: its text and `WBRun.planSummary` of it. */

@@ -437,6 +437,15 @@ interface WindowEventMap {
   "workbench:run-output": CustomEvent<{ text: string }>;
   /** A verb the daemon ran failed or ended; `message` says how. */
   "workbench:run-verb-failed": CustomEvent<{ message: string }>;
+  /** A refresh trigger of the board (#301); the board's predicate decides. */
+  "workbench:board-refresh": CustomEvent<{ trigger: string }>;
+  /** The board opened. */
+  "workbench:board-opened": CustomEvent<null>;
+  /** Open the board's detail of this issue. */
+  "workbench:issue-open": CustomEvent<{ issue: number }>;
+  /** Ask for the open project's issues the board already holds: the board
+   * fills `issues`, during the send. */
+  "workbench:board-issues": CustomEvent<{ issues: import("./wb-kanban.ts").Issue[] }>;
   /** The open checkout's HEAD moved. */
   "workbench:head-moved": CustomEvent<{ ref: string }>;
   "workbench:menus-close": CustomEvent<null>;

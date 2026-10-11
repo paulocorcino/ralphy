@@ -47,6 +47,8 @@ TARGET = os.environ.get("RALPHY_WB_TARGET") or os.path.join(REPO_ROOT, "target",
 EXE = os.path.join(TARGET, "ralphy.exe" if os.name == "nt" else "ralphy")
 CHILD = os.path.join(TARGET, "session_test_child.exe" if os.name == "nt" else "session_test_child")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The board is the component `wbBoard` (wb-board.ts).
+BOARD = "Alpine.$data(document.querySelector('[x-data=\"wbBoard\"]'))"
 # The Hosts dialog's own component, nested in shell().
 HOSTS = "Alpine.$data(document.querySelector('.hosts-dialog'))"
 # The Add a project dialog's own component, nested in shell().
@@ -162,12 +164,12 @@ def active(page):
     return page.evaluate(ACTIVE)
 
 
-def flag(page, expr):
-    return page.evaluate(f"() => {SH}.{expr}")
+def flag(page, expr, root=SH):
+    return page.evaluate(f"() => {root}.{expr}")
 
 
-def wait_flag(page, expr, value, timeout=5000):
-    page.wait_for_function(f"(v) => {SH}.{expr} === v", arg=value, timeout=timeout)
+def wait_flag(page, expr, value, timeout=5000, root=SH):
+    page.wait_for_function(f"(v) => {root}.{expr} === v", arg=value, timeout=timeout)
 
 
 def settle(page):
@@ -351,8 +353,8 @@ def main():
             check("3 Escape cancels the prompt", page.evaluate("() => window.__prompt") is None)
 
             # --- scenario 4: a confirm over the Plan modal --------------------
-            page.evaluate(f"() => {{ {SH}.planModal.open = true; }}")
-            wait_flag(page, "planModal.open", True)
+            page.evaluate(f"() => {{ {BOARD}.planModal.open = true; }}")
+            wait_flag(page, "planModal.open", True, root=BOARD)
             settle(page)
             page.evaluate(f"() => {{ window.__ans = {SH}.askConfirm({{ title: 'Discard' }}); }}")
             wait_flag(page, "confirmModal.open", True)
@@ -361,7 +363,7 @@ def main():
             check("4 the confirm starts on Cancel", a and a["text"] == "Cancel", f"active={a}")
             page.keyboard.press("Enter")
             check("4 Enter on the focused Cancel cancels", page.evaluate("() => window.__ans") is False)
-            check("4 …and the plan under it stays open", flag(page, "planModal.open") is True)
+            check("4 …and the plan under it stays open", flag(page, "planModal.open", BOARD) is True)
 
             page.evaluate(f"() => {{ window.__ans = {SH}.askConfirm({{ title: 'Discard' }}); }}")
             wait_flag(page, "confirmModal.open", True)
@@ -372,7 +374,7 @@ def main():
             # Focus goes back to the Plan's button; the same Enter's keypress
             # must not click it.
             page.wait_for_timeout(200)
-            check("4 …and that Enter does not click the button focus returns to", flag(page, "planModal.open") is True)
+            check("4 …and that Enter does not click the button focus returns to", flag(page, "planModal.open", BOARD) is True)
 
             page.evaluate(f"() => {{ window.__ans = {SH}.askConfirm({{ title: 'Discard' }}); }}")
             wait_flag(page, "confirmModal.open", True)
@@ -381,12 +383,12 @@ def main():
             page.wait_for_timeout(200)
             check(
                 "4 one Escape closes the confirm alone",
-                page.evaluate("() => window.__ans") is False and flag(page, "planModal.open") is True,
-                f"plan={flag(page, 'planModal.open')}",
+                page.evaluate("() => window.__ans") is False and flag(page, "planModal.open", BOARD) is True,
+                f"plan={flag(page, 'planModal.open', BOARD)}",
             )
             page.keyboard.press("Escape")
             page.wait_for_timeout(200)
-            check("4 the next Escape closes the plan", flag(page, "planModal.open") is False)
+            check("4 the next Escape closes the plan", flag(page, "planModal.open", BOARD) is False)
 
             # --- scenario 5: a console keeps its keys across a modal ----------
             page.evaluate(f"() => {{ {SH}.active = 'consoles'; }}")
