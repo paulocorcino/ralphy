@@ -3719,6 +3719,10 @@ fn squeeze(src: &str) -> String {
 const CONSOLE_FAMILY: &[(&str, &str)] = &[
     ("wb-console.ts", include_str!("../assets/ui/wb-console.ts")),
     (
+        "wb-console-feeds.ts",
+        include_str!("../assets/ui/wb-console-feeds.ts"),
+    ),
+    (
         "wb-console-gpu.ts",
         include_str!("../assets/ui/wb-console-gpu.ts"),
     ),
@@ -4198,7 +4202,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 // `wb-console.ts` imports the geometry, the window state, the session folds,
                 // the desk folds, the GPU budget, the title, the fence list, the detach, the view, the
                 // terminal, the window chrome, the popup registry, the fences, the desk, the console name,
-                // the input folds and the key bar; the entry
+                // the input folds, the key bar and the feeds; the entry
                 // imports the console, the door for operator messages, and the z stack and
                 // the gestures. Stated HERE because this set is a hardcoded floor:
                 // nothing derives the popup's needs from the tree, so an
@@ -4209,6 +4213,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-console-name.js",
                 "wb-console-input.js",
                 "wb-console-keys.js",
+                "wb-console-feeds.js",
                 "wb-console-session.js",
                 "wb-desk-folds.js",
                 "wb-console-gpu.js",

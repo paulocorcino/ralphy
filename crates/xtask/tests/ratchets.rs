@@ -81,8 +81,10 @@ const APP_TS_LINES: usize = 4209;
 /// `wb-desk.ts` (#623); 2159 since the desk view, the desk read, the
 /// converge, the answer to an upload and the `pagehide` flush moved to
 /// `wb-desk.ts` (#623); 1931 since its input functions and its key bar moved to
-/// `wb-console-keys.ts` (#621).
-const WB_CONSOLE_TS_LINES: usize = 1931;
+/// `wb-console-keys.ts` (#621); 1832 since the ids, the session list read, the
+/// project names, the fleet, the last session poll, `list` and the stale probe
+/// moved to `wb-console-feeds.ts` (#621).
+const WB_CONSOLE_TS_LINES: usize = 1832;
 /// Lines of `crates/ralphy-daemon/assets/ui/wb-notes.ts`, the note cards
 /// (ADR-0073 D8, started by its 2026-10-10 amendment). 2828 at 823cc84c, before
 /// its first cut (#623); 2835 since the cards take the console as a typed dep
