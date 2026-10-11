@@ -3808,6 +3808,14 @@ const CONSOLE_FAMILY: &[(&str, &str)] = &[
         include_str!("../assets/ui/wb-desk-popups.ts"),
     ),
     (
+        "wb-desk-records.ts",
+        include_str!("../assets/ui/wb-desk-records.ts"),
+    ),
+    (
+        "wb-desk-restore.ts",
+        include_str!("../assets/ui/wb-desk-restore.ts"),
+    ),
+    (
         "wb-desk-sink.ts",
         include_str!("../assets/ui/wb-desk-sink.ts"),
     ),
@@ -4213,7 +4221,8 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-events.js",
                 // `wb-console.ts` imports the geometry, the session folds,
                 // the desk folds, the GPU budget, the title, the fence list, the detach, the view, the
-                // terminal, the window chrome, the popup registry, the fences, the desk, the console name,
+                // terminal, the window chrome, the popup registry, the fences, the desk and its records and
+                // restore, the console name,
                 // the input folds, the key bar, the feeds, the dormancy, the window birth and the
                 // placeholder, and they import the window state; the entry
                 // imports the console, the door for operator messages, and the z stack and
@@ -4240,6 +4249,8 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-stage-view.js",
                 "wb-stage-chrome.js",
                 "wb-desk-popups.js",
+                "wb-desk-records.js",
+                "wb-desk-restore.js",
                 "wb-stage-fences.js",
                 "wb-stage-window.js",
                 "wb-stage-columns.js",
@@ -5627,11 +5638,11 @@ fn shell_locks_consoles_and_fences() {
 #[test]
 fn shell_fences_are_a_group() {
     // The console, its fences and its desk records, as one text: the two
-    // gestures live in the fences, the window record in the desk.
+    // gestures live in the fences, the window record in the desk records.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
         include_str!("../assets/ui/wb-stage-fences.ts"),
-        include_str!("../assets/ui/wb-desk.ts"),
+        include_str!("../assets/ui/wb-desk-records.ts"),
     ]
     .concat();
     for pin in ["function startFenceMove(", "function startFenceResize("] {
@@ -6093,6 +6104,7 @@ fn shell_detaches_a_fence() {
         include_str!("../assets/ui/wb-stage-fence-list.ts"),
         include_str!("../assets/ui/wb-stage-fences.ts"),
         include_str!("../assets/ui/wb-desk.ts"),
+        include_str!("../assets/ui/wb-desk-restore.ts"),
         include_str!("../assets/ui/wb-desk-detach.ts"),
     ]
     .concat();
@@ -6297,6 +6309,7 @@ fn shell_detaches_a_fence() {
 fn the_shell_writes_the_desk_only_as_changes() {
     let console = include_str!("../assets/ui/wb-console.ts");
     let desk = include_str!("../assets/ui/wb-desk.ts");
+    let records = include_str!("../assets/ui/wb-desk-records.ts");
     let notes = include_str!("../assets/ui/wb-notes.ts");
     let folds = include_str!("../assets/ui/wb-notes-folds.ts");
     let sync = include_str!("../assets/ui/wb-desk-sync.ts");
@@ -6340,7 +6353,7 @@ fn the_shell_writes_the_desk_only_as_changes() {
         }
     }
     // Every window write names its fields, and the body is built in one place.
-    let squeezed = squeeze(desk);
+    let squeezed = squeeze(records);
     assert!(
         squeezed.contains(r#"emitDesk({op:"set",type:"window",id:win._deskId,fields});"#),
         "setWin must send the fields it was handed, and nothing else"
@@ -6348,6 +6361,7 @@ fn the_shell_writes_the_desk_only_as_changes() {
     assert!(
         !console.contains("changes:")
             && !desk.contains("changes:")
+            && !records.contains("changes:")
             && sync.contains("changes: pending.slice(0, inflight.count)"),
         "the upload body is built by wb-desk-sync.ts alone"
     );
@@ -6429,6 +6443,7 @@ fn shell_survives_a_reload_with_its_detach() {
         include_str!("../assets/ui/wb-desk-popups.ts"),
         include_str!("../assets/ui/wb-stage-fences.ts"),
         include_str!("../assets/ui/wb-desk.ts"),
+        include_str!("../assets/ui/wb-desk-restore.ts"),
         include_str!("../assets/ui/wb-desk-detach.ts"),
     ]
     .concat();
@@ -7228,8 +7243,8 @@ fn the_destructive_console_clicks_confirm_first() {
 #[test]
 fn relaunching_agent_consoles_on_load_is_opt_in() {
     // Every pin reads whitespace-free text: the code, not its layout. The
-    // restore is in the console's desk.
-    let js = squeeze(include_str!("../assets/ui/wb-desk.ts"));
+    // restore is in the console's desk restore.
+    let js = squeeze(include_str!("../assets/ui/wb-desk-restore.ts"));
     let folds = squeeze(include_str!("../assets/ui/wb-desk-folds.ts"));
     assert!(
         folds.contains(r#"record.kind==="console"||relaunchAgents?"relaunch":"placeholder""#),

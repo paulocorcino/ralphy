@@ -123,7 +123,6 @@ const TS_SIZE_BASELINE: &[(&str, usize)] = &[
     ("wb-file-viewer.ts", 1667),
     ("wb-files.ts", 1205),
     ("wb-console-terminal.ts", 1075),
-    ("wb-desk.ts", 945),
     ("wb-stage-fences.ts", 747),
     ("wb-console-title.ts", 716),
     ("wb-spend.ts", 705),

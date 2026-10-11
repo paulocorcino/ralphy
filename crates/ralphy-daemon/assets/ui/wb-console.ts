@@ -4,16 +4,16 @@
    Consoles are draggable, resizable windows on the STAGE, a plane the VIEWPORT
    (`#workspace`, `overflow:auto`) scrolls over. This module builds the console
    from its parts and returns them as `WBConsole`. The parts are: the desk
-   records and the desk `wb-desk.ts`; the feeds `wb-console-feeds.ts`; the
-   title and the worktree switcher `wb-console-title.ts`; the popups
-   `wb-desk-popups.ts`; sleep and resume `wb-console-dormancy.ts`; the window
-   states `wb-stage-window.ts`; the columns `wb-stage-columns.ts`; the fence
-   list `wb-stage-fence-list.ts`; the GPU budget `wb-console-gpu.ts`; the
-   opener's side of a detach `wb-desk-detach.ts`; the view `wb-stage-view.ts`;
-   the key bar `wb-console-keys.ts`; the terminal (a live xterm.js on a PTY
-   over `/ws/session`) `wb-console-terminal.ts`; the chrome `wb-stage-chrome.ts`;
-   the fences `wb-stage-fences.ts`; the window birth `wb-console-spawn.ts`; the
-   placeholder `wb-console-placeholder.ts`.
+   records `wb-desk-records.ts`; the desk `wb-desk.ts`; the feeds
+   `wb-console-feeds.ts`; the title and the worktree switcher
+   `wb-console-title.ts`; the popups `wb-desk-popups.ts`; sleep and resume
+   `wb-console-dormancy.ts`; the window states `wb-stage-window.ts`; the columns
+   `wb-stage-columns.ts`; the fence list `wb-stage-fence-list.ts`; the GPU budget
+   `wb-console-gpu.ts`; the opener's side of a detach `wb-desk-detach.ts`; the
+   view `wb-stage-view.ts`; the key bar `wb-console-keys.ts`; the terminal (a
+   live xterm.js on a PTY) `wb-console-terminal.ts`; the chrome
+   `wb-stage-chrome.ts`; the fences `wb-stage-fences.ts`; the window birth
+   `wb-console-spawn.ts`; the placeholder `wb-console-placeholder.ts`.
 
    Opening/closing a console spawns/closes a daemon-owned session; on load the
    live sessions re-open as windows, so a reload reattaches with scrollback.
@@ -44,7 +44,8 @@ import { createPopupRegistry } from "./wb-desk-popups.ts";
 import { createFences } from "./wb-stage-fences.ts";
 import { createStageWindow } from "./wb-stage-window.ts";
 import { createStageColumns } from "./wb-stage-columns.ts";
-import { createDesk, createDeskRecords } from "./wb-desk.ts";
+import { createDesk } from "./wb-desk.ts";
+import { createDeskRecords } from "./wb-desk-records.ts";
 import { WBDeskSink } from "./wb-desk-sink.ts";
 import { WBDeskSync } from "./wb-desk-sync.ts";
 import { WBDetachLink } from "./wb-detach-link.ts";
@@ -185,9 +186,8 @@ export function createConsole(window: Window, document: Document, location: Pick
   const link = OPTS.detachLink || WBDetachLink.link();
   const wins = new Set<ConsoleWin>();
 
-  // ---- the desk records: `wb-desk.ts` ------------------------------------------
-  // Built first: the title, the window states, the fence list and the chrome
-  // take `setWin` and `saveFences`. What is built later goes in as lazy arrows.
+  // ---- the desk records: `wb-desk-records.ts` ----------------------------------
+  // Built first: the title, window states, fence list and chrome take `setWin` and `saveFences`.
   const sync = WBDeskSync.createSync();
   const {
     createRecord,
