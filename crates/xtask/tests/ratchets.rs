@@ -80,8 +80,18 @@ const APP_TS_LINES: usize = 4209;
 /// `wb-stage-columns.ts` (#623); 2460 since the desk record writes moved to
 /// `wb-desk.ts` (#623); 2159 since the desk view, the desk read, the
 /// converge, the answer to an upload and the `pagehide` flush moved to
-/// `wb-desk.ts` (#623).
-const WB_CONSOLE_TS_LINES: usize = 2159;
+/// `wb-desk.ts` (#623); 1931 since its input functions and its key bar moved to
+/// `wb-console-keys.ts` (#621); 1832 since the ids, the session list read, the
+/// project names, the fleet, the last session poll, `list` and the stale probe
+/// moved to `wb-console-feeds.ts` (#621); 1658 since sleep, wake, the cover
+/// rule, the resume and their page listeners moved to `wb-console-dormancy.ts`
+/// (#621); 1314 since `spawnWindow` and the desk record writes of a birth
+/// (`recordBirth`, `adoptOrphan`, `recordSession`, `deskOf`) moved to
+/// `wb-console-spawn.ts` (#621); 993 since the placeholder, the relaunch marks,
+/// `spawnOrMissing`, the revive and `checkoutStillThere` moved to
+/// `wb-console-placeholder.ts` (#621); 950 since the comments above the factory
+/// calls name their module and no longer repeat what the code shows (#621).
+const WB_CONSOLE_TS_LINES: usize = 950;
 /// Lines of `crates/ralphy-daemon/assets/ui/wb-notes.ts`, the note cards
 /// (ADR-0073 D8, started by its 2026-10-10 amendment). 2828 at 823cc84c, before
 /// its first cut (#623); 2835 since the cards take the console as a typed dep
@@ -94,6 +104,30 @@ const WB_CONSOLE_TS_LINES: usize = 2159;
 /// map moved to `wb-notes-on-top.ts`, `wb-notes-veil.ts` and
 /// `wb-notes-map.ts` (#623).
 const WB_NOTES_TS_LINES: usize = 1585;
+
+/// The most lines a workbench `.ts` module may have, so that an agent can
+/// read it whole (#621, ADR-0073, the 2026-10-11 amendment). A module over it
+/// is split, or is listed in `TS_SIZE_BASELINE`.
+const TS_SIZE_MAX: usize = 700;
+
+/// `(module under UI_DIR, lines)` of every workbench module over
+/// `TS_SIZE_MAX`, measured at 8783a20e (#621, ADR-0073, the 2026-10-11
+/// amendment). Exact, and it only shrinks: a change to a listed module sets
+/// its count, a module at `TS_SIZE_MAX` or fewer leaves the list, and no
+/// module joins it. `app.ts`, `wb-console.ts` and `wb-notes.ts` are listed
+/// through their D8 constants, so each count has one constant. The list had 10
+/// modules at 8783a20e; the plan of #621 took the console family out of it:
+/// `wb-desk.ts`, `wb-console-terminal.ts`, `wb-stage-fences.ts` and
+/// `wb-console-title.ts` were split, and `wb-console.ts` stays through its
+/// D8 constant.
+const TS_SIZE_BASELINE: &[(&str, usize)] = &[
+    ("app.ts", APP_TS_LINES),
+    ("wb-console.ts", WB_CONSOLE_TS_LINES),
+    ("wb-notes.ts", WB_NOTES_TS_LINES),
+    ("wb-file-viewer.ts", 1667),
+    ("wb-files.ts", 1205),
+    ("wb-spend.ts", 705),
+];
 
 /// Uses of the name `WBConsole` in the code of `wb-notes.ts`: 49 at 823cc84c,
 /// when the cards reached the console through `window.WBConsole`. 0 since the
@@ -384,6 +418,67 @@ fn the_notes_script_matches_the_line_baseline() {
         "lines of crates/ralphy-daemon/assets/ui/wb-notes.ts: {WB_NOTES_TS_LINES} -> {lines}; \
          a lower count lowers WB_NOTES_TS_LINES in the same change, and new code goes \
          into a module of its own instead"
+    );
+}
+
+/// #621 (ADR-0073, the 2026-10-11 amendment): no workbench module grows past
+/// `TS_SIZE_MAX` lines unless `TS_SIZE_BASELINE` lists it with its exact
+/// count.
+#[test]
+fn workbench_ts_modules_stay_small() {
+    let ui = workspace_root().join(UI_DIR);
+    let mut actual = BTreeMap::new();
+    for path in ts_modules(&ui) {
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        let lines = read(&path).lines().count();
+        if lines > TS_SIZE_MAX {
+            actual.insert(name.to_string(), lines);
+        }
+    }
+    let errors = ts_size_errors(&actual, TS_SIZE_BASELINE);
+    assert!(
+        errors.is_empty(),
+        "workbench modules under {UI_DIR} have at most {TS_SIZE_MAX} lines, or are listed \
+         in TS_SIZE_BASELINE (crates/xtask/tests/ratchets.rs) with their exact count:\n{}",
+        errors.join("\n")
+    );
+}
+
+/// The size ratchet flags a new big module, a changed count and an entry
+/// for a module that is small again (#621).
+#[test]
+fn ts_size_errors_flag_a_new_big_module_and_a_stale_entry() {
+    let baseline = [("a.ts", 900), ("b.ts", 750)];
+    let actual = |pairs: &[(&str, usize)]| -> BTreeMap<String, usize> {
+        pairs.iter().map(|(f, n)| (f.to_string(), *n)).collect()
+    };
+    assert!(ts_size_errors(&actual(&[("a.ts", 900), ("b.ts", 750)]), &baseline).is_empty());
+
+    let errors = ts_size_errors(
+        &actual(&[("a.ts", 901), ("b.ts", 750), ("c.ts", 701)]),
+        &baseline,
+    );
+    assert_eq!(errors.len(), 2, "{errors:#?}");
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.starts_with("c.ts: 701 lines") && e.contains("split it")),
+        "{errors:#?}"
+    );
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.starts_with("a.ts: 900 -> 901") && e.contains("set the count")),
+        "{errors:#?}"
+    );
+
+    // `b.ts` dropped to 700 lines or fewer, so it is no longer measured.
+    let errors = ts_size_errors(&actual(&[("a.ts", 900)]), &baseline);
+    assert!(
+        errors.len() == 1
+            && errors[0].starts_with("b.ts: ")
+            && errors[0].contains("remove the entry"),
+        "{errors:#?}"
     );
 }
 
@@ -1025,6 +1120,39 @@ fn flash_errors(actual: &BTreeMap<String, usize>, baseline: &[(&str, usize)]) ->
                 "{file}: `_flashAction` count changed {expected} -> {found}; \
                  if it went down, lower SHELL_FLASH_REACH in this change"
             )
+        },
+    )
+}
+
+/// One line per workbench module whose size breaks `TS_SIZE_BASELINE`.
+/// `actual` holds only the modules over `TS_SIZE_MAX`, so a listed module
+/// missing from it is at `TS_SIZE_MAX` lines or fewer, or gone.
+fn ts_size_errors(actual: &BTreeMap<String, usize>, baseline: &[(&str, usize)]) -> Vec<String> {
+    let baseline = baseline
+        .iter()
+        .map(|(file, n)| (file.to_string(), *n))
+        .collect();
+    ratchet_errors(
+        actual,
+        &baseline,
+        |file, n| {
+            format!(
+                "{file}: {n} lines, over {TS_SIZE_MAX}; split it into modules of \
+                 {TS_SIZE_MAX} lines or fewer (a module never joins TS_SIZE_BASELINE)"
+            )
+        },
+        |file, expected, found| {
+            if found == 0 {
+                format!(
+                    "{file}: {expected} -> {TS_SIZE_MAX} lines or fewer; remove the entry \
+                     from TS_SIZE_BASELINE in this change"
+                )
+            } else {
+                format!(
+                    "{file}: {expected} -> {found} lines; set the count in TS_SIZE_BASELINE \
+                     (or its line constant) in this change"
+                )
+            }
         },
     )
 }

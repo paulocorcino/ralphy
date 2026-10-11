@@ -37,7 +37,7 @@ UI module in `crates/ralphy-daemon/assets/ui/` where one exists.
 | `security/` | security headers, the CSP, the audit log of devices | `wb-device.ts`, `wb-devices.ts` |
 | `spend/` | the Spend tab | `wb-spend.ts` |
 | `workbench/` | rules for the whole page: shown facts, icons, modals, cost | `app.ts` |
-| `worktree/` | worktrees and the checkout switcher | — |
+| `worktree/` | worktrees and the checkout switcher | `wb-console-checkout.ts` |
 
 A script that imports another script's helpers puts that script's folder on
 `sys.path`. The `notes/` scripts use `columns/wb_columns_473.py`, and

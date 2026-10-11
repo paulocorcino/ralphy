@@ -8,38 +8,31 @@
    read outside it. `wb-console.ts` creates one per console and keeps the
    font size, the plane and the clipboard. Each `attachTerminal` call keeps
    the state of its own terminal and socket; the session is the daemon's.
+   The touch gesture is `wb-console-touch.ts`; the image paste, OSC 52 and
+   the right button are `wb-console-paste.ts`; the GPU addon is
+   `terminalGpu` in `wb-console-gpu.ts` (#621).
    --------------------------------------------------------------------------- */
 import { WBSessionRoute } from "./wb-session-route.ts";
-import { WBFail } from "./wb-fail.ts";
 import { socketFrame } from "./wb-api.ts";
 import * as WBConsoleInput from "./wb-console-input.ts";
 import * as WBConsoleSession from "./wb-console-session.ts";
+import { wireTouch } from "./wb-console-touch.ts";
+import { wirePaste } from "./wb-console-paste.ts";
+import { terminalGpu } from "./wb-console-gpu.ts";
 import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
 import type { DetachReason } from "./wb-console-session.ts";
 import type { SessionRequest } from "./wb-session-route.ts";
 import type { Group } from "./wb-fleet.ts";
 
 const {
-  prefersDomRenderer,
-  touchScrollLines,
-  touchScrollTarget,
-  touchGesture,
-  touchCentroid,
   dragThreshold,
   dragBegins,
-  flingStep,
   barKey,
   applyCtrlLatch,
   isTerminalReply,
-  pasteOffered,
-  rightClickAction,
   pressRoute,
   forceSelectionKeys,
   holdMoveReport,
-  selectionRow,
-  pasteDecision,
-  scrubClipboard,
-  FLING_MIN,
 } = WBConsoleInput;
 
 const {
@@ -67,10 +60,6 @@ const TERMINAL_THEME = {
   selectionBackground: "#423a31", // --surface-hi
 };
 
-// The largest OSC 52 payload accepted, measured on the BASE64 so an oversized
-// string is never materialised. xterm's own OSC limit is 10MB.
-const OSC52_MAX_B64 = 128 * 1024;
-
 // What the terminal reads from the console, and nothing else.
 export type TerminalDeps = {
   // The console's page: `WBDaemon` (the image paste) and `getShell` (whether
@@ -85,7 +74,7 @@ export type TerminalDeps = {
   workspace: () => HTMLElement | null;
   // Stops a jump of the viewport in flight: a two-finger pan outranks it.
   cancelSlide: () => void;
-  // The system clipboard. They stay in the console: the key bar uses them too.
+  // The system clipboard. They are made in `wb-console-keys.ts`: the key bar uses them too.
   writeClipboard: (text: string, term: XtermTerminal) => void;
   readClipboard: () => Promise<ClipboardRead>;
 };
@@ -167,355 +156,26 @@ export function createTerminal(deps: TerminalDeps) {
     const fit = new FitAddon.FitAddon();
     term.loadAddon(fit);
     term.open(body);
-    // GPU glyph rendering with a DOM fallback: on a lost context the addon is
-    // disposed and xterm falls back to DOM without dropping the session.
-    // NOT on WebKit: the addon renders scrolled rows twice there (xterm.js
-    // #3357, #5816; reproduced with the scrollbar, so the renderer, not our
-    // gesture). Every browser on iPadOS is WebKit.
-    // The terminal starts on the DOM renderer; the page decides which windows
-    // hold a context (`rebalanceGpu`, wb-console-gpu.ts) and calls `useGpu`/`dropGpu`.
-    let webgl: XtermWebglAddon | null = null;
-    // The canvases the addon added, so `dropGpu` asks only them for a context:
-    // `getContext` on a canvas that has none would create one.
-    let gpuCanvases: HTMLCanvasElement[] = [];
-    // A browser that cannot give a context is not asked again.
-    let gpuBroken = false;
-    function useGpu() {
-      if (webgl || gpuBroken || prefersDomRenderer(navigator.vendor)) return;
-      try {
-        const addon = new WebglAddon.WebglAddon();
-        // Lost to the browser: back to the DOM renderer without dropping the
-        // session. The slot goes back to the page at its next rebalance.
-        addon.onContextLoss(() => {
-          if (webgl === addon) dropGpu();
-        });
-        const before = new Set(term.element.querySelectorAll("canvas"));
-        term.loadAddon(addon);
-        webgl = addon;
-        gpuCanvases = [...term.element.querySelectorAll("canvas")].filter((c) => !before.has(c));
-      } catch {
-        gpuBroken = true;
-      }
-    }
-    // MEASURED: disposing the addon does not free the browser's slot until the
-    // context is collected; an explicit `loseContext` does (14 contexts, 8
-    // disposed, 8 new: 7 "Too many active WebGL contexts" warnings without it,
-    // 0 with it; Chromium headless, @xterm/addon-webgl 0.19.0, 2026-10-04).
-    function dropGpu() {
-      const addon = webgl;
-      if (!addon) return;
-      const canvases = gpuCanvases;
-      webgl = null;
-      gpuCanvases = [];
-      addon.dispose();
-      for (const c of canvases) c.getContext("webgl2")?.getExtension("WEBGL_lose_context")?.loseContext();
-    }
+    // The GPU addon: `terminalGpu`, wb-console-gpu.ts.
+    const { useGpu, dropGpu } = terminalGpu(term);
     term.loadAddon(new WebLinksAddon.WebLinksAddon());
 
-    // The touch gesture this terminal owns (`touchScrollLines`). Single finger
-    // only; the stylesheet's `touch-action: none` already told the browser the
-    // console is not a pan surface, and A+/A− is a terminal's zoom.
-    let touchY: number | null = null;
-    let touchX = 0;
-    let touchLastY = 0;
-    let touchAccum = 0;
-    let touchLastAt = 0;
-    let touchVelocity = 0;
-    let fling = 0;
-    // THE LINE-SELECTION MODE: xterm selects only through mouse events and the
-    // touch handlers below spend the finger on scrolling. Armed by the key
-    // bar's `sel` button for ONE gesture: a single-finger drag selects whole
-    // buffer lines (`selectLines` is the public API; cell-precise is not), and
-    // lifting the finger disarms it, leaving the selection for the copy button.
-    let selecting = false;
-    let selStart: number | null = null;
-    const setSelecting = (on: boolean) => {
-      selecting = !!on;
-      selStart = null;
-      if (typeof opts.onSelecting === "function") opts.onSelecting(selecting);
-    };
-    const rowAt = (clientY: number) => {
-      const screen = term.element?.querySelector(".xterm-screen");
-      const top = screen ? screen.getBoundingClientRect().top : 0;
-      return selectionRow(clientY, top, cellHeight(), term.rows, term.buffer.active.viewportY);
-    };
-    const cellHeight = () => {
-      const el = term.element;
-      const rows = term.rows;
-      return el && rows > 0 ? el.clientHeight / rows : 0;
-    };
-    // Scroll by a fractional number of lines, carrying the remainder (a slow
-    // drag moves less than one row per event). Coalesced to ONE scroll per
-    // frame: `touchmove` fires faster than the display refreshes, and several
-    // paints in one frame show up as a half-updated screen on a slow renderer.
-    let scrollRaf = 0;
-    // The app's share goes in through xterm's OWN wheel listener as line-mode
-    // wheel events — one per line, so `consumeWheelEvent` neither dampens nor
-    // batches them — at the finger's coordinates (a mouse report carries the
-    // cell). xterm then does what it does for the trackpad.
-    const wheelToApp = (lines: number) => {
-      const el = term.element;
-      if (!el) return;
-      const deltaY = Math.sign(lines);
-      for (let n = Math.abs(lines); n > 0; n--) {
-        el.dispatchEvent(
-          new WheelEvent("wheel", {
-            deltaY,
-            deltaMode: WheelEvent.DOM_DELTA_LINE,
-            clientX: touchX,
-            clientY: touchY ?? touchLastY,
-            bubbles: true,
-            cancelable: true,
-          }),
-        );
-      }
-    };
-    const flushScroll = () => {
-      scrollRaf = 0;
-      const whole = Math.trunc(touchAccum);
-      if (whole === 0) return;
-      touchAccum -= whole;
-      // Decided per flush, not per gesture: an app can take the mouse or drop
-      // into the alternate buffer while a finger is still down.
-      if (touchScrollTarget(term.modes.mouseTrackingMode, term.buffer.active.type) === "app") wheelToApp(whole);
-      else term.scrollLines(whole);
-    };
-    const scrollByPixels = (dy: number) => {
-      touchAccum += touchScrollLines(dy, cellHeight());
-      if (!scrollRaf) scrollRaf = requestAnimationFrame(flushScroll);
-    };
-    const stopScroll = () => {
-      if (scrollRaf) cancelAnimationFrame(scrollRaf);
-      scrollRaf = 0;
-    };
-    const stopFling = () => {
-      if (fling) cancelAnimationFrame(fling);
-      fling = 0;
-    };
-    // Repaint every row: a renderer that left a row half-drawn mid-gesture is
-    // corrected once at the end rather than every frame.
-    const refreshScreen = () => {
-      try {
-        term.refresh(0, term.rows - 1);
-      } catch {}
-    };
-    // A two-finger pan of the plane, live until either finger lifts. The
-    // remaining finger does NOT resume a scroll: it never had a `touchstart`.
-    let pan: { x: number; y: number; left: number; top: number } | null = null;
-    const stopPan = () => {
-      if (!pan) return;
-      pan = null;
-      stage()?.classList.remove("panning");
-    };
-    body.addEventListener(
-      "touchstart",
-      (e: TouchEvent) => {
-        stopFling();
-        // Armed selection. Prevented so the synthesized click never reaches
-        // xterm's mousedown, which would clear the selection; the textarea
-        // keeps its focus, so the keyboard stays up.
-        if (selecting && e.touches.length === 1) {
-          e.preventDefault();
-          touchY = null;
-          selStart = rowAt(e.touches[0].clientY);
-          try {
-            term.selectLines(selStart, selStart);
-          } catch {}
-          return;
-        }
-        const ws = workspace();
-        const gesture = touchGesture(e.touches.length, !!ws?.classList.contains("maxlock"));
-        if (gesture === "canvas") {
-          // A second finger ends the terminal's gesture: the plane owns the touch.
-          touchY = null;
-          stopScroll();
-          touchAccum = 0;
-          // The operator's hand outranks a jump in flight (as `onFloorDown`).
-          cancelSlide();
-          const c = touchCentroid(e.touches);
-          pan = { x: c.x, y: c.y, left: ws!.scrollLeft, top: ws!.scrollTop };
-          stage()?.classList.add("panning");
-          return;
-        }
-        stopPan();
-        if (gesture !== "terminal") {
-          touchY = null;
-          return;
-        }
-        touchY = e.touches[0].clientY;
-        touchX = e.touches[0].clientX;
-        touchAccum = 0;
-        touchVelocity = 0;
-        touchLastAt = e.timeStamp;
-        // NOT prevented: the tap must reach xterm, or the terminal never takes
-        // focus and the on-screen keyboard never opens.
-      },
-      // Non-passive ONLY for the armed-selection branch above.
-      { passive: false },
-    );
-    body.addEventListener(
-      "touchmove",
-      (e: TouchEvent) => {
-        if (selecting && selStart != null) {
-          if (e.touches.length === 1) {
-            const row = rowAt(e.touches[0].clientY);
-            try {
-              term.selectLines(Math.min(selStart, row), Math.max(selStart, row));
-            } catch {}
-          }
-          e.preventDefault();
-          return;
-        }
-        if (pan) {
-          if (e.touches.length !== 2) return;
-          const ws = workspace();
-          const c = touchCentroid(e.touches);
-          if (ws) {
-            ws.scrollLeft = pan.left - (c.x - pan.x);
-            ws.scrollTop = pan.top - (c.y - pan.y);
-          }
-          e.preventDefault();
-          return;
-        }
-        if (touchY == null || e.touches.length !== 1) return;
-        const y = e.touches[0].clientY;
-        touchX = e.touches[0].clientX;
-        const dy = y - touchY;
-        touchY = y;
-        const dt = e.timeStamp - touchLastAt;
-        touchLastAt = e.timeStamp;
-        if (dt > 0) touchVelocity = dy / dt;
-        scrollByPixels(dy);
-        // Without this the canvas underneath pans instead.
-        e.preventDefault();
-      },
-      { passive: false },
-    );
-    const endTouch = (e: TouchEvent) => {
-      // The selection stays (the copy button reads it); the arming does not.
-      if (selecting) {
-        if (e.touches.length === 0) setSelecting(false);
-        return;
-      }
-      if (pan) {
-        if (e.touches.length < 2) stopPan();
-        return;
-      }
-      if (touchY == null) return;
-      touchLastY = touchY;
-      touchY = null;
-      // A finger lifted long after it stopped moving is a hold, not a flick.
-      if (e.timeStamp - touchLastAt > 80 || Math.abs(touchVelocity) < FLING_MIN) {
-        refreshScreen();
-        return;
-      }
-      let v = touchVelocity;
-      let last = performance.now();
-      const glide = (now: number) => {
-        const step = flingStep(v, now - last);
-        last = now;
-        v = step.velocity;
-        // Already inside a frame: flush HERE, not through `scrollByPixels`.
-        touchAccum += touchScrollLines(step.dy, cellHeight());
-        stopScroll();
-        flushScroll();
-        fling = v ? requestAnimationFrame(glide) : 0;
-        // The glide has stopped: correct a dropped partial paint once.
-        if (!fling) refreshScreen();
-      };
-      fling = requestAnimationFrame(glide);
-    };
-    body.addEventListener("touchend", endTouch, { passive: true });
-    body.addEventListener("touchcancel", endTouch, { passive: true });
+    // The touch gesture and the line selection: wb-console-touch.ts.
+    const touch = wireTouch({ term, body, stage, workspace, cancelSlide, opts });
+    const { setSelecting, stopFling, stopScroll } = touch;
     fit.fit();
 
-    // A pasted IMAGE is not text (ADR-0055): xterm forwards only `text/plain`.
-    // The bytes become a clipboard drop (`image.write`) and the drop's PATH is
-    // pasted through `term.paste` — bracketed when the child asked, NO trailing
-    // newline either way. Text falls through untouched. The gate mirrors
-    // `onData`: a watcher SEES the refusal, and nothing leaves its window.
-    // Returns whether the paste was taken (false = let the text through).
-    const dropImage = (types: string[], file: Blob | null) => {
-      const decision = pasteDecision({ types, size: file ? file.size : -1, watching });
-      if (decision === "passthrough") return false;
-      if (decision === "watched") {
-        if (typeof opts.onWatchedInput === "function") opts.onWatchedInput();
-        return true;
-      }
-      if (decision === "too-large") {
-        term.write("\r\n[paste refused — too large]\r\n");
-        return true;
-      }
-      const daemon = window.WBDaemon;
-      if (!daemon) {
-        // The popup forgot its bridge: say so rather than swallow the paste.
-        term.write("\r\n[paste refused — daemon not connected]\r\n");
-        return true;
-      }
-      const reader = new FileReader();
-      reader.onerror = () => term.write("\r\n[paste refused — unreadable]\r\n");
-      reader.onload = () => {
-        const base64 = String(reader.result).replace(/^data:[^,]*,/, "");
-        daemon
-          .write("image.write", { repo: currentRepo, base64 })
-          .then((reply) => {
-            if (WBFail.isError(reply) || !reply.path) {
-              const why = WBFail.why(reply, "the daemon refused it");
-              term.write(`\r\n[paste refused — ${why}]\r\n`);
-              return;
-            }
-            term.paste(reply.path);
-            term.focus();
-          })
-          // The socket closed with no reply: say what the browser saw.
-          .catch((err: { message?: string } | null | undefined) => {
-            const why = (err && err.message) || "connection unavailable";
-            term.write(`\r\n[paste refused — ${why}]\r\n`);
-          });
-      };
-      // `file` is set: a missing one has size -1, and `pasteDecision` refuses it.
-      reader.readAsDataURL(file!);
-      return true;
-    };
-    term.textarea.addEventListener("paste", (e: ClipboardEvent) => {
-      const items: DataTransferItem[] = Array.from(e.clipboardData?.items ?? []);
-      const image = items.find((i) => i.type.startsWith("image/"));
-      const file = image ? image.getAsFile() : null;
-      if (dropImage(items.map((i) => i.type), file)) e.preventDefault();
-    });
-
-    // OSC 52 — "put this on the clipboard". xterm's core does not implement
-    // it, and OSC 52 has no reply, so an agent would announce a copy it never
-    // got. WRITE ONLY:
-    // - The READ form (`52;c;?`) is never answered: it would let an agent read
-    //   the operator's clipboard.
-    // - Refused while `replaying`: the scrollback replays as raw bytes, and a
-    //   copy from an hour ago would rewrite the clipboard on every reattach.
-    // - Refused in a watcher: the same bytes reach EVERY attached window, and
-    //   the window whose operator asked owns the clipboard. (Copying BY HAND
-    //   in a watcher stays allowed — the #335 gate is about writing to the
-    //   child.)
-    term.parser.registerOscHandler(52, (data: string) => {
-      // NEVER return the clipboard promise: `OscHandler.end` PAUSES the parser
-      // on a promise, and a rejected write (unfocused document) would stall
-      // the terminal.
-      if (replaying || watching) return true;
-      const semi = data.indexOf(";");
-      if (semi < 0) return true;
-      const payload = data.slice(semi + 1);
-      // `?` reads and `!` clears; both are no-ops.
-      if (payload === "?" || payload === "!") return true;
-      if (payload.length > OSC52_MAX_B64) return true;
-      let text: string;
-      try {
-        const bin = atob(payload);
-        text = new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
-      } catch {
-        // base64url or bad padding: `atob` THROWS into xterm's parser.
-        return true;
-      }
-      writeClipboard(scrubClipboard(text), term);
-      return true;
+    // The image paste, OSC 52 and the right button: wb-console-paste.ts.
+    const { dropImage } = wirePaste({
+      term,
+      body,
+      window,
+      opts,
+      writeClipboard,
+      readClipboard,
+      watchingNow: () => watching,
+      replayingNow: () => replaying,
+      currentRepoNow: () => currentRepo,
     });
 
     // Ctrl+Insert copies the selection. NOT Ctrl+Shift+C: on Chrome/Edge that
@@ -554,42 +214,6 @@ export function createTerminal(deps: TerminalDeps) {
       writeClipboard(term.getSelection(), term);
       return false;
     });
-    // `rightClickAction` and `holdMoveReport`, applied. CAPTURE phase on
-    // `body`: xterm binds its listeners on `term.element`, a child, so a stop
-    // here means neither xterm nor the child gets the event. The decision is
-    // made on `mousedown`, while the selection still exists. Both clipboard
-    // calls run inside the press, a user gesture.
-    body.addEventListener(
-      "mousedown",
-      (e: MouseEvent) => {
-        if (e.button !== 2) return;
-        const rightTaken = rightClickAction(term.hasSelection(), pasteOffered(navigator.clipboard));
-        e.stopPropagation();
-        // xterm's own mousedown focused the terminal; it no longer runs.
-        e.preventDefault();
-        term.focus();
-        if (rightTaken === "copy") {
-          writeClipboard(term.getSelection(), term);
-          term.clearSelection();
-        } else if (rightTaken === "paste") {
-          readClipboard()
-            .then(({ image, text }) => {
-              if (image) dropImage([image.type], image);
-              else if (text) term.paste(text);
-            })
-            .catch(() => {});
-        }
-      },
-      true,
-    );
-    body.addEventListener(
-      "contextmenu",
-      (e: Event) => {
-        e.preventDefault();
-        e.stopPropagation();
-      },
-      true,
-    );
     // `pressRoute`, applied. The held press is REPLAYED to xterm as a
     // synthetic event: with the force-selection key once it turns into a
     // drag, or as itself (then the release) once it ends in place. The
@@ -973,7 +597,7 @@ export function createTerminal(deps: TerminalDeps) {
         return dropImage([blob.type], blob);
       },
       get selecting() {
-        return selecting;
+        return touch.selecting;
       },
       // The page came back from a suspend (or the network did). Returns whether
       // it acted. The `currentSessionId == null` bail is load-bearing: a window

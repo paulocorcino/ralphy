@@ -18,6 +18,7 @@ import {
   peerGate,
   peerHeld,
   peerHost,
+  peerActionLabel,
   peerOfflineView,
   peerReturnDecision,
   reconnectDecision,
@@ -113,6 +114,15 @@ const peerGroup = (state, extra = {}) => ({
   nudgeable: false,
   local: false,
   ...extra,
+});
+
+// The strip of a live window and the placeholder take their button words from
+// one place: an action a click can take has words, the others have none.
+test("peerActionLabel words the actions a click can take, and only those", () => {
+  assert.equal(peerActionLabel("wake"), "Wake");
+  assert.equal(peerActionLabel("retry"), "Try again");
+  assert.equal(peerActionLabel("wait"), "");
+  assert.equal(peerActionLabel(null), "");
 });
 
 test("peerOfflineView words each peer state and offers only the action that fixes it", () => {

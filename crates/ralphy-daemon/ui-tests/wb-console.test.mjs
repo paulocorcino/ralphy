@@ -3,7 +3,7 @@
 // assets/ui into the daemon binary via include_dir!, so a test there would ship.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { WBColumns } from "../assets/ui/wb-columns.ts";
@@ -11,8 +11,25 @@ import { createConsole } from "../assets/ui/wb-console.ts";
 import { WBDeskSink } from "../assets/ui/wb-desk-sink.ts";
 
 const UI = join(dirname(fileURLToPath(import.meta.url)), "../assets/ui");
-// The console's source text, for the few pins on how it is written.
-const SRC = readFileSync(join(UI, "wb-console.ts"), "utf8");
+// The console family's source text, for the few pins on how it is written.
+// It is every module named `wb-console.ts`, `wb-console-*.ts`,
+// `wb-stage-*.ts`, `wb-desk.ts` or `wb-desk-*.ts`, joined in the order of
+// `CONSOLE_FAMILY` in `src/tests.rs`, so a move between family modules does
+// not move a pin (#621).
+function familyGroup(name) {
+  if (!name.endsWith(".ts") || name.endsWith(".d.ts")) return -1;
+  if (name === "wb-console.ts") return 0;
+  if (name.startsWith("wb-console-")) return 1;
+  if (name.startsWith("wb-stage-")) return 2;
+  if (name === "wb-desk.ts") return 3;
+  if (name.startsWith("wb-desk-")) return 4;
+  return -1;
+}
+const SRC = readdirSync(UI)
+  .filter((name) => familyGroup(name) >= 0)
+  .sort((a, b) => familyGroup(a) - familyGroup(b) || (a < b ? -1 : a > b ? 1 : 0))
+  .map((name) => readFileSync(join(UI, name), "utf8"))
+  .join("");
 
 // `extras` is merged into the stub `window` BEFORE the console is created, so
 // a test can supply a browser global (`matchMedia`) or a page instance that

@@ -568,3 +568,79 @@ The order of the work: the renames, the cards' typed deps, the message door,
 the window states, the z stack and the gestures, the column paint, the desk
 records, the card folds, then the cuts of `wb-notes.ts`. The `app.ts` cuts of
 #621, other than the message door, are not part of this work.
+
+## Amendment (2026-10-11): the console keeps its factory glue; no workbench module over 700 lines
+
+Issue #621 (a part of #605) closes the cuts of `wb-console.ts` after #623.
+This amendment records where the cuts stop, the modules they make, and two
+guards, before any code moves. It was measured on `8783a20e`:
+`wb-console.ts` has 2,159 lines. Of these, 140 are the header, the imports
+and the fold destructures, about 480 are the glue that builds 13 factories,
+83 are `open`, `boot`, `refitAll`, `count` and `afterLogin`, and 168 are the
+returned object. Ten workbench modules have more than 700 lines: `app.ts`
+4,209, `wb-console.ts` 2,159, `wb-file-viewer.ts` 1,667, `wb-notes.ts` 1,585,
+`wb-files.ts` 1,205, `wb-console-terminal.ts` 1,075, `wb-desk.ts` 945,
+`wb-stage-fences.ts` 747, `wb-console-title.ts` 716 and `wb-spend.ts` 705.
+
+1. **`createConsole` keeps the factory glue and the returned object.** What
+   stays in `wb-console.ts` is the console itself: it builds the factories,
+   passes their `deps`, and returns the object with the 159 members that
+   `ui-tests/wb-api-members.test.mjs` freezes. This replaces decision 2 of
+   the ADR-0075 amendment of 2026-10-09 (the API object built outside
+   `createConsole`), and it replaces that amendment's goal of about 500
+   lines with about 900 lines. Each cut follows a real responsibility; no
+   cut moves code only to lower the count.
+
+2. **The cuts, in this order.** Each name was checked against CONTEXT.md.
+
+   | Order | Module | What it owns |
+   |---|---|---|
+   | 1 | `wb-console-keys.ts` | The input functions (touch surface, font size, clipboard write and read) and the **key bar** of a window. |
+   | 2 | `wb-console-feeds.ts` | The last session list, project names, fleet and stale probe that the shell fed. |
+   | 3 | `wb-console-dormancy.ts` | Sleep, wake, cover and **resume** of the windows, and the page listeners that start them. |
+   | 4 | `wb-console-spawn.ts` | `spawnWindow`, and the session records that a window's birth writes. |
+   | 5 | `wb-console-placeholder.ts` | The placeholder of a window with no live session, the relaunch, and the revive. |
+   | 6 | `wb-desk-records.ts` | The desk record writes, moved from `wb-desk.ts`. |
+   | 7 | `wb-desk-restore.ts` | The desk restore, only if `wb-desk.ts` still has more than 700 lines. |
+   | 8 | `wb-console-touch.ts` | The touch gesture and the line selection of a terminal. |
+   | 9 | `wb-console-paste.ts` | The image paste, OSC 52 and the right button of a terminal. |
+   | 10 | `wb-console-mouse.ts` | The held-press replay, only if `wb-console-terminal.ts` still needs it. |
+   | 11 | `wb-stage-fence-gestures.ts` | The fence move and the fence resize. |
+   | 12 | `wb-console-checkout.ts` | The worktree switcher, its menu and its dialog. |
+
+   A feed holds the last value of a **shown fact** that the shell fed; its
+   owner stays outside the browser. Cuts 1 to 5 empty `createConsole`, and
+   then the dead glue goes. Cuts 6 to 12 split the big console family
+   modules; each is a move inside one module.
+
+3. **No workbench `.ts` module has more than 700 lines, unless
+   `TS_SIZE_BASELINE` lists it with its exact count.** The size that counts
+   is the lines of each `.ts` file, so that an agent can read it whole; the
+   size of the emitted JavaScript is not watched. The list only shrinks: a
+   change to a listed module sets its count, a module that drops to 700
+   lines or fewer leaves the list in the same change, and no module joins
+   it. `app.ts`, `wb-console.ts` and `wb-notes.ts` are listed through their
+   D8 constants, so each count has one constant. `wb-console.ts` stays
+   listed at about 900. `workbench_ts_modules_stay_small` in
+   `crates/xtask/tests/ratchets.rs` holds the rule.
+
+4. **The pins on console text read the whole console family.** The console
+   family is every module named `wb-console.ts`, `wb-console-*.ts`,
+   `wb-stage-*.ts`, `wb-desk.ts` or `wb-desk-*.ts` (21 modules at
+   `8783a20e`; `wb-consoles-tab.ts` is not one). `CONSOLE_FAMILY` in
+   `crates/ralphy-daemon/src/tests.rs` lists them in a fixed order:
+   `wb-console.ts`, then the `wb-console-*` modules, the `wb-stage-*`
+   modules, `wb-desk.ts`, and the `wb-desk-*` modules, each group sorted.
+   `wb-desk-sync.ts` declares a second `function deskOf(`, so the console
+   modules come first. Seven pins and five ban sweeps read the joined text,
+   so a move between family modules does not move them, and their exact
+   counts and scoped slices are the same as before (`readClipboard()` 3,
+   `clip.read()` 1, `clip.readText()` 1, `navigator.clipboard.read` 0,
+   `title: "Close this console?"` 2). `the_console_family_lists_every_module_on_disk`
+   fails when a family module on disk is missing from the list. The source
+   pins of `ui-tests/wb-console.test.mjs` read the family in the same order.
+
+5. **The worktree switcher module is named after the term Checkout.** The
+   operator sees a **checkout** as a "worktree", but the term is
+   **checkout**, so the module is `wb-console-checkout.ts`, not
+   `wb-console-worktree.ts`.

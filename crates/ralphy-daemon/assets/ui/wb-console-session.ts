@@ -260,6 +260,24 @@ export function peerOfflineView(
   }
 }
 
+// The words on the button of a peer box. The strip of a live window and the
+// placeholder say the same; `wait` and `null` have no button (an empty string).
+export function peerActionLabel(action: PeerAction) {
+  switch (action) {
+    case "wake":
+      return "Wake";
+    case "retry":
+      return "Try again";
+    case "wait":
+    case null:
+      return "";
+    default: {
+      const never: never = action;
+      return never;
+    }
+  }
+}
+
 // What a peer placeholder does on a fleet read. `available` and `offline`
 // are both false while the peer's state is unknown. Returns one of
 //   "relaunch" — the peer is back and this is a shell: open it again;
