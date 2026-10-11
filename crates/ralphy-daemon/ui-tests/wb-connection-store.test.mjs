@@ -26,8 +26,8 @@ function storeOnly() {
   return { store, events };
 }
 
-// A page whose window hears what it is sent, after the `init()` of the store
-// `projects` and of `shell()`. Their own reads at load and their clocks do
+// A page whose window hears what it is sent, after the `init()` of the stores
+// `projects` and `release`, and of `shell()`. Their own reads at load and their clocks do
 // not run here.
 function connectedPage(opts = {}) {
   const listeners = {};
@@ -46,17 +46,19 @@ function connectedPage(opts = {}) {
     reads[name] = projects[name];
     projects[name] = () => {};
   }
-  const loadRelease = state.loadRelease;
-  state.loadRelease = () => {};
+  const release = state.$store.release;
+  const loadRelease = release.loadRelease;
+  release.loadRelease = () => {};
   const realSetInterval = globalThis.setInterval;
   globalThis.setInterval = () => 0;
   try {
     projects.init();
+    release.init();
     state.init();
   } finally {
     globalThis.setInterval = realSetInterval;
     Object.assign(projects, reads);
-    state.loadRelease = loadRelease;
+    release.loadRelease = loadRelease;
   }
   return { ...loaded, store: state.$store.connection };
 }
@@ -131,9 +133,8 @@ test("returning to the tab reads the release view again", () => {
   const calls = [];
   const { state, store, window } = connectedPage(VISIBLE);
   window.addEventListener("workbench:board-refresh", (e) => calls.push(`board:${e.detail.trigger}`));
-  for (const name of ["rereadDesk", "loadRelease"]) {
-    state[name] = () => calls.push(name);
-  }
+  state.rereadDesk = () => calls.push("rereadDesk");
+  state.$store.release.loadRelease = () => calls.push("loadRelease");
   state.$store.projects.loadRepos = () => calls.push("loadRepos");
   store.resumeSockets = () => calls.push("resumeSockets");
   state.$store.runs.hydrateRuns = () => {};
@@ -284,19 +285,19 @@ test("visible and login ask the open panels to read again", () => {
   // The Settings dialog hears the event and reads only when it is open
   // (wb-settings-dialog.test.mjs); here the store sends it each time.
   const events = [];
-  const { state } = loadShell({
+  const loaded = loadShell({
     ...VISIBLE,
     window: { dispatchEvent: (e) => events.push(e.type) },
   });
+  const { state } = loaded;
   const store = state.$store.connection;
   for (const name of ["loadRepos", "loadAgents"]) state.$store.projects[name] = () => {};
-  state.restoreView = () => {};
   for (const name of ["resumeSockets", "loadIdentity"]) store[name] = () => {};
   state.$store.runs.hydrateRuns = () => {};
   const rereads = () => events.filter((t) => t === "workbench:panels-reread").length;
   store.onTabVisible();
   assert.equal(rereads(), 1, "the tab becoming visible asks the open panels");
-  state.rehydrateAfterAuth();
+  loadComponent("wbLogin", { from: loaded }).scope.rehydrateAfterAuth();
   assert.equal(rereads(), 2, "a login asks the open panels too");
 });
 
@@ -318,9 +319,10 @@ test("the peer tick and a project-list push read no change set and no branch", a
   assert.deepEqual(git, ["o/r"]);
 });
 
-// The session read: the store keeps `authed` and the mark, and the shell
-// takes the policy, the password flag and the restore of the view.
-test("a session read tells the shell the policy, and restores the view only when authorized", async () => {
+// The session read: the store keeps `authed`, the mark and the policy, and the
+// shell takes the restore of the view (the login gate's password flag:
+// wb-login.test.mjs).
+test("a session read keeps the policy, and restores the view only when authorized", async () => {
   for (const authed of [true, false]) {
     const { state, store } = connectedPage(VISIBLE);
     const restored = [];
@@ -338,9 +340,28 @@ test("a session read tells the shell the policy, and restores the view only when
     }
     assert.equal(store.authed, authed);
     assert.equal(store.identityAvatar, "🦊");
-    assert.equal(state.security.policy, "bearer");
-    assert.equal(state.login.passwordRequired, true);
+    assert.equal(store.security.policy, "bearer");
     assert.deepEqual(restored, authed ? ["restore"] : [], `authed ${authed}`);
+  }
+});
+
+// Log off: the page hears `workbench:log-off`, and only the `session` policy
+// has a login gate to drop to (#205).
+test("log off drops to the login gate only under the session policy", async () => {
+  for (const [policy, authed] of [
+    ["session", false],
+    ["localhost", true],
+  ]) {
+    const sent = [];
+    const { state, document } = loadShell({ window: { dispatchEvent: (e) => (sent.push(e.type), true) } });
+    const actions = [];
+    document.dispatchEvent = (e) => (actions.push(e.detail.action), true);
+    const store = state.$store.connection;
+    store.securityChanged({ policy });
+    await store.logOff();
+    assert.equal(store.authed, authed, policy);
+    assert.deepEqual(sent, ["workbench:log-off"], policy);
+    assert.deepEqual(actions, ["logoff"], policy);
   }
 });
 

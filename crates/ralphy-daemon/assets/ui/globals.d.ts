@@ -289,6 +289,7 @@ interface Window {
     store(name: "runs"): import("./wb-runs-store.ts").RunsStore;
     store(name: "checkouts"): import("./wb-checkouts-store.ts").CheckoutsStore;
     store(name: "connection"): import("./wb-connection-store.ts").ConnectionStore;
+    store(name: "release"): import("./wb-release-store.ts").ReleaseStore;
     store(name: string, value: object): void;
     raw<T>(value: T): T;
     nextTick(callback: () => void): Promise<void>;
@@ -491,6 +492,8 @@ interface WindowEventMap {
   /** The Spend tab came to the front. */
   "workbench:spend-shown": CustomEvent<null>;
   "workbench:log-off": CustomEvent<null>;
+  /** The daemon accepted a login (wb-login.ts): read the gated desk and tabs again. */
+  "workbench:logged-in": CustomEvent<null>;
   /** Re-list the directory `rel`, then show `reveal`. */
   "workbench:tree-dirty": CustomEvent<{ rel: string; reveal?: string }>;
   "workbench:file-search-open": CustomEvent<null>;

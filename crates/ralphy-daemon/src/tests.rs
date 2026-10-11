@@ -1285,21 +1285,21 @@ fn the_release_badge_and_panel_are_pinned_in_the_served_assets() {
     let css = served_css();
 
     // The dot renders the daemon's severity; it must not be computed here.
-    assert!(html.contains("class=\"rel-dot\" :class=\"release.severity\""));
-    assert!(html.contains("x-show=\"releaseUnread\""));
+    assert!(html.contains("class=\"rel-dot\" :class=\"$store.release.release.severity\""));
+    assert!(html.contains("x-show=\"$store.release.releaseUnread\""));
     // The menu row asks the dialogs' own component to open (ADR-0073 D5).
     assert!(html.contains("$dispatch('workbench:whats-new-open')"));
     assert!(html.contains("@workbench:whats-new-open.window=\"openWhatsNew()\""));
     assert!(html.contains("x-bind=\"scrim('whatsNewOpen', () => closeWhatsNew())\""));
     // The whole gap, not just the newest release.
-    assert!(html.contains("x-for=\"entry in release.gap\""));
+    assert!(html.contains("x-for=\"entry in $store.release.release.gap\""));
     // The upgrade is a command the operator runs, never a button that
     // replaces a binary on the daemon's host from the browser.
     assert!(html.contains("ralphy update"));
 
     assert!(
         app.contains("this.loadRelease()"),
-        "the shell reads it at init"
+        "the store `release` reads it at init"
     );
     assert!(
         app.contains("WBRelease.isSticky(this.release)"),
@@ -3910,6 +3910,7 @@ fn the_console_family_lists_every_module_on_disk() {
 /// `main.ts`.
 const SHELL_FAMILY: &[(&str, &str)] = &[
     ("app.ts", include_str!("../assets/ui/app.ts")),
+    ("wb-account.ts", include_str!("../assets/ui/wb-account.ts")),
     (
         "wb-add-project-dialog.ts",
         include_str!("../assets/ui/wb-add-project-dialog.ts"),
@@ -3941,6 +3942,7 @@ const SHELL_FAMILY: &[(&str, &str)] = &[
         "wb-hosts-dialog.ts",
         include_str!("../assets/ui/wb-hosts-dialog.ts"),
     ),
+    ("wb-login.ts", include_str!("../assets/ui/wb-login.ts")),
     (
         "wb-move-dialog.ts",
         include_str!("../assets/ui/wb-move-dialog.ts"),
@@ -3952,6 +3954,10 @@ const SHELL_FAMILY: &[(&str, &str)] = &[
     (
         "wb-release-dialogs.ts",
         include_str!("../assets/ui/wb-release-dialogs.ts"),
+    ),
+    (
+        "wb-release-store.ts",
+        include_str!("../assets/ui/wb-release-store.ts"),
     ),
     (
         "wb-runs-panel.ts",

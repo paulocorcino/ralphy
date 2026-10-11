@@ -6,6 +6,8 @@
 import "./app.test.mjs";
 import "./wb-board.test.mjs";
 import "./wb-spend-panel.test.mjs";
+import "./wb-account.test.mjs";
+import "./wb-login.test.mjs";
 import "./harness.test.mjs";
 import "./wb-add-project.test.mjs";
 import "./wb-add-project-dialog.test.mjs";
@@ -66,6 +68,7 @@ import "./wb-projects-store.test.mjs";
 import "./wb-runs-panel.test.mjs";
 import "./wb-runs-store.test.mjs";
 import "./wb-release-dialogs.test.mjs";
+import "./wb-release-store.test.mjs";
 import "./wb-runs.test.mjs";
 import "./wb-security-dialog.test.mjs";
 import "./wb-session-route.test.mjs";

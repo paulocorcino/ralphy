@@ -30,10 +30,13 @@ import { wbBoard } from "../assets/ui/wb-board.ts";
 import { wbSpend } from "../assets/ui/wb-spend-panel.ts";
 import { wbChanges } from "../assets/ui/wb-changes-panel.ts";
 import { wbBranchDialog } from "../assets/ui/wb-branch-dialog.ts";
+import { wbAccount } from "../assets/ui/wb-account.ts";
+import { wbLogin } from "../assets/ui/wb-login.ts";
 import { projectsStore } from "../assets/ui/wb-projects-store.ts";
 import { connectionStore } from "../assets/ui/wb-connection-store.ts";
 import { runsStore } from "../assets/ui/wb-runs-store.ts";
 import { checkoutsStore } from "../assets/ui/wb-checkouts-store.ts";
+import { releaseStore } from "../assets/ui/wb-release-store.ts";
 import { WBSpend } from "../assets/ui/wb-spend.ts";
 import { WBKanban } from "../assets/ui/wb-kanban.ts";
 import { createDaemon } from "../assets/ui/wb-daemon.ts";
@@ -65,6 +68,7 @@ export const STORES = {
   connection: connectionStore,
   runs: runsStore,
   checkouts: checkoutsStore,
+  release: releaseStore,
 };
 
 // The Alpine components, by the name the markup gives `x-data`: `loadComponent`
@@ -85,6 +89,8 @@ const MODULE_COMPONENTS = {
   wbChanges,
   wbBranchDialog,
   wbSpend,
+  wbAccount,
+  wbLogin,
 };
 
 export const UI = join(dirname(fileURLToPath(import.meta.url)), "../assets/ui");

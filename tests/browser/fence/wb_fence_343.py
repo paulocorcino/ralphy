@@ -69,6 +69,7 @@ SH = "Alpine.$data(document.querySelector('[x-data]'))"
 # The Consoles tab's menus and the columns are Alpine components of their
 # own (wb-consoles-tab.ts): a check reads them through their root.
 MENUS = "Alpine.$data(document.querySelector('[x-data=\"wbConsoleMenus\"]'))"
+ACCOUNT = "Alpine.$data(document.querySelector('[x-data=\"wbAccount\"]'))"
 
 VIEW = {"width": 1400, "height": 900}
 
@@ -1196,7 +1197,7 @@ def main():
             page.locator(".avatar-btn").click()
             page.wait_for_timeout(200)
             open_menus = page.evaluate(
-                f"() => {{ const s = {SH}; const m = {MENUS};"
+                f"() => {{ const s = {ACCOUNT}; const m = {MENUS};"
                 " return ['agentMenu', 'windowMenu', 'fenceMenu'].filter((k) => m[k])"
                 "   .concat(s.avatarMenu ? ['avatarMenu'] : []); }"
             )
@@ -1213,7 +1214,7 @@ def main():
             page.evaluate("() => document.querySelector(\"button[title='Open a console']\").click()")
             page.wait_for_timeout(200)
             open_menus = page.evaluate(
-                f"() => {{ const s = {SH}; const m = {MENUS};"
+                f"() => {{ const s = {ACCOUNT}; const m = {MENUS};"
                 " return ['agentMenu', 'windowMenu', 'fenceMenu'].filter((k) => m[k])"
                 "   .concat(s.avatarMenu ? ['avatarMenu'] : []); }"
             )

@@ -94,7 +94,7 @@
            avatar (/api/identity); the menu carries the name, the live uptime and
            the security verbs. The menu opens to the SIDE (`.rail .account-menu`),
            over the sidebar: a 48px column has no room to drop one downward. -->
-      <div class="menu-wrap rail-acct">
+      <div class="menu-wrap rail-acct" x-data="wbAccount">
         <button class="avatar-btn" :title="$store.connection.identityName || 'Ralphy'" @click.stop="toggleAvatarMenu()">
           <span class="avatar" x-text="$store.connection.identityMark()"></span>
           <!-- The release dot (ADR-0056 §7). It is machine-wide, not a per-repo
@@ -102,7 +102,7 @@
                count may not: nothing here claims an aggregate this UI does not
                compute. Its loudness is the daemon's `severity`, never derived
                here from version numbers. -->
-          <span class="rel-dot" :class="release.severity" x-show="releaseUnread" x-cloak></span>
+          <span class="rel-dot" :class="$store.release.release.severity" x-show="$store.release.releaseUnread" x-cloak></span>
         </button>
         <div class="dropdown account-menu" x-show="avatarMenu" @click.outside="avatarMenu = false" x-cloak>
           <!-- The daemon this browser is talking to, said by NAME: the mark on
@@ -130,8 +130,8 @@
           <!-- Above Security on purpose: when there is something new, it is the
                reason the operator opened this menu. Absent entirely when there
                is not, rather than greyed out. -->
-          <button class="dropdown-item rel-item" x-show="releaseHasNews" x-cloak @click="avatarMenu = false; $dispatch('workbench:whats-new-open')">
-            <i class="bi bi-stars"></i><span x-text="releaseSummary"></span>
+          <button class="dropdown-item rel-item" x-show="$store.release.releaseHasNews" x-cloak @click="avatarMenu = false; $dispatch('workbench:whats-new-open')">
+            <i class="bi bi-stars"></i><span x-text="$store.release.releaseSummary"></span>
           </button>
           <button class="dropdown-item" @click="avatarMenu = false; $dispatch('workbench:security-open')">
             <i class="bi bi-shield-lock"></i><span>Security settings</span>
@@ -139,7 +139,7 @@
           <button class="dropdown-item" @click="avatarMenu = false; $dispatch('workbench:about-open')">
             <i class="bi bi-info-circle"></i><span>About</span>
           </button>
-          <button class="dropdown-item" @click="logOff()">
+          <button class="dropdown-item" @click="$store.connection.logOff()">
             <i class="bi bi-box-arrow-right"></i><span>Log out</span>
           </button>
         </div>
@@ -157,7 +157,7 @@
       <button :class="{ active: active === 'spend' }" @click="$dispatch('workbench:spend-open')" title="Spend (cost of this project)"><svg x-icon="'coins'"></svg></button>
       <!-- spacer pushes the settings gear to the bottom of the rail -->
       <span class="rail-spacer"></span>
-      <button :class="{ active: modalOpen('settingsOpen') }" @click="avatarMenu = false; $dispatch('workbench:settings-open')" title="Settings"><svg x-icon="'settings'"></svg></button>
+      <button :class="{ active: modalOpen('settingsOpen') }" @click="$dispatch('workbench:menus-close'); $dispatch('workbench:settings-open')" title="Settings"><svg x-icon="'settings'"></svg></button>
     </nav>
 
     <!-- sidebar: project accordion. impl: `$store.projects.projects` comes from the daemon
@@ -2295,8 +2295,8 @@
           <section class="sec-card">
             <div class="sec-card-head">
               <span class="sec-card-title"><i class="bi bi-key"></i> Access token</span>
-              <span class="sec-badge" :class="security.tokenSet ? 'on' : 'off'"
-                    x-text="security.tokenSet ? 'set' : 'not set'"></span>
+              <span class="sec-badge" :class="$store.connection.security.tokenSet ? 'on' : 'off'"
+                    x-text="$store.connection.security.tokenSet ? 'set' : 'not set'"></span>
             </div>
             <p class="sec-note">
               Token for network access to the daemon. A new token logs out every session,
@@ -2311,12 +2311,12 @@
           <section class="sec-card">
             <div class="sec-card-head">
               <span class="sec-card-title"><i class="bi bi-asterisk"></i> Login password</span>
-              <span class="sec-badge" :class="security.passwordSet ? 'on' : 'off'"
-                    x-text="security.passwordSet ? 'set' : 'not set'"></span>
+              <span class="sec-badge" :class="$store.connection.security.passwordSet ? 'on' : 'off'"
+                    x-text="$store.connection.security.passwordSet ? 'set' : 'not set'"></span>
             </div>
             <p class="sec-note">
               Optional password in addition to 2FA. Enter it twice to save.
-              <span x-show="security.passwordSet">Changing or removing it asks for the current one.</span>
+              <span x-show="$store.connection.security.passwordSet">Changing or removing it asks for the current one.</span>
             </p>
             <div class="sec-actions">
               <!-- Each in its own `x-if`, and not one wrapper around the three:
@@ -2326,7 +2326,7 @@
                    still one to the browser's password manager. -->
               <template x-if="securityOpen">
                 <input class="set-input" type="password" placeholder="Current password" autocomplete="current-password"
-                       x-show="security.passwordSet" x-model="securityForm.passwordCurrent" />
+                       x-show="$store.connection.security.passwordSet" x-model="securityForm.passwordCurrent" />
               </template>
               <template x-if="securityOpen">
                 <input class="set-input" type="password" placeholder="New password" autocomplete="new-password"
@@ -2337,8 +2337,8 @@
                        x-model="securityForm.passwordConfirm" @keydown.enter="savePassword()" />
               </template>
               <button class="btn accent" @click="savePassword()"
-                      :disabled="!securityForm.passwordDraft.trim() || securityForm.passwordDraft !== securityForm.passwordConfirm || (security.passwordSet && !securityForm.passwordCurrent)">Save</button>
-              <button class="btn" @click="clearPassword()" x-show="security.passwordSet"
+                      :disabled="!securityForm.passwordDraft.trim() || securityForm.passwordDraft !== securityForm.passwordConfirm || ($store.connection.security.passwordSet && !securityForm.passwordCurrent)">Save</button>
+              <button class="btn" @click="clearPassword()" x-show="$store.connection.security.passwordSet"
                       :disabled="!securityForm.passwordCurrent">Remove</button>
             </div>
             <p class="sec-note" style="margin:0.4rem 0 0;color:var(--danger)"
@@ -2351,15 +2351,15 @@
           <section class="sec-card">
             <div class="sec-card-head">
               <span class="sec-card-title"><i class="bi bi-phone"></i> Two-factor (TOTP)</span>
-              <span class="sec-badge" :class="security.totpEnrolled ? 'on' : 'off'"
-                    x-text="security.totpEnrolled ? 'enrolled' : 'not enrolled'"></span>
+              <span class="sec-badge" :class="$store.connection.security.totpEnrolled ? 'on' : 'off'"
+                    x-text="$store.connection.security.totpEnrolled ? 'enrolled' : 'not enrolled'"></span>
             </div>
             <p class="sec-note">
               Works with any authenticator app. Scan the QR code, then enter a code to finish.
             </p>
 
             <!-- not enrolled & nothing in flight → begin enrolment -->
-            <div class="sec-actions" x-show="!security.totpEnrolled && !securityForm.pendingEnroll">
+            <div class="sec-actions" x-show="!$store.connection.security.totpEnrolled && !securityForm.pendingEnroll">
               <button class="btn accent" @click="enrollTotp()"><i class="bi bi-qr-code"></i> Enroll and show the QR code</button>
             </div>
 
@@ -2385,7 +2385,7 @@
             </div>
 
             <!-- enrolled → revoke -->
-            <div class="sec-actions" x-show="security.totpEnrolled && !securityForm.pendingEnroll">
+            <div class="sec-actions" x-show="$store.connection.security.totpEnrolled && !securityForm.pendingEnroll">
               <span class="sec-note" style="margin:0;flex:1">Enrolled. Revoke to start over.</span>
               <button class="btn danger" @click="revokeTotp()"><i class="bi bi-trash"></i> Revoke stored TOTP</button>
             </div>
@@ -2395,17 +2395,17 @@
           <section class="sec-card">
             <div class="sec-card-head">
               <span class="sec-card-title"><i class="bi bi-door-closed"></i> Require login</span>
-              <span class="sec-badge" :class="security.requireLogin ? 'on' : 'off'"
-                    x-text="security.requireLogin ? 'active' : 'off'"></span>
+              <span class="sec-badge" :class="$store.connection.security.requireLogin ? 'on' : 'off'"
+                    x-text="$store.connection.security.requireLogin ? 'active' : 'off'"></span>
               <label class="switch">
-                <input type="checkbox" :checked="security.requireLogin" :disabled="!security.totpEnrolled" @change="toggleRequireLogin($event)" />
+                <input type="checkbox" :checked="$store.connection.security.requireLogin" :disabled="!$store.connection.security.totpEnrolled" @change="toggleRequireLogin($event)" />
                 <span class="switch-track"></span>
               </label>
             </div>
             <p class="sec-note">
               Require login to open this UI. Set up two-factor first. When you turn it on, you are logged out.
             </p>
-            <p class="sec-note" style="margin:0.4rem 0 0" x-show="!security.totpEnrolled">
+            <p class="sec-note" style="margin:0.4rem 0 0" x-show="!$store.connection.security.totpEnrolled">
               Enroll two-factor above to enable this.
             </p>
           </section>
@@ -2414,10 +2414,10 @@
           <section class="sec-card">
             <div class="sec-card-head">
               <span class="sec-card-title"><i class="bi bi-image"></i> Remote images</span>
-              <span class="sec-badge" :class="security.remoteImages ? 'on' : 'off'"
-                    x-text="security.remoteImages ? 'active' : 'off'"></span>
+              <span class="sec-badge" :class="$store.connection.security.remoteImages ? 'on' : 'off'"
+                    x-text="$store.connection.security.remoteImages ? 'active' : 'off'"></span>
               <label class="switch">
-                <input type="checkbox" :checked="security.remoteImages" @change="toggleRemoteImages($event)" />
+                <input type="checkbox" :checked="$store.connection.security.remoteImages" @change="toggleRemoteImages($event)" />
                 <span class="switch-track"></span>
               </label>
             </div>
@@ -2458,12 +2458,12 @@
         </div>
         <div class="rel-body">
           <p class="rel-standing">
-            <span x-text="release.current"></span> →
-            <strong x-text="release.latest"></strong>
-            <span class="rel-count" x-text="releaseSummary"></span>
+            <span x-text="$store.release.release.current"></span> →
+            <strong x-text="$store.release.release.latest"></strong>
+            <span class="rel-count" x-text="$store.release.releaseSummary"></span>
           </p>
-          <p class="side-error" x-show="releaseStale()" x-text="releaseStale()"></p>
-          <template x-for="entry in release.gap" :key="entry.version">
+          <p class="side-error" x-show="$store.release.releaseStale()" x-text="$store.release.releaseStale()"></p>
+          <template x-for="entry in $store.release.release.gap" :key="entry.version">
             <div class="rel-entry">
               <div class="rel-entry-head">
                 <a class="rel-version" :href="entry.url" target="_blank" rel="noopener" x-text="entry.title"></a>
@@ -2490,7 +2490,7 @@
           <template x-if="relUpdate.phase === 'confirm'">
             <div class="rel-confirm-body">
               <p>
-                Ralphy downloads <strong x-text="release.latest"></strong>, checks it,
+                Ralphy downloads <strong x-text="$store.release.release.latest"></strong>, checks it,
                 and restarts. This page loads again when Ralphy is back.
               </p>
               <p x-show="relUpdate.consoles.length">
@@ -2540,12 +2540,12 @@
             <i class="bi bi-exclamation-triangle"></i>
             <span x-text="releaseConsoleWarning"></span>
           </p>
-          <template x-if="release.can_update">
+          <template x-if="$store.release.release.can_update">
             <button class="btn accent rel-update" @click="beginUpdate()"
                     :disabled="relUpdate.phase !== 'idle'">Update now</button>
           </template>
-          <p class="rel-label" x-show="!release.can_update">To update, run this command in a terminal:</p>
-          <p class="rel-label" x-show="release.can_update" x-cloak>Or run this command in a terminal:</p>
+          <p class="rel-label" x-show="!$store.release.release.can_update">To update, run this command in a terminal:</p>
+          <p class="rel-label" x-show="$store.release.release.can_update" x-cloak>Or run this command in a terminal:</p>
           <div class="rel-cmd-row">
             <span class="rel-cmd">
               <code>ralphy update</code>
@@ -2556,7 +2556,7 @@
               </button>
             </span>
             <label class="rel-watch">
-              <input class="set-check" type="checkbox" :checked="!release.disabled"
+              <input class="set-check" type="checkbox" :checked="!$store.release.release.disabled"
                      @change="setReleaseWatch($event.target.checked)" />
               <span>Check for new releases</span>
             </label>
@@ -2565,7 +2565,7 @@
                workbench console dies with it: on Windows `kill_tree_by_pid`
                walks the tree, and elsewhere the console loses its terminal.
                With the button shown, the button is the way to update. -->
-          <p class="rel-hint" x-show="!release.can_update">
+          <p class="rel-hint" x-show="!$store.release.release.can_update">
             Do not use a workbench console: the update closes all consoles.
             This page connects again by itself.
           </p>
@@ -3192,7 +3192,7 @@
          nothing behind to read: the real daemon never renders the app until
          /api/login succeeds, so there's nothing to peek at.
     ==================================================================== -->
-    <div class="login-gate" x-show="!$store.connection.authed" x-cloak>
+    <div class="login-gate" x-data="wbLogin" x-show="!$store.connection.authed" x-cloak>
       <form class="login-card" @submit.prevent="submitLogin()" autocomplete="off">
         <!-- The mark is `identityMark()`, the same accessor the rail puck, the
              account menu and the About card use (#204) — the daemon wears ONE
@@ -3219,7 +3219,7 @@
             </template>
           </div>
         </label>
-        <label class="login-label" x-show="security.passwordSet || login.passwordRequired">
+        <label class="login-label" x-show="$store.connection.security.passwordSet || login.passwordRequired">
           Password
           <!-- Inside an `x-if` so the field is REMOVED from the document the
                moment the daemon accepts it, not merely hidden with the gate.

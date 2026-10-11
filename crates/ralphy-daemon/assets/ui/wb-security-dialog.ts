@@ -4,8 +4,9 @@
 
    `securityDialog` is the Alpine component `wbSecurityDialog`. It reaches
    `shell()` only through the names in `uses` (ADR-0073 D4). The security fact
-   (`security`) stays in `shell()`, because the boot, the login gate and log
-   off read it: the dialog reads it, and changes it only through
+   (`security`) and log off are the Alpine store `connection`
+   (wb-connection-store.ts), because the boot, the login gate and log off read
+   it too: the dialog reads it, and changes it only through
    `securityChanged`. The dialog opens on the `workbench:security-open` event,
    and log off closes it with the `workbench:log-off` event (ADR-0073 D5).
 
@@ -22,9 +23,10 @@ export function securityDialog() {
   // Every `shell()` member this component's code or markup reads or calls.
   // `loadComponent` in ui-tests/harness.mjs fails on any other name, and the
   // type check fails on a name the code reads.
-  return component(["security", "securityChanged", "logOff", "scrim"], {
+  return component(["scrim"], {
     securityOpen: false,
-    // The dialog's own form state. The fact it shows is `security` in `shell()`.
+    // The dialog's own form state. The fact it shows is `security` in the store
+    // `connection`.
     securityForm: {
       passwordDraft: "",
       passwordConfirm: "",
@@ -59,7 +61,7 @@ export function securityDialog() {
         const r = await apiFetch("GET /api/security/state");
         if (r.ok) {
           const s = await r.json();
-          this.securityChanged({
+          this.$store.connection.securityChanged({
             tokenSet: s.token_set,
             passwordSet: s.password_set,
             totpEnrolled: s.totp_enrolled,
@@ -87,7 +89,7 @@ export function securityDialog() {
     // Whether the daemon will demand a fresh code for a posture downgrade: a
     // live TOTP seed is armed. A pending (unconfirmed) enrolment never counts.
     stepUpNeeded() {
-      return this.security.totpEnrolled === true;
+      return this.$store.connection.security.totpEnrolled === true;
     },
     // Ask the operator for the current 6-digit code before `label`. Resolves
     // to the code, to `""` when no seed is armed (nothing to ask), or to
@@ -164,7 +166,7 @@ export function securityDialog() {
         });
         const ok = r.ok && (await r.json()).confirmed;
         if (ok) {
-          this.securityChanged({ totpEnrolled: true });
+          this.$store.connection.securityChanged({ totpEnrolled: true });
           this.securityForm.pendingEnroll = false;
           this.securityForm.secret = "";
           this.securityForm.otpauthUri = "";
@@ -217,7 +219,7 @@ export function securityDialog() {
       } catch {
         return;
       }
-      this.securityChanged({ totpEnrolled: false });
+      this.$store.connection.securityChanged({ totpEnrolled: false });
       this.securityForm.pendingEnroll = false;
       this.securityForm.secret = "";
       this.securityForm.otpauthUri = "";
@@ -225,7 +227,7 @@ export function securityDialog() {
       this.securityForm.confirmCode = "";
       this.securityForm.totpError = "";
       // revoking the seed removes the session factor → login can't be required
-      this.securityChanged({ requireLogin: false });
+      this.$store.connection.securityChanged({ requireLogin: false });
     },
 
     // The `/api/security/password` body: the new password (empty = remove)
@@ -234,14 +236,14 @@ export function securityDialog() {
     // present: an absent field is a 400, never a clear.
     passwordBody(pw: string) {
       const p = new URLSearchParams({ password: pw });
-      if (this.security.passwordSet) p.set("current", this.securityForm.passwordCurrent);
+      if (this.$store.connection.security.passwordSet) p.set("current", this.securityForm.passwordCurrent);
       return p.toString();
     },
     async savePassword() {
       const pw = this.securityForm.passwordDraft.trim();
       // Require a matching confirmation before the value ever leaves the field.
       if (!pw || this.securityForm.passwordDraft !== this.securityForm.passwordConfirm) return;
-      if (this.security.passwordSet && !this.securityForm.passwordCurrent) return;
+      if (this.$store.connection.security.passwordSet && !this.securityForm.passwordCurrent) return;
       this.securityForm.stepUpError = "";
       try {
         const r = await apiFetch("POST /api/security/password", {
@@ -252,7 +254,7 @@ export function securityDialog() {
           this.notePasswordRefusal(r);
           return;
         }
-        this.securityChanged({ passwordSet: (await r.json()).password_set });
+        this.$store.connection.securityChanged({ passwordSet: (await r.json()).password_set });
       } catch {
         return;
       } finally {
@@ -262,7 +264,7 @@ export function securityDialog() {
       this.securityForm.passwordConfirm = "";
     },
     async clearPassword() {
-      if (this.security.passwordSet && !this.securityForm.passwordCurrent) return;
+      if (this.$store.connection.security.passwordSet && !this.securityForm.passwordCurrent) return;
       this.securityForm.stepUpError = "";
       try {
         const r = await fetch("/api/security/password", {
@@ -279,7 +281,7 @@ export function securityDialog() {
       } finally {
         this.securityForm.passwordCurrent = "";
       }
-      this.securityChanged({ passwordSet: false });
+      this.$store.connection.securityChanged({ passwordSet: false });
       this.securityForm.passwordDraft = "";
       this.securityForm.passwordConfirm = "";
     },
@@ -310,15 +312,15 @@ export function securityDialog() {
       } catch {
         return;
       }
-      if (this.security.policy === "session") this.logOff();
+      if (this.$store.connection.security.policy === "session") this.$store.connection.logOff();
     },
 
     async toggleRequireLogin(ev?: CheckboxChange) {
       // Only meaningful once TOTP is enrolled; the server refuses (400) an
       // enable with no seed, the client guard just avoids the round-trip.
-      const want = !this.security.requireLogin;
-      if (want && !this.security.totpEnrolled) {
-        this.securityChanged({ requireLogin: false });
+      const want = !this.$store.connection.security.requireLogin;
+      if (want && !this.$store.connection.security.totpEnrolled) {
+        this.$store.connection.securityChanged({ requireLogin: false });
         if (ev?.target) ev.target.checked = false;
         return;
       }
@@ -326,7 +328,7 @@ export function securityDialog() {
       // fresh code (step-up). Turning it on stays free.
       const code = want ? "" : await this.askFreshCode("turn login off");
       if (code === null) {
-        if (ev?.target) ev.target.checked = this.security.requireLogin;
+        if (ev?.target) ev.target.checked = this.$store.connection.security.requireLogin;
         return;
       }
       let ok = false;
@@ -341,16 +343,16 @@ export function securityDialog() {
       } catch {
         ok = false;
       }
-      if (ok) this.securityChanged({ requireLogin: want });
+      if (ok) this.$store.connection.securityChanged({ requireLogin: want });
       // `:checked` won't re-sync when the bound value did not change.
-      if (ev?.target) ev.target.checked = this.security.requireLogin;
+      if (ev?.target) ev.target.checked = this.$store.connection.security.requireLogin;
       if (!ok) return;
       if (want) {
         // The gate applies to THIS bind, loopback included (ADR-0032 §A); the
         // daemon invalidated sessions, so drop to the login screen.
-        this.securityChanged({ policy: "session" });
+        this.$store.connection.securityChanged({ policy: "session" });
         this.closeSecurity();
-        this.logOff();
+        this.$store.connection.logOff();
       } else {
         // Gate lifted — re-sync authed/policy from the server.
         await this.$store.connection.probeSession();
@@ -360,10 +362,10 @@ export function securityDialog() {
     async toggleRemoteImages(ev?: CheckboxChange) {
       // Turning it ON loosens the CSP, so that direction costs a fresh code
       // once a seed is armed; turning it off stays free.
-      const want = !this.security.remoteImages;
+      const want = !this.$store.connection.security.remoteImages;
       const code = want ? await this.askFreshCode("show remote images") : "";
       if (code === null) {
-        if (ev?.target) ev.target.checked = this.security.remoteImages;
+        if (ev?.target) ev.target.checked = this.$store.connection.security.remoteImages;
         return;
       }
       let ok = false;
@@ -379,11 +381,11 @@ export function securityDialog() {
         ok = false;
       }
       if (ok) {
-        this.securityChanged({ remoteImages: want });
+        this.$store.connection.securityChanged({ remoteImages: want });
         this.securityForm.remoteImagesReload = true;
       }
       // `:checked` won't re-sync when the bound value did not change.
-      if (ev?.target) ev.target.checked = this.security.remoteImages;
+      if (ev?.target) ev.target.checked = this.$store.connection.security.remoteImages;
     },
   });
 }

@@ -5,8 +5,9 @@
 
    `releaseDialogs` is the Alpine component `wbReleaseDialogs`. It reaches
    `shell()` only through the names in `uses` (ADR-0073 D4). The release fact
-   (`release`, `releaseSeen`) stays in `shell()`, because the sidebar reads it:
-   the dialogs read it, and change it only through `markReleaseSeen` and
+   (`release`, `releaseSeen`) is the Alpine store `release`
+   (wb-release-store.ts), because the account menu reads it too: the dialogs
+   read it, and change it only through `markReleaseSeen` and
    `releaseWatchChanged`. The account menu opens the dialogs with the
    `workbench:whats-new-open` and `workbench:about-open` events (ADR-0073 D5).
 
@@ -20,7 +21,7 @@ export function releaseDialogs() {
   // Every `shell()` member this component's code or markup reads or calls.
   // `loadComponent` in ui-tests/harness.mjs fails on any other name, and the
   // type check fails on a name the code reads.
-  return component(["release", "releaseSummary", "releaseStale", "markReleaseSeen", "releaseWatchChanged", "scrim"], {
+  return component(["scrim"], {
     // --- about (read-only) ------------------------------------------------
     // The product card from `/api/about`; these defaults show until it answers.
     aboutOpen: false,
@@ -68,7 +69,7 @@ export function releaseDialogs() {
     },
     openWhatsNew() {
       this.whatsNewOpen = true;
-      this.markReleaseSeen();
+      this.$store.release.markReleaseSeen();
       // The warning counts the consoles open now, not at the last poll.
       this.$store.projects.refreshLive();
     },
@@ -128,7 +129,7 @@ export function releaseDialogs() {
         return;
       }
       this.relUpdate = { ...u, phase: "restarting", code: "" };
-      this.awaitNewBuild(this.release.current);
+      this.awaitNewBuild(this.$store.release.release.current);
     },
     // The line under the question when the daemon refused or the update failed.
     updateRefusal(result: { ok: boolean; status?: number; retryAfter?: string | null; message?: string }) {
@@ -175,7 +176,7 @@ export function releaseDialogs() {
       if (!WBRelease) return;
       try {
         await WBRelease.setWatch(enable);
-        this.releaseWatchChanged(enable);
+        this.$store.release.releaseWatchChanged(enable);
       } catch (e) {
         // A preference: the next read reports what actually took.
         console.warn("release watch:", e);

@@ -15,14 +15,13 @@ import { WBChanges } from "./wb-changes.ts";
 import { classify, fileTabId, newEntryTitle, parentRel } from "./wb-file-paths.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { WBProject } from "./wb-project.ts";
-import { WBRelease } from "./wb-release.ts";
 import { WBReleaseDialogs } from "./wb-release-dialogs.ts";
 import { WBSecurityDialog } from "./wb-security-dialog.ts";
 import { WBSettingsDialog } from "./wb-settings-dialog.ts";
 import { WBSplit } from "./wb-split.ts";
 import { isFilePopupMessage } from "./wb-detached.ts";
 import { createEmitter, forwardAction, sendWindow } from "./wb-events.ts";
-import type { CanvasTab, ChangeEntry, ConfirmAsk, DiffTarget, Group, MenuItem, ModalEntry, Project, PromptAsk, ReadState, SavePayload, SecurityFact, ShellLate, Slot, TabBody, TabOpen, WireDeps } from "./wb-shell-types.d.ts";
+import type { CanvasTab, ChangeEntry, ConfirmAsk, DiffTarget, Group, MenuItem, ModalEntry, Project, PromptAsk, SavePayload, ShellLate, Slot, TabBody, TabOpen, WireDeps } from "./wb-shell-types.d.ts";
 
 // A phone in either orientation: its SHORT side is under the workbench's phone
 // breakpoint (560px). Landscape iPhone is ~750 wide but ~340 tall; an iPad's
@@ -51,26 +50,32 @@ export function shell() {
     // visibility start in the Alpine store `connection`
     // (wb-connection-store.ts), which `main.ts` registers first; the
     // projects, the fleet, the agents and the sessions in the store
-    // `projects` (wb-projects-store.ts).
+    // `projects` (wb-projects-store.ts); the release view in the store
+    // `release` (wb-release-store.ts). The account menu and the login gate
+    // are the components `wbAccount` and `wbLogin`.
     init() {
-      // Read at load and again on every return to the tab (below): the daemon
-      // polls releases on its own six-hour clock, and a tab left open for days
-      // would otherwise never show what that poll found.
-      this.loadRelease();
       // The daemon said whether this browser is authorized (the store
-      // `connection`): the login gate and the security fact are the shell's.
+      // `connection`): the restored view is the shell's.
       window.addEventListener("workbench:auth-read", (e) => {
-        this.login.passwordRequired = e.detail.password;
-        this.security.policy = e.detail.policy;
         // Gated on `authed`: a pre-login restore would have every tab refused
-        // and closed, persisting the loss (#339). `rehydrateAfterAuth` is the
-        // other end.
+        // and closed, persisting the loss (#339). The `workbench:logged-in`
+        // listener below is the other end.
         if (e.detail.authed) this.restoreView();
+      });
+      // The daemon accepted a login (wb-login.ts).
+      window.addEventListener("workbench:logged-in", () => {
+        // `/api/desk` is gated too: unread AND unwritable until re-read (#327);
+        // the selected checkouts ride it (#406).
+        window.WBConsole?.afterLogin()?.then(() => {
+          this.$store.checkouts.adoptDeskCheckouts();
+          this.syncDeskFailure();
+        });
+        // Only now is `file.read` allowed (#339).
+        this.restoreView();
       });
       // A push, a reopened socket or the tab coming back (the store
       // `connection`) asks to read these facts again.
       window.addEventListener("workbench:desk-reread", () => this.rereadDesk());
-      window.addEventListener("workbench:release-reread", () => this.loadRelease());
       // The runs socket said the snapshots changed (the Alpine store `runs`).
       // A snapshot change means the tracker may have moved, so the same push
       // nudges the board (#301); the predicate coalesces it.
@@ -86,7 +91,6 @@ export function shell() {
       });
       // A flush can be the read that finds the desk unreadable; no push says so.
       window.WBConsole?.setDeskFailureHook?.(() => this.syncDeskFailure());
-      window.addEventListener("workbench:menus-close", () => this.closeAvatarMenu());
       // A canvas tab that a component asks for (the Spend tab): added once,
       // then brought to the front.
       window.addEventListener("workbench:tab-open", (e) => {
@@ -541,254 +545,6 @@ export function shell() {
 
     // The Runs panel's flash line; `_flashAction` writes it.
     runsActionMsg: "",
-
-    // --- release ----------------------------------------------------------
-    // The release fact stays here, because the sidebar reads it. The About,
-    // What's new and update dialogs are the component in
-    // wb-release-dialogs.ts, and change it only through the two methods
-    // after `loadRelease` (ADR-0073 D4).
-    // The release view the daemon computed (ADR-0056 §7), seeded empty.
-    release: (WBRelease && WBRelease.EMPTY) || {
-      current: "",
-      channel: "rc",
-      standing: "unknown",
-      severity: "none",
-      latest: null,
-      gap: [],
-      disabled: false,
-      can_update: false,
-    },
-    // Dismissed by opening the panel — except urgent news.
-    releaseSeen: false,
-
-    get releaseHasNews() {
-      return !!WBRelease && WBRelease.hasNews(this.release);
-    },
-    // What the rail draws: an urgent release ignores the dismissal.
-    get releaseUnread() {
-      if (!this.releaseHasNews) return false;
-      return !this.releaseSeen || WBRelease.isSticky(this.release);
-    },
-    get releaseSummary() {
-      return WBRelease ? WBRelease.gapSummary(this.release) : "";
-    },
-
-    releaseRead: null as ReadState,
-    releaseStale() {
-      return WBFail.notCurrent(this.releaseRead, (ms) => this.$store.connection.fmtClock(ms));
-    },
-    async loadRelease() {
-      if (!WBRelease) return;
-      const view = await WBRelease.read();
-      // A failed read keeps what the page last knew (ADR-0056 §6), marked
-      // not current (ADR-0070 D3).
-      this.releaseRead = WBFail.readFold(this.releaseRead, {
-        ok: !!view,
-        value: true,
-        reason: "the daemon did not answer",
-        at: Date.now(),
-      });
-      if (!view) return;
-      // A dismissal is for the release that was shown. A newer one is news again.
-      if (view.latest !== this.release.latest) this.releaseSeen = false;
-      this.release = view;
-    },
-    // The What's new dialog was opened: the release it shows is dismissed.
-    markReleaseSeen() {
-      this.releaseSeen = true;
-    },
-    // The operator turned the release watch on or off.
-    releaseWatchChanged(enable: boolean) {
-      this.release = { ...this.release, disabled: !enable };
-    },
-
-    // --- account menu + security -----------------------------------------
-    // The daemon auth model (ADR-0032): an opt-in access token, an optional
-    // password, and TOTP whose secret is shown exactly once.
-    avatarMenu: false,
-    security: {
-      tokenSet: true, // a networked daemon always has one; localhost needs none
-      passwordSet: false,
-      totpEnrolled: false,
-      requireLogin: false, // opt-in: mimics a non-loopback bind with TOTP
-      // Opt-in: markdown may load images from other websites (the CSP
-      // `img-src https:`, ADR-0032 amendment §F).
-      remoteImages: false,
-      policy: "session", // overwritten by probeSession()
-    },
-    // The Security dialog (wb-security-dialog.ts) changes the security fact
-    // only here (ADR-0073 D4). `patch` holds fields of `security`.
-    securityChanged(patch: Partial<SecurityFact>) {
-      Object.assign(this.security, patch);
-    },
-
-    // ONE dropdown at a time: the shell hears `workbench:menus-close` (sent by
-    // every menu trigger, this one too) and closes the account menu here.
-    closeAvatarMenu() {
-      this.avatarMenu = false;
-    },
-    toggleAvatarMenu() {
-      const was = this.avatarMenu;
-      sendWindow(window, "workbench:menus-close");
-      this.avatarMenu = !was;
-    },
-
-    // --- login gate -------------------------------------------------------
-    // `remember` is "keep me signed in" (ADR-0032 amendment 2026-09-16):
-    // opt-in, reset on every log-off.
-    login: { code: "", digits: ["", "", "", "", "", ""], password: "", remember: false, error: "", passwordRequired: false },
-
-    async logOff() {
-      this.avatarMenu = false;
-      sendWindow(window, "workbench:log-off");
-      // The session cookie is HttpOnly — only the server can clear it. The
-      // route needs a live session (audit F5): a 401 here means the cookie
-      // was already invalid, which is the same place this lands anyway.
-      try {
-        await fetch("/api/logout", { method: "POST" });
-      } catch {}
-      // Localhost/Bearer have no login gate to drop to (#205).
-      if (this.security.policy === "session") {
-        this.$store.connection.authChanged(false);
-        this.login = { code: "", digits: ["", "", "", "", "", ""], password: "", remember: false, error: "", passwordRequired: this.login.passwordRequired };
-      }
-      window.WB.emit("logoff");
-    },
-
-    // Re-fetch the endpoints that returned 401 while gated; the presence
-    // socket self-reconnects.
-    rehydrateAfterAuth() {
-      this.$store.projects.clearReposError();
-      this.$store.projects.loadRepos();
-      this.$store.connection.loadIdentity();
-      // `/api/agents` is gated too.
-      this.$store.projects.loadAgents();
-      // `/api/desk` is gated too: unread AND unwritable until re-read (#327);
-      // the selected checkouts ride it (#406).
-      window.WBConsole?.afterLogin()?.then(() => {
-        this.$store.checkouts.adoptDeskCheckouts();
-        this.syncDeskFailure();
-      });
-      // Only now is `file.read` allowed (#339).
-      this.restoreView();
-      // Every shown fact reads again after login (ADR-0070 D2 event 4);
-      // `loadRepos` above covers the sessions, the change set and the branch.
-      sendWindow(window, "workbench:board-refresh", { trigger: "login" });
-      // Not only with the Runs panel open: the runs lock the writes.
-      this.$store.runs.hydrateRuns();
-      this.$store.connection.rereadOpenPanels();
-    },
-
-    // --- TOTP digit boxes -------------------------------------------------
-    // One input per digit; a paste or OTP autofill landing all 6 in the first
-    // box is spread. `login.code` is the joined string.
-
-    _otpBoxes(el: HTMLElement) {
-      return el.closest(".login-otp")!.querySelectorAll("input");
-    },
-
-    _otpSync() {
-      this.login.code = this.login.digits.join("");
-    },
-
-    // Once the 6th digit lands: the password field if required, else submit.
-    _otpAdvancePastLast(el: HTMLElement) {
-      if (this.security.passwordSet || this.login.passwordRequired) {
-        this.$refs.loginPassword?.focus();
-      } else {
-        el.closest("form")?.querySelector<HTMLElement>(".login-btn")?.focus();
-      }
-    },
-
-    _otpFill(text: string, el: HTMLElement) {
-      const chars = text.replace(/\D/g, "").slice(0, 6).split("");
-      for (let j = 0; j < 6; j++) this.login.digits[j] = chars[j] || "";
-      this._otpSync();
-      const boxes = this._otpBoxes(el);
-      if (chars.length >= 6) this._otpAdvancePastLast(el);
-      else boxes[chars.length].focus();
-    },
-
-    otpInput(i: number, e: Event & { target: HTMLInputElement }) {
-      const v = e.target.value.replace(/\D/g, "");
-      if (v.length > 1) {
-        this._otpFill(v, e.target);
-        return;
-      }
-      e.target.value = v;
-      this.login.digits[i] = v;
-      this._otpSync();
-      if (!v) return;
-      if (i < 5) this._otpBoxes(e.target)[i + 1].focus();
-      else this._otpAdvancePastLast(e.target);
-    },
-
-    otpKeydown(i: number, e: KeyboardEvent & { target: HTMLInputElement }) {
-      const boxes = this._otpBoxes(e.target);
-      if (e.key === "Backspace" && !e.target.value && i > 0) {
-        e.preventDefault();
-        this.login.digits[i - 1] = "";
-        this._otpSync();
-        boxes[i - 1].focus();
-      } else if (e.key === "ArrowLeft" && i > 0) {
-        e.preventDefault();
-        boxes[i - 1].focus();
-      } else if (e.key === "ArrowRight" && i < 5) {
-        e.preventDefault();
-        boxes[i + 1].focus();
-      }
-    },
-
-    otpPaste(e: ClipboardEvent & { target: HTMLInputElement }) {
-      const text = e.clipboardData?.getData("text") || "";
-      this._otpFill(text, e.target);
-    },
-
-    // The url-encoded `POST /api/login` body; `remember=true` only when
-    // checked (an absent field is a standard session). Pure.
-    loginBody() {
-      const code = (this.login.code || "").trim();
-      const body = new URLSearchParams({ code });
-      if (this.login.passwordRequired || this.security.passwordSet) {
-        body.set("password", this.login.password || "");
-      }
-      if (this.login.remember) body.set("remember", "true");
-      return body.toString();
-    },
-
-    async submitLogin() {
-      try {
-        const res = await fetch("/api/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: this.loginBody(),
-        });
-        if (res.ok) {
-          this.login.error = "";
-          this.$store.connection.authChanged(true);
-          this.forgetLoginSecrets();
-          this.rehydrateAfterAuth();
-          window.WB.emit("login");
-        } else {
-          this.login.error = "Invalid code or password.";
-        }
-      } catch {
-        // Only the daemon authenticates: a thrown fetch never logs in.
-        this.login.error = "Cannot reach the daemon. Try again.";
-      }
-    },
-
-    // The code and the password are SPENT the moment the daemon accepts them:
-    // the session is the cookie now, and neither is ever replayed. Dropping
-    // them keeps a plaintext password out of a live `<input>` for the rest of
-    // the session — which is also what stopped the browser's password manager
-    // from pairing it with the next text field the operator typed into and
-    // offering to save a note's title as a username (measured 2026-09-22).
-    forgetLoginSecrets() {
-      this.login.code = "";
-      this.login.password = "";
-      this.login.digits = ["", "", "", "", "", ""];
-    },
 
     // --- canvas tabs ------------------------------------------------------
     // The SAME terminal glyph as the New-console button and its menu rows.

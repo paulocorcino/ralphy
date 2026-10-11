@@ -1,9 +1,9 @@
 // Unit tests for assets/ui/wb-release-dialogs.ts, the Alpine component of the
 // About, What's new and update dialogs. It is built with `loadComponent`, so
 // every test here also fails when the component reads a shell() name it does
-// not list in `uses`, assigns a shell() field, or writes inside the release
-// fact (ADR-0073 D4). The release fact itself (`loadRelease`) is tested in
-// app.test.mjs.
+// not list in `uses`, or assigns a shell() field (ADR-0073 D4). The release
+// fact itself (`loadRelease`) is the Alpine store `release`, tested in
+// wb-release-store.test.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -127,41 +127,33 @@ test("the same build after a gap is a rollback, and a new build reloads the page
   assert.equal(reloaded, true, "the new build brings its own workbench");
 });
 
-// ADR-0073 D4, amendment of 2026-10-05: the release fact is a shell() value,
-// because the sidebar reads it. The dialogs read it, and change it only
-// through two shell() methods.
+// The release fact is the Alpine store `release`, because the account menu
+// reads it too. The dialogs read it, and change it only through two of its
+// methods.
 test("the dialogs change the release fact only through markReleaseSeen and releaseWatchChanged", async () => {
   const { state, shell } = dialogs();
+  const release = shell.$store.release;
   shell.$store.projects.refreshLive = () => {};
-  assert.throws(
-    () => {
-      state.release.disabled = true;
-    },
-    (e) => e instanceof TypeError && /wbReleaseDialogs/.test(e.message) && /release\.disabled/.test(e.message),
-  );
-  assert.throws(() => {
-    state.releaseSeen = true;
-  }, TypeError);
-  assert.equal(shell.releaseSeen, false, "the write did not reach shell()");
+  assert.throws(() => state.release, ReferenceError, "the fact is not a shell() name the dialogs read");
 
   state.openWhatsNew();
   assert.equal(state.whatsNewOpen, true);
-  assert.equal(shell.releaseSeen, true, "opening the panel dismisses the release it shows");
+  assert.equal(release.releaseSeen, true, "opening the panel dismisses the release it shows");
 
   const watched = [];
   WBRelease.setWatch = async (enable) => watched.push(enable);
   await state.setReleaseWatch(false);
   assert.deepEqual(watched, [false]);
-  assert.equal(shell.release.disabled, true);
+  assert.equal(release.release.disabled, true);
   await state.setReleaseWatch(true);
-  assert.equal(shell.release.disabled, false);
+  assert.equal(release.release.disabled, false);
 
   // A refused preference leaves the fact as it was: the next read says what took.
   WBRelease.setWatch = async () => {
     throw new Error("offline");
   };
   await state.setReleaseWatch(false);
-  assert.equal(shell.release.disabled, false);
+  assert.equal(release.release.disabled, false);
 });
 
 test("the dialogs list at most 12 shell() names, and shell() has each one", () => {
@@ -195,18 +187,20 @@ test("every name the dialogs' markup reads is their own or in their uses list", 
 test("the account menu closes itself and asks the dialogs to open with their events", async () => {
   const loaded = loadShell();
   const { scope: state } = loadComponent("wbReleaseDialogs", { from: loaded });
+  const { scope: menu } = loadComponent("wbAccount", { from: loaded });
   loaded.state.$store.projects.refreshLive = () => {};
   for (const [label, event, flag] of [
-    ["<span x-text=\"releaseSummary\"></span>", "workbench:whats-new-open", "whatsNewOpen"],
+    ["<span x-text=\"$store.release.releaseSummary\"></span>", "workbench:whats-new-open", "whatsNewOpen"],
     ["<span>About</span>", "workbench:about-open", "aboutOpen"],
   ]) {
     const click = menuRow(label).match(/@click="([^"]*)"/)[1];
-    // The opener runs in shell() scope: it closes the menu and sends the event.
+    // The opener runs in the account menu's scope: it closes the menu and
+    // sends the event.
     const sent = [];
-    loaded.state.avatarMenu = true;
-    loaded.state.$dispatch = (name) => sent.push(name);
-    evalIn(loaded.state, click);
-    assert.equal(loaded.state.avatarMenu, false, `${event}: the menu closes`);
+    menu.avatarMenu = true;
+    menu.$dispatch = (name) => sent.push(name);
+    evalIn(menu, click);
+    assert.equal(menu.avatarMenu, false, `${event}: the menu closes`);
     assert.deepEqual(sent, [event]);
 
     // The dialogs' element hears it and opens the one asked for.

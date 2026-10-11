@@ -24,6 +24,8 @@ import { wbBoard } from "./wb-board.ts";
 import { wbChanges } from "./wb-changes-panel.ts";
 import { wbBranchDialog } from "./wb-branch-dialog.ts";
 import { wbSpend } from "./wb-spend-panel.ts";
+import { wbAccount } from "./wb-account.ts";
+import { wbLogin } from "./wb-login.ts";
 import { createDaemon } from "./wb-daemon.ts";
 import { WBDevice } from "./wb-device.ts";
 import { createViewer } from "./wb-file-viewer.ts";
@@ -36,6 +38,7 @@ import { projectsStore } from "./wb-projects-store.ts";
 import { connectionStore } from "./wb-connection-store.ts";
 import { runsStore } from "./wb-runs-store.ts";
 import { checkoutsStore } from "./wb-checkouts-store.ts";
+import { releaseStore } from "./wb-release-store.ts";
 
 window.Alpine = Alpine;
 // The door for operator messages first: the consoles, the cards and the
@@ -73,6 +76,8 @@ Alpine.store("runs", runsStore({ messages }));
 // The selected checkout of each project; its `init` takes the `unknown
 // checkout` hook and the desk's checkouts once the desk lands.
 Alpine.store("checkouts", checkoutsStore({ messages }));
+// The release view; its `init` reads it and hears the tab come back.
+Alpine.store("release", releaseStore({ messages }));
 // Each name is the `x-data` of one element in `index.html`.
 Alpine.data("shell", shell);
 Alpine.data("wbSettingsDialog", settingsDialog);
@@ -90,6 +95,8 @@ Alpine.data("wbBoard", wbBoard);
 Alpine.data("wbChanges", wbChanges);
 Alpine.data("wbBranchDialog", wbBranchDialog);
 Alpine.data("wbSpend", wbSpend);
+Alpine.data("wbAccount", wbAccount);
+Alpine.data("wbLogin", wbLogin);
 Alpine.start();
 // The consoles boot on a page whose shell Alpine has built (ADR-0075 D7).
 window.WBConsole.boot();

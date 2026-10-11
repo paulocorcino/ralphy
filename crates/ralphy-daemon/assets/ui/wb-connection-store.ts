@@ -3,7 +3,7 @@
    (#621; ADR-0073 D6 and the amendment of 2026-10-08, decisions 3 and 6).
 
    The store is the one owner of the session (whether this browser may read),
-   the presence socket and its heartbeat, the uptime, the daemon's name and
+   the security fact and log off, the presence socket and its heartbeat, the uptime, the daemon's name and
    mark, the page build and the build skew, whether the tab is hidden, and
    the write locks. Its fields change only through its own methods.
    `shell()` code reads `this.$store.connection`, the markup reads
@@ -15,6 +15,7 @@
    `window`, and the page decides what each one means for it:
    - `workbench:auth-read`: the daemon said whether this browser may read,
      and its policy;
+   - `workbench:log-off`: the operator logs off;
    - `workbench:repos-reread`, `workbench:sessions-reread`,
      `workbench:desk-reread` and `workbench:release-reread`: a push, a
      reopened socket or the tab coming back asks to read that fact again;
@@ -33,7 +34,7 @@ import { WBFail } from "./wb-fail.ts";
 import { WBRun } from "./wb-runs.ts";
 import { sendWindow } from "./wb-events.ts";
 import type { Messages } from "./wb-messages.ts";
-import type { Subscription, Timer } from "./wb-shell-types.d.ts";
+import type { SecurityFact, Subscription, Timer } from "./wb-shell-types.d.ts";
 
 /** The detached file windows, as `wire` (app.ts) keeps them. */
 export type DetachedWindows = { dirty: () => boolean; close: () => void };
@@ -214,8 +215,9 @@ export function connectionStore(deps: ConnectionStoreDeps) {
           // The login card's mark: `/api/identity` is gated, so this pre-login
           // leg is the only source. `loadIdentity` overwrites it after login.
           if (s.avatar) this.identityAvatar = s.avatar;
-          // The login gate, the security fact and the restored view are the
-          // shell's (app.ts).
+          this.securityChanged({ policy: s.policy });
+          // The login gate (wb-login.ts) and the restored view (app.ts) are
+          // not the store's.
           sendWindow(window, "workbench:auth-read", { authed: s.authed, password: s.password, policy: s.policy });
         }
       } catch {
@@ -228,6 +230,42 @@ export function connectionStore(deps: ConnectionStoreDeps) {
     // log-off.
     authChanged(authed: boolean) {
       this.authed = authed;
+    },
+
+    // --- security ---------------------------------------------------------
+    // The daemon auth model (ADR-0032): an opt-in access token, an optional
+    // password, and TOTP whose secret is shown exactly once.
+    security: {
+      tokenSet: true, // a networked daemon always has one; localhost needs none
+      passwordSet: false,
+      totpEnrolled: false,
+      requireLogin: false, // opt-in: mimics a non-loopback bind with TOTP
+      // Opt-in: markdown may load images from other websites (the CSP
+      // `img-src https:`, ADR-0032 amendment §F).
+      remoteImages: false,
+      policy: "session", // overwritten by probeSession()
+    },
+    // The Security dialog (wb-security-dialog.ts) changes the security fact
+    // only here (ADR-0073 D4). `patch` holds fields of `security`.
+    securityChanged(patch: Partial<SecurityFact>) {
+      Object.assign(this.security, patch);
+    },
+
+    // The account menu (wb-account.ts) and the login gate (wb-login.ts) hear
+    // `workbench:log-off` and reset their own state.
+    async logOff() {
+      sendWindow(window, "workbench:log-off");
+      // The session cookie is HttpOnly — only the server can clear it. The
+      // route needs a live session (audit F5): a 401 here means the cookie
+      // was already invalid, which is the same place this lands anyway.
+      try {
+        await fetch("/api/logout", { method: "POST" });
+      } catch {}
+      // Localhost/Bearer have no login gate to drop to (#205).
+      if (this.security.policy === "session") {
+        this.authChanged(false);
+      }
+      window.WB.emit("logoff");
     },
 
     // A time of day, `14:02`, for "Read at …" (`WBFail.clock`).

@@ -54,6 +54,7 @@ EXE = os.path.join(
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "0056-whats-new-2026-09-08.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+REL_STORE = "Alpine.store('release')"
 
 results = []
 
@@ -156,7 +157,7 @@ def main():
             )
 
             quiet = view("quiet", [entry("v0.1.0-rc.20", "2026-09-07", ["A fix."])])
-            page.evaluate(f"{SH}.release = {json.dumps(quiet)}")
+            page.evaluate(f"{REL_STORE}.release = {json.dumps(quiet)}")
             page.wait_for_timeout(250)
             dot = page.locator(".rel-dot")
             # Geometry is not paint. `is_visible()` and a width assertion both
@@ -188,7 +189,7 @@ def main():
                 entry("v0.1.0-rc.21", "2026-09-08", ["Paste a screenshot into a console."]),
                 entry("v0.1.0-rc.20", "2026-09-07", []),
             ]
-            page.evaluate(f"{SH}.release = {json.dumps(view('notable', gap))}")
+            page.evaluate(f"{REL_STORE}.release = {json.dumps(view('notable', gap))}")
             page.wait_for_timeout(200)
             page.click(".dropdown-item.rel-item")
             page.wait_for_timeout(300)
@@ -227,7 +228,7 @@ def main():
 
             urgent = view("urgent", [entry("v0.1.0-rc.21", "2026-09-08", ["Closed a hole."])])
             urgent["gap"][0]["kinds"] = ["security"]
-            page.evaluate(f"{SH}.release = {json.dumps(urgent)}")
+            page.evaluate(f"{REL_STORE}.release = {json.dumps(urgent)}")
             page.wait_for_timeout(250)
             check(
                 "f · an urgent dot survives the dismissal",

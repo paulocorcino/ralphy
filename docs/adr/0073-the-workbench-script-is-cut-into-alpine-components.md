@@ -734,3 +734,13 @@ the returned object. Without decision 3, `app.ts` stops near 850 lines.
    `wb-consoles-tab.ts`, so they became exact counts over the family.
    `the_shell_family_lists_every_module_on_disk` builds the list from
    `main.ts` and the disk, and fails when the two differ.
+
+The session's security fact (`security`, its one writer `securityChanged`)
+and log off (`logOff`) join the store `connection`, and the release fact
+(`release`, its dismissal and its read state) is a sixth store `release`
+(`wb-release-store.ts`). Each has readers in more than one part: the
+security fact in the Security dialog, the login gate and log off; the
+release fact in the account menu and the release dialogs. A component
+cannot read the data of another component, so these facts are stores. The
+account menu (`wbAccount`) and the login gate (`wbLogin`) keep only their
+own state, and log off resets that state through `workbench:log-off`.

@@ -99,10 +99,6 @@ const SECTIONS: &[(&str, Group)] = &[
     ("chrome panels", Group::Core),
     ("branch switcher", Group::Git),
     ("Runs panel", Group::Board),
-    ("release", Group::Core),
-    ("account menu", Group::Core),
-    ("login gate", Group::Core),
-    ("TOTP digit boxes", Group::Core),
     // The canvas tabs (`tabs`, `active`, `slot`) are layout that `shell()`
     // keeps (ADR-0073 D2), and so are the slot, the per-client view, and
     // opening a file or a Changes row into a tab.

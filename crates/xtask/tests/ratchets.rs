@@ -61,10 +61,13 @@ const PROMPT_GH_ISSUE_VIEW: usize = 20;
 /// panes moved to the component `wbSpend` (#621); 2099 since the session,
 /// the presence and the write locks moved to the Alpine store `connection`
 /// (#621); 1694 since the fleet, the repos, the agents and the live sessions
-/// moved to the Alpine store `projects` (#621).
+/// moved to the Alpine store `projects` (#621); 1450 since the release view
+/// moved to the Alpine store `release`, the security fact and log off to the
+/// store `connection`, and the account menu and the login gate to the
+/// components `wbAccount` and `wbLogin` (#621).
 /// Its shell-only types are in `wb-shell-types.d.ts` and it imports them on
 /// one line (#653).
-const APP_TS_LINES: usize = 1694;
+const APP_TS_LINES: usize = 1450;
 /// Lines of `crates/ralphy-daemon/assets/ui/wb-console.ts`, the console
 /// factory (ADR-0073 D8, which starts this ratchet with the first fold move).
 /// 5842 since ADR-0075 phase 5 moved its pure folds, its GPU budget and its

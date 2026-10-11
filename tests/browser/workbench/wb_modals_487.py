@@ -61,6 +61,8 @@ SECURITY = "Alpine.$data(document.querySelector('.security-dialog'))"
 SETTINGS = "Alpine.$data(document.querySelector('.settings-dialog'))"
 # The About, What's new and update dialogs' own component, nested in shell().
 RELEASE = "Alpine.$data(document.querySelector('.release-dialogs'))"
+ACCOUNT = "Alpine.$data(document.querySelector('[x-data=\"wbAccount\"]'))"
+CONNECTION = "Alpine.store('connection')"
 
 # What has focus, in words a failure line can print.
 ACTIVE = (
@@ -282,10 +284,10 @@ def main():
             # --- scenario 2: Security, and its step-up field ------------------
             # The account menu's item closes the menu and opens the dialog.
             page.locator(".avatar-btn").click()
-            page.wait_for_function(f"() => {SH}.avatarMenu === true", timeout=5000)
+            page.wait_for_function(f"() => {ACCOUNT}.avatarMenu === true", timeout=5000)
             page.locator(".account-menu .dropdown-item", has_text="Security settings").click()
             page.wait_for_function(f"() => {SECURITY}.securityOpen === true", timeout=5000)
-            check("2 the account menu closes when it opens Security", flag(page, "avatarMenu") is False)
+            check("2 the account menu closes when it opens Security", flag(page, "avatarMenu", root=ACCOUNT) is False)
             settle(page)
             page.evaluate(f"() => {{ {SECURITY}.stepUp = {{ open: true, code: '', label: 'test' }}; }}")
             page.wait_for_function(
@@ -308,10 +310,10 @@ def main():
 
             # Log off closes Security with an event. On loopback there is no
             # login gate, so the page stays usable for the next scenarios.
-            check("2 loopback has no login gate", flag(page, "security.policy") != "session", flag(page, "security.policy"))
+            check("2 loopback has no login gate", flag(page, "security.policy", root=CONNECTION) != "session", flag(page, "security.policy", root=CONNECTION))
             page.evaluate("() => document.dispatchEvent(new CustomEvent('workbench:security-open', { bubbles: true }))")
             page.wait_for_function(f"() => {SECURITY}.securityOpen === true", timeout=5000)
-            page.evaluate(f"() => {SH}.logOff()")
+            page.evaluate(f"() => {CONNECTION}.logOff()")
             page.wait_for_function(f"() => {SECURITY}.securityOpen === false", timeout=5000)
             settle(page)
             check("2 log off closes Security", page.evaluate(f"() => {SECURITY}.securityOpen") is False)
@@ -320,7 +322,7 @@ def main():
             # Log off closes Settings the same way.
             page.evaluate("() => document.dispatchEvent(new CustomEvent('workbench:settings-open', { bubbles: true }))")
             page.wait_for_function(f"() => {SETTINGS}.settingsOpen === true", timeout=5000)
-            page.evaluate(f"() => {SH}.logOff()")
+            page.evaluate(f"() => {CONNECTION}.logOff()")
             page.wait_for_function(f"() => {SETTINGS}.settingsOpen === false", timeout=5000)
             settle(page)
             check("2 log off closes Settings", page.evaluate(f"() => {SETTINGS}.settingsOpen") is False)

@@ -15,7 +15,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadComponent, loadShell, UI } from "./harness.mjs";
-import { WBRelease } from "../assets/ui/wb-release.ts";
 import { WBReleaseDialogs } from "../assets/ui/wb-release-dialogs.ts";
 import { WBSecurityDialog } from "../assets/ui/wb-security-dialog.ts";
 import { WBSettingsDialog } from "../assets/ui/wb-settings-dialog.ts";
@@ -44,7 +43,7 @@ test("the state literal declares no key twice", () => {
   // NEGATIVE CONTROL: the scan must actually reach the literal. A regex that
   // matched nothing would report no duplicates forever.
   assert.ok(
-    keys.size > 100,
+    keys.size > 50,
     `the key scan found only ${keys.size} entries — it is not reading the state literal`,
   );
   assert.deepEqual(
@@ -332,34 +331,6 @@ test("under the width floor the shell paints single and keeps the slot for a wid
   }
 });
 
-// The login body is a pure fold over `login` + `security`, extracted so the
-// "keep me signed in" box (ADR-0032 amendment 2026-09-16) can be asserted here:
-// the daemon treats an absent `remember` as a standard session, so the box
-// must only ever ADD the field, never send `remember=false`.
-test("loginBody sends remember=true only when the box is checked", () => {
-  const { state } = loadShell();
-  assert.equal(state.login.remember, false, "opt-in: off by default");
-  state.login.code = " 123456 ";
-  assert.equal(state.loginBody(), "code=123456", "trimmed code, no remember");
-  state.login.remember = true;
-  assert.equal(state.loginBody(), "code=123456&remember=true");
-  state.security.passwordSet = true;
-  state.login.password = "pw";
-  assert.equal(state.loginBody(), "code=123456&password=pw&remember=true");
-});
-
-test("logOff resets the remember box along with the credentials", async () => {
-  const { state } = loadShell();
-  state.security.policy = "session";
-  state.login.remember = true;
-  state.login.passwordRequired = true;
-  state.$nextTick = () => {};
-  await state.logOff();
-  assert.equal(state.$store.connection.authed, false);
-  assert.equal(state.login.remember, false, "the box does not survive a log-off");
-  assert.equal(state.login.passwordRequired, true, "the server-told flag does");
-});
-
 // The Security, Settings and What's new dialogs' open flags are their own
 // (wb-security-dialog.ts, wb-settings-dialog.ts, wb-release-dialogs.ts), so the
 // shortcuts ask the modal stack for them (ADR-0073 amendment of 2026-10-05).
@@ -425,34 +396,6 @@ test("the shortcuts are blocked while the run or the branch dialog is on the mod
   }
 });
 
-// The release view is read again each time the tab comes back (ADR-0056 §7).
-// These pin the two rules that make a repeated read safe: a failed read keeps
-// what the page knew, and a newer release undoes the dismissal of an older one.
-test("loadRelease keeps the last view when the read fails", async () => {
-  const { state } = loadShell();
-  const known = { ...WBRelease.EMPTY, latest: "v0.1.0-rc.26", severity: "notable", gap: [{}] };
-  state.release = known;
-  WBRelease.read = async () => null;
-  await state.loadRelease();
-  assert.equal(state.release, known);
-});
-
-test("loadRelease shows a newer release again after the older one was dismissed", async () => {
-  const { state } = loadShell();
-  const view = (latest) => ({ ...WBRelease.EMPTY, latest, severity: "notable", gap: [{}] });
-  WBRelease.read = async () => view("v0.1.0-rc.26");
-  await state.loadRelease();
-  state.releaseSeen = true;
-
-  await state.loadRelease();
-  assert.equal(state.releaseSeen, true, "the same release stays dismissed");
-
-  WBRelease.read = async () => view("v0.1.0-rc.27");
-  await state.loadRelease();
-  assert.equal(state.releaseSeen, false, "a newer release is news again");
-  assert.equal(state.releaseUnread, true);
-});
-
 // A shell whose `toggle` side effects are recorders: each method `toggle` and
 // the `workbench:project-changed` listeners reach is replaced, so the test
 // sees the calls they make. The window hears the events it is sent, and
@@ -475,7 +418,6 @@ function toggleShell() {
   const record = (name) => (...args) => {
     calls.push([name, ...args]);
   };
-  state.loadRelease = record("loadRelease");
   for (const name of ["loadRepos", "wakePeerFor", "loadAgents"]) state.$store.projects[name] = record(name);
   state.$store.checkouts.ensureWorktreeListing = record("ensureWorktreeListing");
   const runs = state.$store.runs;
@@ -543,20 +485,6 @@ test("a row on a host that cannot answer stays closed, and still wakes it", () =
 // `toggle` changes the store and sends `workbench:project-changed` on the
 // window; the files, the board and the git part each listen to it (ADR-0073
 // amendment of 2026-10-08, decision 4).
-// ONE dropdown at a time: every menu trigger sends `workbench:menus-close`,
-// and the shell closes the account menu when it hears one.
-test("the account menu closes on workbench:menus-close, and opening it sends one", () => {
-  const { state, window, events } = toggleShell();
-  state.toggleAvatarMenu();
-  assert.equal(state.avatarMenu, true);
-  assert.deepEqual(
-    events.map((e) => e.type).filter((t) => t === "workbench:menus-close"),
-    ["workbench:menus-close"],
-  );
-  window.dispatchEvent(new CustomEvent("workbench:menus-close"));
-  assert.equal(state.avatarMenu, false);
-});
-
 test("toggle sends workbench:project-changed with the project now open and the one that was", () => {
   const { state, events } = toggleShell();
   state.toggle("owner/a");
@@ -700,33 +628,31 @@ test("askPrompt settles with the trimmed name the prompt submits", async () => {
 
 // --- ADR-0070 D2: a shown fact is read again on named events only ----------
 
-test("login reads the board, the runs and the tree again", () => {
+// The login gate (wb-login.ts) sends `workbench:logged-in` once the daemon
+// accepted a login: the desk and the open tabs are the shell's, and both were
+// refused while gated (#327, #339).
+test("a login the daemon accepted reads the desk again and restores the view", async () => {
   const listeners = {};
-  const loaded = loadShell({
+  const { state, window } = loadShell({
     window: {
       addEventListener: (type, fn) => (listeners[type] ||= []).push(fn),
       dispatchEvent: (e) => ((listeners[e.type] || []).forEach((fn) => fn(e)), true),
     },
   });
-  const { state } = loaded;
-  const files = loadComponent("wbFiles", { from: loaded }).scope;
-  files.init();
   const calls = [];
-  for (const name of ["loadRepos", "loadAgents"]) state.$store.projects[name] = () => calls.push(name);
+  window.WBConsole.afterLogin = () => (calls.push("afterLogin"), Promise.resolve());
+  state.$store.checkouts.adoptDeskCheckouts = () => calls.push("adoptDeskCheckouts");
   state.restoreView = () => calls.push("restoreView");
-  state.$store.connection.loadIdentity = () => calls.push("loadIdentity");
-  state.$store.runs.hydrateRuns = () => calls.push("hydrateRuns");
-  loaded.window.addEventListener("workbench:board-refresh", (e) => calls.push(`board:${e.detail.trigger}`));
-  files._treeSub = { replay: () => calls.push("tree") };
-  // Closed: the runs lock the writes whether the panel shows them or not.
-  state.runsOpen = false;
-  // The refusal the gated read left goes before the read again.
-  state.$store.projects.reposFailed("the daemon answered 401");
-  state.rehydrateAfterAuth();
-  for (const want of ["loadRepos", "board:login", "hydrateRuns", "tree"]) {
-    assert.ok(calls.includes(want), `${want} in ${calls.join(", ")}`);
+  const realSetInterval = globalThis.setInterval;
+  globalThis.setInterval = () => 0;
+  try {
+    state.init();
+  } finally {
+    globalThis.setInterval = realSetInterval;
   }
-  assert.equal(state.$store.projects.reposError, "");
+  window.dispatchEvent(new CustomEvent("workbench:logged-in"));
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(calls, ["afterLogin", "restoreView", "adoptDeskCheckouts"]);
 });
 
 // --- ADR-0070 D3: a failed read keeps the last good value, marked not current
@@ -780,7 +706,6 @@ function runsEventShell({ visibilityState = "visible" } = {}) {
     },
   });
   const { state } = loaded;
-  state.loadRelease = () => {};
   const realSetInterval = globalThis.setInterval;
   globalThis.setInterval = () => 0;
   try {
