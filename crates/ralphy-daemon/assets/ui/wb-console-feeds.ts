@@ -16,7 +16,7 @@ import { apiFetch } from "./wb-api.ts";
 import type { Group } from "./wb-fleet.ts";
 import type { ConsoleOpts, ConsoleWin, Presentation } from "./wb-types.d.ts";
 
-const { sessionRowFor } = WBConsoleSession;
+const { sessionRowFor, agentStateTitle } = WBConsoleSession;
 
 // What the feeds read from the console, and nothing else.
 export type FeedsDeps = {
@@ -26,14 +26,12 @@ export type FeedsDeps = {
   wins: Set<ConsoleWin>;
   // The stage element, or null before the page has one.
   stage: () => HTMLElement | null;
-  // The tooltip of an agent-state dot.
-  agentStateTitle: (state: string | null | undefined, detail?: string) => string;
   // Draws the title of a window again. Built later: a lazy arrow.
   renderTitle: (win: ConsoleWin, title: HTMLElement, presentation: Presentation) => void;
 };
 
 export function createFeeds(deps: FeedsDeps) {
-  const { OPTS, wins, stage, agentStateTitle, renderTitle } = deps;
+  const { OPTS, wins, stage, renderTitle } = deps;
 
   function newId(prefix: string) {
     // `crypto.randomUUID` is undefined in a non-secure context and the daemon can

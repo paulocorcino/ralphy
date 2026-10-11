@@ -9,7 +9,6 @@ function feeds(OPTS = {}) {
     OPTS,
     wins: new Set(),
     stage: () => null,
-    agentStateTitle: () => "",
     renderTitle() {},
   });
 }

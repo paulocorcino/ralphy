@@ -92,8 +92,12 @@ const APP_TS_LINES: usize = 4209;
 /// `wb-console-placeholder.ts` (#621); 950 since the comments above the factory
 /// calls name their module and no longer repeat what the code shows (#621);
 /// 608 since the object of members and the fold destructures moved to
-/// `wb-console-api.ts` (#621).
-const WB_CONSOLE_TS_LINES: usize = 608;
+/// `wb-console-api.ts` (#621); 488 since `refitAll` moved to
+/// `wb-stage-view.ts`, `boot` and `afterLogin` to `wb-desk.ts`, `open` to
+/// `wb-console-spawn.ts`, the focus hook and `changed` to
+/// `wb-console-dormancy.ts`, `agentStateTitle` to `wb-console-session.ts`, and
+/// `count` and `inGesture` to `wb-console-api.ts` (#621).
+const WB_CONSOLE_TS_LINES: usize = 488;
 /// Lines of `crates/ralphy-daemon/assets/ui/wb-notes.ts`, the note cards
 /// (ADR-0073 D8, started by its 2026-10-10 amendment). 2828 at 823cc84c, before
 /// its first cut (#623); 2835 since the cards take the console as a typed dep

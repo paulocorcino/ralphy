@@ -8,11 +8,13 @@
    fences, its desk and the `WBConsole` API use (ADR-0075 D7). They read the
    console only through `deps`, and `ViewDeps` lists every read, so `tsc`
    refuses a read outside it. `wb-console.ts` creates one per console, before
-   its terminal, and keeps the stage's extent and `refitAll`.
+   its terminal. `refitAll` refits every console when the Consoles tab
+   returns to view.
    --------------------------------------------------------------------------- */
 import { WBGeometry } from "./wb-geometry.ts";
+import { sendDocument } from "./wb-events.ts";
 import type { WBView } from "./wb-client-view.ts";
-import type { ConsoleWin, Offset, Point, Rect, Size } from "./wb-types.d.ts";
+import type { ConsoleWin, ExtentOpts, Offset, Point, Rect, Size } from "./wb-types.d.ts";
 
 // Plane geometry is `wb-geometry.ts` (ADR-0057): pure folds over rects.
 const {
@@ -57,6 +59,13 @@ export type ViewDeps = {
   // The desk restore has settled (landed or refused). The desk is built after
   // the view, so this is a lazy arrow.
   isDeskSettled: () => boolean;
+  // The console windows: `refitAll` fits each terminal.
+  wins: Set<ConsoleWin>;
+  // The stage's extent: forces its edge, then grows or fits the stage.
+  resetExtentEdge: () => void;
+  applyExtent: (opts?: ExtentOpts) => void;
+  // Derives the fence chrome again from the measured rects.
+  refreshFenceChrome: () => void;
 };
 
 export function createView(deps: ViewDeps) {
@@ -75,6 +84,10 @@ export function createView(deps: ViewDeps) {
     clearFenceFocus,
     focusedFence,
     isDeskSettled,
+    wins,
+    resetExtentEdge,
+    applyExtent,
+    refreshFenceChrome,
   } = deps;
 
   // ---- the per-client view (issue #339) ----------------------------------------
@@ -465,6 +478,39 @@ export function createView(deps: ViewDeps) {
     document.addEventListener("fullscreenchange", syncFullState);
   }
 
+  // Refit every open console. Called when the Consoles tab returns to view: a
+  // terminal opened/reattached while the tab was display:none measured 0×0.
+  function refitAll(attempt?: number) {
+    // Alpine's `$nextTick` fires BEFORE `x-show` applies the flip (MEASURED):
+    // `.consoles-tab` is still `display:none` and everything measures 0.
+    // Refitting there collapses the stage to the bare margin (3200×2080 →
+    // 200×200) and sizes every terminal to nothing. Wait for a frame that can
+    // measure; give up rather than refit blind.
+    const ws0 = workspace();
+    if (ws0 && (!ws0.clientWidth || !ws0.clientHeight)) {
+      const n = attempt || 0;
+      if (n < 10) requestAnimationFrame(() => refitAll(n + 1));
+      return;
+    }
+    // First moment the viewport leg of the union can be measured for real.
+    // The extent dispatch is an EDGE, so one that fired before Alpine mounted
+    // would leave the footer pill at `stage 0 × 0`; force the edge.
+    resetExtentEdge();
+    applyExtent();
+    for (const win of wins) {
+      try {
+        win._term?.fit.fit();
+      } catch {}
+    }
+    // The chrome folds MEASURED rects: a refresh while hidden wrote `0
+    // consoles`. Re-derive on the first frame that can measure.
+    refreshFenceChrome();
+    // LAST, after `applyExtent`: `x-show` threw the stored offset away.
+    applyLanding();
+    // The first frame that can measure the column cap.
+    sendDocument(document, "workbench:columns-stale");
+  }
+
   return {
     applyLanding,
     flushPendingOffset,
@@ -475,5 +521,6 @@ export function createView(deps: ViewDeps) {
     cancelSlide,
     autoPan,
     wireStage,
+    refitAll,
   };
 }

@@ -30,10 +30,11 @@ import type { createSpawn } from "./wb-console-spawn.ts";
 import type { createPlaceholders } from "./wb-console-placeholder.ts";
 import type { createChrome } from "./wb-stage-chrome.ts";
 import type { createMessages } from "./wb-messages.ts";
-import type { createStack } from "./wb-stage-stack.ts";
+import type { createStack, Gestures } from "./wb-stage-stack.ts";
+import type { ConsoleWin } from "./wb-types.d.ts";
 
-// What `createConsole` hands over: the result object of each part, and the
-// functions of the console's own that sit between the parts.
+// What `createConsole` hands over: the result object of each part, the
+// console windows and the document's gestures.
 export type ConsoleParts = {
   records: ReturnType<typeof createDeskRecords>;
   feeds: ReturnType<typeof createFeeds>;
@@ -53,20 +54,15 @@ export type ConsoleParts = {
   chrome: ReturnType<typeof createChrome>;
   messages: ReturnType<typeof createMessages>;
   stack: ReturnType<typeof createStack>;
-  boot: () => void;
-  open: (opts: { repo?: string | null; agent?: string | null; plain?: boolean; checkout?: string | null; command?: string }) => boolean;
-  count: () => number;
-  refitAll: (attempt?: number) => void;
-  afterLogin: () => Promise<void>;
-  agentStateTitle: (state: string | null | undefined, detail?: string) => string;
-  inGesture: (el: HTMLElement) => boolean;
+  gestures: Gestures;
+  wins: Set<ConsoleWin>;
 };
 
 export function buildConsoleApi(parts: ConsoleParts) {
-  const { records, feeds, title, popups, dormancy, stageWindow, columns, fenceFloor, detach, view, keys, fences, desk, spawn, placeholders, chrome, messages, stack } = parts;
+  const { records, feeds, title, popups, dormancy, stageWindow, columns, fenceFloor, detach, view, keys, fences, desk, spawn, placeholders, chrome, messages, stack, gestures, wins } = parts;
   return {
-    boot: parts.boot,
-    open: parts.open,
+    boot: desk.boot,
+    open: spawn.open,
     relaunchRequest: WBConsoleSession.relaunchRequest,
     ingestWorktrees: title.ingestWorktrees,
     ingestSessions: feeds.ingestSessions,
@@ -78,8 +74,8 @@ export function buildConsoleApi(parts: ConsoleParts) {
     peerHeld: WBConsoleSession.peerHeld,
     sessionRowFor: WBConsoleSession.sessionRowFor,
     arrangeFence: fences.arrangeFence,
-    count: parts.count,
-    refitAll: parts.refitAll,
+    count: () => wins.size,
+    refitAll: view.refitAll,
     resizeRect: WBGeometry.resizeRect,
     stageExtent: WBGeometry.stageExtent,
     bringIntoView: WBGeometry.bringIntoView,
@@ -162,7 +158,7 @@ export function buildConsoleApi(parts: ConsoleParts) {
     consolePrefix: title.consolePrefix,
     list: feeds.list,
     reveal: view.reveal,
-    afterLogin: parts.afterLogin,
+    afterLogin: desk.afterLogin,
     checkoutOf: records.checkoutOf,
     setCheckout: records.setCheckout,
     checkouts: records.allCheckouts,
@@ -216,7 +212,8 @@ export function buildConsoleApi(parts: ConsoleParts) {
     atDeskCap: records.atDeskCap,
     DESK_MAX: WBDeskFolds.DESK_MAX,
     fenceRecords: fenceFloor.fenceRecords,
-    inGesture: parts.inGesture,
+    // A desk this page takes never moves an element under a gesture.
+    inGesture: gestures.active,
     // The window writes that are not a gesture (a birth, a reconnect, a first
     // act on an adopted console), for the ui-test: each must send only the
     // fields it changed.
@@ -229,7 +226,7 @@ export function buildConsoleApi(parts: ConsoleParts) {
     stackWin: stack.stackWin,
     toast: messages.toast,
     dismissToast: messages.dismissToast,
-    agentStateTitle: parts.agentStateTitle,
+    agentStateTitle: WBConsoleSession.agentStateTitle,
     renderNotes: fenceFloor.renderNotes,
 
   };

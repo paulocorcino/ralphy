@@ -4,7 +4,9 @@
    `createDormancy(deps)` sleeps a window off the viewport and wakes it on
    return, keeps the covered rule, and resumes every socket when the page
    comes back from a suspend. Building it registers no listener: `listen()`
-   registers the page listeners, and the console calls it once. It reads the
+   sets the focus hook and registers the page listeners, and the console
+   calls it once, after its desk. `changed` tells the page that the window
+   set changed. It reads the
    console only through `deps`. The rules are `dormancyDecision` in
    `wb-console-session.ts`; the watch and the GPU budget are
    `wb-console-gpu.ts` (#621).
@@ -12,6 +14,8 @@
 import * as WBConsoleInput from "./wb-console-input.ts";
 import * as WBConsoleSession from "./wb-console-session.ts";
 import { DORMANT_AFTER_MS } from "./wb-console-gpu.ts";
+import { sendDocument } from "./wb-events.ts";
+import type { Stack } from "./wb-stage-stack.ts";
 import type { WBDeskSync } from "./wb-desk-sync.ts";
 import type { TerminalOpts } from "./wb-console-terminal.ts";
 import type { ConsoleTerm, ConsoleWin } from "./wb-types.d.ts";
@@ -27,6 +31,8 @@ export type DormancyDeps = {
   document: Document;
   // Every console window.
   wins: Set<ConsoleWin>;
+  // The document's z stack (`wb-stage-stack.ts`): `listen()` sets the focus hook.
+  stack: Pick<Stack, "setFocusHook">;
   // The desk changes not sent yet: the `online` listener sends them.
   sync: Pick<ReturnType<typeof WBDeskSync.createSync>, "hasPending">;
   // The stale probe the shell fed, read at each resume.
@@ -52,6 +58,7 @@ export function createDormancy(deps: DormancyDeps) {
     window,
     document,
     wins,
+    stack,
     sync,
     staleProbeNow,
     applyKeyBar,
@@ -203,6 +210,17 @@ export function createDormancy(deps: DormancyDeps) {
   // The page listeners. Registered once, by the console, after the desk
   // read has started.
   function listen() {
+    // This console's work when the stack moves the focus.
+    stack.setFocusHook({
+      blurred: (w) => {
+        // Focus held it awake (`dormancyDecision` D2); the observer will not
+        // report a window that did not move.
+        if (wins.has(w)) applyDormancy(w);
+      },
+      // On top now, so first in line for a context. The `applyDormancy` above
+      // asks too, but not when the focus came from a note card.
+      focused: () => budget().scheduleGpu(),
+    });
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState !== "visible") {
         hiddenAt = Date.now();
@@ -262,5 +280,12 @@ export function createDormancy(deps: DormancyDeps) {
     }
   }
 
-  return { resumeAll, applyDormancy, isCovered, refreshCover, listen };
+  function changed() {
+    // A close takes a full bleed away without moving the windows under it, so
+    // the observer has nothing to report.
+    refreshCover();
+    sendDocument(document, "workbench:consoles-changed", { count: wins.size });
+  }
+
+  return { resumeAll, applyDormancy, isCovered, refreshCover, listen, changed };
 }

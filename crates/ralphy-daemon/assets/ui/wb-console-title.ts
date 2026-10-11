@@ -12,6 +12,7 @@
    --------------------------------------------------------------------------- */
 import { WBConsoleName } from "./wb-console-name.ts";
 import { createCheckoutSwitcher } from "./wb-console-checkout.ts";
+import { agentStateTitle } from "./wb-console-session.ts";
 import type { ConsoleWin, DeskRecord, DeskWindowFields, Presentation } from "./wb-types.d.ts";
 
 // What the console's confirmation dialog takes.
@@ -41,8 +42,6 @@ export type TitleDeps = {
   // reassigns both, so they are read at each use.
   desk: () => DeskRecord[];
   lastSessions: () => HostedSession[];
-  // The words for an agent state, the same as the console's dot.
-  agentStateTitle: (state: string, detail?: string) => string;
   // The console's own confirmation dialog.
   askConfirm: (opts: ConfirmOptions) => Promise<unknown>;
   // A repo ref's project name, and its tooltip text.
@@ -61,7 +60,6 @@ export function createTitle(deps: TitleDeps) {
     stage,
     desk,
     lastSessions,
-    agentStateTitle,
     askConfirm,
     projectNameOf,
     projectTitleOf,

@@ -13,16 +13,13 @@
    view `wb-stage-view.ts`; the key bar `wb-console-keys.ts`; the terminal (a
    live xterm.js on a PTY) `wb-console-terminal.ts`; the chrome
    `wb-stage-chrome.ts`; the fences `wb-stage-fences.ts`; the window birth
-   `wb-console-spawn.ts`; the placeholder `wb-console-placeholder.ts`.
-
-   Opening/closing a console spawns/closes a daemon-owned session; on load the
-   live sessions re-open as windows, so a reload reattaches with scrollback.
+   `wb-console-spawn.ts`; the placeholder `wb-console-placeholder.ts`; the
+   `WBConsole` object `wb-console-api.ts`.
 
    Importing this module does nothing. Each entry module calls `createConsole`
    once per page, sets `window.WBConsole`, and calls `boot` after the page has
    started; each call starts with new state (ADR-0075 D7).
 --------------------------------------------------------------------------- */
-import { DESK_MAX } from "./wb-desk-folds.ts";
 import { createGpuBudget } from "./wb-console-gpu.ts";
 import { createTitle } from "./wb-console-title.ts";
 import { createFenceList } from "./wb-stage-fence-list.ts";
@@ -48,7 +45,6 @@ import { WBDetachLink } from "./wb-detach-link.ts";
 import { WBView } from "./wb-client-view.ts";
 import { createMessages } from "./wb-messages.ts";
 import { buildConsoleApi } from "./wb-console-api.ts";
-import { sendDocument } from "./wb-events.ts";
 import type { TerminalOpts } from "./wb-console-terminal.ts";
 import type { DetachReason } from "./wb-console-session.ts";
 import type { ConsoleOpts, ConsoleWin, DeskChange, DeskFence } from "./wb-types.d.ts";
@@ -112,7 +108,6 @@ export function createConsole(window: Window, document: Document, location: Pick
     OPTS,
     wins,
     stage,
-    agentStateTitle,
     renderTitle: (win, title, presentation) => renderTitle(win, title, presentation),
   });
   const { newDeskId, newFenceId, readSessions, projectNameOf, projectTitleOf, peerGroups, list, lastSessions, wakePeerNow, readFleetNow, staleProbeNow } = feeds;
@@ -127,7 +122,6 @@ export function createConsole(window: Window, document: Document, location: Pick
     stage,
     desk: () => currentDesk(),
     lastSessions,
-    agentStateTitle,
     askConfirm,
     projectNameOf,
     projectTitleOf,
@@ -150,6 +144,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     window,
     document,
     wins,
+    stack,
     sync,
     staleProbeNow,
     applyKeyBar: (win: ConsoleWin) => applyKeyBar(win),
@@ -160,7 +155,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     scheduleDeskFlush: (ms?: number) => scheduleDeskFlush(ms),
     revivePlaceholders: () => revivePlaceholders(),
   });
-  const { isCovered, applyDormancy, refreshCover } = dormancy;
+  const { isCovered, applyDormancy, refreshCover, changed } = dormancy;
   // ---- the window states: `wb-stage-window.ts` ---------------------------------
   // Built before the fence list, which takes three of its functions.
   const stageWindow = createStageWindow({
@@ -211,7 +206,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     restoreRect,
     applyExtent,
     columnMeasure,
-    inGesture,
+    inGesture: gestures.active,
     newFenceId,
     paintLockGlyph,
     saveFences,
@@ -274,6 +269,10 @@ export function createConsole(window: Window, document: Document, location: Pick
     clearFenceFocus,
     focusedFence: focusedFenceId,
     isDeskSettled: () => isDeskSettled(),
+    wins,
+    resetExtentEdge,
+    applyExtent,
+    refreshFenceChrome,
   });
   const { applyLanding, flushPendingOffset, reveal, findWindow, jumpToFence, cancelSlide, autoPan, wireStage } = view;
 
@@ -360,39 +359,6 @@ export function createConsole(window: Window, document: Document, location: Pick
   });
   const { buildFence } = fences;
 
-  // This console's work when the stack moves the focus.
-  stack.setFocusHook({
-    blurred: (w) => {
-      // Focus held it awake (`dormancyDecision` D2); the observer will not
-      // report a window that did not move.
-      if (wins.has(w)) applyDormancy(w);
-    },
-    // On top now, so first in line for a context. The `applyDormancy` above
-    // asks too, but not when the focus came from a note card.
-    focused: () => budget.scheduleGpu(),
-  });
-
-  function changed() {
-    // A close takes a full bleed away without moving the windows under it, so
-    // the observer has nothing to report.
-    refreshCover();
-    sendDocument(document, "workbench:consoles-changed", { count: wins.size });
-  }
-
-  // The tooltip of an agent-state dot: the Go-to menu, the checkout switcher
-  // and the title bar all say it the same way. `waiting` carries the question
-  // as its detail; `unknown` is a stale observation (agent_state.rs).
-  function agentStateTitle(state: string | null | undefined, detail?: string) {
-    if (!state) return "";
-    if (state === "unknown") return "Agent state unknown";
-    return detail ? `Agent is ${state}: ${detail}` : `Agent is ${state}`;
-  }
-
-  // A desk this page takes never moves an element under a gesture.
-  function inGesture(el: HTMLElement) {
-    return gestures.active(el);
-  }
-
   // ---- the desk: `wb-desk.ts` --------------------------------------------------
   // `createDesk` starts the desk read at once: `restoreDesk` and
   // `whenDeskLoaded` wait for it.
@@ -419,15 +385,16 @@ export function createConsole(window: Window, document: Document, location: Pick
     applyExtent,
     raiseMaximized,
     applyLanding,
-    inGesture,
+    inGesture: gestures.active,
     nameUnnamed,
     createRecord,
     applyLock,
     renderTitle,
     dropClosedElsewhere,
     flushPendingOffset,
+    wireStage,
   });
-  const { emitDesk, scheduleDeskFlush, restoreDesk, restoreDetached, isDeskSettled, refreshView, recordLeft, reloadDesk, whenDeskLoaded, isDeskLoaded, currentDesk, currentFences, currentNotes, currentCheckouts } = desk;
+  const { emitDesk, scheduleDeskFlush, isDeskSettled, refreshView, recordLeft, reloadDesk, whenDeskLoaded, currentDesk, currentFences, currentNotes, currentCheckouts } = desk;
 
   dormancy.listen();
 
@@ -451,7 +418,9 @@ export function createConsole(window: Window, document: Document, location: Pick
     attachTerminal,
     budget,
     askConfirm,
+    toast,
     createRecord,
+    atDeskCap,
     setWin,
     forgetRecord,
     currentDesk,
@@ -494,90 +463,6 @@ export function createConsole(window: Window, document: Document, location: Pick
   type SpawnOrMissing = typeof spawnOrMissing;
   type SpawnPlaceholder = typeof spawnPlaceholder;
 
-  // `agent` names an adapter (claude/codex/opencode); when `plain` is set there
-  // is no agent — a normal shell in the repo dir, labelled "console", or, with
-  // `command`, a shell running that command and labelled by it (the same label
-  // the daemon gives the session, so the desk record relaunches it as such).
-  function open({ repo, agent, plain, checkout, command }: { repo?: string | null; agent?: string | null; plain?: boolean; checkout?: string | null; command?: string }) {
-    if (atDeskCap()) {
-      toast({ text: `You can have at most ${DESK_MAX} consoles. Close one first.` });
-      return false;
-    }
-    const label = agent || (plain && command) || "console";
-    // The plain console ignores the checkout: it rides the repo path (on a
-    // peer, `wsl.exe --cd`) and stays on the primary.
-    spawnWindow(plain ? { console: true, repo, command } : { repo, agent, checkout }, label, repo);
-    WB.emit("console-open", { repo: repo || null, agent: agent || null, plain: !!plain });
-    return true;
-  }
-
-  // `autoBoot: false` is the popup, which renders only the members
-  // its opener hands over. The entry module calls this once, after its page
-  // has started.
-  function boot() {
-    wireStage();
-    restoreDetached();
-    if (OPTS.autoBoot !== false) restoreDesk();
-  }
-
-  // Refit every open console. Called when the Consoles tab returns to view: a
-  // terminal opened/reattached while the tab was display:none measured 0×0.
-  function refitAll(attempt?: number) {
-    // Alpine's `$nextTick` fires BEFORE `x-show` applies the flip (MEASURED):
-    // `.consoles-tab` is still `display:none` and everything measures 0.
-    // Refitting there collapses the stage to the bare margin (3200×2080 →
-    // 200×200) and sizes every terminal to nothing. Wait for a frame that can
-    // measure; give up rather than refit blind.
-    const ws0 = workspace();
-    if (ws0 && (!ws0.clientWidth || !ws0.clientHeight)) {
-      const n = attempt || 0;
-      if (n < 10) requestAnimationFrame(() => refitAll(n + 1));
-      return;
-    }
-    // First moment the viewport leg of the union can be measured for real.
-    // The extent dispatch is an EDGE, so one that fired before Alpine mounted
-    // would leave the footer pill at `stage 0 × 0`; force the edge.
-    resetExtentEdge();
-    applyExtent();
-    for (const win of wins) {
-      try {
-        win._term?.fit.fit();
-      } catch {}
-    }
-    // The chrome folds MEASURED rects: a refresh while hidden wrote `0
-    // consoles`. Re-derive on the first frame that can measure.
-    refreshFenceChrome();
-    // LAST, after `applyExtent`: `x-show` threw the stored offset away.
-    applyLanding();
-    // The first frame that can measure the column cap.
-    sendDocument(document, "workbench:columns-stale");
-  }
-
-  function count() {
-    return wins.size;
-  }
-
-  // Re-read the daemon's desk and restore it: the pre-login `/api/desk`
-  // answered 401 under `Session`. Called from `rehydrateAfterAuth` (#327).
-  function afterLogin() {
-    return reloadDesk().then(() => {
-      // `popups.size()` counts as "windows already up": detaching every
-      // fence drives `wins.size` to 0, and a `restoreDesk` would respawn the
-      // popups' members.
-      if (isDeskLoaded() && wins.size === 0 && popups.size() === 0) {
-        restoreDesk();
-        return;
-      }
-      // Windows already up: nothing else would put the just-loaded fences on
-      // the stage. Gated on the permit: a REFUSED load leaves `fences` as
-      // whatever this page drew.
-      if (!isDeskLoaded()) return;
-      renderFences();
-      renderNotes();
-      applyExtent();
-    });
-  }
-
   return buildConsoleApi({
     records,
     feeds,
@@ -597,12 +482,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     chrome,
     messages,
     stack,
-    boot,
-    open,
-    count,
-    refitAll,
-    afterLogin,
-    agentStateTitle,
-    inGesture,
+    gestures,
+    wins,
   });
 }
