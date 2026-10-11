@@ -2,6 +2,8 @@
 
 Status: accepted.
 
+Amended by ADR-0076 (proposed: a fence is also a squad, and the daemon owns which console is in which fence).
+
 The **Consoles tab** hosts floating console windows over a dotted floor
 (ADR-0037), and their placement is daemon state (ADR-0050). Both ADRs assume the
 stage *is* the visible box: a rect is absolute pixels inside `#workspace`, and

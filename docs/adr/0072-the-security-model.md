@@ -4,6 +4,8 @@ Status: accepted
 Kind: structural
 Protects: security, integrity of change
 
+Amended by ADR-0076 (proposed: a new trust zone, an agent in a squad, and a console token given to the agent by design as an exception to D7).
+
 ## Context
 
 Ralphy runs AI agents with shell access on the operator's machine, serves a

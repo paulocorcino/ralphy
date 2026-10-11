@@ -321,6 +321,14 @@ call). Not built yet.
 _Avoid_: notification (the operating system's), ping, nudge (a **nudge** wakes
 a daemon).
 
+**Console token**:
+A secret the daemon gives one agent console in a **fence** when its session
+starts. It tells the daemon which console is calling, and it opens only the
+squad's tools for that console's fence. It dies with the session. Not built
+yet. (ADR-0076)
+_Avoid_: daemon token (the access token of the whole daemon), session
+token, API key.
+
 **Attention request**:
 One thing a human must decide now, such as an agent waiting for an answer
 or a stuck squad. The daemon works out the list of attention requests from

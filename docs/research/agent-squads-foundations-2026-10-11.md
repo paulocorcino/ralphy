@@ -1,7 +1,7 @@
 # Agent interoperability: the foundations before the factory
 
 Date: 2026-10-11. Status: **decided in a design session** (§12a, G1–G16);
-the ADR "Squads" is not written yet, and no code exists. §1–§11 are the
+the decisions are now [ADR-0076](../adr/0076-agents-in-a-fence-form-a-squad.md) (proposed), and no code exists. §1–§11 are the
 first draft, written before the decisions; where they disagree with §12a,
 §12a wins.
 

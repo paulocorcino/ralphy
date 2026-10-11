@@ -5,6 +5,8 @@ drifts are recorded in the amendment at the end, and the 2026-09-16
 amendment corrects §1 (no interrupt flag) and §4 (`PostToolUse` is in). Written after
 [ADR-0058](./0058-checkout-per-run.md) and independent of it.
 
+Extended by ADR-0076 (proposed: a second kind of state source, an event stream, and state for Codex and OpenCode consoles).
+
 _Extends [ADR-0039](./0039-event-vocabulary-owned-by-core-emit.md) with one
 event, [ADR-0047](./0047-run-state-snapshot-channel.md) §5 with one additive
 field, and [ADR-0036](./0036-workbench-daemon-integration-protocol.md) §8 with
