@@ -17,12 +17,12 @@ import type { ConfirmOptions } from "./wb-console-title.ts";
 import type { ChromeRecord } from "./wb-stage-chrome.ts";
 import type { ConsoleTerm, ConsoleWin, DeskRecord, DeskWindowFields, ExtentOpts, Presentation, Rect, SpawnCarry, WindowSnapshot } from "./wb-types.d.ts";
 
-const { birthDecision, peerOfflineView, consoleCommand } = WBConsoleSession;
+const { birthDecision, peerOfflineView, peerActionLabel, consoleCommand } = WBConsoleSession;
 const { sessionIdOf, watchingOf, windowCheckout } = WBWindowState;
 
 // What the window birth reads from the console, and nothing else. Every dep
-// is built before the spawn, except the placeholder group, which the console
-// still declares (it reaches it by hoisting).
+// is built before the spawn, except the placeholder group, built after it
+// (`wb-console-placeholder.ts`): lazy arrows.
 export type SpawnDeps = {
   // The page the strips are made in.
   document: Document;
@@ -79,7 +79,7 @@ export type SpawnDeps = {
   applyExtent: (opts?: ExtentOpts) => void;
   // Tells the console that its window set changed.
   changed: () => void;
-  // The placeholder group, still in the console.
+  // The placeholder group (`wb-console-placeholder.ts`). Built later: lazy arrows.
   spawnPlaceholder: (
     record: SpawnCarry,
     missing?: string | null,
@@ -169,7 +169,6 @@ export function createSpawn(deps: SpawnDeps) {
     // the daemon's diagnosis under Details. Built once, then reworded on each
     // fleet read.
     const peerDaemon = WBFleet?.refDaemon(repo) || "";
-    const PEER_BUTTON: Partial<Record<NonNullable<WBConsoleSession.PeerAction>, string>> = { wake: "Wake", retry: "Try again" };
     const showPeerDown = (group: Group | null) => {
       let strip: HTMLElement | null = win.querySelector<HTMLElement>(".session-peer-down");
       if (!strip) {
@@ -199,7 +198,7 @@ export function createSpawn(deps: SpawnDeps) {
       detail.hidden = !view.detail;
       const btn = strip.querySelector<HTMLElement>(".session-reconnect")!;
       btn.dataset.act = view.action || "";
-      const label = view.action && PEER_BUTTON[view.action];
+      const label = peerActionLabel(view.action);
       btn.hidden = !label;
       if (label) btn.textContent = label;
     };

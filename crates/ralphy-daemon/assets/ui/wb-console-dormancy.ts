@@ -43,7 +43,7 @@ export type DormancyDeps = {
   attachTerminal: (body: HTMLElement, opts: TerminalOpts) => ConsoleTerm;
   // Sends the desk changes after `ms`. Built later: a lazy arrow.
   scheduleDeskFlush: (ms?: number) => void;
-  // Brings every placeholder whose console runs back as a window.
+  // Brings every placeholder whose console runs back as a window. Built later: a lazy arrow.
   revivePlaceholders: () => Promise<void>;
 };
 
