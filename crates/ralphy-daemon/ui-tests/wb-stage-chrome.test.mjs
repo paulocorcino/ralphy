@@ -1,9 +1,10 @@
-// Unit tests for assets/ui/wb-stage-chrome.ts — the console's window chrome
-// and the owner of the elements under a gesture. `createChrome` is driven with
-// fake `deps` and a fake document, with no console and no browser.
+// Unit tests for assets/ui/wb-stage-chrome.ts — the console's window chrome.
+// `createChrome` is driven with fake `deps` and a fake document, with no
+// console and no browser.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createChrome, createGestures } from "../assets/ui/wb-stage-chrome.ts";
+import { createChrome } from "../assets/ui/wb-stage-chrome.ts";
+import { createGestures } from "../assets/ui/wb-stage-stack.ts";
 
 // An element with the few DOM members the chrome uses. Listeners are kept so a
 // test can fire them.
@@ -120,21 +121,6 @@ function press(x, y, more = {}) {
     ...more,
   };
 }
-
-test("a gesture owner tracks each element from begin to end, one element at a time", () => {
-  const gestures = createGestures();
-  const win = {};
-  const fence = {};
-  gestures.begin(win);
-  gestures.begin(fence);
-  assert.equal(gestures.active(win), true);
-  assert.equal(gestures.active(fence), true);
-  gestures.end(fence);
-  assert.equal(gestures.active(fence), false);
-  assert.equal(gestures.active(win), true, "ending one gesture leaves the other");
-  gestures.end(win);
-  assert.equal(gestures.active(win), false);
-});
 
 test("a titlebar drag is a gesture from the press to the release, and only a moved drag writes", () => {
   const { deps, writes, document } = fakeDeps();

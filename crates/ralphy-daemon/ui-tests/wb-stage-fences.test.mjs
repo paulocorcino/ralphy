@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createFences } from "../assets/ui/wb-stage-fences.ts";
-import { createGestures } from "../assets/ui/wb-stage-chrome.ts";
+import { createGestures } from "../assets/ui/wb-stage-stack.ts";
 import { createPopupRegistry } from "../assets/ui/wb-desk-popups.ts";
 
 const RECT = { left: 100, top: 100, width: 600, height: 400 };

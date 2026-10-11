@@ -34,7 +34,8 @@ import { createFenceList } from "./wb-stage-fence-list.ts";
 import { createDetach } from "./wb-desk-detach.ts";
 import { createView } from "./wb-stage-view.ts";
 import { createTerminal } from "./wb-console-terminal.ts";
-import { createChrome, createGestures } from "./wb-stage-chrome.ts";
+import { createChrome } from "./wb-stage-chrome.ts";
+import { createStack, createGestures } from "./wb-stage-stack.ts";
 import { createPopupRegistry } from "./wb-desk-popups.ts";
 import { createFences } from "./wb-stage-fences.ts";
 import { createStageWindow } from "./wb-stage-window.ts";
@@ -54,7 +55,7 @@ import { sendDocument } from "./wb-events.ts";
 import type { DetachedMember, Painted } from "./wb-columns.ts";
 import type { TerminalDeps, TerminalOpts } from "./wb-console-terminal.ts";
 import type { Group } from "./wb-fleet.ts";
-import type { ConsoleOpts, ConsoleTerm, ConsoleWin, DeskChange, DeskFence, DeskNote, DeskRecord, DeskReply, DeskWindowFields, NoteCard, Rect, SpawnCarry, Stacked, WindowSnapshot } from "./wb-types.d.ts";
+import type { ConsoleOpts, ConsoleTerm, ConsoleWin, DeskChange, DeskFence, DeskNote, DeskRecord, DeskReply, DeskWindowFields, NoteCard, Rect, SpawnCarry, WindowSnapshot } from "./wb-types.d.ts";
 
 // The input folds are `wb-console-input.ts`: pure functions of their arguments.
 const {
@@ -185,6 +186,11 @@ export function createConsole(window: Window, document: Document, location: Pick
   // a page that passes no door gets one with no shell.
   const messages = OPTS.messages || createMessages(window, document, { shell: () => null });
   const { askConfirm, askNotice, toast, dismissToast } = messages;
+  // The z stack and the gestures are the document's (`wb-stage-stack.ts`),
+  // shared with the note cards; a page that passes none gets its own.
+  const stack = OPTS.stack || createStack(document);
+  const { focusWin, stackWin } = stack;
+  const gestures = OPTS.gestures || createGestures();
   // Detach registry + lifecycle channel (#347). Denied in the popup: `window.open`
   // hands it a COPY of the opener's session-scoped store, so a read there drifts.
   // This module names no browser store of its own — pinned in lib.rs.
@@ -403,12 +409,9 @@ export function createConsole(window: Window, document: Document, location: Pick
   });
 
   // ---- the window chrome -----------------------------------------------------
-  // The elements under a gesture of the operator have one owner,
-  // `createGestures`: the chrome's drag and resize and the fence gestures
-  // begin and end them, and a desk this page takes asks it (`inGesture`).
   // The titlebar, the drag, the resize and the free cascade are
-  // `wb-stage-chrome.ts`; this console hands it the window state.
-  const gestures = createGestures();
+  // `wb-stage-chrome.ts`; this console hands it the window state and the
+  // gestures.
   const { buildChrome, makeDraggable, startResize } = createChrome({
     window,
     document,
@@ -469,12 +472,17 @@ export function createConsole(window: Window, document: Document, location: Pick
     tearDownMember,
   });
 
-  // Focus stacking. `z` climbs each time a window is raised; when it reaches the
-  // ceiling the whole stack is renormalized back down (preserving order) so the
-  // console z-index never overtakes the runs overlay (z 150) or the tabbar.
-  const Z_BASE = 60;
-  const Z_CEIL = 120;
-  let z = Z_BASE;
+  // This console's work when the stack moves the focus.
+  stack.setFocusHook({
+    blurred: (w) => {
+      // Focus held it awake (`dormancyDecision` D2); the observer will not
+      // report a window that did not move.
+      if (wins.has(w)) applyDormancy(w);
+    },
+    // On top now, so first in line for a context. The `applyDormancy` above
+    // asks too, but not when the focus came from a note card.
+    focused: () => budget.scheduleGpu(),
+  });
 
   function changed() {
     // A close takes a full bleed away without moving the windows under it, so
@@ -1426,53 +1434,6 @@ export function createConsole(window: Window, document: Document, location: Pick
       membership: fenceMembership(readFenceRects(st), readWindowRects(st)),
       detached: out,
     };
-  }
-
-  // Give a surface a place in the window tier WITHOUT focusing it. A restore
-  // builds its consoles through `buildChrome`, which ends in `focusWin` and so
-  // hands every window a z; a note card is built by `WBNotes.render` and had
-  // none, which put it at `auto` — BELOW every console (z ≥ 61). MEASURED: a
-  // card restored beside a console was visible where nothing overlapped and
-  // deaf where something did, because the click landed on the terminal's
-  // canvas and the keystrokes went to the shell. A surface on the plane is in
-  // the tier or it is under it; there is no third state.
-  function stackWin(win: Stacked) {
-    if (win.style.zIndex) return;
-    // At the ceiling the counter stops and the newcomers tie: a tie among
-    // cards is a stacking order, while a number past the ceiling would put a
-    // card over the tab bar. The next `focusWin` renormalises the lot.
-    if (z < Z_CEIL) z += 1;
-    win.style.zIndex = z;
-  }
-
-  function focusWin(win: Stacked) {
-    z += 1;
-    if (z > Z_CEIL) {
-      // Renormalize: re-stack the existing windows by their current z, resetting
-      // the counter so focus never pushes a console over the overlay/tabbar tier.
-      const ordered = [...workspace()!.querySelectorAll<Stacked>(".session-window, .note-card")].sort(
-        (a, b) => (parseInt(a.style.zIndex, 10) || 0) - (parseInt(b.style.zIndex, 10) || 0),
-      );
-      z = Z_BASE;
-      for (const w of ordered) {
-        if (w === win) continue;
-        z += 1;
-        w.style.zIndex = z;
-      }
-      z += 1;
-    }
-    win.style.zIndex = z;
-    for (const w of workspace()!.querySelectorAll<ConsoleWin>(".session-window.focused, .note-card.focused")) {
-      if (w === win) continue;
-      w.classList.remove("focused");
-      // Focus held it awake (`dormancyDecision` D2); the observer will not
-      // report a window that did not move.
-      if (wins.has(w)) applyDormancy(w);
-    }
-    win.classList.add("focused");
-    // On top now, so first in line for a context. The `applyDormancy` above
-    // asks too, but not when the focus came from a note card.
-    budget.scheduleGpu();
   }
 
   // Every window on the plane, for the Go-to picker. Reads the DOM, not `wins`:

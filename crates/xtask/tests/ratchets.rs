@@ -74,14 +74,17 @@ const APP_TS_LINES: usize = 4209;
 /// since its two peer buttons read their label once, typed by the peer's
 /// action (#653); 2958 since its confirm, notice and toast moved to the door
 /// for operator messages, `wb-messages.ts` (#623); 2713 since its maximize, lock,
-/// full screen, extent and restore box moved to `wb-stage-window.ts` (#623).
-const WB_CONSOLE_TS_LINES: usize = 2713;
+/// full screen, extent and restore box moved to `wb-stage-window.ts` (#623);
+/// 2674 since its z stack moved to `wb-stage-stack.ts`, built once per
+/// document by the entry module (#623).
+const WB_CONSOLE_TS_LINES: usize = 2674;
 /// Lines of `crates/ralphy-daemon/assets/ui/wb-notes.ts`, the note cards
 /// (ADR-0073 D8, started by its 2026-10-10 amendment). 2828 at 823cc84c, before
 /// its first cut (#623); 2835 since the cards take the console as a typed dep
 /// (#623); 2839 since they take the door for operator messages as a dep
+/// (#623); 2848 since they take the document's z stack and gestures as deps
 /// (#623).
-const WB_NOTES_TS_LINES: usize = 2839;
+const WB_NOTES_TS_LINES: usize = 2848;
 
 /// Uses of the name `WBConsole` in the code of `wb-notes.ts`: 49 at 823cc84c,
 /// when the cards reached the console through `window.WBConsole`. 0 since the
@@ -93,7 +96,10 @@ const NOTES_CONSOLE_REACH: usize = 0;
 /// union of `wb-types.d.ts`. Exact, like the other ratchets: a new name is a
 /// new thing a card reads of the console, and it is a design decision (#623).
 /// 18 since `toast` and `askConfirm` are the door's, `deps.messages` (#623).
-const CARD_HOST_NAMES: usize = 18;
+/// 11 since `focusWin`, `stackWin` and `inGesture` are the document's z stack
+/// and gestures, `deps.stack` and `deps.gestures`, and the drag folds and the
+/// dormancy constants are imported from their own modules (#623).
+const CARD_HOST_NAMES: usize = 11;
 
 /// `(module, count)` of every use of `_flashAction`, a private member of
 /// `shell()`, in a `wb-*.ts` module: a call, or a name in a component's

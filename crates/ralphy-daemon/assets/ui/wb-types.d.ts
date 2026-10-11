@@ -9,6 +9,7 @@ import type { DeskDeps } from "./wb-desk.ts";
 import type { DetachDeps } from "./wb-desk-detach.ts";
 import type { Messages } from "./wb-messages.ts";
 import type { PopupRegistryDeps } from "./wb-desk-popups.ts";
+import type { Gestures, Stack } from "./wb-stage-stack.ts";
 import type { ViewDeps } from "./wb-stage-view.ts";
 
 // ---- the plane ---------------------------------------------------------------
@@ -264,6 +265,10 @@ export type ConsoleOpts = {
   isStale?: () => boolean;
   /** The page's door for operator messages (`wb-messages.ts`). */
   messages?: Messages;
+  /** The document's z stack (`wb-stage-stack.ts`), shared with the note cards. */
+  stack?: Stack;
+  /** The document's gestures (`wb-stage-stack.ts`), shared with the note cards. */
+  gestures?: Gestures;
 };
 
 /**
@@ -345,8 +350,8 @@ export type NoteCard = HTMLElement & {
 };
 
 /**
- * What a note card reads of the consoles: the desk records, the stage's window
- * tier and gestures, and two facts about the page. The
+ * What a note card reads of the consoles: the desk records, the window
+ * states and the chrome's drag and resize, and two facts about the page. The
  * entry module passes it as `deps.console` of `createNotes`.
  */
 export type CardHost = Pick<
@@ -356,17 +361,10 @@ export type CardHost = Pick<
   | "fenceRecords"
   | "atNoteCap"
   | "NOTE_MAX"
-  | "focusWin"
-  | "stackWin"
   | "restoreRect"
   | "startResize"
   | "makeDraggable"
-  | "inGesture"
   | "raiseMaximized"
-  | "dragThreshold"
-  | "dragBegins"
-  | "DORMANT_MARGIN_PX"
-  | "DORMANT_AFTER_MS"
   | "isDetached"
   | "jumpToNote"
 >;
