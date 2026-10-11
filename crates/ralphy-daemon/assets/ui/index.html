@@ -1703,7 +1703,7 @@
     <aside class="runs" x-show="runsOpen" aria-label="Runs">
       <div class="runs-head">
         <span>Runs</span>
-        <span class="runs-count" x-show="$store.projects.openSlug && projectRuns().length" x-text="projectRuns().length" title="Active runs"></span>
+        <span class="runs-count" x-show="$store.projects.openSlug && $store.runs.projectRuns().length" x-text="$store.runs.projectRuns().length" title="Active runs"></span>
         <span class="spacer"></span>
         <button class="runs-close" @click="toggleRuns()" title="Close"><i class="bi bi-x"></i></button>
       </div>
@@ -1727,7 +1727,7 @@
           </button>
         </template>
         <template x-if="runIsLive()">
-          <button class="run-verb danger" data-act="run-stop" @click="stopRun(currentRun()?.runid)"
+          <button class="run-verb danger" data-act="run-stop" @click="stopRun($store.runs.currentRun()?.runid)"
                   :disabled="!!runStopping" :title="runStopping ? 'Stop already requested' : 'Stop this run'">
             <i class="bi bi-stop-fill"></i> Stop
           </button>
@@ -1781,20 +1781,20 @@
       <div class="runs-empty" x-show="!$store.projects.openSlug">Open a project to see its runs.</div>
       <!-- a failed read is its own state: an unreadable project must never be
            rendered as an idle one (ADR-0047 §6). -->
-      <div class="runs-error" x-show="runsError" x-text="runsError"></div>
-      <div class="runs-empty" x-show="$store.projects.openSlug && projectRuns().length === 0 && !runsError">
+      <div class="runs-error" x-show="$store.runs.runsError" x-text="$store.runs.runsError"></div>
+      <div class="runs-empty" x-show="$store.projects.openSlug && $store.runs.projectRuns().length === 0 && !$store.runs.runsError">
         No active runs in <b x-text="$store.projects.projectLabel($store.projects.openSlug)"></b>. Click <b>“Run”</b> to start one.
       </div>
 
       <!-- the panel proper renders only when the open project has a live run -->
-      <template x-if="$store.projects.openSlug && projectRuns().length">
+      <template x-if="$store.projects.openSlug && $store.runs.projectRuns().length">
         <div class="runs-body">
           <!-- ZONE 1 · run picker — a project can host several concurrent runs
                (one per `runid`); pick which to inspect. -->
           <div class="menu-wrap run-select">
             <button class="run-select-btn" @click.stop="runMenu = !runMenu"
-                    :title="clockTitle(currentRun())">
-              <span class="run-face" x-text="currentRun()?.face"></span>
+                    :title="clockTitle($store.runs.currentRun())">
+              <span class="run-face" x-text="$store.runs.currentRun()?.face"></span>
               <!-- The headline is the MODEL, not the vendor: "codex" does not say
                    which of sol/terra/luna is burning quota. The vendor moves to
                    the line below, in front of the phase it drives, and the phase
@@ -1803,21 +1803,21 @@
                    it — and so the clock is never what the ellipsis eats. -->
               <span class="run-select-main">
                 <span class="run-select-head">
-                  <span class="run-select-title" x-text="runTitle(currentRun())"></span>
-                  <span class="run-prog" x-text="(currentRun()?.completed ?? 0) + '/' + (currentRun()?.queueTotal ?? 0)"></span>
+                  <span class="run-select-title" x-text="runTitle($store.runs.currentRun())"></span>
+                  <span class="run-prog" x-text="($store.runs.currentRun()?.completed ?? 0) + '/' + ($store.runs.currentRun()?.queueTotal ?? 0)"></span>
                 </span>
                 <span class="run-select-sub">
-                  <span class="run-sub-phase" x-text="runIdentity(currentRun())"></span>
-                  <span class="run-clock" x-show="runClock(currentRun())"
-                        x-text="runClock(currentRun())"></span>
+                  <span class="run-sub-phase" x-text="runIdentity($store.runs.currentRun())"></span>
+                  <span class="run-clock" x-show="runClock($store.runs.currentRun())"
+                        x-text="runClock($store.runs.currentRun())"></span>
                 </span>
               </span>
               <svg x-icon="'chevron-down'"></svg>
             </button>
             <div class="dropdown run-menu" x-show="runMenu" @click.outside="runMenu = false" x-cloak>
               <div class="dropdown-head" x-text="'Active runs · ' + $store.projects.projectLabel($store.projects.openSlug)"></div>
-              <template x-for="r in projectRuns()" :key="r.runid">
-                <button class="dropdown-item run-menu-item" :class="{ active: r.runid === currentRunId }"
+              <template x-for="r in $store.runs.projectRuns()" :key="r.runid">
+                <button class="dropdown-item run-menu-item" :class="{ active: r.runid === $store.runs.currentRunId }"
                         @click="selectRun(r.runid); runMenu = false">
                   <span class="run-face" x-text="r.face"></span>
                   <span class="run-menu-name">
@@ -1835,18 +1835,18 @@
                (or 🌙 when the whole run is parked on a usage-limit reset). -->
           <div class="trail-wrap">
             <div class="trail-head">
-              <span class="trail-branch"><svg x-icon="'git-branch'"></svg><span x-text="currentRun()?.branch"></span></span>
+              <span class="trail-branch"><svg x-icon="'git-branch'"></svg><span x-text="$store.runs.currentRun()?.branch"></span></span>
               <span class="spacer"></span>
-              <span class="trail-sleep" x-show="currentRun()?.phase === 'sleeping'">
-                🌙 <span x-text="sleepLabel(currentRun())"></span>
+              <span class="trail-sleep" x-show="$store.runs.currentRun()?.phase === 'sleeping'">
+                🌙 <span x-text="sleepLabel($store.runs.currentRun())"></span>
               </span>
             </div>
             <ol class="trail">
-              <template x-for="iss in (currentRun()?.issues || [])" :key="iss.number">
+              <template x-for="iss in ($store.runs.currentRun()?.issues || [])" :key="iss.number">
                 <li class="trail-node" :data-issue="iss.number"
-                    :class="'st-' + issueState(currentRun(), iss) + (trailFocus === iss.number ? ' focus' : '')"
-                    :title="nodeTitle(currentRun(), iss)" @click="focusIssue(iss.number)">
-                  <span class="trail-ic" x-text="issueGlyph(currentRun(), iss)"></span>
+                    :class="'st-' + issueState($store.runs.currentRun(), iss) + (trailFocus === iss.number ? ' focus' : '')"
+                    :title="nodeTitle($store.runs.currentRun(), iss)" @click="focusIssue(iss.number)">
+                  <span class="trail-ic" x-text="issueGlyph($store.runs.currentRun(), iss)"></span>
                   <span class="trail-n" x-text="'#' + iss.number"></span>
                 </li>
               </template>
@@ -1862,8 +1862,8 @@
               <div class="plan-block-head">
                 <svg x-icon="'list-checks'"></svg><span>Steps</span>
                 <span class="spacer"></span>
-                <span class="plan-issue" x-show="(currentRun()?.planIssue ?? currentRun()?.active) != null"
-                      x-text="'#' + (currentRun()?.planIssue ?? currentRun()?.active)"></span>
+                <span class="plan-issue" x-show="($store.runs.currentRun()?.planIssue ?? $store.runs.currentRun()?.active) != null"
+                      x-text="'#' + ($store.runs.currentRun()?.planIssue ?? $store.runs.currentRun()?.active)"></span>
               </div>
               <!-- ABOVE the list, not under it: the note explains why the list is
                    empty, and an explanation parked below an empty box sits at the
@@ -1889,15 +1889,15 @@
               <div class="plan-block-head">
                 <svg x-icon="'book-open'"></svg>
                 <select class="plan-picker" x-model="planSection">
-                  <option value="" x-show="!planHeadings(currentRun()).length">No other sections yet</option>
-                  <template x-for="h in planHeadings(currentRun())" :key="h">
+                  <option value="" x-show="!planHeadings($store.runs.currentRun()).length">No other sections yet</option>
+                  <template x-for="h in planHeadings($store.runs.currentRun())" :key="h">
                     <option :value="h" x-text="h"></option>
                   </template>
                 </select>
                 <svg class="plan-picker-caret" x-icon="'chevron-down'"></svg>
               </div>
               <div class="plan-prose-note" x-show="proseNote()" x-text="proseNote()"></div>
-              <div class="plan-md md" x-html="renderPlanSection(currentRun(), planSection || planHeadings(currentRun())[0])"></div>
+              <div class="plan-md md" x-html="renderPlanSection($store.runs.currentRun(), planSection || planHeadings($store.runs.currentRun())[0])"></div>
             </div>
           </div>
         </div>

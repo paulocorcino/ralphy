@@ -335,7 +335,7 @@ def main():
                 ),
                 active=72,
             )
-            page.wait_for_function(f"() => {SH}.currentRun()?.planReadFailed === true", timeout=15000)
+            page.wait_for_function(f"() => Alpine.store('runs').currentRun()?.planReadFailed === true", timeout=15000)
             rows = step_rows(page)
             check(
                 "a deleted plan.md leaves the step list POPULATED",
@@ -350,10 +350,10 @@ def main():
             )
             check(
                 "the last-read plan text is still held",
-                page.evaluate(f"() => {SH}.currentRun().planMd") != "",
+                page.evaluate(f"() => Alpine.store('runs').currentRun().planMd") != "",
                 "",
             )
-            runs_error = page.evaluate(f"() => {SH}.runsError")
+            runs_error = page.evaluate(f"() => Alpine.store('runs').runsError")
             check(
                 "a plan read failure is NOT reported as a run-list failure",
                 runs_error == "" and not page.locator(".runs-error").is_visible(),
@@ -386,12 +386,12 @@ def main():
                 active=72,
             )
             page.wait_for_function(
-                f"() => {SH}.currentRun()?.planMd.includes('issue=71')", timeout=15000
+                f"() => Alpine.store('runs').currentRun()?.planMd.includes('issue=71')", timeout=15000
             )
             stale = page.evaluate(
                 f"() => ({{ prose: document.querySelector('.plan-block-more .plan-md').innerText.trim(),"
-                f" headings: {SH}.planHeadings({SH}.currentRun()),"
-                f" current: {SH}.planProseIsCurrent({SH}.currentRun()),"
+                f" headings: {SH}.planHeadings(Alpine.store('runs').currentRun()),"
+                f" current: {SH}.planProseIsCurrent(Alpine.store('runs').currentRun()),"
                 " note: (document.querySelector('.plan-prose-note')?.innerText || '').trim() })"
             )
             check(
@@ -426,7 +426,7 @@ def main():
                 active=72,
             )
             page.wait_for_function(
-                f"() => {SH}.planProseIsCurrent({SH}.currentRun()) === true", timeout=15000
+                f"() => {SH}.planProseIsCurrent(Alpine.store('runs').currentRun()) === true", timeout=15000
             )
             owned = page.evaluate(
                 "() => ({ chip: document.querySelector('.plan-block-steps .plan-issue').innerText.trim(),"
@@ -519,7 +519,7 @@ def main():
                 "executing",
                 plan_block(steps(("first step body", "checked"), ("second step body", "open"))),
             )
-            page.wait_for_function(f"() => {SH}.planHeadings({SH}.currentRun()).includes('Verify')", timeout=15000)
+            page.wait_for_function(f"() => {SH}.planHeadings(Alpine.store('runs').currentRun()).includes('Verify')", timeout=15000)
             page.evaluate(f"() => {{ {SH}.planSection = 'Verify'; }}")
             page.wait_for_timeout(200)
             # A background push (nobody touched the browser) must not reassign it.

@@ -340,7 +340,7 @@ def main():
                 "() => { window.__runs = [{ runid: '01LOCKHOLDER', face: '🦊', agent: 'codex',"
                 " phase: 'executing', active: 72, issues: [], completed: 0, queueTotal: 1 }]; }"
             )
-            page.evaluate(f"() => {SH}.hydrateRuns()")
+            page.evaluate(f"() => Alpine.store('runs').hydrateRuns()")
             page.wait_for_function(f"() => {SH}.labelsLocked() === true", timeout=8000)
             page.wait_for_timeout(300)
             reason = page.evaluate(f"() => {SH}.labelLockReason()")

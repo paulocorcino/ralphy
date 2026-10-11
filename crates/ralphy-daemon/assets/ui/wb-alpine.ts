@@ -5,12 +5,13 @@
 // `loadComponent` still checks the names the markup reads.
 import type { Shell } from "./app.ts";
 import type { ProjectsStore } from "./wb-projects-store.ts";
+import type { RunsStore } from "./wb-runs-store.ts";
 
 /** The Alpine magics a component or `shell()` calls. */
 export interface AlpineMagics {
   $nextTick(callback?: () => void): Promise<void>;
   $refs: Record<string, HTMLElement | undefined>;
-  $store: { projects: ProjectsStore };
+  $store: { projects: ProjectsStore; runs: RunsStore };
 }
 
 export function component<U extends keyof Shell, T extends object>(

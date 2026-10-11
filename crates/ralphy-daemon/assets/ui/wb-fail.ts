@@ -145,6 +145,11 @@ function readFold(prev: Read | null | undefined, outcome: Outcome): Read {
   return { value: null, goodAt: 0, error: reason as string, current: false };
 }
 
+// A time of day, `14:02`, for "Read at …".
+function clock(ms: number) {
+  return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
 // The line a panel shows for a read that is not current; "" when it is.
 function notCurrent(read: Read | null | undefined, fmt: (ms: number) => string) {
   if (!read || read.current) return "";
@@ -162,5 +167,6 @@ export const WBFail = {
   sentence,
   readFold,
   notCurrent,
+  clock,
   CAUSE,
 };

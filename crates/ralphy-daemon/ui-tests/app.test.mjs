@@ -649,7 +649,8 @@ test("resumeSockets resumes the file tree socket with the others", () => {
   const { state } = loadShell({
     window: { dispatchEvent: (e) => resumed.push([e.type, e.detail.stale]) },
   });
-  for (const name of ["_runsSub", "_changesSub", "_presenceSub"]) {
+  state.$store.runs._runsSub = { resume: (stale) => resumed.push(["_runsSub", stale]) };
+  for (const name of ["_changesSub", "_presenceSub"]) {
     state[name] = { resume: (stale) => resumed.push([name, stale]) };
   }
   state.resumeSockets(true);
@@ -693,21 +694,21 @@ function toggleShell() {
     "loadAgents",
     "ensureWorktreeListing",
     "refreshSpend",
-    "destroyRunsSub",
-    "mountRunsSub",
     "destroyChangesSub",
     "mountChangesSub",
     "loadBoard",
-    "hydrateRuns",
     "loadChanges",
     "loadSync",
   ]) {
     state[name] = record(name);
   }
-  state.projectRuns = () => [];
+  const runs = state.$store.runs;
+  for (const name of ["destroyRunsSub", "mountRunsSub", "hydrateRuns"]) runs[name] = record(name);
+  runs.projectRuns = () => [];
+  runs.currentRun = () => null;
   state.planHeadings = () => [];
-  state.currentRun = () => null;
   state.$nextTick = (fn) => fn();
+  runs.init();
   // `init()` starts its clocks on the global timers; here they never tick.
   const realSetInterval = globalThis.setInterval;
   globalThis.setInterval = () => 0;
@@ -802,14 +803,15 @@ test("toggle writes no field of the git or the board part", () => {
     commitMsgSlug: "owner/a",
     kanbanSel: 7,
     trailFocus: 3,
-    currentRunId: "run-1",
     planSection: "Stage 1",
     verbError: "a verb refusal",
   };
   Object.assign(state, held);
+  state.$store.runs.setCurrentRun("run-1");
   state.toggle("owner/b");
   assert.equal(state.$store.projects.openSlug, "owner/b");
   assert.deepEqual(Object.fromEntries(Object.keys(held).map((k) => [k, state[k]])), held);
+  assert.equal(state.$store.runs.currentRunId, "run-1");
 });
 
 // Each part resets only its own state, so the order of the listeners is not
@@ -825,7 +827,8 @@ test("the tree, the board and git each react to the project toggle opens", () =>
   const seen = calls.map((c) => c[0]);
   const parts = {
     tree: ["destroyTree", "mountTree"],
-    board: ["destroyRunsSub", "mountRunsSub", "loadBoard", "hydrateRuns"],
+    runs: ["destroyRunsSub", "mountRunsSub", "hydrateRuns"],
+    board: ["loadBoard"],
     git: ["destroyChangesSub", "mountChangesSub", "loadChanges", "loadSync"],
   };
   for (const [part, names] of Object.entries(parts)) {
@@ -853,15 +856,15 @@ test("the git part drops the refusals and the commit message of the project that
 test("the board part drops the selection, the trail and the verb refusal of the project that was open", () => {
   const { state, named } = toggleShell();
   state.$store.projects.setOpen("owner/b");
-  state.projectRuns = () => [{ runid: "run-2" }];
-  state.planHeadings = () => ["Stage 1"];
-  Object.assign(state, { kanbanSel: 7, trailFocus: 3, verbError: "z", currentRunId: "run-1", planSection: "" });
+  state.$store.runs.currentRun = () => ({ runid: "run-2" });
+  state.planHeadings = (run) => (run?.runid === "run-2" ? ["Stage 1"] : []);
+  Object.assign(state, { kanbanSel: 7, trailFocus: 3, verbError: "z", planSection: "" });
   state.boardFollowProject();
+  // The section is the first of the run the store now selects.
   assert.deepEqual(
-    [state.kanbanSel, state.trailFocus, state.verbError, state.currentRunId, state.planSection],
-    [null, null, "", "run-2", "Stage 1"],
+    [state.kanbanSel, state.trailFocus, state.verbError, state.planSection],
+    [null, null, "", "Stage 1"],
   );
-  assert.equal(named("hydrateRuns").length, 1);
   // The board is read only while it is open.
   assert.equal(named("loadBoard").length, 0);
 });
@@ -1237,9 +1240,10 @@ test("login reads the board, the runs and the tree again", () => {
   const files = loadComponent("wbFiles", { from: loaded }).scope;
   files.init();
   const calls = [];
-  for (const name of ["loadRepos", "loadIdentity", "loadAgents", "restoreView", "hydrateRuns"]) {
+  for (const name of ["loadRepos", "loadIdentity", "loadAgents", "restoreView"]) {
     state[name] = () => calls.push(name);
   }
+  state.$store.runs.hydrateRuns = () => calls.push("hydrateRuns");
   state.maybeRefreshBoard = (why) => calls.push(`board:${why}`);
   files._treeSub = { replay: () => calls.push("tree") };
   // Closed: the runs lock the writes whether the panel shows them or not.
@@ -1389,22 +1393,11 @@ test("a label missing from the live list takes the seed color, whatever its name
   }
 });
 
-test("a failed runs read after a good one keeps the runs, marked not current", async () => {
-  const state = observedShell([{ status: "ok", runs: [] }, { status: "error", reason: "the run store is locked" }]);
-  state.runsOpen = false;
-  await state.hydrateRuns();
-  state.runsByProject["o/r"] = [{ runid: "r1" }];
-  await state.hydrateRuns();
-  assert.deepEqual(state.runsByProject["o/r"], [{ runid: "r1" }]);
-  assert.equal(state.runsRead["o/r"].current, false);
-  assert.match(state.runsError, /Not current: the run store is locked/);
-});
-
 // ADR-0070 D3: a write acts on what the page shows, so it is locked while that
 // is not current, and says why.
 test("writes are locked while the change set is not current", async () => {
   const state = observedShell([CHANGES_OK, { status: "error", message: "git exited 128" }]);
-  state.runsByProject["o/r"] = [];
+  state.$store.runs.runsByProject["o/r"] = [];
   await state.loadChanges("o/r");
   assert.equal(state.writeLocked(), false, "a good read locks nothing");
   await state.loadChanges("o/r");
@@ -1419,7 +1412,7 @@ test("moving a board card is locked while the board is not current", async () =>
   ]);
   state.loadPlan = () => {};
   state.kanbanSel = null;
-  state.runsByProject["o/r"] = [];
+  state.$store.runs.runsByProject["o/r"] = [];
   await state.loadBoard();
   assert.equal(state.labelsLocked(), false);
   await state.loadBoard();
@@ -1430,7 +1423,7 @@ test("moving a board card is locked while the board is not current", async () =>
 // NEGATIVE CONTROL: two good reads lock nothing.
 test("two good change-set reads lock no write", async () => {
   const state = observedShell([CHANGES_OK, CHANGES_OK]);
-  state.runsByProject["o/r"] = [];
+  state.$store.runs.runsByProject["o/r"] = [];
   await state.loadChanges("o/r");
   await state.loadChanges("o/r");
   assert.equal(state.writeLocked(), false);
@@ -1614,6 +1607,30 @@ test("a create through the write seam asks the files to re-list the folder and r
 
 const VISIBLE = { document: { visibilityState: "visible", hasFocus: () => true } };
 
+// A shell whose window hears what it is sent, after `init()` as on the page.
+function runsEventShell({ visibilityState = "visible" } = {}) {
+  const listeners = {};
+  const loaded = loadShell({
+    document: { visibilityState, hasFocus: () => true },
+    window: {
+      addEventListener: (type, fn) => (listeners[type] ||= []).push(fn),
+      dispatchEvent: (e) => ((listeners[e.type] || []).forEach((fn) => fn(e)), true),
+    },
+  });
+  const { state } = loaded;
+  for (const name of ["probeSession", "loadRepos", "loadAgents", "subscribePresence", "loadIdentity", "loadRelease"]) {
+    state[name] = () => {};
+  }
+  const realSetInterval = globalThis.setInterval;
+  globalThis.setInterval = () => 0;
+  try {
+    state.init();
+  } finally {
+    globalThis.setInterval = realSetInterval;
+  }
+  return loaded;
+}
+
 test("sessions.dirty on a visible tab reads the sessions", async () => {
   const { state } = loadShell(VISIBLE);
   state.LIVE_SETTLE_MS = 0;
@@ -1629,16 +1646,42 @@ test("a tab that becomes visible reads the runs with the Runs panel closed, so a
   window.WBDaemon.observe = async (verb) => (verb === "runs.list" ? { status: "ok", runs: [] } : null);
   state.$store.projects.setOpen("o/r");
   state.runsOpen = false;
-  state.runsByProject["o/r"] = [{ runid: "r1" }];
+  state.$store.runs.runsByProject["o/r"] = [{ runid: "r1" }];
   assert.equal(state.writeLocked(), true, "the run seen before the tab was hidden locks");
   await withFetchSpy(() => state.onTabVisible());
   assert.equal(state.writeLocked(), false, "the run ended while hidden: the writes unlock");
 });
 
+// The Alpine store `runs` tells the page; the shell decides what each fact
+// means for it.
+test("a runs push on a visible tab reads the runs and nudges the board; a hidden tab does neither", () => {
+  for (const visibilityState of ["visible", "hidden"]) {
+    const { state, window } = runsEventShell({ visibilityState });
+    const calls = [];
+    state.$store.runs.hydrateRuns = () => calls.push("hydrateRuns");
+    state.maybeRefreshBoard = (why) => calls.push(`board:${why}`);
+    window.dispatchEvent(new CustomEvent("workbench:runs-dirty"));
+    assert.deepEqual(calls, visibilityState === "visible" ? ["hydrateRuns", "board:runs"] : [], visibilityState);
+  }
+});
+
+test("a kept runs read loads the selected run's plan only while the Runs panel shows", () => {
+  const { state, window } = runsEventShell();
+  let loads = 0;
+  state.loadRunPlan = () => loads++;
+  state.runsOpen = false;
+  window.dispatchEvent(new CustomEvent("workbench:runs-read"));
+  assert.equal(loads, 0, "a closed panel reads no plan");
+  state.runsOpen = true;
+  window.dispatchEvent(new CustomEvent("workbench:runs-read"));
+  assert.equal(loads, 1);
+});
+
 test("a reopened socket reads the board and the runs", () => {
   const { state } = loadShell(VISIBLE);
   const calls = [];
-  for (const name of ["loadRepos", "rereadDesk", "hydrateRuns"]) state[name] = () => calls.push(name);
+  for (const name of ["loadRepos", "rereadDesk"]) state[name] = () => calls.push(name);
+  state.$store.runs.hydrateRuns = () => calls.push("hydrateRuns");
   state.maybeRefreshBoard = (why) => calls.push(`board:${why}`);
   state.$store.projects.setOpen("o/r");
   state.onPresenceOpen(true);
@@ -1775,7 +1818,7 @@ test("every change-set write is refused while the change set is not current", as
   };
   state.$store.projects.setOpen("o/r");
   state._flashAction = () => {};
-  state.runsByProject["o/r"] = [];
+  state.$store.runs.runsByProject["o/r"] = [];
   await state.loadChanges("o/r");
   await state.loadChanges("o/r");
   assert.equal(state.writeLocked(), true);
@@ -1816,7 +1859,7 @@ test("every change-set write reaches the daemon while the change set is current"
     };
     state.$store.projects.setOpen("o/r");
     state._flashAction = () => {};
-    state.runsByProject["o/r"] = [];
+    state.$store.runs.runsByProject["o/r"] = [];
     await state.loadChanges("o/r");
     assert.equal(state.writeLocked(), false, name);
     verbs.length = 0;
@@ -1956,21 +1999,8 @@ test("a read failure shows the words for a daemon code, never the code", async (
   assert.equal(state.changesReadError["o/r"], "Could not read the changes: the project is not in the list");
   await state.loadSync("o/r");
   assert.equal(state.syncByProject["o/r"].note, "Could not read the branch: the worktree does not exist");
-  state.runsOpen = false;
-  await state.hydrateRuns();
-  assert.equal(state.runsError, "Could not read the runs: the project is not in the list.");
-});
-
-test("an unreadable run is counted, and its id is never shown", async () => {
-  const state = observedShell([
-    { status: "ok", runs: [], unreadable: [{ runid: "01JX4ABCDEF", reason: "malformed" }] },
-  ]);
-  state.runsOpen = false;
-  await state.hydrateRuns();
-  assert.equal(
-    state.runsError,
-    "Could not read 1 saved run. The file is damaged or from another version of Ralphy.",
-  );
+  await state.$store.runs.hydrateRuns();
+  assert.equal(state.$store.runs.runsError, "Could not read the runs: the project is not in the list.");
 });
 
 test("run and peer states show as words, and the dot says what it means", () => {

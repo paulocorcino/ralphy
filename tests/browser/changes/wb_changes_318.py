@@ -620,9 +620,9 @@ def main():
                 ),
                 encoding="utf-8",
             )
-            page.evaluate(f"() => {SH}.hydrateRuns()")
+            page.evaluate(f"() => Alpine.store('runs').hydrateRuns()")
             page.wait_for_function(
-                f"(s) => (({SH}.runsByProject[s]) || []).length === 1", arg=slug, timeout=20000
+                f"(s) => ((Alpine.store('runs').runsByProject[s]) || []).length === 1", arg=slug, timeout=20000
             )
             page.wait_for_function(f"() => {SH}.writeLocked() === true", timeout=15000)
             locked = page.evaluate(

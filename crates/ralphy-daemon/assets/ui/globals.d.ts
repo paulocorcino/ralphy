@@ -286,8 +286,10 @@ interface Window {
       handler: (el: HTMLElement, directive: AlpineDirective, utilities: AlpineDirectiveUtilities) => void,
     ): void;
     store(name: "projects"): import("./wb-projects-store.ts").ProjectsStore;
+    store(name: "runs"): import("./wb-runs-store.ts").RunsStore;
     store(name: string, value: object): void;
     raw<T>(value: T): T;
+    nextTick(callback: () => void): Promise<void>;
     start(): void;
   };
   /** The event bus of `app.ts`, or the opener bridge of a torn-off page. */
@@ -423,6 +425,10 @@ type OpenRequest = {
 interface WindowEventMap {
   /** The open project changed: the project now open and the one that was. */
   "workbench:project-changed": CustomEvent<{ slug: string | null; previous: string | null }>;
+  /** The Alpine store `runs` kept a read of the open project's runs. */
+  "workbench:runs-read": CustomEvent<null>;
+  /** The runs socket of the open project says its run snapshots changed. */
+  "workbench:runs-dirty": CustomEvent<null>;
   /** The open checkout's HEAD moved. */
   "workbench:head-moved": CustomEvent<{ ref: string }>;
   "workbench:menus-close": CustomEvent<null>;

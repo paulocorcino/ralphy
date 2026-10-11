@@ -132,6 +132,19 @@ export function shell() {
       // the files hear it in `wb-files.ts`.
       window.addEventListener("workbench:project-changed", () => this.boardFollowProject());
       window.addEventListener("workbench:project-changed", (e) => this.gitFollowProject(e.detail.slug));
+      // The runs socket said the snapshots changed (the Alpine store `runs`).
+      // A snapshot change means the tracker may have moved, so the same push
+      // nudges the board (#301); the predicate coalesces it.
+      window.addEventListener("workbench:runs-dirty", () => {
+        if (this.tabHidden()) return;
+        this.$store.runs.hydrateRuns();
+        this.maybeRefreshBoard("runs");
+      });
+      // A read of the open project's runs was kept. Only while showing: a
+      // whole-plan `file.read` nobody can see is cost.
+      window.addEventListener("workbench:runs-read", () => {
+        if (this.runsOpen) this.loadRunPlan();
+      });
       // The open checkout's HEAD moved (the files' `/ws/tree` socket says so).
       window.addEventListener("workbench:head-moved", (e) => this.gitFollowHead(e.detail.ref));
       // The console module cannot know whether THIS document's connection is
@@ -196,7 +209,7 @@ export function shell() {
     // itself (`resumeDecision`) and debounces.
     resumeSockets(stale?: boolean) {
       const verdict = stale === undefined ? this.socketsAreStale() : stale;
-      this._runsSub?.resume?.(verdict);
+      this.$store.runs._runsSub?.resume?.(verdict);
       this._changesSub?.resume?.(verdict);
       this._presenceSub?.resume?.(verdict);
       // The files' `/ws/tree` socket (wb-files.ts).
@@ -266,7 +279,7 @@ export function shell() {
       this.loadRepos();
       this.rereadDesk();
       this.maybeRefreshBoard("reopen");
-      if (this.$store.projects.openSlug) this.hydrateRuns();
+      if (this.$store.projects.openSlug) this.$store.runs.hydrateRuns();
     },
 
     // Read the desk again. The console module puts it on the stage, and tells
@@ -428,9 +441,9 @@ export function shell() {
       this.reposError = `Could not load the projects from the daemon: ${reason}.`;
     },
 
-    // A time of day, `14:02`, for "Read at …".
+    // A time of day, `14:02`, for "Read at …" (`WBFail.clock`).
     fmtClock(ms: number) {
-      return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      return WBFail.clock(ms);
     },
 
     // The local fleet (ADR-0052 §5, #349): append every PEER's repos after the
@@ -1058,7 +1071,7 @@ export function shell() {
         // `nowMs` is as stale as the panel has been closed; re-anchor before
         // the first paint.
         this.nowMs = Date.now();
-        this.hydrateRuns();
+        this.$store.runs.hydrateRuns();
       }
     },
     toggleKanban() {
@@ -1451,10 +1464,10 @@ export function shell() {
       if (this.changesRead[slug]?.current === false || this.syncRead[slug]?.current === false) {
         return "The changes shown are not current. Wait for the next read, or reload the page.";
       }
-      if (this.runsRead[slug]?.current === false) {
+      if (this.$store.runs.runsRead[slug]?.current === false) {
         return "The runs shown are not current. Wait for the next read, or reload the page.";
       }
-      return WBChanges.writeLockReason(this.runsByProject[slug]);
+      return WBChanges.writeLockReason(this.$store.runs.runsByProject[slug]);
     },
     BUILD_SKEW_LOCK: "This page is older than Ralphy. Save your work, and the page loads the new version.",
     // The daemon runs another build than this page (ADR-0070 D6). With no
@@ -1504,7 +1517,7 @@ export function shell() {
         return "The board shown is not current. Wait for the next read.";
       }
       return WBChanges.writeLockReason(
-        this.runsByProject[this.$store.projects.openKey()],
+        this.$store.runs.runsByProject[this.$store.projects.openKey()],
         "You can edit labels again when it finishes.",
       );
     },
@@ -1938,16 +1951,8 @@ export function shell() {
     },
 
     // --- Runs panel -------------------------------------------------------
-    // Monotonic hydration token: overlapping `runs.list` replies can land OUT
-    // OF ORDER; only the newest hydration commits.
-    _runsSeq: 0,
-    // One entry per `runid`: issue queue + per-issue status, live phase, the
-    // current issue's plan.md (helpers in wb-runs.ts, `WBRun`).
-    runsByProject: {} as Record<string, Run[]>,
-    // An error must never render as "No active runs": an empty project and an
-    // unreadable one are different facts (ADR-0047 §6).
-    runsError: "",
-    currentRunId: null as string | null,
+    // The runs, their read state and the selected run are the Alpine store
+    // `runs` (wb-runs-store.ts).
     // The clock's "now", advanced by the tick in `init` while the panel is
     // open. STATE, not `Date.now()` in the getter: Alpine only re-renders what
     // it can observe changing.
@@ -1958,74 +1963,13 @@ export function shell() {
     runMenu: false,
     planSection: "",
 
-    // Hydrate from `runs.list` (ADR-0047 §9), by REPLACEMENT — a snapshot is
-    // state, not a log. On panel open and project change.
-    async hydrateRuns() {
-      const slug = this.$store.projects.openSlug;
-      // Clear FIRST: a stale error must not outlive its project.
-      this.runsError = "";
-      if (!slug) return;
-      const prevRuns = this.runsByProject[slug] || [];
-      const seq = ++this._runsSeq;
-      try {
-        const reply = await window.WBDaemon.observe("runs.list", { repo: slug });
-        // Superseded while in flight: the newer hydration owns the state.
-        if (seq !== this._runsSeq || this.$store.projects.openSlug !== slug) return;
-        if (reply?.status !== "ok") {
-          this.runsFailed(slug, WBFail.why(reply, "the daemon gave no reason"));
-          return;
-        }
-        this.runsRead[slug] = WBFail.readFold(this.runsRead[slug], { ok: true, value: true, at: Date.now() });
-        this.runsByProject[slug] = (reply.runs || []).map((d) => {
-          const run = WBRun.fromSnapshot(d);
-          // A push arrives on every snapshot write (~every few hundred ms);
-          // re-fetching an unchanged plan would blank the viewer each time.
-          const prev = prevRuns.find((p) => p.runid === run.runid);
-          if (prev && prev.planPath === run.planPath) {
-            run.planMd = prev.planMd;
-            run.planReadFailed = prev.planReadFailed;
-          }
-          return run;
-        });
-        // A run's id is a key, not a name: the line counts the runs instead.
-        const bad = reply.unreadable || [];
-        this.runsError = bad.length
-          ? `Could not read ${bad.length} saved run${bad.length > 1 ? "s" : ""}. ` +
-            "The file is damaged or from another version of Ralphy."
-          : "";
-        // Keep the selected run while it is still listed.
-        const listed = this.projectRuns();
-        this.currentRunId = listed.some((r) => r.runid === this.currentRunId)
-          ? this.currentRunId
-          : listed[0]?.runid || null;
-        // Only while showing: a whole-plan `file.read` nobody can see is cost.
-        if (this.runsOpen) await this.loadRunPlan();
-      } catch (err) {
-        if (seq !== this._runsSeq || this.$store.projects.openSlug !== slug) return;
-        // A transport failure is a read failure, not an idle project.
-        this.runsFailed(slug, WBFail.why({ message: (err as Error | undefined)?.message }, "the daemon did not answer"));
-      }
-    },
-    // A failed `runs.list` (ADR-0070 D3). After a good read the runs stay,
-    // marked not current; before one, there are none and the panel says why.
-    runsFailed(slug: string, reason: string) {
-      const read = WBFail.readFold(this.runsRead[slug], { ok: false, reason, at: Date.now() });
-      this.runsRead[slug] = read;
-      if (read.goodAt) {
-        this.runsError = WBFail.notCurrent(read, (ms) => this.fmtClock(ms));
-        return;
-      }
-      this.runsByProject[slug] = [];
-      this.runsError = `Could not read the runs: ${reason}.`;
-    },
-
     // Read the selected run's plan via `file.read` (the document carries its
     // PATH, never its text). A refusal KEEPS the last good text and only flags
     // it (#330); `runsError` is untouched. Reads the PRIMARY tree — no
     // `checkout` (#406): a run takes the primary tree (ADR-0063 §7). Same for
     // `loadPlan`, `diffWorkSide` and the git-backed panels.
     async loadRunPlan() {
-      const run = this.currentRun();
+      const run = this.$store.runs.currentRun();
       if (!run?.planPath) return;
       try {
         const reply = await window.WBDaemon.observe("file.read", {
@@ -2043,27 +1987,17 @@ export function shell() {
       }
       // A replacement mints new run objects: a `run` no longer current belongs
       // to a superseded hydration.
-      if (this.currentRun() !== run) return;
+      if (this.$store.runs.currentRun() !== run) return;
       // Reassign the section only when the chosen heading is gone.
       const hs = this.planHeadings(run);
       if (!hs.includes(this.planSection)) this.planSection = hs[0] || "";
     },
 
-    // The open project's runs (the panel is project-scoped).
-    projectRuns() {
-      return this.runsByProject[this.$store.projects.openKey()] || [];
-    },
-    // The selected run, falling back to the first when the id is stale (e.g. the
-    // project changed).
-    currentRun() {
-      const runs = this.projectRuns();
-      return runs.find((r) => r.runid === this.currentRunId) || runs[0] || null;
-    },
     selectRun(runid: string) {
-      this.currentRunId = runid;
+      this.$store.runs.setCurrentRun(runid);
       this.trailFocus = null; // the arrival marker belonged to the run we left
       // reset the section dropdown to the new run's first non-Steps heading
-      this.planSection = this.planHeadings(this.currentRun())[0] || "";
+      this.planSection = this.planHeadings(this.$store.runs.currentRun())[0] || "";
       // each run has its own plan; the viewer follows the selection.
       this.loadRunPlan();
     },
@@ -2120,7 +2054,7 @@ export function shell() {
     // panel closes first (`z-index: 150`, sharing the drawer's right edge).
     // `toggleKanban()` resets `kanbanSel`, so it runs BEFORE `openIssue`.
     focusIssue(number: number) {
-      window.WB.emit("run-issue-focus", { project: this.$store.projects.openSlug, runid: this.currentRun()?.runid, issue: number });
+      window.WB.emit("run-issue-focus", { project: this.$store.projects.openSlug, runid: this.$store.runs.currentRun()?.runid, issue: number });
       this.runsOpen = false;
       this.trailFocus = null;
       if (!this.kanbanOpen) this.toggleKanban();
@@ -2130,10 +2064,10 @@ export function shell() {
     // Board → run (#301): the card's run pill opens the Runs panel on THAT run,
     // marking the issue in the trail. The board stays open behind it.
     openRunFor(number: number) {
-      const hit = window.WBKanban.runningFor(number, this.projectRuns());
+      const hit = window.WBKanban.runningFor(number, this.$store.runs.projectRuns());
       if (!hit) return;
-      this.currentRunId = hit.runid;
-      this.planSection = this.planHeadings(this.currentRun())[0] || "";
+      this.$store.runs.setCurrentRun(hit.runid);
+      this.planSection = this.planHeadings(this.$store.runs.currentRun())[0] || "";
       this.loadRunPlan();
       // `toggleRuns()` would CLOSE an already-open panel — only open it.
       if (!this.runsOpen) this.toggleRuns();
@@ -2145,8 +2079,6 @@ export function shell() {
       );
     },
 
-    runsRead: {} as Record<string, Read>,
-    _runsSub: null as Subscription | null, // the live run-snapshot subscription for the open project, if any
     // The runid whose stop is in flight: a double-click must not dispatch two
     // `ralphy stop` children.
     runStopping: null as string | null,
@@ -2154,7 +2086,7 @@ export function shell() {
     // and `stop` (ADR-0054). Derived from the SAME list `writeLockReason`
     // reads, so the two agree, and self-clearing via `runs.dirty`.
     runIsLive() {
-      return this.projectRuns().length > 0;
+      return this.$store.runs.projectRuns().length > 0;
     },
     // Ask a live run to stop (ADR-0054). This does NOT kill anything: it
     // dispatches `ralphy stop`, which writes a request the run acts on; the
@@ -2191,39 +2123,19 @@ export function shell() {
         this.runStopping = null;
       }
     },
-    // The open project's run-snapshot subscription (#300, ADR-0047 §9).
-    mountRunsSub() {
-      if (!window.WBDaemon?.subscribeRuns || !this.$store.projects.openSlug) return;
-      // A snapshot change means the tracker may have moved, so the same push
-      // nudges the board (#301); the predicate coalesces it.
-      this._runsSub = window.WBDaemon.subscribeRuns(this.$store.projects.openSlug, () => {
-        if (this.tabHidden()) return;
-        this.hydrateRuns();
-        this.maybeRefreshBoard("runs");
-      });
-    },
-    destroyRunsSub() {
-      try {
-        this._runsSub?.close();
-      } catch {}
-      this._runsSub = null;
-    },
     // On `workbench:project-changed`. The drawer selection, the trail marker
     // and a verb refusal (#331, whose terminal frame can land long after the
-    // click) of the project that WAS open are dropped. After the paint, the
-    // runs socket (#300) follows the tree's open/close path.
+    // click) of the project that WAS open are dropped. The runs socket and
+    // the selected run follow in the Alpine store `runs`, whose listener runs
+    // first: after the paint, the section is the new run's.
     boardFollowProject() {
       this.kanbanSel = null;
       this.trailFocus = null;
       this.verbError = "";
       this.$nextTick(() => {
-        this.destroyRunsSub();
-        this.mountRunsSub();
         // Only when the board is OPEN (#301): the fold spawns a tracker CLI.
         if (this.$store.projects.openSlug && this.kanbanOpen) this.loadBoard();
-        this.currentRunId = this.projectRuns()[0]?.runid || null;
-        this.planSection = this.planHeadings(this.currentRun())[0] || "";
-        if (this.$store.projects.openSlug) this.hydrateRuns();
+        this.planSection = this.planHeadings(this.$store.runs.currentRun())[0] || "";
       });
     },
 
@@ -2260,7 +2172,7 @@ export function shell() {
 
     // --- the step list (the plan block is state, #330) ---------------------
     planSteps() {
-      return this.currentRun()?.steps || [];
+      return this.$store.runs.currentRun()?.steps || [];
     },
     stepGlyph(status: string) {
       return WBRun.stepGlyph(status);
@@ -2273,7 +2185,7 @@ export function shell() {
     },
     // Why the step list is empty — an unexplained blank block reads as a bug.
     stepsNote() {
-      const run = this.currentRun();
+      const run = this.$store.runs.currentRun();
       if (this.planSteps().length) return "";
       if (run?.phase === "planning") return "Writing the plan…";
       if (run?.planIssue != null) return "This plan has no steps.";
@@ -2282,7 +2194,7 @@ export function shell() {
     // Why the prose block is empty: unreadable, not written yet, or written
     // for another issue are DIFFERENT facts.
     proseNote() {
-      const run = this.currentRun();
+      const run = this.$store.runs.currentRun();
       if (!run) return "";
       const wanted = this.planIssueWanted(run);
       if (this.planProseIsCurrent(run)) {
@@ -2677,7 +2589,7 @@ export function shell() {
 
     // The run pill for a card (the actively-worked issue of a live run).
     issueRunning(number: number) {
-      return window.WBKanban.runningFor(number, this.projectRuns());
+      return window.WBKanban.runningFor(number, this.$store.runs.projectRuns());
     },
     // The issue drawer's run line: `Running · executing (claude)`.
     issueRunningLabel(run: RunPill) {
@@ -3075,7 +2987,7 @@ export function shell() {
       this.loadRepos();
       this.rereadDesk();
       // Not only with the Runs panel open: the runs lock the writes.
-      this.hydrateRuns();
+      this.$store.runs.hydrateRuns();
       this.rereadOpenPanels();
       this.resumeSockets();
       this.loadRelease();
@@ -3192,7 +3104,7 @@ export function shell() {
       // `loadRepos` above covers the sessions, the change set and the branch.
       this.maybeRefreshBoard("login");
       // Not only with the Runs panel open: the runs lock the writes.
-      this.hydrateRuns();
+      this.$store.runs.hydrateRuns();
       this.rereadOpenPanels();
     },
 

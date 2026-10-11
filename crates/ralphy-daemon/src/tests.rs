@@ -3937,6 +3937,10 @@ const SHELL_FAMILY: &[(&str, &str)] = &[
         include_str!("../assets/ui/wb-release-dialogs.ts"),
     ),
     (
+        "wb-runs-store.ts",
+        include_str!("../assets/ui/wb-runs-store.ts"),
+    ),
+    (
         "wb-security-dialog.ts",
         include_str!("../assets/ui/wb-security-dialog.ts"),
     ),
@@ -7611,9 +7615,9 @@ fn the_run_picker_names_the_model_and_clocks_the_phase() {
     // `phaseClock`, `runTitle`) are driven by `ui-tests/wb-runs.test.mjs`.
     let shell = include_str!("../assets/ui/index.html");
     for pin in [
-        r#"<span class="run-select-title" x-text="runTitle(currentRun())"></span>"#,
-        r#"<span class="run-sub-phase" x-text="runIdentity(currentRun())"></span>"#,
-        r#"<span class="run-clock" x-show="runClock(currentRun())""#,
+        r#"<span class="run-select-title" x-text="runTitle($store.runs.currentRun())"></span>"#,
+        r#"<span class="run-sub-phase" x-text="runIdentity($store.runs.currentRun())"></span>"#,
+        r#"<span class="run-clock" x-show="runClock($store.runs.currentRun())""#,
     ] {
         assert!(
             shell.contains(pin),
@@ -7622,6 +7626,10 @@ fn the_run_picker_names_the_model_and_clocks_the_phase() {
     }
     // The vendor MOVED, it was not deleted: `runIdentity` is what carries it,
     // and the negative pin is what stops the title reverting to it.
+    assert!(
+        !shell.contains(r#"x-text="$store.runs.currentRun()?.agent""#),
+        "the picker's headline must be the model, not the vendor"
+    );
     assert!(
         !shell.contains(r#"x-text="currentRun()?.agent""#),
         "the picker's headline must be the model, not the vendor"

@@ -28,6 +28,7 @@ import { createMessages } from "./wb-messages.ts";
 import { createStack, createGestures } from "./wb-stage-stack.ts";
 import { iconDirective, shell, wire } from "./app.ts";
 import { projectsStore } from "./wb-projects-store.ts";
+import { runsStore } from "./wb-runs-store.ts";
 
 window.Alpine = Alpine;
 // The door for operator messages first: the consoles, the cards and the
@@ -53,6 +54,8 @@ wire(window, document, { messages });
 Alpine.directive("icon", iconDirective);
 // The open project, before the components that read it (ADR-0073 D6).
 Alpine.store("projects", projectsStore());
+// The runs of each project; its `init` hears the open project change.
+Alpine.store("runs", runsStore({ messages }));
 // Each name is the `x-data` of one element in `index.html`.
 Alpine.data("shell", shell);
 Alpine.data("wbSettingsDialog", settingsDialog);

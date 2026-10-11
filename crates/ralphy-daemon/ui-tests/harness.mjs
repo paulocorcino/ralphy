@@ -26,6 +26,7 @@ import { wbColumns, wbConsoleMenus } from "../assets/ui/wb-consoles-tab.ts";
 import { wbFiles } from "../assets/ui/wb-files.ts";
 import { wbMoveDialog } from "../assets/ui/wb-move-dialog.ts";
 import { projectsStore } from "../assets/ui/wb-projects-store.ts";
+import { runsStore } from "../assets/ui/wb-runs-store.ts";
 import { WBSpend } from "../assets/ui/wb-spend.ts";
 import { WBKanban } from "../assets/ui/wb-kanban.ts";
 import { createDaemon } from "../assets/ui/wb-daemon.ts";
@@ -54,6 +55,7 @@ const MODULE_NAMESPACES = {
 // here and every test page has it.
 export const STORES = {
   projects: projectsStore,
+  runs: runsStore,
 };
 
 // The Alpine components, by the name the markup gives `x-data`: `loadComponent`
@@ -173,7 +175,9 @@ export function loadShell(opts = {}) {
   const window = Object.assign(stubWindow(), opts.window || {});
   // Filled once the message door exists: a store is built with it.
   const stores = {};
-  window.Alpine = { store: (name) => stores[name] };
+  // `nextTick` runs the callback at once: a store that waits for the paint
+  // (`Alpine.nextTick`) acts inside the call that asked it.
+  window.Alpine = { store: (name) => stores[name], nextTick: (fn) => fn() };
   const document = Object.assign(stubDocument(), opts.document || {});
   window.window = window;
   window.document = document;

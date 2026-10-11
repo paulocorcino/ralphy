@@ -247,10 +247,10 @@ def main():
             # is the panel-open one. The script exercises BOTH.
             page.evaluate(f"() => {SH}.toggle('{slug}')")
             page.evaluate(f"() => {SH}.toggleRuns()")
-            page.wait_for_function(f"() => {SH}.projectRuns().length === 2", timeout=8000)
+            page.wait_for_function(f"() => Alpine.store('runs').projectRuns().length === 2", timeout=8000)
             page.wait_for_timeout(400)
 
-            n_runs = page.evaluate(f"() => {SH}.projectRuns().length")
+            n_runs = page.evaluate(f"() => Alpine.store('runs').projectRuns().length")
             check("picker lists exactly 2 live runs", n_runs == 2, f"got={n_runs}")
 
             glyphs = page.locator(".trail .trail-ic").all_inner_texts()
@@ -261,7 +261,7 @@ def main():
                 f"got={glyphs}",
             )
 
-            label = page.evaluate(f"() => {SH}.runPhaseLabel({SH}.currentRun())")
+            label = page.evaluate(f"() => {SH}.runPhaseLabel(Alpine.store('runs').currentRun())")
             check("run phase label names the active issue", label == "executing #72", f"got={label!r}")
 
             prog = page.locator(".run-select-btn .run-prog").inner_text().strip()
@@ -275,7 +275,7 @@ def main():
             # both runs are selectable: flip to the sleeping one.
             page.evaluate(f"() => {SH}.selectRun('{RUN_B}')")
             page.wait_for_timeout(300)
-            selected = page.evaluate(f"() => {SH}.currentRun()?.runid")
+            selected = page.evaluate(f"() => Alpine.store('runs').currentRun()?.runid")
             check("the second concurrent run is selectable", selected == RUN_B, f"got={selected!r}")
             sleep_text = page.locator(".trail-sleep").inner_text()
             check(
@@ -287,11 +287,11 @@ def main():
             # --- scenario 2: a failed read is never an idle project -----------
             for runid in (RUN_A, RUN_B):
                 (runstate_dir / f"{runid}.json").unlink()
-            page.evaluate(f"() => {SH}.hydrateRuns()")
-            page.wait_for_function(f"() => {SH}.projectRuns().length === 0", timeout=8000)
+            page.evaluate(f"() => Alpine.store('runs').hydrateRuns()")
+            page.wait_for_function(f"() => Alpine.store('runs').projectRuns().length === 0", timeout=8000)
             page.wait_for_timeout(300)
 
-            runs_error = page.evaluate(f"() => {SH}.runsError")
+            runs_error = page.evaluate(f"() => Alpine.store('runs').runsError")
             check("a failed read sets runsError", bool(runs_error), f"got={runs_error!r}")
             check(".runs-error is visible", page.locator(".runs-error").is_visible())
             empties = [

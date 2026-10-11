@@ -63,7 +63,9 @@ INSTRUMENT = """
   };
   window.WBSpend.state = wrap('WBSpend.state', window.WBSpend.state);
   window.WBSpend.ledger = wrap('WBSpend.ledger', window.WBSpend.ledger);
-  for (const m of ['kanbanColumns', 'selectedIssue', 'currentRun']) sh[m] = wrap(m, sh[m]);
+  for (const m of ['kanbanColumns', 'selectedIssue']) sh[m] = wrap(m, sh[m]);
+  const runs = Alpine.store('runs');
+  runs.currentRun = wrap('currentRun', runs.currentRun);
 }
 """
 
@@ -205,7 +207,7 @@ def main():
                 f"  deliveries: ({SH}.spend.doc?.deliveries || []).length,"
                 f"  records: ({SH}.ledger.records || []).length,"
                 f"  interactive: ({SH}.ledger.interactive || []).length,"
-                f"  runs: ({SH}.runsByProject[s] || []).length }})",
+                f"  runs: (Alpine.store('runs').runsByProject[s] || []).length }})",
                 arg=slug_a,
             )
             print("project A:", slug_a, json.dumps(facts))
@@ -221,8 +223,8 @@ def main():
             per_call = page.evaluate(
                 f"() => {{ const sh = {SH}; const out = {{}};"
                 "  for (const m of ['spendView', 'ledgerView', 'kanbanColumns', 'selectedIssue', 'currentRun']) {"
-                "    const t0 = performance.now();"
-                "    for (let i = 0; i < 200; i++) sh[m]();"
+                "    const t0 = performance.now(); const o = m === 'currentRun' ? Alpine.store('runs') : sh;"
+                "    for (let i = 0; i < 200; i++) o[m]();"
                 "    out[m] = (performance.now() - t0) / 200; }"
                 "  return out; }"
             )

@@ -338,7 +338,7 @@ def main():
             page.evaluate(f"() => {{ {SH}._boardLoadedAt = Date.now() - 10000; }}")
             before = board_calls(page)
             doc_a.write_text(json.dumps(snapshot(RUN_A, "executing", "executing")), encoding="utf-8")
-            page.wait_for_function(f"() => {SH}.projectRuns().length === 1", timeout=15000)
+            page.wait_for_function(f"() => Alpine.store('runs').projectRuns().length === 1", timeout=15000)
             page.wait_for_timeout(600)
             n = board_calls(page)
             check("a run snapshot change refreshes the board", n == before + 1, f"{before} -> {n}")
@@ -453,7 +453,7 @@ def main():
             page.bring_to_front()
             if vis != "hidden":
                 page.evaluate("() => document.dispatchEvent(new Event('visibilitychange'))")
-            page.wait_for_function(f"() => {SH}.projectRuns()[0]?.phase === 'planning'", timeout=15000)
+            page.wait_for_function(f"() => Alpine.store('runs').projectRuns()[0]?.phase === 'planning'", timeout=15000)
             page.wait_for_timeout(800)
             n = board_calls(page)
             check("the board reloads when the document becomes visible again", n == before + 1, f"{before} -> {n}")
@@ -514,7 +514,7 @@ def main():
             page.click(".kanban-card.running .kc-run")
             page.wait_for_timeout(600)
             check("clicking the run pill opens the Runs panel", page.evaluate(f"() => {SH}.runsOpen") is True)
-            rid = page.evaluate(f"() => {SH}.currentRunId")
+            rid = page.evaluate(f"() => Alpine.store('runs').currentRunId")
             check("…on that run", rid == RUN_A, f"got={rid!r}")
             focused = page.evaluate(
                 "() => Array.from(document.querySelectorAll('.trail-node.focus'))"
