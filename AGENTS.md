@@ -138,7 +138,12 @@ ubiquitous language, and each crate is roughly one bounded context.
   files. If it lists a file your change touches, keep working, and write in
   your final report the file and the responsibilities you see that a split
   could follow; a human decides when to split it, by
-  [ADR-0022](./docs/adr/0022-file-split-conventions.md).
+  [ADR-0022](./docs/adr/0022-file-split-conventions.md). One exception is a
+  gate: a workbench `.ts` module over 700 lines fails
+  `workbench_ts_modules_stay_small` in `crates/xtask/tests/ratchets.rs`,
+  unless `TS_SIZE_BASELINE` lists it. That list only shrinks, so split the
+  module instead of adding it
+  ([ADR-0073](./docs/adr/0073-the-workbench-script-is-cut-into-alpine-components.md)).
 - **Comments state what the code cannot show:** an invariant, a measured fact
   (with the tool and version), a limit, or the ADR/issue that decided it. A
   comment does not describe the previous diff, the bug report, or a rejected
