@@ -155,6 +155,21 @@ body {
 body.side-collapsed {
   grid-template-columns: var(--rail-w) 0px 1fr 0px;
 }
+/* The frame around the content is not text. A drag that starts on a scrollbar
+   (a long press on the iPad) otherwise grows a selection over every label of
+   the rail, the sidebar and the tab strip. Safari reads only the prefixed
+   property. A field in the frame keeps its selection: the search box, the
+   commit message. */
+.rail,
+.side,
+.tabbar {
+  -webkit-user-select: none;
+  user-select: none;
+}
+:is(.rail, .side, .tabbar) :is(input, textarea, [contenteditable="true"]) {
+  -webkit-user-select: text;
+  user-select: text;
+}
 /* On a phone (app.js `PHONE_QUERY`) the sidebar is an overlay, not a track: a
    300px column left a 390px portrait screen 42px of canvas. It floats over the
    canvas like the Runs panel, opens closed, and a tap on the canvas closes it.
