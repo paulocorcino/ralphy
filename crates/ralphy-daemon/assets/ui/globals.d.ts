@@ -446,6 +446,18 @@ interface WindowEventMap {
   /** Ask for the open project's issues the board already holds: the board
    * fills `issues`, during the send. */
   "workbench:board-issues": CustomEvent<{ issues: import("./wb-kanban.ts").Issue[] }>;
+  /** Read the change set and the branch of the project `ref`. */
+  "workbench:changes-read": CustomEvent<{ ref: string }>;
+  /** `ref` has a new checkout: its change-set and branch reads start over. */
+  "workbench:changes-forget": CustomEvent<{ ref: string }>;
+  /** The Changes view opened: read it again if it is on screen. */
+  "workbench:changes-refresh": CustomEvent<null>;
+  /** Ask for the change counts per project: the Changes view fills
+   * `counts`, during the send. */
+  "workbench:changes-count": CustomEvent<{ counts: Record<string, number | null> }>;
+  /** Ask whether the change set and the branch of `slug` are current: the
+   * Changes view sets `current` to false when not, during the send. */
+  "workbench:changes-current": CustomEvent<{ slug: string; current: boolean }>;
   /** The open checkout's HEAD moved. */
   "workbench:head-moved": CustomEvent<{ ref: string }>;
   "workbench:menus-close": CustomEvent<null>;

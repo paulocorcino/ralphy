@@ -55,6 +55,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Changes view is the component wbChanges.
+CHG = "Alpine.$data(document.querySelector('[x-data=\"wbChanges\"]'))"
 
 RAIL_CHANGES = "nav.rail button[title=\"Changes\"]"
 RAIL_PROJECTS = "nav.rail button[title=\"Projects\"]"
@@ -491,7 +493,7 @@ def main():
                 " window.WBDaemon.observe = (verb, args) => verb === 'changes.commit'"
                 "   ? Promise.resolve({ status: 'error', message: 'hook said no' }) : real(verb, args); }"
             )
-            page.evaluate(f"() => {{ {SH}.commitMsg = 'feat: composed in the panel'; }}")
+            page.evaluate(f"() => {{ {CHG}.commitMsg = 'feat: composed in the panel'; }}")
             page.wait_for_function(
                 f"() => {{ const b = {VIEW}.querySelector('.chg-commit'); return b && !b.disabled; }}",
                 timeout=15000,
@@ -507,8 +509,8 @@ def main():
             )
             check(
                 "…and does NOT eat the message the operator typed",
-                page.evaluate(f"() => {SH}.commitMsg") == "feat: composed in the panel",
-                f"got={page.evaluate(f'() => {SH}.commitMsg')!r}",
+                page.evaluate(f"() => {CHG}.commitMsg") == "feat: composed in the panel",
+                f"got={page.evaluate(f'() => {CHG}.commitMsg')!r}",
             )
             check(
                 "…and records no commit",
@@ -551,7 +553,7 @@ def main():
             )
             check(
                 "…with the message box cleared only on success",
-                page.evaluate(f"() => {SH}.commitMsg") == "",
+                page.evaluate(f"() => {CHG}.commitMsg") == "",
                 "a refused commit must not eat the message",
             )
             # `fresh.txt` was never staged, so it survives the commit — which is
@@ -572,7 +574,7 @@ def main():
             (Path(fixture) / "renamed2.txt").write_text(
                 "l1\nl2\nl3\nl4\nl5\nl6\nl7\n", encoding="utf-8"
             )
-            page.evaluate(f"(s) => {SH}.loadChanges(s)", arg=slug)
+            page.evaluate(f"(s) => {CHG}.loadChanges(s)", arg=slug)
             wait_groups(page, "renamed2.txt", ["Changes", "Staged changes"])
             check(
                 "a rename-then-edit entry really lands in BOTH groups",

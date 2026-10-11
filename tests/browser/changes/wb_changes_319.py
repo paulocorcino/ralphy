@@ -54,6 +54,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Changes view is the component wbChanges.
+CHG = "Alpine.$data(document.querySelector('[x-data=\"wbChanges\"]'))"
 
 RAIL_CHANGES = "nav.rail button[title=\"Changes\"]"
 RAIL_PROJECTS = "nav.rail button[title=\"Projects\"]"
@@ -505,7 +507,7 @@ def main():
             (Path(fixture) / "README.md").write_text(
                 "# fixture\n\nedited again.\n", encoding="utf-8"
             )
-            page.evaluate(f"(s) => {SH}.loadChanges(s)", arg=slug)
+            page.evaluate(f"(s) => {CHG}.loadChanges(s)", arg=slug)
             wait_groups(page, "README.md", ["Changes"])
             notes = page.evaluate(
                 f"() => {{ const v = {VIEW}; const vis = (e) => e.offsetParent !== null;"

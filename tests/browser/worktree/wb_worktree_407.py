@@ -63,6 +63,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Changes view is the component wbChanges.
+CHG = "Alpine.$data(document.querySelector('[x-data=\"wbChanges\"]'))"
 
 results = []
 
@@ -203,8 +205,8 @@ ROW_BY_NAME = (
 # before Alpine's `x-show` flip, so a raw count resolves early.
 VISIBLE_ROWS = "Array.from(document.querySelectorAll('.chg-row')).filter(r => r.offsetParent !== null)"
 ROW_NAMES = f"() => {VISIBLE_ROWS}.map(r => r.querySelector('.chg-name').textContent.trim())"
-HAS_UNSTAGED = "(a) => ({SH}.changesUnstaged[a[0]] || []).some(e => e.path === a[1])".replace("{SH}", SH)
-HAS_STAGED = "(a) => ({SH}.changesStaged[a[0]] || []).some(e => e.path === a[1])".replace("{SH}", SH)
+HAS_UNSTAGED = "(a) => ({CHG}.changesUnstaged[a[0]] || []).some(e => e.path === a[1])".replace("{CHG}", CHG)
+HAS_STAGED = "(a) => ({CHG}.changesStaged[a[0]] || []).some(e => e.path === a[1])".replace("{CHG}", CHG)
 
 
 def wait_shell(page):
@@ -371,7 +373,7 @@ def main():
             page.wait_for_function(f"(s) => {SH}.checkouts[s] === 'wt-a'", arg=slug, timeout=10000)
             (wt / "dirty.txt").write_text("x\n", encoding="utf-8")
             (wt / "README.md").write_text("# edited in the worktree\n", encoding="utf-8")
-            page.evaluate(f"(s) => {SH}.loadChanges(s)", arg=slug)
+            page.evaluate(f"(s) => {CHG}.loadChanges(s)", arg=slug)
             page.wait_for_function(HAS_UNSTAGED, arg=[slug, "dirty.txt"], timeout=15000)
             show_view(page, "changes")
             page.wait_for_function(
@@ -388,7 +390,7 @@ def main():
             check("the primary's working tree is clean", porcelain == "", f"got={porcelain!r}")
 
             # --- scenario 3: stage lands on the worktree's index --------------
-            page.evaluate(f"(s) => {SH}.stagePaths(s, ['README.md'])", arg=slug)
+            page.evaluate(f"(s) => {CHG}.stagePaths(s, ['README.md'])", arg=slug)
             page.wait_for_function(HAS_STAGED, arg=[slug, "README.md"], timeout=15000)
             check(
                 "stagePaths(README.md) stages in the worktree's index",
@@ -402,11 +404,11 @@ def main():
 
             # --- scenario 4: commit lands on the worktree's branch ------------
             page.evaluate(
-                f"(s) => {{ {SH}.commitMsgSlug = s; {SH}.commitMsg = 'wt commit'; return {SH}.commitStaged(s); }}",
+                f"(s) => {{ {CHG}.commitMsgSlug = s; {CHG}.commitMsg = 'wt commit'; return {CHG}.commitStaged(s); }}",
                 arg=slug,
             )
             page.wait_for_function(
-                f"(s) => ({SH}.changesStaged[s] || []).length === 0 && {SH}.commitMsg === ''",
+                f"(s) => ({CHG}.changesStaged[s] || []).length === 0 && {CHG}.commitMsg === ''",
                 arg=slug,
                 timeout=15000,
             )
@@ -426,7 +428,7 @@ def main():
             # primary would answer `absent` (original ""), so the original side
             # discriminates the tree.
             (wt / "only-in-wt.txt").write_bytes(b"changed\n")
-            page.evaluate(f"(s) => {SH}.loadChanges(s)", arg=slug)
+            page.evaluate(f"(s) => {CHG}.loadChanges(s)", arg=slug)
             page.wait_for_function(HAS_UNSTAGED, arg=[slug, "only-in-wt.txt"], timeout=15000)
             diff_id = f"diff:{slug}@wt-a:only-in-wt.txt"
             click_change_row(page, "only-in-wt.txt")
@@ -467,9 +469,9 @@ def main():
             # The sync row and the commit button follow the moved HEAD: the
             # `sync.status` re-read runs in the worktree too.
             page.wait_for_function(
-                f"(s) => ({SH}.syncByProject[s] || {{}}).branch === 'side'", arg=slug, timeout=15000
+                f"(s) => ({CHG}.syncByProject[s] || {{}}).branch === 'side'", arg=slug, timeout=15000
             )
-            label = page.evaluate(f"() => {SH}.commitTarget().label")
+            label = page.evaluate(f"() => {CHG}.commitTarget().label")
             check("after the switch the commit button reads `Commit to side`", label == "Commit to side", f"got={label!r}")
             show_view(page, "changes")
             page.wait_for_function(HAS_UNSTAGED, arg=[slug, "dirty.txt"], timeout=15000)
@@ -517,7 +519,7 @@ def main():
             click_row(page, "primary", slug)
             page.wait_for_function(f"(s) => {SH}.checkoutOf(s) === null", arg=slug, timeout=10000)
             page.wait_for_function(
-                f"(s) => !({SH}.changesUnstaged[s] || []).some(e => e.path === 'dirty.txt')",
+                f"(s) => !({CHG}.changesUnstaged[s] || []).some(e => e.path === 'dirty.txt')",
                 arg=slug,
                 timeout=15000,
             )

@@ -68,6 +68,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Changes view is the component wbChanges.
+CHG = "Alpine.$data(document.querySelector('[x-data=\"wbChanges\"]'))"
 FILES = "Alpine.$data(document.querySelector('[x-data=\"wbFiles\"]'))"
 
 results = []
@@ -498,7 +500,7 @@ def main():
             # The selection starts `changes.list` and `sync.status`, which run
             # git inside wt-a; let them land before the folder is deleted.
             page.wait_for_function(
-                f"(s) => !!({SH}.changesRead[s] && {SH}.syncRead[s])", arg=slug, timeout=15000
+                f"(s) => !!({CHG}.changesRead[s] && {CHG}.syncRead[s])", arg=slug, timeout=15000
             )
 
             # --- scenario 9: unknown checkout resets the selection ------------

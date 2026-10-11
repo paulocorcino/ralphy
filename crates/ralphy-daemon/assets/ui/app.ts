@@ -27,7 +27,7 @@ import { WBSettingsDialog } from "./wb-settings-dialog.ts";
 import { WBSplit } from "./wb-split.ts";
 import { isFilePopupMessage } from "./wb-detached.ts";
 import { createEmitter, forwardAction, sendWindow } from "./wb-events.ts";
-import type { BoardIssue, CanvasTab, ChangeEntry, CheckoutRow, ConfirmAsk, DiffTarget, FleetPeer, Group, LedgerMissing, LedgerRecord, Listing, MenuItem, ModalEntry, Project, PromptAsk, Read, ReadState, RosterRow, SavePayload, SecurityFact, ShellLate, Slot, SpendDoc, Subscription, Sync, TabBody, TabOpen, Timer, WireDeps } from "./wb-shell-types.d.ts";
+import type { BoardIssue, CanvasTab, ChangeEntry, CheckoutRow, ConfirmAsk, DiffTarget, FleetPeer, Group, LedgerMissing, LedgerRecord, Listing, MenuItem, ModalEntry, Project, PromptAsk, ReadState, RosterRow, SavePayload, SecurityFact, ShellLate, Slot, SpendDoc, Subscription, TabBody, TabOpen, Timer, WireDeps } from "./wb-shell-types.d.ts";
 
 // A phone in either orientation: its SHORT side is under the workbench's phone
 // breakpoint (560px). Landscape iPhone is ~750 wide but ~340 tall; an iPad's
@@ -48,14 +48,9 @@ let detached = { watch: (_win: Window, _desc: FileDescriptor) => {}, dirty: () =
 
 export function shell() {
   return shellData({
-    // The slow backstop: the `/ws/tree` nudge (#310) only reports what a RUN
-    // did; an operator's own editor produces no event. Two git subprocesses per
-    // minute, only while the panel is open and the tab in front.
-    CHANGES_POLL_MS: 50000,
     // The build this page was served with (`<meta name="ralphy-build">`);
     // "" with no such tag, and then the page never reloads for a build.
     pageBuild: document.querySelector<HTMLMetaElement>('meta[name="ralphy-build"]')?.content || "",
-    _changesBackstop: null as Timer,
     // The adapter roster comes from `/api/agents`, never a list here:
     // onboarding a vendor must not need a frontend change (#304).
     agents: [] as ReturnType<typeof WBAgents.runRows>,
@@ -86,11 +81,6 @@ export function shell() {
     // Peers with a wake in flight, keyed by daemon_id: a cold WSL boot takes
     // seconds, and the key stops a second click sending a second nudge.
     waking: {} as Record<string, boolean>,
-    // The last refusal from the Changes panel, held until the next act. NOT
-    // `runsActionMsg`: that renders only inside `aside.runs`, which is closed
-    // by default. One string, not per-project: switching projects is itself
-    // the next act.
-    changesError: "",
     // A repo refresh in flight. The list does NOT auto-refresh (only the live
     // dots do, via the heartbeat); the button picks up a new repo or a
     // branch/dirty change.
@@ -128,8 +118,10 @@ export function shell() {
       window.addEventListener("online", () => this.resumeSockets(true));
       // The open project changed (ADR-0073 amendment of 2026-10-08, decision 4).
       // Each part resets only its own state, so the order is not a contract;
-      // the files hear it in `wb-files.ts`, the board in `wb-board.ts`.
-      window.addEventListener("workbench:project-changed", (e) => this.gitFollowProject(e.detail.slug));
+      // the files hear it in `wb-files.ts`, the board in `wb-board.ts`, the
+      // changes in `wb-changes-panel.ts`. A branch refusal names an act against
+      // the project that WAS open.
+      window.addEventListener("workbench:project-changed", () => (this.branchError = ""));
       // The runs socket said the snapshots changed (the Alpine store `runs`).
       // A snapshot change means the tracker may have moved, so the same push
       // nudges the board (#301); the predicate coalesces it.
@@ -138,8 +130,6 @@ export function shell() {
         this.$store.runs.hydrateRuns();
         sendWindow(window, "workbench:board-refresh", { trigger: "runs" });
       });
-      // The open checkout's HEAD moved (the files' `/ws/tree` socket says so).
-      window.addEventListener("workbench:head-moved", (e) => this.gitFollowHead(e.detail.ref));
       // The console module cannot know whether THIS document's connection is
       // alive; hand it the heartbeat verdict, or its hidden-time fallback
       // resets every console after a minute on another tab.
@@ -154,8 +144,6 @@ export function shell() {
       // A flush can be the read that finds the desk unreadable; no push says so.
       window.WBConsole?.setDeskFailureHook?.(() => this.syncDeskFailure());
       window.addEventListener("workbench:menus-close", () => this.closeAvatarMenu());
-      // Registered once; the tick asks whether the panel is open.
-      this._changesBackstop = setInterval(() => this.refreshChanges(), this.CHANGES_POLL_MS);
       // A peer pushes neither its reachability nor its sessions, so they are
       // read every 30 s while a peer is listed and the tab is visible
       // (ADR-0070 D2 event 6). `loadRepos` reads the fleet and the sessions.
@@ -199,7 +187,6 @@ export function shell() {
     resumeSockets(stale?: boolean) {
       const verdict = stale === undefined ? this.socketsAreStale() : stale;
       this.$store.runs._runsSub?.resume?.(verdict);
-      this._changesSub?.resume?.(verdict);
       this._presenceSub?.resume?.(verdict);
       // The files' `/ws/tree` socket (wb-files.ts).
       sendWindow(window, "workbench:sockets-resume", { stale: verdict });
@@ -413,8 +400,7 @@ export function shell() {
         // answered: the live dots and the console menu come from them.
         this.refreshLive();
         // The sidebar refresh button is the Changes count's manual reload (#307).
-        if (git && this.$store.projects.openSlug) this.loadChanges(this.$store.projects.openSlug);
-        if (git && this.$store.projects.openSlug) this.loadSync(this.$store.projects.openSlug);
+        if (git && this.$store.projects.openSlug) sendWindow(window, "workbench:changes-read", { ref: this.$store.projects.openSlug });
       }
     },
 
@@ -981,22 +967,16 @@ export function shell() {
       this.sideOpen = true;
       // Opening Changes IS a read trigger: the rows were last read when the
       // project was opened.
-      this.refreshChanges();
-    },
-
-    // Re-read the working tree, only while the Changes panel is on screen: both
-    // reads are local but each is a subprocess.
-    refreshChanges() {
-      if (!this.sideOpen || this.sideView !== "changes" || !this.$store.projects.openSlug) return;
-      if (document.visibilityState !== "visible") return;
-      this.loadChanges(this.$store.projects.openSlug);
-      this.loadSync(this.$store.projects.openSlug);
+      sendWindow(window, "workbench:changes-refresh");
     },
 
     // The change indicator for one row. Only slugs whose count was READ render
     // one: a `changes.list` per repo would be N git subprocesses on open.
     projectBadge(slug: string) {
-      return WBChanges.projectBadge(this.changesCount, slug);
+      // The counts are the Changes view's (wb-changes-panel.ts), asked here.
+      const changes = { counts: {} as Record<string, number | null> };
+      sendWindow(window, "workbench:changes-count", changes);
+      return WBChanges.projectBadge(changes.counts, slug);
     },
 
     // Case-insensitive slug/branch/label filter. The sidebar count keeps
@@ -1075,31 +1055,6 @@ export function shell() {
     },
 
     // --- branch switcher --------------------------------------------------
-    // Per slug, named apart from the shell-wide `changesError` below: a
-    // duplicate key in this literal is a silent no-op.
-    changesReadError: {} as Record<string, string>,
-    // Per slug, the read state of the change set, the branch (sync), the board
-    // and the runs (`WBFail.readFold`, ADR-0070 D3). A write is locked while
-    // its fact is not current.
-    changesRead: {} as Record<string, Read>,
-    syncRead: {} as Record<string, Read>,
-    // The two rendered groups (#315). INVARIANT: every path that sets one must
-    // set the OTHER in the SAME statement — a stale group left behind renders
-    // rows under a headline while the badge already reads `—`.
-    changesStaged: {} as Record<string, ChangeEntry[]>,
-    changesUnstaged: {} as Record<string, ChangeEntry[]>,
-    // The sync row per project (#316): the fold of `sync.status`. Same three
-    // triggers as the change set, never a timer.
-    syncByProject: {} as Record<string, Sync>,
-    // The remote act in flight (`"fetch"` | `"pull"` | `"push"`), or null. One
-    // slot for the whole bar: the three acts share the upstream, so a second
-    // click while one is out would race it against the first — and a push's
-    // round trip is long enough that a silent button reads as a dead one.
-    syncBusy: null as "fetch" | "pull" | "push" | null,
-    // Same token for the Changes count (#310's nudge overlaps the open's read)
-    // and for the sync row.
-    _changesSeq: 0,
-    _syncSeq: 0,
     // The branch chip opens a filtered picker; switching or creating goes
     // through the daemon's `branch.*` verbs. The header reflects the pick
     // optimistically.
@@ -1209,231 +1164,10 @@ export function shell() {
       this.branchOpen = false;
     },
 
-    // The open project's change count (#307) via `changes.list`: reloads on
-    // open, sidebar refresh and run-completion nudge (#310), never on a
-    // repo-wide watch. The SELECTED checkout's (#407, ADR-0063 §2).
-    async loadChanges(slug: string | null | undefined) {
-      if (!slug) return;
-      // Overlapping reads can return OUT OF ORDER (as `_runsSeq`).
-      const seq = ++this._changesSeq;
-      try {
-        const reply = await window.WBDaemon.observe(
-          "changes.list",
-          window.WBDaemon.withCheckout({ repo: slug }, this.checkoutOf(slug)),
-        );
-        if (seq !== this._changesSeq) return; // superseded → the newer read owns it
-        if (!reply || reply.status !== "ok") {
-          this.changesFailed(slug, WBFail.why(reply, "the daemon gave no reason"));
-          return;
-        }
-        const folded = WBChanges.fold(reply);
-        this.changesCount[slug] = folded.count;
-        this.changesStaged[slug] = folded.staged;
-        this.changesUnstaged[slug] = folded.unstaged;
-        this.changesReadError[slug] = "";
-        this.changesRead[slug] = WBFail.readFold(this.changesRead[slug], { ok: true, value: true, at: Date.now() });
-      } catch {
-        if (seq === this._changesSeq) {
-          this.changesFailed(slug, "the daemon did not answer");
-        }
-      }
-    },
-    // A failed `changes.list` (ADR-0070 D3). After a good read the groups and
-    // the count stay, marked not current; before one, the count is absent
-    // (`—`), never another repo's number or a clean tree.
-    changesFailed(slug: string, reason: string) {
-      const read = WBFail.readFold(this.changesRead[slug], { ok: false, reason, at: Date.now() });
-      this.changesRead[slug] = read;
-      if (read.goodAt) {
-        this.changesReadError[slug] = WBFail.notCurrent(read, (ms) => this.fmtClock(ms));
-        return;
-      }
-      this.changesCount[slug] = null;
-      this.changesReadError[slug] = `Could not read the changes: ${reason}`;
-      this.changesStaged[slug] = [];
-      this.changesUnstaged[slug] = [];
-    },
-
-    // The open project's sync state (#316) via `sync.status`, which makes NO
-    // network call. No timer: a launcher holding N repos must never become a
-    // scheduled network client.
-    async loadSync(slug: string | null | undefined) {
-      if (!slug) return;
-      const seq = ++this._syncSeq;
-      try {
-        const reply = await window.WBDaemon.observe(
-          "sync.status",
-          window.WBDaemon.withCheckout({ repo: slug }, this.checkoutOf(slug)),
-        );
-        if (seq !== this._syncSeq) return; // superseded → the newer read owns it
-        if (!reply || reply.status !== "ok") {
-          this.syncFailed(slug, WBFail.why(reply, "the daemon gave no reason"));
-          return;
-        }
-        const sync = WBChanges.foldSync(reply);
-        this.syncByProject[slug] = sync;
-        this.syncRead[slug] = WBFail.readFold(this.syncRead[slug], { ok: true, value: true, at: Date.now() });
-        // Under a selected worktree the read is THAT tree's HEAD, and
-        // `p.branch` is the primary's (#407), so only a primary read moves it.
-        const branch = WBChanges.headBranch(sync);
-        const p = this.checkoutOf(slug) ? null : this.$store.projects.projects.find((x) => this.$store.projects.repoRef(x) === slug);
-        if (p && branch !== null && p.branch !== branch) p.branch = branch;
-        const head = WBChanges.headOf(sync);
-        if (p && head !== null) p.head = head;
-      } catch {
-        if (seq === this._syncSeq) {
-          this.syncFailed(slug, "the daemon did not answer");
-        }
-      }
-    },
-    // A failed `sync.status` (ADR-0070 D3). After a good read the row stays,
-    // and its note says it is not current; before one, the state is unknown.
-    syncFailed(slug: string, reason: string) {
-      const read = WBFail.readFold(this.syncRead[slug], { ok: false, reason, at: Date.now() });
-      this.syncRead[slug] = read;
-      const prev = this.syncByProject[slug];
-      if (read.goodAt && prev && prev.state !== "unknown") {
-        this.syncByProject[slug] = { ...prev, note: WBFail.notCurrent(read, (ms) => this.fmtClock(ms)) };
-        return;
-      }
-      this.syncByProject[slug] = { ...WBChanges.foldSync(null), note: `Could not read the branch: ${reason}` };
-    },
-
-    // Fetch from the upstream — the operator's act, never a timer's. A refusal
-    // is `{status:"error"}` whose message IS the core's prose.
-    async syncFetch(slug: string) {
-      if (this.syncBusy || this.writeLocked()) return;
-      this.syncBusy = "fetch";
-      this.changesError = "";
-      try {
-        const reply = await window.WBDaemon.observe(
-          "sync.fetch",
-          window.WBDaemon.withCheckout({ repo: slug }, this.checkoutOf(slug)),
-        );
-        if (WBFail.isError(reply)) {
-          this._changesRefused(
-            WBFail.failed(reply, "Could not fetch: the daemon gave no reason."),
-          );
-        }
-      } catch {
-        // A transport throw is NOT a refusal: the repo never answered.
-        this._changesRefused("Could not fetch: the daemon did not answer.");
-      } finally {
-        this.syncBusy = null;
-      }
-      this.loadSync(slug);
-    },
-
-    // Fast-forward from the upstream. A successful pull moves the working tree,
-    // so the change set is reloaded beside the counts.
-    async syncPull(slug: string) {
-      if (this.syncBusy || this.writeLocked()) return;
-      this.syncBusy = "pull";
-      this.changesError = "";
-      let moved = false;
-      try {
-        const reply = await window.WBDaemon.observe(
-          "sync.pull",
-          window.WBDaemon.withCheckout({ repo: slug }, this.checkoutOf(slug)),
-        );
-        if (WBFail.isError(reply)) {
-          this._changesRefused(
-            WBFail.failed(reply, "Could not pull: the daemon gave no reason."),
-          );
-        } else {
-          moved = true;
-        }
-      } catch {
-        this._changesRefused("Could not pull: the daemon did not answer.");
-      } finally {
-        this.syncBusy = null;
-      }
-      this.loadSync(slug);
-      if (moved) this.loadChanges(slug);
-    },
-
-    // Publish the branch (#320). The OPERATOR's click is the whole consent (no
-    // opt-in flag, ADR-0046 amendment); a refusal's message IS the core's
-    // prose. No credential UI, by decision. Push moves no file, so only the
-    // counts reload.
-    async syncPush(slug: string) {
-      if (this.syncBusy || this.writeLocked()) return;
-      this.syncBusy = "push";
-      this.changesError = "";
-      try {
-        const reply = await window.WBDaemon.observe(
-          "sync.push",
-          window.WBDaemon.withCheckout({ repo: slug }, this.checkoutOf(slug)),
-        );
-        if (WBFail.isError(reply)) {
-          this._changesRefused(
-            WBFail.failed(reply, "Could not push: the daemon gave no reason."),
-          );
-        }
-      } catch {
-        this._changesRefused("Could not push: the daemon did not answer.");
-      } finally {
-        this.syncBusy = null;
-      }
-      this.loadSync(slug);
-    },
-
-    // Working-tree change count per slug (#307). `null` until a load succeeds,
-    // so a failed read never reads like a clean tree; `changesReadError`
-    // carries the reason into the Changes view's title.
-    changesCount: {} as Record<string, number | null>,
     // A refused `branch.switch`/`branch.create`, held until the next branch act
     // or a project switch. Not `treeError` (the tree is fine) and not
     // `changesError` (the chip lives in THIS panel).
     branchError: "",
-    _changesSub: null as Subscription | null, // the run-completion nudge subscription for the open project (#310)
-    // The run-completion subscription (#310, ADR-0036 amendment). The socket
-    // carries EVERY repo's nudge, so the filter is here.
-    mountChangesSub() {
-      if (!window.WBDaemon?.subscribeChanges || !this.$store.projects.openSlug) return;
-      this._changesSub = window.WBDaemon.subscribeChanges(this.$store.projects.openSlug, (frame) => {
-        if (this.tabHidden()) return;
-        // Optional-chained: a frame without wb-changes.ts must not throw
-        // inside `onmessage`.
-        if (WBChanges?.shouldReload?.(frame, this.$store.projects.openSlug)) {
-          this.loadChanges(this.$store.projects.openSlug);
-          this.loadSync(this.$store.projects.openSlug);
-        }
-      });
-    },
-    destroyChangesSub() {
-      try {
-        this._changesSub?.close();
-      } catch {}
-      this._changesSub = null;
-    },
-    // On `workbench:project-changed`. Refusal notes name an act against the
-    // project that WAS open, and an unsent commit message (#318) is dropped.
-    // After the paint, the changes-nudge socket (#310) follows the tree's
-    // open/close path, and the open project's changes are read.
-    gitFollowProject(slug: string | null) {
-      this.changesError = "";
-      this.branchError = "";
-      if (this.commitMsgSlug !== slug) {
-        this.commitMsg = "";
-        this.commitMsgSlug = slug;
-      }
-      this.$nextTick(() => {
-        this.destroyChangesSub();
-        this.mountChangesSub();
-        if (this.$store.projects.openSlug) this.loadChanges(this.$store.projects.openSlug);
-        if (this.$store.projects.openSlug) this.loadSync(this.$store.projects.openSlug);
-      });
-    },
-    // On `workbench:head-moved` (the files' socket heard `head.dirty`): re-read
-    // what the branch drives: the chip, the sync row and the Changes count.
-    gitFollowHead(ref: string) {
-      this.loadChanges(ref);
-      this.loadSync(ref);
-      // Under a selection the chip reads the worktree's branch from the
-      // listing, not `p.branch`.
-      if (this.checkoutOf(ref)) this.ensureWorktreeListing(ref, true);
-    },
 
     // ---- write controls (#318) ------------------------------------------
     // Disabled from the open repo's LIVE RUN list (`runs.list`, ADR-0047 §9).
@@ -1450,7 +1184,10 @@ export function shell() {
     writeLockReason() {
       const slug = this.$store.projects.openKey();
       if (this.buildSkew) return this.BUILD_SKEW_LOCK;
-      if (this.changesRead[slug]?.current === false || this.syncRead[slug]?.current === false) {
+      // The Changes view (wb-changes-panel.ts) says whether its reads are current.
+      const changes = { slug, current: true };
+      sendWindow(window, "workbench:changes-current", changes);
+      if (!changes.current) {
         return "The changes shown are not current. Wait for the next read, or reload the page.";
       }
       if (this.$store.runs.runsRead[slug]?.current === false) {
@@ -1509,163 +1246,6 @@ export function shell() {
     verbRequestedText(verb: string) {
       return `${verb.charAt(0).toUpperCase()}${verb.slice(1)} requested.`;
     },
-    // `all` is the group head's button, which acts on every row of the group.
-    rowActTitle(verb: string, all = false) {
-      const locked = this.writeLockReason();
-      if (locked) return locked;
-      if (verb === "stage") return all ? "Stage all changes" : "Stage changes";
-      if (verb === "discard") return "Discard changes";
-      return all ? "Unstage all changes" : "Unstage changes";
-    },
-    // Push's title (#320) states the run-lock reason, as `rowActTitle` does.
-    pushTitle() {
-      return (
-        this.syncBusyTitle("push") ||
-        this.writeLockReason() ||
-        this.pushAct().title
-      );
-    },
-    pushAct() {
-      return WBChanges.pushAct(this.syncByProject[this.$store.projects.openKey()]);
-    },
-    pullBlocked() {
-      return WBChanges.pullBlocked(this.syncByProject[this.$store.projects.openKey()]);
-    },
-    // The remote bar's title while an act is out: the busy act names itself,
-    // the other two name what they are waiting on.
-    syncBusyTitle(verb: string) {
-      if (!this.syncBusy) return "";
-      if (this.syncBusy !== verb) return `Waiting for the ${this.syncBusy} to finish`;
-      return ({ fetch: "Fetching…", pull: "Pulling…", push: "Pushing…" } as Record<string, string>)[verb] || "";
-    },
-    groupNote(group: string) {
-      return WBChanges.groupDiscardNote(group);
-    },
-    commitTarget() {
-      return WBChanges.commitTarget(this.syncByProject[this.$store.projects.openKey()]);
-    },
-    // `withOriginal` only on the UNSTAGE direction — see `wb-changes.ts`.
-    groupPaths(list: ChangeEntry[], withOriginal: boolean) {
-      return WBChanges.groupPaths(list, withOriginal);
-    },
-    commitTitle() {
-      const locked = this.writeLockReason();
-      if (locked) return locked;
-      if (!(this.changesStaged[this.$store.projects.openKey()] || []).length) {
-        return "Stage a change first";
-      }
-      if (!this.commitMsg.trim()) return "Write a commit message first";
-      return this.commitTarget().label;
-    },
-    canCommit() {
-      return (
-        !this.writeLocked() &&
-        this.commitMsgSlug === this.$store.projects.openSlug &&
-        !!this.commitMsg.trim() &&
-        !!(this.changesStaged[this.$store.projects.openKey()] || []).length
-      );
-    },
-
-    // Stage / unstage / commit, each in `syncFetch`'s shape, re-reading the
-    // list on EVERY path. The list is never moved optimistically.
-    async stagePaths(slug: string, paths: string[]) {
-      if (!slug || !paths || !paths.length || this.writeLocked()) return;
-      this.changesError = "";
-      try {
-        const reply = await window.WBDaemon.observe(
-          "changes.stage",
-          window.WBDaemon.withCheckout({ repo: slug, paths }, this.checkoutOf(slug)),
-        );
-        if (WBFail.isError(reply)) {
-          this._changesRefused(
-            WBFail.failed(reply, "Could not stage: the daemon gave no reason."),
-          );
-        }
-      } catch {
-        // A transport throw is NOT a refusal: the repo never answered.
-        this._changesRefused("Could not stage: the daemon did not answer.");
-      }
-      this.loadChanges(slug);
-      this.loadSync(slug);
-    },
-
-    async unstagePaths(slug: string, paths: string[]) {
-      if (!slug || !paths || !paths.length || this.writeLocked()) return;
-      this.changesError = "";
-      try {
-        const reply = await window.WBDaemon.observe(
-          "changes.unstage",
-          window.WBDaemon.withCheckout({ repo: slug, paths }, this.checkoutOf(slug)),
-        );
-        if (WBFail.isError(reply)) {
-          this._changesRefused(
-            WBFail.failed(reply, "Could not unstage: the daemon gave no reason."),
-          );
-        }
-      } catch {
-        this._changesRefused("Could not unstage: the daemon did not answer.");
-      }
-      this.loadChanges(slug);
-      this.loadSync(slug);
-    },
-
-    // Discard ONE row's changes (#319) — the only irreversible act here, so the
-    // only one confirmed (`discardConfirm`). A cancel makes NO daemon call.
-    async discardRow(slug: string, entry: ChangeEntry) {
-      if (!slug || !entry || !entry.path || this.writeLocked()) return;
-      const c = WBChanges.discardConfirm(entry);
-      const ok = await this.askConfirm({
-        title: c.title,
-        message: c.message,
-        confirmLabel: c.confirmLabel,
-        danger: true,
-      });
-      // A read may have failed while the dialog was open: a discard cannot
-      // be undone, so the lock is asked again.
-      if (!ok || this.writeLocked()) return;
-      this.changesError = "";
-      try {
-        const reply = await window.WBDaemon.observe(
-          "changes.discard",
-          window.WBDaemon.withCheckout({ repo: slug, paths: [entry.path] }, this.checkoutOf(slug)),
-        );
-        if (WBFail.isError(reply)) {
-          this._changesRefused(
-            WBFail.failed(reply, "Could not discard: the daemon gave no reason."),
-          );
-        }
-      } catch {
-        this._changesRefused("Could not discard: the daemon did not answer.");
-      }
-      this.loadChanges(slug);
-      this.loadSync(slug);
-    },
-
-    async commitStaged(slug: string) {
-      // Never commit a draft composed for another project.
-      if (this.commitMsgSlug !== slug || this.writeLocked()) return;
-      const message = this.commitMsg.trim();
-      if (!slug || !message) return;
-      this.changesError = "";
-      try {
-        const reply = await window.WBDaemon.observe(
-          "changes.commit",
-          window.WBDaemon.withCheckout({ repo: slug, message }, this.checkoutOf(slug)),
-        );
-        if (WBFail.isError(reply)) {
-          this._changesRefused(
-            WBFail.failed(reply, "Could not commit: the daemon gave no reason."),
-          );
-        } else {
-          // Cleared on success ONLY: a refused commit must not eat the message.
-          this.commitMsg = "";
-        }
-      } catch {
-        this._changesRefused("Could not commit: the daemon did not answer.");
-      }
-      this.loadChanges(slug);
-      this.loadSync(slug);
-    },
 
     // Filtered (case-insensitive substring), current pinned to the top.
     branchList() {
@@ -1695,12 +1275,6 @@ export function shell() {
       });
     },
 
-    // The commit message being composed (#318). One box, but it belongs to
-    // `commitMsgSlug` ONLY: a message typed for repo A must never land as repo
-    // B's commit. Cleared on success only.
-    commitMsg: "",
-    commitMsgSlug: null as string | null,
-
     // --- the selected checkout (#406, ADR-0063 §4) ----------------------------
     // A `worktree.remove` in flight, per repo ref: the chip's menu greys the
     // row and a second click is ignored until the re-read lands.
@@ -1728,11 +1302,9 @@ export function shell() {
       // The Changes panel and the sync row are the SELECTED checkout's (#407).
       // Another tree's change set is not this tree's "last value" (ADR-0070
       // D3): its reads start over.
-      delete this.changesRead[ref];
-      delete this.syncRead[ref];
+      sendWindow(window, "workbench:changes-forget", { ref });
       if (this.$store.projects.openSlug === ref) {
-        this.loadChanges(ref);
-        this.loadSync(ref);
+        sendWindow(window, "workbench:changes-read", { ref });
       }
     },
     // The daemon answered `unknown checkout` for `name`: drop the selection —
@@ -1772,8 +1344,7 @@ export function shell() {
         // The desk can land AFTER the open's own reads: re-read under the
         // restored selection, only when it differs (two git spawns otherwise).
         if (this.checkoutOf(this.$store.projects.openSlug) !== before) {
-          this.loadChanges(this.$store.projects.openSlug);
-          this.loadSync(this.$store.projects.openSlug);
+          sendWindow(window, "workbench:changes-read", { ref: this.$store.projects.openSlug });
         }
       }
     },
@@ -1914,11 +1485,10 @@ export function shell() {
         // Re-read the listing on every path (an unconfirmed switch may have
         // landed); a moved HEAD also changes the working tree and sync row.
         this.ensureWorktreeListing(slug, true);
-        this.loadChanges(slug);
-        this.loadSync(slug);
+        if (slug) sendWindow(window, "workbench:changes-read", { ref: slug });
       }
     },
-    // The Projects panel's counterpart to `_changesRefused`.
+    // The Projects panel's counterpart to `_changesRefused` (wb-changes-panel.ts).
     _branchRefused(msg: string) {
       this.branchError = msg || "";
       this._flashAction(msg);
@@ -1935,12 +1505,6 @@ export function shell() {
 
     // The Runs panel's flash line; `_flashAction` writes it.
     runsActionMsg: "",
-    // A refusal from the CHANGES panel lands in that panel and STAYS; the flash
-    // is kept beside it. `runs-verb-error`'s counterpart (#331).
-    _changesRefused(msg: string) {
-      this.changesError = msg || "";
-      this._flashAction(msg);
-    },
 
     // --- spend (the Spend tab, #358) ---------------------------------------
     // A canvas tab (ADR-0037 amendment: a closable tab may be a daemon view),

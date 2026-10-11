@@ -3916,6 +3916,10 @@ const SHELL_FAMILY: &[(&str, &str)] = &[
     ),
     ("wb-board.ts", include_str!("../assets/ui/wb-board.ts")),
     (
+        "wb-changes-panel.ts",
+        include_str!("../assets/ui/wb-changes-panel.ts"),
+    ),
+    (
         "wb-consoles-tab.ts",
         include_str!("../assets/ui/wb-consoles-tab.ts"),
     ),
@@ -8544,8 +8548,9 @@ fn no_selector_sets_one_property_twice() {
 /// The run-completion nudge (#310) across the assets. `shouldReload` and
 /// `subscribeChanges` are driven by `wb-changes.test.mjs` and
 /// `wb-daemon.test.mjs`, and `toggle` remounting the subscription by
-/// `app.test.mjs`. No node test reaches the export `app.ts` guards on or the
-/// filter call inside `mountChangesSub`, so those two are pinned here.
+/// `wb-changes-panel.test.mjs`. No node test reaches the export
+/// `wb-changes-panel.ts` guards on or the filter call inside
+/// `mountChangesSub`, so those two are pinned here.
 #[test]
 fn the_run_completion_nudge_is_wired_through_the_ui_assets() {
     assert!(

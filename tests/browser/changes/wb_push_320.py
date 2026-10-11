@@ -46,6 +46,8 @@ REPO_ROOT = os.path.dirname(
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Changes view is the component wbChanges.
+CHG = "Alpine.$data(document.querySelector('[x-data=\"wbChanges\"]'))"
 
 results = []
 
@@ -301,7 +303,7 @@ def main():
             # …and ours commits on top of the stale tip.
             git(ours, "checkout", "--quiet", "feat/publish-me")
             commit_in(ours, "ours-2.txt", "ours\n")
-            page.evaluate(f"(s) => {SH}.loadSync(s)", arg=slug_ours)
+            page.evaluate(f"(s) => {CHG}.loadSync(s)", arg=slug_ours)
             page.wait_for_timeout(1200)
             msg = click_push_and_settle(page)
             check(

@@ -490,7 +490,7 @@
            toolbar it outgrows a section" — and PRD #314's write controls fire
            it. Scoped to `$store.projects.openSlug` alone; the per-project count lives on the
            Projects row above, so it stays reachable with no navigation. -->
-      <div class="changes-view" x-show="sideView === 'changes'">
+      <div class="changes-view" x-data="wbChanges" x-show="sideView === 'changes'">
         <div class="side-head">
           <span>Changes</span>
           <!-- WHICH TREE this panel reads (#407): the Files bar's checkout chip
@@ -690,6 +690,9 @@
           </div>
         </div>
       </div>
+      <!-- ===================================================================
+           The end of the CHANGES view of the open project (wbChanges).
+      ==================================================================== -->
     </aside>
 
     <!-- canvas -->

@@ -43,6 +43,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Changes view is the component wbChanges.
+CHG = "Alpine.$data(document.querySelector('[x-data=\"wbChanges\"]'))"
 
 results = []
 
@@ -245,7 +247,7 @@ def main():
             page.evaluate(f"(s) => {{ if (Alpine.store('projects').openSlug !== s) {SH}.toggle(s); }}", arg=slug_c)
             # Wait on the READ, not the DOM: an unread row also shows no badge.
             page.wait_for_function(
-                f"(s) => {SH}.changesCount[s] === 0", arg=slug_c, timeout=15000
+                f"(s) => {CHG}.changesCount[s] === 0", arg=slug_c, timeout=15000
             )
             check("a clean repo shows no badge", badge_text(page) is None)
             # A FAILED read has no count to show: stub the transport so
@@ -257,13 +259,13 @@ def main():
                 "   ? Promise.reject(new Error('transport down'))"
                 "   : window.__realObserve(verb, payload); }"
             )
-            page.evaluate(f"() => {SH}.loadChanges('{slug_c}')")
+            page.evaluate(f"() => {CHG}.loadChanges('{slug_c}')")
             # Wait on the READ, not the DOM: the badge was already hidden.
             page.wait_for_function(
-                f"(s) => !!{SH}.changesReadError[s]", arg=slug_c, timeout=15000
+                f"(s) => !!{CHG}.changesReadError[s]", arg=slug_c, timeout=15000
             )
             check("a failed read shows no badge, never a 0", badge_text(page) is None)
-            reason = page.evaluate(f"(s) => {SH}.changesReadError[s]", arg=slug_c)
+            reason = page.evaluate(f"(s) => {CHG}.changesReadError[s]", arg=slug_c)
             check(
                 "the failed read keeps its reason for the Changes view",
                 "Not current:" in (reason or ""),

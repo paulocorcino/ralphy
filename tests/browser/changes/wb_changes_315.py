@@ -44,6 +44,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Changes view is the component wbChanges.
+CHG = "Alpine.$data(document.querySelector('[x-data=\"wbChanges\"]'))"
 
 # The sidebar width at which the deep row is genuinely too narrow. Measured on
 # this host: at the default 300px (and at 320px) `docs/deep/nested` fits with
@@ -236,7 +238,7 @@ def open_project(page, slug, expected):
         # A count of 0 never renders a badge (wb-changes.ts projectBadge): wait
         # on the READ, not a DOM element that is never going to appear.
         page.wait_for_function(
-            f"(s) => {SH}.changesCount[s] === 0", arg=slug, timeout=15000
+            f"(s) => {CHG}.changesCount[s] === 0", arg=slug, timeout=15000
         )
         return
     wait_badge(page, expected)
@@ -531,13 +533,13 @@ def main():
             ):
                 # Reload the real rows first, so each leg starts from a known-good
                 # populated list rather than inheriting the previous leg's state.
-                page.evaluate(f"() => {SH}.loadChanges('{slug_a}')")
+                page.evaluate(f"() => {CHG}.loadChanges('{slug_a}')")
                 wait_badge(page, "4")
                 wait_row_count(page, 5)
                 page.evaluate(stub)
-                page.evaluate(f"() => {SH}.loadChanges('{slug_a}')")
+                page.evaluate(f"() => {CHG}.loadChanges('{slug_a}')")
                 page.wait_for_function(
-                    f"(s) => !!{SH}.changesReadError[s]", arg=slug_a, timeout=15000
+                    f"(s) => !!{CHG}.changesReadError[s]", arg=slug_a, timeout=15000
                 )
                 # The badge and the groups now live in DIFFERENT sidebar views
                 # (#317), so they are two reads: the count from the Projects row,
@@ -558,7 +560,7 @@ def main():
                         "          rows: Array.from(li.querySelectorAll('.chg-row')).filter(r => r.offsetParent !== null).length }; }"
                     ),
                 )
-                reason = page.evaluate(f"(s) => {SH}.changesReadError[s]", arg=slug_a) or ""
+                reason = page.evaluate(f"(s) => {CHG}.changesReadError[s]", arg=slug_a) or ""
                 check(
                     f"{label} keeps the last badge and reports it as not current",
                     failed["text"] == "4" and "Not current:" in reason,

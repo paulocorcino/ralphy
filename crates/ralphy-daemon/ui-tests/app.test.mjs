@@ -50,7 +50,7 @@ test("the state literal declares no key twice", () => {
   // NEGATIVE CONTROL: the scan must actually reach the literal. A regex that
   // matched nothing would report no duplicates forever.
   assert.ok(
-    keys.size > 250,
+    keys.size > 200,
     `the key scan found only ${keys.size} entries — it is not reading the state literal`,
   );
   assert.deepEqual(
@@ -502,14 +502,12 @@ test("resumeSockets resumes the file tree socket with the others", () => {
     window: { dispatchEvent: (e) => resumed.push([e.type, e.detail.stale]) },
   });
   state.$store.runs._runsSub = { resume: (stale) => resumed.push(["_runsSub", stale]) };
-  for (const name of ["_changesSub", "_presenceSub"]) {
-    state[name] = { resume: (stale) => resumed.push([name, stale]) };
-  }
+  state._presenceSub = { resume: (stale) => resumed.push(["_presenceSub", stale]) };
   state.resumeSockets(true);
-  // The file tree's socket is the files' (wb-files.test.mjs hears the event).
+  // The file tree's socket is the files' (wb-files.test.mjs hears the event),
+  // and the changes socket is the Changes view's (wb-changes-panel.test.mjs).
   assert.deepEqual(resumed, [
     ["_runsSub", true],
-    ["_changesSub", true],
     ["_presenceSub", true],
     ["workbench:sockets-resume", true],
   ]);
@@ -546,10 +544,6 @@ function toggleShell() {
     "loadAgents",
     "ensureWorktreeListing",
     "refreshSpend",
-    "destroyChangesSub",
-    "mountChangesSub",
-    "loadChanges",
-    "loadSync",
   ]) {
     state[name] = record(name);
   }
@@ -599,17 +593,6 @@ test("a row on a host that cannot answer stays closed, and still wakes it", () =
   assert.equal(opened(), 1);
 });
 
-test("opening a row remounts the run-completion subscription", () => {
-  const { state, calls } = toggleShell();
-  state.toggle("owner/repo");
-  const changes = calls
-    .map((c) => c[0])
-    .filter((n) => n === "destroyChangesSub" || n === "mountChangesSub");
-  // The old socket closes before the new one opens, so a nudge for the
-  // project that WAS open never reloads the new one.
-  assert.deepEqual(changes, ["destroyChangesSub", "mountChangesSub"]);
-});
-
 // `toggle` changes the store and sends `workbench:project-changed` on the
 // window; the files, the board and the git part each listen to it (ADR-0073
 // amendment of 2026-10-08, decision 4).
@@ -646,12 +629,7 @@ test("toggle writes no field of the git part", () => {
   // The default page: the window hears nothing, so no listener runs.
   const { state } = loadShell();
   for (const name of ["wakePeerFor", "loadAgents", "ensureWorktreeListing", "refreshSpend"]) state[name] = () => {};
-  const held = {
-    changesError: "a refusal",
-    branchError: "a branch refusal",
-    commitMsg: "unsent",
-    commitMsgSlug: "owner/a",
-  };
+  const held = { branchError: "a branch refusal" };
   Object.assign(state, held);
   state.$store.runs.setCurrentRun("run-1");
   state.toggle("owner/b");
@@ -678,6 +656,16 @@ test("the tree, the board and git each react to the project toggle opens", () =>
   } finally {
     globalThis.setInterval = realSetInterval;
   }
+  const changes = loadComponent("wbChanges", { from: loaded, magics: { $nextTick: (fn) => fn() } }).scope;
+  for (const name of ["destroyChangesSub", "mountChangesSub", "loadChanges", "loadSync"]) {
+    changes[name] = () => calls.push([name]);
+  }
+  globalThis.setInterval = () => 0;
+  try {
+    changes.init();
+  } finally {
+    globalThis.setInterval = realSetInterval;
+  }
   state.kanbanOpen = true;
   state.toggle("owner/repo");
   const seen = calls.map((c) => c[0]);
@@ -692,21 +680,11 @@ test("the tree, the board and git each react to the project toggle opens", () =>
   }
 });
 
-test("the git part drops the refusals and the commit message of the project that was open", () => {
-  const { state, named } = toggleShell();
-  state.$store.projects.setOpen("owner/b");
-  Object.assign(state, { changesError: "x", branchError: "y", commitMsg: "unsent", commitMsgSlug: "owner/a" });
-  state.gitFollowProject("owner/b");
-  assert.deepEqual(
-    [state.changesError, state.branchError, state.commitMsg, state.commitMsgSlug],
-    ["", "", "", "owner/b"],
-  );
-  assert.deepEqual(named("loadChanges"), [["loadChanges", "owner/b"]]);
-  assert.deepEqual(named("loadSync"), [["loadSync", "owner/b"]]);
-  // CONTROL: a message written for the project now open stays.
-  state.commitMsg = "kept";
-  state.gitFollowProject("owner/b");
-  assert.equal(state.commitMsg, "kept");
+test("a project change drops the branch refusal of the project that was open", () => {
+  const { state } = toggleShell();
+  state.branchError = "a branch refusal";
+  state.toggle("owner/b");
+  assert.equal(state.branchError, "");
 });
 
 test("removing the open project closes it and sends workbench:project-changed", async () => {
@@ -799,73 +777,6 @@ test("askPrompt settles with the trimmed name the prompt submits", async () => {
 
 // ---- folds the tree, the Changes panel and the plan viewer rely on ----------
 
-// Every act the Changes panel dispatches, each answering with a refusal.
-const CHANGE_ACTS = [
-  ["syncFetch", (st) => st.syncFetch("o/r")],
-  ["syncPull", (st) => st.syncPull("o/r")],
-  ["syncPush", (st) => st.syncPush("o/r")],
-  ["stagePaths", (st) => st.stagePaths("o/r", ["a.txt"])],
-  ["unstagePaths", (st) => st.unstagePaths("o/r", ["a.txt"])],
-  ["discardRow", (st) => st.discardRow("o/r", { path: "a.txt", status: "modified" })],
-  [
-    "commitStaged",
-    (st) => {
-      st.commitMsgSlug = "o/r";
-      st.commitMsg = "a message";
-      return st.commitStaged("o/r");
-    },
-  ],
-];
-
-test("a refused Changes act lands in the Changes panel and still flashes", async () => {
-  for (const [act, run] of CHANGE_ACTS) {
-    const { state: st, window } = loadShell();
-    const said = `The daemon refused ${act}.`;
-    window.WBDaemon.observe = async () => ({ status: "error", message: said });
-    st.loadChanges = () => {};
-    st.loadSync = () => {};
-    st.askConfirm = async () => true;
-    const flashed = [];
-    st._flashAction = (msg) => flashed.push(msg);
-    await run(st);
-    assert.equal(st.changesError, said, `${act}: the panel shows the refusal`);
-    assert.deepEqual(flashed, [said], `${act}: the flash still carries it`);
-  }
-});
-
-test("one remote act at a time: the busy slot refuses a second act and frees itself on every exit", async () => {
-  const { state: st, window } = loadShell();
-  st.loadChanges = () => {};
-  st.loadSync = () => {};
-  st._flashAction = () => {};
-  const sent = [];
-  const answers = [];
-  window.WBDaemon.observe = (verb) => {
-    sent.push(verb);
-    return new Promise((resolve) => answers.push(resolve));
-  };
-  const acts = [st.syncFetch("o/r")];
-  assert.equal(st.syncBusy, "fetch");
-  acts.push(st.syncPull("o/r"), st.syncPush("o/r"));
-  const whileBusy = [...sent];
-  for (const answer of answers) answer({ status: "ok" });
-  await Promise.all(acts);
-  assert.deepEqual(whileBusy, ["sync.fetch"], "an act that finds the slot taken sends nothing");
-  assert.equal(st.syncBusy, null, "an answered act frees the slot");
-
-  window.WBDaemon.observe = async () => ({ status: "error", message: "The push was refused." });
-  await st.syncPush("o/r");
-  assert.equal(st.syncBusy, null, "a refused act frees the slot");
-
-  window.WBDaemon.observe = async (verb) => {
-    sent.push(verb);
-    throw new Error("the socket closed");
-  };
-  await st.syncPull("o/r");
-  assert.equal(st.syncBusy, null, "an act whose transport threw frees the slot");
-  assert.deepEqual(sent, ["sync.fetch", "sync.pull"], "the freed slot takes the next act");
-});
-
 test("spendView shows the spend document only for the project that is open", () => {
   const own = loadShell().state;
   own.spend = { loading: false, error: "", doc: { total: "~$1.00" }, slug: "owner/a" };
@@ -884,8 +795,6 @@ test("loadRepos keeps the head of a detached repo for the row title", async () =
   const { state } = loadShell();
   state.loadFleet = () => {};
   state.refreshLive = () => {};
-  state.loadChanges = () => {};
-  state.loadSync = () => {};
   const row = {
     slug: "o/r",
     path: "/r",
@@ -911,8 +820,6 @@ test("loadRepos marks a row github only for a remote hosted on github.com", asyn
   const { state } = loadShell();
   state.loadFleet = () => {};
   state.refreshLive = () => {};
-  state.loadChanges = () => {};
-  state.loadSync = () => {};
   const row = (slug, remote) => ({ slug, path: "/" + slug, reachable: true, branch: "main", dirty: false, remote });
   const rows = [
     row("o/gh", "git@github.com:o/gh.git"),
@@ -1081,8 +988,6 @@ test("a failed project read after a good one keeps the list, marked not current"
   const { state } = loadShell();
   state.loadFleet = () => {};
   state.refreshLive = () => {};
-  state.loadChanges = () => {};
-  state.loadSync = () => {};
   const restore = scriptedFetch([
     { status: 200, body: [{ slug: "a/b", path: "/ab", reachable: true }] },
     { status: 500, body: null },
@@ -1158,47 +1063,11 @@ function observedShell(replies) {
   return state;
 }
 
-const CHANGES_OK = {
-  status: "ok",
-  changes: { changes: [{ path: "a.txt", index: " ", worktree: "M" }] },
-};
-
-test("a failed change-set read after a good one keeps the groups, marked not current", async () => {
-  const state = observedShell([CHANGES_OK, { status: "error", message: "git exited 128" }]);
-  await state.loadChanges("o/r");
-  const before = state.changesCount["o/r"];
-  assert.ok(before > 0, "the first read found a change");
-  await state.loadChanges("o/r");
-  assert.equal(state.changesCount["o/r"], before);
-  assert.equal(state.changesRead["o/r"].current, false);
-  assert.match(state.changesReadError["o/r"], /Not current: git exited 128/);
-});
-
-// ADR-0070 D3: a write acts on what the page shows, so it is locked while that
-// is not current, and says why.
-test("writes are locked while the change set is not current", async () => {
-  const state = observedShell([CHANGES_OK, { status: "error", message: "git exited 128" }]);
-  state.$store.runs.runsByProject["o/r"] = [];
-  await state.loadChanges("o/r");
-  assert.equal(state.writeLocked(), false, "a good read locks nothing");
-  await state.loadChanges("o/r");
-  assert.equal(state.writeLocked(), true);
-  assert.match(state.writeLockReason(), /not current/);
-});
-
-// NEGATIVE CONTROL: two good reads lock nothing.
-test("two good change-set reads lock no write", async () => {
-  const state = observedShell([CHANGES_OK, CHANGES_OK]);
-  state.$store.runs.runsByProject["o/r"] = [];
-  await state.loadChanges("o/r");
-  await state.loadChanges("o/r");
-  assert.equal(state.writeLocked(), false);
-});
-
 // --- ADR-0070 D6: a tab on an older build than the daemon -------------------
 
 function skewShell({ dirty = false, pageBuild = "A" } = {}) {
-  const { state, window } = loadShell();
+  const loaded = loadShell();
+  const { state, window } = loaded;
   let reloads = 0;
   window.location.reload = () => (reloads += 1);
   window.WBViewer.anyDirty = () => dirty;
@@ -1210,7 +1079,7 @@ function skewShell({ dirty = false, pageBuild = "A" } = {}) {
   };
   state.pageBuild = pageBuild;
   state.subscribePresence();
-  return { state, beat: (p) => beat(p), reloads: () => reloads };
+  return { state, loaded, beat: (p) => beat(p), reloads: () => reloads };
 }
 
 test("a build the page was not served with reloads a tab with no unsaved work", () => {
@@ -1290,17 +1159,6 @@ test("the consoles get the shell's fleet read with the fleet", () => {
   assert.equal(asked, 1);
 });
 
-test("a new checkout's change set does not inherit the old tree's last read", () => {
-  const { state } = loadShell();
-  state.loadChanges = () => {};
-  state.loadSync = () => {};
-  state.changesRead["o/r"] = { value: true, goodAt: 5, error: "", current: true };
-  state.syncRead["o/r"] = { value: true, goodAt: 5, error: "", current: true };
-  state.setCheckout("o/r", "wt-a");
-  assert.equal(state.changesRead["o/r"], undefined);
-  assert.equal(state.syncRead["o/r"], undefined);
-});
-
 // --- the shell and the files (wb-files.ts) talk through events ---------------
 
 // A shell whose window records every event it is sent.
@@ -1313,8 +1171,6 @@ function eventShell(opts = {}) {
 
 test("a good fleet read and a new checkout of the open project are sent to the files", async () => {
   const { state, sent } = eventShell();
-  state.loadChanges = () => {};
-  state.loadSync = () => {};
   state.$store.projects.setOpen("o/r");
   state.setCheckout("other/repo", "wt-a");
   assert.deepEqual(sent("workbench:checkout-changed"), [], "not the open project");
@@ -1328,28 +1184,6 @@ test("a good fleet read and a new checkout of the open project are sent to the f
     globalThis.fetch = realFetch;
   }
   assert.deepEqual(sent("workbench:fleet-read"), [null]);
-});
-
-test("a moved HEAD re-reads the change set and the sync row, and the listing under a selection", () => {
-  const listeners = {};
-  const { state } = loadShell({ window: { addEventListener: (type, fn) => (listeners[type] ||= []).push(fn) } });
-  const calls = [];
-  for (const name of ["loadChanges", "loadSync"]) state[name] = (ref) => calls.push(`${name} ${ref}`);
-  state.ensureWorktreeListing = (ref, force) => calls.push(`listing ${ref} ${force}`);
-  const realSetInterval = globalThis.setInterval;
-  globalThis.setInterval = () => 0;
-  try {
-    state.init();
-  } finally {
-    globalThis.setInterval = realSetInterval;
-  }
-  const moved = (ref) => listeners["workbench:head-moved"].forEach((fn) => fn({ detail: { ref } }));
-  moved("o/r");
-  assert.deepEqual(calls, ["loadChanges o/r", "loadSync o/r"]);
-  state.checkouts = { "o/r": "wt-a" };
-  calls.length = 0;
-  moved("o/r");
-  assert.deepEqual(calls, ["loadChanges o/r", "loadSync o/r", "listing o/r true"]);
 });
 
 test("a create through the write seam asks the files to re-list the folder and reveal the entry", async () => {
@@ -1407,8 +1241,6 @@ test("sessions.dirty on a visible tab reads the sessions", async () => {
 test("a tab that becomes visible reads the runs with the Runs panel closed, so an ended run unlocks the writes", async () => {
   const { state, window } = loadShell(VISIBLE);
   state.checkColumnDesk = async () => {};
-  state.loadChanges = async () => {};
-  state.loadSync = async () => {};
   window.WBDaemon.observe = async (verb) => (verb === "runs.list" ? { status: "ok", runs: [] } : null);
   state.$store.projects.setOpen("o/r");
   state.runsOpen = false;
@@ -1474,11 +1306,12 @@ test("visible and login ask the open panels to read again, and read the open Spe
 });
 
 test("the peer tick and a project-list push read no change set and no branch", async () => {
-  const { state } = loadShell(VISIBLE);
-  state.checkColumnDesk = async () => {};
   const git = [];
-  state.loadChanges = async () => git.push("changes");
-  state.loadSync = async () => git.push("sync");
+  const { state } = loadShell({
+    ...VISIBLE,
+    window: { dispatchEvent: (e) => e.type === "workbench:changes-read" && git.push(e.detail.ref) },
+  });
+  state.checkColumnDesk = async () => {};
   state.$store.projects.setOpen("o/r");
   state.fleetPeers = [{ daemon_id: "d" }];
   await withFetchSpy(async () => {
@@ -1489,7 +1322,7 @@ test("the peer tick and a project-list push read no change set and no branch", a
   assert.deepEqual(git, []);
   // NEGATIVE CONTROL: the tab becoming visible does read them.
   await withFetchSpy(() => state.onTabVisible());
-  assert.ok(git.includes("changes") && git.includes("sync"), git.join(", "));
+  assert.deepEqual(git, ["o/r"]);
 });
 
 test("a project read keeps the peer rows and the live dots until the fleet and the sessions answer", async () => {
@@ -1519,7 +1352,7 @@ test("a project read keeps the peer rows and the live dots until the fleet and t
 
 test("a commit draft does not hold the build reload", () => {
   const t = skewShell();
-  t.state.commitMsg = "wip: half a message";
+  loadComponent("wbChanges", { from: t.loaded }).scope.commitMsg = "wip: half a message";
   t.beat({ uptime_secs: 1, build: "B" });
   assert.equal(t.reloads(), 1);
 });
@@ -1550,80 +1383,6 @@ test("the desk hold ends right before the build reload, so the saved work's desk
     assert.deepEqual(events, ["hold:true", "hold:false", "reload"]);
   } finally {
     WBDeskSink.setHold = realSetHold;
-  }
-});
-
-test("a failed first change-set or branch read says why", async () => {
-  const changes = observedShell([{ status: "error", message: "git exited 128" }]);
-  await changes.loadChanges("o/r");
-  assert.match(changes.changesReadError["o/r"], /Could not read the changes: git exited 128/);
-  const sync = observedShell([{ status: "error", message: "not a git repository" }]);
-  await sync.loadSync("o/r");
-  assert.match(sync.syncByProject["o/r"].note, /not a git repository/);
-});
-
-// ADR-0070 D3: each write action asks the lock itself, not only its button.
-test("every change-set write is refused while the change set is not current", async () => {
-  const { state, window } = loadShell();
-  const replies = [CHANGES_OK, { status: "error", message: "git exited 128" }];
-  const verbs = [];
-  window.WBDaemon.observe = async (verb) => {
-    verbs.push(verb);
-    return replies.shift() ?? { status: "ok" };
-  };
-  state.$store.projects.setOpen("o/r");
-  state._flashAction = () => {};
-  state.$store.runs.runsByProject["o/r"] = [];
-  await state.loadChanges("o/r");
-  await state.loadChanges("o/r");
-  assert.equal(state.writeLocked(), true);
-  verbs.length = 0;
-  state.askConfirm = async () => true;
-  state.commitMsgSlug = "o/r";
-  state.commitMsg = "msg";
-  await state.stagePaths("o/r", ["a.txt"]);
-  await state.unstagePaths("o/r", ["a.txt"]);
-  await state.discardRow("o/r", { path: "a.txt", index: " ", worktree: "M" });
-  await state.commitStaged("o/r");
-  await state.syncFetch("o/r");
-  await state.syncPull("o/r");
-  await state.syncPush("o/r");
-  assert.deepEqual(verbs, [], "no write reached the daemon");
-});
-
-// NEGATIVE CONTROL for the refusal above: with a current change set, each
-// action does reach the daemon, so the refusal is the lock and not a missing
-// argument.
-test("every change-set write reaches the daemon while the change set is current", async () => {
-  const acts = {
-    stage: (s) => s.stagePaths("o/r", ["a.txt"]),
-    unstage: (s) => s.unstagePaths("o/r", ["a.txt"]),
-    discard: (s) => s.discardRow("o/r", { path: "a.txt", index: " ", worktree: "M" }),
-    commit: (s) => s.commitStaged("o/r"),
-    fetch: (s) => s.syncFetch("o/r"),
-    pull: (s) => s.syncPull("o/r"),
-    push: (s) => s.syncPush("o/r"),
-  };
-  for (const [name, act] of Object.entries(acts)) {
-    const { state, window } = loadShell();
-    const replies = [CHANGES_OK];
-    const verbs = [];
-    window.WBDaemon.observe = async (verb) => {
-      verbs.push(verb);
-      return replies.shift() ?? { status: "ok" };
-    };
-    state.$store.projects.setOpen("o/r");
-    state._flashAction = () => {};
-    state.$store.runs.runsByProject["o/r"] = [];
-    await state.loadChanges("o/r");
-    assert.equal(state.writeLocked(), false, name);
-    verbs.length = 0;
-    state.askConfirm = async () => true;
-    state.askPush = async () => true;
-    state.commitMsgSlug = "o/r";
-    state.commitMsg = "msg";
-    await act(state);
-    assert.ok(verbs.length > 0, `${name} reached the daemon`);
   }
 });
 
@@ -1745,15 +1504,7 @@ test("projectLabel and projectTitle never print a path- key or a daemon id", () 
 });
 
 test("a read failure shows the words for a daemon code, never the code", async () => {
-  const state = observedShell([
-    { status: "error", message: "unknown repo" },
-    { status: "error", message: "unknown checkout" },
-    { status: "error", reason: "unknown repo" },
-  ]);
-  await state.loadChanges("o/r");
-  assert.equal(state.changesReadError["o/r"], "Could not read the changes: the project is not in the list");
-  await state.loadSync("o/r");
-  assert.equal(state.syncByProject["o/r"].note, "Could not read the branch: the worktree does not exist");
+  const state = observedShell([{ status: "error", reason: "unknown repo" }]);
   await state.$store.runs.hydrateRuns();
   assert.equal(state.$store.runs.runsError, "Could not read the runs: the project is not in the list.");
 });
