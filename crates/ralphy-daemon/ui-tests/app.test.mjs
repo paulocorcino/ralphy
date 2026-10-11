@@ -50,7 +50,7 @@ test("the state literal declares no key twice", () => {
   // NEGATIVE CONTROL: the scan must actually reach the literal. A regex that
   // matched nothing would report no duplicates forever.
   assert.ok(
-    keys.size > 200,
+    keys.size > 150,
     `the key scan found only ${keys.size} entries — it is not reading the state literal`,
   );
   assert.deepEqual(
@@ -121,7 +121,7 @@ test("openTab pins the tab to the selected checkout and keys the tab by it", () 
   window.WBView = { patch() {}, read: () => null };
   state.$nextTick = () => {};
   state.$store.projects.setOpen("owner/repo");
-  state.checkouts = { "owner/repo": "wt-a" };
+  state.$store.checkouts.checkouts = { "owner/repo": "wt-a" };
 
   state.openTab({ project: "owner/repo", path: "README.md", title: "README.md", ftype: "markdown", content: "x" });
   const pinned = state.tabs.find((t) => t.path === "README.md");
@@ -136,7 +136,7 @@ test("openTab pins the tab to the selected checkout and keys the tab by it", () 
   assert.equal(primary[1].id, "file:owner/repo:README.md", "the primary's id is the pre-#406 spelling");
 
   // Selection moves on; the pins do not.
-  state.checkouts = {};
+  state.$store.checkouts.checkouts = {};
   state.openTab({ project: "owner/repo", path: "README.md", title: "README.md", ftype: "markdown", content: "z", checkout: "wt-a" });
   assert.equal(state.tabs.filter((t) => t.path === "README.md").length, 2, "the pinned tab is reused, not duplicated");
   assert.equal(state.active, "file:owner/repo@wt-a:README.md", "re-opening activates the pinned tab");
@@ -148,7 +148,7 @@ test("persistView stores the pin and restoreView hands it back explicitly", () =
   window.WBView = { patch: (v) => (stored = v), read: () => stored };
   state.$nextTick = () => {};
   state.$store.projects.setOpen("owner/repo");
-  state.checkouts = { "owner/repo": "wt-a" };
+  state.$store.checkouts.checkouts = { "owner/repo": "wt-a" };
   state.openTab({ project: "owner/repo", path: "a.txt", title: "a.txt", ftype: "code", content: "a" });
   state.openTab({ project: "owner/repo", path: "b.txt", title: "b.txt", ftype: "code", content: "b", checkout: null });
   assert.deepEqual(
@@ -161,7 +161,7 @@ test("persistView stores the pin and restoreView hands it back explicitly", () =
   const fresh = loadShell();
   fresh.window.WBView = { patch() {}, read: () => stored };
   fresh.state.$nextTick = () => {};
-  fresh.state.checkouts = {};
+  fresh.state.$store.checkouts.checkouts = {};
   fresh.state.restoreView();
   assert.deepEqual(
     fresh.state.tabs.filter((t) => t.id.startsWith("file:")).map((t) => [t.id, t.checkout]),
@@ -542,11 +542,11 @@ function toggleShell() {
     "loadRelease",
     "wakePeerFor",
     "loadAgents",
-    "ensureWorktreeListing",
     "refreshSpend",
   ]) {
     state[name] = record(name);
   }
+  state.$store.checkouts.ensureWorktreeListing = record("ensureWorktreeListing");
   const runs = state.$store.runs;
   for (const name of ["destroyRunsSub", "mountRunsSub", "hydrateRuns"]) runs[name] = record(name);
   runs.projectRuns = () => [];
@@ -628,13 +628,13 @@ test("toggle sends workbench:project-changed with the project now open and the o
 test("toggle writes no field of the git part", () => {
   // The default page: the window hears nothing, so no listener runs.
   const { state } = loadShell();
-  for (const name of ["wakePeerFor", "loadAgents", "ensureWorktreeListing", "refreshSpend"]) state[name] = () => {};
-  const held = { branchError: "a branch refusal" };
-  Object.assign(state, held);
+  for (const name of ["wakePeerFor", "loadAgents", "refreshSpend"]) state[name] = () => {};
+  state.$store.checkouts.ensureWorktreeListing = () => {};
+  state.$store.checkouts.branchRefused("a branch refusal");
   state.$store.runs.setCurrentRun("run-1");
   state.toggle("owner/b");
   assert.equal(state.$store.projects.openSlug, "owner/b");
-  assert.deepEqual(Object.fromEntries(Object.keys(held).map((k) => [k, state[k]])), held);
+  assert.equal(state.$store.checkouts.branchError, "a branch refusal");
   assert.equal(state.$store.runs.currentRunId, "run-1");
 });
 
@@ -680,13 +680,6 @@ test("the tree, the board and git each react to the project toggle opens", () =>
   }
 });
 
-test("a project change drops the branch refusal of the project that was open", () => {
-  const { state } = toggleShell();
-  state.branchError = "a branch refusal";
-  state.toggle("owner/b");
-  assert.equal(state.branchError, "");
-});
-
 test("removing the open project closes it and sends workbench:project-changed", async () => {
   const { state, events, window } = toggleShell();
   window.WBDaemon.observe = async () => ({ status: "ok" });
@@ -721,7 +714,6 @@ test("the create action asks for the name through the shell's prompt", async () 
       asked.push(opts);
       return null;
     },
-    checkoutOf: () => null,
   };
   window.getShell = () => shell;
   const prompted = [];
@@ -1169,13 +1161,8 @@ function eventShell(opts = {}) {
   return { ...loaded, events, sent };
 }
 
-test("a good fleet read and a new checkout of the open project are sent to the files", async () => {
+test("a good fleet read is sent to the files", async () => {
   const { state, sent } = eventShell();
-  state.$store.projects.setOpen("o/r");
-  state.setCheckout("other/repo", "wt-a");
-  assert.deepEqual(sent("workbench:checkout-changed"), [], "not the open project");
-  state.setCheckout("o/r", "wt-a");
-  assert.deepEqual(sent("workbench:checkout-changed"), [null]);
   const realFetch = globalThis.fetch;
   globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ peers: [], repos: [] }) });
   try {
@@ -1194,7 +1181,7 @@ test("a create through the write seam asks the files to re-list the folder and r
   window.WBDaemon = { write: async () => ({ status: "ok" }), withCheckout: (p) => p };
   const realDaemon = globalThis.WBDaemon;
   globalThis.WBDaemon = window.WBDaemon;
-  window.getShell = () => ({ askPrompt: async () => "x.txt", checkoutOf: () => null, openTab() {}, flash() {} });
+  window.getShell = () => ({ askPrompt: async () => "x.txt", openTab() {}, flash() {} });
   try {
     for (const fn of listeners) await fn({ detail: { action: "create", project: "o/r", path: "src", kind: "file" } });
   } finally {

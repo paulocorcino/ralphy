@@ -44,7 +44,7 @@ function shell() {
   state._flashAction = (msg) => flashed.push(msg);
   state.$nextTick = (fn) => fn();
   state.$store.projects.setOpen("owner/repo");
-  state.checkouts = {};
+  state.$store.checkouts.checkouts = {};
   state.syncViewer = () => {};
   return { state, observed, images, opened, emitted, flashed };
 }
@@ -117,7 +117,7 @@ test("a text file still opens a diff tab", async () => {
 
 test("an image under a selected worktree is pinned to it", async () => {
   const { state, images } = shell();
-  state.checkouts = { [P]: "wt-a" };
+  state.$store.checkouts.checkouts = { [P]: "wt-a" };
   state.openDiff(P, { path: "a.png", originalPath: null, status: "modified" });
   await tick();
   assert.deepEqual(fileTabs(state).map((t) => [t.id, t.checkout]), [["file:owner/repo@wt-a:a.png", "wt-a"]]);

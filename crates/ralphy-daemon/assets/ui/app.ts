@@ -27,7 +27,7 @@ import { WBSettingsDialog } from "./wb-settings-dialog.ts";
 import { WBSplit } from "./wb-split.ts";
 import { isFilePopupMessage } from "./wb-detached.ts";
 import { createEmitter, forwardAction, sendWindow } from "./wb-events.ts";
-import type { BoardIssue, CanvasTab, ChangeEntry, CheckoutRow, ConfirmAsk, DiffTarget, FleetPeer, Group, LedgerMissing, LedgerRecord, Listing, MenuItem, ModalEntry, Project, PromptAsk, ReadState, RosterRow, SavePayload, SecurityFact, ShellLate, Slot, SpendDoc, Subscription, TabBody, TabOpen, Timer, WireDeps } from "./wb-shell-types.d.ts";
+import type { BoardIssue, CanvasTab, ChangeEntry, ConfirmAsk, DiffTarget, FleetPeer, Group, LedgerMissing, LedgerRecord, MenuItem, ModalEntry, Project, PromptAsk, ReadState, RosterRow, SavePayload, SecurityFact, ShellLate, Slot, SpendDoc, Subscription, TabBody, TabOpen, Timer, WireDeps } from "./wb-shell-types.d.ts";
 
 // A phone in either orientation: its SHORT side is under the workbench's phone
 // breakpoint (560px). Landscape iPhone is ~750 wide but ~340 tall; an iPad's
@@ -116,12 +116,6 @@ export function shell() {
       });
       // A tablet resumes on a different link; its sockets died without a close.
       window.addEventListener("online", () => this.resumeSockets(true));
-      // The open project changed (ADR-0073 amendment of 2026-10-08, decision 4).
-      // Each part resets only its own state, so the order is not a contract;
-      // the files hear it in `wb-files.ts`, the board in `wb-board.ts`, the
-      // changes in `wb-changes-panel.ts`. A branch refusal names an act against
-      // the project that WAS open.
-      window.addEventListener("workbench:project-changed", () => (this.branchError = ""));
       // The runs socket said the snapshots changed (the Alpine store `runs`).
       // A snapshot change means the tracker may have moved, so the same push
       // nudges the board (#301); the predicate coalesces it.
@@ -134,11 +128,9 @@ export function shell() {
       // alive; hand it the heartbeat verdict, or its hidden-time fallback
       // resets every console after a minute on another tab.
       window.WBConsole?.setStaleProbe?.(() => this.socketsAreStale());
-      // The selected checkouts (#406): the ONE hook for `unknown checkout`, and
-      // the copy of the desk mirror once the boot desk lands.
-      window.WBDaemon?.onUnknownCheckout?.((repo, name) => repo != null && this.checkoutGone(repo, name));
+      // The Alpine store `checkouts` hears `unknown checkout` and copies the
+      // desk's checkouts once the boot desk lands (wb-checkouts-store.ts).
       window.WBConsole?.whenDeskLoaded?.().then(() => {
-        this.adoptDeskCheckouts();
         this.syncDeskFailure();
       });
       // A flush can be the read that finds the desk unreadable; no push says so.
@@ -266,7 +258,7 @@ export function shell() {
       if (!read?.then) return;
       read.then(() => {
         this.syncDeskFailure();
-        this.adoptDeskCheckouts();
+        this.$store.checkouts.adoptDeskCheckouts();
       });
     },
     syncDeskFailure() {
@@ -853,7 +845,7 @@ export function shell() {
       if (slug === ref) this.wakePeerFor(ref);
       this.loadAgents(slug);
       // The chip's `<branch> · <name>` needs the listing (#406).
-      if (slug === ref) this.ensureWorktreeListing(ref);
+      if (slug === ref) this.$store.checkouts.ensureWorktreeListing(ref);
       this.refreshSpend();
       this.projectChanged(previous);
     },
@@ -1055,44 +1047,8 @@ export function shell() {
     },
 
     // --- branch switcher --------------------------------------------------
-    // The branch chip opens a filtered picker; switching or creating goes
-    // through the daemon's `branch.*` verbs. The header reflects the pick
-    // optimistically.
-    branchOpen: false,
-    branchModal: {
-      slug: null as string | null,
-      filter: "",
-      branches: [] as string[],
-      current: "",
-      primaryBranch: "",
-      dirty: false,
-      checkoutDirty: false,
-    },
-    worktreeListings: {} as Record<string, Listing | null>,
-
-    // Only when the daemon can reach the repo on disk. NOT gated on `remote`:
-    // a local-only repo still has branches.
-    canSwitchBranch(p: Project) {
-      return WBProject.canSwitchBranch(p);
-    },
-
-    // The checkout chip of a project row: which tree Files, Changes and
-    // search read, and that a click chooses another.
-    checkoutTitle(p: Project) {
-      const name = this.checkoutOf(this.$store.projects.repoRef(p));
-      return name
-        ? `Files, changes and search show worktree “${name}”. Click to choose another one.`
-        : "Files, changes and search show the primary tree. Click to choose a worktree.";
-    },
-
-    branchChipTitle(p: Project) {
-      const ref = this.$store.projects.repoRef(p);
-      return WBProject.branchChipTitle(p, this.checkoutOf(ref), this.worktreeListings[ref] || null);
-    },
-    chipDirty(p: Project) {
-      const ref = this.$store.projects.repoRef(p);
-      return WBProject.chipDirty(p, this.checkoutOf(ref), this.worktreeListings[ref] || null);
-    },
+    // The dialog is the component `wbBranchDialog` (wb-branch-dialog.ts); the
+    // selected checkouts are the Alpine store `checkouts` (wb-checkouts-store.ts).
     // The row's branch chip. Collapsed it is only the change count, and the
     // click falls through to `.project-head`'s toggle; open it is the switcher,
     // and must not ALSO collapse the row it sits on. Switching is gated on
@@ -1101,73 +1057,13 @@ export function shell() {
     branchChipClick(p: Project, ev: Event) {
       if (!this.$store.projects.rowOpen(p)) return;
       ev.stopPropagation();
-      this.openBranchModal(p);
+      sendWindow(window, "workbench:branch-open", { project: p });
     },
-
-    openBranchModal(p: Project) {
-      if (!this.canSwitchBranch(p)) return;
-      // Reaching for the picker IS the next branch act.
-      this.branchError = "";
-      const ref = this.$store.projects.repoRef(p);
-      // Under a selection "current" is the WORKTREE's branch (#407).
-      const ck = this.checkoutOf(ref);
-      const wt = ck ? (this.worktreeListings[ref]?.worktrees || []).find((w) => w && w.name === ck) : null;
-      this.branchModal = {
-        slug: ref,
-        filter: "",
-        branches: [...(p.branches || [p.branch])],
-        current: wt ? wt.branch || "HEAD" : p.branch,
-        primaryBranch: p.branch,
-        dirty: !!p.dirty,
-        // The dirty warning is about the tree the switch will hit (#407);
-        // `dirty` stays the primary's for its picker row.
-        checkoutDirty: wt ? wt.dirty === true : !!p.dirty,
-      };
-      this.branchOpen = true;
-      this.loadBranches(ref);
-      // The chip's dirty dot and the `current` seed above read the listing.
-      this.ensureWorktreeListing(ref);
-      this.$nextTick(() => {
-        this.$refs.branchFilter?.focus();
-      });
+    // The checkout chip of the Files bar and of the Changes view: its menu is
+    // the branch dialog's.
+    checkoutChipClick(p: Project, anchor: HTMLElement) {
+      sendWindow(window, "workbench:checkout-menu", { project: p, anchor });
     },
-
-    // The repo's real local branches via `branch.list` (#199). A failed read
-    // empties the list (M5).
-    async loadBranches(slug: string) {
-      try {
-        const reply = await window.WBDaemon.observe(
-          "branch.list",
-          window.WBDaemon.withCheckout({ repo: slug }, this.checkoutOf(slug)),
-        );
-        if (this.branchModal.slug !== slug) return; // modal moved on — leave it
-        if (!reply || reply.status !== "ok") {
-          this.branchModal.branches = [];
-          this._flashAction?.("Could not load the branches.");
-          return;
-        }
-        // The daemon nests the CLI's `{current, branches:[]}` JSON under the
-        // `branches` field (lib.rs Query reply), same as `reply.board.*` /
-        // `reply.issue.*` — read one level deeper, not the top level.
-        const data = reply.branches || {};
-        if (Array.isArray(data.branches)) this.branchModal.branches = data.branches;
-        if (data.current) this.branchModal.current = data.current;
-      } catch {
-        if (this.branchModal.slug === slug) {
-          this.branchModal.branches = [];
-          this._flashAction?.("Could not load the branches.");
-        }
-      }
-    },
-
-    closeBranchModal() {
-      this.branchOpen = false;
-    },
-
-    // A refused `branch.switch`/`branch.create`, held until the next branch act
-    // or a project switch. Not `treeError` (the tree is fine) and not
-    // `changesError` (the chip lives in THIS panel).
-    branchError: "",
 
     // ---- write controls (#318) ------------------------------------------
     // Disabled from the open repo's LIVE RUN list (`runs.list`, ADR-0047 §9).
@@ -1245,253 +1141,6 @@ export function shell() {
     // The flash after a no-arg verb is sent: `Triage requested.`
     verbRequestedText(verb: string) {
       return `${verb.charAt(0).toUpperCase()}${verb.slice(1)} requested.`;
-    },
-
-    // Filtered (case-insensitive substring), current pinned to the top.
-    branchList() {
-      const q = this.branchModal.filter.trim().toLowerCase();
-      const all = this.branchModal.branches;
-      const hit = q ? all.filter((b) => b.toLowerCase().includes(q)) : all.slice();
-      const cur = this.branchModal.current;
-      return hit.sort((a, b) => (a === cur ? -1 : b === cur ? 1 : a.localeCompare(b)));
-    },
-
-    // The Files bar's checkout chip (ADR-0063 amendment 2026-09-16 b): shown
-    // once the repo has a worktree; a pick sets the #406 selection (what
-    // Files, Changes, diff and Find show), never where a console is launched.
-    hasWorktrees(p: Project) {
-      return WBProject.hasWorktrees(this.worktreeListings[this.$store.projects.repoRef(p)] || null);
-    },
-    openCheckoutChip(p: Project, anchor: HTMLElement) {
-      const ref = this.$store.projects.repoRef(p);
-      const listing = this.worktreeListings[ref] || null;
-      const mine = (this.liveSessions || []).filter((s) => WBSessionRoute.matchesRepo(s, ref));
-      window.WBConsole.checkoutMenu({
-        anchor,
-        host: document.body,
-        rows: window.WBConsole.checkoutMenuRows(listing, this.checkoutOf(ref), mine, p.branch, !!p.dirty),
-        onPick: (row) => this.setCheckout(ref, row.primary ? null : row.name),
-        onRemove: (row) => this.removeWorktree(ref, row),
-      });
-    },
-
-    // --- the selected checkout (#406, ADR-0063 §4) ----------------------------
-    // A `worktree.remove` in flight, per repo ref: the chip's menu greys the
-    // row and a second click is ignored until the re-read lands.
-    worktreeRemoving: {} as Record<string, string>,
-    // The selected checkout per repo ref (#406, ADR-0063 §4): the REACTIVE copy
-    // of `WBConsole`'s desk mirror (a closure variable there is invisible to
-    // Alpine). `worktreeListings` is the last `worktree.list` reply per ref.
-    checkouts: {} as Record<string, string>,
-    checkoutOf(ref: string | null | undefined) {
-      return (ref != null && this.checkouts[ref]) || null;
-    },
-    chipLabel(p: Project) {
-      const ref = this.$store.projects.repoRef(p);
-      return WBProject.chipLabel(p, this.checkoutOf(ref), this.worktreeListings[ref] || null);
-    },
-    // The reactive map is REPLACED so Alpine sees it; persistence goes to the
-    // desk mirror; the files remount an open tree built for another checkout.
-    setCheckout(ref: string, name: string | null) {
-      const next = { ...this.checkouts };
-      if (name) next[ref] = String(name);
-      else delete next[ref];
-      this.checkouts = next;
-      window.WBConsole?.setCheckout?.(ref, name || null);
-      if (this.$store.projects.openSlug === ref) sendWindow(window, "workbench:checkout-changed");
-      // The Changes panel and the sync row are the SELECTED checkout's (#407).
-      // Another tree's change set is not this tree's "last value" (ADR-0070
-      // D3): its reads start over.
-      sendWindow(window, "workbench:changes-forget", { ref });
-      if (this.$store.projects.openSlug === ref) {
-        sendWindow(window, "workbench:changes-read", { ref });
-      }
-    },
-    // The daemon answered `unknown checkout` for `name`: drop the selection —
-    // unless it already moved on, in which case a late reply says nothing.
-    checkoutGone(ref: string, name: string) {
-      if (this.checkoutOf(ref) !== name) return;
-      this.setCheckout(ref, null);
-      this._flashAction(`Worktree ${name} no longer exists. Showing the primary tree.`);
-    },
-    // The chip needs the worktree's BRANCH, which only `worktree.list` knows:
-    // one read per ref, `force` re-reads (after a branch act the chip
-    // converges from this reply, #407). A forced re-read that fails DROPS the
-    // cached entry rather than showing the pre-act branch. Newest read wins.
-    async ensureWorktreeListing(ref: string | null | undefined, force = false) {
-      if (!ref || ref === "~" || (this.worktreeListings[ref] && !force)) return;
-      const seq = (this._listingSeq = (this._listingSeq || 0) + 1);
-      let listing: Listing | null = null;
-      try {
-        const reply = await window.WBDaemon.observe("worktree.list", { repo: ref });
-        if (reply && reply.status === "ok") listing = reply.checkouts || null;
-      } catch {}
-      if (seq !== this._listingSeq) return; // superseded → the newer read owns it
-      if (listing || force) {
-        this.worktreeListings = { ...this.worktreeListings, [ref]: listing };
-        window.WBConsole?.ingestWorktrees?.(ref, listing);
-      }
-    },
-    // Copy the desk mirror's selections into the reactive map once the desk
-    // has landed (boot, and again after a login under the `Session` policy),
-    // and bring an already-open tree in line with what it now says.
-    adoptDeskCheckouts() {
-      const before = this.$store.projects.openSlug ? this.checkoutOf(this.$store.projects.openSlug) : null;
-      this.checkouts = window.WBConsole?.checkouts?.() || {};
-      if (this.$store.projects.openSlug) sendWindow(window, "workbench:checkout-changed");
-      if (this.$store.projects.openSlug) {
-        this.ensureWorktreeListing(this.$store.projects.openSlug);
-        // The desk can land AFTER the open's own reads: re-read under the
-        // restored selection, only when it differs (two git spawns otherwise).
-        if (this.checkoutOf(this.$store.projects.openSlug) !== before) {
-          sendWindow(window, "workbench:changes-read", { ref: this.$store.projects.openSlug });
-        }
-      }
-    },
-    // The create row shows only when the typed name matches no existing branch.
-    canCreateBranch() {
-      const name = this.branchModal.filter.trim();
-      if (!name) return false;
-      return !this.branchModal.branches.some((b) => b.toLowerCase() === name.toLowerCase());
-    },
-
-    // Enter = act on the top match, else create the typed branch (quick-pick).
-    branchEnter() {
-      const list = this.branchList();
-      if (list.length) this.switchBranch(list[0]);
-      else if (this.canCreateBranch()) this.createBranch();
-    },
-
-    // Under a selected worktree (#407) the act lands on THAT tree's HEAD:
-    // `p.branch` is the primary's and must not move, so no optimistic update —
-    // the chip converges from `_mutateBranch`'s forced `worktree.list` re-read.
-    switchBranch(name: string) {
-      if (this.writeLocked()) {
-        this._flashAction(this.writeLockReason());
-        this.closeBranchModal();
-        return;
-      }
-      if (name !== this.branchModal.current) {
-        const slug = this.branchModal.slug;
-        const checkout = this.checkoutOf(slug);
-        const p = checkout ? null : this.$store.projects.projects.find((x) => this.$store.projects.repoRef(x) === slug);
-        const prev = p ? p.branch : null;
-        if (p) p.branch = name; // optimistic — the chip updates immediately
-        window.WB.emit("branch-switch", { project: slug, branch: name, checkout });
-        // The run-lock-aware `branch.switch` Mutate (#199): refusal → revert.
-        this._mutateBranch("branch.switch", slug, name, () => {
-          if (p) p.branch = prev!;
-        });
-      }
-      this.closeBranchModal();
-    },
-
-    createBranch() {
-      if (!this.canCreateBranch()) return;
-      if (this.writeLocked()) {
-        this._flashAction(this.writeLockReason());
-        return;
-      }
-      const name = this.branchModal.filter.trim();
-      const from = this.branchModal.current;
-      const slug = this.branchModal.slug;
-      const checkout = this.checkoutOf(slug);
-      const p = checkout ? null : this.$store.projects.projects.find((x) => this.$store.projects.repoRef(x) === slug);
-      const prevBranch = p ? p.branch : null;
-      const prevBranches = p ? [...(p.branches || [])] : null;
-      if (p) {
-        p.branches = [...(p.branches || []), name];
-        p.branch = name; // a fresh branch is checked out onto
-      }
-      window.WB.emit("branch-create", { project: slug, name, from, checkout });
-      this._mutateBranch("branch.create", slug, name, () => {
-        if (p) {
-          p.branch = prevBranch!;
-          p.branches = prevBranches!;
-        }
-      });
-      this.closeBranchModal();
-    },
-
-    // The chip menu's trash action: `worktree.remove` (#409). The listing is
-    // the truth on every path (a `branch kept` reply is an error whose
-    // directory is gone), so the selection resets from the re-read
-    // (`checkoutAfterListing`), never from the reply's status. A refusal lands
-    // verbatim in a notice with one OK: the menu it came from has closed.
-    // A cancel makes NO daemon call.
-    async removeWorktree(slug: string, w: CheckoutRow) {
-      if (!slug || !w || w.primary || this.worktreeRemoving[slug]) return;
-      const ok = await this.askConfirm({
-        title: `Delete worktree ${w.name}?`,
-        message:
-          "The worktree folder is deleted from the disk. " +
-          "Its branch is deleted too, unless it has commits that are not on the base branch.",
-        confirmLabel: "Delete",
-        danger: true,
-      });
-      if (!ok || this.worktreeRemoving[slug]) return;
-      this.worktreeRemoving = { ...this.worktreeRemoving, [slug]: w.name };
-      const refused = (message: string) =>
-        window.WBConsole.askNotice({ title: `Could not delete worktree ${w.name}`, message });
-      try {
-        const reply = await window.WBDaemon.observe("worktree.remove", { repo: slug, name: w.name });
-        if (WBFail.isError(reply)) {
-          refused(WBFail.cause(reply, "The daemon refused to delete the worktree."));
-        } else {
-          this._flashAction(`Worktree ${w.name} deleted`);
-        }
-      } catch {
-        refused("Could not reach the daemon. Check whether the worktree was deleted.");
-      } finally {
-        await this.ensureWorktreeListing(slug, true);
-        const ck = this.checkoutOf(slug);
-        if (ck && WBProject.checkoutAfterListing(ck, this.worktreeListings[slug]) === null) {
-          this.checkoutGone(slug, ck);
-        }
-        // Cleared last: no entry means the re-read landed too.
-        const next = { ...this.worktreeRemoving };
-        delete next[slug];
-        this.worktreeRemoving = next;
-      }
-    },
-
-    // Await a `branch.*` Mutate; on a `{status:"error"}` refusal (a held
-    // run.lock, ADR-0036 §6) run `revert` and report the verbatim message under
-    // the chip AND in the runs flash (the aside is closed by default). Carries
-    // the selected checkout (#407): the worktree's HEAD moves, never the
-    // primary's.
-    async _mutateBranch(verb: string, slug: string | null, name: string, revert: () => void) {
-      try {
-        const reply = await window.WBDaemon.observe(
-          verb,
-          WBDaemon.withCheckout({ repo: slug, name }, this.checkoutOf(slug)),
-        );
-        if (WBFail.isError(reply)) {
-          revert();
-          this._branchRefused(
-            WBFail.failed(
-              reply,
-              verb === "branch.create"
-                ? "Could not create the branch: the daemon gave no reason."
-                : "Could not switch branch: the daemon gave no reason.",
-            ),
-          );
-        }
-      } catch {
-        // A transport throw is NOT a refusal, so the optimistic update STAYS —
-        // the verb may have landed.
-        this._branchRefused("Could not reach the daemon. Check whether the branch changed.");
-      } finally {
-        // Re-read the listing on every path (an unconfirmed switch may have
-        // landed); a moved HEAD also changes the working tree and sync row.
-        this.ensureWorktreeListing(slug, true);
-        if (slug) sendWindow(window, "workbench:changes-read", { ref: slug });
-      }
-    },
-    // The Projects panel's counterpart to `_changesRefused` (wb-changes-panel.ts).
-    _branchRefused(msg: string) {
-      this.branchError = msg || "";
-      this._flashAction(msg);
     },
 
     // --- Runs panel -------------------------------------------------------
@@ -1839,7 +1488,7 @@ export function shell() {
       // `/api/desk` is gated too: unread AND unwritable until re-read (#327);
       // the selected checkouts ride it (#406).
       window.WBConsole?.afterLogin()?.then(() => {
-        this.adoptDeskCheckouts();
+        this.$store.checkouts.adoptDeskCheckouts();
         this.syncDeskFailure();
       });
       // Only now is `file.read` allowed (#339).
@@ -2073,7 +1722,7 @@ export function shell() {
     // `encoding`/`bom` come back with a re-attached popup's bytes, so the
     // reattached pane saves the way the detached one would have.
     openTab({ project, path, title, ftype, content, fragment, find, checkout, encoding, bom }: TabOpen) {
-      const ck = checkout !== undefined ? checkout : this.checkoutOf(project);
+      const ck = checkout !== undefined ? checkout : this.$store.checkouts.checkoutOf(project);
       const id = fileTabId(project, path, ck);
       if (this.tabs.some((t) => t.id === id)) {
         this.activate(id);
@@ -2156,7 +1805,7 @@ export function shell() {
         return;
       }
       // Pinned to the selection at open (#407): both sides read `t.checkout`.
-      const t = WBChanges.diffTarget(entry, project, this.checkoutOf(project));
+      const t = WBChanges.diffTarget(entry, project, this.$store.checkouts.checkoutOf(project));
       if (this.tabs.some((x) => x.id === t.id)) {
         this.activate(t.id);
         return;
@@ -2223,7 +1872,7 @@ export function shell() {
         return;
       }
       const title = path.split("/").pop()!;
-      this.openTab({ project, path, title, ftype, checkout: this.checkoutOf(project) });
+      this.openTab({ project, path, title, ftype, checkout: this.$store.checkouts.checkoutOf(project) });
     },
 
     // The diff's HEAD side; an added/untracked path diffs against emptiness.
@@ -2670,7 +2319,7 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
       // tab's PIN (explicit `null` = the primary, never the selection), a tree
       // gesture says the current selection.
       const checkout =
-        "checkout" in d && d.checkout !== undefined ? d.checkout : (window.getShell()?.checkoutOf?.(repo) ?? null);
+        "checkout" in d && d.checkout !== undefined ? d.checkout : window.Alpine.store("checkouts").checkoutOf(repo);
       const aimed = (payload: CommandPayload) => WBDaemon.withCheckout(payload, checkout);
       switch (d.action) {
         case "save": {
@@ -2726,8 +2375,7 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
         case "worktree-created": {
           // A console's switcher cut a worktree: re-read the listing, flash what
           // the add had to say.
-          const c = window.getShell();
-          c?.ensureWorktreeListing?.(repo, true);
+          window.Alpine.store("checkouts").ensureWorktreeListing(repo, true);
           if (d.message) flash(d.message.split("\n").map(WBFail.sentence).filter(Boolean).join(" "));
           break;
         }
@@ -2810,7 +2458,7 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
     if (e.key !== "F" && e.key !== "f") return;
     const c = window.getShell();
     if (!c || !c.authed || !window.Alpine.store("projects").openSlug) return;
-    if (c.modalOpen(WBSettingsDialog.openFlag) || c.modalOpen(WBSecurityDialog.openFlag) || c.modalOpen("runOpen") || c.branchOpen || c.modalOpen(WBReleaseDialogs.whatsNewFlag)) return;
+    if (c.modalOpen(WBSettingsDialog.openFlag) || c.modalOpen(WBSecurityDialog.openFlag) || c.modalOpen("runOpen") || c.modalOpen("branchOpen") || c.modalOpen(WBReleaseDialogs.whatsNewFlag)) return;
     e.preventDefault();
     sendWindow(window, "workbench:file-search-open");
   });

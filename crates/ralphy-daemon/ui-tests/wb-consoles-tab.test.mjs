@@ -56,9 +56,9 @@ test("newConsole opens the agent in the primary even under a selected checkout",
   try {
     shell.active = "consoles";
     state.$store.projects.setOpen("o/r");
-    shell.checkouts = { "o/r": "wt-a" };
+    shell.$store.checkouts.checkouts = { "o/r": "wt-a" };
     state.newConsole("claude");
-    shell.checkouts = {};
+    shell.$store.checkouts.checkouts = {};
     state.newConsole("codex");
   } finally {
     globalThis.WBConsole = real;

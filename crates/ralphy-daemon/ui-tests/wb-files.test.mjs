@@ -163,7 +163,7 @@ test("a tree is remounted when its checkout or its woken peer is the open projec
   files._treeCheckout = null;
   files.filesFollowCheckout();
   assert.deepEqual(calls, [], "the tree is the primary's, and so is the selection");
-  shell.checkouts = { [`${peer}/o/r`]: "wt-a" };
+  shell.$store.checkouts.checkouts = { [`${peer}/o/r`]: "wt-a" };
   files.filesFollowCheckout();
   assert.deepEqual(calls, ["destroy", "mount"]);
   files.filesFollowWake("01OTHERPEER000000000000000");

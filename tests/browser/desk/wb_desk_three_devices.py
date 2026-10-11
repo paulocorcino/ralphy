@@ -42,6 +42,8 @@ sys.stdout.reconfigure(encoding="utf-8")
 PORT = 7433
 BASE = f"http://127.0.0.1:{PORT}/"
 SH = base.SH
+# The selected checkouts are the Alpine store `checkouts` (wb-checkouts-store.ts).
+CHECKOUTS = "Alpine.store('checkouts')"
 
 results = []
 
@@ -247,7 +249,7 @@ def scenario_4(browser):
         tablet_ctx, tablet = device(browser, 1024, 768)
         tablet.wait_for_timeout(4000)
         phone_ctx.set_offline(True)
-        tablet.evaluate(f"(slug) => {SH}.setCheckout(slug, 'wt-b')", d.slug)
+        tablet.evaluate(f"(slug) => {CHECKOUTS}.setCheckout(slug, 'wt-b')", d.slug)
         tablet.wait_for_timeout(1500)
         check("the tablet's selection is stored", desk().get("checkouts", {}).get(d.slug) == "wt-b", json.dumps(desk().get("checkouts")))
         drag_window(phone, "w-1", 150)

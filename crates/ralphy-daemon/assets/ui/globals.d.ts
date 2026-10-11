@@ -287,6 +287,7 @@ interface Window {
     ): void;
     store(name: "projects"): import("./wb-projects-store.ts").ProjectsStore;
     store(name: "runs"): import("./wb-runs-store.ts").RunsStore;
+    store(name: "checkouts"): import("./wb-checkouts-store.ts").CheckoutsStore;
     store(name: string, value: object): void;
     raw<T>(value: T): T;
     nextTick(callback: () => void): Promise<void>;
@@ -467,6 +468,10 @@ interface WindowEventMap {
   /** A sleeping peer woke. */
   "workbench:peer-woken": CustomEvent<{ daemon: string }>;
   "workbench:checkout-changed": CustomEvent<null>;
+  /** Open the branch dialog for this project (wb-branch-dialog.ts). */
+  "workbench:branch-open": CustomEvent<{ project: import("./wb-project.ts").Project }>;
+  /** Open the checkout menu of this project under `anchor` (wb-branch-dialog.ts). */
+  "workbench:checkout-menu": CustomEvent<{ project: import("./wb-project.ts").Project; anchor: HTMLElement }>;
   "workbench:panels-reread": CustomEvent<null>;
   "workbench:log-off": CustomEvent<null>;
   /** Re-list the directory `rel`, then show `reveal`. */

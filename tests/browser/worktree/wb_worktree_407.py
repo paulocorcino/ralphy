@@ -63,6 +63,10 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The branch dialog is the component `wbBranchDialog` (wb-branch-dialog.ts).
+BRANCH = "Alpine.$data(document.querySelector('[x-data=\"wbBranchDialog\"]'))"
+# The selected checkouts are the Alpine store `checkouts` (wb-checkouts-store.ts).
+CHECKOUTS = "Alpine.store('checkouts')"
 # The Changes view is the component wbChanges.
 CHG = "Alpine.$data(document.querySelector('[x-data=\"wbChanges\"]'))"
 
@@ -253,9 +257,9 @@ def open_project(page, slug):
 def open_picker(page, slug):
     open_project(page, slug)
     page.evaluate("() => document.querySelector('li.project.open .project-head .branch-chip').click()")
-    page.wait_for_function(f"() => {SH}.branchOpen === true", timeout=10000)
+    page.wait_for_function(f"() => {BRANCH}.branchOpen === true", timeout=10000)
     # `branch.list` arrives by round trip: gate on the real list having landed.
-    page.wait_for_function(f"() => {SH}.branchModal.branches.length >= 1", timeout=15000)
+    page.wait_for_function(f"() => {BRANCH}.branchModal.branches.length >= 1", timeout=15000)
 
 
 # --- the Files bar's checkout chip and its menu (ADR-0063 amendment 2026-09-16 b) ---
@@ -316,7 +320,7 @@ def click_remove(page, name, slug=None):
     page.wait_for_function(f"() => !({CK_MENU_OPEN})()", timeout=5000)
     page.wait_for_function(f"() => {SH}.confirmModal.open", timeout=5000)
     page.evaluate(f"() => {SH}.confirmRespond(true)")
-    page.wait_for_function(f"() => Object.keys({SH}.worktreeRemoving).length === 0", timeout=20000)
+    page.wait_for_function(f"() => Object.keys({BRANCH}.worktreeRemoving).length === 0", timeout=20000)
 
 
 
@@ -370,7 +374,7 @@ def main():
 
             # --- scenario 2: the Changes rows are the worktree's ---------------
             click_row(page, "wt-a", slug)
-            page.wait_for_function(f"(s) => {SH}.checkouts[s] === 'wt-a'", arg=slug, timeout=10000)
+            page.wait_for_function(f"(s) => {CHECKOUTS}.checkouts[s] === 'wt-a'", arg=slug, timeout=10000)
             (wt / "dirty.txt").write_text("x\n", encoding="utf-8")
             (wt / "README.md").write_text("# edited in the worktree\n", encoding="utf-8")
             page.evaluate(f"(s) => {CHG}.loadChanges(s)", arg=slug)
@@ -457,11 +461,11 @@ def main():
 
             # --- scenario 6: switchBranch moves the worktree's HEAD only ------
             open_picker(page, slug)
-            cur = page.evaluate(f"() => {SH}.branchModal.current")
+            cur = page.evaluate(f"() => {BRANCH}.branchModal.current")
             check("the picker's current is the worktree's branch", cur == "wt-a", f"got={cur!r}")
-            primary_row = page.evaluate(f"() => {SH}.branchModal.primaryBranch")
+            primary_row = page.evaluate(f"() => {BRANCH}.branchModal.primaryBranch")
             check("the picker still knows the primary's own branch", primary_row == "main", f"got={primary_row!r}")
-            page.evaluate(f"() => {SH}.switchBranch('side')")
+            page.evaluate(f"() => {BRANCH}.switchBranch('side')")
             check("switchBranch('side') moves the worktree's HEAD to side", wait_git(wt, "side"), f"got={head_branch(wt)!r}")
             check("the primary's HEAD stays on main", head_branch(fixture) == "main", f"got={head_branch(fixture)!r}")
             page.wait_for_function(CHIP_IS, arg="side", timeout=15000)
@@ -496,9 +500,9 @@ def main():
 
             # --- scenario 7: a branch the primary holds is refused by git -----
             open_picker(page, slug)
-            page.evaluate(f"() => {{ {SH}.branchError = ''; {SH}.switchBranch('main'); }}")
-            page.wait_for_function(f"() => {SH}.branchError !== ''", timeout=15000)
-            err = page.evaluate(f"() => {SH}.branchError")
+            page.evaluate(f"() => {{ {CHECKOUTS}.branchRefused(''); {BRANCH}.switchBranch('main'); }}")
+            page.wait_for_function(f"() => {CHECKOUTS}.branchError !== ''", timeout=15000)
+            err = page.evaluate(f"() => {CHECKOUTS}.branchError")
             check(
                 "switchBranch('main') is sent and refused by git (already used by the primary)",
                 "already" in (err or "") and "main" in (err or ""),
@@ -509,7 +513,7 @@ def main():
 
             # --- scenario 8: createBranch on the worktree ---------------------
             open_picker(page, slug)
-            page.evaluate(f"() => {{ {SH}.branchError = ''; {SH}.branchModal.filter = 'from-wt'; {SH}.createBranch(); }}")
+            page.evaluate(f"() => {{ {CHECKOUTS}.branchRefused(''); {BRANCH}.branchModal.filter = 'from-wt'; {BRANCH}.createBranch(); }}")
             check("createBranch() checks the worktree out onto from-wt", wait_git(wt, "from-wt"), f"got={head_branch(wt)!r}")
             check("the primary's HEAD stays on main after the create", head_branch(fixture) == "main")
             page.wait_for_function(CHIP_IS, arg="from-wt", timeout=15000)
@@ -517,7 +521,7 @@ def main():
 
             # --- scenario 9: primary shows the primary's Changes --------------
             click_row(page, "primary", slug)
-            page.wait_for_function(f"(s) => {SH}.checkoutOf(s) === null", arg=slug, timeout=10000)
+            page.wait_for_function(f"(s) => {CHECKOUTS}.checkoutOf(s) === null", arg=slug, timeout=10000)
             page.wait_for_function(
                 f"(s) => !({CHG}.changesUnstaged[s] || []).some(e => e.path === 'dirty.txt')",
                 arg=slug,

@@ -59,6 +59,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The branch dialog is the component `wbBranchDialog` (wb-branch-dialog.ts).
+BRANCH = "Alpine.$data(document.querySelector('[x-data=\"wbBranchDialog\"]'))"
 
 # The directory names ARE the fixture: scenario 2 asserts the label is the
 # basename, so these must be chosen, not mkdtemp's random suffix.
@@ -383,14 +385,14 @@ def main():
                 "got={}".format(chip),
             )
             page.evaluate("() => document.querySelector('li.project.open .project-head .branch-chip').click()")
-            page.wait_for_function(f"() => {SH}.branchOpen === true", timeout=10000)
-            picked = page.evaluate(f"() => {SH}.branchModal.slug")
+            page.wait_for_function(f"() => {BRANCH}.branchOpen === true", timeout=10000)
+            picked = page.evaluate(f"() => {BRANCH}.branchModal.slug")
             check(
                 "clicking it still opens the picker on that project",
                 picked == slug_c,
                 "got={}".format(picked),
             )
-            page.evaluate(f"() => {{ {SH}.branchOpen = false; }}")
+            page.evaluate(f"() => {{ {BRANCH}.branchOpen = false; }}")
             page.evaluate(f"(s) => {SH}.toggle(s)", arg=slug_c)
             page.wait_for_function(f"() => Alpine.store('projects').openSlug === null", timeout=10000)
 

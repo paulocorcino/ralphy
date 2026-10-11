@@ -24,7 +24,7 @@ import type { ChangeEntry, Read, Subscription, Sync, Timer } from "./wb-shell-ty
 
 export function wbChanges() {
   // Every `shell()` member this component's code or markup reads or calls.
-  return component(["sideOpen", "sideView", "checkoutOf", "checkoutTitle", "hasWorktrees", "openCheckoutChip", "ensureWorktreeListing", "openDiff", "tabHidden", "fmtClock", "flash", "askConfirm", "writeLocked", "writeLockReason"], {
+  return component(["sideOpen", "sideView", "checkoutChipClick", "openDiff", "tabHidden", "fmtClock", "flash", "askConfirm", "writeLocked", "writeLockReason"], {
     // The slow backstop: the `/ws/tree` nudge (#310) only reports what a RUN
     // did; an operator's own editor produces no event. Two git subprocesses per
     // minute, only while the panel is open and the tab in front.
@@ -90,7 +90,7 @@ export function wbChanges() {
       try {
         const reply = await window.WBDaemon.observe(
           "changes.list",
-          window.WBDaemon.withCheckout({ repo: slug }, this.checkoutOf(slug)),
+          window.WBDaemon.withCheckout({ repo: slug }, this.$store.checkouts.checkoutOf(slug)),
         );
         if (seq !== this._changesSeq) return; // superseded → the newer read owns it
         if (!reply || reply.status !== "ok") {
@@ -134,7 +134,7 @@ export function wbChanges() {
       try {
         const reply = await window.WBDaemon.observe(
           "sync.status",
-          window.WBDaemon.withCheckout({ repo: slug }, this.checkoutOf(slug)),
+          window.WBDaemon.withCheckout({ repo: slug }, this.$store.checkouts.checkoutOf(slug)),
         );
         if (seq !== this._syncSeq) return; // superseded → the newer read owns it
         if (!reply || reply.status !== "ok") {
@@ -147,7 +147,7 @@ export function wbChanges() {
         // Under a selected worktree the read is THAT tree's HEAD, and
         // `p.branch` is the primary's (#407), so only a primary read moves it.
         const branch = WBChanges.headBranch(sync);
-        const p = this.checkoutOf(slug) ? null : this.$store.projects.projects.find((x) => this.$store.projects.repoRef(x) === slug);
+        const p = this.$store.checkouts.checkoutOf(slug) ? null : this.$store.projects.projects.find((x) => this.$store.projects.repoRef(x) === slug);
         if (p && branch !== null && p.branch !== branch) p.branch = branch;
         const head = WBChanges.headOf(sync);
         if (p && head !== null) p.head = head;
@@ -179,7 +179,7 @@ export function wbChanges() {
       try {
         const reply = await window.WBDaemon.observe(
           "sync.fetch",
-          window.WBDaemon.withCheckout({ repo: slug }, this.checkoutOf(slug)),
+          window.WBDaemon.withCheckout({ repo: slug }, this.$store.checkouts.checkoutOf(slug)),
         );
         if (WBFail.isError(reply)) {
           this._changesRefused(
@@ -205,7 +205,7 @@ export function wbChanges() {
       try {
         const reply = await window.WBDaemon.observe(
           "sync.pull",
-          window.WBDaemon.withCheckout({ repo: slug }, this.checkoutOf(slug)),
+          window.WBDaemon.withCheckout({ repo: slug }, this.$store.checkouts.checkoutOf(slug)),
         );
         if (WBFail.isError(reply)) {
           this._changesRefused(
@@ -234,7 +234,7 @@ export function wbChanges() {
       try {
         const reply = await window.WBDaemon.observe(
           "sync.push",
-          window.WBDaemon.withCheckout({ repo: slug }, this.checkoutOf(slug)),
+          window.WBDaemon.withCheckout({ repo: slug }, this.$store.checkouts.checkoutOf(slug)),
         );
         if (WBFail.isError(reply)) {
           this._changesRefused(
@@ -294,7 +294,7 @@ export function wbChanges() {
       this.loadSync(ref);
       // Under a selection the chip reads the worktree's branch from the
       // listing, not `p.branch`.
-      if (this.checkoutOf(ref)) this.ensureWorktreeListing(ref, true);
+      if (this.$store.checkouts.checkoutOf(ref)) this.$store.checkouts.ensureWorktreeListing(ref, true);
     },
 
     // --- the rows and the commit box -----------------------------------------
@@ -363,7 +363,7 @@ export function wbChanges() {
       try {
         const reply = await window.WBDaemon.observe(
           "changes.stage",
-          window.WBDaemon.withCheckout({ repo: slug, paths }, this.checkoutOf(slug)),
+          window.WBDaemon.withCheckout({ repo: slug, paths }, this.$store.checkouts.checkoutOf(slug)),
         );
         if (WBFail.isError(reply)) {
           this._changesRefused(
@@ -384,7 +384,7 @@ export function wbChanges() {
       try {
         const reply = await window.WBDaemon.observe(
           "changes.unstage",
-          window.WBDaemon.withCheckout({ repo: slug, paths }, this.checkoutOf(slug)),
+          window.WBDaemon.withCheckout({ repo: slug, paths }, this.$store.checkouts.checkoutOf(slug)),
         );
         if (WBFail.isError(reply)) {
           this._changesRefused(
@@ -416,7 +416,7 @@ export function wbChanges() {
       try {
         const reply = await window.WBDaemon.observe(
           "changes.discard",
-          window.WBDaemon.withCheckout({ repo: slug, paths: [entry.path] }, this.checkoutOf(slug)),
+          window.WBDaemon.withCheckout({ repo: slug, paths: [entry.path] }, this.$store.checkouts.checkoutOf(slug)),
         );
         if (WBFail.isError(reply)) {
           this._changesRefused(
@@ -439,7 +439,7 @@ export function wbChanges() {
       try {
         const reply = await window.WBDaemon.observe(
           "changes.commit",
-          window.WBDaemon.withCheckout({ repo: slug, message }, this.checkoutOf(slug)),
+          window.WBDaemon.withCheckout({ repo: slug, message }, this.$store.checkouts.checkoutOf(slug)),
         );
         if (WBFail.isError(reply)) {
           this._changesRefused(

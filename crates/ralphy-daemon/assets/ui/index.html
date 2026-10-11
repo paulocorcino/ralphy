@@ -305,14 +305,14 @@
               <button
                 class="branch-chip"
                 x-show="$store.projects.rowOpen(p) || projectBadge($store.projects.repoRef(p)).show"
-                :class="{ dirty: chipDirty(p), disabled: !canSwitchBranch(p), collapsed: !$store.projects.rowOpen(p) }"
+                :class="{ dirty: $store.checkouts.chipDirty(p), disabled: !$store.checkouts.canSwitchBranch(p), collapsed: !$store.projects.rowOpen(p) }"
                 :tabindex="$store.projects.rowOpen(p) ? 0 : -1"
                 @click="branchChipClick(p, $event)"
-                :title="$store.projects.rowOpen(p) ? branchChipTitle(p) : projectBadge($store.projects.repoRef(p)).title"
+                :title="$store.projects.rowOpen(p) ? $store.checkouts.branchChipTitle(p) : projectBadge($store.projects.repoRef(p)).title"
               >
                 <span class="branch-chip-ref" x-show="$store.projects.rowOpen(p)">
                   <svg x-icon="'git-branch'"></svg>
-                  <span class="branch-chip-name" x-text="chipLabel(p)"></span>
+                  <span class="branch-chip-name" x-text="$store.checkouts.chipLabel(p)"></span>
                 </span>
                 <!-- The change count survives the promotion to a rail view
                      (#317): readable here with no click and no navigation, the
@@ -326,7 +326,7 @@
                   x-text="projectBadge($store.projects.repoRef(p)).text"
                 ></span>
                 <span class="branch-chip-dot"
-                      x-show="$store.projects.rowOpen(p) && !projectBadge($store.projects.repoRef(p)).show && chipDirty(p) && canSwitchBranch(p)"></span>
+                      x-show="$store.projects.rowOpen(p) && !projectBadge($store.projects.repoRef(p)).show && $store.checkouts.chipDirty(p) && $store.checkouts.canSwitchBranch(p)"></span>
               </button>
               <!-- Unregister, never delete (#363). `@click.stop` because the
                    whole `.project-head` toggles the project open — the removal
@@ -375,12 +375,12 @@
                  Never where a console is launched. -->
             <button
               class="checkout-chip"
-              x-show="$store.projects.openProject() && hasWorktrees($store.projects.openProject())"
-              @click.stop="openCheckoutChip($store.projects.openProject(), $event.currentTarget)"
-              :title="$store.projects.openProject() ? checkoutTitle($store.projects.openProject()) : ''"
+              x-show="$store.projects.openProject() && $store.checkouts.hasWorktrees($store.projects.openProject())"
+              @click.stop="checkoutChipClick($store.projects.openProject(), $event.currentTarget)"
+              :title="$store.projects.openProject() ? $store.checkouts.checkoutTitle($store.projects.openProject()) : ''"
             >
-              <i class="bi" :class="checkoutOf($store.projects.openSlug) ? 'bi-folder2' : 'bi-house-door'"></i>
-              <span class="checkout-chip-name" x-text="checkoutOf($store.projects.openSlug) || 'primary'"></span>
+              <i class="bi" :class="$store.checkouts.checkoutOf($store.projects.openSlug) ? 'bi-folder2' : 'bi-house-door'"></i>
+              <span class="checkout-chip-name" x-text="$store.checkouts.checkoutOf($store.projects.openSlug) || 'primary'"></span>
               <i class="bi bi-chevron-down"></i>
             </button>
             <span class="spacer"></span>
@@ -443,8 +443,8 @@
                closed by default. Its OWN state, not `treeError`: a branch that
                was refused says nothing about the tree, and dressing it as a
                failed read would make a working project look broken. -->
-          <div class="files-error branch-error" x-show="branchError"
-               x-text="branchError"></div>
+          <div class="files-error branch-error" x-show="$store.checkouts.branchError"
+               x-text="$store.checkouts.branchError"></div>
           <!-- the file tree (Wunderbaum) mounts here when the project opens.
                impl: replace the in-memory `tree` with fetch of the repo tree
                and lazy-load subfolders; gestures already emit workbench:action. -->
@@ -500,12 +500,12 @@
                not share a name. Present once the repo has a worktree. -->
           <button
             class="checkout-chip"
-            x-show="$store.projects.openProject() && hasWorktrees($store.projects.openProject())"
-            @click.stop="openCheckoutChip($store.projects.openProject(), $event.currentTarget)"
-            :title="$store.projects.openProject() ? checkoutTitle($store.projects.openProject()) : ''"
+            x-show="$store.projects.openProject() && $store.checkouts.hasWorktrees($store.projects.openProject())"
+            @click.stop="checkoutChipClick($store.projects.openProject(), $event.currentTarget)"
+            :title="$store.projects.openProject() ? $store.checkouts.checkoutTitle($store.projects.openProject()) : ''"
           >
-            <i class="bi" :class="checkoutOf($store.projects.openSlug) ? 'bi-folder2' : 'bi-house-door'"></i>
-            <span class="checkout-chip-name" x-text="checkoutOf($store.projects.openSlug) || 'primary'"></span>
+            <i class="bi" :class="$store.checkouts.checkoutOf($store.projects.openSlug) ? 'bi-folder2' : 'bi-house-door'"></i>
+            <span class="checkout-chip-name" x-text="$store.checkouts.checkoutOf($store.projects.openSlug) || 'primary'"></span>
             <i class="bi bi-chevron-down"></i>
           </button>
           <span class="spacer"></span>
@@ -2647,6 +2647,7 @@
          surfaces each gate's message verbatim (ADR-0063 §4); `.stop` keeps
          the row's own selecting click out of it.
     ==================================================================== -->
+    <div class="branch-dialog" x-data="wbBranchDialog">
     <div class="modal-scrim" x-cloak x-bind="scrim('branchOpen', () => closeBranchModal())">
       <div
         class="modal branch-modal"
@@ -2710,6 +2711,7 @@
           <button class="btn" @click="closeBranchModal()">Cancel</button>
         </div>
       </div>
+    </div>
     </div>
 
     <!-- ===================================================================

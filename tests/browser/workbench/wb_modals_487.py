@@ -47,6 +47,8 @@ TARGET = os.environ.get("RALPHY_WB_TARGET") or os.path.join(REPO_ROOT, "target",
 EXE = os.path.join(TARGET, "ralphy.exe" if os.name == "nt" else "ralphy")
 CHILD = os.path.join(TARGET, "session_test_child.exe" if os.name == "nt" else "session_test_child")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The branch dialog is the component `wbBranchDialog` (wb-branch-dialog.ts).
+BRANCH = "Alpine.$data(document.querySelector('[x-data=\"wbBranchDialog\"]'))"
 # The board is the component `wbBoard` (wb-board.ts).
 BOARD = "Alpine.$data(document.querySelector('[x-data=\"wbBoard\"]'))"
 # The Hosts dialog's own component, nested in shell().
@@ -333,16 +335,16 @@ def main():
                 timeout=15000,
             )
             page.locator("li.project.open .project-head .branch-chip").click()
-            wait_flag(page, "branchOpen", True)
+            wait_flag(page, "branchOpen", True, root=BRANCH)
             settle(page)
             a = active(page)
             check(
                 "3 Branch keeps focus on its filter",
-                page.evaluate(f"() => document.activeElement === {SH}.$refs.branchFilter"),
+                page.evaluate(f"() => document.activeElement === {BRANCH}.$refs.branchFilter"),
                 f"active={a}",
             )
             page.keyboard.press("Escape")
-            wait_flag(page, "branchOpen", False)
+            wait_flag(page, "branchOpen", False, root=BRANCH)
 
             page.evaluate(f"() => {{ window.__prompt = {SH}.askPrompt({{ title: 'Name' }}); }}")
             wait_flag(page, "promptModal.open", True)

@@ -3916,8 +3916,16 @@ const SHELL_FAMILY: &[(&str, &str)] = &[
     ),
     ("wb-board.ts", include_str!("../assets/ui/wb-board.ts")),
     (
+        "wb-branch-dialog.ts",
+        include_str!("../assets/ui/wb-branch-dialog.ts"),
+    ),
+    (
         "wb-changes-panel.ts",
         include_str!("../assets/ui/wb-changes-panel.ts"),
+    ),
+    (
+        "wb-checkouts-store.ts",
+        include_str!("../assets/ui/wb-checkouts-store.ts"),
     ),
     (
         "wb-consoles-tab.ts",
@@ -8125,8 +8133,8 @@ fn a_refused_branch_change_reports_in_the_projects_panel() {
     let html = include_str!("../assets/ui/index.html");
     for pin in [
         r#"class="files-error branch-error""#,
-        r#"class="files-error branch-error" x-show="branchError""#,
-        r#"x-text="branchError""#,
+        r#"class="files-error branch-error" x-show="$store.checkouts.branchError""#,
+        r#"x-text="$store.checkouts.branchError""#,
     ] {
         assert!(html.contains(pin), "index.html must keep the pin {pin}");
     }
@@ -8170,7 +8178,7 @@ fn a_refused_branch_change_reports_in_the_projects_panel() {
         "the daemon-mode throw arm must report; an unanswered branch change must not read as a completed one"
     );
     assert!(
-        app_js.contains("WBDaemon.withCheckout({ repo: slug, name }, this.checkoutOf(slug))"),
+        app_js.contains("WBDaemon.withCheckout({ repo: slug, name }, this.$store.checkouts.checkoutOf(slug))"),
         "a branch act under a selected worktree is sent WITH the checkout — the worktree's HEAD moves, never the primary's"
     );
     assert!(
@@ -8234,7 +8242,7 @@ fn the_worktree_row_remove_action_stops_the_selecting_click() {
     );
     let app_js = shell_family();
     assert!(
-        app_js.contains("WBProject.checkoutAfterListing(ck, this.worktreeListings[slug]) === null"),
+        app_js.contains("WBProject.checkoutAfterListing(ck, this.$store.checkouts.worktreeListings[slug]) === null"),
         "the selection resets from the re-read listing, never from the reply's status"
     );
     let remove = app_js

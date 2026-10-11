@@ -71,6 +71,10 @@ CHILD = os.path.join(TARGET, "session_test_child.exe" if os.name == "nt" else "s
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = "408-console-worktree-2026-09-15.png"
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The branch dialog is the component `wbBranchDialog` (wb-branch-dialog.ts).
+BRANCH = "Alpine.$data(document.querySelector('[x-data=\"wbBranchDialog\"]'))"
+# The selected checkouts are the Alpine store `checkouts` (wb-checkouts-store.ts).
+CHECKOUTS = "Alpine.store('checkouts')"
 # The Consoles tab's menus and the columns are Alpine components of their
 # own (wb-consoles-tab.ts): a check reads them through their root.
 MENUS = "Alpine.$data(document.querySelector('[x-data=\"wbConsoleMenus\"]'))"
@@ -246,9 +250,9 @@ def open_project(page, slug):
 def open_picker(page, slug):
     open_project(page, slug)
     page.evaluate("() => document.querySelector('li.project.open .project-head .branch-chip').click()")
-    page.wait_for_function(f"() => {SH}.branchOpen === true", timeout=10000)
+    page.wait_for_function(f"() => {BRANCH}.branchOpen === true", timeout=10000)
     # `branch.list` arrives by round trip: gate on the real list having landed.
-    page.wait_for_function(f"() => {SH}.branchModal.branches.length >= 1", timeout=15000)
+    page.wait_for_function(f"() => {BRANCH}.branchModal.branches.length >= 1", timeout=15000)
 
 
 # --- the Files bar's checkout chip and its menu (ADR-0063 amendment 2026-09-16 b) ---
@@ -309,7 +313,7 @@ def click_remove(page, name, slug=None):
     page.wait_for_function(f"() => !({CK_MENU_OPEN})()", timeout=5000)
     page.wait_for_function(f"() => {SH}.confirmModal.open", timeout=5000)
     page.evaluate(f"() => {SH}.confirmRespond(true)")
-    page.wait_for_function(f"() => Object.keys({SH}.worktreeRemoving).length === 0", timeout=20000)
+    page.wait_for_function(f"() => Object.keys({BRANCH}.worktreeRemoving).length === 0", timeout=20000)
 
 
 
@@ -400,7 +404,7 @@ def main():
 
             # --- scenario 2: select wt-a ---------------------------------------
             click_row(page, "wt-a", slug)
-            page.wait_for_function(f"(s) => {SH}.checkouts[s] === 'wt-a'", arg=slug, timeout=10000)
+            page.wait_for_function(f"(s) => {CHECKOUTS}.checkouts[s] === 'wt-a'", arg=slug, timeout=10000)
             check("wt-a is the selected checkout", True)
 
             # --- scenario 3: born in the primary; the switcher moves it ---------
@@ -444,7 +448,7 @@ def main():
 
             # --- scenario 6: the selection changes, the console does not -------
             click_row(page, "primary", slug)
-            page.wait_for_function(f"(s) => {SH}.checkoutOf(s) === null", arg=slug, timeout=10000)
+            page.wait_for_function(f"(s) => {CHECKOUTS}.checkoutOf(s) === null", arg=slug, timeout=10000)
             page.wait_for_timeout(500)
             titles = page.evaluate(TITLES)
             check("selecting primary leaves the live console's title unchanged", titles == [expected], f"got={titles!r}")

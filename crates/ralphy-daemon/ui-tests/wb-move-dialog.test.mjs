@@ -79,7 +79,7 @@ test("the picker opens on the parent of the row, in the tree's checkout, and off
       { name: ".Ralphy", dir: true },
     ],
   });
-  shell.checkouts = { "o/r": "wt-a" };
+  shell.$store.checkouts.checkouts = { "o/r": "wt-a" };
   state.openMove("src/inner");
   await tick();
   assert.deepEqual(calls.at(-1), { verb: "tree.list", payload: { repo: "o/r", path: "src", checkout: "wt-a" } });

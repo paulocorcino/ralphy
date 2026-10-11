@@ -117,6 +117,7 @@ test("Escape closes every modal, Settings and Security included", () => {
       securityOpen: "wbSecurityDialog",
       whatsNewOpen: "wbReleaseDialogs",
       aboutOpen: "wbReleaseDialogs",
+      branchOpen: "wbBranchDialog",
       "movePick.open": "wbMoveDialog",
       "addProject.open": "wbAddProjectDialog",
       "addHost.open": "wbHostsDialog",

@@ -99,7 +99,6 @@ const SECTIONS: &[(&str, Group)] = &[
     ("chrome panels", Group::Core),
     ("branch switcher", Group::Git),
     ("write controls", Group::Git),
-    ("the selected checkout", Group::Git),
     ("Runs panel", Group::Board),
     ("spend", Group::Core),
     ("the Ledger pane", Group::Core),

@@ -119,7 +119,7 @@ test("each workbench event reaches the Changes view", () => {
 
 // The shell asks the Changes view for a read, and never calls it.
 test("opening the Changes view, the sidebar refresh and a branch act read the change set", async () => {
-  const { shell, changes, window } = page({ document: { visibilityState: "visible" } });
+  const { loaded, shell, changes, window } = page({ document: { visibilityState: "visible" } });
   const reads = [];
   changes.loadChanges = (ref) => reads.push(`changes:${ref}`);
   changes.loadSync = (ref) => reads.push(`sync:${ref}`);
@@ -129,8 +129,9 @@ test("opening the Changes view, the sidebar refresh and a branch act read the ch
   assert.deepEqual(reads, ["changes:o/r", "sync:o/r"], "opening the view");
   reads.length = 0;
   window.WBDaemon.observe = async () => ({ status: "ok" });
-  shell.ensureWorktreeListing = () => {};
-  await shell._mutateBranch("branch.switch", "o/r", "side", () => {});
+  shell.$store.checkouts.ensureWorktreeListing = () => {};
+  const dialog = loadComponent("wbBranchDialog", { from: loaded }).scope;
+  await dialog._mutateBranch("branch.switch", "o/r", "side", () => {});
   assert.deepEqual(reads, ["changes:o/r", "sync:o/r"], "a branch act");
 });
 
@@ -165,7 +166,8 @@ test("opening a row remounts the run-completion subscription", () => {
   changes.mountChangesSub = () => calls.push("mountChangesSub");
   changes.loadChanges = () => {};
   changes.loadSync = () => {};
-  for (const name of ["wakePeerFor", "loadAgents", "ensureWorktreeListing", "refreshSpend"]) shell[name] = () => {};
+  for (const name of ["wakePeerFor", "loadAgents", "refreshSpend"]) shell[name] = () => {};
+  shell.$store.checkouts.ensureWorktreeListing = () => {};
   shell.toggle("owner/repo");
   // The old socket closes before the new one opens, so a nudge for the
   // project that WAS open never reloads the new one.
@@ -194,10 +196,10 @@ test("a moved HEAD re-reads the change set and the sync row, and the listing und
   const { shell, changes } = page();
   const calls = [];
   for (const name of ["loadChanges", "loadSync"]) changes[name] = (ref) => calls.push(`${name} ${ref}`);
-  shell.ensureWorktreeListing = (ref, force) => calls.push(`listing ${ref} ${force}`);
+  shell.$store.checkouts.ensureWorktreeListing = (ref, force) => calls.push(`listing ${ref} ${force}`);
   changes.gitFollowHead("o/r");
   assert.deepEqual(calls, ["loadChanges o/r", "loadSync o/r"]);
-  shell.checkouts = { "o/r": "wt-a" };
+  shell.$store.checkouts.checkouts = { "o/r": "wt-a" };
   calls.length = 0;
   changes.gitFollowHead("o/r");
   assert.deepEqual(calls, ["loadChanges o/r", "loadSync o/r", "listing o/r true"]);
@@ -209,7 +211,7 @@ test("a new checkout's change set does not inherit the old tree's last read", ()
   changes.loadSync = () => {};
   changes.changesRead["o/r"] = { value: true, goodAt: 5, error: "", current: true };
   changes.syncRead["o/r"] = { value: true, goodAt: 5, error: "", current: true };
-  shell.setCheckout("o/r", "wt-a");
+  shell.$store.checkouts.setCheckout("o/r", "wt-a");
   assert.equal(changes.changesRead["o/r"], undefined);
   assert.equal(changes.syncRead["o/r"], undefined);
 });
