@@ -35,6 +35,7 @@ from playwright.sync_api import sync_playwright  # noqa: E402
 sys.stdout.reconfigure(encoding="utf-8")
 
 T = N.T
+TABS = "Alpine.store('tabs')"
 PORT = 7482
 T.PORT = PORT
 T.BASE = BASE = f"http://127.0.0.1:{PORT}/"
@@ -106,7 +107,7 @@ def main():
             N.boot(page, slug)
             nid = N.create_note(page, slug, "Intro")
             # A card of its own size, off the maximized console.
-            page.evaluate(f"() => {{ {T.SH}.activate('consoles'); }}")
+            page.evaluate(f"() => {{ {TABS}.activate('consoles'); }}")
             page.evaluate("(id) => __card(id)._noteEditor.dom().focus()", nid)
             page.keyboard.press("Control+End")
             page.keyboard.press("Enter")

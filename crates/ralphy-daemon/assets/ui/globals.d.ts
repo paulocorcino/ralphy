@@ -291,6 +291,7 @@ interface Window {
     store(name: "connection"): import("./wb-connection-store.ts").ConnectionStore;
     store(name: "release"): import("./wb-release-store.ts").ReleaseStore;
     store(name: "modals"): import("./wb-modals-store.ts").ModalsStore;
+    store(name: "tabs"): import("./wb-tabs-store.ts").TabsStore;
     store(name: string, value: object): void;
     raw<T>(value: T): T;
     nextTick(callback: () => void): Promise<void>;

@@ -64,6 +64,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
 
 results = []
 
@@ -463,7 +464,7 @@ def main():
             reconcile_table(page)
 
             # The Consoles tab must be in view or every terminal measures 0x0.
-            page.evaluate(f"() => {{ {SH}.active = 'consoles'; }}")
+            page.evaluate(f"() => {{ {TABS}.active = 'consoles'; }}")
             page.wait_for_timeout(300)
 
             # --- scenario 4: a live edge resize -------------------------------

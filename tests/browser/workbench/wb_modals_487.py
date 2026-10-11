@@ -47,6 +47,7 @@ TARGET = os.environ.get("RALPHY_WB_TARGET") or os.path.join(REPO_ROOT, "target",
 EXE = os.path.join(TARGET, "ralphy.exe" if os.name == "nt" else "ralphy")
 CHILD = os.path.join(TARGET, "session_test_child.exe" if os.name == "nt" else "session_test_child")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
 # The Alpine store `modals`: the modal stack, the confirm, the prompt and the flash line.
 MODALS = "Alpine.store('modals')"
 # The branch dialog is the component `wbBranchDialog` (wb-branch-dialog.ts).
@@ -397,7 +398,7 @@ def main():
             check("4 the next Escape closes the plan", flag(page, "planModal.open", BOARD) is False)
 
             # --- scenario 5: a console keeps its keys across a modal ----------
-            page.evaluate(f"() => {{ {SH}.active = 'consoles'; }}")
+            page.evaluate(f"() => {{ {TABS}.active = 'consoles'; }}")
             before = page.locator(".session-window").count()
             page.evaluate(f"() => window.WBConsole.open({{ repo: '{slug}', plain: true }})")
             page.wait_for_function(

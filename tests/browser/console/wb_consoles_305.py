@@ -50,6 +50,7 @@ WIN = os.name == "nt"
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if WIN else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
 
 results = []
 
@@ -168,12 +169,12 @@ def main():
             page.wait_for_timeout(200)
             page.evaluate(
                 f"""() => {{
-                    const s = {SH};
+                    const s = {TABS};
                     s.openTab({{ project: '{slug}', path: 'README.md', title: 'README.md', ftype: 'markdown' }});
                 }}"""
             )
             page.wait_for_timeout(500)
-            tab_state = page.evaluate(f"() => {SH}.tabs.map((t) => ({{ id: t.id, closable: t.closable }}))")
+            tab_state = page.evaluate(f"() => {TABS}.tabs.map((t) => ({{ id: t.id, closable: t.closable }}))")
             check(
                 "tab 0 stays the fixed consoles tab after a file opens",
                 len(tab_state) == 2 and tab_state[0] == {"id": "consoles", "closable": False},

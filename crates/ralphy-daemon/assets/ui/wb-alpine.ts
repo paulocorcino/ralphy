@@ -10,12 +10,13 @@ import type { CheckoutsStore } from "./wb-checkouts-store.ts";
 import type { ConnectionStore } from "./wb-connection-store.ts";
 import type { ReleaseStore } from "./wb-release-store.ts";
 import type { ModalsStore } from "./wb-modals-store.ts";
+import type { TabsStore } from "./wb-tabs-store.ts";
 
 /** The Alpine magics a component or `shell()` calls. */
 export interface AlpineMagics {
   $nextTick(callback?: () => void): Promise<void>;
   $refs: Record<string, HTMLElement | undefined>;
-  $store: { projects: ProjectsStore; connection: ConnectionStore; runs: RunsStore; checkouts: CheckoutsStore; release: ReleaseStore; modals: ModalsStore };
+  $store: { projects: ProjectsStore; connection: ConnectionStore; runs: RunsStore; checkouts: CheckoutsStore; release: ReleaseStore; modals: ModalsStore; tabs: TabsStore };
 }
 
 export function component<U extends keyof Shell, T extends object>(

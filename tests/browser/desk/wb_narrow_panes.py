@@ -75,6 +75,7 @@ TARGET = os.environ.get("RALPHY_WB_TARGET") or os.path.join(REPO_ROOT, "target",
 EXE = os.path.join(TARGET, "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
 # The board is the component `wbBoard` (wb-board.ts).
 BOARD = "Alpine.$data(document.querySelector('[x-data=\"wbBoard\"]'))"
 PHONE = {"width": 390, "height": 844}
@@ -237,7 +238,7 @@ def open_tab(page, slug, path):
     title = path.rsplit("/", 1)[-1]
     ftype = "markdown" if title.endswith(".md") else "code"
     page.evaluate(
-        f"() => {SH}.openTab({{ project: '{slug}', path: '{path}', title: '{title}', ftype: '{ftype}' }})"
+        f"() => {TABS}.openTab({{ project: '{slug}', path: '{path}', title: '{title}', ftype: '{ftype}' }})"
     )
     # `attached`: a narrow editor hides its path, so it is never visible.
     page.wait_for_selector(f".viewer:not([style*='display: none']) .viewer-file", state="attached", timeout=8000)
@@ -417,7 +418,7 @@ def main():
             page.wait_for_timeout(200)
 
             # --- scenario 6c: a maximized console's titlebar -----------------
-            page.evaluate(f"() => {SH}.activate('consoles')")
+            page.evaluate(f"() => {TABS}.activate('consoles')")
             page.wait_for_timeout(300)
             before = page.locator(".session-window").count()
             page.evaluate(f"() => window.WBConsole.open({{ repo: '{slug}', plain: true }})")

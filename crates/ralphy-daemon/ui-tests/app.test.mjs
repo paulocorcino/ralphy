@@ -40,7 +40,7 @@ test("the state literal declares no key twice", () => {
   // NEGATIVE CONTROL: the scan must actually reach the literal. A regex that
   // matched nothing would report no duplicates forever.
   assert.ok(
-    keys.size > 50,
+    keys.size > 25,
     `the key scan found only ${keys.size} entries — it is not reading the state literal`,
   );
   assert.deepEqual(
@@ -83,249 +83,6 @@ test("filteredProjects keeps the open project whatever the query", () => {
   own.$store.projects.setOpen(null);
   own.projectQuery = "zzz-matches-nothing";
   assert.deepEqual(own.filteredProjects(), []);
-});
-
-// The viewer pin (#406): a tab is pinned to the checkout it was opened in, the
-// pin is part of its identity, and an explicit `null` is the primary — not
-// "whatever is selected now". Driven with no DOM and the viewer mount skipped
-// (`$nextTick` swallowed): the tab records are the fold under test.
-test("openTab pins the tab to the selected checkout and keys the tab by it", () => {
-  const { state, window } = loadShell();
-  window.WBView = { patch() {}, read: () => null };
-  state.$nextTick = () => {};
-  state.$store.projects.setOpen("owner/repo");
-  state.$store.checkouts.checkouts = { "owner/repo": "wt-a" };
-
-  state.openTab({ project: "owner/repo", path: "README.md", title: "README.md", ftype: "markdown", content: "x" });
-  const pinned = state.tabs.find((t) => t.path === "README.md");
-  assert.equal(pinned.checkout, "wt-a", "the default pin is the project's selection");
-  assert.equal(pinned.id, "file:owner/repo@wt-a:README.md");
-
-  // The same rel under the PRIMARY is another tab, not the worktree's one.
-  state.openTab({ project: "owner/repo", path: "README.md", title: "README.md", ftype: "markdown", content: "y", checkout: null });
-  const primary = state.tabs.filter((t) => t.path === "README.md");
-  assert.equal(primary.length, 2, "two trees, two tabs");
-  assert.equal(primary[1].checkout, null, "an explicit null is the primary even while wt-a is selected");
-  assert.equal(primary[1].id, "file:owner/repo:README.md", "the primary's id is the pre-#406 spelling");
-
-  // Selection moves on; the pins do not.
-  state.$store.checkouts.checkouts = {};
-  state.openTab({ project: "owner/repo", path: "README.md", title: "README.md", ftype: "markdown", content: "z", checkout: "wt-a" });
-  assert.equal(state.tabs.filter((t) => t.path === "README.md").length, 2, "the pinned tab is reused, not duplicated");
-  assert.equal(state.active, "file:owner/repo@wt-a:README.md", "re-opening activates the pinned tab");
-});
-
-test("persistView stores the pin and restoreView hands it back explicitly", () => {
-  const { state, window } = loadShell();
-  let stored = null;
-  window.WBView = { patch: (v) => (stored = v), read: () => stored };
-  state.$nextTick = () => {};
-  state.$store.projects.setOpen("owner/repo");
-  state.$store.checkouts.checkouts = { "owner/repo": "wt-a" };
-  state.openTab({ project: "owner/repo", path: "a.txt", title: "a.txt", ftype: "code", content: "a" });
-  state.openTab({ project: "owner/repo", path: "b.txt", title: "b.txt", ftype: "code", content: "b", checkout: null });
-  assert.deepEqual(
-    stored.tabs.map((t) => [t.path, t.checkout]),
-    [["a.txt", "wt-a"], ["b.txt", null]],
-  );
-
-  // A fresh shell whose selection is now the PRIMARY restores the pins as
-  // stored — the worktree tab must not be re-pinned to the primary.
-  const fresh = loadShell();
-  fresh.window.WBView = { patch() {}, read: () => stored };
-  fresh.state.$nextTick = () => {};
-  fresh.state.$store.checkouts.checkouts = {};
-  fresh.state.restoreView();
-  assert.deepEqual(
-    fresh.state.tabs.filter((t) => t.id.startsWith("file:")).map((t) => [t.id, t.checkout]),
-    [["file:owner/repo@wt-a:a.txt", "wt-a"], ["file:owner/repo:b.txt", null]],
-  );
-});
-
-// --- the slot (ADR-0037 §3c) ----------------------------------------------
-// `app.ts` reaches `WBViewer` as a bare global; the real one needs a DOM, so
-// the fake records what the shell told it to paint and answers a wide canvas.
-function slotShell(width = 1280, seed = null) {
-  const { state, window } = loadShell();
-  let stored = seed;
-  window.WBView = { patch: (v) => (stored = { ...stored, ...v }), read: () => stored };
-  state.$nextTick = (fn) => fn();
-  state.$store.projects.setOpen("o/r");
-  const painted = [];
-  const real = globalThis.WBViewer;
-  globalThis.WBViewer = {
-    setActive: (id, slot) => painted.push([id, slot ?? null]),
-    width: () => width,
-    open() {},
-    close() {},
-    jumpTo() {},
-    find() {},
-    repath() {},
-  };
-  const open = (path, ftype = "code") =>
-    state.openTab({ project: "o/r", path, title: path, ftype, content: "x", checkout: null });
-  // The opens resolve their bytes on a microtask, so the fake stays until
-  // those landed; restoring it under them would read `open` off `undefined`.
-  const restore = async () => {
-    await new Promise((r) => setImmediate(r));
-    globalThis.WBViewer = real;
-  };
-  return { state, painted, open, stored: () => stored, restore };
-}
-const A = "file:o/r:a.js";
-const B = "file:o/r:b.js";
-
-test("pinning a tab paints it beside the active one; activating it focuses the right pane", async () => {
-  const sh = slotShell();
-  try {
-    sh.open("a.js");
-    sh.open("b.js");
-    sh.state.activate(A);
-    sh.state.pinTab(B);
-    assert.deepEqual(sh.painted.at(-1), [A, { id: B, mirror: false, focus: false, ratio: null }]);
-    sh.state.activate(B);
-    assert.deepEqual(sh.painted.at(-1), [A, { id: B, mirror: false, focus: true, ratio: null }]);
-    assert.deepEqual(sh.state.slot, { kind: "pin", id: B }, "clicking the pinned tab does not unpin it");
-    assert.equal(sh.state.lastLeft, A);
-  } finally {
-    await sh.restore();
-  }
-});
-
-test("a tab opened from the tree while pinned becomes the left the pin returns to", async () => {
-  const sh = slotShell();
-  try {
-    sh.open("a.js");
-    sh.open("b.js");
-    sh.state.activate(A);
-    sh.state.pinTab(B);
-    // `openTab` sets `active` without `activate`: the fold is where lastLeft
-    // lives. Its paint comes after the bytes resolve (a microtask here).
-    sh.open("c.js");
-    await new Promise((r) => setImmediate(r));
-    assert.deepEqual(sh.painted.at(-1), ["file:o/r:c.js", { id: B, mirror: false, focus: false, ratio: null }]);
-    sh.state.activate(B);
-    assert.equal(sh.painted.at(-1)[0], "file:o/r:c.js", "the pane the operator was reading, not an earlier one");
-  } finally {
-    await sh.restore();
-  }
-});
-
-test("closing the pinned tab while it is ACTIVE clears the slot and falls back to a neighbour", async () => {
-  const sh = slotShell();
-  try {
-    sh.open("a.js");
-    sh.open("b.js");
-    sh.state.activate(A);
-    sh.state.pinTab(B);
-    sh.state.activate(B);
-    sh.state.closeTab(B);
-    assert.equal(sh.state.slot, null);
-    assert.equal(sh.state.lastLeft, A);
-    assert.deepEqual(sh.painted.at(-1), [A, null]);
-  } finally {
-    await sh.restore();
-  }
-});
-
-test("a rename re-keys the pin and repaints so the viewer follows the new id", async () => {
-  const sh = slotShell();
-  try {
-    sh.open("a.js");
-    sh.open("b.js");
-    sh.state.activate(A);
-    sh.state.pinTab(B);
-    sh.state.repathTabs("b.js", "c.js");
-    assert.deepEqual(sh.state.slot, { kind: "pin", id: "file:o/r:c.js" });
-    assert.deepEqual(sh.painted.at(-1), [A, { id: "file:o/r:c.js", mirror: false, focus: false, ratio: null }]);
-  } finally {
-    await sh.restore();
-  }
-});
-
-test("a mirror doubles the active code tab and steps aside for a markdown tab", async () => {
-  const sh = slotShell();
-  try {
-    sh.open("a.js");
-    sh.open("R.md", "markdown");
-    sh.state.activate(A);
-    sh.state.toggleMirror();
-    assert.deepEqual(sh.painted.at(-1), [A, { id: A, mirror: true, focus: false, ratio: null }]);
-    sh.state.activate("file:o/r:R.md");
-    assert.deepEqual(sh.painted.at(-1), ["file:o/r:R.md", null]);
-    assert.deepEqual(sh.state.slot, { kind: "mirror" }, "the mirror waits for the next code tab");
-    sh.state.toggleMirror();
-    assert.equal(sh.state.slot, null);
-  } finally {
-    await sh.restore();
-  }
-});
-
-test("closing the pinned tab clears the slot; a paneless tab keeps it waiting", async () => {
-  const sh = slotShell();
-  try {
-    sh.open("a.js");
-    sh.open("b.js");
-    sh.state.activate(A);
-    sh.state.pinTab(B);
-    sh.state.activate("consoles");
-    assert.deepEqual(sh.painted.at(-1), [null, null]);
-    assert.deepEqual(sh.state.slot, { kind: "pin", id: B });
-    sh.state.activate(A);
-    assert.equal(sh.painted.at(-1)[1].id, B);
-    sh.state.closeTab(B);
-    assert.equal(sh.state.slot, null);
-    assert.deepEqual(sh.painted.at(-1), [A, null]);
-    assert.equal(sh.stored().split, null, "the store is told, explicitly, that there is no slot");
-  } finally {
-    await sh.restore();
-  }
-});
-
-test("the slot and its ratio persist per client and come back after the tabs do", async () => {
-  const sh = slotShell();
-  try {
-    sh.open("a.js");
-    sh.open("b.js");
-    sh.state.activate(A);
-    sh.state.pinTab(B);
-    sh.state.splitRatio = 0.6;
-    sh.state.persistView();
-    assert.deepEqual(sh.stored().split, { kind: "pin", project: "o/r", path: "b.js", checkout: null, ratio: 0.6 });
-
-    // A fresh shell over the same record, the way a reload is. `$nextTick` is
-    // a sink here (the restore's reads would hit the harness's throwing
-    // fetch), so the paint is asked for by hand once the restore has run.
-    const fresh = slotShell(1280, sh.stored());
-    try {
-      fresh.state.$nextTick = () => {};
-      fresh.state.restoreView();
-      assert.deepEqual(fresh.state.slot, { kind: "pin", id: B });
-      assert.equal(fresh.state.splitRatio, 0.6);
-      assert.equal(fresh.state.active, A);
-      fresh.state.syncViewer();
-      assert.deepEqual(fresh.painted.at(-1), [A, { id: B, mirror: false, focus: false, ratio: 0.6 }]);
-    } finally {
-      await fresh.restore();
-    }
-  } finally {
-    await sh.restore();
-  }
-});
-
-test("under the width floor the shell paints single and keeps the slot for a wider canvas", async () => {
-  const sh = slotShell(800);
-  try {
-    sh.open("a.js");
-    sh.open("b.js");
-    sh.state.activate(A);
-    sh.state.pinTab(B);
-    assert.deepEqual(sh.painted.at(-1), [A, null]);
-    assert.deepEqual(sh.state.slot, { kind: "pin", id: B });
-    assert.equal(sh.state.splitAvailable(), false);
-  } finally {
-    await sh.restore();
-  }
 });
 
 // A shell whose `toggle` side effects are recorders: each method `toggle` and
@@ -378,16 +135,6 @@ test("opening a row asks to wake its peer, and closing it does not", () => {
   state.toggle("peer:wsl/owner/repo");
   assert.equal(state.$store.projects.openSlug, null);
   assert.equal(named("wakePeerFor").length, 1);
-});
-
-test("a component's tab request adds the tab once and brings it to the front", () => {
-  const { state, window } = toggleShell();
-  const tab = { id: "spend", kind: "spend", title: "Spend", icon: "bi bi-cash-stack", closable: true };
-  state.activate = (id) => (state.active = id);
-  window.dispatchEvent({ type: "workbench:tab-open", detail: { tab } });
-  window.dispatchEvent({ type: "workbench:tab-open", detail: { tab } });
-  assert.equal(state.tabs.filter((t) => t.id === "spend").length, 1);
-  assert.equal(state.active, "spend");
 });
 
 test("opening a project row asks the Spend tab to read again", () => {
@@ -543,7 +290,8 @@ test("the create action asks for the name through the prompt dialog", async () =
 // --- ADR-0070 D2: a shown fact is read again on named events only ----------
 
 // The login gate (wb-login.ts) sends `workbench:logged-in` once the daemon
-// accepted a login: the desk and the open tabs are the shell's, and both were
+// accepted a login: the shell reads the desk and restores the open tabs (the
+// store `tabs`), and both were
 // refused while gated (#327, #339).
 test("a login the daemon accepted reads the desk again and restores the view", async () => {
   const listeners = {};
@@ -556,7 +304,7 @@ test("a login the daemon accepted reads the desk again and restores the view", a
   const calls = [];
   window.WBConsole.afterLogin = () => (calls.push("afterLogin"), Promise.resolve());
   state.$store.checkouts.adoptDeskCheckouts = () => calls.push("adoptDeskCheckouts");
-  state.restoreView = () => calls.push("restoreView");
+  state.$store.tabs.restoreView = () => calls.push("restoreView");
   const realSetInterval = globalThis.setInterval;
   globalThis.setInterval = () => 0;
   try {
@@ -598,7 +346,8 @@ test("a create through the write seam asks the files to re-list the folder and r
   window.WBDaemon = { write: async () => ({ status: "ok" }), withCheckout: (p) => p };
   const realDaemon = globalThis.WBDaemon;
   globalThis.WBDaemon = window.WBDaemon;
-  window.getShell = () => ({ openTab() {} });
+  window.getShell = () => ({});
+  window.Alpine.store("tabs").openTab = () => {};
   window.Alpine.store("modals").askPrompt = async () => "x.txt";
   window.Alpine.store("modals").flash = () => {};
   try {
@@ -651,56 +400,6 @@ test("a reopened socket refreshes an open board, as the tab becoming visible doe
     window.WBKanban.shouldRefresh({ trigger, sinceMs: 60 * 60 * 1000, boardOpen: true, docVisible: true });
   assert.equal(ask("reopen"), true);
   assert.equal(ask("reopen"), ask("visible"));
-});
-
-// The context menu builds each item from elements: a label can name a file,
-// and a file name such as `<img src=x>` must reach the menu as text.
-test("renderMenu sets a label as text, never as markup", () => {
-  const created = [];
-  const element = (tag) => {
-    const el = {
-      tag,
-      children: [],
-      style: {},
-      className: "",
-      textContent: "",
-      innerHTMLWrites: [],
-      append(...kids) {
-        this.children.push(...kids);
-      },
-      set innerHTML(v) {
-        this.innerHTMLWrites.push(v);
-      },
-    };
-    created.push(el);
-    return el;
-  };
-  const menu = element("div");
-  const { state } = loadShell({
-    document: { getElementById: () => menu, createElement: element },
-  });
-  // `renderMenu` reads the BARE viewport globals a browser has; lend them.
-  globalThis.innerWidth = 1440;
-  globalThis.innerHeight = 900;
-  try {
-    state.renderMenu(0, 0, [{ icon: "bi-x", label: "<img src=x>", run() {} }]);
-  } finally {
-    delete globalThis.innerWidth;
-    delete globalThis.innerHeight;
-  }
-  const button = menu.children[0];
-  assert.equal(button.tag, "button");
-  const [icon, label] = button.children;
-  assert.equal(icon.tag, "i");
-  assert.equal(icon.className, "bi bi-x");
-  assert.equal(label.tag, "span");
-  assert.equal(label.textContent, "<img src=x>");
-  assert.ok(!created.some((el) => el.tag === "img"), "an img element was created");
-  for (const el of created) {
-    for (const w of el.innerHTMLWrites) {
-      assert.ok(!w.includes("<img"), `innerHTML took the label: ${w}`);
-    }
-  }
 });
 
 test("Remove project names a remoteless repo by its folder, not its path- slug", async () => {

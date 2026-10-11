@@ -63,6 +63,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
 # The Alpine store `modals`: the modal stack, the confirm, the prompt and the flash line.
 MODALS = "Alpine.store('modals')"
 # The branch dialog is the component `wbBranchDialog` (wb-branch-dialog.ts).
@@ -438,7 +439,7 @@ def main():
             page.wait_for_function(HAS_UNSTAGED, arg=[slug, "only-in-wt.txt"], timeout=15000)
             diff_id = f"diff:{slug}@wt-a:only-in-wt.txt"
             click_change_row(page, "only-in-wt.txt")
-            page.wait_for_function(f"(id) => {SH}.tabs.some(t => t.id === id)", arg=diff_id, timeout=15000)
+            page.wait_for_function(f"(id) => {TABS}.tabs.some(t => t.id === id)", arg=diff_id, timeout=15000)
             check("the diff tab id carries the checkout pin", True, diff_id)
             wait_diff_mounted(page, diff_id)
             sides = page.evaluate(
@@ -456,7 +457,7 @@ def main():
                 sides["modified"] == "changed\n",
                 f"got={sides['modified']!r}",
             )
-            page.evaluate(f"(id) => {SH}.closeTab(id)", arg=diff_id)
+            page.evaluate(f"(id) => {TABS}.closeTab(id)", arg=diff_id)
             # `side` lacks only-in-wt.txt: a modified copy would block the
             # checkout, so restore it from git before the branch acts.
             git(wt, "checkout", "--", "only-in-wt.txt")

@@ -2790,7 +2790,7 @@ fn the_explorer_opens_a_note_as_a_card() {
     );
     let files = include_str!("../assets/ui/wb-files.ts");
     assert!(
-        files.contains("this.openNote(path)"),
+        files.contains("this.$store.tabs.openNote(path)"),
         "wb-files.ts must keep the ADR-0064 pin openNote(path)"
     );
     let app = shell_family();
@@ -3300,16 +3300,17 @@ async fn the_served_ui_carries_no_seed() {
 
 #[tokio::test]
 async fn consoles_tab_is_fixed_and_named() {
-    let body = body_string(get_local("/app.js").await).await;
+    // The canvas tabs are the Alpine store `tabs` (#621).
+    let body = body_string(get_local("/wb-tabs-store.js").await).await;
     assert!(
         !body.contains(r#"title: "Agents""#),
-        "app.ts must not carry the old tab title \"Agents\""
+        "wb-tabs-store.ts must not carry the old tab title \"Agents\""
     );
     // The object literal that sets `id: "consoles"`, however it is wrapped.
     let code = squeeze(&body);
     let at = code
         .find(r#"id:"consoles""#)
-        .unwrap_or_else(|| panic!("no object in app.ts sets id: \"consoles\""));
+        .unwrap_or_else(|| panic!("no object in wb-tabs-store.ts sets id: \"consoles\""));
     let open = code[..at]
         .rfind('{')
         .expect("the id sits in an object literal");
@@ -3982,6 +3983,10 @@ const SHELL_FAMILY: &[(&str, &str)] = &[
     (
         "wb-spend-panel.ts",
         include_str!("../assets/ui/wb-spend-panel.ts"),
+    ),
+    (
+        "wb-tabs-store.ts",
+        include_str!("../assets/ui/wb-tabs-store.ts"),
     ),
 ];
 

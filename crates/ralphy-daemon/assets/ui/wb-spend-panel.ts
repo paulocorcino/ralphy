@@ -6,8 +6,8 @@
    figures are the daemon's (`/api/spend`, `/api/usage`); `WBSpend` folds only
    which state each pane is in.
 
-   It reaches `shell()` only through the names in its `uses` (ADR-0073 D4): the
-   canvas tabs stay there, and it asks for its tab with an event, until they move to their own store. The page reaches
+   It reads the canvas tabs in the Alpine store `tabs` (wb-tabs-store.ts), and
+   asks for its tab with an event, which the store hears. The page reaches
    it only through `workbench:*` events, which the markup and `init()` hear.
 
    `main.ts` registers it (ADR-0075 D5).
@@ -19,7 +19,7 @@ import type { BoardIssue, LedgerMissing, LedgerRecord, SpendDoc } from "./wb-she
 
 export function wbSpend() {
   // Every `shell()` member this component's code or markup reads or calls.
-  return component(["tabs", "active"], {
+  return component([], {
     // --- spend (the Spend tab, #358) ---------------------------------------
     // A canvas tab (ADR-0037 amendment: a closable tab may be a daemon view),
     // scoped to the open project. Everything numeric is rendered by the daemon
@@ -86,7 +86,7 @@ export function wbSpend() {
     },
     // Re-read on activation and when the accordion opens or closes a project.
     refreshSpend() {
-      if (!this.tabs.some((t) => t.id === "spend")) return;
+      if (!this.$store.tabs.tabs.some((t) => t.id === "spend")) return;
       // Dropping the slug makes the next switch to the Ledger re-read. The
       // unpriced filter goes with it: it answered the PREVIOUS project's gap.
       this.ledger.slug = null;
@@ -199,7 +199,7 @@ export function wbSpend() {
       // The panels whose facts have no push: read again on visible and after
       // login while they are open (fact index: usage 3, 4).
       window.addEventListener("workbench:panels-reread", () => {
-        if (this.tabs.some((t) => t.id === "spend")) this.loadSpend();
+        if (this.$store.tabs.tabs.some((t) => t.id === "spend")) this.loadSpend();
       });
     },
   });

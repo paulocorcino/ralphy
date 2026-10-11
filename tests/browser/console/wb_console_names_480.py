@@ -46,6 +46,7 @@ EXE = os.path.join(TARGET, "ralphy.exe" if os.name == "nt" else "ralphy")
 CHILD = os.path.join(TARGET, "session_test_child.exe" if os.name == "nt" else "session_test_child")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
 VIEW = {"width": 1600, "height": 900}
 SLUG = "owner/fincal"
 RENAMED = 'a&b %PATH% "x"'
@@ -230,7 +231,7 @@ def main():
             page.on("pageerror", lambda e: errors.append(str(e)))
             page.goto(BASE)
             page.wait_for_selector("[x-data]", timeout=8000)
-            page.evaluate(f"() => {{ {SH}.activate('consoles'); }}")
+            page.evaluate(f"() => {{ {TABS}.activate('consoles'); }}")
             page.wait_for_timeout(800)
             page.evaluate(HELPERS)
 

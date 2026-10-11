@@ -38,6 +38,7 @@ import { runsStore } from "../assets/ui/wb-runs-store.ts";
 import { checkoutsStore } from "../assets/ui/wb-checkouts-store.ts";
 import { releaseStore } from "../assets/ui/wb-release-store.ts";
 import { modalsStore } from "../assets/ui/wb-modals-store.ts";
+import { tabsStore } from "../assets/ui/wb-tabs-store.ts";
 import { WBSpend } from "../assets/ui/wb-spend.ts";
 import { WBKanban } from "../assets/ui/wb-kanban.ts";
 import { createDaemon } from "../assets/ui/wb-daemon.ts";
@@ -71,6 +72,7 @@ export const STORES = {
   runs: runsStore,
   checkouts: checkoutsStore,
   release: releaseStore,
+  tabs: tabsStore,
 };
 
 // The Alpine components, by the name the markup gives `x-data`: `loadComponent`

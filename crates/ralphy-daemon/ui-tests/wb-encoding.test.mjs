@@ -61,10 +61,10 @@ function shellWith(reply) {
   const emitted = [];
   window.WB = { emit: (action, detail) => emitted.push({ action, ...detail }) };
   GLOBALS.forEach((k) => (globalThis[k] = window[k]));
-  state.$nextTick = (fn) => fn();
+  window.Alpine.nextTick = (fn) => fn();
   state.$store.projects.setOpen("owner/repo");
   state.checkouts = {};
-  state.syncViewer = () => {};
+  state.$store.tabs.syncViewer = () => {};
   const fire = (detail) => listeners.forEach((fn) => fn({ detail }));
   return { state, window, document, observed, written, opened, viewer, fire, emitted };
 }
@@ -73,38 +73,38 @@ const tick = () => new Promise((r) => setImmediate(r));
 
 test("a decoded read opens the pane with its encoding and bom", async () => {
   const { state, opened } = shellWith({ status: "ok", content: "§", encoding: "windows-1252", bom: false });
-  state.openTab({ project: "owner/repo", path: "a.md", title: "a.md", ftype: "markdown" });
+  state.$store.tabs.openTab({ project: "owner/repo", path: "a.md", title: "a.md", ftype: "markdown" });
   await tick();
   assert.equal(opened.length, 1);
   assert.equal(opened[0].content, "§");
   assert.equal(opened[0].encoding, "windows-1252");
   assert.equal(opened[0].bom, false);
   assert.equal(opened[0].refused, undefined);
-  assert.ok(state.tabs.some((t) => t.path === "a.md"), "the tab is there");
+  assert.ok(state.$store.tabs.tabs.some((t) => t.path === "a.md"), "the tab is there");
 });
 
 test("a binary refusal keeps the tab and opens a refused pane", async () => {
   const { state, opened, emitted } = shellWith({ status: "error", reason: "binary" });
-  state.openTab({ project: "owner/repo", path: "x.bin.txt", title: "x.bin.txt", ftype: "code" });
+  state.$store.tabs.openTab({ project: "owner/repo", path: "x.bin.txt", title: "x.bin.txt", ftype: "code" });
   await tick();
   assert.equal(opened.length, 1, "a pane opened");
   assert.equal(opened[0].refused, "binary");
   assert.equal(opened[0].content, undefined);
-  assert.ok(state.tabs.some((t) => t.path === "x.bin.txt"), "the tab stayed");
+  assert.ok(state.$store.tabs.tabs.some((t) => t.path === "x.bin.txt"), "the tab stayed");
   assert.deepEqual(emitted.map((e) => [e.action, e.reason]), [["open-refused", "binary"]]);
 });
 
 test("not found still closes the tab, and opens nothing", async () => {
   const { state, opened } = shellWith({ status: "error", reason: "not found" });
-  state.openTab({ project: "owner/repo", path: "gone.txt", title: "gone.txt", ftype: "code" });
+  state.$store.tabs.openTab({ project: "owner/repo", path: "gone.txt", title: "gone.txt", ftype: "code" });
   await tick();
   assert.equal(opened.length, 0);
-  assert.ok(!state.tabs.some((t) => t.path === "gone.txt"), "the tab closed");
+  assert.ok(!state.$store.tabs.tabs.some((t) => t.path === "gone.txt"), "the tab closed");
 });
 
 test("a re-attached popup's bytes come back with their encoding", async () => {
   const { state, opened, observed } = shellWith({ status: "ok", content: "never read" });
-  state.openTab({
+  state.$store.tabs.openTab({
     project: "owner/repo", path: "b.txt", title: "b.txt", ftype: "code",
     content: "edited", encoding: "UTF-16LE", bom: true, checkout: null,
   });
@@ -119,7 +119,7 @@ test("a nudge re-reads a tab with its own encoding as the hint", async () => {
   const { state, window, document, observed, viewer } = shellWith({ status: "ok", content: "x", encoding: "Shift_JIS", bom: false });
   // The nudge is the files' (wb-files.ts); the tab is the shell's.
   const files = loadComponent("wbFiles", { from: { state, window, document } }).scope;
-  state.openTab({ project: "owner/repo", path: "docs/j.txt", title: "j.txt", ftype: "code" });
+  state.$store.tabs.openTab({ project: "owner/repo", path: "docs/j.txt", title: "j.txt", ftype: "code" });
   await tick();
   viewer.encodings = { "file:owner/repo:docs/j.txt": { encoding: "Shift_JIS", bom: false } };
   observed.length = 0;
@@ -130,7 +130,7 @@ test("a nudge re-reads a tab with its own encoding as the hint", async () => {
 
 test("a save carries the pane's encoding and bom, and the ack clears the pane", async () => {
   const { state, window, written, viewer, fire } = shellWith({ status: "ok", content: "x" });
-  state.openTab({ project: "owner/repo", path: "c.txt", title: "c.txt", ftype: "code", checkout: null });
+  state.$store.tabs.openTab({ project: "owner/repo", path: "c.txt", title: "c.txt", ftype: "code", checkout: null });
   await tick();
   fire({ action: "save", project: "owner/repo", path: "c.txt", content: "é", checkout: null, encoding: "windows-1252", bom: false });
   await tick();
@@ -172,7 +172,7 @@ test("a save carries the pane's encoding and bom, and the ack clears the pane", 
 
 test("a refusal the operator declines to repair leaves the pane unsaved", async () => {
   const { state, window, written, viewer, fire } = shellWith({ status: "ok", content: "x" });
-  state.openTab({ project: "owner/repo", path: "d.txt", title: "d.txt", ftype: "code", checkout: null });
+  state.$store.tabs.openTab({ project: "owner/repo", path: "d.txt", title: "d.txt", ftype: "code", checkout: null });
   await tick();
   window.getShell = () => state;
   state.$store.modals.askConfirm = () => Promise.resolve(false);
@@ -220,7 +220,7 @@ function loadViewer() {
   const emitted = [];
   const window = {
     WB: { emit: (action, detail) => emitted.push({ action, ...detail }) },
-    getShell: () => ({ closeTab() {} }),
+    Alpine: { store: () => ({ closeTab() {} }) },
     addEventListener() {},
     matchMedia: () => ({ matches: false, addEventListener() {} }),
     setTimeout: () => 0,

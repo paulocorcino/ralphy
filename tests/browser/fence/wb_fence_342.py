@@ -65,6 +65,7 @@ EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt"
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "342-arrange-into-the-fence-2026-07-27.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
 
 VIEW = {"width": 1400, "height": 900}
 
@@ -239,7 +240,7 @@ def desk_page(ctx):
     # `activate` and not a raw `active =` write: only the former reaches
     # `refitAll()`, the path that re-applies a stored offset after `display:none`
     # threw the scroll position away (KNOWLEDGE, #339).
-    page.evaluate(f"() => {{ {SH}.activate('consoles'); }}")
+    page.evaluate(f"() => {{ {TABS}.activate('consoles'); }}")
     page.wait_for_timeout(1800)
     return page
 
@@ -438,7 +439,7 @@ def main():
             page.set_viewport_size(dict(VIEW))
             page.goto(BASE)
             page.wait_for_selector("[x-data]", timeout=8000)
-            page.evaluate(f"() => {{ {SH}.activate('consoles'); }}")
+            page.evaluate(f"() => {{ {TABS}.activate('consoles'); }}")
             page.wait_for_timeout(1800)
             settle_windows(page, 1)
             page.wait_for_function(
@@ -713,7 +714,7 @@ def main():
             )
             page.reload()
             page.wait_for_selector("[x-data]", timeout=8000)
-            page.evaluate(f"() => {{ {SH}.activate('consoles'); }}")
+            page.evaluate(f"() => {{ {TABS}.activate('consoles'); }}")
             page.wait_for_timeout(1800)
             settle_windows(page, 4)
             unscroll(page)

@@ -41,6 +41,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 TARGET = os.environ.get("RALPHY_WB_TARGET") or os.path.join(REPO_ROOT, "target", "debug")
 EXE = os.path.join(TARGET, "ralphy.exe" if os.name == "nt" else "ralphy")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
 SPEND = "Alpine.$data(document.querySelector('[x-data=\"wbSpend\"]'))"
 # The board is the component `wbBoard` (wb-board.ts).
 BOARD = "Alpine.$data(document.querySelector('[x-data=\"wbBoard\"]'))"
@@ -243,7 +244,7 @@ def main():
                 # The spend document is per project, and a switch drops it:
                 # read it again so the refresh below runs over a full one.
                 load_spend(page, slug_a)
-                page.evaluate(f"(t) => {{ {SH}.active = t; }}", arg=tab)
+                page.evaluate(f"(t) => {{ {TABS}.active = t; }}", arg=tab)
                 idle(page, 800)
                 refresh = [measure(page, cdp, f"() => {BOARD}.loadBoard()", 600) for _ in range(REPEAT)]
                 out[f"board refresh, {tab} tab shown"] = summarize(f"board refresh, {tab} tab shown", refresh)

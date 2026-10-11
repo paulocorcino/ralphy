@@ -67,6 +67,7 @@ EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt"
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "359-spend-2026-07-31.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
 SPEND = "Alpine.$data(document.querySelector('[x-data=\"wbSpend\"]'))"
 # The board is the component `wbBoard` (wb-board.ts).
 BOARD = "Alpine.$data(document.querySelector('[x-data=\"wbBoard\"]'))"
@@ -347,7 +348,7 @@ def main():
             page.evaluate(f"(s) => {SH}.toggle(s)", arg=slug)
             page.wait_for_function(f"(s) => Alpine.store('projects').openSlug === s", arg=slug, timeout=15000)
             page.evaluate(f"() => {SPEND}.openSpend()")
-            page.wait_for_function(f"() => {SH}.active === 'spend'", timeout=10000)
+            page.wait_for_function(f"() => {TABS}.active === 'spend'", timeout=10000)
             page.wait_for_function(READY, timeout=15000)
 
             doc = page.evaluate(

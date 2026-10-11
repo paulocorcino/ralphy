@@ -48,6 +48,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
 
 MAIN_RS = """// the #308 fixture
 use std::collections::HashMap;
@@ -174,7 +175,7 @@ def open_file(page, slug, path, title, ftype="code"):
     waits on a predicate rather than reading right after the state change."""
     page.evaluate(
         "([project, path, title, ftype]) => "
-        f"{SH}.openTab({{ project, path, title, ftype }})",
+        f"{TABS}.openTab({{ project, path, title, ftype }})",
         [slug, path, title, ftype],
     )
     page.wait_for_function(

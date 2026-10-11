@@ -40,6 +40,7 @@ import { runsStore } from "./wb-runs-store.ts";
 import { checkoutsStore } from "./wb-checkouts-store.ts";
 import { releaseStore } from "./wb-release-store.ts";
 import { modalsStore } from "./wb-modals-store.ts";
+import { tabsStore } from "./wb-tabs-store.ts";
 
 window.Alpine = Alpine;
 // The door for operator messages first: the consoles, the cards and the
@@ -63,7 +64,8 @@ window.WBViewer = createViewer(window, document, { messages });
 // The note cards, before `wire`: `wb-console.ts` reads `WBNotes` inside functions.
 window.WBNotes = createNotes(window, document, { console: window.WBConsole, messages, stack, gestures });
 // `wire` hands back the detached file windows: the store `connection` asks
-// them about unsaved work before a build reload.
+// them about unsaved work before a build reload, and the store `tabs` hands
+// them a file it detaches.
 const detached = wire(window, document, { messages });
 Alpine.directive("icon", iconDirective);
 // The modal stack, the confirm, the prompt and the flash line, first: the
@@ -84,6 +86,9 @@ Alpine.store("runs", runsStore({ messages }));
 Alpine.store("checkouts", checkoutsStore({ messages }));
 // The release view; its `init` reads it and hears the tab come back.
 Alpine.store("release", releaseStore({ messages }));
+// The canvas tabs, the slot and the split; its `init` hears a component ask
+// for a tab. `detachFile` watches a popup through the detached file windows.
+Alpine.store("tabs", tabsStore({ messages, detached }));
 // Each name is the `x-data` of one element in `index.html`.
 Alpine.data("shell", shell);
 Alpine.data("wbSettingsDialog", settingsDialog);

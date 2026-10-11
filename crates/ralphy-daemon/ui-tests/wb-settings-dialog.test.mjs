@@ -239,7 +239,7 @@ test("the open dialog reads its settings again on workbench:panels-reread, and a
   const sent = [];
   const loaded = loadShell({ window: { dispatchEvent: (e) => sent.push(e) } });
   const { scope: state } = loadComponent("wbSettingsDialog", { from: loaded });
-  loaded.state.tabs = loaded.state.tabs.filter((t) => t.id !== "spend");
+  loaded.state.$store.tabs.tabs = loaded.state.$store.tabs.tabs.filter((t) => t.id !== "spend");
   loaded.state.$store.connection.rereadOpenPanels();
   const ev = sent.find((e) => e.type === "workbench:panels-reread");
   assert.ok(ev, `rereadOpenPanels sends workbench:panels-reread on the window; sent ${sent.map((e) => e.type)}`);

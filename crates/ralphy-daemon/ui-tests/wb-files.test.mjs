@@ -188,7 +188,7 @@ test("a head.dirty push sends workbench:head-moved once for the open project", a
 test("the Move item asks the move dialog with the full rel path", () => {
   const { shell, files, events } = page();
   let items = null;
-  shell.renderMenu = (_x, _y, list) => (items = list);
+  shell.$store.tabs.renderMenu = (_x, _y, list) => (items = list);
   const root = { title: "root", parent: null };
   const src = { title: "src", parent: root, data: { folder: true }, children: [] };
   const file = { title: "a.txt", parent: src, data: {}, children: null };
@@ -290,7 +290,7 @@ test("the Move item is withheld inside .git and .ralphy, except for a note in th
   // `.ralphy/notes/<name>.note`, nothing deeper or differently named.
   const { scope: own, shell } = loadComponent("wbFiles");
   let items = null;
-  shell.renderMenu = (_x, _y, list) => {
+  shell.$store.tabs.renderMenu = (_x, _y, list) => {
     items = list;
   };
   const node = (rel) =>

@@ -54,7 +54,7 @@ test("newConsole opens the agent in the primary even under a selected checkout",
   // The component reaches `WBConsole` as a bare global; the real one needs a DOM.
   globalThis.WBConsole = { open: (o) => calls.push(o), count: () => 0 };
   try {
-    shell.active = "consoles";
+    shell.$store.tabs.active = "consoles";
     state.$store.projects.setOpen("o/r");
     shell.$store.checkouts.checkouts = { "o/r": "wt-a" };
     state.newConsole("claude");
@@ -93,7 +93,7 @@ function arrowShell() {
 test("Alt+Shift+←/→ walks the columns while they are open and the fences otherwise", () => {
   const { state, shell, calls, box, done } = arrowShell();
   try {
-    shell.active = "consoles";
+    shell.$store.tabs.active = "consoles";
     state.columns = [];
     assert.ok(state.arrowStep("x", 1));
     assert.deepEqual(calls, [["fence", 1]]);
@@ -118,7 +118,7 @@ test("Alt+Shift+←/→ walks the columns while they are open and the fences oth
 test("Alt+Shift+↑/↓ walks the rows of a column, and applies nothing with no columns", () => {
   const { state, shell, calls, box, done } = arrowShell();
   try {
-    shell.active = "consoles";
+    shell.$store.tabs.active = "consoles";
     state.columns = [];
     assert.equal(state.arrowStep("y", 1), false);
     assert.deepEqual(calls, [], "no fence step for ↑/↓");
@@ -140,7 +140,7 @@ test("the Note menu keeps a card on top, puts it back, and refuses a card in a p
     list: () => [{ id: "a", onTop: false, away: false }],
   };
   state.$nextTick = (fn) => fn();
-  shell.active = "consoles";
+  shell.$store.tabs.active = "consoles";
   state.noteMenu = true;
 
   // Putting back keeps the menu open and redraws the rows.
@@ -163,11 +163,11 @@ test("Alt+Shift+R from another tab opens the Consoles tab and its menu", () => {
   const { scope: state, shell } = loadComponent("wbConsoleMenus");
   const calls = [];
   state.$nextTick = () => {};
-  shell.activate = (tab) => {
+  shell.$store.tabs.activate = (tab) => {
     calls.push("activate:" + tab);
-    shell.active = tab;
+    shell.$store.tabs.active = tab;
   };
-  shell.active = "code";
+  shell.$store.tabs.active = "code";
 
   state.openConsoleRunMenu();
   // The menu sits in the Consoles tab's toolbar: on another tab it is hidden.
@@ -182,11 +182,11 @@ test("keeping a card on top from another tab opens the Consoles tab first", () =
   window.WBNotes = { keepOnTop: (id) => calls.push("keepOnTop:" + id) };
   const ticks = [];
   state.$nextTick = (fn) => ticks.push(fn);
-  shell.activate = (tab) => {
+  shell.$store.tabs.activate = (tab) => {
     calls.push("activate:" + tab);
-    shell.active = tab;
+    shell.$store.tabs.active = tab;
   };
-  shell.active = "code";
+  shell.$store.tabs.active = "code";
 
   state.toggleOnTop({ id: "a", onTop: false, away: false });
   // The card is placed only after the tab is shown: a hidden tab measures 0×0.

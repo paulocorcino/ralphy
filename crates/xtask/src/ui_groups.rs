@@ -63,7 +63,9 @@ const HTML: &str = "crates/ralphy-daemon/assets/ui/index.html";
 /// The consoles group left `shell()` for `wb-consoles-tab.ts`, and the files
 /// group for `wb-files.ts` and `wb-move-dialog.ts` (#621). The Runs panel
 /// left the board group for `wb-runs-panel.ts`, and the board for
-/// `wb-board.ts` (#621).
+/// `wb-board.ts` (#621). The canvas tabs, the slot, the per-client view and
+/// the tab menu left layout core for the Alpine store `tabs`
+/// (`wb-tabs-store.ts`, #621).
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 enum Group {
     Core,
@@ -98,15 +100,6 @@ const SECTIONS: &[(&str, Group)] = &[
     ("chrome panels", Group::Core),
     ("branch switcher", Group::Git),
     ("Runs panel", Group::Board),
-    // The canvas tabs (`tabs`, `active`, `slot`) are layout that `shell()`
-    // keeps (ADR-0073 D2), and so are the slot, the per-client view, and
-    // opening a file or a Changes row into a tab.
-    ("canvas tabs", Group::Core),
-    ("opening a file", Group::Core),
-    ("opening a Changes row", Group::Core),
-    ("the slot", Group::Core),
-    ("the per-client view", Group::Core),
-    ("context menu", Group::Core),
 ];
 
 /// Calls that change the value they are called on.

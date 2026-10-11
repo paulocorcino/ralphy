@@ -54,6 +54,7 @@ EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt"
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "362-explorer-2026-07-30.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
 # The Alpine store `modals`: the modal stack, the confirm, the prompt and the flash line.
 MODALS = "Alpine.store('modals')"
 FILES = "Alpine.$data(document.querySelector('[x-data=\"wbFiles\"]'))"
@@ -457,7 +458,7 @@ def main():
                 and copied[1] == "a.txt",
                 "copied={}".format(copied),
             )
-            page.evaluate(f"() => {SH}.hideMenu()")
+            page.evaluate(f"() => {TABS}.hideMenu()")
 
             # --- scenario c: create a folder under a COLLAPSED parent ----------
             collapsed = page.evaluate(

@@ -40,6 +40,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 TARGET = os.environ.get("RALPHY_WB_TARGET") or os.path.join(REPO_ROOT, "target", "debug")
 EXE = os.path.join(TARGET, "ralphy.exe" if os.name == "nt" else "ralphy")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
 SPEND = "Alpine.$data(document.querySelector('[x-data=\"wbSpend\"]'))"
 # The Runs panel and the run modal: the component `wbRuns`.
 RUNS = "Alpine.$data(document.querySelector('[x-data=\"wbRuns\"]'))"
@@ -213,7 +214,7 @@ def main():
             check("2 the empty Spend view leaves the DOM while a project is open", True)
             page.evaluate(f"(s) => {SH}.toggle(s)", arg=slug_a)
             page.wait_for_function(f"() => Alpine.store('projects').openSlug === null", timeout=15000)
-            page.evaluate(f"() => {{ {SH}.active = 'spend'; }}")
+            page.evaluate(f"() => {{ {TABS}.active = 'spend'; }}")
             page.wait_for_selector(".spend-blank-icon", timeout=5000)
             settle(page)
             blank = page.evaluate(
@@ -269,7 +270,7 @@ def main():
             page.wait_for_function(f"(s) => Alpine.store('projects').openSlug === s", arg=slug_a, timeout=15000)
             views = [
                 ("spend", f"{SPEND}.openSpend()"),
-                ("consoles", f"{SH}.active = 'consoles'"),
+                ("consoles", f"{TABS}.active = 'consoles'"),
                 ("kanban", f"{SH}.toggleKanban()"),
                 ("runs", f"{SH}.toggleRuns()"),
                 ("changes", f"{SH}.showSideView('changes')"),

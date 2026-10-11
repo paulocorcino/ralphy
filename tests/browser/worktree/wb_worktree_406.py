@@ -68,6 +68,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
 # The Alpine store `modals`: the modal stack, the confirm, the prompt and the flash line.
 MODALS = "Alpine.store('modals')"
 # The branch dialog is the component `wbBranchDialog` (wb-branch-dialog.ts).
@@ -460,11 +461,11 @@ def main():
             # (the viewer's own `save` intent, pin included) is refused rather
             # than landing on the primary's README.md.
             page.evaluate(
-                f"(s) => {SH}.openTab({{ project: s, path: 'only-in-wt.txt', title: 'only-in-wt.txt', ftype: 'code' }})",
+                f"(s) => {TABS}.openTab({{ project: s, path: 'only-in-wt.txt', title: 'only-in-wt.txt', ftype: 'code' }})",
                 arg=slug,
             )
             page.wait_for_function(
-                f"(s) => {SH}.tabs.some(t => t.path === 'only-in-wt.txt' && t.checkout === 'wt-a')",
+                f"(s) => {TABS}.tabs.some(t => t.path === 'only-in-wt.txt' && t.checkout === 'wt-a')",
                 arg=slug,
                 timeout=15000,
             )
@@ -476,7 +477,7 @@ def main():
             click_row(page, "primary", slug)
             page.wait_for_function(f"(s) => {CHECKOUTS}.checkoutOf(s) === null", arg=slug, timeout=10000)
             still = page.evaluate(
-                f"() => ({SH}.tabs.find(t => t.path === 'only-in-wt.txt') || {{}}).checkout"
+                f"() => ({TABS}.tabs.find(t => t.path === 'only-in-wt.txt') || {{}}).checkout"
             )
             check("selecting primary leaves the open tab pinned to wt-a", still == "wt-a", f"got={still!r}")
             # The pane's own Save: `WBViewer.save` reads the pane and emits the
@@ -500,7 +501,7 @@ def main():
                 "the primary has no only-in-wt.txt after the refused Save",
                 not (fixture / "only-in-wt.txt").exists(),
             )
-            page.evaluate(f"(s) => {SH}.closeTab('file:' + s + '@wt-a:only-in-wt.txt')", arg=slug)
+            page.evaluate(f"(s) => {TABS}.closeTab('file:' + s + '@wt-a:only-in-wt.txt')", arg=slug)
             click_row(page, "wt-a", slug)
             page.wait_for_function(TITLES_INCLUDE, arg="only-in-wt.txt", timeout=15000)
             # The selection starts `changes.list` and `sync.status`, which run

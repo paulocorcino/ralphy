@@ -326,7 +326,7 @@ test("a session read keeps the policy, and restores the view only when authorize
   for (const authed of [true, false]) {
     const { state, store } = connectedPage(VISIBLE);
     const restored = [];
-    state.restoreView = () => restored.push("restore");
+    state.$store.tabs.restoreView = () => restored.push("restore");
     const realFetch = globalThis.fetch;
     globalThis.fetch = async () => ({
       ok: true,

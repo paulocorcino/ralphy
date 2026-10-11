@@ -56,6 +56,7 @@ EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if WIN else "ralph
 CHILD = os.path.join(REPO_ROOT, "target", "debug", "session_test_child.exe" if WIN else "session_test_child")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
 # The roster lives in the Alpine store `projects`.
 ROSTER = "() => Alpine.store('projects').roster"
 # The Consoles tab's menus and the columns are Alpine components of their
@@ -271,7 +272,7 @@ def main():
 
             # --- scenario 3: selecting a repo enables them --------------------
             close_menu(page)
-            page.evaluate(f"() => {{ Alpine.store('projects').setOpen('{slug}'); {SH}.active = 'consoles'; }}")
+            page.evaluate(f"() => {{ Alpine.store('projects').setOpen('{slug}'); {TABS}.active = 'consoles'; }}")
             page.wait_for_timeout(300)
             open_menu(page)
             enabled = page.evaluate(

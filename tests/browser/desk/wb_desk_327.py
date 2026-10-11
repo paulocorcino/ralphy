@@ -59,6 +59,7 @@ CONSOLE_JS = os.path.join(REPO_ROOT, "crates", "ralphy-daemon", "assets", "ui", 
 # a second copy of the desk. Scenario 5 is the assertion of exactly that line.
 VIEW_KEY = "wb.view.v1"
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
 
 results = []
 
@@ -210,7 +211,7 @@ def desk_page(ctx, viewport=None, at_origin=False):
         page.set_viewport_size(viewport)
     page.goto(BASE)
     page.wait_for_selector("[x-data]", timeout=8000)
-    page.evaluate(f"() => {{ {SH}.active = 'consoles'; }}")
+    page.evaluate(f"() => {{ {TABS}.active = 'consoles'; }}")
     page.wait_for_timeout(1800)
     if at_origin:
         page.evaluate(
@@ -322,7 +323,7 @@ def main():
                 f"got={keys}",
             )
             # `<=`, not `==`: this suite never makes a gesture that WRITES the
-            # view (it drives `SH.active` directly, so `persistView` never runs,
+            # view (it drives `TABS.active` directly, so `persistView` never runs,
             # and a 0,0 landing fires no scroll), and an empty store is the
             # strongest possible pass for "no desk in browser storage". The
             # non-vacuous shape assertions — where the key is really written —
@@ -522,7 +523,7 @@ def main():
             )
             page_d.goto(BASE)
             page_d.wait_for_selector("[x-data]", timeout=8000)
-            page_d.evaluate(f"() => {{ {SH}.active = 'consoles'; }}")
+            page_d.evaluate(f"() => {{ {TABS}.active = 'consoles'; }}")
             page_d.wait_for_timeout(600)
             open_console(page_d, slug)
             drag_title(page_d, 0, -60, 30)

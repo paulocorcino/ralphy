@@ -54,6 +54,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
 # The Changes view is the component wbChanges.
 CHG = "Alpine.$data(document.querySelector('[x-data=\"wbChanges\"]'))"
 
@@ -592,14 +593,14 @@ def main():
             )
             diff_id = f"diff:{slug_a}:README.md"
             page.wait_for_function(
-                f"(want) => {SH}.tabs.map(t => t.id).join('|') === want",
+                f"(want) => {TABS}.tabs.map(t => t.id).join('|') === want",
                 arg=f"consoles|{diff_id}",
                 timeout=20000,
             )
             check(
                 "clicking a changed path still opens the diff as a canvas tab",
-                page.evaluate(f"() => {SH}.tabs.map(t => t.id)") == ["consoles", diff_id],
-                f"got={page.evaluate(f'() => {SH}.tabs.map(t => t.id)')}",
+                page.evaluate(f"() => {TABS}.tabs.map(t => t.id)") == ["consoles", diff_id],
+                f"got={page.evaluate(f'() => {TABS}.tabs.map(t => t.id)')}",
             )
             # A diff editor exposes no readable renderSideBySide, so the two pane
             # classes are the oracle (KNOWLEDGE.md #311).

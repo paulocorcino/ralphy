@@ -63,6 +63,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT = os.path.join(REPO_ROOT, ".ralphy", "screenshots", "473-columns-2026-09-26.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
 # The columns are an Alpine component of their own (wb-consoles-tab.ts):
 # a check reads them through their root.
 COLS = "Alpine.$data(document.querySelector('[x-data=\"wbColumns\"]'))"
@@ -275,7 +276,7 @@ def stored(page):
 
 def boot(page, want=5):
     page.wait_for_selector("[x-data]", timeout=8000)
-    page.evaluate(f"() => {{ {SH}.activate('consoles'); }}")
+    page.evaluate(f"() => {{ {TABS}.activate('consoles'); }}")
     page.wait_for_function(
         "(n) => { const ws = [...document.querySelectorAll('#stage .session-window')];"
         " return ws.length === n && ws.every((w) => w.offsetParent !== null && w.clientWidth > 0); }",

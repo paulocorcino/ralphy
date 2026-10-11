@@ -55,6 +55,7 @@ PORT = 7482
 T.PORT = PORT
 T.BASE = BASE = f"http://127.0.0.1:{PORT}/"
 SH = T.SH
+TABS = "Alpine.store('tabs')"
 VIEW = {"width": 1600, "height": 1000}
 F_DET = {"left": 40, "top": 40, "width": 700, "height": 500}
 F_TWO = {"left": 800, "top": 40, "width": 600, "height": 500}
@@ -180,7 +181,7 @@ def wait_files(page, fx, slug, marker, want=1, timeout=8):
 
 def boot(page, console=True):
     page.wait_for_selector("[x-data]", timeout=8000)
-    page.evaluate(f"() => {{ {SH}.activate('consoles'); }}")
+    page.evaluate(f"() => {{ {TABS}.activate('consoles'); }}")
     if console:
         page.wait_for_function(
             "() => { const w = document.querySelector('#stage .session-window');"

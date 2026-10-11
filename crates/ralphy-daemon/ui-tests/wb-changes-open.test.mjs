@@ -42,22 +42,22 @@ function shell() {
   GLOBALS.forEach((k) => (globalThis[k] = window[k]));
   const flashed = [];
   state.$store.modals.flash = (msg) => flashed.push(msg);
-  state.$nextTick = (fn) => fn();
+  window.Alpine.nextTick = (fn) => fn();
   state.$store.projects.setOpen("owner/repo");
   state.$store.checkouts.checkouts = {};
-  state.syncViewer = () => {};
+  state.$store.tabs.syncViewer = () => {};
   return { state, observed, images, opened, emitted, flashed };
 }
 
 const tick = () => new Promise((r) => setImmediate(r));
 const P = "owner/repo";
-const fileTabs = (state) => state.tabs.filter((t) => String(t.id).startsWith("file:"));
-const diffTabs = (state) => state.tabs.filter((t) => String(t.id).startsWith("diff:"));
+const fileTabs = (state) => state.$store.tabs.tabs.filter((t) => String(t.id).startsWith("file:"));
+const diffTabs = (state) => state.$store.tabs.tabs.filter((t) => String(t.id).startsWith("diff:"));
 
 for (const status of ["modified", "untracked", "added"]) {
   test(`an image with status ${status} opens its working copy in the image pane`, async () => {
     const { state, observed, images, opened } = shell();
-    state.openDiff(P, { path: "img/logo.png", originalPath: null, status });
+    state.$store.tabs.openDiff(P, { path: "img/logo.png", originalPath: null, status });
     await tick();
     assert.equal(diffTabs(state).length, 0, "no diff tab");
     assert.deepEqual(
@@ -74,21 +74,21 @@ for (const status of ["modified", "untracked", "added"]) {
 test("a second click on the same image activates its tab", async () => {
   const { state } = shell();
   const entry = { path: "a.png", originalPath: null, status: "modified" };
-  state.openDiff(P, entry);
+  state.$store.tabs.openDiff(P, entry);
   await tick();
-  state.activate("consoles");
-  state.openDiff(P, entry);
+  state.$store.tabs.activate("consoles");
+  state.$store.tabs.openDiff(P, entry);
   await tick();
   assert.equal(fileTabs(state).length, 1);
-  assert.equal(state.active, "file:owner/repo:a.png");
+  assert.equal(state.$store.tabs.active, "file:owner/repo:a.png");
 });
 
 test("a deleted image is refused and opens no tab", async () => {
   const { state, observed, images, emitted, flashed } = shell();
-  const before = state.tabs.length;
-  state.openDiff(P, { path: "gone.png", originalPath: null, status: "deleted" });
+  const before = state.$store.tabs.tabs.length;
+  state.$store.tabs.openDiff(P, { path: "gone.png", originalPath: null, status: "deleted" });
   await tick();
-  assert.equal(state.tabs.length, before, "no tab");
+  assert.equal(state.$store.tabs.tabs.length, before, "no tab");
   assert.deepEqual(observed, []);
   assert.deepEqual(images, []);
   assert.deepEqual(emitted.map((e) => [e.action, e.reason]), [["open-refused", "deleted"]]);
@@ -97,10 +97,10 @@ test("a deleted image is refused and opens no tab", async () => {
 
 test("another binary is refused before a tab exists", async () => {
   const { state, observed, emitted, flashed } = shell();
-  const before = state.tabs.length;
-  state.openDiff(P, { path: "doc.pdf", originalPath: null, status: "modified" });
+  const before = state.$store.tabs.tabs.length;
+  state.$store.tabs.openDiff(P, { path: "doc.pdf", originalPath: null, status: "modified" });
   await tick();
-  assert.equal(state.tabs.length, before, "no tab");
+  assert.equal(state.$store.tabs.tabs.length, before, "no tab");
   assert.deepEqual(observed, []);
   assert.deepEqual(emitted.map((e) => [e.action, e.reason]), [["open-refused", "binary"]]);
   assert.deepEqual(flashed, ["Cannot open binary files."]);
@@ -108,7 +108,7 @@ test("another binary is refused before a tab exists", async () => {
 
 test("a text file still opens a diff tab", async () => {
   const { state, observed, opened } = shell();
-  state.openDiff(P, { path: "src/x.rs", originalPath: null, status: "modified" });
+  state.$store.tabs.openDiff(P, { path: "src/x.rs", originalPath: null, status: "modified" });
   await tick();
   assert.deepEqual(diffTabs(state).map((t) => t.id), ["diff:owner/repo:src/x.rs"]);
   assert.deepEqual(observed.map((o) => o.verb).sort(), ["blob.read", "file.read"]);
@@ -118,7 +118,7 @@ test("a text file still opens a diff tab", async () => {
 test("an image under a selected worktree is pinned to it", async () => {
   const { state, images } = shell();
   state.$store.checkouts.checkouts = { [P]: "wt-a" };
-  state.openDiff(P, { path: "a.png", originalPath: null, status: "modified" });
+  state.$store.tabs.openDiff(P, { path: "a.png", originalPath: null, status: "modified" });
   await tick();
   assert.deepEqual(fileTabs(state).map((t) => [t.id, t.checkout]), [["file:owner/repo@wt-a:a.png", "wt-a"]]);
   assert.equal(images[0].checkout, "wt-a");

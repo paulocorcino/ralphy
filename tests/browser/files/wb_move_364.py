@@ -63,6 +63,7 @@ FILES_TS = os.path.join(REPO_ROOT, "crates", "ralphy-daemon", "assets", "ui", "w
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "364-move-2026-07-30.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS_STORE = "Alpine.store('tabs')"
 # The Alpine store `modals`: the modal stack, the confirm, the prompt and the flash line.
 MODALS = "Alpine.store('modals')"
 FILES = "Alpine.$data(document.querySelector('[x-data=\"wbFiles\"]'))"
@@ -211,7 +212,7 @@ PICK_STATE = """
 """
 
 # The shell's file tabs (the Consoles tab has no path).
-TABS = f"() => {SH}.tabs.filter(t => t.path).map(t => ({{ id: t.id, path: t.path, kind: t.kind }}))"
+TABS = f"() => {TABS_STORE}.tabs.filter(t => t.path).map(t => ({{ id: t.id, path: t.path, kind: t.kind }}))"
 
 
 def open_menu_on(page, rel):
@@ -365,7 +366,7 @@ def main():
                 folder_menu["open"] and folder_menu["labels"].count("Move to…") == 1,
                 "labels={}".format(folder_menu["labels"]),
             )
-            page.evaluate(f"() => {SH}.hideMenu()")
+            page.evaluate(f"() => {TABS_STORE}.hideMenu()")
 
             # --- scenario f (opening half): a tab open on the file being moved --
             # Opened BEFORE the move so scenario b's move is the thing that
@@ -455,7 +456,7 @@ def main():
             )
             # A SAVE through that same tab: the viewer's `save` emits `rec.path`,
             # so a stale record would write to the root and recreate `a.txt`.
-            page.evaluate(f"(id) => {SH}.activate(id)", arg=f"file:{slug}:dst/a.txt")
+            page.evaluate(f"(id) => {TABS_STORE}.activate(id)", arg=f"file:{slug}:dst/a.txt")
             page.wait_for_selector(
                 f".viewer[data-tab-id='file:{slug}:dst/a.txt'] .monaco-editor", timeout=20000
             )
@@ -496,7 +497,7 @@ def main():
             )
             open_file(page, "src/inner.txt")
             page.wait_for_function(
-                f"() => {SH}.tabs.some(t => t.path === 'src/inner.txt')", timeout=15000
+                f"() => {TABS_STORE}.tabs.some(t => t.path === 'src/inner.txt')", timeout=15000
             )
             check("the menu opens over the folder `src`", open_menu_on(page, "src"))
             click_menu_row(page, "Move to…")
@@ -530,7 +531,7 @@ def main():
                 and inner_tab["id"] == f"file:{slug}:dst/src/inner.txt",
                 "tab={}".format(inner_tab),
             )
-            page.evaluate(f"(id) => {SH}.closeTab(id)", arg=f"file:{slug}:dst/src/inner.txt")
+            page.evaluate(f"(id) => {TABS_STORE}.closeTab(id)", arg=f"file:{slug}:dst/src/inner.txt")
 
             # --- scenario d: a move onto an existing name is refused ------------
             check("the menu opens over `dup.txt`", open_menu_on(page, "dup.txt"))
@@ -599,7 +600,7 @@ def main():
                 "Move to…" not in protected_menu["labels"],
                 "labels={}".format(protected_menu["labels"]),
             )
-            page.evaluate(f"() => {SH}.hideMenu()")
+            page.evaluate(f"() => {TABS_STORE}.hideMenu()")
             # The guard is the UI's; the DAEMON's refusal is still the boundary,
             # so both protected destinations are driven straight at `performMove`
             # — the picker can express neither, and neither may land.

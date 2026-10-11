@@ -5,8 +5,8 @@
    It owns the Wunderbaum tree and its `/ws/tree` socket, the level cache, the
    FILES search, the panel's states (loading, refused, stale, not live, the
    peer down), the tree's context menu, and the move and create gestures. A
-   file opens through the shell's `openTab` and a note through `openNote`: the
-   canvas tabs stay in `shell()` (ADR-0073 D2). The move picker is its own
+   file opens through `openTab` of the Alpine store `tabs` and a note through
+   its `openNote` (wb-tabs-store.ts). The move picker is its own
    component (wb-move-dialog.ts).
 
    It reaches `shell()` only through the names in its `uses` (ADR-0073 D4),
@@ -38,7 +38,7 @@ const menuHosts = new WeakSet<Element>();
 
 export function wbFiles() {
   // Every `shell()` member this component's code or markup reads or calls.
-  return component(["hideMenu", "renderMenu", "openNote", "openTab", "repathTabs", "tabs", "checkoutChipClick"], {
+  return component(["checkoutChipClick"], {
     // --- accordion --------------------------------------------------------
 
     // Wunderbaum copies source keys it does not define into `node.data`, so
@@ -855,7 +855,7 @@ export function wbFiles() {
         return i < 0 ? "" : p.slice(0, i);
       };
       const reads: Promise<void>[] = [];
-      for (const t of this.tabs) {
+      for (const t of this.$store.tabs.tabs) {
         if (t.project !== this.$store.projects.openSlug || dirOf(t.path) !== rel) continue;
         // A tab pinned to another checkout (#406) is not this nudge's.
         if ((t.checkout ?? null) !== (this._treeCheckout ?? null)) continue;
@@ -935,7 +935,7 @@ export function wbFiles() {
       this.treeNotLive = "";
       // A search describes THIS tree; the field stays open.
       this.resetFileSearch();
-      this.hideMenu();
+      this.$store.tabs.hideMenu();
     },
 
     // The FILES search (ADR-0036 amendment 2026-09-15). `seq` dates each
@@ -960,7 +960,7 @@ export function wbFiles() {
       // A note opens as a CARD, not as a tab (ADR-0064 §11): on the stage if
       // it is not there yet, and by a jump if it is.
       if (ftype === "note") {
-        this.openNote(path);
+        this.$store.tabs.openNote(path);
         return;
       }
       // No tree is mounted without an open project.
@@ -976,7 +976,7 @@ export function wbFiles() {
       // Out of a CONTENT search: the tab lands on the first occurrence
       // (ADR-0036 amendment 2026-09-15).
       const find = this.fileSearchFindTerm();
-      this.openTab({ project: slug, path, title: node.title, ftype, find });
+      this.$store.tabs.openTab({ project: slug, path, title: node.title, ftype, find });
     },
 
     // The term to land on: the live query, only while the CONTENT filter is on.
@@ -1031,7 +1031,7 @@ export function wbFiles() {
         node && { sep: true as const },
         node && { label: "Delete", icon: "bi-trash", danger: true, run: () => window.WB.emit("delete", this.nodeDetail(node)) },
       ].filter(Boolean);
-      this.renderMenu(x, y, items);
+      this.$store.tabs.renderMenu(x, y, items);
     },
 
     // --- the backend seam -------------------------------------------------
@@ -1142,7 +1142,7 @@ export function wbFiles() {
       }
       await this.onTreeDirty(parentRel(from));
       await this.onTreeDirty(parentRel(to));
-      this.repathTabs(from, to);
+      this.$store.tabs.repathTabs(from, to);
       // LAST, so its `setActive()` is the final write.
       await this.revealRel(to);
     },

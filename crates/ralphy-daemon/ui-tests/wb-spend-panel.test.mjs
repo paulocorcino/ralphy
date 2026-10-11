@@ -92,10 +92,10 @@ test("each workbench event reaches the Spend tab", () => {
   fire("workbench:spend-shown");
   assert.deepEqual(calls, ["refresh", "refresh"]);
   // The open panels read again, and a closed Spend tab reads nothing.
-  shell.tabs = shell.tabs.filter((t) => t.id !== "spend");
+  shell.$store.tabs.tabs = shell.$store.tabs.tabs.filter((t) => t.id !== "spend");
   fire("workbench:panels-reread");
   assert.deepEqual(calls, ["refresh", "refresh"]);
-  shell.tabs.push({ id: "spend", kind: "spend" });
+  shell.$store.tabs.tabs.push({ id: "spend", kind: "spend" });
   fire("workbench:panels-reread");
   assert.deepEqual(calls, ["refresh", "refresh", "load"]);
 });

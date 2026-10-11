@@ -46,6 +46,7 @@ CHILD = os.path.join(TARGET, "session_test_child.exe" if os.name == "nt" else "s
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = "334-console-pairing-2026-07-27.png"
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
 
 results = []
 
@@ -326,7 +327,7 @@ def probe_page(ctx):
     page = ctx.new_page()
     page.goto(BASE)
     page.wait_for_selector("[x-data]", timeout=8000)
-    page.evaluate(f"() => {{ {SH}.active = 'consoles'; }}")
+    page.evaluate(f"() => {{ {TABS}.active = 'consoles'; }}")
     page.wait_for_timeout(600)
     return page
 
@@ -336,7 +337,7 @@ def desk_page(ctx, settle=2500):
     page = ctx.new_page()
     page.goto(BASE)
     page.wait_for_selector("[x-data]", timeout=8000)
-    page.evaluate(f"() => {{ {SH}.active = 'consoles'; }}")
+    page.evaluate(f"() => {{ {TABS}.active = 'consoles'; }}")
     page.wait_for_timeout(settle)
     return page
 
@@ -685,7 +686,7 @@ def main():
             # --- scenario 6: F5 reattaches without evicting anything ---------
             page_a.reload()
             page_a.wait_for_selector("[x-data]", timeout=8000)
-            page_a.evaluate(f"() => {{ {SH}.active = 'consoles'; }}")
+            page_a.evaluate(f"() => {{ {TABS}.active = 'consoles'; }}")
             page_a.wait_for_timeout(6000)
             check(
                 "a reloaded A comes back with exactly one window",

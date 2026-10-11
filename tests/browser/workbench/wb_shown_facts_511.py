@@ -43,6 +43,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
 DATE = "2026-09-30"
 
 results = []
@@ -216,7 +217,7 @@ def main():
 
             # --- scenario 4: unsaved work holds the reload back ---------------
             page.evaluate(
-                "([project]) => " f"{SH}.openTab({{ project, path: 'README.md', title: 'README.md', ftype: 'code' }})",
+                "([project]) => " f"{TABS}.openTab({{ project, path: 'README.md', title: 'README.md', ftype: 'code' }})",
                 [slug],
             )
             page.wait_for_function(
@@ -288,7 +289,7 @@ def main():
             page5.wait_for_selector("[x-data]", timeout=15000)
             page5.wait_for_timeout(1500)
             page5.evaluate(
-                "([project]) => " f"{SH}.openTab({{ project, path: 'README.md', title: 'README.md', ftype: 'code' }})",
+                "([project]) => " f"{TABS}.openTab({{ project, path: 'README.md', title: 'README.md', ftype: 'code' }})",
                 [slug],
             )
             page5.wait_for_function(

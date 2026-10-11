@@ -42,6 +42,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 PORT = 7433
 BASE = f"http://127.0.0.1:{PORT}/"
 SH = base.SH
+TABS = "Alpine.store('tabs')"
 # The selected checkouts are the Alpine store `checkouts` (wb-checkouts-store.ts).
 CHECKOUTS = "Alpine.store('checkouts')"
 
@@ -110,7 +111,7 @@ def device(browser, width=1400, height=900):
     page = ctx.new_page()
     page.goto(BASE)
     page.wait_for_selector("[x-data]", timeout=8000)
-    page.evaluate(f"() => {{ {SH}.active = 'consoles'; }}")
+    page.evaluate(f"() => {{ {TABS}.active = 'consoles'; }}")
     return ctx, page
 
 

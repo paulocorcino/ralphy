@@ -44,6 +44,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
 # The Security dialog's own component, nested in shell().
 SEC = "Alpine.$data(document.querySelector('.security-dialog'))"
 
@@ -191,7 +192,7 @@ def main():
 
             # ── 3. Monaco + its blob: worker ──────────────────────────────
             page.evaluate(
-                "([project, path, title]) => " f"{SH}.openTab({{ project, path, title, ftype: 'code' }})",
+                "([project, path, title]) => " f"{TABS}.openTab({{ project, path, title, ftype: 'code' }})",
                 [slug, "src/main.rs", "main.rs"],
             )
             page.wait_for_function(
@@ -203,7 +204,7 @@ def main():
 
             # ── 4. markdown + mermaid ─────────────────────────────────────
             page.evaluate(
-                "([project, path, title]) => " f"{SH}.openTab({{ project, path, title, ftype: 'markdown' }})",
+                "([project, path, title]) => " f"{TABS}.openTab({{ project, path, title, ftype: 'markdown' }})",
                 [slug, "NOTES.md", "NOTES.md"],
             )
             page.wait_for_timeout(3000)

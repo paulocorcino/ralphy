@@ -54,6 +54,7 @@ EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt"
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "338-frame-chrome-2026-07-27.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
 # The Consoles tab's menus and the columns are Alpine components of their
 # own (wb-consoles-tab.ts): a check reads them through their root.
 MENUS = "Alpine.$data(document.querySelector('[x-data=\"wbConsoleMenus\"]'))"
@@ -230,7 +231,7 @@ def desk_page(ctx, viewport):
     page.set_viewport_size(viewport)
     page.goto(BASE)
     page.wait_for_selector("[x-data]", timeout=8000)
-    page.evaluate(f"() => {{ {SH}.active = 'consoles'; }}")
+    page.evaluate(f"() => {{ {TABS}.active = 'consoles'; }}")
     page.wait_for_timeout(1800)
     return page
 
@@ -628,7 +629,7 @@ def main():
 
             page.reload()
             page.wait_for_selector("[x-data]", timeout=8000)
-            page.evaluate(f"() => {{ {SH}.active = 'consoles'; }}")
+            page.evaluate(f"() => {{ {TABS}.active = 'consoles'; }}")
             page.wait_for_timeout(1800)
             settle(page, 2)
             back = index_of(page, "w-fixture-a")

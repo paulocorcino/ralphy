@@ -66,10 +66,11 @@ const PROMPT_GH_ISSUE_VIEW: usize = 20;
 /// store `connection`, and the account menu and the login gate to the
 /// components `wbAccount` and `wbLogin` (#621); 1261 since the modal stack,
 /// the confirm, the prompt and the flash line moved to the Alpine store
-/// `modals` (#621).
+/// `modals` (#621); 714 since the canvas tabs, the slot, the split and the
+/// tab menu moved to the Alpine store `tabs` (#621).
 /// Its shell-only types are in `wb-shell-types.d.ts` and it imports them on
 /// one line (#653).
-const APP_TS_LINES: usize = 1261;
+const APP_TS_LINES: usize = 714;
 /// Lines of `crates/ralphy-daemon/assets/ui/wb-console.ts`, the console
 /// factory (ADR-0073 D8, which starts this ratchet with the first fold move).
 /// 5842 since ADR-0075 phase 5 moved its pure folds, its GPU budget and its

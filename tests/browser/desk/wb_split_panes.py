@@ -48,6 +48,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
 VIEW_KEY = "wb.view.v1"
 
 # Long enough to scroll: the mirror scenario jumps one side to the end and
@@ -142,7 +143,7 @@ def launch(daemon_dir):
 
 def open_file(page, slug, path):
     page.evaluate(
-        "([project, path]) => " f"{SH}.openTab({{ project, path, title: path, ftype: 'code' }})",
+        "([project, path]) => " f"{TABS}.openTab({{ project, path, title: path, ftype: 'code' }})",
         [slug, path],
     )
     page.wait_for_function(
@@ -219,7 +220,7 @@ def main():
             # --- scenario 1: two tabs, one pane ---------------------------------
             open_file(page, slug, "a.js")
             open_file(page, slug, "b.js")
-            page.evaluate(f"() => {SH}.activate('{a_id}')")
+            page.evaluate(f"() => {TABS}.activate('{a_id}')")
             page.wait_for_timeout(200)
             check("two code tabs open single: one visible pane", visible_panes(page) == [a_id], f"got={visible_panes(page)}")
             check("…and the canvas is not split", not is_split(page))
@@ -253,7 +254,7 @@ def main():
             page.click(".tab[title='b.js']")
             page.wait_for_timeout(300)
             check("activating the pinned tab keeps both panes", sorted(visible_panes(page)) == sorted([a_id, b_id]), f"got={visible_panes(page)}")
-            check("…and B stays pinned", page.evaluate(f"() => {SH}.slot?.kind === 'pin' && {SH}.slot.id === '{b_id}'"))
+            check("…and B stays pinned", page.evaluate(f"() => {TABS}.slot?.kind === 'pin' && {TABS}.slot.id === '{b_id}'"))
             focused_in = page.evaluate(
                 "() => { const el = document.activeElement; const pane = el && el.closest('.viewer'); return pane ? pane.dataset.tabId : null; }"
             )
@@ -261,8 +262,8 @@ def main():
             check("…and the store names B as the pin", (stored_split(page) or {}).get("path") == "b.js", f"got={stored_split(page)}")
 
             # --- scenario 4: mirror -----------------------------------------------
-            page.evaluate(f"() => {SH}.clearSlot()")
-            page.evaluate(f"() => {SH}.activate('{a_id}')")
+            page.evaluate(f"() => {TABS}.clearSlot()")
+            page.evaluate(f"() => {TABS}.activate('{a_id}')")
             page.wait_for_timeout(200)
             models_before = model_count(page)
             editors_before = editor_count(page)
@@ -316,17 +317,17 @@ def main():
             check("the toolbar button reads Mirror again", page.evaluate(f"() => document.querySelector(\"[data-tab-id='{a_id}'] [data-act='mirror']\").title") == "Mirror")
 
             # --- scenario 6: close the pinned tab ----------------------------------
-            page.evaluate(f"() => {SH}.pinTab('{b_id}')")
+            page.evaluate(f"() => {TABS}.pinTab('{b_id}')")
             page.wait_for_function("() => document.getElementById('viewers').classList.contains('split')", timeout=5000)
-            page.evaluate(f"() => {SH}.closeTab('{b_id}')")
+            page.evaluate(f"() => {TABS}.closeTab('{b_id}')")
             page.wait_for_function("() => !document.getElementById('viewers').classList.contains('split')", timeout=5000)
             check("closing the pinned tab returns to one pane", visible_panes(page) == [a_id], f"got={visible_panes(page)}")
             check("…and the store says so, explicitly", stored_split(page) is None, f"got={stored_split(page)}")
 
             # --- scenario 7: a reload restores the pin and the ratio ---------------
             open_file(page, slug, "b.js")
-            page.evaluate(f"() => {SH}.activate('{a_id}')")
-            page.evaluate(f"() => {SH}.pinTab('{b_id}')")
+            page.evaluate(f"() => {TABS}.activate('{a_id}')")
+            page.evaluate(f"() => {TABS}.pinTab('{b_id}')")
             page.wait_for_function("() => document.getElementById('viewers').classList.contains('split')", timeout=5000)
             page.evaluate(
                 "() => document.dispatchEvent(new CustomEvent('workbench:split-ratio', { detail: { ratio: 0.35 } }))"
@@ -339,7 +340,7 @@ def main():
             # `restoreView` holds the store's write suppressor for 3s after a
             # reload (a refused read must not rewrite the record); the writes
             # scenarios 8-9 assert on come after it.
-            page.wait_for_function(f"() => {SH}._restoring === false", timeout=10000)
+            page.wait_for_function(f"() => {TABS}._restoring === false", timeout=10000)
             check("after a reload the two panes are back", sorted(visible_panes(page)) == sorted([a_id, b_id]), f"got={visible_panes(page)}")
             check("…B is still the pin", page.evaluate("() => document.querySelector('.tab[title=\"b.js\"]').classList.contains('pinned')"))
             ratio_var = page.evaluate("() => document.getElementById('viewers').style.getPropertyValue('--wb-split')")
@@ -378,7 +379,7 @@ def main():
             popup.wait_for_load_state()
             popup.wait_for_selector(".viewer", timeout=15000)
             page.wait_for_function("() => !document.getElementById('viewers').classList.contains('split')", timeout=5000)
-            check("detaching the pinned tab clears the slot", page.evaluate(f"() => {SH}.slot") is None)
+            check("detaching the pinned tab clears the slot", page.evaluate(f"() => {TABS}.slot") is None)
             check("…the popup has no divider and no mirror button", popup.evaluate("() => !document.querySelector('.viewers-divider') && !document.querySelector('[data-act=\"mirror\"]')"))
             popup.close()
 

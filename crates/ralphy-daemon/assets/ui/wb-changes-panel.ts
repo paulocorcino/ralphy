@@ -25,7 +25,7 @@ import type { ChangeEntry, Read, Subscription, Sync, Timer } from "./wb-shell-ty
 
 export function wbChanges() {
   // Every `shell()` member this component's code or markup reads or calls.
-  return component(["sideOpen", "sideView", "checkoutChipClick", "openDiff"], {
+  return component(["sideOpen", "sideView", "checkoutChipClick"], {
     // The slow backstop: the `/ws/tree` nudge (#310) only reports what a RUN
     // did; an operator's own editor produces no event. Two git subprocesses per
     // minute, only while the panel is open and the tab in front.

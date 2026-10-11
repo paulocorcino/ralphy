@@ -39,6 +39,7 @@ PORT = 7521
 T.PORT = PORT
 T.BASE = BASE = f"http://127.0.0.1:{PORT}/"
 SH = T.SH
+TABS = "Alpine.store('tabs')"
 SHOT_DIR = os.path.join(T.REPO_ROOT, ".ralphy", "screenshots")
 VIEW = {"width": 1600, "height": 1000}
 
@@ -127,7 +128,7 @@ def main():
 
             # --- P: the Markdown preview -------------------------------------
             page.evaluate(
-                "([project, path]) => " f"{SH}.openTab({{ project, path, title: path, ftype: 'markdown' }})",
+                "([project, path]) => " f"{TABS}.openTab({{ project, path, title: path, ftype: 'markdown' }})",
                 [slug, "DIAGRAMS.md"],
             )
             try:
@@ -145,7 +146,7 @@ def main():
             page.screenshot(path=os.path.join(SHOT_DIR, "521-522-markdown-preview.png"))
 
             # --- N: the note card --------------------------------------------
-            page.evaluate(f"() => {{ {SH}.activate('consoles'); }}")
+            page.evaluate(f"() => {{ {TABS}.activate('consoles'); }}")
             wrote = page.evaluate(
                 """([repo, path, markdown]) => WBDaemon.write('note.write', { repo, path, markdown })""",
                 [slug, "diagrams.note", "---\ncolor: sand\n---\n" + TEXT],
