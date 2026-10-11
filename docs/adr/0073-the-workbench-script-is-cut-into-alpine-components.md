@@ -518,15 +518,24 @@ names of each domain, before any code moves. It was measured on `823cc84c`:
 
 5. **One door for operator messages, with two drawings.** An **operator
    message** (CONTEXT.md) is a confirm, a notice, a toast or a flash. One
-   module, `wb-messages.ts`, owns all four, and every module calls only it.
-   Each entry module builds it with `createMessages(window, document,
-   { shell })`. `main.ts` passes `() => window.getShell?.() ?? null`, and the
-   popup passes `() => null`. Inside, the door draws with the shell's Alpine
-   modal when the shell exists, and with the DOM dialog in the detached-fence
-   popup, which has no shell. The DOM dialog uses the shell's classes, so the
-   operator sees no change. The console's `askConfirm`, `askNotice`, `toast`
-   and `dismissToast` members stay, and pass the call to the door. No
-   `wb-*.ts` module names `_flashAction` after this cut.
+   module, `wb-messages.ts`, owns all four. Every module outside `shell()`
+   calls only it. Each entry module builds it with `createMessages(window,
+   document, { shell })`. `main.ts` passes `() => window.getShell?.() ?? null`,
+   and the popup passes `() => null`. The door's `askConfirm`, `askNotice` and
+   `toast` always draw the DOM dialog and the DOM toast, in every page. They
+   use the shell's classes, so the operator sees no change, and the browser
+   checks click `.wb-confirm`. `askInShell` draws the shell's Alpine modal, or
+   returns `null` when there is no shell: it is for the callers that used
+   `getShell().askConfirm`, and each keeps its own fallback. `flash` is the
+   door's, and it goes to the shell's line, or nowhere. The console's
+   `askConfirm`, `askNotice`, `toast` and `dismissToast` members stay, and pass
+   the call to the door. No `wb-*.ts` module names `_flashAction` after this
+   cut.
+
+   Known limit: the four Alpine components (`wb-consoles-tab.ts`,
+   `wb-files.ts`, `wb-hosts-dialog.ts`, `wb-settings-dialog.ts`) still call the
+   shell's public `flash` and `askConfirm` through `uses`, not the door, because
+   Alpine builds a component with no arguments.
 
 6. **The `WBConsole` and `WBNotes` member lists do not change.** Browser
    checks call `WBConsole.notes`, `saveNotes`, `focusWin`, `focusedId`,
