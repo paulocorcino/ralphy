@@ -4074,6 +4074,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-stage-chrome.js",
                 "wb-desk-popups.js",
                 "wb-stage-fences.js",
+                "wb-stage-window.js",
                 "wb-desk.js",
                 "wb-console.js",
                 "wb-messages.js",
@@ -4939,6 +4940,7 @@ fn shell_draws_fences_below_the_windows() {
     // the fence list, the console rename in the title.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
+        include_str!("../assets/ui/wb-stage-window.ts"),
         include_str!("../assets/ui/wb-stage-fence-list.ts"),
         include_str!("../assets/ui/wb-stage-fences.ts"),
         include_str!("../assets/ui/wb-console-title.ts"),
@@ -5360,6 +5362,7 @@ fn shell_locks_consoles_and_fences() {
     // button and gestures in the fences.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
+        include_str!("../assets/ui/wb-stage-window.ts"),
         include_str!("../assets/ui/wb-stage-fence-list.ts"),
         include_str!("../assets/ui/wb-stage-chrome.ts"),
         include_str!("../assets/ui/wb-stage-fences.ts"),
@@ -6619,6 +6622,7 @@ fn shell_pins_the_frame_chrome() {
     let js = squeeze(
         &[
             include_str!("../assets/ui/wb-console.ts"),
+            include_str!("../assets/ui/wb-stage-window.ts"),
             include_str!("../assets/ui/wb-stage-view.ts"),
         ]
         .concat(),
@@ -6636,7 +6640,7 @@ fn shell_pins_the_frame_chrome() {
     ] {
         assert!(
             js.contains(pin),
-            "wb-console.ts or wb-stage-view.ts must keep the #338 pin {pin}"
+            "wb-console.ts, wb-stage-window.ts or wb-stage-view.ts must keep the #338 pin {pin}"
         );
     }
     // The POSITIVE half of the `reveal()` change, in either operand order:
@@ -6688,6 +6692,7 @@ fn a_console_can_take_the_whole_screen() {
     // the browser's event in the view.
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
+        include_str!("../assets/ui/wb-stage-window.ts"),
         include_str!("../assets/ui/wb-stage-chrome.ts"),
         include_str!("../assets/ui/wb-stage-view.ts"),
     ]
