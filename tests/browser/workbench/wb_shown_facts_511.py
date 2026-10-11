@@ -230,7 +230,7 @@ def main():
             check("the edit is unsaved", page.evaluate("() => window.WBViewer.anyDirty()"))
             loads = {"n": 0}
             page.on("framenavigated", lambda f: loads.__setitem__("n", loads["n"] + 1) if f == page.main_frame else None)
-            page.evaluate(f"() => {{ {SH}.pageBuild = 'old-build'; }}")
+            page.evaluate(f"() => {{ Alpine.store('connection').pageBuild = 'old-build'; }}")
             notice = page.locator(".build-notice")
             try:
                 notice.wait_for(state="visible", timeout=8000)
@@ -246,7 +246,7 @@ def main():
             check("…and the page does not reload", loads["n"] == 0, f"navigations={loads['n']}")
             check(
                 "…and the change-set writes are locked",
-                page.evaluate(f"() => {SH}.writeLocked()"),
+                page.evaluate(f"() => Alpine.store('connection').writeLocked()"),
             )
             shot(page, "build-notice")
             ctx.close()
@@ -309,7 +309,7 @@ def main():
             check("the detached window holds an unsaved edit", pop.evaluate("() => window.WBViewer.anyDirty()"))
             loads5 = {"n": 0}
             page5.on("framenavigated", lambda f: loads5.__setitem__("n", loads5["n"] + 1) if f == page5.main_frame else None)
-            page5.evaluate(f"() => {{ {SH}.pageBuild = 'old-build'; }}")
+            page5.evaluate(f"() => {{ Alpine.store('connection').pageBuild = 'old-build'; }}")
             notice5 = page5.locator(".build-notice")
             try:
                 notice5.wait_for(state="visible", timeout=8000)

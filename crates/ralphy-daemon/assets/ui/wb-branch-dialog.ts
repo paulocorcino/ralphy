@@ -22,7 +22,7 @@ import type { CheckoutRow, Project } from "./wb-shell-types.d.ts";
 
 export function wbBranchDialog() {
   // Every `shell()` member this component's code or markup reads or calls.
-  return component(["scrim", "flash", "askConfirm", "writeLocked", "writeLockReason", "liveSessions"], {
+  return component(["scrim", "flash", "askConfirm", "liveSessions"], {
     // The branch chip opens a filtered picker; switching or creating goes
     // through the daemon's `branch.*` verbs. The header reflects the pick
     // optimistically.
@@ -145,8 +145,8 @@ export function wbBranchDialog() {
     // `p.branch` is the primary's and must not move, so no optimistic update —
     // the chip converges from `_mutateBranch`'s forced `worktree.list` re-read.
     switchBranch(name: string) {
-      if (this.writeLocked()) {
-        this.flash(this.writeLockReason());
+      if (this.$store.connection.writeLocked()) {
+        this.flash(this.$store.connection.writeLockReason());
         this.closeBranchModal();
         return;
       }
@@ -167,8 +167,8 @@ export function wbBranchDialog() {
 
     createBranch() {
       if (!this.canCreateBranch()) return;
-      if (this.writeLocked()) {
-        this.flash(this.writeLockReason());
+      if (this.$store.connection.writeLocked()) {
+        this.flash(this.$store.connection.writeLockReason());
         return;
       }
       const name = this.branchModal.filter.trim();

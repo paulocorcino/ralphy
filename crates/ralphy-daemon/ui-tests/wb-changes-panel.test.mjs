@@ -304,10 +304,10 @@ test("writes are locked while the change set is not current", async () => {
   const { shell, changes } = observedPage([CHANGES_OK, { status: "error", message: "git exited 128" }]);
   shell.$store.runs.runsByProject["o/r"] = [];
   await changes.loadChanges("o/r");
-  assert.equal(shell.writeLocked(), false, "a good read locks nothing");
+  assert.equal(shell.$store.connection.writeLocked(), false, "a good read locks nothing");
   await changes.loadChanges("o/r");
-  assert.equal(shell.writeLocked(), true);
-  assert.match(shell.writeLockReason(), /not current/);
+  assert.equal(shell.$store.connection.writeLocked(), true);
+  assert.match(shell.$store.connection.writeLockReason(), /not current/);
 });
 
 // NEGATIVE CONTROL: two good reads lock nothing.
@@ -316,7 +316,7 @@ test("two good change-set reads lock no write", async () => {
   shell.$store.runs.runsByProject["o/r"] = [];
   await changes.loadChanges("o/r");
   await changes.loadChanges("o/r");
-  assert.equal(shell.writeLocked(), false);
+  assert.equal(shell.$store.connection.writeLocked(), false);
 });
 
 test("a failed first change-set or branch read says why", async () => {
@@ -342,7 +342,7 @@ test("every change-set write is refused while the change set is not current", as
   shell.$store.runs.runsByProject["o/r"] = [];
   await state.loadChanges("o/r");
   await state.loadChanges("o/r");
-  assert.equal(shell.writeLocked(), true);
+  assert.equal(shell.$store.connection.writeLocked(), true);
   verbs.length = 0;
   shell.askConfirm = async () => true;
   state.commitMsgSlug = "o/r";
@@ -382,7 +382,7 @@ test("every change-set write reaches the daemon while the change set is current"
     shell._flashAction = () => {};
     shell.$store.runs.runsByProject["o/r"] = [];
     await state.loadChanges("o/r");
-    assert.equal(shell.writeLocked(), false, name);
+    assert.equal(shell.$store.connection.writeLocked(), false, name);
     verbs.length = 0;
     shell.askConfirm = async () => true;
     state.commitMsgSlug = "o/r";

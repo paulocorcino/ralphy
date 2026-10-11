@@ -22,7 +22,7 @@ import type { Run, RunIssue } from "./wb-shell-types.d.ts";
 
 export function wbRuns() {
   // Every `shell()` member this component's code or markup reads or calls.
-  return component(["runsOpen", "toggleRuns", "nowMs", "runsActionMsg", "flash", "askConfirm", "scrim", "agents", "verbLocked", "verbTitle", "verbRequestedText", "kanbanOpen", "toggleKanban"], {
+  return component(["runsOpen", "toggleRuns", "nowMs", "runsActionMsg", "flash", "askConfirm", "scrim", "agents", "kanbanOpen", "toggleKanban"], {
     // The trail node the operator arrived at from the board (#301): a marker,
     // not a selection.
     trailFocus: null as number | null,
@@ -327,7 +327,7 @@ export function wbRuns() {
     fireVerb(verb: string) {
       this._resetVerbSurface();
       window.WB.emit("command", { project: this.$store.projects.openSlug, verb });
-      this.flash(this.verbRequestedText(verb));
+      this.flash(this.$store.connection.verbRequestedText(verb));
     },
     // From wb-daemon.ts on a TERMINAL frame only; an empty note is a no-op.
     runVerbFailed(msg: string) {

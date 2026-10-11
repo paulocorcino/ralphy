@@ -6,14 +6,15 @@
    and their read state, the change count, the remote acts (fetch, pull,
    push), the rows and their acts (stage, unstage, discard), the commit box,
    the refusal line, the run-completion nudge socket and the slow backstop.
-   The write locks stay in `shell()`: they also read the runs and the page
-   build, and the board and the Runs panel ask them too.
+   The write locks are the Alpine store `connection`'s (wb-connection-store.ts):
+   they also read the runs and the page build, and the board and the Runs
+   panel ask them too. This view tells the store whether its reads are
+   current (`_reportCurrent`).
 
    It reaches `shell()` only through the names in its `uses` (ADR-0073 D4),
    and the page reaches it only through `workbench:*` events, which `init()`
-   hears. Two of them are asks that it answers during the send: the change
-   counts (the project rows) and whether the change set is current (the
-   write lock).
+   hears. One of them is an ask that it answers during the send: the change
+   counts (the project rows).
 
    `main.ts` registers it (ADR-0075 D5).
    --------------------------------------------------------------------------- */
@@ -24,7 +25,7 @@ import type { ChangeEntry, Read, Subscription, Sync, Timer } from "./wb-shell-ty
 
 export function wbChanges() {
   // Every `shell()` member this component's code or markup reads or calls.
-  return component(["sideOpen", "sideView", "checkoutChipClick", "openDiff", "tabHidden", "fmtClock", "flash", "askConfirm", "writeLocked", "writeLockReason"], {
+  return component(["sideOpen", "sideView", "checkoutChipClick", "openDiff", "flash", "askConfirm"], {
     // The slow backstop: the `/ws/tree` nudge (#310) only reports what a RUN
     // did; an operator's own editor produces no event. Two git subprocesses per
     // minute, only while the panel is open and the tab in front.
@@ -103,6 +104,7 @@ export function wbChanges() {
         this.changesUnstaged[slug] = folded.unstaged;
         this.changesReadError[slug] = "";
         this.changesRead[slug] = WBFail.readFold(this.changesRead[slug], { ok: true, value: true, at: Date.now() });
+        this._reportCurrent(slug);
       } catch {
         if (seq === this._changesSeq) {
           this.changesFailed(slug, "the daemon did not answer");
@@ -115,8 +117,9 @@ export function wbChanges() {
     changesFailed(slug: string, reason: string) {
       const read = WBFail.readFold(this.changesRead[slug], { ok: false, reason, at: Date.now() });
       this.changesRead[slug] = read;
+      this._reportCurrent(slug);
       if (read.goodAt) {
-        this.changesReadError[slug] = WBFail.notCurrent(read, (ms) => this.fmtClock(ms));
+        this.changesReadError[slug] = WBFail.notCurrent(read, (ms) => this.$store.connection.fmtClock(ms));
         return;
       }
       this.changesCount[slug] = null;
@@ -144,6 +147,7 @@ export function wbChanges() {
         const sync = WBChanges.foldSync(reply);
         this.syncByProject[slug] = sync;
         this.syncRead[slug] = WBFail.readFold(this.syncRead[slug], { ok: true, value: true, at: Date.now() });
+        this._reportCurrent(slug);
         // Under a selected worktree the read is THAT tree's HEAD, and
         // `p.branch` is the primary's (#407), so only a primary read moves it.
         const branch = WBChanges.headBranch(sync);
@@ -162,9 +166,10 @@ export function wbChanges() {
     syncFailed(slug: string, reason: string) {
       const read = WBFail.readFold(this.syncRead[slug], { ok: false, reason, at: Date.now() });
       this.syncRead[slug] = read;
+      this._reportCurrent(slug);
       const prev = this.syncByProject[slug];
       if (read.goodAt && prev && prev.state !== "unknown") {
-        this.syncByProject[slug] = { ...prev, note: WBFail.notCurrent(read, (ms) => this.fmtClock(ms)) };
+        this.syncByProject[slug] = { ...prev, note: WBFail.notCurrent(read, (ms) => this.$store.connection.fmtClock(ms)) };
         return;
       }
       this.syncByProject[slug] = { ...WBChanges.foldSync(null), note: `Could not read the branch: ${reason}` };
@@ -173,7 +178,7 @@ export function wbChanges() {
     // Fetch from the upstream — the operator's act, never a timer's. A refusal
     // is `{status:"error"}` whose message IS the core's prose.
     async syncFetch(slug: string) {
-      if (this.syncBusy || this.writeLocked()) return;
+      if (this.syncBusy || this.$store.connection.writeLocked()) return;
       this.syncBusy = "fetch";
       this.changesError = "";
       try {
@@ -198,7 +203,7 @@ export function wbChanges() {
     // Fast-forward from the upstream. A successful pull moves the working tree,
     // so the change set is reloaded beside the counts.
     async syncPull(slug: string) {
-      if (this.syncBusy || this.writeLocked()) return;
+      if (this.syncBusy || this.$store.connection.writeLocked()) return;
       this.syncBusy = "pull";
       this.changesError = "";
       let moved = false;
@@ -228,7 +233,7 @@ export function wbChanges() {
     // prose. No credential UI, by decision. Push moves no file, so only the
     // counts reload.
     async syncPush(slug: string) {
-      if (this.syncBusy || this.writeLocked()) return;
+      if (this.syncBusy || this.$store.connection.writeLocked()) return;
       this.syncBusy = "push";
       this.changesError = "";
       try {
@@ -255,7 +260,7 @@ export function wbChanges() {
     mountChangesSub() {
       if (!window.WBDaemon?.subscribeChanges || !this.$store.projects.openSlug) return;
       this._changesSub = window.WBDaemon.subscribeChanges(this.$store.projects.openSlug, (frame) => {
-        if (this.tabHidden()) return;
+        if (this.$store.connection.tabHidden()) return;
         // Optional-chained: a frame without wb-changes.ts must not throw
         // inside `onmessage`.
         if (WBChanges?.shouldReload?.(frame, this.$store.projects.openSlug)) {
@@ -300,7 +305,7 @@ export function wbChanges() {
     // --- the rows and the commit box -----------------------------------------
     // `all` is the group head's button, which acts on every row of the group.
     rowActTitle(verb: string, all = false) {
-      const locked = this.writeLockReason();
+      const locked = this.$store.connection.writeLockReason();
       if (locked) return locked;
       if (verb === "stage") return all ? "Stage all changes" : "Stage changes";
       if (verb === "discard") return "Discard changes";
@@ -310,7 +315,7 @@ export function wbChanges() {
     pushTitle() {
       return (
         this.syncBusyTitle("push") ||
-        this.writeLockReason() ||
+        this.$store.connection.writeLockReason() ||
         this.pushAct().title
       );
     },
@@ -338,7 +343,7 @@ export function wbChanges() {
       return WBChanges.groupPaths(list, withOriginal);
     },
     commitTitle() {
-      const locked = this.writeLockReason();
+      const locked = this.$store.connection.writeLockReason();
       if (locked) return locked;
       if (!(this.changesStaged[this.$store.projects.openKey()] || []).length) {
         return "Stage a change first";
@@ -348,7 +353,7 @@ export function wbChanges() {
     },
     canCommit() {
       return (
-        !this.writeLocked() &&
+        !this.$store.connection.writeLocked() &&
         this.commitMsgSlug === this.$store.projects.openSlug &&
         !!this.commitMsg.trim() &&
         !!(this.changesStaged[this.$store.projects.openKey()] || []).length
@@ -358,7 +363,7 @@ export function wbChanges() {
     // Stage / unstage / commit, each in `syncFetch`'s shape, re-reading the
     // list on EVERY path. The list is never moved optimistically.
     async stagePaths(slug: string, paths: string[]) {
-      if (!slug || !paths || !paths.length || this.writeLocked()) return;
+      if (!slug || !paths || !paths.length || this.$store.connection.writeLocked()) return;
       this.changesError = "";
       try {
         const reply = await window.WBDaemon.observe(
@@ -379,7 +384,7 @@ export function wbChanges() {
     },
 
     async unstagePaths(slug: string, paths: string[]) {
-      if (!slug || !paths || !paths.length || this.writeLocked()) return;
+      if (!slug || !paths || !paths.length || this.$store.connection.writeLocked()) return;
       this.changesError = "";
       try {
         const reply = await window.WBDaemon.observe(
@@ -401,7 +406,7 @@ export function wbChanges() {
     // Discard ONE row's changes (#319) — the only irreversible act here, so the
     // only one confirmed (`discardConfirm`). A cancel makes NO daemon call.
     async discardRow(slug: string, entry: ChangeEntry) {
-      if (!slug || !entry || !entry.path || this.writeLocked()) return;
+      if (!slug || !entry || !entry.path || this.$store.connection.writeLocked()) return;
       const c = WBChanges.discardConfirm(entry);
       const ok = await this.askConfirm({
         title: c.title,
@@ -411,7 +416,7 @@ export function wbChanges() {
       });
       // A read may have failed while the dialog was open: a discard cannot
       // be undone, so the lock is asked again.
-      if (!ok || this.writeLocked()) return;
+      if (!ok || this.$store.connection.writeLocked()) return;
       this.changesError = "";
       try {
         const reply = await window.WBDaemon.observe(
@@ -432,7 +437,7 @@ export function wbChanges() {
 
     async commitStaged(slug: string) {
       // Never commit a draft composed for another project.
-      if (this.commitMsgSlug !== slug || this.writeLocked()) return;
+      if (this.commitMsgSlug !== slug || this.$store.connection.writeLocked()) return;
       const message = this.commitMsg.trim();
       if (!slug || !message) return;
       this.changesError = "";
@@ -463,6 +468,12 @@ export function wbChanges() {
       this.flash(msg);
     },
 
+    // The write lock (the Alpine store `connection`) hears whether the change
+    // set and the branch shown for `slug` are current.
+    _reportCurrent(slug: string) {
+      this.$store.connection.changesCurrent(slug, !(this.changesRead[slug]?.current === false || this.syncRead[slug]?.current === false));
+    },
+
     init() {
       // The open project changed (ADR-0073 amendment of 2026-10-08, decision 4).
       window.addEventListener("workbench:project-changed", (e) => this.gitFollowProject(e.detail.slug));
@@ -479,19 +490,12 @@ export function wbChanges() {
       window.addEventListener("workbench:changes-forget", (e) => {
         delete this.changesRead[e.detail.ref];
         delete this.syncRead[e.detail.ref];
+        this._reportCurrent(e.detail.ref);
       });
       // Opening the Changes view is a read trigger.
       window.addEventListener("workbench:changes-refresh", () => this.refreshChanges());
       // The project rows ask for the change counts.
       window.addEventListener("workbench:changes-count", (e) => (e.detail.counts = this.changesCount));
-      // The write lock asks whether the change set and the branch shown are
-      // current.
-      window.addEventListener("workbench:changes-current", (e) => {
-        const slug = e.detail.slug;
-        if (this.changesRead[slug]?.current === false || this.syncRead[slug]?.current === false) {
-          e.detail.current = false;
-        }
-      });
       // A resume of the page's sockets (`resumeSockets`).
       window.addEventListener("workbench:sockets-resume", (e) => this._changesSub?.resume?.(e.detail.stale));
       // Registered once; the tick asks whether the panel is open.

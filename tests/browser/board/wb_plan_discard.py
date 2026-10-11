@@ -438,7 +438,7 @@ def main():
             plan_md.write_text(READY_PLAN, encoding="utf-8")
             reload_plan(page, slug)
             doc.write_text(json.dumps(snapshot()), encoding="utf-8")
-            page.wait_for_function(f"() => {SH}.writeLocked() === true", timeout=15000)
+            page.wait_for_function(f"() => Alpine.store('connection').writeLocked() === true", timeout=15000)
             page.click(".kc-plan:visible")
             page.wait_for_function(
                 "() => document.querySelector('.plan-modal')?.offsetParent !== null", timeout=10000

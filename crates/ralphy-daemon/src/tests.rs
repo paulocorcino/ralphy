@@ -3928,6 +3928,10 @@ const SHELL_FAMILY: &[(&str, &str)] = &[
         include_str!("../assets/ui/wb-checkouts-store.ts"),
     ),
     (
+        "wb-connection-store.ts",
+        include_str!("../assets/ui/wb-connection-store.ts"),
+    ),
+    (
         "wb-consoles-tab.ts",
         include_str!("../assets/ui/wb-consoles-tab.ts"),
     ),
@@ -5182,7 +5186,7 @@ fn the_discard_control_is_pinned_in_the_markup() {
 fn presence_staleness_is_derived_on_a_clock_not_inside_the_binding() {
     let html = include_str!("../assets/ui/index.html");
     assert!(
-        html.contains(r#":class="{ stale: presenceStale }""#),
+        html.contains(r#":class="{ stale: $store.connection.presenceStale }""#),
         "the uptime must bind the DERIVED flag"
     );
     assert!(
@@ -5195,14 +5199,18 @@ fn presence_staleness_is_derived_on_a_clock_not_inside_the_binding() {
         "the shell must declare the flag as reactive state"
     );
     // Inside the tick, not merely somewhere in the file: a computation that
-    // is not on a clock is the bug this test is named after.
-    let tick = app
-        .split_once("this._clockTick = setInterval(")
-        .expect("the shell must keep its clock tick")
-        .1;
-    let tick = &tick[..tick.find("}, 1000);").expect("the clock tick must close")];
+    // is not on a clock is the bug this test is named after. The shell and
+    // the store `connection` each keep a one-second tick: one of them.
+    let ticks: Vec<&str> = app
+        .split("this._clockTick = setInterval(")
+        .skip(1)
+        .map(|tick| &tick[..tick.find("}, 1000);").expect("the clock tick must close")])
+        .collect();
+    assert!(!ticks.is_empty(), "the shell must keep its clock tick");
     assert!(
-        tick.contains("this.presenceStale ="),
+        ticks
+            .iter()
+            .any(|tick| tick.contains("this.presenceStale =")),
         "the clock tick must recompute staleness — that is what makes it observable"
     );
     // The class must also LAND: it was bound and styled nowhere, so the flag
@@ -7670,7 +7678,7 @@ fn the_run_picker_names_the_model_and_clocks_the_phase() {
     // statement in it made this run-panel test fail for a change that had
     // nothing to do with the run panel.
     assert!(
-        app.contains("this._clockTick = setInterval(() => {"),
+        app.contains("this._clockTick = setInterval(() => { if (this.runsOpen)"),
         "the shell must own a one-second tick for the phase clock"
     );
     assert!(
@@ -7864,7 +7872,7 @@ fn the_board_surfaces_the_plan_the_next_run_would_execute() {
         .find(r#"data-act="plan-discard""#)
         .expect("the discard control must exist");
     assert!(
-        html[discard..discard + 220].contains(":disabled=\"writeLocked()\""),
+        html[discard..discard + 220].contains(":disabled=\"$store.connection.writeLocked()\""),
         "the discard must be gated while a run holds the repo"
     );
     // A dialog a MODAL asks for must sit above it. Every `.modal-scrim` shares
@@ -8062,9 +8070,9 @@ fn a_refused_change_act_reports_in_the_changes_panel() {
 fn a_remote_act_in_flight_locks_the_bar_and_shows_a_ring() {
     let html = include_str!("../assets/ui/index.html");
     for pin in [
-        r#"data-act="fetch" :disabled="writeLocked() || !!syncBusy""#,
-        r#"data-act="pull" :disabled="writeLocked() || !!syncBusy || !!pullBlocked()""#,
-        r#"data-act="push" :disabled="writeLocked() || !!syncBusy""#,
+        r#"data-act="fetch" :disabled="$store.connection.writeLocked() || !!syncBusy""#,
+        r#"data-act="pull" :disabled="$store.connection.writeLocked() || !!syncBusy || !!pullBlocked()""#,
+        r#"data-act="push" :disabled="$store.connection.writeLocked() || !!syncBusy""#,
         r#":class="{ busy: syncBusy === 'fetch' }""#,
         r#":class="{ busy: syncBusy === 'pull' }""#,
         r#":class="{ busy: syncBusy === 'push' }""#,

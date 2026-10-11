@@ -113,7 +113,7 @@ def main():
             p1, p2, p3 = open_page(browser), open_page(browser), open_page(browser)
             for n, page in ((1, p1), (2, p2), (3, p3)):
                 base.check(f"page {n} shows desk A", shown(page) == [["w-a", 100.0]], f"got={shown(page)}")
-            p3.evaluate(f"() => {{ {base.SH}.onPresencePush = () => {{}}; }}")
+            p3.evaluate(f"() => {{ Alpine.store('connection').onPresencePush = () => {{}}; }}")
 
             # 1. Upload desk B from page 1.
             b = base.record("w-b", slug, "agent", "claude", 600.0, 1)

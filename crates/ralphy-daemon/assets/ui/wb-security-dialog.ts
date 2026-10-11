@@ -22,7 +22,7 @@ export function securityDialog() {
   // Every `shell()` member this component's code or markup reads or calls.
   // `loadComponent` in ui-tests/harness.mjs fails on any other name, and the
   // type check fails on a name the code reads.
-  return component(["security", "securityChanged", "probeSession", "logOff", "scrim"], {
+  return component(["security", "securityChanged", "logOff", "scrim"], {
     securityOpen: false,
     // The dialog's own form state. The fact it shows is `security` in `shell()`.
     securityForm: {
@@ -353,7 +353,7 @@ export function securityDialog() {
         this.logOff();
       } else {
         // Gate lifted — re-sync authed/policy from the server.
-        await this.probeSession();
+        await this.$store.connection.probeSession();
       }
     },
 

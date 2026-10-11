@@ -38,7 +38,7 @@ const menuHosts = new WeakSet<Element>();
 
 export function wbFiles() {
   // Every `shell()` member this component's code or markup reads or calls.
-  return component(["flash", "fleetGroups", "readFleetNow", "wakePeer", "tabHidden", "hideMenu", "renderMenu", "openNote", "openTab", "repathTabs", "tabs", "checkoutChipClick"], {
+  return component(["flash", "fleetGroups", "readFleetNow", "wakePeer", "hideMenu", "renderMenu", "openNote", "openTab", "repathTabs", "tabs", "checkoutChipClick"], {
     // --- accordion --------------------------------------------------------
 
     // Wunderbaum copies source keys it does not define into `node.data`, so
@@ -205,11 +205,11 @@ export function wbFiles() {
         this._treeSub = window.WBDaemon.subscribeTree(
           this.$store.projects.repoRef(project),
           (rel: string) => {
-            if (!this.tabHidden()) this.onTreeDirty(rel);
+            if (!this.$store.connection.tabHidden()) this.onTreeDirty(rel);
           },
           this._treeCheckout,
           () => {
-            if (!this.tabHidden()) this.onHeadMoved();
+            if (!this.$store.connection.tabHidden()) this.onHeadMoved();
           },
           (reason: string | null) => this.treeWatchFailed(reason),
         );

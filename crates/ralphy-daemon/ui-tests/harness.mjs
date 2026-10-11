@@ -31,6 +31,7 @@ import { wbSpend } from "../assets/ui/wb-spend-panel.ts";
 import { wbChanges } from "../assets/ui/wb-changes-panel.ts";
 import { wbBranchDialog } from "../assets/ui/wb-branch-dialog.ts";
 import { projectsStore } from "../assets/ui/wb-projects-store.ts";
+import { connectionStore } from "../assets/ui/wb-connection-store.ts";
 import { runsStore } from "../assets/ui/wb-runs-store.ts";
 import { checkoutsStore } from "../assets/ui/wb-checkouts-store.ts";
 import { WBSpend } from "../assets/ui/wb-spend.ts";
@@ -57,10 +58,11 @@ const MODULE_NAMESPACES = {
 
 // The Alpine stores, by the name `main.ts` registers each with
 // (`Alpine.store(name, …)`, ADR-0073 D6). `loadShell` builds every one per page
-// with the deps `main.ts` gives it (`{ messages }`), so a new store is one line
-// here and every test page has it.
+// with the deps `main.ts` gives it (`{ messages, detached }`), so a new store is
+// one line here and every test page has it.
 export const STORES = {
   projects: projectsStore,
+  connection: connectionStore,
   runs: runsStore,
   checkouts: checkoutsStore,
 };
@@ -185,7 +187,8 @@ function stubWindow() {
 // so both give the same object here, as they do in the browser.
 export function loadShell(opts = {}) {
   const window = Object.assign(stubWindow(), opts.window || {});
-  // Filled once the message door exists: a store is built with it.
+  // Filled once `wire` has run: a store is built with the message door and
+  // the detached file windows.
   const stores = {};
   // `nextTick` runs the callback at once: a store that waits for the paint
   // (`Alpine.nextTick`) acts inside the call that asked it.
@@ -206,8 +209,6 @@ export function loadShell(opts = {}) {
   // page's `shell()` state, the shell the browser would find.
   let state = null;
   const messages = createMessages(window, document, { shell: () => window.getShell?.() ?? state });
-  const given = { projects: opts.projects, ...opts.stores };
-  for (const [name, store] of Object.entries(STORES)) stores[name] = given[name] || store({ messages });
   const realBC = globalThis.BroadcastChannel;
   delete globalThis.BroadcastChannel;
   try {
@@ -222,7 +223,11 @@ export function loadShell(opts = {}) {
   // the last page loaded owns them, as in `loadComponent`.
   globalThis.window = window;
   globalThis.document = document;
-  wire(window, document, { messages });
+  // The stores after `wire`, as `main.ts` registers them: `wire` hands back
+  // the detached file windows the store `connection` asks.
+  const detached = wire(window, document, { messages });
+  const given = { projects: opts.projects, ...opts.stores };
+  for (const [name, store] of Object.entries(STORES)) stores[name] = given[name] || store({ messages, detached });
   state = shell();
   state.$store = stores;
   return { state, window, document };

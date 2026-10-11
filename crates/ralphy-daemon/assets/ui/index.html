@@ -60,10 +60,10 @@
     <link rel="stylesheet" href="vendor/crepe/crepe.css" />
     <link rel="stylesheet" href="styles/13-notes.css" />
   </head>
-  <body x-data="shell" x-cloak :class="{ 'side-collapsed': !sideOpen, 'runs-open': runsOpen, locked: !authed }">
+  <body x-data="shell" x-cloak :class="{ 'side-collapsed': !sideOpen, 'runs-open': runsOpen, locked: !$store.connection.authed }">
     <!-- The daemon runs a newer build than this page, and the page holds
          unsaved work (ADR-0070 D6). It stays until the reload. -->
-    <div class="build-notice" x-show="buildSkew" x-cloak role="status">
+    <div class="build-notice" x-show="$store.connection.buildSkew" x-cloak role="status">
       Ralphy was updated. Save your open work, and this page loads the new version.
     </div>
     <!-- Icons drawn in more than one place, each drawn with `<use>`.
@@ -95,8 +95,8 @@
            the security verbs. The menu opens to the SIDE (`.rail .account-menu`),
            over the sidebar: a 48px column has no room to drop one downward. -->
       <div class="menu-wrap rail-acct">
-        <button class="avatar-btn" :title="identityName || 'Ralphy'" @click.stop="toggleAvatarMenu()">
-          <span class="avatar" x-text="identityMark()"></span>
+        <button class="avatar-btn" :title="$store.connection.identityName || 'Ralphy'" @click.stop="toggleAvatarMenu()">
+          <span class="avatar" x-text="$store.connection.identityMark()"></span>
           <!-- The release dot (ADR-0056 §7). It is machine-wide, not a per-repo
                roll-up, which is why it may sit on the rail where the Changes
                count may not: nothing here claims an aggregate this UI does not
@@ -109,9 +109,9 @@
                the button is a picture, and a picture cannot answer "which
                daemon is this" when the operator runs one per environment. -->
           <div class="dropdown-head acct-head">
-            <span class="acct-mark" x-text="identityMark()"></span>
+            <span class="acct-mark" x-text="$store.connection.identityMark()"></span>
             <span class="acct-who">
-              <span class="acct-name" x-text="identityName || 'Ralphy'"></span>
+              <span class="acct-name" x-text="$store.connection.identityName || 'Ralphy'"></span>
               <span class="acct-role">Signed in · daemon</span>
             </span>
           </div>
@@ -123,8 +123,8 @@
                this replaces could never fire, because ticks stopping is exactly
                what does not trigger a re-render (app.js). -->
           <div class="acct-stats">
-            <span class="stat uptime" :class="{ stale: presenceStale }">
-              <svg x-icon="'circle-dot'"></svg> <span x-text="uptimeText || 'connecting…'"></span>
+            <span class="stat uptime" :class="{ stale: $store.connection.presenceStale }">
+              <svg x-icon="'circle-dot'"></svg> <span x-text="$store.connection.uptimeText || 'connecting…'"></span>
             </span>
           </div>
           <!-- Above Security on purpose: when there is something new, it is the
@@ -563,7 +563,7 @@
             <div class="chg-group-head" x-show="(changesStaged[$store.projects.openSlug] || []).length">
               <span class="chg-group-label">Staged changes</span>
               <span class="chg-group-note" x-text="groupNote('staged')" :title="groupNote('staged')"></span>
-              <button class="chg-act" data-act="unstage-all" :disabled="writeLocked()"
+              <button class="chg-act" data-act="unstage-all" :disabled="$store.connection.writeLocked()"
                       :title="rowActTitle('unstage', true)" aria-label="Unstage all changes"
                       @click.stop="unstagePaths($store.projects.openSlug, groupPaths(changesStaged[$store.projects.openSlug], true))">−</button>
             </div>
@@ -577,7 +577,7 @@
                     <span class="chg-dir" x-show="c.dir" x-text="c.dir"></span>
                     <span class="chg-from" x-show="c.originalPath" x-text="'← ' + c.originalPath"></span>
                   </span>
-                  <button class="chg-act" data-act="unstage" :disabled="writeLocked()"
+                  <button class="chg-act" data-act="unstage" :disabled="$store.connection.writeLocked()"
                           :title="rowActTitle('unstage')" aria-label="Unstage changes"
                           @click.stop="unstagePaths($store.projects.openSlug, [c.path, c.originalPath].filter(Boolean))">−</button>
                 </li>
@@ -586,7 +586,7 @@
             <div class="chg-group-head" x-show="(changesUnstaged[$store.projects.openSlug] || []).length">
               <span class="chg-group-label">Changes</span>
               <span class="chg-group-note" x-text="groupNote('unstaged')" :title="groupNote('unstaged')"></span>
-              <button class="chg-act" data-act="stage-all" :disabled="writeLocked()"
+              <button class="chg-act" data-act="stage-all" :disabled="$store.connection.writeLocked()"
                       :title="rowActTitle('stage', true)" aria-label="Stage all changes"
                       @click.stop="stagePaths($store.projects.openSlug, groupPaths(changesUnstaged[$store.projects.openSlug]))">+</button>
             </div>
@@ -600,7 +600,7 @@
                     <span class="chg-dir" x-show="c.dir" x-text="c.dir"></span>
                     <span class="chg-from" x-show="c.originalPath" x-text="'← ' + c.originalPath"></span>
                   </span>
-                  <button class="chg-act" data-act="stage" :disabled="writeLocked()"
+                  <button class="chg-act" data-act="stage" :disabled="$store.connection.writeLocked()"
                           :title="rowActTitle('stage')" aria-label="Stage changes"
                           @click.stop="stagePaths($store.projects.openSlug, [c.path])">+</button>
                   <!-- Unstaged rows ONLY: `restore --worktree` does not touch the
@@ -610,7 +610,7 @@
                        group, but `restore --worktree` refuses it (`path … is
                        unmerged`) — the core refuses it by value too. -->
                   <button class="chg-act chg-discard" data-act="discard" x-show="c.status !== 'conflicted'"
-                          :disabled="writeLocked()"
+                          :disabled="$store.connection.writeLocked()"
                           :title="rowActTitle('discard')" aria-label="Discard changes"
                           @click.stop="discardRow($store.projects.openSlug, c)">×</button>
                 </li>
@@ -627,7 +627,7 @@
               class="chg-msg"
               x-model="commitMsg"
               @input="commitMsgSlug = $store.projects.openSlug"
-              :disabled="writeLocked()"
+              :disabled="$store.connection.writeLocked()"
               placeholder="Message"
               :title="commitTitle()"
               rows="2"
@@ -665,9 +665,9 @@
                  busy act trades its icon for a ring: the three share one
                  upstream, and a push is the longest wait in this panel. The
                  ring is a sibling the CSS swaps in. -->
-            <button class="bar-act" data-act="fetch" :disabled="writeLocked() || !!syncBusy"
+            <button class="bar-act" data-act="fetch" :disabled="$store.connection.writeLocked() || !!syncBusy"
                     :class="{ busy: syncBusy === 'fetch' }"
-                    :title="syncBusyTitle('fetch') || writeLockReason() || 'Fetch from the upstream'"
+                    :title="syncBusyTitle('fetch') || $store.connection.writeLockReason() || 'Fetch from the upstream'"
                     @click.stop="syncFetch($store.projects.openSlug)">
               <svg x-icon="'radar'"></svg><span class="bar-spinner" aria-hidden="true"></span><span class="bar-label">Fetch</span>
             </button>
@@ -675,14 +675,14 @@
                  not inert for a while, it has nothing to pull from until the
                  Publish beside it runs. The freed width goes to Publish, whose
                  label does not fit in a third of the bar. -->
-            <button class="bar-act" data-act="pull" :disabled="writeLocked() || !!syncBusy || !!pullBlocked()"
+            <button class="bar-act" data-act="pull" :disabled="$store.connection.writeLocked() || !!syncBusy || !!pullBlocked()"
                     x-show="!pullBlocked()"
                     :class="{ busy: syncBusy === 'pull' }"
-                    :title="syncBusyTitle('pull') || pullBlocked() || writeLockReason() || 'Pull from the upstream (fast-forward only)'"
+                    :title="syncBusyTitle('pull') || pullBlocked() || $store.connection.writeLockReason() || 'Pull from the upstream (fast-forward only)'"
                     @click.stop="syncPull($store.projects.openSlug)">
               <svg x-icon="'cloud-download'"></svg><span class="bar-spinner" aria-hidden="true"></span><span class="bar-label">Pull</span>
             </button>
-            <button class="bar-act bar-push" data-act="push" :disabled="writeLocked() || !!syncBusy"
+            <button class="bar-act bar-push" data-act="push" :disabled="$store.connection.writeLocked() || !!syncBusy"
                     :class="{ busy: syncBusy === 'push' }"
                     :title="pushTitle()" @click.stop="syncPush($store.projects.openSlug)">
               <svg x-icon="'cloud-upload'"></svg><span class="bar-spinner" aria-hidden="true"></span><span class="bar-label" x-text="pushAct().label">Push</span>
@@ -1739,7 +1739,7 @@
           <div class="modal-foot">
             <span class="foot-note">The next run executes this plan for that issue.</span>
             <button class="btn" @click="closePlanModal()">Close</button>
-            <button class="btn danger" data-act="plan-discard" :disabled="writeLocked()"
+            <button class="btn danger" data-act="plan-discard" :disabled="$store.connection.writeLocked()"
                     :title="discardTitle()" @click="discardPlan()">Discard plan</button>
           </div>
         </div>
@@ -1777,8 +1777,8 @@
              The stop face is deliberately NOT `verbLocked()`-gated: that gate is
              "a run holds the lock", which is precisely when stop applies. -->
         <template x-if="!runIsLive()">
-          <button class="run-verb accent" @click="openRunModal()" :disabled="verbLocked()"
-                  :title="verbTitle('run')">
+          <button class="run-verb accent" @click="openRunModal()" :disabled="$store.connection.verbLocked()"
+                  :title="$store.connection.verbTitle('run')">
             <i class="bi bi-play-fill"></i> Run
           </button>
         </template>
@@ -1788,12 +1788,12 @@
             <i class="bi bi-stop-fill"></i> Stop
           </button>
         </template>
-        <button class="run-verb" @click="fireVerb('triage')" :disabled="verbLocked()"
-                :title="verbTitle('triage')">
+        <button class="run-verb" @click="fireVerb('triage')" :disabled="$store.connection.verbLocked()"
+                :title="$store.connection.verbTitle('triage')">
           <svg x-icon="'stethoscope'"></svg> Triage
         </button>
-        <button class="run-verb" @click="fireVerb('push')" :disabled="verbLocked()"
-                :title="verbTitle('push')">
+        <button class="run-verb" @click="fireVerb('push')" :disabled="$store.connection.verbLocked()"
+                :title="$store.connection.verbTitle('push')">
           <svg x-icon="'cloud-upload'"></svg> Push
         </button>
         <span class="spacer"></span>
@@ -2589,7 +2589,7 @@
                is about THIS daemon, and the rail's account puck already taught
                the operator which picture means it. -->
           <div class="about-hero">
-            <div class="about-mark" x-text="identityMark()"></div>
+            <div class="about-mark" x-text="$store.connection.identityMark()"></div>
             <div class="about-headline">
               <div class="about-name" x-text="about.name || 'Ralphy'"></div>
               <a class="about-version" x-show="about.version"
@@ -3192,14 +3192,14 @@
          nothing behind to read: the real daemon never renders the app until
          /api/login succeeds, so there's nothing to peek at.
     ==================================================================== -->
-    <div class="login-gate" x-show="!authed" x-cloak>
+    <div class="login-gate" x-show="!$store.connection.authed" x-cloak>
       <form class="login-card" @submit.prevent="submitLogin()" autocomplete="off">
         <!-- The mark is `identityMark()`, the same accessor the rail puck, the
              account menu and the About card use (#204) — the daemon wears ONE
              face everywhere, and the login card is where telling two daemons
              apart matters most. "daemon" is dropped: the word named the process,
              not the thing being logged into. -->
-        <div class="login-brand"><span class="login-mark" x-text="identityMark()"></span> Ralphy</div>
+        <div class="login-brand"><span class="login-mark" x-text="$store.connection.identityMark()"></span> Ralphy</div>
         <label class="login-label">
           Authenticator code
           <!-- One box per digit. `one-time-code` on the first box: tells the
@@ -3230,7 +3230,7 @@
                as the username. `autocomplete="off"` on that field does not
                stop it; Chromium ignores the hint for save prompts. The only
                thing that does is for there to be no password field. -->
-          <template x-if="!authed">
+          <template x-if="!$store.connection.authed">
             <input class="login-input" type="password" x-model="login.password" x-ref="loginPassword" autocomplete="current-password" />
           </template>
         </label>

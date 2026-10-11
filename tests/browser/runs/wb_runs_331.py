@@ -21,7 +21,7 @@ Scenario 6  run/triage/push disabled while locked, each stating the reason in it
 Scenario 7  the verbs re-enable within 15 s of the lock being released
 Scenario 8  a click path that is not gate-guarded reaches the CLI, and the CLI's
             refusal is surfaced as a panel line that outlives the 2.6 s action
-            flash (see app.ts `verbLocked` on what the gate does and does not do)
+            flash (see wb-connection-store.ts `verbLocked` on what the gate does and does not do)
 
 Boots a Localhost daemon on 7421 over a SCRATCH `RALPHY_DAEMON_DIR`, so the
 operator's own daemon registry and login policy are untouched. The daemon is
@@ -446,13 +446,13 @@ def main():
             # --- scenario 6: the verbs are gated while the lock is held -------
             # The live snapshot document IS the lock derivation (`runs.list`,
             # the same one the Changes panel's write controls use).
-            page.wait_for_function(f"() => {SH}.verbLocked() === true", timeout=15000)
+            page.wait_for_function(f"() => Alpine.store('connection').verbLocked() === true", timeout=15000)
             verbs = page.evaluate(
                 "() => Array.from(document.querySelectorAll('.run-verb')).map(b => ({"
                 " label: b.textContent.trim(), disabled: b.disabled, title: b.title,"
                 " act: b.dataset.act || '' }))"
             )
-            reason = page.evaluate(f"() => {SH}.writeLockReason()")
+            reason = page.evaluate(f"() => Alpine.store('connection').writeLockReason()")
             # Since ADR-0054 the first slot is `stop` while a run is live, and it is
             # deliberately NOT lock-gated: this gate means "a run holds the lock",
             # which is precisely when stop applies. The other two are what the lock

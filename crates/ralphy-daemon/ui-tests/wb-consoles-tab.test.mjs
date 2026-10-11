@@ -393,7 +393,7 @@ test("the Alt+Shift keys reach the menus and the columns through the listeners t
   assert.equal(key("ArrowLeft").prevented, true);
   assert.equal(key("Digit0", { altKey: true, shiftKey: false }).prevented, false, "Alt alone is not the chord");
   assert.deepEqual(calls, ["row 0", "run", "fence 3", "arrow x -1"]);
-  shell.authed = false;
+  shell.$store.connection.authChanged(false);
   for (const code of ["Digit0", "KeyR", "F3", "ArrowLeft"]) {
     assert.equal(key(code).prevented, false, `${code} is blocked while locked`);
   }

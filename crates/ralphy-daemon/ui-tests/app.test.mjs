@@ -15,16 +15,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadComponent, loadShell, UI } from "./harness.mjs";
-import { WBDeskSink } from "../assets/ui/wb-desk-sink.ts";
 import { WBRelease } from "../assets/ui/wb-release.ts";
 import { WBReleaseDialogs } from "../assets/ui/wb-release-dialogs.ts";
 import { WBSecurityDialog } from "../assets/ui/wb-security-dialog.ts";
 import { WBSettingsDialog } from "../assets/ui/wb-settings-dialog.ts";
-
-// One load, many reads. `loadShell()` is ~20ms of evaluation and every test in
-// this file only READS from the state, so they share one. A test that mutates
-// must take its own.
-const { state: s } = loadShell();
 
 // NEGATIVE CONTROL for the whole file: a duplicate key in the state literal is
 // silently legal in sloppy mode and the LAST one wins, which is how `app.ts`
@@ -59,23 +53,6 @@ test("the state literal declares no key twice", () => {
     "a duplicate key is not an error in sloppy mode — the last declaration " +
       "silently wins and every write against the first shape becomes a no-op",
   );
-});
-
-test("fmtUptime steps down through the units and never renders a negative", () => {
-  assert.equal(s.fmtUptime(0), "0s");
-  assert.equal(s.fmtUptime(45), "45s");
-  assert.equal(s.fmtUptime(60), "1m");
-  assert.equal(s.fmtUptime(3600), "1h 0m");
-  assert.equal(s.fmtUptime(3661), "1h 1m");
-  assert.equal(s.fmtUptime(86400), "1d 0h");
-  assert.equal(s.fmtUptime(90061), "1d 1h");
-  // Two coarse units only: a day-old daemon never shows minutes.
-  assert.equal(s.fmtUptime(90000 + 59), "1d 1h");
-  // NEGATIVE CONTROL: a clock that ran backwards, and a missing reading, must
-  // both render as zero rather than as "-1s" or "NaNs".
-  assert.equal(s.fmtUptime(-5), "0s");
-  assert.equal(s.fmtUptime(null), "0s");
-  assert.equal(s.fmtUptime(undefined), "0s");
 });
 
 test("rowOpen compares by composite ref, not by slug", () => {
@@ -378,7 +355,7 @@ test("logOff resets the remember box along with the credentials", async () => {
   state.login.passwordRequired = true;
   state.$nextTick = () => {};
   await state.logOff();
-  assert.equal(state.authed, false);
+  assert.equal(state.$store.connection.authed, false);
   assert.equal(state.login.remember, false, "the box does not survive a log-off");
   assert.equal(state.login.passwordRequired, true, "the server-told flag does");
 });
@@ -397,7 +374,7 @@ test("the shortcuts are blocked while the Security, Settings or What's new dialo
   const filesKey = keydowns.find((fn) => /shiftKey/.test(String(fn)) && /file-search-open/.test(String(fn)));
   assert.ok(filesKey, "app.ts registers the Ctrl+Shift+F listener at load");
   const searches = [];
-  state.authed = true;
+  state.$store.connection.authChanged(true);
   state.$store.projects.setOpen("o/r");
   window.dispatchEvent = (e) => e.type === "workbench:file-search-open" && searches.push("files");
   window.getShell = () => state;
@@ -476,42 +453,6 @@ test("loadRelease shows a newer release again after the older one was dismissed"
   assert.equal(state.releaseUnread, true);
 });
 
-test("returning to the tab reads the release view again", () => {
-  const calls = [];
-  const { state } = loadShell({
-    window: { dispatchEvent: (e) => e.type === "workbench:board-refresh" && calls.push(`board:${e.detail.trigger}`) },
-  });
-  for (const name of ["loadRepos", "rereadDesk", "resumeSockets", "loadRelease"]) {
-    state[name] = () => calls.push(name);
-  }
-  state.onTabVisible();
-  // Each read happens once; their order is not what the tab depends on.
-  // `loadRepos` reads the sessions, the fleet, the change set and the branch.
-  assert.deepEqual(calls.toSorted(), [
-    "board:visible",
-    "loadRelease",
-    "loadRepos",
-    "rereadDesk",
-    "resumeSockets",
-  ]);
-});
-
-test("resumeSockets resumes the file tree socket with the others", () => {
-  const resumed = [];
-  const { state } = loadShell({
-    window: { dispatchEvent: (e) => resumed.push([e.type, e.detail.stale]) },
-  });
-  state.$store.runs._runsSub = { resume: (stale) => resumed.push(["_runsSub", stale]) };
-  state._presenceSub = { resume: (stale) => resumed.push(["_presenceSub", stale]) };
-  state.resumeSockets(true);
-  // The file tree's socket is the files' (wb-files.test.mjs hears the event),
-  // and the changes socket is the Changes view's (wb-changes-panel.test.mjs).
-  assert.deepEqual(resumed, [
-    ["_runsSub", true],
-    ["_presenceSub", true],
-    ["workbench:sockets-resume", true],
-  ]);
-});
 // A shell whose `toggle` side effects are recorders: each method `toggle` and
 // the `workbench:project-changed` listeners reach is replaced, so the test
 // sees the calls they make. The window hears the events it is sent, and
@@ -535,10 +476,7 @@ function toggleShell() {
     calls.push([name, ...args]);
   };
   for (const name of [
-    "probeSession",
     "loadRepos",
-    "subscribePresence",
-    "loadIdentity",
     "loadRelease",
     "wakePeerFor",
     "loadAgents",
@@ -836,111 +774,6 @@ test("loadRepos marks a row github only for a remote hosted on github.com", asyn
 
 // --- ADR-0070 D2: a shown fact is read again on named events only ----------
 
-// Every URL the code under test fetched, answered with an empty 200. A bare
-// `fetch` in app.ts resolves to `globalThis.fetch`, not the harness window's.
-// `until`, when given, names a URL the read must reach: the spy waits for it
-// (up to 2 s) instead of a fixed number of event-loop turns, because a read
-// scheduled with `setTimeout` can land after any number of turns.
-async function withFetchSpy(fn, until = null) {
-  const urls = [];
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = async (url) => {
-    urls.push(String(url));
-    return { ok: true, status: 200, json: async () => [] };
-  };
-  try {
-    await fn(urls);
-    // Let the reads chained behind the first await land.
-    for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
-    const deadline = Date.now() + 2000;
-    while (until && !urls.includes(until) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 5));
-  } finally {
-    globalThis.fetch = realFetch;
-  }
-  return urls;
-}
-
-test("a presence frame reads nothing", async () => {
-  const { state, window } = loadShell();
-  let beat = null;
-  window.WBDaemon.subscribePresence = (onPresence) => {
-    beat = onPresence;
-    return { resume() {}, close() {} };
-  };
-  state.subscribePresence();
-  const urls = await withFetchSpy(() => beat({ uptime_secs: 1 }));
-  assert.deepEqual(urls, [], "the heartbeat is not a read trigger");
-  assert.equal(state.uptimeText, "Running for 1s");
-});
-
-test("a hidden tab reads nothing on a push, and reads when it becomes visible", async () => {
-  const { state, document } = loadShell({ document: { visibilityState: "hidden", hasFocus: () => true } });
-  // The column check after a desk read is not under test here.
-  state.checkColumnDesk = async () => {};
-  // app.ts schedules the settle read with Node's global `setTimeout`. Catch
-  // the timers here and run them inside the spy, so a read that the timer
-  // would make is seen on every run and not only when it fires early.
-  const timers = [];
-  const realSetTimeout = globalThis.setTimeout;
-  const hidden = await withFetchSpy(() => {
-    globalThis.setTimeout = (fn) => {
-      timers.push(fn);
-      return timers.length;
-    };
-    try {
-      state.onPresencePush("sessions.dirty", {});
-      state.onPresencePush("repos.dirty", {});
-      state.onPresencePush("desk.dirty", { tab: "other" });
-      state.onPresenceOpen(true);
-    } finally {
-      globalThis.setTimeout = realSetTimeout;
-    }
-    for (const run of timers) run();
-  });
-  assert.deepEqual(hidden, []);
-  document.visibilityState = "visible";
-  const visible = await withFetchSpy(() => state.onTabVisible());
-  assert.ok(visible.includes("/api/sessions"), visible.join(", "));
-  assert.ok(visible.includes("/api/repos"), visible.join(", "));
-  assert.ok(visible.includes("/api/desk"), visible.join(", "));
-});
-
-test("peers.dirty and repos.dirty read the project list", async () => {
-  for (const verb of ["peers.dirty", "repos.dirty"]) {
-    const { state } = loadShell({ document: { visibilityState: "visible", hasFocus: () => true } });
-    state.checkColumnDesk = async () => {};
-    const urls = await withFetchSpy(() => state.onPresencePush(verb, {}));
-    assert.ok(urls.includes("/api/repos"), `${verb}: ${urls.join(", ")}`);
-  }
-});
-
-test("desk.dirty from this tab is ignored, and from another tab reads the desk", () => {
-  const { state, window } = loadShell({ document: { visibilityState: "visible", hasFocus: () => true } });
-  // The column check after a desk read is not under test here.
-  state.checkColumnDesk = async () => {};
-  let reads = 0;
-  window.WBConsole.reloadDesk = () => {
-    reads += 1;
-    return Promise.resolve();
-  };
-  state.onPresencePush("desk.dirty", { tab: WBDeskSink.tabId() });
-  assert.equal(reads, 0, "this tab's own write");
-  state.onPresencePush("desk.dirty", { tab: "another-tab" });
-  assert.equal(reads, 1);
-});
-
-test("a reopened presence socket reads sessions, projects and the desk; the first open reads nothing", async () => {
-  const { state } = loadShell({ document: { visibilityState: "visible", hasFocus: () => true } });
-  // The column check after a desk read is not under test here.
-  state.checkColumnDesk = async () => {};
-  const first = await withFetchSpy(() => state.onPresenceOpen(false));
-  assert.deepEqual(first, []);
-  const again = await withFetchSpy(() => state.onPresenceOpen(true));
-  for (const url of ["/api/sessions", "/api/repos", "/api/desk"]) {
-    assert.ok(again.includes(url), `${url} in ${again.join(", ")}`);
-  }
-});
-
 test("login reads the board, the runs and the tree again", () => {
   const listeners = {};
   const loaded = loadShell({
@@ -953,9 +786,10 @@ test("login reads the board, the runs and the tree again", () => {
   const files = loadComponent("wbFiles", { from: loaded }).scope;
   files.init();
   const calls = [];
-  for (const name of ["loadRepos", "loadIdentity", "loadAgents", "restoreView"]) {
+  for (const name of ["loadRepos", "loadAgents", "restoreView"]) {
     state[name] = () => calls.push(name);
   }
+  state.$store.connection.loadIdentity = () => calls.push("loadIdentity");
   state.$store.runs.hydrateRuns = () => calls.push("hydrateRuns");
   loaded.window.addEventListener("workbench:board-refresh", (e) => calls.push(`board:${e.detail.trigger}`));
   files._treeSub = { replay: () => calls.push("tree") };
@@ -1057,49 +891,6 @@ function observedShell(replies) {
   state._flashAction = () => {};
   return state;
 }
-
-// --- ADR-0070 D6: a tab on an older build than the daemon -------------------
-
-function skewShell({ dirty = false, pageBuild = "A" } = {}) {
-  const loaded = loadShell();
-  const { state, window } = loaded;
-  let reloads = 0;
-  window.location.reload = () => (reloads += 1);
-  window.WBViewer.anyDirty = () => dirty;
-  window.WBNotes.anyDirty = () => false;
-  let beat = null;
-  window.WBDaemon.subscribePresence = (onPresence) => {
-    beat = onPresence;
-    return { resume() {}, close() {} };
-  };
-  state.pageBuild = pageBuild;
-  state.subscribePresence();
-  return { state, loaded, beat: (p) => beat(p), reloads: () => reloads };
-}
-
-test("a build the page was not served with reloads a tab with no unsaved work", () => {
-  const t = skewShell();
-  t.beat({ uptime_secs: 1, build: "A" });
-  assert.equal(t.reloads(), 0, "the same build reloads nothing");
-  t.beat({ uptime_secs: 3, build: "B" });
-  assert.equal(t.reloads(), 1);
-});
-
-test("with unsaved work the tab keeps the page, shows the notice and locks writes", () => {
-  const t = skewShell({ dirty: true });
-  t.beat({ uptime_secs: 1, build: "B" });
-  assert.equal(t.reloads(), 0);
-  assert.equal(t.state.buildSkew, true);
-  assert.equal(t.state.writeLocked(), true);
-  assert.match(t.state.writeLockReason(), /older than Ralphy/);
-});
-
-test("a page with no build id never reloads for a build", () => {
-  const t = skewShell({ pageBuild: "" });
-  t.beat({ uptime_secs: 1, build: "B" });
-  assert.equal(t.reloads(), 0);
-  assert.equal(t.state.buildSkew, false);
-});
 
 // --- review fixes (#511) ----------------------------------------------------
 
@@ -1208,7 +999,7 @@ function runsEventShell({ visibilityState = "visible" } = {}) {
     },
   });
   const { state } = loaded;
-  for (const name of ["probeSession", "loadRepos", "loadAgents", "subscribePresence", "loadIdentity", "loadRelease"]) {
+  for (const name of ["loadRepos", "loadAgents", "loadRelease"]) {
     state[name] = () => {};
   }
   const realSetInterval = globalThis.setInterval;
@@ -1221,25 +1012,6 @@ function runsEventShell({ visibilityState = "visible" } = {}) {
   return loaded;
 }
 
-test("sessions.dirty on a visible tab reads the sessions", async () => {
-  const { state } = loadShell(VISIBLE);
-  state.LIVE_SETTLE_MS = 0;
-  const urls = await withFetchSpy(() => state.onPresencePush("sessions.dirty", {}), "/api/sessions");
-  assert.ok(urls.includes("/api/sessions"), urls.join(", "));
-});
-
-test("a tab that becomes visible reads the runs with the Runs panel closed, so an ended run unlocks the writes", async () => {
-  const { state, window } = loadShell(VISIBLE);
-  state.checkColumnDesk = async () => {};
-  window.WBDaemon.observe = async (verb) => (verb === "runs.list" ? { status: "ok", runs: [] } : null);
-  state.$store.projects.setOpen("o/r");
-  state.runsOpen = false;
-  state.$store.runs.runsByProject["o/r"] = [{ runid: "r1" }];
-  assert.equal(state.writeLocked(), true, "the run seen before the tab was hidden locks");
-  await withFetchSpy(() => state.onTabVisible());
-  assert.equal(state.writeLocked(), false, "the run ended while hidden: the writes unlock");
-});
-
 // The Alpine store `runs` tells the page; the shell decides what each fact
 // means for it.
 test("a runs push on a visible tab reads the runs and nudges the board; a hidden tab does neither", () => {
@@ -1251,58 +1023,6 @@ test("a runs push on a visible tab reads the runs and nudges the board; a hidden
     window.dispatchEvent(new CustomEvent("workbench:runs-dirty"));
     assert.deepEqual(calls, visibilityState === "visible" ? ["hydrateRuns", "board:runs"] : [], visibilityState);
   }
-});
-
-test("a reopened socket reads the board and the runs", () => {
-  const calls = [];
-  const { state } = loadShell({
-    ...VISIBLE,
-    window: { dispatchEvent: (e) => e.type === "workbench:board-refresh" && calls.push(`board:${e.detail.trigger}`) },
-  });
-  for (const name of ["loadRepos", "rereadDesk"]) state[name] = () => calls.push(name);
-  state.$store.runs.hydrateRuns = () => calls.push("hydrateRuns");
-  state.$store.projects.setOpen("o/r");
-  state.onPresenceOpen(true);
-  assert.ok(calls.includes("board:reopen"), calls.join(", "));
-  assert.ok(calls.includes("hydrateRuns"), calls.join(", "));
-});
-
-test("visible and login ask the open panels to read again", () => {
-  // The Settings dialog hears the event and reads only when it is open
-  // (wb-settings-dialog.test.mjs); here the shell sends it each time.
-  const events = [];
-  const { state } = loadShell({
-    ...VISIBLE,
-    window: { dispatchEvent: (e) => events.push(e.type) },
-  });
-  for (const name of ["loadRepos", "rereadDesk", "hydrateRuns", "loadRelease", "resumeSockets", "loadIdentity", "loadAgents", "restoreView"]) {
-    state[name] = () => {};
-  }
-  const rereads = () => events.filter((t) => t === "workbench:panels-reread").length;
-  state.onTabVisible();
-  assert.equal(rereads(), 1, "the tab becoming visible asks the open panels");
-  state.rehydrateAfterAuth();
-  assert.equal(rereads(), 2, "a login asks the open panels too");
-});
-
-test("the peer tick and a project-list push read no change set and no branch", async () => {
-  const git = [];
-  const { state } = loadShell({
-    ...VISIBLE,
-    window: { dispatchEvent: (e) => e.type === "workbench:changes-read" && git.push(e.detail.ref) },
-  });
-  state.checkColumnDesk = async () => {};
-  state.$store.projects.setOpen("o/r");
-  state.fleetPeers = [{ daemon_id: "d" }];
-  await withFetchSpy(async () => {
-    state.peerTick();
-    state.onPresencePush("repos.dirty", {});
-    state.onPresencePush("peers.dirty", {});
-  });
-  assert.deepEqual(git, []);
-  // NEGATIVE CONTROL: the tab becoming visible does read them.
-  await withFetchSpy(() => state.onTabVisible());
-  assert.deepEqual(git, ["o/r"]);
 });
 
 test("a project read keeps the peer rows and the live dots until the fleet and the sessions answer", async () => {
@@ -1328,42 +1048,6 @@ test("a project read keeps the peer rows and the live dots until the fleet and t
   );
   assert.equal(state.$store.projects.projects[0].state, "working", "the live dot stays");
   assert.equal(state.$store.projects.projects[0].env, "wsl");
-});
-
-test("a commit draft does not hold the build reload", () => {
-  const t = skewShell();
-  loadComponent("wbChanges", { from: t.loaded }).scope.commitMsg = "wip: half a message";
-  t.beat({ uptime_secs: 1, build: "B" });
-  assert.equal(t.reloads(), 1);
-});
-
-test("the desk hold ends right before the build reload, so the saved work's desk changes go out", () => {
-  const { state, window } = loadShell(VISIBLE);
-  const events = [];
-  window.location.reload = () => events.push("reload");
-  // The sink is one module per document: its `setHold` is replaced for this
-  // test only.
-  const realSetHold = WBDeskSink.setHold;
-  WBDeskSink.setHold = (on) => events.push(`hold:${on}`);
-  try {
-    let dirty = true;
-    window.WBViewer.anyDirty = () => dirty;
-    window.WBNotes.anyDirty = () => false;
-    let beat = null;
-    window.WBDaemon.subscribePresence = (onPresence) => {
-      beat = onPresence;
-      return { resume() {}, close() {} };
-    };
-    state.pageBuild = "A";
-    state.subscribePresence();
-    beat({ uptime_secs: 1, build: "B" });
-    assert.deepEqual(events, ["hold:true"], "unsaved work: held, no reload");
-    dirty = false;
-    beat({ uptime_secs: 3, build: "B" });
-    assert.deepEqual(events, ["hold:true", "hold:false", "reload"]);
-  } finally {
-    WBDeskSink.setHold = realSetHold;
-  }
 });
 
 test("a reopened socket refreshes an open board, as the tab becoming visible does", () => {

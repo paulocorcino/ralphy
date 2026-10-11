@@ -288,6 +288,7 @@ interface Window {
     store(name: "projects"): import("./wb-projects-store.ts").ProjectsStore;
     store(name: "runs"): import("./wb-runs-store.ts").RunsStore;
     store(name: "checkouts"): import("./wb-checkouts-store.ts").CheckoutsStore;
+    store(name: "connection"): import("./wb-connection-store.ts").ConnectionStore;
     store(name: string, value: object): void;
     raw<T>(value: T): T;
     nextTick(callback: () => void): Promise<void>;
@@ -456,9 +457,6 @@ interface WindowEventMap {
   /** Ask for the change counts per project: the Changes view fills
    * `counts`, during the send. */
   "workbench:changes-count": CustomEvent<{ counts: Record<string, number | null> }>;
-  /** Ask whether the change set and the branch of `slug` are current: the
-   * Changes view sets `current` to false when not, during the send. */
-  "workbench:changes-current": CustomEvent<{ slug: string; current: boolean }>;
   /** The open checkout's HEAD moved. */
   "workbench:head-moved": CustomEvent<{ ref: string }>;
   "workbench:menus-close": CustomEvent<null>;
@@ -473,6 +471,17 @@ interface WindowEventMap {
   /** Open the checkout menu of this project under `anchor` (wb-branch-dialog.ts). */
   "workbench:checkout-menu": CustomEvent<{ project: import("./wb-project.ts").Project; anchor: HTMLElement }>;
   "workbench:panels-reread": CustomEvent<null>;
+  /** The daemon said whether this browser may read (`authed`), whether the
+   * login asks for a password, and its policy (the Alpine store `connection`). */
+  "workbench:auth-read": CustomEvent<{ authed: boolean; password: boolean; policy: "localhost" | "bearer" | "session" }>;
+  /** Read the project list again; `git` reads the change set and the branch too. */
+  "workbench:repos-reread": CustomEvent<{ git: boolean }>;
+  /** Read the live sessions again. */
+  "workbench:sessions-reread": CustomEvent<null>;
+  /** Read the saved desk again. */
+  "workbench:desk-reread": CustomEvent<null>;
+  /** Read the release view again. */
+  "workbench:release-reread": CustomEvent<null>;
   /** Add a canvas tab once and bring it to the front. */
   "workbench:tab-open": CustomEvent<{ tab: import("./wb-shell-types.d.ts").CanvasTab }>;
   /** Open the Spend tab. */

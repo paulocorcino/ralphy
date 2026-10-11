@@ -23,7 +23,7 @@ import type { BoardIssue, BoardRow, Read, ReadyPlan, RunPill, Timer } from "./wb
 
 export function wbBoard() {
   // Every `shell()` member this component's code or markup reads or calls.
-  return component(["kanbanOpen", "toggleKanban", "scrim", "flash", "askConfirm", "fmtClock", "writeLocked", "writeLockReason", "buildSkew", "BUILD_SKEW_LOCK"], {
+  return component(["kanbanOpen", "toggleKanban", "scrim", "flash", "askConfirm"], {
     // The slow refresh backstop of the board, started in `init`.
     _boardBackstop: null as Timer,
     // Counts the `issue.show` reads; only the newest one is kept.
@@ -144,7 +144,7 @@ export function wbBoard() {
     },
     discardTitle() {
       return (
-        this.writeLockReason() ||
+        this.$store.connection.writeLockReason() ||
         "Delete this plan. The next run plans this issue again."
       );
     },
@@ -152,7 +152,7 @@ export function wbBoard() {
     // while a run holds the repo: a run owns the plan it is executing.
     async discardPlan() {
       const held = this.openPlan();
-      if (!held || this.writeLocked()) return;
+      if (!held || this.$store.connection.writeLocked()) return;
       const ok = await this.askConfirm({
         title: "Discard this plan?",
         message:
@@ -250,7 +250,7 @@ export function wbBoard() {
       const read = WBFail.readFold(this.boardRead[slug], { ok: false, reason: msg, at: Date.now() });
       this.boardRead[slug] = read;
       if (read.goodAt) {
-        this.boardError[slug] = WBFail.notCurrent(read, (ms) => this.fmtClock(ms));
+        this.boardError[slug] = WBFail.notCurrent(read, (ms) => this.$store.connection.fmtClock(ms));
         return;
       }
       this.boardIssues[slug] = [];
@@ -510,7 +510,7 @@ export function wbBoard() {
       return !!this.labelLockReason();
     },
     labelLockReason() {
-      if (this.buildSkew) return this.BUILD_SKEW_LOCK;
+      if (this.$store.connection.buildSkew) return this.$store.connection.BUILD_SKEW_LOCK;
       if (this.boardRead[this.$store.projects.openKey()]?.current === false) {
         return "The board shown is not current. Wait for the next read.";
       }

@@ -594,7 +594,7 @@ def main():
             page.wait_for_function(
                 f"(s) => ((Alpine.store('runs').runsByProject[s]) || []).length === 1", arg=slug, timeout=20000
             )
-            page.wait_for_function(f"() => {SH}.writeLocked() === true", timeout=15000)
+            page.wait_for_function(f"() => Alpine.store('connection').writeLocked() === true", timeout=15000)
             locked = page.evaluate(
                 f"() => {{ const v = {VIEW};"
                 " return Array.from(v.querySelectorAll('[data-act=\"discard\"]'))"

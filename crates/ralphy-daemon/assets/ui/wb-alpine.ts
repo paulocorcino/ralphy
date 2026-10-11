@@ -7,12 +7,13 @@ import type { Shell } from "./app.ts";
 import type { ProjectsStore } from "./wb-projects-store.ts";
 import type { RunsStore } from "./wb-runs-store.ts";
 import type { CheckoutsStore } from "./wb-checkouts-store.ts";
+import type { ConnectionStore } from "./wb-connection-store.ts";
 
 /** The Alpine magics a component or `shell()` calls. */
 export interface AlpineMagics {
   $nextTick(callback?: () => void): Promise<void>;
   $refs: Record<string, HTMLElement | undefined>;
-  $store: { projects: ProjectsStore; runs: RunsStore; checkouts: CheckoutsStore };
+  $store: { projects: ProjectsStore; connection: ConnectionStore; runs: RunsStore; checkouts: CheckoutsStore };
 }
 
 export function component<U extends keyof Shell, T extends object>(

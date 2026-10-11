@@ -33,6 +33,7 @@ import { createMessages } from "./wb-messages.ts";
 import { createStack, createGestures } from "./wb-stage-stack.ts";
 import { iconDirective, shell, wire } from "./app.ts";
 import { projectsStore } from "./wb-projects-store.ts";
+import { connectionStore } from "./wb-connection-store.ts";
 import { runsStore } from "./wb-runs-store.ts";
 import { checkoutsStore } from "./wb-checkouts-store.ts";
 
@@ -56,10 +57,15 @@ WBDevice.report(window);
 window.WBViewer = createViewer(window, document, { messages });
 // The note cards, before `wire`: `wb-console.ts` reads `WBNotes` inside functions.
 window.WBNotes = createNotes(window, document, { console: window.WBConsole, messages, stack, gestures });
-wire(window, document, { messages });
+// `wire` hands back the detached file windows: the store `connection` asks
+// them about unsaved work before a build reload.
+const detached = wire(window, document, { messages });
 Alpine.directive("icon", iconDirective);
 // The open project, before the components that read it (ADR-0073 D6).
 Alpine.store("projects", projectsStore());
+// The session, the presence socket and the write locks; its `init` reads the
+// session, opens the presence socket and starts the presence clock.
+Alpine.store("connection", connectionStore({ messages, detached }));
 // The runs of each project; its `init` hears the open project change.
 Alpine.store("runs", runsStore({ messages }));
 // The selected checkout of each project; its `init` takes the `unknown
