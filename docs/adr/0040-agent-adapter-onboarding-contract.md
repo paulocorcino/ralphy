@@ -1,5 +1,7 @@
 # The adapter onboarding contract: what Ralphy asks of a new agent CLI vendor
 
+Amended by ADR-0077 (proposed: each adapter may implement `review`, and the review charter joins the prompts).
+
 Ralphy has onboarded four vendors (Claude, Codex, OpenCode, Kimi) and each time
 the same knowledge was rediscovered by reading the previous adapter. The
 per-vendor ADRs (0004, 0005, 0028) record *decisions*; none of them records the

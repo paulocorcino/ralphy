@@ -26,7 +26,7 @@ An issue whose execution finished cleanly, as opposed to one that stopped as blo
 The runner closing a green queue issue so that it leaves the queue, while the human still merges the branch.
 
 **Review gate**:
-An optional step after the verify gate and before close-on-green. In it, the *reviewer* reads the issue, the plan and the diff, and answers *approve* or *changes requested*. It can keep an issue from being green, but it can never make an issue green. One round of changes goes back to the executor; after that the issue stays open for a human. Not built yet.
+An optional step after the verify gate and before close-on-green. In it, the *reviewer* reads the issue, the plan and the diff, and answers *approve* or *changes requested*. It can keep an issue from being green, but it can never make an issue green. One round of changes goes back to the executor; after that the issue stays open for a human. Not built yet (ADR-0077).
 _Avoid_: code review, PR review (both are the human's review of the branch).
 
 **Acceptance ledger**:
@@ -72,7 +72,7 @@ The unit that holds everything specific to one agent CLI vendor, behind the core
 _Avoid_: driver, plugin, backend.
 
 **Phase roles (triager / planner / executor / reviewer)**:
-The closed set of jobs an **adapter** fills on one issue: the *triager* decides if the issue can enter the queue, the *planner* writes the plan, the *executor* carries out the plan and commits, and the *reviewer* checks the executor's change with a fresh context. The reviewer is not built yet. One-shot tasks (diagnose, draft, consolidate) are not phase roles.
+The closed set of jobs an **adapter** fills on one issue: the *triager* decides if the issue can enter the queue, the *planner* writes the plan, the *executor* carries out the plan and commits, and the *reviewer* checks the executor's change with a fresh context. The reviewer is not built yet (ADR-0077). One-shot tasks (diagnose, draft, consolidate) are not phase roles.
 _Avoid_: stage, role (overloaded with triage roles), agent type.
 
 **Role artifact**:

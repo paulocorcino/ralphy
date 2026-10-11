@@ -108,7 +108,7 @@ The component names are CONTEXT.md terms.
 
 | Component | Crate / module |
 |---|---|
-| Queue, Run, Planner / Executor, Verify gate | `ralphy-core` (`runner`, `blocked`, `verify`, `plan`, `handoff`) |
+| Queue, Run, Planner / Executor, Verify gate; the Review gate (planned, [ADR-0077](./adr/0077-a-reviewer-can-only-veto-a-green-issue.md)) | `ralphy-core` (`runner`, `blocked`, `verify`, `plan`, `handoff`) |
 | Agent contract (the port) | `ralphy-core::agent` |
 | Adapter | one `ralphy-agent-*` crate per vendor |
 | Adapter support, Outcome classifier | `ralphy-adapter-support` |

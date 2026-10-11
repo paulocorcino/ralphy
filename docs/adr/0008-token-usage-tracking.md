@@ -25,6 +25,8 @@ harvest paths (Claude interactive-exec transcript correlation, Claude headless,
 Codex rollouts, OpenCode `opencode.db`) are in production. D5's
 `server_tool_use` web-tool request counts remain the one recorded gap.
 
+Amended by ADR-0077 (proposed: the ledger phases add `review` and `review-repair`; D6 is restated to the list the code writes).
+
 ## D1 — Harvest the vendor's own `usage`; no proxy, no OTEL collector, no unified disk-reader
 
 The capture mechanism is **per-adapter in-line harvest**: each adapter reads the
