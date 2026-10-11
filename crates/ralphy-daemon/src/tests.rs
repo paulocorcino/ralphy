@@ -3747,6 +3747,10 @@ const CONSOLE_FAMILY: &[(&str, &str)] = &[
         include_str!("../assets/ui/wb-console-session.ts"),
     ),
     (
+        "wb-console-spawn.ts",
+        include_str!("../assets/ui/wb-console-spawn.ts"),
+    ),
+    (
         "wb-console-terminal.ts",
         include_str!("../assets/ui/wb-console-terminal.ts"),
     ),
@@ -4206,7 +4210,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 // `wb-console.ts` imports the geometry, the window state, the session folds,
                 // the desk folds, the GPU budget, the title, the fence list, the detach, the view, the
                 // terminal, the window chrome, the popup registry, the fences, the desk, the console name,
-                // the input folds, the key bar, the feeds and the dormancy; the entry
+                // the input folds, the key bar, the feeds, the dormancy and the window birth; the entry
                 // imports the console, the door for operator messages, and the z stack and
                 // the gestures. Stated HERE because this set is a hardcoded floor:
                 // nothing derives the popup's needs from the tree, so an
@@ -4219,6 +4223,7 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-console-keys.js",
                 "wb-console-feeds.js",
                 "wb-console-dormancy.js",
+                "wb-console-spawn.js",
                 "wb-console-session.js",
                 "wb-desk-folds.js",
                 "wb-console-gpu.js",

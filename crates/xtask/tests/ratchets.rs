@@ -85,8 +85,10 @@ const APP_TS_LINES: usize = 4209;
 /// project names, the fleet, the last session poll, `list` and the stale probe
 /// moved to `wb-console-feeds.ts` (#621); 1658 since sleep, wake, the cover
 /// rule, the resume and their page listeners moved to `wb-console-dormancy.ts`
-/// (#621).
-const WB_CONSOLE_TS_LINES: usize = 1658;
+/// (#621); 1314 since `spawnWindow` and the desk record writes of a birth
+/// (`recordBirth`, `adoptOrphan`, `recordSession`, `deskOf`) moved to
+/// `wb-console-spawn.ts` (#621).
+const WB_CONSOLE_TS_LINES: usize = 1314;
 /// Lines of `crates/ralphy-daemon/assets/ui/wb-notes.ts`, the note cards
 /// (ADR-0073 D8, started by its 2026-10-10 amendment). 2828 at 823cc84c, before
 /// its first cut (#623); 2835 since the cards take the console as a typed dep
