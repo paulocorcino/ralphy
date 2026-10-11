@@ -3123,15 +3123,9 @@ fn the_console_terminal_is_themed_in_lockstep_with_the_stylesheet() {
 /// copy; these are the invariants that are not.
 #[test]
 fn the_console_clipboard_is_write_only_and_refused_on_replay() {
-    // The console, its terminal and its window chrome, as one text: the
-    // clipboard calls live in the console, the OSC 52 handler and the right
-    // button in the terminal, and no read may enter the chrome.
-    let js = [
-        include_str!("../assets/ui/wb-console.ts"),
-        include_str!("../assets/ui/wb-console-terminal.ts"),
-        include_str!("../assets/ui/wb-stage-chrome.ts"),
-    ]
-    .concat();
+    // The whole console family, as one text: the exact counts below hold
+    // over every family module, so no clipboard read may enter any of them.
+    let js = console_family();
     for pin in [
         // The gap that made an agent announce a copy it never made.
         "registerOscHandler(52",
@@ -3711,6 +3705,151 @@ fn embedded_ui_paths() -> Vec<String> {
 /// code, not its line breaks and indentation.
 fn squeeze(src: &str) -> String {
     src.split_whitespace().collect()
+}
+
+/// The console family (#621, ADR-0073, the 2026-10-11 amendment): every
+/// module named `wb-console.ts`, `wb-console-*.ts`, `wb-stage-*.ts`,
+/// `wb-desk.ts` or `wb-desk-*.ts`, as `(name, text)`. The order is fixed:
+/// `wb-console.ts`, the `wb-console-*` modules, the `wb-stage-*` modules,
+/// `wb-desk.ts`, then the `wb-desk-*` modules, each group sorted. A scoped
+/// pin finds the first match in the joined text, and `wb-desk-sync.ts`
+/// declares a second `function deskOf(`, so the console modules come first.
+/// `the_console_family_lists_every_module_on_disk` keeps this list equal to
+/// the files on disk.
+const CONSOLE_FAMILY: &[(&str, &str)] = &[
+    ("wb-console.ts", include_str!("../assets/ui/wb-console.ts")),
+    (
+        "wb-console-gpu.ts",
+        include_str!("../assets/ui/wb-console-gpu.ts"),
+    ),
+    (
+        "wb-console-input.ts",
+        include_str!("../assets/ui/wb-console-input.ts"),
+    ),
+    (
+        "wb-console-name.ts",
+        include_str!("../assets/ui/wb-console-name.ts"),
+    ),
+    (
+        "wb-console-session.ts",
+        include_str!("../assets/ui/wb-console-session.ts"),
+    ),
+    (
+        "wb-console-terminal.ts",
+        include_str!("../assets/ui/wb-console-terminal.ts"),
+    ),
+    (
+        "wb-console-title.ts",
+        include_str!("../assets/ui/wb-console-title.ts"),
+    ),
+    (
+        "wb-stage-chrome.ts",
+        include_str!("../assets/ui/wb-stage-chrome.ts"),
+    ),
+    (
+        "wb-stage-columns.ts",
+        include_str!("../assets/ui/wb-stage-columns.ts"),
+    ),
+    (
+        "wb-stage-fence-list.ts",
+        include_str!("../assets/ui/wb-stage-fence-list.ts"),
+    ),
+    (
+        "wb-stage-fences.ts",
+        include_str!("../assets/ui/wb-stage-fences.ts"),
+    ),
+    (
+        "wb-stage-stack.ts",
+        include_str!("../assets/ui/wb-stage-stack.ts"),
+    ),
+    (
+        "wb-stage-view.ts",
+        include_str!("../assets/ui/wb-stage-view.ts"),
+    ),
+    (
+        "wb-stage-window.ts",
+        include_str!("../assets/ui/wb-stage-window.ts"),
+    ),
+    ("wb-desk.ts", include_str!("../assets/ui/wb-desk.ts")),
+    (
+        "wb-desk-detach.ts",
+        include_str!("../assets/ui/wb-desk-detach.ts"),
+    ),
+    (
+        "wb-desk-folds.ts",
+        include_str!("../assets/ui/wb-desk-folds.ts"),
+    ),
+    (
+        "wb-desk-history.ts",
+        include_str!("../assets/ui/wb-desk-history.ts"),
+    ),
+    (
+        "wb-desk-popups.ts",
+        include_str!("../assets/ui/wb-desk-popups.ts"),
+    ),
+    (
+        "wb-desk-sink.ts",
+        include_str!("../assets/ui/wb-desk-sink.ts"),
+    ),
+    (
+        "wb-desk-sync.ts",
+        include_str!("../assets/ui/wb-desk-sync.ts"),
+    ),
+];
+
+/// The texts of `CONSOLE_FAMILY`, joined in its order. A pin on console text
+/// reads this, so a move between family modules does not move the pin
+/// (#621).
+fn console_family() -> String {
+    CONSOLE_FAMILY.iter().map(|(_, text)| *text).collect()
+}
+
+/// The group of a console family module in the order of `CONSOLE_FAMILY`, or
+/// `None` for a module outside the family. `wb-consoles-tab.ts` is outside:
+/// the rule needs the hyphen after `wb-console`.
+fn console_family_group(name: &str) -> Option<u8> {
+    if !name.ends_with(".ts") || name.ends_with(".d.ts") {
+        return None;
+    }
+    if name == "wb-console.ts" {
+        Some(0)
+    } else if name.starts_with("wb-console-") {
+        Some(1)
+    } else if name.starts_with("wb-stage-") {
+        Some(2)
+    } else if name == "wb-desk.ts" {
+        Some(3)
+    } else if name.starts_with("wb-desk-") {
+        Some(4)
+    } else {
+        None
+    }
+}
+
+/// #621: a new console family module cannot be left out of the pins that
+/// read the family, because this test compares the list with the disk.
+#[test]
+fn the_console_family_lists_every_module_on_disk() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/ui");
+    let mut on_disk: Vec<(u8, String)> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("reading {}: {e}", dir.display()))
+        .map(|entry| {
+            entry
+                .unwrap_or_else(|e| panic!("reading an entry of {}: {e}", dir.display()))
+                .file_name()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .filter_map(|name| console_family_group(&name).map(|group| (group, name)))
+        .collect();
+    on_disk.sort();
+    let on_disk: Vec<&str> = on_disk.iter().map(|(_, name)| name.as_str()).collect();
+    let listed: Vec<&str> = CONSOLE_FAMILY.iter().map(|(name, _)| *name).collect();
+    assert_eq!(
+        listed, on_disk,
+        "CONSOLE_FAMILY in crates/ralphy-daemon/src/tests.rs must list every console family \
+         module under assets/ui, in its order: add the new module to CONSOLE_FAMILY"
+    );
 }
 
 fn served_css() -> String {
@@ -4928,7 +5067,7 @@ fn the_workbench_never_titles_a_repo_with_its_routing_head() {
     // The prefix is in the title, the fallback in the console.
     assert!(
         include_str!("../assets/ui/wb-console-title.ts").contains("prefixOf(projectNameOf(repo))")
-            && include_str!("../assets/ui/wb-console.ts").contains("WBFleet.refSlug(ref)"),
+            && console_family().contains("WBFleet.refSlug(ref)"),
         "a console name prefix must come from the project name or the slug, not the ref"
     );
 }
@@ -5367,19 +5506,9 @@ fn a_note_card_is_stacked_and_wears_the_console_chrome() {
 /// drops the bands. Every pin is an expression, as above.
 #[test]
 fn shell_locks_consoles_and_fences() {
-    // The console, its fence list, its window chrome and its fences, as one
-    // text: the lock lives in the console, the fence's lock in the fence list,
-    // the lock button and the window gestures in the chrome, the fence's lock
-    // button and gestures in the fences.
-    let js = &[
-        include_str!("../assets/ui/wb-console.ts"),
-        include_str!("../assets/ui/wb-stage-window.ts"),
-        include_str!("../assets/ui/wb-stage-fence-list.ts"),
-        include_str!("../assets/ui/wb-stage-chrome.ts"),
-        include_str!("../assets/ui/wb-stage-fences.ts"),
-        include_str!("../assets/ui/wb-desk.ts"),
-    ]
-    .concat();
+    // The whole console family, as one text: the lock, the fence's lock, the
+    // lock buttons, the gestures and the desk records live in its modules.
+    let js = &console_family();
     for pin in [
         "function fenceLocked(",
         "function isLocked(",
@@ -6145,23 +6274,10 @@ fn the_shell_writes_the_desk_only_as_changes() {
     let notes = include_str!("../assets/ui/wb-notes.ts");
     let folds = include_str!("../assets/ui/wb-notes-folds.ts");
     let sync = include_str!("../assets/ui/wb-desk-sync.ts");
-    for (name, js) in [
-        ("wb-console.ts", console),
-        ("wb-desk.ts", desk),
+    // The whole console family, and the other modules that write the desk.
+    let others = [
         ("wb-notes.ts", notes),
         ("wb-notes-folds.ts", folds),
-        (
-            "wb-stage-window.ts",
-            include_str!("../assets/ui/wb-stage-window.ts"),
-        ),
-        (
-            "wb-stage-columns.ts",
-            include_str!("../assets/ui/wb-stage-columns.ts"),
-        ),
-        (
-            "wb-stage-stack.ts",
-            include_str!("../assets/ui/wb-stage-stack.ts"),
-        ),
         (
             "wb-notes-editor.ts",
             include_str!("../assets/ui/wb-notes-editor.ts"),
@@ -6182,7 +6298,8 @@ fn the_shell_writes_the_desk_only_as_changes() {
             "wb-messages.ts",
             include_str!("../assets/ui/wb-messages.ts"),
         ),
-    ] {
+    ];
+    for (name, js) in [CONSOLE_FAMILY, &others].concat() {
         for banned in [
             "persistWin(",
             "deskBody(",
@@ -6216,14 +6333,9 @@ fn the_shell_writes_the_desk_only_as_changes() {
 /// of `relaunchIn`), or at birth (`buildChrome`, through the window inventory).
 #[test]
 fn console_name_rides_every_record_copy() {
-    // The console, its desk records and its window chrome, as one text: the
-    // record copies live in the console and the desk, the birth in the chrome.
-    let js = &[
-        include_str!("../assets/ui/wb-console.ts"),
-        include_str!("../assets/ui/wb-desk.ts"),
-        include_str!("../assets/ui/wb-stage-chrome.ts"),
-    ]
-    .concat();
+    // The whole console family, as one text: the record copies and the birth
+    // live in its modules.
+    let js = &console_family();
     let body = |name: &str| -> String {
         let after = js
             .split_once(name)
@@ -6253,10 +6365,10 @@ fn console_name_rides_every_record_copy() {
 /// node table covers the wiring in CI, so a deletion fails HERE (#480).
 #[test]
 fn spawn_window_sends_the_console_name_on_a_new_agent_launch() {
-    let js = include_str!("../assets/ui/wb-console.ts");
+    let js = console_family();
     let after = js
         .split_once("function spawnWindow(")
-        .expect("wb-console.ts must keep spawnWindow")
+        .expect("the console family must keep spawnWindow")
         .1;
     let body = squeeze(&after[..after.find("\n  }").expect("the function must close")]);
     // The guard of the statement that adds the name, whatever its layout
@@ -6313,19 +6425,15 @@ fn shell_survives_a_reload_with_its_detach() {
             "wb-console.ts must keep the #347 pin {pin}"
         );
     }
-    // THE STORE SEAM, with its NEGATIVE CONTROL: the console module must name
-    // no browser store at all, and the link module must be the one that does
+    // THE STORE SEAM, with its NEGATIVE CONTROL: no console family module may
+    // name the session store, and the link module must be the one that does
     // — deleting the store wholesale has to be red, not green.
-    assert!(
-        !js.contains("sessionStorage")
-            && !include_str!("../assets/ui/wb-console-terminal.ts").contains("sessionStorage")
-            && !include_str!("../assets/ui/wb-stage-chrome.ts").contains("sessionStorage")
-            && !include_str!("../assets/ui/wb-console-title.ts").contains("sessionStorage")
-            && !include_str!("../assets/ui/wb-stage-view.ts").contains("sessionStorage")
-            && !include_str!("../assets/ui/wb-stage-fence-list.ts").contains("sessionStorage")
-            && !include_str!("../assets/ui/wb-desk-detach.ts").contains("sessionStorage"),
-        "wb-console.ts must reach the registry only through the injected link (#347)"
-    );
+    for (name, src) in CONSOLE_FAMILY {
+        assert!(
+            !src.contains("sessionStorage"),
+            "{name} must reach the registry only through the injected link (#347)"
+        );
+    }
     // The CALLS, not the bare nouns: this file's own prose names
     // `sessionStorage` three times, so a noun pin stays green over
     // no-op'd `readRecord`/`writeRecord` bodies — the exact defect the
@@ -6435,14 +6543,9 @@ fn shell_survives_a_reload_with_its_detach() {
 /// `wb-console.test.mjs`; this test holds the call sites that use them.
 #[test]
 fn workbench_session_assets_preserve_composite_repo_identity() {
-    // The console, its terminal and its window chrome: the terminal
-    // reconnects and reads the announcement, the console closes.
-    let console = [
-        include_str!("../assets/ui/wb-console.ts"),
-        include_str!("../assets/ui/wb-console-terminal.ts"),
-        include_str!("../assets/ui/wb-stage-chrome.ts"),
-    ]
-    .concat();
+    // The whole console family: the terminal reconnects and reads the
+    // announcement, the console closes.
+    let console = console_family();
     for pin in [
         r#"connect({ id: currentSessionId, repo: currentRepo"#,
         r#"c.verb === "session-open""#,
@@ -6461,14 +6564,8 @@ fn workbench_session_assets_preserve_composite_repo_identity() {
 /// stays deleted: a re-added clamp would pass every unit test in the tree.
 #[test]
 fn shell_has_no_clamp_and_carries_the_stage() {
-    // The console, its terminal (which holds the fit observer) and its
-    // window chrome.
-    let js = [
-        include_str!("../assets/ui/wb-console.ts"),
-        include_str!("../assets/ui/wb-console-terminal.ts"),
-        include_str!("../assets/ui/wb-stage-chrome.ts"),
-    ]
-    .concat();
+    // The whole console family; the terminal holds the fit observer.
+    let js = console_family();
     assert!(
         !js.contains("clampAll"),
         "the clamp-and-refit is deleted, not renamed (#336)"
@@ -6871,46 +6968,15 @@ fn a_console_can_take_the_whole_screen() {
 /// the gate that notices the desk creeping back into the browser.
 #[test]
 fn shell_stores_only_the_view_in_the_browser() {
-    // The two modules that own the state being persisted must reach it only
-    // through `WBView` — a direct write from either is how a second store
-    // starts.
+    // The console family and the shell own the state being persisted, and
+    // must reach it only through `WBView` — a direct write from any of them
+    // is how a second store starts.
     for (name, src) in [
-        ("wb-console.ts", include_str!("../assets/ui/wb-console.ts")),
-        (
-            "wb-console-terminal.ts",
-            include_str!("../assets/ui/wb-console-terminal.ts"),
-        ),
-        (
-            "wb-stage-chrome.ts",
-            include_str!("../assets/ui/wb-stage-chrome.ts"),
-        ),
-        (
-            "wb-console-title.ts",
-            include_str!("../assets/ui/wb-console-title.ts"),
-        ),
-        (
-            "wb-stage-view.ts",
-            include_str!("../assets/ui/wb-stage-view.ts"),
-        ),
-        (
-            "wb-stage-fence-list.ts",
-            include_str!("../assets/ui/wb-stage-fence-list.ts"),
-        ),
-        (
-            "wb-desk-detach.ts",
-            include_str!("../assets/ui/wb-desk-detach.ts"),
-        ),
-        (
-            "wb-desk-popups.ts",
-            include_str!("../assets/ui/wb-desk-popups.ts"),
-        ),
-        (
-            "wb-stage-fences.ts",
-            include_str!("../assets/ui/wb-stage-fences.ts"),
-        ),
-        ("wb-desk.ts", include_str!("../assets/ui/wb-desk.ts")),
-        ("app.ts", include_str!("../assets/ui/app.ts")),
-    ] {
+        CONSOLE_FAMILY,
+        &[("app.ts", include_str!("../assets/ui/app.ts"))],
+    ]
+    .concat()
+    {
         assert!(
             !src.contains("localStorage"),
             "{name} must not touch localStorage — wb-client-view.ts owns the store (#339)"
@@ -7053,19 +7119,11 @@ fn the_console_chrome_holds_its_three_rules() {
 /// would turn every guarded click into a silently cancelled one.
 #[test]
 fn the_destructive_console_clicks_confirm_first() {
-    // The console, its fence list, its fences, its title and the door for
-    // operator messages, as one text: the console's × lives in the console,
-    // the fence's tile and remove buttons in the fences, the remove verb in
-    // the fence list, the two restarts in the title, and the dialog in the
-    // door.
-    let js = &[
-        include_str!("../assets/ui/wb-console.ts"),
-        include_str!("../assets/ui/wb-stage-fence-list.ts"),
-        include_str!("../assets/ui/wb-stage-fences.ts"),
-        include_str!("../assets/ui/wb-console-title.ts"),
-        include_str!("../assets/ui/wb-messages.ts"),
-    ]
-    .concat();
+    // The whole console family and the door for operator messages, as one
+    // text: the console's ×, the fence's tile and remove buttons, the remove
+    // verb and the two restarts live in the family, and the dialog in the
+    // door. The exact counts below hold over every family module.
+    let js = &(console_family() + include_str!("../assets/ui/wb-messages.ts"));
     assert!(
         js.contains("function askConfirm({"),
         "wb-messages.ts must own a confirmation dialog of its own"
@@ -8760,7 +8818,8 @@ fn no_menu_or_key_sink_takes_a_template_string() {
     assert_eq!(template_html_sinks("b.innerHTML = text;").len(), 1);
     assert!(template_html_sinks("b.innerHTML = '<i class=\"bi bi-x\"></i>';").is_empty());
     assert!(template_html_sinks("menu.innerHTML = \"\";").is_empty());
-    for (name, src) in [
+    // The whole console family, and the other modules that build a menu.
+    let others = [
         ("app.ts", include_str!("../assets/ui/app.ts")),
         ("wb-files.ts", include_str!("../assets/ui/wb-files.ts")),
         (
@@ -8771,37 +8830,8 @@ fn no_menu_or_key_sink_takes_a_template_string() {
             "wb-consoles-tab.ts",
             include_str!("../assets/ui/wb-consoles-tab.ts"),
         ),
-        ("wb-console.ts", include_str!("../assets/ui/wb-console.ts")),
-        (
-            "wb-stage-chrome.ts",
-            include_str!("../assets/ui/wb-stage-chrome.ts"),
-        ),
-        (
-            "wb-console-title.ts",
-            include_str!("../assets/ui/wb-console-title.ts"),
-        ),
-        (
-            "wb-stage-view.ts",
-            include_str!("../assets/ui/wb-stage-view.ts"),
-        ),
-        (
-            "wb-stage-fence-list.ts",
-            include_str!("../assets/ui/wb-stage-fence-list.ts"),
-        ),
-        (
-            "wb-desk-detach.ts",
-            include_str!("../assets/ui/wb-desk-detach.ts"),
-        ),
-        (
-            "wb-desk-popups.ts",
-            include_str!("../assets/ui/wb-desk-popups.ts"),
-        ),
-        (
-            "wb-stage-fences.ts",
-            include_str!("../assets/ui/wb-stage-fences.ts"),
-        ),
-        ("wb-desk.ts", include_str!("../assets/ui/wb-desk.ts")),
-    ] {
+    ];
+    for (name, src) in [CONSOLE_FAMILY, &others].concat() {
         let sinks = template_html_sinks(src);
         assert!(sinks.is_empty(), "{name}: {sinks:?}");
     }
