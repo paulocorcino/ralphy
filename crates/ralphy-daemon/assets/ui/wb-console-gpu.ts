@@ -4,9 +4,9 @@
    `createGpuBudget(deps)` returns one budget with new state: its own observer
    and its own queued rebalance (ADR-0075 D7). It reads the console only
    through `deps`, and `GpuBudgetDeps` lists every read, so `tsc` refuses a
-   read outside it. `wb-console.ts` creates one budget per console and keeps
-   what reaches the terminals: sleeping and waking a window, and the covered
-   rule.
+   read outside it. `wb-console.ts` creates one budget per console; what
+   reaches the terminals, sleeping and waking a window and the covered rule,
+   is `wb-console-dormancy.ts`.
 
    `gpuHolders` and the constants are members of `window.WBConsole` under
    their own name.
@@ -69,7 +69,7 @@ export type GpuBudgetDeps = {
   // The viewport, the observer's root; null before the page has it.
   workspace: () => HTMLElement | null;
   isCovered: (win: ConsoleWin) => boolean;
-  // Stays in the console: it reaches `wakeWindow` and the terminal factory.
+  // `wb-console-dormancy.ts`: it reaches `wakeWindow` and the terminal factory.
   applyDormancy: (win: ConsoleWin) => unknown;
   // The page's; absent in a page without it, and then the watch is inert.
   IntersectionObserver: typeof IntersectionObserver | undefined;
