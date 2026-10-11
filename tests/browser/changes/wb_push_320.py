@@ -46,6 +46,8 @@ REPO_ROOT = os.path.dirname(
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Alpine store `modals`: the modal stack, the confirm, the prompt and the flash line.
+MODALS = "Alpine.store('modals')"
 # The Changes view is the component wbChanges.
 CHG = "Alpine.$data(document.querySelector('[x-data=\"wbChanges\"]'))"
 
@@ -200,11 +202,11 @@ def open_changes(page, slug):
 
 
 def flash(page):
-    return page.evaluate(f"() => {SH}.runsActionMsg || ''")
+    return page.evaluate(f"() => {MODALS}.runsActionMsg || ''")
 
 
 def click_push_and_settle(page):
-    page.evaluate(f"() => {{ {SH}.runsActionMsg = ''; }}")
+    page.evaluate(f"() => {{ {MODALS}.runsActionMsg = ''; }}")
     page.click('[data-act="push"]:visible')
     # The click spawns a child process; there is no completion event to await,
     # so this settles on the flash OR on a quiet window — and the assertions

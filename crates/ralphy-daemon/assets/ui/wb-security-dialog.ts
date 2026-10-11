@@ -23,7 +23,7 @@ export function securityDialog() {
   // Every `shell()` member this component's code or markup reads or calls.
   // `loadComponent` in ui-tests/harness.mjs fails on any other name, and the
   // type check fails on a name the code reads.
-  return component(["scrim"], {
+  return component([], {
     securityOpen: false,
     // The dialog's own form state. The fact it shows is `security` in the store
     // `connection`.

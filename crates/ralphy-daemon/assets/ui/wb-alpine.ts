@@ -9,12 +9,13 @@ import type { RunsStore } from "./wb-runs-store.ts";
 import type { CheckoutsStore } from "./wb-checkouts-store.ts";
 import type { ConnectionStore } from "./wb-connection-store.ts";
 import type { ReleaseStore } from "./wb-release-store.ts";
+import type { ModalsStore } from "./wb-modals-store.ts";
 
 /** The Alpine magics a component or `shell()` calls. */
 export interface AlpineMagics {
   $nextTick(callback?: () => void): Promise<void>;
   $refs: Record<string, HTMLElement | undefined>;
-  $store: { projects: ProjectsStore; connection: ConnectionStore; runs: RunsStore; checkouts: CheckoutsStore; release: ReleaseStore };
+  $store: { projects: ProjectsStore; connection: ConnectionStore; runs: RunsStore; checkouts: CheckoutsStore; release: ReleaseStore; modals: ModalsStore };
 }
 
 export function component<U extends keyof Shell, T extends object>(

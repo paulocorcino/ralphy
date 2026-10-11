@@ -22,7 +22,7 @@ import type { CheckoutRow, Project } from "./wb-shell-types.d.ts";
 
 export function wbBranchDialog() {
   // Every `shell()` member this component's code or markup reads or calls.
-  return component(["scrim", "flash", "askConfirm"], {
+  return component([], {
     // The branch chip opens a filtered picker; switching or creating goes
     // through the daemon's `branch.*` verbs. The header reflects the pick
     // optimistically.
@@ -84,7 +84,7 @@ export function wbBranchDialog() {
         if (this.branchModal.slug !== slug) return; // modal moved on — leave it
         if (!reply || reply.status !== "ok") {
           this.branchModal.branches = [];
-          this.flash("Could not load the branches.");
+          this.$store.modals.flash("Could not load the branches.");
           return;
         }
         // The daemon nests the CLI's `{current, branches:[]}` JSON under the
@@ -96,7 +96,7 @@ export function wbBranchDialog() {
       } catch {
         if (this.branchModal.slug === slug) {
           this.branchModal.branches = [];
-          this.flash("Could not load the branches.");
+          this.$store.modals.flash("Could not load the branches.");
         }
       }
     },
@@ -146,7 +146,7 @@ export function wbBranchDialog() {
     // the chip converges from `_mutateBranch`'s forced `worktree.list` re-read.
     switchBranch(name: string) {
       if (this.$store.connection.writeLocked()) {
-        this.flash(this.$store.connection.writeLockReason());
+        this.$store.modals.flash(this.$store.connection.writeLockReason());
         this.closeBranchModal();
         return;
       }
@@ -168,7 +168,7 @@ export function wbBranchDialog() {
     createBranch() {
       if (!this.canCreateBranch()) return;
       if (this.$store.connection.writeLocked()) {
-        this.flash(this.$store.connection.writeLockReason());
+        this.$store.modals.flash(this.$store.connection.writeLockReason());
         return;
       }
       const name = this.branchModal.filter.trim();
@@ -200,7 +200,7 @@ export function wbBranchDialog() {
     // A cancel makes NO daemon call.
     async removeWorktree(slug: string, w: CheckoutRow) {
       if (!slug || !w || w.primary || this.worktreeRemoving[slug]) return;
-      const ok = await this.askConfirm({
+      const ok = await this.$store.modals.askConfirm({
         title: `Delete worktree ${w.name}?`,
         message:
           "The worktree folder is deleted from the disk. " +
@@ -217,7 +217,7 @@ export function wbBranchDialog() {
         if (WBFail.isError(reply)) {
           refused(WBFail.cause(reply, "The daemon refused to delete the worktree."));
         } else {
-          this.flash(`Worktree ${w.name} deleted`);
+          this.$store.modals.flash(`Worktree ${w.name} deleted`);
         }
       } catch {
         refused("Could not reach the daemon. Check whether the worktree was deleted.");
@@ -270,7 +270,7 @@ export function wbBranchDialog() {
     // The Projects panel's counterpart to `_changesRefused` (wb-changes-panel.ts).
     _branchRefused(msg: string) {
       this.$store.checkouts.branchRefused(msg);
-      this.flash(msg);
+      this.$store.modals.flash(msg);
     },
   });
 }

@@ -47,6 +47,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Alpine store `modals`: the modal stack, the confirm, the prompt and the flash line.
+MODALS = "Alpine.store('modals')"
 FILES = "Alpine.$data(document.querySelector('[x-data=\"wbFiles\"]'))"
 
 # The fixtures, as bytes: what the three Windows writers produce.
@@ -270,8 +272,8 @@ def main():
             page.evaluate(
                 "(id) => document.querySelector(`.md-viewer[data-tab-id=\"${id}\"] [data-act=\"save\"]`).click()", cp_id
             )
-            page.wait_for_function(f"() => {SH}.confirmModal.open === true", timeout=10000)
-            modal = page.evaluate(f"() => {SH}.confirmModal")
+            page.wait_for_function(f"() => {MODALS}.confirmModal.open === true", timeout=10000)
+            modal = page.evaluate(f"() => {MODALS}.confirmModal")
             check(
                 "the design-system dialog offers UTF-8",
                 "windows-1252" in modal["title"] and modal["confirmLabel"] == "Save as UTF-8",
@@ -279,7 +281,7 @@ def main():
             )
             with open(os.path.join(fixture, "spike-cp1252.md"), "rb") as f:
                 check("nothing was written before the answer", f.read() == CP1252)
-            page.evaluate(f"() => {SH}.confirmRespond(true)")
+            page.evaluate(f"() => {MODALS}.confirmRespond(true)")
             want = (CP1252_TEXT + "→ arrow\r\n").encode("utf-8")
             deadline = time.time() + 10
             got = None

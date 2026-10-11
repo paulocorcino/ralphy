@@ -27,7 +27,7 @@ type MovePick = {
 
 export function wbMoveDialog() {
   // Every `shell()` member this component's code or markup reads or calls.
-  return component(["scrim"], {
+  return component([], {
     // The move destination picker (#364): browses one level at a time through
     // `tree.list`. `from` is the FULL rel path; `dir` the browsed directory
     // ("" is the repo root).

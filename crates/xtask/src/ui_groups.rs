@@ -94,7 +94,6 @@ impl Group {
 /// The group of each section heading of `shell()`, by the start of its name.
 /// The part before the first heading is layout core.
 const SECTIONS: &[(&str, Group)] = &[
-    ("modal stack", Group::Core),
     ("the open project", Group::Core),
     ("chrome panels", Group::Core),
     ("branch switcher", Group::Git),

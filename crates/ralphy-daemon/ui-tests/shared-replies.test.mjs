@@ -86,7 +86,7 @@ test("issue.show: the issue view takes the body and comments of the reply", asyn
   const reply = fixture("issue.show");
   assert.ok(reply.issue.body.length > 0, "the fixture holds a body");
   loaded.window.WBDaemon.observe = async () => reply;
-  loaded.state._flashAction = () => {};
+  loaded.state.$store.modals.flash = () => {};
   state.$store.projects.setOpen("o/r");
   state.kanbanSel = reply.issue.number;
   state.boardIssues["o/r"] = [state.boardRowToIssue({ number: reply.issue.number })];
@@ -129,8 +129,8 @@ test("project.remove: the unknown-repo refusal means the project is already gone
   const { state, window } = loadShell();
   window.WBDaemon.observe = async () => fixture("project.remove--unknown-repo");
   const flashed = [];
-  state._flashAction = (m) => flashed.push(m);
-  state.askConfirm = async () => true;
+  state.$store.modals.flash = (m) => flashed.push(m);
+  state.$store.modals.askConfirm = async () => true;
   state.$store.projects.loadRepos = () => {};
   const p = { slug: "nope/gone" };
   state.$store.projects.setProjects([p, { slug: "o/r" }]);

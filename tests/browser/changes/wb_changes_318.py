@@ -55,6 +55,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Alpine store `modals`: the modal stack, the confirm, the prompt and the flash line.
+MODALS = "Alpine.store('modals')"
 # The Changes view is the component wbChanges.
 CHG = "Alpine.$data(document.querySelector('[x-data=\"wbChanges\"]'))"
 
@@ -431,9 +433,9 @@ def main():
                 "   ? Promise.resolve({ status: 'error', message: 'boom' }) : real(verb, args); }"
             )
             click_row_act(page, "README.md", "stage")
-            page.wait_for_function(f"() => ({SH}.runsActionMsg || '').includes('boom')", timeout=15000)
+            page.wait_for_function(f"() => ({MODALS}.runsActionMsg || '').includes('boom')", timeout=15000)
             flash = page.evaluate(
-                f"() => ({{ state: {SH}.runsActionMsg,"
+                f"() => ({{ state: {MODALS}.runsActionMsg,"
                 " dom: (document.querySelector('.runs-action-status') || {}).textContent || '' })"
             )
             check(
@@ -500,11 +502,11 @@ def main():
             )
             page.evaluate(f"() => {VIEW}.querySelector('.chg-commit').click()")
             page.wait_for_function(
-                f"() => ({SH}.runsActionMsg || '').includes('hook said no')", timeout=15000
+                f"() => ({MODALS}.runsActionMsg || '').includes('hook said no')", timeout=15000
             )
             check(
                 "a refused commit reports the failure",
-                "hook said no" in page.evaluate(f"() => {SH}.runsActionMsg"),
+                "hook said no" in page.evaluate(f"() => {MODALS}.runsActionMsg"),
                 "the daemon's own message, not a generic one",
             )
             check(
@@ -581,7 +583,7 @@ def main():
                 sorted(groups_of(page, "renamed2.txt")) == ["Changes", "Staged changes"],
                 f"got={groups_of(page, 'renamed2.txt')} — the fixture must exercise the abort case",
             )
-            page.evaluate(f"() => {{ {SH}.runsActionMsg = ''; }}")
+            page.evaluate(f"() => {{ {MODALS}.runsActionMsg = ''; }}")
             click_group_act(page, "Changes", "stage-all")
             wait_groups(page, "fresh.txt", ["Staged changes"])
             staged_now = git_out(fixture, "diff", "--cached", "--name-only").split("\n")
@@ -592,8 +594,8 @@ def main():
             )
             check(
                 "…and no failure was flashed",
-                page.evaluate(f"() => {SH}.runsActionMsg") == "",
-                f"flash={page.evaluate(f'() => {SH}.runsActionMsg')!r}",
+                page.evaluate(f"() => {MODALS}.runsActionMsg") == "",
+                f"flash={page.evaluate(f'() => {MODALS}.runsActionMsg')!r}",
             )
             # …and the reverse direction still sends the old path, which is the
             # half `git restore --staged` genuinely needs.

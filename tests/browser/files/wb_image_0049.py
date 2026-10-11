@@ -64,6 +64,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Alpine store `modals`: the modal stack, the confirm, the prompt and the flash line.
+MODALS = "Alpine.store('modals')"
 FILES = "Alpine.$data(document.querySelector('[x-data=\"wbFiles\"]'))"
 
 LOGO_W, LOGO_H = 64, 48
@@ -257,10 +259,10 @@ def expect_refusal(page, title, word):
     """Open a file expected to refuse, and wait for BOTH the flash and the close
     of the optimistically-pushed tab (reading the tab list mid-flight races)."""
     before = tab_ids(page)
-    page.evaluate(f"() => {{ {SH}.runsActionMsg = ''; }}")
+    page.evaluate(f"() => {{ {MODALS}.runsActionMsg = ''; }}")
     open_from_tree(page, title)
     page.wait_for_function(
-        f"(w) => ({SH}.runsActionMsg || '').includes(w)", arg=word, timeout=15000
+        f"(w) => ({MODALS}.runsActionMsg || '').includes(w)", arg=word, timeout=15000
     )
     page.wait_for_function(
         f"(want) => {SH}.tabs.map(t => t.id).join('|') === want",
@@ -435,7 +437,7 @@ def main():
             # refusal keeps its tab and says why in a refused pane; only the
             # client's extension classifier (scenario 5) still opens no tab.
             evil_id = f"file:{slug}:evil.png"
-            page.evaluate(f"() => {{ {SH}.runsActionMsg = ''; }}")
+            page.evaluate(f"() => {{ {MODALS}.runsActionMsg = ''; }}")
             open_from_tree(page, "evil.png")
             page.wait_for_function(
                 "(id) => !!document.querySelector(`.refused-viewer[data-tab-id=\"${id}\"]`)",

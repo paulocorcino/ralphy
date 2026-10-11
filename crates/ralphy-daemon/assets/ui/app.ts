@@ -21,7 +21,7 @@ import { WBSettingsDialog } from "./wb-settings-dialog.ts";
 import { WBSplit } from "./wb-split.ts";
 import { isFilePopupMessage } from "./wb-detached.ts";
 import { createEmitter, forwardAction, sendWindow } from "./wb-events.ts";
-import type { CanvasTab, ChangeEntry, ConfirmAsk, DiffTarget, Group, MenuItem, ModalEntry, Project, PromptAsk, SavePayload, ShellLate, Slot, TabBody, TabOpen, WireDeps } from "./wb-shell-types.d.ts";
+import type { CanvasTab, ChangeEntry, DiffTarget, Group, MenuItem, Project, SavePayload, ShellLate, Slot, TabBody, TabOpen, WireDeps } from "./wb-shell-types.d.ts";
 
 // A phone in either orientation: its SHORT side is under the workbench's phone
 // breakpoint (560px). Landscape iPhone is ~750 wide but ~340 tall; an iPad's
@@ -51,8 +51,10 @@ export function shell() {
     // (wb-connection-store.ts), which `main.ts` registers first; the
     // projects, the fleet, the agents and the sessions in the store
     // `projects` (wb-projects-store.ts); the release view in the store
-    // `release` (wb-release-store.ts). The account menu and the login gate
-    // are the components `wbAccount` and `wbLogin`.
+    // `release` (wb-release-store.ts); the modal stack, the confirm, the
+    // prompt and the flash line in the store `modals` (wb-modals-store.ts).
+    // The account menu and the login gate are the components `wbAccount` and
+    // `wbLogin`.
     init() {
       // The daemon said whether this browser is authorized (the store
       // `connection`): the restored view is the shell's.
@@ -126,197 +128,8 @@ export function shell() {
         .then(() => this.syncDeskFailure())
         .catch((e) => {
           const why = String(e?.message || "").startsWith("the daemon") ? e.message : "the daemon did not answer";
-          this._flashAction(`Could not start a new desk: ${why}.`);
+          this.$store.modals.flash(`Could not start a new desk: ${why}.`);
         });
-    },
-
-    _flashAction(msg: string) {
-      this.runsActionMsg = msg;
-      clearTimeout(this._actionTimer);
-      this._actionTimer = setTimeout(() => (this.runsActionMsg = ""), 2600);
-    },
-    // The message door (`wb-messages.ts`) and the nested components flash here.
-    flash(msg: string) { this._flashAction(msg); },
-
-    // --- modal stack ------------------------------------------------------
-    // The open modals, oldest first: `{ path, opener }`. Only the last one
-    // answers Escape, and each returns focus to its opener on close.
-    _modalStack: [] as ModalEntry[],
-    // The confirm dialog (replaces window.confirm); `askConfirm` opens it.
-    confirmModal: {
-      open: false,
-      title: "",
-      message: "",
-      confirmLabel: "Confirm",
-      cancelLabel: "Cancel",
-      danger: false,
-    },
-    _confirmResolve: null as ((ok: boolean) => void) | null,
-    // The prompt dialog (replaces window.prompt, which is suppressible
-    // per-origin and never appears in an unfocused popup). `askPrompt`
-    // resolves the typed string, or null.
-    promptModal: {
-      open: false,
-      title: "",
-      message: "",
-      value: "",
-      placeholder: "",
-      confirmLabel: "Create",
-      error: "",
-    },
-    _promptResolve: null as ((name: string | null) => void) | null,
-    // The Escape keydown a modal has already answered.
-    _escapeEvent: null as Event | null,
-    // The one binding every `.modal-scrim` in index.html uses:
-    // `x-bind="scrim('runOpen', () => closeRunModal())"`. `path` names the open
-    // flag, dotted for a nested one (`confirmModal.open`). Alpine evaluates the
-    // object once per scrim, so `was` lives as long as the element.
-    // A click on the scrim closes nothing: a stray click must not throw away
-    // what a modal holds. Only its own buttons and Escape close it.
-    scrim(path: string, close: () => void) {
-      const isOpen = () => path.split(".").reduce<unknown>((o, k) => (o as Record<string, unknown> | undefined)?.[k], this);
-      let was = false;
-      const self = this;
-      return {
-        "x-show": () => isOpen(),
-        // Every open scrim hears the same window keydown; only the top one acts,
-        // so a confirm raised over another modal closes alone. The event is
-        // marked because the browser runs Alpine's effects between two
-        // listeners: the close pops the stack before the next scrim is asked,
-        // and the modal under it would read as the top.
-        "@keydown.escape.window": (e: Event) => {
-          if (self._escapeEvent === e) return;
-          if (isOpen() && self.isTopModal(path)) {
-            self._escapeEvent = e;
-            close();
-          }
-        },
-        // Watches the flag, not the close methods: `logOff()` clears flags
-        // directly, and that close must still pop the stack.
-        "x-effect"(this: { $el: Element }) {
-          const open = !!isOpen();
-          if (open === was) return;
-          was = open;
-          if (open) self.modalOpened(path, this.$el);
-          else self.modalClosed(path);
-        },
-      };
-    },
-    isTopModal(path: string) {
-      return this._modalStack.at(-1)?.path === path;
-    },
-    // Whether the modal with this open-flag path is open, at any depth. Code
-    // outside a dialog's component asks this, never the flag (ADR-0073 D5).
-    modalOpen(path: string) {
-      return this._modalStack.some((m) => m.path === path);
-    },
-    modalOpened(path: string, scrimEl: Element) {
-      this._modalStack.push({ path, opener: document.activeElement as HTMLElement | null });
-      // One frame later: `x-show` has flipped by then, and a modal that focuses
-      // its own field on open (Branch, Prompt) has already done so.
-      window.requestAnimationFrame(() => {
-        const dialog = scrimEl.querySelector('[role="dialog"], [role="alertdialog"]') || scrimEl;
-        if (dialog.contains(document.activeElement)) return;
-        const controls = Array.from(
-          dialog.querySelectorAll<HTMLElement & { disabled?: boolean }>(
-            'button, input, select, textarea, [href], [tabindex]:not([tabindex="-1"])',
-          ),
-        ).filter((el) => !el.disabled && el.getClientRects().length > 0);
-        // The header ✕ is the last resort: it leads every modal, and the
-        // operator came for the content.
-        (controls.find((el) => !el.classList.contains("modal-x")) || controls[0])?.focus();
-      });
-    },
-    modalClosed(path: string) {
-      const i = this._modalStack.findLastIndex((m) => m.path === path);
-      if (i < 0) return;
-      const [{ opener }] = this._modalStack.splice(i, 1);
-      if (opener?.isConnected) opener.focus();
-    },
-    // Accelerators are ignored while typing or while a modal is up.
-    // `allowTerminal`: a key that must also work from inside a terminal (the
-    // column walk); xterm's input is a TEXTAREA.
-    consoleShortcutsBlocked(allowTerminal = false) {
-      if (!this.$store.connection.authed) return true;
-      if (this.modalOpen(WBSettingsDialog.openFlag) || this.modalOpen(WBSecurityDialog.openFlag) || this.modalOpen("runOpen") || this.modalOpen("branchOpen")) return true;
-      if (this.modalOpen(WBReleaseDialogs.whatsNewFlag)) return true;
-      const el = document.activeElement as HTMLElement | null;
-      if (allowTerminal && el?.closest?.(".xterm")) return false;
-      return !!(
-        el &&
-        (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable || el.closest(".monaco-editor"))
-      );
-    },
-    // Resolve `true`/`false` on the operator's choice. A pending dialog is
-    // settled `false` first so a second call never strands its promise.
-    askConfirm(opts: ConfirmAsk = {}) {
-      if (this._confirmResolve) this.confirmRespond(false);
-      this.confirmModal = {
-        open: true,
-        title: opts.title || "Confirm",
-        message: opts.message || "",
-        confirmLabel: opts.confirmLabel || "Confirm",
-        cancelLabel: opts.cancelLabel || "Cancel",
-        danger: opts.danger || false,
-      };
-      return new Promise((resolve) => {
-        this._confirmResolve = resolve;
-      });
-    },
-    // Close the dialog and settle its promise with the choice.
-    confirmRespond(ok: boolean) {
-      this.confirmModal.open = false;
-      const resolve = this._confirmResolve;
-      this._confirmResolve = null;
-      if (resolve) resolve(ok);
-    },
-    // Resolve the typed string, or `null`. Mirrors askConfirm.
-    askPrompt(opts: PromptAsk = {}) {
-      if (this._promptResolve) this.promptRespond(null);
-      this.promptModal = {
-        open: true,
-        title: opts.title || "Name",
-        message: opts.message || "",
-        value: opts.value || "",
-        placeholder: opts.placeholder || "",
-        confirmLabel: opts.confirmLabel || "Create",
-        error: "",
-      };
-      // Focus after Alpine has painted; caret at the end, not selected.
-      queueMicrotask(() => {
-        const el = document.getElementById("prompt-input") as HTMLInputElement | null;
-        if (!el) return;
-        el.focus();
-        el.setSelectionRange(el.value.length, el.value.length);
-      });
-      return new Promise<string | null>((resolve) => {
-        this._promptResolve = resolve;
-      });
-    },
-    // A name that cannot be a single directory entry is refused HERE, dialog
-    // open. The daemon confines every path regardless (`confine_write`); this
-    // says *which* character was wrong.
-    promptSubmit() {
-      const name = this.promptModal.value.trim();
-      const bad = !name
-        ? "name is required"
-        : /[\\/]/.test(name)
-          ? "name cannot contain / or \\"
-          : name === "." || name === ".."
-            ? "name cannot be . or .."
-            : "";
-      if (bad) {
-        this.promptModal.error = bad;
-        return;
-      }
-      this.promptRespond(name);
-    },
-    // Close the dialog and settle its promise with `name` (null = cancelled).
-    promptRespond(name: string | null) {
-      this.promptModal.open = false;
-      const resolve = this._promptResolve;
-      this._promptResolve = null;
-      if (resolve) resolve(name);
     },
 
     // --- the open project -------------------------------------------------
@@ -366,7 +179,7 @@ export function shell() {
     // open no socket.
     async removeProject(p: Project) {
       const ref = this.$store.projects.repoRef(p);
-      const ok = await this.askConfirm({
+      const ok = await this.$store.modals.askConfirm({
         title: "Remove project",
         message: `Remove “${WBProject.projectName(p)}” from Ralphy? Files on disk are kept.`,
         confirmLabel: "Remove",
@@ -385,7 +198,7 @@ export function shell() {
         const gone =
           !WBFail.isError(reply) || WBFail.message(reply, "") === "unknown repo";
         if (!gone) {
-          this._flashAction(WBFail.failed(reply, "Could not remove the project: the daemon gave no reason."));
+          this.$store.modals.flash(WBFail.failed(reply, "Could not remove the project: the daemon gave no reason."));
           return;
         }
         // Identity is `repoRef`, not the slug: a peer can list the same slug.
@@ -396,7 +209,7 @@ export function shell() {
         }
         this.$store.projects.loadRepos();
       } catch {
-        this._flashAction("remove unavailable: no daemon");
+        this.$store.modals.flash("remove unavailable: no daemon");
       }
     },
     // The status dot: live → green, idle → grey, offline → red (unreachable
@@ -543,9 +356,6 @@ export function shell() {
     // it can observe changing.
     nowMs: Date.now(),
 
-    // The Runs panel's flash line; `_flashAction` writes it.
-    runsActionMsg: "",
-
     // --- canvas tabs ------------------------------------------------------
     // The SAME terminal glyph as the New-console button and its menu rows.
     tabs: [{ id: "consoles", kind: "consoles", title: "Consoles", icon: "bi bi-terminal", closable: false }] as CanvasTab[],
@@ -594,7 +404,7 @@ export function shell() {
     fetchContent(project: string, path: string, ftype: string, checkout: string | null | undefined): Promise<TabBody> {
       const refuse = (reason: string) => {
         window.WB.emit("open-refused", { project, path, reason });
-        this._flashAction?.(WBFail.failed({ reason }, "Could not open the file: the daemon gave no reason."));
+        this.$store.modals.flash?.(WBFail.failed({ reason }, "Could not open the file: the daemon gave no reason."));
         if (reason === "not found" || reason === "transport") {
           this.closeTab(fileTabId(project, path, checkout));
           return null;
@@ -631,7 +441,7 @@ export function shell() {
       const title = path.split("/").pop()!;
       if (as === "bytes") {
         window.WB.emit("open-refused", { project, path, reason: "not a note" });
-        this._flashAction?.(`${path} is not a note.`);
+        this.$store.modals.flash?.(`${path} is not a note.`);
         return;
       }
       const ftype = classify(title);
@@ -643,7 +453,7 @@ export function shell() {
       }
       if (ftype === "binary") {
         window.WB.emit("open-refused", { project, path, reason: "binary" });
-        this._flashAction?.("Cannot open binary files.");
+        this.$store.modals.flash?.("Cannot open binary files.");
         return;
       }
       this.openTab({ project: project!, path, title, ftype, fragment, checkout });
@@ -762,7 +572,7 @@ export function shell() {
         const refuse = (reason: string) => {
           if (refused) return null;
           refused = true;
-          this._flashAction?.(WBFail.failed({ message: reason }, "Could not open the diff: the daemon gave no reason."));
+          this.$store.modals.flash?.(WBFail.failed({ message: reason }, "Could not open the diff: the daemon gave no reason."));
           this.closeTab(t.id);
           return null;
         };
@@ -797,12 +607,12 @@ export function shell() {
       const path = entry.path;
       if (ftype === "binary") {
         window.WB.emit("open-refused", { project, path, reason: "binary" });
-        this._flashAction?.("Cannot open binary files.");
+        this.$store.modals.flash?.("Cannot open binary files.");
         return;
       }
       if (entry.status === "deleted") {
         window.WB.emit("open-refused", { project, path, reason: "deleted" });
-        this._flashAction?.("This image was deleted, so there is nothing to show.");
+        this.$store.modals.flash?.("This image was deleted, so there is nothing to show.");
         return;
       }
       const title = path.split("/").pop()!;
@@ -1319,7 +1129,7 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
           const folder = d.kind === "folder";
           const c = window.getShell();
           const name = c
-            ? await c.askPrompt({
+            ? await window.Alpine.store("modals").askPrompt({
                 // No placeholder: a plausible filename in an empty field reads as
                 // a name already chosen, and operators pressed Enter on it.
                 title: newEntryTitle(folder ? "folder" : "file", d.path),
@@ -1379,7 +1189,7 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
   document.addEventListener("keydown", (e) => {
     if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
     const c = window.getShell();
-    if (!c || c.consoleShortcutsBlocked()) return;
+    if (!c || window.Alpine.store("modals").consoleShortcutsBlocked()) return;
     e.preventDefault();
     if (window.Alpine.store("projects").openSlug) sendWindow(window, "workbench:file-search-open");
     else c.focusProjectSearch();
@@ -1392,7 +1202,8 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
     if (e.key !== "F" && e.key !== "f") return;
     const c = window.getShell();
     if (!c || !window.Alpine.store("connection").authed || !window.Alpine.store("projects").openSlug) return;
-    if (c.modalOpen(WBSettingsDialog.openFlag) || c.modalOpen(WBSecurityDialog.openFlag) || c.modalOpen("runOpen") || c.modalOpen("branchOpen") || c.modalOpen(WBReleaseDialogs.whatsNewFlag)) return;
+    const modals = window.Alpine.store("modals");
+    if (modals.modalOpen(WBSettingsDialog.openFlag) || modals.modalOpen(WBSecurityDialog.openFlag) || modals.modalOpen("runOpen") || modals.modalOpen("branchOpen") || modals.modalOpen(WBReleaseDialogs.whatsNewFlag)) return;
     e.preventDefault();
     sendWindow(window, "workbench:file-search-open");
   });

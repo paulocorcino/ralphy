@@ -25,7 +25,7 @@ import type { ChangeEntry, Read, Subscription, Sync, Timer } from "./wb-shell-ty
 
 export function wbChanges() {
   // Every `shell()` member this component's code or markup reads or calls.
-  return component(["sideOpen", "sideView", "checkoutChipClick", "openDiff", "flash", "askConfirm"], {
+  return component(["sideOpen", "sideView", "checkoutChipClick", "openDiff"], {
     // The slow backstop: the `/ws/tree` nudge (#310) only reports what a RUN
     // did; an operator's own editor produces no event. Two git subprocesses per
     // minute, only while the panel is open and the tab in front.
@@ -408,7 +408,7 @@ export function wbChanges() {
     async discardRow(slug: string, entry: ChangeEntry) {
       if (!slug || !entry || !entry.path || this.$store.connection.writeLocked()) return;
       const c = WBChanges.discardConfirm(entry);
-      const ok = await this.askConfirm({
+      const ok = await this.$store.modals.askConfirm({
         title: c.title,
         message: c.message,
         confirmLabel: c.confirmLabel,
@@ -465,7 +465,7 @@ export function wbChanges() {
     // is kept beside it. `runs-verb-error`'s counterpart (#331).
     _changesRefused(msg: string) {
       this.changesError = msg || "";
-      this.flash(msg);
+      this.$store.modals.flash(msg);
     },
 
     // The write lock (the Alpine store `connection`) hears whether the change

@@ -51,7 +51,7 @@ function observedBoard(replies) {
   const loaded = loadShell();
   loaded.window.WBDaemon.observe = async () => replies.shift() ?? null;
   loaded.state.$store.projects.setOpen("o/r");
-  loaded.state._flashAction = () => {};
+  loaded.state.$store.modals.flash = () => {};
   const { scope } = loadComponent("wbBoard", { from: loaded });
   scope.loadPlan = () => {};
   return scope;

@@ -37,6 +37,7 @@ import { connectionStore } from "../assets/ui/wb-connection-store.ts";
 import { runsStore } from "../assets/ui/wb-runs-store.ts";
 import { checkoutsStore } from "../assets/ui/wb-checkouts-store.ts";
 import { releaseStore } from "../assets/ui/wb-release-store.ts";
+import { modalsStore } from "../assets/ui/wb-modals-store.ts";
 import { WBSpend } from "../assets/ui/wb-spend.ts";
 import { WBKanban } from "../assets/ui/wb-kanban.ts";
 import { createDaemon } from "../assets/ui/wb-daemon.ts";
@@ -64,6 +65,7 @@ const MODULE_NAMESPACES = {
 // with the deps `main.ts` gives it (`{ messages, detached }`), so a new store is
 // one line here and every test page has it.
 export const STORES = {
+  modals: modalsStore,
   projects: projectsStore,
   connection: connectionStore,
   runs: runsStore,
@@ -210,11 +212,9 @@ export function loadShell(opts = {}) {
   WBDeskSink.setHold(false);
   // One message door, one console, one daemon door, one file pane and one set
   // of note cards per page, in the order the entry module makes them. `boot`
-  // is not called: the stub document has no stage. The stub document has no
-  // `[x-data]` root, so `getShell` finds no shell: the door falls back to this
-  // page's `shell()` state, the shell the browser would find.
-  let state = null;
-  const messages = createMessages(window, document, { shell: () => window.getShell?.() ?? state });
+  // is not called: the stub document has no stage. The door reaches the store
+  // `modals` through `window.Alpine`, as in the browser.
+  const messages = createMessages(window, document);
   const realBC = globalThis.BroadcastChannel;
   delete globalThis.BroadcastChannel;
   try {
@@ -234,7 +234,7 @@ export function loadShell(opts = {}) {
   const detached = wire(window, document, { messages });
   const given = { projects: opts.projects, ...opts.stores };
   for (const [name, store] of Object.entries(STORES)) stores[name] = given[name] || store({ messages, detached });
-  state = shell();
+  const state = shell();
   state.$store = stores;
   return { state, window, document };
 }
@@ -249,8 +249,7 @@ export function loadShell(opts = {}) {
 // component's own. A `uses` value that is an object comes back read-only: a set
 // or a delete on it, at any depth, throws a TypeError that names the component
 // and the path (`security.passwordSet`). A `shell()` method in `uses` runs with
-// `this` set to the merged scope, as Alpine runs it, so `scrim()` still reaches
-// the modal stack and the dialog's open flag, and the method may write
+// `this` set to the merged scope, as Alpine runs it, and the method may write
 // `shell()` state: that write is the one D4 allows. A getter of the component
 // runs with the scope as `this`, as Alpine 3.14 runs it (`mergeProxies` passes
 // the scope as the receiver of `Reflect.get`), so a getter that reads a

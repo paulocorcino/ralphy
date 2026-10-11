@@ -54,6 +54,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Alpine store `modals`: the modal stack, the confirm, the prompt and the flash line.
+MODALS = "Alpine.store('modals')"
 # The Changes view is the component wbChanges.
 CHG = "Alpine.$data(document.querySelector('[x-data=\"wbChanges\"]'))"
 
@@ -297,7 +299,7 @@ def wait_dialog(page):
 def answer_dialog(page, ok):
     """Settle the open dialog through Alpine's own responder — the label text is
     per-case, so a text-matched click would be a second oracle to keep in sync."""
-    page.evaluate(f"(v) => {SH}.confirmRespond(v)", arg=ok)
+    page.evaluate(f"(v) => {MODALS}.confirmRespond(v)", arg=ok)
     page.wait_for_function(
         "() => { const m = document.querySelector('.confirm-modal');"
         " return !m || m.offsetParent === null; }",

@@ -22,7 +22,7 @@ import type { Run, RunIssue } from "./wb-shell-types.d.ts";
 
 export function wbRuns() {
   // Every `shell()` member this component's code or markup reads or calls.
-  return component(["runsOpen", "toggleRuns", "nowMs", "runsActionMsg", "flash", "askConfirm", "scrim", "kanbanOpen", "toggleKanban"], {
+  return component(["runsOpen", "toggleRuns", "nowMs", "kanbanOpen", "toggleKanban"], {
     // The trail node the operator arrived at from the board (#301): a marker,
     // not a selection.
     trailFocus: null as number | null,
@@ -164,7 +164,7 @@ export function wbRuns() {
       if (!runid || this.runStopping) return;
       // ADR-0032 §6 asks for a strong confirmation. The shell's OWN dialog,
       // not `window.confirm` (blocks the page, ignores the theme).
-      const ok = await this.askConfirm({
+      const ok = await this.$store.modals.askConfirm({
         title: "Stop this run?",
         message:
           "Stops the current issue. Commits already made are kept.",
@@ -181,10 +181,10 @@ export function wbRuns() {
         if (WBFail.isError(reply)) {
           this.runVerbFailed(WBFail.failed(reply, "Could not stop the run."));
         } else {
-          this.flash("Stop requested. The run is stopping.");
+          this.$store.modals.flash("Stop requested. The run is stopping.");
         }
       } catch {
-        this.flash("Could not stop the run: the daemon is not connected.");
+        this.$store.modals.flash("Could not stop the run: the daemon is not connected.");
       } finally {
         this.runStopping = null;
       }
@@ -319,7 +319,7 @@ export function wbRuns() {
         branchMode: c.branchMode,
         command: this.runCommandPreview(),
       });
-      this.flash("Run started.");
+      this.$store.modals.flash("Run started.");
       this.closeRunModal();
     },
     // triage / push: the verb name is the whole intent; the client never
@@ -327,7 +327,7 @@ export function wbRuns() {
     fireVerb(verb: string) {
       this._resetVerbSurface();
       window.WB.emit("command", { project: this.$store.projects.openSlug, verb });
-      this.flash(this.$store.connection.verbRequestedText(verb));
+      this.$store.modals.flash(this.$store.connection.verbRequestedText(verb));
     },
     // From wb-daemon.ts on a TERMINAL frame only; an empty note is a no-op.
     runVerbFailed(msg: string) {

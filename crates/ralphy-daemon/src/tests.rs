@@ -1290,7 +1290,7 @@ fn the_release_badge_and_panel_are_pinned_in_the_served_assets() {
     // The menu row asks the dialogs' own component to open (ADR-0073 D5).
     assert!(html.contains("$dispatch('workbench:whats-new-open')"));
     assert!(html.contains("@workbench:whats-new-open.window=\"openWhatsNew()\""));
-    assert!(html.contains("x-bind=\"scrim('whatsNewOpen', () => closeWhatsNew())\""));
+    assert!(html.contains("x-bind=\"$store.modals.scrim('whatsNewOpen', () => closeWhatsNew())\""));
     // The whole gap, not just the newest release.
     assert!(html.contains("x-for=\"entry in $store.release.release.gap\""));
     // The upgrade is a command the operator runs, never a button that
@@ -3944,6 +3944,10 @@ const SHELL_FAMILY: &[(&str, &str)] = &[
     ),
     ("wb-login.ts", include_str!("../assets/ui/wb-login.ts")),
     (
+        "wb-modals-store.ts",
+        include_str!("../assets/ui/wb-modals-store.ts"),
+    ),
+    (
         "wb-move-dialog.ts",
         include_str!("../assets/ui/wb-move-dialog.ts"),
     ),
@@ -5432,7 +5436,7 @@ fn shell_draws_fences_below_the_windows() {
     // The toolbar says why before the click and again if one gets through — the
     // #318 idiom, since `wb-console.ts` reaches no shell and can only refuse.
     assert!(
-        app.contains("if (WBConsole.createFence() === false) this.flash(this.fenceCapMessage());"),
+        app.contains("if (WBConsole.createFence() === false) this.$store.modals.flash(this.fenceCapMessage());"),
         "newFence must let the module refuse, and say so when it does"
     );
     // The dimming reads the REACTIVE snapshot, not the module's array. MEASURED:
@@ -7827,7 +7831,7 @@ fn stopping_a_run_confirms_through_the_design_system_dialog() {
     let body = &code[start..];
     let body = &body[..body[1..].find("async").map_or(body.len(), |i| i + 1)];
     assert!(
-        body.contains(r#"constok=awaitthis.askConfirm({title:"Stopthisrun?","#),
+        body.contains(r#"constok=awaitthis.$store.modals.askConfirm({title:"Stopthisrun?","#),
         "stopRun must confirm through askConfirm: {body}"
     );
     assert!(
@@ -7856,7 +7860,9 @@ fn the_board_surfaces_the_plan_the_next_run_would_execute() {
     // would invite a discard of the wrong work.
     let app_squeezed: String = app_js.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
-        app_squeezed.contains(r#"const ok = await this.askConfirm({ title: "Discard this plan?","#),
+        app_squeezed.contains(
+            r#"const ok = await this.$store.modals.askConfirm({ title: "Discard this plan?","#
+        ),
         "discardPlan must confirm first"
     );
     assert!(
@@ -8268,7 +8274,7 @@ fn the_worktree_row_remove_action_stops_the_selecting_click() {
         .expect("removeWorktree exists");
     let body = &app_js[remove..];
     let ask = body
-        .find("await this.askConfirm({")
+        .find("await this.$store.modals.askConfirm({")
         .expect("a worktree remove asks the operator first");
     let call = body
         .find(r#"observe("worktree.remove""#)

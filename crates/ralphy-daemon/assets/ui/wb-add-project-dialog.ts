@@ -19,7 +19,7 @@ export function addProjectDialog() {
   // Every `shell()` member this component's code or markup reads or calls.
   // `loadComponent` in ui-tests/harness.mjs fails on any other name, and the
   // type check fails on a name the code reads.
-  return component(["toggle", "scrim"], {
+  return component(["toggle"], {
     // The Add a project dialog (#501): its whole state is the wb-add-project.ts fold.
     addProject: WBAddProject.initial(),
     // The debounce and "Loading…" timers of its folder list.

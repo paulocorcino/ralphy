@@ -157,7 +157,7 @@
       <button :class="{ active: active === 'spend' }" @click="$dispatch('workbench:spend-open')" title="Spend (cost of this project)"><svg x-icon="'coins'"></svg></button>
       <!-- spacer pushes the settings gear to the bottom of the rail -->
       <span class="rail-spacer"></span>
-      <button :class="{ active: modalOpen('settingsOpen') }" @click="$dispatch('workbench:menus-close'); $dispatch('workbench:settings-open')" title="Settings"><svg x-icon="'settings'"></svg></button>
+      <button :class="{ active: $store.modals.modalOpen('settingsOpen') }" @click="$dispatch('workbench:menus-close'); $dispatch('workbench:settings-open')" title="Settings"><svg x-icon="'settings'"></svg></button>
     </nav>
 
     <!-- sidebar: project accordion. impl: `$store.projects.projects` comes from the daemon
@@ -439,7 +439,7 @@
                it. `_mutateBranch` reverts the optimistic chip on a refusal,
                which on its own reads as a click that bounced for no reason —
                the reason (a held run.lock, per ADR-0036 §6) went to
-               `_flashAction`, whose only renderer lives in `aside.runs` and is
+               `$store.modals.flash`, whose only renderer lives in `aside.runs` and is
                closed by default. Its OWN state, not `treeError`: a branch that
                was refused says nothing about the tree, and dressing it as a
                failed read would make a working project look broken. -->
@@ -642,7 +642,7 @@
           </div>
           <!-- The authority's answer to an act dispatched from THIS panel. It
                has to render here, and not only in the runs toolbar: the acts
-               below are clicked in the left rail, while `_flashAction` writes
+               below are clicked in the left rail, while `$store.modals.flash` writes
                into `aside.runs`, which is `x-show="runsOpen"` and closed by
                default — so every refusal in this panel was written to a node
                that was not in the DOM, and a refused Push read as a dead
@@ -1704,7 +1704,7 @@
            the part that changes the decision: a `Feasible: no` or bundle plan is
            asking for a human, not for a run. Discard goes through `plan.discard`
            (ADR-0036 amendment) after the design-system confirm. -->
-      <div class="modal-scrim" x-cloak x-bind="scrim('planModal.open', () => closePlanModal())">
+      <div class="modal-scrim" x-cloak x-bind="$store.modals.scrim('planModal.open', () => closePlanModal())">
         <div class="modal plan-modal" role="dialog" aria-modal="true" aria-label="Plan">
           <div class="modal-head">
             <svg x-icon="'scroll-text'"></svg>
@@ -1803,7 +1803,7 @@
              prose beside three buttons was furniture. The cost is stated where
              it is paid: with no hover there is no tooltip, so on a touch screen
              a dimmed verb explains itself only by being dimmed. -->
-        <span class="runs-action-status" x-text="runsActionMsg" x-show="runsActionMsg"></span>
+        <span class="runs-action-status" x-text="$store.modals.runsActionMsg" x-show="$store.modals.runsActionMsg"></span>
       </div>
 
       <!-- a CLI refusal, surfaced as panel state (#331). The gate above is only
@@ -1965,7 +1965,7 @@
          (`--agent` executor + `--plan-agent` planner); choose the branch mode.
          Emits a `run-start` intent carrying the faithful flags; the daemon
          spawns `ralphy run …`. Kept deliberately minimal. -->
-    <div class="modal-scrim" x-cloak x-bind="scrim('runOpen', () => closeRunModal())">
+    <div class="modal-scrim" x-cloak x-bind="$store.modals.scrim('runOpen', () => closeRunModal())">
       <div class="modal run-modal" role="dialog" aria-modal="true" aria-label="Start a run">
         <div class="modal-head">
           <svg x-icon="'play'"></svg>
@@ -2047,7 +2047,7 @@
     <div class="settings-dialog" x-data="wbSettingsDialog" @workbench:settings-open.window="openSettings()"
          @workbench:log-off.window="settingsOpen = false"
          @workbench:panels-reread.window="settingsOpen && readSettings()">
-    <div class="modal-scrim" x-cloak x-bind="scrim('settingsOpen', () => closeSettings())">
+    <div class="modal-scrim" x-cloak x-bind="$store.modals.scrim('settingsOpen', () => closeSettings())">
       <div class="modal settings-modal" role="dialog" aria-modal="true" aria-label="Settings">
         <div class="modal-head">
           <svg x-icon="'settings'"></svg>
@@ -2262,7 +2262,7 @@
     ==================================================================== -->
     <div class="security-dialog" x-data="wbSecurityDialog" @workbench:security-open.window="openSecurity()"
          @workbench:log-off.window="securityOpen = false">
-    <div class="modal-scrim" x-cloak x-bind="scrim('securityOpen', () => closeSecurity())">
+    <div class="modal-scrim" x-cloak x-bind="$store.modals.scrim('securityOpen', () => closeSecurity())">
       <div class="modal security-modal" role="dialog" aria-modal="true" aria-label="Security settings">
         <div class="modal-head">
           <svg x-icon="'shield'"></svg>
@@ -2448,7 +2448,7 @@
          showed only the last one would hide the reason to take it. -->
     <div class="release-dialogs" x-data="wbReleaseDialogs" @workbench:whats-new-open.window="openWhatsNew()"
          @workbench:about-open.window="openAbout()">
-    <div class="modal-scrim" x-cloak x-bind="scrim('whatsNewOpen', () => closeWhatsNew())">
+    <div class="modal-scrim" x-cloak x-bind="$store.modals.scrim('whatsNewOpen', () => closeWhatsNew())">
       <div class="modal rel-modal" role="dialog" aria-modal="true" aria-label="What's new">
         <div class="modal-head">
           <svg x-icon="'sparkles'"></svg>
@@ -2573,7 +2573,7 @@
       </div>
     </div>
 
-    <div class="modal-scrim" x-cloak x-bind="scrim('aboutOpen', () => closeAbout())">
+    <div class="modal-scrim" x-cloak x-bind="$store.modals.scrim('aboutOpen', () => closeAbout())">
       <div class="modal about-modal" role="dialog" aria-modal="true" aria-label="About Ralphy">
         <div class="modal-head">
           <svg x-icon="'info'"></svg>
@@ -2647,7 +2647,7 @@
          the row's own selecting click out of it.
     ==================================================================== -->
     <div class="branch-dialog" x-data="wbBranchDialog">
-    <div class="modal-scrim" x-cloak x-bind="scrim('branchOpen', () => closeBranchModal())">
+    <div class="modal-scrim" x-cloak x-bind="$store.modals.scrim('branchOpen', () => closeBranchModal())">
       <div
         class="modal branch-modal"
         role="dialog"
@@ -2716,35 +2716,35 @@
     <!-- ===================================================================
          Confirm dialog — the design-system replacement for the native
          window.confirm on destructive actions (delete). Driven by
-         `confirmModal` + `askConfirm()` (app.js): the scrim dims the canvas so
+         `confirmModal` + `askConfirm()` (the store `modals`): the scrim dims the canvas so
          the choice has focus, Enter confirms unless a button has focus (that
          button's own click answers), Escape/scrim/✕ cancels. The Enter that
          confirms is default-prevented: closing hands focus back to the opener,
          and its keypress would otherwise click that button again.
     ==================================================================== -->
-    <div class="modal-scrim" x-cloak x-bind="scrim('confirmModal.open', () => confirmRespond(false))">
+    <div class="modal-scrim" x-cloak x-bind="$store.modals.scrim('$store.modals.confirmModal.open', () => $store.modals.confirmRespond(false))">
       <div
         class="modal confirm-modal"
         role="alertdialog"
         aria-modal="true"
-        :aria-label="confirmModal.title"
-        @keydown.enter.window="confirmModal.open && !$event.target.closest?.('button') && ($event.preventDefault(), confirmRespond(true))"
+        :aria-label="$store.modals.confirmModal.title"
+        @keydown.enter.window="$store.modals.confirmModal.open && !$event.target.closest?.('button') && ($event.preventDefault(), $store.modals.confirmRespond(true))"
       >
         <div class="modal-head">
-          <i class="bi bi-exclamation-triangle" x-show="confirmModal.danger" style="color: var(--danger)"></i>
-          <i class="bi bi-question-circle" x-show="!confirmModal.danger"></i>
-          <span class="modal-title" x-text="confirmModal.title"></span>
+          <i class="bi bi-exclamation-triangle" x-show="$store.modals.confirmModal.danger" style="color: var(--danger)"></i>
+          <i class="bi bi-question-circle" x-show="!$store.modals.confirmModal.danger"></i>
+          <span class="modal-title" x-text="$store.modals.confirmModal.title"></span>
           <span class="spacer"></span>
-          <button class="modal-x" @click="confirmRespond(false)" title="Close"><i class="bi bi-x-lg"></i></button>
+          <button class="modal-x" @click="$store.modals.confirmRespond(false)" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
-        <p class="confirm-body" x-text="confirmModal.message"></p>
+        <p class="confirm-body" x-text="$store.modals.confirmModal.message"></p>
         <div class="modal-foot">
-          <button class="btn" @click="confirmRespond(false)" x-text="confirmModal.cancelLabel"></button>
+          <button class="btn" @click="$store.modals.confirmRespond(false)" x-text="$store.modals.confirmModal.cancelLabel"></button>
           <button
             class="btn"
-            :class="confirmModal.danger ? 'danger' : 'accent'"
-            @click="confirmRespond(true)"
-            x-text="confirmModal.confirmLabel"
+            :class="$store.modals.confirmModal.danger ? 'danger' : 'accent'"
+            @click="$store.modals.confirmRespond(true)"
+            x-text="$store.modals.confirmModal.confirmLabel"
           ></button>
         </div>
       </div>
@@ -2754,39 +2754,39 @@
          Prompt dialog — the design-system replacement for the native
          window.prompt when the workbench needs one word from the operator
          (naming a new file or folder). Driven by `promptModal` + `askPrompt()`
-         (app.js). Enter submits through `promptSubmit()`, which validates and
+         (the store `modals`). Enter submits through `promptSubmit()`, which validates and
          keeps the dialog OPEN on a bad name so it can be fixed in place;
          Escape/scrim/✕ cancel and resolve null.
     ==================================================================== -->
-    <div class="modal-scrim" x-cloak x-bind="scrim('promptModal.open', () => promptRespond(null))">
+    <div class="modal-scrim" x-cloak x-bind="$store.modals.scrim('$store.modals.promptModal.open', () => $store.modals.promptRespond(null))">
       <div
         class="modal prompt-modal"
         role="dialog"
         aria-modal="true"
-        :aria-label="promptModal.title"
+        :aria-label="$store.modals.promptModal.title"
       >
         <div class="modal-head">
           <i class="bi bi-input-cursor-text"></i>
-          <span class="modal-title" x-text="promptModal.title"></span>
+          <span class="modal-title" x-text="$store.modals.promptModal.title"></span>
           <span class="spacer"></span>
-          <button class="modal-x" @click="promptRespond(null)" title="Close"><i class="bi bi-x-lg"></i></button>
+          <button class="modal-x" @click="$store.modals.promptRespond(null)" title="Close"><i class="bi bi-x-lg"></i></button>
         </div>
-        <p class="prompt-where" x-text="promptModal.message" x-show="promptModal.message"></p>
+        <p class="prompt-where" x-text="$store.modals.promptModal.message" x-show="$store.modals.promptModal.message"></p>
         <input
           id="prompt-input"
           class="prompt-input"
           type="text"
           autocomplete="off"
           spellcheck="false"
-          x-model="promptModal.value"
-          :placeholder="promptModal.placeholder"
-          @input="promptModal.error = ''"
-          @keydown.enter.prevent="promptSubmit()"
+          :value="$store.modals.promptModal.value"
+          :placeholder="$store.modals.promptModal.placeholder"
+          @input="$store.modals.promptTyped($event.target.value)"
+          @keydown.enter.prevent="$store.modals.promptSubmit()"
         />
-        <p class="prompt-error" x-show="promptModal.error" x-text="promptModal.error"></p>
+        <p class="prompt-error" x-show="$store.modals.promptModal.error" x-text="$store.modals.promptModal.error"></p>
         <div class="modal-foot">
-          <button class="btn" @click="promptRespond(null)">Cancel</button>
-          <button class="btn accent" @click="promptSubmit()" x-text="promptModal.confirmLabel"></button>
+          <button class="btn" @click="$store.modals.promptRespond(null)">Cancel</button>
+          <button class="btn accent" @click="$store.modals.promptSubmit()" x-text="$store.modals.promptModal.confirmLabel"></button>
         </div>
       </div>
     </div>
@@ -2800,7 +2800,7 @@
          absent from the rows by construction.
     ==================================================================== -->
     <div class="move-dialog" x-data="wbMoveDialog" @workbench:move-open.window="openMove($event.detail.from)">
-    <div class="modal-scrim" x-cloak x-bind="scrim('movePick.open', () => movePickCancel())">
+    <div class="modal-scrim" x-cloak x-bind="$store.modals.scrim('movePick.open', () => movePickCancel())">
       <div
         class="modal move-picker"
         role="dialog"
@@ -2844,7 +2844,7 @@
          state. Folder names are shown with x-text only.
     ==================================================================== -->
     <div class="add-project-dialog" x-data="wbAddProjectDialog" @workbench:add-project-open.window="openAddProject()">
-    <div class="modal-scrim" x-cloak x-bind="scrim('addProject.open', () => closeAddProject())">
+    <div class="modal-scrim" x-cloak x-bind="$store.modals.scrim('addProject.open', () => closeAddProject())">
       <div class="modal run-modal host-modal" role="dialog" aria-modal="true" aria-label="Add a project">
         <div class="modal-head">
           <svg x-icon="'folder-plus'"></svg>
@@ -2907,7 +2907,7 @@
          the host says is shown with x-text only.
     ==================================================================== -->
     <div class="hosts-dialog" x-data="wbHostsDialog" @workbench:hosts-open.window="openAddHost()">
-    <div class="modal-scrim" x-cloak x-bind="scrim('addHost.open', () => closeAddHost())">
+    <div class="modal-scrim" x-cloak x-bind="$store.modals.scrim('addHost.open', () => closeAddHost())">
       <div class="modal run-modal host-modal" role="dialog" aria-modal="true" aria-label="Hosts">
         <div class="modal-head">
           <svg x-icon="'server'"></svg>

@@ -57,6 +57,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Alpine store `modals`: the modal stack, the confirm, the prompt and the flash line.
+MODALS = "Alpine.store('modals')"
 # The Runs panel and the run modal: the component `wbRuns`.
 RUNS = "Alpine.$data(document.querySelector('[x-data=\"wbRuns\"]'))"
 
@@ -563,7 +565,7 @@ def main():
                 f"() => {{ const lines = {RUNS}.rawFeed.split(/\\r?\\n/).filter(l => l.trim() !== '');"
                 " return { err: document.querySelector('.runs-verb-error span').textContent.trim(),"
                 " last: (lines[lines.length - 1] || '').trim(),"
-                f" flash: {SH}.runsActionMsg }}; }}"
+                f" flash: {MODALS}.runsActionMsg }}; }}"
             )
             check(
                 "an unlocked click still reaches the CLI and its refusal is surfaced",
@@ -583,7 +585,7 @@ def main():
                 re.search(r"remote|github", surfaced["err"], re.I) is not None,
                 f"err={surfaced['err']!r}",
             )
-            # The 2.6 s `_flashAction` timer is the bar: a refusal that expires
+            # The 2.6 s `flash` timer (the store `modals`) is the bar: a refusal that expires
             # with it is the defect this replaces. Waiting on the FLASH's own
             # expiry rather than a fixed sleep makes the comparison exact
             # instead of leaving 600 ms of margin to a timing change.

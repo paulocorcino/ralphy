@@ -38,7 +38,7 @@ const menuHosts = new WeakSet<Element>();
 
 export function wbFiles() {
   // Every `shell()` member this component's code or markup reads or calls.
-  return component(["flash", "hideMenu", "renderMenu", "openNote", "openTab", "repathTabs", "tabs", "checkoutChipClick"], {
+  return component(["hideMenu", "renderMenu", "openNote", "openTab", "repathTabs", "tabs", "checkoutChipClick"], {
     // --- accordion --------------------------------------------------------
 
     // Wunderbaum copies source keys it does not define into `node.data`, so
@@ -970,7 +970,7 @@ export function wbFiles() {
         // Flash it too: a click that silently does nothing reads as a broken
         // tree.
         window.WB.emit("open-refused", { project: slug, path, reason: "binary" });
-        this.flash?.("Cannot open binary files.");
+        this.$store.modals.flash?.("Cannot open binary files.");
         return;
       }
       // Out of a CONTENT search: the tab lands on the first occurrence
@@ -1088,7 +1088,7 @@ export function wbFiles() {
       ).catch(() => null);
       // A refused listing must NOT degrade to an empty `taken` set.
       if (!listing || WBFail.isError(listing) || !Array.isArray(listing.entries)) {
-        this.flash?.("couldn't list the folder");
+        this.$store.modals.flash?.("couldn't list the folder");
         return;
       }
       const taken = new Set(listing.entries.map((e) => e.name));
@@ -1101,7 +1101,7 @@ export function wbFiles() {
         WBDaemon.withCheckout({ repo: this.$store.projects.openSlug, path: rel, to }, checkout),
       ).catch(() => null);
       if (!reply || WBFail.isError(reply)) {
-        this.flash?.(
+        this.$store.modals.flash?.(
           reply
             ? WBFail.failed(reply, "Could not duplicate the file: the daemon gave no reason.")
             : "Could not duplicate the file: the daemon did not answer.",
@@ -1133,11 +1133,11 @@ export function wbFiles() {
         ),
       ).catch(() => null);
       if (!reply) {
-        this.flash?.("Could not move: the daemon did not answer.");
+        this.$store.modals.flash?.("Could not move: the daemon did not answer.");
         return;
       }
       if (WBFail.isError(reply)) {
-        this.flash?.(WBFail.failed(reply, "Could not move: the daemon gave no reason."));
+        this.$store.modals.flash?.(WBFail.failed(reply, "Could not move: the daemon gave no reason."));
         return;
       }
       await this.onTreeDirty(parentRel(from));

@@ -71,7 +71,7 @@ export function createConsole(window: Window, document: Document, location: Pick
   const viewStore = OPTS.viewStore || WBView;
   // The confirm, the notice and the toast are the door's (`wb-messages.ts`);
   // a page that passes no door gets one with no shell.
-  const messages = OPTS.messages || createMessages(window, document, { shell: () => null });
+  const messages = OPTS.messages || createMessages(window, document);
   const { askConfirm, toast } = messages;
   // The z stack and the gestures are the document's (`wb-stage-stack.ts`),
   // shared with the note cards; a page that passes none gets its own.

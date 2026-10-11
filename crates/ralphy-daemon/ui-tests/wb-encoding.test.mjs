@@ -144,7 +144,7 @@ test("a save carries the pane's encoding and bom, and the ack clears the pane", 
   // yes re-sends the same text as UTF-8 — the daemon never converted on its own.
   const asked = [];
   window.getShell = () => state;
-  state.askConfirm = (opts) => {
+  state.$store.modals.askConfirm = (opts) => {
     asked.push(opts);
     return Promise.resolve(true);
   };
@@ -175,7 +175,7 @@ test("a refusal the operator declines to repair leaves the pane unsaved", async 
   state.openTab({ project: "owner/repo", path: "d.txt", title: "d.txt", ftype: "code", checkout: null });
   await tick();
   window.getShell = () => state;
-  state.askConfirm = () => Promise.resolve(false);
+  state.$store.modals.askConfirm = () => Promise.resolve(false);
   written.reply = { status: "error", reason: "unencodable", char_index: 0 };
   fire({ action: "save", project: "owner/repo", path: "d.txt", content: "→", checkout: null, encoding: "windows-1252" });
   await tick();

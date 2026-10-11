@@ -33,7 +33,7 @@ type FenceColumnItems = DocumentEventMap["workbench:fence-columns"]["detail"]["i
 
 export function wbConsoleMenus() {
   // Every `shell()` member this component's code or markup reads or calls.
-  return component(["active", "activate", "flash", "consoleShortcutsBlocked"], {
+  return component(["active", "activate"], {
     agentMenu: false,
     // The Go-to picker (#337) and the fence picker (#343): SNAPSHOTS taken
     // when the menu opens, because the windows and fences live in the DOM.
@@ -151,7 +151,7 @@ export function wbConsoleMenus() {
       this.fenceMenu = false;
       // The module decides; `false` is its refusal at the cap, and saying so is
       // this layer's job (`wb-console.ts` reaches no shell).
-      if (WBConsole.createFence() === false) this.flash(this.fenceCapMessage());
+      if (WBConsole.createFence() === false) this.$store.modals.flash(this.fenceCapMessage());
     },
 
     // ONE dropdown at a time: each trigger sends `workbench:menus-close`
@@ -294,7 +294,7 @@ export function wbConsoleMenus() {
       document.addEventListener("keydown", (e) => {
         if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
         if (!/^(?:Digit\d|KeyR)$/.test(e.code)) return;
-        if (this.consoleShortcutsBlocked(true)) return;
+        if (this.$store.modals.consoleShortcutsBlocked(true)) return;
         if (e.code === "KeyR") {
           e.preventDefault();
           this.openConsoleRunMenu();
@@ -314,7 +314,7 @@ export function wbConsoleMenus() {
       document.addEventListener("keydown", (e) => {
         if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
         if (!/^F(?:[1-9]|1[0-2])$/.test(e.code)) return;
-        if (this.consoleShortcutsBlocked()) return;
+        if (this.$store.modals.consoleShortcutsBlocked()) return;
         if (!this.jumpFenceAt(Number(e.code.slice(1)))) return;
         e.preventDefault();
       });
@@ -324,7 +324,7 @@ export function wbConsoleMenus() {
 
 export function wbColumns() {
   // Every `shell()` member this component's code or markup reads or calls.
-  return component(["active", "flash", "consoleShortcutsBlocked"], {
+  return component(["active"], {
     // Columns beside a maximized console (ADR-0051 §5): per-client view
     // state, never desk state. The ids left to right; empty whenever fewer
     // than two remain, so a lone survivor is an ordinary maximize again.
@@ -517,7 +517,7 @@ export function wbColumns() {
       const cols = this.effectiveColumns(from);
       const out = WBColumns.open(cols, from, id, this.columnCap(), this.columnDir);
       if (!out.ok) {
-        if (out.reason) this.flash(out.reason);
+        if (out.reason) this.$store.modals.flash(out.reason);
         return;
       }
       this.setColumns(out.columns);
@@ -660,7 +660,7 @@ export function wbColumns() {
         if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
         const move = ARROW_STEPS[e.code as keyof typeof ARROW_STEPS];
         if (!move) return;
-        if (this.consoleShortcutsBlocked(this.columnIds().length >= 2)) return;
+        if (this.$store.modals.consoleShortcutsBlocked(this.columnIds().length >= 2)) return;
         if (!this.arrowStep(move[0], move[1])) return;
         e.preventDefault();
       });

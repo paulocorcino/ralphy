@@ -47,6 +47,8 @@ TARGET = os.environ.get("RALPHY_WB_TARGET") or os.path.join(REPO_ROOT, "target",
 EXE = os.path.join(TARGET, "ralphy.exe" if os.name == "nt" else "ralphy")
 CHILD = os.path.join(TARGET, "session_test_child.exe" if os.name == "nt" else "session_test_child")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Alpine store `modals`: the modal stack, the confirm, the prompt and the flash line.
+MODALS = "Alpine.store('modals')"
 # The branch dialog is the component `wbBranchDialog` (wb-branch-dialog.ts).
 BRANCH = "Alpine.$data(document.querySelector('[x-data=\"wbBranchDialog\"]'))"
 # The board is the component `wbBoard` (wb-board.ts).
@@ -264,7 +266,7 @@ def main():
             a = active(page)
             check("1b Escape closes Hosts", page.evaluate(hosts_open) is False)
             check("1b focus returns to the Hosts button", a and a["title"] == "Hosts", f"active={a}")
-            check("1b the modal stack is empty", page.evaluate(f"() => {SH}._modalStack.length") == 0)
+            check("1b the modal stack is empty", page.evaluate(f"() => {MODALS}._modalStack.length") == 0)
 
             # --- scenario 1c: Add a project, its own Alpine component too ------
             page.locator("button.side-add-project").focus()
@@ -279,7 +281,7 @@ def main():
             a = active(page)
             check("1c Escape closes Add a project", page.evaluate(f"() => {ADDPROJECT}.addProject.open") is False)
             check("1c focus returns to the Add a project button", a and a["title"] == "Add a project", f"active={a}")
-            check("1c the modal stack is empty", page.evaluate(f"() => {SH}._modalStack.length") == 0)
+            check("1c the modal stack is empty", page.evaluate(f"() => {MODALS}._modalStack.length") == 0)
 
             # --- scenario 2: Security, and its step-up field ------------------
             # The account menu's item closes the menu and opens the dialog.
@@ -317,7 +319,7 @@ def main():
             page.wait_for_function(f"() => {SECURITY}.securityOpen === false", timeout=5000)
             settle(page)
             check("2 log off closes Security", page.evaluate(f"() => {SECURITY}.securityOpen") is False)
-            check("2 the modal stack is empty after log off", page.evaluate(f"() => {SH}._modalStack.length") == 0)
+            check("2 the modal stack is empty after log off", page.evaluate(f"() => {MODALS}._modalStack.length") == 0)
 
             # Log off closes Settings the same way.
             page.evaluate("() => document.dispatchEvent(new CustomEvent('workbench:settings-open', { bubbles: true }))")
@@ -326,7 +328,7 @@ def main():
             page.wait_for_function(f"() => {SETTINGS}.settingsOpen === false", timeout=5000)
             settle(page)
             check("2 log off closes Settings", page.evaluate(f"() => {SETTINGS}.settingsOpen") is False)
-            check("2 the modal stack is empty after Settings", page.evaluate(f"() => {SH}._modalStack.length") == 0)
+            check("2 the modal stack is empty after Settings", page.evaluate(f"() => {MODALS}._modalStack.length") == 0)
 
             # --- scenario 3: Branch and Prompt keep their own field -----------
             page.evaluate(f"(s) => {{ if (Alpine.store('projects').openSlug !== s) {SH}.toggle(s); }}", arg=slug)
@@ -348,8 +350,8 @@ def main():
             page.keyboard.press("Escape")
             wait_flag(page, "branchOpen", False, root=BRANCH)
 
-            page.evaluate(f"() => {{ window.__prompt = {SH}.askPrompt({{ title: 'Name' }}); }}")
-            wait_flag(page, "promptModal.open", True)
+            page.evaluate(f"() => {{ window.__prompt = {MODALS}.askPrompt({{ title: 'Name' }}); }}")
+            wait_flag(page, "promptModal.open", True, root=MODALS)
             settle(page)
             a = active(page)
             check("3 Prompt keeps focus on its input", a and a["id"] == "prompt-input", f"active={a}")
@@ -360,8 +362,8 @@ def main():
             page.evaluate(f"() => {{ {BOARD}.planModal.open = true; }}")
             wait_flag(page, "planModal.open", True, root=BOARD)
             settle(page)
-            page.evaluate(f"() => {{ window.__ans = {SH}.askConfirm({{ title: 'Discard' }}); }}")
-            wait_flag(page, "confirmModal.open", True)
+            page.evaluate(f"() => {{ window.__ans = {MODALS}.askConfirm({{ title: 'Discard' }}); }}")
+            wait_flag(page, "confirmModal.open", True, root=MODALS)
             settle(page)
             a = active(page)
             check("4 the confirm starts on Cancel", a and a["text"] == "Cancel", f"active={a}")
@@ -369,8 +371,8 @@ def main():
             check("4 Enter on the focused Cancel cancels", page.evaluate("() => window.__ans") is False)
             check("4 …and the plan under it stays open", flag(page, "planModal.open", BOARD) is True)
 
-            page.evaluate(f"() => {{ window.__ans = {SH}.askConfirm({{ title: 'Discard' }}); }}")
-            wait_flag(page, "confirmModal.open", True)
+            page.evaluate(f"() => {{ window.__ans = {MODALS}.askConfirm({{ title: 'Discard' }}); }}")
+            wait_flag(page, "confirmModal.open", True, root=MODALS)
             settle(page)
             page.evaluate("() => document.activeElement.blur()")
             page.keyboard.press("Enter")
@@ -380,8 +382,8 @@ def main():
             page.wait_for_timeout(200)
             check("4 …and that Enter does not click the button focus returns to", flag(page, "planModal.open", BOARD) is True)
 
-            page.evaluate(f"() => {{ window.__ans = {SH}.askConfirm({{ title: 'Discard' }}); }}")
-            wait_flag(page, "confirmModal.open", True)
+            page.evaluate(f"() => {{ window.__ans = {MODALS}.askConfirm({{ title: 'Discard' }}); }}")
+            wait_flag(page, "confirmModal.open", True, root=MODALS)
             settle(page)
             page.keyboard.press("Escape")
             page.wait_for_timeout(200)

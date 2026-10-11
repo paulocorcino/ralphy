@@ -39,12 +39,14 @@ import { connectionStore } from "./wb-connection-store.ts";
 import { runsStore } from "./wb-runs-store.ts";
 import { checkoutsStore } from "./wb-checkouts-store.ts";
 import { releaseStore } from "./wb-release-store.ts";
+import { modalsStore } from "./wb-modals-store.ts";
 
 window.Alpine = Alpine;
 // The door for operator messages first: the consoles, the cards and the
-// modules after them tell the operator through it. The shell is read at each
-// call, so it may be built later.
-const messages = createMessages(window, document, { shell: () => window.getShell?.() ?? null });
+// modules after them tell the operator through it. Its flash and its Alpine
+// confirm reach the store `modals` at each call, so the store may be
+// registered later.
+const messages = createMessages(window, document);
 // The z stack and the gestures, once for this document: the consoles and the
 // cards share them.
 const stack = createStack(document);
@@ -64,6 +66,10 @@ window.WBNotes = createNotes(window, document, { console: window.WBConsole, mess
 // them about unsaved work before a build reload.
 const detached = wire(window, document, { messages });
 Alpine.directive("icon", iconDirective);
+// The modal stack, the confirm, the prompt and the flash line, first: the
+// door and every store and component after it flash and ask through it. It
+// has no `init`, and it never calls the door.
+Alpine.store("modals", modalsStore({ messages }));
 // The open project, the fleet, the agents and the live sessions, before the
 // components that read them (ADR-0073 D6); its `init` reads the projects and
 // the agents, and starts the peer read.

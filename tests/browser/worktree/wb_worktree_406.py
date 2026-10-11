@@ -68,6 +68,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Alpine store `modals`: the modal stack, the confirm, the prompt and the flash line.
+MODALS = "Alpine.store('modals')"
 # The branch dialog is the component `wbBranchDialog` (wb-branch-dialog.ts).
 BRANCH = "Alpine.$data(document.querySelector('[x-data=\"wbBranchDialog\"]'))"
 # The selected checkouts are the Alpine store `checkouts` (wb-checkouts-store.ts).
@@ -320,8 +322,8 @@ def click_remove(page, name, slug=None):
     page.wait_for_function(f"(n) => !!({CK_ITEM})(n)", arg=name, timeout=15000)
     page.evaluate(f"(n) => ({CK_ITEM})(n).querySelector('.session-checkout-remove').click()", arg=name)
     page.wait_for_function(f"() => !({CK_MENU_OPEN})()", timeout=5000)
-    page.wait_for_function(f"() => {SH}.confirmModal.open", timeout=5000)
-    page.evaluate(f"() => {SH}.confirmRespond(true)")
+    page.wait_for_function(f"() => {MODALS}.confirmModal.open", timeout=5000)
+    page.evaluate(f"() => {MODALS}.confirmRespond(true)")
     page.wait_for_function(f"() => Object.keys({BRANCH}.worktreeRemoving).length === 0", timeout=20000)
 
 
@@ -481,8 +483,8 @@ def main():
             # `save` intent with the pin, which the write bridge honours. The
             # flash self-clears after 2.6 s, so it is LATCHED, not polled.
             page.evaluate(
-                f"() => {{ const sh = {SH}; sh._latched = []; const orig = sh._flashAction.bind(sh);"
-                "  sh._flashAction = (m) => { sh._latched.push(String(m)); orig(m); }; }"
+                f"() => {{ const sh = {MODALS}; sh._latched = []; const orig = sh.flash.bind(sh);"
+                "  sh.flash = (m) => { sh._latched.push(String(m)); orig(m); }; }"
             )
             page.evaluate(
                 "() => { const id = document.querySelector(\".viewer[data-tab-id$='@wt-a:only-in-wt.txt']\").dataset.tabId;"
@@ -490,7 +492,7 @@ def main():
                 "  el.click(); }"
             )
             page.wait_for_function(
-                f"() => {SH}._latched.some(m => m.includes('not available'))",
+                f"() => {MODALS}._latched.some(m => m.includes('not available'))",
                 timeout=15000,
             )
             check("the pinned tab's Save is refused (`not available`), never written to the primary", True)

@@ -63,6 +63,8 @@ FILES_TS = os.path.join(REPO_ROOT, "crates", "ralphy-daemon", "assets", "ui", "w
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "364-move-2026-07-30.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Alpine store `modals`: the modal stack, the confirm, the prompt and the flash line.
+MODALS = "Alpine.store('modals')"
 FILES = "Alpine.$data(document.querySelector('[x-data=\"wbFiles\"]'))"
 MOVE = "Alpine.$data(document.querySelector('[x-data=\"wbMoveDialog\"]'))"
 
@@ -321,13 +323,13 @@ def main():
                 timeout=15000,
             )
 
-            # The refusal channel is `_flashAction`, whose own state clears itself
+            # The refusal channel is the store `modals` `flash`, whose state clears itself
             # after 2.6 s — a latch that never expires is what makes a refusal
             # assertable without racing the timeout.
             page.evaluate(
-                "() => { const c = " + SH + "; c.__flash = '';"
-                "  const orig = c._flashAction.bind(c);"
-                "  c._flashAction = (m) => { c.__flash = m; return orig(m); }; }"
+                "() => { const c = " + MODALS + "; c.__flash = '';"
+                "  const orig = c.flash.bind(c);"
+                "  c.flash = (m) => { c.__flash = m; return orig(m); }; }"
             )
 
             # --- source pins ---------------------------------------------------
@@ -541,11 +543,11 @@ def main():
             # `exists` (`lib.rs:1736`, WBFail's CAUSE), not a regex: the
             # browser's fallback is "the daemon gave no reason", so only the
             # exact text proves that the daemon named the reason.
-            page.wait_for_function(f"() => {SH}.__flash === 'Could not move: a file with that name already exists.'", timeout=15000)
+            page.wait_for_function(f"() => {MODALS}.__flash === 'Could not move: a file with that name already exists.'", timeout=15000)
             check(
                 "a move onto an existing name is refused with the daemon's own reason",
-                page.evaluate(f"() => {SH}.__flash") == "Could not move: a file with that name already exists.",
-                "flash={!r}".format(page.evaluate(f"() => {SH}.__flash")),
+                page.evaluate(f"() => {MODALS}.__flash") == "Could not move: a file with that name already exists.",
+                "flash={!r}".format(page.evaluate(f"() => {MODALS}.__flash")),
             )
             check(
                 "…the source is still where it was",
@@ -601,25 +603,25 @@ def main():
             # The guard is the UI's; the DAEMON's refusal is still the boundary,
             # so both protected destinations are driven straight at `performMove`
             # — the picker can express neither, and neither may land.
-            page.evaluate(f"() => {SH}.__flash = ''")
+            page.evaluate(f"() => {MODALS}.__flash = ''")
             page.evaluate(f"() => {FILES}.performMove('dst/a.txt', '.ralphy/a.txt')")
-            page.wait_for_function(f"() => {SH}.__flash === 'Could not move: the daemon refused it.'", timeout=15000)
+            page.wait_for_function(f"() => {MODALS}.__flash === 'Could not move: the daemon refused it.'", timeout=15000)
             check(
                 "a move INTO `.ralphy` is refused by the daemon, with its own reason",
                 not Path(fixture, ".ralphy", "a.txt").exists()
                 and Path(fixture, "dst", "a.txt").exists()
-                and page.evaluate(f"() => {SH}.__flash") == "Could not move: the daemon refused it.",
-                "flash={!r}".format(page.evaluate(f"() => {SH}.__flash")),
+                and page.evaluate(f"() => {MODALS}.__flash") == "Could not move: the daemon refused it.",
+                "flash={!r}".format(page.evaluate(f"() => {MODALS}.__flash")),
             )
-            page.evaluate(f"() => {SH}.__flash = ''")
+            page.evaluate(f"() => {MODALS}.__flash = ''")
             page.evaluate(f"() => {FILES}.performMove('dst/a.txt', '../escaped.txt')")
-            page.wait_for_function(f"() => {SH}.__flash === 'Could not move: the daemon refused it.'", timeout=15000)
+            page.wait_for_function(f"() => {MODALS}.__flash === 'Could not move: the daemon refused it.'", timeout=15000)
             check(
                 "a destination outside the repo root is refused, and nothing lands beside it",
                 not Path(fixture).parent.joinpath("escaped.txt").exists()
                 and Path(fixture, "dst", "a.txt").exists()
-                and page.evaluate(f"() => {SH}.__flash") == "Could not move: the daemon refused it.",
-                "flash={!r}".format(page.evaluate(f"() => {SH}.__flash")),
+                and page.evaluate(f"() => {MODALS}.__flash") == "Could not move: the daemon refused it.",
+                "flash={!r}".format(page.evaluate(f"() => {MODALS}.__flash")),
             )
             check(
                 "…and the refused moves left the tab strip alone",

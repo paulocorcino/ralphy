@@ -54,6 +54,8 @@ EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt"
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "362-explorer-2026-07-30.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Alpine store `modals`: the modal stack, the confirm, the prompt and the flash line.
+MODALS = "Alpine.store('modals')"
 FILES = "Alpine.$data(document.querySelector('[x-data=\"wbFiles\"]'))"
 
 results = []
@@ -207,7 +209,7 @@ def answer_prompt(page, name):
     # Gate on the input being LAID OUT, not merely on the flag: Alpine's x-show
     # display flip lands after the property write, so sampling on `open === true`
     # reads a box that measures zero everywhere (CONTEXT.md, the $nextTick trap).
-    page.wait_for_function(f"() => {SH}.promptModal.open === true", timeout=10000)
+    page.wait_for_function(f"() => {MODALS}.promptModal.open === true", timeout=10000)
     page.wait_for_function(
         "() => { const i = document.getElementById('prompt-input');"
         "  return !!i && i.offsetParent !== null && i.clientWidth > 0; }",
@@ -222,8 +224,8 @@ def answer_prompt(page, name):
         "    title: t ? t.textContent.trim() : '',"
         "    message: m ? m.textContent.trim() : '' }; }"
     )
-    page.evaluate(f"(v) => {{ {SH}.promptModal.value = v; {SH}.promptSubmit(); }}", arg=name)
-    page.wait_for_function(f"() => {SH}.promptModal.open === false", timeout=10000)
+    page.evaluate(f"(v) => {{ {MODALS}.promptModal.value = v; {MODALS}.promptSubmit(); }}", arg=name)
+    page.wait_for_function(f"() => {MODALS}.promptModal.open === false", timeout=10000)
     return asked
 
 
@@ -539,8 +541,8 @@ def main():
                 "Duplicate names the copy itself, with NO prompt dialog",
                 dup
                 and dup["laid"]
-                and page.evaluate(f"() => {SH}.promptModal.open") is False,
-                "row={} promptOpen={}".format(dup, page.evaluate(f"() => {SH}.promptModal.open")),
+                and page.evaluate(f"() => {MODALS}.promptModal.open") is False,
+                "row={} promptOpen={}".format(dup, page.evaluate(f"() => {MODALS}.promptModal.open")),
             )
             # Selection is asserted on the TREE, then on the painted row: the
             # `wb-active` class lands a frame or more after `setActive()`, so

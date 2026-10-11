@@ -226,7 +226,7 @@ test("the account menu closes itself and asks the dialogs to open with their eve
 // gives to `scrim()`, or the shortcuts would never see the panel open.
 test("whatsNewFlag is the path the What's new panel gives to scrim()", () => {
   const markup = componentMarkup(HTML, "wbReleaseDialogs");
-  const paths = [...markup.matchAll(/x-bind="scrim\('([^']+)'/g)].map((m) => m[1]);
+  const paths = [...markup.matchAll(/x-bind="\$store\.modals\.scrim\('([^']+)'/g)].map((m) => m[1]);
   assert.deepEqual(paths, ["whatsNewOpen", "aboutOpen"]);
   assert.equal(WBReleaseDialogs.whatsNewFlag, paths[0]);
 });

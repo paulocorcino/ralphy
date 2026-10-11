@@ -41,7 +41,7 @@ function shell() {
   window.WB = { emit: (action, detail) => emitted.push({ action, ...detail }) };
   GLOBALS.forEach((k) => (globalThis[k] = window[k]));
   const flashed = [];
-  state._flashAction = (msg) => flashed.push(msg);
+  state.$store.modals.flash = (msg) => flashed.push(msg);
   state.$nextTick = (fn) => fn();
   state.$store.projects.setOpen("owner/repo");
   state.$store.checkouts.checkouts = {};

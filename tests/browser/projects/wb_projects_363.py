@@ -54,6 +54,8 @@ EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt"
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "363-projects-2026-07-30.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Alpine store `modals`: the modal stack, the confirm, the prompt and the flash line.
+MODALS = "Alpine.store('modals')"
 
 results = []
 
@@ -285,7 +287,7 @@ def main():
             # invariant is "no socket across the click AND the cancel".
             before = len(command_sockets(page))
             row_locator_for(page, drop_slug).click()
-            page.wait_for_function(f"() => {SH}.confirmModal.open === true", timeout=10000)
+            page.wait_for_function(f"() => {MODALS}.confirmModal.open === true", timeout=10000)
             page.wait_for_function(
                 "() => { const b = document.querySelector('.modal.confirm-modal');"
                 "  return !!b && b.offsetParent !== null && b.clientWidth > 0; }",
@@ -316,8 +318,8 @@ def main():
                 mid == before,
                 "before={} after-click={}".format(before, mid),
             )
-            page.evaluate(f"() => {SH}.confirmRespond(false)")
-            page.wait_for_function(f"() => {SH}.confirmModal.open === false", timeout=10000)
+            page.evaluate(f"() => {MODALS}.confirmRespond(false)")
+            page.wait_for_function(f"() => {MODALS}.confirmModal.open === false", timeout=10000)
             # Give a would-be socket a real chance to appear: an assertion that
             # samples in the same tick passes even against a broken order.
             page.wait_for_timeout(600)
@@ -335,8 +337,8 @@ def main():
 
             # --- scenario d: Confirm removes, with no manual refresh ----------
             row_locator_for(page, drop_slug).click()
-            page.wait_for_function(f"() => {SH}.confirmModal.open === true", timeout=10000)
-            page.evaluate(f"() => {SH}.confirmRespond(true)")
+            page.wait_for_function(f"() => {MODALS}.confirmModal.open === true", timeout=10000)
+            page.evaluate(f"() => {MODALS}.confirmRespond(true)")
             gone = False
             try:
                 page.wait_for_function(
@@ -381,13 +383,13 @@ def main():
             # already gone. The routing lookup answers `unknown repo`; the UI
             # must treat that as the state it asked for, not an error.
             page.evaluate(
-                "() => { const c = " + SH + ";"
+                "() => { const c = " + MODALS + ";"
                 "  const orig = c.askConfirm.bind(c);"
                 "  c.askConfirm = () => Promise.resolve(true);"
                 "  c.__origAskConfirm = orig; }"
             )
             sockets_before = len(command_sockets(page))
-            page.evaluate(f"() => {{ {SH}.runsActionMsg = ''; }}")
+            page.evaluate(f"() => {{ {MODALS}.runsActionMsg = ''; }}")
             page.evaluate(
                 "(slug) => " + SH + ".removeProject({ slug: slug, path: slug })",
                 arg=drop_slug,
@@ -410,7 +412,7 @@ def main():
             # unharmed either way. Couples deliberately to the daemon's literal
             # `unknown repo` string (lib.rs), which is what `removeProject`
             # matches on; if that text ever drifts, this reds.
-            flash = page.evaluate(f"() => {SH}.runsActionMsg")
+            flash = page.evaluate(f"() => {MODALS}.runsActionMsg")
             check(
                 "…and is folded as success, never flashed as a refusal",
                 not flash,

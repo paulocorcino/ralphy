@@ -51,6 +51,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Alpine store `modals`: the modal stack, the confirm, the prompt and the flash line.
+MODALS = "Alpine.store('modals')"
 # The Consoles tab's menus and the columns are Alpine components of their
 # own (wb-consoles-tab.ts): a check reads them through their root.
 MENUS = "Alpine.$data(document.querySelector('[x-data=\"wbConsoleMenus\"]'))"
@@ -478,7 +480,7 @@ def main():
             before = tab_ids(page)
             click_row(page, "doc.pdf")
             page.wait_for_function(
-                f"() => ({SH}.runsActionMsg || '').includes('binary')", timeout=15000
+                f"() => ({MODALS}.runsActionMsg || '').includes('binary')", timeout=15000
             )
             # The tab is pushed optimistically, then closed on the refusal — wait
             # for the close rather than reading a mid-flight tab list.

@@ -52,7 +52,7 @@ function observedPage(replies) {
   const p = page();
   p.window.WBDaemon.observe = async () => replies.shift() ?? null;
   p.shell.$store.projects.setOpen("o/r");
-  p.shell._flashAction = () => {};
+  p.shell.$store.modals.flash = () => {};
   return p;
 }
 
@@ -243,9 +243,9 @@ test("a refused Changes act lands in the Changes panel and still flashes", async
     window.WBDaemon.observe = async () => ({ status: "error", message: said });
     st.loadChanges = () => {};
     st.loadSync = () => {};
-    shell.askConfirm = async () => true;
+    shell.$store.modals.askConfirm = async () => true;
     const flashed = [];
-    shell._flashAction = (msg) => flashed.push(msg);
+    shell.$store.modals.flash = (msg) => flashed.push(msg);
     await run(st);
     assert.equal(st.changesError, said, `${act}: the panel shows the refusal`);
     assert.deepEqual(flashed, [said], `${act}: the flash still carries it`);
@@ -256,7 +256,7 @@ test("one remote act at a time: the busy slot refuses a second act and frees its
   const { shell, changes: st, window } = page();
   st.loadChanges = () => {};
   st.loadSync = () => {};
-  shell._flashAction = () => {};
+  shell.$store.modals.flash = () => {};
   const sent = [];
   const answers = [];
   window.WBDaemon.observe = (verb) => {
@@ -338,13 +338,13 @@ test("every change-set write is refused while the change set is not current", as
     return replies.shift() ?? { status: "ok" };
   };
   shell.$store.projects.setOpen("o/r");
-  shell._flashAction = () => {};
+  shell.$store.modals.flash = () => {};
   shell.$store.runs.runsByProject["o/r"] = [];
   await state.loadChanges("o/r");
   await state.loadChanges("o/r");
   assert.equal(shell.$store.connection.writeLocked(), true);
   verbs.length = 0;
-  shell.askConfirm = async () => true;
+  shell.$store.modals.askConfirm = async () => true;
   state.commitMsgSlug = "o/r";
   state.commitMsg = "msg";
   await state.stagePaths("o/r", ["a.txt"]);
@@ -379,12 +379,12 @@ test("every change-set write reaches the daemon while the change set is current"
       return replies.shift() ?? { status: "ok" };
     };
     shell.$store.projects.setOpen("o/r");
-    shell._flashAction = () => {};
+    shell.$store.modals.flash = () => {};
     shell.$store.runs.runsByProject["o/r"] = [];
     await state.loadChanges("o/r");
     assert.equal(shell.$store.connection.writeLocked(), false, name);
     verbs.length = 0;
-    shell.askConfirm = async () => true;
+    shell.$store.modals.askConfirm = async () => true;
     state.commitMsgSlug = "o/r";
     state.commitMsg = "msg";
     await act(state);

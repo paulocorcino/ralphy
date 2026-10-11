@@ -138,7 +138,7 @@ test("a failed settings read says so, and a project setting is not written", asy
   };
   window.WBView.read = () => ({});
   shell.$store.projects.setOpen("o/r");
-  shell._flashAction = () => {};
+  shell.$store.modals.flash = () => {};
   state.openSettings();
   for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
   assert.equal(state.settingsError, "Could not read the settings: settings.json is not JSON.");
@@ -208,9 +208,9 @@ test("the rail button asks the dialog to open with workbench:settings-open, and 
   // The button reads the modal stack, never the dialog's flag.
   const scrimEl = { querySelector: () => null };
   assert.equal(valueIn(loaded.state, active).active, false, "no modal: not active");
-  loaded.state.modalOpened("settingsOpen", scrimEl);
+  loaded.state.$store.modals.modalOpened("settingsOpen", scrimEl);
   assert.equal(valueIn(loaded.state, active).active, true, "Settings on the modal stack: active");
-  loaded.state.modalClosed("settingsOpen");
+  loaded.state.$store.modals.modalClosed("settingsOpen");
   assert.equal(valueIn(loaded.state, active).active, false);
 
   // Nothing outside the component names its state.
@@ -258,7 +258,7 @@ test("the open dialog reads its settings again on workbench:panels-reread, and a
 // gives to `scrim()`, or the shortcuts would never see the dialog open.
 test("openFlag is the path the Settings dialog gives to scrim()", () => {
   const markup = componentMarkup(HTML, "wbSettingsDialog");
-  const paths = [...markup.matchAll(/x-bind="scrim\('([^']+)'/g)].map((m) => m[1]);
+  const paths = [...markup.matchAll(/x-bind="\$store\.modals\.scrim\('([^']+)'/g)].map((m) => m[1]);
   assert.deepEqual(paths, ["settingsOpen"]);
   assert.equal(WBSettingsDialog.openFlag, paths[0]);
 });

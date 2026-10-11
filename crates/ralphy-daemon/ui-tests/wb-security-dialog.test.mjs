@@ -246,7 +246,7 @@ test("log off closes the dialog with the workbench:log-off event", async () => {
 // gives to `scrim()`, or the shortcuts would never see the dialog open.
 test("openFlag is the path the Security dialog gives to scrim()", () => {
   const markup = componentMarkup(HTML, "wbSecurityDialog");
-  const paths = [...markup.matchAll(/x-bind="scrim\('([^']+)'/g)].map((m) => m[1]);
+  const paths = [...markup.matchAll(/x-bind="\$store\.modals\.scrim\('([^']+)'/g)].map((m) => m[1]);
   assert.deepEqual(paths, ["securityOpen"]);
   assert.equal(WBSecurityDialog.openFlag, paths[0]);
 });

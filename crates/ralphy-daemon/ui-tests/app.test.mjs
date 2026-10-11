@@ -15,9 +15,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadComponent, loadShell, UI } from "./harness.mjs";
-import { WBReleaseDialogs } from "../assets/ui/wb-release-dialogs.ts";
-import { WBSecurityDialog } from "../assets/ui/wb-security-dialog.ts";
-import { WBSettingsDialog } from "../assets/ui/wb-settings-dialog.ts";
 
 // NEGATIVE CONTROL for the whole file: a duplicate key in the state literal is
 // silently legal in sloppy mode and the LAST one wins, which is how `app.ts`
@@ -331,71 +328,6 @@ test("under the width floor the shell paints single and keeps the slot for a wid
   }
 });
 
-// The Security, Settings and What's new dialogs' open flags are their own
-// (wb-security-dialog.ts, wb-settings-dialog.ts, wb-release-dialogs.ts), so the
-// shortcuts ask the modal stack for them (ADR-0073 amendment of 2026-10-05).
-// They block in the same cases as the flag did: while the dialog is open, under
-// another modal too, and not once it closes.
-test("the shortcuts are blocked while the Security, Settings or What's new dialog is on the modal stack", () => {
-  const keydowns = [];
-  const { state, window } = loadShell({
-    document: { addEventListener: (type, fn) => type === "keydown" && keydowns.push(fn) },
-  });
-  // The Ctrl/Cmd+Shift+F listener: the one that opens the files search.
-  const filesKey = keydowns.find((fn) => /shiftKey/.test(String(fn)) && /file-search-open/.test(String(fn)));
-  assert.ok(filesKey, "app.ts registers the Ctrl+Shift+F listener at load");
-  const searches = [];
-  state.$store.connection.authChanged(true);
-  state.$store.projects.setOpen("o/r");
-  window.dispatchEvent = (e) => e.type === "workbench:file-search-open" && searches.push("files");
-  window.getShell = () => state;
-  const press = () =>
-    filesKey({ key: "F", ctrlKey: true, metaKey: false, shiftKey: true, altKey: false, preventDefault() {} });
-  const scrimEl = { querySelector: () => null };
-
-  assert.equal(state.consoleShortcutsBlocked(), false, "no modal: not blocked");
-  press();
-  let expected = ["files"];
-  assert.deepEqual(searches, expected);
-
-  for (const flag of [
-    WBSecurityDialog.openFlag,
-    WBSettingsDialog.openFlag,
-    WBReleaseDialogs.whatsNewFlag,
-  ]) {
-    state.modalOpened(flag, scrimEl);
-    assert.equal(state.consoleShortcutsBlocked(), true, `${flag} open: blocked`);
-    assert.equal(state.consoleShortcutsBlocked(true), true, "a terminal key too");
-    press();
-    assert.deepEqual(searches, expected, `${flag}: Ctrl+Shift+F is blocked`);
-
-    state.modalOpened("confirmModal.open", scrimEl);
-    assert.equal(state.consoleShortcutsBlocked(), true, `a confirm over ${flag}: still blocked`);
-    press();
-    assert.deepEqual(searches, expected);
-
-    state.modalClosed("confirmModal.open");
-    state.modalClosed(flag);
-    assert.equal(state.consoleShortcutsBlocked(), false, `${flag} closed: not blocked`);
-    press();
-    expected = [...expected, "files"];
-    assert.deepEqual(searches, expected);
-  }
-});
-
-// The run and the branch dialogs are asked through the modal stack too, as
-// the other dialogs are (ADR-0073 D5): no reader outside a dialog reads its flag.
-test("the shortcuts are blocked while the run or the branch dialog is on the modal stack", () => {
-  const { state } = loadShell();
-  const scrimEl = { querySelector: () => null };
-  for (const flag of ["runOpen", "branchOpen"]) {
-    state.modalOpened(flag, scrimEl);
-    assert.equal(state.consoleShortcutsBlocked(), true, `${flag} open: blocked`);
-    state.modalClosed(flag);
-    assert.equal(state.consoleShortcutsBlocked(), false, `${flag} closed: not blocked`);
-  }
-});
-
 // A shell whose `toggle` side effects are recorders: each method `toggle` and
 // the `workbench:project-changed` listeners reach is replaced, so the test
 // sees the calls they make. The window hears the events it is sent, and
@@ -558,7 +490,7 @@ test("the tree, the board and git each react to the project toggle opens", () =>
 test("removing the open project closes it and sends workbench:project-changed", async () => {
   const { state, events, window } = toggleShell();
   window.WBDaemon.observe = async () => ({ status: "ok" });
-  state.askConfirm = async () => true;
+  state.$store.modals.askConfirm = async () => true;
   const a = { slug: "owner/a" };
   const b = { slug: "owner/b" };
   state.$store.projects.setProjects([a, b]);
@@ -574,7 +506,7 @@ test("removing the open project closes it and sends workbench:project-changed", 
   ]);
 });
 
-test("the create action asks for the name through the shell's prompt", async () => {
+test("the create action asks for the name through the prompt dialog", async () => {
   const listeners = [];
   const { window } = loadShell({
     document: {
@@ -584,13 +516,11 @@ test("the create action asks for the name through the shell's prompt", async () 
   const written = [];
   window.WBDaemon = { write: (verb, payload) => written.push({ verb, payload }) };
   const asked = [];
-  const shell = {
-    askPrompt: async (opts) => {
-      asked.push(opts);
-      return null;
-    },
+  window.Alpine.store("modals").askPrompt = async (opts) => {
+    asked.push(opts);
+    return null;
   };
-  window.getShell = () => shell;
+  window.getShell = () => ({});
   const prompted = [];
   window.prompt = (msg) => {
     prompted.push(msg);
@@ -608,22 +538,6 @@ test("the create action asks for the name through the shell's prompt", async () 
   assert.deepEqual(prompted, [], "the browser's prompt is only the no-shell fallback");
   // A cancelled prompt creates nothing.
   assert.deepEqual(written, []);
-});
-
-test("askPrompt settles with the trimmed name the prompt submits", async () => {
-  const { state } = loadShell();
-  const answer = state.askPrompt({ title: "New file in src" });
-  assert.equal(state.promptModal.open, true);
-  assert.equal(state.promptModal.title, "New file in src");
-  // A name that cannot be one directory entry keeps the dialog open.
-  state.promptModal.value = "a/b";
-  state.promptSubmit();
-  assert.equal(state.promptModal.open, true);
-  assert.equal(state.promptModal.error, "name cannot contain / or \\");
-  state.promptModal.value = "  notes.md ";
-  state.promptSubmit();
-  assert.equal(state.promptModal.open, false);
-  assert.equal(await answer, "notes.md");
 });
 
 // --- ADR-0070 D2: a shown fact is read again on named events only ----------
@@ -662,7 +576,7 @@ function observedShell(replies) {
   const { state, window } = loadShell();
   window.WBDaemon.observe = async () => replies.shift() ?? null;
   state.$store.projects.setOpen("o/r");
-  state._flashAction = () => {};
+  state.$store.modals.flash = () => {};
   return state;
 }
 
@@ -684,7 +598,9 @@ test("a create through the write seam asks the files to re-list the folder and r
   window.WBDaemon = { write: async () => ({ status: "ok" }), withCheckout: (p) => p };
   const realDaemon = globalThis.WBDaemon;
   globalThis.WBDaemon = window.WBDaemon;
-  window.getShell = () => ({ askPrompt: async () => "x.txt", openTab() {}, flash() {} });
+  window.getShell = () => ({ openTab() {} });
+  window.Alpine.store("modals").askPrompt = async () => "x.txt";
+  window.Alpine.store("modals").flash = () => {};
   try {
     for (const fn of listeners) await fn({ detail: { action: "create", project: "o/r", path: "src", kind: "file" } });
   } finally {
@@ -790,7 +706,7 @@ test("renderMenu sets a label as text, never as markup", () => {
 test("Remove project names a remoteless repo by its folder, not its path- slug", async () => {
   const { state } = loadShell();
   const asked = [];
-  state.askConfirm = async (o) => {
+  state.$store.modals.askConfirm = async (o) => {
     asked.push(o.message);
     return false;
   };

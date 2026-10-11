@@ -32,7 +32,7 @@ export function hostsDialog() {
   // `loadComponent` in ui-tests/harness.mjs fails on any other name, and the
   // type check fails on a name the code reads.
   return component(
-    ["scrim", "peerStateWord", "flash"],
+    ["peerStateWord"],
     {
       // The Add a host dialog (#497): its whole state is the wb-hosts.ts fold.
       addHost: WBHosts.initial(),
@@ -324,7 +324,7 @@ export function hostsDialog() {
           console.warn("copy host command:", e);
           return;
         }
-        this.flash(done);
+        this.$store.modals.flash(done);
       },
     },
   );

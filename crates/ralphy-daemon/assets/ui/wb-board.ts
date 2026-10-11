@@ -23,7 +23,7 @@ import type { BoardIssue, BoardRow, Read, ReadyPlan, RunPill, Timer } from "./wb
 
 export function wbBoard() {
   // Every `shell()` member this component's code or markup reads or calls.
-  return component(["kanbanOpen", "toggleKanban", "scrim", "flash", "askConfirm"], {
+  return component(["kanbanOpen", "toggleKanban"], {
     // The slow refresh backstop of the board, started in `init`.
     _boardBackstop: null as Timer,
     // Counts the `issue.show` reads; only the newest one is kept.
@@ -153,7 +153,7 @@ export function wbBoard() {
     async discardPlan() {
       const held = this.openPlan();
       if (!held || this.$store.connection.writeLocked()) return;
-      const ok = await this.askConfirm({
+      const ok = await this.$store.modals.askConfirm({
         title: "Discard this plan?",
         message:
           `Deletes the plan for #${held.summary.issue}. The next run plans it again.`,
@@ -165,13 +165,13 @@ export function wbBoard() {
       try {
         const reply = await window.WBDaemon.write("plan.discard", { repo: slug });
         if (WBFail.isError(reply)) {
-          this.flash(WBFail.failed(reply, "Could not discard the plan."));
+          this.$store.modals.flash(WBFail.failed(reply, "Could not discard the plan."));
           return;
         }
-        this.flash(`Plan for #${held.summary.issue} discarded.`);
+        this.$store.modals.flash(`Plan for #${held.summary.issue} discarded.`);
         this.closePlanModal();
       } catch {
-        this.flash("Could not discard the plan: the daemon is not connected.");
+        this.$store.modals.flash("Could not discard the plan: the daemon is not connected.");
       } finally {
         // Re-read on EVERY path: the panel shows what is on disk now.
         await this.loadPlan(slug);
@@ -210,7 +210,7 @@ export function wbBoard() {
         if (WBFail.isError(reply)) {
           const msg = WBFail.failed(reply, "Could not load the board.");
           this.boardFailed(slug, msg);
-          this.flash(msg);
+          this.$store.modals.flash(msg);
           return;
         }
         const board = reply.board || {};
@@ -230,7 +230,7 @@ export function wbBoard() {
         if (this.kanbanSel != null) this.loadIssueDetail(this.kanbanSel);
       } catch {
         this.boardFailed(slug, "Could not load the board.");
-        this.flash("Could not load the board.");
+        this.$store.modals.flash("Could not load the board.");
       } finally {
         this.boardRefreshing = false;
         // Exactly ONE follow-up for whatever was coalesced away, or for a
@@ -399,7 +399,7 @@ export function wbBoard() {
       const fail = (msg: string) => {
         if (stale()) return;
         this.issueError = msg;
-        this.flash(msg);
+        this.$store.modals.flash(msg);
       };
       try {
         const reply = await window.WBDaemon.observe("issue.show", { repo: slug, number });
@@ -492,7 +492,7 @@ export function wbBoard() {
           });
           if (WBFail.isError(reply)) {
             iss.labels = prev;
-            this.flash(WBFail.failed(reply, "Could not change the labels: the daemon gave no reason."));
+            this.$store.modals.flash(WBFail.failed(reply, "Could not change the labels: the daemon gave no reason."));
             return; // a refused write changed nothing to re-read
           }
           // Re-fold so the column reflects the server, not the optimistic

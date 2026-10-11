@@ -71,6 +71,8 @@ CHILD = os.path.join(TARGET, "session_test_child.exe" if os.name == "nt" else "s
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = "408-console-worktree-2026-09-15.png"
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Alpine store `modals`: the modal stack, the confirm, the prompt and the flash line.
+MODALS = "Alpine.store('modals')"
 # The branch dialog is the component `wbBranchDialog` (wb-branch-dialog.ts).
 BRANCH = "Alpine.$data(document.querySelector('[x-data=\"wbBranchDialog\"]'))"
 # The selected checkouts are the Alpine store `checkouts` (wb-checkouts-store.ts).
@@ -311,8 +313,8 @@ def click_remove(page, name, slug=None):
     page.wait_for_function(f"(n) => !!({CK_ITEM})(n)", arg=name, timeout=15000)
     page.evaluate(f"(n) => ({CK_ITEM})(n).querySelector('.session-checkout-remove').click()", arg=name)
     page.wait_for_function(f"() => !({CK_MENU_OPEN})()", timeout=5000)
-    page.wait_for_function(f"() => {SH}.confirmModal.open", timeout=5000)
-    page.evaluate(f"() => {SH}.confirmRespond(true)")
+    page.wait_for_function(f"() => {MODALS}.confirmModal.open", timeout=5000)
+    page.evaluate(f"() => {MODALS}.confirmRespond(true)")
     page.wait_for_function(f"() => Object.keys({BRANCH}.worktreeRemoving).length === 0", timeout=20000)
 
 

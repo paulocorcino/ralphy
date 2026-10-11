@@ -5,7 +5,7 @@ import { wireDetached } from "./wb-detached.ts";
 
 // The door for operator messages, before the file pane: this page has no
 // shell, so a flash shows nothing and the pane asks with its own fallback.
-const messages = createMessages(window, document, { shell: () => null });
+const messages = createMessages(window, document);
 // The opener reads `popup.WBViewer`, and the page posts "ready" only once it
 // exists: the shell's answer reaches it.
 window.WBViewer = createViewer(window, document, { messages });
