@@ -1537,7 +1537,7 @@
                     <!-- `.stop` is load-bearing: the parent <article> opens the
                          detail drawer, and the pill goes to the RUN instead -->
                     <div class="kc-run" x-show="issueRunning(iss.number)"
-                         @click.stop="openRunFor(iss.number)" title="Open this run">
+                         @click.stop="$dispatch('workbench:run-open', { issue: iss.number })" title="Open this run">
                       <span class="kc-run-face" x-text="issueRunning(iss.number)?.face"></span>
                       <span class="kc-run-glyph" x-text="issueRunning(iss.number)?.glyph"></span>
                       <span class="kc-run-txt" x-text="runStateWord(issueRunning(iss.number)?.state) + ' · ' + (issueRunning(iss.number)?.agent || '')"></span>
@@ -1696,6 +1696,8 @@
 
     </main>
 
+    <!-- The Runs panel and the run modal: the component `wbRuns`. -->
+    <div class="runs-panel" x-data="wbRuns">
     <!-- right-hand run panel: toggled by the Runs rail button. It currently
          reveals an empty framed panel — its real contents (run history/detail)
          come from a separate spec. Kept in the DOM always; the grid gives it a
@@ -1903,6 +1905,80 @@
         </div>
       </template>
     </aside>
+
+    <!-- Run modal — the `run` verb, enriched. Pick the agent (executor); a
+         checkbox reveals a second picker to plan with a different agent
+         (`--agent` executor + `--plan-agent` planner); choose the branch mode.
+         Emits a `run-start` intent carrying the faithful flags; the daemon
+         spawns `ralphy run …`. Kept deliberately minimal. -->
+    <div class="modal-scrim" x-cloak x-bind="scrim('runOpen', () => closeRunModal())">
+      <div class="modal run-modal" role="dialog" aria-modal="true" aria-label="Start a run">
+        <div class="modal-head">
+          <svg x-icon="'play'"></svg>
+          <span class="modal-title">Start a run</span>
+          <span class="modal-sub" x-text="$store.projects.projectLabel($store.projects.openSlug)" :title="$store.projects.projectTitle($store.projects.openSlug)"></span>
+          <span class="spacer"></span>
+          <button class="modal-x" @click="closeRunModal()" title="Close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="run-body">
+          <!-- agent (executor; also the planner unless a split is chosen) -->
+          <div class="run-field">
+            <label class="run-label" x-text="runCfg.split ? 'Execute agent' : 'Agent'"></label>
+            <p class="run-help">
+              Agent that does the work<span x-show="!runCfg.split">, planning and execution</span>.
+            </p>
+            <div class="seg">
+              <template x-for="a in agents" :key="a.id">
+                <button class="seg-btn" :class="{ on: runCfg.agent === a.id, unavailable: !a.available }"
+                        :title="a.title" @click="runCfg.agent = a.id" x-text="a.label"></button>
+              </template>
+            </div>
+          </div>
+
+          <!-- the split toggle: progressive disclosure of a second picker -->
+          <label class="run-check">
+            <input type="checkbox" x-model="runCfg.split" />
+            <span>Plan with a different agent</span>
+          </label>
+
+          <!-- plan agent, only when splitting -->
+          <div class="run-field" x-show="runCfg.split" x-cloak>
+            <label class="run-label">Plan agent</label>
+            <p class="run-help">Plans each issue. The execute agent carries the plan out.</p>
+            <div class="seg">
+              <template x-for="a in agents" :key="'plan-' + a.id">
+                <button class="seg-btn" :class="{ on: runCfg.planAgent === a.id, unavailable: !a.available }"
+                        :title="a.title" @click="runCfg.planAgent = a.id" x-text="a.label"></button>
+              </template>
+            </div>
+          </div>
+
+          <!-- branch mode -->
+          <div class="run-field">
+            <label class="run-label">Branch</label>
+            <div class="seg">
+              <button class="seg-btn" :class="{ on: runCfg.branchMode === 'new' }" @click="runCfg.branchMode = 'new'">New</button>
+              <button class="seg-btn" :class="{ on: runCfg.branchMode === 'current' }" @click="runCfg.branchMode = 'current'">Current</button>
+            </div>
+            <p class="run-help" x-text="runCfg.branchMode === 'new'
+              ? 'Creates an afk/run-… branch from the base and commits there.'
+              : ('Commits on the current branch (' + $store.projects.openProjectBranch() + ').')"></p>
+          </div>
+
+          <!-- live command preview -->
+          <div class="run-preview">
+            <span class="run-preview-tag">ralphy</span>
+            <code x-text="runCommandPreview()"></code>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <span class="foot-note">The daemon starts the run.</span>
+          <button class="btn" @click="closeRunModal()">Cancel</button>
+          <button class="btn accent" @click="startRun()"><i class="bi bi-play-fill"></i> Run</button>
+        </div>
+      </div>
+    </div>
+    </div>
 
     <!-- right-click menu, built per-node by app.js (open/rename/copy-path/
          new/delete). Each item emits a workbench:action intent — no direct FS. -->
@@ -2751,81 +2827,6 @@
           <button class="btn" @click="closePlanModal()">Close</button>
           <button class="btn danger" data-act="plan-discard" :disabled="writeLocked()"
                   :title="discardTitle()" @click="discardPlan()">Discard plan</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- ===================================================================
-         Run modal — the `run` verb, enriched. Pick the agent (executor); a
-         checkbox reveals a second picker to plan with a different agent
-         (`--agent` executor + `--plan-agent` planner); choose the branch mode.
-         Emits a `run-start` intent carrying the faithful flags; the daemon
-         spawns `ralphy run …`. Kept deliberately minimal.
-    ==================================================================== -->
-    <div class="modal-scrim" x-cloak x-bind="scrim('runOpen', () => closeRunModal())">
-      <div class="modal run-modal" role="dialog" aria-modal="true" aria-label="Start a run">
-        <div class="modal-head">
-          <svg x-icon="'play'"></svg>
-          <span class="modal-title">Start a run</span>
-          <span class="modal-sub" x-text="$store.projects.projectLabel($store.projects.openSlug)" :title="$store.projects.projectTitle($store.projects.openSlug)"></span>
-          <span class="spacer"></span>
-          <button class="modal-x" @click="closeRunModal()" title="Close"><i class="bi bi-x-lg"></i></button>
-        </div>
-        <div class="run-body">
-          <!-- agent (executor; also the planner unless a split is chosen) -->
-          <div class="run-field">
-            <label class="run-label" x-text="runCfg.split ? 'Execute agent' : 'Agent'"></label>
-            <p class="run-help">
-              Agent that does the work<span x-show="!runCfg.split">, planning and execution</span>.
-            </p>
-            <div class="seg">
-              <template x-for="a in agents" :key="a.id">
-                <button class="seg-btn" :class="{ on: runCfg.agent === a.id, unavailable: !a.available }"
-                        :title="a.title" @click="runCfg.agent = a.id" x-text="a.label"></button>
-              </template>
-            </div>
-          </div>
-
-          <!-- the split toggle: progressive disclosure of a second picker -->
-          <label class="run-check">
-            <input type="checkbox" x-model="runCfg.split" />
-            <span>Plan with a different agent</span>
-          </label>
-
-          <!-- plan agent, only when splitting -->
-          <div class="run-field" x-show="runCfg.split" x-cloak>
-            <label class="run-label">Plan agent</label>
-            <p class="run-help">Plans each issue. The execute agent carries the plan out.</p>
-            <div class="seg">
-              <template x-for="a in agents" :key="'plan-' + a.id">
-                <button class="seg-btn" :class="{ on: runCfg.planAgent === a.id, unavailable: !a.available }"
-                        :title="a.title" @click="runCfg.planAgent = a.id" x-text="a.label"></button>
-              </template>
-            </div>
-          </div>
-
-          <!-- branch mode -->
-          <div class="run-field">
-            <label class="run-label">Branch</label>
-            <div class="seg">
-              <button class="seg-btn" :class="{ on: runCfg.branchMode === 'new' }" @click="runCfg.branchMode = 'new'">New</button>
-              <button class="seg-btn" :class="{ on: runCfg.branchMode === 'current' }" @click="runCfg.branchMode = 'current'">Current</button>
-            </div>
-            <p class="run-help" x-text="runCfg.branchMode === 'new'
-              ? 'Creates an afk/run-… branch from the base and commits there.'
-              : ('Commits on the current branch (' + $store.projects.openProjectBranch() + ').')"></p>
-          </div>
-
-          <!-- live command preview -->
-          <div class="run-preview">
-            <span class="run-preview-tag">ralphy</span>
-            <code x-text="runCommandPreview()"></code>
-          </div>
-        </div>
-        <div class="modal-foot">
-          <span class="foot-note">The daemon starts the run.</span>
-          <button class="btn" @click="closeRunModal()">Cancel</button>
-          <button class="btn accent" @click="startRun()"><i class="bi bi-play-fill"></i> Run</button>
         </div>
       </div>
     </div>

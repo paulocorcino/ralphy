@@ -429,6 +429,14 @@ interface WindowEventMap {
   "workbench:runs-read": CustomEvent<null>;
   /** The runs socket of the open project says its run snapshots changed. */
   "workbench:runs-dirty": CustomEvent<null>;
+  /** The Runs panel closed. */
+  "workbench:runs-closed": CustomEvent<null>;
+  /** Open the Runs panel on the run that works on this issue. */
+  "workbench:run-open": CustomEvent<{ issue: number }>;
+  /** A chunk of the raw output of a run the daemon started. */
+  "workbench:run-output": CustomEvent<{ text: string }>;
+  /** A verb the daemon ran failed or ended; `message` says how. */
+  "workbench:run-verb-failed": CustomEvent<{ message: string }>;
   /** The open checkout's HEAD moved. */
   "workbench:head-moved": CustomEvent<{ ref: string }>;
   "workbench:menus-close": CustomEvent<null>;

@@ -91,7 +91,7 @@ export function runsStore(_deps: RunsStoreDeps) {
         this.currentRunId = listed.some((r) => r.runid === this.currentRunId)
           ? this.currentRunId
           : listed[0]?.runid || null;
-        // The panel reads the selected run's plan, if it shows (app.ts).
+        // The panel reads the selected run's plan, if it shows (wb-runs-panel.ts).
         sendWindow(window, "workbench:runs-read");
       } catch (err) {
         if (seq !== this._runsSeq || window.Alpine.store("projects").openSlug !== slug) return;
@@ -125,6 +125,16 @@ export function runsStore(_deps: RunsStoreDeps) {
     // The operator picked a run (the run menu, a board pill).
     setCurrentRun(runid: string | null) {
       this.currentRunId = runid;
+    },
+    // The Runs panel read the plan of `run`: its text, or `null` when the read
+    // failed. A failed read KEEPS the last good text and only flags it (#330).
+    setRunPlan(run: Run, planMd: string | null) {
+      if (planMd === null) {
+        run.planReadFailed = true;
+        return;
+      }
+      run.planMd = planMd;
+      run.planReadFailed = false;
     },
 
     // The open project's run-snapshot subscription (#300, ADR-0047 §9).

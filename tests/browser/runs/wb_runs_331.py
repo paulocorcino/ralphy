@@ -57,6 +57,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Runs panel and the run modal: the component `wbRuns`.
+RUNS = "Alpine.$data(document.querySelector('[x-data=\"wbRuns\"]'))"
 
 RUN_A = "01RUN331AAAAAAAAAAAAAA"
 
@@ -263,8 +265,8 @@ def main():
             arrival = page.evaluate(
                 f"() => ({{ head: document.querySelector('.runs-feed-head')?.offsetParent !== null,"
                 " raw: document.querySelector('.runs-raw')?.offsetParent !== null,"
-                f" buffered: {SH}.rawFeed.length,"
-                f" open: {SH}.rawFeedOpen,"
+                f" buffered: {RUNS}.rawFeed.length,"
+                f" open: {RUNS}.rawFeedOpen,"
                 # The whole collapsed BOX, head plus its border: that is the cost,
                 # and measuring the head alone is off by the border.
                 " headH: document.querySelector('.runs-feed').offsetHeight,"
@@ -323,9 +325,9 @@ def main():
                 )
 
             def refeed(text, marker):
-                page.evaluate(f"() => {SH}.dismissFeed()")
+                page.evaluate(f"() => {RUNS}.dismissFeed()")
                 page.wait_for_function(
-                    f"() => {SH}.rawFeed === '' && document.querySelector('.runs-feed')?.offsetParent == null",
+                    f"() => {RUNS}.rawFeed === '' && document.querySelector('.runs-feed')?.offsetParent == null",
                     timeout=5000,
                 )
                 feed(page, text)
@@ -386,7 +388,7 @@ def main():
             )
             collapsed = page.evaluate(
                 f"() => ({{ body: document.querySelector('.runs-body').clientHeight,"
-                f" buffered: {SH}.rawFeed.length,"
+                f" buffered: {RUNS}.rawFeed.length,"
                 f" head: document.querySelector('.runs-feed-head')?.offsetParent !== null }})"
             )
             check(
@@ -405,8 +407,8 @@ def main():
             )
             check(
                 "dismissing the feed clears the buffer entirely",
-                page.evaluate(f"() => {SH}.rawFeed") == "",
-                f"got={page.evaluate(f'() => {SH}.rawFeed')[:40]!r}",
+                page.evaluate(f"() => {RUNS}.rawFeed") == "",
+                f"got={page.evaluate(f'() => {RUNS}.rawFeed')[:40]!r}",
             )
 
             # --- scenario 5: the panel survives a phone width -----------------
@@ -439,7 +441,7 @@ def main():
                 f"sw={phone['sw']} cw={phone['cw']} ch={phone['ch']} steps={phone['steps']}",
             )
             page.set_viewport_size({"width": 1400, "height": 900})
-            page.evaluate(f"() => {SH}.dismissFeed()")
+            page.evaluate(f"() => {RUNS}.dismissFeed()")
 
             # --- scenario 6: the verbs are gated while the lock is held -------
             # The live snapshot document IS the lock derivation (`runs.list`,
@@ -558,7 +560,7 @@ def main():
                 "() => document.querySelector('.runs-verb-error')?.offsetParent !== null", timeout=60000
             )
             surfaced = page.evaluate(
-                f"() => {{ const lines = {SH}.rawFeed.split(/\\r?\\n/).filter(l => l.trim() !== '');"
+                f"() => {{ const lines = {RUNS}.rawFeed.split(/\\r?\\n/).filter(l => l.trim() !== '');"
                 " return { err: document.querySelector('.runs-verb-error span').textContent.trim(),"
                 " last: (lines[lines.length - 1] || '').trim(),"
                 f" flash: {SH}.runsActionMsg }}; }}"

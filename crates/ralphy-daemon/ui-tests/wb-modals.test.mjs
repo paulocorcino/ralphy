@@ -93,6 +93,7 @@ const pressEscape = (bound) => {
 test("Escape closes every modal, Settings and Security included", () => {
   const paths = SCRIMS.map((s) => s.path);
   assert.deepEqual(paths, [
+    "runOpen",
     "settingsOpen",
     "securityOpen",
     "whatsNewOpen",
@@ -102,7 +103,6 @@ test("Escape closes every modal, Settings and Security included", () => {
     "promptModal.open",
     "movePick.open",
     "planModal.open",
-    "runOpen",
     "addProject.open",
     "addHost.open",
   ]);
@@ -111,6 +111,7 @@ test("Escape closes every modal, Settings and Security included", () => {
   assert.deepEqual(
     Object.fromEntries(SCRIMS.filter((s) => s.component).map((s) => [s.path, s.component])),
     {
+      runOpen: "wbRuns",
       settingsOpen: "wbSettingsDialog",
       securityOpen: "wbSecurityDialog",
       whatsNewOpen: "wbReleaseDialogs",
@@ -200,7 +201,8 @@ test("a modal focuses its first control on open and gives focus back on close", 
   const dialog = { contains: () => focusInside, querySelectorAll: () => controls };
   const scrimEl = { querySelector: () => dialog };
 
-  const { state } = loadShell({
+  // The run modal is the component `wbRuns`: its scope holds the flag.
+  const { scope: state } = loadComponent("wbRuns", {
     window: { requestAnimationFrame: (fn) => fn() },
     document: { activeElement: opener },
   });

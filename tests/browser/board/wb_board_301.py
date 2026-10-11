@@ -55,6 +55,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Runs panel and the run modal: the component `wbRuns`.
+RUNS = "Alpine.$data(document.querySelector('[x-data=\"wbRuns\"]'))"
 
 RUN_A = "01RUNAAAAAAAAAAAAAAAAA"
 
@@ -523,7 +525,7 @@ def main():
             check(
                 "…with exactly that issue marked in the trail",
                 focused == ["72"],
-                f"got={focused} trailFocus={page.evaluate(f'() => {SH}.trailFocus')!r}",
+                f"got={focused} trailFocus={page.evaluate(f'() => {RUNS}.trailFocus')!r}",
             )
             # The pill must NOT also open the detail drawer (`@click.stop`).
             check(

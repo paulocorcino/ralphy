@@ -50,7 +50,7 @@ test("the state literal declares no key twice", () => {
   // NEGATIVE CONTROL: the scan must actually reach the literal. A regex that
   // matched nothing would report no duplicates forever.
   assert.ok(
-    keys.size > 350,
+    keys.size > 300,
     `the key scan found only ${keys.size} entries — it is not reading the state literal`,
   );
   assert.deepEqual(
@@ -152,26 +152,6 @@ test("boardRowToIssue accepts both the snake and camel spellings of a blocker li
   assert.equal(own.boardRowToIssue({ number: 7, state_reason: "completed" }).reason, "completed");
 });
 
-test("clockTitle names both anchors, and says nothing about the ones it lacks", () => {
-  const own = loadShell().state;
-  own.nowMs = Date.parse("2026-09-08T12:30:00Z");
-  const t = own.clockTitle({
-    since: "2026-09-08T12:00:00Z",
-    startedAt: "2026-09-08T10:00:00Z",
-  });
-  assert.match(t, /^phase since /);
-  assert.match(t, / · run started /);
-  // The elapsed time is free from `startedAt` — no second anchor is stored.
-  assert.match(t, /\(2h 30m\)/);
-  // Under an hour drops the hour segment entirely.
-  own.nowMs = Date.parse("2026-09-08T10:07:00Z");
-  assert.match(own.clockTitle({ startedAt: "2026-09-08T10:00:00Z" }), /\(7m\)/);
-  // NEGATIVE CONTROL: no run, and a run with neither anchor, render empty —
-  // never "undefined" or a bare separator.
-  assert.equal(own.clockTitle(null), "");
-  assert.equal(own.clockTitle({}), "");
-});
-
 test("kanbanColumnTitle resolves a column id to its human title", () => {
   // Against the real column table, not against "is a non-empty string" — the
   // previous form asserted `title.length >= id.length || title !== ""`, whose
@@ -198,44 +178,6 @@ test("rowOpen compares by composite ref, not by slug", () => {
   own.$store.projects.setOpen(own.$store.projects.repoRef(a));
   assert.equal(own.$store.projects.rowOpen(a), true);
   assert.equal(own.$store.projects.rowOpen({ slug: "owner/other", daemon: false }), false);
-});
-
-test("planHeadings drops Steps and stays empty when the prose is for another issue", () => {
-  const own = loadShell().state;
-  // The plan file carries its own issue key in a trailer; `planBelongsTo` reads
-  // it. Both halves of this fold need a plan that HAS one, or the gate
-  // short-circuits and neither the filter nor the ownership rule is exercised.
-  const plan = (issue) =>
-    [
-      "## Feasible: yes",
-      "## Steps",
-      "1. do the thing",
-      "## Notes & decisions",
-      `<!-- ralphy-plan: issue=${issue} -->`,
-    ].join("\n");
-
-  // The prose belongs to the active issue: its headings render, minus Steps —
-  // which the steps block owns and would otherwise appear twice.
-  assert.deepEqual(own.planHeadings({ active: 42, planMd: plan(42) }), [
-    "Feasible: yes",
-    "Notes & decisions",
-  ]);
-  // `planIssue` wins over `active` when both are present.
-  assert.deepEqual(own.planHeadings({ planIssue: 7, active: 42, planMd: plan(7) }), [
-    "Feasible: yes",
-    "Notes & decisions",
-  ]);
-
-  // NEGATIVE CONTROL, and the defect the gate exists for: `.ralphy/plan.md`
-  // still holds the PREVIOUS issue's plan between runs. Rendering its outline
-  // under the current issue is the lie — so a mismatch renders nothing, not a
-  // stale outline.
-  assert.deepEqual(own.planHeadings({ active: 42, planMd: plan(41) }), []);
-  // A plan with no trailer is mid-write or not a ralphy plan; either way it
-  // belongs to no issue.
-  assert.deepEqual(own.planHeadings({ active: 42, planMd: "## Feasible: yes" }), []);
-  assert.deepEqual(own.planHeadings(null), []);
-  assert.deepEqual(own.planHeadings({}), []);
 });
 
 test("filteredProjects keeps the open project whatever the query", () => {
@@ -706,7 +648,6 @@ function toggleShell() {
   for (const name of ["destroyRunsSub", "mountRunsSub", "hydrateRuns"]) runs[name] = record(name);
   runs.projectRuns = () => [];
   runs.currentRun = () => null;
-  state.planHeadings = () => [];
   state.$nextTick = (fn) => fn();
   runs.init();
   // `init()` starts its clocks on the global timers; here they never tick.
@@ -802,9 +743,6 @@ test("toggle writes no field of the git or the board part", () => {
     commitMsg: "unsent",
     commitMsgSlug: "owner/a",
     kanbanSel: 7,
-    trailFocus: 3,
-    planSection: "Stage 1",
-    verbError: "a verb refusal",
   };
   Object.assign(state, held);
   state.$store.runs.setCurrentRun("run-1");
@@ -853,18 +791,12 @@ test("the git part drops the refusals and the commit message of the project that
   assert.equal(state.commitMsg, "kept");
 });
 
-test("the board part drops the selection, the trail and the verb refusal of the project that was open", () => {
+test("the board part drops the selection of the project that was open", () => {
   const { state, named } = toggleShell();
   state.$store.projects.setOpen("owner/b");
-  state.$store.runs.currentRun = () => ({ runid: "run-2" });
-  state.planHeadings = (run) => (run?.runid === "run-2" ? ["Stage 1"] : []);
-  Object.assign(state, { kanbanSel: 7, trailFocus: 3, verbError: "z", planSection: "" });
+  state.kanbanSel = 7;
   state.boardFollowProject();
-  // The section is the first of the run the store now selects.
-  assert.deepEqual(
-    [state.kanbanSel, state.trailFocus, state.verbError, state.planSection],
-    [null, null, "", "Stage 1"],
-  );
+  assert.equal(state.kanbanSel, null);
   // The board is read only while it is open.
   assert.equal(named("loadBoard").length, 0);
 });
@@ -1024,35 +956,6 @@ test("one remote act at a time: the busy slot refuses a second act and frees its
   await st.syncPull("o/r");
   assert.equal(st.syncBusy, null, "an act whose transport threw frees the slot");
   assert.deepEqual(sent, ["sync.fetch", "sync.pull"], "the freed slot takes the next act");
-});
-
-test("the plan prose renders only for the issue its trailer names", () => {
-  const own = loadShell().state;
-  const plan = (issue) =>
-    ["## Feasible: yes", "## Steps", "1. do the thing", `<!-- ralphy-plan: issue=${issue} -->`].join(
-      "\n",
-    );
-  assert.equal(own.planProseIsCurrent({ active: 42, planMd: plan(42) }), true);
-  assert.equal(own.planProseIsCurrent({ planIssue: 7, active: 42, planMd: plan(7) }), true);
-  assert.equal(own.planProseIsCurrent({ active: 42, planMd: plan(41) }), false);
-  assert.equal(own.planProseIsCurrent({ active: 42, planMd: "## Feasible: yes" }), false);
-
-  // `marked` and `DOMPurify` are vendor globals the harness does not load; an
-  // identity pair shows which section text reached them.
-  const saved = { marked: globalThis.marked, DOMPurify: globalThis.DOMPurify };
-  globalThis.marked = { parse: (text) => text };
-  globalThis.DOMPurify = { sanitize: (html) => html };
-  try {
-    assert.notEqual(own.renderPlanSection({ active: 42, planMd: plan(42) }, "Feasible: yes"), "");
-    assert.equal(
-      own.renderPlanSection({ active: 42, planMd: plan(41) }, "Feasible: yes"),
-      "",
-      "a plan written for another issue renders nothing",
-    );
-  } finally {
-    globalThis.marked = saved.marked;
-    globalThis.DOMPurify = saved.DOMPurify;
-  }
 });
 
 test("spendView shows the spend document only for the project that is open", () => {
@@ -1663,18 +1566,6 @@ test("a runs push on a visible tab reads the runs and nudges the board; a hidden
     window.dispatchEvent(new CustomEvent("workbench:runs-dirty"));
     assert.deepEqual(calls, visibilityState === "visible" ? ["hydrateRuns", "board:runs"] : [], visibilityState);
   }
-});
-
-test("a kept runs read loads the selected run's plan only while the Runs panel shows", () => {
-  const { state, window } = runsEventShell();
-  let loads = 0;
-  state.loadRunPlan = () => loads++;
-  state.runsOpen = false;
-  window.dispatchEvent(new CustomEvent("workbench:runs-read"));
-  assert.equal(loads, 0, "a closed panel reads no plan");
-  state.runsOpen = true;
-  window.dispatchEvent(new CustomEvent("workbench:runs-read"));
-  assert.equal(loads, 1);
 });
 
 test("a reopened socket reads the board and the runs", () => {

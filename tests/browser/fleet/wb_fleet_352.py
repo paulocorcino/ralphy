@@ -30,6 +30,8 @@ SLUG = "ralphy-lab/shared-repo"
 PEER_REF = f"{PEER_ID}/{SLUG}"
 PEER_ENV = "WSL: Ubuntu-22.04"
 SHELL = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Runs panel and the run modal: the component `wbRuns`.
+RUNS = "Alpine.$data(document.querySelector('[x-data=\"wbRuns\"]'))"
 results = []
 
 
@@ -249,13 +251,13 @@ def main():
             def wait_for_verb(verb):
                 try:
                     page.wait_for_function(
-                        f"(wanted) => {SHELL}.rawFeed.includes('dispatch-argv: ' + wanted)",
+                        f"(wanted) => {RUNS}.rawFeed.includes('dispatch-argv: ' + wanted)",
                         arg=expected_argv[verb],
                         timeout=10000,
                     )
                 except Exception as error:
                     state = page.evaluate(
-                        f"() => ({{rawFeed: {SHELL}.rawFeed, verbError: {SHELL}.verbError}})"
+                        f"() => ({{rawFeed: {RUNS}.rawFeed, verbError: {RUNS}.verbError}})"
                     )
                     dump = (
                         command_dump.read_text(encoding="utf-8")
@@ -267,13 +269,13 @@ def main():
                     ) from error
 
             wait_for_verb("run")
-            observed["run"] = page.evaluate(f"() => {SHELL}.rawFeed")
+            observed["run"] = page.evaluate(f"() => {RUNS}.rawFeed")
             observed["run-identity"] = command_dump.read_text(encoding="utf-8")
 
             for verb in ("triage", "push"):
                 controls.filter(has_text=verb).click()
                 wait_for_verb(verb)
-                observed[verb] = page.evaluate(f"() => {SHELL}.rawFeed")
+                observed[verb] = page.evaluate(f"() => {RUNS}.rawFeed")
                 observed[f"{verb}-identity"] = command_dump.read_text(
                     encoding="utf-8"
                 )

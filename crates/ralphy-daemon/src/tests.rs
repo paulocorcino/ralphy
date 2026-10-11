@@ -3937,6 +3937,10 @@ const SHELL_FAMILY: &[(&str, &str)] = &[
         include_str!("../assets/ui/wb-release-dialogs.ts"),
     ),
     (
+        "wb-runs-panel.ts",
+        include_str!("../assets/ui/wb-runs-panel.ts"),
+    ),
+    (
         "wb-runs-store.ts",
         include_str!("../assets/ui/wb-runs-store.ts"),
     ),
@@ -7972,9 +7976,19 @@ fn the_runs_feed_is_contained_in_the_markup() {
         "verbLocked() must be literally writeLocked(), not a second predicate (#331)"
     );
     // `verbLockTitle` and `exitNote` are driven by `ui-tests/wb-runs.test.mjs`.
-    assert!(
-        include_str!("../assets/ui/wb-daemon.ts").contains("runVerbFailed?.("),
+    // Both terminal frames, the refusal and the exit, go to the panel.
+    assert_eq!(
+        include_str!("../assets/ui/wb-daemon.ts")
+            .matches(r#"sendWindow(window, "workbench:run-verb-failed", { message: "#)
+            .count(),
+        2,
         "wb-daemon.ts must route a terminal verb frame to the panel (#331)"
+    );
+    assert!(
+        app_js.contains(
+            r#"addEventListener("workbench:run-verb-failed", (e) => this.runVerbFailed(e.detail.message));"#
+        ),
+        "the Runs panel must hear a terminal verb frame (#331)"
     );
 }
 

@@ -40,6 +40,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 TARGET = os.environ.get("RALPHY_WB_TARGET") or os.path.join(REPO_ROOT, "target", "debug")
 EXE = os.path.join(TARGET, "ralphy.exe" if os.name == "nt" else "ralphy")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Runs panel and the run modal: the component `wbRuns`.
+RUNS = "Alpine.$data(document.querySelector('[x-data=\"wbRuns\"]'))"
 # The Settings dialog's own component, nested in shell().
 SET = "Alpine.$data(document.querySelector('.settings-dialog'))"
 # The About, What's new and update dialogs' own component, nested in shell().
@@ -270,7 +272,7 @@ def main():
                 ("changes", f"{SH}.showSideView('changes')"),
                 ("settings", f"{SET}.openSettings()"),
                 ("about", f"{SET}.closeSettings(); {REL}.openAbout()"),
-                ("run modal", f"{REL}.closeAbout(); {SH}.openRunModal()"),
+                ("run modal", f"{REL}.closeAbout(); {RUNS}.openRunModal()"),
             ]
             for name, act in views:
                 page.evaluate(f"() => {{ {act}; }}")

@@ -61,7 +61,8 @@ const HTML: &str = "crates/ralphy-daemon/assets/ui/index.html";
 
 /// The groups `shell()` is cut by (#605). Layout core is what `shell()` keeps.
 /// The consoles group left `shell()` for `wb-consoles-tab.ts`, and the files
-/// group for `wb-files.ts` and `wb-move-dialog.ts` (#621).
+/// group for `wb-files.ts` and `wb-move-dialog.ts` (#621). The Runs panel
+/// left the board group for `wb-runs-panel.ts` (#621).
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 enum Group {
     Core,
@@ -99,9 +100,6 @@ const SECTIONS: &[(&str, Group)] = &[
     ("write controls", Group::Git),
     ("the selected checkout", Group::Git),
     ("Runs panel", Group::Board),
-    ("plan viewer", Group::Board),
-    ("the step list", Group::Board),
-    ("run / triage", Group::Board),
     ("Kanban board", Group::Board),
     ("the repo's ready plan", Group::Board),
     ("detail drawer", Group::Board),

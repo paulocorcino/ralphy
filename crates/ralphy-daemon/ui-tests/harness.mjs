@@ -25,6 +25,7 @@ import { addProjectDialog } from "../assets/ui/wb-add-project-dialog.ts";
 import { wbColumns, wbConsoleMenus } from "../assets/ui/wb-consoles-tab.ts";
 import { wbFiles } from "../assets/ui/wb-files.ts";
 import { wbMoveDialog } from "../assets/ui/wb-move-dialog.ts";
+import { wbRuns } from "../assets/ui/wb-runs-panel.ts";
 import { projectsStore } from "../assets/ui/wb-projects-store.ts";
 import { runsStore } from "../assets/ui/wb-runs-store.ts";
 import { WBSpend } from "../assets/ui/wb-spend.ts";
@@ -71,6 +72,7 @@ const MODULE_COMPONENTS = {
   wbColumns,
   wbFiles,
   wbMoveDialog,
+  wbRuns,
 };
 
 export const UI = join(dirname(fileURLToPath(import.meta.url)), "../assets/ui");

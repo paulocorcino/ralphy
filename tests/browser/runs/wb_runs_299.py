@@ -48,6 +48,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Runs panel and the run modal: the component `wbRuns`.
+RUNS = "Alpine.$data(document.querySelector('[x-data=\"wbRuns\"]'))"
 
 RUN_A = "01RUNAAAAAAAAAAAAAAAAA"
 RUN_B = "01RUNBBBBBBBBBBBBBBBBB"
@@ -261,7 +263,7 @@ def main():
                 f"got={glyphs}",
             )
 
-            label = page.evaluate(f"() => {SH}.runPhaseLabel(Alpine.store('runs').currentRun())")
+            label = page.evaluate(f"() => {RUNS}.runPhaseLabel(Alpine.store('runs').currentRun())")
             check("run phase label names the active issue", label == "executing #72", f"got={label!r}")
 
             prog = page.locator(".run-select-btn .run-prog").inner_text().strip()
@@ -273,7 +275,7 @@ def main():
             page.screenshot(path=os.path.join(SHOT_DIR, "299-runs-panel-2026-07-24.png"))
 
             # both runs are selectable: flip to the sleeping one.
-            page.evaluate(f"() => {SH}.selectRun('{RUN_B}')")
+            page.evaluate(f"() => {RUNS}.selectRun('{RUN_B}')")
             page.wait_for_timeout(300)
             selected = page.evaluate(f"() => Alpine.store('runs').currentRun()?.runid")
             check("the second concurrent run is selectable", selected == RUN_B, f"got={selected!r}")

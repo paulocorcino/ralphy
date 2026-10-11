@@ -51,6 +51,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Runs panel and the run modal: the component `wbRuns`.
+RUNS = "Alpine.$data(document.querySelector('[x-data=\"wbRuns\"]'))"
 
 RUN_A = "01RUNAAAAAAAAAAAAAAAAA"
 RUN_B = "01RUNBBBBBBBBBBBBBBBBB"
@@ -58,7 +60,7 @@ RUN_B = "01RUNBBBBBBBBBBBBBBBBB"
 # The state the panel exposes, as ONE string — the idempotence oracle.
 STATE_JSON = (
     f"() => JSON.stringify({{ runs: Alpine.store('runs').projectRuns(), currentRunId: Alpine.store('runs').currentRunId,"
-    f" planSection: {SH}.planSection, runsError: Alpine.store('runs').runsError }})"
+    f" planSection: {RUNS}.planSection, runsError: Alpine.store('runs').runsError }})"
 )
 
 STEPS_V1 = [{"text": "first step body", "status": "open"}]
@@ -239,7 +241,7 @@ def main():
             page.wait_for_function(f"() => Alpine.store('runs').projectRuns().length === 1", timeout=15000)
             check("a run started while the panel is open appears with NO operator action", True)
 
-            label = page.evaluate(f"() => {SH}.runPhaseLabel(Alpine.store('runs').currentRun())")
+            label = page.evaluate(f"() => {RUNS}.runPhaseLabel(Alpine.store('runs').currentRun())")
             check("the pushed run reads its planning phase", label == "planning #72", f"got={label!r}")
             glyphs = [g.strip() for g in page.locator(".trail .trail-ic").all_inner_texts()]
             check("the trail starts at done / planning / pending", glyphs == ["✅", "🧠", "○"], f"got={glyphs}")
@@ -260,9 +262,9 @@ def main():
             check("the issue trail advances to done / executing / pending", glyphs == ["✅", "⚙️", "○"], f"got={glyphs}")
 
             page.wait_for_function(
-                f"() => {SH}.runPhaseLabel(Alpine.store('runs').currentRun()) === 'executing #72'", timeout=15000
+                f"() => {RUNS}.runPhaseLabel(Alpine.store('runs').currentRun()) === 'executing #72'", timeout=15000
             )
-            label = page.evaluate(f"() => {SH}.runPhaseLabel(Alpine.store('runs').currentRun())")
+            label = page.evaluate(f"() => {RUNS}.runPhaseLabel(Alpine.store('runs').currentRun())")
             check("the phase label advances to the executing issue", label == "executing #72", f"got={label!r}")
 
             prog = page.locator(".run-select-btn .run-prog").inner_text().strip()

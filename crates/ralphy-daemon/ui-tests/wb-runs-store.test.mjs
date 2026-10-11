@@ -125,3 +125,15 @@ test("a push on the runs socket is told on the window as workbench:runs-dirty", 
   subs[0].onDirty();
   assert.deepEqual(events, ["workbench:runs-dirty"]);
 });
+
+// The Runs panel reads the plan; the store writes it on the run (one writer).
+test("a failed plan read keeps the last good text and flags it; a good read clears the flag", () => {
+  const { store } = page();
+  const run = { runid: "r1", planMd: "", planReadFailed: false };
+  store.setRunPlan(run, "## Steps");
+  assert.deepEqual([run.planMd, run.planReadFailed], ["## Steps", false]);
+  store.setRunPlan(run, null);
+  assert.deepEqual([run.planMd, run.planReadFailed], ["## Steps", true], "the last good text stays");
+  store.setRunPlan(run, "");
+  assert.deepEqual([run.planMd, run.planReadFailed], ["", false], "an empty plan is a good read");
+});

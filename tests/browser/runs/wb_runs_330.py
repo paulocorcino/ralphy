@@ -54,6 +54,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Runs panel and the run modal: the component `wbRuns`.
+RUNS = "Alpine.$data(document.querySelector('[x-data=\"wbRuns\"]'))"
 
 RUN_A = "01RUN330AAAAAAAAAAAAAA"
 
@@ -390,8 +392,8 @@ def main():
             )
             stale = page.evaluate(
                 f"() => ({{ prose: document.querySelector('.plan-block-more .plan-md').innerText.trim(),"
-                f" headings: {SH}.planHeadings(Alpine.store('runs').currentRun()),"
-                f" current: {SH}.planProseIsCurrent(Alpine.store('runs').currentRun()),"
+                f" headings: {RUNS}.planHeadings(Alpine.store('runs').currentRun()),"
+                f" current: {RUNS}.planProseIsCurrent(Alpine.store('runs').currentRun()),"
                 " note: (document.querySelector('.plan-prose-note')?.innerText || '').trim() })"
             )
             check(
@@ -426,7 +428,7 @@ def main():
                 active=72,
             )
             page.wait_for_function(
-                f"() => {SH}.planProseIsCurrent(Alpine.store('runs').currentRun()) === true", timeout=15000
+                f"() => {RUNS}.planProseIsCurrent(Alpine.store('runs').currentRun()) === true", timeout=15000
             )
             owned = page.evaluate(
                 "() => ({ chip: document.querySelector('.plan-block-steps .plan-issue').innerText.trim(),"
@@ -519,8 +521,8 @@ def main():
                 "executing",
                 plan_block(steps(("first step body", "checked"), ("second step body", "open"))),
             )
-            page.wait_for_function(f"() => {SH}.planHeadings(Alpine.store('runs').currentRun()).includes('Verify')", timeout=15000)
-            page.evaluate(f"() => {{ {SH}.planSection = 'Verify'; }}")
+            page.wait_for_function(f"() => {RUNS}.planHeadings(Alpine.store('runs').currentRun()).includes('Verify')", timeout=15000)
+            page.evaluate(f"() => {{ {RUNS}.planSection = 'Verify'; }}")
             page.wait_for_timeout(200)
             # A background push (nobody touched the browser) must not reassign it.
             write(
@@ -534,7 +536,7 @@ def main():
                 " return li.length === 2 && li.every(e => e.className.includes('st-checked')); }",
                 timeout=15000,
             )
-            section = page.evaluate(f"() => {SH}.planSection")
+            section = page.evaluate(f"() => {RUNS}.planSection")
             options = page.locator(".plan-picker option").all_inner_texts()
             check(
                 "the operator's chosen heading survives a background push",
