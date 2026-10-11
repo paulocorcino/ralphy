@@ -45,18 +45,18 @@ const menuRow = (label) => {
 
 test("the What's new panel warns that the update closes the open consoles", () => {
   const { state, shell } = dialogs();
-  shell.liveSessions = [];
+  shell.$store.projects.liveSessions = [];
   assert.equal(state.releaseConsoleWarning, "", "no console, no warning");
-  shell.liveSessions = [{ id: "a" }];
+  shell.$store.projects.liveSessions = [{ id: "a" }];
   assert.match(state.releaseConsoleWarning, /^1 console is open\. The update closes it/);
-  shell.liveSessions = [{ id: "a" }, { id: "b" }, { id: "c" }];
+  shell.$store.projects.liveSessions = [{ id: "a" }, { id: "b" }, { id: "c" }];
   assert.match(state.releaseConsoleWarning, /^3 consoles are open\. The update closes them/);
 });
 
 test("opening What's new counts the consoles again", () => {
   const { state, shell } = dialogs();
   let polled = 0;
-  shell.refreshLive = () => polled++;
+  shell.$store.projects.refreshLive = () => polled++;
   state.openWhatsNew();
   assert.equal(polled, 1);
 });
@@ -67,13 +67,13 @@ test("opening What's new counts the consoles again", () => {
 test("the question names the WSL peers the update takes after this daemon", async () => {
   const { state, shell, window } = dialogs();
   window.fetch = async () => ({ ok: false });
-  shell.refreshLive = async () => {};
-  shell.fleetPeers = [
+  shell.$store.projects.refreshLive = async () => {};
+  shell.$store.projects.fleetPeers = [
     { daemon_id: "wsl-id", name: "Ubuntu", environment: "wsl", nudgeable: true },
     { daemon_id: "srv-id", name: "server", environment: "linux", nudgeable: false },
   ];
   // One console here, two in WSL, one on the other peer.
-  shell.liveSessions = [
+  shell.$store.projects.liveSessions = [
     { daemon_id: "here", name: "app #1" },
     { daemon_id: "wsl-id", name: "api #1" },
     { daemon_id: "wsl-id", name: "api #2" },
@@ -90,8 +90,8 @@ test("the question names the WSL peers the update takes after this daemon", asyn
 // consoles are not in the warning.
 test("the console warning counts only the consoles this daemon hosts", () => {
   const { state, shell } = dialogs();
-  shell.fleetPeers = [{ daemon_id: "wsl-id", nudgeable: true }];
-  shell.liveSessions = [{ daemon_id: "here" }, { daemon_id: "wsl-id" }, { daemon_id: "wsl-id" }];
+  shell.$store.projects.fleetPeers = [{ daemon_id: "wsl-id", nudgeable: true }];
+  shell.$store.projects.liveSessions = [{ daemon_id: "here" }, { daemon_id: "wsl-id" }, { daemon_id: "wsl-id" }];
   assert.match(state.releaseConsoleWarning, /^1 console is open\./);
 });
 
@@ -132,7 +132,7 @@ test("the same build after a gap is a rollback, and a new build reloads the page
 // through two shell() methods.
 test("the dialogs change the release fact only through markReleaseSeen and releaseWatchChanged", async () => {
   const { state, shell } = dialogs();
-  shell.refreshLive = () => {};
+  shell.$store.projects.refreshLive = () => {};
   assert.throws(
     () => {
       state.release.disabled = true;
@@ -195,7 +195,7 @@ test("every name the dialogs' markup reads is their own or in their uses list", 
 test("the account menu closes itself and asks the dialogs to open with their events", async () => {
   const loaded = loadShell();
   const { scope: state } = loadComponent("wbReleaseDialogs", { from: loaded });
-  loaded.state.refreshLive = () => {};
+  loaded.state.$store.projects.refreshLive = () => {};
   for (const [label, event, flag] of [
     ["<span x-text=\"releaseSummary\"></span>", "workbench:whats-new-open", "whatsNewOpen"],
     ["<span>About</span>", "workbench:about-open", "aboutOpen"],

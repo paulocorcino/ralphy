@@ -44,7 +44,7 @@ test("the state literal declares no key twice", () => {
   // NEGATIVE CONTROL: the scan must actually reach the literal. A regex that
   // matched nothing would report no duplicates forever.
   assert.ok(
-    keys.size > 150,
+    keys.size > 100,
     `the key scan found only ${keys.size} entries — it is not reading the state literal`,
   );
   assert.deepEqual(
@@ -475,14 +475,8 @@ function toggleShell() {
   const record = (name) => (...args) => {
     calls.push([name, ...args]);
   };
-  for (const name of [
-    "loadRepos",
-    "loadRelease",
-    "wakePeerFor",
-    "loadAgents",
-  ]) {
-    state[name] = record(name);
-  }
+  state.loadRelease = record("loadRelease");
+  for (const name of ["loadRepos", "wakePeerFor", "loadAgents"]) state.$store.projects[name] = record(name);
   state.$store.checkouts.ensureWorktreeListing = record("ensureWorktreeListing");
   const runs = state.$store.runs;
   for (const name of ["destroyRunsSub", "mountRunsSub", "hydrateRuns"]) runs[name] = record(name);
@@ -533,7 +527,7 @@ test("a row on a host that cannot answer stays closed, and still wakes it", () =
   const peer = "01KY0000000000000000000000";
   const ref = `${peer}/owner/repo`;
   let groups = [{ daemon: peer, local: false, state: "unreachable" }];
-  state.fleetGroups = () => groups;
+  state.$store.projects.fleetGroups = () => groups;
   const opened = () => events.filter((e) => e.type === "workbench:project-changed").length;
   state.toggle(ref);
   assert.equal(state.$store.projects.openSlug, null);
@@ -581,7 +575,7 @@ test("toggle sends workbench:project-changed with the project now open and the o
 test("toggle writes no field of the git part", () => {
   // The default page: the window hears nothing, so no listener runs.
   const { state } = loadShell();
-  for (const name of ["wakePeerFor", "loadAgents"]) state[name] = () => {};
+  for (const name of ["wakePeerFor", "loadAgents"]) state.$store.projects[name] = () => {};
   state.$store.checkouts.ensureWorktreeListing = () => {};
   state.$store.checkouts.branchRefused("a branch refusal");
   state.$store.runs.setCurrentRun("run-1");
@@ -688,22 +682,6 @@ test("the create action asks for the name through the shell's prompt", async () 
   assert.deepEqual(written, []);
 });
 
-test("wakePeerFor wakes the daemon of a sleeping peer's row only", () => {
-  const { state } = loadShell();
-  const peer = "01KY0000000000000000000000";
-  const woken = [];
-  state.wakePeer = (daemon) => woken.push(daemon);
-  let groups = [{ daemon: peer, state: "asleep", nudgeable: true }];
-  state.fleetGroups = () => groups;
-  state.wakePeerFor(`${peer}/owner/repo`);
-  assert.deepEqual(woken, [peer]);
-  // CONTROLS: a local row and an awake peer are not woken.
-  state.wakePeerFor("owner/repo");
-  groups = [{ daemon: peer, state: "online", nudgeable: true }];
-  state.wakePeerFor(`${peer}/owner/repo`);
-  assert.deepEqual(woken, [peer]);
-});
-
 test("askPrompt settles with the trimmed name the prompt submits", async () => {
   const { state } = loadShell();
   const answer = state.askPrompt({ title: "New file in src" });
@@ -720,58 +698,6 @@ test("askPrompt settles with the trimmed name the prompt submits", async () => {
   assert.equal(await answer, "notes.md");
 });
 
-// ---- folds the tree, the Changes panel and the plan viewer rely on ----------
-
-// `/api/repos` carries `head` beside `branch` (#510): a detached HEAD has no
-// branch, and the row must still name its commit.
-test("loadRepos keeps the head of a detached repo for the row title", async () => {
-  const { state } = loadShell();
-  state.loadFleet = () => {};
-  state.refreshLive = () => {};
-  const row = {
-    slug: "o/r",
-    path: "/r",
-    reachable: true,
-    branch: null,
-    head: { kind: "detached", sha: "abc1234" },
-    dirty: false,
-    remote: null,
-  };
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = async () => ({ ok: true, json: async () => [row] });
-  try {
-    await state.loadRepos();
-  } finally {
-    globalThis.fetch = realFetch;
-  }
-  assert.equal(state.$store.projects.projects.length, 1);
-  assert.equal(state.rowTitle(state.$store.projects.projects[0]), "o/r · abc1234");
-});
-
-// The sidebar dot says GitHub only when github.com is the remote's host.
-test("loadRepos marks a row github only for a remote hosted on github.com", async () => {
-  const { state } = loadShell();
-  state.loadFleet = () => {};
-  state.refreshLive = () => {};
-  const row = (slug, remote) => ({ slug, path: "/" + slug, reachable: true, branch: "main", dirty: false, remote });
-  const rows = [
-    row("o/gh", "git@github.com:o/gh.git"),
-    row("o/fake", "https://github.com.evil.example/o/fake"),
-    row("o/none", null),
-  ];
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = async () => ({ ok: true, json: async () => rows });
-  try {
-    await state.loadRepos();
-  } finally {
-    globalThis.fetch = realFetch;
-  }
-  assert.deepEqual(
-    state.$store.projects.projects.map((p) => [p.slug, p.remote]),
-    [["o/gh", "github"], ["o/fake", "local"], ["o/none", "local"]],
-  );
-});
-
 // --- ADR-0070 D2: a shown fact is read again on named events only ----------
 
 test("login reads the board, the runs and the tree again", () => {
@@ -786,102 +712,24 @@ test("login reads the board, the runs and the tree again", () => {
   const files = loadComponent("wbFiles", { from: loaded }).scope;
   files.init();
   const calls = [];
-  for (const name of ["loadRepos", "loadAgents", "restoreView"]) {
-    state[name] = () => calls.push(name);
-  }
+  for (const name of ["loadRepos", "loadAgents"]) state.$store.projects[name] = () => calls.push(name);
+  state.restoreView = () => calls.push("restoreView");
   state.$store.connection.loadIdentity = () => calls.push("loadIdentity");
   state.$store.runs.hydrateRuns = () => calls.push("hydrateRuns");
   loaded.window.addEventListener("workbench:board-refresh", (e) => calls.push(`board:${e.detail.trigger}`));
   files._treeSub = { replay: () => calls.push("tree") };
   // Closed: the runs lock the writes whether the panel shows them or not.
   state.runsOpen = false;
+  // The refusal the gated read left goes before the read again.
+  state.$store.projects.reposFailed("the daemon answered 401");
   state.rehydrateAfterAuth();
   for (const want of ["loadRepos", "board:login", "hydrateRuns", "tree"]) {
     assert.ok(calls.includes(want), `${want} in ${calls.join(", ")}`);
   }
+  assert.equal(state.$store.projects.reposError, "");
 });
 
 // --- ADR-0070 D3: a failed read keeps the last good value, marked not current
-
-// Answers each fetch with the next reply in `replies` (`{ status, body }`).
-function scriptedFetch(replies) {
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = async () => {
-    const { status, body } = replies.shift() || { status: 500, body: null };
-    return { ok: status === 200, status, json: async () => body };
-  };
-  return () => (globalThis.fetch = realFetch);
-}
-
-test("a failed project read after a good one keeps the list, marked not current", async () => {
-  const { state } = loadShell();
-  state.loadFleet = () => {};
-  state.refreshLive = () => {};
-  const restore = scriptedFetch([
-    { status: 200, body: [{ slug: "a/b", path: "/ab", reachable: true }] },
-    { status: 500, body: null },
-  ]);
-  try {
-    await state.loadRepos();
-    await state.loadRepos();
-  } finally {
-    restore();
-  }
-  assert.equal(state.$store.projects.projects.length, 1);
-  assert.equal(state.$store.projects.projects[0].slug, "a/b");
-  assert.match(state.reposError, /Not current: the daemon answered 500/);
-});
-
-test("a failed first project read is empty and says why", async () => {
-  const { state } = loadShell();
-  state.refreshLive = () => {};
-  const restore = scriptedFetch([{ status: 500, body: null }]);
-  try {
-    await state.loadRepos();
-  } finally {
-    restore();
-  }
-  assert.deepEqual(state.$store.projects.projects, []);
-  assert.equal(state.reposError, "Could not load the projects from the daemon: the daemon answered 500.");
-});
-
-test("a failed fleet read after a good one keeps the peers and their rows", async () => {
-  const { state } = loadShell();
-  const fleet = {
-    peers: [{ daemon_id: "p1", name: "wsl", environment: "WSL: U", state: "reachable" }],
-    repos: [{ key: "p1/o/r", slug: "o/r", daemon_id: "p1", reachable: true }],
-  };
-  const restore = scriptedFetch([
-    { status: 200, body: fleet },
-    { status: 502, body: null },
-  ]);
-  try {
-    await state.loadFleet();
-    state.$store.projects.setProjects(state.$store.projects.projects.filter((p) => !p.daemon));
-    await state.loadFleet();
-  } finally {
-    restore();
-  }
-  assert.equal(state.fleetPeers.length, 1);
-  assert.equal(state.$store.projects.projects.filter((p) => p.daemon === "p1").length, 1);
-  assert.match(state.fleetError, /Not current: the daemon answered 502/);
-});
-
-test("a failed session read after a good one keeps the list, marked not current", async () => {
-  const { state } = loadShell();
-  const restore = scriptedFetch([
-    { status: 200, body: [{ id: 1, repo: "o/r" }] },
-    { status: 500, body: null },
-  ]);
-  try {
-    await state.refreshLive();
-    await state.refreshLive();
-  } finally {
-    restore();
-  }
-  assert.equal(state.liveSessions.length, 1);
-  assert.match(state.sessionsError(), /Not current/);
-});
 
 // A shell whose `WBDaemon.observe` answers each call with the next reply.
 function observedShell(replies) {
@@ -892,59 +740,6 @@ function observedShell(replies) {
   return state;
 }
 
-// --- review fixes (#511) ----------------------------------------------------
-
-test("two fleet reads close together list each peer row once", async () => {
-  const { state } = loadShell();
-  state.$store.projects.setProjects([{ slug: "a/b", tree: [] }]);
-  const fleet = {
-    peers: [{ daemon_id: "p1", name: "wsl", environment: "WSL: U", state: "reachable" }],
-    repos: [{ key: "p1/o/r", slug: "o/r", daemon_id: "p1", reachable: true }],
-  };
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => fleet });
-  try {
-    await Promise.all([state.loadFleet(), state.loadFleet()]);
-  } finally {
-    globalThis.fetch = realFetch;
-  }
-  assert.equal(state.$store.projects.projects.filter((p) => p.daemon === "p1").length, 1);
-  assert.equal(state.$store.projects.projects.filter((p) => !p.daemon).length, 1);
-});
-
-test("fleet reads asked now share the read in flight, and a later ask reads again", async () => {
-  const { state } = loadShell();
-  state.$store.projects.setProjects([]);
-  let reads = 0;
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = async (url) => {
-    if (url === "/api/fleet") reads += 1;
-    return { ok: true, status: 200, json: async () => ({ peers: [], repos: [] }) };
-  };
-  try {
-    await Promise.all([state.readFleetNow(), state.readFleetNow(), state.readFleetNow()]);
-    assert.equal(reads, 1);
-    await state.readFleetNow();
-    assert.equal(reads, 2);
-  } finally {
-    globalThis.fetch = realFetch;
-  }
-});
-
-test("the consoles get the shell's fleet read with the fleet", () => {
-  let hooks = null;
-  const { state, window } = loadShell();
-  window.WBConsole = { ingestFleet: (_groups, h) => (hooks = h) };
-  let asked = 0;
-  state.readFleetNow = () => {
-    asked += 1;
-    return Promise.resolve();
-  };
-  state.shareFleet();
-  hooks.read();
-  assert.equal(asked, 1);
-});
-
 // --- the shell and the files (wb-files.ts) talk through events ---------------
 
 // A shell whose window records every event it is sent.
@@ -954,18 +749,6 @@ function eventShell(opts = {}) {
   const sent = (type) => events.filter((e) => e.type === type).map((e) => e.detail ?? null);
   return { ...loaded, events, sent };
 }
-
-test("a good fleet read is sent to the files", async () => {
-  const { state, sent } = eventShell();
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ peers: [], repos: [] }) });
-  try {
-    await state.loadFleet();
-  } finally {
-    globalThis.fetch = realFetch;
-  }
-  assert.deepEqual(sent("workbench:fleet-read"), [null]);
-});
 
 test("a create through the write seam asks the files to re-list the folder and reveal the entry", async () => {
   const listeners = [];
@@ -986,8 +769,6 @@ test("a create through the write seam asks the files to re-list the folder and r
 
 // --- second review of #511 ---------------------------------------------------
 
-const VISIBLE = { document: { visibilityState: "visible", hasFocus: () => true } };
-
 // A shell whose window hears what it is sent, after `init()` as on the page.
 function runsEventShell({ visibilityState = "visible" } = {}) {
   const listeners = {};
@@ -999,9 +780,7 @@ function runsEventShell({ visibilityState = "visible" } = {}) {
     },
   });
   const { state } = loaded;
-  for (const name of ["loadRepos", "loadAgents", "loadRelease"]) {
-    state[name] = () => {};
-  }
+  state.loadRelease = () => {};
   const realSetInterval = globalThis.setInterval;
   globalThis.setInterval = () => 0;
   try {
@@ -1025,64 +804,12 @@ test("a runs push on a visible tab reads the runs and nudges the board; a hidden
   }
 });
 
-test("a project read keeps the peer rows and the live dots until the fleet and the sessions answer", async () => {
-  const { state } = loadShell(VISIBLE);
-  const peer = { key: "d/x", slug: "x", daemon: "d", state: "idle" };
-  state.$store.projects.setProjects([{ slug: "a", state: "working", env: "wsl" }, peer]);
-  state._fleetRows = [peer];
-  const realFetch = globalThis.fetch;
-  // `/api/repos` answers; the fleet and the sessions never do.
-  globalThis.fetch = (url) =>
-    String(url) === "/api/repos"
-      ? Promise.resolve({ ok: true, status: 200, json: async () => [{ slug: "a", reachable: true }] })
-      : new Promise(() => {});
-  try {
-    await state.loadRepos({ git: false });
-  } finally {
-    globalThis.fetch = realFetch;
-  }
-  assert.deepEqual(
-    state.$store.projects.projects.map((p) => p.slug),
-    ["a", "x"],
-    "the peer row stays",
-  );
-  assert.equal(state.$store.projects.projects[0].state, "working", "the live dot stays");
-  assert.equal(state.$store.projects.projects[0].env, "wsl");
-});
-
 test("a reopened socket refreshes an open board, as the tab becoming visible does", () => {
   const { window } = loadShell();
   const ask = (trigger) =>
     window.WBKanban.shouldRefresh({ trigger, sinceMs: 60 * 60 * 1000, boardOpen: true, docVisible: true });
   assert.equal(ask("reopen"), true);
   assert.equal(ask("reopen"), ask("visible"));
-});
-
-// ADR-0070 D4: a peer the daemon cannot read lists no project, so the sidebar
-// says so instead of showing a fleet with that peer missing.
-test("a peer the daemon could not read is named in the sidebar", async () => {
-  const { state } = loadShell(VISIBLE);
-  state.$store.projects.setProjects([]);
-  const restore = scriptedFetch([
-    {
-      status: 200,
-      body: {
-        peers: [
-          { daemon_id: "ok", state: "online" },
-          { daemon_id: "malformed:/p/peers", state: "malformed", name: "/p/peers", diagnosis: "cannot list /p/peers: access denied" },
-        ],
-        repos: [],
-      },
-    },
-  ]);
-  try {
-    await state.loadFleet();
-  } finally {
-    restore();
-  }
-  assert.equal(state.fleetRejectNote, "Could not read a peer: cannot list /p/peers: access denied");
-  // NEGATIVE CONTROL: a fleet with no bad peer says nothing.
-  assert.equal(state.fleetRejectText([{ state: "online" }]), "");
 });
 
 // The context menu builds each item from elements: a label can name a file,

@@ -32,7 +32,7 @@ export type SpawnDeps = {
   wins: Set<ConsoleWin>;
   // The fleet's last answer, grouped by peer: one map for the life of the console.
   peerGroups: Map<string, Group>;
-  // The shell's wake of a peer and its fleet read, read at each use.
+  // The store `projects`' wake of a peer and its fleet read, read at each use.
   wakePeerNow: () => ((daemon: string) => Promise<boolean>) | null;
   readFleetNow: () => (() => void) | null;
   // The window chrome: the frame, the titlebar, the body and its buttons.

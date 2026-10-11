@@ -56,6 +56,8 @@ EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if WIN else "ralph
 CHILD = os.path.join(REPO_ROOT, "target", "debug", "session_test_child.exe" if WIN else "session_test_child")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The roster lives in the Alpine store `projects`.
+ROSTER = "() => Alpine.store('projects').roster"
 # The Consoles tab's menus and the columns are Alpine components of their
 # own (wb-consoles-tab.ts): a check reads them through their root.
 MENUS = "Alpine.$data(document.querySelector('[x-data=\"wbConsoleMenus\"]'))"
@@ -304,7 +306,7 @@ def main():
                 f"got={after_launch}",
             )
             # The presence tick feeds the fold; ask for it now rather than waiting.
-            page.evaluate(f"async () => {SH}.refreshLive()")
+            page.evaluate(f"async () => Alpine.store('projects').refreshLive()")
             page.wait_for_timeout(400)
             rows = open_menu(page)
             claude_row = row_by_label(page, "claude")
@@ -346,7 +348,7 @@ def main():
             )
 
             # --- scenario 5: the count is a readout; there is no "+" ----------
-            page.evaluate(f"async () => {SH}.refreshLive()")
+            page.evaluate(f"async () => Alpine.store('projects').refreshLive()")
             page.wait_for_timeout(400)
             rows = open_menu(page)
             page.screenshot(path=os.path.join(SHOT_DIR, "304-agent-menu-2026-07-25.png"))
@@ -387,7 +389,7 @@ def main():
             # A live row launches on click, so its key launches too.
             mark = len([u for u in sockets if "/ws/session" in u])
             windows_before = page.locator(".session-window").count()
-            page.evaluate(f"async () => {SH}.refreshLive()")
+            page.evaluate(f"async () => Alpine.store('projects').refreshLive()")
             page.wait_for_timeout(400)
             page.keyboard.press("Alt+Shift+Digit1")
             page.wait_for_timeout(300)
@@ -431,12 +433,12 @@ def main():
             # A daemon that cannot answer must not have adapters invented for it.
             # `*` after the path: the roster URL carries `?repo=` once a repo is open.
             page.route("**/api/agents*", lambda route: route.fulfill(status=500, body="nope"))
-            page.evaluate(f"async () => {SH}.loadAgents()")
+            page.evaluate(f"async () => Alpine.store('projects').loadAgents()")
             page.wait_for_timeout(400)
             check(
                 "a 500 from /api/agents leaves the roster EMPTY in daemon mode",
-                page.evaluate(f"() => [{SH}.roster.length, {SH}.agents.length]") == [0, 0],
-                f"got={page.evaluate(f'() => {SH}.roster')}",
+                page.evaluate(f"() => [Alpine.store('projects').roster.length, Alpine.store('projects').agents.length]") == [0, 0],
+                f"got={page.evaluate(ROSTER)}",
             )
             open_menu(page)
             check(
@@ -447,11 +449,11 @@ def main():
             )
             close_menu(page)
             page.unroute("**/api/agents*")
-            page.evaluate(f"async () => {SH}.loadAgents()")
+            page.evaluate(f"async () => Alpine.store('projects').loadAgents()")
             page.wait_for_timeout(400)
 
             # --- scenario 10: rows launch, nothing else; the head says it once -
-            page.evaluate(f"async () => {SH}.refreshLive()")
+            page.evaluate(f"async () => Alpine.store('projects').refreshLive()")
             page.wait_for_timeout(300)
             keys = page.evaluate(
                 f"() => {MENUS}.consoleItems().map((r) => Object.keys(r).sort().join(','))"

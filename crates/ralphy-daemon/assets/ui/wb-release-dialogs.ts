@@ -20,7 +20,7 @@ export function releaseDialogs() {
   // Every `shell()` member this component's code or markup reads or calls.
   // `loadComponent` in ui-tests/harness.mjs fails on any other name, and the
   // type check fails on a name the code reads.
-  return component(["release", "releaseSummary", "releaseStale", "markReleaseSeen", "releaseWatchChanged", "refreshLive", "localSessions", "peerSessions", "fleetPeers", "scrim"], {
+  return component(["release", "releaseSummary", "releaseStale", "markReleaseSeen", "releaseWatchChanged", "scrim"], {
     // --- about (read-only) ------------------------------------------------
     // The product card from `/api/about`; these defaults show until it answers.
     aboutOpen: false,
@@ -50,7 +50,7 @@ export function releaseDialogs() {
     // `ralphy update` in a terminal restarts only this daemon, so only its own
     // consoles close.
     get releaseConsoleWarning() {
-      const n = this.localSessions().length;
+      const n = this.$store.projects.localSessions().length;
       if (!n) return "";
       if (n === 1) return "1 console is open. The update closes it and stops the agent in it.";
       return n + " consoles are open. The update closes them and stops the agents in them.";
@@ -70,7 +70,7 @@ export function releaseDialogs() {
       this.whatsNewOpen = true;
       this.markReleaseSeen();
       // The warning counts the consoles open now, not at the last poll.
-      this.refreshLive();
+      this.$store.projects.refreshLive();
     },
     closeWhatsNew() {
       this.whatsNewOpen = false;
@@ -87,16 +87,16 @@ export function releaseDialogs() {
         console.warn("security state:", e);
       }
       // The list as it is now, not as the last poll left it.
-      await this.refreshLive();
-      const consoles = this.localSessions().map(
+      await this.$store.projects.refreshLive();
+      const consoles = this.$store.projects.localSessions().map(
         (s) => s.name || (s.repo && s.repo !== "~" ? this.$store.projects.projectLabel(s.repo) : "home"),
       );
       // A peer that can be woken through `wsl.exe` is the one the update takes
       // after this daemon (ADR-0056 §11). Its consoles close only if it takes a
       // new version, so they are counted apart.
-      const wsl = (this.fleetPeers || []).filter((p) => p.nudgeable);
+      const wsl = (this.$store.projects.fleetPeers || []).filter((p) => p.nudgeable);
       const peers = wsl.map((p) => p.name || p.environment);
-      const peerConsoles = wsl.reduce((n, p) => n + this.peerSessions(p.daemon_id).length, 0);
+      const peerConsoles = wsl.reduce((n, p) => n + this.$store.projects.peerSessions(p.daemon_id).length, 0);
       this.relUpdate = { phase: "confirm", code: "", needCode, consoles, peers, peerConsoles, error: "" };
     },
     // The line about the WSL peers in the update question.

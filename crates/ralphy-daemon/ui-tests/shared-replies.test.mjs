@@ -131,7 +131,7 @@ test("project.remove: the unknown-repo refusal means the project is already gone
   const flashed = [];
   state._flashAction = (m) => flashed.push(m);
   state.askConfirm = async () => true;
-  state.loadRepos = () => {};
+  state.$store.projects.loadRepos = () => {};
   const p = { slug: "nope/gone" };
   state.$store.projects.setProjects([p, { slug: "o/r" }]);
   await state.removeProject(p);

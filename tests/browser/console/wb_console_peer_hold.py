@@ -184,7 +184,7 @@ def main():
             page.goto(f"http://127.0.0.1:{base.LOCAL_PORT}/", wait_until="domcontentloaded")
             page.wait_for_function("() => !!window.WBConsole", timeout=10000)
             page.wait_for_function(
-                f"() => {SH}.fleetPeers.some(p => p.daemon_id === '{base.PEER_ID}' && p.state === 'reachable')",
+                f"() => Alpine.store('projects').fleetPeers.some(p => p.daemon_id === '{base.PEER_ID}' && p.state === 'reachable')",
                 timeout=30000,
             )
 
@@ -198,7 +198,7 @@ def main():
 
             # --- scenario 2 ----------------------------------------------------
             # The peer's own handshake names its environment, not the descriptor.
-            env = page.evaluate(f"() => {SH}.fleetPeers.find(p => p.daemon_id === '{base.PEER_ID}').environment")
+            env = page.evaluate(f"() => Alpine.store('projects').fleetPeers.find(p => p.daemon_id === '{base.PEER_ID}').environment")
             proxy.down()
             wins = wait_for(page, lambda ws: len(ws) == N and all(w["hold"] for w in ws), 25)
             check(

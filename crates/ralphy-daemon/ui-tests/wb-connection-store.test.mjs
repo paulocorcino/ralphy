@@ -2,9 +2,9 @@
 // `connection`: the session, the presence socket and its heartbeat, the page
 // build and the write locks. A store test builds it without Alpine (ADR-0073
 // D3, D6), as `main.ts` builds it for `Alpine.store`. A page test builds the
-// page with `loadShell`, whose window hears what it is sent, and runs
-// `shell().init()`, so the events the store sends reach the shell's
-// listeners as on the page.
+// page with `loadShell`, whose window hears what it is sent, and runs the
+// `init()` of the store `projects` and of `shell()`, so the events the store
+// sends reach their listeners as on the page.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { loadComponent, loadShell } from "./harness.mjs";
@@ -26,8 +26,9 @@ function storeOnly() {
   return { store, events };
 }
 
-// A page whose window hears what it is sent, after `shell().init()`. The
-// shell's own reads at load and its clocks do not run here.
+// A page whose window hears what it is sent, after the `init()` of the store
+// `projects` and of `shell()`. Their own reads at load and their clocks do
+// not run here.
 function connectedPage(opts = {}) {
   const listeners = {};
   const loaded = loadShell({
@@ -39,18 +40,23 @@ function connectedPage(opts = {}) {
     },
   });
   const { state } = loaded;
+  const projects = state.$store.projects;
   const reads = {};
-  for (const name of ["loadRepos", "loadAgents", "loadRelease"]) {
-    reads[name] = state[name];
-    state[name] = () => {};
+  for (const name of ["loadRepos", "loadAgents"]) {
+    reads[name] = projects[name];
+    projects[name] = () => {};
   }
+  const loadRelease = state.loadRelease;
+  state.loadRelease = () => {};
   const realSetInterval = globalThis.setInterval;
   globalThis.setInterval = () => 0;
   try {
+    projects.init();
     state.init();
   } finally {
     globalThis.setInterval = realSetInterval;
-    Object.assign(state, reads);
+    Object.assign(projects, reads);
+    state.loadRelease = loadRelease;
   }
   return { ...loaded, store: state.$store.connection };
 }
@@ -125,9 +131,10 @@ test("returning to the tab reads the release view again", () => {
   const calls = [];
   const { state, store, window } = connectedPage(VISIBLE);
   window.addEventListener("workbench:board-refresh", (e) => calls.push(`board:${e.detail.trigger}`));
-  for (const name of ["loadRepos", "rereadDesk", "loadRelease"]) {
+  for (const name of ["rereadDesk", "loadRelease"]) {
     state[name] = () => calls.push(name);
   }
+  state.$store.projects.loadRepos = () => calls.push("loadRepos");
   store.resumeSockets = () => calls.push("resumeSockets");
   state.$store.runs.hydrateRuns = () => {};
   store.onTabVisible();
@@ -264,7 +271,8 @@ test("a reopened socket reads the board and the runs", () => {
   const calls = [];
   const { state, store, window } = connectedPage(VISIBLE);
   window.addEventListener("workbench:board-refresh", (e) => calls.push(`board:${e.detail.trigger}`));
-  for (const name of ["loadRepos", "rereadDesk"]) state[name] = () => calls.push(name);
+  state.rereadDesk = () => calls.push("rereadDesk");
+  state.$store.projects.loadRepos = () => calls.push("loadRepos");
   state.$store.runs.hydrateRuns = () => calls.push("hydrateRuns");
   state.$store.projects.setOpen("o/r");
   store.onPresenceOpen(true);
@@ -281,7 +289,8 @@ test("visible and login ask the open panels to read again", () => {
     window: { dispatchEvent: (e) => events.push(e.type) },
   });
   const store = state.$store.connection;
-  for (const name of ["loadRepos", "loadAgents", "restoreView"]) state[name] = () => {};
+  for (const name of ["loadRepos", "loadAgents"]) state.$store.projects[name] = () => {};
+  state.restoreView = () => {};
   for (const name of ["resumeSockets", "loadIdentity"]) store[name] = () => {};
   state.$store.runs.hydrateRuns = () => {};
   const rereads = () => events.filter((t) => t === "workbench:panels-reread").length;
@@ -297,9 +306,9 @@ test("the peer tick and a project-list push read no change set and no branch", a
   window.addEventListener("workbench:changes-read", (e) => git.push(e.detail.ref));
   state.checkColumnDesk = async () => {};
   state.$store.projects.setOpen("o/r");
-  state.fleetPeers = [{ daemon_id: "d" }];
+  state.$store.projects.fleetPeers = [{ daemon_id: "d" }];
   await withFetchSpy(async () => {
-    state.peerTick();
+    state.$store.projects.peerTick();
     store.onPresencePush("repos.dirty", {});
     store.onPresencePush("peers.dirty", {});
   });

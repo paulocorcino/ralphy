@@ -33,7 +33,7 @@ type FenceColumnItems = DocumentEventMap["workbench:fence-columns"]["detail"]["i
 
 export function wbConsoleMenus() {
   // Every `shell()` member this component's code or markup reads or calls.
-  return component(["active", "activate", "flash", "roster", "liveSessions", "sessionsError", "consoleShortcutsBlocked"], {
+  return component(["active", "activate", "flash", "consoleShortcutsBlocked"], {
     agentMenu: false,
     // The Go-to picker (#337) and the fence picker (#343): SNAPSHOTS taken
     // when the menu opens, because the windows and fences live in the DOM.
@@ -60,8 +60,8 @@ export function wbConsoleMenus() {
     // menu with the console row's command field focused.
     consoleItems() {
       return WBAgents.menuRows({
-        roster: this.roster,
-        sessions: this.liveSessions,
+        roster: this.$store.projects.roster,
+        sessions: this.$store.projects.liveSessions,
         openSlug: this.$store.projects.openSlug,
       });
     },

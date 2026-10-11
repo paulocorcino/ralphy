@@ -41,10 +41,10 @@ function dialog(opts = {}) {
   };
   const reloads = [];
   // What a real reload brings back after an add: the new tunnel peer's group.
-  shell.loadRepos = async () => {
+  shell.$store.projects.loadRepos = async () => {
     reloads.push(1);
     shell.$store.projects.setProjects([{ key: VPS_ID + "/me/app", slug: "me/app", path: "/srv/app", daemon: VPS_ID }]);
-    shell.fleetPeers = [
+    shell.$store.projects.fleetPeers = [
       { daemon_id: VPS_ID, name: "vps", environment: "Linux", state: "reachable", tunnel: true },
     ];
   };
@@ -56,7 +56,7 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 test("dialog: the dialog opens with a fleet of one and lists the SSH config hosts", async () => {
   const { state, shell, verbs } = dialog();
-  shell.fleetPeers = [];
+  shell.$store.projects.fleetPeers = [];
   state.openAddHost();
   assert.equal(state.addHost.open, true);
   assert.deepEqual(verbs(), ["host.aliases"]);
@@ -234,9 +234,9 @@ test("dialog: Connect adds the host and reloads the tree with no page reload", a
   state.closeAddHost();
   assert.equal(state.addHost.open, false);
   await tick();
-  const group = shell.fleetGroups().find((g) => g.daemon === VPS_ID);
-  assert.equal(shell.groupHost(group), "vps");
-  assert.equal(shell.groupLabel(group), "Linux");
+  const group = shell.$store.projects.fleetGroups().find((g) => g.daemon === VPS_ID);
+  assert.equal(shell.$store.projects.groupHost(group), "vps");
+  assert.equal(shell.$store.projects.groupLabel(group), "Linux");
 });
 
 test("dialog: a failed Connect keeps the dialog open and does not reload", async () => {
@@ -327,17 +327,17 @@ test("dialog: Back from the checks keeps the fields; it waits while a command ru
 test("dialog: a removed host leaves the list before the fleet read answers", () => {
   const { state, shell, scripts } = dialog();
   const other = { daemon_id: "01OTHERPEER000000000000000", name: "mac", tunnel: true };
-  shell.fleetPeers = [{ daemon_id: VPS_ID, name: "vps", tunnel: true }, other];
-  shell._fleetRows = [{ key: VPS_ID + "/me/app", slug: "me/app", daemon: VPS_ID }];
-  shell.$store.projects.setProjects([{ key: "me/local", slug: "me/local" }, ...shell._fleetRows]);
+  shell.$store.projects.fleetPeers = [{ daemon_id: VPS_ID, name: "vps", tunnel: true }, other];
+  shell.$store.projects._fleetRows = [{ key: VPS_ID + "/me/app", slug: "me/app", daemon: VPS_ID }];
+  shell.$store.projects.setProjects([{ key: "me/local", slug: "me/local" }, ...shell.$store.projects._fleetRows]);
   // The fleet read has not answered yet: the reload changes nothing.
-  shell.loadRepos = async () => {};
+  shell.$store.projects.loadRepos = async () => {};
   scripts["host.remove"] = [{ status: "exited", code: 0 }];
   state.openRemoveHost({ daemon_id: VPS_ID, name: "vps", tunnel: true });
   state.confirmRemoveHost();
   assert.deepEqual(state.sshHosts().map((h) => h.name), ["mac"]);
   assert.deepEqual(shell.$store.projects.projects.map((p) => p.slug), ["me/local"]);
-  assert.deepEqual(shell._fleetRows, []);
+  assert.deepEqual(shell.$store.projects._fleetRows, []);
 });
 
 test("dialog: a failed Remove host stays open with the line to remove by hand", () => {
@@ -358,11 +358,11 @@ test("dialog: a failed Remove host stays open with the line to remove by hand", 
 
 test("dialog: Hosts opens on the list when a host is paired over SSH, else on the form", () => {
   const { state, shell } = dialog();
-  shell.fleetPeers = [{ daemon_id: "wsl", name: "ubuntu", environment: "WSL: Ubuntu", state: "reachable", tunnel: false }];
+  shell.$store.projects.fleetPeers = [{ daemon_id: "wsl", name: "ubuntu", environment: "WSL: Ubuntu", state: "reachable", tunnel: false }];
   state.openAddHost();
   assert.equal(state.hostTab(), "add", "a WSL daemon is not a host of this list");
   assert.deepEqual(state.sshHosts(), []);
-  shell.fleetPeers.push({ daemon_id: VPS_ID, name: "vps", environment: "Linux", state: "reachable", tunnel: true, destination: "root@vps" });
+  shell.$store.projects.fleetPeers.push({ daemon_id: VPS_ID, name: "vps", environment: "Linux", state: "reachable", tunnel: true, destination: "root@vps" });
   state.openAddHost();
   assert.equal(state.addHost.tab, "hosts");
   assert.deepEqual(state.sshHosts().map((h) => h.name), ["vps"]);
@@ -378,7 +378,7 @@ test("dialog: Hosts opens on the list when a host is paired over SSH, else on th
   state.openAddHost();
   // The last host removed: no list is left to show.
   state.addHostTab("hosts");
-  shell.fleetPeers = shell.fleetPeers.filter((p) => !p.tunnel);
+  shell.$store.projects.fleetPeers = shell.$store.projects.fleetPeers.filter((p) => !p.tunnel);
   assert.equal(state.hostTab(), "add");
 });
 
@@ -481,9 +481,9 @@ test("the dialog's scope refuses a shell() name outside uses, and any shell() wr
   assert.ok("toggle" in shell);
   assert.throws(() => state.toggle, /reads toggle/);
   assert.throws(() => {
-    state.fleetPeers = [];
-  }, /assigns fleetPeers/);
-  assert.deepEqual(shell.fleetPeers, [], "the write did not reach shell()");
+    state.projectQuery = "x";
+  }, /assigns projectQuery/);
+  assert.equal(shell.projectQuery, "", "the write did not reach shell()");
 });
 
 test("the sidebar button asks the dialog to open with workbench:hosts-open", () => {

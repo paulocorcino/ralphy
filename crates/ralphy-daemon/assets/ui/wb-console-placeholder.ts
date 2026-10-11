@@ -55,7 +55,7 @@ export type PlaceholderDeps = {
   readSessions: () => Promise<{ sessions: HostedSession[]; unheard: ReadonlySet<string> }>;
   // The fleet's last answer, grouped by peer: one map for the life of the console.
   peerGroups: Map<string, Group>;
-  // The shell's wake of a peer, read at each use.
+  // The store `projects`' wake of a peer, read at each use.
   wakePeerNow: () => ((daemon: string) => Promise<boolean>) | null;
   // A fresh desk read (`createDesk`).
   reloadDesk: () => Promise<unknown>;
@@ -368,7 +368,7 @@ export function createPlaceholders(deps: PlaceholderDeps) {
       e.stopPropagation();
       if (btn.disabled) return;
       btn.disabled = true;
-      // The shell's wake answers when the peer is usable, and reports its own
+      // The store's wake answers when the peer is usable, and reports its own
       // failure; the box then says again what it said.
       if (peerAction === "wake") {
         text.textContent = `Waking ${peerHost(peerGroups.get(daemon), record.environment)}…`;

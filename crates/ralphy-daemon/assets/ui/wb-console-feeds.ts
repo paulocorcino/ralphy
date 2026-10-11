@@ -1,10 +1,10 @@
 /* ---------------------------------------------------------------------------
-   The console's feeds: the last facts the shell handed it.
+   The console's feeds: the last facts the Alpine stores handed it.
 
    `createFeeds(deps)` keeps the last session list, the project names, the
-   fleet and the stale probe that the shell feeds in (a Shown fact has one
-   owner; the console keeps only its last answer), the ids of new records and
-   the Go-to list. Values that change are read through `lastSessions()`,
+   fleet and the stale probe that the stores `projects` and `connection`
+   feed in (a Shown fact has one owner; the console keeps only its last
+   answer), the ids of new records and the Go-to list. Values that change are read through `lastSessions()`,
    `wakePeerNow()`, `readFleetNow()` and `staleProbeNow()`. It reads the console
    only through `deps` (#621).
 --------------------------------------------------------------------------- */
@@ -67,8 +67,8 @@ export function createFeeds(deps: FeedsDeps) {
     }
     return sessionsRead;
   }
-  // The project name and tooltip text per repo ref, fed by the shell
-  // (`ingestProjects`) from the daemon's project list. A ref the shell has not
+  // The project name and tooltip text per repo ref, fed by the store
+  // `projects` (`ingestProjects`) from the daemon's project list. A ref the store has not
   // named yet (the detached popup, a desk read before the list) falls back to
   // its slug, never to the ref: a peer ref carries a `<daemon_id>/` routing
   // head (ADR-0052 §5).
@@ -98,10 +98,11 @@ export function createFeeds(deps: FeedsDeps) {
     }
   }
 
-  // Each peer's fleet group by daemon id, and the shell's wake action, fed by
-  // the shell (`ingestFleet`) after every fleet read. The shell owns the fleet;
-  // this is only its last answer, for the placeholders of peer projects.
-  // `readFleet` is the shell's fleet read on demand, for a window that saw
+  // Each peer's fleet group by daemon id, and the store's wake action, fed by
+  // the Alpine store `projects` (wb-projects-store.ts, `ingestFleet`) after
+  // every fleet read. The store owns the fleet; this is only its last answer,
+  // for the placeholders of peer projects. `readFleet` is the store's fleet
+  // read on demand, for a window that saw
   // its peer fail.
   const peerGroups = new Map<string, Group>();
   let wakePeer: ((daemon: string) => Promise<boolean>) | null = null;
@@ -114,7 +115,7 @@ export function createFeeds(deps: FeedsDeps) {
     for (const win of [...wins]) if (typeof win._peerRefresh === "function") win._peerRefresh();
   }
 
-  // The shell's last `/api/sessions` poll, kept for the menus' state dots.
+  // The store `projects`' last `/api/sessions` poll, kept for the menus' state dots.
   let lastSessionsRead: HostedSession[] = [];
 
   // Every window on the plane, for the Go-to picker. Reads the DOM, not `wins`:
@@ -136,7 +137,7 @@ export function createFeeds(deps: FeedsDeps) {
     }));
   }
 
-  // The agent-state dot per window, from the shell's `/api/sessions` poll
+  // The agent-state dot per window, from the store `projects`' `/api/sessions` poll
   // (ADR-0059 §5): the state word as a class, hidden when the row says
   // nothing. A placeholder has no session and keeps no dot.
   function ingestSessions(sessions: HostedSession[] | null | undefined) {

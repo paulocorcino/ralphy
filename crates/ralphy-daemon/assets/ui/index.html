@@ -173,9 +173,9 @@
              so this re-reads /api/repos to pick up new repos / branch changes. -->
         <button
           class="side-refresh"
-          :class="{ spinning: reposLoading }"
-          :disabled="reposLoading"
-          @click="loadRepos()"
+          :class="{ spinning: $store.projects.reposLoading }"
+          :disabled="$store.projects.reposLoading"
+          @click="$store.projects.loadRepos()"
           title="Refresh projects"
           aria-label="Refresh projects"
         >
@@ -194,14 +194,14 @@
         <span class="count" x-text="$store.projects.projects.length" title="Number of projects"></span>
       </div>
       <!-- daemon-mode repos-load failure (M5, #202): honest error, not seed. -->
-      <div class="side-error" x-show="reposError" x-text="reposError" x-cloak></div>
+      <div class="side-error" x-show="$store.projects.reposError" x-text="$store.projects.reposError" x-cloak></div>
       <!-- The peers' last good read, kept when a read fails (ADR-0070 D3). -->
-      <div class="side-error" x-show="fleetError" x-text="fleetError" x-cloak></div>
+      <div class="side-error" x-show="$store.projects.fleetError" x-text="$store.projects.fleetError" x-cloak></div>
       <!-- The peers the daemon could not read (ADR-0070 D4). -->
-      <div class="side-error" x-show="fleetRejectNote" x-text="fleetRejectNote" x-cloak></div>
+      <div class="side-error" x-show="$store.projects.fleetRejectNote" x-text="$store.projects.fleetRejectNote" x-cloak></div>
       <!-- No project yet: say what to do first (#501). A failed read shows its
            error above instead. -->
-      <div class="side-empty projects-empty" x-show="!$store.projects.projects.length && !reposError && !reposLoading" x-cloak>
+      <div class="side-empty projects-empty" x-show="!$store.projects.projects.length && !$store.projects.reposError && !$store.projects.reposLoading" x-cloak>
         <p>No projects yet</p>
         <button class="btn accent" @click="$dispatch('workbench:add-project-open')"><svg x-icon="'folder-plus'"></svg> Add a project</button>
       </div>
@@ -229,16 +229,16 @@
              stays a direct flex item of `ul.projects` — the open project's
              `order: -1` rise and the `has-open` sibling hiding both keep
              working across groups. A fleet of one renders no headers at all. -->
-        <template x-for="g in fleetGroups()" :key="g.key">
+        <template x-for="g in $store.projects.fleetGroups(filteredProjects())" :key="g.key">
           <div class="env-block">
-            <div class="env-group" x-show="g.header" :title="groupTitle(g)">
+            <div class="env-group" x-show="g.header" :title="$store.projects.groupTitle(g)">
               <span class="os-icon" aria-hidden="true">
-                <i class="bi bi-windows" x-show="osOf(g) === 'windows'"></i>
-                <i class="bi bi-apple" x-show="osOf(g) === 'macos'"></i>
-                <svg x-show="osOf(g) === 'linux'"><use href="#os-linux"></use></svg>
-                <span x-show="osOf(g) === 'other'"><svg x-icon="'monitor'"></svg></span>
+                <i class="bi bi-windows" x-show="$store.projects.osOf(g) === 'windows'"></i>
+                <i class="bi bi-apple" x-show="$store.projects.osOf(g) === 'macos'"></i>
+                <svg x-show="$store.projects.osOf(g) === 'linux'"><use href="#os-linux"></use></svg>
+                <span x-show="$store.projects.osOf(g) === 'other'"><svg x-icon="'monitor'"></svg></span>
               </span>
-              <span class="env-label"><span class="env-host" x-text="groupHost(g) ? groupHost(g) + ' · ' : ''"></span><span class="env-os" x-text="groupLabel(g)"></span></span>
+              <span class="env-label"><span class="env-host" x-text="$store.projects.groupHost(g) ? $store.projects.groupHost(g) + ' · ' : ''"></span><span class="env-os" x-text="$store.projects.groupLabel(g)"></span></span>
               <span class="env-daemon" x-show="g.showName" x-text="g.name"></span>
               <!-- The state is a glyph, its word in the tooltip and the
                    aria-label (wb-fleet.js `stateIcon`). The glyph becomes the
@@ -251,26 +251,26 @@
                    `[object Object]` and the `waking` state never applies. -->
               <button
                 class="peer-state wake"
-                x-show="peerWakeable(g)"
-                :class="[g.state, peerFault(g) ? 'fault' : '', waking[g.daemon] ? 'waking' : '']"
-                :disabled="!!waking[g.daemon]"
+                x-show="$store.projects.peerWakeable(g)"
+                :class="[g.state, $store.projects.peerFault(g) ? 'fault' : '', $store.projects.waking[g.daemon] ? 'waking' : '']"
+                :disabled="!!$store.projects.waking[g.daemon]"
                 :title="wakeTitle(g)"
-                :aria-label="waking[g.daemon] ? 'waking' : peerStateWord(g.state)"
-                @click.stop="wakePeer(g.daemon)"
+                :aria-label="$store.projects.waking[g.daemon] ? 'waking' : peerStateWord(g.state)"
+                @click.stop="$store.projects.wakePeer(g.daemon)"
               ><svg x-icon="'unplug'"></svg></button>
               <span
                 class="peer-state"
-                x-show="!peerWakeable(g) && peerIcon(g)"
-                :class="[g.state, peerFault(g) ? 'fault' : '']"
+                x-show="!$store.projects.peerWakeable(g) && $store.projects.peerIcon(g)"
+                :class="[g.state, $store.projects.peerFault(g) ? 'fault' : '']"
                 role="img"
                 :aria-label="peerStateWord(g.state)"
               >
-                <span class="glyph" x-show="peerIcon(g) === 'plugged'"><svg aria-hidden="true"><use href="#plugged"></use></svg></span>
-                <span class="glyph" x-show="peerIcon(g) === 'unplug'"><svg x-icon="'unplug'"></svg></span>
+                <span class="glyph" x-show="$store.projects.peerIcon(g) === 'plugged'"><svg aria-hidden="true"><use href="#plugged"></use></svg></span>
+                <span class="glyph" x-show="$store.projects.peerIcon(g) === 'unplug'"><svg x-icon="'unplug'"></svg></span>
               </span>
             </div>
             <template x-for="p in g.rows" :key="p.key || p.slug">
-              <li class="project" :class="{ open: $store.projects.rowOpen(p), peer: !!p.daemon, unavailable: !peerAvailable(g) }">
+              <li class="project" :class="{ open: $store.projects.rowOpen(p), peer: !!p.daemon, unavailable: !$store.projects.peerAvailable(g) }">
             <!-- click toggles the project open/closed (mounts/destroys tree) -->
             <!-- `rowTitle` is what a COLLAPSED row can no longer show: the
                  branch chip moved to the Files bar below, which only the open
@@ -278,7 +278,7 @@
                  `.project-slug`: the name's own title still wins when the
                  pointer is over the name. The slug, the ADR-0008 D7 identity,
                  rides `data-slug` for the browser tests. -->
-            <div class="project-head" tabindex="-1" @click="toggle($store.projects.repoRef(p), p)" :title="peerAvailable(g) ? rowTitle(p) : unavailableTitle(g)">
+            <div class="project-head" tabindex="-1" @click="toggle($store.projects.repoRef(p), p)" :title="$store.projects.peerAvailable(g) ? rowTitle(p) : unavailableTitle(g)">
               <span class="chevron"><svg x-icon="'chevron-right'"></svg></span>
               <!-- status dot: the project's daemon-reachability *right now* —
                    green = live (session/daemon active there), grey = idle
@@ -755,7 +755,7 @@
                 <span x-text="$store.projects.openSlug ? consoleMenuRepoName() : 'Home (no project open)'"></span>
                 <kbd class="kbd" x-text="consoleShortcutHint()"></kbd>
               </div>
-              <p class="side-error" x-show="sessionsError()" x-text="sessionsError()"></p>
+              <p class="side-error" x-show="$store.projects.sessionsError()" x-text="$store.projects.sessionsError()"></p>
               <!-- The daemon's adapter roster folded against the live sessions
                    (wb-agents.js), plain console last. Every row LAUNCHES — the
                    live count is a readout; reaching a window is the Go-to
@@ -1982,7 +1982,7 @@
               Agent that does the work<span x-show="!runCfg.split">, planning and execution</span>.
             </p>
             <div class="seg">
-              <template x-for="a in agents" :key="a.id">
+              <template x-for="a in $store.projects.agents" :key="a.id">
                 <button class="seg-btn" :class="{ on: runCfg.agent === a.id, unavailable: !a.available }"
                         :title="a.title" @click="runCfg.agent = a.id" x-text="a.label"></button>
               </template>
@@ -2000,7 +2000,7 @@
             <label class="run-label">Plan agent</label>
             <p class="run-help">Plans each issue. The execute agent carries the plan out.</p>
             <div class="seg">
-              <template x-for="a in agents" :key="'plan-' + a.id">
+              <template x-for="a in $store.projects.agents" :key="'plan-' + a.id">
                 <button class="seg-btn" :class="{ on: runCfg.planAgent === a.id, unavailable: !a.available }"
                         :title="a.title" @click="runCfg.planAgent = a.id" x-text="a.label"></button>
               </template>
@@ -2931,17 +2931,17 @@
               <li class="host-item" :data-host="h.daemon_id">
                 <div class="host-row">
                   <span class="os-icon" :title="h.environment">
-                    <i class="bi bi-windows" x-show="osOf(h) === 'windows'"></i>
-                    <i class="bi bi-apple" x-show="osOf(h) === 'macos'"></i>
-                    <svg x-show="osOf(h) === 'linux'"><use href="#os-linux"></use></svg>
-                    <span x-show="osOf(h) === 'other'"><svg x-icon="'monitor'"></svg></span>
+                    <i class="bi bi-windows" x-show="$store.projects.osOf(h) === 'windows'"></i>
+                    <i class="bi bi-apple" x-show="$store.projects.osOf(h) === 'macos'"></i>
+                    <svg x-show="$store.projects.osOf(h) === 'linux'"><use href="#os-linux"></use></svg>
+                    <span x-show="$store.projects.osOf(h) === 'other'"><svg x-icon="'monitor'"></svg></span>
                   </span>
                   <span class="host-row-name" x-text="h.name"></span>
                   <span class="host-row-dest" x-text="h.destination || ''"></span>
-                  <span class="peer-state" :class="[h.state, peerFault(hostRowGroup(h)) ? 'fault' : '']"
+                  <span class="peer-state" :class="[h.state, $store.projects.peerFault(hostRowGroup(h)) ? 'fault' : '']"
                         role="img" :aria-label="peerStateWord(h.state)" :title="hostRowTitle(h)">
-                    <span class="glyph" x-show="peerIcon(hostRowGroup(h)) === 'plugged'"><svg aria-hidden="true"><use href="#plugged"></use></svg></span>
-                    <span class="glyph" x-show="peerIcon(hostRowGroup(h)) === 'unplug'"><svg x-icon="'unplug'"></svg></span>
+                    <span class="glyph" x-show="$store.projects.peerIcon(hostRowGroup(h)) === 'plugged'"><svg aria-hidden="true"><use href="#plugged"></use></svg></span>
+                    <span class="glyph" x-show="$store.projects.peerIcon(hostRowGroup(h)) === 'unplug'"><svg x-icon="'unplug'"></svg></span>
                   </span>
                   <button class="btn" @click="addHostEdit(h)" :disabled="removeHost.busy">Edit</button>
                   <button class="btn" @click="openRemoveHost(h)" :disabled="removeHost.busy">Remove</button>

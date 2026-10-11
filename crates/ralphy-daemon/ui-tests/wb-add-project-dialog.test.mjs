@@ -42,8 +42,8 @@ function dialog(opts = {}) {
     return replies[verb];
   };
   const reloads = [];
-  shell.loadRepos = async () => reloads.push("repos");
-  shell.loadFleet = async () => reloads.push("fleet");
+  shell.$store.projects.loadRepos = async () => reloads.push("repos");
+  shell.$store.projects.loadFleet = async () => reloads.push("fleet");
   const toggled = [];
   shell.toggle = (ref) => {
     toggled.push(ref);
@@ -141,9 +141,9 @@ test("dialog: a pick by touch does not focus the field; by mouse or key it does"
   assert.match(html, /@click="addProjectPick\(e, \$event\)"/);
 });
 
-test("dialog: the places come from the fleet of shell()", () => {
+test("dialog: the places come from the fleet of the store projects", () => {
   const { state, shell } = dialog();
-  shell.fleetPeers = [{ daemon_id: WSL_ID, name: "ubuntu", environment: "WSL: Ubuntu", state: "reachable" }];
+  shell.$store.projects.fleetPeers = [{ daemon_id: WSL_ID, name: "ubuntu", environment: "WSL: Ubuntu", state: "reachable" }];
   assert.ok(state.addProjectPlaces().some((p) => p.id === WSL_ID));
 });
 
@@ -165,7 +165,7 @@ test("the Add a project button comes before Hosts, after refresh", () => {
 test("the empty state offers Add a project", () => {
   const at = HTML.indexOf('class="side-empty projects-empty"');
   const block = HTML.slice(at, HTML.indexOf("</div>", at));
-  assert.match(block, /x-show="!\$store\.projects\.projects\.length && !reposError && !reposLoading"/);
+  assert.match(block, /x-show="!\$store\.projects\.projects\.length && !\$store\.projects\.reposError && !\$store\.projects\.reposLoading"/);
   assert.match(block, /No projects yet/);
   assert.match(block, /@click="\$dispatch\('workbench:add-project-open'\)"/);
 });
@@ -214,12 +214,12 @@ test("every name the dialog's markup reads is its own or in its uses list", () =
 
 test("the dialog's scope refuses a shell() name outside uses, and any shell() write", () => {
   const { state, shell } = dialog();
-  assert.ok("waking" in shell);
-  assert.throws(() => state.waking, /reads waking/);
+  assert.ok("sideView" in shell);
+  assert.throws(() => state.sideView, /reads sideView/);
   assert.throws(() => {
-    state.fleetPeers = [];
-  }, /assigns fleetPeers/);
-  assert.deepEqual(shell.fleetPeers, [], "the write did not reach shell()");
+    state.projectQuery = "x";
+  }, /assigns projectQuery/);
+  assert.equal(shell.projectQuery, "", "the write did not reach shell()");
 });
 
 test("both openers ask the dialog to open with workbench:add-project-open", () => {

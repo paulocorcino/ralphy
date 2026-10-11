@@ -8583,8 +8583,9 @@ fn the_run_completion_nudge_is_wired_through_the_ui_assets() {
     );
 }
 
-/// The wake affordance, pinned from CI. `toggle` calling `wakePeerFor`, and
-/// `wakePeerFor` calling `wakePeer`, are driven by `app.test.mjs`; `wakeable`
+/// The wake affordance, pinned from CI. `toggle` calling `wakePeerFor` is
+/// driven by `app.test.mjs`, and `wakePeerFor` calling `wakePeer` by
+/// `wb-projects-store.test.mjs`; `wakeable`
 /// by `wb-fleet.test.mjs`. The markup and the body of `wakePeer` are reached
 /// by no node test, and Playwright does not run in CI — these substrings are
 /// the only CI-visible gate over the one consumer `/api/fleet/nudge` has, and
@@ -8606,11 +8607,11 @@ fn the_peer_wake_is_wired_through_the_ui_assets() {
     }
     let html = include_str!("../assets/ui/index.html");
     assert!(
-        html.contains(r#"@click.stop="wakePeer(g.daemon)""#),
+        html.contains(r#"@click.stop="$store.projects.wakePeer(g.daemon)""#),
         "the group header must carry the wake control"
     );
     assert!(
-        html.contains(r#"x-show="peerWakeable(g)""#),
+        html.contains(r#"x-show="$store.projects.peerWakeable(g)""#),
         "the wake control must be withheld from states a nudge cannot fix"
     );
     // Alpine stringifies an object nested inside a `:class` ARRAY, so the
@@ -8619,7 +8620,7 @@ fn the_peer_wake_is_wired_through_the_ui_assets() {
     // in this tree renders Alpine.
     assert!(
         html.contains(
-            r#":class="[g.state, peerFault(g) ? 'fault' : '', waking[g.daemon] ? 'waking' : '']""#
+            r#":class="[g.state, $store.projects.peerFault(g) ? 'fault' : '', $store.projects.waking[g.daemon] ? 'waking' : '']""#
         ),
         "the wake glyph's :class must bind plain strings, never a nested object"
     );

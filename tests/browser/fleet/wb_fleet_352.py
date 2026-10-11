@@ -223,7 +223,7 @@ def main():
             peer_row.locator(".project-head").click()
             page.wait_for_function(f"(ref) => Alpine.store('projects').openSlug === ref", arg=PEER_REF)
             page.wait_for_function(
-                f"() => {SHELL}.roster.some(r => r.id === 'opencode' && r.available === false)",
+                f"() => Alpine.store('projects').roster.some(r => r.id === 'opencode' && r.available === false)",
                 timeout=10000,
             )
 

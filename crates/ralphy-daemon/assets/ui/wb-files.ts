@@ -38,7 +38,7 @@ const menuHosts = new WeakSet<Element>();
 
 export function wbFiles() {
   // Every `shell()` member this component's code or markup reads or calls.
-  return component(["flash", "fleetGroups", "readFleetNow", "wakePeer", "hideMenu", "renderMenu", "openNote", "openTab", "repathTabs", "tabs", "checkoutChipClick"], {
+  return component(["flash", "hideMenu", "renderMenu", "openNote", "openTab", "repathTabs", "tabs", "checkoutChipClick"], {
     // --- accordion --------------------------------------------------------
 
     // Wunderbaum copies source keys it does not define into `node.data`, so
@@ -132,7 +132,7 @@ export function wbFiles() {
         lazyLoad: (e: WunderbaumEvent) =>
           this.loadTreeLevel(this.relPath(e.node)).catch((err) => {
             this.treeWentStale(err);
-            if (WBFleet.refDaemon(this.$store.projects.openSlug || "")) this.readFleetNow();
+            if (WBFleet.refDaemon(this.$store.projects.openSlug || "")) this.$store.projects.readFleetNow();
             setTimeout(() => e.node.setExpanded(false));
             return false;
           }),
@@ -409,7 +409,7 @@ export function wbFiles() {
     openPeerDown() {
       const daemon = WBFleet.refDaemon(this.$store.projects.openSlug || "");
       if (!daemon) return null;
-      const group = this.fleetGroups().find((g) => g.daemon === daemon);
+      const group = this.$store.projects.fleetGroups().find((g) => g.daemon === daemon);
       return group && !WBFleet.available(group) ? group : null;
     },
     peerDownText(g: Group) {
@@ -421,8 +421,8 @@ export function wbFiles() {
     peerDownAct() {
       const g = this.openPeerDown();
       if (!g) return;
-      if (WBFleet.wakeable(g)) this.wakePeer(g.daemon);
-      else this.readFleetNow();
+      if (WBFleet.wakeable(g)) this.$store.projects.wakePeer(g.daemon);
+      else this.$store.projects.readFleetNow();
     },
 
     // After each good fleet read: the read that calls the open project's peer

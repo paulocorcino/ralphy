@@ -22,7 +22,7 @@ import type { CheckoutRow, Project } from "./wb-shell-types.d.ts";
 
 export function wbBranchDialog() {
   // Every `shell()` member this component's code or markup reads or calls.
-  return component(["scrim", "flash", "askConfirm", "liveSessions"], {
+  return component(["scrim", "flash", "askConfirm"], {
     // The branch chip opens a filtered picker; switching or creating goes
     // through the daemon's `branch.*` verbs. The header reflects the pick
     // optimistically.
@@ -117,7 +117,7 @@ export function wbBranchDialog() {
     openCheckoutChip(p: Project, anchor: HTMLElement) {
       const ref = this.$store.projects.repoRef(p);
       const listing = this.$store.checkouts.worktreeListings[ref] || null;
-      const mine = (this.liveSessions || []).filter((s) => WBSessionRoute.matchesRepo(s, ref));
+      const mine = (this.$store.projects.liveSessions || []).filter((s) => WBSessionRoute.matchesRepo(s, ref));
       window.WBConsole.checkoutMenu({
         anchor,
         host: document.body,

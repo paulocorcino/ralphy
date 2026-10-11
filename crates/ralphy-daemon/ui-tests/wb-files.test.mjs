@@ -453,16 +453,17 @@ const FILES_PEER = "01ARZ3NDEKTSV4RRFFQ69G5FAZ";
 const FILES_REF = `${FILES_PEER}/o/r`;
 
 // The files with the peer project open and the peer in the given fleet state.
-// `shell` holds the fleet, which the files read through `fleetGroups`.
+// `shell` is the Alpine store `projects`: it holds the fleet, which the files
+// read through `fleetGroups`.
 function peerFilesShell(state) {
   const loaded = loadShell();
   const files = loadComponent("wbFiles", { from: loaded });
   const s = files.scope;
   s.$store.projects.setProjects([]);
-  loaded.state.fleetPeers = [{ daemon_id: FILES_PEER, name: "corcino-mac", environment: "macOS 15", tunnel: true, state, diagnosis: `diagnosis of ${state}` }];
+  loaded.state.$store.projects.fleetPeers = [{ daemon_id: FILES_PEER, name: "corcino-mac", environment: "macOS 15", tunnel: true, state, diagnosis: `diagnosis of ${state}` }];
   s.$store.projects.setOpen(FILES_REF);
   s.treeMem();
-  return { state: s, shell: loaded.state, window: loaded.window, document: loaded.document };
+  return { state: s, shell: loaded.state.$store.projects, window: loaded.window, document: loaded.document };
 }
 
 // The options `mountTree` gives Wunderbaum, from a stand-in that keeps them.

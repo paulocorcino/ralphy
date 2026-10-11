@@ -61,8 +61,10 @@ window.WBNotes = createNotes(window, document, { console: window.WBConsole, mess
 // them about unsaved work before a build reload.
 const detached = wire(window, document, { messages });
 Alpine.directive("icon", iconDirective);
-// The open project, before the components that read it (ADR-0073 D6).
-Alpine.store("projects", projectsStore());
+// The open project, the fleet, the agents and the live sessions, before the
+// components that read them (ADR-0073 D6); its `init` reads the projects and
+// the agents, and starts the peer read.
+Alpine.store("projects", projectsStore({ messages }));
 // The session, the presence socket and the write locks; its `init` reads the
 // session, opens the presence socket and starts the presence clock.
 Alpine.store("connection", connectionStore({ messages, detached }));

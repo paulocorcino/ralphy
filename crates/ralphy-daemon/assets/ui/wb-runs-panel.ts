@@ -22,7 +22,7 @@ import type { Run, RunIssue } from "./wb-shell-types.d.ts";
 
 export function wbRuns() {
   // Every `shell()` member this component's code or markup reads or calls.
-  return component(["runsOpen", "toggleRuns", "nowMs", "runsActionMsg", "flash", "askConfirm", "scrim", "agents", "kanbanOpen", "toggleKanban"], {
+  return component(["runsOpen", "toggleRuns", "nowMs", "runsActionMsg", "flash", "askConfirm", "scrim", "kanbanOpen", "toggleKanban"], {
     // The trail node the operator arrived at from the board (#301): a marker,
     // not a selection.
     trailFocus: null as number | null,
