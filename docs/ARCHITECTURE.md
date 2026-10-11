@@ -124,6 +124,7 @@ The component names are CONTEXT.md terms.
 | Composition root (names every vendor, wires everything) | `ralphy-cli` |
 | Workbench UI | `crates/ralphy-daemon/assets/ui/` |
 | Process and PTY helpers | `ralphy-proc-util`, `ralphy-pty` |
+| Wording catalog, Text domain, Failure (planned, [ADR-0078](./adr/0078-one-wording-catalog-for-every-surface.md)) | the format in `ralphy-wording`; the text in `assets/wording/<text-domain>.json`; the enum of each text domain in the crate that owns its facts |
 
 ## 5. Allowed edges
 
@@ -135,6 +136,7 @@ The component names are CONTEXT.md terms.
 | No adapter depends on another adapter | ADR-0002, ADR-0040 | the same test |
 | `ralphy-pricing` and `ralphy-release` are leaf crates | ADR-0034, ADR-0056 | the same test |
 | `ralphy-git-read` is a leaf crate | ADR-0069 | the same test |
+| `ralphy-wording` is a leaf crate, and the daemon still does not import `ralphy-core` to read a wording | ADR-0078 | None yet (planned: the same test) |
 | The daemon links no vendor crate and does not import `ralphy-core` | ADR-0032 §10 | `daemon_manifest_has_no_vendor_dependency` (`crates/ralphy-daemon/src/roster.rs`); the core half has none yet |
 | No `tokio` or `reqwest` in the CLI; the async stack stays in the daemon | ADR-0032 | `cli_manifest_pins_ureq_excludes_reqwest_tokio` (`crates/ralphy-cli/src/pricing.rs`) |
 | The daemon may observe the working tree as bytes; anything that interprets or changes a repo is a `ralphy` invocation, except read-only git facts through `ralphy-git-read` (ADR-0069) | ADR-0036 §3 | None yet |
@@ -196,6 +198,7 @@ panel adds its row here before it adds code.
 | File tree and file contents | the daemon file tree (`ralphy-daemon/src/tree.rs`) | verbs `tree.list`, `tree.find`, `tree.grep`, `file.read`; `tree.dirty` push | a walk from the UI | 1 `tree.dirty`, 2–4 |
 | Run state | the **Run snapshot** (`.ralphy/runstate/<runid>.json`) | verb `runs.list`; `runs.dirty` push | parsing run logs or console output | 1 `runs.dirty`, 2–4 |
 | Token usage | the ledger (`~/.ralphy/usage/`) for runs; the **Usage scan** for interactive use | `ralphy usage`; `/api/usage`, `/api/spend` | a stored USD value | 3, 4 |
+| Wording of a fact (a value's text and icon, a failure's text) | the text domain that owns the fact: `assets/wording/<text-domain>.json` and its enum (planned, ADR-0078) | the JSON import in the workbench; `failure.text` in a daemon reply; the owner crate in Rust | a table written by hand in a surface; text parsed out of CLI output | with the build |
 | Price of a model | `ralphy-pricing`, applied at read time | `ralphy usage`, the Spend view | a price written into the ledger | with token usage |
 | Settings | `ralphy-core::settings` (`.ralphy/settings.json`) | `ralphy config get --json`; verb `config.get` | a new reparse in the daemon (three exist, each pinned by a test) | 3, 4, 5 |
 | Desk layout | the daemon (`desk.rs`; a PUT is a list of **desk changes** applied by `desk/apply.rs`, and each reply carries `rev`) | `GET` / `PUT /api/desk`; the browser sends changes only through `wb-desk-sync.ts` | browser storage (only the per-client view lives there, `wb-client-view.ts`); a whole record or a whole desk in a PUT | 1 `desk.dirty`, 2–5 |
