@@ -2,19 +2,18 @@
    ralphy workbench shell — floating consoles (the Consoles tab)
 
    Consoles are draggable, resizable windows on the STAGE, a plane the VIEWPORT
-   (`#workspace`, `overflow:auto`) scrolls over. This module owns the window
-   state (tiling, the stage's extent); the titlebar, the drag and the resize
-   are `wb-stage-chrome.ts`; the console name, the title's text and the
-   worktree switcher are `wb-console-title.ts`; the fence records' chrome, the
-   fence verbs and the focused fence are `wb-stage-fence-list.ts`; the
-   fences are `wb-stage-fences.ts`, the
-   fences this tab detached are `wb-desk-popups.ts`, and the opener's
-   side of a detached fence is `wb-desk-detach.ts`; sending the desk
-   changes and restoring the desk layout are `wb-desk.ts`; the
-   landing, the reveal, the slide and the plane's pan are
-   `wb-stage-view.ts`; the body
-   is a live xterm.js on a PTY over the daemon's `/ws/session` WebSocket,
-   made by `wb-console-terminal.ts`.
+   (`#workspace`, `overflow:auto`) scrolls over. This module builds the console
+   from its parts and returns them as `WBConsole`. The parts are: the desk
+   records and the desk `wb-desk.ts`; the feeds `wb-console-feeds.ts`; the
+   title and the worktree switcher `wb-console-title.ts`; the popups
+   `wb-desk-popups.ts`; sleep and resume `wb-console-dormancy.ts`; the window
+   states `wb-stage-window.ts`; the columns `wb-stage-columns.ts`; the fence
+   list `wb-stage-fence-list.ts`; the GPU budget `wb-console-gpu.ts`; the
+   opener's side of a detach `wb-desk-detach.ts`; the view `wb-stage-view.ts`;
+   the key bar `wb-console-keys.ts`; the terminal (a live xterm.js on a PTY
+   over `/ws/session`) `wb-console-terminal.ts`; the chrome `wb-stage-chrome.ts`;
+   the fences `wb-stage-fences.ts`; the window birth `wb-console-spawn.ts`; the
+   placeholder `wb-console-placeholder.ts`.
 
    Opening/closing a console spawns/closes a daemon-owned session; on load the
    live sessions re-open as windows, so a reload reattaches with scrollback.
@@ -186,12 +185,9 @@ export function createConsole(window: Window, document: Document, location: Pick
   const link = OPTS.detachLink || WBDetachLink.link();
   const wins = new Set<ConsoleWin>();
 
-  // ---- the desk records -------------------------------------------------------
-  // The writes of the desk records and the checkout reads are `wb-desk.ts`
-  // (`createDeskRecords`); the desk view they read is `createDesk`'s, built
-  // below, and this console keeps the sync both fill. Built first: the title, the
-  // window states, the fence list and the chrome take `setWin` and
-  // `saveFences`. What is built later goes in as lazy arrows.
+  // ---- the desk records: `wb-desk.ts` ------------------------------------------
+  // Built first: the title, the window states, the fence list and the chrome
+  // take `setWin` and `saveFences`. What is built later goes in as lazy arrows.
   const sync = WBDeskSync.createSync();
   const {
     createRecord,
@@ -222,10 +218,8 @@ export function createConsole(window: Window, document: Document, location: Pick
     consolePrefix: (repo: string | null | undefined) => consolePrefix(repo),
   });
 
-  // ---- the feeds -------------------------------------------------------------
-  // The last session list, the project names, the fleet and the stale probe the
-  // shell fed are `wb-console-feeds.ts`. Built before the title, which takes
-  // the project names and the session list.
+  // ---- the feeds: `wb-console-feeds.ts` ----------------------------------------
+  // Built before the title, which takes the project names and the session list.
   const {
     newDeskId,
     newFenceId,
@@ -250,11 +244,8 @@ export function createConsole(window: Window, document: Document, location: Pick
     renderTitle: (win, title, presentation) => renderTitle(win, title, presentation),
   });
 
-  // ---- the title -------------------------------------------------------------
-  // The console name, the title's text and the worktree switcher are
-  // `wb-console-title.ts`; this console keeps the desk, the sessions poll and
-  // the project names, and hands them to it. Built before the chrome, which
-  // takes six of its functions.
+  // ---- the title: `wb-console-title.ts` ----------------------------------------
+  // Built before the chrome, which takes six of its functions.
   const {
     consolePrefix,
     takenNames,
@@ -283,21 +274,18 @@ export function createConsole(window: Window, document: Document, location: Pick
     setWin,
   });
 
-  // ---- the popup registry and the fence list ---------------------------------
-  // The fences this tab detached and their popup entries have one owner,
-  // `createPopupRegistry`; the fence list, the fences, the desk restore and
-  // the opener's side of the detach read and change them only through it.
-  // The heartbeat is the detach's, built after the GPU budget: lazy arrows.
+  // ---- the popup registry: `wb-desk-popups.ts` ---------------------------------
+  // The one owner of the detached fences: everything else reads and changes
+  // them through it. The heartbeat is the detach's, built later: lazy arrows.
   const popups = createPopupRegistry({
     link,
     startBeat: () => detach.startBeat(),
     stopBeat: () => detach.stopBeat(),
   });
   const { isDetached } = popups;
-  // ---- dormancy and resume ---------------------------------------------------
-  // Sleep, wake, the cover rule and the resume are `wb-console-dormancy.ts`.
-  // Built before the window states, which take `refreshCover`; what is built
-  // later goes in as lazy arrows. Its listeners wait for `listen()`.
+  // ---- dormancy and resume: `wb-console-dormancy.ts` ---------------------------
+  // Built before the window states, which take `refreshCover`. Its listeners
+  // wait for `listen()`.
   const dormancy = createDormancy({
     window,
     document,
@@ -313,11 +301,8 @@ export function createConsole(window: Window, document: Document, location: Pick
     revivePlaceholders: () => revivePlaceholders(),
   });
   const { isCovered, applyDormancy, refreshCover, resumeAll } = dormancy;
-  // ---- the window states ------------------------------------------------------
-  // Maximize, the lock, full screen, the stage's extent and a window's restore
-  // box are `wb-stage-window.ts`; this console keeps the columns and the desk
-  // records, and hands them the window state. Built before the fence list,
-  // which takes three of its functions.
+  // ---- the window states: `wb-stage-window.ts` ---------------------------------
+  // Built before the fence list, which takes three of its functions.
   const {
     fillsViewport,
     restoreRect,
@@ -345,9 +330,8 @@ export function createConsole(window: Window, document: Document, location: Pick
     heldByFence: (win: HTMLElement) => heldByFence(win),
     refreshCover,
   });
-  // ---- the column paint -------------------------------------------------------
-  // Built before the fence list, which takes `columnMeasure`; the fence list,
-  // the view and the detach registry come later, so they go in as lazy arrows.
+  // ---- the column paint: `wb-stage-columns.ts` ---------------------------------
+  // Built before the fence list, which takes `columnMeasure`.
   const { columnMeasure, applyColumns, dropClosedElsewhere, focusedId, focusColumn, columnRoster } = createStageColumns({
     OPTS,
     wins,
@@ -369,10 +353,8 @@ export function createConsole(window: Window, document: Document, location: Pick
     findWindow: (id: string) => findWindow(id),
     tearDownMember: (win: ConsoleWin, reason: DetachReason) => tearDownMember(win, reason),
   });
-  // The fence records' chrome, the fence verbs and the focused fence are
-  // `wb-stage-fence-list.ts`; this console keeps the fence records and hands
-  // them to it. Built before the view and the fences, which it reaches
-  // through lazy arrows.
+  // ---- the fence list: `wb-stage-fence-list.ts` --------------------------------
+  // Built before the view and the fences, which it reaches through lazy arrows.
   const fenceFloor = createFenceList({
     window,
     document,
@@ -415,10 +397,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     showDetachGlyph,
   } = fenceFloor;
 
-  // ---- dormant consoles and the GPU budget ---------------------------------
-  // The watch, its constants and the GPU budget are `wb-console-gpu.ts`; this
-  // console keeps sleeping and waking a window (`applyDormancy`) and the
-  // covered rule (`isCovered`), and hands them to its budget.
+  // ---- the GPU budget: `wb-console-gpu.ts` -------------------------------------
   const budget = createGpuBudget({
     wins,
     workspace,
@@ -429,11 +408,9 @@ export function createConsole(window: Window, document: Document, location: Pick
     queueMicrotask: (task) => queueMicrotask(task),
   });
 
-  // ---- the opener's side of the detach ----------------------------------------
-  // The heartbeat, the probe of a quiet popup, the re-attach and the two
-  // listeners that hear the popups are `wb-desk-detach.ts`; this console
-  // keeps the desk and the windows, and hands them to it. Built after the
-  // GPU budget and before the fences, which take five of its functions.
+  // ---- the opener's side of the detach: `wb-desk-detach.ts` --------------------
+  // Built after the GPU budget and before the fences, which take five of its
+  // functions.
   const detach = createDetach({
     window,
     location,
@@ -457,11 +434,8 @@ export function createConsole(window: Window, document: Document, location: Pick
   });
   const { peerFold, newPid, fenceSnapshot, tearDownMember, reattachFence, glyphClick } = detach;
 
-  // ---- the view -------------------------------------------------------------
-  // The landing and the stored offset, the reveal, the slide, the auto-pan and
-  // the plane's own pan and wheel are `wb-stage-view.ts`; this console keeps
-  // the stage's extent and `refitAll`, and hands it the window state. Built
-  // before the terminal, which takes `cancelSlide`.
+  // ---- the view: `wb-stage-view.ts` --------------------------------------------
+  // Built before the terminal, which takes `cancelSlide`.
   const {
     applyLanding,
     flushPendingOffset,
@@ -489,8 +463,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     isDeskSettled: () => isDeskSettled(),
   });
 
-  // ---- the input -------------------------------------------------------------
-  // The key bar, the font size and the clipboard are `wb-console-keys.ts`.
+  // ---- the key bar: `wb-console-keys.ts` ---------------------------------------
   const { fontSize, setFont, writeClipboard, readClipboard, applyKeyBar, buildKeyBar } = createConsoleKeys({
     window,
     document,
@@ -499,9 +472,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     focusWin,
   });
 
-  // ---- the terminal ----------------------------------------------------------
-  // The terminal and its session socket are `wb-console-terminal.ts`; this
-  // console keeps the plane and hands it the font size and the clipboard.
+  // ---- the terminal: `wb-console-terminal.ts` ----------------------------------
   const { attachTerminal } = createTerminal({
     window,
     WS_ORIGIN,
@@ -513,10 +484,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     readClipboard,
   });
 
-  // ---- the window chrome -----------------------------------------------------
-  // The titlebar, the drag, the resize and the free cascade are
-  // `wb-stage-chrome.ts`; this console hands it the window state and the
-  // gestures.
+  // ---- the window chrome: `wb-stage-chrome.ts` ---------------------------------
   const { buildChrome, makeDraggable, startResize } = createChrome({
     window,
     document,
@@ -550,9 +518,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     toggleMax,
   });
 
-  // ---- the fences -------------------------------------------------------------
-  // The fence element, its gestures, tiling and detaching are
-  // `wb-stage-fences.ts`; they take the fence list as one object.
+  // ---- the fences: `wb-stage-fences.ts` ----------------------------------------
   const { buildFence, arrangeFence, detachFence } = createFences({
     window,
     document,
@@ -610,10 +576,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     return gestures.active(el);
   }
 
-  // ---- the desk ----------------------------------------------------------------
-  // The desk view, the desk read and what follows it (the converge, the answer
-  // to an upload, the `pagehide` flush), sending the desk changes and
-  // restoring the desk layout are `wb-desk.ts`, which owns the desk state.
+  // ---- the desk: `wb-desk.ts` --------------------------------------------------
   // `createDesk` starts the desk read at once: `restoreDesk` and
   // `whenDeskLoaded` wait for it.
   const {
@@ -671,10 +634,9 @@ export function createConsole(window: Window, document: Document, location: Pick
 
   dormancy.listen();
 
-  // ---- the window birth -------------------------------------------------------
-  // A live console window and the desk record writes of its birth are
-  // `wb-console-spawn.ts`. Built after the desk; the desk and the detach take
-  // `spawnWindow` (and the detach `deskOf`) before it, as lazy arrows.
+  // ---- the window birth: `wb-console-spawn.ts` ---------------------------------
+  // Built after the desk; the desk and the detach take `spawnWindow` (and the
+  // detach `deskOf`) before it, as lazy arrows.
   const { spawnWindow, recordBirth, recordSession, deskOf } = createSpawn({
     document,
     wins,
@@ -707,11 +669,9 @@ export function createConsole(window: Window, document: Document, location: Pick
   });
   type SpawnWindow = typeof spawnWindow;
 
-  // ---- the placeholder --------------------------------------------------------
-  // A console the daemon no longer runs, the relaunch marks and the revive are
-  // `wb-console-placeholder.ts`. Built after the window birth; the spawn, the
-  // desk, the detach and the dormancy take its functions before it, as lazy
-  // arrows.
+  // ---- the placeholder: `wb-console-placeholder.ts` ----------------------------
+  // Built after the window birth; the spawn, the desk, the detach and the
+  // dormancy take its functions before it, as lazy arrows.
   const { isRelaunching, markRelaunch, spawnOrMissing, revivePlaceholders, spawnPlaceholder } = createPlaceholders({
     window,
     document,
@@ -734,9 +694,6 @@ export function createConsole(window: Window, document: Document, location: Pick
   });
   type SpawnOrMissing = typeof spawnOrMissing;
   type SpawnPlaceholder = typeof spawnPlaceholder;
-
-  // The column paint is `wb-stage-columns.ts` (ADR-0051 §5), built with the window
-  // states above; this console keeps the desk records it paints.
 
   // `agent` names an adapter (claude/codex/opencode); when `plain` is set there
   // is no agent — a normal shell in the repo dir, labelled "console", or, with

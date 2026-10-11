@@ -89,8 +89,9 @@ const APP_TS_LINES: usize = 4209;
 /// (`recordBirth`, `adoptOrphan`, `recordSession`, `deskOf`) moved to
 /// `wb-console-spawn.ts` (#621); 993 since the placeholder, the relaunch marks,
 /// `spawnOrMissing`, the revive and `checkoutStillThere` moved to
-/// `wb-console-placeholder.ts` (#621).
-const WB_CONSOLE_TS_LINES: usize = 993;
+/// `wb-console-placeholder.ts` (#621); 950 since the comments above the factory
+/// calls name their module and no longer repeat what the code shows (#621).
+const WB_CONSOLE_TS_LINES: usize = 950;
 /// Lines of `crates/ralphy-daemon/assets/ui/wb-notes.ts`, the note cards
 /// (ADR-0073 D8, started by its 2026-10-10 amendment). 2828 at 823cc84c, before
 /// its first cut (#623); 2835 since the cards take the console as a typed dep
