@@ -32,8 +32,9 @@ And when you're done for the day, the same binary can work your backlog while yo
 
 Three things worth knowing up front:
 
-- 🔒 **Nothing is uploaded anywhere.** The daemon runs on *your* box, binds to loopback by
-  default, and reads the same repos and the same `gh` login you already use.
+- 🔒 **No cloud of ours.** The daemon runs on *your* box, binds to loopback by default, and
+  reads the same repos and the same `gh` login you already use. Your code goes only to the
+  agent you chose, and issue data only to GitHub.
 - 💳 **No API key, no per-token bill.** Ralphy drives the agent CLIs you're already signed
   into, on the **subscription** you already pay for.
 - 💻 **Windows, Linux, and macOS**, one binary, no runtime to install.
@@ -274,8 +275,10 @@ git merge afk/run-<stamp>    git branch -D afk/run-<stamp>
   whole night, and hands you the branch as-is.
 - ✅ **Runner-enforced tests** — an issue closes only when Ralphy *itself* watched the tests
   pass. → [docs/verify-gate.md](docs/verify-gate.md)
-- 🧯 **Command guardrails** — destructive commands like `git push` and `reset --hard` are
-  blocked mid-run.
+- 🧯 **Command guardrails** — Claude Code sessions block `git push`, pull request writes,
+  `reset --hard` and other destructive commands mid-run. Codex, OpenCode and Copilot
+  sessions block pushes and pull request writes. Kimi, Cursor and Gemini rely on their own
+  vendor's controls. → [SECURITY.md](SECURITY.md)
 - 🗣️ **Only your team talks to the agent** — issue comments from people who are not
   collaborators on the repo never reach it.
 
@@ -283,8 +286,12 @@ git merge afk/run-<stamp>    git branch -D afk/run-<stamp>
 
 ## 🔒 What stays on your machine
 
-- **Your code, your sessions and your logins.** Ralphy has no account and no cloud service
-  of its own.
+- **Your code, your sessions and your logins.** Ralphy has no account, no cloud service of
+  its own, and no telemetry.
+- **What does leave, and where it goes.** Your prompts and the code the agent reads go to
+  that agent's vendor, under your own login. Issue reads, comments and labels go to GitHub
+  through `gh`. `ralphy usage` downloads model prices from models.dev. Telegram, the event
+  sink and remote images in the workbench send data only after you turn them on.
 - **The files git and Ralphy own.** The workbench cannot write into `.git` or `.ralphy`.
 - **Checking for updates is anonymous.** The daemon asks GitHub for new releases every six
   hours, with nothing that identifies you. You can turn it off.

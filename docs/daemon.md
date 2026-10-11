@@ -215,6 +215,18 @@ ralphy daemon status      # …prints an `autostart: registered` / `not register
 ralphy daemon uninstall   # remove autostart (idempotent — a second call is a no-op)
 ```
 
+### The daemon log
+
+On Windows and macOS, and after `ralphy daemon restart`, the daemon's output goes to
+`~/.ralphy/daemon.log`. On Linux the systemd unit sends it to the journal instead
+(`journalctl --user -u ralphy-daemon`), which rotates it for you.
+
+Ralphy does not rotate `daemon.log`. With normal use it grows by about 0.5 MB a month.
+Debug logging (`RUST_LOG=debug`) makes it grow much faster, so turn that off when you are
+done. You can delete the file at any time while the daemon is stopped; the next start
+creates a new one. `~/.ralphy/update.log` works the same way and only gets lines during
+`ralphy update`.
+
 ### WSL: who keeps the distro awake
 
 WSL is just Linux to ralphy (ADR-0032 §3): the WSL daemon is a plain Linux
