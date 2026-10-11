@@ -1,6 +1,7 @@
 // Unit tests for assets/ui/wb-stage-fences.ts — the console's fences.
 // `createFences` is driven with fake `deps`, a fake document and the real
-// gestures owner and popup registry, with no console and no browser.
+// gestures owner and popup registry, with no console and no browser. The move
+// and resize gestures are `wb-stage-fence-gestures.ts`, built inside the fences.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createFences } from "../assets/ui/wb-stage-fences.ts";

@@ -1,6 +1,7 @@
 // Unit tests for assets/ui/wb-console-title.ts — the console name, the title
-// and the worktree switcher. `createTitle` is driven with fake `deps` and a
-// fake document, with no console and no browser.
+// and the worktree switcher (`wb-console-checkout.ts`, built inside the
+// title). `createTitle` is driven with fake `deps` and a fake document, with
+// no console and no browser.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createTitle } from "../assets/ui/wb-console-title.ts";

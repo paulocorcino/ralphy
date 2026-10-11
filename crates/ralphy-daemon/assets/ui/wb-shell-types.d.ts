@@ -10,7 +10,7 @@
 // Types of other modules that the shell names.
 export type { RosterRow } from "./wb-agents.ts";
 export type { ChangeEntry, Sync } from "./wb-changes.ts";
-export type { CheckoutRow } from "./wb-console-title.ts";
+export type { CheckoutRow } from "./wb-console-checkout.ts";
 export type { Read } from "./wb-fail.ts";
 export type { FleetPeer, Group } from "./wb-fleet.ts";
 export type { Listing, Project } from "./wb-project.ts";

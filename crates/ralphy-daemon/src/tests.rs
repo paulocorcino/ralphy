@@ -3719,6 +3719,10 @@ fn squeeze(src: &str) -> String {
 const CONSOLE_FAMILY: &[(&str, &str)] = &[
     ("wb-console.ts", include_str!("../assets/ui/wb-console.ts")),
     (
+        "wb-console-checkout.ts",
+        include_str!("../assets/ui/wb-console-checkout.ts"),
+    ),
+    (
         "wb-console-dormancy.ts",
         include_str!("../assets/ui/wb-console-dormancy.ts"),
     ),
@@ -3777,6 +3781,10 @@ const CONSOLE_FAMILY: &[(&str, &str)] = &[
     (
         "wb-stage-columns.ts",
         include_str!("../assets/ui/wb-stage-columns.ts"),
+    ),
+    (
+        "wb-stage-fence-gestures.ts",
+        include_str!("../assets/ui/wb-stage-fence-gestures.ts"),
     ),
     (
         "wb-stage-fence-list.ts",
@@ -4233,7 +4241,8 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 // restore, the console name,
                 // the input folds, the key bar, the feeds, the dormancy, the window birth and the
                 // placeholder, and they import the window state; the terminal imports its touch
-                // gesture and its paste; the entry
+                // gesture and its paste; the title imports the worktree switcher and the fences
+                // import the fence gestures; the entry
                 // imports the console, the door for operator messages, and the z stack and
                 // the gestures. Stated HERE because this set is a hardcoded floor:
                 // nothing derives the popup's needs from the tree, so an
@@ -4255,6 +4264,8 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-console-touch.js",
                 "wb-console-paste.js",
                 "wb-console-title.js",
+                "wb-console-checkout.js",
+                "wb-stage-fence-gestures.js",
                 "wb-stage-fence-list.js",
                 "wb-desk-detach.js",
                 "wb-stage-view.js",
@@ -5134,6 +5145,7 @@ fn shell_draws_fences_below_the_windows() {
         include_str!("../assets/ui/wb-stage-window.ts"),
         include_str!("../assets/ui/wb-stage-fence-list.ts"),
         include_str!("../assets/ui/wb-stage-fences.ts"),
+        include_str!("../assets/ui/wb-stage-fence-gestures.ts"),
         include_str!("../assets/ui/wb-console-title.ts"),
     ]
     .concat();
@@ -5319,6 +5331,7 @@ fn shell_drags_only_past_a_threshold() {
         include_str!("../assets/ui/wb-stage-fence-list.ts"),
         include_str!("../assets/ui/wb-stage-chrome.ts"),
         include_str!("../assets/ui/wb-stage-fences.ts"),
+        include_str!("../assets/ui/wb-stage-fence-gestures.ts"),
     ]
     .concat();
     let body = |name: &str| -> String {
@@ -5653,6 +5666,7 @@ fn shell_fences_are_a_group() {
     let js = &[
         include_str!("../assets/ui/wb-console.ts"),
         include_str!("../assets/ui/wb-stage-fences.ts"),
+        include_str!("../assets/ui/wb-stage-fence-gestures.ts"),
         include_str!("../assets/ui/wb-desk-records.ts"),
     ]
     .concat();
@@ -5727,6 +5741,7 @@ fn shell_arranges_into_the_fence() {
         include_str!("../assets/ui/wb-console.ts"),
         include_str!("../assets/ui/wb-stage-fence-list.ts"),
         include_str!("../assets/ui/wb-stage-fences.ts"),
+        include_str!("../assets/ui/wb-stage-fence-gestures.ts"),
     ]
     .concat();
     for pin in [
@@ -6114,6 +6129,7 @@ fn shell_detaches_a_fence() {
         include_str!("../assets/ui/wb-console.ts"),
         include_str!("../assets/ui/wb-stage-fence-list.ts"),
         include_str!("../assets/ui/wb-stage-fences.ts"),
+        include_str!("../assets/ui/wb-stage-fence-gestures.ts"),
         include_str!("../assets/ui/wb-desk.ts"),
         include_str!("../assets/ui/wb-desk-restore.ts"),
         include_str!("../assets/ui/wb-desk-detach.ts"),
@@ -6453,6 +6469,7 @@ fn shell_survives_a_reload_with_its_detach() {
         include_str!("../assets/ui/wb-console.ts"),
         include_str!("../assets/ui/wb-desk-popups.ts"),
         include_str!("../assets/ui/wb-stage-fences.ts"),
+        include_str!("../assets/ui/wb-stage-fence-gestures.ts"),
         include_str!("../assets/ui/wb-desk.ts"),
         include_str!("../assets/ui/wb-desk-restore.ts"),
         include_str!("../assets/ui/wb-desk-detach.ts"),
@@ -6664,6 +6681,7 @@ fn shell_navigates_the_plane() {
         include_str!("../assets/ui/wb-console.ts"),
         include_str!("../assets/ui/wb-stage-chrome.ts"),
         include_str!("../assets/ui/wb-stage-fences.ts"),
+        include_str!("../assets/ui/wb-stage-fence-gestures.ts"),
         include_str!("../assets/ui/wb-stage-view.ts"),
     ]
     .concat();
@@ -7979,10 +7997,10 @@ fn a_refused_branch_change_reports_in_the_projects_panel() {
         !app_js.contains("pick primary before switching branches"),
         "the #406 client-side refusal is gone"
     );
-    // The create lives in the console's prompt (wb-console-title.ts): an
+    // The create lives in the console's prompt (wb-console-checkout.ts): an
     // unanswered add re-opens it with the same honest line.
     assert!(
-        include_str!("../assets/ui/wb-console-title.ts").contains(
+        console_family().contains(
             r#"error = "Could not reach the daemon. Check whether the worktree was created.";"#
         ),
         "an unanswered worktree create must not read as a completed one"
@@ -8011,11 +8029,11 @@ fn a_refused_branch_change_reports_in_the_projects_panel() {
 /// modal, so without it a remove is also a select-and-dismiss.
 #[test]
 fn the_worktree_row_remove_action_stops_the_selecting_click() {
-    // The rows are the checkout menu's (wb-console-title.ts `checkoutMenu`),
+    // The rows are the checkout menu's (wb-console-checkout.ts `checkoutMenu`),
     // opened from the Files bar's chip with `onRemove` (ADR-0063
     // amendment 2026-09-16 b): the trash is its own element whose click
     // stops before the row's own pick, and the primary row never has one.
-    let console_js = include_str!("../assets/ui/wb-console-title.ts");
+    let console_js = console_family();
     assert!(console_js.contains(r#"trash.className = "session-checkout-remove";"#));
     assert!(
         console_js.contains("if (onRemove && !row.primary) {"),

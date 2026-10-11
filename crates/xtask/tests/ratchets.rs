@@ -115,15 +115,17 @@ const TS_SIZE_MAX: usize = 700;
 /// amendment). Exact, and it only shrinks: a change to a listed module sets
 /// its count, a module at `TS_SIZE_MAX` or fewer leaves the list, and no
 /// module joins it. `app.ts`, `wb-console.ts` and `wb-notes.ts` are listed
-/// through their D8 constants, so each count has one constant.
+/// through their D8 constants, so each count has one constant. The list had 10
+/// modules at 8783a20e; the plan of #621 took the console family out of it:
+/// `wb-desk.ts`, `wb-console-terminal.ts`, `wb-stage-fences.ts` and
+/// `wb-console-title.ts` were split, and `wb-console.ts` stays through its
+/// D8 constant.
 const TS_SIZE_BASELINE: &[(&str, usize)] = &[
     ("app.ts", APP_TS_LINES),
     ("wb-console.ts", WB_CONSOLE_TS_LINES),
     ("wb-notes.ts", WB_NOTES_TS_LINES),
     ("wb-file-viewer.ts", 1667),
     ("wb-files.ts", 1205),
-    ("wb-stage-fences.ts", 747),
-    ("wb-console-title.ts", 716),
     ("wb-spend.ts", 705),
 ];
 
