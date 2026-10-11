@@ -39,6 +39,7 @@ import { createStack, createGestures } from "./wb-stage-stack.ts";
 import { createPopupRegistry } from "./wb-desk-popups.ts";
 import { createFences } from "./wb-stage-fences.ts";
 import { createStageWindow } from "./wb-stage-window.ts";
+import { createStageColumns } from "./wb-stage-columns.ts";
 import { createDesk } from "./wb-desk.ts";
 import { WBWindowState } from "./wb-window-state.ts";
 import { WBConsoleName } from "./wb-console-name.ts";
@@ -52,9 +53,9 @@ import { createMessages } from "./wb-messages.ts";
 import { apiFetch } from "./wb-api.ts";
 import type { ApiRefusal } from "./wb-api.ts";
 import { sendDocument } from "./wb-events.ts";
-import type { DetachedMember, Painted } from "./wb-columns.ts";
 import type { TerminalDeps, TerminalOpts } from "./wb-console-terminal.ts";
 import type { Group } from "./wb-fleet.ts";
+import type { DetachReason } from "./wb-console-session.ts";
 import type { ConsoleOpts, ConsoleTerm, ConsoleWin, DeskChange, DeskFence, DeskNote, DeskRecord, DeskReply, DeskWindowFields, NoteCard, Rect, SpawnCarry, WindowSnapshot } from "./wb-types.d.ts";
 
 // The input folds are `wb-console-input.ts`: pure functions of their arguments.
@@ -272,6 +273,30 @@ export function createConsole(window: Window, document: Document, location: Pick
     setWin,
     heldByFence: (win: HTMLElement) => heldByFence(win),
     refreshCover,
+  });
+  // ---- the column paint -------------------------------------------------------
+  // Built before the fence list, which takes `columnMeasure`; the fence list,
+  // the view and the detach registry come later, so they go in as lazy arrows.
+  const { columnMeasure, applyColumns, dropClosedElsewhere, focusedId, focusColumn, columnRoster } = createStageColumns({
+    OPTS,
+    wins,
+    workspace,
+    stage,
+    popups,
+    desk: () => desk,
+    focusWin,
+    setMax,
+    paintMaxButton,
+    syncMaxLock,
+    syncMaxPin,
+    applyExtent,
+    list,
+    paintFenceColumns: () => paintFenceColumns(),
+    fenceList: () => fenceList(),
+    readFenceRects: (st: HTMLElement) => readFenceRects(st),
+    readWindowRects: (st: HTMLElement) => readWindowRects(st),
+    findWindow: (id: string) => findWindow(id),
+    tearDownMember: (win: ConsoleWin, reason: DetachReason) => tearDownMember(win, reason),
   });
   // The fence records' chrome, the fence verbs and the focused fence are
   // `wb-stage-fence-list.ts`; this console keeps the fence records and hands
@@ -1299,142 +1324,8 @@ export function createConsole(window: Window, document: Document, location: Pick
   // The shell's last `/api/sessions` poll, kept for the menus' state dots.
   let lastSessions: HostedSession[] = [];
 
-  // ---- columns (ADR-0051 §5) --------------------------------------------------
-  // `wbColumns` (wb-consoles-tab.ts) owns the column list and folds it with
-  // `WBColumns`; this module only paints the answer and never reads
-  // `WBColumns`: the detached-fence popup boots this file without it.
-  //
-  // A column writes no rect to the desk: the painted box is CSS, and
-  // `restoreRect` reads the inline rect under it. The first console is the one
-  // the desk records as maximized, so a move of the maximize is written when
-  // the caller passes `persist` (ADR-0051 §5). A reload that keeps the stored
-  // grid writes the desk to match it, so a console another device maximized
-  // inside the grid is written back as not maximized. Another page does not
-  // apply that `max` while it is open (ADR-0050 amendment 2026-10-04).
-
-  // The width of the viewport the columns share, in px.
-  function columnMeasure() {
-    return { viewport: workspace()?.clientWidth || 0 };
-  }
-
-  function clearColumn(win: ConsoleWin) {
-    win.classList.remove("column");
-    win.style.removeProperty("--col-index");
-    win.style.removeProperty("--col-count");
-    win.style.removeProperty("--row-index");
-    win.style.removeProperty("--row-count");
-    if (!win.classList.contains("maximized")) {
-      win.style.removeProperty("--max-left");
-      win.style.removeProperty("--max-top");
-    }
-    paintMaxButton(win);
-    try {
-      win._term?.fit.fit();
-    } catch {}
-  }
-
-  // Paint `painted` (`WBColumns.painted`). `unmax` is the old first console
-  // after a restore: it stops being the maximized console. `persist` writes
-  // each change of the maximize to the desk.
-  function applyColumns(painted: Painted[] | null | undefined, opts?: { cap?: number; unmax?: string | null; raise?: boolean; persist?: boolean }) {
-    const list = painted || [];
-    const cap = opts?.cap ?? 1;
-    const persist = !!opts?.persist;
-    for (const win of wins) {
-      if (win.classList.contains("column") && !columnClasses(list, win._deskId).column) {
-        clearColumn(win);
-      }
-    }
-    const gone = opts?.unmax ? findWindow(opts.unmax) : null;
-    if (gone && !columnClasses(list, gone._deskId).column) setMax(gone, false, persist);
-    const shown = [];
-    for (const p of list) {
-      const win = findWindow(p.id);
-      if (!win) continue;
-      const c = columnClasses(list, p.id);
-      if (c.column) {
-        win.classList.add("column");
-        win.style.setProperty("--col-index", String(p.index));
-        win.style.setProperty("--col-count", String(p.count));
-        win.style.setProperty("--row-index", String(p.row ?? 0));
-        win.style.setProperty("--row-count", String(p.rows ?? 1));
-        shown.push(win);
-      } else if (c.maximized) {
-        // The last column left is a plain maximize, and a full bleed must be
-        // on top: the console just restored was raised later than it.
-        shown.push(win);
-      }
-      // The class is set FIRST: `restoreRect` must already read a column's
-      // inline rect.
-      if (c.maximized && !win.classList.contains("maximized")) setMax(win, true, persist);
-      else if (!c.maximized && win.classList.contains("maximized")) setMax(win, false, persist);
-      paintMaxButton(win);
-    }
-    syncMaxLock();
-    syncMaxPin();
-    // Raised in reading order only on an open or a restore: a repaint on every
-    // `consoles-changed` would bury a console just spawned, and move the focus
-    // mark off the column the operator is typing in.
-    for (const win of shown) {
-      if (opts?.raise) focusWin(win);
-      try {
-        win._term?.fit.fit();
-      } catch {}
-    }
-    // Never disabled: at the cap the list still swaps (ADR-0051 §5).
-    for (const win of wins) {
-      const btn = win._colBtn;
-      if (!btn) continue;
-      const held = win.classList.contains("maximized") || win.classList.contains("column");
-      btn.hidden = !(OPTS.autoBoot !== false && held && cap >= 2);
-    }
-    paintFenceColumns();
-  }
-
-  // A console whose record another client removed: off this stage. Its
-  // session is not touched here, and its record is already gone.
-  function dropClosedElsewhere(id: string) {
-    const win = findWindow(id);
-    if (!win) return;
-    tearDownMember(win, "window-closed");
-    applyExtent();
-  }
-
-  function focusedId() {
-    return stage()?.querySelector<ConsoleWin>(".session-window.focused")?._deskId ?? null;
-  }
-
-  function focusColumn(id: string) {
-    const win = findWindow(id);
-    if (!win) return;
-    focusWin(win);
-    win._term?.term.focus();
-  }
-
-  // What the "Open in a column" list is folded from. A detached fence's
-  // members are not on this stage; its popup told us who they are.
-  function columnRoster() {
-    const st = stage();
-    if (!st) return { rows: [], fences: [], membership: {}, detached: {} };
-    const out: Record<string, DetachedMember[]> = {};
-    for (const [id, entry] of popups.entries()) {
-      out[id] = (entry.members || [])
-        .filter((m) => m && m.id && m.kind !== "note")
-        .map((m) => ({
-          id: m.id,
-          agent: m.agent ?? null,
-          name: desk.find((r) => r.id === m.id)?.consoleName ?? m.consoleName ?? null,
-          repo: m.repo === "~" ? null : (m.repo ?? null),
-          kind: m.kind ?? null,
-        }));
-    }
-    return {
-      rows: list(),
-      fences: fenceList().map(({ id, name }) => ({ id, name })),
-      membership: fenceMembership(readFenceRects(st), readWindowRects(st)),
-      detached: out,
-    };
-  }
+  // The column paint is `wb-stage-columns.ts` (ADR-0051 §5), built with the window
+  // states above; this console keeps the desk records it paints.
 
   // Every window on the plane, for the Go-to picker. Reads the DOM, not `wins`:
   // a snapshot at menu open, not reactive state.

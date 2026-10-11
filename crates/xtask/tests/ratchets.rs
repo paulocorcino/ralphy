@@ -76,8 +76,9 @@ const APP_TS_LINES: usize = 4209;
 /// for operator messages, `wb-messages.ts` (#623); 2713 since its maximize, lock,
 /// full screen, extent and restore box moved to `wb-stage-window.ts` (#623);
 /// 2674 since its z stack moved to `wb-stage-stack.ts`, built once per
-/// document by the entry module (#623).
-const WB_CONSOLE_TS_LINES: usize = 2674;
+/// document by the entry module (#623); 2565 since its column paint moved to
+/// `wb-stage-columns.ts` (#623).
+const WB_CONSOLE_TS_LINES: usize = 2565;
 /// Lines of `crates/ralphy-daemon/assets/ui/wb-notes.ts`, the note cards
 /// (ADR-0073 D8, started by its 2026-10-10 amendment). 2828 at 823cc84c, before
 /// its first cut (#623); 2835 since the cards take the console as a typed dep
@@ -110,7 +111,7 @@ const CARD_HOST_NAMES: usize = 11;
 const SHELL_FLASH_REACH: &[(&str, usize)] = &[];
 
 /// The functions that paint the columns on the stage. Each is declared in one
-/// module only: `wb-console.ts` at 823cc84c (#623).
+/// module only: `wb-stage-columns.ts` (#623; `wb-console.ts` until it moved).
 const COLUMN_PAINT: [&str; 6] = [
     "applyColumns",
     "columnMeasure",
@@ -451,7 +452,14 @@ fn the_column_paint_has_one_owner() {
             }
         }
     }
-    let errors = column_owner_errors(&owners, &COLUMN_PAINT);
+    let mut errors = column_owner_errors(&owners, &COLUMN_PAINT);
+    for (function, modules) in &owners {
+        if modules != &["wb-stage-columns.ts".to_string()] {
+            errors.push(format!(
+                "{function}: owner is {modules:?}, not wb-stage-columns.ts"
+            ));
+        }
+    }
     assert!(
         errors.is_empty(),
         "each column paint function is declared (`function name(`) in exactly one module \
