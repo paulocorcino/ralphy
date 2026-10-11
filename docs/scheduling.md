@@ -226,11 +226,24 @@ do not use the triage ramp for.
 
 ---
 
-## Follow-up
+## Let Ralphy add the timer: `ralphy schedule`
 
-A `ralphy schedule install|status|remove` subcommand that registers the timer
-natively is the planned next step; these recipes double as its per-platform
-specification. Its command surface, correct-by-construction defaults, the
-`--with-triage` chained timer, and the repo-scoped-lock safety prerequisite are
-decided in [ADR-0026](./adr/0026-native-scheduling-command.md); GitHub Actions
-stays a recipe here, not a native `install` target.
+Instead of writing a recipe by hand, `ralphy schedule` adds the timer for you, with
+Windows Task Scheduler or cron:
+
+```sh
+ralphy schedule install run --every 30m                # ralphy run --if-idle, every 30 minutes
+ralphy schedule install run --every 1h --with-triage   # triage --yes first, in the same timer
+ralphy schedule install triage --every 2h              # ralphy triage --if-idle --yes
+ralphy schedule status                                 # the timers of this repo, and when they ran
+ralphy schedule remove run                             # remove one timer (or --all)
+```
+
+- `--every` takes `<N>m` (minutes) or `<N>h` (hours). The default is `30m`.
+- `--repo` takes any folder inside the repo. The default is the current folder.
+- The timer adds its output to `<repo>/.ralphy/schedule.log`, or to the file you give
+  with `--log`.
+- The timer starts the Ralphy binary by its full path, so it does not depend on the
+  scheduler's `PATH`.
+
+GitHub Actions has no `install` target. Use the recipe above.

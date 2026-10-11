@@ -138,6 +138,26 @@ Ralphy **never pushes and never opens a PR** — the run branch is the delivery,
 you merge by hand. If a run **stopped** (didn't finish green), the repo is left on
 the run branch so you can fix the stalled issue in place, then commit and continue.
 
+## Removing Ralphy
+
+There is no single command that removes everything, because some of what Ralphy keeps
+(worktrees) can hold your uncommitted work. Run these steps in order:
+
+1. In each repo where you added a timer: `ralphy schedule remove --all`.
+2. For each other computer you added: `ralphy host remove <name>`. This deletes this
+   computer's key line on that host. Ralphy stays installed there.
+3. `ralphy daemon uninstall` removes the autostart, then stop the daemon.
+4. `ralphy telegram disable`, if you set up Telegram.
+5. In each repo, remove its worktrees with `ralphy worktree remove <name>`. It refuses a
+   worktree with uncommitted changes or an unmerged branch, so you decide what to keep.
+   Then delete the repo's `.ralphy/` folder.
+6. Delete `~/.ralphy/` (or the folder in `RALPHY_DAEMON_DIR`).
+7. Delete the `ralphy` entry that `ralphy install` put in `~/.cargo/bin` or
+   `~/.local/bin`, and the folder it added to your `PATH`, if you no longer need it.
+
+What Ralphy already sent stays where it went: your agent vendor's copy of your sessions,
+and the comments and labels on GitHub.
+
 ## Next steps
 
 - [Configuration reference](./configuration.md) — persist the defaults you'd

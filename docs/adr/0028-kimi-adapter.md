@@ -318,6 +318,12 @@ and drop the forced stop — mirrors PR #145 but is **not required** for a corre
 v1. We reject treating a limit as plain `Stuck` (loses the actionable re-run
 signal).
 
+> **Superseded (2026-07-09, [ADR-0030](./0030-synthetic-reset-for-unschedulable-limits.md)):**
+> the forced `--stop-on-limit` for Kimi no longer holds. A `Limit(None)` now
+> synthesises a ~30-min reset and retries, as for every agent; stopping is reached
+> only through the explicit `--stop-on-limit` or the run deadline
+> (`crates/ralphy-cli/src/run.rs`, `stop_on_limit_plan`/`stop_on_limit_exec`).
+
 **Unvalidated against 0.28 (#239/#240).** Neither the exit-75 sentinel nor
 `is_kimi_limit_text`'s `access_terminated_error` match could be exercised: an
 exhausted billing-cycle quota cannot be forced on demand, on either CLI. Given

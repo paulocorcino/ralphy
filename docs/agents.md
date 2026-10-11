@@ -4,10 +4,10 @@
 
 | `--agent` | Runs | Notes |
 |---|---|---|
-| `claude` (default) | Claude Code, live session | Mobile Remote Control, model routing, auto-resume on usage limits |
-| `codex` | `codex exec`, headless | Scales effort on one model; stops and reports on a usage limit |
-| `kimi` | `kimi -p`, headless | Fixed model (`kimi-code/k3`); stops and reports on a usage limit |
-| `opencode` | `opencode run`, headless | Fixed model; set effort with `--exec-variant`; stops and reports on a usage limit |
+| `claude` (default) | Claude Code, live session | Mobile Remote Control, model routing |
+| `codex` | `codex exec`, headless | Scales effort on one model |
+| `kimi` | `kimi -p`, headless | Fixed model (`kimi-code/k3`) |
+| `opencode` | `opencode run`, headless | Fixed model; set effort with `--exec-variant` |
 | `copilot` | `copilot`, headless | Checks which models your account can use before the run starts |
 | `cursor` | `cursor-agent`, headless | Default model `auto`; a `--model` never changes the default of your own Cursor sessions; turns off Cursor's codebase upload in the repo first, and tells you |
 | `gemini` | `gemini`, headless | Default model `auto`; uses its own settings folder, so your `~/.gemini` is never read or changed |
@@ -16,6 +16,10 @@ All seven use the login you already have in that CLI, **not a metered API key** 
 makes sure that login stays the one in charge. The same `reviewer` and `staged-plan` skills
 ship to every agent automatically, so a run never depends on what's installed on your
 machine, and your global skills are left untouched.
+
+On a usage limit, every agent waits and then resumes the same issue, unless you pass
+`--stop-on-limit`. Claude and Codex wait for the reset time they report; the others retry
+about every 30 minutes. See [usage limits](usage-and-cost.md#usage-limits).
 
 ## Split planner and executor
 
@@ -29,9 +33,9 @@ coder model executes:
 ralphy run --agent opencode --plan-agent claude
 ```
 
-Usage-limit handling is per-phase: a Claude planner can wait out a plan-time reset while
-the OpenCode executor stops on an execute-time limit (an explicit `--stop-on-limit`
-forces both phases to stop). See [usage limits](usage-and-cost.md#usage-limits).
+Each phase handles its own usage limit: a Claude planner waits for a plan-time reset, and
+an OpenCode executor waits for an execute-time limit. `--stop-on-limit` makes both phases
+stop. See [usage limits](usage-and-cost.md#usage-limits).
 
 ## Listing models
 

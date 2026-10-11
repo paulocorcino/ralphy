@@ -5,23 +5,32 @@ it still **measures** what each run consumes so you can see how efficient a task
 
 ## Usage limits
 
-There's no dollar cap to set — there's no API spend. On **Claude** and **Codex**, when you
-hit a usage limit Ralphy **waits for the reset and resumes the same issue** automatically
-(pass `--stop-on-limit` if you'd rather it stop and report). Both emit a trustworthy reset
-time — Codex an absolute timestamp, Claude a relative one. **Kimi** and **OpenCode** always
-stop and report — re-run once the limit clears. (Kimi keys the limit off the CLI's exit
-code 75, so there's no reset timestamp to wait on; the stop is forced.)
+There's no dollar cap to set — there's no API spend. When an agent hits a usage limit,
+Ralphy **waits and then resumes the same issue**. This is the default for every agent.
+Pass `--stop-on-limit` if you want the run to stop and report instead.
 
-When planner and executor are split, usage-limit handling is **per-phase**: a Claude planner
-can wait out a plan-time reset while the OpenCode executor stops on an execute-time limit.
-An explicit `--stop-on-limit` forces both phases to stop.
+How long it waits depends on what the agent reports:
+
+- **Claude** and **Codex** report when the limit resets. Ralphy waits until that time,
+  plus five minutes.
+- **Kimi**, **OpenCode**, **Copilot**, **Cursor** and **Gemini** report no reset time
+  Ralphy can use. Ralphy waits about 30 minutes, tries again, and repeats until the limit
+  clears.
+
+The run deadline (`--deadline-hours`) and `ralphy stop` end a wait early. If an issue hits
+a limit with a reset time twice in a row without a new commit, Ralphy stops retrying it
+and reports the limit.
+
+When planner and executor are split, each phase handles its own limit: a Claude planner
+can wait for a plan-time reset, and an OpenCode executor can wait for an execute-time
+limit. `--stop-on-limit` makes both phases stop.
 
 ## Cost reporting
 
 You don't pay per token, but Ralphy still **measures** what each run consumed so you can
 see how efficient a task was. Every run harvests the token counts each agent CLI already
-reports and accumulates them durably per project in an append-only ledger
-(`.ralphy/usage.jsonl`). The end-of-run footer shows the run total and the project's
+reports and accumulates them durably per project in an append-only ledger, one file per
+project under your home folder (`~/.ralphy/usage/<owner-repo>.jsonl`). The end-of-run footer shows the run total and the project's
 cumulative balance as a token meter (`↑` input, `⚡` cache write, `❄` cache read,
 `↓` output) plus a read-time USD estimate priced per model (`~$?` when a model has no
 known price). USD is only ever a read-time projection — it never enters the ledger, so
