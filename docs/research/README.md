@@ -14,8 +14,7 @@ instructions or verification of the current implementation.
   [analysis against Ralphy](loop-engineering-vs-ralphy.md)
 - [Portuguese essay: Enquanto você dorme](../essays/enquanto-voce-dorme.md)
 - [Agent squads: the foundations](agent-squads-foundations-2026-10-11.md)
-  (decisions G1–G16 and the fact spikes), with its outside input,
-  [the Mastra framework and factory](mastra-2026-10-11.md)
+  (decisions G1–G16 and the fact spikes)
 
 ## Historical experiments
 

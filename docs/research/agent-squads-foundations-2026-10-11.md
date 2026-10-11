@@ -5,7 +5,8 @@ the decisions are now [ADR-0076](../adr/0076-agents-in-a-fence-form-a-squad.md) 
 first draft, written before the decisions; where they disagree with §12a,
 §12a wins.
 
-Companion: [mastra-2026-10-11.md](./mastra-2026-10-11.md).
+Companion: an outside study of an agent framework, kept locally in
+`.ralphy/docs/` (not in the repository).
 
 ## Evidence labels
 
