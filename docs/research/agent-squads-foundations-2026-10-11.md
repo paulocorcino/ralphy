@@ -774,9 +774,9 @@ checklist.
 | Remote MCP with a header through `OPENCODE_CONFIG_CONTENT` | **pass**: `initialize`, `notifications/initialized`, `tools/list` all carried `Authorization: Bearer console-token-opencode` |
 | `POST /session/:id/prompt_async` | **pass**: `204` |
 | State events on `GET /event` | **pass**: `session.status` with `{"type":"busy"}` then `{"type":"idle"}`, and `session.idle`, all with `sessionID` |
-| Charter (`instructions`) and a tool call | **not verified**: the model call failed with the provider's `401 Authentication Failed` (credentials on this host, not the protocol) |
+| Charter (`instructions`) and a tool call | first run **not verified**: the zai providers on this host answered `401 Authentication Failed` (credentials, not the protocol). **Second run: pass** with `opencode/big-pickle` (a free OpenCode model): one `prompt_async` doorbell → `session.status` busy ×5 → idle → `session.idle`; the agent called the MCP tool (`spy_inbox_read`, status `completed`, output "no letters") and reported the charter keyword from `instructions`. The spy saw `initialize`, `notifications/initialized`, `tools/list`, `tools/call` and the GET stream, each with `Authorization: Bearer console-token-opencode`. OpenCode names an MCP tool `<server>_<tool>` |
 | API surface in 1.18.32 (from `/doc`) | `question.asked` / `question.replied` events and `/api/session/{id}/question/{requestID}/reply` (a native ask-user that can be answered from outside); `/api/session/{id}/permission/{requestID}/reply`; `/api/session/{id}/interrupt`; the `/tui/append-prompt` and `/tui/submit-prompt` routes of the docs are **not** in this version's spec (only `/tui/control/*`, `/tui/publish`) |
-| Process lifetime | the `opencode.exe` server **outlived** the shell that started it (npm shim → native binary). A daemon that starts it must end the whole process tree |
+| Process lifetime | the `opencode.exe` server **outlived** the shell that started it (npm shim → native binary), in both runs. A daemon that starts it must end the whole process tree |
 
 ### Codex
 
@@ -815,6 +815,6 @@ checklist.
 2. Codex: TUI with `--remote` on a Ralphy-started app-server daemon; does
    `codex queue` start a turn in it; Windows and WSL.
 3. OpenCode: `opencode attach` to a Ralphy-started server shows a session
-   that `prompt_async` reaches; `instructions` charter; MCP tool call with a
-   working provider.
+   that `prompt_async` reaches (the server side passed in S0; the TUI side
+   needs a real console).
 4. All three under WSL.
