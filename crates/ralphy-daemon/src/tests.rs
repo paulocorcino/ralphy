@@ -3188,7 +3188,7 @@ fn the_console_clipboard_is_write_only_and_refused_on_replay() {
         .split_once("registerOscHandler(52")
         .expect("the OSC 52 handler")
         .1
-        .split_once("\n    });")
+        .split_once("\n  });")
         .expect("the end of the OSC 52 handler")
         .0;
     assert!(
@@ -3743,6 +3743,10 @@ const CONSOLE_FAMILY: &[(&str, &str)] = &[
         include_str!("../assets/ui/wb-console-name.ts"),
     ),
     (
+        "wb-console-paste.ts",
+        include_str!("../assets/ui/wb-console-paste.ts"),
+    ),
+    (
         "wb-console-placeholder.ts",
         include_str!("../assets/ui/wb-console-placeholder.ts"),
     ),
@@ -3761,6 +3765,10 @@ const CONSOLE_FAMILY: &[(&str, &str)] = &[
     (
         "wb-console-title.ts",
         include_str!("../assets/ui/wb-console-title.ts"),
+    ),
+    (
+        "wb-console-touch.ts",
+        include_str!("../assets/ui/wb-console-touch.ts"),
     ),
     (
         "wb-stage-chrome.ts",
@@ -4224,7 +4232,8 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 // terminal, the window chrome, the popup registry, the fences, the desk and its records and
                 // restore, the console name,
                 // the input folds, the key bar, the feeds, the dormancy, the window birth and the
-                // placeholder, and they import the window state; the entry
+                // placeholder, and they import the window state; the terminal imports its touch
+                // gesture and its paste; the entry
                 // imports the console, the door for operator messages, and the z stack and
                 // the gestures. Stated HERE because this set is a hardcoded floor:
                 // nothing derives the popup's needs from the tree, so an
@@ -4243,6 +4252,8 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-desk-folds.js",
                 "wb-console-gpu.js",
                 "wb-console-terminal.js",
+                "wb-console-touch.js",
+                "wb-console-paste.js",
                 "wb-console-title.js",
                 "wb-stage-fence-list.js",
                 "wb-desk-detach.js",

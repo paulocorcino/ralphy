@@ -4,7 +4,7 @@
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { createTerminal } from "../assets/ui/wb-console-terminal.ts";
-import { encodeDetach } from "../assets/ui/wb-console-session.ts";
+import { encodeDetach, TAG_TERMINAL } from "../assets/ui/wb-console-session.ts";
 
 // An element that takes listeners and does nothing with them.
 function fakeElement() {
@@ -121,6 +121,77 @@ test("an OSC 52 copy reaches deps.writeClipboard with its control characters rem
     assert.deepEqual(copies, [{ text: "abc", term }]);
     handle.dispose();
   } finally {
+    page.restore();
+  }
+});
+
+// A terminal frame of the session socket: the tag, the 8-byte session id, the bytes.
+function terminalFrame(id, text) {
+  const frame = new Uint8Array(9 + text.length);
+  frame[0] = TAG_TERMINAL;
+  new DataView(frame.buffer).setBigUint64(1, BigInt(id));
+  frame.set(Buffer.from(text, "utf8"), 9);
+  return { data: frame.buffer };
+}
+
+test("an OSC 52 copy is refused while the terminal replays or watches, as it is now", () => {
+  const page = fakePage();
+  try {
+    const { deps, copies } = fakeDeps();
+    const copy = "c;" + Buffer.from("x").toString("base64");
+    // A reattach: the backlog replays first, so a copy in it is refused.
+    const handle = createTerminal(deps).attachTerminal(fakeElement(), { id: 5 });
+    const osc = page.terminals[0].osc.get(52);
+    osc(copy);
+    assert.deepEqual(copies, []);
+    // The replay is written: the next copy reaches the clipboard.
+    page.sockets[0].onmessage(terminalFrame(5, "a"));
+    osc(copy);
+    assert.equal(copies.length, 1);
+    handle.dispose();
+
+    // A watcher: the replay ends, and the copy is still refused.
+    const watcher = createTerminal(deps).attachTerminal(fakeElement(), { id: 6, watch: true });
+    page.sockets[1].onmessage(terminalFrame(6, "a"));
+    page.terminals[1].osc.get(52)(copy);
+    assert.equal(copies.length, 1);
+    watcher.dispose();
+  } finally {
+    page.restore();
+  }
+});
+
+test("a pasted image is dropped under the terminal's repo", async () => {
+  const page = fakePage();
+  const savedReader = globalThis.FileReader;
+  globalThis.FileReader = class {
+    readAsDataURL() {
+      this.result = "data:image/png;base64,AAAA";
+      this.onload();
+    }
+  };
+  try {
+    const writes = [];
+    const { deps } = fakeDeps({
+      window: {
+        WBDaemon: {
+          write: (verb, args) => {
+            writes.push({ verb, args });
+            return Promise.resolve({ path: "/tmp/drop.png" });
+          },
+        },
+      },
+    });
+    const handle = createTerminal(deps).attachTerminal(fakeElement(), { repo: "acme/app", agent: "claude" });
+    const pasted = [];
+    page.terminals[0].paste = (text) => pasted.push(text);
+    assert.equal(handle.pasteImage({ type: "image/png", size: 3 }), true);
+    await Promise.resolve();
+    assert.deepEqual(writes, [{ verb: "image.write", args: { repo: "acme/app", base64: "AAAA" } }]);
+    assert.deepEqual(pasted, ["/tmp/drop.png"]);
+    handle.dispose();
+  } finally {
+    globalThis.FileReader = savedReader;
     page.restore();
   }
 });

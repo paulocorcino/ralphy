@@ -6,11 +6,13 @@
    through `deps`, and `GpuBudgetDeps` lists every read, so `tsc` refuses a
    read outside it. `wb-console.ts` creates one budget per console; what
    reaches the terminals, sleeping and waking a window and the covered rule,
-   is `wb-console-dormancy.ts`.
+   is `wb-console-dormancy.ts`. `terminalGpu(term)` holds the WebGL addon of
+   one terminal (#621).
 
    `gpuHolders` and the constants are members of `window.WBConsole` under
    their own name.
    --------------------------------------------------------------------------- */
+import { prefersDomRenderer } from "./wb-console-input.ts";
 import type { ConsoleWin } from "./wb-types.d.ts";
 
 // ---- dormant consoles ----------------------------------------------------
@@ -151,4 +153,54 @@ export function createGpuBudget(deps: GpuBudgetDeps) {
   }
 
   return { trackDormancy, untrackDormancy, scheduleGpu, dormancyWatch };
+}
+
+// ---- the GPU addon of one terminal ---------------------------------------
+// GPU glyph rendering with a DOM fallback: on a lost context the addon is
+// disposed and xterm falls back to DOM without dropping the session.
+// NOT on WebKit: the addon renders scrolled rows twice there (xterm.js
+// #3357, #5816; reproduced with the scrollbar, so the renderer, not our
+// gesture). Every browser on iPadOS is WebKit.
+// The terminal starts on the DOM renderer; the page decides which windows
+// hold a context (`rebalanceGpu`, wb-console-gpu.ts) and calls `useGpu`/`dropGpu`.
+// `terminalGpu(term)` holds the addon of one terminal; `wb-console-terminal.ts`
+// calls it once per terminal (#621).
+export function terminalGpu(term: XtermTerminal) {
+  let webgl: XtermWebglAddon | null = null;
+  // The canvases the addon added, so `dropGpu` asks only them for a context:
+  // `getContext` on a canvas that has none would create one.
+  let gpuCanvases: HTMLCanvasElement[] = [];
+  // A browser that cannot give a context is not asked again.
+  let gpuBroken = false;
+  function useGpu() {
+    if (webgl || gpuBroken || prefersDomRenderer(navigator.vendor)) return;
+    try {
+      const addon = new WebglAddon.WebglAddon();
+      // Lost to the browser: back to the DOM renderer without dropping the
+      // session. The slot goes back to the page at its next rebalance.
+      addon.onContextLoss(() => {
+        if (webgl === addon) dropGpu();
+      });
+      const before = new Set(term.element.querySelectorAll("canvas"));
+      term.loadAddon(addon);
+      webgl = addon;
+      gpuCanvases = [...term.element.querySelectorAll("canvas")].filter((c) => !before.has(c));
+    } catch {
+      gpuBroken = true;
+    }
+  }
+  // MEASURED: disposing the addon does not free the browser's slot until the
+  // context is collected; an explicit `loseContext` does (14 contexts, 8
+  // disposed, 8 new: 7 "Too many active WebGL contexts" warnings without it,
+  // 0 with it; Chromium headless, @xterm/addon-webgl 0.19.0, 2026-10-04).
+  function dropGpu() {
+    const addon = webgl;
+    if (!addon) return;
+    const canvases = gpuCanvases;
+    webgl = null;
+    gpuCanvases = [];
+    addon.dispose();
+    for (const c of canvases) c.getContext("webgl2")?.getExtension("WEBGL_lose_context")?.loseContext();
+  }
+  return { useGpu, dropGpu };
 }
