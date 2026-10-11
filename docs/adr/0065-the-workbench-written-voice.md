@@ -6,6 +6,9 @@ can check are in [`docs/ui-copy-rules.json`](../ui-copy-rules.json). The copy
 lint (#425) reads that file, and the editorial passes (#426–#430) apply this
 ADR.
 
+Amended by ADR-0078 (the failure replaces the §6 code table and the parsing
+of CLI output; the rules apply to the wording catalog on every surface).
+
 [ADR-0035](./0035-daemon-ui-visual-language.md) decides how the workbench
 looks. Nothing decided how it speaks. The inventory
 (`cargo run -p xtask -- ui-copy`, measured at `53be8d22`) found 662 texts in
@@ -396,3 +399,30 @@ fails the job. Its rules are in `crates/xtask/src/ui_copy/check.rs`.
   editorial passes read the text by hand.
 - §11: not checked by code: it limits what the other rules cover. Reviewed
   in the PR.
+
+## Amendment (2026-10-11): the wording catalog
+
+[ADR-0078](./0078-one-wording-catalog-for-every-surface.md) adds the
+**wording catalog**: one English text for each fact, read by every surface.
+It changes this ADR in four places.
+
+- **Rejected alternatives.** "A translation catalog with keys" stays
+  rejected. The wording catalog is not a translation catalog. It has the
+  second caller that PRD #422 found missing: the CLI, the Telegram notifier
+  and the workbench show the same facts, and each wrote its own text for
+  them.
+- **§6, text from the daemon.** A daemon reply carries a **failure** in its
+  own `failure` field, with a **failure code** and the text already filled
+  in. The `CAUSE` table of `wb-fail.ts` and its parsing of CLI output
+  (`Error: `, `Caused by:`, ` — `) are replaced by it, one text domain at a
+  time, under the ratchets that ADR-0078 lists. The shape of this section
+  does not change: the act still comes from the workbench, and the failure
+  wording gives the cause (lowercase, no final period) and the remedy (a
+  whole sentence).
+- **§1 and §9, what the lint reads.** The copy lint reads the files in
+  `assets/wording/` as one more source, by their fields.
+- **Scope.** §2 (state words), §6, §7, §8, §10 and the rule that user text
+  never cites an ADR apply to every text in the wording catalog, on every
+  surface. The arrangement of the CLI and the Telegram notifier (order,
+  separators, width) stays outside this ADR.
+

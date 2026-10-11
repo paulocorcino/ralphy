@@ -533,6 +533,39 @@ The stream of releases a Ralphy follows when it looks for a newer one: `rc`,
 which includes release candidates, or `stable` (ADR-0056).
 _Avoid_: track, branch (taken by git and by the **run branch**), ring, stream.
 
+**Wording catalog**:
+The one source of the text Ralphy shows about the facts it knows, on every
+surface: the CLI, the console, the workbench and the notifiers. It is English
+only.
+_Avoid_: copy (that word is the workbench's text only), i18n (there is no
+second language), message catalog (an **operator message** is a form, not a
+text).
+
+**Text domain**:
+One part of the **wording catalog**, owned by the component that owns the
+facts it describes, such as `run`, `forge` or `files`. A text domain is never
+a surface: there is no `cli` or `workbench` text domain.
+_Avoid_: domain alone (it also means the DDD domain), namespace.
+
+**Wording**:
+One text of the **wording catalog**. A *value wording* is the text, icon and
+plain-text fallback of one value of a closed set; an *event wording* is a
+sentence that tells an event; a *failure wording* is the text of a **failure
+code**.
+_Avoid_: label (a **queue label** is a GitHub label), copy, string.
+
+**Failure**:
+A failure the operator reads: a **text domain**, a **failure code**, the
+details of this occurrence (such as the `cause` that git or gh printed), and
+the English text already filled in.
+_Avoid_: error (the developer's diagnostic chain, written to the log),
+reason (the **queue snapshot** has a skip reason), problem.
+
+**Failure code**:
+The stable name of one kind of **failure** inside its **text domain**. A
+published failure code never takes a new meaning.
+_Avoid_: reason, error code, status.
+
 ## Relationships
 
 - The **queue** is the open issues that carry a **queue label**, in ascending
@@ -559,6 +592,9 @@ _Avoid_: track, branch (taken by git and by the **run branch**), ring, stream.
   is owned by the browser.
 - A **changelog fragment**'s kind, not the version number, decides how the
   **release watch** presents a release.
+- A **failure** is what the operator reads; the error chain behind it is what
+  the developer reads in the log. Every surface shows the same **wording** for
+  the same fact, because it reads it from the fact's **text domain**.
 
 ## Flagged ambiguities
 
