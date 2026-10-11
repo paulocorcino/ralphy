@@ -330,7 +330,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     heldByFence: (win: HTMLElement) => heldByFence(win),
     refreshCover,
   });
-  // ---- the column paint: `wb-stage-columns.ts` ---------------------------------
+  // ---- the column paint: `wb-stage-columns.ts` (ADR-0051 §5) -------------
   // Built before the fence list, which takes `columnMeasure`.
   const { columnMeasure, applyColumns, dropClosedElsewhere, focusedId, focusColumn, columnRoster } = createStageColumns({
     OPTS,

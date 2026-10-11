@@ -6172,8 +6172,17 @@ fn shell_detaches_a_fence() {
     // The PUT literal now lives in exactly one file. The second half is the
     // NEGATIVE CONTROL: deleting the write wholesale would satisfy the first
     // assertion alone.
+    // The family holds the sink itself, which is the one place that writes.
+    let outside_sink: String = CONSOLE_FAMILY
+        .iter()
+        .filter(|(name, _)| *name != "wb-desk-sink.ts")
+        .map(|(_, text)| *text)
+        .collect();
     assert!(
-        !js.contains(r#""/api/desk", {"#) && !js.contains(r#""PUT /api/desk""#),
+        !js.contains(r#""/api/desk", {"#)
+            && !js.contains(r#""PUT /api/desk""#)
+            && !outside_sink.contains(r#""/api/desk", {"#)
+            && !outside_sink.contains(r#""PUT /api/desk""#),
         "the desk PUT must live only in wb-desk-sink.ts (#346)"
     );
     let sink = include_str!("../assets/ui/wb-desk-sink.ts");
@@ -6385,8 +6394,15 @@ fn the_shell_writes_the_desk_only_as_changes() {
         squeezed.contains(r#"emitDesk({op:"set",type:"window",id:win._deskId,fields});"#),
         "setWin must send the fields it was handed, and nothing else"
     );
+    // The family holds the sync module itself, which builds the body.
+    let outside_sync: String = CONSOLE_FAMILY
+        .iter()
+        .filter(|(name, _)| *name != "wb-desk-sync.ts")
+        .map(|(_, text)| *text)
+        .collect();
     assert!(
-        !console.contains("changes:")
+        !outside_sync.contains("changes:")
+            && !console.contains("changes:")
             && !desk.contains("changes:")
             && !records.contains("changes:")
             && sync.contains("changes: pending.slice(0, inflight.count)"),
@@ -6550,7 +6566,8 @@ fn shell_survives_a_reload_with_its_detach() {
         "every detach transition must go through commitDetached (#347)"
     );
     assert!(
-        !js.contains("detached = out.registry"),
+        !js.contains("detached = out.registry")
+            && !console_family().contains("detached = out.registry"),
         "no caller may assign the registry behind commitDetached's back (#347)"
     );
     // THE F5 RULE: `pagehide` fires on a reload exactly as on a close, so it
@@ -6615,12 +6632,19 @@ fn workbench_session_assets_preserve_composite_repo_identity() {
     // The whole console family: the terminal reconnects and reads the
     // announcement, the console closes.
     let console = console_family();
+    // The close is pinned in the module that closes a console: the worktree
+    // switcher also calls `closeUrl`, so the family text alone would hide a
+    // lost close.
+    assert!(
+        include_str!("../assets/ui/wb-console-spawn.ts")
+            .contains("fetch(WBSessionRoute.closeUrl(id, win._deskRepo)"),
+        "the console close must keep its closeUrl call in wb-console-spawn.ts"
+    );
     for pin in [
         r#"connect({ id: currentSessionId, repo: currentRepo"#,
         r#"c.verb === "session-open""#,
         "WBSessionRoute.url(",
         "WBSessionRoute.announcement(",
-        "WBSessionRoute.closeUrl(",
     ] {
         assert!(console.contains(pin), "the console must keep {pin}");
     }
