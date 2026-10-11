@@ -1,7 +1,8 @@
-// Unit tests for assets/ui/wb-desk.ts — the console's desk: sending
-// the desk changes and restoring the desk layout. `createDesk` is driven with
-// fake `deps` (a fake sync, sink, store and stage), with no console and no
-// browser. The popup registry is the real one over a fake store.
+// Unit tests for assets/ui/wb-desk.ts — the console's desk: the desk read,
+// sending the desk changes and restoring the desk layout. `createDesk` is
+// driven with fake `deps` (a fake sync, sink, store and stage) and a fake
+// `fetch` for the desk read, with no console and no browser. The popup
+// registry is the real one over a fake store.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createDesk } from "../assets/ui/wb-desk.ts";
@@ -9,9 +10,13 @@ import { createPopupRegistry } from "../assets/ui/wb-desk-popups.ts";
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
-// A desk over fakes that record each call. `over` replaces any dep.
-function fakeDesk(over = {}) {
-  const calls = { put: [], putSync: [], flushed: [], spawned: [], placeholders: [], glyphs: [], events: [], posts: [], landings: 0 };
+// The desk read the daemon answers: a desk this page takes.
+const readOk = () => Promise.resolve({ ok: true, status: 200, json: async () => ({}) });
+
+// A desk over fakes that record each call. `over` replaces any dep; `read`
+// answers the desk read, which `createDesk` starts while it is built.
+function fakeDesk(over = {}, read = readOk) {
+  const calls = { put: [], putSync: [], acked: [], listeners: [], spawned: [], placeholders: [], glyphs: [], events: [], posts: [], landings: 0 };
   let batch = 0;
   let landed;
   const landing = new Promise((resolve) => {
@@ -25,7 +30,7 @@ function fakeDesk(over = {}) {
     post: (m) => calls.posts.push(m),
   };
   const deps = {
-    window: {},
+    window: { addEventListener: (type) => calls.listeners.push(type) },
     document: { dispatchEvent: (e) => calls.events.push(e.type) },
     OPTS: {},
     deskSink: {
@@ -40,19 +45,17 @@ function fakeDesk(over = {}) {
       emit: () => {},
       nextBatch: () => ({ seq: ++batch }),
       closingBatch: () => ({ closing: true }),
+      take: () => "taken",
+      view: () => ({ windows: [], fences: [], notes: [], checkouts: {} }),
+      hasPending: () => false,
+      acked: (reply) => calls.acked.push(reply),
     },
     viewStore: { read: () => ({}) },
     link,
     popups: null,
     wins: new Set(),
-    fences: () => [],
+    stage: () => null,
     peerGroups: () => new Map(),
-    deskLoaded: () => true,
-    currentDeskFailure: () => "",
-    whenDeskLoaded: () => Promise.resolve(),
-    reloadDesk: () => Promise.resolve(),
-    refreshView: () => {},
-    flushed: (out) => calls.flushed.push(out),
     loadDesk: () => [],
     readSessions: () => Promise.resolve({ sessions: [], unheard: [] }),
     spawnWindow: (termOpts, label, repo, record) => calls.spawned.push({ termOpts, record }),
@@ -67,11 +70,39 @@ function fakeDesk(over = {}) {
       calls.landings += 1;
       landed();
     },
+    inGesture: () => false,
+    nameUnnamed: () => {},
+    createRecord: () => {},
+    applyLock: () => {},
+    renderTitle: () => {},
+    dropClosedElsewhere: () => {},
+    flushPendingOffset: () => {},
     ...over,
   };
   deps.popups = over.popups || createPopupRegistry({ link: deps.link, startBeat: () => {}, stopBeat: () => {} });
-  return { desk: createDesk(deps), deps, calls, landing };
+  // The read calls `fetch` while the desk is built, and only then.
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = read;
+  let desk;
+  try {
+    desk = createDesk(deps);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  return { desk, deps, calls, landing };
 }
+
+// `restoreDesk` and `whenDeskLoaded` wait for this read, and the `pagehide`
+// flush sends what the page changed after it.
+test("the desk read starts while the desk is built, and the tab close is heard from then on", () => {
+  const reads = [];
+  const { calls } = fakeDesk({}, (url, init) => {
+    reads.push([String(url), init?.method]);
+    return new Promise(() => {});
+  });
+  assert.deepEqual(reads, [["/api/desk", "GET"]], "the read is on the wire before createDesk returns");
+  assert.deepEqual(calls.listeners, ["pagehide"]);
+});
 
 test("two desk changes close together make one upload", (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
@@ -107,26 +138,36 @@ test("a flush during a flush waits for the batch on the wire", async (t) => {
 
   answer({ kind: "ok" });
   await settle();
-  assert.deepEqual(calls.flushed, [{ kind: "ok" }]);
+  assert.equal(calls.acked.length, 1, "the answer reached the sync");
   desk.scheduleDeskFlush();
   t.mock.timers.tick(250);
   assert.equal(calls.put.length, 2);
 });
 
-test("an upload the network lost is answered as a network failure", async (t) => {
+test("an upload the network lost is sent again a second later", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const { desk, calls } = fakeDesk({
-    deskSink: { put: () => Promise.reject(new Error("offline")), putSync: () => {} },
+    deskSink: {
+      put: (body) => {
+        calls.put.push(JSON.parse(body));
+        return Promise.reject(new Error("offline"));
+      },
+      putSync: () => {},
+    },
   });
   desk.scheduleDeskFlush();
   t.mock.timers.tick(250);
   await settle();
-  assert.deepEqual(calls.flushed, [{ kind: "network" }]);
+  assert.equal(calls.put.length, 1);
+  assert.equal(calls.acked.length, 0, "a lost upload is not an answer");
+  t.mock.timers.tick(1000);
+  assert.equal(calls.put.length, 2);
 });
 
-test("the last batch as the tab closes goes by putSync, and the waiting upload does not go too", (t) => {
+test("the last batch as the tab closes goes by putSync, and the waiting upload does not go too", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const { desk, calls } = fakeDesk();
+  await desk.whenDeskLoaded();
   desk.scheduleDeskFlush();
   desk.flushDeskOnClose();
   assert.deepEqual(calls.putSync, [{ closing: true }]);
@@ -134,8 +175,9 @@ test("the last batch as the tab closes goes by putSync, and the waiting upload d
   assert.equal(calls.put.length, 0);
 });
 
-test("a page that has not read the desk sends nothing as the tab closes", () => {
-  const { desk, calls } = fakeDesk({ deskLoaded: () => false });
+test("a page that has not read the desk sends nothing as the tab closes", async () => {
+  const { desk, calls } = fakeDesk({}, () => Promise.reject(new Error("offline")));
+  await desk.whenDeskLoaded();
   desk.flushDeskOnClose();
   assert.deepEqual(calls.putSync, []);
 });
