@@ -61,10 +61,24 @@ exists only in supervised mode. A run never joins a squad and never gets
 the squad tools.
 
 **D2. A fence is a squad, and the daemon owns who is in it.** A console
-belongs to the fence that holds the centre of its window; fences never
-overlap, so the answer is unique. The daemon computes this from the **desk
-layout** and serves it. The browser reads it and does not compute it. A
-console outside every fence is in no squad.
+belongs to the fence that holds the centre of its window. The test is
+half-open (`left <= x < left + width`), the first fence that holds the
+centre wins, and a missing rect is read at the origin; fences never overlap,
+so the answer is unique. A console outside every fence is in no squad.
+
+- **The squad fact comes only from the daemon.** The daemon computes
+  membership from the stored **desk layout**. Everything that acts on a
+  squad (the scope of a letter, of a console token, of `agents_list`)
+  reads it there, and nowhere else.
+- **The browser keeps the same rule for its gestures.** While the operator
+  drags, resizes, locks, tiles or detaches, the browser applies the rule to
+  the rects on its own screen, which the daemon has not stored yet. It never
+  uses its own answer to show or decide squad membership; the squad shown
+  on the stage is the daemon's.
+- **The two copies are one rule, held by one fixture.** A table of cases
+  (a centre on a shared border, abutting fences, a missing rect, a window
+  in no fence) is read by the Rust test and by the browser test. A change
+  to either copy that the other does not follow fails the build.
 
 **D3. Letters are the one channel between agents in a squad, for every
 vendor.** A **letter** goes from one agent console to another in the same
@@ -182,8 +196,13 @@ shown as such.
 ## Consequences
 
 - **ADR-0051 is amended.** A fence gains a behaviour: its members form a
-  squad, and its membership becomes a daemon fact (D2). The
-  geometry rule moves from `wb-geometry.ts` to the desk in Rust.
+  squad, and its membership becomes a daemon fact (D2). The rule gets a
+  Rust copy in the desk, and the copy in `wb-geometry.ts` stays for
+  gestures, both held by one shared fixture. It is used in about twelve
+  places in the browser, most of them during a gesture on rects the daemon
+  has not stored yet (measured 2026-10-11: `wb-console-fences.ts`,
+  `wb-console-detach.ts`, `wb-console-desk.ts`, `wb-desk-folds.ts`,
+  `wb-notes.ts`, `wb-console.ts`).
 - **ADR-0072 is amended.** A new trust zone: an agent in a squad. Its
   letters are untrusted data for the receiver, like an agent session's
   output. D7 of ADR-0072 gets one exception: a console token is given to the
@@ -225,6 +244,14 @@ shown as such.
 - **Agent Client Protocol or a vendor's app server as the console.** Gives
   mid-turn control, but replaces the vendor's TUI that the operator watches
   and types into. It can come later, vendor by vendor.
+- **Only the daemon computes membership, and the browser always reads it.**
+  Most uses in the browser happen during a gesture, on rects the daemon has
+  not stored yet; a round trip there would lag the drag or answer with the
+  old layout. One rule in two copies, held by one fixture, keeps a single
+  meaning without that cost.
+- **A stored `fenceId` on each desk record.** A second fact that can
+  disagree with the geometry: a console drawn outside a fence could still
+  carry an old id.
 - **A database (SQLite, libSQL) for letters.** The volume is small, there is
   one writer, and every other daemon store is a file. SQLite through
   `rusqlite` is already in the daemon binary (read-only today, through the
@@ -240,9 +267,11 @@ shown as such.
 - D1: not checked by code: not built yet; a planned check that no run argv
   (`crates/ralphy-cli/src/run/`) carries the squad MCP config or the
   console token variable.
-- D2: not checked by code: not built yet; a planned ratchet that no
-  workbench module computes fence membership (`fenceMembership` leaves
-  `wb-geometry.ts`).
+- D2: not checked by code: not built yet; the planned check is the shared
+  membership fixture, read by a Rust test of the desk and by a test in
+  `crates/ralphy-daemon/ui-tests/`, in the pattern of the shared replies of
+  ADR-0070. A second planned check: no squad route reads membership from a
+  request body.
 - D3: not checked by code: the deny rule lives in per-console vendor
   settings; a test of the Claude console spec will pin it.
 - D4: not checked by code: not built yet; a test that the doorbell text and
