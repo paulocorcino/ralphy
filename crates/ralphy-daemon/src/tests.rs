@@ -1279,7 +1279,7 @@ async fn api_about_route_reports_version_and_facts() {
 #[test]
 fn the_release_badge_and_panel_are_pinned_in_the_served_assets() {
     let html = include_str!("../assets/ui/index.html");
-    let app = include_str!("../assets/ui/app.ts");
+    let app = shell_family();
     let module = include_str!("../assets/ui/wb-release.ts");
     let dialogs = include_str!("../assets/ui/wb-release-dialogs.ts");
     let css = served_css();
@@ -2793,10 +2793,10 @@ fn the_explorer_opens_a_note_as_a_card() {
         files.contains("this.openNote(path)"),
         "wb-files.ts must keep the ADR-0064 pin openNote(path)"
     );
-    let app = include_str!("../assets/ui/app.ts");
+    let app = shell_family();
     assert!(
         app.contains("WBNotes.openFromExplorer("),
-        "app.ts must keep the ADR-0064 pin WBNotes.openFromExplorer("
+        "the shell must keep the ADR-0064 pin WBNotes.openFromExplorer("
     );
     // The UI's mirror of the denylist carve-out (`isNoteInNotesDir`) is
     // driven through the context menu by `ui-tests/wb-files.test.mjs`.
@@ -3894,6 +3894,124 @@ fn the_console_family_lists_every_module_on_disk() {
         "CONSOLE_FAMILY in crates/ralphy-daemon/src/tests.rs must list every console family \
          module under assets/ui, in its order: add the new module to CONSOLE_FAMILY"
     );
+}
+
+/// The shell family (#621, ADR-0073, the amendment of 2026-10-11): `app.ts`,
+/// then `wb-wire.ts` and `wb-icon.ts` once they exist, then every module that
+/// `main.ts` imports a registered Alpine component or Alpine store from,
+/// sorted, as `(name, text)`. `app.ts` comes first: a scoped pin finds the
+/// first match in the joined text, and every slice the pins take was measured
+/// inside `app.ts` when the family was made.
+/// `the_shell_family_lists_every_module_on_disk` keeps this list equal to
+/// `main.ts`.
+const SHELL_FAMILY: &[(&str, &str)] = &[
+    ("app.ts", include_str!("../assets/ui/app.ts")),
+    (
+        "wb-add-project-dialog.ts",
+        include_str!("../assets/ui/wb-add-project-dialog.ts"),
+    ),
+    (
+        "wb-consoles-tab.ts",
+        include_str!("../assets/ui/wb-consoles-tab.ts"),
+    ),
+    ("wb-devices.ts", include_str!("../assets/ui/wb-devices.ts")),
+    ("wb-files.ts", include_str!("../assets/ui/wb-files.ts")),
+    (
+        "wb-hosts-dialog.ts",
+        include_str!("../assets/ui/wb-hosts-dialog.ts"),
+    ),
+    (
+        "wb-move-dialog.ts",
+        include_str!("../assets/ui/wb-move-dialog.ts"),
+    ),
+    (
+        "wb-projects-store.ts",
+        include_str!("../assets/ui/wb-projects-store.ts"),
+    ),
+    (
+        "wb-release-dialogs.ts",
+        include_str!("../assets/ui/wb-release-dialogs.ts"),
+    ),
+    (
+        "wb-security-dialog.ts",
+        include_str!("../assets/ui/wb-security-dialog.ts"),
+    ),
+    (
+        "wb-settings-dialog.ts",
+        include_str!("../assets/ui/wb-settings-dialog.ts"),
+    ),
+];
+
+/// The texts of `SHELL_FAMILY`, joined in its order. A pin on shell text reads
+/// this, so a move from `app.ts` to a component or a store of the family does
+/// not move the pin (#621).
+fn shell_family() -> String {
+    SHELL_FAMILY.iter().map(|(_, text)| *text).collect()
+}
+
+/// #621: a module that `main.ts` registers with Alpine cannot be left out of
+/// the pins that read the shell family, because this test builds the list
+/// from `main.ts` and the disk.
+#[test]
+fn the_shell_family_lists_every_module_on_disk() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/ui");
+    let main_path = dir.join("main.ts");
+    let main = std::fs::read_to_string(&main_path)
+        .unwrap_or_else(|e| panic!("reading {}: {e}", main_path.display()));
+    // The module of each name a one-line import of `main.ts` gives
+    // (`static_imports` reads only one-line imports too).
+    let import =
+        regex::Regex::new(r#"(?m)^import \{([^}]*)\} from "\./([^"]+)";"#).expect("valid regex");
+    let mut module_of = std::collections::HashMap::new();
+    for cap in import.captures_iter(&main) {
+        for part in cap[1].split(',') {
+            if let Some(name) = part.split_whitespace().last() {
+                module_of.insert(name.to_string(), cap[2].to_string());
+            }
+        }
+    }
+    let register =
+        regex::Regex::new(r#"Alpine\.(?:data|store)\(\s*"[^"]+"\s*,\s*([A-Za-z_$][\w$]*)"#)
+            .expect("valid regex");
+    let mut registered = std::collections::BTreeSet::new();
+    for cap in register.captures_iter(&main) {
+        let factory = &cap[1];
+        let module = module_of.get(factory).unwrap_or_else(|| {
+            panic!("main.ts registers {factory}, and no one-line import of main.ts gives it")
+        });
+        registered.insert(module.clone());
+    }
+    assert!(
+        registered.contains("app.ts"),
+        "main.ts must register the shell from app.ts"
+    );
+    let mut expected = vec!["app.ts".to_string()];
+    for front in ["wb-wire.ts", "wb-icon.ts"] {
+        if dir.join(front).is_file() {
+            expected.push(front.to_string());
+        }
+    }
+    let rest: Vec<String> = registered
+        .into_iter()
+        .filter(|module| !expected.contains(module))
+        .collect();
+    expected.extend(rest);
+    let listed: Vec<&str> = SHELL_FAMILY.iter().map(|(name, _)| *name).collect();
+    assert_eq!(
+        listed, expected,
+        "SHELL_FAMILY in crates/ralphy-daemon/src/tests.rs must list app.ts, then wb-wire.ts \
+         and wb-icon.ts when they exist, then every module main.ts registers an Alpine \
+         component or Alpine store from, sorted: add the module to SHELL_FAMILY"
+    );
+    for (name, text) in SHELL_FAMILY {
+        let path = dir.join(name);
+        let on_disk = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("reading {}: {e}", path.display()));
+        assert_eq!(
+            *text, on_disk,
+            "the SHELL_FAMILY entry {name} must include the text of {name}"
+        );
+    }
 }
 
 fn served_css() -> String {
@@ -5039,16 +5157,16 @@ fn presence_staleness_is_derived_on_a_clock_not_inside_the_binding() {
         !html.contains("Date.now() - _lastHeartbeat"),
         "staleness must not be computed inside a binding — it cannot re-fire"
     );
-    let app = include_str!("../assets/ui/app.ts");
+    let app = shell_family();
     assert!(
         app.contains("presenceStale: false,"),
-        "app.ts must declare the flag as reactive state"
+        "the shell must declare the flag as reactive state"
     );
     // Inside the tick, not merely somewhere in the file: a computation that
     // is not on a clock is the bug this test is named after.
     let tick = app
         .split_once("this._clockTick = setInterval(")
-        .expect("app.ts must keep the shell's clock tick")
+        .expect("the shell must keep its clock tick")
         .1;
     let tick = &tick[..tick.find("}, 1000);").expect("the clock tick must close")];
     assert!(
@@ -5786,7 +5904,7 @@ fn shell_arranges_into_the_fence() {
             .contains("minWidth"),
         "arrangeFence must relax the CSS floor for a tile below it (#342)"
     );
-    let app = include_str!("../assets/ui/app.ts");
+    let app = shell_family();
     assert!(
         !app.contains("arrangeConsoles"),
         "the shell's global arrange action must be gone (#342)"
@@ -6099,7 +6217,7 @@ fn a_detached_file_comes_home_when_its_popup_closes() {
             "wb-detached.ts must keep the unload re-attach {pin}"
         );
     }
-    let app = include_str!("../assets/ui/app.ts");
+    let app = shell_family();
     for pin in [
         "detached.watch(win, desc);",
         "window.setInterval(pollDetached, 500)",
@@ -6107,7 +6225,7 @@ fn a_detached_file_comes_home_when_its_popup_closes() {
     ] {
         assert!(
             app.contains(pin),
-            "app.ts must keep the detached-file re-attach {pin}"
+            "the shell must keep the detached-file re-attach {pin}"
         );
     }
 }
@@ -6648,7 +6766,7 @@ fn workbench_session_assets_preserve_composite_repo_identity() {
     ] {
         assert!(console.contains(pin), "the console must keep {pin}");
     }
-    assert!(include_str!("../assets/ui/app.ts").contains("WBSessionRoute.matchesRepo("));
+    assert!(shell_family().contains("WBSessionRoute.matchesRepo("));
 }
 
 /// The stage/viewport shell (#336). A clamp lives in CSS and markup, which
@@ -7065,12 +7183,7 @@ fn shell_stores_only_the_view_in_the_browser() {
     // The console family and the shell own the state being persisted, and
     // must reach it only through `WBView` — a direct write from any of them
     // is how a second store starts.
-    for (name, src) in [
-        CONSOLE_FAMILY,
-        &[("app.ts", include_str!("../assets/ui/app.ts"))],
-    ]
-    .concat()
-    {
+    for (name, src) in [CONSOLE_FAMILY, SHELL_FAMILY].concat() {
         assert!(
             !src.contains("localStorage"),
             "{name} must not touch localStorage — wb-client-view.ts owns the store (#339)"
@@ -7162,7 +7275,7 @@ fn a_quiet_detach_peer_is_challenged_before_it_is_buried() {
 /// because the browser pass — Playwright — does not run in CI.
 #[test]
 fn the_console_chrome_holds_its_three_rules() {
-    let app = include_str!("../assets/ui/app.ts");
+    let app = shell_family();
     let tab = include_str!("../assets/ui/wb-consoles-tab.ts");
     let html = include_str!("../assets/ui/index.html");
     // ONE dropdown at a time. Every toggler sends ONE event,
@@ -7172,9 +7285,14 @@ fn the_console_chrome_holds_its_three_rules() {
     // wb-consoles-tab.test.mjs and app.test.mjs drive the event.
     let close = r#"sendWindow(window, "workbench:menus-close");"#;
     let hear = r#"addEventListener("workbench:menus-close", "#;
+    // Counted, not `contains`: the family also holds the two consoles
+    // components, so a bare `contains` stays green when the shell's own send
+    // or hear is gone. Three is the shell's one and their two.
     assert!(
-        app.contains(close) && app.contains(hear) && app.contains("this.avatarMenu = false;"),
-        "app.ts must close the account menu on the one menus event, and send it"
+        app.matches(close).count() == 3
+            && app.matches(hear).count() == 3
+            && app.contains("this.avatarMenu = false;"),
+        "the shell must close the account menu on the one menus event, and send it"
     );
     assert!(
         tab.matches(close).count() == 2 && tab.matches(hear).count() == 2,
@@ -7501,7 +7619,7 @@ fn the_run_picker_names_the_model_and_clocks_the_phase() {
         "the picker's headline must be the model, not the vendor"
     );
 
-    let app_js = include_str!("../assets/ui/app.ts");
+    let app_js = shell_family();
     let app: String = app_js.split_whitespace().collect::<Vec<_>>().join(" ");
     // The tick is what makes the clock live, and reading `nowMs` in the getter
     // is what subscribes the binding to it — a `Date.now()` inside `runClock`
@@ -7630,17 +7748,17 @@ fn the_label_editor_is_unclipped_and_closed_under_a_live_run() {
         "both the edit button and the option rows must be gated"
     );
 
-    let app_js = include_str!("../assets/ui/app.ts");
+    let app_js = shell_family();
     // ONE predicate, two subjects — the drift #318 avoided. A second
     // "does this repo have a live run" test is how the gate and the controls
     // beside it start disagreeing. The sentence itself is driven by
     // `ui-tests/wb-changes.test.mjs`.
     assert!(
-        js_method_body(app_js, "labelLockReason() {").contains("WBChanges.writeLockReason("),
+        js_method_body(&app_js, "labelLockReason() {").contains("WBChanges.writeLockReason("),
         "the label reason must reuse writeLockReason, not parallel it"
     );
     assert!(
-        squeeze(app_js).contains("if(this.labelsLocked())return;"),
+        squeeze(&app_js).contains("if(this.labelsLocked())return;"),
         "toggleLabel must refuse behind the disabled rows too"
     );
 }
@@ -7651,10 +7769,10 @@ fn the_label_editor_is_unclipped_and_closed_under_a_live_run() {
 /// which is the wrong furniture for the panel's most consequential click.
 #[test]
 fn stopping_a_run_confirms_through_the_design_system_dialog() {
-    let code = squeeze(include_str!("../assets/ui/app.ts"));
+    let code = squeeze(&shell_family());
     let start = code
         .find("asyncstopRun(")
-        .expect("app.ts must keep stopRun");
+        .expect("the shell must keep stopRun");
     let body = &code[start..];
     let body = &body[..body[1..].find("async").map_or(body.len(), |i| i + 1)];
     assert!(
@@ -7675,12 +7793,12 @@ fn the_board_surfaces_the_plan_the_next_run_would_execute() {
     // The plan folds (`planSummary`, the pill, `isBundleReason`, and the
     // zero-open-steps verdict that mirrors `plan::count_open_steps`) are
     // driven by `ui-tests/wb-runs.test.mjs`.
-    let app_js = include_str!("../assets/ui/app.ts");
+    let app_js = shell_family();
     for pin in [
         r#"path: ".ralphy/plan.md","#,
         r#"window.WBDaemon.write("plan.discard", { repo: slug })"#,
     ] {
-        assert!(app_js.contains(pin), "app.ts must keep {pin}");
+        assert!(app_js.contains(pin), "the shell must keep {pin}");
     }
     // The discard is confirmed, and the plan is only ever shown against the
     // issue its trailer names (`planFor`) — a plan offered on the wrong card
@@ -7812,12 +7930,15 @@ fn the_runs_feed_is_contained_in_the_markup() {
          each disabled verb's title (`verbTitle`)"
     );
 
-    let app_js = include_str!("../assets/ui/app.ts");
+    let app_js = shell_family();
     // `rawFeedOpen: false` is the DEFAULT, not an incidental initialiser: the
     // feed can take 30vh of a panel whose job is the trail and the plan, so
     // the bytes are opt-in and only the head arrives with the output.
     for pin in ["dismissFeed()", "runVerbFailed(", "rawFeedOpen: false"] {
-        assert!(app_js.contains(pin), "app.ts must keep the #331 pin {pin}");
+        assert!(
+            app_js.contains(pin),
+            "the shell must keep the #331 pin {pin}"
+        );
     }
     assert!(
         !app_js.contains("rawFeedOpen = true"),
@@ -7988,13 +8109,13 @@ fn a_refused_branch_change_reports_in_the_projects_panel() {
         "the branch refusal sits between the files bar and the tree"
     );
 
-    let app_js = include_str!("../assets/ui/app.ts");
+    let app_js = shell_family();
     for pin in [
         "branchError: \"\"",
         "_branchRefused(msg: string) {",
         "this.branchError = msg || \"\";",
     ] {
-        assert!(app_js.contains(pin), "app.ts must keep the pin {pin}");
+        assert!(app_js.contains(pin), "the shell must keep the pin {pin}");
     }
     // Both `_mutateBranch` arms report: the refusal AND, in daemon mode, the
     // transport throw. The throw is the arm that used to be deliberately
@@ -8004,7 +8125,7 @@ fn a_refused_branch_change_reports_in_the_projects_panel() {
     // client-side refusal under a selected worktree any more (#407): the
     // act is SENT with the checkout.
     let mutate = squeeze(js_method_body(
-        app_js,
+        &app_js,
         "async _mutateBranch(verb: string, slug: string | null, name: string, revert: () => void) {",
     ));
     assert!(
@@ -8073,11 +8194,10 @@ fn the_worktree_row_remove_action_stops_the_selecting_click() {
     let html = include_str!("../assets/ui/index.html");
     assert!(
         html.contains(r#"onRemove: (row) => this.removeWorktree(ref, row),"#)
-            || include_str!("../assets/ui/app.ts")
-                .contains("onRemove: (row) => this.removeWorktree(ref, row),"),
+            || shell_family().contains("onRemove: (row) => this.removeWorktree(ref, row),"),
         "the Files chip's menu wires the remove action"
     );
-    let app_js = include_str!("../assets/ui/app.ts");
+    let app_js = shell_family();
     assert!(
         app_js.contains("WBProject.checkoutAfterListing(ck, this.worktreeListings[slug]) === null"),
         "the selection resets from the re-read listing, never from the reply's status"
@@ -8402,9 +8522,8 @@ fn the_run_completion_nudge_is_wired_through_the_ui_assets() {
         "wb-daemon.ts must EXPORT subscribeChanges — app.ts guards on it (#310)"
     );
     assert!(
-        include_str!("../assets/ui/app.ts")
-            .contains("WBChanges?.shouldReload?.(frame, this.$store.projects.openSlug)"),
-        "app.ts must filter each nudge through shouldReload (#310)"
+        shell_family().contains("WBChanges?.shouldReload?.(frame, this.$store.projects.openSlug)"),
+        "the shell must filter each nudge through shouldReload (#310)"
     );
 }
 
@@ -8416,7 +8535,7 @@ fn the_run_completion_nudge_is_wired_through_the_ui_assets() {
 /// a route with no caller is a route that rots.
 #[test]
 fn the_peer_wake_is_wired_through_the_ui_assets() {
-    let app_js = include_str!("../assets/ui/app.ts");
+    let app_js = shell_family();
     for symbol in [
         r#"apiFetch("POST /api/fleet/nudge", { query: { daemon_id: daemonId } })"#,
         "async wakePeer(",
@@ -8426,7 +8545,7 @@ fn the_peer_wake_is_wired_through_the_ui_assets() {
     ] {
         assert!(
             app_js.contains(symbol),
-            "app.ts must keep {symbol} to wake a peer"
+            "the shell must keep {symbol} to wake a peer"
         );
     }
     let html = include_str!("../assets/ui/index.html");
@@ -8586,14 +8705,14 @@ fn a_changes_row_keeps_its_actions_outside_the_clipped_face() {
     }
 }
 
-/// The body of one Alpine method in `app.ts`, sliced from its opener to the
-/// first four-space-indented `},` — the file's method terminator. Whole-file
+/// The body of one Alpine method in the shell family text, sliced from its
+/// opener to the first four-space-indented `},` — the method terminator. Whole-file
 /// `contains` is useless for these pins: a call such as `this.$nextTick(`
 /// appears at dozens of sites, so a check that does not scope to the method
 /// it is about passes no matter which one regressed.
 fn js_method_body<'a>(js: &'a str, opener: &str) -> &'a str {
     js.split_once(opener)
-        .unwrap_or_else(|| panic!("app.ts must define `{opener}`"))
+        .unwrap_or_else(|| panic!("the shell family must define `{opener}`"))
         .1
         .split_once("\n    },")
         .unwrap_or_else(|| panic!("`{opener}` must close at method indent"))
@@ -8619,18 +8738,21 @@ fn css_rule_body<'a>(css: &'a str, selector: &str) -> &'a str {
 #[test]
 fn every_icon_is_drawn_by_the_x_icon_directive() {
     let html = include_str!("../assets/ui/index.html");
-    let js = include_str!("../assets/ui/app.ts");
+    let js = shell_family();
     assert!(
         js.contains("export function iconDirective(")
             && include_str!("../assets/ui/main.ts")
                 .contains(r#"Alpine.directive("icon", iconDirective);"#),
-        "main.ts must register the x-icon directive of app.ts"
+        "main.ts must register the x-icon directive of the shell family"
     );
     assert!(
         html.matches("x-icon=").count() >= 40,
         "index.html must draw its icons with x-icon"
     );
-    for (file, text) in [("index.html", html), ("app.ts", js)] {
+    for (file, text) in [("index.html", html)]
+        .into_iter()
+        .chain(SHELL_FAMILY.iter().copied())
+    {
         assert!(
             !text.contains("data-lucide=") && !text.contains("createIcons()"),
             "{file} must not use lucide placeholders or the createIcons scan"
@@ -8642,8 +8764,8 @@ fn every_icon_is_drawn_by_the_x_icon_directive() {
 /// the identity; only the LABEL becomes the directory basename (#332).
 #[test]
 fn a_remoteless_project_is_labelled_by_its_directory() {
-    let js = include_str!("../assets/ui/app.ts");
-    let load = js_method_body(js, "async loadRepos({ git = true } = {}) {");
+    let js = shell_family();
+    let load = js_method_body(&js, "async loadRepos({ git = true } = {}) {");
     assert!(
         load.contains("name: x.name"),
         "`loadRepos` must keep `/api/repos`'s name — the label reads it; \
@@ -8666,7 +8788,7 @@ fn a_remoteless_project_is_labelled_by_its_directory() {
         "the label is built on the daemon's project name; found: {label:?}"
     );
 
-    let filter = js_method_body(js, "filteredProjects() {");
+    let filter = js_method_body(&js, "filteredProjects() {");
     assert!(
         filter.contains("repoLabel("),
         "the filter must match the VISIBLE label: typing what the row prints \
@@ -8800,12 +8922,12 @@ fn the_branch_chip_carries_the_change_count_on_the_project_row() {
         "a collapsed chip is only its count; found: {collapsed:?}"
     );
 
-    let js = include_str!("../assets/ui/app.ts");
+    let js = shell_family();
     for pin in [
         "rowTitle(p: Project) {",
         "branchChipClick(p: Project, ev: Event) {",
     ] {
-        assert!(js.contains(pin), "app.ts must define {pin}");
+        assert!(js.contains(pin), "the shell must define {pin}");
     }
 }
 
@@ -8912,20 +9034,9 @@ fn no_menu_or_key_sink_takes_a_template_string() {
     assert_eq!(template_html_sinks("b.innerHTML = text;").len(), 1);
     assert!(template_html_sinks("b.innerHTML = '<i class=\"bi bi-x\"></i>';").is_empty());
     assert!(template_html_sinks("menu.innerHTML = \"\";").is_empty());
-    // The whole console family, and the other modules that build a menu.
-    let others = [
-        ("app.ts", include_str!("../assets/ui/app.ts")),
-        ("wb-files.ts", include_str!("../assets/ui/wb-files.ts")),
-        (
-            "wb-move-dialog.ts",
-            include_str!("../assets/ui/wb-move-dialog.ts"),
-        ),
-        (
-            "wb-consoles-tab.ts",
-            include_str!("../assets/ui/wb-consoles-tab.ts"),
-        ),
-    ];
-    for (name, src) in [CONSOLE_FAMILY, &others].concat() {
+    // The whole console family, and the whole shell family: the shell,
+    // `wb-files.ts`, `wb-move-dialog.ts` and `wb-consoles-tab.ts` build menus.
+    for (name, src) in [CONSOLE_FAMILY, SHELL_FAMILY].concat() {
         let sinks = template_html_sinks(src);
         assert!(sinks.is_empty(), "{name}: {sinks:?}");
     }

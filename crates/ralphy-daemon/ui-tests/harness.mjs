@@ -48,6 +48,14 @@ const MODULE_NAMESPACES = {
   WBConsoleName,
 };
 
+// The Alpine stores, by the name `main.ts` registers each with
+// (`Alpine.store(name, …)`, ADR-0073 D6). `loadShell` builds every one per page
+// with the deps `main.ts` gives it (`{ messages }`), so a new store is one line
+// here and every test page has it.
+export const STORES = {
+  projects: projectsStore,
+};
+
 // The Alpine components, by the name the markup gives `x-data`: `loadComponent`
 // builds each from its module's export (ADR-0073 D3, ADR-0075 D7).
 const MODULE_COMPONENTS = {
@@ -156,13 +164,16 @@ function stubWindow() {
 // `addEventListener` is a sink. `opts.window` does the same for the window
 // (the detached popups' `message` listener and their `closed` poll).
 //
-// The Alpine store `projects` is a real `projectsStore()`, one per page, or
-// `opts.projects`. `shell()` reads it as `this.$store.projects`, and the
-// window bridge as `Alpine.store("projects")`, so both are set here.
+// Every Alpine store in `STORES` is a real one, built per page, or the object
+// a test gives in `opts.stores` (`opts.projects` is the older name for
+// `opts.stores.projects`). Shell code and components read a store as
+// `this.$store.<name>`, and code outside Alpine as `Alpine.store("<name>")`,
+// so both give the same object here, as they do in the browser.
 export function loadShell(opts = {}) {
   const window = Object.assign(stubWindow(), opts.window || {});
-  const projects = opts.projects || projectsStore();
-  window.Alpine = { store: (name) => (name === "projects" ? projects : undefined) };
+  // Filled once the message door exists: a store is built with it.
+  const stores = {};
+  window.Alpine = { store: (name) => stores[name] };
   const document = Object.assign(stubDocument(), opts.document || {});
   window.window = window;
   window.document = document;
@@ -179,6 +190,8 @@ export function loadShell(opts = {}) {
   // page's `shell()` state, the shell the browser would find.
   let state = null;
   const messages = createMessages(window, document, { shell: () => window.getShell?.() ?? state });
+  const given = { projects: opts.projects, ...opts.stores };
+  for (const [name, store] of Object.entries(STORES)) stores[name] = given[name] || store({ messages });
   const realBC = globalThis.BroadcastChannel;
   delete globalThis.BroadcastChannel;
   try {
@@ -195,7 +208,7 @@ export function loadShell(opts = {}) {
   globalThis.document = document;
   wire(window, document, { messages });
   state = shell();
-  state.$store = { projects };
+  state.$store = stores;
   return { state, window, document };
 }
 
