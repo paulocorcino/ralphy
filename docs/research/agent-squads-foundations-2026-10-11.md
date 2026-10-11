@@ -5,7 +5,8 @@ the decisions are now [ADR-0076](../adr/0076-agents-in-a-fence-form-a-squad.md) 
 first draft, written before the decisions; where they disagree with §12a,
 §12a wins.
 
-Companion: [mastra-2026-10-11.md](./mastra-2026-10-11.md).
+Companion: an outside study of an agent framework, kept locally in
+`.ralphy/docs/` (not in the repository).
 
 ## Evidence labels
 
@@ -17,7 +18,8 @@ Every claim carries one label:
   `Outcome`, null stdin in `dispatch/spawn.rs`, the verb list in
   `dispatch.rs`, `STALE_AFTER`, the Claude `SendMessage` note in
   `session/spec.rs`).
-- **[docs]** from Mastra or vendor documentation (see the research file).
+- **[docs]** from the documentation of an outside agent framework ("the studied
+  framework") or of a vendor.
 - **[memory]** from training or earlier sessions; **verify before use**.
 - **[proposal]** a suggestion in this document.
 
@@ -36,7 +38,7 @@ stage) is the end state. It stands on three foundation questions:
 Plus one cross-cutting question: **through which protocol** does each of
 these reach each vendor?
 
-## 2. How an agent is created today: Ralphy and Mastra
+## 2. How an agent is created today: Ralphy and the studied framework
 
 ### 2.1 Ralphy [checked]
 
@@ -61,12 +63,12 @@ these reach each vendor?
   typed into by the browser that holds the **writer slot** (CONTEXT.md)
   [checked].
 
-### 2.2 Mastra [docs]
+### 2.2 The studied framework [docs]
 
 - An agent is an object in the same process: model + instructions + tools +
-  memory. **Mastra owns the loop.**
+  memory. **The framework owns the loop.**
 - The unit of conversation is a **thread** (stored). A live **session**
-  (AgentController) holds mode, model, permissions and an event bus.
+  (a session controller) holds mode, model, permissions and an event bus.
 - Input reaches a running loop through `sendMessage` / `queueMessage` /
   `sendSignal`; a reasoning-only request is cancelled and sent again with the
   new input.
@@ -75,17 +77,17 @@ these reach each vendor?
 
 ### 2.3 The difference that decides the design
 
-| | Ralphy | Mastra |
+| | Ralphy | Studied framework |
 |---|---|---|
-| Who owns the agent loop | the vendor CLI | Mastra |
+| Who owns the agent loop | the vendor CLI | the framework |
 | Where an "inject a message" can happen | only where the vendor opens a door: hooks, PTY input, a native protocol | anywhere in its own loop |
 | Cost model | the operator's vendor subscriptions | API keys per token |
 | Unit of work | issue in a queue (forge) | thread |
 | Agent-to-agent today | files and comments, in sequence | tool call (subagent), signals |
 
-**Consequence [proposal]:** Ralphy must not copy Mastra's harness. Mastra's
+**Consequence [proposal]:** Ralphy must not copy the framework's harness. The framework's
 problem is "make my own loop durable and steerable". Ralphy's problem is
-"talk to loops I do not own". The closest Mastra piece is its **ACP client**
+"talk to loops I do not own". The closest piece of the framework is its **ACP client**
 (`AcpAgent`), not its agent class. Building an own agent loop would throw
 away Ralphy's main asset (the vendor CLIs, their subscriptions, their tools)
 and is out of scope.
@@ -123,10 +125,10 @@ two-way options today [reported].
 | claude | PTY TUI; `-p stream-json` out | `--input-format stream-json` (messages in on stdin); hooks with `additionalContext`; a `Stop` hook that blocks the stop with a reason | [memory] — verify |
 | codex | `codex exec … -o <file> -` | `codex app-server`: JSON-RPC, thread → turn → item, server-initiated approvals, `turn/steer`, `turn/interrupt` | [docs/reported]; method names not checked against a schema |
 | gemini | headless `stream-json` | `--acp` / `--experimental-acp` | spike doc mentions it [reported] |
-| opencode | `run --format json` | `opencode acp`, `opencode serve` (HTTP) | [docs] Mastra lists `opencode acp` |
+| opencode | `run --format json` | `opencode acp`, `opencode serve` (HTTP) | [docs] the studied framework lists `opencode acp` |
 | kimi | `-p … stream-json` | an `acp` subcommand | spike doc [reported] |
 | copilot | `--output-format json` | ACP listed in the ACP registry | [reported] third-party |
-| cursor | `-p stream-json --resume` | Cursor SDK (Mastra wraps it) | [docs] |
+| cursor | `-p stream-json --resume` | Cursor SDK (the studied framework wraps it) | [docs] |
 | all seven | — | **MCP client**: every vendor CLI can call tools on an MCP server | [memory] — verify per vendor; note Copilot and Cursor adapters disable or refuse extra MCP servers on purpose |
 
 Protocol roles, in one line each:
@@ -326,7 +328,7 @@ sequenceDiagram
 Rules [proposal]:
 
 - A message is **untrusted data** for the receiver, wrapped with its sender,
-  the same way Mastra wraps `<user name=… sentFrom=…>`. ADR-0072 trust zones
+  the same way the studied framework wraps `<user name=… sentFrom=…>`. ADR-0072 trust zones
   apply: an agent's output is not an operator instruction.
 - Every link has a **budget**: messages per agent per hour, and a hop count,
   so two agents cannot answer each other forever.
@@ -397,15 +399,15 @@ Codex app-server. Each one is an adapter-level change (ADR-0002).
 - **A2A.** It solves agents across organizations and the network. The fleet
   already federates Ralphy's own hosts. Revisit when an outside agent must
   call Ralphy.
-- **An own agent loop or a Mastra-style framework.** See 2.3.
+- **An own agent loop or a framework of our own.** See 2.3.
 - **Durable replay of agent runs.** Ralphy already recovers at the issue
   level (plan resume, cooperative stop, usage-limit sleep). Replaying vendor
-  turns would repeat paid calls; Mastra's own docs warn about this.
+  turns would repeat paid calls; the studied framework's own docs warn about this.
 - **A knowledge graph.** `KNOWLEDGE.md` and handoffs cover the current scale.
 
 ## 10. The factory, mapped to what exists [proposal, inferred from ADR titles and the reports]
 
-| Mastra Factory stage | Ralphy today |
+| Stage of the studied software factory | Ralphy today |
 |---|---|
 | Intake (GitHub, Linear) | the forge queue (GitHub only; the forge is not an extension point, ARCHITECTURE §6) |
 | Triage | `triage-agent` role, evidence gate, escalate (ADR-0017, ADR-0018) |
@@ -425,9 +427,9 @@ steps 1–3 exist, because a plan approval is an attention request, and
 
 - **"Talk to each vendor by its own protocol" as the first step.** Seven
   protocols, seven test harnesses, and every vendor changes its flags between
-  releases (Mastra's ACP page says so). MCP plus turn-boundary delivery gives
+  releases (the studied framework's ACP page says so). MCP plus turn-boundary delivery gives
   most of the value with one implementation.
-- **Mid-turn steering as a requirement.** Mastra itself delivers at the loop
+- **Mid-turn steering as a requirement.** The studied framework itself delivers at the loop
   boundary once content has started, and it only interrupts reasoning-only
   requests. A turn boundary is enough for almost every factory flow.
 - **Moving the interop layer into core.** Core is batch and vendor-free by
@@ -456,16 +458,16 @@ steps 1–3 exist, because a plan approval is an attention request, and
 | G3 | Where the reviewer acts | **Inside the run**, after the verify gate and before close-on-green (the **review gate**). It can only veto. "Changes requested" goes back to the executor **once**; after that the issue stays open for a human. Opt-in by setting. It can move to a PR trigger later, when push and PR exist. CONTEXT.md updated. |
 | G4 | How roles talk | **Only through role artifacts** (files in `.ralphy/` and an issue comment for the audit trail), at points the runner controls. A live message is only "the world → one running agent" (human, operator, outside event). It is never role → role. An agent that operates another agent's console stays a console feature, outside the factory's critical path. This shrinks the mailbox to delivery to one agent, with no routing between agents. CONTEXT.md updated (Role artifact). **Scope corrected by G6: unattended mode only.** |
 | G5 | Scale | Now: more repos and hosts (today's model). Next: one checkout per issue, several at once (ADR-0058), only after the review gate exists; the number per repo is a setting (default 1); quota is checked before a new one starts. Overlapping roles in one repo (planner and executor on two issues at the same time): never. Reason: the limits are vendor quota and human review, not orchestration. |
-| G6 | The desk | **Two operating modes on the same foundations.** *Unattended* (run): G1–G5 hold. *Supervised* (desk): the operator orchestrates; a role is what the operator tells an agent (an open set, not the enum); **the fence is the squad**: agents in one fence may send live messages to each other; every message shows on the stage; a budget per fence (messages per hour, hop limit); a console outside every fence gets messages only from the operator; the scope works across hosts because the local daemon routes. Gives the fence a behaviour, not only a meaning, so ADR-0051 needs an amendment. Convergence: run ≈ Mastra Factory/workflows; desk ≈ Mastra AgentController/Sessions/Signals. CONTEXT.md updated (Fence, Operating mode). |
+| G6 | The desk | **Two operating modes on the same foundations.** *Unattended* (run): G1–G5 hold. *Supervised* (desk): the operator orchestrates; a role is what the operator tells an agent (an open set, not the enum); **the fence is the squad**: agents in one fence may send live messages to each other; every message shows on the stage; a budget per fence (messages per hour, hop limit); a console outside every fence gets messages only from the operator; the scope works across hosts because the local daemon routes. Gives the fence a behaviour, not only a meaning, so ADR-0051 needs an amendment. Convergence with the studied framework: the run is close to its software factory and workflows; the desk is close to its session controller and signals. CONTEXT.md updated (Fence, Operating mode). |
 | G7 | How a message reaches a console agent | **Doorbell + letter.** The letter (the content) stays in the daemon mailbox and is read only through MCP (`inbox_read`), wrapped as `<message from="fence / console" kind="agent">`. The doorbell is a fixed text written by Ralphy, never the letter's content. It goes in through a hook reply when the agent is in a turn, or is typed into the PTY when the agent is `done` and the operator has not typed for N seconds. Another agent's content is never typed into a PTY automatically. A vendor with no MCP client does not join the squad, and the console says so. **Parked for later:** a daemon tool (MCP or other) that sends content to any PTY and reads its result, for agent CLIs, shells and non-agent TUIs (htop). It is a console operation tool with its own authority question (who may call it). See the console MCP brainstorm of 2026-09-30. |
-| G8 | Agent states and "both wait, nobody notices" | Three levels: **agent** (hooks: working / waiting / done / unknown), **wait** (from the mailbox: "A waits for B since T"), **fence** (derived: active / needs operator / **stalled** / idle / can't tell). Every letter with `expects_reply` has a deadline (default 10 min, one global setting); a late one becomes `overdue` and the sender gets a doorbell. `stalled` (nobody working, nobody waiting for the operator, an open wait or unread letter older than the deadline) opens an attention request that names the cycle. `can't tell` (an `unknown` agent) never shows as idle. The graph stays free; no tree is forced. Mastra avoids the problem by shape (delegation is a tool call, so a tree) and gives every wait a state and a timeout; it has no stall detector between peers (docs). |
-| G9 | Duties | A **duty** per agent console: a *charter* (text given at start) + a *description* (one line other agents see in `agents_list`). Duties are operator-written files (an open set) with a few seeds. Stored on the console, like the console name. At most one **lead** per fence; the lead is the first to get the stall letter, and after the deadline it goes to the operator. No permissions per duty in v1: the charter asks, the existing guard enforces. Mastra analog: modes + subagent description. CONTEXT.md updated (Duty). |
+| G8 | Agent states and "both wait, nobody notices" | Three levels: **agent** (hooks: working / waiting / done / unknown), **wait** (from the mailbox: "A waits for B since T"), **fence** (derived: active / needs operator / **stalled** / idle / can't tell). Every letter with `expects_reply` has a deadline (default 10 min, one global setting); a late one becomes `overdue` and the sender gets a doorbell. `stalled` (nobody working, nobody waiting for the operator, an open wait or unread letter older than the deadline) opens an attention request that names the cycle. `can't tell` (an `unknown` agent) never shows as idle. The graph stays free; no tree is forced. The studied framework avoids the problem by shape (delegation is a tool call, so a tree) and gives every wait a state and a timeout; it has no stall detector between peers (docs). |
+| G9 | Duties | A **duty** per agent console: a *charter* (text given at start) + a *description* (one line other agents see in `agents_list`). Duties are operator-written files (an open set) with a few seeds. Stored on the console, like the console name. At most one **lead** per fence; the lead is the first to get the stall letter, and after the deadline it goes to the operator. No permissions per duty in v1: the charter asks, the existing guard enforces. Analog in the studied framework: modes + subagent description. CONTEXT.md updated (Duty). |
 | G10a | Owner of fence membership | **The daemon.** The rule `fenceMembership` (the fence that holds the window's centre; fences never overlap) moves from `wb-geometry.ts` to Rust in the desk; the browser reads membership and does not compute it. One fact, one owner (ARCHITECTURE §7). Needs a row in the §7 fact index. **Corrected in ADR-0076 D2:** the browser keeps the same rule for gestures on rects not yet stored (about twelve uses), both copies held by one shared fixture; squad decisions read only the daemon. Open side finding: Claude consoles can already message each other through the vendor's own `SendMessage` by display name, outside the fence; decide later whether to accept it or turn it off for squad consoles. |
 | G10 | Identity and authority of `ralphy mcp` | **A console token**, anchored on `DeskRecord.id`, put in the agent's env next to `RALPHY_STATUS_FILE` by `spec_with_status`, with the MCP config written next to `<id>.settings.json`. It opens only the squad tools (`agents_list` of its fence, `message_send` inside the fence, `inbox_read`, `ask_human`): no workbench verb, no daemon token, no PTY operation tool. The daemon sets the `from` of every letter. Scope is checked against the daemon's membership (G10a) on every desk change; the token dies with the session. Squad routes always need the console token, even on loopback (identity, not only access). Only consoles inside a fence get `ralphy mcp`; runs do not in v1. ADR-0072 amendment: a new zone (an agent in a squad: its letters are untrusted for the receiver) and a D7 exception (a console-scoped token is given to the agent by design). |
 | G11 | The attention list | **Derived in the daemon**, not stored. An item lives while its source says so; only an `ask_human` item is kept until it is answered or its console closes. v1 sources: a console agent `waiting`, a run agent `waiting`, a fence `stalled`, an `ask_human`. Forge sources (human blockers, escalate, verify failed) come in v2. Surfaces: an area in the workbench, plus a browser notification (opt-in) when the tab is hidden. Telegram unchanged. **The run (unattended) side does not change:** no answer path into a run, no new guard rule. Answering is a squad (supervised) feature only. |
 | G12 | How the human answers a squad agent | `ask_human` items carry the answer (option buttons + free text); the answer becomes a letter with a doorbell (G7); it works from a phone or tablet with no terminal. A vendor-native wait (permission menu, a TUI question) gets a "go to the console" button that focuses the console and asks for the writer slot; no remote typing into a TUI menu in v1. The base squad charter tells every agent to ask through `ask_human`, not on the screen. Answers from outside the workbench (Telegram): v2. The parked PTY operation tool is what could later answer native menus from the item. |
 | G13 | Vendors in the squad | **v1: Claude only, end to end** (two Claudes in a fence: duties, letters, `ask_human`, `stalled`), because only Claude has state hooks, which make the doorbell safe and `stalled` reliable. Every next vendor is one issue with a squad checklist: **S1** MCP config at launch, **S2** duty charter at launch, **S3** state hooks, **S4** doorbell point; the vendor list stays in the ADR-0040 inventory. A vendor with S1+S2 but not S3/S4 may join as an explicit **letter-only member** (no doorbell, state `can't tell`). Order after Claude: Codex, then Gemini, each after a research spike that answers S1–S4 with evidence. **Revised by the operator: v1 = Claude, Codex and OpenCode** (see 12e). |
-| G14 | Claude's own `SendMessage` | **Turned off only for consoles inside a fence**, by adding it to the deny list of the per-console settings file the daemon already writes. Outside any fence nothing changes. Reason: inside a squad there is one way to talk, or the fence scope, the budget, the timeline and `stalled` stop being true. Not chosen: an allowlist (Mastra's way; it would take tools from the operator in an interactive console) and a bridge that turns `SendMessage` into letters (depends on vendor internals). Known risk, written down: two agents can still talk through files. To verify: `SendMessage` can be denied by settings on the installed Claude version. **Revised after 12c/12e (operator agreed): one channel, Ralphy's letters, for all three v1 vendors.** Inside a fence a PreToolUse hook denies Claude's `SendMessage` when the target is another session ("use message_send"); messages to Claude's own subagents still work. If the spike shows the tool input cannot tell a session from a subagent, deny all `SendMessage` inside a fence. Reason: Codex and OpenCode have no native peer messaging, so the Ralphy channel exists anyway; two channels would split the timeline and blind `stalled`. CONTEXT.md updated (Letter, Doorbell, Attention request). |
+| G14 | Claude's own `SendMessage` | **Turned off only for consoles inside a fence**, by adding it to the deny list of the per-console settings file the daemon already writes. Outside any fence nothing changes. Reason: inside a squad there is one way to talk, or the fence scope, the budget, the timeline and `stalled` stop being true. Not chosen: an allowlist (the studied framework's way; it would take tools from the operator in an interactive console) and a bridge that turns `SendMessage` into letters (depends on vendor internals). Known risk, written down: two agents can still talk through files. To verify: `SendMessage` can be denied by settings on the installed Claude version. **Revised after 12c/12e (operator agreed): one channel, Ralphy's letters, for all three v1 vendors.** Inside a fence a PreToolUse hook denies Claude's `SendMessage` when the target is another session ("use message_send"); messages to Claude's own subagents still work. If the spike shows the tool input cannot tell a session from a subagent, deny all `SendMessage` inside a fence. Reason: Codex and OpenCode have no native peer messaging, so the Ralphy channel exists anyway; two channels would split the timeline and blind `stalled`. CONTEXT.md updated (Letter, Doorbell, Attention request). |
 | G16 | Delivery order | **S0** fact spikes (report only) → **ADR "Squads"** (G6–G15, member lifecycle, back doors stated, amendments to ADR-0051 and ADR-0072, ARCHITECTURE §7 and §9 rows) → **E1** daemon owns fence membership → **E2** attention list v1 + opt-in browser notification → **E3** state fold with two source kinds (hook file, event stream) + Codex hooks + OpenCode SSE + Claude `Notification` → **E4** duty and charter at launch → **E5** daemon MCP endpoint + console token + `agents_list` + Launching/Joined/Degraded → **E6** letters (JSONL) + doorbell per vendor + `SendMessage` denied between sessions in a fence (first visible milestone) → **E7** `ask_human` → **E8** deadlines, `stalled`, lead first → **E9** PTY tool for free consoles → **E10** resume the vendor session on relaunch. Inside E3, E5, E6: **Claude → OpenCode → Codex**. Each step brings its fake agent (Rust helper binary); real vendors get a live checklist. Parallel track: review gate (G3), then checkout per run (G5). Out of v1: answering native permission prompts from the item, cost per squad, two-way Telegram. |
 | G15 | The console operation tool (send to a PTY, read it) | **Only for free consoles** (shell, command, htop, a REPL) **in the same fence**, with the console token. Agent consoles are reached only by letters (G7). Visible (live typing, an "operated by …" mark, take back control), waits if the operator typed in the last N seconds, recorded in the audit log apart from operator input. Reading: v1 `read_output` (plain text from the existing 256 KiB ring); later `read_screen` (needs a terminal emulator in the daemon). Comes after the squad core. |
 
@@ -591,7 +593,7 @@ Options:
 
 Recommendation: **JSONL now**, with rotation and caps (ADR-0072 D11). SQLite
 through the existing `rusqlite` is the recorded upgrade when a real query need
-appears (search across timelines, the control plane). Not libSQL. Mastra uses
+appears (search across timelines, the control plane). Not libSQL. The studied framework uses
 libSQL/Postgres because it is a library for multi-instance servers with
 threads, semantic recall and a notification inbox; Ralphy's daemon is one
 process per OS account.
@@ -648,39 +650,39 @@ Readings:
   fence scope is a guarantee of **Ralphy's** channel, not an OS sandbox. The
   ADR must say so.
 
-### How Mastra handles communication and lifecycle with these agents [docs]
+### How the studied framework handles communication and lifecycle with these agents [docs]
 
 - **Shape: hub and spokes.** An outside agent (ACP: OpenCode, Gemini, Cline;
-  SDK: Claude Agent SDK, Cursor, OpenAI) is a **child of a Mastra parent**,
+  SDK: Claude Agent SDK, Cursor, OpenAI) is a **child of a framework parent**,
   called as a subagent or a tool: prompt in, stream out. Outside agents never
   talk to each other; every exchange goes through the parent. Codex is not
-  covered (no package; not in Mastra's ACP list).
+  covered (no package; not in the framework's ACP list).
 - **Lifecycle:** lazy spawn on first use; `persistSession: true` (default)
   keeps the process and its context across calls, `false` = one process per
   prompt; SDK agents resume by the vendor's own id (`sessionId`,
   `previousResponseId`). Stop, crash, restart, timeouts and concurrent calls
   are **not documented**.
-- **Permissions:** by default `@mastra/acp` **picks the first option the agent
+- **Permissions:** by default its ACP package **picks the first option the agent
   offers** (that is, it usually approves); a callback can override.
 - **Human:** outside agents are headless; the human sees them through
-  Mastra's own surfaces (Studio, AgentController sessions), never in the
+  the framework's own surfaces (its UI and its session controller), never in the
   vendor's TUI.
-- **Mastra as an ACP server** (`mastracode --acp`): `session/new`, prompt,
+- **The framework as an ACP server** (its coding agent run with `--acp`): `session/new`, prompt,
   `session/cancel`; no session load; close = close stdin; modes and models
   through `session/set_config_option`.
 
 Comparison:
 
-| | Mastra | Ralphy desk (squad) |
+| | Studied framework | Ralphy desk (squad) |
 |---|---|---|
 | Topology | tree: LLM parent → vendor children | mesh of peers inside a fence, under the operator |
 | Who owns the process | the parent, lazily | the daemon (PTY), started by the operator |
-| Human view | Mastra UI; vendor TUI hidden | the vendor's own TUI, live |
+| Human view | the framework's UI; vendor TUI hidden | the vendor's own TUI, live |
 | Message path | prompt and stream through the parent | letters through the daemon; nudges per vendor |
 | Lifecycle docs | spawn and persist only | must define: launch, join, leave, relaunch, end |
 | Permissions | auto-pick first option by default | the vendor's own prompt, seen by the operator |
 
-What to take from Mastra: **a session that persists across prompts** and
+What to take from the studied framework: **a session that persists across prompts** and
 **resume by the vendor's id** (Ralphy lacks console resume, gap 3 of 12c).
 What not to take: auto-approval by default, and the parent-only topology (G6
 chose a mesh).
