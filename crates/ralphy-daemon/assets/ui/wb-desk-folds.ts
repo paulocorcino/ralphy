@@ -358,3 +358,22 @@ export function nextFenceName(existing: readonly { name?: string }[]) {
   }, 0);
   return `Fence ${highest + 1}`;
 }
+
+// The cap rule of every record list: a list at its cap is full. One rule for
+// the refusal before a record is born (`atNoteCap`, `atDeskCap`) and for
+// `addNote`.
+export function atCap(list: readonly unknown[], cap: number) {
+  return list.length >= cap;
+}
+
+// The card list with one more card at the end, or `null` when the list is at
+// its cap: the cap refuses, it never evicts. Pure; the caller writes the
+// result through `saveNotes`.
+export function addNote(list: readonly DeskNote[], note: DeskNote, cap: number) {
+  return atCap(list, cap) ? null : list.concat([note]);
+}
+
+// The card list without the card `id`, in the same order.
+export function removeNote(list: readonly DeskNote[], id: string) {
+  return list.filter((n) => n.id !== id);
+}

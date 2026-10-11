@@ -87,8 +87,9 @@ const WB_CONSOLE_TS_LINES: usize = 2159;
 /// its first cut (#623); 2835 since the cards take the console as a typed dep
 /// (#623); 2839 since they take the door for operator messages as a dep
 /// (#623); 2848 since they take the document's z stack and gestures as deps
-/// (#623).
-const WB_NOTES_TS_LINES: usize = 2848;
+/// (#623); 2833 since the add, remove and cap rules of the cards are folds in
+/// `wb-desk-folds.ts` (#623).
+const WB_NOTES_TS_LINES: usize = 2833;
 
 /// Uses of the name `WBConsole` in the code of `wb-notes.ts`: 49 at 823cc84c,
 /// when the cards reached the console through `window.WBConsole`. 0 since the
@@ -103,7 +104,9 @@ const NOTES_CONSOLE_REACH: usize = 0;
 /// 11 since `focusWin`, `stackWin` and `inGesture` are the document's z stack
 /// and gestures, `deps.stack` and `deps.gestures`, and the drag folds and the
 /// dormancy constants are imported from their own modules (#623).
-const CARD_HOST_NAMES: usize = 11;
+/// 9 since `atNoteCap` and `NOTE_MAX` are the cap fold and the constant of
+/// `wb-desk-folds.ts` (#623).
+const CARD_HOST_NAMES: usize = 9;
 
 /// `(module, count)` of every use of `_flashAction`, a private member of
 /// `shell()`, in a `wb-*.ts` module: a call, or a name in a component's

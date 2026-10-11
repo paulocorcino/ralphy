@@ -17,6 +17,7 @@
 // there is (#339).
 import { WBFail } from "./wb-fail.ts";
 import { WBGeometry } from "./wb-geometry.ts";
+import { addNote, removeNote, NOTE_MAX } from "./wb-desk-folds.ts";
 import { sendDocument } from "./wb-events.ts";
 import { DORMANT_AFTER_MS, DORMANT_MARGIN_PX } from "./wb-console-gpu.ts";
 import { dragThreshold, dragBegins } from "./wb-console-input.ts";
@@ -1136,9 +1137,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
           // the shell says so; keeping it would put an editor over bytes and
           // the first autosave would overwrite them.
           if (reason === "not a note") {
-            consoleHost?.saveNotes(
-              (consoleHost?.notes() || []).filter((n) => n.id !== record.id),
-            );
+            consoleHost?.saveNotes(removeNote(consoleHost?.notes() || [], record.id));
             render();
             sendDocument(document, "workbench:open-request", {
               project: record.repo!,
@@ -1801,23 +1800,13 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
 
   // ---- creating, closing, rendering ---------------------------------------------
 
-  // A new note (ADR-0064 §9): no dialog. The card lands in the middle of the
-  // view with an empty editor and a default directory in its footer, and NO
-  // file — the first autosave names it, so a note nobody typed into is never
-  // written.
-  function create({ repo, checkout, viewport, offset }: NewNote = {}) {
-    if (!repo) return null;
-    // The cap refuses, it does not evict (see `saveNotes`).
-    if (consoleHost?.atNoteCap?.()) {
-      messages?.toast({ text: `You can have at most ${consoleHost?.NOTE_MAX} notes. Close one first.` });
-      return null;
-    }
+  // One rule for both ways a card is born: the cap refuses, it does not evict
+  // (see `saveNotes`); the new record lands at the end of the desk's list.
+  function addCard(fields: { repo: string; checkout: string | null; path: string }, { viewport, offset }: NewNote) {
     const records = consoleHost?.notes?.() || [];
     const record = {
       id: `note-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-      repo,
-      checkout: checkout ?? null,
-      path: "",
+      ...fields,
       rect: spawnRect(
         viewport || { width: 0, height: 0 },
         offset || { left: 0, top: 0 },
@@ -1827,8 +1816,25 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
       locked: false,
       ts: Date.now(),
     };
-    consoleHost?.saveNotes(records.concat([record]));
+    const next = addNote(records, record, NOTE_MAX);
+    if (!next) {
+      messages?.toast({ text: `You can have at most ${NOTE_MAX} notes. Close one first.` });
+      return null;
+    }
+    consoleHost?.saveNotes(next);
     render();
+    return record;
+  }
+
+  // A new note (ADR-0064 §9): no dialog. The card lands in the middle of the
+  // view with an empty editor and a default directory in its footer, and NO
+  // file — the first autosave names it, so a note nobody typed into is never
+  // written.
+  function create(where: NewNote = {}) {
+    const { repo, checkout } = where;
+    if (!repo) return null;
+    const record = addCard({ repo, checkout: checkout ?? null, path: "" }, where);
+    if (!record) return null;
     const el = cardEl(record.id);
     if (el) {
       stack?.focusWin(el);
@@ -1861,7 +1867,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
       // its first save, and the path the undo must restore is the one that
       // save just chose — the pre-flush snapshot aims at nothing.
       const saved = recordOf(id) || record;
-      consoleHost?.saveNotes((consoleHost?.notes() || []).filter((n) => n.id !== id));
+      consoleHost?.saveNotes(removeNote(consoleHost?.notes() || [], record.id));
       render();
       messages?.toast({
         // The path IS the sentence: "note closed · <path> kept" said the same
@@ -2666,9 +2672,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
           // The record goes without a toast: an undo that cannot put the file
           // back would be a lie.
           el._noteDirty = false;
-          consoleHost?.saveNotes(
-            (consoleHost?.notes() || []).filter((n) => n.id !== record.id),
-          );
+          consoleHost?.saveNotes(removeNote(consoleHost?.notes() || [], record.id));
           render();
         })
         .catch((err: Error) => paintState(el, WBFail.cause({ message: err?.message }, "The daemon did not answer.")));
@@ -2688,27 +2692,8 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
       (n) => n.repo === repo && (n.checkout ?? null) === tree && n.path === path,
     );
     if (already) return window.WBNotes.jump(already.id);
-    if (consoleHost?.atNoteCap?.()) {
-      messages?.toast({ text: `You can have at most ${consoleHost?.NOTE_MAX} notes. Close one first.` });
-      return null;
-    }
-    const records = consoleHost?.notes?.() || [];
-    const record = {
-      id: `note-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-      repo,
-      checkout: tree,
-      path,
-      rect: spawnRect(
-        viewport || { width: 0, height: 0 },
-        offset || { left: 0, top: 0 },
-        records.length,
-        consoleHost?.fenceRecords?.() || [],
-      ),
-      locked: false,
-      ts: Date.now(),
-    };
-    consoleHost?.saveNotes(records.concat([record]));
-    render();
+    const record = addCard({ repo, checkout: tree, path }, { viewport, offset });
+    if (!record) return null;
     return window.WBNotes.jump(record.id);
   }
 

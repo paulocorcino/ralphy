@@ -8,6 +8,8 @@ import { WBColumns } from "../assets/ui/wb-columns.ts";
 import { WBGeometry } from "../assets/ui/wb-geometry.ts";
 import {
   DETACH_MAX,
+  addNote,
+  atCap,
   columnClasses,
   detachFold,
   fenceCycle,
@@ -20,6 +22,7 @@ import {
   placeholderSession,
   popupMatches,
   reconcileDesk,
+  removeNote,
 } from "../assets/ui/wb-desk-folds.ts";
 
 const { fenceSpawnRect } = WBGeometry;
@@ -669,4 +672,24 @@ test("reconcileDesk adopts a session under the record it names", () => {
       [7, "adopt", null],
     ],
   );
+});
+
+// One cap rule for the desk and the cards: a list at its cap refuses, it does
+// not evict, and a list under it grows at the end.
+test("addNote appends below the cap and refuses at it, leaving the list alone", () => {
+  const a = { id: "a", rect: {} };
+  const b = { id: "b", rect: {} };
+  const list = [a];
+  assert.deepEqual(addNote(list, b, 2), [a, b]);
+  assert.deepEqual(list, [a], "the input list is not changed");
+  assert.equal(addNote([a, b], { id: "c", rect: {} }, 2), null);
+  assert.equal(atCap([a], 1), true);
+  assert.equal(atCap([], 1), false);
+});
+
+test("removeNote drops the card with the id and keeps the order of the rest", () => {
+  const list = [{ id: "a" }, { id: "b" }, { id: "c" }];
+  assert.deepEqual(removeNote(list, "b").map((n) => n.id), ["a", "c"]);
+  assert.deepEqual(removeNote(list, "zz").map((n) => n.id), ["a", "b", "c"]);
+  assert.equal(list.length, 3, "the input list is not changed");
 });

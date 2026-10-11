@@ -359,8 +359,6 @@ export type CardHost = Pick<
   | "notes"
   | "saveNotes"
   | "fenceRecords"
-  | "atNoteCap"
-  | "NOTE_MAX"
   | "restoreRect"
   | "startResize"
   | "makeDraggable"
