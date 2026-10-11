@@ -21,6 +21,7 @@ import "./wb-desk-detach.test.mjs";
 import "./wb-stage-fences.test.mjs";
 import "./wb-console-gpu.test.mjs";
 import "./wb-console-input.test.mjs";
+import "./wb-console-keys.test.mjs";
 import "./wb-console-name.test.mjs";
 import "./wb-desk-popups.test.mjs";
 import "./wb-console-session.test.mjs";

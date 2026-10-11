@@ -85,7 +85,7 @@ export type TerminalDeps = {
   workspace: () => HTMLElement | null;
   // Stops a jump of the viewport in flight: a two-finger pan outranks it.
   cancelSlide: () => void;
-  // The system clipboard. They stay in the console: the key bar uses them too.
+  // The system clipboard. They are made in `wb-console-keys.ts`: the key bar uses them too.
   writeClipboard: (text: string, term: XtermTerminal) => void;
   readClipboard: () => Promise<ClipboardRead>;
 };
