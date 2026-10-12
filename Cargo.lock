@@ -4178,10 +4178,12 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "proc-macro2",
  "regex",
  "semver",
  "serde",
  "serde_json",
+ "syn 2.0.117",
  "tempfile",
  "ureq",
 ]

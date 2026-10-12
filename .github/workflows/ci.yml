@@ -18,6 +18,11 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
+  # The oxlint of the `ui-tests` and `complexity` jobs. The `complexity` xtask
+  # runs the same version through npx locally, and its test
+  # `ci_installs_the_pinned_oxlint` fails when the two differ.
+  OXLINT_VERSION: "1.85.0"
+  OXLINT_SHA256: 39cb1f977613ea1c0d734590e9b9325a959a740cfec702a63df56ee04ce15cc3
 
 jobs:
   lint:
@@ -86,13 +91,8 @@ jobs:
       # The release binary, pinned by version and checksum, so the workbench
       # still needs no npm install (ADR-0057 D3). Rules: .oxlintrc.json.
       - name: UI lint (oxlint)
-        env:
-          OXLINT_VERSION: "1.85.0"
-          OXLINT_SHA256: 39cb1f977613ea1c0d734590e9b9325a959a740cfec702a63df56ee04ce15cc3
         run: |
-          curl -sSLf -o oxlint.tar.gz "https://github.com/oxc-project/oxc/releases/download/oxlint_v${OXLINT_VERSION}/oxlint-x86_64-unknown-linux-gnu.tar.gz"
-          echo "${OXLINT_SHA256}  oxlint.tar.gz" | sha256sum --check
-          tar xzf oxlint.tar.gz
+          ./.github/scripts/fetch-oxlint.sh
           ./oxlint-x86_64-unknown-linux-gnu --deny-warnings crates/ralphy-daemon/assets/ui crates/ralphy-daemon/ui-tests
 
   test:
@@ -343,3 +343,34 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref }}
         run: cargo run -q -p xtask -- oversized --base "origin/$BASE_REF"
+
+  complexity:
+    name: no function grows past its complexity limit
+    # Fails when a production function scores over 10 and docs/complexity-
+    # baseline.json does not list it, or a listed function scores higher or
+    # lower than its entry (ADR-0081). Rust is scored by its cognitive
+    # complexity, read from the source text; TypeScript by oxlint's
+    # complexity rule.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The Rust scores come from the source text, not from the compiler, so
+      # the toolchain only builds the xtask.
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        with:
+          toolchain: stable
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Download oxlint
+        run: ./.github/scripts/fetch-oxlint.sh
+
+      - name: No function over its complexity limit grows
+        run: cargo run -q -p xtask -- complexity --check --oxlint ./oxlint-x86_64-unknown-linux-gnu

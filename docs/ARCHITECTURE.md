@@ -224,6 +224,7 @@ any code, including code that does not exist yet. A behaviour test is not one.
 | Event vocabulary pinned | `every_decoder_arm_has_a_pin` |
 | Inline test module size | `crates/xtask/tests/inline_test_modules.rs` (ADR-0022 §6) |
 | No source file over its size limit grows (500 lines of code in Rust, 700 in TypeScript, test code included) | `cargo run -p xtask -- oversized --base <rev>`, which the `oversized` CI job runs on each pull request against its base branch (ADR-0022 §7) |
+| No production function over a complexity of 10 is new or grows (cognitive complexity read from the source text in Rust, oxlint `complexity` with `variant: "modified"` in TypeScript) | `cargo run -p xtask -- complexity --check`, which the `complexity` CI job runs, with `docs/complexity-baseline.json` as a ratchet by function (ADR-0081) |
 | Text a user reads cites no ADR | `crates/xtask/tests/user_text_cites_no_adr.rs`, `no_help_text_cites_an_adr` |
 | UI written voice | `cargo run -p xtask -- ui-copy --check` (ADR-0065) |
 | Changelog fragments parse | `cargo run -p xtask -- changelog --check` (ADR-0056) |
