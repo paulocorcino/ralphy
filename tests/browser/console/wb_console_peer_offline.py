@@ -268,7 +268,7 @@ def main():
             page.goto(BASE, wait_until="domcontentloaded")
             page.wait_for_function("() => !!window.WBConsole", timeout=8000)
             page.wait_for_function(
-                f"() => {SH}.fleetPeers.some(p => p.daemon_id === '{PEER_ID}' && p.state === 'unreachable')",
+                f"() => Alpine.store('projects').fleetPeers.some(p => p.daemon_id === '{PEER_ID}' && p.state === 'unreachable')",
                 timeout=20000,
             )
 
@@ -323,7 +323,7 @@ def main():
             # --- scenario 4: the peer answers again ---------------------------
             stub = start_peer_stub(peer_port)
             before = len(sockets)
-            page.evaluate(f"() => {SH}.loadRepos({{ git: false }})")
+            page.evaluate(f"() => Alpine.store('projects').loadRepos({{ git: false }})")
             wins = wait_for(
                 page,
                 lambda ws: (by_kind(ws, "agent") or {}).get("button") == "Relaunch"
@@ -352,7 +352,7 @@ def main():
                 f"win={plain}",
             )
             after = len(sockets)
-            page.evaluate(f"() => {SH}.loadRepos({{ git: false }})")
+            page.evaluate(f"() => Alpine.store('projects').loadRepos({{ git: false }})")
             page.wait_for_timeout(3000)
             check("a second fleet read launches nothing", len(sockets) == after, f"sockets={sockets[after:]}")
 

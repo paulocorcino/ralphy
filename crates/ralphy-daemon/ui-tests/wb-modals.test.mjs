@@ -1,9 +1,10 @@
 // The modals: every `.modal-scrim` in index.html takes its behavior from ONE
-// binding, `scrim()` in app.ts. These tests read each scrim's real `x-bind`
-// expression out of the document and evaluate it against a real `shell()`, so a
-// scrim that stops using the binding, or a binding that stops closing, fails
-// here. Alpine itself does not run in this harness: a test calls the binding's
-// `x-effect` where Alpine would, after a flag changes.
+// binding, `scrim()` of the Alpine store `modals` (wb-modals-store.ts). These
+// tests read each scrim's real `x-bind` expression out of the document and
+// evaluate it against a real page, so a scrim that stops using the binding, or
+// a binding that stops closing, fails here. Alpine itself does not run in this
+// harness: a test calls each function of the binding as Alpine would, with the
+// scrim's scope as `this`, and calls `x-effect` after a flag changes.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -37,7 +38,7 @@ const COMPONENTS = Array.from(HTML.matchAll(/<div [^<>]*x-data="(wb\w+)"/g), (m)
 // window listeners in. `component` is the innermost Alpine component whose
 // `x-data` element holds the scrim, or null for a scrim of `shell()`.
 const SCRIMS = Array.from(
-  HTML.matchAll(/<div class="modal-scrim" x-cloak x-bind="(scrim\('([^']+)'[^"]*)">/g),
+  HTML.matchAll(/<div class="modal-scrim" x-cloak x-bind="(\$store\.modals\.scrim\('([^']+)'[^"]*)">/g),
   (m) => ({
     expr: m[1],
     path: m[2],
@@ -72,11 +73,22 @@ const setPath = (state, path, value) => {
 // nothing. The focus test below builds a richer one.
 const bareScrim = () => ({ querySelector: () => null, querySelectorAll: () => [], contains: () => false });
 
+// The `this` Alpine gives a function of the binding: the scrim's scope, with
+// the `$el` magic.
+const withEl = (scope, $el) => new Proxy(scope, { get: (t, k) => (k === "$el" ? $el : Reflect.get(t, k)) });
+
 const bindAll = ({ scopeOf }) =>
   SCRIMS.map((s) => {
-    const b = evalIn(scopeOf(s), s.expr);
+    const scope = scopeOf(s);
+    const b = evalIn(scope, s.expr);
     const el = bareScrim();
-    return { ...s, b, effect: () => b["x-effect"].call({ $el: el }) };
+    return {
+      ...s,
+      b,
+      show: () => b["x-show"].call(scope),
+      escape: (e) => b["@keydown.escape.window"].call(scope, e),
+      effect: () => b["x-effect"].call(withEl(scope, el)),
+    };
   });
 
 // What the browser does with one Escape keydown: every scrim's window listener
@@ -85,7 +97,7 @@ const bindAll = ({ scopeOf }) =>
 const pressEscape = (bound) => {
   const event = { key: "Escape" };
   for (const s of bound) {
-    s.b["@keydown.escape.window"](event);
+    s.escape(event);
     for (const t of bound) t.effect();
   }
 };
@@ -93,16 +105,16 @@ const pressEscape = (bound) => {
 test("Escape closes every modal, Settings and Security included", () => {
   const paths = SCRIMS.map((s) => s.path);
   assert.deepEqual(paths, [
+    "planModal.open",
+    "runOpen",
     "settingsOpen",
     "securityOpen",
     "whatsNewOpen",
     "aboutOpen",
     "branchOpen",
-    "confirmModal.open",
-    "promptModal.open",
+    "$store.modals.confirmModal.open",
+    "$store.modals.promptModal.open",
     "movePick.open",
-    "planModal.open",
-    "runOpen",
     "addProject.open",
     "addHost.open",
   ]);
@@ -111,10 +123,13 @@ test("Escape closes every modal, Settings and Security included", () => {
   assert.deepEqual(
     Object.fromEntries(SCRIMS.filter((s) => s.component).map((s) => [s.path, s.component])),
     {
+      "planModal.open": "wbBoard",
+      runOpen: "wbRuns",
       settingsOpen: "wbSettingsDialog",
       securityOpen: "wbSecurityDialog",
       whatsNewOpen: "wbReleaseDialogs",
       aboutOpen: "wbReleaseDialogs",
+      branchOpen: "wbBranchDialog",
       "movePick.open": "wbMoveDialog",
       "addProject.open": "wbAddProjectDialog",
       "addHost.open": "wbHostsDialog",
@@ -128,17 +143,17 @@ test("Escape closes every modal, Settings and Security included", () => {
     const mine = bound.find((s) => s.path === path);
     setPath(view.scopeOf(scrim), path, true);
     for (const s of bound) s.effect();
-    assert.equal(mine.b["x-show"](), true, `${path}: the binding shows the open modal`);
+    assert.equal(mine.show(), true, `${path}: the binding shows the open modal`);
     pressEscape(bound);
-    assert.equal(mine.b["x-show"](), false, `${path}: Escape must close it`);
-    assert.deepEqual(state._modalStack, [], `${path}: the closed modal leaves the stack`);
+    assert.equal(mine.show(), false, `${path}: Escape must close it`);
+    assert.deepEqual(state.$store.modals._modalStack, [], `${path}: the closed modal leaves the stack`);
   }
 });
 
-// Two rows because the window asks the scrims in document order: Plan is asked
-// after the confirm, Settings before it.
+// Three rows because the window asks the scrims in document order: Plan and
+// Settings are asked before the confirm, Move after it.
 test("one Escape closes only the top modal", async () => {
-  for (const under of ["planModal.open", "settingsOpen"]) {
+  for (const under of ["planModal.open", "settingsOpen", "movePick.open"]) {
     const view = page();
     const { state } = view;
     const bound = bindAll(view);
@@ -147,13 +162,13 @@ test("one Escape closes only the top modal", async () => {
     const read = () => under.split(".").reduce((o, k) => o[k], scope);
     setPath(scope, under, true);
     for (const s of bound) s.effect();
-    const answer = state.askConfirm({ title: "Discard" });
+    const answer = state.$store.modals.askConfirm({ title: "Discard" });
     for (const s of bound) s.effect();
 
     pressEscape(bound);
     // The flag first: on a failure the promise never settles, and awaiting it
     // would stall the run instead of failing this test.
-    assert.equal(state.confirmModal.open, false, `${under}: the confirm on top is cancelled`);
+    assert.equal(state.$store.modals.confirmModal.open, false, `${under}: the confirm on top is cancelled`);
     assert.equal(await answer, false);
     assert.equal(read(), true, `${under}: the modal under it stays open`);
 
@@ -200,12 +215,13 @@ test("a modal focuses its first control on open and gives focus back on close", 
   const dialog = { contains: () => focusInside, querySelectorAll: () => controls };
   const scrimEl = { querySelector: () => dialog };
 
-  const { state } = loadShell({
+  // The run modal is the component `wbRuns`: its scope holds the flag.
+  const { scope: state } = loadComponent("wbRuns", {
     window: { requestAnimationFrame: (fn) => fn() },
     document: { activeElement: opener },
   });
-  const b = state.scrim("runOpen", () => state.closeRunModal());
-  const effect = () => b["x-effect"].call({ $el: scrimEl });
+  const b = state.$store.modals.scrim("runOpen", () => state.closeRunModal());
+  const effect = () => b["x-effect"].call(withEl(state, scrimEl));
 
   state.runOpen = true;
   effect();

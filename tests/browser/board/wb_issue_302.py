@@ -52,6 +52,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The board is the component `wbBoard` (wb-board.ts).
+BOARD = "Alpine.$data(document.querySelector('[x-data=\"wbBoard\"]'))"
 
 RAW_AT = "2026-07-23T17:21:43Z"
 BODY = "the #302 fixture body"
@@ -228,7 +230,7 @@ def main():
             cards = page.locator(".kanban-card").count()
             check("the board renders the fixture rows", cards == 3, f"got={cards}")
 
-            page.evaluate(f"() => {SH}.openIssue(72)")
+            page.evaluate(f"() => {BOARD}.openIssue(72)")
             page.wait_for_timeout(600)
             drawer = page.locator(".kanban-detail.open")
             check("clicking a card opens the detail drawer", drawer.is_visible())
@@ -271,10 +273,10 @@ def main():
             page.screenshot(path=os.path.join(SHOT_DIR, "302-issue-drawer-2026-07-25.png"))
 
             # --- scenario 5: a failed fetch is VISIBLE -------------------------
-            page.evaluate(f"() => {SH}.closeIssue()")
+            page.evaluate(f"() => {BOARD}.closeIssue()")
             page.wait_for_timeout(200)
             page.evaluate("() => { window.__showMode = 'error'; }")
-            page.evaluate(f"() => {SH}.openIssue(73)")
+            page.evaluate(f"() => {BOARD}.openIssue(73)")
             page.wait_for_timeout(700)
             err = page.locator(".kanban-detail.open .kd-error")
             shown = page.evaluate(
@@ -291,14 +293,14 @@ def main():
 
             # The banner must not outlive the failure: a good open clears it.
             page.evaluate("() => { window.__showMode = 'ok'; }")
-            page.evaluate(f"() => {SH}.closeIssue()")
+            page.evaluate(f"() => {BOARD}.closeIssue()")
             page.wait_for_timeout(200)
-            page.evaluate(f"() => {SH}.openIssue(71)")
+            page.evaluate(f"() => {BOARD}.openIssue(71)")
             page.wait_for_timeout(700)
             check(
                 "…and clears on the next successful open",
-                page.evaluate(f"() => {SH}.issueError") in (None, ""),
-                f"issueError={page.evaluate(f'() => {SH}.issueError')!r}",
+                page.evaluate(f"() => {BOARD}.issueError") in (None, ""),
+                f"issueError={page.evaluate(f'() => {BOARD}.issueError')!r}",
             )
             still = page.evaluate(
                 "() => { const e = document.querySelector('.kanban-detail.open .kd-error');"
@@ -316,17 +318,17 @@ def main():
             page.evaluate("() => { window.__showMode = 'deferError'; window.__deferred = null; }")
             # Fire-and-forget on purpose: returning the promise would make
             # `evaluate` await a load this leg deliberately leaves hanging.
-            page.evaluate(f"() => {{ {SH}.loadIssueDetail(71); }}")
+            page.evaluate(f"() => {{ {BOARD}.loadIssueDetail(71); }}")
             page.wait_for_function("() => !!window.__deferred", timeout=5000)
             page.evaluate("() => { window.__showMode = 'ok'; }")
-            page.evaluate(f"() => {{ {SH}.loadIssueDetail(71); }}")
+            page.evaluate(f"() => {{ {BOARD}.loadIssueDetail(71); }}")
             page.wait_for_timeout(500)
             page.evaluate("() => window.__deferred()")
             page.wait_for_timeout(500)
             check(
                 "a stale failed load never overwrites the newer good one",
-                page.evaluate(f"() => {SH}.issueError") in (None, ""),
-                f"issueError={page.evaluate(f'() => {SH}.issueError')!r}",
+                page.evaluate(f"() => {BOARD}.issueError") in (None, ""),
+                f"issueError={page.evaluate(f'() => {BOARD}.issueError')!r}",
             )
             body_txt = page.locator(".kanban-detail.open .kd-body").inner_text().strip()
             check("…and the drawer keeps its body", BODY in body_txt, f"got={body_txt[:60]!r}")

@@ -13,6 +13,7 @@ import { WBFail } from "./wb-fail.ts";
 import { socketFrame } from "./wb-api.ts";
 import { WBProject } from "./wb-project.ts";
 import { WBRun } from "./wb-runs.ts";
+import { sendWindow } from "./wb-events.ts";
 import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
 import type { Messages } from "./wb-messages.ts";
 
@@ -490,9 +491,9 @@ export function createDaemon(window: Window, document: Document, location: Locat
       } else if (WBFail.isError(s)) {
         const msg = WBFail.failed(s, "Could not start: the daemon gave no reason.");
         messages.flash(msg);
-        window.getShell()?.runVerbFailed?.(msg);
+        sendWindow(window, "workbench:run-verb-failed", { message: msg });
       } else if (s.status === "exited") {
-        window.getShell()?.runVerbFailed?.(WBRun.exitNote(verb, s.code, finalLine()));
+        sendWindow(window, "workbench:run-verb-failed", { message: WBRun.exitNote(verb, s.code, finalLine()) });
       }
     });
   });

@@ -643,13 +643,16 @@ mod tests {
     #[test]
     fn app_js_holds_no_vendor_list() {
         let js = include_str!("../assets/ui/app.ts");
+        // The roster and its read live in the Alpine store `projects` (#621).
+        let store = include_str!("../assets/ui/wb-projects-store.ts");
         let api_js = include_str!("../assets/ui/wb-api.ts");
 
-        // Non-vacuous first: app.ts reads the roster route, which the route
+        // Non-vacuous first: the store reads the roster route, which the route
         // list of `wb-api.ts` declares.
         assert!(
-            js.contains("apiFetch(\"GET /api/agents\"") && api_js.contains("\"GET /api/agents\": "),
-            "app.ts must render the menu from the daemon's roster endpoint"
+            store.contains("apiFetch(\"GET /api/agents\"")
+                && api_js.contains("\"GET /api/agents\": "),
+            "the store `projects` must render the menu from the daemon's roster endpoint"
         );
 
         // The `agents` binding survives (the run dialog's pickers bind it) but it
@@ -658,20 +661,20 @@ mod tests {
         // be UNIQUE — a second, populated `agents: [ … ]` further down would
         // otherwise leave this first (empty) one answering for it.
         assert_eq!(
-            js.matches(" agents: [").count(),
+            store.matches(" agents: [").count(),
             1,
-            "app.ts must declare exactly one `agents: [` literal"
+            "the store `projects` must declare exactly one `agents: [` literal"
         );
-        let start = js
+        let start = store
             .find(" agents: [")
-            .expect("app.ts no longer declares `agents: [`");
-        let rest = &js[start + " agents: [".len()..];
+            .expect("the store `projects` no longer declares `agents: [`");
+        let rest = &store[start + " agents: [".len()..];
         let end = rest
             .find(']')
-            .expect("app.ts's `agents: [` is never closed");
+            .expect("the store's `agents: [` is never closed");
         assert!(
             rest[..end].trim().is_empty(),
-            "app.ts's `agents:` must stay an empty literal; found: {:?}",
+            "the store's `agents:` must stay an empty literal; found: {:?}",
             &rest[..end]
         );
 
@@ -702,6 +705,10 @@ mod tests {
         assert!(
             named_non_default_vendors(js).is_empty(),
             "app.ts must hold no non-default vendor names"
+        );
+        assert!(
+            named_non_default_vendors(store).is_empty(),
+            "the store `projects` must hold no non-default vendor names"
         );
         assert_eq!(
             named_non_default_vendors(r#"agents: [{ id: "codex" }]"#),

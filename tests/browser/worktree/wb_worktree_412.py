@@ -65,6 +65,10 @@ CHILD = os.path.join(TARGET, "session_test_child.exe" if os.name == "nt" else "s
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = "412-worktree-switch-2026-09-15" + ("" if os.name == "nt" else "-linux") + ".png"
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The branch dialog is the component `wbBranchDialog` (wb-branch-dialog.ts).
+BRANCH = "Alpine.$data(document.querySelector('[x-data=\"wbBranchDialog\"]'))"
+# The selected checkouts are the Alpine store `checkouts` (wb-checkouts-store.ts).
+CHECKOUTS = "Alpine.store('checkouts')"
 # The Consoles tab's menus and the columns are Alpine components of their
 # own (wb-consoles-tab.ts): a check reads them through their root.
 MENUS = "Alpine.$data(document.querySelector('[x-data=\"wbConsoleMenus\"]'))"
@@ -232,12 +236,12 @@ def open_project(page, slug):
 
 def open_picker(page, slug):
     open_project(page, slug)
-    if not page.evaluate(f"() => {SH}.branchOpen === true"):
+    if not page.evaluate(f"() => {BRANCH}.branchOpen === true"):
         page.evaluate("() => document.querySelector('li.project.open .project-head .branch-chip').click()")
-    page.wait_for_function(f"() => {SH}.branchOpen === true", timeout=10000)
+    page.wait_for_function(f"() => {BRANCH}.branchOpen === true", timeout=10000)
     # The listing arrives by round trip: gate on the reply having landed, not
     # on the modal being open (an open modal samples an empty section).
-    page.wait_for_function(f"() => {SH}.branchModal.checkouts !== null", timeout=15000)
+    page.wait_for_function(f"() => {BRANCH}.branchModal.checkouts !== null", timeout=15000)
 
 
 
@@ -245,14 +249,14 @@ def open_picker(page, slug):
 def wait_settled(page):
     """`removing` is cleared only after the `loadWorktrees` re-read landed, so
     this is the value to gate on before anyone counts rows (#405 trap)."""
-    page.wait_for_function(f"() => {SH}.branchModal.removing === null", timeout=15000)
+    page.wait_for_function(f"() => {BRANCH}.branchModal.removing === null", timeout=15000)
 
 
 def refusal(page):
     """Wait for `branchError` to land AND the re-read to settle."""
-    page.wait_for_function(f"() => {SH}.branchError !== ''", timeout=15000)
+    page.wait_for_function(f"() => {CHECKOUTS}.branchError !== ''", timeout=15000)
     wait_settled(page)
-    return {"err": page.evaluate(f"() => {SH}.branchError"), "shown": page.evaluate(SHOWN_ERROR)}
+    return {"err": page.evaluate(f"() => {CHECKOUTS}.branchError"), "shown": page.evaluate(SHOWN_ERROR)}
 
 
 def type_name_and_enter(page, name):
@@ -387,12 +391,12 @@ def main():
             check("the wt-a directory exists", wt.is_dir(), str(wt))
             # The console module reads the listing once per repo; the shell's
             # own re-read (a picker open) is what refreshes it.
-            page.evaluate(f"(s) => {SH}.ensureWorktreeListing(s, true)", arg=slug)
+            page.evaluate(f"(s) => {CHECKOUTS}.ensureWorktreeListing(s, true)", arg=slug)
             page.wait_for_function(
-                f"() => {{ const l = {SH}.worktreeListings; const k = Object.keys(l)[0]; return !!k && (l[k]?.worktrees || []).length === 1; }}",
+                f"() => {{ const l = {CHECKOUTS}.worktreeListings; const k = Object.keys(l)[0]; return !!k && (l[k]?.worktrees || []).length === 1; }}",
                 timeout=15000,
             )
-            check("the Files selection is unset", page.evaluate(f"(s) => {SH}.checkoutOf(s) === null", arg=slug))
+            check("the Files selection is unset", page.evaluate(f"(s) => {CHECKOUTS}.checkoutOf(s) === null", arg=slug))
 
             # --- scenario 4: the menu ---------------------------------------------
             page.evaluate(f"() => ({SWITCHER})().click()")
@@ -442,7 +446,7 @@ def main():
             check("the record reads checkout wt-a", bool(recs) and recs[0].get("checkout") == "wt-a", f"got={recs!r}")
             rows = sessions()
             check("the daemon runs ONE session, in wt-a — the moved one was closed", len(rows) == 1 and rows[0].get("checkout") == "wt-a", f"rows={rows!r}")
-            check("the Files selection is STILL unset", page.evaluate(f"(s) => {SH}.checkoutOf(s) === null", arg=slug))
+            check("the Files selection is STILL unset", page.evaluate(f"(s) => {CHECKOUTS}.checkoutOf(s) === null", arg=slug))
             text = page.evaluate(SWITCHER_TEXT)
             check("the switcher now reads wt-a", (text or "").strip() == "wt-a", f"got={text!r}")
             page.evaluate(f"() => ({SWITCHER})().click()")

@@ -62,6 +62,7 @@ EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt"
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "358-spend-2026-07-31.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
 
 results = []
 
@@ -338,7 +339,7 @@ def main():
                 "() => [...document.querySelectorAll('.rail button')]"
                 "  .find(b => (b.getAttribute('title') || '').startsWith('Spend')).click()"
             )
-            page.wait_for_function(f"() => {SH}.active === 'spend'", timeout=10000)
+            page.wait_for_function(f"() => {TABS}.active === 'spend'", timeout=10000)
             titles = page.evaluate(TAB_TITLES)
             check(
                 "…and clicking it opens a Spend tab AFTER the fixed Consoles tab",
@@ -347,7 +348,7 @@ def main():
             )
             check(
                 "…which is closable, unlike Consoles (ADR-0037 §3, amended)",
-                page.evaluate(f"() => {SH}.tabs.map(t => t.closable)")[:2] == [False, True],
+                page.evaluate(f"() => {TABS}.tabs.map(t => t.closable)")[:2] == [False, True],
             )
 
             # --- scenario b · the empty state ---------------------------------
@@ -580,11 +581,11 @@ def main():
             print(f"[INFO] screenshot {SHOT}", flush=True)
 
             # --- the tab behaves like a tab -----------------------------------
-            page.evaluate(f"() => {SH}.closeTab('spend')")
+            page.evaluate(f"() => {TABS}.closeTab('spend')")
             titles = page.evaluate(TAB_TITLES)
             check(
                 "closing the Spend tab leaves the Consoles tab alone",
-                titles == ["Consoles"] and page.evaluate(f"() => {SH}.active") == "consoles",
+                titles == ["Consoles"] and page.evaluate(f"() => {TABS}.active") == "consoles",
                 "titles={}".format(titles),
             )
 

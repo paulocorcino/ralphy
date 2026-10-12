@@ -62,6 +62,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The board is the component `wbBoard` (wb-board.ts).
+BOARD = "Alpine.$data(document.querySelector('[x-data=\"wbBoard\"]'))"
 
 results = []
 
@@ -244,7 +246,7 @@ def open_drawer(page, slug, number):
     if not page.evaluate(f"() => {SH}.kanbanOpen"):
         page.evaluate(f"() => {SH}.toggleKanban()")
     page.wait_for_timeout(500)
-    page.evaluate(f"() => {SH}.openIssue({number})")
+    page.evaluate(f"() => {BOARD}.openIssue({number})")
     page.wait_for_selector(".kanban-detail.open", timeout=8000)
     page.wait_for_timeout(400)
 
@@ -303,7 +305,7 @@ def main():
             # --- scenario 2: opened from the bottom of a scrolled drawer ------
             # The case that clipped: the row sits low, and an absolute menu
             # dropped straight through `.kanban-detail`'s hidden overflow.
-            page.evaluate(f"() => {SH}.labelMenuOpen = false")
+            page.evaluate(f"() => {BOARD}.labelMenuOpen = false")
             page.wait_for_timeout(200)
             page.evaluate("() => { const i = document.querySelector('.kd-inner'); i.scrollTop = i.scrollHeight; }")
             page.wait_for_timeout(300)
@@ -340,10 +342,10 @@ def main():
                 "() => { window.__runs = [{ runid: '01LOCKHOLDER', face: '🦊', agent: 'codex',"
                 " phase: 'executing', active: 72, issues: [], completed: 0, queueTotal: 1 }]; }"
             )
-            page.evaluate(f"() => {SH}.hydrateRuns()")
-            page.wait_for_function(f"() => {SH}.labelsLocked() === true", timeout=8000)
+            page.evaluate(f"() => Alpine.store('runs').hydrateRuns()")
+            page.wait_for_function(f"() => {BOARD}.labelsLocked() === true", timeout=8000)
             page.wait_for_timeout(300)
-            reason = page.evaluate(f"() => {SH}.labelLockReason()")
+            reason = page.evaluate(f"() => {BOARD}.labelLockReason()")
             check(
                 "the reason names the lock AND what it closed",
                 "A run is active in this project" in reason and "edit labels again" in reason,

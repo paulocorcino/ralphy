@@ -644,3 +644,103 @@ returned object. Ten workbench modules have more than 700 lines: `app.ts`
    operator sees a **checkout** as a "worktree", but the term is
    **checkout**, so the module is `wb-console-checkout.ts`, not
    `wb-console-worktree.ts`.
+
+## Amendment (2026-10-11): the shell keeps the side panel; five Alpine stores take the shared facts
+
+Issue #621 (a part of #605) closes `app.ts` and the rest of `wb-console.ts`.
+This amendment records where `shell()` stops, the parts that take the rest,
+and the guard the pins need, before any code moves. It was measured on
+`6408f3c0`: `app.ts` has 4,209 lines, and `shell()` is one object literal of
+394 members. Ten Alpine components and one Alpine store (`projects`) are
+registered in `main.ts`. `wb-console.ts` has 950 lines, and 168 of them are
+the returned object. Without decision 3, `app.ts` stops near 850 lines.
+
+1. **`shell()` keeps the side panel, and an `init()` that starts only what is
+   still its own.** The side panel is `toggle`, the project rows (`rowTitle`,
+   `dotTitle`), `sideOpen`, `sideView`, `filteredProjects`, `toggleRuns` and
+   `toggleKanban`. Each other part of `init()` moves into the `init()` of its
+   new owner, in the same order relative to the others. This narrows decision
+   1 of the 2026-10-09 amendment again: the canvas tabs and the slot leave
+   `shell()` too (decision 3). `app.ts` ends near 500 lines.
+
+2. **The new parts.** Each name was checked against CONTEXT.md. A part is an
+   Alpine component when one region of the page shows it and nothing else
+   reads its state. It is an Alpine store when parts in two or more regions,
+   or code outside Alpine, read it (D6).
+
+   | Module | Kind | Alpine name | What it owns |
+   |---|---|---|---|
+   | `wb-console-api.ts` | function | - | `buildConsoleApi(parts)`: the `WBConsole` object. |
+   | `wb-runs-store.ts` | Alpine store | `runs` | The runs of each project, their read state, the current run and the runs subscription. The runs panel, the board and the shell read them, so they are a store. |
+   | `wb-runs-panel.ts` | component | `wbRuns` | The runs panel, the plan section, the run modal and the raw feed. One region shows them. |
+   | `wb-board.ts` | component | `wbBoard` | The board, the issue view, the label menu and the plan modal. One region shows them. |
+   | `wb-changes-panel.ts` | component | `wbChanges` | The changes, the sync, the commit and the rows. One region shows them. |
+   | `wb-branch-dialog.ts` | component | `wbBranchDialog` | The branch modal, the branch switch and create, and the worktree remove. One dialog shows them. |
+   | `wb-checkouts-store.ts` | Alpine store | `checkouts` | The **checkout** of each project and the worktree listings. The files pane, the canvas tabs, the branch dialog and the consoles read them, so they are a store. |
+   | `wb-spend-panel.ts` | component | `wbSpend` | The spend and Ledger panes. One region shows them. |
+   | `wb-connection-store.ts` | Alpine store | `connection` | The login session, auth, the sockets, presence, the heartbeat, the uptime, the identity, the page build, the build skew and the write locks. Every part reads them, so they are a store. |
+   | `wb-projects-store.ts` (grows) | Alpine store | `projects` | Adds the fleet, the repos, the agents and the live sessions to the open project. The side panel, the dialogs and the files pane read them. |
+   | `wb-account.ts` | component | `wbAccount` | The account menu, the release badge and the security fact. One menu shows them. |
+   | `wb-login.ts` | component | `wbLogin` | The login gate and the TOTP boxes. One region shows them. |
+   | `wb-modals-store.ts` | Alpine store | `modals` | The modal stack, the confirm, the prompt and the flash line. Every part asks it, and the message door draws through it, so it is a store. |
+   | `wb-tabs-store.ts` | Alpine store | `tabs` | The canvas tabs, the slot, the split and the tab menu (decision 3). |
+   | `wb-wire.ts`, `wb-icon.ts` | functions | - | `wire()` and the icon directive (decision 5). |
+
+3. **The canvas tabs, the slot and the split become the Alpine store `tabs`,
+   with one writer.** The tab operations (`openTab`, `openDiff`, `activate`,
+   `repathTabs`, `syncViewer`, `detachFile`) move with them. This replaces
+   decision 2 of the 2026-10-08 amendment and the part of decision 1 of the
+   2026-10-09 amendment that kept the canvas tabs, the slot and the tab
+   operations in `shell()` (Paulo, 2026-10-11). The file pane, the spend
+   panel, the consoles and the window bridge read them, so they are a store,
+   not layout in `shell()`.
+
+4. **An Alpine store follows one pattern.** The module exports
+   `xStore({ messages })`, and the store is a plain object. **One writer:**
+   only its own methods change its fields. `main.ts` registers it with
+   `Alpine.store("x", xStore({ messages }))` before `Alpine.data("shell", …)`.
+   Its own `init()` starts its reads, listeners and timers; Alpine calls it at
+   registration, so it may read `WBConsole`, `WBDaemon` and `WBViewer`, never
+   the shell. Shell code and components read it as `this.$store.x`, markup as
+   `$store.x`, and code outside Alpine as `Alpine.store("x")`. A store tells
+   the operator something through the message door (`deps.messages`) and
+   never calls the shell. The test harness builds every store for each page,
+   and a store has its own unit test that builds it without Alpine.
+
+5. **`wire()` and the icon directive leave `app.ts`.** They move to
+   `wb-wire.ts` and `wb-icon.ts`. `getShell()` stays only as the window
+   bridge, and for the question of the terminal module whether the page has a
+   shell at all. Every other module reads a store with `Alpine.store("x")`.
+
+6. **`wb-console.ts` builds its API object in `wb-console-api.ts`, and gives
+   its glue to its owners.** `createConsole` still returns the object, so the
+   types that read its return type do not change, and the 159 members that
+   `ui-tests/wb-api-members.test.mjs` freezes stay the same. The focus hook,
+   `open`, `boot`, `refitAll`, `afterLogin` and the small helpers move to the
+   modules that own what they do. This replaces decision 1 of the 2026-10-11
+   amendment on the console ("`createConsole` keeps the factory glue and the
+   returned object") and its goal of about 900 lines with about 600 lines.
+
+7. **The pins on shell text read the whole shell family.** The shell family
+   is `app.ts`, then `wb-wire.ts` and `wb-icon.ts` when they exist, then
+   every module that `main.ts` imports a registered Alpine component or
+   Alpine store from, sorted (11 modules at `6408f3c0`). `SHELL_FAMILY` in
+   `crates/ralphy-daemon/src/tests.rs` lists them, and the pins that read
+   `app.ts` read the joined text (`shell_family()`), so a move from `app.ts`
+   into a family module does not move them. `app.ts` comes first, and every
+   exact count and scoped slice of those pins is the same over the joined
+   text as over `app.ts` alone. Two plain `contains` pins (the
+   `workbench:menus-close` send and hear) also match twice in
+   `wb-consoles-tab.ts`, so they became exact counts over the family.
+   `the_shell_family_lists_every_module_on_disk` builds the list from
+   `main.ts` and the disk, and fails when the two differ.
+
+The session's security fact (`security`, its one writer `securityChanged`)
+and log off (`logOff`) join the store `connection`, and the release fact
+(`release`, its dismissal and its read state) is a sixth store `release`
+(`wb-release-store.ts`). Each has readers in more than one part: the
+security fact in the Security dialog, the login gate and log off; the
+release fact in the account menu and the release dialogs. A component
+cannot read the data of another component, so these facts are stores. The
+account menu (`wbAccount`) and the login gate (`wbLogin`) keep only their
+own state, and log off resets that state through `workbench:log-off`.

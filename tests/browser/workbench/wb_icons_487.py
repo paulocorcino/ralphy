@@ -40,6 +40,12 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 TARGET = os.environ.get("RALPHY_WB_TARGET") or os.path.join(REPO_ROOT, "target", "debug")
 EXE = os.path.join(TARGET, "ralphy.exe" if os.name == "nt" else "ralphy")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
+SPEND = "Alpine.$data(document.querySelector('[x-data=\"wbSpend\"]'))"
+# The Runs panel and the run modal: the component `wbRuns`.
+RUNS = "Alpine.$data(document.querySelector('[x-data=\"wbRuns\"]'))"
+# The board is the component `wbBoard` (wb-board.ts).
+BOARD = "Alpine.$data(document.querySelector('[x-data=\"wbBoard\"]'))"
 # The Settings dialog's own component, nested in shell().
 SET = "Alpine.$data(document.querySelector('.settings-dialog'))"
 # The About, What's new and update dialogs' own component, nested in shell().
@@ -208,7 +214,7 @@ def main():
             check("2 the empty Spend view leaves the DOM while a project is open", True)
             page.evaluate(f"(s) => {SH}.toggle(s)", arg=slug_a)
             page.wait_for_function(f"() => Alpine.store('projects').openSlug === null", timeout=15000)
-            page.evaluate(f"() => {{ {SH}.active = 'spend'; }}")
+            page.evaluate(f"() => {{ {TABS}.active = 'spend'; }}")
             page.wait_for_selector(".spend-blank-icon", timeout=5000)
             settle(page)
             blank = page.evaluate(
@@ -245,7 +251,7 @@ def main():
             head = "document.querySelector('.kanban-col-head svg[x-icon]')"
             read_head = f"() => ({{ cls: {head}.getAttribute('class') || '', body: {head}.innerHTML }})"
             before = page.evaluate(read_head)
-            page.evaluate(f"() => {{ {SH}.KANBAN.COLUMNS[0].lucide = 'star'; }}")
+            page.evaluate(f"() => {{ {BOARD}.KANBAN.COLUMNS[0].lucide = 'star'; }}")
             settle(page)
             after = page.evaluate(read_head)
             check(
@@ -257,20 +263,20 @@ def main():
                 and after["body"] != "",
                 f"before={before['cls']} after={after['cls']}",
             )
-            page.evaluate(f"() => {{ {SH}.KANBAN.COLUMNS[0].lucide = 'inbox'; }}")
+            page.evaluate(f"() => {{ {BOARD}.KANBAN.COLUMNS[0].lucide = 'inbox'; }}")
 
             # --- scenario 5: a sweep over every surface -----------------------
             page.evaluate(f"(s) => {SH}.toggle(s)", arg=slug_a)
             page.wait_for_function(f"(s) => Alpine.store('projects').openSlug === s", arg=slug_a, timeout=15000)
             views = [
-                ("spend", f"{SH}.openSpend()"),
-                ("consoles", f"{SH}.active = 'consoles'"),
+                ("spend", f"{SPEND}.openSpend()"),
+                ("consoles", f"{TABS}.active = 'consoles'"),
                 ("kanban", f"{SH}.toggleKanban()"),
                 ("runs", f"{SH}.toggleRuns()"),
                 ("changes", f"{SH}.showSideView('changes')"),
                 ("settings", f"{SET}.openSettings()"),
                 ("about", f"{SET}.closeSettings(); {REL}.openAbout()"),
-                ("run modal", f"{REL}.closeAbout(); {SH}.openRunModal()"),
+                ("run modal", f"{REL}.closeAbout(); {RUNS}.openRunModal()"),
             ]
             for name, act in views:
                 page.evaluate(f"() => {{ {act}; }}")

@@ -47,6 +47,9 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
+# The Alpine store `modals`: the modal stack, the confirm, the prompt and the flash line.
+MODALS = "Alpine.store('modals')"
 FILES = "Alpine.$data(document.querySelector('[x-data=\"wbFiles\"]'))"
 
 # The fixtures, as bytes: what the three Windows writers produce.
@@ -134,7 +137,7 @@ def launch(daemon_dir):
 
 
 def tab_ids(page):
-    return page.evaluate(f"() => {SH}.tabs.map(t => t.id)")
+    return page.evaluate(f"() => {TABS}.tabs.map(t => t.id)")
 
 
 def open_from_tree(page, title):
@@ -240,7 +243,7 @@ def main():
 
             # --- scenario 4: each saves back byte-for-byte -----------------------
             for tab, rel, want in [(cp_id, "spike-cp1252.md", CP1252), (u16_id, "ps5-utf16.txt", UTF16), (b8_id, "bom8.txt", BOM8)]:
-                page.evaluate(f"() => {SH}.activate('{tab}')")
+                page.evaluate(f"() => {TABS}.activate('{tab}')")
                 got = save_and_wait(page, tab, fixture, rel, want)
                 check(f"{rel} saves back byte-for-byte", got == want, f"got={got[:16]!r}")
 
@@ -256,7 +259,7 @@ def main():
             check("the pane names the reason", "binary" in why, f"got={why!r}")
 
             # --- scenario 6: unencodable → dialog → UTF-8 ------------------------
-            page.evaluate(f"() => {SH}.activate('{cp_id}')")
+            page.evaluate(f"() => {TABS}.activate('{cp_id}')")
             # Edit through the markdown pane's editor (toggle to edit, then set).
             page.evaluate(
                 "(id) => document.querySelector(`.md-viewer[data-tab-id=\"${id}\"] [data-act=\"toggle\"]`).click()", cp_id
@@ -270,8 +273,8 @@ def main():
             page.evaluate(
                 "(id) => document.querySelector(`.md-viewer[data-tab-id=\"${id}\"] [data-act=\"save\"]`).click()", cp_id
             )
-            page.wait_for_function(f"() => {SH}.confirmModal.open === true", timeout=10000)
-            modal = page.evaluate(f"() => {SH}.confirmModal")
+            page.wait_for_function(f"() => {MODALS}.confirmModal.open === true", timeout=10000)
+            modal = page.evaluate(f"() => {MODALS}.confirmModal")
             check(
                 "the design-system dialog offers UTF-8",
                 "windows-1252" in modal["title"] and modal["confirmLabel"] == "Save as UTF-8",
@@ -279,7 +282,7 @@ def main():
             )
             with open(os.path.join(fixture, "spike-cp1252.md"), "rb") as f:
                 check("nothing was written before the answer", f.read() == CP1252)
-            page.evaluate(f"() => {SH}.confirmRespond(true)")
+            page.evaluate(f"() => {MODALS}.confirmRespond(true)")
             want = (CP1252_TEXT + "→ arrow\r\n").encode("utf-8")
             deadline = time.time() + 10
             got = None
@@ -298,7 +301,7 @@ def main():
             check("the pill flipped to UTF-8", pill(page, cp_id) == "UTF-8")
 
             # --- scenario 7: save with UTF-16 LE from the menu -------------------
-            page.evaluate(f"() => {SH}.activate('{b8_id}')")
+            page.evaluate(f"() => {TABS}.activate('{b8_id}')")
             page.evaluate(
                 "(id) => document.querySelector(`.viewer[data-tab-id=\"${id}\"] [data-act=\"encoding\"]`).click()", b8_id
             )

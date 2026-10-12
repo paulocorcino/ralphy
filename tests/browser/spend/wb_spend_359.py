@@ -67,6 +67,10 @@ EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt"
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "359-spend-2026-07-31.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
+SPEND = "Alpine.$data(document.querySelector('[x-data=\"wbSpend\"]'))"
+# The board is the component `wbBoard` (wb-board.ts).
+BOARD = "Alpine.$data(document.querySelector('[x-data=\"wbBoard\"]'))"
 
 OPUS = "claude-opus-4-8"
 HAIKU = "claude-haiku-4-5"
@@ -343,8 +347,8 @@ def main():
             # from a Windows path carries backslashes a literal would swallow.
             page.evaluate(f"(s) => {SH}.toggle(s)", arg=slug)
             page.wait_for_function(f"(s) => Alpine.store('projects').openSlug === s", arg=slug, timeout=15000)
-            page.evaluate(f"() => {SH}.openSpend()")
-            page.wait_for_function(f"() => {SH}.active === 'spend'", timeout=10000)
+            page.evaluate(f"() => {SPEND}.openSpend()")
+            page.wait_for_function(f"() => {TABS}.active === 'spend'", timeout=10000)
             page.wait_for_function(READY, timeout=15000)
 
             doc = page.evaluate(
@@ -504,8 +508,8 @@ def main():
                 view["deliveries"][0]["title"] is None,
                 "title={}".format(view["deliveries"][0]["title"]),
             )
-            page.evaluate(f"() => {SH}.loadSpend()")
-            page.wait_for_function(f"() => {SH}.spend.loading === false", timeout=15000)
+            page.evaluate(f"() => {SPEND}.loadSpend()")
+            page.wait_for_function(f"() => {SPEND}.spend.loading === false", timeout=15000)
             verbs = page.evaluate("() => window.__verbs.slice()")
             check(
                 "…and opening + refreshing Spend sent ZERO `board.list` frames",
@@ -514,8 +518,8 @@ def main():
             )
 
             # --- scenario e · the period rescopes the page ----------------------
-            page.evaluate(f"() => {SH}.setSpendPeriod('7d')")
-            page.wait_for_function(f"() => {SH}.spend.loading === false", timeout=15000)
+            page.evaluate(f"() => {SPEND}.setSpendPeriod('7d')")
+            page.wait_for_function(f"() => {SPEND}.spend.loading === false", timeout=15000)
             page.wait_for_function(
                 "() => { const e = document.querySelector('.spend-tab .kpi.kpi-primary .spend-figure');"
                 "  return !!e && e.clientWidth > 0 && e.textContent.trim() === '$75.00+'; }",
@@ -560,7 +564,7 @@ def main():
             # --- scenario g (second half) · the title, once the board holds it --
             # ONE deliberate board fold. Whether it succeeds against a remoteless
             # fixture is not this suite's subject; that it is the ONLY frame is.
-            page.evaluate(f"() => {SH}.loadBoard()")
+            page.evaluate(f"() => {BOARD}.loadBoard()")
             page.wait_for_function(
                 "() => (window.__verbs || []).includes('board.list')", timeout=15000
             )
@@ -569,11 +573,11 @@ def main():
             # directly, because a fixture repo seeded with plain `git init` is
             # remoteless and its real fold has no tracker to answer it.
             page.evaluate(
-                f"(s) => {{ {SH}.boardIssues[s] = [{{ number: 251, title: 'the retry that cost $30' }}]; }}",
+                f"(s) => {{ {BOARD}.boardIssues[s] = [{{ number: 251, title: 'the retry that cost $30' }}]; }}",
                 arg=slug,
             )
-            page.evaluate(f"() => {SH}.setSpendPeriod('all')")
-            page.wait_for_function(f"() => {SH}.spend.loading === false", timeout=15000)
+            page.evaluate(f"() => {SPEND}.setSpendPeriod('all')")
+            page.wait_for_function(f"() => {SPEND}.spend.loading === false", timeout=15000)
             page.wait_for_function(
                 "() => { const e = document.querySelector('.spend-tab .delivery-title');"
                 "  return !!e && e.offsetParent !== null && e.clientWidth > 0; }",

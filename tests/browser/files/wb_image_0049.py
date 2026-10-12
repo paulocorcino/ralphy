@@ -64,6 +64,9 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
+# The Alpine store `modals`: the modal stack, the confirm, the prompt and the flash line.
+MODALS = "Alpine.store('modals')"
 FILES = "Alpine.$data(document.querySelector('[x-data=\"wbFiles\"]'))"
 
 LOGO_W, LOGO_H = 64, 48
@@ -225,7 +228,7 @@ def launch(daemon_dir):
 
 
 def tab_ids(page):
-    return page.evaluate(f"() => {SH}.tabs.map(t => t.id)")
+    return page.evaluate(f"() => {TABS}.tabs.map(t => t.id)")
 
 
 def open_from_tree(page, title):
@@ -257,13 +260,13 @@ def expect_refusal(page, title, word):
     """Open a file expected to refuse, and wait for BOTH the flash and the close
     of the optimistically-pushed tab (reading the tab list mid-flight races)."""
     before = tab_ids(page)
-    page.evaluate(f"() => {{ {SH}.runsActionMsg = ''; }}")
+    page.evaluate(f"() => {{ {MODALS}.runsActionMsg = ''; }}")
     open_from_tree(page, title)
     page.wait_for_function(
-        f"(w) => ({SH}.runsActionMsg || '').includes(w)", arg=word, timeout=15000
+        f"(w) => ({MODALS}.runsActionMsg || '').includes(w)", arg=word, timeout=15000
     )
     page.wait_for_function(
-        f"(want) => {SH}.tabs.map(t => t.id).join('|') === want",
+        f"(want) => {TABS}.tabs.map(t => t.id).join('|') === want",
         arg="|".join(before),
         timeout=8000,
     )
@@ -435,7 +438,7 @@ def main():
             # refusal keeps its tab and says why in a refused pane; only the
             # client's extension classifier (scenario 5) still opens no tab.
             evil_id = f"file:{slug}:evil.png"
-            page.evaluate(f"() => {{ {SH}.runsActionMsg = ''; }}")
+            page.evaluate(f"() => {{ {MODALS}.runsActionMsg = ''; }}")
             open_from_tree(page, "evil.png")
             page.wait_for_function(
                 "(id) => !!document.querySelector(`.refused-viewer[data-tab-id=\"${id}\"]`)",
@@ -451,7 +454,7 @@ def main():
                 evil_id in tab_ids(page) and "not an image" in why,
                 f"tabs={tab_ids(page)} why={why!r}",
             )
-            page.evaluate(f"() => {SH}.closeTab('{evil_id}')")
+            page.evaluate(f"() => {TABS}.closeTab('{evil_id}')")
 
             # --- scenario 5: a non-image binary still refuses -----------------
             before = expect_refusal(page, "notes.pdf", "binary")
@@ -464,7 +467,7 @@ def main():
             # --- scenario 8: markdown resolves its relative image -------------
             md_id = f"file:{slug}:docs/guide.md"
             page.evaluate(
-                f"""() => {SH}.openTab({{ project: '{slug}', path: 'docs/guide.md',
+                f"""() => {TABS}.openTab({{ project: '{slug}', path: 'docs/guide.md',
                         title: 'guide.md', ftype: 'markdown' }})"""
             )
             # The local image decodes; the remote one is left to the browser's

@@ -15,7 +15,8 @@
 // object nobody reads. See ADR-0022's "smallest change that fits the seam".
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { shell, wire } from "../assets/ui/app.ts";
+import { shell } from "../assets/ui/app.ts";
+import { wire } from "../assets/ui/wb-wire.ts";
 import { hostsDialog } from "../assets/ui/wb-hosts-dialog.ts";
 import { settingsDialog } from "../assets/ui/wb-settings-dialog.ts";
 import { devices } from "../assets/ui/wb-devices.ts";
@@ -25,7 +26,20 @@ import { addProjectDialog } from "../assets/ui/wb-add-project-dialog.ts";
 import { wbColumns, wbConsoleMenus } from "../assets/ui/wb-consoles-tab.ts";
 import { wbFiles } from "../assets/ui/wb-files.ts";
 import { wbMoveDialog } from "../assets/ui/wb-move-dialog.ts";
+import { wbRuns } from "../assets/ui/wb-runs-panel.ts";
+import { wbBoard } from "../assets/ui/wb-board.ts";
+import { wbSpend } from "../assets/ui/wb-spend-panel.ts";
+import { wbChanges } from "../assets/ui/wb-changes-panel.ts";
+import { wbBranchDialog } from "../assets/ui/wb-branch-dialog.ts";
+import { wbAccount } from "../assets/ui/wb-account.ts";
+import { wbLogin } from "../assets/ui/wb-login.ts";
 import { projectsStore } from "../assets/ui/wb-projects-store.ts";
+import { connectionStore } from "../assets/ui/wb-connection-store.ts";
+import { runsStore } from "../assets/ui/wb-runs-store.ts";
+import { checkoutsStore } from "../assets/ui/wb-checkouts-store.ts";
+import { releaseStore } from "../assets/ui/wb-release-store.ts";
+import { modalsStore } from "../assets/ui/wb-modals-store.ts";
+import { tabsStore } from "../assets/ui/wb-tabs-store.ts";
 import { WBSpend } from "../assets/ui/wb-spend.ts";
 import { WBKanban } from "../assets/ui/wb-kanban.ts";
 import { createDaemon } from "../assets/ui/wb-daemon.ts";
@@ -48,6 +62,20 @@ const MODULE_NAMESPACES = {
   WBConsoleName,
 };
 
+// The Alpine stores, by the name `main.ts` registers each with
+// (`Alpine.store(name, …)`, ADR-0073 D6). `loadShell` builds every one per page
+// with the deps `main.ts` gives it (`{ messages, detached }`), so a new store is
+// one line here and every test page has it.
+export const STORES = {
+  modals: modalsStore,
+  projects: projectsStore,
+  connection: connectionStore,
+  runs: runsStore,
+  checkouts: checkoutsStore,
+  release: releaseStore,
+  tabs: tabsStore,
+};
+
 // The Alpine components, by the name the markup gives `x-data`: `loadComponent`
 // builds each from its module's export (ADR-0073 D3, ADR-0075 D7).
 const MODULE_COMPONENTS = {
@@ -61,6 +89,13 @@ const MODULE_COMPONENTS = {
   wbColumns,
   wbFiles,
   wbMoveDialog,
+  wbRuns,
+  wbBoard,
+  wbChanges,
+  wbBranchDialog,
+  wbSpend,
+  wbAccount,
+  wbLogin,
 };
 
 export const UI = join(dirname(fileURLToPath(import.meta.url)), "../assets/ui");
@@ -139,7 +174,7 @@ function stubWindow() {
   };
 }
 
-// Create this page's instances the way `main.ts` does, run app.ts's `wire`
+// Create this page's instances the way `main.ts` does, run `wire` (wb-wire.ts)
 // on this page, and return a FRESH `shell()` state object.
 //
 // Fresh per call, never shared: `shell()` returns a mutable object with ~390
@@ -156,13 +191,19 @@ function stubWindow() {
 // `addEventListener` is a sink. `opts.window` does the same for the window
 // (the detached popups' `message` listener and their `closed` poll).
 //
-// The Alpine store `projects` is a real `projectsStore()`, one per page, or
-// `opts.projects`. `shell()` reads it as `this.$store.projects`, and the
-// window bridge as `Alpine.store("projects")`, so both are set here.
+// Every Alpine store in `STORES` is a real one, built per page, or the object
+// a test gives in `opts.stores` (`opts.projects` is the older name for
+// `opts.stores.projects`). Shell code and components read a store as
+// `this.$store.<name>`, and code outside Alpine as `Alpine.store("<name>")`,
+// so both give the same object here, as they do in the browser.
 export function loadShell(opts = {}) {
   const window = Object.assign(stubWindow(), opts.window || {});
-  const projects = opts.projects || projectsStore();
-  window.Alpine = { store: (name) => (name === "projects" ? projects : undefined) };
+  // Filled once `wire` has run: a store is built with the message door and
+  // the detached file windows.
+  const stores = {};
+  // `nextTick` runs the callback at once: a store that waits for the paint
+  // (`Alpine.nextTick`) acts inside the call that asked it.
+  window.Alpine = { store: (name) => stores[name], nextTick: (fn) => fn() };
   const document = Object.assign(stubDocument(), opts.document || {});
   window.window = window;
   window.document = document;
@@ -174,11 +215,9 @@ export function loadShell(opts = {}) {
   WBDeskSink.setHold(false);
   // One message door, one console, one daemon door, one file pane and one set
   // of note cards per page, in the order the entry module makes them. `boot`
-  // is not called: the stub document has no stage. The stub document has no
-  // `[x-data]` root, so `getShell` finds no shell: the door falls back to this
-  // page's `shell()` state, the shell the browser would find.
-  let state = null;
-  const messages = createMessages(window, document, { shell: () => window.getShell?.() ?? state });
+  // is not called: the stub document has no stage. The door reaches the store
+  // `modals` through `window.Alpine`, as in the browser.
+  const messages = createMessages(window, document);
   const realBC = globalThis.BroadcastChannel;
   delete globalThis.BroadcastChannel;
   try {
@@ -193,9 +232,13 @@ export function loadShell(opts = {}) {
   // the last page loaded owns them, as in `loadComponent`.
   globalThis.window = window;
   globalThis.document = document;
-  wire(window, document, { messages });
-  state = shell();
-  state.$store = { projects };
+  // The stores after `wire`, as `main.ts` registers them: `wire` hands back
+  // the detached file windows the store `connection` asks.
+  const detached = wire(window, document, { messages });
+  const given = { projects: opts.projects, ...opts.stores };
+  for (const [name, store] of Object.entries(STORES)) stores[name] = given[name] || store({ messages, detached });
+  const state = shell();
+  state.$store = stores;
   return { state, window, document };
 }
 
@@ -209,8 +252,7 @@ export function loadShell(opts = {}) {
 // component's own. A `uses` value that is an object comes back read-only: a set
 // or a delete on it, at any depth, throws a TypeError that names the component
 // and the path (`security.passwordSet`). A `shell()` method in `uses` runs with
-// `this` set to the merged scope, as Alpine runs it, so `scrim()` still reaches
-// the modal stack and the dialog's open flag, and the method may write
+// `this` set to the merged scope, as Alpine runs it, and the method may write
 // `shell()` state: that write is the one D4 allows. A getter of the component
 // runs with the scope as `this`, as Alpine 3.14 runs it (`mergeProxies` passes
 // the scope as the receiver of `Reflect.get`), so a getter that reads a

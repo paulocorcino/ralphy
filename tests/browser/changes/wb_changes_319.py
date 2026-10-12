@@ -54,6 +54,10 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Alpine store `modals`: the modal stack, the confirm, the prompt and the flash line.
+MODALS = "Alpine.store('modals')"
+# The Changes view is the component wbChanges.
+CHG = "Alpine.$data(document.querySelector('[x-data=\"wbChanges\"]'))"
 
 RAIL_CHANGES = "nav.rail button[title=\"Changes\"]"
 RAIL_PROJECTS = "nav.rail button[title=\"Projects\"]"
@@ -295,7 +299,7 @@ def wait_dialog(page):
 def answer_dialog(page, ok):
     """Settle the open dialog through Alpine's own responder — the label text is
     per-case, so a text-matched click would be a second oracle to keep in sync."""
-    page.evaluate(f"(v) => {SH}.confirmRespond(v)", arg=ok)
+    page.evaluate(f"(v) => {MODALS}.confirmRespond(v)", arg=ok)
     page.wait_for_function(
         "() => { const m = document.querySelector('.confirm-modal');"
         " return !m || m.offsetParent === null; }",
@@ -505,7 +509,7 @@ def main():
             (Path(fixture) / "README.md").write_text(
                 "# fixture\n\nedited again.\n", encoding="utf-8"
             )
-            page.evaluate(f"(s) => {SH}.loadChanges(s)", arg=slug)
+            page.evaluate(f"(s) => {CHG}.loadChanges(s)", arg=slug)
             wait_groups(page, "README.md", ["Changes"])
             notes = page.evaluate(
                 f"() => {{ const v = {VIEW}; const vis = (e) => e.offsetParent !== null;"
@@ -588,11 +592,11 @@ def main():
                 ),
                 encoding="utf-8",
             )
-            page.evaluate(f"() => {SH}.hydrateRuns()")
+            page.evaluate(f"() => Alpine.store('runs').hydrateRuns()")
             page.wait_for_function(
-                f"(s) => (({SH}.runsByProject[s]) || []).length === 1", arg=slug, timeout=20000
+                f"(s) => ((Alpine.store('runs').runsByProject[s]) || []).length === 1", arg=slug, timeout=20000
             )
-            page.wait_for_function(f"() => {SH}.writeLocked() === true", timeout=15000)
+            page.wait_for_function(f"() => Alpine.store('connection').writeLocked() === true", timeout=15000)
             locked = page.evaluate(
                 f"() => {{ const v = {VIEW};"
                 " return Array.from(v.querySelectorAll('[data-act=\"discard\"]'))"

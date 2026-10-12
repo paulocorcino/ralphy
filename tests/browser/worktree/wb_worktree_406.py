@@ -68,6 +68,15 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
+# The Alpine store `modals`: the modal stack, the confirm, the prompt and the flash line.
+MODALS = "Alpine.store('modals')"
+# The branch dialog is the component `wbBranchDialog` (wb-branch-dialog.ts).
+BRANCH = "Alpine.$data(document.querySelector('[x-data=\"wbBranchDialog\"]'))"
+# The selected checkouts are the Alpine store `checkouts` (wb-checkouts-store.ts).
+CHECKOUTS = "Alpine.store('checkouts')"
+# The Changes view is the component wbChanges.
+CHG = "Alpine.$data(document.querySelector('[x-data=\"wbChanges\"]'))"
 FILES = "Alpine.$data(document.querySelector('[x-data=\"wbFiles\"]'))"
 
 results = []
@@ -253,9 +262,9 @@ def open_project(page, slug):
 def open_picker(page, slug):
     open_project(page, slug)
     page.evaluate("() => document.querySelector('li.project.open .project-head .branch-chip').click()")
-    page.wait_for_function(f"() => {SH}.branchOpen === true", timeout=10000)
+    page.wait_for_function(f"() => {BRANCH}.branchOpen === true", timeout=10000)
     # `branch.list` arrives by round trip: gate on the real list having landed.
-    page.wait_for_function(f"() => {SH}.branchModal.branches.length >= 1", timeout=15000)
+    page.wait_for_function(f"() => {BRANCH}.branchModal.branches.length >= 1", timeout=15000)
 
 
 # --- the Files bar's checkout chip and its menu (ADR-0063 amendment 2026-09-16 b) ---
@@ -314,9 +323,9 @@ def click_remove(page, name, slug=None):
     page.wait_for_function(f"(n) => !!({CK_ITEM})(n)", arg=name, timeout=15000)
     page.evaluate(f"(n) => ({CK_ITEM})(n).querySelector('.session-checkout-remove').click()", arg=name)
     page.wait_for_function(f"() => !({CK_MENU_OPEN})()", timeout=5000)
-    page.wait_for_function(f"() => {SH}.confirmModal.open", timeout=5000)
-    page.evaluate(f"() => {SH}.confirmRespond(true)")
-    page.wait_for_function(f"() => Object.keys({SH}.worktreeRemoving).length === 0", timeout=20000)
+    page.wait_for_function(f"() => {MODALS}.confirmModal.open", timeout=5000)
+    page.evaluate(f"() => {MODALS}.confirmRespond(true)")
+    page.wait_for_function(f"() => Object.keys({BRANCH}.worktreeRemoving).length === 0", timeout=20000)
 
 
 
@@ -354,7 +363,7 @@ def main():
             before = page.evaluate(CHIP)
             check("before any selection the chip reads the primary's branch", before == "main", f"got={before!r}")
             click_row(page, "wt-a")
-            page.wait_for_function(f"(s) => {SH}.checkouts[s] === 'wt-a'", arg=slug, timeout=10000)
+            page.wait_for_function(f"(s) => {CHECKOUTS}.checkouts[s] === 'wt-a'", arg=slug, timeout=10000)
             check("clicking the row closes the picker and records the selection", True)
             page.wait_for_function(TITLES_INCLUDE, arg="only-in-wt.txt", timeout=15000)
             titles = page.evaluate(ROW_TITLES)
@@ -378,7 +387,7 @@ def main():
             page.reload()
             wait_shell(page)
             open_project(page, slug)
-            page.wait_for_function(f"(s) => {SH}.checkouts[s] === 'wt-a'", arg=slug, timeout=15000)
+            page.wait_for_function(f"(s) => {CHECKOUTS}.checkouts[s] === 'wt-a'", arg=slug, timeout=15000)
             check("after a reload the selection is back from the desk", True)
             page.wait_for_function(CHIP_IS, arg="wt-a", timeout=15000)
             check("after a reload the chip reads `wt-a` without opening the picker", True)
@@ -392,14 +401,14 @@ def main():
             page2.goto(BASE)
             wait_shell(page2)
             open_project(page2, slug)
-            page2.wait_for_function(f"(s) => {SH}.checkouts[s] === 'wt-a'", arg=slug, timeout=15000)
+            page2.wait_for_function(f"(s) => {CHECKOUTS}.checkouts[s] === 'wt-a'", arg=slug, timeout=15000)
             page2.wait_for_function(CHIP_IS, arg="wt-a", timeout=15000)
             check("a second browser context reads the same selection and chip", True)
             ctx2.close()
 
             # --- scenario 6: the primary row clears the selection -------------
             click_row(page, "primary", slug)
-            page.wait_for_function(f"(s) => {SH}.checkoutOf(s) === null", arg=slug, timeout=10000)
+            page.wait_for_function(f"(s) => {CHECKOUTS}.checkoutOf(s) === null", arg=slug, timeout=10000)
             page.wait_for_function(TITLES_INCLUDE, arg="only-in-primary.txt", timeout=15000)
             page.wait_for_function(CHIP_IS, arg="main", timeout=10000)
             titles = page.evaluate(ROW_TITLES)
@@ -417,9 +426,9 @@ def main():
             # Git's wording is `already used by worktree` on 2.50 (`already
             # checked out` on older ones): assert the stable words.
             open_picker(page, slug)
-            page.evaluate(f"() => {SH}.switchBranch('main')")
-            page.wait_for_function(f"() => {SH}.branchError !== ''", timeout=10000)
-            err = page.evaluate(f"() => {SH}.branchError")
+            page.evaluate(f"() => {BRANCH}.switchBranch('main')")
+            page.wait_for_function(f"() => {CHECKOUTS}.branchError !== ''", timeout=10000)
+            err = page.evaluate(f"() => {CHECKOUTS}.branchError")
             check(
                 "switchBranch('main') under wt-a is sent and refused by git (already used by the primary)",
                 "already" in (err or "") and "main" in (err or ""),
@@ -429,7 +438,7 @@ def main():
             check("the primary's HEAD did not move", branch_now == "main", f"got={branch_now!r}")
             wt_branch = git(wt, "rev-parse", "--abbrev-ref", "HEAD")
             check("the worktree's HEAD did not move", wt_branch == "wt-a", f"got={wt_branch!r}")
-            page.evaluate(f"() => {{ {SH}.branchError = ''; {SH}.branchOpen = false; }}")
+            page.evaluate(f"() => {{ {CHECKOUTS}.branchRefused(''); {BRANCH}.branchOpen = false; }}")
 
             # --- scenario 8: a write under the worktree is refused ------------
             reply = page.evaluate(
@@ -452,11 +461,11 @@ def main():
             # (the viewer's own `save` intent, pin included) is refused rather
             # than landing on the primary's README.md.
             page.evaluate(
-                f"(s) => {SH}.openTab({{ project: s, path: 'only-in-wt.txt', title: 'only-in-wt.txt', ftype: 'code' }})",
+                f"(s) => {TABS}.openTab({{ project: s, path: 'only-in-wt.txt', title: 'only-in-wt.txt', ftype: 'code' }})",
                 arg=slug,
             )
             page.wait_for_function(
-                f"(s) => {SH}.tabs.some(t => t.path === 'only-in-wt.txt' && t.checkout === 'wt-a')",
+                f"(s) => {TABS}.tabs.some(t => t.path === 'only-in-wt.txt' && t.checkout === 'wt-a')",
                 arg=slug,
                 timeout=15000,
             )
@@ -466,17 +475,17 @@ def main():
             )
             check("a tab opened under wt-a is pinned to it and its pane carries the pinned id", True)
             click_row(page, "primary", slug)
-            page.wait_for_function(f"(s) => {SH}.checkoutOf(s) === null", arg=slug, timeout=10000)
+            page.wait_for_function(f"(s) => {CHECKOUTS}.checkoutOf(s) === null", arg=slug, timeout=10000)
             still = page.evaluate(
-                f"() => ({SH}.tabs.find(t => t.path === 'only-in-wt.txt') || {{}}).checkout"
+                f"() => ({TABS}.tabs.find(t => t.path === 'only-in-wt.txt') || {{}}).checkout"
             )
             check("selecting primary leaves the open tab pinned to wt-a", still == "wt-a", f"got={still!r}")
             # The pane's own Save: `WBViewer.save` reads the pane and emits the
             # `save` intent with the pin, which the write bridge honours. The
             # flash self-clears after 2.6 s, so it is LATCHED, not polled.
             page.evaluate(
-                f"() => {{ const sh = {SH}; sh._latched = []; const orig = sh._flashAction.bind(sh);"
-                "  sh._flashAction = (m) => { sh._latched.push(String(m)); orig(m); }; }"
+                f"() => {{ const sh = {MODALS}; sh._latched = []; const orig = sh.flash.bind(sh);"
+                "  sh.flash = (m) => { sh._latched.push(String(m)); orig(m); }; }"
             )
             page.evaluate(
                 "() => { const id = document.querySelector(\".viewer[data-tab-id$='@wt-a:only-in-wt.txt']\").dataset.tabId;"
@@ -484,7 +493,7 @@ def main():
                 "  el.click(); }"
             )
             page.wait_for_function(
-                f"() => {SH}._latched.some(m => m.includes('not available'))",
+                f"() => {MODALS}._latched.some(m => m.includes('not available'))",
                 timeout=15000,
             )
             check("the pinned tab's Save is refused (`not available`), never written to the primary", True)
@@ -492,13 +501,13 @@ def main():
                 "the primary has no only-in-wt.txt after the refused Save",
                 not (fixture / "only-in-wt.txt").exists(),
             )
-            page.evaluate(f"(s) => {SH}.closeTab('file:' + s + '@wt-a:only-in-wt.txt')", arg=slug)
+            page.evaluate(f"(s) => {TABS}.closeTab('file:' + s + '@wt-a:only-in-wt.txt')", arg=slug)
             click_row(page, "wt-a", slug)
             page.wait_for_function(TITLES_INCLUDE, arg="only-in-wt.txt", timeout=15000)
             # The selection starts `changes.list` and `sync.status`, which run
             # git inside wt-a; let them land before the folder is deleted.
             page.wait_for_function(
-                f"(s) => !!({SH}.changesRead[s] && {SH}.syncRead[s])", arg=slug, timeout=15000
+                f"(s) => !!({CHG}.changesRead[s] && {CHG}.syncRead[s])", arg=slug, timeout=15000
             )
 
             # --- scenario 9: unknown checkout resets the selection ------------
@@ -506,7 +515,7 @@ def main():
             # answers `unknown checkout`, which is the one reply that drops it.
             rmtree_retry(wt)
             page.evaluate(f"() => {FILES}.fetchTreeLevel('').catch(() => null)")
-            page.wait_for_function(f"(s) => {SH}.checkouts[s] === undefined", arg=slug, timeout=15000)
+            page.wait_for_function(f"(s) => {CHECKOUTS}.checkouts[s] === undefined", arg=slug, timeout=15000)
             page.wait_for_function(CHIP_IS, arg="main", timeout=10000)
             page.wait_for_function(TITLES_INCLUDE, arg="only-in-primary.txt", timeout=15000)
             check("after the worktree is removed, `unknown checkout` drops the selection and the primary shows", True)

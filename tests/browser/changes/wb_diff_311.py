@@ -51,6 +51,9 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
+# The Alpine store `modals`: the modal stack, the confirm, the prompt and the flash line.
+MODALS = "Alpine.store('modals')"
 # The Consoles tab's menus and the columns are Alpine components of their
 # own (wb-consoles-tab.ts): a check reads them through their root.
 MENUS = "Alpine.$data(document.querySelector('[x-data=\"wbConsoleMenus\"]'))"
@@ -232,7 +235,7 @@ def wait_diff_mounted(page, tab_id, timeout=25000):
 
 
 def tab_ids(page):
-    return page.evaluate(f"() => {SH}.tabs.map(t => t.id)")
+    return page.evaluate(f"() => {TABS}.tabs.map(t => t.id)")
 
 
 def main():
@@ -478,12 +481,12 @@ def main():
             before = tab_ids(page)
             click_row(page, "doc.pdf")
             page.wait_for_function(
-                f"() => ({SH}.runsActionMsg || '').includes('binary')", timeout=15000
+                f"() => ({MODALS}.runsActionMsg || '').includes('binary')", timeout=15000
             )
             # The tab is pushed optimistically, then closed on the refusal — wait
             # for the close rather than reading a mid-flight tab list.
             page.wait_for_function(
-                f"(want) => {SH}.tabs.map(t => t.id).join('|') === want",
+                f"(want) => {TABS}.tabs.map(t => t.id).join('|') === want",
                 arg="|".join(before),
                 timeout=8000,
             )
@@ -505,14 +508,14 @@ def main():
             )
             # Close every diff tab; the Consoles tab must be all that is left.
             page.evaluate(
-                f"() => {SH}.tabs.filter(t => t.kind === 'diff').map(t => t.id)"
-                f".forEach(id => {SH}.closeTab(id))"
+                f"() => {TABS}.tabs.filter(t => t.kind === 'diff').map(t => t.id)"
+                f".forEach(id => {TABS}.closeTab(id))"
             )
-            page.wait_for_function(f"() => {SH}.tabs.length === 1", timeout=8000)
+            page.wait_for_function(f"() => {TABS}.tabs.length === 1", timeout=8000)
             after = page.evaluate(
                 f"""() => ({{
-                  ids: {SH}.tabs.map(t => t.id),
-                  active: {SH}.active,
+                  ids: {TABS}.tabs.map(t => t.id),
+                  active: {TABS}.active,
                   consoles: document.querySelectorAll('#workspace .session-window').length,
                   xterms: document.querySelectorAll('#workspace .session-window .xterm').length,
                   panes: document.querySelectorAll('.diff-viewer').length,

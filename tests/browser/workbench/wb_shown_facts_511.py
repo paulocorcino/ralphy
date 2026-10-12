@@ -43,6 +43,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
 DATE = "2026-09-30"
 
 results = []
@@ -216,7 +217,7 @@ def main():
 
             # --- scenario 4: unsaved work holds the reload back ---------------
             page.evaluate(
-                "([project]) => " f"{SH}.openTab({{ project, path: 'README.md', title: 'README.md', ftype: 'code' }})",
+                "([project]) => " f"{TABS}.openTab({{ project, path: 'README.md', title: 'README.md', ftype: 'code' }})",
                 [slug],
             )
             page.wait_for_function(
@@ -230,7 +231,7 @@ def main():
             check("the edit is unsaved", page.evaluate("() => window.WBViewer.anyDirty()"))
             loads = {"n": 0}
             page.on("framenavigated", lambda f: loads.__setitem__("n", loads["n"] + 1) if f == page.main_frame else None)
-            page.evaluate(f"() => {{ {SH}.pageBuild = 'old-build'; }}")
+            page.evaluate(f"() => {{ Alpine.store('connection').pageBuild = 'old-build'; }}")
             notice = page.locator(".build-notice")
             try:
                 notice.wait_for(state="visible", timeout=8000)
@@ -246,7 +247,7 @@ def main():
             check("…and the page does not reload", loads["n"] == 0, f"navigations={loads['n']}")
             check(
                 "…and the change-set writes are locked",
-                page.evaluate(f"() => {SH}.writeLocked()"),
+                page.evaluate(f"() => Alpine.store('connection').writeLocked()"),
             )
             shot(page, "build-notice")
             ctx.close()
@@ -288,7 +289,7 @@ def main():
             page5.wait_for_selector("[x-data]", timeout=15000)
             page5.wait_for_timeout(1500)
             page5.evaluate(
-                "([project]) => " f"{SH}.openTab({{ project, path: 'README.md', title: 'README.md', ftype: 'code' }})",
+                "([project]) => " f"{TABS}.openTab({{ project, path: 'README.md', title: 'README.md', ftype: 'code' }})",
                 [slug],
             )
             page5.wait_for_function(
@@ -309,7 +310,7 @@ def main():
             check("the detached window holds an unsaved edit", pop.evaluate("() => window.WBViewer.anyDirty()"))
             loads5 = {"n": 0}
             page5.on("framenavigated", lambda f: loads5.__setitem__("n", loads5["n"] + 1) if f == page5.main_frame else None)
-            page5.evaluate(f"() => {{ {SH}.pageBuild = 'old-build'; }}")
+            page5.evaluate(f"() => {{ Alpine.store('connection').pageBuild = 'old-build'; }}")
             notice5 = page5.locator(".build-notice")
             try:
                 notice5.wait_for(state="visible", timeout=8000)

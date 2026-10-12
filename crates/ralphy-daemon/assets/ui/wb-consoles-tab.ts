@@ -33,7 +33,7 @@ type FenceColumnItems = DocumentEventMap["workbench:fence-columns"]["detail"]["i
 
 export function wbConsoleMenus() {
   // Every `shell()` member this component's code or markup reads or calls.
-  return component(["active", "activate", "flash", "roster", "liveSessions", "sessionsError", "consoleShortcutsBlocked"], {
+  return component([], {
     agentMenu: false,
     // The Go-to picker (#337) and the fence picker (#343): SNAPSHOTS taken
     // when the menu opens, because the windows and fences live in the DOM.
@@ -60,8 +60,8 @@ export function wbConsoleMenus() {
     // menu with the console row's command field focused.
     consoleItems() {
       return WBAgents.menuRows({
-        roster: this.roster,
-        sessions: this.liveSessions,
+        roster: this.$store.projects.roster,
+        sessions: this.$store.projects.liveSessions,
         openSlug: this.$store.projects.openSlug,
       });
     },
@@ -92,7 +92,7 @@ export function wbConsoleMenus() {
     newConsole(agent: string) {
       // The accelerator path calls this directly: refuse with no repo here too.
       if (!this.$store.projects.openSlug) return;
-      if (this.active !== "consoles") this.activate("consoles");
+      if (this.$store.tabs.active !== "consoles") this.$store.tabs.activate("consoles");
       // Always the primary: only the console's own title switcher moves it
       // (ADR-0063, amendment 2026-09-16 b).
       WBConsole.open({ repo: this.$store.projects.openSlug, agent, checkout: null });
@@ -101,7 +101,7 @@ export function wbConsoleMenus() {
     // with `command`, the shell runs it instead of a prompt and the session
     // ends with it (the console row's "Run…" field)
     newPlainConsole(command: string | null | undefined) {
-      if (this.active !== "consoles") this.activate("consoles");
+      if (this.$store.tabs.active !== "consoles") this.$store.tabs.activate("consoles");
       WBConsole.open({ repo: this.$store.projects.openSlug, plain: true, command: command || undefined });
     },
     openConsoleRun() {
@@ -125,7 +125,7 @@ export function wbConsoleMenus() {
     // The menu lives in the Consoles tab's toolbar: on any other tab it would
     // open hidden.
     openConsoleRunMenu() {
-      if (this.active !== "consoles") this.activate("consoles");
+      if (this.$store.tabs.active !== "consoles") this.$store.tabs.activate("consoles");
       this.closeMenus();
       this.agentMenu = true;
       this.openConsoleRun();
@@ -146,12 +146,12 @@ export function wbConsoleMenus() {
       return this.fenceAtCap() ? this.fenceCapMessage() : "Draw a named fence on the stage";
     },
     newFence() {
-      if (this.active !== "consoles") this.activate("consoles");
+      if (this.$store.tabs.active !== "consoles") this.$store.tabs.activate("consoles");
       // The menu closes BEFORE the fence is drawn, or its list goes stale.
       this.fenceMenu = false;
       // The module decides; `false` is its refusal at the cap, and saying so is
       // this layer's job (`wb-console.ts` reaches no shell).
-      if (WBConsole.createFence() === false) this.flash(this.fenceCapMessage());
+      if (WBConsole.createFence() === false) this.$store.modals.flash(this.fenceCapMessage());
     },
 
     // ONE dropdown at a time: each trigger sends `workbench:menus-close`
@@ -179,7 +179,7 @@ export function wbConsoleMenus() {
       this.windowMenu = !was;
     },
     revealWindow(id: string) {
-      if (this.active !== "consoles") this.activate("consoles");
+      if (this.$store.tabs.active !== "consoles") this.$store.tabs.activate("consoles");
       this.windowMenu = false;
       // AFTER the tab is laid out: a `display:none` tab measures 0.
       this.$nextTick(() => WBConsole.reveal(id));
@@ -208,7 +208,7 @@ export function wbConsoleMenus() {
     newNote() {
       const slug = this.$store.projects.openSlug;
       if (!slug) return;
-      if (this.active !== "consoles") this.activate("consoles");
+      if (this.$store.tabs.active !== "consoles") this.$store.tabs.activate("consoles");
       this.noteMenu = false;
       // AFTER the tab is laid out, as `revealWindow`: a `display:none` tab
       // measures a 0×0 viewport and every card would land at the origin.
@@ -226,7 +226,7 @@ export function wbConsoleMenus() {
     // The note list is the map too (ADR-0064 §10): the row slides the plane to
     // the card.
     jumpNote(id: string) {
-      if (this.active !== "consoles") this.activate("consoles");
+      if (this.$store.tabs.active !== "consoles") this.$store.tabs.activate("consoles");
       this.noteMenu = false;
       // As `revealWindow`: a `display:none` tab measures a 0×0 viewport.
       this.$nextTick(() => window.WBNotes.jump(id));
@@ -241,7 +241,7 @@ export function wbConsoleMenus() {
         this.noteItems = window.WBNotes.list();
         return;
       }
-      if (this.active !== "consoles") this.activate("consoles");
+      if (this.$store.tabs.active !== "consoles") this.$store.tabs.activate("consoles");
       this.noteMenu = false;
       // As `jumpNote`: a `display:none` tab measures a 0×0 viewport.
       this.$nextTick(() => window.WBNotes.keepOnTop(n.id));
@@ -255,7 +255,7 @@ export function wbConsoleMenus() {
       this.fenceMenu = !was;
     },
     jumpFence(id: string) {
-      if (this.active !== "consoles") this.activate("consoles");
+      if (this.$store.tabs.active !== "consoles") this.$store.tabs.activate("consoles");
       this.fenceMenu = false;
       // As `revealWindow`: a `display:none` tab measures 0.
       this.$nextTick(() => WBConsole.jumpToFence(id));
@@ -275,7 +275,7 @@ export function wbConsoleMenus() {
     // Ordinal, not id: the row's position in `fenceList()`, read LIVE (the
     // menu's snapshot may be stale). Returns whether it landed.
     jumpFenceAt(n: number) {
-      if (this.active !== "consoles") return false;
+      if (this.$store.tabs.active !== "consoles") return false;
       const f = WBConsole.fenceList()[n - 1];
       if (!f) return false;
       this.fenceMenu = false;
@@ -294,7 +294,7 @@ export function wbConsoleMenus() {
       document.addEventListener("keydown", (e) => {
         if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
         if (!/^(?:Digit\d|KeyR)$/.test(e.code)) return;
-        if (this.consoleShortcutsBlocked(true)) return;
+        if (this.$store.modals.consoleShortcutsBlocked(true)) return;
         if (e.code === "KeyR") {
           e.preventDefault();
           this.openConsoleRunMenu();
@@ -314,7 +314,7 @@ export function wbConsoleMenus() {
       document.addEventListener("keydown", (e) => {
         if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
         if (!/^F(?:[1-9]|1[0-2])$/.test(e.code)) return;
-        if (this.consoleShortcutsBlocked()) return;
+        if (this.$store.modals.consoleShortcutsBlocked()) return;
         if (!this.jumpFenceAt(Number(e.code.slice(1)))) return;
         e.preventDefault();
       });
@@ -324,7 +324,7 @@ export function wbConsoleMenus() {
 
 export function wbColumns() {
   // Every `shell()` member this component's code or markup reads or calls.
-  return component(["active", "flash", "consoleShortcutsBlocked"], {
+  return component([], {
     // Columns beside a maximized console (ADR-0051 §5): per-client view
     // state, never desk state. The ids left to right; empty whenever fewer
     // than two remain, so a lone survivor is an ordinary maximize again.
@@ -432,7 +432,7 @@ export function wbColumns() {
       // Only when the keys are not somewhere else (a search box, a modal).
       const el = document.activeElement;
       const keysFree = !el || el === document.body || !!el.closest?.(".session-window");
-      if (this.active === "consoles" && keysFree && (this.columnIds() as readonly (string | null)[]).includes(before)) {
+      if (this.$store.tabs.active === "consoles" && keysFree && (this.columnIds() as readonly (string | null)[]).includes(before)) {
         const want = WBColumns.focusAfter(ids, before);
         if (want && (want !== before || moved)) WBConsole.focusColumn(want);
       }
@@ -517,7 +517,7 @@ export function wbColumns() {
       const cols = this.effectiveColumns(from);
       const out = WBColumns.open(cols, from, id, this.columnCap(), this.columnDir);
       if (!out.ok) {
-        if (out.reason) this.flash(out.reason);
+        if (out.reason) this.$store.modals.flash(out.reason);
         return;
       }
       this.setColumns(out.columns);
@@ -570,13 +570,13 @@ export function wbColumns() {
     // none (the shortcut decides whether to swallow the key). Runs against the
     // LIVE stage.
     stepFence(step: number) {
-      if (this.active !== "consoles") return null;
+      if (this.$store.tabs.active !== "consoles") return null;
       return WBConsole.stepFence(step);
     },
     // Alt+Shift+arrows among the painted consoles: "x" across the columns,
     // "y" along the rows of one column. Returns whether it applied.
     stepColumn(axis: string, step: number) {
-      if (this.active !== "consoles" || this.columnIds().length < 2) return false;
+      if (this.$store.tabs.active !== "consoles" || this.columnIds().length < 2) return false;
       const painted = WBColumns.painted(this.columns, this.columnCap());
       const to = WBColumns.focusMove(painted, WBConsole.focusedId(), axis, step);
       if (to) WBConsole.focusColumn(to);
@@ -660,7 +660,7 @@ export function wbColumns() {
         if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
         const move = ARROW_STEPS[e.code as keyof typeof ARROW_STEPS];
         if (!move) return;
-        if (this.consoleShortcutsBlocked(this.columnIds().length >= 2)) return;
+        if (this.$store.modals.consoleShortcutsBlocked(this.columnIds().length >= 2)) return;
         if (!this.arrowStep(move[0], move[1])) return;
         e.preventDefault();
       });

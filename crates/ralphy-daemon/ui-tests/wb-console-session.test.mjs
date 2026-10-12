@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import {
   TAG_COMMAND,
   TAG_TERMINAL,
+  agentStateTitle,
   birthDecision,
   consoleCommand,
   dormancyDecision,
@@ -404,4 +405,12 @@ test("consoleCommand is the label of a startup-command console, and nothing for 
   assert.equal(consoleCommand("console"), undefined);
   assert.equal(consoleCommand(""), undefined);
   assert.equal(consoleCommand(undefined), undefined);
+});
+
+test("agentStateTitle words an agent state, its question, and a stale observation", () => {
+  assert.equal(agentStateTitle(null), "");
+  assert.equal(agentStateTitle(""), "");
+  assert.equal(agentStateTitle("unknown", "ignored"), "Agent state unknown");
+  assert.equal(agentStateTitle("working"), "Agent is working");
+  assert.equal(agentStateTitle("waiting", "Run the tests?"), "Agent is waiting: Run the tests?");
 });

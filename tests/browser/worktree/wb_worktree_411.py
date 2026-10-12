@@ -63,6 +63,10 @@ CHILD = os.path.join(TARGET, "session_test_child.exe" if os.name == "nt" else "s
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = "411-worktree-restart-2026-09-15" + ("" if os.name == "nt" else "-linux") + ".png"
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The branch dialog is the component `wbBranchDialog` (wb-branch-dialog.ts).
+BRANCH = "Alpine.$data(document.querySelector('[x-data=\"wbBranchDialog\"]'))"
+# The selected checkouts are the Alpine store `checkouts` (wb-checkouts-store.ts).
+CHECKOUTS = "Alpine.store('checkouts')"
 # The Consoles tab's menus and the columns are Alpine components of their
 # own (wb-consoles-tab.ts): a check reads them through their root.
 MENUS = "Alpine.$data(document.querySelector('[x-data=\"wbConsoleMenus\"]'))"
@@ -230,12 +234,12 @@ def open_project(page, slug):
 
 def open_picker(page, slug):
     open_project(page, slug)
-    if not page.evaluate(f"() => {SH}.branchOpen === true"):
+    if not page.evaluate(f"() => {BRANCH}.branchOpen === true"):
         page.evaluate("() => document.querySelector('li.project.open .project-head .branch-chip').click()")
-    page.wait_for_function(f"() => {SH}.branchOpen === true", timeout=10000)
+    page.wait_for_function(f"() => {BRANCH}.branchOpen === true", timeout=10000)
     # The listing arrives by round trip: gate on the reply having landed, not
     # on the modal being open (an open modal samples an empty section).
-    page.wait_for_function(f"() => {SH}.branchModal.checkouts !== null", timeout=15000)
+    page.wait_for_function(f"() => {BRANCH}.branchModal.checkouts !== null", timeout=15000)
 
 
 
@@ -243,14 +247,14 @@ def open_picker(page, slug):
 def wait_settled(page):
     """`removing` is cleared only after the `loadWorktrees` re-read landed, so
     this is the value to gate on before anyone counts rows (#405 trap)."""
-    page.wait_for_function(f"() => {SH}.branchModal.removing === null", timeout=15000)
+    page.wait_for_function(f"() => {BRANCH}.branchModal.removing === null", timeout=15000)
 
 
 def refusal(page):
     """Wait for `branchError` to land AND the re-read to settle."""
-    page.wait_for_function(f"() => {SH}.branchError !== ''", timeout=15000)
+    page.wait_for_function(f"() => {CHECKOUTS}.branchError !== ''", timeout=15000)
     wait_settled(page)
-    return {"err": page.evaluate(f"() => {SH}.branchError"), "shown": page.evaluate(SHOWN_ERROR)}
+    return {"err": page.evaluate(f"() => {CHECKOUTS}.branchError"), "shown": page.evaluate(SHOWN_ERROR)}
 
 
 # Cut a worktree the console's way (ADR-0063, amendment 2026-09-16 b): the

@@ -276,7 +276,7 @@ export function createViewer(window: ViewerWindow, document: Document, deps: Vie
       </div>
       <div class="viewer-body"></div>`;
     setPathLabel(el, rec);
-    el.querySelector<HTMLElement>('[data-act="mirror"]')!.onclick = () => window.getShell?.()?.toggleMirror?.();
+    el.querySelector<HTMLElement>('[data-act="mirror"]')!.onclick = () => window.Alpine?.store("tabs")?.toggleMirror();
     viewers!.append(el);
     const holder: Mirror = { rec, el, ed: null, ro: undefined, saveKey: undefined };
     const ed = WBMonaco.createOver(el.querySelector<HTMLElement>(".viewer-body")!, (rec.ed as MonacoEditor).getModel()!, {
@@ -312,7 +312,7 @@ export function createViewer(window: ViewerWindow, document: Document, deps: Vie
     divider.className = "viewers-divider";
     divider.innerHTML =
       '<button class="slot-close" title="Close the second pane" aria-label="Close the second pane"><i class="bi bi-x-lg"></i></button>';
-    divider.querySelector<HTMLElement>(".slot-close")!.onclick = () => window.getShell?.()?.clearSlot?.();
+    divider.querySelector<HTMLElement>(".slot-close")!.onclick = () => window.Alpine?.store("tabs")?.clearSlot();
     divider.addEventListener("pointerdown", (e: PointerEvent) => {
       if (e.button !== 0 || !e.isPrimary || (e.target as Element).closest(".slot-close")) return;
       e.preventDefault();
@@ -500,7 +500,7 @@ export function createViewer(window: ViewerWindow, document: Document, deps: Vie
         rec.mountFailed = true;
         console.error("[workbench] monaco diff failed to mount", err);
         messages.flash("Could not open the editor.");
-        window.getShell?.()?.closeTab(rec.id);
+        window.Alpine?.store("tabs")?.closeTab(rec.id);
       });
   }
 
@@ -562,7 +562,7 @@ export function createViewer(window: ViewerWindow, document: Document, deps: Vie
       (rec.ed as MonacoEditor | undefined)?.getAction("actions.find")?.run();
     };
     const mirrorBtn = el.querySelector<HTMLElement>('[data-act="mirror"]');
-    if (mirrorBtn) mirrorBtn.onclick = () => window.getShell?.()?.toggleMirror?.();
+    if (mirrorBtn) mirrorBtn.onclick = () => window.Alpine?.store("tabs")?.toggleMirror();
     saveBtn.onclick = () => save(rec);
     el.querySelector<HTMLElement>('[data-act="reload"]')!.onclick = () => reloadFile(rec);
     el.querySelector<HTMLElement>('[data-act="disk"]')!.onclick = () => {

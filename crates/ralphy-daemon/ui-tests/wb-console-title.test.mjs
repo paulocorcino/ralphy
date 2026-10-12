@@ -81,7 +81,6 @@ function fakeDeps(more = {}) {
     stage: () => null,
     desk: () => [],
     lastSessions: () => [],
-    agentStateTitle: (state) => state,
     askConfirm: async () => true,
     projectNameOf: (ref) => ref.split("/").pop(),
     projectTitleOf: (ref) => ref,

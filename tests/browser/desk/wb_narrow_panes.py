@@ -75,6 +75,9 @@ TARGET = os.environ.get("RALPHY_WB_TARGET") or os.path.join(REPO_ROOT, "target",
 EXE = os.path.join(TARGET, "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
+# The board is the component `wbBoard` (wb-board.ts).
+BOARD = "Alpine.$data(document.querySelector('[x-data=\"wbBoard\"]'))"
 PHONE = {"width": 390, "height": 844}
 DESKTOP = {"width": 1280, "height": 800}
 
@@ -235,7 +238,7 @@ def open_tab(page, slug, path):
     title = path.rsplit("/", 1)[-1]
     ftype = "markdown" if title.endswith(".md") else "code"
     page.evaluate(
-        f"() => {SH}.openTab({{ project: '{slug}', path: '{path}', title: '{title}', ftype: '{ftype}' }})"
+        f"() => {TABS}.openTab({{ project: '{slug}', path: '{path}', title: '{title}', ftype: '{ftype}' }})"
     )
     # `attached`: a narrow editor hides its path, so it is never visible.
     page.wait_for_selector(f".viewer:not([style*='display: none']) .viewer-file", state="attached", timeout=8000)
@@ -254,7 +257,7 @@ def inject_issue(page, slug):
     page.wait_for_timeout(200)
     page.evaluate(
         f"""() => {{
-          const sh = {SH};
+          const sh = {BOARD};
           sh.boardIssues['{slug}'] = [{{
             number: 2, title: 'Gate humano: credenciais e recursos externos para destravar a Fase 0 (A2 + A3a)',
             state: 'closed', reason: 'not_planned', column: 'closed', labels: [{{ name: 'ready-for-human', color: '0e8a16' }}],
@@ -377,7 +380,7 @@ def main():
             page.evaluate(f"() => {{ if (!{SH}.kanbanOpen) {SH}.toggleKanban(); }}")
             page.wait_for_timeout(300)
             inject_issue(page, slug)
-            page.evaluate(f"() => {SH}.openIssue(2)")
+            page.evaluate(f"() => {BOARD}.openIssue(2)")
             page.wait_for_selector(".kanban-detail.open .kd-head", timeout=5000)
             page.wait_for_timeout(300)
             board = rect(page, ".kanban")
@@ -391,7 +394,7 @@ def main():
             check("GitHub caption folded", display(page, ".kanban-detail.open .kd-gh-label") in ("none", None))
             page.click(".kanban-detail.open .kd-x")
             page.wait_for_timeout(300)
-            check("the back arrow closes the drawer", page.evaluate(f"() => {SH}.kanbanSel") is None)
+            check("the back arrow closes the drawer", page.evaluate(f"() => {BOARD}.kanbanSel") is None)
 
             # --- scenario 6b: the board head ---------------------------------
             close = rect(page, ".kanban-close")
@@ -415,7 +418,7 @@ def main():
             page.wait_for_timeout(200)
 
             # --- scenario 6c: a maximized console's titlebar -----------------
-            page.evaluate(f"() => {SH}.activate('consoles')")
+            page.evaluate(f"() => {TABS}.activate('consoles')")
             page.wait_for_timeout(300)
             before = page.locator(".session-window").count()
             page.evaluate(f"() => window.WBConsole.open({{ repo: '{slug}', plain: true }})")
@@ -580,7 +583,7 @@ def main():
             page.evaluate(f"() => {{ if (!{SH}.kanbanOpen) {SH}.toggleKanban(); }}")
             page.wait_for_timeout(300)
             inject_issue(page, slug)
-            page.evaluate(f"() => {SH}.openIssue(2)")
+            page.evaluate(f"() => {BOARD}.openIssue(2)")
             page.wait_for_selector(".kanban-detail.open .kd-head", timeout=5000)
             page.wait_for_timeout(300)
             board = rect(page, ".kanban")

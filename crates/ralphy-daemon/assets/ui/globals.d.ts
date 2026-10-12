@@ -286,8 +286,15 @@ interface Window {
       handler: (el: HTMLElement, directive: AlpineDirective, utilities: AlpineDirectiveUtilities) => void,
     ): void;
     store(name: "projects"): import("./wb-projects-store.ts").ProjectsStore;
+    store(name: "runs"): import("./wb-runs-store.ts").RunsStore;
+    store(name: "checkouts"): import("./wb-checkouts-store.ts").CheckoutsStore;
+    store(name: "connection"): import("./wb-connection-store.ts").ConnectionStore;
+    store(name: "release"): import("./wb-release-store.ts").ReleaseStore;
+    store(name: "modals"): import("./wb-modals-store.ts").ModalsStore;
+    store(name: "tabs"): import("./wb-tabs-store.ts").TabsStore;
     store(name: string, value: object): void;
     raw<T>(value: T): T;
+    nextTick(callback: () => void): Promise<void>;
     start(): void;
   };
   /** The event bus of `app.ts`, or the opener bridge of a torn-off page. */
@@ -423,6 +430,33 @@ type OpenRequest = {
 interface WindowEventMap {
   /** The open project changed: the project now open and the one that was. */
   "workbench:project-changed": CustomEvent<{ slug: string | null; previous: string | null }>;
+  /** The Alpine store `runs` kept a read of the open project's runs. */
+  "workbench:runs-read": CustomEvent<null>;
+  /** The runs socket of the open project says its run snapshots changed. */
+  "workbench:runs-dirty": CustomEvent<null>;
+  /** The Runs panel closed. */
+  "workbench:runs-closed": CustomEvent<null>;
+  /** Open the Runs panel on the run that works on this issue. */
+  "workbench:run-open": CustomEvent<{ issue: number }>;
+  /** A chunk of the raw output of a run the daemon started. */
+  "workbench:run-output": CustomEvent<{ text: string }>;
+  /** A verb the daemon ran failed or ended; `message` says how. */
+  "workbench:run-verb-failed": CustomEvent<{ message: string }>;
+  /** A refresh trigger of the board (#301); the board's predicate decides. */
+  "workbench:board-refresh": CustomEvent<{ trigger: string }>;
+  /** The board opened. */
+  "workbench:board-opened": CustomEvent<null>;
+  /** Open the board's detail of this issue. */
+  "workbench:issue-open": CustomEvent<{ issue: number }>;
+  /** Ask for the open project's issues the board already holds: the board
+   * fills `issues`, during the send. */
+  "workbench:board-issues": CustomEvent<{ issues: import("./wb-kanban.ts").Issue[] }>;
+  /** Read the change set and the branch of the project `ref`. */
+  "workbench:changes-read": CustomEvent<{ ref: string }>;
+  /** `ref` has a new checkout: its change-set and branch reads start over. */
+  "workbench:changes-forget": CustomEvent<{ ref: string }>;
+  /** The Changes view opened: read it again if it is on screen. */
+  "workbench:changes-refresh": CustomEvent<null>;
   /** The open checkout's HEAD moved. */
   "workbench:head-moved": CustomEvent<{ ref: string }>;
   "workbench:menus-close": CustomEvent<null>;
@@ -432,8 +466,33 @@ interface WindowEventMap {
   /** A sleeping peer woke. */
   "workbench:peer-woken": CustomEvent<{ daemon: string }>;
   "workbench:checkout-changed": CustomEvent<null>;
+  /** Open the branch dialog for this project (wb-branch-dialog.ts). */
+  "workbench:branch-open": CustomEvent<{ project: import("./wb-project.ts").Project }>;
+  /** Open the checkout menu of this project under `anchor` (wb-branch-dialog.ts). */
+  "workbench:checkout-menu": CustomEvent<{ project: import("./wb-project.ts").Project; anchor: HTMLElement }>;
   "workbench:panels-reread": CustomEvent<null>;
+  /** The daemon said whether this browser may read (`authed`), whether the
+   * login asks for a password, and its policy (the Alpine store `connection`). */
+  "workbench:auth-read": CustomEvent<{ authed: boolean; password: boolean; policy: "localhost" | "bearer" | "session" }>;
+  /** Read the project list again; `git` reads the change set and the branch too. */
+  "workbench:repos-reread": CustomEvent<{ git: boolean }>;
+  /** Read the live sessions again. */
+  "workbench:sessions-reread": CustomEvent<null>;
+  /** Read the saved desk again. */
+  "workbench:desk-reread": CustomEvent<null>;
+  /** Read the release view again. */
+  "workbench:release-reread": CustomEvent<null>;
+  /** Add a canvas tab once and bring it to the front. */
+  "workbench:tab-open": CustomEvent<{ tab: import("./wb-shell-types.d.ts").CanvasTab }>;
+  /** Open the Spend tab. */
+  "workbench:spend-open": CustomEvent<null>;
+  /** Read the Spend tab again: the open project changed. */
+  "workbench:spend-refresh": CustomEvent<null>;
+  /** The Spend tab came to the front. */
+  "workbench:spend-shown": CustomEvent<null>;
   "workbench:log-off": CustomEvent<null>;
+  /** The daemon accepted a login (wb-login.ts): read the gated desk and tabs again. */
+  "workbench:logged-in": CustomEvent<null>;
   /** Re-list the directory `rel`, then show `reveal`. */
   "workbench:tree-dirty": CustomEvent<{ rel: string; reveal?: string }>;
   "workbench:file-search-open": CustomEvent<null>;

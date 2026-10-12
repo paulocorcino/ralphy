@@ -20,6 +20,7 @@ function dormancy(p) {
     window: p.window,
     document: p.document,
     wins: new Set(),
+    stack: { setFocusHook() {} },
     sync: { hasPending: () => false },
     staleProbeNow: () => null,
     applyKeyBar() {},

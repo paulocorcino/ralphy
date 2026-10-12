@@ -59,6 +59,7 @@ EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt"
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "340-fence-end-to-end-2026-07-27.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
 
 VIEW = {"width": 1400, "height": 900}
 # The fixture window, in the shape a PRE-#340 shell wrote. `kind = "agent"`
@@ -216,7 +217,7 @@ def desk_page(ctx, viewport=None):
     # `activate` and not a raw `active =` write: only the former reaches
     # `refitAll()`, the path that re-applies a stored offset after `display:none`
     # threw the scroll position away (KNOWLEDGE, #339).
-    page.evaluate(f"() => {{ {SH}.activate('consoles'); }}")
+    page.evaluate(f"() => {{ {TABS}.activate('consoles'); }}")
     page.wait_for_timeout(1800)
     return page
 
@@ -829,7 +830,7 @@ def main():
             )
             blind.goto(BASE)
             blind.wait_for_selector("[x-data]", timeout=8000)
-            blind.evaluate(f"() => {{ {SH}.activate('consoles'); }}")
+            blind.evaluate(f"() => {{ {TABS}.activate('consoles'); }}")
             blind.wait_for_timeout(1200)
             draw_fence(blind)
             blind.wait_for_timeout(1500)

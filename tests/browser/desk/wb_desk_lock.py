@@ -52,6 +52,7 @@ BASE = f"http://127.0.0.1:{PORT}/"
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
 VIEW = {"width": 1400, "height": 900}
 
 FENCE = {"left": 40, "top": 40, "width": 500, "height": 360}
@@ -191,7 +192,7 @@ def desk_page(ctx):
     page.set_viewport_size(dict(VIEW))
     page.goto(BASE)
     page.wait_for_selector("[x-data]", timeout=8000)
-    page.evaluate(f"() => {{ {SH}.activate('consoles'); }}")
+    page.evaluate(f"() => {{ {TABS}.activate('consoles'); }}")
     page.wait_for_timeout(1800)
     settle_windows(page, 2)
     page.wait_for_function("() => document.querySelectorAll('.fence').length === 1", timeout=15000)
@@ -435,7 +436,7 @@ def main():
 
             page.reload()
             page.wait_for_selector("[x-data]", timeout=8000)
-            page.evaluate(f"() => {{ {SH}.activate('consoles'); }}")
+            page.evaluate(f"() => {{ {TABS}.activate('consoles'); }}")
             page.wait_for_timeout(1800)
             settle_windows(page, 2)
             tag_windows(page)
@@ -511,7 +512,7 @@ def main():
 
             page.reload()
             page.wait_for_selector("[x-data]", timeout=8000)
-            page.evaluate(f"() => {{ {SH}.activate('consoles'); }}")
+            page.evaluate(f"() => {{ {TABS}.activate('consoles'); }}")
             page.wait_for_timeout(1800)
             settle_windows(page, 2)
             tag_windows(page)

@@ -46,6 +46,7 @@ CHILD = os.path.join(TARGET, "session_test_child.exe" if os.name == "nt" else "s
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = "335-watch-baton-2026-07-27.png"
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
 
 results = []
 
@@ -217,7 +218,7 @@ def desk_page(ctx, settle=2500):
     page = ctx.new_page()
     page.goto(BASE)
     page.wait_for_selector("[x-data]", timeout=8000)
-    page.evaluate(f"() => {{ {SH}.active = 'consoles'; }}")
+    page.evaluate(f"() => {{ {TABS}.active = 'consoles'; }}")
     page.wait_for_timeout(settle)
     return page
 

@@ -1,7 +1,7 @@
 // Unit tests for assets/ui/wb-messages.ts — the one door for operator
-// messages. `createMessages` is driven with a fake document and a fake shell,
-// with no browser: each test checks which drawing the door uses when the page
-// has a shell, and when it has none.
+// messages. `createMessages` is driven with a fake document and a fake Alpine
+// store `modals`, with no browser: each test checks which drawing the door
+// uses when the page has the store, and when it has none.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createMessages } from "../assets/ui/wb-messages.ts";
@@ -64,7 +64,13 @@ function fakeDocument() {
   return doc;
 }
 
-const fakeWindow = () => ({ setTimeout: () => 1, clearTimeout() {} });
+// The page's window. `modals` is the Alpine store the page registered, or
+// absent for a page with no Alpine.
+const fakeWindow = (modals) => ({
+  setTimeout: () => 1,
+  clearTimeout() {},
+  ...(modals ? { Alpine: { store: (name) => (name === "modals" ? modals : undefined) } } : {}),
+});
 
 // The buttons of the dialog the door appended last: `[cancel, go]`, or `[go]`.
 function buttonsOf(document) {
@@ -74,10 +80,10 @@ function buttonsOf(document) {
   return { scrim, buttons: foot.children };
 }
 
-test("with a shell, the door asks in the shell's modal and flashes on the shell's line", async () => {
+test("with the store modals, the door asks in its modal and flashes on its line", async () => {
   const asked = [];
   const flashed = [];
-  const shell = {
+  const modals = {
     askConfirm: (opts) => {
       asked.push(opts);
       return Promise.resolve(true);
@@ -85,25 +91,25 @@ test("with a shell, the door asks in the shell's modal and flashes on the shell'
     flash: (msg) => flashed.push(msg),
   };
   const document = fakeDocument();
-  const messages = createMessages(fakeWindow(), document, { shell: () => shell });
+  const messages = createMessages(fakeWindow(modals), document);
 
   const ask = messages.askInShell({ title: "Delete", message: "Delete x?", confirmLabel: "Delete", danger: true });
-  assert.ok(ask, "a page with a shell gets the shell's answer");
+  assert.ok(ask, "a page with the store gets the store's answer");
   assert.equal(await ask, true);
   assert.deepEqual(asked, [{ title: "Delete", message: "Delete x?", confirmLabel: "Delete", danger: true }]);
-  assert.equal(document.body.children.length, 0, "the shell's modal draws it: the door builds no dialog");
+  assert.equal(document.body.children.length, 0, "the store's modal draws it: the door builds no dialog");
 
   messages.flash("Run started.");
   assert.deepEqual(flashed, ["Run started."]);
 });
 
-test("with no shell, the door has no shell modal, a flash shows nothing, and the dialog is the DOM one", async () => {
+test("with no Alpine, the door has no Alpine modal, a flash shows nothing, and the dialog is the DOM one", async () => {
   const document = fakeDocument();
-  const messages = createMessages(fakeWindow(), document, { shell: () => null });
+  const messages = createMessages(fakeWindow(), document);
 
-  assert.equal(messages.askInShell({ title: "Delete" }), null, "the caller decides what a page with no shell does");
+  assert.equal(messages.askInShell({ title: "Delete" }), null, "the caller decides what a page with no Alpine does");
   messages.flash("Run started.");
-  assert.equal(document.body.children.length, 0, "a flash with no shell draws nothing");
+  assert.equal(document.body.children.length, 0, "a flash with no Alpine draws nothing");
 
   const yes = messages.askConfirm({ title: "Close this console?", message: "The session ends." });
   const { scrim, buttons } = buttonsOf(document);
@@ -129,7 +135,7 @@ test("with no shell, the door has no shell modal, a flash shows nothing, and the
 
 test("a second toast replaces the first", () => {
   const document = fakeDocument();
-  const messages = createMessages(fakeWindow(), document, { shell: () => null });
+  const messages = createMessages(fakeWindow(), document);
   const first = messages.toast({ text: "Note closed" });
   const second = messages.toast({ text: "Note a.md closed" });
   assert.equal(first.removed, true);

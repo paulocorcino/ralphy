@@ -59,6 +59,7 @@ PORT = 7481
 T.PORT = PORT
 T.BASE = BASE = f"http://127.0.0.1:{PORT}/"
 SH = T.SH
+TABS = "Alpine.store('tabs')"
 # The Consoles tab's menus and the columns are Alpine components of their
 # own (wb-consoles-tab.ts): a check reads them through their root.
 MENUS = "Alpine.$data(document.querySelector('[x-data=\"wbConsoleMenus\"]'))"
@@ -134,7 +135,7 @@ def daemon_rect(nid, want=None, timeout=4):
 
 def boot(page, slug):
     page.wait_for_selector("[x-data]", timeout=8000)
-    page.evaluate(f"() => {{ {SH}.activate('consoles'); }}")
+    page.evaluate(f"() => {{ {TABS}.activate('consoles'); }}")
     page.wait_for_function(
         "() => { const w = document.querySelector('#stage .session-window');"
         " return !!w && w.clientWidth > 0; }",
@@ -197,7 +198,7 @@ def main():
             move_note(page, a, A_RECT)
             bnote = create_note(page, slug, "Note B")
             move_note(page, bnote, B_RECT)
-            page.evaluate(f"() => {{ {SH}.activate('consoles'); }}")
+            page.evaluate(f"() => {{ {TABS}.activate('consoles'); }}")
             page.wait_for_timeout(300)
             console_max = page.evaluate(
                 "() => document.querySelector('#stage .session-window').classList.contains('maximized')"

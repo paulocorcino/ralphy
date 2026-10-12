@@ -27,7 +27,7 @@ type MovePick = {
 
 export function wbMoveDialog() {
   // Every `shell()` member this component's code or markup reads or calls.
-  return component(["checkoutOf", "scrim"], {
+  return component([], {
     // The move destination picker (#364): browses one level at a time through
     // `tree.list`. `from` is the FULL rel path; `dir` the browsed directory
     // ("" is the repo root).
@@ -57,7 +57,7 @@ export function wbMoveDialog() {
       // Same checkout as the tree the row came from (#406).
       const listing = await WBDaemon.observe(
         "tree.list",
-        WBDaemon.withCheckout({ repo: this.$store.projects.openSlug, path: dir }, this.checkoutOf(this.$store.projects.openSlug)),
+        WBDaemon.withCheckout({ repo: this.$store.projects.openSlug, path: dir }, this.$store.checkouts.checkoutOf(this.$store.projects.openSlug)),
       ).catch(() => null);
       if (seq !== this._movePickSeq) return;
       this.movePick.busy = false;

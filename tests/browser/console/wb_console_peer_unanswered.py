@@ -244,7 +244,7 @@ def reload(page):
 
 
 def fleet_read(page):
-    page.evaluate(f"() => {SH}.loadRepos({{ git: false }})")
+    page.evaluate(f"() => Alpine.store('projects').loadRepos({{ git: false }})")
 
 
 def build():
@@ -322,7 +322,7 @@ def main():
             page.goto(f"http://127.0.0.1:{LOCAL_PORT}/", wait_until="domcontentloaded")
             page.wait_for_function("() => !!window.WBConsole", timeout=10000)
             page.wait_for_function(
-                f"() => {SH}.fleetPeers.some(p => p.daemon_id === '{PEER_ID}' && p.state === 'reachable')",
+                f"() => Alpine.store('projects').fleetPeers.some(p => p.daemon_id === '{PEER_ID}' && p.state === 'reachable')",
                 timeout=30000,
             )
 

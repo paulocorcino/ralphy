@@ -23,6 +23,10 @@ B_ID = "01ARZ3NDEKTSV4RRFFQ69G5FAW"
 SLUG = "ralphy-lab/shared-repo"
 PEER_REF = f"{B_ID}/{SLUG}"
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The branch dialog is the component `wbBranchDialog` (wb-branch-dialog.ts).
+BRANCH = "Alpine.$data(document.querySelector('[x-data=\"wbBranchDialog\"]'))"
+# The Changes view is the component wbChanges.
+CHG = "Alpine.$data(document.querySelector('[x-data=\"wbChanges\"]'))"
 FILES = "Alpine.$data(document.querySelector('[x-data=\"wbFiles\"]'))"
 results = []
 
@@ -218,16 +222,16 @@ def main():
             )
 
             page.evaluate(
-                f"(ref) => {SH}.openBranchModal(Alpine.store('projects').projects.find(p => Alpine.store('projects').repoRef(p) === ref))",
+                f"(ref) => {BRANCH}.openBranchModal(Alpine.store('projects').projects.find(p => Alpine.store('projects').repoRef(p) === ref))",
                 PEER_REF,
             )
             page.wait_for_function(
-                f"(ref) => {SH}.branchModal.slug === ref && {SH}.branchModal.branches.includes('main')",
+                f"(ref) => {BRANCH}.branchModal.slug === ref && {BRANCH}.branchModal.branches.includes('main')",
                 arg=PEER_REF,
                 timeout=20000,
             )
             page.evaluate(
-                f"() => {{ {SH}.branchModal.filter = 'peer-browser-branch'; {SH}.createBranch(); }}"
+                f"() => {{ {BRANCH}.branchModal.filter = 'peer-browser-branch'; {BRANCH}.createBranch(); }}"
             )
             deadline = time.time() + 20
             while (
@@ -268,14 +272,14 @@ def main():
             (b_repo / "changed.txt").write_text("changed on peer", encoding="utf-8")
             page.evaluate(f"() => {SH}.showSideView('changes')")
             page.wait_for_function(
-                f"(ref) => ({SH}.changesUnstaged[ref] || []).some(c => c.path === 'changed.txt')",
+                f"(ref) => ({CHG}.changesUnstaged[ref] || []).some(c => c.path === 'changed.txt')",
                 arg=PEER_REF,
                 timeout=20000,
             )
             check(
                 "Changes lists a file modified in the peer repo",
                 page.evaluate(
-                    f"(ref) => ({SH}.changesUnstaged[ref] || []).some(c => c.path === 'changed.txt')",
+                    f"(ref) => ({CHG}.changesUnstaged[ref] || []).some(c => c.path === 'changed.txt')",
                     PEER_REF,
                 ),
             )

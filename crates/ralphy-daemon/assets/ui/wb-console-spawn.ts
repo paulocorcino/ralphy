@@ -3,7 +3,8 @@
 
    `createSpawn(deps)` builds a live console window (the chrome, the terminal,
    the parked and peer strips, the restart and the close) and writes what its
-   birth and its session change in its desk record. It reads the console only
+   birth and its session change in its desk record. `open` is the operator's
+   new console, under the desk cap. It reads the console only
    through `deps`. The rules are `birthDecision` and `peerOfflineView` in
    `wb-console-session.ts`; the key bar is `wb-console-keys.ts` (#621).
 --------------------------------------------------------------------------- */
@@ -11,6 +12,7 @@ import * as WBConsoleSession from "./wb-console-session.ts";
 import { WBWindowState } from "./wb-window-state.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
+import { DESK_MAX } from "./wb-desk-folds.ts";
 import type { Group } from "./wb-fleet.ts";
 import type { TerminalOpts } from "./wb-console-terminal.ts";
 import type { ConfirmOptions } from "./wb-console-title.ts";
@@ -30,7 +32,7 @@ export type SpawnDeps = {
   wins: Set<ConsoleWin>;
   // The fleet's last answer, grouped by peer: one map for the life of the console.
   peerGroups: Map<string, Group>;
-  // The shell's wake of a peer and its fleet read, read at each use.
+  // The store `projects`' wake of a peer and its fleet read, read at each use.
   wakePeerNow: () => ((daemon: string) => Promise<boolean>) | null;
   readFleetNow: () => (() => void) | null;
   // The window chrome: the frame, the titlebar, the body and its buttons.
@@ -64,10 +66,12 @@ export type SpawnDeps = {
     trackDormancy: (win: ConsoleWin) => void;
     untrackDormancy: (win: ConsoleWin) => void;
   };
-  // The door's confirm.
+  // The door's confirm, and its toast.
   askConfirm: (opts: ConfirmOptions) => Promise<unknown>;
-  // The desk record writes (`createDeskRecords`).
+  toast: (opts: { text: string }) => void;
+  // The desk record writes (`createDeskRecords`), and whether the desk is full.
   createRecord: (win: ConsoleWin) => void;
+  atDeskCap: () => boolean;
   setWin: (win: ConsoleWin, fields: DeskWindowFields) => void;
   forgetRecord: (deskId: string) => void;
   // The desk view, a fresh desk read, and a window whose record left (`createDesk`).
@@ -113,7 +117,9 @@ export function createSpawn(deps: SpawnDeps) {
     attachTerminal,
     budget,
     askConfirm,
+    toast,
     createRecord,
+    atDeskCap,
     setWin,
     forgetRecord,
     currentDesk,
@@ -504,5 +510,22 @@ export function createSpawn(deps: SpawnDeps) {
     };
   }
 
-  return { spawnWindow, recordBirth, recordSession, deskOf };
+  // `agent` names an adapter (claude/codex/opencode); when `plain` is set there
+  // is no agent — a normal shell in the repo dir, labelled "console", or, with
+  // `command`, a shell running that command and labelled by it (the same label
+  // the daemon gives the session, so the desk record relaunches it as such).
+  function open({ repo, agent, plain, checkout, command }: { repo?: string | null; agent?: string | null; plain?: boolean; checkout?: string | null; command?: string }) {
+    if (atDeskCap()) {
+      toast({ text: `You can have at most ${DESK_MAX} consoles. Close one first.` });
+      return false;
+    }
+    const label = agent || (plain && command) || "console";
+    // The plain console ignores the checkout: it rides the repo path (on a
+    // peer, `wsl.exe --cd`) and stays on the primary.
+    spawnWindow(plain ? { console: true, repo, command } : { repo, agent, checkout }, label, repo);
+    WB.emit("console-open", { repo: repo || null, agent: agent || null, plain: !!plain });
+    return true;
+  }
+
+  return { spawnWindow, recordBirth, recordSession, deskOf, open };
 }

@@ -59,11 +59,6 @@ export type Subscription = ReturnType<import("./wb-daemon.ts").WBDaemonApi["subs
 /** The shell fields its methods set on first use: none is in the literal. */
 export type ShellLate = {
   _clockTick?: Timer;
-  _actionTimer?: Timer;
-  /** Counts the `worktree.list` reads; only the newest one is kept. */
-  _listingSeq?: number;
-  /** Counts the `issue.show` reads; only the newest one is kept. */
-  _issueDetailGen?: number;
 };
 
 /** The repo's ready plan on the board: its text and `WBRun.planSummary` of it. */

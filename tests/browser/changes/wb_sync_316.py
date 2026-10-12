@@ -281,7 +281,7 @@ def main():
             # The negative control for "no fetch on a timer or on panel open":
             # sit on the open panel, then force the sidebar refresh path too.
             page.wait_for_timeout(3000)
-            page.evaluate(f"() => {SH}.loadRepos()")
+            page.evaluate(f"() => Alpine.store('projects').loadRepos()")
             page.wait_for_timeout(1500)
             check(
                 "no fetch happens on panel open, on a refresh, or on a timer",

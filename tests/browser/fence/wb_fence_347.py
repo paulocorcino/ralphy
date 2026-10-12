@@ -72,6 +72,7 @@ CHILD = os.path.join(TARGET, "session_test_child.exe" if os.name == "nt" else "s
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "347-the-detach-survives-an-f5-2026-07-28.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
 
 VIEW = {"width": 1400, "height": 900}
 
@@ -303,7 +304,7 @@ def activate_consoles(page, fences=2):
     threw the scroll position away (KNOWLEDGE, #339).
     """
     page.wait_for_selector("[x-data]", timeout=8000)
-    page.evaluate(f"() => {{ {SH}.activate('consoles'); }}")
+    page.evaluate(f"() => {{ {TABS}.activate('consoles'); }}")
     page.wait_for_timeout(1800)
     page.wait_for_function(
         "(n) => document.querySelectorAll('.fence').length === n", arg=fences, timeout=15000

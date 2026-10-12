@@ -63,6 +63,15 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
+# The Alpine store `modals`: the modal stack, the confirm, the prompt and the flash line.
+MODALS = "Alpine.store('modals')"
+# The branch dialog is the component `wbBranchDialog` (wb-branch-dialog.ts).
+BRANCH = "Alpine.$data(document.querySelector('[x-data=\"wbBranchDialog\"]'))"
+# The selected checkouts are the Alpine store `checkouts` (wb-checkouts-store.ts).
+CHECKOUTS = "Alpine.store('checkouts')"
+# The Changes view is the component wbChanges.
+CHG = "Alpine.$data(document.querySelector('[x-data=\"wbChanges\"]'))"
 
 results = []
 
@@ -203,8 +212,8 @@ ROW_BY_NAME = (
 # before Alpine's `x-show` flip, so a raw count resolves early.
 VISIBLE_ROWS = "Array.from(document.querySelectorAll('.chg-row')).filter(r => r.offsetParent !== null)"
 ROW_NAMES = f"() => {VISIBLE_ROWS}.map(r => r.querySelector('.chg-name').textContent.trim())"
-HAS_UNSTAGED = "(a) => ({SH}.changesUnstaged[a[0]] || []).some(e => e.path === a[1])".replace("{SH}", SH)
-HAS_STAGED = "(a) => ({SH}.changesStaged[a[0]] || []).some(e => e.path === a[1])".replace("{SH}", SH)
+HAS_UNSTAGED = "(a) => ({CHG}.changesUnstaged[a[0]] || []).some(e => e.path === a[1])".replace("{CHG}", CHG)
+HAS_STAGED = "(a) => ({CHG}.changesStaged[a[0]] || []).some(e => e.path === a[1])".replace("{CHG}", CHG)
 
 
 def wait_shell(page):
@@ -251,9 +260,9 @@ def open_project(page, slug):
 def open_picker(page, slug):
     open_project(page, slug)
     page.evaluate("() => document.querySelector('li.project.open .project-head .branch-chip').click()")
-    page.wait_for_function(f"() => {SH}.branchOpen === true", timeout=10000)
+    page.wait_for_function(f"() => {BRANCH}.branchOpen === true", timeout=10000)
     # `branch.list` arrives by round trip: gate on the real list having landed.
-    page.wait_for_function(f"() => {SH}.branchModal.branches.length >= 1", timeout=15000)
+    page.wait_for_function(f"() => {BRANCH}.branchModal.branches.length >= 1", timeout=15000)
 
 
 # --- the Files bar's checkout chip and its menu (ADR-0063 amendment 2026-09-16 b) ---
@@ -312,9 +321,9 @@ def click_remove(page, name, slug=None):
     page.wait_for_function(f"(n) => !!({CK_ITEM})(n)", arg=name, timeout=15000)
     page.evaluate(f"(n) => ({CK_ITEM})(n).querySelector('.session-checkout-remove').click()", arg=name)
     page.wait_for_function(f"() => !({CK_MENU_OPEN})()", timeout=5000)
-    page.wait_for_function(f"() => {SH}.confirmModal.open", timeout=5000)
-    page.evaluate(f"() => {SH}.confirmRespond(true)")
-    page.wait_for_function(f"() => Object.keys({SH}.worktreeRemoving).length === 0", timeout=20000)
+    page.wait_for_function(f"() => {MODALS}.confirmModal.open", timeout=5000)
+    page.evaluate(f"() => {MODALS}.confirmRespond(true)")
+    page.wait_for_function(f"() => Object.keys({BRANCH}.worktreeRemoving).length === 0", timeout=20000)
 
 
 
@@ -368,10 +377,10 @@ def main():
 
             # --- scenario 2: the Changes rows are the worktree's ---------------
             click_row(page, "wt-a", slug)
-            page.wait_for_function(f"(s) => {SH}.checkouts[s] === 'wt-a'", arg=slug, timeout=10000)
+            page.wait_for_function(f"(s) => {CHECKOUTS}.checkouts[s] === 'wt-a'", arg=slug, timeout=10000)
             (wt / "dirty.txt").write_text("x\n", encoding="utf-8")
             (wt / "README.md").write_text("# edited in the worktree\n", encoding="utf-8")
-            page.evaluate(f"(s) => {SH}.loadChanges(s)", arg=slug)
+            page.evaluate(f"(s) => {CHG}.loadChanges(s)", arg=slug)
             page.wait_for_function(HAS_UNSTAGED, arg=[slug, "dirty.txt"], timeout=15000)
             show_view(page, "changes")
             page.wait_for_function(
@@ -388,7 +397,7 @@ def main():
             check("the primary's working tree is clean", porcelain == "", f"got={porcelain!r}")
 
             # --- scenario 3: stage lands on the worktree's index --------------
-            page.evaluate(f"(s) => {SH}.stagePaths(s, ['README.md'])", arg=slug)
+            page.evaluate(f"(s) => {CHG}.stagePaths(s, ['README.md'])", arg=slug)
             page.wait_for_function(HAS_STAGED, arg=[slug, "README.md"], timeout=15000)
             check(
                 "stagePaths(README.md) stages in the worktree's index",
@@ -402,11 +411,11 @@ def main():
 
             # --- scenario 4: commit lands on the worktree's branch ------------
             page.evaluate(
-                f"(s) => {{ {SH}.commitMsgSlug = s; {SH}.commitMsg = 'wt commit'; return {SH}.commitStaged(s); }}",
+                f"(s) => {{ {CHG}.commitMsgSlug = s; {CHG}.commitMsg = 'wt commit'; return {CHG}.commitStaged(s); }}",
                 arg=slug,
             )
             page.wait_for_function(
-                f"(s) => ({SH}.changesStaged[s] || []).length === 0 && {SH}.commitMsg === ''",
+                f"(s) => ({CHG}.changesStaged[s] || []).length === 0 && {CHG}.commitMsg === ''",
                 arg=slug,
                 timeout=15000,
             )
@@ -426,11 +435,11 @@ def main():
             # primary would answer `absent` (original ""), so the original side
             # discriminates the tree.
             (wt / "only-in-wt.txt").write_bytes(b"changed\n")
-            page.evaluate(f"(s) => {SH}.loadChanges(s)", arg=slug)
+            page.evaluate(f"(s) => {CHG}.loadChanges(s)", arg=slug)
             page.wait_for_function(HAS_UNSTAGED, arg=[slug, "only-in-wt.txt"], timeout=15000)
             diff_id = f"diff:{slug}@wt-a:only-in-wt.txt"
             click_change_row(page, "only-in-wt.txt")
-            page.wait_for_function(f"(id) => {SH}.tabs.some(t => t.id === id)", arg=diff_id, timeout=15000)
+            page.wait_for_function(f"(id) => {TABS}.tabs.some(t => t.id === id)", arg=diff_id, timeout=15000)
             check("the diff tab id carries the checkout pin", True, diff_id)
             wait_diff_mounted(page, diff_id)
             sides = page.evaluate(
@@ -448,18 +457,18 @@ def main():
                 sides["modified"] == "changed\n",
                 f"got={sides['modified']!r}",
             )
-            page.evaluate(f"(id) => {SH}.closeTab(id)", arg=diff_id)
+            page.evaluate(f"(id) => {TABS}.closeTab(id)", arg=diff_id)
             # `side` lacks only-in-wt.txt: a modified copy would block the
             # checkout, so restore it from git before the branch acts.
             git(wt, "checkout", "--", "only-in-wt.txt")
 
             # --- scenario 6: switchBranch moves the worktree's HEAD only ------
             open_picker(page, slug)
-            cur = page.evaluate(f"() => {SH}.branchModal.current")
+            cur = page.evaluate(f"() => {BRANCH}.branchModal.current")
             check("the picker's current is the worktree's branch", cur == "wt-a", f"got={cur!r}")
-            primary_row = page.evaluate(f"() => {SH}.branchModal.primaryBranch")
+            primary_row = page.evaluate(f"() => {BRANCH}.branchModal.primaryBranch")
             check("the picker still knows the primary's own branch", primary_row == "main", f"got={primary_row!r}")
-            page.evaluate(f"() => {SH}.switchBranch('side')")
+            page.evaluate(f"() => {BRANCH}.switchBranch('side')")
             check("switchBranch('side') moves the worktree's HEAD to side", wait_git(wt, "side"), f"got={head_branch(wt)!r}")
             check("the primary's HEAD stays on main", head_branch(fixture) == "main", f"got={head_branch(fixture)!r}")
             page.wait_for_function(CHIP_IS, arg="side", timeout=15000)
@@ -467,9 +476,9 @@ def main():
             # The sync row and the commit button follow the moved HEAD: the
             # `sync.status` re-read runs in the worktree too.
             page.wait_for_function(
-                f"(s) => ({SH}.syncByProject[s] || {{}}).branch === 'side'", arg=slug, timeout=15000
+                f"(s) => ({CHG}.syncByProject[s] || {{}}).branch === 'side'", arg=slug, timeout=15000
             )
-            label = page.evaluate(f"() => {SH}.commitTarget().label")
+            label = page.evaluate(f"() => {CHG}.commitTarget().label")
             check("after the switch the commit button reads `Commit to side`", label == "Commit to side", f"got={label!r}")
             show_view(page, "changes")
             page.wait_for_function(HAS_UNSTAGED, arg=[slug, "dirty.txt"], timeout=15000)
@@ -494,9 +503,9 @@ def main():
 
             # --- scenario 7: a branch the primary holds is refused by git -----
             open_picker(page, slug)
-            page.evaluate(f"() => {{ {SH}.branchError = ''; {SH}.switchBranch('main'); }}")
-            page.wait_for_function(f"() => {SH}.branchError !== ''", timeout=15000)
-            err = page.evaluate(f"() => {SH}.branchError")
+            page.evaluate(f"() => {{ {CHECKOUTS}.branchRefused(''); {BRANCH}.switchBranch('main'); }}")
+            page.wait_for_function(f"() => {CHECKOUTS}.branchError !== ''", timeout=15000)
+            err = page.evaluate(f"() => {CHECKOUTS}.branchError")
             check(
                 "switchBranch('main') is sent and refused by git (already used by the primary)",
                 "already" in (err or "") and "main" in (err or ""),
@@ -507,7 +516,7 @@ def main():
 
             # --- scenario 8: createBranch on the worktree ---------------------
             open_picker(page, slug)
-            page.evaluate(f"() => {{ {SH}.branchError = ''; {SH}.branchModal.filter = 'from-wt'; {SH}.createBranch(); }}")
+            page.evaluate(f"() => {{ {CHECKOUTS}.branchRefused(''); {BRANCH}.branchModal.filter = 'from-wt'; {BRANCH}.createBranch(); }}")
             check("createBranch() checks the worktree out onto from-wt", wait_git(wt, "from-wt"), f"got={head_branch(wt)!r}")
             check("the primary's HEAD stays on main after the create", head_branch(fixture) == "main")
             page.wait_for_function(CHIP_IS, arg="from-wt", timeout=15000)
@@ -515,9 +524,9 @@ def main():
 
             # --- scenario 9: primary shows the primary's Changes --------------
             click_row(page, "primary", slug)
-            page.wait_for_function(f"(s) => {SH}.checkoutOf(s) === null", arg=slug, timeout=10000)
+            page.wait_for_function(f"(s) => {CHECKOUTS}.checkoutOf(s) === null", arg=slug, timeout=10000)
             page.wait_for_function(
-                f"(s) => !({SH}.changesUnstaged[s] || []).some(e => e.path === 'dirty.txt')",
+                f"(s) => !({CHG}.changesUnstaged[s] || []).some(e => e.path === 'dirty.txt')",
                 arg=slug,
                 timeout=15000,
             )

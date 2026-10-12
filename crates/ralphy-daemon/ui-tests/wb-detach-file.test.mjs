@@ -41,7 +41,7 @@ function detached() {
   let onMessage = null;
   let poll = null;
   const urls = [];
-  const { state, window } = loadShell({
+  const { state } = loadShell({
     window: {
       location: { protocol: "http:", host: "127.0.0.1:7431", pathname: "/", search: "", origin: ORIGIN },
       addEventListener: (type, fn) => type === "message" && (onMessage = fn),
@@ -51,14 +51,14 @@ function detached() {
     },
   });
   const opened = [];
-  state.openTab = (d) => opened.push(d);
-  state.closeTab = () => {};
-  state.activate = () => {};
-  window.getShell = () => state;
-  state.detachFile(DESC);
+  const tabs = state.$store.tabs;
+  tabs.openTab = (d) => opened.push(d);
+  tabs.closeTab = () => {};
+  tabs.activate = () => {};
+  tabs.detachFile(DESC);
   return {
     popup,
-    state,
+    tabs,
     urls,
     opened,
     tick: () => poll?.(),
@@ -118,7 +118,7 @@ test("a re-attach from a window the shell did not open is ignored", () => {
 test("a popup message of another shape is dropped", () => {
   const d = detached();
   const links = [];
-  d.state.openLink = (r) => links.push(r);
+  d.tabs.openLink = (r) => links.push(r);
   for (const data of [
     { type: "wb-reattach", desc: { ...DESC, path: 7 } },
     { type: "wb-open-request", detail: "docs/b.md" },

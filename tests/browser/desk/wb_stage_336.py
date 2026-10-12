@@ -55,6 +55,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
 
 # The fixture desk, in the shape a PRE-#336 shell wrote: absolute pixels, no
 # stage, no migration marker. bbox = 1300 x 680.
@@ -241,7 +242,7 @@ def desk_page(ctx, viewport):
     page.set_viewport_size(viewport)
     page.goto(BASE)
     page.wait_for_selector("[x-data]", timeout=8000)
-    page.evaluate(f"() => {{ {SH}.active = 'consoles'; }}")
+    page.evaluate(f"() => {{ {TABS}.active = 'consoles'; }}")
     page.wait_for_timeout(1800)
     return page
 

@@ -61,7 +61,11 @@ const HTML: &str = "crates/ralphy-daemon/assets/ui/index.html";
 
 /// The groups `shell()` is cut by (#605). Layout core is what `shell()` keeps.
 /// The consoles group left `shell()` for `wb-consoles-tab.ts`, and the files
-/// group for `wb-files.ts` and `wb-move-dialog.ts` (#621).
+/// group for `wb-files.ts` and `wb-move-dialog.ts` (#621). The Runs panel
+/// left the board group for `wb-runs-panel.ts`, and the board for
+/// `wb-board.ts` (#621). The canvas tabs, the slot, the per-client view and
+/// the tab menu left layout core for the Alpine store `tabs`
+/// (`wb-tabs-store.ts`, #621).
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 enum Group {
     Core,
@@ -92,35 +96,10 @@ impl Group {
 /// The group of each section heading of `shell()`, by the start of its name.
 /// The part before the first heading is layout core.
 const SECTIONS: &[(&str, Group)] = &[
-    ("modal stack", Group::Core),
     ("the open project", Group::Core),
     ("chrome panels", Group::Core),
     ("branch switcher", Group::Git),
-    ("write controls", Group::Git),
-    ("the selected checkout", Group::Git),
     ("Runs panel", Group::Board),
-    ("plan viewer", Group::Board),
-    ("the step list", Group::Board),
-    ("run / triage", Group::Board),
-    ("Kanban board", Group::Board),
-    ("the repo's ready plan", Group::Board),
-    ("detail drawer", Group::Board),
-    ("the one allowed mutation", Group::Board),
-    ("spend", Group::Core),
-    ("the Ledger pane", Group::Core),
-    ("release", Group::Core),
-    ("account menu", Group::Core),
-    ("login gate", Group::Core),
-    ("TOTP digit boxes", Group::Core),
-    // The canvas tabs (`tabs`, `active`, `slot`) are layout that `shell()`
-    // keeps (ADR-0073 D2), and so are the slot, the per-client view, and
-    // opening a file or a Changes row into a tab.
-    ("canvas tabs", Group::Core),
-    ("opening a file", Group::Core),
-    ("opening a Changes row", Group::Core),
-    ("the slot", Group::Core),
-    ("the per-client view", Group::Core),
-    ("context menu", Group::Core),
 ];
 
 /// Calls that change the value they are called on.

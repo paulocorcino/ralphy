@@ -243,7 +243,7 @@ def main():
             page.wait_for_selector("[x-data]", timeout=8000)
 
             # --- a: empty state and header -------------------------------
-            page.wait_for_function(f"() => !{SH}.reposLoading", timeout=15000)
+            page.wait_for_function(f"() => !Alpine.store('projects').reposLoading", timeout=15000)
             check("a: the empty state is laid out", laid(page, ".projects-empty"))
             text = page.evaluate("() => document.querySelector('.projects-empty')?.textContent || ''")
             check("a: …it says No projects yet", "No projects yet" in text, repr(text.strip()))

@@ -41,6 +41,7 @@ CHILD = os.path.join(TARGET, "session_test_child.exe" if os.name == "nt" else "s
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = "desk-double-launch-2026-10-04.png"
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
 
 results = []
 
@@ -157,7 +158,7 @@ def close_all_sessions():
 
 def open_consoles_tab(page):
     page.wait_for_selector("[x-data]", timeout=8000)
-    page.evaluate(f"() => {{ {SH}.active = 'consoles'; }}")
+    page.evaluate(f"() => {{ {TABS}.active = 'consoles'; }}")
 
 
 def main():

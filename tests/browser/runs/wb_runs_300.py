@@ -51,14 +51,16 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Runs panel and the run modal: the component `wbRuns`.
+RUNS = "Alpine.$data(document.querySelector('[x-data=\"wbRuns\"]'))"
 
 RUN_A = "01RUNAAAAAAAAAAAAAAAAA"
 RUN_B = "01RUNBBBBBBBBBBBBBBBBB"
 
 # The state the panel exposes, as ONE string — the idempotence oracle.
 STATE_JSON = (
-    f"() => JSON.stringify({{ runs: {SH}.projectRuns(), currentRunId: {SH}.currentRunId,"
-    f" planSection: {SH}.planSection, runsError: {SH}.runsError }})"
+    f"() => JSON.stringify({{ runs: Alpine.store('runs').projectRuns(), currentRunId: Alpine.store('runs').currentRunId,"
+    f" planSection: {RUNS}.planSection, runsError: Alpine.store('runs').runsError }})"
 )
 
 STEPS_V1 = [{"text": "first step body", "status": "open"}]
@@ -228,7 +230,7 @@ def main():
 
             # --- scenario 1: a run appearing while the panel is open ----------
             open_panel(page, slug)
-            page.wait_for_function(f"() => {SH}.projectRuns().length === 0", timeout=8000)
+            page.wait_for_function(f"() => Alpine.store('runs').projectRuns().length === 0", timeout=8000)
             check("the panel opens empty (no runs on disk yet)", True)
 
             # Issue 72 starts `planning`, NOT `pending`: `issueState` reads the
@@ -236,10 +238,10 @@ def main():
             # `planning`, so a `pending` fixture would render the scenario-2
             # oracle (✅/⚙️/○) before scenario 2 ever ran.
             doc_a.write_text(json.dumps(snapshot(RUN_A, "planning", trail("planning"), active=72)), encoding="utf-8")
-            page.wait_for_function(f"() => {SH}.projectRuns().length === 1", timeout=15000)
+            page.wait_for_function(f"() => Alpine.store('runs').projectRuns().length === 1", timeout=15000)
             check("a run started while the panel is open appears with NO operator action", True)
 
-            label = page.evaluate(f"() => {SH}.runPhaseLabel({SH}.currentRun())")
+            label = page.evaluate(f"() => {RUNS}.runPhaseLabel(Alpine.store('runs').currentRun())")
             check("the pushed run reads its planning phase", label == "planning #72", f"got={label!r}")
             glyphs = [g.strip() for g in page.locator(".trail .trail-ic").all_inner_texts()]
             check("the trail starts at done / planning / pending", glyphs == ["✅", "🧠", "○"], f"got={glyphs}")
@@ -260,9 +262,9 @@ def main():
             check("the issue trail advances to done / executing / pending", glyphs == ["✅", "⚙️", "○"], f"got={glyphs}")
 
             page.wait_for_function(
-                f"() => {SH}.runPhaseLabel({SH}.currentRun()) === 'executing #72'", timeout=15000
+                f"() => {RUNS}.runPhaseLabel(Alpine.store('runs').currentRun()) === 'executing #72'", timeout=15000
             )
-            label = page.evaluate(f"() => {SH}.runPhaseLabel({SH}.currentRun())")
+            label = page.evaluate(f"() => {RUNS}.runPhaseLabel(Alpine.store('runs').currentRun())")
             check("the phase label advances to the executing issue", label == "executing #72", f"got={label!r}")
 
             prog = page.locator(".run-select-btn .run-prog").inner_text().strip()
@@ -279,20 +281,20 @@ def main():
             # --- scenario 3: replacement is idempotent ------------------------
             page.wait_for_timeout(600)  # let any in-flight push settle
             before = page.evaluate(STATE_JSON)
-            page.evaluate(f"async () => {{ await {SH}.hydrateRuns(); }}")
+            page.evaluate(f"async () => {{ await Alpine.store('runs').hydrateRuns(); }}")
             page.wait_for_timeout(400)
             after = page.evaluate(STATE_JSON)
             check("applying the same snapshot twice changes nothing", before == after, f"len={len(before)}")
 
             # --- scenario 4: a run that ends leaves the panel cleanly ---------
             doc_a.unlink()
-            page.wait_for_function(f"() => {SH}.projectRuns().length === 0", timeout=15000)
+            page.wait_for_function(f"() => Alpine.store('runs').projectRuns().length === 0", timeout=15000)
             page.wait_for_timeout(300)
             check("a finished run's document removal empties the panel", True)
             check(
                 "an ended run is NOT an error state",
                 not page.locator(".runs-error").is_visible(),
-                f"runsError={page.evaluate(f'() => {SH}.runsError')!r}",
+                "runsError=" + repr(page.evaluate("() => Alpine.store('runs').runsError")),
             )
 
             # --- scenario 5: the panel survives a browser reload --------------
@@ -302,7 +304,7 @@ def main():
             page.wait_for_selector("[x-data]", timeout=8000)
             page.wait_for_timeout(300)
             open_panel(page, slug)
-            page.wait_for_function(f"() => {SH}.projectRuns().length === 1", timeout=15000)
+            page.wait_for_function(f"() => Alpine.store('runs').projectRuns().length === 1", timeout=15000)
             check("the panel repopulates after a browser reload", True)
 
             # --- scenario 6: the panel recovers after a daemon restart --------
@@ -315,16 +317,16 @@ def main():
             doc_b.write_text(json.dumps(snapshot(RUN_B, "planning", trail("pending"), active=72)), encoding="utf-8")
             # No reload, no operator call: the 3s-backoff reconnect re-sends
             # `runs.watch` and does one catch-up read on open.
-            page.wait_for_function(f"() => {SH}.projectRuns().length === 2", timeout=20000)
+            page.wait_for_function(f"() => Alpine.store('runs').projectRuns().length === 2", timeout=20000)
             check("the panel recovers after a daemon restart, unaided", True)
 
             page.screenshot(path=os.path.join(SHOT_DIR, "300-runs-live-2026-07-25.png"))
 
             # --- scenario 7: the seed and the fold are unreachable ------------
             check("the ⚡ demo control is gone", page.locator(".runs-demo").count() == 0, "")
-            keys = page.evaluate(f"() => Object.keys({SH}.runsByProject)")
+            keys = page.evaluate(f"() => Object.keys(Alpine.store('runs').runsByProject)")
             check("only the registered repo has runs (no seed project keys)", keys == [slug], f"got={keys}")
-            runids = page.evaluate(f"() => {SH}.projectRuns().map(r => r.runid)")
+            runids = page.evaluate(f"() => Alpine.store('runs').projectRuns().map(r => r.runid)")
             check(
                 "every listed run is a live snapshot, never a seed run",
                 all(r.startswith("01RUN") for r in runids),

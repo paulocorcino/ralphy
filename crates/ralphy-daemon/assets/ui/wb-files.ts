@@ -5,8 +5,8 @@
    It owns the Wunderbaum tree and its `/ws/tree` socket, the level cache, the
    FILES search, the panel's states (loading, refused, stale, not live, the
    peer down), the tree's context menu, and the move and create gestures. A
-   file opens through the shell's `openTab` and a note through `openNote`: the
-   canvas tabs stay in `shell()` (ADR-0073 D2). The move picker is its own
+   file opens through `openTab` of the Alpine store `tabs` and a note through
+   its `openNote` (wb-tabs-store.ts). The move picker is its own
    component (wb-move-dialog.ts).
 
    It reaches `shell()` only through the names in its `uses` (ADR-0073 D4),
@@ -38,7 +38,7 @@ const menuHosts = new WeakSet<Element>();
 
 export function wbFiles() {
   // Every `shell()` member this component's code or markup reads or calls.
-  return component(["flash", "checkoutOf", "fleetGroups", "readFleetNow", "wakePeer", "tabHidden", "hideMenu", "renderMenu", "openNote", "openTab", "repathTabs", "tabs", "hasWorktrees", "openCheckoutChip", "checkoutTitle", "branchError"], {
+  return component(["checkoutChipClick"], {
     // --- accordion --------------------------------------------------------
 
     // Wunderbaum copies source keys it does not define into `node.data`, so
@@ -104,7 +104,7 @@ export function wbFiles() {
       this.treeNotLive = "";
       // The checkout this tree is built for (#406): cache key, every level
       // read and the watch carry it.
-      this._treeCheckout = this.checkoutOf(this.$store.projects.openSlug);
+      this._treeCheckout = this.$store.checkouts.checkoutOf(this.$store.projects.openSlug);
       // A mount generation: a root read failing AFTER this tree was replaced
       // must not paint its error onto the fresh mount.
       const gen = (this._treeGen = (this._treeGen || 0) + 1);
@@ -132,7 +132,7 @@ export function wbFiles() {
         lazyLoad: (e: WunderbaumEvent) =>
           this.loadTreeLevel(this.relPath(e.node)).catch((err) => {
             this.treeWentStale(err);
-            if (WBFleet.refDaemon(this.$store.projects.openSlug || "")) this.readFleetNow();
+            if (WBFleet.refDaemon(this.$store.projects.openSlug || "")) this.$store.projects.readFleetNow();
             setTimeout(() => e.node.setExpanded(false));
             return false;
           }),
@@ -205,11 +205,11 @@ export function wbFiles() {
         this._treeSub = window.WBDaemon.subscribeTree(
           this.$store.projects.repoRef(project),
           (rel: string) => {
-            if (!this.tabHidden()) this.onTreeDirty(rel);
+            if (!this.$store.connection.tabHidden()) this.onTreeDirty(rel);
           },
           this._treeCheckout,
           () => {
-            if (!this.tabHidden()) this.onHeadMoved();
+            if (!this.$store.connection.tabHidden()) this.onHeadMoved();
           },
           (reason: string | null) => this.treeWatchFailed(reason),
         );
@@ -308,7 +308,7 @@ export function wbFiles() {
       const key = this.treeKey(rel);
       const payload = WBDaemon.withCheckout(
         { repo: this.$store.projects.openSlug, path: rel },
-        this.checkoutOf(this.$store.projects.openSlug),
+        this.$store.checkouts.checkoutOf(this.$store.projects.openSlug),
       );
       return WBDaemon.observe("tree.list", payload).then((reply) => {
         if (!reply || reply.status !== "ok" || !Array.isArray(reply.entries)) {
@@ -354,7 +354,7 @@ export function wbFiles() {
 
     // Cache key, scoped by REPO and by CHECKOUT (#406).
     treeKey(rel: string) {
-      return `${this.$store.projects.openSlug}\n${this.checkoutOf(this.$store.projects.openSlug) || ""}\n${rel}`;
+      return `${this.$store.projects.openSlug}\n${this.$store.checkouts.checkoutOf(this.$store.projects.openSlug) || ""}\n${rel}`;
     },
 
     // Daemon entries → fresh Wunderbaum node specs, rebuilt on every call: the
@@ -409,7 +409,7 @@ export function wbFiles() {
     openPeerDown() {
       const daemon = WBFleet.refDaemon(this.$store.projects.openSlug || "");
       if (!daemon) return null;
-      const group = this.fleetGroups().find((g) => g.daemon === daemon);
+      const group = this.$store.projects.fleetGroups().find((g) => g.daemon === daemon);
       return group && !WBFleet.available(group) ? group : null;
     },
     peerDownText(g: Group) {
@@ -421,8 +421,8 @@ export function wbFiles() {
     peerDownAct() {
       const g = this.openPeerDown();
       if (!g) return;
-      if (WBFleet.wakeable(g)) this.wakePeer(g.daemon);
-      else this.readFleetNow();
+      if (WBFleet.wakeable(g)) this.$store.projects.wakePeer(g.daemon);
+      else this.$store.projects.readFleetNow();
     },
 
     // After each good fleet read: the read that calls the open project's peer
@@ -545,7 +545,7 @@ export function wbFiles() {
       const verb = WBFileSearch.verbFor(this.fileSearch.mode);
       this.fileSearch.note = "searching…";
       // Find and grep walk the SELECTED tree (#406).
-      const payload = window.WBDaemon.withCheckout({ repo: slug, query }, this.checkoutOf(slug));
+      const payload = window.WBDaemon.withCheckout({ repo: slug, query }, this.$store.checkouts.checkoutOf(slug));
       return window.WBDaemon.observe(verb, payload)
         .then((reply) => {
           if (seq !== this.fileSearch.seq || slug !== this.$store.projects.openSlug) return;
@@ -855,7 +855,7 @@ export function wbFiles() {
         return i < 0 ? "" : p.slice(0, i);
       };
       const reads: Promise<void>[] = [];
-      for (const t of this.tabs) {
+      for (const t of this.$store.tabs.tabs) {
         if (t.project !== this.$store.projects.openSlug || dirOf(t.path) !== rel) continue;
         // A tab pinned to another checkout (#406) is not this nudge's.
         if ((t.checkout ?? null) !== (this._treeCheckout ?? null)) continue;
@@ -935,7 +935,7 @@ export function wbFiles() {
       this.treeNotLive = "";
       // A search describes THIS tree; the field stays open.
       this.resetFileSearch();
-      this.hideMenu();
+      this.$store.tabs.hideMenu();
     },
 
     // The FILES search (ADR-0036 amendment 2026-09-15). `seq` dates each
@@ -960,7 +960,7 @@ export function wbFiles() {
       // A note opens as a CARD, not as a tab (ADR-0064 §11): on the stage if
       // it is not there yet, and by a jump if it is.
       if (ftype === "note") {
-        this.openNote(path);
+        this.$store.tabs.openNote(path);
         return;
       }
       // No tree is mounted without an open project.
@@ -970,13 +970,13 @@ export function wbFiles() {
         // Flash it too: a click that silently does nothing reads as a broken
         // tree.
         window.WB.emit("open-refused", { project: slug, path, reason: "binary" });
-        this.flash?.("Cannot open binary files.");
+        this.$store.modals.flash?.("Cannot open binary files.");
         return;
       }
       // Out of a CONTENT search: the tab lands on the first occurrence
       // (ADR-0036 amendment 2026-09-15).
       const find = this.fileSearchFindTerm();
-      this.openTab({ project: slug, path, title: node.title, ftype, find });
+      this.$store.tabs.openTab({ project: slug, path, title: node.title, ftype, find });
     },
 
     // The term to land on: the live query, only while the CONTENT filter is on.
@@ -991,7 +991,7 @@ export function wbFiles() {
     // remounted (cache key, watch and rows are per checkout).
     filesFollowCheckout() {
       const ref = this.$store.projects.openSlug;
-      if (ref && this._treeCheckout !== this.checkoutOf(ref)) {
+      if (ref && this._treeCheckout !== this.$store.checkouts.checkoutOf(ref)) {
         this.destroyTree();
         this.mountTree();
       }
@@ -1031,7 +1031,7 @@ export function wbFiles() {
         node && { sep: true as const },
         node && { label: "Delete", icon: "bi-trash", danger: true, run: () => window.WB.emit("delete", this.nodeDetail(node)) },
       ].filter(Boolean);
-      this.renderMenu(x, y, items);
+      this.$store.tabs.renderMenu(x, y, items);
     },
 
     // --- the backend seam -------------------------------------------------
@@ -1081,14 +1081,14 @@ export function wbFiles() {
 
       // The tree's gestures speak the tree's checkout (#406); a refusal beats
       // a primary-aimed copy that silently misfires.
-      const checkout = this.checkoutOf(this.$store.projects.openSlug);
+      const checkout = this.$store.checkouts.checkoutOf(this.$store.projects.openSlug);
       const listing = await WBDaemon.observe(
         "tree.list",
         WBDaemon.withCheckout({ repo: this.$store.projects.openSlug, path: parent }, checkout),
       ).catch(() => null);
       // A refused listing must NOT degrade to an empty `taken` set.
       if (!listing || WBFail.isError(listing) || !Array.isArray(listing.entries)) {
-        this.flash?.("couldn't list the folder");
+        this.$store.modals.flash?.("couldn't list the folder");
         return;
       }
       const taken = new Set(listing.entries.map((e) => e.name));
@@ -1101,7 +1101,7 @@ export function wbFiles() {
         WBDaemon.withCheckout({ repo: this.$store.projects.openSlug, path: rel, to }, checkout),
       ).catch(() => null);
       if (!reply || WBFail.isError(reply)) {
-        this.flash?.(
+        this.$store.modals.flash?.(
           reply
             ? WBFail.failed(reply, "Could not duplicate the file: the daemon gave no reason.")
             : "Could not duplicate the file: the daemon did not answer.",
@@ -1129,20 +1129,20 @@ export function wbFiles() {
         "file.rename",
         WBDaemon.withCheckout(
           { repo: this.$store.projects.openSlug, path: from, to },
-          this.checkoutOf(this.$store.projects.openSlug),
+          this.$store.checkouts.checkoutOf(this.$store.projects.openSlug),
         ),
       ).catch(() => null);
       if (!reply) {
-        this.flash?.("Could not move: the daemon did not answer.");
+        this.$store.modals.flash?.("Could not move: the daemon did not answer.");
         return;
       }
       if (WBFail.isError(reply)) {
-        this.flash?.(WBFail.failed(reply, "Could not move: the daemon gave no reason."));
+        this.$store.modals.flash?.(WBFail.failed(reply, "Could not move: the daemon gave no reason."));
         return;
       }
       await this.onTreeDirty(parentRel(from));
       await this.onTreeDirty(parentRel(to));
-      this.repathTabs(from, to);
+      this.$store.tabs.repathTabs(from, to);
       // LAST, so its `setActive()` is the final write.
       await this.revealRel(to);
     },

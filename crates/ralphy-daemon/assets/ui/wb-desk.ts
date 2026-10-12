@@ -6,7 +6,8 @@
    `fences`, `notes`, `checkouts`, filled from `sync`), the desk read
    (`reloadDesk`) and what follows it (the converge, a record another device
    removed, the desk failure), the upload and its answer (`flushed`), and the
-   `pagehide` flush. It owns the desk state: whether the page has read the
+   `pagehide` flush, the boot (`boot`) and the read after a login
+   (`afterLogin`). It owns the desk state: whether the page has read the
    desk (`deskLoaded`), the failure, the upload timer and the batch on the
    wire. Only this module writes them; the console reads them through the
    getters it returns. It starts the desk read while it is built. `DeskDeps`
@@ -110,6 +111,8 @@ export type DeskDeps = {
   dropClosedElsewhere: (id: string) => void;
   // Stores the per-client view offset not yet written.
   flushPendingOffset: () => void;
+  // Registers the stage's own listeners (`createView`): the boot runs it first.
+  wireStage: () => void;
 };
 
 export function createDesk(deps: DeskDeps) {
@@ -143,6 +146,7 @@ export function createDesk(deps: DeskDeps) {
     renderTitle,
     dropClosedElsewhere,
     flushPendingOffset,
+    wireStage,
   } = deps;
 
   // ---- the desk layout ---------------------------------------------------------
@@ -547,6 +551,36 @@ export function createDesk(deps: DeskDeps) {
     return checkouts;
   }
 
+  // `autoBoot: false` is the popup, which renders only the members
+  // its opener hands over. The entry module calls this once, after its page
+  // has started.
+  function boot() {
+    wireStage();
+    restoreDetached();
+    if (OPTS.autoBoot !== false) restoreDesk();
+  }
+
+  // Re-read the daemon's desk and restore it: the pre-login `/api/desk`
+  // answered 401 under `Session`. Called from `rehydrateAfterAuth` (#327).
+  function afterLogin() {
+    return reloadDesk().then(() => {
+      // `popups.size()` counts as "windows already up": detaching every
+      // fence drives `wins.size` to 0, and a `restoreDesk` would respawn the
+      // popups' members.
+      if (isDeskLoaded() && wins.size === 0 && popups.size() === 0) {
+        restoreDesk();
+        return;
+      }
+      // Windows already up: nothing else would put the just-loaded fences on
+      // the stage. Gated on the permit: a REFUSED load leaves `fences` as
+      // whatever this page drew.
+      if (!isDeskLoaded()) return;
+      renderFences();
+      renderNotes();
+      applyExtent();
+    });
+  }
+
   return {
     emitDesk,
     scheduleDeskFlush,
@@ -570,5 +604,7 @@ export function createDesk(deps: DeskDeps) {
     currentFences,
     currentNotes,
     currentCheckouts,
+    boot,
+    afterLogin,
   };
 }

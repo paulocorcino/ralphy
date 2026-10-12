@@ -163,7 +163,7 @@ test("a tree is remounted when its checkout or its woken peer is the open projec
   files._treeCheckout = null;
   files.filesFollowCheckout();
   assert.deepEqual(calls, [], "the tree is the primary's, and so is the selection");
-  shell.checkouts = { [`${peer}/o/r`]: "wt-a" };
+  shell.$store.checkouts.checkouts = { [`${peer}/o/r`]: "wt-a" };
   files.filesFollowCheckout();
   assert.deepEqual(calls, ["destroy", "mount"]);
   files.filesFollowWake("01OTHERPEER000000000000000");
@@ -188,7 +188,7 @@ test("a head.dirty push sends workbench:head-moved once for the open project", a
 test("the Move item asks the move dialog with the full rel path", () => {
   const { shell, files, events } = page();
   let items = null;
-  shell.renderMenu = (_x, _y, list) => (items = list);
+  shell.$store.tabs.renderMenu = (_x, _y, list) => (items = list);
   const root = { title: "root", parent: null };
   const src = { title: "src", parent: root, data: { folder: true }, children: [] };
   const file = { title: "a.txt", parent: src, data: {}, children: null };
@@ -290,7 +290,7 @@ test("the Move item is withheld inside .git and .ralphy, except for a note in th
   // `.ralphy/notes/<name>.note`, nothing deeper or differently named.
   const { scope: own, shell } = loadComponent("wbFiles");
   let items = null;
-  shell.renderMenu = (_x, _y, list) => {
+  shell.$store.tabs.renderMenu = (_x, _y, list) => {
     items = list;
   };
   const node = (rel) =>
@@ -453,16 +453,17 @@ const FILES_PEER = "01ARZ3NDEKTSV4RRFFQ69G5FAZ";
 const FILES_REF = `${FILES_PEER}/o/r`;
 
 // The files with the peer project open and the peer in the given fleet state.
-// `shell` holds the fleet, which the files read through `fleetGroups`.
+// `shell` is the Alpine store `projects`: it holds the fleet, which the files
+// read through `fleetGroups`.
 function peerFilesShell(state) {
   const loaded = loadShell();
   const files = loadComponent("wbFiles", { from: loaded });
   const s = files.scope;
   s.$store.projects.setProjects([]);
-  loaded.state.fleetPeers = [{ daemon_id: FILES_PEER, name: "corcino-mac", environment: "macOS 15", tunnel: true, state, diagnosis: `diagnosis of ${state}` }];
+  loaded.state.$store.projects.fleetPeers = [{ daemon_id: FILES_PEER, name: "corcino-mac", environment: "macOS 15", tunnel: true, state, diagnosis: `diagnosis of ${state}` }];
   s.$store.projects.setOpen(FILES_REF);
   s.treeMem();
-  return { state: s, shell: loaded.state, window: loaded.window, document: loaded.document };
+  return { state: s, shell: loaded.state.$store.projects, window: loaded.window, document: loaded.document };
 }
 
 // The options `mountTree` gives Wunderbaum, from a stand-in that keeps them.

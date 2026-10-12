@@ -128,7 +128,7 @@ def main():
             page = browser.new_page(viewport={"width": 1100, "height": 700})
             page.on("pageerror", lambda e: errors.append(str(e)))
             page.goto(BASE)
-            page.wait_for_function("() => window.Alpine && Alpine.$data(document.body).authed")
+            page.wait_for_function("() => window.Alpine && Alpine.store('connection').authed")
 
             # Scenario 1
             page.evaluate(OPEN_WITH, 20)

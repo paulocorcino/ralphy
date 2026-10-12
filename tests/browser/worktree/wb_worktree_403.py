@@ -46,6 +46,12 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Alpine store `modals`: the modal stack, the confirm, the prompt and the flash line.
+MODALS = "Alpine.store('modals')"
+# The branch dialog is the component `wbBranchDialog` (wb-branch-dialog.ts).
+BRANCH = "Alpine.$data(document.querySelector('[x-data=\"wbBranchDialog\"]'))"
+# The selected checkouts are the Alpine store `checkouts` (wb-checkouts-store.ts).
+CHECKOUTS = "Alpine.store('checkouts')"
 
 results = []
 
@@ -168,13 +174,13 @@ def open_picker(page, slug):
         timeout=15000,
     )
     page.evaluate("() => document.querySelector('li.project.open .project-head .branch-chip').click()")
-    page.wait_for_function(f"() => {SH}.branchOpen === true", timeout=10000)
+    page.wait_for_function(f"() => {BRANCH}.branchOpen === true", timeout=10000)
     # `branch.list` arrives by round trip: gate on the real list having landed.
-    page.wait_for_function(f"() => {SH}.branchModal.branches.length >= 1", timeout=15000)
+    page.wait_for_function(f"() => {BRANCH}.branchModal.branches.length >= 1", timeout=15000)
 
 
 def close_picker(page, slug):
-    page.evaluate(f"() => {{ {SH}.branchOpen = false; }}")
+    page.evaluate(f"() => {{ {BRANCH}.branchOpen = false; }}")
     page.evaluate(f"(s) => {SH}.toggle(s)", arg=slug)
     page.wait_for_function(f"() => Alpine.store('projects').openSlug === null", timeout=10000)
 
@@ -241,9 +247,9 @@ def click_remove(page, name, slug=None):
     page.wait_for_function(f"(n) => !!({CHIP_ITEM})(n)", arg=name, timeout=15000)
     page.evaluate(f"(n) => ({CHIP_ITEM})(n).querySelector('.session-checkout-remove').click()", arg=name)
     page.wait_for_function(f"() => !({CHIP_MENU_OPEN})()", timeout=5000)
-    page.wait_for_function(f"() => {SH}.confirmModal.open", timeout=5000)
-    page.evaluate(f"() => {SH}.confirmRespond(true)")
-    page.wait_for_function(f"() => Object.keys({SH}.worktreeRemoving).length === 0", timeout=20000)
+    page.wait_for_function(f"() => {MODALS}.confirmModal.open", timeout=5000)
+    page.evaluate(f"() => {MODALS}.confirmRespond(true)")
+    page.wait_for_function(f"() => Object.keys({BRANCH}.worktreeRemoving).length === 0", timeout=20000)
 
 
 def main():
@@ -324,7 +330,7 @@ def main():
             )
             page.evaluate(f"(n) => ({CHIP_ITEM})(n).click()", arg="wt-a")
             page.wait_for_function(f"() => !({CHIP_MENU_OPEN})()", timeout=5000)
-            selected = page.evaluate(f"(s) => {SH}.checkoutOf(s)", arg=slug_a)
+            selected = page.evaluate(f"(s) => {CHECKOUTS}.checkoutOf(s)", arg=slug_a)
             page.wait_for_function(f"() => document.querySelector('{CHIP} .checkout-chip-name').textContent.trim() === 'wt-a'", timeout=5000)
             branch_after = page.evaluate(
                 f"(s) => (Alpine.store('projects').projects.find(p => Alpine.store('projects').repoRef(p) === s) || {{}}).branch", arg=slug_a
@@ -335,21 +341,21 @@ def main():
                 "selected={} before={} after={}".format(selected, branch_before, branch_after),
             )
             # Back to the primary so the rest of the suite reads the tree it seeded.
-            page.evaluate(f"(s) => {SH}.setCheckout(s, null)", arg=slug_a)
-            page.wait_for_function(f"(s) => {SH}.checkoutOf(s) === null", arg=slug_a, timeout=10000)
+            page.evaluate(f"(s) => {CHECKOUTS}.setCheckout(s, null)", arg=slug_a)
+            page.wait_for_function(f"(s) => {CHECKOUTS}.checkoutOf(s) === null", arg=slug_a, timeout=10000)
             close_picker(page, slug_a)
 
             # --- scenario 4: the plain fixture renders no checkouts section at
             # all (2026-09-16). `open_picker` already gated on the (empty)
             # listing having landed.
             open_project(page, slug_b)
-            page.wait_for_function(f"(s) => s in {SH}.worktreeListings", arg=slug_b, timeout=15000)
+            page.wait_for_function(f"(s) => s in {CHECKOUTS}.worktreeListings", arg=slug_b, timeout=15000)
             open_picker(page, slug_b)
             plain = page.evaluate(
                 f"(s) => ({{ items: document.querySelectorAll('.branch-modal .worktree-item').length,"
                 "  create: document.querySelectorAll('.branch-modal .worktree-sec').length,"
                 f"  chip: ({CHIP_VISIBLE})(),"
-                f"  listing: {SH}.worktreeListings[s],"
+                f"  listing: {CHECKOUTS}.worktreeListings[s],"
                 "  branches: Array.from(document.querySelectorAll('.branch-modal .branch-item'))"
                 "    .filter(e => e.offsetParent !== null).length })",
                 arg=slug_b,

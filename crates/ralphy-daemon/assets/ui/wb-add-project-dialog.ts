@@ -19,7 +19,7 @@ export function addProjectDialog() {
   // Every `shell()` member this component's code or markup reads or calls.
   // `loadComponent` in ui-tests/harness.mjs fails on any other name, and the
   // type check fails on a name the code reads.
-  return component(["fleetPeers", "loadFleet", "loadRepos", "toggle", "scrim"], {
+  return component(["toggle"], {
     // The Add a project dialog (#501): its whole state is the wb-add-project.ts fold.
     addProject: WBAddProject.initial(),
     // The debounce and "Loading…" timers of its folder list.
@@ -46,7 +46,7 @@ export function addProjectDialog() {
       clearTimeout(this._addProjectSlow);
     },
     addProjectPlaces() {
-      return WBAddProject.places(this.fleetPeers);
+      return WBAddProject.places(this.$store.projects.fleetPeers);
     },
     addProjectEntries() {
       return WBAddProject.entries(this.addProject);
@@ -65,7 +65,7 @@ export function addProjectDialog() {
       this.addProjectList(0);
     },
     addProjectText(text: string) {
-      this.addProjectStep({ type: "text", text, peers: this.fleetPeers });
+      this.addProjectStep({ type: "text", text, peers: this.$store.projects.fleetPeers });
       // A WSL path with no peer calls no verb.
       if (this.addProject.wslMissing) return;
       this.addProjectList(150);
@@ -130,13 +130,13 @@ export function addProjectDialog() {
           type: "addFailed",
           message: WBFail.failed(reply, "Could not add the project: the daemon gave no reason."),
         });
-        this.loadRepos({ git: false });
+        this.$store.projects.loadRepos({ git: false });
         return;
       }
       const stillOpen = this.addProject.open;
       this.addProjectStep({ type: "added" });
-      await this.loadRepos({ git: false });
-      if (payload.daemon) await this.loadFleet();
+      await this.$store.projects.loadRepos({ git: false });
+      if (payload.daemon) await this.$store.projects.loadFleet();
       // A stated exception to returning focus to the opener: the new project
       // is selected, shown and focused, so work on it can start at once.
       if (stillOpen) this.selectAddedProject(payload.daemon ? `${payload.daemon}/${reply.slug}` : reply.slug);

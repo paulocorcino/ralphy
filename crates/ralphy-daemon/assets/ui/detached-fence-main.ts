@@ -37,7 +37,7 @@ window.WB = {
 // popup incapable rather than merely careful.
 // The door for operator messages: this page has no shell, so the dialog and
 // the toast are the DOM ones, and a flash shows nothing.
-const messages = createMessages(window, document, { shell: () => null });
+const messages = createMessages(window, document);
 // The z stack and the gestures of this document, not the opener's: the
 // consoles and the cards here share them.
 const stack = createStack(document);

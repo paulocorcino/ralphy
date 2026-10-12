@@ -332,13 +332,13 @@ test("every group header shows its system's icon and the group label, and has no
   // The icon is drawn for every group, not only a tunnel peer's.
   assert.doesNotMatch(head, /g\.tunnel/, head);
   for (const os of ["windows", "macos", "linux", "other"]) {
-    assert.ok(head.includes(`osOf(g) === '${os}'`), os);
+    assert.ok(head.includes(`$store.projects.osOf(g) === '${os}'`), os);
   }
   assert.ok(head.includes('<use href="#os-linux">'), "the penguin");
   assert.ok(html.includes('<symbol id="os-linux"'), "the penguin's symbol");
   const label = html.slice(labelAt, html.indexOf("</span></span>", labelAt));
-  assert.ok(label.includes('x-text="groupHost(g) ?'), label);
-  assert.ok(label.includes('x-text="groupLabel(g)"'), label);
+  assert.ok(label.includes('x-text="$store.projects.groupHost(g) ?'), label);
+  assert.ok(label.includes('x-text="$store.projects.groupLabel(g)"'), label);
   const header = html.slice(start, html.indexOf('<template x-for="p in g.rows"', start));
   assert.doesNotMatch(header, /group-menu|contextmenu|showGroupMenu/);
 });

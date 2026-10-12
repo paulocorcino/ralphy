@@ -5,11 +5,10 @@
    flash. Every module outside `shell()` tells the operator through this door
    (ADR-0073, the 2026-10-10 amendment, decision 5). It has two drawings: the
    dialog and the toast below are DOM-built, so they work in every page, the
-   detached-fence popup too, which has no shell; the shell's Alpine modal and
-   its flash line are reached through `shell`, and only when the shell
-   exists. An Alpine component nested in `shell()` lists the shell's `flash`
-   and `askConfirm` in its `uses`: it exists only where the shell does, and
-   it is built with no arguments.
+   detached-fence popup too, which has no Alpine; the Alpine modal and the
+   flash line are the Alpine store `modals` (wb-modals-store.ts), reached
+   through `window.Alpine`, and only when the page registered it. Shell code
+   and an Alpine component read that store through the `$store` magic.
 
    Importing this module does nothing. Each entry module calls
    `createMessages` once per page, before the console and the note cards
@@ -19,28 +18,26 @@ import type { ConfirmOptions } from "./wb-console-title.ts";
 import type { ConfirmAsk } from "./wb-shell-types.d.ts";
 
 /**
- * The two members of `shell()` (`app.ts`) the door calls. Written out, not
- * picked from the shell's type: that type is inferred from `shell()`, which
- * reads this module's type through `window.WBConsole`, whose options take
- * the door, and tsc 5.9.3 then loses the type of `this` inside `shell()`
- * (measured).
+ * The two members of the Alpine store `modals` the door calls. Written out,
+ * not picked from the store's type, so the door's type does not depend on
+ * the store's: the store's deps name this module's type.
  */
-export type ShellMessages = {
+export type ModalsMessages = {
   askConfirm(opts: ConfirmAsk): Promise<unknown>;
   flash(msg: string): void;
 };
 
-/** What the entry module hands the door. */
-export type MessagesDeps = {
-  /** The page's shell, read at each call; `null` in a page that has none. */
-  shell: () => ShellMessages | null;
+/** The page's window, as the door reads it. A page with no Alpine has no `Alpine`. */
+export type MessagesWindow = Pick<Window, "setTimeout" | "clearTimeout"> & {
+  Alpine?: { store(name: "modals"): ModalsMessages | undefined };
 };
 
 /** The door one page builds. */
 export type Messages = ReturnType<typeof createMessages>;
 
-export function createMessages(window: Pick<Window, "setTimeout" | "clearTimeout">, document: Document, deps: MessagesDeps) {
-  const { shell } = deps;
+export function createMessages(window: MessagesWindow, document: Document) {
+  // The store `modals`, read at each call; `null` in a page that has none.
+  const modals = (): ModalsMessages | null => window.Alpine?.store("modals") ?? null;
 
   // Ask before a click that cannot be taken back: tiling moves every console in
   // a fence, removing a fence takes the region out from under them, a console's
@@ -175,17 +172,17 @@ export function createMessages(window: Pick<Window, "setTimeout" | "clearTimeout
     toastEl = null;
   }
 
-  // The shell's own confirm, the Alpine modal of `index.html`. `null` where
-  // the page has no shell: the caller decides what that page does instead.
-  function askInShell(opts: ConfirmAsk) {
-    const sh = shell();
-    return sh ? sh.askConfirm(opts) : null;
+  // The Alpine confirm of `index.html` (the store `modals`). `null` where the
+  // page has none: the caller decides what that page does instead.
+  function askInShell(opts: ConfirmAsk): Promise<unknown> | null {
+    const m = modals();
+    return m ? m.askConfirm(opts) : null;
   }
 
-  // The shell's flash line. A page with no shell has no line, so it shows
-  // nothing.
-  function flash(text: string) {
-    shell()?.flash(text);
+  // The flash line (the store `modals`). A page with no store has no line, so
+  // it shows nothing.
+  function flash(text: string): void {
+    modals()?.flash(text);
   }
 
   return { askConfirm, askNotice, toast, dismissToast, askInShell, flash };

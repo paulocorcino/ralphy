@@ -21,7 +21,7 @@ Scenario 6  run/triage/push disabled while locked, each stating the reason in it
 Scenario 7  the verbs re-enable within 15 s of the lock being released
 Scenario 8  a click path that is not gate-guarded reaches the CLI, and the CLI's
             refusal is surfaced as a panel line that outlives the 2.6 s action
-            flash (see app.ts `verbLocked` on what the gate does and does not do)
+            flash (see wb-connection-store.ts `verbLocked` on what the gate does and does not do)
 
 Boots a Localhost daemon on 7421 over a SCRATCH `RALPHY_DAEMON_DIR`, so the
 operator's own daemon registry and login policy are untouched. The daemon is
@@ -57,6 +57,10 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+# The Alpine store `modals`: the modal stack, the confirm, the prompt and the flash line.
+MODALS = "Alpine.store('modals')"
+# The Runs panel and the run modal: the component `wbRuns`.
+RUNS = "Alpine.$data(document.querySelector('[x-data=\"wbRuns\"]'))"
 
 RUN_A = "01RUN331AAAAAAAAAAAAAA"
 
@@ -263,8 +267,8 @@ def main():
             arrival = page.evaluate(
                 f"() => ({{ head: document.querySelector('.runs-feed-head')?.offsetParent !== null,"
                 " raw: document.querySelector('.runs-raw')?.offsetParent !== null,"
-                f" buffered: {SH}.rawFeed.length,"
-                f" open: {SH}.rawFeedOpen,"
+                f" buffered: {RUNS}.rawFeed.length,"
+                f" open: {RUNS}.rawFeedOpen,"
                 # The whole collapsed BOX, head plus its border: that is the cost,
                 # and measuring the head alone is off by the border.
                 " headH: document.querySelector('.runs-feed').offsetHeight,"
@@ -323,9 +327,9 @@ def main():
                 )
 
             def refeed(text, marker):
-                page.evaluate(f"() => {SH}.dismissFeed()")
+                page.evaluate(f"() => {RUNS}.dismissFeed()")
                 page.wait_for_function(
-                    f"() => {SH}.rawFeed === '' && document.querySelector('.runs-feed')?.offsetParent == null",
+                    f"() => {RUNS}.rawFeed === '' && document.querySelector('.runs-feed')?.offsetParent == null",
                     timeout=5000,
                 )
                 feed(page, text)
@@ -386,7 +390,7 @@ def main():
             )
             collapsed = page.evaluate(
                 f"() => ({{ body: document.querySelector('.runs-body').clientHeight,"
-                f" buffered: {SH}.rawFeed.length,"
+                f" buffered: {RUNS}.rawFeed.length,"
                 f" head: document.querySelector('.runs-feed-head')?.offsetParent !== null }})"
             )
             check(
@@ -405,8 +409,8 @@ def main():
             )
             check(
                 "dismissing the feed clears the buffer entirely",
-                page.evaluate(f"() => {SH}.rawFeed") == "",
-                f"got={page.evaluate(f'() => {SH}.rawFeed')[:40]!r}",
+                page.evaluate(f"() => {RUNS}.rawFeed") == "",
+                f"got={page.evaluate(f'() => {RUNS}.rawFeed')[:40]!r}",
             )
 
             # --- scenario 5: the panel survives a phone width -----------------
@@ -439,18 +443,18 @@ def main():
                 f"sw={phone['sw']} cw={phone['cw']} ch={phone['ch']} steps={phone['steps']}",
             )
             page.set_viewport_size({"width": 1400, "height": 900})
-            page.evaluate(f"() => {SH}.dismissFeed()")
+            page.evaluate(f"() => {RUNS}.dismissFeed()")
 
             # --- scenario 6: the verbs are gated while the lock is held -------
             # The live snapshot document IS the lock derivation (`runs.list`,
             # the same one the Changes panel's write controls use).
-            page.wait_for_function(f"() => {SH}.verbLocked() === true", timeout=15000)
+            page.wait_for_function(f"() => Alpine.store('connection').verbLocked() === true", timeout=15000)
             verbs = page.evaluate(
                 "() => Array.from(document.querySelectorAll('.run-verb')).map(b => ({"
                 " label: b.textContent.trim(), disabled: b.disabled, title: b.title,"
                 " act: b.dataset.act || '' }))"
             )
-            reason = page.evaluate(f"() => {SH}.writeLockReason()")
+            reason = page.evaluate(f"() => Alpine.store('connection').writeLockReason()")
             # Since ADR-0054 the first slot is `stop` while a run is live, and it is
             # deliberately NOT lock-gated: this gate means "a run holds the lock",
             # which is precisely when stop applies. The other two are what the lock
@@ -558,10 +562,10 @@ def main():
                 "() => document.querySelector('.runs-verb-error')?.offsetParent !== null", timeout=60000
             )
             surfaced = page.evaluate(
-                f"() => {{ const lines = {SH}.rawFeed.split(/\\r?\\n/).filter(l => l.trim() !== '');"
+                f"() => {{ const lines = {RUNS}.rawFeed.split(/\\r?\\n/).filter(l => l.trim() !== '');"
                 " return { err: document.querySelector('.runs-verb-error span').textContent.trim(),"
                 " last: (lines[lines.length - 1] || '').trim(),"
-                f" flash: {SH}.runsActionMsg }}; }}"
+                f" flash: {MODALS}.runsActionMsg }}; }}"
             )
             check(
                 "an unlocked click still reaches the CLI and its refusal is surfaced",
@@ -581,7 +585,7 @@ def main():
                 re.search(r"remote|github", surfaced["err"], re.I) is not None,
                 f"err={surfaced['err']!r}",
             )
-            # The 2.6 s `_flashAction` timer is the bar: a refusal that expires
+            # The 2.6 s `flash` timer (the store `modals`) is the bar: a refusal that expires
             # with it is the defect this replaces. Waiting on the FLASH's own
             # expiry rather than a fixed sleep makes the comparison exact
             # instead of leaving 600 ms of margin to a timing change.

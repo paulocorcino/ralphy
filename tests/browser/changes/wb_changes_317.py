@@ -54,6 +54,9 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.p
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
+# The Changes view is the component wbChanges.
+CHG = "Alpine.$data(document.querySelector('[x-data=\"wbChanges\"]'))"
 
 RAIL_CHANGES = "nav.rail button[title=\"Changes\"]"
 RAIL_PROJECTS = "nav.rail button[title=\"Projects\"]"
@@ -562,12 +565,12 @@ def main():
                 " window.WBDaemon.observe = (verb, args) => verb === 'changes.list'"
                 "   ? Promise.reject(new Error('refused')) : real(verb, args); }"
             )
-            page.evaluate(f"(s) => {SH}.loadChanges(s)", arg=slug_a)
+            page.evaluate(f"(s) => {CHG}.loadChanges(s)", arg=slug_a)
             page.wait_for_function(
-                f"(s) => !!{SH}.changesReadError[s]", arg=slug_a, timeout=15000
+                f"(s) => !!{CHG}.changesReadError[s]", arg=slug_a, timeout=15000
             )
             failed = page.evaluate(f"(s) => {BADGE_EXPR}", arg=slug_a)
-            reason = page.evaluate(f"(s) => {SH}.changesReadError[s]", arg=slug_a)
+            reason = page.evaluate(f"(s) => {CHG}.changesReadError[s]", arg=slug_a)
             check(
                 "a failed read keeps the last badge and reports it as not current",
                 failed and failed["shown"] and failed["text"] == "2" and "Not current:" in (reason or ""),
@@ -590,14 +593,14 @@ def main():
             )
             diff_id = f"diff:{slug_a}:README.md"
             page.wait_for_function(
-                f"(want) => {SH}.tabs.map(t => t.id).join('|') === want",
+                f"(want) => {TABS}.tabs.map(t => t.id).join('|') === want",
                 arg=f"consoles|{diff_id}",
                 timeout=20000,
             )
             check(
                 "clicking a changed path still opens the diff as a canvas tab",
-                page.evaluate(f"() => {SH}.tabs.map(t => t.id)") == ["consoles", diff_id],
-                f"got={page.evaluate(f'() => {SH}.tabs.map(t => t.id)')}",
+                page.evaluate(f"() => {TABS}.tabs.map(t => t.id)") == ["consoles", diff_id],
+                f"got={page.evaluate(f'() => {TABS}.tabs.map(t => t.id)')}",
             )
             # A diff editor exposes no readable renderSideBySide, so the two pane
             # classes are the oracle (KNOWLEDGE.md #311).

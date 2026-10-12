@@ -25,7 +25,7 @@ export function settingsDialog() {
   // Every `shell()` member this component's code or markup reads or calls.
   // `loadComponent` in ui-tests/harness.mjs fails on any other name, and the
   // type check fails on a name the code reads.
-  return component(["flash", "askConfirm", "scrim"], {
+  return component([], {
     // Data-driven (schema in wb-settings.ts); the daemon persists via
     // `config.set`/`config.unset`.
     SETTINGS: WB_SETTINGS,
@@ -130,7 +130,7 @@ export function settingsDialog() {
       }
     },
     askDeskRestore(title: string) {
-      return this.askConfirm({
+      return this.$store.modals.askConfirm({
         title,
         message: "Consoles that run now stay open. Every open page reloads.",
         confirmLabel: "Restore",
@@ -200,7 +200,7 @@ export function settingsDialog() {
       // The run-lock-aware config Mutates; an empty/"unset" value clears the
       // key. `observe` (not `spawn`) so a run-lock refusal surfaces (#207).
       if (this.$store.projects.openSlug && this.settingsError) {
-        this.flash("Could not change the setting: the settings were not read. Open the settings again.");
+        this.$store.modals.flash("Could not change the setting: the settings were not read. Open the settings again.");
         return;
       }
       if (this.$store.projects.openSlug) {
@@ -212,7 +212,7 @@ export function settingsDialog() {
             value: String(value),
           });
           if (WBFail.isError(reply)) {
-            this.flash(WBFail.failed(reply, "Could not change the setting: the daemon gave no reason."));
+            this.$store.modals.flash(WBFail.failed(reply, "Could not change the setting: the daemon gave no reason."));
           }
         } catch {
           // No daemon reachable — leave the optimistic setting in place.

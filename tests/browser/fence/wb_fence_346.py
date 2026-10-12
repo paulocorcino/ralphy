@@ -83,6 +83,7 @@ CHILD = os.path.join(TARGET, "session_test_child.exe" if os.name == "nt" else "s
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "346-a-fence-detaches-into-its-own-window-2026-07-27.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
 # The Consoles tab's menus and the columns are Alpine components of their
 # own (wb-consoles-tab.ts): a check reads them through their root.
 MENUS = "Alpine.$data(document.querySelector('[x-data=\"wbConsoleMenus\"]'))"
@@ -312,7 +313,7 @@ def desk_page(ctx, fences=5, windows=3):
     # `activate` and not a raw `active =` write: only the former reaches
     # `refitAll()`, the path that re-applies a stored offset after `display:none`
     # threw the scroll position away (KNOWLEDGE, #339).
-    page.evaluate(f"() => {{ {SH}.activate('consoles'); }}")
+    page.evaluate(f"() => {{ {TABS}.activate('consoles'); }}")
     page.wait_for_timeout(1800)
     settle_windows(page, windows)
     page.wait_for_function(

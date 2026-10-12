@@ -49,6 +49,7 @@ EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt"
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "339-view-per-client-2026-07-27.png")
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
+TABS = "Alpine.store('tabs')"
 VIEW_KEY = "wb.view.v1"
 
 # Far from the origin ON BOTH AXES on purpose: a landing bug that answers 0,0
@@ -263,11 +264,11 @@ def fresh_context(browser, viewport):
 def activate_consoles(page, want=2):
     """Return to the Consoles tab the way a CLICK does.
 
-    Writing `SH.active` by hand is not the same act: only `activate()` reaches
+    Writing `TABS.active` by hand is not the same act: only `activate()` reaches
     `refitAll()`, and `refitAll()` is the path that re-applies the stored offset
     after `x-show`'s `display:none` threw the scroll position away.
     """
-    page.evaluate(f"() => {{ {SH}.activate('consoles'); }}")
+    page.evaluate(f"() => {{ {TABS}.activate('consoles'); }}")
     if want:
         settle(page, want)
     else:
@@ -286,7 +287,7 @@ def desk_page(ctx, viewport, want=2):
 def open_file_tab(page, slug, path):
     ftype = "markdown" if path.endswith(".md") else "code"
     page.evaluate(
-        f"([slug, path, ftype]) => {SH}.openTab("
+        f"([slug, path, ftype]) => {TABS}.openTab("
         "{ project: slug, path: path, title: path, ftype: ftype })",
         [slug, path, ftype],
     )
@@ -295,7 +296,7 @@ def open_file_tab(page, slug, path):
 
 
 def tab_state(page):
-    return page.evaluate(f"() => ({{ ids: {SH}.tabs.map((t) => t.id), active: {SH}.active }})")
+    return page.evaluate(f"() => ({{ ids: {TABS}.tabs.map((t) => t.id), active: {TABS}.active }})")
 
 
 def panes(page):
@@ -460,7 +461,7 @@ def main():
             page.reload()
             page.wait_for_selector("[x-data]", timeout=8000)
             page.wait_for_function(
-                f"(want) => {SH}.tabs.length === want", arg=3, timeout=15000
+                f"(want) => {TABS}.tabs.length === want", arg=3, timeout=15000
             )
             page.wait_for_timeout(900)
             state = tab_state(page)
@@ -476,7 +477,7 @@ def main():
             )
             # A restored tab that never fetched its bytes is an empty shell: the
             # content check is what proves the tab is USABLE, not merely listed.
-            page.evaluate(f"([id]) => {SH}.activate(id)", [readme_id])
+            page.evaluate(f"([id]) => {TABS}.activate(id)", [readme_id])
             page.wait_for_function(
                 "(needle) => document.getElementById('viewers').innerText.includes(needle)",
                 arg=README_NEEDLE,
@@ -530,7 +531,7 @@ def main():
             page_r.wait_for_selector("[x-data]", timeout=8000)
             r_readme = open_file_tab(page_r, slug, "README.md")
             r_notes = open_file_tab(page_r, slug, "notes.md")
-            page_r.evaluate(f"() => {{ {SH}.activate('consoles'); }}")
+            page_r.evaluate(f"() => {{ {TABS}.activate('consoles'); }}")
             page_r.wait_for_timeout(700)
             stored_r = json.loads(stored_raw(page_r))
             check(
@@ -731,7 +732,7 @@ def main():
             activate_consoles(page)
             SWITCH_TO = (1620, 920)
             pan_to(page, *SWITCH_TO)
-            page.evaluate(f"([id]) => {SH}.activate(id)", [readme_id])
+            page.evaluate(f"([id]) => {TABS}.activate(id)", [readme_id])
             page.wait_for_timeout(900)
             hidden = page.evaluate(
                 "() => { const ws = document.getElementById('workspace');"

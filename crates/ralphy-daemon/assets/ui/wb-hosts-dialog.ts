@@ -32,7 +32,7 @@ export function hostsDialog() {
   // `loadComponent` in ui-tests/harness.mjs fails on any other name, and the
   // type check fails on a name the code reads.
   return component(
-    ["scrim", "osOf", "peerIcon", "peerStateWord", "peerFault", "fleetPeers", "loadRepos", "flash", "hostRemoved"],
+    ["peerStateWord"],
     {
       // The Add a host dialog (#497): its whole state is the wb-hosts.ts fold.
       addHost: WBHosts.initial(),
@@ -68,7 +68,7 @@ export function hostsDialog() {
       },
       // The hosts paired over SSH. A WSL daemon is paired by its setup instead.
       sshHosts(): FleetPeer[] {
-        return (this.fleetPeers || []).filter((p) => p.tunnel);
+        return (this.$store.projects.fleetPeers || []).filter((p) => p.tunnel);
       },
       // With no host left there is no list to show.
       hostTab() {
@@ -251,7 +251,7 @@ export function hostsDialog() {
             // `loadRepos`, not `loadFleet`: the latter CONCATENATES peer rows.
             // An add that saved the host (`done`) but ended non-zero (the tunnel is not
             // up) still made a row, so the list shows it and offers Edit.
-            if (verb === "host.add" && (st.code === 0 || this.addHost.done)) this.loadRepos();
+            if (verb === "host.add" && (st.code === 0 || this.addHost.done)) this.$store.projects.loadRepos();
             if (verb === "host.install" && st.code === 0) this.addHostCheckAgain();
             if (verb === "host.check" && st.code === 0 && WBHosts.wantsAutoInstall(this.addHost)) {
               this.addHostStep({ type: "auto-tried" });
@@ -294,9 +294,9 @@ export function hostsDialog() {
             } else if (st.status === "exited") {
               s = WBHosts.next(s, { type: "exit", verb: "host.remove", code: st.code });
               if (st.code === 0) {
-                this.hostRemoved(this.removeHost.daemon);
+                this.$store.projects.hostRemoved(this.removeHost.daemon);
                 this.removeHost.open = false;
-                this.loadRepos();
+                this.$store.projects.loadRepos();
               }
             } else if (st.status === "error") {
               s = WBHosts.next(s, {
@@ -324,7 +324,7 @@ export function hostsDialog() {
           console.warn("copy host command:", e);
           return;
         }
-        this.flash(done);
+        this.$store.modals.flash(done);
       },
     },
   );

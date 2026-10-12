@@ -114,9 +114,12 @@
 .hosts-dialog,
 .add-project-dialog,
 .move-dialog,
+.branch-dialog,
 .security-dialog,
 .settings-dialog,
-.release-dialogs {
+.release-dialogs,
+.runs-panel,
+.board-panel {
   display: contents;
 }
 /* The two dialogs a MODAL can raise (`askConfirm` / `askPrompt`) sit one tier

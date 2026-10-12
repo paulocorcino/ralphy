@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { loadShell } from "./harness.mjs";
+import { loadComponent, loadShell } from "./harness.mjs";
 import * as WBHosts from "../assets/ui/wb-hosts.ts";
 import { WBChanges } from "../assets/ui/wb-changes.ts";
 import { WBFail } from "../assets/ui/wb-fail.ts";
@@ -58,7 +58,7 @@ test("sync.status: no upstream is its own state", () => {
 });
 
 test("board.list: every board row keeps the fields the board shows", () => {
-  const { state } = loadShell();
+  const { scope: state } = loadComponent("wbBoard");
   const rows = fixture("board.list").board.issues;
   assert.ok(rows.some((r) => r.assignees.length > 0), "a row with assignees");
   assert.ok(rows.some((r) => r.blocked_by.length > 0), "a row with blockers");
@@ -81,11 +81,12 @@ test("board.list: every board row keeps the fields the board shows", () => {
 });
 
 test("issue.show: the issue view takes the body and comments of the reply", async () => {
-  const { state, window } = loadShell();
+  const loaded = loadShell();
+  const { scope: state } = loadComponent("wbBoard", { from: loaded });
   const reply = fixture("issue.show");
   assert.ok(reply.issue.body.length > 0, "the fixture holds a body");
-  window.WBDaemon.observe = async () => reply;
-  state._flashAction = () => {};
+  loaded.window.WBDaemon.observe = async () => reply;
+  loaded.state.$store.modals.flash = () => {};
   state.$store.projects.setOpen("o/r");
   state.kanbanSel = reply.issue.number;
   state.boardIssues["o/r"] = [state.boardRowToIssue({ number: reply.issue.number })];
@@ -128,9 +129,9 @@ test("project.remove: the unknown-repo refusal means the project is already gone
   const { state, window } = loadShell();
   window.WBDaemon.observe = async () => fixture("project.remove--unknown-repo");
   const flashed = [];
-  state._flashAction = (m) => flashed.push(m);
-  state.askConfirm = async () => true;
-  state.loadRepos = () => {};
+  state.$store.modals.flash = (m) => flashed.push(m);
+  state.$store.modals.askConfirm = async () => true;
+  state.$store.projects.loadRepos = () => {};
   const p = { slug: "nope/gone" };
   state.$store.projects.setProjects([p, { slug: "o/r" }]);
   await state.removeProject(p);

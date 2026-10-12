@@ -52,9 +52,27 @@ const PROMPT_GH_ISSUE_VIEW: usize = 20;
 /// replies are read through `wb-api.ts` (#653); 4212 since it imports the
 /// check of a detached file window's message from `wb-detached.ts` (#653);
 /// 4209 since a file tab passes its bytes or its refusal to the viewer as one
-/// value (#653). Its shell-only types are in `wb-shell-types.d.ts` and it
-/// imports them on one line (#653).
-const APP_TS_LINES: usize = 4209;
+/// value (#653); 4121 since the runs moved to the Alpine store `runs` (#621);
+/// 3803 since the Runs panel moved to the component `wbRuns` (#621);
+/// 3300 since the board moved to the component `wbBoard` (#621); 2864 since
+/// the Changes view moved to the component `wbChanges` (#621); 2512 since
+/// the branch dialog moved to the component `wbBranchDialog` and the checkouts
+/// to the Alpine store `checkouts` (#621); 2344 since the Spend and Ledger
+/// panes moved to the component `wbSpend` (#621); 2099 since the session,
+/// the presence and the write locks moved to the Alpine store `connection`
+/// (#621); 1694 since the fleet, the repos, the agents and the live sessions
+/// moved to the Alpine store `projects` (#621); 1450 since the release view
+/// moved to the Alpine store `release`, the security fact and log off to the
+/// store `connection`, and the account menu and the login gate to the
+/// components `wbAccount` and `wbLogin` (#621); 1261 since the modal stack,
+/// the confirm, the prompt and the flash line moved to the Alpine store
+/// `modals` (#621); 714 since the canvas tabs, the slot, the split and the
+/// tab menu moved to the Alpine store `tabs` (#621); 347 since `wire()` and
+/// the icon directive moved to `wb-wire.ts` and `wb-icon.ts` (#621); 344
+/// since the change count moved to the Alpine store `checkouts` (#621).
+/// Its shell-only types are in `wb-shell-types.d.ts` and it imports them on
+/// one line (#653).
+const APP_TS_LINES: usize = 344;
 /// Lines of `crates/ralphy-daemon/assets/ui/wb-console.ts`, the console
 /// factory (ADR-0073 D8, which starts this ratchet with the first fold move).
 /// 5842 since ADR-0075 phase 5 moved its pure folds, its GPU budget and its
@@ -90,8 +108,14 @@ const APP_TS_LINES: usize = 4209;
 /// `wb-console-spawn.ts` (#621); 993 since the placeholder, the relaunch marks,
 /// `spawnOrMissing`, the revive and `checkoutStillThere` moved to
 /// `wb-console-placeholder.ts` (#621); 950 since the comments above the factory
-/// calls name their module and no longer repeat what the code shows (#621).
-const WB_CONSOLE_TS_LINES: usize = 950;
+/// calls name their module and no longer repeat what the code shows (#621);
+/// 608 since the object of members and the fold destructures moved to
+/// `wb-console-api.ts` (#621); 488 since `refitAll` moved to
+/// `wb-stage-view.ts`, `boot` and `afterLogin` to `wb-desk.ts`, `open` to
+/// `wb-console-spawn.ts`, the focus hook and `changed` to
+/// `wb-console-dormancy.ts`, `agentStateTitle` to `wb-console-session.ts`, and
+/// `count` and `inGesture` to `wb-console-api.ts` (#621).
+const WB_CONSOLE_TS_LINES: usize = 488;
 /// Lines of `crates/ralphy-daemon/assets/ui/wb-notes.ts`, the note cards
 /// (ADR-0073 D8, started by its 2026-10-10 amendment). 2828 at 823cc84c, before
 /// its first cut (#623); 2835 since the cards take the console as a typed dep
@@ -114,15 +138,14 @@ const TS_SIZE_MAX: usize = 700;
 /// `TS_SIZE_MAX`, measured at 8783a20e (#621, ADR-0073, the 2026-10-11
 /// amendment). Exact, and it only shrinks: a change to a listed module sets
 /// its count, a module at `TS_SIZE_MAX` or fewer leaves the list, and no
-/// module joins it. `app.ts`, `wb-console.ts` and `wb-notes.ts` are listed
-/// through their D8 constants, so each count has one constant. The list had 10
+/// module joins it. `wb-notes.ts` is listed
+/// through its D8 constant, so its count has one constant. The list had 10
 /// modules at 8783a20e; the plan of #621 took the console family out of it:
 /// `wb-desk.ts`, `wb-console-terminal.ts`, `wb-stage-fences.ts` and
-/// `wb-console-title.ts` were split, and `wb-console.ts` stays through its
-/// D8 constant.
+/// `wb-console-title.ts` were split, and `wb-console.ts` fell to 608 lines
+/// when its object of members moved to `wb-console-api.ts`. The app plan of
+/// #621 took `app.ts` out of it: it fell to 347 lines.
 const TS_SIZE_BASELINE: &[(&str, usize)] = &[
-    ("app.ts", APP_TS_LINES),
-    ("wb-console.ts", WB_CONSOLE_TS_LINES),
     ("wb-notes.ts", WB_NOTES_TS_LINES),
     ("wb-file-viewer.ts", 1667),
     ("wb-files.ts", 1205),
