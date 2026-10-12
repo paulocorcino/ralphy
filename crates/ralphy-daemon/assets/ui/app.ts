@@ -15,13 +15,8 @@ import { WBChanges } from "./wb-changes.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { WBProject } from "./wb-project.ts";
 import { sendWindow } from "./wb-events.ts";
+import { phoneLayout } from "./wb-viewport.ts";
 import type { Group, Project, ShellLate } from "./wb-shell-types.d.ts";
-
-// A phone in either orientation: its SHORT side is under the workbench's phone
-// breakpoint (560px). Landscape iPhone is ~750 wide but ~340 tall; an iPad's
-// short side is 744+ and keeps its desktop chrome. 01-base.css and
-// 05-workspace.css gate on the same query.
-const PHONE_QUERY = "(max-width: 560px), (pointer: coarse) and (max-height: 560px)";
 
 // The `this` of `shell()`'s members: its own members, the Alpine magics, and
 // the fields a method sets on first use (`ShellLate`). The type a
@@ -226,7 +221,7 @@ export function shell() {
     // --- chrome panels ----------------------------------------------------
     // Sidebar, Runs panel and Kanban board: each a layout flip on a body class.
     // A phone opens with the sidebar closed: there it floats over the canvas.
-    sideOpen: !window.matchMedia?.(PHONE_QUERY)?.matches,
+    sideOpen: !phoneLayout(window),
     // `projects` or `changes` (#317). Changes is a VIEW scoped to `openSlug`.
     sideView: "projects",
     runsOpen: false,
@@ -234,7 +229,7 @@ export function shell() {
     projectQuery: "",
 
     phone() {
-      return !!window.matchMedia?.(PHONE_QUERY)?.matches;
+      return phoneLayout(window);
     },
 
     // Clicking the rail button of the view already showing collapses the sidebar.

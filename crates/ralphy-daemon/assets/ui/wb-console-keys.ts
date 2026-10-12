@@ -8,6 +8,7 @@
    (#621).
 --------------------------------------------------------------------------- */
 import * as WBConsoleInput from "./wb-console-input.ts";
+import { touchInput } from "./wb-viewport.ts";
 import type { WBView } from "./wb-client-view.ts";
 import type { TerminalDeps } from "./wb-console-terminal.ts";
 import type { ConsoleTerm, ConsoleWin } from "./wb-types.d.ts";
@@ -32,13 +33,6 @@ export type ConsoleKeysDeps = {
 export function createConsoleKeys(deps: ConsoleKeysDeps) {
   const { window, document, viewStore, wins, focusWin } = deps;
 
-  function hasTouchSurface() {
-    try {
-      return !!window.matchMedia?.("(any-pointer: coarse)")?.matches;
-    } catch {
-      return false;
-    }
-  }
 
   // Per browser profile (wb-settings.ts `scope: client`, stored by
   // `wb-client-view.ts`). Absent — the popup reads nothing — means auto.
@@ -47,7 +41,7 @@ export function createConsoleKeys(deps: ConsoleKeysDeps) {
   }
 
   function applyKeyBar(win: ConsoleWin) {
-    win.classList.toggle("keys", keyBarVisible(keyBarMode(), hasTouchSurface()));
+    win.classList.toggle("keys", keyBarVisible(keyBarMode(), touchInput(window)));
     win._applyInputMode?.();
   }
 

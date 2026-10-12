@@ -589,8 +589,9 @@
 /* The touch criterion: on a coarse pointer or a phone-width column the
    irreversible action carries LESS prominence than the safe ones — smaller and
    dimmer — while staying visible and reachable. Shrinking it is the whole
-   point; hiding it would just move the mis-tap to a menu nobody can find. */
-@media (pointer: coarse), (max-width: 560px) {
+   point; hiding it would just move the mis-tap to a menu nobody can find.
+   The touch half is wb-viewport.ts `TOUCH_QUERY`. */
+@media (any-pointer: coarse), (max-width: 560px) {
   .chg-discard {
     min-width: 18px;
     min-height: 18px;

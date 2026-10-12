@@ -79,6 +79,7 @@ import "./wb-desk-folds.test.mjs";
 import "./wb-desk-history.test.mjs";
 import "./wb-desk-sync.test.mjs";
 import "./wb-device.test.mjs";
+import "./wb-viewport.test.mjs";
 import "./wb-devices.test.mjs";
 import "./wb-settings-dialog.test.mjs";
 import "./wb-settings.test.mjs";
