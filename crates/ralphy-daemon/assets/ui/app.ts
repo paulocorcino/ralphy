@@ -253,10 +253,7 @@ export function shell() {
     // The change indicator for one row. Only slugs whose count was READ render
     // one: a `changes.list` per repo would be N git subprocesses on open.
     projectBadge(slug: string) {
-      // The counts are the Changes view's (wb-changes-panel.ts), asked here.
-      const changes = { counts: {} as Record<string, number | null> };
-      sendWindow(window, "workbench:changes-count", changes);
-      return WBChanges.projectBadge(changes.counts, slug);
+      return WBChanges.projectBadge(this.$store.checkouts.changesCount, slug);
     },
 
     // Case-insensitive slug/branch/label filter. The sidebar count keeps

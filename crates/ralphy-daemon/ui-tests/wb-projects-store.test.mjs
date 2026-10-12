@@ -33,6 +33,21 @@ test("setOpen and setProjects are the writers, and the open row is found by its 
   assert.equal(store.openSlug, null);
 });
 
+// The branch dialog and the Changes view write a row's git fields only
+// through the store.
+test("setRowGit sets the git fields it is given on the row, and leaves the others", () => {
+  const store = projectsStore();
+  const row = { slug: "owner/repo", branch: "main", branches: ["main"], head: { kind: "branch", name: "main" } };
+  store.setProjects([row]);
+  store.setRowGit(row, { branch: "side" });
+  assert.deepEqual(row, { slug: "owner/repo", branch: "side", branches: ["main"], head: { kind: "branch", name: "main" } });
+  store.setRowGit(row, { branches: ["main", "new"], branch: "new" });
+  assert.deepEqual(row.branches, ["main", "new"]);
+  assert.equal(row.branch, "new");
+  store.setRowGit(row, { head: { kind: "detached", sha: "abc1234" } });
+  assert.deepEqual(row, { slug: "owner/repo", branch: "new", branches: ["main", "new"], head: { kind: "detached", sha: "abc1234" } });
+});
+
 // The sidebar gives the rows its search keeps; the files and the wake read
 // every project. A peer's group comes from the peer list either way.
 test("fleetGroups groups the rows it is given, and every project without them", () => {

@@ -8,8 +8,9 @@
    (wb-connection-store.ts); the gate reads them and keeps no copy. It hears
    `workbench:auth-read` for whether the login asks for a password, and
    `workbench:log-off` to reset its fields. After a login the daemon accepted,
-   it reads the gated facts again, and sends `workbench:logged-in` for the
-   desk (app.ts) and the open tabs (wb-tabs-store.ts).
+   it reads the gated facts again, and sends `workbench:logged-in`. The shell
+   (app.ts) hears it: it reads the desk again and restores the open tabs
+   through the store `tabs`.
 
    `main.ts` registers it as `wbLogin`.
    --------------------------------------------------------------------------- */

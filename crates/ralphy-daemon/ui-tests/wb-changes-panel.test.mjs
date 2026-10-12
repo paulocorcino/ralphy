@@ -93,7 +93,7 @@ test("every name the markup of wbChanges reads is its own or in its uses list", 
 test("nothing outside the Changes view element names its state", () => {
   const start = HTML.indexOf('x-data="wbChanges"');
   const outside = withoutComments(HTML.slice(0, start) + HTML.slice(HTML.indexOf("<!-- ===", start)));
-  for (const name of ["changesError", "changesCount", "changesReadError", "changesStaged", "changesUnstaged", "syncByProject", "syncBusy", "commitMsg", "loadChanges", "loadSync", "stagePaths", "discardRow", "commitStaged", "syncPush", "pullBlocked", "rowActTitle"]) {
+  for (const name of ["changesError", "changesReadError", "changesStaged", "changesUnstaged", "syncByProject", "syncBusy", "commitMsg", "loadChanges", "loadSync", "stagePaths", "discardRow", "commitStaged", "syncPush", "pullBlocked", "rowActTitle"]) {
     assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`), name);
   }
 });
@@ -135,9 +135,9 @@ test("opening the Changes view, the sidebar refresh and a branch act read the ch
   assert.deepEqual(reads, ["changes:o/r", "sync:o/r"], "a branch act");
 });
 
-test("the project rows read the change count the Changes view holds", () => {
-  const { shell, changes } = page();
-  changes.changesCount = { "o/r": 3 };
+test("the project rows read the change count the Changes view wrote to the store checkouts", () => {
+  const { shell } = page();
+  shell.$store.checkouts.changeCountRead("o/r", 3);
   assert.deepEqual(shell.projectBadge("o/r"), { show: true, text: "3", title: "3 changed" });
   // CONTROL: a slug the view never read shows no badge.
   assert.equal(shell.projectBadge("o/x").show, false);
@@ -288,12 +288,12 @@ test("one remote act at a time: the busy slot refuses a second act and frees its
 // ---- ADR-0070 D3: a shown fact that is not current -------------------------------
 
 test("a failed change-set read after a good one keeps the groups, marked not current", async () => {
-  const { changes: state } = observedPage([CHANGES_OK, { status: "error", message: "git exited 128" }]);
+  const { changes: state, shell } = observedPage([CHANGES_OK, { status: "error", message: "git exited 128" }]);
   await state.loadChanges("o/r");
-  const before = state.changesCount["o/r"];
+  const before = shell.$store.checkouts.changesCount["o/r"];
   assert.ok(before > 0, "the first read found a change");
   await state.loadChanges("o/r");
-  assert.equal(state.changesCount["o/r"], before);
+  assert.equal(shell.$store.checkouts.changesCount["o/r"], before);
   assert.equal(state.changesRead["o/r"].current, false);
   assert.match(state.changesReadError["o/r"], /Not current: git exited 128/);
 });

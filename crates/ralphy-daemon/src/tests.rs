@@ -7352,6 +7352,14 @@ fn the_console_chrome_holds_its_three_rules() {
             && app.contains("this.avatarMenu = false;"),
         "the shell must close the account menu on the one menus event, and send it"
     );
+    // The account menu's send and hear are the third of each above.
+    let account = include_str!("../assets/ui/wb-account.ts");
+    assert!(
+        account.matches(close).count() == 1
+            && account.matches(hear).count() == 1
+            && account.contains("this.avatarMenu = false;"),
+        "the account menu (wb-account.ts) must close on the one menus event, and send it"
+    );
     assert!(
         tab.matches(close).count() == 2 && tab.matches(hear).count() == 2,
         "both consoles components must send the one menus event and hear it"
@@ -7702,8 +7710,17 @@ fn the_run_picker_names_the_model_and_clocks_the_phase() {
         app.contains("if (this.runsOpen) this.nowMs = Date.now();"),
         "the phase clock must advance only while the panel is open"
     );
+    // The period of the shell's own tick, the one that holds the phase
+    // guard: the store `connection` has a one-second presence tick of its
+    // own, which the family also holds.
+    let phase_tick = app
+        .split("this._clockTick = setInterval(")
+        .find(|tick| tick.starts_with("() => { if (this.runsOpen)"))
+        .unwrap_or_default();
     assert!(
-        app.contains("}, 1000);"),
+        phase_tick
+            .find("}, ")
+            .is_some_and(|end| phase_tick[end..].starts_with("}, 1000);")),
         "the phase clock must tick once a second"
     );
 }

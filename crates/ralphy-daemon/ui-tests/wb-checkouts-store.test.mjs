@@ -83,3 +83,14 @@ test("a project change drops the branch refusal of the project that was open", (
   fire("workbench:project-changed", { slug: "o/b", previous: "o/r" });
   assert.equal(store.branchError, "");
 });
+
+// The project rows and the Changes view read one count per project.
+test("a change count read for one project keeps the counts of the others, and a failed read is null", () => {
+  const { store } = page();
+  assert.deepEqual(store.changesCount, {}, "no project was read");
+  store.changeCountRead("o/r", 3);
+  store.changeCountRead("o/b", 0);
+  assert.deepEqual(store.changesCount, { "o/r": 3, "o/b": 0 });
+  store.changeCountRead("o/r", null);
+  assert.deepEqual(store.changesCount, { "o/r": null, "o/b": 0 });
+});

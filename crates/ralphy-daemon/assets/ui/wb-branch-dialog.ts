@@ -155,11 +155,11 @@ export function wbBranchDialog() {
         const checkout = this.$store.checkouts.checkoutOf(slug);
         const p = checkout ? null : this.$store.projects.projects.find((x) => this.$store.projects.repoRef(x) === slug);
         const prev = p ? p.branch : null;
-        if (p) p.branch = name; // optimistic — the chip updates immediately
+        if (p) this.$store.projects.setRowGit(p, { branch: name }); // optimistic — the chip updates immediately
         window.WB.emit("branch-switch", { project: slug, branch: name, checkout });
         // The run-lock-aware `branch.switch` Mutate (#199): refusal → revert.
         this._mutateBranch("branch.switch", slug, name, () => {
-          if (p) p.branch = prev!;
+          if (p) this.$store.projects.setRowGit(p, { branch: prev! });
         });
       }
       this.closeBranchModal();
@@ -178,16 +178,11 @@ export function wbBranchDialog() {
       const p = checkout ? null : this.$store.projects.projects.find((x) => this.$store.projects.repoRef(x) === slug);
       const prevBranch = p ? p.branch : null;
       const prevBranches = p ? [...(p.branches || [])] : null;
-      if (p) {
-        p.branches = [...(p.branches || []), name];
-        p.branch = name; // a fresh branch is checked out onto
-      }
+      // A fresh branch is checked out onto.
+      if (p) this.$store.projects.setRowGit(p, { branches: [...(p.branches || []), name], branch: name });
       window.WB.emit("branch-create", { project: slug, name, from, checkout });
       this._mutateBranch("branch.create", slug, name, () => {
-        if (p) {
-          p.branch = prevBranch!;
-          p.branches = prevBranches!;
-        }
+        if (p) this.$store.projects.setRowGit(p, { branch: prevBranch!, branches: prevBranches! });
       });
       this.closeBranchModal();
     },

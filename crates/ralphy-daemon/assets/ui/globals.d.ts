@@ -457,9 +457,6 @@ interface WindowEventMap {
   "workbench:changes-forget": CustomEvent<{ ref: string }>;
   /** The Changes view opened: read it again if it is on screen. */
   "workbench:changes-refresh": CustomEvent<null>;
-  /** Ask for the change counts per project: the Changes view fills
-   * `counts`, during the send. */
-  "workbench:changes-count": CustomEvent<{ counts: Record<string, number | null> }>;
   /** The open checkout's HEAD moved. */
   "workbench:head-moved": CustomEvent<{ ref: string }>;
   "workbench:menus-close": CustomEvent<null>;

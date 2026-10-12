@@ -3,18 +3,19 @@
    that holds it (`div.changes-view` in the side panel; #621, ADR-0073 D2).
 
    It owns the change set and the branch (sync) of each project, their reads
-   and their read state, the change count, the remote acts (fetch, pull,
-   push), the rows and their acts (stage, unstage, discard), the commit box,
-   the refusal line, the run-completion nudge socket and the slow backstop.
+   and their read state, the remote acts (fetch, pull, push), the rows and
+   their acts (stage, unstage, discard), the commit box, the refusal line,
+   the run-completion nudge socket and the slow backstop.
    The write locks are the Alpine store `connection`'s (wb-connection-store.ts):
    they also read the runs and the page build, and the board and the Runs
    panel ask them too. This view tells the store whether its reads are
-   current (`_reportCurrent`).
+   current (`_reportCurrent`). The change count of each project is the
+   Alpine store `checkouts`'s (wb-checkouts-store.ts), because the project
+   rows show it too: this view writes it through `changeCountRead`.
 
    It reaches `shell()` only through the names in its `uses` (ADR-0073 D4),
    and the page reaches it only through `workbench:*` events, which `init()`
-   hears. One of them is an ask that it answers during the send: the change
-   counts (the project rows).
+   hears.
 
    `main.ts` registers it (ADR-0075 D5).
    --------------------------------------------------------------------------- */
@@ -62,10 +63,9 @@ export function wbChanges() {
     // by default. One string, not per-project: switching projects is itself
     // the next act.
     changesError: "",
-    // Working-tree change count per slug (#307). `null` until a load succeeds,
-    // so a failed read never reads like a clean tree; `changesReadError`
-    // carries the reason into the Changes view's title.
-    changesCount: {} as Record<string, number | null>,
+    // The change count per slug is the store `checkouts`'s (`changesCount`);
+    // `changesReadError` carries the reason of a failed read into the Changes
+    // view's title.
     // The commit message being composed (#318). One box, but it belongs to
     // `commitMsgSlug` ONLY: a message typed for repo A must never land as repo
     // B's commit. Cleared on success only.
@@ -99,7 +99,7 @@ export function wbChanges() {
           return;
         }
         const folded = WBChanges.fold(reply);
-        this.changesCount[slug] = folded.count;
+        this.$store.checkouts.changeCountRead(slug, folded.count);
         this.changesStaged[slug] = folded.staged;
         this.changesUnstaged[slug] = folded.unstaged;
         this.changesReadError[slug] = "";
@@ -122,7 +122,7 @@ export function wbChanges() {
         this.changesReadError[slug] = WBFail.notCurrent(read, (ms) => this.$store.connection.fmtClock(ms));
         return;
       }
-      this.changesCount[slug] = null;
+      this.$store.checkouts.changeCountRead(slug, null);
       this.changesReadError[slug] = `Could not read the changes: ${reason}`;
       this.changesStaged[slug] = [];
       this.changesUnstaged[slug] = [];
@@ -152,9 +152,9 @@ export function wbChanges() {
         // `p.branch` is the primary's (#407), so only a primary read moves it.
         const branch = WBChanges.headBranch(sync);
         const p = this.$store.checkouts.checkoutOf(slug) ? null : this.$store.projects.projects.find((x) => this.$store.projects.repoRef(x) === slug);
-        if (p && branch !== null && p.branch !== branch) p.branch = branch;
+        if (p && branch !== null && p.branch !== branch) this.$store.projects.setRowGit(p, { branch });
         const head = WBChanges.headOf(sync);
-        if (p && head !== null) p.head = head;
+        if (p && head !== null) this.$store.projects.setRowGit(p, { head });
       } catch {
         if (seq === this._syncSeq) {
           this.syncFailed(slug, "the daemon did not answer");
@@ -494,8 +494,6 @@ export function wbChanges() {
       });
       // Opening the Changes view is a read trigger.
       window.addEventListener("workbench:changes-refresh", () => this.refreshChanges());
-      // The project rows ask for the change counts.
-      window.addEventListener("workbench:changes-count", (e) => (e.detail.counts = this.changesCount));
       // A resume of the page's sockets (`resumeSockets`).
       window.addEventListener("workbench:sockets-resume", (e) => this._changesSub?.resume?.(e.detail.stale));
       // Registered once; the tick asks whether the panel is open.

@@ -247,7 +247,7 @@ def main():
             page.evaluate(f"(s) => {{ if (Alpine.store('projects').openSlug !== s) {SH}.toggle(s); }}", arg=slug_c)
             # Wait on the READ, not the DOM: an unread row also shows no badge.
             page.wait_for_function(
-                f"(s) => {CHG}.changesCount[s] === 0", arg=slug_c, timeout=15000
+                f"(s) => Alpine.store('checkouts').changesCount[s] === 0", arg=slug_c, timeout=15000
             )
             check("a clean repo shows no badge", badge_text(page) is None)
             # A FAILED read has no count to show: stub the transport so

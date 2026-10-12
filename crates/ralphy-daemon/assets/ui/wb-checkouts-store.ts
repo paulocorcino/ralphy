@@ -14,6 +14,8 @@
    - `workbench:checkout-changed`: the open project's checkout changed;
    - `workbench:changes-read` and `workbench:changes-forget`: the change set
      of a ref must be read again, or forgotten.
+   It also holds the change count of each project, which the Changes view
+   reads and the project rows show.
 
    The branch dialog and the checkout menu are the component `wbBranchDialog`
    (wb-branch-dialog.ts). `main.ts` registers the store as `checkouts`, after
@@ -46,6 +48,11 @@ export function checkoutsStore(deps: CheckoutsStoreDeps) {
     // `changesError` (the chip lives in THIS panel). The branch dialog
     // (wb-branch-dialog.ts) sets it, and the files show it under the Files bar.
     branchError: "",
+    // Working-tree change count per slug (#307), of the checkout the Changes
+    // view reads. `null` until a load succeeds, so a failed read never reads
+    // like a clean tree. The Changes view (wb-changes-panel.ts) reads it and
+    // writes it through `changeCountRead`; the project rows show it.
+    changesCount: {} as Record<string, number | null>,
 
     // Alpine calls this once, when `main.ts` registers the store. `main.ts`
     // builds `WBDaemon` and `WBConsole` first.
@@ -56,6 +63,12 @@ export function checkoutsStore(deps: CheckoutsStoreDeps) {
       window.WBConsole?.whenDeskLoaded?.().then(() => this.adoptDeskCheckouts());
       // A branch refusal names an act against the project that WAS open.
       window.addEventListener("workbench:project-changed", () => (this.branchError = ""));
+    },
+
+    // The Changes view read the change count of `slug`; `null` is a read
+    // that found no count.
+    changeCountRead(slug: string, count: number | null) {
+      this.changesCount[slug] = count;
     },
 
     // The branch dialog's refusal line; "" clears it.

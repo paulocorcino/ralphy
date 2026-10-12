@@ -513,8 +513,8 @@
                broken daemon read exactly like a clean tree. -->
           <span
             class="count"
-            :class="{ zero: changesCount[$store.projects.openSlug] === 0 }"
-            x-text="$store.projects.openSlug ? (changesCount[$store.projects.openSlug] ?? '—') : ''"
+            :class="{ zero: $store.checkouts.changesCount[$store.projects.openSlug] === 0 }"
+            x-text="$store.projects.openSlug ? ($store.checkouts.changesCount[$store.projects.openSlug] ?? '—') : ''"
             :title="changesReadError[$store.projects.openSlug] || 'Working-tree changes'"
           ></span>
         </div>

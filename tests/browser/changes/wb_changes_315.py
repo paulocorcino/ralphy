@@ -238,7 +238,7 @@ def open_project(page, slug, expected):
         # A count of 0 never renders a badge (wb-changes.ts projectBadge): wait
         # on the READ, not a DOM element that is never going to appear.
         page.wait_for_function(
-            f"(s) => {CHG}.changesCount[s] === 0", arg=slug, timeout=15000
+            f"(s) => Alpine.store('checkouts').changesCount[s] === 0", arg=slug, timeout=15000
         )
         return
     wait_badge(page, expected)
