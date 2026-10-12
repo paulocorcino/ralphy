@@ -477,13 +477,26 @@ fn remove_applies_the_gates_in_order() {
     assert!(!wt_keep.exists(), "the directory is gone");
     assert!(branch_exists(&root, "wt-keep"), "the branch is kept");
 
-    // (5) unknown names, the primary included.
+    // (5) switched to another branch, its own branch already deleted: the
+    // directory goes, the delete succeeds, the other branch is not touched.
+    add(&root, "wt-switch", None).unwrap();
+    let wt_switch = root.join(WORKTREES_DIR).join("wt-switch");
+    git(&wt_switch, &["switch", "-q", "-c", "other"]).unwrap();
+    git(&root, &["branch", "-D", "wt-switch"]).unwrap();
+    remove(&root, "wt-switch").unwrap();
+    assert!(!wt_switch.exists(), "the directory is gone");
+    assert!(
+        branch_exists(&root, "other"),
+        "the switched-to branch is kept"
+    );
+
+    // (6) unknown names, the primary included.
     for name in ["nope", "primary"] {
         let (err, _) = remove_error(&root, name);
         assert_eq!(err, RemoveError::NotFound { name: name.into() });
     }
 
-    // (6) nothing left to list.
+    // (7) nothing left to list.
     assert!(list(&root).unwrap().worktrees.is_empty());
 
     let _ = std::fs::remove_dir_all(&root);
