@@ -279,7 +279,12 @@ impl Workspace {
 
     /// `<repo>/.ralphy/runs/<stamp>` — per-run logs and scratch.
     pub fn run_dir(&self, stamp: &str) -> PathBuf {
-        self.ralphy_dir().join("runs").join(stamp)
+        self.runs_dir().join(stamp)
+    }
+
+    /// `<repo>/.ralphy/runs` — the folder that holds every run folder.
+    pub fn runs_dir(&self) -> PathBuf {
+        self.ralphy_dir().join("runs")
     }
 
     /// `<repo>/.ralphy/settings.json` — the per-repo operator config store

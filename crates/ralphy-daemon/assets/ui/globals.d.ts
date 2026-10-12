@@ -57,7 +57,7 @@ interface DaemonReplies {
     runs?: import("./wb-runs.ts").RunSnapshot[];
     unreadable?: { runid: string; reason: string }[];
   };
-  "branch.list": DaemonReply & { branches?: { current?: string; branches?: string[] } };
+  "branch.list": DaemonReply & { branches?: { current?: string; branches?: string[]; worktrees?: Record<string, string> } };
   "worktree.list": DaemonReply & { checkouts?: import("./wb-project.ts").Listing };
   "changes.list": DaemonReply & { changes?: { changes?: import("./wb-changes.ts").ChangeRow[] } };
   "sync.status": DaemonReply & { sync?: { sync?: import("./wb-changes.ts").SyncBody } };

@@ -56,6 +56,8 @@ with different `--base-branch`.
 | `--stop-on-limit` | On a usage limit, stop and report instead of waiting for the reset and resuming. See [usage-and-cost.md](usage-and-cost.md#usage-limits). |
 | `--if-idle` | Skip this invocation (exit 0) if a run is already active — the anti-overlap flag for schedulers. |
 
+A run keeps the last 50 run folders under `.ralphy/runs/` and deletes the older ones when it starts. `ralphy config set runs.keep <n>` changes the number (`0` keeps every folder). Rename a folder to keep it.
+
 ## Models and effort
 
 | Flag | What it does |

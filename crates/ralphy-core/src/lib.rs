@@ -29,6 +29,10 @@ use std::time::Duration;
 /// `Default` impls pointing here rather than re-spelling a literal.
 pub const DEFAULT_MAX_MINUTES_PER_ISSUE: u64 = 0;
 
+/// How many run folders under `.ralphy/runs/` a run keeps when `runs.keep` is
+/// not set. `0` keeps every folder.
+pub const DEFAULT_RUNS_KEEP: u64 = 50;
+
 /// Default time budget in minutes for the runner-enforced verify gate
 /// (ADR-0011), used when `verify.timeout_minutes` is unset.
 ///
@@ -97,6 +101,7 @@ pub mod protocol;
 pub mod queue_view;
 pub mod references;
 pub mod repo;
+pub mod run_dirs;
 pub mod settings;
 pub mod stop;
 pub mod sync;

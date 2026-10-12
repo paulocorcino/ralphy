@@ -39,6 +39,10 @@ pub(crate) struct UpdateArgs {
     /// update, and the daemon shuts down when the new binary is in place.
     #[arg(long, value_name = "PID", hide = true)]
     pub(crate) handoff: Option<u32>,
+
+    /// Do not ask before closing the open consoles of the daemon.
+    #[arg(long)]
+    pub(crate) yes: bool,
 }
 
 pub(crate) fn run(args: &UpdateArgs) -> Result<()> {
@@ -50,7 +54,13 @@ pub(crate) fn run(args: &UpdateArgs) -> Result<()> {
     print!("{}", report(&build, channel, &standing));
 
     match standing {
-        Standing::Behind(gap) if !args.check => take(&gap[0]),
+        Standing::Behind(gap) if !args.check => {
+            // Before the download, so a "no" costs nothing.
+            if !crate::daemon::confirm::confirm_recorded_daemon(args.yes)? {
+                return Ok(());
+            }
+            take(&gap[0])
+        }
         _ => Ok(()),
     }
 }
@@ -237,6 +247,7 @@ mod tests {
             channel: "nightly".into(),
             force: false,
             handoff: None,
+            yes: false,
         };
         let err = run(&args).expect_err("nightly is not a channel");
         assert!(

@@ -152,6 +152,7 @@ pub(crate) fn run_cmd(args: RunArgs) -> Result<()> {
             ralphy_core::Settings::default()
         }
     };
+    prune_old_run_folders(&ws, &settings, &run_dir, args.dry_run);
     // The effective assignee filter for the label-built queue (ADR-0021): flag >
     // `--no-assignee` > persisted `queue.assignee` > none. `--only-issue`/`--issues`
     // bypass it below so an explicit selection always fetches unfiltered.
@@ -634,6 +635,31 @@ fn resolve_verify_timeout_minutes(persisted: Option<u64>) -> u64 {
     persisted
         .filter(|m| *m > 0)
         .unwrap_or(ralphy_core::VERIFY_GATE_FALLBACK_MINUTES)
+}
+
+/// Keep the newest `runs.keep` run folders and remove the older ones. A refused
+/// delete is a warning: pruning never fails a run.
+fn prune_old_run_folders(
+    ws: &Workspace,
+    settings: &ralphy_core::Settings,
+    run_dir: &std::path::Path,
+    dry_run: bool,
+) {
+    let keep = settings.runs.keep.unwrap_or(ralphy_core::DEFAULT_RUNS_KEEP);
+    let pruned =
+        ralphy_core::run_dirs::prune_run_dirs(&ws.runs_dir(), keep, run_dir, dry_run, |p| {
+            std::fs::remove_dir_all(p)
+        });
+    if !pruned.removed.is_empty() {
+        let verb = if dry_run { "would remove" } else { "removed" };
+        info!(
+            "{verb} {} old run folders (keeping the last {keep}; change with runs.keep)",
+            pruned.removed.len()
+        );
+    }
+    for (path, e) in &pruned.failed {
+        warn!(path = %path.display(), error = %e, "could not remove an old run folder");
+    }
 }
 
 #[cfg(test)]

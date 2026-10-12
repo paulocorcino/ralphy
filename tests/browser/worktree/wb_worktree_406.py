@@ -25,8 +25,8 @@ Scenario 4  reload: `page.reload()` + open the project (no picker) → the
 Scenario 5  a second browser context sees the same selection and chip
 Scenario 6  the `primary` row clears the selection: the primary is listed and
             the chip reads `main`; re-selecting `wt-a` lists the worktree
-Scenario 7  with `wt-a` selected `switchBranch("main")` is SENT (#407) and
-            git refuses it (`main` is checked out in the primary): the
+Scenario 7  with `wt-a` selected the picker greys `main`; a raw `branch.switch` of
+            `main` is SENT (#407) and git refuses it (`main` is checked out in the primary): the
             `branchError` names `main`, and neither tree's HEAD moved
 Scenario 8  a `file.write` carrying `checkout: "wt-a"` is refused with
             `not available`, and neither tree's `README.md` changed
@@ -426,11 +426,17 @@ def main():
             # Git's wording is `already used by worktree` on 2.50 (`already
             # checked out` on older ones): assert the stable words.
             open_picker(page, slug)
-            page.evaluate(f"() => {BRANCH}.switchBranch('main')")
+            # The picker greys `main` (the primary holds it) and sends nothing;
+            # the refusal path is reached through the raw mutate.
+            # The names come from the project row at once; the holders arrive with the reply.
+            page.wait_for_function(f"() => Object.keys({BRANCH}.branchModal.worktrees).length >= 1", timeout=15000)
+            held = page.evaluate(f"() => {BRANCH}.branchHeldBy('main')")
+            check("the picker marks `main` as held by the primary's path", bool(held), f"got={held!r}")
+            page.evaluate(f"(s) => {BRANCH}._mutateBranch('branch.switch', s, 'main', () => {{}})", arg=slug)
             page.wait_for_function(f"() => {CHECKOUTS}.branchError !== ''", timeout=10000)
             err = page.evaluate(f"() => {CHECKOUTS}.branchError")
             check(
-                "switchBranch('main') under wt-a is sent and refused by git (already used by the primary)",
+                "a branch.switch of main under wt-a is sent and refused by git (already used by the primary)",
                 "already" in (err or "") and "main" in (err or ""),
                 f"got={err!r}",
             )
@@ -532,7 +538,7 @@ def main():
 
     print(f"\n{sum(results)}/{len(results)} checks passed", flush=True)
     # A deleted scenario must not silently shrink the suite (#339 trap).
-    check_floor = 24
+    check_floor = 25
     if len(results) != check_floor:
         print(f"[FAIL] the suite ran {len(results)} checks, expected {check_floor}", flush=True)
         sys.exit(1)

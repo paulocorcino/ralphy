@@ -17,6 +17,7 @@ use ralphy_daemon::registry;
 use ralphy_daemon::{auth, password, totp};
 
 mod bootstrap;
+pub(crate) mod confirm;
 mod describe;
 mod register;
 pub(crate) mod restart;
@@ -120,7 +121,11 @@ pub(crate) enum DaemonCommand {
     /// Stop the running daemon and start this program in its place. Run it after
     /// an update, so the new version serves the workbench.
     // ADR-0056.
-    Restart,
+    Restart {
+        /// Do not ask before closing the open consoles.
+        #[arg(long)]
+        yes: bool,
+    },
     /// Ask for the access token on every request, also from this computer. Turn
     /// it on for a daemon that another computer reaches through an SSH tunnel:
     /// the tunnel arrives on 127.0.0.1, like a program on this computer. `on`
@@ -213,7 +218,7 @@ pub(crate) fn run(args: &DaemonArgs) -> Result<()> {
             println!("removed daemon autostart");
             Ok(())
         }
-        Some(DaemonCommand::Restart) => restart::restart(),
+        Some(DaemonCommand::Restart { yes }) => restart::restart(*yes),
         Some(DaemonCommand::RequireToken { state }) => {
             require_token(&auth::store_dir()?, *state, &mut std::io::stdout())
         }

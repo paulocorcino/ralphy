@@ -117,12 +117,44 @@ pub fn current_branch(repo: &Path) -> Result<String> {
 /// workbench branch switcher (issue #199): robust enumeration needs git (packed
 /// refs, worktrees), so the CLI owns it and the daemon reads it via `branch list`.
 pub fn local_branches(repo: &Path) -> Result<Vec<String>> {
-    let out = git(repo, &["branch", "--format=%(refname:short)"])?;
+    Ok(local_branches_held(repo)?
+        .into_iter()
+        .map(|b| b.name)
+        .collect())
+}
+
+/// A local branch and the worktree that has it checked out, if any.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalBranch {
+    pub name: String,
+    /// The absolute path of the worktree that holds the branch, as git prints
+    /// it (forward slashes on Windows). `None` when no worktree holds it.
+    pub worktree: Option<String>,
+}
+
+/// [`local_branches`] plus the worktree that holds each branch. Git refuses to
+/// check out a branch that another worktree holds, so the branch switcher
+/// needs the holder. `%(worktreepath)` exists since git 2.23.
+pub fn local_branches_held(repo: &Path) -> Result<Vec<LocalBranch>> {
+    // NUL separates the two fields: neither a ref name nor a path can hold it.
+    let out = git(
+        repo,
+        &["branch", "--format=%(refname:short)%00%(worktreepath)"],
+    )?;
     Ok(out
         .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .map(str::to_string)
+        .filter_map(|line| {
+            let (name, path) = line.split_once('\0').unwrap_or((line, ""));
+            let name = name.trim();
+            if name.is_empty() {
+                return None;
+            }
+            let path = path.trim();
+            Some(LocalBranch {
+                name: name.to_string(),
+                worktree: (!path.is_empty()).then(|| path.to_string()),
+            })
+        })
         .collect())
 }
 
@@ -256,7 +288,15 @@ pub fn validate_commitish(repo: &Path, refname: &str) -> Result<()> {
 /// option that rewrites the working tree.
 pub fn checkout(repo: &Path, refname: &str) -> Result<()> {
     validate_branch_name(repo, refname)?;
-    git(repo, &["checkout", refname, "--quiet"])?;
+    // Git's reason comes first: the workbench note shows only its first lines,
+    // and the command adds nothing the operator does not already know.
+    let out = raw(repo, &["checkout", refname, "--quiet"])?;
+    if !out.status.success() {
+        bail!(
+            "cannot switch branch: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
     Ok(())
 }
 

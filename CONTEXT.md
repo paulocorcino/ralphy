@@ -43,6 +43,9 @@ The branch where a run's commits land: a new branch for the run, or the branch t
 A repo's working-tree changes as one ordered list of paths, each with its kind of change (modified, added, deleted, renamed, untracked or conflicted). It is Ralphy's single definition of a dirty working tree.
 _Avoid_: diff, status, dirty list.
 
+**Run folder**:
+The folder `.ralphy/runs/<stamp>` that holds one run's logs. A run keeps the newest 50 of them (`runs.keep`) and deletes the older ones. A folder renamed away from its stamp is never deleted.
+
 **Run artifact**:
 A path under the repo-root `.ralphy/` folder, which Ralphy keeps out of the **Change set** by its own rule.
 _Avoid_: ignored file.
