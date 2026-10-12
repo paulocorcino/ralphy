@@ -75,6 +75,7 @@ pub(crate) async fn session_ws_upgrade(
     let tab = Tab {
         holder: query.holder().map(str::to_owned),
         device: who.device,
+        gzip: query.gzip == Some(1),
     };
     let record = query.record().map(str::to_owned);
     let daemon_id = identity
@@ -532,7 +533,7 @@ mod tests {
     fn a_relayed_request_records_a_launch_or_a_takeover_and_nothing_else() {
         let tab = Tab {
             holder: Some("tab-a".to_string()),
-            device: None,
+            ..Tab::default()
         };
         let record = |q| relayed_record(&query(q), "owner/repo", "01PEER", &tab);
 

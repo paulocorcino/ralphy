@@ -32,6 +32,7 @@ pub(crate) fn peer_session_query(query: &SessionQuery, slug: &str) -> String {
             out.push_str("&watch=1");
         }
         push_holder(&mut out, query);
+        push_gzip(&mut out, query);
         return out;
     }
     // A free console on a peer with no distro (ADR-0067 §7): the peer opens it
@@ -46,6 +47,7 @@ pub(crate) fn peer_session_query(query: &SessionQuery, slug: &str) -> String {
         }
         push_record(&mut out, query);
         push_holder(&mut out, query);
+        push_gzip(&mut out, query);
         return out;
     }
     let mut out = format!(
@@ -67,7 +69,17 @@ pub(crate) fn peer_session_query(query: &SessionQuery, slug: &str) -> String {
     }
     push_record(&mut out, query);
     push_holder(&mut out, query);
+    push_gzip(&mut out, query);
     out
+}
+
+/// The daemon that hosts the session is the one that compresses the replay,
+/// so it must know the page can decode it. An older peer ignores the key and
+/// sends the replay raw.
+fn push_gzip(out: &mut String, query: &SessionQuery) {
+    if query.gzip == Some(1) {
+        out.push_str("&gzip=1");
+    }
 }
 
 /// The owning daemon keeps one session per window record (ADR-0050 amendment

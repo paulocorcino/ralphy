@@ -4,6 +4,10 @@
    `readSocketEvent(bytes)` folds the bytes of one message into a closed
    `SocketEvent`. The terminal module matches it exhaustively and does the
    side effects; this module has none.
+
+   `frameQueue(apply)` gives each message to `apply` in arrival order. When
+   `session-open` says the replay is gzipped, the next terminal frame is
+   decoded first, and the frames that arrive meanwhile wait behind it.
    --------------------------------------------------------------------------- */
 import { socketFrame } from "./wb-api.ts";
 import { TAG_COMMAND, TAG_TERMINAL } from "./wb-console-session.ts";
@@ -67,4 +71,50 @@ export function readSocketEvent(a: Uint8Array): SocketEvent {
 
 function isCount(n: unknown): n is number {
   return typeof n === "number" && Number.isInteger(n) && n > 0;
+}
+
+// The decoded bytes of a gzip stream; rejects on a stream that is not gzip.
+async function gunzip(bytes: Uint8Array): Promise<Uint8Array> {
+  const stream = new Blob([new Uint8Array(bytes)]).stream().pipeThrough(new DecompressionStream("gzip"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+export function frameQueue(apply: (event: SocketEvent) => void): (bytes: Uint8Array) => void {
+  // Set by `session-open`: the next terminal frame is a gzip replay.
+  let gzipNext = false;
+  // The messages that arrived while the replay decodes, in order; null when
+  // no decode is running.
+  let waiting: Uint8Array[] | null = null;
+
+  function take(bytes: Uint8Array) {
+    if (waiting) {
+      waiting.push(bytes);
+      return;
+    }
+    const event = readSocketEvent(bytes);
+    if (event.kind === "open") gzipNext = event.payload?.replay_encoding === "gzip";
+    if (event.kind !== "output" || !gzipNext) {
+      apply(event);
+      return;
+    }
+    gzipNext = false;
+    waiting = [];
+    gunzip(event.bytes)
+      .then(
+        (decoded) => apply({ ...event, bytes: decoded }),
+        // The replay is lost, not the console: the live stream goes on.
+        (error: unknown) => console.warn("console replay did not decode:", error),
+      )
+      .finally(drain);
+  }
+
+  // A frame that starts another decode sends the rest of `queued` into the
+  // new wait, still in order.
+  function drain() {
+    const queued = waiting ?? [];
+    waiting = null;
+    for (const bytes of queued) take(bytes);
+  }
+
+  return take;
 }

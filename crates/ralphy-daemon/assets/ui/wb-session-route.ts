@@ -1,9 +1,10 @@
 /* Pure browser-session ownership rules, shared by the shell and Node coverage. */
 // What a `/ws/session` url is built from: a reattach (`id`), a free console,
 // or an agent launch.
+// `gzip`: the page can decode a gzip replay, so it asks for one.
 type SessionUrlOpts =
-  | { id: number; repo?: string; takeover?: boolean; watch?: boolean; holder?: string }
-  | { id?: null; console: true; repo?: string; command?: string; record?: string; holder?: string }
+  | { id: number; repo?: string; takeover?: boolean; watch?: boolean; holder?: string; gzip?: boolean }
+  | { id?: null; console: true; repo?: string; command?: string; record?: string; holder?: string; gzip?: boolean }
   | {
       id?: null;
       console?: false;
@@ -13,6 +14,7 @@ type SessionUrlOpts =
       name?: string | null;
       record?: string;
       holder?: string;
+      gzip?: boolean;
     };
 
 // What one connect of a terminal asks for, before it is one of the shapes
@@ -46,6 +48,9 @@ type SessionOpen = {
   environment?: string;
   name?: string | null;
   checkout?: string | null;
+  // "gzip" when the replay frame that follows is gzipped. A peer of an older
+  // build sends no such field, and its replay is raw.
+  replay_encoding?: "gzip";
 };
 
 export const WBSessionRoute = (function () {
@@ -92,7 +97,8 @@ export const WBSessionRoute = (function () {
   }
 
   function url(origin: string, opts: SessionUrlOpts) {
-    let value = origin + "/ws/session?";
+    // First, so the rest of the query reads as it did before the key.
+    let value = origin + "/ws/session?" + (opts.gzip ? "gzip=1&" : "");
     if (opts.id != null) {
       value += "id=" + encodeURIComponent(opts.id);
       if (opts.repo) value += "&repo=" + encodeURIComponent(opts.repo);
@@ -125,15 +131,20 @@ export const WBSessionRoute = (function () {
     return value;
   }
 
+  // The replay is gzipped only for a page that can decode it.
+  function canGunzip() {
+    return typeof DecompressionStream === "function";
+  }
+
   // The url options of one connect, in the shape its kind reads. An agent
   // launch with no repo or no agent sends the value empty, never `null`: the
   // daemon refuses it as an unknown repo or agent.
-  function requestOpts(req: SessionRequest, holder: string): SessionUrlOpts {
+  function requestOpts(req: SessionRequest, holder: string, gzip = false): SessionUrlOpts {
     const repo = req.repo ?? undefined;
-    if (req.id != null) return { id: req.id, repo, takeover: req.takeover, watch: req.watch, holder };
-    if (req.console) return { console: true, repo, command: req.command, record: req.record, holder };
+    if (req.id != null) return { id: req.id, repo, takeover: req.takeover, watch: req.watch, holder, gzip };
+    if (req.console) return { console: true, repo, command: req.command, record: req.record, holder, gzip };
     const { agent, checkout, name, record } = req;
-    return { repo: req.repo ?? "", agent: agent ?? "", checkout, name, record, holder };
+    return { repo: req.repo ?? "", agent: agent ?? "", checkout, name, record, holder, gzip };
   }
   // The window record of a NEW launch: the daemon keeps one live session per
   // record, so a second page relaunching it joins the first one's session.
@@ -189,6 +200,7 @@ export const WBSessionRoute = (function () {
   return {
     url,
     requestOpts,
+    canGunzip,
     holder,
     tabHolder,
     closeUrl,

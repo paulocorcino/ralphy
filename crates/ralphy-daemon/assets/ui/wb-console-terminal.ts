@@ -19,7 +19,7 @@ import { wireTouch } from "./wb-console-touch.ts";
 import { wirePaste } from "./wb-console-paste.ts";
 import { wirePress } from "./wb-console-press.ts";
 import { createFit } from "./wb-console-fit.ts";
-import { readSocketEvent } from "./wb-console-frames.ts";
+import { frameQueue } from "./wb-console-frames.ts";
 import { terminalGpu } from "./wb-console-gpu.ts";
 import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
 import type { DetachReason } from "./wb-console-session.ts";
@@ -269,9 +269,11 @@ export function createTerminal(deps: TerminalDeps) {
       // An empty scrollback sends no replay frame, so the flag rides until the
       // first LIVE frame clears it.
       replaying = connOpts.id != null;
+      const holder = WBSessionRoute.tabHolder();
       ws = new WebSocket(
-        WBSessionRoute.url(WS_ORIGIN, WBSessionRoute.requestOpts(connOpts, WBSessionRoute.tabHolder())),
+        WBSessionRoute.url(WS_ORIGIN, WBSessionRoute.requestOpts(connOpts, holder, WBSessionRoute.canGunzip())),
       );
+      const socket = ws;
       ws.binaryType = "arraybuffer";
       connectingSince = Date.now();
       // `close()` on a CONNECTING socket fires `onclose` with `opened` false:
@@ -300,8 +302,9 @@ export function createTerminal(deps: TerminalDeps) {
         // Never xterm's default 80×24: only a size the body measured.
         sizing.opened();
       };
-      ws.onmessage = (ev: MessageEvent) => {
-        const event = readSocketEvent(new Uint8Array(ev.data));
+      const take = frameQueue((event) => {
+        // A replay decoded after its socket was retired belongs to no one.
+        if (leaving || ws !== socket) return;
         switch (event.kind) {
           case "output":
             if (currentSessionId == null) {
@@ -357,7 +360,8 @@ export function createTerminal(deps: TerminalDeps) {
             return unreachable;
           }
         }
-      };
+      });
+      ws.onmessage = (ev: MessageEvent) => take(new Uint8Array(ev.data));
       // Swallow the error event; onclose drives recovery in every case.
       ws.onerror = () => {};
       ws.onclose = (event: CloseEvent) => {

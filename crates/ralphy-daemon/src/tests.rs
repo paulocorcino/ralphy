@@ -35,6 +35,7 @@ fn peer_session_query_forwards_the_checkout_only_when_present() {
         holder: None,
         name: None,
         record: None,
+        gzip: None,
     };
     assert_eq!(
         peer_session_query(&launch(Some("wt-a")), "owner/repo"),
@@ -70,6 +71,7 @@ fn peer_session_query_forwards_a_console_launch() {
         holder: Some("tab-1".into()),
         name: None,
         record: None,
+        gzip: None,
     };
     assert_eq!(
         peer_session_query(&console(Some(" htop ")), "owner/repo"),
@@ -104,6 +106,7 @@ fn peer_session_query_forwards_a_well_formed_holder() {
         holder: Some(holder.to_string()),
         name: None,
         record: None,
+        gzip: None,
     };
     assert_eq!(
         peer_session_query(&reattach("tab-1_A"), "owner/repo"),
@@ -144,6 +147,7 @@ fn peer_session_query_forwards_the_console_name_on_a_launch_only() {
         holder: None,
         name,
         record: None,
+        gzip: None,
     };
     assert_eq!(
         peer_session_query(&launch(Some("fincal #1".into())), "owner/repo"),
@@ -187,6 +191,7 @@ fn peer_session_query_forwards_the_record_on_a_launch_only() {
         holder: None,
         name: None,
         record: Some(record.to_string()),
+        gzip: None,
     };
     assert_eq!(
         peer_session_query(&console("w-a_1"), "owner/repo"),
@@ -218,6 +223,57 @@ fn peer_session_query_forwards_the_record_on_a_launch_only() {
     }
 }
 
+/// The daemon that hosts the session compresses the replay, so the relay
+/// forwards `gzip=1` on every shape, and nothing when the page did not ask.
+#[test]
+fn peer_session_query_forwards_gzip_on_every_shape() {
+    let launch = |gzip: Option<u32>| SessionQuery {
+        repo: Some("x".into()),
+        agent: Some("claude".into()),
+        id: None,
+        takeover: None,
+        watch: None,
+        console: None,
+        checkout: None,
+        command: None,
+        holder: None,
+        name: None,
+        record: None,
+        gzip,
+    };
+    assert_eq!(
+        peer_session_query(&launch(Some(1)), "owner/repo"),
+        "repo=owner%2Frepo&agent=claude&gzip=1"
+    );
+    let watch = |gzip| SessionQuery {
+        id: Some(7),
+        watch: Some(1),
+        ..launch(gzip)
+    };
+    assert_eq!(
+        peer_session_query(&watch(Some(1)), "owner/repo"),
+        "id=7&repo=owner%2Frepo&watch=1&gzip=1"
+    );
+    let console = SessionQuery {
+        console: Some(1),
+        agent: None,
+        ..launch(Some(1))
+    };
+    assert_eq!(
+        peer_session_query(&console, "owner/repo"),
+        "console=1&repo=owner%2Frepo&gzip=1"
+    );
+    assert_eq!(
+        peer_session_query(&watch(None), "owner/repo"),
+        "id=7&repo=owner%2Frepo&watch=1"
+    );
+    assert_eq!(
+        peer_session_query(&watch(Some(0)), "owner/repo"),
+        "id=7&repo=owner%2Frepo&watch=1",
+        "only `1` asks"
+    );
+}
+
 /// The console name is cut to the desk's 40 characters on a char boundary,
 /// and an empty one is no name at all.
 #[test]
@@ -234,6 +290,7 @@ fn session_query_name_is_cut_to_40_and_empty_is_absent() {
         holder: None,
         name,
         record: None,
+        gzip: None,
     };
     let long = "é".repeat(40);
     assert_eq!(query(Some("é".repeat(41))).name(), Some(long.as_str()));

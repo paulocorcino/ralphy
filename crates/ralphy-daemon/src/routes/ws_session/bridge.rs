@@ -1,6 +1,7 @@
 //! The byte bridge of an attached `/ws/session`: replay, live stream, input,
 //! resize, and the eviction/exit teardown.
 
+use std::io::Write;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
@@ -31,6 +32,9 @@ const PING_MS_ENV: &str = "RALPHY_DAEMON_WS_PING_MS";
 
 /// The command verb that tells a client the session size (ADR-0079 D6).
 const SESSION_SIZE: &str = "session-size";
+
+/// The `replay_encoding` of a gzipped replay frame (ADR-0079 D9).
+const GZIP: &str = "gzip";
 
 impl Liveness {
     /// Two whole ping periods plus a quarter of slack: one lost pong on a lossy
@@ -108,28 +112,34 @@ pub(crate) async fn session_ws(
     let notified = evict.notify.notified();
     tokio::pin!(notified);
     notified.as_mut().enable();
+    let replay = Replay::of(std::mem::take(&mut attach.snapshot), tab.gzip);
     let mut traffic = Traffic::local(id, tab, Instant::now());
 
+    let mut payload = serde_json::json!({
+        "session": id,
+        "daemon_id": daemon_id,
+        "environment": environment,
+        // Absent for every vendor but Claude, and for the free console —
+        // which is the honest signal that those are not addressable.
+        "name": labels.name,
+        // The worktree NAME the console lives in, `null` for the primary;
+        // re-announced on a reattach from the record (ADR-0063 §3).
+        "checkout": labels.checkout,
+        // Read-only from the start: this launch joined a session another
+        // page drives (ADR-0050 amendment 2026-10-04).
+        "watch": labels.watching,
+        // A replay (the screen snapshot) follows. Read by a relaying daemon for its
+        // traffic summary; the page does not need it.
+        "replay": !replay.data.is_empty(),
+    });
+    // Absent when the replay is raw, as from a daemon that never gzips.
+    if replay.gzipped {
+        payload["replay_encoding"] = GZIP.into();
+    }
     let open = Frame::Command(Command {
         id,
         verb: SESSION_OPEN.to_string(),
-        payload: serde_json::json!({
-            "session": id,
-            "daemon_id": daemon_id,
-            "environment": environment,
-            // Absent for every vendor but Claude, and for the free console —
-            // which is the honest signal that those are not addressable.
-            "name": labels.name,
-            // The worktree NAME the console lives in, `null` for the primary;
-            // re-announced on a reattach from the record (ADR-0063 §3).
-            "checkout": labels.checkout,
-            // Read-only from the start: this launch joined a session another
-            // page drives (ADR-0050 amendment 2026-10-04).
-            "watch": labels.watching,
-            // A replay (the screen snapshot) follows. Read by a relaying daemon for its
-            // traffic summary; the page does not need it.
-            "replay": !attach.snapshot.is_empty(),
-        }),
+        payload,
     });
     if socket
         .send(Message::Binary(protocol::encode(&open).into()))
@@ -148,13 +158,14 @@ pub(crate) async fn session_ws(
 
     // Replay the screen snapshot first so a reattaching client sees the screen before the
     // live stream resumes. Skip an empty snapshot (a fresh session).
-    if !attach.snapshot.is_empty() {
+    if !replay.data.is_empty() {
+        let sent = replay.data.len();
         let frame = Frame::Terminal {
             session: id,
-            data: std::mem::take(&mut attach.snapshot),
+            data: replay.data,
         };
         let encoded = protocol::encode(&frame);
-        traffic.replay(encoded.len());
+        traffic.replay(encoded.len(), encoded.len() - sent + replay.raw_len);
         if socket.send(Message::Binary(encoded.into())).await.is_err() {
             traffic.log(None, Instant::now());
             return;
@@ -324,6 +335,47 @@ pub(crate) async fn session_ws(
     drop(attach);
 }
 
+/// The replay frame's data: the snapshot, gzipped when the tab asked for it.
+struct Replay {
+    data: Vec<u8>,
+    gzipped: bool,
+    /// The length of the snapshot, for the traffic summary.
+    raw_len: usize,
+}
+
+impl Replay {
+    fn of(snapshot: Vec<u8>, gzip: bool) -> Replay {
+        let raw_len = snapshot.len();
+        if gzip && !snapshot.is_empty() {
+            match gzipped(&snapshot) {
+                Ok(data) => {
+                    return Replay {
+                        data,
+                        gzipped: true,
+                        raw_len,
+                    }
+                }
+                // A replay that does not compress goes raw; it is never dropped.
+                Err(error) => tracing::warn!(%error, "the replay did not compress; sent raw"),
+            }
+        }
+        Replay {
+            data: snapshot,
+            gzipped: false,
+            raw_len,
+        }
+    }
+}
+
+fn gzipped(bytes: &[u8]) -> std::io::Result<Vec<u8>> {
+    let mut enc = flate2::write::GzEncoder::new(
+        Vec::with_capacity(bytes.len() / 4),
+        flate2::Compression::default(),
+    );
+    enc.write_all(bytes)?;
+    enc.finish()
+}
+
 /// Tell the client the session size. Not counted in the traffic summary, like
 /// `session-open`.
 async fn send_size(
@@ -448,11 +500,13 @@ mod tests {
         }
     }
 
-    /// Serve `session_ws` for one client on `listener`.
+    /// Serve `session_ws` for one client on `listener`; `gzip` is what the
+    /// client's tab asked for.
     fn serve_bridge<L>(
         listener: L,
         id: session::SessionId,
         attach: session::Attachment,
+        gzip: bool,
     ) -> tokio::task::JoinHandle<std::io::Result<()>>
     where
         L: axum::serve::Listener,
@@ -485,6 +539,7 @@ mod tests {
                             Tab {
                                 holder: None,
                                 device: None,
+                                gzip,
                             },
                             shutdown,
                         )
@@ -565,7 +620,7 @@ mod tests {
         let addr = listener
             .local_addr()
             .expect("a bound listener has an address");
-        let server = serve_bridge(listener, id, attach);
+        let server = serve_bridge(listener, id, attach, false);
 
         let (mut client, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/"))
             .await
@@ -598,7 +653,7 @@ mod tests {
         let chunks: Vec<Vec<u8>> = (0..100u8).map(|n| vec![n; 64 * 1024]).collect();
         let (id, attach) = exited_session(&chunks, 128);
         let (server_io, client_io) = tokio::io::duplex(4096);
-        let server = serve_bridge(OneConnection(Some(server_io)), id, attach);
+        let server = serve_bridge(OneConnection(Some(server_io)), id, attach, false);
 
         let (mut client, _) = tokio_tungstenite::client_async("ws://localhost/", client_io)
             .await
@@ -671,7 +726,7 @@ mod tests {
         let addr = listener
             .local_addr()
             .expect("a bound listener has an address");
-        let server = serve_bridge(listener, id, watcher);
+        let server = serve_bridge(listener, id, watcher, false);
         let (mut client, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/"))
             .await
             .expect("the bridge accepts the socket");
@@ -696,5 +751,64 @@ mod tests {
         assert_eq!(resized, (30, 100));
         server.abort();
         manager.close(id);
+    }
+
+    /// The replay a tab gets: gzipped and named so in `session-open` when it
+    /// asks for gzip, raw with no `replay_encoding` when it does not.
+    #[tokio::test]
+    async fn the_replay_is_gzipped_only_when_the_tab_asks() {
+        use std::io::Read;
+        let snapshot = b"\x1b[2J\x1b[Hthe screen as it is now\r\n".repeat(50);
+        for gzip in [true, false] {
+            let manager = Arc::new(session::SessionManager::new());
+            let spec = session::console_spec(std::env::temp_dir(), 24, 80, None);
+            let (id, _writer) = manager
+                .spawn_attached(
+                    "~".to_string(),
+                    "console".to_string(),
+                    "console".to_string(),
+                    None,
+                    None,
+                    None,
+                    spec,
+                )
+                .expect("the platform shell must spawn — the free console depends on it");
+            let mut watcher = manager.watch(id).expect("a live session is watchable");
+            watcher.snapshot = snapshot.clone();
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("bind a loopback port");
+            let addr = listener
+                .local_addr()
+                .expect("a bound listener has an address");
+            let server = serve_bridge(listener, id, watcher, gzip);
+            let (mut client, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/"))
+                .await
+                .expect("the bridge accepts the socket");
+
+            let Frame::Command(open) = next_frame(&mut client).await else {
+                panic!("the first frame is session-open");
+            };
+            let encoding = open.payload.get("replay_encoding").cloned();
+            let size = next_frame(&mut client).await;
+            assert!(size_of(&size).is_some(), "the size follows: {size:?}");
+            let Frame::Terminal { data, .. } = next_frame(&mut client).await else {
+                panic!("the replay follows the size");
+            };
+            if gzip {
+                assert_eq!(encoding, Some(serde_json::json!("gzip")));
+                let mut raw = Vec::new();
+                flate2::read::GzDecoder::new(data.as_slice())
+                    .read_to_end(&mut raw)
+                    .expect("the replay is gzip");
+                assert_eq!(raw, snapshot);
+                assert!(data.len() < snapshot.len(), "the gzip is smaller");
+            } else {
+                assert_eq!(encoding, None, "a raw replay names no encoding");
+                assert_eq!(data, snapshot);
+            }
+            server.abort();
+            manager.close(id);
+        }
     }
 }

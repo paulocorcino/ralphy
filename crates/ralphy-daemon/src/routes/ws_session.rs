@@ -51,6 +51,10 @@ pub(crate) struct SessionQuery {
     /// while a live session serves it, the launch attaches to that session
     /// instead of starting another. Ignored on a reattach by `id`.
     pub(crate) record: Option<String>,
+    /// `1`: the page can decode a gzip replay, so the daemon that hosts the
+    /// session may send the replay frame gzipped (ADR-0079 D9). Live frames
+    /// are never compressed.
+    pub(crate) gzip: Option<u32>,
 }
 
 /// The shape of a `holder` and of a `record`: 1–64 ASCII letters, digits, `-`

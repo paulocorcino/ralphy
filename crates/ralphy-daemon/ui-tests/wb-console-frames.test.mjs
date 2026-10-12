@@ -1,12 +1,16 @@
 // Unit tests for assets/ui/wb-console-frames.ts: one socket message folded
-// into a SocketEvent. Pure function, no socket and no DOM.
+// into a SocketEvent, and the queue that keeps live frames behind a gzip
+// replay. No socket and no DOM.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readSocketEvent } from "../assets/ui/wb-console-frames.ts";
+import { frameQueue, readSocketEvent } from "../assets/ui/wb-console-frames.ts";
 import { TAG_COMMAND, TAG_TERMINAL } from "../assets/ui/wb-console-session.ts";
 
 function terminalFrame(id, text) {
-  const data = new TextEncoder().encode(text);
+  return terminalBytes(id, new TextEncoder().encode(text));
+}
+
+function terminalBytes(id, data) {
   const out = new Uint8Array(9 + data.length);
   out[0] = TAG_TERMINAL;
   new DataView(out.buffer).setBigUint64(1, BigInt(id));
@@ -71,4 +75,60 @@ test("another verb, a bad body, a short frame and an unknown tag are other", () 
   assert.deepEqual(readSocketEvent(Uint8Array.of(TAG_TERMINAL, 0, 0)), { kind: "other" });
   assert.deepEqual(readSocketEvent(new Uint8Array(0)), { kind: "other" });
   assert.deepEqual(readSocketEvent(Uint8Array.of(0x09, 1, 2)), { kind: "other" });
+});
+
+async function gzip(text) {
+  const stream = new Blob([new TextEncoder().encode(text)]).stream().pipeThrough(new CompressionStream("gzip"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+// What the queue applied, as short labels: the text of an output, the kind of
+// anything else.
+function recorder() {
+  const seen = [];
+  const apply = (event) => seen.push(event.kind === "output" ? new TextDecoder().decode(event.bytes) : event.kind);
+  return { seen, apply };
+}
+
+// Every pending decode and drain has run.
+const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+
+test("live frames that arrive while a gzip replay decodes are applied after it, in order", async () => {
+  const { seen, apply } = recorder();
+  const take = frameQueue(apply);
+  take(commandFrame("session-open", { session: 1, replay_encoding: "gzip" }));
+  take(commandFrame("session-size", { rows: 24, cols: 80 }));
+  take(terminalBytes(1, await gzip("the screen")));
+  take(terminalFrame(1, "live 1"));
+  take(terminalFrame(1, "live 2"));
+  await settle();
+  assert.deepEqual(seen, ["open", "size", "the screen", "live 1", "live 2"]);
+});
+
+test("a raw replay is applied at once, and only the frame after a gzip open is decoded", async () => {
+  const { seen, apply } = recorder();
+  const take = frameQueue(apply);
+  take(commandFrame("session-open", { session: 1 }));
+  take(terminalFrame(1, "raw screen"));
+  take(terminalFrame(1, "live"));
+  assert.deepEqual(seen, ["open", "raw screen", "live"], "nothing waits");
+});
+
+test("a replay that is not gzip is dropped and the live frames still come", async () => {
+  const { seen, apply } = recorder();
+  const take = frameQueue(apply);
+  const warn = console.warn;
+  const warned = [];
+  console.warn = (...args) => warned.push(args);
+  try {
+    take(commandFrame("session-open", { session: 1, replay_encoding: "gzip" }));
+    take(terminalFrame(1, "not gzip"));
+    take(terminalFrame(1, "live 1"));
+    await settle();
+    take(terminalFrame(1, "live 2"));
+  } finally {
+    console.warn = warn;
+  }
+  assert.deepEqual(seen, ["open", "live 1", "live 2"]);
+  assert.equal(warned.length, 1, "the decode error is logged");
 });
