@@ -246,7 +246,12 @@ pub fn fold(records: &[(String, String)]) -> (Vec<PeerDescriptor>, Vec<PeerRejec
                 continue;
             }
         };
-        if d.protocol_version != PEER_PROTOCOL_VERSION {
+        // A self-announced descriptor is rewritten at each start of its
+        // daemon, so its version is current. A tunnel descriptor keeps the
+        // version read at `host add`, and the host can be upgraded after it:
+        // the handshake checks it on connect (ADR-0052 §3), and the host
+        // stays in the list to be upgraded or removed.
+        if d.tunnel.is_none() && d.protocol_version != PEER_PROTOCOL_VERSION {
             rejected.push(PeerReject::IncompatibleVersion {
                 file: file.clone(),
                 daemon_id: d.daemon_id,

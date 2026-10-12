@@ -80,6 +80,20 @@ fn fold_rejects_incompatible_version() {
 }
 
 #[test]
+fn fold_keeps_a_tunnel_host_whose_saved_version_is_old() {
+    let text = descriptor_toml("01AAA", 7257).replace(
+        &format!("protocol_version = {PEER_PROTOCOL_VERSION}"),
+        "protocol_version = 3",
+    ) + "[tunnel]\ndestination = \"user@host\"\npeer_port = 7257\nlocal_port = 7257\n";
+    let (accepted, rejected) = fold(&[("01AAA.toml".to_string(), text)]);
+    assert!(
+        rejected.is_empty(),
+        "the host stays in the list: {rejected:?}"
+    );
+    assert_eq!(accepted.len(), 1);
+}
+
+#[test]
 fn fold_first_duplicate_identity_wins() {
     let records = vec![
         ("a.toml".to_string(), descriptor_toml("01SAME", 7257)),
