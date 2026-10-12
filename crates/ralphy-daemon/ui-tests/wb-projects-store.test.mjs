@@ -329,3 +329,44 @@ test("a peer the daemon could not read is named in the sidebar", async () => {
   // NEGATIVE CONTROL: a fleet with no bad peer says nothing.
   assert.equal(state.fleetRejectText([{ state: "online" }]), "");
 });
+
+// The update button of an SSH host: install, then add again so the saved
+// descriptor reads the host anew. A failed install adds nothing.
+test("updatePeer installs on the host, adds it again, and stops at a failure", async () => {
+  const { state: shell, window } = loadShell();
+  const state = shell.$store.projects;
+  const peer = "01TUNNELPEER0000000000000A";
+  state.fleetPeers = [
+    { daemon_id: peer, name: "vps", state: "version-mismatch", tunnel: true, destination: "me@vps", identity_file: "/k" },
+  ];
+  const calls = [];
+  let installCode = 0;
+  window.WBDaemon = {
+    spawn: (verb, payload, onStatus) => {
+      calls.push({ verb, payload });
+      if (verb === "host.install" && installCode !== 0) {
+        onStatus({ status: "output", chunk: JSON.stringify({ event: "failed", kind: "other", message: "no disk" }) + "\n" });
+      }
+      onStatus({ status: "exited", code: verb === "host.install" ? installCode : 0 });
+      return 1;
+    },
+  };
+  let reloads = 0;
+  state.loadRepos = async () => {
+    reloads++;
+  };
+  const payload = { destination: "me@vps", name: "vps", identity: "/k" };
+  assert.equal(await state.updatePeer(peer), true);
+  assert.deepEqual(calls, [
+    { verb: "host.install", payload },
+    { verb: "host.add", payload },
+  ]);
+  assert.equal(reloads, 1);
+  assert.deepEqual(state.updating, {});
+
+  calls.length = 0;
+  installCode = 1;
+  assert.equal(await state.updatePeer(peer), false);
+  assert.deepEqual(calls.map((c) => c.verb), ["host.install"]);
+  assert.equal(reloads, 1);
+});
