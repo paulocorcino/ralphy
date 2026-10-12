@@ -36,6 +36,7 @@ import { wbLogin } from "../assets/ui/wb-login.ts";
 import { projectsStore } from "../assets/ui/wb-projects-store.ts";
 import { connectionStore } from "../assets/ui/wb-connection-store.ts";
 import { runsStore } from "../assets/ui/wb-runs-store.ts";
+import { boardStore } from "../assets/ui/wb-board-store.ts";
 import { checkoutsStore } from "../assets/ui/wb-checkouts-store.ts";
 import { releaseStore } from "../assets/ui/wb-release-store.ts";
 import { modalsStore } from "../assets/ui/wb-modals-store.ts";
@@ -71,6 +72,7 @@ export const STORES = {
   projects: projectsStore,
   connection: connectionStore,
   runs: runsStore,
+  board: boardStore,
   checkouts: checkoutsStore,
   release: releaseStore,
   tabs: tabsStore,

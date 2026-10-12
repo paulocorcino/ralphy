@@ -17,6 +17,7 @@ import "./wb-api.test.mjs";
 import "./wb-api-members.test.mjs";
 import "./wb-changes.test.mjs";
 import "./wb-changes-panel.test.mjs";
+import "./wb-board-store.test.mjs";
 import "./wb-checkouts-store.test.mjs";
 import "./wb-connection-store.test.mjs";
 import "./wb-branch-dialog.test.mjs";

@@ -675,6 +675,7 @@ the returned object. Without decision 3, `app.ts` stops near 850 lines.
    | `wb-console-api.ts` | function | - | `buildConsoleApi(parts)`: the `WBConsole` object. |
    | `wb-runs-store.ts` | Alpine store | `runs` | The runs of each project, their read state, the current run and the runs subscription. The runs panel, the board and the shell read them, so they are a store. |
    | `wb-runs-panel.ts` | component | `wbRuns` | The runs panel, the plan section, the run modal and the raw feed. One region shows them. |
+   | `wb-board-store.ts` | Alpine store | `board` | The board's issues and labels of each project and the state of their read. The board writes them, and the Spend pane reads them, so they are a store. |
    | `wb-board.ts` | component | `wbBoard` | The board, the issue view, the label menu and the plan modal. One region shows them. |
    | `wb-changes-panel.ts` | component | `wbChanges` | The changes, the sync, the commit and the rows. One region shows them. |
    | `wb-branch-dialog.ts` | component | `wbBranchDialog` | The branch modal, the branch switch and create, and the worktree remove. One dialog shows them. |

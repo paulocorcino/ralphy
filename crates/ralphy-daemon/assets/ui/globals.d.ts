@@ -287,6 +287,7 @@ interface Window {
     ): void;
     store(name: "projects"): import("./wb-projects-store.ts").ProjectsStore;
     store(name: "runs"): import("./wb-runs-store.ts").RunsStore;
+    store(name: "board"): import("./wb-board-store.ts").BoardStore;
     store(name: "checkouts"): import("./wb-checkouts-store.ts").CheckoutsStore;
     store(name: "connection"): import("./wb-connection-store.ts").ConnectionStore;
     store(name: "release"): import("./wb-release-store.ts").ReleaseStore;

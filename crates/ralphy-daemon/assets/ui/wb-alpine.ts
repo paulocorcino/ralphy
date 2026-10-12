@@ -6,6 +6,7 @@
 import type { Shell } from "./app.ts";
 import type { ProjectsStore } from "./wb-projects-store.ts";
 import type { RunsStore } from "./wb-runs-store.ts";
+import type { BoardStore } from "./wb-board-store.ts";
 import type { CheckoutsStore } from "./wb-checkouts-store.ts";
 import type { ConnectionStore } from "./wb-connection-store.ts";
 import type { ReleaseStore } from "./wb-release-store.ts";
@@ -16,7 +17,7 @@ import type { TabsStore } from "./wb-tabs-store.ts";
 export interface AlpineMagics {
   $nextTick(callback?: () => void): Promise<void>;
   $refs: Record<string, HTMLElement | undefined>;
-  $store: { projects: ProjectsStore; connection: ConnectionStore; runs: RunsStore; checkouts: CheckoutsStore; release: ReleaseStore; modals: ModalsStore; tabs: TabsStore };
+  $store: { projects: ProjectsStore; connection: ConnectionStore; runs: RunsStore; board: BoardStore; checkouts: CheckoutsStore; release: ReleaseStore; modals: ModalsStore; tabs: TabsStore };
 }
 
 export function component<U extends keyof Shell, T extends object>(

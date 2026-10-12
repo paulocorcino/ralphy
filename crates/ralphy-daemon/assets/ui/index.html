@@ -1496,11 +1496,11 @@
           Loading the board for <b x-text="$store.projects.projectLabel($store.projects.openSlug)"></b>…
         </div>
         <div class="kanban-empty"
-             x-show="$store.projects.openSlug && !boardRefreshing && !boardError[$store.projects.openSlug] && projectIssues().length === 0">
+             x-show="$store.projects.openSlug && !boardRefreshing && !$store.board.boardError[$store.projects.openSlug] && projectIssues().length === 0">
           No issues in <b x-text="$store.projects.projectLabel($store.projects.openSlug)"></b>.
         </div>
-        <div class="kanban-error" x-show="$store.projects.openSlug && boardError[$store.projects.openSlug]">
-          <svg x-icon="'alert-triangle'"></svg> <span x-text="boardError[$store.projects.openSlug]"></span>
+        <div class="kanban-error" x-show="$store.projects.openSlug && $store.board.boardError[$store.projects.openSlug]">
+          <svg x-icon="'alert-triangle'"></svg> <span x-text="$store.board.boardError[$store.projects.openSlug]"></span>
         </div>
 
         <div class="kanban-cols" x-show="$store.projects.openSlug && projectIssues().length">
