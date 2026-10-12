@@ -29,6 +29,9 @@ const DRAIN_LIMIT: Duration = Duration::from_secs(4);
 /// milliseconds. A test cannot wait out the production window.
 const PING_MS_ENV: &str = "RALPHY_DAEMON_WS_PING_MS";
 
+/// The command verb that tells a client the session size (ADR-0079 D6).
+const SESSION_SIZE: &str = "session-size";
+
 impl Liveness {
     /// Two whole ping periods plus a quarter of slack: one lost pong on a lossy
     /// link is not a dead peer, two in a row is.
@@ -60,9 +63,10 @@ impl Liveness {
 }
 
 /// Bridge one WebSocket to one daemon-owned session (the tmux model, #166).
-/// FIRST announces `session-open` with the hosting identity, then replays the
-/// screen snapshot and loops: session output (via the broadcast `rx`) →
-/// `Frame::Terminal`; client `Frame::Terminal` → PTY stdin; client
+/// FIRST announces `session-open` with the hosting identity, then the session
+/// size (`session-size`), then replays the screen snapshot and loops: session
+/// output (via the broadcast `rx`) → `Frame::Terminal`; a new session size →
+/// `session-size`; client `Frame::Terminal` → PTY stdin; client
 /// `Frame::Command{verb:"resize"}` → PTY resize. The loop breaks on client
 /// close/error, a send failure, an eviction (a `takeover` reattach OR the child
 /// exiting), or daemon shutdown.
@@ -135,6 +139,12 @@ pub(crate) async fn session_ws(
         traffic.log(None, Instant::now());
         return;
     }
+    // The size the snapshot below was written at: a watcher paints at it.
+    let size = *attach.size.borrow_and_update();
+    if send_size(&mut socket, id, size).await.is_err() {
+        traffic.log(None, Instant::now());
+        return;
+    }
 
     // Replay the screen snapshot first so a reattaching client sees the screen before the
     // live stream resumes. Skip an empty snapshot (a fresh session).
@@ -168,6 +178,9 @@ pub(crate) async fn session_ws(
     // announcing there would tell a client its session ended when it did not, and
     // the client would park instead of recovering the flaky link (issue #334).
     let mut end: Option<session::EndReason> = None;
+    // False once the size sender is gone, so `changed()` cannot return at once
+    // on every turn of the loop.
+    let mut sizes = true;
     loop {
         tokio::select! {
             _ = shutdown.changed() => { end = Some(session::EndReason::DaemonShutdown); break; }
@@ -189,6 +202,15 @@ pub(crate) async fn session_ws(
                     break;
                 }
             }
+            changed = attach.size.changed(), if sizes => match changed {
+                Ok(()) => {
+                    let size = *attach.size.borrow_and_update();
+                    if send_size(&mut socket, id, size).await.is_err() {
+                        break;
+                    }
+                }
+                Err(_) => sizes = false,
+            },
             recv = attach.rx.recv() => match recv {
                 Ok(bytes) => {
                     if send_output(&mut socket, id, bytes, &mut traffic).await.is_err() {
@@ -300,6 +322,23 @@ pub(crate) async fn session_ws(
     // Detach, do NOT close: dropping `attach` releases the single-writer slot; the
     // session (and its child) live on for a later reattach.
     drop(attach);
+}
+
+/// Tell the client the session size. Not counted in the traffic summary, like
+/// `session-open`.
+async fn send_size(
+    socket: &mut WebSocket,
+    id: session::SessionId,
+    (rows, cols): (u16, u16),
+) -> Result<(), axum::Error> {
+    let frame = Frame::Command(Command {
+        id,
+        verb: SESSION_SIZE.to_string(),
+        payload: serde_json::json!({ "rows": rows, "cols": cols }),
+    });
+    socket
+        .send(Message::Binary(protocol::encode(&frame).into()))
+        .await
 }
 
 /// Send one chunk of session output to the client as a `Terminal` frame.
@@ -578,5 +617,84 @@ mod tests {
             seen.received.len() < chunks.concat().len(),
             "the drain stopped at its limit instead of sending everything"
         );
+    }
+
+    /// The next binary frame the client gets, decoded.
+    async fn next_frame(
+        client: &mut (impl futures_util::Stream<Item = Result<tungstenite::Message, tungstenite::Error>>
+                  + Unpin),
+    ) -> Frame {
+        loop {
+            let message = tokio::time::timeout(Duration::from_secs(10), client.next())
+                .await
+                .expect("a frame within 10 s")
+                .expect("the socket is open")
+                .expect("a well-formed message");
+            if let tungstenite::Message::Binary(bytes) = message {
+                return protocol::decode(&bytes).expect("a well-formed frame");
+            }
+        }
+    }
+
+    /// The session size as a frame says it, or `None` for another frame.
+    fn size_of(frame: &Frame) -> Option<(u64, u64)> {
+        match frame {
+            Frame::Command(cmd) if cmd.verb == SESSION_SIZE => {
+                Some((cmd.payload["rows"].as_u64()?, cmd.payload["cols"].as_u64()?))
+            }
+            _ => None,
+        }
+    }
+
+    /// A watcher's socket gets `session-size` after `session-open` and before
+    /// the replay, and again when the writer resizes the session (ADR-0079 D6).
+    #[tokio::test]
+    async fn a_watcher_gets_the_size_before_the_replay_and_on_each_resize() {
+        let manager = Arc::new(session::SessionManager::new());
+        let spec = session::console_spec(std::env::temp_dir(), 24, 80, None);
+        let (id, writer) = manager
+            .spawn_attached(
+                "~".to_string(),
+                "console".to_string(),
+                "console".to_string(),
+                None,
+                None,
+                None,
+                spec,
+            )
+            .expect("the platform shell must spawn — the free console depends on it");
+        let mut watcher = manager.watch(id).expect("a live session is watchable");
+        watcher.snapshot = b"REPLAY".to_vec();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind a loopback port");
+        let addr = listener
+            .local_addr()
+            .expect("a bound listener has an address");
+        let server = serve_bridge(listener, id, watcher);
+        let (mut client, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/"))
+            .await
+            .expect("the bridge accepts the socket");
+
+        let open = next_frame(&mut client).await;
+        assert!(
+            matches!(&open, Frame::Command(cmd) if cmd.verb == SESSION_OPEN),
+            "the first frame is session-open: {open:?}"
+        );
+        assert_eq!(size_of(&next_frame(&mut client).await), Some((24, 80)));
+        match next_frame(&mut client).await {
+            Frame::Terminal { data, .. } => assert_eq!(data, b"REPLAY"),
+            other => panic!("the replay follows the size: {other:?}"),
+        }
+
+        writer.resize(30, 100).expect("the PTY takes a resize");
+        let resized = loop {
+            if let Some(size) = size_of(&next_frame(&mut client).await) {
+                break size;
+            }
+        };
+        assert_eq!(resized, (30, 100));
+        server.abort();
+        manager.close(id);
     }
 }

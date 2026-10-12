@@ -556,6 +556,12 @@
 .session-body .xterm .xterm-helper-textarea {
   font-size: 16px;
 }
+/* A console that only watches paints at the session size, the size of the
+   console that drives it (wb-console-fit.ts). When its own body is smaller,
+   the body scrolls; the font keeps its size. */
+.session-body.following {
+  overflow: auto;
+}
 /* THE KEY BAR — the row a virtual keyboard does not have. Hidden unless the
    window carries `.keys`, which `applyKeyBar` sets from the operator's setting
    (auto = this machine has a touch surface). It is the LAST flex child, under

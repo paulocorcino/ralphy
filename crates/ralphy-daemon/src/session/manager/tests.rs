@@ -348,7 +348,7 @@ fn attach_while_publishing() -> usize {
 
     let expected: Vec<String> = (0..LINES).map(line).collect();
     let mut during = 0;
-    for (n, (replay, mut rx)) in attaches.into_iter().enumerate() {
+    for (n, (replay, mut rx, _size)) in attaches.into_iter().enumerate() {
         let mut screen = Screen::new(24, 80, screen::SCROLLBACK_LINES);
         screen.feed(&replay);
         let mut seen: Vec<String> = screen
@@ -503,5 +503,56 @@ async fn a_resize_gives_the_screen_the_clamped_session_size() {
         .resize(1000, 1)
         .expect("the PTY takes a clamped resize");
     assert_eq!(size(), (300, 2));
+    manager.close(id);
+}
+
+/// The session size goes to every attachment (ADR-0079 D6): a new one holds
+/// the size now, a resize by the writer reaches a watcher, a resize to the
+/// same size and a watcher's resize reach nobody, and the size outlives a
+/// broken screen.
+#[tokio::test]
+async fn a_resize_by_the_writer_reaches_every_attachment() {
+    let manager = Arc::new(SessionManager::new());
+    let (id, writer) = manager
+        .spawn_attached(
+            "~".to_string(),
+            "console".to_string(),
+            "console".to_string(),
+            None,
+            None,
+            None,
+            console_spec(std::env::temp_dir(), 24, 80, None),
+        )
+        .expect("the platform shell must spawn");
+    let mut watcher = manager.watch(id).expect("a live session is watchable");
+    assert_eq!(*watcher.size.borrow_and_update(), (24, 80));
+
+    watcher
+        .resize(40, 120)
+        .expect("a watcher's resize is dropped");
+    assert!(
+        !watcher.size.has_changed().expect("the session is live"),
+        "a watcher does not size the session"
+    );
+
+    writer.resize(30, 100).expect("the PTY takes a resize");
+    assert!(watcher.size.has_changed().expect("the session is live"));
+    assert_eq!(*watcher.size.borrow_and_update(), (30, 100));
+    writer.resize(30, 100).expect("the PTY takes a resize");
+    assert!(
+        !watcher.size.has_changed().expect("the session is live"),
+        "the same size is not sent again"
+    );
+
+    let sess = manager.sessions.lock().expect("sessions mutex")[&id].clone();
+    let mut kept = sess.kept.lock().expect("kept output mutex");
+    assert!(kept.on_screen(|_| panic!("a test panic")).is_none());
+    drop(kept);
+    writer
+        .resize(1000, 1)
+        .expect("the PTY takes a clamped resize");
+    assert_eq!(*watcher.size.borrow_and_update(), (300, 2));
+    let late = manager.watch(id).expect("a live session is watchable");
+    assert_eq!(*late.size.borrow(), (300, 2));
     manager.close(id);
 }

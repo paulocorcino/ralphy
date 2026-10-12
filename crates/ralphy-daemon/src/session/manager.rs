@@ -8,8 +8,8 @@ use std::sync::{Arc, Mutex, Weak};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
-use tokio::sync::broadcast;
 use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::{broadcast, watch};
 
 use super::screen::{self, Screen};
 use super::{EndReason, EvictToken, Session, SessionId, SessionInfo, SessionSpec};
@@ -49,6 +49,10 @@ struct KeptOutput {
     /// `None` once the emulator panicked: every later attach then gets the
     /// raw ring (ADR-0079 D3).
     screen: Option<Screen>,
+    /// The session size `(rows, cols)`, clamped. Kept here and not read from
+    /// `screen`, which a panic removes. Every attachment holds a receiver
+    /// (ADR-0079 D6).
+    size: watch::Sender<(u16, u16)>,
 }
 
 impl KeptOutput {
@@ -58,6 +62,7 @@ impl KeptOutput {
             session,
             ring: VecDeque::new(),
             screen: Some(Screen::new(rows, cols, screen::SCROLLBACK_LINES)),
+            size: watch::Sender::new(screen::clamp_size(rows, cols)),
         }
     }
 
@@ -66,8 +71,16 @@ impl KeptOutput {
         self.on_screen(|screen| screen.feed(chunk));
     }
 
+    /// Gives the screen the new size, and tells the attachments when the
+    /// size changed. A resize to the size the session has tells nobody.
     fn resize(&mut self, rows: u16, cols: u16) {
         self.on_screen(|screen| screen.resize(rows, cols));
+        let size = screen::clamp_size(rows, cols);
+        self.size.send_if_modified(|now| {
+            let changed = *now != size;
+            *now = size;
+            changed
+        });
     }
 
     /// The replay of an attach: the screen snapshot, or the raw ring once the
@@ -117,18 +130,25 @@ fn publish(kept: &Mutex<KeptOutput>, tx: &broadcast::Sender<Vec<u8>>, chunk: Vec
     drop(kept);
 }
 
-/// The replay of an attach and its live receiver, taken under the `kept`
-/// lock (see [`publish`]). The writer and every watcher come here, so they
-/// get the same replay.
-fn replay_and_subscribe(
-    kept: &Mutex<KeptOutput>,
-    tx: &broadcast::Sender<Vec<u8>>,
-) -> (Vec<u8>, broadcast::Receiver<Vec<u8>>) {
+/// What an attach gets under the `kept` lock: the replay, the live receiver
+/// and the size receiver.
+type Subscribed = (
+    Vec<u8>,
+    broadcast::Receiver<Vec<u8>>,
+    watch::Receiver<(u16, u16)>,
+);
+
+/// The replay of an attach, its live receiver and its size receiver, taken
+/// under the `kept` lock (see [`publish`]). The writer and every watcher come
+/// here, so they get the same replay. The size a receiver holds now is the
+/// size the replay was written at.
+fn replay_and_subscribe(kept: &Mutex<KeptOutput>, tx: &broadcast::Sender<Vec<u8>>) -> Subscribed {
     let mut kept = kept.lock().expect("kept output mutex");
     let replay = kept.replay();
     let rx = tx.subscribe();
+    let size = kept.size.subscribe();
     drop(kept);
-    (replay, rx)
+    (replay, rx, size)
 }
 
 /// A session the daemon owns (the tmux model): the PTY child plus the machinery
@@ -518,10 +538,11 @@ impl SessionManager {
             drop(slot);
             sess
         };
-        let (snapshot, rx) = replay_and_subscribe(&sess.kept, &sess.tx);
+        let (snapshot, rx, size) = replay_and_subscribe(&sess.kept, &sess.tx);
         Ok(Attachment {
             snapshot,
             rx,
+            size,
             evict: token.clone(),
             writer: true,
             _guard: AttachGuard {
@@ -555,10 +576,11 @@ impl SessionManager {
                 .push(token.clone());
             sess
         };
-        let (snapshot, rx) = replay_and_subscribe(&sess.kept, &sess.tx);
+        let (snapshot, rx, size) = replay_and_subscribe(&sess.kept, &sess.tx);
         Ok(Attachment {
             snapshot,
             rx,
+            size,
             evict: token.clone(),
             writer: false,
             _guard: AttachGuard {
@@ -729,14 +751,17 @@ pub enum AttachError {
 
 /// A live attachment to a session: the replay `snapshot` to send first (the
 /// screen snapshot, or the raw ring once the screen is broken), a `rx`
-/// for the live stream, and an `evict` token the bridge waits on to learn WHY it
-/// ended (taken over, child exited, daemon shutting down). `writer` is the role:
+/// for the live stream, a `size` receiver that holds the session size `(rows,
+/// cols)` and changes when a resize by the writer changes it, and an `evict` token the
+/// bridge waits on to learn WHY it ended (taken over, child exited, daemon
+/// shutting down). `writer` is the role:
 /// `true` for the single writer, `false` for a watcher. Dropping it releases the
 /// writer slot (or deregisters the watcher) WITHOUT closing the session (the tmux
 /// detach).
 pub struct Attachment {
     pub snapshot: Vec<u8>,
     pub rx: broadcast::Receiver<Vec<u8>>,
+    pub size: watch::Receiver<(u16, u16)>,
     pub evict: Arc<EvictToken>,
     pub writer: bool,
     _guard: AttachGuard,

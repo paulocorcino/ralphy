@@ -9,11 +9,14 @@ import { socketFrame } from "./wb-api.ts";
 import { TAG_COMMAND, TAG_TERMINAL } from "./wb-console-session.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
 
-// The payload of the daemon's `session-end` and `session-open` frames.
+// The payload of the daemon's `session-end`, `session-open` and
+// `session-size` frames. A peer of an older build sends no `session-size`.
 export type FramePayload = NonNullable<Parameters<typeof WBSessionRoute.announcement>[1]> & {
   reason?: string;
   message?: unknown;
   watch?: boolean;
+  rows?: number;
+  cols?: number;
 };
 
 // A command frame the daemon pushes on the session socket.
@@ -24,6 +27,8 @@ export type SocketEvent =
   | { kind: "output"; sessionId: number; bytes: Uint8Array }
   | { kind: "open"; payload: FramePayload | undefined }
   | { kind: "end"; reason: string; message: string | null }
+  // The session size: the size of the writer's console.
+  | { kind: "size"; rows: number; cols: number }
   // A frame this page does not act on: another verb, a bad body, a short or
   // unknown frame.
   | { kind: "other" };
@@ -43,6 +48,12 @@ export function readSocketEvent(a: Uint8Array): SocketEvent {
       c = socketFrame<SessionFrame>(a);
     } catch {}
     if (c && c.verb === "session-open") return { kind: "open", payload: c.payload };
+    if (c && c.verb === "session-size") {
+      const rows = c.payload?.rows;
+      const cols = c.payload?.cols;
+      if (isCount(rows) && isCount(cols)) return { kind: "size", rows, cols };
+      return { kind: "other" };
+    }
     if (c && c.verb === "session-end") {
       return {
         kind: "end",
@@ -52,4 +63,8 @@ export function readSocketEvent(a: Uint8Array): SocketEvent {
     }
   }
   return { kind: "other" };
+}
+
+function isCount(n: unknown): n is number {
+  return typeof n === "number" && Number.isInteger(n) && n > 0;
 }

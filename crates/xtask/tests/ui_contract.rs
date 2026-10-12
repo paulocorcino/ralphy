@@ -18,8 +18,9 @@ use regex::Regex;
 /// Message types with no shared reply file. Measured on 4e092da4 + the
 /// registry verbs: 51 registry verbs + 30 UI routes + 10 pushes = 91 types, 9
 /// of them covered. Counting rules are in [`message_types`]. A new type starts with a
-/// shared reply; a new reply file lowers this number.
-const UNSHARED_BASELINE: usize = 80;
+/// shared reply; a new reply file lowers this number. `session-size` has
+/// no reply file: 81.
+const UNSHARED_BASELINE: usize = 81;
 
 const FIXTURES: &str = "crates/ralphy-daemon/ui-tests/fixtures";
 
@@ -115,8 +116,8 @@ fn message_type_scan_finds_verbs_routes_and_pushes() {
 /// - routes: the `.route("…")` paths of the router without `/api/peer/*`
 ///   (daemon to daemon), one type per path, named without the leading `/` and
 ///   with `/` as `-`;
-/// - pushes: the `<word>.dirty`, `<word>.failed`, `session-open` and
-///   `session-end` literals of the routes' production code.
+/// - pushes: the `<word>.dirty`, `<word>.failed`, `session-open`,
+///   `session-size` and `session-end` literals of the routes' production code.
 fn message_types(dispatch: &str, routes: &str, pushes: &str) -> BTreeSet<String> {
     let mut all = verbs(dispatch);
     all.extend(ui_routes(routes));
@@ -150,8 +151,9 @@ fn ui_routes(routes: &str) -> BTreeSet<String> {
 }
 
 fn push_types(text: &str) -> BTreeSet<String> {
-    let push = Regex::new(r#""([a-z_]+\.dirty|[a-z_]+\.failed|session-open|session-end)""#)
-        .expect("a valid regex");
+    let push =
+        Regex::new(r#""([a-z_]+\.dirty|[a-z_]+\.failed|session-open|session-size|session-end)""#)
+            .expect("a valid regex");
     push.captures_iter(text).map(|c| c[1].to_string()).collect()
 }
 

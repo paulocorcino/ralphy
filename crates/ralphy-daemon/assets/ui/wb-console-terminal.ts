@@ -173,6 +173,7 @@ export function createTerminal(deps: TerminalDeps) {
       socket: () => ws,
       covered: opts.covered,
       focused: opts.focused,
+      watching: () => watching,
     });
     const { fit, dispose: stopFit } = sizing;
 
@@ -341,6 +342,10 @@ export function createTerminal(deps: TerminalDeps) {
             }
             return;
           }
+          // A watcher paints at the session size; the writer ignores it.
+          case "size":
+            sizing.sessionSize(event.rows, event.cols);
+            return;
           case "end":
             announced = event.reason;
             refusal = event.message;

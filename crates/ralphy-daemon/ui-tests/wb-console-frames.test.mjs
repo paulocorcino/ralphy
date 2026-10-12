@@ -35,6 +35,20 @@ test("a session-open frame carries its payload", () => {
   assert.deepEqual(event.payload, { id: 7, watch: true });
 });
 
+test("a session-size frame carries the rows and the columns", () => {
+  assert.deepEqual(readSocketEvent(commandFrame("session-size", { rows: 30, cols: 100 })), {
+    kind: "size",
+    rows: 30,
+    cols: 100,
+  });
+});
+
+test("a session-size frame without a positive whole size is other", () => {
+  for (const payload of [{}, { rows: 30 }, { rows: 0, cols: 100 }, { rows: 30, cols: 1.5 }, { rows: "30", cols: 100 }]) {
+    assert.deepEqual(readSocketEvent(commandFrame("session-size", payload)), { kind: "other" }, JSON.stringify(payload));
+  }
+});
+
 test("a session-end frame carries the reason and the message", () => {
   assert.deepEqual(readSocketEvent(commandFrame("session-end", { reason: "refused", message: "no" })), {
     kind: "end",
