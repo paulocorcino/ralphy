@@ -222,7 +222,7 @@ any code, including code that does not exist yet. A behaviour test is not one.
 | No `tokio`/`reqwest` in the CLI | `cli_manifest_pins_ureq_excludes_reqwest_tokio` |
 | Event vocabulary pinned | `every_decoder_arm_has_a_pin` |
 | Inline test module size | `crates/xtask/tests/inline_test_modules.rs` (ADR-0022 §6) |
-| Files over 500 lines of code are seen (a recommendation, not a gate) | `cargo run -p xtask -- oversized` lists them; the `oversized` CI job warns, never fails, on each one a pull request touches (ADR-0022) |
+| No source file over its size limit grows (500 lines of code in Rust, 700 in TypeScript, test code included) | `cargo run -p xtask -- oversized --base <rev>`, which the `oversized` CI job runs on each pull request against its base branch (ADR-0022 §7) |
 | Text a user reads cites no ADR | `crates/xtask/tests/user_text_cites_no_adr.rs`, `no_help_text_cites_an_adr` |
 | UI written voice | `cargo run -p xtask -- ui-copy --check` (ADR-0065) |
 | Changelog fragments parse | `cargo run -p xtask -- changelog --check` (ADR-0056) |
@@ -230,8 +230,6 @@ any code, including code that does not exist yet. A behaviour test is not one.
 | Workbench modules type-check, and no first-party classic script comes back | `tsc --noEmit -p crates/ralphy-daemon/assets/ui`; `first_party_scripts_move_to_typescript_and_never_back` (`crates/ralphy-daemon/src/tests.rs`), with `CLASSIC_SCRIPTS` empty and `MODULE_WINDOW_NAMES` as ratchets (ADR-0075) |
 | No explicit `any` in any workbench module, with no exception | oxlint `typescript/no-explicit-any` (`.oxlintrc.json`, no override); `explicit_any_matches_the_baseline` (`crates/xtask/tests/ratchets.rs`), with an empty `ANY_BASELINE`; and `no_escape_hatch_in_the_workbench` for `as unknown as` and `@ts-` directives (ADR-0075 D6, #613) |
 | A cast written over another cast (`x as A as B`) does not spread in the workbench | `no_escape_hatch_in_the_workbench` (`crates/xtask/tests/ratchets.rs`), with `CHAINED_CAST_BASELINE` as an exact ratchet by module (#653) |
-| The three large workbench files only get smaller | `the_workbench_script_matches_the_line_baseline`, `the_console_script_matches_the_line_baseline` and `the_notes_script_matches_the_line_baseline` (`crates/xtask/tests/ratchets.rs`), exact ratchets on `APP_TS_LINES`, `WB_CONSOLE_TS_LINES` and `WB_NOTES_TS_LINES` (ADR-0073 D8) |
-| No workbench module grows past 700 lines unless it is listed | `workbench_ts_modules_stay_small` (`crates/xtask/tests/ratchets.rs`), an exact ratchet on `TS_SIZE_BASELINE` that only shrinks (ADR-0073, the 2026-10-11 amendment) |
 | The pins on console text read the whole console family | `the_console_family_lists_every_module_on_disk`, which keeps `CONSOLE_FAMILY` in `crates/ralphy-daemon/src/tests.rs` equal to the family modules on disk (ADR-0073, the 2026-10-11 amendment) |
 | The pins on shell text read the whole shell family | `the_shell_family_lists_every_module_on_disk`, which keeps `SHELL_FAMILY` in `crates/ralphy-daemon/src/tests.rs` equal to `app.ts` and the modules `main.ts` registers with Alpine (ADR-0073, the amendment of 2026-10-11 on the shell) |
 | The cards, the operator messages and the column paint keep their owners | `the_notes_reach_the_console_as_measured` (`NOTES_CONSOLE_REACH`), `shell_flash_reach_matches_the_baseline` (`SHELL_FLASH_REACH`) and `the_column_paint_has_one_owner` (`crates/xtask/tests/ratchets.rs`), read through the `ui-copy` lexer (ADR-0073, the 2026-10-10 amendment) |

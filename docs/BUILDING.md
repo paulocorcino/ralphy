@@ -83,9 +83,10 @@ Six GitHub Actions workflows live under [`.github/workflows/`](../.github/workfl
   requests only**: it fails when the diff touches the shipped surface
   (`crates/*/src/`, the workbench UI assets, `assets/`) without a `changelog.d/` fragment, and it checks
   that the fragments present parse. A human overrides it with the `no-changelog`
-  label. The job `oversized`, also on pull requests only, never fails: it puts
-  a warning on the pull request for each file it touches that
-  `cargo run -p xtask -- oversized` lists (over 500 lines of code). The job
+  label. The job `oversized`, also on pull requests only, runs
+  `cargo run -p xtask -- oversized --base` against the base branch. It fails
+  when a source file over its limit (500 lines of code in Rust, 700 in
+  TypeScript) is larger than on the base branch (ADR-0022 §7). The job
   `duplication`, on pull requests only, runs jscpd (a release binary pinned
   by version and checksum) with the settings in `.jscpd.json`. It fails when
   the pull request adds a clone that the base branch does not have. An edit
