@@ -43,6 +43,26 @@ test("requestOpts builds each kind of connect, and never sends null as a value",
   for (const [req, query] of rows) assert.equal(at(req), "ws://h/ws/session?" + query, JSON.stringify(req));
 });
 
+// The daemon's `peer_session_query_forwards_the_link_the_browser_reported`
+// test reads these same keys.
+test("url sends the network the browser reports, and nothing when it reports none", () => {
+  const { url } = load();
+  const link = { effectiveType: "4g", rtt: 100, downlink: 1.75 };
+  assert.equal(url("ws://h", { id: 3, link }), "ws://h/ws/session?id=3&net=4g&net_rtt=100&net_down=1.75");
+  assert.equal(
+    url("ws://h", { repo: "o/r", agent: "claude", holder: "h1", link }),
+    "ws://h/ws/session?repo=o%2Fr&agent=claude&holder=h1&net=4g&net_rtt=100&net_down=1.75",
+  );
+  assert.equal(url("ws://h", { console: true, link: { rtt: 0 } }), "ws://h/ws/session?console=1&net_rtt=0");
+  // Safari, and values the daemon would not read.
+  assert.equal(url("ws://h", { id: 3 }), "ws://h/ws/session?id=3");
+  assert.equal(url("ws://h", { id: 3, link: {} }), "ws://h/ws/session?id=3");
+  assert.equal(
+    url("ws://h", { id: 3, link: { effectiveType: "wifi", rtt: 1.5, downlink: Number.NaN } }),
+    "ws://h/ws/session?id=3",
+  );
+});
+
 test("url sends the console name only on a new agent launch", () => {
   const { url } = load();
   assert.equal(

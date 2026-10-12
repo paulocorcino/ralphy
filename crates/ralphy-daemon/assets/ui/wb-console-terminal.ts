@@ -315,7 +315,7 @@ export function createTerminal(deps: TerminalDeps) {
         WBSessionRoute.tabAttempt(),
         shown ?? undefined,
       );
-      ws = new WebSocket(WBSessionRoute.url(WS_ORIGIN, request));
+      ws = new WebSocket(WBSessionRoute.url(WS_ORIGIN, { ...request, link: WBSessionRoute.tabLink() }));
       const socket = ws;
       ws.binaryType = "arraybuffer";
       connectingSince = Date.now();

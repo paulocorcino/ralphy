@@ -19,6 +19,49 @@ pub(crate) struct Tab {
     pub(crate) holder: Option<String>,
     pub(crate) device: Option<DeviceId>,
     pub(crate) gzip: bool,
+    pub(crate) link: Link,
+}
+
+/// The network the page's browser reported when it opened the socket
+/// (`navigator.connection`). It is a client fact: it can be false, and only
+/// the log reads it (ADR-0074 D2, D5). Safari reports none of it, and then
+/// every field is `None`.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct Link {
+    pub(crate) effective_type: Option<EffectiveType>,
+    pub(crate) rtt_ms: Option<u32>,
+    pub(crate) downlink_mbps: Option<f64>,
+}
+
+/// The `effectiveType` values the Network Information API defines.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum EffectiveType {
+    Slow2g,
+    G2,
+    G3,
+    G4,
+}
+
+impl EffectiveType {
+    /// `None` for a value the API does not define.
+    pub(crate) fn parse(value: &str) -> Option<EffectiveType> {
+        match value {
+            "slow-2g" => Some(EffectiveType::Slow2g),
+            "2g" => Some(EffectiveType::G2),
+            "3g" => Some(EffectiveType::G3),
+            "4g" => Some(EffectiveType::G4),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            EffectiveType::Slow2g => "slow-2g",
+            EffectiveType::G2 => "2g",
+            EffectiveType::G3 => "3g",
+            EffectiveType::G4 => "4g",
+        }
+    }
 }
 
 /// Which loop owns the socket: the bridge to a session this daemon hosts, or
@@ -136,6 +179,7 @@ struct Keys {
     peer: Option<String>,
     holder: Option<String>,
     device: Option<DeviceId>,
+    link: Link,
 }
 
 pub(crate) struct Traffic {
@@ -188,6 +232,7 @@ impl Traffic {
             peer: None,
             holder: tab.holder,
             device: tab.device,
+            link: tab.link,
         };
         Traffic::new(Channel::Local, keys, now)
     }
@@ -201,6 +246,7 @@ impl Traffic {
             peer: Some(peer),
             holder: tab.holder,
             device: tab.device,
+            link: tab.link,
         };
         Traffic::new(Channel::Peer, keys, now)
     }
@@ -400,6 +446,9 @@ impl Traffic {
             peer = self.keys.peer.as_deref(),
             holder = self.keys.holder.as_deref(),
             device = self.keys.device.map(|d| d.to_string()),
+            net_type = self.keys.link.effective_type.map(EffectiveType::as_str),
+            net_rtt_ms = self.keys.link.rtt_ms,
+            net_downlink_mbps = self.keys.link.downlink_mbps,
             end,
             secs = now.duration_since(self.started).as_secs(),
             replay_bytes = s.replay_bytes,
@@ -531,7 +580,7 @@ mod tests {
         let tab = Tab {
             holder: Some("tab-a".to_string()),
             device: Some(device),
-            gzip: false,
+            ..Tab::default()
         };
         let local = Traffic::local(7, tab, now);
         assert_eq!(local.channel, Channel::Local);
@@ -553,6 +602,26 @@ mod tests {
         assert_eq!(relayed.keys.peer_id.as_deref(), Some("01PEER"));
         assert_eq!(relayed.keys.peer.as_deref(), Some("Ubuntu"));
         assert_eq!(relayed.keys.session, None);
+    }
+
+    #[test]
+    fn the_keys_carry_the_link_the_page_reported() {
+        let link = Link {
+            effective_type: Some(EffectiveType::G3),
+            rtt_ms: Some(300),
+            downlink_mbps: Some(1.5),
+        };
+        let tab = Tab {
+            link,
+            ..Tab::default()
+        };
+        assert_eq!(
+            Traffic::local(7, tab.clone(), Instant::now()).keys.link,
+            link
+        );
+        let relayed = Traffic::peer("01PEER".into(), "Mac".into(), tab, Instant::now());
+        assert_eq!(relayed.keys.link, link);
+        assert_eq!(traffic(Instant::now()).keys.link, Link::default(), "Safari");
     }
 
     fn command(json: &str) -> Command {

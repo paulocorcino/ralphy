@@ -78,6 +78,7 @@ pub(crate) async fn session_ws_upgrade(
         holder: query.holder().map(str::to_owned),
         device: who.device,
         gzip: query.gzip == Some(1),
+        link: query.link(),
     };
     let record = query.record().map(str::to_owned);
     let daemon_id = identity

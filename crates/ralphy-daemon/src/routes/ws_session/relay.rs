@@ -34,6 +34,7 @@ pub(crate) fn peer_session_query(query: &SessionQuery, slug: &str) -> String {
         push_holder(&mut out, query);
         push_gzip(&mut out, query);
         push_since(&mut out, query);
+        push_link(&mut out, query);
         return out;
     }
     // A free console on a peer with no distro (ADR-0067 §7): the peer opens it
@@ -49,6 +50,7 @@ pub(crate) fn peer_session_query(query: &SessionQuery, slug: &str) -> String {
         push_record(&mut out, query);
         push_holder(&mut out, query);
         push_gzip(&mut out, query);
+        push_link(&mut out, query);
         return out;
     }
     let mut out = format!(
@@ -71,6 +73,7 @@ pub(crate) fn peer_session_query(query: &SessionQuery, slug: &str) -> String {
     push_record(&mut out, query);
     push_holder(&mut out, query);
     push_gzip(&mut out, query);
+    push_link(&mut out, query);
     out
 }
 
@@ -89,6 +92,23 @@ fn push_gzip(out: &mut String, query: &SessionQuery) {
 fn push_since(out: &mut String, query: &SessionQuery) {
     if let Some(since) = query.since {
         out.push_str(&format!("&since={since}"));
+    }
+}
+
+/// The network the browser reported, so the peer's own traffic summary has
+/// it too. Only the parsed values go on, so they need no encoding. An older
+/// peer ignores the keys.
+fn push_link(out: &mut String, query: &SessionQuery) {
+    let link = query.link();
+    if let Some(kind) = link.effective_type {
+        out.push_str("&net=");
+        out.push_str(kind.as_str());
+    }
+    if let Some(rtt) = link.rtt_ms {
+        out.push_str(&format!("&net_rtt={rtt}"));
+    }
+    if let Some(down) = link.downlink_mbps {
+        out.push_str(&format!("&net_down={down}"));
     }
 }
 

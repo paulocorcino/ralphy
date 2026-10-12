@@ -17,6 +17,7 @@ pub(crate) use relay::*;
 pub(crate) use upgrade::session_ws_upgrade;
 
 use crate::identity;
+use traffic::{EffectiveType, Link};
 
 /// Query for `/ws/session`. A NEW agent launch carries `repo` + `agent`; a NEW
 /// free-console launch (issue #167) carries `console=1` and an optional `repo`
@@ -64,6 +65,13 @@ pub(crate) struct SessionQuery {
     /// after it, when it still has them all, and says so in `session-open`
     /// (ADR-0079 D8).
     pub(crate) since: Option<u64>,
+    /// The network the browser reported (`navigator.connection`): its
+    /// `effectiveType`, its `rtt` in ms, and its `downlink` in Mbit/s. Only
+    /// the traffic summary reads them. Strings, so that a bad value is absent
+    /// and does not refuse the socket.
+    pub(crate) net: Option<String>,
+    pub(crate) net_rtt: Option<String>,
+    pub(crate) net_down: Option<String>,
 }
 
 /// The shape of a `holder` and of a `record`: 1–64 ASCII letters, digits, `-`
@@ -86,6 +94,20 @@ impl SessionQuery {
     /// The window record, when it is a well-formed one (the `holder` shape).
     pub(crate) fn record(&self) -> Option<&str> {
         self.record.as_deref().filter(|r| well_formed_key(r))
+    }
+
+    /// The network the browser reported. A value that does not parse, or
+    /// that no browser gives, is absent: it is never guessed.
+    pub(crate) fn link(&self) -> Link {
+        Link {
+            effective_type: self.net.as_deref().and_then(EffectiveType::parse),
+            rtt_ms: self.net_rtt.as_deref().and_then(|v| v.parse().ok()),
+            downlink_mbps: self
+                .net_down
+                .as_deref()
+                .and_then(|v| v.parse::<f64>().ok())
+                .filter(|d| d.is_finite() && *d >= 0.0),
+        }
     }
 
     /// The console name, cut to the desk's limit on a char boundary so the

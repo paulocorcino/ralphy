@@ -584,9 +584,8 @@ mod tests {
                                 watching: false,
                             },
                             Tab {
-                                holder: None,
-                                device: None,
                                 gzip,
+                                ..Tab::default()
                             },
                             shutdown,
                         )
