@@ -32,6 +32,7 @@ const { barKey, applyCtrlLatch, isTerminalReply } = WBConsoleInput;
 const {
   encodeTerminal,
   encodeDetach,
+  encodeShown,
   endNotice,
   reconnectDecision,
   peerGate,
@@ -314,7 +315,7 @@ export function createTerminal(deps: TerminalDeps) {
         WBSessionRoute.tabAttempt(),
         shown ?? undefined,
       );
-      ws = new WebSocket(WBSessionRoute.url(WS_ORIGIN, request));
+      ws = new WebSocket(WBSessionRoute.url(WS_ORIGIN, { ...request, link: WBSessionRoute.tabLink() }));
       const socket = ws;
       ws.binaryType = "arraybuffer";
       connectingSince = Date.now();
@@ -623,6 +624,14 @@ export function createTerminal(deps: TerminalDeps) {
           return;
         }
         if (retryTimer && gate === "hold") hold(group);
+      },
+      // The page went hidden, or is visible again. The socket stays open;
+      // only the daemon's log reads this.
+      notePage(hidden: boolean) {
+        if (!ws || ws.readyState !== 1) return;
+        try {
+          ws.send(hidden ? encodeDetach("hidden") : encodeShown());
+        } catch {} // a socket that fails here is closing, and its close tells
       },
       // `reason` (see `encodeDetach`) tells the daemon why the socket closes.
       dispose(reason: DetachReason) {

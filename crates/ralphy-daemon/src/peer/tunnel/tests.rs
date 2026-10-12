@@ -131,9 +131,18 @@ fn stand_in() -> Result<Child> {
 fn an_edited_host_gets_a_new_tunnel() {
     let tunnels = Tunnels::new();
     let before = spec(None);
-    assert!(tunnels.ensure_with("mac", &before, stand_in).unwrap());
-    assert!(
-        !tunnels.ensure_with("mac", &before, stand_in).unwrap(),
+    let now = Instant::now();
+    assert_eq!(
+        tunnels
+            .ensure_with("mac", &before, now, false, stand_in)
+            .unwrap(),
+        Ensured::Started
+    );
+    assert_eq!(
+        tunnels
+            .ensure_with("mac", &before, now, false, stand_in)
+            .unwrap(),
+        Ensured::Running,
         "a running tunnel with the same spec is kept"
     );
     let edited = TunnelSpec {
@@ -141,14 +150,22 @@ fn an_edited_host_gets_a_new_tunnel() {
         ..before.clone()
     };
     let old_pid = tunnels.0.lock().unwrap().held["mac"].child.id();
-    assert!(tunnels.ensure_with("mac", &edited, stand_in).unwrap());
+    assert_eq!(
+        tunnels
+            .ensure_with("mac", &edited, now, false, stand_in)
+            .unwrap(),
+        Ensured::Started
+    );
     let to_socket = TunnelSpec {
         peer_port: 0,
         peer_socket: Some("/home/ralphy2/.ralphy/daemon.sock".into()),
         ..edited.clone()
     };
-    assert!(
-        tunnels.ensure_with("mac", &to_socket, stand_in).unwrap(),
+    assert_eq!(
+        tunnels
+            .ensure_with("mac", &to_socket, now, false, stand_in)
+            .unwrap(),
+        Ensured::Started,
         "a spec that changes from a port to a socket replaces the tunnel"
     );
     let edited = to_socket;
@@ -158,4 +175,173 @@ fn an_edited_host_gets_a_new_tunnel() {
     assert_eq!(held.spec, edited);
     held.child.kill().unwrap();
     held.child.wait().unwrap();
+}
+
+/// Stands in for an `ssh` that cannot reach its host: the test binary, asked
+/// for a test that does not exist, exits at once.
+fn exits_at_once() -> Result<Child> {
+    let exe = std::env::current_exe().context("locating the test binary")?;
+    Command::new(exe)
+        .args(["--exact", "peer::tunnel::tests::no_such_test"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .context("starting the exiting stand-in")
+}
+
+/// Wait until the held `ssh` of `id` has exited.
+fn wait_exited(tunnels: &Tunnels, id: &str) {
+    let until = Instant::now() + Duration::from_secs(30);
+    while tunnels.is_alive(id) {
+        assert!(Instant::now() < until, "the stand-in did not exit");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+/// Start an `ssh` for "mac" at `now` that exits at once, and wait for the exit.
+/// The wait after an exit counts from the ensure that sees it.
+fn start_and_exit(tunnels: &Tunnels, spec: &TunnelSpec, now: Instant) {
+    assert_eq!(
+        tunnels
+            .ensure_with("mac", spec, now, false, exits_at_once)
+            .unwrap(),
+        Ensured::Started
+    );
+    wait_exited(tunnels, "mac");
+}
+
+fn waiting(secs: u64) -> Ensured {
+    Ensured::Waiting {
+        retry_in: Duration::from_secs(secs),
+    }
+}
+
+#[test]
+fn an_unreachable_peer_waits_longer_after_each_exit_up_to_ten_minutes() {
+    let tunnels = Tunnels::new();
+    let spec = spec(None);
+    let mut now = Instant::now();
+    start_and_exit(&tunnels, &spec, now);
+    // The first exit is replaced at once: a short VPN drop.
+    start_and_exit(&tunnels, &spec, now);
+    for secs in [30, 60, 120, 240, 480, 600, 600] {
+        assert_eq!(
+            tunnels
+                .ensure_with("mac", &spec, now, false, || panic!("it waits"))
+                .unwrap(),
+            waiting(secs)
+        );
+        now += Duration::from_secs(secs);
+        start_and_exit(&tunnels, &spec, now);
+    }
+}
+
+#[test]
+fn an_edited_host_does_not_wait() {
+    let tunnels = Tunnels::new();
+    let before = spec(None);
+    let now = Instant::now();
+    start_and_exit(&tunnels, &before, now);
+    start_and_exit(&tunnels, &before, now);
+    assert_eq!(
+        tunnels
+            .ensure_with("mac", &before, now, false, || panic!("it waits"))
+            .unwrap(),
+        waiting(30)
+    );
+    let edited = TunnelSpec {
+        destination: "user@192.168.101.3".into(),
+        ..before
+    };
+    start_and_exit(&tunnels, &edited, now);
+    // The edited host starts its own count: its first exit is replaced at once.
+    start_and_exit(&tunnels, &edited, now);
+}
+
+#[test]
+fn a_peer_that_answered_does_not_wait() {
+    let tunnels = Tunnels::new();
+    let spec = spec(None);
+    let now = Instant::now();
+    let waits = || {
+        tunnels
+            .ensure_with("mac", &spec, now, false, || panic!("it waits"))
+            .unwrap()
+    };
+    start_and_exit(&tunnels, &spec, now);
+    start_and_exit(&tunnels, &spec, now);
+    assert_eq!(waits(), waiting(30));
+    tunnels.answered("mac");
+    // The count starts again: no wait now, and none after the next exit.
+    start_and_exit(&tunnels, &spec, now);
+    start_and_exit(&tunnels, &spec, now);
+    assert_eq!(waits(), waiting(30));
+}
+
+/// The wake that sees the exit counts it, and still starts the `ssh` now.
+#[test]
+fn a_wake_does_not_wait_even_for_the_exit_it_sees() {
+    let tunnels = Tunnels::new();
+    let spec = spec(None);
+    let now = Instant::now();
+    start_and_exit(&tunnels, &spec, now);
+    start_and_exit(&tunnels, &spec, now);
+    assert_eq!(
+        tunnels
+            .ensure_with("mac", &spec, now, true, exits_at_once)
+            .unwrap(),
+        Ensured::Started
+    );
+    wait_exited(&tunnels, "mac");
+    assert_eq!(
+        tunnels
+            .ensure_with("mac", &spec, now, false, || panic!("it waits"))
+            .unwrap(),
+        waiting(60),
+        "the exits before the wake still count"
+    );
+}
+
+#[test]
+fn a_close_is_quiet_only_at_the_longest_wait_with_the_same_words() {
+    let said = Some("ssh: connect to host 10.1.1.4 port 22: Connection timed out".to_string());
+    let other = Some("Permission denied (publickey).".to_string());
+    let longest = Duration::from_secs(600);
+    assert!(quiet_close(longest, said.as_ref(), said.as_ref()));
+    assert!(!quiet_close(longest, said.as_ref(), other.as_ref()));
+    assert!(!quiet_close(
+        Duration::from_secs(480),
+        said.as_ref(),
+        said.as_ref()
+    ));
+    assert!(
+        quiet_close(longest, None, None),
+        "silence twice says nothing new"
+    );
+}
+
+#[test]
+fn a_waiting_tunnel_is_closed_and_says_when_it_tries_again() {
+    use super::super::client::classify_tunnel;
+    let closed = classify_tunnel("svrapp", Ok(waiting(239)), "refused".into(), None);
+    assert_eq!(
+        closed.state(),
+        "tunnel-closed",
+        "no ssh runs while it waits"
+    );
+    let d = closed.diagnosis("Linux");
+    assert!(d.ends_with("Ralphy tries again in 4 minutes."), "got: {d}");
+    let said = Some("Connection timed out".to_string());
+    let soon = classify_tunnel("svrapp", Ok(waiting(30)), "refused".into(), said);
+    assert_eq!(
+        soon.diagnosis("Linux"),
+        "The tunnel to svrapp is closed: ssh said \"Connection timed out\". Ralphy tries again in 30 seconds."
+    );
+    let wait = |retry_in| {
+        let status = classify_tunnel("h", Ok(Ensured::Waiting { retry_in }), String::new(), None);
+        status.diagnosis("Linux")
+    };
+    assert!(wait(Duration::from_millis(400)).ends_with("in 1 second."));
+    assert!(wait(Duration::from_secs(60)).ends_with("in 1 minute."));
+    assert!(wait(Duration::from_secs(600)).ends_with("in 10 minutes."));
 }

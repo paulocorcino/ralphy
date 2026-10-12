@@ -5,7 +5,7 @@ import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { gzipSync } from "node:zlib";
 import { createTerminal } from "../assets/ui/wb-console-terminal.ts";
-import { encodeDetach, TAG_COMMAND, TAG_TERMINAL } from "../assets/ui/wb-console-session.ts";
+import { encodeDetach, encodeShown, TAG_COMMAND, TAG_TERMINAL } from "../assets/ui/wb-console-session.ts";
 
 // An element that takes listeners and does nothing with them.
 function fakeElement() {
@@ -418,5 +418,44 @@ test("a gzip tail is not counted, and the live frames after it are", async () =>
     handle.dispose();
   } finally {
     page.restore();
+  }
+});
+
+test("notePage tells an open socket that the page went hidden or came back, and a connecting one nothing", () => {
+  const page = fakePage();
+  try {
+    const handle = createTerminal(fakeDeps().deps).attachTerminal(fakeElement(), { id: 5 });
+    const ws = page.sockets[0];
+    const sent = [];
+    ws.send = (data) => sent.push(data);
+    handle.notePage(true);
+    assert.deepEqual(sent, [], "a socket still connecting cannot send");
+    ws.readyState = 1;
+    handle.notePage(true);
+    handle.notePage(false);
+    assert.deepEqual(sent, [encodeDetach("hidden"), encodeShown()]);
+    handle.dispose();
+  } finally {
+    page.restore();
+  }
+});
+
+test("the socket names the network the browser reports, and nothing when it reports none", () => {
+  const saved = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  const navigatorWith = (value) => Object.defineProperty(globalThis, "navigator", { value, configurable: true });
+  const page = fakePage();
+  try {
+    navigatorWith({ connection: { effectiveType: "3g", rtt: 300, downlink: 0.7 } });
+    const chromium = createTerminal(fakeDeps().deps).attachTerminal(fakeElement(), { id: 5 });
+    assert.match(page.sockets[0].url, /&net=3g&net_rtt=300&net_down=0\.7$/);
+    chromium.dispose();
+    navigatorWith({});
+    const safari = createTerminal(fakeDeps().deps).attachTerminal(fakeElement(), { id: 5 });
+    assert.ok(!page.sockets[1].url.includes("net"), page.sockets[1].url);
+    safari.dispose();
+  } finally {
+    page.restore();
+    if (saved) Object.defineProperty(globalThis, "navigator", saved);
+    else delete globalThis.navigator;
   }
 });

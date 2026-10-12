@@ -291,13 +291,12 @@ async fn fleet_reports_the_two_tunnel_states() {
     assert!(!diagnosis.contains("WSL"), "got: {diagnosis}");
 }
 
-#[tokio::test]
-async fn a_nudge_on_a_tunnel_peer_opens_its_tunnel() {
-    let _serial = SERIAL.lock().await;
-    let fx = setup(60_000);
+/// Serve the peer daemon `id` on a loopback port. The store must outlive the
+/// server.
+async fn serve_peer(id: &str) -> (u16, tokio::task::JoinHandle<()>, tempfile::TempDir) {
     let peer_store = tempfile::tempdir().unwrap();
     let peer_app = app(
-        NUDGE_ID,
+        id,
         peer_store.path(),
         AuthState::fixed(
             AuthPolicy::Bearer("peer-token".to_string()),
@@ -309,7 +308,14 @@ async fn a_nudge_on_a_tunnel_peer_opens_its_tunnel() {
     let serving = tokio::spawn(async move {
         axum::serve(listener, peer_app).await.unwrap();
     });
+    (port, serving, peer_store)
+}
 
+#[tokio::test]
+async fn a_nudge_on_a_tunnel_peer_opens_its_tunnel() {
+    let _serial = SERIAL.lock().await;
+    let fx = setup(60_000);
+    let (port, serving, _peer_store) = serve_peer(NUDGE_ID).await;
     let store = tempfile::tempdir().unwrap();
     peer::write_descriptor(store.path(), &descriptor(NUDGE_ID, port, Some(spec(port)))).unwrap();
     let local = app(LOCAL_ID, store.path(), AuthState::localhost());
@@ -325,6 +331,39 @@ async fn a_nudge_on_a_tunnel_peer_opens_its_tunnel() {
     std::thread::sleep(Duration::from_millis(500));
     let got = lines(&fx.argv_log);
     assert_eq!(got.len(), 1, "got: {got:?}");
+    serving.abort();
+}
+
+const WAKE_ID: &str = "01ARZ3NDEKTSV4RRFFQ69G5FB6";
+
+/// A tunnel that waits after its exits: the operator's wake starts the `ssh`
+/// at once, even when the wake is what sees the last exit, and the peer's
+/// answer to the wake's probe resets the count.
+#[tokio::test]
+async fn a_wake_and_an_answer_reopen_a_waiting_tunnel() {
+    let _serial = SERIAL.lock().await;
+    let fx = setup(0);
+    let (port, serving, _peer_store) = serve_peer(WAKE_ID).await;
+    let store = tempfile::tempdir().unwrap();
+    peer::write_descriptor(store.path(), &descriptor(WAKE_ID, port, Some(spec(port)))).unwrap();
+    for _ in 0..2 {
+        assert!(tunnels().ensure(WAKE_ID, &spec(port)).unwrap());
+        wait_dead(tunnels(), WAKE_ID);
+    }
+    let local = app(LOCAL_ID, store.path(), AuthState::localhost());
+    let uri = format!("/api/fleet/nudge?daemon_id={WAKE_ID}");
+    let (status, body) = call(&local, "POST", &uri).await;
+    assert_eq!(status, StatusCode::OK, "got: {body}");
+    assert_eq!(
+        wait_lines(&fx.argv_log, 3).len(),
+        3,
+        "the wake started an ssh"
+    );
+    wait_dead(tunnels(), WAKE_ID);
+    assert!(
+        tunnels().ensure(WAKE_ID, &spec(port)).unwrap(),
+        "the answer to the wake's probe reset the count"
+    );
     serving.abort();
 }
 

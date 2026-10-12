@@ -51,7 +51,8 @@ pub(crate) async fn fleet_nudge_route(
             )
                 .into_response();
         }
-        if let Err(e) = peer::tunnel::hold_open(d.daemon_id.clone(), spec).await {
+        // The operator asked: the tunnel does not wait for its next try.
+        if let Err(e) = peer::tunnel::wake_open(d.daemon_id.clone(), spec).await {
             return (
                 StatusCode::BAD_REQUEST,
                 Json(serde_json::json!({ "error": format!("{e:#}") })),

@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use axum::extract::ws::{Message, WebSocket};
 
-use super::traffic::{Leave, Tab, Traffic, SESSION_OPEN};
+use super::traffic::{Tab, Traffic, SESSION_OPEN};
 use super::SessionLabels;
 use crate::protocol::{Command, Frame};
 use crate::routes::send_command;
@@ -231,9 +231,7 @@ pub(crate) async fn session_ws(
                             }
                         }
                         Ok(Frame::Command(cmd)) => {
-                            if let Some(leave) = Leave::from_command(&cmd) {
-                                traffic.client_left(leave);
-                            }
+                            traffic.client_command(&cmd);
                         }
                         _ => {} // other frames carry no session meaning here
                     },
@@ -586,9 +584,8 @@ mod tests {
                                 watching: false,
                             },
                             Tab {
-                                holder: None,
-                                device: None,
                                 gzip,
+                                ..Tab::default()
                             },
                             shutdown,
                         )

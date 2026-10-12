@@ -19,6 +19,49 @@ pub(crate) struct Tab {
     pub(crate) holder: Option<String>,
     pub(crate) device: Option<DeviceId>,
     pub(crate) gzip: bool,
+    pub(crate) link: Link,
+}
+
+/// The network the page's browser reported when it opened the socket
+/// (`navigator.connection`). It is a client fact: it can be false, and only
+/// the log reads it (ADR-0074 D2, D5). Safari reports none of it, and then
+/// every field is `None`.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct Link {
+    pub(crate) effective_type: Option<EffectiveType>,
+    pub(crate) rtt_ms: Option<u32>,
+    pub(crate) downlink_mbps: Option<f64>,
+}
+
+/// The `effectiveType` values the Network Information API defines.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum EffectiveType {
+    Slow2g,
+    G2,
+    G3,
+    G4,
+}
+
+impl EffectiveType {
+    /// `None` for a value the API does not define.
+    pub(crate) fn parse(value: &str) -> Option<EffectiveType> {
+        match value {
+            "slow-2g" => Some(EffectiveType::Slow2g),
+            "2g" => Some(EffectiveType::G2),
+            "3g" => Some(EffectiveType::G3),
+            "4g" => Some(EffectiveType::G4),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            EffectiveType::Slow2g => "slow-2g",
+            EffectiveType::G2 => "2g",
+            EffectiveType::G3 => "3g",
+            EffectiveType::G4 => "4g",
+        }
+    }
 }
 
 /// Which loop owns the socket: the bridge to a session this daemon hosts, or
@@ -48,12 +91,18 @@ const CLIENT_CLOSED: &str = "client-closed";
 /// The command verb that opens every console socket, before any output.
 pub(crate) const SESSION_OPEN: &str = "session-open";
 
-/// The command verb a page sends just before it closes a console socket.
+/// The command verb a page sends just before it closes a console socket, or
+/// when it goes hidden.
 const DETACH: &str = "detach";
 
+/// The command verb a page sends when it is visible again after a `hidden`
+/// detach. Only the log reads it.
+const SHOWN: &str = "shown";
+
 /// Why the page closed a console socket, as it announced it in a `detach`
-/// command. Each of these is followed by a reattach that replays the
-/// scrollback, except `WindowClosed`.
+/// command. `Dormant` and `Reconnect` are followed by a reattach that replays
+/// the scrollback. `Hidden` does not close the socket: the page went hidden,
+/// and a browser that suspends it ends the socket without a word.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Leave {
     /// The console window went off the viewport and gave its terminal back.
@@ -63,6 +112,8 @@ pub(crate) enum Leave {
     Reconnect,
     /// The console window left this page.
     WindowClosed,
+    /// The page went hidden: a screen lock, an app switch, or a tab switch.
+    Hidden,
 }
 
 impl Leave {
@@ -71,12 +122,13 @@ impl Leave {
             Leave::Dormant => "dormant",
             Leave::Reconnect => "reconnect",
             Leave::WindowClosed => "window-closed",
+            Leave::Hidden => "hidden",
         }
     }
 
     /// The leave a `detach` command names; `None` for another verb or a reason
     /// this daemon does not know.
-    pub(crate) fn from_command(cmd: &Command) -> Option<Leave> {
+    fn from_command(cmd: &Command) -> Option<Leave> {
         if cmd.verb != DETACH {
             return None;
         }
@@ -84,6 +136,7 @@ impl Leave {
             "dormant" => Some(Leave::Dormant),
             "reconnect" => Some(Leave::Reconnect),
             "window-closed" => Some(Leave::WindowClosed),
+            "hidden" => Some(Leave::Hidden),
             _ => None,
         }
     }
@@ -126,6 +179,7 @@ struct Keys {
     peer: Option<String>,
     holder: Option<String>,
     device: Option<DeviceId>,
+    link: Link,
 }
 
 pub(crate) struct Traffic {
@@ -178,6 +232,7 @@ impl Traffic {
             peer: None,
             holder: tab.holder,
             device: tab.device,
+            link: tab.link,
         };
         Traffic::new(Channel::Local, keys, now)
     }
@@ -191,6 +246,7 @@ impl Traffic {
             peer: Some(peer),
             holder: tab.holder,
             device: tab.device,
+            link: tab.link,
         };
         Traffic::new(Channel::Peer, keys, now)
     }
@@ -286,8 +342,15 @@ impl Traffic {
         self.in_bytes += bytes as u64;
     }
 
-    pub(crate) fn client_left(&mut self, leave: Leave) {
-        self.left = Some(leave);
+    /// Read a command the page sent, for the log only: a `detach` names the
+    /// leave, and a `shown` takes back a `hidden` one. A later leave replaces
+    /// an earlier one.
+    pub(crate) fn client_command(&mut self, cmd: &Command) {
+        if let Some(leave) = Leave::from_command(cmd) {
+            self.left = Some(leave);
+        } else if cmd.verb == SHOWN && self.left == Some(Leave::Hidden) {
+            self.left = None;
+        }
     }
 
     /// The client sent a Close frame.
@@ -383,6 +446,9 @@ impl Traffic {
             peer = self.keys.peer.as_deref(),
             holder = self.keys.holder.as_deref(),
             device = self.keys.device.map(|d| d.to_string()),
+            net_type = self.keys.link.effective_type.map(EffectiveType::as_str),
+            net_rtt_ms = self.keys.link.rtt_ms,
+            net_downlink_mbps = self.keys.link.downlink_mbps,
             end,
             secs = now.duration_since(self.started).as_secs(),
             replay_bytes = s.replay_bytes,
@@ -436,251 +502,4 @@ fn median(sorted: &[u32]) -> Option<u32> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::time::Duration;
-
-    fn traffic(now: Instant) -> Traffic {
-        let tab = Tab {
-            holder: Some("tab-1".to_string()),
-            ..Tab::default()
-        };
-        Traffic::local(1, tab, now)
-    }
-
-    #[test]
-    fn a_pong_is_timed_against_the_ping_with_its_payload() {
-        let t0 = Instant::now();
-        let mut t = traffic(t0);
-        t.ping_sent(&[1], t0);
-        t.ping_sent(&[2], t0 + Duration::from_millis(100));
-        t.pong_received(&[9], t0 + Duration::from_millis(150));
-        t.pong_received(&[2], t0 + Duration::from_millis(130));
-        let s = t.summary();
-        assert_eq!(s.rtt_samples, 1, "an unknown payload records no sample");
-        assert_eq!(s.rtt_p50_ms, Some(30));
-    }
-
-    #[test]
-    fn replay_and_live_bytes_are_kept_apart() {
-        let mut t = traffic(Instant::now());
-        t.replay(400, 1000);
-        t.live(10);
-        t.live(5);
-        t.inbound(3);
-        let s = t.summary();
-        assert_eq!((s.replay_bytes, s.live_bytes, s.live_frames), (400, 15, 2));
-        assert_eq!(s.replay_raw_bytes, 1000, "the replay before its gzip");
-        assert_eq!(s.in_bytes, 3);
-    }
-
-    #[test]
-    fn a_ping_after_live_output_is_busy_and_a_quiet_one_is_idle() {
-        let t0 = Instant::now();
-        let mut t = traffic(t0);
-        t.ping_sent(&[1], t0);
-        t.pong_received(&[1], t0 + Duration::from_millis(40));
-        t.live(10);
-        t.ping_sent(&[2], t0);
-        t.pong_received(&[2], t0 + Duration::from_millis(400));
-        let s = t.summary();
-        assert_eq!(s.rtt_idle_p50_ms, Some(40));
-        assert_eq!(s.rtt_busy_p50_ms, Some(400));
-    }
-
-    #[test]
-    fn the_median_is_the_lower_middle_sample() {
-        assert_eq!(median(&[]), None);
-        assert_eq!(median_of(&[30, 10, 20]), Some(20));
-        assert_eq!(median_of(&[40, 10, 30, 20]), Some(20));
-    }
-
-    #[test]
-    fn lost_pongs_do_not_grow_the_waiting_queue() {
-        let t0 = Instant::now();
-        let mut t = traffic(t0);
-        for seq in 0..=OUTSTANDING_CAP as u8 {
-            t.ping_sent(&[seq], t0);
-        }
-        assert_eq!(t.outstanding.len(), OUTSTANDING_CAP);
-        t.pong_received(&[0], t0 + Duration::from_millis(10));
-        assert_eq!(t.summary().rtt_samples, 0, "the oldest ping was dropped");
-    }
-
-    #[test]
-    fn the_keys_name_the_session_or_the_peer_and_the_tab() {
-        let now = Instant::now();
-        let device = DeviceId::mint();
-        let tab = Tab {
-            holder: Some("tab-a".to_string()),
-            device: Some(device),
-            gzip: false,
-        };
-        let local = Traffic::local(7, tab, now);
-        assert_eq!(local.channel, Channel::Local);
-        assert_eq!(local.keys.session, Some(7));
-        assert_eq!(local.keys.holder.as_deref(), Some("tab-a"));
-        assert_eq!(local.keys.device, Some(device));
-        // The summary writes the ID alone: 32 hex digits, not the cookie
-        // value with its version and HMAC.
-        let written = device.to_string();
-        assert_eq!(written.len(), 32);
-        assert!(written.bytes().all(|b| b.is_ascii_hexdigit()), "{written}");
-        let relayed = Traffic::peer(
-            "01PEER".to_string(),
-            "Ubuntu".to_string(),
-            Tab::default(),
-            now,
-        );
-        assert_eq!(relayed.channel, Channel::Peer);
-        assert_eq!(relayed.keys.peer_id.as_deref(), Some("01PEER"));
-        assert_eq!(relayed.keys.peer.as_deref(), Some("Ubuntu"));
-        assert_eq!(relayed.keys.session, None);
-    }
-
-    fn command(json: &str) -> Command {
-        match crate::protocol::decode(&[&[0x02], json.as_bytes()].concat()) {
-            Ok(crate::protocol::Frame::Command(cmd)) => cmd,
-            other => panic!("not a command frame: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn a_detach_command_names_the_leave() {
-        // The bytes `encodeDetach` in wb-console.ts produces (its node test).
-        let dormant = command(r#"{"id":0,"verb":"detach","payload":{"reason":"dormant"}}"#);
-        assert_eq!(Leave::from_command(&dormant), Some(Leave::Dormant));
-        let reconnect = command(r#"{"id":0,"verb":"detach","payload":{"reason":"reconnect"}}"#);
-        assert_eq!(Leave::from_command(&reconnect), Some(Leave::Reconnect));
-        let closed = command(r#"{"id":0,"verb":"detach","payload":{"reason":"window-closed"}}"#);
-        assert_eq!(Leave::from_command(&closed), Some(Leave::WindowClosed));
-        let unknown = command(r#"{"id":0,"verb":"detach","payload":{"reason":"bored"}}"#);
-        assert_eq!(Leave::from_command(&unknown), None);
-        let resize = command(r#"{"id":0,"verb":"resize","payload":{"reason":"dormant"}}"#);
-        assert_eq!(
-            Leave::from_command(&resize),
-            None,
-            "only `detach` names a leave"
-        );
-    }
-
-    #[test]
-    fn the_end_is_the_most_specific_reason_known() {
-        let mut t = traffic(Instant::now());
-        assert_eq!(t.end_label(None), "dropped");
-        t.client_closed();
-        assert_eq!(t.end_label(None), "client-closed");
-        t.client_left(Leave::Dormant);
-        assert_eq!(t.end_label(None), "dormant");
-        assert_eq!(t.end_label(Some("taken-over")), "taken-over");
-    }
-
-    fn peer() -> Traffic {
-        Traffic::peer(
-            "01PEER".to_string(),
-            "Mac".to_string(),
-            Tab::default(),
-            Instant::now(),
-        )
-    }
-
-    fn open_frame(payload: &str) -> Vec<u8> {
-        [
-            &[protocol::TAG_COMMAND][..],
-            format!(r#"{{"id":4,"verb":"session-open","payload":{payload}}}"#).as_bytes(),
-        ]
-        .concat()
-    }
-
-    fn terminal_frame(len: usize) -> Vec<u8> {
-        protocol::encode(&Frame::Terminal {
-            session: 4,
-            data: vec![b'x'; len],
-        })
-    }
-
-    #[test]
-    fn a_relayed_replay_is_counted_as_replay_and_names_the_session() {
-        let mut t = peer();
-        t.peer_frame(&open_frame(r#"{"session":4,"replay":true}"#));
-        let replay = terminal_frame(1000);
-        t.peer_frame(&replay);
-        t.peer_frame(&terminal_frame(10));
-        let s = t.summary();
-        assert_eq!(t.keys.session, Some(4));
-        assert_eq!(s.replay_bytes, replay.len() as u64);
-        assert_eq!(s.replay_raw_bytes, replay.len() as u64, "a raw replay");
-        assert_eq!(s.live_frames, 1, "the open frame is not counted");
-        assert_eq!(s.live_bytes, terminal_frame(10).len() as u64);
-    }
-
-    /// A peer that gzips its replay sends a `session-size` frame between the
-    /// announcement and the replay; the replay is still found, and its raw
-    /// size is the size of the frame decoded.
-    #[test]
-    fn a_relayed_gzip_replay_is_counted_on_the_wire_and_raw() {
-        use std::io::Write;
-        let mut t = peer();
-        t.peer_frame(&open_frame(
-            r#"{"session":4,"replay":true,"replay_encoding":"gzip"}"#,
-        ));
-        let size = [
-            &[protocol::TAG_COMMAND][..],
-            br#"{"id":4,"verb":"session-size","payload":{"rows":24,"cols":80}}"#,
-        ]
-        .concat();
-        t.peer_frame(&size);
-        let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-        enc.write_all(&[b'x'; 5000]).expect("an in-memory gzip");
-        let replay = protocol::encode(&Frame::Terminal {
-            session: 4,
-            data: enc.finish().expect("an in-memory gzip"),
-        });
-        t.peer_frame(&replay);
-        t.peer_frame(&terminal_frame(10));
-        let s = t.summary();
-        assert_eq!(s.replay_bytes, replay.len() as u64);
-        assert_eq!(s.replay_raw_bytes, terminal_frame(5000).len() as u64);
-        assert_eq!(s.live_frames, 2, "the size frame and the live frame");
-    }
-
-    /// A peer that lagged sends a second `session-open` and a new snapshot:
-    /// that snapshot is a replay too, not live output.
-    #[test]
-    fn a_relayed_resync_counts_its_snapshot_as_replay() {
-        let mut t = peer();
-        t.peer_frame(&open_frame(r#"{"session":4,"replay":true}"#));
-        t.peer_frame(&terminal_frame(1000));
-        t.peer_frame(&terminal_frame(10));
-        t.peer_frame(&open_frame(r#"{"session":4,"replay":true}"#));
-        t.peer_frame(&terminal_frame(2000));
-        let s = t.summary();
-        assert_eq!(
-            s.replay_bytes,
-            (terminal_frame(1000).len() + terminal_frame(2000).len()) as u64
-        );
-        assert_eq!(
-            (s.live_frames, s.live_bytes),
-            (1, terminal_frame(10).len() as u64)
-        );
-    }
-
-    #[test]
-    fn an_older_peer_without_the_replay_field_still_names_the_session() {
-        let mut t = peer();
-        t.peer_frame(&open_frame(r#"{"session":4}"#));
-        t.peer_frame(&terminal_frame(1000));
-        let s = t.summary();
-        assert_eq!(t.keys.session, Some(4));
-        assert_eq!((s.replay_bytes, s.live_frames), (0, 1));
-    }
-
-    #[test]
-    fn a_burst_that_outran_the_socket_is_counted() {
-        let mut t = traffic(Instant::now());
-        t.lagged(7);
-        t.lagged(3);
-        let s = t.summary();
-        assert_eq!((s.lagged_events, s.lagged_skipped), (2, 10));
-    }
-}
+mod tests;

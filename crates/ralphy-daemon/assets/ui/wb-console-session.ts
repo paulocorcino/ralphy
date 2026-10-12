@@ -51,10 +51,15 @@ export function encodeResize(rows: number, cols: number) {
 // Why this page closes a console socket, sent as DATA just before the close:
 // close metadata does not survive the trip (#334), and the peer relay
 // forwards data frames unchanged. The daemon only logs it. One of
-// `dormant`, `reconnect`, `window-closed`.
-export type DetachReason = "dormant" | "reconnect" | "window-closed";
+// `dormant`, `reconnect`, `window-closed`, or `hidden`. `hidden` closes
+// nothing: the page went hidden, and a browser that suspends it ends the
+// socket with no Close frame. `encodeShown` takes `hidden` back.
+export type DetachReason = "dormant" | "reconnect" | "window-closed" | "hidden";
 export function encodeDetach(reason: DetachReason) {
   return encodeCommand("detach", { reason });
+}
+export function encodeShown() {
+  return encodeCommand("shown", {});
 }
 
 // Failed re-opens before a socket is given up on, and how many a never-opened

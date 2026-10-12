@@ -26,18 +26,8 @@ fn peer_session_query_forwards_the_checkout_only_when_present() {
     let launch = |checkout: Option<&str>| SessionQuery {
         repo: Some("x".into()),
         agent: Some("claude".into()),
-        id: None,
-        takeover: None,
-        watch: None,
-        console: None,
         checkout: checkout.map(str::to_string),
-        command: None,
-        holder: None,
-        name: None,
-        record: None,
-        gzip: None,
-        attempt: None,
-        since: None,
+        ..SessionQuery::default()
     };
     assert_eq!(
         peer_session_query(&launch(Some("wt-a")), "owner/repo"),
@@ -63,19 +53,10 @@ fn peer_session_query_forwards_the_checkout_only_when_present() {
 fn peer_session_query_forwards_a_console_launch() {
     let console = |command: Option<&str>| SessionQuery {
         repo: Some("x".into()),
-        agent: None,
-        id: None,
-        takeover: None,
-        watch: None,
         console: Some(1),
-        checkout: None,
         command: command.map(str::to_string),
         holder: Some("tab-1".into()),
-        name: None,
-        record: None,
-        gzip: None,
-        attempt: None,
-        since: None,
+        ..SessionQuery::default()
     };
     assert_eq!(
         peer_session_query(&console(Some(" htop ")), "owner/repo"),
@@ -100,19 +81,9 @@ fn peer_session_query_forwards_a_console_launch() {
 fn peer_session_query_forwards_a_well_formed_holder() {
     let reattach = |holder: &str| SessionQuery {
         repo: Some("x".into()),
-        agent: None,
         id: Some(7),
-        takeover: None,
-        watch: None,
-        console: None,
-        checkout: None,
-        command: None,
         holder: Some(holder.to_string()),
-        name: None,
-        record: None,
-        gzip: None,
-        attempt: None,
-        since: None,
+        ..SessionQuery::default()
     };
     assert_eq!(
         peer_session_query(&reattach("tab-1_A"), "owner/repo"),
@@ -156,6 +127,9 @@ fn peer_session_query_forwards_the_console_name_on_a_launch_only() {
         gzip: None,
         attempt: None,
         since: None,
+        net: None,
+        net_rtt: None,
+        net_down: None,
     };
     assert_eq!(
         peer_session_query(&launch(Some("fincal #1".into())), "owner/repo"),
@@ -189,19 +163,9 @@ fn peer_session_query_forwards_the_console_name_on_a_launch_only() {
 fn peer_session_query_forwards_the_record_on_a_launch_only() {
     let console = |record: &str| SessionQuery {
         repo: Some("x".into()),
-        agent: None,
-        id: None,
-        takeover: None,
-        watch: None,
         console: Some(1),
-        checkout: None,
-        command: None,
-        holder: None,
-        name: None,
         record: Some(record.to_string()),
-        gzip: None,
-        attempt: None,
-        since: None,
+        ..SessionQuery::default()
     };
     assert_eq!(
         peer_session_query(&console("w-a_1"), "owner/repo"),
@@ -252,6 +216,9 @@ fn peer_session_query_forwards_gzip_on_every_shape() {
         gzip,
         attempt: None,
         since: None,
+        net: None,
+        net_rtt: None,
+        net_down: None,
     };
     assert_eq!(
         peer_session_query(&launch(Some(1)), "owner/repo"),
@@ -293,19 +260,10 @@ fn peer_session_query_forwards_gzip_on_every_shape() {
 fn peer_session_query_forwards_the_attempt_with_the_holder() {
     let reattach = |holder: Option<&str>| SessionQuery {
         repo: Some("x".into()),
-        agent: None,
         id: Some(7),
-        takeover: None,
-        watch: None,
-        console: None,
-        checkout: None,
-        command: None,
         holder: holder.map(str::to_string),
-        name: None,
-        record: None,
-        gzip: None,
         attempt: Some(12),
-        since: None,
+        ..SessionQuery::default()
     };
     assert_eq!(
         peer_session_query(&reattach(Some("tab-A")), "owner/repo"),
@@ -355,6 +313,9 @@ fn peer_session_query_forwards_since_on_a_reattach() {
         gzip: None,
         attempt: None,
         since: Some(4096),
+        net: None,
+        net_rtt: None,
+        net_down: None,
     };
     assert_eq!(
         peer_session_query(&reattach(None), "owner/repo"),
@@ -403,6 +364,9 @@ fn session_query_name_is_cut_to_40_and_empty_is_absent() {
         gzip: None,
         attempt: None,
         since: None,
+        net: None,
+        net_rtt: None,
+        net_down: None,
     };
     let long = "é".repeat(40);
     assert_eq!(query(Some("é".repeat(41))).name(), Some(long.as_str()));

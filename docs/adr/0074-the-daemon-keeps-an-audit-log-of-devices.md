@@ -239,3 +239,17 @@ upgrade are **not** recorded. They happen often, they mean nothing for
 security, and D3 caps the file for security events. They are in the daemon
 log: the traffic summary of each console socket and one line for each
 refused upgrade.
+
+## Amendment 2026-10-12 — the traffic summary records the network the page reported
+
+Issue #690. A console socket's URL may carry the network that the browser
+reports in `navigator.connection`: `net` (the effective type), `net_rtt` (ms)
+and `net_down` (Mbit/s). The traffic summary of the socket (D10) writes them
+as `net_type`, `net_rtt_ms` and `net_downlink_mbps`. The peer relay forwards
+them, so the peer's own summary has them too.
+
+These are client facts, as in D5: a page can report anything. D2 applies to
+them: no decision reads them, and only the log writes them. A value outside
+the closed set (`slow-2g`, `2g`, `3g`, `4g`), or a number that does not parse,
+is absent. The daemon never guesses a value. Safari has no
+`navigator.connection`, so its lines have none of these fields.

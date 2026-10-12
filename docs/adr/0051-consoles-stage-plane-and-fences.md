@@ -828,3 +828,30 @@ These rules were decided earlier and were recorded only in CONTEXT.md. On 2026-0
 - **A watcher is refused by the client too (§9).** A watcher's keystrokes are refused by the client as well: the browser gates its own input and names what it is watching in the window, a visible state rather than a `confirm()` prompt (issue #335), with the daemon's drop kept as defence in depth.
 - **The key bar is an input surface (§9).** It is not a menu: every button sends bytes down the same path a keystroke takes, so a **watching** window refuses a tap exactly as it refuses a keystroke.
 - **A free console can start with a command.** A free console can start with a command line typed in the Consoles menu: the shell runs it, the session ends with it, and the command is the session's label, so a restart runs it again. Nothing stores the command as a default (decided 2026-09-27, `f0903843`).
+
+## Amendment (2026-10-12): the page says why a console socket leaves (§9)
+
+Issue #690. Before a page closes a console socket, it sends a `detach` command
+with a reason, because the metadata of a Close frame does not reach the
+daemon through a proxy (#334). The daemon writes the reason as the `end` of
+the socket's traffic summary (ADR-0074 D10). Until now the reasons were
+recorded only in code. They are:
+
+- `dormant`: the console window went off the viewport and gave its terminal
+  back. A reattach follows.
+- `reconnect`: the page opens a new socket at once (a resume, a take-over, or
+  a move to a detached fence).
+- `window-closed`: the console window left the page.
+- `hidden` (new): the page went hidden (`visibilitychange`, or `pagehide`).
+  The page does not close the socket. A browser that suspends the page (iOS
+  on a screen lock or an app switch) later ends the socket with no Close
+  frame. Without this reason, that end was logged as `dropped`, the same as a
+  failed link.
+
+A new command `shown` takes `hidden` back when the page is visible again, so a
+later link failure is still logged as `dropped`. It never takes back another
+reason.
+
+Only the log reads `detach` and `shown`. No decision about a session, a slot,
+or access reads them. A daemon that does not know a reason or a verb ignores
+it, and the peer relay forwards both unchanged.

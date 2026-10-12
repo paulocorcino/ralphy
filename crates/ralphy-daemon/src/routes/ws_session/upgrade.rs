@@ -74,11 +74,7 @@ pub(crate) async fn session_ws_upgrade(
         bound_port,
     } = host;
     // Owned: `query` is rewritten below (a peer ref resolves to its slug).
-    let tab = Tab {
-        holder: query.holder().map(str::to_owned),
-        device: who.device,
-        gzip: query.gzip == Some(1),
-    };
+    let tab = query.tab(who.device);
     let record = query.record().map(str::to_owned);
     let daemon_id = identity
         .as_ref()

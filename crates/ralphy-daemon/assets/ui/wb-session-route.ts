@@ -5,7 +5,8 @@
 // `attempt`: the tab's number for this connect, sent beside the holder.
 // `since`: on a reattach, the count of the session's output bytes the
 // terminal shows.
-type SessionUrlOpts =
+// `link`: the network the browser reports, for the daemon's traffic log.
+type SessionUrlOpts = { link?: LinkFacts } & (
   | {
       id: number;
       since?: number;
@@ -37,7 +38,12 @@ type SessionUrlOpts =
       holder?: string;
       gzip?: boolean;
       attempt?: number;
-    };
+    }
+);
+
+// The members of `navigator.connection` the daemon's traffic log records.
+// Safari has no `navigator.connection`, and then nothing is sent.
+export type LinkFacts = { effectiveType?: string; rtt?: number; downlink?: number };
 
 // What one connect of a terminal asks for, before it is one of the shapes
 // above: `id` set is a reattach, `console` a free console, else an agent launch.
@@ -189,7 +195,28 @@ export const WBSessionRoute = (function () {
       value += recordParam(opts.record);
       value += holderParam(opts.holder, opts.attempt);
     }
+    return value + linkParam(opts.link);
+  }
+
+  // Only the values the daemon reads; any other value is not sent.
+  const EFFECTIVE_TYPE_RE = /^(slow-2g|2g|3g|4g)$/;
+  function linkParam(link: LinkFacts | undefined) {
+    if (!link) return "";
+    let value = "";
+    const { effectiveType, rtt, downlink } = link;
+    if (typeof effectiveType === "string" && EFFECTIVE_TYPE_RE.test(effectiveType)) value += "&net=" + effectiveType;
+    if (typeof rtt === "number" && Number.isSafeInteger(rtt) && rtt >= 0) value += "&net_rtt=" + rtt;
+    if (typeof downlink === "number" && Number.isFinite(downlink) && downlink >= 0) value += "&net_down=" + downlink;
     return value;
+  }
+
+  // The network this browser reports now, read at each connect.
+  function tabLink(): LinkFacts | undefined {
+    try {
+      return (globalThis.navigator as Navigator & { connection?: LinkFacts }).connection ?? undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   // The replay is gzipped only for a page that can decode it.
@@ -273,6 +300,7 @@ export const WBSessionRoute = (function () {
     url,
     requestOpts,
     canGunzip,
+    tabLink,
     holder,
     tabHolder,
     nextAttempt,

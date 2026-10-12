@@ -10,7 +10,7 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::io::AsyncWriteExt;
 
 use super::refuse::Refuser;
-use super::traffic::{Leave, Tab, Traffic};
+use super::traffic::{Tab, Traffic};
 use super::SessionQuery;
 use crate::peer;
 use crate::protocol::{self, Frame};
@@ -34,6 +34,7 @@ pub(crate) fn peer_session_query(query: &SessionQuery, slug: &str) -> String {
         push_holder(&mut out, query);
         push_gzip(&mut out, query);
         push_since(&mut out, query);
+        push_link(&mut out, query);
         return out;
     }
     // A free console on a peer with no distro (ADR-0067 §7): the peer opens it
@@ -49,6 +50,7 @@ pub(crate) fn peer_session_query(query: &SessionQuery, slug: &str) -> String {
         push_record(&mut out, query);
         push_holder(&mut out, query);
         push_gzip(&mut out, query);
+        push_link(&mut out, query);
         return out;
     }
     let mut out = format!(
@@ -71,6 +73,7 @@ pub(crate) fn peer_session_query(query: &SessionQuery, slug: &str) -> String {
     push_record(&mut out, query);
     push_holder(&mut out, query);
     push_gzip(&mut out, query);
+    push_link(&mut out, query);
     out
 }
 
@@ -89,6 +92,23 @@ fn push_gzip(out: &mut String, query: &SessionQuery) {
 fn push_since(out: &mut String, query: &SessionQuery) {
     if let Some(since) = query.since {
         out.push_str(&format!("&since={since}"));
+    }
+}
+
+/// The network the browser reported, so the peer's own traffic summary has
+/// it too. Only the parsed values go on, so they need no encoding. An older
+/// peer ignores the keys.
+fn push_link(out: &mut String, query: &SessionQuery) {
+    let link = query.link();
+    if let Some(kind) = link.effective_type {
+        out.push_str("&net=");
+        out.push_str(kind.as_str());
+    }
+    if let Some(rtt) = link.rtt_ms {
+        out.push_str(&format!("&net_rtt={rtt}"));
+    }
+    if let Some(down) = link.downlink_mbps {
+        out.push_str(&format!("&net_down={down}"));
     }
 }
 
@@ -192,9 +212,7 @@ pub(crate) async fn peer_session_ws(
                         traffic.inbound(bytes.len());
                         // Read only for the log; the bytes go on unchanged.
                         if let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) {
-                            if let Some(leave) = Leave::from_command(&cmd) {
-                                traffic.client_left(leave);
-                            }
+                            traffic.client_command(&cmd);
                         }
                         tokio_tungstenite::tungstenite::Message::Binary(bytes)
                     }
@@ -252,5 +270,59 @@ pub(crate) async fn close_peer_session(peer: &mut peer::client::PeerSocket) {
         .await;
     if let tokio_tungstenite::MaybeTlsStream::Plain(stream) = peer.get_mut() {
         let _ = stream.shutdown().await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The network the browser reported goes to the peer on every shape, so the
+    /// peer's traffic summary has it too. A value no browser gives is absent, and
+    /// does not refuse the socket.
+    #[test]
+    fn peer_session_query_forwards_the_link_the_browser_reported() {
+        let reattach = |net: &str, rtt: &str, down: &str| SessionQuery {
+            repo: Some("x".into()),
+            id: Some(7),
+            net: Some(net.into()),
+            net_rtt: Some(rtt.into()),
+            net_down: Some(down.into()),
+            ..SessionQuery::default()
+        };
+        assert_eq!(
+            peer_session_query(&reattach("4g", "100", "1.75"), "owner/repo"),
+            "id=7&repo=owner%2Frepo&net=4g&net_rtt=100&net_down=1.75"
+        );
+        let console = SessionQuery {
+            id: None,
+            console: Some(1),
+            ..reattach("slow-2g", "2000", "0")
+        };
+        assert_eq!(
+            peer_session_query(&console, "owner/repo"),
+            "console=1&repo=owner%2Frepo&net=slow-2g&net_rtt=2000&net_down=0"
+        );
+        let launch = SessionQuery {
+            id: None,
+            agent: Some("claude".into()),
+            ..reattach("2g", "50", "10")
+        };
+        assert_eq!(
+            peer_session_query(&launch, "owner/repo"),
+            "repo=owner%2Frepo&agent=claude&net=2g&net_rtt=50&net_down=10"
+        );
+        assert_eq!(
+            peer_session_query(&reattach("3g", "x", "0.5"), "owner/repo"),
+            "id=7&repo=owner%2Frepo&net=3g&net_down=0.5",
+            "each value is read alone"
+        );
+        for (net, rtt, down) in [("5g", "-1", "NaN"), ("wifi", "x", "-2"), ("", "1e9", "inf")] {
+            assert_eq!(
+                peer_session_query(&reattach(net, rtt, down), "owner/repo"),
+                "id=7&repo=owner%2Frepo",
+                "{net} {rtt} {down}"
+            );
+        }
     }
 }

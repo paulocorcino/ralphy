@@ -896,3 +896,34 @@ release shows the release as soon as it answers, without Edit.
 
 Measured on 2026-10-02: a Mac paired with `environment = "macOS"` answered the
 handshake with `macOS 12` (rc.36, `sw_vers -productVersion` = `12.7.6`).
+
+## Amendment (2026-10-12): an unreachable host waits longer for its next `ssh`
+
+Issue #690. §2 says the tunnel is "replaced when it has exited". For a host
+that cannot be reached, that was one new `ssh` on every failed probe, which
+is about every 30 s while a workbench is open. Two unreachable hosts made 91%
+of the lines in one operator's `daemon.log` (3,822 `closed` and `started`
+pairs in about two days).
+
+**W1. The next `ssh` waits after an exit with no answer.** The first exit is
+replaced at once, so a short VPN drop recovers on the next probe, as before.
+After the next exits, the next `ssh` waits 30 s, then 1, 2, 4 and 8 minutes,
+and then 10 minutes each time. That is about 6 `ssh` an hour for a host that
+stays unreachable. The wait counts from the ensure that sees the exit. While
+it waits, no `ssh` runs, and the diagnosis says when Ralphy tries again.
+
+**W2. Three things end the wait.**
+- The peer gives any HTTP answer to its handshake through the tunnel, even
+  a refusal of the token: the tunnel works. The next exit is replaced at
+  once again.
+- The host is edited (H4). A changed spec does not wait for the old one,
+  and the exit of the old spec's `ssh` is not counted.
+- The operator wakes the peer. The nudge starts the `ssh` now, also when
+  the nudge is what sees the last exit. That exit still counts.
+
+**W3. The log keeps one line pair per wait.** The `closed` line names the
+wait (`retry_in_secs`). At the 10-minute wait, an `ssh` that says the same
+line as the one before is logged at debug level.
+
+§12 changes in one row: when the VPN comes back, the group comes back within
+the current wait (10 minutes at most), or at once when the operator wakes it.
