@@ -203,7 +203,8 @@ mod tests {
                 .unwrap_or_else(|| panic!("{name}/SKILL.md has no closing '---' delimiter"));
             let frontmatter = rest[..end].join("\n");
 
-            let res = serde_yaml_ng::from_str::<serde_yaml_ng::Value>(&frontmatter);
+            let res =
+                saphyr_parser::Parser::new_from_str(&frontmatter).collect::<Result<Vec<_>, _>>();
             assert!(
                 res.is_ok(),
                 "{name}/SKILL.md frontmatter is not valid YAML: {:?}",
