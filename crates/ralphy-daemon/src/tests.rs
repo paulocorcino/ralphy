@@ -8406,7 +8406,7 @@ fn a_refused_branch_change_reports_in_the_projects_panel() {
     );
     assert!(
         app_js.contains(
-            r#"refused("Could not reach the daemon. Check whether the worktree was deleted.")"#
+            r#"failure = "Could not reach the daemon. Check whether the worktree was deleted.";"#
         ),
         "an unanswered worktree remove must not read as a completed one"
     );
@@ -8453,7 +8453,7 @@ fn the_worktree_row_remove_action_stops_the_selecting_click() {
     );
     let app_js = shell_family();
     assert!(
-        app_js.contains("WBProject.checkoutAfterListing(ck, this.$store.checkouts.worktreeListings[slug]) === null"),
+        app_js.contains("WBProject.checkoutAfterListing(ck, listing) === null"),
         "the selection resets from the re-read listing, never from the reply's status"
     );
     let remove = app_js
@@ -8468,7 +8468,7 @@ fn the_worktree_row_remove_action_stops_the_selecting_click() {
         .expect("removeWorktree sends worktree.remove");
     assert!(ask < call, "the confirm comes before the daemon call");
     assert!(
-        body[ask..call].contains("if (!ok || this.worktreeRemoving[slug]) return;"),
+        body[ask..call].contains("if (!ok || this._removing(slug, w.name)) return;"),
         "a cancel makes no daemon call"
     );
     assert!(

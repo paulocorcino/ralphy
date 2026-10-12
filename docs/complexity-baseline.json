@@ -358,11 +358,6 @@
       11
     ]
   },
-  "crates/ralphy-daemon/assets/ui/wb-branch-dialog.ts": {
-    "removeWorktree": [
-      11
-    ]
-  },
   "crates/ralphy-daemon/assets/ui/wb-changes-panel.ts": {
     "loadSync": [
       13
@@ -375,7 +370,7 @@
   },
   "crates/ralphy-daemon/assets/ui/wb-checkouts-store.ts": {
     "ensureWorktreeListing": [
-      16
+      14
     ]
   },
   "crates/ralphy-daemon/assets/ui/wb-client-view.ts": {

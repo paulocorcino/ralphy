@@ -148,3 +148,84 @@ test("a refused switch shows git's words after the act", async () => {
   const note = dialog.$store.checkouts.branchError;
   assert.match(note, /^Could not switch branch: error: Your local changes/);
 });
+
+// ---- deleting a worktree --------------------------------------------------------
+
+// A dialog on `o/r` with worktrees `wt-a` and `wt-b`. `worktree.remove` waits
+// until the test calls `settle(name, reply)`; `worktree.list` answers `listed`.
+function deleter() {
+  const { shell, dialog } = page();
+  const store = dialog.$store.checkouts;
+  const pending = {};
+  const sent = [];
+  const notices = [];
+  const flashed = [];
+  let listed = ["wt-a", "wt-b"];
+  const listing = () => ({ primary: "/repo", worktrees: listed.map((name) => ({ name, branch: name })) });
+  globalThis.window.WBDaemon.observe = async (verb, args) => {
+    sent.push([verb, args.name ?? null]);
+    if (verb === "worktree.list") return { status: "ok", checkouts: listing() };
+    return new Promise((resolve) => (pending[args.name] = resolve));
+  };
+  globalThis.window.WBConsole.askNotice = (n) => notices.push(n.message);
+  shell.$store.modals.askConfirm = async () => true;
+  shell.$store.modals.flash = (msg) => flashed.push(msg);
+  const shown = () => (store.worktreeListings["o/r"]?.worktrees || []).map((w) => w.name);
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+  return {
+    dialog,
+    store,
+    sent,
+    notices,
+    flashed,
+    shown,
+    tick,
+    setListed: (names) => (listed = names),
+    settle: async (name, reply) => (pending[name](reply), await tick(), await tick()),
+  };
+}
+
+test("a deleted worktree leaves the list before the daemon answers, and another one can be deleted meanwhile", async () => {
+  const d = deleter();
+  await d.store.ensureWorktreeListing("o/r", true);
+  assert.deepEqual(d.shown(), ["wt-a", "wt-b"]);
+  const a = d.dialog.removeWorktree("o/r", { name: "wt-a" });
+  await d.tick();
+  assert.deepEqual(d.shown(), ["wt-b"]);
+  const b = d.dialog.removeWorktree("o/r", { name: "wt-b" });
+  await d.tick();
+  assert.deepEqual(d.shown(), []);
+  // CONTROL: the same worktree twice sends one delete.
+  d.dialog.removeWorktree("o/r", { name: "wt-a" });
+  await d.tick();
+  assert.deepEqual(d.sent.filter(([v]) => v === "worktree.remove"), [["worktree.remove", "wt-a"], ["worktree.remove", "wt-b"]]);
+  // wt-a is done first; the re-read must not bring back wt-b, still in flight.
+  d.setListed(["wt-b"]);
+  await d.settle("wt-a", { status: "ok" });
+  assert.deepEqual(d.shown(), []);
+  d.setListed([]);
+  await d.settle("wt-b", { status: "ok" });
+  await Promise.all([a, b]);
+  assert.deepEqual(d.flashed, ["Worktree wt-a deleted", "Worktree wt-b deleted"]);
+  assert.deepEqual(d.notices, []);
+});
+
+test("a refused delete brings the row back with a notice; a kept branch is a flash", async () => {
+  const d = deleter();
+  await d.store.ensureWorktreeListing("o/r", true);
+  const a = d.dialog.removeWorktree("o/r", { name: "wt-a" });
+  await d.tick();
+  await d.settle("wt-a", { status: "error", message: "worktree 'wt-a' has uncommitted changes: commit or discard them first" });
+  await a;
+  assert.deepEqual(d.shown(), ["wt-a", "wt-b"]);
+  assert.equal(d.notices.length, 1);
+  assert.match(d.notices[0], /has uncommitted changes/);
+  d.setListed(["wt-a"]);
+  const b = d.dialog.removeWorktree("o/r", { name: "wt-b" });
+  await d.tick();
+  await d.settle("wt-b", { status: "error", message: "removed worktree 'wt-b'; branch 'wt-b' kept: it has commits not on main" });
+  await b;
+  assert.equal(d.notices.length, 1, "a worktree that is gone opens no notice");
+  assert.equal(d.flashed.length, 1);
+  assert.match(d.flashed[0], /branch 'wt-b' kept: it has commits not on main/);
+});
