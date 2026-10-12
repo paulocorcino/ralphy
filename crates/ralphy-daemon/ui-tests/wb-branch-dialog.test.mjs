@@ -42,7 +42,7 @@ test("every name the markup of wbBranchDialog reads is its own or in its uses li
 test("nothing outside the branch dialog element names its state", () => {
   const start = HTML.indexOf('x-data="wbBranchDialog"');
   const outside = withoutComments(HTML.slice(0, start) + HTML.slice(HTML.indexOf("<!-- ===", start)));
-  for (const name of ["branchModal", "openBranchModal", "closeBranchModal", "branchList", "canCreateBranch", "branchEnter", "switchBranch", "createBranch", "removeWorktree", "worktreeRemoving", "openCheckoutChip", "_mutateBranch"]) {
+  for (const name of ["branchModal", "openBranchModal", "closeBranchModal", "branchList", "canCreateBranch", "branchEnter", "switchBranch", "createBranch", "removeWorktree", "worktreeRemoving", "openCheckoutChip", "_mutateBranch", "branchHeldBy"]) {
     assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`), name);
   }
 });
@@ -91,4 +91,60 @@ test("the branch chip and the two checkout chips reach the branch dialog through
     ["menu", "o/r", "files-anchor"],
     ["menu", "o/r", "changes-anchor"],
   ]);
+});
+
+// ---- a branch another worktree holds (#622) ------------------------------------
+
+// A picker open on `o/r` whose `branch.list` answers with `worktrees`; every
+// verb the dialog sends is recorded in `verbs`.
+async function heldPicker(replies = {}) {
+  const { dialog } = page();
+  const verbs = [];
+  globalThis.WBDaemon = globalThis.window.WBDaemon; // `_mutateBranch` reads the bare global
+  globalThis.window.WBDaemon.observe = async (verb, args) => {
+    verbs.push([verb, args.name ?? null]);
+    return replies[verb] ?? null;
+  };
+  dialog.branchModal = { slug: "o/r", filter: "", branches: [], current: "main", primaryBranch: "main", dirty: false, checkoutDirty: false, worktrees: {} };
+  replies["branch.list"] = {
+    status: "ok",
+    branches: { current: "main", branches: ["main", "feat-a", "free"], worktrees: { main: "/repo", "feat-a": "/repo/wt-a" } },
+  };
+  await dialog.loadBranches("o/r");
+  verbs.length = 0;
+  return { dialog, verbs };
+}
+
+test("a branch held by another worktree is named by its path, never the current one", async () => {
+  const { dialog } = await heldPicker();
+  assert.equal(dialog.branchHeldBy("feat-a"), "/repo/wt-a");
+  assert.equal(dialog.branchHeldBy("free"), "");
+  // CONTROL: `main` is in the map, but this tree has it.
+  assert.equal(dialog.branchHeldBy("main"), "");
+});
+
+test("a held branch is still listed, and switching to it sends nothing", async () => {
+  const { dialog, verbs } = await heldPicker();
+  assert.deepEqual(dialog.branchList(), ["main", "feat-a", "free"]);
+  dialog.branchModal.filter = "feat";
+  assert.deepEqual(dialog.branchList(), ["feat-a"]);
+  dialog.switchBranch("feat-a");
+  dialog.branchEnter();
+  assert.deepEqual(verbs, []);
+  // CONTROL: a free branch is sent.
+  dialog.switchBranch("free");
+  assert.deepEqual(verbs, [["branch.switch", "free"]]);
+});
+
+test("a refused switch shows git's words after the act", async () => {
+  const { dialog } = await heldPicker({
+    "branch.switch": {
+      status: "error",
+      message: "Error: cannot switch branch: error: Your local changes to the following files would be overwritten by checkout",
+    },
+  });
+  dialog.switchBranch("free");
+  await new Promise((r) => setTimeout(r, 0));
+  const note = dialog.$store.checkouts.branchError;
+  assert.match(note, /^Could not switch branch: error: Your local changes/);
 });

@@ -2688,12 +2688,14 @@
             <template x-for="b in branchList()" :key="b">
               <li
                 class="branch-item"
-                :class="{ current: b === branchModal.current }"
+                :class="{ current: b === branchModal.current, held: branchHeldBy(b) }"
+                :aria-disabled="branchHeldBy(b) ? 'true' : null"
                 @click="switchBranch(b)"
               >
                 <i class="bi" :class="b === branchModal.current ? 'bi-check2' : 'bi-git'"></i>
                 <span class="branch-name" x-text="b"></span>
                 <span class="branch-tag" x-show="b === branchModal.current">current</span>
+                <span class="branch-tag" x-show="branchHeldBy(b)" :title="branchHeldBy(b)" x-text="'Open in ' + branchHeldBy(b)"></span>
               </li>
             </template>
             <!-- create-from-current, shown only when the typed name is new -->
