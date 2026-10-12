@@ -264,6 +264,13 @@ The workbench is used from iPads and Android tablets and phones.
   Under `(any-pointer: coarse)` the resize bands are 26px at corners and 14px
   at edges.
 - **Send keys through `sendInput`**, so a watching window refuses them.
+- **Ask about space or about a finger, never about the device.**
+  `wb-viewport.ts` owns both questions: `phoneLayout` (`PHONE_QUERY`, the
+  viewport) and `touchInput` (`TOUCH_QUERY`, `any-pointer: coarse`). A
+  stylesheet copies the query exactly; `ui-tests/wb-viewport.test.mjs` fails
+  on a copy that differs, and on a touch rule that reads only the primary
+  pointer. Which device the page runs on is a fact the daemon keeps for the
+  audit log, not a layout input.
 
 ### Behaviour measured on devices
 
@@ -301,8 +308,8 @@ The workbench is used from iPads and Android tablets and phones.
   OPEN; `visibilitychange` and `online` call `resumeAll`. The term is
   CONTEXT.md → *Resume*.
 
-The pure rules are in their own modules: `wb-console-input.ts` (touch, keys,
-paste, font), `wb-console-session.ts`, `wb-desk-folds.ts` and `wb-geometry.ts`;
+The pure rules are in their own modules: `wb-viewport.ts` (phone layout, touch
+input), `wb-console-input.ts` (touch, keys, paste, font), `wb-console-session.ts`, `wb-desk-folds.ts` and `wb-geometry.ts`;
 the dormancy watch and the GPU budget are `wb-console-gpu.ts`. Each is tested
 in `ui-tests/<module>.test.mjs`, and the rules that need a whole console in
 `ui-tests/wb-console.test.mjs`. The browser

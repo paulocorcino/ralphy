@@ -69,10 +69,11 @@ const PROMPT_GH_ISSUE_VIEW: usize = 20;
 /// `modals` (#621); 714 since the canvas tabs, the slot, the split and the
 /// tab menu moved to the Alpine store `tabs` (#621); 347 since `wire()` and
 /// the icon directive moved to `wb-wire.ts` and `wb-icon.ts` (#621); 344
-/// since the change count moved to the Alpine store `checkouts` (#621).
+/// since the change count moved to the Alpine store `checkouts` (#621); 339
+/// since the phone query moved to `wb-viewport.ts`.
 /// Its shell-only types are in `wb-shell-types.d.ts` and it imports them on
 /// one line (#653).
-const APP_TS_LINES: usize = 344;
+const APP_TS_LINES: usize = 339;
 /// Lines of `crates/ralphy-daemon/assets/ui/wb-console.ts`, the console
 /// factory (ADR-0073 D8, which starts this ratchet with the first fold move).
 /// 5842 since ADR-0075 phase 5 moved its pure folds, its GPU budget and its
