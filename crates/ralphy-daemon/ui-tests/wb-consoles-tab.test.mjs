@@ -312,6 +312,52 @@ test("every shell path that paints the columns asks to write the maximize", () =
   }
 });
 
+// A phone paints one console (cap 1), so the list there is always full: a
+// row swaps its console into the maximize, and a console in a detached fence
+// cannot come in (#599). Wider, a row opens a column.
+test("on a phone a row of the list switches the maximized console; wider it opens a column", () => {
+  const { scope: state, window } = loadComponent("wbColumns", { magics: { $nextTick: () => {} } });
+  const paints = [];
+  const realConsole = globalThis.WBConsole;
+  globalThis.WBConsole = {
+    ...window.WBConsole,
+    applyColumns: (painted, opts) => paints.push([painted.map((p) => p.id), opts.unmax]),
+    columnRoster: () => ({
+      rows: [{ id: "a", agent: "claude", kind: "agent" }, { id: "b", agent: "claude", kind: "agent" }],
+      fences: [{ id: "f", name: "F" }],
+      membership: {},
+      detached: { f: [{ id: "d", agent: "claude", kind: "agent" }] },
+    }),
+    columnMeasure: () => ({ viewport: 1200 }),
+    dropClosedElsewhere() {},
+    focusColumn() {},
+    focusedId: () => null,
+  };
+  const rows = () => Object.fromEntries(state.columnGroups.flatMap((g) => g.rows).map((r) => [r.id, r]));
+  try {
+    state.paintColumns = () => {};
+    state.columnCap = () => 1;
+    state.toggleColumnMenu("a", { bottom: 0, right: 300 });
+    assert.equal(state.columnSwitch, true);
+    const { b, d } = rows();
+    assert.deepEqual([state.columnRowOff(b), state.columnRowTip(b)], [false, ""], "a console on the stage can come in");
+    assert.equal(state.columnRowOff(d), true, "a console in a detached fence cannot");
+    state.pickColumn("b");
+    assert.deepEqual(paints, [[["b"], "a"]], "b takes the maximize from a");
+    assert.deepEqual([state.columns, state.columnMenu], [[], false], "no column opens, and the list closes");
+
+    paints.length = 0;
+    state.columnCap = () => 3;
+    state.toggleColumnMenu("a", { bottom: 0, right: 300 });
+    assert.equal(state.columnSwitch, false);
+    assert.equal(state.columnRowOff(rows().b), false);
+    state.pickColumn("b");
+    assert.deepEqual(state.columns, [["a"], ["b"]], "wider, b opens a column beside a");
+  } finally {
+    globalThis.WBConsole = realConsole;
+  }
+});
+
 // The two components share nothing but the event below; each owns its names.
 for (const name of ["wbConsoleMenus", "wbColumns"]) {
   test(`${name} lists only shell() names in uses, and its members left shell()`, () => {

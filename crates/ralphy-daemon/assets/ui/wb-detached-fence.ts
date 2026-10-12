@@ -117,7 +117,7 @@ export function wireDetachedFence(window: Window, document: Document) {
   const capNow = () => WBColumns.cap(WBConsole.columnMeasure().viewport, WBConsole.PHONE_MAX_WIDTH);
   const paintGrid = (g: Grid, opts?: { unmax?: string | null; raise?: boolean }) => {
     const cap = WBColumns.flat(g).length >= 2 ? capNow() : 1;
-    WBConsole.applyColumns(WBColumns.painted(g, cap), { cap, unmax: null, raise: false, ...opts });
+    WBConsole.applyColumns(WBColumns.painted(g, cap), { unmax: null, raise: false, ...opts });
   };
   function openColumns() {
     const all = WBColumns.fromRects(consoles().map((w) => ({ id: w._deskId, rect: WBConsole.restoreRect(w) })));

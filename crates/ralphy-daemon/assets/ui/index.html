@@ -955,10 +955,11 @@
                button that opened it. Rows stay `.column-item`, a class of their
                own, so queries scoped to the other menus stay inert. The
                Right | Down pair on top decides where a row opens (rows
-               amendment); the swap icon ignores it. -->
+               amendment); the swap icon ignores it. On a phone (Switch) a
+               row swaps, and the pair and the swap icon are hidden. -->
           <div class="dropdown column-menu" x-show="columnMenu" @click.outside="columnMenu = false" x-cloak
                :style="`top: ${columnMenuAt.top}px; right: ${columnMenuAt.right}px; max-width: ${columnMenuAt.maxWidth}px; max-height: ${columnMenuAt.maxHeight}px`">
-            <div class="column-dir" role="group" aria-label="Where the console opens">
+            <div class="column-dir" role="group" aria-label="Where the console opens" x-show="!columnSwitch">
               <button type="button" class="column-dir-btn" data-dir="right" :aria-pressed="columnDir === 'right'"
                       :class="{ on: columnDir === 'right' }" @click="setColumnDir('right')">
                 <i class="bi bi-arrow-right"></i><span>Right</span>
@@ -980,17 +981,21 @@
                     <span class="column-group-name" x-text="g.fence?.name"></span>
                   </div>
                   <!-- The row opens a new column; the icon beside it swaps the
-                       console into the column that opened the list. -->
-                  <template x-for="r in g.rows" :key="r.id">
+                       console into the column that opened the list. On a
+                       phone the row swaps and the icon is hidden. The key
+                       holds the mode: MEASURED (Alpine 3.14.1, Chromium), a
+                       row kept under the same key across a mode change showed
+                       the previous list's values until the next open. -->
+                  <template x-for="r in g.rows" :key="(columnSwitch ? 'switch ' : '') + r.id">
                     <div class="column-row">
-                      <button class="column-item" :disabled="!r.enabled" :title="r.reason || ''"
-                              :data-id="r.id" @click="openColumn(r.id)">
+                      <button class="column-item" :disabled="columnRowOff(r)" :title="columnRowTip(r)"
+                              :data-id="r.id" @click="pickColumn(r.id)">
                         <i class="bi bi-terminal"></i>
                         <span class="row-name" x-text="columnRowLabel(r)"></span>
                         <span class="session-state" :class="r.state" x-show="r.state" :title="window.WBConsole?.agentStateTitle(r.state)"></span>
                         <span class="row-off" x-show="!r.running">not running</span>
                       </button>
-                      <button class="column-swap" :disabled="!r.swappable" :data-id="r.id"
+                      <button class="column-swap" :disabled="!r.swappable" :data-id="r.id" x-show="!columnSwitch"
                               title="Swap into this column" aria-label="Swap into this column"
                               @click="swapColumn(r.id)">
                         <i class="bi bi-arrow-down-up"></i>
