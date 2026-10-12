@@ -170,7 +170,7 @@ body.side-collapsed {
   -webkit-user-select: text;
   user-select: text;
 }
-/* On a phone (app.js `PHONE_QUERY`) the sidebar is an overlay, not a track: a
+/* On a phone (wb-viewport.ts `PHONE_QUERY`) the sidebar is an overlay, not a track: a
    300px column left a 390px portrait screen 42px of canvas. It floats over the
    canvas like the Runs panel, opens closed, and a tap on the canvas closes it.
    This block precedes the phone bleed so `body.console-max` still wins. */

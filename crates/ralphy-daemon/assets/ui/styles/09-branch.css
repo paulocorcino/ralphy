@@ -219,6 +219,20 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+.branch-item.held {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.branch-item.held:hover {
+  background: none;
+}
+.branch-item.held .branch-tag {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .branch-item.create .bi {
   color: var(--console-text);
 }

@@ -83,6 +83,20 @@ impl WorktreeSettings {
     }
 }
 
+/// How many run folders a repo keeps (`runs.keep`): `None` means
+/// [`crate::DEFAULT_RUNS_KEEP`], `Some(0)` keeps every folder.
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RunsSettings {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keep: Option<u64>,
+}
+
+impl RunsSettings {
+    pub fn is_empty(&self) -> bool {
+        self.keep.is_none()
+    }
+}
+
 /// How the workbench reads a file that is neither BOM-marked, UTF-16-shaped
 /// nor valid UTF-8 (`files.encoding`, ADR-0036 amendment 2026-09-22): a WHATWG
 /// encoding label, decoded by the daemon, `None` → `windows-1252`. Validated
@@ -140,6 +154,10 @@ pub struct Settings {
     /// empty so a saved file keeps its pre-carry-over shape.
     #[serde(default, skip_serializing_if = "WorktreeSettings::is_empty")]
     pub worktree: WorktreeSettings,
+    /// Run folder retention (`runs.keep`). Omitted when unset so a saved file
+    /// keeps its shape.
+    #[serde(default, skip_serializing_if = "RunsSettings::is_empty")]
+    pub runs: RunsSettings,
     /// The workbench's fallback text encoding (`files.encoding`). Omitted when
     /// unset so a saved file keeps its shape.
     #[serde(default, skip_serializing_if = "FilesSettings::is_empty")]

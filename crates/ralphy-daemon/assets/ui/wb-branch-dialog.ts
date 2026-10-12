@@ -35,6 +35,9 @@ export function wbBranchDialog() {
       primaryBranch: "",
       dirty: false,
       checkoutDirty: false,
+      // Branch name -> the worktree that holds it (from `branch.list`; an
+      // older peer sends none).
+      worktrees: {} as Record<string, string>,
     },
     // A `worktree.remove` in flight, per repo ref: the chip's menu greys the
     // row and a second click is ignored until the re-read lands.
@@ -63,6 +66,7 @@ export function wbBranchDialog() {
         // The dirty warning is about the tree the switch will hit (#407);
         // `dirty` stays the primary's for its picker row.
         checkoutDirty: wt ? wt.dirty === true : !!p.dirty,
+        worktrees: {},
       };
       this.branchOpen = true;
       this.loadBranches(ref);
@@ -93,6 +97,7 @@ export function wbBranchDialog() {
         const data = reply.branches || {};
         if (Array.isArray(data.branches)) this.branchModal.branches = data.branches;
         if (data.current) this.branchModal.current = data.current;
+        this.branchModal.worktrees = data.worktrees || {};
       } catch {
         if (this.branchModal.slug === slug) {
           this.branchModal.branches = [];
@@ -134,17 +139,27 @@ export function wbBranchDialog() {
       return !this.branchModal.branches.some((b) => b.toLowerCase() === name.toLowerCase());
     },
 
+    // The path of the other worktree that has `name` checked out, or "". The
+    // current branch is never held: this tree has it.
+    branchHeldBy(name: string) {
+      if (name === this.branchModal.current) return "";
+      return this.branchModal.worktrees[name] || "";
+    },
+
     // Enter = act on the top match, else create the typed branch (quick-pick).
+    // A held top match does nothing: it cannot be switched to.
     branchEnter() {
       const list = this.branchList();
-      if (list.length) this.switchBranch(list[0]);
-      else if (this.canCreateBranch()) this.createBranch();
+      if (list.length) {
+        if (!this.branchHeldBy(list[0])) this.switchBranch(list[0]);
+      } else if (this.canCreateBranch()) this.createBranch();
     },
 
     // Under a selected worktree (#407) the act lands on THAT tree's HEAD:
     // `p.branch` is the primary's and must not move, so no optimistic update —
     // the chip converges from `_mutateBranch`'s forced `worktree.list` re-read.
     switchBranch(name: string) {
+      if (this.branchHeldBy(name)) return;
       if (this.$store.connection.writeLocked()) {
         this.$store.modals.flash(this.$store.connection.writeLockReason());
         this.closeBranchModal();

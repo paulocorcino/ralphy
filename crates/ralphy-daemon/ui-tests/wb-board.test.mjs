@@ -91,7 +91,7 @@ test("every name the markup of wbBoard reads is its own or in its uses list", ()
 test("nothing outside the board element names its state", () => {
   const start = HTML.indexOf('x-data="wbBoard"');
   const outside = withoutComments(HTML.slice(0, start) + HTML.slice(HTML.indexOf("<!-- ===", start)));
-  for (const name of ["kanbanSel", "openIssue", "selectedIssue", "kanbanColumns", "boardError", "planModal", "openPlanModal", "discardPlan", "toggleLabel", "labelMenuOpen", "labelsLocked", "issueRunning"]) {
+  for (const name of ["kanbanSel", "openIssue", "selectedIssue", "kanbanColumns", "planModal", "openPlanModal", "discardPlan", "toggleLabel", "labelMenuOpen", "labelsLocked", "issueRunning"]) {
     assert.doesNotMatch(outside, new RegExp(`\\b${name}\\b`), name);
   }
 });
@@ -113,20 +113,6 @@ test("each workbench event reaches the board", () => {
   assert.deepEqual(calls, ["refresh:visible", "loadBoard"]);
   fire("workbench:issue-open", { issue: 12 });
   assert.deepEqual(calls, ["refresh:visible", "loadBoard", "open:12"]);
-});
-
-test("the Spend view takes the titles the board already holds, and loads nothing", () => {
-  const { loaded, shell, board } = page();
-  const { scope: spend } = loadComponent("wbSpend", { from: loaded });
-  shell.$store.projects.setOpen("o/r");
-  board.loadBoard = () => assert.fail("the Spend view must not load the board");
-  // The board answers during the send, with the open project's issues only.
-  board.boardIssues = { "o/r": [{ number: 251, title: "the retry" }], "o/x": [{ number: 9, title: "other" }] };
-  loaded.window.WBSpend = { state: (view) => view };
-  assert.deepEqual(spend.spendView().issues, [{ number: 251, title: "the retry" }]);
-  // CONTROL: a board that holds nothing for the project gives no titles.
-  board.boardIssues = {};
-  assert.deepEqual(spend.spendView().issues, []);
 });
 
 test("opening the board reads it and drops the selection; closing it reads nothing", () => {
@@ -209,10 +195,10 @@ test("githubUrl resolves the OPEN project's remote, and refuses when it cannot",
 });
 
 test("issueBlockers resolves each blocker it can see and admits the ones it cannot", () => {
-  const { scope: own } = loadComponent("wbBoard");
+  const { scope: own, shell } = loadComponent("wbBoard");
   own.$store.projects.setOpen("owner/repo");
   // `projectIssues()` reads the BOARD's fold, not the run's issue list.
-  own.boardIssues = {
+  shell.$store.board.boardIssues = {
     "owner/repo": [
       { number: 10, title: "the open one", state: "open" },
       { number: 11, title: "the closed one", state: "closed" },
@@ -292,11 +278,11 @@ test("a failed board read after a good one keeps the cards, marked not current",
   ]);
   state.kanbanSel = null;
   await state.loadBoard();
-  assert.equal(state.boardIssues["o/r"].length, 1);
+  assert.equal(state.$store.board.boardIssues["o/r"].length, 1);
   await state.loadBoard();
-  assert.equal(state.boardIssues["o/r"].length, 1, "the cards stay");
-  assert.equal(state.boardRead["o/r"].current, false);
-  assert.match(state.boardError["o/r"], /Not current/);
+  assert.equal(state.$store.board.boardIssues["o/r"].length, 1, "the cards stay");
+  assert.equal(state.$store.board.boardRead["o/r"].current, false);
+  assert.match(state.$store.board.boardError["o/r"], /Not current/);
 });
 
 // A label name is repo data: one named like an Object member (`constructor`)
@@ -319,7 +305,8 @@ test("moving a board card is locked while the board is not current", async () =>
     { status: "error", message: "gh not authed" },
   ]);
   state.kanbanSel = null;
-  state.$store.runs.runsByProject["o/r"] = [];
+  // Set-up writes go to the raw store: the component's view refuses them.
+  globalThis.window.Alpine.store("runs").runsByProject["o/r"] = [];
   await state.loadBoard();
   assert.equal(state.labelsLocked(), false);
   await state.loadBoard();

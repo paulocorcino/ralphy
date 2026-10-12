@@ -12,6 +12,7 @@
    `detached-fence.html`).
    --------------------------------------------------------------------------- */
 import type { Point, Tap } from "./wb-types.d.ts";
+import { PHONE_MAX_WIDTH } from "./wb-viewport.ts";
 
 // The engine, not the brand: WebKit answers "Apple Computer, Inc." in every
 // browser on iPadOS; Chromium "Google Inc."; Firefox "". Pure so the string
@@ -293,9 +294,9 @@ export function holdMoveReport(mode: string, hasSelection: boolean, buttons: num
 // THE PHONE BLEED. Fullscreen is withheld on WebKit (`fullscreenOffered`), so
 // on a phone maximize is the ceiling and the chrome folds away below this
 // width: `syncMaxLock` writes `body.console-max`, 01-base.css gates on the
-// same number. Width, not pointer: an iPad keeps its chrome. 560px is the
-// workbench's phone breakpoint (04-canvas.css, 11-appended.css).
-export const PHONE_MAX_WIDTH = 560;
+// same number. Width, not pointer: an iPad keeps its chrome. The breakpoint's
+// owner is `wb-viewport.ts`.
+export { PHONE_MAX_WIDTH };
 export function phoneBleed(maxed: boolean, viewportWidth: number) {
   return !!maxed && Number.isFinite(viewportWidth) && viewportWidth <= PHONE_MAX_WIDTH;
 }

@@ -32,10 +32,14 @@ const POLL: Duration = Duration::from_millis(100);
 /// that does not answer yet shows no socket (ADR-0067 amendment M3).
 const START_TIMEOUT: Duration = Duration::from_secs(10);
 
-pub(crate) fn restart() -> Result<()> {
+pub(crate) fn restart(yes: bool) -> Result<()> {
     let exe = current_exe()?;
     let store = ralphy_daemon::auth::store_dir()?;
     let args = effective(&ralphy_daemon::pidfile::read_args_in(&store));
+    let port = super::describe::port_from_args(&args);
+    if !super::confirm::confirm_with_daemon(&store, port, yes)? {
+        return Ok(());
+    }
     if restarted_by_systemd(&store)? {
         println!("restarted {UNIT_NAME}");
     } else if restarted_by_launchd(&store)? {
@@ -49,7 +53,6 @@ pub(crate) fn restart() -> Result<()> {
         spawn_detached(&exe, &args, &store)?;
         println!("started {} {}", readable(&exe), args.join(" "));
     }
-    let port = super::describe::port_from_args(&args);
     if !started(
         || super::describe::answers(&store, port),
         START_TIMEOUT,

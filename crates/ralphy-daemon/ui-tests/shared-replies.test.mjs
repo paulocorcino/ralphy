@@ -89,9 +89,9 @@ test("issue.show: the issue view takes the body and comments of the reply", asyn
   loaded.state.$store.modals.flash = () => {};
   state.$store.projects.setOpen("o/r");
   state.kanbanSel = reply.issue.number;
-  state.boardIssues["o/r"] = [state.boardRowToIssue({ number: reply.issue.number })];
+  loaded.state.$store.board.boardIssues["o/r"] = [state.boardRowToIssue({ number: reply.issue.number })];
   await state.loadIssueDetail(reply.issue.number);
-  const row = state.boardIssues["o/r"][0];
+  const row = loaded.state.$store.board.boardIssues["o/r"][0];
   assert.equal(state.issueError, null);
   assert.equal(row.body, reply.issue.body);
   assert.deepEqual(row.comments, reply.issue.comments);

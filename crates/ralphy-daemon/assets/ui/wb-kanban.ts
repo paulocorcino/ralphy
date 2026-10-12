@@ -96,7 +96,7 @@ export type Issue = {
 
 export const WBKanban = {
   // GitHub label vocabulary → { color, short }. This is only the FALLBACK seed:
-  // `boardLabels[slug]` (the repo's live `gh label list`) wins when the daemon
+  // `$store.board.boardLabels[slug]` (the repo's live `gh label list`) wins when the daemon
   // answers, so the seed matters for a label the API returns without a
   // colour. Ralphy's own labels are kept in step with
   // `ralphy_label_specs` (ralphy-core/src/github/labels.rs) and grouped by its

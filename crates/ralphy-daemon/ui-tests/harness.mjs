@@ -36,6 +36,7 @@ import { wbLogin } from "../assets/ui/wb-login.ts";
 import { projectsStore } from "../assets/ui/wb-projects-store.ts";
 import { connectionStore } from "../assets/ui/wb-connection-store.ts";
 import { runsStore } from "../assets/ui/wb-runs-store.ts";
+import { boardStore } from "../assets/ui/wb-board-store.ts";
 import { checkoutsStore } from "../assets/ui/wb-checkouts-store.ts";
 import { releaseStore } from "../assets/ui/wb-release-store.ts";
 import { modalsStore } from "../assets/ui/wb-modals-store.ts";
@@ -71,6 +72,7 @@ export const STORES = {
   projects: projectsStore,
   connection: connectionStore,
   runs: runsStore,
+  board: boardStore,
   checkouts: checkoutsStore,
   release: releaseStore,
   tabs: tabsStore,
@@ -262,7 +264,8 @@ export function loadShell(opts = {}) {
 // the page's globals on the real `window` and `document`, so both are set to
 // this page's stubs: the last component built owns them, and node --test
 // runs each file in its own process. `opts.magics` gives the `$` magics
-// (`$nextTick`) that Alpine would add; `$store` is the page's stores.
+// (`$nextTick`) that Alpine would add; `$store` is a view of the page's
+// stores (`storeView`) that refuses a write from the component.
 // `opts.from` is a `loadShell()` result to nest the component in, so several
 // components share one page; without it the other `opts` go to a new
 // `loadShell`.
@@ -279,7 +282,7 @@ export function loadComponent(alpineName, opts = {}) {
   for (const name of uses) {
     if (!(name in shell)) throw new Error(`${alpineName} lists ${name} in uses, and shell() has no such member`);
   }
-  const magics = Object.assign({ $store: shell.$store }, opts.magics);
+  const magics = Object.assign({ $store: storeView(alpineName, shell.$store) }, opts.magics);
   const own = (k) => Object.prototype.hasOwnProperty.call(data, k);
 
   // Alpine's merged scope: the component first, then `shell()`.
@@ -343,6 +346,64 @@ function readOnly(alpineName, value, path) {
     deleteProperty: (_, k) => refuse(k),
     defineProperty: (_, k) => refuse(k),
   });
+}
+
+// The page's stores as a component sees them: ADR-0073 D4 lets only a
+// store's own methods change its state. A read gives the value; a set, a
+// delete or a define at any depth throws a TypeError that names the component
+// and the path. A store's own method runs on the raw store, read again on each
+// call because tests replace methods, with each argument that is a view (or a
+// raw array of views) given back as the raw value. A function inside a nested
+// value (`Array.prototype.push`) runs with the view as `this`, so its write
+// throws. Only plain objects and arrays are wrapped: a Map, Set, Promise, Date
+// or DOM value comes back raw, because their methods refuse a Proxy receiver,
+// so a write into one is not caught. `loadShell().state.$store` and
+// `Alpine.store()` stay raw, for tests and for store-to-store calls.
+const viewTargets = new WeakMap();
+
+function unwrapView(value) {
+  if (viewTargets.has(value)) return viewTargets.get(value);
+  if (Array.isArray(value)) return value.map((v) => (viewTargets.has(v) ? viewTargets.get(v) : v));
+  return value;
+}
+
+function storeView(alpineName, stores) {
+  const views = new WeakMap();
+  const wrappable = (v) => {
+    if (v === null || typeof v !== "object") return false;
+    if (Array.isArray(v)) return true;
+    const proto = Object.getPrototypeOf(v);
+    return proto === Object.prototype || proto === null;
+  };
+  // `depth` 0 is the map of stores, 1 a store, 2 and more a value inside one.
+  const wrap = (value, path, depth) => {
+    if (!wrappable(value)) return value;
+    if (views.has(value)) return views.get(value);
+    const refuse = (k) => {
+      const at = path ? `${path}.${String(k)}` : String(k);
+      throw new TypeError(`${alpineName} writes $store.${at}: only the store's own methods change it`);
+    };
+    const view = new Proxy(value, {
+      get(target, k) {
+        const v = Reflect.get(target, k);
+        if (typeof k === "symbol") return v;
+        const d = Reflect.getOwnPropertyDescriptor(target, k);
+        if (d && !d.configurable && !d.writable) return v;
+        const at = path ? `${path}.${k}` : k;
+        if (depth === 1 && typeof v === "function" && d && "value" in d) {
+          return (...args) => wrap(Reflect.get(target, k).apply(target, args.map(unwrapView)), `${at}()`, 2);
+        }
+        return wrap(v, at, depth + 1);
+      },
+      set: (_, k) => refuse(k),
+      deleteProperty: (_, k) => refuse(k),
+      defineProperty: (_, k) => refuse(k),
+    });
+    views.set(value, view);
+    viewTargets.set(view, value);
+    return view;
+  };
+  return wrap(stores, "", 0);
 }
 
 // The text from the element that binds `x-data="<alpineName>"` to the close of

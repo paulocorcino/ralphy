@@ -148,11 +148,13 @@ with the chain in `cause`. The daemon writes the chain to its log. The browser
 never receives an anyhow chain.
 
 **D12. A daemon reply carries a failure in its own `failure` field:
-`{domain, code, details, text}`.** The workbench decides on `code` and shows
+`{domain, code, details, text}`.** A daemon reply is every path that
+sends error text to the browser: a JSON reply, a plain-text HTTP body, the
+`session-end` frame of a console, and an error frame of `/ws/tree`. The workbench decides on `code` and shows
 `text`. A code it does not know still shows a correct text, so a tab that is
 older than its daemon keeps working (ADR-0070 D6). Text that only the browser
 knows (`transport`, a failed `localStorage`) stays in TypeScript, under
-ADR-0065.
+ADR-0065, outside the `CAUSE` table.
 
 **D13. In the terminal, a failure prints its cause first, then its remedy,
 then the anyhow chain as today.**

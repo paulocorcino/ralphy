@@ -134,7 +134,7 @@ jobs:
       # nextest schedules every test across one pool instead. It does not run
       # doctests, hence the separate `--doc` step below.
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2.87.20
+        uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
         with:
           tool: cargo-nextest
 

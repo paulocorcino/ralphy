@@ -15,7 +15,7 @@
 import { component } from "./wb-alpine.ts";
 import { apiFetch } from "./wb-api.ts";
 import { sendWindow } from "./wb-events.ts";
-import type { BoardIssue, LedgerMissing, LedgerRecord, SpendDoc } from "./wb-shell-types.d.ts";
+import type { LedgerMissing, LedgerRecord, SpendDoc } from "./wb-shell-types.d.ts";
 
 export function wbSpend() {
   // Every `shell()` member this component's code or markup reads or calls.
@@ -32,10 +32,8 @@ export function wbSpend() {
     // a project drops the pane to its empty state.
     spendView() {
       // Titles ride whatever the board ALREADY holds; never a load
-      // (`loadBoard` spawns a throttled tracker CLI). The board (wb-board.ts)
-      // fills `issues`.
-      const board = { issues: [] as BoardIssue[] };
-      sendWindow(window, "workbench:board-issues", board);
+      // (`loadBoard` spawns a throttled tracker CLI). They are read from the
+      // store `board`.
       return window.WBSpend.state({
         project: this.$store.projects.openSlug,
         loading: this.spend.loading,
@@ -43,7 +41,7 @@ export function wbSpend() {
         // A document for a project no longer open is stale by definition.
         doc: this.spend.slug === this.$store.projects.openSlug ? this.spend.doc : null,
         period: this.spendPeriod,
-        issues: board.issues,
+        issues: this.$store.board.openIssues(),
       });
     },
     // The window is a server-side filter: assign, then re-read.

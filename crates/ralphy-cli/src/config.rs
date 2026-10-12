@@ -111,6 +111,7 @@ const SUPPORTED_KEYS: &[&str] = &[
     "verify.command",
     "verify.require_verify_gate",
     "files.encoding",
+    "runs.keep",
     "events.url",
     "events.token",
     "claude.plan_model",
@@ -144,7 +145,7 @@ checks. verify.require_verify_gate=true leaves an unchecked issue open for a \
 person instead of closing it. \
 queue.trust_all_comments=true lets a run read every issue comment; by default \
 it reads only comments from owners, members and collaborators. \
-files.encoding is the encoding the workbench uses for a file that is not UTF-8 \
+runs.keep is how many run folders a repo keeps (default 50; 0 keeps every folder). files.encoding is the encoding the workbench uses for a file that is not UTF-8 \
 or UTF-16, for example windows-1252 (the default) or shift_jis. \
 The model, effort and time defaults apply only to Claude today; OpenCode's model \
 is opencode.model. \
@@ -262,6 +263,12 @@ pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
         }
         "base_branch" => s.base_branch = Some(value.to_owned()),
         "files.encoding" => s.files.encoding = Some(value.to_owned()),
+        "runs.keep" => {
+            let n = value.parse::<u64>().map_err(|_| {
+                anyhow!("runs.keep must be a non-negative integer (0 keeps every run folder), got '{value}'")
+            })?;
+            s.runs.keep = Some(n);
+        }
         "queue.assignee" => s.queue.assignee = Some(value.to_owned()),
         "queue.trust_all_comments" => {
             let b = value.parse::<bool>().map_err(|_| {
@@ -401,6 +408,7 @@ pub fn unset(ws: &Workspace, key: &str) -> Result<()> {
         "verify.require_verify_gate" => s.verify.require_verify_gate = None,
         "base_branch" => s.base_branch = None,
         "files.encoding" => s.files.encoding = None,
+        "runs.keep" => s.runs.keep = None,
         "queue.assignee" => s.queue.assignee = None,
         "queue.trust_all_comments" => s.queue.trust_all_comments = None,
         "branch_mode" => s.branch_mode = None,
@@ -450,6 +458,10 @@ pub fn get(ws: &Workspace, json: bool) -> Result<()> {
     print_str("base_branch", s.base_branch);
     print_str("branch_mode", s.branch_mode);
     print_str("files.encoding", s.files.encoding);
+    match s.runs.keep {
+        Some(n) => println!("runs.keep = {n}"),
+        None => println!("runs.keep: not set"),
+    }
     match s.remote_control {
         Some(b) => println!("remote_control = {b}"),
         None => println!("remote_control: not set"),
@@ -525,6 +537,7 @@ fn config_json(ws: &Workspace) -> Result<serde_json::Value> {
         "verify.command": s.verify.command,
         "verify.require_verify_gate": s.verify.require_verify_gate,
         "files.encoding": s.files.encoding,
+        "runs.keep": s.runs.keep,
         "events.url": entry.and_then(|e| e.url.clone()),
         "events.token": masked_token,
         "claude.plan_model": claude.plan_model,

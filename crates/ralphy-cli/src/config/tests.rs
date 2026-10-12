@@ -252,7 +252,7 @@ fn config_keys_round_trip_through_set_and_unset() {
     // (key, value, read the stored value as Debug text, the Debug text once
     // set, a refused value and the words of its refusal)
     type Row<'a> = (&'a str, &'a str, Read, &'a str, Option<(&'a str, &'a str)>);
-    let rows: [Row; 5] = [
+    let rows: [Row; 6] = [
         (
             "remote_control",
             "true",
@@ -291,6 +291,13 @@ fn config_keys_round_trip_through_set_and_unset() {
             "Some(\"cargo test\")",
             None,
         ),
+        (
+            "runs.keep",
+            "7",
+            |s| format!("{:?}", s.runs.keep),
+            "Some(7)",
+            None,
+        ),
     ];
     for (key, value, read, stored, refused) in rows {
         let (ws, dir) = tmp_ws(&key.replace('.', "-"));
@@ -308,6 +315,21 @@ fn config_keys_round_trip_through_set_and_unset() {
     let (ws, dir) = tmp_ws("unknown-key");
     let err = set(&ws, "bad.key", "x").unwrap_err();
     assert!(err.to_string().contains("unknown config key"), "{err}");
+    fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn runs_keep_refuses_a_value_that_is_not_a_non_negative_integer() {
+    let (ws, dir) = tmp_ws("runs-keep-refused");
+    for bad in ["-1", "abc"] {
+        let err = set(&ws, "runs.keep", bad).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("runs.keep must be a non-negative integer"),
+            "{bad}: {err}"
+        );
+    }
+    assert_eq!(Settings::load(&ws).unwrap().runs.keep, None);
     fs::remove_dir_all(&dir).ok();
 }
 
@@ -480,6 +502,7 @@ fn every_registry_key_is_handled_by_all_subcommands() {
             "verify.require_verify_gate" | "queue.trust_all_comments" => "true",
             "remote_control" => "true",
             "claude.max_minutes_per_issue" => "45",
+            "runs.keep" => "50",
             "claude.console_name" => "true",
             // Validated against effort vocabularies, so `x` is refused.
             "claude.plan_effort"
