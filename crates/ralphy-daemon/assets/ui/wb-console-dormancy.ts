@@ -183,6 +183,8 @@ export function createDormancy(deps: DormancyDeps) {
       const covered = isCovered(win);
       if (covered === !!win._covered) continue;
       win._covered = covered;
+      // The size it kept while covered goes now, on the next frame.
+      if (!covered) win._term?.uncovered();
       applyDormancy(win);
     }
   }

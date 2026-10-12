@@ -32,7 +32,7 @@ fn push_capped(ring: &mut std::collections::VecDeque<u8>, bytes: &[u8], cap: usi
 /// structure that satisfies the "chatty session cannot grow memory unboundedly"
 /// AC; a byte cap may truncate an escape sequence at the replay seam, which
 /// xterm.js resynchronizes on the live stream that follows.
-const SCROLLBACK_CAP_BYTES: usize = 256 * 1024;
+const SCROLLBACK_CAP_BYTES: usize = 512 * 1024;
 
 /// Broadcast capacity (chunks) for the live fan-out. Generous so a briefly slow
 /// attach only `Lagged`s (the bridge tolerates a gap) rather than blocking the pump.

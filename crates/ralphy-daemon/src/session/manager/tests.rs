@@ -16,6 +16,13 @@ fn scrollback_ring_is_bounded() {
     );
 }
 
+/// The replay of a reattach is the ring; a cap of 256 KiB gave 407 of 600
+/// measured reattaches a full ring (#689).
+#[test]
+fn scrollback_cap_is_512_kib() {
+    assert_eq!(SCROLLBACK_CAP_BYTES, 512 * 1024);
+}
+
 /// The writer slot and the watcher list are separate registers: a watcher may
 /// never make the slot LOOK occupied (which would refuse an honest attach with
 /// `409`), and it must be reachable while the slot IS held (which is the whole

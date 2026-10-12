@@ -31,7 +31,6 @@ const { barKey, applyCtrlLatch, isTerminalReply } = WBConsoleInput;
 
 const {
   encodeTerminal,
-  encodeResize,
   encodeDetach,
   endNotice,
   reconnectDecision,
@@ -90,6 +89,10 @@ export type TerminalOpts = SessionRequest & {
   onEnded?: (announced: string | null, refusal: string | null) => void;
   // The baton came back to this window.
   onResume?: () => void;
+  // Whether a full-bleed console covers this window, and whether it has the
+  // focus: the size rule of wb-console-fit.ts.
+  covered?: () => boolean;
+  focused?: () => boolean;
   // The peer's fleet group, or null for a local project.
   peerGroup?: () => Group | null;
   onPeerHold?: (group: Group | null) => void;
@@ -163,7 +166,15 @@ export function createTerminal(deps: TerminalDeps) {
     // The keyboard and mouse rules: wb-console-press.ts.
     wirePress({ term, body, window, writeClipboard });
     // Refit whenever THIS window's body changes size, and send the size: wb-console-fit.ts.
-    const { fit, dispose: stopFit } = createFit({ term, body, fitAddon, socket: () => ws });
+    const sizing = createFit({
+      term,
+      body,
+      fitAddon,
+      socket: () => ws,
+      covered: opts.covered,
+      focused: opts.focused,
+    });
+    const { fit, dispose: stopFit } = sizing;
 
     let currentSessionId = opts.id ?? null;
     let currentRepo = opts.repo ?? null;
@@ -285,8 +296,8 @@ export function createTerminal(deps: TerminalDeps) {
         if (watching) {
           term.write("\r\n[read-only: another window has control]\r\n");
         }
-        fit.fit();
-        ws!.send(encodeResize(term.rows, term.cols));
+        // Never xterm's default 80×24: only a size the body measured.
+        sizing.opened();
       };
       ws.onmessage = (ev: MessageEvent) => {
         const event = readSocketEvent(new Uint8Array(ev.data));
@@ -418,6 +429,8 @@ export function createTerminal(deps: TerminalDeps) {
     return {
       term,
       fit,
+      // The cover over this window went (`refreshCover`).
+      uncovered: sizing.uncovered,
       useGpu,
       dropGpu,
       get ws() {

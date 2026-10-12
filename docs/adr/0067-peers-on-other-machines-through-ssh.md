@@ -218,7 +218,7 @@ never a side effect of removal.
   mismatch is diagnosed as it is today, and the operator can install the local
   version from the add flow (Amendment 2026-09-29); the automatic peer update
   after a workbench update covers WSL peers only.
-- **Text in a console is capped.** A session keeps 256 KiB of output
+- **Text in a console is capped.** A session keeps 512 KiB of output
   (`session/manager.rs`); after a long disconnection, the operator sees only
   the end.
 - **Credentials are per host, permanently** (ADR-0052 Consequences), now for
@@ -297,7 +297,7 @@ header and removing: see there.
 | Event | The workbench | The host |
 |---|---|---|
 | The VPN drops | The group turns grey: the tunnel to that host closed, and it is reconnecting. `ssh` sees the drop in about 45 s (§2). | Runs, agent sessions and consoles continue. |
-| The VPN comes back | The group comes back when the tunnel reopens, with no action. | The operator attaches again; output past 256 KiB is lost from the screen, not from the work. |
+| The VPN comes back | The group comes back when the tunnel reopens, with no action. | The operator attaches again; output past 512 KiB is lost from the screen, not from the work. |
 | The local computer is off, then on | The local daemon starts at sign-in, reopens every tunnel, and the groups come back. | Nothing stopped. |
 | The host restarts | The group is grey until its daemon is up. | Linux: up at boot. macOS and Windows: after a sign-in (§8). |
 | The tunnel is open but the daemon does not answer | A different message: the tunnel is open and the daemon on the host does not answer. | The daemon is down; the operator starts it. |
@@ -376,7 +376,7 @@ wrong prediction is visible.
 2. **Detach and attach.** Start an agent session on the VPS, kill the local
    `ssh`, wait, start it again, attach.
    *Prediction:* the session is alive, and the output shown is at most the
-   last 256 KiB.
+   last 512 KiB.
 3. **Latency and connections.** Measure the `/api/fleet` probe (2 s timeout)
    and the tree poll through the tunnel, and count local TIME_WAIT sockets
    during a tree poll.

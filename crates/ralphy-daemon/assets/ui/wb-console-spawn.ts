@@ -214,6 +214,9 @@ export function createSpawn(deps: SpawnDeps) {
     // `win`, never a particular terminal.
     const termWiring: TerminalOpts = {
       ...termOpts,
+      // The size rule's inputs. `_covered` is the cover `refreshCover` keeps.
+      covered: () => win._covered === true,
+      focused: () => win.classList.contains("focused"),
       onCtrlLatch: (on) => {
         if (ctrlBtn) ctrlBtn.setAttribute("aria-pressed", on ? "true" : "false");
       },

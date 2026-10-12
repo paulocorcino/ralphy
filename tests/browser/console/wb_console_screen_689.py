@@ -3,15 +3,21 @@
 This is a measure, not a pass/fail check. It drives a REAL daemon on a scratch
 `RALPHY_DAEMON_DIR` (the operator's own desk and login policy are untouched)
 with `RALPHY_DAEMON_AGENT_OVERRIDE` set to `session_test_child`, and records
-what a console screen looks like in five situations. PORT 7530. Three plain
+what a console screen looks like in six situations. PORT 7530. Three plain
 consoles float at 680 px each in a 2400 px viewport.
 
 A  maximize swap: console 1 is maximized, then the maximize moves between
-   console 1 and console 2 five times. `floating_sizes` counts the PTY sizes
+   console 1 and console 2 five times. A move is one task, as a swap in the
+   columns is: the maximized console is restored, then the other one is
+   maximized. `floating_sizes` counts the PTY sizes
    (the child prints `SIZE <cols>x<rows>`) that are smaller than the maximized
    size, printed after the first maximize.
 B  slice columns: the same with columns. `columns_floating_sizes` counts the
    sizes smaller than the width of a column.
+F  uncover: console 1 is maximized and console 2, under it, gets a larger
+   font and asks for a fit, as the font setting does. `covered_sizes` counts the sizes console 2 printed while it
+   was covered; `uncover_sizes` counts the sizes it printed when console 1
+   was restored and the cover went.
 C  reconnect of the same terminal after `flood 600` (the page reattaches a
    socket and keeps its xterm): `reconnect`.
 D  wake: console 1 is covered until it sleeps, then uncovered, so it gets a
@@ -26,7 +32,9 @@ payload of that socket) and `traffic` (every field of the daemon's
 
 Arguments: `--label <name>` names the output
 `docs/plans/logs/689-measure-<label>.json` (default `latest`); `--assert <name>`
-(repeatable) names a fact that must hold. This stage defines no assert names.
+(repeatable) names a fact that must hold. `size` always holds: no console
+sent its floating size while another one covered it (`floating_sizes == 0`,
+`columns_floating_sizes == 0`, `covered_sizes == 0`, `uncover_sizes <= 1`).
 Exit 0: everything was measured. Exit 1: an asserted fact failed. Exit 2: a
 scenario could not run.
 
@@ -65,7 +73,14 @@ MOVES = 5
 FLOOD_KIB = 600
 IDS = ["w-1", "w-2", "w-3"]
 # Names `--assert` accepts. Later stages add their own.
-ASSERTS: dict = {}
+ASSERTS: dict = {
+    "size": lambda f: f.get("floating_sizes") == 0
+    and f.get("columns_floating_sizes") == 0
+    and f.get("covered_sizes") == 0
+    and (f.get("uncover_sizes") or 0) <= 1,
+}
+# The asserts every run checks.
+DEFAULT_ASSERTS = ["size"]
 
 HELPERS = """() => {
   window.__W = (id) => [...document.querySelectorAll('#stage .session-window')].find((w) => w._deskId === id) || null;
@@ -290,7 +305,12 @@ def scenario_a(page):
     before = sizes_now(page)
     press_max(page, "w-1")
     for i in range(MOVES):
-        press_max(page, "w-2" if i % 2 == 0 else "w-1")
+        old, new = ("w-1", "w-2") if i % 2 == 0 else ("w-2", "w-1")
+        page.evaluate(
+            "([a, b]) => { __W(a).querySelector('.session-max').click(); __W(b).querySelector('.session-max').click(); }",
+            [old, new],
+        )
+        page.wait_for_timeout(1000)
     after = sizes_now(page)
     maximized_cols = max((s[0] for w in IDS for s in after[w][len(before[w]) :]), default=0)
     floating = floating_after(before, after, maximized_cols - 2)
@@ -316,6 +336,22 @@ def scenario_b(page):
     facts["columns_sizes"] = {w: [f"{c}x{r}" for c, r in after[w]] for w in IDS}
     facts["columns_floating_sizes"] = len(floating)
     restore_all(page)
+
+
+def scenario_f(page):
+    press_max(page, "w-1")
+    before = sizes_now(page)
+    font = page.evaluate("() => { const t = __W('w-2')._term; const f = t.term.options.fontSize;"
+                         " t.term.options.fontSize = f + 4; t.fit.fit(); return f; }")
+    page.wait_for_timeout(1000)
+    covered = sizes_now(page)
+    press_max(page, "w-1")
+    after = sizes_now(page)
+    facts["covered_sizes"] = len(covered["w-2"]) - len(before["w-2"])
+    facts["uncover_sizes"] = len(after["w-2"]) - len(covered["w-2"])
+    facts["uncover_trace"] = {w: [f"{c}x{r}" for c, r in after[w][len(before[w]) :]] for w in IDS}
+    page.evaluate("(f) => { const t = __W('w-2')._term; t.term.options.fontSize = f; t.fit.fit(); }", font)
+    page.wait_for_timeout(600)
 
 
 def type_line(page, wid, text):
@@ -476,6 +512,7 @@ def run(args):
             for name, step in (
                 ("A", lambda: scenario_a(page)),
                 ("B", lambda: scenario_b(page)),
+                ("F", lambda: scenario_f(page)),
                 ("C", lambda: scenario_c(page)),
             ):
                 try:
@@ -518,7 +555,8 @@ def main():
     if errors:
         print("could not run: " + "; ".join(errors), file=sys.stderr)
         sys.exit(2)
-    failed = [name for name in args.asserts if not ASSERTS[name](facts)]
+    names = DEFAULT_ASSERTS + [n for n in args.asserts if n not in DEFAULT_ASSERTS]
+    failed = [name for name in names if not ASSERTS[name](facts)]
     if failed:
         print("failed asserts: " + ", ".join(failed), file=sys.stderr)
         sys.exit(1)
