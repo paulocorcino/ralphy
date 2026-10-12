@@ -48,12 +48,18 @@ const CLIENT_CLOSED: &str = "client-closed";
 /// The command verb that opens every console socket, before any output.
 pub(crate) const SESSION_OPEN: &str = "session-open";
 
-/// The command verb a page sends just before it closes a console socket.
+/// The command verb a page sends just before it closes a console socket, or
+/// when it goes hidden.
 const DETACH: &str = "detach";
 
+/// The command verb a page sends when it is visible again after a `hidden`
+/// detach. Only the log reads it.
+const SHOWN: &str = "shown";
+
 /// Why the page closed a console socket, as it announced it in a `detach`
-/// command. Each of these is followed by a reattach that replays the
-/// scrollback, except `WindowClosed`.
+/// command. `Dormant` and `Reconnect` are followed by a reattach that replays
+/// the scrollback. `Hidden` does not close the socket: the page went hidden,
+/// and a browser that suspends it ends the socket without a word.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Leave {
     /// The console window went off the viewport and gave its terminal back.
@@ -63,6 +69,8 @@ pub(crate) enum Leave {
     Reconnect,
     /// The console window left this page.
     WindowClosed,
+    /// The page went hidden: a screen lock, an app switch, or a tab switch.
+    Hidden,
 }
 
 impl Leave {
@@ -71,12 +79,13 @@ impl Leave {
             Leave::Dormant => "dormant",
             Leave::Reconnect => "reconnect",
             Leave::WindowClosed => "window-closed",
+            Leave::Hidden => "hidden",
         }
     }
 
     /// The leave a `detach` command names; `None` for another verb or a reason
     /// this daemon does not know.
-    pub(crate) fn from_command(cmd: &Command) -> Option<Leave> {
+    fn from_command(cmd: &Command) -> Option<Leave> {
         if cmd.verb != DETACH {
             return None;
         }
@@ -84,6 +93,7 @@ impl Leave {
             "dormant" => Some(Leave::Dormant),
             "reconnect" => Some(Leave::Reconnect),
             "window-closed" => Some(Leave::WindowClosed),
+            "hidden" => Some(Leave::Hidden),
             _ => None,
         }
     }
@@ -286,8 +296,15 @@ impl Traffic {
         self.in_bytes += bytes as u64;
     }
 
-    pub(crate) fn client_left(&mut self, leave: Leave) {
-        self.left = Some(leave);
+    /// Read a command the page sent, for the log only: a `detach` names the
+    /// leave, and a `shown` takes back a `hidden` one. A later leave replaces
+    /// an earlier one.
+    pub(crate) fn client_command(&mut self, cmd: &Command) {
+        if let Some(leave) = Leave::from_command(cmd) {
+            self.left = Some(leave);
+        } else if cmd.verb == SHOWN && self.left == Some(Leave::Hidden) {
+            self.left = None;
+        }
     }
 
     /// The client sent a Close frame.
@@ -554,6 +571,8 @@ mod tests {
         assert_eq!(Leave::from_command(&reconnect), Some(Leave::Reconnect));
         let closed = command(r#"{"id":0,"verb":"detach","payload":{"reason":"window-closed"}}"#);
         assert_eq!(Leave::from_command(&closed), Some(Leave::WindowClosed));
+        let hidden = command(r#"{"id":0,"verb":"detach","payload":{"reason":"hidden"}}"#);
+        assert_eq!(Leave::from_command(&hidden), Some(Leave::Hidden));
         let unknown = command(r#"{"id":0,"verb":"detach","payload":{"reason":"bored"}}"#);
         assert_eq!(Leave::from_command(&unknown), None);
         let resize = command(r#"{"id":0,"verb":"resize","payload":{"reason":"dormant"}}"#);
@@ -570,9 +589,36 @@ mod tests {
         assert_eq!(t.end_label(None), "dropped");
         t.client_closed();
         assert_eq!(t.end_label(None), "client-closed");
-        t.client_left(Leave::Dormant);
+        t.client_command(&command(
+            r#"{"id":0,"verb":"detach","payload":{"reason":"dormant"}}"#,
+        ));
         assert_eq!(t.end_label(None), "dormant");
         assert_eq!(t.end_label(Some("taken-over")), "taken-over");
+    }
+
+    // The bytes `encodeDetach("hidden")` and `encodeShown` produce (their
+    // node test in wb-console-session.test.mjs).
+    const HIDDEN: &str = r#"{"id":0,"verb":"detach","payload":{"reason":"hidden"}}"#;
+    const SHOWN_AGAIN: &str = r#"{"id":0,"verb":"shown","payload":{}}"#;
+
+    #[test]
+    fn a_hidden_page_that_never_came_back_ends_hidden() {
+        let mut t = traffic(Instant::now());
+        t.client_command(&command(HIDDEN));
+        assert_eq!(t.end_label(None), "hidden");
+    }
+
+    #[test]
+    fn a_page_shown_again_clears_hidden_but_not_dormant() {
+        let mut t = traffic(Instant::now());
+        t.client_command(&command(HIDDEN));
+        t.client_command(&command(SHOWN_AGAIN));
+        assert_eq!(t.end_label(None), "dropped", "a later failure is a drop");
+        t.client_command(&command(
+            r#"{"id":0,"verb":"detach","payload":{"reason":"dormant"}}"#,
+        ));
+        t.client_command(&command(SHOWN_AGAIN));
+        assert_eq!(t.end_label(None), "dormant");
     }
 
     fn peer() -> Traffic {

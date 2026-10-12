@@ -12,6 +12,7 @@ import {
   dormancyDecision,
   encodeCommand,
   encodeDetach,
+  encodeShown,
   encodeResize,
   encodeTerminal,
   endNotice,
@@ -264,6 +265,13 @@ test("encodeDetach is a command frame that names the reason", () => {
   const frame = encodeDetach("dormant");
   assert.equal(frame[0], 0x02, "the command tag");
   assert.equal(textOf(frame), '{"id":0,"verb":"detach","payload":{"reason":"dormant"}}');
+});
+
+// The daemon's `a_page_shown_again_clears_hidden_but_not_dormant` test reads
+// these two frames.
+test("a hidden page and a page shown again are command frames", () => {
+  assert.equal(textOf(encodeDetach("hidden")), '{"id":0,"verb":"detach","payload":{"reason":"hidden"}}');
+  assert.equal(textOf(encodeShown()), '{"id":0,"verb":"shown","payload":{}}');
 });
 
 test("encodeResize keeps its frame", () => {

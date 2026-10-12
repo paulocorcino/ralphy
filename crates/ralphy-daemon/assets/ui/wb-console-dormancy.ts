@@ -99,6 +99,12 @@ export function createDormancy(deps: DormancyDeps) {
     return woke;
   }
 
+  // Tell the daemon's log that this page went hidden or came back, so a
+  // suspended page is not counted as a failed link.
+  function notePage(hidden: boolean) {
+    for (const w of wins) w._term?.notePage(hidden);
+  }
+
   // Dispose the renderer, keep the window: frame, title, state dot (fed by the
   // `/api/sessions` poll, not this socket) and desk record are untouched.
   //
@@ -226,13 +232,17 @@ export function createDormancy(deps: DormancyDeps) {
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState !== "visible") {
         hiddenAt = Date.now();
+        notePage(true);
         return;
       }
       const hiddenMs = hiddenAt ? Date.now() - hiddenAt : 0;
       hiddenAt = 0;
+      notePage(false);
       resumeAll(isStale(hiddenMs));
       revivePlaceholders();
     });
+    // A page that closes, or that iOS freezes, may fire only this one.
+    window.addEventListener("pagehide", () => notePage(true));
     // No `pageshow`: a document holding an open WebSocket is not bfcache-eligible,
     // so the restore this would catch cannot happen here.
     window.addEventListener("online", () => {

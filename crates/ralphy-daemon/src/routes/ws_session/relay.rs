@@ -10,7 +10,7 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::io::AsyncWriteExt;
 
 use super::refuse::Refuser;
-use super::traffic::{Leave, Tab, Traffic};
+use super::traffic::{Tab, Traffic};
 use super::SessionQuery;
 use crate::peer;
 use crate::protocol::{self, Frame};
@@ -192,9 +192,7 @@ pub(crate) async fn peer_session_ws(
                         traffic.inbound(bytes.len());
                         // Read only for the log; the bytes go on unchanged.
                         if let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) {
-                            if let Some(leave) = Leave::from_command(&cmd) {
-                                traffic.client_left(leave);
-                            }
+                            traffic.client_command(&cmd);
                         }
                         tokio_tungstenite::tungstenite::Message::Binary(bytes)
                     }

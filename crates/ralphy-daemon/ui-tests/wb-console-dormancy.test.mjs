@@ -7,19 +7,21 @@ import { createDormancy } from "../assets/ui/wb-console-dormancy.ts";
 // A page that records every listener added to it, as `<target>:<type>`.
 function page() {
   const added = [];
+  const handlers = {};
   const target = (name) => ({
-    addEventListener(type) {
+    addEventListener(type, handler) {
       added.push(`${name}:${type}`);
+      handlers[`${name}:${type}`] = handler;
     },
   });
-  return { added, document: target("document"), window: target("window") };
+  return { added, handlers, document: target("document"), window: target("window") };
 }
 
-function dormancy(p) {
+function dormancy(p, wins = new Set()) {
   return createDormancy({
     window: p.window,
     document: p.document,
-    wins: new Set(),
+    wins,
     stack: { setFocusHook() {} },
     sync: { hasPending: () => false },
     staleProbeNow: () => null,
@@ -40,5 +42,23 @@ test("the dormancy registers no listener until listen(), then the page listeners
   d.listen();
   // A page without `visualViewport` (the popup, this harness) gets no inset
   // publisher.
-  assert.deepEqual(p.added, ["document:visibilitychange", "window:online", "document:workbench:action"]);
+  assert.deepEqual(p.added, [
+    "document:visibilitychange",
+    "window:pagehide",
+    "window:online",
+    "document:workbench:action",
+  ]);
+});
+
+test("a hidden page tells each console, and a visible one takes it back before the resume", () => {
+  const p = page();
+  const said = [];
+  const win = { _term: { notePage: (hidden) => said.push(hidden ? "hidden" : "shown"), resume: () => said.push("resume") } };
+  dormancy(p, new Set([win])).listen();
+  p.document.visibilityState = "hidden";
+  p.handlers["document:visibilitychange"]();
+  p.document.visibilityState = "visible";
+  p.handlers["document:visibilitychange"]();
+  p.handlers["window:pagehide"]();
+  assert.deepEqual(said, ["hidden", "shown", "resume", "hidden"]);
 });
