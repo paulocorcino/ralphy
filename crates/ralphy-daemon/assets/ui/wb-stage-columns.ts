@@ -8,6 +8,7 @@
    `wb-console.ts` creates one per console.
    --------------------------------------------------------------------------- */
 import { WBGeometry } from "./wb-geometry.ts";
+import { PHONE_MAX_WIDTH } from "./wb-viewport.ts";
 import * as WBDeskFolds from "./wb-desk-folds.ts";
 import type { DetachedMember, Painted } from "./wb-columns.ts";
 import type { ConsoleOpts, ConsoleWin, DeskRecord, Stacked } from "./wb-types.d.ts";
@@ -108,6 +109,15 @@ export function createStageColumns(deps: StageColumnsDeps) {
     return { viewport: workspace()?.clientWidth || 0 };
   }
 
+  // A phone has no hover to show a title, so the icon changes with it.
+  function paintColumnButton(btn: HTMLButtonElement, narrow: boolean) {
+    const label = narrow ? "Switch" : "Slice";
+    if (btn.getAttribute("aria-label") === label) return;
+    btn.title = label;
+    btn.setAttribute("aria-label", label);
+    btn.innerHTML = narrow ? '<i class="bi bi-arrow-down-up"></i>' : '<i class="bi bi-arrows-expand-vertical"></i>';
+  }
+
   function clearColumn(win: ConsoleWin) {
     win.classList.remove("column");
     win.style.removeProperty("--col-index");
@@ -127,9 +137,8 @@ export function createStageColumns(deps: StageColumnsDeps) {
   // Paint `painted` (`WBColumns.painted`). `unmax` is the old first console
   // after a restore: it stops being the maximized console. `persist` writes
   // each change of the maximize to the desk.
-  function applyColumns(painted: Painted[] | null | undefined, opts?: { cap?: number; unmax?: string | null; raise?: boolean; persist?: boolean }) {
+  function applyColumns(painted: Painted[] | null | undefined, opts?: { unmax?: string | null; raise?: boolean; persist?: boolean }) {
     const list = painted || [];
-    const cap = opts?.cap ?? 1;
     const persist = !!opts?.persist;
     for (const win of wins) {
       if (win.classList.contains("column") && !columnClasses(list, win._deskId).column) {
@@ -172,12 +181,17 @@ export function createStageColumns(deps: StageColumnsDeps) {
         win._term?.fit.fit();
       } catch {}
     }
-    // Never disabled: at the cap the list still swaps (ADR-0051 §5).
+    // Never disabled: at the cap the list still swaps (ADR-0051 §5). A phone
+    // paints one console, so there the same list only switches the maximized
+    // console (#599). The viewport is read here, not the caller's cap: a
+    // caller with no columns open passes a cap of 1 at any width.
+    const narrow = columnMeasure().viewport <= PHONE_MAX_WIDTH;
     for (const win of wins) {
       const btn = win._colBtn;
       if (!btn) continue;
       const held = win.classList.contains("maximized") || win.classList.contains("column");
-      btn.hidden = !(OPTS.autoBoot !== false && held && cap >= 2);
+      btn.hidden = !(OPTS.autoBoot !== false && held);
+      paintColumnButton(btn, narrow);
     }
     paintFenceColumns();
   }

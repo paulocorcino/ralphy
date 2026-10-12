@@ -340,6 +340,9 @@ export function wbColumns() {
     columnGroups: [] as ColumnGroup[],
     columnFilter: "",
     columnFrom: null as string | null,
+    // The list was opened on a phone: a row switches the maximized console
+    // instead of opening a column (#599).
+    columnSwitch: false,
     columnMenuAt: { top: 0, right: 0, maxWidth: 400, maxHeight: 400 },
     // INVARIANT: the columns never write `max` themselves. Each `applyColumns` call
     // passes `persist`, so `setMax` writes it for the first console in reading
@@ -408,7 +411,7 @@ export function wbColumns() {
       if (head && !headWin && keptIds.length === 1) {
         const cap = this.columnCap();
         this.setColumns([]);
-        WBConsole.applyColumns(WBColumns.painted(kept, cap), { cap, unmax: null, persist: true });
+        WBConsole.applyColumns(WBColumns.painted(kept, cap), { unmax: null, persist: true });
         return;
       }
       // The KEPT grid is stored, never the painted slice: a console the cap
@@ -428,7 +431,7 @@ export function wbColumns() {
       // old z-index; raising the painted ones keeps it behind them.
       const moved = this.columnIds().length >= 2 && key !== this._paintedKey;
       this._paintedKey = key;
-      WBConsole.applyColumns(painted, { cap, unmax: null, raise: !!opts?.raise || moved, persist: true });
+      WBConsole.applyColumns(painted, { unmax: null, raise: !!opts?.raise || moved, persist: true });
       // Only when the keys are not somewhere else (a search box, a modal).
       const el = document.activeElement;
       const keysFree = !el || el === document.body || !!el.closest?.(".session-window");
@@ -443,7 +446,7 @@ export function wbColumns() {
       if (!r.changed) return;
       const cap = r.columns.length ? this.columnCap() : 1;
       this.setColumns(r.ended ? [] : r.columns);
-      WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { cap, unmax: r.unmax, raise: true, persist: true });
+      WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { unmax: r.unmax, raise: true, persist: true });
     },
     // Consoles whose records another client removed (`ids`, from the console
     // module after a desk read) leave the columns, then the stage. A session
@@ -456,7 +459,7 @@ export function wbColumns() {
         const cap = r.columns.length ? this.columnCap() : 1;
         this.setColumns(r.ended ? [] : r.columns);
         // Painted BEFORE the drops, so a lone survivor is maximized first.
-        WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { cap, unmax: null, raise: true, persist: true });
+        WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { unmax: null, raise: true, persist: true });
       }
       for (const id of ids) WBConsole.dropClosedElsewhere(id);
       if (r.changed) this.paintColumns();
@@ -464,12 +467,14 @@ export function wbColumns() {
     toggleColumnMenu(id: string, rect: DOMRect | undefined) {
       const was = this.columnMenu && this.columnFrom === id;
       const ids = WBColumns.flat(this.effectiveColumns(id));
+      const cap = this.columnCap();
       this.columnGroups = WBColumns.listFold({
         ...WBConsole.columnRoster(),
         columns: ids,
         from: id,
-        full: ids.length >= this.columnCap(),
+        full: ids.length >= cap,
       });
+      this.columnSwitch = cap < 2;
       this.columnFrom = id;
       const top = Math.round((rect?.bottom || 0) + 4);
       const right = Math.round(rect?.right || 0);
@@ -501,6 +506,18 @@ export function wbColumns() {
     },
     columnRowLabel(r: ColumnRow) {
       return WBColumns.rowLabel(r, window.WBConsoleName.consoleLabel);
+    },
+    // A row's click. On a phone the list is always full, so the row itself
+    // swaps: the icon beside it is hidden there.
+    pickColumn(id: string) {
+      if (this.columnSwitch) this.swapColumn(id);
+      else this.openColumn(id);
+    },
+    columnRowOff(r: ColumnRow) {
+      return this.columnSwitch ? !r.swappable : !r.enabled;
+    },
+    columnRowTip(r: ColumnRow) {
+      return this.columnSwitch && r.swappable ? "" : r.reason || "";
     },
     // Enter in the filter opens the first row that can be opened; at the cap,
     // it swaps in the first row that can be swapped.
@@ -534,7 +551,7 @@ export function wbColumns() {
       const cap = this.columnCap();
       this.setColumns(r.ended ? [] : r.columns);
       this.columnMenu = false;
-      WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { cap, unmax: r.unmax, raise: true, persist: true });
+      WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { unmax: r.unmax, raise: true, persist: true });
       this.paintColumns();
       WBConsole.focusColumn(id);
     },
@@ -543,7 +560,7 @@ export function wbColumns() {
       const cap = r.columns.length ? this.columnCap() : 1;
       this.setColumns(r.ended ? [] : r.columns);
       // It may promote a lone survivor to the maximize.
-      WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { cap, unmax: r.unmax, raise: true, persist: true });
+      WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { unmax: r.unmax, raise: true, persist: true });
       this.paintColumns();
     },
     // A fence opened as columns (ADR-0051 §5, 2026-09-30): the grid follows the
@@ -557,7 +574,6 @@ export function wbColumns() {
       const cap = ids.length >= 2 ? this.columnCap() : 1;
       this.setColumns(ids.length >= 2 ? grid : []);
       WBConsole.applyColumns(WBColumns.painted(grid, cap), {
-        cap,
         unmax: old && !ids.includes(old) ? old : null,
         raise: true,
         persist: true,
