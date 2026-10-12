@@ -205,7 +205,9 @@ change to modules is mechanical.
   (added by the pilot). It builds the component against a scope that has only
   its own members and its `uses` names. Reading any other name fails, and
   assigning a `shell()` field fails. A write to a property inside a `uses`
-  value is not caught yet: the Security cut adds that (see the amendment). The
+  value fails too. The component's `$store` is a view of each store
+  (`storeView` in the same file): a write to a store field, at any depth,
+  fails, and the store's own methods still change it. The
   component's test checks its markup with `componentMarkup` and
   `bindingNames` from the same file. The D3 check requires the test file that
   calls this helper.

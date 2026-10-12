@@ -319,7 +319,8 @@ test("moving a board card is locked while the board is not current", async () =>
     { status: "error", message: "gh not authed" },
   ]);
   state.kanbanSel = null;
-  state.$store.runs.runsByProject["o/r"] = [];
+  // Set-up writes go to the raw store: the component's view refuses them.
+  globalThis.window.Alpine.store("runs").runsByProject["o/r"] = [];
   await state.loadBoard();
   assert.equal(state.labelsLocked(), false);
   await state.loadBoard();
