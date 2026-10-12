@@ -144,6 +144,12 @@ export function shell() {
       if (this.$store.projects.waking[g.daemon]) return `Waking ${g.environment}…`;
       return `Wake ${g.environment}. ${g.diagnosis}`;
     },
+    // The update button of an SSH host that speaks another protocol.
+    updateTitle(g: Group) {
+      const host = WBFleet.peerName(g);
+      if (this.$store.projects.updating[g.daemon]) return `Updating Ralphy on ${host}…`;
+      return `${g.diagnosis} Click to install this computer's Ralphy on ${host}.`;
+    },
     // A row on a host that cannot answer: why it does not open.
     unavailableTitle(g: Group) {
       const host = WBFleet.peerName(g);

@@ -258,9 +258,20 @@
                 :aria-label="$store.projects.waking[g.daemon] ? 'waking' : peerStateWord(g.state)"
                 @click.stop="$store.projects.wakePeer(g.daemon)"
               ><svg x-icon="'unplug'"></svg></button>
+              <!-- An SSH host on another protocol: the same glyph installs
+                   this computer's Ralphy there. The click is the permission. -->
+              <button
+                class="peer-state wake"
+                x-show="$store.projects.peerUpdatable(g)"
+                :class="[g.state, 'fault', $store.projects.updating[g.daemon] ? 'waking' : '']"
+                :disabled="!!$store.projects.updating[g.daemon]"
+                :title="updateTitle(g)"
+                :aria-label="$store.projects.updating[g.daemon] ? 'Updating Ralphy' : 'Update Ralphy'"
+                @click.stop="$store.projects.updatePeer(g.daemon)"
+              ><svg x-icon="'unplug'"></svg></button>
               <span
                 class="peer-state"
-                x-show="!$store.projects.peerWakeable(g) && $store.projects.peerIcon(g)"
+                x-show="!$store.projects.peerWakeable(g) && !$store.projects.peerUpdatable(g) && $store.projects.peerIcon(g)"
                 :class="[g.state, $store.projects.peerFault(g) ? 'fault' : '']"
                 role="img"
                 :aria-label="peerStateWord(g.state)"
