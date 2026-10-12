@@ -93,7 +93,7 @@ Six GitHub Actions workflows live under [`.github/workflows/`](../.github/workfl
   inside a clone that already exists also makes it new, because jscpd
   fingerprints the text of the clone. The job `complexity`, on every push
   and pull request, runs `cargo run -p xtask -- complexity --check` with
-  Rust 1.98.0 and the pinned oxlint binary. It fails when a production
+  the pinned oxlint binary. It fails when a production
   function scores over 10 and `docs/complexity-baseline.json` does not list
   it, or when a listed function scores higher or lower than its entry
   (ADR-0081). The oxlint version and checksum are in the workflow `env`,

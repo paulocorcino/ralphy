@@ -1,7 +1,9 @@
 //! `complexity` holds the complexity of every production function (ADR-0081).
-//! Rust functions are scored by `clippy::cognitive_complexity`, TypeScript
-//! functions by oxlint's `complexity` rule with `variant: "modified"`, so an
-//! exhaustive `switch` or `match` counts once. A function over [`LIMIT`]
+//! Rust functions are scored by their cognitive complexity, read from the
+//! source text ([`cognitive`]), so every `#[cfg]` branch counts on every
+//! platform. TypeScript functions are scored by oxlint's `complexity` rule
+//! with `variant: "modified"`. In both, an exhaustive `switch` or `match`
+//! counts once. A function over [`LIMIT`]
 //! fails unless `docs/complexity-baseline.json` lists it; a listed function
 //! may go down, never up. `--bless` rewrites the baseline. With `--base
 //! <rev>`, the functions at [`NEAR`] to [`LIMIT`] in the files changed since
@@ -21,13 +23,9 @@ use crate::capabilities::git;
 
 /// The highest score a function may have without a baseline entry.
 const LIMIT: u32 = 10;
-/// The lowest score of the near-limit list. The tools are asked for every
-/// score from here up, so one run gives both lists.
+/// The lowest score of the near-limit list. oxlint is asked for every score
+/// from here up, so one run gives both lists.
 const NEAR: u32 = 7;
-/// The toolchain whose clippy gives the scores. A new clippy can score the
-/// same code differently, so the version moves only with a `--bless`
-/// (ADR-0081 D7). `.github/workflows/ci.yml` installs the same one.
-pub(crate) const CLIPPY_TOOLCHAIN: &str = "1.98.0";
 /// The oxlint the default `npx` runs; `.github/workflows/ci.yml` pins the
 /// same version by checksum.
 pub(crate) const OXLINT_VERSION: &str = "1.85.0";
@@ -35,8 +33,9 @@ const BASELINE: &str = "docs/complexity-baseline.json";
 const UI_DIR: &str = "crates/ralphy-daemon/assets/ui";
 /// Where the generated tool configs go: build output, never committed.
 const WORK_DIR: &str = "target/xtask-complexity";
-/// The name of a function that has none: a Rust closure, or a TypeScript
-/// arrow function passed as an argument.
+/// The name of a TypeScript function that has none, such as an arrow
+/// function passed as an argument. A Rust closure is scored as part of the
+/// function around it.
 const ANONYMOUS: &str = "(anonymous)";
 
 /// The score of one function. `path` is from the repo root, with `/`.
@@ -72,7 +71,7 @@ pub fn complexity_cmd(args: &[String]) -> Result<()> {
         bail!("usage: complexity --check | --bless [--base <rev>] [--oxlint <program>]");
     }
     let root = repo_root();
-    let mut scores = clippy_scores(&root)?;
+    let mut scores = rust_scores(&root)?;
     scores.extend(oxlint_scores(&root, oxlint.as_deref())?);
     scores.sort();
     if let Some(base) = base {
@@ -109,82 +108,29 @@ pub fn complexity_cmd(args: &[String]) -> Result<()> {
     )
 }
 
-/// Runs clippy on the production code of the workspace. Not `--all-targets`:
-/// test code is not measured (ADR-0081 D3). `--force-warn` keeps the lint a
-/// warning under the `RUSTFLAGS=-D warnings` of CI, so clippy still exits 0.
-fn clippy_scores(root: &Path) -> Result<Vec<Score>> {
-    let conf = root.join(WORK_DIR);
-    std::fs::create_dir_all(&conf).with_context(|| format!("creating {}", conf.display()))?;
-    std::fs::write(
-        conf.join("clippy.toml"),
-        format!("cognitive-complexity-threshold = {}\n", NEAR - 1),
-    )
-    .context("writing the clippy config")?;
-    let toolchain = format!("+{CLIPPY_TOOLCHAIN}");
-    let out = Command::new("cargo")
-        .current_dir(root)
-        .env("CLIPPY_CONF_DIR", &conf)
-        .args([&toolchain, "clippy", "--workspace", "--quiet"])
-        .args(["--message-format=json", "--"])
-        .args(["--force-warn", "clippy::cognitive_complexity"])
-        .output()
-        .context("running cargo clippy")?;
-    if !out.status.success() {
-        bail!(
-            "cargo {toolchain} clippy failed (install the toolchain with `rustup toolchain \
-             install {CLIPPY_TOOLCHAIN} -c clippy`): {}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        );
-    }
-    parse_clippy(&String::from_utf8(out.stdout).context("clippy output is not UTF-8")?)
-}
-
-/// The cognitive-complexity warnings in clippy's JSON lines. A crate built
-/// as a library and a binary reports a function twice, so the scores are
-/// kept once per file and line.
-fn parse_clippy(json_lines: &str) -> Result<Vec<Score>> {
-    static VALUE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"cognitive complexity of \((\d+)/").expect("a valid literal regex")
-    });
-    let mut seen = BTreeSet::new();
+/// Scores every function of the production Rust files under `crates/`,
+/// from the source text (ADR-0081, amendment 2026-10-12).
+fn rust_scores(root: &Path) -> Result<Vec<Score>> {
+    let crates = root.join("crates");
     let mut scores = Vec::new();
-    for line in json_lines.lines().filter(|l| l.starts_with('{')) {
-        let msg: Value = serde_json::from_str(line).context("parsing a clippy message")?;
-        let msg = &msg["message"];
-        if msg["code"]["code"] != "clippy::cognitive_complexity" {
+    for entry in
+        std::fs::read_dir(&crates).with_context(|| format!("reading {}", crates.display()))?
+    {
+        let dir = entry.context("reading a crate entry")?.path();
+        if !dir.join("Cargo.toml").is_file() {
             continue;
         }
-        let text = msg["message"].as_str().unwrap_or_default();
-        let value = VALUE
-            .captures(text)
-            .and_then(|c| c[1].parse().ok())
-            .with_context(|| format!("no score in clippy message {text:?}"))?;
-        let span = &msg["spans"][0];
-        let path = slashes(
-            span["file_name"]
-                .as_str()
-                .with_context(|| format!("no file in clippy message {text:?}"))?,
-        );
-        if !seen.insert((path.clone(), span["line_start"].as_u64())) {
-            continue;
+        for file in cognitive::production_files(&dir)? {
+            let text = std::fs::read_to_string(&file)
+                .with_context(|| format!("reading {}", file.display()))?;
+            let path = rel_path(root, &file)?;
+            let found = cognitive::file_scores(&text).with_context(|| format!("parsing {path}"))?;
+            scores.extend(found.into_iter().map(|(name, value)| Score {
+                path: path.clone(),
+                name,
+                value,
+            }));
         }
-        // The span is the name of the function.
-        let name = span["text"][0]
-            .as_object()
-            .and_then(|t| {
-                let line = t.get("text")?.as_str()?;
-                let start = usize::try_from(t.get("highlight_start")?.as_u64()?).ok()?;
-                let end = usize::try_from(t.get("highlight_end")?.as_u64()?).ok()?;
-                line.get(start - 1..end - 1)
-            })
-            .with_context(|| format!("no function name for {path} in clippy message"))?;
-        // A closure is scored too; its span is its parameter list.
-        let closure = name.starts_with('|') || name.starts_with("move");
-        scores.push(Score {
-            path,
-            name: if closure { ANONYMOUS } else { name }.to_string(),
-            value,
-        });
     }
     Ok(scores)
 }
@@ -193,7 +139,9 @@ fn parse_clippy(json_lines: &str) -> Result<Vec<Score>> {
 /// `program` replaces the default `npx -y oxlint@<version>`; CI passes the
 /// binary it pins by checksum.
 fn oxlint_scores(root: &Path, program: Option<&str>) -> Result<Vec<Score>> {
-    let config = root.join(WORK_DIR).join("oxlint.json");
+    let work = root.join(WORK_DIR);
+    std::fs::create_dir_all(&work).with_context(|| format!("creating {}", work.display()))?;
+    let config = work.join("oxlint.json");
     let rule = serde_json::json!({
         "plugins": ["eslint"],
         "categories": { "correctness": "off" },
@@ -356,9 +304,19 @@ fn changed_files(root: &Path, base: &str) -> Result<BTreeSet<String>> {
     Ok(changed.lines().chain(new.lines()).map(slashes).collect())
 }
 
+/// `path` relative to `root`, with `/` separators on every platform.
+fn rel_path(root: &Path, path: &Path) -> Result<String> {
+    let rel = path
+        .strip_prefix(root)
+        .with_context(|| format!("{} is not under {}", path.display(), root.display()))?;
+    Ok(slashes(&rel.to_string_lossy()))
+}
+
 fn slashes(path: &str) -> String {
     path.replace('\\', "/")
 }
+
+mod cognitive;
 
 #[cfg(test)]
 mod tests;

@@ -1,6 +1,7 @@
 # Function complexity is a gate
 
 Status: accepted
+Amended 2026-10-12 (Rust is scored from the source text, not by clippy).
 Kind: process
 Protects: integrity of change, testability
 
@@ -130,8 +131,48 @@ issue when this ADR is accepted.
   the `complexity` job of `.github/workflows/ci.yml`. Its rules are tested
   in `crates/xtask/src/complexity/tests.rs`.
 - D5, D6: checked by the tests in `crates/xtask/src/complexity/tests.rs`.
-- D7: checked by `ci_installs_the_pinned_tools`
-  (`crates/xtask/src/complexity/tests.rs`): `ci.yml` installs the toolchain
-  and the oxlint version that the xtask names.
+- D7 (as amended): checked by `ci_installs_the_pinned_oxlint`
+  (`crates/xtask/src/complexity/tests.rs`): `ci.yml` pins the oxlint
+  version that the xtask names.
+- Amendment A1, A3: the scoring rules and the module walk are tested in
+  `crates/xtask/src/complexity/cognitive/tests.rs`.
 - D8: not checked by code: reviewed in the PR that changes AGENTS.md.
 - D9: not checked by code: the issues are opened by hand.
+
+## Amendment 2026-10-12 — Rust is scored from the source text
+
+The first CI run of the gate (PR #710) failed on Linux with a baseline
+written on Windows. Clippy scores only the code that `#[cfg]` keeps on the
+machine it runs on: `serve` in `ralphy-daemon/src/serve.rs` scored 64 on
+Windows and 74 on Linux, and functions under `#[cfg(unix)]` exist only on
+Linux. A check for the other targets from one machine does not build: the
+build script of `ring` needs a C compiler for the target (measured with
+Rust 1.98.0, 2026-10-12). So a baseline from clippy is true on one platform
+only.
+
+**A1. Replaces D1 for Rust.** The xtask reads the Rust source with `syn`
+and computes the cognitive complexity of the SonarSource specification
+("Cognitive Complexity", G. Ann Campbell, 2018). Every `#[cfg]` branch is
+read, so a function has one score on every platform. The rules, with the
+Rust forms they cover, are in `crates/xtask/src/complexity/cognitive.rs`.
+A closure and an `async` block are part of the function around them. The
+tokens of a macro are scored when they are expressions separated by commas,
+and the arms of `select!` are scored as a `match`; tokens of another form
+are not scored. Recursion is not scored.
+
+**A2. Replaces D7.** No Rust toolchain is pinned: the score does not come
+from the compiler. oxlint keeps its version and checksum pin.
+
+**A3. Makes D3 exact for Rust.** The production files of a crate are the
+modules its roots declare (`src/lib.rs`, `src/main.rs`, each `src/bin/*.rs`
+that is not a `*_test_child.rs`), followed through `mod x;` and `#[path]`.
+A module or item under `#[cfg(test)]` and a `#[test]` function are left
+out. A file no root declares is not measured.
+
+Measured on the rebased branch with `complexity --bless`: 178 Rust
+functions over 10 (119 at 11–20, 47 at 21–50, 12 at 51 or more) and 114
+TypeScript functions. The order changed: `tree_ws` scores 212, because
+its `select!` sits inside a `loop` and every level of nesting costs more;
+`verify_gate`, at 99 with clippy, scores 33. D9 now covers the twelve
+functions at 51 or more. The `complexity` job runs in seconds instead of
+running clippy a second time.

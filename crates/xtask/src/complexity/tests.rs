@@ -8,64 +8,6 @@ fn score(path: &str, name: &str, value: u32) -> Score {
     }
 }
 
-/// One clippy JSON line whose span is `name` in the source line `src`.
-fn clippy_line(file: &str, line: u64, src: &str, name: &str, value: u32) -> String {
-    let start = src.find(name).expect("the name is in the line") + 1;
-    serde_json::json!({
-        "reason": "compiler-message",
-        "message": {
-            "code": { "code": "clippy::cognitive_complexity" },
-            "message": format!("the function has a cognitive complexity of ({value}/6)"),
-            "spans": [{
-                "file_name": file,
-                "line_start": line,
-                "text": [{ "text": src, "highlight_start": start, "highlight_end": start + name.len() }]
-            }]
-        }
-    })
-    .to_string()
-}
-
-#[test]
-fn clippy_scores_take_the_name_from_the_span_and_count_a_function_once() {
-    let other = serde_json::json!({
-        "reason": "compiler-message",
-        "message": { "code": { "code": "clippy::needless_return" }, "message": "x", "spans": [] }
-    });
-    let lines = [
-        clippy_line(r"crates\a\src\lib.rs", 3, "pub fn run() {", "run", 12),
-        // The same function again, from the binary of the same crate.
-        clippy_line(r"crates\a\src\lib.rs", 3, "pub fn run() {", "run", 12),
-        clippy_line(
-            "crates/a/src/lib.rs",
-            40,
-            "    fn new() -> Self {",
-            "new",
-            7,
-        ),
-        clippy_line("crates/a/src/lib.rs", 52, "    .map_err(|e| {", "|e|", 11),
-        clippy_line(
-            "crates/a/src/lib.rs",
-            60,
-            "    spawn(move || {",
-            "move ||",
-            9,
-        ),
-        other.to_string(),
-        r#"{"reason":"build-finished","success":true}"#.to_string(),
-    ];
-    let scores = parse_clippy(&lines.join("\n")).expect("parse");
-    assert_eq!(
-        scores,
-        [
-            score("crates/a/src/lib.rs", "run", 12),
-            score("crates/a/src/lib.rs", "new", 7),
-            score("crates/a/src/lib.rs", ANONYMOUS, 11),
-            score("crates/a/src/lib.rs", ANONYMOUS, 9)
-        ]
-    );
-}
-
 #[test]
 fn oxlint_scores_name_an_anonymous_function_and_refuse_an_unknown_message() {
     let report = serde_json::json!({ "diagnostics": [
@@ -159,13 +101,9 @@ fn the_near_list_holds_seven_to_ten_in_the_changed_files() {
 }
 
 #[test]
-fn ci_installs_the_pinned_tools() {
+fn ci_installs_the_pinned_oxlint() {
     let ci =
         std::fs::read_to_string(repo_root().join(".github/workflows/ci.yml")).expect("read ci.yml");
-    assert!(
-        ci.contains(&format!("toolchain: {CLIPPY_TOOLCHAIN}")),
-        "ci.yml must install the clippy toolchain {CLIPPY_TOOLCHAIN}"
-    );
     assert!(
         ci.contains(&format!("OXLINT_VERSION: \"{OXLINT_VERSION}\"")),
         "ci.yml must pin oxlint {OXLINT_VERSION}"

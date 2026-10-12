@@ -1,239 +1,339 @@
 {
   "crates/ralphy-adapter-support/src/headless.rs": {
     "drive_headless": [
-      31
-    ]
-  },
-  "crates/ralphy-agent-claude/src/headless.rs": {
-    "execute_headless": [
-      31
+      20
+    ],
+    "spawn_reader": [
+      30
     ]
   },
   "crates/ralphy-agent-claude/src/interactive.rs": {
     "drive_session": [
+      57
+    ],
+    "strip_pty_escapes": [
       30
     ]
   },
-  "crates/ralphy-agent-copilot/src/effort.rs": {
-    "resolve_effort": [
-      39
-    ]
-  },
-  "crates/ralphy-agent-cursor/src/lib.rs": {
-    "execute": [
-      18
-    ]
-  },
-  "crates/ralphy-agent-gemini/src/lib.rs": {
-    "note_vendor_error": [
-      17
+  "crates/ralphy-agent-claude/src/status.rs": {
+    "poll": [
+      11
     ],
-    "prepare_root": [
+    "start": [
+      13
+    ]
+  },
+  "crates/ralphy-agent-claude/src/usage.rs": {
+    "newest_jsonl_since": [
+      20
+    ],
+    "parse_transcript_usage": [
       16
+    ]
+  },
+  "crates/ralphy-agent-codex/src/usage.rs": {
+    "parse_codex_rollout_usage": [
+      12
+    ]
+  },
+  "crates/ralphy-agent-copilot/src/catalog.rs": {
+    "fetch_catalog": [
+      11
+    ]
+  },
+  "crates/ralphy-agent-copilot/src/guards.rs": {
+    "builtin_mcp_violation": [
+      17
+    ]
+  },
+  "crates/ralphy-agent-copilot/src/outcome.rs": {
+    "copilot_final_text": [
+      13
+    ]
+  },
+  "crates/ralphy-agent-cursor/src/outcome.rs": {
+    "collect_tool_results": [
+      13
     ],
-    "report_skill_discovery": [
-      24
+    "fold_cursor_stream": [
+      21
+    ]
+  },
+  "crates/ralphy-agent-gemini/src/outcome.rs": {
+    "fold_gemini_stream": [
+      20
     ]
   },
   "crates/ralphy-agent-gemini/src/policy.rs": {
     "import_deny_rules": [
-      18
+      17
+    ]
+  },
+  "crates/ralphy-agent-gemini/src/revocation.rs": {
+    "inspect_admin_tier": [
+      13
+    ],
+    "strip_ansi": [
+      12
     ]
   },
   "crates/ralphy-agent-gemini/src/root.rs": {
-    "prune_sessions": [
+    "session_stems": [
+      21
+    ]
+  },
+  "crates/ralphy-agent-kimi/src/usage.rs": {
+    "parse_kimi_wire_usage": [
       11
     ]
   },
-  "crates/ralphy-agent-opencode/src/lib.rs": {
-    "execute": [
-      16
+  "crates/ralphy-agent-opencode/src/events.rs": {
+    "parse_opencode_events": [
+      13
+    ],
+    "parse_opencode_reset_hint": [
+      22
     ]
   },
-  "crates/ralphy-cli/src/daemon.rs": {
-    "status": [
-      14
-    ]
-  },
-  "crates/ralphy-cli/src/daemon/confirm.rs": {
-    "fetch_sessions": [
-      11
+  "crates/ralphy-cli/src/config.rs": {
+    "set": [
+      28
     ]
   },
   "crates/ralphy-cli/src/daemon/register.rs": {
     "migrate_side_stores": [
-      37
+      13
+    ]
+  },
+  "crates/ralphy-cli/src/events/emitter.rs": {
+    "public_ip": [
+      14
+    ]
+  },
+  "crates/ralphy-cli/src/events/envelope.rs": {
+    "runevent_to_cloudevent": [
+      28
+    ]
+  },
+  "crates/ralphy-cli/src/guard.rs": {
+    "evaluate_recursive_delete": [
+      17
+    ],
+    "run_guard_hook": [
+      16
+    ],
+    "shell_tokens": [
+      11
+    ]
+  },
+  "crates/ralphy-cli/src/hook.rs": {
+    "read_transcript_last_assistant": [
+      28
+    ]
+  },
+  "crates/ralphy-cli/src/host/aliases.rs": {
+    "parse_config_hosts": [
+      16
     ]
   },
   "crates/ralphy-cli/src/host/checks.rs": {
     "evaluate": [
-      18
-    ]
-  },
-  "crates/ralphy-cli/src/host/install.rs": {
-    "release_binary": [
+      22
+    ],
+    "parse_facts": [
       12
     ]
   },
-  "crates/ralphy-cli/src/host/pair/connect.rs": {
-    "connect": [
-      14
+  "crates/ralphy-cli/src/host/install.rs": {
+    "install": [
+      11
+    ]
+  },
+  "crates/ralphy-cli/src/host/pair.rs": {
+    "add": [
+      20
+    ],
+    "remove": [
+      11
     ]
   },
   "crates/ralphy-cli/src/host/password.rs": {
-    "(anonymous)": [
-      19
-    ]
-  },
-  "crates/ralphy-cli/src/host/probe.rs": {
-    "end": [
-      26
+    "serve": [
+      13
     ]
   },
   "crates/ralphy-cli/src/host/shell.rs": {
     "render": [
-      14
+      32
     ]
   },
   "crates/ralphy-cli/src/init/gate.rs": {
     "format_report": [
-      11
+      20
+    ]
+  },
+  "crates/ralphy-cli/src/init/render.rs": {
+    "print_gate_report": [
+      12
     ]
   },
   "crates/ralphy-cli/src/init/run.rs": {
     "run": [
-      22
+      67
     ]
   },
-  "crates/ralphy-cli/src/main.rs": {
-    "run_consolidation": [
+  "crates/ralphy-cli/src/install.rs": {
+    "put_on_path": [
       11
     ]
   },
-  "crates/ralphy-cli/src/run.rs": {
-    "emit_queue_built": [
-      19
-    ],
-    "prune_old_run_folders": [
+  "crates/ralphy-cli/src/install/user_path.rs": {
+    "add": [
+      13
+    ]
+  },
+  "crates/ralphy-cli/src/issues.rs": {
+    "issues_cmd": [
       18
     ],
-    "run_cmd": [
-      42
+    "render_board_json": [
+      12
     ]
   },
   "crates/ralphy-cli/src/run/wiring.rs": {
     "build_run_queue": [
-      15
+      17
     ]
   },
   "crates/ralphy-cli/src/runstate/state.rs": {
     "apply": [
-      11
+      36
+    ]
+  },
+  "crates/ralphy-cli/src/telegram/notifier.rs": {
+    "on_event": [
+      12
+    ],
+    "on_tick": [
+      15
     ]
   },
   "crates/ralphy-cli/src/triage.rs": {
+    "apply_triage": [
+      15
+    ],
     "run": [
-      11
+      19
+    ]
+  },
+  "crates/ralphy-cli/src/ui.rs": {
+    "queue_bar_label": [
+      22
+    ]
+  },
+  "crates/ralphy-cli/src/ui/presenter.rs": {
+    "run": [
+      13
     ]
   },
   "crates/ralphy-cli/src/ui/render/panel.rs": {
     "render_totals_panel": [
-      26
+      51
     ]
   },
-  "crates/ralphy-cli/src/update/handoff.rs": {
-    "kill": [
-      17
+  "crates/ralphy-core/src/acceptance.rs": {
+    "apply_ledger": [
+      12
+    ],
+    "evidence_comment": [
+      13
+    ],
+    "logical_checkbox_items": [
+      12
     ]
   },
   "crates/ralphy-core/src/blocked.rs": {
     "sort_queue_in_graph": [
-      14
+      27
     ]
   },
   "crates/ralphy-core/src/checkouts.rs": {
-    "delete_branch_best_effort": [
-      18
+    "add": [
+      13
+    ],
+    "parse_porcelain": [
+      15
     ]
   },
-  "crates/ralphy-core/src/cmdcost.rs": {
-    "save": [
-      18
-    ]
-  },
-  "crates/ralphy-core/src/emit.rs": {
-    "run_stopped": [
-      16
+  "crates/ralphy-core/src/checkouts/carry.rs": {
+    "unlink_in": [
+      12
     ]
   },
   "crates/ralphy-core/src/github/attachments.rs": {
+    "fetch_one": [
+      11
+    ],
     "fetch_triage_attachments": [
+      26
+    ]
+  },
+  "crates/ralphy-core/src/handoff.rs": {
+    "knowledge_used": [
       11
     ]
   },
   "crates/ralphy-core/src/runner.rs": {
-    "restore": [
-      18
-    ],
     "run_queue_with": [
-      81
-    ]
-  },
-  "crates/ralphy-core/src/runner/artifacts.rs": {
-    "record_citations": [
-      16
-    ],
-    "write_handoffs": [
-      26
-    ],
-    "write_knowledge": [
-      24
-    ],
-    "write_references": [
-      26
-    ]
-  },
-  "crates/ralphy-core/src/runner/branch.rs": {
-    "prepare_branch": [
-      16
+      78
     ]
   },
   "crates/ralphy-core/src/runner/clock.rs": {
-    "wait_for_reset": [
-      34
-    ]
-  },
-  "crates/ralphy-core/src/runner/phases.rs": {
-    "open_blockers": [
-      20
+    "next_reset": [
+      12
     ],
-    "prepare_issue": [
-      18
+    "wait_for_reset": [
+      14
     ]
   },
   "crates/ralphy-core/src/runner/phases/close.rs": {
     "close_and_record": [
-      38
+      14
     ]
   },
   "crates/ralphy-core/src/runner/phases/execute.rs": {
     "execute_phase": [
-      25
+      16
     ]
   },
   "crates/ralphy-core/src/runner/phases/plan.rs": {
     "plan_phase": [
-      50
-    ]
-  },
-  "crates/ralphy-core/src/runner/phases/protocol.rs": {
-    "protocol_gate": [
-      20
+      32
     ]
   },
   "crates/ralphy-core/src/runner/phases/verify.rs": {
     "verify_gate": [
-      99
+      33
+    ]
+  },
+  "crates/ralphy-core/src/sync.rs": {
+    "pull": [
+      11
+    ]
+  },
+  "crates/ralphy-core/src/verify.rs": {
+    "run_one": [
+      11
+    ]
+  },
+  "crates/ralphy-core/src/verify/parse.rs": {
+    "has_escaped_quote": [
+      11
+    ]
+  },
+  "crates/ralphy-core/src/worktree.rs": {
+    "discard": [
+      18
     ]
   },
   "crates/ralphy-daemon/assets/ui/wb-add-project.ts": {
@@ -688,313 +788,449 @@
       11
     ]
   },
-  "crates/ralphy-daemon/src/bin/session_test_child.rs": {
-    "main": [
+  "crates/ralphy-daemon/src/agent_state.rs": {
+    "poll": [
+      11
+    ]
+  },
+  "crates/ralphy-daemon/src/audit/normalize.rs": {
+    "browser": [
       13
+    ],
+    "gpu": [
+      14
+    ],
+    "normalize": [
+      12
     ]
   },
   "crates/ralphy-daemon/src/desk/apply.rs": {
     "apply_one": [
-      23
+      75
     ]
   },
-  "crates/ralphy-daemon/src/dispatch/spawn.rs": {
-    "drain_to_eof": [
-      11
+  "crates/ralphy-daemon/src/dispatch/host.rs": {
+    "host_argv": [
+      16
+    ]
+  },
+  "crates/ralphy-daemon/src/fleet/watchsub.rs": {
+    "subscribe": [
+      19
     ]
   },
   "crates/ralphy-daemon/src/peer.rs": {
-    "read_store": [
+    "fold": [
       13
     ]
   },
   "crates/ralphy-daemon/src/peer/client.rs": {
-    "diagnose_failed_dial": [
-      20
-    ],
     "handshake": [
-      12
-    ]
-  },
-  "crates/ralphy-daemon/src/peer/nudge.rs": {
-    "ensure_with": [
       18
     ]
   },
   "crates/ralphy-daemon/src/peer/tunnel.rs": {
-    "ensure_all": [
-      19
-    ],
     "ensure_with": [
-      32
-    ],
-    "keep_last_line": [
-      11
+      26
     ]
   },
   "crates/ralphy-daemon/src/rekey.rs": {
-    "heal": [
-      24
+    "rekey_desk": [
+      13
+    ]
+  },
+  "crates/ralphy-daemon/src/release.rs": {
+    "parse_body": [
+      13
     ]
   },
   "crates/ralphy-daemon/src/routes.rs": {
     "router_with_roster": [
-      19
+      12
+    ]
+  },
+  "crates/ralphy-daemon/src/routes/api_audit.rs": {
+    "audit_routes": [
+      21
     ]
   },
   "crates/ralphy-daemon/src/routes/api_desk.rs": {
     "desk_history_restore_route": [
-      14
+      11
     ],
     "desk_put_route": [
-      16
+      12
     ]
   },
   "crates/ralphy-daemon/src/routes/api_fleet.rs": {
     "fleet_route": [
-      34
-    ]
-  },
-  "crates/ralphy-daemon/src/routes/api_peer.rs": {
-    "peer_command_route": [
-      11
-    ],
-    "peer_tree_poll_route": [
-      27
-    ]
-  },
-  "crates/ralphy-daemon/src/routes/api_security.rs": {
-    "apply_auth_change": [
-      18
-    ],
-    "security_remote_images_route": [
-      11
+      33
     ]
   },
   "crates/ralphy-daemon/src/routes/api_sessions.rs": {
-    "sessions_route": [
-      21
+    "close_session_route": [
+      14
     ]
   },
-  "crates/ralphy-daemon/src/routes/api_update.rs": {
-    "release_update_route": [
-      27
-    ]
-  },
-  "crates/ralphy-daemon/src/routes/api_usage.rs": {
-    "usage_route": [
-      13
+  "crates/ralphy-daemon/src/routes/guard.rs": {
+    "require_auth": [
+      18
     ]
   },
   "crates/ralphy-daemon/src/routes/presence.rs": {
     "watch_stores": [
-      26
+      13
     ],
     "ws_presence_loop": [
-      21
+      32
     ]
   },
   "crates/ralphy-daemon/src/routes/ws_command.rs": {
     "command_ws": [
-      76
+      22
     ],
     "proxy_peer_command": [
-      24
-    ]
-  },
-  "crates/ralphy-daemon/src/routes/ws_command/host.rs": {
-    "collect_reply": [
-      19
-    ],
-    "serve_host": [
-      40
+      27
     ]
   },
   "crates/ralphy-daemon/src/routes/ws_command/oneshot.rs": {
     "execute_oneshot": [
-      69
-    ]
-  },
-  "crates/ralphy-daemon/src/routes/ws_command/registry_verbs.rs": {
-    "added_reply": [
-      17
-    ],
-    "dir_list_reply": [
-      18
-    ],
-    "project_add_reply": [
-      19
+      99
     ]
   },
   "crates/ralphy-daemon/src/routes/ws_command/stream.rs": {
     "drain": [
-      20
+      11
     ],
     "stream_child": [
-      18
+      21
     ]
   },
   "crates/ralphy-daemon/src/routes/ws_session/bridge.rs": {
     "session_ws": [
-      33
-    ]
-  },
-  "crates/ralphy-daemon/src/routes/ws_session/gemini_root.rs": {
-    "ensure": [
-      15
-    ]
-  },
-  "crates/ralphy-daemon/src/routes/ws_session/peer_console.rs": {
-    "launch": [
-      15
+      56
     ]
   },
   "crates/ralphy-daemon/src/routes/ws_session/relay.rs": {
+    "peer_session_query": [
+      13
+    ],
     "peer_session_ws": [
-      17
+      25
+    ]
+  },
+  "crates/ralphy-daemon/src/routes/ws_session/traffic.rs": {
+    "peer_frame": [
+      12
     ]
   },
   "crates/ralphy-daemon/src/routes/ws_session/upgrade.rs": {
     "session_ws_upgrade": [
-      52
+      53
     ]
   },
   "crates/ralphy-daemon/src/routes/ws_tree.rs": {
     "tree_ws": [
-      77
+      212
+    ]
+  },
+  "crates/ralphy-daemon/src/routes/ws_tree/peer_poll.rs": {
+    "spawn_peer_tree_poller": [
+      61
     ]
   },
   "crates/ralphy-daemon/src/serve.rs": {
-    "announce_peer": [
-      41
-    ],
-    "ctrl_c": [
-      11
-    ],
-    "hold_tunnels_at_start": [
-      11
-    ],
     "serve": [
-      64
-    ],
-    "shutdown_signal": [
-      19
-    ],
-    "wake_fleet_at_start": [
+      37
+    ]
+  },
+  "crates/ralphy-daemon/src/session.rs": {
+    "spawn": [
       13
+    ]
+  },
+  "crates/ralphy-daemon/src/session/manager.rs": {
+    "start_pump": [
+      24
+    ]
+  },
+  "crates/ralphy-daemon/src/session/screen.rs": {
+    "text": [
+      12
+    ]
+  },
+  "crates/ralphy-daemon/src/session/screen/input.rs": {
+    "filter": [
+      24
     ]
   },
   "crates/ralphy-daemon/src/session/screen/snapshot.rs": {
+    "apply": [
+      16
+    ],
     "write": [
+      16
+    ],
+    "write_rows": [
+      22
+    ]
+  },
+  "crates/ralphy-daemon/src/spend.rs": {
+    "annotate_unpriced": [
+      12
+    ]
+  },
+  "crates/ralphy-daemon/src/spend/activity.rs": {
+    "fold": [
+      11
+    ]
+  },
+  "crates/ralphy-daemon/src/spend/deliveries.rs": {
+    "fold": [
+      11
+    ]
+  },
+  "crates/ralphy-daemon/src/spend/rows.rs": {
+    "classify": [
       16
     ]
   },
-  "crates/ralphy-daemon/src/session/spec.rs": {
-    "spec_with_status": [
-      13
+  "crates/ralphy-daemon/src/textcodec.rs": {
+    "encode": [
+      18
     ]
   },
-  "crates/ralphy-daemon/src/tree/ignored.rs": {
-    "push_file": [
-      18
+  "crates/ralphy-daemon/src/tree.rs": {
+    "svg_root_element": [
+      15
+    ]
+  },
+  "crates/ralphy-daemon/src/tree/search.rs": {
+    "find": [
+      12
+    ],
+    "grep_with": [
+      24
+    ]
+  },
+  "crates/ralphy-daemon/src/usage.rs": {
+    "run_records": [
+      24
     ]
   },
   "crates/ralphy-daemon/src/watch.rs": {
     "pump": [
-      11
+      19
+    ],
+    "watch": [
+      14
     ]
   },
-  "crates/ralphy-pricing/src/fetch.rs": {
-    "refresh_if_stale": [
-      26
+  "crates/ralphy-pricing/src/ingest.rs": {
+    "ingest_models_dev": [
+      23
     ]
   },
   "crates/ralphy-pricing/src/lib.rs": {
-    "load": [
-      18
+    "parse_pricing_toml": [
+      14
     ],
-    "warn_unknown": [
-      17
+    "resolve": [
+      20
+    ]
+  },
+  "crates/ralphy-proc-util/src/cursor.rs": {
+    "locate_cursor_with": [
+      13
     ]
   },
   "crates/ralphy-proc-util/src/lib.rs": {
-    "keep_std_handles_from_children": [
+    "find_program": [
+      17
+    ],
+    "tree_to_kill": [
       11
     ]
   },
-  "crates/ralphy-release/src/fetch.rs": {
-    "refresh_if_stale": [
-      26
+  "crates/ralphy-pty/src/bin/demo.rs": {
+    "main": [
+      19
     ]
   },
   "crates/ralphy-run-snapshot/src/read.rs": {
     "list_runs": [
-      12
+      19
+    ]
+  },
+  "crates/ralphy-usage-scan/src/claude.rs": {
+    "parse_transcript": [
+      34
+    ],
+    "scan_claude": [
+      22
     ]
   },
   "crates/ralphy-usage-scan/src/codex.rs": {
     "parse_rollout": [
+      33
+    ],
+    "scan_codex_with_stems": [
+      32
+    ]
+  },
+  "crates/ralphy-usage-scan/src/copilot.rs": {
+    "read_copilot": [
+      12
+    ]
+  },
+  "crates/ralphy-usage-scan/src/cursor.rs": {
+    "scan_chats": [
+      15
+    ],
+    "scan_transcripts": [
       13
     ]
   },
+  "crates/ralphy-usage-scan/src/gemini.rs": {
+    "fold_session": [
+      22
+    ],
+    "scan_gemini": [
+      23
+    ]
+  },
   "crates/ralphy-usage-scan/src/kimi.rs": {
+    "scan_kimi_code": [
+      31
+    ],
     "scan_legacy": [
-      11
+      45
+    ]
+  },
+  "crates/ralphy-usage-scan/src/opencode.rs": {
+    "read_opencode": [
+      18
     ]
   },
   "crates/ralphy-usage-scan/src/recovery.rs": {
     "resolve_models": [
-      11
+      16
     ]
   },
   "crates/xtask/src/asset_pins.rs": {
+    "balanced": [
+      16
+    ],
+    "classify": [
+      15
+    ],
     "collect": [
-      23
+      77
     ],
     "raw_literals": [
-      12
+      32
+    ]
+  },
+  "crates/xtask/src/capabilities.rs": {
+    "parse_diff": [
+      13
+    ],
+    "scan": [
+      13
     ]
   },
   "crates/xtask/src/capabilities/rules.rs": {
     "line_findings": [
-      13
+      19
+    ]
+  },
+  "crates/xtask/src/changelog.rs": {
+    "render_notes": [
+      18
+    ]
+  },
+  "crates/xtask/src/oversized.rs": {
+    "code_lines": [
+      11
+    ]
+  },
+  "crates/xtask/src/release_cmds.rs": {
+    "bump_cmd": [
+      15
+    ],
+    "changelog_cmd": [
+      14
+    ]
+  },
+  "crates/xtask/src/ui_copy.rs": {
+    "to_markdown": [
+      15
     ]
   },
   "crates/xtask/src/ui_copy/check.rs": {
     "row_violations": [
-      12
+      18
     ]
   },
   "crates/xtask/src/ui_copy/html.rs": {
     "read_tag": [
-      14
+      34
     ],
     "scan": [
-      14
+      39
     ]
   },
   "crates/xtask/src/ui_copy/js.rs": {
     "scan": [
-      32
+      65
+    ]
+  },
+  "crates/xtask/src/ui_copy/js/scan.rs": {
+    "alternatives": [
+      17
+    ],
+    "emit": [
+      11
+    ],
+    "expr_end": [
+      11
+    ],
+    "markup": [
+      19
+    ],
+    "render": [
+      20
     ]
   },
   "crates/xtask/src/ui_copy/lex.rs": {
     "lex": [
-      17
+      43
     ]
   },
   "crates/xtask/src/ui_groups.rs": {
     "expression_names": [
-      12
+      30
     ],
     "parse_shell": [
-      19
+      47
     ],
     "read_tag": [
-      16
+      40
+    ],
+    "render": [
+      14
+    ],
+    "scan_accesses": [
+      18
     ],
     "scan_bindings": [
+      38
+    ],
+    "stats": [
       15
+    ],
+    "writes": [
+      17
     ]
   }
 }

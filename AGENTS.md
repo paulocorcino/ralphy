@@ -149,11 +149,11 @@ ubiquitous language, and each crate is roughly one bounded context.
   workbench module is cut by
   [ADR-0073](./docs/adr/0073-the-workbench-script-is-cut-into-alpine-components.md).
 - **Function complexity is measured by tools too.** A production function
-  may score 10: clippy's cognitive complexity in Rust, oxlint's `complexity`
-  in TypeScript. A function over 10 fails unless
+  may score 10: cognitive complexity in Rust, oxlint's `complexity` in
+  TypeScript. A closure and every `#[cfg]` branch count toward the function
+  around them. A function over 10 fails unless
   `docs/complexity-baseline.json` lists it, and a listed function may only
-  go down. The local form (it needs `rustup toolchain install 1.98.0 -c
-  clippy`):
+  go down. The local form:
 
   ```sh
   cargo run -q -p xtask -- complexity --check --base main
