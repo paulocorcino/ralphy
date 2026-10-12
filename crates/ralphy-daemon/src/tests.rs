@@ -698,8 +698,19 @@ async fn root_serves_the_embedded_page() {
     // screen look like a broken asset pipeline — and "daemon" left that
     // brand naming the process rather than the thing being logged into.
     assert!(
-        body.contains("<title>Ralphy · workbench</title>"),
+        body.contains("<title>Ralphy</title>"),
         "the page must identify the daemon; got: {body}"
+    );
+    // An installed app's window title is "<manifest name> - <page title>"
+    // unless the page title starts with the name (Chromium
+    // `WebAppBrowserController::GetTitle`), so a name that differs from the
+    // title shows the product twice.
+    let manifest: serde_json::Value =
+        serde_json::from_str(include_str!("../assets/ui/manifest.webmanifest"))
+            .expect("the manifest is valid JSON, pinned by the install test");
+    assert_eq!(
+        manifest["name"], "Ralphy",
+        "the installed app name must equal the page title"
     );
     assert!(
         body.contains(r#"x-data="shell""#),
