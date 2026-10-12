@@ -20,7 +20,7 @@ import { wirePaste } from "./wb-console-paste.ts";
 import { wirePress } from "./wb-console-press.ts";
 import { createFit } from "./wb-console-fit.ts";
 import { frameQueue } from "./wb-console-frames.ts";
-import { terminalGpu } from "./wb-console-gpu.ts";
+import { reportHandshake, terminalGpu } from "./wb-console-gpu.ts";
 import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
 import type { DetachReason } from "./wb-console-session.ts";
 import type { SessionRequest } from "./wb-session-route.ts";
@@ -287,8 +287,8 @@ export function createTerminal(deps: TerminalDeps) {
       // first LIVE frame clears it.
       replaying = connOpts.id != null;
       replayNext = false;
-      // A terminal that no socket of this window has written to yet.
-      const fresh = firstConnect;
+      // A terminal that no `session-open` of this window has written to yet.
+      let fresh = firstConnect;
       const holder = WBSessionRoute.tabHolder();
       const request = WBSessionRoute.requestOpts(
         connOpts,
@@ -316,6 +316,7 @@ export function createTerminal(deps: TerminalDeps) {
         retryDelay = 0;
         failedReopens = 0;
         firstConnect = false;
+        reportHandshake(Date.now() - connectingSince);
         // Never xterm's default 80×24: only a size the body measured.
         sizing.opened();
       };
@@ -352,6 +353,7 @@ export function createTerminal(deps: TerminalDeps) {
             // shows. Any other replay repaints the screen, so the terminal is
             // cleared first.
             if (!fresh && !resumed) term.reset();
+            fresh = false;
             // HERE, not in `onPark`: the reset above would wipe a line written
             // before the socket opened.
             if (watching && !resumed) term.write("\r\n[read-only: another window has control]\r\n");

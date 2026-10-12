@@ -4,10 +4,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  DORMANT_AFTER_MS,
   DORMANT_MARGIN_PX,
   GPU_BUDGET,
+  SLOW_DORMANT_AFTER_MS,
+  SLOW_HANDSHAKE_MS,
   createGpuBudget,
+  dormantAfterMs,
   gpuHolders,
+  reportHandshake,
 } from "../assets/ui/wb-console-gpu.ts";
 
 // --- gpuHolders: which windows hold one of the page's WebGL contexts ---------
@@ -208,4 +213,34 @@ test("a budget uses its deps, not the page's IntersectionObserver or queueMicrot
   assert.throws(missing("queueMicrotask"), TypeError);
   assert.throws(missing("isCovered"), TypeError);
   assert.throws(missing("wins"), TypeError);
+});
+
+// --- dormantAfterMs: how long a covered window waits before it sleeps ------
+// On a slow link a reattach costs more, so a window waits longer.
+
+test("dormantAfterMs waits longer only after a slow handshake", () => {
+  // [case, handshake ms, expected wait ms]
+  const rows = [
+    ["no socket opened yet", null, DORMANT_AFTER_MS],
+    ["a fast handshake", 80, DORMANT_AFTER_MS],
+    ["just under the threshold", SLOW_HANDSHAKE_MS - 1, DORMANT_AFTER_MS],
+    ["at the threshold", SLOW_HANDSHAKE_MS, SLOW_DORMANT_AFTER_MS],
+    ["a slow handshake", 2000, SLOW_DORMANT_AFTER_MS],
+  ];
+  for (const [name, handshake, expected] of rows) {
+    assert.equal(dormantAfterMs(handshake), expected, name);
+  }
+  assert.equal(DORMANT_AFTER_MS, 15000);
+  assert.equal(SLOW_DORMANT_AFTER_MS, 120000);
+});
+
+test("dormantAfterMs reads the handshake the last console socket reported", () => {
+  try {
+    reportHandshake(900);
+    assert.equal(dormantAfterMs(), SLOW_DORMANT_AFTER_MS);
+    reportHandshake(40);
+    assert.equal(dormantAfterMs(), DORMANT_AFTER_MS);
+  } finally {
+    reportHandshake(null);
+  }
 });

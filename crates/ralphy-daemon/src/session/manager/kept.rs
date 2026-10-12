@@ -44,7 +44,7 @@ pub(super) struct KeptOutput {
     size: watch::Sender<(u16, u16)>,
     /// Every byte the session wrote, also the ones the ring dropped. The ring
     /// holds the last `ring.len()` of them.
-    written: u64,
+    pub(super) written: u64,
     /// `written` at the last resize the PTY accepted. The bytes after it were
     /// written at the size the session has now.
     resized_at: u64,

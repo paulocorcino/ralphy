@@ -34,6 +34,9 @@ payload of that socket), `since` (the byte count the socket sent),
 have) and `traffic` (every field of the daemon's `console socket traffic`
 line for that socket).
 
+`wake_gzip_bytes` is the gzip replay frame of the wake: the compressed
+snapshot (null when the wake's replay was not gzip).
+
 Arguments: `--label <name>` names the output
 `docs/plans/logs/689-measure-<label>.json` (default `latest`); `--assert <name>`
 (repeatable) names a fact that must hold. `size` always holds: no console
@@ -76,7 +79,7 @@ EXE = os.path.join(TARGET, "ralphy.exe" if os.name == "nt" else "ralphy")
 CHILD = os.path.join(TARGET, "session_test_child.exe" if os.name == "nt" else "session_test_child")
 LOGS = os.path.join(REPO_ROOT, "docs", "plans", "logs")
 VIEW = {"width": 2400, "height": 1000}
-# `DORMANT_AFTER_MS` in wb-console-gpu.ts is 15 s.
+# `dormantAfterMs()` in wb-console-gpu.ts: 15 s on a fast link, as loopback is.
 DORMANT_AFTER_S = 15
 MOVES = 5
 FLOOD_KIB = 600
@@ -550,6 +553,10 @@ def attach_traffic(log_path, page_session):
         if name in facts:
             facts[name].pop("_socket", None)
     facts["traffic_lines"] = lines
+    # The compressed snapshot on wake decides #581 item 5 (ADR-0079 D11).
+    wake = facts.get("wake") or {}
+    gzipped = (wake.get("open") or {}).get("replay_encoding") == "gzip"
+    facts["wake_gzip_bytes"] = wake.get("replay_bytes") if gzipped else None
 
 
 def run(args):

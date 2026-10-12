@@ -1,6 +1,6 @@
 # The daemon keeps the console screen, and a reattach is ordered and resumable
 
-Status: proposed
+Status: accepted
 Kind: structural
 Protects: consistency of the workbench, responsiveness
 
@@ -189,6 +189,12 @@ a dormant console keeps its bytes and resumes by offset (D8). The spike
 predicts 24 KB for a full 1000-line prose snapshot. The number on the iPhone
 through dev tunnels is still to be confirmed by a person.
 
+Decided on 2026-10-12: **item 5 is dropped.** The closing measure of #689
+(`tests/browser/console/wb_console_screen_689.py`, Windows 11, loopback) put
+the compressed snapshot on wake at 3 168 bytes (27 947 bytes before gzip),
+well under 64 KiB. A dormant console keeps no bytes. The iPhone number
+through dev tunnels is still to be confirmed by Paulo.
+
 **D12. The ring stays, at 512 KiB.** It serves the resume (D8), the fallback
 of D3, and `read_output` (#679). The ring is no longer the replay of a
 normal attach.
@@ -219,6 +225,26 @@ the new fields gets the raw replay and today's rules.
 - ADR-0067's prediction for a reattach after a long disconnection changes:
   the operator sees the screen and the last 1000 lines, not the last 512 KiB.
 
+Two limits found while this decision was built:
+
+- **A terminal refitted while its socket was dead.** The page keeps its
+  byte count across a reconnect. When its box changed size while the socket
+  was down, the resume tail (D8) can hold bytes written at the old size. The
+  size the page sends on open makes the TUI repaint, which corrects the
+  screen; a plain shell does not repaint.
+- **A live receiver that lags (resolved).** A burst can outrun a slow socket, and the
+  broadcast then drops bytes for it. The bridge starts that socket again: it
+  takes a new snapshot, a new receiver and the size under the same lock as
+  an attach, and sends a new `session-open` with `resume: false`, the size
+  and the snapshot. The page resets its terminal and takes the new byte
+  count. The traffic line counts it in `lagged_events`. Checked by the
+  manager test `a_resync_after_a_lag_shows_the_session_screen`, the bridge
+  test `a_lagged_receiver_sends_the_screen_again_from_a_new_offset` and the
+  `wb-console-terminal` ui-test
+  `a second session-open on one socket resets the terminal and sets the count`.
+  A relaying daemon counts the replay of such a second `session-open` as live
+  bytes in its own traffic line.
+
 ## Considered options
 
 - **vt100.** No reflow; 0 of 3000 lines of scrollback while a scroll region is
@@ -234,35 +260,64 @@ the new fields gets the raw replay and today's rules.
 
 ## Compliance
 
-- D1: not checked by code yet. Planned: a test in `crates/xtask/tests/`
-  that fails when a file other than `crates/ralphy-daemon/src/session/screen.rs`
-  (or its `screen/` directory) names `alacritty_terminal`.
-- D2: not checked by code yet. Planned: a screen test that feeds a
-  synchronized update without its end and finds the bytes on the screen.
-- D3: not checked by code yet. Planned: screen tests for the 64 KiB string
-  cap, the size clamp (0x0 and 65535x65535 resizes), and the fallback to the
-  raw ring after a caught panic.
-- D4: not checked by code yet. Planned: a screen test that the emulator's
-  history is 1000 lines; the 30-console memory is a measure, not a test.
-- D5: not checked by code yet. Planned: round-trip tests in the screen module
-  (a recorded stream with a width change, each input mode, the alternate
-  screen, the scroll region, a wrapped row before an empty row, the pending
-  wrap), and the measure harness `screen_equal_after_wake`.
-- D6: not checked by code yet. Planned: a bridge test that `session-size`
-  comes after `session-open` and before the replay; a browser check that a
-  watcher paints at the session size; `session-size` added to the push verbs
-  of `crates/xtask/tests/ui_contract.rs`.
-- D7: not checked by code yet. Planned: manager tests for a lower, an equal
-  and a missing attempt; a browser check with a delayed first socket.
-- D8: not checked by code yet. Planned: manager tests for an offset inside the
-  ring, before the last resize, older than the ring and after the count.
-- D9: not checked by code yet. Planned: a bridge test of `replay_encoding`; a
-  browser check that delays the replay frame and finds the live frames after
-  it, in order.
-- D10: not checked by code yet. Planned: a `ui-tests` test of the delay for a
-  slow and a fast handshake.
-- D11: not checked by code: a measure, recorded in this ADR by the closing
-  stage of #689.
+Rust tests named here are in `crates/ralphy-daemon/src/`:
+`session/screen/tests.rs` (the screen), `session/manager/tests.rs` (the
+manager), `routes/ws_session/bridge.rs` (the bridge) and `tests.rs` (the
+relay). Browser checks are in `tests/browser/console/`; they are not CI tests.
+
+- D1: not checked by code. The crate is named only in `session/screen.rs` and
+  `session/screen/`; a test in `crates/xtask/tests/` that fails on any other
+  file is still to be written.
+- D2: checked by the screen test `a_synchronized_update_is_applied_at_once`.
+- D3: checked by the screen tests
+  `a_string_past_the_cap_is_ended_and_its_rest_dropped`, `sizes_are_clamped`
+  and `hostile_output_does_not_panic`, the manager tests
+  `a_resize_gives_the_screen_the_clamped_session_size`,
+  `a_broken_screen_falls_back_to_the_raw_ring` and
+  `a_resume_still_works_after_the_screen_broke`.
+- D4: checked by the screen test `the_scrollback_keeps_its_line_count` and
+  the manager test `thirty_full_sessions_keep_only_the_scrollback_lines`. The
+  resident memory of 30 consoles is a measure, not a test.
+- D5: checked by the screen round-trip tests (a width change, each input
+  mode, the cursor shape, the alternate screen, the scroll region, a wrapped
+  row before an empty row, the pending wrap, the title and a hyperlink), the
+  manager tests `a_replay_rebuilds_the_screen_after_a_width_change`,
+  `every_line_is_in_the_replay_or_on_the_live_receiver_once` and
+  `a_watcher_gets_the_same_replay_as_the_writer`, and the browser check
+  `wb_console_screen_689.py` (`screen_equal` for reconnect, wake and reload).
+- D6: checked by the bridge test
+  `a_watcher_gets_the_size_before_the_replay_and_on_each_resize`, the manager
+  test `a_resize_by_the_writer_reaches_every_attachment`, the
+  `wb-console-fit` and `wb-console-frames` ui-tests, `session-size` in the
+  push verbs of `crates/xtask/tests/ui_contract.rs`, and the browser check
+  `wb_console_watch_size_689.py`.
+- D7: checked by the manager tests
+  `a_lower_attempt_of_the_same_holder_is_superseded_and_evicts_nobody`,
+  `another_holder_is_busy_and_a_take_over_still_evicts` and
+  `without_an_attempt_on_either_side_the_holder_reclaims`, the relay test
+  `peer_session_query_forwards_the_attempt_with_the_holder`, the
+  `wb-session-route` ui-tests of the attempt, and the browser check
+  `wb_console_late_socket_598.py`.
+- D8: checked by the manager tests
+  `a_since_inside_the_ring_resumes_with_the_bytes_after_it`,
+  `a_since_that_cannot_resume_gets_the_snapshot`,
+  `a_since_before_the_ring_start_gets_the_snapshot`,
+  `a_resume_while_publishing_gets_every_byte_after_since_once` and
+  `an_attachment_says_its_offset_and_whether_it_resumed`, the bridge test
+  `session_open_says_the_offset_and_whether_the_replay_resumes`, the relay
+  test `peer_session_query_forwards_since_on_a_reattach`, the
+  `wb-console-terminal` ui-tests of the offset, and the browser check
+  `wb_console_screen_689.py` (`resume`).
+- D9: checked by the bridge test `the_replay_is_gzipped_only_when_the_tab_asks`,
+  the traffic test `a_relayed_gzip_replay_is_counted_on_the_wire_and_raw`, the
+  relay test `peer_session_query_forwards_gzip_on_every_shape`, the
+  `wb-console-frames` ui-tests of the gzip queue, and the browser check
+  `wb_console_gzip_689.py`.
+- D10: checked by the `wb-console-gpu` ui-tests
+  `dormantAfterMs waits longer only after a slow handshake` and
+  `dormantAfterMs reads the handshake the last console socket reported`.
+- D11: not checked by code: a measure. `wb_console_screen_689.py` writes
+  `wake_gzip_bytes`; the decision and its number are in D11.
 - D12: checked by `crates/ralphy-daemon/src/session/manager/tests.rs`
   (`scrollback_cap_is_512_kib`).
 - D13: checked by `crates/xtask/tests/ratchets.rs`

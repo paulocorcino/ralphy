@@ -836,3 +836,63 @@ async fn an_attachment_says_its_offset_and_whether_it_resumed() {
     assert!(!watcher.resume);
     manager.close(id);
 }
+
+/// A watcher whose receiver lagged starts again from the screen: after
+/// `resync`, its new replay plus its new receiver show what the session
+/// shows, and the lost bytes are not missed.
+#[tokio::test]
+async fn a_resync_after_a_lag_shows_the_session_screen() {
+    let manager = Arc::new(SessionManager::new());
+    let (id, writer) = manager
+        .spawn_attached(
+            "~".to_string(),
+            "console".to_string(),
+            "console".to_string(),
+            None,
+            None,
+            None,
+            console_spec(std::env::temp_dir(), 24, 80, None),
+        )
+        .expect("the platform shell must spawn");
+    drop(writer);
+    let mut watcher = manager.watch(id, None).expect("a live session");
+    let line = |i: usize| format!("R{i:04} {}\r\n", "-".repeat(60)).into_bytes();
+    for i in 0..BROADCAST_CAP + 10 {
+        publish(&watcher.sess.kept, &watcher.sess.tx, line(i));
+    }
+    assert!(matches!(
+        watcher.rx.try_recv(),
+        Err(broadcast::error::TryRecvError::Lagged(_))
+    ));
+
+    watcher.resync();
+    assert!(!watcher.resume, "a resync is never a resume");
+    for i in 0..5 {
+        publish(
+            &watcher.sess.kept,
+            &watcher.sess.tx,
+            format!("after {i}\r\n").into_bytes(),
+        );
+    }
+    // Under the lock no chunk is on its way, so the receiver holds every
+    // byte up to the count.
+    let kept = watcher.sess.kept.lock().expect("kept output mutex");
+    let (rows, cols) = *watcher.size.borrow();
+    let mut page = Screen::new(rows, cols, screen::SCROLLBACK_LINES);
+    page.feed(&watcher.snapshot);
+    let mut live = 0u64;
+    while let Ok(chunk) = watcher.rx.try_recv() {
+        live += chunk.len() as u64;
+        page.feed(&chunk);
+    }
+    assert_eq!(
+        watcher.offset + live,
+        kept.written,
+        "no byte is lost or repeated"
+    );
+    let session = kept.screen.as_ref().expect("no panic was caught").text();
+    assert!(session.contains("after 4"));
+    assert_eq!(page.text(), session);
+    drop(kept);
+    manager.close(id);
+}

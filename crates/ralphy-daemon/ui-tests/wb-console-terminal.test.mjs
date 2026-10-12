@@ -336,6 +336,28 @@ test("a reconnect that does not resume resets the terminal, and a peer with no o
   }
 });
 
+// A daemon whose live stream lagged sends `session-open` again on the same
+// socket, with the screen of now: the terminal is cleared and takes the new count.
+test("a second session-open on one socket resets the terminal and sets the count", () => {
+  const page = fakePage();
+  try {
+    const handle = createTerminal(fakeDeps().deps).attachTerminal(fakeElement(), { id: 5 });
+    const term = page.terminals[0];
+    open(page.sockets[0], { offset: 40, replay: true });
+    page.sockets[0].onmessage(terminalFrame(5, "SNAP"));
+    page.sockets[0].onmessage(terminalFrame(5, "abc"));
+    page.sockets[0].onmessage(commandFrame("session-open", { session: 5, offset: 900, replay: true, resume: false }));
+    page.sockets[0].onmessage(terminalFrame(5, "SCREEN"));
+    page.sockets[0].onmessage(terminalFrame(5, "de"));
+    assert.equal(term.resets, 1, "the screen of now replaces what the terminal shows");
+    handle.takeOver();
+    assert.equal(sinceOf(page.sockets[1]), "902");
+    handle.dispose();
+  } finally {
+    page.restore();
+  }
+});
+
 test("a notice of the page in the terminal forgets the offset", () => {
   const page = fakePage();
   try {

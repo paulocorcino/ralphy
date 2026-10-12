@@ -711,6 +711,19 @@ impl Attachment {
         self.sess.resize(rows, cols)
     }
 
+    /// Start again from the screen as it is now, for a bridge whose live
+    /// receiver lagged and lost bytes: a new `snapshot` (never a resume), its
+    /// `offset`, a new `rx` and a new `size`, taken under the `kept` lock as an
+    /// attach takes them, so the EXACTLY-ONCE REPLAY INVARIANT holds from here.
+    pub fn resync(&mut self) {
+        let subscribed = replay_and_subscribe(&self.sess.kept, &self.sess.tx, None);
+        self.snapshot = subscribed.replay;
+        self.resume = subscribed.resume;
+        self.offset = subscribed.offset;
+        self.rx = subscribed.rx;
+        self.size = subscribed.size;
+    }
+
     /// Record `holder` and its `attempt` on the writer slot this attachment
     /// holds — how a fresh launch, which claims its slot inside the spawn,
     /// names its holder. A no-op for a watcher and for a slot another
