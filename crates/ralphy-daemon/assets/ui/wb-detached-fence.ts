@@ -12,6 +12,7 @@ import type { PopupMember } from "./wb-desk-popups.ts";
 import { isNullableString, isOptionalString, isRecord } from "./wb-api.ts";
 import { openerOf } from "./wb-events.ts";
 import type { ConsoleWin, Rect } from "./wb-types.d.ts";
+import { windowTitle } from "./wb-window-title.ts";
 
 /** The opener's answer to "ready": the fence, its members, and the ids of
  * the tab and of this window. */
@@ -89,7 +90,7 @@ export function wireDetachedFence(window: Window, document: Document) {
     // hands back after the opener reloads, so the consoles return to the
     // boxes they were detached from whatever was done to them here.
     MEMBERS = m.members || [];
-    document.title = (m.fence.name || "fence") + " · Ralphy";
+    document.title = windowTitle(m.fence.name || "fence");
     WBConsole.mountDetached(m.fence, MEMBERS);
     addTools();
     openLink();
