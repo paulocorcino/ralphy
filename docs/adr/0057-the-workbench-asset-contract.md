@@ -4,6 +4,9 @@ Status: accepted (2026-09-08).
 
 D3 and D7 are amended (2026-09-30); see the amendment at the end.
 
+Amended by ADR-0080, proposed (D6: a page is built from parts at compile
+time; the daemon still has no template engine).
+
 Amended by ADR-0075, proposed (the gate adds a type check; D4 names
 `wb-foo.ts`).
 

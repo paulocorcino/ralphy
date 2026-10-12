@@ -100,7 +100,11 @@ feature with its own state moves out of it into an Alpine component in its
 own file, one feature at a time
 ([ADR-0073](./adr/0073-the-workbench-script-is-cut-into-alpine-components.md)).
 The Hosts dialog (`wb-hosts-dialog.ts`) is the first one, and the first
-module.
+module. The markup of a component is planned to move into a part
+(`wb-foo.part.html`) that `build.rs` puts into the page; the daemon still
+serves one complete page
+([ADR-0080](./adr/0080-the-workbench-pages-are-built-from-parts.md),
+proposed).
 
 ## 4. Components and crates
 

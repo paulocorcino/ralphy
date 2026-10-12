@@ -7,6 +7,9 @@ Protects: testability, extensibility
 Amended by ADR-0075, proposed (D1 is replaced: the script is TypeScript,
 built into ES modules by `build.rs`).
 
+Amended by ADR-0080, proposed (D9: a component's markup is a part, put into
+`index.html` at compile time).
+
 ## Context
 
 Two files hold most of the workbench script, and they grow fast. Measured on
