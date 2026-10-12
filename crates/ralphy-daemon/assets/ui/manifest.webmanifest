@@ -1,6 +1,6 @@
 {
-  "name": "ralphy workbench",
-  "short_name": "ralphy",
+  "name": "Ralphy",
+  "short_name": "Ralphy",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",
