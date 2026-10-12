@@ -129,6 +129,6 @@ test("a replay that is not gzip is dropped and the live frames still come", asyn
   } finally {
     console.warn = warn;
   }
-  assert.deepEqual(seen, ["open", "live 1", "live 2"]);
+  assert.deepEqual(seen, ["open", "replay-lost", "live 1", "live 2"], "the terminal is told the replay is lost");
   assert.equal(warned.length, 1, "the decode error is logged");
 });

@@ -33,6 +33,8 @@ export type SocketEvent =
   | { kind: "end"; reason: string; message: string | null }
   // The session size: the size of the writer's console.
   | { kind: "size"; rows: number; cols: number }
+  // The gzip replay did not decode: the terminal does not show it.
+  | { kind: "replay-lost" }
   // A frame this page does not act on: another verb, a bad body, a short or
   // unknown frame.
   | { kind: "other" };
@@ -103,7 +105,10 @@ export function frameQueue(apply: (event: SocketEvent) => void): (bytes: Uint8Ar
       .then(
         (decoded) => apply({ ...event, bytes: decoded }),
         // The replay is lost, not the console: the live stream goes on.
-        (error: unknown) => console.warn("console replay did not decode:", error),
+        (error: unknown) => {
+          console.warn("console replay did not decode:", error);
+          apply({ kind: "replay-lost" });
+        },
       )
       .finally(drain);
   }

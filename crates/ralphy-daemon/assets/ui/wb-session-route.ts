@@ -3,9 +3,12 @@
 // or an agent launch.
 // `gzip`: the page can decode a gzip replay, so it asks for one.
 // `attempt`: the tab's number for this connect, sent beside the holder.
+// `since`: on a reattach, the count of the session's output bytes the
+// terminal shows.
 type SessionUrlOpts =
   | {
       id: number;
+      since?: number;
       repo?: string;
       takeover?: boolean;
       watch?: boolean;
@@ -70,6 +73,14 @@ type SessionOpen = {
   // "gzip" when the replay frame that follows is gzipped. A peer of an older
   // build sends no such field, and its replay is raw.
   replay_encoding?: "gzip";
+  // A replay frame follows.
+  replay?: boolean;
+  // The count of the session's output bytes at the end of the replay. A peer
+  // of an older build sends neither this nor `resume`.
+  offset?: number;
+  // The replay is only the bytes after the `since` this socket sent: the
+  // terminal keeps what it shows.
+  resume?: boolean;
 };
 
 export const WBSessionRoute = (function () {
@@ -148,6 +159,7 @@ export const WBSessionRoute = (function () {
     if (opts.id != null) {
       value += "id=" + encodeURIComponent(opts.id);
       if (opts.repo) value += "&repo=" + encodeURIComponent(opts.repo);
+      if (Number.isSafeInteger(opts.since) && opts.since != null && opts.since >= 0) value += "&since=" + opts.since;
       if (opts.takeover) value += "&takeover=1";
       // A watcher claims nothing, so it names no holder.
       if (opts.watch) value += "&watch=1";
@@ -185,9 +197,17 @@ export const WBSessionRoute = (function () {
   // The url options of one connect, in the shape its kind reads. An agent
   // launch with no repo or no agent sends the value empty, never `null`: the
   // daemon refuses it as an unknown repo or agent.
-  function requestOpts(req: SessionRequest, holder: string, gzip = false, attempt?: number): SessionUrlOpts {
+  // `since` is sent only on a reattach: a launch opens a new terminal.
+  function requestOpts(
+    req: SessionRequest,
+    holder: string,
+    gzip = false,
+    attempt?: number,
+    since?: number,
+  ): SessionUrlOpts {
     const repo = req.repo ?? undefined;
-    if (req.id != null) return { id: req.id, repo, takeover: req.takeover, watch: req.watch, holder, gzip, attempt };
+    if (req.id != null)
+      return { id: req.id, since, repo, takeover: req.takeover, watch: req.watch, holder, gzip, attempt };
     if (req.console) return { console: true, repo, command: req.command, record: req.record, holder, gzip, attempt };
     const { agent, checkout, name, record } = req;
     return { repo: req.repo ?? "", agent: agent ?? "", checkout, name, record, holder, gzip, attempt };

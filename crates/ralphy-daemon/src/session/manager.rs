@@ -2,7 +2,7 @@
 //! close the daemon-owned sessions, and pump each child's bytes to its
 //! subscribers.
 
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -11,145 +11,17 @@ use anyhow::Result;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::{broadcast, watch};
 
-use super::screen::{self, Screen};
+use super::screen;
 use super::{EndReason, EvictToken, Session, SessionId, SessionInfo, SessionSpec};
 
+mod kept;
 mod record;
+use kept::{publish, replay_and_subscribe, KeptOutput, Subscribed};
 pub use record::RecordClaim;
-
-/// Append `bytes` to the scrollback `ring`, then drop from the FRONT until it is
-/// no longer over `cap` — a byte-bounded ring so a chatty session cannot grow the
-/// daemon's memory without bound (issue #166 AC2). Front-drop is intentional:
-/// scrollback keeps the most RECENT output; the truncated seam is resynchronized
-/// by the live stream that follows the replay.
-fn push_capped(ring: &mut std::collections::VecDeque<u8>, bytes: &[u8], cap: usize) {
-    ring.extend(bytes.iter().copied());
-    while ring.len() > cap {
-        ring.pop_front();
-    }
-}
-
-/// Per-session scrollback cap. A byte bound (not a line bound) is the simplest
-/// structure that satisfies the "chatty session cannot grow memory unboundedly"
-/// AC; a byte cap may truncate an escape sequence at the replay seam, which
-/// xterm.js resynchronizes on the live stream that follows.
-const SCROLLBACK_CAP_BYTES: usize = 512 * 1024;
 
 /// Broadcast capacity (chunks) for the live fan-out. Generous so a briefly slow
 /// attach only `Lagged`s (the bridge tolerates a gap) rather than blocking the pump.
 const BROADCAST_CAP: usize = 1024;
-
-/// What the daemon keeps of one session's output, under ONE lock: the raw
-/// ring and the screen the emulator builds from the same bytes (ADR-0079 D1,
-/// D12). Only [`publish`] feeds them, so both see every byte in the same
-/// order.
-struct KeptOutput {
-    session: SessionId,
-    ring: VecDeque<u8>,
-    /// `None` once the emulator panicked: every later attach then gets the
-    /// raw ring (ADR-0079 D3).
-    screen: Option<Screen>,
-    /// The session size `(rows, cols)`, clamped. Kept here and not read from
-    /// `screen`, which a panic removes. Every attachment holds a receiver
-    /// (ADR-0079 D6).
-    size: watch::Sender<(u16, u16)>,
-}
-
-impl KeptOutput {
-    /// Empty, with a screen of `rows` x `cols` (clamped).
-    fn new(session: SessionId, rows: u16, cols: u16) -> Self {
-        KeptOutput {
-            session,
-            ring: VecDeque::new(),
-            screen: Some(Screen::new(rows, cols, screen::SCROLLBACK_LINES)),
-            size: watch::Sender::new(screen::clamp_size(rows, cols)),
-        }
-    }
-
-    fn push(&mut self, chunk: &[u8]) {
-        push_capped(&mut self.ring, chunk, SCROLLBACK_CAP_BYTES);
-        self.on_screen(|screen| screen.feed(chunk));
-    }
-
-    /// Gives the screen the new size, and tells the attachments when the
-    /// size changed. A resize to the size the session has tells nobody.
-    fn resize(&mut self, rows: u16, cols: u16) {
-        self.on_screen(|screen| screen.resize(rows, cols));
-        let size = screen::clamp_size(rows, cols);
-        self.size.send_if_modified(|now| {
-            let changed = *now != size;
-            *now = size;
-            changed
-        });
-    }
-
-    /// The replay of an attach: the screen snapshot, or the raw ring once the
-    /// screen is broken. Empty while the session has written nothing, so a
-    /// fresh session sends no replay frame.
-    fn replay(&mut self) -> Vec<u8> {
-        if self.ring.is_empty() {
-            return Vec::new();
-        }
-        if let Some(snapshot) = self.on_screen(Screen::snapshot) {
-            return snapshot;
-        }
-        let (front, back) = self.ring.as_slices();
-        [front, back].concat()
-    }
-
-    /// Runs `f` on the screen, unless it is broken. A panic inside the
-    /// emulator is caught and breaks the screen for good: the output is
-    /// untrusted (ADR-0072 D11), and a panic must not end the pump. The lock
-    /// is not poisoned, because the panic does not leave this call.
-    fn on_screen<R>(&mut self, f: impl FnOnce(&mut Screen) -> R) -> Option<R> {
-        let screen = self.screen.as_mut()?;
-        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(screen))) {
-            Ok(result) => Some(result),
-            Err(_) => {
-                tracing::warn!(
-                    session = self.session,
-                    "the console screen failed; a reattach of this session now gets the raw output"
-                );
-                self.screen = None;
-                None
-            }
-        }
-    }
-}
-
-/// Keep `chunk` and send it to every attachment.
-///
-/// EXACTLY-ONCE REPLAY INVARIANT: the `kept` lock is held across BOTH the
-/// keep AND `tx.send`, mirrored by [`replay_and_subscribe`] holding it across
-/// replay+subscribe. So an attach never gets a byte both in its replay and on
-/// its live receiver, and never misses one in between.
-fn publish(kept: &Mutex<KeptOutput>, tx: &broadcast::Sender<Vec<u8>>, chunk: Vec<u8>) {
-    let mut kept = kept.lock().expect("kept output mutex");
-    kept.push(&chunk);
-    let _ = tx.send(chunk);
-    drop(kept);
-}
-
-/// What an attach gets under the `kept` lock: the replay, the live receiver
-/// and the size receiver.
-type Subscribed = (
-    Vec<u8>,
-    broadcast::Receiver<Vec<u8>>,
-    watch::Receiver<(u16, u16)>,
-);
-
-/// The replay of an attach, its live receiver and its size receiver, taken
-/// under the `kept` lock (see [`publish`]). The writer and every watcher come
-/// here, so they get the same replay. The size a receiver holds now is the
-/// size the replay was written at.
-fn replay_and_subscribe(kept: &Mutex<KeptOutput>, tx: &broadcast::Sender<Vec<u8>>) -> Subscribed {
-    let mut kept = kept.lock().expect("kept output mutex");
-    let replay = kept.replay();
-    let rx = tx.subscribe();
-    let size = kept.size.subscribe();
-    drop(kept);
-    (replay, rx, size)
-}
 
 /// A session the daemon owns (the tmux model): the PTY child plus the machinery
 /// that lets a client detach and reattach. `kept` is the ring and the screen; `tx`
@@ -495,7 +367,7 @@ impl SessionManager {
         id: SessionId,
         takeover: bool,
     ) -> Result<Attachment, AttachError> {
-        self.attach_as(id, takeover, None, None)
+        self.attach_as(id, takeover, None, None, None)
     }
 
     /// [`attach`](Self::attach) as `holder`. A busy slot whose writer claimed it
@@ -509,12 +381,17 @@ impl SessionManager {
     /// socket the client already replaced, so it is `Superseded` and evicts
     /// nobody, `takeover` or not. When either side has no attempt, the
     /// holder rule above decides alone.
+    ///
+    /// `since` is the byte count the client's terminal already shows: the
+    /// replay is then only the bytes after it, when the ring still has them
+    /// all (ADR-0079 D8). See [`Attachment::resume`].
     pub fn attach_as(
         self: &Arc<Self>,
         id: SessionId,
         takeover: bool,
         holder: Option<&str>,
         attempt: Option<u64>,
+        since: Option<u64>,
     ) -> Result<Attachment, AttachError> {
         let token = Arc::new(EvictToken::new());
         let sess = {
@@ -553,20 +430,12 @@ impl SessionManager {
             drop(slot);
             sess
         };
-        let (snapshot, rx, size) = replay_and_subscribe(&sess.kept, &sess.tx);
-        Ok(Attachment {
-            snapshot,
-            rx,
-            size,
-            evict: token.clone(),
-            writer: true,
-            _guard: AttachGuard {
-                sess: sess.clone(),
-                token,
-                writer: true,
-            },
+        Ok(Attachment::new(
+            replay_and_subscribe(&sess.kept, &sess.tx, since),
+            token,
+            true,
             sess,
-        })
+        ))
     }
 
     /// Attach to an existing session as a READ-ONLY watcher (issue #334): the
@@ -577,9 +446,15 @@ impl SessionManager {
     ///
     /// EXACTLY-ONCE REPLAY INVARIANT: replay+`subscribe()` under the `kept`
     /// lock, exactly as [`attach`] does — the invariant holds for a watcher too.
+    /// `since` is read as [`attach_as`] reads it.
     ///
     /// [`attach`]: SessionManager::attach
-    pub fn watch(self: &Arc<Self>, id: SessionId) -> Result<Attachment, AttachError> {
+    /// [`attach_as`]: SessionManager::attach_as
+    pub fn watch(
+        self: &Arc<Self>,
+        id: SessionId,
+        since: Option<u64>,
+    ) -> Result<Attachment, AttachError> {
         let token = Arc::new(EvictToken::new());
         let sess = {
             // Same REGISTRATION INVARIANT as `attach` — see its comment.
@@ -591,20 +466,12 @@ impl SessionManager {
                 .push(token.clone());
             sess
         };
-        let (snapshot, rx, size) = replay_and_subscribe(&sess.kept, &sess.tx);
-        Ok(Attachment {
-            snapshot,
-            rx,
-            size,
-            evict: token.clone(),
-            writer: false,
-            _guard: AttachGuard {
-                sess: sess.clone(),
-                token,
-                writer: false,
-            },
+        Ok(Attachment::new(
+            replay_and_subscribe(&sess.kept, &sess.tx, since),
+            token,
+            false,
             sess,
-        })
+        ))
     }
 
     /// The live sessions, ordered by id (the `BTreeMap` key order).
@@ -779,6 +646,13 @@ pub enum AttachError {
 /// detach).
 pub struct Attachment {
     pub snapshot: Vec<u8>,
+    /// `snapshot` is the ring bytes after the `since` the attach named, for a
+    /// terminal that keeps what it shows (ADR-0079 D8). `false`: it is the
+    /// screen snapshot (or the raw ring), for a terminal that starts empty.
+    pub resume: bool,
+    /// The count of the session's output bytes at the end of `snapshot`. The
+    /// live stream starts at this count.
+    pub offset: u64,
     pub rx: broadcast::Receiver<Vec<u8>>,
     pub size: watch::Receiver<(u16, u16)>,
     pub evict: Arc<EvictToken>,
@@ -788,6 +662,29 @@ pub struct Attachment {
 }
 
 impl Attachment {
+    fn new(
+        subscribed: Subscribed,
+        token: Arc<EvictToken>,
+        writer: bool,
+        sess: Arc<ManagedSession>,
+    ) -> Attachment {
+        Attachment {
+            snapshot: subscribed.replay,
+            resume: subscribed.resume,
+            offset: subscribed.offset,
+            rx: subscribed.rx,
+            size: subscribed.size,
+            evict: token.clone(),
+            writer,
+            _guard: AttachGuard {
+                sess: sess.clone(),
+                token,
+                writer,
+            },
+            sess,
+        }
+    }
+
     /// Feed a client keystroke to the child. The single-writer policy makes this
     /// race-free with any other browser.
     ///

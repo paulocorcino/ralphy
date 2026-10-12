@@ -60,9 +60,10 @@ impl Joined {
     ) -> Option<Joined> {
         let id = claim?.live()?;
         let info = sessions.get(id)?;
-        let (att, watching) = match sessions.attach_as(id, false, holder, attempt) {
+        // A launch opens a new terminal, so it has no byte count to resume at.
+        let (att, watching) = match sessions.attach_as(id, false, holder, attempt, None) {
             Ok(att) => (att, false),
-            Err(session::AttachError::Busy) => (sessions.watch(id).ok()?, true),
+            Err(session::AttachError::Busy) => (sessions.watch(id, None).ok()?, true),
             Err(session::AttachError::Superseded) => return Some(Joined::Superseded { attempt }),
             Err(session::AttachError::Unknown) => return None,
         };

@@ -185,8 +185,9 @@ export function createTerminal(deps: TerminalDeps) {
 
     // A dropped socket does NOT end the session: the daemon keeps the child
     // alive (session_ws's teardown invariant), so a close is recovered by
-    // reattaching to the SAME id. The daemon replays scrollback on reattach,
-    // so the terminal is reset on a reconnecting open. Backoff is exponential
+    // reattaching to the SAME id. The daemon replays the screen on reattach,
+    // so the terminal is reset on a reconnecting open, unless the daemon
+    // sends only the bytes after `shown` (a resume). Backoff is exponential
     // with jitter, capped.
     //
     // NO RECONNECT EVER CARRIES `takeover` (#334): two open workbenches
@@ -205,6 +206,22 @@ export function createTerminal(deps: TerminalDeps) {
     let refusal: string | null = null; // the daemon's words when that reason is "refused"
     let switching = false; // an intentional close on the way to a takeover
     let firstConnect = true;
+    // The count of the session's output bytes this terminal shows (ADR-0079
+    // D8), sent as `since` so that a reconnect gets only the bytes it misses.
+    // `null` when it is not known: a peer of an older build sends no count,
+    // and a terminal that shows a notice of this page no longer matches the
+    // session's bytes.
+    let shown: number | null = null;
+    // The next terminal frame is the replay, which `shown` already counts.
+    let replayNext = false;
+    // True while the session's output is written. Every other write is a
+    // notice of this page (here, or in the paste and close modules).
+    let writingOutput = false;
+    const write = term.write.bind(term);
+    term.write = (data, done) => {
+      if (!writingOutput) shown = null;
+      write(data, done);
+    };
     // True while the scrollback replay is being parsed. The replay is RAW BYTES
     // (one terminal frame), so every escape sequence in the backlog runs again
     // (OSC 52 is refused meanwhile). Cleared by the write callback, not after
@@ -269,12 +286,16 @@ export function createTerminal(deps: TerminalDeps) {
       // An empty scrollback sends no replay frame, so the flag rides until the
       // first LIVE frame clears it.
       replaying = connOpts.id != null;
+      replayNext = false;
+      // A terminal that no socket of this window has written to yet.
+      const fresh = firstConnect;
       const holder = WBSessionRoute.tabHolder();
       const request = WBSessionRoute.requestOpts(
         connOpts,
         holder,
         WBSessionRoute.canGunzip(),
         WBSessionRoute.tabAttempt(),
+        shown ?? undefined,
       );
       ws = new WebSocket(WBSessionRoute.url(WS_ORIGIN, request));
       const socket = ws;
@@ -294,15 +315,7 @@ export function createTerminal(deps: TerminalDeps) {
         everOpened = true;
         retryDelay = 0;
         failedReopens = 0;
-        // A reconnect reattaches and the daemon replays the whole backlog; clear
-        // what's on screen first so the replay repaints instead of duplicating.
-        if (!firstConnect) term.reset();
         firstConnect = false;
-        // HERE, not in `onPark`: the reset above would wipe a line written
-        // before the socket opened.
-        if (watching) {
-          term.write("\r\n[read-only: another window has control]\r\n");
-        }
         // Never xterm's default 80×24: only a size the body measured.
         sizing.opened();
       };
@@ -316,17 +329,32 @@ export function createTerminal(deps: TerminalDeps) {
               // A fresh launch's id is only known now; the chrome records under it.
               if (typeof opts.onSession === "function") opts.onSession(currentSessionId);
             }
+            if (replayNext) replayNext = false;
+            else if (shown != null) shown += event.bytes.length;
             // The callback tells the OSC 52 handler the replay is behind us.
-            term.write(
-              event.bytes,
-              replaying
-                ? () => {
-                    replaying = false;
-                  }
-                : undefined,
-            );
+            writingOutput = true;
+            try {
+              term.write(
+                event.bytes,
+                replaying
+                  ? () => {
+                      replaying = false;
+                    }
+                  : undefined,
+              );
+            } finally {
+              writingOutput = false;
+            }
             return;
           case "open": {
+            const resumed = event.payload?.resume === true;
+            // A resume writes only the missing bytes after what the terminal
+            // shows. Any other replay repaints the screen, so the terminal is
+            // cleared first.
+            if (!fresh && !resumed) term.reset();
+            // HERE, not in `onPark`: the reset above would wipe a line written
+            // before the socket opened.
+            if (watching && !resumed) term.write("\r\n[read-only: another window has control]\r\n");
             const owner = WBSessionRoute.announcement(
               {
                 sessionId: currentSessionId,
@@ -347,11 +375,19 @@ export function createTerminal(deps: TerminalDeps) {
               term.write("\r\n[read-only: another window has control]\r\n");
               if (typeof opts.onPark === "function") opts.onPark("joined");
             }
+            // Last: the notices above are not session output.
+            const offset = event.payload?.offset;
+            shown = typeof offset === "number" && Number.isSafeInteger(offset) && offset >= 0 ? offset : null;
+            replayNext = event.payload?.replay === true;
             return;
           }
           // A watcher paints at the session size; the writer ignores it.
           case "size":
             sizing.sessionSize(event.rows, event.cols);
+            return;
+          case "replay-lost":
+            shown = null;
+            replayNext = false;
             return;
           case "end":
             announced = event.reason;
@@ -390,6 +426,8 @@ export function createTerminal(deps: TerminalDeps) {
             // back to the backoff, so a refused watch cannot busy-loop.
             if (!watching) {
               watching = true;
+              // The watcher repaints from the snapshot, under its banner.
+              shown = null;
               if (typeof opts.onPark === "function") opts.onPark(announced);
               connect({ id: currentSessionId, repo: currentRepo, watch: true });
             } else {

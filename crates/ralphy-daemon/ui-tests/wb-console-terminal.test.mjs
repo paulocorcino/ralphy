@@ -3,8 +3,9 @@
 // xterm, observer and socket classes, with no console and no DOM.
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
+import { gzipSync } from "node:zlib";
 import { createTerminal } from "../assets/ui/wb-console-terminal.ts";
-import { encodeDetach, TAG_TERMINAL } from "../assets/ui/wb-console-session.ts";
+import { encodeDetach, TAG_COMMAND, TAG_TERMINAL } from "../assets/ui/wb-console-session.ts";
 
 // An element that takes listeners and does nothing with them.
 function fakeElement() {
@@ -26,6 +27,9 @@ function fakePage() {
       this.textarea = fakeElement();
       this.element = null;
       this.osc = new Map();
+      // What was written, as text, and how many times the terminal was reset.
+      this.written = [];
+      this.resets = 0;
       this.parser = { registerOscHandler: (code, handler) => this.osc.set(code, handler) };
       terminals.push(this);
     }
@@ -33,14 +37,17 @@ function fakePage() {
     open(body) {
       this.element = body;
     }
-    write(_data, done) {
+    write(data, done) {
+      this.written.push(typeof data === "string" ? data : Buffer.from(data).toString("utf8"));
       done?.();
     }
     attachCustomKeyEventHandler() {}
     onData() {}
     onResize() {}
     focus() {}
-    reset() {}
+    reset() {
+      this.resets += 1;
+    }
     dispose() {}
   }
   class FakeSocket {
@@ -248,4 +255,119 @@ test("detachSocket retires a socket: no handler is left, an open socket says why
 
   // No socket yet: nothing to retire.
   assert.doesNotThrow(() => detachSocket(null, "reconnect"));
+});
+
+// A command frame of the session socket, as the daemon pushes it.
+function commandFrame(verb, payload) {
+  const body = Buffer.from(JSON.stringify({ id: 0, verb, payload }), "utf8");
+  const frame = new Uint8Array(1 + body.length);
+  frame[0] = TAG_COMMAND;
+  frame.set(body, 1);
+  return { data: frame.buffer };
+}
+
+function gzipFrame(id, text) {
+  const data = gzipSync(Buffer.from(text, "utf8"));
+  const frame = new Uint8Array(9 + data.length);
+  frame[0] = TAG_TERMINAL;
+  new DataView(frame.buffer).setBigUint64(1, BigInt(id));
+  frame.set(data, 9);
+  return { data: frame.buffer };
+}
+
+// Open `socket` and give it `session-open` with `payload` for session 5.
+function open(socket, payload) {
+  socket.readyState = 1;
+  socket.onopen();
+  socket.onmessage(commandFrame("session-open", { session: 5, ...payload }));
+}
+
+const sinceOf = (socket) => new URL(socket.url).searchParams.get("since");
+
+// ADR-0079 D8: the terminal counts the session's bytes it shows, from the
+// `offset` of `session-open` plus each live frame, and a reconnect sends it.
+test("a reconnect sends the offset plus the live frames, and a resume keeps the terminal", () => {
+  const page = fakePage();
+  try {
+    const handle = createTerminal(fakeDeps().deps).attachTerminal(fakeElement(), { id: 5 });
+    const term = page.terminals[0];
+    assert.equal(sinceOf(page.sockets[0]), null, "a new terminal shows nothing to resume");
+    open(page.sockets[0], { offset: 100, replay: true });
+    page.sockets[0].onmessage(terminalFrame(5, "SNAP"));
+    page.sockets[0].onmessage(terminalFrame(5, "abc"));
+    assert.equal(handle.resume(true), true);
+    assert.equal(sinceOf(page.sockets[1]), "103", "the replay is in the offset already");
+
+    open(page.sockets[1], { offset: 110, replay: true, resume: true });
+    page.sockets[1].onmessage(terminalFrame(5, "defghij"));
+    page.sockets[1].onmessage(terminalFrame(5, "xy"));
+    assert.equal(term.resets, 0, "a resume keeps what the terminal shows");
+    assert.deepEqual(term.written.slice(-2), ["defghij", "xy"]);
+    handle.takeOver();
+    assert.equal(sinceOf(page.sockets[2]), "112");
+    handle.dispose();
+  } finally {
+    page.restore();
+  }
+});
+
+test("a reconnect that does not resume resets the terminal, and a peer with no offset gets no since", () => {
+  const page = fakePage();
+  try {
+    const handle = createTerminal(fakeDeps().deps).attachTerminal(fakeElement(), { id: 5 });
+    const term = page.terminals[0];
+    open(page.sockets[0], { offset: 40, replay: true });
+    assert.equal(term.resets, 0, "the first open of a new terminal clears nothing");
+    handle.takeOver();
+    assert.equal(sinceOf(page.sockets[1]), "40");
+    open(page.sockets[1], { offset: 90, replay: true, resume: false });
+    assert.equal(term.resets, 1, "a snapshot repaints a cleared terminal");
+    handle.takeOver();
+    assert.equal(sinceOf(page.sockets[2]), "90", "the snapshot sets the count");
+
+    // A peer of an older build: no offset, no resume.
+    open(page.sockets[2], { replay: true });
+    assert.equal(term.resets, 2);
+    handle.takeOver();
+    assert.equal(sinceOf(page.sockets[3]), null);
+    handle.dispose();
+  } finally {
+    page.restore();
+  }
+});
+
+test("a notice of the page in the terminal forgets the offset", () => {
+  const page = fakePage();
+  try {
+    const handle = createTerminal(fakeDeps().deps).attachTerminal(fakeElement(), { id: 5 });
+    open(page.sockets[0], { offset: 40 });
+    page.sockets[0].onclose({});
+    assert.ok(page.terminals[0].written.some((t) => t.includes("connection lost")));
+    mock.timers.tick(20000);
+    assert.equal(page.sockets.length, 2, "the backoff reconnects");
+    assert.equal(sinceOf(page.sockets[1]), null, "the terminal no longer matches the session");
+    handle.dispose();
+  } finally {
+    page.restore();
+  }
+});
+
+test("a gzip tail is not counted, and the live frames after it are", async () => {
+  const page = fakePage();
+  try {
+    const handle = createTerminal(fakeDeps().deps).attachTerminal(fakeElement(), { id: 5 });
+    open(page.sockets[0], { offset: 7 });
+    handle.takeOver();
+    open(page.sockets[1], { offset: 20, replay: true, resume: true, replay_encoding: "gzip" });
+    page.sockets[1].onmessage(gzipFrame(5, "the missing bytes"));
+    page.sockets[1].onmessage(terminalFrame(5, "live"));
+    // The decode runs on real promises; the mocked timers do not hold it.
+    for (let i = 0; i < 20 && !page.terminals[0].written.includes("live"); i++) await new Promise(setImmediate);
+    assert.deepEqual(page.terminals[0].written.slice(-2), ["the missing bytes", "live"]);
+    handle.takeOver();
+    assert.equal(sinceOf(page.sockets[2]), "24");
+    handle.dispose();
+  } finally {
+    page.restore();
+  }
 });

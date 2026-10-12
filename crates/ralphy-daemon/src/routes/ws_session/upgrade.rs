@@ -146,7 +146,7 @@ pub(crate) async fn session_ws_upgrade(
         // A watcher never touches the writer slot, so it is dispatched BEFORE the
         // attach branch and can never produce a `409`.
         if query.watch == Some(1) {
-            return match sessions.watch(id) {
+            return match sessions.watch(id, query.since) {
                 Ok(att) => ws.on_upgrade(move |socket| {
                     session_ws(
                         socket,
@@ -170,7 +170,7 @@ pub(crate) async fn session_ws_upgrade(
             };
         }
         let takeover = query.takeover == Some(1);
-        return match sessions.attach_as(id, takeover, query.holder(), query.attempt) {
+        return match sessions.attach_as(id, takeover, query.holder(), query.attempt, query.since) {
             Ok(att) => {
                 if takeover {
                     who.console(&ConsoleRecord {

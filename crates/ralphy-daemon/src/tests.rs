@@ -37,6 +37,7 @@ fn peer_session_query_forwards_the_checkout_only_when_present() {
         record: None,
         gzip: None,
         attempt: None,
+        since: None,
     };
     assert_eq!(
         peer_session_query(&launch(Some("wt-a")), "owner/repo"),
@@ -74,6 +75,7 @@ fn peer_session_query_forwards_a_console_launch() {
         record: None,
         gzip: None,
         attempt: None,
+        since: None,
     };
     assert_eq!(
         peer_session_query(&console(Some(" htop ")), "owner/repo"),
@@ -110,6 +112,7 @@ fn peer_session_query_forwards_a_well_formed_holder() {
         record: None,
         gzip: None,
         attempt: None,
+        since: None,
     };
     assert_eq!(
         peer_session_query(&reattach("tab-1_A"), "owner/repo"),
@@ -152,6 +155,7 @@ fn peer_session_query_forwards_the_console_name_on_a_launch_only() {
         record: None,
         gzip: None,
         attempt: None,
+        since: None,
     };
     assert_eq!(
         peer_session_query(&launch(Some("fincal #1".into())), "owner/repo"),
@@ -197,6 +201,7 @@ fn peer_session_query_forwards_the_record_on_a_launch_only() {
         record: Some(record.to_string()),
         gzip: None,
         attempt: None,
+        since: None,
     };
     assert_eq!(
         peer_session_query(&console("w-a_1"), "owner/repo"),
@@ -246,6 +251,7 @@ fn peer_session_query_forwards_gzip_on_every_shape() {
         record: None,
         gzip,
         attempt: None,
+        since: None,
     };
     assert_eq!(
         peer_session_query(&launch(Some(1)), "owner/repo"),
@@ -299,6 +305,7 @@ fn peer_session_query_forwards_the_attempt_with_the_holder() {
         record: None,
         gzip: None,
         attempt: Some(12),
+        since: None,
     };
     assert_eq!(
         peer_session_query(&reattach(Some("tab-A")), "owner/repo"),
@@ -328,6 +335,55 @@ fn peer_session_query_forwards_the_attempt_with_the_holder() {
     );
 }
 
+/// The owning daemon keeps the session's output, so the relay forwards the
+/// byte count of a reattach, on the reattach and the watch alike. A launch
+/// opens a new terminal and sends none.
+#[test]
+fn peer_session_query_forwards_since_on_a_reattach() {
+    let reattach = |watch: Option<u32>| SessionQuery {
+        repo: Some("x".into()),
+        agent: None,
+        id: Some(7),
+        takeover: None,
+        watch,
+        console: None,
+        checkout: None,
+        command: None,
+        holder: None,
+        name: None,
+        record: None,
+        gzip: None,
+        attempt: None,
+        since: Some(4096),
+    };
+    assert_eq!(
+        peer_session_query(&reattach(None), "owner/repo"),
+        "id=7&repo=owner%2Frepo&since=4096"
+    );
+    assert_eq!(
+        peer_session_query(&reattach(Some(1)), "owner/repo"),
+        "id=7&repo=owner%2Frepo&watch=1&since=4096"
+    );
+    let at_zero = SessionQuery {
+        since: Some(0),
+        ..reattach(None)
+    };
+    assert_eq!(
+        peer_session_query(&at_zero, "owner/repo"),
+        "id=7&repo=owner%2Frepo&since=0",
+        "a terminal that shows no byte yet resumes at 0"
+    );
+    let launch = SessionQuery {
+        id: None,
+        agent: Some("claude".into()),
+        ..reattach(None)
+    };
+    assert_eq!(
+        peer_session_query(&launch, "owner/repo"),
+        "repo=owner%2Frepo&agent=claude"
+    );
+}
+
 /// The console name is cut to the desk's 40 characters on a char boundary,
 /// and an empty one is no name at all.
 #[test]
@@ -346,6 +402,7 @@ fn session_query_name_is_cut_to_40_and_empty_is_absent() {
         record: None,
         gzip: None,
         attempt: None,
+        since: None,
     };
     let long = "é".repeat(40);
     assert_eq!(query(Some("é".repeat(41))).name(), Some(long.as_str()));

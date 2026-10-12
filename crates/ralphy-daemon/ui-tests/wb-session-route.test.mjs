@@ -199,6 +199,19 @@ test("the attempt is on the url only beside a holder", () => {
   assert.equal(url("ws://h", { id: 3, holder: "h1", attempt: -1 }), "ws://h/ws/session?id=3&holder=h1");
 });
 
+// ADR-0079 D8: the byte count the terminal shows rides only on a reattach.
+test("since is on the url of a reattach only, and a watch url still ends with watch=1", () => {
+  const { url, requestOpts } = load();
+  const at = (req) => url("ws://h", requestOpts(req, "h1", false, undefined, 4096));
+  assert.equal(at({ id: 3, repo: "o/r" }), "ws://h/ws/session?id=3&repo=o%2Fr&since=4096&holder=h1");
+  assert.equal(at({ id: 3, watch: true }), "ws://h/ws/session?id=3&since=4096&watch=1");
+  assert.equal(at({ console: true }), "ws://h/ws/session?console=1&holder=h1", "a launch opens a new terminal");
+  assert.equal(at({ repo: "o/r", agent: "claude" }), "ws://h/ws/session?repo=o%2Fr&agent=claude&holder=h1");
+  assert.equal(url("ws://h", { id: 3, since: 0 }), "ws://h/ws/session?id=3&since=0");
+  assert.equal(url("ws://h", { id: 3, since: -1 }), "ws://h/ws/session?id=3");
+  assert.equal(url("ws://h", { id: 3, since: 1.5 }), "ws://h/ws/session?id=3");
+});
+
 test("tabAttempt raises the tab's counter on every call", () => {
   const { tabAttempt } = load();
   const first = tabAttempt();

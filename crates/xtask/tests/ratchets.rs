@@ -258,8 +258,10 @@ const NOT_PEER_REPLIES: &[(&str, &str, &str)] = &[
 /// `rows` and `cols` of `session-size` keep version 4: with no such frame a
 /// watcher fits its own box, as before (#689). So does the optional
 /// `replay_encoding` of `session-open`: a peer that does not send it sends
-/// the replay raw, and the page reads it raw.
-const PEER_REPLY_PIN: (u32, u64) = (4, 0x4e35_00f3_3e0f_b175);
+/// the replay raw, and the page reads it raw. So do the optional `replay`,
+/// `offset` and `resume` of `session-open`: with no `offset` the page never
+/// sends `since`, and with no `resume` it resets its terminal, as before.
+const PEER_REPLY_PIN: (u32, u64) = (4, 0x330a_0076_f721_7ef7);
 
 /// Where `PEER_PROTOCOL_VERSION` is, from the repo root.
 const PEER_RS: &str = "crates/ralphy-daemon/src/peer.rs";

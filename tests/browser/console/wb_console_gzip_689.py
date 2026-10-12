@@ -274,6 +274,10 @@ def main():
             check("the child echoed the line", saw)
 
             page.evaluate(WRITES)
+            # A notice of the page in the terminal: the terminal no longer
+            # matches the session's bytes, so the reconnect gets the snapshot,
+            # not a resume of the bytes it missed.
+            page.evaluate("() => __W()._term.term.write('')")
             known = len(routed)
             if not page.evaluate("() => __W()._term.resume(true)"):
                 check("the terminal reconnects", False)

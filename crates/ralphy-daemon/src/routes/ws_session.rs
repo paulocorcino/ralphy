@@ -59,6 +59,11 @@ pub(crate) struct SessionQuery {
     /// per holder, so a lower one than the slot's writer is a late socket the
     /// tab already replaced (ADR-0079 D7). Ignored without a holder.
     pub(crate) attempt: Option<u64>,
+    /// On a reattach by `id`: the count of the session's output bytes the
+    /// tab's terminal already shows. The daemon then sends only the bytes
+    /// after it, when it still has them all, and says so in `session-open`
+    /// (ADR-0079 D8).
+    pub(crate) since: Option<u64>,
 }
 
 /// The shape of a `holder` and of a `record`: 1–64 ASCII letters, digits, `-`

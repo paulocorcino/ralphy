@@ -33,6 +33,7 @@ pub(crate) fn peer_session_query(query: &SessionQuery, slug: &str) -> String {
         }
         push_holder(&mut out, query);
         push_gzip(&mut out, query);
+        push_since(&mut out, query);
         return out;
     }
     // A free console on a peer with no distro (ADR-0067 §7): the peer opens it
@@ -79,6 +80,15 @@ pub(crate) fn peer_session_query(query: &SessionQuery, slug: &str) -> String {
 fn push_gzip(out: &mut String, query: &SessionQuery) {
     if query.gzip == Some(1) {
         out.push_str("&gzip=1");
+    }
+}
+
+/// The owning daemon keeps the session's output, so it is the one that can
+/// resume a reattach at the tab's byte count (ADR-0079 D8). An older peer
+/// ignores the key and sends the snapshot or the raw replay.
+fn push_since(out: &mut String, query: &SessionQuery) {
+    if let Some(since) = query.since {
+        out.push_str(&format!("&since={since}"));
     }
 }
 

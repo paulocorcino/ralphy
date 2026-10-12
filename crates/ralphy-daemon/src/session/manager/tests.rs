@@ -1,5 +1,7 @@
+use super::kept::{push_capped, SCROLLBACK_CAP_BYTES};
 use super::*;
 use crate::session::console_spec;
+use crate::session::screen::Screen;
 
 #[test]
 fn scrollback_ring_is_bounded() {
@@ -49,7 +51,7 @@ async fn a_watcher_does_not_occupy_the_writer_slot() {
     drop(writer); // the slot is free; only the watcher list is about to fill
 
     let watcher = manager
-        .watch(id)
+        .watch(id, None)
         .expect("a live session is always watchable");
     assert!(!watcher.writer, "watch() yields a reader, never the baton");
     let taker = manager
@@ -57,7 +59,7 @@ async fn a_watcher_does_not_occupy_the_writer_slot() {
         .expect("a registered watcher must not make the writer slot look busy");
     assert!(taker.writer, "a plain attach takes the baton");
     let second = manager
-        .watch(id)
+        .watch(id, None)
         .expect("a BUSY session is still watchable — watch never refuses with Busy");
     assert!(!second.writer);
 
@@ -298,7 +300,7 @@ fn a_replay_rebuilds_the_screen_after_a_width_change() {
     kept.push(b"narrow after the resize\r\n");
 
     let mut fresh = Screen::new(24, 60, screen::SCROLLBACK_LINES);
-    fresh.feed(&kept.replay());
+    fresh.feed(&kept.replay(None).0);
     let session = kept.screen.as_ref().expect("no panic was caught").text();
     assert!(session.contains("done"), "the redraw is on the screen");
     assert_eq!(fresh.text(), session);
@@ -342,13 +344,13 @@ fn attach_while_publishing() -> usize {
     // Each attach is checked below, and a check costs a screen; 100 attaches
     // keep the test short.
     while !pump.is_finished() && attaches.len() < 100 {
-        attaches.push(replay_and_subscribe(&kept, &tx));
+        attaches.push(replay_and_subscribe(&kept, &tx, None));
     }
     pump.join().expect("the pump thread does not panic");
 
     let expected: Vec<String> = (0..LINES).map(line).collect();
     let mut during = 0;
-    for (n, (replay, mut rx, _size)) in attaches.into_iter().enumerate() {
+    for (n, Subscribed { replay, mut rx, .. }) in attaches.into_iter().enumerate() {
         let mut screen = Screen::new(24, 80, screen::SCROLLBACK_LINES);
         screen.feed(&replay);
         let mut seen: Vec<String> = screen
@@ -392,7 +394,7 @@ async fn a_watcher_gets_the_same_replay_as_the_writer() {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
     loop {
         let writer = manager.attach(id, true).expect("a live session");
-        let watcher = manager.watch(id).expect("a live session");
+        let watcher = manager.watch(id, None).expect("a live session");
         if !writer.snapshot.is_empty() && writer.snapshot == watcher.snapshot {
             break;
         }
@@ -414,14 +416,14 @@ fn a_broken_screen_falls_back_to_the_raw_ring() {
     let mut kept = KeptOutput::new(1, 24, 80);
     kept.push(b"before\r\n");
     assert_ne!(
-        kept.replay(),
+        kept.replay(None).0,
         b"before\r\n",
         "a working screen replays a snapshot"
     );
     assert!(kept.on_screen(|_| panic!("a test panic")).is_none());
     kept.push(b"after\r\n");
     assert!(kept.screen.is_none(), "the screen stays broken");
-    assert_eq!(kept.replay(), b"before\r\nafter\r\n");
+    assert_eq!(kept.replay(None).0, b"before\r\nafter\r\n");
 }
 
 /// The memory budget of ADR-0079 D4 is for screens that keep
@@ -524,7 +526,9 @@ async fn a_resize_by_the_writer_reaches_every_attachment() {
             console_spec(std::env::temp_dir(), 24, 80, None),
         )
         .expect("the platform shell must spawn");
-    let mut watcher = manager.watch(id).expect("a live session is watchable");
+    let mut watcher = manager
+        .watch(id, None)
+        .expect("a live session is watchable");
     assert_eq!(*watcher.size.borrow_and_update(), (24, 80));
 
     watcher
@@ -552,7 +556,9 @@ async fn a_resize_by_the_writer_reaches_every_attachment() {
         .resize(1000, 1)
         .expect("the PTY takes a clamped resize");
     assert_eq!(*watcher.size.borrow_and_update(), (300, 2));
-    let late = manager.watch(id).expect("a live session is watchable");
+    let late = manager
+        .watch(id, None)
+        .expect("a live session is watchable");
     assert_eq!(*late.size.borrow(), (300, 2));
     manager.close(id);
 }
@@ -588,7 +594,7 @@ async fn a_lower_attempt_of_the_same_holder_is_superseded_and_evicts_nobody() {
     for takeover in [false, true] {
         assert!(
             matches!(
-                manager.attach_as(id, takeover, Some("tab-A"), Some(4)),
+                manager.attach_as(id, takeover, Some("tab-A"), Some(4), None),
                 Err(AttachError::Superseded)
             ),
             "attempt 4 after 5 is a late socket (takeover {takeover})"
@@ -597,16 +603,16 @@ async fn a_lower_attempt_of_the_same_holder_is_superseded_and_evicts_nobody() {
     assert_eq!(writer.evict.reason(), None, "the writer is not evicted");
 
     let newer = manager
-        .attach_as(id, false, Some("tab-A"), Some(6))
+        .attach_as(id, false, Some("tab-A"), Some(6), None)
         .expect("a higher attempt of the same holder reclaims the slot");
     assert_eq!(writer.evict.reason(), Some(EndReason::TakenOver));
     let equal = manager
-        .attach_as(id, false, Some("tab-A"), Some(6))
+        .attach_as(id, false, Some("tab-A"), Some(6), None)
         .expect("an equal attempt reclaims the slot too");
     assert_eq!(newer.evict.reason(), Some(EndReason::TakenOver));
     assert!(
         matches!(
-            manager.attach_as(id, false, Some("tab-A"), Some(5)),
+            manager.attach_as(id, false, Some("tab-A"), Some(5), None),
             Err(AttachError::Superseded)
         ),
         "the reclaim keeps the attempt it claimed with"
@@ -621,11 +627,11 @@ async fn a_lower_attempt_of_the_same_holder_is_superseded_and_evicts_nobody() {
 async fn another_holder_is_busy_and_a_take_over_still_evicts() {
     let (manager, id, writer) = held_session("tab-A", Some(5));
     assert!(matches!(
-        manager.attach_as(id, false, Some("tab-B"), Some(100)),
+        manager.attach_as(id, false, Some("tab-B"), Some(100), None),
         Err(AttachError::Busy)
     ));
     let taker = manager
-        .attach_as(id, true, Some("tab-B"), Some(1))
+        .attach_as(id, true, Some("tab-B"), Some(1), None)
         .expect("a take over by another holder evicts the writer");
     assert!(taker.writer);
     assert_eq!(writer.evict.reason(), Some(EndReason::TakenOver));
@@ -638,12 +644,195 @@ async fn another_holder_is_busy_and_a_take_over_still_evicts() {
 async fn without_an_attempt_on_either_side_the_holder_reclaims() {
     let (manager, id, writer) = held_session("tab-A", None);
     let claimed = manager
-        .attach_as(id, false, Some("tab-A"), Some(1))
+        .attach_as(id, false, Some("tab-A"), Some(1), None)
         .expect("a writer with no attempt is reclaimed by its holder");
     assert_eq!(writer.evict.reason(), Some(EndReason::TakenOver));
     manager
-        .attach_as(id, false, Some("tab-A"), None)
+        .attach_as(id, false, Some("tab-A"), None, None)
         .expect("a claim with no attempt reclaims a writer that has one");
     assert_eq!(claimed.evict.reason(), Some(EndReason::TakenOver));
+    manager.close(id);
+}
+
+/// A kept output that wrote `a`, then `b`: the byte count after `a` is
+/// `a.len()`.
+fn kept_after(a: &[u8], b: &[u8]) -> KeptOutput {
+    let mut kept = KeptOutput::new(1, 24, 80);
+    kept.push(a);
+    kept.push(b);
+    kept
+}
+
+/// ADR-0079 D8: a `since` inside the ring resumes with exactly the bytes
+/// after it; a `since` at the count resumes with nothing.
+#[test]
+fn a_since_inside_the_ring_resumes_with_the_bytes_after_it() {
+    let mut kept = kept_after(b"first line\r\n", b"second\r\n");
+    assert_eq!(kept.replay(Some(12)), (b"second\r\n".to_vec(), true));
+    assert_eq!(kept.replay(Some(13)), (b"econd\r\n".to_vec(), true));
+    assert_eq!(kept.replay(Some(20)), (Vec::new(), true), "at the count");
+    assert_eq!(
+        kept.replay(Some(0)),
+        (b"first line\r\nsecond\r\n".to_vec(), true),
+        "the ring still has every byte"
+    );
+}
+
+/// No `since`, a `since` after the count, and a `since` before the last
+/// resize all get the screen snapshot, not a resume.
+#[test]
+fn a_since_that_cannot_resume_gets_the_snapshot() {
+    let mut kept = kept_after(b"first line\r\n", b"second\r\n");
+    let (snapshot, resume) = kept.replay(None);
+    assert!(!resume);
+    assert_ne!(
+        snapshot, b"first line\r\nsecond\r\n",
+        "a snapshot, not the ring"
+    );
+    assert_eq!(
+        kept.replay(Some(21)),
+        (snapshot.clone(), false),
+        "after the count"
+    );
+
+    kept.resize(24, 60);
+    kept.push(b"narrow\r\n");
+    let (narrow, resume) = kept.replay(Some(12));
+    assert!(
+        !resume,
+        "bytes before the resize were written at another size"
+    );
+    let mut fresh = Screen::new(24, 60, screen::SCROLLBACK_LINES);
+    fresh.feed(&narrow);
+    assert!(
+        fresh.text().contains("narrow"),
+        "the snapshot of the screen now"
+    );
+    assert_eq!(
+        kept.replay(Some(20)),
+        (b"narrow\r\n".to_vec(), true),
+        "at the resize, every byte after it is at the new size"
+    );
+}
+
+/// A `since` before the first byte the ring still has gets the snapshot: the
+/// bytes between are gone.
+#[test]
+fn a_since_before_the_ring_start_gets_the_snapshot() {
+    let line = |i: usize| format!("{i:07} {}\r\n", "x".repeat(70));
+    let mut kept = KeptOutput::new(1, 24, 80);
+    let mut written = 0usize;
+    let mut i = 0;
+    while written <= SCROLLBACK_CAP_BYTES + 1000 {
+        let bytes = line(i).into_bytes();
+        written += bytes.len();
+        kept.push(&bytes);
+        i += 1;
+    }
+    let start = (written - SCROLLBACK_CAP_BYTES) as u64;
+    assert!(!kept.replay(Some(start - 1)).1, "one byte before the ring");
+    let (tail, resume) = kept.replay(Some(start));
+    assert!(resume, "the first byte the ring has");
+    assert_eq!(tail.len(), SCROLLBACK_CAP_BYTES);
+}
+
+/// After a panic of the emulator the replay of a plain attach is the raw
+/// ring, and a resume is still the bytes after `since`.
+#[test]
+fn a_resume_still_works_after_the_screen_broke() {
+    let mut kept = kept_after(b"before\r\n", b"after\r\n");
+    assert!(kept.on_screen(|_| panic!("a test panic")).is_none());
+    assert_eq!(kept.replay(Some(8)), (b"after\r\n".to_vec(), true));
+}
+
+/// EXACTLY-ONCE REPLAY INVARIANT with `since`: attaches that resume at one
+/// byte count while a pump publishes get, in their tail and then on their
+/// live receiver, exactly the bytes after that count, and an `offset` at the
+/// end of the tail.
+#[test]
+fn a_resume_while_publishing_gets_every_byte_after_since_once() {
+    // A round where the scheduler ran every attach before or after the pump
+    // proves nothing, so it is run again.
+    let rounds = (0..5)
+        .take_while(|_| resume_while_publishing() == 0)
+        .count();
+    assert!(
+        rounds < 5,
+        "no resume happened while the pump ran, in 5 rounds"
+    );
+}
+
+/// One round of the test above. Returns how many attaches got a tail with
+/// some, but not all, of the lines published after `since`.
+fn resume_while_publishing() -> usize {
+    const LINES: usize = 800;
+    let line = |i: usize| format!("L{i:04} {}\r\n", "-".repeat(70)).into_bytes();
+    let kept = Arc::new(Mutex::new(KeptOutput::new(1, 24, 80)));
+    let (tx, _) = broadcast::channel(BROADCAST_CAP);
+    for i in 0..10 {
+        publish(&kept, &tx, line(i));
+    }
+    let since = replay_and_subscribe(&kept, &tx, None).offset;
+    let start = Arc::new(std::sync::Barrier::new(2));
+    let pump = std::thread::spawn({
+        let (kept, tx, start) = (kept.clone(), tx.clone(), start.clone());
+        move || {
+            start.wait();
+            for i in 10..LINES {
+                publish(&kept, &tx, line(i));
+            }
+        }
+    });
+    start.wait();
+    let mut attaches = Vec::new();
+    while !pump.is_finished() && attaches.len() < 200 {
+        attaches.push(replay_and_subscribe(&kept, &tx, Some(since)));
+    }
+    pump.join().expect("the pump thread does not panic");
+
+    let all: Vec<u8> = (0..LINES).flat_map(line).collect();
+    let expected = &all[usize::try_from(since).expect("a small count")..];
+    let mut during = 0;
+    for (n, mut sub) in attaches.into_iter().enumerate() {
+        assert!(sub.resume, "attach {n} resumes");
+        assert_eq!(sub.offset, since + sub.replay.len() as u64, "attach {n}");
+        if (1..expected.len()).contains(&sub.replay.len()) {
+            during += 1;
+        }
+        let mut seen = sub.replay;
+        while let Ok(chunk) = sub.rx.try_recv() {
+            seen.extend(chunk);
+        }
+        assert_eq!(seen, expected, "attach {n}");
+    }
+    during
+}
+
+/// An attach names the byte count and whether it resumed: a reattach at the
+/// count of the last one resumes; one with no `since` does not.
+#[tokio::test]
+async fn an_attachment_says_its_offset_and_whether_it_resumed() {
+    let manager = Arc::new(SessionManager::new());
+    let (id, writer) = manager
+        .spawn_attached(
+            "~".to_string(),
+            "console".to_string(),
+            "console".to_string(),
+            None,
+            None,
+            None,
+            console_spec(std::env::temp_dir(), 24, 80, None),
+        )
+        .expect("the platform shell must spawn");
+    assert!(!writer.resume, "a launch starts a new terminal");
+    let offset = writer.offset;
+    drop(writer);
+    let resumed = manager
+        .attach_as(id, false, None, None, Some(offset))
+        .expect("a free slot");
+    assert!(resumed.resume);
+    assert_eq!(resumed.offset, offset + resumed.snapshot.len() as u64);
+    let watcher = manager.watch(id, None).expect("a live session");
+    assert!(!watcher.resume);
     manager.close(id);
 }

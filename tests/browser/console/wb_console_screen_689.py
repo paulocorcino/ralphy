@@ -19,7 +19,9 @@ F  uncover: console 1 is maximized and console 2, under it, gets a larger
    was covered; `uncover_sizes` counts the sizes it printed when console 1
    was restored and the cover went.
 C  reconnect of the same terminal after `flood 600` (the page reattaches a
-   socket and keeps its xterm): `reconnect`.
+   socket and keeps its xterm): `reconnect`. Then a reconnect while the child
+   writes `flood 300`: `reconnect_busy`. The wake (D) compares with the screen
+   after it.
 D  wake: console 1 is covered until it sleeps, then uncovered, so it gets a
    NEW terminal: `wake` (and `screen_equal_after_wake`).
 E  reload: the page loads again and reattaches: `reattach`.
@@ -27,8 +29,10 @@ E  reload: the page loads again and reattaches: `reattach`.
 Each of `reconnect`, `wake` and `reattach` holds `replay_bytes`, `first_frame_ms`
 (from the creation of the socket to its first terminal frame), `screen_equal`
 (the visible text after is the visible text before), `open` (the `session-open`
-payload of that socket) and `traffic` (every field of the daemon's
-`console socket traffic` line for that socket).
+payload of that socket), `since` (the byte count the socket sent),
+`away_bytes` (`open.offset` minus `since`: the bytes the terminal did not
+have) and `traffic` (every field of the daemon's `console socket traffic`
+line for that socket).
 
 Arguments: `--label <name>` names the output
 `docs/plans/logs/689-measure-<label>.json` (default `latest`); `--assert <name>`
@@ -36,7 +40,10 @@ Arguments: `--label <name>` names the output
 sent its floating size while another one covered it (`floating_sizes == 0`,
 `columns_floating_sizes == 0`, `covered_sizes == 0`, `uncover_sizes <= 1`).
 `snapshot` always holds too: the screen after the replay is the screen before
-it (`screen_equal`) for `reconnect`, `wake` and `reattach`.
+it (`screen_equal`) for `reconnect`, `wake` and `reattach`. `resume` always
+holds: both reconnects resume (`open.resume`) with a replay of exactly the
+bytes the terminal did not have, and `wake` and `reattach`, which start a
+new terminal, do not resume.
 Exit 0: everything was measured. Exit 1: an asserted fact failed. Exit 2: a
 scenario could not run.
 
@@ -73,6 +80,9 @@ VIEW = {"width": 2400, "height": 1000}
 DORMANT_AFTER_S = 15
 MOVES = 5
 FLOOD_KIB = 600
+BUSY_KIB = 300
+# A terminal frame is a tag and an 8-byte session id before the bytes.
+FRAME_HEADER = 9
 IDS = ["w-1", "w-2", "w-3"]
 # Names `--assert` accepts. Later stages add their own.
 ASSERTS: dict = {
@@ -83,9 +93,22 @@ ASSERTS: dict = {
     "snapshot": lambda f: all(
         (f.get(name) or {}).get("screen_equal") is True for name in ("reconnect", "wake", "reattach")
     ),
+    "resume": lambda f: all(resumed(f.get(name)) for name in ("reconnect", "reconnect_busy"))
+    and all(((f.get(name) or {}).get("open") or {}).get("resume") is not True for name in ("wake", "reattach")),
 }
 # The asserts every run checks.
-DEFAULT_ASSERTS = ["size", "snapshot"]
+DEFAULT_ASSERTS = ["size", "snapshot", "resume"]
+
+
+def resumed(fact):
+    """The socket resumed, and its replay was exactly the bytes it did not have."""
+    if not fact or (fact.get("open") or {}).get("resume") is not True or fact.get("away_bytes") is None:
+        return False
+    raw = (fact.get("traffic") or {}).get("replay_raw_bytes")
+    if raw is None:
+        return False
+    tail = raw - FRAME_HEADER if raw > 0 else 0
+    return tail == fact["away_bytes"]
 
 HELPERS = """() => {
   window.__W = (id) => [...document.querySelectorAll('#stage .session-window')].find((w) => w._deskId === id) || null;
@@ -216,9 +239,11 @@ def on_websocket(ws):
     if "/ws/session" not in ws.url:
         return
     m = re.search(r"[?&]id=(\d+)", ws.url)
+    since = re.search(r"[?&]since=(\d+)", ws.url)
     rec = {
         "n": len(sockets),
         "session": int(m.group(1)) if m else None,
+        "since": int(since.group(1)) if since else None,
         "t0": time.time(),
         "first_frame_ms": None,
         "first_frame_bytes": None,
@@ -407,19 +432,55 @@ def settle(page, wid):
     return last
 
 
+def socket_fact(sock):
+    opened = sock["open"] if sock else None
+    since = sock["since"] if sock else None
+    offset = (opened or {}).get("offset")
+    return {
+        "replay_bytes": sock["first_frame_bytes"] if sock else None,
+        "first_frame_ms": sock["first_frame_ms"] if sock else None,
+        "open": opened,
+        "since": since,
+        "away_bytes": offset - since if isinstance(offset, int) and since is not None else None,
+        "traffic": None,
+        "_socket": sock["n"] if sock else None,
+    }
+
+
 def record(page, name, session, known, before):
     sock = new_socket(page, session, known)
     wait_flood(page, "w-1")
     after = settle(page, "w-1")
-    facts[name] = {
-        "replay_bytes": sock["first_frame_bytes"] if sock else None,
-        "first_frame_ms": sock["first_frame_ms"] if sock else None,
-        "screen_equal": after == before,
-        "open": sock["open"] if sock else None,
-        "traffic": None,
-        "_socket": sock["n"] if sock else None,
-    }
+    facts[name] = {**socket_fact(sock), "screen_equal": after == before}
     return after
+
+
+
+def resume_while_busy(page, session):
+    """A reconnect while the child writes: the replay is the bytes written
+    while the terminal had no socket. The wake (D) then checks that the
+    terminal shows the daemon's screen: no byte twice, none missing."""
+    # `RESUME_DEBOUNCE_MS` in wb-resume.ts is 1.5 s since the last resume.
+    page.wait_for_timeout(1600)
+    # No wait: the command goes on the old socket, and the child writes while
+    # the terminal reconnects.
+    type_line(page, "w-1", f"flood {BUSY_KIB}")
+    known = len(sockets_of(session))
+    if not page.evaluate("() => __W('w-1')._term.resume(true)"):
+        raise RuntimeError("the terminal did not reconnect while busy")
+    sock = new_socket(page, session, known)
+    done = wait_for(
+        page,
+        "(id) => { const t = __W(id)?._term?.term; if (!t) return false; const b = t.buffer.active;"
+        " for (let y = b.viewportY; y < b.viewportY + t.rows; y++)"
+        " if (/FLOOD-DONE 3\\d{5}/.test(b.getLine(y)?.translateToString(true) ?? '')) return true; return false; }",
+        60,
+        arg="w-1",
+    )
+    if not done:
+        raise RuntimeError("the busy FLOOD-DONE did not appear")
+    facts["reconnect_busy"] = socket_fact(sock)
+    return settle(page, "w-1")
 
 
 def scenario_c(page):
@@ -433,7 +494,8 @@ def scenario_c(page):
         raise RuntimeError("the terminal did not reconnect")
     record(page, "reconnect", session, known, before)
     facts["resume"] = (facts["reconnect"]["open"] or {}).get("resume")
-    return before
+    # The screen the wake (D) must show is the one after the busy reconnect.
+    return resume_while_busy(page, session)
 
 
 def scenario_d(page, before):
@@ -473,7 +535,7 @@ def attach_traffic(log_path, page_session):
             break
         time.sleep(0.5)
     mine = sockets_of(page_session)
-    for name in ("reconnect", "wake", "reattach"):
+    for name in ("reconnect", "reconnect_busy", "wake", "reattach"):
         fact = facts.get(name)
         if not fact:
             continue
@@ -484,7 +546,7 @@ def attach_traffic(log_path, page_session):
         fact["traffic"] = lines[index + 1]
         if fact["replay_bytes"] is None:
             fact["replay_bytes"] = fact["traffic"].get("replay_bytes")
-    for name in ("reconnect", "wake", "reattach"):
+    for name in ("reconnect", "reconnect_busy", "wake", "reattach"):
         if name in facts:
             facts[name].pop("_socket", None)
     facts["traffic_lines"] = lines

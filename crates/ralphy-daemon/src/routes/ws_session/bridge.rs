@@ -128,9 +128,15 @@ pub(crate) async fn session_ws(
         // Read-only from the start: this launch joined a session another
         // page drives (ADR-0050 amendment 2026-10-04).
         "watch": labels.watching,
-        // A replay (the screen snapshot) follows. Read by a relaying daemon for its
-        // traffic summary; the page does not need it.
+        // A replay follows. A relaying daemon reads it for its traffic
+        // summary; the page reads it to tell the replay from the live frames.
         "replay": !replay.data.is_empty(),
+        // The count of the session's output bytes at the end of the replay;
+        // the page adds each live frame to it and sends it back as `since`.
+        "offset": attach.offset,
+        // The replay is only the bytes after the tab's `since`: the page
+        // keeps its terminal. `false`: it resets it (ADR-0079 D8).
+        "resume": attach.resume,
     });
     // Absent when the replay is raw, as from a daemon that never gzips.
     if replay.gzipped {
@@ -157,7 +163,8 @@ pub(crate) async fn session_ws(
     }
 
     // Replay the screen snapshot first so a reattaching client sees the screen before the
-    // live stream resumes. Skip an empty snapshot (a fresh session).
+    // live stream resumes. Skip an empty replay: a fresh session, or a resume
+    // with nothing new.
     if !replay.data.is_empty() {
         let sent = replay.data.len();
         let frame = Frame::Terminal {
@@ -718,7 +725,9 @@ mod tests {
                 spec,
             )
             .expect("the platform shell must spawn — the free console depends on it");
-        let mut watcher = manager.watch(id).expect("a live session is watchable");
+        let mut watcher = manager
+            .watch(id, None)
+            .expect("a live session is watchable");
         watcher.snapshot = b"REPLAY".to_vec();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
@@ -753,6 +762,75 @@ mod tests {
         manager.close(id);
     }
 
+    /// A watcher of a live console session, changed by `edit` and bridged on
+    /// a loopback socket; `gzip` is what the tab asked for.
+    async fn bridged_watcher(
+        gzip: bool,
+        edit: impl FnOnce(&mut session::Attachment),
+    ) -> (
+        Arc<session::SessionManager>,
+        session::SessionId,
+        tokio::task::JoinHandle<std::io::Result<()>>,
+        tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+    ) {
+        let manager = Arc::new(session::SessionManager::new());
+        let spec = session::console_spec(std::env::temp_dir(), 24, 80, None);
+        let (id, writer) = manager
+            .spawn_attached(
+                "~".to_string(),
+                "console".to_string(),
+                "console".to_string(),
+                None,
+                None,
+                None,
+                spec,
+            )
+            .expect("the platform shell must spawn — the free console depends on it");
+        // The writer leaves; the session lives on, watched.
+        drop(writer);
+        let mut watcher = manager
+            .watch(id, None)
+            .expect("a live session is watchable");
+        edit(&mut watcher);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind a loopback port");
+        let addr = listener
+            .local_addr()
+            .expect("a bound listener has an address");
+        let server = serve_bridge(listener, id, watcher, gzip);
+        let (client, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/"))
+            .await
+            .expect("the bridge accepts the socket");
+        (manager, id, server, client)
+    }
+
+    /// `session-open` names the byte count at the end of the replay and
+    /// whether the replay resumes the tab's terminal; an empty resume sends
+    /// no replay frame.
+    #[tokio::test]
+    async fn session_open_says_the_offset_and_whether_the_replay_resumes() {
+        for resume in [true, false] {
+            let (manager, id, server, mut client) = bridged_watcher(false, |watcher| {
+                watcher.snapshot.clear();
+                watcher.offset = 4096;
+                watcher.resume = resume;
+            })
+            .await;
+
+            let Frame::Command(open) = next_frame(&mut client).await else {
+                panic!("the first frame is session-open");
+            };
+            assert_eq!(open.payload["offset"], serde_json::json!(4096));
+            assert_eq!(open.payload["resume"], serde_json::json!(resume));
+            assert_eq!(open.payload["replay"], serde_json::json!(false));
+            server.abort();
+            manager.close(id);
+        }
+    }
+
     /// The replay a tab gets: gzipped and named so in `session-open` when it
     /// asks for gzip, raw with no `replay_encoding` when it does not.
     #[tokio::test]
@@ -760,31 +838,8 @@ mod tests {
         use std::io::Read;
         let snapshot = b"\x1b[2J\x1b[Hthe screen as it is now\r\n".repeat(50);
         for gzip in [true, false] {
-            let manager = Arc::new(session::SessionManager::new());
-            let spec = session::console_spec(std::env::temp_dir(), 24, 80, None);
-            let (id, _writer) = manager
-                .spawn_attached(
-                    "~".to_string(),
-                    "console".to_string(),
-                    "console".to_string(),
-                    None,
-                    None,
-                    None,
-                    spec,
-                )
-                .expect("the platform shell must spawn — the free console depends on it");
-            let mut watcher = manager.watch(id).expect("a live session is watchable");
-            watcher.snapshot = snapshot.clone();
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-                .await
-                .expect("bind a loopback port");
-            let addr = listener
-                .local_addr()
-                .expect("a bound listener has an address");
-            let server = serve_bridge(listener, id, watcher, gzip);
-            let (mut client, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/"))
-                .await
-                .expect("the bridge accepts the socket");
+            let (manager, id, server, mut client) =
+                bridged_watcher(gzip, |watcher| watcher.snapshot = snapshot.clone()).await;
 
             let Frame::Command(open) = next_frame(&mut client).await else {
                 panic!("the first frame is session-open");
