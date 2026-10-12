@@ -228,6 +228,12 @@ path defensible.
 operator asking for it, in a product whose whole posture is that the operator
 decides.
 
+**The restart asks before it ends open consoles.** Every console is a child of the daemon,
+so the restart ends them and stops their agents. `ralphy update` (before the download)
+and `ralphy daemon restart` list the open consoles and ask. `--yes` skips the question.
+Without a terminal and without `--yes` they stop with an error. `update --check` and the
+workbench hand-over never ask: the first changes nothing, and the page already warned.
+
 ### 9. What this does not build
 
 No telemetry, of any kind, in any direction. Stated exactly, because this is the
