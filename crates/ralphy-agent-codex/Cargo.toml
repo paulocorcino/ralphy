@@ -16,7 +16,7 @@ ralphy-core.workspace = true
 ralphy-adapter-support.workspace = true
 
 [dev-dependencies]
-serde_yaml_ng = "0.10.0"
+saphyr-parser = "0.2.1"
 tempfile.workspace = true
 
 [lints]
