@@ -272,3 +272,52 @@ pub(crate) async fn close_peer_session(peer: &mut peer::client::PeerSocket) {
         let _ = stream.shutdown().await;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The network the browser reported goes to the peer on every shape, so the
+    /// peer's traffic summary has it too. A value no browser gives is absent, and
+    /// does not refuse the socket.
+    #[test]
+    fn peer_session_query_forwards_the_link_the_browser_reported() {
+        let reattach = |net: &str, rtt: &str, down: &str| SessionQuery {
+            repo: Some("x".into()),
+            id: Some(7),
+            net: Some(net.into()),
+            net_rtt: Some(rtt.into()),
+            net_down: Some(down.into()),
+            ..SessionQuery::default()
+        };
+        assert_eq!(
+            peer_session_query(&reattach("4g", "100", "1.75"), "owner/repo"),
+            "id=7&repo=owner%2Frepo&net=4g&net_rtt=100&net_down=1.75"
+        );
+        let console = SessionQuery {
+            id: None,
+            console: Some(1),
+            ..reattach("slow-2g", "2000", "0")
+        };
+        assert_eq!(
+            peer_session_query(&console, "owner/repo"),
+            "console=1&repo=owner%2Frepo&net=slow-2g&net_rtt=2000&net_down=0"
+        );
+        let launch = SessionQuery {
+            id: None,
+            agent: Some("claude".into()),
+            ..reattach("2g", "50", "10")
+        };
+        assert_eq!(
+            peer_session_query(&launch, "owner/repo"),
+            "repo=owner%2Frepo&agent=claude&net=2g&net_rtt=50&net_down=10"
+        );
+        for (net, rtt, down) in [("5g", "-1", "NaN"), ("wifi", "x", "-2"), ("", "1e9", "inf")] {
+            assert_eq!(
+                peer_session_query(&reattach(net, rtt, down), "owner/repo"),
+                "id=7&repo=owner%2Frepo",
+                "{net} {rtt} {down}"
+            );
+        }
+    }
+}

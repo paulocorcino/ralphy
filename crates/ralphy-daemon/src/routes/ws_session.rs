@@ -24,7 +24,7 @@ use traffic::{EffectiveType, Link};
 /// (home dir when absent); a REATTACH carries `id` (and optional `takeover=1`,
 /// or `watch=1` for a read-only attach, issue #334). All optional so one struct
 /// serves every shape; the handler dispatches on `id` first, then `console`.
-#[derive(serde::Deserialize)]
+#[derive(Default, serde::Deserialize)]
 pub(crate) struct SessionQuery {
     pub(crate) repo: Option<String>,
     pub(crate) agent: Option<String>,
