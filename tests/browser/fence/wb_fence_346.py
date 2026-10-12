@@ -666,7 +666,7 @@ def main():
 
             check(
                 "the popup carries the fence's name in its title",
-                popup.title() == "alpha · Ralphy",
+                popup.title() == "Ralphy · alpha",
                 f"title={popup.title()!r}",
             )
             # The fence is EMPTIED, not empty (ADR-0051 §7a). Membership is a

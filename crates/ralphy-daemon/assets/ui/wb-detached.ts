@@ -5,6 +5,7 @@
 import { isRecord } from "./wb-api.ts";
 import { openerOf } from "./wb-events.ts";
 import { isFileDescriptor, isOpenRequest } from "./wb-file-viewer.ts";
+import { windowTitle } from "./wb-window-title.ts";
 
 /** A message this window sends the shell. */
 export type FilePopupMessage =
@@ -103,7 +104,7 @@ export function wireDetached(window: Window, document: Document) {
     const m: unknown = e.data;
     if (!isDetachOpen(m)) return;
     const desc = m.desc;
-    document.title = desc.path + " · Ralphy";
+    document.title = windowTitle(desc.path);
     WBViewer.open({
       id: "detached",
       project: desc.project,

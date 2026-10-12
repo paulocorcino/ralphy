@@ -54,6 +54,7 @@ import "./wb-detach-file.test.mjs";
 import "./wb-detach-link.test.mjs";
 import "./wb-detached.test.mjs";
 import "./wb-detached-fence.test.mjs";
+import "./wb-window-title.test.mjs";
 import "./wb-fail.test.mjs";
 import "./wb-file-search.test.mjs";
 import "./wb-files.test.mjs";
