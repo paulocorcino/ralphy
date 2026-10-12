@@ -32,6 +32,8 @@ pub(crate) fn peer_session_query(query: &SessionQuery, slug: &str) -> String {
             out.push_str("&watch=1");
         }
         push_holder(&mut out, query);
+        push_gzip(&mut out, query);
+        push_since(&mut out, query);
         return out;
     }
     // A free console on a peer with no distro (ADR-0067 §7): the peer opens it
@@ -46,6 +48,7 @@ pub(crate) fn peer_session_query(query: &SessionQuery, slug: &str) -> String {
         }
         push_record(&mut out, query);
         push_holder(&mut out, query);
+        push_gzip(&mut out, query);
         return out;
     }
     let mut out = format!(
@@ -67,7 +70,26 @@ pub(crate) fn peer_session_query(query: &SessionQuery, slug: &str) -> String {
     }
     push_record(&mut out, query);
     push_holder(&mut out, query);
+    push_gzip(&mut out, query);
     out
+}
+
+/// The daemon that hosts the session is the one that compresses the replay,
+/// so it must know the page can decode it. An older peer ignores the key and
+/// sends the replay raw.
+fn push_gzip(out: &mut String, query: &SessionQuery) {
+    if query.gzip == Some(1) {
+        out.push_str("&gzip=1");
+    }
+}
+
+/// The owning daemon keeps the session's output, so it is the one that can
+/// resume a reattach at the tab's byte count (ADR-0079 D8). An older peer
+/// ignores the key and sends the snapshot or the raw replay.
+fn push_since(out: &mut String, query: &SessionQuery) {
+    if let Some(since) = query.since {
+        out.push_str(&format!("&since={since}"));
+    }
 }
 
 /// The owning daemon keeps one session per window record (ADR-0050 amendment
@@ -81,11 +103,15 @@ fn push_record(out: &mut String, query: &SessionQuery) {
 }
 
 /// The owning daemon keeps the writer slot, so it is the one that must know
-/// the holder (ADR-0051 §9 amendment 2026-09-22). An older peer ignores the key.
+/// the holder (ADR-0051 §9 amendment 2026-09-22) and the attempt of its claim
+/// (ADR-0079 D7). An older peer ignores both keys.
 fn push_holder(out: &mut String, query: &SessionQuery) {
     if let Some(holder) = query.holder() {
         out.push_str("&holder=");
         out.push_str(holder);
+        if let Some(attempt) = query.attempt {
+            out.push_str(&format!("&attempt={attempt}"));
+        }
     }
 }
 

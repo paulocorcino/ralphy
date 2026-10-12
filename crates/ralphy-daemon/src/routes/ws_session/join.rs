@@ -7,6 +7,7 @@ use std::sync::Arc;
 use axum::extract::ws::WebSocketUpgrade;
 use axum::response::Response;
 
+use super::refuse::Refuser;
 use super::traffic::Tab;
 use super::{session_ws, SessionLabels};
 use crate::session;
@@ -24,20 +25,26 @@ pub(super) async fn claim_for(
 }
 
 /// A fresh launch claims its writer slot inside the spawn; name its holder
-/// there, so the tab that launched it can reclaim it later.
-pub(super) fn hold(att: &session::Attachment, holder: Option<&str>) {
+/// and the attempt of its claim there, so the tab that launched it can
+/// reclaim it later.
+pub(super) fn hold(att: &session::Attachment, holder: Option<&str>, attempt: Option<u64>) {
     if let Some(holder) = holder {
-        att.hold_as(holder);
+        att.hold_as(holder, attempt);
     }
 }
 
 /// A launch that joined the live session already serving its record, instead
 /// of starting a second one (ADR-0050 amendment 2026-10-04).
-pub(super) struct Joined {
-    id: session::SessionId,
-    att: session::Attachment,
-    labels: SessionLabels,
-    environment: String,
+pub(super) enum Joined {
+    Attached {
+        id: session::SessionId,
+        att: session::Attachment,
+        labels: SessionLabels,
+        environment: String,
+    },
+    /// This holder's newer socket already writes to the session. Not a
+    /// watcher: it would watch its own session (ADR-0079 D7).
+    Superseded { attempt: Option<u64> },
 }
 
 impl Joined {
@@ -48,16 +55,19 @@ impl Joined {
         sessions: &Arc<session::SessionManager>,
         claim: Option<&session::RecordClaim>,
         holder: Option<&str>,
+        attempt: Option<u64>,
         environment: &str,
     ) -> Option<Joined> {
         let id = claim?.live()?;
         let info = sessions.get(id)?;
-        let (att, watching) = match sessions.attach_as(id, false, holder) {
+        // A launch opens a new terminal, so it has no byte count to resume at.
+        let (att, watching) = match sessions.attach_as(id, false, holder, attempt, None) {
             Ok(att) => (att, false),
-            Err(session::AttachError::Busy) => (sessions.watch(id).ok()?, true),
+            Err(session::AttachError::Busy) => (sessions.watch(id, None).ok()?, true),
+            Err(session::AttachError::Superseded) => return Some(Joined::Superseded { attempt }),
             Err(session::AttachError::Unknown) => return None,
         };
-        Some(Joined {
+        Some(Joined::Attached {
             id,
             att,
             labels: SessionLabels {
@@ -74,14 +84,18 @@ impl Joined {
         ws: WebSocketUpgrade,
         daemon_id: String,
         tab: Tab,
+        refuser: &Refuser,
         shutdown: tokio::sync::watch::Receiver<bool>,
     ) -> Response {
-        let Joined {
-            id,
-            att,
-            labels,
-            environment,
-        } = self;
+        let (id, att, labels, environment) = match self {
+            Joined::Attached {
+                id,
+                att,
+                labels,
+                environment,
+            } => (id, att, labels, environment),
+            Joined::Superseded { attempt } => return refuser.supersede(ws, attempt),
+        };
         ws.on_upgrade(move |socket| {
             session_ws(
                 socket,

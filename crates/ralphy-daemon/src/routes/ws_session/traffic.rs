@@ -1,21 +1,24 @@
 //! The traffic summary of one console socket: the bytes it sent, how many of
-//! them were a scrollback replay, and the round trip of its pings. It is logged
+//! them were a replay (on the wire, and before a gzip), and the round trip of
+//! its pings. It is logged
 //! once, when the socket closes, so that a session over a slow or metered link
 //! can be measured.
 
 use std::collections::VecDeque;
+use std::io::Read;
 use std::time::Instant;
 
 use crate::device::DeviceId;
 use crate::protocol::{self, Command, Frame};
 
-/// The browser tab that opened a console socket: the holder it named, and
-/// the device of its browser. The device ID is written in the summary, never
-/// the cookie value (ADR-0074 D10).
+/// The browser tab that opened a console socket: the holder it named, the
+/// device of its browser, and whether it can decode a gzip replay. The device
+/// ID is written in the summary, never the cookie value (ADR-0074 D10).
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Tab {
     pub(crate) holder: Option<String>,
     pub(crate) device: Option<DeviceId>,
+    pub(crate) gzip: bool,
 }
 
 /// Which loop owns the socket: the bridge to a session this daemon hosts, or
@@ -93,13 +96,18 @@ const OUTSTANDING_CAP: usize = 4;
 /// Round-trip samples kept per socket: about 5 hours of 20 s pings.
 const SAMPLE_CAP: usize = 1024;
 
+/// The most bytes a relayed gzip replay is decoded to, only to count them. A
+/// snapshot is a screen and its scrollback, far below this.
+const RAW_COUNT_CAP: u64 = 16 * 1024 * 1024;
+
 /// Where a relayed socket is in the frames a peer sends: before the
 /// `session-open` announcement, before the first terminal frame (a replay when
-/// the announcement says so), or in the live stream.
+/// the announcement says so, gzipped when it says that too), or in the live
+/// stream.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PeerStage {
     Open,
-    FirstOutput { replay: bool },
+    FirstOutput { replay: bool, gzip: bool },
     Live,
 }
 
@@ -125,6 +133,7 @@ pub(crate) struct Traffic {
     keys: Keys,
     started: Instant,
     replay_bytes: u64,
+    replay_raw_bytes: u64,
     live_bytes: u64,
     live_frames: u64,
     in_bytes: u64,
@@ -144,6 +153,9 @@ pub(crate) struct Traffic {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct Summary {
     pub(crate) replay_bytes: u64,
+    /// The replay frame as it would be without the gzip: equal to
+    /// `replay_bytes` when the replay went raw.
+    pub(crate) replay_raw_bytes: u64,
     pub(crate) live_bytes: u64,
     pub(crate) live_frames: u64,
     pub(crate) in_bytes: u64,
@@ -189,6 +201,7 @@ impl Traffic {
             keys,
             started: now,
             replay_bytes: 0,
+            replay_raw_bytes: 0,
             live_bytes: 0,
             live_frames: 0,
             in_bytes: 0,
@@ -204,8 +217,10 @@ impl Traffic {
         }
     }
 
-    pub(crate) fn replay(&mut self, bytes: usize) {
-        self.replay_bytes += bytes as u64;
+    /// Count a replay frame: `wire` bytes sent, `raw` bytes before a gzip.
+    pub(crate) fn replay(&mut self, wire: usize, raw: usize) {
+        self.replay_bytes += wire as u64;
+        self.replay_raw_bytes += raw as u64;
     }
 
     pub(crate) fn live(&mut self, bytes: usize) {
@@ -218,38 +233,53 @@ impl Traffic {
     /// the bytes unchanged; this reads them only until the replay is known.
     /// The `session-open` announcement names the session and says whether a
     /// replay follows; it is not counted, as the bridge does not count it. A
-    /// peer older than the `replay` field gets its replay counted as live.
+    /// peer older than the `replay` field gets its replay counted as live. A
+    /// later `session-open` (the peer's resync after a lag) starts the count
+    /// of its replay again.
     pub(crate) fn peer_frame(&mut self, bytes: &[u8]) {
+        if self.peer_open(bytes) {
+            return;
+        }
         match self.peer_stage {
-            PeerStage::Live => self.live(bytes.len()),
-            PeerStage::FirstOutput { replay } => {
+            PeerStage::Live | PeerStage::Open => self.live(bytes.len()),
+            PeerStage::FirstOutput { replay, gzip } => {
                 if bytes.first() == Some(&protocol::TAG_TERMINAL) {
                     self.peer_stage = PeerStage::Live;
                     if replay {
-                        self.replay(bytes.len());
+                        let raw = if gzip {
+                            gunzipped_frame_len(bytes)
+                        } else {
+                            bytes.len()
+                        };
+                        self.replay(bytes.len(), raw);
                         return;
                     }
                 }
                 self.live(bytes.len());
             }
-            PeerStage::Open => {
-                if bytes.first() == Some(&protocol::TAG_COMMAND) {
-                    if let Ok(Frame::Command(cmd)) = protocol::decode(bytes) {
-                        if cmd.verb == SESSION_OPEN {
-                            if self.keys.session.is_none() {
-                                self.keys.session =
-                                    cmd.payload.get("session").and_then(|v| v.as_u64());
-                            }
-                            let replay =
-                                cmd.payload.get("replay").and_then(|v| v.as_bool()) == Some(true);
-                            self.peer_stage = PeerStage::FirstOutput { replay };
-                            return;
-                        }
-                    }
-                }
-                self.live(bytes.len());
-            }
         }
+    }
+
+    /// Whether `bytes` is a `session-open` announcement. It moves the stage
+    /// to the first output after it, and names the session when none is
+    /// known.
+    fn peer_open(&mut self, bytes: &[u8]) -> bool {
+        if bytes.first() != Some(&protocol::TAG_COMMAND) {
+            return false;
+        }
+        let Ok(Frame::Command(cmd)) = protocol::decode(bytes) else {
+            return false;
+        };
+        if cmd.verb != SESSION_OPEN {
+            return false;
+        }
+        if self.keys.session.is_none() {
+            self.keys.session = cmd.payload.get("session").and_then(|v| v.as_u64());
+        }
+        let replay = cmd.payload.get("replay").and_then(|v| v.as_bool()) == Some(true);
+        let gzip = cmd.payload.get("replay_encoding").and_then(|v| v.as_str()) == Some("gzip");
+        self.peer_stage = PeerStage::FirstOutput { replay, gzip };
+        true
     }
 
     pub(crate) fn inbound(&mut self, bytes: usize) {
@@ -327,6 +357,7 @@ impl Traffic {
         all.sort_unstable();
         Summary {
             replay_bytes: self.replay_bytes,
+            replay_raw_bytes: self.replay_raw_bytes,
             live_bytes: self.live_bytes,
             live_frames: self.live_frames,
             in_bytes: self.in_bytes,
@@ -355,6 +386,7 @@ impl Traffic {
             end,
             secs = now.duration_since(self.started).as_secs(),
             replay_bytes = s.replay_bytes,
+            replay_raw_bytes = s.replay_raw_bytes,
             live_bytes = s.live_bytes,
             live_frames = s.live_frames,
             in_bytes = s.in_bytes,
@@ -368,6 +400,24 @@ impl Traffic {
             rtt_idle_p50_ms = s.rtt_idle_p50_ms,
             "console socket traffic"
         );
+    }
+}
+
+/// The length a gzipped terminal frame would have raw: its header plus its
+/// data decoded. A frame that does not decode counts as it was sent, so the
+/// summary still has a number.
+fn gunzipped_frame_len(frame: &[u8]) -> usize {
+    let Ok(Frame::Terminal { data, .. }) = protocol::decode(frame) else {
+        return frame.len();
+    };
+    let header = frame.len() - data.len();
+    let mut decoder = flate2::read::GzDecoder::new(data.as_slice()).take(RAW_COUNT_CAP);
+    match std::io::copy(&mut decoder, &mut std::io::sink()) {
+        Ok(raw) => header + usize::try_from(raw).unwrap_or(usize::MAX - header),
+        Err(error) => {
+            tracing::debug!(%error, "a relayed gzip replay did not decode; counted as sent");
+            frame.len()
+        }
     }
 }
 
@@ -393,7 +443,7 @@ mod tests {
     fn traffic(now: Instant) -> Traffic {
         let tab = Tab {
             holder: Some("tab-1".to_string()),
-            device: None,
+            ..Tab::default()
         };
         Traffic::local(1, tab, now)
     }
@@ -414,12 +464,13 @@ mod tests {
     #[test]
     fn replay_and_live_bytes_are_kept_apart() {
         let mut t = traffic(Instant::now());
-        t.replay(1000);
+        t.replay(400, 1000);
         t.live(10);
         t.live(5);
         t.inbound(3);
         let s = t.summary();
-        assert_eq!((s.replay_bytes, s.live_bytes, s.live_frames), (1000, 15, 2));
+        assert_eq!((s.replay_bytes, s.live_bytes, s.live_frames), (400, 15, 2));
+        assert_eq!(s.replay_raw_bytes, 1000, "the replay before its gzip");
         assert_eq!(s.in_bytes, 3);
     }
 
@@ -463,6 +514,7 @@ mod tests {
         let tab = Tab {
             holder: Some("tab-a".to_string()),
             device: Some(device),
+            gzip: false,
         };
         let local = Traffic::local(7, tab, now);
         assert_eq!(local.channel, Channel::Local);
@@ -557,8 +609,60 @@ mod tests {
         let s = t.summary();
         assert_eq!(t.keys.session, Some(4));
         assert_eq!(s.replay_bytes, replay.len() as u64);
+        assert_eq!(s.replay_raw_bytes, replay.len() as u64, "a raw replay");
         assert_eq!(s.live_frames, 1, "the open frame is not counted");
         assert_eq!(s.live_bytes, terminal_frame(10).len() as u64);
+    }
+
+    /// A peer that gzips its replay sends a `session-size` frame between the
+    /// announcement and the replay; the replay is still found, and its raw
+    /// size is the size of the frame decoded.
+    #[test]
+    fn a_relayed_gzip_replay_is_counted_on_the_wire_and_raw() {
+        use std::io::Write;
+        let mut t = peer();
+        t.peer_frame(&open_frame(
+            r#"{"session":4,"replay":true,"replay_encoding":"gzip"}"#,
+        ));
+        let size = [
+            &[protocol::TAG_COMMAND][..],
+            br#"{"id":4,"verb":"session-size","payload":{"rows":24,"cols":80}}"#,
+        ]
+        .concat();
+        t.peer_frame(&size);
+        let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        enc.write_all(&[b'x'; 5000]).expect("an in-memory gzip");
+        let replay = protocol::encode(&Frame::Terminal {
+            session: 4,
+            data: enc.finish().expect("an in-memory gzip"),
+        });
+        t.peer_frame(&replay);
+        t.peer_frame(&terminal_frame(10));
+        let s = t.summary();
+        assert_eq!(s.replay_bytes, replay.len() as u64);
+        assert_eq!(s.replay_raw_bytes, terminal_frame(5000).len() as u64);
+        assert_eq!(s.live_frames, 2, "the size frame and the live frame");
+    }
+
+    /// A peer that lagged sends a second `session-open` and a new snapshot:
+    /// that snapshot is a replay too, not live output.
+    #[test]
+    fn a_relayed_resync_counts_its_snapshot_as_replay() {
+        let mut t = peer();
+        t.peer_frame(&open_frame(r#"{"session":4,"replay":true}"#));
+        t.peer_frame(&terminal_frame(1000));
+        t.peer_frame(&terminal_frame(10));
+        t.peer_frame(&open_frame(r#"{"session":4,"replay":true}"#));
+        t.peer_frame(&terminal_frame(2000));
+        let s = t.summary();
+        assert_eq!(
+            s.replay_bytes,
+            (terminal_frame(1000).len() + terminal_frame(2000).len()) as u64
+        );
+        assert_eq!(
+            (s.live_frames, s.live_bytes),
+            (1, terminal_frame(10).len() as u64)
+        );
     }
 
     #[test]

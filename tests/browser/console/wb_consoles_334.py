@@ -412,9 +412,25 @@ def never_reached_child(page, i, token):
 
 def flat(page, i=0):
     """The buffer with its line breaks removed. xterm hard-wraps at the terminal
-    width, so a UI marker like `[connection lost — reconnecting…]` is split
+    width, so a UI marker like `[session closed]` is split
     mid-word in the buffer and a literal search over `screen()` would miss it."""
     return screen(page, i).replace("\n", "")
+
+
+def link_lost(page, i=0):
+    """Whether window `i` shows the strip of a dropped link."""
+    return page.evaluate(
+        "(i) => !!document.querySelectorAll('.session-window')[i]?.querySelector('.session-link-lost')", i
+    )
+
+
+def wait_link_lost(page, i, timeout=10000):
+    deadline = time.time() + timeout / 1000
+    while time.time() < deadline:
+        if link_lost(page, i):
+            return True
+        page.wait_for_timeout(100)
+    return False
 
 
 def wait_for_screen(page, i, needle, timeout=15000):
@@ -647,7 +663,7 @@ def main():
             )
             check(
                 "an offline A says the link dropped, not that the session ended",
-                wait_for_screen(page_a, 0, "[connection lost — reconnecting…]", timeout=10000),
+                wait_link_lost(page_a, 0),
                 flat(page_a, 0)[-160:],
             )
             check(
@@ -661,6 +677,7 @@ def main():
                 timeout=20000,
             )
             type_line(page_a, 0, "after-drop")
+            check("…and the strip goes when the link is back", not link_lost(page_a, 0))
             check(
                 "a recovered A drives the child again",
                 reached_child(page_a, 0, "after-drop"),
@@ -717,8 +734,6 @@ def main():
             )
 
             # --- scenario 7: a genuine end says "closed", in both contexts ---
-            lost_a = flat(page_a, 0).count("[connection lost — reconnecting…]")
-            lost_b = flat(page_b, 0).count("[connection lost — reconnecting…]")
             base_a = counters(page_a)
             http("POST", f"api/sessions/close?id={sid}")
             check(
@@ -733,8 +748,7 @@ def main():
             )
             check(
                 "…without either reading it as a flaky link",
-                flat(page_a, 0).count("[connection lost — reconnecting…]") == lost_a
-                and flat(page_b, 0).count("[connection lost — reconnecting…]") == lost_b,
+                not link_lost(page_a, 0) and not link_lost(page_b, 0),
             )
             page_a.wait_for_timeout(6000)
             # `created` is the storm oracle here, not the whole dict: the close

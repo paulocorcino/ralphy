@@ -9,6 +9,9 @@
 //!
 //! A REATTACH keeps its HTTP status: the browser's retry rules count those
 //! failed opens, and a `404`/`409` must stay a failed open, not an announced end.
+//! The one exception is a superseded claim (ADR-0079 D7): it is announced on
+//! every shape, because a retry would only raise the attempt and evict the
+//! socket that replaced it.
 
 use std::time::Duration;
 
@@ -21,6 +24,10 @@ use crate::routes::send_command;
 
 /// The wire value of `session-end`'s `reason` for a launch the daemon refused.
 pub(crate) const REFUSED: &str = "refused";
+
+/// The wire value of `session-end`'s `reason` for a late claim of a tab whose
+/// newer socket already holds the writer slot (ADR-0079 D7).
+pub(crate) const SUPERSEDED: &str = "superseded";
 
 /// Refuses one `/ws/session` request in the way its client can read, and
 /// logs each refusal: a console that does not open is the failure the
@@ -65,6 +72,30 @@ impl Refuser {
         if self.session.is_some() {
             return (status, message).into_response();
         }
+        self.announce(ws, REFUSED, message)
+    }
+
+    /// Refuse a claim whose holder already holds the slot with a higher
+    /// attempt, on a reattach and on a launch alike. Nobody is evicted.
+    pub(crate) fn supersede(&self, ws: WebSocketUpgrade, attempt: Option<u64>) -> Response {
+        tracing::info!(
+            reason = SUPERSEDED,
+            launch = self.session.is_none(),
+            session = self.session,
+            holder = self.tab.holder.as_deref(),
+            attempt,
+            device = self.tab.device.map(|d| d.to_string()),
+            "console socket refused"
+        );
+        self.announce(
+            ws,
+            SUPERSEDED,
+            "a newer connection from this tab has the console".to_string(),
+        )
+    }
+
+    /// Upgrade, send `session-end` with `reason` and `message`, then Close.
+    fn announce(&self, ws: WebSocketUpgrade, reason: &'static str, message: String) -> Response {
         let daemon_id = self.daemon_id.clone();
         let environment = self.environment.clone();
         ws.on_upgrade(move |mut socket| async move {
@@ -76,7 +107,7 @@ impl Refuser {
                     0,
                     "session-end",
                     serde_json::json!({
-                        "reason": REFUSED,
+                        "reason": reason,
                         "message": message,
                         "daemon_id": daemon_id,
                         "environment": environment,

@@ -168,9 +168,10 @@ impl PeerConsole<'_> {
             &sessions,
             claim.as_ref(),
             tab.holder.as_deref(),
+            query.attempt,
             &environment,
         ) {
-            return joined.upgrade(ws, daemon_id, tab, shutdown);
+            return joined.upgrade(ws, daemon_id, tab, &refuser, shutdown);
         }
         let effective_environment = peer.environment.clone();
         match sessions
@@ -183,7 +184,7 @@ impl PeerConsole<'_> {
                 record.clone(),
                 spec,
             )
-            .inspect(|(_, att)| hold(att, tab.holder.as_deref()))
+            .inspect(|(_, att)| hold(att, tab.holder.as_deref(), query.attempt))
         {
             Ok((id, att)) => {
                 who.console(&launch_record(

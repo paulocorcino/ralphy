@@ -20,7 +20,7 @@ import { WBGeometry } from "./wb-geometry.ts";
 import { addNote, removeNote, NOTE_MAX } from "./wb-desk-folds.ts";
 import { DEFAULT_DIR, DEFAULT_FILL, DEFAULT_FONT, DEFAULT_INK, DEFAULT_SIZE, DEFAULT_TONE, FILLS, FONTS, INKS, NEW_NOTE_STYLE, NOTE_DEFAULT, NOTE_MIN, ON_TOP_BAND_BELOW, ON_TOP_FLOOR, ON_TOP_TOP, SAVE_AFTER_MS, SIZES, SWATCH_NAME, TONES, anchorsOf, applyLook, baseName, bodyOf, colorOf, dirName, fillOf, fontOf, inkOf, isSafeScheme, lockedBy, lookOf, noCredential, noteDormancyDecision, noteSlug, onTopClamp, onTopRect, popupLinkTarget, savedLabel, sizeOf, spawnRect, stampName, styleOf, titleFieldOf, titleOf, toneOf, veiledOf, withStyle, withTitle, withVeil } from "./wb-notes-folds.ts";
 import { sendDocument } from "./wb-events.ts";
-import { DORMANT_AFTER_MS, DORMANT_MARGIN_PX } from "./wb-console-gpu.ts";
+import { dormantAfterMs, DORMANT_MARGIN_PX } from "./wb-console-gpu.ts";
 import { createNoteEditor } from "./wb-notes-editor.ts";
 import { createNoteOnTop } from "./wb-notes-on-top.ts";
 import { createNoteVeil } from "./wb-notes-veil.ts";
@@ -805,7 +805,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     el.remove();
   }
   function sweepDormancy() {
-    const after = DORMANT_AFTER_MS;
+    const after = dormantAfterMs();
     for (const [el, seen] of [...watched]) {
       if (!el.isConnected) {
         untrackDormancy(el);

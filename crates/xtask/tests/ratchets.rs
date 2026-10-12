@@ -225,8 +225,8 @@ const PEER_REPLY_TYPES: &[(&str, &str)] = &[
     ("wb-api.ts", "AgentRow"),
     ("wb-changes.ts", "ChangeRow"),
     ("wb-changes.ts", "SyncBody"),
-    ("wb-console-terminal.ts", "FramePayload"),
-    ("wb-console-terminal.ts", "SessionFrame"),
+    ("wb-console-frames.ts", "FramePayload"),
+    ("wb-console-frames.ts", "SessionFrame"),
     ("wb-kanban.ts", "BoardLabel"),
     ("wb-kanban.ts", "BoardRow"),
     ("wb-kanban.ts", "IssueComment"),
@@ -255,8 +255,14 @@ const NOT_PEER_REPLIES: &[(&str, &str, &str)] = &[
 
 /// `(PEER_PROTOCOL_VERSION, hash of PEER_REPLY_TYPES)`. Version 4 pays for
 /// the fields that version 3 got with no raise: `file.read`'s `encoding` and
-/// `bom`, and the `char_index` of a refused write (#653).
-const PEER_REPLY_PIN: (u32, u64) = (4, 0xf01c_405c_b75e_76c1);
+/// `bom`, and the `char_index` of a refused write (#653). The optional
+/// `rows` and `cols` of `session-size` keep version 4: with no such frame a
+/// watcher fits its own box, as before (#689). So does the optional
+/// `replay_encoding` of `session-open`: a peer that does not send it sends
+/// the replay raw, and the page reads it raw. So do the optional `replay`,
+/// `offset` and `resume` of `session-open`: with no `offset` the page never
+/// sends `since`, and with no `resume` it resets its terminal, as before.
+const PEER_REPLY_PIN: (u32, u64) = (4, 0xe5f0_e83b_1e64_02ee);
 
 /// Where `PEER_PROTOCOL_VERSION` is, from the repo root.
 const PEER_RS: &str = "crates/ralphy-daemon/src/peer.rs";

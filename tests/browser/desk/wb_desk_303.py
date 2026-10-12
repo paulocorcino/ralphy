@@ -46,6 +46,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -67,6 +68,21 @@ SH = "Alpine.$data(document.querySelector('[x-data]'))"
 TABS = "Alpine.store('tabs')"
 
 results = []
+
+
+def session_socket(url):
+    """Whether `url` is a `/ws/session` socket."""
+    return urllib.parse.urlparse(url).path.endswith("/ws/session")
+
+
+def attach_id(url):
+    """The session id a `/ws/session` socket attaches to, or None for a
+    launch or another socket. Read from the query, so the order of its keys
+    does not matter."""
+    if not session_socket(url):
+        return None
+    ids = urllib.parse.parse_qs(urllib.parse.urlparse(url).query).get("id")
+    return int(ids[0]) if ids else None
 
 
 def check(name, ok, detail=""):
@@ -705,20 +721,19 @@ def main():
                 "() => [...document.querySelectorAll('.session-window')]"
                 ".map((w) => w._term?.sessionId ?? w._dormantSession ?? w._wantsSession ?? null)"
             )
-            launches = [u for u in reload_sockets if "/ws/session?" in u and "/ws/session?id=" not in u]
-            attached = f"/ws/session?id={records[1]['sessionId']}&"
+            launches = [u for u in reload_sockets if session_socket(u) and attach_id(u) is None]
             check(
                 "…still attached to their live sessions, not relaunched",
                 held == [r["sessionId"] for r in records]
                 and not launches
-                and any(attached in u for u in reload_sockets),
+                and any(attach_id(u) == records[1]["sessionId"] for u in reload_sockets),
                 f"held={held} records={[r['sessionId'] for r in records]} launches={launches}",
             )
             # Read last before it shows, after a second more: a console that
             # wakes late while still covered is caught too.
             page.wait_for_timeout(1000)
             asleep = page.evaluate("() => document.querySelectorAll('.session-window')[0].classList.contains('dormant')")
-            early = [u for u in reload_sockets if f"/ws/session?id={records[0]['sessionId']}&" in u]
+            early = [u for u in reload_sockets if attach_id(u) == records[0]["sessionId"]]
             check(
                 "…and the console under the maximized one comes back asleep, with no socket yet",
                 asleep is True and not early,
@@ -739,11 +754,12 @@ def main():
             except Exception:
                 pass
             woke = page.evaluate("() => document.querySelectorAll('.session-window')[0]._term?.sessionId ?? null")
-            launches = [u for u in reload_sockets if "/ws/session?" in u and "/ws/session?id=" not in u]
-            attached = f"/ws/session?id={records[0]['sessionId']}&"
+            launches = [u for u in reload_sockets if session_socket(u) and attach_id(u) is None]
             check(
                 "…and the console under it wakes on its own session when it shows",
-                woke == records[0]["sessionId"] and not launches and any(attached in u for u in reload_sockets),
+                woke == records[0]["sessionId"]
+                and not launches
+                and any(attach_id(u) == records[0]["sessionId"] for u in reload_sockets),
                 f"woke={woke} record={records[0]['sessionId']} launches={launches}",
             )
 

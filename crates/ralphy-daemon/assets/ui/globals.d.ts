@@ -139,6 +139,7 @@ interface XtermTerminal {
   focus(): void;
   dispose(): void;
   refresh(start: number, end: number): void;
+  resize(cols: number, rows: number): void;
   scrollLines(amount: number): void;
   selectLines(start: number, end: number): void;
   hasSelection(): boolean;

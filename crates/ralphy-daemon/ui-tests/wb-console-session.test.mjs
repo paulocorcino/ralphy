@@ -98,6 +98,8 @@ test("endNotice names the reason of a refused launch, and only of one", () => {
   for (const reason of ["child-exited", "daemon-shutdown", "taken-over", null]) {
     assert.equal(endNotice(reason, "ignored"), "[session closed]", String(reason));
   }
+  // Not "[session closed]": the session lives on, in the window that replaced this socket.
+  assert.equal(endNotice("superseded", "ignored"), "[this console is open in another window]");
 });
 
 // --- peer placeholders: a console whose peer cannot serve it ---------------
@@ -236,6 +238,7 @@ test("reconnectDecision reattaches any unannounced close and gives up only on an
   const rows = [
     ["no id: nothing to reattach to", { idKnown: false }, "give-up"],
     ["taken over: watch", { announced: "taken-over" }, "park-as-watcher"],
+    ["superseded: a newer socket of this tab holds it", { announced: "superseded" }, "give-up"],
     ["the daemon said why", { announced: "child-exited" }, "give-up"],
     ["too many failed opens", { failedReopens: 11 }, "give-up"],
     ["a drop of a held session", {}, "reconnect"],

@@ -35,6 +35,9 @@ fn peer_session_query_forwards_the_checkout_only_when_present() {
         holder: None,
         name: None,
         record: None,
+        gzip: None,
+        attempt: None,
+        since: None,
     };
     assert_eq!(
         peer_session_query(&launch(Some("wt-a")), "owner/repo"),
@@ -70,6 +73,9 @@ fn peer_session_query_forwards_a_console_launch() {
         holder: Some("tab-1".into()),
         name: None,
         record: None,
+        gzip: None,
+        attempt: None,
+        since: None,
     };
     assert_eq!(
         peer_session_query(&console(Some(" htop ")), "owner/repo"),
@@ -104,6 +110,9 @@ fn peer_session_query_forwards_a_well_formed_holder() {
         holder: Some(holder.to_string()),
         name: None,
         record: None,
+        gzip: None,
+        attempt: None,
+        since: None,
     };
     assert_eq!(
         peer_session_query(&reattach("tab-1_A"), "owner/repo"),
@@ -144,6 +153,9 @@ fn peer_session_query_forwards_the_console_name_on_a_launch_only() {
         holder: None,
         name,
         record: None,
+        gzip: None,
+        attempt: None,
+        since: None,
     };
     assert_eq!(
         peer_session_query(&launch(Some("fincal #1".into())), "owner/repo"),
@@ -187,6 +199,9 @@ fn peer_session_query_forwards_the_record_on_a_launch_only() {
         holder: None,
         name: None,
         record: Some(record.to_string()),
+        gzip: None,
+        attempt: None,
+        since: None,
     };
     assert_eq!(
         peer_session_query(&console("w-a_1"), "owner/repo"),
@@ -218,6 +233,157 @@ fn peer_session_query_forwards_the_record_on_a_launch_only() {
     }
 }
 
+/// The daemon that hosts the session compresses the replay, so the relay
+/// forwards `gzip=1` on every shape, and nothing when the page did not ask.
+#[test]
+fn peer_session_query_forwards_gzip_on_every_shape() {
+    let launch = |gzip: Option<u32>| SessionQuery {
+        repo: Some("x".into()),
+        agent: Some("claude".into()),
+        id: None,
+        takeover: None,
+        watch: None,
+        console: None,
+        checkout: None,
+        command: None,
+        holder: None,
+        name: None,
+        record: None,
+        gzip,
+        attempt: None,
+        since: None,
+    };
+    assert_eq!(
+        peer_session_query(&launch(Some(1)), "owner/repo"),
+        "repo=owner%2Frepo&agent=claude&gzip=1"
+    );
+    let watch = |gzip| SessionQuery {
+        id: Some(7),
+        watch: Some(1),
+        ..launch(gzip)
+    };
+    assert_eq!(
+        peer_session_query(&watch(Some(1)), "owner/repo"),
+        "id=7&repo=owner%2Frepo&watch=1&gzip=1"
+    );
+    let console = SessionQuery {
+        console: Some(1),
+        agent: None,
+        ..launch(Some(1))
+    };
+    assert_eq!(
+        peer_session_query(&console, "owner/repo"),
+        "console=1&repo=owner%2Frepo&gzip=1"
+    );
+    assert_eq!(
+        peer_session_query(&watch(None), "owner/repo"),
+        "id=7&repo=owner%2Frepo&watch=1"
+    );
+    assert_eq!(
+        peer_session_query(&watch(Some(0)), "owner/repo"),
+        "id=7&repo=owner%2Frepo&watch=1",
+        "only `1` asks"
+    );
+}
+
+/// The owning daemon orders the claims of one holder by their attempt, so the
+/// relay forwards it beside the holder on every shape that sends one, and
+/// never alone: an attempt without a holder orders nothing.
+#[test]
+fn peer_session_query_forwards_the_attempt_with_the_holder() {
+    let reattach = |holder: Option<&str>| SessionQuery {
+        repo: Some("x".into()),
+        agent: None,
+        id: Some(7),
+        takeover: None,
+        watch: None,
+        console: None,
+        checkout: None,
+        command: None,
+        holder: holder.map(str::to_string),
+        name: None,
+        record: None,
+        gzip: None,
+        attempt: Some(12),
+        since: None,
+    };
+    assert_eq!(
+        peer_session_query(&reattach(Some("tab-A")), "owner/repo"),
+        "id=7&repo=owner%2Frepo&holder=tab-A&attempt=12"
+    );
+    let launch = SessionQuery {
+        id: None,
+        agent: Some("claude".into()),
+        ..reattach(Some("tab-A"))
+    };
+    assert_eq!(
+        peer_session_query(&launch, "owner/repo"),
+        "repo=owner%2Frepo&agent=claude&holder=tab-A&attempt=12"
+    );
+    let console = SessionQuery {
+        console: Some(1),
+        ..launch
+    };
+    assert_eq!(
+        peer_session_query(&console, "owner/repo"),
+        "console=1&repo=owner%2Frepo&holder=tab-A&attempt=12"
+    );
+    assert_eq!(
+        peer_session_query(&reattach(None), "owner/repo"),
+        "id=7&repo=owner%2Frepo",
+        "no holder, no attempt"
+    );
+}
+
+/// The owning daemon keeps the session's output, so the relay forwards the
+/// byte count of a reattach, on the reattach and the watch alike. A launch
+/// opens a new terminal and sends none.
+#[test]
+fn peer_session_query_forwards_since_on_a_reattach() {
+    let reattach = |watch: Option<u32>| SessionQuery {
+        repo: Some("x".into()),
+        agent: None,
+        id: Some(7),
+        takeover: None,
+        watch,
+        console: None,
+        checkout: None,
+        command: None,
+        holder: None,
+        name: None,
+        record: None,
+        gzip: None,
+        attempt: None,
+        since: Some(4096),
+    };
+    assert_eq!(
+        peer_session_query(&reattach(None), "owner/repo"),
+        "id=7&repo=owner%2Frepo&since=4096"
+    );
+    assert_eq!(
+        peer_session_query(&reattach(Some(1)), "owner/repo"),
+        "id=7&repo=owner%2Frepo&watch=1&since=4096"
+    );
+    let at_zero = SessionQuery {
+        since: Some(0),
+        ..reattach(None)
+    };
+    assert_eq!(
+        peer_session_query(&at_zero, "owner/repo"),
+        "id=7&repo=owner%2Frepo&since=0",
+        "a terminal that shows no byte yet resumes at 0"
+    );
+    let launch = SessionQuery {
+        id: None,
+        agent: Some("claude".into()),
+        ..reattach(None)
+    };
+    assert_eq!(
+        peer_session_query(&launch, "owner/repo"),
+        "repo=owner%2Frepo&agent=claude"
+    );
+}
+
 /// The console name is cut to the desk's 40 characters on a char boundary,
 /// and an empty one is no name at all.
 #[test]
@@ -234,6 +400,9 @@ fn session_query_name_is_cut_to_40_and_empty_is_absent() {
         holder: None,
         name,
         record: None,
+        gzip: None,
+        attempt: None,
+        since: None,
     };
     let long = "é".repeat(40);
     assert_eq!(query(Some("é".repeat(41))).name(), Some(long.as_str()));
@@ -3132,7 +3301,7 @@ fn the_console_clipboard_is_write_only_and_refused_on_replay() {
         // The read form is refused, never answered.
         "payload === \"?\"",
         // The replay gate, and the write callback that is the ONLY correct
-        // way to clear it — reverting to a bare `term.write(a.subarray(9))`
+        // way to clear it — reverting to a bare `term.write(event.bytes)`
         // reintroduces the clipboard clobber with every other pin still green.
         "replaying = connOpts.id != null",
         // Whose clipboard it is: not every attached window's.
@@ -3150,7 +3319,7 @@ fn the_console_clipboard_is_write_only_and_refused_on_replay() {
     // declaration `let replaying = false;` does not match it.
     let flat: String = js.split_whitespace().collect();
     assert!(
-        flat.contains("term.write(a.subarray(9),replaying?()=>{replaying=false;}:undefined"),
+        flat.contains("term.write(event.bytes,replaying?()=>{replaying=false;}:undefined"),
         "the terminal must clear the replay gate in the replay's write callback"
     );
     // The read property. The clipboard is read only inside an operator's
@@ -3736,6 +3905,14 @@ const CONSOLE_FAMILY: &[(&str, &str)] = &[
         include_str!("../assets/ui/wb-console-feeds.ts"),
     ),
     (
+        "wb-console-fit.ts",
+        include_str!("../assets/ui/wb-console-fit.ts"),
+    ),
+    (
+        "wb-console-frames.ts",
+        include_str!("../assets/ui/wb-console-frames.ts"),
+    ),
+    (
         "wb-console-gpu.ts",
         include_str!("../assets/ui/wb-console-gpu.ts"),
     ),
@@ -3758,6 +3935,10 @@ const CONSOLE_FAMILY: &[(&str, &str)] = &[
     (
         "wb-console-placeholder.ts",
         include_str!("../assets/ui/wb-console-placeholder.ts"),
+    ),
+    (
+        "wb-console-press.ts",
+        include_str!("../assets/ui/wb-console-press.ts"),
     ),
     (
         "wb-console-session.ts",
@@ -4435,6 +4616,9 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-console-session.js",
                 "wb-desk-folds.js",
                 "wb-console-gpu.js",
+                "wb-console-fit.js",
+                "wb-console-frames.js",
+                "wb-console-press.js",
                 "wb-console-terminal.js",
                 "wb-console-touch.js",
                 "wb-console-paste.js",

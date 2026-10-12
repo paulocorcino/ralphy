@@ -161,6 +161,81 @@ test("holder still names the tab when storage is absent or throws", () => {
   assert.equal(holder(throwing, () => "fresh"), "fresh");
 });
 
+// ADR-0079 D7: the attempt orders the claims of one tab, so it only grows,
+// across a reload too, and rides on the url beside the holder.
+test("nextAttempt only grows and survives a reload in sessionStorage", () => {
+  const { nextAttempt } = load();
+  const storage = memoryStorage({ "ralphy.attempt": "41" });
+  const first = nextAttempt(storage);
+  assert.ok(first >= 42, `kept 41, got ${first}`);
+  assert.equal(storage.map.get("ralphy.attempt"), String(first));
+  // A reload reads the same storage; the module memo of the old document is gone.
+  const second = nextAttempt(memoryStorage({ "ralphy.attempt": storage.map.get("ralphy.attempt") }));
+  assert.ok(second > first, `${second} after ${first}`);
+  // A storage that was cleared, holds junk, or throws never makes it go down.
+  const junk = memoryStorage({ "ralphy.attempt": "x&takeover=1" });
+  assert.ok(nextAttempt(junk) > second);
+  assert.ok(nextAttempt(memoryStorage()) > second + 1);
+  const throwing = {
+    getItem() {
+      throw new Error("denied");
+    },
+    setItem() {
+      throw new Error("denied");
+    },
+  };
+  assert.ok(nextAttempt(throwing) > second + 2);
+});
+
+// A duplicated tab or a fence popup copies sessionStorage, so two windows
+// share a holder and each has its own module memo. The clock keeps their
+// attempts in the order of their connects.
+test("two windows that copied one storage order their attempts by the clock", async () => {
+  const { WBSessionRoute: popup } = await import("../assets/ui/wb-session-route.ts?window=popup");
+  const { nextAttempt } = load();
+  const t = Date.now();
+  const copied = { "ralphy.attempt": String(nextAttempt(memoryStorage(), t)) };
+  const opener = memoryStorage(copied);
+  const copy = memoryStorage(copied);
+  const first = popup.nextAttempt(copy, t + 10);
+  const second = nextAttempt(opener, t + 20);
+  assert.ok(second > first, `the opener's later connect ${second} after the popup's ${first}`);
+  assert.ok(popup.nextAttempt(copy, t + 30) > second, "and the popup's after that");
+  assert.ok(Number.isSafeInteger(nextAttempt(opener)));
+});
+
+test("the attempt is on the url only beside a holder", () => {
+  const { url, requestOpts } = load();
+  const at = (req, holder) => url("ws://h", requestOpts(req, holder, false, 9));
+  assert.equal(at({ id: 3, repo: "o/r" }, "h1"), "ws://h/ws/session?id=3&repo=o%2Fr&holder=h1&attempt=9");
+  assert.equal(at({ console: true }, "h1"), "ws://h/ws/session?console=1&holder=h1&attempt=9");
+  assert.equal(at({ repo: "o/r", agent: "claude" }, "h1"), "ws://h/ws/session?repo=o%2Fr&agent=claude&holder=h1&attempt=9");
+  // A watcher claims nothing; its url still ends with `watch=1`.
+  assert.equal(at({ id: 3, watch: true }, "h1"), "ws://h/ws/session?id=3&watch=1");
+  assert.equal(at({ id: 3 }, "a&b"), "ws://h/ws/session?id=3", "no holder, no attempt");
+  assert.equal(url("ws://h", { id: 3, holder: "h1", attempt: -1 }), "ws://h/ws/session?id=3&holder=h1");
+});
+
+// ADR-0079 D8: the byte count the terminal shows rides only on a reattach.
+test("since is on the url of a reattach only, and a watch url still ends with watch=1", () => {
+  const { url, requestOpts } = load();
+  const at = (req) => url("ws://h", requestOpts(req, "h1", false, undefined, 4096));
+  assert.equal(at({ id: 3, repo: "o/r" }), "ws://h/ws/session?id=3&repo=o%2Fr&since=4096&holder=h1");
+  assert.equal(at({ id: 3, watch: true }), "ws://h/ws/session?id=3&since=4096&watch=1");
+  assert.equal(at({ console: true }), "ws://h/ws/session?console=1&holder=h1", "a launch opens a new terminal");
+  assert.equal(at({ repo: "o/r", agent: "claude" }), "ws://h/ws/session?repo=o%2Fr&agent=claude&holder=h1");
+  assert.equal(url("ws://h", { id: 3, since: 0 }), "ws://h/ws/session?id=3&since=0");
+  assert.equal(url("ws://h", { id: 3, since: -1 }), "ws://h/ws/session?id=3");
+  assert.equal(url("ws://h", { id: 3, since: 1.5 }), "ws://h/ws/session?id=3");
+});
+
+test("tabAttempt raises the tab's counter on every call", () => {
+  const { tabAttempt } = load();
+  const first = tabAttempt();
+  assert.ok(Number.isSafeInteger(first) && first > 0);
+  assert.ok(tabAttempt() > first);
+});
+
 test("tabHolder mints one well-formed holder per document and keeps it", () => {
   const { tabHolder } = load();
   const first = tabHolder();

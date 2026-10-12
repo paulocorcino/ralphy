@@ -9,7 +9,7 @@
    is `wb-console-dormancy.ts`. `terminalGpu(term)` holds the WebGL addon of
    one terminal (#621).
 
-   `gpuHolders` and the constants are members of `window.WBConsole` under
+   `gpuHolders`, `dormantAfterMs` and the constants are members of `window.WBConsole` under
    their own name.
    --------------------------------------------------------------------------- */
 import { prefersDomRenderer } from "./wb-console-input.ts";
@@ -37,6 +37,27 @@ import type { ConsoleWin } from "./wb-types.d.ts";
 // window back a screenful before it could be seen — panning stays free.
 export const DORMANT_AFTER_MS = 15000;
 export const DORMANT_MARGIN_PX = 300;
+
+// On a slow link a reattach costs more, so a covered window waits longer
+// before it sleeps (ADR-0079 D10). A link is slow when the handshake of the
+// last console socket took SLOW_HANDSHAKE_MS or more: three round trips
+// (TCP, TLS, upgrade) at 250 ms, the round trip only the slowest 10% of
+// remote sockets passed in the operator's log.
+export const SLOW_HANDSHAKE_MS = 750;
+export const SLOW_DORMANT_AFTER_MS = 120000;
+
+// The handshake time of the last console socket that opened, in ms; null
+// before one opened. The link is the page's, so one value serves every console.
+let lastHandshakeMs: number | null = null;
+
+export function reportHandshake(ms: number | null) {
+  lastHandshakeMs = ms;
+}
+
+// How long a window off the viewport waits before it sleeps.
+export function dormantAfterMs(handshakeMs: number | null = lastHandshakeMs) {
+  return handshakeMs != null && handshakeMs >= SLOW_HANDSHAKE_MS ? SLOW_DORMANT_AFTER_MS : DORMANT_AFTER_MS;
+}
 
 // ---- the GPU budget ------------------------------------------------------
 // LIMIT: Chrome keeps 16 live WebGL contexts per renderer process and drops

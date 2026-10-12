@@ -115,8 +115,8 @@ fn message_type_scan_finds_verbs_routes_and_pushes() {
 /// - routes: the `.route("…")` paths of the router without `/api/peer/*`
 ///   (daemon to daemon), one type per path, named without the leading `/` and
 ///   with `/` as `-`;
-/// - pushes: the `<word>.dirty`, `<word>.failed`, `session-open` and
-///   `session-end` literals of the routes' production code.
+/// - pushes: the `<word>.dirty`, `<word>.failed`, `session-open`,
+///   `session-size` and `session-end` literals of the routes' production code.
 fn message_types(dispatch: &str, routes: &str, pushes: &str) -> BTreeSet<String> {
     let mut all = verbs(dispatch);
     all.extend(ui_routes(routes));
@@ -150,8 +150,9 @@ fn ui_routes(routes: &str) -> BTreeSet<String> {
 }
 
 fn push_types(text: &str) -> BTreeSet<String> {
-    let push = Regex::new(r#""([a-z_]+\.dirty|[a-z_]+\.failed|session-open|session-end)""#)
-        .expect("a valid regex");
+    let push =
+        Regex::new(r#""([a-z_]+\.dirty|[a-z_]+\.failed|session-open|session-size|session-end)""#)
+            .expect("a valid regex");
     push.captures_iter(text).map(|c| c[1].to_string()).collect()
 }
 

@@ -13,37 +13,28 @@
    `terminalGpu` in `wb-console-gpu.ts` (#621).
    --------------------------------------------------------------------------- */
 import { WBSessionRoute } from "./wb-session-route.ts";
-import { socketFrame } from "./wb-api.ts";
 import * as WBConsoleInput from "./wb-console-input.ts";
 import * as WBConsoleSession from "./wb-console-session.ts";
 import { wireTouch } from "./wb-console-touch.ts";
 import { wirePaste } from "./wb-console-paste.ts";
-import { terminalGpu } from "./wb-console-gpu.ts";
+import { wirePress } from "./wb-console-press.ts";
+import { createFit } from "./wb-console-fit.ts";
+import { frameQueue } from "./wb-console-frames.ts";
+import { reportHandshake, terminalGpu } from "./wb-console-gpu.ts";
 import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
 import type { DetachReason } from "./wb-console-session.ts";
 import type { SessionRequest } from "./wb-session-route.ts";
+import type { FramePayload } from "./wb-console-frames.ts";
 import type { Group } from "./wb-fleet.ts";
 
-const {
-  dragThreshold,
-  dragBegins,
-  barKey,
-  applyCtrlLatch,
-  isTerminalReply,
-  pressRoute,
-  forceSelectionKeys,
-  holdMoveReport,
-} = WBConsoleInput;
+const { barKey, applyCtrlLatch, isTerminalReply } = WBConsoleInput;
 
 const {
   encodeTerminal,
-  encodeResize,
   encodeDetach,
   endNotice,
   reconnectDecision,
   peerGate,
-  TAG_TERMINAL,
-  TAG_COMMAND,
 } = WBConsoleSession;
 
 // The terminal's surface, ADR-0035's palette. xterm.js takes no CSS variables
@@ -82,15 +73,9 @@ export type TerminalDeps = {
 // What a clipboard read gives: an image, or else text (`clipboardContent`).
 type ClipboardRead = { image?: Blob; text?: string };
 
-// The payload of the daemon's `session-end` and `session-open` frames.
-type FramePayload = NonNullable<Parameters<typeof WBSessionRoute.announcement>[1]> & {
-  reason?: string;
-  message?: unknown;
-  watch?: boolean;
-};
-
-// A command frame the daemon pushes on the session socket.
-type SessionFrame = { verb?: string; payload?: FramePayload };
+// The link of a window that had a socket: "lost" while it reconnects, "back"
+// when a socket opens again or the window stops trying.
+export type LinkState = "lost" | "back";
 
 // What `attachTerminal` is built with, and what the chrome hands back to
 // rebuild a terminal after sleep (`TermWiring`).
@@ -108,10 +93,17 @@ export type TerminalOpts = SessionRequest & {
   onEnded?: (announced: string | null, refusal: string | null) => void;
   // The baton came back to this window.
   onResume?: () => void;
+  // Whether a full-bleed console covers this window, and whether it has the
+  // focus: the size rule of wb-console-fit.ts.
+  covered?: () => boolean;
+  focused?: () => boolean;
   // The peer's fleet group, or null for a local project.
   peerGroup?: () => Group | null;
   onPeerHold?: (group: Group | null) => void;
   onPeerBack?: () => void;
+  // Shown beside the terminal, never in it: a notice in the terminal forgets
+  // the byte count, and the reconnect could not resume (ADR-0079 D8).
+  onLink?: (state: LinkState) => void;
   readFleet?: () => void;
 };
 
@@ -153,8 +145,8 @@ export function createTerminal(deps: TerminalDeps) {
     // Option+drag selects on macOS while a TUI owns the mouse; Shift+drag is
     // xterm's default elsewhere (`shouldForceSelection`).
     term.options.macOptionClickForcesSelection = true;
-    const fit = new FitAddon.FitAddon();
-    term.loadAddon(fit);
+    const fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
     term.open(body);
     // The GPU addon: `terminalGpu`, wb-console-gpu.ts.
     const { useGpu, dropGpu } = terminalGpu(term);
@@ -163,7 +155,7 @@ export function createTerminal(deps: TerminalDeps) {
     // The touch gesture and the line selection: wb-console-touch.ts.
     const touch = wireTouch({ term, body, stage, workspace, cancelSlide, opts });
     const { setSelecting, stopFling, stopScroll } = touch;
-    fit.fit();
+    fitAddon.fit();
 
     // The image paste, OSC 52 and the right button: wb-console-paste.ts.
     const { dropImage } = wirePaste({
@@ -178,119 +170,19 @@ export function createTerminal(deps: TerminalDeps) {
       currentRepoNow: () => currentRepo,
     });
 
-    // Ctrl+Insert copies the selection. NOT Ctrl+Shift+C: on Chrome/Edge that
-    // is the DevTools accelerator and a page cannot take it back. Ctrl+C
-    // belongs to the child.
-    term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
-      // Alt+Shift+arrows in a column walk the columns and their rows (ADR-0051
-      // §5): xterm must not send them to the child, and the document listener
-      // of the columns (wb-consoles-tab.ts) takes them.
-      if (
-        e.altKey &&
-        e.shiftKey &&
-        !e.ctrlKey &&
-        !e.metaKey &&
-        /^Arrow(Left|Right|Up|Down)$/.test(e.code) &&
-        body.closest(".session-window")?.classList.contains("column")
-      ) {
-        return false;
-      }
-      // Alt+Shift+R and Alt+Shift+<digit> open a console from inside a
-      // terminal too. Only where the console menus' document listener exists
-      // (wb-consoles-tab.ts, on the page with a shell): a
-      // detached popup has none, so its terminal keeps the key.
-      if (
-        e.altKey &&
-        e.shiftKey &&
-        !e.ctrlKey &&
-        !e.metaKey &&
-        /^(?:Digit\d|KeyR)$/.test(e.code) &&
-        typeof window.getShell === "function"
-      ) {
-        return false;
-      }
-      if (e.type !== "keydown" || !e.ctrlKey || e.shiftKey || e.altKey) return true;
-      if (e.key !== "Insert" || !term.hasSelection()) return true;
-      writeClipboard(term.getSelection(), term);
-      return false;
+    // The keyboard and mouse rules: wb-console-press.ts.
+    wirePress({ term, body, window, writeClipboard });
+    // Refit whenever THIS window's body changes size, and send the size: wb-console-fit.ts.
+    const sizing = createFit({
+      term,
+      body,
+      fitAddon,
+      socket: () => ws,
+      covered: opts.covered,
+      focused: opts.focused,
+      watching: () => watching,
     });
-    // `pressRoute`, applied. The held press is REPLAYED to xterm as a
-    // synthetic event: with the force-selection key once it turns into a
-    // drag, or as itself (then the release) once it ends in place. The
-    // replays are marked so this listener lets them through. The real release
-    // is stopped: xterm adds its `mouseup` listener to the document during the
-    // replayed press, and the real release would report a second time.
-    const replayed = new WeakSet<Event>();
-    const replay = (target: EventTarget | null, type: string, from: MouseEvent, keys: { altKey?: boolean; shiftKey?: boolean }) => {
-      const ev = new MouseEvent(type, {
-        bubbles: true,
-        cancelable: true,
-        view: from.view,
-        clientX: from.clientX,
-        clientY: from.clientY,
-        screenX: from.screenX,
-        screenY: from.screenY,
-        button: 0,
-        buttons: type === "mousedown" ? 1 : 0,
-        // xterm's selection starts only on `detail === 1` (a single click).
-        detail: 1,
-        ...keys,
-      });
-      replayed.add(ev);
-      // The press came from a node inside the terminal (the `contains` test).
-      target!.dispatchEvent(ev);
-    };
-    body.addEventListener(
-      "mousedown",
-      (e: MouseEvent) => {
-        if (replayed.has(e) || !term.element?.contains(e.target as Node)) return;
-        const modified = e.shiftKey || e.altKey || e.ctrlKey || e.metaKey;
-        if (pressRoute(term.modes.mouseTrackingMode, e.button, modified) !== "hold") return;
-        e.stopPropagation();
-        e.preventDefault();
-        term.focus();
-        const doc = body.ownerDocument;
-        const start = { x: e.clientX, y: e.clientY };
-        const end = () => {
-          doc.removeEventListener("mousemove", onMove, true);
-          doc.removeEventListener("mouseup", onUp, true);
-        };
-        const onMove = (m: MouseEvent) => {
-          if (!dragBegins(start, { x: m.clientX, y: m.clientY }, dragThreshold("mouse"))) return;
-          end();
-          // The selection service is disabled under tracking, so it does not
-          // extend an old selection; a new drag replaces it.
-          term.clearSelection();
-          replay(e.target, "mousedown", e, forceSelectionKeys(navigator.platform || navigator.userAgent));
-        };
-        const onUp = (u: MouseEvent) => {
-          end();
-          u.stopPropagation();
-          replay(e.target, "mousedown", e, {});
-          replay(e.target, "mouseup", u, {});
-        };
-        doc.addEventListener("mousemove", onMove, true);
-        doc.addEventListener("mouseup", onUp, true);
-      },
-      true,
-    );
-    body.addEventListener(
-      "mousemove",
-      (e: MouseEvent) => {
-        if (holdMoveReport(term.modes.mouseTrackingMode, term.hasSelection(), e.buttons)) {
-          e.stopPropagation();
-        }
-      },
-      true,
-    );
-    // Refit whenever THIS window's body changes size. The only ResizeObserver
-    // in the file; it resizes a TERMINAL, never a window rect (#336).
-    const ro = new ResizeObserver(() => {
-      try {
-        fit.fit();
-      } catch {}
-    });
-    ro.observe(body);
+    const { fit, dispose: stopFit } = sizing;
 
     let currentSessionId = opts.id ?? null;
     let currentRepo = opts.repo ?? null;
@@ -300,8 +192,9 @@ export function createTerminal(deps: TerminalDeps) {
 
     // A dropped socket does NOT end the session: the daemon keeps the child
     // alive (session_ws's teardown invariant), so a close is recovered by
-    // reattaching to the SAME id. The daemon replays scrollback on reattach,
-    // so the terminal is reset on a reconnecting open. Backoff is exponential
+    // reattaching to the SAME id. The daemon replays the screen on reattach,
+    // so the terminal is reset on a reconnecting open, unless the daemon
+    // sends only the bytes after `shown` (a resume). Backoff is exponential
     // with jitter, capped.
     //
     // NO RECONNECT EVER CARRIES `takeover` (#334): two open workbenches
@@ -320,6 +213,22 @@ export function createTerminal(deps: TerminalDeps) {
     let refusal: string | null = null; // the daemon's words when that reason is "refused"
     let switching = false; // an intentional close on the way to a takeover
     let firstConnect = true;
+    // The count of the session's output bytes this terminal shows (ADR-0079
+    // D8), sent as `since` so that a reconnect gets only the bytes it misses.
+    // `null` when it is not known: a peer of an older build sends no count,
+    // and a terminal that shows a notice of this page no longer matches the
+    // session's bytes.
+    let shown: number | null = null;
+    // The next terminal frame is the replay, which `shown` already counts.
+    let replayNext = false;
+    // True while the session's output is written. Every other write is a
+    // notice of this page (here, or in the paste and close modules).
+    let writingOutput = false;
+    const write = term.write.bind(term);
+    term.write = (data, done) => {
+      if (!writingOutput) shown = null;
+      write(data, done);
+    };
     // True while the scrollback replay is being parsed. The replay is RAW BYTES
     // (one terminal frame), so every escape sequence in the backlog runs again
     // (OSC 52 is refused meanwhile). Cleared by the write callback, not after
@@ -337,9 +246,18 @@ export function createTerminal(deps: TerminalDeps) {
     // The session lives on the peer, so a hold never gives up.
     let held = false;
     const peerGroup = () => (typeof opts.peerGroup === "function" ? opts.peerGroup() : null);
+    let linkLost = false;
+    function link(state: LinkState) {
+      const lost = state === "lost";
+      if (lost === linkLost) return;
+      linkLost = lost;
+      if (typeof opts.onLink === "function") opts.onLink(state);
+    }
 
     function hold(group: Group | null) {
       held = true;
+      // The peer's own strip says why.
+      link("back");
       if (retryTimer) {
         clearTimeout(retryTimer);
         retryTimer = null;
@@ -357,9 +275,10 @@ export function createTerminal(deps: TerminalDeps) {
 
     function giveUp() {
       ended = true;
+      link("back");
       // Stop observing so a dead-ws terminal doesn't keep firing fit() until the
       // window is closed.
-      ro.disconnect();
+      stopFit();
       term.write("\r\n" + endNotice(announced, refusal) + "\r\n");
       if (typeof opts.onEnded === "function") opts.onEnded(announced, refusal);
     }
@@ -384,9 +303,19 @@ export function createTerminal(deps: TerminalDeps) {
       // An empty scrollback sends no replay frame, so the flag rides until the
       // first LIVE frame clears it.
       replaying = connOpts.id != null;
-      ws = new WebSocket(
-        WBSessionRoute.url(WS_ORIGIN, WBSessionRoute.requestOpts(connOpts, WBSessionRoute.tabHolder())),
+      replayNext = false;
+      // A terminal that no `session-open` of this window has written to yet.
+      let fresh = firstConnect;
+      const holder = WBSessionRoute.tabHolder();
+      const request = WBSessionRoute.requestOpts(
+        connOpts,
+        holder,
+        WBSessionRoute.canGunzip(),
+        WBSessionRoute.tabAttempt(),
+        shown ?? undefined,
       );
+      ws = new WebSocket(WBSessionRoute.url(WS_ORIGIN, request));
+      const socket = ws;
       ws.binaryType = "arraybuffer";
       connectingSince = Date.now();
       // `close()` on a CONNECTING socket fires `onclose` with `opened` false:
@@ -403,75 +332,100 @@ export function createTerminal(deps: TerminalDeps) {
         everOpened = true;
         retryDelay = 0;
         failedReopens = 0;
-        // A reconnect reattaches and the daemon replays the whole backlog; clear
-        // what's on screen first so the replay repaints instead of duplicating.
-        if (!firstConnect) term.reset();
         firstConnect = false;
-        // HERE, not in `onPark`: the reset above would wipe a line written
-        // before the socket opened.
-        if (watching) {
-          term.write("\r\n[read-only: another window has control]\r\n");
-        }
-        fit.fit();
-        ws!.send(encodeResize(term.rows, term.cols));
+        link("back");
+        reportHandshake(Date.now() - connectingSince);
+        // Never xterm's default 80×24: only a size the body measured.
+        sizing.opened();
       };
-      ws.onmessage = (ev: MessageEvent) => {
-        const a = new Uint8Array(ev.data);
-        if (a[0] === TAG_TERMINAL) {
-          if (currentSessionId == null) {
-            currentSessionId = Number(
-              new DataView(a.buffer, a.byteOffset + 1, 8).getBigUint64(0),
-            );
-            // A fresh launch's id is only known now; the chrome records under it.
-            if (typeof opts.onSession === "function") opts.onSession(currentSessionId);
-          }
-          // The callback tells the OSC 52 handler the replay is behind us.
-          term.write(
-            a.subarray(9),
-            replaying
-              ? () => {
-                  replaying = false;
-                }
-              : undefined,
-          );
-        } else if (a[0] === TAG_COMMAND) {
-          // The daemon's deliberate-end announcement, sent as DATA before the
-          // Close frame: the close metadata does not survive the trip (#334).
-          let c: SessionFrame | null = null;
-          try {
-            c = socketFrame<SessionFrame>(a);
-          } catch {}
-          if (c && c.verb === "session-open") {
+      const frames = frameQueue((event) => {
+        // A replay decoded after its socket was retired belongs to no one.
+        if (leaving || ws !== socket) return;
+        switch (event.kind) {
+          case "output":
+            if (currentSessionId == null) {
+              currentSessionId = event.sessionId;
+              // A fresh launch's id is only known now; the chrome records under it.
+              if (typeof opts.onSession === "function") opts.onSession(currentSessionId);
+            }
+            if (replayNext) replayNext = false;
+            else if (shown != null) shown += event.bytes.length;
+            // The callback tells the OSC 52 handler the replay is behind us.
+            writingOutput = true;
+            try {
+              term.write(
+                event.bytes,
+                replaying
+                  ? () => {
+                      replaying = false;
+                    }
+                  : undefined,
+              );
+            } finally {
+              writingOutput = false;
+            }
+            return;
+          case "open": {
+            const resumed = event.payload?.resume === true;
+            // A resume writes only the missing bytes after what the terminal
+            // shows. Any other replay repaints the screen, so the terminal is
+            // cleared first.
+            if (!fresh && !resumed) term.reset();
+            fresh = false;
+            // HERE, not in `onPark`: the reset above would wipe a line written
+            // before the socket opened.
+            if (watching && !resumed) term.write("\r\n[read-only: another window has control]\r\n");
             const owner = WBSessionRoute.announcement(
               {
                 sessionId: currentSessionId,
                 daemonId: currentDaemonId,
                 environment: currentEnvironment,
               },
-              c.payload,
+              event.payload,
             );
             currentSessionId = owner.sessionId;
             currentDaemonId = owner.daemonId;
             currentEnvironment = owner.environment;
             if (typeof opts.onSession === "function")
-              opts.onSession(currentSessionId, c.payload);
+              opts.onSession(currentSessionId, event.payload);
             // A launch that joined a session another page drives is read-only
             // from the start; the daemon says so here.
-            if (c.payload?.watch === true && !watching) {
+            if (event.payload?.watch === true && !watching) {
               watching = true;
               term.write("\r\n[read-only: another window has control]\r\n");
               if (typeof opts.onPark === "function") opts.onPark("joined");
             }
-          } else if (c && c.verb === "session-end") {
-            announced = c.payload?.reason ?? "child-exited";
-            refusal = typeof c.payload?.message === "string" ? c.payload.message : null;
+            // Last: the notices above are not session output.
+            const offset = event.payload?.offset;
+            shown = typeof offset === "number" && Number.isSafeInteger(offset) && offset >= 0 ? offset : null;
+            replayNext = event.payload?.replay === true;
+            return;
+          }
+          // A watcher paints at the session size; the writer ignores it.
+          case "size":
+            sizing.sessionSize(event.rows, event.cols);
+            return;
+          case "replay-lost":
+            shown = null;
+            replayNext = false;
+            return;
+          case "end":
+            announced = event.reason;
+            refusal = event.message;
+            return;
+          case "other":
+            return;
+          default: {
+            const unreachable: never = event;
+            return unreachable;
           }
         }
-      };
+      });
+      ws.onmessage = (ev: MessageEvent) => frames.take(new Uint8Array(ev.data));
       // Swallow the error event; onclose drives recovery in every case.
       ws.onerror = () => {};
-      ws.onclose = (event: CloseEvent) => {
-        if (leaving || switching) return;
+      const closed = () => {
+        if (leaving || switching || ws !== socket) return;
         if (!opened) failedReopens += 1;
         const decision = reconnectDecision({
           everOpened,
@@ -492,6 +446,8 @@ export function createTerminal(deps: TerminalDeps) {
             // back to the backoff, so a refused watch cannot busy-loop.
             if (!watching) {
               watching = true;
+              // The watcher repaints from the snapshot, under its banner.
+              shown = null;
               if (typeof opts.onPark === "function") opts.onPark(announced);
               connect({ id: currentSessionId, repo: currentRepo, watch: true });
             } else {
@@ -500,13 +456,16 @@ export function createTerminal(deps: TerminalDeps) {
             return;
           default:
             if (retryDelay === 0) {
-              term.write("\r\n[connection lost — reconnecting…]\r\n");
+              link("lost");
               // The fleet may already know why; its answer can hold this window.
               if (typeof opts.readFleet === "function") opts.readFleet();
             }
             scheduleReconnect();
         }
       };
+      // After the frames that wait behind a replay decode: a `session-end`
+      // among them names the reason this close is read with.
+      ws.onclose = () => frames.whenIdle(closed);
     }
 
     // Every byte this window sends to the child goes through here (keyboard,
@@ -537,10 +496,6 @@ export function createTerminal(deps: TerminalDeps) {
       if (replaying && isTerminalReply(d)) return;
       sendInput(d);
     });
-    term.onResize(({ rows, cols }) => {
-      if (ws && ws.readyState === WebSocket.OPEN)
-        ws.send(encodeResize(rows, cols));
-    });
 
     if (peerGate({ decision: "connect", group: peerGroup(), id: opts.id }) === "hold") hold(peerGroup());
     else connect(opts);
@@ -548,6 +503,8 @@ export function createTerminal(deps: TerminalDeps) {
     return {
       term,
       fit,
+      // The cover over this window went (`refreshCover`).
+      uncovered: sizing.uncovered,
       useGpu,
       dropGpu,
       get ws() {
@@ -614,7 +571,7 @@ export function createTerminal(deps: TerminalDeps) {
         const now = Date.now();
         if (now - lastResumeAt < RESUME_DEBOUNCE_MS) return false;
         // A pending backoff is brought forward. `retryDelay` is kept: it stops
-        // "[connection lost]" printing twice for one drop.
+        // a second fleet read for one drop.
         if (retryTimer) {
           lastResumeAt = now;
           clearTimeout(retryTimer);
@@ -670,6 +627,7 @@ export function createTerminal(deps: TerminalDeps) {
       // `reason` (see `encodeDetach`) tells the daemon why the socket closes.
       dispose(reason: DetachReason) {
         leaving = true;
+        link("back");
         if (held) {
           held = false;
           if (typeof opts.onPeerBack === "function") opts.onPeerBack();
@@ -678,7 +636,7 @@ export function createTerminal(deps: TerminalDeps) {
           clearTimeout(retryTimer);
           retryTimer = null;
         }
-        ro.disconnect();
+        stopFit();
         // A glide or a pending scroll would call `scrollLines` on a disposed
         // terminal.
         stopFling();

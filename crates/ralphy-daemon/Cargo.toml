@@ -99,6 +99,12 @@ notify-debouncer-full = "0.7"
 # the one duplex transport at the peer-client seam; peers remain loopback-only.
 tokio-tungstenite = "0.29"
 futures-util = "0.3"
+# The terminal emulator that keeps each console's screen (ADR-0079 D1). Only
+# `session/screen.rs` and its `screen/` directory name it. The exact version is
+# the one the spike of #689 measured: the snapshot writer reads private state
+# through two work-arounds that a new version can break. No default features:
+# `serde` is not used.
+alacritty_terminal = { version = "=0.26.0", default-features = false }
 # The Spend view's period boundary (#359): the ROUTE turns `7d` into an RFC3339
 # `since`, and the activity band walks civil dates to zero-fill a window's quiet
 # days. The fold itself stays clock-free — it only compares against the instant

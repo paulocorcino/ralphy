@@ -12,7 +12,7 @@ import * as WBConsoleInput from "./wb-console-input.ts";
 import * as WBConsoleSession from "./wb-console-session.ts";
 import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
 import * as WBDeskFolds from "./wb-desk-folds.ts";
-import { gpuHolders, DORMANT_AFTER_MS, DORMANT_MARGIN_PX } from "./wb-console-gpu.ts";
+import { gpuHolders, dormantAfterMs, DORMANT_MARGIN_PX } from "./wb-console-gpu.ts";
 import type { createDeskRecords } from "./wb-desk-records.ts";
 import type { createFeeds } from "./wb-console-feeds.ts";
 import type { createTitle } from "./wb-console-title.ts";
@@ -92,7 +92,7 @@ export function buildConsoleApi(parts: ConsoleParts) {
     birthDecision: WBConsoleSession.birthDecision,
     encodeDetach: WBConsoleSession.encodeDetach,
     encodeResize: WBConsoleSession.encodeResize,
-    DORMANT_AFTER_MS,
+    dormantAfterMs,
     DORMANT_MARGIN_PX,
     keyboardInset: WBConsoleInput.keyboardInset,
     raiseMaximized: stageWindow.raiseMaximized,

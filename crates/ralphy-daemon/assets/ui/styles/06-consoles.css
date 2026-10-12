@@ -556,6 +556,12 @@
 .session-body .xterm .xterm-helper-textarea {
   font-size: 16px;
 }
+/* A console that only watches paints at the session size, the size of the
+   console that drives it (wb-console-fit.ts). When its own body is smaller,
+   the body scrolls; the font keeps its size. */
+.session-body.following {
+  overflow: auto;
+}
 /* THE KEY BAR — the row a virtual keyboard does not have. Hidden unless the
    window carries `.keys`, which `applyKeyBar` sets from the operator's setting
    (auto = this machine has a touch surface). It is the LAST flex child, under
@@ -683,9 +689,11 @@
    #334). One line between the titlebar and the terminal — the session stays
    visible and keeps streaming, so the strip must not take the body's height.
    The button reuses `.session-reconnect`. The same line holds a console whose
-   peer the fleet calls down: the scrollback stays, no socket is opened. */
+   peer the fleet calls down: the scrollback stays, no socket is opened, and
+   a console whose link dropped while it reconnects. */
 .session-parked,
-.session-peer-down {
+.session-peer-down,
+.session-link-lost {
   display: flex;
   flex: 0 0 auto;
   align-items: center;

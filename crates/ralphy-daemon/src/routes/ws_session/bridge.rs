@@ -1,6 +1,7 @@
 //! The byte bridge of an attached `/ws/session`: replay, live stream, input,
 //! resize, and the eviction/exit teardown.
 
+use std::io::Write;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
@@ -28,6 +29,12 @@ const DRAIN_LIMIT: Duration = Duration::from_secs(4);
 /// Test seam, like `RALPHY_DAEMON_AGENT_OVERRIDE`: the ping period in
 /// milliseconds. A test cannot wait out the production window.
 const PING_MS_ENV: &str = "RALPHY_DAEMON_WS_PING_MS";
+
+/// The command verb that tells a client the session size (ADR-0079 D6).
+const SESSION_SIZE: &str = "session-size";
+
+/// The `replay_encoding` of a gzipped replay frame (ADR-0079 D9).
+const GZIP: &str = "gzip";
 
 impl Liveness {
     /// Two whole ping periods plus a quarter of slack: one lost pong on a lossy
@@ -60,9 +67,10 @@ impl Liveness {
 }
 
 /// Bridge one WebSocket to one daemon-owned session (the tmux model, #166).
-/// FIRST announces `session-open` with the hosting identity, then replays the
-/// scrollback snapshot and loops: session output (via the broadcast `rx`) →
-/// `Frame::Terminal`; client `Frame::Terminal` → PTY stdin; client
+/// FIRST announces `session-open` with the hosting identity, then the session
+/// size (`session-size`), then replays the screen snapshot and loops: session
+/// output (via the broadcast `rx`) → `Frame::Terminal`; a new session size →
+/// `session-size`; client `Frame::Terminal` → PTY stdin; client
 /// `Frame::Command{verb:"resize"}` → PTY resize. The loop breaks on client
 /// close/error, a send failure, an eviction (a `takeover` reattach OR the child
 /// exiting), or daemon shutdown.
@@ -104,51 +112,30 @@ pub(crate) async fn session_ws(
     let notified = evict.notify.notified();
     tokio::pin!(notified);
     notified.as_mut().enable();
+    let gzip = tab.gzip;
     let mut traffic = Traffic::local(id, tab, Instant::now());
 
-    let open = Frame::Command(Command {
-        id,
-        verb: SESSION_OPEN.to_string(),
-        payload: serde_json::json!({
-            "session": id,
-            "daemon_id": daemon_id,
-            "environment": environment,
-            // Absent for every vendor but Claude, and for the free console —
-            // which is the honest signal that those are not addressable.
-            "name": labels.name,
-            // The worktree NAME the console lives in, `null` for the primary;
-            // re-announced on a reattach from the record (ADR-0063 §3).
-            "checkout": labels.checkout,
-            // Read-only from the start: this launch joined a session another
-            // page drives (ADR-0050 amendment 2026-10-04).
-            "watch": labels.watching,
-            // A scrollback replay follows. Read by a relaying daemon for its
-            // traffic summary; the page does not need it.
-            "replay": !attach.snapshot.is_empty(),
-        }),
+    let fields = serde_json::json!({
+        "session": id,
+        "daemon_id": daemon_id,
+        "environment": environment,
+        // Absent for every vendor but Claude, and for the free console —
+        // which is the honest signal that those are not addressable.
+        "name": labels.name,
+        // The worktree NAME the console lives in, `null` for the primary;
+        // re-announced on a reattach from the record (ADR-0063 §3).
+        "checkout": labels.checkout,
+        // Read-only from the start: this launch joined a session another
+        // page drives (ADR-0050 amendment 2026-10-04).
+        "watch": labels.watching,
     });
-    if socket
-        .send(Message::Binary(protocol::encode(&open).into()))
+    let opening = Opening { fields, gzip };
+    if open(&mut socket, id, &opening, &mut attach, &mut traffic)
         .await
         .is_err()
     {
         traffic.log(None, Instant::now());
         return;
-    }
-
-    // Replay the backlog first so a reattaching client sees history before the
-    // live stream resumes. Skip an empty snapshot (a fresh session).
-    if !attach.snapshot.is_empty() {
-        let frame = Frame::Terminal {
-            session: id,
-            data: std::mem::take(&mut attach.snapshot),
-        };
-        let encoded = protocol::encode(&frame);
-        traffic.replay(encoded.len());
-        if socket.send(Message::Binary(encoded.into())).await.is_err() {
-            traffic.log(None, Instant::now());
-            return;
-        }
     }
     // Keep the socket warm on quiet/low-quality links: an idle terminal sends no
     // bytes, so a NAT/proxy idle-timeout silently drops it. The pongs the pings
@@ -168,6 +155,9 @@ pub(crate) async fn session_ws(
     // announcing there would tell a client its session ended when it did not, and
     // the client would park instead of recovering the flaky link (issue #334).
     let mut end: Option<session::EndReason> = None;
+    // False once the size sender is gone, so `changed()` cannot return at once
+    // on every turn of the loop.
+    let mut sizes = true;
     loop {
         tokio::select! {
             _ = shutdown.changed() => { end = Some(session::EndReason::DaemonShutdown); break; }
@@ -189,17 +179,26 @@ pub(crate) async fn session_ws(
                     break;
                 }
             }
+            changed = attach.size.changed(), if sizes => match changed {
+                Ok(()) => {
+                    let size = *attach.size.borrow_and_update();
+                    if send_size(&mut socket, id, size).await.is_err() {
+                        break;
+                    }
+                }
+                Err(_) => sizes = false,
+            },
             recv = attach.rx.recv() => match recv {
                 Ok(bytes) => {
                     if send_output(&mut socket, id, bytes, &mut traffic).await.is_err() {
                         break;
                     }
                 }
-                // A burst outran this slow attach; scrollback already replayed and
-                // xterm.js tolerates a gap, so keep streaming.
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
                     traffic.lagged(skipped);
-                    continue;
+                    if resync(&mut socket, id, &opening, &mut attach, &mut traffic).await.is_err() {
+                        break;
+                    }
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                     end = Some(session::EndReason::ChildExited);
@@ -272,7 +271,7 @@ pub(crate) async fn session_ws(
             if reason == session::EndReason::ChildExited
                 && tokio::time::timeout(
                     DRAIN_LIMIT,
-                    send_queued(&mut socket, id, &mut attach.rx, &mut traffic),
+                    send_queued(&mut socket, id, &opening, &mut attach, &mut traffic),
                 )
                 .await
                 .is_err()
@@ -302,6 +301,138 @@ pub(crate) async fn session_ws(
     drop(attach);
 }
 
+/// What every `session-open` of one socket says, and whether its tab asked
+/// for a gzip replay.
+struct Opening {
+    fields: serde_json::Value,
+    gzip: bool,
+}
+
+/// Send `session-open` (the fields of `opening`, then the replay's), the
+/// session size, then the replay frame of `attach`: the screen snapshot, or
+/// the bytes after the tab's `since`.
+async fn open(
+    socket: &mut WebSocket,
+    id: session::SessionId,
+    opening: &Opening,
+    attach: &mut session::Attachment,
+    traffic: &mut Traffic,
+) -> Result<(), axum::Error> {
+    let replay = Replay::of(std::mem::take(&mut attach.snapshot), opening.gzip);
+    let mut payload = opening.fields.clone();
+    // A replay follows. A relaying daemon reads it for its traffic summary;
+    // the page reads it to tell the replay from the live frames.
+    payload["replay"] = (!replay.data.is_empty()).into();
+    // The count of the session's output bytes at the end of the replay; the
+    // page adds each live frame to it and sends it back as `since`.
+    payload["offset"] = attach.offset.into();
+    // The replay is only the bytes after the tab's `since`: the page keeps
+    // its terminal. `false`: it resets it (ADR-0079 D8).
+    payload["resume"] = attach.resume.into();
+    // Absent when the replay is raw, as from a daemon that never gzips.
+    if replay.gzipped {
+        payload["replay_encoding"] = GZIP.into();
+    }
+    let open = Frame::Command(Command {
+        id,
+        verb: SESSION_OPEN.to_string(),
+        payload,
+    });
+    socket
+        .send(Message::Binary(protocol::encode(&open).into()))
+        .await?;
+    // The size the snapshot below was written at: a watcher paints at it. A
+    // resize after the attach is still marked changed on `attach.size`, so
+    // the loop sends it after the replay.
+    send_size(socket, id, attach.replay_size).await?;
+    // The replay goes before the live stream. An empty one is not sent: a
+    // fresh session, or a resume with nothing new.
+    if !replay.data.is_empty() {
+        let sent = replay.data.len();
+        let frame = Frame::Terminal {
+            session: id,
+            data: replay.data,
+        };
+        let encoded = protocol::encode(&frame);
+        traffic.replay(encoded.len(), encoded.len() - sent + replay.raw_len);
+        socket.send(Message::Binary(encoded.into())).await?;
+    }
+    Ok(())
+}
+
+/// The live receiver lagged: the page missed bytes, so its screen is wrong
+/// and its byte count would make a later resume repeat bytes. Start it again
+/// from the screen as it is now, as a reattach does: a new `session-open`
+/// with `resume: false`, the size, and the snapshot.
+async fn resync(
+    socket: &mut WebSocket,
+    id: session::SessionId,
+    opening: &Opening,
+    attach: &mut session::Attachment,
+    traffic: &mut Traffic,
+) -> Result<(), axum::Error> {
+    attach.resync();
+    open(socket, id, opening, attach, traffic).await
+}
+
+/// The replay frame's data: the snapshot, gzipped when the tab asked for it.
+struct Replay {
+    data: Vec<u8>,
+    gzipped: bool,
+    /// The length of the snapshot, for the traffic summary.
+    raw_len: usize,
+}
+
+impl Replay {
+    fn of(snapshot: Vec<u8>, gzip: bool) -> Replay {
+        let raw_len = snapshot.len();
+        if gzip && !snapshot.is_empty() {
+            match gzipped(&snapshot) {
+                Ok(data) => {
+                    return Replay {
+                        data,
+                        gzipped: true,
+                        raw_len,
+                    }
+                }
+                // A replay that does not compress goes raw; it is never dropped.
+                Err(error) => tracing::warn!(%error, "the replay did not compress; sent raw"),
+            }
+        }
+        Replay {
+            data: snapshot,
+            gzipped: false,
+            raw_len,
+        }
+    }
+}
+
+fn gzipped(bytes: &[u8]) -> std::io::Result<Vec<u8>> {
+    let mut enc = flate2::write::GzEncoder::new(
+        Vec::with_capacity(bytes.len() / 4),
+        flate2::Compression::default(),
+    );
+    enc.write_all(bytes)?;
+    enc.finish()
+}
+
+/// Tell the client the session size. Not counted in the traffic summary, like
+/// `session-open`.
+async fn send_size(
+    socket: &mut WebSocket,
+    id: session::SessionId,
+    (rows, cols): (u16, u16),
+) -> Result<(), axum::Error> {
+    let frame = Frame::Command(Command {
+        id,
+        verb: SESSION_SIZE.to_string(),
+        payload: serde_json::json!({ "rows": rows, "cols": cols }),
+    });
+    socket
+        .send(Message::Binary(protocol::encode(&frame).into()))
+        .await
+}
+
 /// Send one chunk of session output to the client as a `Terminal` frame.
 async fn send_output(
     socket: &mut WebSocket,
@@ -326,18 +457,27 @@ async fn send_output(
 async fn send_queued(
     socket: &mut WebSocket,
     id: session::SessionId,
-    rx: &mut tokio::sync::broadcast::Receiver<Vec<u8>>,
+    opening: &Opening,
+    attach: &mut session::Attachment,
     traffic: &mut Traffic,
 ) {
     use tokio::sync::broadcast::error::TryRecvError;
-    for _ in 0..rx.len() {
-        match rx.try_recv() {
+    let mut left = attach.rx.len();
+    while left > 0 {
+        left -= 1;
+        match attach.rx.try_recv() {
             Ok(bytes) => {
                 if send_output(socket, id, bytes, traffic).await.is_err() {
                     return;
                 }
             }
-            Err(TryRecvError::Lagged(skipped)) => traffic.lagged(skipped),
+            Err(TryRecvError::Lagged(skipped)) => {
+                traffic.lagged(skipped);
+                if resync(socket, id, opening, attach, traffic).await.is_err() {
+                    return;
+                }
+                left = attach.rx.len();
+            }
             Err(TryRecvError::Empty | TryRecvError::Closed) => return,
         }
     }
@@ -409,11 +549,13 @@ mod tests {
         }
     }
 
-    /// Serve `session_ws` for one client on `listener`.
+    /// Serve `session_ws` for one client on `listener`; `gzip` is what the
+    /// client's tab asked for.
     fn serve_bridge<L>(
         listener: L,
         id: session::SessionId,
         attach: session::Attachment,
+        gzip: bool,
     ) -> tokio::task::JoinHandle<std::io::Result<()>>
     where
         L: axum::serve::Listener,
@@ -446,6 +588,7 @@ mod tests {
                             Tab {
                                 holder: None,
                                 device: None,
+                                gzip,
                             },
                             shutdown,
                         )
@@ -526,7 +669,7 @@ mod tests {
         let addr = listener
             .local_addr()
             .expect("a bound listener has an address");
-        let server = serve_bridge(listener, id, attach);
+        let server = serve_bridge(listener, id, attach, false);
 
         let (mut client, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/"))
             .await
@@ -559,7 +702,7 @@ mod tests {
         let chunks: Vec<Vec<u8>> = (0..100u8).map(|n| vec![n; 64 * 1024]).collect();
         let (id, attach) = exited_session(&chunks, 128);
         let (server_io, client_io) = tokio::io::duplex(4096);
-        let server = serve_bridge(OneConnection(Some(server_io)), id, attach);
+        let server = serve_bridge(OneConnection(Some(server_io)), id, attach, false);
 
         let (mut client, _) = tokio_tungstenite::client_async("ws://localhost/", client_io)
             .await
@@ -578,5 +721,259 @@ mod tests {
             seen.received.len() < chunks.concat().len(),
             "the drain stopped at its limit instead of sending everything"
         );
+    }
+
+    /// The next binary frame the client gets, decoded.
+    async fn next_frame(
+        client: &mut (impl futures_util::Stream<Item = Result<tungstenite::Message, tungstenite::Error>>
+                  + Unpin),
+    ) -> Frame {
+        loop {
+            let message = tokio::time::timeout(Duration::from_secs(10), client.next())
+                .await
+                .expect("a frame within 10 s")
+                .expect("the socket is open")
+                .expect("a well-formed message");
+            if let tungstenite::Message::Binary(bytes) = message {
+                return protocol::decode(&bytes).expect("a well-formed frame");
+            }
+        }
+    }
+
+    /// The session size as a frame says it, or `None` for another frame.
+    fn size_of(frame: &Frame) -> Option<(u64, u64)> {
+        match frame {
+            Frame::Command(cmd) if cmd.verb == SESSION_SIZE => {
+                Some((cmd.payload["rows"].as_u64()?, cmd.payload["cols"].as_u64()?))
+            }
+            _ => None,
+        }
+    }
+
+    /// A watcher's socket gets `session-size` after `session-open` and before
+    /// the replay, and again when the writer resizes the session (ADR-0079 D6).
+    /// The first size is the one the replay was taken at, also when a resize
+    /// came between the attach and the open; that resize follows the replay.
+    #[tokio::test]
+    async fn a_watcher_gets_the_size_before_the_replay_and_on_each_resize() {
+        let manager = Arc::new(session::SessionManager::new());
+        let spec = session::console_spec(std::env::temp_dir(), 24, 80, None);
+        let (id, writer) = manager
+            .spawn_attached(
+                "~".to_string(),
+                "console".to_string(),
+                "console".to_string(),
+                None,
+                None,
+                None,
+                spec,
+            )
+            .expect("the platform shell must spawn — the free console depends on it");
+        let mut watcher = manager
+            .watch(id, None)
+            .expect("a live session is watchable");
+        watcher.snapshot = b"REPLAY".to_vec();
+        writer.resize(28, 90).expect("the PTY takes a resize");
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind a loopback port");
+        let addr = listener
+            .local_addr()
+            .expect("a bound listener has an address");
+        let server = serve_bridge(listener, id, watcher, false);
+        let (mut client, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/"))
+            .await
+            .expect("the bridge accepts the socket");
+
+        let open = next_frame(&mut client).await;
+        assert!(
+            matches!(&open, Frame::Command(cmd) if cmd.verb == SESSION_OPEN),
+            "the first frame is session-open: {open:?}"
+        );
+        assert_eq!(size_of(&next_frame(&mut client).await), Some((24, 80)));
+        match next_frame(&mut client).await {
+            Frame::Terminal { data, .. } => assert_eq!(data, b"REPLAY"),
+            other => panic!("the replay follows the size: {other:?}"),
+        }
+        let after_replay = loop {
+            if let Some(size) = size_of(&next_frame(&mut client).await) {
+                break size;
+            }
+        };
+        assert_eq!(after_replay, (28, 90));
+
+        writer.resize(30, 100).expect("the PTY takes a resize");
+        let resized = loop {
+            if let Some(size) = size_of(&next_frame(&mut client).await) {
+                break size;
+            }
+        };
+        assert_eq!(resized, (30, 100));
+        server.abort();
+        manager.close(id);
+    }
+
+    /// A watcher of a live console session, changed by `edit` and bridged on
+    /// a loopback socket; `gzip` is what the tab asked for.
+    async fn bridged_watcher(
+        gzip: bool,
+        edit: impl FnOnce(&mut session::Attachment),
+    ) -> (
+        Arc<session::SessionManager>,
+        session::SessionId,
+        tokio::task::JoinHandle<std::io::Result<()>>,
+        tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+    ) {
+        let manager = Arc::new(session::SessionManager::new());
+        let spec = session::console_spec(std::env::temp_dir(), 24, 80, None);
+        let (id, writer) = manager
+            .spawn_attached(
+                "~".to_string(),
+                "console".to_string(),
+                "console".to_string(),
+                None,
+                None,
+                None,
+                spec,
+            )
+            .expect("the platform shell must spawn — the free console depends on it");
+        // The writer leaves; the session lives on, watched.
+        drop(writer);
+        let mut watcher = manager
+            .watch(id, None)
+            .expect("a live session is watchable");
+        edit(&mut watcher);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind a loopback port");
+        let addr = listener
+            .local_addr()
+            .expect("a bound listener has an address");
+        let server = serve_bridge(listener, id, watcher, gzip);
+        let (client, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/"))
+            .await
+            .expect("the bridge accepts the socket");
+        (manager, id, server, client)
+    }
+
+    /// `session-open` names the byte count at the end of the replay and
+    /// whether the replay resumes the tab's terminal; an empty resume sends
+    /// no replay frame.
+    #[tokio::test]
+    async fn session_open_says_the_offset_and_whether_the_replay_resumes() {
+        for resume in [true, false] {
+            let (manager, id, server, mut client) = bridged_watcher(false, |watcher| {
+                watcher.snapshot.clear();
+                watcher.offset = 4096;
+                watcher.resume = resume;
+            })
+            .await;
+
+            let Frame::Command(open) = next_frame(&mut client).await else {
+                panic!("the first frame is session-open");
+            };
+            assert_eq!(open.payload["offset"], serde_json::json!(4096));
+            assert_eq!(open.payload["resume"], serde_json::json!(resume));
+            assert_eq!(open.payload["replay"], serde_json::json!(false));
+            server.abort();
+            manager.close(id);
+        }
+    }
+
+    /// The replay a tab gets: gzipped and named so in `session-open` when it
+    /// asks for gzip, raw with no `replay_encoding` when it does not.
+    #[tokio::test]
+    async fn the_replay_is_gzipped_only_when_the_tab_asks() {
+        use std::io::Read;
+        let snapshot = b"\x1b[2J\x1b[Hthe screen as it is now\r\n".repeat(50);
+        for gzip in [true, false] {
+            let (manager, id, server, mut client) =
+                bridged_watcher(gzip, |watcher| watcher.snapshot = snapshot.clone()).await;
+
+            let Frame::Command(open) = next_frame(&mut client).await else {
+                panic!("the first frame is session-open");
+            };
+            let encoding = open.payload.get("replay_encoding").cloned();
+            let size = next_frame(&mut client).await;
+            assert!(size_of(&size).is_some(), "the size follows: {size:?}");
+            let Frame::Terminal { data, .. } = next_frame(&mut client).await else {
+                panic!("the replay follows the size");
+            };
+            if gzip {
+                assert_eq!(encoding, Some(serde_json::json!("gzip")));
+                let mut raw = Vec::new();
+                flate2::read::GzDecoder::new(data.as_slice())
+                    .read_to_end(&mut raw)
+                    .expect("the replay is gzip");
+                assert_eq!(raw, snapshot);
+                assert!(data.len() < snapshot.len(), "the gzip is smaller");
+            } else {
+                assert_eq!(encoding, None, "a raw replay names no encoding");
+                assert_eq!(data, snapshot);
+            }
+            server.abort();
+            manager.close(id);
+        }
+    }
+
+    /// A receiver that lagged makes the bridge start the page again: a new
+    /// `session-open` with `resume: false`, the size, the screen snapshot,
+    /// then the live bytes from the new offset, with no gap and no repeat.
+    #[tokio::test]
+    async fn a_lagged_receiver_sends_the_screen_again_from_a_new_offset() {
+        let (lag, lagging) = tokio::sync::broadcast::channel::<Vec<u8>>(1);
+        let (manager, id, server, mut client) = bridged_watcher(false, |watcher| {
+            watcher.snapshot = b"OLD".to_vec();
+            watcher.rx = lagging;
+        })
+        .await;
+        for chunk in [b"lost".to_vec(), b"kept".to_vec()] {
+            lag.send(chunk).expect("the bridge holds a receiver");
+        }
+        for _ in 0..3 {
+            next_frame(&mut client).await; // the first open, size and replay
+        }
+
+        let Frame::Command(open) = next_frame(&mut client).await else {
+            panic!("a lag sends session-open again");
+        };
+        assert_eq!(open.verb, SESSION_OPEN);
+        assert_eq!(open.payload["resume"], serde_json::json!(false));
+        let offset = open.payload["offset"].as_u64().expect("an offset");
+        assert!(size_of(&next_frame(&mut client).await).is_some());
+        if open.payload["replay"] == serde_json::json!(true) {
+            let Frame::Terminal { data, .. } = next_frame(&mut client).await else {
+                panic!("the snapshot follows the size");
+            };
+            assert_ne!(data, b"OLD", "the snapshot of now, not the first replay");
+        }
+        // The shell echoes what is typed: output after the resync.
+        let writer = manager.attach(id, false).expect("the writer slot is free");
+        writer
+            .write(b"echo resync\r")
+            .expect("the shell takes input");
+        // The session's bytes after `offset`, as a resume at it would get them.
+        let mut tail = manager.watch(id, Some(offset)).expect("a live session");
+        for _ in 0..200 {
+            if tail.resume && !tail.snapshot.is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            tail = manager.watch(id, Some(offset)).expect("a live session");
+        }
+        assert!(tail.resume && !tail.snapshot.is_empty(), "the shell wrote");
+        let mut live = Vec::new();
+        while live.len() < tail.snapshot.len() {
+            match next_frame(&mut client).await {
+                Frame::Terminal { data, .. } => live.extend(data),
+                other => panic!("only live output follows: {other:?}"),
+            }
+        }
+        assert_eq!(live[..tail.snapshot.len()], tail.snapshot[..]);
+        drop(lag);
+        server.abort();
+        manager.close(id);
     }
 }

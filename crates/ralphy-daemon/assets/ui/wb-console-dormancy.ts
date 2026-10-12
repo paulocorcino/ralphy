@@ -13,7 +13,7 @@
 --------------------------------------------------------------------------- */
 import * as WBConsoleInput from "./wb-console-input.ts";
 import * as WBConsoleSession from "./wb-console-session.ts";
-import { DORMANT_AFTER_MS } from "./wb-console-gpu.ts";
+import { dormantAfterMs } from "./wb-console-gpu.ts";
 import { sendDocument } from "./wb-events.ts";
 import type { Stack } from "./wb-stage-stack.ts";
 import type { WBDeskSync } from "./wb-desk-sync.ts";
@@ -165,7 +165,7 @@ export function createDormancy(deps: DormancyDeps) {
       win._dormantTimer = setTimeout(() => {
         win._dormantTimer = null;
         if (dormancyDecision(dormancyInputs(win)) === "sleep") sleepWindow(win);
-      }, DORMANT_AFTER_MS);
+      }, dormantAfterMs());
     }
     return verdict;
   }
@@ -183,6 +183,8 @@ export function createDormancy(deps: DormancyDeps) {
       const covered = isCovered(win);
       if (covered === !!win._covered) continue;
       win._covered = covered;
+      // The size it kept while covered goes now, on the next frame.
+      if (!covered) win._term?.uncovered();
       applyDormancy(win);
     }
   }

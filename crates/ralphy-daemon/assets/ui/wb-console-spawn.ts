@@ -214,6 +214,9 @@ export function createSpawn(deps: SpawnDeps) {
     // `win`, never a particular terminal.
     const termWiring: TerminalOpts = {
       ...termOpts,
+      // The size rule's inputs. `_covered` is the cover `refreshCover` keeps.
+      covered: () => win._covered === true,
+      focused: () => win.classList.contains("focused"),
       onCtrlLatch: (on) => {
         if (ctrlBtn) ctrlBtn.setAttribute("aria-pressed", on ? "true" : "false");
       },
@@ -305,6 +308,25 @@ export function createSpawn(deps: SpawnDeps) {
         : {}),
       onPeerHold: (group) => showPeerDown(group),
       onPeerBack: () => win.querySelector(".session-peer-down")?.remove(),
+      onLink: (state) => {
+        switch (state) {
+          case "lost": {
+            if (win.querySelector(".session-link-lost")) return;
+            const strip = document.createElement("div");
+            strip.className = "session-link-lost";
+            strip.textContent = "Connection lost. Reconnecting…";
+            win.insertBefore(strip, body);
+            return;
+          }
+          case "back":
+            win.querySelector(".session-link-lost")?.remove();
+            return;
+          default: {
+            const unreachable: never = state;
+            return unreachable;
+          }
+        }
+      },
     };
     win._termWiring = termWiring;
     // The fleet reaches a live window here; `wakeWindow` replaces `_term`, so

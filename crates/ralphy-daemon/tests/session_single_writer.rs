@@ -292,6 +292,12 @@ async fn a_watcher_reads_but_never_writes() {
     // …and the resize oracle itself is live: the WRITER's resize does land.
     writer.send(resize(40, 100)).await.unwrap();
     read_until(&mut writer, "SIZE 100x40", false).await;
+    // The PTY gets the size clamped to 300 rows and 500 columns, as the
+    // daemon's screen does; then the test goes back to 40x100.
+    writer.send(resize(u16::MAX, u16::MAX)).await.unwrap();
+    read_until(&mut writer, "SIZE 500x300", false).await;
+    writer.send(resize(40, 100)).await.unwrap();
+    read_until(&mut writer, "SIZE 100x40", false).await;
 
     // `watch=1` is dispatched BEFORE the attach branch, so a stray `takeover=1`
     // riding along cannot evict the writer. Swapping that order reds this.

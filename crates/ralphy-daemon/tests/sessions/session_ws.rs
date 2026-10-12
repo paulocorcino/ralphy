@@ -65,6 +65,7 @@ async fn session_ws_round_trips_keystrokes_and_tears_down_on_close() {
     // terminal emulator (xterm.js's role): answer the ConPTY startup `ESC[6n` so
     // the child unblocks on Windows. Bounded so a regression fails, not hangs.
     ws.send(terminal(b"hello-ws\r")).await.unwrap();
+    let mut size = None;
     let got = tokio::time::timeout(Duration::from_secs(10), async {
         let mut acc = String::new();
         while let Some(msg) = ws.next().await {
@@ -72,7 +73,13 @@ async fn session_ws_round_trips_keystrokes_and_tears_down_on_close() {
                 Message::Binary(b) => b,
                 _ => continue,
             };
-            if let Ok(Frame::Terminal { data, .. }) = protocol::decode(&bytes) {
+            let frame = protocol::decode(&bytes);
+            if let Ok(Frame::Command(cmd)) = &frame {
+                if cmd.verb == "session-size" && size.is_none() {
+                    size = Some(cmd.payload.clone());
+                }
+            }
+            if let Ok(Frame::Terminal { data, .. }) = frame {
                 if data
                     .windows(CURSOR_POSITION_REQUEST.len())
                     .any(|w| w == CURSOR_POSITION_REQUEST)
@@ -92,6 +99,12 @@ async fn session_ws_round_trips_keystrokes_and_tears_down_on_close() {
     assert!(
         got.contains("GOT:hello-ws"),
         "server must echo the typed line back through codec + PTY; got:\n{got}"
+    );
+    // The browser's fold reads this very file (`readSocketEvent`).
+    super::golden::check(
+        "session-size",
+        size.expect("a launch is told the session size"),
+        &[],
     );
 
     // End the CHILD (not the socket): under the #166 tmux model a WS drop only
