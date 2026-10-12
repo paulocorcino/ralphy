@@ -19,7 +19,10 @@
 //!   `env <NAME>` prints `ENV:<NAME>=<value>` and `argv` prints
 //!   `ARGV:<args…>` — the only way a test can observe the environment and the
 //!   command line the launcher actually gave the child, rather than the spec it
-//!   built; any other line echoes as `GOT:<line>`.
+//!   built; `flood <kib>` writes about that many KiB of colored numbered lines,
+//!   redrawing the last three after every twenty with a cursor-up (a TUI redraw
+//!   that is right at one width only) and ends with `FLOOD-DONE <bytes>`; any
+//!   other line echoes as `GOT:<line>`.
 //! - `sleep` mode sleeps ~60s — the grandchild that holds stdout open.
 
 use std::io::{Read, Write};
@@ -108,6 +111,10 @@ fn main() {
                 println!("{ARGV_MARKER}{}", args.join(" "));
                 let _ = std::io::stdout().flush();
             }
+            other if other.starts_with("flood ") => {
+                let kib = other["flood ".len()..].trim().parse::<usize>().unwrap_or(0);
+                flood(kib);
+            }
             other if other.starts_with("osc52 ") => {
                 // Emit a clipboard-write escape the way a vendor TUI does, so a
                 // browser test can drive the real path: child -> PTY -> daemon
@@ -132,6 +139,54 @@ fn main() {
             }
         }
     }
+}
+
+/// Width of one flood line, in characters, before the line break.
+const FLOOD_LINE_WIDTH: usize = 70;
+/// Lines between two cursor-up redraws.
+const FLOOD_REDRAW_EVERY: usize = 20;
+
+/// One numbered line, padded to [`FLOOD_LINE_WIDTH`], in one of seven colors.
+fn flood_line(n: usize) -> String {
+    let text = format!("{:<width$}", format!("LINE {n} "), width = FLOOD_LINE_WIDTH);
+    format!(
+        "[3{}m{text}[0m
+",
+        n % 7 + 1
+    )
+}
+
+/// Write about `kib` KiB of numbered lines. After every [`FLOOD_REDRAW_EVERY`]
+/// lines the cursor goes up three lines and those three are written again.
+fn flood(kib: usize) {
+    let target = kib * 1024;
+    let mut written = 0usize;
+    let mut n = 0usize;
+    let mut chunk = String::new();
+    let stdout = std::io::stdout();
+    let mut out = stdout.lock();
+    while written < target {
+        n += 1;
+        chunk.push_str(&flood_line(n));
+        if n.is_multiple_of(FLOOD_REDRAW_EVERY) {
+            chunk.push_str("[3A");
+            for again in n - 2..=n {
+                chunk.push_str(&flood_line(again));
+            }
+        }
+        if chunk.len() >= 4096 {
+            written += chunk.len();
+            if out.write_all(chunk.as_bytes()).is_err() {
+                return;
+            }
+            let _ = out.flush();
+            chunk.clear();
+        }
+    }
+    written += chunk.len();
+    let _ = out.write_all(chunk.as_bytes());
+    let _ = writeln!(out, "FLOOD-DONE {written}");
+    let _ = out.flush();
 }
 
 /// Put the tty in the raw-ish mode a real vendor TUI uses: no echo, no line
