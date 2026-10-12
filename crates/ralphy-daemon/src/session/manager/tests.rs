@@ -586,20 +586,18 @@ fn held_session(
 
 /// ADR-0079 D7: the claims of one holder are ordered by their attempt. A
 /// lower one is a late socket the tab already replaced: it is refused and
-/// evicts nobody, also with `takeover`. An equal or higher one reclaims the
-/// slot, the half-open case of ADR-0051 §9.
+/// evicts nobody. An equal or higher one reclaims the slot, the half-open
+/// case of ADR-0051 §9.
 #[tokio::test]
 async fn a_lower_attempt_of_the_same_holder_is_superseded_and_evicts_nobody() {
     let (manager, id, writer) = held_session("tab-A", Some(5));
-    for takeover in [false, true] {
-        assert!(
-            matches!(
-                manager.attach_as(id, takeover, Some("tab-A"), Some(4), None),
-                Err(AttachError::Superseded)
-            ),
-            "attempt 4 after 5 is a late socket (takeover {takeover})"
-        );
-    }
+    assert!(
+        matches!(
+            manager.attach_as(id, false, Some("tab-A"), Some(4), None),
+            Err(AttachError::Superseded)
+        ),
+        "attempt 4 after 5 is a late socket"
+    );
     assert_eq!(writer.evict.reason(), None, "the writer is not evicted");
 
     let newer = manager
@@ -618,6 +616,21 @@ async fn a_lower_attempt_of_the_same_holder_is_superseded_and_evicts_nobody() {
         "the reclaim keeps the attempt it claimed with"
     );
     assert_eq!(equal.evict.reason(), None);
+    manager.close(id);
+}
+
+/// A take over always wins, also as the slot's own holder with a lower
+/// attempt: two windows that share a holder (a duplicated tab, a fence
+/// popup) swap the console with Take over, and a page reconnect never sends
+/// one.
+#[tokio::test]
+async fn a_take_over_with_a_lower_attempt_of_the_same_holder_evicts_the_writer() {
+    let (manager, id, writer) = held_session("tab-A", Some(5));
+    let taker = manager
+        .attach_as(id, true, Some("tab-A"), Some(4), None)
+        .expect("a take over is never a late socket");
+    assert!(taker.writer);
+    assert_eq!(writer.evict.reason(), Some(EndReason::TakenOver));
     manager.close(id);
 }
 
@@ -712,6 +725,27 @@ fn a_since_that_cannot_resume_gets_the_snapshot() {
         kept.replay(Some(20)),
         (b"narrow\r\n".to_vec(), true),
         "at the resize, every byte after it is at the new size"
+    );
+}
+
+/// A resize to the size the session has changes nothing: the snapshot still
+/// writes the scroll region, and a `since` from before it still resumes. The
+/// page sends its size on every socket open, and on Linux and macOS the child
+/// gets no signal for the same size, so it never writes the region again.
+#[test]
+fn a_resize_to_the_same_size_keeps_the_region_and_the_resume() {
+    let mut kept = kept_after(b"\x1b[2;20r", b"body\r\n");
+    kept.resize(24, 80);
+    let (snapshot, resume) = kept.replay(None);
+    assert!(!resume);
+    assert!(
+        snapshot.windows(7).any(|w| w == b"\x1b[2;20r"),
+        "the snapshot keeps the scroll region"
+    );
+    assert_eq!(
+        kept.replay(Some(7)),
+        (b"body\r\n".to_vec(), true),
+        "a resume from before the same-size resize"
     );
 }
 

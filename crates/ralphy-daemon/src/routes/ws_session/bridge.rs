@@ -341,9 +341,10 @@ async fn open(
     socket
         .send(Message::Binary(protocol::encode(&open).into()))
         .await?;
-    // The size the snapshot below was written at: a watcher paints at it.
-    let size = *attach.size.borrow_and_update();
-    send_size(socket, id, size).await?;
+    // The size the snapshot below was written at: a watcher paints at it. A
+    // resize after the attach is still marked changed on `attach.size`, so
+    // the loop sends it after the replay.
+    send_size(socket, id, attach.replay_size).await?;
     // The replay goes before the live stream. An empty one is not sent: a
     // fresh session, or a resume with nothing new.
     if !replay.data.is_empty() {
@@ -751,6 +752,8 @@ mod tests {
 
     /// A watcher's socket gets `session-size` after `session-open` and before
     /// the replay, and again when the writer resizes the session (ADR-0079 D6).
+    /// The first size is the one the replay was taken at, also when a resize
+    /// came between the attach and the open; that resize follows the replay.
     #[tokio::test]
     async fn a_watcher_gets_the_size_before_the_replay_and_on_each_resize() {
         let manager = Arc::new(session::SessionManager::new());
@@ -770,6 +773,7 @@ mod tests {
             .watch(id, None)
             .expect("a live session is watchable");
         watcher.snapshot = b"REPLAY".to_vec();
+        writer.resize(28, 90).expect("the PTY takes a resize");
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .expect("bind a loopback port");
@@ -791,6 +795,12 @@ mod tests {
             Frame::Terminal { data, .. } => assert_eq!(data, b"REPLAY"),
             other => panic!("the replay follows the size: {other:?}"),
         }
+        let after_replay = loop {
+            if let Some(size) = size_of(&next_frame(&mut client).await) {
+                break size;
+            }
+        };
+        assert_eq!(after_replay, (28, 90));
 
         writer.resize(30, 100).expect("the PTY takes a resize");
         let resized = loop {

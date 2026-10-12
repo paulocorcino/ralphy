@@ -5,6 +5,16 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { frameQueue, readSocketEvent } from "../assets/ui/wb-console-frames.ts";
 import { TAG_COMMAND, TAG_TERMINAL } from "../assets/ui/wb-console-session.ts";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+// A reply a Rust test wrote to `fixtures/` (ADR-0070 Compliance, shared replies).
+function fixture(name) {
+  return JSON.parse(readFileSync(join(HERE, "fixtures", name + ".json"), "utf8"));
+}
 
 function terminalFrame(id, text) {
   return terminalBytes(id, new TextEncoder().encode(text));
@@ -44,6 +54,15 @@ test("a session-size frame carries the rows and the columns", () => {
     kind: "size",
     rows: 30,
     cols: 100,
+  });
+});
+
+test("session-size: the size fold reads the payload the daemon sends", () => {
+  const size = fixture("session-size");
+  assert.deepEqual(readSocketEvent(commandFrame("session-size", size)), {
+    kind: "size",
+    rows: size.rows,
+    cols: size.cols,
   });
 });
 
@@ -95,7 +114,7 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
 
 test("live frames that arrive while a gzip replay decodes are applied after it, in order", async () => {
   const { seen, apply } = recorder();
-  const take = frameQueue(apply);
+  const { take } = frameQueue(apply);
   take(commandFrame("session-open", { session: 1, replay_encoding: "gzip" }));
   take(commandFrame("session-size", { rows: 24, cols: 80 }));
   take(terminalBytes(1, await gzip("the screen")));
@@ -107,7 +126,7 @@ test("live frames that arrive while a gzip replay decodes are applied after it, 
 
 test("a raw replay is applied at once, and only the frame after a gzip open is decoded", async () => {
   const { seen, apply } = recorder();
-  const take = frameQueue(apply);
+  const { take } = frameQueue(apply);
   take(commandFrame("session-open", { session: 1 }));
   take(terminalFrame(1, "raw screen"));
   take(terminalFrame(1, "live"));
@@ -116,7 +135,7 @@ test("a raw replay is applied at once, and only the frame after a gzip open is d
 
 test("a replay that is not gzip is dropped and the live frames still come", async () => {
   const { seen, apply } = recorder();
-  const take = frameQueue(apply);
+  const { take } = frameQueue(apply);
   const warn = console.warn;
   const warned = [];
   console.warn = (...args) => warned.push(args);
@@ -131,4 +150,20 @@ test("a replay that is not gzip is dropped and the live frames still come", asyn
   }
   assert.deepEqual(seen, ["open", "replay-lost", "live 1", "live 2"], "the terminal is told the replay is lost");
   assert.equal(warned.length, 1, "the decode error is logged");
+});
+
+// A close is decided after the frames that wait behind a decode: a
+// `session-end` (taken over) that came before the close names its reason.
+test("whenIdle runs after the frames that wait behind a gzip replay", async () => {
+  const { seen, apply } = recorder();
+  const { take, whenIdle } = frameQueue(apply);
+  take(commandFrame("session-open", { session: 1, replay_encoding: "gzip" }));
+  take(terminalBytes(1, await gzip("the screen")));
+  take(commandFrame("session-end", { reason: "taken-over" }));
+  whenIdle(() => seen.push("close"));
+  assert.deepEqual(seen, ["open"], "the close waits");
+  await settle();
+  assert.deepEqual(seen, ["open", "the screen", "end", "close"]);
+  whenIdle(() => seen.push("at once"));
+  assert.equal(seen.at(-1), "at once", "an idle queue runs it at once");
 });

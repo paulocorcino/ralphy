@@ -45,7 +45,7 @@ pub(super) struct KeptOutput {
     /// Every byte the session wrote, also the ones the ring dropped. The ring
     /// holds the last `ring.len()` of them.
     pub(super) written: u64,
-    /// `written` at the last resize the PTY accepted. The bytes after it were
+    /// `written` at the last resize that changed the size. The bytes after it were
     /// written at the size the session has now.
     resized_at: u64,
 }
@@ -69,18 +69,18 @@ impl KeptOutput {
         self.on_screen(|screen| screen.feed(chunk));
     }
 
-    /// Gives the screen the new size, and tells the attachments when the
-    /// size changed. A resize to the size the session has tells nobody.
-    /// Called only for a size the PTY accepted.
+    /// Gives the screen the new size, and tells the attachments. A resize to
+    /// the size the session has changes nothing: the screen keeps its scroll
+    /// region, a resume stays valid, and nobody is told. Called only for a
+    /// size the PTY accepted.
     pub(super) fn resize(&mut self, rows: u16, cols: u16) {
+        let size = screen::clamp_size(rows, cols);
+        if *self.size.borrow() == size {
+            return;
+        }
         self.resized_at = self.written;
         self.on_screen(|screen| screen.resize(rows, cols));
-        let size = screen::clamp_size(rows, cols);
-        self.size.send_if_modified(|now| {
-            let changed = *now != size;
-            *now = size;
-            changed
-        });
+        self.size.send_replace(size);
     }
 
     /// The replay of an attach, and whether it resumes at `since` (ADR-0079
@@ -164,12 +164,15 @@ pub(super) struct Subscribed {
     pub(super) offset: u64,
     pub(super) rx: broadcast::Receiver<Vec<u8>>,
     pub(super) size: watch::Receiver<(u16, u16)>,
+    /// The session size `(rows, cols)` the replay was written at.
+    pub(super) replay_size: (u16, u16),
 }
 
 /// The replay of an attach, its byte count, its live receiver and its size
 /// receiver, taken under the `kept` lock (see [`publish`]). The writer and
-/// every watcher come here, so with no `since` they get the same replay. The
-/// size a receiver holds now is the size the replay was written at.
+/// every watcher come here, so with no `since` they get the same replay.
+/// `replay_size` is the size the replay was written at; `size` may change
+/// after the lock is released.
 pub(super) fn replay_and_subscribe(
     kept: &Mutex<KeptOutput>,
     tx: &broadcast::Sender<Vec<u8>>,
@@ -180,6 +183,7 @@ pub(super) fn replay_and_subscribe(
     let offset = kept.written;
     let rx = tx.subscribe();
     let size = kept.size.subscribe();
+    let replay_size = *size.borrow();
     drop(kept);
     Subscribed {
         replay,
@@ -187,5 +191,6 @@ pub(super) fn replay_and_subscribe(
         offset,
         rx,
         size,
+        replay_size,
     }
 }

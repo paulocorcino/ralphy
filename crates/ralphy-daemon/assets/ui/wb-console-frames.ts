@@ -8,6 +8,8 @@
    `frameQueue(apply)` gives each message to `apply` in arrival order. When
    `session-open` says the replay is gzipped, the next terminal frame is
    decoded first, and the frames that arrive meanwhile wait behind it.
+   `whenIdle(run)` runs `run` once no frame waits, so a socket's close is
+   decided after a `session-end` that waited behind a decode.
    --------------------------------------------------------------------------- */
 import { socketFrame } from "./wb-api.ts";
 import { TAG_COMMAND, TAG_TERMINAL } from "./wb-console-session.ts";
@@ -81,12 +83,19 @@ async function gunzip(bytes: Uint8Array): Promise<Uint8Array> {
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
-export function frameQueue(apply: (event: SocketEvent) => void): (bytes: Uint8Array) => void {
+export type FrameQueue = {
+  take: (bytes: Uint8Array) => void;
+  whenIdle: (run: () => void) => void;
+};
+
+export function frameQueue(apply: (event: SocketEvent) => void): FrameQueue {
   // Set by `session-open`: the next terminal frame is a gzip replay.
   let gzipNext = false;
   // The messages that arrived while the replay decodes, in order; null when
   // no decode is running.
   let waiting: Uint8Array[] | null = null;
+  // What waits for the queue to be idle, in order.
+  let idle: (() => void)[] = [];
 
   function take(bytes: Uint8Array) {
     if (waiting) {
@@ -119,7 +128,16 @@ export function frameQueue(apply: (event: SocketEvent) => void): (bytes: Uint8Ar
     const queued = waiting ?? [];
     waiting = null;
     for (const bytes of queued) take(bytes);
+    if (waiting) return;
+    const runs = idle;
+    idle = [];
+    for (const run of runs) run();
   }
 
-  return take;
+  function whenIdle(run: () => void) {
+    if (waiting) idle.push(run);
+    else run();
+  }
+
+  return { take, whenIdle };
 }

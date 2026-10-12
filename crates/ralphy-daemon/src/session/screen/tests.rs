@@ -360,7 +360,8 @@ fn lines_scrolled_inside_a_top_scroll_region_reach_the_scrollback() {
 }
 
 /// The tracker applies the emulator's rules: an invalid region is ignored, a
-/// bottom past the screen is clamped, and a full reset or a resize clears it.
+/// bottom past the screen is clamped, a full reset or a resize clears it, and
+/// a resize to the same size does not.
 #[test]
 fn the_region_tracker_follows_the_emulator() {
     let mut screen = Screen::new(ROWS_40, COLS_120, SCROLLBACK_LINES);
@@ -377,6 +378,12 @@ fn the_region_tracker_follows_the_emulator() {
     screen.feed(b"\x1b[2;9r\x1bc");
     assert_eq!(screen.region.region(), None, "a full reset");
     screen.feed(b"\x1b[2;9r");
+    screen.resize(ROWS_40, COLS_120);
+    assert_eq!(
+        screen.region.region(),
+        Some((2, 9)),
+        "a resize to the same size keeps it, as the emulator does"
+    );
     screen.resize(30, 80);
     assert_eq!(screen.region.region(), None, "a resize");
 }

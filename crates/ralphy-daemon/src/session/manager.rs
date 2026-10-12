@@ -122,19 +122,22 @@ impl ManagedSession {
     /// Resize the PTY window and the screen to the same clamped size
     /// (ADR-0079 D3). The screen is resized only when the PTY accepted it.
     ///
-    /// LOCK ORDER: `session`, then `kept`. The pump takes each of the two
-    /// alone, never both, and an attach takes `kept` alone, so this order
-    /// cannot deadlock. `session` is held across both resizes so that two
-    /// resizes that race leave the PTY and the screen at the same size.
+    /// LOCK ORDER: `kept`, then `session`. This is the one place that holds
+    /// both; the pump, an attach, `write` and `close` each take one of them
+    /// alone, so the order cannot deadlock. `kept` is held across both
+    /// resizes, so no output is kept between them: the bytes the child
+    /// writes at the new size (ConPTY repaints at once) reach the screen
+    /// after its resize, and two resizes that race leave the PTY and the
+    /// screen at the same size.
     fn resize(&self, rows: u16, cols: u16) -> Result<()> {
         let (rows, cols) = screen::clamp_size(rows, cols);
-        let session = self.session.lock().expect("session mutex");
-        session.resize(rows, cols)?;
-        self.kept
+        let mut kept = self.kept.lock().expect("kept output mutex");
+        self.session
             .lock()
-            .expect("kept output mutex")
-            .resize(rows, cols);
-        drop(session);
+            .expect("session mutex")
+            .resize(rows, cols)?;
+        kept.resize(rows, cols);
+        drop(kept);
         Ok(())
     }
 }
@@ -377,10 +380,11 @@ impl SessionManager {
     /// or by a writer that named no holder — stays `Busy`.
     ///
     /// `attempt` orders the claims of one holder (ADR-0079 D7): a claim as the
-    /// slot's own holder with a LOWER attempt than the writer's is a late
-    /// socket the client already replaced, so it is `Superseded` and evicts
-    /// nobody, `takeover` or not. When either side has no attempt, the
-    /// holder rule above decides alone.
+    /// slot's own holder with a LOWER attempt than the writer's and no
+    /// `takeover` is a late socket the client already replaced, so it is
+    /// `Superseded` and evicts nobody. A `takeover` is the operator's own
+    /// choice and always wins; a page reconnect never sends one. When either
+    /// side has no attempt, the holder rule above decides alone.
     ///
     /// `since` is the byte count the client's terminal already shows: the
     /// replay is then only the bytes after it, when the ring still has them
@@ -407,7 +411,8 @@ impl SessionManager {
             let mut slot = sess.attached.lock().expect("attached mutex");
             if let Some(existing) = slot.as_ref() {
                 let own = holder.is_some() && existing.holder.as_deref() == holder;
-                if own
+                if !takeover
+                    && own
                     && matches!((attempt, existing.attempt), (Some(claim), Some(held)) if claim < held)
                 {
                     return Err(AttachError::Superseded);
@@ -624,7 +629,7 @@ fn evict_all(sess: &ManagedSession, reason: EndReason) {
 /// Why an [`attach`] failed. `Unknown` → the id names no live session (`404`);
 /// `Busy` → a single writer is already attached and `takeover` was not set (`409`);
 /// `Superseded` → the slot's own holder already claimed it with a higher
-/// attempt, so this claim is a late socket ([`attach_as`]).
+/// attempt, so this claim (not a take over) is a late socket ([`attach_as`]).
 ///
 /// [`attach`]: SessionManager::attach
 /// [`attach_as`]: SessionManager::attach_as
@@ -655,6 +660,9 @@ pub struct Attachment {
     pub offset: u64,
     pub rx: broadcast::Receiver<Vec<u8>>,
     pub size: watch::Receiver<(u16, u16)>,
+    /// The session size `(rows, cols)` `snapshot` was written at. `size` may
+    /// already hold a later one.
+    pub(crate) replay_size: (u16, u16),
     pub evict: Arc<EvictToken>,
     pub writer: bool,
     _guard: AttachGuard,
@@ -674,6 +682,7 @@ impl Attachment {
             offset: subscribed.offset,
             rx: subscribed.rx,
             size: subscribed.size,
+            replay_size: subscribed.replay_size,
             evict: token.clone(),
             writer,
             _guard: AttachGuard {
@@ -722,6 +731,7 @@ impl Attachment {
         self.offset = subscribed.offset;
         self.rx = subscribed.rx;
         self.size = subscribed.size;
+        self.replay_size = subscribed.replay_size;
     }
 
     /// Record `holder` and its `attempt` on the writer slot this attachment

@@ -320,7 +320,7 @@ export function createTerminal(deps: TerminalDeps) {
         // Never xterm's default 80×24: only a size the body measured.
         sizing.opened();
       };
-      const take = frameQueue((event) => {
+      const frames = frameQueue((event) => {
         // A replay decoded after its socket was retired belongs to no one.
         if (leaving || ws !== socket) return;
         switch (event.kind) {
@@ -403,11 +403,11 @@ export function createTerminal(deps: TerminalDeps) {
           }
         }
       });
-      ws.onmessage = (ev: MessageEvent) => take(new Uint8Array(ev.data));
+      ws.onmessage = (ev: MessageEvent) => frames.take(new Uint8Array(ev.data));
       // Swallow the error event; onclose drives recovery in every case.
       ws.onerror = () => {};
-      ws.onclose = (event: CloseEvent) => {
-        if (leaving || switching) return;
+      const closed = () => {
+        if (leaving || switching || ws !== socket) return;
         if (!opened) failedReopens += 1;
         const decision = reconnectDecision({
           everOpened,
@@ -445,6 +445,9 @@ export function createTerminal(deps: TerminalDeps) {
             scheduleReconnect();
         }
       };
+      // After the frames that wait behind a replay decode: a `session-end`
+      // among them names the reason this close is read with.
+      ws.onclose = () => frames.whenIdle(closed);
     }
 
     // Every byte this window sends to the child goes through here (keyboard,

@@ -97,14 +97,16 @@ export function createFit({ term, body, fitAddon, socket, covered, focused, watc
     });
   }
 
-  // The only ResizeObserver of the console's terminal.
-  const ro = new ResizeObserver(() => request());
+  // The handle's `fit`: the outside callers call `fit.fit()`.
+  const fit = { fit: request };
+  // The only ResizeObserver of the console's terminal. It calls through the
+  // handle's door, so every refit request goes through one door.
+  const ro = new ResizeObserver(() => fit.fit());
   ro.observe(body);
   term.onResize(() => send());
 
   return {
-    // The handle's `fit`: the outside callers call `fit.fit()`.
-    fit: { fit: request },
+    fit,
     // The cover over this console went: run the request it kept.
     uncovered() {
       if (pending) request();

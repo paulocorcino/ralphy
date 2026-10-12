@@ -145,11 +145,17 @@ own box. When its box is smaller, its body scrolls; the font is not scaled.
 **D7. A writer claim carries an attempt number.** The attach query key is
 `attempt` (u64). The page keeps one counter per holder in the tab's
 `sessionStorage` and raises it on every connect: launch, reattach, reconnect
-and wake. The daemon keeps the attempt of the slot's writer. A claim with the
-same holder and a LOWER attempt is refused with the end reason `superseded`,
-and it evicts nobody. A claim with the same holder and an equal or higher
-attempt reclaims the slot, as today. A claim with no attempt follows today's
-rule (an older page). The relay passes `attempt` to a peer.
+and wake. Each new value is the larger of the clock in milliseconds and the
+last value plus one, so it only grows. A duplicated tab and a fence popup copy
+the `sessionStorage`, and so the holder; the clock keeps the claims of these
+windows in the order of their connects. The daemon keeps the attempt of the
+slot's writer. A claim with the same holder, a LOWER attempt and no
+`takeover` is refused with the end reason `superseded`, and it evicts nobody.
+A claim with `takeover` is never refused for its attempt: Take over is the
+operator's own choice, and a page reconnect never sends it. A claim with the
+same holder and an equal or higher attempt reclaims the slot, as today. A
+claim with no attempt follows today's rule (an older page). The relay passes
+`attempt` to a peer.
 
 **D8. A reattach can resume from a byte offset.** The daemon counts every
 output byte of a session (u64, under the scrollback lock) and keeps the count
@@ -192,8 +198,11 @@ through dev tunnels is still to be confirmed by a person.
 Decided on 2026-10-12: **item 5 is dropped.** The closing measure of #689
 (`tests/browser/console/wb_console_screen_689.py`, Windows 11, loopback) put
 the compressed snapshot on wake at 3 168 bytes (27 947 bytes before gzip),
-well under 64 KiB. A dormant console keeps no bytes. The iPhone number
-through dev tunnels is still to be confirmed by Paulo.
+well under 64 KiB. That number comes from the measure's flood pattern, which
+compresses about 9 times; the spike's prose estimate (about 24 KB) is the
+better guide for the iPhone check. Both are under 64 KiB. A dormant console
+keeps no bytes. The iPhone number through dev tunnels is still to be
+confirmed by a person.
 
 **D12. The ring stays, at 512 KiB.** It serves the resume (D8), the fallback
 of D3, and `read_output` (#679). The ring is no longer the replay of a
@@ -293,6 +302,7 @@ relay). Browser checks are in `tests/browser/console/`; they are not CI tests.
   `wb_console_watch_size_689.py`.
 - D7: checked by the manager tests
   `a_lower_attempt_of_the_same_holder_is_superseded_and_evicts_nobody`,
+  `a_take_over_with_a_lower_attempt_of_the_same_holder_evicts_the_writer`,
   `another_holder_is_busy_and_a_take_over_still_evicts` and
   `without_an_attempt_on_either_side_the_holder_reclaims`, the relay test
   `peer_session_query_forwards_the_attempt_with_the_holder`, the

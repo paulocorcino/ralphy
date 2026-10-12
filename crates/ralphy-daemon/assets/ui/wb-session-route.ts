@@ -129,16 +129,19 @@ export const WBSessionRoute = (function () {
   // The tab's attempt number (ADR-0079 D7): raised on every connect, so the
   // daemon can tell a late socket of this tab from the one that replaced it.
   // Kept in `sessionStorage` beside the holder, so it keeps growing across a
-  // reload; `attemptMemo` keeps it growing when the storage throws.
+  // reload; `attemptMemo` keeps it growing when the storage throws. It is at
+  // least the clock in ms: a duplicated tab or a fence popup copies the
+  // storage and so the holder, and the clock keeps the windows of that
+  // holder in the order of their connects.
   const ATTEMPT_KEY = "ralphy.attempt";
   let attemptMemo = 0;
-  function nextAttempt(storage: Storage | null | undefined) {
+  function nextAttempt(storage: Storage | null | undefined, now = Date.now()) {
     let kept = 0;
     try {
       const n = Number(storage?.getItem(ATTEMPT_KEY));
       if (Number.isSafeInteger(n) && n > 0) kept = n;
     } catch {}
-    attemptMemo = Math.max(kept, attemptMemo) + 1;
+    attemptMemo = Math.max(Math.floor(now), Math.max(kept, attemptMemo) + 1);
     try {
       storage?.setItem(ATTEMPT_KEY, String(attemptMemo));
     } catch {}

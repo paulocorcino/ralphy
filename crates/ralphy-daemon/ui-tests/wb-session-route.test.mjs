@@ -187,6 +187,23 @@ test("nextAttempt only grows and survives a reload in sessionStorage", () => {
   assert.ok(nextAttempt(throwing) > second + 2);
 });
 
+// A duplicated tab or a fence popup copies sessionStorage, so two windows
+// share a holder and each has its own module memo. The clock keeps their
+// attempts in the order of their connects.
+test("two windows that copied one storage order their attempts by the clock", async () => {
+  const { WBSessionRoute: popup } = await import("../assets/ui/wb-session-route.ts?window=popup");
+  const { nextAttempt } = load();
+  const t = Date.now();
+  const copied = { "ralphy.attempt": String(nextAttempt(memoryStorage(), t)) };
+  const opener = memoryStorage(copied);
+  const copy = memoryStorage(copied);
+  const first = popup.nextAttempt(copy, t + 10);
+  const second = nextAttempt(opener, t + 20);
+  assert.ok(second > first, `the opener's later connect ${second} after the popup's ${first}`);
+  assert.ok(popup.nextAttempt(copy, t + 30) > second, "and the popup's after that");
+  assert.ok(Number.isSafeInteger(nextAttempt(opener)));
+});
+
 test("the attempt is on the url only beside a holder", () => {
   const { url, requestOpts } = load();
   const at = (req, holder) => url("ws://h", requestOpts(req, holder, false, 9));
@@ -216,7 +233,7 @@ test("tabAttempt raises the tab's counter on every call", () => {
   const { tabAttempt } = load();
   const first = tabAttempt();
   assert.ok(Number.isSafeInteger(first) && first > 0);
-  assert.equal(tabAttempt(), first + 1);
+  assert.ok(tabAttempt() > first);
 });
 
 test("tabHolder mints one well-formed holder per document and keeps it", () => {

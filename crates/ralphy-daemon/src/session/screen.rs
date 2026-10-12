@@ -105,9 +105,14 @@ impl Screen {
 
     /// Gives the screen a new size (clamped). Lines longer than the new width
     /// are wrapped, not cut, and the scroll region is reset, as in the
-    /// emulator.
+    /// emulator. A resize to the size it has changes nothing: the emulator
+    /// then keeps its scroll region (`alacritty_terminal` 0.26.0
+    /// `Term::resize` returns early), so the tracker keeps it too.
     pub fn resize(&mut self, rows: u16, cols: u16) {
         let (rows, cols) = clamp_size(rows, cols);
+        if (rows, cols) == (self.rows, self.cols) {
+            return;
+        }
         self.term.resize(Size::new(rows, cols));
         self.region.resize(usize::from(rows));
         self.rows = rows;

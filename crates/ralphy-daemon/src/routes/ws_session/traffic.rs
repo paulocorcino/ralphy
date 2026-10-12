@@ -233,10 +233,15 @@ impl Traffic {
     /// the bytes unchanged; this reads them only until the replay is known.
     /// The `session-open` announcement names the session and says whether a
     /// replay follows; it is not counted, as the bridge does not count it. A
-    /// peer older than the `replay` field gets its replay counted as live.
+    /// peer older than the `replay` field gets its replay counted as live. A
+    /// later `session-open` (the peer's resync after a lag) starts the count
+    /// of its replay again.
     pub(crate) fn peer_frame(&mut self, bytes: &[u8]) {
+        if self.peer_open(bytes) {
+            return;
+        }
         match self.peer_stage {
-            PeerStage::Live => self.live(bytes.len()),
+            PeerStage::Live | PeerStage::Open => self.live(bytes.len()),
             PeerStage::FirstOutput { replay, gzip } => {
                 if bytes.first() == Some(&protocol::TAG_TERMINAL) {
                     self.peer_stage = PeerStage::Live;
@@ -252,26 +257,29 @@ impl Traffic {
                 }
                 self.live(bytes.len());
             }
-            PeerStage::Open => {
-                if bytes.first() == Some(&protocol::TAG_COMMAND) {
-                    if let Ok(Frame::Command(cmd)) = protocol::decode(bytes) {
-                        if cmd.verb == SESSION_OPEN {
-                            if self.keys.session.is_none() {
-                                self.keys.session =
-                                    cmd.payload.get("session").and_then(|v| v.as_u64());
-                            }
-                            let replay =
-                                cmd.payload.get("replay").and_then(|v| v.as_bool()) == Some(true);
-                            let gzip = cmd.payload.get("replay_encoding").and_then(|v| v.as_str())
-                                == Some("gzip");
-                            self.peer_stage = PeerStage::FirstOutput { replay, gzip };
-                            return;
-                        }
-                    }
-                }
-                self.live(bytes.len());
-            }
         }
+    }
+
+    /// Whether `bytes` is a `session-open` announcement. It moves the stage
+    /// to the first output after it, and names the session when none is
+    /// known.
+    fn peer_open(&mut self, bytes: &[u8]) -> bool {
+        if bytes.first() != Some(&protocol::TAG_COMMAND) {
+            return false;
+        }
+        let Ok(Frame::Command(cmd)) = protocol::decode(bytes) else {
+            return false;
+        };
+        if cmd.verb != SESSION_OPEN {
+            return false;
+        }
+        if self.keys.session.is_none() {
+            self.keys.session = cmd.payload.get("session").and_then(|v| v.as_u64());
+        }
+        let replay = cmd.payload.get("replay").and_then(|v| v.as_bool()) == Some(true);
+        let gzip = cmd.payload.get("replay_encoding").and_then(|v| v.as_str()) == Some("gzip");
+        self.peer_stage = PeerStage::FirstOutput { replay, gzip };
+        true
     }
 
     pub(crate) fn inbound(&mut self, bytes: usize) {
@@ -634,6 +642,27 @@ mod tests {
         assert_eq!(s.replay_bytes, replay.len() as u64);
         assert_eq!(s.replay_raw_bytes, terminal_frame(5000).len() as u64);
         assert_eq!(s.live_frames, 2, "the size frame and the live frame");
+    }
+
+    /// A peer that lagged sends a second `session-open` and a new snapshot:
+    /// that snapshot is a replay too, not live output.
+    #[test]
+    fn a_relayed_resync_counts_its_snapshot_as_replay() {
+        let mut t = peer();
+        t.peer_frame(&open_frame(r#"{"session":4,"replay":true}"#));
+        t.peer_frame(&terminal_frame(1000));
+        t.peer_frame(&terminal_frame(10));
+        t.peer_frame(&open_frame(r#"{"session":4,"replay":true}"#));
+        t.peer_frame(&terminal_frame(2000));
+        let s = t.summary();
+        assert_eq!(
+            s.replay_bytes,
+            (terminal_frame(1000).len() + terminal_frame(2000).len()) as u64
+        );
+        assert_eq!(
+            (s.live_frames, s.live_bytes),
+            (1, terminal_frame(10).len() as u64)
+        );
     }
 
     #[test]
