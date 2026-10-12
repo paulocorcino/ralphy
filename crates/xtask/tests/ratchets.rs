@@ -67,10 +67,11 @@ const PROMPT_GH_ISSUE_VIEW: usize = 20;
 /// components `wbAccount` and `wbLogin` (#621); 1261 since the modal stack,
 /// the confirm, the prompt and the flash line moved to the Alpine store
 /// `modals` (#621); 714 since the canvas tabs, the slot, the split and the
-/// tab menu moved to the Alpine store `tabs` (#621).
+/// tab menu moved to the Alpine store `tabs` (#621); 347 since `wire()` and
+/// the icon directive moved to `wb-wire.ts` and `wb-icon.ts` (#621).
 /// Its shell-only types are in `wb-shell-types.d.ts` and it imports them on
 /// one line (#653).
-const APP_TS_LINES: usize = 714;
+const APP_TS_LINES: usize = 347;
 /// Lines of `crates/ralphy-daemon/assets/ui/wb-console.ts`, the console
 /// factory (ADR-0073 D8, which starts this ratchet with the first fold move).
 /// 5842 since ADR-0075 phase 5 moved its pure folds, its GPU budget and its
@@ -136,14 +137,14 @@ const TS_SIZE_MAX: usize = 700;
 /// `TS_SIZE_MAX`, measured at 8783a20e (#621, ADR-0073, the 2026-10-11
 /// amendment). Exact, and it only shrinks: a change to a listed module sets
 /// its count, a module at `TS_SIZE_MAX` or fewer leaves the list, and no
-/// module joins it. `app.ts` and `wb-notes.ts` are listed
-/// through their D8 constants, so each count has one constant. The list had 10
+/// module joins it. `wb-notes.ts` is listed
+/// through its D8 constant, so its count has one constant. The list had 10
 /// modules at 8783a20e; the plan of #621 took the console family out of it:
 /// `wb-desk.ts`, `wb-console-terminal.ts`, `wb-stage-fences.ts` and
 /// `wb-console-title.ts` were split, and `wb-console.ts` fell to 608 lines
-/// when its object of members moved to `wb-console-api.ts`.
+/// when its object of members moved to `wb-console-api.ts`. The app plan of
+/// #621 took `app.ts` out of it: it fell to 347 lines.
 const TS_SIZE_BASELINE: &[(&str, usize)] = &[
-    ("app.ts", APP_TS_LINES),
     ("wb-notes.ts", WB_NOTES_TS_LINES),
     ("wb-file-viewer.ts", 1667),
     ("wb-files.ts", 1205),

@@ -3911,6 +3911,8 @@ fn the_console_family_lists_every_module_on_disk() {
 /// `main.ts`.
 const SHELL_FAMILY: &[(&str, &str)] = &[
     ("app.ts", include_str!("../assets/ui/app.ts")),
+    ("wb-wire.ts", include_str!("../assets/ui/wb-wire.ts")),
+    ("wb-icon.ts", include_str!("../assets/ui/wb-icon.ts")),
     ("wb-account.ts", include_str!("../assets/ui/wb-account.ts")),
     (
         "wb-add-project-dialog.ts",

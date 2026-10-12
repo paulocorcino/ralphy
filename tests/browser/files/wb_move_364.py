@@ -58,7 +58,7 @@ BASE = f"http://127.0.0.1:{PORT}/"
 # tests/browser/files/wb_move_364.py -> repo root is 4 dirs up.
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
-APP_TS = os.path.join(REPO_ROOT, "crates", "ralphy-daemon", "assets", "ui", "app.ts")
+APP_TS = os.path.join(REPO_ROOT, "crates", "ralphy-daemon", "assets", "ui", "wb-wire.ts")
 FILES_TS = os.path.join(REPO_ROOT, "crates", "ralphy-daemon", "assets", "ui", "wb-files.ts")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
 SHOT = os.path.join(SHOT_DIR, "364-move-2026-07-30.png")

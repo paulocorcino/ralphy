@@ -15,7 +15,8 @@
 // object nobody reads. See ADR-0022's "smallest change that fits the seam".
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { shell, wire } from "../assets/ui/app.ts";
+import { shell } from "../assets/ui/app.ts";
+import { wire } from "../assets/ui/wb-wire.ts";
 import { hostsDialog } from "../assets/ui/wb-hosts-dialog.ts";
 import { settingsDialog } from "../assets/ui/wb-settings-dialog.ts";
 import { devices } from "../assets/ui/wb-devices.ts";
@@ -173,7 +174,7 @@ function stubWindow() {
   };
 }
 
-// Create this page's instances the way `main.ts` does, run app.ts's `wire`
+// Create this page's instances the way `main.ts` does, run `wire` (wb-wire.ts)
 // on this page, and return a FRESH `shell()` state object.
 //
 // Fresh per call, never shared: `shell()` returns a mutable object with ~390
