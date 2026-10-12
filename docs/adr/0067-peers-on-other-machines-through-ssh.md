@@ -7,6 +7,8 @@ Linux host and a macOS host (see "Spike results"). §13 lists what is still open
 for the implementation. Amended 2026-09-29: the add flow can install Ralphy on
 the host, after the operator allows it (see "Amendment").
 
+Amended by ADR-0079 (proposed: a reattach shows the screen the host daemon keeps, not the last 512 KiB).
+
 Extended by ADR-0070 (proposed): an unreadable peer store is a failure, never "no peers" (D4); peers' state is read again on the ADR-0070 D2 events.
 
 An operator has computers other than the one that serves the workbench: a VPS
@@ -220,7 +222,8 @@ never a side effect of removal.
   after a workbench update covers WSL peers only.
 - **Text in a console is capped.** A session keeps 512 KiB of output
   (`session/manager.rs`); after a long disconnection, the operator sees only
-  the end.
+  the end. When ADR-0079 is built, a reattach shows the screen and the last
+  1000 lines of scrollback that the host daemon's emulator keeps.
 - **Credentials are per host, permanently** (ADR-0052 Consequences), now for
   more hosts.
 - **Installing Ralphy on the host needs the operator's permission.** The add
@@ -376,7 +379,8 @@ wrong prediction is visible.
 2. **Detach and attach.** Start an agent session on the VPS, kill the local
    `ssh`, wait, start it again, attach.
    *Prediction:* the session is alive, and the output shown is at most the
-   last 512 KiB.
+   last 512 KiB. When ADR-0079 is built: the screen as it is now, with at
+   most 1000 lines of scrollback.
 3. **Latency and connections.** Measure the `/api/fleet` probe (2 s timeout)
    and the tree poll through the tunnel, and count local TIME_WAIT sockets
    during a tree poll.

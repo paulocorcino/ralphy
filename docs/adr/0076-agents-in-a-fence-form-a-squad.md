@@ -4,6 +4,8 @@ Status: proposed
 Kind: structural
 Protects: integrity of change, consistency of the workbench, security
 
+Amended by ADR-0079 (proposed: the console output an agent reads comes from the daemon's screen of the session).
+
 ## Context
 
 An operator already builds teams of agents by hand. On the **stage**, the
@@ -167,7 +169,9 @@ fence and read its output. It may not do this to an agent console: that
 would turn another agent's words into the operator's. The operator sees the
 typing live and a mark on the console. The tool waits while the operator is
 typing. The audit log records what the agent sent, apart from the operator's
-input.
+input. The output the agent reads (`read_screen`) comes from the daemon's
+screen of the session (ADR-0079), not from the raw ring: the raw ring holds
+bytes written at several widths and cut at any byte.
 
 **D15. A fence has a budget.** The daemon limits letters per fence per hour
 and the length of a chain of replies, and refuses `message_send` past either

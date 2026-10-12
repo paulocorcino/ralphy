@@ -248,6 +248,18 @@ and cannot type. (ADR-0051)
 _Avoid_: slot without a qualifier (the **Slot (secondary pane)** is a
 different thing), spectator mode.
 
+**Session size**:
+The one size, in rows and columns, of a **workbench session**'s PTY. The
+writer sets it, and the daemon announces it to the writer and every watcher.
+(ADR-0079)
+_Avoid_: terminal size, window size (the size of a box in the page).
+
+**Screen snapshot**:
+The screen of a **workbench session** as the daemon's terminal emulator holds
+it, written as escape sequences for one terminal frame. A reattach gets it in
+place of the raw bytes. (ADR-0079)
+_Avoid_: scrollback replay, ring (the raw bytes the daemon also keeps).
+
 **Clipboard drop**:
 The file that an image pasted into a **workbench session**'s terminal becomes:
 a run artifact under the repo's `.ralphy/`, whose path is pasted into the

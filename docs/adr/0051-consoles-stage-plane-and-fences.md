@@ -4,6 +4,8 @@ Status: accepted.
 
 Amended by ADR-0076 (proposed: a fence is also a squad, and the daemon owns which console is in which fence).
 
+Amended by ADR-0079 (proposed: one size per session, the daemon keeps the screen, and a reattach is ordered and resumable).
+
 The **Consoles tab** hosts floating console windows over a dotted floor
 (ADR-0037), and their placement is daemon state (ADR-0050). Both ADRs assume the
 stage *is* the visible box: a rect is absolute pixels inside `#workspace`, and
@@ -583,6 +585,30 @@ claim a slot it did not hold.*
   and never persists it. A duplicated tab copies `sessionStorage` and so shares
   the holder. Its first attach reclaims the slot, and the original tab parks
   visibly, the same outcome as an explicit takeover.)*
+
+*(Amended 2026-10-12, one size per session (#689, ADR-0079). One PTY has one
+size, and it is the size of the console the writer can see.*
+
+- ***A covered console does not size its PTY.*** *A console that is covered
+  and does not have the focus does not fit its terminal and sends no size. The
+  check runs after the layout, in the next frame, because a swap removes the
+  old maximize before it sets the new one. When the cover goes, the console
+  fits once and sends its size. A body that measures 0x0 sends no size.*
+- ***The daemon announces the size.*** *A `session-size` frame `{rows, cols}`
+  goes to the writer and to every watcher on attach and after every accepted
+  resize (ADR-0079 D6). A watcher paints at that size and stops fitting its
+  own box; a smaller box scrolls.*
+- ***A claim of the slot is ordered.*** *A writer claim carries an attempt
+  number that only grows for its holder. A claim with the same holder and a
+  lower attempt is refused (`superseded`) and evicts nobody, so a late socket
+  of a tab never takes the slot from that tab's newer socket (ADR-0079 D7).
+  The holder reclaim above is unchanged for an equal or higher attempt and for
+  a claim with no attempt.*
+- ***A reattach sends only what is missing.*** *A reattach gets the screen as
+  the daemon's emulator holds it now, not the raw ring. A tab that still has
+  its terminal names the last byte it has, and when that byte is still in the
+  ring and no resize came after it, the daemon sends only the bytes after it
+  (ADR-0079 D5, D8). None of this lets a client claim a slot it did not hold.)*
 
 **Pairing therefore needs no new feature.** A client that has not claimed the
 writer slot *is* a spectator: the broadcast channel already serves any number of
