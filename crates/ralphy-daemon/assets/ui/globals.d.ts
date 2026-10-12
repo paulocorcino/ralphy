@@ -449,9 +449,6 @@ interface WindowEventMap {
   "workbench:board-opened": CustomEvent<null>;
   /** Open the board's detail of this issue. */
   "workbench:issue-open": CustomEvent<{ issue: number }>;
-  /** Ask for the open project's issues the board already holds: the board
-   * fills `issues`, during the send. */
-  "workbench:board-issues": CustomEvent<{ issues: import("./wb-kanban.ts").Issue[] }>;
   /** Read the change set and the branch of the project `ref`. */
   "workbench:changes-read": CustomEvent<{ ref: string }>;
   /** `ref` has a new checkout: its change-set and branch reads start over. */

@@ -78,6 +78,7 @@ SH = "Alpine.$data(document.querySelector('[x-data]'))"
 TABS = "Alpine.store('tabs')"
 # The board is the component `wbBoard` (wb-board.ts).
 BOARD = "Alpine.$data(document.querySelector('[x-data=\"wbBoard\"]'))"
+BOARD_STORE = "Alpine.store('board')"
 PHONE = {"width": 390, "height": 844}
 DESKTOP = {"width": 1280, "height": 800}
 
@@ -257,7 +258,7 @@ def inject_issue(page, slug):
     page.wait_for_timeout(200)
     page.evaluate(
         f"""() => {{
-          const sh = {BOARD};
+          const sh = {BOARD_STORE};
           sh.boardIssues['{slug}'] = [{{
             number: 2, title: 'Gate humano: credenciais e recursos externos para destravar a Fase 0 (A2 + A3a)',
             state: 'closed', reason: 'not_planned', column: 'closed', labels: [{{ name: 'ready-for-human', color: '0e8a16' }}],

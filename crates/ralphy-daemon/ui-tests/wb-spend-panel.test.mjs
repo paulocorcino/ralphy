@@ -124,6 +124,18 @@ test("spendView shows the spend document only for the project that is open", () 
   assert.equal(spend.spendView().kind, "loading");
 });
 
+test("the Spend view takes the titles the board already holds, and loads nothing", () => {
+  const { loaded, shell, spend } = page();
+  shell.$store.projects.setOpen("o/r");
+  shell.loadBoard = () => assert.fail("the Spend view must not load the board");
+  shell.$store.board.boardIssues = { "o/r": [{ number: 251, title: "the retry" }], "o/x": [{ number: 9, title: "other" }] };
+  loaded.window.WBSpend = { state: (view) => view };
+  assert.deepEqual(spend.spendView().issues, [{ number: 251, title: "the retry" }]);
+  // CONTROL: a store that holds nothing for the project gives no titles.
+  shell.$store.board.boardIssues = {};
+  assert.deepEqual(spend.spendView().issues, []);
+});
+
 test("a period change drops the Ledger rows and reads the pane that is shown", () => {
   const { spend } = page();
   const calls = [];

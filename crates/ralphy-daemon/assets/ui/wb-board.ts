@@ -518,8 +518,6 @@ export function wbBoard() {
       });
       // A trail node of the Runs panel (#301) opens that issue's detail.
       window.addEventListener("workbench:issue-open", (e) => this.openIssue(e.detail.issue));
-      // The Spend tab asks for the issues the board already holds.
-      window.addEventListener("workbench:board-issues", (e) => (e.detail.issues = this.$store.board.openIssues()));
       // Anchor the clock at page load: `_boardLoadedAt` at 0 would clear the
       // 120s floor on the first tick.
       this._boardLoadedAt = Date.now();

@@ -45,6 +45,7 @@ TABS = "Alpine.store('tabs')"
 SPEND = "Alpine.$data(document.querySelector('[x-data=\"wbSpend\"]'))"
 # The board is the component `wbBoard` (wb-board.ts).
 BOARD = "Alpine.$data(document.querySelector('[x-data=\"wbBoard\"]'))"
+BOARD_STORE = "Alpine.store('board')"
 
 # The wrappers. `window.__perf` holds, per name, the calls and the time since
 # the last reset. The shell methods are replaced on the component, so the
@@ -197,18 +198,18 @@ def main():
             page.evaluate(f"(s) => {SH}.toggle(s)", arg=slug_a)
             page.wait_for_function(f"(s) => Alpine.store('projects').openSlug === s", arg=slug_a, timeout=30000)
             page.evaluate(f"() => {SH}.toggleKanban()")
-            page.wait_for_function(f"(s) => ({BOARD}.boardIssues[s] || []).length > 0", arg=slug_a, timeout=180000)
+            page.wait_for_function(f"(s) => ({BOARD_STORE}.boardIssues[s] || []).length > 0", arg=slug_a, timeout=180000)
             load_spend(page, slug_a)
             # B's board once for real, so the switch back and forth replays both.
             page.evaluate(f"(s) => {SH}.toggle(s)", arg=slug_b)
-            page.wait_for_function(f"(s) => ({BOARD}.boardIssues[s] !== undefined)", arg=slug_b, timeout=180000)
+            page.wait_for_function(f"(s) => ({BOARD_STORE}.boardIssues[s] !== undefined)", arg=slug_b, timeout=180000)
             page.wait_for_function(f"() => !{BOARD}.boardRefreshing", timeout=180000)
             page.evaluate(f"(s) => {SH}.toggle(s)", arg=slug_a)
             page.wait_for_function(f"(s) => Alpine.store('projects').openSlug === s", arg=slug_a, timeout=30000)
             idle(page, 1500)
 
             facts = page.evaluate(
-                f"(s) => ({{ issues: ({BOARD}.boardIssues[s] || []).length,"
+                f"(s) => ({{ issues: ({BOARD_STORE}.boardIssues[s] || []).length,"
                 f"  deliveries: ({SPEND}.spend.doc?.deliveries || []).length,"
                 f"  records: ({SPEND}.ledger.records || []).length,"
                 f"  interactive: ({SPEND}.ledger.interactive || []).length,"
@@ -224,7 +225,7 @@ def main():
             # outside a cross-origin-isolated page, so a single short call
             # reads as 0 ms.
             load_spend(page, slug_a)
-            page.evaluate(f"() => {{ {BOARD}.kanbanSel = ({BOARD}.boardIssues[Alpine.store('projects').openSlug] || [])[0]?.number ?? null; }}")
+            page.evaluate(f"() => {{ {BOARD}.kanbanSel = ({BOARD_STORE}.boardIssues[Alpine.store('projects').openSlug] || [])[0]?.number ?? null; }}")
             per_call = page.evaluate(
                 f"() => {{ const spend = {SPEND}; const board = {BOARD}; const out = {{}};"
                 "  for (const m of ['spendView', 'ledgerView', 'kanbanColumns', 'selectedIssue', 'currentRun']) {"
