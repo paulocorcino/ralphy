@@ -170,12 +170,13 @@ impl PeerStatus {
 /// rounded up.
 fn in_words(wait: Duration) -> String {
     let secs = wait.as_secs().max(1);
-    if secs < 60 {
-        return format!("{secs} seconds");
-    }
-    match secs.div_ceil(60) {
-        1 => "1 minute".to_string(),
-        minutes => format!("{minutes} minutes"),
+    match secs {
+        1 => "1 second".to_string(),
+        2..=59 => format!("{secs} seconds"),
+        _ => match secs.div_ceil(60) {
+            1 => "1 minute".to_string(),
+            minutes => format!("{minutes} minutes"),
+        },
     }
 }
 
@@ -596,8 +597,6 @@ pub async fn probe_hello(d: &PeerDescriptor, me: SelfRef<'_>) -> (PeerStatus, Op
     let status = handshake(d, me, &mut environment).await;
     if status != PeerStatus::Reachable {
         environment = None;
-    } else if d.tunnel.is_some() {
-        super::tunnel::tunnels().answered(&d.daemon_id);
     }
     (status, environment)
 }
@@ -617,6 +616,10 @@ async fn handshake(
         Ok(pair) => pair,
         Err(e) => return diagnose_failed_dial(d, format!("{e:#}")).await,
     };
+    // Any HTTP answer came through the tunnel, so the tunnel works.
+    if d.tunnel.is_some() {
+        super::tunnel::tunnels().answered(&d.daemon_id);
+    }
     if status == 401 || status == 403 {
         return PeerStatus::Unauthorized {
             tunnel: d.tunnel.is_some(),

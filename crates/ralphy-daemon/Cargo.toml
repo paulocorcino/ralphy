@@ -137,6 +137,8 @@ windows-sys = { version = "0.61", features = [
 # Drive the Router in-process (`ServiceExt::oneshot`) — no sockets in unit tests.
 tower = { version = "0.5", features = ["util"] }
 tempfile.workspace = true
+# Read back a log line in a test (the console socket traffic summary).
+tracing-subscriber.workspace = true
 # Seed an `opencode.db` fixture for the OpenCode interactive-usage integration test.
 rusqlite.workspace = true
 # Paused time (`start_paused`) for tests of time limits, so they do not wait

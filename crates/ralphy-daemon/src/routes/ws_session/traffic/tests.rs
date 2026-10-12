@@ -293,3 +293,59 @@ fn a_burst_that_outran_the_socket_is_counted() {
     let s = t.summary();
     assert_eq!((s.lagged_events, s.lagged_skipped), (2, 10));
 }
+
+/// A writer the tests read back: what one `Traffic::log` call wrote.
+#[derive(Clone, Default)]
+struct Written(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+impl std::io::Write for Written {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().expect("a test lock").extend_from_slice(buf);
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Written {
+    type Writer = Written;
+    fn make_writer(&'a self) -> Written {
+        self.clone()
+    }
+}
+
+fn logged(t: &Traffic) -> String {
+    let written = Written::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(written.clone())
+        .with_ansi(false)
+        .finish();
+    tracing::subscriber::with_default(subscriber, || t.log(None, Instant::now()));
+    let bytes = written.0.lock().expect("a test lock").clone();
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
+#[test]
+fn the_traffic_line_names_the_link_and_safari_has_none() {
+    let tab = Tab {
+        link: Link {
+            effective_type: Some(EffectiveType::G4),
+            rtt_ms: Some(100),
+            downlink_mbps: Some(1.75),
+        },
+        ..Tab::default()
+    };
+    let line = logged(&Traffic::local(7, tab, Instant::now()));
+    assert!(line.contains("console socket traffic"), "{line}");
+    for field in [
+        r#"net_type="4g""#,
+        "net_rtt_ms=100",
+        "net_downlink_mbps=1.75",
+    ] {
+        assert!(line.contains(field), "{field} not in {line}");
+    }
+    let safari = logged(&traffic(Instant::now()));
+    assert!(safari.contains("console socket traffic"), "{safari}");
+    assert!(!safari.contains("net_"), "{safari}");
+}

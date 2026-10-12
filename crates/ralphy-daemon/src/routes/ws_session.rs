@@ -16,8 +16,12 @@ pub(crate) use bridge::*;
 pub(crate) use relay::*;
 pub(crate) use upgrade::session_ws_upgrade;
 
+use crate::device::DeviceId;
 use crate::identity;
-use traffic::{EffectiveType, Link};
+use traffic::{EffectiveType, Link, Tab};
+
+#[cfg(test)]
+mod tests;
 
 /// Query for `/ws/session`. A NEW agent launch carries `repo` + `agent`; a NEW
 /// free-console launch (issue #167) carries `console=1` and an optional `repo`
@@ -94,6 +98,17 @@ impl SessionQuery {
     /// The window record, when it is a well-formed one (the `holder` shape).
     pub(crate) fn record(&self) -> Option<&str> {
         self.record.as_deref().filter(|r| well_formed_key(r))
+    }
+
+    /// The browser tab that opens the socket, as this query names it.
+    /// `device` is the device of the request that carries the query.
+    pub(crate) fn tab(&self, device: Option<DeviceId>) -> Tab {
+        Tab {
+            holder: self.holder().map(str::to_owned),
+            device,
+            gzip: self.gzip == Some(1),
+            link: self.link(),
+        }
     }
 
     /// The network the browser reported. A value that does not parse, or

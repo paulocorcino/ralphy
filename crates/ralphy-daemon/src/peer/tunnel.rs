@@ -284,10 +284,13 @@ impl Tunnels {
     /// [`Tunnels::ensure`], and say when no `ssh` runs because the next one
     /// waits.
     pub fn ensure_or_wait(&self, daemon_id: &str, spec: &TunnelSpec) -> Result<Ensured> {
-        self.ensure_with(daemon_id, spec, Instant::now(), || {
-            let ssh = ssh_program().context("no ssh program found: install OpenSSH")?;
-            spawn_detached(&tunnel_argv(&ssh, spec))
-        })
+        self.ensure_with(daemon_id, spec, Instant::now(), false, || spawn_ssh(spec))
+    }
+
+    /// [`Tunnels::ensure_or_wait`] for an operator who asked to wake the peer:
+    /// the exit is counted, but the next `ssh` does not wait for it.
+    pub fn wake(&self, daemon_id: &str, spec: &TunnelSpec) -> Result<Ensured> {
+        self.ensure_with(daemon_id, spec, Instant::now(), true, || spawn_ssh(spec))
     }
 
     /// The peer `daemon_id` answered through its tunnel: the next exit of its
@@ -295,15 +298,6 @@ impl Tunnels {
     pub fn answered(&self, daemon_id: &str) {
         let mut state = self.0.lock().unwrap_or_else(|e| e.into_inner());
         state.failing.remove(daemon_id);
-    }
-
-    /// The operator asked to wake the peer `daemon_id`: its next `ssh` does
-    /// not wait.
-    pub fn stop_waiting(&self, daemon_id: &str) {
-        let mut state = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(failing) = state.failing.get_mut(daemon_id) {
-            failing.next_at = Instant::now();
-        }
     }
 
     /// Ensure the tunnel of every descriptor that has one, skipping this
@@ -349,6 +343,7 @@ impl Tunnels {
         daemon_id: &str,
         spec: &TunnelSpec,
         now: Instant,
+        wake: bool,
         spawn: impl FnOnce() -> Result<Child>,
     ) -> Result<Ensured> {
         // A poisoned lock means a panic mid-insert; the map is still a map, and
@@ -372,12 +367,16 @@ impl Tunnels {
             } else if let Some(exited) = state.held.remove(daemon_id) {
                 // It exited by itself: what it said last is why.
                 let said = exited.said.settle();
-                let wait = state.exited(daemon_id, &exited.spec, now);
+                // The exit of an edited host's old `ssh` is not counted: the
+                // new spec starts now.
+                let wait = if exited.spec == *spec {
+                    state.exited(daemon_id, spec, now)
+                } else {
+                    state.failing.remove(daemon_id);
+                    Duration::ZERO
+                };
                 let retry_in_secs = wait.as_secs();
-                // At the longest wait, an `ssh` that says the same again adds
-                // nothing to the log.
-                if wait == WAITS[WAITS.len() - 1] && said.as_ref() == state.last_said.get(daemon_id)
-                {
+                if quiet_close(wait, said.as_ref(), state.last_said.get(daemon_id)) {
                     tracing::debug!(peer = %daemon_id, said = said.as_deref().unwrap_or(""), retry_in_secs, "the tunnel to a peer closed");
                 } else {
                     tracing::info!(peer = %daemon_id, said = said.as_deref().unwrap_or(""), retry_in_secs, "the tunnel to a peer closed");
@@ -392,7 +391,7 @@ impl Tunnels {
         if let Some(failing) = state.failing.get(daemon_id) {
             if failing.spec != *spec {
                 state.failing.remove(daemon_id);
-            } else if now < failing.next_at {
+            } else if now < failing.next_at && !wake {
                 return Ok(Ensured::Waiting {
                     retry_in: failing.next_at - now,
                 });
@@ -412,9 +411,21 @@ impl Tunnels {
     }
 }
 
+/// Start the `ssh` that runs `spec`.
+fn spawn_ssh(spec: &TunnelSpec) -> Result<Child> {
+    let ssh = ssh_program().context("no ssh program found: install OpenSSH")?;
+    spawn_detached(&tunnel_argv(&ssh, spec))
+}
+
+/// Whether the `closed` line of an exit goes to debug, not info: at the
+/// longest wait, an `ssh` that says the same as the one before adds nothing.
+fn quiet_close(wait: Duration, said: Option<&String>, before: Option<&String>) -> bool {
+    wait == WAITS[WAITS.len() - 1] && said == before
+}
+
 impl State {
-    /// Count an exit of `daemon_id`'s `ssh` that ran `spec`, and return how
-    /// long the next one waits.
+    /// Count an exit of `daemon_id`'s `ssh`, whose spec is the one the caller
+    /// asks for, and return how long the next one waits.
     fn exited(&mut self, daemon_id: &str, spec: &TunnelSpec, now: Instant) -> Duration {
         let failing = self
             .failing
@@ -424,10 +435,6 @@ impl State {
                 exits: 0,
                 next_at: now,
             });
-        if failing.spec != *spec {
-            failing.spec = spec.clone();
-            failing.exits = 0;
-        }
         let wait = WAITS[failing.exits.min(WAITS.len() - 1)];
         failing.exits += 1;
         failing.next_at = now + wait;
@@ -441,10 +448,28 @@ pub(crate) async fn hold_open(
     daemon_id: String,
     spec: TunnelSpec,
 ) -> Result<(Ensured, Option<String>)> {
+    hold(daemon_id, spec, false).await
+}
+
+/// [`hold_open`] for an operator who asked to wake the peer
+/// ([`Tunnels::wake`]).
+pub(crate) async fn wake_open(daemon_id: String, spec: TunnelSpec) -> Result<Ensured> {
+    Ok(hold(daemon_id, spec, true).await?.0)
+}
+
+async fn hold(
+    daemon_id: String,
+    spec: TunnelSpec,
+    wake: bool,
+) -> Result<(Ensured, Option<String>)> {
     let (ensured, said) = tokio::task::spawn_blocking({
         let daemon_id = daemon_id.clone();
         move || {
-            let ensured = tunnels().ensure_or_wait(&daemon_id, &spec)?;
+            let ensured = if wake {
+                tunnels().wake(&daemon_id, &spec)?
+            } else {
+                tunnels().ensure_or_wait(&daemon_id, &spec)?
+            };
             anyhow::Ok((ensured, tunnels().last_said(&daemon_id)))
         }
     })

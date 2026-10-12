@@ -312,6 +312,11 @@ mod tests {
             peer_session_query(&launch, "owner/repo"),
             "repo=owner%2Frepo&agent=claude&net=2g&net_rtt=50&net_down=10"
         );
+        assert_eq!(
+            peer_session_query(&reattach("3g", "x", "0.5"), "owner/repo"),
+            "id=7&repo=owner%2Frepo&net=3g&net_down=0.5",
+            "each value is read alone"
+        );
         for (net, rtt, down) in [("5g", "-1", "NaN"), ("wifi", "x", "-2"), ("", "1e9", "inf")] {
             assert_eq!(
                 peer_session_query(&reattach(net, rtt, down), "owner/repo"),

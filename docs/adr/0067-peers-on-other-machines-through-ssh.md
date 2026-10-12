@@ -913,10 +913,13 @@ stays unreachable. The wait counts from the ensure that sees the exit. While
 it waits, no `ssh` runs, and the diagnosis says when Ralphy tries again.
 
 **W2. Three things end the wait.**
-- The peer answers its handshake through the tunnel. The next exit is
-  replaced at once again.
-- The host is edited (H4). A changed spec does not wait for the old one.
-- The operator wakes the peer. The nudge starts the `ssh` now.
+- The peer gives any HTTP answer to its handshake through the tunnel, even
+  a refusal of the token: the tunnel works. The next exit is replaced at
+  once again.
+- The host is edited (H4). A changed spec does not wait for the old one,
+  and the exit of the old spec's `ssh` is not counted.
+- The operator wakes the peer. The nudge starts the `ssh` now, also when
+  the nudge is what sees the last exit. That exit still counts.
 
 **W3. The log keeps one line pair per wait.** The `closed` line names the
 wait (`retry_in_secs`). At the 10-minute wait, an `ssh` that says the same
