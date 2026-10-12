@@ -21,6 +21,7 @@ use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::sync::Notify;
 
 mod manager;
+mod screen;
 mod spec;
 
 pub use manager::{AttachError, Attachment, RecordClaim, SessionManager};
