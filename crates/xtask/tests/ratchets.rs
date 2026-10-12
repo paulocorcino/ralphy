@@ -255,7 +255,7 @@ const NOT_PEER_REPLIES: &[(&str, &str, &str)] = &[
 /// `(PEER_PROTOCOL_VERSION, hash of PEER_REPLY_TYPES)`. Version 4 pays for
 /// the fields that version 3 got with no raise: `file.read`'s `encoding` and
 /// `bom`, and the `char_index` of a refused write (#653).
-const PEER_REPLY_PIN: (u32, u64) = (4, 0xfdaa_c9b2_6860_c15a);
+const PEER_REPLY_PIN: (u32, u64) = (4, 0xf01c_405c_b75e_76c1);
 
 /// Where `PEER_PROTOCOL_VERSION` is, from the repo root.
 const PEER_RS: &str = "crates/ralphy-daemon/src/peer.rs";

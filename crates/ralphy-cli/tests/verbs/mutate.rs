@@ -84,6 +84,84 @@ fn branch_list_reports_current_and_branches() {
         branches.iter().any(|b| b == "other"),
         "branches must contain the created branch, got: {branches:?}"
     );
+    let worktrees = v["worktrees"].as_object().expect("worktrees object");
+    assert!(
+        !worktrees.contains_key("other"),
+        "a branch no worktree holds has no holder, got: {worktrees:?}"
+    );
+}
+
+/// `ralphy branch list --format json` against `repo`, parsed.
+fn branch_list_json(repo: &std::path::Path) -> serde_json::Value {
+    let out = ralphy(&[
+        "branch",
+        "list",
+        "--format",
+        "json",
+        "--repo",
+        &repo.to_string_lossy(),
+    ]);
+    assert!(out.status.success(), "branch list must succeed");
+    serde_json::from_slice(&out.stdout).expect("branch list emits JSON")
+}
+
+#[test]
+fn branch_list_names_the_worktree_that_holds_a_branch() {
+    let repo = init_repo();
+    let other = tempfile::tempdir().unwrap();
+    let held = other.path().join("held");
+    run_git(
+        repo.path(),
+        &[
+            "worktree",
+            "add",
+            "--quiet",
+            "-b",
+            "busy",
+            &held.to_string_lossy(),
+        ],
+    );
+
+    let v = branch_list_json(repo.path());
+    let path = v["worktrees"]["busy"]
+        .as_str()
+        .unwrap_or_else(|| panic!("busy must name its worktree, got: {v}"));
+    assert_eq!(
+        std::fs::canonicalize(path).unwrap(),
+        std::fs::canonicalize(&held).unwrap(),
+        "the holder must be the worktree that has the branch checked out"
+    );
+}
+
+#[test]
+fn branch_switch_refused_by_local_changes_leads_with_gits_reason() {
+    let repo = init_repo();
+    let root = repo.path();
+    std::fs::write(root.join("f.txt"), "one\n").unwrap();
+    run_git(root, &["add", "f.txt"]);
+    run_git(root, &["commit", "--quiet", "-m", "one"]);
+    run_git(root, &["branch", "other"]);
+    std::fs::write(root.join("f.txt"), "two\n").unwrap();
+    run_git(root, &["commit", "--quiet", "-am", "two"]);
+    std::fs::write(root.join("f.txt"), "three\n").unwrap();
+
+    let out = ralphy(&[
+        "branch",
+        "switch",
+        "other",
+        "--repo",
+        &root.to_string_lossy(),
+    ]);
+    assert!(!out.status.success(), "git must refuse the switch");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let reason = stderr
+        .split_once("cannot switch branch: ")
+        .map(|(_, rest)| rest)
+        .unwrap_or_else(|| panic!("the error must lead with the refusal, got: {stderr}"));
+    assert!(
+        reason.contains("local changes"),
+        "git's reason must follow the prefix, got: {stderr}"
+    );
 }
 
 /// The held-lock rows of `branch switch` (its state: the checked-out branch)

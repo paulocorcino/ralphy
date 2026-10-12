@@ -163,14 +163,24 @@ pub(crate) fn branch(cmd: BranchCommand) -> anyhow::Result<()> {
 fn branch_list(args: BranchListArgs) -> anyhow::Result<()> {
     let repo_root = ralphy_core::git::resolve_toplevel(&args.repo)?;
     let current = ralphy_core::git::current_branch(&repo_root)?;
-    let branches = ralphy_core::git::local_branches(&repo_root)?;
+    let held = ralphy_core::git::local_branches_held(&repo_root)?;
+    let branches: Vec<&str> = held.iter().map(|b| b.name.as_str()).collect();
 
     if args.format.as_deref() == Some("json") {
-        let out = serde_json::json!({ "current": current, "branches": branches });
+        // Only branches some worktree holds; the tree's own branch is among them.
+        let worktrees: serde_json::Map<String, serde_json::Value> = held
+            .iter()
+            .filter_map(|b| Some((b.name.clone(), b.worktree.clone()?.into())))
+            .collect();
+        let out = serde_json::json!({
+            "current": current,
+            "branches": branches,
+            "worktrees": worktrees,
+        });
         println!("{out}");
     } else {
         for b in &branches {
-            if *b == current {
+            if *b == current.as_str() {
                 println!("* {b}");
             } else {
                 println!("  {b}");
