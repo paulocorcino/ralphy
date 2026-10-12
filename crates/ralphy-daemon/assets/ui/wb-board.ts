@@ -3,8 +3,9 @@
    holds the board (`section.kanban`, with its issue view and label menu) and
    the plan modal (#621; ADR-0073 D2).
 
-   It owns the board's issues and labels, their reads and their read state,
-   the filters, the issue view, the label menu with its lock, and the ready
+   It reads the board's issues and labels and gives each reply to the Alpine
+   store `board` (wb-board-store.ts), which owns them and their read state.
+   It owns the filters, the issue view, the label menu with its lock, and the ready
    plan of the next run. The runs are the Alpine store `runs`
    (wb-runs-store.ts): the board only reads them.
 
@@ -19,7 +20,7 @@ import { WBChanges } from "./wb-changes.ts";
 import { WBFail } from "./wb-fail.ts";
 import { WBProject } from "./wb-project.ts";
 import { WBRun } from "./wb-runs.ts";
-import type { BoardIssue, BoardRow, Read, ReadyPlan, RunPill, Timer } from "./wb-shell-types.d.ts";
+import type { BoardIssue, BoardRow, ReadyPlan, RunPill, Timer } from "./wb-shell-types.d.ts";
 
 export function wbBoard() {
   // Every `shell()` member this component's code or markup reads or calls.
@@ -33,9 +34,6 @@ export function wbBoard() {
     // The open project's issues in four columns (window.WBKanban). Read-only
     // except labels, the one mutation that moves a card.
     KANBAN: window.WBKanban,
-    // Fed by `board.list` (#198): rows adapted to the issue shape, and the
-    // repo's name→color label map. Empty until `loadBoard()` resolves.
-    boardIssues: {} as Record<string, BoardIssue[]>,
     // Refresh bookkeeping (#301). `_boardLoadedAt` is stamped at fold START,
     // before any await, so the min-gap measures spacing between STARTS and an
     // erroring board throttles like a healthy one. `_boardPending` COALESCES a
@@ -44,10 +42,6 @@ export function wbBoard() {
     kanbanSel: null as number | null, // the selected issue number → opens the detail drawer
 
     // --- the repo's ready plan, on the board -------------------------------
-    boardLabels: {} as Record<string, Map<string, string>>,
-    // A `board.list` failure (#207): a broken tracker connection must never
-    // read as "no work to do".
-    boardError: {} as Record<string, string | null>,
     _boardPending: false,
     boardRefreshing: false,
     // The daemon awaits the board CLI with no timeout of its own; a wedged `gh`
@@ -180,7 +174,7 @@ export function wbBoard() {
 
     // The open project's issues (#198). Empty until `loadBoard()` populates it.
     projectIssues() {
-      return this.boardIssues[this.$store.projects.openKey()] || [];
+      return this.$store.board.openIssues();
     },
 
     // The whole-tracker board fold via `board.list`, cached under the slug. No
@@ -209,12 +203,12 @@ export function wbBoard() {
         ]);
         if (WBFail.isError(reply)) {
           const msg = WBFail.failed(reply, "Could not load the board.");
-          this.boardFailed(slug, msg);
+          this.$store.board.boardReadFailed(slug, msg);
           this.$store.modals.flash(msg);
           return;
         }
         const board = reply.board || {};
-        this.boardIssues[slug] = (board.issues || []).map((r) => this.boardRowToIssue(r));
+        const issues = (board.issues || []).map((r) => this.boardRowToIssue(r));
         // A Map, so a label named `constructor` reads as missing. A blank
         // color is skipped: a bare "#" is truthy and masks `labelColor`'s fallback.
         const colors = new Map<string, string>();
@@ -222,14 +216,12 @@ export function wbBoard() {
           if (!l.color) continue;
           colors.set(l.name, "#" + String(l.color).replace(/^#/, ""));
         }
-        this.boardLabels[slug] = colors;
-        this.boardError[slug] = null;
-        this.boardRead[slug] = WBFail.readFold(this.boardRead[slug], { ok: true, value: true, at: Date.now() });
+        this.$store.board.boardReadOk(slug, issues, colors);
         // Fold rows carry `body: ""`: re-merge the open drawer's detail or it
         // goes blank on every refresh.
         if (this.kanbanSel != null) this.loadIssueDetail(this.kanbanSel);
       } catch {
-        this.boardFailed(slug, "Could not load the board.");
+        this.$store.board.boardReadFailed(slug, "Could not load the board.");
         this.$store.modals.flash("Could not load the board.");
       } finally {
         this.boardRefreshing = false;
@@ -241,20 +233,6 @@ export function wbBoard() {
           if (this.$store.projects.openSlug && this.kanbanOpen) this.loadBoard();
         }
       }
-    },
-
-    // A failed `board.list` (ADR-0070 D3). After a good read the cards stay,
-    // under a banner that says they are not current; before one, there are no
-    // cards and the banner says why. Moving a card is locked meanwhile.
-    boardFailed(slug: string, msg: string) {
-      const read = WBFail.readFold(this.boardRead[slug], { ok: false, reason: msg, at: Date.now() });
-      this.boardRead[slug] = read;
-      if (read.goodAt) {
-        this.boardError[slug] = WBFail.notCurrent(read, (ms) => this.$store.connection.fmtClock(ms));
-        return;
-      }
-      this.boardIssues[slug] = [];
-      this.boardError[slug] = msg;
     },
 
     // The one door every refresh trigger goes through (#301): the predicate
@@ -345,7 +323,7 @@ export function wbBoard() {
     },
     labelColor(l: string) {
       // The repo's real label hex, else the seed vocabulary.
-      return this.boardLabels[this.$store.projects.openKey()]?.get(l) || window.WBKanban.labelColor(l);
+      return this.$store.board.boardLabels[this.$store.projects.openKey()]?.get(l) || window.WBKanban.labelColor(l);
     },
     labelInk(l: string) {
       return window.WBKanban.labelInk(l);
@@ -363,8 +341,6 @@ export function wbBoard() {
     kfmtDate(iso: string | null | undefined) {
       return window.WBKanban.fmtDate(iso);
     },
-
-    boardRead: {} as Record<string, Read>,
 
     // --- detail drawer ----------------------------------------------------
     // The open drawer's detail-fetch failure (#302). One string: exactly one
@@ -412,11 +388,8 @@ export function wbBoard() {
           return;
         }
         const detail = reply.issue;
-        const iss = (this.boardIssues[slug!] || []).find((i) => i.number === number);
-        if (!iss || stale()) return;
-        if (typeof detail.body === "string") iss.body = detail.body;
-        if (Array.isArray(detail.comments)) iss.comments = detail.comments;
-        if (Array.isArray(detail.blocked_by)) iss.blockedBy = detail.blocked_by;
+        if (stale()) return;
+        if (!this.$store.board.issueDetailRead(slug!, number, detail)) return;
         // Success owns the banner too: this one may land second.
         this.issueError = null;
       } catch {
@@ -478,8 +451,8 @@ export function wbBoard() {
       const has = this.hasLabel(iss, label);
       const op = has ? "remove" : "add";
       const prev = [...(iss.labels || [])];
-      iss.labels = has ? iss.labels.filter((l) => l !== label) : [...(iss.labels || []), label];
       const slug = this.$store.projects.openSlug;
+      this.$store.board.issueLabelsSet(slug!, iss.number, has ? prev.filter((l) => l !== label) : [...prev, label]);
       window.WB.emit("issue-label-change", { project: slug, number: iss.number, label, op });
       // The run-lock-aware `label.set` Mutate (#199): refusal → revert + flash.
       (async () => {
@@ -491,7 +464,7 @@ export function wbBoard() {
             op,
           });
           if (WBFail.isError(reply)) {
-            iss.labels = prev;
+            this.$store.board.issueLabelsSet(slug!, iss.number, prev);
             this.$store.modals.flash(WBFail.failed(reply, "Could not change the labels: the daemon gave no reason."));
             return; // a refused write changed nothing to re-read
           }
@@ -511,7 +484,7 @@ export function wbBoard() {
     },
     labelLockReason() {
       if (this.$store.connection.buildSkew) return this.$store.connection.BUILD_SKEW_LOCK;
-      if (this.boardRead[this.$store.projects.openKey()]?.current === false) {
+      if (this.$store.board.boardRead[this.$store.projects.openKey()]?.current === false) {
         return "The board shown is not current. Wait for the next read.";
       }
       return WBChanges.writeLockReason(
@@ -545,8 +518,6 @@ export function wbBoard() {
       });
       // A trail node of the Runs panel (#301) opens that issue's detail.
       window.addEventListener("workbench:issue-open", (e) => this.openIssue(e.detail.issue));
-      // The Spend tab asks for the issues the board already holds.
-      window.addEventListener("workbench:board-issues", (e) => (e.detail.issues = this.projectIssues()));
       // Anchor the clock at page load: `_boardLoadedAt` at 0 would clear the
       // 120s floor on the first tick.
       this._boardLoadedAt = Date.now();

@@ -1,8 +1,8 @@
 // Unit tests for assets/ui/wb-release-dialogs.ts, the Alpine component of the
 // About, What's new and update dialogs. It is built with `loadComponent`, so
 // every test here also fails when the component reads a shell() name it does
-// not list in `uses`, or assigns a shell() field (ADR-0073 D4). The release
-// fact itself (`loadRelease`) is the Alpine store `release`, tested in
+// not list in `uses`, assigns a shell() field, or writes inside the release
+// fact (ADR-0073 D4). The release fact itself (`loadRelease`) is the Alpine store `release`, tested in
 // wb-release-store.test.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -135,6 +135,17 @@ test("the dialogs change the release fact only through markReleaseSeen and relea
   const release = shell.$store.release;
   shell.$store.projects.refreshLive = () => {};
   assert.throws(() => state.release, ReferenceError, "the fact is not a shell() name the dialogs read");
+  assert.throws(
+    () => {
+      state.$store.release.release.disabled = true;
+    },
+    (e) => e instanceof TypeError && /wbReleaseDialogs/.test(e.message) && /release\.release\.disabled/.test(e.message),
+  );
+  assert.throws(() => {
+    state.$store.release.releaseSeen = true;
+  }, TypeError);
+  assert.equal(release.releaseSeen, false, "the write did not reach the store");
+  assert.notEqual(release.release.disabled, true, "the write did not reach the release");
 
   state.openWhatsNew();
   assert.equal(state.whatsNewOpen, true);

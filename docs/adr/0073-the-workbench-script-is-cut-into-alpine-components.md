@@ -205,7 +205,9 @@ change to modules is mechanical.
   (added by the pilot). It builds the component against a scope that has only
   its own members and its `uses` names. Reading any other name fails, and
   assigning a `shell()` field fails. A write to a property inside a `uses`
-  value is not caught yet: the Security cut adds that (see the amendment). The
+  value fails too. The component's `$store` is a view of each store
+  (`storeView` in the same file): a write to a store field, at any depth,
+  fails, and the store's own methods still change it. The
   component's test checks its markup with `componentMarkup` and
   `bindingNames` from the same file. The D3 check requires the test file that
   calls this helper.
@@ -673,6 +675,7 @@ the returned object. Without decision 3, `app.ts` stops near 850 lines.
    | `wb-console-api.ts` | function | - | `buildConsoleApi(parts)`: the `WBConsole` object. |
    | `wb-runs-store.ts` | Alpine store | `runs` | The runs of each project, their read state, the current run and the runs subscription. The runs panel, the board and the shell read them, so they are a store. |
    | `wb-runs-panel.ts` | component | `wbRuns` | The runs panel, the plan section, the run modal and the raw feed. One region shows them. |
+   | `wb-board-store.ts` | Alpine store | `board` | The board's issues and labels of each project and the state of their read. The board writes them, and the Spend pane reads them, so they are a store. |
    | `wb-board.ts` | component | `wbBoard` | The board, the issue view, the label menu and the plan modal. One region shows them. |
    | `wb-changes-panel.ts` | component | `wbChanges` | The changes, the sync, the commit and the rows. One region shows them. |
    | `wb-branch-dialog.ts` | component | `wbBranchDialog` | The branch modal, the branch switch and create, and the worktree remove. One dialog shows them. |

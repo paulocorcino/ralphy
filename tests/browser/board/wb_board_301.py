@@ -59,6 +59,7 @@ SH = "Alpine.$data(document.querySelector('[x-data]'))"
 RUNS = "Alpine.$data(document.querySelector('[x-data=\"wbRuns\"]'))"
 # The board is the component `wbBoard` (wb-board.ts).
 BOARD = "Alpine.$data(document.querySelector('[x-data=\"wbBoard\"]'))"
+BOARD_STORE = "Alpine.store('board')"
 
 RUN_A = "01RUNAAAAAAAAAAAAAAAAA"
 
@@ -365,8 +366,8 @@ def main():
             check("an erroring fold still counts as a load", mid == before + 1, f"{before} -> {mid}")
             check(
                 "…and raises the board error state",
-                page.evaluate(f"() => !!{BOARD}.boardError[Alpine.store('projects').openSlug]") is True,
-                f"boardError={page.evaluate(f'() => {BOARD}.boardError[Alpine.store(`projects`).openSlug]')!r}",
+                page.evaluate(f"() => !!{BOARD_STORE}.boardError[Alpine.store('projects').openSlug]") is True,
+                f"boardError={page.evaluate(f'() => {BOARD_STORE}.boardError[Alpine.store(`projects`).openSlug]')!r}",
             )
             page.evaluate(f"() => {BOARD}.maybeRefreshBoard('runs')")
             page.wait_for_timeout(400)
@@ -377,7 +378,7 @@ def main():
             page.wait_for_timeout(400)
             check(
                 "the board recovers from the error state on the next good fold",
-                page.evaluate(f"() => {BOARD}.boardError[Alpine.store('projects').openSlug]") in (None, ""),
+                page.evaluate(f"() => {BOARD_STORE}.boardError[Alpine.store('projects').openSlug]") in (None, ""),
                 "",
             )
 

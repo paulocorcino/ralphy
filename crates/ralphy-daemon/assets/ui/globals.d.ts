@@ -287,6 +287,7 @@ interface Window {
     ): void;
     store(name: "projects"): import("./wb-projects-store.ts").ProjectsStore;
     store(name: "runs"): import("./wb-runs-store.ts").RunsStore;
+    store(name: "board"): import("./wb-board-store.ts").BoardStore;
     store(name: "checkouts"): import("./wb-checkouts-store.ts").CheckoutsStore;
     store(name: "connection"): import("./wb-connection-store.ts").ConnectionStore;
     store(name: "release"): import("./wb-release-store.ts").ReleaseStore;
@@ -448,9 +449,6 @@ interface WindowEventMap {
   "workbench:board-opened": CustomEvent<null>;
   /** Open the board's detail of this issue. */
   "workbench:issue-open": CustomEvent<{ issue: number }>;
-  /** Ask for the open project's issues the board already holds: the board
-   * fills `issues`, during the send. */
-  "workbench:board-issues": CustomEvent<{ issues: import("./wb-kanban.ts").Issue[] }>;
   /** Read the change set and the branch of the project `ref`. */
   "workbench:changes-read": CustomEvent<{ ref: string }>;
   /** `ref` has a new checkout: its change-set and branch reads start over. */

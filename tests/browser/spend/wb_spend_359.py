@@ -71,6 +71,7 @@ TABS = "Alpine.store('tabs')"
 SPEND = "Alpine.$data(document.querySelector('[x-data=\"wbSpend\"]'))"
 # The board is the component `wbBoard` (wb-board.ts).
 BOARD = "Alpine.$data(document.querySelector('[x-data=\"wbBoard\"]'))"
+BOARD_STORE = "Alpine.store('board')"
 
 OPUS = "claude-opus-4-8"
 HAIKU = "claude-haiku-4-5"
@@ -573,7 +574,7 @@ def main():
             # directly, because a fixture repo seeded with plain `git init` is
             # remoteless and its real fold has no tracker to answer it.
             page.evaluate(
-                f"(s) => {{ {BOARD}.boardIssues[s] = [{{ number: 251, title: 'the retry that cost $30' }}]; }}",
+                f"(s) => {{ {BOARD_STORE}.boardIssues[s] = [{{ number: 251, title: 'the retry that cost $30' }}]; }}",
                 arg=slug,
             )
             page.evaluate(f"() => {SPEND}.setSpendPeriod('all')")

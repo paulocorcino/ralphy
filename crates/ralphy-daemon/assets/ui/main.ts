@@ -39,6 +39,7 @@ import { iconDirective } from "./wb-icon.ts";
 import { projectsStore } from "./wb-projects-store.ts";
 import { connectionStore } from "./wb-connection-store.ts";
 import { runsStore } from "./wb-runs-store.ts";
+import { boardStore } from "./wb-board-store.ts";
 import { checkoutsStore } from "./wb-checkouts-store.ts";
 import { releaseStore } from "./wb-release-store.ts";
 import { modalsStore } from "./wb-modals-store.ts";
@@ -83,6 +84,8 @@ Alpine.store("projects", projectsStore({ messages }));
 Alpine.store("connection", connectionStore({ messages, detached }));
 // The runs of each project; its `init` hears the open project change.
 Alpine.store("runs", runsStore({ messages }));
+// The board's issues of each project; the board component reads them.
+Alpine.store("board", boardStore({ messages }));
 // The selected checkout of each project; its `init` takes the `unknown
 // checkout` hook and the desk's checkouts once the desk lands.
 Alpine.store("checkouts", checkoutsStore({ messages }));

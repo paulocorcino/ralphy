@@ -1,8 +1,8 @@
 // Unit tests for assets/ui/wb-security-dialog.ts, the Security dialog's Alpine
 // component. It is built with `loadComponent`, so every test here also fails
-// when the component reads a shell() name it does not list in `uses`, or
-// assigns a shell() field (ADR-0073 D4). The security fact is the Alpine store
-// `connection`.
+// when the component reads a shell() name it does not list in `uses`, assigns a
+// shell() field, or writes inside the security fact (ADR-0073 D4). The
+// security fact is the Alpine store `connection`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -116,6 +116,17 @@ test("the dialog reads the security fact from the store connection", () => {
   assert.equal(shell.security, undefined, "shell() holds no copy");
   assert.equal(state.$store.connection.security.passwordSet, false);
   assert.equal(state.$store.connection.security.policy, "session");
+  assert.throws(
+    () => {
+      state.$store.connection.security.passwordSet = true;
+    },
+    (e) => e instanceof TypeError && /wbSecurityDialog/.test(e.message) && /security\.passwordSet/.test(e.message),
+  );
+  assert.throws(() => {
+    delete state.$store.connection.security.policy;
+  }, TypeError);
+  assert.equal(shell.$store.connection.security.passwordSet, false, "the write did not reach the store");
+  assert.equal(shell.$store.connection.security.policy, "session", "the delete did not reach the store");
 });
 
 test("the dialog changes the security fact only through securityChanged", async () => {
