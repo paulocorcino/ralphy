@@ -19,6 +19,7 @@ use axum::http::{header, Request};
 use http_body_util::{BodyExt, Full};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
+use super::tunnel::Ensured;
 use super::{PeerDescriptor, PEER_PROTOCOL_VERSION};
 
 /// An authenticated WebSocket to another daemon in the local fleet.
@@ -85,6 +86,9 @@ pub enum PeerStatus {
         cause: Option<String>,
         /// The last line the `ssh` that exited wrote on its stderr.
         said: Option<String>,
+        /// When the next `ssh` starts, if it waits because the ones before
+        /// kept exiting.
+        retry_in: Option<Duration>,
     },
     /// The tunnel is open, but the daemon on the other end does not answer.
     TunnelSilent {
@@ -136,25 +140,42 @@ impl PeerStatus {
             }
             PeerStatus::TunnelClosed {
                 host,
-                cause: None,
-                said: None,
-            } => format!("The tunnel to {host} is closed. Ralphy is opening it again."),
-            PeerStatus::TunnelClosed {
-                host,
-                cause: None,
-                said: Some(said),
-            } => format!(
-                "The tunnel to {host} is closed: ssh said \"{said}\". Ralphy is opening it again."
-            ),
-            PeerStatus::TunnelClosed {
-                host,
                 cause: Some(cause),
                 ..
             } => format!("The tunnel to {host} is closed. Ralphy could not open it: {cause}."),
+            PeerStatus::TunnelClosed {
+                host,
+                cause: None,
+                said,
+                retry_in,
+            } => {
+                let said = said
+                    .as_ref()
+                    .map(|said| format!(": ssh said \"{said}\""))
+                    .unwrap_or_default();
+                let next = match retry_in {
+                    Some(wait) => format!("Ralphy tries again in {}.", in_words(*wait)),
+                    None => "Ralphy is opening it again.".to_string(),
+                };
+                format!("The tunnel to {host} is closed{said}. {next}")
+            }
             PeerStatus::TunnelSilent { host, why } => format!(
                 "The tunnel to {host} is open, but its daemon does not answer: {why}. Start it."
             ),
         }
+    }
+}
+
+/// A wait as a person says it: seconds under a minute, else whole minutes,
+/// rounded up.
+fn in_words(wait: Duration) -> String {
+    let secs = wait.as_secs().max(1);
+    if secs < 60 {
+        return format!("{secs} seconds");
+    }
+    match secs.div_ceil(60) {
+        1 => "1 minute".to_string(),
+        minutes => format!("{minutes} minutes"),
     }
 }
 
@@ -241,28 +262,36 @@ pub fn classify_unreachable(
 }
 
 /// Which tunnel state a failed dial was, from the answer of the ensure that
-/// followed it: `Ok(true)` means it had to start a new `ssh`, so the tunnel was
-/// closed; `Ok(false)` means the held `ssh` still runs, so the tunnel is open and
-/// the daemon behind it is silent. `said` is the last stderr line of the `ssh`
-/// that exited. Pure: the ensure lives in `peer::tunnel`.
+/// followed it: a new `ssh` started, or none runs while the next one waits,
+/// means the tunnel was closed; the held `ssh` still running means the tunnel
+/// is open and the daemon behind it is silent. `said` is the last stderr line
+/// of the `ssh` that exited. Pure: the ensure lives in `peer::tunnel`.
 pub fn classify_tunnel(
     host: &str,
-    ensured: std::result::Result<bool, String>,
+    ensured: std::result::Result<Ensured, String>,
     why: String,
     said: Option<String>,
 ) -> PeerStatus {
     let host = host.to_string();
     match ensured {
-        Ok(true) => PeerStatus::TunnelClosed {
+        Ok(Ensured::Started) => PeerStatus::TunnelClosed {
             host,
             cause: None,
             said,
+            retry_in: None,
         },
-        Ok(false) => PeerStatus::TunnelSilent { host, why },
+        Ok(Ensured::Waiting { retry_in }) => PeerStatus::TunnelClosed {
+            host,
+            cause: None,
+            said,
+            retry_in: Some(retry_in),
+        },
+        Ok(Ensured::Running) => PeerStatus::TunnelSilent { host, why },
         Err(cause) => PeerStatus::TunnelClosed {
             host,
             cause: Some(cause),
             said,
+            retry_in: None,
         },
     }
 }
@@ -282,7 +311,7 @@ async fn diagnose_failed_dial(d: &PeerDescriptor, why: String) -> PeerStatus {
             &d.name
         };
         let (ensured, said) = match super::tunnel::hold_open(d.daemon_id.clone(), spec).await {
-            Ok((started, said)) => (Ok(started), said),
+            Ok((ensured, said)) => (Ok(ensured), said),
             Err(e) => (Err(format!("{e:#}")), None),
         };
         return classify_tunnel(host, ensured, why, said);
@@ -567,6 +596,8 @@ pub async fn probe_hello(d: &PeerDescriptor, me: SelfRef<'_>) -> (PeerStatus, Op
     let status = handshake(d, me, &mut environment).await;
     if status != PeerStatus::Reachable {
         environment = None;
+    } else if d.tunnel.is_some() {
+        super::tunnel::tunnels().answered(&d.daemon_id);
     }
     (status, environment)
 }

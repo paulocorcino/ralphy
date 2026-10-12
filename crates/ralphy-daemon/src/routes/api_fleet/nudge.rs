@@ -51,6 +51,8 @@ pub(crate) async fn fleet_nudge_route(
             )
                 .into_response();
         }
+        // The operator asked: the tunnel does not wait for its next try.
+        peer::tunnel::tunnels().stop_waiting(&d.daemon_id);
         if let Err(e) = peer::tunnel::hold_open(d.daemon_id.clone(), spec).await {
             return (
                 StatusCode::BAD_REQUEST,
