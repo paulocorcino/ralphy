@@ -22,6 +22,7 @@ import { WBAgents } from "./wb-agents.ts";
 import { apiFetch } from "./wb-api.ts";
 import { WBFail } from "./wb-fail.ts";
 import { WBFleet } from "./wb-fleet.ts";
+import * as WBHosts from "./wb-hosts.ts";
 import { WBProject } from "./wb-project.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
 import { sendWindow } from "./wb-events.ts";
@@ -34,6 +35,26 @@ export type ProjectsStoreDeps = {
   /** The door for operator messages: a failed wake says why. */
   messages: Messages;
 };
+
+// Run one `host` verb to its end. Resolves to null when it succeeded, else to
+// the sentence that says why it failed: the CLI's own failure line when it
+// printed one.
+function runHostVerb(verb: string, payload: Record<string, string>): Promise<string | null> {
+  return new Promise((resolve) => {
+    let s = WBHosts.initial();
+    window.WBDaemon.spawn(verb, payload, (st) => {
+      if (st.status === "output") {
+        const fed = WBHosts.feed(s.buf, st.chunk);
+        s = Object.assign({}, s, { buf: fed.rest });
+        for (const event of fed.events) s = WBHosts.next(s, { type: "event", event });
+      } else if (st.status === "exited") {
+        resolve(st.code === 0 ? null : s.failure?.message || `The command ended with code ${st.code}.`);
+      } else {
+        resolve(WBFail.failed(st, "The daemon did not start the command."));
+      }
+    });
+  });
+}
 
 export function projectsStore(deps: ProjectsStoreDeps) {
   return {
@@ -130,6 +151,8 @@ export function projectsStore(deps: ProjectsStoreDeps) {
     // Peers with a wake in flight, keyed by daemon_id: a cold WSL boot takes
     // seconds, and the key stops a second click sending a second nudge.
     waking: {} as Record<string, boolean>,
+    // SSH hosts with an update in flight, keyed by daemon_id.
+    updating: {} as Record<string, boolean>,
     // A repo refresh in flight. The list does NOT auto-refresh (only the live
     // dots do, via the heartbeat); the button picks up a new repo or a
     // branch/dirty change.
@@ -391,6 +414,35 @@ export function projectsStore(deps: ProjectsStoreDeps) {
       } finally {
         delete this.waking[daemonId];
       }
+    },
+
+    // Install this computer's Ralphy on an SSH host that speaks another
+    // protocol, then add it again: `host add` reads the host anew and saves
+    // its descriptor with the same local port. The click is the operator's
+    // permission to install on the host (ADR-0067).
+    async updatePeer(daemonId: string) {
+      const peer = this.fleetPeers.find((p) => p.daemon_id === daemonId);
+      if (!peer?.destination || this.updating[daemonId]) return false;
+      this.updating[daemonId] = true;
+      try {
+        const payload: Record<string, string> = { destination: peer.destination, name: peer.name };
+        if (peer.identity_file) payload.identity = peer.identity_file;
+        for (const verb of ["host.install", "host.add"]) {
+          const failure = await runHostVerb(verb, payload);
+          if (failure !== null) {
+            deps.messages.flash(`Could not update Ralphy on ${peer.name}. ${failure}`);
+            return false;
+          }
+        }
+        // `loadRepos`, not `loadFleet`: the latter CONCATENATES peer rows.
+        await this.loadRepos();
+        return true;
+      } finally {
+        delete this.updating[daemonId];
+      }
+    },
+    peerUpdatable(g: Group) {
+      return WBFleet.updatable(g);
     },
 
     // Opening a row on a sleeping peer wakes it. A no-op for every other row.

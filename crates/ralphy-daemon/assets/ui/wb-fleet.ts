@@ -270,6 +270,14 @@ function wakeable(group: Group | null | undefined) {
   return group.state === "asleep" || group.state === "unreachable";
 }
 
+// Whether installing this computer's Ralphy on the host could fix this group's
+// state: a host this daemon reaches over SSH that speaks another protocol. A
+// WSL peer is updated with the workbench, and other states need no install.
+function updatable(group: Group | null | undefined) {
+  if (!group || group.local || !group.tunnel) return false;
+  return group.state === "version-mismatch";
+}
+
 // Whether the projects of this group can be opened. A peer that is not
 // `reachable` cannot serve a tree, so its rows are shown but stay closed. A
 // peer with no state yet (the fleet list has not arrived) counts as
@@ -304,6 +312,7 @@ export const WBFleet = {
   refSlug: refSlug,
   refLabel: refLabel,
   wakeable: wakeable,
+  updatable: updatable,
   available: available,
   stateIcon: stateIcon,
   stateFault: stateFault,

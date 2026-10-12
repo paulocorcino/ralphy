@@ -226,6 +226,17 @@ impl PeerReject {
     }
 }
 
+/// Whether the protocol version saved in a descriptor refuses it.
+///
+/// A self-announced descriptor is rewritten at each start of its daemon, so
+/// its version is current. A tunnel descriptor keeps the version read at
+/// `host add`, and the host can be upgraded after it: the handshake checks it
+/// on connect (ADR-0052 §3), and the host stays in the list to be upgraded or
+/// removed.
+fn saved_version_refused(d: &PeerDescriptor) -> bool {
+    d.tunnel.is_none() && d.protocol_version != PEER_PROTOCOL_VERSION
+}
+
 /// Fold `(file_name, file_text)` records — caller-sorted by file name — into the
 /// usable peers plus the per-record rejections. Pure: no I/O, so every
 /// degradation rule is unit-testable.
@@ -246,7 +257,7 @@ pub fn fold(records: &[(String, String)]) -> (Vec<PeerDescriptor>, Vec<PeerRejec
                 continue;
             }
         };
-        if d.protocol_version != PEER_PROTOCOL_VERSION {
+        if saved_version_refused(&d) {
             rejected.push(PeerReject::IncompatibleVersion {
                 file: file.clone(),
                 daemon_id: d.daemon_id,

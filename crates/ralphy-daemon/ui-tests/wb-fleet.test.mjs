@@ -362,3 +362,15 @@ test("a descriptor without an OS falls back to its older environment label", () 
   assert.equal(system("", ""), "other");
   assert.equal(system("freebsd", "FreeBSD 14.1"), "other", "no icon for an OS Ralphy does not ship");
 });
+
+test("only an SSH host on another protocol offers to update", () => {
+  const { updatable } = load();
+  const group = (state, extra) => Object.assign({ daemon: "01XYZ", local: false, tunnel: true, state: state }, extra);
+  assert.equal(updatable(group("version-mismatch")), true);
+  // A WSL peer is updated with the workbench; other states need no install.
+  assert.equal(updatable(group("version-mismatch", { tunnel: false })), false);
+  for (const state of ["reachable", "unreachable", "unauthorized", "tunnel-closed", "malformed"]) {
+    assert.equal(updatable(group(state)), false, `${state} must not offer an update`);
+  }
+  assert.equal(updatable(null), false);
+});
