@@ -25,6 +25,14 @@ C  reconnect of the same terminal after `flood 600` (the page reattaches a
 D  wake: console 1 is covered until it sleeps, then uncovered, so it gets a
    NEW terminal: `wake` (and `screen_equal_after_wake`).
 E  reload: the page loads again and reattaches: `reattach`.
+G  drop: a new page routes its session sockets through Playwright, and the
+   route of console 1 is closed, as a dropped link closes it. The page
+   reconnects on its own: `drop` holds `resume` (`open.resume` of the
+   reconnect), `since`, `replay_bytes` (the first terminal frame of the
+   reconnect, 0 when there was none), `screen_equal`, `strip_shown` (the
+   window showed its "connection lost" strip), `strip_gone` (the strip went
+   when the socket opened) and `notice_in_terminal` (the terminal text holds
+   the old notice; expected false).
 
 Each of `reconnect`, `wake` and `reattach` holds `replay_bytes`, `first_frame_ms`
 (from the creation of the socket to its first terminal frame), `screen_equal`
@@ -42,7 +50,8 @@ Arguments: `--label <name>` names the output
 (repeatable) names a fact that must hold. `size` always holds: no console
 sent its floating size while another one covered it (`floating_sizes == 0`,
 `columns_floating_sizes == 0`, `covered_sizes == 0`, `uncover_sizes <= 1`).
-`snapshot` always holds too: the screen after the replay is the screen before
+`drop` always holds: the dropped link resumes (`drop.resume`). `snapshot`
+always holds too: the screen after the replay is the screen before
 it (`screen_equal`) for `reconnect`, `wake` and `reattach`. `resume` always
 holds: both reconnects resume (`open.resume`) with a replay of exactly the
 bytes the terminal did not have, and `wake` and `reattach`, which start a
@@ -98,9 +107,10 @@ ASSERTS: dict = {
     ),
     "resume": lambda f: all(resumed(f.get(name)) for name in ("reconnect", "reconnect_busy"))
     and all(((f.get(name) or {}).get("open") or {}).get("resume") is not True for name in ("wake", "reattach")),
+    "drop": lambda f: (f.get("drop") or {}).get("resume") is True,
 }
 # The asserts every run checks.
-DEFAULT_ASSERTS = ["size", "snapshot", "resume"]
+DEFAULT_ASSERTS = ["size", "snapshot", "resume", "drop"]
 
 
 def resumed(fact):
@@ -527,6 +537,75 @@ def scenario_e(page):
     record(page, "reattach", session, known, before)
 
 
+def scenario_g(browser):
+    """A dropped link: the route of console 1 is closed, and both sides of the
+    socket close, as a link that drops closes them."""
+    routes = []
+
+    def route(ws):
+        rec = {"url": ws.url, "ws": ws, "open": None, "replay_bytes": None}
+        routes.append(rec)
+        server = ws.connect_to_server()
+
+        def from_server(message):
+            ws.send(message)
+            data = message if isinstance(message, (bytes, bytearray)) else message.encode("utf-8")
+            if not data:
+                return
+            if data[0] == 0x02 and rec["open"] is None:
+                try:
+                    msg = json.loads(bytes(data[1:]).decode("utf-8"))
+                except ValueError:
+                    return
+                if msg.get("verb") == "session-open":
+                    rec["open"] = msg.get("payload") or {}
+            elif data[0] == 0x01 and (rec["open"] or {}).get("replay") is True and rec["replay_bytes"] is None:
+                rec["replay_bytes"] = len(data) - FRAME_HEADER
+
+        server.on_message(from_server)
+
+    context = browser.new_context(viewport=dict(VIEW))
+    page = context.new_page()
+    page.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
+    page.route_web_socket(re.compile(r"/ws/session"), route)
+    try:
+        page.goto(BASE)
+        if not boot(page):
+            raise RuntimeError("the consoles did not start in the drop page")
+        session = session_of(page, "w-1")
+        mine = lambda: [r for r in routes if re.search(rf"[?&]id={session}(&|$)", r["url"])]
+        if not mine():
+            raise RuntimeError("no routed socket for console 1")
+        before = settle(page, "w-1")
+        known = len(mine())
+        has_strip = "!!__W('w-1').querySelector('.session-link-lost')"
+        mine()[-1]["ws"].close(code=4000, reason="drop")
+        shown = wait_for(page, f"() => {has_strip}", 5)
+        deadline = time.time() + 15
+        while time.time() < deadline and not (len(mine()) > known and mine()[known]["open"] is not None):
+            page.wait_for_timeout(100)
+        if len(mine()) <= known or mine()[known]["open"] is None:
+            raise RuntimeError("the dropped console did not reconnect")
+        rec = mine()[known]
+        gone = wait_for(page, f"() => !{has_strip}", 5)
+        page.wait_for_timeout(600)
+        rec["replay_bytes"] = rec["replay_bytes"] or 0
+        after = settle(page, "w-1")
+        since = re.search(r"[?&]since=(\d+)", rec["url"])
+        facts["drop"] = {
+            "resume": rec["open"].get("resume") is True,
+            "open": rec["open"],
+            "since": int(since.group(1)) if since else None,
+            "replay_bytes": rec["replay_bytes"],
+            "screen_equal": after == before,
+            "strip_shown": shown,
+            "strip_gone": gone,
+            "notice_in_terminal": "connection lost" in (page.evaluate(BUFFER, "w-1") or "").lower(),
+        }
+    finally:
+        context.close()
+
+
 def attach_traffic(log_path, page_session):
     """Put each measured socket's daemon traffic line on its fact. A socket logs
     one line when it closes; the first socket of a session (the launch) logs the first."""
@@ -603,9 +682,16 @@ def run(args):
                 scenario_e(page)
             except Exception as exc:
                 errors.append(f"scenario E: {exc}")
+            # The drop page reattaches the same desk: this page leaves first,
+            # and its traffic is read before the drop page adds lines.
+            page.close()
+            if page_session is not None:
+                attach_traffic(log_path, page_session)
+            try:
+                scenario_g(browser)
+            except Exception as exc:
+                errors.append(f"scenario G: {exc}")
             browser.close()
-        if page_session is not None:
-            attach_traffic(log_path, page_session)
     finally:
         stop(proc)
 

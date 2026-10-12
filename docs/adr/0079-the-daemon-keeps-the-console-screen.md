@@ -233,6 +233,10 @@ the new fields gets the raw replay and today's rules.
   instead of a narrow, broken screen.
 - ADR-0067's prediction for a reattach after a long disconnection changes:
   the operator sees the screen and the last 1000 lines, not the last 512 KiB.
+- A dropped link resumes (D8). The "connection lost" notice is a strip in the
+  console window, outside the terminal, so the terminal keeps its byte count.
+  Other notices of the page (the watcher banner, a refused paste, a failed
+  close) are still written into the terminal and forget the count.
 
 Two limits found while this decision was built:
 
@@ -316,12 +320,16 @@ relay). Browser checks are in `tests/browser/console/`; they are not CI tests.
   `an_attachment_says_its_offset_and_whether_it_resumed`, the bridge test
   `session_open_says_the_offset_and_whether_the_replay_resumes`, the relay
   test `peer_session_query_forwards_since_on_a_reattach`, the
-  `wb-console-terminal` ui-tests of the offset, and the browser check
-  `wb_console_screen_689.py` (`resume`).
+  `wb-console-terminal` ui-tests of the offset (a dropped link: `a dropped
+  link keeps the count, writes nothing, and the strip shows until a socket
+  opens`), and the browser check `wb_console_screen_689.py` (`resume`, and
+  `drop` for a real dropped link).
 - D9: checked by the bridge test `the_replay_is_gzipped_only_when_the_tab_asks`,
   the traffic test `a_relayed_gzip_replay_is_counted_on_the_wire_and_raw`, the
   relay test `peer_session_query_forwards_gzip_on_every_shape`, the
-  `wb-console-frames` ui-tests of the gzip queue, and the browser check
+  `wb-console-frames` ui-tests of the gzip queue (a frame that throws: `a
+  queued frame that throws does not stop the later frames or whenIdle`), and
+  the browser check
   `wb_console_gzip_689.py`.
 - D10: checked by the `wb-console-gpu` ui-tests
   `dormantAfterMs waits longer only after a slow handshake` and

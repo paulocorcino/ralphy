@@ -73,6 +73,10 @@ export type TerminalDeps = {
 // What a clipboard read gives: an image, or else text (`clipboardContent`).
 type ClipboardRead = { image?: Blob; text?: string };
 
+// The link of a window that had a socket: "lost" while it reconnects, "back"
+// when a socket opens again or the window stops trying.
+export type LinkState = "lost" | "back";
+
 // What `attachTerminal` is built with, and what the chrome hands back to
 // rebuild a terminal after sleep (`TermWiring`).
 export type TerminalOpts = SessionRequest & {
@@ -97,6 +101,9 @@ export type TerminalOpts = SessionRequest & {
   peerGroup?: () => Group | null;
   onPeerHold?: (group: Group | null) => void;
   onPeerBack?: () => void;
+  // Shown beside the terminal, never in it: a notice in the terminal forgets
+  // the byte count, and the reconnect could not resume (ADR-0079 D8).
+  onLink?: (state: LinkState) => void;
   readFleet?: () => void;
 };
 
@@ -239,9 +246,18 @@ export function createTerminal(deps: TerminalDeps) {
     // The session lives on the peer, so a hold never gives up.
     let held = false;
     const peerGroup = () => (typeof opts.peerGroup === "function" ? opts.peerGroup() : null);
+    let linkLost = false;
+    function link(state: LinkState) {
+      const lost = state === "lost";
+      if (lost === linkLost) return;
+      linkLost = lost;
+      if (typeof opts.onLink === "function") opts.onLink(state);
+    }
 
     function hold(group: Group | null) {
       held = true;
+      // The peer's own strip says why.
+      link("back");
       if (retryTimer) {
         clearTimeout(retryTimer);
         retryTimer = null;
@@ -259,6 +275,7 @@ export function createTerminal(deps: TerminalDeps) {
 
     function giveUp() {
       ended = true;
+      link("back");
       // Stop observing so a dead-ws terminal doesn't keep firing fit() until the
       // window is closed.
       stopFit();
@@ -316,6 +333,7 @@ export function createTerminal(deps: TerminalDeps) {
         retryDelay = 0;
         failedReopens = 0;
         firstConnect = false;
+        link("back");
         reportHandshake(Date.now() - connectingSince);
         // Never xterm's default 80×24: only a size the body measured.
         sizing.opened();
@@ -438,7 +456,7 @@ export function createTerminal(deps: TerminalDeps) {
             return;
           default:
             if (retryDelay === 0) {
-              term.write("\r\n[connection lost — reconnecting…]\r\n");
+              link("lost");
               // The fleet may already know why; its answer can hold this window.
               if (typeof opts.readFleet === "function") opts.readFleet();
             }
@@ -553,7 +571,7 @@ export function createTerminal(deps: TerminalDeps) {
         const now = Date.now();
         if (now - lastResumeAt < RESUME_DEBOUNCE_MS) return false;
         // A pending backoff is brought forward. `retryDelay` is kept: it stops
-        // "[connection lost]" printing twice for one drop.
+        // a second fleet read for one drop.
         if (retryTimer) {
           lastResumeAt = now;
           clearTimeout(retryTimer);
@@ -609,6 +627,7 @@ export function createTerminal(deps: TerminalDeps) {
       // `reason` (see `encodeDetach`) tells the daemon why the socket closes.
       dispose(reason: DetachReason) {
         leaving = true;
+        link("back");
         if (held) {
           held = false;
           if (typeof opts.onPeerBack === "function") opts.onPeerBack();

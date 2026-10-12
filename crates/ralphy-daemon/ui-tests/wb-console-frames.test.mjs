@@ -167,3 +167,31 @@ test("whenIdle runs after the frames that wait behind a gzip replay", async () =
   whenIdle(() => seen.push("at once"));
   assert.equal(seen.at(-1), "at once", "an idle queue runs it at once");
 });
+
+// A queued frame that throws costs that frame only: the close that waits for
+// the queue must still run, or the console never reconnects.
+test("a queued frame that throws does not stop the later frames or whenIdle", async () => {
+  const seen = [];
+  const apply = (event) => {
+    const label = event.kind === "output" ? new TextDecoder().decode(event.bytes) : event.kind;
+    if (label === "bad") throw new Error("apply failed");
+    seen.push(label);
+  };
+  const { take, whenIdle } = frameQueue(apply);
+  const warn = console.warn;
+  const warned = [];
+  console.warn = (...args) => warned.push(args);
+  try {
+    take(commandFrame("session-open", { session: 1, replay_encoding: "gzip" }));
+    take(terminalBytes(1, await gzip("the screen")));
+    take(terminalFrame(1, "bad"));
+    take(terminalFrame(1, "live 1"));
+    take(terminalFrame(1, "live 2"));
+    whenIdle(() => seen.push("close"));
+    await settle();
+  } finally {
+    console.warn = warn;
+  }
+  assert.deepEqual(seen, ["open", "the screen", "live 1", "live 2", "close"]);
+  assert.equal(warned.length, 1, "the error of the bad frame is logged");
+});

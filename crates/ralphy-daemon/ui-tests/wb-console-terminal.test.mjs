@@ -363,12 +363,39 @@ test("a notice of the page in the terminal forgets the offset", () => {
   try {
     const handle = createTerminal(fakeDeps().deps).attachTerminal(fakeElement(), { id: 5 });
     open(page.sockets[0], { offset: 40 });
-    page.sockets[0].onclose({});
-    assert.ok(page.terminals[0].written.some((t) => t.includes("connection lost")));
-    mock.timers.tick(20000);
-    assert.equal(page.sockets.length, 2, "the backoff reconnects");
+    handle.term.write("a notice");
+    handle.takeOver();
     assert.equal(sinceOf(page.sockets[1]), null, "the terminal no longer matches the session");
     handle.dispose();
+  } finally {
+    page.restore();
+  }
+});
+
+// The link notice is a strip beside the terminal: the terminal still matches
+// the session, so the reconnect resumes.
+test("a dropped link keeps the count, writes nothing, and the strip shows until a socket opens", () => {
+  const page = fakePage();
+  try {
+    const links = [];
+    const handle = createTerminal(fakeDeps().deps).attachTerminal(fakeElement(), {
+      id: 5,
+      onLink: (state) => links.push(state),
+    });
+    open(page.sockets[0], { offset: 40, replay: true });
+    page.sockets[0].onmessage(terminalFrame(5, "SNAP"));
+    page.sockets[0].onmessage(terminalFrame(5, "abc"));
+    const written = page.terminals[0].written.length;
+    page.sockets[0].onclose({});
+    assert.deepEqual(links, ["lost"]);
+    mock.timers.tick(20000);
+    assert.equal(page.sockets.length, 2, "the backoff reconnects");
+    assert.equal(sinceOf(page.sockets[1]), "43", "the count is kept");
+    assert.equal(page.terminals[0].written.length, written, "nothing is written to the terminal");
+    open(page.sockets[1], { offset: 43, replay: true, resume: true });
+    assert.deepEqual(links, ["lost", "back"]);
+    handle.dispose();
+    assert.deepEqual(links, ["lost", "back"], "a link that is back is not told again");
   } finally {
     page.restore();
   }

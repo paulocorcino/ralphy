@@ -124,14 +124,26 @@ export function frameQueue(apply: (event: SocketEvent) => void): FrameQueue {
 
   // A frame that starts another decode sends the rest of `queued` into the
   // new wait, still in order.
+  // One frame that throws costs that frame only: the later frames and the
+  // idle list still run, so a waiting socket close is never stranded.
   function drain() {
     const queued = waiting ?? [];
     waiting = null;
-    for (const bytes of queued) take(bytes);
-    if (waiting) return;
-    const runs = idle;
-    idle = [];
-    for (const run of runs) run();
+    try {
+      for (const bytes of queued) {
+        try {
+          take(bytes);
+        } catch (error: unknown) {
+          console.warn("console frame was not applied:", error);
+        }
+      }
+    } finally {
+      if (!waiting) {
+        const runs = idle;
+        idle = [];
+        for (const run of runs) run();
+      }
+    }
   }
 
   function whenIdle(run: () => void) {
