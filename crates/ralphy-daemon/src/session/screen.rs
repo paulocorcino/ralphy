@@ -27,21 +27,15 @@ mod tests;
 /// The size range of a session (ADR-0079 D3). `alacritty_terminal` 0.26.0
 /// panics on a 0x0 resize; the upper bounds keep one hostile resize from
 /// allocating a grid of 65535x65535 cells.
-// Stage 6 of #689 wires the manager and the PTY to these; until then only the
-// tests call them.
-#[cfg_attr(not(test), allow(dead_code))]
 pub const ROWS: std::ops::RangeInclusive<u16> = 2..=300;
-#[cfg_attr(not(test), allow(dead_code))]
 pub const COLS: std::ops::RangeInclusive<u16> = 2..=500;
 
 /// Lines of scrollback each screen keeps: the page's own xterm scrollback
 /// (ADR-0079 D4).
-#[cfg_attr(not(test), allow(dead_code))]
 pub const SCROLLBACK_LINES: usize = 1000;
 
 /// `(rows, cols)` clamped to [`ROWS`] and [`COLS`]. The PTY and the screen of
 /// a session take the same clamped size, so the two never differ.
-#[cfg_attr(not(test), allow(dead_code))]
 pub fn clamp_size(rows: u16, cols: u16) -> (u16, u16) {
     (
         rows.clamp(*ROWS.start(), *ROWS.end()),
@@ -51,7 +45,6 @@ pub fn clamp_size(rows: u16, cols: u16) -> (u16, u16) {
 
 /// The screen of one session: the emulator, the state it keeps private that
 /// the snapshot needs (the scroll region, the title), and the string cap.
-#[cfg_attr(not(test), allow(dead_code))]
 pub struct Screen {
     term: Term<Listener>,
     processor: Processor<NoSync>,
@@ -68,7 +61,6 @@ pub struct Screen {
 /// a larger feed gets a buffer that is dropped after it.
 const FILTERED_KEEP: usize = 64 * 1024;
 
-#[cfg_attr(not(test), allow(dead_code))]
 impl Screen {
     /// An empty screen of `rows` x `cols` (clamped) that keeps
     /// `scrollback_lines` lines above the visible rows.
@@ -123,6 +115,8 @@ impl Screen {
     }
 
     /// `(rows, cols)`, after the clamp.
+    // Only tests read it today.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn size(&self) -> (u16, u16) {
         (self.rows, self.cols)
     }
@@ -147,6 +141,8 @@ impl Screen {
     /// The plain text of the active screen: its scrollback and its visible
     /// rows, a wrapped row joined to the next, trailing spaces removed, one
     /// line per `\n`. The alternate screen has no scrollback.
+    // `read_screen` (#679) is its caller; until then only tests.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn text(&self) -> String {
         let grid = self.term.grid();
         let last = grid.columns() - 1;

@@ -35,6 +35,8 @@ Arguments: `--label <name>` names the output
 (repeatable) names a fact that must hold. `size` always holds: no console
 sent its floating size while another one covered it (`floating_sizes == 0`,
 `columns_floating_sizes == 0`, `covered_sizes == 0`, `uncover_sizes <= 1`).
+`snapshot` always holds too: the screen after the replay is the screen before
+it (`screen_equal`) for `reconnect`, `wake` and `reattach`.
 Exit 0: everything was measured. Exit 1: an asserted fact failed. Exit 2: a
 scenario could not run.
 
@@ -78,9 +80,12 @@ ASSERTS: dict = {
     and f.get("columns_floating_sizes") == 0
     and f.get("covered_sizes") == 0
     and (f.get("uncover_sizes") or 0) <= 1,
+    "snapshot": lambda f: all(
+        (f.get(name) or {}).get("screen_equal") is True for name in ("reconnect", "wake", "reattach")
+    ),
 }
 # The asserts every run checks.
-DEFAULT_ASSERTS = ["size"]
+DEFAULT_ASSERTS = ["size", "snapshot"]
 
 HELPERS = """() => {
   window.__W = (id) => [...document.querySelectorAll('#stage .session-window')].find((w) => w._deskId === id) || null;

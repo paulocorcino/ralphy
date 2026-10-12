@@ -61,7 +61,7 @@ impl Liveness {
 
 /// Bridge one WebSocket to one daemon-owned session (the tmux model, #166).
 /// FIRST announces `session-open` with the hosting identity, then replays the
-/// scrollback snapshot and loops: session output (via the broadcast `rx`) →
+/// screen snapshot and loops: session output (via the broadcast `rx`) →
 /// `Frame::Terminal`; client `Frame::Terminal` → PTY stdin; client
 /// `Frame::Command{verb:"resize"}` → PTY resize. The loop breaks on client
 /// close/error, a send failure, an eviction (a `takeover` reattach OR the child
@@ -122,7 +122,7 @@ pub(crate) async fn session_ws(
             // Read-only from the start: this launch joined a session another
             // page drives (ADR-0050 amendment 2026-10-04).
             "watch": labels.watching,
-            // A scrollback replay follows. Read by a relaying daemon for its
+            // A replay (the screen snapshot) follows. Read by a relaying daemon for its
             // traffic summary; the page does not need it.
             "replay": !attach.snapshot.is_empty(),
         }),
@@ -136,7 +136,7 @@ pub(crate) async fn session_ws(
         return;
     }
 
-    // Replay the backlog first so a reattaching client sees history before the
+    // Replay the screen snapshot first so a reattaching client sees the screen before the
     // live stream resumes. Skip an empty snapshot (a fresh session).
     if !attach.snapshot.is_empty() {
         let frame = Frame::Terminal {
