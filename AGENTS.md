@@ -148,6 +148,22 @@ ubiquitous language, and each crate is roughly one bounded context.
   behavior, by [ADR-0022](./docs/adr/0022-file-split-conventions.md). A
   workbench module is cut by
   [ADR-0073](./docs/adr/0073-the-workbench-script-is-cut-into-alpine-components.md).
+- **Function complexity is measured by tools too.** A production function
+  may score 10: clippy's cognitive complexity in Rust, oxlint's `complexity`
+  in TypeScript. A function over 10 fails unless
+  `docs/complexity-baseline.json` lists it, and a listed function may only
+  go down. The local form (it needs `rustup toolchain install 1.98.0 -c
+  clippy`):
+
+  ```sh
+  cargo run -q -p xtask -- complexity --check --base main
+  ```
+
+  It also lists the functions at 7 to 10 in the files you changed: give a
+  new branch in one of them its own function. When the check fails, split
+  the function as a file is split above. When a function goes down, record
+  it with `complexity --bless` in the same change
+  ([ADR-0081](./docs/adr/0081-function-complexity-is-a-gate.md)).
 - **Comments state what the code cannot show:** an invariant, a measured fact
   (with the tool and version), a limit, or the ADR/issue that decided it. A
   comment does not describe the previous diff, the bug report, or a rejected

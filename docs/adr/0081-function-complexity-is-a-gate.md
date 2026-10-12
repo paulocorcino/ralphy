@@ -1,6 +1,6 @@
 # Function complexity is a gate
 
-Status: proposed
+Status: accepted
 Kind: process
 Protects: integrity of change, testability
 
@@ -45,11 +45,13 @@ measures `crates/ralphy-daemon/assets/ui` without `vendor/`, and does not
 measure `ui-tests/`.
 
 **D4. A committed baseline is the ratchet.** `docs/complexity-baseline.json`
-lists every function over the limit as path, function name, and value. A
-function is identified by its path with `/` separators, its name, and its
-position among the functions of the same name in that file. A line number is
-not part of the identity. The entries are sorted, so every platform writes
-the same file. The check fails when:
+lists every function over the limit by path, function name, and value. A
+function is identified by its path with `/` separators and its name. A Rust
+closure and a TypeScript function with no name are named `(anonymous)`. When
+a file has several functions of one name, their values are compared as a
+list sorted highest first. A line number is not part of the identity. The
+entries are sorted, so every platform writes the same file. The check fails
+when:
 
 1. a function over 10 has no entry in the baseline;
 2. a function's value is higher than its entry;
@@ -62,11 +64,14 @@ function, so it must be 10 or less.
 **D5. One command.** `cargo run -p xtask -- complexity --check` runs both
 tools and applies D4. `--bless` rewrites the baseline from the current code.
 A change uses `--bless` only to record a value that went down; a value that
-went up has already failed rule 2.
+went up has already failed rule 2. Locally the command runs oxlint through
+`npx`; `--oxlint <program>` replaces it, and CI passes the binary it pins
+by checksum.
 
-**D6. The near-limit list is printed, and does not fail.** The command also
-lists each function the current change touches that scores 7 to 10. This is
-the warning for the agent that runs the gate locally. It does not fail CI.
+**D6. The near-limit list is printed, and does not fail.** With `--base
+<rev>`, the command also lists the functions that score 7 to 10 in the
+files changed since `<rev>`. This is the warning for the agent that runs
+the gate locally. It does not fail CI.
 
 **D7. The tools are pinned in the step.** The CI step pins its Rust
 toolchain to an exact version instead of `stable`, and oxlint keeps its
@@ -85,8 +90,8 @@ issue when this ADR is accepted.
 
 ## Consequences
 
-- The `lint` job runs clippy a second time with other lint flags. The
-  dependencies stay cached; the workspace crates are checked again.
+- The `complexity` job runs clippy a second time, with its own pinned
+  toolchain and cache. The `lint` job keeps `stable`.
 - A change that touches a function on the baseline and makes it larger fails
   even when the new code is correct. The split is part of that change, by
   ADR-0022 §7.4.
@@ -122,9 +127,11 @@ issue when this ADR is accepted.
 ## Compliance
 
 - D1, D2, D3, D4: checked by `cargo run -p xtask -- complexity --check` in
-  the `lint` job of `.github/workflows/ci.yml`. Its rules are tested in
-  `crates/xtask/src/complexity.rs`.
-- D5, D6: checked by the tests of `crates/xtask/src/complexity.rs`.
-- D7: not checked by code: reviewed in the PR that changes the step.
+  the `complexity` job of `.github/workflows/ci.yml`. Its rules are tested
+  in `crates/xtask/src/complexity/tests.rs`.
+- D5, D6: checked by the tests in `crates/xtask/src/complexity/tests.rs`.
+- D7: checked by `ci_installs_the_pinned_tools`
+  (`crates/xtask/src/complexity/tests.rs`): `ci.yml` installs the toolchain
+  and the oxlint version that the xtask names.
 - D8: not checked by code: reviewed in the PR that changes AGENTS.md.
 - D9: not checked by code: the issues are opened by hand.

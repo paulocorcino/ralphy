@@ -15,6 +15,7 @@
 mod asset_pins;
 mod capabilities;
 mod changelog;
+mod complexity;
 mod oversized;
 mod release_cmds;
 mod ui_copy;
@@ -84,6 +85,7 @@ fn main() -> Result<()> {
         Some("capabilities") => capabilities::capabilities_cmd(&args[1..]),
         Some("vendor-lock") => vendor_lock::vendor_lock_cmd(&args[1..]),
         Some("oversized") => oversized::oversized_cmd(&args[1..]),
+        Some("complexity") => complexity::complexity_cmd(&args[1..]),
         _ => {
             eprintln!(
                 "usage: cargo run -p xtask -- <cmd>\n\
@@ -96,7 +98,8 @@ fn main() -> Result<()> {
                  ui-groups [--root <repo>] [--verbose]\n  \
                  capabilities --base <rev> [--head <rev>] [--repo <path>] [--github] [--check]\n  \
                  vendor-lock <out>\n  \
-                 oversized [--base <rev>]"
+                 oversized [--base <rev>]\n  \
+                 complexity --check | --bless [--base <rev>] [--oxlint <program>]"
             );
             std::process::exit(2);
         }
