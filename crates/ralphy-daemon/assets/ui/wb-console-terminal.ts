@@ -13,27 +13,21 @@
    `terminalGpu` in `wb-console-gpu.ts` (#621).
    --------------------------------------------------------------------------- */
 import { WBSessionRoute } from "./wb-session-route.ts";
-import { socketFrame } from "./wb-api.ts";
 import * as WBConsoleInput from "./wb-console-input.ts";
 import * as WBConsoleSession from "./wb-console-session.ts";
 import { wireTouch } from "./wb-console-touch.ts";
 import { wirePaste } from "./wb-console-paste.ts";
+import { wirePress } from "./wb-console-press.ts";
+import { createFit } from "./wb-console-fit.ts";
+import { readSocketEvent } from "./wb-console-frames.ts";
 import { terminalGpu } from "./wb-console-gpu.ts";
 import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
 import type { DetachReason } from "./wb-console-session.ts";
 import type { SessionRequest } from "./wb-session-route.ts";
+import type { FramePayload } from "./wb-console-frames.ts";
 import type { Group } from "./wb-fleet.ts";
 
-const {
-  dragThreshold,
-  dragBegins,
-  barKey,
-  applyCtrlLatch,
-  isTerminalReply,
-  pressRoute,
-  forceSelectionKeys,
-  holdMoveReport,
-} = WBConsoleInput;
+const { barKey, applyCtrlLatch, isTerminalReply } = WBConsoleInput;
 
 const {
   encodeTerminal,
@@ -42,8 +36,6 @@ const {
   endNotice,
   reconnectDecision,
   peerGate,
-  TAG_TERMINAL,
-  TAG_COMMAND,
 } = WBConsoleSession;
 
 // The terminal's surface, ADR-0035's palette. xterm.js takes no CSS variables
@@ -81,16 +73,6 @@ export type TerminalDeps = {
 
 // What a clipboard read gives: an image, or else text (`clipboardContent`).
 type ClipboardRead = { image?: Blob; text?: string };
-
-// The payload of the daemon's `session-end` and `session-open` frames.
-type FramePayload = NonNullable<Parameters<typeof WBSessionRoute.announcement>[1]> & {
-  reason?: string;
-  message?: unknown;
-  watch?: boolean;
-};
-
-// A command frame the daemon pushes on the session socket.
-type SessionFrame = { verb?: string; payload?: FramePayload };
 
 // What `attachTerminal` is built with, and what the chrome hands back to
 // rebuild a terminal after sleep (`TermWiring`).
@@ -153,8 +135,8 @@ export function createTerminal(deps: TerminalDeps) {
     // Option+drag selects on macOS while a TUI owns the mouse; Shift+drag is
     // xterm's default elsewhere (`shouldForceSelection`).
     term.options.macOptionClickForcesSelection = true;
-    const fit = new FitAddon.FitAddon();
-    term.loadAddon(fit);
+    const fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
     term.open(body);
     // The GPU addon: `terminalGpu`, wb-console-gpu.ts.
     const { useGpu, dropGpu } = terminalGpu(term);
@@ -163,7 +145,7 @@ export function createTerminal(deps: TerminalDeps) {
     // The touch gesture and the line selection: wb-console-touch.ts.
     const touch = wireTouch({ term, body, stage, workspace, cancelSlide, opts });
     const { setSelecting, stopFling, stopScroll } = touch;
-    fit.fit();
+    fitAddon.fit();
 
     // The image paste, OSC 52 and the right button: wb-console-paste.ts.
     const { dropImage } = wirePaste({
@@ -178,119 +160,10 @@ export function createTerminal(deps: TerminalDeps) {
       currentRepoNow: () => currentRepo,
     });
 
-    // Ctrl+Insert copies the selection. NOT Ctrl+Shift+C: on Chrome/Edge that
-    // is the DevTools accelerator and a page cannot take it back. Ctrl+C
-    // belongs to the child.
-    term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
-      // Alt+Shift+arrows in a column walk the columns and their rows (ADR-0051
-      // §5): xterm must not send them to the child, and the document listener
-      // of the columns (wb-consoles-tab.ts) takes them.
-      if (
-        e.altKey &&
-        e.shiftKey &&
-        !e.ctrlKey &&
-        !e.metaKey &&
-        /^Arrow(Left|Right|Up|Down)$/.test(e.code) &&
-        body.closest(".session-window")?.classList.contains("column")
-      ) {
-        return false;
-      }
-      // Alt+Shift+R and Alt+Shift+<digit> open a console from inside a
-      // terminal too. Only where the console menus' document listener exists
-      // (wb-consoles-tab.ts, on the page with a shell): a
-      // detached popup has none, so its terminal keeps the key.
-      if (
-        e.altKey &&
-        e.shiftKey &&
-        !e.ctrlKey &&
-        !e.metaKey &&
-        /^(?:Digit\d|KeyR)$/.test(e.code) &&
-        typeof window.getShell === "function"
-      ) {
-        return false;
-      }
-      if (e.type !== "keydown" || !e.ctrlKey || e.shiftKey || e.altKey) return true;
-      if (e.key !== "Insert" || !term.hasSelection()) return true;
-      writeClipboard(term.getSelection(), term);
-      return false;
-    });
-    // `pressRoute`, applied. The held press is REPLAYED to xterm as a
-    // synthetic event: with the force-selection key once it turns into a
-    // drag, or as itself (then the release) once it ends in place. The
-    // replays are marked so this listener lets them through. The real release
-    // is stopped: xterm adds its `mouseup` listener to the document during the
-    // replayed press, and the real release would report a second time.
-    const replayed = new WeakSet<Event>();
-    const replay = (target: EventTarget | null, type: string, from: MouseEvent, keys: { altKey?: boolean; shiftKey?: boolean }) => {
-      const ev = new MouseEvent(type, {
-        bubbles: true,
-        cancelable: true,
-        view: from.view,
-        clientX: from.clientX,
-        clientY: from.clientY,
-        screenX: from.screenX,
-        screenY: from.screenY,
-        button: 0,
-        buttons: type === "mousedown" ? 1 : 0,
-        // xterm's selection starts only on `detail === 1` (a single click).
-        detail: 1,
-        ...keys,
-      });
-      replayed.add(ev);
-      // The press came from a node inside the terminal (the `contains` test).
-      target!.dispatchEvent(ev);
-    };
-    body.addEventListener(
-      "mousedown",
-      (e: MouseEvent) => {
-        if (replayed.has(e) || !term.element?.contains(e.target as Node)) return;
-        const modified = e.shiftKey || e.altKey || e.ctrlKey || e.metaKey;
-        if (pressRoute(term.modes.mouseTrackingMode, e.button, modified) !== "hold") return;
-        e.stopPropagation();
-        e.preventDefault();
-        term.focus();
-        const doc = body.ownerDocument;
-        const start = { x: e.clientX, y: e.clientY };
-        const end = () => {
-          doc.removeEventListener("mousemove", onMove, true);
-          doc.removeEventListener("mouseup", onUp, true);
-        };
-        const onMove = (m: MouseEvent) => {
-          if (!dragBegins(start, { x: m.clientX, y: m.clientY }, dragThreshold("mouse"))) return;
-          end();
-          // The selection service is disabled under tracking, so it does not
-          // extend an old selection; a new drag replaces it.
-          term.clearSelection();
-          replay(e.target, "mousedown", e, forceSelectionKeys(navigator.platform || navigator.userAgent));
-        };
-        const onUp = (u: MouseEvent) => {
-          end();
-          u.stopPropagation();
-          replay(e.target, "mousedown", e, {});
-          replay(e.target, "mouseup", u, {});
-        };
-        doc.addEventListener("mousemove", onMove, true);
-        doc.addEventListener("mouseup", onUp, true);
-      },
-      true,
-    );
-    body.addEventListener(
-      "mousemove",
-      (e: MouseEvent) => {
-        if (holdMoveReport(term.modes.mouseTrackingMode, term.hasSelection(), e.buttons)) {
-          e.stopPropagation();
-        }
-      },
-      true,
-    );
-    // Refit whenever THIS window's body changes size. The only ResizeObserver
-    // in the file; it resizes a TERMINAL, never a window rect (#336).
-    const ro = new ResizeObserver(() => {
-      try {
-        fit.fit();
-      } catch {}
-    });
-    ro.observe(body);
+    // The keyboard and mouse rules: wb-console-press.ts.
+    wirePress({ term, body, window, writeClipboard });
+    // Refit whenever THIS window's body changes size, and send the size: wb-console-fit.ts.
+    const { fit, dispose: stopFit } = createFit({ term, body, fitAddon, socket: () => ws });
 
     let currentSessionId = opts.id ?? null;
     let currentRepo = opts.repo ?? null;
@@ -359,7 +232,7 @@ export function createTerminal(deps: TerminalDeps) {
       ended = true;
       // Stop observing so a dead-ws terminal doesn't keep firing fit() until the
       // window is closed.
-      ro.disconnect();
+      stopFit();
       term.write("\r\n" + endNotice(announced, refusal) + "\r\n");
       if (typeof opts.onEnded === "function") opts.onEnded(announced, refusal);
     }
@@ -416,55 +289,56 @@ export function createTerminal(deps: TerminalDeps) {
         ws!.send(encodeResize(term.rows, term.cols));
       };
       ws.onmessage = (ev: MessageEvent) => {
-        const a = new Uint8Array(ev.data);
-        if (a[0] === TAG_TERMINAL) {
-          if (currentSessionId == null) {
-            currentSessionId = Number(
-              new DataView(a.buffer, a.byteOffset + 1, 8).getBigUint64(0),
+        const event = readSocketEvent(new Uint8Array(ev.data));
+        switch (event.kind) {
+          case "output":
+            if (currentSessionId == null) {
+              currentSessionId = event.sessionId;
+              // A fresh launch's id is only known now; the chrome records under it.
+              if (typeof opts.onSession === "function") opts.onSession(currentSessionId);
+            }
+            // The callback tells the OSC 52 handler the replay is behind us.
+            term.write(
+              event.bytes,
+              replaying
+                ? () => {
+                    replaying = false;
+                  }
+                : undefined,
             );
-            // A fresh launch's id is only known now; the chrome records under it.
-            if (typeof opts.onSession === "function") opts.onSession(currentSessionId);
-          }
-          // The callback tells the OSC 52 handler the replay is behind us.
-          term.write(
-            a.subarray(9),
-            replaying
-              ? () => {
-                  replaying = false;
-                }
-              : undefined,
-          );
-        } else if (a[0] === TAG_COMMAND) {
-          // The daemon's deliberate-end announcement, sent as DATA before the
-          // Close frame: the close metadata does not survive the trip (#334).
-          let c: SessionFrame | null = null;
-          try {
-            c = socketFrame<SessionFrame>(a);
-          } catch {}
-          if (c && c.verb === "session-open") {
+            return;
+          case "open": {
             const owner = WBSessionRoute.announcement(
               {
                 sessionId: currentSessionId,
                 daemonId: currentDaemonId,
                 environment: currentEnvironment,
               },
-              c.payload,
+              event.payload,
             );
             currentSessionId = owner.sessionId;
             currentDaemonId = owner.daemonId;
             currentEnvironment = owner.environment;
             if (typeof opts.onSession === "function")
-              opts.onSession(currentSessionId, c.payload);
+              opts.onSession(currentSessionId, event.payload);
             // A launch that joined a session another page drives is read-only
             // from the start; the daemon says so here.
-            if (c.payload?.watch === true && !watching) {
+            if (event.payload?.watch === true && !watching) {
               watching = true;
               term.write("\r\n[read-only: another window has control]\r\n");
               if (typeof opts.onPark === "function") opts.onPark("joined");
             }
-          } else if (c && c.verb === "session-end") {
-            announced = c.payload?.reason ?? "child-exited";
-            refusal = typeof c.payload?.message === "string" ? c.payload.message : null;
+            return;
+          }
+          case "end":
+            announced = event.reason;
+            refusal = event.message;
+            return;
+          case "other":
+            return;
+          default: {
+            const unreachable: never = event;
+            return unreachable;
           }
         }
       };
@@ -536,10 +410,6 @@ export function createTerminal(deps: TerminalDeps) {
     term.onData((d) => {
       if (replaying && isTerminalReply(d)) return;
       sendInput(d);
-    });
-    term.onResize(({ rows, cols }) => {
-      if (ws && ws.readyState === WebSocket.OPEN)
-        ws.send(encodeResize(rows, cols));
     });
 
     if (peerGate({ decision: "connect", group: peerGroup(), id: opts.id }) === "hold") hold(peerGroup());
@@ -678,7 +548,7 @@ export function createTerminal(deps: TerminalDeps) {
           clearTimeout(retryTimer);
           retryTimer = null;
         }
-        ro.disconnect();
+        stopFit();
         // A glide or a pending scroll would call `scrollLines` on a disposed
         // terminal.
         stopFling();

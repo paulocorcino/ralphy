@@ -3132,7 +3132,7 @@ fn the_console_clipboard_is_write_only_and_refused_on_replay() {
         // The read form is refused, never answered.
         "payload === \"?\"",
         // The replay gate, and the write callback that is the ONLY correct
-        // way to clear it — reverting to a bare `term.write(a.subarray(9))`
+        // way to clear it — reverting to a bare `term.write(event.bytes)`
         // reintroduces the clipboard clobber with every other pin still green.
         "replaying = connOpts.id != null",
         // Whose clipboard it is: not every attached window's.
@@ -3150,7 +3150,7 @@ fn the_console_clipboard_is_write_only_and_refused_on_replay() {
     // declaration `let replaying = false;` does not match it.
     let flat: String = js.split_whitespace().collect();
     assert!(
-        flat.contains("term.write(a.subarray(9),replaying?()=>{replaying=false;}:undefined"),
+        flat.contains("term.write(event.bytes,replaying?()=>{replaying=false;}:undefined"),
         "the terminal must clear the replay gate in the replay's write callback"
     );
     // The read property. The clipboard is read only inside an operator's
@@ -3736,6 +3736,14 @@ const CONSOLE_FAMILY: &[(&str, &str)] = &[
         include_str!("../assets/ui/wb-console-feeds.ts"),
     ),
     (
+        "wb-console-fit.ts",
+        include_str!("../assets/ui/wb-console-fit.ts"),
+    ),
+    (
+        "wb-console-frames.ts",
+        include_str!("../assets/ui/wb-console-frames.ts"),
+    ),
+    (
         "wb-console-gpu.ts",
         include_str!("../assets/ui/wb-console-gpu.ts"),
     ),
@@ -3758,6 +3766,10 @@ const CONSOLE_FAMILY: &[(&str, &str)] = &[
     (
         "wb-console-placeholder.ts",
         include_str!("../assets/ui/wb-console-placeholder.ts"),
+    ),
+    (
+        "wb-console-press.ts",
+        include_str!("../assets/ui/wb-console-press.ts"),
     ),
     (
         "wb-console-session.ts",
@@ -4431,6 +4443,9 @@ fn every_shell_tag_resolves_and_every_asset_is_reachable() {
                 "wb-console-session.js",
                 "wb-desk-folds.js",
                 "wb-console-gpu.js",
+                "wb-console-fit.js",
+                "wb-console-frames.js",
+                "wb-console-press.js",
                 "wb-console-terminal.js",
                 "wb-console-touch.js",
                 "wb-console-paste.js",

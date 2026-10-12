@@ -224,8 +224,8 @@ const PEER_REPLY_TYPES: &[(&str, &str)] = &[
     ("wb-api.ts", "AgentRow"),
     ("wb-changes.ts", "ChangeRow"),
     ("wb-changes.ts", "SyncBody"),
-    ("wb-console-terminal.ts", "FramePayload"),
-    ("wb-console-terminal.ts", "SessionFrame"),
+    ("wb-console-frames.ts", "FramePayload"),
+    ("wb-console-frames.ts", "SessionFrame"),
     ("wb-kanban.ts", "BoardLabel"),
     ("wb-kanban.ts", "BoardRow"),
     ("wb-kanban.ts", "IssueComment"),
@@ -255,7 +255,7 @@ const NOT_PEER_REPLIES: &[(&str, &str, &str)] = &[
 /// `(PEER_PROTOCOL_VERSION, hash of PEER_REPLY_TYPES)`. Version 4 pays for
 /// the fields that version 3 got with no raise: `file.read`'s `encoding` and
 /// `bom`, and the `char_index` of a refused write (#653).
-const PEER_REPLY_PIN: (u32, u64) = (4, 0xfdaa_c9b2_6860_c15a);
+const PEER_REPLY_PIN: (u32, u64) = (4, 0x5fc9_4a75_e210_ef36);
 
 /// Where `PEER_PROTOCOL_VERSION` is, from the repo root.
 const PEER_RS: &str = "crates/ralphy-daemon/src/peer.rs";
