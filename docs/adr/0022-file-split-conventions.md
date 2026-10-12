@@ -97,7 +97,7 @@ not a gate: a split is a refactor, and it never blocks a delivery.
 change touches a listed file reports it with the responsibilities a split
 could follow, and a human decides when to split, often as its own issue.
 Measured on the day: 22 of the 27 files over 500 production lines were under
-500 lines of code.
+500 lines of code. *Replaced by §7 (2026-10-12): the threshold is a gate.*
 
 ### 6. The inline-test budget (amendment, 2026-09-23)
 
@@ -110,6 +110,48 @@ found. `ralphy-daemon/src/lib.rs` reached 178 production lines under an
 `foo.rs`, or `src/tests.rs` for a crate root — as a pure move that touches no
 production code. The budget is enforced, not remembered:
 `crates/xtask/tests/inline_test_modules.rs` fails CI naming each module over it.
+
+### 7. The size limit is a gate (amendment, 2026-10-12)
+
+The line ratchets of ADR-0073 D8 held `app.ts` and `wb-console.ts` while
+they were cut, and they did their work: `app.ts` went from 7,155 to 339
+lines, and `wb-console.ts` from 6,789 to 488. After the cut, an exact count
+on two small files only makes a change put its code in another file to keep
+the count the same. The recommendation of §5 had the opposite problem:
+nothing stopped a file from growing, so each split waited for a human.
+
+1. **The limits.** A Rust file may have 500 lines of code, and a TypeScript
+   file 700 (the module size of ADR-0073, its 2026-10-11 amendment). Lines
+   of code are counted as in §5: comment lines, blank lines and the inline
+   test module (it has its own budget, §6) do not count. A line that starts
+   a `/* … */` block, and each line inside the block, is a comment too.
+2. **Every source file.** Every `.rs` and `.ts` file under `crates/` is
+   measured, test code included: `tests/`, `tests.rs`, test child binaries
+   and `.d.ts` files. `vendor/`, `node_modules/` and `target/` are not.
+3. **The base branch is the baseline.** A pull request fails when a file
+   over its limit has more lines of code than on the base branch. So a new
+   file over the limit fails, a file that grows past the limit fails, and an
+   old large file that grows fails. An old large file may keep its size or
+   shrink. No list of large files is kept by hand, so there is no number for
+   a change to raise. A file moved to a new path is a new file there.
+4. **Build first; the gate decides when to split.** A change is not planned
+   around the limit. When the gate fails, the split is part of the change,
+   not a change of scope: along a responsibility the file already has (§5),
+   in its own commit that changes no behavior.
+5. **What it replaces.** The recommendation of the §5 amendment, D8 of
+   ADR-0073, and decision 3 of its 2026-10-11 amendment: the exact ratchets
+   `APP_TS_LINES`, `WB_CONSOLE_TS_LINES`, `WB_NOTES_TS_LINES` and
+   `TS_SIZE_BASELINE` are gone.
+
+Measured on `b199d7e6` with `cargo run -p xtask -- oversized`: 29 files are
+over their limit, and 25 of them are test files. The largest are
+`ralphy-daemon/src/tests.rs` (7,265 lines of code) and `wb-file-viewer.ts`
+(1,231). A test added to one of these files fails the gate, so it goes into
+a new file, or the old file is split first.
+
+The count does not see code that is joined onto fewer lines. `cargo fmt` in
+the gate stops this in Rust. The TypeScript has no formatter in the gate, so
+joined lines there are found in review.
 
 ## Consequences
 
@@ -125,10 +167,10 @@ production code. The budget is enforced, not remembered:
 
 ## Compliance
 
-- The 500-line threshold (§5 amendment): reported, not checked.
-  `cargo run -p xtask -- oversized` lists the files over it, and the
-  `oversized` job in `.github/workflows/ci.yml` warns on each one a pull
-  request touches. It never fails.
+- §7: checked by `cargo run -p xtask -- oversized --base <rev>`, which the
+  `oversized` job in `.github/workflows/ci.yml` runs on each pull request
+  against its base branch. With no argument, the command lists the files
+  over their limit. Its rules are tested in `crates/xtask/src/oversized.rs`.
 
 - §1: not checked by code: reviewed in the PR. One legacy `mod.rs` remains
   (`crates/ralphy-cli/src/events/mod.rs`).

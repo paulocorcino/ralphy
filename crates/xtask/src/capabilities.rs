@@ -260,7 +260,7 @@ fn to_markdown(findings: &[Finding]) -> String {
     out
 }
 
-fn git(repo: &Path, args: &[&str]) -> Result<String> {
+pub(crate) fn git(repo: &Path, args: &[&str]) -> Result<String> {
     let out = Command::new("git")
         .arg("-C")
         .arg(repo)
@@ -278,12 +278,14 @@ fn git(repo: &Path, args: &[&str]) -> Result<String> {
 }
 
 /// A file at a revision, or an empty string when the file does not exist there.
-fn git_show(repo: &Path, rev: &str, path: &str) -> Result<String> {
+pub(crate) fn git_show(repo: &Path, rev: &str, path: &str) -> Result<String> {
     let spec = format!("{rev}:{path}");
     let exists = Command::new("git")
         .arg("-C")
         .arg(repo)
         .args(["cat-file", "-e", &spec])
+        // A missing file is an answer here, not an error to print.
+        .stderr(std::process::Stdio::null())
         .status()
         .with_context(|| format!("running git cat-file -e {spec}"))?;
     if !exists.success() {

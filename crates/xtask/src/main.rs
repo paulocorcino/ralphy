@@ -96,7 +96,7 @@ fn main() -> Result<()> {
                  ui-groups [--root <repo>] [--verbose]\n  \
                  capabilities --base <rev> [--head <rev>] [--repo <path>] [--github] [--check]\n  \
                  vendor-lock <out>\n  \
-                 oversized"
+                 oversized [--base <rev>]"
             );
             std::process::exit(2);
         }

@@ -1,7 +1,6 @@
 // The types only the shell (`app.ts`) reads. It also re-exports the types of
 // other modules that the shell names, so `app.ts` imports all of them on one
-// line: `app.ts` has an exact line ratchet (`APP_TS_LINES` in
-// `crates/xtask/tests/ratchets.rs`). Only `app.ts` imports from here. A type
+// line. Only `app.ts` imports from here. A type
 // that a second module reads goes in `wb-types.d.ts`, and any other module
 // imports a type from the module that declares it. Types only: the build
 // skips a `.d.ts` file, so `app.ts` imports from here with `import type`

@@ -99,7 +99,8 @@ becomes a factory that receives that object, in its own file. The public
 **D8. The two large files may only get smaller.** After the first cut of a
 file ships, a ratchet holds its line count. A change that adds lines to
 `app.js` or `wb-console.js` fails, and a change that removes lines lowers the
-baseline in the same change.
+baseline in the same change. *Replaced (2026-10-12) by ADR-0022 §7: one size
+limit for every source file, with the base branch as the baseline.*
 
 **D9. `index.html` stays one file.** ADR-0057 D6 holds. A component changes
 only the markup of its own feature: its `x-data` element, and the names its
@@ -214,9 +215,7 @@ change to modules is mechanical.
 - D5: not checked by code: reviewed in the PR.
 - D6: not checked by code: reviewed in the PR, against the fact index.
 - D7: not checked by code until its pilot ships. The pilot adds the check.
-- D8: checked by `crates/xtask/tests/ratchets.rs` as a ratchet (added by the
-  first cut of each file): the baseline is the line count of `app.js` and
-  `wb-console.js`, and the check fails if a count goes up.
+- D8: replaced by ADR-0022 §7, and checked as it says.
 - D9: not checked by code: reviewed in the PR (as ADR-0057 D6).
 
 ## Amendment (2026-10-05): the pilot result, and phase 2 as measured
@@ -624,7 +623,9 @@ returned object. Ten workbench modules have more than 700 lines: `app.ts`
    it. `app.ts`, `wb-console.ts` and `wb-notes.ts` are listed through their
    D8 constants, so each count has one constant. `wb-console.ts` stays
    listed at about 900. `workbench_ts_modules_stay_small` in
-   `crates/xtask/tests/ratchets.rs` holds the rule.
+   `crates/xtask/tests/ratchets.rs` holds the rule. *Replaced (2026-10-12)
+   by ADR-0022 §7: the limit stays 700, counted as lines of code, and the
+   base branch is the baseline instead of `TS_SIZE_BASELINE`.*
 
 4. **The pins on console text read the whole console family.** The console
    family is every module named `wb-console.ts`, `wb-console-*.ts`,
