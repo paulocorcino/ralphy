@@ -39,9 +39,10 @@ export function wbBranchDialog() {
       // older peer sends none).
       worktrees: {} as Record<string, string>,
     },
-    // A `worktree.remove` in flight, per repo ref: the chip's menu greys the
-    // row and a second click is ignored until the re-read lands.
-    worktreeRemoving: {} as Record<string, string>,
+    // The `worktree.remove` calls in flight, per repo ref: a second delete of
+    // the same worktree is ignored until its re-read lands; another worktree
+    // of the same repo can be deleted at the same time.
+    worktreeRemoving: {} as Record<string, string[]>,
 
     init() {
       window.addEventListener("workbench:branch-open", (e) => this.openBranchModal(e.detail.project));
@@ -202,14 +203,14 @@ export function wbBranchDialog() {
       this.closeBranchModal();
     },
 
-    // The chip menu's trash action: `worktree.remove` (#409). The listing is
-    // the truth on every path (a `branch kept` reply is an error whose
-    // directory is gone), so the selection resets from the re-read
-    // (`checkoutAfterListing`), never from the reply's status. A refusal lands
-    // verbatim in a notice with one OK: the menu it came from has closed.
-    // A cancel makes NO daemon call.
+    // The chip menu's trash action: `worktree.remove` (#409). The row leaves
+    // the listing at once; the re-read after the reply is the truth, so the
+    // selection resets from it (`checkoutAfterListing`), never from the
+    // reply's status. Only a refusal that kept the worktree opens a notice
+    // with one OK: the menu it came from has closed. A worktree that is gone
+    // with its branch kept is a flash. A cancel makes NO daemon call.
     async removeWorktree(slug: string, w: CheckoutRow) {
-      if (!slug || !w || w.primary || this.worktreeRemoving[slug]) return;
+      if (!slug || !w || w.primary || this._removing(slug, w.name)) return;
       const ok = await this.$store.modals.askConfirm({
         title: `Delete worktree ${w.name}?`,
         message:
@@ -218,30 +219,38 @@ export function wbBranchDialog() {
         confirmLabel: "Delete",
         danger: true,
       });
-      if (!ok || this.worktreeRemoving[slug]) return;
-      this.worktreeRemoving = { ...this.worktreeRemoving, [slug]: w.name };
-      const refused = (message: string) =>
-        window.WBConsole.askNotice({ title: `Could not delete worktree ${w.name}`, message });
+      if (!ok || this._removing(slug, w.name)) return;
+      this._setRemoving(slug, w.name, true);
+      this.$store.checkouts.hideWorktree(slug, w.name);
+      let failure: string | null = null;
       try {
         const reply = await window.WBDaemon.observe("worktree.remove", { repo: slug, name: w.name });
-        if (WBFail.isError(reply)) {
-          refused(WBFail.cause(reply, "The daemon refused to delete the worktree."));
-        } else {
-          this.$store.modals.flash(`Worktree ${w.name} deleted`);
-        }
+        if (WBFail.isError(reply)) failure = WBFail.cause(reply, "The daemon refused to delete the worktree.");
       } catch {
-        refused("Could not reach the daemon. Check whether the worktree was deleted.");
-      } finally {
-        await this.$store.checkouts.ensureWorktreeListing(slug, true);
-        const ck = this.$store.checkouts.checkoutOf(slug);
-        if (ck && WBProject.checkoutAfterListing(ck, this.$store.checkouts.worktreeListings[slug]) === null) {
-          this.$store.checkouts.checkoutGone(slug, ck);
-        }
-        // Cleared last: no entry means the re-read landed too.
-        const next = { ...this.worktreeRemoving };
-        delete next[slug];
-        this.worktreeRemoving = next;
+        failure = "Could not reach the daemon. Check whether the worktree was deleted.";
       }
+      this.$store.checkouts.unhideWorktree(slug, w.name);
+      await this.$store.checkouts.ensureWorktreeListing(slug, true);
+      this._reportRemoval(slug, w.name, failure);
+      // Cleared last: no entry means the re-read landed too.
+      this._setRemoving(slug, w.name, false);
+    },
+    _removing(slug: string, name: string) {
+      return (this.worktreeRemoving[slug] || []).includes(name);
+    },
+    _setRemoving(slug: string, name: string, on: boolean) {
+      const rest = (this.worktreeRemoving[slug] || []).filter((n) => n !== name);
+      this.worktreeRemoving = { ...this.worktreeRemoving, [slug]: on ? [...rest, name] : rest };
+    },
+    // After the re-read: a worktree still listed was refused; a listing that
+    // could not be read says nothing, so the reply decides.
+    _reportRemoval(slug: string, name: string, failure: string | null) {
+      const listing = this.$store.checkouts.worktreeListings[slug];
+      const ck = this.$store.checkouts.checkoutOf(slug);
+      if (ck && WBProject.checkoutAfterListing(ck, listing) === null) this.$store.checkouts.checkoutGone(slug, ck);
+      const kept = !listing || listing.worktrees.some((x) => x && x.name === name);
+      if (failure && kept) window.WBConsole.askNotice({ title: `Could not delete worktree ${name}`, message: failure });
+      else this.$store.modals.flash(failure || `Worktree ${name} deleted`);
     },
 
     // Await a `branch.*` Mutate; on a `{status:"error"}` refusal (a held

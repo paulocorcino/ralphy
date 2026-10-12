@@ -2,6 +2,7 @@
 
 Status: accepted
 Amended 2026-10-12 (Rust is scored from the source text, not by clippy).
+Amended 2026-10-12 (a ceiling on the baseline goes down to 15).
 Kind: process
 Protects: integrity of change, testability
 
@@ -137,7 +138,9 @@ issue when this ADR is accepted.
 - Amendment A1, A3: the scoring rules and the module walk are tested in
   `crates/xtask/src/complexity/cognitive/tests.rs`.
 - D8: not checked by code: reviewed in the PR that changes AGENTS.md.
-- D9: not checked by code: the issues are opened by hand.
+- D9 (as amended by A4–A7): A5 is checked by `complexity --check`, and its
+  rule is tested in `crates/xtask/src/complexity/tests.rs`. The issue of
+  each step (A6) is opened by hand.
 
 ## Amendment 2026-10-12 — Rust is scored from the source text
 
@@ -176,3 +179,50 @@ its `select!` sits inside a `loop` and every level of nesting costs more;
 `verify_gate`, at 99 with clippy, scores 33. D9 now covers the twelve
 functions at 51 or more. The `complexity` job runs in seconds instead of
 running clippy a second time.
+
+## Amendment 2026-10-12 — a ceiling on the baseline goes down to 15
+
+D9 opens issues for the functions at 51 or more, but nothing stops the work
+there, and nothing says where it ends. The baseline on `50f1be4a` lists 292
+functions over 10:
+
+| Score | Rust | TypeScript | Total |
+|---|---|---|---|
+| 51 or more | 12 | 0 | 12 |
+| 41–50 | 3 | 1 | 4 |
+| 31–40 | 16 | 6 | 22 |
+| 21–30 | 28 | 16 | 44 |
+| 16–20 | 40 | 29 | 69 |
+| 11–15 | 79 | 62 | 141 |
+
+**A4. Replaces D9. The target for code on the baseline is 15, in both
+languages.** 15 is the default limit of the SonarSource rule for cognitive
+complexity. A function at 11 to 15 stays on the baseline. It goes down to 10
+when a change edits it for another reason. D2 does not change: a function
+that is not on the baseline must be 10 or less.
+
+**A5. The baseline has a ceiling.** `docs/complexity-baseline.json` records
+one ceiling for both languages. The check fails when a function on the
+baseline scores more than the ceiling. This is a fourth rule of D4. The
+ceiling only goes down, as the values of D4 do.
+
+**A6. The ceiling goes down in four steps, when the work of a step is
+done.** Each step is one issue, cut into sub-issues by file:
+
+| Step | Functions | Ceiling when the step closes |
+|---|---|---|
+| 1 | the 12 at 51 or more (#709) | 50 |
+| 2 | the 26 at 31–50 | 30 |
+| 3 | the 44 at 21–30 | 20 |
+| 4 | the 69 at 16–20 | 15 |
+
+The commit that closes a step lowers the ceiling and runs `--bless`. A step
+has no date. A date would push a function into helpers that follow no
+responsibility, and ADR-0022 §7.4 asks for a split along a responsibility the
+function already has.
+
+**A7. The ceiling is the same number for two measures.** The Rust score is
+cognitive complexity and the TypeScript score is modified cyclomatic
+complexity, so 15 in one language is not 15 in the other. One number keeps
+the rule simple. The measured TypeScript maximum is 43, so TypeScript enters
+the work at step 2.

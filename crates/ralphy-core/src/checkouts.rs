@@ -366,6 +366,11 @@ pub fn remove(start: &Path, name: &str) -> Result<()> {
         }
         .into());
     }
+    // Only the branch `add` made is deleted: a branch the worktree was switched
+    // to is the operator's own, and a branch already gone leaves nothing to do.
+    if !branch_exists(primary, name)? {
+        return Ok(());
+    }
     let out = raw(primary, &["branch", "-d", name])?;
     if out.status.success() {
         return Ok(());
@@ -423,15 +428,26 @@ fn branch_kept_why(primary: &Path, name: &str, base: &str, git_stderr: &str) -> 
 /// the primary's HEAD, not the base the branch was cut from — and at every
 /// call site the branch has no commit of its own, so nothing is lost.
 fn delete_branch_best_effort(primary: &Path, name: &str) {
-    let ref_name = format!("refs/heads/{name}");
-    match raw(primary, &["show-ref", "--verify", "--quiet", &ref_name]) {
-        Ok(out) if out.status.success() => {
+    match branch_exists(primary, name) {
+        Ok(true) => {
             if let Err(rm) = git(primary, &["branch", "-D", name]) {
                 tracing::warn!(error = %rm, branch = name, "could not roll back the branch");
             }
         }
-        Ok(_) => {}
+        Ok(false) => {}
         Err(e) => tracing::warn!(error = %e, branch = name, "could not probe the branch"),
+    }
+}
+
+/// Whether `refs/heads/<name>` exists. `show-ref --verify --quiet` exits 1 for
+/// a missing ref; any other failure is an error.
+fn branch_exists(primary: &Path, name: &str) -> Result<bool> {
+    let ref_name = format!("refs/heads/{name}");
+    let out = raw(primary, &["show-ref", "--verify", "--quiet", &ref_name])?;
+    match out.status.code() {
+        Some(0) => Ok(true),
+        Some(1) => Ok(false),
+        _ => bail!("probing {ref_name} failed: {}", one_line(&out.stderr)),
     }
 }
 

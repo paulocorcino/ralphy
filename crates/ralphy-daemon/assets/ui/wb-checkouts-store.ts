@@ -43,6 +43,10 @@ export function checkoutsStore(deps: CheckoutsStoreDeps) {
     checkouts: {} as Record<string, string>,
     // The newest `worktree.list` read: a reply of an older one is dropped.
     _listingSeq: 0,
+    // Worktrees per ref whose delete is in flight: every listing leaves them
+    // out until their own delete settles, so the re-read of another delete
+    // does not bring them back.
+    _hidden: {} as Record<string, string[]>,
     // A refused `branch.switch`/`branch.create`, held until the next branch act
     // or a project switch. Not `treeError` (the tree is fine) and not
     // `changesError` (the chip lives in THIS panel). The branch dialog
@@ -151,10 +155,23 @@ export function checkoutsStore(deps: CheckoutsStoreDeps) {
         if (reply && reply.status === "ok") listing = reply.checkouts || null;
       } catch {}
       if (seq !== this._listingSeq) return; // superseded → the newer read owns it
-      if (listing || force) {
-        this.worktreeListings = { ...this.worktreeListings, [ref]: listing };
-        window.WBConsole?.ingestWorktrees?.(ref, listing);
-      }
+      if (listing || force) this._storeListing(ref, listing);
+    },
+    _storeListing(ref: string, listing: Listing | null) {
+      const hidden = this._hidden[ref] || [];
+      const shown = listing && hidden.length ? { ...listing, worktrees: listing.worktrees.filter((w) => !hidden.includes(w.name)) } : listing;
+      this.worktreeListings = { ...this.worktreeListings, [ref]: shown };
+      window.WBConsole?.ingestWorktrees?.(ref, shown);
+    },
+    // A delete of `name` started: the listing leaves it out at once.
+    hideWorktree(ref: string, name: string) {
+      this._hidden = { ...this._hidden, [ref]: [...(this._hidden[ref] || []), name] };
+      const listing = this.worktreeListings[ref];
+      if (listing) this._storeListing(ref, listing);
+    },
+    // The delete of `name` settled: the next listing shows it if it is there.
+    unhideWorktree(ref: string, name: string) {
+      this._hidden = { ...this._hidden, [ref]: (this._hidden[ref] || []).filter((n) => n !== name) };
     },
     // Copy the desk mirror's selections into the reactive map once the desk
     // has landed (boot, and again after a login under the `Session` policy),
