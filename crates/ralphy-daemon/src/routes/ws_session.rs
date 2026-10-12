@@ -55,6 +55,10 @@ pub(crate) struct SessionQuery {
     /// session may send the replay frame gzipped (ADR-0079 D9). Live frames
     /// are never compressed.
     pub(crate) gzip: Option<u32>,
+    /// The tab's attempt number for this claim, beside `holder`: it only grows
+    /// per holder, so a lower one than the slot's writer is a late socket the
+    /// tab already replaced (ADR-0079 D7). Ignored without a holder.
+    pub(crate) attempt: Option<u64>,
 }
 
 /// The shape of a `holder` and of a `record`: 1–64 ASCII letters, digits, `-`

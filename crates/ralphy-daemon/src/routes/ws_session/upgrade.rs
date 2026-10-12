@@ -51,7 +51,9 @@ use crate::{agent_state, auth, checkout, confine, fleet, peer, registry, session
 /// A NEW launch is refused after the upgrade, by a `session-end` frame with
 /// `reason: "refused"` and the reason as `message` ([`Refuser`]); the browser
 /// cannot read the body of a refused upgrade, and a new launch has no id to
-/// retry. A reattach keeps the HTTP statuses above.
+/// retry. A reattach keeps the HTTP statuses above, except a claim that a
+/// newer attempt of the same holder superseded: on any shape it upgrades and
+/// ends with `reason: "superseded"`, and nobody is evicted (ADR-0079 D7).
 pub(crate) async fn session_ws_upgrade(
     ws: WebSocketUpgrade,
     Query(mut query): Query<SessionQuery>,
@@ -162,13 +164,13 @@ pub(crate) async fn session_ws_upgrade(
                 Err(session::AttachError::Unknown) => {
                     refuser.refuse(ws, StatusCode::NOT_FOUND, "unknown session")
                 }
-                Err(session::AttachError::Busy) => {
+                Err(session::AttachError::Busy | session::AttachError::Superseded) => {
                     refuser.refuse(ws, StatusCode::CONFLICT, "session busy")
                 }
             };
         }
         let takeover = query.takeover == Some(1);
-        return match sessions.attach_as(id, takeover, query.holder()) {
+        return match sessions.attach_as(id, takeover, query.holder(), query.attempt) {
             Ok(att) => {
                 if takeover {
                     who.console(&ConsoleRecord {
@@ -199,6 +201,7 @@ pub(crate) async fn session_ws_upgrade(
             Err(session::AttachError::Busy) => {
                 refuser.refuse(ws, StatusCode::CONFLICT, "session busy")
             }
+            Err(session::AttachError::Superseded) => refuser.supersede(ws, query.attempt),
         };
     }
     if query.console == Some(1) {
@@ -275,9 +278,10 @@ pub(crate) async fn session_ws_upgrade(
             &sessions,
             claim.as_ref(),
             tab.holder.as_deref(),
+            query.attempt,
             &environment,
         ) {
-            return joined.upgrade(ws, daemon_id, tab, shutdown);
+            return joined.upgrade(ws, daemon_id, tab, &refuser, shutdown);
         }
         return match sessions
             .spawn_attached(
@@ -289,7 +293,7 @@ pub(crate) async fn session_ws_upgrade(
                 record.clone(),
                 spec,
             )
-            .inspect(|(_, att)| hold(att, tab.holder.as_deref()))
+            .inspect(|(_, att)| hold(att, tab.holder.as_deref(), query.attempt))
         {
             Ok((id, att)) => {
                 who.console(&launch_record(
@@ -406,9 +410,10 @@ pub(crate) async fn session_ws_upgrade(
         &sessions,
         claim.as_ref(),
         tab.holder.as_deref(),
+        query.attempt,
         &environment,
     ) {
-        return joined.upgrade(ws, daemon_id, tab, shutdown);
+        return joined.upgrade(ws, daemon_id, tab, &refuser, shutdown);
     }
     let id = sessions.reserve_id();
     let status = match agent {
@@ -440,7 +445,7 @@ pub(crate) async fn session_ws_upgrade(
             record.clone(),
             spec,
         )
-        .inspect(|(_, att)| hold(att, tab.holder.as_deref()))
+        .inspect(|(_, att)| hold(att, tab.holder.as_deref(), query.attempt))
     {
         Ok((id, att)) => {
             who.console(&launch_record(

@@ -93,11 +93,15 @@ fn push_record(out: &mut String, query: &SessionQuery) {
 }
 
 /// The owning daemon keeps the writer slot, so it is the one that must know
-/// the holder (ADR-0051 §9 amendment 2026-09-22). An older peer ignores the key.
+/// the holder (ADR-0051 §9 amendment 2026-09-22) and the attempt of its claim
+/// (ADR-0079 D7). An older peer ignores both keys.
 fn push_holder(out: &mut String, query: &SessionQuery) {
     if let Some(holder) = query.holder() {
         out.push_str("&holder=");
         out.push_str(holder);
+        if let Some(attempt) = query.attempt {
+            out.push_str(&format!("&attempt={attempt}"));
+        }
     }
 }
 

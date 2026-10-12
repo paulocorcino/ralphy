@@ -2,9 +2,27 @@
 // What a `/ws/session` url is built from: a reattach (`id`), a free console,
 // or an agent launch.
 // `gzip`: the page can decode a gzip replay, so it asks for one.
+// `attempt`: the tab's number for this connect, sent beside the holder.
 type SessionUrlOpts =
-  | { id: number; repo?: string; takeover?: boolean; watch?: boolean; holder?: string; gzip?: boolean }
-  | { id?: null; console: true; repo?: string; command?: string; record?: string; holder?: string; gzip?: boolean }
+  | {
+      id: number;
+      repo?: string;
+      takeover?: boolean;
+      watch?: boolean;
+      holder?: string;
+      gzip?: boolean;
+      attempt?: number;
+    }
+  | {
+      id?: null;
+      console: true;
+      repo?: string;
+      command?: string;
+      record?: string;
+      holder?: string;
+      gzip?: boolean;
+      attempt?: number;
+    }
   | {
       id?: null;
       console?: false;
@@ -15,6 +33,7 @@ type SessionUrlOpts =
       record?: string;
       holder?: string;
       gzip?: boolean;
+      attempt?: number;
     };
 
 // What one connect of a terminal asks for, before it is one of the shapes
@@ -96,6 +115,33 @@ export const WBSessionRoute = (function () {
     return tabHolderMemo;
   }
 
+  // The tab's attempt number (ADR-0079 D7): raised on every connect, so the
+  // daemon can tell a late socket of this tab from the one that replaced it.
+  // Kept in `sessionStorage` beside the holder, so it keeps growing across a
+  // reload; `attemptMemo` keeps it growing when the storage throws.
+  const ATTEMPT_KEY = "ralphy.attempt";
+  let attemptMemo = 0;
+  function nextAttempt(storage: Storage | null | undefined) {
+    let kept = 0;
+    try {
+      const n = Number(storage?.getItem(ATTEMPT_KEY));
+      if (Number.isSafeInteger(n) && n > 0) kept = n;
+    } catch {}
+    attemptMemo = Math.max(kept, attemptMemo) + 1;
+    try {
+      storage?.setItem(ATTEMPT_KEY, String(attemptMemo));
+    } catch {}
+    return attemptMemo;
+  }
+
+  function tabAttempt() {
+    let storage = null;
+    try {
+      storage = globalThis.sessionStorage ?? null;
+    } catch {}
+    return nextAttempt(storage);
+  }
+
   function url(origin: string, opts: SessionUrlOpts) {
     // First, so the rest of the query reads as it did before the key.
     let value = origin + "/ws/session?" + (opts.gzip ? "gzip=1&" : "");
@@ -105,14 +151,14 @@ export const WBSessionRoute = (function () {
       if (opts.takeover) value += "&takeover=1";
       // A watcher claims nothing, so it names no holder.
       if (opts.watch) value += "&watch=1";
-      else value += holderParam(opts.holder);
+      else value += holderParam(opts.holder, opts.attempt);
     } else if (opts.console) {
       value += "console=1";
       if (opts.repo) value += "&repo=" + encodeURIComponent(opts.repo);
       // The startup command (the shell runs it and the session ends with it).
       if (opts.command) value += "&command=" + encodeURIComponent(opts.command);
       value += recordParam(opts.record);
-      value += holderParam(opts.holder);
+      value += holderParam(opts.holder, opts.attempt);
     } else {
       value +=
         "repo=" +
@@ -126,7 +172,7 @@ export const WBSessionRoute = (function () {
       if (typeof opts.name === "string" && opts.name)
         value += "&name=" + encodeURIComponent(opts.name);
       value += recordParam(opts.record);
-      value += holderParam(opts.holder);
+      value += holderParam(opts.holder, opts.attempt);
     }
     return value;
   }
@@ -139,12 +185,12 @@ export const WBSessionRoute = (function () {
   // The url options of one connect, in the shape its kind reads. An agent
   // launch with no repo or no agent sends the value empty, never `null`: the
   // daemon refuses it as an unknown repo or agent.
-  function requestOpts(req: SessionRequest, holder: string, gzip = false): SessionUrlOpts {
+  function requestOpts(req: SessionRequest, holder: string, gzip = false, attempt?: number): SessionUrlOpts {
     const repo = req.repo ?? undefined;
-    if (req.id != null) return { id: req.id, repo, takeover: req.takeover, watch: req.watch, holder, gzip };
-    if (req.console) return { console: true, repo, command: req.command, record: req.record, holder, gzip };
+    if (req.id != null) return { id: req.id, repo, takeover: req.takeover, watch: req.watch, holder, gzip, attempt };
+    if (req.console) return { console: true, repo, command: req.command, record: req.record, holder, gzip, attempt };
     const { agent, checkout, name, record } = req;
-    return { repo: req.repo ?? "", agent: agent ?? "", checkout, name, record, holder, gzip };
+    return { repo: req.repo ?? "", agent: agent ?? "", checkout, name, record, holder, gzip, attempt };
   }
   // The window record of a NEW launch: the daemon keeps one live session per
   // record, so a second page relaunching it joins the first one's session.
@@ -153,8 +199,11 @@ export const WBSessionRoute = (function () {
     return typeof r === "string" && HOLDER_RE.test(r) ? "&record=" + r : "";
   }
 
-  function holderParam(h: string | undefined) {
-    return typeof h === "string" && HOLDER_RE.test(h) ? "&holder=" + h : "";
+  // The attempt rides only with a holder: it orders the claims of one holder.
+  function holderParam(h: string | undefined, attempt?: number) {
+    if (typeof h !== "string" || !HOLDER_RE.test(h)) return "";
+    const n = Number.isSafeInteger(attempt) && attempt != null && attempt >= 0 ? "&attempt=" + attempt : "";
+    return "&holder=" + h + n;
   }
 
   function closeUrl(id: number, repo: string) {
@@ -203,6 +252,8 @@ export const WBSessionRoute = (function () {
     canGunzip,
     holder,
     tabHolder,
+    nextAttempt,
+    tabAttempt,
     closeUrl,
     closeSucceeded,
     announcement,

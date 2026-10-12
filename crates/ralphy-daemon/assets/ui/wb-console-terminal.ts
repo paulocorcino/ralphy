@@ -270,9 +270,13 @@ export function createTerminal(deps: TerminalDeps) {
       // first LIVE frame clears it.
       replaying = connOpts.id != null;
       const holder = WBSessionRoute.tabHolder();
-      ws = new WebSocket(
-        WBSessionRoute.url(WS_ORIGIN, WBSessionRoute.requestOpts(connOpts, holder, WBSessionRoute.canGunzip())),
+      const request = WBSessionRoute.requestOpts(
+        connOpts,
+        holder,
+        WBSessionRoute.canGunzip(),
+        WBSessionRoute.tabAttempt(),
       );
+      ws = new WebSocket(WBSessionRoute.url(WS_ORIGIN, request));
       const socket = ws;
       ws.binaryType = "arraybuffer";
       connectingSince = Date.now();

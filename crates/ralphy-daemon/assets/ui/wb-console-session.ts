@@ -134,7 +134,11 @@ export function dormancyDecision({
 // The last line a console prints when it gives up. A launch the daemon
 // refused names the reason; the browser cannot read it anywhere else,
 // because a refused launch never had a session to show.
+// A superseded socket is one this tab already replaced by a newer one; a
+// person sees it only when two windows that share this tab's holder reach
+// the same session.
 export function endNotice(announced: string | null, message: string | null | undefined) {
+  if (announced === "superseded") return "[this console is open in another window]";
   if (announced !== "refused") return "[session closed]";
   const why = typeof message === "string" ? message.trim() : "";
   return why ? `[could not start: ${why}]` : "[could not start]";
@@ -164,7 +168,9 @@ export function reconnectDecision({
   // R1: no id is nothing to reattach TO; reconnecting would spawn a SECOND
   // session.
   if (!idKnown) return "give-up";
-  // R2/R3: the daemon said why. Taken over → park and watch; else gone.
+  // R2/R3: the daemon said why. Taken over → park and watch; else gone. A
+  // "superseded" socket is gone too: a newer socket of this tab holds the
+  // session, so a take-over prompt or a reconnect would only fight it.
   if (announced === "taken-over") return "park-as-watcher";
   if (announced != null) return "give-up";
   if (failedReopens > MAX_FAILED_REOPENS) return "give-up";

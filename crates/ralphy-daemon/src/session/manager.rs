@@ -179,10 +179,12 @@ struct ManagedSession {
 
 /// Who holds the writer slot: the bridge's eviction token, and the holder the
 /// client named when it claimed the slot, if any (ADR-0051 §9 amendment
-/// 2026-09-22) — the one identity a reattach may reclaim the slot as.
+/// 2026-09-22) — the one identity a reattach may reclaim the slot as — with
+/// the attempt number of that claim (ADR-0079 D7).
 struct Writer {
     token: Arc<EvictToken>,
     holder: Option<String>,
+    attempt: Option<u64>,
 }
 
 struct StatusTail {
@@ -493,7 +495,7 @@ impl SessionManager {
         id: SessionId,
         takeover: bool,
     ) -> Result<Attachment, AttachError> {
-        self.attach_as(id, takeover, None)
+        self.attach_as(id, takeover, None, None)
     }
 
     /// [`attach`](Self::attach) as `holder`. A busy slot whose writer claimed it
@@ -501,11 +503,18 @@ impl SessionManager {
     /// client's own earlier socket, which a link change left half-open behind a
     /// tunnel (ADR-0051 §9 amendment 2026-09-22). A slot held by anyone else —
     /// or by a writer that named no holder — stays `Busy`.
+    ///
+    /// `attempt` orders the claims of one holder (ADR-0079 D7): a claim as the
+    /// slot's own holder with a LOWER attempt than the writer's is a late
+    /// socket the client already replaced, so it is `Superseded` and evicts
+    /// nobody, `takeover` or not. When either side has no attempt, the
+    /// holder rule above decides alone.
     pub fn attach_as(
         self: &Arc<Self>,
         id: SessionId,
         takeover: bool,
         holder: Option<&str>,
+        attempt: Option<u64>,
     ) -> Result<Attachment, AttachError> {
         let token = Arc::new(EvictToken::new());
         let sess = {
@@ -521,6 +530,11 @@ impl SessionManager {
             let mut slot = sess.attached.lock().expect("attached mutex");
             if let Some(existing) = slot.as_ref() {
                 let own = holder.is_some() && existing.holder.as_deref() == holder;
+                if own
+                    && matches!((attempt, existing.attempt), (Some(claim), Some(held)) if claim < held)
+                {
+                    return Err(AttachError::Superseded);
+                }
                 if !takeover && !own {
                     return Err(AttachError::Busy);
                 }
@@ -534,6 +548,7 @@ impl SessionManager {
             *slot = Some(Writer {
                 token: token.clone(),
                 holder: holder.map(str::to_owned),
+                attempt,
             });
             drop(slot);
             sess
@@ -740,13 +755,17 @@ fn evict_all(sess: &ManagedSession, reason: EndReason) {
 }
 
 /// Why an [`attach`] failed. `Unknown` → the id names no live session (`404`);
-/// `Busy` → a single writer is already attached and `takeover` was not set (`409`).
+/// `Busy` → a single writer is already attached and `takeover` was not set (`409`);
+/// `Superseded` → the slot's own holder already claimed it with a higher
+/// attempt, so this claim is a late socket ([`attach_as`]).
 ///
 /// [`attach`]: SessionManager::attach
+/// [`attach_as`]: SessionManager::attach_as
 #[derive(Debug)]
 pub enum AttachError {
     Unknown,
     Busy,
+    Superseded,
 }
 
 /// A live attachment to a session: the replay `snapshot` to send first (the
@@ -795,10 +814,11 @@ impl Attachment {
         self.sess.resize(rows, cols)
     }
 
-    /// Record `holder` on the writer slot this attachment holds — how a fresh
-    /// launch, which claims its slot inside the spawn, names its holder. A
-    /// no-op for a watcher and for a slot another attachment has since taken.
-    pub fn hold_as(&self, holder: &str) {
+    /// Record `holder` and its `attempt` on the writer slot this attachment
+    /// holds — how a fresh launch, which claims its slot inside the spawn,
+    /// names its holder. A no-op for a watcher and for a slot another
+    /// attachment has since taken.
+    pub fn hold_as(&self, holder: &str, attempt: Option<u64>) {
         if !self.writer {
             return;
         }
@@ -806,6 +826,7 @@ impl Attachment {
         if let Some(writer) = slot.as_mut() {
             if Arc::ptr_eq(&writer.token, &self._guard.token) {
                 writer.holder = Some(holder.to_owned());
+                writer.attempt = attempt;
             }
         }
     }
