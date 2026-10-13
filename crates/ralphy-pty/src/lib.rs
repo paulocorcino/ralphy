@@ -198,6 +198,23 @@ impl PtySession {
             .context("cloning the PTY output reader")
     }
 
+    /// The master output as chunks on a channel, filled by a background thread
+    /// that ends at EOF or when the receiver is dropped. The caller polls the
+    /// receiver without blocking on the PTY.
+    pub fn output_channel(&self) -> Result<std::sync::mpsc::Receiver<Vec<u8>>> {
+        let mut reader = self.reader()?;
+        let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+        std::thread::spawn(move || {
+            let mut buf = [0u8; 4096];
+            while let Ok(n) = reader.read(&mut buf) {
+                if n == 0 || tx.send(buf[..n].to_vec()).is_err() {
+                    break;
+                }
+            }
+        });
+        Ok(rx)
+    }
+
     /// Send raw bytes to the child as terminal input (include `\r` to submit a
     /// line, as a real terminal would).
     /// Fails once [`take_writer`](PtySession::take_writer) took the writer.

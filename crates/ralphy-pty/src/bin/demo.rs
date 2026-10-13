@@ -10,8 +10,6 @@
 //! and handed back here so the main loop can both reply to the shell's
 //! cursor-position query and poll the child for exit.
 
-use std::io::Read;
-use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -31,16 +29,7 @@ fn main() -> Result<()> {
 
     // Drain the master on its own thread; chunks come back over a channel so the
     // main loop stays free to answer queries and poll for exit.
-    let mut reader = session.reader()?;
-    let (tx, rx) = mpsc::channel::<Vec<u8>>();
-    thread::spawn(move || {
-        let mut buf = [0u8; 4096];
-        while let Ok(n) = reader.read(&mut buf) {
-            if n == 0 || tx.send(buf[..n].to_vec()).is_err() {
-                break;
-            }
-        }
-    });
+    let rx = session.output_channel()?;
 
     // Type into the terminal: echo a marker, then exit so the shell closes.
     session.write_all(format!("echo {MARKER}\r\n").as_bytes())?;

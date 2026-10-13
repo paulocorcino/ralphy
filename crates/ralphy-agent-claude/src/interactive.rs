@@ -4,7 +4,7 @@
 //! first-run gate pre-clearing (`~/.claude.json` workspace-trust + onboarding),
 //! and the `claude` binary resolver.
 
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::Path;
 use std::sync::{mpsc, Arc};
 use std::thread;
@@ -220,17 +220,7 @@ impl ClaudeAgent {
 /// Start the thread that moves the PTY output into a channel, so the poll loop
 /// reads it without blocking.
 fn spawn_pty_reader(session: &mut PtySession) -> Result<mpsc::Receiver<Vec<u8>>> {
-    let mut reader = session.reader()?;
-    let (tx, rx) = mpsc::channel::<Vec<u8>>();
-    thread::spawn(move || {
-        let mut buf = [0u8; 4096];
-        while let Ok(n) = reader.read(&mut buf) {
-            if n == 0 || tx.send(buf[..n].to_vec()).is_err() {
-                break;
-            }
-        }
-    });
-    Ok(rx)
+    session.output_channel()
 }
 
 /// Why the poll loop of [`ClaudeAgent::drive_session`] stopped.
