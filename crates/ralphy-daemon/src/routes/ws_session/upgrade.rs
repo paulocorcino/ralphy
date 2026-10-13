@@ -2,6 +2,7 @@
 //! launch, free-console launch), each local or relayed to the peer that owns
 //! the repo.
 
+use std::ops::ControlFlow;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -10,15 +11,14 @@ use axum::extract::Query;
 use axum::http::StatusCode;
 use axum::response::Response;
 
-use super::join::{claim_for, hold, Joined};
-use super::peer_console::PeerConsole;
+use super::join::{claim_for, Joined};
 use super::refuse::Refuser;
 use super::traffic::Tab;
-use super::{gemini_root, peer_session_query, relay_to_peer, session_ws, Opening};
+use super::{peer_session_query, relay_to_peer, session_ws, Opening};
 use super::{SessionHost, SessionLabels, SessionQuery};
 use crate::routes::audit_layer::{ConsoleKind, ConsoleRecord, SocketAudit};
-use crate::routes::{blocking_read, read_peer_store};
-use crate::{agent_state, auth, checkout, confine, fleet, peer, registry, session};
+use crate::routes::read_peer_store;
+use crate::{fleet, peer, registry, session};
 
 /// `GET /ws/session`: four shapes over one route.
 ///
@@ -56,7 +56,7 @@ use crate::{agent_state, auth, checkout, confine, fleet, peer, registry, session
 /// ends with `reason: "superseded"`, and nobody is evicted (ADR-0079 D7).
 pub(crate) async fn session_ws_upgrade(
     ws: WebSocketUpgrade,
-    Query(mut query): Query<SessionQuery>,
+    Query(query): Query<SessionQuery>,
     sessions: Arc<session::SessionManager>,
     registry_path: PathBuf,
     host: SessionHost,
@@ -67,411 +67,223 @@ pub(crate) async fn session_ws_upgrade(
     let ws = ws
         .max_message_size(crate::tree::MAX_COMMAND_BYTES)
         .max_frame_size(crate::tree::MAX_COMMAND_BYTES);
-    let SessionHost {
-        peers_dir,
-        identity,
-        environment,
-        bound_port,
-    } = host;
-    // Owned: `query` is rewritten below (a peer ref resolves to its slug).
-    let tab = query.tab(who.device);
-    let record = query.record().map(str::to_owned);
-    let daemon_id = identity
-        .as_ref()
-        .map(|identity| identity.id.to_string())
-        .unwrap_or_default();
-    let refuser = Refuser::new(query.id, &daemon_id, &environment, tab.clone());
-    // A peer free console is the one composite-ref session hosted HERE. Match
-    // both id and repo so an equal numeric id owned by the peer still proxies.
-    let locally_owned = query.id.and_then(|id| {
-        sessions.get(id).filter(|info| {
-            query
-                .repo
-                .as_deref()
-                .map(|repo| repo == info.repo)
-                .unwrap_or(true)
-        })
-    });
-    if query.console != Some(1) && locally_owned.is_none() {
-        if let Some(repo_ref) = query.repo.clone() {
-            let (descriptors, rejects) = read_peer_store(peers_dir.clone()).await;
-            match fleet::route(&repo_ref, &daemon_id, &descriptors) {
-                fleet::route::Route::Local { slug } => {
-                    query.repo = Some(slug.to_string());
-                }
-                fleet::route::Route::Peer { peer, slug } => {
-                    let me = peer::client::SelfRef {
-                        port: bound_port,
-                        daemon_id: &daemon_id,
-                    };
-                    let peer_query = peer_session_query(&query, slug);
-                    let opening = Opening {
-                        record: relayed_record(&query, slug, &peer.daemon_id, &tab),
-                        tab,
-                        who,
-                    };
-                    return relay_to_peer(ws, peer, &peer_query, opening, me, &refuser, shutdown)
-                        .await;
-                }
-                fleet::route::Route::UnknownDaemon { daemon_id } => {
-                    return refuser.refuse(
-                        ws,
-                        StatusCode::BAD_GATEWAY,
-                        fleet::unknown_daemon(daemon_id, &rejects),
-                    );
-                }
-            }
-        }
+    let upgrade = Upgrade::new(ws, query, sessions, registry_path, host, shutdown, who);
+    let upgrade = match upgrade.relay_unowned().await {
+        ControlFlow::Break(response) => return response,
+        ControlFlow::Continue(upgrade) => upgrade,
+    };
+    if let Some(id) = upgrade.query.id {
+        return upgrade.reattach(id);
     }
-    if let Some(id) = query.id {
-        let effective_environment = locally_owned
+    if upgrade.query.console == Some(1) {
+        return upgrade.console().await;
+    }
+    upgrade.agent().await
+}
+
+/// One `/ws/session` request, read: the socket still to upgrade, the query,
+/// and the values every shape of the route needs.
+pub(super) struct Upgrade {
+    pub(super) ws: WebSocketUpgrade,
+    pub(super) query: SessionQuery,
+    pub(super) sessions: Arc<session::SessionManager>,
+    pub(super) registry_path: PathBuf,
+    peers_dir: PathBuf,
+    pub(super) daemon_id: String,
+    pub(super) environment: String,
+    pub(super) bound_port: u16,
+    pub(super) tab: Tab,
+    pub(super) who: SocketAudit,
+    pub(super) record: Option<String>,
+    pub(super) refuser: Refuser,
+    pub(super) shutdown: tokio::sync::watch::Receiver<bool>,
+    /// The session `query.id` names, when this daemon hosts it.
+    pub(super) locally_owned: Option<session::SessionInfo>,
+}
+
+/// Where the repo ref of a request lives.
+pub(super) enum Placement {
+    Local,
+    Peer {
+        peer: Box<peer::PeerDescriptor>,
+        slug: String,
+        repo_ref: String,
+    },
+    UnknownDaemon(String),
+}
+
+impl Upgrade {
+    fn new(
+        ws: WebSocketUpgrade,
+        query: SessionQuery,
+        sessions: Arc<session::SessionManager>,
+        registry_path: PathBuf,
+        host: SessionHost,
+        shutdown: tokio::sync::watch::Receiver<bool>,
+        who: SocketAudit,
+    ) -> Upgrade {
+        let SessionHost {
+            peers_dir,
+            identity,
+            environment,
+            bound_port,
+        } = host;
+        let tab = query.tab(who.device);
+        let record = query.record().map(str::to_owned);
+        let daemon_id = identity
             .as_ref()
-            .and_then(|info| info.environment.clone())
-            .unwrap_or_else(|| environment.clone());
-        // A reattach re-announces the name the child was LAUNCHED under; the spec
-        // is long gone, so the session record is where it comes from. Without
-        // this a reload would blank the name on a console that still answers to it.
-        let effective_labels = locally_owned
-            .as_ref()
-            .map(|info| SessionLabels {
-                name: info.name.clone(),
-                checkout: info.checkout.clone(),
-                watching: false,
-            })
+            .map(|identity| identity.id.to_string())
             .unwrap_or_default();
-        // A watcher never touches the writer slot, so it is dispatched BEFORE the
-        // attach branch and can never produce a `409`.
-        if query.watch == Some(1) {
-            return match sessions.watch(id, query.since) {
-                Ok(att) => ws.on_upgrade(move |socket| {
-                    session_ws(
-                        socket,
-                        att,
-                        id,
-                        daemon_id,
-                        effective_environment,
-                        effective_labels,
-                        tab,
-                        shutdown,
-                    )
-                }),
-                // `watch` never yields `Busy`; matching the variant keeps that a
-                // compile-time fact rather than a comment.
-                Err(session::AttachError::Unknown) => {
-                    refuser.refuse(ws, StatusCode::NOT_FOUND, "unknown session")
-                }
-                Err(session::AttachError::Busy | session::AttachError::Superseded) => {
-                    refuser.refuse(ws, StatusCode::CONFLICT, "session busy")
-                }
-            };
-        }
-        let takeover = query.takeover == Some(1);
-        return match sessions.attach_as(id, takeover, query.holder(), query.attempt, query.since) {
-            Ok(att) => {
-                if takeover {
-                    who.console(&ConsoleRecord {
-                        kind: ConsoleKind::Takeover,
-                        session: Some(id),
-                        agent: None,
-                        repo: locally_owned.as_ref().map(|info| info.repo.clone()),
-                        peer: None,
-                        holder: tab.holder.clone(),
-                    });
-                }
-                ws.on_upgrade(move |socket| {
-                    session_ws(
-                        socket,
-                        att,
-                        id,
-                        daemon_id,
-                        effective_environment,
-                        effective_labels,
-                        tab,
-                        shutdown,
-                    )
-                })
-            }
-            Err(session::AttachError::Unknown) => {
-                refuser.refuse(ws, StatusCode::NOT_FOUND, "unknown session")
-            }
-            Err(session::AttachError::Busy) => {
-                refuser.refuse(ws, StatusCode::CONFLICT, "session busy")
-            }
-            Err(session::AttachError::Superseded) => refuser.supersede(ws, query.attempt),
-        };
-    }
-    if query.console == Some(1) {
-        let command = query
-            .command
-            .as_deref()
-            .map(str::trim)
-            .filter(|command| !command.is_empty())
-            .map(str::to_owned);
-        // The label the session list and the desk record carry: the command
-        // for a startup-command console, `console` for the bare shell.
-        let agent_label = command.clone().unwrap_or_else(|| "console".to_string());
-        if let Some(repo_ref) = query.repo.clone() {
-            let (descriptors, rejects) = read_peer_store(peers_dir).await;
-            match fleet::route(&repo_ref, &daemon_id, &descriptors) {
-                fleet::route::Route::Local { slug } => {
-                    query.repo = Some(slug.to_string());
-                }
-                fleet::route::Route::Peer { peer, slug } => {
-                    return PeerConsole {
-                        sessions,
-                        query: &query,
-                        peer,
-                        slug,
-                        repo_ref: &repo_ref,
-                        command,
-                        agent_label,
-                        daemon_id,
-                        environment,
-                        bound_port,
-                        tab,
-                        who,
-                        record,
-                        refuser,
-                        shutdown,
-                    }
-                    .launch(ws)
-                    .await;
-                }
-                fleet::route::Route::UnknownDaemon { daemon_id } => {
-                    return refuser.refuse(
-                        ws,
-                        StatusCode::BAD_GATEWAY,
-                        fleet::unknown_daemon(daemon_id, &rejects),
-                    );
-                }
-            }
-        }
-        let repo_path = match query.repo.as_deref() {
-            Some(slug) => {
-                let store = match registry::load_from(&registry_path) {
-                    Ok(store) => store,
-                    Err(e) => {
-                        tracing::warn!(error = %e, "failed to load repo registry for a console session");
-                        return refuser.refuse(
-                            ws,
-                            StatusCode::BAD_REQUEST,
-                            "repo registry unreadable",
-                        );
-                    }
-                };
-                let Some(entry) = store.entry(slug) else {
-                    return refuser.refuse(ws, StatusCode::BAD_REQUEST, "unknown repo");
-                };
-                Some(PathBuf::from(&entry.path))
-            }
-            None => None,
-        };
-        let cwd = session::console_cwd(repo_path);
-        let spec = session::console_spec(cwd, 24, 80, command.as_deref());
-        let repo_label = query.repo.clone().unwrap_or_else(|| "~".to_string());
-        let claim = claim_for(&sessions, &record).await;
-        if let Some(joined) = Joined::find(
-            &sessions,
-            claim.as_ref(),
-            tab.holder.as_deref(),
-            query.attempt,
-            &environment,
-        ) {
-            return joined.upgrade(ws, daemon_id, tab, &refuser, shutdown);
-        }
-        return match sessions
-            .spawn_attached(
-                repo_label,
-                agent_label,
-                "console".to_string(),
-                None,
-                None,
-                record.clone(),
-                spec,
-            )
-            .inspect(|(_, att)| hold(att, tab.holder.as_deref(), query.attempt))
-        {
-            Ok((id, att)) => {
-                who.console(&launch_record(
-                    id,
-                    "console",
-                    query.repo.clone(),
-                    None,
-                    &tab,
-                ));
-                ws.on_upgrade(move |socket| {
-                    session_ws(
-                        socket,
-                        att,
-                        id,
-                        daemon_id,
-                        environment,
-                        SessionLabels::default(),
-                        tab,
-                        shutdown,
-                    )
-                })
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, "failed to spawn a console session");
-                refuser.refuse(
-                    ws,
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "failed to spawn session",
-                )
-            }
-        };
-    }
-    let Some(agent_str) = query.agent.as_deref() else {
-        return refuser.refuse(ws, StatusCode::BAD_REQUEST, "unknown agent");
-    };
-    let Some(agent) = session::Agent::from_query(agent_str) else {
-        return refuser.refuse(ws, StatusCode::BAD_REQUEST, "unknown agent");
-    };
-    let Some(repo) = query.repo.as_deref() else {
-        return refuser.refuse(ws, StatusCode::BAD_REQUEST, "unknown repo");
-    };
-    let store = match registry::load_from(&registry_path) {
-        Ok(store) => store,
-        Err(e) => {
-            tracing::warn!(error = %e, "failed to load repo registry for a session");
-            return refuser.refuse(ws, StatusCode::BAD_REQUEST, "repo registry unreadable");
-        }
-    };
-    let Some(entry) = store.entry(repo) else {
-        return refuser.refuse(ws, StatusCode::BAD_REQUEST, "unknown repo");
-    };
-    let root = PathBuf::from(&entry.path);
-    // ADR-0063 §3: the selected checkout, resolved with the same resolver and
-    // confinement as every git-backed verb (`spawn_cwd`), off the runtime.
-    // INVARIANT: this returns BEFORE the Cursor gate, the Gemini gate, `spec_for`
-    // and every spawn — a bad name writes nothing and spawns nothing.
-    let checkout = match query.checkout.as_deref() {
-        None => None,
-        Some(name) => {
-            let (name, primary) = (name.to_string(), root.clone());
-            let resolved = blocking_read(move || {
-                let c = checkout::resolve(&name, |n| checkout::is_linked(&primary, n))
-                    .map_err(|_| ())?;
-                confine::confine(&primary, &c.prefix("")).map_err(|_| ())?;
-                Ok::<_, ()>(c)
+        let refuser = Refuser::new(query.id, &daemon_id, &environment, tab.clone());
+        // A peer free console is the one composite-ref session hosted HERE. Match
+        // both id and repo so an equal numeric id owned by the peer still proxies.
+        let locally_owned = query.id.and_then(|id| {
+            sessions.get(id).filter(|info| {
+                query
+                    .repo
+                    .as_deref()
+                    .map(|repo| repo == info.repo)
+                    .unwrap_or(true)
             })
-            .await;
-            match resolved {
-                Some(Ok(c)) => Some(c),
-                Some(Err(())) => {
-                    return refuser.refuse(ws, StatusCode::BAD_REQUEST, checkout::UNKNOWN)
-                }
-                None => {
-                    return refuser.refuse(ws, StatusCode::INTERNAL_SERVER_ERROR, "unavailable")
-                }
-            }
-        }
-    };
-    let cwd = checkout
-        .as_ref()
-        .map_or_else(|| root.clone(), |c| c.dir(&root));
-    // ADR-0042 D6: an ordinary Cursor run uploads the enclosing repository. The
-    // run path is gated in the adapter, but this interactive launch spawns
-    // `cursor-agent` directly — so the gate has to run here too, BEFORE the spec
-    // is built and anything is spawned: it writes `.cursorindexingignore` into the
-    // unprotected repo (announced on the daemon log) and then proceeds. A write
-    // failure (read-only tree) is the only way it stops the launch. The gate
-    // walks up from `cwd`, so a checkout gets its own opt-out and the primary
-    // keeps its own (ADR-0063 §3); the opt-in is the primary's `.ralphy/`.
-    if agent == session::Agent::Cursor {
-        if let Err(e) =
-            ralphy_proc_util::cursor::indexing_gate(&cwd, session::cursor_indexing_allowed(&root))
-        {
-            return refuser.refuse(ws, StatusCode::BAD_REQUEST, e.to_string());
+        });
+        Upgrade {
+            ws,
+            query,
+            sessions,
+            registry_path,
+            peers_dir,
+            daemon_id,
+            environment,
+            bound_port,
+            tab,
+            who,
+            record,
+            refuser,
+            shutdown,
+            locally_owned,
         }
     }
-    // ADR-0043 D4/D6: a Gemini child is contained by an owned configuration root
-    // AND the policy document inside it. The daemon may not import the adapter
-    // that writes them (ADR-0032 §10), so `gemini_root::ensure` asks the CLI to
-    // (ADR-0040 Amendment 3). INVARIANT: this refusal precedes `spec_for` and
-    // every spawn path, so no Gemini child is ever created outside the owned root.
-    if agent == session::Agent::Gemini {
-        if let Err(why) = gemini_root::ensure(&root, &daemon_id).await {
-            return refuser.refuse(ws, StatusCode::BAD_REQUEST, why);
-        }
+
+    /// Refuse with `message`, as the [`Refuser`] of this request does.
+    pub(super) fn refuse(self, status: StatusCode, message: impl Into<String>) -> Response {
+        self.refuser.refuse(self.ws, status, message)
     }
-    // The id first: the agent-state files are named by it and must exist
-    // before the child that reads them is launched (ADR-0059 §5). Only a
-    // vendor with hooks gets the slot; the store dir failing to resolve means
-    // no hooks, never no console. The record claim comes first, so a launch
-    // that joins a live session burns no id and writes no file.
-    let claim = claim_for(&sessions, &record).await;
-    if let Some(joined) = Joined::find(
-        &sessions,
-        claim.as_ref(),
-        tab.holder.as_deref(),
-        query.attempt,
-        &environment,
-    ) {
-        return joined.upgrade(ws, daemon_id, tab, &refuser, shutdown);
-    }
-    let id = sessions.reserve_id();
-    let status = match agent {
-        session::Agent::Claude => auth::store_dir()
-            .ok()
-            .map(|d| agent_state::StatusFiles::for_session(&d.join("sessions"), id)),
-        _ => None,
-    };
-    // The fallback `--name` is built from the project NAME: a remoteless repo's
-    // slug is a `path-<hash>` key, and the operator reads this name.
-    let project = registry::project_name(repo, &entry.path);
-    let spec = session::spec_with_status(agent, &root, cwd, &project, query.name(), 24, 80, status);
-    // Lifted before the spec moves into the spawn: the bridge announces the name
-    // in `session-open`, which is how the shell learns it without deriving the
-    // format a second time.
-    let labels = SessionLabels {
-        name: spec.name.clone(),
-        checkout: checkout.as_ref().map(|c| c.name().to_string()),
-        watching: false,
-    };
-    match sessions
-        .spawn_attached_as(
-            id,
-            repo.to_string(),
-            agent_str.to_string(),
-            "agent".to_string(),
-            None,
-            labels.checkout.clone(),
-            record.clone(),
-            spec,
-        )
-        .inspect(|(_, att)| hold(att, tab.holder.as_deref(), query.attempt))
-    {
-        Ok((id, att)) => {
-            who.console(&launch_record(
+
+    /// Bridge the upgraded socket to the attachment `att` of session `id`.
+    pub(super) fn bridge(
+        self,
+        att: session::Attachment,
+        id: session::SessionId,
+        environment: String,
+        labels: SessionLabels,
+    ) -> Response {
+        self.ws.on_upgrade(move |socket| {
+            session_ws(
+                socket,
+                att,
                 id,
-                agent_str,
-                Some(repo.to_string()),
-                None,
-                &tab,
-            ));
-            ws.on_upgrade(move |socket| {
-                session_ws(
-                    socket,
-                    att,
-                    id,
-                    daemon_id,
-                    environment,
-                    labels,
-                    tab,
-                    shutdown,
-                )
-            })
-        }
-        Err(e) => {
-            tracing::warn!(error = %e, "failed to spawn a workbench session");
-            refuser.refuse(
-                ws,
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to spawn session",
+                self.daemon_id,
+                environment,
+                labels,
+                self.tab,
+                self.shutdown,
             )
+        })
+    }
+
+    /// Where the repo of the query lives, or `None` when it names no repo. A
+    /// repo of this daemon is rewritten to its slug.
+    pub(super) async fn place(&mut self) -> Option<Placement> {
+        let repo_ref = self.query.repo.clone()?;
+        let (descriptors, rejects) = read_peer_store(self.peers_dir.clone()).await;
+        Some(
+            match fleet::route(&repo_ref, &self.daemon_id, &descriptors) {
+                fleet::route::Route::Local { slug } => {
+                    self.query.repo = Some(slug.to_string());
+                    Placement::Local
+                }
+                fleet::route::Route::Peer { peer, slug } => Placement::Peer {
+                    peer: Box::new(peer.clone()),
+                    slug: slug.to_string(),
+                    repo_ref,
+                },
+                fleet::route::Route::UnknownDaemon { daemon_id } => {
+                    Placement::UnknownDaemon(fleet::unknown_daemon(daemon_id, &rejects))
+                }
+            },
+        )
+    }
+
+    /// Relay a request for a repo that lives on another daemon. Any other
+    /// request goes on, with a repo of this daemon rewritten to its slug.
+    async fn relay_unowned(mut self) -> ControlFlow<Response, Upgrade> {
+        if self.query.console == Some(1) || self.locally_owned.is_some() {
+            return ControlFlow::Continue(self);
         }
+        match self.place().await {
+            None | Some(Placement::Local) => ControlFlow::Continue(self),
+            Some(Placement::Peer { peer, slug, .. }) => {
+                ControlFlow::Break(self.relay(&peer, &slug).await)
+            }
+            Some(Placement::UnknownDaemon(why)) => {
+                ControlFlow::Break(self.refuse(StatusCode::BAD_GATEWAY, why))
+            }
+        }
+    }
+
+    async fn relay(self, peer: &peer::PeerDescriptor, slug: &str) -> Response {
+        let me = peer::client::SelfRef {
+            port: self.bound_port,
+            daemon_id: &self.daemon_id,
+        };
+        let peer_query = peer_session_query(&self.query, slug);
+        let opening = Opening {
+            record: relayed_record(&self.query, slug, &peer.daemon_id, &self.tab),
+            tab: self.tab,
+            who: self.who,
+        };
+        relay_to_peer(
+            self.ws,
+            peer,
+            &peer_query,
+            opening,
+            me,
+            &self.refuser,
+            self.shutdown,
+        )
+        .await
+    }
+
+    /// Take the claim on the window record and join the live session that
+    /// serves it. The claim is held until the caller drops it, which is after
+    /// the spawn that does not join.
+    pub(super) async fn claim_and_join(&self) -> (Option<session::RecordClaim>, Option<Joined>) {
+        let claim = claim_for(&self.sessions, &self.record).await;
+        let joined = Joined::find(
+            &self.sessions,
+            claim.as_ref(),
+            self.tab.holder.as_deref(),
+            self.query.attempt,
+            &self.environment,
+        );
+        (claim, joined)
+    }
+
+    /// The path of the registered repo `slug`. `purpose` names the launch in
+    /// the log line of an unreadable registry.
+    pub(super) fn registered_repo(
+        &self,
+        slug: &str,
+        purpose: &str,
+    ) -> Result<String, &'static str> {
+        let store = registry::load_from(&self.registry_path).map_err(|e| {
+            tracing::warn!(error = %e, "failed to load repo registry for {purpose}");
+            "repo registry unreadable"
+        })?;
+        store
+            .entry(slug)
+            .map(|entry| entry.path.clone())
+            .ok_or("unknown repo")
     }
 }
 

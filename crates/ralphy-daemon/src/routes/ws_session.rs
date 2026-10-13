@@ -3,11 +3,14 @@
 
 use std::path::PathBuf;
 
+mod agent_launch;
 mod bridge;
+mod console_launch;
 mod gemini_root;
 mod join;
 mod outbound;
 mod peer_console;
+mod reattach;
 mod refuse;
 mod relay;
 mod traffic;

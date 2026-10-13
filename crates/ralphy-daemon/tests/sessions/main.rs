@@ -13,6 +13,7 @@ mod session_ws;
 mod session_ws_checkout;
 mod session_ws_cursor;
 mod session_ws_gemini;
+mod session_ws_refusals;
 
 #[path = "../support/golden.rs"]
 mod golden;

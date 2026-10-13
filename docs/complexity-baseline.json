@@ -899,11 +899,6 @@
       12
     ]
   },
-  "crates/ralphy-daemon/src/routes/ws_session/upgrade.rs": {
-    "session_ws_upgrade": [
-      53
-    ]
-  },
   "crates/ralphy-daemon/src/routes/ws_tree/peer_poll.rs": {
     "spawn_peer_tree_poller": [
       18
