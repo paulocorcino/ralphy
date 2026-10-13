@@ -6,7 +6,7 @@
 
 use std::io::{Read, Write};
 use std::path::Path;
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
@@ -201,165 +201,257 @@ impl ClaudeAgent {
         transcript_dir: Option<&Path>,
         transcript_since: SystemTime,
     ) -> Result<DriveEnd> {
-        let mut reader = session.reader()?;
-        let (tx, rx) = mpsc::channel::<Vec<u8>>();
-        thread::spawn(move || {
-            let mut buf = [0u8; 4096];
-            while let Ok(n) = reader.read(&mut buf) {
-                if n == 0 || tx.send(buf[..n].to_vec()).is_err() {
-                    break;
-                }
-            }
-        });
-
-        let mut log = std::fs::File::create(self.run_dir.join("exec.log")).ok();
-        let deadline = self.issue_deadline();
-
-        let mut timed_out = false;
-        let mut child_exited = false;
-        // The operator's stop (docs/adr/0054). Kept apart from `timed_out` for
-        // the reason the headless path keeps `stopped` apart from it: a stop
-        // classified as a timeout would report `Outcome::Timeout` for a button.
-        let mut stopped = false;
-        let mut limit_transcript: Option<String> = None;
-        let mut next_transcript_poll = Instant::now();
-        let mut dsr_carry: Vec<u8> = Vec::new();
-        let mut login_watch = LoginTuiWatch::new();
-        let mut api_watch = ApiWatch::new();
-        // Idle watchdog (docs/adr/0038). The progress signal is transcript growth
-        // and ONLY transcript growth: the TUI redraws its spinner forever, so PTY
-        // bytes keep arriving from a child that is thoroughly wedged and would
-        // make this watchdog permanently blind. That coarser signal is why the
-        // interactive window is the larger default — a legitimate long tool call
-        // advances no transcript while it runs.
-        let idle_watch = IdleWatch::from_minutes(self.exec.idle_minutes_for(true));
-        let idle_beat = ProgressBeat::new(Instant::now());
-        // Last observed transcript length; a growth between polls is the
-        // "activity resumed" signal that clears a degraded state.
-        let mut last_len: usize = 0;
-        loop {
-            // Act as the terminal: tee output and answer cursor-position queries.
-            while let Ok(chunk) = rx.try_recv() {
-                if scan_dsr_request(&mut dsr_carry, &chunk) {
-                    let _ = session.write_all(CURSOR_POSITION_REPLY);
-                }
-                login_watch.feed(&chunk);
-                api_watch.feed(&chunk);
-                if let Some(f) = log.as_mut() {
-                    let _ = f.write_all(&chunk);
-                }
-            }
-
-            if flag_file.exists() {
-                break;
-            }
-            // The operator's stop (docs/adr/0054). The PTY path shares no type
-            // with the headless pump, so it needs its own read — right beside the
-            // sentinel above, which is the same species of cooperative signal.
-            //
-            // Nothing is killed here: the caller already reaps the session
-            // unconditionally on every exit path, so a second kill would be a
-            // second owner of the child.
-            if ralphy_core::stop::requested() {
-                info!("operator stop — ending the interactive session");
-                stopped = true;
-                break;
-            }
-            if Instant::now() >= next_transcript_poll {
-                let advanced;
-                if let Some(t) = latest_transcript_text_since(transcript_dir, transcript_since) {
-                    // Any transcript activity proves the model loop started —
-                    // a logged-out session never produces one (see LoginTuiWatch).
-                    login_watch.disarm();
-                    advanced = t.len() > last_len;
-                    last_len = t.len();
-                    if transcript_limit(&t).is_some() {
-                        limit_transcript = Some(t);
-                        break;
-                    }
-                } else {
-                    advanced = false;
-                    if login_watch.detected() {
-                        // Logged-out interactive session: the login TUI stalls
-                        // without exiting, so fail fast with the auth message
-                        // instead of burning the wall budget into a misleading
-                        // `Timeout` (issue #72). The caller kills the session.
-                        bail!("{CLAUDE_AUTH_ERROR_MSG}");
-                    }
-                }
-                if advanced {
-                    idle_beat.beat(Instant::now());
-                }
-                match api_watch.poll(Instant::now(), advanced) {
-                    ApiWatchAction::Degraded => ralphy_core::emit::api_degraded(),
-                    ApiWatchAction::Recovered => ralphy_core::emit::api_recovered(),
-                    ApiWatchAction::Respawn => return Ok(DriveEnd::Respawn),
-                    ApiWatchAction::None => {}
-                }
-                // Deliberately no re-spawn here, unlike the API-banner path above:
-                // a visible retry banner is evidence the child is trying and may
-                // recover, whereas silence is evidence of nothing. End the drive as
-                // the timeout it already is rather than spend a respawn on a guess.
-                if idle_watch.expired(&idle_beat, Instant::now()) {
-                    // The same canonical helper the headless path calls, so the
-                    // operator-facing event does not depend on which child shape
-                    // happened to be driving (docs/adr/0038).
-                    ralphy_core::emit::idle_reaped(
-                        idle_watch.window().map(|w| w.as_secs() / 60).unwrap_or(0),
-                    );
-                    timed_out = true;
-                    break;
-                }
-                next_transcript_poll = Instant::now() + Duration::from_secs(2);
-            }
-            if session.try_wait()?.is_some() {
-                child_exited = true;
-                break;
-            }
-            if Instant::now() >= deadline {
-                timed_out = true;
-                break;
+        let rx = spawn_pty_reader(session)?;
+        let mut pump = SessionPump::new(self, rx, flag_file, transcript_dir, transcript_since);
+        let exit = loop {
+            if let Some(exit) = pump.step(session)? {
+                break exit;
             }
             thread::sleep(Duration::from_millis(500));
-        }
-
-        let flag = std::fs::read_to_string(flag_file).ok();
-        // A transcript read is needed to spot a usage limit when the session
-        // ends without a sentinel, and the live loop above also watches for the
-        // Claude CLI's subagent/tool-result rate-limit shape while the PTY stays
-        // alive.
-        let transcript = if flag.is_none() {
-            limit_transcript.or_else(|| {
-                (child_exited || timed_out)
-                    .then(|| latest_transcript_text_since(transcript_dir, transcript_since))
-                    .flatten()
-                    .or_else(|| {
-                        (child_exited || timed_out)
-                            .then(latest_transcript_text)
-                            .flatten()
-                    })
-            })
-        } else {
-            None
         };
-
-        // An auth failure in the transcript takes precedence over classification:
-        // it won't self-heal (unlike a usage limit), so surface it immediately.
-        if child_exited && flag.is_none() {
-            if let Some(ref t) = transcript {
-                if is_claude_auth_error(t) {
-                    bail!("{CLAUDE_AUTH_ERROR_MSG}");
-                }
-            }
+        if matches!(exit, SessionExit::Respawn) {
+            return Ok(DriveEnd::Respawn);
         }
-
-        let outcome = classify_outcome(flag.as_deref(), timed_out, transcript.as_deref());
-        info!(
-            ?outcome,
-            child_exited, timed_out, stopped, "execution session ended"
-        );
+        let outcome = classify_exit(exit, flag_file, transcript_dir, transcript_since)?;
         Ok(DriveEnd::Outcome(outcome))
     }
+}
+
+/// Start the thread that moves the PTY output into a channel, so the poll loop
+/// reads it without blocking.
+fn spawn_pty_reader(session: &mut PtySession) -> Result<mpsc::Receiver<Vec<u8>>> {
+    let mut reader = session.reader()?;
+    let (tx, rx) = mpsc::channel::<Vec<u8>>();
+    thread::spawn(move || {
+        let mut buf = [0u8; 4096];
+        while let Ok(n) = reader.read(&mut buf) {
+            if n == 0 || tx.send(buf[..n].to_vec()).is_err() {
+                break;
+            }
+        }
+    });
+    Ok(rx)
+}
+
+/// Why the poll loop of [`ClaudeAgent::drive_session`] stopped.
+enum SessionExit {
+    /// The Stop hook wrote the flag file.
+    Flag,
+    /// The operator asked to stop.
+    Stopped,
+    /// The transcript shows a usage limit; carries the transcript text.
+    Limit(String),
+    /// The idle watchdog or the per-issue wall timeout expired.
+    TimedOut,
+    /// The child exited on its own.
+    ChildExited,
+    /// The API watch asks for one more child.
+    Respawn,
+}
+
+/// The state of one poll loop over a live session, and the checks it runs on
+/// each turn.
+struct SessionPump<'a> {
+    rx: mpsc::Receiver<Vec<u8>>,
+    log: Option<std::fs::File>,
+    deadline: Instant,
+    flag_file: &'a Path,
+    transcript_dir: Option<&'a Path>,
+    transcript_since: SystemTime,
+    next_transcript_poll: Instant,
+    dsr_carry: Vec<u8>,
+    login_watch: LoginTuiWatch,
+    api_watch: ApiWatch,
+    // Idle watchdog (docs/adr/0038). The progress signal is transcript growth
+    // and ONLY transcript growth: the TUI redraws its spinner forever, so PTY
+    // bytes keep arriving from a child that is thoroughly wedged and would
+    // make this watchdog permanently blind. That coarser signal is why the
+    // interactive window is the larger default — a legitimate long tool call
+    // advances no transcript while it runs.
+    idle_watch: IdleWatch,
+    idle_beat: Arc<ProgressBeat>,
+    // Last observed transcript length; a growth between polls is the
+    // "activity resumed" signal that clears a degraded state.
+    last_len: usize,
+}
+
+impl<'a> SessionPump<'a> {
+    fn new(
+        agent: &ClaudeAgent,
+        rx: mpsc::Receiver<Vec<u8>>,
+        flag_file: &'a Path,
+        transcript_dir: Option<&'a Path>,
+        transcript_since: SystemTime,
+    ) -> Self {
+        Self {
+            rx,
+            log: std::fs::File::create(agent.run_dir.join("exec.log")).ok(),
+            deadline: agent.issue_deadline(),
+            flag_file,
+            transcript_dir,
+            transcript_since,
+            next_transcript_poll: Instant::now(),
+            dsr_carry: Vec::new(),
+            login_watch: LoginTuiWatch::new(),
+            api_watch: ApiWatch::new(),
+            idle_watch: IdleWatch::from_minutes(agent.exec.idle_minutes_for(true)),
+            idle_beat: ProgressBeat::new(Instant::now()),
+            last_len: 0,
+        }
+    }
+
+    /// One turn of the loop: `Some` when the session is over.
+    fn step(&mut self, session: &mut PtySession) -> Result<Option<SessionExit>> {
+        self.drain(session);
+
+        if self.flag_file.exists() {
+            return Ok(Some(SessionExit::Flag));
+        }
+        // The operator's stop (docs/adr/0054). The PTY path shares no type
+        // with the headless pump, so it needs its own read — right beside the
+        // sentinel above, which is the same species of cooperative signal.
+        //
+        // Nothing is killed here: the caller already reaps the session
+        // unconditionally on every exit path, so a second kill would be a
+        // second owner of the child.
+        if ralphy_core::stop::requested() {
+            info!("operator stop — ending the interactive session");
+            return Ok(Some(SessionExit::Stopped));
+        }
+        if Instant::now() >= self.next_transcript_poll {
+            if let Some(exit) = self.poll_transcript()? {
+                return Ok(Some(exit));
+            }
+        }
+        if session.try_wait()?.is_some() {
+            return Ok(Some(SessionExit::ChildExited));
+        }
+        if Instant::now() >= self.deadline {
+            return Ok(Some(SessionExit::TimedOut));
+        }
+        Ok(None)
+    }
+
+    /// Act as the terminal: tee output and answer cursor-position queries.
+    fn drain(&mut self, session: &mut PtySession) {
+        while let Ok(chunk) = self.rx.try_recv() {
+            if scan_dsr_request(&mut self.dsr_carry, &chunk) {
+                let _ = session.write_all(CURSOR_POSITION_REPLY);
+            }
+            self.login_watch.feed(&chunk);
+            self.api_watch.feed(&chunk);
+            if let Some(f) = self.log.as_mut() {
+                let _ = f.write_all(&chunk);
+            }
+        }
+    }
+
+    /// The transcript-paced checks: usage limit, login TUI, API watch and idle
+    /// watchdog. `Some` when one of them ends the session.
+    fn poll_transcript(&mut self) -> Result<Option<SessionExit>> {
+        let advanced;
+        if let Some(t) = latest_transcript_text_since(self.transcript_dir, self.transcript_since) {
+            // Any transcript activity proves the model loop started —
+            // a logged-out session never produces one (see LoginTuiWatch).
+            self.login_watch.disarm();
+            advanced = t.len() > self.last_len;
+            self.last_len = t.len();
+            if transcript_limit(&t).is_some() {
+                return Ok(Some(SessionExit::Limit(t)));
+            }
+        } else {
+            advanced = false;
+            if self.login_watch.detected() {
+                // Logged-out interactive session: the login TUI stalls
+                // without exiting, so fail fast with the auth message
+                // instead of burning the wall budget into a misleading
+                // `Timeout` (issue #72). The caller kills the session.
+                bail!("{CLAUDE_AUTH_ERROR_MSG}");
+            }
+        }
+        if advanced {
+            self.idle_beat.beat(Instant::now());
+        }
+        match self.api_watch.poll(Instant::now(), advanced) {
+            ApiWatchAction::Degraded => ralphy_core::emit::api_degraded(),
+            ApiWatchAction::Recovered => ralphy_core::emit::api_recovered(),
+            ApiWatchAction::Respawn => return Ok(Some(SessionExit::Respawn)),
+            ApiWatchAction::None => {}
+        }
+        // Deliberately no re-spawn here, unlike the API-banner path above:
+        // a visible retry banner is evidence the child is trying and may
+        // recover, whereas silence is evidence of nothing. End the drive as
+        // the timeout it already is rather than spend a respawn on a guess.
+        if self.idle_watch.expired(&self.idle_beat, Instant::now()) {
+            // The same canonical helper the headless path calls, so the
+            // operator-facing event does not depend on which child shape
+            // happened to be driving (docs/adr/0038).
+            ralphy_core::emit::idle_reaped(
+                self.idle_watch
+                    .window()
+                    .map(|w| w.as_secs() / 60)
+                    .unwrap_or(0),
+            );
+            return Ok(Some(SessionExit::TimedOut));
+        }
+        self.next_transcript_poll = Instant::now() + Duration::from_secs(2);
+        Ok(None)
+    }
+}
+
+/// Turn the end of a session (other than a respawn) into an [`Outcome`].
+fn classify_exit(
+    exit: SessionExit,
+    flag_file: &Path,
+    transcript_dir: Option<&Path>,
+    transcript_since: SystemTime,
+) -> Result<Outcome> {
+    let child_exited = matches!(exit, SessionExit::ChildExited);
+    let timed_out = matches!(exit, SessionExit::TimedOut);
+    let stopped = matches!(exit, SessionExit::Stopped);
+    let limit_transcript = match exit {
+        SessionExit::Limit(t) => Some(t),
+        _ => None,
+    };
+
+    let flag = std::fs::read_to_string(flag_file).ok();
+    // A transcript read is needed to spot a usage limit when the session
+    // ends without a sentinel, and the live loop also watches for the
+    // Claude CLI's subagent/tool-result rate-limit shape while the PTY stays
+    // alive.
+    let transcript = if flag.is_none() {
+        limit_transcript.or_else(|| {
+            ended_transcript(child_exited || timed_out, transcript_dir, transcript_since)
+        })
+    } else {
+        None
+    };
+
+    // An auth failure in the transcript takes precedence over classification:
+    // it won't self-heal (unlike a usage limit), so surface it immediately.
+    if child_exited && flag.is_none() && transcript.as_deref().is_some_and(is_claude_auth_error) {
+        bail!("{CLAUDE_AUTH_ERROR_MSG}");
+    }
+
+    let outcome = classify_outcome(flag.as_deref(), timed_out, transcript.as_deref());
+    info!(
+        ?outcome,
+        child_exited, timed_out, stopped, "execution session ended"
+    );
+    Ok(outcome)
+}
+
+/// The latest transcript text of a session that has ended: this session's
+/// transcript first, then the newest one anywhere.
+fn ended_transcript(
+    ended: bool,
+    transcript_dir: Option<&Path>,
+    transcript_since: SystemTime,
+) -> Option<String> {
+    if !ended {
+        return None;
+    }
+    latest_transcript_text_since(transcript_dir, transcript_since).or_else(latest_transcript_text)
 }
 
 /// Flatten raw PTY bytes into matchable text: ANSI escape sequences are

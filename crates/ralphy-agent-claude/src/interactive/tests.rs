@@ -248,3 +248,29 @@ fn login_watch_detects_across_chunks_and_disarms_on_transcript() {
     watch.feed(LOGIN_TUI_FIXTURE);
     assert!(!watch.detected());
 }
+
+#[test]
+fn classify_exit_reads_the_flag_file_and_the_limit_transcript() {
+    let dir = tempfile::tempdir().unwrap();
+    let flag = dir.path().join("status.flag");
+    let limit = r#"{"type":"rate_limit_event","rate_limit_info":{"status":"rejected"}}"#;
+    let since = SystemTime::now();
+
+    // No flag: the limit transcript of the live loop decides.
+    let outcome = classify_exit(SessionExit::Limit(limit.into()), &flag, None, since).unwrap();
+    assert_eq!(outcome, Outcome::Limit(None));
+
+    // A flag from the Stop hook is read at the end of the session.
+    std::fs::write(&flag, "BLOCKED needs a key").unwrap();
+    let outcome = classify_exit(SessionExit::Flag, &flag, None, since).unwrap();
+    assert_eq!(outcome, Outcome::Blocked("needs a key".into()));
+
+    // With a flag, the transcript is not consulted.
+    let outcome = classify_exit(SessionExit::Limit(limit.into()), &flag, None, since).unwrap();
+    assert_eq!(outcome, Outcome::Blocked("needs a key".into()));
+}
+
+#[test]
+fn a_running_session_has_no_ended_transcript() {
+    assert_eq!(ended_transcript(false, None, SystemTime::UNIX_EPOCH), None);
+}

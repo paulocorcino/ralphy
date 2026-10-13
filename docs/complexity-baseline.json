@@ -8,9 +8,6 @@
     ]
   },
   "crates/ralphy-agent-claude/src/interactive.rs": {
-    "drive_session": [
-      57
-    ],
     "strip_pty_escapes": [
       30
     ]
