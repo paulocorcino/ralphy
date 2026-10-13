@@ -1008,7 +1008,7 @@
     },
     "crates/ralphy-pty/src/bin/demo.rs": {
       "main": [
-        19
+        13
       ]
     },
     "crates/ralphy-run-snapshot/src/read.rs": {
