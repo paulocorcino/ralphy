@@ -678,7 +678,7 @@ const FLAT_REPLIES: &[(&str, &str)] = &[
 
 /// The daemon files that name the field a Query reply carries its JSON in.
 const REPLY_FIELD_SOURCES: &[&str] = &[
-    "crates/ralphy-daemon/src/routes/ws_command/oneshot.rs",
+    "crates/ralphy-daemon/src/routes/ws_command/oneshot/collect.rs",
     "crates/ralphy-daemon/src/routes/ws_command/host.rs",
 ];
 

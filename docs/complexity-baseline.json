@@ -1,1231 +1,1183 @@
 {
-  "crates/ralphy-adapter-support/src/headless.rs": {
-    "drive_headless": [
-      20
-    ],
-    "spawn_reader": [
-      30
-    ]
-  },
-  "crates/ralphy-agent-claude/src/interactive.rs": {
-    "drive_session": [
-      57
-    ],
-    "strip_pty_escapes": [
-      30
-    ]
-  },
-  "crates/ralphy-agent-claude/src/status.rs": {
-    "poll": [
-      11
-    ],
-    "start": [
-      13
-    ]
-  },
-  "crates/ralphy-agent-claude/src/usage.rs": {
-    "newest_jsonl_since": [
-      20
-    ],
-    "parse_transcript_usage": [
-      16
-    ]
-  },
-  "crates/ralphy-agent-codex/src/usage.rs": {
-    "parse_codex_rollout_usage": [
-      12
-    ]
-  },
-  "crates/ralphy-agent-copilot/src/catalog.rs": {
-    "fetch_catalog": [
-      11
-    ]
-  },
-  "crates/ralphy-agent-copilot/src/guards.rs": {
-    "builtin_mcp_violation": [
-      17
-    ]
-  },
-  "crates/ralphy-agent-copilot/src/outcome.rs": {
-    "copilot_final_text": [
-      13
-    ]
-  },
-  "crates/ralphy-agent-cursor/src/outcome.rs": {
-    "collect_tool_results": [
-      13
-    ],
-    "fold_cursor_stream": [
-      21
-    ]
-  },
-  "crates/ralphy-agent-gemini/src/outcome.rs": {
-    "fold_gemini_stream": [
-      20
-    ]
-  },
-  "crates/ralphy-agent-gemini/src/policy.rs": {
-    "import_deny_rules": [
-      17
-    ]
-  },
-  "crates/ralphy-agent-gemini/src/revocation.rs": {
-    "inspect_admin_tier": [
-      13
-    ],
-    "strip_ansi": [
-      12
-    ]
-  },
-  "crates/ralphy-agent-gemini/src/root.rs": {
-    "session_stems": [
-      21
-    ]
-  },
-  "crates/ralphy-agent-kimi/src/usage.rs": {
-    "parse_kimi_wire_usage": [
-      11
-    ]
-  },
-  "crates/ralphy-agent-opencode/src/events.rs": {
-    "parse_opencode_events": [
-      13
-    ],
-    "parse_opencode_reset_hint": [
-      22
-    ]
-  },
-  "crates/ralphy-cli/src/config.rs": {
-    "set": [
-      28
-    ]
-  },
-  "crates/ralphy-cli/src/daemon/register.rs": {
-    "migrate_side_stores": [
-      13
-    ]
-  },
-  "crates/ralphy-cli/src/events/emitter.rs": {
-    "public_ip": [
-      14
-    ]
-  },
-  "crates/ralphy-cli/src/events/envelope.rs": {
-    "runevent_to_cloudevent": [
-      28
-    ]
-  },
-  "crates/ralphy-cli/src/guard.rs": {
-    "evaluate_recursive_delete": [
-      17
-    ],
-    "run_guard_hook": [
-      16
-    ],
-    "shell_tokens": [
-      11
-    ]
-  },
-  "crates/ralphy-cli/src/hook.rs": {
-    "read_transcript_last_assistant": [
-      28
-    ]
-  },
-  "crates/ralphy-cli/src/host/aliases.rs": {
-    "parse_config_hosts": [
-      16
-    ]
-  },
-  "crates/ralphy-cli/src/host/checks.rs": {
-    "evaluate": [
-      22
-    ],
-    "parse_facts": [
-      12
-    ]
-  },
-  "crates/ralphy-cli/src/host/install.rs": {
-    "install": [
-      11
-    ]
-  },
-  "crates/ralphy-cli/src/host/pair.rs": {
-    "add": [
-      20
-    ],
-    "remove": [
-      11
-    ]
-  },
-  "crates/ralphy-cli/src/host/password.rs": {
-    "serve": [
-      13
-    ]
-  },
-  "crates/ralphy-cli/src/host/shell.rs": {
-    "render": [
-      32
-    ]
-  },
-  "crates/ralphy-cli/src/init/gate.rs": {
-    "format_report": [
-      20
-    ]
-  },
-  "crates/ralphy-cli/src/init/render.rs": {
-    "print_gate_report": [
-      12
-    ]
-  },
-  "crates/ralphy-cli/src/init/run.rs": {
-    "run": [
-      67
-    ]
-  },
-  "crates/ralphy-cli/src/install.rs": {
-    "put_on_path": [
-      11
-    ]
-  },
-  "crates/ralphy-cli/src/install/user_path.rs": {
-    "add": [
-      13
-    ]
-  },
-  "crates/ralphy-cli/src/issues.rs": {
-    "issues_cmd": [
-      18
-    ],
-    "render_board_json": [
-      12
-    ]
-  },
-  "crates/ralphy-cli/src/run/wiring.rs": {
-    "build_run_queue": [
-      17
-    ]
-  },
-  "crates/ralphy-cli/src/runstate/state.rs": {
-    "apply": [
-      36
-    ]
-  },
-  "crates/ralphy-cli/src/telegram/notifier.rs": {
-    "on_event": [
-      12
-    ],
-    "on_tick": [
-      15
-    ]
-  },
-  "crates/ralphy-cli/src/triage.rs": {
-    "apply_triage": [
-      15
-    ],
-    "run": [
-      19
-    ]
-  },
-  "crates/ralphy-cli/src/ui.rs": {
-    "queue_bar_label": [
-      22
-    ]
-  },
-  "crates/ralphy-cli/src/ui/presenter.rs": {
-    "run": [
-      13
-    ]
-  },
-  "crates/ralphy-cli/src/ui/render/panel.rs": {
-    "render_totals_panel": [
-      51
-    ]
-  },
-  "crates/ralphy-core/src/acceptance.rs": {
-    "apply_ledger": [
-      12
-    ],
-    "evidence_comment": [
-      13
-    ],
-    "logical_checkbox_items": [
-      12
-    ]
-  },
-  "crates/ralphy-core/src/blocked.rs": {
-    "sort_queue_in_graph": [
-      27
-    ]
-  },
-  "crates/ralphy-core/src/checkouts.rs": {
-    "add": [
-      13
-    ],
-    "parse_porcelain": [
-      15
-    ]
-  },
-  "crates/ralphy-core/src/checkouts/carry.rs": {
-    "unlink_in": [
-      12
-    ]
-  },
-  "crates/ralphy-core/src/github/attachments.rs": {
-    "fetch_one": [
-      11
-    ],
-    "fetch_triage_attachments": [
-      26
-    ]
-  },
-  "crates/ralphy-core/src/handoff.rs": {
-    "knowledge_used": [
-      11
-    ]
-  },
-  "crates/ralphy-core/src/runner.rs": {
-    "run_queue_with": [
-      78
-    ]
-  },
-  "crates/ralphy-core/src/runner/clock.rs": {
-    "next_reset": [
-      12
-    ],
-    "wait_for_reset": [
-      14
-    ]
-  },
-  "crates/ralphy-core/src/runner/phases/close.rs": {
-    "close_and_record": [
-      14
-    ]
-  },
-  "crates/ralphy-core/src/runner/phases/execute.rs": {
-    "execute_phase": [
-      16
-    ]
-  },
-  "crates/ralphy-core/src/runner/phases/plan.rs": {
-    "plan_phase": [
-      32
-    ]
-  },
-  "crates/ralphy-core/src/runner/phases/verify.rs": {
-    "verify_gate": [
-      33
-    ]
-  },
-  "crates/ralphy-core/src/sync.rs": {
-    "pull": [
-      11
-    ]
-  },
-  "crates/ralphy-core/src/verify.rs": {
-    "run_one": [
-      11
-    ]
-  },
-  "crates/ralphy-core/src/verify/parse.rs": {
-    "has_escaped_quote": [
-      11
-    ]
-  },
-  "crates/ralphy-core/src/worktree.rs": {
-    "discard": [
-      18
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-add-project.ts": {
-    "next": [
-      33
-    ],
-    "sepOf": [
-      11
-    ],
-    "target": [
-      28
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-board.ts": {
-    "boardRowToIssue": [
-      11
-    ],
-    "loadBoard": [
-      15
-    ],
-    "loadIssueDetail": [
-      11
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-changes-panel.ts": {
-    "loadSync": [
-      13
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-changes.ts": {
-    "foldSync": [
-      16
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-checkouts-store.ts": {
-    "ensureWorktreeListing": [
-      14
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-client-view.ts": {
-    "read": [
-      17
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-columns.ts": {
-    "fromStored": [
-      11
-    ],
-    "listFold": [
-      28
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-connection-store.ts": {
-    "onBuildSkew": [
-      17
-    ],
-    "onPresencePush": [
-      11
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-console-checkout.ts": {
-    "askWorktree": [
-      12
-    ],
-    "checkoutMenu": [
-      14
-    ],
-    "checkoutMenuRows": [
-      12
-    ],
-    "createWorktreeFor": [
-      19
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-console-feeds.ts": {
-    "ingestFleet": [
-      12
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-console-frames.ts": {
-    "readSocketEvent": [
-      19
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-console-keys.ts": {
-    "(anonymous)": [
-      11
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-console-placeholder.ts": {
-    "(anonymous)": [
-      15,
-      12
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-console-press.ts": {
-    "(anonymous)": [
-      20
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-console-session.ts": {
-    "dormancyDecision": [
-      11
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-console-spawn.ts": {
-    "recordBirth": [
-      11
-    ],
-    "recordSession": [
-      15
-    ],
-    "spawnWindow": [
-      13
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-console-terminal.ts": {
-    "(anonymous)": [
-      24,
-      11
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-console-title.ts": {
-    "sessionPresentation": [
-      13
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-console-touch.ts": {
-    "(anonymous)": [
-      11
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-consoles-tab.ts": {
-    "paintColumns": [
-      29
-    ],
-    "restoreColumns": [
-      13
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-daemon.ts": {
-    "onMessage": [
-      13
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-desk-detach.ts": {
-    "(anonymous)": [
-      31,
-      12
-    ],
-    "peerFold": [
-      11
-    ],
-    "reattachFence": [
-      25
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-desk-folds.ts": {
-    "(anonymous)": [
-      17
-    ],
-    "noteNameOk": [
-      11
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-desk-restore.ts": {
-    "(anonymous)": [
-      39
-    ],
-    "mountDetached": [
-      17
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-desk-sync.ts": {
-    "applyChange": [
-      21
-    ],
-    "setFields": [
-      36
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-desk.ts": {
-    "converge": [
-      15
-    ],
-    "flushed": [
-      23
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-detach-link.ts": {
-    "isDetachMessage": [
-      13
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-detached-fence.ts": {
-    "(anonymous)": [
-      16
-    ],
-    "isFenceOpen": [
-      12
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-file-viewer.ts": {
-    "applyFresh": [
-      11
-    ],
-    "disposeEditor": [
-      12
-    ],
-    "paint": [
-      23
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-files.ts": {
-    "_reconcileOnce": [
-      36
-    ],
-    "applyFileSearch": [
-      12
-    ],
-    "duplicateNode": [
-      15
-    ],
-    "reconcileLevel": [
-      12
-    ],
-    "refreshOpenViewers": [
-      12
-    ],
-    "revealRel": [
-      11
-    ],
-    "showMenu": [
-      13
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-fleet.ts": {
-    "fleetGroups": [
-      24
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-geometry.ts": {
-    "bringIntoView": [
-      13
-    ],
-    "clampOffset": [
-      13
-    ],
-    "freeSpawnRect": [
-      15
-    ],
-    "panNudge": [
-      19
-    ],
-    "rectHolds": [
-      17
-    ],
-    "rectsOverlap": [
-      28
-    ],
-    "stageExtent": [
-      16
-    ],
-    "viewLanding": [
-      11
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-hosts-dialog.ts": {
-    "(anonymous)": [
-      13
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-hosts.ts": {
-    "next": [
-      23
-    ],
-    "progress": [
-      18
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-kanban.ts": {
-    "orderGraph": [
-      23
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-modals-store.ts": {
-    "consoleShortcutsBlocked": [
-      16
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-monaco.ts": {
-    "disableLanguageServices": [
-      16
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-notes-editor.ts": {
-    "(anonymous)": [
-      11
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-notes-folds.ts": {
-    "withHeader": [
-      13
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-notes-on-top.ts": {
-    "keepOnTop": [
-      13
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-notes.ts": {
-    "(anonymous)": [
-      16
-    ],
-    "addCard": [
-      12
-    ],
-    "commitRename": [
-      14
-    ],
-    "render": [
-      24
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-project.ts": {
-    "worktreeNameProblem": [
-      16
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-projects-store.ts": {
-    "(anonymous)": [
-      18,
-      11
-    ],
-    "loadFleet": [
-      18
-    ],
-    "refreshLive": [
-      12
-    ],
-    "wakePeer": [
-      11
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-runs-store.ts": {
-    "hydrateRuns": [
-      18
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-runs.ts": {
-    "fromSnapshot": [
-      20
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-security-dialog.ts": {
-    "toggleRequireLogin": [
-      17
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-session-route.ts": {
-    "announcement": [
-      15
-    ],
-    "url": [
-      15
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-settings-dialog.ts": {
-    "(anonymous)": [
-      11
-    ],
-    "saveSetting": [
-      16
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-spend-panel.ts": {
-    "loadLedger": [
-      14
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-spend.ts": {
-    "state": [
-      30
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-split.ts": {
-    "resolve": [
-      17
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-stage-chrome.ts": {
-    "buildChrome": [
-      43
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-stage-columns.ts": {
-    "applyColumns": [
-      29
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-stage-fence-gestures.ts": {
-    "(anonymous)": [
-      11
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-stage-fence-list.ts": {
-    "createFence": [
-      17
-    ],
-    "refreshFenceChrome": [
-      21
-    ],
-    "renderFences": [
-      19
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-stage-fences.ts": {
-    "arrangeFence": [
-      12
-    ],
-    "detachFence": [
-      18
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-stage-view.ts": {
-    "applyLanding": [
-      16
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-stage-window.ts": {
-    "setMax": [
-      11
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-tabs-store.ts": {
-    "repathTabs": [
-      14
-    ],
-    "restoreView": [
-      15
-    ]
-  },
-  "crates/ralphy-daemon/assets/ui/wb-wire.ts": {
-    "(anonymous)": [
-      31,
-      15,
-      11
-    ]
-  },
-  "crates/ralphy-daemon/src/agent_state.rs": {
-    "poll": [
-      11
-    ]
-  },
-  "crates/ralphy-daemon/src/audit/normalize.rs": {
-    "browser": [
-      13
-    ],
-    "gpu": [
-      14
-    ],
-    "normalize": [
-      12
-    ]
-  },
-  "crates/ralphy-daemon/src/desk/apply.rs": {
-    "apply_one": [
-      75
-    ]
-  },
-  "crates/ralphy-daemon/src/dispatch/host.rs": {
-    "host_argv": [
-      16
-    ]
-  },
-  "crates/ralphy-daemon/src/fleet/watchsub.rs": {
-    "subscribe": [
-      19
-    ]
-  },
-  "crates/ralphy-daemon/src/peer.rs": {
-    "fold": [
-      13
-    ]
-  },
-  "crates/ralphy-daemon/src/peer/client.rs": {
-    "handshake": [
-      18
-    ]
-  },
-  "crates/ralphy-daemon/src/peer/tunnel.rs": {
-    "ensure_with": [
-      26
-    ]
-  },
-  "crates/ralphy-daemon/src/rekey.rs": {
-    "rekey_desk": [
-      13
-    ]
-  },
-  "crates/ralphy-daemon/src/release.rs": {
-    "parse_body": [
-      13
-    ]
-  },
-  "crates/ralphy-daemon/src/routes.rs": {
-    "router_with_roster": [
-      12
-    ]
-  },
-  "crates/ralphy-daemon/src/routes/api_audit.rs": {
-    "audit_routes": [
-      21
-    ]
-  },
-  "crates/ralphy-daemon/src/routes/api_desk.rs": {
-    "desk_history_restore_route": [
-      11
-    ],
-    "desk_put_route": [
-      12
-    ]
-  },
-  "crates/ralphy-daemon/src/routes/api_fleet.rs": {
-    "fleet_route": [
-      33
-    ]
-  },
-  "crates/ralphy-daemon/src/routes/api_sessions.rs": {
-    "close_session_route": [
-      14
-    ]
-  },
-  "crates/ralphy-daemon/src/routes/guard.rs": {
-    "require_auth": [
-      18
-    ]
-  },
-  "crates/ralphy-daemon/src/routes/presence.rs": {
-    "watch_stores": [
-      13
-    ],
-    "ws_presence_loop": [
-      32
-    ]
-  },
-  "crates/ralphy-daemon/src/routes/ws_command.rs": {
-    "command_ws": [
-      22
-    ],
-    "proxy_peer_command": [
-      27
-    ]
-  },
-  "crates/ralphy-daemon/src/routes/ws_command/oneshot.rs": {
-    "execute_oneshot": [
-      99
-    ]
-  },
-  "crates/ralphy-daemon/src/routes/ws_command/stream.rs": {
-    "drain": [
-      11
-    ],
-    "stream_child": [
-      21
-    ]
-  },
-  "crates/ralphy-daemon/src/routes/ws_session/bridge.rs": {
-    "session_ws": [
-      56
-    ]
-  },
-  "crates/ralphy-daemon/src/routes/ws_session/relay.rs": {
-    "peer_session_query": [
-      13
-    ],
-    "peer_session_ws": [
-      25
-    ]
-  },
-  "crates/ralphy-daemon/src/routes/ws_session/traffic.rs": {
-    "peer_frame": [
-      12
-    ]
-  },
-  "crates/ralphy-daemon/src/routes/ws_session/upgrade.rs": {
-    "session_ws_upgrade": [
-      53
-    ]
-  },
-  "crates/ralphy-daemon/src/routes/ws_tree.rs": {
-    "tree_ws": [
-      212
-    ]
-  },
-  "crates/ralphy-daemon/src/routes/ws_tree/peer_poll.rs": {
-    "spawn_peer_tree_poller": [
-      61
-    ]
-  },
-  "crates/ralphy-daemon/src/serve.rs": {
-    "serve": [
-      37
-    ]
-  },
-  "crates/ralphy-daemon/src/session.rs": {
-    "spawn": [
-      13
-    ]
-  },
-  "crates/ralphy-daemon/src/session/manager.rs": {
-    "start_pump": [
-      24
-    ]
-  },
-  "crates/ralphy-daemon/src/session/screen.rs": {
-    "text": [
-      12
-    ]
-  },
-  "crates/ralphy-daemon/src/session/screen/input.rs": {
-    "filter": [
-      24
-    ]
-  },
-  "crates/ralphy-daemon/src/session/screen/snapshot.rs": {
-    "apply": [
-      16
-    ],
-    "write": [
-      16
-    ],
-    "write_rows": [
-      22
-    ]
-  },
-  "crates/ralphy-daemon/src/spend.rs": {
-    "annotate_unpriced": [
-      12
-    ]
-  },
-  "crates/ralphy-daemon/src/spend/activity.rs": {
-    "fold": [
-      11
-    ]
-  },
-  "crates/ralphy-daemon/src/spend/deliveries.rs": {
-    "fold": [
-      11
-    ]
-  },
-  "crates/ralphy-daemon/src/spend/rows.rs": {
-    "classify": [
-      16
-    ]
-  },
-  "crates/ralphy-daemon/src/textcodec.rs": {
-    "encode": [
-      18
-    ]
-  },
-  "crates/ralphy-daemon/src/tree.rs": {
-    "svg_root_element": [
-      15
-    ]
-  },
-  "crates/ralphy-daemon/src/tree/search.rs": {
-    "find": [
-      12
-    ],
-    "grep_with": [
-      24
-    ]
-  },
-  "crates/ralphy-daemon/src/usage.rs": {
-    "run_records": [
-      24
-    ]
-  },
-  "crates/ralphy-daemon/src/watch.rs": {
-    "pump": [
-      19
-    ],
-    "watch": [
-      14
-    ]
-  },
-  "crates/ralphy-pricing/src/ingest.rs": {
-    "ingest_models_dev": [
-      23
-    ]
-  },
-  "crates/ralphy-pricing/src/lib.rs": {
-    "parse_pricing_toml": [
-      14
-    ],
-    "resolve": [
-      20
-    ]
-  },
-  "crates/ralphy-proc-util/src/cursor.rs": {
-    "locate_cursor_with": [
-      13
-    ]
-  },
-  "crates/ralphy-proc-util/src/lib.rs": {
-    "find_program": [
-      17
-    ],
-    "tree_to_kill": [
-      11
-    ]
-  },
-  "crates/ralphy-pty/src/bin/demo.rs": {
-    "main": [
-      19
-    ]
-  },
-  "crates/ralphy-run-snapshot/src/read.rs": {
-    "list_runs": [
-      19
-    ]
-  },
-  "crates/ralphy-usage-scan/src/claude.rs": {
-    "parse_transcript": [
-      34
-    ],
-    "scan_claude": [
-      22
-    ]
-  },
-  "crates/ralphy-usage-scan/src/codex.rs": {
-    "parse_rollout": [
-      33
-    ],
-    "scan_codex_with_stems": [
-      32
-    ]
-  },
-  "crates/ralphy-usage-scan/src/copilot.rs": {
-    "read_copilot": [
-      12
-    ]
-  },
-  "crates/ralphy-usage-scan/src/cursor.rs": {
-    "scan_chats": [
-      15
-    ],
-    "scan_transcripts": [
-      13
-    ]
-  },
-  "crates/ralphy-usage-scan/src/gemini.rs": {
-    "fold_session": [
-      22
-    ],
-    "scan_gemini": [
-      23
-    ]
-  },
-  "crates/ralphy-usage-scan/src/kimi.rs": {
-    "scan_kimi_code": [
-      31
-    ],
-    "scan_legacy": [
-      45
-    ]
-  },
-  "crates/ralphy-usage-scan/src/opencode.rs": {
-    "read_opencode": [
-      18
-    ]
-  },
-  "crates/ralphy-usage-scan/src/recovery.rs": {
-    "resolve_models": [
-      16
-    ]
-  },
-  "crates/xtask/src/asset_pins.rs": {
-    "balanced": [
-      16
-    ],
-    "classify": [
-      15
-    ],
-    "collect": [
-      77
-    ],
-    "raw_literals": [
-      32
-    ]
-  },
-  "crates/xtask/src/capabilities.rs": {
-    "parse_diff": [
-      13
-    ],
-    "scan": [
-      13
-    ]
-  },
-  "crates/xtask/src/capabilities/rules.rs": {
-    "line_findings": [
-      19
-    ]
-  },
-  "crates/xtask/src/changelog.rs": {
-    "render_notes": [
-      18
-    ]
-  },
-  "crates/xtask/src/oversized.rs": {
-    "code_lines": [
-      11
-    ]
-  },
-  "crates/xtask/src/release_cmds.rs": {
-    "bump_cmd": [
-      15
-    ],
-    "changelog_cmd": [
-      14
-    ]
-  },
-  "crates/xtask/src/ui_copy.rs": {
-    "to_markdown": [
-      15
-    ]
-  },
-  "crates/xtask/src/ui_copy/check.rs": {
-    "row_violations": [
-      18
-    ]
-  },
-  "crates/xtask/src/ui_copy/html.rs": {
-    "read_tag": [
-      34
-    ],
-    "scan": [
-      39
-    ]
-  },
-  "crates/xtask/src/ui_copy/js.rs": {
-    "scan": [
-      65
-    ]
-  },
-  "crates/xtask/src/ui_copy/js/scan.rs": {
-    "alternatives": [
-      17
-    ],
-    "emit": [
-      11
-    ],
-    "expr_end": [
-      11
-    ],
-    "markup": [
-      19
-    ],
-    "render": [
-      20
-    ]
-  },
-  "crates/xtask/src/ui_copy/lex.rs": {
-    "lex": [
-      43
-    ]
-  },
-  "crates/xtask/src/ui_groups.rs": {
-    "expression_names": [
-      30
-    ],
-    "parse_shell": [
-      47
-    ],
-    "read_tag": [
-      40
-    ],
-    "render": [
-      14
-    ],
-    "scan_accesses": [
-      18
-    ],
-    "scan_bindings": [
-      38
-    ],
-    "stats": [
-      15
-    ],
-    "writes": [
-      17
-    ]
+  "ceiling": 50,
+  "functions": {
+    "crates/ralphy-adapter-support/src/headless.rs": {
+      "drive_headless": [
+        20
+      ],
+      "spawn_reader": [
+        30
+      ]
+    },
+    "crates/ralphy-agent-claude/src/interactive.rs": {
+      "strip_pty_escapes": [
+        30
+      ]
+    },
+    "crates/ralphy-agent-claude/src/status.rs": {
+      "poll": [
+        11
+      ],
+      "start": [
+        13
+      ]
+    },
+    "crates/ralphy-agent-claude/src/usage.rs": {
+      "newest_jsonl_since": [
+        20
+      ],
+      "parse_transcript_usage": [
+        16
+      ]
+    },
+    "crates/ralphy-agent-codex/src/usage.rs": {
+      "parse_codex_rollout_usage": [
+        12
+      ]
+    },
+    "crates/ralphy-agent-copilot/src/catalog.rs": {
+      "fetch_catalog": [
+        11
+      ]
+    },
+    "crates/ralphy-agent-copilot/src/guards.rs": {
+      "builtin_mcp_violation": [
+        17
+      ]
+    },
+    "crates/ralphy-agent-copilot/src/outcome.rs": {
+      "copilot_final_text": [
+        13
+      ]
+    },
+    "crates/ralphy-agent-cursor/src/outcome.rs": {
+      "collect_tool_results": [
+        13
+      ],
+      "fold_cursor_stream": [
+        21
+      ]
+    },
+    "crates/ralphy-agent-gemini/src/outcome.rs": {
+      "fold_gemini_stream": [
+        20
+      ]
+    },
+    "crates/ralphy-agent-gemini/src/policy.rs": {
+      "import_deny_rules": [
+        17
+      ]
+    },
+    "crates/ralphy-agent-gemini/src/revocation.rs": {
+      "inspect_admin_tier": [
+        13
+      ],
+      "strip_ansi": [
+        12
+      ]
+    },
+    "crates/ralphy-agent-gemini/src/root.rs": {
+      "session_stems": [
+        21
+      ]
+    },
+    "crates/ralphy-agent-kimi/src/usage.rs": {
+      "parse_kimi_wire_usage": [
+        11
+      ]
+    },
+    "crates/ralphy-agent-opencode/src/events.rs": {
+      "parse_opencode_events": [
+        13
+      ],
+      "parse_opencode_reset_hint": [
+        22
+      ]
+    },
+    "crates/ralphy-cli/src/config.rs": {
+      "set": [
+        28
+      ]
+    },
+    "crates/ralphy-cli/src/daemon/register.rs": {
+      "migrate_side_stores": [
+        13
+      ]
+    },
+    "crates/ralphy-cli/src/events/emitter.rs": {
+      "public_ip": [
+        14
+      ]
+    },
+    "crates/ralphy-cli/src/events/envelope.rs": {
+      "runevent_to_cloudevent": [
+        28
+      ]
+    },
+    "crates/ralphy-cli/src/guard.rs": {
+      "evaluate_recursive_delete": [
+        17
+      ],
+      "run_guard_hook": [
+        16
+      ],
+      "shell_tokens": [
+        11
+      ]
+    },
+    "crates/ralphy-cli/src/hook.rs": {
+      "read_transcript_last_assistant": [
+        28
+      ]
+    },
+    "crates/ralphy-cli/src/host/aliases.rs": {
+      "parse_config_hosts": [
+        16
+      ]
+    },
+    "crates/ralphy-cli/src/host/checks.rs": {
+      "evaluate": [
+        22
+      ],
+      "parse_facts": [
+        12
+      ]
+    },
+    "crates/ralphy-cli/src/host/install.rs": {
+      "install": [
+        11
+      ]
+    },
+    "crates/ralphy-cli/src/host/pair.rs": {
+      "add": [
+        20
+      ],
+      "remove": [
+        11
+      ]
+    },
+    "crates/ralphy-cli/src/host/password.rs": {
+      "serve": [
+        13
+      ]
+    },
+    "crates/ralphy-cli/src/host/shell.rs": {
+      "render": [
+        32
+      ]
+    },
+    "crates/ralphy-cli/src/init/gate.rs": {
+      "format_report": [
+        20
+      ]
+    },
+    "crates/ralphy-cli/src/init/render.rs": {
+      "print_gate_report": [
+        12
+      ]
+    },
+    "crates/ralphy-cli/src/install.rs": {
+      "put_on_path": [
+        11
+      ]
+    },
+    "crates/ralphy-cli/src/install/user_path.rs": {
+      "add": [
+        13
+      ]
+    },
+    "crates/ralphy-cli/src/issues.rs": {
+      "issues_cmd": [
+        18
+      ],
+      "render_board_json": [
+        12
+      ]
+    },
+    "crates/ralphy-cli/src/run/wiring.rs": {
+      "build_run_queue": [
+        17
+      ]
+    },
+    "crates/ralphy-cli/src/runstate/state.rs": {
+      "apply": [
+        36
+      ]
+    },
+    "crates/ralphy-cli/src/telegram/notifier.rs": {
+      "on_event": [
+        12
+      ],
+      "on_tick": [
+        15
+      ]
+    },
+    "crates/ralphy-cli/src/triage.rs": {
+      "apply_triage": [
+        15
+      ],
+      "run": [
+        19
+      ]
+    },
+    "crates/ralphy-cli/src/ui.rs": {
+      "queue_bar_label": [
+        22
+      ]
+    },
+    "crates/ralphy-cli/src/ui/presenter.rs": {
+      "run": [
+        13
+      ]
+    },
+    "crates/ralphy-core/src/acceptance.rs": {
+      "apply_ledger": [
+        12
+      ],
+      "evidence_comment": [
+        13
+      ],
+      "logical_checkbox_items": [
+        12
+      ]
+    },
+    "crates/ralphy-core/src/blocked.rs": {
+      "sort_queue_in_graph": [
+        27
+      ]
+    },
+    "crates/ralphy-core/src/checkouts.rs": {
+      "add": [
+        13
+      ],
+      "parse_porcelain": [
+        15
+      ]
+    },
+    "crates/ralphy-core/src/checkouts/carry.rs": {
+      "unlink_in": [
+        12
+      ]
+    },
+    "crates/ralphy-core/src/github/attachments.rs": {
+      "fetch_one": [
+        11
+      ],
+      "fetch_triage_attachments": [
+        26
+      ]
+    },
+    "crates/ralphy-core/src/handoff.rs": {
+      "knowledge_used": [
+        11
+      ]
+    },
+    "crates/ralphy-core/src/runner/clock.rs": {
+      "next_reset": [
+        12
+      ],
+      "wait_for_reset": [
+        14
+      ]
+    },
+    "crates/ralphy-core/src/runner/phases/close.rs": {
+      "close_and_record": [
+        14
+      ]
+    },
+    "crates/ralphy-core/src/runner/phases/execute.rs": {
+      "execute_phase": [
+        16
+      ]
+    },
+    "crates/ralphy-core/src/runner/phases/plan.rs": {
+      "plan_phase": [
+        32
+      ]
+    },
+    "crates/ralphy-core/src/runner/phases/verify.rs": {
+      "verify_gate": [
+        33
+      ]
+    },
+    "crates/ralphy-core/src/sync.rs": {
+      "pull": [
+        11
+      ]
+    },
+    "crates/ralphy-core/src/verify.rs": {
+      "run_one": [
+        11
+      ]
+    },
+    "crates/ralphy-core/src/verify/parse.rs": {
+      "has_escaped_quote": [
+        11
+      ]
+    },
+    "crates/ralphy-core/src/worktree.rs": {
+      "discard": [
+        18
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-add-project.ts": {
+      "next": [
+        33
+      ],
+      "sepOf": [
+        11
+      ],
+      "target": [
+        28
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-board.ts": {
+      "boardRowToIssue": [
+        11
+      ],
+      "loadBoard": [
+        15
+      ],
+      "loadIssueDetail": [
+        11
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-changes-panel.ts": {
+      "loadSync": [
+        13
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-changes.ts": {
+      "foldSync": [
+        16
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-checkouts-store.ts": {
+      "ensureWorktreeListing": [
+        14
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-client-view.ts": {
+      "read": [
+        17
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-columns.ts": {
+      "fromStored": [
+        11
+      ],
+      "listFold": [
+        28
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-connection-store.ts": {
+      "onBuildSkew": [
+        17
+      ],
+      "onPresencePush": [
+        11
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-console-checkout.ts": {
+      "askWorktree": [
+        12
+      ],
+      "checkoutMenu": [
+        14
+      ],
+      "checkoutMenuRows": [
+        12
+      ],
+      "createWorktreeFor": [
+        19
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-console-feeds.ts": {
+      "ingestFleet": [
+        12
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-console-frames.ts": {
+      "readSocketEvent": [
+        19
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-console-keys.ts": {
+      "(anonymous)": [
+        11
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-console-placeholder.ts": {
+      "(anonymous)": [
+        15,
+        12
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-console-press.ts": {
+      "(anonymous)": [
+        20
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-console-session.ts": {
+      "dormancyDecision": [
+        11
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-console-spawn.ts": {
+      "recordBirth": [
+        11
+      ],
+      "recordSession": [
+        15
+      ],
+      "spawnWindow": [
+        13
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-console-terminal.ts": {
+      "(anonymous)": [
+        24,
+        11
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-console-title.ts": {
+      "sessionPresentation": [
+        13
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-console-touch.ts": {
+      "(anonymous)": [
+        11
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-consoles-tab.ts": {
+      "paintColumns": [
+        29
+      ],
+      "restoreColumns": [
+        13
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-daemon.ts": {
+      "onMessage": [
+        13
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-desk-detach.ts": {
+      "(anonymous)": [
+        31,
+        12
+      ],
+      "peerFold": [
+        11
+      ],
+      "reattachFence": [
+        25
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-desk-folds.ts": {
+      "(anonymous)": [
+        17
+      ],
+      "noteNameOk": [
+        11
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-desk-restore.ts": {
+      "(anonymous)": [
+        39
+      ],
+      "mountDetached": [
+        17
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-desk-sync.ts": {
+      "applyChange": [
+        21
+      ],
+      "setFields": [
+        36
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-desk.ts": {
+      "converge": [
+        15
+      ],
+      "flushed": [
+        23
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-detach-link.ts": {
+      "isDetachMessage": [
+        13
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-detached-fence.ts": {
+      "(anonymous)": [
+        16
+      ],
+      "isFenceOpen": [
+        12
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-file-viewer.ts": {
+      "applyFresh": [
+        11
+      ],
+      "disposeEditor": [
+        12
+      ],
+      "paint": [
+        23
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-files.ts": {
+      "_reconcileOnce": [
+        36
+      ],
+      "applyFileSearch": [
+        12
+      ],
+      "duplicateNode": [
+        15
+      ],
+      "reconcileLevel": [
+        12
+      ],
+      "refreshOpenViewers": [
+        12
+      ],
+      "revealRel": [
+        11
+      ],
+      "showMenu": [
+        13
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-fleet.ts": {
+      "fleetGroups": [
+        24
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-geometry.ts": {
+      "bringIntoView": [
+        13
+      ],
+      "clampOffset": [
+        13
+      ],
+      "freeSpawnRect": [
+        15
+      ],
+      "panNudge": [
+        19
+      ],
+      "rectHolds": [
+        17
+      ],
+      "rectsOverlap": [
+        28
+      ],
+      "stageExtent": [
+        16
+      ],
+      "viewLanding": [
+        11
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-hosts-dialog.ts": {
+      "(anonymous)": [
+        13
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-hosts.ts": {
+      "next": [
+        23
+      ],
+      "progress": [
+        18
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-kanban.ts": {
+      "orderGraph": [
+        23
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-modals-store.ts": {
+      "consoleShortcutsBlocked": [
+        16
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-monaco.ts": {
+      "disableLanguageServices": [
+        16
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-notes-editor.ts": {
+      "(anonymous)": [
+        11
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-notes-folds.ts": {
+      "withHeader": [
+        13
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-notes-on-top.ts": {
+      "keepOnTop": [
+        13
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-notes.ts": {
+      "(anonymous)": [
+        16
+      ],
+      "addCard": [
+        12
+      ],
+      "commitRename": [
+        14
+      ],
+      "render": [
+        24
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-project.ts": {
+      "worktreeNameProblem": [
+        16
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-projects-store.ts": {
+      "(anonymous)": [
+        18,
+        11
+      ],
+      "loadFleet": [
+        18
+      ],
+      "refreshLive": [
+        12
+      ],
+      "wakePeer": [
+        11
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-runs-store.ts": {
+      "hydrateRuns": [
+        18
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-runs.ts": {
+      "fromSnapshot": [
+        20
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-security-dialog.ts": {
+      "toggleRequireLogin": [
+        17
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-session-route.ts": {
+      "announcement": [
+        15
+      ],
+      "url": [
+        15
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-settings-dialog.ts": {
+      "(anonymous)": [
+        11
+      ],
+      "saveSetting": [
+        16
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-spend-panel.ts": {
+      "loadLedger": [
+        14
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-spend.ts": {
+      "state": [
+        30
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-split.ts": {
+      "resolve": [
+        17
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-stage-chrome.ts": {
+      "buildChrome": [
+        43
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-stage-columns.ts": {
+      "applyColumns": [
+        29
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-stage-fence-gestures.ts": {
+      "(anonymous)": [
+        11
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-stage-fence-list.ts": {
+      "createFence": [
+        17
+      ],
+      "refreshFenceChrome": [
+        21
+      ],
+      "renderFences": [
+        19
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-stage-fences.ts": {
+      "arrangeFence": [
+        12
+      ],
+      "detachFence": [
+        18
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-stage-view.ts": {
+      "applyLanding": [
+        16
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-stage-window.ts": {
+      "setMax": [
+        11
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-tabs-store.ts": {
+      "repathTabs": [
+        14
+      ],
+      "restoreView": [
+        15
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-wire.ts": {
+      "(anonymous)": [
+        31,
+        15,
+        11
+      ]
+    },
+    "crates/ralphy-daemon/src/agent_state.rs": {
+      "poll": [
+        11
+      ]
+    },
+    "crates/ralphy-daemon/src/audit/normalize.rs": {
+      "browser": [
+        13
+      ],
+      "gpu": [
+        14
+      ],
+      "normalize": [
+        12
+      ]
+    },
+    "crates/ralphy-daemon/src/dispatch/host.rs": {
+      "host_argv": [
+        16
+      ]
+    },
+    "crates/ralphy-daemon/src/fleet/watchsub.rs": {
+      "subscribe": [
+        19
+      ]
+    },
+    "crates/ralphy-daemon/src/peer.rs": {
+      "fold": [
+        13
+      ]
+    },
+    "crates/ralphy-daemon/src/peer/client.rs": {
+      "handshake": [
+        18
+      ]
+    },
+    "crates/ralphy-daemon/src/peer/tunnel.rs": {
+      "ensure_with": [
+        26
+      ]
+    },
+    "crates/ralphy-daemon/src/rekey.rs": {
+      "rekey_desk": [
+        13
+      ]
+    },
+    "crates/ralphy-daemon/src/release.rs": {
+      "parse_body": [
+        13
+      ]
+    },
+    "crates/ralphy-daemon/src/routes.rs": {
+      "router_with_roster": [
+        12
+      ]
+    },
+    "crates/ralphy-daemon/src/routes/api_audit.rs": {
+      "audit_routes": [
+        21
+      ]
+    },
+    "crates/ralphy-daemon/src/routes/api_desk.rs": {
+      "desk_history_restore_route": [
+        11
+      ],
+      "desk_put_route": [
+        12
+      ]
+    },
+    "crates/ralphy-daemon/src/routes/api_fleet.rs": {
+      "fleet_route": [
+        33
+      ]
+    },
+    "crates/ralphy-daemon/src/routes/api_sessions.rs": {
+      "close_session_route": [
+        14
+      ]
+    },
+    "crates/ralphy-daemon/src/routes/guard.rs": {
+      "require_auth": [
+        18
+      ]
+    },
+    "crates/ralphy-daemon/src/routes/presence.rs": {
+      "watch_stores": [
+        13
+      ],
+      "ws_presence_loop": [
+        32
+      ]
+    },
+    "crates/ralphy-daemon/src/routes/ws_command.rs": {
+      "command_ws": [
+        22
+      ],
+      "proxy_peer_command": [
+        27
+      ]
+    },
+    "crates/ralphy-daemon/src/routes/ws_command/stream.rs": {
+      "drain": [
+        11
+      ],
+      "stream_child": [
+        21
+      ]
+    },
+    "crates/ralphy-daemon/src/routes/ws_session/relay.rs": {
+      "peer_session_query": [
+        13
+      ],
+      "peer_session_ws": [
+        25
+      ]
+    },
+    "crates/ralphy-daemon/src/routes/ws_session/traffic.rs": {
+      "peer_frame": [
+        12
+      ]
+    },
+    "crates/ralphy-daemon/src/routes/ws_tree/peer_poll.rs": {
+      "spawn_peer_tree_poller": [
+        18
+      ]
+    },
+    "crates/ralphy-daemon/src/serve.rs": {
+      "serve": [
+        37
+      ]
+    },
+    "crates/ralphy-daemon/src/session.rs": {
+      "spawn": [
+        13
+      ]
+    },
+    "crates/ralphy-daemon/src/session/manager.rs": {
+      "start_pump": [
+        24
+      ]
+    },
+    "crates/ralphy-daemon/src/session/screen.rs": {
+      "text": [
+        12
+      ]
+    },
+    "crates/ralphy-daemon/src/session/screen/input.rs": {
+      "filter": [
+        24
+      ]
+    },
+    "crates/ralphy-daemon/src/session/screen/snapshot.rs": {
+      "apply": [
+        16
+      ],
+      "write": [
+        16
+      ],
+      "write_rows": [
+        22
+      ]
+    },
+    "crates/ralphy-daemon/src/spend.rs": {
+      "annotate_unpriced": [
+        12
+      ]
+    },
+    "crates/ralphy-daemon/src/spend/activity.rs": {
+      "fold": [
+        11
+      ]
+    },
+    "crates/ralphy-daemon/src/spend/deliveries.rs": {
+      "fold": [
+        11
+      ]
+    },
+    "crates/ralphy-daemon/src/spend/rows.rs": {
+      "classify": [
+        16
+      ]
+    },
+    "crates/ralphy-daemon/src/textcodec.rs": {
+      "encode": [
+        18
+      ]
+    },
+    "crates/ralphy-daemon/src/tree.rs": {
+      "svg_root_element": [
+        15
+      ]
+    },
+    "crates/ralphy-daemon/src/tree/search.rs": {
+      "find": [
+        12
+      ],
+      "grep_with": [
+        24
+      ]
+    },
+    "crates/ralphy-daemon/src/usage.rs": {
+      "run_records": [
+        24
+      ]
+    },
+    "crates/ralphy-daemon/src/watch.rs": {
+      "pump": [
+        19
+      ],
+      "watch": [
+        14
+      ]
+    },
+    "crates/ralphy-pricing/src/ingest.rs": {
+      "ingest_models_dev": [
+        23
+      ]
+    },
+    "crates/ralphy-pricing/src/lib.rs": {
+      "parse_pricing_toml": [
+        14
+      ],
+      "resolve": [
+        20
+      ]
+    },
+    "crates/ralphy-proc-util/src/cursor.rs": {
+      "locate_cursor_with": [
+        13
+      ]
+    },
+    "crates/ralphy-proc-util/src/lib.rs": {
+      "find_program": [
+        17
+      ],
+      "tree_to_kill": [
+        11
+      ]
+    },
+    "crates/ralphy-pty/src/bin/demo.rs": {
+      "main": [
+        13
+      ]
+    },
+    "crates/ralphy-run-snapshot/src/read.rs": {
+      "list_runs": [
+        19
+      ]
+    },
+    "crates/ralphy-usage-scan/src/claude.rs": {
+      "parse_transcript": [
+        34
+      ],
+      "scan_claude": [
+        22
+      ]
+    },
+    "crates/ralphy-usage-scan/src/codex.rs": {
+      "parse_rollout": [
+        33
+      ],
+      "scan_codex_with_stems": [
+        32
+      ]
+    },
+    "crates/ralphy-usage-scan/src/copilot.rs": {
+      "read_copilot": [
+        12
+      ]
+    },
+    "crates/ralphy-usage-scan/src/cursor.rs": {
+      "scan_chats": [
+        15
+      ],
+      "scan_transcripts": [
+        13
+      ]
+    },
+    "crates/ralphy-usage-scan/src/gemini.rs": {
+      "fold_session": [
+        22
+      ],
+      "scan_gemini": [
+        23
+      ]
+    },
+    "crates/ralphy-usage-scan/src/kimi.rs": {
+      "scan_kimi_code": [
+        31
+      ],
+      "scan_legacy": [
+        45
+      ]
+    },
+    "crates/ralphy-usage-scan/src/opencode.rs": {
+      "read_opencode": [
+        18
+      ]
+    },
+    "crates/ralphy-usage-scan/src/recovery.rs": {
+      "resolve_models": [
+        16
+      ]
+    },
+    "crates/xtask/src/asset_pins.rs": {
+      "balanced": [
+        16
+      ],
+      "classify": [
+        15
+      ],
+      "raw_literals": [
+        32
+      ]
+    },
+    "crates/xtask/src/capabilities.rs": {
+      "parse_diff": [
+        13
+      ],
+      "scan": [
+        13
+      ]
+    },
+    "crates/xtask/src/capabilities/rules.rs": {
+      "line_findings": [
+        19
+      ]
+    },
+    "crates/xtask/src/changelog.rs": {
+      "render_notes": [
+        18
+      ]
+    },
+    "crates/xtask/src/oversized.rs": {
+      "code_lines": [
+        11
+      ]
+    },
+    "crates/xtask/src/release_cmds.rs": {
+      "bump_cmd": [
+        15
+      ],
+      "changelog_cmd": [
+        14
+      ]
+    },
+    "crates/xtask/src/ui_copy.rs": {
+      "to_markdown": [
+        15
+      ]
+    },
+    "crates/xtask/src/ui_copy/check.rs": {
+      "row_violations": [
+        18
+      ]
+    },
+    "crates/xtask/src/ui_copy/html.rs": {
+      "read_tag": [
+        34
+      ],
+      "scan": [
+        39
+      ]
+    },
+    "crates/xtask/src/ui_copy/js/scan.rs": {
+      "alternatives": [
+        17
+      ],
+      "emit": [
+        11
+      ],
+      "expr_end": [
+        11
+      ],
+      "markup": [
+        19
+      ],
+      "render": [
+        20
+      ]
+    },
+    "crates/xtask/src/ui_copy/lex.rs": {
+      "lex": [
+        43
+      ]
+    },
+    "crates/xtask/src/ui_groups.rs": {
+      "expression_names": [
+        30
+      ],
+      "parse_shell": [
+        47
+      ],
+      "read_tag": [
+        40
+      ],
+      "render": [
+        14
+      ],
+      "scan_accesses": [
+        18
+      ],
+      "scan_bindings": [
+        38
+      ],
+      "stats": [
+        15
+      ],
+      "writes": [
+        17
+      ]
+    }
   }
 }

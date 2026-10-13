@@ -142,6 +142,7 @@ fn verify_gate_fails_skips_issue_and_continues_queue() {
     let r1 = report.worked.iter().find(|r| r.number == 1).unwrap();
     assert!(!r1.closed, "gate-failed issue is not closed");
     assert!(r1.outcome.is_none(), "a verify skip carries no outcome");
+    assert_eq!(r1.skip, Some(ralphy_core::SkipReason::VerifyFailed));
     let r2 = report.worked.iter().find(|r| r.number == 2).unwrap();
     assert!(r2.closed, "the passing issue closed");
 

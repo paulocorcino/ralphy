@@ -5,7 +5,8 @@
 //! with `variant: "modified"`. In both, an exhaustive `switch` or `match`
 //! counts once. A function over [`LIMIT`]
 //! fails unless `docs/complexity-baseline.json` lists it; a listed function
-//! may go down, never up. `--bless` rewrites the baseline. With `--base
+//! may go down, never up, and never over the ceiling the baseline records.
+//! `--bless` rewrites the baseline and keeps the ceiling it read. With `--base
 //! <rev>`, the functions at [`NEAR`] to [`LIMIT`] in the files changed since
 //! `<rev>` are listed, and do not fail.
 
@@ -16,6 +17,7 @@ use std::sync::LazyLock;
 
 use anyhow::{bail, Context, Result};
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::asset_pins::repo_root;
@@ -29,6 +31,9 @@ const NEAR: u32 = 7;
 /// The oxlint the default `npx` runs; `.github/workflows/ci.yml` pins the
 /// same version by checksum.
 pub(crate) const OXLINT_VERSION: &str = "1.85.0";
+/// The ceiling of a baseline that records none (ADR-0081, amendment A5). It is
+/// only where the first ceiling comes from: after that, the file holds it.
+const CEILING: u32 = 50;
 const BASELINE: &str = "docs/complexity-baseline.json";
 const UI_DIR: &str = "crates/ralphy-daemon/assets/ui";
 /// Where the generated tool configs go: build output, never committed.
@@ -51,6 +56,14 @@ struct Score {
 /// blocks, two anonymous functions), so the values are compared as a sorted
 /// list and a line number is never part of the identity.
 type Table = BTreeMap<String, BTreeMap<String, Vec<u32>>>;
+
+/// The committed file: one ceiling for both languages, and the functions over
+/// [`LIMIT`]. The ceiling goes down by hand, when a step of A6 closes.
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+struct Baseline {
+    ceiling: u32,
+    functions: Table,
+}
 
 pub fn complexity_cmd(args: &[String]) -> Result<()> {
     let mut check = false;
@@ -80,32 +93,68 @@ pub fn complexity_cmd(args: &[String]) -> Result<()> {
     let current = table(scores.iter().filter(|s| s.value > LIMIT));
     let path = root.join(BASELINE);
     if bless {
-        std::fs::write(&path, to_json(&current)?)
-            .with_context(|| format!("writing {}", path.display()))?;
-        println!("{BASELINE}: {} function(s) over {LIMIT}", count(&current));
-        return Ok(());
+        return bless_baseline(&path, current);
     }
     let text =
         std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
-    let baseline: Table =
-        serde_json::from_str(&text).with_context(|| format!("parsing {BASELINE}"))?;
-    let errors = compare(&baseline, &current);
+    let baseline = parse_baseline(&text).with_context(|| format!("parsing {BASELINE}"))?;
+    let mut errors = compare(&baseline.functions, &current);
+    let over_ceiling = ceiling_errors(baseline.ceiling, &current);
+    let advice = fix_advice(!errors.is_empty(), !over_ceiling.is_empty());
+    errors.extend(over_ceiling);
     if errors.is_empty() {
         println!(
-            "{} function(s) over {LIMIT}, as in {BASELINE}",
-            count(&current)
+            "{} function(s) over {LIMIT}, as in {BASELINE}, none over the ceiling {}",
+            count(&current),
+            baseline.ceiling
         );
         return Ok(());
     }
     for error in &errors {
         eprintln!("{error}");
     }
-    bail!(
-        "{} complexity error(s); split a function that grew along a responsibility it \
-         already has, and run `cargo run -p xtask -- complexity --bless` to record a \
-         function that went down",
-        errors.len()
-    )
+    bail!("{} complexity error(s); {advice}", errors.len())
+}
+
+/// What to do about the errors printed. `--bless` records a function that went
+/// down. It never raises the ceiling, so a function over it can only be split.
+fn fix_advice(compared: bool, over_ceiling: bool) -> String {
+    let mut steps = Vec::new();
+    if compared || over_ceiling {
+        steps.push("split a function that grew along a responsibility it already has");
+    }
+    if compared {
+        steps.push(
+            "run `cargo run -p xtask -- complexity --bless` to record a function that went down",
+        );
+    }
+    if over_ceiling {
+        steps.push(
+            "a function over the ceiling can only be split: --bless does not raise the ceiling",
+        );
+    }
+    steps.join("; ")
+}
+
+/// Writes `current` to the baseline at `path`, with the ceiling it holds.
+fn bless_baseline(path: &Path, current: Table) -> Result<()> {
+    let existing = path
+        .is_file()
+        .then(|| std::fs::read_to_string(path))
+        .transpose()
+        .with_context(|| format!("reading {}", path.display()))?;
+    let ceiling = ceiling_of(existing.as_deref()).with_context(|| format!("parsing {BASELINE}"))?;
+    let baseline = Baseline {
+        ceiling,
+        functions: current,
+    };
+    std::fs::write(path, to_json(&baseline)?)
+        .with_context(|| format!("writing {}", path.display()))?;
+    println!(
+        "{BASELINE}: {} function(s) over {LIMIT}, ceiling {ceiling}",
+        count(&baseline.functions)
+    );
+    Ok(())
 }
 
 /// Scores every function of the production Rust files under `crates/`,
@@ -227,6 +276,21 @@ fn compare(baseline: &Table, current: &Table) -> Vec<String> {
     errors
 }
 
+/// One error for each function that scores more than `ceiling`.
+fn ceiling_errors(ceiling: u32, current: &Table) -> Vec<String> {
+    let mut errors = Vec::new();
+    for (path, names) in current {
+        for (name, values) in names {
+            for value in values.iter().filter(|v| **v > ceiling) {
+                errors.push(format!(
+                    "{path}: {name}: {value} is over the ceiling {ceiling}"
+                ));
+            }
+        }
+    }
+    errors
+}
+
 /// Both lists are sorted, highest first, and compared position by position.
 fn compare_values(at: &str, was: &[u32], now: &[u32]) -> Vec<String> {
     let mut errors = Vec::new();
@@ -270,10 +334,34 @@ fn count(table: &Table) -> usize {
         .sum()
 }
 
-fn to_json(table: &Table) -> Result<String> {
-    let mut out = serde_json::to_string_pretty(table).context("serializing the baseline")?;
+fn to_json(baseline: &Baseline) -> Result<String> {
+    let mut out = serde_json::to_string_pretty(baseline).context("serializing the baseline")?;
     out.push('\n');
     Ok(out)
+}
+
+fn parse_baseline(text: &str) -> Result<Baseline> {
+    serde_json::from_str(text).context(
+        "reading the ceiling and the functions; a baseline in the old format has no \
+         `ceiling`: run `cargo run -p xtask -- complexity --bless` to migrate it",
+    )
+}
+
+/// The ceiling `--bless` writes: the one in the existing file, or [`CEILING`]
+/// when there is no file or it records none (the format before A5). It is
+/// never computed from the scores, so a bless cannot raise it.
+fn ceiling_of(existing: Option<&str>) -> Result<u32> {
+    let Some(text) = existing else {
+        return Ok(CEILING);
+    };
+    let value: Value = serde_json::from_str(text).context("the file is not JSON")?;
+    match value.get("ceiling") {
+        None => Ok(CEILING),
+        Some(ceiling) => ceiling
+            .as_u64()
+            .and_then(|n| u32::try_from(n).ok())
+            .context("the ceiling is not a number"),
+    }
 }
 
 /// The scores from [`NEAR`] to [`LIMIT`] in `files`.

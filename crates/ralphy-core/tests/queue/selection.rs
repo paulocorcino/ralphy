@@ -189,6 +189,11 @@ fn human_return_labels_skip_their_issues_and_the_queue_continues() {
             "{case}: #{n} skipped, no outcome"
         );
         assert!(!skipped.closed, "{case}: #{n} stays open");
+        assert_eq!(
+            skipped.skip,
+            Some(ralphy_core::SkipReason::HumanReturn),
+            "{case}: #{n} skipped for its human-return label"
+        );
         assert!(
             !tracker.closes.borrow().iter().any(|(c, _)| *c == n),
             "{case}: #{n} never closed on the tracker"

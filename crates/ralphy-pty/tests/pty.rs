@@ -286,3 +286,41 @@ fn exe_program_passes_ampersand_and_percent_intact() {
     assert!(out.contains("ARG=R&D|"), "missing R&D:\n{out}");
     assert!(out.contains("ARG=50%off|"), "missing 50%off:\n{out}");
 }
+
+#[test]
+fn output_channel_delivers_a_childs_output_and_closes_at_eof() {
+    // About 8 KB of output in lines shorter than the terminal: more than one
+    // read of the channel's buffer, and no line broken by a wrap.
+    let args: Vec<String> = (0..120)
+        .map(|n| format!("{n:03}-{}", "x".repeat(60)))
+        .collect();
+    let exe = env!("CARGO_BIN_EXE_pty_args_test_child");
+    let mut session = PtySession::spawn(PtyCommand::new(exe).args(&args)).expect("spawn in PTY");
+    let rx = session.output_channel().expect("start the output channel");
+
+    let (out, seen) = pump_until_contains(&mut session, &rx, "ARGS-END", Duration::from_secs(20));
+    assert!(
+        seen,
+        "the end marker never arrived, got:
+{out}"
+    );
+    assert!(
+        out.contains(&format!("ARG={}|", args[119])),
+        "the last argument was lost:
+{out}"
+    );
+
+    // ConPTY closes the output only when the master closes.
+    session.wait().expect("wait on the child");
+    drop(session);
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let closed = loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        match rx.recv_timeout(left) {
+            Ok(_) => continue,
+            Err(mpsc::RecvTimeoutError::Disconnected) => break true,
+            Err(mpsc::RecvTimeoutError::Timeout) => break false,
+        }
+    };
+    assert!(closed, "the channel should close at EOF");
+}

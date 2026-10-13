@@ -1,4 +1,5 @@
 use super::*;
+use crate::Outcome;
 
 fn labeled(number: u64, labels: &[&str]) -> Issue {
     Issue {

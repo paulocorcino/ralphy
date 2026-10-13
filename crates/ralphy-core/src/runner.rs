@@ -5,12 +5,12 @@
 use std::collections::BTreeMap;
 
 use anyhow::Result;
-use tracing::{info, warn};
+use tracing::warn;
 
 use crate::{
     ledger::{FileLedger, LedgerSink},
     repo::{GitRepo, Repo},
-    Agent, Issue, IssueTracker, Outcome, Usage, Workspace,
+    Agent, Issue, IssueTracker, Usage, Workspace,
 };
 
 mod artifacts;
@@ -18,9 +18,9 @@ mod branch;
 mod clock;
 mod comments;
 mod phases;
+mod queue_run;
 mod types;
 
-use artifacts::{clear_protocol_failure, clear_verify_failure};
 pub(crate) use branch::prepare_branch;
 #[allow(unused_imports)]
 pub use branch::BranchMode;
@@ -31,6 +31,7 @@ pub(crate) use phases::{
     close_and_record, execute_phase, open_blockers, plan_phase, prepare_issue, protocol_gate,
     verify_gate, ExecPhase, IssueCtx, PlanPhase, Prepared, ProtocolGate, VerifyGate,
 };
+use queue_run::{Early, QueueRun};
 pub(crate) use types::RunLedger;
 pub use types::{IssueResult, QueueConfig, QueueReport, ResultStatus, SkipReason, StopReason};
 
@@ -142,24 +143,13 @@ fn run_queue_with(
         cfg.branch_mode,
     )?;
 
-    // Pre-run undo marker: a local tag at the compare ref (the base in `New`
-    // mode, the pre-run HEAD in `Current` mode), so undoing the whole run is one
-    // copyable command instead of reflog archaeology. Best-effort — a run must
-    // never fail over its own bookkeeping.
-    let undo_tag_name = format!("ralphy/pre-run-{}", cfg.stamp);
-    let mut undo_tag = match repo.tag(&undo_tag_name, &compare_ref) {
-        Ok(()) => Some(undo_tag_name),
-        Err(e) => {
-            warn!(tag = %undo_tag_name, error = %e, "creating the pre-run undo tag failed");
-            None
-        }
-    };
+    let mut undo_tag = create_undo_tag(repo, &cfg.stamp, &compare_ref);
 
     // Identity for every ledger line this run writes (ADR-0008 D6/D7), read once
     // from git: the project slug (remote, or a path-hash fallback) and the actor.
     // The accumulators fold every phase's usage into the run totals; the per-model
     // split feeds the read-time USD footer (D8).
-    let mut ledger = RunLedger {
+    let ledger = RunLedger {
         sink,
         project: repo.project_slug(),
         actor_email: repo.user_email().unwrap_or_default(),
@@ -170,362 +160,39 @@ fn run_queue_with(
         invocations: 0,
     };
 
-    let mut worked: Vec<IssueResult> = Vec::new();
+    let mut run = QueueRun {
+        cx: IssueCtx {
+            cfg,
+            ws: &ws,
+            repo,
+            agent,
+            tracker,
+            clock,
+            branch: &branch,
+        },
+        orig: &orig,
+        ledger,
+        worked: Vec::new(),
+    };
     let mut stop: Option<StopReason> = None;
 
-    let cx = IssueCtx {
-        cfg,
-        ws: &ws,
-        repo,
-        agent,
-        tracker,
-        clock,
-        branch: &branch,
-    };
-
-    'queue: for issue in queue {
-        // The operator's stop outranks the clock (docs/adr/0054): a run stopped
-        // on the same tick its deadline lapsed must report the button, not the
-        // budget, or the panel tells the operator something they did not do.
-        // Between issues nothing is in flight, so no number is named.
-        if crate::stop::requested() {
-            crate::emit::run_stopped(None);
-            stop = Some(StopReason::Stopped { number: None });
-            break;
-        }
-
-        // Don't start a new issue past the global budget. Work already committed
-        // for earlier issues is kept; the branch is handed back as it stands.
-        if clock.deadline_passed() {
-            crate::emit::deadline_passed(issue.number);
-            stop = Some(StopReason::Deadline);
-            break;
-        }
-
-        // Stop-before: a flow-control label that pauses the run before the tagged
-        // issue. An explicitly named issue (`--only-issue`/`--issues`) overrides it
-        // — the queue was pre-filtered to that selection, so the operator clearly
-        // wants it to run.
-        if first_stop_before(std::slice::from_ref(issue), &cfg.forced_issues).is_some() {
-            crate::emit::stop_before_label(issue.number);
-            stop = Some(StopReason::StopBefore {
-                number: issue.number,
-            });
-            break;
-        }
-
-        // Human-return precedence (ADR-0016): a label that returns the issue to a
-        // human outranks its queue label. Skip with a recorded reason and CONTINUE
-        // the queue (unlike stop-before, which halts). `forced_issues` does NOT
-        // override this: the label may record someone else's state (a reporter
-        // owing info, a parked verify gate) that a run flag must not steamroll.
-        if let Some(label) = human_return_label(issue, &cfg.human_return_labels) {
-            crate::emit::human_return_label(issue.number, label);
-            worked.push(IssueResult {
-                number: issue.number,
-                outcome: None,
-                closed: false,
-                blocked_by: Vec::new(),
-                human_blockers: Vec::new(),
-                status: ResultStatus::Skipped,
-                skip: Some(SkipReason::HumanReturn),
-                review_only: 0,
-            });
-            continue;
-        }
-
-        // Gate and stage the issue (blocked-by, comment enrichment, `.ralphy/`
-        // staging). A preparation error is fatal: restore and propagate.
-        let issue = match prepare_issue(&cx, issue) {
-            Ok(Prepared::Ready(enriched)) => enriched,
-            Ok(Prepared::Blocked { open, human }) => {
-                // Mirrors the emitter split in `prepare_issue`: a blocker that
-                // is a human gate parks the issue as HITL, not a plain skip.
-                let status = if human.is_empty() {
-                    ResultStatus::Skipped
-                } else {
-                    ResultStatus::Hitl
-                };
-                worked.push(IssueResult {
-                    number: issue.number,
-                    outcome: None,
-                    closed: false,
-                    blocked_by: open,
-                    human_blockers: human,
-                    status,
-                    skip: (status == ResultStatus::Skipped).then_some(SkipReason::BlockedBy),
-                    review_only: 0,
-                });
-                continue;
-            }
-            Err(e) => {
-                restore(repo, &orig, &branch, &cfg.base_branch, cfg.branch_mode);
-                return Err(e);
-            }
-        };
-        let issue = &issue;
-
-        // Plan the issue; a non-limit planning failure restores and propagates.
-        let planned = plan_phase(&cx, issue, &mut ledger);
-        // The operator's stop outranks whatever planning returned (docs/adr/0054):
-        // a reaped planner wrote no plan (an `Err`), a stopped limit wait reads as
-        // `StopDeadline`, and a plan that did finish must not start an executor.
-        if crate::stop::requested() {
-            if let Err(e) = &planned {
-                info!(number = issue.number, error = %e, "planning ended by the operator's stop");
-            }
-            stop = Some(record_stop(issue.number, &mut worked));
-            break;
-        }
-        let (plan, executed) = match planned {
-            Ok(PlanPhase::Planned(plan)) => (plan, false),
-            Ok(PlanPhase::Executed(plan)) => (plan, true),
-            Ok(PlanPhase::Infeasible { needs_split }) => {
-                worked.push(IssueResult {
-                    number: issue.number,
-                    outcome: None,
-                    closed: false,
-                    blocked_by: Vec::new(),
-                    human_blockers: Vec::new(),
-                    status: if needs_split {
-                        ResultStatus::NeedsSplit
-                    } else {
-                        ResultStatus::Infeasible
-                    },
-                    skip: None,
-                    review_only: 0,
-                });
-                continue;
-            }
-            Ok(PlanPhase::StopLimit { reset }) => {
-                worked.push(IssueResult {
-                    number: issue.number,
-                    outcome: Some(Outcome::Limit(reset.clone())),
-                    closed: false,
-                    blocked_by: Vec::new(),
-                    human_blockers: Vec::new(),
-                    status: ResultStatus::NonGreen,
-                    skip: None,
-                    review_only: 0,
-                });
-                stop = Some(StopReason::Limit {
-                    number: issue.number,
-                    reset,
-                });
-                break 'queue;
-            }
-            Ok(PlanPhase::StopDeadline) => {
-                stop = Some(StopReason::Deadline);
-                break 'queue;
-            }
-            Err(e) => {
-                restore(repo, &orig, &branch, &cfg.base_branch, cfg.branch_mode);
-                return Err(e);
-            }
-        };
-
-        // A dry run plans only — it executes nothing and closes nothing.
-        if cfg.dry_run {
-            worked.push(IssueResult {
-                number: issue.number,
-                outcome: None,
-                closed: false,
-                blocked_by: Vec::new(),
-                human_blockers: Vec::new(),
-                status: ResultStatus::Planned,
-                skip: None,
-                review_only: 0,
-            });
-            continue;
-        }
-
-        // Execute the issue; any non-green terminal outcome stops the whole
-        // run — later issues are untouched. A plan already executed by an
-        // earlier run goes straight to the gates.
-        let exec = if executed {
-            clear_verify_failure(cx.ws);
-            clear_protocol_failure(cx.ws);
-            ExecPhase::Done {
-                exec_usage: Usage::default(),
-            }
-        } else {
-            execute_phase(&cx, issue, &plan, &mut ledger)?
-        };
-        let exec_usage = match exec {
-            ExecPhase::Done { exec_usage } => exec_usage,
-            ExecPhase::NonGreen {
-                outcome,
-                deadline_cut,
-            } => {
-                let number = issue.number;
-                // The event has to agree with the stop reason below, or the live
-                // trail reports a non-green halt for a run the operator stopped
-                // while the final panel says something else entirely.
-                if crate::stop::requested() {
-                    crate::emit::run_stopped(Some(number));
-                } else {
-                    crate::emit::non_green(number, &outcome);
-                }
-                worked.push(IssueResult {
-                    number,
-                    outcome: Some(outcome.clone()),
-                    closed: false,
-                    blocked_by: Vec::new(),
-                    human_blockers: Vec::new(),
-                    // Mirrors the fold's `outcome.starts_with("Blocked")` split.
-                    status: if matches!(outcome, Outcome::Blocked(_)) {
-                        ResultStatus::Blocked
-                    } else {
-                        ResultStatus::NonGreen
-                    },
-                    skip: None,
-                    review_only: 0,
-                });
-                // The operator's stop outranks every other reading of this
-                // outcome (docs/adr/0054). A stop-killed child ends with no
-                // verdict, so the ladder reports `Stuck` — reporting THAT would
-                // tell the operator their agent got wedged, when in fact they
-                // pressed a button. The `IssueResult` above keeps the adapter's
-                // real outcome; only the RUN's stop reason is overridden.
-                stop = Some(if crate::stop::requested() {
-                    StopReason::Stopped {
-                        number: Some(number),
-                    }
-                } else if deadline_cut {
-                    StopReason::Deadline
-                } else {
-                    match outcome {
-                        Outcome::Limit(reset) => StopReason::Limit { number, reset },
-                        other => StopReason::NonGreen {
-                            number,
-                            outcome: other,
-                        },
-                    }
-                });
+    for issue in queue {
+        match run.issue(issue) {
+            Ok(()) | Err(Early::Next) => {}
+            Err(Early::Stop(reason)) => {
+                stop = Some(reason);
                 break;
             }
-        };
-
-        // A stop that landed on a GREEN execute (docs/adr/0054). Without this the
-        // run would go on to the protocol lint and then sit in the verify gate —
-        // routinely minutes of test suite — after the operator asked it to stop.
-        // The issue is recorded as worked-but-not-delivered and left OPEN: its
-        // commits are on the branch, but nothing verified them, so closing it
-        // here would be the run vouching for work it never checked.
-        if crate::stop::requested() {
-            stop = Some(record_stop(issue.number, &mut worked));
-            break;
+            Err(Early::Fail(e)) => return Err(e),
         }
-
-        // Structurally lint the finished plan, with one bounce back to the
-        // executor on a violation (ADR-0015).
-        let (lint, plan_md, protocol_usage) = match protocol_gate(&cx, issue, &plan, &mut ledger)? {
-            ProtocolGate::Settled {
-                lint,
-                plan_md,
-                protocol_usage,
-            } => (lint, plan_md, protocol_usage),
-            ProtocolGate::StopLimit { reset } => {
-                worked.push(IssueResult {
-                    number: issue.number,
-                    outcome: Some(Outcome::Limit(reset.clone())),
-                    closed: false,
-                    blocked_by: Vec::new(),
-                    human_blockers: Vec::new(),
-                    status: ResultStatus::NonGreen,
-                    skip: None,
-                    review_only: 0,
-                });
-                stop = Some(StopReason::Limit {
-                    number: issue.number,
-                    reset,
-                });
-                break;
-            }
-        };
-
-        // Re-run the plan's `## Verify` commands over the committed state
-        // before trusting the self-report (ADR-0011/0015).
-        let repair_usage = match verify_gate(&cx, issue, &plan, &plan_md, &mut ledger)? {
-            VerifyGate::Green { repair_usage } => repair_usage,
-            VerifyGate::StopLimit { reset } => {
-                let number = issue.number;
-                worked.push(IssueResult {
-                    number,
-                    outcome: Some(Outcome::Limit(reset.clone())),
-                    closed: false,
-                    blocked_by: Vec::new(),
-                    human_blockers: Vec::new(),
-                    status: ResultStatus::NonGreen,
-                    skip: None,
-                    review_only: 0,
-                });
-                stop = Some(StopReason::Limit { number, reset });
-                break;
-            }
-            VerifyGate::Failed { summary } => {
-                let number = issue.number;
-                // A verify failure no longer halts the queue: the repair budget is
-                // spent, so leave THIS issue open (its commits stay on the branch
-                // for a human to pick up — see the artifact comment) and march on
-                // to the next issue. The issue is reported skipped-on-verify so the
-                // miss is visible, never a silent close.
-                crate::emit::verify_gate_failed(number, &summary);
-                worked.push(IssueResult {
-                    number,
-                    outcome: None,
-                    closed: false,
-                    blocked_by: Vec::new(),
-                    human_blockers: Vec::new(),
-                    status: ResultStatus::Skipped,
-                    skip: Some(SkipReason::VerifyFailed),
-                    review_only: 0,
-                });
-                continue;
-            }
-            VerifyGate::NeedsHuman => {
-                let number = issue.number;
-                // ADR-0015: the one hole where a false self-report closed an
-                // issue unchecked is now a human gate. Label + comment are
-                // best-effort — the issue staying OPEN is the guarantee, and
-                // a failed label must not abort the rest of the queue.
-                if let Err(e) = tracker.add_label(number, HUMAN_GATE_LABELS[0]) {
-                    warn!(number, error = %e, "applying ready-for-human label failed");
-                }
-                if let Err(e) = tracker.comment(number, &no_gate_comment(&cfg.stamp, &branch)) {
-                    warn!(number, error = %e, "posting the no-gate comment failed");
-                }
-                // consumed by the telegram notifier / presenter — keep stable
-                info!(
-                    number,
-                    "no verify gate — issue left open for a human, run continues"
-                );
-                worked.push(IssueResult {
-                    number,
-                    outcome: Some(Outcome::Done),
-                    closed: false,
-                    blocked_by: Vec::new(),
-                    human_blockers: Vec::new(),
-                    status: ResultStatus::Done,
-                    skip: None,
-                    review_only: 0,
-                });
-                continue;
-            }
-        };
-
-        // Close the cycle and publish what the session leaves behind.
-        close_and_record(
-            &cx,
-            issue,
-            &plan,
-            &lint,
-            &exec_usage,
-            &protocol_usage,
-            &repair_usage,
-            &mut worked,
-        )?;
     }
+    let QueueRun { ledger, worked, .. } = run;
+    let RunLedger {
+        run_usage,
+        run_usage_by_model,
+        invocations,
+        ..
+    } = ledger;
 
     // Count what the run added over the compare ref and capture the oneline log,
     // matching the ps1 `finally` block. Failures here are non-fatal reporting
@@ -534,38 +201,10 @@ fn run_queue_with(
     let commits = repo.rev_list_count(&range).unwrap_or(0);
     let oneline = repo.log_oneline(&range).unwrap_or_default();
 
-    // A run that added nothing has nothing to undo — drop the marker so tags
-    // never accumulate for dry runs and empty queues (mirrors the empty-branch
-    // delete in `restore`).
     if commits == 0 {
-        if let Some(tag) = undo_tag.take() {
-            if let Err(e) = repo.delete_tag(&tag) {
-                warn!(%tag, error = %e, "deleting the empty run's undo tag failed");
-            }
-        }
+        drop_undo_tag(repo, &mut undo_tag);
     }
-
-    // Closing-state matrix, keyed on mode × outcome × dry-run (ps1 `finally`):
-    //  - Current: commits already live on the branch — never check out or delete.
-    //  - New + dry-run: plans only — return to orig and drop the empty branch.
-    //  - New + stop: leave the repo on the run branch for inspection.
-    //  - New + clean run: return to orig; the run branch is kept (not deleted).
-    match cfg.branch_mode {
-        BranchMode::Current => {}
-        BranchMode::New => {
-            if cfg.dry_run {
-                restore(repo, &orig, &branch, &cfg.base_branch, cfg.branch_mode);
-            } else if stop.is_none() {
-                // Force, same as `restore`: `.ralphy/` scratch may modify a
-                // tracked file (e.g. a plan.md committed on the base), and a
-                // non-force checkout would abort and strand the repo on the
-                // run branch after an otherwise green run (ADR-0005, #41).
-                if let Err(e) = repo.checkout_force(&orig) {
-                    warn!("could not return to '{orig}': {e}");
-                }
-            }
-        }
-    }
+    close_branch(repo, cfg, &orig, &branch, stop.is_none());
 
     Ok(QueueReport {
         branch,
@@ -575,28 +214,59 @@ fn run_queue_with(
         commits,
         undo_tag,
         oneline,
-        run_usage: ledger.run_usage,
-        run_usage_by_model: ledger.run_usage_by_model,
-        invocations: ledger.invocations,
+        run_usage,
+        run_usage_by_model,
+        invocations,
     })
 }
 
-/// Record an issue the operator's stop cut short (docs/adr/0054 D6): worked but
-/// not delivered, left open, with no adapter verdict of its own.
-fn record_stop(number: u64, worked: &mut Vec<IssueResult>) -> StopReason {
-    crate::emit::run_stopped(Some(number));
-    worked.push(IssueResult {
-        number,
-        outcome: None,
-        closed: false,
-        blocked_by: Vec::new(),
-        human_blockers: Vec::new(),
-        status: ResultStatus::NonGreen,
-        skip: None,
-        review_only: 0,
-    });
-    StopReason::Stopped {
-        number: Some(number),
+/// Pre-run undo marker: a local tag at the compare ref (the base in `New`
+/// mode, the pre-run HEAD in `Current` mode), so undoing the whole run is one
+/// copyable command instead of reflog archaeology. Best-effort — a run must
+/// never fail over its own bookkeeping.
+fn create_undo_tag(repo: &dyn Repo, stamp: &str, compare_ref: &str) -> Option<String> {
+    let name = format!("ralphy/pre-run-{stamp}");
+    match repo.tag(&name, compare_ref) {
+        Ok(()) => Some(name),
+        Err(e) => {
+            warn!(tag = %name, error = %e, "creating the pre-run undo tag failed");
+            None
+        }
+    }
+}
+
+/// A run that added nothing has nothing to undo — drop the marker so tags
+/// never accumulate for dry runs and empty queues (mirrors the empty-branch
+/// delete in `restore`).
+fn drop_undo_tag(repo: &dyn Repo, undo_tag: &mut Option<String>) {
+    if let Some(tag) = undo_tag.take() {
+        if let Err(e) = repo.delete_tag(&tag) {
+            warn!(%tag, error = %e, "deleting the empty run's undo tag failed");
+        }
+    }
+}
+
+/// Closing-state matrix, keyed on mode × outcome × dry-run (ps1 `finally`):
+///  - Current: commits already live on the branch — never check out or delete.
+///  - New + dry-run: plans only — return to orig and drop the empty branch.
+///  - New + stop: leave the repo on the run branch for inspection.
+///  - New + clean run: return to orig; the run branch is kept (not deleted).
+fn close_branch(repo: &dyn Repo, cfg: &QueueConfig, orig: &str, branch: &str, clean: bool) {
+    match cfg.branch_mode {
+        BranchMode::Current => {}
+        BranchMode::New => {
+            if cfg.dry_run {
+                restore(repo, orig, branch, &cfg.base_branch, cfg.branch_mode);
+            } else if clean {
+                // Force, same as `restore`: `.ralphy/` scratch may modify a
+                // tracked file (e.g. a plan.md committed on the base), and a
+                // non-force checkout would abort and strand the repo on the
+                // run branch after an otherwise green run (ADR-0005, #41).
+                if let Err(e) = repo.checkout_force(orig) {
+                    warn!("could not return to '{orig}': {e}");
+                }
+            }
+        }
     }
 }
 

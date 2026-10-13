@@ -1,16 +1,17 @@
 //! The byte bridge of an attached `/ws/session`: replay, live stream, input,
 //! resize, and the eviction/exit teardown.
 
-use std::io::Write;
+use std::ops::ControlFlow;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use axum::extract::ws::{Message, WebSocket};
+use tokio::sync::broadcast::error::RecvError;
 
-use super::traffic::{Tab, Traffic, SESSION_OPEN};
+use super::outbound::{announce_end, open, resync, send_output, send_size, Opening};
+use super::traffic::{Tab, Traffic};
 use super::SessionLabels;
 use crate::protocol::{Command, Frame};
-use crate::routes::send_command;
 use crate::{protocol, session};
 
 /// How often the bridge pings its client, and how long the client may stay
@@ -21,20 +22,9 @@ pub(crate) struct Liveness {
     pub(crate) silent_after: Duration,
 }
 
-/// The share of the 5 s end window that the queued output may use. The
-/// remaining second is for `session-end` and `Close`, which must always be
-/// sent (#334): a full queue on a slow link can otherwise use the whole window.
-const DRAIN_LIMIT: Duration = Duration::from_secs(4);
-
 /// Test seam, like `RALPHY_DAEMON_AGENT_OVERRIDE`: the ping period in
 /// milliseconds. A test cannot wait out the production window.
 const PING_MS_ENV: &str = "RALPHY_DAEMON_WS_PING_MS";
-
-/// The command verb that tells a client the session size (ADR-0079 D6).
-const SESSION_SIZE: &str = "session-size";
-
-/// The `replay_encoding` of a gzipped replay frame (ADR-0079 D9).
-const GZIP: &str = "gzip";
 
 impl Liveness {
     /// Two whole ping periods plus a quarter of slack: one lost pong on a lossy
@@ -63,6 +53,22 @@ impl Liveness {
     /// Whether a client last heard from `heard` ago has gone silent.
     pub(crate) fn is_silent(&self, heard: Duration) -> bool {
         heard >= self.silent_after
+    }
+}
+
+/// Whether the bridge loop goes on. `Break` carries the DELIBERATE end to
+/// announce (daemon shutdown, takeover/child-exit eviction, or the broadcast
+/// sender closing). `Break(None)` means the loop fell out some other way
+/// (client close, network drop, write failure) and the bridge stays SILENT:
+/// announcing there would tell a client its session ended when it did not, and
+/// the client would park instead of recovering the flaky link (issue #334).
+type Flow = ControlFlow<Option<session::EndReason>>;
+
+/// A failed send ends the loop without an announcement: the socket is gone.
+fn silent_if_err<T, E>(sent: Result<T, E>) -> Flow {
+    match sent {
+        Ok(_) => ControlFlow::Continue(()),
+        Err(_) => ControlFlow::Break(None),
     }
 }
 
@@ -115,21 +121,7 @@ pub(crate) async fn session_ws(
     let gzip = tab.gzip;
     let mut traffic = Traffic::local(id, tab, Instant::now());
 
-    let fields = serde_json::json!({
-        "session": id,
-        "daemon_id": daemon_id,
-        "environment": environment,
-        // Absent for every vendor but Claude, and for the free console —
-        // which is the honest signal that those are not addressable.
-        "name": labels.name,
-        // The worktree NAME the console lives in, `null` for the primary;
-        // re-announced on a reattach from the record (ADR-0063 §3).
-        "checkout": labels.checkout,
-        // Read-only from the start: this launch joined a session another
-        // page drives (ADR-0050 amendment 2026-10-04).
-        "watch": labels.watching,
-    });
-    let opening = Opening { fields, gzip };
+    let opening = Opening::new(id, daemon_id, environment, &labels, gzip);
     if open(&mut socket, id, &opening, &mut attach, &mut traffic)
         .await
         .is_err()
@@ -148,150 +140,39 @@ pub(crate) async fn session_ws(
     // Each ping carries its own number, so a pong is timed against its ping.
     let mut ping_seq: u64 = 0;
 
-    // A DELIBERATE end (daemon shutdown, takeover/child-exit eviction, or the
-    // broadcast sender closing) is ANNOUNCED after the loop — a data frame naming
-    // the reason, then the Close frame. `None` means the loop fell out some other
-    // way (client close, network drop, write failure) and the bridge stays SILENT:
-    // announcing there would tell a client its session ended when it did not, and
-    // the client would park instead of recovering the flaky link (issue #334).
-    let mut end: Option<session::EndReason> = None;
     // False once the size sender is gone, so `changed()` cannot return at once
     // on every turn of the loop.
     let mut sizes = true;
-    loop {
-        tokio::select! {
-            _ = shutdown.changed() => { end = Some(session::EndReason::DaemonShutdown); break; }
+    let end = loop {
+        let flow = tokio::select! {
+            _ = shutdown.changed() => {
+                ControlFlow::Break(Some(session::EndReason::DaemonShutdown))
+            }
             // Taken over, closed, or the child exited — the token carries which.
-            _ = &mut notified => {
-                end = Some(evict.reason().unwrap_or(session::EndReason::ChildExited));
-                break;
-            }
+            _ = &mut notified => ControlFlow::Break(Some(
+                evict.reason().unwrap_or(session::EndReason::ChildExited),
+            )),
             _ = ping.tick() => {
-                // Silent, not announced: a client that is in fact alive reads
-                // the drop as a flaky link and reattaches (issue #334).
-                if liveness.is_silent(heard.elapsed()) {
-                    break;
-                }
-                ping_seq += 1;
-                let payload = ping_seq.to_le_bytes();
-                traffic.ping_sent(&payload, Instant::now());
-                if socket.send(Message::Ping(payload.to_vec().into())).await.is_err() {
-                    break;
-                }
+                on_ping(&mut socket, &mut traffic, &liveness, heard, &mut ping_seq).await
             }
-            changed = attach.size.changed(), if sizes => match changed {
-                Ok(()) => {
-                    let size = *attach.size.borrow_and_update();
-                    if send_size(&mut socket, id, size).await.is_err() {
-                        break;
-                    }
-                }
-                Err(_) => sizes = false,
-            },
-            recv = attach.rx.recv() => match recv {
-                Ok(bytes) => {
-                    if send_output(&mut socket, id, bytes, &mut traffic).await.is_err() {
-                        break;
-                    }
-                }
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
-                    traffic.lagged(skipped);
-                    if resync(&mut socket, id, &opening, &mut attach, &mut traffic).await.is_err() {
-                        break;
-                    }
-                }
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                    end = Some(session::EndReason::ChildExited);
-                    break;
-                }
-            },
+            changed = attach.size.changed(), if sizes => {
+                on_size(changed, &mut socket, id, &mut attach, &mut sizes).await
+            }
+            recv = attach.rx.recv() => {
+                on_output(recv, &mut socket, id, &opening, &mut attach, &mut traffic).await
+            }
             incoming = socket.recv() => {
-                if matches!(incoming, Some(Ok(_))) {
-                    heard = Instant::now();
-                }
-                if let Some(Ok(Message::Binary(bytes))) = &incoming {
-                    traffic.inbound(bytes.len());
-                }
-                match incoming {
-                    Some(Ok(Message::Binary(bytes))) => match protocol::decode(&bytes) {
-                        Ok(Frame::Terminal { data, .. }) => {
-                            if attach.write(&data).is_err() {
-                                break;
-                            }
-                        }
-                        Ok(Frame::Command(cmd)) if cmd.verb == "resize" => {
-                            // `try_into` rejects a garbage/oversized dimension rather
-                            // than truncating it into a wrong terminal size.
-                            let rows: Option<u16> =
-                                cmd.payload.get("rows").and_then(|v| v.as_u64()?.try_into().ok());
-                            let cols: Option<u16> =
-                                cmd.payload.get("cols").and_then(|v| v.as_u64()?.try_into().ok());
-                            if let (Some(rows), Some(cols)) = (rows, cols) {
-                                let _ = attach.resize(rows, cols);
-                            }
-                        }
-                        Ok(Frame::Command(cmd)) => {
-                            traffic.client_command(&cmd);
-                        }
-                        _ => {} // other frames carry no session meaning here
-                    },
-                    Some(Ok(Message::Close(_))) => {
-                        traffic.client_closed();
-                        break;
-                    }
-                    None => break,
-                    Some(Ok(Message::Pong(payload))) => {
-                        traffic.pong_received(&payload, Instant::now());
-                    }
-                    Some(Ok(_)) => {} // text/ping: counted in `heard`, nothing else
-                    Some(Err(_)) => break,
-                }
+                on_client(incoming, &mut heard, &attach, &mut traffic)
             }
+        };
+        if let ControlFlow::Break(end) = flow {
+            break end;
         }
-    }
-    // ANNOUNCEMENT-BEFORE-CLOSE INVARIANT (issue #334), to hold on every return
-    // path: a deliberate end is named in a DATA frame first, and only then does
-    // the Close frame follow and the attachment drop. Meaning placed in the close
-    // metadata is meaning lost — the browser reports `1005 / wasClean=false` for
-    // this very `Close(None)`, which is why the client could not tell an eviction
-    // from a flaky link and stole the session back. The early `return` in the
-    // snapshot replay above announces nothing because the socket is already gone,
-    // and `end == None` stays silent by design (see the declaration).
-    // Bounded: these are the only sends made AFTER the loop that would surface a
-    // wedged peer as an error, so an unbounded await here would defer
-    // `drop(attach)` — and the session's scrollback ring with it — indefinitely.
+    };
+    // `None` announces nothing, and so does the early `return` above: the socket
+    // is already gone there.
     if let Some(reason) = end {
-        let _ = tokio::time::timeout(Duration::from_secs(5), async {
-            // The child's last output is sent before its end is named. Only a
-            // child end drains: a takeover leaves the stream to the new owner,
-            // whose replay already holds those bytes, and the old client is
-            // about to be told it lost the session.
-            if reason == session::EndReason::ChildExited
-                && tokio::time::timeout(
-                    DRAIN_LIMIT,
-                    send_queued(&mut socket, id, &opening, &mut attach, &mut traffic),
-                )
-                .await
-                .is_err()
-            {
-                // A client that cannot take the queue in time loses the rest of
-                // it. The session is already gone, so nothing sends it later.
-                tracing::debug!("the queued output did not drain in time; naming the end");
-            }
-            send_command(
-                &mut socket,
-                0,
-                "session-end",
-                serde_json::json!({
-                    "reason": reason.as_wire(),
-                    "daemon_id": daemon_id,
-                    "environment": environment,
-                }),
-            )
-            .await;
-            let _ = socket.send(Message::Close(None)).await;
-        })
-        .await;
+        announce_end(&mut socket, id, &opening, &mut attach, &mut traffic, reason).await;
     }
     traffic.log(end.map(|r| r.as_wire()), Instant::now());
     // Detach, do NOT close: dropping `attach` releases the single-writer slot; the
@@ -299,678 +180,117 @@ pub(crate) async fn session_ws(
     drop(attach);
 }
 
-/// What every `session-open` of one socket says, and whether its tab asked
-/// for a gzip replay.
-struct Opening {
-    fields: serde_json::Value,
-    gzip: bool,
+/// Silent, not announced: a client that is in fact alive reads the drop as a
+/// flaky link and reattaches (issue #334).
+async fn on_ping(
+    socket: &mut WebSocket,
+    traffic: &mut Traffic,
+    liveness: &Liveness,
+    heard: Instant,
+    ping_seq: &mut u64,
+) -> Flow {
+    if liveness.is_silent(heard.elapsed()) {
+        return ControlFlow::Break(None);
+    }
+    *ping_seq += 1;
+    let payload = ping_seq.to_le_bytes();
+    traffic.ping_sent(&payload, Instant::now());
+    silent_if_err(socket.send(Message::Ping(payload.to_vec().into())).await)
 }
 
-/// Send `session-open` (the fields of `opening`, then the replay's), the
-/// session size, then the replay frame of `attach`: the screen snapshot, or
-/// the bytes after the tab's `since`.
-async fn open(
+/// A new session size goes to the client. A closed size sender stops the arm.
+async fn on_size(
+    changed: Result<(), tokio::sync::watch::error::RecvError>,
+    socket: &mut WebSocket,
+    id: session::SessionId,
+    attach: &mut session::Attachment,
+    sizes: &mut bool,
+) -> Flow {
+    if changed.is_err() {
+        *sizes = false;
+        return ControlFlow::Continue(());
+    }
+    let size = *attach.size.borrow_and_update();
+    silent_if_err(send_size(socket, id, size).await)
+}
+
+/// One turn of the live output stream. A lag sends the screen again.
+async fn on_output(
+    recv: Result<Vec<u8>, RecvError>,
     socket: &mut WebSocket,
     id: session::SessionId,
     opening: &Opening,
     attach: &mut session::Attachment,
     traffic: &mut Traffic,
-) -> Result<(), axum::Error> {
-    let replay = Replay::of(std::mem::take(&mut attach.snapshot), opening.gzip);
-    let mut payload = opening.fields.clone();
-    // A replay follows. A relaying daemon reads it for its traffic summary;
-    // the page reads it to tell the replay from the live frames.
-    payload["replay"] = (!replay.data.is_empty()).into();
-    // The count of the session's output bytes at the end of the replay; the
-    // page adds each live frame to it and sends it back as `since`.
-    payload["offset"] = attach.offset.into();
-    // The replay is only the bytes after the tab's `since`: the page keeps
-    // its terminal. `false`: it resets it (ADR-0079 D8).
-    payload["resume"] = attach.resume.into();
-    // Absent when the replay is raw, as from a daemon that never gzips.
-    if replay.gzipped {
-        payload["replay_encoding"] = GZIP.into();
+) -> Flow {
+    match recv {
+        Ok(bytes) => silent_if_err(send_output(socket, id, bytes, traffic).await),
+        Err(RecvError::Lagged(skipped)) => {
+            traffic.lagged(skipped);
+            silent_if_err(resync(socket, id, opening, attach, traffic).await)
+        }
+        Err(RecvError::Closed) => ControlFlow::Break(Some(session::EndReason::ChildExited)),
     }
-    let open = Frame::Command(Command {
-        id,
-        verb: SESSION_OPEN.to_string(),
-        payload,
-    });
-    socket
-        .send(Message::Binary(protocol::encode(&open).into()))
-        .await?;
-    // The size the snapshot below was written at: a watcher paints at it. A
-    // resize after the attach is still marked changed on `attach.size`, so
-    // the loop sends it after the replay.
-    send_size(socket, id, attach.replay_size).await?;
-    // The replay goes before the live stream. An empty one is not sent: a
-    // fresh session, or a resume with nothing new.
-    if !replay.data.is_empty() {
-        let sent = replay.data.len();
-        let frame = Frame::Terminal {
-            session: id,
-            data: replay.data,
-        };
-        let encoded = protocol::encode(&frame);
-        traffic.replay(encoded.len(), encoded.len() - sent + replay.raw_len);
-        socket.send(Message::Binary(encoded.into())).await?;
-    }
-    Ok(())
 }
 
-/// The live receiver lagged: the page missed bytes, so its screen is wrong
-/// and its byte count would make a later resume repeat bytes. Start it again
-/// from the screen as it is now, as a reattach does: a new `session-open`
-/// with `resume: false`, the size, and the snapshot.
-async fn resync(
-    socket: &mut WebSocket,
-    id: session::SessionId,
-    opening: &Opening,
-    attach: &mut session::Attachment,
+/// One message from the client. Every message that arrives, of any kind,
+/// counts as `heard`.
+fn on_client(
+    incoming: Option<Result<Message, axum::Error>>,
+    heard: &mut Instant,
+    attach: &session::Attachment,
     traffic: &mut Traffic,
-) -> Result<(), axum::Error> {
-    attach.resync();
-    open(socket, id, opening, attach, traffic).await
+) -> Flow {
+    if matches!(incoming, Some(Ok(_))) {
+        *heard = Instant::now();
+    }
+    match incoming {
+        Some(Ok(Message::Binary(bytes))) => {
+            traffic.inbound(bytes.len());
+            on_client_frame(&bytes, attach, traffic)
+        }
+        Some(Ok(Message::Close(_))) => {
+            traffic.client_closed();
+            ControlFlow::Break(None)
+        }
+        Some(Ok(Message::Pong(payload))) => {
+            traffic.pong_received(&payload, Instant::now());
+            ControlFlow::Continue(())
+        }
+        // Text and ping: counted in `heard`, nothing else.
+        Some(Ok(_)) => ControlFlow::Continue(()),
+        None | Some(Err(_)) => ControlFlow::Break(None),
+    }
 }
 
-/// The replay frame's data: the snapshot, gzipped when the tab asked for it.
-struct Replay {
-    data: Vec<u8>,
-    gzipped: bool,
-    /// The length of the snapshot, for the traffic summary.
-    raw_len: usize,
-}
-
-impl Replay {
-    fn of(snapshot: Vec<u8>, gzip: bool) -> Replay {
-        let raw_len = snapshot.len();
-        if gzip && !snapshot.is_empty() {
-            match gzipped(&snapshot) {
-                Ok(data) => {
-                    return Replay {
-                        data,
-                        gzipped: true,
-                        raw_len,
-                    }
-                }
-                // A replay that does not compress goes raw; it is never dropped.
-                Err(error) => tracing::warn!(%error, "the replay did not compress; sent raw"),
+fn on_client_frame(bytes: &[u8], attach: &session::Attachment, traffic: &mut Traffic) -> Flow {
+    match protocol::decode(bytes) {
+        Ok(Frame::Terminal { data, .. }) => silent_if_err(attach.write(&data)),
+        Ok(Frame::Command(cmd)) if cmd.verb == "resize" => {
+            if let Some((rows, cols)) = resize_of(&cmd) {
+                let _ = attach.resize(rows, cols);
             }
+            ControlFlow::Continue(())
         }
-        Replay {
-            data: snapshot,
-            gzipped: false,
-            raw_len,
+        Ok(Frame::Command(cmd)) => {
+            traffic.client_command(&cmd);
+            ControlFlow::Continue(())
         }
+        // Other frames carry no session meaning here.
+        _ => ControlFlow::Continue(()),
     }
 }
 
-fn gzipped(bytes: &[u8]) -> std::io::Result<Vec<u8>> {
-    let mut enc = flate2::write::GzEncoder::new(
-        Vec::with_capacity(bytes.len() / 4),
-        flate2::Compression::default(),
-    );
-    enc.write_all(bytes)?;
-    enc.finish()
-}
-
-/// Tell the client the session size. Not counted in the traffic summary, like
-/// `session-open`.
-async fn send_size(
-    socket: &mut WebSocket,
-    id: session::SessionId,
-    (rows, cols): (u16, u16),
-) -> Result<(), axum::Error> {
-    let frame = Frame::Command(Command {
-        id,
-        verb: SESSION_SIZE.to_string(),
-        payload: serde_json::json!({ "rows": rows, "cols": cols }),
-    });
-    socket
-        .send(Message::Binary(protocol::encode(&frame).into()))
-        .await
-}
-
-/// Send one chunk of session output to the client as a `Terminal` frame.
-async fn send_output(
-    socket: &mut WebSocket,
-    id: session::SessionId,
-    bytes: Vec<u8>,
-    traffic: &mut Traffic,
-) -> Result<(), axum::Error> {
-    let frame = Frame::Terminal {
-        session: id,
-        data: bytes,
+/// The size a `resize` command asks for. `try_into` rejects a garbage or
+/// oversized dimension rather than truncating it into a wrong terminal size.
+fn resize_of(cmd: &Command) -> Option<(u16, u16)> {
+    let dimension = |key: &str| -> Option<u16> {
+        cmd.payload
+            .get(key)
+            .and_then(|v| v.as_u64()?.try_into().ok())
     };
-    let encoded = protocol::encode(&frame);
-    traffic.live(encoded.len());
-    socket.send(Message::Binary(encoded.into())).await
-}
-
-/// Send every chunk already queued on `rx` when the loop ended. The pump
-/// broadcasts the child's last output and only then fires the eviction, so
-/// both can be ready together, and the loop's `select!` may take the eviction
-/// first. Bounded by the count queued now: on a `close` the eviction fires
-/// before the kill, and the child can still print while this drains.
-async fn send_queued(
-    socket: &mut WebSocket,
-    id: session::SessionId,
-    opening: &Opening,
-    attach: &mut session::Attachment,
-    traffic: &mut Traffic,
-) {
-    use tokio::sync::broadcast::error::TryRecvError;
-    let mut left = attach.rx.len();
-    while left > 0 {
-        left -= 1;
-        match attach.rx.try_recv() {
-            Ok(bytes) => {
-                if send_output(socket, id, bytes, traffic).await.is_err() {
-                    return;
-                }
-            }
-            Err(TryRecvError::Lagged(skipped)) => {
-                traffic.lagged(skipped);
-                if resync(socket, id, opening, attach, traffic).await.is_err() {
-                    return;
-                }
-                left = attach.rx.len();
-            }
-            Err(TryRecvError::Empty | TryRecvError::Closed) => return,
-        }
-    }
+    Some((dimension("rows")?, dimension("cols")?))
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::sync::{Arc, Mutex};
-
-    use axum::extract::ws::WebSocketUpgrade;
-    use futures_util::StreamExt;
-    use tokio_tungstenite::tungstenite;
-
-    /// A console whose child has exited: the eviction is signalled and the
-    /// attachment's output stream is the test's own, holding `chunks`, so the
-    /// client receives exactly these and nothing the shell prints.
-    fn exited_session(
-        chunks: &[Vec<u8>],
-        capacity: usize,
-    ) -> (session::SessionId, session::Attachment) {
-        let manager = Arc::new(session::SessionManager::new());
-        let spec = session::console_spec(std::env::temp_dir(), 24, 80, None);
-        let (id, mut attach) = manager
-            .spawn_attached(
-                "~".to_string(),
-                "console".to_string(),
-                "console".to_string(),
-                None,
-                None,
-                None,
-                spec,
-            )
-            .expect("the platform shell must spawn — the free console depends on it");
-        let (tx, rx) = tokio::sync::broadcast::channel::<Vec<u8>>(capacity);
-        attach.rx = rx;
-        attach.snapshot.clear();
-        for chunk in chunks {
-            tx.send(chunk.clone())
-                .expect("the attachment holds a receiver");
-        }
-        assert!(manager.close(id), "the session was live");
-        assert_eq!(
-            attach.evict.reason(),
-            Some(session::EndReason::ChildExited),
-            "the eviction is signalled before the bridge starts"
-        );
-        (id, attach)
-    }
-
-    /// One in-memory connection, accepted once. The bytes move between tasks
-    /// without the kernel, so paused time cannot move forward while bytes
-    /// are still on their way, as it can with a loopback socket.
-    struct OneConnection(Option<tokio::io::DuplexStream>);
-
-    impl axum::serve::Listener for OneConnection {
-        type Io = tokio::io::DuplexStream;
-        type Addr = ();
-
-        async fn accept(&mut self) -> (Self::Io, Self::Addr) {
-            match self.0.take() {
-                Some(io) => (io, ()),
-                None => std::future::pending().await,
-            }
-        }
-
-        fn local_addr(&self) -> std::io::Result<Self::Addr> {
-            Ok(())
-        }
-    }
-
-    /// Serve `session_ws` for one client on `listener`; `gzip` is what the
-    /// client's tab asked for.
-    fn serve_bridge<L>(
-        listener: L,
-        id: session::SessionId,
-        attach: session::Attachment,
-        gzip: bool,
-    ) -> tokio::task::JoinHandle<std::io::Result<()>>
-    where
-        L: axum::serve::Listener,
-        L::Addr: std::fmt::Debug,
-    {
-        let slot = Arc::new(Mutex::new(Some(attach)));
-        let (stop, shutdown) = tokio::sync::watch::channel(false);
-        let app = axum::Router::new().route(
-            "/",
-            axum::routing::get(move |ws: WebSocketUpgrade| {
-                let attach = slot
-                    .lock()
-                    .expect("slot mutex")
-                    .take()
-                    .expect("one client connects");
-                let shutdown = shutdown.clone();
-                async move {
-                    ws.on_upgrade(move |socket| {
-                        session_ws(
-                            socket,
-                            attach,
-                            id,
-                            "daemon".to_string(),
-                            "test".to_string(),
-                            SessionLabels {
-                                name: None,
-                                checkout: None,
-                                watching: false,
-                            },
-                            Tab {
-                                gzip,
-                                ..Tab::default()
-                            },
-                            shutdown,
-                        )
-                    })
-                }
-            }),
-        );
-        tokio::spawn(async move {
-            // The sender stays alive as long as the server runs.
-            let _stop = stop;
-            axum::serve(listener, app).await
-        })
-    }
-
-    /// What a client saw: the output, where `session-end` came in it, and
-    /// whether the `Close` frame followed.
-    struct Seen {
-        received: Vec<u8>,
-        ended_after: Option<usize>,
-        closed: bool,
-    }
-
-    /// Read until the `Close` frame, pausing `pause` after every message.
-    async fn read_until_close(
-        client: &mut (impl futures_util::Stream<Item = Result<tungstenite::Message, tungstenite::Error>>
-                  + Unpin),
-        pause: Duration,
-    ) -> Seen {
-        let mut seen = Seen {
-            received: Vec::new(),
-            ended_after: None,
-            closed: false,
-        };
-        // The bridge drops the socket right after its Close frame, so the
-        // read that follows the Close can fail: stop at the Close.
-        while let Some(Ok(message)) = client.next().await {
-            let bytes = match message {
-                tungstenite::Message::Binary(bytes) => bytes,
-                tungstenite::Message::Close(_) => {
-                    seen.closed = true;
-                    break;
-                }
-                _ => continue,
-            };
-            match protocol::decode(&bytes).expect("a well-formed frame") {
-                Frame::Terminal { data, .. } => {
-                    assert!(
-                        seen.ended_after.is_none(),
-                        "output arrived after session-end"
-                    );
-                    seen.received.extend_from_slice(&data);
-                }
-                Frame::Command(cmd) if cmd.verb == "session-end" => {
-                    assert_eq!(cmd.payload["reason"], "child-exited");
-                    seen.ended_after = Some(seen.received.len());
-                }
-                _ => {}
-            }
-            tokio::time::sleep(pause).await;
-        }
-        seen
-    }
-
-    /// A child that exits leaves its last output queued on the attachment
-    /// while the eviction is already signalled. Every queued chunk reaches the
-    /// client before `session-end`. With both arms ready, an unbiased select
-    /// takes the eviction about half the time, so a loop that drops queued
-    /// output keeps all 32 chunks with a chance near 2^-32.
-    #[tokio::test]
-    async fn queued_output_reaches_the_client_before_the_session_end() {
-        let chunks: Vec<Vec<u8>> = (0..32)
-            .map(|n| format!("line {n}\r\n").into_bytes())
-            .collect();
-        let (id, attach) = exited_session(&chunks, 64);
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind a loopback port");
-        let addr = listener
-            .local_addr()
-            .expect("a bound listener has an address");
-        let server = serve_bridge(listener, id, attach, false);
-
-        let (mut client, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/"))
-            .await
-            .expect("the bridge accepts the socket");
-        let seen = tokio::time::timeout(
-            Duration::from_secs(10),
-            read_until_close(&mut client, Duration::ZERO),
-        )
-        .await
-        .expect("the bridge closes the socket after session-end");
-        server.abort();
-
-        assert_eq!(
-            String::from_utf8_lossy(&seen.received),
-            String::from_utf8_lossy(&chunks.concat()),
-            "every queued chunk reaches the client"
-        );
-        assert!(seen.ended_after.is_some(), "the end is announced");
-    }
-
-    /// A client that takes the queue too slowly cannot hold back the end:
-    /// the drain stops at its own limit, so `session-end` and `Close` are
-    /// still sent inside the 5 s end window. The connection is a 4 KiB pipe
-    /// and the client reads one chunk per 100 ms, so 100 chunks need about
-    /// 10 s. Time is paused: tokio moves the clock forward only while every
-    /// task waits, so the limits are measured in test time, not in the speed
-    /// of the machine.
-    #[tokio::test(start_paused = true)]
-    async fn a_drain_that_cannot_finish_still_sends_the_end_and_the_close() {
-        let chunks: Vec<Vec<u8>> = (0..100u8).map(|n| vec![n; 64 * 1024]).collect();
-        let (id, attach) = exited_session(&chunks, 128);
-        let (server_io, client_io) = tokio::io::duplex(4096);
-        let server = serve_bridge(OneConnection(Some(server_io)), id, attach, false);
-
-        let (mut client, _) = tokio_tungstenite::client_async("ws://localhost/", client_io)
-            .await
-            .expect("the bridge upgrades the connection");
-        let seen = tokio::time::timeout(
-            Duration::from_secs(15),
-            read_until_close(&mut client, Duration::from_millis(100)),
-        )
-        .await
-        .expect("the bridge closes the socket inside its end window");
-        server.abort();
-
-        assert!(seen.ended_after.is_some(), "the end is announced");
-        assert!(seen.closed, "the Close frame follows the end");
-        assert!(
-            seen.received.len() < chunks.concat().len(),
-            "the drain stopped at its limit instead of sending everything"
-        );
-    }
-
-    /// The next binary frame the client gets, decoded.
-    async fn next_frame(
-        client: &mut (impl futures_util::Stream<Item = Result<tungstenite::Message, tungstenite::Error>>
-                  + Unpin),
-    ) -> Frame {
-        loop {
-            let message = tokio::time::timeout(Duration::from_secs(10), client.next())
-                .await
-                .expect("a frame within 10 s")
-                .expect("the socket is open")
-                .expect("a well-formed message");
-            if let tungstenite::Message::Binary(bytes) = message {
-                return protocol::decode(&bytes).expect("a well-formed frame");
-            }
-        }
-    }
-
-    /// The session size as a frame says it, or `None` for another frame.
-    fn size_of(frame: &Frame) -> Option<(u64, u64)> {
-        match frame {
-            Frame::Command(cmd) if cmd.verb == SESSION_SIZE => {
-                Some((cmd.payload["rows"].as_u64()?, cmd.payload["cols"].as_u64()?))
-            }
-            _ => None,
-        }
-    }
-
-    /// A watcher's socket gets `session-size` after `session-open` and before
-    /// the replay, and again when the writer resizes the session (ADR-0079 D6).
-    /// The first size is the one the replay was taken at, also when a resize
-    /// came between the attach and the open; that resize follows the replay.
-    #[tokio::test]
-    async fn a_watcher_gets_the_size_before_the_replay_and_on_each_resize() {
-        let manager = Arc::new(session::SessionManager::new());
-        let spec = session::console_spec(std::env::temp_dir(), 24, 80, None);
-        let (id, writer) = manager
-            .spawn_attached(
-                "~".to_string(),
-                "console".to_string(),
-                "console".to_string(),
-                None,
-                None,
-                None,
-                spec,
-            )
-            .expect("the platform shell must spawn — the free console depends on it");
-        let mut watcher = manager
-            .watch(id, None)
-            .expect("a live session is watchable");
-        watcher.snapshot = b"REPLAY".to_vec();
-        writer.resize(28, 90).expect("the PTY takes a resize");
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind a loopback port");
-        let addr = listener
-            .local_addr()
-            .expect("a bound listener has an address");
-        let server = serve_bridge(listener, id, watcher, false);
-        let (mut client, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/"))
-            .await
-            .expect("the bridge accepts the socket");
-
-        let open = next_frame(&mut client).await;
-        assert!(
-            matches!(&open, Frame::Command(cmd) if cmd.verb == SESSION_OPEN),
-            "the first frame is session-open: {open:?}"
-        );
-        assert_eq!(size_of(&next_frame(&mut client).await), Some((24, 80)));
-        match next_frame(&mut client).await {
-            Frame::Terminal { data, .. } => assert_eq!(data, b"REPLAY"),
-            other => panic!("the replay follows the size: {other:?}"),
-        }
-        let after_replay = loop {
-            if let Some(size) = size_of(&next_frame(&mut client).await) {
-                break size;
-            }
-        };
-        assert_eq!(after_replay, (28, 90));
-
-        writer.resize(30, 100).expect("the PTY takes a resize");
-        let resized = loop {
-            if let Some(size) = size_of(&next_frame(&mut client).await) {
-                break size;
-            }
-        };
-        assert_eq!(resized, (30, 100));
-        server.abort();
-        manager.close(id);
-    }
-
-    /// A watcher of a live console session, changed by `edit` and bridged on
-    /// a loopback socket; `gzip` is what the tab asked for.
-    async fn bridged_watcher(
-        gzip: bool,
-        edit: impl FnOnce(&mut session::Attachment),
-    ) -> (
-        Arc<session::SessionManager>,
-        session::SessionId,
-        tokio::task::JoinHandle<std::io::Result<()>>,
-        tokio_tungstenite::WebSocketStream<
-            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-        >,
-    ) {
-        let manager = Arc::new(session::SessionManager::new());
-        let spec = session::console_spec(std::env::temp_dir(), 24, 80, None);
-        let (id, writer) = manager
-            .spawn_attached(
-                "~".to_string(),
-                "console".to_string(),
-                "console".to_string(),
-                None,
-                None,
-                None,
-                spec,
-            )
-            .expect("the platform shell must spawn — the free console depends on it");
-        // The writer leaves; the session lives on, watched.
-        drop(writer);
-        let mut watcher = manager
-            .watch(id, None)
-            .expect("a live session is watchable");
-        edit(&mut watcher);
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind a loopback port");
-        let addr = listener
-            .local_addr()
-            .expect("a bound listener has an address");
-        let server = serve_bridge(listener, id, watcher, gzip);
-        let (client, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/"))
-            .await
-            .expect("the bridge accepts the socket");
-        (manager, id, server, client)
-    }
-
-    /// `session-open` names the byte count at the end of the replay and
-    /// whether the replay resumes the tab's terminal; an empty resume sends
-    /// no replay frame.
-    #[tokio::test]
-    async fn session_open_says_the_offset_and_whether_the_replay_resumes() {
-        for resume in [true, false] {
-            let (manager, id, server, mut client) = bridged_watcher(false, |watcher| {
-                watcher.snapshot.clear();
-                watcher.offset = 4096;
-                watcher.resume = resume;
-            })
-            .await;
-
-            let Frame::Command(open) = next_frame(&mut client).await else {
-                panic!("the first frame is session-open");
-            };
-            assert_eq!(open.payload["offset"], serde_json::json!(4096));
-            assert_eq!(open.payload["resume"], serde_json::json!(resume));
-            assert_eq!(open.payload["replay"], serde_json::json!(false));
-            server.abort();
-            manager.close(id);
-        }
-    }
-
-    /// The replay a tab gets: gzipped and named so in `session-open` when it
-    /// asks for gzip, raw with no `replay_encoding` when it does not.
-    #[tokio::test]
-    async fn the_replay_is_gzipped_only_when_the_tab_asks() {
-        use std::io::Read;
-        let snapshot = b"\x1b[2J\x1b[Hthe screen as it is now\r\n".repeat(50);
-        for gzip in [true, false] {
-            let (manager, id, server, mut client) =
-                bridged_watcher(gzip, |watcher| watcher.snapshot = snapshot.clone()).await;
-
-            let Frame::Command(open) = next_frame(&mut client).await else {
-                panic!("the first frame is session-open");
-            };
-            let encoding = open.payload.get("replay_encoding").cloned();
-            let size = next_frame(&mut client).await;
-            assert!(size_of(&size).is_some(), "the size follows: {size:?}");
-            let Frame::Terminal { data, .. } = next_frame(&mut client).await else {
-                panic!("the replay follows the size");
-            };
-            if gzip {
-                assert_eq!(encoding, Some(serde_json::json!("gzip")));
-                let mut raw = Vec::new();
-                flate2::read::GzDecoder::new(data.as_slice())
-                    .read_to_end(&mut raw)
-                    .expect("the replay is gzip");
-                assert_eq!(raw, snapshot);
-                assert!(data.len() < snapshot.len(), "the gzip is smaller");
-            } else {
-                assert_eq!(encoding, None, "a raw replay names no encoding");
-                assert_eq!(data, snapshot);
-            }
-            server.abort();
-            manager.close(id);
-        }
-    }
-
-    /// A receiver that lagged makes the bridge start the page again: a new
-    /// `session-open` with `resume: false`, the size, the screen snapshot,
-    /// then the live bytes from the new offset, with no gap and no repeat.
-    #[tokio::test]
-    async fn a_lagged_receiver_sends_the_screen_again_from_a_new_offset() {
-        let (lag, lagging) = tokio::sync::broadcast::channel::<Vec<u8>>(1);
-        let (manager, id, server, mut client) = bridged_watcher(false, |watcher| {
-            watcher.snapshot = b"OLD".to_vec();
-            watcher.rx = lagging;
-        })
-        .await;
-        for chunk in [b"lost".to_vec(), b"kept".to_vec()] {
-            lag.send(chunk).expect("the bridge holds a receiver");
-        }
-        for _ in 0..3 {
-            next_frame(&mut client).await; // the first open, size and replay
-        }
-
-        let Frame::Command(open) = next_frame(&mut client).await else {
-            panic!("a lag sends session-open again");
-        };
-        assert_eq!(open.verb, SESSION_OPEN);
-        assert_eq!(open.payload["resume"], serde_json::json!(false));
-        let offset = open.payload["offset"].as_u64().expect("an offset");
-        assert!(size_of(&next_frame(&mut client).await).is_some());
-        if open.payload["replay"] == serde_json::json!(true) {
-            let Frame::Terminal { data, .. } = next_frame(&mut client).await else {
-                panic!("the snapshot follows the size");
-            };
-            assert_ne!(data, b"OLD", "the snapshot of now, not the first replay");
-        }
-        // The shell echoes what is typed: output after the resync.
-        let writer = manager.attach(id, false).expect("the writer slot is free");
-        writer
-            .write(b"echo resync\r")
-            .expect("the shell takes input");
-        // The session's bytes after `offset`, as a resume at it would get them.
-        let mut tail = manager.watch(id, Some(offset)).expect("a live session");
-        for _ in 0..200 {
-            if tail.resume && !tail.snapshot.is_empty() {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(50)).await;
-            tail = manager.watch(id, Some(offset)).expect("a live session");
-        }
-        assert!(tail.resume && !tail.snapshot.is_empty(), "the shell wrote");
-        let mut live = Vec::new();
-        while live.len() < tail.snapshot.len() {
-            match next_frame(&mut client).await {
-                Frame::Terminal { data, .. } => live.extend(data),
-                other => panic!("only live output follows: {other:?}"),
-            }
-        }
-        assert_eq!(live[..tail.snapshot.len()], tail.snapshot[..]);
-        drop(lag);
-        server.abort();
-        manager.close(id);
-    }
-}
+mod tests;

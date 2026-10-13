@@ -95,16 +95,35 @@ pub struct PanelData {
 /// line. ANSI colour is applied only when `opts.color`; the non-TTY path is
 /// guaranteed to contain no `\u{1b}` byte.
 pub fn render_totals_panel(data: &PanelData, opts: RenderOpts) -> Vec<String> {
-    let mut lines: Vec<String> = Vec::new();
+    let mut lines = vec![counts_line(data, opts)];
+    lines.extend(hitl_line(data, opts));
+    lines.extend(review_debt_line(data, opts));
+    lines.push(commits_line(data, opts));
+    lines.extend(data.stop.as_ref().map(|stop| stop_line(stop, opts)));
+    lines.push(closing_line(data, opts));
+    lines.extend(undo_line(data, opts));
+    lines.extend(next_step_line(data, opts));
+    lines.push(footer_line(data, opts));
+    lines
+}
 
-    // Counts line
+/// `raw` in `style` when colour is on, else `raw` untouched (no ANSI byte).
+fn paint(raw: String, style: Style, color: bool) -> String {
+    if color {
+        style.apply_to(&raw).to_string()
+    } else {
+        raw
+    }
+}
+
+fn counts_line(data: &PanelData, opts: RenderOpts) -> String {
     let done_icon = pick("✅", "[ok]", opts.emoji);
     let blocked_icon = pick("⛔", "[blocked]", opts.emoji);
     let skipped_icon = pick("⏭️", "[skip]", opts.emoji);
     let done_part = format!("{done_icon} {} done", data.done);
     let blocked_part = format!("{blocked_icon} {} blocked", data.blocked);
     let skipped_part = format!("{skipped_icon} {} skipped", data.skipped);
-    lines.push(if opts.color {
+    if opts.color {
         format!(
             "{} · {} · {}",
             Style::new().green().apply_to(&done_part),
@@ -113,96 +132,89 @@ pub fn render_totals_panel(data: &PanelData, opts: RenderOpts) -> Vec<String> {
         )
     } else {
         format!("{done_part} · {blocked_part} · {skipped_part}")
-    });
-
-    // "Waiting on human" bucket (ADR-0014) — appended only when something is
-    // stalled on a human gate, so ordinary runs keep their three-part line.
-    if data.hitl > 0 {
-        let hitl_icon = pick("🙋", "[hitl]", opts.emoji);
-        let hitl_raw = format!("{hitl_icon} {} waiting on human", data.hitl);
-        lines.push(if opts.color {
-            Style::new().yellow().apply_to(&hitl_raw).to_string()
-        } else {
-            hitl_raw
-        });
     }
+}
 
-    // Review debt (#313) — an attribute of DONE issues, so it never touches the
-    // counts line above and stays out of the yellow "waiting on human" bucket.
-    if !data.review_only.is_empty() {
-        let review_icon = pick("🔎", "[review]", opts.emoji);
-        let n = data.review_only.len();
-        let (noun, verb) = if n == 1 {
-            ("issue", "needs")
-        } else {
-            ("issues", "need")
-        };
-        let numbers = data
-            .review_only
-            .iter()
-            .map(|n| format!("#{n}"))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let review_raw = format!(
-            "{review_icon} {n} {noun} {verb} your eyes: {numbers} \
-             — review-only criteria, delivered but not machine-checked"
-        );
-        lines.push(if opts.color {
-            Style::new().cyan().apply_to(&review_raw).to_string()
-        } else {
-            review_raw
-        });
+/// "Waiting on human" bucket (ADR-0014) — present only when something is
+/// stalled on a human gate, so ordinary runs keep their three-part line.
+fn hitl_line(data: &PanelData, opts: RenderOpts) -> Option<String> {
+    if data.hitl == 0 {
+        return None;
     }
+    let hitl_icon = pick("🙋", "[hitl]", opts.emoji);
+    let hitl_raw = format!("{hitl_icon} {} waiting on human", data.hitl);
+    Some(paint(hitl_raw, Style::new().yellow(), opts.color))
+}
 
-    // Commits line
-    let commits_raw = format!("{} commit(s) on '{}'", data.commits, data.branch);
-    lines.push(if opts.color {
-        Style::new().dim().apply_to(&commits_raw).to_string()
+/// Review debt (#313) — an attribute of DONE issues, so it never touches the
+/// counts line and stays out of the yellow "waiting on human" bucket.
+fn review_debt_line(data: &PanelData, opts: RenderOpts) -> Option<String> {
+    if data.review_only.is_empty() {
+        return None;
+    }
+    let review_icon = pick("🔎", "[review]", opts.emoji);
+    let n = data.review_only.len();
+    let (noun, verb) = if n == 1 {
+        ("issue", "needs")
     } else {
-        commits_raw
-    });
+        ("issues", "need")
+    };
+    let numbers = data
+        .review_only
+        .iter()
+        .map(|n| format!("#{n}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let review_raw = format!(
+        "{review_icon} {n} {noun} {verb} your eyes: {numbers} \
+         — review-only criteria, delivered but not machine-checked"
+    );
+    Some(paint(review_raw, Style::new().cyan(), opts.color))
+}
 
-    // Stop-reason line (reuses wording from the old main.rs match arms)
-    if let Some(stop) = &data.stop {
-        let stop_raw = match stop {
-            PanelStop::Deadline => {
-                "Stopped: run deadline reached (before the next issue, or a usage-limit reset landed past it).".to_string()
-            }
-            PanelStop::NonGreen { number, outcome } => {
-                format!("Stopped: #{number} finished non-green ({outcome}). Branch handed back.")
-            }
-            PanelStop::StopBefore { number } => {
-                format!("Stopped: stop-before label on #{number}. Remove the label and re-run to continue.")
-            }
-            PanelStop::Limit {
-                number,
-                reset: Some(t),
-            } => {
-                format!("Stopped: usage limit on #{number}. Reset ~{t}; re-run to continue (or it stalled with no progress).")
-            }
-            PanelStop::Limit {
-                number,
-                reset: None,
-            } => {
-                format!("Stopped: usage limit on #{number}. No parseable reset time; re-run after the limit clears.")
-            }
-            // Both arms say what happened to the WORK, because that is the only
-            // thing the operator cannot see from having pressed the button.
-            PanelStop::Stopped { number: Some(n) } => {
-                format!("Stopped: you stopped the run during #{n}. Branch handed back with the work in place; #{n} stays open.")
-            }
-            PanelStop::Stopped { number: None } => {
-                "Stopped: you stopped the run between issues. Branch handed back.".to_string()
-            }
-        };
-        lines.push(if opts.color {
-            Style::new().yellow().apply_to(&stop_raw).to_string()
-        } else {
-            stop_raw
-        });
-    }
+fn commits_line(data: &PanelData, opts: RenderOpts) -> String {
+    let commits_raw = format!("{} commit(s) on '{}'", data.commits, data.branch);
+    paint(commits_raw, Style::new().dim(), opts.color)
+}
 
-    // Per-mode/dry-run closing-state line
+/// Stop-reason line (reuses wording from the old main.rs match arms).
+fn stop_line(stop: &PanelStop, opts: RenderOpts) -> String {
+    let stop_raw = match stop {
+        PanelStop::Deadline => {
+            "Stopped: run deadline reached (before the next issue, or a usage-limit reset landed past it).".to_string()
+        }
+        PanelStop::NonGreen { number, outcome } => {
+            format!("Stopped: #{number} finished non-green ({outcome}). Branch handed back.")
+        }
+        PanelStop::StopBefore { number } => {
+            format!("Stopped: stop-before label on #{number}. Remove the label and re-run to continue.")
+        }
+        PanelStop::Limit {
+            number,
+            reset: Some(t),
+        } => {
+            format!("Stopped: usage limit on #{number}. Reset ~{t}; re-run to continue (or it stalled with no progress).")
+        }
+        PanelStop::Limit {
+            number,
+            reset: None,
+        } => {
+            format!("Stopped: usage limit on #{number}. No parseable reset time; re-run after the limit clears.")
+        }
+        // Both arms say what happened to the WORK, because that is the only
+        // thing the operator cannot see from having pressed the button.
+        PanelStop::Stopped { number: Some(n) } => {
+            format!("Stopped: you stopped the run during #{n}. Branch handed back with the work in place; #{n} stays open.")
+        }
+        PanelStop::Stopped { number: None } => {
+            "Stopped: you stopped the run between issues. Branch handed back.".to_string()
+        }
+    };
+    paint(stop_raw, Style::new().yellow(), opts.color)
+}
+
+/// Per-mode/dry-run closing-state line.
+fn closing_line(data: &PanelData, opts: RenderOpts) -> String {
     let stopped = data.stop.is_some();
     let closing_raw = match data.branch_mode {
         PanelBranchMode::Current => {
@@ -233,55 +245,50 @@ pub fn render_totals_panel(data: &PanelData, opts: RenderOpts) -> Vec<String> {
             }
         }
     };
-    lines.push(if opts.color {
-        Style::new().dim().apply_to(&closing_raw).to_string()
-    } else {
-        closing_raw
-    });
+    paint(closing_raw, Style::new().dim(), opts.color)
+}
 
-    // Undo line: only when the run left commits behind and the pre-run tag
-    // exists (the runner deletes it on a zero-commit run). The command is
-    // mode-aware — `Current` rewinds the live branch to the marker; `New`
-    // simply drops the run branch (checking out `orig` first when a stop left
-    // the repo parked on it).
-    if data.commits > 0 {
-        if let Some(tag) = &data.undo_tag {
-            let undo_icon = pick("↩️", "[undo]", opts.emoji);
-            let cmd = match data.branch_mode {
-                PanelBranchMode::Current => format!("git reset --hard {tag}"),
-                PanelBranchMode::New if stopped => format!(
-                    "git checkout {} && git branch -D {}",
-                    data.orig_branch, data.branch
-                ),
-                PanelBranchMode::New => format!("git branch -D {}", data.branch),
-            };
-            let undo_raw = format!("{undo_icon}  undo (pre-run tag '{tag}'): {cmd}");
-            lines.push(if opts.color {
-                Style::new().dim().apply_to(&undo_raw).to_string()
-            } else {
-                undo_raw
-            });
-        }
+/// Undo line: only when the run left commits behind and the pre-run tag
+/// exists (the runner deletes it on a zero-commit run). The command is
+/// mode-aware — `Current` rewinds the live branch to the marker; `New`
+/// simply drops the run branch (checking out `orig` first when a stop left
+/// the repo parked on it).
+fn undo_line(data: &PanelData, opts: RenderOpts) -> Option<String> {
+    if data.commits == 0 {
+        return None;
     }
+    let tag = data.undo_tag.as_ref()?;
+    let undo_icon = pick("↩️", "[undo]", opts.emoji);
+    let cmd = match data.branch_mode {
+        PanelBranchMode::Current => format!("git reset --hard {tag}"),
+        PanelBranchMode::New if data.stop.is_some() => format!(
+            "git checkout {} && git branch -D {}",
+            data.orig_branch, data.branch
+        ),
+        PanelBranchMode::New => format!("git branch -D {}", data.branch),
+    };
+    let undo_raw = format!("{undo_icon}  undo (pre-run tag '{tag}'): {cmd}");
+    Some(paint(undo_raw, Style::new().dim(), opts.color))
+}
 
-    // Next-step line: New mode only, absent when dry-run + zero commits
-    if data.branch_mode == PanelBranchMode::New && !(data.dry_run && data.commits == 0) {
-        let next_raw = format!("➜  git merge {}", data.branch);
-        lines.push(if opts.color {
-            Style::new().cyan().apply_to(&next_raw).to_string()
-        } else {
-            next_raw
-        });
+/// Next-step line: New mode only, absent when dry-run + zero commits.
+fn next_step_line(data: &PanelData, opts: RenderOpts) -> Option<String> {
+    if data.branch_mode != PanelBranchMode::New || (data.dry_run && data.commits == 0) {
+        return None;
     }
+    let next_raw = format!("➜  git merge {}", data.branch);
+    Some(paint(next_raw, Style::new().cyan(), opts.color))
+}
 
-    // Token-usage footer (ADR-0008 D11): the run total and the project's
-    // accumulated balance, each in tokens plus a read-time USD estimate (D8). USD
-    // is a read-time projection, never stored; an unpriced model shows `~$?`
-    // (never `~$0.00`) or flags the priced portion with `+?`.
-    // The consolidation segment (issue #269): shown only on a run that consolidated,
-    // between the run total it is part of and the project balance. `false` for the
-    // partial flag — the segment prices a single model, so there is no priced/unpriced
-    // split to flag; an unpriced model already renders `$?`.
+/// Token-usage footer (ADR-0008 D11): the run total and the project's
+/// accumulated balance, each in tokens plus a read-time USD estimate (D8). USD
+/// is a read-time projection, never stored; an unpriced model shows `~$?`
+/// (never `~$0.00`) or flags the priced portion with `+?`.
+/// The consolidation segment (issue #269): shown only on a run that consolidated,
+/// between the run total it is part of and the project balance. `false` for the
+/// partial flag — the segment prices a single model, so there is no priced/unpriced
+/// split to flag; an unpriced model already renders `$?`.
+fn footer_line(data: &PanelData, opts: RenderOpts) -> String {
     let consolidate_seg = match &data.consolidate_breakdown {
         Some(u) => format!(
             " · consolidate: {}",
@@ -306,13 +313,7 @@ pub fn render_totals_panel(data: &PanelData, opts: RenderOpts) -> Vec<String> {
             opts.emoji
         ),
     );
-    lines.push(if opts.color {
-        Style::new().dim().apply_to(&footer_raw).to_string()
-    } else {
-        footer_raw
-    });
-
-    lines
+    paint(footer_raw, Style::new().dim(), opts.color)
 }
 
 /// Format a footer breakdown meter — `↑X ⚡X ❄X ↓X · $Y` — reusing the inline meter
@@ -328,3 +329,6 @@ fn fmt_breakdown(u: &UsageLite, usd: Option<f64>, partial: bool, emoji: bool) ->
         emoji,
     )
 }
+
+#[cfg(test)]
+mod tests;

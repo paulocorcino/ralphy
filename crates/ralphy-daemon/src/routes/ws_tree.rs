@@ -8,12 +8,14 @@ use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::routing::get;
 use axum::Router;
 
+use super::send_command;
 use super::RouterShared;
-use super::{read_peer_store, send_command};
-use crate::protocol::Frame;
-use crate::{checkout, fleet, protocol, registry, watch};
+use crate::watch;
 
+mod conn;
+mod frame;
 mod peer_poll;
+use conn::TreeConn;
 pub(crate) use peer_poll::*;
 
 /// `GET /ws/tree`: the persistent live-tree subscription socket (#196, ADR-0036
@@ -35,7 +37,7 @@ pub(crate) use peer_poll::*;
 /// the repo it has open.
 ///
 /// A FOURTH kind, `head.watch { repo, checkout? }`, holds the checkout's gitdir
-/// and its `logs/` ([`checkout::head_rels`]); the watcher lets only their `HEAD`
+/// and its `logs/` (`checkout::head_rels`); the watcher lets only their `HEAD`
 /// child through, and a move pushes `head.dirty { repo, checkout? }`. Local
 /// repos only. It has no unwatch verb: the browser holds it on the tree's own
 /// socket, which it closes when the checkout or the project changes.
@@ -61,30 +63,10 @@ pub(crate) async fn tree_ws(
     mut shutdown: tokio::sync::watch::Receiver<bool>,
     run_exits: tokio::sync::broadcast::Sender<String>,
 ) {
-    // Fan-in: one forwarder task per subscribed repo pipes that repo's broadcast
-    // into this shared channel, so the select! loop watches ONE receiver regardless
-    // of how many repos/dirs the connection holds. Keyed by repo so it is torn down
-    // when this connection releases the repo's LAST dir — and re-spawned (on the
-    // fresh broadcast the manager rebuilds) if the same repo is watched again.
     let (nudge_tx, mut nudge_rx) = tokio::sync::mpsc::unbounded_channel::<(String, String)>();
-    let mut forwarders: std::collections::BTreeMap<String, tokio::task::JoinHandle<()>> =
-        std::collections::BTreeMap::new();
-    let mut peer_pollers: std::collections::BTreeMap<String, PeerTreePoller> =
-        std::collections::BTreeMap::new();
-    // The (repo, rel) dirs THIS connection holds, in normalized form — held at most
-    // once each (a duplicate `watch` is a no-op, so the manager refcount this
-    // connection contributes stays 1 per dir and teardown releases it exactly once).
-    // Doubles as the per-connection push filter (a repo's broadcast carries every
-    // dir, including ones other connections watch).
-    let mut watched: Vec<(String, String)> = Vec::new();
-    // `(repo, prefixed rel)` → `(operator rel, checkout name)` for the dirs this
-    // connection watches under a `checkout`. A per-connection VIEW only: the
-    // manager never reads it, and `watched` keeps the prefixed rel so the
-    // refcount/teardown logic above is byte-for-byte the no-checkout one.
-    let mut aliases: std::collections::BTreeMap<(String, String), (String, String)> =
-        std::collections::BTreeMap::new();
+    let mut conn = TreeConn::new(watchers, registry_path, peers_dir, daemon_id, nudge_tx);
     // The run-completion nudge bus (#310): daemon-wide, held by NO watch, so it
-    // needs no subscription verb and adds nothing to the teardown below. Every
+    // needs no subscription verb and adds nothing to the teardown. Every
     // connection relays every nudge; the browser filters by its open repo.
     let mut run_exits_rx = run_exits.subscribe();
     let mut exits_open = true;
@@ -93,298 +75,42 @@ pub(crate) async fn tree_ws(
         tokio::select! {
             _ = shutdown.changed() => break,
             incoming = socket.recv() => match incoming {
-                Some(Ok(Message::Binary(bytes))) => {
-                    let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) else {
-                        continue;
-                    };
-                    let repo_ref = cmd
-                        .payload
-                        .get("repo")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let rel = watch::norm_rel(
-                        cmd.payload.get("path").and_then(|v| v.as_str()).unwrap_or(""),
-                    );
-                    // `checkout` prefixes the rel under the same root (shape gate
-                    // only — see the fn doc); a malformed name drops the frame the
-                    // way an unknown route does. `runs.*` ignore it: the runstate
-                    // dir is the primary's (ADR-0063 §7).
-                    let runs = cmd.verb == "runs.watch" || cmd.verb == "runs.unwatch";
-                    // `head.watch` holds the checkout's gitdir, not a tree dir: the
-                    // payload path is ignored and `checkout` names WHICH gitdir.
-                    let head = cmd.verb == "head.watch";
-                    // Same door as `checkout::from_payload`: absent or `null` is
-                    // the primary; anything else must pass the gate or the frame
-                    // is dropped — a non-string or `""` never silently holds a
-                    // PRIMARY watch the client believes is the worktree's.
-                    let checkout = match cmd.payload.get("checkout") {
-                        None | Some(serde_json::Value::Null) => None,
-                        Some(_) if runs => None,
-                        Some(serde_json::Value::String(name)) => Some(checkout::lexical(name)),
-                        Some(_) => Some(None),
-                    };
-                    let (rel, alias, head_checkout) = match checkout {
-                        None => (rel, None, None),
-                        Some(Some(c)) if head => (rel, Some((String::new(), c.name().to_string())), Some(c)),
-                        Some(Some(c)) => (c.prefix(&rel), Some((rel, c.name().to_string())), None),
-                        Some(None) => continue,
-                    };
-                    match cmd.verb.as_str() {
-                        "watch" | "runs.watch" | "head.watch" => {
-                            if repo_ref.is_empty() {
-                                continue;
-                            }
-                            // The runs subscription ignores the payload path: its dir is
-                            // fixed (ADR-0047 §9), so a client cannot aim it elsewhere.
-                            let rel = if runs { watch::RUNSTATE_REL.to_string() } else { rel };
-                            let (descriptors, _) = read_peer_store(peers_dir.clone()).await;
-                            let repo = match fleet::route(
-                                &repo_ref,
-                                daemon_id.as_deref().unwrap_or(""),
-                                &descriptors,
-                            ) {
-                                fleet::Route::Local { slug } => slug.to_string(),
-                                fleet::Route::UnknownDaemon { .. } => continue,
-                                // Local only: a peer on an older build would hold the
-                                // gitdir without the `HEAD`-only filter, and its `index`
-                                // writes would loop against the answering `git status`.
-                                fleet::Route::Peer { .. } if head => continue,
-                                fleet::Route::Peer { peer, slug } => {
-                                    let key = (repo_ref.clone(), rel.clone());
-                                    if watched.contains(&key) {
-                                        // Held already: refresh the alias so a re-watch of the
-                                        // same dir under a `checkout` is pushed in its form.
-                                        if let Some(a) = alias {
-                                            aliases.insert(key, a);
-                                        }
-                                        continue;
-                                    }
-                                    let poller = peer_pollers.entry(repo_ref.clone()).or_insert_with(|| {
-                                        let set = PeerWatchSet::new(&rel, runs);
-                                        let sub = format!(
-                                            "{}-{}",
-                                            daemon_id.as_deref().unwrap_or("daemon"),
-                                            ulid::Ulid::new()
-                                        );
-                                        let task = spawn_peer_tree_poller(
-                                            peer.clone(),
-                                            repo_ref.clone(),
-                                            slug.to_string(),
-                                            sub.clone(),
-                                            set.clone(),
-                                            nudge_tx.clone(),
-                                        );
-                                        PeerTreePoller {
-                                            task,
-                                            set,
-                                            peer: peer.clone(),
-                                            sub,
-                                        }
-                                    });
-                                    poller.set.add(&rel, runs);
-                                    if let Some(a) = alias {
-                                        aliases.insert(key.clone(), a);
-                                    }
-                                    watched.push(key);
-                                    continue;
-                                }
-                            };
-                            let root = match registry::load_from(&registry_path) {
-                                Ok(store) => store.entry(&repo).map(|e| PathBuf::from(&e.path)),
-                                Err(e) => {
-                                    tracing::warn!(error = %e, "tree watch: registry unreadable");
-                                    None
-                                }
-                            };
-                            let Some(root) = root else { continue };
-                            if runs {
-                                // `notify` errors on a missing path, and a repo where
-                                // `ralphy run` never ran has no snapshot dir — without
-                                // this, a first run started while the panel is open would
-                                // stay invisible until reopen (ADR-0036 §4 amendment).
-                                if let Err(e) = std::fs::create_dir_all(root.join(watch::RUNSTATE_REL))
-                                {
-                                    tracing::warn!(error = %e, "runs watch: creating the runstate dir");
-                                }
-                            }
-                            let rels = if head {
-                                checkout::head_rels(&root, head_checkout.as_ref())
-                            } else {
-                                vec![rel]
-                            };
-                            for rel in rels {
-                                // Idempotent per connection: a repeat watch must NOT take a
-                                // second manager refcount this teardown would never release.
-                                let key = (repo.clone(), rel.clone());
-                                if watched.contains(&key) {
-                                    if let Some(a) = alias.clone() {
-                                        aliases.insert(key, a);
-                                    }
-                                    continue;
-                                }
-                                match watchers.watch(&repo, &root, &rel) {
-                                    Ok(rx) => {
-                                        // First dir for this repo on this connection → spawn its
-                                        // forwarder on the rx the manager just handed us.
-                                        forwarders
-                                            .entry(repo.clone())
-                                            .or_insert_with(|| spawn_nudge_forwarder(rx, nudge_tx.clone()));
-                                        if let Some(a) = alias.clone() {
-                                            aliases.insert(key.clone(), a);
-                                        }
-                                        watched.push(key);
-                                    }
-                                    Err(e) => {
-                                        tracing::warn!(error = %format!("{e:#}"), "tree watch failed");
-                                        // The tree shows it no longer updates by
-                                        // itself (ADR-0070 D3). Paths are pushed
-                                        // like `tree.dirty`; the runs list has no
-                                        // line to show it, so it stays a log line.
-                                        if runs {
-                                            continue;
-                                        }
-                                        let reason = format!("{e:#}");
-                                        let payload = match (&alias, head) {
-                                            (Some((_, name)), true) => serde_json::json!({
-                                                "repo": repo, "checkout": name, "reason": reason,
-                                            }),
-                                            (None, true) => {
-                                                serde_json::json!({ "repo": repo, "reason": reason })
-                                            }
-                                            (Some((shown, name)), false) => serde_json::json!({
-                                                "repo": repo, "path": shown, "checkout": name,
-                                                "reason": reason,
-                                            }),
-                                            (None, false) => serde_json::json!({
-                                                "repo": repo, "path": rel, "reason": reason,
-                                            }),
-                                        };
-                                        send_command(&mut socket, 0, "tree.failed", payload).await;
-                                    }
-                                }
-                            }
-                        }
-                        "unwatch" | "runs.unwatch" => {
-                            let rel = if runs {
-                                watch::RUNSTATE_REL.to_string()
-                            } else {
-                                rel
-                            };
-                            if let Some(poller) = peer_pollers.get(&repo_ref) {
-                                let key = (repo_ref.clone(), rel.clone());
-                                if !watched.contains(&key) {
-                                    continue;
-                                }
-                                aliases.remove(&key);
-                                watched.retain(|held| held != &key);
-                                poller.set.remove(
-                                    &rel,
-                                    watched.iter().any(|(repo, path)| {
-                                        repo == &repo_ref && path == watch::RUNSTATE_REL
-                                    }),
-                                );
-                                if !watched.iter().any(|(repo, _)| repo == &repo_ref) {
-                                    if let Some(poller) = peer_pollers.remove(&repo_ref) {
-                                        close_peer_tree_poller(poller);
-                                    }
-                                }
-                                continue;
-                            }
-                            let repo = repo_ref.clone();
-                            let key = (repo.clone(), rel.clone());
-                            if !watched.contains(&key) {
-                                continue; // not held → nothing to release (no double-unwatch)
-                            }
-                            watchers.unwatch(&repo, &rel);
-                            aliases.remove(&key);
-                            watched.retain(|k| k != &key);
-                            // Last dir of this repo released → stop its forwarder so a later
-                            // re-watch re-subscribes to the rebuilt broadcast.
-                            if !watched.iter().any(|(r, _)| r == &repo) {
-                                if let Some(f) = forwarders.remove(&repo) {
-                                    f.abort();
-                                }
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                Some(Ok(Message::Close(_))) | None => break,
+                Some(Ok(Message::Binary(bytes))) => conn.on_frame(&mut socket, &bytes).await,
+                Some(Ok(Message::Close(_))) | Some(Err(_)) | None => break,
                 Some(Ok(_)) => {}
-                Some(Err(_)) => break,
             },
-            nudge = nudge_rx.recv() => {
-                // A repo's broadcast carries every watched dir; push only the ones
-                // THIS connection subscribed to.
-                if let Some((repo, rel)) = nudge {
-                    if watched.iter().any(|(r, p)| r == &repo && p == &rel) {
-                        // Discriminated by REL, not by the verb that subscribed, so
-                        // both subscription kinds share ONE `watched` list (and one
-                        // exactly-once teardown). The browser's two consumers react
-                        // differently: re-read a subtree vs re-read `runs.list`.
-                        if rel == watch::RUNSTATE_REL {
-                            send_command(
-                                &mut socket,
-                                0,
-                                "runs.dirty",
-                                serde_json::json!({ "repo": repo }),
-                            )
-                            .await;
-                        } else if watch::is_head_rel(&rel) {
-                            // The checkout's HEAD moved: the browser re-reads its
-                            // branch and changes. The name says which checkout.
-                            let payload = match aliases.get(&(repo.clone(), rel.clone())) {
-                                Some((_, name)) => serde_json::json!({ "repo": repo, "checkout": name }),
-                                None => serde_json::json!({ "repo": repo }),
-                            };
-                            send_command(&mut socket, 0, "head.dirty", payload).await;
-                        } else {
-                            // A checkout watch pushes the OPERATOR's rel plus the
-                            // name, never the prefixed dir it is held under.
-                            let payload = match aliases.get(&(repo.clone(), rel.clone())) {
-                                Some((shown, name)) => serde_json::json!({
-                                    "repo": repo, "path": shown, "checkout": name,
-                                }),
-                                None => serde_json::json!({ "repo": repo, "path": rel }),
-                            };
-                            send_command(&mut socket, 0, "tree.dirty", payload).await;
-                        }
-                    }
-                }
+            nudge = nudge_rx.recv() => conn.push_nudge(&mut socket, nudge).await,
+            exited = run_exits_rx.recv(), if exits_open => {
+                exits_open = relay_run_exit(&mut socket, exited).await;
             }
-            exited = run_exits_rx.recv(), if exits_open => match exited {
-                Ok(repo) => {
-                    send_command(
-                        &mut socket,
-                        0,
-                        "changes.dirty",
-                        serde_json::json!({ "repo": repo }),
-                    )
-                    .await;
-                }
-                // Skipped nudges are free: the browser's re-read is idempotent.
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
-                // Load-bearing: a closed broadcast makes `recv()` return
-                // immediately forever, which would spin this loop.
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => exits_open = false,
-            },
         }
     }
 
-    // TEARDOWN: release every held dir (the last release tears the watcher down)
-    // and abort the forwarders (their broadcast receivers may otherwise outlive us
-    // if another connection keeps the repo alive).
-    for (repo, rel) in &watched {
-        if !peer_pollers.contains_key(repo) {
-            watchers.unwatch(repo, rel);
+    conn.teardown();
+}
+
+/// Relay one run-exit nudge as `changes.dirty`. Returns whether the broadcast is
+/// still open.
+async fn relay_run_exit(
+    socket: &mut WebSocket,
+    exited: Result<String, tokio::sync::broadcast::error::RecvError>,
+) -> bool {
+    match exited {
+        Ok(repo) => {
+            send_command(
+                socket,
+                0,
+                "changes.dirty",
+                serde_json::json!({ "repo": repo }),
+            )
+            .await;
+            true
         }
-    }
-    for (_repo, forwarder) in forwarders {
-        forwarder.abort();
-    }
-    for (_repo, poller) in peer_pollers {
-        close_peer_tree_poller(poller);
+        // Skipped nudges are free: the browser's re-read is idempotent.
+        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => true,
+        // Load-bearing: a closed broadcast makes `recv()` return
+        // immediately forever, which would spin the loop.
+        Err(tokio::sync::broadcast::error::RecvError::Closed) => false,
     }
 }
 

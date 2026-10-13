@@ -166,6 +166,110 @@ impl CatchUp {
     }
 }
 
+/// What one finished poll request told the poller: how the cycle went, and the
+/// dirs the peer named.
+struct PollReply {
+    cycle: PollCycle,
+    dirty: Vec<String>,
+}
+
+/// The dirs a 200 body names, or `None` when the body is not a poll result.
+fn dirty_paths(bytes: &[u8]) -> Option<Vec<String>> {
+    let value = serde_json::from_slice::<serde_json::Value>(bytes).ok()?;
+    let dirty = value.get("dirty")?.as_array()?;
+    Some(
+        dirty
+            .iter()
+            .filter_map(|item| item["path"].as_str().map(str::to_string))
+            .collect(),
+    )
+}
+
+fn read_poll_reply(
+    answer: anyhow::Result<(u16, Vec<u8>)>,
+    repo_ref: &str,
+    failures: u32,
+) -> PollReply {
+    let empty = |cycle| PollReply {
+        cycle,
+        dirty: Vec::new(),
+    };
+    match answer {
+        Ok((200, bytes)) => match dirty_paths(&bytes) {
+            Some(dirty) if dirty.is_empty() => empty(PollCycle::Quiet),
+            Some(dirty) => PollReply {
+                cycle: PollCycle::Changed,
+                dirty,
+            },
+            None => {
+                tracing::warn!(
+                    repo = %repo_ref,
+                    body = %String::from_utf8_lossy(&bytes).chars().take(200).collect::<String>(),
+                    "a peer answered a tree poll with something that is not a poll result"
+                );
+                empty(PollCycle::Unreadable)
+            }
+        },
+        Ok((code, _)) => {
+            tracing::warn!(repo = %repo_ref, status = code, "a peer refused a tree poll");
+            empty(PollCycle::Failed)
+        }
+        Err(error) => {
+            // The first failure of a streak is a WARN because it names the
+            // cause — "address already in use" here is the port pool going
+            // dry, which is otherwise invisible until the whole panel dies.
+            if failures == 0 {
+                tracing::warn!(repo = %repo_ref, error = %format!("{error:#}"), "a peer tree poll failed");
+            } else {
+                tracing::debug!(repo = %repo_ref, failures, error = %format!("{error:#}"), "a peer tree poll failed again");
+            }
+            empty(PollCycle::Failed)
+        }
+    }
+}
+
+/// Hand each path to the browser connection. False once that connection is gone,
+/// which ends the poller.
+fn send_nudges(
+    nudge_tx: &tokio::sync::mpsc::UnboundedSender<(String, String)>,
+    repo_ref: &str,
+    paths: Vec<String>,
+) -> bool {
+    paths
+        .into_iter()
+        .all(|path| nudge_tx.send((repo_ref.to_string(), path)).is_ok())
+}
+
+/// Post one poll. `None` when the watch set moved first.
+///
+/// A poll names its watch set, so the peer only ever learns about a dir a
+/// REQUEST mentioned. A folder expanded while a poll is in flight would
+/// otherwise go unwatched until that poll's window ran out — and the first poll
+/// of all races the browser's opening burst of `watch` frames, so the tree
+/// opened blind for a full window. Abandon the question that is already out of
+/// date and ask the new one.
+async fn poll_until_set_moves(
+    peer: &peer::PeerDescriptor,
+    slug: &str,
+    sub: &str,
+    set: &PeerWatchSet,
+) -> Option<anyhow::Result<(u16, Vec<u8>)>> {
+    let body = serde_json::json!({
+        "sub": sub,
+        "repo": slug,
+        "paths": set.snapshot(),
+        "runs": set.runs(),
+        "timeout_ms": PEER_POLL_WINDOW_MS,
+    });
+    let request =
+        peer::client::post_json_timeout(peer, "/api/peer/tree/poll", &body, PEER_POLL_DEADLINE);
+    tokio::pin!(request);
+    tokio::select! {
+        answer = &mut request => Some(answer),
+        _ = set.changed.notified() => None,
+    }
+}
+
 pub(crate) fn spawn_peer_tree_poller(
     peer: peer::PeerDescriptor,
     repo_ref: String,
@@ -180,101 +284,25 @@ pub(crate) fn spawn_peer_tree_poller(
         let mut failures: u32 = 0;
         let mut catch_up = CatchUp::default();
         loop {
-            let body = serde_json::json!({
-                "sub": sub,
-                "repo": slug,
-                "paths": set.snapshot(),
-                "runs": set.runs(),
-                "timeout_ms": PEER_POLL_WINDOW_MS,
-            });
             let started = Instant::now();
-            // A poll names its watch set, so the peer only ever learns about a dir
-            // a REQUEST mentioned. A folder expanded while a poll is in flight
-            // would otherwise go unwatched until that poll's window ran out — and
-            // the first poll of all races the browser's opening burst of `watch`
-            // frames, so the tree opened blind for a full window. Abandon the
-            // question that is already out of date and ask the new one.
-            let request = peer::client::post_json_timeout(
-                &peer,
-                "/api/peer/tree/poll",
-                &body,
-                PEER_POLL_DEADLINE,
-            );
-            tokio::pin!(request);
-            let answer = tokio::select! {
-                answer = &mut request => answer,
-                _ = set.changed.notified() => {
-                    tracing::debug!(repo = %repo_ref, sub = %sub, "peer tree poll restarted: the watch set moved");
-                    failures = 0;
-                    tokio::time::sleep(next_poll_delay(PollCycle::Restarted)).await;
-                    continue;
-                }
-            };
-            let cycle = match answer {
-                Ok((200, bytes)) => {
-                    let parsed = serde_json::from_slice::<serde_json::Value>(&bytes);
-                    match parsed
-                        .as_ref()
-                        .ok()
-                        .and_then(|value| value.get("dirty"))
-                        .and_then(|dirty| dirty.as_array())
-                    {
-                        Some(dirty) => {
-                            let mut changed = false;
-                            for item in dirty {
-                                if let Some(path) = item["path"].as_str() {
-                                    changed = true;
-                                    if nudge_tx.send((repo_ref.clone(), path.to_string())).is_err()
-                                    {
-                                        return;
-                                    }
-                                }
-                            }
-                            if changed {
-                                PollCycle::Changed
-                            } else {
-                                PollCycle::Quiet
-                            }
-                        }
-                        None => {
-                            tracing::warn!(
-                                repo = %repo_ref,
-                                body = %String::from_utf8_lossy(&bytes).chars().take(200).collect::<String>(),
-                                "a peer answered a tree poll with something that is not a poll result"
-                            );
-                            PollCycle::Unreadable
-                        }
-                    }
-                }
-                Ok((code, _)) => {
-                    tracing::warn!(repo = %repo_ref, status = code, "a peer refused a tree poll");
-                    PollCycle::Failed
-                }
-                Err(error) => {
-                    // The first failure of a streak is a WARN because it names the
-                    // cause — "address already in use" here is the port pool going
-                    // dry, which is otherwise invisible until the whole panel dies.
-                    if failures == 0 {
-                        tracing::warn!(repo = %repo_ref, error = %format!("{error:#}"), "a peer tree poll failed");
-                    } else {
-                        tracing::debug!(repo = %repo_ref, failures, error = %format!("{error:#}"), "a peer tree poll failed again");
-                    }
-                    PollCycle::Failed
-                }
-            };
-            if cycle == PollCycle::Failed || cycle == PollCycle::Unreadable {
-                failures = failures.saturating_add(1);
-            } else {
+            let Some(answer) = poll_until_set_moves(&peer, &slug, &sub, &set).await else {
+                tracing::debug!(repo = %repo_ref, sub = %sub, "peer tree poll restarted: the watch set moved");
                 failures = 0;
+                tokio::time::sleep(next_poll_delay(PollCycle::Restarted)).await;
+                continue;
+            };
+            let PollReply { cycle, dirty } = read_poll_reply(answer, &repo_ref, failures);
+            failures = match cycle {
+                PollCycle::Failed | PollCycle::Unreadable => failures.saturating_add(1),
+                _ => 0,
+            };
+            if !send_nudges(&nudge_tx, &repo_ref, dirty) {
+                return;
             }
             // The browser re-reads each nudged dir, and that read is idempotent,
             // so a dir the peer also named in this answer costs one extra read.
-            if catch_up.after(cycle) {
-                for path in set.snapshot() {
-                    if nudge_tx.send((repo_ref.clone(), path)).is_err() {
-                        return;
-                    }
-                }
+            if catch_up.after(cycle) && !send_nudges(&nudge_tx, &repo_ref, set.snapshot()) {
+                return;
             }
             tracing::debug!(
                 repo = %repo_ref,
@@ -297,4 +325,62 @@ pub(crate) fn close_peer_tree_poller(poller: PeerTreePoller) {
         let body = serde_json::json!({ "sub": poller.sub });
         let _ = peer::client::post_json(&poller.peer, "/api/peer/tree/close", &body).await;
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn reply(status: u16, body: &str) -> PollReply {
+        read_poll_reply(Ok((status, body.as_bytes().to_vec())), "repo", 0)
+    }
+
+    #[test]
+    fn a_poll_that_names_dirs_is_changed_and_lists_them() {
+        let got = reply(
+            200,
+            r#"{"dirty":[{"path":"a"},{"nopath":1},{"path":"b/c"}]}"#,
+        );
+        assert_eq!(got.cycle, PollCycle::Changed);
+        assert_eq!(got.dirty, ["a", "b/c"]);
+    }
+
+    #[test]
+    fn a_poll_with_no_dirs_is_quiet() {
+        let got = reply(200, r#"{"dirty":[]}"#);
+        assert_eq!(got.cycle, PollCycle::Quiet);
+        assert!(got.dirty.is_empty());
+        assert_eq!(
+            reply(200, r#"{"dirty":[{"nopath":1}]}"#).cycle,
+            PollCycle::Quiet
+        );
+    }
+
+    #[test]
+    fn a_200_that_is_not_a_poll_result_is_unreadable_never_quiet() {
+        assert_eq!(reply(200, r#"{"error":"no"}"#).cycle, PollCycle::Unreadable);
+        assert_eq!(reply(200, r#"{"dirty":"x"}"#).cycle, PollCycle::Unreadable);
+        assert_eq!(reply(200, "not json").cycle, PollCycle::Unreadable);
+    }
+
+    #[test]
+    fn a_refusal_or_a_transport_error_is_failed() {
+        assert_eq!(
+            reply(500, r#"{"dirty":[{"path":"a"}]}"#).cycle,
+            PollCycle::Failed
+        );
+        let error = read_poll_reply(Err(anyhow::anyhow!("refused")), "repo", 3);
+        assert_eq!(error.cycle, PollCycle::Failed);
+        assert!(error.dirty.is_empty());
+    }
+
+    #[test]
+    fn nudges_stop_when_the_connection_is_gone() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        assert!(send_nudges(&tx, "repo", vec!["a".into(), "b".into()]));
+        assert_eq!(rx.try_recv().ok(), Some(("repo".into(), "a".into())));
+        assert_eq!(rx.try_recv().ok(), Some(("repo".into(), "b".into())));
+        drop(rx);
+        assert!(!send_nudges(&tx, "repo", vec!["c".into()]));
+    }
 }
