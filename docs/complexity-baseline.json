@@ -228,11 +228,6 @@
       13
     ]
   },
-  "crates/ralphy-cli/src/ui/render/panel.rs": {
-    "render_totals_panel": [
-      51
-    ]
-  },
   "crates/ralphy-core/src/acceptance.rs": {
     "apply_ledger": [
       12
