@@ -794,11 +794,6 @@
       12
     ]
   },
-  "crates/ralphy-daemon/src/desk/apply.rs": {
-    "apply_one": [
-      75
-    ]
-  },
   "crates/ralphy-daemon/src/dispatch/host.rs": {
     "host_argv": [
       16

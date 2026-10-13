@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use serde_json::json;
 
 use super::*;
-use crate::desk::CONSOLE_NAME_MAX;
+use crate::desk::{CONSOLE_NAME_MAX, DESK_MAX};
 
 const NOW: i64 = 5_000;
 
@@ -176,4 +176,62 @@ fn a_create_cuts_a_long_console_name_by_char() {
         out.desk.windows[0].console_name.as_deref().map(str::len),
         Some(CONSOLE_NAME_MAX)
     );
+}
+
+fn fence(id: &str) -> serde_json::Value {
+    json!({
+        "id": id, "name": id,
+        "rect": { "left": 0.0, "top": 0.0, "width": 720.0, "height": 460.0 }, "ts": 1,
+    })
+}
+
+fn note(id: &str) -> serde_json::Value {
+    json!({
+        "id": id, "repo": "o/r", "path": "a.note",
+        "rect": { "left": 80.0, "top": 120.0, "width": 240.0, "height": 180.0 }, "ts": 1,
+    })
+}
+
+#[test]
+fn a_fence_or_note_with_a_bad_rect_or_checkout_is_refused_by_kind() {
+    let out_of_frame = json!({ "left": -1.0, "top": 0.0, "width": 10.0, "height": 10.0 });
+    let changes = [
+        create("fence", fence("f-1")),
+        create("note", note("n-1")),
+        create("fence", json!({ "id": "f-2", "rect": out_of_frame })),
+        create(
+            "note",
+            json!({ "id": "n-2", "repo": "o/r", "path": "b.note", "rect": out_of_frame }),
+        ),
+        json!({ "op": "set", "type": "fence", "id": "f-1", "fields": { "rect": out_of_frame } }),
+        json!({ "op": "set", "type": "note", "id": "n-1", "fields": { "rect": out_of_frame } }),
+        json!({ "op": "set", "type": "note", "id": "n-1", "fields": { "file": { "repo": "o/r", "path": "a.note", "checkout": "../x" } } }),
+    ];
+    let out = apply(DeskStore::default(), &changes, &BTreeMap::new(), NOW);
+    let refused: Vec<(usize, &str)> = out
+        .refused
+        .iter()
+        .map(|r| (r.index, r.error.as_str()))
+        .collect();
+    assert_eq!(
+        refused,
+        [
+            (2, "fence f-2 has an out-of-frame rect"),
+            (3, "note n-2 has an out-of-frame rect"),
+            (4, "fence f-1 has an out-of-frame rect"),
+            (5, "note n-1 has an out-of-frame rect"),
+            (6, "checkout ../x on record n-1 is not a valid name"),
+        ]
+    );
+}
+
+#[test]
+fn a_remove_drops_only_the_named_fence() {
+    let out = desk_of(&[
+        create("fence", fence("f-1")),
+        create("fence", fence("f-2")),
+        json!({ "op": "remove", "type": "fence", "id": "f-1" }),
+    ]);
+    let ids: Vec<&str> = out.fences.iter().map(|f| f.id.as_str()).collect();
+    assert_eq!(ids, ["f-2"]);
 }
