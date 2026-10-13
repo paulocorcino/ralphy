@@ -786,3 +786,51 @@ image also tells its host that someone opened the document;
 This is why the flag is opt-in and why turning it on costs a code. To turn it
 off from the host, delete `daemon-remote-images` in the store and reload the
 page.
+
+## Amendment (2026-10-12, proposed): end one login without ending the others
+
+Status: proposed.
+
+**Context.** A pentest on 2026-10-12 replayed a valid session cookie from
+another machine. The step-up of amendment E held: the replay could not
+disarm TOTP, change the password or lift the login gate. But the only answer
+to a stolen cookie is the epoch bump of §B, and the epoch ends every login at
+once, the operator's own included. Under the remembered kind a stolen cookie
+lives up to 30 days, and each use restarts its 7-day idle window. So the
+operator must choose between leaving the intruder in and signing out every
+own device.
+
+**Decision.**
+
+- Each login mints a random **login ID** (128 bits, base64url). It is a claim
+  inside the cookie, bound by the MAC, so the value format goes `3` → `4`
+  (`4.<epoch>.<iat>.<exp>.<kind>.<login-id>.<mac>`). A `3.*` cookie fails
+  closed and every device signs in once, as §B and the remembered amendment
+  already declared for their bumps. A slide re-issue keeps the login ID; only
+  a new login mints a new one.
+- The store gains a **revoked-login list**, `daemon-revoked-logins`, owner-only
+  like `daemon-token`. Each entry is a login ID and the `exp` cap of its
+  cookie. `verify_claims` refuses a cookie whose login ID is in the list. An
+  entry is pruned once its cap has passed: after that the cookie is dead on
+  its own. So the list holds at most the logins revoked in the last 30 days.
+- `POST /api/security/logins/revoke` with a login ID adds it to the list. It
+  costs no fresh factor: ending a login lowers no posture (amendment E covers
+  only lowering it). A login may revoke itself.
+- The audit log records the login ID on `login_ok` and on each line written
+  under that login (ADR-0074 amendment 2026-10-12), so the operator can see
+  which login did what and revoke exactly that one.
+
+**Why this is not the session table §D rejected.** §D rejected one stored row
+per live login. The daemon still stores nothing for a live login: the cookie
+carries every claim, and a login the operator never revokes leaves no trace in
+the store. The new state is a deny list, empty in normal use, whose entries
+expire by themselves. The epoch stays the tool for "end everything".
+
+**Consequences.**
+
+- One file read per request is avoided the same way as the other store flags:
+  `AuthState` holds the list and `rebuild()` re-reads it.
+- Revocation does not stop an intruder who signs in again. That needs the
+  credentials, which the cookie does not carry; the login throttle covers it.
+- No device or IP binding is added. The remembered amendment's reason still
+  holds: the dev-tunnel path rewrites `Host` and `Origin`.

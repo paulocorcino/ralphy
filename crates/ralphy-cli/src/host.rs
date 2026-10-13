@@ -260,12 +260,17 @@ fn paired(
     result
 }
 
-/// The newest published release tag, from the release cache, refreshed when
-/// stale. `None` offline or when nothing was ever read.
+/// The newest published release tag, read from GitHub each time; the cache
+/// answers only when the read fails. A cache inside its TTL can miss a release
+/// published since, and that older release can speak another peer protocol.
+/// `None` offline or when nothing was ever read.
 fn latest_release() -> Option<String> {
     use ralphy_release::fetch::{self, RefreshOpts};
     let cache = ralphy_release::cache_file()?;
-    fetch::refresh_if_stale(&RefreshOpts::new(&cache));
+    fetch::refresh_if_stale(&RefreshOpts {
+        force: true,
+        ..RefreshOpts::new(&cache)
+    });
     fetch::load(&cache)
         .into_iter()
         .filter(|r| !r.draft)

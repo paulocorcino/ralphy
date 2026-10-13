@@ -497,6 +497,13 @@
   outline: none;
   border-color: var(--border-focus);
 }
+/* iOS Safari zooms the page when a field under 16px takes focus, and the
+   list focuses this field as it opens. */
+@media (any-pointer: coarse) {
+  .column-filter {
+    font-size: 16px;
+  }
+}
 .column-row {
   display: flex;
   align-items: center;

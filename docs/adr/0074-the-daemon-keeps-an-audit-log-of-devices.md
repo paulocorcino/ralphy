@@ -253,3 +253,40 @@ them: no decision reads them, and only the log writes them. A value outside
 the closed set (`slow-2g`, `2g`, `3g`, `4g`), or a number that does not parse,
 is absent. The daemon never guesses a value. Safari has no
 `navigator.connection`, so its lines have none of these fields.
+
+## Amendment 2026-10-12 — a login used from a second device is reported to the operator
+
+Status: proposed. Depends on the login ID of the ADR-0032 amendment of the
+same date.
+
+**Context.** A pentest on 2026-10-12 replayed a session cookie from a
+container. The log showed it clearly (Linux, software GPU, UTC, unlike every
+device of the operator), but only when someone read the log. Nothing told the
+operator while it happened.
+
+**Decision.**
+
+- Each audit line written under a login names its login ID, next to the
+  device. `login_ok` records the device that signed in.
+- When a login opens a console (`console_launch`) or runs a state-changing
+  verb (D12) from a device ID that is not the one on its `login_ok`, the
+  daemon writes one **`login_other_device`** line, once per pair of login and
+  device.
+- Every open workbench page of the operator shows a notice: the device facts
+  of the new device, what it did, and a button that revokes that login. The
+  channel that carries the notice to the page is chosen in the issue, from
+  the fact index in docs/ARCHITECTURE.md §7; this amendment adds no new path
+  between daemon and browser by itself.
+
+**D2 still holds.** The notice is a record shown to a human. No access
+decision reads the device ID; the request that triggered the line succeeds as
+before. The human decides, and the revoke is the action.
+
+**Limits, stated so they are not mistaken for a guarantee.**
+
+- The device cookie is not a credential (D2). An intruder who copies it
+  together with the session cookie looks like the operator's device, and no
+  notice fires. The notice catches a replay from another browser, not a full
+  copy of the browser profile.
+- The operator's own browser fires the notice too after its device cookie is
+  cleared. The notice names the device facts, so the operator can tell.
