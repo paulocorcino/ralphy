@@ -174,11 +174,6 @@
       12
     ]
   },
-  "crates/ralphy-cli/src/init/run.rs": {
-    "run": [
-      67
-    ]
-  },
   "crates/ralphy-cli/src/install.rs": {
     "put_on_path": [
       11
