@@ -888,11 +888,6 @@
       27
     ]
   },
-  "crates/ralphy-daemon/src/routes/ws_command/oneshot.rs": {
-    "execute_oneshot": [
-      99
-    ]
-  },
   "crates/ralphy-daemon/src/routes/ws_command/stream.rs": {
     "drain": [
       11
