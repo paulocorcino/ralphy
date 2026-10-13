@@ -929,7 +929,7 @@
       <div class="tabbody">
         <!-- Consoles tab: the floating-console workspace. Consoles live here as
              draggable windows over the dotted floor. -->
-        <section class="consoles-tab" x-show="$store.tabs.active === 'consoles'">
+        <section class="consoles-tab" :class="{ 'tab-hidden': $store.tabs.active !== 'consoles' }">
           <!-- `#workspace` is the VIEWPORT (overflow:auto) and `#stage` the plane
                it scrolls over; wb-console.js appends the floating console windows
                into the stage and sizes it from their bbox (issue #336). -->

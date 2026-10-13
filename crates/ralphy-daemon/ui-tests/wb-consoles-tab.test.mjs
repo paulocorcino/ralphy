@@ -494,3 +494,15 @@ test("the menu head and the columns list name a project without its path- key or
   assert.equal(menus.consoleMenuRepoName(), "widget");
   assert.equal(columns.columnRepoLabel(ref(peer)), "gadget");
 });
+
+// The Consoles tab is hidden with `visibility`, never `display:none`: with
+// `display:none` the consoles leave the dormancy observer, lose their WebGL
+// renderer, and the first frame on return paints stretched text.
+test("the Consoles tab hides without display:none, so its consoles keep their renderer", () => {
+  const open = withoutComments(HTML).match(/<section class="consoles-tab"[^>]*>/);
+  assert.ok(open, "index.html must keep the consoles tab");
+  assert.doesNotMatch(open[0], /x-show/);
+  assert.match(open[0], /'tab-hidden': \$store\.tabs\.active !== 'consoles'/);
+  const css = readFileSync(join(UI, "styles", "05-workspace.css"), "utf8");
+  assert.match(css, /\.consoles-tab\.tab-hidden \{\s*visibility: hidden;\s*\}/);
+});
