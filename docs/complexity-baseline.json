@@ -886,11 +886,6 @@
       21
     ]
   },
-  "crates/ralphy-daemon/src/routes/ws_session/bridge.rs": {
-    "session_ws": [
-      56
-    ]
-  },
   "crates/ralphy-daemon/src/routes/ws_session/relay.rs": {
     "peer_session_query": [
       13
