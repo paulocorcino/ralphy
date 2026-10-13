@@ -109,3 +109,34 @@ fn ci_installs_the_pinned_oxlint() {
         "ci.yml must pin oxlint {OXLINT_VERSION}"
     );
 }
+
+#[test]
+fn a_listed_function_over_the_ceiling_fails() {
+    let current = table([score("a.rs", "run", 51), score("a.rs", "load", 50)].iter());
+    assert_eq!(
+        ceiling_errors(50, &current),
+        ["a.rs: run: 51 is over the ceiling 50"]
+    );
+    assert!(ceiling_errors(51, &current).is_empty());
+}
+
+#[test]
+fn the_baseline_file_keeps_its_ceiling_through_a_round_trip() {
+    let baseline = Baseline {
+        ceiling: 30,
+        functions: table([score("a.rs", "run", 12)].iter()),
+    };
+    let text = to_json(&baseline).expect("serialize");
+    assert!(text.starts_with("{\n  \"ceiling\": 30,\n  \"functions\": {"));
+    assert_eq!(parse_baseline(&text).expect("parse"), baseline);
+}
+
+#[test]
+fn a_blessed_baseline_keeps_the_ceiling_it_read_and_never_raises_it() {
+    assert_eq!(ceiling_of(None).expect("no file"), CEILING);
+    let old_format = r#"{ "a.rs": { "run": [12] } }"#;
+    assert_eq!(ceiling_of(Some(old_format)).expect("old"), CEILING);
+    let lowered = r#"{ "ceiling": 30, "functions": {} }"#;
+    assert_eq!(ceiling_of(Some(lowered)).expect("lowered"), 30);
+    assert!(ceiling_of(Some("not json")).is_err());
+}
