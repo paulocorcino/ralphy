@@ -201,7 +201,7 @@ impl ClaudeAgent {
         transcript_dir: Option<&Path>,
         transcript_since: SystemTime,
     ) -> Result<DriveEnd> {
-        let rx = spawn_pty_reader(session)?;
+        let rx = session.output_channel()?;
         let mut pump = SessionPump::new(self, rx, flag_file, transcript_dir, transcript_since);
         let exit = loop {
             if let Some(exit) = pump.step(session)? {
@@ -215,12 +215,6 @@ impl ClaudeAgent {
         let outcome = classify_exit(exit, flag_file, transcript_dir, transcript_since)?;
         Ok(DriveEnd::Outcome(outcome))
     }
-}
-
-/// Start the thread that moves the PTY output into a channel, so the poll loop
-/// reads it without blocking.
-fn spawn_pty_reader(session: &mut PtySession) -> Result<mpsc::Receiver<Vec<u8>>> {
-    session.output_channel()
 }
 
 /// Why the poll loop of [`ClaudeAgent::drive_session`] stopped.
