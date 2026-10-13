@@ -104,6 +104,13 @@
   position: absolute;
   inset: 0;
 }
+/* Hidden, not `display:none`: the consoles keep their geometry, so the
+   dormancy observer still sees them and they keep their WebGL renderer. With
+   `display:none` they fell back to the DOM renderer, and the first frame on
+   return was painted with spacing measured at 0 (wide, stretched text). */
+.consoles-tab.tab-hidden {
+  visibility: hidden;
+}
 /* the VIEWPORT: a fixed box that scrolls over the stage. Nothing is ever moved
    or resized to fit it — shrinking it only changes the scroll offsets. */
 #workspace {

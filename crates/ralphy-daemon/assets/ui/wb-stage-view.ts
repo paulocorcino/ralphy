@@ -93,16 +93,14 @@ export function createView(deps: ViewDeps) {
   // ---- the per-client view (issue #339) ----------------------------------------
   // Where this browser profile was looking. `landed` latches the FIRST paint's
   // bbox landing so a later refit cannot re-centre a plane the operator has
-  // panned — but a STORED offset is re-applied on every call: `.consoles-tab`
-  // is `x-show`, and `display:none` destroys `#workspace`'s scroll position.
+  // panned — but a STORED offset is re-applied on every call: a viewport that
+  // measured 0 (before the first layout) has lost its scroll position.
   // INVARIANT: never runs before `applyExtent()` on any path — the clamp needs
   // the extent the same frame's rects imply.
   let landed = false;
-  // A reveal that arrived while `.consoles-tab` was `display:none` (viewport
-  // measures 0, so `reveal` cannot centre): parked here, honoured by the first
-  // `applyLanding` that CAN measure, AHEAD of the stored offset. Measured:
-  // a reveal requested on the same synchronous stack as `activate` runs before
-  // Alpine's `x-show` flip, which lands a microtask later.
+  // A reveal that arrived while the viewport measured 0 (`reveal` cannot
+  // centre): parked here, honoured by the first `applyLanding` that CAN
+  // measure, AHEAD of the stored offset.
   let pendingReveal: string | null = null;
   function applyLanding() {
     const ws = workspace();
@@ -146,10 +144,10 @@ export function createView(deps: ViewDeps) {
   let offsetFlush: ReturnType<typeof setTimeout> | null = null;
   let pendingOffset: Offset | null = null;
   function flushOffset() {
-    // Writes the offset CAPTURED at schedule time, never a fresh read: a file
-    // tab switched to inside the 250 ms hides `.consoles-tab` (`x-show`), and
-    // `display:none` resets the offsets to 0 (measured: `off:{0,0}` stored over
-    // a real 1500,850 pan). Bailing instead would drop the operator's last pan.
+    // Writes the offset CAPTURED at schedule time, never a fresh read: a
+    // viewport that measures 0 reads its offsets as 0 (measured: `off:{0,0}`
+    // stored over a real 1500,850 pan). Bailing instead would drop the
+    // operator's last pan.
     if (!pendingOffset) return;
     viewStore?.patch({ off: pendingOffset });
     pendingOffset = null;
@@ -478,11 +476,9 @@ export function createView(deps: ViewDeps) {
     document.addEventListener("fullscreenchange", syncFullState);
   }
 
-  // Refit every open console. Called when the Consoles tab returns to view: a
-  // terminal opened/reattached while the tab was display:none measured 0×0.
+  // Refit every open console. Called when the Consoles tab returns to view.
   function refitAll(attempt?: number) {
-    // Alpine's `$nextTick` fires BEFORE `x-show` applies the flip (MEASURED):
-    // `.consoles-tab` is still `display:none` and everything measures 0.
+    // A viewport that measures 0 (before the first layout) cannot be fitted.
     // Refitting there collapses the stage to the bare margin (3200×2080 →
     // 200×200) and sizes every terminal to nothing. Wait for a frame that can
     // measure; give up rather than refit blind.
