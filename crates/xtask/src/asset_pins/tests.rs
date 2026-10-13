@@ -216,3 +216,101 @@ fn needles_keep_every_literal_of_a_long_assert_whole() {
         ]
     );
 }
+
+/// A comment that quotes an assertion is prose about a pin, not a pin.
+#[test]
+fn a_comment_describing_a_pin_is_not_a_pin() {
+    let src = r#"
+    fn t() {
+        let js = include_str!("../assets/ui/app.ts");
+        // assert!(js.contains("function foo("), "msg");
+    }
+"#;
+    let mut out = Vec::new();
+    collect("x.rs", src, &mut out);
+    assert!(out.is_empty());
+}
+
+/// A `const` table of pins is a list of claims, one per element, with the
+/// shape of a plain identifier.
+#[test]
+fn a_const_table_of_pins_is_one_identifier_claim_per_element() {
+    let src = r#"
+    fn t() {
+        let js = include_str!("../assets/ui/app.ts");
+        const PINS: &[&str] = &["function foo(", "function bar("];
+    }
+"#;
+    let mut out = Vec::new();
+    collect("x.rs", src, &mut out);
+    let texts: Vec<&str> = out.iter().map(|p| p.text.as_str()).collect();
+    assert_eq!(texts, vec!["function foo(", "function bar("]);
+    assert!(out.iter().all(|p| p.shape == Shape::Identifier));
+    assert!(out.iter().all(|p| p.asset.as_deref() == Some("app.ts")));
+}
+
+/// A `let` that carves a region with `find(…).expect(…)` is a pin in its own
+/// right: the one that panics under a split.
+#[test]
+fn a_scoped_slice_let_is_a_pin_of_its_own() {
+    let src = r#"
+    fn t() {
+        let js = include_str!("../assets/ui/app.ts");
+        let region = js.find("function foo(").expect("foo exists");
+    }
+"#;
+    let mut out = Vec::new();
+    collect("x.rs", src, &mut out);
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].shape, Shape::ScopedSlice);
+    assert_eq!(out[0].asset.as_deref(), Some("app.ts"));
+    assert_eq!(out[0].line, 4);
+}
+
+/// `get_local` fetches assets and routes. Only a name with an extension is an
+/// asset.
+#[test]
+fn a_fetched_route_is_not_an_asset_but_a_fetched_file_is() {
+    let src = r#"
+    fn route() {
+        let body = get_local("/api/session");
+        assert!(body.contains("ok"), "msg");
+    }
+    fn asset() {
+        let body = get_local("/app.js");
+        assert!(body.contains("function foo("), "msg");
+    }
+"#;
+    let mut out = Vec::new();
+    collect("x.rs", src, &mut out);
+    let booked: Vec<Option<&str>> = out.iter().map(|p| p.asset.as_deref()).collect();
+    assert_eq!(booked, vec![None, Some("app.js")]);
+}
+
+/// A new test starts clean: the asset, the bindings and the normalized
+/// variables of the previous test must not reach it. `async fn` starts a test
+/// like `fn` does.
+#[test]
+fn a_new_test_forgets_what_the_previous_test_read() {
+    let src = r#"
+    fn first() {
+        let html = include_str!("../assets/ui/index.html");
+        let squeezed = html.split_whitespace().collect::<Vec<_>>().join(" ");
+    }
+    fn second() {
+        assert!(html.contains("a("), "msg");
+        assert!(squeezed.contains("b("), "msg");
+    }
+    async fn third() {
+        let html = include_str!("../assets/ui/index.html");
+    }
+    async fn fourth() {
+        assert!(html.contains("c("), "msg");
+    }
+"#;
+    let mut out = Vec::new();
+    collect("x.rs", src, &mut out);
+    assert_eq!(out.len(), 3);
+    assert!(out.iter().all(|p| p.asset.is_none()));
+    assert!(out.iter().all(|p| p.shape == Shape::Identifier));
+}
