@@ -119,6 +119,7 @@ fn dry_run_closes_nothing_and_restores() {
         agent.executed.borrow().is_empty(),
         "dry run plans only — never executes"
     );
+    assert_eq!(report.worked.len(), 2, "a dry run records both issues");
     assert!(
         report
             .worked

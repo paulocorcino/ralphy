@@ -33,3 +33,22 @@ fn publish_remaining_refuses_a_draft_shorter_than_the_checkpoint() {
         "got: {err}"
     );
 }
+
+#[test]
+fn publish_remaining_accepts_a_draft_as_long_as_the_checkpoint() {
+    let dir = tempfile::tempdir().unwrap();
+    let ws = Workspace::new(dir.path());
+    std::fs::create_dir_all(ws.ralphy_dir()).unwrap();
+    let issue = r#"{"title":"t","body":"b","labels":[]}"#;
+    std::fs::write(
+        ws.issues_draft_path(),
+        format!(r#"{{"issues":[{issue},{issue}]}}"#),
+    )
+    .unwrap();
+    let mut state = state_with_two_published();
+
+    publish_remaining(dir.path(), &ws, &mut state).unwrap();
+
+    assert_eq!(state.created_issues, [101, 102]);
+    assert!(state.is_done(Stage::Issues));
+}

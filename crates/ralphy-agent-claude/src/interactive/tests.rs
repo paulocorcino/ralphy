@@ -270,7 +270,67 @@ fn classify_exit_reads_the_flag_file_and_the_limit_transcript() {
     assert_eq!(outcome, Outcome::Blocked("needs a key".into()));
 }
 
+/// A transcript directory holding one fresh transcript with `text`.
+fn transcript_with(text: &str) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("session.jsonl"), text).unwrap();
+    dir
+}
+
 #[test]
-fn a_running_session_has_no_ended_transcript() {
-    assert_eq!(ended_transcript(false, None, SystemTime::UNIX_EPOCH), None);
+fn only_an_ended_session_has_a_transcript_to_read() {
+    let dir = transcript_with("{\"type\":\"system\"}");
+    let since = SystemTime::UNIX_EPOCH;
+    assert_eq!(ended_transcript(false, Some(dir.path()), since), None);
+    assert_eq!(
+        ended_transcript(true, Some(dir.path()), since),
+        Some("{\"type\":\"system\"}".to_string())
+    );
+}
+
+#[test]
+fn a_child_that_exits_on_a_logged_out_transcript_is_an_auth_error() {
+    let logged_out = transcript_with(
+        "Not logged in · Please run /login
+",
+    );
+    let flag = logged_out.path().join("status.flag");
+    let since = SystemTime::UNIX_EPOCH;
+    let error = classify_exit(
+        SessionExit::ChildExited,
+        &flag,
+        Some(logged_out.path()),
+        since,
+    )
+    .unwrap_err();
+    assert_eq!(error.to_string(), CLAUDE_AUTH_ERROR_MSG);
+
+    // Control: the same child exit on a healthy transcript is no auth error.
+    let healthy = transcript_with(
+        "{\"type\":\"system\"}
+",
+    );
+    let flag = healthy.path().join("status.flag");
+    let outcome =
+        classify_exit(SessionExit::ChildExited, &flag, Some(healthy.path()), since).unwrap();
+    assert_eq!(outcome, Outcome::Stuck);
+}
+
+#[test]
+fn a_timed_out_session_reads_its_transcript_for_a_limit() {
+    let limit = r#"{"type":"rate_limit_event","rate_limit_info":{"status":"rejected"}}"#;
+    let limited = transcript_with(limit);
+    let flag = limited.path().join("status.flag");
+    let since = SystemTime::UNIX_EPOCH;
+    let outcome = classify_exit(SessionExit::TimedOut, &flag, Some(limited.path()), since).unwrap();
+    assert_eq!(outcome, Outcome::Limit(None));
+
+    // Control: without a limit in the transcript the same exit is a timeout.
+    let quiet = transcript_with(
+        "{\"type\":\"system\"}
+",
+    );
+    let flag = quiet.path().join("status.flag");
+    let outcome = classify_exit(SessionExit::TimedOut, &flag, Some(quiet.path()), since).unwrap();
+    assert_eq!(outcome, Outcome::Timeout);
 }

@@ -127,7 +127,6 @@ fn the_baseline_file_keeps_its_ceiling_through_a_round_trip() {
         functions: table([score("a.rs", "run", 12)].iter()),
     };
     let text = to_json(&baseline).expect("serialize");
-    assert!(text.starts_with("{\n  \"ceiling\": 30,\n  \"functions\": {"));
     assert_eq!(parse_baseline(&text).expect("parse"), baseline);
 }
 

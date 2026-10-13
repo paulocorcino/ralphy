@@ -208,6 +208,12 @@ fn a_fence_or_note_with_a_bad_rect_or_checkout_is_refused_by_kind() {
         json!({ "op": "set", "type": "note", "id": "n-1", "fields": { "file": { "repo": "o/r", "path": "a.note", "checkout": "../x" } } }),
     ];
     let out = apply(DeskStore::default(), &changes, &BTreeMap::new(), NOW);
+    let accepted = apply(DeskStore::default(), &changes[..2], &BTreeMap::new(), NOW);
+    assert_eq!(
+        out.desk, accepted.desk,
+        "a refused change leaves the desk with only f-1 and n-1, as created"
+    );
+    assert_eq!(out.desk.fences.len() + out.desk.notes.len(), 2);
     let refused: Vec<(usize, &str)> = out
         .refused
         .iter()
@@ -226,12 +232,20 @@ fn a_fence_or_note_with_a_bad_rect_or_checkout_is_refused_by_kind() {
 }
 
 #[test]
-fn a_remove_drops_only_the_named_fence() {
-    let out = desk_of(&[
-        create("fence", fence("f-1")),
-        create("fence", fence("f-2")),
-        json!({ "op": "remove", "type": "fence", "id": "f-1" }),
-    ]);
-    let ids: Vec<&str> = out.fences.iter().map(|f| f.id.as_str()).collect();
-    assert_eq!(ids, ["f-2"]);
+fn a_remove_drops_only_the_named_record_of_its_kind() {
+    type Make = fn(&str) -> serde_json::Value;
+    let kinds: [(&str, Make); 3] = [("window", window), ("fence", fence), ("note", note)];
+    for (kind, record) in kinds {
+        let out = desk_of(&[
+            create(kind, record("r-1")),
+            create(kind, record("r-2")),
+            json!({ "op": "remove", "type": kind, "id": "r-1" }),
+        ]);
+        let ids: Vec<&str> = match kind {
+            "window" => out.windows.iter().map(|w| w.id.as_str()).collect(),
+            "fence" => out.fences.iter().map(|f| f.id.as_str()).collect(),
+            _ => out.notes.iter().map(|n| n.id.as_str()).collect(),
+        };
+        assert_eq!(ids, ["r-2"], "{kind}");
+    }
 }
