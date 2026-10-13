@@ -25,8 +25,8 @@ struct Site<'a> {
 }
 
 pub(super) struct Walk<'a> {
-    pub(super) sc: &'a Scan<'a>,
-    pub(super) out: &'a mut Vec<Found>,
+    sc: &'a Scan<'a>,
+    out: &'a mut Vec<Found>,
     stack: Vec<Open<'a>>,
     helper_body_at: Option<usize>,
 }

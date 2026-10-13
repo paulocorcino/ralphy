@@ -140,3 +140,28 @@ fn a_blessed_baseline_keeps_the_ceiling_it_read_and_never_raises_it() {
     assert_eq!(ceiling_of(Some(lowered)).expect("lowered"), 30);
     assert!(ceiling_of(Some("not json")).is_err());
 }
+
+#[test]
+fn a_ceiling_error_is_never_told_to_bless() {
+    let bless =
+        "run `cargo run -p xtask -- complexity --bless` to record a function that went down";
+    let split = "split a function that grew along a responsibility it already has";
+    let ceiling =
+        "a function over the ceiling can only be split: --bless does not raise the ceiling";
+    assert_eq!(fix_advice(true, false), format!("{split}; {bless}"));
+    assert_eq!(fix_advice(false, true), format!("{split}; {ceiling}"));
+    assert_eq!(
+        fix_advice(true, true),
+        format!("{split}; {bless}; {ceiling}")
+    );
+}
+
+#[test]
+fn a_baseline_in_the_old_format_says_to_bless_it() {
+    let old_format = r#"{ "a.rs": { "run": [12] } }"#;
+    let error = parse_baseline(old_format).expect_err("no ceiling key");
+    assert!(
+        format!("{error:#}").contains("run `cargo run -p xtask -- complexity --bless` to migrate"),
+        "{error:#}"
+    );
+}

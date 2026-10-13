@@ -99,7 +99,9 @@ pub fn complexity_cmd(args: &[String]) -> Result<()> {
         std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
     let baseline = parse_baseline(&text).with_context(|| format!("parsing {BASELINE}"))?;
     let mut errors = compare(&baseline.functions, &current);
-    errors.extend(ceiling_errors(baseline.ceiling, &current));
+    let over_ceiling = ceiling_errors(baseline.ceiling, &current);
+    let advice = fix_advice(!errors.is_empty(), !over_ceiling.is_empty());
+    errors.extend(over_ceiling);
     if errors.is_empty() {
         println!(
             "{} function(s) over {LIMIT}, as in {BASELINE}, none over the ceiling {}",
@@ -111,12 +113,27 @@ pub fn complexity_cmd(args: &[String]) -> Result<()> {
     for error in &errors {
         eprintln!("{error}");
     }
-    bail!(
-        "{} complexity error(s); split a function that grew along a responsibility it \
-         already has, and run `cargo run -p xtask -- complexity --bless` to record a \
-         function that went down",
-        errors.len()
-    )
+    bail!("{} complexity error(s); {advice}", errors.len())
+}
+
+/// What to do about the errors printed. `--bless` records a function that went
+/// down. It never raises the ceiling, so a function over it can only be split.
+fn fix_advice(compared: bool, over_ceiling: bool) -> String {
+    let mut steps = Vec::new();
+    if compared || over_ceiling {
+        steps.push("split a function that grew along a responsibility it already has");
+    }
+    if compared {
+        steps.push(
+            "run `cargo run -p xtask -- complexity --bless` to record a function that went down",
+        );
+    }
+    if over_ceiling {
+        steps.push(
+            "a function over the ceiling can only be split: --bless does not raise the ceiling",
+        );
+    }
+    steps.join("; ")
 }
 
 /// Writes `current` to the baseline at `path`, with the ceiling it holds.
@@ -324,7 +341,10 @@ fn to_json(baseline: &Baseline) -> Result<String> {
 }
 
 fn parse_baseline(text: &str) -> Result<Baseline> {
-    serde_json::from_str(text).context("reading the ceiling and the functions")
+    serde_json::from_str(text).context(
+        "reading the ceiling and the functions; a baseline in the old format has no \
+         `ceiling`: run `cargo run -p xtask -- complexity --bless` to migrate it",
+    )
 }
 
 /// The ceiling `--bless` writes: the one in the existing file, or [`CEILING`]
