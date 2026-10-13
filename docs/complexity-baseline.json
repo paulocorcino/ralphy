@@ -924,11 +924,6 @@
       53
     ]
   },
-  "crates/ralphy-daemon/src/routes/ws_tree.rs": {
-    "tree_ws": [
-      212
-    ]
-  },
   "crates/ralphy-daemon/src/routes/ws_tree/peer_poll.rs": {
     "spawn_peer_tree_poller": [
       61
