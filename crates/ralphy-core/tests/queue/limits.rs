@@ -467,3 +467,69 @@ fn deadline_during_wait_short_circuits_with_deadline() {
 
     fs::remove_dir_all(&repo).ok();
 }
+
+/// A run where the first execute is `Done` and the next one (the protocol
+/// bounce, or the verify repair) hits a usage limit with a reset. The run
+/// stops on that limit, the issue is recorded as non-green and stays open.
+fn assert_second_execute_limit_stops_the_run(
+    repo: &Path,
+    agent: &ScriptedAgent,
+    stamp: &str,
+    number: u64,
+) {
+    let tracker = RecordingTracker::default();
+
+    let report = run_queue(
+        &cfg_stop_on_limit(repo, stamp),
+        &[issue(number)],
+        agent,
+        &tracker,
+        &ScriptedClock::never(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        *agent.executed.borrow(),
+        vec![number, number],
+        "the first execute, then the one that hit the limit"
+    );
+    match report.stop {
+        Some(StopReason::Limit { number: n, reset }) => {
+            assert_eq!(n, number);
+            assert_eq!(reset, Some("15:00".into()));
+        }
+        other => panic!("expected a Limit stop, got {other:?}"),
+    }
+    assert_eq!(report.worked.len(), 1);
+    let worked = &report.worked[0];
+    assert_eq!(worked.status, ralphy_core::ResultStatus::NonGreen);
+    assert!(!worked.closed, "a limit never closes the issue");
+    assert!(
+        tracker.closes.borrow().is_empty(),
+        "an issue stopped on a limit stays open"
+    );
+
+    fs::remove_dir_all(repo).ok();
+}
+
+#[test]
+fn a_limit_during_the_protocol_bounce_stops_the_run() {
+    let repo = init_repo("limit-protocol");
+    // A protocol-dirty plan makes the runner bounce the issue once; that
+    // second execute hits the limit.
+    let agent =
+        ScriptedAgent::new(vec![Outcome::Done, Outcome::Limit(Some("15:00".into()))]).lint_dirty();
+
+    assert_second_execute_limit_stops_the_run(&repo, &agent, "stamp-limit-protocol", 50);
+}
+
+#[test]
+fn a_limit_during_a_verify_repair_stops_the_run() {
+    let repo = init_repo("limit-verify-repair");
+    // The gate fails after the first execute; the repair hits the limit.
+    let extra = format!("## Verify\n\n{}\n", verify_fail_line());
+    let agent = ScriptedAgent::new(vec![Outcome::Done, Outcome::Limit(Some("15:00".into()))])
+        .with_plan_extra(extra);
+
+    assert_second_execute_limit_stops_the_run(&repo, &agent, "stamp-limit-verify", 51);
+}

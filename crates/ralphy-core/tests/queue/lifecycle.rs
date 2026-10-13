@@ -86,6 +86,9 @@ fn first_non_green_stops_run_and_leaves_later_issues_untouched() {
         other => panic!("expected NonGreen stop, got {other:?}"),
     }
 
+    let blocked = report.worked.iter().find(|r| r.number == 2).unwrap();
+    assert_eq!(blocked.status, ralphy_core::ResultStatus::Blocked);
+
     // Branch handed back with the green commit on it.
     assert_eq!(current_branch(&repo), report.branch);
 
@@ -115,6 +118,13 @@ fn dry_run_closes_nothing_and_restores() {
     assert!(
         agent.executed.borrow().is_empty(),
         "dry run plans only — never executes"
+    );
+    assert!(
+        report
+            .worked
+            .iter()
+            .all(|r| r.status == ralphy_core::ResultStatus::Planned),
+        "a dry run records every issue as planned"
     );
     // Empty branch dropped, repo restored.
     assert_eq!(current_branch(&repo), "main", "restored to original branch");

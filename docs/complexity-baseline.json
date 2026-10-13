@@ -283,11 +283,6 @@
       11
     ]
   },
-  "crates/ralphy-core/src/runner.rs": {
-    "run_queue_with": [
-      78
-    ]
-  },
   "crates/ralphy-core/src/runner/clock.rs": {
     "next_reset": [
       12

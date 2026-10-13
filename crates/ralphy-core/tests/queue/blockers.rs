@@ -296,6 +296,11 @@ fn human_gate_blocker_is_classified_and_run_continues() {
         .find(|r| r.number == 5)
         .expect("#5 in worked");
     assert!(r5.outcome.is_none(), "#5 skipped, never planned");
+    assert_eq!(
+        r5.status,
+        ralphy_core::ResultStatus::Hitl,
+        "a human-gate blocker parks the issue as HITL"
+    );
     assert!(!r5.closed, "#5 not closed");
     assert_eq!(r5.blocked_by, vec![2], "#5 still records its open blocker");
     assert_eq!(
@@ -344,6 +349,7 @@ fn ordinary_open_blocker_is_not_a_human_gate() {
         .find(|r| r.number == 5)
         .expect("#5 in worked");
     assert_eq!(r5.blocked_by, vec![2]);
+    assert_eq!(r5.skip, Some(ralphy_core::SkipReason::BlockedBy));
     assert!(
         r5.human_blockers.is_empty(),
         "an agent-work blocker is not a human gate"

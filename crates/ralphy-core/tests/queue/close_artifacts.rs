@@ -235,6 +235,11 @@ fn infeasible_plan_posts_planner_reasoning_comment() {
         "infeasible never executes"
     );
     assert!(report.stop.is_none(), "infeasible does not stop the run");
+    assert_eq!(
+        report.worked[0].status,
+        ralphy_core::ResultStatus::NeedsSplit,
+        "a bundle verdict is its own status"
+    );
 
     // But the verdict is no longer silent: the reasoning lands on the issue.
     // This reason carries the word "bundle", so it routes to the bundle path:
@@ -283,6 +288,11 @@ fn infeasible_plan_without_bundle_verdict_stays_generic() {
     .unwrap();
 
     assert!(report.stop.is_none(), "infeasible does not stop the run");
+    assert_eq!(
+        report.worked[0].status,
+        ralphy_core::ResultStatus::Infeasible,
+        "no bundle verdict is a plain infeasible status"
+    );
     assert!(
         tracker.labels.borrow().is_empty(),
         "no needs-split label without a bundle verdict"
