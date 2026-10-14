@@ -2,7 +2,7 @@
 
 Status: accepted (2026-09-08). Amended 2026-09-24: §10, the record and the
 release page are two renderings. Amended 2026-09-28: §11, the workbench can ask
-for the update.
+for the update. Amended 2026-10-14: §12, one command installs, removes and checks.
 
 Ralphy has users. They run the `v0.1.0-rcNN` pre-releases, which are cut every
 few days while feedback is collected, and the project has no way to tell them a
@@ -408,6 +408,124 @@ It escapes the walk only because the walk finds live parents, which is an
 implementation detail of `kill_tree_by_pid`. A daemon that exits by itself
 depends on nothing like that.
 
+### 12. One command installs Ralphy, one command removes it, and one command checks the machine (amended 2026-10-14)
+
+The path to a first install is still "find the Releases page, download an
+archive, unpack it, run `ralphy install`". Other tools give one line per
+platform. Ralphy also teaches only how to install: nothing removes the
+binary, the `PATH` line, the autostart and the store together.
+
+**The install scripts.** Two scripts live in `assets/install/`:
+`install.sh` for Linux and macOS, `install.ps1` for Windows. The README
+gives one line for each:
+
+```
+curl -fsSL https://raw.githubusercontent.com/paulocorcino/ralphy/main/assets/install/install.sh | sh
+irm https://raw.githubusercontent.com/paulocorcino/ralphy/main/assets/install/install.ps1 | iex
+```
+
+A script does only what a person does by hand today:
+
+1. It reads the operating system and the processor, and maps them to a
+   release target. A target with no archive stops the script with a
+   message that names the target.
+2. It reads the newest release from the API that `ralphy-release` reads,
+   on the `rc` channel while every release is a candidate. `RALPHY_VERSION`
+   picks a tag instead.
+3. It downloads the archive and its `.sha256`, and stops when the hash does
+   not match.
+4. It unpacks the archive into a temporary folder and runs `ralphy install`
+   from there. The `PATH` rules stay in the binary; the script copies none
+   of them.
+5. With `RALPHY_DAEMON=1` (`-Daemon` in PowerShell) it also runs
+   `ralphy daemon install`. Without it, the script ends with a line that
+   says how to do that. A script piped from the web does not register a
+   process that starts at login unless the operator asks.
+6. It ends with `ralphy doctor`, whose result is shown and never stops the
+   install.
+
+The scripts are served from `main`, not from a release. GitHub's
+`releases/latest` URL skips pre-releases, and every release is a candidate.
+Upgrades are `ralphy update` (§8); the script has no version logic beyond
+step 2, and running it again repairs an install.
+
+**Root and administrator.** Nothing in the install needs root or an
+administrator: the binary, the `PATH` and the autostart are all per user.
+When a script runs as root (UID 0) or in an elevated PowerShell, it warns
+that the binary, the `PATH` and the daemon go to that account, and asks
+"Continue anyway? [y/N]". `sh` reads the answer from `/dev/tty`, because
+its standard input is the script itself. The default is no. With no
+terminal (a Dockerfile, CI) there is nobody to ask, so the script stops
+unless `RALPHY_ALLOW_ROOT=1` is set; the variable also skips the question.
+On Windows, an elevated script registers the daemon's autostart but does
+not start the daemon: it starts without elevation at the next sign-in. The
+binary itself never asks and never refuses: `ralphy install` and
+`ralphy daemon install` run as root print a warning on stderr and go on.
+`ralphy host add` and `ralphy host install` run these commands over ssh with
+no terminal, and their host check already warns about root (ADR-0067); a
+question in the binary would break them.
+
+**`ralphy daemon install` starts the daemon the first time.** Until now it
+only registered the autostart, so on Linux and Windows nothing ran until the
+next sign-in; on macOS `RunAtLoad` already started it. When the autostart
+was not registered before, the command now also starts the daemon:
+`systemctl --user enable --now` on Linux, and on Windows the command line
+written to the `Run` key, started detached and outside the caller's job
+object. When the autostart was already registered, the command only writes
+the registration again, as before: `ralphy host install` runs it on a host
+whose daemon the operator may have stopped on purpose, and it must stay
+stopped. When a daemon already answers, nothing is started. No flag is
+added, because `ralphy host add` runs the `ralphy` already on the host, which
+can be older than the flag.
+
+**Lingering has one rule.** On Linux, a user's systemd services stop when
+the user's last session ends, unless lingering is on. `ralphy host add`
+already turns it on and, when that fails, says to use `sudo`. `ralphy
+daemon install` does not turn it on: `host add` runs it as its own step.
+`ralphy doctor` reports it with the same text as the host check, from the
+same function. An install script asked for the daemon on a Linux host with
+no graphical session tries `loginctl enable-linger` and, when that fails,
+says to use `sudo`, as `host add` does.
+
+**`ralphy uninstall`.** It undoes what the installs did, in this order: it
+stops the daemon and removes its autostart; it removes the binary that
+`ralphy install` linked and the copy that `ralphy host install` put in
+`~/.ralphy/bin`; it removes the `PATH` block that carries the
+`ralphy install` marker, and the folder it added to the Windows user
+`Path`. It keeps the store (`~/.ralphy`, or `RALPHY_DAEMON_DIR`) and says
+where it is. `--purge` also deletes the store, after it shows the path and
+its size and asks; `--yes` skips the question. Nothing outside the store is
+touched: the `.ralphy/` folder of each project and the labels on GitHub
+belong to those repositories, and the command ends by saying so.
+
+**`ralphy doctor`.** It checks that this machine has the tools Ralphy calls:
+git, `gh` signed in, python, and at least one agent CLI, plus lingering on
+Linux. It prints one line per tool with the version it found, or what is
+missing and how to fix it, and exits non-zero when a required tool is
+missing. It checks the machine only; the checks of a repository (a GitHub
+remote, the labels) stay in `ralphy init`, which runs `doctor`'s checks
+first. A tool is checked for presence only. A minimum version is added for
+one tool only after a measured failure, with that failure in a comment.
+
+**Linux on ARM64.** The release builds `aarch64-unknown-linux-musl` as
+`linux-arm64`, and `target_for` maps it. This serves the install script,
+`ralphy update` and `ralphy host install`, which today refuses an ARM64
+Linux host.
+
+**Rejected: the scripts as release assets.** `releases/latest/download/…`
+returns 404 while every release is a pre-release. A URL with the tag in it
+would change with each release, and a README cannot follow it.
+
+**Rejected: a question in the binary as root.** See above: the ssh flows
+have no terminal.
+
+**Rejected: the script installs git, gh and python.** Each platform has its
+own package manager, and the operator may want another version. `doctor`
+says what is missing.
+
+**Not decided here: Homebrew.** A tap needs a second repository and a token
+that can write to it. It is a later phase.
+
 ## Consequences
 
 - **Every pull request that touches the shipped surface gains one file.** That is
@@ -483,3 +601,8 @@ terminal the operator sees a failed start and can act on it.
   in `crates/ralphy-daemon`). Reviewed in the PR.
 - §11 (the hand-over, the rollback and the fresh factor): not checked by code:
   reviewed in the PR.
+- §12: not built yet. The issue that builds it adds the checks: the scripts
+  run on Windows, Linux and macOS in CI against a fixture release; behaviour
+  tests pin that `daemon install` starts the daemon only on the first
+  registration and that `uninstall` removes only the marked `PATH` block;
+  and `ralphy host add` keeps running with no terminal and as root.

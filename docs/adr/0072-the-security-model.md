@@ -4,6 +4,8 @@ Status: accepted
 Kind: structural
 Protects: security, integrity of change
 
+Amended 2026-10-14: D12, the install scripts (ADR-0056 §12).
+
 Amended by ADR-0076 (proposed: a new trust zone, an agent in a squad, and a console token given to the agent by design as an exception to D7).
 
 ## Context
@@ -61,6 +63,7 @@ listed under Compliance, next to the premise each one breaks. The largest:
 | The agent session | Acts as the operator; its output is unverified | A prompt can turn it. Its claims are checked by the runner, not believed. |
 | An outside service (GitHub, models.dev, vendor APIs, Telegram, an event sink) | Its answer is untrusted data | Ralphy does not control it. |
 | A Ralphy release | Trusted after its checksum is verified | It comes from this repository's release workflow. |
+| The install script | Trusted as the `main` branch | The operator runs it before any binary exists, so nothing checks it. |
 
 ### Premises
 
@@ -199,6 +202,20 @@ neither is added. A signature by an offline key is the option to reopen if
 Ralphy is ever distributed outside GitHub. Code signing (Authenticode,
 macOS notarization) is an install-experience question, not an integrity
 one, and is not decided here.
+
+Amended 2026-10-14 (ADR-0056 §12): the install scripts. An operator who
+pipes `install.sh` or `install.ps1` into a shell runs that text with no
+check, before any Ralphy binary exists. Its trust anchor is the `main`
+branch of this repository: the same anchor as a release, because a
+release is built from `main`. No
+checksum of the script is published, because it would come from the same
+place as the script. The script verifies the archive's SHA-256 as the
+updater does, with the same limit. The script is served over HTTPS only,
+and the README tells the operator who wants to read it first to download
+it, read it, and then run it. The script asks before it installs as root
+or as an administrator, and it never runs `sudo`. When the operator asked
+for the daemon, it runs `loginctl enable-linger`, which needs no root on
+most distributions; when that fails, it says to use `sudo`.
 
 **D13. `unsafe` Rust is for FFI only.** It lives in named modules, and every
 block has a `SAFETY` comment.
