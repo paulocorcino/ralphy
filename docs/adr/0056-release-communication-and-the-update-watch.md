@@ -506,6 +506,13 @@ missing. It checks the machine only; the checks of a repository (a GitHub
 remote, the labels) stay in `ralphy init`, which runs `doctor`'s checks
 first. A tool is checked for presence only. A minimum version is added for
 one tool only after a measured failure, with that failure in a comment.
+`doctor` owns the list of tools for every computer. A host in the fleet runs
+the same runs, so it needs the same tools: when Ralphy answers on a host,
+`ralphy host add` runs `ralphy doctor --json` there and shows each line as a
+host check that warns and does not block. The shell probe of ADR-0067 stays
+for a host with no Ralphy yet, or with a Ralphy older than `doctor`; it
+checks only git and `gh`, and says that the full check runs after the
+install.
 
 **Linux on ARM64.** The release builds `aarch64-unknown-linux-musl` as
 `linux-arm64`, and `target_for` maps it. This serves the install script,
