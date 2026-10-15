@@ -628,7 +628,7 @@
     },
     "crates/ralphy-daemon/assets/ui/wb-stage-columns.ts": {
       "applyColumns": [
-        29
+        17
       ]
     },
     "crates/ralphy-daemon/assets/ui/wb-stage-fence-gestures.ts": {
