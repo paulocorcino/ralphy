@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use axum::extract::ws::WebSocket;
 use tokio::sync::mpsc;
+use tokio::task::{JoinError, JoinHandle};
 
 use super::send_command;
 use crate::dispatch;
@@ -82,17 +83,7 @@ pub(super) async fn stream_child(
         tokio::task::spawn_blocking(move || drain(reader, tx));
     }
 
-    // `Child::wait` is blocking and must not sit on the tokio runtime.
-    // `on_exit` runs HERE, inside the blocking task, and not from the wait arm
-    // below: the shutdown and client-disconnect arms `break` without ever
-    // polling that arm while the child keeps living (the teardown invariant),
-    // and tokio never cancels a blocking task — so this is the only site that
-    // fires on every exit path the daemon outlives.
-    let mut wait = tokio::task::spawn_blocking(move || {
-        let result = child.wait();
-        on_exit();
-        result
-    });
+    let mut wait = spawn_wait(child, on_exit);
     // Disables the output arm once the drain channel closes (child pipe EOF), so
     // a closed `rx` never busy-loops and the other arms keep being polled.
     let mut output_open = true;
@@ -119,38 +110,63 @@ pub(super) async fn stream_child(
                 }
             }
             // The run exited: flush remaining output before the exit frame.
-            // `recv().await` (not `try_recv`) closes the trailing-output race —
-            // `wait` returns before the drain thread has forwarded the child's
-            // final bytes. But the drain reaches EOF (and drops `tx`) only when
-            // EVERY pipe write end is closed, and a `ralphy run` DESCENDANT can
-            // inherit the merged fds and outlive the primary child — so we bound
-            // the wait for each next chunk: an idle gap (or channel close) ends
-            // the flush and we always emit `exited`, never wedging the handler.
             joined = &mut wait => {
-                let mut taken = true;
-                while let Ok(Some(chunk)) =
-                    tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
-                {
-                    if !relay_chunk(socket, id, verb, chunk).await {
-                        taken = false;
-                        break;
-                    }
-                }
-                if !taken {
-                    break;
-                }
-                let code = joined.ok().and_then(|r| r.ok()).flatten();
-                send_command(
-                    socket,
-                    id,
-                    verb,
-                    serde_json::json!({ "status": "exited", "code": code }),
-                )
-                .await;
+                flush_and_report(socket, id, verb, &mut rx, joined).await;
                 break;
             }
         }
     }
+}
+
+/// Wait for `child` off the tokio runtime, then run `on_exit`.
+///
+/// `Child::wait` is blocking and must not sit on the tokio runtime.
+/// `on_exit` runs HERE, inside the blocking task, and not from the wait arm
+/// of [`stream_child`]: the shutdown and client-disconnect arms `break`
+/// without ever polling that arm while the child keeps living (the teardown
+/// invariant), and tokio never cancels a blocking task — so this is the only
+/// site that fires on every exit path the daemon outlives.
+fn spawn_wait(
+    mut child: Box<dyn dispatch::Child>,
+    on_exit: impl FnOnce() + Send + 'static,
+) -> JoinHandle<anyhow::Result<Option<i32>>> {
+    tokio::task::spawn_blocking(move || {
+        let result = child.wait();
+        on_exit();
+        result
+    })
+}
+
+/// Send the output still on its way, then the `exited` frame with the code
+/// of `joined`. No `exited` frame when the browser does not take a chunk.
+///
+/// `recv().await` (not `try_recv`) closes the trailing-output race —
+/// `wait` returns before the drain thread has forwarded the child's
+/// final bytes. But the drain reaches EOF (and drops `tx`) only when
+/// EVERY pipe write end is closed, and a `ralphy run` DESCENDANT can
+/// inherit the merged fds and outlive the primary child — so we bound
+/// the wait for each next chunk: an idle gap (or channel close) ends
+/// the flush and we always emit `exited`, never wedging the handler.
+async fn flush_and_report(
+    socket: &mut WebSocket,
+    id: u64,
+    verb: &str,
+    rx: &mut mpsc::Receiver<String>,
+    joined: Result<anyhow::Result<Option<i32>>, JoinError>,
+) {
+    while let Ok(Some(chunk)) = tokio::time::timeout(Duration::from_millis(200), rx.recv()).await {
+        if !relay_chunk(socket, id, verb, chunk).await {
+            return;
+        }
+    }
+    let code = joined.ok().and_then(|r| r.ok()).flatten();
+    send_command(
+        socket,
+        id,
+        verb,
+        serde_json::json!({ "status": "exited", "code": code }),
+    )
+    .await;
 }
 
 /// Read `reader` to EOF and send it on `tx` as text. A send waits while the
