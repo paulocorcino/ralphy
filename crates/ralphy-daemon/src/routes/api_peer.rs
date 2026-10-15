@@ -100,7 +100,7 @@ pub(crate) async fn peer_command_route(
             .into_response();
         }
     };
-    let Some(entry) = store.entry(slug) else {
+    let Some(entry) = store.entry_or_former(slug) else {
         return Json(serde_json::json!({
             "status": "error",
             "message": "unknown repo"
@@ -162,7 +162,7 @@ pub(crate) async fn peer_tree_poll_route(
             .into_response()
         }
     };
-    let Some(entry) = store.entry(&poll.repo) else {
+    let Some(entry) = store.entry_or_former(&poll.repo) else {
         return Json(serde_json::json!({
             "status": "error",
             "message": "unknown repo"

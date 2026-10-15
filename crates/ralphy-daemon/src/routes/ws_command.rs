@@ -187,7 +187,7 @@ pub(crate) async fn command_ws(
             return;
         }
     };
-    let Some(entry) = store.entry(&slug) else {
+    let Some(entry) = store.entry_or_former(&slug) else {
         send_command(
             &mut socket,
             id,

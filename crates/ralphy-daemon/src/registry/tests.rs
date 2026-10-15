@@ -425,3 +425,21 @@ fn project_name_is_the_folder_of_a_remoteless_repo_and_the_slug_otherwise() {
     assert_eq!(project_name("path-9f2a1c", ""), "path-9f2a1c");
     assert_eq!(project_name("path-9f2a1c", "C:/"), "path-9f2a1c");
 }
+
+#[test]
+fn entry_or_former_finds_a_rekeyed_entry_and_prefers_an_exact_key() {
+    let mut store = RegistryStore::default();
+    store.upsert("path-abc", "/repo");
+    store.rekey("path-abc", "owner/repo");
+    assert!(store.entry("path-abc").is_none(), "entry stays exact");
+    let by_old = store
+        .entry_or_former("path-abc")
+        .expect("the old key resolves");
+    assert_eq!(by_old.path, "/repo");
+    assert!(store.entry_or_former("path-zzz").is_none());
+
+    // A key that is registered again after the rename is its own entry.
+    store.upsert("path-abc", "/other");
+    let exact = store.entry_or_former("path-abc").expect("exact key");
+    assert_eq!(exact.path, "/other", "an exact key wins over a former slug");
+}
