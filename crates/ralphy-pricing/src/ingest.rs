@@ -196,4 +196,28 @@ mod tests {
         assert_eq!(partial.len(), 1);
         assert!(partial.contains_key("anthropic/ok"));
     }
+
+    #[test]
+    fn a_model_without_cost_is_skipped_and_the_next_model_is_kept() {
+        let doc = json!({
+            "p": {
+                "models": {
+                    "a-no-cost": { "name": "no cost key" },
+                    "z-ok": { "cost": { "input": 1.0, "output": 2.0 } }
+                }
+            }
+        });
+        let keys: Vec<String> = ingest_models_dev(&doc).into_keys().collect();
+        assert_eq!(keys, ["p/z-ok"]);
+    }
+
+    #[test]
+    fn a_provider_without_models_is_skipped_and_the_next_provider_is_kept() {
+        let doc = json!({
+            "a-no-models": { "name": "no models key" },
+            "z": { "models": { "m": { "cost": { "input": 1.0, "output": 2.0 } } } }
+        });
+        let keys: Vec<String> = ingest_models_dev(&doc).into_keys().collect();
+        assert_eq!(keys, ["z/m"]);
+    }
 }
