@@ -76,3 +76,6 @@ pub(super) fn start_pump(
         }
     });
 }
+
+#[cfg(test)]
+mod tests;

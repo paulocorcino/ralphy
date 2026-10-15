@@ -367,3 +367,6 @@ fn write_underline_color(color: Color, out: &mut String) {
         Color::Spec(rgb) => out.push_str(&format!(";58;2;{};{};{}", rgb.r, rgb.g, rgb.b)),
     }
 }
+
+#[cfg(test)]
+mod tests;

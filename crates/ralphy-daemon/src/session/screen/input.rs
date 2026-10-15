@@ -178,3 +178,6 @@ impl Perform for Region {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

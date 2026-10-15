@@ -168,6 +168,29 @@ fn grep_stops_at_the_hit_cap_and_says_so() {
 }
 
 #[test]
+fn grep_refuses_a_query_shorter_than_the_floor() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(dir.path());
+    let reply = grep(dir.path(), "t", &SearchBudget::default()).unwrap();
+    assert!(reply.hits.is_empty(), "{:?}", reply.hits);
+    let reply = grep(dir.path(), "  ", &SearchBudget::default()).unwrap();
+    assert!(reply.hits.is_empty(), "{:?}", reply.hits);
+}
+
+#[test]
+fn grep_stops_at_the_deadline_and_says_so() {
+    let dir = tempfile::tempdir().unwrap();
+    seed(dir.path());
+    let budget = SearchBudget {
+        max_hits: 200,
+        deadline: Duration::ZERO,
+    };
+    let reply = grep(dir.path(), "task", &budget).unwrap();
+    assert!(reply.hits.is_empty(), "{:?}", reply.hits);
+    assert!(reply.truncated);
+}
+
+#[test]
 fn grep_without_a_ralphy_dir_is_the_main_walk_alone() {
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join("a.txt"), "needle\n").unwrap();
