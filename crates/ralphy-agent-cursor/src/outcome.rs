@@ -175,13 +175,7 @@ pub(crate) fn fold_cursor_stream(stdout: &str) -> CursorFold {
     for line in stdout.lines() {
         let trimmed = line.trim();
         let Ok(obj) = serde_json::from_str::<Value>(trimmed) else {
-            // Not JSON. Capture only the bare-stderr quota prose (#251); everything
-            // else here is genuinely noise. First one wins, so a later stderr line
-            // cannot overwrite a `turn_ended.error` already read from a record.
-            if let Some(msg) = bare_limit_prose(trimmed) {
-                fold.is_error = true;
-                fold.vendor_error.get_or_insert(msg);
-            }
+            fold_bare_line(&mut fold, trimmed);
             continue;
         };
         let ty = obj.get("type").and_then(Value::as_str).unwrap_or_default();
@@ -196,41 +190,8 @@ pub(crate) fn fold_cursor_stream(stdout: &str) -> CursorFold {
                     .and_then(Value::as_str)
                     .map(str::to_string);
             }
-            ("result", _) => {
-                fold.saw_envelope = true;
-                fold.subtype = obj
-                    .get("subtype")
-                    .and_then(Value::as_str)
-                    .map(str::to_string);
-                fold.is_error = obj
-                    .get("is_error")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false);
-                if let Some(text) = obj.get("result").and_then(Value::as_str) {
-                    fold.final_text = text.to_string();
-                }
-                if let Some(sid) = obj.get("session_id").and_then(Value::as_str) {
-                    fold.session_id.get_or_insert_with(|| sid.to_string());
-                }
-            }
-            // The OTHER terminal record. It carries its own verdict in `status`,
-            // and folding it without reading that field is how a vendor refusal
-            // that names its own cause arrives as a mute stop. Any status other
-            // than `success` is an error, in the same pessimistic direction as
-            // the envelope's unknown `subtype`.
-            ("turn_ended", _) => {
-                fold.saw_turn_end = true;
-                let status = obj
-                    .get("status")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default();
-                if status != "success" {
-                    fold.is_error = true;
-                    if let Some(msg) = obj.get("error").and_then(Value::as_str) {
-                        fold.vendor_error = Some(msg.to_string());
-                    }
-                }
-            }
+            ("result", _) => fold_result(&mut fold, &obj),
+            ("turn_ended", _) => fold_turn_ended(&mut fold, &obj),
             // NOT gated on `subtype == "completed"`: the ADR never pins the subtype
             // of the `permissionDenied` record it quotes, and a hardcoded value here
             // would be the same silent-stop-discriminating failure the structural
@@ -247,6 +208,54 @@ pub(crate) fn fold_cursor_stream(stdout: &str) -> CursorFold {
         }
     }
     fold
+}
+
+/// A line that is not JSON. Capture only the bare-stderr quota prose (#251);
+/// everything else here is genuinely noise. First one wins, so a later stderr line
+/// cannot overwrite a `turn_ended.error` already read from a record.
+fn fold_bare_line(fold: &mut CursorFold, trimmed: &str) {
+    if let Some(msg) = bare_limit_prose(trimmed) {
+        fold.is_error = true;
+        fold.vendor_error.get_or_insert(msg);
+    }
+}
+
+/// The `result` envelope.
+fn fold_result(fold: &mut CursorFold, obj: &Value) {
+    fold.saw_envelope = true;
+    fold.subtype = obj
+        .get("subtype")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    fold.is_error = obj
+        .get("is_error")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if let Some(text) = obj.get("result").and_then(Value::as_str) {
+        fold.final_text = text.to_string();
+    }
+    if let Some(sid) = obj.get("session_id").and_then(Value::as_str) {
+        fold.session_id.get_or_insert_with(|| sid.to_string());
+    }
+}
+
+/// The OTHER terminal record. It carries its own verdict in `status`,
+/// and folding it without reading that field is how a vendor refusal
+/// that names its own cause arrives as a mute stop. Any status other
+/// than `success` is an error, in the same pessimistic direction as
+/// the envelope's unknown `subtype`.
+fn fold_turn_ended(fold: &mut CursorFold, obj: &Value) {
+    fold.saw_turn_end = true;
+    let status = obj
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if status != "success" {
+        fold.is_error = true;
+        if let Some(msg) = obj.get("error").and_then(Value::as_str) {
+            fold.vendor_error = Some(msg.to_string());
+        }
+    }
 }
 
 /// The exit code a `SIGINT` produces. The vendor's ONE semantic exit code, and it

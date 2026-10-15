@@ -45,9 +45,6 @@
     "crates/ralphy-agent-cursor/src/outcome.rs": {
       "collect_tool_results": [
         13
-      ],
-      "fold_cursor_stream": [
-        21
       ]
     },
     "crates/ralphy-agent-gemini/src/outcome.rs": {
