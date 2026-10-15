@@ -258,34 +258,74 @@ function progress(s: State, ev: Progress | undefined): State {
   }
 }
 
+// Edit is the add flow with the host's connection filled in. The
+// password is empty: the host still accepts Ralphy's key, or it asks.
+function editState(s: State, h: PeerHost): State {
+  const keyFile = typeof h.identity_file === "string" ? h.identity_file : "";
+  return Object.assign(
+    fresh(s, "add"),
+    { editing: { daemon: String(h.daemon_id || ""), name: String(h.name || "") } },
+    fields(h.destination),
+    keyFile ? { signIn: "key" as const, keyFile: keyFile } : {},
+  );
+}
+
+// An SSH config host picked from the list fills user and port; a name that
+// is not in the list empties them.
+function pickState(s: State, alias: string): State {
+  const found = s.aliases.find((a) => a.alias === alias);
+  if (!found) return Object.assign({}, s, { alias: "", user: "", port: "" });
+  return Object.assign({}, s, {
+    alias: found.alias,
+    address: found.hostname || "",
+    user: found.user || "",
+    port: found.port ? String(found.port) : "",
+  });
+}
+
+// The `host.key` answer: a key to trust, a host that does not answer, or a
+// known key, which goes on to the checks.
+function keyState(s: State, key: KeyReply): State {
+  if (key.state === "unknown") {
+    return Object.assign({}, s, { step: "identity" as const, keys: key.keys || [] });
+  }
+  if (key.state === "unreachable") {
+    return Object.assign({}, s, {
+      help: true,
+      failure: { kind: "unreachable", message: sentence(key.reason) },
+    });
+  }
+  return Object.assign({}, s, { step: "checks" as const, failure: null, help: false, autoTried: false });
+}
+
+// A `host.*` command ended with `ev.code`.
+function exitState(s: State, ev: Extract<Action, { type: "exit" }>): State {
+  if (ev.code === 0) {
+    if (ev.verb !== "host.add") return Object.assign({}, s, { busy: false });
+    // An edit goes back to the list it started from; a new host gets
+    // a last step that says it was added.
+    return s.editing ? fresh(s, "hosts") : Object.assign({}, s, { step: "done" as const, busy: false });
+  }
+  const failure = s.failure || {
+    kind: "other",
+    message:
+      ev.code === null || ev.code === undefined
+        ? "The command stopped before it finished."
+        : "The command stopped with code " + ev.code + ".",
+  };
+  return Object.assign({}, s, { busy: false, failure: failure });
+}
+
 export function next(s: State, ev: Action): State {
   switch (ev.type) {
     case "tab":
       return fresh(s, ev.tab === "add" ? "add" : "hosts");
-    // Edit is the add flow with the host's connection filled in. The
-    // password is empty: the host still accepts Ralphy's key, or it asks.
-    case "edit": {
-      const h: PeerHost = ev.host || {};
-      const keyFile = typeof h.identity_file === "string" ? h.identity_file : "";
-      return Object.assign(
-        fresh(s, "add"),
-        { editing: { daemon: String(h.daemon_id || ""), name: String(h.name || "") } },
-        fields(h.destination),
-        keyFile ? { signIn: "key" as const, keyFile: keyFile } : {},
-      );
-    }
+    case "edit":
+      return editState(s, ev.host || {});
     case "aliases":
       return Object.assign({}, s, { aliases: Array.isArray(ev.aliases) ? ev.aliases : [] });
-    case "pick": {
-      const found = s.aliases.find((a) => a.alias === ev.alias);
-      if (!found) return Object.assign({}, s, { alias: "", user: "", port: "" });
-      return Object.assign({}, s, {
-        alias: found.alias,
-        address: found.hostname || "",
-        user: found.user || "",
-        port: found.port ? String(found.port) : "",
-      });
-    }
+    case "pick":
+      return pickState(s, ev.alias);
     case "type":
       return Object.assign({}, s, { [ev.field]: ev.value });
     // Typing in the Host field leaves the SSH config host: the text is an
@@ -294,19 +334,8 @@ export function next(s: State, ev: Action): State {
       return Object.assign({}, s, { alias: "", address: ev.value });
     case "busy":
       return Object.assign({}, s, { busy: !!ev.value });
-    case "key": {
-      const key: KeyReply = ev.key || {};
-      if (key.state === "unknown") {
-        return Object.assign({}, s, { step: "identity" as const, keys: key.keys || [] });
-      }
-      if (key.state === "unreachable") {
-        return Object.assign({}, s, {
-          help: true,
-          failure: { kind: "unreachable", message: sentence(key.reason) },
-        });
-      }
-      return Object.assign({}, s, { step: "checks" as const, failure: null, help: false, autoTried: false });
-    }
+    case "key":
+      return keyState(s, ev.key || {});
     case "close":
       return Object.assign({}, s, { open: false, password: "" });
     case "cancel-trust":
@@ -338,22 +367,8 @@ export function next(s: State, ev: Action): State {
       });
     case "event":
       return progress(s, ev.event);
-    case "exit": {
-      if (ev.code === 0) {
-        if (ev.verb !== "host.add") return Object.assign({}, s, { busy: false });
-        // An edit goes back to the list it started from; a new host gets
-        // a last step that says it was added.
-        return s.editing ? fresh(s, "hosts") : Object.assign({}, s, { step: "done" as const, busy: false });
-      }
-      const failure = s.failure || {
-        kind: "other",
-        message:
-          ev.code === null || ev.code === undefined
-            ? "The command stopped before it finished."
-            : "The command stopped with code " + ev.code + ".",
-      };
-      return Object.assign({}, s, { busy: false, failure: failure });
-    }
+    case "exit":
+      return exitState(s, ev);
     case "help-tab":
       return Object.assign({}, s, { helpTab: ev.tab });
     default:

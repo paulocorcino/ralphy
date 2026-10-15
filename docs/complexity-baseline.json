@@ -497,9 +497,6 @@
       ]
     },
     "crates/ralphy-daemon/assets/ui/wb-hosts.ts": {
-      "next": [
-        23
-      ],
       "progress": [
         18
       ]
