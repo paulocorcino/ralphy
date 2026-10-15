@@ -189,11 +189,6 @@
         17
       ]
     },
-    "crates/ralphy-cli/src/runstate/state.rs": {
-      "apply": [
-        36
-      ]
-    },
     "crates/ralphy-cli/src/telegram/notifier.rs": {
       "on_event": [
         12
