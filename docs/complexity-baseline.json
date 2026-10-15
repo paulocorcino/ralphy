@@ -107,9 +107,6 @@
       ]
     },
     "crates/ralphy-cli/src/host/checks.rs": {
-      "evaluate": [
-        22
-      ],
       "parse_facts": [
         12
       ]
