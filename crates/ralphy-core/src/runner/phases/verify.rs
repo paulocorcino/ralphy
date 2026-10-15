@@ -107,130 +107,9 @@ pub(crate) fn verify_gate(
     plan_md: &str,
     ledger: &mut RunLedger,
 ) -> Result<VerifyGate> {
-    // Tokens the agent spends on repairs, accounted as their own phase so
-    // the initial execute line stays truthful and the repair cost is never
-    // hidden (ADR-0008). One usage per attempt, folded after the loop via
-    // `fold_usage` — the ONE place accumulated-usage model derivation lives
-    // (D8). Accumulating with `add_tokens` instead would drop the model and
-    // land the whole repair line in the unpriced `unknown` bucket.
-    let mut repair_attempts: Vec<Usage> = Vec::new();
-    // Last non-empty vendor session across the repair loop — the repair line
-    // carries the terminal attempt's session (ADR-0033 §5, last-non-empty-wins).
-    let mut repair_session_id: Option<String> = None;
-    // Set when a repair attempt itself hits a usage limit. `None` while the
-    // gate is still being worked.
-    let mut repair_limit: Option<Outcome> = None;
+    let mut repairs = Repairs::default();
     let gate: GateDecision = match resolve_verify(plan_md, &cx.cfg.verify_fallback) {
-        VerifyPlan::Run(commands) => {
-            let mut attempt = 0u32;
-            loop {
-                // consumed by the telegram notifier / presenter — keep stable
-                info!(
-                    number = issue.number,
-                    commands = commands.len(),
-                    "verify gate — running"
-                );
-                let report = verify::run(&commands, &cx.cfg.repo_root, cx.cfg.verify_timeout);
-                // Feed the durable command-cost knowledge the verification-cost
-                // gate reads: the gate just measured the real price of each
-                // `## Verify` command, so future sessions (this repo, any issue)
-                // know which ones are too expensive for an inner loop.
-                crate::cmdcost::record_gate_costs(
-                    &cx.cfg.repo_root,
-                    &report
-                        .commands
-                        .iter()
-                        .map(|c| (c.argv.clone(), c.secs))
-                        .collect::<Vec<_>>(),
-                );
-                // Short-circuit a non-repairable spawn failure (#182): the gate's
-                // deciding command never ran (program not found / typo'd binary),
-                // so re-running the SAME argv can never make it pass. Handing it
-                // back would burn the whole VERIFY_MAX_REPAIRS budget on a fix the
-                // agent has no way to win. Skip immediately with a spawn-specific
-                // artifact and summary — still honoring ADR-0011 (the runner never
-                // lets a self-report past a red gate); it just stops wasting the
-                // budget on a structural failure it can already see.
-                if report.spawn_failed() {
-                    let summary = verify_spawn_failure_summary(&report);
-                    // consumed by the telegram notifier / presenter — keep stable
-                    info!(
-                        number = issue.number,
-                        %summary,
-                        "verify gate — command could not spawn, non-repairable, issue not closed"
-                    );
-                    // Distinct honesty artifact: names it a spec/spawn problem, not
-                    // a test failure. Best-effort — a comment failure must not crash
-                    // the run.
-                    if let Err(e) = cx.tracker.comment(
-                        issue.number,
-                        &verify::spawn_failure_comment(&cx.cfg.stamp, &report),
-                    ) {
-                        warn!(number = issue.number, error = %e, "posting verify artifact comment failed");
-                    }
-                    break GateDecision::Failed(summary);
-                }
-                // Honesty artifact: every command + its exit code (pass or
-                // fail), with the failing tail on a failure. Best-effort — a
-                // comment failure must not crash a run that otherwise passed.
-                if let Err(e) = cx
-                    .tracker
-                    .comment(issue.number, &verify::comment(&cx.cfg.stamp, &report))
-                {
-                    warn!(number = issue.number, error = %e, "posting verify artifact comment failed");
-                }
-                if report.passed {
-                    info!(number = issue.number, "verify gate passed");
-                    clear_verify_failure(cx.ws);
-                    break GateDecision::Green;
-                }
-
-                let summary = verify_failure_summary(&report);
-                if attempt >= VERIFY_MAX_REPAIRS {
-                    // consumed by the telegram notifier / presenter — keep stable
-                    info!(
-                        number = issue.number,
-                        %summary,
-                        attempts = attempt,
-                        "verify gate failed — issue not closed"
-                    );
-                    break GateDecision::Failed(summary);
-                }
-
-                attempt += 1;
-                info!(
-                    number = issue.number,
-                    %summary,
-                    attempt,
-                    max = VERIFY_MAX_REPAIRS,
-                    "verify gate failed — handing back to the agent to repair"
-                );
-                // Hand the failure to the executor through the workspace
-                // (the same vendor-neutral channel as plan.md), then re-run
-                // execute() against the unchanged plan. The repair runs
-                // within the issue's own time budget, like every execute.
-                write_verify_failure(cx.ws, &cx.cfg.stamp, &report, &cx.cfg.done_signal);
-                let Execution {
-                    outcome: repair_outcome,
-                    usage,
-                    session_id,
-                } = cx.agent.execute(plan, cx.ws)?;
-                repair_attempts.push(usage);
-                if session_id.is_some() {
-                    repair_session_id = session_id;
-                }
-                // A usage limit mid-repair stops the run on the limit; we do
-                // not re-verify (the agent never got to fix anything) and do
-                // not spend another attempt.
-                if let Outcome::Limit(_) = repair_outcome {
-                    repair_limit = Some(repair_outcome);
-                    break GateDecision::Failed(summary);
-                }
-                // Any other outcome (Done, Blocked, …) loops back to re-run
-                // the gate: the deterministic commands — not the agent's
-                // word — decide whether the repair earned the close.
-            }
-        }
+        VerifyPlan::Run(commands) => run_with_repairs(cx, issue, plan, &commands, &mut repairs)?,
         VerifyPlan::OptedOut => {
             info!(
                 number = issue.number,
@@ -238,26 +117,7 @@ pub(crate) fn verify_gate(
             );
             GateDecision::Green
         }
-        VerifyPlan::Invalid(error) => {
-            // A malformed `## Verify` section cannot be run: leave the issue open
-            // with the parse error as its summary rather than close it silently
-            // (the gate never saw anything pass). The plan author fixes the section.
-            // consumed by the telegram notifier / presenter — keep stable
-            info!(
-                number = issue.number,
-                %error,
-                "verify gate — malformed `## Verify` section, issue not closed"
-            );
-            // Honesty artifact on the issue itself, like every other gate outcome
-            // (#181). Best-effort — a comment failure must not crash the run.
-            if let Err(e) = cx.tracker.comment(
-                issue.number,
-                &verify::invalid_comment(&cx.cfg.stamp, &error),
-            ) {
-                warn!(number = issue.number, error = %e, "posting verify artifact comment failed");
-            }
-            GateDecision::Failed(error)
-        }
+        VerifyPlan::Invalid(error) => invalid_gate(cx, issue, error),
         VerifyPlan::NoGate if cx.cfg.require_verify_gate => {
             // consumed by the telegram notifier / presenter — keep stable
             info!(
@@ -280,7 +140,7 @@ pub(crate) fn verify_gate(
     // Model attribution happens once, after the loop, like the execute phase:
     // the runner stays vendor-neutral and passes no fallback (ADR-0002 — alias
     // fallback lives in the adapter).
-    let repair_usage = Usage::fold_usage(&repair_attempts, None);
+    let repair_usage = Usage::fold_usage(&repairs.usages, None);
 
     // Account the repair phase before branching on the gate result, so the
     // run totals and the per-issue ledger are honest whether the gate went
@@ -295,7 +155,7 @@ pub(crate) fn verify_gate(
             "done"
         },
         &repair_usage,
-        repair_session_id.as_deref(),
+        repairs.session_id.as_deref(),
     );
 
     Ok(match gate {
@@ -304,7 +164,7 @@ pub(crate) fn verify_gate(
             // issue's fault: there are no tokens left to work the rest of the
             // queue, so stop on the reset (the same global stance the execute
             // path already takes on a limit).
-            if let Some(Outcome::Limit(reset)) = repair_limit {
+            if let Some(Outcome::Limit(reset)) = repairs.limit {
                 VerifyGate::StopLimit { reset }
             } else {
                 VerifyGate::Failed { summary }
@@ -313,4 +173,185 @@ pub(crate) fn verify_gate(
         GateDecision::NeedsHuman => VerifyGate::NeedsHuman,
         GateDecision::Green => VerifyGate::Green { repair_usage },
     })
+}
+
+/// What the repair loop leaves for the ledger line and the gate result.
+#[derive(Default)]
+struct Repairs {
+    /// Tokens the agent spends on repairs, accounted as their own phase so
+    /// the initial execute line stays truthful and the repair cost is never
+    /// hidden (ADR-0008). One usage per attempt, folded after the loop via
+    /// `fold_usage` — the ONE place accumulated-usage model derivation lives
+    /// (D8). Accumulating with `add_tokens` instead would drop the model and
+    /// land the whole repair line in the unpriced `unknown` bucket.
+    usages: Vec<Usage>,
+    /// Last non-empty vendor session across the repair loop — the repair line
+    /// carries the terminal attempt's session (ADR-0033 §5, last-non-empty-wins).
+    session_id: Option<String>,
+    /// Set when a repair attempt itself hits a usage limit. `None` while the
+    /// gate is still being worked.
+    limit: Option<Outcome>,
+}
+
+/// Run the gate's commands, and hand a failure back to the agent until the
+/// commands pass or the repair budget is spent.
+fn run_with_repairs(
+    cx: &IssueCtx,
+    issue: &Issue,
+    plan: &Plan,
+    commands: &[Vec<String>],
+    repairs: &mut Repairs,
+) -> Result<GateDecision> {
+    let mut attempt = 0u32;
+    loop {
+        // consumed by the telegram notifier / presenter — keep stable
+        info!(
+            number = issue.number,
+            commands = commands.len(),
+            "verify gate — running"
+        );
+        let report = run_commands(cx, commands);
+        // Short-circuit a non-repairable spawn failure (#182): the gate's
+        // deciding command never ran (program not found / typo'd binary),
+        // so re-running the SAME argv can never make it pass. Handing it
+        // back would burn the whole VERIFY_MAX_REPAIRS budget on a fix the
+        // agent has no way to win. Skip immediately with a spawn-specific
+        // artifact and summary — still honoring ADR-0011 (the runner never
+        // lets a self-report past a red gate); it just stops wasting the
+        // budget on a structural failure it can already see.
+        if report.spawn_failed() {
+            return Ok(spawn_failed_gate(cx, issue, &report));
+        }
+        // Honesty artifact: every command + its exit code (pass or
+        // fail), with the failing tail on a failure. Best-effort — a
+        // comment failure must not crash a run that otherwise passed.
+        post_verify_artifact(cx, issue, &verify::comment(&cx.cfg.stamp, &report));
+        if report.passed {
+            info!(number = issue.number, "verify gate passed");
+            clear_verify_failure(cx.ws);
+            return Ok(GateDecision::Green);
+        }
+
+        let summary = verify_failure_summary(&report);
+        if attempt >= VERIFY_MAX_REPAIRS {
+            // consumed by the telegram notifier / presenter — keep stable
+            info!(
+                number = issue.number,
+                %summary,
+                attempts = attempt,
+                "verify gate failed — issue not closed"
+            );
+            return Ok(GateDecision::Failed(summary));
+        }
+
+        attempt += 1;
+        info!(
+            number = issue.number,
+            %summary,
+            attempt,
+            max = VERIFY_MAX_REPAIRS,
+            "verify gate failed — handing back to the agent to repair"
+        );
+        // A usage limit mid-repair stops the run on the limit; we do
+        // not re-verify (the agent never got to fix anything) and do
+        // not spend another attempt.
+        if repair(cx, plan, &report, repairs)? {
+            return Ok(GateDecision::Failed(summary));
+        }
+        // Any other outcome (Done, Blocked, …) loops back to re-run
+        // the gate: the deterministic commands — not the agent's
+        // word — decide whether the repair earned the close.
+    }
+}
+
+/// Run the gate's commands once and record what each one cost.
+fn run_commands(cx: &IssueCtx, commands: &[Vec<String>]) -> verify::VerifyReport {
+    let report = verify::run(commands, &cx.cfg.repo_root, cx.cfg.verify_timeout);
+    // Feed the durable command-cost knowledge the verification-cost
+    // gate reads: the gate just measured the real price of each
+    // `## Verify` command, so future sessions (this repo, any issue)
+    // know which ones are too expensive for an inner loop.
+    crate::cmdcost::record_gate_costs(
+        &cx.cfg.repo_root,
+        &report
+            .commands
+            .iter()
+            .map(|c| (c.argv.clone(), c.secs))
+            .collect::<Vec<_>>(),
+    );
+    report
+}
+
+/// One repair attempt: hand the failure to the executor and record its usage
+/// and session. Returns whether the attempt hit a usage limit.
+fn repair(
+    cx: &IssueCtx,
+    plan: &Plan,
+    report: &verify::VerifyReport,
+    repairs: &mut Repairs,
+) -> Result<bool> {
+    // Hand the failure to the executor through the workspace
+    // (the same vendor-neutral channel as plan.md), then re-run
+    // execute() against the unchanged plan. The repair runs
+    // within the issue's own time budget, like every execute.
+    write_verify_failure(cx.ws, &cx.cfg.stamp, report, &cx.cfg.done_signal);
+    let Execution {
+        outcome: repair_outcome,
+        usage,
+        session_id,
+    } = cx.agent.execute(plan, cx.ws)?;
+    repairs.usages.push(usage);
+    if session_id.is_some() {
+        repairs.session_id = session_id;
+    }
+    if let Outcome::Limit(_) = repair_outcome {
+        repairs.limit = Some(repair_outcome);
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+/// The gate result when a command could not spawn: failed, with no repair.
+fn spawn_failed_gate(cx: &IssueCtx, issue: &Issue, report: &verify::VerifyReport) -> GateDecision {
+    let summary = verify_spawn_failure_summary(report);
+    // consumed by the telegram notifier / presenter — keep stable
+    info!(
+        number = issue.number,
+        %summary,
+        "verify gate — command could not spawn, non-repairable, issue not closed"
+    );
+    // Distinct honesty artifact: names it a spec/spawn problem, not
+    // a test failure. Best-effort — a comment failure must not crash
+    // the run.
+    post_verify_artifact(
+        cx,
+        issue,
+        &verify::spawn_failure_comment(&cx.cfg.stamp, report),
+    );
+    GateDecision::Failed(summary)
+}
+
+/// The gate result for a malformed `## Verify` section: failed, with the
+/// parse error as its summary.
+fn invalid_gate(cx: &IssueCtx, issue: &Issue, error: String) -> GateDecision {
+    // A malformed `## Verify` section cannot be run: leave the issue open
+    // with the parse error as its summary rather than close it silently
+    // (the gate never saw anything pass). The plan author fixes the section.
+    // consumed by the telegram notifier / presenter — keep stable
+    info!(
+        number = issue.number,
+        %error,
+        "verify gate — malformed `## Verify` section, issue not closed"
+    );
+    // Honesty artifact on the issue itself, like every other gate outcome
+    // (#181). Best-effort — a comment failure must not crash the run.
+    post_verify_artifact(cx, issue, &verify::invalid_comment(&cx.cfg.stamp, &error));
+    GateDecision::Failed(error)
+}
+
+/// Post a verify artifact comment on the issue. A failure only warns.
+fn post_verify_artifact(cx: &IssueCtx, issue: &Issue, body: &str) {
+    if let Err(e) = cx.tracker.comment(issue.number, body) {
+        warn!(number = issue.number, error = %e, "posting verify artifact comment failed");
+    }
 }

@@ -275,11 +275,6 @@
         16
       ]
     },
-    "crates/ralphy-core/src/runner/phases/verify.rs": {
-      "verify_gate": [
-        33
-      ]
-    },
     "crates/ralphy-core/src/sync.rs": {
       "pull": [
         11
