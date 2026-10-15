@@ -1,6 +1,7 @@
 //! `/ws/command`: the verb socket — spawn-and-stream, spawn-and-collect and
 //! the Observe verbs, or the relay of a verb to the owning peer (ADR-0036).
 
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -359,62 +360,9 @@ pub(crate) async fn proxy_peer_command(
     shutdown: &mut tokio::sync::watch::Receiver<bool>,
     me: peer::client::SelfRef<'_>,
 ) {
-    let mut peer_socket = match peer::client::command(descriptor, me).await {
-        Ok(socket) => socket,
-        Err(peer::client::SocketError::Peer(status)) => {
-            send_command(
-                browser,
-                command.id,
-                &command.verb,
-                serde_json::json!({
-                    "status": "error",
-                    "message": status.diagnosis(&descriptor.environment),
-                }),
-            )
-            .await;
-            return;
-        }
-        Err(peer::client::SocketError::Http { status, body }) => {
-            let detail = if body.trim().is_empty() {
-                format!("peer command upgrade answered HTTP {status}")
-            } else {
-                body
-            };
-            send_command(
-                browser,
-                command.id,
-                &command.verb,
-                serde_json::json!({
-                    "status": "error",
-                    "message": fleet::peer_unreachable(descriptor, &detail),
-                }),
-            )
-            .await;
-            return;
-        }
-    };
-    if peer_socket
-        .send(tokio_tungstenite::tungstenite::Message::Binary(
-            protocol::encode(&Frame::Command(command.clone())).into(),
-        ))
-        .await
-        .is_err()
-    {
-        send_command(
-            browser,
-            command.id,
-            &command.verb,
-            serde_json::json!({
-                "status": "error",
-                "message": fleet::peer_unreachable(
-                    descriptor,
-                    "the peer command socket closed before accepting the command"
-                ),
-            }),
-        )
-        .await;
+    let Some(mut peer_socket) = open_peer(browser, descriptor, &command, me).await else {
         return;
-    }
+    };
 
     loop {
         tokio::select! {
@@ -440,38 +388,125 @@ pub(crate) async fn proxy_peer_command(
                     .await;
                     break;
                 };
-                match message {
-                    tokio_tungstenite::tungstenite::Message::Binary(bytes) => {
-                        let terminal = matches!(
-                            protocol::decode(&bytes),
-                            Ok(Frame::Command(ref reply))
-                                if reply.id == command.id
-                                    && matches!(
-                                        reply.payload.get("status").and_then(|value| value.as_str()),
-                                        Some("exited" | "error")
-                                    )
-                        );
-                        if browser.send(Message::Binary(bytes)).await.is_err() || terminal {
-                            break;
-                        }
-                    }
-                    tokio_tungstenite::tungstenite::Message::Ping(bytes) => {
-                        if browser.send(Message::Ping(bytes)).await.is_err() {
-                            break;
-                        }
-                    }
-                    tokio_tungstenite::tungstenite::Message::Pong(bytes) => {
-                        if browser.send(Message::Pong(bytes)).await.is_err() {
-                            break;
-                        }
-                    }
-                    tokio_tungstenite::tungstenite::Message::Close(_)
-                    | tokio_tungstenite::tungstenite::Message::Text(_)
-                    | tokio_tungstenite::tungstenite::Message::Frame(_) => continue,
+                if forward_peer_message(browser, message, command.id).await.is_break() {
+                    break;
                 }
             }
         }
     }
+}
+
+/// Open the peer's command socket and send it `command`. `None` once the
+/// browser has the one error frame that says why it failed.
+async fn open_peer(
+    browser: &mut WebSocket,
+    descriptor: &peer::PeerDescriptor,
+    command: &Command,
+    me: peer::client::SelfRef<'_>,
+) -> Option<peer::client::PeerSocket> {
+    let mut peer_socket = match peer::client::command(descriptor, me).await {
+        Ok(socket) => socket,
+        Err(peer::client::SocketError::Peer(status)) => {
+            send_command(
+                browser,
+                command.id,
+                &command.verb,
+                serde_json::json!({
+                    "status": "error",
+                    "message": status.diagnosis(&descriptor.environment),
+                }),
+            )
+            .await;
+            return None;
+        }
+        Err(peer::client::SocketError::Http { status, body }) => {
+            let detail = if body.trim().is_empty() {
+                format!("peer command upgrade answered HTTP {status}")
+            } else {
+                body
+            };
+            send_command(
+                browser,
+                command.id,
+                &command.verb,
+                serde_json::json!({
+                    "status": "error",
+                    "message": fleet::peer_unreachable(descriptor, &detail),
+                }),
+            )
+            .await;
+            return None;
+        }
+    };
+    if peer_socket
+        .send(tokio_tungstenite::tungstenite::Message::Binary(
+            protocol::encode(&Frame::Command(command.clone())).into(),
+        ))
+        .await
+        .is_err()
+    {
+        send_command(
+            browser,
+            command.id,
+            &command.verb,
+            serde_json::json!({
+                "status": "error",
+                "message": fleet::peer_unreachable(
+                    descriptor,
+                    "the peer command socket closed before accepting the command"
+                ),
+            }),
+        )
+        .await;
+        return None;
+    }
+    Some(peer_socket)
+}
+
+/// Forward one peer frame to the browser. `Break` when the browser did not
+/// take it, or after the terminal reply to command `id`.
+async fn forward_peer_message(
+    browser: &mut WebSocket,
+    message: tokio_tungstenite::tungstenite::Message,
+    id: u64,
+) -> ControlFlow<()> {
+    let sent = match message {
+        tokio_tungstenite::tungstenite::Message::Binary(bytes) => {
+            let terminal = is_terminal_reply(&bytes, id);
+            if browser.send(Message::Binary(bytes)).await.is_err() || terminal {
+                return ControlFlow::Break(());
+            }
+            return ControlFlow::Continue(());
+        }
+        tokio_tungstenite::tungstenite::Message::Ping(bytes) => {
+            browser.send(Message::Ping(bytes)).await
+        }
+        tokio_tungstenite::tungstenite::Message::Pong(bytes) => {
+            browser.send(Message::Pong(bytes)).await
+        }
+        tokio_tungstenite::tungstenite::Message::Close(_)
+        | tokio_tungstenite::tungstenite::Message::Text(_)
+        | tokio_tungstenite::tungstenite::Message::Frame(_) => return ControlFlow::Continue(()),
+    };
+    if sent.is_err() {
+        ControlFlow::Break(())
+    } else {
+        ControlFlow::Continue(())
+    }
+}
+
+/// Whether `bytes` is the reply that ends command `id`: its `exited` or
+/// `error` frame.
+fn is_terminal_reply(bytes: &[u8], id: u64) -> bool {
+    matches!(
+        protocol::decode(bytes),
+        Ok(Frame::Command(ref reply))
+            if reply.id == id
+                && matches!(
+                    reply.payload.get("status").and_then(|value| value.as_str()),
+                    Some("exited" | "error")
+                )
+    )
 }
 
 /// `/ws/command`: the command socket.

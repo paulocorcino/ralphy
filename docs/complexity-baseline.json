@@ -756,11 +756,6 @@
         13
       ]
     },
-    "crates/ralphy-daemon/src/routes/ws_command.rs": {
-      "proxy_peer_command": [
-        27
-      ]
-    },
     "crates/ralphy-daemon/src/routes/ws_command/stream.rs": {
       "drain": [
         11
