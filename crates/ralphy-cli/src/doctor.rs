@@ -5,10 +5,11 @@
 //! It checks presence only. A minimum version is added only after a measured
 //! failure, with that failure in a comment.
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
-use anyhow::{bail, Result};
+use anyhow::{Context, Result};
 use clap::Args;
 use ralphy_adapter_support::{find_program, locate_program};
 use serde::{Deserialize, Serialize};
@@ -235,10 +236,13 @@ pub(crate) fn run(args: &DoctorArgs) -> Result<()> {
     } else {
         print_report(&report, &mut stdout)?;
     }
-    match report.missing_required() {
-        0 => Ok(()),
-        n => bail!("{n} required tool(s) missing"),
+    if report.missing_required() > 0 {
+        // The report already says what is missing; an `Error:` line under it
+        // would say it twice.
+        stdout.flush().context("writing the report")?;
+        std::process::exit(1);
     }
+    Ok(())
 }
 
 // --- probes -----------------------------------------------------------------
