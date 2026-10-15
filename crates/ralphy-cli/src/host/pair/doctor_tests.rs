@@ -40,6 +40,10 @@ fn a_host_with_doctor_shows_the_doctor_result() {
         .append(&mut linux_host(LINUX_PROBE, description("linux")).answers);
     let checks = checks_of(&mut fake);
     assert!(fake.index_of("doctor --json").is_some());
+    for id in [CheckId::Git, CheckId::Gh] {
+        let rows = checks.iter().filter(|c| c.id == id).count();
+        assert_eq!(rows, 1, "one {id:?} row, not a doctor row and a probe row");
+    }
     assert_eq!(get(&checks, CheckId::Git).status, CheckStatus::Pass);
     assert_eq!(get(&checks, CheckId::Git).text, "git version 2.43.0");
     assert_eq!(

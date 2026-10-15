@@ -76,7 +76,7 @@ pub(super) fn no_keygen(_: &Path) -> Result<()> {
 pub(super) fn linux_host(probe: &str, first: ralphy_daemon::peer::DaemonDescription) -> FakeHost {
     let mut second = description("linux");
     second.token = Some("host-tok".to_string());
-    FakeHost::default()
+    FakeHost::before_doctor()
         .answer("uname -s", out(0, "Linux\n", ""))
         .answer("--- uid", out(0, probe, ""))
         .answer("describe --with-token", out(0, &json(&second), ""))
@@ -102,7 +102,7 @@ fn denied() -> HostOutput {
 #[test]
 fn add_refuses_an_unknown_host_before_anything_else() {
     let store = tempfile::tempdir().unwrap();
-    let mut fake = FakeHost::default().answer(
+    let mut fake = FakeHost::before_doctor().answer(
         "uname -s",
         out(
             255,
@@ -133,7 +133,7 @@ fn add_refuses_an_unknown_host_before_anything_else() {
 #[test]
 fn add_refuses_a_changed_host_key() {
     let store = tempfile::tempdir().unwrap();
-    let mut fake = FakeHost::default().answer(
+    let mut fake = FakeHost::before_doctor().answer(
         "uname -s",
         out(
             255,
@@ -168,7 +168,7 @@ fn add_to_a_host_that_reports_a_socket_writes_peer_socket() {
     let mut second = description("linux");
     second.token = Some("host-tok".to_string());
     second.socket = Some("/home/ralphy2/.ralphy/daemon.sock".to_string());
-    let mut fake = FakeHost::default()
+    let mut fake = FakeHost::before_doctor()
         .answer("uname -s", out(0, "Linux\n", ""))
         .answer("--- uid", out(0, LINUX_PROBE, ""))
         .answer("describe --with-token", out(0, &json(&second), ""))
@@ -203,7 +203,7 @@ fn host_with_a_socket() -> FakeHost {
     second.socket = Some("/home/ralphy2/.ralphy/daemon.sock".to_string());
     let mut first = second.clone();
     first.token = None;
-    FakeHost::default()
+    FakeHost::before_doctor()
         .answer("uname -s", out(0, "Linux\n", ""))
         .answer("--- uid", out(0, LINUX_PROBE, ""))
         .answer("describe --with-token", out(0, &json(&second), ""))
@@ -326,7 +326,7 @@ fn a_running_daemon_with_no_socket_is_restarted_to_get_one() {
     let mut second = description("linux");
     second.token = Some("host-tok".to_string());
     second.socket = Some("/home/ralphy2/.ralphy/daemon.sock".to_string());
-    let mut fake = FakeHost::default()
+    let mut fake = FakeHost::before_doctor()
         .answer("uname -s", out(0, "Linux\n", ""))
         .answer("--- uid", out(0, LINUX_PROBE, ""))
         .answer("describe --with-token", out(0, &json(&second), ""))
@@ -478,7 +478,7 @@ fn add_keeps_the_port_of_a_readd_and_skips_other_hosts() {
 #[test]
 fn add_falls_back_to_the_peer_key() {
     let store = tempfile::tempdir().unwrap();
-    let mut fake = FakeHost::default()
+    let mut fake = FakeHost::before_doctor()
         .answer("uname -s", denied())
         .answer("uname -s", out(0, "Linux\n", ""));
     let mut rest = linux_host(LINUX_PROBE, description("linux"));
@@ -511,7 +511,7 @@ fn add_falls_back_to_the_peer_key() {
 #[test]
 fn add_both_keys_refused_prints_the_public_line() {
     let store = tempfile::tempdir().unwrap();
-    let mut fake = FakeHost::default().answer("uname -s", denied());
+    let mut fake = FakeHost::before_doctor().answer("uname -s", denied());
     let err = add(
         &mut fake,
         &local(store.path()),
@@ -540,7 +540,7 @@ fn add_both_keys_refused_prints_the_public_line() {
 #[test]
 fn add_blocks_on_a_missing_ralphy_and_writes_nothing() {
     let store = tempfile::tempdir().unwrap();
-    let mut fake = FakeHost::default()
+    let mut fake = FakeHost::before_doctor()
         .answer("uname -s", out(0, "Linux\n", ""))
         .answer("--- uid", out(0, LINUX_NO_LINGER, ""))
         .answer("describe", out(127, "", "sh: 1: ralphy: not found\n"));
@@ -578,7 +578,7 @@ fn add_blocks_on_a_missing_ralphy_and_writes_nothing() {
 #[test]
 fn add_linger_needs_sudo_is_not_fatal() {
     let store = tempfile::tempdir().unwrap();
-    let mut fake = FakeHost::default().answer(
+    let mut fake = FakeHost::before_doctor().answer(
         "enable-linger",
         out(1, "", "Could not enable linger: Access denied\n"),
     );
@@ -671,7 +671,7 @@ fn check_applies_nothing() {
 #[test]
 fn check_creates_the_peer_key_and_hands_over_its_line() {
     let store = tempfile::tempdir().unwrap();
-    let mut fake = FakeHost::default().answer("uname -s", denied());
+    let mut fake = FakeHost::before_doctor().answer("uname -s", denied());
     let err = check(
         &mut fake,
         &local(store.path()),
@@ -705,7 +705,7 @@ fn paired_store() -> (tempfile::TempDir, PeerDescriptor) {
 }
 
 fn linux_keys_host() -> FakeHost {
-    FakeHost::default()
+    FakeHost::before_doctor()
         .answer("uname -s", out(0, "Linux\n", ""))
         .answer("cat >", out(0, "", ""))
         .answer("cat .ssh/authorized_keys", out(0, KEYS, ""))
@@ -771,7 +771,7 @@ fn remove_rotate_token_rotates_then_restarts() {
 #[test]
 fn remove_host_silent_prints_the_line() {
     let (store, host) = paired_store();
-    let mut fake = FakeHost::default().answer(
+    let mut fake = FakeHost::before_doctor().answer(
         "uname -s",
         out(
             255,
@@ -804,7 +804,7 @@ fn remove_finds_no_unknown_host() {
 #[test]
 fn remove_on_a_windows_admin_clears_the_shared_keys_file() {
     let (store, host) = paired_store();
-    let mut fake = FakeHost::default()
+    let mut fake = FakeHost::before_doctor()
         .answer(
             "uname -s",
             out(
@@ -853,7 +853,7 @@ fn remove_on_a_windows_admin_clears_the_shared_keys_file() {
 #[test]
 fn remove_stops_on_a_changed_host_key_and_keeps_the_descriptor() {
     let (store, host) = paired_store();
-    let mut fake = FakeHost::default().answer(
+    let mut fake = FakeHost::before_doctor().answer(
         "uname -s",
         out(
             255,
@@ -877,7 +877,7 @@ fn remove_stops_on_a_changed_host_key_and_keeps_the_descriptor() {
 #[test]
 fn remove_rotate_token_on_a_silent_host_keeps_the_descriptor() {
     let (store, host) = paired_store();
-    let mut fake = FakeHost::default().answer(
+    let mut fake = FakeHost::before_doctor().answer(
         "uname -s",
         out(
             255,
@@ -901,7 +901,7 @@ fn remove_rotate_token_on_a_silent_host_keeps_the_descriptor() {
 #[test]
 fn connect_with_a_key_file_never_falls_back() {
     let store = tempfile::tempdir().unwrap();
-    let mut fake = FakeHost::default().answer("uname -s", denied());
+    let mut fake = FakeHost::before_doctor().answer("uname -s", denied());
     let err = connect(
         &mut fake,
         store.path(),
@@ -926,7 +926,7 @@ fn add_with_a_password_adds_the_peer_key_then_signs_in_with_it() {
     let store = tempfile::tempdir().unwrap();
     // The SSH config and the peer key are refused; the password session
     // answers; then the peer key it added signs in.
-    let mut fake = FakeHost::default()
+    let mut fake = FakeHost::before_doctor()
         .with_password()
         .answer("uname -s", denied())
         .answer("uname -s", denied())

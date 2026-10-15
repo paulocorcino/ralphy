@@ -26,6 +26,21 @@ impl FakeHost {
         self
     }
 
+    /// A host whose Ralphy is older than `doctor`, the Ralphy the flow tests
+    /// written before `doctor` stand for.
+    pub(crate) fn before_doctor() -> Self {
+        Self::default().old_ralphy()
+    }
+
+    /// A host whose Ralphy is older than `doctor`: clap refuses the unknown
+    /// subcommand.
+    pub(crate) fn old_ralphy(self) -> Self {
+        self.answer(
+            "doctor --json",
+            out(2, "", "error: unrecognized subcommand 'doctor'\n"),
+        )
+    }
+
     pub(crate) fn with_password(mut self) -> Self {
         self.password = true;
         self
@@ -60,15 +75,8 @@ impl HostShell for FakeHost {
         let pos = self
             .answers
             .iter()
-            .position(|(needle, _)| command.contains(needle.as_str()));
-        // A test that scripts no `doctor` answer stands for a Ralphy older than
-        // `doctor`, as clap refuses an unknown subcommand.
-        let Some(pos) = pos else {
-            if command.contains("doctor --json") {
-                return Ok(out(2, "", "error: unrecognized subcommand 'doctor'\n"));
-            }
-            panic!("the fake host has no answer for {command:?}");
-        };
+            .position(|(needle, _)| command.contains(needle.as_str()))
+            .unwrap_or_else(|| panic!("the fake host has no answer for {command:?}"));
         // A needle answers once when a later entry has the same needle, so a
         // test can script "refused, then accepted".
         let later = self.answers[pos + 1..]

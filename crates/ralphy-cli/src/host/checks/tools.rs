@@ -13,10 +13,32 @@ use super::{CheckId, CheckStatus, HostCheck};
 /// Read what `ralphy doctor --json` printed. `doctor` exits non-zero when a
 /// tool is missing, so the exit code says nothing here. `None` is an older
 /// Ralphy that does not know the command.
+///
+/// Each line is read on its own: a newer Ralphy on the host may report a tool
+/// this one does not know, and that line is skipped, not the whole report.
 pub(crate) fn parse_doctor(out: &HostOutput) -> Option<DoctorReport> {
     // A login shell may print a banner first; the JSON is the last line.
     let last = out.stdout.lines().rev().find(|l| !l.trim().is_empty())?;
-    serde_json::from_str(last.trim()).ok()
+    let value: serde_json::Value = match serde_json::from_str(last.trim()) {
+        Ok(value) => value,
+        Err(e) => {
+            tracing::debug!(error = %e, "the host printed no doctor report");
+            return None;
+        }
+    };
+    let tools = value.get("tools")?.as_array()?;
+    Some(DoctorReport {
+        tools: tools
+            .iter()
+            .filter_map(|line| match serde_json::from_value::<ToolLine>(line.clone()) {
+                Ok(line) => Some(line),
+                Err(e) => {
+                    tracing::debug!(error = %e, "skipping a doctor line this Ralphy does not know");
+                    None
+                }
+            })
+            .collect(),
+    })
 }
 
 /// Put the tool checks in `checks`: the `doctor` result when there is one,
@@ -111,3 +133,6 @@ fn agent_check(report: &DoctorReport) -> HostCheck {
         text: found.join(", "),
     }
 }
+
+#[cfg(test)]
+mod tests;
