@@ -296,9 +296,6 @@
       ]
     },
     "crates/ralphy-daemon/assets/ui/wb-add-project.ts": {
-      "next": [
-        33
-      ],
       "sepOf": [
         11
       ],
