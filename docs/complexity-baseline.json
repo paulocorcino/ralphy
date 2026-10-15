@@ -1147,23 +1147,25 @@
       "parse_shell": [
         47
       ],
-      "read_tag": [
-        40
-      ],
       "render": [
         14
       ],
       "scan_accesses": [
         18
       ],
-      "scan_bindings": [
-        38
-      ],
       "stats": [
         15
       ],
       "writes": [
         17
+      ]
+    },
+    "crates/xtask/src/ui_groups/html.rs": {
+      "read_tag": [
+        40
+      ],
+      "scan_bindings": [
+        38
       ]
     }
   }
