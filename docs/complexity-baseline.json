@@ -466,9 +466,6 @@
     "crates/ralphy-daemon/assets/ui/wb-desk-sync.ts": {
       "applyChange": [
         21
-      ],
-      "setFields": [
-        36
       ]
     },
     "crates/ralphy-daemon/assets/ui/wb-desk.ts": {
