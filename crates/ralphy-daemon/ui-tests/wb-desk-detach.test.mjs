@@ -26,7 +26,7 @@ function withWB(t) {
 // what this tab posts in `posts` and hands `hear` the message a popup sends;
 // the window keeps its listeners in `listeners`; the calls into the console
 // are recorded in `calls`.
-function harness({ wins = [], desk = [], notes = [] } = {}) {
+function harness({ wins = [], desk = [], notes = [], WBNotes } = {}) {
   const calls = [];
   const record = (name) => (...args) => calls.push([name, ...args]);
   const posts = [];
@@ -43,6 +43,7 @@ function harness({ wins = [], desk = [], notes = [] } = {}) {
     addEventListener: (type, fn) => {
       listeners[type] = fn;
     },
+    WBNotes,
   };
   let detach = null;
   const popups = createPopupRegistry({
@@ -221,6 +222,51 @@ test("a re-attach brings the members home, and not one that is already on the st
   );
   assert.deepEqual(posts.at(-1), { type: "origin-close", tab: "t1", fenceId: "f", pid: "p1" });
   assert.deepEqual(emitted, [{ type: "fence-reattach", detail: { fence: "f" } }]);
+});
+
+test("a re-attach of a fence this tab does not hold does nothing, unless the glyph forces it", (t) => {
+  const emitted = withWB(t);
+  const { detach, posts, calls } = harness();
+  detach.reattachFence("f");
+  assert.deepEqual([posts, calls, emitted], [[], [], []], "the automatic paths stop at the fold");
+  detach.reattachFence("f", { force: true });
+  assert.deepEqual(posts, [{ type: "origin-close", tab: "t1", fenceId: "f", pid: undefined }]);
+  assert.deepEqual(emitted, [{ type: "fence-reattach", detail: { fence: "f" } }]);
+});
+
+test("a re-attach closes the popup it still has a handle on", (t) => {
+  withWB(t);
+  const { detach, detachFence } = harness();
+  const closes = [];
+  detachFence("f", { pid: "p1", handle: { closed: false, close: () => closes.push("f") } });
+  detachFence("g", { pid: "p2", handle: { closed: true, close: () => closes.push("g") } });
+  detach.reattachFence("f");
+  detach.reattachFence("g");
+  assert.deepEqual(closes, ["f"], "a popup that is already closed is not closed again");
+});
+
+test("a note member brings its draft home only when its record has no file yet", (t) => {
+  withWB(t);
+  const adopted = [];
+  const { detach, calls, detachFence } = harness({
+    notes: [{ id: "n1", rect: {} }, { id: "n2", rect: {}, path: "notes/b.note" }],
+    WBNotes: { adoptDraft: (...args) => adopted.push(args) },
+  });
+  detachFence("f", {
+    pid: "p1",
+    members: [
+      { id: "n1", kind: "note", draft: "unsaved", claim: "notes/a.note" },
+      { id: "n2", kind: "note", draft: "older text" },
+      { id: "n3", kind: "note", draft: "no record" },
+    ],
+  });
+  detach.reattachFence("f");
+  assert.deepEqual(adopted, [["n1", "unsaved", "notes/a.note"]]);
+  assert.deepEqual(
+    calls.filter(([name]) => name !== "showDetachGlyph"),
+    [],
+    "a card comes home by a render, never as a console window",
+  );
 });
 
 test("a handshake message from another origin is ignored", (t) => {

@@ -357,3 +357,116 @@ test("a refused restore is settled anyway, and is not a reconciled layout", asyn
   assert.equal(desk.isDeskReconciled(), false);
   assert.deepEqual(calls.spawned, []);
 });
+
+// A desk whose every upload gets `answer`, over a sync that records the calls
+// the answer makes. `verdict` is what `acked` says about the reply.
+function answeredDesk(answer, { verdict = "taken", pending = () => false, window } = {}) {
+  const seen = { dropped: 0, reloads: 0 };
+  let served = [];
+  const { desk, deps, calls } = fakeDesk({
+    window: window || {
+      addEventListener: () => {},
+      location: { reload: () => (seen.reloads += 1) },
+    },
+    deskSink: {
+      put: (body) => {
+        calls.put.push(JSON.parse(body));
+        return answer();
+      },
+      putSync: () => {},
+    },
+  });
+  Object.assign(deps.sync, {
+    view: () => ({ windows: served, fences: [], notes: [], checkouts: {} }),
+    hasPending: pending,
+    acked: () => verdict,
+    dropped: () => (seen.dropped += 1),
+    restored: () => {},
+  });
+  return { desk, calls, seen, serve: (windows) => (served = windows) };
+}
+
+test("an upload the daemon calls malformed is dropped and not sent again", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const warn = t.mock.method(console, "warn", () => {});
+  for (const status of [400, 422]) {
+    const { desk, calls, seen } = answeredDesk(() => Promise.resolve({ kind: "refused", status, reply: { error: "bad" } }));
+    desk.scheduleDeskFlush();
+    t.mock.timers.tick(250);
+    await settle();
+    t.mock.timers.tick(30000);
+    await settle();
+    assert.deepEqual([calls.put.length, seen.dropped], [1, 1], String(status));
+  }
+  assert.deepEqual(warn.mock.calls.map((c) => c.arguments), [
+    ["desk changes refused:", "bad"],
+    ["desk changes refused:", "bad"],
+  ]);
+});
+
+test("an answered upload takes the desk the daemon sent, and only when the sync takes it", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const ok = () => Promise.resolve({ kind: "ok", reply: {} });
+  for (const [verdict, expect] of [["taken", ["w9"]], ["stale", []]]) {
+    const { desk, serve } = answeredDesk(ok, { verdict });
+    await desk.whenDeskLoaded();
+    serve([{ id: "w9" }]);
+    desk.scheduleDeskFlush();
+    t.mock.timers.tick(250);
+    await settle();
+    assert.deepEqual(desk.currentDesk().map((r) => r.id), expect, verdict);
+  }
+  // A reply from a desk restored since this page read it reloads the page.
+  const { desk, seen } = answeredDesk(ok, { verdict: "reload" });
+  desk.scheduleDeskFlush();
+  t.mock.timers.tick(250);
+  await settle();
+  assert.equal(seen.reloads, 1);
+});
+
+test("an answered upload sends the changes that came while it was on the wire", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let more = false;
+  const { desk, calls } = answeredDesk(() => Promise.resolve({ kind: "ok", reply: {} }), { pending: () => more });
+  // The desk read sends what is pending too: this test starts after it.
+  await desk.whenDeskLoaded();
+  more = true;
+  desk.scheduleDeskFlush();
+  t.mock.timers.tick(250);
+  await settle();
+  more = false;
+  t.mock.timers.tick(250);
+  await settle();
+  assert.equal(calls.put.length, 2);
+});
+
+test("the changes the daemon refused one by one are each written to the browser console", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const warn = t.mock.method(console, "warn", () => {});
+  const reply = { refused: [{ error: "no such window" }, { error: "bad rect" }] };
+  const { desk } = answeredDesk(() => Promise.resolve({ kind: "ok", reply }));
+  desk.scheduleDeskFlush();
+  t.mock.timers.tick(250);
+  await settle();
+  assert.deepEqual(warn.mock.calls.map((c) => c.arguments), [
+    ["desk change refused:", "no such window"],
+    ["desk change refused:", "bad rect"],
+  ]);
+});
+
+test("an upload the network keeps losing is sent again later each time, at most 30 seconds apart", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { desk, calls } = answeredDesk(() => Promise.resolve({ kind: "network" }));
+  desk.scheduleDeskFlush();
+  t.mock.timers.tick(250);
+  await settle();
+  for (const wait of [1000, 2000, 4000, 8000, 16000, 30000, 30000]) {
+    const before = calls.put.length;
+    t.mock.timers.tick(wait - 1);
+    await settle();
+    assert.equal(calls.put.length, before, `nothing before ${wait} ms`);
+    t.mock.timers.tick(1);
+    await settle();
+    assert.equal(calls.put.length, before + 1, `sent again after ${wait} ms`);
+  }
+});

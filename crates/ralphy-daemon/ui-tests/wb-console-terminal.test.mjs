@@ -421,6 +421,79 @@ test("a gzip tail is not counted, and the live frames after it are", async () =>
   }
 });
 
+// A launch that joined a session another page drives is read-only from the
+// start: the daemon says so in `session-open`, and the window is told once.
+test("a session-open that says watch makes the terminal a watcher, and tells the window once", () => {
+  const page = fakePage();
+  try {
+    const parks = [];
+    const handle = createTerminal(fakeDeps().deps).attachTerminal(fakeElement(), {
+      console: true,
+      onPark: (why) => parks.push(why),
+    });
+    const term = page.terminals[0];
+    open(page.sockets[0], { watch: true });
+    assert.equal(handle.watching, true);
+    assert.deepEqual(parks, ["joined"]);
+    assert.ok(term.written.includes("\r\n[read-only: another window has control]\r\n"), JSON.stringify(term.written));
+    page.sockets[0].onmessage(commandFrame("session-open", { session: 5, watch: true }));
+    assert.deepEqual(parks, ["joined"], "a watcher is not told again");
+
+    // A session-open without `watch` leaves a writer as it is.
+    const writer = createTerminal(fakeDeps().deps).attachTerminal(fakeElement(), {
+      console: true,
+      onPark: (why) => parks.push(why),
+    });
+    open(page.sockets[1], {});
+    assert.equal(writer.watching, false);
+    assert.deepEqual(parks, ["joined"]);
+    writer.dispose();
+    handle.dispose();
+  } finally {
+    page.restore();
+  }
+});
+
+// A watcher paints at the size of the session it watches.
+test("a session-size frame resizes a watcher's terminal to the session", () => {
+  const page = fakePage();
+  try {
+    const body = { ...fakeElement(), classList: { toggle() {} } };
+    const handle = createTerminal(fakeDeps().deps).attachTerminal(body, { id: 5, watch: true });
+    const term = page.terminals[0];
+    const sizes = [];
+    term.resize = (cols, rows) => sizes.push([cols, rows]);
+    open(page.sockets[0], { replay: true });
+    page.sockets[0].onmessage(commandFrame("session-size", { rows: 30, cols: 100 }));
+    assert.deepEqual(sizes, [[100, 30]]);
+    handle.dispose();
+  } finally {
+    page.restore();
+  }
+});
+
+// The daemon names why it ends a session before it closes the socket; the
+// close is read with that reason, so the window ends instead of reconnecting.
+test("a session-end frame names the reason the close is read with", () => {
+  const page = fakePage();
+  try {
+    const ends = [];
+    const handle = createTerminal(fakeDeps().deps).attachTerminal(fakeElement(), {
+      id: 5,
+      onEnded: (reason, message) => ends.push([reason, message]),
+    });
+    open(page.sockets[0], { replay: true });
+    page.sockets[0].onmessage(commandFrame("session-end", { reason: "refused", message: "no such project" }));
+    page.sockets[0].onclose({});
+    assert.deepEqual(ends, [["refused", "no such project"]]);
+    mock.timers.tick(20000);
+    assert.equal(page.sockets.length, 1, "an ended session is not reconnected");
+    handle.dispose();
+  } finally {
+    page.restore();
+  }
+});
+
 test("notePage tells an open socket that the page went hidden or came back, and a connecting one nothing", () => {
   const page = fakePage();
   try {

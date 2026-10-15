@@ -120,6 +120,32 @@ test("a subfolder of a repo adds the repo root, and says so", () => {
   assert.deepEqual(P.primary(s), { label: "Add project", disabled: false });
 });
 
+test("a text that ends with a separator names the listed folder, without its last separator", () => {
+  const P = load();
+  // The listed folder is a repo: its path loses the separator it was typed with.
+  const repo = { dir: { path: "/home/me/fincal/", root: "/home/me/fincal", added: false }, entries: [] };
+  let s = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "/home/me/fincal/"), repo);
+  assert.deepEqual(P.addPayload(s), { daemon: "", path: "/home/me/fincal", init: false });
+
+  // The same repo, already added.
+  const added = { dir: { ...repo.dir, added: true }, entries: [] };
+  s = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "/home/me/fincal/"), added);
+  assert.deepEqual(P.primary(s), { label: "Already in Projects", disabled: true });
+
+  // A subfolder of a repo, listed itself: the repo root is what gets added.
+  const inside = { dir: { path: "/home/me/fincal/src/", root: "/home/me/fincal", added: false }, entries: [] };
+  s = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "/home/me/fincal/src/"), inside);
+  assert.deepEqual(P.primary(s), { label: "Add fincal", disabled: false });
+});
+
+test("the drive list names no folder to add, even when a typed name matches a drive", () => {
+  const P = load();
+  const drives = { dir: { path: "", root: null, added: false }, entries: [{ name: "D:", repo: false, added: false }] };
+  const s = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "D:"), drives);
+  assert.deepEqual(P.primary(s), { label: "Add project", disabled: true });
+  assert.equal(P.help(s), "");
+});
+
 test("a missing parent folder is refused by the daemon and labelled", () => {
   const P = load();
   let s = typed(P, P.next(P.initial(), { type: "open" }), "C:\\Nope\\x");
