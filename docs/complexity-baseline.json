@@ -78,9 +78,6 @@
     "crates/ralphy-agent-opencode/src/events.rs": {
       "parse_opencode_events": [
         13
-      ],
-      "parse_opencode_reset_hint": [
-        22
       ]
     },
     "crates/ralphy-cli/src/config.rs": {
