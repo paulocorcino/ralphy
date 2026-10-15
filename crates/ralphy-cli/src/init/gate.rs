@@ -2,7 +2,7 @@ use std::path::Path;
 use std::process::Stdio;
 
 use clap::ValueEnum;
-use ralphy_adapter_support::{find_program, locate_program, resolve_program};
+use ralphy_adapter_support::resolve_program;
 use ralphy_core::git;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -88,7 +88,7 @@ pub enum HardFail {
 /// The agent-login rule fires only when ≥1 agent is present.
 pub fn evaluate_gate(f: &EnvFindings) -> Vec<HardFail> {
     let mut fails = Vec::new();
-    // FIRST on purpose: git is a hard prerequisite whose absence otherwise
+    // FIRST on purpose: git is a hard requirement whose absence otherwise
     // surfaces as `NoGithubRemote` (git::origin_url fails ⇒ github_remote() is
     // false), so name the root cause ahead of the symptom it masquerades as.
     if !f.git {
@@ -117,7 +117,7 @@ pub fn evaluate_gate(f: &EnvFindings) -> Vec<HardFail> {
 }
 
 /// Pure report formatter. Produces a human-readable string with one line per
-/// prerequisite and a summary. The substrings `"<name>: logged in"` and
+/// check and a summary. The substrings `"<name>: logged in"` and
 /// `"<name>: not logged in"` are guaranteed for present agents so tests can
 /// assert them literally.
 pub fn format_report(f: &EnvFindings, fails: &[HardFail]) -> String {
@@ -191,46 +191,28 @@ pub fn format_report(f: &EnvFindings, fails: &[HardFail]) -> String {
     out
 }
 
-pub(crate) fn git_present() -> bool {
-    find_program("git", std::env::var_os("PATH"), std::env::var_os("PATHEXT")).is_some()
-}
-
-pub(crate) fn python_present() -> bool {
-    let path = std::env::var_os("PATH");
-    let pathext = std::env::var_os("PATHEXT");
-    find_program("python", path.clone(), pathext.clone()).is_some()
-        || find_program("python3", path, pathext).is_some()
-}
-
-pub(crate) fn gh_authenticated() -> bool {
-    std::process::Command::new("gh")
-        .args(["auth", "status"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-}
-
 pub(crate) fn github_remote(repo: &Path) -> bool {
     git::origin_url(repo)
         .map(|url| url.contains("github.com"))
         .unwrap_or(false)
 }
 
-// The gate's presence/login probes resolve each CLI through the SAME locator the
-// adapters spawn through (`locate_program`/`resolve_program`), so detection and
-// execution agree — a `claude` under `~/.local/bin` but off `PATH` is reported
-// present and is the binary actually run, rather than being falsely called absent.
-pub(crate) fn agent_present(a: &Agent) -> bool {
-    match a {
-        // The one vendor whose selector is not its binary name: Cursor installs as
-        // `cursor-agent`/`agent` and is on `PATH` on NEITHER platform (ADR-0042
-        // D14), so `locate_program("cursor")` would look for a binary that does
-        // not exist and report every Cursor operator as missing the CLI.
-        Agent::Cursor => ralphy_agent_cursor::locate_cursor().is_some(),
-        _ => locate_program(a.cli_name()).is_some(),
+/// The tool findings come from `doctor`, which owns the tool list; the remote
+/// and the agent logins are the repo-level checks only `init` makes.
+pub(crate) fn findings_from(machine: &crate::doctor::MachineFacts, repo: &Path) -> EnvFindings {
+    let agents_present: Vec<Agent> = machine.agents.iter().map(|(a, _)| *a).collect();
+    let agents_logged_in = agents_present
+        .iter()
+        .copied()
+        .filter(agent_logged_in)
+        .collect();
+    EnvFindings {
+        git: machine.git.is_some(),
+        python: machine.python.is_some(),
+        gh_authenticated: machine.gh_signed_in,
+        github_remote: github_remote(repo),
+        agents_present,
+        agents_logged_in,
     }
 }
 

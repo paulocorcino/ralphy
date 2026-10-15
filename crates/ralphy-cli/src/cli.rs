@@ -10,8 +10,8 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use ralphy_core::{BranchMode, Effort};
 
 use crate::{
-    blob, changes, config, daemon, gemini, host, init, install, issues, models, mutate, schedule,
-    stop, sync, telegram, triage, update, usage,
+    blob, changes, config, daemon, doctor, gemini, host, init, install, issues, models, mutate,
+    schedule, stop, sync, telegram, triage, update, usage,
 };
 
 #[derive(Parser)]
@@ -43,6 +43,13 @@ pub(crate) enum Command {
     ///
     /// It links (or copies) this program into a folder on your PATH.
     Install(install::InstallArgs),
+    /// Check this computer for the tools Ralphy runs.
+    ///
+    /// It checks git, a `gh` login, Python, an agent CLI, and lingering on
+    /// Linux, and prints the version it found. It exits with an error when a
+    /// required tool is missing.
+    // ADR-0056 §12.
+    Doctor(doctor::DoctorArgs),
     /// Check that a repo is ready for Ralphy.
     ///
     /// It checks for Python, a `gh` login, a GitHub remote, and at least one

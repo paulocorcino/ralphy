@@ -142,6 +142,10 @@ _Avoid_: service, server (it dials out), agent (reserved for vendor CLIs), insta
 The three names of one **daemon**: a stable id that machines use, a unique name that people and models use, and an emoji avatar that is only for display (ADR-0032).
 _Avoid_: hostname (a suggestion for the name, not the name), token (the credential is per daemon).
 
+**Doctor**:
+The check of one computer (`ralphy doctor`): which of the tools Ralphy runs (git, `gh` signed in, python, an agent CLI, lingering on Linux) are present, with the version found. It owns that list; `init` and `host add` read it from there (ADR-0056 §12).
+_Avoid_: prerequisite, requirements check, preflight.
+
 **Device**:
 One browser profile on one machine that talks to a **daemon**, known by an ID the daemon issues in a signed cookie. It is a record for the **audit log**, never a credential (ADR-0074).
 _Avoid_: client (also the HTTP client), fingerprint (computed in the browser), user (there is one operator), session (a login of a device).

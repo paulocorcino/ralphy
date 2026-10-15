@@ -345,19 +345,14 @@ pub(crate) fn evaluate(
     checks.push(HostCheck::new(CheckId::Autostart, status, text));
 
     if os == HostOs::Linux {
+        let base = crate::doctor::linger_text(facts.linger);
         let (status, text) = match facts.linger {
-            Some(true) => (
-                Pass,
-                "lingering is on: the daemon runs with no one signed in",
-            ),
+            Some(true) => (Pass, base.to_string()),
             Some(false) => (
                 Fix(HostOp::EnableLinger),
-                "lingering is off: the daemon stops when you sign out. Ralphy turns it on",
+                format!("{base}. Ralphy turns it on"),
             ),
-            None => (
-                Warn,
-                "could not read lingering: the daemon may stop when you sign out",
-            ),
+            None => (Warn, base.to_string()),
         };
         checks.push(HostCheck::new(CheckId::Linger, status, text));
     }
