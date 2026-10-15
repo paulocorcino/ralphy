@@ -253,77 +253,96 @@ export function createDetach(deps: DetachDeps) {
     beat = null;
   }
 
-  // The origin's half of the lifecycle channel. The channel is browser-WIDE:
-  // the `tab` filter keeps a SECOND tab's popups out of this registry, the
-  // `origin-` prefix drop keeps this tab from consuming its own broadcasts.
+  // Whether this tab hears `m`. The channel is browser-WIDE: the `tab` filter
+  // keeps a SECOND tab's popups out of this registry, the `origin-` prefix
+  // drop keeps this tab from consuming its own broadcasts.
+  function fromThisTab(m: DetachMessage) {
+    if (!m || typeof m.type !== "string") return false;
+    if (link.tab == null || m.tab !== link.tab) return false;
+    return !m.type.startsWith("origin-");
+  }
+
+  // An EARLIER popup of the same fence still talks while it unloads: its
+  // `popup-gone` would re-attach the popup that replaced it, and its
+  // `popup-members` would drop that popup's consoles (#476). Only the popup
+  // this entry holds is heard. A ping is answered whoever sends it.
+  function heardFrom(m: DetachMessage) {
+    if (!fromThisTab(m)) return false;
+    if (m.type === "popup-here" || m.type === "popup-ping") return true;
+    return popupMatches(popups.entry(m.fenceId!), m);
+  }
+
+  // A name report sent while this tab was reloading reached nobody. The
+  // popup's members carry the name it gave, so it is recorded from here, once
+  // the desk has loaded. `recordNoteName` refuses a record that already has
+  // its path, so this is safe to repeat.
+  function replayNoteNames(id: string, members: NonNullable<DetachMessage["members"]>) {
+    whenDeskLoaded().then(() => {
+      for (const x of members) {
+        if (x?.kind === "note" && typeof x.path === "string") {
+          recordNoteName(id, { noteId: x.id, path: x.path });
+        }
+      }
+    });
+  }
+
+  // The fence record of a popup entry: the one on the stage, or an empty one.
+  function fenceFor(id: string) {
+    const st = stage();
+    return (st ? readFenceRects(st).find((f) => f.id === id) : null) || { id, name: "", rect: null };
+  }
+
+  // A popup that survived this tab's reload, announcing which fence it
+  // holds. Adopted only when the RESTORED registry already says that fence
+  // is detached — the payload alone must never be able to detach one.
+  function onPopupHere(id: string, m: DetachMessage) {
+    if (!isDetached(id)) return;
+    if (popups.has(id) && !popupMatches(popups.entry(id), m)) return;
+    // MUTATED IN PLACE, never replaced: `glyphClick`'s ping compares the entry
+    // it captured with the one in the map.
+    const entry = popups.entry(id) || newPopupEntry();
+    // A restored entry learns which popup it holds from its first answer.
+    if (entry.pid == null && typeof m.pid === "string") entry.pid = m.pid;
+    entry.greeted = true;
+    // The popup hands back the UNTRANSLATED snapshot it was given, so a
+    // re-attach puts every console back where it was detached from. Adopted
+    // whole, EMPTY included: an empty set is an answer, not a missing one.
+    popups.put(id, entry);
+    if (Array.isArray(m.members)) {
+      adoptMembers(id, m.members);
+      replayNoteNames(id, m.members);
+    }
+    if (!entry.fence) entry.fence = fenceFor(id);
+    entry.peer = { seen: Date.now(), lost: false };
+    entry.probed = false;
+    popups.put(id, entry);
+    // Re-persist: the snapshot the popup just handed back is a better member
+    // list than the ids this tab restored, and the NEXT reload reads it.
+    commitDetached(popups.detachedIds());
+    showDetachGlyph(id, true);
+  }
+
+  function onPopupBeat(id: string) {
+    const entry = popups.entry(id);
+    if (entry?.peer) entry.peer = peerFold(entry.peer, { type: "beat", at: Date.now() }, PEER_WINDOW).state;
+    // Any word at all clears the probe: `stillThere` asks "has it answered
+    // SINCE I asked", and a beat is an answer.
+    if (entry) entry.probed = false;
+  }
+
+  // The origin's half of the lifecycle channel.
   link.onMessage((m) => {
-    if (!m || typeof m.type !== "string") return;
-    if (link.tab == null || m.tab !== link.tab) return;
-    if (m.type.startsWith("origin-")) return;
+    if (!heardFrom(m)) return;
     // A message with no fence id changes nothing: no entry answers to it, so
     // each branch below returns first.
     const id = m.fenceId!;
-    // An EARLIER popup of the same fence still talks while it unloads: its
-    // `popup-gone` would re-attach the popup that replaced it, and its
-    // `popup-members` would drop that popup's consoles (#476). Only the popup
-    // this entry holds is heard. A ping is answered whoever sends it.
-    if (m.type !== "popup-here" && m.type !== "popup-ping" && !popupMatches(popups.entry(id), m)) {
-      return;
-    }
     if (m.type === "popup-here") {
-      // A popup that survived this tab's reload, announcing which fence it
-      // holds. Adopted only when the RESTORED registry already says that fence
-      // is detached — the payload alone must never be able to detach one.
-      if (!isDetached(id)) return;
-      if (popups.has(id) && !popupMatches(popups.entry(id), m)) return;
-      // MUTATED IN PLACE, never replaced: `glyphClick`'s ping compares the entry
-      // it captured with the one in the map.
-      const entry = popups.entry(id) || newPopupEntry();
-      // A restored entry learns which popup it holds from its first answer.
-      if (entry.pid == null && typeof m.pid === "string") entry.pid = m.pid;
-      const st = stage();
-      entry.greeted = true;
-      // The popup hands back the UNTRANSLATED snapshot it was given, so a
-      // re-attach puts every console back where it was detached from. Adopted
-      // whole, EMPTY included: an empty set is an answer, not a missing one.
-      popups.put(id, entry);
-      if (Array.isArray(m.members)) {
-        adoptMembers(id, m.members);
-        // A name report sent while this tab was reloading reached nobody. The
-        // popup's members carry the name it gave, so it is recorded from
-        // here, once the desk has loaded. `recordNoteName` refuses a record
-        // that already has its path, so this is safe to repeat.
-        whenDeskLoaded().then(() => {
-          for (const x of m.members!) {
-            if (x?.kind === "note" && typeof x.path === "string") {
-              recordNoteName(id, { noteId: x.id, path: x.path });
-            }
-          }
-        });
-      }
-      if (!entry.fence) {
-        entry.fence = (st ? readFenceRects(st).find((f) => f.id === id) : null) || {
-          id,
-          name: "",
-          rect: null,
-        };
-      }
-      entry.peer = { seen: Date.now(), lost: false };
-      entry.probed = false;
-      popups.put(id, entry);
-      // Re-persist: the snapshot the popup just handed back is a better member
-      // list than the ids this tab restored, and the NEXT reload reads it.
-      commitDetached(popups.detachedIds());
-      showDetachGlyph(id, true);
+      onPopupHere(id, m);
     } else if (m.type === "popup-members") {
       // A console closed INSIDE the popup. Same registry gate as `popup-here`.
       if (isDetached(id)) adoptMembers(id, m.members);
     } else if (m.type === "popup-beat") {
-      const entry = popups.entry(id);
-      if (entry?.peer) entry.peer = peerFold(entry.peer, { type: "beat", at: Date.now() }, PEER_WINDOW).state;
-      // Any word at all clears the probe: `stillThere` asks "has it answered
-      // SINCE I asked", and a beat is an answer.
-      if (entry) entry.probed = false;
+      onPopupBeat(id);
     } else if (m.type === "popup-ping") {
       // The popup asking whether THIS document is still here. Answering from a
       // message handler is the point: a throttled tab still delivers messages.
