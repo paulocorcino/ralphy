@@ -45,18 +45,38 @@ Three things worth knowing up front:
 
 ### 📦 1 — Get the `ralphy` binary
 
-Grab the archive for your platform from the
-[**Releases page**](https://github.com/paulocorcino/ralphy/releases) — Windows, Linux, or
-macOS (Intel & Apple Silicon) — unzip it anywhere, then let it put itself on your `PATH`:
+One line installs it for your user. On Linux and macOS:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/paulocorcino/ralphy/main/assets/install/install.sh | sh
+```
+
+On Windows, in PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/paulocorcino/ralphy/main/assets/install/install.ps1 | iex
+```
+
+The script downloads the newest release for your computer, checks its SHA-256, puts
+`ralphy` on your `PATH`, and ends with `ralphy doctor`. It needs no root and no
+administrator, and asks before it goes on as either. To also start the daemon at sign-in,
+end the Linux and macOS line with `| RALPHY_DAEMON=1 sh`, or on Windows run
+`$env:RALPHY_DAEMON = '1'` first. To read the script before it runs, download it, read it,
+then run the file. Run it again to repair an install.
+
+Prefer to do it by hand? Grab the archive for your platform from the
+[**Releases page**](https://github.com/paulocorcino/ralphy/releases) — Windows, Linux
+(x64 and ARM64), or macOS (Intel & Apple Silicon) — unzip it anywhere, then let it put
+itself on your `PATH`:
 
 ```bash
 ./ralphy install
 ```
 
-It needs no root and no administrator. It links `ralphy` into `~/.cargo/bin` when you have
-one, otherwise `~/.local/bin`. When that folder is not on your `PATH`, it adds it: to your
-shell start-up files on Linux and macOS, or to your user `Path` on Windows. Then open a new
-terminal. `--no-modify-path` leaves your `PATH` alone.
+It links `ralphy` into `~/.cargo/bin` when you have one, otherwise `~/.local/bin`. When that
+folder is not on your `PATH`, it adds it: to your shell start-up files on Linux and macOS, or
+to your user `Path` on Windows. Then open a new terminal. `--no-modify-path` leaves your
+`PATH` alone.
 
 Already have it? `ralphy update` takes the newest release: it checks the published
 checksum, replaces the binary in place, and restarts the daemon if one is running.
@@ -74,7 +94,8 @@ checksum, replaces the binary in place, and restarts the daemon if one is runnin
   with `gh auth status`. (Not using GitHub? The consoles, explorer, notes and changes work
   without it.)
 
-No API keys anywhere.
+No API keys anywhere. Git and Python must be installed too. `ralphy doctor` checks all of
+this and prints the version of each tool it finds.
 
 ### 🖥️ 3 — Start the workbench
 
@@ -90,6 +111,16 @@ menu. That's it: an agent is working on your machine, and you are watching it fr
 Want it up whenever you log in? `ralphy daemon install` registers it with your OS (Task
 Scheduler on Windows, a systemd **user** unit on Linux/WSL, a launchd agent on macOS), and
 `ralphy daemon uninstall` takes it back out. → [docs/daemon.md](docs/daemon.md)
+
+### 🧹 Uninstall
+
+```bash
+ralphy uninstall           # stop the daemon, remove ralphy, and take it off your PATH
+ralphy uninstall --purge   # also delete ~/.ralphy (settings, token, peers, logs), after it asks
+```
+
+It keeps `~/.ralphy` unless you add `--purge`, and it never changes a project's `.ralphy/`
+folder or its GitHub labels.
 
 ---
 

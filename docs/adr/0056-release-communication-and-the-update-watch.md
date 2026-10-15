@@ -608,8 +608,19 @@ terminal the operator sees a failed start and can act on it.
   in `crates/ralphy-daemon`). Reviewed in the PR.
 - §11 (the hand-over, the rollback and the fresh factor): not checked by code:
   reviewed in the PR.
-- §12: not built yet. The issue that builds it adds the checks: the scripts
-  run on Windows, Linux and macOS in CI against a fixture release; behaviour
-  tests pin that `daemon install` starts the daemon only on the first
-  registration and that `uninstall` removes only the marked `PATH` block;
-  and `ralphy host add` keeps running with no terminal and as root.
+- §12 (the scripts): checked by the `install-scripts` job in
+  `.github/workflows/ci.yml`, which runs `install.sh` (Linux, macOS) and
+  `install.ps1` (Windows) against a fixture release built from the commit:
+  a first run, a repair run, a wrong checksum, root with no terminal and
+  allowed root on Linux, the elevated runner with `-Daemon` on Windows, and
+  `shellcheck` on Linux.
+- §12 (the binary): not checked by code: behaviour tests pin it
+  (`only_the_first_registration_starts_a_daemon`,
+  `an_elevated_windows_shell_registers_but_does_not_start`,
+  `only_the_marked_block_is_removed`,
+  `purge_deletes_the_store_and_nothing_beside_it`,
+  `purge_refuses_a_project_folder_and_the_home_folder`,
+  `the_json_shape_is_pinned`, and `a_host_with_doctor_shows_the_doctor_result`
+  with `a_host_older_than_doctor_shows_the_probe_result` in
+  `crates/ralphy-cli`). That `ralphy host add` keeps working with no
+  terminal and as root is a live check, reviewed in the PR.

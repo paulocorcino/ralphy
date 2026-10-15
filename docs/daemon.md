@@ -205,6 +205,13 @@ scheduler, it only writes and removes one registration:
   `/Library/LaunchDaemons` daemon: no elevation, and the daemon is a per-user
   loopback resident.
 
+The first registration also starts the daemon now, when none answers yet:
+systemd starts the unit, launchd starts the agent, and on Windows the daemon
+starts detached, outside the job of the shell that ran `install`. A
+registration that already existed is only written again, and nothing is
+started. From an elevated Windows window the daemon is registered but not
+started, so it does not run as administrator; it starts at the next sign-in.
+
 All three registrations run the daemon with its DEFAULTS (loopback bind, the
 default port) — no `--bind`/`--port` passthrough in this slice; edit the
 value, unit or plist by hand for a non-default listener.
