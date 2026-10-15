@@ -144,7 +144,8 @@ stage, over what the operator is looking at.)*
   holds for a single maximized console: it hides lock and close, and Restore
   takes it out first. A console in fullscreen keeps only the exit and restart:
   maximize changes nothing there, and the add-a-console control, lock and
-  close are hidden as well.*
+  close are hidden as well.* *Amended 2026-10-15: a column keeps full screen;
+  see the last amendment.*
 - ***Alt+Shift+←/→ moves the focus between columns while columns are open***,
   *and wraps at the ends, as the fence walk does (§7). Under a maximize the
   fence walk pans a plane the operator cannot see, so the keys lose nothing
@@ -855,3 +856,19 @@ reason.
 Only the log reads `detach` and `shown`. No decision about a session, a slot,
 or access reads them. A daemon that does not know a reason or a verb ignores
 it, and the peer relay forwards both unchanged.
+
+## Amendment (2026-10-15): a column keeps the full screen control (§5)
+
+§5 says a column hides lock, full screen and close. The reason it gives holds
+for two of them. A lock means nothing where nothing moves, and close would put
+the end of a working agent one click away. Full screen does neither: it moves
+no box and ends no session. The console fills the display, and leaving it puts
+the column back where it was. A console that is maximized already offers it,
+and the leftmost column is a maximized console.
+
+Seen on a notebook with Chrome: two consoles in columns, and no way to give
+one the whole screen without first restoring it.
+
+So a column hides lock, close and the handles, and keeps the title, restart,
+the worktree picker and full screen. In full screen a column keeps only the
+exit and restart, the same as any other console. The rest of §5 is unchanged.
