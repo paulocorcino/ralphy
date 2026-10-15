@@ -2,9 +2,7 @@
 //! until the shutdown signal (docs/adr/0032, ADR-0052 §3).
 
 use std::net::{Ipv4Addr, SocketAddr};
-#[cfg(unix)]
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use anyhow::{Context, Result};
@@ -61,67 +59,18 @@ pub(crate) async fn serve(
         );
     }
 
-    // Record which process is serving, so `ralphy daemon restart` can end it —
-    // there is no other way to name it (ADR-0056 §8). Advisory, never a lock: a
-    // failure to write it must not stop a daemon that is otherwise ready.
     if let Some(dir) = store.as_deref() {
-        // The invocation, not just the pid: a daemon started with `--port 8080`
-        // must come back on 8080, not on the default. And the program, so a
-        // restart can tell this daemon from whatever reused its number after a
-        // crash or a reboot (ADR-0056 §8).
-        let args: Vec<String> = std::env::args().skip(1).collect();
-        match std::env::current_exe() {
-            Ok(exe) => {
-                if let Err(e) = pidfile::write_in(dir, std::process::id(), &exe, &args) {
-                    tracing::warn!(error = %e, "could not record the daemon pid");
-                }
-            }
-            Err(e) => tracing::warn!(
-                error = %e,
-                "could not resolve this executable; not recording a pid a restart cannot verify"
-            ),
-        }
+        write_pidfile(dir);
     }
 
     // The release watch (ADR-0056 §6). A daemon-lifetime concern, so it lives
     // here and not in `router`: a router is also built by tests, and this task
     // reaches the network and writes a cache.
     if let Some(dir) = store.as_ref().cloned() {
-        let mut release_shutdown = shutdown_rx.clone();
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(RELEASE_POLL_EVERY);
-            // The first tick is immediate: a daemon that has just come back on a
-            // new build should not wait six hours to learn what it is.
-            loop {
-                tokio::select! {
-                    _ = release_shutdown.changed() => break,
-                    _ = interval.tick() => {}
-                }
-                let dir = dir.clone();
-                // `ureq` is blocking, and this reactor drives every terminal.
-                if let Err(e) = tokio::task::spawn_blocking(move || poll_releases(&dir)).await {
-                    // A panic in the poll, or a pool refusing the task at
-                    // shutdown: the loop keeps ticking either way, so the only
-                    // way to notice a cache that stopped refreshing is to say so.
-                    tracing::warn!(error = %e, "the release poll did not complete");
-                }
-            }
-        });
+        tokio::spawn(poll_releases_until_stop(dir, shutdown_rx.clone()));
     }
 
-    // Log a load failure rather than masking a corrupt daemon.toml as
-    // "un-baptized" — the operator needs to see the real fault, not a silent
-    // fall-through to no-identity.
-    let id = match identity::load_current() {
-        Ok(id) => id,
-        Err(e) => {
-            tracing::warn!(error = %e, "failed to load daemon identity; serving without one");
-            None
-        }
-    };
-    if id.is_none() {
-        tracing::info!("daemon has no identity yet — run `ralphy daemon setup` to baptize it");
-    }
+    let id = load_identity();
     // Resolve the effective access token, then the bind policy. INVARIANT:
     // `for_bind` returns Err and aborts startup on a non-loopback bind with no
     // token — the daemon must never begin serving an unauthenticated network
@@ -161,35 +110,15 @@ pub(crate) async fn serve(
     // reads it FRESH from disk on each request, so the resident daemon sees
     // writes made by separate `ralphy run` processes (ADR-0032).
     let registry_path = registry::repos_toml_path()?;
-    // Hold every nudgeable peer's distro open from the start (ADR-0052 §4
-    // amendment): a WSL peer whose keepalive died with the previous daemon
-    // would otherwise stay `asleep` until a chip is clicked. Windows only —
-    // the handle is a `wsl.exe`. AFTER `strip_token_from_env`: the keepalive is
-    // a child like any other, and the token invariant above covers it. The
-    // store is read fresh, the same way the fleet route reads it.
-    if cfg!(windows) {
-        let peers_dir = registry_path.with_file_name("peers");
-        let self_id = id.as_ref().map(|i| i.id.to_string());
-        tokio::spawn(wake_fleet_at_start(peers_dir, self_id));
-    }
-    // Open every peer tunnel from the start (ADR-0067 §2), on every OS. AFTER
-    // `strip_token_from_env`, like the keepalive: `ssh` is a child too.
-    tokio::spawn(hold_tunnels_at_start(
+    // AFTER `strip_token_from_env`: the keepalives and the tunnels are
+    // children like any other, and the token invariant above covers them.
+    spawn_peer_tasks(
         registry_path.with_file_name("peers"),
         id.as_ref().map(|i| i.id.to_string()),
         addr.port(),
-    ));
+    );
     let usage_dir = usage::usage_dir_path()?;
-    let stores = StorePaths {
-        claude_projects_dir: usage::claude_projects_dir_path()?,
-        codex_dir: usage::codex_dir_path()?,
-        opencode_db: usage::opencode_db_path()?,
-        kimi_dir: usage::kimi_dir_path()?,
-        kimi_code_dir: usage::kimi_code_dir_path()?,
-        copilot_db: usage::copilot_db_path()?,
-        cursor_dir: usage::cursor_dir_path()?,
-        gemini_dir: usage::gemini_dir_path()?,
-    };
+    let stores = usage_stores()?;
     let stop = shutdown_rx.clone();
     let app = router(
         id,
@@ -252,6 +181,100 @@ pub(crate) async fn serve(
     }
     tracing::info!("daemon stopped");
     Ok(())
+}
+
+/// Record which process is serving, so `ralphy daemon restart` can end it —
+/// there is no other way to name it (ADR-0056 §8). Advisory, never a lock: a
+/// failure to write it must not stop a daemon that is otherwise ready.
+fn write_pidfile(dir: &Path) {
+    // The invocation, not just the pid: a daemon started with `--port 8080`
+    // must come back on 8080, not on the default. And the program, so a
+    // restart can tell this daemon from whatever reused its number after a
+    // crash or a reboot (ADR-0056 §8).
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match std::env::current_exe() {
+        Ok(exe) => {
+            if let Err(e) = pidfile::write_in(dir, std::process::id(), &exe, &args) {
+                tracing::warn!(error = %e, "could not record the daemon pid");
+            }
+        }
+        Err(e) => tracing::warn!(
+            error = %e,
+            "could not resolve this executable; not recording a pid a restart cannot verify"
+        ),
+    }
+}
+
+/// Poll the releases now and every [`RELEASE_POLL_EVERY`] after, until the
+/// daemon stops.
+async fn poll_releases_until_stop(
+    dir: PathBuf,
+    mut release_shutdown: tokio::sync::watch::Receiver<bool>,
+) {
+    let mut interval = tokio::time::interval(RELEASE_POLL_EVERY);
+    // The first tick is immediate: a daemon that has just come back on a
+    // new build should not wait six hours to learn what it is.
+    loop {
+        tokio::select! {
+            _ = release_shutdown.changed() => break,
+            _ = interval.tick() => {}
+        }
+        let dir = dir.clone();
+        // `ureq` is blocking, and this reactor drives every terminal.
+        if let Err(e) = tokio::task::spawn_blocking(move || poll_releases(&dir)).await {
+            // A panic in the poll, or a pool refusing the task at
+            // shutdown: the loop keeps ticking either way, so the only
+            // way to notice a cache that stopped refreshing is to say so.
+            tracing::warn!(error = %e, "the release poll did not complete");
+        }
+    }
+}
+
+/// This daemon's identity, or none when it has none or it cannot be read.
+fn load_identity() -> Option<identity::Identity> {
+    // Log a load failure rather than masking a corrupt daemon.toml as
+    // "un-baptized" — the operator needs to see the real fault, not a silent
+    // fall-through to no-identity.
+    let id = match identity::load_current() {
+        Ok(id) => id,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to load daemon identity; serving without one");
+            None
+        }
+    };
+    if id.is_none() {
+        tracing::info!("daemon has no identity yet — run `ralphy daemon setup` to baptize it");
+    }
+    id
+}
+
+/// Start the tasks that hold the peers: the WSL keepalives and the tunnels.
+/// Each one starts a child process.
+fn spawn_peer_tasks(peers_dir: PathBuf, self_id: Option<String>, port: u16) {
+    // Hold every nudgeable peer's distro open from the start (ADR-0052 §4
+    // amendment): a WSL peer whose keepalive died with the previous daemon
+    // would otherwise stay `asleep` until a chip is clicked. Windows only —
+    // the handle is a `wsl.exe`. The store is read fresh, the same way the
+    // fleet route reads it.
+    if cfg!(windows) {
+        tokio::spawn(wake_fleet_at_start(peers_dir.clone(), self_id.clone()));
+    }
+    // Open every peer tunnel from the start (ADR-0067 §2), on every OS.
+    tokio::spawn(hold_tunnels_at_start(peers_dir, self_id, port));
+}
+
+/// Where the usage store of each agent lives on this machine.
+fn usage_stores() -> Result<StorePaths> {
+    Ok(StorePaths {
+        claude_projects_dir: usage::claude_projects_dir_path()?,
+        codex_dir: usage::codex_dir_path()?,
+        opencode_db: usage::opencode_db_path()?,
+        kimi_dir: usage::kimi_dir_path()?,
+        kimi_code_dir: usage::kimi_code_dir_path()?,
+        copilot_db: usage::copilot_db_path()?,
+        cursor_dir: usage::cursor_dir_path()?,
+        gemini_dir: usage::gemini_dir_path()?,
+    })
 }
 
 /// Bind the daemon socket next to the TCP result. A busy port with the
