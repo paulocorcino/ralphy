@@ -329,6 +329,41 @@ test("nothing on screen hides the mirror; it comes back with its editor, not a n
   assert.deepEqual(log, ["over:a.js", "savekey:mirror:a.js:1", "editor:mirror:a.js:1"]);
 });
 
+test("a find asked for while its pane was hidden runs when the pane is shown", async () => {
+  const { viewer } = loadWithDom();
+  // The editor this test reads: the stub's, with the find calls recorded.
+  const found = [];
+  const create = WBMonaco.create;
+  WBMonaco.create = (container, opts) => {
+    const ed = create(container, opts);
+    ed.setSelection = () => {};
+    ed.revealRangeInCenter = () => {};
+    ed.trigger = (source, action, args) => found.push([opts.path, action, args.searchString]);
+    return ed;
+  };
+  const raf = globalThis.requestAnimationFrame;
+  globalThis.requestAnimationFrame = (cb) => cb();
+  try {
+    openCode(viewer, "a", "a.js");
+    openCode(viewer, "b", "b.js");
+    await settle();
+    viewer.setActive("a");
+    viewer.find("b", "needle");
+    await settle();
+    assert.deepEqual(found, []);
+    viewer.setActive("b");
+    await settle();
+    assert.deepEqual(found, [["b.js", "actions.find", "needle"]]);
+    // Asked once, run once: showing the pane again finds nothing more.
+    viewer.setActive("a");
+    viewer.setActive("b");
+    await settle();
+    assert.equal(found.length, 1);
+  } finally {
+    globalThis.requestAnimationFrame = raf;
+  }
+});
+
 // The notice that replaces a remote image the page's CSP refused
 // (`remoteImageNotice`): a short text that names what and where, and a reason
 // that matches the policy — `https:` is opt-in, plain `http:` is never admitted.
