@@ -202,11 +202,7 @@ pub(crate) fn render(os: Option<HostOs>, op: &HostOp) -> Result<String> {
     let windows = os == HostOs::Windows;
     let script = match op {
         HostOp::Uname | HostOp::WindowsVer => unreachable!("answered above"),
-        HostOp::Probe => match os {
-            HostOs::Linux => LINUX_PROBE.to_string(),
-            HostOs::MacOs => MACOS_PROBE.to_string(),
-            HostOs::Windows => WINDOWS_PROBE.to_string(),
-        },
+        HostOp::Probe => probe_script(os).to_string(),
         HostOp::Describe { with_token } => {
             let args = if *with_token {
                 "daemon describe --with-token"
@@ -216,14 +212,7 @@ pub(crate) fn render(os: Option<HostOs>, op: &HostOp) -> Result<String> {
             ralphy(os, args)
         }
         HostOp::Doctor => ralphy(os, "doctor --json"),
-        HostOp::SetName { name, avatar } => {
-            let name = if windows {
-                quote_cmd(name)?
-            } else {
-                quote_posix(name)
-            };
-            ralphy(os, &format!("daemon setup --name {name} --avatar {avatar}"))
-        }
+        HostOp::SetName { name, avatar } => set_name_script(os, name, *avatar)?,
         HostOp::InstallAutostart => ralphy(os, "daemon install"),
         HostOp::EnableLinger => {
             if os != HostOs::Linux {
@@ -234,54 +223,26 @@ pub(crate) fn render(os: Option<HostOs>, op: &HostOp) -> Result<String> {
         HostOp::RequireTokenOn => ralphy(os, "daemon require-token on"),
         HostOp::Restart => ralphy(os, "daemon restart"),
         HostOp::RotateToken => ralphy(os, "daemon rotate-token"),
-        HostOp::ReadKeys { admin } => {
-            let path = keys_path(os, *admin);
-            if windows {
-                let path = quote_cmd(path)?;
-                format!("if exist {path} type {path}")
-            } else {
-                let path = quote_posix(path);
-                format!("if [ -e {path} ]; then cat {path}; fi")
-            }
-        }
-        HostOp::WriteKeys { admin } => {
-            let path = keys_path(os, *admin);
-            if windows {
-                format!("findstr \"^\" > {}", quote_cmd(path)?)
-            } else {
-                format!("cat > {}", quote_posix(path))
-            }
-        }
+        HostOp::ReadKeys { admin } => keys_file_script(
+            os,
+            *admin,
+            |path| format!("if exist {path} type {path}"),
+            |path| format!("if [ -e {path} ]; then cat {path}; fi"),
+        )?,
+        HostOp::WriteKeys { admin } => keys_file_script(
+            os,
+            *admin,
+            |path| format!("findstr \"^\" > {path}"),
+            |path| format!("cat > {path}"),
+        )?,
         // `findstr` exits 1 on empty input, so an empty file is written apart.
-        HostOp::ClearKeys { admin } => {
-            let path = keys_path(os, *admin);
-            if windows {
-                format!("type nul > {}", quote_cmd(path)?)
-            } else {
-                format!(": > {}", quote_posix(path))
-            }
-        }
-        HostOp::AppendKey { admin, body } => {
-            if !is_key_body(body) {
-                bail!("{body:?} is not the base64 field of a key");
-            }
-            if windows {
-                let (path, acl) = if *admin {
-                    (format!("'{}'", keys_path(os, true)), WINDOWS_ADMIN_ACL)
-                } else {
-                    (
-                        r"Join-Path $env:USERPROFILE '.ssh\authorized_keys'".to_string(),
-                        "",
-                    )
-                };
-                WINDOWS_APPEND_KEY
-                    .replace("PATH", &format!("({path})"))
-                    .replace("BODY", body)
-                    .replace("ACL", acl)
-            } else {
-                UNIX_APPEND_KEY.replace("BODY", body)
-            }
-        }
+        HostOp::ClearKeys { admin } => keys_file_script(
+            os,
+            *admin,
+            |path| format!("type nul > {path}"),
+            |path| format!(": > {path}"),
+        )?,
+        HostOp::AppendKey { admin, body } => append_key_script(os, *admin, body)?,
         HostOp::WriteBinary if windows => WINDOWS_WRITE_BINARY.to_string(),
         HostOp::WriteBinary => UNIX_WRITE_BINARY.to_string(),
         HostOp::CommitBinary if windows => WINDOWS_COMMIT_BINARY.to_string(),
@@ -289,6 +250,72 @@ pub(crate) fn render(os: Option<HostOs>, op: &HostOp) -> Result<String> {
         HostOp::Installed(op) if windows => format!("{WINDOWS_INSTALLED} {}", op.args()),
         HostOp::Installed(op) => format!("{UNIX_INSTALLED} {}", op.args()),
     };
+    Ok(wrap(os, op, script))
+}
+
+/// The probe script of `os`.
+fn probe_script(os: HostOs) -> &'static str {
+    match os {
+        HostOs::Linux => LINUX_PROBE,
+        HostOs::MacOs => MACOS_PROBE,
+        HostOs::Windows => WINDOWS_PROBE,
+    }
+}
+
+/// `ralphy daemon setup` with the name quoted for the host's shell.
+fn set_name_script(os: HostOs, name: &str, avatar: usize) -> Result<String> {
+    let name = if os == HostOs::Windows {
+        quote_cmd(name)?
+    } else {
+        quote_posix(name)
+    };
+    Ok(ralphy(
+        os,
+        &format!("daemon setup --name {name} --avatar {avatar}"),
+    ))
+}
+
+/// A command on the keys file: `windows` or `unix` gets the path already
+/// quoted for its shell.
+fn keys_file_script(
+    os: HostOs,
+    admin: bool,
+    windows: impl Fn(&str) -> String,
+    unix: impl Fn(&str) -> String,
+) -> Result<String> {
+    let path = keys_path(os, admin);
+    if os == HostOs::Windows {
+        Ok(windows(&quote_cmd(path)?))
+    } else {
+        Ok(unix(&quote_posix(path)))
+    }
+}
+
+/// The script that adds the key line on standard input to the keys file,
+/// unless a line already holds `body`.
+fn append_key_script(os: HostOs, admin: bool, body: &str) -> Result<String> {
+    if !is_key_body(body) {
+        bail!("{body:?} is not the base64 field of a key");
+    }
+    if os != HostOs::Windows {
+        return Ok(UNIX_APPEND_KEY.replace("BODY", body));
+    }
+    let (path, acl) = if admin {
+        (format!("'{}'", keys_path(os, true)), WINDOWS_ADMIN_ACL)
+    } else {
+        (
+            r"Join-Path $env:USERPROFILE '.ssh\authorized_keys'".to_string(),
+            "",
+        )
+    };
+    Ok(WINDOWS_APPEND_KEY
+        .replace("PATH", &format!("({path})"))
+        .replace("BODY", body)
+        .replace("ACL", acl))
+}
+
+/// `script` inside the shell that runs it on `os`.
+fn wrap(os: HostOs, op: &HostOp, script: String) -> String {
     // The keys file and the binary need no PATH, and a login shell may print a
     // banner that would end up inside the keys file or before the hash.
     let keys = matches!(
@@ -300,12 +327,12 @@ pub(crate) fn render(os: Option<HostOs>, op: &HostOp) -> Result<String> {
             | HostOp::WriteBinary
             | HostOp::CommitBinary
     );
-    Ok(match os {
+    match os {
         HostOs::Linux | HostOs::MacOs if keys => format!("sh -c {}", quote_posix(&script)),
         HostOs::Linux => format!("sh -lc {}", quote_posix(&script)),
         HostOs::MacOs => format!("zsh -lc {}", quote_posix(&script)),
         HostOs::Windows => script,
-    })
+    }
 }
 
 #[cfg(test)]

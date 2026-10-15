@@ -161,11 +161,6 @@
         13
       ]
     },
-    "crates/ralphy-cli/src/host/shell.rs": {
-      "render": [
-        32
-      ]
-    },
     "crates/ralphy-cli/src/init/gate.rs": {
       "format_report": [
         20
