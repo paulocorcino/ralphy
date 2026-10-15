@@ -233,9 +233,6 @@
     "crates/ralphy-core/src/github/attachments.rs": {
       "fetch_one": [
         11
-      ],
-      "fetch_triage_attachments": [
-        26
       ]
     },
     "crates/ralphy-core/src/handoff.rs": {
