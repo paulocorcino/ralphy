@@ -282,3 +282,48 @@ fn an_unquoted_value_ends_at_white_space() {
     let html = "<body x-data=shell :title=tabs></body>";
     assert_eq!(binding_lines(html), [(1, vec!["tabs".to_string()])]);
 }
+
+/// The names the one `x-text` expression `expr` reads, out of `known`.
+fn names_read(expr: &str, known: &[&str]) -> Vec<String> {
+    let known: BTreeSet<String> = known.iter().map(|s| s.to_string()).collect();
+    let html = format!("<body x-data=\"shell\"><i x-text=\"{expr}\"></i></body>");
+    scan_bindings(&html, &known)
+        .into_iter()
+        .flat_map(|b| b.names)
+        .collect()
+}
+
+#[test]
+fn an_arrow_with_one_bare_parameter_declares_it() {
+    assert_eq!(
+        names_read("list.map(x => x + openSlug)", &["x", "openSlug"]),
+        ["openSlug"]
+    );
+}
+
+#[test]
+fn let_const_and_var_declare_the_name_after_them() {
+    assert_eq!(
+        names_read(
+            "{ let tabs = 1; const x = 2; var y = 3; tabs + x + y + openSlug }",
+            &["tabs", "x", "y", "openSlug"]
+        ),
+        ["openSlug"]
+    );
+}
+
+#[test]
+fn a_name_after_an_optional_chain_dot_is_a_property_not_a_read() {
+    assert_eq!(
+        names_read("tabs?.openSlug", &["tabs", "openSlug"]),
+        ["tabs"]
+    );
+}
+
+#[test]
+fn an_object_key_after_a_comma_is_not_a_read() {
+    assert_eq!(
+        names_read("call({ tabs: 1, openSlug: 2 })", &["tabs", "openSlug"]),
+        Vec::<String>::new()
+    );
+}
