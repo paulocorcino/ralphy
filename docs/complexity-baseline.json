@@ -181,11 +181,6 @@
         11
       ]
     },
-    "crates/ralphy-cli/src/install/user_path.rs": {
-      "add": [
-        13
-      ]
-    },
     "crates/ralphy-cli/src/issues.rs": {
       "issues_cmd": [
         18

@@ -223,14 +223,20 @@ fn add_to_profiles(dir: &Path, env: &ShellEnv<'_>) -> Result<Added> {
     Ok(Added { places, reload })
 }
 
+/// One user `Path` entry as Windows compares it: without case, and a trailing
+/// `\` names the same folder.
+#[cfg(any(windows, test))]
+fn path_entry(s: &str) -> String {
+    s.trim().trim_end_matches(['\\', '/']).to_lowercase()
+}
+
 /// The user `Path` value with `dir` put first, or `None` when it is already
 /// there. Windows compares paths without case, and a trailing `\` names the
 /// same folder.
 #[cfg(any(windows, test))]
 fn path_with(current: &str, dir: &str) -> Option<String> {
-    let norm = |s: &str| s.trim().trim_end_matches(['\\', '/']).to_lowercase();
-    let want = norm(dir);
-    if current.split(';').any(|entry| norm(entry) == want) {
+    let want = path_entry(dir);
+    if current.split(';').any(|entry| path_entry(entry) == want) {
         return None;
     }
     let rest = current.trim().trim_matches(';');
@@ -243,6 +249,8 @@ fn path_with(current: &str, dir: &str) -> Option<String> {
 
 #[cfg(windows)]
 mod registry;
+mod remove;
+pub(crate) use remove::remove_from_user_path;
 
 #[cfg(test)]
 mod tests {

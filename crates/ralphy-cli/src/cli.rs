@@ -11,7 +11,7 @@ use ralphy_core::{BranchMode, Effort};
 
 use crate::{
     blob, changes, config, daemon, doctor, gemini, host, init, install, issues, models, mutate,
-    schedule, stop, sync, telegram, triage, update, usage,
+    schedule, stop, sync, telegram, triage, uninstall, update, usage,
 };
 
 #[derive(Parser)]
@@ -50,6 +50,13 @@ pub(crate) enum Command {
     /// required tool is missing.
     // ADR-0056 §12.
     Doctor(doctor::DoctorArgs),
+    /// Remove Ralphy from this computer.
+    ///
+    /// It stops the daemon and removes its autostart, removes the installed
+    /// `ralphy`, and takes it off your PATH. It keeps Ralphy's own folder
+    /// unless you add `--purge`. Projects and GitHub labels are not changed.
+    // ADR-0056 §12.
+    Uninstall(uninstall::UninstallArgs),
     /// Check that a repo is ready for Ralphy.
     ///
     /// It checks for Python, a `gh` login, a GitHub remote, and at least one

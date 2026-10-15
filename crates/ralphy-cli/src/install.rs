@@ -18,6 +18,7 @@ use anyhow::{bail, Context, Result};
 use clap::Args;
 
 mod user_path;
+pub(crate) use user_path::remove_from_user_path;
 
 #[derive(Args)]
 pub struct InstallArgs {
@@ -255,7 +256,7 @@ fn copy_permissions(_from: Option<&Path>, _to: &Path) {}
 
 /// Default install target: `~/.cargo/bin` when present (Rust users already have it
 /// on PATH), else `~/.local/bin` (the XDG-conventional user bin dir).
-fn default_bin_dir() -> Result<PathBuf> {
+pub(crate) fn default_bin_dir() -> Result<PathBuf> {
     let base = directories::BaseDirs::new().context("locating the home directory")?;
     let home = base.home_dir();
     let cargo_bin = home.join(".cargo").join("bin");

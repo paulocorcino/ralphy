@@ -309,7 +309,7 @@ pub(crate) fn effective(args: &[String]) -> Vec<String> {
 }
 
 /// The production stop: real liveness, real identity, real killer.
-fn stop(store: &Path) -> Result<bool> {
+pub(crate) fn stop(store: &Path) -> Result<bool> {
     stop_recorded(
         store,
         EXIT_TIMEOUT,
