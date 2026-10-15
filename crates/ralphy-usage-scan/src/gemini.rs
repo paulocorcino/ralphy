@@ -33,7 +33,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::Path;
 
-use crate::{GeminiScan, InteractiveRecord, Tokens};
+use crate::{since, GeminiScan, InteractiveRecord, Tokens};
 
 /// Scan the Gemini store into interactive records (one per session × model).
 /// Enumerates every project directory under `<gemini_dir>/tmp/`, maps it back to
@@ -53,35 +53,7 @@ pub fn scan_gemini(input: &GeminiScan) -> Vec<InteractiveRecord> {
         return out;
     };
     for project in projects.flatten() {
-        let dir = project.path();
-        let root = fs::read_to_string(dir.join(".project_root")).unwrap_or_default();
-        let root = root.trim();
-        let (slug, actor_email) = attribute(input, &mut email_cache, root);
-
-        for file in chat_files(&dir.join("chats")) {
-            let Ok(text) = fs::read_to_string(&file) else {
-                continue;
-            };
-            let Some(fold) = fold_session(&text) else {
-                continue;
-            };
-            if input.run_session_ids.contains(&fold.session_id) {
-                continue;
-            }
-            for (model, tokens) in fold.by_model {
-                out.push(InteractiveRecord {
-                    agent: "gemini".to_string(),
-                    model,
-                    session_id: fold.session_id.clone(),
-                    project: slug.clone(),
-                    actor_email: actor_email.clone(),
-                    tokens: Some(tokens),
-                    first_ts: fold.first_ts.clone(),
-                    last_ts: fold.last_ts.clone(),
-                    lower_bound: true,
-                });
-            }
-        }
+        out.extend(project_records(input, &mut email_cache, &project.path()));
     }
 
     out.sort_by(|a, b| {
@@ -90,15 +62,57 @@ pub fn scan_gemini(input: &GeminiScan) -> Vec<InteractiveRecord> {
             .then_with(|| a.first_ts.cmp(&b.first_ts))
     });
 
-    if let Some(since) = input.since {
-        if let Ok(since_dt) = chrono::DateTime::parse_from_rfc3339(since) {
-            out.retain(|r| match chrono::DateTime::parse_from_rfc3339(&r.last_ts) {
-                Ok(last) => last >= since_dt,
-                Err(_) => true, // never hide spend on a parse miss
-            });
+    since::retain_since(&mut out, input.since);
+    out
+}
+
+/// The interactive records of one project directory under `tmp/`, attributed
+/// through its `.project_root` sibling.
+fn project_records(
+    input: &GeminiScan,
+    email_cache: &mut HashMap<String, Option<String>>,
+    dir: &Path,
+) -> Vec<InteractiveRecord> {
+    let root = fs::read_to_string(dir.join(".project_root")).unwrap_or_default();
+    let root = root.trim();
+    let (slug, actor_email) = attribute(input, email_cache, root);
+
+    let mut out = Vec::new();
+    for file in chat_files(&dir.join("chats")) {
+        let Ok(text) = fs::read_to_string(&file) else {
+            continue;
+        };
+        let Some(fold) = fold_session(&text) else {
+            continue;
+        };
+        if input.run_session_ids.contains(&fold.session_id) {
+            continue;
         }
+        out.extend(records_of(fold, &slug, &actor_email));
     }
     out
+}
+
+/// One record per model of a folded session.
+fn records_of(
+    fold: Fold,
+    slug: &Option<String>,
+    actor_email: &Option<String>,
+) -> Vec<InteractiveRecord> {
+    fold.by_model
+        .into_iter()
+        .map(|(model, tokens)| InteractiveRecord {
+            agent: "gemini".to_string(),
+            model,
+            session_id: fold.session_id.clone(),
+            project: slug.clone(),
+            actor_email: actor_email.clone(),
+            tokens: Some(tokens),
+            first_ts: fold.first_ts.clone(),
+            last_ts: fold.last_ts.clone(),
+            lower_bound: true,
+        })
+        .collect()
 }
 
 /// Every session log under `chats/`: the direct `*.jsonl` files AND the ones one
