@@ -122,6 +122,40 @@ fn a_heading_with_no_group_is_an_error() {
     assert!(err.contains("\"a new section\""), "{err}");
 }
 
+fn parse_error(app: &str) -> String {
+    parse_shell(app)
+        .err()
+        .map(|e| e.to_string())
+        .unwrap_or_default()
+}
+
+#[test]
+fn app_ts_with_no_function_shell_is_an_error() {
+    let err = parse_error("const s = shellData({ a: 1 });\n");
+    assert_eq!(err, "app.ts has no `function shell`");
+}
+
+#[test]
+fn a_shell_that_does_not_return_shell_data_is_an_error() {
+    let err = parse_error("function shell() {\n  return { a: 1 };\n}\n");
+    assert_eq!(err, "shell() does not return shellData({ … })");
+}
+
+#[test]
+fn an_object_literal_that_is_not_closed_is_an_error() {
+    let err = parse_error("function shell() {\n  return shellData({\n    a: 1,\n");
+    assert_eq!(err, "the object literal of shell() is not closed");
+}
+
+#[test]
+fn a_member_with_no_plain_name_is_an_error() {
+    let app = "function shell() {\n  return shellData({\n    a: 1,\n    [k]: 2,\n  });\n}\n";
+    assert_eq!(
+        parse_error(app),
+        "app.ts:4: a member of shell() with no plain name"
+    );
+}
+
 #[test]
 fn reads_and_writes_from_outside_a_group_are_told_apart() {
     let shell = parsed();
@@ -217,4 +251,34 @@ fn a_binding_names_only_free_members_of_shell_scope() {
             (13, vec!["label"]),
         ]
     );
+}
+
+fn binding_lines(html: &str) -> Vec<(usize, Vec<String>)> {
+    let known: BTreeSet<String> = ["openSlug", "tabs"].iter().map(|s| s.to_string()).collect();
+    scan_bindings(html, &known)
+        .into_iter()
+        .map(|b| (b.line, b.names.into_iter().collect()))
+        .collect()
+}
+
+#[test]
+fn a_doctype_ends_at_its_own_closing_bracket() {
+    let html = "<!DOCTYPE html>\n<body x-data=\"shell\" :class=\"openSlug\"></body>";
+    assert_eq!(binding_lines(html), [(2, vec!["openSlug".to_string()])]);
+}
+
+#[test]
+fn a_self_closing_tag_holds_no_scope() {
+    let html = "\
+<div x-data=\"other\">
+  <b x-data=\"shell\" />
+  <span x-text=\"openSlug\"></span>
+</div>";
+    assert_eq!(binding_lines(html), []);
+}
+
+#[test]
+fn an_unquoted_value_ends_at_white_space() {
+    let html = "<body x-data=shell :title=tabs></body>";
+    assert_eq!(binding_lines(html), [(1, vec!["tabs".to_string()])]);
 }
