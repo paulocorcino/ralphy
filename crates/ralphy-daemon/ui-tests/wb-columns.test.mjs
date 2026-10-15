@@ -493,3 +493,40 @@ test("fromRects: no window, one window", () => {
   assert.deepEqual(C.fromRects(undefined), []);
   assert.deepEqual(C.fromRects([win("a", 10, 10)]), [["a"]]);
 });
+
+// Membership comes from a fold that gives each window one fence, but the list
+// does not trust that: a window named by two fences is listed once, under the
+// fence `membership` names first.
+test("listFold: a window in two fences is listed once, under the first fence", () => {
+  const C = load();
+  const groups = C.listFold({
+    rows: [{ id: "W", agent: "claude", kind: "agent" }],
+    fences: [
+      { id: "f2", name: "Two" },
+      { id: "f1", name: "One" },
+    ],
+    membership: { f1: ["W"], f2: ["W"] },
+  });
+  assert.deepEqual(
+    groups.map((g) => [g.fence?.id ?? null, g.rows.map((r) => r.id)]),
+    [["f1", ["W"]]],
+  );
+});
+
+test("listFold: missing lists fold to nothing, and a missing name, repo or state reads null", () => {
+  const C = load();
+  assert.deepEqual(C.listFold({ rows: null, fences: null, membership: null, detached: null, columns: null }), []);
+  const groups = C.listFold({
+    rows: [{ id: "A", agent: "claude", kind: "agent" }],
+    fences: [{ id: "f", name: "F" }],
+    detached: { f: [{ id: "D", agent: "codex", kind: "agent" }] },
+  });
+  const rows = new Map(groups.flatMap((g) => g.rows).map((r) => [r.id, r]));
+  const a = rows.get("A");
+  assert.deepEqual(
+    { name: a.name, repo: a.repo, state: a.state, running: a.running, enabled: a.enabled },
+    { name: null, repo: null, state: null, running: true, enabled: true },
+  );
+  const d = rows.get("D");
+  assert.deepEqual({ name: d.name, repo: d.repo }, { name: null, repo: null }, "a detached member with no name");
+});

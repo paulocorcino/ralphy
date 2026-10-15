@@ -989,3 +989,15 @@ test("bboxOf wraps every rect, and an empty list is the zero box at the origin",
     { left: 100, top: 20, width: 350, height: 400 },
   );
 });
+
+// A rect with no edges reads as a zero box at the origin, on either side: it
+// overlaps a box that covers the origin, and nothing else.
+test("rectsOverlap: an undefined or empty rect is a zero box at the origin", () => {
+  const AROUND = { left: -10, top: -10, width: 20, height: 20 };
+  const AWAY = { left: 10, top: 10, width: 20, height: 20 };
+  for (const empty of [undefined, {}]) {
+    assert.equal(WBGeometry.rectsOverlap(empty, AROUND), true, `${JSON.stringify(empty)} inside`);
+    assert.equal(WBGeometry.rectsOverlap(AROUND, empty), true, `${JSON.stringify(empty)} as the second rect`);
+    assert.equal(WBGeometry.rectsOverlap(empty, AWAY), false, `${JSON.stringify(empty)} away`);
+  }
+});
