@@ -348,6 +348,52 @@ pub(crate) async fn close_peer_session(peer: &mut peer::client::PeerSocket) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio_tungstenite::tungstenite::Message as PeerMessage;
+
+    fn traffic() -> Traffic {
+        Traffic::peer("d1".into(), "Linux".into(), Tab::default(), Instant::now())
+    }
+
+    #[test]
+    fn a_browser_frame_is_counted_and_passed_on_and_a_text_frame_is_dropped() {
+        let mut traffic = traffic();
+        let step = from_browser(Message::Binary(vec![1, 2, 3].into()), &mut traffic);
+        assert!(
+            matches!(step, Step::Send(PeerMessage::Binary(ref b)) if b[..] == [1, 2, 3]),
+            "{step:?}"
+        );
+        assert_eq!(traffic.summary().in_bytes, 3);
+        let step = from_browser(Message::Text("detach".into()), &mut traffic);
+        assert!(matches!(step, Step::Skip), "{step:?}");
+        let step = from_browser(Message::Close(None), &mut traffic);
+        assert!(matches!(step, Step::Close), "{step:?}");
+        assert_eq!(traffic.summary().in_bytes, 3, "only a binary frame counts");
+    }
+
+    #[test]
+    fn a_peer_close_sets_the_end_and_a_peer_ping_is_timed_by_the_browser_pong() {
+        let mut traffic = traffic();
+        let mut end = None;
+        let output = vec![protocol::TAG_TERMINAL, b'a', b'b'];
+        let step = from_peer(PeerMessage::Binary(output.into()), &mut traffic, &mut end);
+        assert!(matches!(step, Step::Send(Message::Binary(_))), "{step:?}");
+        assert_eq!(traffic.summary().live_bytes, 3);
+        let step = from_peer(PeerMessage::Ping(vec![9].into()), &mut traffic, &mut end);
+        assert!(matches!(step, Step::Send(Message::Ping(_))), "{step:?}");
+        let step = from_browser(Message::Pong(vec![9].into()), &mut traffic);
+        assert!(matches!(step, Step::Send(PeerMessage::Pong(_))), "{step:?}");
+        assert_eq!(
+            traffic.summary().rtt_samples,
+            1,
+            "the pong answers the ping"
+        );
+        let step = from_peer(PeerMessage::Text("x".into()), &mut traffic, &mut end);
+        assert!(matches!(step, Step::Skip), "{step:?}");
+        assert_eq!(end, None);
+        let step = from_peer(PeerMessage::Close(None), &mut traffic, &mut end);
+        assert!(matches!(step, Step::Close), "{step:?}");
+        assert_eq!(end, Some(PEER_CLOSED));
+    }
 
     /// The network the browser reported goes to the peer on every shape, so the
     /// peer's traffic summary has it too. A value no browser gives is absent, and
