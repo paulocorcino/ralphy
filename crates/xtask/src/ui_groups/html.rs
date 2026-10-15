@@ -3,7 +3,8 @@
 
 use std::collections::BTreeSet;
 
-use super::{expression_names, Binding};
+use super::lex::{lex, Tok, Token};
+use super::{close_of, tok_is, Binding};
 
 /// Alpine attributes that hold no expression of the component's state.
 const NOT_BINDINGS: &[&str] = &[
@@ -148,6 +149,83 @@ fn binding(a: &Attr, vars: &[String], known: &BTreeSet<String>) -> Option<Bindin
         line: a.line,
         names,
     })
+}
+
+/// The free identifiers an Alpine expression reads, and the flag named by the
+/// first argument of `scrim('flag', …)`.
+fn expression_names(expr: &str) -> Vec<String> {
+    let toks = lex(expr, 1);
+    let declared = declared_names(&toks);
+    free_names(&toks, &declared)
+}
+
+/// The names the expression declares itself: arrow parameters, and the name
+/// after `let`, `const` or `var`.
+fn declared_names(toks: &[Token]) -> BTreeSet<String> {
+    let mut declared = BTreeSet::new();
+    for (i, t) in toks.iter().enumerate() {
+        if t.is("=>") {
+            declared.extend(arrow_params(toks, i));
+        }
+        if matches!(t.ident(), Some("let" | "const" | "var")) {
+            declared.extend(toks.get(i + 1).and_then(Token::ident).map(str::to_string));
+        }
+    }
+    declared
+}
+
+/// The parameter names of the arrow whose `=>` is at `i`: one bare name, or the
+/// identifiers between the parentheses before it.
+fn arrow_params(toks: &[Token], i: usize) -> Vec<String> {
+    if let Some(p) = i.checked_sub(1).and_then(|p| toks[p].ident()) {
+        return vec![p.to_string()];
+    }
+    if i > 0 && tok_is(toks, i - 1, ")") {
+        let open = (0..i - 1).rev().find(|&k| close_of(toks, k) == i - 1);
+        return open
+            .map_or(&toks[0..0], |o| &toks[o..i])
+            .iter()
+            .filter_map(|p| p.ident().map(str::to_string))
+            .collect();
+    }
+    Vec::new()
+}
+
+/// The identifiers of `toks` that are free reads (see [`is_free_read`]), plus
+/// the flag of `scrim('flag', …)`.
+fn free_names(toks: &[Token], declared: &BTreeSet<String>) -> Vec<String> {
+    let mut names = Vec::new();
+    for (i, t) in toks.iter().enumerate() {
+        names.extend(scrim_flag(toks, i));
+        if let Some(id) = t.ident() {
+            if is_free_read(toks, i, declared) {
+                names.push(id.to_string());
+            }
+        }
+    }
+    names
+}
+
+/// The first segment of the flag named by the first argument of `scrim(…)`,
+/// when the token at `i` is that `scrim`.
+fn scrim_flag(toks: &[Token], i: usize) -> Option<String> {
+    if toks[i].ident() != Some("scrim") || !tok_is(toks, i + 1, "(") {
+        return None;
+    }
+    match toks.get(i + 2).map(|t| &t.tok) {
+        Some(Tok::Str(flag)) => Some(flag.split('.').next().unwrap_or("").to_string()),
+        _ => None,
+    }
+}
+
+/// Is the identifier at `i` a read of a member: not `declared`, not a property
+/// after `.` or `?.`, and not an object key.
+fn is_free_read(toks: &[Token], i: usize, declared: &BTreeSet<String>) -> bool {
+    let at = |i: usize, p: &str| tok_is(toks, i, p);
+    let after_dot = i > 0 && (at(i - 1, ".") || at(i - 1, "?."));
+    let key = at(i + 1, ":") && (i == 0 || at(i - 1, "{") || at(i - 1, ","));
+    let declared_here = toks[i].ident().is_some_and(|id| declared.contains(id));
+    !after_dot && !key && !declared_here
 }
 
 /// The variables an `x-for` value declares: `item in list`, `(item, i) in list`.

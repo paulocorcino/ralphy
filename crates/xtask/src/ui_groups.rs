@@ -526,44 +526,6 @@ struct Binding {
     names: BTreeSet<String>,
 }
 
-/// The free identifiers an Alpine expression reads, and the flag named by the
-/// first argument of `scrim('flag', …)`.
-fn expression_names(expr: &str) -> Vec<String> {
-    let toks = lex(expr, 1);
-    let at = |i: usize, p: &str| toks.get(i).is_some_and(|t| t.is(p));
-    let mut declared = BTreeSet::new();
-    for (i, t) in toks.iter().enumerate() {
-        if t.is("=>") {
-            if let Some(p) = i.checked_sub(1).and_then(|p| toks[p].ident()) {
-                declared.insert(p.to_string());
-            } else if i > 0 && at(i - 1, ")") {
-                let open = (0..i - 1).rev().find(|&k| close_of(&toks, k) == i - 1);
-                for p in open.map_or(&toks[0..0], |o| &toks[o..i]) {
-                    declared.extend(p.ident().map(str::to_string));
-                }
-            }
-        }
-        if matches!(t.ident(), Some("let" | "const" | "var")) {
-            declared.extend(toks.get(i + 1).and_then(Token::ident).map(str::to_string));
-        }
-    }
-    let mut names = Vec::new();
-    for (i, t) in toks.iter().enumerate() {
-        if t.ident() == Some("scrim") && at(i + 1, "(") {
-            if let Some(Tok::Str(flag)) = toks.get(i + 2).map(|t| &t.tok) {
-                names.push(flag.split('.').next().unwrap_or("").to_string());
-            }
-        }
-        let Some(id) = t.ident() else { continue };
-        let after_dot = i > 0 && (at(i - 1, ".") || at(i - 1, "?."));
-        let key = at(i + 1, ":") && (i == 0 || at(i - 1, "{") || at(i - 1, ","));
-        if !after_dot && !key && !declared.contains(id) {
-            names.push(id.to_string());
-        }
-    }
-    names
-}
-
 /// What one group holds and shares.
 #[derive(Default)]
 struct Stats {
