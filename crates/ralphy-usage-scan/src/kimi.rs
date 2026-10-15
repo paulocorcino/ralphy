@@ -103,6 +103,87 @@ struct Snap {
     ts_ms: Option<i64>,
 }
 
+impl Snap {
+    /// Keep-largest by total; on a tie the later ts wins.
+    fn supersedes(&self, existing: &Snap) -> bool {
+        self.total > existing.total
+            || (self.total == existing.total && self.ts_ms >= existing.ts_ms)
+    }
+}
+
+/// The surviving legacy snapshots of one wire file. Keyed snapshots dedup by
+/// `message_id`; unkeyed (missing or empty id) each count.
+#[derive(Default)]
+struct Snaps {
+    keyed: HashMap<String, Snap>,
+    unkeyed: Vec<Snap>,
+}
+
+impl Snaps {
+    fn insert(&mut self, key: Option<String>, snap: Snap) {
+        match key {
+            Some(key) => {
+                if self.keyed.get(&key).is_none_or(|old| snap.supersedes(old)) {
+                    self.keyed.insert(key, snap);
+                }
+            }
+            None => self.unkeyed.push(snap),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.keyed.is_empty() && self.unkeyed.is_empty()
+    }
+
+    /// Sum every surviving snapshot into `agg`.
+    fn fold_into(&self, agg: &mut Agg) {
+        for snap in self.keyed.values().chain(self.unkeyed.iter()) {
+            agg.add(&snap.tokens, snap.ts_ms);
+        }
+    }
+}
+
+/// Read one wire line as a `StatusUpdate` snapshot and its `message_id` key.
+/// `None` for a blank, unparseable or `metadata` line, any other message type,
+/// and a zero-total snapshot.
+fn read_status_update(line: &str) -> Option<(Option<String>, Snap)> {
+    let val: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+    if val.get("type").and_then(|v| v.as_str()) == Some("metadata") {
+        return None;
+    }
+    let message = val.get("message")?;
+    if message.get("type").and_then(|v| v.as_str()) != Some("StatusUpdate") {
+        return None;
+    }
+    let payload = message.get("payload")?;
+    let tu = payload.get("token_usage")?;
+    let tokens = to_breakdown(
+        i64_field(tu, "input_other"),
+        i64_field(tu, "output"),
+        i64_field(tu, "input_cache_read"),
+        i64_field(tu, "input_cache_creation"),
+    )?;
+    // Unix seconds (float) → ms.
+    let ts_ms = val
+        .get("timestamp")
+        .and_then(|v| v.as_f64())
+        .map(|s| (s * 1000.0) as i64);
+    let total = tokens.input + tokens.output + tokens.cache_read + tokens.cache_creation;
+    let key = payload
+        .get("message_id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    Some((
+        key,
+        Snap {
+            tokens,
+            total,
+            ts_ms,
+        },
+    ))
+}
+
 /// Scan the legacy `kimi-cli` store: `kimi_dir/sessions/**/wire.jsonl` carrying
 /// `StatusUpdate` messages. Model comes from `kimi_dir/config.json` `.model`
 /// (default [`DEFAULT_MODEL`]). Progressive snapshots of the same `message_id`
@@ -125,75 +206,62 @@ fn scan_legacy(
         let Ok(text) = fs::read_to_string(&file) else {
             continue;
         };
-        // Keyed snapshots dedup by `message_id`; unkeyed (missing id) each count.
-        let mut keyed: HashMap<String, Snap> = HashMap::new();
-        let mut unkeyed: Vec<Snap> = Vec::new();
-        for line in text.lines() {
-            let line = line.trim();
-            if line.is_empty() {
-                continue;
-            }
-            let Ok(val) = serde_json::from_str::<serde_json::Value>(line) else {
-                continue;
-            };
-            if val.get("type").and_then(|v| v.as_str()) == Some("metadata") {
-                continue;
-            }
-            let Some(message) = val.get("message") else {
-                continue;
-            };
-            if message.get("type").and_then(|v| v.as_str()) != Some("StatusUpdate") {
-                continue;
-            }
-            let Some(payload) = message.get("payload") else {
-                continue;
-            };
-            let Some(tu) = payload.get("token_usage") else {
-                continue;
-            };
-            let Some(tokens) = to_breakdown(
-                i64_field(tu, "input_other"),
-                i64_field(tu, "output"),
-                i64_field(tu, "input_cache_read"),
-                i64_field(tu, "input_cache_creation"),
-            ) else {
-                continue; // zero-total snapshot
-            };
-            // Unix seconds (float) → ms.
-            let ts_ms = val
-                .get("timestamp")
-                .and_then(|v| v.as_f64())
-                .map(|s| (s * 1000.0) as i64);
-            let total = tokens.input + tokens.output + tokens.cache_read + tokens.cache_creation;
-            let snap = Snap {
-                tokens,
-                total,
-                ts_ms,
-            };
-            let key = payload
-                .get("message_id")
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty());
-            match key {
-                Some(key) => {
-                    // Keep the largest snapshot; on a tie the later ts wins.
-                    let replace = keyed.get(key).is_none_or(|existing| {
-                        snap.total > existing.total
-                            || (snap.total == existing.total && snap.ts_ms >= existing.ts_ms)
-                    });
-                    if replace {
-                        keyed.insert(key.to_string(), snap);
-                    }
-                }
-                None => unkeyed.push(snap),
-            }
+        let mut snaps = Snaps::default();
+        for (key, snap) in text.lines().filter_map(read_status_update) {
+            snaps.insert(key, snap);
         }
-        if keyed.is_empty() && unkeyed.is_empty() {
+        if snaps.is_empty() {
             continue; // no non-zero snapshot → no aggregate (else a zero record)
         }
-        let agg = out.entry((session_id, model.clone())).or_default();
-        for snap in keyed.values().chain(unkeyed.iter()) {
-            agg.add(&snap.tokens, snap.ts_ms);
+        snaps.fold_into(out.entry((session_id, model.clone())).or_default());
+    }
+}
+
+/// One `kimi-code` turn-scoped `usage.record`: its model, tokens and time.
+struct UsageRecord {
+    model: String,
+    tokens: Tokens,
+    ts_ms: Option<i64>,
+}
+
+/// Read one wire line as a turn-scoped `usage.record`. `None` for a blank or
+/// unparseable line, any other type, a missing scope (not "turn": session-scoped
+/// bookkeeping) and a zero-total record.
+fn read_usage_record(line: &str) -> Option<UsageRecord> {
+    let val: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+    if val.get("type").and_then(|v| v.as_str()) != Some("usage.record") {
+        return None;
+    }
+    if val.get("usageScope").and_then(|v| v.as_str()) != Some("turn") {
+        return None;
+    }
+    let usage = val.get("usage")?;
+    let tokens = to_breakdown(
+        i64_field(usage, "inputOther"),
+        i64_field(usage, "output"),
+        i64_field(usage, "inputCacheRead"),
+        i64_field(usage, "inputCacheCreation"),
+    )?;
+    let model = val
+        .get("model")
+        .and_then(|v| v.as_str())
+        .map(|m| m.strip_prefix("kimi-code/").unwrap_or(m).to_string())
+        .unwrap_or_else(|| DEFAULT_MODEL.to_string());
+    Some(UsageRecord {
+        model,
+        tokens,
+        ts_ms: val.get("time").and_then(|v| v.as_i64()),
+    })
+}
+
+impl Agg {
+    /// Set the project and actor only while they are empty.
+    fn attribute(&mut self, project: &Option<String>, actor_email: &Option<String>) {
+        if self.project.is_none() {
+            self.project = project.clone();
+        }
+        if self.actor_email.is_none() {
+            self.actor_email = actor_email.clone();
         }
     }
 }
@@ -225,46 +293,10 @@ fn scan_kimi_code(
         let Ok(text) = fs::read_to_string(&file) else {
             continue;
         };
-        for line in text.lines() {
-            let line = line.trim();
-            if line.is_empty() {
-                continue;
-            }
-            let Ok(val) = serde_json::from_str::<serde_json::Value>(line) else {
-                continue;
-            };
-            if val.get("type").and_then(|v| v.as_str()) != Some("usage.record") {
-                continue;
-            }
-            // A missing scope is NOT "turn" → skip (session-scoped bookkeeping).
-            if val.get("usageScope").and_then(|v| v.as_str()) != Some("turn") {
-                continue;
-            }
-            let Some(usage) = val.get("usage") else {
-                continue;
-            };
-            let Some(tokens) = to_breakdown(
-                i64_field(usage, "inputOther"),
-                i64_field(usage, "output"),
-                i64_field(usage, "inputCacheRead"),
-                i64_field(usage, "inputCacheCreation"),
-            ) else {
-                continue;
-            };
-            let model = val
-                .get("model")
-                .and_then(|v| v.as_str())
-                .map(|m| m.strip_prefix("kimi-code/").unwrap_or(m).to_string())
-                .unwrap_or_else(|| DEFAULT_MODEL.to_string());
-            let ts_ms = val.get("time").and_then(|v| v.as_i64());
-            let agg = out.entry((session_id.clone(), model)).or_default();
-            agg.add(&tokens, ts_ms);
-            if agg.project.is_none() {
-                agg.project = project.clone();
-            }
-            if agg.actor_email.is_none() {
-                agg.actor_email = actor_email.clone();
-            }
+        for rec in text.lines().filter_map(read_usage_record) {
+            let agg = out.entry((session_id.clone(), rec.model)).or_default();
+            agg.add(&rec.tokens, rec.ts_ms);
+            agg.attribute(&project, &actor_email);
         }
     }
 }

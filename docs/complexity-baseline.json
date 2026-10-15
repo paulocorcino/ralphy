@@ -1037,14 +1037,6 @@
         23
       ]
     },
-    "crates/ralphy-usage-scan/src/kimi.rs": {
-      "scan_kimi_code": [
-        31
-      ],
-      "scan_legacy": [
-        45
-      ]
-    },
     "crates/ralphy-usage-scan/src/opencode.rs": {
       "read_opencode": [
         18
