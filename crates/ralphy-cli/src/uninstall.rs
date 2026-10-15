@@ -100,8 +100,7 @@ fn remove_binary(entry: &Path) -> Result<()> {
         if file.symlink_metadata().is_err() {
             continue;
         }
-        remove_file(&file)?;
-        removed = true;
+        removed |= remove_file(&file)?;
     }
     if removed {
         println!("Removed {}.", entry.display());
@@ -141,9 +140,11 @@ fn is_parked_name(name: &str, entry: &str) -> bool {
     name != entry && crate::daemon::restart::unparked(name) == entry
 }
 
-fn remove_file(file: &Path) -> Result<()> {
+/// Whether `file` is gone, or goes once this program ends. `false` when it
+/// stays, after a warning that says so.
+fn remove_file(file: &Path) -> Result<bool> {
     match std::fs::remove_file(file) {
-        Ok(()) => Ok(()),
+        Ok(()) => Ok(true),
         Err(e) if running_image(&e) => remove_running(file),
         Err(e) => Err(e).with_context(|| format!("removing {}", file.display())),
     }
@@ -171,10 +172,8 @@ fn running_image(_error: &std::io::Error) -> bool {
 /// tries again every second, for up to 30 s; the file was gone about one
 /// second after the process ended.
 #[cfg(windows)]
-fn remove_running(file: &Path) -> Result<()> {
+fn remove_running(file: &Path) -> Result<bool> {
     use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    const DETACHED_PROCESS: u32 = 0x0000_0008;
 
     let aside = std::env::temp_dir().join(format!(
         "ralphy-removed-{}-{}.exe",
@@ -183,33 +182,35 @@ fn remove_running(file: &Path) -> Result<()> {
             .and_then(|n| n.to_str())
             .unwrap_or("ralphy")
     ));
-    // The temp folder may be on another drive, where a rename fails; the file
-    // is then deleted where it is.
-    let target = match std::fs::rename(file, &aside) {
-        Ok(()) => aside,
-        Err(e) => {
-            tracing::debug!(error = %e, "the running image stays in its folder");
-            file.to_path_buf()
-        }
-    };
-    ralphy_proc_util::keep_std_handles_from_children();
-    let target = target.display();
-    std::process::Command::new("cmd")
-        .raw_arg(format!(
-            "/d /c for /l %i in (1,1,30) do (if exist \"{target}\" \
-             (ping -n 2 127.0.0.1 >nul & del /f /q \"{target}\" 2>nul))"
-        ))
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
-        .spawn()
-        .with_context(|| format!("starting the removal of {target}"))?;
-    Ok(())
+    // A locked file, or a temp folder on another drive, refuses the rename.
+    // The file then stays, and the operator is told so.
+    if let Err(e) = std::fs::rename(file, &aside) {
+        eprintln!(
+            "warning: {} is in use and could not be moved ({e}); delete it when nothing runs it",
+            file.display()
+        );
+        return Ok(false);
+    }
+    let target = aside.display();
+    let command = format!(
+        "/d /c for /l %i in (1,1,30) do (if exist \"{target}\" \
+         (ping -n 2 127.0.0.1 >nul & del /f /q \"{target}\" 2>nul))"
+    );
+    crate::daemon::restart::spawn_outside_job("the removal of the old ralphy", |flags| {
+        std::process::Command::new("cmd")
+            .raw_arg(&command)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .creation_flags(flags)
+            .spawn()
+    })
+    .with_context(|| format!("starting the removal of {target}"))?;
+    Ok(true)
 }
 
 #[cfg(not(windows))]
-fn remove_running(file: &Path) -> Result<()> {
+fn remove_running(file: &Path) -> Result<bool> {
     bail!("{} is in use and cannot be removed", file.display())
 }
 

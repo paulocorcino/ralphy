@@ -490,10 +490,6 @@ pub(crate) fn spawn_detached(
     use std::os::windows::process::CommandExt;
     use std::process::{Command, Stdio};
 
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    const DETACHED_PROCESS: u32 = 0x0000_0008;
-    const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
-
     let spawn = |flags: u32| {
         let (stdout, stderr) = log_stdio(store);
         Command::new(exe)
@@ -504,21 +500,37 @@ pub(crate) fn spawn_detached(
             .creation_flags(flags)
             .spawn()
     };
-    // Otherwise the daemon also inherits this command's own stdout, and a
-    // caller that reads it (a pipe, an SSH session) waits until the daemon ends.
+    spawn_outside_job("the daemon", spawn)
+        .with_context(|| format!("spawning {} {}", readable(exe), args.join(" ")))
+}
+
+/// Start a process with no console and outside the job of this command, so it
+/// outlives the shell or ssh session that ran it. `spawn` gets the creation
+/// flags. A job that refuses breakaway gets the process inside it, said out
+/// loud with `what` as the subject.
+#[cfg(windows)]
+pub(crate) fn spawn_outside_job(
+    what: &str,
+    spawn: impl Fn(u32) -> std::io::Result<std::process::Child>,
+) -> std::io::Result<std::process::Child> {
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    const DETACHED_PROCESS: u32 = 0x0000_0008;
+    const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+
+    // Otherwise the child also inherits this command's own stdout, and a
+    // caller that reads it (a pipe, an SSH session) waits until the child ends.
     ralphy_proc_util::keep_std_handles_from_children();
     let detached = CREATE_NO_WINDOW | DETACHED_PROCESS;
     match spawn(detached | CREATE_BREAKAWAY_FROM_JOB) {
         Err(e) if breakaway_refused(&e) => {
             eprintln!(
-                "warning: the daemon stays inside the job of the program that started it, \
+                "warning: {what} stays inside the job of the program that started it, \
                  so it stops when that program closes"
             );
             spawn(detached)
         }
         spawned => spawned,
     }
-    .with_context(|| format!("spawning {} {}", readable(exe), args.join(" ")))
 }
 
 /// A job that does not allow breakaway makes `CreateProcess` fail with
