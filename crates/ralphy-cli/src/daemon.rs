@@ -19,6 +19,7 @@ use ralphy_daemon::{auth, password, totp};
 mod bootstrap;
 pub(crate) mod confirm;
 mod describe;
+mod first_start;
 mod register;
 pub(crate) mod restart;
 
@@ -208,11 +209,7 @@ pub(crate) fn run(args: &DaemonArgs) -> Result<()> {
             }
             Ok(())
         }
-        Some(DaemonCommand::Install) => {
-            ralphy_daemon::autostart::install()?;
-            println!("registered daemon autostart");
-            Ok(())
-        }
+        Some(DaemonCommand::Install) => first_start::install(args.port),
         Some(DaemonCommand::Uninstall) => {
             ralphy_daemon::autostart::uninstall()?;
             println!("removed daemon autostart");

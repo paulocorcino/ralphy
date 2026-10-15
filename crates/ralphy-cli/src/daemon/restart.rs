@@ -68,7 +68,7 @@ pub(crate) fn restart(yes: bool) -> Result<()> {
 }
 
 /// Whether `answers` turns true before `timeout` ends, asked every `poll`.
-fn started(answers: impl Fn() -> bool, timeout: Duration, poll: Duration) -> bool {
+pub(crate) fn started(answers: impl Fn() -> bool, timeout: Duration, poll: Duration) -> bool {
     let deadline = Instant::now() + timeout;
     loop {
         if answers() {
