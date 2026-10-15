@@ -837,11 +837,6 @@
         12
       ]
     },
-    "crates/ralphy-daemon/src/usage.rs": {
-      "run_records": [
-        24
-      ]
-    },
     "crates/ralphy-daemon/src/watch.rs": {
       "pump": [
         19
