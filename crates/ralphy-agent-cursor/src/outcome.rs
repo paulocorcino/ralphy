@@ -361,3 +361,6 @@ impl CursorAgent {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod fold_tests;

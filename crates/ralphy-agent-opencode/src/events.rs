@@ -358,6 +358,30 @@ mod tests {
     }
 
     #[test]
+    fn parse_limit_reads_a_numeric_retry_after() {
+        let stream = r#"{"type":"error","name":"APIError","statusCode":429,"message":"rate limited","retryAfter":120}
+"#;
+        assert_eq!(parse_opencode_limit(stream), Some(Some("120".into())));
+    }
+
+    #[test]
+    fn parse_limit_reads_a_retry_after_header_in_the_message() {
+        let stream = r#"{"type":"error","name":"APIError","statusCode":429,"message":"Too many requests. Retry-After: 45, slow down"}
+"#;
+        assert_eq!(parse_opencode_limit(stream), Some(Some("45".into())));
+    }
+
+    #[test]
+    fn parse_limit_reads_try_again_in_from_the_message() {
+        let stream = r#"{"type":"error","name":"APIError","statusCode":429,"message":"Rate limit exceeded. Try again in 20 minutes. Thanks"}
+"#;
+        assert_eq!(
+            parse_opencode_limit(stream),
+            Some(Some("20 minutes".into()))
+        );
+    }
+
+    #[test]
     fn parse_limit_apierror_429_without_reset_hint() {
         // APIError + 429 but no reset hint → Some(None).
         let stream = r#"{"type":"error","name":"APIError","statusCode":429,"message":"too many requests"}

@@ -422,6 +422,39 @@ mod tests {
         assert_eq!(std::fs::read(&notes).unwrap(), b"mine");
         assert_eq!(std::fs::read(&decoy).unwrap(), b"mine");
     }
+
+    #[test]
+    fn session_stems_skips_a_project_dir_with_no_chats_folder() {
+        let cli_dir = tempfile::tempdir().unwrap();
+        let tmp = cli_dir.path().join("tmp");
+        for empty in ["a-empty", "b-empty"] {
+            std::fs::create_dir_all(tmp.join(empty)).unwrap();
+        }
+        let chats = tmp.join("m-proj").join("chats");
+        std::fs::create_dir_all(&chats).unwrap();
+        write_session_pair(&chats, 1);
+        for empty in ["y-empty", "z-empty"] {
+            std::fs::create_dir_all(tmp.join(empty)).unwrap();
+        }
+
+        let groups = session_stems(cli_dir.path());
+
+        assert_eq!(groups.len(), 1, "{groups:?}");
+        assert_eq!(groups[0].1, "session-01-01");
+        assert_eq!(groups[0].2.len(), 2, "the json+jsonl pair is one group");
+    }
+
+    #[test]
+    fn session_stems_ignores_a_file_that_is_not_a_session() {
+        let cli_dir = tempfile::tempdir().unwrap();
+        let chats = cli_dir.path().join("tmp").join("proj").join("chats");
+        std::fs::create_dir_all(&chats).unwrap();
+        std::fs::write(chats.join("checkpoint-1.json"), b"{}").unwrap();
+        std::fs::write(chats.join("session-2.txt"), b"x").unwrap();
+
+        assert!(session_stems(cli_dir.path()).is_empty());
+    }
+
     #[test]
     fn two_workspaces_get_two_independent_roots() {
         let base_a = tempfile::tempdir().unwrap();

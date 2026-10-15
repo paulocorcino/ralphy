@@ -162,6 +162,33 @@ fn strip_pty_escapes_drops_osc_and_csi() {
     assert_eq!(strip_pty_escapes(raw), "plaintext");
 }
 
+#[test]
+fn strip_pty_escapes_ends_an_osc_at_the_string_terminator() {
+    let raw = b"a\x1b]0;window title\x1b\\b";
+    assert_eq!(strip_pty_escapes(raw), "ab");
+}
+
+#[test]
+fn strip_pty_escapes_turns_cursor_position_into_a_space() {
+    assert_eq!(strip_pty_escapes(b"a\x1b[3;4Hb"), "a b");
+    assert_eq!(strip_pty_escapes(b"a\x1b[3;4fb"), "a b");
+}
+
+#[test]
+fn strip_pty_escapes_drops_a_two_byte_escape() {
+    assert_eq!(strip_pty_escapes(b"a\x1bcb\x1b=c"), "abc");
+}
+
+#[test]
+fn strip_pty_escapes_ignores_a_trailing_lone_escape() {
+    assert_eq!(strip_pty_escapes(b"ab\x1b"), "ab");
+}
+
+#[test]
+fn strip_pty_escapes_turns_each_cr_and_lf_into_a_space() {
+    assert_eq!(strip_pty_escapes(b"a\r\nb\nc"), "a  b c");
+}
+
 /// Live end-to-end proof for issue #72: spawn a real logged-out `claude`
 /// in a PTY (isolated `CLAUDE_CONFIG_DIR`, onboarding pre-completed,
 /// workspace pre-trusted, no credentials) and assert the watch flags it on
