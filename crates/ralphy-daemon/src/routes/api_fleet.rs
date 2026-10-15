@@ -17,6 +17,9 @@ use crate::{fleet, identity, peer, registry};
 mod nudge;
 pub(crate) use nudge::*;
 
+#[cfg(test)]
+mod tests;
+
 /// What each peer last showed this daemon, keyed by `daemon_id`. Held for the
 /// router's lifetime — same ownership model as `sessions`/`watchers`, so the
 /// public `router` signature holds.

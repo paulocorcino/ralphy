@@ -294,4 +294,134 @@ mod tests {
         assert_ne!(one, empty, "a new descriptor changes the stamp");
         assert_eq!(peers_stamp(&peers), one);
     }
+
+    type Ws = tokio_tungstenite::WebSocketStream<
+        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    >;
+
+    /// Run one `ws_presence_loop` on `sessions` and `pushes` behind a loopback
+    /// `/ws`, and connect to it. The returned sender holds the shutdown open.
+    async fn connect(
+        sessions: broadcast::Receiver<()>,
+        pushes: broadcast::Receiver<Push>,
+    ) -> (Ws, tokio::sync::watch::Sender<bool>) {
+        let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
+        let receivers = std::sync::Arc::new(std::sync::Mutex::new(Some((sessions, pushes))));
+        let app = Router::new().route(
+            "/ws",
+            get(move |ws: WebSocketUpgrade| {
+                let taken = receivers.lock().unwrap().take();
+                let stop_rx = stop_rx.clone();
+                async move {
+                    let (sessions, pushes) = taken.expect("the test connects once");
+                    ws.on_upgrade(move |socket| {
+                        ws_presence_loop(socket, None, Instant::now(), stop_rx, sessions, pushes)
+                    })
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            if let Err(e) = axum::serve(listener, app).await {
+                panic!("the test /ws stopped: {e}");
+            }
+        });
+        let (ws, _resp) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}/ws"))
+            .await
+            .unwrap();
+        (ws, stop_tx)
+    }
+
+    /// What the socket carried within `within`: the verbs of the commands,
+    /// the number of presence frames, and whether the socket ended.
+    async fn read_for(ws: &mut Ws, within: Duration) -> (Vec<Command>, usize, bool) {
+        use futures_util::StreamExt;
+        use tokio_tungstenite::tungstenite::Message as Wire;
+        let mut commands = Vec::new();
+        let mut beats = 0;
+        let deadline = tokio::time::Instant::now() + within;
+        loop {
+            let msg = match tokio::time::timeout_at(deadline, ws.next()).await {
+                Err(_) => return (commands, beats, false),
+                Ok(msg) => msg,
+            };
+            match msg {
+                Some(Ok(Wire::Binary(bytes))) => match protocol::decode(&bytes).unwrap() {
+                    Frame::Command(c) => commands.push(c),
+                    Frame::Presence(_) => beats += 1,
+                    other => panic!("an unexpected frame: {other:?}"),
+                },
+                None | Some(Ok(Wire::Close(_))) | Some(Err(_)) => return (commands, beats, true),
+                Some(Ok(_)) => {}
+            }
+        }
+    }
+
+    fn count(commands: &[Command], verb: &str) -> usize {
+        commands.iter().filter(|c| c.verb == verb).count()
+    }
+
+    /// A pushes receiver that lagged sends `sessions.dirty` and every push
+    /// once, then goes on with what the bus still holds.
+    #[tokio::test]
+    async fn a_lagged_push_receiver_sends_every_push_once() {
+        let (_sessions_tx, sessions) = broadcast::channel(4);
+        let (pushes_tx, pushes) = broadcast::channel(1);
+        let tab = Some("t1".to_string());
+        // Two pushes on a bus that holds one: the receiver lags by one.
+        for _ in 0..2 {
+            pushes_tx.send(Push::Desk { tab: tab.clone() }).unwrap();
+        }
+        let (mut ws, _stop) = connect(sessions, pushes).await;
+        let (commands, _, ended) = read_for(&mut ws, Duration::from_millis(1500)).await;
+        assert!(!ended, "the socket stays open");
+        let verbs: Vec<&str> = commands.iter().map(|c| c.verb.as_str()).collect();
+        assert_eq!(count(&commands, "sessions.dirty"), 1, "got: {verbs:?}");
+        assert_eq!(count(&commands, "repos.dirty"), 1, "got: {verbs:?}");
+        assert_eq!(count(&commands, "peers.dirty"), 1, "got: {verbs:?}");
+        let desk_tabs: Vec<&serde_json::Value> = commands
+            .iter()
+            .filter(|c| c.verb == "desk.dirty")
+            .map(|c| &c.payload["tab"])
+            .collect();
+        assert_eq!(
+            desk_tabs,
+            [&serde_json::Value::Null, &serde_json::json!("t1")],
+            "the lag sends a desk push for every tab, then the push the bus kept"
+        );
+    }
+
+    /// A channel whose sender is gone turns its arm off: the socket stays
+    /// open, the heartbeat goes on, and nothing is sent for that channel.
+    async fn a_closed_channel_keeps_the_heartbeat(close_sessions: bool) {
+        let (sessions_tx, sessions) = broadcast::channel::<()>(4);
+        let (pushes_tx, pushes) = broadcast::channel::<Push>(4);
+        let _held = if close_sessions {
+            drop(sessions_tx);
+            (None, Some(pushes_tx))
+        } else {
+            drop(pushes_tx);
+            (Some(sessions_tx), None)
+        };
+        let (mut ws, _stop) = connect(sessions, pushes).await;
+        let (commands, beats, ended) = read_for(&mut ws, Duration::from_millis(2600)).await;
+        assert!(!ended, "a closed channel does not close the socket");
+        assert!(beats >= 2, "the heartbeat goes on: {beats} beat(s)");
+        let verbs: Vec<&str> = commands.iter().map(|c| c.verb.as_str()).collect();
+        assert!(
+            verbs.is_empty(),
+            "a closed channel sends nothing: {verbs:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_closed_sessions_channel_keeps_the_heartbeat() {
+        a_closed_channel_keeps_the_heartbeat(true).await;
+    }
+
+    #[tokio::test]
+    async fn a_closed_pushes_channel_keeps_the_heartbeat() {
+        a_closed_channel_keeps_the_heartbeat(false).await;
+    }
 }
