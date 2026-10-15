@@ -61,6 +61,9 @@ export type FleetRepoRow = {
   /** `null` on a local row: `/api/repos` reads it. */
   dirty: boolean | null;
   remote: string | null;
+  /** The peer's absolute native root; `null` on a local row, and on a peer
+   * that predates the field. */
+  root?: string | null;
   local: boolean;
 };
 
