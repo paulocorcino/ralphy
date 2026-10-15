@@ -25,7 +25,9 @@ import { createNoteEditor } from "./wb-notes-editor.ts";
 import { createNoteOnTop } from "./wb-notes-on-top.ts";
 import { createNoteVeil } from "./wb-notes-veil.ts";
 import { createNoteMap } from "./wb-notes-map.ts";
+import { createNoteStage } from "./wb-notes-stage.ts";
 import type { CrepeLean } from "./wb-notes-editor.ts";
+import type { Home } from "./wb-notes-stage.ts";
 import type { Messages } from "./wb-messages.ts";
 import type { Gestures, Stack } from "./wb-stage-stack.ts";
 import type { CardHost, DeskFence, DeskNote, NoteCard, NoteEditor, NoteLook, NoteSource, Offset, Point, Size } from "./wb-types.d.ts";
@@ -43,9 +45,6 @@ type NewNote = {
   viewport?: Partial<Size> | null;
   offset?: Partial<Offset> | null;
 };
-
-/** A draft that came home with a re-attach: the text and the name it chose. */
-type Home = { draft: string; claim: string | null };
 
 /** What the entry module hands the cards. */
 export type NotesDeps = {
@@ -970,38 +969,12 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
       // In a fragment, an unknown record is not this window's to show.
       if (fragment && !nodes.has(record.id)) continue;
       seen.add(record.id);
-      let el = nodes.get(record.id);
-      if (!el) {
-        el = buildCard(record);
-        const home = record.path ? undefined : drafts.get(record.id);
-        drafts.delete(record.id);
-        if (home) mountHome(el, record, home);
-        else loadInto(el, record);
-        trackDormancy(el);
-      }
+      const el = nodes.get(record.id) || mountCard(record);
       el._noteListed = true;
       paint(el, record, fences);
     }
     for (const [id, el] of nodes) {
-      if (seen.has(id)) continue;
-      // A popup card whose record this document's desk has never held (a
-      // note created a moment before the detach) is not gone: it is the
-      // snapshot's. Tearing it down would drop its text unsaved.
-      if (fragment && el._noteOrphan && !el._noteListed) continue;
-      // A card leaving the stage takes its editor with it; the record it was
-      // built from has already gone (closed) or moved (detached). It is put
-      // back first, so a detach carries it from its place and not from the
-      // corner, and what was typed is written before the editor goes: a
-      // detach, or a close from another client, tears the card down with no
-      // other flush on the way. A NAMED note only: an unnamed one would be
-      // named here while a detach popup opens the same record with no path,
-      // and the two would write two files.
-      if (id === onTopNow()) putBack();
-      if (el._noteRecord?.path) {
-        el._noteOrphan = el._noteRecord;
-        flush(el).catch(() => {});
-      }
-      tearDownCard(el);
+      if (!seen.has(id)) dropCard(id, el);
     }
   }
 
@@ -1122,6 +1095,12 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
 
   const { onTop, keepOnTop, putBack, onTopNow, paintShadow, floatGesture } = createNoteOnTop({
     window, document, consoleHost, stack, stage, cardEl, recordOf, isAway, wakeCard, fragment: () => fragment,
+  });
+
+  // ---- the cards on the stage (in `wb-notes-stage.ts`) -------------------------
+
+  const { mountCard, dropCard } = createNoteStage({
+    buildCard, drafts, mountHome, loadInto, trackDormancy, onTopNow, putBack, flush, tearDownCard, isFragment: () => fragment,
   });
 
   // ---- the file actions (ADR-0064 §11) ------------------------------------------

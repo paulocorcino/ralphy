@@ -6709,6 +6709,10 @@ fn the_shell_writes_the_desk_only_as_changes() {
             include_str!("../assets/ui/wb-notes-map.ts"),
         ),
         (
+            "wb-notes-stage.ts",
+            include_str!("../assets/ui/wb-notes-stage.ts"),
+        ),
+        (
             "wb-messages.ts",
             include_str!("../assets/ui/wb-messages.ts"),
         ),
