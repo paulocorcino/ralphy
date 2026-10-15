@@ -1012,9 +1012,6 @@
       ]
     },
     "crates/ralphy-usage-scan/src/claude.rs": {
-      "parse_transcript": [
-        34
-      ],
       "scan_claude": [
         22
       ]

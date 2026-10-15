@@ -101,6 +101,93 @@ struct Group {
     last_ts: Option<String>,
 }
 
+/// One assistant line with a model and a top-level usage block.
+struct UsageLine {
+    model: String,
+    toks: [u64; 4],
+    dedup_key: Option<String>,
+    ts: Option<String>,
+}
+
+/// Read one transcript line. `None` for a blank or unparseable line, a line
+/// without `message.model`, and a line without `message.usage`.
+fn read_usage_line(line: &str) -> Option<UsageLine> {
+    let value: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+    let message = value.get("message")?;
+    let model = message.get("model").and_then(|v| v.as_str())?;
+    let usage = message.get("usage")?;
+    let field = |k: &str| usage.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+    Some(UsageLine {
+        model: model.to_string(),
+        toks: [
+            field("input_tokens"),
+            field("output_tokens"),
+            field("cache_read_input_tokens"),
+            cache_creation_tokens(usage),
+        ],
+        dedup_key: dedup_key(message, &value),
+        ts: value
+            .get("timestamp")
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+    })
+}
+
+/// Dedup key: `message.id` (in `message`) joined to `requestId` (top-level
+/// on the entry, per the transcript schema), else `message:<id>`, else none.
+fn dedup_key(message: &serde_json::Value, entry: &serde_json::Value) -> Option<String> {
+    let id = message.get("id").and_then(|v| v.as_str());
+    let req = entry.get("requestId").and_then(|v| v.as_str());
+    match (id, req) {
+        (Some(id), Some(req)) => Some(format!("{id}:{req}")),
+        (Some(id), None) => Some(format!("message:{id}")),
+        _ => None,
+    }
+}
+
+impl Group {
+    /// Fold one line in: max-merge under a dedup key, sum without one.
+    fn fold(&mut self, line: &UsageLine) {
+        match &line.dedup_key {
+            Some(key) => {
+                let slot = self.per_key.entry(key.clone()).or_default();
+                for (s, t) in slot.iter_mut().zip(line.toks.iter()) {
+                    *s = (*s).max(*t);
+                }
+            }
+            None => {
+                for (n, t) in self.no_key.iter_mut().zip(line.toks.iter()) {
+                    *n += *t;
+                }
+            }
+        }
+        if let Some(ts) = &line.ts {
+            self.widen(ts);
+        }
+    }
+
+    /// Widen the first/last timestamps to include `ts`.
+    fn widen(&mut self, ts: &str) {
+        if self.first_ts.as_deref().is_none_or(|cur| ts_lt(ts, cur)) {
+            self.first_ts = Some(ts.to_string());
+        }
+        if self.last_ts.as_deref().is_none_or(|cur| ts_lt(cur, ts)) {
+            self.last_ts = Some(ts.to_string());
+        }
+    }
+
+    /// The token total: the sum of the `per_key` maxima plus `no_key`.
+    fn total(&self) -> [u64; 4] {
+        let mut total = self.no_key;
+        for maxed in self.per_key.values() {
+            for (t, m) in total.iter_mut().zip(maxed.iter()) {
+                *t += *m;
+            }
+        }
+        total
+    }
+}
+
 /// Parse one transcript file's lines into interactive records — one per model
 /// seen. Only assistant lines carrying both `message.model` and `message.usage`
 /// contribute (model-less / usage-less lines are skipped, so a zero-usage stub
@@ -113,75 +200,14 @@ fn parse_transcript(
     actor_email: &Option<String>,
 ) -> Vec<InteractiveRecord> {
     let mut groups: BTreeMap<String, Group> = BTreeMap::new();
-    for line in jsonl.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
-            continue;
-        };
-        let Some(message) = value.get("message") else {
-            continue;
-        };
-        let Some(model) = message.get("model").and_then(|v| v.as_str()) else {
-            continue;
-        };
-        let Some(usage) = message.get("usage") else {
-            continue;
-        };
-        let field = |k: &str| usage.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
-        let toks = [
-            field("input_tokens"),
-            field("output_tokens"),
-            field("cache_read_input_tokens"),
-            cache_creation_tokens(usage),
-        ];
-
-        // Dedup key: `message.id` (in `message`) joined to `requestId` (top-level
-        // on the entry, per the transcript schema), else `message:<id>`, else none.
-        let id = message.get("id").and_then(|v| v.as_str());
-        let req = value.get("requestId").and_then(|v| v.as_str());
-        let dedup_key = match (id, req) {
-            (Some(id), Some(req)) => Some(format!("{id}:{req}")),
-            (Some(id), None) => Some(format!("message:{id}")),
-            _ => None,
-        };
-
-        let group = groups.entry(model.to_string()).or_default();
-        match dedup_key {
-            Some(key) => {
-                let slot = group.per_key.entry(key).or_default();
-                for (s, t) in slot.iter_mut().zip(toks.iter()) {
-                    *s = (*s).max(*t);
-                }
-            }
-            None => {
-                for (n, t) in group.no_key.iter_mut().zip(toks.iter()) {
-                    *n += *t;
-                }
-            }
-        }
-
-        if let Some(ts) = value.get("timestamp").and_then(|v| v.as_str()) {
-            if group.first_ts.as_deref().is_none_or(|cur| ts_lt(ts, cur)) {
-                group.first_ts = Some(ts.to_string());
-            }
-            if group.last_ts.as_deref().is_none_or(|cur| ts_lt(cur, ts)) {
-                group.last_ts = Some(ts.to_string());
-            }
-        }
+    for line in jsonl.lines().filter_map(read_usage_line) {
+        groups.entry(line.model.clone()).or_default().fold(&line);
     }
 
     groups
         .into_iter()
         .map(|(model, group)| {
-            let mut total = group.no_key;
-            for maxed in group.per_key.values() {
-                for (t, m) in total.iter_mut().zip(maxed.iter()) {
-                    *t += *m;
-                }
-            }
+            let total = group.total();
             InteractiveRecord {
                 agent: "claude".to_string(),
                 model,
