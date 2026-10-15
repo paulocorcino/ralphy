@@ -824,9 +824,6 @@
     "crates/ralphy-daemon/src/routes/presence.rs": {
       "watch_stores": [
         13
-      ],
-      "ws_presence_loop": [
-        32
       ]
     },
     "crates/ralphy-daemon/src/routes/ws_command.rs": {
