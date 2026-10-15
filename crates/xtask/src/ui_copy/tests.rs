@@ -1,11 +1,11 @@
 use super::*;
 
-fn rows(name: &str, src: &str) -> Vec<Row> {
+pub(super) fn rows(name: &str, src: &str) -> Vec<Row> {
     rows_of(name, src, &[], CopyFns::default())
 }
 
 /// `(kind, text)` of every row, for compact assertions.
-fn seen(rows: &[Row]) -> Vec<(&'static str, &str)> {
+pub(super) fn seen(rows: &[Row]) -> Vec<(&'static str, &str)> {
     rows.iter()
         .map(|r| (r.kind.label(), r.text.as_str()))
         .collect()
