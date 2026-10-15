@@ -169,3 +169,16 @@ fn the_printed_report_tags_each_line_and_counts_the_missing() {
     assert!(out.contains("[miss] python:"), "{out}");
     assert!(out.contains("result: 1 required tool(s) missing"), "{out}");
 }
+
+#[test]
+fn a_missing_git_on_windows_says_how_to_install_it() {
+    let facts = MachineFacts {
+        git: None,
+        ..all_found()
+    };
+    assert_eq!(
+        line(&evaluate(&facts, true), "git").fix.as_deref(),
+        Some("winget install --id Git.Git -e")
+    );
+    assert_eq!(line(&evaluate(&facts, false), "git").fix, None);
+}

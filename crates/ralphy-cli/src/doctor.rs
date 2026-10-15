@@ -8,10 +8,11 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use clap::Args;
-use ralphy_adapter_support::{find_program, locate_program};
+use ralphy_adapter_support::{find_program, locate_program, run_headless};
 use serde::{Deserialize, Serialize};
 
 use crate::init::Agent;
@@ -247,38 +248,74 @@ pub(crate) fn run(args: &DoctorArgs) -> Result<()> {
 
 // --- probes -----------------------------------------------------------------
 
-/// Run every probe on this computer.
+/// Run every probe on this computer. The probes are independent and each one
+/// starts a program, so they run at the same time.
 pub(crate) fn probe() -> MachineFacts {
-    MachineFacts {
-        git: on_path("git").map(|p| version_of(&p)),
-        gh: on_path("gh").map(|p| version_of(&p)),
-        gh_signed_in: gh_signed_in(),
-        python: on_path("python")
-            .or_else(|| on_path("python3"))
-            .map(|p| version_of(&p)),
-        agents: Agent::ALL
+    let version = |p: Option<PathBuf>| p.map(|p| version_of(&p));
+    std::thread::scope(|scope| {
+        let git = scope.spawn(|| version(on_path("git")));
+        let gh = scope.spawn(|| version(on_path("gh")));
+        let signed_in = scope.spawn(gh_signed_in);
+        let python = scope.spawn(|| version(on_path("python").or_else(|| on_path("python3"))));
+        let agents: Vec<_> = Agent::ALL
             .iter()
-            .filter_map(|a| agent_program(a).map(|p| (*a, version_of(&p))))
-            .collect(),
-        linger: linger(),
-    }
+            .map(|a| scope.spawn(move || agent_program(a).map(|p| (*a, version_of(&p)))))
+            .collect();
+        let linger = linger();
+        // A probe thread only runs a program and reads its output; a panic in
+        // one is a bug in that code, not a fact about the computer.
+        let join = "a doctor probe does not panic";
+        MachineFacts {
+            git: git.join().expect(join),
+            gh: gh.join().expect(join),
+            gh_signed_in: signed_in.join().expect(join),
+            python: python.join().expect(join),
+            agents: agents
+                .into_iter()
+                .filter_map(|h| h.join().expect(join))
+                .collect(),
+            linger,
+        }
+    })
 }
 
 fn on_path(name: &str) -> Option<PathBuf> {
     find_program(name, std::env::var_os("PATH"), std::env::var_os("PATHEXT"))
 }
 
+/// How long one probe may run. `doctor` runs on a host over ssh and before
+/// `init`, so a CLI that waits for input or for the network must not hold it.
+const PROBE_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// Run `cmd` with no input, killed after [`PROBE_TIMEOUT`]. `None` when it
+/// did not start, timed out, or failed; else what it printed.
+fn probe_output(mut cmd: std::process::Command) -> Option<String> {
+    cmd.stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let program = cmd.get_program().to_string_lossy().into_owned();
+    let out = match run_headless(cmd, "", PROBE_TIMEOUT) {
+        Ok(out) => out,
+        Err(e) => {
+            tracing::debug!(error = %e, %program, "probe did not start");
+            return None;
+        }
+    };
+    if out.timed_out {
+        tracing::debug!(%program, "probe timed out");
+    }
+    out.exit
+        .is_some_and(|status| status.success())
+        .then_some(out.stdout)
+}
+
 /// The first non-empty line `<program> --version` prints, or an empty string.
 fn version_of(program: &Path) -> String {
-    std::process::Command::new(program)
-        .arg("--version")
-        .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .and_then(|o| {
-            String::from_utf8_lossy(&o.stdout)
+    let mut cmd = std::process::Command::new(program);
+    cmd.arg("--version");
+    probe_output(cmd)
+        .and_then(|stdout| {
+            stdout
                 .lines()
                 .map(str::trim)
                 .find(|l| !l.is_empty())
@@ -289,14 +326,9 @@ fn version_of(program: &Path) -> String {
 
 /// `gh auth status` exits 0 only when signed in.
 pub(crate) fn gh_signed_in() -> bool {
-    std::process::Command::new("gh")
-        .args(["auth", "status"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+    let mut cmd = std::process::Command::new("gh");
+    cmd.args(["auth", "status"]);
+    probe_output(cmd).is_some()
 }
 
 // Each CLI resolves through the same locator the adapters spawn through, so a
