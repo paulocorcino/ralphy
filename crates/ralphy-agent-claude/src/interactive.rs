@@ -449,40 +449,7 @@ pub(crate) fn strip_pty_escapes(raw: &[u8]) -> String {
     let mut i = 0;
     while i < raw.len() {
         match raw[i] {
-            0x1b => {
-                i += 1;
-                match raw.get(i) {
-                    // CSI: params/intermediates until a final byte in 0x40-0x7e.
-                    Some(b'[') => {
-                        i += 1;
-                        while i < raw.len() && !(0x40..=0x7e).contains(&raw[i]) {
-                            i += 1;
-                        }
-                        if matches!(raw.get(i), Some(b'C') | Some(b'H') | Some(b'f')) {
-                            out.push(b' ');
-                        }
-                        i += 1;
-                    }
-                    // OSC: swallow until BEL or ST (ESC \).
-                    Some(b']') => {
-                        i += 1;
-                        while i < raw.len() {
-                            if raw[i] == 0x07 {
-                                i += 1;
-                                break;
-                            }
-                            if raw[i] == 0x1b && raw.get(i + 1) == Some(&b'\\') {
-                                i += 2;
-                                break;
-                            }
-                            i += 1;
-                        }
-                    }
-                    // Two-byte escape (ESC c, ESC =, ...): drop the pair.
-                    Some(_) => i += 1,
-                    None => {}
-                }
-            }
+            0x1b => i = skip_escape(raw, i + 1, &mut out),
             b'\r' | b'\n' => {
                 out.push(b' ');
                 i += 1;
@@ -494,6 +461,44 @@ pub(crate) fn strip_pty_escapes(raw: &[u8]) -> String {
         }
     }
     String::from_utf8_lossy(&out).into_owned()
+}
+
+/// Skip the escape whose ESC byte sits just before `i`; return the index of the
+/// next byte to read.
+fn skip_escape(raw: &[u8], i: usize, out: &mut Vec<u8>) -> usize {
+    match raw.get(i) {
+        Some(b'[') => skip_csi(raw, i + 1, out),
+        Some(b']') => skip_osc(raw, i + 1),
+        // Two-byte escape (ESC c, ESC =, ...): drop the pair.
+        Some(_) => i + 1,
+        None => i,
+    }
+}
+
+/// Skip a CSI body from `i`: params/intermediates until a final byte in
+/// 0x40-0x7e. The cursor moves `C`, `H` and `f` leave a space in `out`.
+fn skip_csi(raw: &[u8], mut i: usize, out: &mut Vec<u8>) -> usize {
+    while i < raw.len() && !(0x40..=0x7e).contains(&raw[i]) {
+        i += 1;
+    }
+    if matches!(raw.get(i), Some(b'C') | Some(b'H') | Some(b'f')) {
+        out.push(b' ');
+    }
+    i + 1
+}
+
+/// Skip an OSC body from `i`: swallow until BEL or ST (ESC `\`).
+fn skip_osc(raw: &[u8], mut i: usize) -> usize {
+    while i < raw.len() {
+        if raw[i] == 0x07 {
+            return i + 1;
+        }
+        if raw[i] == 0x1b && raw.get(i + 1) == Some(&b'\\') {
+            return i + 2;
+        }
+        i += 1;
+    }
+    i
 }
 
 /// Return `true` when raw interactive PTY output shows the logged-out REPL.
