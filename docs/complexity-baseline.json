@@ -173,11 +173,6 @@
         19
       ]
     },
-    "crates/ralphy-cli/src/ui.rs": {
-      "queue_bar_label": [
-        22
-      ]
-    },
     "crates/ralphy-cli/src/ui/presenter.rs": {
       "run": [
         13
