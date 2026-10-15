@@ -667,4 +667,34 @@ mod tests {
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].project.as_deref(), Some("o/wsrepo"));
     }
+
+    #[test]
+    fn legacy_tie_on_total_is_won_by_the_later_timestamp() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Same message_id, both totals 100; the later snapshot comes first in the file.
+        let body = format!(
+            "{}\n{}",
+            status_update(1770983420.0, 0, 100, 0, "msg-t"),
+            status_update(1770983410.0, 100, 0, 0, "msg-t"),
+        );
+        write_wire(tmp.path(), "sessions/GRP/SESS/wire.jsonl", &body);
+        let records = scan_legacy_only(tmp.path());
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].tokens.as_ref().unwrap().output, 100);
+        assert_eq!(records[0].tokens.as_ref().unwrap().input, 0);
+    }
+
+    #[test]
+    fn legacy_empty_message_id_counts_each_snapshot() {
+        let tmp = tempfile::tempdir().unwrap();
+        let body = format!(
+            "{}\n{}",
+            status_update(1770983410.0, 10, 1, 0, ""),
+            status_update(1770983420.0, 20, 2, 0, ""),
+        );
+        write_wire(tmp.path(), "sessions/GRP/SESS/wire.jsonl", &body);
+        let records = scan_legacy_only(tmp.path());
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].tokens.as_ref().unwrap().input, 30);
+    }
 }

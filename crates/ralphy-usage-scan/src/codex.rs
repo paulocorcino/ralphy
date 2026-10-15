@@ -647,4 +647,55 @@ mod tests {
         });
         assert_eq!(records.len(), 1);
     }
+
+    #[test]
+    fn excludes_run_owned_by_session_meta_id() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        write(
+            root,
+            "sessions/rollout-run.jsonl",
+            &rollout(
+                "run-meta",
+                "/work/x",
+                "m",
+                &[token_line(10, 0, 0, "2026-07-10T10:00:00Z")],
+            ),
+        );
+        let mut runs = HashSet::new();
+        runs.insert("run-meta".to_string()); // the meta id, not the file stem
+
+        let records = scan_codex(&CodexScan {
+            codex_dir: root,
+            run_session_ids: &runs,
+            repos: &[],
+            since: None,
+        });
+        assert!(records.is_empty());
+    }
+
+    #[test]
+    fn a_flat_payload_with_no_payload_key_still_parses() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let body = [
+            "{\"type\":\"session_meta\",\"id\":\"flat-id\",\"cwd\":\"/work/x\"}",
+            "{\"type\":\"turn_context\",\"model\":\"flat-model\"}",
+            "{\"timestamp\":\"2026-07-10T10:00:00Z\",\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":40,\"cached_input_tokens\":10,\"output_tokens\":7}}}",
+        ]
+        .join("\n");
+        write(root, "sessions/rollout-flat.jsonl", &body);
+
+        let records = scan_codex(&CodexScan {
+            codex_dir: root,
+            run_session_ids: &no_runs(),
+            repos: &[],
+            since: None,
+        });
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].session_id, "flat-id");
+        assert_eq!(records[0].model, "flat-model");
+        assert_eq!(records[0].tokens.as_ref().unwrap().input, 30);
+        assert_eq!(records[0].tokens.as_ref().unwrap().output, 7);
+    }
 }

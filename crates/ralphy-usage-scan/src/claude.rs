@@ -582,4 +582,51 @@ mod tests {
         assert_eq!(records.len(), 1, "the bound is inclusive");
         assert_eq!(records[0].session_id, "new");
     }
+
+    #[test]
+    fn a_message_id_without_request_id_dedups_by_max_merge() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let body = [
+            usage_line("m", "m1", None, 100, "2026-07-10T10:00:00Z"),
+            usage_line("m", "m1", None, 300, "2026-07-10T10:00:01Z"),
+        ]
+        .join("\n");
+        write(root, "ws-key/sess1.jsonl", &body);
+        let records = scan_claude(&ClaudeScan {
+            projects_dir: root,
+            run_session_ids: &no_runs(),
+            repos: &[],
+            since: None,
+        });
+        assert_eq!(records.len(), 1);
+        assert_eq!(
+            records[0].tokens.as_ref().unwrap().input,
+            300,
+            "one id, no requestId: the max 300, not the sum 400"
+        );
+    }
+
+    #[test]
+    fn timestamps_widen_to_the_first_and_last_line_in_any_order() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let body = [
+            usage_line("m", "a", Some("r"), 1, "2026-07-10T10:00:05Z"),
+            usage_line("m", "b", Some("r"), 1, "2026-07-10T10:00:01Z"),
+            usage_line("m", "c", Some("r"), 1, "2026-07-10T10:00:09Z"),
+            usage_line("m", "d", Some("r"), 1, "2026-07-10T10:00:03Z"),
+        ]
+        .join("\n");
+        write(root, "ws-key/sess1.jsonl", &body);
+        let records = scan_claude(&ClaudeScan {
+            projects_dir: root,
+            run_session_ids: &no_runs(),
+            repos: &[],
+            since: None,
+        });
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].first_ts, "2026-07-10T10:00:01Z");
+        assert_eq!(records[0].last_ts, "2026-07-10T10:00:09Z");
+    }
 }
