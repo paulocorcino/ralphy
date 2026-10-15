@@ -475,11 +475,6 @@
         13
       ]
     },
-    "crates/ralphy-daemon/assets/ui/wb-fleet.ts": {
-      "fleetGroups": [
-        24
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-geometry.ts": {
       "bringIntoView": [
         13

@@ -93,46 +93,9 @@ function fleetGroups(repos: readonly Project[] | null | undefined, peers: readon
     return groups.get(key)!;
   };
 
-  for (const row of rows) {
-    const key = groupKey(row);
-    const g = ensure(key, {
-      environment: row.env || "",
-      os: row.os || "",
-      daemon: row.daemon || "",
-      // A local group has no entry in the peer list below, so its name has to
-      // come off the row — which `loadFleet` stamps from `/api/fleet`.
-      name: isLocal(row) ? row.daemonName || "" : "",
-      state: isLocal(row) ? "local" : row.peerState || "",
-      diagnosis: "",
-      nudgeable: false,
-      tunnel: false,
-      local: isLocal(row),
-    });
-    g.rows.push(row);
-  }
+  for (const row of rows) ensure(groupKey(row), rowSeed(row)).rows.push(row);
 
-  for (const p of peerList) {
-    const g = ensure(p.daemon_id, {
-      environment: p.environment || "",
-      os: "",
-      daemon: p.daemon_id,
-      name: "",
-      state: "",
-      diagnosis: "",
-      nudgeable: false,
-      tunnel: false,
-      local: false,
-    });
-    // The peer list is authoritative about the peer; the rows only carry what
-    // a row needs. A row-derived state is a fallback, never an override.
-    g.environment = p.environment || g.environment;
-    g.os = p.os || g.os;
-    g.name = p.name || "";
-    g.state = p.state || g.state;
-    g.diagnosis = p.diagnosis || "";
-    g.nudgeable = !!p.nudgeable;
-    g.tunnel = !!p.tunnel;
-  }
+  for (const p of peerList) applyPeer(ensure(p.daemon_id, peerSeed(p)), p);
 
   const out = Array.from(groups.values());
   out.sort((a, b) => {
@@ -141,6 +104,56 @@ function fleetGroups(repos: readonly Project[] | null | undefined, peers: readon
     if (byEnv !== 0) return byEnv;
     return String(a.daemon).localeCompare(String(b.daemon));
   });
+  markHeaders(out);
+  return out;
+}
+
+// What a group knows of its environment from its first row.
+function rowSeed(row: Row): GroupSeed {
+  return {
+    environment: row.env || "",
+    os: row.os || "",
+    daemon: row.daemon || "",
+    // A local group has no entry in the peer list, so its name has to
+    // come off the row — which `loadFleet` stamps from `/api/fleet`.
+    name: isLocal(row) ? row.daemonName || "" : "",
+    state: isLocal(row) ? "local" : row.peerState || "",
+    diagnosis: "",
+    nudgeable: false,
+    tunnel: false,
+    local: isLocal(row),
+  };
+}
+
+// What a group knows of a peer that gave no rows.
+function peerSeed(p: FleetPeer): GroupSeed {
+  return {
+    environment: p.environment || "",
+    os: "",
+    daemon: p.daemon_id,
+    name: "",
+    state: "",
+    diagnosis: "",
+    nudgeable: false,
+    tunnel: false,
+    local: false,
+  };
+}
+
+// The peer list is authoritative about the peer; the rows only carry what
+// a row needs. A row-derived state is a fallback, never an override.
+function applyPeer(g: Group, p: FleetPeer) {
+  g.environment = p.environment || g.environment;
+  g.os = p.os || g.os;
+  g.name = p.name || "";
+  g.state = p.state || g.state;
+  g.diagnosis = p.diagnosis || "";
+  g.nudgeable = !!p.nudgeable;
+  g.tunnel = !!p.tunnel;
+}
+
+// Which group headers show, and which of them name their daemon.
+function markHeaders(out: Group[]) {
   // A fleet of one needs no environment headers — they would only name the
   // machine the operator is already sitting at.
   const header = out.length > 1;
@@ -154,7 +167,6 @@ function fleetGroups(repos: readonly Project[] | null | undefined, peers: readon
     // A tunnel peer's header already carries its name (`groupHost`).
     g.showName = !g.tunnel && !!g.name && (perEnv.get(g.environment) || 0) > 1;
   }
-  return out;
 }
 
 // The header names a peer on another machine before its OS release
