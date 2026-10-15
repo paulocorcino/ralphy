@@ -420,7 +420,7 @@ pub(crate) fn same_program(a: &Path, b: &Path) -> bool {
 /// `ralphy.exe` while the OS reports `ralphy.exe.old`. Refusing on that would
 /// leave the old daemon running and the record cleared — defeating the restart
 /// the update exists to perform.
-fn unparked(name: &str) -> String {
+pub(crate) fn unparked(name: &str) -> String {
     let mut base = name;
     while let Some((head, tail)) = base.rsplit_once('.') {
         let is_park = tail.eq_ignore_ascii_case("old")

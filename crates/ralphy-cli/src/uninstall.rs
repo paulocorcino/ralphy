@@ -44,15 +44,19 @@ pub(crate) fn run(args: &UninstallArgs) -> Result<()> {
         remove_binary(&entry)?;
     }
     remove_from_path(&dir);
-    if args.purge {
-        purge(&store, args.yes)?;
-    } else {
-        println!(
-            "Kept Ralphy's folder {}. Delete it to remove the daemon settings and logs too.",
-            store.display()
-        );
-    }
+    keep_or_purge(&store, args.purge, args.yes)?;
     println!("Project `.ralphy/` folders and GitHub labels were not changed.");
+    Ok(())
+}
+
+fn keep_or_purge(store: &Path, purge_it: bool, yes: bool) -> Result<()> {
+    if purge_it {
+        return purge(store, yes);
+    }
+    println!(
+        "Kept Ralphy's folder {}. Delete it to remove the daemon settings and logs too.",
+        store.display()
+    );
     Ok(())
 }
 
@@ -112,7 +116,6 @@ fn with_parked(entry: &Path) -> Vec<PathBuf> {
     let Some(name) = entry.file_name().and_then(|n| n.to_str()) else {
         return files;
     };
-    let parked = format!("{name}.old");
     let Some(dir) = entry.parent() else {
         return files;
     };
@@ -124,7 +127,7 @@ fn with_parked(entry: &Path) -> Vec<PathBuf> {
         .filter(|p| {
             p.file_name()
                 .and_then(|n| n.to_str())
-                .is_some_and(|n| is_parked_name(n, &parked))
+                .is_some_and(|n| is_parked_name(n, name))
         })
         .collect();
     others.sort();
@@ -132,12 +135,10 @@ fn with_parked(entry: &Path) -> Vec<PathBuf> {
     files
 }
 
-fn is_parked_name(name: &str, parked: &str) -> bool {
-    name == parked
-        || name
-            .strip_prefix(parked)
-            .and_then(|rest| rest.strip_prefix('.'))
-            .is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
+/// A name `install` parks `entry` under. The rule is the one `daemon restart`
+/// reads a parked image with.
+fn is_parked_name(name: &str, entry: &str) -> bool {
+    name != entry && crate::daemon::restart::unparked(name) == entry
 }
 
 fn remove_file(file: &Path) -> Result<()> {
@@ -228,19 +229,67 @@ fn remove_from_path(dir: &Path) {
     }
 }
 
-/// Why `store` must not be deleted as Ralphy's folder, or `None`. A
-/// `RALPHY_DAEMON_DIR` set by mistake could name the home folder, a root, or a
-/// project's own `.ralphy/`, which holds that project's runs.
-fn purge_refusal(store: &Path, home: Option<&Path>) -> Option<&'static str> {
-    let parent = store.parent()?;
-    if parent.as_os_str().is_empty() {
+/// Files only the daemon writes in its store. A folder with none of them is
+/// not Ralphy's folder, whatever `RALPHY_DAEMON_DIR` says.
+const STORE_MARKERS: [&str; 5] = [
+    "daemon.toml",
+    "daemon-token",
+    "repos.toml",
+    "daemon.log",
+    "peers",
+];
+
+/// A path as Windows compares it: without case. Other systems compare it as
+/// it is.
+fn same_path_key(path: &Path) -> String {
+    let text = path.to_string_lossy();
+    let text = text.trim_end_matches(std::path::is_separator);
+    if cfg!(windows) {
+        text.to_lowercase()
+    } else {
+        text.to_string()
+    }
+}
+
+/// Whether `inner` is `outer` or a folder inside it, compared component by
+/// component.
+fn is_within(inner: &Path, outer: &Path) -> bool {
+    let inner = same_path_key(inner);
+    let outer = same_path_key(outer);
+    inner == outer
+        || inner
+            .strip_prefix(&outer)
+            .is_some_and(|rest| rest.starts_with(std::path::is_separator))
+}
+
+/// Why `store` must not be deleted as Ralphy's folder, or `None`. Paths are
+/// canonical. A `RALPHY_DAEMON_DIR` set by mistake could name a root, the home
+/// folder or a folder above it, a project, or a project's own `.ralphy/`,
+/// which holds that project's runs. The default store is accepted even when
+/// the home folder is a git repository.
+fn purge_refusal(
+    store: &Path,
+    home: Option<&Path>,
+    default_store: Option<&Path>,
+) -> Option<&'static str> {
+    let Some(parent) = store.parent() else {
+        return Some("it is the root of a drive");
+    };
+    if !store.is_absolute() || parent.as_os_str().is_empty() {
         return Some("it is a relative path");
     }
-    if home.is_some_and(|h| h == store) {
-        return Some("it is the home folder");
+    if home.is_some_and(|h| is_within(h, store)) {
+        return Some("it is the home folder or a folder above it");
     }
-    if parent.join(".git").exists() {
+    if store.join(".git").exists() {
+        return Some("it is a project");
+    }
+    let is_default = default_store.is_some_and(|d| same_path_key(d) == same_path_key(store));
+    if !is_default && parent.join(".git").exists() {
         return Some("it is the `.ralphy` folder of a project");
+    }
+    if !STORE_MARKERS.iter().any(|m| store.join(m).exists()) {
+        return Some("it holds none of the files the daemon writes");
     }
     None
 }
@@ -250,11 +299,10 @@ fn purge(store: &Path, yes: bool) -> Result<()> {
         println!("Ralphy's folder {} does not exist.", store.display());
         return Ok(());
     }
-    let home = directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf());
-    let refusal = match store.parent() {
-        None => Some("it is the root of a drive"),
-        Some(_) => purge_refusal(store, home.as_deref()),
-    };
+    let canonical = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    let home = directories::BaseDirs::new().map(|b| canonical(b.home_dir()));
+    let default_store = home.as_ref().map(|h| canonical(&h.join(".ralphy")));
+    let refusal = purge_refusal(&canonical(store), home.as_deref(), default_store.as_deref());
     if let Some(why) = refusal {
         bail!("will not delete {}: {why}", store.display());
     }

@@ -18,24 +18,74 @@ fn purge_deletes_the_store_and_nothing_beside_it() {
     );
 }
 
+/// A folder with one file only the daemon writes.
+fn store_at(dir: &Path) -> PathBuf {
+    std::fs::create_dir_all(dir).expect("store");
+    std::fs::write(dir.join("daemon.toml"), "name = \"x\"").expect("marker");
+    dir.to_path_buf()
+}
+
 #[test]
-fn purge_refuses_a_project_folder_and_the_home_folder() {
+fn purge_refuses_every_folder_that_is_not_ralphys_own() {
     let root = tempfile::tempdir().expect("scratch");
-    let project = root.path().join("app");
+    let root = std::fs::canonicalize(root.path()).expect("canonical");
+    let home = root.join("home");
+    let default_store = store_at(&home.join(".ralphy"));
+    let project = store_at(&root.join("code").join("app"));
     std::fs::create_dir_all(project.join(".git")).expect("repo");
-    let runs = project.join(".ralphy");
-    std::fs::create_dir_all(&runs).expect("runs");
-    std::fs::write(runs.join("run.log"), "run").expect("run");
+    let runs = store_at(&project.join(".ralphy"));
+    let plain = root.join("photos");
+    std::fs::create_dir_all(&plain).expect("plain");
+    std::fs::write(plain.join("a.jpg"), "x").expect("photo");
+
+    let refusal = |store: &Path| purge_refusal(store, Some(&home), Some(&default_store));
+    assert_eq!(
+        refusal(&home),
+        Some("it is the home folder or a folder above it")
+    );
+    assert_eq!(
+        refusal(&root),
+        Some("it is the home folder or a folder above it")
+    );
+    assert_eq!(refusal(&project), Some("it is a project"));
+    assert_eq!(
+        refusal(&runs),
+        Some("it is the `.ralphy` folder of a project")
+    );
+    assert_eq!(
+        refusal(&plain),
+        Some("it holds none of the files the daemon writes")
+    );
+    assert_eq!(refusal(Path::new("store")), Some("it is a relative path"));
+    assert_eq!(refusal(&default_store), None);
+
+    // A home folder kept in git (dotfiles) still lets its own store go.
+    std::fs::create_dir_all(home.join(".git")).expect("dotfiles");
+    assert_eq!(refusal(&default_store), None);
 
     let err = purge(&runs, true).expect_err("a project's .ralphy is refused");
     assert!(err.to_string().contains("of a project"), "{err}");
-    assert!(runs.join("run.log").is_file(), "nothing was deleted");
+    assert!(runs.join("daemon.toml").is_file(), "nothing was deleted");
+}
 
+/// Windows compares paths without case, so a home spelled in other letters
+/// is still the home folder.
+#[cfg(windows)]
+#[test]
+fn purge_compares_windows_paths_without_case() {
+    let home = Path::new(r"C:\Users\Me");
     assert_eq!(
-        purge_refusal(root.path(), Some(root.path())),
-        Some("it is the home folder")
+        purge_refusal(Path::new(r"c:\users"), Some(home), None),
+        Some("it is the home folder or a folder above it")
     );
-    assert_eq!(purge_refusal(&root.path().join(".ralphy"), None), None);
+}
+
+#[test]
+fn a_plain_uninstall_keeps_the_store() {
+    let home = tempfile::tempdir().expect("scratch");
+    let store = store_at(&home.path().join(".ralphy"));
+    keep_or_purge(&store, false, true).expect("keep");
+    assert!(store.join("daemon.toml").is_file());
 }
 
 #[test]
@@ -43,14 +93,16 @@ fn the_binary_and_its_parked_copies_go_and_nothing_else() {
     let dir = tempfile::tempdir().expect("scratch");
     let entry = dir.path().join(binary_name());
     for name in [
-        binary_name().to_string(),
-        format!("{}.old", binary_name()),
         format!("{}.old.2", binary_name()),
         format!("{}.older", binary_name()),
         "ralphy-notes".to_string(),
     ] {
         std::fs::write(dir.path().join(name), "x").expect("seed");
     }
+    // `.old` is named by install's own parking, so the two cannot drift.
+    std::fs::write(&entry, "x").expect("seed");
+    crate::install::park_existing(&entry).expect("park");
+    std::fs::write(&entry, "x").expect("seed");
 
     remove_binary(&entry).expect("remove");
 
