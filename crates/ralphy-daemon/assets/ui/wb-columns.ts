@@ -326,50 +326,63 @@ export const WBColumns = (function () {
   // `columns` is the grid's ids in reading order (`flat`). `from` is the
   // console that opened the list; `full` says no console can be added. A list
   // row can still be swapped in when it cannot open.
-  function listFold({ rows, fences, membership, detached, columns, from, full }: ListFoldInput): ColumnGroup[] {
-    const inColumns = new Set(columns || []);
-    // A console in no fence looks up `undefined`.
-    const byFence = new Map<string | undefined, ColumnRow[]>((fences || []).map((f) => [f.id, []]));
+  // Window id → the fence that holds it. A window two fences name goes to
+  // the first one.
+  function fenceOfWindow(membership: Record<string, string[]> | null | undefined) {
     const fenceOfWin = new Map<string, string>();
     for (const [fenceId, ids] of Object.entries(membership || {})) {
       for (const wid of ids || []) if (!fenceOfWin.has(wid)) fenceOfWin.set(wid, fenceId);
     }
+    return fenceOfWin;
+  }
+
+  // The row of a console on this stage. `open`: it is in the grid already.
+  function liveRow(r: RosterRow, open: boolean, full: boolean | undefined): ColumnRow {
+    return {
+      id: r.id,
+      agent: r.agent,
+      name: r.name ?? null,
+      repo: r.repo ?? null,
+      kind: r.kind,
+      state: r.state ?? null,
+      running: r.running !== false,
+      enabled: !open && !full,
+      reason: open ? REASON_OPEN : full ? REASON_FULL : null,
+      swappable: true,
+    };
+  }
+
+  // The row of a console in a detached fence: named, never opened or swapped.
+  function detachedRow(m: DetachedMember): ColumnRow {
+    return {
+      id: m.id,
+      agent: m.agent,
+      name: m.name ?? null,
+      repo: m.repo ?? null,
+      kind: m.kind,
+      state: null,
+      running: true,
+      enabled: false,
+      reason: REASON_DETACHED,
+      swappable: false,
+    };
+  }
+
+  function listFold({ rows, fences, membership, detached, columns, from, full }: ListFoldInput): ColumnGroup[] {
+    const inColumns = new Set(columns || []);
+    // A console in no fence looks up `undefined`.
+    const byFence = new Map<string | undefined, ColumnRow[]>((fences || []).map((f) => [f.id, []]));
+    const fenceOfWin = fenceOfWindow(membership);
     const loose: ColumnRow[] = [];
     for (const r of rows || []) {
       if (r.id === from) continue;
-      const open = inColumns.has(r.id);
-      const row = {
-        id: r.id,
-        agent: r.agent,
-        name: r.name ?? null,
-        repo: r.repo ?? null,
-        kind: r.kind,
-        state: r.state ?? null,
-        running: r.running !== false,
-        enabled: !open && !full,
-        reason: open ? REASON_OPEN : full ? REASON_FULL : null,
-        swappable: true,
-      };
       const into = byFence.get(fenceOfWin.get(r.id));
-      (into || loose).push(row);
+      (into || loose).push(liveRow(r, inColumns.has(r.id), full));
     }
     for (const [fenceId, members] of Object.entries(detached || {})) {
       const into = byFence.get(fenceId);
       if (!into) continue;
-      for (const m of members) {
-        into.push({
-          id: m.id,
-          agent: m.agent,
-          name: m.name ?? null,
-          repo: m.repo ?? null,
-          kind: m.kind,
-          state: null,
-          running: true,
-          enabled: false,
-          reason: REASON_DETACHED,
-          swappable: false,
-        });
-      }
+      for (const m of members) into.push(detachedRow(m));
     }
     const group = (fence: ColumnFence | null, rows: ColumnRow[]): ColumnGroup => ({ fence, rows });
     const groups: ColumnGroup[] = [];
