@@ -344,6 +344,9 @@ jobs:
           if ($bad -notmatch 'SHA-256 of') { throw "refused for another reason: $bad" }
           if (Test-Path (Join-Path $env:RALPHY_INSTALL_DIR 'ralphy.exe')) { throw 'a binary was installed' }
           Stop-Process -Id $server.Id
+          # The runner ends the step with the last native exit code, which is the
+          # refused install above.
+          exit 0
 
   changelog:
     name: changelog fragment
