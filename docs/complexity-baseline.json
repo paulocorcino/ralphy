@@ -835,9 +835,6 @@
     "crates/ralphy-daemon/src/tree/search.rs": {
       "find": [
         12
-      ],
-      "grep_with": [
-        24
       ]
     },
     "crates/ralphy-daemon/src/usage.rs": {

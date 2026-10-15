@@ -183,25 +183,44 @@ pub fn grep_with(
     if needle.chars().count() < MIN_QUERY_CHARS {
         return Ok(reply);
     }
-    let re = match regex::RegexBuilder::new(&regex::escape(needle))
-        .case_insensitive(true)
-        .build()
-    {
-        Ok(re) => re,
-        // An escaped literal always compiles; the only way here is a query so
-        // long it trips the regex size limit, and an empty answer is the honest
-        // one for that.
-        Err(_) => return Ok(reply),
+    let Some(re) = literal_regex(needle) else {
+        return Ok(reply);
     };
     let clock = Clock::start(budget);
+    collect_hits(
+        grep_walks(&dir),
+        &dir,
+        &re,
+        fallback,
+        budget,
+        &clock,
+        &mut reply,
+    );
+    reply.hits.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(reply)
+}
 
-    // Two walks, not one override: the `ignore` crate's whitelist overrides
-    // turn every NON-matching file into an ignored one, so `.ralphy/**` cannot
-    // be whitelisted without hiding the rest of the repo. The main walk skips
-    // the top-level `.ralphy` (whether or not the repo ignores it, so a hit is
-    // never counted twice); the second walk owns it with every filter off.
+/// `needle` as a literal, case-insensitive regex.
+fn literal_regex(needle: &str) -> Option<regex::Regex> {
+    // An escaped literal always compiles; the only error is a query so long
+    // it trips the regex size limit, and an empty answer is the honest one
+    // for that.
+    regex::RegexBuilder::new(&regex::escape(needle))
+        .case_insensitive(true)
+        .build()
+        .ok()
+}
+
+/// The walks [`grep`] searches under `dir`.
+///
+/// Two walks, not one override: the `ignore` crate's whitelist overrides
+/// turn every NON-matching file into an ignored one, so `.ralphy/**` cannot
+/// be whitelisted without hiding the rest of the repo. The main walk skips
+/// the top-level `.ralphy` (whether or not the repo ignores it, so a hit is
+/// never counted twice); the second walk owns it with every filter off.
+fn grep_walks(dir: &Path) -> impl Iterator<Item = ignore::Walk> {
     let ralphy = dir.join(ALWAYS_SEARCHED);
-    let mut main = ignore::WalkBuilder::new(&dir);
+    let mut main = ignore::WalkBuilder::new(dir);
     main.hidden(false)
         .git_ignore(true)
         .git_exclude(true)
@@ -216,31 +235,41 @@ pub fn grep_with(
         let sub = dir.join(ALWAYS_SEARCHED);
         sub.is_dir().then(|| walker(&sub).build())
     };
+    std::iter::once(main.build()).chain(ralphy_walk)
+}
 
-    let walks = std::iter::once(main.build()).chain(ralphy_walk);
-    'walk: for walk in walks {
-        for entry in walk.filter_map(Result::ok) {
-            if clock.expired() {
-                reply.truncated = true;
-                break 'walk;
-            }
-            if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
-                continue;
-            }
-            let Some(count) = count_in(entry.path(), &re, fallback) else {
-                continue;
-            };
-            if reply.hits.len() >= budget.max_hits {
-                reply.truncated = true;
-                break 'walk;
-            }
-            if let Some(path) = rel_of(&dir, &entry) {
-                reply.hits.push(GrepHit { path, count });
-            }
+/// Push a hit into `reply` for each file of `walks` that contains `re`, until
+/// the clock runs out or the hit cap is reached; either one sets `truncated`.
+/// The cap is checked only for a file that is a hit, so a walk that ends
+/// right at the cap is not `truncated`.
+fn collect_hits(
+    walks: impl Iterator<Item = ignore::Walk>,
+    dir: &Path,
+    re: &regex::Regex,
+    fallback: &'static Encoding,
+    budget: &SearchBudget,
+    clock: &Clock,
+    reply: &mut SearchReply<GrepHit>,
+) {
+    for entry in walks.flatten().filter_map(Result::ok) {
+        if clock.expired() {
+            reply.truncated = true;
+            return;
         }
+        if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
+            continue;
+        }
+        let Some(count) = count_in(entry.path(), re, fallback) else {
+            continue;
+        };
+        if reply.hits.len() >= budget.max_hits {
+            reply.truncated = true;
+            return;
+        }
+        reply
+            .hits
+            .extend(rel_of(dir, &entry).map(|path| GrepHit { path, count }));
     }
-    reply.hits.sort_by(|a, b| a.path.cmp(&b.path));
-    Ok(reply)
 }
 
 /// Occurrences of `re` in the file at `path`, or `None` when the file is not a
