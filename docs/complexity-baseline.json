@@ -811,11 +811,6 @@
         12
       ]
     },
-    "crates/ralphy-daemon/src/routes/api_fleet.rs": {
-      "fleet_route": [
-        33
-      ]
-    },
     "crates/ralphy-daemon/src/routes/api_sessions.rs": {
       "close_session_route": [
         14
