@@ -246,7 +246,8 @@ jobs:
         run: shellcheck assets/install/install.sh
 
       # The server runs in the same step as the script: a background process
-      # does not reliably outlive its step.
+      # does not reliably outlive its step. Each refusal is checked by its
+      # message, so an unrelated failure does not pass for it.
       - name: install.sh
         if: runner.os != 'Windows'
         env:
@@ -262,27 +263,44 @@ jobs:
           esac
           python3 .github/scripts/install-fixture.py target/debug/ralphy "$target" "$RUNNER_TEMP/release"
           python3 -m http.server 8765 --bind 127.0.0.1 --directory "$RUNNER_TEMP/release" >/dev/null 2>&1 &
-          sleep 2
+          for _ in $(seq 1 50); do
+            curl -fsS -o /dev/null "$RALPHY_RELEASES_URL" && break
+            sleep 0.2
+          done
           sh assets/install/install.sh
           "$RALPHY_INSTALL_DIR/ralphy" --version
           sh assets/install/install.sh   # a second run repairs the install
+          # The default folder, decided by the binary: a scratch home has no
+          # ~/.cargo/bin, so it is ~/.local/bin.
+          ( export HOME="$RUNNER_TEMP/home"; mkdir -p "$HOME"; unset RALPHY_INSTALL_DIR
+            sh assets/install/install.sh
+            "$HOME/.local/bin/ralphy" --version )
+          if [ "$(uname -s)" = Darwin ]; then
+            # The daemon at sign-in: a launchd agent in a scratch home.
+            ( export HOME="$RUNNER_TEMP/daemon-home"; mkdir -p "$HOME"
+              RALPHY_DAEMON=1 sh assets/install/install.sh
+              test -f "$HOME/Library/LaunchAgents/dev.ralphy.daemon.plist"
+              "$RALPHY_INSTALL_DIR/ralphy" daemon uninstall )
+          fi
           if [ "$(uname -s)" = Linux ]; then
             # As root with no terminal, it stops unless root is allowed.
-            if sudo -E setsid sh assets/install/install.sh </dev/null; then
+            if sudo -E setsid -w sh assets/install/install.sh </dev/null 2>"$RUNNER_TEMP/root.err"; then
               echo "install.sh ran as root with no terminal and no RALPHY_ALLOW_ROOT"
               exit 1
             fi
+            grep -q "no terminal to ask in" "$RUNNER_TEMP/root.err"
             sudo -E env RALPHY_ALLOW_ROOT=1 RALPHY_INSTALL_DIR="$RUNNER_TEMP/rootbin" \
-              setsid sh assets/install/install.sh </dev/null
+              setsid -w sh assets/install/install.sh </dev/null
             "$RUNNER_TEMP/rootbin/ralphy" --version
           fi
           # A wrong checksum installs nothing.
           sum="$RUNNER_TEMP/release/download/v0.0.0-fixture/ralphy-v0.0.0-fixture-$target.tar.gz.sha256"
           echo "0000  x" > "$sum"
-          if RALPHY_INSTALL_DIR="$RUNNER_TEMP/badbin" sh assets/install/install.sh; then
+          if RALPHY_INSTALL_DIR="$RUNNER_TEMP/badbin" sh assets/install/install.sh 2>"$RUNNER_TEMP/sum.err"; then
             echo "install.sh accepted a wrong checksum"
             exit 1
           fi
+          grep -q "SHA-256 of" "$RUNNER_TEMP/sum.err"
           test ! -e "$RUNNER_TEMP/badbin/ralphy"
 
       # A hosted Windows runner is elevated, so this is the administrator path:
@@ -299,17 +317,32 @@ jobs:
           $release = Join-Path $env:RUNNER_TEMP 'release'
           python .github/scripts/install-fixture.py target/debug/ralphy.exe windows-x64 $release
           $server = Start-Process python -ArgumentList '-m', 'http.server', '8765', '--bind', '127.0.0.1', '--directory', $release -PassThru
-          Start-Sleep -Seconds 2
-          '' | pwsh -NoProfile -File assets/install/install.ps1
+          foreach ($i in 1..50) {
+            try { Invoke-WebRequest -UseBasicParsing $env:RALPHY_RELEASES_URL | Out-Null; break } catch { Start-Sleep -Milliseconds 200 }
+          }
+          $refused = '' | pwsh -NoProfile -File assets/install/install.ps1 2>&1 | Out-String
           if ($LASTEXITCODE -eq 0) { throw 'install.ps1 ran elevated with no terminal and no RALPHY_ALLOW_ROOT' }
+          if ($refused -notmatch 'no terminal to ask in') { throw "refused for another reason: $refused" }
           $env:RALPHY_ALLOW_ROOT = '1'
-          pwsh -NoProfile -File assets/install/install.ps1 -Daemon
-          if ($LASTEXITCODE -ne 0) { throw "install.ps1 failed ($LASTEXITCODE)" }
+          $installed = pwsh -NoProfile -File assets/install/install.ps1 -Daemon 2>&1 | Out-String
+          if ($LASTEXITCODE -ne 0) { throw "install.ps1 failed ($LASTEXITCODE): $installed" }
           & "$env:RALPHY_INSTALL_DIR\ralphy.exe" --version
           reg query 'HKCU\Software\Microsoft\Windows\CurrentVersion\Run' /v ralphy-daemon
           if ($LASTEXITCODE -ne 0) { throw 'the daemon autostart is not registered' }
+          if ($installed -notmatch 'not started from this administrator window') { throw "no refusal line: $installed" }
+          $running = Get-CimInstance Win32_Process -Filter "Name = 'ralphy.exe'" |
+            Where-Object { $_.CommandLine -match ' daemon' }
+          if ($running) { throw 'an elevated install started the daemon' }
           # The same script through Invoke-Expression, as the README runs it.
           Get-Content -Raw assets/install/install.ps1 | Invoke-Expression
+          # A wrong checksum installs nothing.
+          $sum = Join-Path $release 'download\v0.0.0-fixture\ralphy-v0.0.0-fixture-windows-x64.zip.sha256'
+          Set-Content $sum '0000  x'
+          $env:RALPHY_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'badbin'
+          $bad = pwsh -NoProfile -File assets/install/install.ps1 2>&1 | Out-String
+          if ($LASTEXITCODE -eq 0) { throw 'install.ps1 accepted a wrong checksum' }
+          if ($bad -notmatch 'SHA-256 of') { throw "refused for another reason: $bad" }
+          if (Test-Path (Join-Path $env:RALPHY_INSTALL_DIR 'ralphy.exe')) { throw 'a binary was installed' }
           Stop-Process -Id $server.Id
 
   changelog:

@@ -39,7 +39,11 @@ fetch() {
     if command -v curl >/dev/null 2>&1; then
         curl -fsSL --proto "$PROTO" --proto-redir "$PROTO" -o "$2" "$1"
     elif command -v wget >/dev/null 2>&1; then
-        wget -q -O "$2" "$1"
+        if [ "$PROTO" = "=https" ]; then
+            wget -q --https-only -O "$2" "$1"
+        else
+            wget -q -O "$2" "$1"
+        fi
     else
         fail "this needs curl or wget to download Ralphy"
     fi
@@ -80,7 +84,9 @@ detect_target() {
 }
 
 # The newest release on the rc channel, which admits every release. The list
-# comes newest first, and a draft is not visible without a token.
+# comes newest first, and a draft is not visible without a token. A limit: the
+# list is in the order the releases were made, not in version order as
+# `ralphy update` reads it; the two differ only for a release made out of turn.
 pick_tag() {
     if [ -n "${RALPHY_VERSION:-}" ]; then
         printf '%s' "$RALPHY_VERSION"
@@ -102,15 +108,13 @@ sha256_of() {
     fi
 }
 
-# The folder `ralphy install` picks by default: `~/.cargo/bin` when it exists,
-# otherwise `~/.local/bin` (`default_bin_dir` in crates/ralphy-cli/src/install.rs).
+# Where `ralphy install` puts the binary. The binary answers, so the default
+# folder is decided in one place.
 installed_binary() {
     if [ -n "${RALPHY_INSTALL_DIR:-}" ]; then
-        printf '%s' "$RALPHY_INSTALL_DIR/ralphy"
-    elif [ -d "$HOME/.cargo/bin" ]; then
-        printf '%s' "$HOME/.cargo/bin/ralphy"
+        "$1" install --print-path --dir "$RALPHY_INSTALL_DIR"
     else
-        printf '%s' "$HOME/.local/bin/ralphy"
+        "$1" install --print-path
     fi
 }
 
@@ -131,6 +135,7 @@ main() {
     target="$(detect_target)"
     tmp="$(mktemp -d)"
     trap 'rm -rf "$tmp"' EXIT
+    trap 'rm -rf "$tmp"; exit 1' INT TERM
     tag="$(pick_tag)"
     name="ralphy-$tag-$target"
     archive="$name.tar.gz"
@@ -145,14 +150,12 @@ main() {
     [ "$want" = "$got" ] || fail "the SHA-256 of $archive is wrong, so nothing was installed"
 
     tar -xzf "$tmp/$archive" -C "$tmp"
+    unpacked="$tmp/$name/ralphy"
+    ralphy="$(installed_binary "$unpacked")" ||
+        fail "cannot run programs from $tmp (is it mounted noexec?): set TMPDIR to another folder"
     # A copy, not a link: the download folder is removed when this script ends.
     # `--force` lets a second run repair an install.
-    if [ -n "${RALPHY_INSTALL_DIR:-}" ]; then
-        "$tmp/$name/ralphy" install --copy --force --dir "$RALPHY_INSTALL_DIR"
-    else
-        "$tmp/$name/ralphy" install --copy --force
-    fi
-    ralphy="$(installed_binary)"
+    "$unpacked" install --copy --force --dir "$(dirname "$ralphy")"
 
     if [ "${RALPHY_DAEMON:-}" = 1 ]; then
         "$ralphy" daemon install
@@ -162,7 +165,11 @@ main() {
     fi
 
     say ""
-    "$ralphy" doctor || true
+    # `doctor` exits 1 when a tool is missing; that never stops the install.
+    # Any other code means the installed binary did not run.
+    status=0
+    "$ralphy" doctor || status=$?
+    [ "$status" -le 1 ] || fail "could not run $ralphy (exit $status)"
 }
 
 main "$@"

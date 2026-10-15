@@ -42,6 +42,11 @@ pub struct InstallArgs {
     /// to your user Path (Windows).
     #[arg(long)]
     no_modify_path: bool,
+
+    /// Print where `ralphy` would go, and change nothing. The install scripts
+    /// read it, so the default folder is decided only here.
+    #[arg(long, hide = true)]
+    print_path: bool,
 }
 
 /// The warning for a run as root or as administrator, or `None`. It never asks
@@ -62,16 +67,20 @@ pub(crate) fn warn_if_elevated() {
 }
 
 pub fn run(args: &InstallArgs) -> Result<()> {
+    let dir = match &args.dir {
+        Some(d) => d.clone(),
+        None => default_bin_dir()?,
+    };
+    if args.print_path {
+        println!("{}", dir.join(binary_name()).display());
+        return Ok(());
+    }
     warn_if_elevated();
     // Link to the real file, not to another link, so the installed entry survives
     // the build dir being a symlink farm (e.g. some CI layouts).
     let exe = std::env::current_exe().context("locating the running ralphy binary")?;
     let exe = std::fs::canonicalize(&exe).unwrap_or(exe);
 
-    let dir = match &args.dir {
-        Some(d) => d.clone(),
-        None => default_bin_dir()?,
-    };
     std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
 
     let dest = dir.join(binary_name());

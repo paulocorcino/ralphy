@@ -15,6 +15,7 @@ mod daemon_cli;
 mod doctor;
 mod gemini_root;
 mod hook_status;
+mod install_path;
 mod lock_refusal;
 mod mutate;
 mod sync;

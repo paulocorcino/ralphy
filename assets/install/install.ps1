@@ -15,11 +15,13 @@
 
 param([switch]$Daemon)
 
-$ErrorActionPreference = 'Stop'
-$ProgressPreference = 'SilentlyContinue'
-
 function Install-Ralphy {
     param([bool]$WithDaemon)
+
+    # Set here, not at the top: under `irm | iex` the top of the script runs in
+    # the user's own console, and these would stay set there.
+    $ErrorActionPreference = 'Stop'
+    $ProgressPreference = 'SilentlyContinue'
 
     $repo = 'paulocorcino/ralphy'
     $releasesUrl = if ($env:RALPHY_RELEASES_URL) { $env:RALPHY_RELEASES_URL } else { "https://api.github.com/repos/$repo/releases" }
@@ -69,24 +71,19 @@ function Install-Ralphy {
         if ($want -ne $got) { throw "the SHA-256 of $archive is wrong, so nothing was installed" }
 
         Expand-Archive -LiteralPath (Join-Path $tmp $archive) -DestinationPath $tmp
+        $unpacked = Join-Path $tmp "$name\ralphy.exe"
+        # Where `ralphy install` puts the binary. The binary answers, so the
+        # default folder is decided in one place.
+        $dirArgs = if ($env:RALPHY_INSTALL_DIR) { @('--dir', $env:RALPHY_INSTALL_DIR) } else { @() }
+        $ralphy = (& $unpacked install --print-path @dirArgs | Select-Object -Last 1).Trim()
+        if ($LASTEXITCODE -ne 0 -or -not $ralphy) { throw 'the downloaded ralphy did not run' }
         # A copy, not a link: the download folder is removed when this ends.
         # `--force` lets a second run repair an install.
-        $installArgs = @('install', '--copy', '--force')
-        if ($env:RALPHY_INSTALL_DIR) { $installArgs += @('--dir', $env:RALPHY_INSTALL_DIR) }
-        & (Join-Path $tmp "$name\ralphy.exe") @installArgs
+        & $unpacked install --copy --force --dir (Split-Path -Parent $ralphy)
         if ($LASTEXITCODE -ne 0) { throw 'ralphy install failed' }
     } finally {
         Remove-Item -Recurse -Force -LiteralPath $tmp -ErrorAction SilentlyContinue
     }
-
-    # The folder `ralphy install` picks by default: `~/.cargo/bin` when it
-    # exists, otherwise `~/.local/bin` (`default_bin_dir` in
-    # crates/ralphy-cli/src/install.rs).
-    $cargoBin = Join-Path $HOME '.cargo\bin'
-    $dir = if ($env:RALPHY_INSTALL_DIR) { $env:RALPHY_INSTALL_DIR }
-    elseif (Test-Path -LiteralPath $cargoBin -PathType Container) { $cargoBin }
-    else { Join-Path $HOME '.local\bin' }
-    $ralphy = Join-Path $dir 'ralphy.exe'
 
     if ($WithDaemon) {
         # From an administrator window, the binary registers the daemon and
@@ -98,7 +95,9 @@ function Install-Ralphy {
     }
 
     Write-Host ''
+    # `doctor` exits 1 when a tool is missing; that never stops the install.
     & $ralphy doctor
+    if ($LASTEXITCODE -gt 1) { throw "could not run $ralphy (exit $LASTEXITCODE)" }
     $global:LASTEXITCODE = 0
 }
 
