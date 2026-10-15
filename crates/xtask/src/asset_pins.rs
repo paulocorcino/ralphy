@@ -248,55 +248,76 @@ fn raw_literals(fragment: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut i = 0;
     while i < bytes.len() {
-        // A raw string opens with `r`, any number of `#`, then a quote, and
-        // closes with a quote followed by the SAME number of `#`.
         if bytes[i] == 'r' {
-            let mut hashes = 0;
-            let mut j = i + 1;
-            while j < bytes.len() && bytes[j] == '#' {
-                hashes += 1;
-                j += 1;
-            }
-            if j < bytes.len() && bytes[j] == '"' {
-                let close: String = std::iter::once('"')
-                    .chain(std::iter::repeat_n('#', hashes))
-                    .collect();
-                let rest: String = bytes[j + 1..].iter().collect();
-                if let Some(at) = rest.find(&close) {
-                    if at > 0 {
-                        out.push(rest[..at].to_string());
-                    }
-                    i = j + 1 + at + close.len();
-                    continue;
+            if let Some((body, next)) = raw_string(&bytes, i) {
+                if !body.is_empty() {
+                    out.push(body);
                 }
+                i = next;
+                continue;
             }
         }
         if bytes[i] != '"' {
             i += 1;
             continue;
         }
-        let mut lit = String::new();
-        let mut escaped = false;
-        i += 1;
-        while i < bytes.len() {
-            let c = bytes[i];
-            i += 1;
-            if escaped {
-                lit.push(c);
-                escaped = false;
-                continue;
-            }
-            match c {
-                '\\' => escaped = true,
-                '"' => break,
-                _ => lit.push(c),
-            }
-        }
+        let (lit, next) = plain_string(&bytes, i);
+        i = next;
         if !lit.is_empty() {
             out.push(lit);
         }
     }
     out
+}
+
+/// A raw string that opens at the `r` at `at`: its body, and the index after
+/// its closing quote and hashes. `None` when `r` opens no raw string or the
+/// string never closes.
+fn raw_string(bytes: &[char], at: usize) -> Option<(String, usize)> {
+    // A raw string opens with `r`, any number of `#`, then a quote, and
+    // closes with a quote followed by the SAME number of `#`.
+    let (hashes, quote) = raw_opener(bytes, at)?;
+    let close: String = std::iter::once('"')
+        .chain(std::iter::repeat_n('#', hashes))
+        .collect();
+    let rest: String = bytes[quote + 1..].iter().collect();
+    let end = rest.find(&close)?;
+    Some((rest[..end].to_string(), quote + 1 + end + close.len()))
+}
+
+/// The number of `#` after the `r` at `at`, and the index of the quote that
+/// follows them. `None` when no quote follows.
+fn raw_opener(bytes: &[char], at: usize) -> Option<(usize, usize)> {
+    let mut hashes = 0;
+    let mut j = at + 1;
+    while j < bytes.len() && bytes[j] == '#' {
+        hashes += 1;
+        j += 1;
+    }
+    (j < bytes.len() && bytes[j] == '"').then_some((hashes, j))
+}
+
+/// A plain string whose opening quote is at `open`: its text with the escapes
+/// dropped, and the index after the closing quote (or the end of input).
+fn plain_string(bytes: &[char], open: usize) -> (String, usize) {
+    let mut lit = String::new();
+    let mut escaped = false;
+    let mut i = open + 1;
+    while i < bytes.len() {
+        let c = bytes[i];
+        i += 1;
+        if escaped {
+            lit.push(c);
+            escaped = false;
+            continue;
+        }
+        match c {
+            '\\' => escaped = true,
+            '"' => break,
+            _ => lit.push(c),
+        }
+    }
+    (lit, i)
 }
 
 /// Record a literal if it is a PIN rather than an assertion message or a path.
