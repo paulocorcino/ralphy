@@ -415,12 +415,7 @@ function state({
     // than off the control — a label that led its own data would be the
     // misread the closed vocabulary exists to prevent.
     periods: { list: PERIODS, key: (doc.period || {}).key || "all" },
-    // The words come from the control's own list, keyed by the document's
-    // key, so the note and the select read the same.
-    periodLabel:
-      (PERIODS.find((p) => p.key === (doc.period || {}).key) || {}).label ||
-      (doc.period || {}).label ||
-      "All time",
+    periodLabel: docPeriodLabel(doc),
     tiles: tiles(doc),
     deliveryRows: deliveryRows(doc, issues),
     deliveriesTruncated: doc.deliveries_truncated || 0,
@@ -435,31 +430,58 @@ function state({
     // The caveat names the volume that made it a floor, because "some of it"
     // is not something the operator can act on.
     floorNote: floorNote(doc, unpriced),
+    ...tokenFields(tokens),
+    coverage: coverageOf(unpriced),
+    unpriced: unpricedOf(unpriced),
+  };
+}
+
+// The words come from the control's own list, keyed by the document's
+// key, so the note and the select read the same.
+function docPeriodLabel(doc: SpendDoc) {
+  return (
+    (PERIODS.find((p) => p.key === (doc.period || {}).key) || {}).label ||
+    (doc.period || {}).label ||
+    "All time"
+  );
+}
+
+// The token meter of the pane, with its defaults.
+function tokenFields(tokens: Tokens) {
+  return {
     meter: tokens.meter || "",
     tokensTotal: tokens.label || "0",
     tokensRaw: tokens.total || 0,
     meterRows: meterRows(tokens),
-    coverage: {
-      // Only worth drawing once something is missing: a full-width bar at
-      // 100% priced is a decoration that says what the absent floor marker
-      // already said.
-      show: (unpriced.tokens || 0) > 0,
-      priced: pct(unpriced.priced_share),
-      pricedLabel: unpriced.priced_share_label || "",
-      pricedVolume: unpriced.priced_label || "",
-      unpriced: pct(unpriced.share),
-      unpricedLabel: unpriced.share_label || "",
-    },
-    unpriced: {
-      any: (unpriced.tokens || 0) > 0 || (unpriced.unmetered_sessions || 0) > 0,
-      label: unpriced.label || "",
-      share: unpriced.share_label || "",
-      causes: causes(unpriced),
-      // Sessions whose vendor keeps no token count anywhere: real spend of
-      // unmeasurable size, so it is reported as a count of sessions rather
-      // than folded into a token figure it has no tokens for.
-      unmetered: unpriced.unmetered_sessions || 0,
-    },
+  };
+}
+
+// The priced and unpriced shares, as the coverage bar draws them.
+function coverageOf(unpriced: Unpriced) {
+  return {
+    // Only worth drawing once something is missing: a full-width bar at
+    // 100% priced is a decoration that says what the absent floor marker
+    // already said.
+    show: (unpriced.tokens || 0) > 0,
+    priced: pct(unpriced.priced_share),
+    pricedLabel: unpriced.priced_share_label || "",
+    pricedVolume: unpriced.priced_label || "",
+    unpriced: pct(unpriced.share),
+    unpricedLabel: unpriced.share_label || "",
+  };
+}
+
+// The spend the pane could not price, and why.
+function unpricedOf(unpriced: Unpriced) {
+  return {
+    any: (unpriced.tokens || 0) > 0 || (unpriced.unmetered_sessions || 0) > 0,
+    label: unpriced.label || "",
+    share: unpriced.share_label || "",
+    causes: causes(unpriced),
+    // Sessions whose vendor keeps no token count anywhere: real spend of
+    // unmeasurable size, so it is reported as a count of sessions rather
+    // than folded into a token figure it has no tokens for.
+    unmetered: unpriced.unmetered_sessions || 0,
   };
 }
 
