@@ -12,7 +12,8 @@ use ralphy_daemon::peer::{self, DaemonDescription, PeerDescriptor, TunnelSpec};
 use ralphy_release::Build;
 
 use super::checks::{
-    classify_describe, evaluate, parse_facts, CheckStatus, HostCheck, RalphyOnHost,
+    classify_describe, evaluate, parse_doctor, parse_facts, with_doctor, CheckStatus, HostCheck,
+    RalphyOnHost,
 };
 use super::install::{offer_for, Offer};
 use super::report::Report;
@@ -99,6 +100,11 @@ fn survey<S: HostShell>(
     };
     let names = fleet_names(local, host_id.as_deref());
     let mut checks = evaluate(&facts, &ralphy, &names, s.dest, wanted_name);
+    let doctor = match ralphy {
+        RalphyOnHost::Missing => None,
+        _ => parse_doctor(&s.run(&HostOp::Doctor, b"")?),
+    };
+    with_doctor(&mut checks, doctor.as_ref(), s.os);
     let offer = offer_for(&mut checks, &facts, &ralphy, local);
     Ok((checks, ralphy, facts.user, offer))
 }
@@ -454,3 +460,6 @@ pub(crate) fn without_key_line(text: &str, body: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod doctor_tests;

@@ -33,6 +33,8 @@ pub(crate) enum HostOp {
     Describe {
         with_token: bool,
     },
+    /// `ralphy doctor --json`: the tools on the host.
+    Doctor,
     SetName {
         name: String,
         avatar: usize,
@@ -213,6 +215,7 @@ pub(crate) fn render(os: Option<HostOs>, op: &HostOp) -> Result<String> {
             };
             ralphy(os, args)
         }
+        HostOp::Doctor => ralphy(os, "doctor --json"),
         HostOp::SetName { name, avatar } => {
             let name = if windows {
                 quote_cmd(name)?

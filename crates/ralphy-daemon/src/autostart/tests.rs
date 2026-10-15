@@ -356,3 +356,18 @@ fn systemd_is_enabled_parses_literal() {
     assert!(!systemd_is_enabled("disabled\n"));
     assert!(!systemd_is_enabled(""));
 }
+
+#[test]
+fn a_loaded_agent_with_the_same_plist_is_not_loaded_again() {
+    let plist = "<plist/>";
+    assert!(!launchd_reload_needed(Some(plist), plist, true));
+    assert!(
+        launchd_reload_needed(Some("<old/>"), plist, true),
+        "a changed plist reloads"
+    );
+    assert!(
+        launchd_reload_needed(Some(plist), plist, false),
+        "an agent not loaded is loaded"
+    );
+    assert!(launchd_reload_needed(None, plist, false));
+}

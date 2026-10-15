@@ -5,10 +5,11 @@ use anyhow::{bail, Context, Result};
 use clap::Args;
 use ralphy_core::{git, github, gitignore, DiagnosisReport, Workspace};
 
-use super::gate::{gh_authenticated, Agent};
+use super::gate::Agent;
 use super::render::{ask_yes_no, print_note, print_ok, print_section, with_spinner};
 use super::verify::finalize;
 use super::wizard::InitState;
+use crate::doctor::gh_signed_in;
 
 mod decisions;
 mod stages;
@@ -116,7 +117,7 @@ fn resolve_or_bootstrap_repo(target: &Path) -> Result<PathBuf> {
 
     // Creating a GitHub repo needs an authenticated `gh`; check it up front so the
     // dev fixes auth before we offer to create anything.
-    if !gh_authenticated() {
+    if !gh_signed_in() {
         bail!(
             "ralphy init: this directory is not a git repository and `gh` is not authenticated, \
              so a repo can't be created — run `gh auth login`, then re-run `ralphy init` \

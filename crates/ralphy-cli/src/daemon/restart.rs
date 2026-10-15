@@ -68,7 +68,7 @@ pub(crate) fn restart(yes: bool) -> Result<()> {
 }
 
 /// Whether `answers` turns true before `timeout` ends, asked every `poll`.
-fn started(answers: impl Fn() -> bool, timeout: Duration, poll: Duration) -> bool {
+pub(crate) fn started(answers: impl Fn() -> bool, timeout: Duration, poll: Duration) -> bool {
     let deadline = Instant::now() + timeout;
     loop {
         if answers() {
@@ -309,7 +309,7 @@ pub(crate) fn effective(args: &[String]) -> Vec<String> {
 }
 
 /// The production stop: real liveness, real identity, real killer.
-fn stop(store: &Path) -> Result<bool> {
+pub(crate) fn stop(store: &Path) -> Result<bool> {
     stop_recorded(
         store,
         EXIT_TIMEOUT,
@@ -420,7 +420,7 @@ pub(crate) fn same_program(a: &Path, b: &Path) -> bool {
 /// `ralphy.exe` while the OS reports `ralphy.exe.old`. Refusing on that would
 /// leave the old daemon running and the record cleared — defeating the restart
 /// the update exists to perform.
-fn unparked(name: &str) -> String {
+pub(crate) fn unparked(name: &str) -> String {
     let mut base = name;
     while let Some((head, tail)) = base.rsplit_once('.') {
         let is_park = tail.eq_ignore_ascii_case("old")
@@ -490,10 +490,6 @@ pub(crate) fn spawn_detached(
     use std::os::windows::process::CommandExt;
     use std::process::{Command, Stdio};
 
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    const DETACHED_PROCESS: u32 = 0x0000_0008;
-    const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
-
     let spawn = |flags: u32| {
         let (stdout, stderr) = log_stdio(store);
         Command::new(exe)
@@ -504,21 +500,37 @@ pub(crate) fn spawn_detached(
             .creation_flags(flags)
             .spawn()
     };
-    // Otherwise the daemon also inherits this command's own stdout, and a
-    // caller that reads it (a pipe, an SSH session) waits until the daemon ends.
+    spawn_outside_job("the daemon", spawn)
+        .with_context(|| format!("spawning {} {}", readable(exe), args.join(" ")))
+}
+
+/// Start a process with no console and outside the job of this command, so it
+/// outlives the shell or ssh session that ran it. `spawn` gets the creation
+/// flags. A job that refuses breakaway gets the process inside it, said out
+/// loud with `what` as the subject.
+#[cfg(windows)]
+pub(crate) fn spawn_outside_job(
+    what: &str,
+    spawn: impl Fn(u32) -> std::io::Result<std::process::Child>,
+) -> std::io::Result<std::process::Child> {
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    const DETACHED_PROCESS: u32 = 0x0000_0008;
+    const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+
+    // Otherwise the child also inherits this command's own stdout, and a
+    // caller that reads it (a pipe, an SSH session) waits until the child ends.
     ralphy_proc_util::keep_std_handles_from_children();
     let detached = CREATE_NO_WINDOW | DETACHED_PROCESS;
     match spawn(detached | CREATE_BREAKAWAY_FROM_JOB) {
         Err(e) if breakaway_refused(&e) => {
             eprintln!(
-                "warning: the daemon stays inside the job of the program that started it, \
+                "warning: {what} stays inside the job of the program that started it, \
                  so it stops when that program closes"
             );
             spawn(detached)
         }
         spawned => spawned,
     }
-    .with_context(|| format!("spawning {} {}", readable(exe), args.join(" ")))
 }
 
 /// A job that does not allow breakaway makes `CreateProcess` fail with

@@ -103,6 +103,8 @@ Six GitHub Actions workflows live under [`.github/workflows/`](../.github/workfl
   - `ralphy-<version>-windows-x64.zip`
   - `ralphy-<version>-linux-x64.tar.gz` — a **static musl** binary with no glibc
     dependency, so it runs on any Linux distro (tar preserves the executable bit)
+  - `ralphy-<version>-linux-arm64.tar.gz` — the same static musl build for
+    64-bit ARM, built on GitHub's ARM runner (`ubuntu-24.04-arm`)
   - `ralphy-<version>-macos-x64.tar.gz` — Intel, floored at macOS 12 Monterey
   - `ralphy-<version>-macos-arm64.tar.gz` — Apple Silicon, floored at macOS 12 Monterey
 

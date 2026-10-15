@@ -26,6 +26,21 @@ impl FakeHost {
         self
     }
 
+    /// A host whose Ralphy is older than `doctor`, the Ralphy the flow tests
+    /// written before `doctor` stand for.
+    pub(crate) fn before_doctor() -> Self {
+        Self::default().old_ralphy()
+    }
+
+    /// A host whose Ralphy is older than `doctor`: clap refuses the unknown
+    /// subcommand.
+    pub(crate) fn old_ralphy(self) -> Self {
+        self.answer(
+            "doctor --json",
+            out(2, "", "error: unrecognized subcommand 'doctor'\n"),
+        )
+    }
+
     pub(crate) fn with_password(mut self) -> Self {
         self.password = true;
         self

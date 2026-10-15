@@ -186,6 +186,8 @@ pub(crate) enum CheckId {
     User,
     Git,
     Gh,
+    Python,
+    Agent,
 }
 
 impl CheckId {
@@ -202,6 +204,8 @@ impl CheckId {
             CheckId::User => "user",
             CheckId::Git => "git",
             CheckId::Gh => "gh",
+            CheckId::Python => "python",
+            CheckId::Agent => "agent",
         }
     }
 
@@ -217,6 +221,8 @@ impl CheckId {
             CheckId::User => "User",
             CheckId::Git => "Git",
             CheckId::Gh => "GitHub CLI",
+            CheckId::Python => "Python",
+            CheckId::Agent => "Agent CLI",
         }
     }
 }
@@ -345,19 +351,14 @@ pub(crate) fn evaluate(
     checks.push(HostCheck::new(CheckId::Autostart, status, text));
 
     if os == HostOs::Linux {
+        let base = crate::doctor::linger_text(facts.linger);
         let (status, text) = match facts.linger {
-            Some(true) => (
-                Pass,
-                "lingering is on: the daemon runs with no one signed in",
-            ),
+            Some(true) => (Pass, base.to_string()),
             Some(false) => (
                 Fix(HostOp::EnableLinger),
-                "lingering is off: the daemon stops when you sign out. Ralphy turns it on",
+                format!("{base}. Ralphy turns it on"),
             ),
-            None => (
-                Warn,
-                "could not read lingering: the daemon may stop when you sign out",
-            ),
+            None => (Warn, base.to_string()),
         };
         checks.push(HostCheck::new(CheckId::Linger, status, text));
     }
@@ -527,6 +528,9 @@ pub(crate) fn print_checks(checks: &[HostCheck], out: &mut impl Write) -> Result
     }
     Ok(())
 }
+
+mod tools;
+pub(crate) use tools::{parse_doctor, with_doctor};
 
 #[cfg(test)]
 pub(crate) mod tests;

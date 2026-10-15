@@ -18,6 +18,7 @@ use anyhow::{bail, Context, Result};
 use clap::Args;
 
 mod user_path;
+pub(crate) use user_path::remove_from_user_path;
 
 #[derive(Args)]
 pub struct InstallArgs {
@@ -41,18 +42,45 @@ pub struct InstallArgs {
     /// to your user Path (Windows).
     #[arg(long)]
     no_modify_path: bool,
+
+    /// Print where `ralphy` would go, and change nothing. The install scripts
+    /// read it, so the default folder is decided only here.
+    #[arg(long, hide = true)]
+    print_path: bool,
+}
+
+/// The warning for a run as root or as administrator, or `None`. It never asks
+/// and never stops: `host add` runs these commands over ssh with no terminal,
+/// and maybe as root (ADR-0056 §12).
+fn elevated_warning(elevated: bool) -> Option<&'static str> {
+    elevated.then_some(
+        "warning: ralphy runs as root or as administrator. Ralphy does not need this: \
+         it installs for one user, and the files it writes now belong to that account. \
+         Use a normal user when you can.",
+    )
+}
+
+pub(crate) fn warn_if_elevated() {
+    if let Some(warning) = elevated_warning(ralphy_proc_util::elevated::runs_elevated()) {
+        eprintln!("{warning}");
+    }
 }
 
 pub fn run(args: &InstallArgs) -> Result<()> {
+    let dir = match &args.dir {
+        Some(d) => d.clone(),
+        None => default_bin_dir()?,
+    };
+    if args.print_path {
+        println!("{}", dir.join(binary_name()).display());
+        return Ok(());
+    }
+    warn_if_elevated();
     // Link to the real file, not to another link, so the installed entry survives
     // the build dir being a symlink farm (e.g. some CI layouts).
     let exe = std::env::current_exe().context("locating the running ralphy binary")?;
     let exe = std::fs::canonicalize(&exe).unwrap_or(exe);
 
-    let dir = match &args.dir {
-        Some(d) => d.clone(),
-        None => default_bin_dir()?,
-    };
     std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
 
     let dest = dir.join(binary_name());
@@ -237,7 +265,7 @@ fn copy_permissions(_from: Option<&Path>, _to: &Path) {}
 
 /// Default install target: `~/.cargo/bin` when present (Rust users already have it
 /// on PATH), else `~/.local/bin` (the XDG-conventional user bin dir).
-fn default_bin_dir() -> Result<PathBuf> {
+pub(crate) fn default_bin_dir() -> Result<PathBuf> {
     let base = directories::BaseDirs::new().context("locating the home directory")?;
     let home = base.home_dir();
     let cargo_bin = home.join(".cargo").join("bin");
@@ -361,6 +389,13 @@ fn symlink(src: &Path, dst: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_an_elevated_run_is_warned() {
+        assert_eq!(elevated_warning(false), None);
+        let warning = elevated_warning(true).expect("an elevated run is warned");
+        assert!(warning.contains("root or as administrator"), "{warning}");
+    }
 
     fn scratch(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("ralphy-install-{}-{tag}", std::process::id()));

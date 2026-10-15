@@ -38,6 +38,7 @@ pub(crate) fn target_for(os: &str, arch: &str) -> Option<&'static str> {
     match (os, arch) {
         ("windows", "x86_64") => Some("windows-x64"),
         ("linux", "x86_64") => Some("linux-x64"),
+        ("linux", "aarch64") => Some("linux-arm64"),
         ("macos", "x86_64") => Some("macos-x64"),
         ("macos", "aarch64") => Some("macos-arm64"),
         _ => None,
@@ -264,12 +265,38 @@ Connection: close
         assert_eq!(target_for("macos", "x86_64"), Some("macos-x64"));
         assert_eq!(target_for("macos", "aarch64"), Some("macos-arm64"));
         assert_eq!(target_for("windows", "x86_64"), Some("windows-x64"));
-        assert_eq!(target_for("linux", "aarch64"), None, "no Linux arm64 build");
+        assert_eq!(target_for("linux", "aarch64"), Some("linux-arm64"));
+        assert_eq!(
+            target_for("linux", "riscv64"),
+            None,
+            "no Linux RISC-V build"
+        );
         assert_eq!(
             target_for("windows", "aarch64"),
             None,
             "no Windows ARM64 build"
         );
+    }
+
+    /// Every target `target_for` names is built by the release workflow, and
+    /// every target the workflow builds is reachable: a name that differs
+    /// between the two is found here, not when a release is cut.
+    #[test]
+    fn target_for_and_the_release_matrix_name_the_same_targets() {
+        let release = include_str!("../../../../.github/workflows/release.yml");
+        let built: Vec<&str> = release
+            .lines()
+            .filter_map(|l| l.trim().strip_prefix("target_name: "))
+            .collect();
+        let mut mapped: Vec<&str> = ["windows", "linux", "macos"]
+            .iter()
+            .flat_map(|os| ["x86_64", "aarch64"].map(|arch| target_for(os, arch)))
+            .flatten()
+            .collect();
+        let mut built_sorted = built.clone();
+        built_sorted.sort_unstable();
+        mapped.sort_unstable();
+        assert_eq!(mapped, built_sorted);
     }
 
     #[test]

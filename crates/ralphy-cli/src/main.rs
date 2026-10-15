@@ -15,6 +15,7 @@ mod cli;
 mod config;
 mod daemon;
 mod delivery;
+mod doctor;
 mod events;
 mod gemini;
 mod guard;
@@ -37,6 +38,7 @@ mod sync;
 mod telegram;
 mod triage;
 mod ui;
+mod uninstall;
 mod update;
 mod usage;
 
@@ -79,6 +81,8 @@ fn main() -> Result<()> {
         Command::Hook(HookCommand::Status) => hook::run_status_hook(),
         Command::Telegram(cmd) => telegram::run(cmd),
         Command::Install(args) => install::run(&args),
+        Command::Doctor(args) => doctor::run(&args),
+        Command::Uninstall(args) => uninstall::run(&args),
         Command::Init(args) => init::run(&args),
         Command::Triage(args) => triage::run(&args),
         Command::Issues(args) => issues::issues_cmd(args),

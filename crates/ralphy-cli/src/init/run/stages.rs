@@ -12,10 +12,7 @@ use super::decisions::{
     branch_decision, commit_decision, labels_decision, BranchDecision, CommitDecision,
 };
 use super::{diagnose_with_agent, diagnosis_cwd};
-use crate::init::gate::{
-    agent_logged_in, agent_present, evaluate_gate, gh_authenticated, git_present, github_remote,
-    python_present, Agent, EnvFindings,
-};
+use crate::init::gate::{evaluate_gate, findings_from, Agent, EnvFindings};
 use crate::init::issues::{
     decide_issues_path, draft_decision, draft_with_agent, format_draft_summary, load_issues_draft,
     publish_decision, publish_draft, resolve_triage_label, IssuesPath,
@@ -52,20 +49,7 @@ pub(super) fn check_environment(repo: &Path) -> Result<EnvFindings> {
     // Run the (subprocess-backed: `gh auth status`, agent `whoami`/login probes)
     // environment checks behind a spinner so the multi-second wait shows life.
     let findings = with_spinner("Analyzing the environment…", || {
-        let agents_present: Vec<Agent> = Agent::ALL.iter().copied().filter(agent_present).collect();
-        let agents_logged_in: Vec<Agent> = agents_present
-            .iter()
-            .copied()
-            .filter(agent_logged_in)
-            .collect();
-        EnvFindings {
-            git: git_present(),
-            python: python_present(),
-            gh_authenticated: gh_authenticated(),
-            github_remote: github_remote(repo),
-            agents_present,
-            agents_logged_in,
-        }
+        findings_from(&crate::doctor::probe(), repo)
     });
 
     let fails = evaluate_gate(&findings);
