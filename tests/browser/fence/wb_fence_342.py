@@ -665,7 +665,12 @@ def main():
             refit = page.evaluate(
                 "(ids) => ids.map((id) => { const w = [...document.querySelectorAll('.session-window')]"
                 "   .find((x) => x._deskId === id);"
-                " const p = w._term ? w._term.fit.proposeDimensions() : null;"
+                # The handle's `fit` is the refit door (wb-console-fit.ts), not
+                # the addon: measure with a fresh FitAddon bound to the same
+                # terminal. `activate` only binds it; nothing is registered.
+                " let p = null;"
+                " if (w._term) { const a = new FitAddon.FitAddon(); a.activate(w._term.term);"
+                "   p = a.proposeDimensions(); }"
                 " return { id, cols: w._term.term.cols, rows: w._term.term.rows,"
                 "   proposed: p ? { cols: p.cols, rows: p.rows } : null }; })",
                 member_ids,
