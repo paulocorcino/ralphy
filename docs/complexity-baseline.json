@@ -101,11 +101,6 @@
         11
       ]
     },
-    "crates/ralphy-cli/src/hook.rs": {
-      "read_transcript_last_assistant": [
-        28
-      ]
-    },
     "crates/ralphy-cli/src/host/aliases.rs": {
       "parse_config_hosts": [
         16

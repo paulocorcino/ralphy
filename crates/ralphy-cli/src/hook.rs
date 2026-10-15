@@ -97,28 +97,33 @@ pub fn read_transcript_last_assistant(path: &str) -> Option<String> {
     let body = fs::read_to_string(p).ok()?;
     let mut text: Option<String> = None;
     for line in body.lines() {
-        let Ok(obj) = serde_json::from_str::<Value>(line) else {
+        let Some(content) = assistant_content(line) else {
             continue;
         };
-        if obj.get("type").and_then(Value::as_str) != Some("assistant") {
-            continue;
-        }
-        let Some(content) = obj.get("message").and_then(|m| m.get("content")) else {
-            continue;
-        };
-        if let Some(blocks) = content.as_array() {
-            for block in blocks {
-                if block.get("type").and_then(Value::as_str) == Some("text") {
-                    if let Some(t) = block.get("text").and_then(Value::as_str) {
-                        if !t.is_empty() {
-                            text = Some(t.to_string());
-                        }
-                    }
-                }
-            }
+        if let Some(t) = content.as_array().and_then(|blocks| last_text(blocks)) {
+            text = Some(t.to_string());
         }
     }
     text
+}
+
+/// The `message.content` of a transcript line that is an `assistant` turn;
+/// `None` for a line that does not parse or is another kind of turn.
+fn assistant_content(line: &str) -> Option<Value> {
+    let mut obj = serde_json::from_str::<Value>(line).ok()?;
+    if obj.get("type").and_then(Value::as_str) != Some("assistant") {
+        return None;
+    }
+    obj.get_mut("message")?.get_mut("content").map(Value::take)
+}
+
+/// The last non-empty `text` block of a message's content blocks.
+fn last_text(blocks: &[Value]) -> Option<&str> {
+    blocks
+        .iter()
+        .filter(|block| block.get("type").and_then(Value::as_str) == Some("text"))
+        .filter_map(|block| block.get("text").and_then(Value::as_str))
+        .rfind(|t| !t.is_empty())
 }
 
 /// Run the `hook post` subcommand (PostToolUse, matcher `Bash`): close the
