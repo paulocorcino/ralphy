@@ -800,9 +800,6 @@
       ],
       "write": [
         16
-      ],
-      "write_rows": [
-        22
       ]
     },
     "crates/ralphy-daemon/src/spend.rs": {
