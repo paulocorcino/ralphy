@@ -1201,3 +1201,103 @@ Neither is true now. Nothing new is decided.
 - `docs/WORKBENCH-BUILD-GUIDE.md` now holds only the `workbench:action` seam,
   the vendored-library procedures and the touch rules. It does not document
   the client.
+
+## Amendment (2026-10-15): `file.stat` and `tree.size` — the properties of a file or a folder are an Observe read
+
+Two verbs join §2's **Observe** class. The workbench uses them for the
+Properties dialog of the file tree. Both read OS bytes and need no repo
+judgment, so the daemon answers them in-process inside `blocking_read`, like
+`tree.list`. A peer answers them on the peer, over the existing relay.
+
+- **`file.stat { repo, path, checkout? }`** answers one path, at once:
+  `{ status: "ok", name, kind: "file" | "folder", size?, modified, readonly,
+  ignored, type? }`. `size` is the logical length in bytes and is sent for a
+  file only. `modified` is milliseconds since the Unix epoch. `type` is sent
+  for a file only: `{ class: "text" | "image" | "binary" | "too_large",
+  encoding?, bom?, image? }`. The class is not decided here. It is the result
+  of `tree::read_with` and `tree::read_image`, so the dialog can never call a
+  file text that `file.read` then refuses. A path that is missing or outside
+  the root answers `{ status: "error", reason: "not found" }`, as every
+  Observe read does.
+- **`tree.size { repo, path, checkout? }`** walks one folder and answers
+  `{ status: "ok", bytes, files, dirs, ignored_bytes, truncated }`. It counts
+  what is on the disk, including `.git`, `node_modules` and `target`:
+  `HARD_EXCLUDE` is a rule of the listing, not of a size. A symlink counts as
+  one item with the size of the link and is never followed, so the walk cannot
+  leave the root. `ignored_bytes` is the part of `bytes` that git ignores,
+  by the rules of the 2026-09-30 amendment (an ignored folder ignores
+  everything below it).
+
+**The budget lives in the walker.** As for `tree.find` and `tree.grep`, nothing
+upstream caps an Observe read. So `tree.size` stops itself after 200,000
+entries or five seconds, whichever comes first, and says `truncated: true`.
+The numbers it has are then a lower bound. The relay ceiling for a peer is
+60 s, so the budget fits inside it.
+
+**One walk at a time.** The daemon holds one slot for `tree.size`. A second
+request while the slot is taken answers `{ status: "error", reason: "busy" }`
+at once. Four threads for five seconds is the most that a forgotten click can
+cost, and the slot keeps clicks from adding up.
+
+**There is no cancel verb.** A read is one request and one reply, and a
+blocking task cannot be cancelled. Closing the dialog drops the reply on the
+page, and the walk ends by its budget. A real cancel needs a control channel
+that no Observe verb has, and a peer would have to understand it too. The gain
+is a few seconds of CPU, so it is not built.
+
+**The engine is the `ignore` crate, already a dependency.** The walk is
+`ignore::WalkBuilder::build_parallel` with four threads, every filter off, and
+no link followed. Four is a cap that leaves CPU for the consoles that the same
+daemon serves.
+
+Measured on 2026-10-15 with a throwaway Rust program (rustc 1.98.0, `ignore`
+0.4.33, median of five runs, warm cache; the same count of files and bytes
+from all three engines):
+
+| Tree | Entries | `read_dir` stack | `ignore` x4 | `ignore` x8 |
+|---|---|---|---|---|
+| Windows 11, 12 CPUs, `C:\Dev\ralphy` with `target/` | 315,000 | 1,369 ms | 474 ms | 342 ms |
+| WSL 2 ext4, 4 CPUs, a `target/` tree | 13,800 | 44.8 ms | 17.1 ms | 16.5 ms |
+| WSL 2 ext4, `~/.cargo` | 23,000 | 82.6 ms | 34.3 ms | 33.5 ms |
+| WSL 2 ext4, `~/go` | 19,500 | 74.5 ms | 26.8 ms | 28.5 ms |
+| Windows, `daemon/src` | 219 | 3.3 ms | 4.4 ms | 4.2 ms |
+| WSL 2 drvfs (`/mnt/c`), `daemon/src` | 219 | 287 ms | 94 ms | 65 ms |
+
+The parallel walk is 2.4 to 4.4 times faster on every large tree. It is about
+one millisecond slower on a tiny tree, which is the cost to start the
+threads. The first run of the sequential walk on the Windows tree, with a cold
+cache, took 9.0 s. The drvfs costs about one millisecond per entry, so a large
+folder there ends by the budget. On four CPUs, eight threads add nothing.
+
+**Peers.** The two verbs are new. An older peer answers
+`{ status: "error", message: "unknown verb" }`, which the page already shows as
+a refusal, and the dialog says that the host runs an older daemon. So the
+reply shapes of version 4 do not change for a peer that does not know the
+verbs (see the amendment of ADR-0052 of 2026-10-10), and
+`PEER_PROTOCOL_VERSION` stays 4.
+
+**Rejected:**
+
+- **A sequential `read_dir` walk.** It is slower by 2.4 to 4.4 times on a
+  large tree, and the `ignore` walker needs no new dependency.
+- **`jwalk` or `dua-core`.** `jwalk` is archived by its owner (2026-08-05) and
+  was the slowest in the measures we found. `dua-core` is fast but is a new
+  dependency with code for each system, for one dialog.
+- **Size on disk.** On Windows it costs one more system call for each file
+  (`GetCompressedFileSizeW`) and loses part of the gain above. On Unix it
+  needs a rule for hard links. The question "how big is this?" is answered by
+  the logical size. A row for the size on disk can be added later for a file.
+- **A classification of the first 8 KiB for `type`.** It is a second rule for
+  "what is text", and the dialog could say text for a file that the workbench
+  then refuses to open.
+- **Hiding `.git`, `node_modules` and `target` from the size.** The number
+  would differ from the one every other program shows.
+
+### Consequences of the amendment
+
+- The verb count grows from 51 to 53.
+- The workbench shows the facts when the Properties dialog opens, and reads
+  them again each time it opens (ARCHITECTURE §7, the row for the size and
+  the kind of a file or a folder).
+- A `tree.size` of a large folder on a peer can take the whole budget. The
+  dialog shows the numbers it has with a "stopped after 5 s" note.
