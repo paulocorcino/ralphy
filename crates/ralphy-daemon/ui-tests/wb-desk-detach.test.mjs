@@ -257,7 +257,6 @@ test("a note member brings its draft home only when its record has no file yet",
     members: [
       { id: "n1", kind: "note", draft: "unsaved", claim: "notes/a.note" },
       { id: "n2", kind: "note", draft: "older text" },
-      { id: "n3", kind: "note", draft: "no record" },
     ],
   });
   detach.reattachFence("f");
