@@ -153,40 +153,19 @@ fn session_stems(cli_dir: &Path) -> Vec<(std::time::SystemTime, String, Vec<Path
     let mut groups: std::collections::BTreeMap<String, (std::time::SystemTime, Vec<PathBuf>)> =
         std::collections::BTreeMap::new();
 
-    let Ok(projects) = std::fs::read_dir(cli_dir.join(TMP_DIR_NAME)) else {
-        return Vec::new();
-    };
-    for project in projects.flatten() {
-        let chats = project.path().join(CHATS_DIR_NAME);
+    for chats in chat_dirs(cli_dir) {
         let Ok(entries) = std::fs::read_dir(&chats) else {
             continue;
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
-                continue;
-            };
-            if !name.starts_with(SESSION_FILE_PREFIX) {
-                continue;
-            }
-            let is_session_file = matches!(
-                path.extension().and_then(|e| e.to_str()),
-                Some("json") | Some("jsonl")
-            );
-            if !is_session_file {
-                continue;
-            }
-            let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+            let Some(stem) = session_stem(&path) else {
                 continue;
             };
             let Ok(mtime) = entry.metadata().and_then(|m| m.modified()) else {
                 continue;
             };
-            let group = groups
-                .entry(stem.to_string())
-                .or_insert((mtime, Vec::new()));
-            group.0 = group.0.max(mtime);
-            group.1.push(path);
+            add_to_group(&mut groups, stem, mtime, &path);
         }
     }
 
@@ -196,7 +175,49 @@ fn session_stems(cli_dir: &Path) -> Vec<(std::time::SystemTime, String, Vec<Path
         .collect()
 }
 
-/// Delete every session beyond [`SESSION_KEEP`], newest-first by mtime.
+/// `<cli_dir>/tmp/*/chats`, one per project dir. Empty when `tmp/` is missing.
+fn chat_dirs(cli_dir: &Path) -> Vec<PathBuf> {
+    let Ok(projects) = std::fs::read_dir(cli_dir.join(TMP_DIR_NAME)) else {
+        return Vec::new();
+    };
+    projects
+        .flatten()
+        .map(|project| project.path().join(CHATS_DIR_NAME))
+        .collect()
+}
+
+/// The group stem of `path` when it is a session file: a `session-*` name with a
+/// `.json` or `.jsonl` extension.
+fn session_stem(path: &Path) -> Option<&str> {
+    let name = path.file_name().and_then(|n| n.to_str())?;
+    if !name.starts_with(SESSION_FILE_PREFIX) {
+        return None;
+    }
+    let is_session_file = matches!(
+        path.extension().and_then(|e| e.to_str()),
+        Some("json") | Some("jsonl")
+    );
+    if !is_session_file {
+        return None;
+    }
+    path.file_stem().and_then(|s| s.to_str())
+}
+
+/// Put `path` in the group of `stem`; the group's time is the newest of its files.
+fn add_to_group(
+    groups: &mut std::collections::BTreeMap<String, (std::time::SystemTime, Vec<PathBuf>)>,
+    stem: &str,
+    mtime: std::time::SystemTime,
+    path: &Path,
+) {
+    let group = groups
+        .entry(stem.to_string())
+        .or_insert((mtime, Vec::new()));
+    group.0 = group.0.max(mtime);
+    group.1.push(path.to_path_buf());
+}
+
+// Delete every session beyond [`SESSION_KEEP`], newest-first by mtime.
 /// Never fails: a `remove_file` error is logged and skipped, so a stale
 /// Windows file lock cannot fail the run whose root is otherwise correct.
 fn prune_sessions(cli_dir: &Path) -> usize {
