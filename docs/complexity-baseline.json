@@ -516,11 +516,6 @@
         18
       ]
     },
-    "crates/ralphy-daemon/assets/ui/wb-kanban.ts": {
-      "orderGraph": [
-        23
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-modals-store.ts": {
       "consoleShortcutsBlocked": [
         16
