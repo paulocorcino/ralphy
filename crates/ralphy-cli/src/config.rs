@@ -226,34 +226,48 @@ pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
     // (`~/.ralphy/events.toml`), keyed by slug — never in `.ralphy/settings.json`
     // (ADR-0019). Route them there and return before the settings path.
     if key == "events.url" || key == "events.token" {
-        let slug = git::project_slug(ws.repo_root());
-        let mut store = crate::events::config::EventsStore::load()?;
-        match key {
-            "events.url" => {
-                if let Some(host) = cleartext_remote_host(value) {
-                    // Warn, never refuse: the daemon is TLS-aware, not
-                    // TLS-enforcing (ADR-0032 amendment, audit F6/F14) — an
-                    // `http://` sink on a LAN is the operator's call, and this
-                    // line is what makes it an informed one.
-                    println!("warning: events.url is plain http — the events bearer will travel in cleartext to {host}");
-                }
-                store.set_url(&slug, value);
-            }
-            "events.token" => store.set_token(&slug, value),
-            _ => unreachable!(),
-        }
-        store.save()?;
-        // Never echo the secret token back to stdout — mask it like `config get`.
-        if key == "events.token" {
-            println!("{key} = {}", crate::telegram::config::masked_token(value));
-        } else {
-            println!("{key} = {value}");
-        }
-        return Ok(());
+        return set_events_key(ws, key, value);
     }
     let mut s = Settings::load(ws)?;
+    set_core_key(&mut s, key, value)?;
+    s.save(ws)?;
+    gitignore::ensure_ralphy_ignored(ws.repo_root())?;
+    println!("{key} = {value}");
+    Ok(())
+}
+
+/// Save `events.url` or `events.token` in the global store for this repo.
+fn set_events_key(ws: &Workspace, key: &str, value: &str) -> Result<()> {
+    let slug = git::project_slug(ws.repo_root());
+    let mut store = crate::events::config::EventsStore::load()?;
     match key {
-        "opencode.model" => with_opencode(&mut s, |o| o.model = Some(value.to_owned()))?,
+        "events.url" => {
+            if let Some(host) = cleartext_remote_host(value) {
+                // Warn, never refuse: the daemon is TLS-aware, not
+                // TLS-enforcing (ADR-0032 amendment, audit F6/F14) — an
+                // `http://` sink on a LAN is the operator's call, and this
+                // line is what makes it an informed one.
+                println!("warning: events.url is plain http — the events bearer will travel in cleartext to {host}");
+            }
+            store.set_url(&slug, value);
+        }
+        "events.token" => store.set_token(&slug, value),
+        _ => unreachable!(),
+    }
+    store.save()?;
+    // Never echo the secret token back to stdout — mask it like `config get`.
+    if key == "events.token" {
+        println!("{key} = {}", crate::telegram::config::masked_token(value));
+    } else {
+        println!("{key} = {value}");
+    }
+    Ok(())
+}
+
+/// Set a key of the core settings; a key of an agent section goes on to
+/// [`set_agent_key`].
+fn set_core_key(s: &mut Settings, key: &str, value: &str) -> Result<()> {
+    match key {
         "verify.command" => s.verify.command = Some(value.to_owned()),
         "verify.require_verify_gate" => {
             let b = value.parse::<bool>().map_err(|_| {
@@ -288,88 +302,45 @@ pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
                 .map_err(|_| anyhow!("remote_control must be 'true' or 'false', got '{value}'"))?;
             s.remote_control = Some(b);
         }
-        "claude.plan_model" => with_claude(&mut s, |c| c.plan_model = Some(value.to_owned()))?,
-        "claude.plan_effort" | "claude.exec_effort" => {
-            value.parse::<Effort>().map_err(anyhow::Error::msg)?;
-            let plan = key == "claude.plan_effort";
-            with_claude(&mut s, |c| {
-                let slot = if plan {
-                    &mut c.plan_effort
-                } else {
-                    &mut c.exec_effort
-                };
-                *slot = Some(value.to_owned());
-            })?
-        }
+        _ => set_agent_key(s, key, value)?,
+    }
+    Ok(())
+}
+
+/// Set a key of an agent section (`opencode.*`, `claude.*`, `copilot.*`,
+/// `gemini.*`, `cursor.*`).
+fn set_agent_key(s: &mut Settings, key: &str, value: &str) -> Result<()> {
+    match key {
+        "opencode.model" => with_opencode(s, |o| o.model = Some(value.to_owned()))?,
+        "claude.plan_model" => with_claude(s, |c| c.plan_model = Some(value.to_owned()))?,
+        "claude.plan_effort" | "claude.exec_effort" => set_claude_effort(s, key, value)?,
         "claude.default_exec_model" => {
-            with_claude(&mut s, |c| c.default_exec_model = Some(value.to_owned()))?
+            with_claude(s, |c| c.default_exec_model = Some(value.to_owned()))?
         }
         "claude.max_minutes_per_issue" => {
             let n = value.parse::<u64>().map_err(|_| {
                 anyhow!("claude.max_minutes_per_issue must be a non-negative integer (0 disables the per-issue cap), got '{value}'")
             })?;
-            with_claude(&mut s, |c| c.max_minutes_per_issue = Some(n))?;
+            with_claude(s, |c| c.max_minutes_per_issue = Some(n))?;
         }
         "claude.console_name" => {
             let b = value
                 .parse::<bool>()
                 .map_err(|_| anyhow!("{key} must be 'true' or 'false', got '{value}'"))?;
-            with_claude(&mut s, |c| c.console_name = b)?
+            with_claude(s, |c| c.console_name = b)?
         }
-        "copilot.plan_model" => with_copilot(&mut s, |c| c.plan_model = Some(value.to_owned()))?,
-        "copilot.exec_model" => with_copilot(&mut s, |c| c.exec_model = Some(value.to_owned()))?,
-        // Validated here, not at run time: an unrankable level is silently
-        // dropped by the adapter's clamp, so an unvalidated typo would persist as
-        // a setting that `config get` reports as set and that does nothing.
-        "copilot.plan_effort" | "copilot.exec_effort" => {
-            if !ralphy_agent_copilot::is_known_effort(value) {
-                bail!("{key} must be a Copilot reasoning-effort level, got '{value}'");
-            }
-            let plan = key == "copilot.plan_effort";
-            with_copilot(&mut s, |c| {
-                let slot = if plan {
-                    &mut c.plan_effort
-                } else {
-                    &mut c.exec_effort
-                };
-                *slot = Some(value.to_owned());
-            })?
-        }
+        "copilot.plan_model" => with_copilot(s, |c| c.plan_model = Some(value.to_owned()))?,
+        "copilot.exec_model" => with_copilot(s, |c| c.exec_model = Some(value.to_owned()))?,
+        "copilot.plan_effort" | "copilot.exec_effort" => set_copilot_effort(s, key, value)?,
         // The verbosity IS the safety feature (ADR-0041 D7): the hatch gives
         // Copilot back a credentialled MCP server that can open a PR on its own.
         "copilot.allow_builtin_mcp_servers_i_understand_the_risk" => {
             let b = value
                 .parse::<bool>()
                 .map_err(|_| anyhow!("{key} must be 'true' or 'false', got '{value}'"))?;
-            with_copilot(&mut s, |c| {
-                c.allow_builtin_mcp_servers_i_understand_the_risk = b
-            })?
+            with_copilot(s, |c| c.allow_builtin_mcp_servers_i_understand_the_risk = b)?
         }
-        // Validated HERE and only here: a persisted id is refused at
-        // configuration time rather than mid-run, while `--plan-model`/
-        // `--exec-model` stay unfiltered so a stale local list cannot block an id
-        // the vendor has started serving (ADR-0043 D8 amendment, #257).
-        //
-        // The stored value is TRIMMED: `is_pinnable_model` trims before matching,
-        // so persisting the raw string would accept ` gemini-2.5-pro `, report it
-        // valid from `config get`, and 404 on every run.
-        "gemini.plan_model" | "gemini.exec_model" => {
-            let value = value.trim();
-            if !ralphy_agent_gemini::is_pinnable_model(value) {
-                bail!(
-                    "{key} must be a Gemini model id the CLI still serves, got '{value}'; valid: {}",
-                    ralphy_agent_gemini::PINNABLE_MODELS.join(", ")
-                );
-            }
-            let plan = key == "gemini.plan_model";
-            with_gemini(&mut s, |g| {
-                if plan {
-                    g.plan_model = Some(value.to_owned());
-                } else {
-                    g.exec_model = Some(value.to_owned());
-                }
-            })?
-        }
+        "gemini.plan_model" | "gemini.exec_model" => set_gemini_model(s, key, value)?,
         // Same reasoning, a different capability (ADR-0042 D6): the hatch lets a
         // run upload the operator's repository to the vendor. Ralphy never denies
         // the capability — it denies a SILENT one.
@@ -377,16 +348,73 @@ pub fn set(ws: &Workspace, key: &str, value: &str) -> Result<()> {
             let b = value
                 .parse::<bool>()
                 .map_err(|_| anyhow!("{key} must be 'true' or 'false', got '{value}'"))?;
-            with_cursor(&mut s, |c| {
-                c.allow_codebase_indexing_i_understand_the_risk = b
-            })?
+            with_cursor(s, |c| c.allow_codebase_indexing_i_understand_the_risk = b)?
         }
         _ => unreachable!(),
     }
-    s.save(ws)?;
-    gitignore::ensure_ralphy_ignored(ws.repo_root())?;
-    println!("{key} = {value}");
     Ok(())
+}
+
+/// Set `claude.plan_effort` or `claude.exec_effort` to a core effort level.
+fn set_claude_effort(s: &mut Settings, key: &str, value: &str) -> Result<()> {
+    value.parse::<Effort>().map_err(anyhow::Error::msg)?;
+    let plan = key == "claude.plan_effort";
+    with_claude(s, |c| {
+        let slot = if plan {
+            &mut c.plan_effort
+        } else {
+            &mut c.exec_effort
+        };
+        *slot = Some(value.to_owned());
+    })
+}
+
+/// Set `copilot.plan_effort` or `copilot.exec_effort`.
+///
+/// Validated here, not at run time: an unrankable level is silently
+/// dropped by the adapter's clamp, so an unvalidated typo would persist as
+/// a setting that `config get` reports as set and that does nothing.
+fn set_copilot_effort(s: &mut Settings, key: &str, value: &str) -> Result<()> {
+    if !ralphy_agent_copilot::is_known_effort(value) {
+        bail!("{key} must be a Copilot reasoning-effort level, got '{value}'");
+    }
+    let plan = key == "copilot.plan_effort";
+    with_copilot(s, |c| {
+        let slot = if plan {
+            &mut c.plan_effort
+        } else {
+            &mut c.exec_effort
+        };
+        *slot = Some(value.to_owned());
+    })
+}
+
+/// Set `gemini.plan_model` or `gemini.exec_model`.
+///
+/// Validated HERE and only here: a persisted id is refused at
+/// configuration time rather than mid-run, while `--plan-model`/
+/// `--exec-model` stay unfiltered so a stale local list cannot block an id
+/// the vendor has started serving (ADR-0043 D8 amendment, #257).
+///
+/// The stored value is TRIMMED: `is_pinnable_model` trims before matching,
+/// so persisting the raw string would accept ` gemini-2.5-pro `, report it
+/// valid from `config get`, and 404 on every run.
+fn set_gemini_model(s: &mut Settings, key: &str, value: &str) -> Result<()> {
+    let value = value.trim();
+    if !ralphy_agent_gemini::is_pinnable_model(value) {
+        bail!(
+            "{key} must be a Gemini model id the CLI still serves, got '{value}'; valid: {}",
+            ralphy_agent_gemini::PINNABLE_MODELS.join(", ")
+        );
+    }
+    let plan = key == "gemini.plan_model";
+    with_gemini(s, |g| {
+        if plan {
+            g.plan_model = Some(value.to_owned());
+        } else {
+            g.exec_model = Some(value.to_owned());
+        }
+    })
 }
 
 pub fn unset(ws: &Workspace, key: &str) -> Result<()> {

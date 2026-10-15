@@ -80,11 +80,6 @@
         13
       ]
     },
-    "crates/ralphy-cli/src/config.rs": {
-      "set": [
-        28
-      ]
-    },
     "crates/ralphy-cli/src/daemon/register.rs": {
       "migrate_side_stores": [
         13
