@@ -794,11 +794,6 @@
         12
       ]
     },
-    "crates/ralphy-daemon/src/session/screen/input.rs": {
-      "filter": [
-        24
-      ]
-    },
     "crates/ralphy-daemon/src/session/screen/snapshot.rs": {
       "apply": [
         16
