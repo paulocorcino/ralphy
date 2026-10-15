@@ -200,18 +200,29 @@ function hostDeps(box, more = {}) {
   });
 }
 
+// The window's box must sit inside the fence's box, below its head band
+// (28px: the fake fence has no measured head).
+function assertInsideFence(win, fence) {
+  const box = ["left", "top", "width", "height"].map((k) => parseInt(win.style[k], 10));
+  const [left, top, width, height] = box;
+  assert.ok(left >= fence.left && left + width <= fence.left + fence.width, `x ${box} in ${JSON.stringify(fence)}`);
+  assert.ok(top >= fence.top + 28 && top + height <= fence.top + fence.height, `y ${box} in ${JSON.stringify(fence)}`);
+}
+
 test("a window born with a focused fence lands inside it and relaxes the minimum only on the short axes", () => {
   // Wide and short: only the height is below its floor.
-  let { deps } = hostDeps({ left: 1000, top: 900, width: 400, height: 200 });
+  const wide = { left: 1000, top: 900, width: 400, height: 200 };
+  let { deps } = hostDeps(wide);
   let { win } = createChrome(deps).buildChrome("shell", "~", null, "console");
-  assert.equal(parseInt(win.style.left, 10) >= 1000, true, win.style.left);
-  assert.equal(parseInt(win.style.top, 10) >= 900, true, win.style.top);
+  assertInsideFence(win, wide);
   assert.equal(win.style.minWidth, undefined);
   assert.equal(win.style.minHeight, win.style.height);
 
   // Narrow and tall: only the width is below its floor.
-  ({ deps } = hostDeps({ left: 1000, top: 900, width: 200, height: 600 }));
+  const tall = { left: 1000, top: 900, width: 200, height: 600 };
+  ({ deps } = hostDeps(tall));
   ({ win } = createChrome(deps).buildChrome("shell", "~", null, "console"));
+  assertInsideFence(win, tall);
   assert.equal(win.style.minWidth, win.style.width);
   assert.equal(win.style.minHeight, undefined);
 
