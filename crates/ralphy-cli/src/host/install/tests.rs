@@ -191,7 +191,7 @@ fn a_copy_with_another_hash_replaces_nothing() {
 fn nothing_is_sent_when_the_install_must_not_happen() {
     let mut newer = description("linux");
     newer.protocol_version = PEER_PROTOCOL_VERSION + 1;
-    let arm_probe = LINUX_PROBE.replace("x86_64", "aarch64");
+    let riscv_probe = LINUX_PROBE.replace("x86_64", "riscv64");
     let missing = || out(127, "", "sh: 1: ralphy: not found\n");
     let cases: [(&str, HostOutput, &str, &str, &'static str); 4] = [
         (
@@ -204,7 +204,7 @@ fn nothing_is_sent_when_the_install_must_not_happen() {
         (
             "no build for the target",
             missing(),
-            &arm_probe,
+            &riscv_probe,
             "v0.1.0-rc.30",
             "linux-x64",
         ),
@@ -248,8 +248,9 @@ fn each_host_maps_to_its_release_target() {
     assert_eq!(target_of(HostOs::MacOs, Some("arm64")), Ok("macos-arm64"));
     assert_eq!(target_of(HostOs::MacOs, Some("x86_64")), Ok("macos-x64"));
     assert_eq!(target_of(HostOs::Windows, Some("AMD64")), Ok("windows-x64"));
-    let arm = target_of(HostOs::Linux, Some("aarch64")).unwrap_err();
-    assert!(arm.contains("cargo"), "{arm}");
+    assert_eq!(target_of(HostOs::Linux, Some("aarch64")), Ok("linux-arm64"));
+    let riscv = target_of(HostOs::Linux, Some("riscv64")).unwrap_err();
+    assert!(riscv.contains("cargo"), "{riscv}");
     assert!(
         target_of(HostOs::Windows, Some("ARM64")).is_err(),
         "not measured"

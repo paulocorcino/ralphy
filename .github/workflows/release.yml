@@ -36,6 +36,13 @@ jobs:
             target: x86_64-unknown-linux-musl
             bin: ralphy
             archive: tar.gz
+          # Built natively on the ARM runner, static musl for the same reason as
+          # linux-x64. `ralphy host install` sends it to an ARM64 Linux host.
+          - os: ubuntu-24.04-arm
+            target_name: linux-arm64
+            target: aarch64-unknown-linux-musl
+            bin: ralphy
+            archive: tar.gz
           # Both macOS arches build on the Apple Silicon runner (macos-14): arm64
           # natively, x86_64 by cross-compile (Apple clang cross-compiles out of
           # the box, no extra deps). This avoids the scarce/retiring macos-13 Intel
@@ -76,13 +83,14 @@ jobs:
       - name: Build release binary
         # MACOSX_DEPLOYMENT_TARGET is read by the Apple linker to set the binary's
         # minimum-OS load command; empty (and so ignored) on Windows/Linux.
-        # CC_x86_64_unknown_linux_musl points cc-rs at the wrapper Ubuntu's
-        # musl-tools actually installs (`musl-gcc`), not the prefixed name cc-rs
-        # probes by default (`x86_64-linux-musl-gcc`), so the bundled C deps
-        # (sqlite, ring) compile. Ignored on the Windows/macOS targets.
+        # CC_<target> points cc-rs at the wrapper Ubuntu's musl-tools actually
+        # installs (`musl-gcc`), not the prefixed name cc-rs probes by default
+        # (`x86_64-linux-musl-gcc`), so the bundled C deps (sqlite, ring)
+        # compile. Ignored on the Windows/macOS targets.
         env:
           MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macos_min }}
           CC_x86_64_unknown_linux_musl: musl-gcc
+          CC_aarch64_unknown_linux_musl: musl-gcc
         run: cargo build --release --bin ralphy --target ${{ matrix.target }}
 
       - name: Determine version

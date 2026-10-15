@@ -38,6 +38,7 @@ pub(crate) fn target_for(os: &str, arch: &str) -> Option<&'static str> {
     match (os, arch) {
         ("windows", "x86_64") => Some("windows-x64"),
         ("linux", "x86_64") => Some("linux-x64"),
+        ("linux", "aarch64") => Some("linux-arm64"),
         ("macos", "x86_64") => Some("macos-x64"),
         ("macos", "aarch64") => Some("macos-arm64"),
         _ => None,
@@ -264,7 +265,12 @@ Connection: close
         assert_eq!(target_for("macos", "x86_64"), Some("macos-x64"));
         assert_eq!(target_for("macos", "aarch64"), Some("macos-arm64"));
         assert_eq!(target_for("windows", "x86_64"), Some("windows-x64"));
-        assert_eq!(target_for("linux", "aarch64"), None, "no Linux arm64 build");
+        assert_eq!(target_for("linux", "aarch64"), Some("linux-arm64"));
+        assert_eq!(
+            target_for("linux", "riscv64"),
+            None,
+            "no Linux RISC-V build"
+        );
         assert_eq!(
             target_for("windows", "aarch64"),
             None,
