@@ -316,6 +316,9 @@ fn kahn(queue: Vec<Issue>, deps: &BTreeMap<u64, BTreeSet<u64>>) -> Vec<Issue> {
 }
 
 #[cfg(test)]
+mod graph_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
