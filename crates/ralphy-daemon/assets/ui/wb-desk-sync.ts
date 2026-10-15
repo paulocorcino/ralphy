@@ -22,6 +22,12 @@ type LooseFields = DeskWindowFields & DeskFenceFields & DeskNoteFields;
 type FieldValue = LooseRecord[keyof LooseRecord];
 // A served desk: the reply to a GET or a PUT.
 type ServedDesk = Partial<Desk> | null | undefined;
+// A record of any of the three types, as one collection holds it.
+type AnyRecord = DeskRecord | DeskFence | DeskNote;
+// The changes of one op.
+type CheckoutChange = Extract<DeskChange, { op: "checkout" | "checkout-clear" }>;
+type CreateChange = Extract<DeskChange, { op: "create" }>;
+type SetChange = Extract<DeskChange, { op: "set" }>;
 
 export const WBDeskSync = (function () {
 
@@ -151,49 +157,64 @@ export const WBDeskSync = (function () {
   function applyChange(desk: DeskView, change: DeskChange): { desk: DeskView; changed: boolean } {
     const unchanged = { desk, changed: false };
     const op = change?.op;
-    if (op === "checkout" || op === "checkout-clear") {
-      const held = desk.checkouts[change.repo];
-      if (op === "checkout" ? held === change.name : held !== change.ifName) return unchanged;
-      const checkouts = { ...desk.checkouts };
-      if (op === "checkout") checkouts[change.repo] = change.name;
-      else delete checkouts[change.repo];
-      return { desk: { ...desk, checkouts }, changed: true };
-    }
+    if (op === "checkout" || op === "checkout-clear") return applyCheckout(desk, change);
     if (!TYPES.has(change?.type)) return unchanged;
     const key: `${DeskRecordType}s` = `${change.type}s`;
-    const list: (DeskRecord | DeskFence | DeskNote)[] = desk[key];
+    const list: AnyRecord[] = desk[key];
     const id = op === "create" ? change.record?.id : change.id;
     const at = list.findIndex((r) => r.id === id);
     let next;
     if (op === "create") {
-      if (at < 0) {
-        next = list.concat([{ ...change.record }]);
-      } else {
-        // A page that adopted a running console: only its session is news.
-        if (change.type !== "window") return unchanged;
-        const rec = { ...list[at] };
-        const r = change.record;
-        const did = setFields("window", rec, {
-          session: { sessionId: r.sessionId, daemonId: r.daemonId, environment: r.environment },
-        });
-        if (!did) return unchanged;
-        next = list.slice();
-        next[at] = rec;
-      }
+      next = createIn(list, at, change);
     } else if (op === "set") {
-      // Deleted elsewhere: a change must not bring it back.
-      if (at < 0) return unchanged;
-      const rec = { ...list[at] };
-      if (!setFields(change.type, rec, change.fields || {})) return unchanged;
-      next = list.slice();
-      next[at] = rec;
+      next = setIn(list, at, change);
     } else if (op === "remove") {
-      if (at < 0) return unchanged;
-      next = list.filter((r) => r.id !== id);
+      next = at < 0 ? null : list.filter((r) => r.id !== id);
     } else {
       return unchanged;
     }
+    if (!next) return unchanged;
     return { desk: { ...desk, [key]: next }, changed: true };
+  }
+
+  // A checkout selects a tree for one project; a checkout-clear clears the
+  // name it saw go.
+  function applyCheckout(desk: DeskView, change: CheckoutChange) {
+    const held = desk.checkouts[change.repo];
+    if (change.op === "checkout" ? held === change.name : held !== change.ifName) return { desk, changed: false };
+    const checkouts = { ...desk.checkouts };
+    if (change.op === "checkout") checkouts[change.repo] = change.name;
+    else delete checkouts[change.repo];
+    return { desk: { ...desk, checkouts }, changed: true };
+  }
+
+  // The list after a create of the record at index `at` (-1: none has its
+  // id), or null when nothing changed.
+  function createIn(list: AnyRecord[], at: number, change: CreateChange): AnyRecord[] | null {
+    if (at < 0) return list.concat([{ ...change.record }]);
+    // A page that adopted a running console: only its session is news.
+    if (change.type !== "window") return null;
+    const rec = { ...list[at] };
+    const r = change.record;
+    const did = setFields("window", rec, {
+      session: { sessionId: r.sessionId, daemonId: r.daemonId, environment: r.environment },
+    });
+    if (!did) return null;
+    const next = list.slice();
+    next[at] = rec;
+    return next;
+  }
+
+  // The list after a set of the record at index `at`, or null when nothing
+  // changed.
+  function setIn(list: AnyRecord[], at: number, change: SetChange): AnyRecord[] | null {
+    // Deleted elsewhere: a change must not bring it back.
+    if (at < 0) return null;
+    const rec = { ...list[at] };
+    if (!setFields(change.type, rec, change.fields || {})) return null;
+    const next = list.slice();
+    next[at] = rec;
+    return next;
   }
 
   // The daemon's desk with this page's pending changes on top.
