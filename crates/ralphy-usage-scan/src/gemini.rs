@@ -488,6 +488,35 @@ mod tests {
     }
 
     #[test]
+    fn the_earliest_start_time_is_the_first_ts() {
+        let lines = concat!(
+            r#"{"sessionId":"s","startTime":"2026-07-21T00:58:00Z"}"#,
+            "\n",
+            r#"{"startTime":"2026-07-21T00:56:00Z"}"#,
+            "\n",
+            r#"{"startTime":"2026-07-21T00:57:00Z"}"#,
+        );
+        let fold = fold_session(lines).expect("a header names the session");
+        assert_eq!(fold.first_ts, "2026-07-21T00:56:00Z");
+    }
+
+    #[test]
+    fn a_log_with_no_session_id_folds_to_no_session() {
+        assert!(fold_session(&format!(
+            "{TURN}
+"
+        ))
+        .is_none());
+    }
+
+    #[test]
+    fn last_ts_falls_back_to_first_ts_when_no_last_updated_is_seen() {
+        let lines = r#"{"sessionId":"s","startTime":"2026-07-21T00:56:00Z"}"#;
+        let fold = fold_session(lines).expect("a header names the session");
+        assert_eq!(fold.last_ts, "2026-07-21T00:56:00Z");
+    }
+
+    #[test]
     fn a_session_is_attributed_through_its_project_root_sibling() {
         let tmp = tempfile::tempdir().unwrap();
         seed(
