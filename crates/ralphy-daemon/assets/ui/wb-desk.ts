@@ -39,6 +39,8 @@ const { sessionIdOf } = WBWindowState;
 // Where an upload goes. The sink never rejects, and a network failure is one
 // more answer to `flushed`.
 type DeskSink = Pick<ReturnType<typeof WBDeskSink.daemon>, "put" | "putSync">;
+// The answer to one upload, as `flushed` reads it.
+type FlushAnswer = { kind: string; status?: number; reply?: DeskReply | null };
 
 // What the desk reads from the console, and nothing else.
 export type DeskDeps = {
@@ -468,51 +470,62 @@ export function createDesk(deps: DeskDeps) {
   // that failed in a way the daemon may still accept is sent again with the
   // same `seq`, later.
   let flushBackoff = 1000;
-  function flushed(out: { kind: string; status?: number; reply?: DeskReply | null }) {
+  function flushed(out: FlushAnswer) {
     const kind = out?.kind;
     if (kind === "held") return;
     if (kind === "ok") {
-      flushBackoff = 1000;
-      for (const r of out.reply?.refused || []) console.warn("desk change refused:", r.error);
-      const verdict = sync.acked(out.reply);
-      if (verdict === "reload") {
-        reloadForRestoredDesk();
-        return;
-      }
-      if (verdict === "taken") {
-        refreshView();
-        converge();
-      }
-      if (sync.hasPending()) scheduleDeskFlush();
+      flushedOk(out);
       return;
     }
-    if (kind === "refused") {
-      const state = out.reply?.state;
-      if (out.status === 409 && state === "restored") {
-        reloadForRestoredDesk();
-        return;
-      }
-      // The daemon will never accept this batch.
-      if (out.status === 400 || out.status === 422) {
-        console.warn("desk changes refused:", out.reply?.error);
-        sync.dropped();
-        if (sync.hasPending()) scheduleDeskFlush();
-        return;
-      }
-      // The daemon refuses a write over a desk it cannot read; the page shows
-      // the failure and sends nothing until the desk reads again.
-      if (out.status === 409 && state === "unreadable") {
-        if (out.reply?.error) console.warn("saved desk:", out.reply.error);
-        deskFailure = "the file is damaged";
-        deskLoaded = false;
-        sync.fail();
-        onDeskFailure?.();
-        return;
-      }
-    }
+    if (kind === "refused" && flushedRefused(out)) return;
     // A network failure, a 401 before a login, a 5xx: kept, and sent again.
     scheduleDeskFlush(flushBackoff);
     flushBackoff = Math.min(flushBackoff * 2, 30000);
+  }
+  // The daemon took the batch: the desk it sent is the view now.
+  function flushedOk(out: FlushAnswer) {
+    flushBackoff = 1000;
+    for (const r of out.reply?.refused || []) console.warn("desk change refused:", r.error);
+    const verdict = sync.acked(out.reply);
+    if (verdict === "reload") {
+      reloadForRestoredDesk();
+      return;
+    }
+    if (verdict === "taken") {
+      refreshView();
+      converge();
+    }
+    if (sync.hasPending()) scheduleDeskFlush();
+  }
+  // The daemon refused the batch. True when the refusal is handled; false
+  // for one that is kept and sent again.
+  function flushedRefused(out: FlushAnswer): boolean {
+    const state = out.reply?.state;
+    if (out.status === 409 && state === "restored") {
+      reloadForRestoredDesk();
+      return true;
+    }
+    // The daemon will never accept this batch.
+    if (out.status === 400 || out.status === 422) {
+      console.warn("desk changes refused:", out.reply?.error);
+      sync.dropped();
+      if (sync.hasPending()) scheduleDeskFlush();
+      return true;
+    }
+    if (out.status === 409 && state === "unreadable") {
+      deskUnreadable(out);
+      return true;
+    }
+    return false;
+  }
+  // The daemon refuses a write over a desk it cannot read; the page shows
+  // the failure and sends nothing until the desk reads again.
+  function deskUnreadable(out: FlushAnswer) {
+    if (out.reply?.error) console.warn("saved desk:", out.reply.error);
+    deskFailure = "the file is damaged";
+    deskLoaded = false;
+    sync.fail();
+    onDeskFailure?.();
   }
   // A mutation in the last 250 ms before the tab closes would otherwise be
   // dropped. The sink's `putSync` rides `keepalive`, which outlives the document.

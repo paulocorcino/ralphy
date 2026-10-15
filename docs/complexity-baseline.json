@@ -422,9 +422,6 @@
     "crates/ralphy-daemon/assets/ui/wb-desk.ts": {
       "converge": [
         15
-      ],
-      "flushed": [
-        23
       ]
     },
     "crates/ralphy-daemon/assets/ui/wb-detach-link.ts": {
