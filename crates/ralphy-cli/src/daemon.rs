@@ -209,7 +209,7 @@ pub(crate) fn run(args: &DaemonArgs) -> Result<()> {
             }
             Ok(())
         }
-        Some(DaemonCommand::Install) => first_start::install(args.port),
+        Some(DaemonCommand::Install) => first_start::install(),
         Some(DaemonCommand::Uninstall) => {
             ralphy_daemon::autostart::uninstall()?;
             println!("removed daemon autostart");

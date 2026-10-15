@@ -41,46 +41,78 @@ fn after_registration(
     }
 }
 
-pub(crate) fn install(port: u16) -> Result<()> {
-    crate::install::warn_if_elevated();
-    let was_registered = autostart::status()
-        .context("reading the daemon autostart registration")?
-        .registered;
-    autostart::install()?;
-    println!("registered daemon autostart");
-    let store = ralphy_daemon::auth::store_dir()?;
-    let windows_elevated = cfg!(windows) && ralphy_proc_util::elevated::runs_elevated();
-    match after_registration(
+/// Read the registration, write it, then decide. The read comes first: read
+/// after the write, every install would look like a second one.
+fn register(
+    was_registered: impl FnOnce() -> Result<bool>,
+    write: impl FnOnce() -> Result<()>,
+    answers: impl FnOnce() -> bool,
+    windows_elevated: bool,
+) -> Result<AfterRegistration> {
+    let was_registered = was_registered()?;
+    write()?;
+    Ok(after_registration(
         was_registered,
-        super::describe::answers(&store, port),
+        answers(),
         windows_elevated,
-    ) {
+    ))
+}
+
+/// Only Windows refuses to start from an elevated shell: root on Linux runs
+/// `daemon install` over ssh for `host add`, and starts the daemon as before.
+fn blocks_an_elevated_start(on_windows: bool, elevated: bool) -> bool {
+    on_windows && elevated
+}
+
+// The registration starts a bare `daemon`, so the daemon it starts listens on
+// the default port whatever `--port` this command got.
+pub(crate) fn install() -> Result<()> {
+    crate::install::warn_if_elevated();
+    let store = ralphy_daemon::auth::store_dir()?;
+    let port = ralphy_daemon::DEFAULT_PORT;
+    let elevated =
+        blocks_an_elevated_start(cfg!(windows), ralphy_proc_util::elevated::runs_elevated());
+    let next = register(
+        || {
+            Ok(autostart::status()
+                .context("reading the daemon autostart registration")?
+                .registered)
+        },
+        autostart::install,
+        || super::describe::answers(&store, port),
+        elevated,
+    )?;
+    println!("registered daemon autostart");
+    match next {
         AfterRegistration::AlreadyRegistered => {}
         AfterRegistration::AlreadyRunning => println!("the daemon is already running"),
         AfterRegistration::NotAsAdministrator => println!(
             "the daemon was not started from this administrator window; \
              it starts when you sign in again"
         ),
-        AfterRegistration::Start => {
-            start(&store)?;
-            // `host add` runs `daemon restart` right after this. A restart that
-            // came before the daemon wrote its pid file would start a second one.
-            // A daemon that never answers (no name yet, a port in use) is
-            // reported, not an error: the registration is in place either way.
-            if super::restart::started(
-                || super::describe::answers(&store, port),
-                START_TIMEOUT,
-                POLL,
-            ) {
-                println!("started the daemon");
-            } else {
-                eprintln!(
-                    "warning: the daemon did not answer within {}s after the start: see {}",
-                    START_TIMEOUT.as_secs(),
-                    store.join("daemon.log").display()
-                );
-            }
-        }
+        AfterRegistration::Start => start_and_wait(&store, port)?,
+    }
+    Ok(())
+}
+
+/// Start the daemon and wait until it answers and has written its pid file.
+/// `host add` runs `daemon restart` right after this, and a restart that finds
+/// no pid file starts a second daemon. A daemon that never gets there (no name
+/// yet, a port in use) is reported, not an error: the registration is in
+/// place either way.
+fn start_and_wait(store: &std::path::Path, port: u16) -> Result<()> {
+    start(store)?;
+    let up = || {
+        super::describe::answers(store, port) && ralphy_daemon::pidfile::read_in(store).is_some()
+    };
+    if super::restart::started(up, START_TIMEOUT, POLL) {
+        println!("started the daemon");
+    } else {
+        eprintln!(
+            "warning: the daemon did not answer within {}s after the start: see {}",
+            START_TIMEOUT.as_secs(),
+            store.join("daemon.log").display()
+        );
     }
     Ok(())
 }
@@ -144,6 +176,40 @@ mod tests {
             AfterRegistration::AlreadyRunning,
             "a daemon that answers is not started twice"
         );
+    }
+
+    /// A fake registration: read it, then write it, as `daemon install` does.
+    fn install_on(registered: &std::cell::Cell<bool>) -> AfterRegistration {
+        register(
+            || Ok(registered.get()),
+            || {
+                registered.set(true);
+                Ok(())
+            },
+            || false,
+            false,
+        )
+        .expect("a fake registration does not fail")
+    }
+
+    #[test]
+    fn a_second_install_does_not_start_the_daemon_again() {
+        let registered = std::cell::Cell::new(false);
+        assert_eq!(install_on(&registered), AfterRegistration::Start);
+        assert_eq!(
+            install_on(&registered),
+            AfterRegistration::AlreadyRegistered
+        );
+    }
+
+    #[test]
+    fn only_windows_refuses_an_elevated_start() {
+        assert!(blocks_an_elevated_start(true, true));
+        assert!(
+            !blocks_an_elevated_start(false, true),
+            "root on Linux starts it"
+        );
+        assert!(!blocks_an_elevated_start(true, false));
     }
 
     #[test]
