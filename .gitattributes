@@ -6,3 +6,6 @@ assets/prompts/** text eol=lf
 # The vendored UI files are hashed in vendor/manifest.json, and include_dir!
 # embeds the working-tree bytes. No checkout may convert their line endings.
 crates/ralphy-daemon/assets/ui/vendor/** -text
+
+# The install script runs under sh and is served from main as it is.
+assets/install/install.sh text eol=lf
