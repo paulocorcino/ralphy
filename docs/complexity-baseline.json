@@ -910,11 +910,6 @@
         14
       ]
     },
-    "crates/ralphy-pricing/src/ingest.rs": {
-      "ingest_models_dev": [
-        23
-      ]
-    },
     "crates/ralphy-pricing/src/lib.rs": {
       "parse_pricing_toml": [
         14

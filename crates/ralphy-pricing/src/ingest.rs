@@ -24,39 +24,38 @@ pub fn ingest_models_dev(doc: &Value) -> BTreeMap<String, ModelPrice> {
             continue;
         };
         for (model_id, mval) in models {
-            let Some(cost) = mval.get("cost") else {
+            let Some(price) = mval.get("cost").and_then(price_of) else {
                 continue;
             };
-            let Some(input) = json_f64(cost.get("input")) else {
-                continue;
-            };
-            let Some(output) = json_f64(cost.get("output")) else {
-                continue;
-            };
-            if input == 0.0 && output == 0.0 {
-                continue;
-            }
-            let cache_read = json_f64(cost.get("cache_read")).unwrap_or(0.0);
-            let cache_creation = json_f64(cost.get("cache_write")).unwrap_or(0.0);
-            if [input, output, cache_read, cache_creation]
-                .iter()
-                .any(|p| *p < 0.0 || !p.is_finite())
-            {
-                continue;
-            }
             let key = format!("{provider}/{}", strip_release_date(model_id));
-            out.insert(
-                key,
-                ModelPrice {
-                    input,
-                    output,
-                    cache_read,
-                    cache_creation,
-                },
-            );
+            out.insert(key, price);
         }
     }
     out
+}
+
+/// The price of one model's `cost` object, or `None` for a row that has no
+/// usable input+output cost or carries a negative or non-finite price.
+fn price_of(cost: &Value) -> Option<ModelPrice> {
+    let input = json_f64(cost.get("input"))?;
+    let output = json_f64(cost.get("output"))?;
+    if input == 0.0 && output == 0.0 {
+        return None;
+    }
+    let cache_read = json_f64(cost.get("cache_read")).unwrap_or(0.0);
+    let cache_creation = json_f64(cost.get("cache_write")).unwrap_or(0.0);
+    if [input, output, cache_read, cache_creation]
+        .iter()
+        .any(|p| *p < 0.0 || !p.is_finite())
+    {
+        return None;
+    }
+    Some(ModelPrice {
+        input,
+        output,
+        cache_read,
+        cache_creation,
+    })
 }
 
 /// Parse a JSON number as `f64`. `None` for missing, null, or non-numeric values
