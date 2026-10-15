@@ -545,10 +545,24 @@ pub fn status() -> Result<AutostartStatus> {
     })
 }
 
+/// Whether `install` must load the launchd agent again. A loaded agent whose
+/// plist did not change is left alone: `bootstrap` runs it at once
+/// (`RunAtLoad`), so a reload would start a daemon the operator stopped on
+/// purpose, and a second install only writes the registration (ADR-0056 §12).
+pub fn launchd_reload_needed(on_disk: Option<&str>, wanted: &str, loaded: bool) -> bool {
+    !(loaded && on_disk == Some(wanted))
+}
+
 #[cfg(target_os = "macos")]
 pub fn install() -> Result<()> {
     let spec = build_spec()?;
-    write_registration(&spec.plist_path, &launchd_plist(&spec))?;
+    let plist = launchd_plist(&spec);
+    let on_disk = std::fs::read_to_string(&spec.plist_path).ok();
+    let loaded = argv_succeeds(&render_query(Platform::Launchd, &spec))?;
+    if !launchd_reload_needed(on_disk.as_deref(), &plist, loaded) {
+        return Ok(());
+    }
+    write_registration(&spec.plist_path, &plist)?;
     // launchd opens `StandardOutPath` itself and does not create its parent;
     // on a fresh account `~/.ralphy` may not exist yet and the agent would
     // fail to spawn with nothing logged anywhere.

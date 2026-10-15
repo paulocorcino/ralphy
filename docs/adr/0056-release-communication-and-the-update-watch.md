@@ -464,6 +464,12 @@ binary itself never asks and never refuses: `ralphy install` and
 `ralphy host add` and `ralphy host install` run these commands over ssh with
 no terminal, and their host check already warns about root (ADR-0067); a
 question in the binary would break them.
+An accepted exception (2026-10-15): over OpenSSH, a Windows account in the
+Administrators group always gets an elevated token. There `daemon install`
+does not start the daemon, but `ralphy host add` then runs `daemon restart`,
+which starts it elevated. `host add` needs a running daemon to pair with, and
+refusing these accounts would block hosts that work today, so this is kept;
+the host check already says when the user is an administrator.
 
 **`ralphy daemon install` starts the daemon the first time.** Until now it
 only registered the autostart, so on Linux and Windows nothing ran until the
@@ -474,7 +480,12 @@ written to the `Run` key, started detached and outside the caller's job
 object. When the autostart was already registered, the command only writes
 the registration again, as before: `ralphy host install` runs it on a host
 whose daemon the operator may have stopped on purpose, and it must stay
-stopped. When a daemon already answers, nothing is started. No flag is
+stopped. On macOS this means a loaded agent whose plist did not change is
+not loaded again, because `launchctl bootstrap` runs it at once
+(`RunAtLoad`); a changed plist is loaded again, and that starts it. The
+first start waits until the daemon answers on the default port and has
+written its pid file, so the `daemon restart` that `host add` runs next
+finds it. When a daemon already answers, nothing is started. No flag is
 added, because `ralphy host add` runs the `ralphy` already on the host, which
 can be older than the flag.
 
