@@ -129,3 +129,36 @@ async fn a_peer_that_refuses_its_repos_keeps_its_last_known_repos() {
 async fn a_peer_that_serves_an_unreadable_repo_list_keeps_its_last_known_repos() {
     keeps_the_last_good_repos_when_the_peer_serves(UNREADABLE).await;
 }
+
+/// A probe task that fails leaves its peer listed, as unreachable, and the
+/// peer still reaches the repo rows.
+#[tokio::test]
+async fn a_probe_task_that_fails_is_an_unreachable_row() {
+    let mut set: tokio::task::JoinSet<(usize, Probed)> = tokio::task::JoinSet::new();
+    set.spawn(async { (0, (peer::client::PeerStatus::Reachable, None, None)) });
+    set.spawn(async { panic!("a probe task that fails") });
+    let probed = collect_probes(set, 2).await;
+
+    let mut lost = descriptor(2);
+    lost.daemon_id = "01PEERLOST".into();
+    let descriptors = [descriptor(1), lost];
+    let recalled = [None, None];
+    let fallback = probe_did_not_complete();
+    let (views, input) = peer_rows(&descriptors, &probed, &recalled, &fallback);
+
+    let states: Vec<(&str, &str)> = views
+        .iter()
+        .map(|v| (v.daemon_id.as_str(), v.state.as_str()))
+        .collect();
+    assert_eq!(
+        states,
+        [("01PEERFAKE", "reachable"), ("01PEERLOST", "unreachable")],
+        "the peer whose probe failed is listed, not dropped"
+    );
+    assert!(
+        views[1].diagnosis.contains("WSL: Ubuntu-22.04"),
+        "the diagnosis names the environment: {}",
+        views[1].diagnosis
+    );
+    assert_eq!(input.len(), 2, "both peers reach the repo rows");
+}
