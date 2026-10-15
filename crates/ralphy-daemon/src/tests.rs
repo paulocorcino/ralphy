@@ -6370,8 +6370,8 @@ fn shell_lists_the_fences() {
     // fence is focused lands inside it" is arithmetic, not a hand-placed
     // rect that drifts from the fence's own geometry.
     assert!(
-        body("function buildChrome(").contains("spawnRectIn("),
-        "buildChrome must place a fence-born console through spawnRectIn (#343)"
+        body("function spawnInFence(").contains("spawnRectIn("),
+        "spawnInFence must place a fence-born console through spawnRectIn (#343)"
     );
     // One fold feeds BOTH readouts: the fence's own chrome and the toolbar
     // row can never disagree about a count.

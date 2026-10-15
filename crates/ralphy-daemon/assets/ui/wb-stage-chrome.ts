@@ -449,13 +449,10 @@ export function createChrome(deps: ChromeDeps) {
     win.style.height = box.height + "px";
   }
 
-  // The box of a console born INTO a fence: the fence element and the height of its head band in.
-  type FenceBox = (host: HTMLElement, headH: number) => Rect;
-
   // A console born INTO a fence (#343), below the fence's head band.
-  function spawnInFence(win: ConsoleWin, host: HTMLElement, boxIn: FenceBox) {
+  function spawnInFence(win: ConsoleWin, host: HTMLElement) {
     const headH = host.querySelector<HTMLElement>(".fence-head")?.offsetHeight || 28;
-    const box = boxIn(host, headH);
+    const box = spawnRectIn(restoreRect(host), cascade, headH);
     setBox(win, box);
     // The CSS floor outranks the inline size (#342); relax it for exactly
     // the axes below it.
@@ -485,7 +482,7 @@ export function createChrome(deps: ChromeDeps) {
   // The window's box: a record's own rect, else a place in the cascade. The
   // rect is written at CONSTRUCTION so a record never snapshots mid-transition
   // (#342). Returns whether the free cascade had to leave the viewport.
-  function placeWindow(win: ConsoleWin, rect: Partial<Rect> | undefined, boxIn: FenceBox) {
+  function placeWindow(win: ConsoleWin, rect: Partial<Rect> | undefined) {
     if (rect) {
       setBox(win, rect);
       return false;
@@ -502,7 +499,7 @@ export function createChrome(deps: ChromeDeps) {
     const el = focusedFence() && !fenceLocked(focusedFence()) && fenceEl(focusedFence());
     const host = el && el.offsetWidth && el.offsetHeight ? el : null;
     if (!host) return spawnFree(win);
-    spawnInFence(win, host, boxIn);
+    spawnInFence(win, host);
     return false;
   }
 
@@ -638,7 +635,7 @@ export function createChrome(deps: ChromeDeps) {
     const consoleName = desk?.consoleName || WBConsoleName.defaultName(consolePrefix(repo), takenNames(null));
     const win = seedWindow(label, repo, desk, kind, consoleName);
     const rect = desk?.rect;
-    const spawnMoved = placeWindow(win, rect, (host, headH) => spawnRectIn(restoreRect(host), cascade, headH));
+    const spawnMoved = placeWindow(win, rect);
     const bar = buildTitlebar(win, label, repo, desk);
     const body = appendBody(win, bar.titlebar);
     stage()!.append(win);
