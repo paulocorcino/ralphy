@@ -40,12 +40,12 @@ const HOST_ID: &str = "01ARZ3NDEKTSV4RRFFQ69G5FC0";
 const PUBLIC: &str = "ssh-ed25519 BODY ralphy-peer@anvil";
 
 // format of `id -u`, `id -un` and `loginctl show-user`
-const LINUX_PROBE: &str =
+pub(super) const LINUX_PROBE: &str =
     "--- host\nsvr.example.com\n--- uid\n1000\n--- user\npaulo\n--- arch\nx86_64\n--- linger\nLinger=yes\n";
 const LINUX_NO_LINGER: &str =
     "--- host\nsvr.example.com\n--- uid\n1000\n--- user\npaulo\n--- arch\nx86_64\n--- linger\nLinger=no\n";
 
-fn local(store: &Path) -> Local<'_> {
+pub(super) fn local(store: &Path) -> Local<'_> {
     Local {
         store,
         daemon_id: Some(LOCAL_ID.to_string()),
@@ -67,13 +67,13 @@ fn fake_keygen(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn no_keygen(_: &Path) -> Result<()> {
+pub(super) fn no_keygen(_: &Path) -> Result<()> {
     panic!("the peer key must not be generated here")
 }
 
 /// A Linux host with Ralphy ready except for `first`'s gaps; the second
 /// describe carries the token.
-fn linux_host(probe: &str, first: ralphy_daemon::peer::DaemonDescription) -> FakeHost {
+pub(super) fn linux_host(probe: &str, first: ralphy_daemon::peer::DaemonDescription) -> FakeHost {
     let mut second = description("linux");
     second.token = Some("host-tok".to_string());
     FakeHost::default()

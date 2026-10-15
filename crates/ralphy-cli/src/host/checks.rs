@@ -186,6 +186,8 @@ pub(crate) enum CheckId {
     User,
     Git,
     Gh,
+    Python,
+    Agent,
 }
 
 impl CheckId {
@@ -202,6 +204,8 @@ impl CheckId {
             CheckId::User => "user",
             CheckId::Git => "git",
             CheckId::Gh => "gh",
+            CheckId::Python => "python",
+            CheckId::Agent => "agent",
         }
     }
 
@@ -217,6 +221,8 @@ impl CheckId {
             CheckId::User => "User",
             CheckId::Git => "Git",
             CheckId::Gh => "GitHub CLI",
+            CheckId::Python => "Python",
+            CheckId::Agent => "Agent CLI",
         }
     }
 }
@@ -522,6 +528,9 @@ pub(crate) fn print_checks(checks: &[HostCheck], out: &mut impl Write) -> Result
     }
     Ok(())
 }
+
+mod tools;
+pub(crate) use tools::{parse_doctor, with_doctor};
 
 #[cfg(test)]
 pub(crate) mod tests;
