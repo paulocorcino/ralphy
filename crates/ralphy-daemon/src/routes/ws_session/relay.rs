@@ -1,6 +1,7 @@
 //! The peer relay for `/ws/session`: the query the owning daemon receives
 //! and the byte-for-byte bridge between the browser and the peer socket.
 
+use std::ops::ControlFlow;
 use std::time::Instant;
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -203,65 +204,136 @@ pub(crate) async fn peer_session_ws(
                 break;
             }
             incoming = browser.recv() => {
-                let Some(Ok(message)) = incoming else {
-                    close_peer_session(&mut peer).await;
-                    break;
-                };
-                let outbound = match message {
-                    Message::Binary(bytes) => {
-                        traffic.inbound(bytes.len());
-                        // Read only for the log; the bytes go on unchanged.
-                        if let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) {
-                            traffic.client_command(&cmd);
-                        }
-                        tokio_tungstenite::tungstenite::Message::Binary(bytes)
-                    }
-                    Message::Ping(bytes) => tokio_tungstenite::tungstenite::Message::Ping(bytes),
-                    Message::Pong(bytes) => {
-                        traffic.pong_received(&bytes, Instant::now());
-                        tokio_tungstenite::tungstenite::Message::Pong(bytes)
-                    }
-                    Message::Close(_) => {
-                        traffic.client_closed();
-                        close_peer_session(&mut peer).await;
-                        break;
-                    }
-                    Message::Text(_) => continue,
-                };
-                if peer.send(outbound).await.is_err() {
+                if to_peer(incoming, &mut peer, &mut traffic).await.is_break() {
                     break;
                 }
             }
             incoming = peer.next() => {
-                let Some(Ok(message)) = incoming else {
-                    let _ = browser.send(Message::Close(None)).await;
-                    break;
-                };
-                let outbound = match message {
-                    tokio_tungstenite::tungstenite::Message::Binary(bytes) => {
-                        traffic.peer_frame(&bytes);
-                        Message::Binary(bytes)
-                    }
-                    tokio_tungstenite::tungstenite::Message::Ping(bytes) => {
-                        traffic.ping_sent(&bytes, Instant::now());
-                        Message::Ping(bytes)
-                    }
-                    tokio_tungstenite::tungstenite::Message::Pong(bytes) => Message::Pong(bytes),
-                    tokio_tungstenite::tungstenite::Message::Close(_) => {
-                        end = Some(PEER_CLOSED);
-                        let _ = browser.send(Message::Close(None)).await;
-                        break;
-                    }
-                    tokio_tungstenite::tungstenite::Message::Text(_)
-                    | tokio_tungstenite::tungstenite::Message::Frame(_) => continue,
-                };
-                if browser.send(outbound).await.is_err() {
+                if to_browser(incoming, &mut browser, &mut traffic, &mut end).await.is_break() {
                     break;
                 }
             }
         }
     }
     traffic.log(end, Instant::now());
+}
+
+/// Relay one read of the browser socket to the peer. `Break` ends the relay.
+async fn to_peer(
+    incoming: Option<Result<Message, axum::Error>>,
+    peer: &mut peer::client::PeerSocket,
+    traffic: &mut Traffic,
+) -> ControlFlow<()> {
+    let Some(Ok(message)) = incoming else {
+        close_peer_session(peer).await;
+        return ControlFlow::Break(());
+    };
+    match from_browser(message, traffic) {
+        Step::Send(outbound) => {
+            if peer.send(outbound).await.is_err() {
+                return ControlFlow::Break(());
+            }
+            ControlFlow::Continue(())
+        }
+        Step::Skip => ControlFlow::Continue(()),
+        Step::Close => {
+            close_peer_session(peer).await;
+            ControlFlow::Break(())
+        }
+    }
+}
+
+/// Relay one read of the peer socket to the browser. `Break` ends the relay.
+async fn to_browser(
+    incoming: Option<
+        Result<tokio_tungstenite::tungstenite::Message, tokio_tungstenite::tungstenite::Error>,
+    >,
+    browser: &mut WebSocket,
+    traffic: &mut Traffic,
+    end: &mut Option<&'static str>,
+) -> ControlFlow<()> {
+    let Some(Ok(message)) = incoming else {
+        let _ = browser.send(Message::Close(None)).await;
+        return ControlFlow::Break(());
+    };
+    match from_peer(message, traffic, end) {
+        Step::Send(outbound) => {
+            if browser.send(outbound).await.is_err() {
+                return ControlFlow::Break(());
+            }
+            ControlFlow::Continue(())
+        }
+        Step::Skip => ControlFlow::Continue(()),
+        Step::Close => {
+            let _ = browser.send(Message::Close(None)).await;
+            ControlFlow::Break(())
+        }
+    }
+}
+
+/// What the relay does with one frame it read.
+#[derive(Debug)]
+enum Step<M> {
+    /// Pass this frame on to the other side.
+    Send(M),
+    /// Drop the frame and read the next one.
+    Skip,
+    /// The side that sent it closed: close the other side and stop.
+    Close,
+}
+
+/// One frame from the browser, for the peer. A Close is recorded in
+/// `traffic` here, before the relay closes the peer session.
+fn from_browser(
+    message: Message,
+    traffic: &mut Traffic,
+) -> Step<tokio_tungstenite::tungstenite::Message> {
+    match message {
+        Message::Binary(bytes) => {
+            traffic.inbound(bytes.len());
+            // Read only for the log; the bytes go on unchanged.
+            if let Ok(Frame::Command(cmd)) = protocol::decode(&bytes) {
+                traffic.client_command(&cmd);
+            }
+            Step::Send(tokio_tungstenite::tungstenite::Message::Binary(bytes))
+        }
+        Message::Ping(bytes) => Step::Send(tokio_tungstenite::tungstenite::Message::Ping(bytes)),
+        Message::Pong(bytes) => {
+            traffic.pong_received(&bytes, Instant::now());
+            Step::Send(tokio_tungstenite::tungstenite::Message::Pong(bytes))
+        }
+        Message::Close(_) => {
+            traffic.client_closed();
+            Step::Close
+        }
+        Message::Text(_) => Step::Skip,
+    }
+}
+
+/// One frame from the peer, for the browser. A peer Close sets `end` before
+/// the relay sends the Close on to the browser.
+fn from_peer(
+    message: tokio_tungstenite::tungstenite::Message,
+    traffic: &mut Traffic,
+    end: &mut Option<&'static str>,
+) -> Step<Message> {
+    match message {
+        tokio_tungstenite::tungstenite::Message::Binary(bytes) => {
+            traffic.peer_frame(&bytes);
+            Step::Send(Message::Binary(bytes))
+        }
+        tokio_tungstenite::tungstenite::Message::Ping(bytes) => {
+            traffic.ping_sent(&bytes, Instant::now());
+            Step::Send(Message::Ping(bytes))
+        }
+        tokio_tungstenite::tungstenite::Message::Pong(bytes) => Step::Send(Message::Pong(bytes)),
+        tokio_tungstenite::tungstenite::Message::Close(_) => {
+            *end = Some(PEER_CLOSED);
+            Step::Close
+        }
+        tokio_tungstenite::tungstenite::Message::Text(_)
+        | tokio_tungstenite::tungstenite::Message::Frame(_) => Step::Skip,
+    }
 }
 
 pub(crate) async fn close_peer_session(peer: &mut peer::client::PeerSocket) {
