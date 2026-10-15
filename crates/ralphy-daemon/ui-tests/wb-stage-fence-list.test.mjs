@@ -188,7 +188,7 @@ function chromeFence(id, rect) {
 
 // Fence `a` is locked and holds one console and one card, `b` holds two
 // consoles, and `c` went to a popup with three.
-function chromeHarness({ autoBoot, measured = true } = {}) {
+function chromeHarness({ autoBoot, measured = true, ownLocks = false } = {}) {
   const rect = (left, top) => ({ left, top, width: 400, height: 400 });
   const at = (left, top) => ({ left, top, width: 100, height: 100 });
   const fences = [
@@ -199,6 +199,7 @@ function chromeHarness({ autoBoot, measured = true } = {}) {
   const fenceEls = fences.map((f) => chromeFence(f.id, f.rect));
   const wins = [fakeEl(at(10, 10)), fakeEl(at(510, 10)), fakeEl(at(610, 110))];
   wins.forEach((w, i) => (w._deskId = `w${i}`));
+  wins[0]._deskLocked = ownLocks;
   const card = fakeEl(at(150, 150), {}, { noteId: "n1" });
   const st = {
     offsetWidth: measured ? 1200 : 0,
@@ -215,7 +216,7 @@ function chromeHarness({ autoBoot, measured = true } = {}) {
     OPTS: autoBoot === undefined ? {} : { autoBoot },
     popups,
     fences: () => fences,
-    notes: () => [{ id: "n1" }],
+    notes: () => [{ id: "n1", locked: ownLocks }],
     stage: () => st,
     workspace: () => null,
     restoreRect: (el) => el.rect,
@@ -261,4 +262,13 @@ test("in the detached-fence popup a locked fence holds no console and no card", 
   list.refreshFenceChrome();
   assert.deepEqual(wins.map((w) => w.classes.has("held")), [false, false, false]);
   assert.deepEqual([card.classes.has("held"), locks], [false, []]);
+});
+
+// A console or a card with its own lock wears that lock, not the fence's.
+test("a console or a card locked on its own is not held by its locked fence", () => {
+  const { list, wins, card, locks } = chromeHarness({ ownLocks: true });
+  list.refreshFenceChrome();
+  assert.equal(wins[0].classes.has("held"), false);
+  assert.equal(card.classes.has("held"), false);
+  assert.deepEqual(locks, [["n1", true]], "the card is still read-only");
 });
