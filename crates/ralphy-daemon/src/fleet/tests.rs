@@ -39,6 +39,7 @@ fn peer_store(pairs: &[(&str, &str)]) -> PeerRepoStore {
                     branch: None,
                     dirty: false,
                     remote: None,
+                    former_slugs: Vec::new(),
                 },
             )
         })
@@ -244,6 +245,26 @@ fn store_from_repos_json_keeps_the_peers_own_verdict_and_ignores_extra_fields() 
     let old = store.get("owner/old").expect("owner/old folds");
     assert!(!old.dirty);
     assert_eq!(old.remote, None);
+}
+
+/// A peer that re-keyed a project serves the old key in `former_slugs`; the
+/// host maps it in the form a desk record names a peer's repo. A row from an
+/// older peer carries no field and maps nothing (ADR-0036 amendment 2026-10-15).
+#[test]
+fn a_peers_former_slugs_map_to_the_federated_keys() {
+    let body = br#"[
+      {"slug":"owner/repo","path":"/home/repo","reachable":true,"former_slugs":["path-abc","path-def"]},
+      {"slug":"owner/old","path":"/home/old","reachable":true}
+    ]"#;
+    let store = store_from_repos_json(body).expect("the body folds");
+    let map = peer_former_slug_map("peer1", &store);
+    assert_eq!(
+        map,
+        BTreeMap::from([
+            ("peer1/path-abc".to_string(), "peer1/owner/repo".to_string()),
+            ("peer1/path-def".to_string(), "peer1/owner/repo".to_string()),
+        ])
+    );
 }
 
 /// A peer repo whose path is gone is listed as gone, on a live peer.

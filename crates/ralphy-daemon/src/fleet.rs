@@ -86,6 +86,9 @@ pub struct PeerRepoRow {
     /// GitHub. Without it every peer row rendered as "local only" (found live
     /// on a WSL peer whose repo had a github.com origin).
     pub remote: Option<String>,
+    /// The keys this repo had before the peer re-keyed it (ADR-0036 amendment
+    /// 2026-10-15). An older peer serves none.
+    pub former_slugs: Vec<String>,
 }
 
 /// A peer's repos, keyed by slug, as last served by that peer.
@@ -174,6 +177,8 @@ pub fn store_from_repos_json(body: &[u8]) -> Option<PeerRepoStore> {
         dirty: bool,
         #[serde(default)]
         remote: Option<String>,
+        #[serde(default)]
+        former_slugs: Vec<String>,
     }
     let rows: Vec<Row> = serde_json::from_slice(body).ok()?;
     Some(
@@ -187,11 +192,30 @@ pub fn store_from_repos_json(body: &[u8]) -> Option<PeerRepoStore> {
                         branch: row.branch,
                         dirty: row.dirty,
                         remote: row.remote,
+                        former_slugs: row.former_slugs,
                     },
                 )
             })
             .collect(),
     )
+}
+
+/// Every former key a peer served, mapped to the key it now has, both in the
+/// federated form `<daemon_id>/<slug>` — the form a desk record names a peer's
+/// repo in. The desk routes read it like the local registry's map (ADR-0036
+/// amendment 2026-10-15).
+pub fn peer_former_slug_map(daemon_id: &str, store: &PeerRepoStore) -> BTreeMap<String, String> {
+    store
+        .iter()
+        .flat_map(|(slug, row)| {
+            row.former_slugs.iter().map(move |former| {
+                (
+                    format!("{daemon_id}/{former}"),
+                    format!("{daemon_id}/{slug}"),
+                )
+            })
+        })
+        .collect()
 }
 
 /// Locate one repo in a peer-served registry while retaining the owning
