@@ -204,33 +204,71 @@ impl Shell {
 fn parse_shell(app: &str) -> Result<Shell> {
     let cs: Vec<char> = app.chars().collect();
     let toks = lex(app, 1);
-    let at = |i: usize, p: &str| toks.get(i).is_some_and(|t| t.is(p));
-    let ident = |i: usize| toks.get(i).and_then(Token::ident);
+    let bounds = bounds(&toks)?;
+    let sections = sections(app, &toks, &bounds)?;
+    let (members, ranges) = members(&toks, &cs, &sections, &bounds)?;
+    let accesses = accesses(&toks, &members, &ranges);
+    Ok(Shell {
+        sections,
+        members,
+        accesses,
+    })
+}
 
+/// Where `shell()` sits in the tokens of `app.ts`.
+struct Bounds {
+    /// The `function` of `function shell`.
+    start: usize,
+    /// The `{` of `shellData({`.
+    open: usize,
+    /// The `}` that closes `open`.
+    close: usize,
+}
+
+fn tok_is(toks: &[Token], i: usize, p: &str) -> bool {
+    toks.get(i).is_some_and(|t| t.is(p))
+}
+
+fn ident_at(toks: &[Token], i: usize) -> Option<&str> {
+    toks.get(i).and_then(Token::ident)
+}
+
+/// The line of the last character of the token at `i`.
+fn end_line(toks: &[Token], cs: &[char], i: usize) -> usize {
+    let t = &toks[i];
+    t.line + cs[t.start..t.end].iter().filter(|&&c| c == '\n').count()
+}
+
+fn bounds(toks: &[Token]) -> Result<Bounds> {
     let start = (0..toks.len())
-        .find(|&i| ident(i) == Some("function") && ident(i + 1) == Some("shell"))
+        .find(|&i| ident_at(toks, i) == Some("function") && ident_at(toks, i + 1) == Some("shell"))
         .context("app.ts has no `function shell`")?;
     let open = (start..toks.len())
-        .find(|&i| ident(i) == Some("shellData") && at(i + 1, "(") && at(i + 2, "{"))
+        .find(|&i| {
+            ident_at(toks, i) == Some("shellData")
+                && tok_is(toks, i + 1, "(")
+                && tok_is(toks, i + 2, "{")
+        })
         .map(|i| i + 2)
         .context("shell() does not return shellData({ … })")?;
-    let close = close_of(&toks, open);
+    let close = close_of(toks, open);
     if close >= toks.len() {
         bail!("the object literal of shell() is not closed");
     }
-    let end_line = |i: usize| {
-        let t = &toks[i];
-        t.line + cs[t.start..t.end].iter().filter(|&&c| c == '\n').count()
-    };
+    Ok(Bounds { start, open, close })
+}
 
+/// The part before the first heading, then one section per heading line
+/// inside the object literal.
+fn sections(app: &str, toks: &[Token], bounds: &Bounds) -> Result<Vec<Section>> {
     let mut sections = vec![Section {
         name: "(top)".to_string(),
         group: Group::Core,
-        line: toks[start].line,
+        line: toks[bounds.start].line,
     }];
     for (n, line) in app.lines().enumerate() {
         let number = n + 1;
-        if number <= toks[open].line || number >= toks[close].line {
+        if number <= toks[bounds.open].line || number >= toks[bounds.close].line {
             continue;
         }
         if let Some(name) = heading(line) {
@@ -244,76 +282,121 @@ fn parse_shell(app: &str) -> Result<Shell> {
             });
         }
     }
+    Ok(sections)
+}
 
+/// The first and the last token of a member.
+type TokenRange = (usize, usize);
+
+/// The members of the object literal, and the range of tokens of each, in
+/// the same order.
+fn members(
+    toks: &[Token],
+    cs: &[char],
+    sections: &[Section],
+    bounds: &Bounds,
+) -> Result<(Vec<Member>, Vec<TokenRange>)> {
     let mut members = Vec::new();
     let mut ranges = Vec::new();
-    let mut i = open + 1;
-    while i < close {
+    let mut i = bounds.open + 1;
+    while i < bounds.close {
         let first = i;
-        let mut name_at = i;
-        let mut accessor = None;
-        if matches!(ident(i), Some("async" | "get" | "set"))
-            && toks.get(i + 1).is_some_and(|t| t.ident().is_some())
-        {
-            accessor = ident(i);
-            name_at = i + 1;
-        }
-        if at(name_at, "*") {
-            name_at += 1;
-        }
-        let name = match toks.get(name_at).map(|t| &t.tok) {
-            Some(Tok::Ident(n) | Tok::Str(n)) => n.clone(),
-            _ => bail!(
-                "app.ts:{}: a member of shell() with no plain name",
-                toks[name_at].line
-            ),
-        };
-        let kind = if at(name_at + 1, "(") {
-            match accessor {
-                Some("get") => Kind::Getter,
-                Some("set") => Kind::Setter,
-                _ => Kind::Method,
-            }
-        } else if at(name_at + 1, ":") && is_function(&toks, name_at + 2) {
-            Kind::Method
-        } else {
-            Kind::Field
-        };
-        // The member ends before the next `,` at its own depth. After `as`
-        // and after the `:` of a return type, `<…>` is a type argument list,
-        // whose commas are not the end.
-        let mut j = name_at + 1;
-        let mut in_type = false;
-        let mut angle = 0usize;
-        while j < close && !(at(j, ",") && angle == 0) {
-            if ident(j) == Some("as") || (at(j, ":") && at(j - 1, ")")) {
-                in_type = true;
-            } else if in_type && at(j, "<") {
-                angle += 1;
-            } else if in_type && at(j, ">") {
-                angle = angle.saturating_sub(1);
-            }
-            j = match &toks[j].tok {
-                Tok::Punct("(" | "[" | "{") => close_of(&toks, j) + 1,
-                _ => j + 1,
-            };
-        }
-        let last = j.min(close) - 1;
+        let (name_at, name, kind) = member_head(toks, i)?;
+        let j = member_end(toks, name_at, bounds.close);
+        let last = j.min(bounds.close) - 1;
         let line = toks[first].line;
         let section = sections.iter().rposition(|s| s.line <= line).unwrap_or(0);
-        let from = members.last().map_or(toks[open].line, |m: &Member| m.last) + 1;
+        let from = members
+            .last()
+            .map_or(toks[bounds.open].line, |m: &Member| m.last)
+            + 1;
         members.push(Member {
             name,
             kind,
             from,
             first: line,
-            last: end_line(last),
+            last: end_line(toks, cs, last),
             section,
         });
         ranges.push((first, last));
         i = j + 1;
     }
+    Ok((members, ranges))
+}
 
+/// The head of the member that starts at `i`: the index of its name, its
+/// name and its kind.
+fn member_head(toks: &[Token], i: usize) -> Result<(usize, String, Kind)> {
+    let mut name_at = i;
+    let mut accessor = None;
+    if matches!(ident_at(toks, i), Some("async" | "get" | "set"))
+        && toks.get(i + 1).is_some_and(|t| t.ident().is_some())
+    {
+        accessor = ident_at(toks, i);
+        name_at = i + 1;
+    }
+    if tok_is(toks, name_at, "*") {
+        name_at += 1;
+    }
+    let name = match toks.get(name_at).map(|t| &t.tok) {
+        Some(Tok::Ident(n) | Tok::Str(n)) => n.clone(),
+        _ => bail!(
+            "app.ts:{}: a member of shell() with no plain name",
+            toks[name_at].line
+        ),
+    };
+    Ok((name_at, name, member_kind(toks, name_at, accessor)))
+}
+
+/// The kind of the member whose name is at `name_at`; `accessor` is the
+/// `async`, `get` or `set` before the name.
+fn member_kind(toks: &[Token], name_at: usize, accessor: Option<&str>) -> Kind {
+    if tok_is(toks, name_at + 1, "(") {
+        match accessor {
+            Some("get") => Kind::Getter,
+            Some("set") => Kind::Setter,
+            _ => Kind::Method,
+        }
+    } else if tok_is(toks, name_at + 1, ":") && is_function(toks, name_at + 2) {
+        Kind::Method
+    } else {
+        Kind::Field
+    }
+}
+
+/// Index of the `,` that ends the member whose name is at `name_at`, or
+/// `close`. The member ends before the next `,` at its own depth.
+fn member_end(toks: &[Token], name_at: usize, close: usize) -> usize {
+    let mut j = name_at + 1;
+    let (mut in_type, mut angle) = (false, 0usize);
+    while j < close && !(tok_is(toks, j, ",") && angle == 0) {
+        (in_type, angle) = type_args(toks, j, in_type, angle);
+        j = match &toks[j].tok {
+            Tok::Punct("(" | "[" | "{") => close_of(toks, j) + 1,
+            _ => j + 1,
+        };
+    }
+    j
+}
+
+/// Whether a type has started and the depth of `<` after the token at `j`.
+/// After `as` and after the `:` of a return type, `<…>` is a type argument
+/// list, whose commas are not the end of a member.
+fn type_args(toks: &[Token], j: usize, in_type: bool, angle: usize) -> (bool, usize) {
+    if ident_at(toks, j) == Some("as") || (tok_is(toks, j, ":") && tok_is(toks, j - 1, ")")) {
+        (true, angle)
+    } else if in_type && tok_is(toks, j, "<") {
+        (true, angle + 1)
+    } else if in_type && tok_is(toks, j, ">") {
+        (true, angle.saturating_sub(1))
+    } else {
+        (in_type, angle)
+    }
+}
+
+/// The accesses of each member to the other members, from the tokens in its
+/// range.
+fn accesses(toks: &[Token], members: &[Member], ranges: &[TokenRange]) -> Vec<Access> {
     let known: BTreeMap<&str, usize> = members
         .iter()
         .enumerate()
@@ -333,11 +416,7 @@ fn parse_shell(app: &str) -> Result<Shell> {
             }
         }
     }
-    Ok(Shell {
-        sections,
-        members,
-        accesses,
-    })
+    accesses
 }
 
 /// Index of the bracket that closes the one at `open`, or `toks.len()`.
