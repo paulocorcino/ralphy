@@ -15,6 +15,8 @@ mod host;
 mod oneshot;
 mod registry_verbs;
 mod stream;
+#[cfg(test)]
+mod tests;
 
 pub(crate) use oneshot::*;
 pub(crate) use registry_verbs::serve_registry;
