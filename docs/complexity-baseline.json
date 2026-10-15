@@ -677,11 +677,6 @@
         17
       ]
     },
-    "crates/ralphy-daemon/assets/ui/wb-stage-chrome.ts": {
-      "buildChrome": [
-        43
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-stage-columns.ts": {
       "applyColumns": [
         29

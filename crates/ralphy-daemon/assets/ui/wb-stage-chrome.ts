@@ -408,21 +408,19 @@ export function createChrome(deps: ChromeDeps) {
     };
   }
 
-  // The floating-window chrome, shared by a live console and a placeholder:
-  // rect (from a desk record, else cascaded), titlebar, body, eight resize
-  // handles. `desk` is a record (or a partial carrying at least `kind`);
-  // everything the record needs later is hung off the element.
-  function buildChrome(label: string | null | undefined, repo: string | null | undefined, desk: ChromeRecord, kind: string | null | undefined) {
-    const win = document.createElement("div") as HTMLElement as ConsoleWin;
-    win.className = "session-window";
-    // Every field this element will carry is written HERE, by the module that
-    // declares them (wb-window-state.ts): a field nothing seeds reads as its
-    // declared default, not `undefined`.
-    initWindow(win, {
+  // Who the window is.
+  function identityFields(label: string | null | undefined, repo: string | null | undefined, desk: ChromeRecord, kind: string | null | undefined) {
+    return {
       _deskId: desk?.id || newDeskId(),
       _deskRepo: repo || "~",
       _deskAgent: label || "",
       _deskKind: desk?.kind || kind || "",
+    };
+  }
+
+  // What a carried record hands the window: where it runs and how it is kept.
+  function carriedFields(desk: ChromeRecord, consoleName: string) {
+    return {
       _deskDaemonId: desk?.daemonId ?? null,
       _deskEnvironment: desk?.environment ?? null,
       // The worktree (#411), seeded from the record; the launch request and
@@ -430,65 +428,97 @@ export function createChrome(deps: ChromeDeps) {
       _deskCheckout: desk?.checkout ?? null,
       // Locked in place (ADR-0050 lock amendment), seeded from the record.
       _deskLocked: !!desk?.locked,
-      // The console name (ADR-0066 §2): a carried record keeps its own; a new
-      // console takes the lowest free number of its prefix.
-      _deskConsoleName:
-        desk?.consoleName || WBConsoleName.defaultName(consolePrefix(repo), takenNames(null)),
-    });
-    const rect = desk?.rect;
-    // Set when the free cascade had to leave the viewport (`freeSpawnRect`).
-    let spawnMoved = false;
-    if (rect) {
-      win.style.left = rect.left + "px";
-      win.style.top = rect.top + "px";
-      win.style.width = rect.width + "px";
-      win.style.height = rect.height + "px";
-    } else {
-      cascade = (cascade + 1) % 8;
-      // Born INTO the focused fence when there is one (#343). The rect is
-      // written at CONSTRUCTION so a record never snapshots mid-transition
-      // (#342). MEASURABLE, not merely present: `openConsoleItem` calls
-      // `activate` then `open` on the SAME synchronous stack, so a spawn can
-      // land while the tab is still `display:none` and `restoreRect` reads all
-      // zeros — a 1x1 window persisted to the shared desk. Fall back to the
-      // free cascade; the focus survives for the next spawn.
-      // A LOCKED focused fence is not a host: the console would be born held
-      // by its lock. It takes the free cascade instead.
-      const el = focusedFence() && !fenceLocked(focusedFence()) && fenceEl(focusedFence());
-      const host = el && el.offsetWidth && el.offsetHeight ? el : null;
-      if (host) {
-        const headH = host.querySelector<HTMLElement>(".fence-head")?.offsetHeight || 28;
-        const box = spawnRectIn(restoreRect(host), cascade, headH);
-        win.style.left = box.left + "px";
-        win.style.top = box.top + "px";
-        win.style.width = box.width + "px";
-        win.style.height = box.height + "px";
-        // The CSS floor outranks the inline size (#342); relax it for exactly
-        // the axes below it.
-        if (box.width < WIN_MIN_W) win.style.minWidth = box.width + "px";
-        if (box.height < WIN_MIN_H) win.style.minHeight = box.height + "px";
-      } else {
-        // The free cascade is anchored at the VIEWPORT's current offset, not
-        // the plane's origin, and sized from the viewport, not the stage
-        // (which `applyExtent` grows well past it).
-        const ws = workspace();
-        const view = {
-          left: ws?.scrollLeft || 0,
-          top: ws?.scrollTop || 0,
-          width: ws?.clientWidth || 0,
-          height: ws?.clientHeight || 0,
-        };
-        // The popup gets no fences: its members' rects are re-origined, so the
-        // fold would match the wrong fence (`fenceHolds`).
-        const spawn = freeSpawnRect(view, cascade, OPTS.autoBoot === false ? [] : fences());
-        win.style.left = spawn.rect.left + "px";
-        win.style.top = spawn.rect.top + "px";
-        win.style.width = spawn.rect.width + "px";
-        win.style.height = spawn.rect.height + "px";
-        spawnMoved = spawn.moved;
-      }
-    }
+      _deskConsoleName: consoleName,
+    };
+  }
 
+  // The element of a new window, with every field it will carry written HERE,
+  // by the module that declares them (wb-window-state.ts): a field nothing
+  // seeds reads as its declared default, not `undefined`.
+  function seedWindow(label: string | null | undefined, repo: string | null | undefined, desk: ChromeRecord, kind: string | null | undefined, consoleName: string) {
+    const win = document.createElement("div") as HTMLElement as ConsoleWin;
+    win.className = "session-window";
+    initWindow(win, { ...identityFields(label, repo, desk, kind), ...carriedFields(desk, consoleName) });
+    return win;
+  }
+
+  function setBox(win: ConsoleWin, box: Partial<Rect>) {
+    win.style.left = box.left + "px";
+    win.style.top = box.top + "px";
+    win.style.width = box.width + "px";
+    win.style.height = box.height + "px";
+  }
+
+  // The box of a console born INTO a fence: the fence element and the height of its head band in.
+  type FenceBox = (host: HTMLElement, headH: number) => Rect;
+
+  // A console born INTO a fence (#343), below the fence's head band.
+  function spawnInFence(win: ConsoleWin, host: HTMLElement, boxIn: FenceBox) {
+    const headH = host.querySelector<HTMLElement>(".fence-head")?.offsetHeight || 28;
+    const box = boxIn(host, headH);
+    setBox(win, box);
+    // The CSS floor outranks the inline size (#342); relax it for exactly
+    // the axes below it.
+    if (box.width < WIN_MIN_W) win.style.minWidth = box.width + "px";
+    if (box.height < WIN_MIN_H) win.style.minHeight = box.height + "px";
+  }
+
+  // The free cascade is anchored at the VIEWPORT's current offset, not the
+  // plane's origin, and sized from the viewport, not the stage (which
+  // `applyExtent` grows well past it). True when it had to leave the viewport
+  // (`freeSpawnRect`).
+  function spawnFree(win: ConsoleWin) {
+    const ws = workspace();
+    const view = {
+      left: ws?.scrollLeft || 0,
+      top: ws?.scrollTop || 0,
+      width: ws?.clientWidth || 0,
+      height: ws?.clientHeight || 0,
+    };
+    // The popup gets no fences: its members' rects are re-origined, so the
+    // fold would match the wrong fence (`fenceHolds`).
+    const spawn = freeSpawnRect(view, cascade, OPTS.autoBoot === false ? [] : fences());
+    setBox(win, spawn.rect);
+    return spawn.moved;
+  }
+
+  // The window's box: a record's own rect, else a place in the cascade. The
+  // rect is written at CONSTRUCTION so a record never snapshots mid-transition
+  // (#342). Returns whether the free cascade had to leave the viewport.
+  function placeWindow(win: ConsoleWin, rect: Partial<Rect> | undefined, boxIn: FenceBox) {
+    if (rect) {
+      setBox(win, rect);
+      return false;
+    }
+    cascade = (cascade + 1) % 8;
+    // Born INTO the focused fence when there is one (#343). The fence must be
+    // MEASURABLE, not merely present: `openConsoleItem` calls `activate` then
+    // `open` on the SAME synchronous stack, so a spawn can land while the tab
+    // is still `display:none` and `restoreRect` reads all zeros — a 1x1 window
+    // persisted to the shared desk. Fall back to the free cascade; the focus
+    // survives for the next spawn.
+    // A LOCKED focused fence is not a host: the console would be born held
+    // by its lock. It takes the free cascade instead.
+    const el = focusedFence() && !fenceLocked(focusedFence()) && fenceEl(focusedFence());
+    const host = el && el.offsetWidth && el.offsetHeight ? el : null;
+    if (!host) return spawnFree(win);
+    spawnInFence(win, host, boxIn);
+    return false;
+  }
+
+  // A button of the titlebar.
+  function chromeButton(className: string, title: string, icon: string) {
+    const btn = document.createElement("button");
+    btn.className = className;
+    btn.title = title;
+    const glyph = document.createElement("i");
+    glyph.className = "bi " + icon;
+    btn.append(glyph);
+    return btn;
+  }
+
+  // The titlebar: the state dot and title, and the buttons.
+  function buildTitlebar(win: ConsoleWin, label: string | null | undefined, repo: string | null | undefined, desk: ChromeRecord) {
     const titlebar = document.createElement("div");
     titlebar.className = "session-titlebar";
     // The agent's state as a dot before the label (ADR-0059). Hidden until a
@@ -508,35 +538,20 @@ export function createChrome(deps: ChromeDeps) {
     // Open another console beside this maximized one (ADR-0051 §5). Shown and
     // enabled by `applyColumns`. The torn-off fence window calls it too, and
     // never shows the button: it boots without `autoBoot`.
-    const colBtn = document.createElement("button");
-    colBtn.className = "session-column";
-    colBtn.title = "Slice";
-    colBtn.innerHTML = '<i class="bi bi-arrows-expand-vertical"></i>';
+    const colBtn = chromeButton("session-column", "Slice", "bi-arrows-expand-vertical");
     colBtn.hidden = true;
     win._colBtn = colBtn;
     // Restart is offered on a live session too, behind a confirm
     // (`restartWin`); hidden only where nothing can launch (the popup).
-    const restartBtn = document.createElement("button");
-    restartBtn.className = "session-restart";
-    restartBtn.title = "Restart session";
-    restartBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i>';
+    const restartBtn = chromeButton("session-restart", "Restart session", "bi-arrow-clockwise");
     restartBtn.hidden = OPTS.canLaunch === false;
-    const maxBtn = document.createElement("button");
-    maxBtn.className = "session-max";
-    maxBtn.title = "Maximize";
-    maxBtn.innerHTML = '<i class="bi bi-fullscreen"></i>';
+    const maxBtn = chromeButton("session-max", "Maximize", "bi-fullscreen");
     win._maxBtn = maxBtn;
     // Fullscreen is orthogonal to maximize (viewport vs physical screen). Built
     // only where the browser can HOLD it (`fullscreenOffered`).
-    const fullBtn = document.createElement("button");
-    fullBtn.className = "session-full";
-    fullBtn.title = "Full screen";
-    fullBtn.innerHTML = '<i class="bi bi-arrows-fullscreen"></i>';
+    const fullBtn = chromeButton("session-full", "Full screen", "bi-arrows-fullscreen");
     fullBtn.hidden = !fullscreenOffered(document.fullscreenEnabled, navigator.vendor);
-    const closeBtn = document.createElement("button");
-    closeBtn.className = "session-close";
-    closeBtn.title = "Close";
-    closeBtn.innerHTML = '<i class="bi bi-x-lg"></i>';
+    const closeBtn = chromeButton("session-close", "Close", "bi-x-lg");
     // Lock in place. Glyph and title painted by `applyLock`.
     const lockBtn = document.createElement("button");
     lockBtn.className = "session-lock";
@@ -546,7 +561,11 @@ export function createChrome(deps: ChromeDeps) {
     head.className = "session-head";
     head.append(stateDot, title);
     titlebar.append(head, actions);
+    return { titlebar, title, colBtn, restartBtn, maxBtn, fullBtn, closeBtn, lockBtn };
+  }
 
+  // The body, the corner grip and the eight resize handles.
+  function appendBody(win: ConsoleWin, titlebar: HTMLElement) {
     const body = document.createElement("div");
     body.className = "session-body";
     const grip = document.createElement("div");
@@ -559,9 +578,14 @@ export function createChrome(deps: ChromeDeps) {
       h.addEventListener("pointerdown", startResize(win, dir));
       win.append(h);
     }
-    stage()!.append(win);
-    applyExtent();
+    return body;
+  }
 
+  type Bar = ReturnType<typeof buildTitlebar>;
+
+  // The listeners of the window and its buttons.
+  function wireChromeEvents(win: ConsoleWin, bar: Bar) {
+    const { titlebar, colBtn, maxBtn, fullBtn, lockBtn } = bar;
     // Pointer: a touch raises the window on contact, not after the tap resolves.
     win.addEventListener("pointerdown", () => focusWin(win));
     makeDraggable(win, titlebar);
@@ -598,17 +622,36 @@ export function createChrome(deps: ChromeDeps) {
       e.stopPropagation();
       toggleLock(win);
     });
-    applyLock(win, !!desk?.locked);
     fullBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       toggleFull(win);
     });
+  }
+
+  // The floating-window chrome, shared by a live console and a placeholder:
+  // rect (from a desk record, else cascaded), titlebar, body, eight resize
+  // handles. `desk` is a record (or a partial carrying at least `kind`);
+  // everything the record needs later is hung off the element.
+  function buildChrome(label: string | null | undefined, repo: string | null | undefined, desk: ChromeRecord, kind: string | null | undefined) {
+    // The console name (ADR-0066 §2): a carried record keeps its own; a new
+    // console takes the lowest free number of its prefix.
+    const consoleName = desk?.consoleName || WBConsoleName.defaultName(consolePrefix(repo), takenNames(null));
+    const win = seedWindow(label, repo, desk, kind, consoleName);
+    const rect = desk?.rect;
+    const spawnMoved = placeWindow(win, rect, (host, headH) => spawnRectIn(restoreRect(host), cascade, headH));
+    const bar = buildTitlebar(win, label, repo, desk);
+    const body = appendBody(win, bar.titlebar);
+    stage()!.append(win);
+    applyExtent();
+    wireChromeEvents(win, bar);
+    applyLock(win, !!desk?.locked);
     // Re-apply a persisted maximized state (the inline rect above is the box it
     // restores to).
     if (rect && desk.max) setMax(win, true);
     // A console pushed past a locked fence may be out of view: slide to it.
     if (spawnMoved) reveal(win._deskId);
     else focusWin(win);
+    const { title, restartBtn, fullBtn, lockBtn, maxBtn, closeBtn } = bar;
     return { win, body, title, restartBtn, fullBtn, lockBtn, maxBtn, closeBtn };
   }
 
