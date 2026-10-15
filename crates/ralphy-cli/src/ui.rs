@@ -169,4 +169,6 @@ pub(crate) fn queue_bar_label(state: &RunState, opts: RenderOpts, width: usize) 
 }
 
 #[cfg(test)]
+mod queue_bar_tests;
+#[cfg(test)]
 mod tests;

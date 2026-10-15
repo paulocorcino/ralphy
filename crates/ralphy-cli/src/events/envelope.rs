@@ -601,4 +601,6 @@ pub fn runevent_to_cloudevent(ev: &RunEvent, ctx: &EventCtx, state: &RunState) -
 }
 
 #[cfg(test)]
+mod rollup_tests;
+#[cfg(test)]
 mod tests;

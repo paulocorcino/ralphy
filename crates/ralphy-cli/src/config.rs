@@ -590,4 +590,6 @@ fn cleartext_remote_host(url: &str) -> Option<&str> {
 }
 
 #[cfg(test)]
+mod set_tests;
+#[cfg(test)]
 mod tests;

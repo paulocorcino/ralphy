@@ -382,6 +382,55 @@ mod tests {
         assert_eq!(classify_stop("not json", |_| None), None);
     }
 
+    /// Write `lines` as a transcript JSONL file and read it back.
+    fn last_assistant(lines: &[&str]) -> Option<String> {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("transcript.jsonl");
+        fs::write(&path, lines.join("\n")).unwrap();
+        read_transcript_last_assistant(path.to_str().unwrap())
+    }
+
+    fn assistant(texts: &[&str]) -> String {
+        let blocks: Vec<Value> = texts
+            .iter()
+            .map(|t| serde_json::json!({ "type": "text", "text": t }))
+            .collect();
+        serde_json::json!({ "type": "assistant", "message": { "content": blocks } }).to_string()
+    }
+
+    #[test]
+    fn transcript_the_last_assistant_message_wins() {
+        let got = last_assistant(&[&assistant(&["first"]), &assistant(&["second"])]);
+        assert_eq!(got.as_deref(), Some("second"));
+    }
+
+    #[test]
+    fn transcript_skips_an_empty_text_block() {
+        let got = last_assistant(&[&assistant(&["real", ""])]);
+        assert_eq!(got.as_deref(), Some("real"));
+    }
+
+    #[test]
+    fn transcript_ignores_a_user_line() {
+        let user =
+            r#"{"type":"user","message":{"content":[{"type":"text","text":"from the user"}]}}"#;
+        let got = last_assistant(&[&assistant(&["from the agent"]), user]);
+        assert_eq!(got.as_deref(), Some("from the agent"));
+    }
+
+    #[test]
+    fn transcript_skips_a_malformed_line() {
+        let got = last_assistant(&[&assistant(&["kept"]), "{ not json"]);
+        assert_eq!(got.as_deref(), Some("kept"));
+    }
+
+    #[test]
+    fn transcript_missing_file_gives_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("absent.jsonl");
+        assert_eq!(read_transcript_last_assistant(path.to_str().unwrap()), None);
+    }
+
     fn json_str(s: &str) -> String {
         serde_json::Value::String(s.to_string()).to_string()
     }

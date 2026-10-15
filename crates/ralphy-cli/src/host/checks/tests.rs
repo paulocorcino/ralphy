@@ -464,3 +464,30 @@ fn describe_skips_a_login_banner_and_reads_9009_as_missing() {
         RalphyOnHost::Missing
     );
 }
+
+#[test]
+fn checks_linux_linger_unknown_is_a_warning() {
+    let checks = run(HostOs::Linux, "--- uid\n1000\n", &ready("linux"));
+    assert_eq!(get(&checks, Linger).status, CheckStatus::Warn);
+}
+
+/// A macOS host with FileVault off and no automatic sign-in gets the generic
+/// advice, and a probe with no `pmset` section leaves the sleep setting unread.
+#[test]
+fn checks_macos_without_automatic_sign_in_or_sleep_setting() {
+    let checks = run(
+        HostOs::MacOs,
+        "--- uid\n501\n--- filevault\nfalse\n",
+        &ready("macos"),
+    );
+    let sign_in = get(&checks, SignIn);
+    assert_eq!(sign_in.status, CheckStatus::Warn);
+    assert_eq!(
+        sign_in.text,
+        "after a restart, the daemon starts only when someone signs in on the host. \
+         Turn on automatic sign-in to change this"
+    );
+    let sleep = get(&checks, Sleep);
+    assert_eq!(sleep.status, CheckStatus::Warn);
+    assert_eq!(sleep.text, "could not read the sleep setting");
+}
