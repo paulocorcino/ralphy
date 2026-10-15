@@ -188,3 +188,49 @@ test("a deps member left out fails the call that needs it", () => {
   makeDraggable(fakeElement(), handle);
   assert.throws(() => handle.listeners.pointerdown[0](press(100, 100)), TypeError);
 });
+
+// A fence element the spawn can measure: it has a size, and `restoreRect` gives its box.
+function hostDeps(box, more = {}) {
+  const host = fakeElement();
+  return fakeDeps({
+    focusedFence: () => "f1",
+    fenceEl: () => host,
+    restoreRect: () => box,
+    ...more,
+  });
+}
+
+test("a window born with a focused fence lands inside it and relaxes the minimum only on the short axes", () => {
+  // Wide and short: only the height is below its floor.
+  let { deps } = hostDeps({ left: 1000, top: 900, width: 400, height: 200 });
+  let { win } = createChrome(deps).buildChrome("shell", "~", null, "console");
+  assert.equal(parseInt(win.style.left, 10) >= 1000, true, win.style.left);
+  assert.equal(parseInt(win.style.top, 10) >= 900, true, win.style.top);
+  assert.equal(win.style.minWidth, undefined);
+  assert.equal(win.style.minHeight, win.style.height);
+
+  // Narrow and tall: only the width is below its floor.
+  ({ deps } = hostDeps({ left: 1000, top: 900, width: 200, height: 600 }));
+  ({ win } = createChrome(deps).buildChrome("shell", "~", null, "console"));
+  assert.equal(win.style.minWidth, win.style.width);
+  assert.equal(win.style.minHeight, undefined);
+
+  // A locked fence is no host: the free cascade, with no minimum relaxed.
+  ({ deps } = hostDeps({ left: 1000, top: 900, width: 200, height: 100 }, { fenceLocked: () => true }));
+  ({ win } = createChrome(deps).buildChrome("shell", "~", null, "console"));
+  assert.equal(win.style.minWidth, undefined);
+  assert.equal(win.style.minHeight, undefined);
+  assert.equal(parseInt(win.style.left, 10) < 1000, true, win.style.left);
+});
+
+test("a record with a rect and max is maximized after the window is on the stage; a rect alone is not", () => {
+  const calls = [];
+  const { deps } = fakeDeps({ setMax: (win, on) => calls.push([win, on]) });
+  const { buildChrome } = createChrome(deps);
+  const rect = { left: 7, top: 8, width: 300, height: 200 };
+  const maxed = buildChrome("shell", "~", { kind: "console", rect, max: true }, "console");
+  assert.deepEqual(calls, [[maxed.win, true]]);
+  buildChrome("shell", "~", { kind: "console", rect, max: false }, "console");
+  buildChrome("shell", "~", { kind: "console", max: true }, "console");
+  assert.equal(calls.length, 1);
+});

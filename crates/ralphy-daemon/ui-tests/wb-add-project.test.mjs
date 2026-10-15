@@ -293,3 +293,32 @@ test("while adding, the controls are locked; a failure keeps the path", () => {
   assert.equal(s.text, "C:\\Dev\\fincal");
   assert.equal(s.error, "o/fincal is already added from C:/Dev/fincal");
 });
+
+test("the arrows change nothing when no folder is listed", () => {
+  const P = load();
+  const s = P.next(P.initial(), { type: "open" });
+  assert.equal(P.entries(s).length, 0);
+  assert.equal(P.next(s, { type: "move", by: 1 }).active, -1);
+  assert.equal(P.next(s, { type: "move", by: -1 }).active, -1);
+});
+
+test("while adding, a pick leaves the path as it is", () => {
+  const P = load();
+  let s = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "C:\\Dev\\"), DEV);
+  s = P.next(s, { type: "adding" });
+  assert.equal(P.next(s, { type: "pick", name: "notes" }).text, "C:\\Dev\\");
+  assert.equal(P.next(s, { type: "pick", up: true }).text, "C:\\Dev\\");
+});
+
+test("close hides the dialog and keeps its fields; added also ends the adding", () => {
+  const P = load();
+  let s = listed(P, typed(P, P.next(P.initial(), { type: "open" }), "C:\\Dev\\fincal"), DEV);
+  const closed = P.next(s, { type: "close" });
+  assert.equal(closed.open, false);
+  assert.equal(closed.text, "C:\\Dev\\fincal");
+  s = P.next(s, { type: "adding" });
+  const done = P.next(s, { type: "added" });
+  assert.equal(done.open, false);
+  assert.equal(done.adding, false);
+  assert.equal(done.text, "C:\\Dev\\fincal");
+});
