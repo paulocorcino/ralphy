@@ -1016,14 +1016,6 @@
         22
       ]
     },
-    "crates/ralphy-usage-scan/src/codex.rs": {
-      "parse_rollout": [
-        33
-      ],
-      "scan_codex_with_stems": [
-        32
-      ]
-    },
     "crates/ralphy-usage-scan/src/copilot.rs": {
       "read_copilot": [
         12
