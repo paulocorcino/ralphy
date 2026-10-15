@@ -35,6 +35,7 @@ Run: python tests/browser/console/wb_console_peer_unanswered.py   (exit 0 = all 
 
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -60,6 +61,15 @@ PEER_ID = "01ARZ3NDEKTSV4RRFFQ69G5FAZ"
 TOKEN = "peer-unanswered-token"
 SLUG = "ralphy-lab/unanswered-repo"
 REF = f"{PEER_ID}/{SLUG}"
+# The peer protocol of the daemon under test. A peer descriptor with any other
+# version is refused before the handshake (`saved_version_refused`), so the
+# peer would never be reachable.
+PROTOCOL = int(
+    re.search(
+        r"pub const PEER_PROTOCOL_VERSION: u32 = (\d+);",
+        (REPO_ROOT / "crates" / "ralphy-daemon" / "src" / "peer.rs").read_text(encoding="utf-8"),
+    ).group(1)
+)
 N = 5
 SH = "Alpine.$data(document.querySelector('[x-data]'))"
 
@@ -278,7 +288,7 @@ def main():
                 f"port = {proxy_port}",
                 'environment = "macOS 12"',
                 f'token = "{TOKEN}"',
-                "protocol_version = 3",
+                f"protocol_version = {PROTOCOL}",
                 "",
             ]
         ),
