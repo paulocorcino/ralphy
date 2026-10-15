@@ -133,7 +133,7 @@ def main():
                 f"port = {proxy_port}",
                 'environment = "macOS 12"',
                 f'token = "{base.TOKEN}"',
-                "protocol_version = 3",
+                f"protocol_version = {base.PROTOCOL}",
                 "",
             ]
         ),
