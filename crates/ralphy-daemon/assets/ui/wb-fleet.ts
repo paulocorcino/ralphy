@@ -302,7 +302,14 @@ function system(os: string | null | undefined, environment: string | null | unde
   return "other";
 }
 
+// The native root of a peer's project. A peer that predates the field serves
+// none, and its `path` is then the best root there is.
+function peerRoot(row: { root?: string | null; path?: string | null }) {
+  return row.root || row.path || "";
+}
+
 export const WBFleet = {
+  peerRoot: peerRoot,
   stateWord: stateWord,
   fleetGroups: fleetGroups,
   system: system,

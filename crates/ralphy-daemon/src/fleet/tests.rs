@@ -40,6 +40,7 @@ fn peer_store(pairs: &[(&str, &str)]) -> PeerRepoStore {
                     dirty: false,
                     remote: None,
                     former_slugs: Vec::new(),
+                    root: None,
                 },
             )
         })
@@ -61,6 +62,7 @@ fn a_peer_rows_remote_and_dirty_ride_through_and_a_local_row_has_neither() {
     let row = theirs.get_mut("owner/forge").expect("the seeded row");
     row.remote = Some("https://github.com/owner/forge.git".to_string());
     row.dirty = true;
+    row.root = Some("/mnt/c/forge".to_string());
     let d = peer("01XYZ", "wsl-box", "WSL: Ubuntu-22.04");
     let rows = aggregate(
         ("01ABC", "anvil", "Windows", &local),
@@ -77,6 +79,7 @@ fn a_peer_rows_remote_and_dirty_ride_through_and_a_local_row_has_neither() {
         "the peer's origin is carried through: {forge:?}"
     );
     assert_eq!(forge.dirty, Some(true), "{forge:?}");
+    assert_eq!(forge.root.as_deref(), Some("/mnt/c/forge"), "{forge:?}");
 
     let mine = rows
         .iter()
@@ -87,6 +90,7 @@ fn a_peer_rows_remote_and_dirty_ride_through_and_a_local_row_has_neither() {
         "a local row is not re-derived here: {mine:?}"
     );
     assert_eq!(mine.dirty, None, "{mine:?}");
+    assert_eq!(mine.root, None, "{mine:?}");
 }
 
 #[test]
@@ -223,7 +227,7 @@ fn ordering_is_deterministic() {
 #[test]
 fn store_from_repos_json_keeps_the_peers_own_verdict_and_ignores_extra_fields() {
     let body = br#"[
-      {"slug":"owner/a","path":"/home/a","reachable":true,"branch":"main","dirty":false,"remote":"https://github.com/owner/a.git","extra":1},
+      {"slug":"owner/a","path":"/home/a","reachable":true,"branch":"main","dirty":false,"remote":"https://github.com/owner/a.git","root":"/home/a","extra":1},
       {"slug":"owner/b","path":"/home/b","reachable":false,"branch":null,"dirty":true,"remote":null},
       {"slug":"owner/old","path":"/home/old","reachable":true}
     ]"#;
@@ -235,6 +239,7 @@ fn store_from_repos_json_keeps_the_peers_own_verdict_and_ignores_extra_fields() 
     assert_eq!(a.branch.as_deref(), Some("main"));
     assert!(!a.dirty);
     assert_eq!(a.remote.as_deref(), Some("https://github.com/owner/a.git"));
+    assert_eq!(a.root.as_deref(), Some("/home/a"));
     // The row this fold used to lose: a peer repo whose directory is gone.
     let b = store.get("owner/b").expect("owner/b folds");
     assert!(!b.reachable, "the peer said its own path is not there");
@@ -245,6 +250,7 @@ fn store_from_repos_json_keeps_the_peers_own_verdict_and_ignores_extra_fields() 
     let old = store.get("owner/old").expect("owner/old folds");
     assert!(!old.dirty);
     assert_eq!(old.remote, None);
+    assert_eq!(old.root, None);
 }
 
 /// A peer that re-keyed a project serves the old key in `former_slugs`; the

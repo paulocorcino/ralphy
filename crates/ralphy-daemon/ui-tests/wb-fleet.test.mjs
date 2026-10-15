@@ -374,3 +374,9 @@ test("only an SSH host on another protocol offers to update", () => {
   }
   assert.equal(updatable(null), false);
 });
+
+test("a peer's project root is the peer's own root, else its path", () => {
+  assert.equal(WBFleet.peerRoot({ root: "/mnt/c/Dev/cactus", path: "/mnt/c/Dev/cactus/" }), "/mnt/c/Dev/cactus");
+  assert.equal(WBFleet.peerRoot({ root: null, path: "/home/forge" }), "/home/forge");
+  assert.equal(WBFleet.peerRoot({}), "");
+});

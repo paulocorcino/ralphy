@@ -20,6 +20,7 @@ import { component } from "./wb-alpine.ts";
 import { WBFail } from "./wb-fail.ts";
 import { WBFileSearch } from "./wb-file-search.ts";
 import { WBFleet } from "./wb-fleet.ts";
+import { WBReadRetry } from "./wb-read-retry.ts";
 import { classify, newEntryTitle, parentRel, underProtectedDir } from "./wb-file-paths.ts";
 import { sendWindow } from "./wb-events.ts";
 import type { WBDaemonApi } from "./wb-daemon.ts";
@@ -130,7 +131,7 @@ export function wbFiles() {
         // the failure. A rethrow drew an "Error (…)" row inside the folder.
         // The footer says why; the folder closes, because it shows nothing.
         lazyLoad: (e: WunderbaumEvent) =>
-          this.loadTreeLevel(this.relPath(e.node)).catch((err) => {
+          WBReadRetry.patiently(() => this.loadTreeLevel(this.relPath(e.node))).catch((err) => {
             this.treeWentStale(err);
             if (WBFleet.refDaemon(this.$store.projects.openSlug || "")) this.$store.projects.readFleetNow();
             setTimeout(() => e.node.setExpanded(false));
@@ -312,7 +313,7 @@ export function wbFiles() {
       );
       return WBDaemon.observe("tree.list", payload).then((reply) => {
         if (!reply || reply.status !== "ok" || !Array.isArray(reply.entries)) {
-          throw new Error(WBFail.message(reply, ""));
+          throw new WBReadRetry.Refused(WBFail.message(reply, ""));
         }
         this.treeFresh();
         this.pruneTreeCache(rel, reply.entries);
@@ -395,8 +396,7 @@ export function wbFiles() {
     // every row alone. Cleared by `treeFresh`.
     treeWentStale(err: Failure) {
       if (!this.useDaemonTree()) return;
-      const failure = WBFail.failed({ message: err?.message }, "Could not refresh the file list: the daemon gave no reason.");
-      this.treeStale = `${failure} The list shown is the last one read.`;
+      this.treeStale = `${WBFail.failed({ message: err?.message }, "Could not refresh the file list: the daemon gave no reason.")} The list shown is the last one read.`;
     },
 
     // A read landed: whatever the tree is showing is confirmed again.

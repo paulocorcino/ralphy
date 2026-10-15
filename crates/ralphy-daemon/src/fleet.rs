@@ -62,6 +62,10 @@ pub struct FederatedRepo {
     /// The peer's `origin` URL, or `None` when it reported none. `None` on a
     /// LOCAL row for the same reason as `dirty`.
     pub remote: Option<String>,
+    /// The peer's own absolute native root, for "Copy full path": `path` is
+    /// git's forward-slashed form. `None` on a LOCAL row (`/api/repos` serves
+    /// it) and for a peer that predates the field.
+    pub root: Option<String>,
     pub local: bool,
 }
 
@@ -89,6 +93,8 @@ pub struct PeerRepoRow {
     /// The keys this repo had before the peer re-keyed it (ADR-0036 amendment
     /// 2026-10-15). An older peer serves none.
     pub former_slugs: Vec<String>,
+    /// The peer's absolute native root; `None` for a peer that predates it.
+    pub root: Option<String>,
 }
 
 /// A peer's repos, keyed by slug, as last served by that peer.
@@ -127,6 +133,7 @@ pub fn aggregate(
             branch: entry.head_branch(),
             dirty: None,
             remote: None,
+            root: None,
             local: true,
         })
         .collect();
@@ -151,6 +158,7 @@ pub fn aggregate(
             branch: row.branch.clone(),
             dirty: Some(row.dirty),
             remote: row.remote.clone(),
+            root: row.root.clone(),
             local: false,
         }));
     }
@@ -179,6 +187,8 @@ pub fn store_from_repos_json(body: &[u8]) -> Option<PeerRepoStore> {
         remote: Option<String>,
         #[serde(default)]
         former_slugs: Vec<String>,
+        #[serde(default)]
+        root: Option<String>,
     }
     let rows: Vec<Row> = serde_json::from_slice(body).ok()?;
     Some(
@@ -193,6 +203,7 @@ pub fn store_from_repos_json(body: &[u8]) -> Option<PeerRepoStore> {
                         dirty: row.dirty,
                         remote: row.remote,
                         former_slugs: row.former_slugs,
+                        root: row.root,
                     },
                 )
             })

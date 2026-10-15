@@ -16,6 +16,7 @@ fn cache_with_a_renamed_peer_repo() -> PeerRepoCache {
             dirty: false,
             remote: None,
             former_slugs: vec!["path-abc".into()],
+            root: None,
         },
     )]
     .into();

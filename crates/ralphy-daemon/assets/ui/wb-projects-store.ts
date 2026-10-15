@@ -326,6 +326,7 @@ export function projectsStore(deps: ProjectsStoreDeps) {
             slug: x.slug,
             name: x.name || x.slug,
             path: x.path || "",
+            root: WBFleet.peerRoot(x),
             branch: x.branch || "",
             branches: [],
             // The peer's OWN working-tree facts, same classification as `loadRepos`.
