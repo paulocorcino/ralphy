@@ -275,11 +275,6 @@
         16
       ]
     },
-    "crates/ralphy-core/src/runner/phases/plan.rs": {
-      "plan_phase": [
-        32
-      ]
-    },
     "crates/ralphy-core/src/runner/phases/verify.rs": {
       "verify_gate": [
         33
