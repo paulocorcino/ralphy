@@ -126,3 +126,24 @@ fn a_size_reads_in_kilobytes_or_megabytes() {
     assert_eq!(readable_size(1500), "2 KB");
     assert_eq!(readable_size(5 * 1024 * 1024 + 1024 * 512), "5.5 MB");
 }
+
+/// A link in the store to a file outside it: the purge removes the link, never
+/// what it points at.
+#[cfg(unix)]
+#[test]
+fn purge_does_not_follow_a_link_out_of_the_store() {
+    let home = tempfile::tempdir().expect("scratch");
+    let outside = home.path().join("keep.txt");
+    std::fs::write(&outside, "keep").expect("outside");
+    let store = store_at(&home.path().join(".ralphy"));
+    std::os::unix::fs::symlink(&outside, store.join("link")).expect("link");
+    std::os::unix::fs::symlink(home.path(), store.join("home-link")).expect("dir link");
+
+    purge(&store, true).expect("purge");
+
+    assert!(!store.exists());
+    assert_eq!(
+        std::fs::read_to_string(&outside).expect("still there"),
+        "keep"
+    );
+}

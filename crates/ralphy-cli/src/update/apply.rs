@@ -278,6 +278,27 @@ Connection: close
         );
     }
 
+    /// Every target `target_for` names is built by the release workflow, and
+    /// every target the workflow builds is reachable: a name that differs
+    /// between the two is found here, not when a release is cut.
+    #[test]
+    fn target_for_and_the_release_matrix_name_the_same_targets() {
+        let release = include_str!("../../../../.github/workflows/release.yml");
+        let built: Vec<&str> = release
+            .lines()
+            .filter_map(|l| l.trim().strip_prefix("target_name: "))
+            .collect();
+        let mut mapped: Vec<&str> = ["windows", "linux", "macos"]
+            .iter()
+            .flat_map(|os| ["x86_64", "aarch64"].map(|arch| target_for(os, arch)))
+            .flatten()
+            .collect();
+        let mut built_sorted = built.clone();
+        built_sorted.sort_unstable();
+        mapped.sort_unstable();
+        assert_eq!(mapped, built_sorted);
+    }
+
     #[test]
     fn another_targets_binary_is_found_by_its_own_name() {
         for (target, other) in [("linux-x64", "ralphy.exe"), ("windows-x64", "ralphy")] {
