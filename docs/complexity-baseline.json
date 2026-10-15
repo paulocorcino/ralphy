@@ -733,11 +733,6 @@
         12
       ]
     },
-    "crates/ralphy-daemon/src/routes/api_audit.rs": {
-      "audit_routes": [
-        21
-      ]
-    },
     "crates/ralphy-daemon/src/routes/api_desk.rs": {
       "desk_history_restore_route": [
         11
