@@ -173,9 +173,7 @@ fn fold_session(lines: &str) -> Option<Fold> {
             session_id.get_or_insert_with(|| id.to_string());
         }
         if let Some(start) = value.get("startTime").and_then(|v| v.as_str()) {
-            if first_ts.is_empty() || earlier(start, &first_ts) {
-                first_ts = start.to_string();
-            }
+            widen_first(&mut first_ts, start);
         }
         // `lastUpdated` appears both on the header and inside `$set` mutations.
         for updated in [value.get("lastUpdated"), value.pointer("/$set/lastUpdated")]
@@ -183,33 +181,14 @@ fn fold_session(lines: &str) -> Option<Fold> {
             .flatten()
             .filter_map(|v| v.as_str())
         {
-            if last_ts.is_empty() || earlier(&last_ts, updated) {
-                last_ts = updated.to_string();
-            }
+            widen_last(&mut last_ts, updated);
         }
-        let (Some(tokens), Some(model)) = (
+        if let (Some(tokens), Some(model)) = (
             value.get("tokens"),
             value.get("model").and_then(|v| v.as_str()),
-        ) else {
-            continue;
-        };
-        let n = |k: &str| tokens.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
-        let (input, cached) = (n("input"), n("cached"));
-        // A record with no `total` cannot be differenced — reconstruct the sum
-        // from the parts instead, or the turn would report input-only spend.
-        let total = match tokens.get("total").and_then(|v| v.as_u64()) {
-            Some(t) => t,
-            None => input + n("output") + n("thoughts"),
-        };
-        let agg = by_model.entry(model.to_string()).or_default();
-        // `input` INCLUDES `cached` in this store (live: 14134 = 8133 cached +
-        // 6001 fresh, and 14134 + 37 output + 218 thoughts = 14389 total), but
-        // `Tokens`' four buckets are DISJOINT — a consumer sums them. Subtract the
-        // cached subset out, exactly as `codex.rs` does for `input_tokens`.
-        agg.input += input.saturating_sub(cached);
-        // `total` already carries `thoughts`; the bare `output` field does not.
-        agg.output += total.saturating_sub(input);
-        agg.cache_read += cached;
+        ) {
+            add_turn(&mut by_model, tokens, model);
+        }
     }
 
     let session_id = session_id?;
@@ -222,6 +201,41 @@ fn fold_session(lines: &str) -> Option<Fold> {
         first_ts,
         last_ts,
     })
+}
+
+/// Move `first_ts` back to `start` when `start` is the earliest seen.
+fn widen_first(first_ts: &mut String, start: &str) {
+    if first_ts.is_empty() || earlier(start, first_ts) {
+        *first_ts = start.to_string();
+    }
+}
+
+/// Move `last_ts` forward to `updated` when `updated` is the latest seen.
+fn widen_last(last_ts: &mut String, updated: &str) {
+    if last_ts.is_empty() || earlier(last_ts, updated) {
+        *last_ts = updated.to_string();
+    }
+}
+
+/// Add one assistant turn's `tokens` block to the aggregate of its `model`.
+fn add_turn(by_model: &mut BTreeMap<String, Tokens>, tokens: &serde_json::Value, model: &str) {
+    let n = |k: &str| tokens.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+    let (input, cached) = (n("input"), n("cached"));
+    // A record with no `total` cannot be differenced — reconstruct the sum
+    // from the parts instead, or the turn would report input-only spend.
+    let total = match tokens.get("total").and_then(|v| v.as_u64()) {
+        Some(t) => t,
+        None => input + n("output") + n("thoughts"),
+    };
+    let agg = by_model.entry(model.to_string()).or_default();
+    // `input` INCLUDES `cached` in this store (live: 14134 = 8133 cached +
+    // 6001 fresh, and 14134 + 37 output + 218 thoughts = 14389 total), but
+    // `Tokens`' four buckets are DISJOINT — a consumer sums them. Subtract the
+    // cached subset out, exactly as `codex.rs` does for `input_tokens`.
+    agg.input += input.saturating_sub(cached);
+    // `total` already carries `thoughts`; the bare `output` field does not.
+    agg.output += total.saturating_sub(input);
+    agg.cache_read += cached;
 }
 
 /// True when `a` names a strictly earlier instant than `b`. Compared as parsed
