@@ -714,6 +714,20 @@ mod tests {
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].tokens.as_ref().unwrap().output, 100);
         assert_eq!(records[0].tokens.as_ref().unwrap().input, 0);
+
+        // The same tie with the later snapshot second: the order in the file
+        // does not decide, the timestamp does.
+        let tmp = tempfile::tempdir().unwrap();
+        let body = format!(
+            "{}\n{}",
+            status_update(1770983410.0, 100, 0, 0, "msg-t"),
+            status_update(1770983420.0, 0, 100, 0, "msg-t"),
+        );
+        write_wire(tmp.path(), "sessions/GRP/SESS/wire.jsonl", &body);
+        let records = scan_legacy_only(tmp.path());
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].tokens.as_ref().unwrap().output, 100);
+        assert_eq!(records[0].tokens.as_ref().unwrap().input, 0);
     }
 
     #[test]
