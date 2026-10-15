@@ -23,18 +23,21 @@ function withWB(t) {
 }
 
 // One console's detach with the real popup registry. The channel keeps
-// what this tab posts in `posts`; the window keeps its listeners in
-// `listeners`; the calls into the console are recorded in `calls`.
-function harness({ wins = [], desk = [] } = {}) {
+// what this tab posts in `posts` and hands `hear` the message a popup sends;
+// the window keeps its listeners in `listeners`; the calls into the console
+// are recorded in `calls`.
+function harness({ wins = [], desk = [], notes = [] } = {}) {
   const calls = [];
   const record = (name) => (...args) => calls.push([name, ...args]);
   const posts = [];
+  const heard = [];
   const link = {
     tab: "t1",
     post: (m) => posts.push(m),
-    onMessage() {},
+    onMessage: (fn) => heard.push(fn),
     writeRegistry() {},
   };
+  const hear = (m) => heard.forEach((fn) => fn(m));
   const listeners = {};
   const window = {
     addEventListener: (type, fn) => {
@@ -55,7 +58,7 @@ function harness({ wins = [], desk = [] } = {}) {
     wins: new Set(wins),
     budget: { untrackDormancy() {} },
     fences: () => [],
-    notes: () => [],
+    notes: () => notes,
     stage: () => null,
     changed() {},
     applyExtent() {},
@@ -84,8 +87,85 @@ function harness({ wins = [], desk = [] } = {}) {
     popups.commitDetached([...popups.detachedIds(), id]);
     return entry;
   };
-  return { detach, popups, posts, listeners, calls, detachFence };
+  return { detach, popups, posts, listeners, calls, detachFence, hear };
 }
+
+// ---- the lifecycle channel: what a popup of this tab says ----------------------
+
+test("a channel message from another tab changes nothing here", (t) => {
+  t.mock.timers.enable({ apis: ["setInterval"] });
+  withWB(t);
+  const { popups, hear, detachFence } = harness();
+  detachFence("f", { pid: "p1" });
+  hear({ type: "popup-gone", tab: "t2", fenceId: "f", pid: "p1" });
+  hear({ type: "popup-gone", fenceId: "f", pid: "p1" });
+  assert.equal(popups.isDetached("f"), true, "the channel is browser-wide: another tab's popup is not ours");
+  // CONTROL: the same message from this tab brings the fence home.
+  hear({ type: "popup-gone", tab: "t1", fenceId: "f", pid: "p1" });
+  assert.equal(popups.isDetached("f"), false);
+});
+
+test("an earlier popup of the fence is not heard, but its ping is answered", (t) => {
+  t.mock.timers.enable({ apis: ["setInterval"] });
+  withWB(t);
+  const { popups, posts, calls, hear, detachFence } = harness();
+  const entry = detachFence("f", { pid: "p2", members: [{ id: "w1", session: "s1" }], memberIds: ["w1"] });
+  const stale = { tab: "t1", fenceId: "f", pid: "p1" };
+  hear({ ...stale, type: "popup-members", members: [] });
+  hear({ ...stale, type: "popup-here", members: [] });
+  hear({ ...stale, type: "popup-gone" });
+  assert.equal(popups.isDetached("f"), true, "the stale popup-gone would re-attach the popup that replaced it");
+  assert.equal(popups.entry("f"), entry);
+  assert.deepEqual(entry.members, [{ id: "w1", session: "s1" }]);
+  assert.deepEqual(calls.filter(([name]) => name === "forgetRecord"), [], "a stale member list drops nothing");
+  hear({ ...stale, type: "popup-ping" });
+  assert.deepEqual(posts.at(-1), { type: "origin-here", tab: "t1", fenceId: "f" });
+  // CONTROL: the popup this entry holds is heard.
+  hear({ ...stale, pid: "p2", type: "popup-gone" });
+  assert.equal(popups.isDetached("f"), false);
+});
+
+test("popup-here adopts the members of a detached fence into the same entry", async (t) => {
+  t.mock.timers.enable({ apis: ["setInterval"] });
+  withWB(t);
+  const notes = [{ id: "n1", rect: {} }];
+  const { popups, calls, hear, detachFence } = harness({ notes });
+  // A restored entry: no handle and no pid, only the member ids it stored.
+  const entry = detachFence("f", { memberIds: ["w1", "w2"] });
+  const members = [
+    { id: "w1", session: "s1" },
+    { id: "n1", kind: "note", path: "notes/a.note" },
+  ];
+  hear({ type: "popup-here", tab: "t1", fenceId: "f", pid: "p9", members });
+  assert.equal(popups.entry("f"), entry, "the entry is changed in place, never replaced");
+  assert.equal(entry.pid, "p9");
+  assert.deepEqual(entry.members, members);
+  assert.deepEqual(entry.memberIds, ["w1", "n1"]);
+  assert.equal(entry.greeted, true);
+  assert.deepEqual(entry.fence, { id: "f", name: "", rect: null });
+  assert.deepEqual(calls.filter(([name]) => name === "forgetRecord"), [["forgetRecord", "w2"]]);
+  assert.deepEqual(calls.filter(([name]) => name === "showDetachGlyph"), [["showDetachGlyph", "f", true]]);
+  // The name the popup gave its note is recorded once the desk has loaded.
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(calls.filter(([name]) => name === "saveNotes"), [
+    ["saveNotes", [{ id: "n1", rect: {}, path: "notes/a.note" }]],
+  ]);
+  // A fence the registry does not hold is never detached by a popup-here.
+  hear({ type: "popup-here", tab: "t1", fenceId: "g", pid: "p3", members: [] });
+  assert.equal(popups.has("g"), false);
+  assert.equal(popups.isDetached("g"), false);
+});
+
+test("a beat from the popup makes it heard now, and clears the probe", (t) => {
+  t.mock.timers.enable({ apis: ["setInterval", "Date"] });
+  withWB(t);
+  const { hear, detachFence } = harness();
+  const entry = detachFence("f", { pid: "p1", probed: true, peer: { seen: 0, lost: false } });
+  t.mock.timers.setTime(5000);
+  hear({ type: "popup-beat", tab: "t1", fenceId: "f", pid: "p1" });
+  assert.deepEqual(entry.peer, { seen: 5000, lost: false });
+  assert.equal(entry.probed, false, "a beat answers the probe");
+});
 
 test("a quiet popup is asked once before its consoles come home", (t) => {
   t.mock.timers.enable({ apis: ["setInterval", "Date"] });
