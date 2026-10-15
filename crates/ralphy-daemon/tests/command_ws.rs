@@ -37,8 +37,8 @@ async fn command_ws_spawns_a_run_and_reports_ack_then_exit() {
     registry::save_to(&store, &registry_path).unwrap();
 
     // Point the dispatcher at the helper bin (exit code 7) instead of `ralphy`.
-    // This is the only test that sets these, its sole test → no intra-process env
-    // race.
+    // This is the only test that sets these, and the other tests of this file
+    // spawn nothing → no intra-process env race.
     std::env::set_var(
         "RALPHY_EXE_OVERRIDE",
         env!("CARGO_BIN_EXE_command_test_child"),
@@ -123,4 +123,80 @@ async fn command_ws_spawns_a_run_and_reports_ack_then_exit() {
         Some(7),
         "the exit frame must carry the child's code 7; got: {exited}"
     );
+}
+
+/// Serve `/ws/command` over an empty registry; returns its URL.
+async fn serve_empty() -> String {
+    let dir = tempfile::tempdir().unwrap();
+    let registry_path = dir.path().join("repos.toml");
+    registry::save_to(&registry::RegistryStore::default(), &registry_path).unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let (tx, rx) = tokio::sync::watch::channel(false);
+    let app = router(
+        None,
+        registry_path,
+        std::path::PathBuf::from("does-not-exist"),
+        ralphy_daemon::StorePaths::default(),
+        Instant::now(),
+        rx,
+        ralphy_daemon::auth::AuthState::localhost(),
+    );
+    tokio::spawn(async move {
+        // The temp dir and the shutdown sender live as long as the server.
+        let _keep = (dir, tx);
+        axum::serve(listener, app).await.unwrap();
+    });
+    format!("ws://127.0.0.1:{port}/ws/command")
+}
+
+/// Send `first` as the first frame and return every binary frame the daemon
+/// sends until it ends the socket.
+async fn frames_after(url: &str, first: Message) -> Vec<Vec<u8>> {
+    let (mut ws, _resp) = tokio_tungstenite::connect_async(url)
+        .await
+        .expect("connecting to /ws/command");
+    ws.send(first).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(10), async {
+        let mut frames = Vec::new();
+        while let Some(Ok(msg)) = ws.next().await {
+            match msg {
+                Message::Binary(b) => frames.push(b.to_vec()),
+                Message::Close(_) => break,
+                _ => {}
+            }
+        }
+        frames
+    })
+    .await
+    .expect("the daemon must end the socket within 10s")
+}
+
+#[tokio::test]
+async fn an_unknown_verb_gets_one_error_frame() {
+    let url = serve_empty().await;
+    let frames = frames_after(&url, command(4, "no.such.verb", "owner/repo")).await;
+    assert_eq!(frames.len(), 1, "exactly one reply frame: {frames:?}");
+    let Ok(Frame::Command(reply)) = protocol::decode(&frames[0]) else {
+        panic!("the reply is a command frame");
+    };
+    assert_eq!(reply.id, 4);
+    assert_eq!(reply.verb, "no.such.verb");
+    assert_eq!(
+        reply.payload,
+        serde_json::json!({ "status": "error", "message": "unknown verb" })
+    );
+}
+
+#[tokio::test]
+async fn a_first_frame_that_is_not_a_command_gets_no_frame() {
+    let url = serve_empty().await;
+    for first in [
+        Message::Text("run".into()),
+        Message::Binary(vec![0xFF, 0x00, 0x13].into()),
+    ] {
+        let shown = format!("{first:?}");
+        let frames = frames_after(&url, first).await;
+        assert!(frames.is_empty(), "{shown} got {frames:?}");
+    }
 }
