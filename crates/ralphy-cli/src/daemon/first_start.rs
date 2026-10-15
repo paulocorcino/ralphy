@@ -65,18 +65,21 @@ pub(crate) fn install(port: u16) -> Result<()> {
             start(&store)?;
             // `host add` runs `daemon restart` right after this. A restart that
             // came before the daemon wrote its pid file would start a second one.
-            if !super::restart::started(
+            // A daemon that never answers (no name yet, a port in use) is
+            // reported, not an error: the registration is in place either way.
+            if super::restart::started(
                 || super::describe::answers(&store, port),
                 START_TIMEOUT,
                 POLL,
             ) {
-                anyhow::bail!(
-                    "the daemon did not answer within {}s after the start: see {}",
+                println!("started the daemon");
+            } else {
+                eprintln!(
+                    "warning: the daemon did not answer within {}s after the start: see {}",
                     START_TIMEOUT.as_secs(),
                     store.join("daemon.log").display()
                 );
             }
-            println!("started the daemon");
         }
     }
     Ok(())
