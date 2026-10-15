@@ -27,8 +27,30 @@ pub(crate) type PeerRepoCache =
 /// handshake gave. Each is kept until a newer answer replaces it.
 #[derive(Default)]
 pub(crate) struct PeerMemory {
-    repos: Option<fleet::PeerRepoStore>,
-    environment: Option<String>,
+    pub(crate) repos: Option<fleet::PeerRepoStore>,
+    pub(crate) environment: Option<String>,
+}
+
+/// Every former key the peers last served, mapped to the key it now has
+/// (`fleet::peer_former_slug_map`, over every peer in the cache). The guard is
+/// taken and dropped here, with no `.await` between.
+pub(crate) fn peer_slug_aliases(
+    cache: &PeerRepoCache,
+) -> std::collections::BTreeMap<String, String> {
+    let cache = match cache.lock() {
+        Ok(cache) => cache,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    cache
+        .iter()
+        .filter_map(|(daemon_id, memory)| {
+            memory
+                .repos
+                .as_ref()
+                .map(|store| fleet::peer_former_slug_map(daemon_id, store))
+        })
+        .flatten()
+        .collect()
 }
 
 /// What one probe found: the peer's state, the label its handshake gave, and
