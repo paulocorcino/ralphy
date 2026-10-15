@@ -1119,11 +1119,8 @@
       ]
     },
     "crates/xtask/src/ui_copy/html.rs": {
-      "read_tag": [
-        34
-      ],
       "scan": [
-        39
+        17
       ]
     },
     "crates/xtask/src/ui_copy/js/scan.rs": {
