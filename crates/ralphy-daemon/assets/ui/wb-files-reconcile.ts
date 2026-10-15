@@ -46,8 +46,8 @@ export function snapshotLevel(files: ReconcileFiles, node: WunderbaumNode): Leve
   });
   const activeRel = files.relPath(files.rawTree()?.getActiveNode?.() || null) || null;
   // The teardown shrinks the list under the viewport, the browser clamps
-  // `scrollTop` to the shorter list, and the re-activation below scrolls
-  // to the selected row. Nothing else puts the offset back.
+  // `scrollTop` to the shorter list, and the re-activation in `restoreView`
+  // scrolls to the selected row. Nothing else puts the offset back.
   const scrollTop = files.rawTree()?.element?.scrollTop ?? 0;
   return { expandedRels, activeRel, scrollTop };
 }
