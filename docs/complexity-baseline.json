@@ -1140,11 +1140,6 @@
         20
       ]
     },
-    "crates/xtask/src/ui_copy/lex.rs": {
-      "lex": [
-        43
-      ]
-    },
     "crates/xtask/src/ui_groups.rs": {
       "expression_names": [
         30
