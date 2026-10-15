@@ -757,9 +757,6 @@
       ]
     },
     "crates/ralphy-daemon/src/routes/ws_command.rs": {
-      "command_ws": [
-        22
-      ],
       "proxy_peer_command": [
         27
       ]
