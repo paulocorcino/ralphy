@@ -24,56 +24,18 @@ struct Open {
 /// Every binding of `index.html` in the scope of `x-data="shell"`, with the
 /// members of `known` it names.
 pub(super) fn scan_bindings(html: &str, known: &BTreeSet<String>) -> Vec<Binding> {
-    const VOID: &[&str] = &[
-        "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source",
-        "track", "wbr",
-    ];
     let cs: Vec<char> = html.chars().collect();
     let mut out = Vec::new();
     let mut stack: Vec<Open> = Vec::new();
     let mut line = 1;
     let mut i = 0;
     while i < cs.len() {
-        if starts(&cs, i, "<!--") {
-            i = skip_past(&cs, i, "-->", &mut line);
-        } else if starts(&cs, i, "<!") {
-            i = skip_past(&cs, i, ">", &mut line);
+        if starts(&cs, i, "<!") {
+            i = skip_declaration(&cs, i, &mut line);
         } else if starts(&cs, i, "</") {
-            let (tag, _, _, end) = read_tag(&cs, i + 2, &mut line);
-            if let Some(k) = stack.iter().rposition(|o| o.tag == tag) {
-                stack.truncate(k);
-            }
-            i = end;
+            i = end_tag(&cs, i, &mut line, &mut stack);
         } else if cs[i] == '<' && cs.get(i + 1).is_some_and(char::is_ascii_alphabetic) {
-            let (tag, attrs, self_closing, end) = read_tag(&cs, i + 1, &mut line);
-            i = end;
-            let parent = stack.last();
-            let x_data = attrs.iter().find(|a| a.name == "x-data");
-            let in_shell = match x_data {
-                Some(a) => a.value.as_deref().map(str::trim) == Some("shell"),
-                None => parent.is_some_and(|p| p.in_shell),
-            };
-            let mut vars = parent.map(|p| p.vars.clone()).unwrap_or_default();
-            if let Some(f) = attrs.iter().find(|a| a.name == "x-for") {
-                vars.extend(for_vars(f.value.as_deref().unwrap_or("")));
-            }
-            if in_shell {
-                for a in &attrs {
-                    if let Some(b) = binding(a, &vars, known) {
-                        out.push(b);
-                    }
-                }
-            }
-            if tag == "script" || tag == "style" {
-                i = skip_past(&cs, i, &format!("</{tag}"), &mut line);
-                i = skip_past(&cs, i, ">", &mut line);
-            } else if !self_closing && !VOID.contains(&tag.as_str()) {
-                stack.push(Open {
-                    tag,
-                    in_shell,
-                    vars,
-                });
-            }
+            i = start_tag(&cs, i, &mut line, &mut stack, known, &mut out);
         } else {
             if cs[i] == '\n' {
                 line += 1;
@@ -82,6 +44,73 @@ pub(super) fn scan_bindings(html: &str, known: &BTreeSet<String>) -> Vec<Binding
         }
     }
     out
+}
+
+/// Index one past the comment (`<!-- … -->`) or the declaration
+/// (`<!DOCTYPE …>`) that starts at `i`.
+fn skip_declaration(cs: &[char], i: usize, line: &mut usize) -> usize {
+    let end = if starts(cs, i, "<!--") { "-->" } else { ">" };
+    skip_past(cs, i, end, line)
+}
+
+/// Read the end tag at `i`, close the open element it names with all the
+/// elements inside it, and return the index after the tag.
+fn end_tag(cs: &[char], i: usize, line: &mut usize, stack: &mut Vec<Open>) -> usize {
+    let (tag, _, _, end) = read_tag(cs, i + 2, line);
+    if let Some(k) = stack.iter().rposition(|o| o.tag == tag) {
+        stack.truncate(k);
+    }
+    end
+}
+
+/// Read the start tag at `i`, add its bindings to `out` when it is in the
+/// scope of `shell`, and return the index after it. The body of a `script`
+/// or `style` is skipped; an element that has a body is pushed on `stack`.
+fn start_tag(
+    cs: &[char],
+    i: usize,
+    line: &mut usize,
+    stack: &mut Vec<Open>,
+    known: &BTreeSet<String>,
+    out: &mut Vec<Binding>,
+) -> usize {
+    const VOID: &[&str] = &[
+        "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source",
+        "track", "wbr",
+    ];
+    let (tag, attrs, self_closing, end) = read_tag(cs, i + 1, line);
+    let open = scope(tag, &attrs, stack.last());
+    if open.in_shell {
+        out.extend(attrs.iter().filter_map(|a| binding(a, &open.vars, known)));
+    }
+    if open.tag == "script" || open.tag == "style" {
+        let body_end = skip_past(cs, end, &format!("</{}", open.tag), line);
+        return skip_past(cs, body_end, ">", line);
+    }
+    if !self_closing && !VOID.contains(&open.tag.as_str()) {
+        stack.push(open);
+    }
+    end
+}
+
+/// The scope a start tag opens. It is in `shell` when its own `x-data` is
+/// `shell`, or when it has no `x-data` and its parent is. Its variables are
+/// those of its parent and those of its own `x-for`.
+fn scope(tag: String, attrs: &[Attr], parent: Option<&Open>) -> Open {
+    let x_data = attrs.iter().find(|a| a.name == "x-data");
+    let in_shell = match x_data {
+        Some(a) => a.value.as_deref().map(str::trim) == Some("shell"),
+        None => parent.is_some_and(|p| p.in_shell),
+    };
+    let mut vars = parent.map(|p| p.vars.clone()).unwrap_or_default();
+    if let Some(f) = attrs.iter().find(|a| a.name == "x-for") {
+        vars.extend(for_vars(f.value.as_deref().unwrap_or("")));
+    }
+    Open {
+        tag,
+        in_shell,
+        vars,
+    }
 }
 
 struct Attr {
@@ -163,12 +192,8 @@ fn skip_past(cs: &[char], from: usize, needle: &str, line: &mut usize) -> usize 
 
 /// A tag whose name starts at `i`: its lowercase name, its attributes, whether
 /// it closes itself, and the index one past its `>`.
-fn read_tag(cs: &[char], mut i: usize, line: &mut usize) -> (String, Vec<Attr>, bool, usize) {
-    let mut name = String::new();
-    while i < cs.len() && (cs[i].is_ascii_alphanumeric() || cs[i] == '-') {
-        name.push(cs[i].to_ascii_lowercase());
-        i += 1;
-    }
+fn read_tag(cs: &[char], i: usize, line: &mut usize) -> (String, Vec<Attr>, bool, usize) {
+    let (name, mut i) = tag_name(cs, i);
     let mut attrs = Vec::new();
     let mut self_closing = false;
     while i < cs.len() {
@@ -189,38 +214,9 @@ fn read_tag(cs: &[char], mut i: usize, line: &mut usize) -> (String, Vec<Attr>, 
             break;
         }
         let attr_line = *line;
-        let mut attr = String::new();
-        while i < cs.len()
-            && !cs[i].is_whitespace()
-            && !matches!(cs[i], '=' | '>')
-            && !starts(cs, i, "/>")
-        {
-            attr.push(cs[i]);
-            i += 1;
-        }
-        let mut value = None;
-        if cs.get(i) == Some(&'=') {
-            i += 1;
-            let quote = cs.get(i).copied();
-            let mut v = String::new();
-            if matches!(quote, Some('"' | '\'')) {
-                i += 1;
-                while i < cs.len() && Some(cs[i]) != quote {
-                    if cs[i] == '\n' {
-                        *line += 1;
-                    }
-                    v.push(cs[i]);
-                    i += 1;
-                }
-                i += 1;
-            } else {
-                while i < cs.len() && !cs[i].is_whitespace() && cs[i] != '>' {
-                    v.push(cs[i]);
-                    i += 1;
-                }
-            }
-            value = Some(v);
-        }
+        let (attr, after_name) = attr_name(cs, i);
+        let (value, after_value) = attr_value(cs, after_name, line);
+        i = after_value;
         if attr.is_empty() {
             i += 1;
         } else {
@@ -232,4 +228,58 @@ fn read_tag(cs: &[char], mut i: usize, line: &mut usize) -> (String, Vec<Attr>, 
         }
     }
     (name, attrs, self_closing, i)
+}
+
+/// The tag name at `i`, made of ASCII letters, digits and `-`, in lowercase,
+/// and the index after it.
+fn tag_name(cs: &[char], i: usize) -> (String, usize) {
+    let end = (i..cs.len())
+        .find(|&k| !(cs[k].is_ascii_alphanumeric() || cs[k] == '-'))
+        .unwrap_or(cs.len());
+    let name = cs[i..end].iter().map(char::to_ascii_lowercase).collect();
+    (name, end)
+}
+
+/// The attribute name at `i` as written, and the index after it. It ends at
+/// white space, `=`, `>` or `/>`.
+fn attr_name(cs: &[char], i: usize) -> (String, usize) {
+    let end = (i..cs.len())
+        .find(|&k| cs[k].is_whitespace() || matches!(cs[k], '=' | '>') || starts(cs, k, "/>"))
+        .unwrap_or(cs.len());
+    (cs[i..end].iter().collect(), end)
+}
+
+/// The value after an attribute name, which starts at `i` with `=`, and the
+/// index after it. With no `=` there is no value.
+fn attr_value(cs: &[char], i: usize, line: &mut usize) -> (Option<String>, usize) {
+    if cs.get(i) != Some(&'=') {
+        return (None, i);
+    }
+    let (value, end) = if matches!(cs.get(i + 1), Some('"' | '\'')) {
+        quoted_value(cs, i + 1, line)
+    } else {
+        bare_value(cs, i + 1)
+    };
+    (Some(value), end)
+}
+
+/// The text between the quote at `i` and the next same quote, counting its
+/// lines, and the index one past that quote. With no closing quote, the
+/// value runs to the end of input.
+fn quoted_value(cs: &[char], i: usize, line: &mut usize) -> (String, usize) {
+    let quote = cs[i];
+    let close = (i + 1..cs.len())
+        .find(|&k| cs[k] == quote)
+        .unwrap_or(cs.len());
+    let value: String = cs[i + 1..close].iter().collect();
+    *line += value.matches('\n').count();
+    (value, close + 1)
+}
+
+/// An unquoted value at `i`: it ends at white space or `>`.
+fn bare_value(cs: &[char], i: usize) -> (String, usize) {
+    let end = (i..cs.len())
+        .find(|&k| cs[k].is_whitespace() || cs[k] == '>')
+        .unwrap_or(cs.len());
+    (cs[i..end].iter().collect(), end)
 }
