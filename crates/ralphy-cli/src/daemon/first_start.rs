@@ -18,30 +18,49 @@ enum AfterRegistration {
     AlreadyRegistered,
     /// A daemon answers already, so starting a second one would fail on its port.
     AlreadyRunning,
+    /// An elevated Windows shell: a daemon started from it would run as
+    /// administrator. The `Run` value starts it at the next sign-in instead.
+    NotAsAdministrator,
     /// The first registration and no daemon: start one.
     Start,
 }
 
-fn after_registration(was_registered: bool, answers: bool) -> AfterRegistration {
+fn after_registration(
+    was_registered: bool,
+    answers: bool,
+    windows_elevated: bool,
+) -> AfterRegistration {
     if was_registered {
         AfterRegistration::AlreadyRegistered
     } else if answers {
         AfterRegistration::AlreadyRunning
+    } else if windows_elevated {
+        AfterRegistration::NotAsAdministrator
     } else {
         AfterRegistration::Start
     }
 }
 
 pub(crate) fn install(port: u16) -> Result<()> {
+    crate::install::warn_if_elevated();
     let was_registered = autostart::status()
         .context("reading the daemon autostart registration")?
         .registered;
     autostart::install()?;
     println!("registered daemon autostart");
     let store = ralphy_daemon::auth::store_dir()?;
-    match after_registration(was_registered, super::describe::answers(&store, port)) {
+    let windows_elevated = cfg!(windows) && ralphy_proc_util::elevated::runs_elevated();
+    match after_registration(
+        was_registered,
+        super::describe::answers(&store, port),
+        windows_elevated,
+    ) {
         AfterRegistration::AlreadyRegistered => {}
         AfterRegistration::AlreadyRunning => println!("the daemon is already running"),
+        AfterRegistration::NotAsAdministrator => println!(
+            "the daemon was not started from this administrator window; \
+             it starts when you sign in again"
+        ),
         AfterRegistration::Start => {
             start(&store)?;
             // `host add` runs `daemon restart` right after this. A restart that
@@ -104,20 +123,31 @@ mod tests {
 
     #[test]
     fn only_the_first_registration_starts_a_daemon() {
-        assert_eq!(after_registration(false, false), AfterRegistration::Start);
         assert_eq!(
-            after_registration(true, false),
+            after_registration(false, false, false),
+            AfterRegistration::Start
+        );
+        assert_eq!(
+            after_registration(true, false, false),
             AfterRegistration::AlreadyRegistered,
             "a second install only writes the registration again"
         );
         assert_eq!(
-            after_registration(true, true),
+            after_registration(true, true, false),
             AfterRegistration::AlreadyRegistered
         );
         assert_eq!(
-            after_registration(false, true),
+            after_registration(false, true, false),
             AfterRegistration::AlreadyRunning,
             "a daemon that answers is not started twice"
+        );
+    }
+
+    #[test]
+    fn an_elevated_windows_shell_registers_but_does_not_start() {
+        assert_eq!(
+            after_registration(false, false, true),
+            AfterRegistration::NotAsAdministrator
         );
     }
 }

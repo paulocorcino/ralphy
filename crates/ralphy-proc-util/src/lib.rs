@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 
 pub mod cursor;
+pub mod elevated;
 pub mod pid;
 
 pub use pid::pid_is_alive;

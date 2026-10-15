@@ -43,7 +43,25 @@ pub struct InstallArgs {
     no_modify_path: bool,
 }
 
+/// The warning for a run as root or as administrator, or `None`. It never asks
+/// and never stops: `host add` runs these commands over ssh with no terminal,
+/// and maybe as root (ADR-0056 §12).
+fn elevated_warning(elevated: bool) -> Option<&'static str> {
+    elevated.then_some(
+        "warning: ralphy runs as root or as administrator. Ralphy does not need this: \
+         it installs for one user, and the files it writes now belong to that account. \
+         Use a normal user when you can.",
+    )
+}
+
+pub(crate) fn warn_if_elevated() {
+    if let Some(warning) = elevated_warning(ralphy_proc_util::elevated::runs_elevated()) {
+        eprintln!("{warning}");
+    }
+}
+
 pub fn run(args: &InstallArgs) -> Result<()> {
+    warn_if_elevated();
     // Link to the real file, not to another link, so the installed entry survives
     // the build dir being a symlink farm (e.g. some CI layouts).
     let exe = std::env::current_exe().context("locating the running ralphy binary")?;
@@ -361,6 +379,13 @@ fn symlink(src: &Path, dst: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_an_elevated_run_is_warned() {
+        assert_eq!(elevated_warning(false), None);
+        let warning = elevated_warning(true).expect("an elevated run is warned");
+        assert!(warning.contains("root or as administrator"), "{warning}");
+    }
 
     fn scratch(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("ralphy-install-{}-{tag}", std::process::id()));
