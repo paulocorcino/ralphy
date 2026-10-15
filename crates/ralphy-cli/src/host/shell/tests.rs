@@ -249,3 +249,46 @@ fn render_append_key_refuses_a_body_that_is_not_base64() {
         assert!(render(Some(HostOs::Linux), &op).is_err(), "{body:?}");
     }
 }
+
+#[test]
+fn render_probe_runs_the_script_of_each_os() {
+    assert_eq!(
+        render(Some(HostOs::Linux), &HostOp::Probe).unwrap(),
+        format!("sh -lc {}", quote_posix(LINUX_PROBE))
+    );
+    assert_eq!(
+        render(Some(HostOs::MacOs), &HostOp::Probe).unwrap(),
+        format!("zsh -lc {}", quote_posix(MACOS_PROBE))
+    );
+    assert_eq!(
+        render(Some(HostOs::Windows), &HostOp::Probe).unwrap(),
+        WINDOWS_PROBE
+    );
+}
+
+#[test]
+fn render_read_keys_on_linux_ignores_the_administrator_flag() {
+    for admin in [false, true] {
+        assert_eq!(
+            render(Some(HostOs::Linux), &HostOp::ReadKeys { admin }).unwrap(),
+            r"sh -c 'if [ -e .ssh/authorized_keys ]; then cat .ssh/authorized_keys; fi'",
+            "admin: {admin}"
+        );
+    }
+}
+
+#[test]
+fn render_append_key_on_windows_refuses_a_body_that_is_not_base64() {
+    for admin in [false, true] {
+        for body in ["", "AAAA' ; rm -rf ~", "AAAA$(id)"] {
+            let op = HostOp::AppendKey {
+                admin,
+                body: body.to_string(),
+            };
+            assert!(
+                render(Some(HostOs::Windows), &op).is_err(),
+                "admin: {admin}, body: {body:?}"
+            );
+        }
+    }
+}

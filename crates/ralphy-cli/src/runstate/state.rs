@@ -595,3 +595,6 @@ mod tests;
 
 #[cfg(test)]
 mod agent_state_tests;
+
+#[cfg(test)]
+mod summary_tests;
