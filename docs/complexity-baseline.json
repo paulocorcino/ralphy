@@ -4,9 +4,6 @@
     "crates/ralphy-adapter-support/src/headless.rs": {
       "drive_headless": [
         20
-      ],
-      "spawn_reader": [
-        30
       ]
     },
     "crates/ralphy-agent-claude/src/interactive.rs": {

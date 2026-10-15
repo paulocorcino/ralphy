@@ -111,6 +111,67 @@ impl DegradedSwitch {
     }
 }
 
+/// What one reader thread does with each line it reads, besides keeping the bytes.
+struct LineWatch {
+    log: Option<Arc<Mutex<fs::File>>>,
+    switch: Option<Arc<KillSwitch>>,
+    beat: Option<Arc<ProgressBeat>>,
+    degraded: Option<Arc<DegradedSwitch>>,
+    on_stderr: bool,
+}
+
+impl LineWatch {
+    /// Run every per-line side effect, in this order: publish the degraded state,
+    /// beat (not on a degraded line), tee, then the early-kill switch.
+    fn on_line(&self, line: &[u8]) {
+        let is_degraded = self.publish_degraded(line);
+        // Any output at all is the headless progress signal: a child still
+        // talking is a child still working. Both streams feed the same beacon
+        // (unlike the early-kill switch, which is stderr-only) — a child
+        // narrating only on stdout is just as alive. A degraded line is the one
+        // exception: it must NOT rearm the beacon, or a child stuck retrying an
+        // API failure would look alive forever and never be idle-reaped.
+        if !is_degraded {
+            if let Some(b) = &self.beat {
+                b.beat(Instant::now());
+            }
+        }
+        self.tee_line(line);
+        self.check_switch(line);
+    }
+
+    /// Publish the degraded state for the poll loop: `true` on a matching line,
+    /// `false` on any other. Computed before the beat because a degraded line is
+    /// a failure banner, not progress.
+    fn publish_degraded(&self, line: &[u8]) -> bool {
+        let is_degraded = self
+            .degraded
+            .as_ref()
+            .is_some_and(|d| (d.pred)(&String::from_utf8_lossy(line)));
+        if let Some(d) = &self.degraded {
+            d.store(self.on_stderr, is_degraded);
+        }
+        is_degraded
+    }
+
+    fn tee_line(&self, line: &[u8]) {
+        if let Some(f) = &self.log {
+            if let Ok(mut f) = f.lock() {
+                let _ = f.write_all(line);
+                let _ = f.flush();
+            }
+        }
+    }
+
+    fn check_switch(&self, line: &[u8]) {
+        if let Some(sw) = &self.switch {
+            if !sw.fired.load(Ordering::Relaxed) && (sw.pred)(&String::from_utf8_lossy(line)) {
+                sw.fired.store(true, Ordering::Release);
+            }
+        }
+    }
+}
+
 /// Spawn one reader thread that drains `reader` line by line: it accumulates the
 /// full bytes for the return value, optionally **tees** each line to `log` as it
 /// arrives (so the on-disk log is live and survives a crash of this process), and
@@ -127,6 +188,13 @@ fn spawn_reader<R: Read + Send + 'static>(
     degraded: Option<Arc<DegradedSwitch>>,
     on_stderr: bool,
 ) -> thread::JoinHandle<()> {
+    let watch = LineWatch {
+        log,
+        switch,
+        beat,
+        degraded,
+        on_stderr,
+    };
     thread::spawn(move || {
         let mut br = BufReader::new(reader);
         let mut all = Vec::new();
@@ -138,37 +206,7 @@ fn spawn_reader<R: Read + Send + 'static>(
                 Ok(_) => {}
             }
             all.extend_from_slice(&line);
-            // Publish the degraded state for the poll loop: `true` on a matching
-            // line, `false` on any other. Computed before the beat because a
-            // degraded line is a failure banner, not progress.
-            let is_degraded = degraded
-                .as_ref()
-                .is_some_and(|d| (d.pred)(&String::from_utf8_lossy(&line)));
-            if let Some(d) = &degraded {
-                d.store(on_stderr, is_degraded);
-            }
-            // Any output at all is the headless progress signal: a child still
-            // talking is a child still working. Both streams feed the same beacon
-            // (unlike the early-kill switch, which is stderr-only) — a child
-            // narrating only on stdout is just as alive. A degraded line is the one
-            // exception: it must NOT rearm the beacon, or a child stuck retrying an
-            // API failure would look alive forever and never be idle-reaped.
-            if !is_degraded {
-                if let Some(b) = &beat {
-                    b.beat(Instant::now());
-                }
-            }
-            if let Some(f) = &log {
-                if let Ok(mut f) = f.lock() {
-                    let _ = f.write_all(&line);
-                    let _ = f.flush();
-                }
-            }
-            if let Some(sw) = &switch {
-                if !sw.fired.load(Ordering::Relaxed) && (sw.pred)(&String::from_utf8_lossy(&line)) {
-                    sw.fired.store(true, Ordering::Release);
-                }
-            }
+            watch.on_line(&line);
         }
         let _ = tx.send(all);
     })
