@@ -500,3 +500,41 @@ fn protocol_lint_second_violation_closes_with_report() {
 
     fs::remove_dir_all(&repo).ok();
 }
+
+#[test]
+fn a_malformed_verify_section_leaves_the_issue_open_without_a_repair() {
+    // A `## Verify` written as a markdown list cannot run. The settings fallback
+    // passes, so a runner that read the section as absent would close the issue.
+    let repo = init_repo("verify-invalid");
+    let queue = vec![issue(1), issue(2)];
+    let agent = ScriptedAgent::new(vec![Outcome::Done, Outcome::Done])
+        .with_plan_extra_for(1, format!("## Verify\n\n- {}\n", verify_ok_line()))
+        .with_plan_extra_for(2, format!("## Verify\n\n{}\n", verify_ok_line()));
+    let tracker = RecordingTracker::default();
+    let mut config = cfg(&repo, "stamp-verify-invalid", false);
+    config.verify_fallback = Some(vec![ralphy_core::verify::tokenize(verify_ok_line())]);
+    config.require_verify_gate = true;
+
+    let report = run_queue(&config, &queue, &agent, &tracker, &ScriptedClock::never()).unwrap();
+
+    assert!(
+        report.stop.is_none(),
+        "a malformed gate does not stop the run"
+    );
+    assert_eq!(*agent.executed.borrow(), vec![1, 2], "no repair for #1");
+    let closes: Vec<u64> = tracker.closes.borrow().iter().map(|(n, _)| *n).collect();
+    assert_eq!(closes, vec![2], "#1 stays open");
+    assert!(tracker.labels.borrow().is_empty(), "not parked for a human");
+    let comments = tracker.comments.borrow();
+    assert!(
+        comments
+            .iter()
+            .any(|(n, b)| *n == 1 && b.contains("could NOT run")),
+        "the malformed-section artifact is posted: {comments:?}"
+    );
+    let r1 = report.worked.iter().find(|r| r.number == 1).unwrap();
+    assert!(!r1.closed);
+    assert_eq!(r1.skip, Some(ralphy_core::SkipReason::VerifyFailed));
+
+    fs::remove_dir_all(&repo).ok();
+}
