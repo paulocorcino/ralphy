@@ -90,11 +90,6 @@
         14
       ]
     },
-    "crates/ralphy-cli/src/events/envelope.rs": {
-      "runevent_to_cloudevent": [
-        28
-      ]
-    },
     "crates/ralphy-cli/src/guard.rs": {
       "evaluate_recursive_delete": [
         17
