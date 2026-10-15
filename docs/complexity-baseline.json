@@ -212,11 +212,6 @@
         12
       ]
     },
-    "crates/ralphy-core/src/blocked.rs": {
-      "sort_queue_in_graph": [
-        27
-      ]
-    },
     "crates/ralphy-core/src/checkouts.rs": {
       "add": [
         13
