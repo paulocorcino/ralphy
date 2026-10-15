@@ -941,11 +941,6 @@
         19
       ]
     },
-    "crates/ralphy-usage-scan/src/claude.rs": {
-      "scan_claude": [
-        22
-      ]
-    },
     "crates/ralphy-usage-scan/src/copilot.rs": {
       "read_copilot": [
         12

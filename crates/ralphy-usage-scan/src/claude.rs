@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::Path;
 
-use crate::{ClaudeScan, InteractiveRecord, Tokens};
+use crate::{since, ClaudeScan, InteractiveRecord, Tokens};
 
 /// Scan the Claude projects store into interactive records (one per session ×
 /// model). A missing or unreadable `projects_dir` yields an empty vec (not an
@@ -26,12 +26,32 @@ pub fn scan_claude(input: &ClaudeScan) -> Vec<InteractiveRecord> {
     };
     // slug → resolved git actor email, computed at most once per attributed repo.
     let mut email_cache: HashMap<String, Option<String>> = HashMap::new();
-    // Dashed-cwd keys the workspace-key dir name can match: each repo's own
-    // path, PLUS each of its checkouts under `.ralphy/worktrees/` (ADR-0063 §5)
-    // — the lossy dashed key cannot be reversed, so this resolves it "the other
-    // way" by enumerating the bounded, known checkout location instead.
-    let keys: Vec<(String, &crate::RegisteredRepo)> = input
-        .repos
+    let keys = workspace_keys(input.repos);
+    for entry in entries.flatten() {
+        let ws_path = entry.path();
+        if !ws_path.is_dir() {
+            continue;
+        }
+        let ws_key = entry.file_name().to_string_lossy().to_string();
+        records.extend(scan_workspace(
+            input,
+            &keys,
+            &mut email_cache,
+            &ws_path,
+            &ws_key,
+        ));
+    }
+
+    since::retain_since(&mut records, input.since);
+    records
+}
+
+/// Dashed-cwd keys the workspace-key dir name can match: each repo's own
+/// path, PLUS each of its checkouts under `.ralphy/worktrees/` (ADR-0063 §5)
+/// — the lossy dashed key cannot be reversed, so this resolves it "the other
+/// way" by enumerating the bounded, known checkout location instead.
+fn workspace_keys(repos: &[crate::RegisteredRepo]) -> Vec<(String, &crate::RegisteredRepo)> {
+    repos
         .iter()
         .flat_map(|r| {
             std::iter::once((dashed_cwd(&r.path), r)).chain(
@@ -40,51 +60,47 @@ pub fn scan_claude(input: &ClaudeScan) -> Vec<InteractiveRecord> {
                     .map(move |d| (dashed_cwd(&d.to_string_lossy()), r)),
             )
         })
-        .collect();
-    for entry in entries.flatten() {
-        let ws_path = entry.path();
-        if !ws_path.is_dir() {
+        .collect()
+}
+
+/// The interactive records of one workspace directory `ws_path` (named
+/// `ws_key`), skipping the sessions that are Ralphy runs'.
+fn scan_workspace(
+    input: &ClaudeScan,
+    keys: &[(String, &crate::RegisteredRepo)],
+    email_cache: &mut HashMap<String, Option<String>>,
+    ws_path: &Path,
+    ws_key: &str,
+) -> Vec<InteractiveRecord> {
+    // Attribute by dashed-cwd-encoding each registered repo path (D10), or
+    // one of its worktree checkouts (ADR-0063 §5), and matching the
+    // workspace-key dir name exactly. No match → project/actor stay None;
+    // the session is still reported.
+    let matched = keys.iter().find(|(k, _)| *k == ws_key).map(|(_, r)| *r);
+    let project = matched.map(|r| r.slug.clone());
+    let actor_email = matched.and_then(|r| {
+        email_cache
+            .entry(r.slug.clone())
+            .or_insert_with(|| ralphy_git_read::user_email(Path::new(&r.path)))
+            .clone()
+    });
+
+    let mut records = Vec::new();
+    for transcript in crate::walk::files_under(ws_path, crate::walk::is_jsonl) {
+        let Some(session_id) = transcript
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .map(str::to_string)
+        else {
+            continue;
+        };
+        if input.run_session_ids.contains(&session_id) {
             continue;
         }
-        let ws_key = entry.file_name().to_string_lossy().to_string();
-        // Attribute by dashed-cwd-encoding each registered repo path (D10), or
-        // one of its worktree checkouts (ADR-0063 §5), and matching the
-        // workspace-key dir name exactly. No match → project/actor stay None;
-        // the session is still reported.
-        let matched = keys.iter().find(|(k, _)| *k == ws_key).map(|(_, r)| *r);
-        let project = matched.map(|r| r.slug.clone());
-        let actor_email = matched.and_then(|r| {
-            email_cache
-                .entry(r.slug.clone())
-                .or_insert_with(|| ralphy_git_read::user_email(Path::new(&r.path)))
-                .clone()
-        });
-
-        for transcript in crate::walk::files_under(&ws_path, crate::walk::is_jsonl) {
-            let Some(session_id) = transcript
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .map(str::to_string)
-            else {
-                continue;
-            };
-            if input.run_session_ids.contains(&session_id) {
-                continue;
-            }
-            let Ok(text) = fs::read_to_string(&transcript) else {
-                continue;
-            };
-            records.extend(parse_transcript(&text, &session_id, &project, &actor_email));
-        }
-    }
-
-    if let Some(since) = input.since {
-        if let Ok(since_dt) = chrono::DateTime::parse_from_rfc3339(since) {
-            records.retain(|r| match chrono::DateTime::parse_from_rfc3339(&r.last_ts) {
-                Ok(last) => last >= since_dt,
-                Err(_) => true, // never hide spend on a parse miss
-            });
-        }
+        let Ok(text) = fs::read_to_string(&transcript) else {
+            continue;
+        };
+        records.extend(parse_transcript(&text, &session_id, &project, &actor_email));
     }
     records
 }
