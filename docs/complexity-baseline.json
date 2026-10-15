@@ -396,9 +396,6 @@
       ],
       "peerFold": [
         11
-      ],
-      "reattachFence": [
-        25
       ]
     },
     "crates/ralphy-daemon/assets/ui/wb-desk-folds.ts": {

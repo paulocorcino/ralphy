@@ -442,6 +442,46 @@ export function createDetach(deps: DetachDeps) {
     if (entry?.rescue) clearTimeout(entry.rescue);
   }
 
+  // Closes the popup of fence `id`, by its handle when this document has one.
+  function closePopup(id: string, entry: PopupEntry | undefined) {
+    try {
+      if (entry?.handle && !entry.handle.closed) entry.handle.close();
+    } catch {}
+    // After a reload the handle is null, so only the channel can evict the
+    // popup; otherwise it keeps driving the sessions re-spawned here.
+    link.post({ type: "origin-close", tab: link.tab, fenceId: id, pid: entry?.pid ?? undefined });
+  }
+
+  // A card comes home by RE-RENDER: its record never left the desk, and
+  // `renderNotes` puts back every card whose fence is no longer detached.
+  // A draft whose popup closed before its first save comes home with it.
+  function homeNote(m: PopupMember) {
+    const record = notes().find((n) => n.id === m.id);
+    if (typeof m.draft === "string" && record && !record.path) {
+      window.WBNotes?.adoptDraft?.(m.id, m.draft, m.claim);
+    }
+  }
+
+  // A console member comes home as a window over its session, or as a
+  // placeholder.
+  function homeConsole(m: PopupMember) {
+    // A member already on the plane is not re-spawned: two windows over one
+    // session is worse than a console left away.
+    if (m.id && [...wins].some((w) => w._deskId === m.id)) return;
+    // The name comes from the desk, not the snapshot: a rename on another page
+    // while the fence was away must not be undone (ADR-0066 §3).
+    const rec = loadDesk().find((r) => r.id === m.id);
+    const member = rec?.consoleName ? { ...m, consoleName: rec.consoleName } : m;
+    if (member.session != null) {
+      spawnWindow({ id: member.session, repo: member.repo }, member.agent || "console", member.repo, member);
+    } else {
+      // The snapshot keeps no session id, so a member relaunched in the
+      // popup comes home as a placeholder. `_revive` attaches it to the
+      // session that runs now and never launches one.
+      spawnPlaceholder(member)._revive!();
+    }
+  }
+
   // `opts.force` is the GLYPH's call only. The automatic paths (`beforeunload`,
   // the closed-poll, the peer-loss tick) stay gated on the fold because their
   // signals arrive DOUBLED. A click is an instruction that must land even when
@@ -455,40 +495,12 @@ export function createDetach(deps: DetachDeps) {
     stopPoll(entry);
     popups.remove(id);
     commitDetached(out.registry);
-    try {
-      if (entry?.handle && !entry.handle.closed) entry.handle.close();
-    } catch {}
-    // After a reload the handle is null, so only the channel can evict the
-    // popup; otherwise it keeps driving the sessions re-spawned here.
-    link.post({ type: "origin-close", tab: link.tab, fenceId: id, pid: entry?.pid ?? undefined });
+    closePopup(id, entry);
     // The ORIGINAL records: the popup's own layout is discarded by never having
     // been read.
     for (const m of entry?.members || []) {
-      // A card comes home by RE-RENDER: its record never left the desk, and
-      // `renderNotes` puts back every card whose fence is no longer detached.
-      // A draft whose popup closed before its first save comes home with it.
-      if (m.kind === "note") {
-        const record = notes().find((n) => n.id === m.id);
-        if (typeof m.draft === "string" && record && !record.path) {
-          window.WBNotes?.adoptDraft?.(m.id, m.draft, m.claim);
-        }
-        continue;
-      }
-      // A member already on the plane is not re-spawned: two windows over one
-      // session is worse than a console left away.
-      if (m.id && [...wins].some((w) => w._deskId === m.id)) continue;
-      // The name comes from the desk, not the snapshot: a rename on another page
-      // while the fence was away must not be undone (ADR-0066 §3).
-      const rec = loadDesk().find((r) => r.id === m.id);
-      const member = rec?.consoleName ? { ...m, consoleName: rec.consoleName } : m;
-      if (member.session != null) {
-        spawnWindow({ id: member.session, repo: member.repo }, member.agent || "console", member.repo, member);
-      } else {
-        // The snapshot keeps no session id, so a member relaunched in the
-        // popup comes home as a placeholder. `_revive` attaches it to the
-        // session that runs now and never launches one.
-        spawnPlaceholder(member)._revive!();
-      }
+      if (m.kind === "note") homeNote(m);
+      else homeConsole(m);
     }
     showDetachGlyph(id, false);
     renderNotes();
