@@ -789,11 +789,6 @@
         13
       ]
     },
-    "crates/ralphy-daemon/src/session/manager/pump.rs": {
-      "start_pump": [
-        24
-      ]
-    },
     "crates/ralphy-daemon/src/session/screen.rs": {
       "text": [
         12
