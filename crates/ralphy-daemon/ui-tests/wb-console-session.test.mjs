@@ -300,6 +300,7 @@ const live = {
   hasTerminal: true,
   ended: false,
   sessionId: 7,
+  tabShown: true,
 };
 
 test("dormancyDecision sleeps only a live console nobody can see", () => {
@@ -424,4 +425,30 @@ test("agentStateTitle words an agent state, its question, and a stale observatio
   assert.equal(agentStateTitle("unknown", "ignored"), "Agent state unknown");
   assert.equal(agentStateTitle("working"), "Agent is working");
   assert.equal(agentStateTitle("waiting", "Run the tests?"), "Agent is waiting: Run the tests?");
+});
+
+// While a file tab covers the Consoles tab, nobody sees any console: each one
+// with a session sleeps, even maximized, fullscreen or focused. A console that
+// has nothing to reattach to still holds.
+test("dormancyDecision sleeps every window while the Consoles tab is hidden", () => {
+  const hidden = { ...live, intersecting: true, tabShown: false };
+  const rows = [
+    ["an intersecting, uncovered console sleeps", {}, "sleep"],
+    ["a maximized console sleeps", { maximized: true }, "sleep"],
+    ["a fullscreen console sleeps", { fullscreen: true }, "sleep"],
+    ["the focused console sleeps", { focused: true }, "sleep"],
+    ["a placeholder holds", { hasTerminal: false }, "hold"],
+    ["an ended session holds", { ended: true }, "hold"],
+    ["a null session id holds", { sessionId: null }, "hold"],
+    ["an already dormant console holds", { dormant: true, hasTerminal: false }, "hold"],
+  ];
+  for (const [name, change, want] of rows) {
+    assert.equal(dormancyDecision({ ...hidden, ...change }), want, name);
+  }
+});
+
+test("dormancyDecision does not wake a window while the Consoles tab is hidden", () => {
+  const asleep = { ...live, intersecting: true, dormant: true, hasTerminal: false };
+  assert.equal(dormancyDecision({ ...asleep, tabShown: false }), "hold");
+  assert.equal(dormancyDecision({ ...asleep, tabShown: true }), "wake");
 });

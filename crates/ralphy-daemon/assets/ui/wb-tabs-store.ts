@@ -23,7 +23,7 @@ import { WBFail } from "./wb-fail.ts";
 import { WBChanges } from "./wb-changes.ts";
 import { classify, fileTabId } from "./wb-file-paths.ts";
 import { WBSplit } from "./wb-split.ts";
-import { sendWindow } from "./wb-events.ts";
+import { sendDocument, sendWindow } from "./wb-events.ts";
 import type { Messages } from "./wb-messages.ts";
 import type { CanvasTab, ChangeEntry, DiffTarget, MenuItem, Slot, TabBody, TabOpen } from "./wb-shell-types.d.ts";
 
@@ -179,7 +179,7 @@ export function tabsStore(deps: TabsStoreDeps) {
             ? "bi bi-file-earmark-image"
             : "bi bi-file-earmark-code";
       this.tabs.push({ id, kind: ftype, title, path, project, icon, closable: true, checkout: ck });
-      this.active = id;
+      this.showTab(id);
       this.persistView();
       window.Alpine.nextTick(() => {
         // A re-attach passes bytes in; a fresh open reads `file.read`.
@@ -262,7 +262,7 @@ export function tabsStore(deps: TabsStoreDeps) {
         icon: "bi bi-file-earmark-diff",
         closable: true,
       });
-      this.active = t.id;
+      this.showTab(t.id);
       window.WB.emit("open-diff", { project, path: t.workingPath, checkout: t.checkout });
       window.Alpine.nextTick(() => {
         // Latched: a path refused on BOTH sides would flash twice.
@@ -367,8 +367,15 @@ export function tabsStore(deps: TabsStoreDeps) {
       this.activate("consoles");
     },
 
-    activate(id: string) {
+    // Puts a tab on the left. Every change of `active` goes through here: the
+    // consoles sleep while their tab is hidden and wake when it shows.
+    showTab(id: string) {
       this.active = id;
+      sendDocument(document, "workbench:tab-shown", { id });
+    },
+
+    activate(id: string) {
+      this.showTab(id);
       // The Spend tab's subject can change while it sits in the background.
       if (id === "spend") sendWindow(window, "workbench:spend-shown");
       window.Alpine.nextTick(() => {

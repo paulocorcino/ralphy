@@ -45,6 +45,8 @@ export type DormancyDeps = {
   fillsViewport: (win: ConsoleWin) => boolean;
   // Whether a window is in full screen. Built later: a lazy arrow.
   isFull: (win: HTMLElement) => boolean;
+  // Whether the Consoles tab is the one on screen.
+  consolesShown: () => boolean;
   // Builds the terminal of a window. Built later: a lazy arrow.
   attachTerminal: (body: HTMLElement, opts: TerminalOpts) => ConsoleTerm;
   // Sends the desk changes after `ms`. Built later: a lazy arrow.
@@ -65,6 +67,7 @@ export function createDormancy(deps: DormancyDeps) {
     budget,
     fillsViewport,
     isFull,
+    consolesShown,
     attachTerminal,
     scheduleDeskFlush,
     revivePlaceholders,
@@ -212,6 +215,7 @@ export function createDormancy(deps: DormancyDeps) {
       // spawned-but-silent console with only `_wantsSession` would sleep with
       // nothing for `wakeWindow` to reattach to, and never come back.
       sessionId: win._term?.sessionId ?? win._dormantSession ?? null,
+      tabShown: consolesShown(),
     };
   }
 
@@ -258,6 +262,11 @@ export function createDormancy(deps: DormancyDeps) {
     document.addEventListener("workbench:action", (e: DocumentEventMap["workbench:action"]) => {
       if (e.detail?.action !== "setting-change" || e.detail.key !== "consoles.key_bar") return;
       for (const w of wins) applyKeyBar(w);
+    });
+    // The canvas tab changed: a hidden Consoles tab sleeps its consoles, a
+    // shown one wakes those on screen. No observer reports a `visibility` change.
+    document.addEventListener("workbench:tab-shown", () => {
+      for (const w of wins) applyDormancy(w);
     });
 
     // Publish the keyboard inset. The popup and the node harness load this module
