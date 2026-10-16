@@ -20,7 +20,7 @@ import { wirePaste } from "./wb-console-paste.ts";
 import { wirePress } from "./wb-console-press.ts";
 import { createFit } from "./wb-console-fit.ts";
 import { frameQueue } from "./wb-console-frames.ts";
-import { reportHandshake, terminalGpu } from "./wb-console-gpu.ts";
+import { terminalGpu } from "./wb-console-gpu.ts";
 import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
 import type { DetachReason } from "./wb-console-session.ts";
 import type { SessionRequest } from "./wb-session-route.ts";
@@ -342,7 +342,6 @@ export function createTerminal(deps: TerminalDeps) {
         failedReopens = 0;
         firstConnect = false;
         link("back");
-        reportHandshake(Date.now() - connectingSince);
         // Never xterm's default 80×24: only a size the body measured.
         sizing.opened();
       };

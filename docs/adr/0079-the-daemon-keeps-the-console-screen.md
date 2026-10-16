@@ -185,6 +185,13 @@ of remote sockets passed in the operator's log (p90 256 ms). On a slow link a
 console waits 120 s, not 15 s, before it sleeps, and `wb-notes.ts` reads the
 same delay. The GPU budget still applies.
 
+Amended on 2026-10-16 (#738): **this verdict is suspended.** The measured
+handshake included the time the socket waited in the browser's connection
+queue, and the browser gives no queue time for a WebSocket, so the page took a
+queue for a slow link. Every console waits 15 s before it sleeps, on every
+link. The verdict returns when ADR-0082 D6 measures the handshake of the one
+socket of the page.
+
 **D11. #581 item 5 is decided by the size of the compressed snapshot on
 wake.** If the compressed snapshot on wake, measured by the closing stage of
 #689, is at most 64 KiB, item 5 is dropped: a dormant console keeps no bytes
@@ -331,9 +338,8 @@ relay). Browser checks are in `tests/browser/console/`; they are not CI tests.
   queued frame that throws does not stop the later frames or whenIdle`), and
   the browser check
   `wb_console_gzip_689.py`.
-- D10: checked by the `wb-console-gpu` ui-tests
-  `dormantAfterMs waits longer only after a slow handshake` and
-  `dormantAfterMs reads the handshake the last console socket reported`.
+- D10: suspended (see its amendment); checked by the `wb-console-gpu`
+  ui-test `dormantAfterMs is 15 s on every link`.
 - D11: not checked by code: a measure. `wb_console_screen_689.py` writes
   `wake_gzip_bytes`; the decision and its number are in D11.
 - D12: checked by `crates/ralphy-daemon/src/session/manager/tests.rs`
