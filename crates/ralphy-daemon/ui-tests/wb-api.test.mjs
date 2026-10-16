@@ -1,9 +1,88 @@
 // Unit tests for assets/ui/wb-api.ts — runs the real source with no DOM.
 // Lives OUTSIDE assets/ui on purpose: lib.rs embeds all of assets/ui into the
 // daemon binary via include_dir!, so a test there would ship.
-import { test } from "node:test";
+import { test, mock } from "node:test";
 import assert from "node:assert/strict";
-import { apiFetch } from "../assets/ui/wb-api.ts";
+import { apiFetch, ReadDeadline } from "../assets/ui/wb-api.ts";
+
+// Let every pending promise callback run; setImmediate is not under mock timers.
+const flush = () => new Promise((r) => setImmediate(r));
+
+// The abort signal is the deadline's own; the rest of the init is what the caller gave.
+function withoutSignal(calls) {
+  return calls.map(({ url, init: { signal, ...init } }) => {
+    assert.ok(signal instanceof AbortSignal, "every request carries the deadline's signal");
+    return { url, init };
+  });
+}
+
+// A fetch that never answers; the deadline is driven by mock timers.
+function neverAnswers(route, init) {
+  const prev = globalThis.fetch;
+  globalThis.fetch = () => new Promise(() => {});
+  mock.timers.enable({ apis: ["setTimeout"] });
+  const out = { error: null };
+  const done = apiFetch(route, init).catch((e) => {
+    out.error = e;
+  });
+  return {
+    out,
+    done,
+    restore: () => {
+      mock.timers.reset();
+      globalThis.fetch = prev;
+    },
+  };
+}
+
+test("apiFetch rejects a request with no answer at its deadline", async () => {
+  const w = neverAnswers("GET /api/repos");
+  try {
+    mock.timers.tick(19999);
+    await flush();
+    assert.equal(w.out.error, null, "still waiting at 19999 ms");
+    mock.timers.tick(1);
+    await flush();
+    assert.ok(w.out.error instanceof ReadDeadline, "rejected at 20000 ms");
+  } finally {
+    w.restore();
+  }
+});
+
+test("apiFetch gives each route its deadline", async () => {
+  // [case, route, init, deadline]
+  const rows = [
+    ["default route", "GET /api/repos", undefined, 20000],
+    ["nudge", "POST /api/fleet/nudge", undefined, 40000],
+    ["explicit deadline", "GET /api/repos", { deadlineMs: 500 }, 500],
+  ];
+  for (const [name, route, init, ms] of rows) {
+    const w = neverAnswers(route, init);
+    try {
+      mock.timers.tick(ms - 1);
+      await flush();
+      assert.equal(w.out.error, null, `${name}: waits until ${ms - 1} ms`);
+      mock.timers.tick(1);
+      await flush();
+      assert.ok(w.out.error instanceof ReadDeadline, `${name}: fails at ${ms} ms`);
+    } finally {
+      w.restore();
+    }
+  }
+});
+
+test("a read past its deadline fails with ReadDeadline naming what waited", async () => {
+  const w = neverAnswers("GET /api/repos");
+  try {
+    mock.timers.tick(20000);
+    await flush();
+    assert.ok(w.out.error instanceof ReadDeadline);
+    assert.equal(w.out.error.what, "GET /api/repos");
+    assert.equal(w.out.error.waitedMs, 20000);
+  } finally {
+    w.restore();
+  }
+});
 
 test("apiFetch sends the route's method to its path, with the query encoded", async () => {
   // [case, route, init, url, method]
@@ -34,12 +113,12 @@ test("apiFetch sends the route's method to its path, with the query encoded", as
       calls.length = 0;
       const r = await apiFetch(route, init);
       assert.equal(r, answer, `${name}: the answer of fetch, as it came`);
-      assert.deepEqual(calls, [{ url, init: { method } }], name);
+      assert.deepEqual(withoutSignal(calls), [{ url, init: { method } }], name);
     }
     // The rest of the init goes to fetch as it was given.
     calls.length = 0;
     await apiFetch("POST /api/desk/history", { headers: { "Content-Type": "application/json" }, body: "{}" });
-    assert.deepEqual(calls, [
+    assert.deepEqual(withoutSignal(calls), [
       {
         url: "/api/desk/history",
         init: { headers: { "Content-Type": "application/json" }, body: "{}", method: "POST" },

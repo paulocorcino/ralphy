@@ -10,7 +10,7 @@
    the Runs panel live (ADR-0032 §5, ADR-0036).
 --------------------------------------------------------------------------- */
 import { WBFail } from "./wb-fail.ts";
-import { socketFrame } from "./wb-api.ts";
+import { socketFrame, ReadDeadline } from "./wb-api.ts";
 import { WBProject } from "./wb-project.ts";
 import { WBRun } from "./wb-runs.ts";
 import { sendWindow } from "./wb-events.ts";
@@ -55,6 +55,10 @@ export function createDaemon(window: Window, document: Document, location: Locat
   const ACTION_TO_VERB: Partial<Record<WorkbenchActionName, string>> = { "run-start": "run" };
 
   let nextId = 1;
+
+  // How long a command waits for its one reply: `dispatch::REPLY_DEADLINE`
+  // (60 s) of the daemon, plus the 5 s margin of `relay_to_peer` for a peer.
+  const COMMAND_DEADLINE_MS = 70000;
 
   // Fail a handshake that has not opened by the deadline. `close()` on a
   // CONNECTING socket fires `close`, so the caller's ordinary retry takes over.
@@ -150,10 +154,31 @@ export function createDaemon(window: Window, document: Document, location: Locat
       const id = nextId++;
       const ws = new WebSocket(WS_ORIGIN + "/ws/command");
       ws.binaryType = "arraybuffer";
-      ws.onopen = () => ws.send(encodeCommand({ id, verb, payload }));
+      // The first of reply, close, error or deadline settles the read. At a
+      // deadline the socket is detached, so a later event reaches nothing.
+      let replyTimer: ReturnType<typeof setTimeout> | undefined;
+      let handshakeTimer: ReturnType<typeof setTimeout> | undefined;
+      const stop = () => {
+        clearTimeout(replyTimer);
+        clearTimeout(handshakeTimer);
+      };
+      const giveUp = (ms: number) => {
+        stop();
+        detachSocket(ws);
+        reject(new ReadDeadline(verb, ms));
+      };
+      handshakeTimer = setTimeout(() => {
+        if (ws.readyState === 0) giveUp(CONNECT_TIMEOUT_MS);
+      }, CONNECT_TIMEOUT_MS);
+      replyTimer = setTimeout(() => giveUp(COMMAND_DEADLINE_MS), COMMAND_DEADLINE_MS);
+      ws.onopen = () => {
+        clearTimeout(handshakeTimer);
+        ws.send(encodeCommand({ id, verb, payload }));
+      };
       ws.onmessage = (ev) => {
         const a = new Uint8Array(ev.data);
         if (a[0] !== TAG_COMMAND) return;
+        stop();
         try {
           const reply = socketFrame<{ payload: ReplyOf<V> }>(a).payload;
           resolve(reply);
@@ -174,8 +199,14 @@ export function createDaemon(window: Window, document: Document, location: Locat
       // without this the promise pends for the page's life and every caller
       // awaiting it is wedged. Settling twice is a no-op, so the `ws.close()`
       // after a resolve above is harmless.
-      ws.onclose = () => reject(new Error("connection closed before a reply"));
-      ws.onerror = (err) => reject(err);
+      ws.onclose = () => {
+        stop();
+        reject(new Error("connection closed before a reply"));
+      };
+      ws.onerror = (err) => {
+        stop();
+        reject(err);
+      };
     });
   }
 

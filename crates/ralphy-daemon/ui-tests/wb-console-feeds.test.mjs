@@ -1,6 +1,6 @@
 // Unit tests for assets/ui/wb-console-feeds.ts — the last facts the shell fed.
 // `createFeeds` is driven with stubs and no DOM.
-import { test } from "node:test";
+import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { createFeeds } from "../assets/ui/wb-console-feeds.ts";
 
@@ -41,4 +41,29 @@ test("ingestFleet keeps only peer groups", () => {
   f.ingestFleet([{ daemon: "d1", local: true }, peer, { daemon: "", local: false }, null], null);
   assert.deepEqual([...f.peerGroups.keys()], ["d2"]);
   assert.equal(f.peerGroups.get("d2"), peer);
+});
+
+test("a shared sessions read that passed its deadline is not shared again", async () => {
+  const prev = globalThis.fetch;
+  let fetches = 0;
+  globalThis.fetch = () => {
+    fetches += 1;
+    return new Promise(() => {});
+  };
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const f = feeds();
+    const first = f.readSessions().catch((e) => e);
+    const second = f.readSessions().catch((e) => e);
+    assert.equal(fetches, 1, "the second read shares the first request");
+    mock.timers.tick(20000);
+    await new Promise((r) => setImmediate(r));
+    assert.equal((await first).name, "ReadDeadline");
+    assert.equal((await second).name, "ReadDeadline");
+    f.readSessions().catch(() => {});
+    assert.equal(fetches, 2, "a read after the deadline makes a new request");
+  } finally {
+    mock.timers.reset();
+    globalThis.fetch = prev;
+  }
 });

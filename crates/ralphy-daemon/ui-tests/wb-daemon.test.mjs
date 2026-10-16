@@ -1,7 +1,7 @@
 // Unit tests for assets/ui/wb-daemon.ts — runs the real module with no DOM.
 // This file lives OUTSIDE assets/ui on purpose: lib.rs embeds all of
 // assets/ui into the daemon binary via include_dir!, so a test there would ship.
-import { test } from "node:test";
+import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -9,6 +9,7 @@ import { dirname, join } from "node:path";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 import { createDaemon } from "../assets/ui/wb-daemon.ts";
+import { ReadDeadline } from "../assets/ui/wb-api.ts";
 import { CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS, resumeDecision } from "../assets/ui/wb-resume.ts";
 
 // A push the daemon produced, as its tests wrote it (`tests/support/golden.rs`).
@@ -203,6 +204,109 @@ test("observe fans out an unknown checkout to the registered listeners, after th
     assert.deepEqual(seen, [["o/r", "gone"]]);
   } finally {
     restore();
+  }
+});
+
+// Let every pending promise callback run; setImmediate is not under mock timers.
+const flush = () => new Promise((r) => setImmediate(r));
+
+// --- observe: a read that gets no answer fails at its deadline ------------
+
+// A socket that opens (or not) and never answers; `sockets` lists the ones made.
+function silentSocket({ opens, checkout }) {
+  const sockets = [];
+  const window = { addEventListener() {} };
+  const document = { addEventListener() {} };
+  const location = { protocol: "http:", host: "127.0.0.1:7431" };
+  globalThis.WebSocket = class {
+    constructor() {
+      this.readyState = 0;
+      this.closes = 0;
+      sockets.push(this);
+    }
+    send() {}
+    close() {
+      this.closes += 1;
+      this.readyState = 3;
+    }
+  };
+  mock.timers.enable({ apis: ["setTimeout"] });
+  const d = createDaemon(window, document, location, { messages: { flash() {} } });
+  const result = { error: null, value: undefined };
+  const p = d.observe("tree.list", { repo: "r", path: "", checkout }).then(
+    (v) => (result.value = v),
+    (e) => (result.error = e),
+  );
+  if (opens) {
+    sockets[0].readyState = 1;
+    sockets[0].onopen();
+  }
+  return {
+    d,
+    sockets,
+    result,
+    p,
+    restore: () => {
+      mock.timers.reset();
+      delete globalThis.WebSocket;
+    },
+  };
+}
+
+test("observe rejects when the socket never opens, by the handshake deadline", async () => {
+  const s = silentSocket({ opens: false });
+  try {
+    mock.timers.tick(CONNECT_TIMEOUT_MS - 1);
+    await flush();
+    assert.equal(s.result.error, null, "still waiting before the deadline");
+    mock.timers.tick(1);
+    await flush();
+    assert.ok(s.result.error instanceof ReadDeadline);
+    assert.equal(s.result.error.what, "tree.list");
+    assert.equal(s.result.error.waitedMs, CONNECT_TIMEOUT_MS);
+    assert.equal(s.sockets[0].closes, 1, "the socket is retired");
+  } finally {
+    s.restore();
+  }
+});
+
+test("observe rejects an open socket with no reply at the command deadline", async () => {
+  const s = silentSocket({ opens: true });
+  try {
+    mock.timers.tick(69999);
+    await flush();
+    assert.equal(s.result.error, null, "still waiting at 69999 ms");
+    mock.timers.tick(1);
+    await flush();
+    assert.ok(s.result.error instanceof ReadDeadline);
+    assert.equal(s.result.error.waitedMs, 70000);
+  } finally {
+    s.restore();
+  }
+});
+
+test("a reply after the deadline neither resolves the read nor fans out", async () => {
+  const s = silentSocket({ opens: true, checkout: "gone" });
+  try {
+    let calls = 0;
+    s.d.onUnknownCheckout(() => calls++);
+    mock.timers.tick(70000);
+    await flush();
+    assert.ok(s.result.error instanceof ReadDeadline);
+    // A late frame: the retired socket has no handler left to hear it.
+    const reply = { id: 1, verb: "tree.list", payload: { status: "error", message: "unknown checkout" } };
+    const body = new TextEncoder().encode(JSON.stringify(reply));
+    const out = new Uint8Array(1 + body.length);
+    out[0] = 0x02;
+    out.set(body, 1);
+    s.sockets[0].onmessage?.({ data: out.buffer });
+    mock.timers.tick(10);
+    await flush();
+    assert.ok(s.result.error instanceof ReadDeadline, "still rejected");
+    assert.equal(s.result.value, undefined);
+    assert.equal(calls, 0);
+  } finally {
+    s.restore();
   }
 });
 

@@ -540,6 +540,10 @@ the only release text a person writes (ADR-0056).
 _Avoid_: changelog entry (that is the folded output), release note (the whole
 body), news file, towncrier fragment.
 
+**Read deadline**:
+The time a read of the page may wait for its answer. At the deadline the read
+fails and shows as failed, so one answer that never comes cannot hold the page.
+
 **Release watch**:
 The daemon's read of Ralphy's published releases, which tells the workbench
 whether the running build is behind, level with, or ahead of the newest
