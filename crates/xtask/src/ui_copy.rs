@@ -466,4 +466,6 @@ fn to_json(rows: &[Row]) -> Result<String> {
 }
 
 #[cfg(test)]
+mod scanner_tests;
+#[cfg(test)]
 mod tests;

@@ -1,7 +1,7 @@
 //! `/api/fleet*`: the federated repo list, and the nudge that starts a peer
 //! (ADR-0052).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use axum::extract::Query;
@@ -16,6 +16,9 @@ use crate::{fleet, identity, peer, registry};
 
 mod nudge;
 pub(crate) use nudge::*;
+
+#[cfg(test)]
+mod tests;
 
 /// What each peer last showed this daemon, keyed by `daemon_id`. Held for the
 /// router's lifetime — same ownership model as `sessions`/`watchers`, so the
@@ -112,176 +115,16 @@ pub(crate) async fn fleet_route(
         .map(|identity| identity.id.to_string())
         .unwrap_or_default();
 
-    // Probe every peer CONCURRENTLY: with a 2 s per-peer timeout, dialling them
-    // one after another would make the page cost the sum of the down ones.
-    let mut set = tokio::task::JoinSet::new();
-    for (index, d) in descriptors.iter().cloned().enumerate() {
-        let probe_id = probe_id.clone();
-        set.spawn(async move {
-            let (status, live_environment) = peer::client::probe_hello(
-                &d,
-                peer::client::SelfRef {
-                    port: bound_port,
-                    daemon_id: &probe_id,
-                },
-            )
-            .await;
-            // Only a reachable peer is asked for its repos; an unreachable one
-            // contributes no rows but is still listed (marked, never removed).
-            let store = match status {
-                peer::client::PeerStatus::Reachable => {
-                    match peer::client::get(&d, "/api/repos").await {
-                        Ok((200, body)) => match fleet::store_from_repos_json(&body) {
-                            Some(store) => Some(store),
-                            None => {
-                                tracing::warn!(peer = %d.environment, "peer served an /api/repos body this daemon cannot read; keeping its last-known repos");
-                                None
-                            }
-                        },
-                        Ok((code, _)) => {
-                            tracing::warn!(peer = %d.environment, %code, "peer answered the handshake but refused /api/repos; keeping its last-known repos");
-                            None
-                        }
-                        Err(e) => {
-                            tracing::warn!(peer = %d.environment, error = %format!("{e:#}"), "could not read a peer's repos; keeping its last-known ones");
-                            None
-                        }
-                    }
-                }
-                _ => None,
-            };
-            (index, status, live_environment, store)
-        });
-    }
-    let mut probed: Vec<Option<Probed>> = (0..descriptors.len()).map(|_| None).collect();
-    while let Some(joined) = set.join_next().await {
-        match joined {
-            Ok((index, status, live_environment, store)) => {
-                probed[index] = Some((status, live_environment, store));
-            }
-            Err(e) => tracing::warn!(error = %e, "a peer probe task failed"),
-        }
-    }
+    let probed = probe_all(&descriptors, &probe_id, bound_port).await;
+    let recalled = recall_repos(&repo_cache, &mut descriptors, &probed);
 
-    // Remember what each peer just served, and recall it for the ones that could
-    // not be asked. INVARIANT: the guard is taken and dropped inside this block —
-    // it is a `std::sync::Mutex` and there is no `.await` between these lines.
-    //
-    // The descriptor's label is what the peer said when it was paired; its
-    // handshake is what it says now, and the last handshake is what it said
-    // before it stopped answering (ADR-0067, amendment "the header in
-    // capitals, the label from the handshake"). The file on disk is left as
-    // `host add` wrote it.
-    let recalled: Vec<Option<fleet::PeerRepoStore>> = {
-        let mut cache = match repo_cache.lock() {
-            Ok(cache) => cache,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        descriptors
-            .iter_mut()
-            .zip(probed.iter())
-            .map(|(d, slot)| {
-                let memory = cache.entry(d.daemon_id.clone()).or_default();
-                if let Some((_, live, fresh)) = slot {
-                    if live.is_some() {
-                        memory.environment = live.clone();
-                    }
-                    if fresh.is_some() {
-                        memory.repos = fresh.clone();
-                    }
-                }
-                if let Some(environment) = &memory.environment {
-                    d.environment = environment.clone();
-                }
-                memory.repos.clone()
-            })
-            .collect()
-    };
-
-    let mut peer_views: Vec<PeerView> = Vec::with_capacity(descriptors.len() + rejects.len());
-    let mut aggregate_input: Vec<(
-        &peer::PeerDescriptor,
-        &peer::client::PeerStatus,
-        Option<&fleet::PeerRepoStore>,
-    )> = Vec::with_capacity(descriptors.len());
-    // A probe whose task itself failed is reported as unreachable rather than
-    // dropped — the operator must see the peer, not a silently shorter list.
-    let fallback = peer::client::PeerStatus::Unreachable {
-        why: "the probe did not complete".to_string(),
-    };
-    for ((d, slot), store) in descriptors.iter().zip(probed.iter()).zip(recalled.iter()) {
-        let status = match slot {
-            Some((status, _, _)) => status,
-            None => &fallback,
-        };
-        let store = store.as_ref();
-        peer_views.push(PeerView {
-            daemon_id: d.daemon_id.clone(),
-            name: d.name.clone(),
-            avatar: d.avatar.clone(),
-            environment: d.environment.clone(),
-            os: d.os.clone(),
-            state: status.state().to_string(),
-            diagnosis: status.diagnosis(&d.environment),
-            nudgeable: d.nudge.is_some(),
-            tunnel: d.tunnel.is_some(),
-            destination: d.tunnel.as_ref().map(|t| t.destination.clone()),
-            identity_file: d.tunnel.as_ref().and_then(|t| t.identity_file.clone()),
-        });
-        aggregate_input.push((d, status, store));
-    }
+    let fallback = probe_did_not_complete();
+    let (mut peer_views, aggregate_input) = peer_rows(&descriptors, &probed, &recalled, &fallback);
     // A rejected record is DEGRADED, never dropped: the operator has a file on
     // disk that is not doing what they think it is, and only this list says so.
-    for reject in &rejects {
-        peer_views.push(PeerView {
-            // A synthetic id keyed on the FILE: the browser groups by
-            // `daemon_id`, so a shared empty string would collapse two bad
-            // descriptors into one row and lose the first one's diagnosis.
-            daemon_id: format!("malformed:{}", reject.file()),
-            name: reject.file().to_string(),
-            avatar: "❔".to_string(),
-            environment: "unknown".to_string(),
-            os: String::new(),
-            state: "malformed".to_string(),
-            diagnosis: reject.why(),
-            nudgeable: false,
-            tunnel: false,
-            destination: None,
-            identity_file: None,
-        });
-    }
+    peer_views.extend(rejects.iter().map(reject_view));
 
-    let local_store = match registry::load_from(&registry_path) {
-        Ok(store) => store,
-        Err(e) => {
-            tracing::warn!(error = %e, "failed to load repo registry; federating an empty local list");
-            registry::RegistryStore::default()
-        }
-    };
-    let local_id = identity
-        .as_ref()
-        .map(|i| i.id.to_string())
-        .unwrap_or_default();
-    let local_name = identity
-        .as_ref()
-        .map(|i| i.name.clone())
-        .unwrap_or_default();
-    // A local row reads its branch through git, so the local rows are built on
-    // the blocking pool; the peer rows need no git.
-    let local_rows = {
-        let environment = environment.clone();
-        tokio::task::spawn_blocking(move || {
-            fleet::aggregate((&local_id, &local_name, &environment, &local_store), &[])
-        })
-        .await
-    };
-    let mut repos = match local_rows {
-        Ok(rows) => rows,
-        Err(e) => {
-            tracing::warn!(error = %e, "the local repo rows did not complete; federating none");
-            Vec::new()
-        }
-    };
+    let mut repos = local_rows(&registry_path, identity.as_ref(), &environment).await;
     repos.extend(fleet::aggregate(
         ("", "", &environment, &registry::RegistryStore::default()),
         &aggregate_input,
@@ -291,6 +134,232 @@ pub(crate) async fn fleet_route(
         (&a.environment, &a.daemon_id, &a.slug).cmp(&(&b.environment, &b.daemon_id, &b.slug))
     });
     Json(serde_json::json!({ "peers": peer_views, "repos": repos })).into_response()
+}
+
+/// Probe every peer, each in its own task; the slot of a peer whose task
+/// failed stays `None`.
+async fn probe_all(
+    descriptors: &[peer::PeerDescriptor],
+    probe_id: &str,
+    bound_port: u16,
+) -> Vec<Option<Probed>> {
+    // Probe every peer CONCURRENTLY: with a 2 s per-peer timeout, dialling them
+    // one after another would make the page cost the sum of the down ones.
+    let mut set = tokio::task::JoinSet::new();
+    for (index, d) in descriptors.iter().cloned().enumerate() {
+        let probe_id = probe_id.to_string();
+        set.spawn(async move { (index, probe_one(d, probe_id, bound_port).await) });
+    }
+    collect_probes(set, descriptors.len()).await
+}
+
+/// One probe: the handshake, then the repos of a peer that answered it. It
+/// owns its inputs because it runs as its own task.
+async fn probe_one(d: peer::PeerDescriptor, probe_id: String, bound_port: u16) -> Probed {
+    let (status, live_environment) = peer::client::probe_hello(
+        &d,
+        peer::client::SelfRef {
+            port: bound_port,
+            daemon_id: &probe_id,
+        },
+    )
+    .await;
+    // Only a reachable peer is asked for its repos; an unreachable one
+    // contributes no rows but is still listed (marked, never removed).
+    let store = match status {
+        peer::client::PeerStatus::Reachable => read_peer_repos(&d).await,
+        _ => None,
+    };
+    (status, live_environment, store)
+}
+
+/// The repos a reachable peer serves on `/api/repos`, or `None` when it
+/// refuses or serves a body this daemon cannot read.
+async fn read_peer_repos(d: &peer::PeerDescriptor) -> Option<fleet::PeerRepoStore> {
+    match peer::client::get(d, "/api/repos").await {
+        Ok((200, body)) => match fleet::store_from_repos_json(&body) {
+            Some(store) => Some(store),
+            None => {
+                tracing::warn!(peer = %d.environment, "peer served an /api/repos body this daemon cannot read; keeping its last-known repos");
+                None
+            }
+        },
+        Ok((code, _)) => {
+            tracing::warn!(peer = %d.environment, %code, "peer answered the handshake but refused /api/repos; keeping its last-known repos");
+            None
+        }
+        Err(e) => {
+            tracing::warn!(peer = %d.environment, error = %format!("{e:#}"), "could not read a peer's repos; keeping its last-known ones");
+            None
+        }
+    }
+}
+
+/// Wait for every probe task and put each result in its peer's slot.
+async fn collect_probes(
+    mut set: tokio::task::JoinSet<(usize, Probed)>,
+    len: usize,
+) -> Vec<Option<Probed>> {
+    let mut probed: Vec<Option<Probed>> = (0..len).map(|_| None).collect();
+    while let Some(joined) = set.join_next().await {
+        match joined {
+            Ok((index, found)) => probed[index] = Some(found),
+            Err(e) => tracing::warn!(error = %e, "a peer probe task failed"),
+        }
+    }
+    probed
+}
+
+/// Remember what each peer just served, and recall it for the ones that could
+/// not be asked. Sync on purpose: the guard is a `std::sync::Mutex`.
+fn recall_repos(
+    repo_cache: &PeerRepoCache,
+    descriptors: &mut [peer::PeerDescriptor],
+    probed: &[Option<Probed>],
+) -> Vec<Option<fleet::PeerRepoStore>> {
+    // INVARIANT: the guard is taken and dropped inside this function — it is a
+    // `std::sync::Mutex` and there is no `.await` here.
+    //
+    // The descriptor's label is what the peer said when it was paired; its
+    // handshake is what it says now, and the last handshake is what it said
+    // before it stopped answering (ADR-0067, amendment "the header in
+    // capitals, the label from the handshake"). The file on disk is left as
+    // `host add` wrote it.
+    let mut cache = match repo_cache.lock() {
+        Ok(cache) => cache,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    descriptors
+        .iter_mut()
+        .zip(probed.iter())
+        .map(|(d, slot)| {
+            let memory = cache.entry(d.daemon_id.clone()).or_default();
+            memory.remember(slot.as_ref());
+            if let Some(environment) = &memory.environment {
+                d.environment = environment.clone();
+            }
+            memory.repos.clone()
+        })
+        .collect()
+}
+
+impl PeerMemory {
+    /// Keep the label and the repos a probe just found; what it did not find
+    /// keeps its last value.
+    fn remember(&mut self, probed: Option<&Probed>) {
+        if let Some((_, live, fresh)) = probed {
+            if live.is_some() {
+                self.environment = live.clone();
+            }
+            if fresh.is_some() {
+                self.repos = fresh.clone();
+            }
+        }
+    }
+}
+
+/// The state of a peer whose probe task itself failed.
+fn probe_did_not_complete() -> peer::client::PeerStatus {
+    peer::client::PeerStatus::Unreachable {
+        why: "the probe did not complete".to_string(),
+    }
+}
+
+/// One peer as `fleet::aggregate` reads it.
+type AggregateInput<'a> = (
+    &'a peer::PeerDescriptor,
+    &'a peer::client::PeerStatus,
+    Option<&'a fleet::PeerRepoStore>,
+);
+
+/// The row of every peer, and what `fleet::aggregate` needs of it.
+fn peer_rows<'a>(
+    descriptors: &'a [peer::PeerDescriptor],
+    probed: &'a [Option<Probed>],
+    recalled: &'a [Option<fleet::PeerRepoStore>],
+    fallback: &'a peer::client::PeerStatus,
+) -> (Vec<PeerView>, Vec<AggregateInput<'a>>) {
+    let mut peer_views: Vec<PeerView> = Vec::with_capacity(descriptors.len());
+    let mut aggregate_input: Vec<AggregateInput<'a>> = Vec::with_capacity(descriptors.len());
+    // A probe whose task itself failed is reported as unreachable rather than
+    // dropped — the operator must see the peer, not a silently shorter list.
+    for ((d, slot), store) in descriptors.iter().zip(probed.iter()).zip(recalled.iter()) {
+        let status = match slot {
+            Some((status, _, _)) => status,
+            None => fallback,
+        };
+        peer_views.push(peer_view(d, status));
+        aggregate_input.push((d, status, store.as_ref()));
+    }
+    (peer_views, aggregate_input)
+}
+
+/// The row of one peer, from its descriptor and the state just observed.
+fn peer_view(d: &peer::PeerDescriptor, status: &peer::client::PeerStatus) -> PeerView {
+    PeerView {
+        daemon_id: d.daemon_id.clone(),
+        name: d.name.clone(),
+        avatar: d.avatar.clone(),
+        environment: d.environment.clone(),
+        os: d.os.clone(),
+        state: status.state().to_string(),
+        diagnosis: status.diagnosis(&d.environment),
+        nudgeable: d.nudge.is_some(),
+        tunnel: d.tunnel.is_some(),
+        destination: d.tunnel.as_ref().map(|t| t.destination.clone()),
+        identity_file: d.tunnel.as_ref().and_then(|t| t.identity_file.clone()),
+    }
+}
+
+/// The row of a peer record this daemon could not read.
+fn reject_view(reject: &peer::PeerReject) -> PeerView {
+    PeerView {
+        // A synthetic id keyed on the FILE: the browser groups by
+        // `daemon_id`, so a shared empty string would collapse two bad
+        // descriptors into one row and lose the first one's diagnosis.
+        daemon_id: format!("malformed:{}", reject.file()),
+        name: reject.file().to_string(),
+        avatar: "❔".to_string(),
+        environment: "unknown".to_string(),
+        os: String::new(),
+        state: "malformed".to_string(),
+        diagnosis: reject.why(),
+        nudgeable: false,
+        tunnel: false,
+        destination: None,
+        identity_file: None,
+    }
+}
+
+/// The rows of this daemon's own repos; none when they cannot be built.
+async fn local_rows(
+    registry_path: &Path,
+    identity: Option<&identity::Identity>,
+    environment: &str,
+) -> Vec<fleet::FederatedRepo> {
+    let local_store = match registry::load_from(registry_path) {
+        Ok(store) => store,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to load repo registry; federating an empty local list");
+            registry::RegistryStore::default()
+        }
+    };
+    let local_id = identity.map(|i| i.id.to_string()).unwrap_or_default();
+    let local_name = identity.map(|i| i.name.clone()).unwrap_or_default();
+    // A local row reads its branch through git, so the local rows are built on
+    // the blocking pool; the peer rows need no git.
+    let environment = environment.to_string();
+    let local_rows = tokio::task::spawn_blocking(move || {
+        fleet::aggregate((&local_id, &local_name, &environment, &local_store), &[])
+    })
+    .await;
+    match local_rows {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::warn!(error = %e, "the local repo rows did not complete; federating none");
+            Vec::new()
+        }
+    }
 }
 
 /// `/api/fleet*`: the federated repo list and the nudge.

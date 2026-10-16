@@ -40,6 +40,9 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "console"))
+from wb_console_peer_unanswered import PROTOCOL  # noqa: E402  the peer protocol of the daemon under test
+
 sys.stdout.reconfigure(encoding="utf-8")
 
 PORT = 7495
@@ -124,7 +127,7 @@ class PeerStub(http.server.BaseHTTPRequestHandler):
                     "name": PEER_NAME,
                     "avatar": "🐙",
                     "environment": PEER_ENV,
-                    "protocol_version": 3,
+                    "protocol_version": PROTOCOL,
                 },
             )
         elif self.path == "/api/repos":
@@ -230,7 +233,7 @@ def seed_descriptor(daemon_dir, port):
             f"port = {port}",
             f'environment = "{PEER_ENV}"',
             f'token = "{PEER_TOKEN}"',
-            "protocol_version = 3",
+            f"protocol_version = {PROTOCOL}",
             "",
             "[tunnel]",
             f'destination = "{PEER_NAME}"',

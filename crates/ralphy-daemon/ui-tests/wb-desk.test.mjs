@@ -235,6 +235,118 @@ test("the restore reconciles the layout once, whatever calls it again", async ()
   assert.equal(desk.isDeskSettled(), true);
 });
 
+// A peer project: its ref starts with the peer daemon's id.
+const PEER = "01ARZ3NDEKTSV4RRFFQ69G5FAZ";
+
+test("a relaunch into a worktree is waited for before the stage is sized", async () => {
+  const record = { id: "w1", repo: "o/r", agent: "claude", kind: "agent", checkout: "wt-a", rect: {} };
+  let land;
+  const launched = [];
+  const order = [];
+  const { desk, landing } = fakeDesk({
+    viewStore: { read: () => ({ relaunch: true }) },
+    loadDesk: () => [record],
+    spawnOrMissing: (...args) => {
+      launched.push(args);
+      return new Promise((resolve) => (land = resolve));
+    },
+    applyExtent: () => order.push("extent"),
+    document: { dispatchEvent: (e) => order.push(e.type) },
+  });
+  desk.restoreDesk();
+  await settle();
+  assert.deepEqual(launched, [[{ repo: "o/r", agent: "claude", checkout: "wt-a" }, "claude", "o/r", record]]);
+  assert.deepEqual(order, [], "the stage waits for the window that is still asking for its tree");
+  land();
+  await landing;
+  assert.deepEqual(order, ["extent", "workbench:desk-restored"]);
+});
+
+test("a record the restore cannot launch gets a placeholder that says why", async () => {
+  const records = [
+    { id: "agent", repo: "o/r", agent: "claude", kind: "agent", rect: {} },
+    { id: "agent-peer", repo: `${PEER}/o/r`, agent: "claude", kind: "agent", rect: {} },
+    { id: "shell-peer", repo: `${PEER}/o/s`, agent: "console", kind: "console", rect: {} },
+    { id: "shell", repo: "o/u", agent: "console", kind: "console", rect: {} },
+  ];
+  // What the restore did with each record, in its order.
+  const done = [];
+  const run = async (unheard) => {
+    done.length = 0;
+    const { desk, landing } = fakeDesk({
+      loadDesk: () => records.slice(),
+      readSessions: () => Promise.resolve({ sessions: [], unheard }),
+      peerGroups: () => new Map([[PEER, { daemon: PEER, state: "asleep" }]]),
+      spawnOrMissing: (request, agent, repo, rec) => {
+        done.push(["launch", rec.id]);
+        return Promise.resolve();
+      },
+      spawnPlaceholder: (rec, ...rest) => done.push([rec.id, ...rest]),
+    });
+    desk.restoreDesk();
+    await landing;
+  };
+  // The fleet list did not hear from the peer: its consoles may still run there.
+  await run(new Set([PEER]));
+  assert.deepEqual(done, [
+    ["agent", null, null, { unheard: false }],
+    ["agent-peer", null, null, { unheard: true }],
+    ["shell-peer", null, null, { unheard: true }],
+    ["launch", "shell"],
+  ]);
+  // Heard from, the peer is asleep: its shell waits, and launches nothing.
+  await run(new Set());
+  assert.deepEqual(done, [
+    ["agent", null, null, { unheard: false }],
+    ["agent-peer", null, null, { unheard: false }],
+    ["shell-peer"],
+    ["launch", "shell"],
+  ]);
+});
+
+test("a live session no record holds is adopted, under the record it names", async () => {
+  const session = { id: 7, record: "w9", repo: "o/r", agent: "claude", kind: "agent", daemon_id: "D1", environment: "WSL: Ubuntu" };
+  const { desk, calls, landing } = fakeDesk({
+    readSessions: () => Promise.resolve({ sessions: [session, { id: 8, repo: "o/r", kind: "console" }], unheard: [] }),
+  });
+  desk.restoreDesk();
+  await landing;
+  assert.deepEqual(calls.spawned, [
+    {
+      termOpts: { id: 7, repo: "o/r" },
+      record: { id: "w9", kind: "agent", daemonId: "D1", environment: "WSL: Ubuntu", checkout: null, unrecorded: true },
+    },
+    {
+      termOpts: { id: 8, repo: "o/r" },
+      record: { id: undefined, kind: "console", daemonId: undefined, environment: undefined, checkout: null, unrecorded: true },
+    },
+  ]);
+});
+
+test("a window already on the stage is not restored twice", async () => {
+  const layout = [
+    { id: "w1", repo: "r", agent: "a", kind: "console", sessionId: 1, rect: {} },
+    { id: "w2", repo: "r", agent: "a", kind: "console", sessionId: 2, rect: {} },
+  ];
+  const sessions = [
+    { id: 1, record: "w1", repo: "r", agent: "a" },
+    { id: 2, record: "w2", repo: "r", agent: "a" },
+    { id: 3, record: "w3", repo: "r", agent: "a" },
+  ];
+  const { desk, calls, landing } = fakeDesk({
+    wins: new Set([{ _deskId: "w1" }, { _deskId: "w3" }]),
+    loadDesk: () => layout.slice(),
+    readSessions: () => Promise.resolve({ sessions, unheard: [] }),
+  });
+  desk.restoreDesk();
+  await landing;
+  assert.deepEqual(
+    calls.spawned.map((s) => s.record.id),
+    ["w2"],
+    "a re-attach during the restore already put w1 and w3 back",
+  );
+});
+
 test("a refused restore is settled anyway, and is not a reconciled layout", async () => {
   const { desk, calls, landing } = fakeDesk({
     readSessions: () => Promise.reject(new Error("sessions unavailable")),

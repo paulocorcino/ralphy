@@ -43,83 +43,131 @@ pub(super) fn scan(src: &str, fns: CopyFns, out: &mut Vec<Found>) {
     let mut in_sentence = false;
 
     while i < cs.len() {
-        let c = cs[i];
-        let starts = |s: &str| {
-            s.chars()
-                .enumerate()
-                .all(|(k, sc)| cs.get(i + k) == Some(&sc))
-        };
-        let tag_start = c == '<'
-            && cs
-                .get(i + 1)
-                .is_some_and(|n| n.is_ascii_alphabetic() || *n == '/' || *n == '!');
-        if !tag_start {
-            if c == '\n' {
+        if !opens_tag(&cs, i) {
+            gather_text(cs[i], line, &mut text, &mut text_line);
+            if cs[i] == '\n' {
                 line += 1;
-            } else if !c.is_whitespace() && text.trim().is_empty() {
-                text_line = line;
             }
-            text.push(c);
             i += 1;
             continue;
         }
         let shown = flush_text(&mut text, text_line, &stack, in_sentence, out);
-        let mut inline = |name: &str| {
-            in_sentence = INLINE.contains(&name) && (in_sentence || shown);
-        };
 
-        if starts("<!--") {
+        if starts_at(&cs, i, "<!--") {
             i = skip_past(&cs, i + 4, "-->", &mut line);
-        } else if starts("<!") {
+        } else if starts_at(&cs, i, "<!") {
             i = skip_past(&cs, i + 2, ">", &mut line);
         } else if cs[i + 1] == '/' {
-            let end = skip_past(&cs, i + 2, ">", &mut line);
-            // `end` is past the `>`, or the end of input when there is none.
-            let close = if cs.get(end.wrapping_sub(1)) == Some(&'>') {
-                end - 1
-            } else {
-                end
-            };
-            let name: String = cs[i + 2..close.max(i + 2)]
-                .iter()
-                .collect::<String>()
-                .trim()
-                .to_ascii_lowercase();
-            inline(&name);
-            if let Some(at) = stack.iter().rposition(|(n, _)| *n == name) {
-                stack.truncate(at);
-            }
+            let (name, end) = close_tag(&cs, i, &mut line, &mut stack);
+            in_sentence = continues_sentence(&name, &[], in_sentence, shown);
             i = end;
         } else {
             let (name, attrs, self_closing, end) = read_tag(&cs, i + 1, &mut line);
-            inline(&name);
-            // `<span x-text="n"></span> rows`: the bound value starts the
-            // sentence the next text goes on with.
-            in_sentence |=
-                INLINE.contains(&name.as_str()) && attrs.iter().any(|a| a.name == "x-text");
+            in_sentence = continues_sentence(&name, &attrs, in_sentence, shown);
             i = end;
-            // A landmark's own attributes belong to the area it names.
-            let own = landmark(&name, &attrs);
-            let area = own.clone().or_else(|| area_of(&stack));
-            for attr in &attrs {
-                attribute(attr, area.as_deref(), out);
-            }
+            let own = book_attributes(&name, &attrs, &stack, out);
             if name == "script" || name == "style" {
-                let close = format!("</{name}");
-                let body_line = line;
-                let body_end = find(&cs, i, &close).unwrap_or(cs.len());
-                let body: String = cs[i..body_end].iter().collect();
-                if name == "script" && !attrs.iter().any(|a| a.name == "src") {
-                    js::scan(&body, body_line, fns, out);
-                }
-                line += body.matches('\n').count();
-                i = skip_past(&cs, body_end, ">", &mut line);
+                i = raw_text_body(&cs, i, &name, &attrs, &mut line, fns, out);
             } else if !self_closing && !VOID.contains(&name.as_str()) {
                 stack.push((name, own));
             }
         }
     }
     flush_text(&mut text, text_line, &stack, in_sentence, out);
+}
+
+fn starts_at(cs: &[char], i: usize, s: &str) -> bool {
+    s.chars()
+        .enumerate()
+        .all(|(k, sc)| cs.get(i + k) == Some(&sc))
+}
+
+/// Does the `<` at `i` open a start tag, an end tag, a comment or a declaration?
+fn opens_tag(cs: &[char], i: usize) -> bool {
+    cs[i] == '<'
+        && cs
+            .get(i + 1)
+            .is_some_and(|n| n.is_ascii_alphabetic() || *n == '/' || *n == '!')
+}
+
+/// Add the character `c`, on page line `line`, to the text node being gathered.
+/// `text_line` is the line of its first visible character.
+fn gather_text(c: char, line: usize, text: &mut String, text_line: &mut usize) {
+    if c != '\n' && !c.is_whitespace() && text.trim().is_empty() {
+        *text_line = line;
+    }
+    text.push(c);
+}
+
+/// Does text go on with the sentence an element leaves open? Only an inline
+/// element does, and `<span x-text="n"></span> rows`: the bound value starts the
+/// sentence the next text goes on with.
+fn continues_sentence(name: &str, attrs: &[Attr], in_sentence: bool, shown: bool) -> bool {
+    INLINE.contains(&name) && (in_sentence || shown || attrs.iter().any(|a| a.name == "x-text"))
+}
+
+/// Read the end tag at `i`, close the element it names, and return that name
+/// in lowercase with the index after the tag.
+fn close_tag(
+    cs: &[char],
+    i: usize,
+    line: &mut usize,
+    stack: &mut Vec<(String, Option<String>)>,
+) -> (String, usize) {
+    let end = skip_past(cs, i + 2, ">", line);
+    // `end` is past the `>`, or the end of input when there is none.
+    let close = if cs.get(end.wrapping_sub(1)) == Some(&'>') {
+        end - 1
+    } else {
+        end
+    };
+    let name: String = cs[i + 2..close.max(i + 2)]
+        .iter()
+        .collect::<String>()
+        .trim()
+        .to_ascii_lowercase();
+    if let Some(at) = stack.iter().rposition(|(n, _)| *n == name) {
+        stack.truncate(at);
+    }
+    (name, end)
+}
+
+/// Book the attributes of a start tag. Returns the area the tag itself names,
+/// if it is a landmark: a landmark's own attributes belong to that area.
+fn book_attributes(
+    name: &str,
+    attrs: &[Attr],
+    stack: &[(String, Option<String>)],
+    out: &mut Vec<Found>,
+) -> Option<String> {
+    let own = landmark(name, attrs);
+    let area = own.clone().or_else(|| area_of(stack));
+    for attr in attrs {
+        attribute(attr, area.as_deref(), out);
+    }
+    own
+}
+
+/// Read the body of a `<script>` or `<style>` that opened at `i`, and return
+/// the index after its end tag. Only a script with no `src` is copy.
+fn raw_text_body(
+    cs: &[char],
+    i: usize,
+    name: &str,
+    attrs: &[Attr],
+    line: &mut usize,
+    fns: CopyFns,
+    out: &mut Vec<Found>,
+) -> usize {
+    let close = format!("</{name}");
+    let body_line = *line;
+    let body_end = find(cs, i, &close).unwrap_or(cs.len());
+    let body: String = cs[i..body_end].iter().collect();
+    if name == "script" && !attrs.iter().any(|a| a.name == "src") {
+        js::scan(&body, body_line, fns, out);
+    }
+    *line += body.matches('\n').count();
+    skip_past(cs, body_end, ">", line)
 }
 
 /// Book the text gathered so far as one row. Returns whether it was one.
@@ -218,12 +266,8 @@ fn area_of(stack: &[(String, Option<String>)]) -> Option<String> {
 
 /// Read a start tag whose name begins at `i`. Returns the lowercase name, its
 /// attributes, whether it ends in `/>`, and the index after the `>`.
-fn read_tag(cs: &[char], mut i: usize, line: &mut usize) -> (String, Vec<Attr>, bool, usize) {
-    let mut name = String::new();
-    while i < cs.len() && !cs[i].is_whitespace() && cs[i] != '>' && cs[i] != '/' {
-        name.push(cs[i].to_ascii_lowercase());
-        i += 1;
-    }
+fn read_tag(cs: &[char], i: usize, line: &mut usize) -> (String, Vec<Attr>, bool, usize) {
+    let (name, mut i) = read_tag_name(cs, i);
     let mut attrs = Vec::new();
     let mut self_closing = false;
     while i < cs.len() {
@@ -244,43 +288,81 @@ fn read_tag(cs: &[char], mut i: usize, line: &mut usize) -> (String, Vec<Attr>, 
             continue;
         }
         self_closing = false;
-        let mut attr = String::new();
-        while i < cs.len() && !cs[i].is_whitespace() && !matches!(cs[i], '=' | '>') {
-            attr.push(cs[i]);
-            i += 1;
-        }
-        let mut value = String::new();
-        let mut value_line = *line;
-        if cs.get(i) == Some(&'=') {
-            i += 1;
-            match cs.get(i) {
-                Some(&q @ ('"' | '\'')) => {
+        let (attr, next) = read_attr(cs, i, line);
+        attrs.push(attr);
+        i = next;
+    }
+    (name, attrs, self_closing, i)
+}
+
+/// The lowercase tag name at `i`, and the index after it.
+fn read_tag_name(cs: &[char], mut i: usize) -> (String, usize) {
+    let mut name = String::new();
+    while i < cs.len() && !cs[i].is_whitespace() && cs[i] != '>' && cs[i] != '/' {
+        name.push(cs[i].to_ascii_lowercase());
+        i += 1;
+    }
+    (name, i)
+}
+
+/// One attribute that starts at `i`, and the index after it.
+fn read_attr(cs: &[char], i: usize, line: &mut usize) -> (Attr, usize) {
+    let (name, i) = read_attr_name(cs, i);
+    let (value, value_line, i) = read_attr_value(cs, i, line);
+    let attr = Attr {
+        name: name.to_ascii_lowercase(),
+        value,
+        line: value_line,
+    };
+    (attr, i)
+}
+
+fn read_attr_name(cs: &[char], mut i: usize) -> (String, usize) {
+    let mut name = String::new();
+    while i < cs.len() && !cs[i].is_whitespace() && !matches!(cs[i], '=' | '>') {
+        name.push(cs[i]);
+        i += 1;
+    }
+    (name, i)
+}
+
+/// The value after an attribute name, quoted or not, with the line it starts
+/// on and the index after it. An attribute with no `=` has an empty value.
+fn read_attr_value(cs: &[char], mut i: usize, line: &mut usize) -> (String, usize, usize) {
+    let mut value = String::new();
+    let mut value_line = *line;
+    if cs.get(i) == Some(&'=') {
+        i += 1;
+        match cs.get(i) {
+            Some(&q @ ('"' | '\'')) => {
+                i += 1;
+                value_line = *line;
+                (value, i) = read_quoted(cs, i, q, line);
+                i += 1;
+            }
+            _ => {
+                while i < cs.len() && !cs[i].is_whitespace() && cs[i] != '>' {
+                    value.push(cs[i]);
                     i += 1;
-                    value_line = *line;
-                    while i < cs.len() && cs[i] != q {
-                        if cs[i] == '\n' {
-                            *line += 1;
-                        }
-                        value.push(cs[i]);
-                        i += 1;
-                    }
-                    i += 1;
-                }
-                _ => {
-                    while i < cs.len() && !cs[i].is_whitespace() && cs[i] != '>' {
-                        value.push(cs[i]);
-                        i += 1;
-                    }
                 }
             }
         }
-        attrs.push(Attr {
-            name: attr.to_ascii_lowercase(),
-            value,
-            line: value_line,
-        });
     }
-    (name, attrs, self_closing, i)
+    (value, value_line, i)
+}
+
+/// The text from `i` up to the quote `q`, and the index of that quote (or the
+/// end of input).
+fn read_quoted(cs: &[char], mut i: usize, q: char, line: &mut usize) -> (String, usize) {
+    let mut value = String::new();
+    while i < cs.len() && cs[i] != q {
+        if cs[i] == '\n' {
+            *line += 1;
+        }
+        value.push(cs[i]);
+        i += 1;
+    }
+    (value, i)
 }
 
 fn find(cs: &[char], from: usize, needle: &str) -> Option<usize> {

@@ -14,12 +14,15 @@ import * as WBConsoleSession from "./wb-console-session.ts";
 import * as WBDeskFolds from "./wb-desk-folds.ts";
 import { sendDocument } from "./wb-events.ts";
 import type { DeskDeps } from "./wb-desk.ts";
-import type { PopupMember } from "./wb-desk-popups.ts";
-import type { ConsoleWin, DeskFence, NoteSource, Rect } from "./wb-types.d.ts";
+import type { PopupEntry, PopupMember } from "./wb-desk-popups.ts";
+import type { ConsoleWin, DeskFence, DeskRecord, NoteSource, Rect } from "./wb-types.d.ts";
 
 const { fenceMembership } = WBGeometry;
 const { unheardRef, peerHeld, relaunchRequest } = WBConsoleSession;
 const { reconcileDesk } = WBDeskFolds;
+
+// One verdict of the restore fold on this page's records and sessions.
+type Verdict = ReturnType<typeof reconcileDesk<HostedSession, DeskRecord>>[number];
 
 // What the restore reads from the desk and the console, and nothing else.
 export type DeskRestoreDeps = Pick<
@@ -110,6 +113,107 @@ export function createDeskRestore(deps: DeskRestoreDeps) {
     deskRetryMs = Math.min(deskRetryMs * 2, 30000);
   }
 
+  // Members of a fence detached BEFORE this reload are live in a popup that
+  // survived it: every verdict is skipped for them (#347) — a `relaunch`
+  // would be a SECOND PTY. Ids from the REGISTRY first, the membership fold
+  // second: a detached fence may have been moved (§7a) while its members kept
+  // their old records, so the fold alone answers "no members".
+  // The map is window id -> the detached fence holding it.
+  function awayMap() {
+    const membership = fenceMembership(fences(), loadDesk());
+    const away = new Map<string, string>();
+    for (const id of popups.detachedIds()) {
+      for (const wid of entryMemberIds(popups.entry(id))) away.set(wid, id);
+      for (const wid of membership[id] || []) away.set(wid, id);
+    }
+    return away;
+  }
+
+  // The window ids a popup entry names: the ids it stored, then its snapshot.
+  function entryMemberIds(entry: PopupEntry | undefined) {
+    const snapshot = (entry?.members || []).filter((m) => m.id).map((m) => m.id);
+    return [...(entry?.memberIds || []), ...snapshot];
+  }
+
+  // The fallback snapshot, so a popup that never answers still has somewhere
+  // to come home to. `popup-here` supersedes this.
+  function seedAway(record: DeskRecord, fenceId: string) {
+    const entry = popups.entry(fenceId);
+    if (entry && !entry.members.some((m) => m.id === record.id)) {
+      entry.members.push({ ...record, session: record.sessionId ?? null });
+    }
+  }
+
+  // One window on the stage for one verdict. A relaunch that waits for its
+  // worktree check goes in `pending`.
+  function dispatchVerdict(
+    verdict: Verdict,
+    unheard: ReadonlySet<string>,
+    onPlane: Set<string>,
+    pending: Promise<ConsoleWin>[],
+  ) {
+    if (verdict.action === "attach") {
+      const { session } = verdict;
+      spawnWindow({ id: session.id, repo: session.repo }, session.agent || "console", session.repo, verdict.record);
+    } else if (verdict.action === "relaunch") {
+      relaunch(verdict.record, unheard, pending);
+    } else if (verdict.action === "placeholder") {
+      spawnPlaceholder(verdict.record, null, null, { unheard: unheardRef(verdict.record.repo, unheard) });
+    } else if (!(verdict.id && onPlane.has(verdict.id))) {
+      adopt(verdict.session, verdict.id);
+    }
+  }
+
+  function relaunch(record: DeskRecord, unheard: ReadonlySet<string>, pending: Promise<ConsoleWin>[]) {
+    if (unheardRef(record.repo, unheard)) {
+      // The list did not hear from its peer: the console may still run
+      // there, and a launch on a peer without the record join would be
+      // a SECOND shell. The box asks again on the next fleet read.
+      spawnPlaceholder(record, null, null, { unheard: true });
+    } else if (peerHeld(record.repo, peerGroups())) {
+      // Its peer cannot serve it: a launch would only be refused.
+      spawnPlaceholder(record);
+    } else {
+      // `relaunchRequest` carries the worktree the record was in (#411).
+      pending.push(spawnOrMissing(relaunchRequest(record), record.agent, record.repo, record));
+    }
+  }
+
+  // `adopt`: a cascaded window, keeping the live session's own kind so the
+  // desk relaunches it correctly next time, under the record the session
+  // names when it names one.
+  function adopt(session: HostedSession, id: string | null) {
+    spawnWindow({ id: session.id, repo: session.repo }, session.agent || "console", session.repo, {
+      id: id || undefined,
+      kind: session.kind,
+      daemonId: session.daemon_id,
+      environment: session.environment,
+      checkout: session.checkout ?? null,
+      unrecorded: true,
+    });
+  }
+
+  // Every window of the restore is on the stage: the fences, the cards and
+  // the glyphs follow, then the stage is sized and the restore is settled.
+  function settleRestore() {
+    // A desk saved on a larger screen keeps its rects verbatim (#336): the
+    // STAGE grows to hold them. Fences go on the stage BEFORE that fold.
+    // Re-persist the member ids the fallback seeded, so a fence whose popup
+    // never answers still skips its members on the NEXT reload.
+    if (popups.detachedIds().length) commitDetached(popups.detachedIds());
+    renderFences();
+    renderNotes();
+    // The glyph is DOM the fences own: lit only once they are on the stage.
+    for (const id of popups.detachedIds()) showDetachGlyph(id, true);
+    applyExtent();
+    raiseMaximized();
+    // Every stored id that can be on this stage is on it now: the shell
+    // restores the columns from here, once.
+    sendDocument(document, "workbench:desk-restored");
+    deskSettled = true;
+    applyLanding();
+  }
+
   // Restore the desk: reconcile the saved layout against the daemon's live
   // sessions and dispatch one window per verdict. A REJECTED fetch leaves the
   // desk untouched — no relaunch, no phantom placeholders.
@@ -122,27 +226,14 @@ export function createDeskRestore(deps: DeskRestoreDeps) {
         }
         if (deskReconciled) return;
         deskReconciled = true;
-        // Members of a fence detached BEFORE this reload are live in a popup
-        // that survived it: every verdict is skipped for them (#347) — a
-        // `relaunch` would be a SECOND PTY. Ids from the REGISTRY first, the
-        // membership fold second: a detached fence may have been moved (§7a)
-        // while its members kept their old records, so the fold alone answers
-        // "no members".
-        const membership = fenceMembership(fences(), loadDesk());
-        const away = new Map<string, string>(); // window id -> the detached fence holding it
-        for (const id of popups.detachedIds()) {
-          const entry = popups.entry(id);
-          for (const wid of entry?.memberIds || []) away.set(wid, id);
-          for (const m of entry?.members || []) if (m.id) away.set(m.id, id);
-          for (const wid of membership[id] || []) away.set(wid, id);
-        }
+        const away = awayMap();
         // Not restored twice: `reattachFence` can run while this fetch is in
         // flight (a `popup-gone` mid-boot) and spawn these very members.
         const onPlane = new Set([...wins].map((w) => w._deskId));
         // A relaunch into a recorded worktree first asks whether the tree is
         // still there; the stage is sized only once every such window landed.
         const pending: Promise<ConsoleWin>[] = [];
-        for (const { record, session, action, id } of reconcileDesk({
+        for (const verdict of reconcileDesk({
           layout: loadDesk(),
           sessions,
           // Read at restore time, not module load. `canLaunch === false` (the
@@ -151,74 +242,16 @@ export function createDeskRestore(deps: DeskRestoreDeps) {
         })) {
           // `adopt` carries NO record, so every read below is guarded — a
           // throw here is swallowed by the catch below and nothing renders.
+          const { record } = verdict;
           if (record && onPlane.has(record.id)) continue;
           if (record && away.has(record.id)) {
-            // The fallback snapshot, so a popup that never answers still has
-            // somewhere to come home to. `popup-here` supersedes this.
-            const entry = popups.entry(away.get(record.id)!);
-            if (entry && !entry.members.some((m) => m.id === record.id)) {
-              entry.members.push({ ...record, session: record.sessionId ?? null });
-            }
+            seedAway(record, away.get(record.id)!);
             continue;
           }
-          if (action === "attach") {
-            spawnWindow(
-              { id: session.id, repo: session.repo },
-              session.agent || "console",
-              session.repo,
-              record,
-            );
-          } else if (action === "relaunch" && unheardRef(record.repo, unheard)) {
-            // The list did not hear from its peer: the console may still run
-            // there, and a launch on a peer without the record join would be
-            // a SECOND shell. The box asks again on the next fleet read.
-            spawnPlaceholder(record, null, null, { unheard: true });
-          } else if (action === "relaunch" && peerHeld(record.repo, peerGroups())) {
-            // Its peer cannot serve it: a launch would only be refused.
-            spawnPlaceholder(record);
-          } else if (action === "relaunch") {
-            // `relaunchRequest` carries the worktree the record was in (#411).
-            pending.push(
-              spawnOrMissing(relaunchRequest(record), record.agent, record.repo, record),
-            );
-          } else if (action === "placeholder") {
-            spawnPlaceholder(record, null, null, { unheard: unheardRef(record.repo, unheard) });
-          } else if (!(id && onPlane.has(id))) {
-            // `adopt`: a cascaded window, keeping the live session's own kind
-            // so the desk relaunches it correctly next time, under the record
-            // the session names when it names one.
-            spawnWindow(
-              { id: session.id, repo: session.repo },
-              session.agent || "console",
-              session.repo,
-              {
-                id: id || undefined,
-                kind: session.kind,
-                daemonId: session.daemon_id,
-                environment: session.environment,
-                checkout: session.checkout ?? null,
-                unrecorded: true,
-              },
-            );
-          }
+          dispatchVerdict(verdict, unheard, onPlane, pending);
         }
         await Promise.allSettled(pending);
-        // A desk saved on a larger screen keeps its rects verbatim (#336): the
-        // STAGE grows to hold them. Fences go on the stage BEFORE that fold.
-        // Re-persist the member ids the fallback seeded, so a fence whose popup
-        // never answers still skips its members on the NEXT reload.
-        if (popups.detachedIds().length) commitDetached(popups.detachedIds());
-        renderFences();
-        renderNotes();
-        // The glyph is DOM the fences own: lit only once they are on the stage.
-        for (const id of popups.detachedIds()) showDetachGlyph(id, true);
-        applyExtent();
-        raiseMaximized();
-        // Every stored id that can be on this stage is on it now: the shell
-        // restores the columns from here, once.
-        sendDocument(document, "workbench:desk-restored");
-        deskSettled = true;
-        applyLanding();
+        settleRestore();
       })
       .catch(() => {
         // A refused/unreachable desk restores nothing. The glyph is lit ANYWAY:

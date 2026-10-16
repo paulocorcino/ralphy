@@ -447,3 +447,88 @@ test("peer states show as words, and the dot says what it means", () => {
   assert.equal(state.dotTitle("offline"), "The folder cannot be reached");
   assert.equal(state.dotTitle("idle"), "No console is open");
 });
+
+// --- the write actions of the seam: delete, rename, worktree-created --------
+
+// A shell whose `workbench:action` listeners can be fired, with a daemon that
+// answers every write with `reply` and records it.
+function writeSeam(reply) {
+  const listeners = [];
+  const { window, sent } = eventShell({
+    document: { addEventListener: (type, fn) => type === "workbench:action" && listeners.push(fn) },
+  });
+  const written = [];
+  window.WBDaemon = {
+    write: async (verb, payload) => (written.push({ verb, payload }), reply),
+    withCheckout: (p) => p,
+  };
+  const flashed = [];
+  window.Alpine.store("modals").flash = (m) => flashed.push(m);
+  const answer = { yes: true };
+  window.Alpine.store("modals").askConfirm = async () => answer.yes;
+  const act = async (detail) => {
+    const realDaemon = globalThis.WBDaemon;
+    globalThis.WBDaemon = window.WBDaemon;
+    try {
+      for (const fn of listeners) await fn({ detail });
+    } finally {
+      globalThis.WBDaemon = realDaemon;
+    }
+  };
+  return { window, sent, written, flashed, answer, act };
+}
+
+test("a delete that the daemon answers 'not found' flashes the refusal and re-lists the parent", async () => {
+  const { sent, written, flashed, act } = writeSeam({ status: "error", message: "not found" });
+  await act({ action: "delete", project: "o/r", path: "src/a/gone.txt", title: "gone.txt" });
+  assert.deepEqual(written.map((w) => [w.verb, w.payload.path]), [["file.delete", "src/a/gone.txt"]]);
+  assert.equal(flashed.length, 1);
+  assert.match(flashed[0], /Could not delete/);
+  assert.deepEqual(sent("workbench:tree-dirty"), [{ rel: "src/a" }]);
+});
+
+test("a delete that works says so and re-lists nothing; one that is refused for another reason re-lists nothing", async () => {
+  let seam = writeSeam({ status: "ok" });
+  await seam.act({ action: "delete", project: "o/r", path: "src/a.txt", title: "a.txt" });
+  assert.deepEqual(seam.flashed, ["a.txt deleted."]);
+  assert.deepEqual(seam.sent("workbench:tree-dirty"), []);
+
+  seam = writeSeam({ status: "error", message: "permission denied" });
+  await seam.act({ action: "delete", project: "o/r", path: "src/a.txt" });
+  assert.match(seam.flashed[0], /Could not delete/);
+  assert.deepEqual(seam.sent("workbench:tree-dirty"), []);
+});
+
+test("a delete the operator declines writes nothing", async () => {
+  const { answer, written, flashed, act } = writeSeam({ status: "ok" });
+  answer.yes = false;
+  await act({ action: "delete", project: "o/r", path: "src/a.txt" });
+  assert.deepEqual(written, []);
+  assert.deepEqual(flashed, []);
+});
+
+test("a rename writes the full paths and flashes only a refusal", async () => {
+  let seam = writeSeam({ status: "ok" });
+  await seam.act({ action: "rename", project: "o/r", from: "src/a.txt", to: "src/b.txt" });
+  assert.deepEqual(seam.written.map((w) => [w.verb, w.payload.path, w.payload.to]), [["file.rename", "src/a.txt", "src/b.txt"]]);
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(seam.flashed, []);
+
+  seam = writeSeam({ status: "error", message: "already exists" });
+  await seam.act({ action: "rename", project: "o/r", from: "src/a.txt", to: "src/b.txt" });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(seam.flashed.length, 1);
+  assert.match(seam.flashed[0], /Could not rename/);
+});
+
+test("a worktree-created action re-reads the worktree list and flashes its message as one line", async () => {
+  const { window, flashed, act } = writeSeam({ status: "ok" });
+  const reads = [];
+  window.Alpine.store("checkouts").ensureWorktreeListing = (repo, force) => reads.push([repo, force]);
+  await act({ action: "worktree-created", project: "o/r", message: "Created.\nPrepared." });
+  assert.deepEqual(reads, [["o/r", true]]);
+  assert.deepEqual(flashed, ["Created. Prepared."]);
+  await act({ action: "worktree-created", project: "o/r" });
+  assert.equal(flashed.length, 1, "no message, no flash");
+  assert.equal(reads.length, 2);
+});

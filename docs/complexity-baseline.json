@@ -1,5 +1,5 @@
 {
-  "ceiling": 50,
+  "ceiling": 30,
   "functions": {
     "crates/ralphy-adapter-support/src/headless.rs": {
       "drive_headless": [
@@ -161,11 +161,6 @@
         13
       ]
     },
-    "crates/ralphy-cli/src/host/shell.rs": {
-      "render": [
-        32
-      ]
-    },
     "crates/ralphy-cli/src/init/gate.rs": {
       "format_report": [
         20
@@ -192,11 +187,6 @@
     "crates/ralphy-cli/src/run/wiring.rs": {
       "build_run_queue": [
         17
-      ]
-    },
-    "crates/ralphy-cli/src/runstate/state.rs": {
-      "apply": [
-        36
       ]
     },
     "crates/ralphy-cli/src/telegram/notifier.rs": {
@@ -285,16 +275,6 @@
         16
       ]
     },
-    "crates/ralphy-core/src/runner/phases/plan.rs": {
-      "plan_phase": [
-        32
-      ]
-    },
-    "crates/ralphy-core/src/runner/phases/verify.rs": {
-      "verify_gate": [
-        33
-      ]
-    },
     "crates/ralphy-core/src/sync.rs": {
       "pull": [
         11
@@ -316,9 +296,6 @@
       ]
     },
     "crates/ralphy-daemon/assets/ui/wb-add-project.ts": {
-      "next": [
-        33
-      ],
       "sepOf": [
         11
       ],
@@ -460,8 +437,8 @@
     },
     "crates/ralphy-daemon/assets/ui/wb-desk-detach.ts": {
       "(anonymous)": [
-        31,
-        12
+        12,
+        11
       ],
       "peerFold": [
         11
@@ -480,7 +457,7 @@
     },
     "crates/ralphy-daemon/assets/ui/wb-desk-restore.ts": {
       "(anonymous)": [
-        39
+        11
       ],
       "mountDetached": [
         17
@@ -489,9 +466,6 @@
     "crates/ralphy-daemon/assets/ui/wb-desk-sync.ts": {
       "applyChange": [
         21
-      ],
-      "setFields": [
-        36
       ]
     },
     "crates/ralphy-daemon/assets/ui/wb-desk.ts": {
@@ -527,9 +501,6 @@
       ]
     },
     "crates/ralphy-daemon/assets/ui/wb-files.ts": {
-      "_reconcileOnce": [
-        36
-      ],
       "applyFileSearch": [
         12
       ],
@@ -703,11 +674,6 @@
         17
       ]
     },
-    "crates/ralphy-daemon/assets/ui/wb-stage-chrome.ts": {
-      "buildChrome": [
-        43
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-stage-columns.ts": {
       "applyColumns": [
         29
@@ -757,7 +723,6 @@
     },
     "crates/ralphy-daemon/assets/ui/wb-wire.ts": {
       "(anonymous)": [
-        31,
         15,
         11
       ]
@@ -831,11 +796,6 @@
         12
       ]
     },
-    "crates/ralphy-daemon/src/routes/api_fleet.rs": {
-      "fleet_route": [
-        33
-      ]
-    },
     "crates/ralphy-daemon/src/routes/api_sessions.rs": {
       "close_session_route": [
         14
@@ -849,9 +809,6 @@
     "crates/ralphy-daemon/src/routes/presence.rs": {
       "watch_stores": [
         13
-      ],
-      "ws_presence_loop": [
-        32
       ]
     },
     "crates/ralphy-daemon/src/routes/ws_command.rs": {
@@ -890,7 +847,7 @@
     },
     "crates/ralphy-daemon/src/serve.rs": {
       "serve": [
-        37
+        18
       ]
     },
     "crates/ralphy-daemon/src/session.rs": {
@@ -1012,19 +969,8 @@
       ]
     },
     "crates/ralphy-usage-scan/src/claude.rs": {
-      "parse_transcript": [
-        34
-      ],
       "scan_claude": [
         22
-      ]
-    },
-    "crates/ralphy-usage-scan/src/codex.rs": {
-      "parse_rollout": [
-        33
-      ],
-      "scan_codex_with_stems": [
-        32
       ]
     },
     "crates/ralphy-usage-scan/src/copilot.rs": {
@@ -1048,14 +994,6 @@
         23
       ]
     },
-    "crates/ralphy-usage-scan/src/kimi.rs": {
-      "scan_kimi_code": [
-        31
-      ],
-      "scan_legacy": [
-        45
-      ]
-    },
     "crates/ralphy-usage-scan/src/opencode.rs": {
       "read_opencode": [
         18
@@ -1074,7 +1012,7 @@
         15
       ],
       "raw_literals": [
-        32
+        14
       ]
     },
     "crates/xtask/src/capabilities.rs": {
@@ -1119,11 +1057,8 @@
       ]
     },
     "crates/xtask/src/ui_copy/html.rs": {
-      "read_tag": [
-        34
-      ],
       "scan": [
-        39
+        17
       ]
     },
     "crates/xtask/src/ui_copy/js/scan.rs": {
@@ -1143,20 +1078,9 @@
         20
       ]
     },
-    "crates/xtask/src/ui_copy/lex.rs": {
-      "lex": [
-        43
-      ]
-    },
     "crates/xtask/src/ui_groups.rs": {
       "expression_names": [
         30
-      ],
-      "parse_shell": [
-        47
-      ],
-      "read_tag": [
-        40
       ],
       "render": [
         14
@@ -1164,14 +1088,16 @@
       "scan_accesses": [
         18
       ],
-      "scan_bindings": [
-        38
-      ],
       "stats": [
         15
       ],
       "writes": [
         17
+      ]
+    },
+    "crates/xtask/src/ui_groups/html.rs": {
+      "read_tag": [
+        13
       ]
     }
   }

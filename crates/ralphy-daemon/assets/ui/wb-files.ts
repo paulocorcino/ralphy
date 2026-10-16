@@ -21,6 +21,7 @@ import { WBFail } from "./wb-fail.ts";
 import { WBFileSearch } from "./wb-file-search.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { WBReadRetry } from "./wb-read-retry.ts";
+import { liveNode, reexpand, restoreView, snapshotLevel } from "./wb-files-reconcile.ts";
 import { classify, newEntryTitle, parentRel, underProtectedDir } from "./wb-file-paths.ts";
 import { sendWindow } from "./wb-events.ts";
 import type { WBDaemonApi } from "./wb-daemon.ts";
@@ -749,7 +750,6 @@ export function wbFiles() {
     },
 
     async _reconcileOnce(nodeAtCall: WunderbaumNode, rel: string) {
-      let node: WunderbaumNode | undefined = nodeAtCall;
       // The selection restored is a SNAPSHOT; a reveal landing mid-pass must
       // not be undone by it. `_revealSeq` dates the snapshot.
       const seq = this._revealSeq || 0;
@@ -758,17 +758,8 @@ export function wbFiles() {
       // PROMISE appends (Wunderbaum quirk); a resolved ARRAY after
       // `removeChildren()` replaces cleanly. FRESH, never the cache.
       const source = await this.fetchTreeLevel(rel);
-      // A reload of an ANCESTOR can land inside the fetch: its
-      // `removeChildren()` unregisters this node (`node.tree` null) and a
-      // teardown on the dead node throws inside Wunderbaum (MEASURED
-      // 2026-09-16, Safari). Re-resolve by rel: none is a level that no longer
-      // exists; one still loading is the ancestor's own re-expansion, and a
-      // teardown under an in-flight load doubles the children.
-      if (!node.tree) {
-        const raw = this.rawTree();
-        node = rel === "" ? raw?.root : raw?.findFirst((n: WunderbaumNode) => this.relPath(n) === rel);
-        if (!node || node.isLoading?.()) return;
-      }
+      const node = liveNode(this, nodeAtCall, rel);
+      if (!node) return;
       const hasGitignore = source.some((n) => !n.folder && n.title === ".gitignore");
       // A write to a file already listed nudges its directory too. When the
       // rows on screen already match the fresh listing, the teardown would
@@ -777,17 +768,7 @@ export function wbFiles() {
         if (hasGitignore) this.revalidateBelow(node, rel);
         return;
       }
-      // Read AFTER the fetch, right before the teardown: read before it, the
-      // snapshot missed every folder a FILES search opened meanwhile.
-      const expandedRels: string[] = [];
-      node.visit((n: WunderbaumNode) => {
-        if (this.isFolder(n) && n.expanded) expandedRels.push(this.relPath(n));
-      });
-      const activeRel = this.relPath(this.rawTree()?.getActiveNode?.() || null) || null;
-      // The teardown shrinks the list under the viewport, the browser clamps
-      // `scrollTop` to the shorter list, and the re-activation below scrolls
-      // to the selected row. Nothing else puts the offset back.
-      const scrollTop = this.rawTree()?.element?.scrollTop ?? 0;
+      const view = snapshotLevel(this, node);
       node.removeChildren();
       await node.load(source);
       // `load` leaves the reloaded node collapsed, and the NEXT nudge would
@@ -798,25 +779,8 @@ export function wbFiles() {
       // cache. Forgetting that they were validated makes `loadTreeLevel`
       // re-read each one in the background.
       if (hasGitignore) this.forgetValidatedBelow(rel);
-
-      // Shallow-first. Match by rel path (NOT findFolderByRel): a freshly
-      // reloaded folder has neither `folder` nor loaded `children` yet.
-      expandedRels.sort((a, b) => a.split("/").length - b.split("/").length);
-      for (const r of expandedRels) {
-        const f = this.rawTree()?.findFirst((n: WunderbaumNode) => this.relPath(n) === r);
-        if (f && !f.expanded) await f.setExpanded(true);
-      }
-      const target = (this._revealSeq || 0) > seq ? this._revealedRel : activeRel;
-      if (target) await this.revealRel(target, { restore: true });
-      // A search is on: the reloaded level has no match marks yet.
-      const raw = this.rawTree();
-      if (raw?.isFilterActive?.()) raw.updateFilter();
-      // A reveal that landed mid-pass owns the scroll position.
-      if (raw?.element && (this._revealSeq || 0) === seq) {
-        // The list must have its full height first, or the offset is clamped.
-        raw.updatePendingModifications?.();
-        raw.element.scrollTop = scrollTop;
-      }
+      await reexpand(this, view.expandedRels);
+      await restoreView(this, seq, view);
     },
 
     // Whether the rows under `node` already show `specs` (from `treeNodes`):

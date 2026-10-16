@@ -69,57 +69,82 @@ export const WBDeskSync = (function () {
     return { left: r.left, top: r.top, width: r.width, height: r.height };
   }
 
-  // The fields of one `set`, per record type. The daemon refuses any other.
+  // The box of a record. Written without `put`: a rect is never null.
+  function setRect(rec: LooseRecord, rect: Rect) {
+    const r = rectOf(rect);
+    if (rec.rect && same(rectOf(rec.rect), r)) return false;
+    rec.rect = r;
+    return true;
+  }
+
+  // The session a window holds. A `sessionId` that is gone is kept as `null`,
+  // not deleted.
+  function setSession(rec: LooseRecord, s: NonNullable<DeskWindowFields["session"]>) {
+    let did = false;
+    if (!same(rec.sessionId, s.sessionId ?? null)) {
+      rec.sessionId = s.sessionId ?? null;
+      did = true;
+    }
+    did = put(rec, "daemonId", s.daemonId ?? null) || did;
+    did = put(rec, "environment", s.environment ?? null) || did;
+    return did;
+  }
+
+  // `max` is always written, like the daemon's `bool` without a skip.
+  function setMaxFlag(rec: LooseRecord, max: boolean) {
+    if (!!rec.max === max) return false;
+    rec.max = max;
+    return true;
+  }
+
+  function setWindowFields(rec: LooseRecord, fields: LooseFields) {
+    let did = false;
+    if (typeof fields.max === "boolean") did = setMaxFlag(rec, fields.max);
+    // A blank name is no name: the stored one stays.
+    if (typeof fields.consoleName === "string" && fields.consoleName.trim()) {
+      did = put(rec, "consoleName", fields.consoleName) || did;
+    }
+    if ("checkout" in fields) did = put(rec, "checkout", fields.checkout ?? null) || did;
+    if (fields.session) did = setSession(rec, fields.session) || did;
+    return did;
+  }
+
+  function setFenceFields(rec: LooseRecord, fields: LooseFields) {
+    if (typeof fields.name !== "string" || fields.name === (rec.name ?? "")) return false;
+    rec.name = fields.name;
+    return true;
+  }
+
+  // The file a note shows. Its `repo` and `path` are written without `put`: a
+  // note keeps an empty `path`, not an absent one.
+  function setNoteFile(rec: LooseRecord, f: NonNullable<DeskNoteFields["file"]>) {
+    let did = false;
+    if (f.repo !== rec.repo) {
+      rec.repo = f.repo;
+      did = true;
+    }
+    if ((f.path ?? "") !== (rec.path ?? "")) {
+      rec.path = f.path ?? "";
+      did = true;
+    }
+    did = put(rec, "checkout", f.checkout ?? null) || did;
+    return did;
+  }
+
+  // The fields only one record type has. The daemon refuses any other.
+  function setTypeFields(type: DeskRecordType, rec: LooseRecord, fields: LooseFields) {
+    if (type === "window") return setWindowFields(rec, fields);
+    if (type === "fence") return setFenceFields(rec, fields);
+    return !!fields.file && setNoteFile(rec, fields.file);
+  }
+
+  // The fields of one `set`: the box and the lock of any record, then the
+  // fields of its type. Every setter runs, so `did` never short-circuits one.
   function setFields(type: DeskRecordType, rec: LooseRecord, fields: LooseFields) {
     let did = false;
-    if (fields.rect) {
-      const r = rectOf(fields.rect);
-      if (!rec.rect || !same(rectOf(rec.rect), r)) {
-        rec.rect = r;
-        did = true;
-      }
-    }
+    if (fields.rect) did = setRect(rec, fields.rect);
     if (typeof fields.locked === "boolean") did = put(rec, "locked", fields.locked) || did;
-    if (type === "window") {
-      if (typeof fields.max === "boolean") {
-        // `max` is always written, like the daemon's `bool` without a skip.
-        if (!!rec.max !== fields.max) {
-          rec.max = fields.max;
-          did = true;
-        }
-      }
-      // A blank name is no name: the stored one stays.
-      if (typeof fields.consoleName === "string" && fields.consoleName.trim()) {
-        did = put(rec, "consoleName", fields.consoleName) || did;
-      }
-      if ("checkout" in fields) did = put(rec, "checkout", fields.checkout ?? null) || did;
-      if (fields.session) {
-        const s = fields.session;
-        if (!same(rec.sessionId, s.sessionId ?? null)) {
-          rec.sessionId = s.sessionId ?? null;
-          did = true;
-        }
-        did = put(rec, "daemonId", s.daemonId ?? null) || did;
-        did = put(rec, "environment", s.environment ?? null) || did;
-      }
-    } else if (type === "fence") {
-      if (typeof fields.name === "string" && fields.name !== (rec.name ?? "")) {
-        rec.name = fields.name;
-        did = true;
-      }
-    } else if (type === "note" && fields.file) {
-      const f = fields.file;
-      if (f.repo !== rec.repo) {
-        rec.repo = f.repo;
-        did = true;
-      }
-      if ((f.path ?? "") !== (rec.path ?? "")) {
-        rec.path = f.path ?? "";
-        did = true;
-      }
-      did = put(rec, "checkout", f.checkout ?? null) || did;
-    }
-    return did;
+    return setTypeFields(type, rec, fields) || did;
   }
 
   // One change onto a desk: `{ desk, changed }`, never mutating `desk`.

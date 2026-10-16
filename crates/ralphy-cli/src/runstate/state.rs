@@ -263,145 +263,31 @@ impl RunState {
                 stop_before,
                 issues,
                 ..
-            } => {
-                self.total = count as usize;
-                self.order = order;
-                self.stop_before = stop_before;
-                // Seed the light queue scope from the enriched snapshot (tolerating
-                // the legacy `Null` shape and missing titles) — NOT into `issues`,
-                // so the Telegram card fold never renders not-yet-started issues.
-                if let serde_json::Value::Array(arr) = &issues {
-                    self.queue = arr
-                        .iter()
-                        .filter_map(|e| {
-                            let number = e.get("number")?.as_u64()?;
-                            let title = e
-                                .get("title")
-                                .and_then(|t| t.as_str())
-                                .unwrap_or_default()
-                                .to_string();
-                            Some(QueueRef { number, title })
-                        })
-                        .collect();
-                }
-            }
-            RunEvent::IssueStarted { number, title } => {
-                // A new active issue supersedes a still-non-terminal prior one: it
-                // emitted no lifecycle outcome (a plan-only dry run, or an execution
-                // whose outcome never arrived), so it is done as far as the run goes.
-                if let Some(prev) = self.active.filter(|p| *p != number) {
-                    let e = self.entry_mut(prev);
-                    if !e.status.is_terminal() {
-                        e.status = IssueStatus::Planned;
-                    }
-                }
-                self.active = Some(number);
-                self.agent = None;
-                let e = self.entry_mut(number);
-                e.title = title;
-                e.status = IssueStatus::Planning;
-                // The render facts are per-pass, not cumulative: a restarted issue
-                // must not inherit the previous pass's model/effort/budget.
-                e.model = None;
-                e.effort = None;
-                e.budget_min = None;
-                e.plan_usage = None;
-                e.exec_usage = None;
-            }
+            } => self.apply_queue_built(count, order, stop_before, &issues),
+            RunEvent::IssueStarted { number, title } => self.apply_issue_started(number, title),
             // Live-region only for the card (the planner's model/effort never
             // changes an issue's status), but it does set the current-phase agent
             // context the `data.agent` block reads (ADR-0019 amendment #96).
-            RunEvent::Planning { model, effort } => {
-                self.cur_agent = Some(self.plan_agent.clone());
-                self.cur_model = model.clone();
-                self.cur_effort = effort.clone();
-                // The planner's labels land on the active issue only when present:
-                // an absent field must not blank what a previous event set.
-                if let Some(n) = self.active {
-                    let e = self.entry_mut(n);
-                    if model.is_some() {
-                        e.model = model;
-                    }
-                    if effort.is_some() {
-                        e.effort = effort;
-                    }
-                }
-            }
+            RunEvent::Planning { model, effort } => self.apply_planning(model, effort),
             RunEvent::PlanWritten {
                 number,
                 open_steps,
                 usage,
                 ..
-            } => {
-                let Some(n) = self.resolve(number) else {
-                    return;
-                };
-                let e = self.entry_mut(n);
-                e.plan_usage = Some(usage);
-                e.status = if open_steps == 0 {
-                    IssueStatus::Infeasible
-                } else {
-                    IssueStatus::Planning
-                };
-            }
+            } => self.apply_plan_written(number, open_steps, usage),
             RunEvent::Executing {
                 number,
                 model,
                 effort,
                 budget_min,
-            } => {
-                self.cur_agent = Some(self.exec_agent.clone());
-                self.cur_model = (!model.is_empty()).then(|| model.clone());
-                self.cur_effort = effort.clone();
-                let Some(n) = self.resolve(number) else {
-                    return;
-                };
-                let e = self.entry_mut(n);
-                e.status = IssueStatus::Executing;
-                // The per-issue model is set unconditionally, empty string included:
-                // the console's active line renders the bare separator that produces,
-                // and `cur_model`'s `None` degradation would change it.
-                e.model = Some(model);
-                if effort.is_some() {
-                    e.effort = effort;
-                }
-                e.budget_min = Some(budget_min);
-            }
+            } => self.apply_executing(number, model, effort, budget_min),
             RunEvent::IssueClosed {
                 number,
                 usage,
                 invocations,
                 ..
-            } => {
-                let Some(n) = self.resolve(number) else {
-                    return;
-                };
-                let e = self.entry_mut(n);
-                e.exec_usage = Some(usage);
-                // `0` (a manual construction or pre-#270 producer) means "unknown",
-                // not "zero spawns", so store `None` and let the done line omit the
-                // estimate rather than render a nonsensical `0×`.
-                e.invocations = (invocations > 0).then_some(invocations);
-                e.status = IssueStatus::Done;
-                // The child that reported the agent's state is gone with the
-                // issue (ADR-0059 §1): no agent between issues.
-                self.agent = None;
-            }
-            RunEvent::NonGreen { number, outcome } => {
-                let Some(n) = self.resolve(number) else {
-                    return;
-                };
-                // A `Blocked` execution outcome is its own status; everything else
-                // non-green collapses to NonGreen.
-                let status = if outcome.starts_with("Blocked") {
-                    IssueStatus::Blocked
-                } else {
-                    IssueStatus::NonGreen
-                };
-                self.entry_mut(n).status = status;
-                self.final_summary = Some(format!("stopped on #{n}: {outcome}"));
-                self.agent = None;
-            }
+            } => self.apply_issue_closed(number, usage, invocations),
+            RunEvent::NonGreen { number, outcome } => self.apply_non_green(number, &outcome),
             RunEvent::Skipped {
                 number,
                 kind,
@@ -518,6 +404,146 @@ impl RunState {
         }
     }
 
+    fn apply_queue_built(
+        &mut self,
+        count: u64,
+        order: Vec<u64>,
+        stop_before: Option<u64>,
+        issues: &serde_json::Value,
+    ) {
+        self.total = count as usize;
+        self.order = order;
+        self.stop_before = stop_before;
+        // Seed the light queue scope from the enriched snapshot (tolerating
+        // the legacy `Null` shape and missing titles) — NOT into `issues`,
+        // so the Telegram card fold never renders not-yet-started issues.
+        if let serde_json::Value::Array(arr) = issues {
+            self.queue = arr
+                .iter()
+                .filter_map(|e| {
+                    let number = e.get("number")?.as_u64()?;
+                    let title = e
+                        .get("title")
+                        .and_then(|t| t.as_str())
+                        .unwrap_or_default()
+                        .to_string();
+                    Some(QueueRef { number, title })
+                })
+                .collect();
+        }
+    }
+
+    fn apply_issue_started(&mut self, number: u64, title: String) {
+        // A new active issue supersedes a still-non-terminal prior one: it
+        // emitted no lifecycle outcome (a plan-only dry run, or an execution
+        // whose outcome never arrived), so it is done as far as the run goes.
+        if let Some(prev) = self.active.filter(|p| *p != number) {
+            let e = self.entry_mut(prev);
+            if !e.status.is_terminal() {
+                e.status = IssueStatus::Planned;
+            }
+        }
+        self.active = Some(number);
+        self.agent = None;
+        let e = self.entry_mut(number);
+        e.title = title;
+        e.status = IssueStatus::Planning;
+        // The render facts are per-pass, not cumulative: a restarted issue
+        // must not inherit the previous pass's model/effort/budget.
+        e.model = None;
+        e.effort = None;
+        e.budget_min = None;
+        e.plan_usage = None;
+        e.exec_usage = None;
+    }
+
+    fn apply_planning(&mut self, model: Option<String>, effort: Option<String>) {
+        self.cur_agent = Some(self.plan_agent.clone());
+        self.cur_model = model.clone();
+        self.cur_effort = effort.clone();
+        // The planner's labels land on the active issue only when present:
+        // an absent field must not blank what a previous event set.
+        if let Some(n) = self.active {
+            let e = self.entry_mut(n);
+            if model.is_some() {
+                e.model = model;
+            }
+            if effort.is_some() {
+                e.effort = effort;
+            }
+        }
+    }
+
+    fn apply_plan_written(&mut self, number: u64, open_steps: u64, usage: UsageLite) {
+        let Some(n) = self.resolve(number) else {
+            return;
+        };
+        let e = self.entry_mut(n);
+        e.plan_usage = Some(usage);
+        e.status = if open_steps == 0 {
+            IssueStatus::Infeasible
+        } else {
+            IssueStatus::Planning
+        };
+    }
+
+    fn apply_executing(
+        &mut self,
+        number: u64,
+        model: String,
+        effort: Option<String>,
+        budget_min: u64,
+    ) {
+        self.cur_agent = Some(self.exec_agent.clone());
+        self.cur_model = (!model.is_empty()).then(|| model.clone());
+        self.cur_effort = effort.clone();
+        let Some(n) = self.resolve(number) else {
+            return;
+        };
+        let e = self.entry_mut(n);
+        e.status = IssueStatus::Executing;
+        // The per-issue model is set unconditionally, empty string included:
+        // the console's active line renders the bare separator that produces,
+        // and `cur_model`'s `None` degradation would change it.
+        e.model = Some(model);
+        if effort.is_some() {
+            e.effort = effort;
+        }
+        e.budget_min = Some(budget_min);
+    }
+
+    fn apply_issue_closed(&mut self, number: u64, usage: UsageLite, invocations: u64) {
+        let Some(n) = self.resolve(number) else {
+            return;
+        };
+        let e = self.entry_mut(n);
+        e.exec_usage = Some(usage);
+        // `0` (a manual construction or pre-#270 producer) means "unknown",
+        // not "zero spawns", so store `None` and let the done line omit the
+        // estimate rather than render a nonsensical `0×`.
+        e.invocations = (invocations > 0).then_some(invocations);
+        e.status = IssueStatus::Done;
+        // The child that reported the agent's state is gone with the
+        // issue (ADR-0059 §1): no agent between issues.
+        self.agent = None;
+    }
+
+    fn apply_non_green(&mut self, number: u64, outcome: &str) {
+        let Some(n) = self.resolve(number) else {
+            return;
+        };
+        // A `Blocked` execution outcome is its own status; everything else
+        // non-green collapses to NonGreen.
+        let status = if outcome.starts_with("Blocked") {
+            IssueStatus::Blocked
+        } else {
+            IssueStatus::NonGreen
+        };
+        self.entry_mut(n).status = status;
+        self.final_summary = Some(format!("stopped on #{n}: {outcome}"));
+        self.agent = None;
+    }
+
     /// Tally the issues by status for the counter line.
     pub fn counts(&self) -> Counts {
         let mut c = Counts::default();
@@ -595,3 +621,6 @@ mod tests;
 
 #[cfg(test)]
 mod agent_state_tests;
+
+#[cfg(test)]
+mod summary_tests;

@@ -52,82 +52,128 @@ pub(crate) fn scan_codex_with_stems(input: &CodexScan) -> Vec<(String, Interacti
     ];
     for dir in &dirs {
         for file in crate::walk::files_under(dir, crate::walk::is_jsonl) {
-            let Some(stem) = file
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .map(str::to_string)
-            else {
+            let Some(session) = read_session(&file, input, &mut seen) else {
                 continue;
             };
-            // Run-owned exclusion, primary key: the rollout file stem (ADR-0033 §5).
-            if input.run_session_ids.contains(&stem) {
-                continue;
-            }
-            let Ok(text) = fs::read_to_string(&file) else {
-                continue;
-            };
-            let (meta_id, cwd, models) = parse_rollout(&text);
-            // Defensive second exclusion on `session_meta.id` (the record identity).
-            if let Some(mid) = &meta_id {
-                if input.run_session_ids.contains(mid) {
-                    continue;
-                }
-            }
-            let session_id = meta_id.unwrap_or_else(|| stem.clone());
-            if !seen.insert(session_id.clone()) {
-                continue; // a `sessions/` copy already won
-            }
-
-            // cwd → project attribution, direct or via a linked worktree's
-            // `.git` pointer (ADR-0063 §5). No match → project/actor None.
-            let matched = cwd
-                .as_deref()
-                .and_then(|c| crate::attribution::find_repo(input.repos, c));
-            let project = matched.map(|r| r.slug.clone());
-            let actor_email = matched.and_then(|r| {
-                email_cache
-                    .entry(r.slug.clone())
-                    .or_insert_with(|| ralphy_git_read::user_email(Path::new(&r.path)))
-                    .clone()
-            });
-
-            for (model, agg) in models {
-                records.push((
-                    stem.clone(),
-                    InteractiveRecord {
-                        agent: "codex".to_string(),
-                        model,
-                        session_id: session_id.clone(),
-                        project: project.clone(),
-                        actor_email: actor_email.clone(),
-                        // Codex `input_tokens` INCLUDES the cached subset, so subtract
-                        // it out; `cache_creation` is always 0 (no write split).
-                        tokens: Some(Tokens {
-                            input: agg.totals.input.saturating_sub(agg.totals.cached),
-                            output: agg.totals.output,
-                            cache_read: agg.totals.cached,
-                            cache_creation: 0,
-                        }),
-                        first_ts: agg.first_ts.unwrap_or_default(),
-                        last_ts: agg.last_ts.unwrap_or_default(),
-                        lower_bound: false,
-                    },
-                ));
-            }
+            let (project, actor_email) =
+                attribute(session.cwd.as_deref(), input.repos, &mut email_cache);
+            records.extend(session.into_records(project, actor_email));
         }
     }
 
-    if let Some(since) = input.since {
-        if let Ok(since_dt) = chrono::DateTime::parse_from_rfc3339(since) {
-            records.retain(
-                |(_, r)| match chrono::DateTime::parse_from_rfc3339(&r.last_ts) {
-                    Ok(last) => last >= since_dt,
-                    Err(_) => true, // never hide spend on a parse miss
-                },
-            );
-        }
-    }
+    retain_since(&mut records, input.since);
     records
+}
+
+/// One rollout file that passed the exclusions and the dedup.
+struct Session {
+    stem: String,
+    session_id: String,
+    cwd: Option<String>,
+    models: BTreeMap<String, ModelAgg>,
+}
+
+/// Read one rollout. `None` for an unreadable file, a run-owned session (by
+/// stem, then by `session_meta.id`), and a `session_id` already emitted.
+/// `seen.insert` runs after both exclusions, so an excluded session never
+/// shadows a later copy.
+fn read_session(file: &Path, input: &CodexScan, seen: &mut HashSet<String>) -> Option<Session> {
+    let stem = file.file_stem().and_then(|s| s.to_str())?.to_string();
+    // Run-owned exclusion, primary key: the rollout file stem (ADR-0033 §5).
+    if input.run_session_ids.contains(&stem) {
+        return None;
+    }
+    let text = fs::read_to_string(file).ok()?;
+    let (meta_id, cwd, models) = parse_rollout(&text);
+    // Defensive second exclusion on `session_meta.id` (the record identity).
+    if meta_id
+        .as_ref()
+        .is_some_and(|mid| input.run_session_ids.contains(mid))
+    {
+        return None;
+    }
+    let session_id = meta_id.unwrap_or_else(|| stem.clone());
+    if !seen.insert(session_id.clone()) {
+        return None; // a `sessions/` copy already won
+    }
+    Some(Session {
+        stem,
+        session_id,
+        cwd,
+        models,
+    })
+}
+
+/// cwd → project attribution, direct or via a linked worktree's `.git`
+/// pointer (ADR-0063 §5). No match → project/actor None.
+fn attribute(
+    cwd: Option<&str>,
+    repos: &[crate::RegisteredRepo],
+    email_cache: &mut HashMap<String, Option<String>>,
+) -> (Option<String>, Option<String>) {
+    let matched = cwd.and_then(|c| crate::attribution::find_repo(repos, c));
+    let project = matched.map(|r| r.slug.clone());
+    let actor_email = matched.and_then(|r| {
+        email_cache
+            .entry(r.slug.clone())
+            .or_insert_with(|| ralphy_git_read::user_email(Path::new(&r.path)))
+            .clone()
+    });
+    (project, actor_email)
+}
+
+impl Session {
+    /// One record per model, each paired with the rollout stem.
+    fn into_records(
+        self,
+        project: Option<String>,
+        actor_email: Option<String>,
+    ) -> Vec<(String, InteractiveRecord)> {
+        let Session {
+            stem,
+            session_id,
+            models,
+            ..
+        } = self;
+        models
+            .into_iter()
+            .map(|(model, agg)| {
+                let record = InteractiveRecord {
+                    agent: "codex".to_string(),
+                    model,
+                    session_id: session_id.clone(),
+                    project: project.clone(),
+                    actor_email: actor_email.clone(),
+                    // Codex `input_tokens` INCLUDES the cached subset, so subtract
+                    // it out; `cache_creation` is always 0 (no write split).
+                    tokens: Some(Tokens {
+                        input: agg.totals.input.saturating_sub(agg.totals.cached),
+                        output: agg.totals.output,
+                        cache_read: agg.totals.cached,
+                        cache_creation: 0,
+                    }),
+                    first_ts: agg.first_ts.unwrap_or_default(),
+                    last_ts: agg.last_ts.unwrap_or_default(),
+                    lower_bound: false,
+                };
+                (stem.clone(), record)
+            })
+            .collect()
+    }
+}
+
+/// Drop records whose `last_ts` is strictly before `since`; an unparseable
+/// bound or record keeps the record.
+fn retain_since(records: &mut Vec<(String, InteractiveRecord)>, since: Option<&str>) {
+    let Some(since_dt) = since.and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok()) else {
+        return;
+    };
+    records.retain(
+        |(_, r)| match chrono::DateTime::parse_from_rfc3339(&r.last_ts) {
+            Ok(last) => last >= since_dt,
+            Err(_) => true, // never hide spend on a parse miss
+        },
+    );
 }
 
 /// The three cumulative Codex token counters. `input` is the vendor's raw
@@ -159,86 +205,115 @@ struct ModelAgg {
 /// `turn_context.payload.model` seen (rollouts carry no per-event model), default
 /// `"unknown"`.
 fn parse_rollout(jsonl: &str) -> (Option<String>, Option<String>, BTreeMap<String, ModelAgg>) {
-    let mut meta_id: Option<String> = None;
-    let mut cwd: Option<String> = None;
-    let mut current_model = "unknown".to_string();
+    let mut head = Header {
+        meta_id: None,
+        cwd: None,
+        current_model: "unknown".to_string(),
+    };
     let mut prev = RawTotals::default();
     let mut models: BTreeMap<String, ModelAgg> = BTreeMap::new();
 
     for line in jsonl.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
             continue;
         };
         // The real fields live under `payload`; fall back to the value itself so a
         // flat shape still parses (mirrors the adapter).
         let payload = value.get("payload").unwrap_or(&value);
-        match value.get("type").and_then(|v| v.as_str()) {
+        head.track(value.get("type").and_then(|v| v.as_str()), payload);
+
+        let Some(snap) = read_snapshot(payload) else {
+            continue;
+        };
+        // The monotonic watermark: a snapshot with any field below `prev` is a
+        // compaction/cap rewrite — drop it whole, keep the peak.
+        if snap.is_below(&prev) {
+            continue;
+        }
+        let ts = value.get("timestamp").and_then(|v| v.as_str());
+        models
+            .entry(head.current_model.clone())
+            .or_default()
+            .add_delta(&snap, &prev, ts);
+        prev = snap;
+    }
+
+    (head.meta_id, head.cwd, models)
+}
+
+/// What the header lines of a rollout set: the first `session_meta` id and cwd,
+/// and the latest model.
+struct Header {
+    meta_id: Option<String>,
+    cwd: Option<String>,
+    current_model: String,
+}
+
+impl Header {
+    /// Take the `session_meta` id and cwd (first wins) or the `turn_context`
+    /// model (last wins) of one line; `kind` is the line's own `type`.
+    fn track(&mut self, kind: Option<&str>, payload: &serde_json::Value) {
+        let text = |k: &str| payload.get(k).and_then(|v| v.as_str()).map(str::to_string);
+        match kind {
             Some("session_meta") => {
-                if meta_id.is_none() {
-                    meta_id = payload
-                        .get("id")
-                        .and_then(|v| v.as_str())
-                        .map(str::to_string);
+                if self.meta_id.is_none() {
+                    self.meta_id = text("id");
                 }
-                if cwd.is_none() {
-                    cwd = payload
-                        .get("cwd")
-                        .and_then(|v| v.as_str())
-                        .map(str::to_string);
+                if self.cwd.is_none() {
+                    self.cwd = text("cwd");
                 }
             }
             Some("turn_context") => {
-                if let Some(m) = payload.get("model").and_then(|v| v.as_str()) {
-                    current_model = m.to_string();
+                if let Some(m) = text("model") {
+                    self.current_model = m;
                 }
             }
             _ => {}
         }
-
-        if payload.get("type").and_then(|v| v.as_str()) != Some("token_count") {
-            continue;
-        }
-        let Some(ttu) = payload
-            .get("info")
-            .and_then(|info| info.get("total_token_usage"))
-        else {
-            continue;
-        };
-        // `{}`/null `info.total_token_usage` snapshots are placeholders; ignore.
-        if !ttu.is_object() {
-            continue;
-        }
-        let field = |k: &str| ttu.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
-        let snap = RawTotals {
-            input: field("input_tokens"),
-            output: field("output_tokens"),
-            cached: field("cached_input_tokens"),
-        };
-        // The monotonic watermark: a snapshot with any field below `prev` is a
-        // compaction/cap rewrite — drop it whole, keep the peak.
-        if snap.input < prev.input || snap.output < prev.output || snap.cached < prev.cached {
-            continue;
-        }
-        let agg = models.entry(current_model.clone()).or_default();
-        agg.totals.input += snap.input - prev.input;
-        agg.totals.output += snap.output - prev.output;
-        agg.totals.cached += snap.cached - prev.cached;
-        if let Some(ts) = value.get("timestamp").and_then(|v| v.as_str()) {
-            if agg.first_ts.as_deref().is_none_or(|cur| ts_lt(ts, cur)) {
-                agg.first_ts = Some(ts.to_string());
-            }
-            if agg.last_ts.as_deref().is_none_or(|cur| ts_lt(cur, ts)) {
-                agg.last_ts = Some(ts.to_string());
-            }
-        }
-        prev = snap;
     }
+}
 
-    (meta_id, cwd, models)
+/// The cumulative snapshot of a `token_count` payload. `None` for any other
+/// payload, and for the `{}`/null `total_token_usage` placeholders.
+fn read_snapshot(payload: &serde_json::Value) -> Option<RawTotals> {
+    if payload.get("type").and_then(|v| v.as_str()) != Some("token_count") {
+        return None;
+    }
+    let ttu = payload.get("info")?.get("total_token_usage")?;
+    if !ttu.is_object() {
+        return None;
+    }
+    let field = |k: &str| ttu.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+    Some(RawTotals {
+        input: field("input_tokens"),
+        output: field("output_tokens"),
+        cached: field("cached_input_tokens"),
+    })
+}
+
+impl RawTotals {
+    /// `true` when any field is below the same field of `prev`.
+    fn is_below(&self, prev: &RawTotals) -> bool {
+        self.input < prev.input || self.output < prev.output || self.cached < prev.cached
+    }
+}
+
+impl ModelAgg {
+    /// Add the per-field delta from `prev` to `snap` and widen the ts span.
+    fn add_delta(&mut self, snap: &RawTotals, prev: &RawTotals, ts: Option<&str>) {
+        self.totals.input += snap.input - prev.input;
+        self.totals.output += snap.output - prev.output;
+        self.totals.cached += snap.cached - prev.cached;
+        let Some(ts) = ts else {
+            return;
+        };
+        if self.first_ts.as_deref().is_none_or(|cur| ts_lt(ts, cur)) {
+            self.first_ts = Some(ts.to_string());
+        }
+        if self.last_ts.as_deref().is_none_or(|cur| ts_lt(cur, ts)) {
+            self.last_ts = Some(ts.to_string());
+        }
+    }
 }
 
 /// `a < b` for two RFC3339 timestamp strings, comparing parsed instants (a `…Z`
@@ -646,5 +721,56 @@ mod tests {
             since: None,
         });
         assert_eq!(records.len(), 1);
+    }
+
+    #[test]
+    fn excludes_run_owned_by_session_meta_id() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        write(
+            root,
+            "sessions/rollout-run.jsonl",
+            &rollout(
+                "run-meta",
+                "/work/x",
+                "m",
+                &[token_line(10, 0, 0, "2026-07-10T10:00:00Z")],
+            ),
+        );
+        let mut runs = HashSet::new();
+        runs.insert("run-meta".to_string()); // the meta id, not the file stem
+
+        let records = scan_codex(&CodexScan {
+            codex_dir: root,
+            run_session_ids: &runs,
+            repos: &[],
+            since: None,
+        });
+        assert!(records.is_empty());
+    }
+
+    #[test]
+    fn a_flat_payload_with_no_payload_key_still_parses() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let body = [
+            "{\"type\":\"session_meta\",\"id\":\"flat-id\",\"cwd\":\"/work/x\"}",
+            "{\"type\":\"turn_context\",\"model\":\"flat-model\"}",
+            "{\"timestamp\":\"2026-07-10T10:00:00Z\",\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":40,\"cached_input_tokens\":10,\"output_tokens\":7}}}",
+        ]
+        .join("\n");
+        write(root, "sessions/rollout-flat.jsonl", &body);
+
+        let records = scan_codex(&CodexScan {
+            codex_dir: root,
+            run_session_ids: &no_runs(),
+            repos: &[],
+            since: None,
+        });
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].session_id, "flat-id");
+        assert_eq!(records[0].model, "flat-model");
+        assert_eq!(records[0].tokens.as_ref().unwrap().input, 30);
+        assert_eq!(records[0].tokens.as_ref().unwrap().output, 7);
     }
 }

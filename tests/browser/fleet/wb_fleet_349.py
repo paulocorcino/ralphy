@@ -6,7 +6,7 @@ environment group, carrying its own repos, and it is MARKED — not removed — 
 it stops answering.
 
 The "peer" is a stub HTTP listener this script opens on loopback. It answers the
-two routes a peer must answer (`/api/peer/hello` with `protocol_version: 3` and
+two routes a peer must answer (`/api/peer/hello` with the current `protocol_version` and
 `/api/repos` with one row) and nothing else — no WSL, no second Ralphy build, no
 `wsl.exe`. The environment label `WSL: Ubuntu-22.04` is DATA in the descriptor,
 which is the point: the local daemon renders the environment it was told about.
@@ -49,6 +49,9 @@ import urllib.request
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "console"))
+from wb_console_peer_unanswered import PROTOCOL  # noqa: E402  the peer protocol of the daemon under test
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -136,7 +139,7 @@ class PeerStub(http.server.BaseHTTPRequestHandler):
                     "name": PEER_NAME,
                     "avatar": "🐺",
                     "environment": PEER_ENV,
-                    "protocol_version": 3,
+                    "protocol_version": PROTOCOL,
                 },
             )
         elif self.path == "/api/repos":
@@ -220,7 +223,7 @@ def seed_peer_descriptor(daemon_dir, port):
                 f"port = {port}",
                 f'environment = "{PEER_ENV}"',
                 f'token = "{PEER_TOKEN}"',
-                "protocol_version = 3",
+                f"protocol_version = {PROTOCOL}",
                 "",
                 "[nudge]",
                 'distro = "Ubuntu-22.04"',

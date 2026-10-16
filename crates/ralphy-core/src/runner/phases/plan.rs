@@ -97,34 +97,8 @@ pub(crate) fn plan_phase(
         let limit = e.downcast::<PlanLimit>()?;
 
         plan_limit_streak += 1;
-        let capped = plan_limit_streak > MAX_PLAN_LIMIT_RESUMES;
-        // A limit that carries no parseable reset is an account-wide pause: instead
-        // of stopping, park a synthetic ~30-min window and re-plan, unbounded until
-        // the deadline or a human interrupt decides to give up (ADR-0030). The
-        // no-progress cap only guards the *scheduled*-reset resume path — a synthetic
-        // wait makes no per-issue progress by definition, so counting it would abandon
-        // the issue the moment the account is throttled.
-        let synthetic = limit.reset.is_none();
-        // Stop-and-report when configured, or when a real reset hit the no-progress
-        // cap — never delete the branch, so it is handed back exactly like an
-        // execute-time limit stop.
-        if cx.cfg.stop_on_limit_plan || (!synthetic && capped) {
-            info!(
-                number = issue.number,
-                reset = ?limit.reset,
-                "usage limit while planning — stopping run"
-            );
-            return Ok(PlanPhase::StopLimit { reset: limit.reset });
-        }
-
-        // Deadline beats resume: a reset past the deadline stops the run.
-        let reset = limit.reset.unwrap_or_else(synthetic_reset);
-        if cx.clock.wait_for_reset(&reset) == WaitOutcome::DeadlinePassed {
-            info!(
-                number = issue.number,
-                "deadline beats resume while planning — stopping run"
-            );
-            return Ok(PlanPhase::StopDeadline);
+        if let Some(stop) = wait_out_plan_limit(cx, issue, limit, plan_limit_streak) {
+            return Ok(stop);
         }
         // Otherwise loop: re-plan after the reset window.
     };
@@ -133,16 +107,7 @@ pub(crate) fn plan_phase(
     // `steps_json` rides `plan written` (→ `plan.written.data.steps`), and the raw
     // markdown rides a stable `plan opened` event (→ `dev.ralphy.plan.opened`).
     let plan_md = std::fs::read_to_string(cx.ws.plan_path()).unwrap_or_default();
-    let steps_json = plan_steps_json(&plan_md);
-    crate::emit::plan_written(
-        issue.number,
-        plan.open_steps as u64,
-        &plan.usage,
-        &steps_json,
-    );
-    // The raw plan snapshot at the write point (issue-scoped); the sink maps it to
-    // `dev.ralphy.plan.opened`.
-    crate::emit::plan_opened(issue.number, &plan_md);
+    emit_plan_written(issue, &plan, &plan_md);
 
     // Record the plan phase's token usage (ADR-0008 D6). Written before the
     // feasibility branch so even an infeasible plan's planning cost is on the
@@ -172,37 +137,106 @@ pub(crate) fn plan_phase(
     // planner's reasoning is posted on the issue so the verdict is
     // actionable instead of dying in the gitignored plan.md.
     if !plan.is_feasible() {
-        let mut needs_split = false;
-        if let Ok(plan_md) = std::fs::read_to_string(cx.ws.plan_path()) {
-            if let Some(reason) = handoff::infeasible_reason(&plan_md) {
-                if handoff::is_bundle_verdict(&plan_md) {
-                    needs_split = true;
-                    crate::emit::needs_split(issue.number);
-                    // Best-effort: a label failure must not stop the run —
-                    // the comment below still carries the verdict.
-                    if let Err(e) = cx.tracker.add_label(issue.number, NEEDS_SPLIT_LABEL) {
-                        warn!(number = issue.number, error = %e, "applying needs-split label failed");
-                    }
-                    // Best-effort: a failed verdict comment must not abort
-                    // the queue over a non-green skip.
-                    if let Err(e) = cx
-                        .tracker
-                        .comment(issue.number, &bundle_comment(&cx.cfg.stamp, &reason))
-                    {
-                        warn!(number = issue.number, error = %e, "posting bundle verdict comment failed");
-                    }
-                } else if let Err(e) = cx
-                    .tracker
-                    .comment(issue.number, &infeasible_comment(&cx.cfg.stamp, &reason))
-                {
-                    warn!(number = issue.number, error = %e, "posting infeasible verdict comment failed");
-                }
-            }
-        }
+        let needs_split = post_infeasible_verdict(cx, issue);
         return Ok(PlanPhase::Infeasible { needs_split });
     }
 
     Ok(PlanPhase::Planned(plan))
+}
+
+/// Decide what one plan-time usage limit does: the outcome that stops the run,
+/// or `None` after waiting for the reset, so the caller plans again.
+/// `streak` counts the consecutive limits, this one included.
+fn wait_out_plan_limit(
+    cx: &IssueCtx,
+    issue: &Issue,
+    limit: PlanLimit,
+    streak: u32,
+) -> Option<PlanPhase> {
+    let capped = streak > MAX_PLAN_LIMIT_RESUMES;
+    // A limit that carries no parseable reset is an account-wide pause: instead
+    // of stopping, park a synthetic ~30-min window and re-plan, unbounded until
+    // the deadline or a human interrupt decides to give up (ADR-0030). The
+    // no-progress cap only guards the *scheduled*-reset resume path — a synthetic
+    // wait makes no per-issue progress by definition, so counting it would abandon
+    // the issue the moment the account is throttled.
+    let synthetic = limit.reset.is_none();
+    // Stop-and-report when configured, or when a real reset hit the no-progress
+    // cap — never delete the branch, so it is handed back exactly like an
+    // execute-time limit stop.
+    if cx.cfg.stop_on_limit_plan || (!synthetic && capped) {
+        info!(
+            number = issue.number,
+            reset = ?limit.reset,
+            "usage limit while planning — stopping run"
+        );
+        return Some(PlanPhase::StopLimit { reset: limit.reset });
+    }
+
+    // Deadline beats resume: a reset past the deadline stops the run.
+    let reset = limit.reset.unwrap_or_else(synthetic_reset);
+    if cx.clock.wait_for_reset(&reset) == WaitOutcome::DeadlinePassed {
+        info!(
+            number = issue.number,
+            "deadline beats resume while planning — stopping run"
+        );
+        return Some(PlanPhase::StopDeadline);
+    }
+    None
+}
+
+/// Emit `plan written` with the plan's steps, then the raw plan snapshot.
+fn emit_plan_written(issue: &Issue, plan: &Plan, plan_md: &str) {
+    let steps_json = plan_steps_json(plan_md);
+    crate::emit::plan_written(
+        issue.number,
+        plan.open_steps as u64,
+        &plan.usage,
+        &steps_json,
+    );
+    // The raw plan snapshot at the write point (issue-scoped); the sink maps it to
+    // `dev.ralphy.plan.opened`.
+    crate::emit::plan_opened(issue.number, plan_md);
+}
+
+/// Post the planner's reason for an infeasible plan on the issue. Returns
+/// whether the verdict was a bundle, which also gets the `needs-split` label.
+fn post_infeasible_verdict(cx: &IssueCtx, issue: &Issue) -> bool {
+    let Ok(plan_md) = std::fs::read_to_string(cx.ws.plan_path()) else {
+        return false;
+    };
+    let Some(reason) = handoff::infeasible_reason(&plan_md) else {
+        return false;
+    };
+    if handoff::is_bundle_verdict(&plan_md) {
+        post_bundle_verdict(cx, issue, &reason);
+        return true;
+    }
+    if let Err(e) = cx
+        .tracker
+        .comment(issue.number, &infeasible_comment(&cx.cfg.stamp, &reason))
+    {
+        warn!(number = issue.number, error = %e, "posting infeasible verdict comment failed");
+    }
+    false
+}
+
+/// Label a bundle `needs-split` and post the planner's reason on it.
+fn post_bundle_verdict(cx: &IssueCtx, issue: &Issue, reason: &str) {
+    crate::emit::needs_split(issue.number);
+    // Best-effort: a label failure must not stop the run —
+    // the comment below still carries the verdict.
+    if let Err(e) = cx.tracker.add_label(issue.number, NEEDS_SPLIT_LABEL) {
+        warn!(number = issue.number, error = %e, "applying needs-split label failed");
+    }
+    // Best-effort: a failed verdict comment must not abort
+    // the queue over a non-green skip.
+    if let Err(e) = cx
+        .tracker
+        .comment(issue.number, &bundle_comment(&cx.cfg.stamp, reason))
+    {
+        warn!(number = issue.number, error = %e, "posting bundle verdict comment failed");
+    }
 }
 
 #[cfg(test)]

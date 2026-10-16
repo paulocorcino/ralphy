@@ -65,66 +65,14 @@ pub(super) fn lex(src: &str, first_line: usize) -> Vec<Token> {
     let mut line = first_line;
     let mut i = 0;
     while i < cs.len() {
-        let c = cs[i];
-        if c == '\n' {
-            line += 1;
-            i += 1;
-            continue;
-        }
-        if c.is_whitespace() {
-            i += 1;
+        if let Some(next) = skip_trivia(&cs, i, &mut line) {
+            i = next;
             continue;
         }
         let start = i;
         let start_line = line;
-        let next = cs.get(i + 1).copied();
-        let tok = if c == '/' && next == Some('/') {
-            while i < cs.len() && cs[i] != '\n' {
-                i += 1;
-            }
-            continue;
-        } else if c == '/' && next == Some('*') {
-            i += 2;
-            while i < cs.len() && !(cs[i] == '*' && cs.get(i + 1) == Some(&'/')) {
-                if cs[i] == '\n' {
-                    line += 1;
-                }
-                i += 1;
-            }
-            i += 2;
-            continue;
-        } else if c == '/' && regex_allowed(out.last()) {
-            i = skip_regex(&cs, i);
-            Tok::Other
-        } else if c == '"' || c == '\'' {
-            let (text, end) = read_string(&cs, i, &mut line);
-            i = end;
-            Tok::Str(text)
-        } else if c == '`' {
-            let (pieces, end) = read_template(&cs, i, &mut line);
-            i = end;
-            Tok::Tpl(pieces)
-        } else if c.is_alphabetic() || c == '_' || c == '$' {
-            while i < cs.len() && (cs[i].is_alphanumeric() || cs[i] == '_' || cs[i] == '$') {
-                i += 1;
-            }
-            Tok::Ident(cs[start..i].iter().collect())
-        } else if c.is_ascii_digit() {
-            while i < cs.len() && (cs[i].is_alphanumeric() || cs[i] == '.' || cs[i] == '_') {
-                i += 1;
-            }
-            Tok::Other
-        } else if let Some(p) = PUNCTS.iter().find(|p| {
-            p.chars()
-                .enumerate()
-                .all(|(k, pc)| cs.get(i + k) == Some(&pc))
-        }) {
-            i += p.chars().count();
-            Tok::Punct(p)
-        } else {
-            i += 1;
-            Tok::Other
-        };
+        let (tok, end) = read_token(&cs, i, &mut line, out.last());
+        i = end;
         out.push(Token {
             tok,
             line: start_line,
@@ -133,6 +81,93 @@ pub(super) fn lex(src: &str, first_line: usize) -> Vec<Token> {
         });
     }
     out
+}
+
+/// The index after the whitespace, newline or comment at `i`, counting the
+/// newlines it passes. `None` when a token starts at `i`.
+fn skip_trivia(cs: &[char], i: usize, line: &mut usize) -> Option<usize> {
+    let next = cs.get(i + 1).copied();
+    match cs[i] {
+        '\n' => {
+            *line += 1;
+            Some(i + 1)
+        }
+        c if c.is_whitespace() => Some(i + 1),
+        '/' if next == Some('/') => Some(skip_line_comment(cs, i)),
+        '/' if next == Some('*') => Some(skip_block_comment(cs, i, line)),
+        _ => None,
+    }
+}
+
+/// Index of the newline that ends the `//` comment at `i`, or the end of input.
+fn skip_line_comment(cs: &[char], mut i: usize) -> usize {
+    while i < cs.len() && cs[i] != '\n' {
+        i += 1;
+    }
+    i
+}
+
+/// Index after the `/* … */` comment at `i`. A comment with no end runs to the
+/// end of input, and the index may then pass it by the length of `*/`.
+fn skip_block_comment(cs: &[char], mut i: usize, line: &mut usize) -> usize {
+    i += 2;
+    while i < cs.len() && !(cs[i] == '*' && cs.get(i + 1) == Some(&'/')) {
+        if cs[i] == '\n' {
+            *line += 1;
+        }
+        i += 1;
+    }
+    i + 2
+}
+
+/// The token that starts at `i` and the index after it. `prev` is the token
+/// before it, which decides whether a `/` opens a regex.
+fn read_token(cs: &[char], i: usize, line: &mut usize, prev: Option<&Token>) -> (Tok, usize) {
+    let c = cs[i];
+    if c == '/' && regex_allowed(prev) {
+        (Tok::Other, skip_regex(cs, i))
+    } else if c == '"' || c == '\'' {
+        let (text, end) = read_string(cs, i, line);
+        (Tok::Str(text), end)
+    } else if c == '`' {
+        let (pieces, end) = read_template(cs, i, line);
+        (Tok::Tpl(pieces), end)
+    } else if c.is_alphabetic() || c == '_' || c == '$' {
+        let end = ident_end(cs, i);
+        (Tok::Ident(cs[i..end].iter().collect()), end)
+    } else if c.is_ascii_digit() {
+        (Tok::Other, number_end(cs, i))
+    } else if let Some(p) = punct_at(cs, i) {
+        (Tok::Punct(p), i + p.chars().count())
+    } else {
+        (Tok::Other, i + 1)
+    }
+}
+
+fn ident_end(cs: &[char], mut i: usize) -> usize {
+    while i < cs.len() && (cs[i].is_alphanumeric() || cs[i] == '_' || cs[i] == '$') {
+        i += 1;
+    }
+    i
+}
+
+fn number_end(cs: &[char], mut i: usize) -> usize {
+    while i < cs.len() && (cs[i].is_alphanumeric() || cs[i] == '.' || cs[i] == '_') {
+        i += 1;
+    }
+    i
+}
+
+/// The longest punctuator that starts at `i`.
+fn punct_at(cs: &[char], i: usize) -> Option<&'static str> {
+    PUNCTS
+        .iter()
+        .find(|p| {
+            p.chars()
+                .enumerate()
+                .all(|(k, pc)| cs.get(i + k) == Some(&pc))
+        })
+        .copied()
 }
 
 fn regex_allowed(prev: Option<&Token>) -> bool {

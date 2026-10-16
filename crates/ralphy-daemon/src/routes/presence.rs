@@ -193,55 +193,114 @@ pub(crate) async fn ws_presence_loop(
     let mut sessions_open = true;
     let mut pushes_open = true;
     loop {
-        tokio::select! {
-            changed = sessions.recv(), if sessions_open => match changed {
-                Ok(()) | Err(broadcast::error::RecvError::Lagged(_)) => {
-                    if !send_push(&mut socket, "sessions.dirty", serde_json::json!({})).await {
-                        break;
-                    }
-                }
-                Err(broadcast::error::RecvError::Closed) => sessions_open = false,
-            },
-            pushed = pushes.recv(), if pushes_open => match pushed {
-                Ok(p) => {
-                    if !send_push(&mut socket, p.verb(), p.payload()).await {
-                        break;
-                    }
-                }
-                Err(broadcast::error::RecvError::Lagged(_)) => {
-                    let mut sent = send_push(&mut socket, "sessions.dirty", serde_json::json!({})).await;
-                    for p in Push::all() {
-                        sent = sent && send_push(&mut socket, p.verb(), p.payload()).await;
-                    }
-                    if !sent {
-                        break;
-                    }
-                }
-                Err(broadcast::error::RecvError::Closed) => pushes_open = false,
-            },
+        let stop = tokio::select! {
+            changed = sessions.recv(), if sessions_open => {
+                on_sessions(&mut socket, changed).await.stops(&mut sessions_open)
+            }
+            pushed = pushes.recv(), if pushes_open => {
+                on_push(&mut socket, pushed).await.stops(&mut pushes_open)
+            }
             // Ok = the daemon signalled shutdown; Err = the sender was dropped
             // (its runtime is going away). Either way, stop serving this socket.
-            _ = shutdown.changed() => break,
-            _ = tick.tick() => {
-                let frame = build_presence(identity.as_ref(), start.elapsed());
-                if socket
-                    .send(Message::Binary(protocol::encode(&frame).into()))
-                    .await
-                    .is_err()
-                {
-                    break;
-                }
-            }
-            incoming = socket.recv() => {
-                // None (stream closed), a Close frame, or a recv error all end
-                // the loop; the socket drops when this task returns.
-                match incoming {
-                    Some(Ok(Message::Close(_))) | None => break,
-                    Some(Err(_)) => break,
-                    Some(Ok(_)) => {}
-                }
-            }
+            _ = shutdown.changed() => true,
+            _ = tick.tick() => !send_presence(&mut socket, identity.as_ref(), start).await,
+            incoming = socket.recv() => ends_the_loop(&incoming),
+        };
+        if stop {
+            break;
         }
+    }
+}
+
+/// What one channel arm of [`ws_presence_loop`] tells the loop to do next.
+enum Next {
+    /// Wait for the next event.
+    Go,
+    /// The channel is closed: turn its arm off and go on.
+    CloseArm,
+    /// A send failed: end the loop.
+    Stop,
+}
+
+impl Next {
+    /// Whether the loop ends; a closed arm sets its `open` flag to false.
+    fn stops(self, open: &mut bool) -> bool {
+        match self {
+            Next::Go => false,
+            Next::CloseArm => {
+                *open = false;
+                false
+            }
+            Next::Stop => true,
+        }
+    }
+
+    /// `Go` when the send worked, `Stop` when it failed.
+    fn sent(ok: bool) -> Next {
+        if ok {
+            Next::Go
+        } else {
+            Next::Stop
+        }
+    }
+}
+
+/// The sessions arm: a change, or a lag, is one `sessions.dirty`.
+async fn on_sessions(
+    socket: &mut WebSocket,
+    changed: Result<(), broadcast::error::RecvError>,
+) -> Next {
+    match changed {
+        Ok(()) | Err(broadcast::error::RecvError::Lagged(_)) => {
+            Next::sent(send_push(socket, "sessions.dirty", serde_json::json!({})).await)
+        }
+        Err(broadcast::error::RecvError::Closed) => Next::CloseArm,
+    }
+}
+
+/// The pushes arm: a push is sent as its verb; a lag sends every verb once.
+async fn on_push(
+    socket: &mut WebSocket,
+    pushed: Result<Push, broadcast::error::RecvError>,
+) -> Next {
+    match pushed {
+        Ok(p) => Next::sent(send_push(socket, p.verb(), p.payload()).await),
+        Err(broadcast::error::RecvError::Lagged(_)) => Next::sent(send_every_push(socket).await),
+        Err(broadcast::error::RecvError::Closed) => Next::CloseArm,
+    }
+}
+
+/// `sessions.dirty` and every [`Push`] once; no send after the first one that
+/// fails. `false` when a send failed.
+async fn send_every_push(socket: &mut WebSocket) -> bool {
+    let mut sent = send_push(socket, "sessions.dirty", serde_json::json!({})).await;
+    for p in Push::all() {
+        sent = sent && send_push(socket, p.verb(), p.payload()).await;
+    }
+    sent
+}
+
+/// Send one presence heartbeat. `false` when the send failed.
+async fn send_presence(
+    socket: &mut WebSocket,
+    identity: Option<&identity::Identity>,
+    start: Instant,
+) -> bool {
+    let frame = build_presence(identity, start.elapsed());
+    socket
+        .send(Message::Binary(protocol::encode(&frame).into()))
+        .await
+        .is_ok()
+}
+
+/// Whether a message from the client ends the loop. None (stream closed), a
+/// Close frame, or a recv error all end it; the socket drops when the loop's
+/// task returns.
+fn ends_the_loop(incoming: &Option<Result<Message, axum::Error>>) -> bool {
+    match incoming {
+        Some(Ok(Message::Close(_))) | None => true,
+        Some(Err(_)) => true,
+        Some(Ok(_)) => false,
     }
 }
 
@@ -293,5 +352,135 @@ mod tests {
         let one = peers_stamp(&peers);
         assert_ne!(one, empty, "a new descriptor changes the stamp");
         assert_eq!(peers_stamp(&peers), one);
+    }
+
+    type Ws = tokio_tungstenite::WebSocketStream<
+        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    >;
+
+    /// Run one `ws_presence_loop` on `sessions` and `pushes` behind a loopback
+    /// `/ws`, and connect to it. The returned sender holds the shutdown open.
+    async fn connect(
+        sessions: broadcast::Receiver<()>,
+        pushes: broadcast::Receiver<Push>,
+    ) -> (Ws, tokio::sync::watch::Sender<bool>) {
+        let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
+        let receivers = std::sync::Arc::new(std::sync::Mutex::new(Some((sessions, pushes))));
+        let app = Router::new().route(
+            "/ws",
+            get(move |ws: WebSocketUpgrade| {
+                let taken = receivers.lock().unwrap().take();
+                let stop_rx = stop_rx.clone();
+                async move {
+                    let (sessions, pushes) = taken.expect("the test connects once");
+                    ws.on_upgrade(move |socket| {
+                        ws_presence_loop(socket, None, Instant::now(), stop_rx, sessions, pushes)
+                    })
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            if let Err(e) = axum::serve(listener, app).await {
+                panic!("the test /ws stopped: {e}");
+            }
+        });
+        let (ws, _resp) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}/ws"))
+            .await
+            .unwrap();
+        (ws, stop_tx)
+    }
+
+    /// What the socket carried within `within`: the verbs of the commands,
+    /// the number of presence frames, and whether the socket ended.
+    async fn read_for(ws: &mut Ws, within: Duration) -> (Vec<Command>, usize, bool) {
+        use futures_util::StreamExt;
+        use tokio_tungstenite::tungstenite::Message as Wire;
+        let mut commands = Vec::new();
+        let mut beats = 0;
+        let deadline = tokio::time::Instant::now() + within;
+        loop {
+            let msg = match tokio::time::timeout_at(deadline, ws.next()).await {
+                Err(_) => return (commands, beats, false),
+                Ok(msg) => msg,
+            };
+            match msg {
+                Some(Ok(Wire::Binary(bytes))) => match protocol::decode(&bytes).unwrap() {
+                    Frame::Command(c) => commands.push(c),
+                    Frame::Presence(_) => beats += 1,
+                    other => panic!("an unexpected frame: {other:?}"),
+                },
+                None | Some(Ok(Wire::Close(_))) | Some(Err(_)) => return (commands, beats, true),
+                Some(Ok(_)) => {}
+            }
+        }
+    }
+
+    fn count(commands: &[Command], verb: &str) -> usize {
+        commands.iter().filter(|c| c.verb == verb).count()
+    }
+
+    /// A pushes receiver that lagged sends `sessions.dirty` and every push
+    /// once, then goes on with what the bus still holds.
+    #[tokio::test]
+    async fn a_lagged_push_receiver_sends_every_push_once() {
+        let (_sessions_tx, sessions) = broadcast::channel(4);
+        let (pushes_tx, pushes) = broadcast::channel(1);
+        let tab = Some("t1".to_string());
+        // Two pushes on a bus that holds one: the receiver lags by one.
+        for _ in 0..2 {
+            pushes_tx.send(Push::Desk { tab: tab.clone() }).unwrap();
+        }
+        let (mut ws, _stop) = connect(sessions, pushes).await;
+        let (commands, _, ended) = read_for(&mut ws, Duration::from_millis(1500)).await;
+        assert!(!ended, "the socket stays open");
+        let verbs: Vec<&str> = commands.iter().map(|c| c.verb.as_str()).collect();
+        assert_eq!(count(&commands, "sessions.dirty"), 1, "got: {verbs:?}");
+        assert_eq!(count(&commands, "repos.dirty"), 1, "got: {verbs:?}");
+        assert_eq!(count(&commands, "peers.dirty"), 1, "got: {verbs:?}");
+        let desk_tabs: Vec<&serde_json::Value> = commands
+            .iter()
+            .filter(|c| c.verb == "desk.dirty")
+            .map(|c| &c.payload["tab"])
+            .collect();
+        assert_eq!(
+            desk_tabs,
+            [&serde_json::Value::Null, &serde_json::json!("t1")],
+            "the lag sends a desk push for every tab, then the push the bus kept"
+        );
+    }
+
+    /// A channel whose sender is gone turns its arm off: the socket stays
+    /// open, the heartbeat goes on, and nothing is sent for that channel.
+    async fn a_closed_channel_keeps_the_heartbeat(close_sessions: bool) {
+        let (sessions_tx, sessions) = broadcast::channel::<()>(4);
+        let (pushes_tx, pushes) = broadcast::channel::<Push>(4);
+        let _held = if close_sessions {
+            drop(sessions_tx);
+            (None, Some(pushes_tx))
+        } else {
+            drop(pushes_tx);
+            (Some(sessions_tx), None)
+        };
+        let (mut ws, _stop) = connect(sessions, pushes).await;
+        let (commands, beats, ended) = read_for(&mut ws, Duration::from_millis(2600)).await;
+        assert!(!ended, "a closed channel does not close the socket");
+        assert!(beats >= 2, "the heartbeat goes on: {beats} beat(s)");
+        let verbs: Vec<&str> = commands.iter().map(|c| c.verb.as_str()).collect();
+        assert!(
+            verbs.is_empty(),
+            "a closed channel sends nothing: {verbs:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_closed_sessions_channel_keeps_the_heartbeat() {
+        a_closed_channel_keeps_the_heartbeat(true).await;
+    }
+
+    #[tokio::test]
+    async fn a_closed_pushes_channel_keeps_the_heartbeat() {
+        a_closed_channel_keeps_the_heartbeat(false).await;
     }
 }

@@ -167,127 +167,154 @@ export function wire(window: Window, document: Document, deps: WireDeps) {
         .catch(() => flash("Could not rename: the daemon did not answer."));
     };
 
+    // Where a write is aimed: the project, and the checkout it carries.
+    type Aim = { repo: string; checkout: string | null; aimed: (payload: CommandPayload) => CommandPayload };
+    type ActionOf<A extends WorkbenchAction["action"]> = Extract<WorkbenchAction, { action: A }>;
+
+    // The aim of an action, or null where it has no project. Every Write carries
+    // the checkout it is aimed at (#406): a Save says its tab's PIN (explicit
+    // `null` = the primary, never the selection), a tree gesture says the
+    // current selection.
+    function actionTarget(d: WorkbenchAction | undefined): Aim | null {
+      if (!d || !("project" in d)) return null;
+      const repo = d.project;
+      if (!repo) return null;
+      const checkout =
+        "checkout" in d && d.checkout !== undefined ? d.checkout : window.Alpine.store("checkouts").checkoutOf(repo);
+      return { repo, checkout, aimed: (payload) => WBDaemon.withCheckout(payload, checkout) };
+    }
+
+    // The pane's encoding rides the write (ADR-0036 amendment 2026-09-22)
+    // and the pane hears the answer: its dirty mark waits for the ack, and
+    // a refusal is read where the bytes are, not in a flash elsewhere.
+    // A detached window's pane is `detached` in its own viewer; a tab's is
+    // its tab id in this one.
+    function actSave(d: ActionOf<"save">, { repo, checkout, aimed }: Aim) {
+      const viewer = () => (d.fromWindow ? d.fromWindow.WBViewer : window.WBViewer);
+      const id = d.fromWindow ? "detached" : fileTabId(repo, d.path, checkout);
+      const payload: SavePayload = { repo, path: d.path, content: d.content || "" };
+      if (d.encoding) payload.encoding = d.encoding;
+      if (d.bom) payload.bom = true;
+      const send = (p: SavePayload): Promise<void> =>
+        WBDaemon.write("file.write", aimed(p))
+          .then((reply) => {
+            if (!WBFail.isError(reply)) return viewer()?.saveDone?.(id);
+            const reason = WBFail.message(reply, "the daemon gave no reason");
+            viewer()?.saveFailed?.(id, reason, reply);
+            // UTF-8 represents everything; a refusal under it is not a
+            // conversion question, and asking again would loop.
+            if (reason === "unencodable" && !/^utf-?8$/i.test(p.encoding || "utf-8")) {
+              return offerUtf8(p, reply);
+            }
+            flash(WBFail.failed(reply, "Could not save: the daemon gave no reason."));
+          })
+          .catch(() => {
+            viewer()?.saveFailed?.(id, "the daemon did not answer");
+            flash("Could not save: the daemon did not answer.");
+          });
+      // The daemon wrote nothing (a round-trip or a refusal, never a `?`):
+      // the one repair the browser can offer is a DELIBERATE conversion,
+      // named to the operator and made only on their yes.
+      const offerUtf8 = (p: SavePayload, reply: WriteReply) => {
+        const at = Number(reply?.char_index ?? 0) + 1;
+        const ask = messages.askInShell({
+          title: `Could not save as ${p.encoding}`,
+          message: `Character ${at} is not representable in ${p.encoding}. Save the file as UTF-8 instead?`,
+          confirmLabel: "Save as UTF-8",
+        });
+        // No shell, no dialog: the pane already says "Could not save" and why.
+        if (!ask) return;
+        return ask.then((ok) => {
+          if (!ok) return;
+          viewer()?.setEncoding?.(id, "UTF-8", false);
+          const { bom: _bom, ...rest } = p;
+          return send({ ...rest, encoding: "utf-8" });
+        });
+      };
+      send(payload);
+    }
+
+    // A console's switcher cut a worktree: re-read the listing, flash what the
+    // add had to say.
+    function actWorktreeCreated(d: ActionOf<"worktree-created">, { repo }: Aim) {
+      window.Alpine.store("checkouts").ensureWorktreeListing(repo, true);
+      if (d.message) flash(d.message.split("\n").map(WBFail.sentence).filter(Boolean).join(" "));
+    }
+
+    // The name of a new entry: the prompt dialog where the page has a shell,
+    // else the browser's prompt.
+    async function askEntryName(shellPage: boolean, folder: boolean, dir: string) {
+      if (!shellPage) return window.prompt(folder ? "New folder name" : "New file name");
+      return window.Alpine.store("modals").askPrompt({
+        // No placeholder: a plausible filename in an empty field reads as
+        // a name already chosen, and operators pressed Enter on it.
+        title: newEntryTitle(folder ? "folder" : "file", dir),
+        message: "",
+        placeholder: "",
+      });
+    }
+
+    // `create` carries the target DIRECTORY and no name: ask for it, then
+    // open a created file so the operator lands in it.
+    async function actCreate(d: ActionOf<"create">, { repo, aimed }: Aim) {
+      const folder = d.kind === "folder";
+      const c = window.getShell();
+      const name = await askEntryName(!!c, folder, d.path);
+      if (!name) return;
+      const path = d.path ? `${d.path}/${name}` : name;
+      const reply = await WBDaemon.write("file.create", aimed({ repo, path, dir: folder })).catch(() => null);
+      if (!reply) return flash(`Could not create ${name}: the daemon did not answer.`);
+      if (WBFail.isError(reply)) return flash(WBFail.failed(reply, `Could not create ${name}: the daemon gave no reason.`));
+      flash(`${name} created.`);
+      if (!folder && c) window.Alpine.store("tabs").openTab({ project: repo, path, title: name, ftype: classify(name) });
+      // The files re-list the level, then reveal the new entry (wb-files.ts).
+      sendWindow(window, "workbench:tree-dirty", { rel: d.path || "", reveal: path });
+    }
+
+    // Irreversible (a folder removes recursively): confirm first.
+    async function actDelete(d: ActionOf<"delete">, { repo, aimed }: Aim) {
+      const name = d.title || d.path.split("/").pop() || d.path;
+      const message = d.isFolder
+        ? `Delete folder “${name}” and its contents? This cannot be undone.`
+        : `Delete “${name}”? This cannot be undone.`;
+      const ask = messages.askInShell({ title: "Delete", message, confirmLabel: "Delete", danger: true });
+      const ok = ask ? await ask : window.confirm(message);
+      if (!ok) return;
+      const reply = await WBDaemon.write("file.delete", aimed({ repo, path: d.path })).catch(() => null);
+      if (!reply) return flash("Could not delete: the daemon did not answer.");
+      if (!WBFail.isError(reply)) return flash(`${name} deleted.`);
+      const reason = WBFail.message(reply, "the daemon gave no reason");
+      flash(WBFail.failed(reply, "Could not delete: the daemon gave no reason."));
+      // "not found" on a delete says the ROW is the lie: re-list the parent
+      // so the ghost ends up off the screen.
+      if (/not found/i.test(reason)) {
+        sendWindow(window, "workbench:tree-dirty", { rel: parentRel(d.path) });
+      }
+    }
+
     document.addEventListener("workbench:action", async (e) => {
       if (!daemonBacked()) return;
       const d = e.detail;
-      if (!d || !("project" in d)) return;
-      const repo = d.project;
-      if (!repo) return;
-      // Every Write carries the checkout it is aimed at (#406): a Save says its
-      // tab's PIN (explicit `null` = the primary, never the selection), a tree
-      // gesture says the current selection.
-      const checkout =
-        "checkout" in d && d.checkout !== undefined ? d.checkout : window.Alpine.store("checkouts").checkoutOf(repo);
-      const aimed = (payload: CommandPayload) => WBDaemon.withCheckout(payload, checkout);
+      const aim = actionTarget(d);
+      if (!aim) return;
       switch (d.action) {
-        case "save": {
-          // The pane's encoding rides the write (ADR-0036 amendment 2026-09-22)
-          // and the pane hears the answer: its dirty mark waits for the ack, and
-          // a refusal is read where the bytes are, not in a flash elsewhere.
-          // A detached window's pane is `detached` in its own viewer; a tab's is
-          // its tab id in this one.
-          const viewer = () => (d.fromWindow ? d.fromWindow.WBViewer : window.WBViewer);
-          const id = d.fromWindow ? "detached" : fileTabId(repo, d.path, checkout);
-          const payload: SavePayload = { repo, path: d.path, content: d.content || "" };
-          if (d.encoding) payload.encoding = d.encoding;
-          if (d.bom) payload.bom = true;
-          const send = (p: SavePayload): Promise<void> =>
-            WBDaemon.write("file.write", aimed(p))
-              .then((reply) => {
-                if (!WBFail.isError(reply)) return viewer()?.saveDone?.(id);
-                const reason = WBFail.message(reply, "the daemon gave no reason");
-                viewer()?.saveFailed?.(id, reason, reply);
-                // UTF-8 represents everything; a refusal under it is not a
-                // conversion question, and asking again would loop.
-                if (reason === "unencodable" && !/^utf-?8$/i.test(p.encoding || "utf-8")) {
-                  return offerUtf8(p, reply);
-                }
-                flash(WBFail.failed(reply, "Could not save: the daemon gave no reason."));
-              })
-              .catch(() => {
-                viewer()?.saveFailed?.(id, "the daemon did not answer");
-                flash("Could not save: the daemon did not answer.");
-              });
-          // The daemon wrote nothing (a round-trip or a refusal, never a `?`):
-          // the one repair the browser can offer is a DELIBERATE conversion,
-          // named to the operator and made only on their yes.
-          const offerUtf8 = (p: SavePayload, reply: WriteReply) => {
-            const at = Number(reply?.char_index ?? 0) + 1;
-            const ask = messages.askInShell({
-              title: `Could not save as ${p.encoding}`,
-              message: `Character ${at} is not representable in ${p.encoding}. Save the file as UTF-8 instead?`,
-              confirmLabel: "Save as UTF-8",
-            });
-            // No shell, no dialog: the pane already says "Could not save" and why.
-            if (!ask) return;
-            return ask.then((ok) => {
-              if (!ok) return;
-              viewer()?.setEncoding?.(id, "UTF-8", false);
-              const { bom: _bom, ...rest } = p;
-              return send({ ...rest, encoding: "utf-8" });
-            });
-          };
-          send(payload);
+        case "save":
+          actSave(d, aim);
           break;
-        }
-        case "worktree-created": {
-          // A console's switcher cut a worktree: re-read the listing, flash what
-          // the add had to say.
-          window.Alpine.store("checkouts").ensureWorktreeListing(repo, true);
-          if (d.message) flash(d.message.split("\n").map(WBFail.sentence).filter(Boolean).join(" "));
+        case "worktree-created":
+          actWorktreeCreated(d, aim);
           break;
-        }
-        case "create": {
-          // `create` carries the target DIRECTORY and no name: ask for it, then
-          // open a created file so the operator lands in it.
-          const folder = d.kind === "folder";
-          const c = window.getShell();
-          const name = c
-            ? await window.Alpine.store("modals").askPrompt({
-                // No placeholder: a plausible filename in an empty field reads as
-                // a name already chosen, and operators pressed Enter on it.
-                title: newEntryTitle(folder ? "folder" : "file", d.path),
-                message: "",
-                placeholder: "",
-              })
-            : window.prompt(folder ? "New folder name" : "New file name");
-          if (!name) return;
-          const path = d.path ? `${d.path}/${name}` : name;
-          const reply = await WBDaemon.write("file.create", aimed({ repo, path, dir: folder })).catch(() => null);
-          if (!reply) return flash(`Could not create ${name}: the daemon did not answer.`);
-          if (WBFail.isError(reply)) return flash(WBFail.failed(reply, `Could not create ${name}: the daemon gave no reason.`));
-          flash(`${name} created.`);
-          if (!folder && c) window.Alpine.store("tabs").openTab({ project: repo, path, title: name, ftype: classify(name) });
-          // The files re-list the level, then reveal the new entry (wb-files.ts).
-          sendWindow(window, "workbench:tree-dirty", { rel: d.path || "", reveal: path });
+        case "create":
+          await actCreate(d, aim);
           break;
-        }
         case "rename": {
           // `from`/`to` are FULL rel paths (shared with the move gesture).
-          call("file.rename", aimed({ repo, path: d.from, to: d.to }));
+          call("file.rename", aim.aimed({ repo: aim.repo, path: d.from, to: d.to }));
           break;
         }
-        case "delete": {
-          // Irreversible (a folder removes recursively): confirm first.
-          const name = d.title || d.path.split("/").pop() || d.path;
-          const message = d.isFolder
-            ? `Delete folder “${name}” and its contents? This cannot be undone.`
-            : `Delete “${name}”? This cannot be undone.`;
-          const ask = messages.askInShell({ title: "Delete", message, confirmLabel: "Delete", danger: true });
-          const ok = ask ? await ask : window.confirm(message);
-          if (!ok) return;
-          const reply = await WBDaemon.write("file.delete", aimed({ repo, path: d.path })).catch(() => null);
-          if (!reply) return flash("Could not delete: the daemon did not answer.");
-          if (!WBFail.isError(reply)) return flash(`${name} deleted.`);
-          const reason = WBFail.message(reply, "the daemon gave no reason");
-          flash(WBFail.failed(reply, "Could not delete: the daemon gave no reason."));
-          // "not found" on a delete says the ROW is the lie: re-list the parent
-          // so the ghost ends up off the screen.
-          if (/not found/i.test(reason)) {
-            sendWindow(window, "workbench:tree-dirty", { rel: parentRel(d.path) });
-          }
+        case "delete":
+          await actDelete(d, aim);
           break;
-        }
         default:
           break;
       }

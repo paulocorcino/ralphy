@@ -128,3 +128,32 @@ test("the closing batch carries every pending change with a higher seq", () => {
   assert.ok(closing.seq > onWire.seq);
   assert.deepEqual(closing.changes, [moveTo(200), moveTo(300)]);
 });
+
+const deskWith = (key, rec) => ({ windows: [], fences: [], notes: [], checkouts: {}, [key]: [rec] });
+
+test("a blank console name is no name: the stored one stays and nothing changes", () => {
+  const S = load();
+  const desk = deskWith("windows", W(100, { consoleName: "build" }));
+  for (const blank of ["", "   "]) {
+    const out = S.applyChange(desk, { op: "set", type: "window", id: "w-1", fields: { consoleName: blank } });
+    assert.equal(out.changed, false, JSON.stringify(blank));
+    assert.equal(out.desk.windows[0].consoleName, "build");
+  }
+  const named = S.applyChange(desk, { op: "set", type: "window", id: "w-1", fields: { consoleName: "test" } });
+  assert.equal(named.desk.windows[0].consoleName, "test");
+});
+
+test("a note file with an empty path or no path sets the repo and the empty path", () => {
+  const S = load();
+  const note = { id: "n-1", repo: "o/r", path: "docs/a.md", rect: { left: 0, top: 0, width: 300, height: 200 } };
+  for (const file of [{ repo: "o/s", path: "" }, { repo: "o/s" }]) {
+    const out = S.applyChange(deskWith("notes", note), { op: "set", type: "note", id: "n-1", fields: { file } });
+    assert.equal(out.changed, true, JSON.stringify(file));
+    assert.equal(out.desk.notes[0].repo, "o/s");
+    assert.equal(out.desk.notes[0].path, "");
+  }
+  const same = S.applyChange(deskWith("notes", { ...note, path: "" }), {
+    op: "set", type: "note", id: "n-1", fields: { file: { repo: "o/r" } },
+  });
+  assert.equal(same.changed, false, "an absent path equals the stored empty one");
+});
