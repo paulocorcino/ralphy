@@ -24,21 +24,9 @@ import { focusTarget, isSplit, paneLayout } from "./wb-viewer-panes.ts";
 import { decorateZoomable } from "./wb-zoom-overlay.ts";
 import type { MonacoDiffEditor, MonacoDisposable, MonacoEditor } from "./wb-monaco.ts";
 import type { Messages } from "./wb-messages.ts";
+import { drawDiagram, isRendered, renderBody, slugOf } from "./wb-viewer-render.ts";
 import type { ViewerSlot } from "./wb-viewer-panes.ts";
-
-/** The vendored mermaid (`vendor/mermaid`): the members this module calls. */
-type Mermaid = {
-  initialize(config: {
-    startOnLoad: boolean;
-    securityLevel: string;
-    theme: string;
-    htmlLabels: boolean;
-    flowchart: { htmlLabels: boolean };
-  }): void;
-  render(id: string, source: string): Promise<{ svg: string }>;
-};
-
-type ViewerWindow = Window & { mermaid?: Mermaid };
+import type { MermaidWindow } from "./wb-viewer-render.ts";
 
 /**
  * One open file pane. `open` fills the first group; the rest appear as the
@@ -148,32 +136,8 @@ export type ViewerDeps = {
   messages: Messages;
 };
 
-export function createViewer(window: ViewerWindow, document: Document, deps: ViewerDeps) {
+export function createViewer(window: MermaidWindow, document: Document, deps: ViewerDeps) {
   const { messages } = deps;
-  let mermaidReady = false;
-  function initMermaid() {
-    if (mermaidReady || !window.mermaid) return;
-    // `strict`, not `loose`: diagram source is repo bytes (an agent-written plan,
-    // a PR fixture, a cloned README), i.e. untrusted. `loose` skips mermaid's
-    // own sanitize pass over the emitted SVG and turns a `click A "javascript:…"`
-    // directive into a live <a href>. Nothing here calls `bindFunctions`, so
-    // click bindings were never wired up and `strict` costs no working feature.
-    // `htmlLabels: false` is LOAD-BEARING, not a style (found while building
-    // ADR-0064 §15): mermaid's default label is HTML inside a
-    // `<foreignObject>`, and DOMPurify 3.4 dropped that tag from its SVG
-    // allowlist — so `drawMermaid`'s sanitize pass below removed every label
-    // and the diagram arrived as unlabelled boxes. MEASURED against 3.4.12.
-    // Plain `<text>` labels survive it untouched.
-    window.mermaid.initialize({
-      startOnLoad: false,
-      securityLevel: "strict",
-      theme: "dark",
-      htmlLabels: false,
-      flowchart: { htmlLabels: false },
-    });
-    mermaidReady = true;
-  }
-
   const viewers = document.getElementById("viewers");
   const map = new Map<string, ViewerRecord>(); // tab id → viewer record
 
@@ -226,7 +190,7 @@ export function createViewer(window: ViewerWindow, document: Document, deps: Vie
             findInEditor(rec, term);
           }
         }, 0);
-        if (rec.kind === "markdown") drawMermaid(rec);
+        if (isRendered(rec.kind)) drawMermaid(rec);
       }
     }
     if (!viewers) return;
@@ -600,7 +564,7 @@ export function createViewer(window: ViewerWindow, document: Document, deps: Vie
       encoding: rec.encoding,
       bom: !!rec.bom,
     });
-    if (rec.kind === "markdown" && !rec.editing) renderMarkdown(rec); // keep preview fresh
+    if (isRendered(rec.kind) && !rec.editing) renderMarkdown(rec); // keep preview fresh
   }
 
   // The inline "not saved" line beside the Save button: a write refusal must
@@ -1102,25 +1066,9 @@ export function createViewer(window: ViewerWindow, document: Document, deps: Vie
   }
 
   function renderMarkdown(rec: BytesRecord) {
+    if (!isRendered(rec.kind)) return;
     const article = rec.el!.querySelector(".md-body")!;
-    article.innerHTML = DOMPurify.sanitize(marked.parse(rec.content));
-
-    // mermaid fences: marked emits <pre><code class="language-mermaid">. Defer
-    // the actual draw to first paint (a hidden container measures as 0). An
-    // inline `<code class="language-mermaid">` from raw HTML has no <pre> and
-    // stays as code.
-    rec.mermaidPending = [];
-    article.querySelectorAll("code.language-mermaid").forEach((code, i) => {
-      const pre = code.closest("pre");
-      if (!pre) return;
-      const holder = document.createElement("div");
-      holder.className = "mermaid";
-      holder.dataset.src = code.textContent;
-      holder.id = `mmd-${rec.uid}-${i}`;
-      pre.replaceWith(holder);
-      rec.mermaidPending!.push(holder);
-    });
-
+    rec.mermaidPending = renderBody(rec.kind, article, rec.content, rec.uid, document);
     resolveImages(rec, article);
     decorateZoomable(article);
     buildOutline(rec, article);
@@ -1269,16 +1217,8 @@ export function createViewer(window: ViewerWindow, document: Document, deps: Vie
     });
   }
 
-  // Scroll a rendered document to the heading a `#fragment` names. `marked`
-  // emits no heading ids (the outline assigns positional ones), so the match is
-  // by GitHub-style slug of the heading text — the spelling authors write.
-  function slugOf(text: string) {
-    return text
-      .trim()
-      .toLowerCase()
-      .replace(/[^\p{L}\p{N}\s-]/gu, "")
-      .replace(/\s+/g, "-");
-  }
+  // Scroll a rendered document to the heading a `#fragment` names, matched
+  // by the slug of the heading text (`slugOf`).
   function jumpTo(rec: ViewerRecord, fragment: string) {
     if (!fragment) return;
     let want = fragment;
@@ -1299,17 +1239,12 @@ export function createViewer(window: ViewerWindow, document: Document, deps: Vie
 
   function drawMermaid(rec: ViewerRecord) {
     if (!rec.mermaidPending || !rec.mermaidPending.length) return;
-    initMermaid();
     const pending = rec.mermaidPending;
     rec.mermaidPending = [];
     pending.forEach((holder) => {
-      window.mermaid!
-        .render(holder.id + "-svg", holder.dataset.src!)
-        // The fence source is re-read RAW above (DOMPurify escaped it in the
-        // markdown pass), so the rendered SVG is the one string on this path that
-        // never met the sanitizer. Sanitize on insert. `foreignobject` is already
-        // in DOMPurify's SVG allowlist, so mermaid's HTML labels survive.
-        .then(({ svg }) => (holder.innerHTML = DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true, html: true } })))
+      // `drawDiagram` returns the SVG already sanitized.
+      drawDiagram(window, holder.id + "-svg", holder.dataset.src!)
+        .then((svg) => (holder.innerHTML = svg))
         .catch((err) => {
           holder.classList.add("mermaid-error");
           holder.textContent = "Mermaid error: " + (err?.message || err);
@@ -1513,7 +1448,7 @@ export function createViewer(window: ViewerWindow, document: Document, deps: Vie
       }
       const rec: BytesRecord = { ...pane, content: spec.content, refused: null };
       map.set(id, rec);
-      if (ftype === "markdown") buildMarkdown(rec);
+      if (isRendered(ftype)) buildMarkdown(rec);
       else if (ftype === "diff") buildDiff(rec);
       else if (ftype === "image") buildImage(rec);
       else buildCode(rec);
@@ -1612,7 +1547,7 @@ export function createViewer(window: ViewerWindow, document: Document, deps: Vie
     // Scroll an open markdown pane to a `#fragment`, once the bytes landed.
     jumpTo(id: string, fragment: string) {
       const rec = map.get(id);
-      if (rec && rec.kind === "markdown") jumpTo(rec, fragment);
+      if (rec && isRendered(rec.kind)) jumpTo(rec, fragment);
     },
 
     // Land a tab on the first occurrence of `term` (a content-search open).
@@ -1623,7 +1558,7 @@ export function createViewer(window: ViewerWindow, document: Document, deps: Vie
       const rec = map.get(id);
       if (!rec || !term) return;
       if (rec.kind === "diff" || rec.kind === "image") return;
-      if (rec.kind === "markdown" && !rec.editing) {
+      if (isRendered(rec.kind) && !rec.editing) {
         findInMarkdown(rec, term);
         return;
       }

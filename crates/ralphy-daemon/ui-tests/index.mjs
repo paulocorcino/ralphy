@@ -95,6 +95,7 @@ import "./wb-spend.test.mjs";
 import "./wb-split.test.mjs";
 import "./wb-client-view.test.mjs";
 import "./wb-file-viewer.test.mjs";
+import "./wb-viewer-render.test.mjs";
 import "./wb-viewer-panes.test.mjs";
 import "./wb-window-state.test.mjs";
 import "./wb-diagram-zoom.test.mjs";
