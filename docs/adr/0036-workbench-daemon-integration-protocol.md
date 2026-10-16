@@ -1228,6 +1228,11 @@ judgment, so the daemon answers them in-process inside `blocking_read`, like
   by the rules of the 2026-09-30 amendment (an ignored folder ignores
   everything below it).
 
+Both take the optional `checkout` of ADR-0058 and read from the checkout's own
+root, as `tree.list` does. The ignore rules anchor there: the primary ignores
+`.ralphy/`, where the worktree lives, so rules read from the primary would mark
+every file of the worktree as ignored.
+
 **The budget lives in the walker.** As for `tree.find` and `tree.grep`, nothing
 upstream caps an Observe read. So `tree.size` stops itself after 200,000
 entries or five seconds, whichever comes first, and says `truncated: true`.

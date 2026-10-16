@@ -40,6 +40,7 @@ pub(super) async fn observe(
         }
         dispatch::Verb::FileRead => file_read(cmd, repo_path, &rel).await,
         dispatch::Verb::FileStat => file_stat(repo_path, checkout.as_ref(), asked).await,
+        dispatch::Verb::TreeSize => tree_size(repo_path, checkout.as_ref(), asked).await,
         dispatch::Verb::ImageRead => image_read(repo_path, &rel).await,
         dispatch::Verb::NoteRead => note_read(repo_path, &rel).await,
         dispatch::Verb::RunsList => runs_list(repo_path),
@@ -164,14 +165,38 @@ async fn file_stat(
     })
     .await;
     match read {
-        Some(Ok(stat)) => {
-            let mut reply = serde_json::json!(stat);
-            reply["status"] = serde_json::json!("ok");
-            reply
-        }
+        Some(Ok(stat)) => ok_reply(&stat),
         Some(Err(e)) => serde_json::json!({ "status": "error", "reason": e.reason() }),
         None => unavailable(),
     }
+}
+
+/// `tree.size`: the size of one folder. The walk stops itself at its budget and
+/// says `truncated`; a second walk while one runs answers `busy`.
+async fn tree_size(
+    repo_path: &Path,
+    checkout: Option<&checkout::Checkout>,
+    asked: &str,
+) -> serde_json::Value {
+    let (walk_rel, path) = properties_target(checkout, asked);
+    let repo_root = repo_path.to_path_buf();
+    let sized = blocking_read(move || {
+        let root = properties_root(repo_root, walk_rel).map_err(|_| tree::SizeError::NotFound)?;
+        tree::size(&root, &path, tree::SizeBudget::default(), &tree::size::SLOT)
+    })
+    .await;
+    match sized {
+        Some(Ok(size)) => ok_reply(&size),
+        Some(Err(e)) => serde_json::json!({ "status": "error", "reason": e.reason() }),
+        None => unavailable(),
+    }
+}
+
+/// A reply of `status: "ok"` that carries the fields of `value`.
+fn ok_reply(value: &impl serde::Serialize) -> serde_json::Value {
+    let mut reply = serde_json::json!(value);
+    reply["status"] = serde_json::json!("ok");
+    reply
 }
 
 async fn file_read(cmd: &protocol::Command, repo_path: &Path, rel: &str) -> serde_json::Value {

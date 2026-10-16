@@ -10,6 +10,7 @@
 //! inside an ignored directory, so every entry below it is ignored.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use ignore::Match;
@@ -26,8 +27,9 @@ pub(crate) enum Rules {
     /// An ancestor of the listed directory is ignored, so every entry is.
     AllIgnored,
     /// The rule sources, lowest precedence first: global excludes,
-    /// `info/exclude`, then each `.gitignore` from the root downwards.
-    Layers(Vec<Layer>),
+    /// `info/exclude`, then each `.gitignore` from the root downwards. A layer
+    /// is shared, so the rules of a child folder reuse those of its parent.
+    Layers(Vec<Arc<Layer>>),
 }
 
 impl Rules {
@@ -41,16 +43,32 @@ impl Rules {
             push_file(&mut layers, root, "", &exclude);
         }
         push_file(&mut layers, root, "", &root.join(".gitignore"));
+        let mut rules = Rules::Layers(layers);
         let mut base = String::new();
         for part in dir {
             base = join(&base, part);
-            if decide(&layers, &base, true) {
-                return Rules::AllIgnored;
-            }
-            let here = root.join(&base);
-            push_file(&mut layers, &here, &base, &here.join(".gitignore"));
+            rules = rules.descend(&base, &root.join(&base));
         }
-        Rules::Layers(layers)
+        rules
+    }
+
+    /// The rules for the entries of the child folder `rel` (`/`-joined,
+    /// relative to the root) at `dir` on the disk. An ignored folder gives
+    /// [`Rules::AllIgnored`], and its own `.gitignore` is not read: git never
+    /// looks inside it. Otherwise the folder's `.gitignore` is the deepest
+    /// layer. The parent's layers are shared, never read again.
+    pub(crate) fn descend(&self, rel: &str, dir: &Path) -> Rules {
+        match self {
+            Rules::AllIgnored => Rules::AllIgnored,
+            Rules::Layers(layers) => {
+                if decide(layers, rel, true) {
+                    return Rules::AllIgnored;
+                }
+                let mut next = layers.clone();
+                push_file(&mut next, dir, rel, &dir.join(".gitignore"));
+                Rules::Layers(next)
+            }
+        }
     }
 
     /// Is the entry at `rel` (`/`-joined, relative to the root) ignored?
@@ -88,7 +106,7 @@ pub(crate) fn join(base: &str, name: &str) -> String {
 /// construction, so the strip always succeeds. Paths are handed to the matcher
 /// RELATIVE to the layer's directory: `Gitignore::matched` strips an absolute
 /// prefix with `/` only, which a Windows path does not use.
-fn decide(layers: &[Layer], rel: &str, is_dir: bool) -> bool {
+fn decide(layers: &[Arc<Layer>], rel: &str, is_dir: bool) -> bool {
     for layer in layers.iter().rev() {
         let local = if layer.base.is_empty() {
             rel
@@ -113,7 +131,7 @@ fn decide(layers: &[Layer], rel: &str, is_dir: bool) -> bool {
 /// Add the rules of the ignore file `file`, anchored at `dir`. A missing file
 /// is the common case and adds nothing. A file that cannot be read or holds a
 /// bad glob adds what it can: the listing must open whatever the rules say.
-fn push_file(layers: &mut Vec<Layer>, dir: &Path, base: &str, file: &Path) {
+fn push_file(layers: &mut Vec<Arc<Layer>>, dir: &Path, base: &str, file: &Path) {
     if !file.is_file() {
         return;
     }
@@ -122,10 +140,10 @@ fn push_file(layers: &mut Vec<Layer>, dir: &Path, base: &str, file: &Path) {
         tracing::debug!(path = %file.display(), error = %e, "partly unreadable ignore file");
     }
     match builder.build() {
-        Ok(rules) => layers.push(Layer {
+        Ok(rules) => layers.push(Arc::new(Layer {
             base: base.to_string(),
             rules,
-        }),
+        })),
         Err(e) => {
             tracing::debug!(path = %file.display(), error = %e, "ignore file gives no rules");
         }
@@ -133,16 +151,16 @@ fn push_file(layers: &mut Vec<Layer>, dir: &Path, base: &str, file: &Path) {
 }
 
 /// Add the global excludes (`core.excludesFile`, else the XDG default).
-fn push_global(layers: &mut Vec<Layer>, root: &Path) {
+fn push_global(layers: &mut Vec<Arc<Layer>>, root: &Path) {
     let (rules, err) = GitignoreBuilder::new(root).build_global();
     if let Some(e) = err {
         tracing::debug!(error = %e, "global excludes give partial rules");
     }
     if !rules.is_empty() {
-        layers.push(Layer {
+        layers.push(Arc::new(Layer {
             base: String::new(),
             rules,
-        });
+        }));
     }
 }
 
