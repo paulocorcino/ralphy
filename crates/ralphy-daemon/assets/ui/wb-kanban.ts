@@ -94,6 +94,86 @@ export type Issue = {
   parent?: number | null;
 };
 
+/** The edges `orderGraph` walks, by issue number. */
+type IssueGraph = {
+  inQueue: Set<number>;
+  openNums: Set<number>;
+  blockedOf: Map<number, number[]>;
+  childrenOf: Map<number, number[]>;
+};
+
+// Each issue's blockers: every issue of the project, then a queue member the
+// project list lacks.
+function blockedIndex(queue: Issue[], all: Issue[]) {
+  const blockedOf = new Map<number, number[]>();
+  for (const i of all) blockedOf.set(i.number, i.blockedBy || []);
+  for (const i of queue) if (!blockedOf.has(i.number)) blockedOf.set(i.number, i.blockedBy || []);
+  return blockedOf;
+}
+
+// childrenOf[parent] = queue members declaring `## Parent` #parent (stand-ins
+// for a retired/closed bundle).
+function childrenIndex(queue: Issue[]) {
+  const childrenOf = new Map<number, number[]>();
+  for (const i of queue) {
+    if (i.parent == null) continue;
+    let children = childrenOf.get(i.parent);
+    if (!children) {
+      children = [];
+      childrenOf.set(i.parent, children);
+    }
+    children.push(i.number);
+  }
+  return childrenOf;
+}
+
+// The queue members that must precede `self`: its blockers, walked through
+// open issues outside the queue.
+function walkDeps(self: number, g: IssueGraph) {
+  const acc = new Set<number>();
+  const seen = new Set<number>();
+  const stack = [self];
+  while (stack.length) {
+    const node = stack.pop();
+    if (node === undefined || seen.has(node)) continue; // already expanded — also breaks cycles
+    seen.add(node);
+    for (const n of g.blockedOf.get(node) || []) addNeighbour(n, self, g, acc, stack);
+  }
+  return acc;
+}
+
+// One blocker `n` of a node `walkDeps` expands: a predecessor of `self`, a
+// node to walk through, or a closed bundle whose children stand in.
+function addNeighbour(n: number, self: number, g: IssueGraph, acc: Set<number>, stack: number[]) {
+  if (n === self) return;
+  if (g.inQueue.has(n)) acc.add(n); // terminal in-queue predecessor
+  else if (g.openNums.has(n)) stack.push(n); // transparent: keep walking
+  else {
+    const ch = g.childrenOf.get(n); // closed bundle → its children stand in
+    if (ch) for (const c of ch) if (c !== self) acc.add(c);
+  }
+}
+
+// Kahn, smallest ready number first (ascending tie-break); a cycle's
+// remainder is appended ascending (the runtime gate owns correctness).
+function kahnOrder(queue: Issue[], deps: Map<number, Set<number>>) {
+  const byNum = new Map(queue.map((i) => [i.number, i]));
+  const placed = new Set<number>();
+  const out = [];
+  while (byNum.size) {
+    const keys = [...byNum.keys()].sort((a, b) => a - b);
+    const ready = keys.find((n) => [...(deps.get(n) || [])].every((d) => placed.has(d)));
+    if (ready == null) {
+      for (const n of keys) out.push(byNum.get(n));
+      break;
+    }
+    placed.add(ready);
+    out.push(byNum.get(ready));
+    byNum.delete(ready);
+  }
+  return out;
+}
+
 export const WBKanban = {
   // GitHub label vocabulary → { color, short }. This is only the FALLBACK seed:
   // `$store.board.boardLabels[slug]` (the repo's live `gh label list`) wins when the daemon
@@ -178,58 +258,16 @@ export const WBKanban = {
   // (for walking edges through open out-of-queue blockers, pruning closed ones,
   // and substituting a retired bundle's `## Parent` children).
   orderGraph(queue: Issue[], all: Issue[]) {
-    const inQueue = new Set(queue.map((i) => i.number));
-    const openNums = new Set(all.filter((i) => i.state === "open").map((i) => i.number));
-    const blockedOf = new Map();
-    for (const i of all) blockedOf.set(i.number, i.blockedBy || []);
-    for (const i of queue) if (!blockedOf.has(i.number)) blockedOf.set(i.number, i.blockedBy || []);
-    // childrenOf[parent] = queue members declaring `## Parent` #parent (stand-ins
-    // for a retired/closed bundle).
-    const childrenOf = new Map();
-    for (const i of queue) {
-      if (i.parent == null) continue;
-      if (!childrenOf.has(i.parent)) childrenOf.set(i.parent, []);
-      childrenOf.get(i.parent).push(i.number);
-    }
+    const g: IssueGraph = {
+      inQueue: new Set(queue.map((i) => i.number)),
+      openNums: new Set(all.filter((i) => i.state === "open").map((i) => i.number)),
+      blockedOf: blockedIndex(queue, all),
+      childrenOf: childrenIndex(queue),
+    };
     // deps[x] = queue members that must precede x.
-    const deps = new Map();
-    for (const i of queue) {
-      const acc = new Set();
-      const seen = new Set();
-      const stack = [i.number];
-      while (stack.length) {
-        const node = stack.pop();
-        if (seen.has(node)) continue; // already expanded — also breaks cycles
-        seen.add(node);
-        for (const n of blockedOf.get(node) || []) {
-          if (n === i.number) continue;
-          if (inQueue.has(n)) acc.add(n); // terminal in-queue predecessor
-          else if (openNums.has(n)) stack.push(n); // transparent: keep walking
-          else {
-            const ch = childrenOf.get(n); // closed bundle → its children stand in
-            if (ch) for (const c of ch) if (c !== i.number) acc.add(c);
-          }
-        }
-      }
-      deps.set(i.number, acc);
-    }
-    // Kahn, smallest ready number first (ascending tie-break); a cycle's
-    // remainder is appended ascending (the runtime gate owns correctness).
-    const byNum = new Map(queue.map((i) => [i.number, i]));
-    const placed = new Set<number>();
-    const out = [];
-    while (byNum.size) {
-      const keys = [...byNum.keys()].sort((a, b) => a - b);
-      const ready = keys.find((n) => [...(deps.get(n) || [])].every((d) => placed.has(d)));
-      if (ready == null) {
-        for (const n of keys) out.push(byNum.get(n));
-        break;
-      }
-      placed.add(ready);
-      out.push(byNum.get(ready));
-      byNum.delete(ready);
-    }
-    return out;
+    const deps = new Map<number, Set<number>>();
+    for (const i of queue) deps.set(i.number, walkDeps(i.number, g));
+    return kahnOrder(queue, deps);
   },
 
   // --- running cross-ref (against the CALLER's runs, via WBRun) ----

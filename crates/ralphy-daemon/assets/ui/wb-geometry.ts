@@ -93,13 +93,17 @@ export const WBGeometry = (function () {
     };
   }
 
+  // The four edges of a rect; a missing rect or field reads 0.
+  function edgesOf(r: Partial<Rect> | undefined) {
+    const left = r?.left || 0;
+    const top = r?.top || 0;
+    return { left, top, right: left + (r?.width || 0), bottom: top + (r?.height || 0) };
+  }
+
   function rectsOverlap(a: Partial<Rect>, b: Partial<Rect>) {
-    return (
-      (a?.left || 0) < (b?.left || 0) + (b?.width || 0) &&
-      (a?.left || 0) + (a?.width || 0) > (b?.left || 0) &&
-      (a?.top || 0) < (b?.top || 0) + (b?.height || 0) &&
-      (a?.top || 0) + (a?.height || 0) > (b?.top || 0)
-    );
+    const p = edgesOf(a);
+    const q = edgesOf(b);
+    return p.left < q.right && p.right > q.left && p.top < q.bottom && p.bottom > q.top;
   }
 
   // ---- a fence is a group (issue #341) -----------------------------------------

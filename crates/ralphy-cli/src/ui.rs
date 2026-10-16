@@ -104,22 +104,7 @@ pub(crate) fn active_phase(status: &IssueStatus) -> Option<Phase> {
 /// so the operator sees up front that nothing from that issue onward will run this
 /// session. `opts.emoji` picks the glyph; the bar itself is ANSI-free by construction.
 pub(crate) fn queue_bar_label(state: &RunState, opts: RenderOpts, width: usize) -> String {
-    let terminal = |n: u64| {
-        state
-            .issues
-            .iter()
-            .any(|e| e.number == n && e.status.is_terminal())
-    };
-    let pending: Vec<u64> = if state.finished {
-        Vec::new()
-    } else {
-        state
-            .order
-            .iter()
-            .copied()
-            .filter(|&n| !terminal(n))
-            .collect()
-    };
+    let pending = pending_numbers(state);
     let total = state.total;
     let completed = if state.finished {
         total
@@ -128,45 +113,75 @@ pub(crate) fn queue_bar_label(state: &RunState, opts: RenderOpts, width: usize) 
     };
     let filled = "▰".repeat(completed.min(total));
     let empty = "▱".repeat(total.saturating_sub(completed));
-    let pending_part = if pending.is_empty() {
-        String::new()
-    } else {
-        let nums: Vec<String> = pending
-            .iter()
-            .map(|&n| {
-                if Some(n) == state.stop_before {
-                    // The cut: this issue (and everything after it) won't run.
-                    if opts.emoji {
-                        format!("⛔ stop-before #{n}")
-                    } else {
-                        format!("|stop-before #{n}|")
-                    }
-                } else {
-                    format!("#{n}")
-                }
-            })
-            .collect();
-        format!(" (pending {})", nums.join(" "))
-    };
+    let pending_part = pending_tail(&pending, state.stop_before, opts.emoji);
     let head = format!("{filled}{empty} {completed}/{total}");
     if fit::display_width(&head) > width {
-        // The bar glyphs overflow even before the pending tail: shrink them one
-        // at a time, but never touch the `N/M` counter (the one segment that
-        // must survive any width, per the issue's design constraint).
-        let counter = format!(" {completed}/{total}");
-        let bar_glyphs: Vec<char> = filled.chars().chain(empty.chars()).collect();
-        for cut in (0..=bar_glyphs.len()).rev() {
-            let bar: String = bar_glyphs[..cut].iter().collect();
-            let candidate = format!("{bar}{counter}");
-            if fit::display_width(&candidate) <= width {
-                return candidate;
-            }
-        }
-        return counter; // Even the bare counter overflows: return it, never empty.
+        return shrink_bar(&filled, &empty, &format!(" {completed}/{total}"), width);
     }
     let head_width = fit::display_width(&head);
     head + &fit::truncate_to_width(&pending_part, width - head_width)
 }
 
+/// The queue's issues, in queue order, that have not reached a terminal
+/// status; none once the run is finished.
+fn pending_numbers(state: &RunState) -> Vec<u64> {
+    if state.finished {
+        return Vec::new();
+    }
+    let terminal = |n: u64| {
+        state
+            .issues
+            .iter()
+            .any(|e| e.number == n && e.status.is_terminal())
+    };
+    state
+        .order
+        .iter()
+        .copied()
+        .filter(|&n| !terminal(n))
+        .collect()
+}
+
+/// The ` (pending #4 #5 #6)` tail, with the `stop-before` cut marked; empty
+/// when nothing is pending.
+fn pending_tail(pending: &[u64], stop_before: Option<u64>, emoji: bool) -> String {
+    if pending.is_empty() {
+        return String::new();
+    }
+    let nums: Vec<String> = pending
+        .iter()
+        .map(|&n| {
+            if Some(n) == stop_before {
+                // The cut: this issue (and everything after it) won't run.
+                if emoji {
+                    format!("⛔ stop-before #{n}")
+                } else {
+                    format!("|stop-before #{n}|")
+                }
+            } else {
+                format!("#{n}")
+            }
+        })
+        .collect();
+    format!(" (pending {})", nums.join(" "))
+}
+
+/// The bar glyphs overflow even before the pending tail: shrink them one at a
+/// time, but never touch the `N/M` counter (the one segment that must survive
+/// any width, per the issue's design constraint).
+fn shrink_bar(filled: &str, empty: &str, counter: &str, width: usize) -> String {
+    let bar_glyphs: Vec<char> = filled.chars().chain(empty.chars()).collect();
+    for cut in (0..=bar_glyphs.len()).rev() {
+        let bar: String = bar_glyphs[..cut].iter().collect();
+        let candidate = format!("{bar}{counter}");
+        if fit::display_width(&candidate) <= width {
+            return candidate;
+        }
+    }
+    counter.to_string() // Even the bare counter overflows: return it, never empty.
+}
+
+#[cfg(test)]
+mod queue_bar_tests;
 #[cfg(test)]
 mod tests;

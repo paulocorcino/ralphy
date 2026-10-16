@@ -64,3 +64,94 @@ test("a maximized console shows the list button as Switch on a phone and as Slic
 test("the detached-fence popup never shows the list button", () => {
   for (const width of [400, 1200]) assert.equal(paint({ width, autoBoot: false }).hidden, true, `${width}px`);
 });
+
+// A window with a class list and an inline style the paint can write and read.
+function fakeWindow(id, classes = []) {
+  const set = new Set(classes);
+  const style = new Map();
+  return {
+    _deskId: id,
+    classList: {
+      add: (c) => set.add(c),
+      remove: (c) => set.delete(c),
+      contains: (c) => set.has(c),
+    },
+    style: {
+      setProperty: (k, v) => style.set(k, v),
+      removeProperty: (k) => style.delete(k),
+    },
+    classes: set,
+    vars: style,
+  };
+}
+
+// The columns `wins`, painted with `painted`, each window found by its id.
+function paintWindows(wins, painted) {
+  const noop = () => {};
+  const byId = new Map(wins.map((w) => [w._deskId, w]));
+  const setMax = [];
+  const cols = createStageColumns({
+    OPTS: { autoBoot: true },
+    wins: new Set(wins),
+    workspace: () => ({ clientWidth: 1200 }),
+    stage: () => null,
+    popups: { entries: () => [] },
+    desk: () => [],
+    focusWin: noop,
+    setMax: (win, on) => {
+      setMax.push([win._deskId, on]);
+      if (on) win.classList.add("maximized");
+      else win.classList.remove("maximized");
+    },
+    paintMaxButton: noop,
+    syncMaxLock: noop,
+    syncMaxPin: noop,
+    applyExtent: noop,
+    list: () => [],
+    paintFenceColumns: noop,
+    fenceList: () => [],
+    readFenceRects: () => [],
+    readWindowRects: () => [],
+    findWindow: (id) => byId.get(id) ?? null,
+    tearDownMember: noop,
+  });
+  cols.applyColumns(painted);
+  return setMax;
+}
+
+test("a painted column carries its place as CSS variables, with one row when the grid names none", () => {
+  const a = fakeWindow("a");
+  const b = fakeWindow("b");
+  const setMax = paintWindows([a, b], [
+    { id: "a", index: 0, count: 2 },
+    { id: "b", index: 1, count: 2, row: 1, rows: 3 },
+  ]);
+  assert.deepEqual(Object.fromEntries(a.vars), {
+    "--col-index": "0",
+    "--col-count": "2",
+    "--row-index": "0",
+    "--row-count": "1",
+  });
+  assert.deepEqual(Object.fromEntries(b.vars), {
+    "--col-index": "1",
+    "--col-count": "2",
+    "--row-index": "1",
+    "--row-count": "3",
+  });
+  assert.ok(a.classes.has("column") && b.classes.has("column"));
+  assert.deepEqual(setMax, [["a", true]], "the first console is the maximized one");
+});
+
+test("a window the paint no longer names leaves the columns and drops its variables", () => {
+  const a = fakeWindow("a");
+  const b = fakeWindow("b");
+  const stale = fakeWindow("z", ["column"]);
+  stale.style.setProperty("--col-index", "2");
+  stale.style.setProperty("--max-left", "10px");
+  paintWindows([a, b, stale], [
+    { id: "a", index: 0, count: 2 },
+    { id: "b", index: 1, count: 2 },
+  ]);
+  assert.equal(stale.classes.has("column"), false);
+  assert.deepEqual([...stale.vars.keys()], [], "a window that is not maximized drops its maximize box too");
+});

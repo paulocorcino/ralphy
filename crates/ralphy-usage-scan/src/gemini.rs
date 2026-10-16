@@ -33,7 +33,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::Path;
 
-use crate::{GeminiScan, InteractiveRecord, Tokens};
+use crate::{since, GeminiScan, InteractiveRecord, Tokens};
 
 /// Scan the Gemini store into interactive records (one per session × model).
 /// Enumerates every project directory under `<gemini_dir>/tmp/`, maps it back to
@@ -53,35 +53,7 @@ pub fn scan_gemini(input: &GeminiScan) -> Vec<InteractiveRecord> {
         return out;
     };
     for project in projects.flatten() {
-        let dir = project.path();
-        let root = fs::read_to_string(dir.join(".project_root")).unwrap_or_default();
-        let root = root.trim();
-        let (slug, actor_email) = attribute(input, &mut email_cache, root);
-
-        for file in chat_files(&dir.join("chats")) {
-            let Ok(text) = fs::read_to_string(&file) else {
-                continue;
-            };
-            let Some(fold) = fold_session(&text) else {
-                continue;
-            };
-            if input.run_session_ids.contains(&fold.session_id) {
-                continue;
-            }
-            for (model, tokens) in fold.by_model {
-                out.push(InteractiveRecord {
-                    agent: "gemini".to_string(),
-                    model,
-                    session_id: fold.session_id.clone(),
-                    project: slug.clone(),
-                    actor_email: actor_email.clone(),
-                    tokens: Some(tokens),
-                    first_ts: fold.first_ts.clone(),
-                    last_ts: fold.last_ts.clone(),
-                    lower_bound: true,
-                });
-            }
-        }
+        out.extend(project_records(input, &mut email_cache, &project.path()));
     }
 
     out.sort_by(|a, b| {
@@ -90,15 +62,57 @@ pub fn scan_gemini(input: &GeminiScan) -> Vec<InteractiveRecord> {
             .then_with(|| a.first_ts.cmp(&b.first_ts))
     });
 
-    if let Some(since) = input.since {
-        if let Ok(since_dt) = chrono::DateTime::parse_from_rfc3339(since) {
-            out.retain(|r| match chrono::DateTime::parse_from_rfc3339(&r.last_ts) {
-                Ok(last) => last >= since_dt,
-                Err(_) => true, // never hide spend on a parse miss
-            });
+    since::retain_since(&mut out, input.since);
+    out
+}
+
+/// The interactive records of one project directory under `tmp/`, attributed
+/// through its `.project_root` sibling.
+fn project_records(
+    input: &GeminiScan,
+    email_cache: &mut HashMap<String, Option<String>>,
+    dir: &Path,
+) -> Vec<InteractiveRecord> {
+    let root = fs::read_to_string(dir.join(".project_root")).unwrap_or_default();
+    let root = root.trim();
+    let (slug, actor_email) = attribute(input, email_cache, root);
+
+    let mut out = Vec::new();
+    for file in chat_files(&dir.join("chats")) {
+        let Ok(text) = fs::read_to_string(&file) else {
+            continue;
+        };
+        let Some(fold) = fold_session(&text) else {
+            continue;
+        };
+        if input.run_session_ids.contains(&fold.session_id) {
+            continue;
         }
+        out.extend(records_of(fold, &slug, &actor_email));
     }
     out
+}
+
+/// One record per model of a folded session.
+fn records_of(
+    fold: Fold,
+    slug: &Option<String>,
+    actor_email: &Option<String>,
+) -> Vec<InteractiveRecord> {
+    fold.by_model
+        .into_iter()
+        .map(|(model, tokens)| InteractiveRecord {
+            agent: "gemini".to_string(),
+            model,
+            session_id: fold.session_id.clone(),
+            project: slug.clone(),
+            actor_email: actor_email.clone(),
+            tokens: Some(tokens),
+            first_ts: fold.first_ts.clone(),
+            last_ts: fold.last_ts.clone(),
+            lower_bound: true,
+        })
+        .collect()
 }
 
 /// Every session log under `chats/`: the direct `*.jsonl` files AND the ones one
@@ -159,9 +173,7 @@ fn fold_session(lines: &str) -> Option<Fold> {
             session_id.get_or_insert_with(|| id.to_string());
         }
         if let Some(start) = value.get("startTime").and_then(|v| v.as_str()) {
-            if first_ts.is_empty() || earlier(start, &first_ts) {
-                first_ts = start.to_string();
-            }
+            widen_first(&mut first_ts, start);
         }
         // `lastUpdated` appears both on the header and inside `$set` mutations.
         for updated in [value.get("lastUpdated"), value.pointer("/$set/lastUpdated")]
@@ -169,33 +181,14 @@ fn fold_session(lines: &str) -> Option<Fold> {
             .flatten()
             .filter_map(|v| v.as_str())
         {
-            if last_ts.is_empty() || earlier(&last_ts, updated) {
-                last_ts = updated.to_string();
-            }
+            widen_last(&mut last_ts, updated);
         }
-        let (Some(tokens), Some(model)) = (
+        if let (Some(tokens), Some(model)) = (
             value.get("tokens"),
             value.get("model").and_then(|v| v.as_str()),
-        ) else {
-            continue;
-        };
-        let n = |k: &str| tokens.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
-        let (input, cached) = (n("input"), n("cached"));
-        // A record with no `total` cannot be differenced — reconstruct the sum
-        // from the parts instead, or the turn would report input-only spend.
-        let total = match tokens.get("total").and_then(|v| v.as_u64()) {
-            Some(t) => t,
-            None => input + n("output") + n("thoughts"),
-        };
-        let agg = by_model.entry(model.to_string()).or_default();
-        // `input` INCLUDES `cached` in this store (live: 14134 = 8133 cached +
-        // 6001 fresh, and 14134 + 37 output + 218 thoughts = 14389 total), but
-        // `Tokens`' four buckets are DISJOINT — a consumer sums them. Subtract the
-        // cached subset out, exactly as `codex.rs` does for `input_tokens`.
-        agg.input += input.saturating_sub(cached);
-        // `total` already carries `thoughts`; the bare `output` field does not.
-        agg.output += total.saturating_sub(input);
-        agg.cache_read += cached;
+        ) {
+            add_turn(&mut by_model, tokens, model);
+        }
     }
 
     let session_id = session_id?;
@@ -208,6 +201,41 @@ fn fold_session(lines: &str) -> Option<Fold> {
         first_ts,
         last_ts,
     })
+}
+
+/// Move `first_ts` back to `start` when `start` is the earliest seen.
+fn widen_first(first_ts: &mut String, start: &str) {
+    if first_ts.is_empty() || earlier(start, first_ts) {
+        *first_ts = start.to_string();
+    }
+}
+
+/// Move `last_ts` forward to `updated` when `updated` is the latest seen.
+fn widen_last(last_ts: &mut String, updated: &str) {
+    if last_ts.is_empty() || earlier(last_ts, updated) {
+        *last_ts = updated.to_string();
+    }
+}
+
+/// Add one assistant turn's `tokens` block to the aggregate of its `model`.
+fn add_turn(by_model: &mut BTreeMap<String, Tokens>, tokens: &serde_json::Value, model: &str) {
+    let n = |k: &str| tokens.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+    let (input, cached) = (n("input"), n("cached"));
+    // A record with no `total` cannot be differenced — reconstruct the sum
+    // from the parts instead, or the turn would report input-only spend.
+    let total = match tokens.get("total").and_then(|v| v.as_u64()) {
+        Some(t) => t,
+        None => input + n("output") + n("thoughts"),
+    };
+    let agg = by_model.entry(model.to_string()).or_default();
+    // `input` INCLUDES `cached` in this store (live: 14134 = 8133 cached +
+    // 6001 fresh, and 14134 + 37 output + 218 thoughts = 14389 total), but
+    // `Tokens`' four buckets are DISJOINT — a consumer sums them. Subtract the
+    // cached subset out, exactly as `codex.rs` does for `input_tokens`.
+    agg.input += input.saturating_sub(cached);
+    // `total` already carries `thoughts`; the bare `output` field does not.
+    agg.output += total.saturating_sub(input);
+    agg.cache_read += cached;
 }
 
 /// True when `a` names a strictly earlier instant than `b`. Compared as parsed
@@ -485,6 +513,35 @@ mod tests {
 
         let records = scan(tmp.path());
         assert_eq!(records[0].last_ts, "2026-07-21T02:00:00Z");
+    }
+
+    #[test]
+    fn the_earliest_start_time_is_the_first_ts() {
+        let lines = concat!(
+            r#"{"sessionId":"s","startTime":"2026-07-21T00:58:00Z"}"#,
+            "\n",
+            r#"{"startTime":"2026-07-21T00:56:00Z"}"#,
+            "\n",
+            r#"{"startTime":"2026-07-21T00:57:00Z"}"#,
+        );
+        let fold = fold_session(lines).expect("a header names the session");
+        assert_eq!(fold.first_ts, "2026-07-21T00:56:00Z");
+    }
+
+    #[test]
+    fn a_log_with_no_session_id_folds_to_no_session() {
+        assert!(fold_session(&format!(
+            "{TURN}
+"
+        ))
+        .is_none());
+    }
+
+    #[test]
+    fn last_ts_falls_back_to_first_ts_when_no_last_updated_is_seen() {
+        let lines = r#"{"sessionId":"s","startTime":"2026-07-21T00:56:00Z"}"#;
+        let fold = fold_session(lines).expect("a header names the session");
+        assert_eq!(fold.last_ts, "2026-07-21T00:56:00Z");
     }
 
     #[test]

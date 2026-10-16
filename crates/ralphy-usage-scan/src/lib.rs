@@ -23,6 +23,7 @@ pub mod gemini;
 pub mod kimi;
 pub mod opencode;
 pub mod recovery;
+mod since;
 mod walk;
 
 pub use claude::scan_claude;

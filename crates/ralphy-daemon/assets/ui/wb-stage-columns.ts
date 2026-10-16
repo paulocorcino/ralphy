@@ -134,6 +134,47 @@ export function createStageColumns(deps: StageColumnsDeps) {
     } catch {}
   }
 
+  // A column's place in the grid, as the CSS variables its box is drawn from.
+  function paintColumnSlot(win: ConsoleWin, p: Painted) {
+    win.classList.add("column");
+    win.style.setProperty("--col-index", String(p.index));
+    win.style.setProperty("--col-count", String(p.count));
+    win.style.setProperty("--row-index", String(p.row ?? 0));
+    win.style.setProperty("--row-count", String(p.rows ?? 1));
+  }
+
+  // Paint one console of `list` and bring its maximize in step. Answers the
+  // window when it is shown (a column, or the maximized console), else null.
+  function syncSlot(p: Painted, list: Painted[], persist: boolean): ConsoleWin | null {
+    const win = findWindow(p.id);
+    if (!win) return null;
+    const c = columnClasses(list, p.id);
+    if (c.column) paintColumnSlot(win, p);
+    // The class is set FIRST: `restoreRect` must already read a column's
+    // inline rect.
+    if (c.maximized && !win.classList.contains("maximized")) setMax(win, true, persist);
+    else if (!c.maximized && win.classList.contains("maximized")) setMax(win, false, persist);
+    paintMaxButton(win);
+    // The last column left is a plain maximize, and a full bleed must be on
+    // top: the console just restored was raised later than it.
+    return c.column || c.maximized ? win : null;
+  }
+
+  // Never disabled: at the cap the list still swaps (ADR-0051 §5). A phone
+  // paints one console, so there the same list only switches the maximized
+  // console (#599). The viewport is read here, not the caller's cap: a
+  // caller with no columns open passes a cap of 1 at any width.
+  function paintListButtons() {
+    const narrow = columnMeasure().viewport <= PHONE_MAX_WIDTH;
+    for (const win of wins) {
+      const btn = win._colBtn;
+      if (!btn) continue;
+      const held = win.classList.contains("maximized") || win.classList.contains("column");
+      btn.hidden = !(OPTS.autoBoot !== false && held);
+      paintColumnButton(btn, narrow);
+    }
+  }
+
   // Paint `painted` (`WBColumns.painted`). `unmax` is the old first console
   // after a restore: it stops being the maximized console. `persist` writes
   // each change of the maximize to the desk.
@@ -149,26 +190,8 @@ export function createStageColumns(deps: StageColumnsDeps) {
     if (gone && !columnClasses(list, gone._deskId).column) setMax(gone, false, persist);
     const shown = [];
     for (const p of list) {
-      const win = findWindow(p.id);
-      if (!win) continue;
-      const c = columnClasses(list, p.id);
-      if (c.column) {
-        win.classList.add("column");
-        win.style.setProperty("--col-index", String(p.index));
-        win.style.setProperty("--col-count", String(p.count));
-        win.style.setProperty("--row-index", String(p.row ?? 0));
-        win.style.setProperty("--row-count", String(p.rows ?? 1));
-        shown.push(win);
-      } else if (c.maximized) {
-        // The last column left is a plain maximize, and a full bleed must be
-        // on top: the console just restored was raised later than it.
-        shown.push(win);
-      }
-      // The class is set FIRST: `restoreRect` must already read a column's
-      // inline rect.
-      if (c.maximized && !win.classList.contains("maximized")) setMax(win, true, persist);
-      else if (!c.maximized && win.classList.contains("maximized")) setMax(win, false, persist);
-      paintMaxButton(win);
+      const win = syncSlot(p, list, persist);
+      if (win) shown.push(win);
     }
     syncMaxLock();
     syncMaxPin();
@@ -181,18 +204,7 @@ export function createStageColumns(deps: StageColumnsDeps) {
         win._term?.fit.fit();
       } catch {}
     }
-    // Never disabled: at the cap the list still swaps (ADR-0051 §5). A phone
-    // paints one console, so there the same list only switches the maximized
-    // console (#599). The viewport is read here, not the caller's cap: a
-    // caller with no columns open passes a cap of 1 at any width.
-    const narrow = columnMeasure().viewport <= PHONE_MAX_WIDTH;
-    for (const win of wins) {
-      const btn = win._colBtn;
-      if (!btn) continue;
-      const held = win.classList.contains("maximized") || win.classList.contains("column");
-      btn.hidden = !(OPTS.autoBoot !== false && held);
-      paintColumnButton(btn, narrow);
-    }
+    paintListButtons();
     paintFenceColumns();
   }
 

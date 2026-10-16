@@ -157,3 +157,17 @@ test("a note file with an empty path or no path sets the repo and the empty path
   });
   assert.equal(same.changed, false, "an absent path equals the stored empty one");
 });
+
+test("an unknown op, an unknown record type and a remove of a missing id change nothing", () => {
+  const S = load();
+  const desk = deskWith("windows", W(100));
+  for (const change of [
+    { op: "rename", type: "window", id: "w-1" },
+    { op: "set", type: "panel", id: "w-1", fields: { locked: true } },
+    { op: "remove", type: "window", id: "w-2" },
+  ]) {
+    const out = S.applyChange(desk, change);
+    assert.equal(out.changed, false, JSON.stringify(change));
+    assert.equal(out.desk, desk, `${JSON.stringify(change)}: the same desk comes back`);
+  }
+});

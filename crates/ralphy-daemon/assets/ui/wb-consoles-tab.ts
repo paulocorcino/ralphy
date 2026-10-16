@@ -322,6 +322,27 @@ export function wbConsoleMenus() {
   });
 }
 
+// The keys are free when nothing outside a console has them: no search box,
+// no modal. Read at call time.
+function keysFree() {
+  const el = document.activeElement;
+  return !el || el === document.body || !!el.closest?.(".session-window");
+}
+
+// The console the columns grow from: the first column, else the console that
+// is maximized on the stage.
+function columnLead(ids: readonly string[]): string | undefined {
+  return ids[0] ?? document.querySelector<ConsoleWin>("#stage .session-window.maximized")?._deskId;
+}
+
+// After a paint, the focus goes back to the column that had it, or to the
+// last painted one, while the keys are free on the Consoles tab.
+function refocusAfterPaint(tabActive: boolean, columnIds: readonly (string | null)[], ids: string[], before: string | null, moved: boolean) {
+  if (!tabActive || !keysFree() || !columnIds.includes(before)) return;
+  const want = WBColumns.focusAfter(ids, before);
+  if (want && (want !== before || moved)) WBConsole.focusColumn(want);
+}
+
 export function wbColumns() {
   // Every `shell()` member this component's code or markup reads or calls.
   return component([], {
@@ -417,8 +438,7 @@ export function wbColumns() {
       // The KEPT grid is stored, never the painted slice: a console the cap
       // hides comes back when the cap grows again.
       this.setColumns(keptIds.length >= 2 ? kept : []);
-      const left =
-        this.columnIds()[0] ?? document.querySelector<ConsoleWin>("#stage .session-window.maximized")?._deskId;
+      const left = columnLead(this.columnIds());
       // A hidden consoles tab measures 0 wide, which reads as a cap of 1: keep
       // the painted columns as they are until the tab shows again.
       if (left && !WBConsole.columnMeasure().viewport) return;
@@ -432,13 +452,7 @@ export function wbColumns() {
       const moved = this.columnIds().length >= 2 && key !== this._paintedKey;
       this._paintedKey = key;
       WBConsole.applyColumns(painted, { unmax: null, raise: !!opts?.raise || moved, persist: true });
-      // Only when the keys are not somewhere else (a search box, a modal).
-      const el = document.activeElement;
-      const keysFree = !el || el === document.body || !!el.closest?.(".session-window");
-      if (this.$store.tabs.active === "consoles" && keysFree && (this.columnIds() as readonly (string | null)[]).includes(before)) {
-        const want = WBColumns.focusAfter(ids, before);
-        if (want && (want !== before || moved)) WBConsole.focusColumn(want);
-      }
+      refocusAfterPaint(this.$store.tabs.active === "consoles", this.columnIds(), ids, before, moved);
     },
     // A fence detached to a popup takes its consoles out of the columns.
     leaveColumns(ids: string[]) {

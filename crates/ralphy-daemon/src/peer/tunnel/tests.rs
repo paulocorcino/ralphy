@@ -302,6 +302,71 @@ fn a_wake_does_not_wait_even_for_the_exit_it_sees() {
     );
 }
 
+/// The words of [`says_why_and_exits`].
+const WHY: &str = "ssh: connect to host svrapp port 22: Connection timed out";
+
+/// Stands in for an `ssh` that cannot reach its host and says why on stderr.
+/// Only ever started by [`says_why_and_exits`].
+#[test]
+#[ignore = "a child process of another test"]
+fn tunnel_says_why_stand_in() {
+    eprintln!("{WHY}");
+}
+
+fn says_why_and_exits() -> Result<Child> {
+    let exe = std::env::current_exe().context("locating the test binary")?;
+    Command::new(exe)
+        .args([
+            "--ignored",
+            "--exact",
+            "peer::tunnel::tests::tunnel_says_why_stand_in",
+            "--nocapture",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("starting the stand-in that says why")
+}
+
+#[test]
+fn a_tunnel_keeps_the_last_words_of_the_ssh_before_it() {
+    let tunnels = Tunnels::new();
+    let before = spec(None);
+    let now = Instant::now();
+    // A wake never waits, so every ensure here starts an `ssh`.
+    let ensure = |spec: &TunnelSpec, spawn: fn() -> Result<Child>| {
+        tunnels.ensure_with("mac", spec, now, true, spawn).unwrap()
+    };
+    assert_eq!(ensure(&before, says_why_and_exits), Ensured::Started);
+    wait_exited(&tunnels, "mac");
+    assert_eq!(ensure(&before, exits_at_once), Ensured::Started);
+    assert_eq!(
+        tunnels.last_said("mac").as_deref(),
+        Some(WHY),
+        "the last line of the ssh that exited is kept"
+    );
+    wait_exited(&tunnels, "mac");
+    assert_eq!(ensure(&before, says_why_and_exits), Ensured::Started);
+    assert_eq!(
+        tunnels.last_said("mac"),
+        None,
+        "an ssh that said nothing clears the line of the one before"
+    );
+    wait_exited(&tunnels, "mac");
+    assert_eq!(ensure(&before, stand_in), Ensured::Started);
+    assert_eq!(tunnels.last_said("mac").as_deref(), Some(WHY));
+    let edited = TunnelSpec {
+        destination: "user@192.168.101.3".into(),
+        ..before
+    };
+    assert_eq!(ensure(&edited, exits_at_once), Ensured::Started);
+    assert_eq!(
+        tunnels.last_said("mac"),
+        None,
+        "what the old ssh said was about the old host"
+    );
+}
+
 #[test]
 fn a_close_is_quiet_only_at_the_longest_wait_with_the_same_words() {
     let said = Some("ssh: connect to host 10.1.1.4 port 22: Connection timed out".to_string());

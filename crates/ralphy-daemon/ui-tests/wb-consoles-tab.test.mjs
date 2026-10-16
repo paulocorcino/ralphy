@@ -506,3 +506,82 @@ test("the Consoles tab hides without display:none, so its consoles keep their re
   const css = readFileSync(join(UI, "styles", "05-workspace.css"), "utf8");
   assert.match(css, /\.consoles-tab\.tab-hidden \{\s*visibility: hidden;\s*\}/);
 });
+
+// `paintColumns` on a stage of `wins` (`[id, maximized]`), with the console
+// module's reads in `box`. Every paint and every focus is recorded.
+function paintShell() {
+  const { scope: state, shell, window, document } = loadComponent("wbColumns");
+  const box = { viewport: 1920, focused: null };
+  const paints = [];
+  const focus = [];
+  const realConsole = globalThis.WBConsole;
+  globalThis.WBConsole = {
+    ...window.WBConsole,
+    applyColumns: (painted) => paints.push(painted.map((p) => p.id)),
+    columnMeasure: () => ({ viewport: box.viewport }),
+    focusedId: () => box.focused,
+    focusColumn: (id) => focus.push(id),
+    isRelaunching: () => false,
+  };
+  state.columnCap = () => 3;
+  const stage = (...wins) => {
+    document.querySelectorAll = () =>
+      wins.map(([id, max]) => ({ _deskId: id, classList: { contains: (c) => max && c === "maximized" } }));
+  };
+  const done = () => {
+    globalThis.WBConsole = realConsole;
+  };
+  return { state, shell, document, box, paints, focus, stage, done };
+}
+
+// A hidden tab measures 0 wide, which reads as a cap of 1. A console that is
+// maximized with no columns open keeps its paint until the tab shows again.
+test("paintColumns leaves a maximized console alone while the tab measures 0", () => {
+  const { state, document, box, paints, stage, done } = paintShell();
+  try {
+    stage(["m", true]);
+    state.columns = [];
+    box.viewport = 0;
+    document.querySelector = () => ({ _deskId: "m" });
+    state.paintColumns();
+    assert.deepEqual(paints, [], "nothing is painted at 0 wide");
+    document.querySelector = () => null;
+    state.paintColumns();
+    assert.deepEqual(paints, [[]], "with no console maximized the paint runs");
+  } finally {
+    done();
+  }
+});
+
+// The keys go back to the focused column only when they are free: not in a
+// search box, and only on the Consoles tab.
+test("paintColumns gives the focus back to a column only while the keys are free on the Consoles tab", () => {
+  const { state, shell, document, box, focus, stage, done } = paintShell();
+  try {
+    stage(["a", true], ["b"]);
+    state.columns = [["a"], ["b"]];
+    shell.$store.tabs.active = "consoles";
+    box.focused = "b";
+    state.paintColumns();
+    assert.deepEqual(focus, ["b"], "a new grid puts the focus back on its console");
+    state.paintColumns();
+    assert.deepEqual(focus, ["b"], "the same grid with the focus in place does nothing");
+    const again = (active, tab = "consoles") => {
+      state._paintedKey = "";
+      document.activeElement = active;
+      shell.$store.tabs.active = tab;
+      state.paintColumns();
+    };
+    again({ closest: () => null });
+    assert.deepEqual(focus, ["b"], "a search box keeps its keys");
+    again({ closest: (sel) => (sel === ".session-window" ? {} : null) });
+    assert.deepEqual(focus, ["b", "b"], "a console has the keys");
+    again(undefined, "code");
+    assert.deepEqual(focus, ["b", "b"], "another tab keeps its keys");
+    box.focused = "x";
+    again(undefined);
+    assert.deepEqual(focus, ["b", "b"], "a focus outside the columns stays where it is");
+  } finally {
+    done();
+  }
+});

@@ -221,47 +221,59 @@ function target(state: State): Target {
   const l = state.listing;
   if (!l || !l.dir || l.dir.path === "") return none;
   const dir = l.dir;
-  let path;
-  let repo;
-  let added;
-  let inside = null;
-  if (endsWithSep(text)) {
-    path = dir.path;
-    repo = !!dir.root && samePath(dir.root, dir.path, sep);
-    added = !!dir.added;
-    if (dir.root && !repo) inside = dir.root;
-  } else {
-    const name = lastName(text);
-    const entry = listed(state).find((e) => sameName(e.name, name, sep));
-    // The parent folder exists: the last name can be created there. Not
-    // inside a repo, where a new repository would sit in another one.
-    if (!entry && !dir.root && name.trim()) {
-      // Windows drops a final space or dot, so the folder would get
-      // another name than the one shown.
-      if (/[ .]$/.test(name)) {
-        return { action: "missing", label: "A folder name cannot end with a space or a dot", help: "", path: "", init: false };
-      }
-      const path = withSep(dir.path, sep) + name;
-      return {
-        action: "create",
-        label: "Create folder and repository",
-        help: `Ralphy creates the folder ${path} and a git repository in it.`,
-        path,
-        init: true,
-        create: true,
-      };
-    }
-    if (!entry) {
-      return { action: "missing", label: "This folder does not exist", help: "", path: "", init: false };
-    }
-    if (entry.error) {
-      return { action: "unreadable", label: "Cannot read this folder", help: "", path: "", init: false };
-    }
-    path = withSep(dir.path, sep) + entry.name;
-    repo = entry.repo;
-    added = entry.added || (!entry.repo && !!dir.root && !!dir.added);
-    if (!entry.repo && dir.root) inside = dir.root;
+  if (!endsWithSep(text)) return entryTarget(state, dir, text, sep);
+  const repo = !!dir.root && samePath(dir.root, dir.path, sep);
+  return finalTarget(dir.path, repo, !!dir.added, dir.root && !repo ? dir.root : null);
+}
+
+/** The folder `dir` of a listing. */
+type ListedDir = NonNullable<Listing["dir"]>;
+
+// The text names a folder by its last name: a listed folder, or one that the
+// parent folder `dir` can create.
+function entryTarget(state: State, dir: ListedDir, text: string, sep: string): Target {
+  const name = lastName(text);
+  const entry = listed(state).find((e) => sameName(e.name, name, sep));
+  // The parent folder exists: the last name can be created there. Not
+  // inside a repo, where a new repository would sit in another one.
+  if (!entry && !dir.root && name.trim()) return createTarget(dir, name, sep);
+  if (!entry) {
+    return { action: "missing", label: "This folder does not exist", help: "", path: "", init: false };
   }
+  return listedTarget(dir, entry, sep);
+}
+
+// A folder the daemon listed in the folder `dir`.
+function listedTarget(dir: ListedDir, entry: Row, sep: string): Target {
+  if (entry.error) {
+    return { action: "unreadable", label: "Cannot read this folder", help: "", path: "", init: false };
+  }
+  const added = entry.added || (!entry.repo && !!dir.root && !!dir.added);
+  const inside = !entry.repo && dir.root ? dir.root : null;
+  return finalTarget(withSep(dir.path, sep) + entry.name, entry.repo, added, inside);
+}
+
+// A folder `name` that does not exist yet in the folder `dir`.
+function createTarget(dir: ListedDir, name: string, sep: string): Target {
+  // Windows drops a final space or dot, so the folder would get
+  // another name than the one shown.
+  if (/[ .]$/.test(name)) {
+    return { action: "missing", label: "A folder name cannot end with a space or a dot", help: "", path: "", init: false };
+  }
+  const path = withSep(dir.path, sep) + name;
+  return {
+    action: "create",
+    label: "Create folder and repository",
+    help: `Ralphy creates the folder ${path} and a git repository in it.`,
+    path,
+    init: true,
+    create: true,
+  };
+}
+
+// What adding the existing folder at `path` does: it is in Projects, it is a
+// repo, it is inside the repo `inside`, or it gets a repository.
+function finalTarget(path: string, repo: boolean, added: boolean, inside: string | null): Target {
   path = path.length > 3 ? path.replace(/[\\/]+$/, "") : path;
   if (added) return { action: "added", label: "Already in Projects", help: "", path, init: false };
   if (repo) return { action: "add", label: "Add project", help: "", path, init: false };

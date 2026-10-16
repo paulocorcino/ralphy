@@ -211,3 +211,171 @@ test("a card is refused at the cap, with a toast and no write", () => {
   assert.deepEqual(saved, []);
   assert.deepEqual(toasts, Array(2).fill("You can have at most 32 notes. Close one first."));
 });
+
+// ---- the stage: what `render` builds and what it drops ------------------------
+// A DOM that remembers structure: children, classes and a class selector. It
+// is enough for `buildCard`, which `mountDetached` needs to make a window a
+// fragment; nothing here asserts on the card's chrome.
+function fakeEl(tag) {
+  const classes = new Set();
+  const el = {
+    tag,
+    dataset: {},
+    style: { setProperty() {}, removeProperty() {} },
+    children: [],
+    parent: null,
+    get className() {
+      return [...classes].join(" ");
+    },
+    set className(v) {
+      classes.clear();
+      for (const c of String(v).split(/\s+/).filter(Boolean)) classes.add(c);
+    },
+    classList: {
+      add: (...cs) => cs.forEach((c) => classes.add(c)),
+      remove: (...cs) => cs.forEach((c) => classes.delete(c)),
+      toggle: (c, force) => {
+        const on = force === undefined ? !classes.has(c) : !!force;
+        if (on) classes.add(c);
+        else classes.delete(c);
+        return on;
+      },
+      contains: (c) => classes.has(c),
+    },
+    get firstChild() {
+      return el.children[0] || null;
+    },
+    get isConnected() {
+      return !!el.parent;
+    },
+    append(...kids) {
+      for (const k of kids) {
+        k.parent = el;
+        el.children.push(k);
+      }
+    },
+    remove() {
+      if (el.parent) el.parent.children = el.parent.children.filter((k) => k !== el);
+      el.parent = null;
+    },
+    querySelectorAll(sel) {
+      const cls = sel.replace(/^\./, "");
+      const out = [];
+      const walk = (n) => {
+        for (const k of n.children) {
+          if (k.classList.contains(cls)) out.push(k);
+          walk(k);
+        }
+      };
+      walk(el);
+      return out;
+    },
+    querySelector(sel) {
+      return el.querySelectorAll(sel)[0] || null;
+    },
+    contains: () => false,
+    addEventListener() {},
+    setAttribute() {},
+    focus() {},
+  };
+  return el;
+}
+
+function onStage({ records, WBDaemon = {} }) {
+  const stage = fakeEl("stage");
+  const window = {
+    WBDaemon: {
+      withCheckout: (args) => args,
+      // A read that never answers: the cards here are about the stage.
+      observe: () => new Promise(() => {}),
+      ...WBDaemon,
+    },
+  };
+  const document = {
+    getElementById: (id) => (id === "stage" ? stage : null),
+    createElement: (tag) => fakeEl(tag),
+    querySelector: () => null,
+    addEventListener() {},
+  };
+  const desk = { records };
+  const host = {
+    notes: () => desk.records,
+    fenceRecords: () => [],
+    saveNotes() {},
+    startResize: () => () => {},
+    makeDraggable() {},
+  };
+  const notes = createNotes(window, document, { console: host });
+  const ids = () => stage.querySelectorAll(".note-card").map((c) => c.dataset.noteId);
+  return { notes, stage, desk, ids };
+}
+
+const RECT = { left: 0, top: 0, width: 10, height: 10 };
+
+test("a detached popup does not build a card for a record it was not handed", () => {
+  const mine = { id: "mine", repo: "r", path: "a.note", rect: RECT };
+  const other = { id: "other", repo: "r", path: "b.note", rect: RECT };
+  const { notes, desk, ids } = onStage({ records: [mine, other] });
+  notes.mountDetached(mine);
+  notes.render();
+  assert.deepEqual(ids(), ["mine"]);
+  // The control: the shell's window builds every record of its desk.
+  const shell = onStage({ records: [mine, other] });
+  shell.notes.render();
+  assert.deepEqual(shell.ids(), ["mine", "other"]);
+  assert.equal(desk.records.length, 2);
+});
+
+test("a popup card whose record this desk never held is kept on the stage", () => {
+  const snap = { id: "snap", repo: "r", path: "a.note", rect: RECT };
+  const { notes, ids } = onStage({ records: [] });
+  const card = notes.mountDetached(snap);
+  notes.render();
+  assert.deepEqual(ids(), ["snap"]);
+  assert.notEqual(card._noteGone, true);
+});
+
+test("a named note whose record left the desk writes what was typed as its card goes", async () => {
+  const writes = [];
+  const record = { id: "n", repo: "r", path: "a.note", rect: RECT };
+  const { notes, desk, ids } = onStage({
+    records: [record],
+    WBDaemon: {
+      write: (verb, args) => {
+        writes.push([verb, args.path, args.markdown]);
+        return Promise.resolve({});
+      },
+    },
+  });
+  notes.render();
+  const card = notes.cardEl("n");
+  card._noteMarkdown = "typed\n";
+  card._noteDirty = true;
+  // Closed from another client: the record is gone, the card follows it.
+  desk.records = [];
+  notes.render();
+  assert.deepEqual(ids(), []);
+  assert.equal(card._noteGone, true);
+  await card._noteWrite;
+  assert.deepEqual(writes, [["note.write", "a.note", "typed\n"]]);
+});
+
+test("the card on top is put back before its card leaves the stage", () => {
+  const record = { id: "t", repo: "r", path: "a.note", rect: RECT };
+  const { notes, desk } = onStage({ records: [record] });
+  notes.render();
+  const card = notes.cardEl("t");
+  const real = globalThis.getComputedStyle;
+  globalThis.getComputedStyle = () => ({ getPropertyValue: () => "" });
+  try {
+    assert.equal(notes.keepOnTop("t"), true);
+  } finally {
+    globalThis.getComputedStyle = real;
+  }
+  assert.equal(card.classList.contains("on-top"), true);
+  desk.records = [];
+  notes.render();
+  assert.equal(notes.onTopNow(), null);
+  assert.equal(card.classList.contains("on-top"), false);
+  assert.equal(card._noteShadow, null);
+});

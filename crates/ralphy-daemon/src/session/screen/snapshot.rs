@@ -2,7 +2,7 @@
 //! reset terminal of the same size (ADR-0079 D5). `alacritty_terminal` has no
 //! writer of its own.
 
-use alacritty_terminal::grid::{Dimensions, Grid};
+use alacritty_terminal::grid::{Dimensions, Grid, Row};
 use alacritty_terminal::index::{Column, Line};
 use alacritty_terminal::term::cell::{Cell, Flags, Hyperlink};
 use alacritty_terminal::term::{Term, TermMode};
@@ -225,43 +225,59 @@ fn write_rows(grid: &Grid<Cell>, with_history: bool, out: &mut String, pen: &mut
     for l in top..=bottom {
         let row = &grid[Line(l)];
         let wrapped = row[Column(last)].flags.contains(Flags::WRAPLINE);
-        let end = if wrapped {
-            columns
-        } else {
-            let end = (0..columns)
-                .rev()
-                .find(|c| !is_blank(&row[Column(*c)]))
-                .map_or(0, |c| c + 1);
-            // The row before left a pending wrap; only a written cell makes
-            // it fire, or the receiving terminal loses this row.
-            if after_wrapped {
-                end.max(1)
-            } else {
-                end
-            }
-        };
+        let end = row_end(row, columns, wrapped, after_wrapped);
         after_wrapped = wrapped;
-        for c in 0..end {
-            let cell = &row[Column(c)];
-            if cell
-                .flags
-                .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
-            {
-                continue;
-            }
-            pen.apply(cell, out);
-            write_cell(cell, out);
-        }
+        write_cells(row, end, out, pen);
         if !wrapped && l != bottom {
-            // A colored background would paint the new row when the
-            // receiving terminal scrolls.
-            if pen.set && pen.bg != Some(Color::Named(NamedColor::Background)) {
-                out.push_str("\x1b[0m");
-                pen.set = false;
-            }
-            out.push_str("\r\n");
+            end_line(pen, out);
         }
     }
+}
+
+/// The column after the last cell of `row` to write: every column of a
+/// wrapped row, else up to the last cell that is not blank.
+fn row_end(row: &Row<Cell>, columns: usize, wrapped: bool, after_wrapped: bool) -> usize {
+    if wrapped {
+        return columns;
+    }
+    let end = (0..columns)
+        .rev()
+        .find(|c| !is_blank(&row[Column(*c)]))
+        .map_or(0, |c| c + 1);
+    // The row before left a pending wrap; only a written cell makes
+    // it fire, or the receiving terminal loses this row.
+    if after_wrapped {
+        end.max(1)
+    } else {
+        end
+    }
+}
+
+/// The cells of `row` before `end`. A wide character's spacer is not
+/// written: the character itself takes both columns.
+fn write_cells(row: &Row<Cell>, end: usize, out: &mut String, pen: &mut Pen) {
+    for c in 0..end {
+        let cell = &row[Column(c)];
+        if cell
+            .flags
+            .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
+        {
+            continue;
+        }
+        pen.apply(cell, out);
+        write_cell(cell, out);
+    }
+}
+
+/// CR LF after a row that is not wrapped.
+fn end_line(pen: &mut Pen, out: &mut String) {
+    // A colored background would paint the new row when the
+    // receiving terminal scrolls.
+    if pen.set && pen.bg != Some(Color::Named(NamedColor::Background)) {
+        out.push_str("\x1b[0m");
+        pen.set = false;
+    }
+    out.push_str("\r\n");
 }
 
 /// The attributes last written, so a run of equal cells gets one SGR.
@@ -367,3 +383,6 @@ fn write_underline_color(color: Color, out: &mut String) {
         Color::Spec(rgb) => out.push_str(&format!(";58;2;{};{};{}", rgb.r, rgb.g, rgb.b)),
     }
 }
+
+#[cfg(test)]
+mod tests;

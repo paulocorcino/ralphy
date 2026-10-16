@@ -380,3 +380,14 @@ test("a peer's project root is the peer's own root, else its path", () => {
   assert.equal(WBFleet.peerRoot({ root: null, path: "/home/forge" }), "/home/forge");
   assert.equal(WBFleet.peerRoot({}), "");
 });
+
+// A row may come with no environment, OS or daemon name: each reads "" in its
+// group, the local group's state is "local", and a peer's is "" until the
+// peer list says more.
+test("a row with no environment, OS or daemon name gives a group of empty words", () => {
+  const seed = (g) => ({ environment: g.environment, os: g.os, daemon: g.daemon, name: g.name, state: g.state, local: g.local });
+  const peerRow = { key: "01XYZ/owner/repo", slug: "owner/repo", daemon: "01XYZ" };
+  const [local, peer] = load().fleetGroups([LOCAL_ROW, peerRow], []);
+  assert.deepEqual(seed(local), { environment: "", os: "", daemon: "", name: "", state: "local", local: true });
+  assert.deepEqual(seed(peer), { environment: "", os: "", daemon: "01XYZ", name: "", state: "", local: false });
+});

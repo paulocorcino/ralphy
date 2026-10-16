@@ -292,46 +292,10 @@ pub(crate) fn evaluate(
     destination: &str,
     wanted_name: Option<&str>,
 ) -> Vec<HostCheck> {
-    use CheckStatus::{Copy, Fix, Pass, Pending, Warn};
+    use CheckStatus::{Fix, Pass, Pending, Warn};
     let os = facts.os;
-    let mut checks = Vec::new();
-    let described = match ralphy {
-        RalphyOnHost::Described(d) => {
-            checks.push(HostCheck::new(
-                CheckId::Ralphy,
-                Pass,
-                format!(
-                    "Ralphy is installed and speaks peer protocol {}",
-                    d.protocol_version
-                ),
-            ));
-            Some(d)
-        }
-        RalphyOnHost::Missing => {
-            checks.push(HostCheck::new(
-                CheckId::Ralphy,
-                Copy(install_command(destination)),
-                "Ralphy is not installed on the host",
-            ));
-            None
-        }
-        old if old.is_newer() => {
-            checks.push(HostCheck::new(
-                CheckId::Ralphy,
-                Copy("ralphy update".to_string()),
-                "the Ralphy on the host is newer than this one: update Ralphy on this computer",
-            ));
-            None
-        }
-        RalphyOnHost::Old { .. } => {
-            checks.push(HostCheck::new(
-                CheckId::Ralphy,
-                Copy(install_command(destination)),
-                "the Ralphy on the host is too old to connect to this one",
-            ));
-            None
-        }
-    };
+    let (ralphy_check, described) = ralphy_check(ralphy, destination);
+    let mut checks = vec![ralphy_check];
     let pending = || (Pending, "waits for Ralphy on the host".to_string());
 
     let (status, text) = match described {
@@ -350,59 +314,7 @@ pub(crate) fn evaluate(
     };
     checks.push(HostCheck::new(CheckId::Autostart, status, text));
 
-    if os == HostOs::Linux {
-        let base = crate::doctor::linger_text(facts.linger);
-        let (status, text) = match facts.linger {
-            Some(true) => (Pass, base.to_string()),
-            Some(false) => (
-                Fix(HostOp::EnableLinger),
-                format!("{base}. Ralphy turns it on"),
-            ),
-            None => (Warn, base.to_string()),
-        };
-        checks.push(HostCheck::new(CheckId::Linger, status, text));
-    }
-
-    if os != HostOs::Linux {
-        let after_sign_in =
-            "after a restart, the daemon starts only when someone signs in on the host";
-        let (status, text) = match (os, facts.filevault, facts.autologin) {
-            (HostOs::MacOs, Some(true), _) => (
-                Warn,
-                format!("{after_sign_in}. FileVault is on, and it blocks automatic sign-in"),
-            ),
-            (_, _, Some(true)) => (
-                Pass,
-                "the host signs in by itself after a restart".to_string(),
-            ),
-            (HostOs::Windows, _, _) => (
-                Warn,
-                format!("{after_sign_in}. To sign in by itself, use Autologon from Sysinternals"),
-            ),
-            _ => (
-                Warn,
-                format!("{after_sign_in}. Turn on automatic sign-in to change this"),
-            ),
-        };
-        checks.push(HostCheck::new(CheckId::SignIn, status, text));
-
-        let (status, text) = match facts.sleeps {
-            Some(false) => (Pass, "the host does not sleep"),
-            Some(true) => (
-                Copy(
-                    if os == HostOs::MacOs {
-                        "sudo pmset -a sleep 0"
-                    } else {
-                        "powercfg /change standby-timeout-ac 0"
-                    }
-                    .to_string(),
-                ),
-                "the host sleeps when idle, and a sleeping host does not answer",
-            ),
-            None => (Warn, "could not read the sleep setting"),
-        };
-        checks.push(HostCheck::new(CheckId::Sleep, status, text));
-    }
+    checks.extend(wake_checks(facts, os));
 
     let (status, text) = match described {
         None => pending(),
@@ -414,6 +326,69 @@ pub(crate) fn evaluate(
     };
     checks.push(HostCheck::new(CheckId::RequireToken, status, text));
 
+    checks.push(user_check(facts, os));
+    checks.push(git_check(facts, os));
+
+    let (status, text) = match facts.gh {
+        Some(true) => (Pass, "gh is installed"),
+        Some(false) => (
+            Warn,
+            "gh is not installed. A run that reads or changes GitHub needs it",
+        ),
+        None => (Warn, "could not read whether gh is installed"),
+    };
+    checks.push(HostCheck::new(CheckId::Gh, status, text));
+    checks
+}
+
+/// The Ralphy check, and the host's description when its Ralphy speaks this
+/// computer's peer protocol.
+fn ralphy_check<'a>(
+    ralphy: &'a RalphyOnHost,
+    destination: &str,
+) -> (HostCheck, Option<&'a DaemonDescription>) {
+    use CheckStatus::{Copy, Pass};
+    match ralphy {
+        RalphyOnHost::Described(d) => (
+            HostCheck::new(
+                CheckId::Ralphy,
+                Pass,
+                format!(
+                    "Ralphy is installed and speaks peer protocol {}",
+                    d.protocol_version
+                ),
+            ),
+            Some(d),
+        ),
+        RalphyOnHost::Missing => (
+            HostCheck::new(
+                CheckId::Ralphy,
+                Copy(install_command(destination)),
+                "Ralphy is not installed on the host",
+            ),
+            None,
+        ),
+        old if old.is_newer() => (
+            HostCheck::new(
+                CheckId::Ralphy,
+                Copy("ralphy update".to_string()),
+                "the Ralphy on the host is newer than this one: update Ralphy on this computer",
+            ),
+            None,
+        ),
+        RalphyOnHost::Old { .. } => (
+            HostCheck::new(
+                CheckId::Ralphy,
+                Copy(install_command(destination)),
+                "the Ralphy on the host is too old to connect to this one",
+            ),
+            None,
+        ),
+    }
+}
+
+fn user_check(facts: &HostFacts, os: HostOs) -> HostCheck {
+    use CheckStatus::{Pass, Warn};
     let (status, text) = if facts.uid == Some(0) {
         (Warn, "signed in as root: use a normal user".to_string())
     } else if os == HostOs::Windows && facts.windows_admin {
@@ -427,9 +402,12 @@ pub(crate) fn evaluate(
     } else {
         (Pass, "signed in as a normal user".to_string())
     };
-    checks.push(HostCheck::new(CheckId::User, status, text));
+    HostCheck::new(CheckId::User, status, text)
+}
 
-    // Neither blocks: the host can be added first and get Git later.
+/// Neither Git nor gh blocks: the host can be added first and get Git later.
+fn git_check(facts: &HostFacts, os: HostOs) -> HostCheck {
+    use CheckStatus::{Copy, Pass, Warn};
     let (status, text) = match (facts.git, os) {
         (Some(true), _) => (Pass, "Git is installed"),
         (Some(false), HostOs::MacOs) => (
@@ -446,18 +424,7 @@ pub(crate) fn evaluate(
         ),
         (None, _) => (Warn, "could not read whether Git is installed"),
     };
-    checks.push(HostCheck::new(CheckId::Git, status, text));
-
-    let (status, text) = match facts.gh {
-        Some(true) => (Pass, "gh is installed"),
-        Some(false) => (
-            Warn,
-            "gh is not installed. A run that reads or changes GitHub needs it",
-        ),
-        None => (Warn, "could not read whether gh is installed"),
-    };
-    checks.push(HostCheck::new(CheckId::Gh, status, text));
-    checks
+    HostCheck::new(CheckId::Git, status, text)
 }
 
 fn name_check(
@@ -530,7 +497,9 @@ pub(crate) fn print_checks(checks: &[HostCheck], out: &mut impl Write) -> Result
 }
 
 mod tools;
+mod wake;
 pub(crate) use tools::{parse_doctor, with_doctor};
+use wake::wake_checks;
 
 #[cfg(test)]
 pub(crate) mod tests;

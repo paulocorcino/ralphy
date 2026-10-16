@@ -24,7 +24,7 @@ import { reportHandshake, terminalGpu } from "./wb-console-gpu.ts";
 import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
 import type { DetachReason } from "./wb-console-session.ts";
 import type { SessionRequest } from "./wb-session-route.ts";
-import type { FramePayload } from "./wb-console-frames.ts";
+import type { FramePayload, SocketEvent } from "./wb-console-frames.ts";
 import type { Group } from "./wb-fleet.ts";
 
 const { barKey, applyCtrlLatch, isTerminalReply } = WBConsoleInput;
@@ -37,6 +37,13 @@ const {
   reconnectDecision,
   peerGate,
 } = WBConsoleSession;
+
+// The count of the session's output bytes a `session-open` says the terminal
+// shows, or null when the daemon sent none that is a whole count.
+function offsetOf(payload: FramePayload | undefined): number | null {
+  const offset = payload?.offset;
+  return typeof offset === "number" && Number.isSafeInteger(offset) && offset >= 0 ? offset : null;
+}
 
 // The terminal's surface, ADR-0035's palette. xterm.js takes no CSS variables
 // (WebGL paints the glyphs), so these mirror :root in styles.css and must
@@ -339,6 +346,44 @@ export function createTerminal(deps: TerminalDeps) {
         // Never xterm's default 80×24: only a size the body measured.
         sizing.opened();
       };
+      // The daemon's `session-open`: who owns the session, what the terminal
+      // shows of it, and whether this window only watches.
+      function takeOpen(event: Extract<SocketEvent, { kind: "open" }>) {
+        const resumed = event.payload?.resume === true;
+        // A resume writes only the missing bytes after what the terminal
+        // shows. Any other replay repaints the screen, so the terminal is
+        // cleared first.
+        if (!fresh && !resumed) term.reset();
+        fresh = false;
+        // HERE, not in `onPark`: the reset above would wipe a line written
+        // before the socket opened.
+        if (watching && !resumed) term.write("\r\n[read-only: another window has control]\r\n");
+        const owner = WBSessionRoute.announcement(
+          {
+            sessionId: currentSessionId,
+            daemonId: currentDaemonId,
+            environment: currentEnvironment,
+          },
+          event.payload,
+        );
+        currentSessionId = owner.sessionId;
+        currentDaemonId = owner.daemonId;
+        currentEnvironment = owner.environment;
+        if (typeof opts.onSession === "function")
+          opts.onSession(currentSessionId, event.payload);
+        joinWatch(event.payload);
+        // Last: the notices above are not session output.
+        shown = offsetOf(event.payload);
+        replayNext = event.payload?.replay === true;
+      }
+      // A launch that joined a session another page drives is read-only
+      // from the start; the daemon says so here.
+      function joinWatch(payload: FramePayload | undefined) {
+        if (payload?.watch !== true || watching) return;
+        watching = true;
+        term.write("\r\n[read-only: another window has control]\r\n");
+        if (typeof opts.onPark === "function") opts.onPark("joined");
+      }
       const frames = frameQueue((event) => {
         // A replay decoded after its socket was retired belongs to no one.
         if (leaving || ws !== socket) return;
@@ -366,42 +411,9 @@ export function createTerminal(deps: TerminalDeps) {
               writingOutput = false;
             }
             return;
-          case "open": {
-            const resumed = event.payload?.resume === true;
-            // A resume writes only the missing bytes after what the terminal
-            // shows. Any other replay repaints the screen, so the terminal is
-            // cleared first.
-            if (!fresh && !resumed) term.reset();
-            fresh = false;
-            // HERE, not in `onPark`: the reset above would wipe a line written
-            // before the socket opened.
-            if (watching && !resumed) term.write("\r\n[read-only: another window has control]\r\n");
-            const owner = WBSessionRoute.announcement(
-              {
-                sessionId: currentSessionId,
-                daemonId: currentDaemonId,
-                environment: currentEnvironment,
-              },
-              event.payload,
-            );
-            currentSessionId = owner.sessionId;
-            currentDaemonId = owner.daemonId;
-            currentEnvironment = owner.environment;
-            if (typeof opts.onSession === "function")
-              opts.onSession(currentSessionId, event.payload);
-            // A launch that joined a session another page drives is read-only
-            // from the start; the daemon says so here.
-            if (event.payload?.watch === true && !watching) {
-              watching = true;
-              term.write("\r\n[read-only: another window has control]\r\n");
-              if (typeof opts.onPark === "function") opts.onPark("joined");
-            }
-            // Last: the notices above are not session output.
-            const offset = event.payload?.offset;
-            shown = typeof offset === "number" && Number.isSafeInteger(offset) && offset >= 0 ? offset : null;
-            replayNext = event.payload?.replay === true;
+          case "open":
+            takeOpen(event);
             return;
-          }
           // A watcher paints at the session size; the writer ignores it.
           case "size":
             sizing.sessionSize(event.rows, event.cols);

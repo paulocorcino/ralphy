@@ -245,3 +245,41 @@ test("a ledger row shows words for its kind, its unpriced cause and its time", (
   }).rows;
   assert.equal(chat.unpricedLabel, "no token count");
 });
+
+// The period words: the control's own for a key it knows, else the document's
+// own label, else "All time".
+test("the pane state names the period from the control, then the document, then All time", () => {
+  const label = (period) => WB.state({ project: "a/b", doc: { period } }).periodLabel;
+  assert.equal(label({ key: "30d", label: "ignored" }), "Last 30 days");
+  assert.equal(label({ key: "14d", label: "Last 14 days" }), "Last 14 days", "a key the control lacks");
+  assert.equal(label({ key: "14d" }), "All time");
+  assert.equal(label(undefined), "All time");
+  assert.equal(WB.state({ project: "a/b", doc: {} }).periods.key, "all");
+});
+
+// A document with no total and no tokens still draws: the unknown-cost label
+// and a zero token meter, never `undefined`.
+test("the pane state of a sparse document reads ~$? and a zero token meter", () => {
+  const ready = WB.state({ project: "a/b", doc: {} });
+  assert.equal(ready.total, "~$?");
+  assert.deepEqual(
+    [ready.meter, ready.tokensTotal, ready.tokensRaw, ready.meterRows, ready.deliveriesTruncated],
+    ["", "0", 0, [], 0],
+  );
+  const counted = WB.state({ project: "a/b", doc: { tokens: { meter: "▮▯", label: "1.2M", total: 1200000 } } });
+  assert.deepEqual([counted.meter, counted.tokensTotal, counted.tokensRaw], ["▮▯", "1.2M", 1200000]);
+});
+
+// Sessions with no token count are spend the pane cannot size: they alone
+// mark the spend as partly unpriced, with no coverage bar to draw.
+test("the pane state counts sessions with no token count as unpriced on their own", () => {
+  const ready = WB.state({ project: "a/b", doc: { unpriced: { unmetered_sessions: 3 } } });
+  assert.deepEqual(
+    { any: ready.unpriced.any, unmetered: ready.unpriced.unmetered, label: ready.unpriced.label, share: ready.unpriced.share },
+    { any: true, unmetered: 3, label: "", share: "" },
+  );
+  assert.deepEqual(
+    ready.coverage,
+    { show: false, priced: "0%", pricedLabel: "", pricedVolume: "", unpriced: "0%", unpricedLabel: "" },
+  );
+});

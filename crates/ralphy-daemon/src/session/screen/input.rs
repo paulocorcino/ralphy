@@ -53,44 +53,62 @@ impl StringCap {
                     out.push(byte);
                 }
                 State::InString => {
-                    match byte {
-                        BEL | CAN | SUB => self.state = State::Ground,
-                        ESC => self.state = State::EscapeInString,
-                        _ => {
-                            self.len += 1;
-                            if self.len > STRING_CAP {
-                                out.push(CAN);
-                                self.state = State::Dropping;
-                                continue;
-                            }
-                        }
-                    }
-                    out.push(byte);
-                }
-                State::EscapeInString => {
-                    if byte == b'\\' {
-                        self.state = State::Ground;
-                    } else {
-                        self.after_escape(byte);
-                    }
-                    out.push(byte);
-                }
-                State::Dropping => match byte {
-                    BEL | CAN | SUB => self.state = State::Ground,
-                    ESC => self.state = State::EscapeWhileDropping,
-                    _ => {}
-                },
-                State::EscapeWhileDropping => {
-                    if byte == b'\\' {
-                        self.state = State::Ground;
-                    } else {
-                        // The dropped string ended; this escape is a new one.
-                        out.push(ESC);
-                        self.after_escape(byte);
+                    if self.in_string(byte, out) {
                         out.push(byte);
                     }
                 }
+                State::EscapeInString => {
+                    self.escape_in_string(byte);
+                    out.push(byte);
+                }
+                State::Dropping | State::EscapeWhileDropping => self.while_dropping(byte, out),
             }
+        }
+    }
+
+    /// One byte inside a string. Past the cap it ends the string with CAN and
+    /// returns false: the byte is dropped.
+    fn in_string(&mut self, byte: u8, out: &mut Vec<u8>) -> bool {
+        match byte {
+            BEL | CAN | SUB => self.state = State::Ground,
+            ESC => self.state = State::EscapeInString,
+            _ => {
+                self.len += 1;
+                if self.len > STRING_CAP {
+                    out.push(CAN);
+                    self.state = State::Dropping;
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    /// The byte after an `ESC` inside a string: `\` ends the string; any
+    /// other byte ends it too and is read as the byte after an `ESC`.
+    fn escape_in_string(&mut self, byte: u8) {
+        if byte == b'\\' {
+            self.state = State::Ground;
+        } else {
+            self.after_escape(byte);
+        }
+    }
+
+    /// One byte of a string past the cap: dropped until the string ends.
+    fn while_dropping(&mut self, byte: u8, out: &mut Vec<u8>) {
+        if self.state == State::Dropping {
+            match byte {
+                BEL | CAN | SUB => self.state = State::Ground,
+                ESC => self.state = State::EscapeWhileDropping,
+                _ => {}
+            }
+        } else if byte == b'\\' {
+            self.state = State::Ground;
+        } else {
+            // The dropped string ended; this escape is a new one.
+            out.push(ESC);
+            self.after_escape(byte);
+            out.push(byte);
         }
     }
 
@@ -178,3 +196,6 @@ impl Perform for Region {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

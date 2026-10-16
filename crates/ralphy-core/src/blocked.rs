@@ -229,59 +229,93 @@ pub fn sort_queue(queue: Vec<Issue>) -> Vec<Issue> {
 pub fn sort_queue_in_graph(queue: Vec<Issue>, open: &[Issue]) -> Vec<Issue> {
     let in_queue: BTreeSet<u64> = queue.iter().map(|i| i.number).collect();
     let open_numbers: BTreeSet<u64> = open.iter().map(|i| i.number).collect();
-    // Body lookup spanning the open set and the queue (a queue member should
-    // always be open, but fall back to its own body if `open` omits it).
+    let body_of = body_lookup(open, &queue);
+    let children_of = children_by_parent(&queue);
+
+    // deps[x] = queue members that must precede x.
+    let mut deps: BTreeMap<u64, BTreeSet<u64>> = BTreeMap::new();
+    for i in &queue {
+        let graph = Graph {
+            body_of: &body_of,
+            in_queue: &in_queue,
+            open_numbers: &open_numbers,
+            children_of: &children_of,
+        };
+        deps.insert(i.number, queue_predecessors(i.number, &graph));
+    }
+
+    kahn(queue, &deps)
+}
+
+/// The blocked-by graph that [`queue_predecessors`] walks.
+struct Graph<'a> {
+    body_of: &'a BTreeMap<u64, &'a str>,
+    in_queue: &'a BTreeSet<u64>,
+    open_numbers: &'a BTreeSet<u64>,
+    children_of: &'a BTreeMap<u64, Vec<u64>>,
+}
+
+/// Body lookup spanning the open set and the queue (a queue member should
+/// always be open, but fall back to its own body if `open` omits it).
+fn body_lookup<'a>(open: &'a [Issue], queue: &'a [Issue]) -> BTreeMap<u64, &'a str> {
     let mut body_of: BTreeMap<u64, &str> = BTreeMap::new();
     for i in open {
         body_of.insert(i.number, i.body.as_str());
     }
-    for i in &queue {
+    for i in queue {
         body_of.entry(i.number).or_insert(i.body.as_str());
     }
-    // children_of[n] = queue members declaring `## Parent` #n — the stand-ins for
-    // a retired (closed) bundle #n that is absent from the open graph.
+    body_of
+}
+
+/// children_of[n] = queue members declaring `## Parent` #n — the stand-ins for
+/// a retired (closed) bundle #n that is absent from the open graph.
+fn children_by_parent(queue: &[Issue]) -> BTreeMap<u64, Vec<u64>> {
     let mut children_of: BTreeMap<u64, Vec<u64>> = BTreeMap::new();
-    for i in &queue {
+    for i in queue {
         for p in parse_parent(&i.body) {
             children_of.entry(p).or_default().push(i.number);
         }
     }
+    children_of
+}
 
-    // deps[x] = queue members that must precede x. For each queue member, walk the
-    // blocked-by graph: an in-queue ref is a direct predecessor; an open
-    // out-of-queue ref is transparent (recurse into its own blockers); a closed
-    // ref substitutes its split children.
-    let mut deps: BTreeMap<u64, BTreeSet<u64>> = BTreeMap::new();
-    for i in &queue {
-        let mut acc: BTreeSet<u64> = BTreeSet::new();
-        let mut seen: BTreeSet<u64> = BTreeSet::new();
-        let mut stack: Vec<u64> = vec![i.number];
-        while let Some(node) = stack.pop() {
-            if !seen.insert(node) {
-                continue; // already expanded — also breaks blocked-by cycles
-            }
-            let body = match body_of.get(&node) {
-                Some(b) => *b,
-                None => continue,
-            };
-            for n in parse_blocked_by(body) {
-                if n == i.number {
-                    continue; // never depend on yourself
-                }
-                if in_queue.contains(&n) {
-                    acc.insert(n); // terminal: a real in-queue predecessor
-                } else if open_numbers.contains(&n) {
-                    stack.push(n); // transparent: keep walking its blockers
-                } else if let Some(children) = children_of.get(&n) {
-                    // closed/absent ref that was split: its queue children stand in.
-                    acc.extend(children.iter().copied().filter(|&c| c != i.number));
-                }
+/// The queue members that must precede `root`. Walk the blocked-by graph from
+/// `root`: an in-queue ref is a direct predecessor; an open out-of-queue ref is
+/// transparent (recurse into its own blockers); a closed ref substitutes its
+/// split children.
+fn queue_predecessors(root: u64, graph: &Graph) -> BTreeSet<u64> {
+    let mut acc: BTreeSet<u64> = BTreeSet::new();
+    let mut seen: BTreeSet<u64> = BTreeSet::new();
+    let mut stack: Vec<u64> = vec![root];
+    while let Some(node) = stack.pop() {
+        if !seen.insert(node) {
+            continue; // already expanded — also breaks blocked-by cycles
+        }
+        let Some(body) = graph.body_of.get(&node) else {
+            continue;
+        };
+        for n in parse_blocked_by(body) {
+            if n != root {
+                // never depend on yourself
+                follow_blocker(n, root, graph, &mut acc, &mut stack);
             }
         }
-        deps.insert(i.number, acc);
     }
+    acc
+}
 
-    kahn(queue, &deps)
+/// One blocker `n` of the walk from `root`: terminal when in the queue,
+/// transparent when open, replaced by its split children when closed.
+fn follow_blocker(n: u64, root: u64, graph: &Graph, acc: &mut BTreeSet<u64>, stack: &mut Vec<u64>) {
+    if graph.in_queue.contains(&n) {
+        acc.insert(n); // terminal: a real in-queue predecessor
+    } else if graph.open_numbers.contains(&n) {
+        stack.push(n); // transparent: keep walking its blockers
+    } else if let Some(children) = graph.children_of.get(&n) {
+        // closed/absent ref that was split: its queue children stand in.
+        acc.extend(children.iter().copied().filter(|&c| c != root));
+    }
 }
 
 /// Kahn's algorithm over `deps` (the must-precede set per issue number), always
@@ -314,6 +348,9 @@ fn kahn(queue: Vec<Issue>, deps: &BTreeMap<u64, BTreeSet<u64>>) -> Vec<Issue> {
     }
     out
 }
+
+#[cfg(test)]
+mod graph_tests;
 
 #[cfg(test)]
 mod tests {

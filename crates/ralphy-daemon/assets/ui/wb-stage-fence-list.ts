@@ -25,6 +25,9 @@ const { fenceSummaries, nextFenceSlot, nextFenceName, fenceCycle, FENCE_MAX } = 
 // A fence element: `buildFence` always sets its `data-fence-id`.
 export type FenceElement = HTMLElement & { dataset: { fenceId: string } };
 
+// One fence of `fenceSummaries`: its id, name, member count, repos and lock.
+type FenceSummary = ReturnType<typeof fenceSummaries>[number];
+
 // The refusal span of a fence, with the timer that clears it.
 type FenceNotice = HTMLElement & { _noticeTimer?: ReturnType<typeof setTimeout> };
 
@@ -136,27 +139,39 @@ export function createFenceList(deps: FenceListDeps) {
     const away = detachedMembers();
     for (const s of fenceSummaries(readFenceRects(st), readWindowRects(st))) {
       const el = els.get(s.id);
-      if (!el) continue;
-      const n = away[s.id] ? away[s.id].length : s.count;
-      // Parenthesised: it trails the name field and reads as an aside to it.
-      const count = el.querySelector<HTMLElement>(".fence-count");
-      if (count) count.textContent = `(${n} console${n === 1 ? "" : "s"})`;
-      const cols = el.querySelector<HTMLButtonElement>(".fence-columns");
-      if (cols) cols.disabled = s.count === 0;
+      if (el) paintFenceCount(el, s, away);
     }
     paintFenceColumns();
-    // A console HELD by a locked fence wears the fence's lock (the class drops
-    // its bands and grab cursor). Derived here with membership, from live rects.
+    markHeldWindows(st);
+    markHeldNotes(st);
+  }
+
+  // One fence's count readout and its columns button.
+  function paintFenceCount(el: FenceElement, s: FenceSummary, away: Record<string, string[]>) {
+    const n = away[s.id] ? away[s.id].length : s.count;
+    // Parenthesised: it trails the name field and reads as an aside to it.
+    const count = el.querySelector<HTMLElement>(".fence-count");
+    if (count) count.textContent = `(${n} console${n === 1 ? "" : "s"})`;
+    const cols = el.querySelector<HTMLButtonElement>(".fence-columns");
+    if (cols) cols.disabled = s.count === 0;
+  }
+
+  // A console HELD by a locked fence wears the fence's lock (the class drops
+  // its bands and grab cursor). Derived here with membership, from live rects.
+  function markHeldWindows(st: HTMLElement) {
     for (const w of st.querySelectorAll<ConsoleWin>(".session-window")) {
       w.classList.toggle("held", !w._deskLocked && heldByFence(w));
       paintLockGlyph(w);
     }
-    // A card held by a locked fence is read-only for the same reason, and by
-    // the same derivation (ADR-0064 §8) — the record is not rewritten. NOT in
-    // the popup: `mountDetached` re-origins its members' rects into this
-    // window while `fences` still holds the shell's stage coordinates, so the
-    // derivation there would match a card to whatever fence happens to cover
-    // the translated point.
+  }
+
+  // A card held by a locked fence is read-only for the same reason, and by
+  // the same derivation (ADR-0064 §8) — the record is not rewritten. NOT in
+  // the popup: `mountDetached` re-origins its members' rects into this
+  // window while `fences` still holds the shell's stage coordinates, so the
+  // derivation there would match a card to whatever fence happens to cover
+  // the translated point.
+  function markHeldNotes(st: HTMLElement) {
     for (const el of OPTS.autoBoot === false ? [] : st.querySelectorAll<NoteCard>(".note-card")) {
       const own = notes().find((n: DeskNote) => n.id === el.dataset.noteId);
       const held = !own?.locked && !!fenceOf(fences(), restoreRect(el))?.locked;

@@ -20,8 +20,10 @@ import { WBFail } from "./wb-fail.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { sendDocument } from "./wb-events.ts";
 import { isNullableString, isOptionalString, isRecord } from "./wb-api.ts";
+import { focusTarget, isSplit, paneLayout } from "./wb-viewer-panes.ts";
 import type { MonacoDiffEditor, MonacoDisposable, MonacoEditor } from "./wb-monaco.ts";
 import type { Messages } from "./wb-messages.ts";
+import type { ViewerSlot } from "./wb-viewer-panes.ts";
 
 /** The vendored mermaid (`vendor/mermaid`): the members this module calls. */
 type Mermaid = {
@@ -97,9 +99,6 @@ type OpenSpec = {
   encoding?: string;
   bom?: boolean;
 } & ({ content: string; refused?: undefined } | { content?: undefined; refused: string });
-
-/** The second pane the shell resolved (`WBSplit.resolve`). */
-type ViewerSlot = { id: string; mirror?: boolean; focus?: boolean; ratio: number | null };
 
 /** The mirror: a second editor over a pane's model, in a `.viewer` of its own. */
 type Mirror = {
@@ -211,12 +210,10 @@ export function createViewer(window: ViewerWindow, document: Document, deps: Vie
   function paint() {
     const { id, slot } = shown;
     const slotRec = slot ? map.get(slot.id) : null;
-    // A mirror needs an editor to mirror; a pin needs its pane open.
-    const split = !!slotRec && (!slot!.mirror || (slotRec.kind === "code" && !!slotRec.ed));
+    const split = isSplit(slot, slotRec);
     for (const rec of map.values()) {
-      const on = rec.id === id || (split && rec.id === slot!.id);
-      rec.el!.style.display = on ? "flex" : "none";
-      rec.el!.style.gridColumn = on && split ? (rec.id === id ? "1" : "3") : "";
+      const { on, display, gridColumn } = paneLayout(rec.id, id, split, slot?.id);
+      Object.assign(rec.el!.style, { display, gridColumn });
       rec.visible = on;
       if (on) {
         setTimeout(() => {
@@ -244,10 +241,10 @@ export function createViewer(window: ViewerWindow, document: Document, deps: Vie
     }
     ensureDivider();
     viewers.style.setProperty("--wb-split", ratioPct(slot!.ratio));
-    if (slot!.mirror) ensureMirror(slotRec);
+    if (slot!.mirror) ensureMirror(slotRec!);
     else closeMirror();
     if (slot!.focus) {
-      const target = slot!.mirror ? mirror?.ed : (slotRec.ed as MonacoEditor | undefined);
+      const target = focusTarget(slot!, mirror, slotRec!.ed as MonacoEditor | undefined);
       setTimeout(() => target?.focus(), 0);
     }
   }

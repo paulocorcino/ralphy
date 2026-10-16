@@ -140,50 +140,57 @@ pub(crate) fn parse_opencode_events(stdout: &str) -> (String, bool) {
 /// Looks for a `retryAfter` field value, or a `Retry-After` / "try again" substring
 /// in the message. Returns `None` when absent (D9: reset hint is not guaranteed).
 fn parse_opencode_reset_hint(event: &serde_json::Value) -> Option<String> {
-    // retryAfter field on the event object.
-    if let Some(v) = event.get("retryAfter") {
-        let s = match v {
-            serde_json::Value::String(s) => s.clone(),
-            other => other.to_string(),
-        };
-        if !s.is_empty() && s != "null" {
-            return Some(s);
-        }
+    if let Some(hint) = retry_after_field(event) {
+        return Some(hint);
     }
     // "try again" or "Retry-After" in the message text.
-    if let Some(msg) = event.get("message").and_then(|v| v.as_str()) {
-        let lower = msg.to_ascii_lowercase();
-        // "retry-after: <value>"
-        if let Some(pos) = lower.find("retry-after:") {
-            let rest = msg[pos + "retry-after:".len()..].trim();
-            let hint = rest
-                .split_whitespace()
-                .next()
-                .unwrap_or("")
-                .trim_end_matches(',');
+    let msg = event.get("message").and_then(|v| v.as_str())?;
+    let lower = msg.to_ascii_lowercase();
+    retry_after_header(msg, &lower).or_else(|| try_again_phrase(msg, &lower))
+}
+
+/// The `retryAfter` field on the event object, as text.
+fn retry_after_field(event: &serde_json::Value) -> Option<String> {
+    let s = match event.get("retryAfter")? {
+        serde_json::Value::String(s) => s.clone(),
+        other => other.to_string(),
+    };
+    (!s.is_empty() && s != "null").then_some(s)
+}
+
+/// The first word after `retry-after:` in the message, without a trailing comma.
+/// `lower` is the ASCII-lowercase of `msg`, so byte positions agree.
+fn retry_after_header(msg: &str, lower: &str) -> Option<String> {
+    let pos = lower.find("retry-after:")?;
+    let rest = msg[pos + "retry-after:".len()..].trim();
+    let hint = rest
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .trim_end_matches(',');
+    (!hint.is_empty()).then(|| hint.to_string())
+}
+
+/// The text after "try again at " or "try again in ", up to the first `.` or
+/// newline. `lower` is the ASCII-lowercase of `msg`, so byte positions agree.
+fn try_again_phrase(msg: &str, lower: &str) -> Option<String> {
+    for prefix in &["try again at ", "try again in "] {
+        if let Some(pos) = lower.find(prefix) {
+            let rest = msg[pos + prefix.len()..].trim();
+            let hint: String = rest
+                .chars()
+                .take_while(|c| *c != '.' && *c != '\n')
+                .collect();
+            let hint = hint.trim().to_string();
             if !hint.is_empty() {
-                return Some(hint.to_string());
-            }
-        }
-        // "try again at <value>" or "try again in <value>"
-        for prefix in &["try again at ", "try again in "] {
-            if let Some(pos) = lower.find(prefix) {
-                let rest = msg[pos + prefix.len()..].trim();
-                let hint: String = rest
-                    .chars()
-                    .take_while(|c| *c != '.' && *c != '\n')
-                    .collect();
-                let hint = hint.trim().to_string();
-                if !hint.is_empty() {
-                    return Some(hint);
-                }
+                return Some(hint);
             }
         }
     }
     None
 }
 
-/// Scan the line-delimited JSON event stream for a usage-limit signal (ADR-0005 D9).
+// Scan the line-delimited JSON event stream for a usage-limit signal (ADR-0005 D9).
 ///
 /// Returns:
 /// - `Some(Some(hint))` — a limit event was seen and carries a reset hint.
@@ -354,6 +361,30 @@ mod tests {
         assert_eq!(
             parse_opencode_limit(stream),
             Some(Some("2026-06-10T18:00:00Z".into()))
+        );
+    }
+
+    #[test]
+    fn parse_limit_reads_a_numeric_retry_after() {
+        let stream = r#"{"type":"error","name":"APIError","statusCode":429,"message":"rate limited","retryAfter":120}
+"#;
+        assert_eq!(parse_opencode_limit(stream), Some(Some("120".into())));
+    }
+
+    #[test]
+    fn parse_limit_reads_a_retry_after_header_in_the_message() {
+        let stream = r#"{"type":"error","name":"APIError","statusCode":429,"message":"Too many requests. Retry-After: 45, slow down"}
+"#;
+        assert_eq!(parse_opencode_limit(stream), Some(Some("45".into())));
+    }
+
+    #[test]
+    fn parse_limit_reads_try_again_in_from_the_message() {
+        let stream = r#"{"type":"error","name":"APIError","statusCode":429,"message":"Rate limit exceeded. Try again in 20 minutes. Thanks"}
+"#;
+        assert_eq!(
+            parse_opencode_limit(stream),
+            Some(Some("20 minutes".into()))
         );
     }
 

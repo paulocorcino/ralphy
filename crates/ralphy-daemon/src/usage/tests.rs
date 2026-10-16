@@ -333,6 +333,45 @@ fn run_records_skips_a_malformed_middle_line() {
     assert_eq!(records.len(), 2, "malformed middle line is skipped");
 }
 
+fn session_ids(records: &[serde_json::Value]) -> Vec<&str> {
+    records
+        .iter()
+        .map(|r| r.get("session_id").and_then(|v| v.as_str()).unwrap_or(""))
+        .collect()
+}
+
+#[test]
+fn run_records_reads_only_jsonl_files_and_only_objects() {
+    let dir = tempfile::tempdir().unwrap();
+    write_ledger(dir.path(), "notes.json", "{\"session_id\":\"other\"}\n");
+    write_ledger(
+        dir.path(),
+        "owner-repo.jsonl",
+        "[1, 2]\n\"text\"\n{\"session_id\":\"sess-a\"}\n",
+    );
+    assert_eq!(session_ids(&run_records(dir.path(), None)), vec!["sess-a"]);
+}
+
+#[test]
+fn run_records_from_two_files_come_sorted_by_ts() {
+    let dir = tempfile::tempdir().unwrap();
+    write_ledger(
+        dir.path(),
+        "a-repo.jsonl",
+        "{\"session_id\":\"late\",\"ts\":\"2026-06-15T12:09:00+00:00\"}\n\
+         {\"session_id\":\"first\",\"ts\":\"2026-06-15T12:01:00+00:00\"}\n",
+    );
+    write_ledger(
+        dir.path(),
+        "b-repo.jsonl",
+        "{\"session_id\":\"middle\",\"ts\":\"2026-06-15T12:05:00+00:00\"}\n",
+    );
+    assert_eq!(
+        session_ids(&run_records(dir.path(), None)),
+        vec!["first", "middle", "late"]
+    );
+}
+
 #[test]
 fn local_contribution_projects_recovered_models_without_mutating_files() {
     let dir = tempfile::tempdir().unwrap();

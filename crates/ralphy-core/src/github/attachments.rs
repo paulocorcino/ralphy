@@ -370,6 +370,65 @@ fn fetch_one(repo: &Path, dir: &Path, url: &str, images: &ImageCapability) -> At
     }
 }
 
+/// Read one issue's thread. Best-effort: a `gh issue view` failure leaves this
+/// issue without an attachment block and with a thread that says why, rather than
+/// aborting the whole triage run.
+fn fetch_thread(repo: &Path, n: u64) -> IssueThread {
+    let fetched = gh_output(&format!("gh issue view {n} --json body,comments"), || {
+        let mut c = gh(repo);
+        c.args(["issue", "view", &n.to_string(), "--json", "body,comments"]);
+        c
+    })
+    .and_then(|out| parse_issue_thread(n, &out.stdout));
+    match fetched {
+        Ok(t) => t,
+        Err(e) => IssueThread::not_fetched(n, format!("{e:#}")),
+    }
+}
+
+/// The written name is authoritative, not the URL's: a sniffed asset gained an
+/// extension on the way in, and that is what both the manifest and the
+/// image-class test must see. A fetched image is also collected in `image_paths`.
+fn written_name_and_image(
+    outcome: &AttachmentOutcome,
+    name: &mut String,
+    image_paths: &mut Vec<PathBuf>,
+) {
+    if let AttachmentOutcome::Fetched { path } = outcome {
+        if let Some(written) = path.file_name().and_then(|n| n.to_str()) {
+            *name = written.to_string();
+        }
+        if classify_format(name) == FormatClass::Image {
+            image_paths.push(path.clone());
+        }
+    }
+}
+
+/// Fetch every link of one issue (the first [`COUNT_CAP`] of them) into
+/// `issue_dir` and pair each with its visible outcome.
+fn fetch_issue_entries(
+    repo: &Path,
+    issue_dir: &Path,
+    links: &[String],
+    images: &ImageCapability,
+    image_paths: &mut Vec<PathBuf>,
+) -> Vec<(String, AttachmentOutcome)> {
+    let mut entries: Vec<(String, AttachmentOutcome)> = Vec::new();
+    for (url, within_cap) in count_capped(links) {
+        let mut name = filename_from_url(&url);
+        let outcome = if within_cap {
+            fetch_one(repo, issue_dir, &url, images)
+        } else {
+            AttachmentOutcome::NotFetched {
+                reason: "attachment cap reached".to_string(),
+            }
+        };
+        written_name_and_image(&outcome, &mut name, image_paths);
+        entries.push((name, outcome));
+    }
+    entries
+}
+
 /// Fetch every issue's text attachments into a per-run OS temp dir and build the
 /// combined inline manifest (ADR-0025), and read each issue's thread for the
 /// session's input. Best-effort and never blocking: only a `TempDir` creation
@@ -387,19 +446,7 @@ pub fn fetch_triage_attachments(
     let mut image_paths: Vec<PathBuf> = Vec::new();
     let mut threads: Vec<IssueThread> = Vec::new();
     for &n in issue_numbers {
-        // Best-effort: a `gh issue view` failure leaves this issue without an
-        // attachment block and with a thread that says why, rather than
-        // aborting the whole triage run.
-        let fetched = gh_output(&format!("gh issue view {n} --json body,comments"), || {
-            let mut c = gh(repo);
-            c.args(["issue", "view", &n.to_string(), "--json", "body,comments"]);
-            c
-        })
-        .and_then(|out| parse_issue_thread(n, &out.stdout));
-        let thread = match fetched {
-            Ok(t) => t,
-            Err(e) => IssueThread::not_fetched(n, format!("{e:#}")),
-        };
+        let thread = fetch_thread(repo, n);
         let comments: Vec<String> = thread.comments.iter().map(|c| c.body.clone()).collect();
         let links = extract_user_attachment_links(&thread.body, &comments);
         threads.push(thread);
@@ -410,29 +457,7 @@ pub fn fetch_triage_attachments(
         if std::fs::create_dir_all(&issue_dir).is_err() {
             continue;
         }
-        let mut entries: Vec<(String, AttachmentOutcome)> = Vec::new();
-        for (url, within_cap) in count_capped(&links) {
-            let mut name = filename_from_url(&url);
-            let outcome = if within_cap {
-                fetch_one(repo, &issue_dir, &url, &images)
-            } else {
-                AttachmentOutcome::NotFetched {
-                    reason: "attachment cap reached".to_string(),
-                }
-            };
-            // The written name is authoritative, not the URL's: a sniffed asset
-            // gained an extension on the way in, and that is what both the
-            // manifest and the image-class test must see.
-            if let AttachmentOutcome::Fetched { path } = &outcome {
-                if let Some(written) = path.file_name().and_then(|n| n.to_str()) {
-                    name = written.to_string();
-                }
-                if classify_format(&name) == FormatClass::Image {
-                    image_paths.push(path.clone());
-                }
-            }
-            entries.push((name, outcome));
-        }
+        let entries = fetch_issue_entries(repo, &issue_dir, &links, &images, &mut image_paths);
         let block = render_manifest(n, &entries);
         if !block.is_empty() {
             manifest.push('\n');
@@ -678,5 +703,32 @@ mod tests {
             None,
             "\u{feff}<!DOCTYPE html><html>".as_bytes()
         ));
+    }
+
+    #[test]
+    fn the_written_name_replaces_the_url_name_and_collects_an_image() {
+        let mut name = "0a1b2c".to_string();
+        let mut images = Vec::new();
+        let outcome = AttachmentOutcome::Fetched {
+            path: PathBuf::from("run").join("1").join("0a1b2c.png"),
+        };
+        written_name_and_image(&outcome, &mut name, &mut images);
+        assert_eq!(name, "0a1b2c.png");
+        assert_eq!(
+            images,
+            vec![PathBuf::from("run").join("1").join("0a1b2c.png")]
+        );
+    }
+
+    #[test]
+    fn a_fetched_text_file_takes_the_written_name_and_is_not_an_image() {
+        let mut name = "log".to_string();
+        let mut images = Vec::new();
+        let outcome = AttachmentOutcome::Fetched {
+            path: PathBuf::from("run").join("diagnose.log"),
+        };
+        written_name_and_image(&outcome, &mut name, &mut images);
+        assert_eq!(name, "diagnose.log");
+        assert!(images.is_empty());
     }
 }

@@ -349,53 +349,11 @@ impl Tunnels {
         // A poisoned lock means a panic mid-insert; the map is still a map, and
         // refusing every future tunnel over it would be the worse failure.
         let mut state = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(held) = state.held.get_mut(daemon_id) {
-            // `try_wait` is a read: it neither blocks nor signals. `Err` means
-            // the handle itself is unusable, which is as good as exited.
-            if matches!(held.child.try_wait(), Ok(None)) {
-                if held.spec == *spec {
-                    return Ok(Ensured::Running);
-                }
-                // The local port may be the same, so the old `ssh` must be gone
-                // before the new one binds it: kill, then reap.
-                let child = &mut held.child;
-                if let Err(e) = child.kill().and_then(|()| child.wait().map(drop)) {
-                    tracing::warn!(peer = %daemon_id, error = %e, "could not stop the tunnel of an edited host");
-                }
-                // What the old ssh said was about the old host.
-                state.last_said.remove(daemon_id);
-            } else if let Some(exited) = state.held.remove(daemon_id) {
-                // It exited by itself: what it said last is why.
-                let said = exited.said.settle();
-                // The exit of an edited host's old `ssh` is not counted: the
-                // new spec starts now.
-                let wait = if exited.spec == *spec {
-                    state.exited(daemon_id, spec, now)
-                } else {
-                    state.failing.remove(daemon_id);
-                    Duration::ZERO
-                };
-                let retry_in_secs = wait.as_secs();
-                if quiet_close(wait, said.as_ref(), state.last_said.get(daemon_id)) {
-                    tracing::debug!(peer = %daemon_id, said = said.as_deref().unwrap_or(""), retry_in_secs, "the tunnel to a peer closed");
-                } else {
-                    tracing::info!(peer = %daemon_id, said = said.as_deref().unwrap_or(""), retry_in_secs, "the tunnel to a peer closed");
-                }
-                match said {
-                    Some(line) => state.last_said.insert(daemon_id.to_string(), line),
-                    None => state.last_said.remove(daemon_id),
-                };
-            }
+        if let Some(running) = reap_held(&mut state, daemon_id, spec, now) {
+            return Ok(running);
         }
-        // A changed spec is an edited host: it does not wait for the old one.
-        if let Some(failing) = state.failing.get(daemon_id) {
-            if failing.spec != *spec {
-                state.failing.remove(daemon_id);
-            } else if now < failing.next_at && !wake {
-                return Ok(Ensured::Waiting {
-                    retry_in: failing.next_at - now,
-                });
-            }
+        if let Some(waiting) = backoff_gate(&mut state, daemon_id, spec, now, wake) {
+            return Ok(waiting);
         }
         let mut child = spawn()?;
         let said = watch_stderr(&mut child);
@@ -409,6 +367,93 @@ impl Tunnels {
         );
         Ok(Ensured::Started)
     }
+}
+
+/// Look at the `ssh` held for `daemon_id`: `Running` when it still runs
+/// `spec`. Else it is stopped (an edited host) or its exit is recorded, and
+/// `None` lets a new one start.
+fn reap_held(
+    state: &mut State,
+    daemon_id: &str,
+    spec: &TunnelSpec,
+    now: Instant,
+) -> Option<Ensured> {
+    let held = state.held.get_mut(daemon_id)?;
+    // `try_wait` is a read: it neither blocks nor signals. `Err` means
+    // the handle itself is unusable, which is as good as exited.
+    if matches!(held.child.try_wait(), Ok(None)) {
+        if held.spec == *spec {
+            return Some(Ensured::Running);
+        }
+        // The local port may be the same, so the old `ssh` must be gone
+        // before the new one binds it: kill, then reap.
+        let child = &mut held.child;
+        if let Err(e) = child.kill().and_then(|()| child.wait().map(drop)) {
+            tracing::warn!(peer = %daemon_id, error = %e, "could not stop the tunnel of an edited host");
+        }
+        // What the old ssh said was about the old host.
+        state.last_said.remove(daemon_id);
+    } else if let Some(exited) = state.held.remove(daemon_id) {
+        record_exit(state, daemon_id, spec, now, exited);
+    }
+    None
+}
+
+/// An `ssh` that exited by itself: count its exit, log it, and keep what it
+/// said last, which is why.
+fn record_exit(state: &mut State, daemon_id: &str, spec: &TunnelSpec, now: Instant, exited: Held) {
+    let said = exited.said.settle();
+    // The exit of an edited host's old `ssh` is not counted: the
+    // new spec starts now.
+    let wait = if exited.spec == *spec {
+        state.exited(daemon_id, spec, now)
+    } else {
+        state.failing.remove(daemon_id);
+        Duration::ZERO
+    };
+    log_close(
+        daemon_id,
+        wait,
+        said.as_ref(),
+        state.last_said.get(daemon_id),
+    );
+    match said {
+        Some(line) => state.last_said.insert(daemon_id.to_string(), line),
+        None => state.last_said.remove(daemon_id),
+    };
+}
+
+/// Log that the tunnel to `daemon_id` closed: at debug when [`quiet_close`]
+/// says the line adds nothing, else at info.
+fn log_close(daemon_id: &str, wait: Duration, said: Option<&String>, before: Option<&String>) {
+    let retry_in_secs = wait.as_secs();
+    let words = said.map_or("", String::as_str);
+    if quiet_close(wait, said, before) {
+        tracing::debug!(peer = %daemon_id, said = words, retry_in_secs, "the tunnel to a peer closed");
+    } else {
+        tracing::info!(peer = %daemon_id, said = words, retry_in_secs, "the tunnel to a peer closed");
+    }
+}
+
+/// `Waiting` while the exits of `daemon_id`'s `ssh` set a later start and no
+/// wake asks for one now. A changed spec is an edited host: it does not wait
+/// for the old one.
+fn backoff_gate(
+    state: &mut State,
+    daemon_id: &str,
+    spec: &TunnelSpec,
+    now: Instant,
+    wake: bool,
+) -> Option<Ensured> {
+    let failing = state.failing.get(daemon_id)?;
+    if failing.spec != *spec {
+        state.failing.remove(daemon_id);
+    } else if now < failing.next_at && !wake {
+        return Some(Ensured::Waiting {
+            retry_in: failing.next_at - now,
+        });
+    }
+    None
 }
 
 /// Start the `ssh` that runs `spec`.

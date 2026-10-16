@@ -63,33 +63,48 @@ pub fn run_records(dir: &Path, since: Option<&str>) -> Vec<serde_json::Value> {
         return records;
     };
     for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
-            continue;
-        }
-        let Ok(content) = std::fs::read_to_string(&path) else {
-            continue;
-        };
-        for line in content.lines() {
-            let line = line.trim();
-            if line.is_empty() {
-                continue;
-            }
-            let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
-                continue;
-            };
-            if !value.is_object() {
-                continue;
-            }
-            if let Some(since) = since {
-                let ts = value.get("ts").and_then(|v| v.as_str()).unwrap_or("");
-                if ts < since {
-                    continue;
-                }
-            }
-            records.push(value);
+        file_records(&entry.path(), since, &mut records);
+    }
+    sort_by_ts(&mut records);
+    records
+}
+
+/// Push the records of the ledger file at `path` into `out`. A file that is
+/// not `.jsonl`, or that cannot be read, adds none.
+fn file_records(path: &Path, since: Option<&str>, out: &mut Vec<serde_json::Value>) {
+    if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+        return;
+    }
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return;
+    };
+    out.extend(content.lines().filter_map(|line| keep_line(line, since)));
+}
+
+/// One ledger line as a record: `None` for a blank line, a line that is not a
+/// JSON object, or a record older than `since`.
+fn keep_line(line: &str, since: Option<&str>) -> Option<serde_json::Value> {
+    let line = line.trim();
+    if line.is_empty() {
+        return None;
+    }
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+        return None;
+    };
+    if !value.is_object() {
+        return None;
+    }
+    if let Some(since) = since {
+        let ts = value.get("ts").and_then(|v| v.as_str()).unwrap_or("");
+        if ts < since {
+            return None;
         }
     }
+    Some(value)
+}
+
+/// Sort `records` by their `ts` string, oldest first.
+fn sort_by_ts(records: &mut [serde_json::Value]) {
     records.sort_by(|a, b| {
         let ts = |v: &serde_json::Value| {
             v.get("ts")
@@ -99,7 +114,6 @@ pub fn run_records(dir: &Path, since: Option<&str>) -> Vec<serde_json::Value> {
         };
         ts(a).cmp(&ts(b))
     });
-    records
 }
 
 /// The Claude projects store root: `$RALPHY_CLAUDE_PROJECTS_DIR` when set (tests

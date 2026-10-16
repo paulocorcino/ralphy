@@ -32,6 +32,14 @@ test("picking an alias fills user and port, and the alias is the destination", (
   assert.equal(s.user, "");
 });
 
+test("a pick that finds no alias empties the alias, user and port, and keeps the address", () => {
+  const H = load();
+  let s = H.next(H.initial(), { type: "aliases", aliases: ALIASES });
+  s = H.next(s, { type: "pick", alias: "svrapp" });
+  s = H.next(s, { type: "pick", alias: "nope" });
+  assert.deepEqual([s.alias, s.user, s.port, s.address], ["", "", "", "10.0.0.5"]);
+});
+
 test("a typed address becomes user@host, or ssh:// when the port is not 22", () => {
   const H = load();
   const typed = (address, user, port) =>
@@ -174,6 +182,15 @@ test("add exit 0 shows the last step; any other code keeps the checks with a fai
   assert.equal(s.failure.message, "No");
   const silent = H.next(open, { type: "exit", verb: "host.add", code: 2 });
   assert.match(silent.failure.message, /code 2/);
+});
+
+test("an exit with no code says the command stopped before it finished", () => {
+  const H = load();
+  const open = Object.assign(H.initial(), { open: true, step: "checks", busy: true });
+  for (const code of [null, undefined]) {
+    const s = H.next(open, { type: "exit", verb: "host.check", code });
+    assert.deepEqual([s.busy, s.failure], [false, { kind: "other", message: "The command stopped before it finished." }], String(code));
+  }
 });
 
 test("the password is dropped once signed in, on a refusal and on close", () => {

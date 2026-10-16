@@ -165,3 +165,110 @@ test("a step lands on the fence the view jumped to, and on nothing when the jump
   state.jumpAnswer = false;
   assert.equal(list.stepFence(1), null);
 });
+
+// An element with a class list and children by selector.
+function fakeEl(rect, parts = {}, data = {}) {
+  const classes = new Set();
+  return {
+    rect,
+    dataset: data,
+    classList: {
+      contains: (c) => classes.has(c),
+      toggle: (c, on) => (on ? classes.add(c) : classes.delete(c)),
+    },
+    querySelector: (sel) => parts[sel] || null,
+    classes,
+  };
+}
+
+// A fence with the count and the columns button `refreshFenceChrome` writes.
+function chromeFence(id, rect) {
+  return fakeEl(rect, { ".fence-name": { value: id }, ".fence-count": { textContent: "" }, ".fence-columns": { disabled: false } }, { fenceId: id });
+}
+
+// Fence `a` is locked and holds one console and one card, `b` holds two
+// consoles, and `c` went to a popup with three.
+function chromeHarness({ autoBoot, measured = true, ownLocks = false } = {}) {
+  const rect = (left, top) => ({ left, top, width: 400, height: 400 });
+  const at = (left, top) => ({ left, top, width: 100, height: 100 });
+  const fences = [
+    { id: "a", name: "A", rect: rect(0, 0), locked: true },
+    { id: "b", name: "B", rect: rect(500, 0) },
+    { id: "c", name: "C", rect: rect(0, 500) },
+  ];
+  const fenceEls = fences.map((f) => chromeFence(f.id, f.rect));
+  const wins = [fakeEl(at(10, 10)), fakeEl(at(510, 10)), fakeEl(at(610, 110))];
+  wins.forEach((w, i) => (w._deskId = `w${i}`));
+  wins[0]._deskLocked = ownLocks;
+  const card = fakeEl(at(150, 150), {}, { noteId: "n1" });
+  const st = {
+    offsetWidth: measured ? 1200 : 0,
+    offsetHeight: measured ? 900 : 0,
+    querySelectorAll: (sel) => ({ ".fence": fenceEls, ".session-window": wins, ".note-card": [card] })[sel] || [],
+  };
+  const locks = [];
+  const popups = createPopupRegistry({ link: { writeRegistry() {} }, startBeat() {}, stopBeat() {} });
+  popups.put("c", popups.newPopupEntry(["x", "y", "z"]));
+  popups.commitDetached(["c"]);
+  const list = createFenceList({
+    window: { WBNotes: { applyLock: (el, on) => locks.push([el.dataset.noteId, on]) } },
+    document: { activeElement: null },
+    OPTS: autoBoot === undefined ? {} : { autoBoot },
+    popups,
+    fences: () => fences,
+    notes: () => [{ id: "n1", locked: ownLocks }],
+    stage: () => st,
+    workspace: () => null,
+    restoreRect: (el) => el.rect,
+    applyExtent() {},
+    columnMeasure: () => ({ viewport: 1600 }),
+    inGesture: () => false,
+    newFenceId: () => "new",
+    paintLockGlyph() {},
+    saveFences() {},
+    jumpToFence: () => null,
+    buildFence: () => null,
+  });
+  const count = (i) => fenceEls[i].querySelector(".fence-count").textContent;
+  const columns = (i) => fenceEls[i].querySelector(".fence-columns").disabled;
+  return { list, wins, card, locks, count, columns };
+}
+
+test("the fence chrome counts each fence's consoles, and a detached fence's from the popup", () => {
+  const { list, count, columns } = chromeHarness();
+  list.refreshFenceChrome();
+  assert.deepEqual([count(0), count(1), count(2)], ["(1 console)", "(2 consoles)", "(3 consoles)"]);
+  assert.deepEqual([columns(0), columns(1), columns(2)], [false, false, true], "a fence with no console on the stage has no columns");
+});
+
+test("the fence chrome writes nothing while the stage cannot measure", () => {
+  const { list, wins, card, locks, count } = chromeHarness({ measured: false });
+  list.refreshFenceChrome();
+  assert.deepEqual([count(0), count(1), count(2)], ["", "", ""]);
+  assert.equal(wins[0].classes.has("held"), false);
+  assert.deepEqual([card.classes.has("held"), locks], [false, []]);
+});
+
+test("a locked fence holds its consoles and its note cards", () => {
+  const { list, wins, card, locks } = chromeHarness();
+  list.refreshFenceChrome();
+  assert.deepEqual(wins.map((w) => w.classes.has("held")), [true, false, false]);
+  assert.equal(card.classes.has("held"), true);
+  assert.deepEqual(locks, [["n1", true]]);
+});
+
+test("in the detached-fence popup a locked fence holds no console and no card", () => {
+  const { list, wins, card, locks } = chromeHarness({ autoBoot: false });
+  list.refreshFenceChrome();
+  assert.deepEqual(wins.map((w) => w.classes.has("held")), [false, false, false]);
+  assert.deepEqual([card.classes.has("held"), locks], [false, []]);
+});
+
+// A console or a card with its own lock wears that lock, not the fence's.
+test("a console or a card locked on its own is not held by its locked fence", () => {
+  const { list, wins, card, locks } = chromeHarness({ ownLocks: true });
+  list.refreshFenceChrome();
+  assert.equal(wins[0].classes.has("held"), false);
+  assert.equal(card.classes.has("held"), false);
+  assert.deepEqual(locks, [["n1", true]], "the card is still read-only");
+});
