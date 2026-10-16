@@ -30,6 +30,7 @@ import { wbLogin } from "./wb-login.ts";
 import { createDaemon } from "./wb-daemon.ts";
 import { WBDevice } from "./wb-device.ts";
 import { createViewer } from "./wb-file-viewer.ts";
+import { wireDiagramZoom } from "./wb-zoom-overlay.ts";
 import { createNotes } from "./wb-notes.ts";
 import { createConsole } from "./wb-console.ts";
 import { createMessages } from "./wb-messages.ts";
@@ -65,6 +66,7 @@ window.WBDaemon = createDaemon(window, document, location, { messages });
 WBDevice.report(window);
 // The file pane, before `wire`: `app.ts` reads `WBViewer`.
 window.WBViewer = createViewer(window, document, { messages });
+wireDiagramZoom(window, document);
 // The note cards, before `wire`: `wb-console.ts` reads `WBNotes` inside functions.
 window.WBNotes = createNotes(window, document, { console: window.WBConsole, messages, stack, gestures });
 // `wire` hands back the detached file windows: the store `connection` asks

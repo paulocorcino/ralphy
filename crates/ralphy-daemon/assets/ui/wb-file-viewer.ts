@@ -21,6 +21,7 @@ import { WBFleet } from "./wb-fleet.ts";
 import { sendDocument } from "./wb-events.ts";
 import { isNullableString, isOptionalString, isRecord } from "./wb-api.ts";
 import { focusTarget, isSplit, paneLayout } from "./wb-viewer-panes.ts";
+import { decorateZoomable } from "./wb-zoom-overlay.ts";
 import type { MonacoDiffEditor, MonacoDisposable, MonacoEditor } from "./wb-monaco.ts";
 import type { Messages } from "./wb-messages.ts";
 import type { ViewerSlot } from "./wb-viewer-panes.ts";
@@ -1102,8 +1103,7 @@ export function createViewer(window: ViewerWindow, document: Document, deps: Vie
 
   function renderMarkdown(rec: BytesRecord) {
     const article = rec.el!.querySelector(".md-body")!;
-    const html = DOMPurify.sanitize(marked.parse(rec.content));
-    article.innerHTML = html;
+    article.innerHTML = DOMPurify.sanitize(marked.parse(rec.content));
 
     // mermaid fences: marked emits <pre><code class="language-mermaid">. Defer
     // the actual draw to first paint (a hidden container measures as 0). An
@@ -1122,6 +1122,7 @@ export function createViewer(window: ViewerWindow, document: Document, deps: Vie
     });
 
     resolveImages(rec, article);
+    decorateZoomable(article);
     buildOutline(rec, article);
     if (rec.visible) drawMermaid(rec);
   }
@@ -1484,8 +1485,7 @@ export function createViewer(window: ViewerWindow, document: Document, deps: Vie
     // Whether any open file tab holds an edit not yet saved: the work a
     // reload onto a new build must not lose (ADR-0070 D6).
     anyDirty() {
-      for (const rec of map.values()) if (rec.dirty) return true;
-      return false;
+      return [...map.values()].some((rec) => rec.dirty);
     },
     // `original` is the diff's HEAD side. `project` is the IDENTITY (tab id,
     // wire field, model URI) and stays the full ref; `label` is the human
