@@ -24,8 +24,9 @@ Scenario 5   no limit: every console opens a column, and on a narrow window
              the columns still share the width without overlap
 Scenario 5s  swap: into a middle column, two columns change places (the desk
              follows the new leftmost), and back
-Scenario 6   a column hides lock, full screen, close and the handles; restart
-             stays and asks first
+Scenario 6   a column hides lock, close and the handles; full screen, restart
+             and the title stay; restart asks first; in full screen a column
+             keeps only the exit and restart
 Scenario 7   restore the middle column: the others widen
 Scenario 8   restore the leftmost: the next is the maximized console, and the
              desk says so
@@ -72,7 +73,7 @@ TABS = "Alpine.store('tabs')"
 # a check reads them through their root.
 COLS = "Alpine.$data(document.querySelector('[x-data=\"wbColumns\"]'))"
 VIEW = {"width": 2400, "height": 1000}
-FLOOR = 63  # every check above the floor check; pinned after the first green run
+FLOOR = 66  # every check above the floor check; pinned after the first green run
 
 F_ONE = {"left": 40, "top": 40, "width": 600, "height": 500}
 F_LOCK = {"left": 700, "top": 40, "width": 600, "height": 500}
@@ -546,9 +547,47 @@ def main():
                 "    restart: __visible(w.querySelector('.session-restart')),"
                 "    title: __visible(w.querySelector('.session-title')) }; }"
             )
-            check("6 lock, full screen, close and the handles are hidden in a column",
-                  all(chrome[k] == "none" for k in ("lock", "full", "close", "handle", "resize")), str(chrome))
-            check("6 restart and the title stay", chrome["restart"] and chrome["title"], str(chrome))
+            check("6 lock, close and the handles are hidden in a column",
+                  all(chrome[k] == "none" for k in ("lock", "close", "handle", "resize")), str(chrome))
+            check("6 full screen, restart and the title stay in a column",
+                  chrome["full"] != "none" and chrome["restart"] and chrome["title"], str(chrome))
+            # Headless Chromium grants no fullscreen without a real gesture, so
+            # the class `syncFullState` derives is set by hand: it is what the
+            # CSS reads.
+            in_full = page.evaluate(
+                "() => { const w = __W('w-b'); w.classList.add('fullscreen');"
+                " const d = (s) => getComputedStyle(w.querySelector(s)).display;"
+                " const r = { lock: d('.session-lock'), close: d('.session-close'), max: d('.session-max'),"
+                "   column: d('.session-column'), full: d('.session-full'), restart: d('.session-restart') };"
+                " w.classList.remove('fullscreen'); return r; }"
+            )
+            check("6 a column in full screen keeps only the exit and restart",
+                  all(in_full[k] == "none" for k in ("lock", "close", "max", "column"))
+                  and in_full["full"] != "none" and in_full["restart"] != "none", str(in_full))
+            # A REAL click: Playwright's input is a user gesture, so the browser
+            # may grant the full screen. The column enters it and, on exit, is
+            # still a column in the same place.
+            page.evaluate("() => __W('w-b').setAttribute('data-probe', '1')")
+            before = page.evaluate("() => __W('w-b').getBoundingClientRect().toJSON()")
+            page.locator("[data-probe] .session-full").click()
+            page.wait_for_timeout(500)
+            entered = page.evaluate(
+                "() => ({ el: document.fullscreenElement === __W('w-b'),"
+                " cls: __W('w-b').classList.contains('fullscreen') })"
+            )
+            check("6 the full screen button takes a column to the display", entered["el"] and entered["cls"],
+                  str(entered))
+            page.evaluate("() => document.exitFullscreen()")
+            page.wait_for_timeout(500)
+            after = page.evaluate(
+                "() => ({ el: !!document.fullscreenElement, column: __W('w-b').classList.contains('column'),"
+                " rect: __W('w-b').getBoundingClientRect().toJSON() })"
+            )
+            check("6 leaving full screen puts the column back where it was",
+                  not after["el"] and after["column"]
+                  and all(abs(after["rect"][k] - before[k]) < 1 for k in ("x", "y", "width", "height")),
+                  f"{before} {after}")
+            page.evaluate("() => __W('w-b').removeAttribute('data-probe')")
             page.evaluate("() => __W('w-b').querySelector('.session-restart').click()")
             try:
                 page.wait_for_selector(".wb-confirm", timeout=3000)

@@ -252,7 +252,7 @@ async fn run_local(
             return None;
         }
     };
-    let Some(entry) = store.entry(slug) else {
+    let Some(entry) = store.entry_or_former(slug) else {
         send_command(
             socket,
             id,

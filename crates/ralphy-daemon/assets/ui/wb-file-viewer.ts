@@ -213,8 +213,7 @@ export function createViewer(window: ViewerWindow, document: Document, deps: Vie
     const split = isSplit(slot, slotRec);
     for (const rec of map.values()) {
       const { on, display, gridColumn } = paneLayout(rec.id, id, split, slot?.id);
-      rec.el!.style.display = display;
-      rec.el!.style.gridColumn = gridColumn;
+      Object.assign(rec.el!.style, { display, gridColumn });
       rec.visible = on;
       if (on) {
         setTimeout(() => {

@@ -253,6 +253,18 @@ impl RegistryStore {
     pub fn entry(&self, slug: &str) -> Option<&RepoEntry> {
         self.repos.get(slug)
     }
+
+    /// The entry for `slug`, or for the key `slug` was re-keyed to. An exact key
+    /// wins over a former slug. A request that carries a key (a peer poll, a
+    /// command, a tree watch, a console launch) uses this, because its sender
+    /// may have read the key before the rename (ADR-0036 amendment 2026-10-15).
+    pub fn entry_or_former(&self, slug: &str) -> Option<&RepoEntry> {
+        self.entry(slug).or_else(|| {
+            self.repos
+                .values()
+                .find(|e| e.former_slugs.iter().any(|f| f == slug))
+        })
+    }
 }
 
 /// Load a [`RegistryStore`] from `path`, or `Ok(default())` when the file does

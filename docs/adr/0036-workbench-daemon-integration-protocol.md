@@ -1202,6 +1202,41 @@ Neither is true now. Nothing new is decided.
   the vendored-library procedures and the touch rules. It does not document
   the client.
 
+## Amendment (2026-10-15): a rename on a peer reaches the host
+
+The 2026-09-16 amendment keeps the rename fact in one registry and lets the
+desk routes read it. It did not say what happens when the registry is a
+peer's. Seen live: a project on a WSL peer gained an `origin`, the peer
+re-keyed it from `path-<hash>` to `owner/repo`, and the host kept the old key
+in two places. The host's desk record still named `<peer>/path-<hash>`, so the
+window had no project and its console stayed blank. The host's tree poller
+kept asking the peer for the old key, and the peer answered `unknown repo`
+every 1.5 s, with one log line each time, until the tab closed.
+
+Three decisions:
+
+1. **A peer resolves a former slug.** Every lookup that serves a request from
+   a repo key — the peer routes, `/ws/command`, `/ws/tree` and `/ws/session` —
+   accepts a key the registry has since re-keyed (`former_slugs`) as the key
+   it lives under. An exact key always wins. `RegistryStore::entry` stays
+   exact: the registrar and the audit read use it to ask "is this key
+   registered", and a former slug is not.
+
+2. **A peer serves its rename facts.** `/api/repos` rows gain `former_slugs`,
+   omitted when empty. The field is additive, so `PEER_PROTOCOL_VERSION` does
+   not change: a host that does not know the field ignores it, and a peer that
+   does not send it folds as "no renames".
+
+3. **The host maps a peer's rename in the desk.** The desk routes add
+   `<peer>/<old>` → `<peer>/<new>` for every peer row to the map they already
+   build from the local registry, and `rekey::rekey_desk` is unchanged. The
+   rows come from the cache that `/api/fleet` fills, so a peer that is down
+   still maps from its last-known rows. A cold cache maps nothing, which is
+   the behaviour before this amendment.
+
+The transient of the 2026-09-16 amendment stays: a console live across the
+rename keeps its session's `repo` until it closes.
+
 ## Amendment (2026-10-15): `file.stat` and `tree.size` — the properties of a file or a folder are an Observe read
 
 Two verbs join §2's **Observe** class. The workbench uses them for the

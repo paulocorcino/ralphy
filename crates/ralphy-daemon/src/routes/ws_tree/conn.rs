@@ -284,7 +284,7 @@ fn start_peer_poller(
 
 fn registry_root(registry_path: &Path, repo: &str) -> Option<PathBuf> {
     match registry::load_from(registry_path) {
-        Ok(store) => store.entry(repo).map(|e| PathBuf::from(&e.path)),
+        Ok(store) => store.entry_or_former(repo).map(|e| PathBuf::from(&e.path)),
         Err(e) => {
             tracing::warn!(error = %e, "tree watch: registry unreadable");
             None

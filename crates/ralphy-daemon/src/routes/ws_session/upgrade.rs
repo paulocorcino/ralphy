@@ -281,7 +281,7 @@ impl Upgrade {
             "repo registry unreadable"
         })?;
         store
-            .entry(slug)
+            .entry_or_former(slug)
             .map(|entry| entry.path.clone())
             .ok_or("unknown repo")
     }

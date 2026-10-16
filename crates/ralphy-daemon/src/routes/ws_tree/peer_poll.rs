@@ -202,11 +202,18 @@ fn read_poll_reply(
                 dirty,
             },
             None => {
-                tracing::warn!(
-                    repo = %repo_ref,
-                    body = %String::from_utf8_lossy(&bytes).chars().take(200).collect::<String>(),
-                    "a peer answered a tree poll with something that is not a poll result"
-                );
+                // Only the first of a streak is a WARN, as for a transport error
+                // below: a peer that refuses one key answers the same body every
+                // PEER_POLL_BACKOFF for as long as the tab stays open.
+                let body = String::from_utf8_lossy(&bytes)
+                    .chars()
+                    .take(200)
+                    .collect::<String>();
+                if failures == 0 {
+                    tracing::warn!(repo = %repo_ref, body = %body, "a peer answered a tree poll with something that is not a poll result");
+                } else {
+                    tracing::debug!(repo = %repo_ref, failures, body = %body, "a peer answered a tree poll with something that is not a poll result again");
+                }
                 empty(PollCycle::Unreadable)
             }
         },
