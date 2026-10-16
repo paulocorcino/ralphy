@@ -12,7 +12,7 @@ use axum::Json;
 use axum::Router;
 
 use super::RouterShared;
-use super::{push, Push};
+use super::{peer_slug_aliases, push, PeerRepoCache, Push};
 use crate::{checkout, desk, registry, rekey, session};
 
 /// Query for `PUT /api/desk`: the writing tab's id, echoed in the
@@ -87,27 +87,35 @@ fn unreadable(e: &anyhow::Error) -> Response {
 /// registry has since re-keyed (`former_slugs`) is rewritten on the way out,
 /// so a migrated project's consoles come back to it (ADR-0036 amendment
 /// 2026-09-16). The registry is read fresh, like `/api/repos`.
-pub(crate) async fn desk_get_route(path: PathBuf, registry_path: PathBuf) -> Response {
-    let aliases = former_slug_aliases(&registry_path);
+pub(crate) async fn desk_get_route(
+    path: PathBuf,
+    registry_path: PathBuf,
+    peers: PeerRepoCache,
+) -> Response {
+    let aliases = former_slug_aliases(&registry_path, &peers);
     match desk::load_from(&path) {
         Ok(store) => Json(rekey::rekey_desk(store, &aliases)).into_response(),
         Err(e) => unreadable(&e),
     }
 }
 
-/// The registry's former-slug → canonical-key map, or empty when the registry
-/// is unreadable (warned; the desk is still served — a lost alias costs a
-/// cascaded stage, never the layout).
+/// The former-slug → canonical-key map: the registry's, plus every peer's
+/// (`<daemon_id>/<old>` → `<daemon_id>/<new>`, from the repos each peer last
+/// served). The registry's part is empty when it is unreadable (warned; the
+/// desk is still served — a lost alias costs a cascaded stage, never the
+/// layout).
 pub(crate) fn former_slug_aliases(
     registry_path: &Path,
+    peers: &PeerRepoCache,
 ) -> std::collections::BTreeMap<String, String> {
+    let mut aliases = peer_slug_aliases(peers);
     match registry::load_from(registry_path) {
-        Ok(store) => store.former_slug_map(),
+        Ok(store) => aliases.extend(store.former_slug_map()),
         Err(e) => {
             tracing::warn!(error = %e, "repo registry unreadable; desk served without slug aliases");
-            Default::default()
         }
     }
+    aliases
 }
 
 /// The checks a desk body passes before anything is written: every rect on
@@ -233,6 +241,7 @@ fn put_reply(store: &desk::DeskStore, refused: &[desk::apply::Refusal]) -> Respo
 pub(crate) async fn desk_put_route(
     path: PathBuf,
     registry_path: PathBuf,
+    peers: PeerRepoCache,
     pushes: tokio::sync::broadcast::Sender<Push>,
     tab: Option<String>,
     raw: &[u8],
@@ -266,7 +275,7 @@ pub(crate) async fn desk_put_route(
         Ok(stored) => stored,
         Err(e) => return unreadable(&e),
     };
-    let aliases = former_slug_aliases(&registry_path);
+    let aliases = former_slug_aliases(&registry_path, &peers);
     let stored = rekey::rekey_desk(stored, &aliases);
     // A page that loaded before a restore still shows the older layout
     // (ADR-0050 amendment 2026-10-04, desk history).
@@ -407,6 +416,7 @@ pub(crate) struct RestoreBody {
 pub(crate) async fn desk_history_restore_route(
     path: PathBuf,
     registry_path: PathBuf,
+    peers: PeerRepoCache,
     pushes: tokio::sync::broadcast::Sender<Push>,
     sessions: Arc<session::SessionManager>,
     body: RestoreBody,
@@ -465,7 +475,7 @@ pub(crate) async fn desk_history_restore_route(
             notes: desk::prune_notes(restored.notes),
             checkouts: restored.checkouts,
         },
-        &former_slug_aliases(&registry_path),
+        &former_slug_aliases(&registry_path, &peers),
     );
     if let Err(e) = desk::save_to(&store, &path) {
         return failed(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}"));
@@ -485,15 +495,22 @@ pub(crate) fn desk_routes(s: &RouterShared) -> Router {
             get({
                 let path = s.desk_path.clone();
                 let registry = s.registry_path.clone();
-                move || desk_get_route(path.clone(), registry.clone())
+                let peers = s.peer_repo_cache.clone();
+                move || desk_get_route(path.clone(), registry.clone(), peers.clone())
             })
             .put({
                 let path = s.desk_path.clone();
                 let registry = s.registry_path.clone();
+                let peers = s.peer_repo_cache.clone();
                 let pushes = s.pushes.clone();
                 move |Query(q): Query<DeskPutQuery>, raw: axum::body::Bytes| {
-                    let (path, registry, pushes) = (path.clone(), registry.clone(), pushes.clone());
-                    async move { desk_put_route(path, registry, pushes, q.tab, &raw).await }
+                    let (path, registry, peers, pushes) = (
+                        path.clone(),
+                        registry.clone(),
+                        peers.clone(),
+                        pushes.clone(),
+                    );
+                    async move { desk_put_route(path, registry, peers, pushes, q.tab, &raw).await }
                 }
             }),
         )
@@ -506,12 +523,14 @@ pub(crate) fn desk_routes(s: &RouterShared) -> Router {
             .post({
                 let path = s.desk_path.clone();
                 let registry = s.registry_path.clone();
+                let peers = s.peer_repo_cache.clone();
                 let pushes = s.pushes.clone();
                 let sessions = s.sessions.clone();
                 move |Json(body): Json<RestoreBody>| {
                     desk_history_restore_route(
                         path.clone(),
                         registry.clone(),
+                        peers.clone(),
                         pushes.clone(),
                         sessions.clone(),
                         body,
@@ -528,3 +547,6 @@ pub(crate) fn desk_routes(s: &RouterShared) -> Router {
             }),
         )
 }
+
+#[cfg(test)]
+mod tests;
