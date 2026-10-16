@@ -53,6 +53,10 @@ pub(crate) async fn repos_route(registry_path: PathBuf, memo: rekey::HealMemo) -
         // "Copy full path". `path` is left byte-identical — peers parse it
         // (`fleet::store_from_repos_json`).
         root: Option<String>,
+        // Additive (ADR-0036 amendment 2026-10-15): the keys this repo had before
+        // a re-key, so a host can follow the rename. Omitted when empty.
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        former_slugs: Vec<String>,
     }
     let store = match registry::load_from(&registry_path) {
         Ok(store) => store,
@@ -80,6 +84,7 @@ pub(crate) async fn repos_route(registry_path: PathBuf, memo: rekey::HealMemo) -
                     dirty: entry.dirty(),
                     remote: entry.remote(),
                     root: entry.root(),
+                    former_slugs: entry.former_slugs.clone(),
                 }
             })
             .collect()
