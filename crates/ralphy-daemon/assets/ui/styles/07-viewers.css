@@ -671,3 +671,127 @@
   font-size: 0.74rem;
   min-width: 3.5em;
 }
+
+/* The "Enlarge" button on a diagram or a large picture of a rendered article,
+   and the zoom view it opens (wb-zoom-overlay.ts). The button sits beside the
+   Mermaid holder, never inside it: drawing the diagram replaces the holder's
+   content. */
+.zoomable {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+.zoomable-block {
+  display: block;
+}
+.zoom-btn {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  color: var(--text);
+  background: var(--chrome);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  opacity: 0;
+  touch-action: manipulation;
+}
+/* A diagram that is not drawn yet has nothing to enlarge. */
+.zoomable-block:not(:has(svg)) > .zoom-btn {
+  display: none;
+}
+.zoomable:hover > .zoom-btn,
+.zoom-btn:focus-visible {
+  opacity: 1;
+}
+.zoom-btn:hover {
+  border-color: var(--border-focus);
+}
+/* A finger has no hover: the button is always there, at a size a finger hits. */
+@media (any-pointer: coarse) {
+  .zoom-btn {
+    opacity: 0.9;
+    width: 44px;
+    height: 44px;
+  }
+}
+.zoom-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 510;
+  background: rgba(8, 6, 5, 0.94);
+}
+.zoom-overlay:focus {
+  outline: none;
+}
+/* The surface takes the drag and the pinch itself: without `touch-action:
+   none` the browser claims the first pixels as a page scroll and cancels the
+   pointer. */
+.zoom-surface {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.zoom-surface:active {
+  cursor: grabbing;
+}
+.zoom-stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+.zoom-stage > img,
+.zoom-stage > svg {
+  display: block;
+  max-width: none;
+  max-height: none;
+}
+.zoom-bar {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  display: flex;
+  gap: 0.35rem;
+  padding: 0.3rem;
+  background: var(--chrome);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.zoom-bar-btn {
+  font: inherit;
+  font-size: 0.76rem;
+  min-width: 2.2rem;
+  height: 2.2rem;
+  padding: 0 0.5rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.zoom-bar-btn:hover {
+  border-color: var(--border-focus);
+}
+.zoom-bar-btn:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+}
+@media (any-pointer: coarse) {
+  .zoom-bar-btn {
+    min-width: 44px;
+    height: 44px;
+  }
+}
