@@ -4,6 +4,7 @@
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { apiFetch, ReadDeadline } from "../assets/ui/wb-api.ts";
+import { forgetStalls } from "../assets/ui/wb-stall.ts";
 
 // Let every pending promise callback run; setImmediate is not under mock timers.
 const flush = () => new Promise((r) => setImmediate(r));
@@ -125,6 +126,29 @@ test("apiFetch sends the route's method to its path, with the query encoded", as
       },
     ]);
   } finally {
+    globalThis.fetch = prev;
+  }
+});
+
+test("a read past its deadline reports a stall", async () => {
+  const prev = globalThis.fetch;
+  const stalls = [];
+  globalThis.fetch = (url, init) => {
+    if (url === "/api/device/stall") stalls.push(JSON.parse(init.body));
+    return new Promise(() => {});
+  };
+  forgetStalls();
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const done = apiFetch("GET /api/repos").catch(() => {});
+    mock.timers.tick(20000);
+    await done;
+    assert.deepEqual(
+      stalls.map((s) => [s.kind, s.what, s.waited_ms]),
+      [["read-deadline", "GET /api/repos", 20000]],
+    );
+  } finally {
+    mock.timers.reset();
     globalThis.fetch = prev;
   }
 });

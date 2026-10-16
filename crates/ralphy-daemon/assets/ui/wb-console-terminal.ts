@@ -21,6 +21,7 @@ import { wirePress } from "./wb-console-press.ts";
 import { createFit } from "./wb-console-fit.ts";
 import { frameQueue } from "./wb-console-frames.ts";
 import { terminalGpu } from "./wb-console-gpu.ts";
+import { reportStall } from "./wb-stall.ts";
 import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
 import type { DetachReason } from "./wb-console-session.ts";
 import type { SessionRequest } from "./wb-session-route.ts";
@@ -288,6 +289,7 @@ export function createTerminal(deps: TerminalDeps) {
       // window is closed.
       stopFit();
       term.write("\r\n" + endNotice(announced, refusal) + "\r\n");
+      void reportStall("console-gave-up", announced ?? "closed", 0);
       if (typeof opts.onEnded === "function") opts.onEnded(announced, refusal);
     }
 

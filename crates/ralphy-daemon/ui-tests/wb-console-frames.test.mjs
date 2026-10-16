@@ -5,6 +5,7 @@ import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { DECODE_DEADLINE_MS, frameQueue, readSocketEvent } from "../assets/ui/wb-console-frames.ts";
 import { TAG_COMMAND, TAG_TERMINAL } from "../assets/ui/wb-console-session.ts";
+import { forgetStalls } from "../assets/ui/wb-stall.ts";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -254,5 +255,29 @@ test("a decode that ends after its deadline writes nothing", async () => {
     assert.equal(seen.filter((k) => k === "A").length, 0);
   } finally {
     mock.timers.reset();
+  }
+});
+
+test("a replay decode past its deadline reports a stall", () => {
+  const prev = globalThis.fetch;
+  const kinds = [];
+  globalThis.fetch = (_url, init) => {
+    kinds.push(JSON.parse(init.body).kind);
+    return Promise.resolve(new Response(null, { status: 204 }));
+  };
+  forgetStalls();
+  const warn = console.warn;
+  console.warn = () => {};
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const { apply } = recorder();
+    const { take } = frameQueue(apply, () => new Promise(() => {}));
+    gzipOpen(take);
+    mock.timers.tick(DECODE_DEADLINE_MS);
+    assert.deepEqual(kinds, ["decode-deadline"]);
+  } finally {
+    mock.timers.reset();
+    console.warn = warn;
+    globalThis.fetch = prev;
   }
 });

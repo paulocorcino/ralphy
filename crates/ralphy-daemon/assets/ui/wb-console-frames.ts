@@ -14,6 +14,7 @@
 import { socketFrame } from "./wb-api.ts";
 import { TAG_COMMAND, TAG_TERMINAL } from "./wb-console-session.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
+import { reportStall } from "./wb-stall.ts";
 
 // The payload of the daemon's `session-end`, `session-open` and
 // `session-size` frames. A peer of an older build sends no `session-size`.
@@ -131,6 +132,7 @@ export function frameQueue(
     };
     const timer = setTimeout(() => {
       console.warn("console replay did not decode in time");
+      void reportStall("decode-deadline", "replay", DECODE_DEADLINE_MS);
       end({ kind: "replay-lost" });
     }, DECODE_DEADLINE_MS);
     decode(event.bytes).then(

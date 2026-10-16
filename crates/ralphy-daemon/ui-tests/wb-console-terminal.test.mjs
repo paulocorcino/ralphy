@@ -5,6 +5,7 @@ import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { gzipSync } from "node:zlib";
 import { createTerminal } from "../assets/ui/wb-console-terminal.ts";
+import { forgetStalls } from "../assets/ui/wb-stall.ts";
 import { encodeDetach, encodeShown, TAG_COMMAND, TAG_TERMINAL } from "../assets/ui/wb-console-session.ts";
 
 // An element that takes listeners and does nothing with them.
@@ -530,5 +531,30 @@ test("the socket names the network the browser reports, and nothing when it repo
     page.restore();
     if (saved) Object.defineProperty(globalThis, "navigator", saved);
     else delete globalThis.navigator;
+  }
+});
+
+test("a console that gives up reports a stall", () => {
+  const page = fakePage();
+  const prev = globalThis.fetch;
+  const reports = [];
+  globalThis.fetch = (_url, init) => {
+    reports.push(JSON.parse(init.body));
+    return Promise.resolve(new Response(null, { status: 204 }));
+  };
+  forgetStalls();
+  try {
+    const handle = createTerminal(fakeDeps().deps).attachTerminal(fakeElement(), { id: 6, onEnded() {} });
+    open(page.sockets[0], { replay: true });
+    page.sockets[0].onmessage(commandFrame("session-end", { reason: "refused", message: "no such project" }));
+    page.sockets[0].onclose({});
+    assert.deepEqual(
+      reports.map((r) => [r.kind, r.what]),
+      [["console-gave-up", "refused"]],
+    );
+    handle.dispose();
+  } finally {
+    globalThis.fetch = prev;
+    page.restore();
   }
 });

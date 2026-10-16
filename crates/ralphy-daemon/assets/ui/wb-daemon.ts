@@ -13,6 +13,7 @@ import { WBFail } from "./wb-fail.ts";
 import { socketFrame, ReadDeadline } from "./wb-api.ts";
 import { WBProject } from "./wb-project.ts";
 import { WBRun } from "./wb-runs.ts";
+import { reportStall } from "./wb-stall.ts";
 import { sendWindow } from "./wb-events.ts";
 import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
 import type { Messages } from "./wb-messages.ts";
@@ -165,6 +166,7 @@ export function createDaemon(window: Window, document: Document, location: Locat
       const giveUp = (ms: number) => {
         stop();
         detachSocket(ws);
+        void reportStall("read-deadline", verb, ms);
         reject(new ReadDeadline(verb, ms));
       };
       handshakeTimer = setTimeout(() => {

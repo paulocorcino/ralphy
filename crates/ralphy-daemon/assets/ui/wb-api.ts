@@ -25,6 +25,7 @@ import type { MissingUsage, SpendDoc, SpendRecord } from "./wb-spend.ts";
 import type { DeskVersion, VersionInfo } from "./wb-desk-history.ts";
 import type { AuditEvent, Device } from "./wb-devices.ts";
 import type { ReleaseView } from "./wb-release.ts";
+import { reportStall } from "./wb-stall.ts";
 
 /** What HEAD points at (`ralphy_git_read::Head`). */
 export type Head = { kind: "branch"; name: string } | { kind: "detached"; sha: string };
@@ -216,6 +217,10 @@ export function apiFetch<K extends ApiRoute>(route: K, init: ApiInit = {}): Prom
   const ms = deadlineMs ?? ROUTE_DEADLINE_MS[route] ?? READ_DEADLINE_MS;
   const controller = new AbortController();
   const abort = () => controller.abort();
+  const stalled = () => {
+    abort();
+    void reportStall("read-deadline", route, ms);
+  };
   if (callerSignal) {
     if (callerSignal.aborted) abort();
     else callerSignal.addEventListener("abort", abort, { once: true });
@@ -223,8 +228,8 @@ export function apiFetch<K extends ApiRoute>(route: K, init: ApiInit = {}): Prom
   // The one unchecked step: the reply comes from the daemon of the same
   // build, whose handler `ApiRoutes` follows.
   const sent = fetch(url, { ...rest, method, signal: controller.signal }) as Promise<ApiResponse<K>>;
-  return beforeDeadline(sent, route, ms, abort).then((res) => {
-    boundBodyReads(res, route, ms, abort);
+  return beforeDeadline(sent, route, ms, stalled).then((res) => {
+    boundBodyReads(res, route, ms, stalled);
     return res;
   });
 }

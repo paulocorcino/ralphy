@@ -46,8 +46,9 @@ test("ingestFleet keeps only peer groups", () => {
 test("a shared sessions read that passed its deadline is not shared again", async () => {
   const prev = globalThis.fetch;
   let fetches = 0;
-  globalThis.fetch = () => {
-    fetches += 1;
+  // The stall report that the deadline sends is not a sessions read.
+  globalThis.fetch = (url) => {
+    if (url !== "/api/device/stall") fetches += 1;
     return new Promise(() => {});
   };
   mock.timers.enable({ apis: ["setTimeout"] });

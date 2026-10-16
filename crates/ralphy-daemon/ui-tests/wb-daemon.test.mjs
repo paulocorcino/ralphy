@@ -10,6 +10,7 @@ import { dirname, join } from "node:path";
 const HERE = dirname(fileURLToPath(import.meta.url));
 import { createDaemon } from "../assets/ui/wb-daemon.ts";
 import { ReadDeadline } from "../assets/ui/wb-api.ts";
+import { forgetStalls } from "../assets/ui/wb-stall.ts";
 import { CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS, resumeDecision } from "../assets/ui/wb-resume.ts";
 
 // A push the daemon produced, as its tests wrote it (`tests/support/golden.rs`).
@@ -536,4 +537,27 @@ test("subscribePresence hands a command frame to onPush and each open to onOpen"
   ]);
   assert.deepEqual(beats, [{ uptime_secs: 4 }], "a push is not a heartbeat");
   assert.deepEqual(opens, [false]);
+});
+
+test("an observe past its deadline reports a stall naming the verb", async () => {
+  const prev = globalThis.fetch;
+  const stalls = [];
+  globalThis.fetch = (url, init) => {
+    stalls.push({ url, ...JSON.parse(init.body) });
+    return Promise.resolve(new Response(null, { status: 204 }));
+  };
+  forgetStalls();
+  const s = silentSocket({ opens: false });
+  try {
+    mock.timers.tick(CONNECT_TIMEOUT_MS);
+    await flush();
+    assert.ok(s.result.error instanceof ReadDeadline);
+    assert.deepEqual(
+      stalls.map((r) => [r.url, r.kind, r.what]),
+      [["/api/device/stall", "read-deadline", "tree.list"]],
+    );
+  } finally {
+    s.restore();
+    globalThis.fetch = prev;
+  }
 });
