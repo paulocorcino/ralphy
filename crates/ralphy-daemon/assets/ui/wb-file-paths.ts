@@ -89,8 +89,8 @@ export function fileTabId(project: string, path: string, checkout: string | null
   return checkout ? `file:${project}@${checkout}:${path}` : `file:${project}:${path}`;
 }
 
-// Which viewer a file gets: markdown and a Mermaid diagram (`.mmd`) →
-// rendered pane, image → image pane,
+// Which viewer a file gets: markdown, a Mermaid diagram (`.mmd`) and a
+// database markup file (`.dbml`) → rendered pane, image → image pane,
 // a note → its CARD on the consoles stage (ADR-0064 §11, never a tab: two
 // editors over one file is the thing that decision exists to prevent), other
 // binaries refused, everything else source code.
@@ -99,6 +99,7 @@ export function classify(name: string) {
   if (ext === "note") return "note";
   if (ext === "md" || ext === "markdown") return "markdown";
   if (ext === "mmd") return "mermaid";
+  if (ext === "dbml") return "dbml";
   if (IMAGE_EXT.has(ext)) return "image";
   if (BINARY_EXT.has(ext)) return "binary";
   return "code";
@@ -113,6 +114,8 @@ export function tabIcon(kind: string) {
       return "bi bi-file-earmark-image";
     case "mermaid":
       return "bi bi-diagram-3";
+    case "dbml":
+      return "bi bi-table";
     default:
       return "bi bi-file-earmark-code";
   }
@@ -142,6 +145,7 @@ const TREE_ICONS: Record<string, string> = {
   yaml: "bi bi-gear",
   note: "bi bi-sticky",
   mmd: "bi bi-diagram-3",
+  dbml: "bi bi-table",
 };
 
 export function treeIcon(title: string) {

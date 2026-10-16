@@ -9,6 +9,8 @@
    container measures 0.
    --------------------------------------------------------------------------- */
 
+import { renderDbmlGrid } from "./wb-dbml-view.ts";
+
 /** The vendored mermaid (`vendor/mermaid`): the members this module calls. */
 type Mermaid = {
   initialize(config: {
@@ -26,10 +28,10 @@ type Mermaid = {
 export type MermaidWindow = Window & { mermaid?: Mermaid };
 
 /** The file kinds the markdown pane shows as a rendered body. */
-export type RenderedKind = "markdown" | "mermaid";
+export type RenderedKind = "markdown" | "mermaid" | "dbml";
 
 export function isRendered(kind: string): kind is RenderedKind {
-  return kind === "markdown" || kind === "mermaid";
+  return kind === "markdown" || kind === "mermaid" || kind === "dbml";
 }
 
 // The anchor a `#fragment` uses for a heading: the GitHub-style slug of the
@@ -54,6 +56,9 @@ export function renderBody(kind: RenderedKind, article: Element, content: string
       return markdownBody(article, content, uid, doc);
     case "mermaid":
       return diagramBody(article, content, uid, doc);
+    case "dbml":
+      renderDbmlGrid(doc, article, content);
+      return [];
     default: {
       const unknown: never = kind;
       throw new Error(`no rendered body for the kind ${String(unknown)}`);

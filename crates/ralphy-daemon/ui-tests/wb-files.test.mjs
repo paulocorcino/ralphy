@@ -54,7 +54,7 @@ test("the path rules: the viewer of a name, the parent of a rel path, a tab id, 
     ["Makefile", "code"],
     ["erd.mmd", "mermaid"],
     ["FLOW.MMD", "mermaid"],
-    ["schema.dbml", "code"],
+    ["schema.dbml", "dbml"],
   ];
   for (const [name, want] of rows) assert.equal(classify(name), want, name);
   assert.deepEqual([parentRel("a/b/c.txt"), parentRel("top.txt")], ["a/b", ""]);
@@ -71,6 +71,7 @@ test("the tab icon of each file kind", () => {
     ["markdown", "bi bi-file-earmark-text"],
     ["image", "bi bi-file-earmark-image"],
     ["mermaid", "bi bi-diagram-3"],
+    ["dbml", "bi bi-table"],
     ["code", "bi bi-file-earmark-code"],
   ];
   for (const [kind, want] of rows) assert.equal(tabIcon(kind), want, kind);
@@ -79,6 +80,7 @@ test("the tab icon of each file kind", () => {
 test("the tree icon of a diagram file", () => {
   const s = loadComponent("wbFiles").scope;
   assert.equal(s.fileIcon("flow.mmd"), "bi bi-diagram-3");
+  assert.equal(s.fileIcon("schema.dbml"), "bi bi-table");
   // Control: a file with no icon of its own gets the plain one.
   assert.equal(s.fileIcon("flow.txt"), "bi bi-file-earmark");
 });

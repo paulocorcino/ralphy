@@ -1,8 +1,11 @@
-"""Browser acceptance: a Mermaid file (`.mmd`) opens as a drawn diagram.
+"""Browser acceptance: a Mermaid file (`.mmd`) opens as a drawn diagram, and a
+database markup file (`.dbml`) opens as a grouped grid of table cards.
 
 One Playwright pass over a REAL daemon. A fixture repo holds three Mermaid
 files under `docs/`: a small flowchart, a file Mermaid rejects, and an
-`erDiagram` over Mermaid's default limit of 50,000 characters.
+`erDiagram` over Mermaid's default limit of 50,000 characters. It also holds
+three synthetic DBML files: a schema, a table whose name is markup, and a
+file with comments only.
 
 Scenario 1  `flow.mmd` opens as one diagram (one svg, with the label `Start`)
 Scenario 2  Edit shows the file text in the editor; Preview draws it again
@@ -12,6 +15,12 @@ Scenario 4  a change on disk draws the diagram again
 Scenario 5  `broken.mmd` says "Mermaid error:" in the pane
 Scenario 6  `big.mmd` (more than 50,000 characters) is drawn, all 120 entities
 Scenario 7  the detached file window draws the diagram
+Scenario 8  `schema.dbml`: one card per table, grouped by name prefix, the
+            side index lists groups and tables, the summary counts the lines
+            not understood, only the exceptions are tagged, no card overflows
+Scenario 9  Edit on the `.dbml` tab shows the source; Preview shows the cards
+Scenario 10 a table name with markup shows as text; a file with no tables
+            says so
 
 Requires `playwright` (`pip install playwright`, then
 `playwright install chromium`).
@@ -50,6 +59,56 @@ BROKEN = "flowchart TD\n  A[Start --> (((\n  this is not mermaid ]]]\n"
 BIG_ENTITIES = 120
 BIG_COLUMNS = 8
 MERMAID_DEFAULT_LIMIT = 50000
+
+# Synthetic. Seven tables: `ledger` (2), `shop` (3) and `Other tables` (2).
+# Two lines are garbage, which the summary line must count.
+SCHEMA = """\
+// A synthetic shop schema.
+this line is garbage
+
+Table shop_orders {
+  id int [pk, not null]
+  buyer varchar(40)
+  total decimal(10, 2) [not null]
+  a_very_long_column_name_that_goes_on_for_a_long_while decimal(10, 2) [unique]
+  Note: 'Orders of the shop'
+}
+
+Table shop_items {
+  id int [pk, not null]
+  sku varchar(20) [not null, unique]
+}
+
+Table shop_users {
+  id int [pk, not null]
+  login varchar(40) [not null]
+}
+
+Table ledgerBook {
+  id int [pk, not null]
+  title varchar(40) [not null]
+}
+
+Table ledgerEntry {
+  id int [pk, not null]
+  amount decimal(10, 2) [not null]
+}
+
+Table audit {
+  id int [pk, not null]
+}
+
+Table zone {
+  id int [pk, not null]
+}
+
+another loose line
+"""
+SCHEMA_TABLES = 7
+SCHEMA_GROUPS = ["ledger", "shop", "Other tables"]
+MARKUP_NAME = "<img src=x onerror=alert(1)>"
+MARKUP = 'Table "' + MARKUP_NAME + '" {\n  id int [pk, not null]\n}\n'
+EMPTY = "// A file with comments only.\n/* No table here. */\n"
 
 results = []
 
@@ -115,6 +174,9 @@ def make_fixture_repo():
     (docs / "flow.mmd").write_text(FLOW, encoding="utf-8", newline="\n")
     (docs / "broken.mmd").write_text(BROKEN, encoding="utf-8", newline="\n")
     (docs / "big.mmd").write_text(big_diagram(), encoding="utf-8", newline="\n")
+    (docs / "schema.dbml").write_text(SCHEMA, encoding="utf-8", newline="\n")
+    (docs / "markup.dbml").write_text(MARKUP, encoding="utf-8", newline="\n")
+    (docs / "empty.dbml").write_text(EMPTY, encoding="utf-8", newline="\n")
     for args in (
         ["git", "init"],
         ["git", "config", "user.email", "wbrender@example.com"],
@@ -294,6 +356,112 @@ def scenario_detached(page, ctx, slug):
     check("mmd: the detached window draws the diagram", n == 1, f"svgs={n}")
 
 
+def count(page, sel, inner):
+    return page.evaluate("([s, q]) => document.querySelectorAll(s + ' ' + q).length", [sel, inner])
+
+
+def texts(page, sel, inner):
+    return page.evaluate(
+        "([s, q]) => [...document.querySelectorAll(s + ' ' + q)].map(e => e.textContent.trim())", [sel, inner]
+    )
+
+
+def wait_cards(page, sel):
+    page.wait_for_function("(s) => !!document.querySelector(s + ' .md-body .dbml-card')", arg=sel, timeout=30000)
+
+
+def tags_of(page, sel, table, column):
+    return page.evaluate(
+        """([s, t, c]) => {
+          const card = [...document.querySelectorAll(s + ' .dbml-card')].find(e => e.dataset.table === t);
+          const row = card && [...card.querySelectorAll('tr.dbml-col')].find(e => e.dataset.col === c);
+          return row ? [...row.querySelectorAll('.dbml-tag')].map(e => e.textContent) : null;
+        }""",
+        [sel, table, column],
+    )
+
+
+def scenario_dbml(page, slug):
+    open_path(page, slug, "docs/schema.dbml")
+    sel = pane("docs/schema.dbml")
+    wait_cards(page, sel)
+    summary = texts(page, sel, ".dbml-summary")
+    check(
+        "dbml: the summary counts the lines not understood",
+        len(summary) == 1 and summary[0].endswith("2 lines were not understood."),
+        f"summary={summary}",
+    )
+    cards = count(page, sel, ".dbml-card")
+    check("dbml: the file shows one card per table", cards == SCHEMA_TABLES, f"cards={cards}")
+    labels = texts(page, sel, ".md-body h2")
+    check("dbml: tables are grouped by name prefix", labels == SCHEMA_GROUPS, f"labels={labels}")
+    items = count(page, sel, ".md-outline .outline-item")
+    check(
+        "dbml: the side index lists groups and tables",
+        items == len(SCHEMA_GROUPS) + SCHEMA_TABLES,
+        f"items={items}",
+    )
+    long_name = "a_very_long_column_name_that_goes_on_for_a_long_while"
+    tags = {
+        "not null": tags_of(page, sel, "shop_orders", "total"),
+        "nullable": tags_of(page, sel, "shop_orders", "buyer"),
+        "unique": tags_of(page, sel, "shop_orders", long_name),
+        "pk": tags_of(page, sel, "shop_orders", "id"),
+    }
+    check(
+        "dbml: only the exceptions are tagged",
+        tags == {"not null": [], "nullable": ["null"], "unique": ["null", "unique"], "pk": []},
+        f"tags={tags}",
+    )
+    wide = page.evaluate(
+        "(s) => [...document.querySelectorAll(s + ' .dbml-card')].filter(e => e.scrollWidth > e.clientWidth).length",
+        sel,
+    )
+    check("dbml: no card overflows", wide == 0, f"overflowing={wide}")
+    page.screenshot(path=os.path.join(SHOT_DIR, "rendered-files-dbml.png"))
+
+    # Edit shows the source in Monaco; Preview shows the cards again.
+    page.locator(f'{sel} [data-act="toggle"]').click()
+    page.wait_for_function(
+        "(s) => !!document.querySelector(s + ' .md-editor .monaco-editor')", arg=sel, timeout=30000
+    )
+    page.wait_for_function(
+        "(src) => !!window.monaco && monaco.editor.getModels().some(m => m.getValue() === src)", arg=SCHEMA, timeout=15000
+    )
+    editor_shown = page.evaluate("(s) => getComputedStyle(document.querySelector(s + ' .md-editor')).display", sel)
+    page.locator(f'{sel} [data-act="toggle"]').click()
+    wait_cards(page, sel)
+    again = count(page, sel, ".dbml-card")
+    check(
+        "dbml: Edit shows the source and Preview shows the cards again",
+        editor_shown == "block" and again == SCHEMA_TABLES,
+        f"editor={editor_shown} cards={again}",
+    )
+
+
+def scenario_dbml_edges(page, slug):
+    open_path(page, slug, "docs/markup.dbml")
+    sel = pane("docs/markup.dbml")
+    wait_cards(page, sel)
+    heads = texts(page, sel, ".dbml-card h3")
+    images = count(page, sel, ".md-body img")
+    check(
+        "dbml: a table name with markup shows as text",
+        heads == [MARKUP_NAME] and images == 0,
+        f"h3={heads} img={images}",
+    )
+
+    open_path(page, slug, "docs/empty.dbml")
+    sel = pane("docs/empty.dbml")
+    page.wait_for_function("(s) => !!document.querySelector(s + ' .md-body .dbml-empty')", arg=sel, timeout=30000)
+    empty = texts(page, sel, ".dbml-empty")
+    check(
+        "dbml: a file with no tables says so",
+        empty == ["No tables found in this file."] and count(page, sel, ".dbml-card") == 0,
+        f"empty={empty}",
+    )
+
+
 def main():
     os.makedirs(SHOT_DIR, exist_ok=True)
     build()
@@ -327,6 +495,8 @@ def main():
             scenario_big(page, slug)
             page.screenshot(path=os.path.join(SHOT_DIR, "rendered-files-big.png"))
             scenario_detached(page, ctx, slug)
+            scenario_dbml(page, slug)
+            scenario_dbml_edges(page, slug)
             browser.close()
     finally:
         stop(proc)

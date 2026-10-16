@@ -10,6 +10,7 @@ test("isRendered names the kinds the rendered pane shows", () => {
   const rows = [
     ["markdown", true],
     ["mermaid", true],
+    ["dbml", true],
     ["code", false],
     ["image", false],
     ["diff", false],
