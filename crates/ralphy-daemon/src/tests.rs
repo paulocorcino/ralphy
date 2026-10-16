@@ -2956,10 +2956,13 @@ fn the_explorer_opens_a_note_as_a_card() {
     // The native dialogs are pinned OUT for the reason `wb-messages.ts`
     // records: an automated browser dismisses them by default, which turns
     // a guarded click into a silently cancelled one.
-    assert!(
-        !notes.contains("window.confirm(") && !notes.contains("window.prompt("),
-        "a note's file actions must use the workbench's own dialog and field"
-    );
+    let stage = include_str!("../assets/ui/wb-notes-stage.ts");
+    for js in [notes, stage] {
+        assert!(
+            !js.contains("window.confirm(") && !js.contains("window.prompt("),
+            "a note's file actions must use the workbench's own dialog and field"
+        );
+    }
     assert!(
         notes.contains("messages?.askConfirm({"),
         "deleting a note's FILE must ask first (ADR-0064 §11)"
@@ -6322,6 +6325,10 @@ fn the_shell_writes_the_desk_only_as_changes() {
     let others = [
         ("wb-notes.ts", notes),
         ("wb-notes-folds.ts", folds),
+        (
+            "wb-notes-stage.ts",
+            include_str!("../assets/ui/wb-notes-stage.ts"),
+        ),
         (
             "wb-notes-editor.ts",
             include_str!("../assets/ui/wb-notes-editor.ts"),
