@@ -1,5 +1,5 @@
 {
-  "ceiling": 30,
+  "ceiling": 20,
   "functions": {
     "crates/ralphy-adapter-support/src/headless.rs": {
       "drive_headless": [
