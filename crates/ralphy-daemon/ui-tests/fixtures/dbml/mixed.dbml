@@ -1,0 +1,65 @@
+// Every construct of the subset the parser reads, plus garbage.
+/* A block comment
+   over two lines, with a Table inside: Table ghost { id int } */
+
+Project demo {
+  database_type: 'MySQL'
+  Note: 'A project note, not a table'
+}
+
+Enum status {
+  active
+  closed [note: 'no longer open']
+}
+
+TablePartial audit_cols {
+  created_at timestamp
+}
+
+Table users [headercolor: #3498db] {
+  id integer [pk, increment]
+  email varchar(255) [unique, not null, note: 'login address']
+  nickname varchar(40) [null]
+  status status [default: 'active']
+  indexes {
+    (id, email) [unique]
+    email [name: 'by_email']
+  }
+  Note: 'Accounts of the shop'
+}
+
+Table "order items" as oi {
+  id integer [pk]
+  user_id integer [ref: > users.id]
+  price decimal(10, 2) [not null]
+  Note {
+    '''A note in a block'''
+  }
+}
+
+Table sales.invoices {
+  id integer [pk]
+  item_id integer
+  total "double precision"
+}
+
+Table orders {
+  id integer [primary key]
+  user_id integer
+}
+
+Ref: orders.user_id > users.id
+
+Ref fk_items {
+  sales.invoices.item_id > "order items".id
+  orders.id - users.id [delete: cascade]
+}
+
+Ref: orders.(id, user_id) > users.(id, email)
+
+this line is garbage
+
+TableGroup shop {
+  users
+  orders
+}
