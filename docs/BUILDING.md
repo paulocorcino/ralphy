@@ -202,6 +202,58 @@ test that replaces nothing:
 cargo nextest run -p ralphy-cli -E 'test(takes_a_published_release)' --run-ignored all
 ```
 
+## Updating the local daemon from source (Windows)
+
+`ralphy update` installs a published release. To run the code in your checkout
+instead, use [`scripts/update-ralphy.ps1`](../scripts/update-ralphy.ps1)
+(PowerShell 7.2 or later). It builds the folder as it is, uncommitted changes
+included, and then replaces the installed binary and restarts the daemon. When
+a WSL peer daemon runs (the systemd user unit `ralphy-daemon`, started from a
+cargo build `…/release/ralphy`), it updates that one too.
+
+```powershell
+scripts/update-ralphy.ps1              # Windows, then the WSL peer
+scripts/update-ralphy.ps1 -SkipWsl     # Windows only
+scripts/update-ralphy.ps1 -Status      # the end of the last update's log
+scripts/update-ralphy.ps1 -Rollback    # the binaries of the update before
+Get-Help scripts/update-ralphy.ps1 -Full
+```
+
+How it runs:
+
+- The work runs in a hidden process that Windows starts through WMI. That
+  process is not a child of your terminal or of the daemon, so the update
+  finishes even when the restart closes the console you started it from.
+- Phases: build Windows, build the WSL peer, replace and restart Windows,
+  restart the WSL peer. Nothing is replaced until both builds pass. A build
+  that runs over 60 minutes is stopped with its whole process tree.
+- After the builds, it waits 5 seconds (`-Delay`). Press C in the window to
+  cancel; nothing is replaced.
+- The restart closes every console of the daemon, and the agents inside stop.
+  The script lists the open consoles and asks first. With no keyboard (an
+  agent, a pipe) it stops unless you pass `-Yes`.
+- It stops a process by its PID only: a `ralphy.exe` that holds the daemon
+  port and is not the recorded daemon. Another program on the port stops the
+  update. Other `ralphy` processes keep running and are listed in the log.
+- The previous binary is kept as `ralphy.exe.prev` (WSL: `ralphy.prev`). When
+  the new daemon does not answer on its port, the previous one is put back and
+  started.
+- The log is in `~/.ralphy/update-logs/`. Its last line is
+  `RESULT: OK|FAILED|CANCELLED|DOWN`. Exit codes: 0 OK, 1 failed (the previous
+  version runs), 2 no daemon runs, 3 the update ended with no result,
+  4 cancelled.
+
+Two facts the script depends on, both measured:
+
+- The running binary is renamed to `ralphy.exe.old` (WSL: `ralphy.old`), never
+  to another name. `ralphy daemon restart` recognizes the daemon by its
+  program path, and it accepts only the `.old` and `.old.<digits>` names. With
+  any other name it decides the pid was reused, clears `daemon.pid`, and does
+  not stop the daemon. The new daemon then fails because the port is in use.
+- On Linux, a build that writes over the running binary makes its
+  `/proc/<pid>/exe` read `(deleted)`. Every verb that starts `ralphy` again
+  then fails until a restart. The rename before the build keeps the old file.
+
 ## Changelog fragments (`xtask`)
 
 Every pull request that changes what a user can see or do leaves one file behind:
@@ -291,6 +343,7 @@ The map of the crates, with the component each one holds, is §4 of
 | Path | Role |
 |------|------|
 | `crates/xtask/` | Out-of-band repo tooling (`refresh-seed`, `changelog`, `bump`, `ui-copy`, `asset-pins`, `capabilities`); not part of the shipped binary. |
+| `scripts/` | Developer scripts that are not part of CI, such as `update-ralphy.ps1`. |
 | `changelog.d/` | Human-owned changelog fragments, one per pull request; consumed by the `changelog` xtask. |
 | `assets/pricing/` | The offline price floor: machine-owned `models-dev-seed.json` + human-owned `slug-overlay.json`. |
 | `assets/prompts/` | The plan/execute prompt charters. |

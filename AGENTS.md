@@ -221,6 +221,17 @@ ubiquitous language, and each crate is roughly one bounded context.
   [CONTEXT.md](./CONTEXT.md) are fine; slang is not. UI text goes further: no
   tool jargon either (*scrollback* → "the text in this console"), by
   [ADR-0065](./docs/adr/0065-the-workbench-written-voice.md) §10.
+- **To run your change in the local daemon, use the update script.**
+  `scripts/update-ralphy.ps1 -Yes` builds the checkout, replaces the
+  installed binary, and restarts the daemon and its WSL peer. Details:
+  [docs/BUILDING.md](./docs/BUILDING.md) → *Updating the local daemon from
+  source*. The restart closes every console of the daemon. If your own
+  process descends from the daemon (follow the parent PIDs up to the `pid=`
+  in `~/.ralphy/daemon.pid`), the restart ends you too: do not run it, ask
+  the person. Read the result from the exit code (0 OK, 1 failed and the
+  previous version runs, 2 no daemon runs, 4 cancelled) or `-Status`. Never
+  stop a `ralphy` process by its name: the person's own daemon runs on the
+  same machine.
 - **Commit on the current branch.** Create a branch, push, or open a PR only
   when someone asks you to. A human reviews and merges.
 
