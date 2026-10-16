@@ -22,8 +22,9 @@ import { WBFileSearch } from "./wb-file-search.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { WBReadRetry } from "./wb-read-retry.ts";
 import { liveNode, reexpand, restoreView, snapshotLevel } from "./wb-files-reconcile.ts";
-import { classify, newEntryTitle, parentRel, underProtectedDir } from "./wb-file-paths.ts";
+import { classify, fullPath, newEntryTitle, parentRel, underProtectedDir } from "./wb-file-paths.ts";
 import { sendWindow } from "./wb-events.ts";
+import { propertiesItem, propertiesKey } from "./wb-files-properties.ts";
 import type { WBDaemonApi } from "./wb-daemon.ts";
 import type { Hit } from "./wb-file-search.ts";
 import type { Group } from "./wb-fleet.ts";
@@ -198,6 +199,7 @@ export function wbFiles() {
           if (!this.isFolder(e.node)) this.openFile(e.node);
           return false;
         },
+        keydown: (e: WunderbaumKeyEvent) => propertiesKey(this, e),
       });
 
       // One `/ws/tree` subscription per open project; the root is always
@@ -987,7 +989,8 @@ export function wbFiles() {
           icon: "bi-arrow-right-square",
           run: () => this.moveNode(node),
         },
-        node && { sep: true as const },
+        propertiesItem(this, node),
+        { sep: true as const },
         // Creating targets the folder itself, or the folder CONTAINING the
         // clicked file.
         { label: "New file…", icon: "bi-file-earmark-plus", run: () => this.emitCreate(node, "file") },
@@ -1017,15 +1020,7 @@ export function wbFiles() {
     copyPath(node: WunderbaumNode, full = false) {
       const rel = this.relPath(node);
       const root = full ? this.$store.projects.projects.find((p) => p.slug === this.$store.projects.openSlug)?.root : "";
-      let path = rel;
-      if (root) {
-        // Windows by SHAPE (drive letter or UNC lead), not by "contains a
-        // backslash".
-        const sep = /^[A-Za-z]:/.test(root) || root.startsWith("\\\\") ? "\\" : "/";
-        // Trim a trailing separator so a drive root (`C:\`) does not double it.
-        const base = root.replace(/[\\/]+$/, "");
-        path = base + sep + rel.split("/").join(sep);
-      }
+      const path = root ? fullPath(root, rel) : rel;
       navigator.clipboard?.writeText(path).catch(() => {});
       window.WB.emit("copy-path", { ...this.nodeDetail(node), path });
     },

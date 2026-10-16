@@ -23,7 +23,7 @@ const PNG_BYTES: &[u8] = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR";
 /// `outer/secret.png` sit right outside it. So a `../secret` read can answer
 /// "not found" only because confinement refused it, never because the target
 /// is absent.
-async fn serve_repo() -> (String, String) {
+pub(super) async fn serve_repo() -> (String, String) {
     let outer = tempfile::tempdir().unwrap();
     std::fs::write(outer.path().join("secret"), b"token").unwrap();
     std::fs::write(outer.path().join("secret.png"), PNG_BYTES).unwrap();
@@ -74,7 +74,7 @@ async fn serve_repo() -> (String, String) {
 /// listing no longer consults `.gitignore`: it is what makes `.secret/` a
 /// genuinely ignored entry, so the test proves the amendment rather than a
 /// no-op. Returns the `ws://…/ws/command` URL and the repo slug.
-async fn serve_git_repo() -> (String, String) {
+pub(super) async fn serve_git_repo() -> (String, String) {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("visible.txt"), b"hello").unwrap();
     std::fs::create_dir(dir.path().join(".github")).unwrap();
@@ -127,7 +127,7 @@ async fn serve_git_repo() -> (String, String) {
 
 /// Send one `Command` and collect every reply frame on `id` until the socket
 /// closes, returning `(replies, spawned_count)`.
-async fn round_trip(
+pub(super) async fn round_trip(
     url: &str,
     id: u64,
     verb: &str,
@@ -430,7 +430,7 @@ async fn tree_find_refuses_an_unknown_repo() {
 /// with its own files (`inner.txt`, `sub/deep.txt`) that the primary lacks.
 /// Returns the `ws://…/ws/command` URL, the slug, and the primary's path (so a
 /// test can prove a refused write never landed there).
-async fn serve_checkout_repo() -> (String, String, std::path::PathBuf) {
+pub(super) async fn serve_checkout_repo() -> (String, String, std::path::PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("visible.txt"), b"hello").unwrap();
     std::fs::write(dir.path().join("only.txt"), b"primary").unwrap();

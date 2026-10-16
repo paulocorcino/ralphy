@@ -14,8 +14,7 @@ import {
   isProtectedDir,
   newEntryTitle,
   parentRel,
-  underProtectedDir,
-} from "../assets/ui/wb-file-paths.ts";
+  underProtectedDir, fullPath } from "../assets/ui/wb-file-paths.ts";
 
 const HTML = readFileSync(join(UI, "index.html"), "utf8");
 
@@ -748,4 +747,81 @@ test("a re-list keeps the scroll offset and the selection, unless a reveal lande
   await s._reconcileOnce(tree.root, "");
   assert.equal(tree.relOf(tree.active), "y.txt");
   assert.equal(tree.element.scrollTop, 0);
+});
+
+test("a full path takes the separator of the root it is joined onto", () => {
+  const rows = [
+    ["C:\\Dev\\r", "src/a.txt", "C:\\Dev\\r\\src\\a.txt"],
+    // A drive root keeps one separator, not two.
+    ["C:\\", "a.txt", "C:\\a.txt"],
+    ["\\\\host\\share\\r", "src/a.txt", "\\\\host\\share\\r\\src\\a.txt"],
+    ["/home/me/r", "src/a.txt", "/home/me/r/src/a.txt"],
+    ["/home/me/r/", "a.txt", "/home/me/r/a.txt"],
+    // The root itself: no separator is added after it.
+    ["C:\\Dev\\r", "", "C:\\Dev\\r"],
+    ["/home/me/r", "", "/home/me/r"],
+  ];
+  for (const [root, rel, want] of rows) assert.equal(fullPath(root, rel), want, `${root} + ${rel}`);
+});
+
+test("the Properties item addresses the row, and empty space addresses the project root", () => {
+  const { shell, files, events } = page();
+  let items = null;
+  shell.$store.tabs.renderMenu = (_x, _y, list) => (items = list);
+  const root = { title: "root", parent: null };
+  const src = { title: "src", parent: root, data: { folder: true }, children: [] };
+  const file = { title: "a.txt", parent: src, data: {}, children: null };
+  const asked = (node) => {
+    files.showMenu(0, 0, node);
+    items.find((i) => i.label === "Properties").run();
+    return events.filter((e) => e.type === "workbench:properties-open").at(-1).detail;
+  };
+  assert.deepEqual(asked(file), { path: "src/a.txt", isFolder: false });
+  assert.deepEqual(asked(src), { path: "src", isFolder: true });
+  // Empty space has no node: the path is empty, which the dialog reads as the root.
+  assert.deepEqual(asked(null), { path: "", isFolder: false });
+});
+
+test("the Properties item is offered where Move is withheld", () => {
+  const { shell, files } = page();
+  let items = null;
+  shell.$store.tabs.renderMenu = (_x, _y, list) => (items = list);
+  const inGit = { title: "config", parent: { title: ".git", parent: { title: "root", parent: null } }, data: {}, children: null };
+  files.showMenu(0, 0, inGit);
+  const labels = items.map((i) => i.label);
+  assert.equal(labels.includes("Properties"), true);
+  assert.equal(labels.some((l) => l?.startsWith("Move")), false, "the control: Move is withheld here");
+});
+
+test("Alt+Enter on a row asks for its properties and keeps the tree from opening it", () => {
+  const { state, window, document } = peerFilesShell("reachable");
+  const sent = [];
+  window.dispatchEvent = (e) => (sent.push(e), true);
+  const options = mountedTreeOptions(state, window, document);
+  state.relPath = (n) => n.rel;
+  const file = { rel: "src/a.txt", data: {}, children: null };
+  const folder = { rel: "src", data: { folder: true }, children: [] };
+  const key = (node, init) => options.keydown({ node, event: { key: "Enter", altKey: false, ...init } });
+  const asked = () => sent.filter((e) => e.type === "workbench:properties-open").map((e) => e.detail);
+
+  assert.equal(key(file, { altKey: true }), false, "the tree does not open the file");
+  assert.equal(key(folder, { altKey: true }), false);
+  assert.deepEqual(asked(), [
+    { path: "src/a.txt", isFolder: false },
+    { path: "src", isFolder: true },
+  ]);
+});
+
+test("every other key, and Alt+Enter with no row, is left to the tree", () => {
+  const { state, window, document } = peerFilesShell("reachable");
+  const sent = [];
+  window.dispatchEvent = (e) => (sent.push(e), true);
+  const options = mountedTreeOptions(state, window, document);
+  state.relPath = (n) => n.rel;
+  const file = { rel: "a.txt", data: {}, children: null };
+
+  assert.equal(options.keydown({ node: file, event: { key: "Enter", altKey: false } }), undefined, "Enter alone opens the file");
+  assert.equal(options.keydown({ node: file, event: { key: "ArrowDown", altKey: true } }), undefined);
+  assert.equal(options.keydown({ node: undefined, event: { key: "Enter", altKey: true } }), undefined);
+  assert.deepEqual(sent.filter((e) => e.type === "workbench:properties-open"), []);
 });

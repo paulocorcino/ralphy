@@ -115,6 +115,7 @@ test("Escape closes every modal, Settings and Security included", () => {
     "$store.modals.confirmModal.open",
     "$store.modals.promptModal.open",
     "movePick.open",
+    "props.open",
     "addProject.open",
     "addHost.open",
   ]);
@@ -131,6 +132,7 @@ test("Escape closes every modal, Settings and Security included", () => {
       aboutOpen: "wbReleaseDialogs",
       branchOpen: "wbBranchDialog",
       "movePick.open": "wbMoveDialog",
+      "props.open": "wbPropertiesDialog",
       "addProject.open": "wbAddProjectDialog",
       "addHost.open": "wbHostsDialog",
     },
@@ -243,7 +245,7 @@ test("every dialog in the document is marked modal", () => {
   const dialogs = Array.from(HTML.matchAll(/<div\b(?:[^>"]|"[^"]*")*>/g), (m) => m[0]).filter((t) =>
     /\brole="(?:alert)?dialog"/.test(t),
   );
-  assert.equal(dialogs.length, 12);
+  assert.equal(dialogs.length, 13);
   for (const tag of dialogs) {
     assert.match(tag, /\baria-modal="true"/, tag.replace(/\s+/g, " "));
   }

@@ -44,6 +44,7 @@ const CAUSE: Record<string, string> = {
   "unknown verb": "the daemon does not know that command",
   "unknown repo": "the project is not in the list",
   "unknown checkout": "the worktree does not exist",
+  busy: "the daemon is already counting another folder",
   "repo registry unreadable": "the daemon could not read its project list",
   "invalid run options": "the request was not valid",
   "invalid query options": "the request was not valid",

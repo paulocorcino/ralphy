@@ -1,0 +1,14 @@
+{
+  "ignored": false,
+  "kind": "file",
+  "modified": "<modified>",
+  "name": "visible.txt",
+  "readonly": false,
+  "size": 5,
+  "status": "ok",
+  "type": {
+    "bom": false,
+    "class": "text",
+    "encoding": "UTF-8"
+  }
+}

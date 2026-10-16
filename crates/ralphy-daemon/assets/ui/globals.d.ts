@@ -43,6 +43,26 @@ interface DaemonReplies {
   "tree.find": DaemonReply & { hits?: { path: string; dir: boolean }[]; truncated?: boolean };
   "tree.grep": DaemonReply & { hits?: { path: string; count: number }[]; truncated?: boolean };
   "file.read": FileReadReply;
+  /** One path: `size` and `type` come for a file only, `modified` in Unix
+   * milliseconds. `type.image` is the extension the image type is written with. */
+  "file.stat": DaemonReply & {
+    name?: string;
+    kind?: "file" | "folder";
+    size?: number;
+    modified?: number;
+    readonly?: boolean;
+    ignored?: boolean;
+    type?: { class: "text" | "image" | "binary" | "too_large"; encoding?: string; bom?: boolean; image?: string };
+  };
+  /** One folder. With `truncated` the numbers are a lower bound. A second walk
+   * while one runs answers `reason: "busy"`. */
+  "tree.size": DaemonReply & {
+    bytes?: number;
+    files?: number;
+    dirs?: number;
+    ignored_bytes?: number;
+    truncated?: boolean;
+  };
   "file.image": DaemonReply & { mediaType?: string; base64?: string };
   "file.write": WriteReply;
   "file.create": WriteReply;
@@ -243,6 +263,11 @@ interface WunderbaumRenderEvent extends WunderbaumEvent {
   nodeElem: HTMLElement;
 }
 /** `expand` and `beforeExpand`: the new expanded state. */
+/** A key pressed in the tree. `node` is the row that has the focus, if any. */
+interface WunderbaumKeyEvent extends WunderbaumEvent {
+  event: KeyboardEvent;
+}
+
 interface WunderbaumExpandEvent extends WunderbaumEvent {
   flag: boolean;
 }
@@ -273,6 +298,8 @@ interface WunderbaumOptions {
   expand(e: WunderbaumExpandEvent): void;
   /** `false` stops the default action. */
   dblclick(e: WunderbaumEvent): boolean;
+  /** `false` stops the tree's own handling of the key. */
+  keydown(e: WunderbaumKeyEvent): false | undefined;
 }
 
 interface Window {
@@ -498,6 +525,8 @@ interface WindowEventMap {
   /** Ask where to move the row at the full rel path `from`. */
   "workbench:move-open": CustomEvent<{ from: string }>;
   "workbench:move-confirmed": CustomEvent<{ from: string; to: string }>;
+  /** Show the properties of the row at the rel path `path` ("" is the project root). */
+  "workbench:properties-open": CustomEvent<{ path: string; isFolder: boolean }>;
   "workbench:whats-new-open": CustomEvent<null>;
   "workbench:security-open": CustomEvent<null>;
   "workbench:about-open": CustomEvent<null>;

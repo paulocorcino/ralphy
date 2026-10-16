@@ -532,3 +532,12 @@ protocol version.
 
 Version 4 pays for the version-3 changes above. A version-3 peer is refused
 until it is updated, with the message §3 already gives.
+
+**A new verb keeps the version.** A new verb adds a key to `DaemonReplies`,
+and that changes the hash. It does not change a reply that a peer already
+sends. An older peer answers the new verb with
+`{ status: "error", message: "unknown verb" }`, and the page shows that as a
+refusal that names the older daemon. So the version stays, and the commit that
+adds the verb says why and pins the new hash with the same version.
+`file.stat` and `tree.size` (ADR-0036, amendment of 2026-10-15) are the first
+verbs added this way after version 4.
