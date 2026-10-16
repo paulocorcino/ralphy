@@ -24,6 +24,7 @@ import { WBReadRetry } from "./wb-read-retry.ts";
 import { liveNode, reexpand, restoreView, snapshotLevel } from "./wb-files-reconcile.ts";
 import { classify, fullPath, newEntryTitle, parentRel, underProtectedDir } from "./wb-file-paths.ts";
 import { sendWindow } from "./wb-events.ts";
+import { propertiesItem, propertiesKey } from "./wb-files-properties.ts";
 import type { WBDaemonApi } from "./wb-daemon.ts";
 import type { Hit } from "./wb-file-search.ts";
 import type { Group } from "./wb-fleet.ts";
@@ -198,6 +199,7 @@ export function wbFiles() {
           if (!this.isFolder(e.node)) this.openFile(e.node);
           return false;
         },
+        keydown: (e: WunderbaumKeyEvent) => propertiesKey(this, e),
       });
 
       // One `/ws/tree` subscription per open project; the root is always
@@ -987,13 +989,7 @@ export function wbFiles() {
           icon: "bi-arrow-right-square",
           run: () => this.moveNode(node),
         },
-        // Read-only, so it is offered everywhere, `.git` and `.ralphy` included.
-        // For empty space `relPath` is "" and the row addresses the project root.
-        {
-          label: "Properties",
-          icon: "bi-info-circle",
-          run: () => sendWindow(window, "workbench:properties-open", { path: this.relPath(node), isFolder }),
-        },
+        propertiesItem(this, node),
         { sep: true as const },
         // Creating targets the folder itself, or the folder CONTAINING the
         // clicked file.

@@ -263,6 +263,11 @@ interface WunderbaumRenderEvent extends WunderbaumEvent {
   nodeElem: HTMLElement;
 }
 /** `expand` and `beforeExpand`: the new expanded state. */
+/** A key pressed in the tree. `node` is the row that has the focus, if any. */
+interface WunderbaumKeyEvent extends WunderbaumEvent {
+  event: KeyboardEvent;
+}
+
 interface WunderbaumExpandEvent extends WunderbaumEvent {
   flag: boolean;
 }
@@ -293,6 +298,8 @@ interface WunderbaumOptions {
   expand(e: WunderbaumExpandEvent): void;
   /** `false` stops the default action. */
   dblclick(e: WunderbaumEvent): boolean;
+  /** `false` stops the tree's own handling of the key. */
+  keydown(e: WunderbaumKeyEvent): false | undefined;
 }
 
 interface Window {

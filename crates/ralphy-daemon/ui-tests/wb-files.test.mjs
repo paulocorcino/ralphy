@@ -792,3 +792,36 @@ test("the Properties item is offered where Move is withheld", () => {
   assert.equal(labels.includes("Properties"), true);
   assert.equal(labels.some((l) => l?.startsWith("Move")), false, "the control: Move is withheld here");
 });
+
+test("Alt+Enter on a row asks for its properties and keeps the tree from opening it", () => {
+  const { state, window, document } = peerFilesShell("reachable");
+  const sent = [];
+  window.dispatchEvent = (e) => (sent.push(e), true);
+  const options = mountedTreeOptions(state, window, document);
+  state.relPath = (n) => n.rel;
+  const file = { rel: "src/a.txt", data: {}, children: null };
+  const folder = { rel: "src", data: { folder: true }, children: [] };
+  const key = (node, init) => options.keydown({ node, event: { key: "Enter", altKey: false, ...init } });
+  const asked = () => sent.filter((e) => e.type === "workbench:properties-open").map((e) => e.detail);
+
+  assert.equal(key(file, { altKey: true }), false, "the tree does not open the file");
+  assert.equal(key(folder, { altKey: true }), false);
+  assert.deepEqual(asked(), [
+    { path: "src/a.txt", isFolder: false },
+    { path: "src", isFolder: true },
+  ]);
+});
+
+test("every other key, and Alt+Enter with no row, is left to the tree", () => {
+  const { state, window, document } = peerFilesShell("reachable");
+  const sent = [];
+  window.dispatchEvent = (e) => (sent.push(e), true);
+  const options = mountedTreeOptions(state, window, document);
+  state.relPath = (n) => n.rel;
+  const file = { rel: "a.txt", data: {}, children: null };
+
+  assert.equal(options.keydown({ node: file, event: { key: "Enter", altKey: false } }), undefined, "Enter alone opens the file");
+  assert.equal(options.keydown({ node: file, event: { key: "ArrowDown", altKey: true } }), undefined);
+  assert.equal(options.keydown({ node: undefined, event: { key: "Enter", altKey: true } }), undefined);
+  assert.deepEqual(sent.filter((e) => e.type === "workbench:properties-open"), []);
+});
