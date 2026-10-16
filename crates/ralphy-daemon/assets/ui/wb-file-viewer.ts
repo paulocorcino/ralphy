@@ -26,7 +26,7 @@ import { focusTarget, isSplit, paneLayout } from "./wb-viewer-panes.ts";
 import { decorateZoomable } from "./wb-zoom-overlay.ts";
 import type { MonacoDiffEditor, MonacoDisposable, MonacoEditor } from "./wb-monaco.ts";
 import type { Messages } from "./wb-messages.ts";
-import { drawDiagram, isRendered, renderBody, slugOf } from "./wb-viewer-render.ts";
+import { drawDiagram, isRendered, prepareFind, renderBody, slugOf } from "./wb-viewer-render.ts";
 import type { ViewerSlot } from "./wb-viewer-panes.ts";
 import type { MermaidWindow } from "./wb-viewer-render.ts";
 
@@ -1329,14 +1329,15 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
   function mdSearch(rec: ViewerRecord, term: string) {
     clearHits(rec);
     const count = rec.el!.querySelector(".md-find-count")!;
+    const article = rec.el!.querySelector(".md-body")!;
+    prepareFind(rec.kind, article, term);
     if (!term) {
       count.textContent = "";
       return;
     }
-    const article = rec.el!.querySelector(".md-body")!;
     const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT, {
       acceptNode: (n) =>
-        n.nodeValue!.trim() && !n.parentElement!.closest("svg, script, style")
+        n.nodeValue!.trim() && !n.parentElement!.closest("svg, script, style, button, [hidden]")
           ? NodeFilter.FILTER_ACCEPT
           : NodeFilter.FILTER_REJECT,
     });
@@ -1382,9 +1383,8 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
   }
 
   function mdSearchClose(rec: ViewerRecord) {
-    clearHits(rec);
+    mdSearch(rec, "");
     rec.el!.querySelector(".md-find")!.classList.remove("open");
-    rec.el!.querySelector(".md-find-count")!.textContent = "";
     rec.el!.querySelector<HTMLInputElement>(".md-find-input")!.value = "";
   }
 

@@ -9,7 +9,7 @@
    container measures 0.
    --------------------------------------------------------------------------- */
 
-import { renderDbmlGrid } from "./wb-dbml-view.ts";
+import { filterDbml, renderDbmlGrid } from "./wb-dbml-view.ts";
 
 /** The vendored mermaid (`vendor/mermaid`): the members this module calls. */
 type Mermaid = {
@@ -62,6 +62,27 @@ export function renderBody(kind: RenderedKind, article: Element, content: string
     default: {
       const unknown: never = kind;
       throw new Error(`no rendered body for the kind ${String(unknown)}`);
+    }
+  }
+}
+
+/**
+ * Get the rendered body ready for an in-page find of `term`, before the text
+ * is searched: a table grid hides the cards the term does not match. An empty
+ * term restores the body. A `kind` that is not rendered has nothing to do.
+ */
+export function prepareFind(kind: string, article: Element, term: string): void {
+  if (!isRendered(kind)) return;
+  switch (kind) {
+    case "markdown":
+    case "mermaid":
+      return;
+    case "dbml":
+      filterDbml(article, term);
+      return;
+    default: {
+      const unknown: never = kind;
+      throw new Error(`no find for the kind ${String(unknown)}`);
     }
   }
 }

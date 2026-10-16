@@ -562,3 +562,82 @@ export function groupTables(schema: DbmlSchema): { label: string; tables: DbmlTa
     .map(([label, tables]) => ({ label, tables: tables.sort((a, b) => byLower(a.name, b.name)) }))
     .sort(byLabel);
 }
+
+// ---- navigation -------------------------------------------------------------------
+
+/** The key of one column in the sets that `matchSchema` and `sameColumns` return. */
+export function colKey(table: string, column: string) {
+  return `${table}\u001f${column}`;
+}
+
+/**
+ * What a Find term matches, case-insensitively and as a substring: a table by
+ * its own name or by any of its column names, and each column by its name.
+ * An empty term matches every table and no column.
+ */
+export function matchSchema(schema: DbmlSchema, term: string): { tables: Set<string>; columns: Set<string> } {
+  const needle = term.toLowerCase();
+  if (needle === "") return { tables: new Set(schema.tables.map((t) => t.name)), columns: new Set() };
+  const tables = new Set<string>();
+  const columns = new Set<string>();
+  for (const table of schema.tables) {
+    const found = table.columns.filter((c) => c.name.toLowerCase().includes(needle));
+    for (const column of found) columns.add(colKey(table.name, column.name));
+    if (found.length > 0 || table.name.toLowerCase().includes(needle)) tables.add(table.name);
+  }
+  return { tables, columns };
+}
+
+// The name without its prefix, the text up to and including the first `_`.
+// Null when the name has no `_`, or nothing after it.
+function withoutPrefix(name: string) {
+  const at = name.indexOf("_");
+  return at < 0 || at === name.length - 1 ? null : name.slice(at + 1).toLowerCase();
+}
+
+// True when `c` has the clicked name, or `bare` is its name without the prefix.
+function sameName(c: DbmlColumn, column: string, bare: string | null) {
+  if (c.name.toLowerCase() === column.toLowerCase()) return true;
+  return bare !== null && !c.pk && withoutPrefix(c.name) === bare;
+}
+
+/**
+ * The columns that the click on `table.column` marks, as `colKey`s: the other
+ * columns with the same name, and, when neither side is a key, the columns
+ * whose name without its prefix is the same (`ab_nb_owner` and `cd_nb_owner`).
+ * The prefix rule is a guess about legacy names, so it never reaches a key
+ * column: every table has its own `id`-like key.
+ */
+export function sameColumns(schema: DbmlSchema, table: string, column: string): Set<string> {
+  const self = colKey(table, column);
+  const clicked = schema.tables.find((t) => t.name === table)?.columns.find((c) => c.name === column);
+  const bare = clicked && !clicked.pk ? withoutPrefix(column) : null;
+  const same = new Set<string>();
+  for (const t of schema.tables) {
+    for (const c of t.columns.filter((x) => sameName(x, column, bare))) same.add(colKey(t.name, c.name));
+  }
+  same.delete(self);
+  return same;
+}
+
+/** The columns a closed card shows. */
+export const COLLAPSED_COLUMNS = 8;
+
+/**
+ * The columns of a card, in file order. A closed card of more than
+ * COLLAPSED_COLUMNS columns shows every key column and, with the room that is
+ * left, the first other columns.
+ */
+export function shownColumns(table: DbmlTable, open: boolean): DbmlColumn[] {
+  if (open || table.columns.length <= COLLAPSED_COLUMNS) return table.columns;
+  let room = COLLAPSED_COLUMNS - table.columns.filter((c) => c.pk).length;
+  return table.columns.filter((c) => c.pk || room-- > 0);
+}
+
+/** The refs that start in `table`, and the refs that end in it. */
+export function refsOf(schema: DbmlSchema, table: string): { out: DbmlRef[]; in: DbmlRef[] } {
+  return {
+    out: schema.refs.filter((r) => r.from.table === table),
+    in: schema.refs.filter((r) => r.to.table === table),
+  };
+}

@@ -709,6 +709,63 @@
   border-radius: 3px;
   font-size: 0.85em;
 }
+/* A `hidden` card, group or row stays hidden: the rules above set `display`,
+   which outranks the browser's own `[hidden]` rule. */
+.md-body .dbml-group[hidden],
+.md-body .dbml-card[hidden],
+.md-body .dbml-cols tr[hidden] {
+  display: none;
+}
+.md-body .dbml-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0 0 1em;
+}
+.md-body .dbml-bar .dbml-summary {
+  margin: 0 auto 0 0;
+}
+.md-body .dbml-btn {
+  padding: 0.1em 0.6em;
+  background: transparent;
+  border: 1px solid var(--border-focus);
+  border-radius: 3px;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.8em;
+  cursor: pointer;
+}
+.md-body .dbml-btn:hover {
+  color: var(--text);
+}
+.md-body .dbml-more {
+  display: block;
+  margin: 0.4rem 0 0.2rem;
+}
+/* A click on a column name marks it and the columns with the same name. */
+.md-body .dbml-cols .dbml-col-name {
+  cursor: pointer;
+}
+.md-body .dbml-cols tr.dbml-origin td {
+  background: rgba(232, 217, 168, 0.28);
+}
+.md-body .dbml-cols tr.dbml-same td {
+  background: rgba(232, 217, 168, 0.14);
+}
+/* A ref is a link to its table; one line, cut with an ellipsis. */
+.md-body .dbml-cols .dbml-ref {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.9em;
+}
+.md-body .dbml-in {
+  margin: 0.4em 0 0;
+  color: var(--text-muted);
+  font-size: 0.85em;
+  overflow-wrap: anywhere;
+}
 .md-body .mermaid-error {
   color: var(--danger);
   font-family: ui-monospace, monospace;

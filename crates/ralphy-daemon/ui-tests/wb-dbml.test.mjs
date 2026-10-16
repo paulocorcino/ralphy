@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { groupTables, parseDbml } from "../assets/ui/wb-dbml.ts";
+import { colKey, groupTables, matchSchema, parseDbml, refsOf, sameColumns, shownColumns } from "../assets/ui/wb-dbml.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const fixture = (name) => readFileSync(join(HERE, "fixtures", "dbml", name), "utf8");
@@ -145,4 +145,110 @@ test("groupTables puts a TableGroup first", () => {
   assert.deepEqual(plain.map((g) => g.label), ["shop"]);
   // A TableGroup that names no table of the file makes no group.
   assert.deepEqual(groupTables(parseDbml("Table a { id int }\nTableGroup g {\n  nothing\n}\n")).map((g) => g.label), ["Other tables"]);
+});
+
+// A synthetic schema for the navigation rules.
+const NAV = parseDbml(`
+Table shop_orders {
+  id int [pk]
+  buyer varchar(40)
+  Note: 'x'
+}
+Table shop_items {
+  id int [pk]
+  Total int
+  order_id int [ref: > shop_orders.id]
+}
+Table audit {
+  id int
+}
+`);
+
+test("matchSchema finds tables by table name and by column name", () => {
+  const keys = (...pairs) => new Set(pairs.map(([t, c]) => colKey(t, c)));
+  // A table-name term: the tables only, no column.
+  let m = matchSchema(NAV, "shop");
+  assert.deepEqual(m.tables, new Set(["shop_orders", "shop_items"]));
+  assert.deepEqual(m.columns, new Set());
+  // A column-name term: the table holding the column, and the column.
+  m = matchSchema(NAV, "buyer");
+  assert.deepEqual(m.tables, new Set(["shop_orders"]));
+  assert.deepEqual(m.columns, keys(["shop_orders", "buyer"]));
+  // A different case matches (`Total` is written with a capital).
+  m = matchSchema(NAV, "TOTAL");
+  assert.deepEqual(m.tables, new Set(["shop_items"]));
+  assert.deepEqual(m.columns, keys(["shop_items", "Total"]));
+  // An empty term matches every table and no column.
+  m = matchSchema(NAV, "");
+  assert.deepEqual(m.tables, new Set(["shop_orders", "shop_items", "audit"]));
+  assert.deepEqual(m.columns, new Set());
+  // A term that matches nothing.
+  m = matchSchema(NAV, "zzz");
+  assert.deepEqual(m, { tables: new Set(), columns: new Set() });
+  // A column in two tables marks both columns.
+  assert.deepEqual(matchSchema(NAV, "id").columns, keys(["shop_orders", "id"], ["shop_items", "id"], ["shop_items", "order_id"], ["audit", "id"]));
+});
+
+test("sameColumns matches the exact name and the name without its prefix", () => {
+  const schema = parseDbml(`
+Table t1 { ab_nb_owner int
+  ab_nb_id int [pk]
+  code int
+  plain int }
+Table t2 { cd_nb_owner int
+  cd_nb_id int [pk]
+  CODE int
+  Plain int
+  ab_nb_id int }
+Table t3 { ab_nb_owner int
+  ef_nb_id int
+  x_ int }
+Table t4 { y_ int
+  ef_nb_owner int [pk] }
+`);
+  const set = (...pairs) => new Set(pairs.map(([t, c]) => colKey(t, c)));
+  // The same name under another prefix, and the exact name in another table.
+  assert.deepEqual(sameColumns(schema, "t1", "ab_nb_owner"), set(["t2", "cd_nb_owner"], ["t3", "ab_nb_owner"]));
+  // A pk never matches by its name without the prefix, on either side (`t4.ef_nb_owner`
+  // is a pk; `t3.ef_nb_id` is not), but an exact name still does.
+  assert.deepEqual(sameColumns(schema, "t1", "ab_nb_id"), set(["t2", "ab_nb_id"]));
+  assert.deepEqual(sameColumns(schema, "t2", "cd_nb_id"), set());
+  // A name with no `_` matches the exact name only, in any case.
+  assert.deepEqual(sameColumns(schema, "t1", "code"), set(["t2", "CODE"]));
+  // A name with nothing after its `_` has no prefix form: the exact name only.
+  assert.deepEqual(sameColumns(schema, "t3", "x_"), set());
+  // The clicked column is never in the set.
+  assert.equal(sameColumns(schema, "t1", "plain").has(colKey("t1", "plain")), false);
+});
+
+test("shownColumns keeps the key columns and the first 8 columns of a closed card", () => {
+  const names = (t, open) => shownColumns(t, open).map((c) => c.name);
+  const cols = Array.from({ length: 12 }, (_, i) => `c${i + 1}`);
+  const table = (lines) => parseDbml(["Table t {", ...lines, "}"].join("\n")).tables[0];
+  const text = (n, pkAt) => cols.slice(0, n).map((c, i) => `  ${c} int${i + 1 === pkAt ? " [pk]" : ""}`);
+  const twelve = table(text(12, 5));
+  assert.deepEqual(names(twelve, false), ["c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8"]);
+  // A key past the eighth column stays, and a non-key column leaves room for it.
+  const late = table(text(12, 11));
+  assert.deepEqual(names(late, false), ["c1", "c2", "c3", "c4", "c5", "c6", "c7", "c11"]);
+  assert.equal(names(twelve, true).length, 12);
+  const five = table(text(5, 0));
+  assert.equal(names(five, false).length, 5);
+  // Every key column is kept, even over 8 of them.
+  const keys = table([...cols.slice(0, 10).map((c) => `  ${c} int [pk]`), "  extra int"]);
+  assert.equal(names(keys, false).length, 10);
+});
+
+test("refsOf lists the links out of a table and into it", () => {
+  const schema = parseDbml(
+    ["Table a { id int }", "Table b { a_id int [ref: > a.id] }", "Table c { a_id int }", "Ref: c.a_id > a.id", "Ref: a.id - c.a_id"].join("\n"),
+  );
+  const from = (r) => `${r.from.table}.${r.from.column}`;
+  assert.deepEqual(refsOf(schema, "a").out.map(from), ["a.id"]);
+  assert.deepEqual(refsOf(schema, "a").in.map(from), ["b.a_id", "c.a_id"]);
+  assert.deepEqual(refsOf(schema, "b").out.map(from), ["b.a_id"]);
+  assert.deepEqual(refsOf(schema, "b").in, []);
+  assert.deepEqual(refsOf(schema, "c").out.map(from), ["c.a_id"]);
+  assert.deepEqual(refsOf(schema, "c").in.map(from), ["a.id"]);
+  assert.deepEqual(refsOf(schema, "nothing"), { out: [], in: [] });
 });

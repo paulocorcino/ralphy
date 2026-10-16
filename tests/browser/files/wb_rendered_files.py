@@ -21,6 +21,14 @@ Scenario 8  `schema.dbml`: one card per table, grouped by name prefix, the
 Scenario 9  Edit on the `.dbml` tab shows the source; Preview shows the cards
 Scenario 10 a table name with markup shows as text; a file with no tables
             says so
+Scenario 11 Find filters the cards, a match in a hidden column opens its card,
+            closing the bar shows every card again
+Scenario 12 a long card shows 8 columns until it is opened; Expand all and
+            Collapse all; a click on a column marks the columns with the same
+            name
+Scenario 13 a ref is a link to its table, a table lists the columns that point
+            to it, a ref to a missing table is plain text
+Scenario 14 a project search opens the grid already filtered
 
 Requires `playwright` (`pip install playwright`, then
 `playwright install chromium`).
@@ -51,6 +59,7 @@ BASE = f"http://127.0.0.1:{PORT}/"
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 EXE = os.path.join(REPO_ROOT, "target", "debug", "ralphy.exe" if os.name == "nt" else "ralphy")
 SHOT_DIR = os.path.join(REPO_ROOT, ".ralphy", "screenshots")
+TABS = "Alpine.store('tabs')"
 FILES = "Alpine.$data(document.querySelector('[x-data=\"wbFiles\"]'))"
 
 FLOW = "flowchart TD\n  A[Start] --> B[Finish]\n"
@@ -60,8 +69,11 @@ BIG_ENTITIES = 120
 BIG_COLUMNS = 8
 MERMAID_DEFAULT_LIMIT = 50000
 
-# Synthetic. Seven tables: `ledger` (2), `shop` (3) and `Other tables` (2).
-# Two lines are garbage, which the summary line must count.
+# Synthetic. Ten tables: `ledger` (2), `shop` (3) and `Other tables` (5).
+# Two lines are garbage, which the summary line must count. `stock_levels` has
+# 12 columns, so it is closed; its column 10 and `ab_cust`, `cd_cust` hold the
+# `xx_nb_owner` names. `shop_items.order_id` and `cd_cust.order_ref` point to
+# `shop_orders`; `shop_users.country_id` points to a table that is not here.
 SCHEMA = """\
 // A synthetic shop schema.
 this line is garbage
@@ -77,11 +89,13 @@ Table shop_orders {
 Table shop_items {
   id int [pk, not null]
   sku varchar(20) [not null, unique]
+  order_id int [not null, ref: > shop_orders.id]
 }
 
 Table shop_users {
   id int [pk, not null]
   login varchar(40) [not null]
+  country_id int
 }
 
 Table ledgerBook {
@@ -98,13 +112,41 @@ Table audit {
   id int [pk, not null]
 }
 
+Table ab_cust {
+  id int [pk, not null]
+  ab_nb_owner int
+}
+
+Table cd_cust {
+  id int [pk, not null]
+  cd_nb_owner int
+  order_ref int [ref: > shop_orders.id]
+}
+
+Table stock_levels {
+  id int [pk, not null]
+  sku varchar(20)
+  warehouse varchar(20)
+  shelf varchar(10)
+  bin varchar(10)
+  counted date
+  checked_by varchar(40)
+  batch varchar(20)
+  quantity int
+  ef_nb_owner int
+  warehouse_zone_code varchar(8)
+  updated date
+}
+
 Table zone {
   id int [pk, not null]
 }
 
+Ref: shop_users.country_id > geo.countries.id
+
 another loose line
 """
-SCHEMA_TABLES = 7
+SCHEMA_TABLES = 10
 SCHEMA_GROUPS = ["ledger", "shop", "Other tables"]
 MARKUP_NAME = "<img src=x onerror=alert(1)>"
 MARKUP = 'Table "' + MARKUP_NAME + '" {\n  id int [pk, not null]\n}\n'
@@ -175,6 +217,7 @@ def make_fixture_repo():
     (docs / "broken.mmd").write_text(BROKEN, encoding="utf-8", newline="\n")
     (docs / "big.mmd").write_text(big_diagram(), encoding="utf-8", newline="\n")
     (docs / "schema.dbml").write_text(SCHEMA, encoding="utf-8", newline="\n")
+    (docs / "search.dbml").write_text(SCHEMA, encoding="utf-8", newline="\n")
     (docs / "markup.dbml").write_text(MARKUP, encoding="utf-8", newline="\n")
     (docs / "empty.dbml").write_text(EMPTY, encoding="utf-8", newline="\n")
     for args in (
@@ -462,6 +505,231 @@ def scenario_dbml_edges(page, slug):
     )
 
 
+def shown_cards(page, sel):
+    """The cards on screen: a card with `hidden`, or in a hidden group, takes no space."""
+    return page.evaluate(
+        "(s) => [...document.querySelectorAll(s + ' .dbml-card')].filter(e => e.offsetParent !== null).map(e => e.dataset.table)",
+        sel,
+    )
+
+
+def shown_groups(page, sel):
+    return page.evaluate(
+        "(s) => [...document.querySelectorAll(s + ' .dbml-group')].filter(e => e.offsetParent !== null).map(e => e.querySelector('h2').textContent)",
+        sel,
+    )
+
+
+def shown_rows(page, sel, table):
+    """The column names a card shows."""
+    return page.evaluate(
+        """([s, t]) => {
+          const card = [...document.querySelectorAll(s + ' .dbml-card')].find(e => e.dataset.table === t);
+          return [...card.querySelectorAll('tr.dbml-col')].filter(e => e.offsetParent !== null).map(e => e.dataset.col);
+        }""",
+        [sel, table],
+    )
+
+
+def hidden_rows(page, sel):
+    return page.evaluate("(s) => document.querySelectorAll(s + ' tr.dbml-col[hidden]').length", sel)
+
+
+def more_button(page, sel, table):
+    return page.evaluate(
+        """([s, t]) => {
+          const card = [...document.querySelectorAll(s + ' .dbml-card')].find(e => e.dataset.table === t);
+          const b = card.querySelector('button.dbml-more');
+          return b ? b.textContent : null;
+        }""",
+        [sel, table],
+    )
+
+
+def marked(page, sel, cls):
+    """`table.column` of every row that carries the class `cls`."""
+    return page.evaluate(
+        """([s, c]) => [...document.querySelectorAll(s + ' tr.dbml-col.' + c)]
+            .map(e => e.closest('.dbml-card').dataset.table + '.' + e.dataset.col).sort()""",
+        [sel, cls],
+    )
+
+
+def wait_shown(page, sel, n):
+    """Wait until `n` cards are on screen. A miss is not an error: the check that follows reports it."""
+    try:
+        page.wait_for_function(
+            "([s, n]) => [...document.querySelectorAll(s + ' .dbml-card')].filter(e => e.offsetParent !== null).length === n",
+            arg=[sel, n],
+            timeout=5000,
+        )
+    except Exception:
+        pass
+
+
+def open_find(page, sel):
+    page.locator(f'{sel} [data-act="find"]').click()
+    return page.locator(f"{sel} .md-find-input")
+
+
+def scenario_dbml_find(page, slug):
+    sel = pane("docs/schema.dbml")
+    box = open_find(page, sel)
+    box.fill("buyer")
+    wait_shown(page, sel, 1)
+    cards, groups = shown_cards(page, sel), shown_groups(page, sel)
+    check(
+        "dbml find: a term hides the cards that do not contain it",
+        cards == ["shop_orders"] and groups == ["shop"],
+        f"cards={cards} groups={groups}",
+    )
+    box.press("Escape")
+    wait_shown(page, sel, SCHEMA_TABLES)
+    after, groups = len(shown_cards(page, sel)), shown_groups(page, sel)
+    check(
+        "dbml find: closing the search shows every card again",
+        after == SCHEMA_TABLES and groups == SCHEMA_GROUPS,
+        f"cards={after} groups={groups}",
+    )
+
+    # Column 11 of `stock_levels` is hidden while the card is closed.
+    box = open_find(page, sel)
+    box.fill("warehouse_zone")
+    wait_shown(page, sel, 1)
+    rows = shown_rows(page, sel, "stock_levels")
+    hit_in = page.evaluate(
+        "(s) => [...document.querySelectorAll(s + ' mark.find-hit')].map(e => e.closest('tr.dbml-col')?.dataset.col)", sel
+    )
+    check(
+        "dbml find: a match in a hidden column opens its card",
+        len(rows) == 12 and "warehouse_zone_code" in rows and hit_in == ["warehouse_zone_code"],
+        f"rows={len(rows)} hits={hit_in}",
+    )
+    page.screenshot(path=os.path.join(SHOT_DIR, "rendered-files-dbml-find.png"))
+    box.press("Escape")
+    wait_shown(page, sel, SCHEMA_TABLES)
+
+
+def scenario_dbml_cards(page, slug):
+    sel = pane("docs/schema.dbml")
+    closed = len(shown_rows(page, sel, "stock_levels"))
+    label = more_button(page, sel, "stock_levels")
+    short = more_button(page, sel, "shop_orders")
+    page.locator(f'{sel} .dbml-card[data-table="stock_levels"] button.dbml-more').click()
+    opened = len(shown_rows(page, sel, "stock_levels"))
+    label_open = more_button(page, sel, "stock_levels")
+    check(
+        "dbml cards: a long table shows 8 columns until it is opened",
+        closed == 8 and label == "Show 4 more columns" and short is None and opened == 12 and label_open == "Show fewer columns",
+        f"closed={closed} label={label!r} short={short!r} opened={opened} label_open={label_open!r}",
+    )
+    page.locator(f'{sel} .dbml-card[data-table="stock_levels"] button.dbml-more').click()
+    page.get_by_role("button", name="Expand all").click()
+    all_open = hidden_rows(page, sel)
+    page.get_by_role("button", name="Collapse all").click()
+    back = len(shown_rows(page, sel, "stock_levels"))
+    check(
+        "dbml cards: Expand all opens every card",
+        all_open == 0 and back == 8,
+        f"hidden-after-expand={all_open} rows-after-collapse={back}",
+    )
+
+    row = f'{sel} .dbml-card[data-table="ab_cust"] tr.dbml-col[data-col="ab_nb_owner"]'
+    page.locator(f"{row} .dbml-col-name").click()
+    origin, same = marked(page, sel, "dbml-origin"), marked(page, sel, "dbml-same")
+    rows = len(shown_rows(page, sel, "stock_levels"))
+    page.locator(f"{row} .dbml-col-name").click()
+    cleared = marked(page, sel, "dbml-origin") + marked(page, sel, "dbml-same")
+    check(
+        "dbml columns: a click marks the columns with the same name",
+        origin == ["ab_cust.ab_nb_owner"]
+        and same == ["cd_cust.cd_nb_owner", "stock_levels.ef_nb_owner"]
+        and rows == 12
+        and cleared == [],
+        f"origin={origin} same={same} stock-rows={rows} after-second-click={cleared}",
+    )
+    page.get_by_role("button", name="Collapse all").click()
+
+
+def scenario_dbml_refs(page, slug):
+    sel = pane("docs/schema.dbml")
+    # A short window, so the target card is off screen while the link is clicked.
+    page.set_viewport_size({"width": 1500, "height": 450})
+    page.evaluate("(s) => { const m = document.querySelector(s + ' .md-scroll'); m.scrollTop = m.scrollHeight; }", sel)
+    url = page.url
+    link = f'{sel} .dbml-card[data-table="cd_cust"] tr.dbml-col[data-col="order_ref"] a.dbml-ref'
+    text = page.locator(link).text_content()
+    probe = """(s) => {
+      const box = document.querySelector(s + ' .md-scroll').getBoundingClientRect();
+      const top = document.querySelector(s + ' .dbml-card[data-table="shop_orders"] h3').getBoundingClientRect().top;
+      return top >= box.top - 1 && top < box.bottom;
+    }"""
+    before = page.evaluate(probe, sel)
+    page.locator(link).dispatch_event("click")
+    try:
+        page.wait_for_function(probe, arg=sel, timeout=10000)
+        moved = True
+    except Exception:
+        moved = False
+    check(
+        "dbml refs: a link moves the view to the target table",
+        text == "→ shop_orders.id" and not before and moved and page.url == url,
+        f"text={text!r} visible-before={before} moved={moved} url-same={page.url == url}",
+    )
+    page.set_viewport_size({"width": 1500, "height": 950})
+
+    incoming = page.evaluate(
+        """(s) => {
+          const card = [...document.querySelectorAll(s + ' .dbml-card')].find(e => e.dataset.table === 'shop_orders');
+          const p = card.querySelector('p.dbml-in');
+          return p ? { text: p.textContent, links: [...p.querySelectorAll('a')].map(a => a.textContent) } : null;
+        }""",
+        sel,
+    )
+    check(
+        "dbml refs: a table lists the columns that point to it",
+        incoming is not None
+        and incoming["text"].startswith("Referenced by:")
+        and sorted(incoming["links"]) == ["cd_cust.order_ref", "shop_items.order_id"],
+        f"incoming={incoming}",
+    )
+
+    missing = page.evaluate(
+        """(s) => [...document.querySelectorAll(s + ' .dbml-ref')]
+            .filter(e => e.textContent.includes('geo.countries'))
+            .map(e => e.tagName + ':' + e.textContent)""",
+        sel,
+    )
+    check(
+        "dbml refs: a ref to a missing table is plain text",
+        missing == ["SPAN:→ geo.countries.id"],
+        f"missing={missing}",
+    )
+
+
+def scenario_dbml_project_search(page, slug):
+    page.evaluate(
+        f"([s]) => {TABS}.openTab({{ project: s, path: 'docs/search.dbml', title: 'search.dbml', ftype: 'dbml', find: 'buyer' }})",
+        [slug],
+    )
+    sel = pane("docs/search.dbml")
+    wait_cards(page, sel)
+    wait_shown(page, sel, 1)
+    got = page.evaluate(
+        """(s) => ({
+          open: document.querySelector(s + ' .md-find').classList.contains('open'),
+          term: document.querySelector(s + ' .md-find-input').value,
+        })""",
+        sel,
+    )
+    cards = shown_cards(page, sel)
+    check(
+        "dbml find: a project search opens the grid filtered",
+        got == {"open": True, "term": "buyer"} and cards == ["shop_orders"],
+        f"find={got} cards={cards}",
+    )
+
+
 def main():
     os.makedirs(SHOT_DIR, exist_ok=True)
     build()
@@ -496,6 +764,10 @@ def main():
             page.screenshot(path=os.path.join(SHOT_DIR, "rendered-files-big.png"))
             scenario_detached(page, ctx, slug)
             scenario_dbml(page, slug)
+            scenario_dbml_find(page, slug)
+            scenario_dbml_cards(page, slug)
+            scenario_dbml_refs(page, slug)
+            scenario_dbml_project_search(page, slug)
             scenario_dbml_edges(page, slug)
             browser.close()
     finally:
