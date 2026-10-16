@@ -72,6 +72,8 @@ import "./wb-move-dialog.test.mjs";
 import "./wb-notes.test.mjs";
 import "./wb-notes-folds.test.mjs";
 import "./wb-project.test.mjs";
+import "./wb-properties-dialog.test.mjs";
+import "./wb-properties-format.test.mjs";
 import "./wb-projects-store.test.mjs";
 import "./wb-runs-panel.test.mjs";
 import "./wb-runs-store.test.mjs";

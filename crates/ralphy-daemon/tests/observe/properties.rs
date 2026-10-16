@@ -49,6 +49,8 @@ async fn a_file_answers_its_facts() {
 
     let reply = stat(&url, &slug, "visible.txt", None).await;
 
+    // The reply the dialog of the workbench is tested on (ADR-0070).
+    super::golden::check("file.stat", reply.clone(), &["/modified"]);
     assert_eq!(
         without_modified(reply),
         json!({
@@ -187,6 +189,7 @@ async fn a_folder_the_tree_never_lists_has_a_size() {
     // size counts what is on the disk.
     let reply = size(&url, &slug, "node_modules", None).await;
 
+    super::golden::check("tree.size", reply.clone(), &[]);
     assert_eq!(
         reply,
         json!({

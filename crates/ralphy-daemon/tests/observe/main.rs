@@ -2,6 +2,9 @@
 //! run snapshots, file encodings, confined writes and the refusal of a
 //! malformed run. No module sets an env var, so they share one test binary.
 
+#[path = "../support/golden.rs"]
+mod golden;
+
 mod command_refusal;
 mod file_encoding;
 mod observe_read;

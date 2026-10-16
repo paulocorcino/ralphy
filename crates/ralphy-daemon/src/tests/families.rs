@@ -280,6 +280,10 @@ pub(super) const SHELL_FAMILY: &[(&str, &str)] = &[
         include_str!("../../assets/ui/wb-projects-store.ts"),
     ),
     (
+        "wb-properties-dialog.ts",
+        include_str!("../../assets/ui/wb-properties-dialog.ts"),
+    ),
+    (
         "wb-release-dialogs.ts",
         include_str!("../../assets/ui/wb-release-dialogs.ts"),
     ),

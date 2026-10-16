@@ -64,6 +64,17 @@ export function newEntryTitle(kind: string, dir: string) {
   return `New ${kind} in ${dir || "the project root"}`;
 }
 
+// The absolute path of `rel` below the project's `root`, in the root's own
+// separator, so it pastes into a native shell. `rel` empty is the root.
+export function fullPath(root: string, rel: string) {
+  if (!rel) return root;
+  // Windows by SHAPE (drive letter or UNC lead), not by "contains a backslash".
+  const sep = /^[A-Za-z]:/.test(root) || root.startsWith("\\\\") ? "\\" : "/";
+  // Trim a trailing separator so a drive root (`C:\`) does not double it.
+  const base = root.replace(/[\\/]+$/, "");
+  return base + sep + rel.split("/").join(sep);
+}
+
 // The directory containing `rel`; "" for a top-level entry (the repo root).
 export function parentRel(rel: string) {
   const i = rel.lastIndexOf("/");

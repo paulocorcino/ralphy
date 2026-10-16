@@ -7,9 +7,12 @@ use regex::Regex;
 use super::{fixture_names, read, workspace_root, FIXTURES};
 
 /// Verbs whose ok reply is flat, as the ADR-0036 amendment "the registry
-/// verbs" fixes it, and the daemon file that writes each key: a `"key"`
-/// literal or a `pub key:` field of the serialized struct.
+/// verbs" fixes it (the two properties verbs follow it), and the daemon file
+/// that writes each key: a `"key"` literal or a `pub key:` field of the
+/// serialized struct.
 const FLAT_REPLIES: &[(&str, &str)] = &[
+    ("file.stat", "crates/ralphy-daemon/src/tree/stat.rs"),
+    ("tree.size", "crates/ralphy-daemon/src/tree/size.rs"),
     ("dir.list", "crates/ralphy-daemon/src/dir_list.rs"),
     (
         "project.add",

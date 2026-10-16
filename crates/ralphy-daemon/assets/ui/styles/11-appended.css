@@ -193,3 +193,57 @@
   font-size: 0.78rem;
 }
 /* #364 move picker end */
+
+/* Properties dialog: one label and value per line. The slow rows of a folder
+   hold the .files-spinner ring until the count is back. */
+.properties-modal {
+  width: min(30rem, 92vw);
+}
+.props-list {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0.8rem 0.95rem 0.5rem;
+}
+.props-row {
+  display: grid;
+  grid-template-columns: 8.5rem 1fr;
+  gap: 0.6rem;
+  align-items: baseline;
+}
+.props-row dt {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+.props-row dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  font-size: 0.85rem;
+  word-break: break-all;
+}
+.props-retry {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.props-retry:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+/* Read by a screen reader, drawn nowhere. */
+.props-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

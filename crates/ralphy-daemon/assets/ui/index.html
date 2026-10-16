@@ -2856,6 +2856,43 @@
     </div>
 
     <!-- ===================================================================
+         Properties of a file or a folder: the facts of one path (`file.stat`)
+         and, for a folder, what is inside it (`tree.size`), which can take
+         seconds. wb-properties-dialog.ts is the component that owns it: the
+         files open it with `workbench:properties-open`. Names and values are
+         shown with x-text only.
+    ==================================================================== -->
+    <div class="properties-dialog" x-data="wbPropertiesDialog" @workbench:properties-open.window="openProperties($event.detail)">
+    <div class="modal-scrim" x-cloak x-bind="$store.modals.scrim('props.open', () => propsClose())">
+      <div class="modal properties-modal" role="dialog" aria-modal="true" aria-label="Properties" :aria-busy="propsBusy()">
+        <div class="modal-head">
+          <i class="bi bi-info-circle"></i>
+          <span class="modal-title">Properties</span>
+          <span class="spacer"></span>
+          <button class="modal-x" @click="propsClose()" title="Close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <dl class="props-list">
+          <template x-for="r in propsRows()" :key="r.label">
+            <div class="props-row">
+              <dt x-text="r.label"></dt>
+              <dd>
+                <span class="files-spinner" x-show="r.pending"></span>
+                <span x-text="r.value"></span>
+                <button class="props-retry" x-show="r.retry" @click="propsRetrySize()">Try again</button>
+              </dd>
+            </div>
+          </template>
+        </dl>
+        <p class="props-status" role="status" x-text="propsStatus()"></p>
+        <div class="modal-foot">
+          <button class="btn" @click="propsCopy()" x-text="props.copied ? 'Copied' : 'Copy'"></button>
+          <button class="btn accent" @click="propsClose()">Close</button>
+        </div>
+      </div>
+    </div>
+    </div>
+
+    <!-- ===================================================================
          Add a project (#501): a folder on this computer or on a peer becomes
          a project. The daemon that owns the folder lists it (`dir.list`) and
          runs `ralphy daemon add` (`project.add`); wb-add-project.ts holds the

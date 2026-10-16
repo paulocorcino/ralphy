@@ -151,7 +151,11 @@ const NOT_PEER_REPLIES: &[(&str, &str, &str)] = &[
 /// the replay raw, and the page reads it raw. So do the optional `replay`,
 /// `offset` and `resume` of `session-open`: with no `offset` the page never
 /// sends `since`, and with no `resume` it resets its terminal, as before.
-const PEER_REPLY_PIN: (u32, u64) = (4, 0xe5f0_e83b_1e64_02ee);
+/// The new verbs `file.stat` and `tree.size` keep version 4 (ADR-0052): every
+/// field of their replies is optional in the page type, and an older peer
+/// answers them `unknown verb`, which the Properties dialog shows as a refusal
+/// that names the older daemon.
+const PEER_REPLY_PIN: (u32, u64) = (4, 0xf35f_d192_cf23_68e2);
 
 /// Where `PEER_PROTOCOL_VERSION` is, from the repo root.
 const PEER_RS: &str = "crates/ralphy-daemon/src/peer.rs";
