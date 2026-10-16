@@ -81,7 +81,7 @@ flowchart LR
 
 | Unit | Talks to | How |
 |---|---|---|
-| Browser workbench | daemon | Synchronous HTTP and WebSocket, through the verb registry ([ADR-0036](./adr/0036-workbench-daemon-integration-protocol.md)) |
+| Browser workbench | daemon | Synchronous HTTP and WebSocket, through the verb registry ([ADR-0036](./adr/0036-workbench-daemon-integration-protocol.md)); proposed: reads over HTTP and one socket per page ([ADR-0082](./adr/0082-the-page-holds-one-socket-and-reads-over-http.md)) |
 | Daemon | CLI children, peers, consoles | Spawns `ralphy` for anything that interprets or changes a repo ([ADR-0032](./adr/0032-daemon-mode-supervised-launcher.md), ADR-0036 §3) |
 | Run | daemon | **Asynchronous only**: run snapshot, stop sentinel, run lock, ledger ([ADR-0047](./adr/0047-run-state-snapshot-channel.md), [ADR-0054](./adr/0054-cooperative-run-stop.md)) |
 | Peer daemon | daemon | Synchronous, versioned peer protocol ([ADR-0052](./adr/0052-local-fleet-federation.md), [ADR-0067](./adr/0067-peers-on-other-machines-through-ssh.md)) |
