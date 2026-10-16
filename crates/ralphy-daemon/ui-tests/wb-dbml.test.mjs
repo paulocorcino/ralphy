@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { colKey, groupTables, matchSchema, parseDbml, refsOf, sameColumns, shownColumns } from "../assets/ui/wb-dbml.ts";
+import { colKey, groupTables, matchSchema, parseDbml, refsOf, sameColumns, shownColumns, toMermaidEr } from "../assets/ui/wb-dbml.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const fixture = (name) => readFileSync(join(HERE, "fixtures", "dbml", name), "utf8");
@@ -251,4 +251,91 @@ test("refsOf lists the links out of a table and into it", () => {
   assert.deepEqual(refsOf(schema, "c").out.map(from), ["c.a_id"]);
   assert.deepEqual(refsOf(schema, "c").in.map(from), ["a.id"]);
   assert.deepEqual(refsOf(schema, "nothing"), { out: [], in: [] });
+});
+
+// Three tables joined three ways: many-to-one (`order items` to `users`),
+// one-to-one (`users` to `c`) and many-to-many (`order items` to `c`).
+const FK_SCHEMA = [
+  "Table users {",
+  "  id integer [pk]",
+  "  email varchar(255)",
+  "}",
+  'Table "order items" {',
+  "  id integer [pk]",
+  "  user_id integer",
+  "}",
+  "Table c { id int [pk] }",
+  'Ref: "order items".user_id > users.id',
+  "Ref: users.id - c.id",
+  'Ref: "order items".id <> c.id',
+].join("\n");
+
+test("toMermaidEr draws the selected tables and the refs between them", () => {
+  const schema = parseDbml(FK_SCHEMA);
+  assert.equal(
+    toMermaidEr(schema, ["order items", "users"]),
+    [
+      "erDiagram",
+      '  t0["order items"] {',
+      "    integer id PK",
+      "    integer user_id",
+      "  }",
+      '  t1["users"] {',
+      "    integer id PK",
+      "    varchar(255) email",
+      "  }",
+      '  t0 }o--|| t1 : "user_id"',
+    ].join("\n"),
+  );
+  // The order given is the order of the entities.
+  assert.match(toMermaidEr(schema, ["users", "order items"]), /^erDiagram\n {2}t0\["users"\] \{/);
+});
+
+test("toMermaidEr keeps only the refs inside the selection", () => {
+  const schema = parseDbml(FK_SCHEMA);
+  const lines = (names) =>
+    toMermaidEr(schema, names)
+      .split("\n")
+      .filter((l) => l.includes("--"));
+  assert.deepEqual(lines(["order items", "users"]), ['  t0 }o--|| t1 : "user_id"']);
+  assert.deepEqual(lines(["users", "c"]), ['  t0 ||--|| t1 : "id"']);
+  assert.deepEqual(lines(["order items", "c"]), ['  t0 }o--o{ t1 : "id"']);
+  // A ref with one end outside the selection adds no line, and a name the
+  // file does not have adds no entity.
+  assert.deepEqual(lines(["users"]), []);
+  assert.equal(toMermaidEr(schema, ["users", "ghost"]).includes("t1"), false);
+  assert.equal(toMermaidEr(schema, []), "erDiagram");
+});
+
+test("toMermaidEr makes names and types safe for Mermaid", () => {
+  const table = (name, columns) => ({ name, note: null, columns });
+  const schema = {
+    tables: [
+      table("order items", [col("1st col", "DECIMAL(10, 2)")]),
+      table('say "hi"', [col("naïve", "double precision")]),
+      table("<img src=x onerror=alert(1)>", [col("a-b", "int[]")]),
+    ],
+    refs: [{ from: { table: "order items", column: "1st col" }, to: { table: 'say "hi"', column: "x y" }, kind: "many-to-one" }],
+    groups: [],
+    skipped: 0,
+  };
+  assert.equal(
+    toMermaidEr(
+      schema,
+      schema.tables.map((t) => t.name),
+    ),
+    [
+      "erDiagram",
+      '  t0["order items"] {',
+      "    DECIMAL(10_2) _1stcol",
+      "  }",
+      "  t1[\"say 'hi'\"] {",
+      "    doubleprecision na_ve",
+      "  }",
+      '  t2["<img src=x onerror=alert(1)>"] {',
+      "    int[] a-b",
+      "  }",
+      '  t0 }o--|| t1 : "_1stcol"',
+    ].join("\n"),
+  );
 });

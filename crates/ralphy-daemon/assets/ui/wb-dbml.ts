@@ -641,3 +641,52 @@ export function refsOf(schema: DbmlSchema, table: string): { out: DbmlRef[]; in:
     in: schema.refs.filter((r) => r.to.table === table),
   };
 }
+
+// ---- drawing a selection -----------------------------------------------------------
+
+/**
+ * The most tables one diagram draws. Mermaid places tables that have no
+ * relation in one row; on a measured 79-table schema, about 12 tables are the
+ * most that the zoom view (4 times at most) still shows readable.
+ */
+export const DRAW_LIMIT = 12;
+
+// A word of the `erDiagram` grammar: space is removed, any character outside
+// `A-Za-z0-9_()[]-` becomes `_`, and the word starts with a letter or `_`.
+function mermaidWord(raw: string) {
+  const word = raw.replace(/\s+/g, "").replace(/[^A-Za-z0-9_()[\]-]/g, "_");
+  return /^[A-Za-z_]/.test(word) ? word : `_${word}`;
+}
+
+function entityLines(id: string, table: DbmlTable) {
+  const label = table.name.replace(/"/g, "'");
+  if (table.columns.length === 0) return [`  ${id}["${label}"]`];
+  const rows = table.columns.map((c) => `    ${mermaidWord(c.type)} ${mermaidWord(c.name)}${c.pk ? " PK" : ""}`);
+  return [`  ${id}["${label}"] {`, ...rows, "  }"];
+}
+
+const CARDINALITY: Record<DbmlRefKind, string> = {
+  "many-to-one": "}o--||",
+  "one-to-one": "||--||",
+  "many-to-many": "}o--o{",
+};
+
+/**
+ * The Mermaid `erDiagram` source that draws the tables `names`, in that order,
+ * and the refs whose two ends are both among them. A name the file does not
+ * have, or a repeated name, adds no entity. Entities have the ids `t0`, `t1`…
+ * and their real names as quoted labels, so no name reaches the grammar.
+ */
+export function toMermaidEr(schema: DbmlSchema, names: string[]): string {
+  const byName = new Map(schema.tables.map((t) => [t.name, t]));
+  const picked = [...new Set(names)].flatMap((n) => byName.get(n) ?? []);
+  const ids = new Map(picked.map((t, i) => [t.name, `t${i}`]));
+  const lines = ["erDiagram"];
+  picked.forEach((table, i) => lines.push(...entityLines(`t${i}`, table)));
+  for (const ref of schema.refs) {
+    const from = ids.get(ref.from.table);
+    const to = ids.get(ref.to.table);
+    if (from && to) lines.push(`  ${from} ${CARDINALITY[ref.kind]} ${to} : "${mermaidWord(ref.from.column)}"`);
+  }
+  return lines.join("\n");
+}

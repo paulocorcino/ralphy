@@ -647,6 +647,13 @@
   font-size: 0.9em;
 }
 .md-body .dbml-group h2 {
+  margin: 0;
+}
+.md-body .dbml-group-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.8rem;
   margin: 1.6em 0 0.6em;
 }
 .md-body .dbml-grid {
@@ -738,6 +745,23 @@
 }
 .md-body .dbml-btn:hover {
   color: var(--text);
+}
+.md-body .dbml-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.md-body .dbml-btn:disabled:hover {
+  color: var(--text-muted);
+}
+.md-body .dbml-draw-status {
+  color: var(--danger);
+  font-size: 0.85em;
+}
+/* The checkbox that selects a table, before its name. */
+.md-body .dbml-card h3 .dbml-pick {
+  margin: 0 0.5em 0 0;
+  vertical-align: middle;
+  cursor: pointer;
 }
 .md-body .dbml-more {
   display: block;

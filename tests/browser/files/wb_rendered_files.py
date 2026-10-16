@@ -29,6 +29,10 @@ Scenario 12 a long card shows 8 columns until it is opened; Expand all and
 Scenario 13 a ref is a link to its table, a table lists the columns that point
             to it, a ref to a missing table is plain text
 Scenario 14 a project search opens the grid already filtered
+Scenario 15 the selected tables open as a diagram in the zoom view; a group is
+            selected at once; the draw button keeps the limit of 12 tables;
+            Escape closes the view and the focus returns to the button; a
+            table name with markup is drawn as text
 
 Requires `playwright` (`pip install playwright`, then
 `playwright install chromium`).
@@ -151,6 +155,10 @@ SCHEMA_GROUPS = ["ledger", "shop", "Other tables"]
 MARKUP_NAME = "<img src=x onerror=alert(1)>"
 MARKUP = 'Table "' + MARKUP_NAME + '" {\n  id int [pk, not null]\n}\n'
 EMPTY = "// A file with comments only.\n/* No table here. */\n"
+# One group of 14 tables, over the limit of 12 for a diagram.
+MANY_TABLES = 14
+DRAW_LIMIT = 12
+MANY = "".join(f"Table box_{i:02d} {{\n  id int [pk, not null]\n}}\n" for i in range(1, MANY_TABLES + 1))
 
 results = []
 
@@ -220,6 +228,7 @@ def make_fixture_repo():
     (docs / "search.dbml").write_text(SCHEMA, encoding="utf-8", newline="\n")
     (docs / "markup.dbml").write_text(MARKUP, encoding="utf-8", newline="\n")
     (docs / "empty.dbml").write_text(EMPTY, encoding="utf-8", newline="\n")
+    (docs / "many.dbml").write_text(MANY, encoding="utf-8", newline="\n")
     for args in (
         ["git", "init"],
         ["git", "config", "user.email", "wbrender@example.com"],
@@ -730,6 +739,157 @@ def scenario_dbml_project_search(page, slug):
     )
 
 
+def pick_boxes(page, sel, tables):
+    for table in tables:
+        page.locator(f'{sel} .dbml-card[data-table="{table}"] input.dbml-pick').check()
+
+
+def draw_button(page, sel):
+    """The text and state of the draw button."""
+    return page.evaluate(
+        "(s) => { const b = document.querySelector(s + ' button.dbml-draw'); return [b.textContent, b.disabled]; }", sel
+    )
+
+
+def wait_overlay(page, timeout=30000):
+    """Wait for the zoom view with a diagram in it. A miss is not an error: the check that follows reports it."""
+    try:
+        page.wait_for_function("() => !!document.querySelector('.zoom-overlay svg')", timeout=timeout)
+    except Exception:
+        pass
+
+
+def overlay_parts(page):
+    return page.evaluate(
+        """() => {
+          const o = document.querySelector('.zoom-overlay');
+          if (!o) return null;
+          const svg = o.querySelector('svg');
+          const names = new Set([...svg.querySelectorAll('text, tspan')].map(t => t.textContent.trim()));
+          return {
+            entities: svg.querySelectorAll('g.node').length,
+            lines: svg.querySelectorAll('path.relationshipLine').length,
+            names: [...names],
+            images: o.querySelectorAll('img').length,
+          };
+        }"""
+    )
+
+
+def checked_count(page, sel):
+    return page.evaluate("(s) => document.querySelectorAll(s + ' input.dbml-pick:checked').length", sel)
+
+
+def clear_selection(page, sel):
+    page.locator(f"{sel} button.dbml-btn", has_text="Clear selection").click()
+
+
+def scenario_dbml_draw(page, slug):
+    sel = pane("docs/schema.dbml")
+    # `shop_items.order_id` points to `shop_orders.id`: one relation between two of the three.
+    pick_boxes(page, sel, ["shop_orders", "shop_items", "shop_users"])
+    label = draw_button(page, sel)
+    page.locator(f"{sel} button.dbml-draw").click()
+    wait_overlay(page)
+    parts = overlay_parts(page)
+    page.screenshot(path=os.path.join(SHOT_DIR, "rendered-files-dbml-draw.png"))
+    check(
+        "dbml draw: the selected tables open as a diagram",
+        label == ["Draw 3 tables", False]
+        and parts is not None
+        and parts["entities"] == 3
+        and parts["lines"] == 1
+        and {"shop_orders", "shop_items", "shop_users"} <= set(parts["names"]),
+        f"button={label} overlay={parts}",
+    )
+
+    page.keyboard.press("Escape")
+    closed = page.evaluate("() => !document.querySelector('.zoom-overlay')")
+    focus = page.evaluate("() => document.activeElement && document.activeElement.className")
+    again = draw_button(page, sel)
+    check(
+        "dbml draw: Escape closes the diagram",
+        closed and "dbml-draw" in (focus or "") and again == ["Draw 3 tables", False],
+        f"closed={closed} focus={focus!r} button={again}",
+    )
+    clear_selection(page, sel)
+    cleared = draw_button(page, sel)
+    boxes = checked_count(page, sel)
+    check(
+        "dbml draw: Clear selection unchecks every table",
+        cleared == ["Draw 0 tables", True] and boxes == 0,
+        f"button={cleared} checked={boxes}",
+    )
+
+    # A group of 3 is selected at once, and Find keeps the selection.
+    page.locator(f'{sel} .dbml-group:has(h2:text-is("shop")) button', has_text="Select group").click()
+    group = draw_button(page, sel)
+    checked = checked_count(page, sel)
+    box = open_find(page, sel)
+    box.fill("buyer")
+    wait_shown(page, sel, 1)
+    kept = draw_button(page, sel)
+    box.press("Escape")
+    wait_shown(page, sel, SCHEMA_TABLES)
+    check(
+        "dbml draw: a group can be selected at once",
+        group == ["Draw 3 tables", False] and checked == 3 and kept == ["Draw 3 tables", False],
+        f"button={group} checked={checked} after-find={kept}",
+    )
+    clear_selection(page, sel)
+
+
+def scenario_dbml_limit(page, slug):
+    open_path(page, slug, "docs/many.dbml")
+    sel = pane("docs/many.dbml")
+    wait_cards(page, sel)
+    start = draw_button(page, sel)
+    pick_boxes(page, sel, [f"box_{i:02d}" for i in range(1, MANY_TABLES + 1)])
+    fourteen = draw_button(page, sel)
+    page.locator(f'{sel} .dbml-card[data-table="box_14"] input.dbml-pick').uncheck()
+    thirteen = draw_button(page, sel)
+    page.locator(f'{sel} .dbml-card[data-table="box_13"] input.dbml-pick').uncheck()
+    twelve = draw_button(page, sel)
+    over = ["Select 12 tables or fewer", True]
+    check(
+        "dbml draw: the button keeps the limit",
+        start == ["Draw 0 tables", True]
+        and fourteen == over
+        and thirteen == over
+        and twelve == [f"Draw {DRAW_LIMIT} tables", False],
+        f"start={start} fourteen={fourteen} thirteen={thirteen} twelve={twelve}",
+    )
+    # The most the button allows is drawn.
+    page.locator(f"{sel} button.dbml-draw").click()
+    wait_overlay(page)
+    parts = overlay_parts(page)
+    check(
+        "dbml draw: 12 tables are drawn",
+        parts is not None and parts["entities"] == DRAW_LIMIT and parts["lines"] == 0,
+        f"overlay={parts}",
+    )
+    page.keyboard.press("Escape")
+
+
+def scenario_dbml_draw_markup(page, slug):
+    dialogs = []
+    page.on("dialog", lambda d: (dialogs.append(d.message), d.dismiss()))
+    open_path(page, slug, "docs/markup.dbml")
+    sel = pane("docs/markup.dbml")
+    wait_cards(page, sel)
+    pick_boxes(page, sel, [MARKUP_NAME])
+    page.locator(f"{sel} button.dbml-draw").click()
+    wait_overlay(page)
+    parts = overlay_parts(page)
+    time.sleep(0.5)
+    check(
+        "dbml draw: a table name with markup is drawn as text",
+        parts is not None and MARKUP_NAME in parts["names"] and parts["images"] == 0 and dialogs == [],
+        f"overlay={parts} dialogs={dialogs}",
+    )
+    page.keyboard.press("Escape")
+
+
 def main():
     os.makedirs(SHOT_DIR, exist_ok=True)
     build()
@@ -767,8 +927,11 @@ def main():
             scenario_dbml_find(page, slug)
             scenario_dbml_cards(page, slug)
             scenario_dbml_refs(page, slug)
+            scenario_dbml_draw(page, slug)
             scenario_dbml_project_search(page, slug)
             scenario_dbml_edges(page, slug)
+            scenario_dbml_limit(page, slug)
+            scenario_dbml_draw_markup(page, slug)
             browser.close()
     finally:
         stop(proc)

@@ -10,15 +10,32 @@
    name marks the columns with the same name; a ref is a link to its table.
    The links are plain `#fragment` anchors: the viewer's `linkClick` moves the
    view to the heading, so this module adds no listener for them.
+
+   Drawing: a checkbox on each card, and a button on each group, select up to
+   DRAW_LIMIT tables. The selection is the set of checked boxes, so it stays
+   while the cards are filtered and is lost when the body is drawn again. The
+   draw button shows the tables as a Mermaid diagram in the zoom view.
    --------------------------------------------------------------------------- */
 
-import { colKey, groupTables, matchSchema, parseDbml, refsOf, sameColumns, shownColumns } from "./wb-dbml.ts";
+import { colKey, DRAW_LIMIT, groupTables, matchSchema, parseDbml, refsOf, sameColumns, shownColumns, toMermaidEr } from "./wb-dbml.ts";
 import type { DbmlColumn, DbmlEndpoint, DbmlRef, DbmlSchema, DbmlTable } from "./wb-dbml.ts";
 // The two modules import each other; both use the other only inside a function
 // that runs after both have loaded.
-import { slugOf } from "./wb-viewer-render.ts";
+import { drawDiagram, slugOf } from "./wb-viewer-render.ts";
+import type { MermaidWindow } from "./wb-viewer-render.ts";
+import { openZoom } from "./wb-zoom-overlay.ts";
 
-type Ctx = { doc: Document; article: Element; schema: DbmlSchema; names: Set<string> };
+type Ctx = {
+  doc: Document;
+  article: Element;
+  schema: DbmlSchema;
+  names: Set<string>;
+  // The controls of the bar that draw the selected tables.
+  draw: HTMLButtonElement;
+  clear: HTMLButtonElement;
+  status: HTMLElement;
+  busy: boolean;
+};
 
 // What the last render put in an article, for `filterDbml`.
 const schemas = new WeakMap<Element, DbmlSchema>();
@@ -129,12 +146,23 @@ function onCardClick(ctx: Ctx, card: HTMLElement, ev: Event) {
   if (row && target.closest(".dbml-col-name")) toggleMark(ctx, row);
 }
 
+// The heading of a card: the table name, behind the checkbox that selects it.
+function cardHead(ctx: Ctx, table: DbmlTable) {
+  const head = el(ctx.doc, "h3", "");
+  const pick = el(ctx.doc, "input", "dbml-pick") as HTMLInputElement;
+  pick.type = "checkbox";
+  pick.setAttribute("aria-label", `Select ${table.name}`);
+  pick.addEventListener("change", () => onPick(ctx));
+  head.append(pick, table.name);
+  return head;
+}
+
 function card(ctx: Ctx, table: DbmlTable) {
   const { doc } = ctx;
   const box = el(doc, "div", "dbml-card");
   box.dataset.table = table.name;
   tableOfCard.set(box, table);
-  box.append(el(doc, "h3", "", table.name));
+  box.append(cardHead(ctx, table));
   if (table.note) box.append(el(doc, "p", "dbml-note", table.note));
   const refs = refsOf(ctx.schema, table.name);
   const cols = el(doc, "table", "dbml-cols");
@@ -163,8 +191,90 @@ function summaryBar(ctx: Ctx, text: string) {
   expand.addEventListener("click", () => setAll(ctx, true));
   const collapse = button(doc, "dbml-btn", "Collapse all");
   collapse.addEventListener("click", () => setAll(ctx, false));
-  bar.append(el(doc, "div", "dbml-summary", text), expand, collapse);
+  bar.append(el(doc, "div", "dbml-summary", text), ctx.status, ctx.draw, ctx.clear, expand, collapse);
   return bar;
+}
+
+// ---- drawing the selected tables ---------------------------------------------------
+
+const DRAW_FAILED = "Could not draw these tables.";
+
+let drawCount = 0;
+
+// The tables of the checked boxes, in the order of the page.
+function selected(ctx: Ctx) {
+  const boxes = ctx.article.querySelectorAll<HTMLInputElement>("input.dbml-pick:checked");
+  return [...boxes].flatMap((box) => box.closest<HTMLElement>(".dbml-card")?.dataset.table ?? []);
+}
+
+// The text and state of the draw button follow the size of the selection.
+function refreshDraw(ctx: Ctx) {
+  const n = selected(ctx).length;
+  const over = n > DRAW_LIMIT;
+  ctx.draw.textContent = over ? `Select ${DRAW_LIMIT} tables or fewer` : `Draw ${plural(n, "table", "tables")}`;
+  ctx.draw.disabled = ctx.busy || over || n === 0;
+  ctx.clear.disabled = n === 0;
+}
+
+function onPick(ctx: Ctx) {
+  ctx.status.textContent = "";
+  refreshDraw(ctx);
+}
+
+function clearSelection(ctx: Ctx) {
+  for (const box of ctx.article.querySelectorAll<HTMLInputElement>("input.dbml-pick")) box.checked = false;
+  onPick(ctx);
+}
+
+// Select the cards of a group that Find has not hidden.
+function selectGroup(ctx: Ctx, section: Element) {
+  for (const box of section.querySelectorAll<HTMLInputElement>(".dbml-card:not([hidden]) input.dbml-pick")) box.checked = true;
+  onPick(ctx);
+}
+
+// The SVG element of the Mermaid markup, or null when the markup is not SVG.
+// The markup is parsed as XML, never written into the page as HTML.
+function svgOf(doc: Document, markup: string) {
+  const parsed = new DOMParser().parseFromString(markup, "image/svg+xml");
+  if (parsed.querySelector("parsererror")) return null;
+  const root = doc.importNode(parsed.documentElement, true);
+  return root instanceof SVGSVGElement ? root : null;
+}
+
+// Draw `names` and open the picture in the zoom view. True when it opened.
+async function drawInZoom(ctx: Ctx, win: MermaidWindow, names: string[]) {
+  ctx.busy = true;
+  refreshDraw(ctx);
+  let svg: SVGSVGElement | null = null;
+  try {
+    svg = svgOf(ctx.doc, await drawDiagram(win, `dbml-draw-${drawCount++}`, toMermaidEr(ctx.schema, names)));
+  } catch {
+    // Mermaid rejected the source; the status text below tells the person.
+  }
+  ctx.busy = false;
+  refreshDraw(ctx);
+  return svg !== null && openZoom(win, ctx.doc, svg, ctx.draw) !== null;
+}
+
+async function drawSelection(ctx: Ctx) {
+  const win = ctx.doc.defaultView as MermaidWindow | null;
+  const names = selected(ctx);
+  if (!win || names.length === 0 || names.length > DRAW_LIMIT) return;
+  ctx.status.textContent = "";
+  if (!(await drawInZoom(ctx, win, names))) ctx.status.textContent = DRAW_FAILED;
+}
+
+function newCtx(doc: Document, article: Element, schema: DbmlSchema) {
+  const draw = button(doc, "dbml-btn dbml-draw", "");
+  const clear = button(doc, "dbml-btn", "Clear selection");
+  const status = el(doc, "span", "dbml-draw-status");
+  status.setAttribute("role", "status");
+  const names = new Set(schema.tables.map((t) => t.name));
+  const ctx: Ctx = { doc, article, schema, names, draw, clear, status, busy: false };
+  draw.addEventListener("click", () => void drawSelection(ctx));
+  clear.addEventListener("click", () => clearSelection(ctx));
+  refreshDraw(ctx);
+  return ctx;
 }
 
 /** Fill `article` with the table cards of the DBML `text`. */
@@ -176,19 +286,29 @@ export function renderDbmlGrid(doc: Document, article: Element, text: string): v
     article.append(el(doc, "p", "dbml-empty", "No tables found in this file."));
     return;
   }
-  const ctx: Ctx = { doc, article, schema, names: new Set(schema.tables.map((t) => t.name)) };
+  const ctx = newCtx(doc, article, schema);
   const groups = groupTables(schema);
   let summary = `${plural(schema.tables.length, "table", "tables")} in ${plural(groups.length, "group", "groups")}.`;
   if (schema.skipped > 0) summary += ` ${plural(schema.skipped, "line was", "lines were")} not understood.`;
   article.append(summaryBar(ctx, summary));
-  for (const group of groups) {
-    const section = el(doc, "section", "dbml-group");
-    section.append(el(doc, "h2", "", group.label));
-    const grid = el(doc, "div", "dbml-grid");
-    for (const table of group.tables) grid.append(card(ctx, table));
-    section.append(grid);
-    article.append(section);
-  }
+  for (const group of groups) article.append(groupSection(ctx, group));
+}
+
+// A group: its heading, a button that selects its tables, and its cards. The
+// button sits beside the `h2`, not in it, because the side index reads the
+// text of the heading.
+function groupSection(ctx: Ctx, group: { label: string; tables: DbmlTable[] }) {
+  const { doc } = ctx;
+  const section = el(doc, "section", "dbml-group");
+  const pickAll = button(doc, "dbml-btn", "Select group");
+  pickAll.setAttribute("aria-label", `Select group ${group.label}`);
+  pickAll.addEventListener("click", () => selectGroup(ctx, section));
+  const head = el(doc, "div", "dbml-group-head");
+  head.append(el(doc, "h2", "", group.label), pickAll);
+  const grid = el(doc, "div", "dbml-grid");
+  for (const table of group.tables) grid.append(card(ctx, table));
+  section.append(head, grid);
+  return section;
 }
 
 // True when the card hides a column that the term matches.
