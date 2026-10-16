@@ -146,6 +146,12 @@ pub enum Verb {
     TreeGrep,
     /// Read a repo file's text (Observe: reads state, never spawns).
     FileRead,
+    /// The facts of one path: size, time, type, ignored mark (Observe: reads
+    /// state, never spawns — ADR-0036 amendment 2026-10-15).
+    FileStat,
+    /// The size of one folder, counted by a walk with a budget (Observe: reads
+    /// state, never spawns — ADR-0036 amendment 2026-10-15).
+    TreeSize,
     /// Read a repo file's bytes as an allowlisted image (Observe: reads state,
     /// never spawns — ADR-0049).
     ImageRead,
@@ -295,6 +301,8 @@ impl Verb {
             "tree.find" => Some(Verb::TreeFind),
             "tree.grep" => Some(Verb::TreeGrep),
             "file.read" => Some(Verb::FileRead),
+            "file.stat" => Some(Verb::FileStat),
+            "tree.size" => Some(Verb::TreeSize),
             "file.image" => Some(Verb::ImageRead),
             "note.read" => Some(Verb::NoteRead),
             "runs.list" => Some(Verb::RunsList),
@@ -352,6 +360,8 @@ impl Verb {
         Verb::TreeFind,
         Verb::TreeGrep,
         Verb::FileRead,
+        Verb::FileStat,
+        Verb::TreeSize,
         Verb::ImageRead,
         Verb::NoteRead,
         Verb::RunsList,
@@ -408,6 +418,8 @@ impl Verb {
             | Verb::TreeFind
             | Verb::TreeGrep
             | Verb::FileRead
+            | Verb::FileStat
+            | Verb::TreeSize
             | Verb::ImageRead
             | Verb::NoteRead
             | Verb::RunsList
@@ -507,6 +519,8 @@ mod tests {
         assert_eq!(Verb::TreeFind.effect_class(), EffectClass::Observe);
         assert_eq!(Verb::TreeGrep.effect_class(), EffectClass::Observe);
         assert_eq!(Verb::FileRead.effect_class(), EffectClass::Observe);
+        assert_eq!(Verb::FileStat.effect_class(), EffectClass::Observe);
+        assert_eq!(Verb::TreeSize.effect_class(), EffectClass::Observe);
         assert_eq!(Verb::ImageRead.effect_class(), EffectClass::Observe);
         assert_eq!(Verb::from_query("file.image"), Some(Verb::ImageRead));
         assert_eq!(Verb::RunsList.effect_class(), EffectClass::Observe);
@@ -596,8 +610,8 @@ mod tests {
         }
         assert_eq!(
             Verb::ALL.len(),
-            51,
-            "the registry holds exactly fifty-one verbs"
+            53,
+            "the registry holds exactly fifty-three verbs"
         );
     }
 
@@ -730,6 +744,8 @@ mod tests {
         assert_eq!(Verb::from_query("tree.find"), Some(Verb::TreeFind));
         assert_eq!(Verb::from_query("tree.grep"), Some(Verb::TreeGrep));
         assert_eq!(Verb::from_query("file.read"), Some(Verb::FileRead));
+        assert_eq!(Verb::from_query("file.stat"), Some(Verb::FileStat));
+        assert_eq!(Verb::from_query("tree.size"), Some(Verb::TreeSize));
         // No destructive verb, and no arbitrary composition, is reachable.
         // `stop` and `kill` stay unrepresentable even though `run.stop` now
         // exists (docs/adr/0054): that verb spawns a `ralphy stop` which WRITES A
@@ -749,6 +765,10 @@ mod tests {
             "note.delete",
             "note.rename",
             "note.list",
+            // The properties are two verbs and stay two: no `file.size`, no
+            // `tree.stat`, no `file.*` or `tree.*` family to widen them.
+            "file.size",
+            "tree.stat",
             "image.read",
             "image",
             "image.delete",
@@ -812,7 +832,7 @@ mod tests {
             }
         }
         assert_eq!(count, 13, "the family is the 13 git-backed verbs");
-        assert_eq!(Verb::ALL.len(), 51, "Verb::ALL grew — revisit the family");
+        assert_eq!(Verb::ALL.len(), 53, "Verb::ALL grew — revisit the family");
 
         for &v in Verb::ALL {
             if matches!(

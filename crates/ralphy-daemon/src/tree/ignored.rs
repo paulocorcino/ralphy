@@ -62,6 +62,18 @@ impl Rules {
     }
 }
 
+/// The components of the confined `dir`, relative to the confined `base`, as
+/// the rules take them: the one place that cuts a path into rule coordinates.
+pub(crate) fn components_below(base: &Path, dir: &Path) -> Vec<String> {
+    dir.strip_prefix(base)
+        .map(|r| {
+            r.components()
+                .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// `base` and `name` joined with `/`, `base` empty for the root.
 pub(crate) fn join(base: &str, name: &str) -> String {
     if base.is_empty() {

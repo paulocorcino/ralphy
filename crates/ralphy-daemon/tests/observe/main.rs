@@ -5,5 +5,6 @@
 mod command_refusal;
 mod file_encoding;
 mod observe_read;
+mod properties;
 mod runs_list;
 mod workspace_write;

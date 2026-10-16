@@ -21,7 +21,9 @@ use crate::textcodec::{self, Decoded};
 
 mod ignored;
 pub mod search;
+pub mod stat;
 pub use search::{find, grep, grep_with, FindHit, GrepHit, SearchBudget, SearchReply};
+pub use stat::{stat, Stat};
 
 /// Directory-listing hard-exclude: noise dirs never surfaced in the tree —
 /// `.git`, `node_modules`, `target`. This is the ONLY listing filter left
@@ -53,14 +55,7 @@ pub struct Entry {
 pub fn list(root: &Path, rel: &str) -> Result<Vec<Entry>, ConfineError> {
     let base = confine::confine(root, "")?;
     let dir = confine::confine(root, rel)?;
-    let parts: Vec<String> = dir
-        .strip_prefix(&base)
-        .map(|r| {
-            r.components()
-                .map(|c| c.as_os_str().to_string_lossy().into_owned())
-                .collect()
-        })
-        .unwrap_or_default();
+    let parts = ignored::components_below(&base, &dir);
     let rules = ignored::Rules::for_dir(&base, &parts);
     let dir_rel = parts.join("/");
 

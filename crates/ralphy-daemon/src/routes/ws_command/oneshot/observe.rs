@@ -1,7 +1,7 @@
 //! The Observe verbs of `/ws/command`: filesystem reads answered off the
 //! runtime, each in the operator's coordinates (ADR-0036 §2, ADR-0063 §2).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::{checkout_of, encoding_param};
 use crate::routes::blocking_read;
@@ -39,6 +39,7 @@ pub(super) async fn observe(
             tree_search(verb, cmd, repo_path, checkout.as_ref()).await
         }
         dispatch::Verb::FileRead => file_read(cmd, repo_path, &rel).await,
+        dispatch::Verb::FileStat => file_stat(repo_path, checkout.as_ref(), asked).await,
         dispatch::Verb::ImageRead => image_read(repo_path, &rel).await,
         dispatch::Verb::NoteRead => note_read(repo_path, &rel).await,
         dispatch::Verb::RunsList => runs_list(repo_path),
@@ -118,6 +119,57 @@ async fn tree_search(
             reply
         }
         Some(Err(_)) => serde_json::json!({ "status": "error", "reason": "not found" }),
+        None => unavailable(),
+    }
+}
+
+/// Where the properties verbs read from: the checkout's own root when there is
+/// one, and the path asked for relative to it. The ignore rules anchor at that
+/// root, as for `tree.list`: read from the primary root, every file of a
+/// worktree would be ignored, because the primary ignores `.ralphy/`.
+fn properties_target(
+    checkout: Option<&checkout::Checkout>,
+    asked: &str,
+) -> (Option<String>, String) {
+    match checkout {
+        Some(c) => (Some(c.prefix("")), asked.trim_matches('/').to_string()),
+        None => (None, asked.to_string()),
+    }
+}
+
+/// The checkout root, confined against the registered root as the searches do.
+fn properties_root(
+    repo_root: PathBuf,
+    walk_rel: Option<String>,
+) -> Result<PathBuf, confine::ConfineError> {
+    match walk_rel {
+        None => Ok(repo_root),
+        Some(rel) => confine::confine(&repo_root, &rel),
+    }
+}
+
+/// `file.stat`: the facts of one path, answered at once.
+async fn file_stat(
+    repo_path: &Path,
+    checkout: Option<&checkout::Checkout>,
+    asked: &str,
+) -> serde_json::Value {
+    let (walk_rel, path) = properties_target(checkout, asked);
+    let repo_root = repo_path.to_path_buf();
+    let settings_root = repo_path.to_path_buf();
+    let read = blocking_read(move || {
+        let root = properties_root(repo_root, walk_rel).map_err(|_| tree::ReadError::NotFound)?;
+        // The primary's settings, not the checkout's, as for the searches.
+        tree::stat(&root, &path, textcodec::fallback_for(&settings_root))
+    })
+    .await;
+    match read {
+        Some(Ok(stat)) => {
+            let mut reply = serde_json::json!(stat);
+            reply["status"] = serde_json::json!("ok");
+            reply
+        }
+        Some(Err(e)) => serde_json::json!({ "status": "error", "reason": e.reason() }),
         None => unavailable(),
     }
 }
