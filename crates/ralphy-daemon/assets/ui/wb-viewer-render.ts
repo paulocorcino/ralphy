@@ -17,6 +17,7 @@ type Mermaid = {
     theme: string;
     htmlLabels: boolean;
     flowchart: { htmlLabels: boolean };
+    maxTextSize: number;
   }): void;
   render(id: string, source: string): Promise<{ svg: string }>;
 };
@@ -25,10 +26,10 @@ type Mermaid = {
 export type MermaidWindow = Window & { mermaid?: Mermaid };
 
 /** The file kinds the markdown pane shows as a rendered body. */
-export type RenderedKind = "markdown";
+export type RenderedKind = "markdown" | "mermaid";
 
 export function isRendered(kind: string): kind is RenderedKind {
-  return kind === "markdown";
+  return kind === "markdown" || kind === "mermaid";
 }
 
 // The anchor a `#fragment` uses for a heading: the GitHub-style slug of the
@@ -51,6 +52,8 @@ export function renderBody(kind: RenderedKind, article: Element, content: string
   switch (kind) {
     case "markdown":
       return markdownBody(article, content, uid, doc);
+    case "mermaid":
+      return diagramBody(article, content, uid, doc);
     default: {
       const unknown: never = kind;
       throw new Error(`no rendered body for the kind ${String(unknown)}`);
@@ -79,6 +82,17 @@ function markdownBody(article: Element, content: string, uid: number, doc: Docum
   return pending;
 }
 
+// A `.mmd` file is one diagram: the whole text is its source.
+function diagramBody(article: Element, content: string, uid: number, doc: Document) {
+  article.innerHTML = "";
+  const holder = doc.createElement("div");
+  holder.className = "mermaid";
+  holder.id = `mmd-${uid}-0`;
+  holder.dataset.src = content;
+  article.append(holder);
+  return [holder];
+}
+
 let mermaidReady = false;
 
 export function initMermaid(win: MermaidWindow) {
@@ -100,6 +114,11 @@ export function initMermaid(win: MermaidWindow) {
     theme: "dark",
     htmlLabels: false,
     flowchart: { htmlLabels: false },
+    // Mermaid's default limit is 50,000 characters, and over it Mermaid does
+    // not throw: it draws a "Maximum text size in diagram exceeded" box
+    // instead (measured, Mermaid 11.17.2). A real 79-table `erd.mmd` has
+    // 61,823 characters. 2 MiB is the most `file.read` serves.
+    maxTextSize: 2 * 1024 * 1024,
   });
   mermaidReady = true;
 }

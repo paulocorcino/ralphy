@@ -3,12 +3,13 @@
 // heading that a `#fragment` link names.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isRendered, slugOf } from "../assets/ui/wb-viewer-render.ts";
+import { isRendered, renderBody, slugOf } from "../assets/ui/wb-viewer-render.ts";
 
 test("isRendered names the kinds the rendered pane shows", () => {
   // [kind, shown by the rendered pane]
   const rows = [
     ["markdown", true],
+    ["mermaid", true],
     ["code", false],
     ["image", false],
     ["diff", false],
@@ -26,4 +27,18 @@ test("slugOf makes the anchor of a heading", () => {
     ["Already-dashed words", "already-dashed-words"],
   ];
   for (const [text, want] of rows) assert.equal(slugOf(text), want, text);
+});
+
+// A `.mmd` file is one diagram: the article holds a single holder whose
+// source is the whole file, drawn later when the pane is on screen.
+test("a mermaid file is one diagram holder with the whole file as its source", () => {
+  const appended = [];
+  const article = { innerHTML: "<p>old</p>", append: (el) => appended.push(el) };
+  const doc = { createElement: (tag) => ({ tag, className: "", id: "", dataset: {} }) };
+  const source = "flowchart TD\n  A[Start] --> B[Finish]\n";
+  const pending = renderBody("mermaid", article, source, 7, doc);
+  assert.equal(article.innerHTML, "");
+  assert.equal(appended.length, 1);
+  assert.deepEqual(pending, appended);
+  assert.deepEqual(pending[0], { tag: "div", className: "mermaid", id: "mmd-7-0", dataset: { src: source } });
 });

@@ -623,6 +623,16 @@
   margin: 1em 0;
   text-align: center;
 }
+/* A Mermaid file (`.mmd`) is one diagram: it has no headings to index, and
+   the diagram takes the whole width of the pane. The selector outranks the
+   narrow-pane rule that shows the Contents button. */
+.md-viewer[data-kind="mermaid"] .md-outline,
+.md-viewer[data-kind="mermaid"] .md-toc-btn {
+  display: none;
+}
+.md-viewer[data-kind="mermaid"] .md-body {
+  max-width: none;
+}
 .md-body .mermaid-error {
   color: var(--danger);
   font-family: ui-monospace, monospace;

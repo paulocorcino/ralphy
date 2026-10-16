@@ -6,7 +6,9 @@
        find widget. Binaries never reach here (app.ts refuses them).
      • Markdown  — rendered with `marked`, sanitized with DOMPurify, mermaid
        fences drawn as diagrams (Cursor-style), a heading outline to jump around,
-       an in-page find, and an edit/preview toggle over the raw source.
+       an in-page find, and an edit/preview toggle over the raw source. A
+       Mermaid file (`.mmd`) uses the same pane, drawn as one diagram
+       (`wb-viewer-render.ts` fills the body by kind).
      • image     — an allowlisted image the daemon verified and served as a
        `data:` URL (ADR-0049), fit to the pane or shown 1:1. Read-only.
      • diff      — HEAD against the working tree, side by side. Read-only.
@@ -990,6 +992,7 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
     const el = document.createElement("div");
     el.className = "viewer md-viewer";
     el.dataset.tabId = rec.id;
+    el.dataset.kind = rec.kind;
     el.style.display = "none";
     el.innerHTML = `
       <div class="viewer-toolbar">
