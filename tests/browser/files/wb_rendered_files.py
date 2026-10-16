@@ -33,6 +33,10 @@ Scenario 15 the selected tables open as a diagram in the zoom view; a group is
             selected at once; the draw button keeps the limit of 12 tables;
             Escape closes the view and the focus returns to the button; a
             table name with markup is drawn as text
+Scenario 16 Edit on `schema.dbml` and on `flow.mmd` gives a model whose
+            language is `dbml` and `mermaid`
+Scenario 17 the editor gives each token of a DBML and of a Mermaid line the
+            color class it must have, and broken text does not break it
 
 Requires `playwright` (`pip install playwright`, then
 `playwright install chromium`).
@@ -159,6 +163,61 @@ EMPTY = "// A file with comments only.\n/* No table here. */\n"
 MANY_TABLES = 14
 DRAW_LIMIT = 12
 MANY = "".join(f"Table box_{i:02d} {{\n  id int [pk, not null]\n}}\n" for i in range(1, MANY_TABLES + 1))
+
+# Editor colors (Stage 5). Each case is a line of a text, a column and the token
+# type there. The text runs as one document, so the table body line sees the
+# state the `Table` line opened. Monarch adds the language as a suffix to a
+# token type (`keyword.dbml`); the check removes it.
+DBML_TEXT = "\n".join(
+    [
+        "Table users {",
+        "  id int [pk, not null]",
+        "  price decimal(10,2)",
+        "}",
+        "// a comment",
+        "Note: 'text'",
+        "Ref: a.b > c.d",
+    ]
+)
+DBML_TOKENS = [
+    (0, 0, "keyword"),
+    (1, 2, "variable"),
+    (1, 5, "type"),
+    (1, 10, "attribute.name"),
+    (1, 14, "attribute.name"),
+    (2, 8, "type"),
+    (4, 0, "comment"),
+    (5, 0, "keyword"),
+    (5, 6, "string"),
+    (6, 0, "keyword"),
+    (6, 9, "operator"),
+]
+DBML_NOTE_TEXT = "Note: '''\nthree lines\nof text\n'''"
+DBML_NOTE_TOKENS = [(1, 0, "string"), (1, 6, "string"), (2, 0, "string")]
+MMD_TEXT = "\n".join(
+    [
+        "erDiagram",
+        "%% a comment",
+        "  A -->|yes| B",
+        "  CUSTOMER ||--o{ ORDER : places",
+        "  INT id PK",
+        "flowchart LR",
+    ]
+)
+MMD_TOKENS = [
+    (0, 0, "keyword"),
+    (1, 0, "comment"),
+    (2, 4, "operator"),
+    (2, 7, "string"),
+    (3, 11, "operator"),
+    (4, 9, "attribute.name"),
+    (5, 0, "keyword"),
+    (5, 10, "attribute.name"),
+]
+# An unclosed triple quote, a lone bracket, an unclosed directive, an empty
+# line and 2000 characters with no space.
+NL = chr(10)
+GARBAGE = "'''unclosed\n]\n%%{\n\n" + "x" * 2000
 
 results = []
 
@@ -890,6 +949,76 @@ def scenario_dbml_draw_markup(page, slug):
     page.keyboard.press("Escape")
 
 
+def edit_language(page, slug, path, ready):
+    """Press Edit on `path` and return the language id of its Monaco model."""
+    open_path(page, slug, path)
+    sel = pane(path)
+    ready(page, sel)
+    page.locator(f'{sel} [data-act="toggle"]').click()
+    page.wait_for_function(
+        "(p) => !!window.monaco && monaco.editor.getModels().some(m => m.uri.path.endsWith(p))",
+        arg="/" + path,
+        timeout=30000,
+    )
+    language = page.evaluate(
+        "(p) => monaco.editor.getModels().find(m => m.uri.path.endsWith(p)).getLanguageId()", "/" + path
+    )
+    page.locator(f'{sel} [data-act="toggle"]').click()
+    return language
+
+
+def scenario_grammar_languages(page, slug):
+    dbml = edit_language(page, slug, "docs/schema.dbml", wait_cards)
+    mermaid = edit_language(page, slug, "docs/flow.mmd", wait_svg)
+    check(
+        "grammar: the editor knows .dbml and .mmd",
+        (dbml, mermaid) == ("dbml", "mermaid"),
+        f"dbml={dbml} mermaid={mermaid}",
+    )
+
+
+def tokens(page, text, language):
+    """The token list of every line: [(offset, type without the language suffix)]."""
+    rows = page.evaluate(
+        "([t, l]) => monaco.editor.tokenize(t, l).map(r => r.map(k => [k.offset, k.type]))", [text, language]
+    )
+    return [[(o, t.removesuffix("." + language)) for o, t in row] for row in rows]
+
+
+def type_at(row, col):
+    """The type of the token that covers column `col`."""
+    found = [t for o, t in row if o <= col]
+    return found[-1] if found else None
+
+
+def mismatches(rows, expected):
+    return [(i, c, want, type_at(rows[i], c)) for i, c, want in expected if type_at(rows[i], c) != want]
+
+
+def scenario_grammar_tokens(page):
+    wrong = mismatches(tokens(page, DBML_TEXT, "dbml"), DBML_TOKENS)
+    wrong += mismatches(tokens(page, DBML_NOTE_TEXT, "dbml"), DBML_NOTE_TOKENS)
+    check("grammar: DBML lines get their colors", not wrong, f"wrong(line, col, want, got)={wrong}")
+    wrong = mismatches(tokens(page, MMD_TEXT, "mermaid"), MMD_TOKENS)
+    check("grammar: Mermaid lines get their colors", not wrong, f"wrong(line, col, want, got)={wrong}")
+
+
+def scenario_grammar_broken(page):
+    problems = []
+    for language in ("dbml", "mermaid"):
+        for part in (GARBAGE, *GARBAGE.split(NL)):
+            try:
+                rows = tokens(page, part, language)
+            except Exception as err:
+                problems.append((language, part[:12], str(err)[:80]))
+                continue
+            if len(rows) != len(part.split(NL)):
+                problems.append((language, part[:12], len(rows)))
+    # The broken text must still be read by the grammar, not by plain text.
+    problems += mismatches(tokens(page, GARBAGE, "dbml"), [(0, 0, "string"), (1, 0, "string")])
+    problems += mismatches(tokens(page, GARBAGE, "mermaid"), [(2, 0, "metatag")])
+    check("grammar: broken text does not break the editor", not problems, f"problems={problems}")
+
 def main():
     os.makedirs(SHOT_DIR, exist_ok=True)
     build()
@@ -932,6 +1061,9 @@ def main():
             scenario_dbml_edges(page, slug)
             scenario_dbml_limit(page, slug)
             scenario_dbml_draw_markup(page, slug)
+            scenario_grammar_languages(page, slug)
+            scenario_grammar_tokens(page)
+            scenario_grammar_broken(page)
             browser.close()
     finally:
         stop(proc)
