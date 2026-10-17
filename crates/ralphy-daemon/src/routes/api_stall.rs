@@ -17,6 +17,9 @@ pub(crate) const STALL_MAX_BYTES: usize = 2048;
 /// The longest `what` the log line keeps, in characters.
 pub(crate) const WHAT_MAX_CHARS: usize = 200;
 
+/// The longest `holder` the log line keeps, in characters.
+pub(crate) const HOLDER_MAX_CHARS: usize = 64;
+
 /// What waited past its deadline.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -48,12 +51,21 @@ pub(crate) struct StallReport {
 
 /// Write the one `daemon.log` line of a stall report.
 pub(crate) fn log_stall(report: &StallReport, device: Option<&DeviceId>) {
+    // Both strings come from the browser. Debug formatting quotes and
+    // escapes them, so a newline cannot start a second log line.
     let what: String = report.what.chars().take(WHAT_MAX_CHARS).collect();
+    let holder: String = report
+        .holder
+        .as_deref()
+        .unwrap_or("none")
+        .chars()
+        .take(HOLDER_MAX_CHARS)
+        .collect();
     tracing::warn!(
         device = %device.map(ToString::to_string).unwrap_or_else(|| "none".to_string()),
-        holder = report.holder.as_deref().unwrap_or("none"),
+        holder = ?holder,
         kind = report.kind.as_str(),
-        what = %what,
+        what = ?what,
         waited_ms = report.waited_ms,
         "the page reported a stall"
     );
@@ -167,7 +179,7 @@ mod tests {
             format!("device={device}"),
             "holder=\"tab1\"".to_string(),
             "kind=\"read-deadline\"".to_string(),
-            "what=GET /api/repos".to_string(),
+            "what=\"GET /api/repos\"".to_string(),
             "waited_ms=20000".to_string(),
         ] {
             assert!(line.contains(&part), "{part} missing in {line}");
@@ -197,7 +209,22 @@ mod tests {
     fn a_long_what_is_clipped_in_the_stall_line() {
         let long = "w".repeat(500);
         let line = logged(|| log_stall(&report(&long), None));
-        assert!(line.contains(&"w".repeat(WHAT_MAX_CHARS)), "{line}");
-        assert!(!line.contains(&"w".repeat(WHAT_MAX_CHARS + 1)), "{line}");
+        assert!(line.contains(&"w".repeat(200)), "{line}");
+        assert!(!line.contains(&"w".repeat(201)), "{line}");
+    }
+
+    #[test]
+    fn a_newline_in_what_does_not_start_a_second_line() {
+        let line = logged(|| log_stall(&report("x\n2026 WARN forged"), None));
+        assert_eq!(line.trim_end().lines().count(), 1, "{line}");
+    }
+
+    #[test]
+    fn a_long_holder_is_clipped_in_the_stall_line() {
+        let mut long = report("x");
+        long.holder = Some("h".repeat(500));
+        let line = logged(|| log_stall(&long, None));
+        assert!(line.contains(&"h".repeat(64)), "{line}");
+        assert!(!line.contains(&"h".repeat(65)), "{line}");
     }
 }

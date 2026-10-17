@@ -237,10 +237,20 @@ export function apiFetch<K extends ApiRoute>(route: K, init: ApiInit = {}): Prom
   // The one unchecked step: the reply comes from the daemon of the same
   // build, whose handler `ApiRoutes` follows.
   const sent = fetch(url, { ...rest, method, signal: controller.signal }) as Promise<ApiResponse<K>>;
-  return beforeDeadline(sent, what, ms, stalled).then((res) => {
-    boundBodyReads(res, what, ms, stalled);
-    return res;
-  });
+  // The caller's signal may outlive many requests: drop the listener once
+  // this one settles, so it does not keep the controller alive.
+  const forget = () => callerSignal?.removeEventListener("abort", abort);
+  return beforeDeadline(sent, what, ms, stalled).then(
+    (res) => {
+      forget();
+      boundBodyReads(res, what, ms, stalled);
+      return res;
+    },
+    (e: unknown) => {
+      forget();
+      throw e;
+    },
+  );
 }
 
 /** The reply of a command answered over `POST /api/command`. The one

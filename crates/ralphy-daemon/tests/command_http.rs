@@ -186,6 +186,23 @@ async fn a_write_answers_the_same_over_http_and_the_socket() {
     );
 }
 
+// 3 MB is over axum's 2 MB default body limit and under the command cap,
+// so only the route's own limit lets this body through.
+#[tokio::test]
+async fn a_write_of_three_megabytes_is_answered_over_http() {
+    let dir = tempfile::tempdir().unwrap();
+    let port = serve(registered(dir.path())).await;
+    let content = "y".repeat(3_000_000);
+    let payload = serde_json::json!({ "repo": SLUG, "path": "big.txt", "content": content });
+    let (status, http) = over_http(port, "file.write", payload, &[]).await;
+    assert_eq!(status, 200);
+    assert_eq!(http["status"], "ok", "{http}");
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("repo/big.txt")).unwrap(),
+        content
+    );
+}
+
 #[tokio::test]
 async fn a_refused_verb_answers_the_same_over_http_and_the_socket() {
     let dir = tempfile::tempdir().unwrap();

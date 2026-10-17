@@ -152,3 +152,20 @@ test("a read past its deadline reports a stall", async () => {
     globalThis.fetch = prev;
   }
 });
+
+test("apiFetch removes its listener from the caller's signal when the request settles", async () => {
+  const prev = globalThis.fetch;
+  globalThis.fetch = async () => new Response("[]", { status: 200 });
+  const listeners = new Set();
+  const signal = {
+    aborted: false,
+    addEventListener: (_type, fn) => listeners.add(fn),
+    removeEventListener: (_type, fn) => listeners.delete(fn),
+  };
+  try {
+    await apiFetch("GET /api/repos", { signal });
+    assert.equal(listeners.size, 0);
+  } finally {
+    globalThis.fetch = prev;
+  }
+});
