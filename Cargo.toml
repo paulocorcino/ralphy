@@ -54,7 +54,7 @@ sha2 = "0.10"
 # `deflate-flate2`, not `deflate`: `deflate` turns on flate2's zlib-rs backend,
 # and features are shared, so the daemon's note containers would change backend
 # too (`note::tests::a_container_carries_no_plaintext` pins miniz_oxide) (#443).
-zip = { version = "8", default-features = false, features = ["deflate-flate2"] }
+zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 tar = "0.4"
 flate2 = "1"
 uuid = { version = "1", features = ["v4"] }
