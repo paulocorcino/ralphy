@@ -18,12 +18,14 @@ use crate::protocol::Command;
 /// Mutating paths the layer does not record as an `action`: a peer polls the
 /// first every few seconds, so its lines would push every other line out; the
 /// next two write their own line. A stall report changes nothing and writes
-/// its line in `daemon.log`; a stalling page may send several.
+/// its line in `daemon.log`; a stalling page may send several. A command
+/// over HTTP writes its own `command` line, as on the command socket.
 const NOT_AN_ACTION: &[&str] = &[
     "/api/peer/tree/poll",
     "/api/device/facts",
     "/api/peer/command",
     "/api/device/stall",
+    "/api/command",
 ];
 
 /// The request that gives a browser its device cookie (D1). Each page load

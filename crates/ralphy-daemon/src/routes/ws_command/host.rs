@@ -42,6 +42,15 @@ fn check(cmd: &Command, verb: Verb, secret_ok: bool) -> Result<Checked, serde_js
     }
 }
 
+/// The refusal a host verb gets before it runs, or `None` when it passes.
+pub(crate) fn host_refusal(
+    cmd: &Command,
+    verb: Verb,
+    secret_ok: bool,
+) -> Option<serde_json::Value> {
+    check(cmd, verb, secret_ok).err()
+}
+
 /// The one reply to a Query or Mutate host verb.
 pub(super) async fn host_reply(
     cmd: &Command,

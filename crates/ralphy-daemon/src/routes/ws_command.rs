@@ -18,6 +18,7 @@ mod stream;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use host::host_refusal;
 pub(crate) use oneshot::*;
 pub(crate) use registry_verbs::serve_registry;
 
