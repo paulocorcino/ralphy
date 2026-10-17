@@ -1,6 +1,7 @@
 /* ---------------------------------------------------------------------------
    The workbench's rules about a file path, as pure functions: which viewer a
-   file name gets, the directory that holds a rel path, a file tab's identity,
+   file name gets and its icon in the FILES tree, the directory that holds a
+   rel path, a file tab's identity,
    the title of a create gesture, and the directories the daemon's Write path
    refuses.
 
@@ -88,7 +89,8 @@ export function fileTabId(project: string, path: string, checkout: string | null
   return checkout ? `file:${project}@${checkout}:${path}` : `file:${project}:${path}`;
 }
 
-// Which viewer a file gets: markdown → rendered pane, image → image pane,
+// Which viewer a file gets: markdown, a Mermaid diagram (`.mmd`) and a
+// database markup file (`.dbml`) → rendered pane, image → image pane,
 // a note → its CARD on the consoles stage (ADR-0064 §11, never a tab: two
 // editors over one file is the thing that decision exists to prevent), other
 // binaries refused, everything else source code.
@@ -96,7 +98,58 @@ export function classify(name: string) {
   const ext = extOf(name);
   if (ext === "note") return "note";
   if (ext === "md" || ext === "markdown") return "markdown";
+  if (ext === "mmd") return "mermaid";
+  if (ext === "dbml") return "dbml";
   if (IMAGE_EXT.has(ext)) return "image";
   if (BINARY_EXT.has(ext)) return "binary";
   return "code";
+}
+
+// The icon of a file's canvas tab, by the kind `classify` gave it.
+export function tabIcon(kind: string) {
+  switch (kind) {
+    case "markdown":
+      return "bi bi-file-earmark-text";
+    case "image":
+      return "bi bi-file-earmark-image";
+    case "mermaid":
+      return "bi bi-diagram-3";
+    case "dbml":
+      return "bi bi-table";
+    default:
+      return "bi bi-file-earmark-code";
+  }
+}
+
+// The icon of a file in the FILES tree, by its name: a Devicon glyph or a
+// Bootstrap icon for the extensions the tree knows, a plain file otherwise.
+const TREE_ICONS: Record<string, string> = {
+  ts: "devicon-typescript-plain colored",
+  tsx: "devicon-typescript-plain colored",
+  js: "devicon-javascript-plain colored",
+  mjs: "devicon-javascript-plain colored",
+  cjs: "devicon-javascript-plain colored",
+  json: "devicon-json-plain colored",
+  md: "devicon-markdown-plain md-glyph",
+  rs: "devicon-rust-plain rs-glyph",
+  css: "devicon-css3-plain colored",
+  html: "devicon-html5-plain colored",
+  prisma: "devicon-prisma-plain colored",
+  png: "bi bi-image",
+  jpg: "bi bi-image",
+  jpeg: "bi bi-image",
+  gif: "bi bi-image",
+  svg: "bi bi-image",
+  toml: "bi bi-gear",
+  yml: "bi bi-gear",
+  yaml: "bi bi-gear",
+  note: "bi bi-sticky",
+  mmd: "bi bi-diagram-3",
+  dbml: "bi bi-table",
+};
+
+export function treeIcon(title: string) {
+  const name = title.toLowerCase();
+  if (name.endsWith("lock") || name === "package-lock.json") return "devicon-json-plain colored";
+  return TREE_ICONS[extOf(name)] || "bi bi-file-earmark";
 }

@@ -11,6 +11,9 @@
    DOMPurify, mermaid, Wunderbaum, xterm + addons) would latch onto instead of
    exporting its global. The loader tag therefore comes AFTER all of them.
 --------------------------------------------------------------------------- */
+import { registerGrammars } from "./wb-monaco-grammars.ts";
+import type { LanguageConfig, MonarchGrammar } from "./wb-monaco-grammars.ts";
+
 /** A Monaco model URI (`monaco.Uri.file`). */
 type MonacoUri = { readonly path: string };
 
@@ -122,6 +125,8 @@ export interface Monaco {
   KeyCode: { KeyS: number };
   languages: {
     register(language: { id: string; extensions: string[] }): void;
+    setMonarchTokensProvider(languageId: string, grammar: MonarchGrammar): MonacoDisposable;
+    setLanguageConfiguration(languageId: string, configuration: LanguageConfig): MonacoDisposable;
     json?: {
       jsonDefaults?: LanguageDefaults & {
         setDiagnosticsOptions(options: { validate: boolean; schemaValidation: string }): void;
@@ -270,6 +275,7 @@ export const WBMonaco = (function () {
           // `.toml` is the one extension the workbench needs that Monaco does
           // not resolve natively; `ini`'s grammar covers [section] / key = value.
           monaco.languages.register({ id: "ini", extensions: [".toml"] });
+          registerGrammars(monaco);
           disableLanguageServices(monaco);
           resolve(monaco);
         },

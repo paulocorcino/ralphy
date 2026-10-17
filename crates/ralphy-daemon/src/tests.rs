@@ -3163,8 +3163,8 @@ fn vendored_crepe_states_its_recipe() {
             include_str!("../vendor-build/crepe/entry.js"),
         ),
         (
-            "wb-file-viewer.ts",
-            include_str!("../assets/ui/wb-file-viewer.ts"),
+            "wb-viewer-render.ts",
+            include_str!("../assets/ui/wb-viewer-render.ts"),
         ),
     ] {
         assert!(

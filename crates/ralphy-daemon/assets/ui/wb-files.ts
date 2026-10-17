@@ -22,7 +22,7 @@ import { WBFileSearch } from "./wb-file-search.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { WBReadRetry } from "./wb-read-retry.ts";
 import { liveNode, reexpand, restoreView, snapshotLevel } from "./wb-files-reconcile.ts";
-import { classify, fullPath, newEntryTitle, parentRel, underProtectedDir } from "./wb-file-paths.ts";
+import { classify, fullPath, newEntryTitle, parentRel, treeIcon, underProtectedDir } from "./wb-file-paths.ts";
 import { sendWindow } from "./wb-events.ts";
 import { propertiesItem, propertiesKey } from "./wb-files-properties.ts";
 import type { WBDaemonApi } from "./wb-daemon.ts";
@@ -55,32 +55,7 @@ export function wbFiles() {
 
     // --- file-type icons (Devicon font; folders use Wunderbaum defaults) ---
     fileIcon(title: string) {
-      const name = title.toLowerCase();
-      if (name.endsWith("lock") || name === "package-lock.json") return "devicon-json-plain colored";
-      const ext = name.includes(".") ? name.split(".").pop()! : "";
-      const map: Record<string, string> = {
-        ts: "devicon-typescript-plain colored",
-        tsx: "devicon-typescript-plain colored",
-        js: "devicon-javascript-plain colored",
-        mjs: "devicon-javascript-plain colored",
-        cjs: "devicon-javascript-plain colored",
-        json: "devicon-json-plain colored",
-        md: "devicon-markdown-plain md-glyph",
-        rs: "devicon-rust-plain rs-glyph",
-        css: "devicon-css3-plain colored",
-        html: "devicon-html5-plain colored",
-        prisma: "devicon-prisma-plain colored",
-        png: "bi bi-image",
-        jpg: "bi bi-image",
-        jpeg: "bi bi-image",
-        gif: "bi bi-image",
-        svg: "bi bi-image",
-        toml: "bi bi-gear",
-        yml: "bi bi-gear",
-        yaml: "bi bi-gear",
-        note: "bi bi-sticky",
-      };
-      return map[ext] || "bi bi-file-earmark";
+      return treeIcon(title);
     },
 
     // --- Wunderbaum mount / teardown --------------------------------------

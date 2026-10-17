@@ -21,7 +21,7 @@
    --------------------------------------------------------------------------- */
 import { WBFail } from "./wb-fail.ts";
 import { WBChanges } from "./wb-changes.ts";
-import { classify, fileTabId } from "./wb-file-paths.ts";
+import { classify, fileTabId, tabIcon } from "./wb-file-paths.ts";
 import { WBSplit } from "./wb-split.ts";
 import { sendDocument, sendWindow } from "./wb-events.ts";
 import type { Messages } from "./wb-messages.ts";
@@ -172,13 +172,7 @@ export function tabsStore(deps: TabsStoreDeps) {
         if (find) WBViewer.find(id, find);
         return;
       }
-      const icon =
-        ftype === "markdown"
-          ? "bi bi-file-earmark-text"
-          : ftype === "image"
-            ? "bi bi-file-earmark-image"
-            : "bi bi-file-earmark-code";
-      this.tabs.push({ id, kind: ftype, title, path, project, icon, closable: true, checkout: ck });
+      this.tabs.push({ id, kind: ftype, title, path, project, icon: tabIcon(ftype), closable: true, checkout: ck });
       this.showTab(id);
       this.persistView();
       window.Alpine.nextTick(() => {
