@@ -142,11 +142,8 @@ until it reloads (ADR-0070 D6).
 
 ## Compliance
 
-- D1: not checked by code. Planned: a ratchet on the `new WebSocket(` sites in
-  `crates/ralphy-daemon/assets/ui/` (4 sites on 2026-10-16), which goes to 1
-  when D3 ships.
-- D2: not checked by code. Planned: a UI test that each `observe` and
-  `apiFetch` call without an answer settles by its deadline.
+- D1: `crates/ralphy-daemon/tests/command_http.rs` (the route answers a command with one reply, refuses a Spawn verb, and caps the body); `websocket_sites_match_the_baseline` in `crates/xtask/tests/ratchets.rs`, a ratchet on the `new WebSocket(` sites in `crates/ralphy-daemon/assets/ui/` (3 on 2026-10-16), which goes to 1 when D3 ships; `crates/ralphy-daemon/ui-tests/wb-daemon.test.mjs` (`observe`, `write` and `readImage` send their command over HTTP and open no socket).
+- D2: `crates/ralphy-daemon/ui-tests/wb-api.test.mjs` and `wb-daemon.test.mjs` (a read or a command with no answer settles with `ReadDeadline` at its deadline, and a late reply changes nothing), and the decode deadline test in `wb-console-frames.test.mjs`.
 - D3: not checked by code; the same ratchet as D1.
 - D4: not checked by code: a resume over a real dropped link needs a
   browser check (`tests/browser/console/`).

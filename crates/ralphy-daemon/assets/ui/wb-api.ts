@@ -94,6 +94,8 @@ interface ApiRoutes {
     ok: { nudged: true; ready: boolean; waited_ms: number; state: string; diagnosis: string };
     failed: ErrorBody;
   };
+  /** A command with one reply: `200` with the reply, a refusal included. */
+  "POST /api/command": { ok: DaemonReply };
   "GET /api/sessions": { ok: HostedSession[] };
   "GET /api/spend": { ok: SpendDoc };
   "GET /api/usage": {
@@ -142,8 +144,14 @@ export type ApiResponse<K extends ApiRoute> = ApiOk<ApiRoutes[K]["ok"]> | ApiFai
 export type ApiRefusal<K extends ApiRoute> = ApiFailed<FailedOf<ApiRoutes[K]>>;
 
 /** What `apiFetch` sends besides the route. The method comes from the route.
- * `deadlineMs` replaces the route's read deadline. */
-export type ApiInit = Omit<RequestInit, "method"> & { query?: Record<string, string | number>; deadlineMs?: number };
+ * `deadlineMs` replaces the route's read deadline. `what` names the read in
+ * `ReadDeadline` and in the stall report, when the route is not the name the
+ * operator knows (a command is named by its verb). */
+export type ApiInit = Omit<RequestInit, "method"> & {
+  query?: Record<string, string | number>;
+  deadlineMs?: number;
+  what?: string;
+};
 
 /** A read of the page that got no answer by its deadline. `what` names the
  * read (a route, or a command verb) and `waitedMs` is the time it waited. */
@@ -212,14 +220,15 @@ function boundBodyReads(res: Response, what: string, ms: number, abort: () => vo
  * resolves, and the caller reads `ok` and `status`. A request, or the read of
  * its body, with no answer by its deadline rejects with `ReadDeadline`. */
 export function apiFetch<K extends ApiRoute>(route: K, init: ApiInit = {}): Promise<ApiResponse<K>> {
-  const { query, deadlineMs, signal: callerSignal, ...rest } = init;
+  const { query, deadlineMs, what: named, signal: callerSignal, ...rest } = init;
+  const what = named ?? route;
   const { method, url } = apiRequest(route, query);
   const ms = deadlineMs ?? ROUTE_DEADLINE_MS[route] ?? READ_DEADLINE_MS;
   const controller = new AbortController();
   const abort = () => controller.abort();
   const stalled = () => {
     abort();
-    void reportStall("read-deadline", route, ms);
+    void reportStall("read-deadline", what, ms);
   };
   if (callerSignal) {
     if (callerSignal.aborted) abort();
@@ -228,10 +237,17 @@ export function apiFetch<K extends ApiRoute>(route: K, init: ApiInit = {}): Prom
   // The one unchecked step: the reply comes from the daemon of the same
   // build, whose handler `ApiRoutes` follows.
   const sent = fetch(url, { ...rest, method, signal: controller.signal }) as Promise<ApiResponse<K>>;
-  return beforeDeadline(sent, route, ms, stalled).then((res) => {
-    boundBodyReads(res, route, ms, stalled);
+  return beforeDeadline(sent, what, ms, stalled).then((res) => {
+    boundBodyReads(res, what, ms, stalled);
     return res;
   });
+}
+
+/** The reply of a command answered over `POST /api/command`. The one
+ * unchecked step for a command reply, as `socketFrame` is for a frame: the
+ * daemon of the same build writes the reply, and `ReplyOf<V>` follows its verb. */
+export function commandReply<V extends string>(r: ApiOk<DaemonReply>): Promise<ReplyOf<V>> {
+  return r.json() as Promise<ReplyOf<V>>;
 }
 
 /** The JSON after the tag byte of a `[tag][JSON]` frame on a socket of this

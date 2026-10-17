@@ -3,17 +3,17 @@
 
    The browser's `workbench:action` seam is verb-agnostic; this adapter maps the
    actions that reach the daemon (`ACTION_TO_VERB`) to a `Command {id, verb,
-   payload}` and drives one `/ws/command` socket per Spawn call (the daemon's
-   handler is one-command-per-connection with a streamed lifecycle). The client
+   payload}`. A verb that streams (a Spawn call) drives one `/ws/command`
+   socket per call; a command with one reply (`observe`, `write`, `readImage`)
+   goes over `POST /api/command`. The client
    never composes a command line — it sends closed-enum params and the daemon's
    verb registry (dispatch.rs) builds the argv. Raw `status:"output"` chunks feed
    the Runs panel live (ADR-0032 §5, ADR-0036).
 --------------------------------------------------------------------------- */
 import { WBFail } from "./wb-fail.ts";
-import { socketFrame, ReadDeadline } from "./wb-api.ts";
+import { apiFetch, commandReply, socketFrame } from "./wb-api.ts";
 import { WBProject } from "./wb-project.ts";
 import { WBRun } from "./wb-runs.ts";
-import { reportStall } from "./wb-stall.ts";
 import { sendWindow } from "./wb-events.ts";
 import { resumeDecision, CONNECT_TIMEOUT_MS, RESUME_DEBOUNCE_MS } from "./wb-resume.ts";
 import type { Messages } from "./wb-messages.ts";
@@ -147,69 +147,30 @@ export function createDaemon(window: Window, document: Document, location: Locat
     }
   }
 
-  // Fire an Observe read (`tree.list`/`file.read`) and resolve with the single
-  // reply payload — the daemon answers ONE frame on the same id and returns (no
-  // spawn/stream). One socket per read, mirroring `spawn`'s per-call shape.
+  // Fire a command with ONE reply (`tree.list`/`file.read`, the Write byte-ops)
+  // and resolve with that reply. It goes over `POST /api/command`, which shares
+  // the HTTP/2 connection the page already holds, so it never waits in the
+  // browser's queue of new sockets. A stall reports the verb, not the route.
   function observe<V extends string>(verb: V, payload: CommandPayload) {
-    return new Promise<ReplyOf<V>>((resolve, reject) => {
-      const id = nextId++;
-      const ws = new WebSocket(WS_ORIGIN + "/ws/command");
-      ws.binaryType = "arraybuffer";
-      // The first of reply, close, error or deadline settles the read. At a
-      // deadline the socket is detached, so a later event reaches nothing.
-      let replyTimer: ReturnType<typeof setTimeout> | undefined;
-      let handshakeTimer: ReturnType<typeof setTimeout> | undefined;
-      const stop = () => {
-        clearTimeout(replyTimer);
-        clearTimeout(handshakeTimer);
-      };
-      const giveUp = (ms: number) => {
-        stop();
-        detachSocket(ws);
-        void reportStall("read-deadline", verb, ms);
-        reject(new ReadDeadline(verb, ms));
-      };
-      handshakeTimer = setTimeout(() => {
-        if (ws.readyState === 0) giveUp(CONNECT_TIMEOUT_MS);
-      }, CONNECT_TIMEOUT_MS);
-      replyTimer = setTimeout(() => giveUp(COMMAND_DEADLINE_MS), COMMAND_DEADLINE_MS);
-      ws.onopen = () => {
-        clearTimeout(handshakeTimer);
-        ws.send(encodeCommand({ id, verb, payload }));
-      };
-      ws.onmessage = (ev) => {
-        const a = new Uint8Array(ev.data);
-        if (a[0] !== TAG_COMMAND) return;
-        stop();
-        try {
-          const reply = socketFrame<{ payload: ReplyOf<V> }>(a).payload;
-          resolve(reply);
-          // AFTER the resolve, on a later task: a listener that remounts the
-          // tree must not run before the read that failed has settled its whole
-          // `.then`/`.catch` chain, or the stale mount's catch paints its error
-          // onto the fresh one (a microtask would still race that chain).
-          setTimeout(() => noteUnknownCheckout(payload, reply), 0);
-        } catch (err) {
-          reject(err);
-        }
-        ws.close();
-      };
-      // A socket that closes without ever answering must REJECT, not hang: the
-      // daemon drops the connection with no reply on an undecodable frame
-      // (lib.rs `let Ok(Frame::Command(cmd)) … else { return; }`) and on
-      // shutdown/restart mid-read. A clean close fires `close`, not `error`, so
-      // without this the promise pends for the page's life and every caller
-      // awaiting it is wedged. Settling twice is a no-op, so the `ws.close()`
-      // after a resolve above is harmless.
-      ws.onclose = () => {
-        stop();
-        reject(new Error("connection closed before a reply"));
-      };
-      ws.onerror = (err) => {
-        stop();
-        reject(err);
-      };
-    });
+    const id = nextId++;
+    return apiFetch("POST /api/command", {
+      body: JSON.stringify({ id, verb, payload }),
+      headers: { "content-type": "application/json" },
+      deadlineMs: COMMAND_DEADLINE_MS,
+      what: verb,
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(`the command answered HTTP ${res.status}`);
+        return commandReply<V>(res);
+      })
+      .then((reply) => {
+        // AFTER the resolve, on a later task: a listener that remounts the
+        // tree must not run before the read that failed has settled its whole
+        // `.then`/`.catch` chain, or the stale mount's catch paints its error
+        // onto the fresh one (a microtask would still race that chain).
+        setTimeout(() => noteUnknownCheckout(payload, reply), 0);
+        return reply;
+      });
   }
 
   // Read an image (`file.image`, ADR-0049) and resolve with a `data:` URL ready
