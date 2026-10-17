@@ -411,8 +411,10 @@ test("a gzip tail is not counted, and the live frames after it are", async () =>
     open(page.sockets[1], { offset: 20, replay: true, resume: true, replay_encoding: "gzip" });
     page.sockets[1].onmessage(gzipFrame(5, "the missing bytes"));
     page.sockets[1].onmessage(terminalFrame(5, "live"));
-    // The decode runs on real promises; the mocked timers do not hold it.
-    for (let i = 0; i < 20 && !page.terminals[0].written.includes("live"); i++) await new Promise(setImmediate);
+    // The decode runs on real promises and a real worker thread; the mocked
+    // timers do not hold it. A count of turns was too few on a slow CI runner.
+    const until = performance.now() + 5000;
+    while (!page.terminals[0].written.includes("live") && performance.now() < until) await new Promise(setImmediate);
     assert.deepEqual(page.terminals[0].written.slice(-2), ["the missing bytes", "live"]);
     handle.takeOver();
     assert.equal(sinceOf(page.sockets[2]), "24");
