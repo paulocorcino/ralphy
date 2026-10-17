@@ -218,7 +218,7 @@ export function tabsStore(deps: TabsStoreDeps) {
           continue;
         }
         window.WBViewer?.repath(t.id, { id: newId, path: newPath });
-        if (this.active === t.id) this.active = newId;
+        if (this.active === t.id) this.showTab(newId);
         if (this.slot?.kind === "pin" && this.slot.id === t.id) this.slot = { kind: "pin", id: newId };
         if (this.lastLeft === t.id) this.lastLeft = newId;
         t.path = newPath;
