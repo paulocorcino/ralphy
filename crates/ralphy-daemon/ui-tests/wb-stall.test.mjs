@@ -2,7 +2,12 @@
 // its daemon. No DOM; `fetch` is replaced, as the module reads it at call time.
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { forgetStalls, reportStall, STALL_REPEAT_MS } from "../assets/ui/wb-stall.ts";
+
+function fixture(name) {
+  return JSON.parse(readFileSync(new URL(`fixtures/${name}.json`, import.meta.url), "utf8"));
+}
 
 function recordFetch() {
   const prev = globalThis.fetch;
@@ -25,7 +30,8 @@ test("reportStall posts the stall to the daemon", async () => {
     assert.equal(init.method, "POST");
     assert.equal(init.headers["content-type"], "application/json");
     const body = JSON.parse(init.body);
-    assert.deepEqual(Object.keys(body).sort(), ["holder", "kind", "waited_ms", "what"]);
+    // The body the daemon reads (`fixtures/api-device-stall--report.json`).
+    assert.deepEqual(Object.keys(body).sort(), Object.keys(fixture("api-device-stall--report")).sort());
     assert.equal(body.kind, "read-deadline");
     assert.equal(body.what, "GET /api/repos");
     assert.equal(body.waited_ms, 20000);

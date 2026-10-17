@@ -188,7 +188,8 @@ test("observe sends its command over HTTP and opens no socket", async () => {
     assert.equal(calls.length, 1);
     assert.equal(calls[0].url, "/api/command");
     assert.equal(calls[0].method, "POST");
-    assert.deepEqual(Object.keys(calls[0].cmd).sort(), ["id", "payload", "verb"]);
+    // The body the daemon reads (`fixtures/api-command--request.json`).
+    assert.deepEqual(Object.keys(calls[0].cmd).sort(), Object.keys(fixture("api-command--request")).sort());
     assert.equal(calls[0].cmd.verb, "tree.list");
     assert.deepEqual(calls[0].cmd.payload, { repo: "o/r", path: "" });
   } finally {

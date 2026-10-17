@@ -61,3 +61,18 @@ pub(crate) fn command_http_routes(s: &RouterShared) -> Router {
         )
         .layer(DefaultBodyLimit::max(crate::tree::MAX_COMMAND_BYTES))
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::protocol::Command;
+
+    /// The body the page sends (`ui-tests/fixtures/api-command--request.json`):
+    /// the route reads it as the `Command` the command socket takes.
+    #[test]
+    fn the_shared_request_body_is_a_command() {
+        let body = include_str!("../../ui-tests/fixtures/api-command--request.json");
+        let cmd: Command =
+            serde_json::from_str(body).expect("the shared request body is a command");
+        assert_eq!(cmd.verb, "tree.list");
+    }
+}

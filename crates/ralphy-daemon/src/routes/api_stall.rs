@@ -152,8 +152,8 @@ mod tests {
 
     #[test]
     fn a_stall_report_is_answered_no_content() {
-        let body =
-            r#"{"kind":"read-deadline","what":"GET /api/repos","waited_ms":20000,"holder":null}"#;
+        // The body the page sends, shared with `wb-stall.test.mjs`.
+        let body = include_str!("../../ui-tests/fixtures/api-device-stall--report.json");
         let (status, line) = post_body(body.to_string());
         assert_eq!(status, StatusCode::NO_CONTENT);
         assert!(line.contains("GET /api/repos"), "{line}");
