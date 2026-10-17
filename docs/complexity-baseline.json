@@ -345,11 +345,6 @@
         20
       ]
     },
-    "crates/ralphy-daemon/assets/ui/wb-console-session.ts": {
-      "dormancyDecision": [
-        11
-      ]
-    },
     "crates/ralphy-daemon/assets/ui/wb-console-spawn.ts": {
       "recordBirth": [
         11

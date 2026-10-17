@@ -29,6 +29,7 @@ function dormancy(p, wins = new Set()) {
     budget: () => ({ scheduleGpu() {} }),
     fillsViewport: () => false,
     isFull: () => false,
+    consolesShown: () => true,
     attachTerminal: () => null,
     scheduleDeskFlush() {},
     revivePlaceholders: async () => {},
@@ -47,6 +48,7 @@ test("the dormancy registers no listener until listen(), then the page listeners
     "window:pagehide",
     "window:online",
     "document:workbench:action",
+    "document:workbench:tab-shown",
   ]);
 });
 
@@ -61,4 +63,52 @@ test("a hidden page tells each console, and a visible one takes it back before t
   p.handlers["document:visibilitychange"]();
   p.handlers["window:pagehide"]();
   assert.deepEqual(said, ["hidden", "shown", "resume", "hidden"]);
+});
+
+// A file tab hides the Consoles tab with `visibility: hidden`, so the observer
+// still calls every console visible. The tab change itself re-asks the rule.
+test("hiding the Consoles tab puts its consoles to sleep, and showing it wakes them", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const p = page();
+  const disposed = [];
+  const attached = [];
+  const classes = new Set();
+  const body = { replaceWith() {} };
+  const win = {
+    _visible: true,
+    _termWiring: {},
+    _term: { sessionId: 7, watching: false, dispose: (why) => disposed.push(why) },
+    classList: { contains: (c) => classes.has(c), add: (c) => classes.add(c), remove: (c) => classes.delete(c) },
+    querySelector: () => body,
+  };
+  let shown = true;
+  const d = createDormancy({
+    window: p.window,
+    document: { ...p.document, createElement: () => ({}) },
+    wins: new Set([win]),
+    stack: { setFocusHook() {} },
+    sync: { hasPending: () => false },
+    staleProbeNow: () => null,
+    applyKeyBar() {},
+    budget: () => ({ scheduleGpu() {} }),
+    fillsViewport: () => false,
+    isFull: () => false,
+    consolesShown: () => shown,
+    attachTerminal: (_body, opts) => {
+      attached.push(opts.id);
+      return { sessionId: opts.id };
+    },
+    scheduleDeskFlush() {},
+    revivePlaceholders: async () => {},
+  });
+  d.listen();
+  shown = false;
+  p.handlers["document:workbench:tab-shown"]({ detail: { id: "file:a.md" } });
+  t.mock.timers.tick(15000);
+  assert.equal(win._dormant, true);
+  assert.deepEqual(disposed, ["dormant"]);
+  shown = true;
+  p.handlers["document:workbench:tab-shown"]({ detail: { id: "consoles" } });
+  assert.deepEqual(attached, [7]);
+  assert.equal(win._dormant, false);
 });

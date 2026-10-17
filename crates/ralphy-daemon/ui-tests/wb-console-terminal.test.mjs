@@ -5,6 +5,7 @@ import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { gzipSync } from "node:zlib";
 import { createTerminal } from "../assets/ui/wb-console-terminal.ts";
+import { forgetStalls } from "../assets/ui/wb-stall.ts";
 import { encodeDetach, encodeShown, TAG_COMMAND, TAG_TERMINAL } from "../assets/ui/wb-console-session.ts";
 
 // An element that takes listeners and does nothing with them.
@@ -410,8 +411,10 @@ test("a gzip tail is not counted, and the live frames after it are", async () =>
     open(page.sockets[1], { offset: 20, replay: true, resume: true, replay_encoding: "gzip" });
     page.sockets[1].onmessage(gzipFrame(5, "the missing bytes"));
     page.sockets[1].onmessage(terminalFrame(5, "live"));
-    // The decode runs on real promises; the mocked timers do not hold it.
-    for (let i = 0; i < 20 && !page.terminals[0].written.includes("live"); i++) await new Promise(setImmediate);
+    // The decode runs on real promises and a real worker thread; the mocked
+    // timers do not hold it. A count of turns was too few on a slow CI runner.
+    const until = performance.now() + 5000;
+    while (!page.terminals[0].written.includes("live") && performance.now() < until) await new Promise(setImmediate);
     assert.deepEqual(page.terminals[0].written.slice(-2), ["the missing bytes", "live"]);
     handle.takeOver();
     assert.equal(sinceOf(page.sockets[2]), "24");
@@ -530,5 +533,30 @@ test("the socket names the network the browser reports, and nothing when it repo
     page.restore();
     if (saved) Object.defineProperty(globalThis, "navigator", saved);
     else delete globalThis.navigator;
+  }
+});
+
+test("a console that gives up reports a stall", () => {
+  const page = fakePage();
+  const prev = globalThis.fetch;
+  const reports = [];
+  globalThis.fetch = (_url, init) => {
+    reports.push(JSON.parse(init.body));
+    return Promise.resolve(new Response(null, { status: 204 }));
+  };
+  forgetStalls();
+  try {
+    const handle = createTerminal(fakeDeps().deps).attachTerminal(fakeElement(), { id: 6, onEnded() {} });
+    open(page.sockets[0], { replay: true });
+    page.sockets[0].onmessage(commandFrame("session-end", { reason: "refused", message: "no such project" }));
+    page.sockets[0].onclose({});
+    assert.deepEqual(
+      reports.map((r) => [r.kind, r.what]),
+      [["console-gave-up", "refused"]],
+    );
+    handle.dispose();
+  } finally {
+    globalThis.fetch = prev;
+    page.restore();
   }
 });

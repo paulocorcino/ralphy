@@ -1,0 +1,6 @@
+{
+  "kind": "read-deadline",
+  "what": "GET /api/repos",
+  "waited_ms": 20000,
+  "holder": null
+}

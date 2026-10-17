@@ -18,6 +18,7 @@ mod stream;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use host::host_refusal;
 pub(crate) use oneshot::*;
 pub(crate) use registry_verbs::serve_registry;
 
@@ -27,13 +28,113 @@ use super::{request_may_carry_a_secret, RouterShared};
 use crate::protocol::{Command, Frame};
 use crate::{dispatch, fleet, peer, protocol, registry, session};
 
+/// What the command socket needs to answer a one-reply command.
+pub(crate) struct CommandCtx {
+    pub(crate) registry_path: PathBuf,
+    pub(crate) peers_dir: PathBuf,
+    pub(crate) daemon_id: Option<String>,
+    pub(crate) sessions: Arc<session::SessionManager>,
+    pub(crate) secret_ok: bool,
+}
+
+/// How a command is answered: one reply, or a run whose output streams.
+#[derive(Debug)]
+pub(crate) enum Answer {
+    Reply(serde_json::Value),
+    Stream(dispatch::Verb),
+}
+
+/// Answer `cmd` with its one reply, or say that its verb streams. Every
+/// known verb is recorded once, here. A Spawn verb is never run here.
+pub(crate) async fn answer_one(ctx: &CommandCtx, cmd: &Command, who: &SocketAudit) -> Answer {
+    let Some(verb) = dispatch::Verb::from_query(&cmd.verb) else {
+        return Answer::Reply(serde_json::json!({ "status": "error", "message": "unknown verb" }));
+    };
+    // Recorded before any routing: a verb relayed to a peer or refused here
+    // was still asked for by this device.
+    who.record(verb, cmd);
+    if verb.effect_class() == dispatch::EffectClass::Spawn {
+        return Answer::Stream(verb);
+    }
+    let daemon_id = ctx.daemon_id.as_deref();
+    // A host verb names no repo and acts on THIS computer: served here, before
+    // any repo routing, and never relayed to a peer.
+    if verb.is_host() {
+        let store_dir = store_dir(&ctx.peers_dir);
+        let reply = host::host_reply(cmd, verb, &store_dir, daemon_id, ctx.secret_ok).await;
+        return Answer::Reply(reply);
+    }
+    if verb.is_registry() {
+        let peers_dir = ctx.peers_dir.clone();
+        let reply = serve_registry_verb(cmd, verb, &ctx.registry_path, peers_dir, daemon_id).await;
+        return Answer::Reply(reply);
+    }
+    let (descriptors, _) = read_peer_store(ctx.peers_dir.clone()).await;
+    let reply = match fleet::route(repo_ref(cmd), daemon_id.unwrap_or(""), &descriptors) {
+        fleet::Route::Local { slug } => local_reply(ctx, cmd, verb, slug).await,
+        fleet::Route::UnknownDaemon { daemon_id } => unknown_daemon(daemon_id),
+        fleet::Route::Peer { peer, slug } => relay_to_peer(peer, &for_peer(cmd, slug)).await,
+    };
+    Answer::Reply(reply)
+}
+
+/// The one reply to a one-shot repo verb served on this daemon.
+async fn local_reply(
+    ctx: &CommandCtx,
+    cmd: &Command,
+    verb: dispatch::Verb,
+    slug: &str,
+) -> serde_json::Value {
+    let path = match repo_path(&ctx.registry_path, slug) {
+        Ok(path) => path,
+        Err(reply) => return reply,
+    };
+    let daemon_id = ctx.daemon_id.as_deref();
+    // `None` only for an effect class no verb has today (`Native`).
+    execute_oneshot(verb, cmd, &path, daemon_id, slug, &ctx.sessions)
+        .await
+        .unwrap_or_else(|| serde_json::json!({ "status": "error", "message": "unknown verb" }))
+}
+
+/// The checkout of the registered repo `slug`. `Err` is the one error reply.
+fn repo_path(registry_path: &Path, slug: &str) -> Result<PathBuf, serde_json::Value> {
+    let store = registry::load_from(registry_path).map_err(|e| {
+        tracing::warn!(error = %e, "failed to load repo registry for a command");
+        serde_json::json!({ "status": "error", "message": "repo registry unreadable" })
+    })?;
+    match store.entry_or_former(slug) {
+        Some(entry) => Ok(PathBuf::from(&entry.path)),
+        None => Err(serde_json::json!({ "status": "error", "message": "unknown repo" })),
+    }
+}
+
+/// The store directory: the parent of the peers directory.
+fn store_dir(peers_dir: &Path) -> PathBuf {
+    peers_dir.parent().unwrap_or(peers_dir).to_path_buf()
+}
+
+fn repo_ref(cmd: &Command) -> &str {
+    cmd.payload
+        .get("repo")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+}
+
+/// `cmd` as the peer sees it: its repo is the peer's own slug.
+fn for_peer(cmd: &Command, slug: &str) -> Command {
+    let mut proxied = cmd.clone();
+    proxied.payload["repo"] = serde_json::Value::String(slug.to_string());
+    proxied
+}
+
 /// `GET /ws/command`: one remote command per connection. Read the first frame; a
 /// `Frame::Command{verb}` naming a blessed [`dispatch::Verb`] for a registered
 /// repo spawns the run and reports its lifecycle — an ack (`status:"spawned"` +
 /// pid), a stream of live output (`status:"output"` + `chunk`, issue #180), then
 /// the child's exit (`status:"exited"` + code). An unknown verb or an unregistered
-/// repo gets one `status:"error"` frame and spawns nothing. The run keeps its own
-/// lifecycle: see the teardown invariant on [`stream::stream_child`].
+/// repo gets one `status:"error"` frame and spawns nothing. A one-reply verb is
+/// answered by [`answer_one`]. The run keeps its own lifecycle: see the teardown
+/// invariant on [`stream::stream_child`].
 // The router's per-route dependencies, one parameter each (precedent: `usage_route`).
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn command_ws(
@@ -51,106 +152,71 @@ pub(crate) async fn command_ws(
     let Some(cmd) = read_first_command(&mut socket).await else {
         return;
     };
-    let id = cmd.id;
-
-    let Some(verb) = dispatch::Verb::from_query(&cmd.verb) else {
-        send_command(
-            &mut socket,
-            id,
-            &cmd.verb,
-            serde_json::json!({ "status": "error", "message": "unknown verb" }),
-        )
-        .await;
-        return;
+    let ctx = CommandCtx {
+        registry_path,
+        peers_dir,
+        daemon_id,
+        sessions,
+        secret_ok,
     };
-    // Recorded before any routing: a verb relayed to a peer or refused here
-    // was still asked for by this device.
-    who.record(verb, &cmd);
-    // A host verb names no repo and acts on THIS computer: served here, before
-    // any repo routing, and never relayed to a peer.
+    let verb = match answer_one(&ctx, &cmd, &who).await {
+        Answer::Reply(reply) => {
+            send_command(&mut socket, cmd.id, &cmd.verb, reply).await;
+            return;
+        }
+        Answer::Stream(verb) => verb,
+    };
+    let daemon_id = ctx.daemon_id.as_deref();
     if verb.is_host() {
-        let store_dir = peers_dir.parent().unwrap_or(&peers_dir).to_path_buf();
-        host::serve_host(
+        let store_dir = store_dir(&ctx.peers_dir);
+        host::spawn_host(
             &mut socket,
             &cmd,
             verb,
             &store_dir,
-            daemon_id.as_deref(),
+            daemon_id,
             &mut shutdown,
             secret_ok,
         )
         .await;
         return;
     }
-    if verb.is_registry() {
-        let reply =
-            serve_registry_verb(&cmd, verb, &registry_path, peers_dir, daemon_id.as_deref()).await;
-        send_command(&mut socket, id, &cmd.verb, reply).await;
-        return;
-    }
-    let repo_ref = cmd
-        .payload
-        .get("repo")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    let (descriptors, _) = read_peer_store(peers_dir).await;
-    let slug = match fleet::route(repo_ref, daemon_id.as_deref().unwrap_or(""), &descriptors) {
+    let (descriptors, _) = read_peer_store(ctx.peers_dir.clone()).await;
+    let slug = match fleet::route(repo_ref(&cmd), daemon_id.unwrap_or(""), &descriptors) {
         fleet::Route::Local { slug } => slug.to_string(),
         fleet::Route::UnknownDaemon { daemon_id } => {
-            send_command(&mut socket, id, &cmd.verb, unknown_daemon(daemon_id)).await;
+            send_command(&mut socket, cmd.id, &cmd.verb, unknown_daemon(daemon_id)).await;
             return;
         }
         fleet::Route::Peer { peer, slug } => {
-            if verb.effect_class() == dispatch::EffectClass::Spawn {
-                let mut proxied = cmd.clone();
-                proxied.payload["repo"] = serde_json::Value::String(slug.to_string());
-                proxy_peer_command(
-                    &mut socket,
-                    peer,
-                    proxied,
-                    &mut shutdown,
-                    peer::client::SelfRef {
-                        port: bound_port,
-                        daemon_id: daemon_id.as_deref().unwrap_or(""),
-                    },
-                )
-                .await;
-                return;
-            }
-            let mut proxied = cmd.clone();
-            proxied.payload["repo"] = serde_json::Value::String(slug.to_string());
-            let payload = relay_to_peer(peer, &proxied).await;
-            send_command(&mut socket, id, &cmd.verb, payload).await;
+            let me = peer::client::SelfRef {
+                port: bound_port,
+                daemon_id: daemon_id.unwrap_or(""),
+            };
+            proxy_peer_command(&mut socket, peer, for_peer(&cmd, slug), &mut shutdown, me).await;
             return;
         }
     };
-    let Some(child) = run_local(
-        &mut socket,
-        &cmd,
-        verb,
-        &slug,
-        &registry_path,
-        daemon_id.as_deref(),
-        &sessions,
-    )
-    .await
-    else {
-        return;
+    let child = match spawn_local(&cmd, verb, &slug, &ctx.registry_path, daemon_id) {
+        Ok(child) => child,
+        Err(reply) => {
+            send_command(&mut socket, cmd.id, &cmd.verb, reply).await;
+            return;
+        }
     };
     // The run-completion nudge (#310) rides on the child's exit, which
     // `stream_child` observes on every path the daemon outlives (a run that
     // outlives the process has no nudge to send — the browser's reconnect
     // catch-up read covers that one). A send with no `/ws/tree` subscriber is
     // `Err`, and a nudge nobody hears is a no-op (as in `watch.rs`).
-    let nudge_slug = slug.to_string();
     stream::stream_child(
         &mut socket,
-        id,
+        cmd.id,
         &cmd.verb,
         child,
         &mut shutdown,
         move || {
-            let _ = run_exits.send(nudge_slug);
+            let _ = run_exits.send(slug);
         },
     )
     .await;
@@ -225,88 +291,35 @@ async fn serve_registry_verb(
     }
 }
 
-/// Serve a repo verb on this daemon. A one-shot verb gets its one reply; a
-/// Spawn verb starts its run, which is returned to be streamed. `None` means
-/// the reply was sent: every refusal is one error frame and spawns nothing.
-async fn run_local(
-    socket: &mut WebSocket,
+/// Spawn a Spawn repo verb on this daemon; its run is returned to be
+/// streamed. `Err` is the one error reply: a refusal spawns nothing.
+fn spawn_local(
     cmd: &Command,
     verb: dispatch::Verb,
     slug: &str,
     registry_path: &Path,
     daemon_id: Option<&str>,
-    sessions: &session::SessionManager,
-) -> Option<Box<dyn dispatch::Child>> {
-    let id = cmd.id;
-    let store = match registry::load_from(registry_path) {
-        Ok(store) => store,
-        Err(e) => {
-            tracing::warn!(error = %e, "failed to load repo registry for a command");
-            send_command(
-                socket,
-                id,
-                &cmd.verb,
-                serde_json::json!({ "status": "error", "message": "repo registry unreadable" }),
-            )
-            .await;
-            return None;
-        }
-    };
-    let Some(entry) = store.entry_or_former(slug) else {
-        send_command(
-            socket,
-            id,
-            &cmd.verb,
-            serde_json::json!({ "status": "error", "message": "unknown repo" }),
-        )
-        .await;
-        return None;
-    };
-
-    if let Some(payload) =
-        execute_oneshot(verb, cmd, Path::new(&entry.path), daemon_id, slug, sessions).await
-    {
-        send_command(socket, id, &cmd.verb, payload).await;
-        return None;
-    }
-
+) -> Result<Box<dyn dispatch::Child>, serde_json::Value> {
+    let path = repo_path(registry_path, slug)?;
     // Compose the argv from the verb + closed-enum params (ADR-0036 §1). A
     // malformed/out-of-enum param refuses the run: one error frame, no spawn.
-    let argv = match dispatch::spawn_argv(verb, &cmd.payload) {
-        Ok(argv) => argv,
-        Err(e) => {
-            tracing::warn!(error = %e, "refused a run with invalid params");
-            send_command(
-                socket,
-                id,
-                &cmd.verb,
-                serde_json::json!({ "status": "error", "message": "invalid run options" }),
-            )
-            .await;
-            return None;
-        }
-    };
+    let argv = dispatch::spawn_argv(verb, &cmd.payload).map_err(|e| {
+        tracing::warn!(error = %e, "refused a run with invalid params");
+        serde_json::json!({ "status": "error", "message": "invalid run options" })
+    })?;
     let argv_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
-    match dispatch::dispatch(
+    let exe = dispatch::ralphy_exe();
+    dispatch::dispatch(
         &dispatch::ProcessSpawner,
-        &dispatch::ralphy_exe(),
+        &exe,
         &argv_refs,
-        Path::new(&entry.path),
+        &path,
         daemon_id,
-    ) {
-        Ok(child) => Some(child),
-        Err(e) => {
-            tracing::warn!(error = %e, "failed to spawn a dispatched command");
-            send_command(
-                socket,
-                id,
-                &cmd.verb,
-                serde_json::json!({ "status": "error", "message": "spawn failed" }),
-            )
-            .await;
-            None
-        }
-    }
+    )
+    .map_err(|e| {
+        tracing::warn!(error = %e, "failed to spawn a dispatched command");
+        serde_json::json!({ "status": "error", "message": "spawn failed" })
+    })
 }
 
 fn unknown_daemon(daemon_id: &str) -> serde_json::Value {

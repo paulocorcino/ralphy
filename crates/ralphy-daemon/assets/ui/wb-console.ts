@@ -151,6 +151,12 @@ export function createConsole(window: Window, document: Document, location: Pick
     budget: () => budget,
     fillsViewport: (win: ConsoleWin) => fillsViewport(win),
     isFull: (win: HTMLElement) => isFull(win),
+    // The detached popup and the node harness have no tabs store: their
+    // consoles are always on screen.
+    consolesShown: () => {
+      const tabs = window.Alpine?.store("tabs");
+      return !tabs || tabs.active === "consoles";
+    },
     attachTerminal: (body: HTMLElement, termOpts: TerminalOpts) => attachTerminal(body, termOpts),
     scheduleDeskFlush: (ms?: number) => scheduleDeskFlush(ms),
     revivePlaceholders: () => revivePlaceholders(),

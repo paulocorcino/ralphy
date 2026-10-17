@@ -103,6 +103,8 @@ type DormancyInput = {
   hasTerminal: boolean;
   ended: boolean;
   sessionId: number | null | undefined;
+  // Whether the Consoles tab is the one on screen.
+  tabShown: boolean;
 };
 export function dormancyDecision({
   intersecting,
@@ -114,26 +116,35 @@ export function dormancyDecision({
   hasTerminal,
   ended,
   sessionId,
+  tabShown,
 }: DormancyInput) {
+  // A file tab hides the Consoles tab with `visibility: hidden`: the observer
+  // still calls each window visible, and nobody sees any of them. D1 and D2
+  // hold a window someone looks at, so they do not apply here (#738).
+  if (!tabShown) return dormant || cannotSleep(hasTerminal, ended, sessionId) ? "hold" : "sleep";
   // Visible outranks everything. A window under a full bleed is inside the
   // viewport but nobody sees it: the observer reports geometry, not paint.
   if (intersecting && !covered) return dormant ? "wake" : "hold";
   if (dormant) return "hold";
   // D1: maximized/fullscreen fills the viewport; "outside" is a lie the
   // observer can tell in the frame between the class and the layout.
-  if (maximized || fullscreen) return "hold";
   // D2: the focused window is being typed into — and every drag/resize begins
   // with a `pointerdown` that focuses, so this covers a window mid-drag too.
-  if (focused) return "hold";
-  // D3: a placeholder has no terminal to dispose.
-  if (!hasTerminal) return "hold";
-  // D4: an ENDED session has no daemon to replay it; sleeping would throw its
-  // scrollback away for good.
-  if (ended) return "hold";
-  // D5: no id is nothing to reattach TO — waking would compose a LAUNCH url
-  // and spawn a second vendor CLI (`reconnectDecision` R1).
-  if (sessionId == null) return "hold";
-  return "sleep";
+  if (heldOnScreen(maximized, fullscreen, focused)) return "hold";
+  return cannotSleep(hasTerminal, ended, sessionId) ? "hold" : "sleep";
+}
+
+function heldOnScreen(maximized: boolean, fullscreen: boolean, focused: boolean) {
+  return maximized || fullscreen || focused;
+}
+
+// D3: a placeholder has no terminal to dispose.
+// D4: an ENDED session has no daemon to replay it; sleeping would throw its
+// scrollback away for good.
+// D5: no id is nothing to reattach TO — waking would compose a LAUNCH url
+// and spawn a second vendor CLI (`reconnectDecision` R1).
+function cannotSleep(hasTerminal: boolean, ended: boolean, sessionId: number | null | undefined) {
+  return !hasTerminal || ended || sessionId == null;
 }
 
 // The last line a console prints when it gives up. A launch the daemon

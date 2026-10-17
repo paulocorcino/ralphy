@@ -15,6 +15,7 @@ use crate::StorePaths;
 use crate::{audit, auth, fleet, identity, peer, protocol, registry, rekey, session, watch};
 
 mod api_audit;
+mod api_command;
 mod api_desk;
 mod api_fleet;
 mod api_peer;
@@ -22,6 +23,7 @@ mod api_read;
 mod api_release;
 mod api_security;
 mod api_sessions;
+mod api_stall;
 mod api_update;
 mod api_usage;
 mod audit_layer;
@@ -34,6 +36,7 @@ mod ws_session;
 mod ws_tree;
 
 pub(crate) use api_audit::*;
+pub(crate) use api_command::*;
 pub(crate) use api_desk::*;
 pub(crate) use api_fleet::*;
 pub(crate) use api_peer::*;
@@ -41,6 +44,7 @@ pub(crate) use api_read::*;
 pub(crate) use api_release::*;
 pub(crate) use api_security::*;
 pub(crate) use api_sessions::*;
+pub(crate) use api_stall::*;
 pub(crate) use api_update::*;
 pub(crate) use api_usage::*;
 pub(crate) use audit_layer::*;
@@ -239,9 +243,11 @@ pub(crate) fn router_with_roster(
         .merge(session_routes(&shared))
         .merge(desk_routes(&shared))
         .merge(command_routes(&shared))
+        .merge(command_http_routes(&shared))
         .merge(tree_routes(&shared))
         .merge(security_routes(&shared))
         .merge(audit_routes(&shared))
+        .merge(stall_routes(&shared))
         .fallback(ui_asset)
         // Inside the guard: only requests the guard let through are recorded.
         .layer(axum::middleware::from_fn_with_state(audit, audit_layer))

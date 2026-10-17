@@ -1,10 +1,11 @@
 // Unit tests for assets/ui/wb-console-frames.ts: one socket message folded
 // into a SocketEvent, and the queue that keeps live frames behind a gzip
 // replay. No socket and no DOM.
-import { test } from "node:test";
+import { test, mock } from "node:test";
 import assert from "node:assert/strict";
-import { frameQueue, readSocketEvent } from "../assets/ui/wb-console-frames.ts";
+import { DECODE_DEADLINE_MS, frameQueue, readSocketEvent } from "../assets/ui/wb-console-frames.ts";
 import { TAG_COMMAND, TAG_TERMINAL } from "../assets/ui/wb-console-session.ts";
+import { forgetStalls } from "../assets/ui/wb-stall.ts";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -194,4 +195,89 @@ test("a queued frame that throws does not stop the later frames or whenIdle", as
   }
   assert.deepEqual(seen, ["open", "the screen", "live 1", "live 2", "close"]);
   assert.equal(warned.length, 1, "the error of the bad frame is logged");
+});
+
+// A decode the test settles by hand, or never.
+function gzipOpen(take) {
+  take(commandFrame("session-open", { session: 1, replay_encoding: "gzip" }));
+  take(terminalBytes(1, new Uint8Array([1, 2, 3])));
+}
+
+test("a replay decode with no end is lost at its deadline", () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const { seen, apply } = recorder();
+    const { take } = frameQueue(apply, () => new Promise(() => {}));
+    gzipOpen(take);
+    mock.timers.tick(DECODE_DEADLINE_MS - 1);
+    assert.deepEqual(seen, ["open"]);
+    mock.timers.tick(1);
+    assert.deepEqual(seen, ["open", "replay-lost"]);
+    mock.timers.tick(DECODE_DEADLINE_MS);
+    assert.deepEqual(seen, ["open", "replay-lost"], "once");
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("frames behind a decode that passed its deadline are applied in order, and the close runs", () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const { seen, apply } = recorder();
+    const { take, whenIdle } = frameQueue(apply, () => new Promise(() => {}));
+    gzipOpen(take);
+    take(terminalFrame(1, "a"));
+    take(terminalFrame(1, "b"));
+    take(terminalFrame(1, "c"));
+    let closed = 0;
+    whenIdle(() => closed++);
+    assert.equal(closed, 0);
+    mock.timers.tick(DECODE_DEADLINE_MS);
+    assert.deepEqual(seen, ["open", "replay-lost", "a", "b", "c"]);
+    assert.equal(closed, 1);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("a decode that ends after its deadline writes nothing", async () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const { seen, apply } = recorder();
+    let finish = () => {};
+    const { take } = frameQueue(apply, () => new Promise((resolve) => (finish = () => resolve(new Uint8Array([65])))));
+    gzipOpen(take);
+    mock.timers.tick(DECODE_DEADLINE_MS);
+    finish();
+    await Promise.resolve();
+    await Promise.resolve();
+    assert.deepEqual(seen, ["open", "replay-lost"]);
+    assert.equal(seen.filter((k) => k === "A").length, 0);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("a replay decode past its deadline reports a stall", () => {
+  const prev = globalThis.fetch;
+  const kinds = [];
+  globalThis.fetch = (_url, init) => {
+    kinds.push(JSON.parse(init.body).kind);
+    return Promise.resolve(new Response(null, { status: 204 }));
+  };
+  forgetStalls();
+  const warn = console.warn;
+  console.warn = () => {};
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const { apply } = recorder();
+    const { take } = frameQueue(apply, () => new Promise(() => {}));
+    gzipOpen(take);
+    mock.timers.tick(DECODE_DEADLINE_MS);
+    assert.deepEqual(kinds, ["decode-deadline"]);
+  } finally {
+    mock.timers.reset();
+    console.warn = warn;
+    globalThis.fetch = prev;
+  }
 });

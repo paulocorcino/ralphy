@@ -1,0 +1,8 @@
+{
+  "id": 1,
+  "verb": "tree.list",
+  "payload": {
+    "repo": "o/r",
+    "path": ""
+  }
+}

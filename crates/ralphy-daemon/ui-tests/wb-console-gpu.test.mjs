@@ -7,12 +7,9 @@ import {
   DORMANT_AFTER_MS,
   DORMANT_MARGIN_PX,
   GPU_BUDGET,
-  SLOW_DORMANT_AFTER_MS,
-  SLOW_HANDSHAKE_MS,
   createGpuBudget,
   dormantAfterMs,
   gpuHolders,
-  reportHandshake,
 } from "../assets/ui/wb-console-gpu.ts";
 
 // --- gpuHolders: which windows hold one of the page's WebGL contexts ---------
@@ -216,31 +213,13 @@ test("a budget uses its deps, not the page's IntersectionObserver or queueMicrot
 });
 
 // --- dormantAfterMs: how long a covered window waits before it sleeps ------
-// On a slow link a reattach costs more, so a window waits longer.
+// The slow-link verdict is suspended (ADR-0079 D10): no handshake changes the
+// wait. The GPU module has no way to receive a handshake time any more, so the
+// rows only show that the value is the same however the socket was slow.
 
-test("dormantAfterMs waits longer only after a slow handshake", () => {
-  // [case, handshake ms, expected wait ms]
-  const rows = [
-    ["no socket opened yet", null, DORMANT_AFTER_MS],
-    ["a fast handshake", 80, DORMANT_AFTER_MS],
-    ["just under the threshold", SLOW_HANDSHAKE_MS - 1, DORMANT_AFTER_MS],
-    ["at the threshold", SLOW_HANDSHAKE_MS, SLOW_DORMANT_AFTER_MS],
-    ["a slow handshake", 2000, SLOW_DORMANT_AFTER_MS],
-  ];
-  for (const [name, handshake, expected] of rows) {
-    assert.equal(dormantAfterMs(handshake), expected, name);
+test("dormantAfterMs is 15 s on every link", () => {
+  for (const handshakeMs of [100, 750, 5000]) {
+    assert.equal(dormantAfterMs(handshakeMs), 15000, `handshake ${handshakeMs} ms`);
   }
   assert.equal(DORMANT_AFTER_MS, 15000);
-  assert.equal(SLOW_DORMANT_AFTER_MS, 120000);
-});
-
-test("dormantAfterMs reads the handshake the last console socket reported", () => {
-  try {
-    reportHandshake(900);
-    assert.equal(dormantAfterMs(), SLOW_DORMANT_AFTER_MS);
-    reportHandshake(40);
-    assert.equal(dormantAfterMs(), DORMANT_AFTER_MS);
-  } finally {
-    reportHandshake(null);
-  }
 });

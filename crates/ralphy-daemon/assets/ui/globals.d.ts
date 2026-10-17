@@ -547,6 +547,7 @@ interface DocumentEventMap {
   "workbench:canvas-resize": CustomEvent<{ width: number }>;
   /** How many consoles are open. */
   "workbench:consoles-changed": CustomEvent<{ count: number }>;
+  "workbench:tab-shown": CustomEvent<{ id: string }>;
   "workbench:stage-extent": CustomEvent<import("./wb-types.d.ts").Size>;
   "workbench:columns-stale": CustomEvent<null>;
   /** A console's title bar asks to restore its column. */

@@ -14,6 +14,7 @@
 import { socketFrame } from "./wb-api.ts";
 import { TAG_COMMAND, TAG_TERMINAL } from "./wb-console-session.ts";
 import { WBSessionRoute } from "./wb-session-route.ts";
+import { reportStall } from "./wb-stall.ts";
 
 // The payload of the daemon's `session-end`, `session-open` and
 // `session-size` frames. A peer of an older build sends no `session-size`.
@@ -88,7 +89,14 @@ export type FrameQueue = {
   whenIdle: (run: () => void) => void;
 };
 
-export function frameQueue(apply: (event: SocketEvent) => void): FrameQueue {
+// A replay that has not decoded by now is lost; a decode that never ends
+// would hold every later frame of the console behind it.
+export const DECODE_DEADLINE_MS = 10000;
+
+export function frameQueue(
+  apply: (event: SocketEvent) => void,
+  decode: (bytes: Uint8Array) => Promise<Uint8Array> = gunzip,
+): FrameQueue {
   // Set by `session-open`: the next terminal frame is a gzip replay.
   let gzipNext = false;
   // The messages that arrived while the replay decodes, in order; null when
@@ -110,16 +118,31 @@ export function frameQueue(apply: (event: SocketEvent) => void): FrameQueue {
     }
     gzipNext = false;
     waiting = [];
-    gunzip(event.bytes)
-      .then(
-        (decoded) => apply({ ...event, bytes: decoded }),
-        // The replay is lost, not the console: the live stream goes on.
-        (error: unknown) => {
-          console.warn("console replay did not decode:", error);
-          apply({ kind: "replay-lost" });
-        },
-      )
-      .finally(drain);
+    // The first of the decode and the timer ends the wait; the other is dropped.
+    let ended = false;
+    const end = (event: SocketEvent) => {
+      if (ended) return;
+      ended = true;
+      clearTimeout(timer);
+      try {
+        apply(event);
+      } finally {
+        drain();
+      }
+    };
+    const timer = setTimeout(() => {
+      console.warn("console replay did not decode in time");
+      void reportStall("decode-deadline", "replay", DECODE_DEADLINE_MS);
+      end({ kind: "replay-lost" });
+    }, DECODE_DEADLINE_MS);
+    decode(event.bytes).then(
+      (decoded) => end({ ...event, bytes: decoded }),
+      // The replay is lost, not the console: the live stream goes on.
+      (error: unknown) => {
+        console.warn("console replay did not decode:", error);
+        end({ kind: "replay-lost" });
+      },
+    );
   }
 
   // A frame that starts another decode sends the rest of `queued` into the

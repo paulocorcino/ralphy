@@ -366,3 +366,25 @@ async fn the_device_list_marks_the_device_that_asks() {
         "another browser is not this device"
     );
 }
+
+#[tokio::test]
+async fn a_stall_report_writes_no_audit_action() {
+    let dir = tempfile::tempdir().unwrap();
+    let app = desk_router(dir.path());
+    let set = device_set_cookie(&send(app.clone(), session_read()).await).unwrap();
+    let res = send(
+        app,
+        Request::builder()
+            .method("POST")
+            .uri("/api/device/stall")
+            .header(header::CONTENT_TYPE, "application/json")
+            .header(header::COOKIE, pair(&set))
+            .body(Body::from(
+                r#"{"kind":"read-deadline","what":"GET /api/repos","waited_ms":20000,"holder":"tab1"}"#,
+            ))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(res.status(), StatusCode::NO_CONTENT);
+    assert!(audit_lines(dir.path()).is_empty());
+}

@@ -101,3 +101,4 @@ import "./wb-viewer-panes.test.mjs";
 import "./wb-window-state.test.mjs";
 import "./wb-diagram-zoom.test.mjs";
 import "./wb-zoom-overlay.test.mjs";
+import "./wb-stall.test.mjs";
