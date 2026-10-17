@@ -7,10 +7,57 @@ use std::path::Path;
 use axum::extract::ws::WebSocket;
 
 use super::{collect_config, not_answered, send_command, stream};
-use crate::dispatch::{self, EffectClass, Verb};
+use crate::dispatch::{self, Verb};
 use crate::protocol::Command;
 
-pub(super) async fn serve_host(
+/// A host command that passed its checks: the password, if any, and the argv.
+type Checked = (Option<zeroize::Zeroizing<String>>, Vec<String>);
+
+/// The checks every host verb passes before it runs: a valid password field,
+/// a password only over a channel that may carry a secret, and valid params.
+/// `Err` is the one error reply.
+fn check(cmd: &Command, verb: Verb, secret_ok: bool) -> Result<Checked, serde_json::Value> {
+    let password = match dispatch::host_password(verb, &cmd.payload) {
+        Ok(password) => password,
+        Err(e) => {
+            tracing::warn!(error = %e, "refused a host command with an invalid password field");
+            return Err(
+                serde_json::json!({ "status": "error", "message": "invalid host options" }),
+            );
+        }
+    };
+    if password.is_some() && !secret_ok {
+        tracing::warn!("refused a host password that came over plain http from the network");
+        return Err(serde_json::json!({
+            "status": "error",
+            "message": "A password is accepted only over https or from this computer. Use a key, or open the workbench over https.",
+        }));
+    }
+    match dispatch::host_argv(verb, &cmd.payload) {
+        Ok(argv) => Ok((password, argv)),
+        Err(e) => {
+            tracing::warn!(error = %e, "refused a host command with invalid params");
+            Err(serde_json::json!({ "status": "error", "message": "invalid host options" }))
+        }
+    }
+}
+
+/// The one reply to a Query or Mutate host verb.
+pub(super) async fn host_reply(
+    cmd: &Command,
+    verb: Verb,
+    store_dir: &Path,
+    daemon_id: Option<&str>,
+    secret_ok: bool,
+) -> serde_json::Value {
+    match check(cmd, verb, secret_ok) {
+        Ok((_, argv)) => collect_reply(verb, argv, store_dir, daemon_id).await,
+        Err(reply) => reply,
+    }
+}
+
+/// Spawn a Spawn host verb and stream its run. A refusal is one error frame.
+pub(super) async fn spawn_host(
     socket: &mut WebSocket,
     cmd: &Command,
     verb: Verb,
@@ -19,38 +66,13 @@ pub(super) async fn serve_host(
     shutdown: &mut tokio::sync::watch::Receiver<bool>,
     secret_ok: bool,
 ) {
-    let password = match dispatch::host_password(verb, &cmd.payload) {
-        Ok(password) => password,
-        Err(e) => {
-            tracing::warn!(error = %e, "refused a host command with an invalid password field");
-            let reply = serde_json::json!({ "status": "error", "message": "invalid host options" });
+    let (password, argv) = match check(cmd, verb, secret_ok) {
+        Ok(checked) => checked,
+        Err(reply) => {
             send_command(socket, cmd.id, &cmd.verb, reply).await;
             return;
         }
     };
-    if password.is_some() && !secret_ok {
-        tracing::warn!("refused a host password that came over plain http from the network");
-        let reply = serde_json::json!({
-            "status": "error",
-            "message": "A password is accepted only over https or from this computer. Use a key, or open the workbench over https.",
-        });
-        send_command(socket, cmd.id, &cmd.verb, reply).await;
-        return;
-    }
-    let argv = match dispatch::host_argv(verb, &cmd.payload) {
-        Ok(argv) => argv,
-        Err(e) => {
-            tracing::warn!(error = %e, "refused a host command with invalid params");
-            let reply = serde_json::json!({ "status": "error", "message": "invalid host options" });
-            send_command(socket, cmd.id, &cmd.verb, reply).await;
-            return;
-        }
-    };
-    if verb.effect_class() != EffectClass::Spawn {
-        let reply = collect_reply(verb, argv, store_dir, daemon_id).await;
-        send_command(socket, cmd.id, &cmd.verb, reply).await;
-        return;
-    }
     let argv_refs: Vec<&str> = argv.iter().map(String::as_str).collect();
     let spawned = match &password {
         Some(password) => dispatch::ProcessSpawner.spawn_with_input(
