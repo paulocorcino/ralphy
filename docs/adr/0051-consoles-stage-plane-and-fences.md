@@ -249,11 +249,22 @@ resumes untouched the moment they come home.)*
 *(Amended 2026-09-20, lock: the tuple is `id`, `name`, `rect`, `ts`,
 **`locked`**. A locked fence refuses move, resize and tile, and the consoles it
 holds refuse a drag and a resize for as long as it holds them — decided from
-the same centre-point fold at gesture time, so membership stays derived and
+the same membership fold at gesture time, so membership stays derived and
 nothing here reopens `fenceId`. A console locked on its own record inside an
 *unlocked* fence is still carried by the fence's move (the fence is the group;
 lock the fence to freeze the group) and is skipped by tile, as a maximized one
 is. See ADR-0050's lock amendment for the record shape.)*
+
+*(Amended 2026-10-18, title bar (#743): membership is derived from the middle
+of the window's **title bar**, not its centre: `x` is the window's horizontal
+centre, `y` is its top plus half the title bar height (at most half the window
+height). The operator grabs a window by its title bar, so a window whose title
+bar is outside a fence is free, whatever its body covers. Measured case: a
+console born with its title bar above a locked fence and its centre 15 px
+inside was held by the lock and covered the fence's lock button, so neither
+could move. Everything else in this section holds: the point is still derived,
+containment is still half-open, and the lock, the drag, tile and the spawn rule
+still read the one membership fold.)*
 
 ### 7. Arrange is per fence, and the fence list is the navigation
 

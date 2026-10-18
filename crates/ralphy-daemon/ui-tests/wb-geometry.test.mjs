@@ -22,11 +22,12 @@ const MARGIN = 200;
 const FENCE_VIEW = { width: 1400, height: 900 };
 const ORIGIN = { left: 0, top: 0 };
 
-// Two abutting fences. Membership is DERIVED from the centre point, never
-// stored: no window record gains a `fenceId`, so a fence and a window can never
-// disagree about it. Containment is HALF-OPEN (`left <= cx < left + width`)
-// because fences may abut — a closed test would put a centre sitting on the
-// shared border inside BOTH of them, breaking "exactly one fence".
+// Two abutting fences. Membership is DERIVED from the middle of the title bar
+// (x = centre, y = top + min(16, height / 2)), never stored: no window record
+// gains a `fenceId`, so a fence and a window can never disagree about it.
+// Containment is HALF-OPEN (`left <= x < left + width`) because fences may
+// abut — a closed test would put a point sitting on the shared border inside
+// BOTH of them, breaking "exactly one fence".
 const AB = [
   { id: "a", rect: { left: 0, top: 0, width: 100, height: 100 } },
   { id: "b", rect: { left: 100, top: 0, width: 100, height: 100 } },
@@ -195,14 +196,14 @@ test("fenceSpawnRect: the first six spawn rects are pairwise disjoint", () => {
   }
 });
 
-test("fenceMembership: a window whose centre is inside a fence is its member", () => {
+test("fenceMembership: a window whose title bar is inside a fence is its member", () => {
   const m = load().fenceMembership(AB, [
     { id: "w1", rect: { left: 10, top: 10, width: 40, height: 40 } },
   ]);
   assert.deepEqual(m, { a: ["w1"], b: [] });
 });
 
-test("fenceMembership: a window whose centre is outside every fence belongs nowhere", () => {
+test("fenceMembership: a window whose title bar is outside every fence belongs nowhere", () => {
   const m = load().fenceMembership(AB, [
     { id: "w1", rect: { left: 400, top: 400, width: 40, height: 40 } },
   ]);
@@ -210,8 +211,8 @@ test("fenceMembership: a window whose centre is outside every fence belongs nowh
   assert.equal(memberCount(m), 0);
 });
 
-test("fenceMembership: a window straddling the border belongs to the fence holding its centre", () => {
-  // Spans 60..140 across the shared edge at 100; centre x = 90, inside A.
+test("fenceMembership: a window straddling the border belongs to the fence holding its title bar", () => {
+  // Spans 60..120 across the shared edge at 100; title bar x = 90, inside A.
   const m = load().fenceMembership(AB, [
     { id: "w1", rect: { left: 60, top: 20, width: 60, height: 40 } },
   ]);
@@ -219,9 +220,9 @@ test("fenceMembership: a window straddling the border belongs to the fence holdi
   assert.equal(memberCount(m), 1, "a straddling window belongs to exactly ONE fence");
 });
 
-test("fenceMembership: a centre exactly on the shared edge belongs to the RIGHT fence", () => {
+test("fenceMembership: a title bar point exactly on the shared edge belongs to the RIGHT fence", () => {
   // NEGATIVE CONTROL: a CLOSED containment test (`cx <= left + width`) hands
-  // this centre to A — the fence it is leaving — and a `break`-less fold lists
+  // this point to A — the fence it is leaving — and a `break`-less fold lists
   // it under both. Half-open on the far edge is what makes "exactly one" hold
   // for abutting fences.
   const m = load().fenceMembership(AB, [
@@ -231,16 +232,17 @@ test("fenceMembership: a centre exactly on the shared edge belongs to the RIGHT 
   assert.equal(memberCount(m), 1);
 });
 
-test("fenceMembership: a centre exactly on the shared HORIZONTAL edge belongs to the LOWER fence", () => {
+test("fenceMembership: a title bar point exactly on the shared HORIZONTAL edge belongs to the LOWER fence", () => {
+  // Title bar y = 84 + 16 = 100, the shared edge.
   const m = load().fenceMembership(TB, [
-    { id: "w1", rect: { left: 20, top: 80, width: 40, height: 40 } },
+    { id: "w1", rect: { left: 20, top: 84, width: 40, height: 40 } },
   ]);
   assert.deepEqual(m, { t: [], u: ["w1"] });
   assert.equal(memberCount(m), 1);
 });
 
 // --- fenceOf: the one fence a rect belongs to ---------------------------------
-test("fenceOf answers the fence holding the rect's centre, and null outside every fence", () => {
+test("fenceOf answers the fence holding the rect's title bar point, and null outside every fence", () => {
   const { fenceOf } = load();
   assert.equal(fenceOf(AB, { left: 10, top: 10, width: 20, height: 20 })?.id, "a");
   assert.equal(fenceOf(AB, { left: 150, top: 10, width: 20, height: 20 })?.id, "b");
@@ -252,7 +254,7 @@ test("fenceOf answers the fence holding the rect's centre, and null outside ever
 test("fenceOf is half-open on the far edge, like fenceMembership: the shared edge is the RIGHT fence's", () => {
   const { fenceOf } = load();
   assert.equal(fenceOf(AB, { left: 80, top: 20, width: 40, height: 40 })?.id, "b");
-  assert.equal(fenceOf(TB, { left: 20, top: 80, width: 40, height: 40 })?.id, "u");
+  assert.equal(fenceOf(TB, { left: 20, top: 84, width: 40, height: 40 })?.id, "u");
 });
 
 test("fenceOf never disagrees with fenceMembership", () => {
@@ -271,12 +273,30 @@ test("fenceOf never disagrees with fenceMembership", () => {
   }
 });
 
-test("fenceMembership: a window straddling the horizontal border belongs to the fence holding its centre", () => {
+test("fenceMembership: a window straddling the horizontal border belongs to the fence holding its title bar", () => {
   const m = load().fenceMembership(TB, [
     { id: "w1", rect: { left: 20, top: 60, width: 40, height: 60 } },
   ]);
   assert.deepEqual(m, { t: ["w1"], u: [] });
   assert.equal(memberCount(m), 1);
+});
+
+// #743: the measured desk. The title bar is above the locked fence, the centre
+// is 15 px inside it.
+test("fenceOf: a window whose title bar is outside a fence is free, whatever its body covers", () => {
+  const { fenceOf, fenceMembership, fenceHolds } = load();
+  const fence = { id: "cactus", rect: { left: 2479, top: 1200, width: 1130, height: 767 }, locked: true };
+  const rect = { left: 3007, top: 1045, width: 560, height: 340 };
+  assert.equal(fenceOf([fence], rect), null);
+  assert.deepEqual(fenceMembership([fence], [{ id: "w", rect }]), { cactus: [] });
+  assert.equal(fenceHolds([fence], rect, false), false);
+});
+
+test("fenceOf: a window whose title bar is inside a fence is its member, even with the body outside", () => {
+  const { fenceOf } = load();
+  const fence = { id: "f", rect: { left: 0, top: 0, width: 400, height: 300 } };
+  // Centre y = 450, below the fence; the title bar is at y 280..313.
+  assert.equal(fenceOf([fence], { left: 50, top: 280, width: 200, height: 340 })?.id, "f");
 });
 
 test("fenceMembership: no fences at all is an empty map, whatever the windows", () => {
@@ -910,9 +930,9 @@ test("freeSpawnRect: an UNLOCKED fence under the slot does not move the console"
 });
 
 test("freeSpawnRect: a slot a locked fence holds is skipped for the next free one", () => {
-  // Slot 0's centre is (310, 190); slot 1's is (334, 214). The fence holds
-  // only the first one.
-  const fence = { id: "f", rect: { left: 300, top: 180, width: 20, height: 20 }, locked: true };
+  // Slot 0's title bar point is (310, 36); slot 1's is (334, 60). The fence
+  // holds only the first one.
+  const fence = { id: "f", rect: { left: 300, top: 30, width: 20, height: 20 }, locked: true };
   const wb = WBGeometry;
   const got = wb.freeSpawnRect(FREE_VIEW, 0, [fence]);
   assert.deepEqual(got, { rect: { left: 54, top: 44, ...FREE_BOX }, moved: false });

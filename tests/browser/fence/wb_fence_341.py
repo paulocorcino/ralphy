@@ -9,14 +9,14 @@ fences and one window clear of both, at rects this file names — every geometri
 assertion below is against those literals, not against whatever the shell
 happened to draw.
 
-Scenario 1  a window dragged so its CENTRE enters a fence becomes a member, and
+Scenario 1  a window dragged so its TITLE BAR enters a fence becomes a member, and
             no `fenceId` is written anywhere: membership is derived
 Scenario 2  dragged back out, it stops being one — same gesture, no extra step
 Scenario 3  a fence dragged onto its neighbour is REFUSED: `fence-invalid` is on
             the element mid-gesture, and the stored rect is byte-identical after
 Scenario 4  a fence moved by a known delta carries its member: the member's
             PERSISTED rect moved by exactly that delta, its size untouched
-Scenario 5  resizing a fence resizes NO member, and a member whose centre falls
+Scenario 5  resizing a fence resizes NO member, and a member whose title bar falls
             outside the new rect leaves the fence — this is where the evidence
             screenshot is taken
 
@@ -364,6 +364,11 @@ def centre(r):
     return (r["left"] + r["width"] / 2, r["top"] + r["height"] / 2)
 
 
+def title_point(r):
+    """The middle of the title bar, the point membership reads (#743)."""
+    return (r["left"] + r["width"] / 2, r["top"] + min(16, r["height"] / 2))
+
+
 def inside(rect, point):
     return (
         rect["left"] <= point[0] < rect["left"] + rect["width"]
@@ -428,7 +433,7 @@ def main():
             win_id = g["wins"][0]["id"]
 
             # ===== scenario 1: drag a window IN ==============================
-            # Land the window's centre inside fence alpha. The delta is computed
+            # Land the window inside fence alpha. The delta is computed
             # from the LIVE boxes, so an auto-pan or a chrome height that differs
             # from the fixture cannot silently aim the drag at the wrong place.
             target = (FENCE_A["left"] + 200, FENCE_A["top"] + 150)
@@ -439,12 +444,12 @@ def main():
             g = geometry(page)
             wrect = g["wins"][0]["rect"]
             check(
-                "the drag put the window's CENTRE inside fence alpha",
-                inside(FENCE_A, centre(wrect)),
-                f"centre={centre(wrect)} fence={FENCE_A}",
+                "the drag put the window's TITLE BAR inside fence alpha",
+                inside(FENCE_A, title_point(wrect)),
+                f"title={title_point(wrect)} fence={FENCE_A}",
             )
             check(
-                "a window whose centre entered a fence IS a member — no extra gesture",
+                "a window whose title bar entered a fence IS a member — no extra gesture",
                 g["membership"] == {"f-alpha": [win_id], "f-beta": []},
                 f"got={g['membership']}",
             )
@@ -580,13 +585,14 @@ def main():
             # negative coordinate, off the plane whose origin is pinned (#336).
             fa = geometry(page)["fences"][0]["rect"]
             # The member's TOP must sit above the fence's, so the vertical clamp
-            # can only come from the member. Its LEFT stays to the right of the
+            # can only come from the member. Only 10 px above: the middle of
+            # its title bar (top + 16) must stay inside, or it is no member. Its LEFT stays to the right of the
             # fence's, which keeps the window's box clear of the `.fence-grab`
             # handle in the fence's NW corner — a covered handle is pressed as
             # the WINDOW and the gesture never starts.
             here = centre(geometry(page)["wins"][0]["rect"])
             bar = client_point(page, ".session-window .session-titlebar")
-            drag(page, bar, fa["left"] + 240 - here[0], fa["top"] + 80 - here[1])
+            drag(page, bar, fa["left"] + 240 - here[0], fa["top"] + 90 - here[1])
             g = geometry(page)
             wr_pre = g["wins"][0]["rect"]
             check(
@@ -643,15 +649,16 @@ def main():
             )
 
             # ===== scenario 5: a resize resizes no member ====================
-            # Park the window deep in alpha, so shrinking the fence to its
-            # minimum leaves the window's centre plainly OUTSIDE — not on a
-            # border, where a one-pixel measurement would decide the check.
+            # Park the window low in alpha, so shrinking the fence to its
+            # 240x150 minimum leaves the middle of its title bar (top + 16)
+            # plainly OUTSIDE — not on a border, where a one-pixel measurement
+            # would decide the check.
             # The window is 300x200 and draws ABOVE the fence (`z >= 60`), so its
             # box must stay CLEAR of the 14 px grip in the fence's SE corner —
             # a `page.mouse` press on a covered grip correctly hits the WINDOW
             # and the resize never starts (#340's probe-ambiguity trap).
             fa = geometry(page)["fences"][0]["rect"]
-            corner = (fa["left"] + 230, fa["top"] + 180)
+            corner = (fa["left"] + 230, fa["top"] + 250)
             here = centre(geometry(page)["wins"][0]["rect"])
             bar = client_point(page, ".session-window .session-titlebar")
             drag(page, bar, corner[0] - here[0], corner[1] - here[1])
@@ -685,7 +692,7 @@ def main():
                 f"before={fa} after={shrunk}",
             )
             check(
-                "a member whose centre now falls OUTSIDE leaves the fence",
+                "a member whose title bar now falls OUTSIDE leaves the fence",
                 g["membership"] == {"f-alpha": [], "f-beta": []},
                 f"got={g['membership']} win={g['wins'][0]['rect']} fence={shrunk}",
             )
