@@ -108,14 +108,20 @@ export const WBGeometry = (function () {
 
   // ---- a fence is a group (issue #341) -----------------------------------------
   // Membership is DERIVED, never stored: a window belongs to the fence that holds
-  // its CENTRE point, so nothing has to be kept in step and a record can never
-  // disagree with the geometry. Containment is HALF-OPEN (`left <= cx < left +
-  // width`) — fences may abut, and a closed test would put a centre sitting on a
+  // the middle of its TITLE BAR (ADR-0051 amendment, #743), so nothing has to be
+  // kept in step and a record can never disagree with the geometry. The operator
+  // grabs a window by its title bar: one whose title bar is outside a fence is
+  // free, whatever its body covers. Containment is HALF-OPEN (`left <= x < left +
+  // width`) — fences may abut, and a closed test would put a point sitting on a
   // shared border inside both of them, breaking "exactly one fence".
-  function rectCentre(rect: Rect | undefined) {
+  // Half of `--row-h` (33px, styles/01-base.css), the console title bar's
+  // height; a note card's 22px head is inside it too.
+  const TITLE_MID = 16;
+
+  function titleBarPoint(rect: Rect | undefined) {
     return {
       x: (rect?.left || 0) + (rect?.width || 0) / 2,
-      y: (rect?.top || 0) + (rect?.height || 0) / 2,
+      y: (rect?.top || 0) + Math.min(TITLE_MID, (rect?.height || 0) / 2),
     };
   }
 
@@ -144,7 +150,7 @@ export const WBGeometry = (function () {
     const out: Record<string, string[]> = {};
     for (const f of list) out[f.id] = [];
     for (const w of windows || []) {
-      const c = rectCentre(w?.rect);
+      const c = titleBarPoint(w?.rect);
       for (const f of list) {
         if (rectHolds(f.rect, c)) {
           out[f.id].push(w.id);
@@ -157,11 +163,11 @@ export const WBGeometry = (function () {
 
   // The fence that holds `rect` — the SAME half-open test and the SAME
   // first-match rule as `fenceMembership`, so the two can never disagree about
-  // whose a window is. `null` when no fence holds its centre. This is what a
+  // whose a window is. `null` when no fence holds its title bar point. This is what a
   // gesture consults to ask "is the fence under this window locked?". A missing
-  // rect is read at the origin, as `rectCentre` reads it.
+  // rect is read at the origin, as `titleBarPoint` reads it.
   function fenceOf(fences: readonly DeskFence[], rect: Rect | undefined) {
-    const c = rectCentre(rect);
+    const c = titleBarPoint(rect);
     for (const f of fences || []) {
       if (rectHolds(f.rect, c)) return f;
     }
@@ -419,7 +425,7 @@ export const WBGeometry = (function () {
     const roomY = Math.max(0, fh - head - SPAWN_PAD * 2 - height);
     // The outer `Math.min` is for the DEGENERATE fence narrower than the pad
     // pair: the pad alone would push the box past the far edge, and the
-    // centre-based fold would report the newborn console in NO fence.
+    // title-bar fold would report the newborn console in NO fence.
     const offX = Math.min(SPAWN_PAD + Math.min(k * SPAWN_STEP, roomX), Math.max(0, fw - width));
     const offY = Math.min(
       head + SPAWN_PAD + Math.min(k * SPAWN_STEP, roomY),
@@ -432,7 +438,7 @@ export const WBGeometry = (function () {
   // size), cascade index and the fence records in, one box out. A console is
   // never born held by a LOCKED fence: it would wear that lock at once, and
   // the operator could not drag it out. The cascade steps past a slot whose
-  // centre a locked fence holds (the `fenceHolds` fold); when every slot is
+  // title bar a locked fence holds (the `fenceHolds` fold); when every slot is
   // held, the box moves right of the fence that holds it until one is free.
   // `moved` says the box left the viewport's cascade, so the caller reveals it.
   function freeSpawnRect(view: Partial<Rect> | null | undefined, index: number, fences: readonly DeskFence[]) {
@@ -472,7 +478,7 @@ export const WBGeometry = (function () {
     FENCE_COLS,
     fenceSpawnRect,
     rectsOverlap,
-    rectCentre,
+    titleBarPoint,
     rectHolds,
     fenceMembership,
     fenceOf,
