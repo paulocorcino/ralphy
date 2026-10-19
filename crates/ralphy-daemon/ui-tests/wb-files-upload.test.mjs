@@ -7,7 +7,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { bindingNames, componentMarkup, loadComponent, UI } from "./harness.mjs";
-import { askUpload, conflictFor, limitMb } from "../assets/ui/wb-files-upload.ts";
+import { askUpload, conflictFor, limitMb, pickFiles } from "../assets/ui/wb-files-upload.ts";
+import { treeMenu } from "../assets/ui/wb-files-menu.ts";
 
 const HTML = readFileSync(join(UI, "index.html"), "utf8");
 const MB = 1024 * 1024;
@@ -15,6 +16,7 @@ const MB = 1024 * 1024;
 after(() => {
   delete globalThis.WBDaemon;
   delete globalThis.window;
+  delete globalThis.document;
 });
 
 // A file of `size` bytes; only its name and size are read before the upload.
@@ -146,4 +148,28 @@ test("a dropped folder, a worktree and a protected folder are refused with a mes
   askUpload(t, { rel: ".git/hooks", folder: true }, [file("x.txt")]);
   assert.match(flashed[0], /cannot write/);
   assert.deepEqual(opened, []);
+});
+
+test("Upload… is a row of a folder and of the root, not of a file or a protected folder", () => {
+  const { t } = tree();
+  const rows = (node) => {
+    const menu = { ...t, isFolder: (n) => !!n?.folder, relPath: (n) => n?.rel ?? "" };
+    return treeMenu(menu, node).map((r) => r.label).filter((l) => l === "Upload…");
+  };
+  assert.deepEqual(rows(null), ["Upload…"]);
+  assert.deepEqual(rows({ rel: "docs", folder: true, startEditTitle() {} }), ["Upload…"]);
+  assert.deepEqual(rows({ rel: "docs/a.md", folder: false, startEditTitle() {} }), []);
+  assert.deepEqual(rows({ rel: ".ralphy/runs", folder: true, startEditTitle() {} }), []);
+});
+
+test("Upload… opens the file picker, and the picked files open the dialog for that folder", () => {
+  const { t, opened } = tree();
+  const input = { listeners: {}, addEventListener(type, fn) { this.listeners[type] = fn; }, click() {} };
+  globalThis.document = { createElement: () => input };
+  pickFiles(t, { rel: "docs", folder: true });
+  assert.equal(input.type, "file");
+  assert.equal(input.multiple, true);
+  input.files = [file("p.png")];
+  input.listeners.change();
+  assert.deepEqual(opened.map((d) => [d.folder, d.files.map((f) => f.name)]), [["docs", ["p.png"]]]);
 });

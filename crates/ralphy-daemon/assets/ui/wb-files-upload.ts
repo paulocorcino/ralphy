@@ -192,6 +192,18 @@ export function askUpload(tree: DropTree, node: WunderbaumNode | null, files: Ar
   sendWindow(window, "workbench:upload-open", { repo, folder, files: Array.from(files) });
 }
 
+/** "Upload…" of the folder menu: the operator picks files on their computer,
+ * and the same dialog opens for `node`. */
+export function pickFiles(tree: DropTree, node: WunderbaumNode | null) {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.multiple = true;
+  input.addEventListener("change", () => {
+    if (input.files) askUpload(tree, node, input.files);
+  });
+  input.click();
+}
+
 /** The `dnd` options of the files tree: a drop of files from the computer,
  * and no drag of the tree's own rows (no `dragStart`). */
 export function treeDrop(tree: DropTree): WunderbaumOptions["dnd"] {

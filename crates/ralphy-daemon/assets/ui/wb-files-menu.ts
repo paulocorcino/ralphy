@@ -8,6 +8,7 @@
    --------------------------------------------------------------------------- */
 import { underProtectedDir } from "./wb-file-paths.ts";
 import { propertiesItem } from "./wb-files-properties.ts";
+import { pickFiles } from "./wb-files-upload.ts";
 import type { MenuItem } from "./wb-shell-types.d.ts";
 
 /** The acts of the tree the menu rows run. */
@@ -20,7 +21,7 @@ type MenuTree = {
   moveNode(node: WunderbaumNode): void;
   emitCreate(node: WunderbaumNode | null, kind: "file" | "folder"): void;
   nodeDetail(node: WunderbaumNode): WorkbenchNodeDetail;
-};
+} & Parameters<typeof pickFiles>[0];
 
 /** The rows for `node`. `node` is null for empty tree space, which addresses
  * the repo root: the create items apply, the per-node items drop out. */
@@ -33,9 +34,18 @@ export function treeMenu(tree: MenuTree, node: WunderbaumNode | null): MenuItem[
     // clicked file.
     { label: "New file…", icon: "bi-file-earmark-plus", run: () => tree.emitCreate(node, "file") },
     { label: "New folder…", icon: "bi-folder-plus", run: () => tree.emitCreate(node, "folder") },
+    uploadRow(tree, node),
     node && { sep: true as const },
     node && { label: "Delete", icon: "bi-trash", danger: true, run: () => window.WB.emit("delete", tree.nodeDetail(node)) },
   ].filter(Boolean);
+}
+
+/** "Upload…" on a folder or on the project root, never inside `.git` or
+ * `.ralphy`, where the daemon refuses every write. */
+function uploadRow(tree: MenuTree, node: WunderbaumNode | null): MenuItem | false {
+  if (node && !tree.isFolder(node)) return false;
+  if (underProtectedDir(tree.relPath(node))) return false;
+  return { label: "Upload…", icon: "bi-cloud-upload", run: () => pickFiles(tree, node) };
 }
 
 /** The rows that act on one row of the tree, above Properties. */
