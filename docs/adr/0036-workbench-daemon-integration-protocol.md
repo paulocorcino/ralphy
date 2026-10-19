@@ -1343,3 +1343,103 @@ verbs (see the amendment of ADR-0052 of 2026-10-10), and
   the kind of a file or a folder).
 - A `tree.size` of a large folder on a peer can take the whole budget. The
   dialog shows the numbers it has with a "stopped after 5 s" note.
+
+## Amendment (2026-10-19): `file.upload` — a file from the operator's computer is a Write in parts
+
+The operator drops files from their computer on a folder of the file tree,
+or picks them with "Upload…" in the menu of a folder. One verb joins the
+**Write** class. It writes OS bytes inside the confined root and needs no
+repo judgment, so the daemon answers it in-process, like `file.write`. A
+peer answers it on the peer, over the existing relay.
+
+### The verb
+
+**`file.upload { repo, path, id, offset, total, data, on_conflict? }`** sends
+one part of one file. `path` is the target, relative to the root. `id` is a
+random name the page gives to one upload (`[0-9a-f]{32}`). `data` is the
+base64 of at most 1 MiB of the file, starting at byte `offset`. `total` is
+the size of the whole file. The page reads each part from the `File` with
+`File.slice()`, so it never holds the whole file in memory.
+
+- The daemon appends a part to `.ralphy/uploads/<id>.part` only when the
+  length of that file equals `offset`. Otherwise it answers
+  `{ status: "error", reason: "offset", expected }`, and the page sends again
+  from `expected`. This is how an upload continues after a failed request.
+- `total` above the limit (below) is refused at the first part, with
+  `reason: "too large"`. The daemon also refuses a part that would write
+  past `total`.
+- The part that ends the file (`offset` + its length = `total`) also carries
+  `on_conflict`: `"fail"` (the default), `"replace"` or `"keep_both"`. The
+  daemon then moves the `.part` file to `path` with one rename. Before that,
+  the target is checked by `fswrite` like every Write: confined, and never
+  inside `.git` or `.ralphy`. With `"fail"`, an existing target answers
+  `reason: "conflict"`. With `"keep_both"`, the daemon chooses the first free
+  name of the form `name (1).ext`, `name (2).ext`, …. The reply to the last
+  part is `{ status: "ok", path }`, with the path the daemon used.
+- A write under a `checkout` is refused, as for every Write today.
+
+The `.part` file is in `.ralphy/`, so the tree, the watcher and git never
+see a half-written file. It is on the same disk as the target, so the last
+rename is atomic. When an upload starts (`offset` 0), the daemon deletes
+each `.part` file in `.ralphy/uploads/` older than one hour. A closed page
+leaves no file behind for longer than that, and the daemon needs no timer.
+
+### The limit
+
+`files.upload_max_mb` in the repo settings, next to `files.encoding`, sets
+the largest file. The default is 25. A value above 1024 is read as 1024,
+and the daemon logs a warning, as it does for an unknown encoding. The
+limit is read where the daemon checks it, at the first part. Each request
+still fits under `MAX_COMMAND_BYTES`, so the transport cap does not change
+(ADR-0072 D11).
+
+### Any kind of file
+
+The daemon does not check the kind of the file. The operator can already
+create any file through the tree and the console, so a list of allowed
+kinds would protect nothing and would refuse files the operator needs. The
+daemon only writes the bytes: it never runs, opens or unpacks them. A zip
+file stays a zip file.
+
+### Audit
+
+Only the last part writes an audit record: the target path, the size, and
+the result (created, replaced or conflict). The other parts and an upload
+that never ends write none. The record shows what entered the tree.
+
+### The page
+
+- The tree accepts the drop through the `dnd` extension that Wunderbaum
+  already has (`dnd.dragEnter`, `dnd.drop`, `dataTransfer.files`). The page
+  does not turn on `dragStart`, so nodes of the tree cannot be dragged. A
+  drop on a file means its folder. A dropped folder is refused with a
+  message.
+- One dialog per drop lists the files, refuses each file over the limit,
+  and asks once for all names that already exist: replace, keep both, or
+  skip.
+- One store sends the files one after another, one part at a time. A card
+  at the bottom of the files panel shows the progress and has a button to
+  cancel. A change of project does not stop an upload. When the request
+  fails, the card offers to try again from the confirmed offset.
+
+**Peers.** The verb is new. An older peer answers `unknown verb`, and the
+card says that the host runs an older daemon. `PEER_PROTOCOL_VERSION` does
+not change.
+
+**Rejected:**
+
+- **One request with the whole file.** A request is capped near 5.4 MiB,
+  and a raise of that cap would apply to every command and to the peer
+  route.
+- **A new HTTP route that streams the body.** Safari does not send a request
+  body as a stream, the route would need its own cap, and the page could not
+  show the progress of each part with `fetch`.
+- **Parts sent in parallel.** Over one tunnel they are not faster, and the
+  daemon would have to put parts back in order.
+- **A list of allowed kinds of file.** See "Any kind of file" above.
+
+### Consequences of the amendment
+
+- The verb count grows from 53 to 54.
+- `.ralphy/uploads/` is a new folder that the daemon owns, like
+  `.ralphy/clipboard/`.

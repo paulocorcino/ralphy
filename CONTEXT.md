@@ -278,6 +278,11 @@ prompt. (ADR-0055)
 _Avoid_: upload (a different feature), attachment (the CLIs' own word),
 clipboard bridge (rejected).
 
+**File upload**:
+A file from the operator's computer that the workbench writes into a folder
+of the file tree, sent to the daemon in parts. (ADR-0036)
+_Avoid_: attachment, import, clipboard drop (the pasted image).
+
 **File encoding (of a workbench read)**:
 The text encoding the daemon used to decode a file the workbench opened, and
 that a save of the same file uses again. UTF-8 is Ralphy's own encoding; any

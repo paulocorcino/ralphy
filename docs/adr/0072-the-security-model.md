@@ -388,6 +388,10 @@ surface.
   (`a_message_over_the_cap_closes_the_socket`) or is answered `413`
   (`peer_command_refuses_a_body_over_the_cap`); a 4 MiB paste still passes
   (`a_4_mib_image_paste_still_replies`, `peer_command_takes_a_4_mib_image`).
+  A file upload (ADR-0036, amendment of 2026-10-19) sends parts of at most
+  1 MiB under the same cap. The whole file has its own cap,
+  `files.upload_max_mb` (default 25), and the daemon never reads it above
+  1024.
   Measured before the fix: `/api/peer/command` answered `413` to a forwarded
   4 MiB `image.write` under axum's 2 MB default. Accepted: `/ws` and
   `/ws/tree` keep the tungstenite default; the browser sends them only
