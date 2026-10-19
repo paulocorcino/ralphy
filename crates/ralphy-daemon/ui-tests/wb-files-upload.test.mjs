@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { bindingNames, componentMarkup, loadComponent, UI } from "./harness.mjs";
-import { askUpload, conflictFor, limitMb, pickFiles } from "../assets/ui/wb-files-upload.ts";
+import { askUpload, conflictFor, limitMb, pickFiles, treeDrop } from "../assets/ui/wb-files-upload.ts";
 import { treeMenu } from "../assets/ui/wb-files-menu.ts";
 
 const HTML = readFileSync(join(UI, "index.html"), "utf8");
@@ -128,7 +128,8 @@ function tree({ checkout = "" } = {}) {
 
 test("a drop on a file opens the dialog for its folder", () => {
   const { t, opened, flashed } = tree();
-  askUpload(t, { rel: "src/main.rs", folder: false }, [file("x.txt")]);
+  const data = { files: [file("x.txt")], items: [] };
+  treeDrop(t).drop({ node: { rel: "src/main.rs", folder: false }, event: { dataTransfer: data } });
   assert.deepEqual(flashed, []);
   assert.deepEqual(
     opened.map((d) => [d.repo, d.folder, d.files.map((f) => f.name)]),
@@ -139,13 +140,13 @@ test("a drop on a file opens the dialog for its folder", () => {
 test("a dropped folder, a worktree and a protected folder are refused with a message", () => {
   const dir = [{ webkitGetAsEntry: () => ({ isDirectory: true }) }];
   let { t, opened, flashed } = tree();
-  askUpload(t, null, [file("photos")], dir);
+  askUpload(t, "", [file("photos")], dir);
   assert.match(flashed[0], /not folders/);
   ({ t, opened, flashed } = tree({ checkout: "wt-a" }));
-  askUpload(t, null, [file("x.txt")]);
+  askUpload(t, "", [file("x.txt")]);
   assert.match(flashed[0], /worktree/);
   ({ t, opened, flashed } = tree());
-  askUpload(t, { rel: ".git/hooks", folder: true }, [file("x.txt")]);
+  askUpload(t, ".git/hooks", [file("x.txt")]);
   assert.match(flashed[0], /cannot write/);
   assert.deepEqual(opened, []);
 });
@@ -166,7 +167,11 @@ test("Upload… opens the file picker, and the picked files open the dialog for 
   const { t, opened } = tree();
   const input = { listeners: {}, addEventListener(type, fn) { this.listeners[type] = fn; }, click() {} };
   globalThis.document = { createElement: () => input };
-  pickFiles(t, { rel: "docs", folder: true });
+  const docs = { rel: "docs", folder: true };
+  pickFiles(t, docs);
+  // A reload of the level while the picker is open unregisters the node.
+  docs.rel = "";
+  docs.folder = false;
   assert.equal(input.type, "file");
   assert.equal(input.multiple, true);
   input.files = [file("p.png")];

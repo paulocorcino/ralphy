@@ -167,10 +167,10 @@ function carriesFiles(event: DragEvent): boolean {
   return !!event.dataTransfer?.types.includes("Files");
 }
 
-/** Open the dialog for the files dropped or picked on `node` (`null` is the
- * project root). A drop on a file means its folder. A folder in the drop, a
- * worktree and a folder inside `.git` or `.ralphy` are refused with a message. */
-export function askUpload(tree: DropTree, node: WunderbaumNode | null, files: ArrayLike<Blob & { name: string }>, items?: DataTransferItemList) {
+/** Open the dialog for the files dropped or picked for `folder` ("" is the
+ * project root). A folder in the drop, a worktree and a folder inside `.git`
+ * or `.ralphy` are refused with a message. */
+export function askUpload(tree: DropTree, folder: string, files: ArrayLike<Blob & { name: string }>, items?: DataTransferItemList) {
   const flash = (msg: string) => tree.$store.modals.flash(msg);
   const dropped = items ? Array.from(items) : [];
   if (dropped.some((item) => item.webkitGetAsEntry?.()?.isDirectory)) {
@@ -184,7 +184,6 @@ export function askUpload(tree: DropTree, node: WunderbaumNode | null, files: Ar
     flash("Uploading into a worktree is not available yet.");
     return;
   }
-  const folder = tree.createDir(node);
   if (underProtectedDir(folder)) {
     flash("Ralphy cannot write a file in this folder.");
     return;
@@ -193,13 +192,16 @@ export function askUpload(tree: DropTree, node: WunderbaumNode | null, files: Ar
 }
 
 /** "Upload…" of the folder menu: the operator picks files on their computer,
- * and the same dialog opens for `node`. */
+ * and the same dialog opens for the folder of `node`. The folder is read at
+ * the click: while the picker is open, a reload of a level can unregister
+ * `node`, and its path would then read as the root. */
 export function pickFiles(tree: DropTree, node: WunderbaumNode | null) {
+  const folder = tree.createDir(node);
   const input = document.createElement("input");
   input.type = "file";
   input.multiple = true;
   input.addEventListener("change", () => {
-    if (input.files) askUpload(tree, node, input.files);
+    if (input.files) askUpload(tree, folder, input.files);
   });
   input.click();
 }
@@ -212,7 +214,8 @@ export function treeDrop(tree: DropTree): WunderbaumOptions["dnd"] {
     dragEnter: (e) => (carriesFiles(e.event) ? "over" : false),
     drop: (e) => {
       const data = e.event.dataTransfer;
-      if (data) askUpload(tree, e.node, data.files, data.items);
+      // A drop on a file means its folder.
+      if (data) askUpload(tree, tree.createDir(e.node), data.files, data.items);
     },
   };
 }
@@ -229,6 +232,6 @@ export function guardEmptySpace(host: HTMLElement, tree: DropTree) {
     ev.preventDefault();
     if (mar10.Wunderbaum.getNode(ev)) return;
     const data = ev.dataTransfer;
-    if (data) askUpload(tree, null, data.files, data.items);
+    if (data) askUpload(tree, "", data.files, data.items);
   });
 }
