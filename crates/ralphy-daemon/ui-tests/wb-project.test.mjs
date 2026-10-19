@@ -206,6 +206,12 @@ test("worktreeNameProblem says why the daemon would refuse a name, and nothing f
   assert.equal(why("wt-a"), "A worktree named “wt-a” already exists.");
 });
 
+test("chipIcon draws a folder only for a selected worktree", () => {
+  assert.equal(wb.chipIcon(null), "git-branch");
+  assert.equal(wb.chipIcon(""), "git-branch");
+  assert.equal(wb.chipIcon("wt-a"), "folder-git-2");
+});
+
 test("chipLabel names the worktree's branch, never the primary's", () => {
   // The chip follows the SELECTED checkout (#406, ADR-0063 §4): with none it
   // is the project's branch as before; with one it is the worktree's branch

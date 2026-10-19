@@ -217,6 +217,12 @@ function chipLabel(p: Project, checkout: string | null | undefined, listing: Lis
   return entry.branch || "HEAD";
 }
 
+// The chip's icon: a worktree's branch is drawn inside a folder, so the row
+// shows that it is not the primary tree.
+function chipIcon(checkout: string | null | undefined) {
+  return checkout ? "folder-git-2" : "git-branch";
+}
+
 // The chip's dirty dot: the selected worktree's dirtiness when one is
 // selected (the tree the act lands in), the primary's otherwise (#407).
 function chipDirty(p: Project, checkout: string | null | undefined, listing: Listing | null | undefined) {
@@ -297,6 +303,7 @@ export const WBProject = {
   maskWorktreeName,
   CARRY_OVER_NOTE,
   chipLabel,
+  chipIcon,
   chipDirty,
   checkoutAfter,
   checkoutAfterListing,

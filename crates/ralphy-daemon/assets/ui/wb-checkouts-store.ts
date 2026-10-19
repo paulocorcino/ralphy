@@ -99,6 +99,9 @@ export function checkoutsStore(deps: CheckoutsStoreDeps) {
       const ref = window.Alpine.store("projects").repoRef(p);
       return WBProject.branchChipTitle(p, this.checkoutOf(ref), this.worktreeListings[ref] || null);
     },
+    chipIcon(p: Project) {
+      return WBProject.chipIcon(this.checkoutOf(window.Alpine.store("projects").repoRef(p)));
+    },
     chipDirty(p: Project) {
       const ref = window.Alpine.store("projects").repoRef(p);
       return WBProject.chipDirty(p, this.checkoutOf(ref), this.worktreeListings[ref] || null);

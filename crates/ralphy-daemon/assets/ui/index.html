@@ -322,7 +322,7 @@
                 :title="$store.projects.rowOpen(p) ? $store.checkouts.branchChipTitle(p) : projectBadge($store.projects.repoRef(p)).title"
               >
                 <span class="branch-chip-ref" x-show="$store.projects.rowOpen(p)">
-                  <svg x-icon="'git-branch'"></svg>
+                  <svg x-icon="$store.checkouts.chipIcon(p)"></svg>
                   <span class="branch-chip-name" x-text="$store.checkouts.chipLabel(p)"></span>
                 </span>
                 <!-- The change count survives the promotion to a rail view
