@@ -314,6 +314,10 @@ interface WunderbaumOptions {
     autoExpandMS: number;
     /** The drop regions a row takes; `false` refuses the drop. */
     dragEnter(e: WunderbaumDndEvent): "over" | false;
+    /** Every `dragover` on a row. */
+    dragOver(e: WunderbaumDndEvent): void;
+    /** `false` keeps a closed folder closed this time. */
+    dragExpand(e: WunderbaumDndEvent): boolean;
     drop(e: WunderbaumDndEvent): void;
   };
 }

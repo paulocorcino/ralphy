@@ -15,8 +15,8 @@ Scenario e  a 25 MB file goes in parts; one request is dropped in the middle,
             confirmed offset: the bytes on disk are the same as the source
 Scenario f  a file over files.upload_max_mb is refused in the dialog
 Scenario h  a drag that allows only `copy` (as from Explorer) resting on a
-            closed folder marks the row as the target, opens the folder after
-            a moment, and the drop still lands there
+            closed folder marks the row as the target; a drag that only passes
+            over it does not open it, and 1 s of rest does, and the drop still lands there
 Scenario g  the audit log has one file.upload line per finished file, not one
             per part
 
@@ -161,7 +161,10 @@ DROP = """
 # Rest a drag that allows only `copy` on the row of `rel` for `ms`, firing
 # `dragover` as a browser does, and say what the row showed and the tree did.
 HOVER = """
-async ([rel, ms]) => {
+async ([rel, ms, mode]) => {
+  // `mode`: 'pass' sweeps the pointer and leaves, 'rest' stays and leaves,
+  // 'drop' stays and drops.
+  const move = mode === 'pass';
   const c = Alpine.$data(document.querySelector('[x-data="wbFiles"]'));
   // The row is drawn again when the folder opens: each step finds the live
   // row, as the pointer of a real drag is always over the live element.
@@ -172,11 +175,13 @@ async ([rel, ms]) => {
   const dt = new DataTransfer();
   dt.items.add(new File(['hovered'], 'hovered.txt'));
   dt.effectAllowed = 'copy';
+  let step = 0;
   const fire = (type) => {
     const row = rowOf();
+    const dx = move ? (step++ % 2) * 40 : 0;
     const target = row.querySelector('.wb-title') || row;
     const box = row.getBoundingClientRect();
-    const ev = new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt, clientX: box.left + 30, clientY: box.top + box.height / 2 });
+    const ev = new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt, clientX: box.left + 30 + dx, clientY: box.top + box.height / 2 });
     target.dispatchEvent(ev);
     return { row, ev };
   };
@@ -195,6 +200,10 @@ async ([rel, ms]) => {
     await new Promise(r => setTimeout(r, 100));
   }
   const node = c._tree.findFirst(x => c.relPath(x) === rel);
+  if (mode !== 'drop') {
+    fire('dragleave');
+    return { expanded: !!node?.expanded };
+  }
   fire('drop');
   return { marked, accepted, expanded: !!node?.expanded, outline };
 }
@@ -462,7 +471,11 @@ def main():
                 "  .some(r => { const n = mar10.Wunderbaum.getNode(r); return n && c.relPath(n) === 'deep'; }); }",
                 timeout=15000,
             )
-            h = page.evaluate(HOVER, ["deep", 2000])
+            passing = page.evaluate(HOVER, ["deep", 2000, "pass"])
+            check("h: a drag that keeps moving over the folder does not open it", not passing["expanded"], str(passing))
+            h = page.evaluate(HOVER, ["deep", 700, "rest"])
+            check("h: 0.7 s of rest does not open it yet", not h["expanded"], str(h))
+            h = page.evaluate(HOVER, ["deep", 1500, "drop"])
             check("h: the row takes a copy-only drag", h["accepted"], str(h))
             check("h: the row is marked as the drop target", h["marked"] and h["outline"] == "dashed", str(h))
             check("h: the closed folder opens while the drag rests on it", h["expanded"], str(h))

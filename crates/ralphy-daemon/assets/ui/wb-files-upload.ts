@@ -206,17 +206,48 @@ export function pickFiles(tree: DropTree, node: WunderbaumNode | null) {
   input.click();
 }
 
+/** How long the pointer rests on a closed folder before it opens. */
+export const REST_MS = 1000;
+/** A move larger than this, in pixels, starts the rest again. */
+const STILL_PX = 6;
+
+/** Whether a drag has rested on one row: the clock starts again when the
+ * pointer moves to another row or more than `STILL_PX` within one. */
+export function restTracker(now: () => number = Date.now) {
+  let node: unknown = null;
+  let x = 0;
+  let y = 0;
+  let since = 0;
+  return {
+    over(on: unknown, at: { clientX: number; clientY: number }) {
+      if (on === node && Math.hypot(at.clientX - x, at.clientY - y) <= STILL_PX) return;
+      node = on;
+      x = at.clientX;
+      y = at.clientY;
+      since = now();
+    },
+    rested(on: unknown) {
+      return on === node && now() - since >= REST_MS;
+    },
+  };
+}
+
 /** The `dnd` options of the files tree: a drop of files from the computer,
  * and no drag of the tree's own rows (no `dragStart`). */
 export function treeDrop(tree: DropTree): WunderbaumOptions["dnd"] {
+  const rest = restTracker();
   return {
     preventLazyParents: false,
     // A file from the computer is copied, never moved: with `move`, a
     // browser refuses the drop of a drag that allows only `copy`.
     dropEffectDefault: "copy",
-    // A closed folder opens after the pointer rests on it this long.
-    autoExpandMS: 1200,
+    // Wunderbaum asks `dragExpand` on every `dragover`; `rest` decides. Its
+    // own delay counts from the drag ENTERING a row, so a drag that only
+    // passes over a folder opened it.
+    autoExpandMS: 1,
     dragEnter: (e) => (carriesFiles(e.event) ? "over" : false),
+    dragOver: (e) => rest.over(e.node, e.event),
+    dragExpand: (e) => rest.rested(e.node),
     drop: (e) => {
       const data = e.event.dataTransfer;
       // A drop on a file means its folder.

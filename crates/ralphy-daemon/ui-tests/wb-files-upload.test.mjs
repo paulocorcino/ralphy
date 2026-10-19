@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { bindingNames, componentMarkup, loadComponent, UI } from "./harness.mjs";
-import { askUpload, conflictFor, limitMb, pickFiles, treeDrop } from "../assets/ui/wb-files-upload.ts";
+import { askUpload, conflictFor, limitMb, pickFiles, REST_MS, restTracker, treeDrop } from "../assets/ui/wb-files-upload.ts";
 import { treeMenu } from "../assets/ui/wb-files-menu.ts";
 
 const HTML = readFileSync(join(UI, "index.html"), "utf8");
@@ -177,4 +177,23 @@ test("Upload… opens the file picker, and the picked files open the dialog for 
   input.files = [file("p.png")];
   input.listeners.change();
   assert.deepEqual(opened.map((d) => [d.folder, d.files.map((f) => f.name)]), [["docs", ["p.png"]]]);
+});
+
+test("a closed folder opens only after the drag rests on it", () => {
+  let clock = 0;
+  const rest = restTracker(() => clock);
+  const a = {};
+  const b = {};
+  rest.over(a, { clientX: 10, clientY: 10 });
+  clock = REST_MS - 1;
+  rest.over(a, { clientX: 12, clientY: 11 });
+  assert.equal(rest.rested(a), false, "not yet");
+  clock = REST_MS;
+  assert.equal(rest.rested(a), true, "a small tremble is still a rest");
+  rest.over(b, { clientX: 12, clientY: 30 });
+  assert.equal(rest.rested(b), false, "another row starts again");
+  assert.equal(rest.rested(a), false, "and the row it left is no longer the one");
+  clock += REST_MS;
+  rest.over(b, { clientX: 40, clientY: 30 });
+  assert.equal(rest.rested(b), false, "a move inside the row starts again");
 });
