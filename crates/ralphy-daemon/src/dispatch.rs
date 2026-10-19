@@ -187,6 +187,10 @@ pub enum Verb {
     /// daemon chooses (Write: in-daemon, never spawns, no client path —
     /// ADR-0055).
     ImageWrite,
+    /// Append one part of a file the operator uploads; the last part moves it
+    /// to its target (Write: in-daemon, never spawns — ADR-0036 amendment
+    /// 2026-10-19).
+    FileUpload,
     /// Write a note's markdown into a `.note` container (Write: in-daemon,
     /// never spawns; the target class is the verb's, not the client's —
     /// ADR-0064 §5). The ONE Write verb a `checkout` is honoured on: it
@@ -317,6 +321,7 @@ impl Verb {
             "file.copy" => Some(Verb::FileCopy),
             "file.delete" => Some(Verb::FileDelete),
             "image.write" => Some(Verb::ImageWrite),
+            "file.upload" => Some(Verb::FileUpload),
             "note.write" => Some(Verb::NoteWrite),
             "branch.list" => Some(Verb::BranchList),
             "branch.switch" => Some(Verb::BranchSwitch),
@@ -376,6 +381,7 @@ impl Verb {
         Verb::FileCopy,
         Verb::FileDelete,
         Verb::ImageWrite,
+        Verb::FileUpload,
         Verb::NoteWrite,
         Verb::BranchList,
         Verb::BranchSwitch,
@@ -458,6 +464,7 @@ impl Verb {
             | Verb::FileCopy
             | Verb::FileDelete
             | Verb::ImageWrite
+            | Verb::FileUpload
             | Verb::NoteWrite
             | Verb::PlanDiscard => EffectClass::Write,
             Verb::Run
@@ -562,6 +569,8 @@ mod tests {
         // a client-named path (ADR-0055).
         assert_eq!(Verb::from_query("image.write"), Some(Verb::ImageWrite));
         assert_eq!(Verb::ImageWrite.effect_class(), EffectClass::Write);
+        assert_eq!(Verb::from_query("file.upload"), Some(Verb::FileUpload));
+        assert_eq!(Verb::FileUpload.effect_class(), EffectClass::Write);
         // A project removal is a Mutate: it spawns the existing `daemon remove`
         // subcommand, the ONE owner of the registry file (issue #363).
         assert_eq!(
@@ -610,8 +619,8 @@ mod tests {
         }
         assert_eq!(
             Verb::ALL.len(),
-            53,
-            "the registry holds exactly fifty-three verbs"
+            54,
+            "the registry holds exactly fifty-four verbs"
         );
     }
 
@@ -832,7 +841,7 @@ mod tests {
             }
         }
         assert_eq!(count, 13, "the family is the 13 git-backed verbs");
-        assert_eq!(Verb::ALL.len(), 53, "Verb::ALL grew — revisit the family");
+        assert_eq!(Verb::ALL.len(), 54, "Verb::ALL grew — revisit the family");
 
         for &v in Verb::ALL {
             if matches!(

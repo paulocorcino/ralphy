@@ -160,7 +160,7 @@ fn refuse_protected(rel: &str) -> Result<(), WriteError> {
 /// and its name passed the lexical gate. Only the components BELOW the canonical
 /// root are inspected: the repo itself may live under a `.ralphy/worktrees/…`
 /// path, and that is not the operator writing into `.ralphy`.
-fn confine_outside_protected(root: &Path, rel: &str) -> Result<PathBuf, WriteError> {
+pub(crate) fn confine_outside_protected(root: &Path, rel: &str) -> Result<PathBuf, WriteError> {
     // A `:` inside a name is an NTFS alternate data stream (`a.txt:hidden` writes
     // a stream on `a.txt`, and `.git:x` a stream on the directory) — a second
     // name-rewriting class the lexical compare cannot see. The read side

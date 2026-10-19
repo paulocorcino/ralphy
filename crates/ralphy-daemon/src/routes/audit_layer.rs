@@ -47,6 +47,7 @@ pub(crate) fn actor_of(headers: &HeaderMap, device: Option<DeviceId>) -> Actor {
 /// The line a command-socket verb writes, or `None` for a verb that only
 /// reads (D12). The line names the verb and its project, never the
 /// arguments, and it is written when the verb is asked for, before its result.
+/// `file.upload` writes its line after the last part instead ([`upload_event`]).
 pub(crate) fn command_event(
     verb: Verb,
     cmd: &Command,
@@ -54,21 +55,55 @@ pub(crate) fn command_event(
     actor: Actor,
     ip: Option<String>,
 ) -> Option<Event> {
+    if verb == Verb::FileUpload {
+        return None;
+    }
     match verb.effect_class() {
         EffectClass::Native | EffectClass::Observe | EffectClass::Query => None,
         EffectClass::Spawn | EffectClass::Mutate | EffectClass::Write => {
-            let mut e = Event::new(EventKind::Command, device, actor);
-            e.verb = Some(audit::clip(&cmd.verb));
-            e.repo = cmd
-                .payload
-                .get("repo")
-                .and_then(|v| v.as_str())
-                .map(audit::clip)
-                .filter(|r| !r.is_empty());
-            e.ip = ip;
-            Some(e)
+            Some(verb_event(cmd, device, actor, ip))
         }
     }
+}
+
+fn verb_event(cmd: &Command, device: Option<DeviceId>, actor: Actor, ip: Option<String>) -> Event {
+    let mut e = Event::new(EventKind::Command, device, actor);
+    e.verb = Some(audit::clip(&cmd.verb));
+    e.repo = cmd
+        .payload
+        .get("repo")
+        .and_then(|v| v.as_str())
+        .map(audit::clip)
+        .filter(|r| !r.is_empty());
+    e.ip = ip;
+    e
+}
+
+/// The line of a `file.upload` part, from its reply: only the last part
+/// writes one, with the target, the size and the result (ADR-0036 amendment
+/// 2026-10-19). Every other part, and a refusal other than a conflict, writes
+/// none.
+pub(crate) fn upload_event(
+    cmd: &Command,
+    reply: &serde_json::Value,
+    device: Option<DeviceId>,
+    actor: Actor,
+    ip: Option<String>,
+) -> Option<Event> {
+    let text =
+        |v: &serde_json::Value, key: &str| v.get(key).and_then(|x| x.as_str()).map(str::to_owned);
+    let (file, result) = match text(reply, "status").as_deref() {
+        Some("ok") => (text(reply, "path")?, text(reply, "result")?),
+        _ if text(reply, "reason").as_deref() == Some("conflict") => {
+            (text(&cmd.payload, "path")?, "conflict".to_owned())
+        }
+        _ => return None,
+    };
+    let mut e = verb_event(cmd, device, actor, ip);
+    e.file = Some(audit::clip(&file));
+    e.size = cmd.payload.get("total").and_then(|v| v.as_u64());
+    e.result = Some(result);
+    Some(e)
 }
 
 /// Who sent a request, as the audit layer found it: it reads the request
@@ -116,6 +151,16 @@ impl SocketAudit {
     /// Record `verb` when it changes state.
     pub(crate) fn record(&self, verb: Verb, cmd: &Command) {
         if let Some(event) = command_event(verb, cmd, self.device, self.actor, self.ip.clone()) {
+            self.audit.record(&event);
+        }
+    }
+
+    /// Record a `file.upload` part from its reply; only the last part writes.
+    pub(crate) fn record_upload(&self, verb: Verb, cmd: &Command, reply: &serde_json::Value) {
+        if verb != Verb::FileUpload {
+            return;
+        }
+        if let Some(event) = upload_event(cmd, reply, self.device, self.actor, self.ip.clone()) {
             self.audit.record(&event);
         }
     }
@@ -303,5 +348,46 @@ mod tests {
         let list = command("branch.list", serde_json::json!({"repo": "ralphy"}));
         let verb = Verb::from_query(&list.verb).expect("a known verb");
         assert!(command_event(verb, &list, None, Actor::Device, None).is_none());
+    }
+
+    #[test]
+    fn only_the_last_part_of_an_upload_is_a_line() {
+        let part = command(
+            "file.upload",
+            serde_json::json!({"repo": "ralphy", "path": "docs/r.pdf", "total": 7, "data": "c2VjcmV0"}),
+        );
+        assert!(
+            command_event(Verb::FileUpload, &part, None, Actor::Device, None).is_none(),
+            "no line when the part is asked for"
+        );
+        let middle = serde_json::json!({"status": "ok", "received": 3});
+        assert!(upload_event(&part, &middle, None, Actor::Device, None).is_none());
+        let offset = serde_json::json!({"status": "error", "reason": "offset", "expected": 3});
+        assert!(upload_event(&part, &offset, None, Actor::Device, None).is_none());
+
+        let last =
+            serde_json::json!({"status": "ok", "path": "docs/r (1).pdf", "result": "created"});
+        let json = serde_json::to_value(
+            upload_event(&part, &last, None, Actor::Device, None)
+                .expect("the last part writes a line"),
+        )
+        .unwrap();
+        assert_eq!(json["verb"], "file.upload");
+        assert_eq!(json["file"], "docs/r (1).pdf");
+        assert_eq!(json["size"], 7);
+        assert_eq!(json["result"], "created");
+        assert!(
+            !json.to_string().contains("c2VjcmV0"),
+            "the bytes stay out: {json}"
+        );
+
+        let conflict = serde_json::json!({"status": "error", "reason": "conflict"});
+        let json = serde_json::to_value(
+            upload_event(&part, &conflict, None, Actor::Device, None)
+                .expect("a conflict writes a line"),
+        )
+        .unwrap();
+        assert_eq!(json["file"], "docs/r.pdf");
+        assert_eq!(json["result"], "conflict");
     }
 }

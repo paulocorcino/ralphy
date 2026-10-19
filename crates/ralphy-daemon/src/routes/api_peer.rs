@@ -122,6 +122,7 @@ pub(crate) async fn peer_command_route(
             "message": "a run is not federated yet"
         })
     });
+    who.record_upload(verb, &cmd, &payload);
     Json(payload).into_response()
 }
 

@@ -191,6 +191,16 @@ pub struct Event {
     /// On a console event: the daemon ID of the peer that hosts the session.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub peer: Option<String>,
+    /// On the `command` line of a finished `file.upload`: the path the file
+    /// took in the project.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
+    /// On the same line: the size of the file in bytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
+    /// On the same line: `created`, `replaced` or `conflict`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<String>,
     /// On `device_profile_changed`: the normalized fields that changed.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub changed: Vec<&'static str>,
@@ -221,6 +231,9 @@ impl Event {
             session: None,
             agent: None,
             peer: None,
+            file: None,
+            size: None,
+            result: None,
             changed: Vec::new(),
             normalized: None,
             client: None,
