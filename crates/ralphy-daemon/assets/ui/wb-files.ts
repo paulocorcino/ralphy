@@ -26,6 +26,7 @@ import { classify, fullPath, newEntryTitle, parentRel, treeIcon } from "./wb-fil
 import { sendWindow } from "./wb-events.ts";
 import { propertiesKey } from "./wb-files-properties.ts";
 import { treeMenu } from "./wb-files-menu.ts";
+import { guardEmptySpace, treeDrop } from "./wb-files-upload.ts";
 import type { WBDaemonApi } from "./wb-daemon.ts";
 import type { Hit } from "./wb-file-search.ts";
 import type { Group } from "./wb-fleet.ts";
@@ -176,6 +177,8 @@ export function wbFiles() {
           return false;
         },
         keydown: (e: WunderbaumKeyEvent) => propertiesKey(this, e),
+        // Files dropped from the computer open the upload dialog.
+        dnd: treeDrop(this),
       });
 
       // One `/ws/tree` subscription per open project; the root is always
@@ -209,6 +212,7 @@ export function wbFiles() {
           node?.setActive();
           this.showMenu(ev.clientX, ev.clientY, node || null);
         });
+        guardEmptySpace(host, this);
       }
     },
 

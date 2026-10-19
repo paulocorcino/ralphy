@@ -247,3 +247,67 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/* Upload: the dialog's file rows and choice, and the progress card at the
+   bottom of the files panel. */
+.upload-picker {
+  width: min(30rem, 92vw);
+}
+.upload-file,
+.upload-line {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+}
+.upload-file {
+  padding: 0.3rem 0.4rem;
+}
+.upload-file.refused {
+  color: var(--text-muted);
+}
+.upload-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.upload-state {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+}
+.upload-choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  margin: 0.6rem 0.95rem 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.8rem;
+}
+.upload-card {
+  margin: 0.4rem var(--side-gutter);
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.8rem;
+}
+.upload-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.25rem;
+}
+.upload-row {
+  padding: 0.2rem 0;
+}
+.upload-row progress {
+  width: 100%;
+  height: 0.35rem;
+}
+.upload-error {
+  margin: 0.15rem 0 0;
+  color: var(--danger);
+  font-size: 0.74rem;
+}

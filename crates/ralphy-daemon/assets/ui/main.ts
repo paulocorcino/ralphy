@@ -19,6 +19,7 @@ import { securityDialog } from "./wb-security-dialog.ts";
 import { wbColumns, wbConsoleMenus } from "./wb-consoles-tab.ts";
 import { wbFiles } from "./wb-files.ts";
 import { wbMoveDialog } from "./wb-move-dialog.ts";
+import { wbUploadDialog } from "./wb-files-upload.ts";
 import { wbPropertiesDialog } from "./wb-properties-dialog.ts";
 import { wbRuns } from "./wb-runs-panel.ts";
 import { wbBoard } from "./wb-board.ts";
@@ -46,6 +47,7 @@ import { checkoutsStore } from "./wb-checkouts-store.ts";
 import { releaseStore } from "./wb-release-store.ts";
 import { modalsStore } from "./wb-modals-store.ts";
 import { tabsStore } from "./wb-tabs-store.ts";
+import { uploadsStore } from "./wb-uploads-store.ts";
 
 window.Alpine = Alpine;
 // The door for operator messages first: the consoles, the cards and the
@@ -97,6 +99,9 @@ Alpine.store("release", releaseStore({ messages }));
 // The canvas tabs, the slot and the split; its `init` hears a component ask
 // for a tab. `detachFile` watches a popup through the detached file windows.
 Alpine.store("tabs", tabsStore({ messages, detached }));
+// The files the operator uploads; the upload dialog adds them, and the card
+// at the bottom of the files panel shows them.
+Alpine.store("uploads", uploadsStore({ messages }));
 // Each name is the `x-data` of one element in `index.html`.
 Alpine.data("shell", shell);
 Alpine.data("wbSettingsDialog", settingsDialog);
@@ -109,6 +114,7 @@ Alpine.data("wbConsoleMenus", wbConsoleMenus);
 Alpine.data("wbColumns", wbColumns);
 Alpine.data("wbFiles", wbFiles);
 Alpine.data("wbMoveDialog", wbMoveDialog);
+Alpine.data("wbUploadDialog", wbUploadDialog);
 Alpine.data("wbPropertiesDialog", wbPropertiesDialog);
 Alpine.data("wbRuns", wbRuns);
 Alpine.data("wbBoard", wbBoard);

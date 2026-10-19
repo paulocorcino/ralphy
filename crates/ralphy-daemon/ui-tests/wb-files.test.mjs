@@ -115,8 +115,10 @@ test("every name the markup of wbFiles reads is its own or in its uses list", ()
   for (const [, attr, value] of attrs) {
     // `x-data` names the component; `x-ref` names an element.
     if (attr === "x-data" || attr === "x-ref") continue;
-    for (const n of bindingNames(value)) {
-      if (n.startsWith("$")) continue;
+    const raw = attr === "x-for" ? value.split(/\s+in\s+/)[1] : value;
+    for (const n of bindingNames(raw)) {
+      // `u` is the row of the upload card's `x-for`.
+      if (n.startsWith("$") || n === "u") continue;
       assert.doesNotThrow(() => state[n], `${attr}="${value}" reads ${n}`);
       read++;
     }
