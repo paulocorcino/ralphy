@@ -1,6 +1,87 @@
 {
   "releases": [
     {
+      "version": "v0.1.0-rc.41",
+      "date": "2026-10-19",
+      "announce": true,
+      "entries": [
+        {
+          "id": "rustls-0-23-46",
+          "kind": "security",
+          "text": "The TLS library used for updates and release checks is updated to fix four advisories (RUSTSEC-2026-0346 to 0349)."
+        },
+        {
+          "id": "721",
+          "kind": "feature",
+          "text": "One command installs Ralphy; `ralphy doctor` checks the tools, and `ralphy uninstall` removes it.",
+          "headline": "📦 **One-line install** — install, check and remove Ralphy with one command"
+        },
+        {
+          "id": "file-properties",
+          "kind": "feature",
+          "text": "Right-click a file, a folder or the empty tree space, or press Alt+Enter, to see its size, type, time of change and more.",
+          "headline": "🗂️ **Properties** — the size and the facts of a file, a folder or the project"
+        },
+        {
+          "id": "rendered-files",
+          "kind": "feature",
+          "text": "Open a .dbml file as table cards, draw up to 12 selected tables as a diagram, open a .mmd file as a diagram, and edit both in color.",
+          "headline": "🗂️ **Schema and diagram files** — see a .dbml file as table cards and a .mmd file as a diagram"
+        },
+        {
+          "id": "viewer-diagram-zoom",
+          "kind": "feature",
+          "text": "In a markdown file, an Enlarge button on each diagram and large image opens a view you can zoom and move.",
+          "headline": "🔍 **Zoom** — enlarge a diagram or an image in a file"
+        },
+        {
+          "id": "738",
+          "kind": "fix",
+          "text": "On a phone, the workbench no longer stops updating when a read gets no answer: the read fails and shows as failed."
+        },
+        {
+          "id": "739",
+          "kind": "fix",
+          "text": "On a slow remote link, file and folder reads no longer wait behind the consoles."
+        },
+        {
+          "id": "743",
+          "kind": "fix",
+          "text": "A locked fence no longer holds a console whose title bar is outside the fence."
+        },
+        {
+          "id": "column-filter-zoom",
+          "kind": "fix",
+          "text": "On a phone or tablet, opening the console list no longer zooms the page."
+        },
+        {
+          "id": "column-fullscreen",
+          "kind": "fix",
+          "text": "A console in a column can now go to full screen from its title bar."
+        },
+        {
+          "id": "console-tab-return",
+          "kind": "fix",
+          "text": "When you return to the Consoles tab, the consoles no longer show stretched text for a moment."
+        },
+        {
+          "id": "host-install-latest",
+          "kind": "fix",
+          "text": "Installing Ralphy on a host from a development build sends the newest release, not one from before it."
+        },
+        {
+          "id": "peer-files-root-and-retry",
+          "kind": "fix",
+          "text": "Files: \"Copy full path\" now works for projects on a peer, and a lost folder read is tried again."
+        },
+        {
+          "id": "peer-rekey",
+          "kind": "fix",
+          "text": "A project on another computer that gains a GitHub remote keeps its consoles and file tree open."
+        }
+      ]
+    },
+    {
       "version": "v0.1.0-rc.40",
       "date": "2026-10-12",
       "announce": true,
