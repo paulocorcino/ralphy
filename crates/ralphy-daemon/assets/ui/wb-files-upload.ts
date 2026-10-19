@@ -211,6 +211,11 @@ export function pickFiles(tree: DropTree, node: WunderbaumNode | null) {
 export function treeDrop(tree: DropTree): WunderbaumOptions["dnd"] {
   return {
     preventLazyParents: false,
+    // A file from the computer is copied, never moved: with `move`, a
+    // browser refuses the drop of a drag that allows only `copy`.
+    dropEffectDefault: "copy",
+    // A closed folder opens after the pointer rests on it this long.
+    autoExpandMS: 1200,
     dragEnter: (e) => (carriesFiles(e.event) ? "over" : false),
     drop: (e) => {
       const data = e.event.dataTransfer;

@@ -14,6 +14,9 @@ Scenario e  a 25 MB file goes in parts; one request is dropped in the middle,
             the card stops with "Try again", and Try again finishes from the
             confirmed offset: the bytes on disk are the same as the source
 Scenario f  a file over files.upload_max_mb is refused in the dialog
+Scenario h  a drag that allows only `copy` (as from Explorer) resting on a
+            closed folder marks the row as the target, opens the folder after
+            a moment, and the drop still lands there
 Scenario g  the audit log has one file.upload line per finished file, not one
             per part
 
@@ -152,6 +155,48 @@ DROP = """
   const target = row.querySelector('.wb-title') || row;
   for (const type of ['dragenter', 'dragover', 'drop']) target.dispatchEvent(new DragEvent(type, at));
   return true;
+}
+"""
+
+# Rest a drag that allows only `copy` on the row of `rel` for `ms`, firing
+# `dragover` as a browser does, and say what the row showed and the tree did.
+HOVER = """
+async ([rel, ms]) => {
+  const c = Alpine.$data(document.querySelector('[x-data="wbFiles"]'));
+  // The row is drawn again when the folder opens: each step finds the live
+  // row, as the pointer of a real drag is always over the live element.
+  const rowOf = () => [...document.querySelectorAll('.wb-host .wb-row')].find(r => {
+    const n = mar10.Wunderbaum.getNode(r);
+    return n && c.relPath(n) === rel;
+  });
+  const dt = new DataTransfer();
+  dt.items.add(new File(['hovered'], 'hovered.txt'));
+  dt.effectAllowed = 'copy';
+  const fire = (type) => {
+    const row = rowOf();
+    const target = row.querySelector('.wb-title') || row;
+    const box = row.getBoundingClientRect();
+    const ev = new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt, clientX: box.left + 30, clientY: box.top + box.height / 2 });
+    target.dispatchEvent(ev);
+    return { row, ev };
+  };
+  fire('dragenter');
+  let marked = false;
+  let accepted = false;
+  let outline = '';
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    const { row, ev } = fire('dragover');
+    accepted = accepted || ev.defaultPrevented;
+    if (row.classList.contains('wb-drop-over')) {
+      marked = true;
+      outline = getComputedStyle(row).outlineStyle;
+    }
+    await new Promise(r => setTimeout(r, 100));
+  }
+  const node = c._tree.findFirst(x => c.relPath(x) === rel);
+  fire('drop');
+  return { marked, accepted, expanded: !!node?.expanded, outline };
 }
 """
 
@@ -406,6 +451,23 @@ def main():
             st = wait_dialog(page)
             check("f: a file over the 1 MB limit is refused", st["rows"] == [["over.bin", True, False]], str(st))
             check("f: Upload is blocked", st["blocked"])
+            page.evaluate(f"() => {DIALOG}.uploadCancel()")
+
+            # --- h: hover marks the target and opens a closed folder -------------
+            (fixture / "deep").mkdir()
+            (fixture / "deep" / "x.txt").write_text("x", encoding="utf-8")
+            check("h: the tree shows the new closed folder", tree_has(page, "deep"))
+            page.wait_for_function(
+                f"() => {{ const c = {FILES}; return [...document.querySelectorAll('.wb-host .wb-row')]"
+                "  .some(r => { const n = mar10.Wunderbaum.getNode(r); return n && c.relPath(n) === 'deep'; }); }",
+                timeout=15000,
+            )
+            h = page.evaluate(HOVER, ["deep", 2000])
+            check("h: the row takes a copy-only drag", h["accepted"], str(h))
+            check("h: the row is marked as the drop target", h["marked"] and h["outline"] == "dashed", str(h))
+            check("h: the closed folder opens while the drag rests on it", h["expanded"], str(h))
+            st = wait_dialog(page)
+            check("h: the drop opens the dialog for the folder", st["folder"] == "deep", str(st))
             page.evaluate(f"() => {DIALOG}.uploadCancel()")
 
             check("no page error", not thrown, str(thrown))

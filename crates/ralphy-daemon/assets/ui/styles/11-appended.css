@@ -311,3 +311,10 @@
   color: var(--danger);
   font-size: 0.74rem;
 }
+/* The row a drag of files from the computer is over: Wunderbaum sets these
+   classes, and its own stylesheet does not draw them. */
+.wb-host .wb-row.wb-drop-target.wb-drop-over {
+  background: var(--surface-hi);
+  outline: 1px dashed var(--info);
+  outline-offset: -1px;
+}

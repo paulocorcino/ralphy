@@ -308,6 +308,10 @@ interface WunderbaumOptions {
   dnd: {
     /** `false` lets a folder that is not loaded yet take a drop. */
     preventLazyParents: boolean;
+    /** The drop effect when the drag names none. */
+    dropEffectDefault: "copy" | "move" | "link";
+    /** How long the pointer rests on a closed folder before it opens. */
+    autoExpandMS: number;
     /** The drop regions a row takes; `false` refuses the drop. */
     dragEnter(e: WunderbaumDndEvent): "over" | false;
     drop(e: WunderbaumDndEvent): void;
