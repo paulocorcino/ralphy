@@ -123,3 +123,11 @@ test("an image under a selected worktree is pinned to it", async () => {
   assert.deepEqual(fileTabs(state).map((t) => [t.id, t.checkout]), [["file:owner/repo@wt-a:a.png", "wt-a"]]);
   assert.equal(images[0].checkout, "wt-a");
 });
+
+test("a new folder row opens no diff and says why", () => {
+  const { state, flashed, emitted } = shell();
+  state.$store.tabs.openDiff(P, { path: "apps/", originalPath: null, status: "untracked" });
+  assert.deepEqual(diffTabs(state), []);
+  assert.deepEqual(emitted.filter((e) => e.action === "open-diff"), []);
+  assert.deepEqual(flashed, ["apps/ is a new folder. Open its files in Files."]);
+});

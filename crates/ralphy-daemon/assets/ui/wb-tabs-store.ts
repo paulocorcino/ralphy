@@ -233,6 +233,12 @@ export function tabsStore(deps: TabsStoreDeps) {
     // HEAD on one side, the working tree on the other (#311). Read-only;
     // Monaco computes the diff, nothing produces a patch.
     openDiff(project: string, entry: ChangeEntry) {
+      // git lists a new folder as one row whose path ends with "/": it has
+      // no text to compare, and a diff of it was an empty tab.
+      if (entry.path.endsWith("/")) {
+        deps.messages.flash(`${entry.path} is a new folder. Open its files in Files.`);
+        return;
+      }
       // Both diff sides read text, and a binary side closes the tab again: an
       // image or other binary path never reaches the diff.
       const ftype = classify(entry.path.split("/").pop()!);
