@@ -22,9 +22,10 @@ import { WBFileSearch } from "./wb-file-search.ts";
 import { WBFleet } from "./wb-fleet.ts";
 import { WBReadRetry } from "./wb-read-retry.ts";
 import { liveNode, reexpand, restoreView, snapshotLevel } from "./wb-files-reconcile.ts";
-import { classify, fullPath, newEntryTitle, parentRel, treeIcon, underProtectedDir } from "./wb-file-paths.ts";
+import { classify, fullPath, newEntryTitle, parentRel, treeIcon } from "./wb-file-paths.ts";
 import { sendWindow } from "./wb-events.ts";
-import { propertiesItem, propertiesKey } from "./wb-files-properties.ts";
+import { propertiesKey } from "./wb-files-properties.ts";
+import { treeMenu } from "./wb-files-menu.ts";
 import type { WBDaemonApi } from "./wb-daemon.ts";
 import type { Hit } from "./wb-file-search.ts";
 import type { Group } from "./wb-fleet.ts";
@@ -946,34 +947,9 @@ export function wbFiles() {
       }
     },
 
-    // `node` is null for empty tree space, which addresses the repo root: the
-    // create items apply, the per-node items drop out.
+    // The rows come from `treeMenu` (wb-files-menu.ts).
     showMenu(x: number, y: number, node: WunderbaumNode | null) {
-      const isFolder = this.isFolder(node);
-      const items = [
-        node && !isFolder && { label: "Open", icon: "bi-box-arrow-up-right", run: () => this.openFile(node) },
-        node && { label: "Rename…", icon: "bi-pencil", run: () => node.startEditTitle() },
-        // FLAT rows, not a submenu, for a two-item choice made constantly.
-        node && { label: "Copy full path", icon: "bi-clipboard", run: () => this.copyPath(node, true) },
-        node && { label: "Copy relative path", icon: "bi-clipboard", run: () => this.copyPath(node, false) },
-        node && !isFolder && { label: "Duplicate", icon: "bi-files", run: () => this.duplicateNode(node) },
-        // Folders too. Dropped for a node inside `.git`/`.ralphy`, whose every
-        // move the daemon refuses on the SOURCE.
-        node && !underProtectedDir(this.relPath(node)) && {
-          label: "Move to…",
-          icon: "bi-arrow-right-square",
-          run: () => this.moveNode(node),
-        },
-        propertiesItem(this, node),
-        { sep: true as const },
-        // Creating targets the folder itself, or the folder CONTAINING the
-        // clicked file.
-        { label: "New file…", icon: "bi-file-earmark-plus", run: () => this.emitCreate(node, "file") },
-        { label: "New folder…", icon: "bi-folder-plus", run: () => this.emitCreate(node, "folder") },
-        node && { sep: true as const },
-        node && { label: "Delete", icon: "bi-trash", danger: true, run: () => window.WB.emit("delete", this.nodeDetail(node)) },
-      ].filter(Boolean);
-      this.$store.tabs.renderMenu(x, y, items);
+      this.$store.tabs.renderMenu(x, y, treeMenu(this, node));
     },
 
     // --- the backend seam -------------------------------------------------
