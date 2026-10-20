@@ -11,8 +11,8 @@ Amended by #358: §3 is widened — a closable tab may also be a **daemon view**
 not only an open file.
 Amended 2026-09-22: §3c adds the **slot** — one secondary pane beside the
 active tab, holding a pinned tab or a mirror of the active code tab.
-Amended by #748: §3d adds the **console tab** — one console of the stage,
-maximized on this device only, in a closable tab.
+Amended by #748: §3d adds the **console tab** — one console of the stage in
+a closable tab with its own pane, on this device only.
 
 The daemon workbench (ADR-0032, promoted to the daemon's `/` in #200) lays out
 as four columns: **icon rail · sidebar · canvas · Runs panel**. This ADR records
@@ -119,32 +119,36 @@ answer "in which group". The one-slot shape keeps those answers unchanged.
 
 A **+** at the end of the strip lists the consoles on the stage. These are the
 rows of the column list (ADR-0051 §5). A pick opens a closable tab of kind
-`console`, after the fixed Consoles tab. The tab shows the stage, with that
-console maximized.
+`console`, after the fixed Consoles tab. The tab has its own pane, and the
+console fills it.
 
 - **The tab belongs to this device.** Its id is `console:<desk id>`. The view
   store keeps it as `consoleTabs: [{deskId, title}]`, beside the file tabs
   (ADR-0051 §8). Another device sees no tab.
-- **Its maximize is not written to the desk.** The tab maximizes its console
-  on this page only.
-- **The active tab's console is in front.** It fills the viewport above every
-  other console, also when it is a column of a grid of the Consoles tab.
-- **A column grid belongs to the tab it was opened in.** The grid is kept per
-  device with the desk id of its console tab (`columnsTab`), or none for the
-  Consoles tab. Only that tab shows the grid. A grid of a console tab writes
-  no maximize to the desk. On a phone, Switch in a console tab opens the tab
-  of the picked console. The maximize button of the stage is unchanged.
-- **The same window, not a copy.** The console stays on the stage. It stays
-  maximized when the operator goes back to the Consoles tab, until the tab
-  closes.
-- **No Restore on the console of the tab.** Restore would move the maximize to
-  another console and take the console out of its own tab. A column in the tab
-  keeps its Restore.
-- **The × only closes the tab.** The console goes back to its stage rect, or
-  stays maximized when the desk records it as maximized. The console keeps
-  running. A console that leaves the stage closes its tab.
+- **The window moves; it is not copied.** The console's window leaves the
+  stage of this page and goes into the pane of the tab. The terminal, its
+  socket and the writer slot stay the same, so typing and the PTY size do not
+  change hands. The pane's size is the console's size.
+- **The stage of this page does not show it.** The desk keeps its record: its
+  rect, its lock and its maximize. The tab writes nothing to the desk, and
+  another device sees no change. The column list, the + and Switch name the
+  console as in a tab, and a pick shows that tab. A console that is a column
+  leaves the grid when its tab opens.
+- **One console per tab.** The tab has no Slice, no maximize or Restore, no
+  move and no resize: these are for the stage. A column grid lives only on
+  the Consoles tab.
+- **The × only closes the tab.** The window goes back to the stage, at its
+  rect, maximized when the desk records it as maximized. The console keeps
+  running. A console that leaves the stage closes its tab; a console that
+  relaunches keeps it.
 
 ## Rejected alternatives
+
+- **(#748) A console tab that shows the stage with its console maximized.**
+  Tried first, and rejected after use: the tab had no pane of its own, so the
+  same window had four owners (the desk maximize, the tab maximize, a z-index
+  tier and the column grid). A Slice in the tab changed the stage of the
+  Consoles tab, and each stage feature needed a new guard.
 
 - **A single-view canvas that swaps content (agents *or* a file, never both).**
   Rejected: a human running an agent console needs to open a file without
