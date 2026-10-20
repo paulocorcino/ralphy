@@ -11,6 +11,8 @@ Amended by #358: §3 is widened — a closable tab may also be a **daemon view**
 not only an open file.
 Amended 2026-09-22: §3c adds the **slot** — one secondary pane beside the
 active tab, holding a pinned tab or a mirror of the active code tab.
+Amended by #748: §3d adds the **console tab** — one console of the stage,
+maximized on this device only, in a closable tab.
 
 The daemon workbench (ADR-0032, promoted to the daemon's `/` in #200) lays out
 as four columns: **icon rail · sidebar · canvas · Runs panel**. This ADR records
@@ -112,6 +114,29 @@ involved (ADR-0036 untouched).
 two places" and "two files side by side" — the two cases actually asked for —
 and a tree would make every tab operation (close, activate, restore, detach)
 answer "in which group". The one-slot shape keeps those answers unchanged.
+
+### 3d. A console may open in its own tab (amendment, #748)
+
+A **+** at the end of the strip lists the consoles on the stage. These are the
+rows of the column list (ADR-0051 §5). A pick opens a closable tab of kind
+`console`, after the fixed Consoles tab. The tab shows the stage, with that
+console maximized.
+
+- **The tab belongs to this device.** Its id is `console:<desk id>`. The view
+  store keeps it as `consoleTabs: [{deskId, title}]`, beside the file tabs
+  (ADR-0051 §8). Another device sees no tab.
+- **Its maximize is not written to the desk.** The tab maximizes its console
+  on this page only. While a tab holds a console, the columns write no
+  maximize to the desk either. The maximize button of the stage is unchanged.
+- **The same window, not a copy.** The console stays on the stage. It stays
+  maximized when the operator goes back to the Consoles tab, until the tab
+  closes.
+- **No Restore on the console of the tab.** Restore would move the maximize to
+  another console and take the console out of its own tab. A column in the tab
+  keeps its Restore.
+- **The × only closes the tab.** The console goes back to its stage rect, or
+  stays maximized when the desk records it as maximized. The console keeps
+  running. A console that leaves the stage closes its tab.
 
 ## Rejected alternatives
 
