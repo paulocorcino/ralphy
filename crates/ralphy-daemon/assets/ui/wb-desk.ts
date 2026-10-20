@@ -65,6 +65,8 @@ export type DeskDeps = {
   wins: Set<ConsoleWin>;
   // The stage the converge puts the records on, or null before it exists.
   stage: () => HTMLElement | null;
+  // Every console window of the page, also one in a console tab.
+  pageWindows: () => ConsoleWin[];
   // The fleet's last answer, grouped by peer, for the held rule.
   peerGroups: () => Map<string, Group>;
   // The window records, as a copy.
@@ -129,6 +131,7 @@ export function createDesk(deps: DeskDeps) {
     popups,
     wins,
     stage,
+    pageWindows,
     peerGroups,
     loadDesk,
     readSessions,
@@ -300,7 +303,7 @@ export function createDesk(deps: DeskDeps) {
     const st = stage();
     if (!st) return;
     const byId = new Map<string, DeskRecord>(desk.map((r) => [r.id, r]));
-    for (const w of [...st.querySelectorAll<ConsoleWin>(".session-window")]) {
+    for (const w of pageWindows()) {
       const r = byId.get(w._deskId);
       if (!r) {
         if (!w._deskUnrecorded) recordLeft(w);

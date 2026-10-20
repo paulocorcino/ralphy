@@ -24,14 +24,14 @@ export type FeedsDeps = {
   OPTS: Pick<ConsoleOpts, "isStale">;
   // Every console window: a feed redraws what it shows.
   wins: Set<ConsoleWin>;
-  // The stage element, or null before the page has one.
-  stage: () => HTMLElement | null;
+  // Every console window of the page, in DOM order.
+  pageWindows: () => ConsoleWin[];
   // Draws the title of a window again. Built later: a lazy arrow.
   renderTitle: (win: ConsoleWin, title: HTMLElement, presentation: Presentation) => void;
 };
 
 export function createFeeds(deps: FeedsDeps) {
-  const { OPTS, wins, stage, renderTitle } = deps;
+  const { OPTS, wins, pageWindows, renderTitle } = deps;
 
   function newId(prefix: string) {
     // `crypto.randomUUID` is undefined in a non-secure context and the daemon can
@@ -121,9 +121,7 @@ export function createFeeds(deps: FeedsDeps) {
   // Every window on the plane, for the Go-to picker. Reads the DOM, not `wins`:
   // a snapshot at menu open, not reactive state.
   function list() {
-    const st = stage();
-    if (!st) return [];
-    return [...st.querySelectorAll<ConsoleWin>(".session-window")].map((w) => ({
+    return pageWindows().map((w) => ({
       id: w._deskId,
       agent: w._deskAgent,
       name: w._deskConsoleName ?? null,

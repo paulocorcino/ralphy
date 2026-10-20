@@ -8,7 +8,7 @@ function feeds(OPTS = {}) {
   return createFeeds({
     OPTS,
     wins: new Set(),
-    stage: () => null,
+    pageWindows: () => [],
     renderTitle() {},
   });
 }

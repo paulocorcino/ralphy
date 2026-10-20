@@ -36,8 +36,8 @@ export type TitleDeps = {
   OPTS: { canLaunch?: boolean };
   // The console windows on this page.
   wins: Set<ConsoleWin>;
-  // The plane; null before the page has it.
-  stage: () => HTMLElement | null;
+  // Every console window of the page.
+  pageWindows: () => ConsoleWin[];
   // The desk mirror and the shell's last sessions poll: the console
   // reassigns both, so they are read at each use.
   desk: () => DeskRecord[];
@@ -57,7 +57,7 @@ export function createTitle(deps: TitleDeps) {
     document,
     OPTS,
     wins,
-    stage,
+    pageWindows,
     desk,
     lastSessions,
     askConfirm,
@@ -77,8 +77,7 @@ export function createTitle(deps: TitleDeps) {
   // except `exceptId` (the console being renamed).
   function takenNames(exceptId: string | null) {
     const names = desk().filter((r) => r.id !== exceptId).map((r) => r.consoleName);
-    const st = typeof document?.getElementById === "function" ? stage() : null;
-    for (const w of st ? st.querySelectorAll<ConsoleWin>(".session-window") : []) {
+    for (const w of pageWindows()) {
       if (w._deskId !== exceptId) names.push(w._deskConsoleName);
     }
     return names.filter(Boolean);

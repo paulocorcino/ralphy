@@ -78,7 +78,7 @@ function fakeDeps(more = {}) {
     document: fakeDocument(),
     OPTS: {},
     wins: new Set(),
-    stage: () => null,
+    pageWindows: () => [],
     desk: () => [],
     lastSessions: () => [],
     askConfirm: async () => true,
@@ -110,8 +110,7 @@ test("takenNames reads the desk at each call and leaves out the console being re
   const onStage = { _deskId: "w9", _deskConsoleName: "shell #1" };
   const { deps } = fakeDeps({
     desk: () => desk,
-    document: { ...fakeDocument(), getElementById: () => ({}) },
-    stage: () => ({ querySelectorAll: () => [onStage] }),
+    pageWindows: () => [onStage],
   });
   const title = createTitle(deps);
   // The console reassigns its desk mirror after the title is built.

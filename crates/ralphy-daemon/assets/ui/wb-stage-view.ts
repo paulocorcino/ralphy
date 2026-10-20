@@ -39,6 +39,8 @@ export type ViewDeps = {
   // null before the page has them.
   workspace: () => HTMLElement | null;
   stage: () => HTMLElement | null;
+  // Every console window of the page, also one in a console tab.
+  pageWindows: () => ConsoleWin[];
   // The per-client view store (`WBView`): it reads and patches the stored
   // offset. The popup's store reads nothing.
   viewStore: Pick<typeof WBView, "read" | "patch">;
@@ -74,6 +76,7 @@ export function createView(deps: ViewDeps) {
     document,
     workspace,
     stage,
+    pageWindows,
     viewStore,
     restoreRect,
     focusWin,
@@ -190,11 +193,7 @@ export function createView(deps: ViewDeps) {
   }
 
   function findWindow(deskId: string) {
-    const st = stage();
-    if (!st) return null;
-    return (
-      [...st.querySelectorAll<ConsoleWin>(".session-window")].find((w) => w._deskId === deskId) || null
-    );
+    return pageWindows().find((w) => w._deskId === deskId) || null;
   }
 
   // The centring half, on a viewport that is known to measure.

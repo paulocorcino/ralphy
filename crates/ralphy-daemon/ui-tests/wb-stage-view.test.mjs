@@ -45,6 +45,7 @@ function harness({ width = 1000, height = 700, stored = null, settled = false } 
     document: doc,
     workspace: () => ws,
     stage: () => st,
+    pageWindows: () => [...st.querySelectorAll(".session-window")],
     viewStore: {
       read: () => (state.stored ? { off: state.stored } : {}),
       patch: (p) => patches.push(p),

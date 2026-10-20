@@ -58,6 +58,13 @@ export function createConsole(window: Window, document: Document, location: Pick
   // handles a null stage.
   const stage = () =>
     typeof document?.getElementById === "function" ? document.getElementById("stage") : null;
+  // Every console window of this page: on the stage, then in the pane of the
+  // console tabs (ADR-0037 §3d). A lookup by console uses this; a rule about
+  // the stage's layout reads the stage only.
+  const tabsPane = () =>
+    typeof document?.getElementById === "function" ? document.getElementById("console-tabs-pane") : null;
+  const pageWindows = () =>
+    [stage(), tabsPane()].flatMap((el) => (el ? [...el.querySelectorAll<ConsoleWin>(".session-window")] : []));
   // Scheme-match the session socket to the page (see wb-daemon.ts WS_ORIGIN):
   // `wss://` over a TLS dev-tunnel/proxy, `ws://` for a plain-http localhost bind.
   const WS_ORIGIN =
@@ -107,7 +114,7 @@ export function createConsole(window: Window, document: Document, location: Pick
   const feeds = createFeeds({
     OPTS,
     wins,
-    stage,
+    pageWindows,
     renderTitle: (win, title, presentation) => renderTitle(win, title, presentation),
   });
   const { newDeskId, newFenceId, readSessions, projectNameOf, projectTitleOf, peerGroups, list, lastSessions, wakePeerNow, readFleetNow, staleProbeNow } = feeds;
@@ -119,7 +126,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     document,
     OPTS,
     wins,
-    stage,
+    pageWindows,
     desk: () => currentDesk(),
     lastSessions,
     askConfirm,
@@ -267,6 +274,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     document,
     workspace,
     stage,
+    pageWindows,
     viewStore,
     restoreRect,
     focusWin,
@@ -381,6 +389,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     popups,
     wins,
     stage,
+    pageWindows,
     peerGroups: () => peerGroups,
     loadDesk,
     readSessions,

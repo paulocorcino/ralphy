@@ -55,6 +55,7 @@ function fakeDesk(over = {}, read = readOk) {
     popups: null,
     wins: new Set(),
     stage: () => null,
+    pageWindows: () => [],
     peerGroups: () => new Map(),
     loadDesk: () => [],
     readSessions: () => Promise.resolve({ sessions: [], unheard: [] }),
