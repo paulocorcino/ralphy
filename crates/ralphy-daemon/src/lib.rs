@@ -46,6 +46,7 @@ pub mod spend;
 pub mod textcodec;
 pub mod totp;
 pub mod tree;
+pub(crate) mod uploads;
 pub mod usage;
 pub mod watch;
 

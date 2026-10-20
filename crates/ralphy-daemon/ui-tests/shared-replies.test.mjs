@@ -12,6 +12,7 @@ import * as WBHosts from "../assets/ui/wb-hosts.ts";
 import { WBChanges } from "../assets/ui/wb-changes.ts";
 import { WBFail } from "../assets/ui/wb-fail.ts";
 import { WBAddProject } from "../assets/ui/wb-add-project.ts";
+import { uploadsStore } from "../assets/ui/wb-uploads-store.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -158,5 +159,15 @@ test("session-end--refused: a refused launch shows the daemon's own words", () =
   assert.equal(
     window.WBConsole.endNotice(end.reason, end.message),
     `[could not start: ${end.message}]`,
+  );
+});
+
+test("file.upload: the reply to the last part marks the file done at the daemon's path", async () => {
+  const done = fixture("file.upload");
+  const s = uploadsStore({ messages: { flash: () => {} }, send: async () => done });
+  await s.add([{ file: new File([new Uint8Array(3)], "up.bin"), repo: "o/r", folder: "", onConflict: "fail" }]);
+  assert.deepEqual(
+    s.items.map((i) => [i.state, i.path]),
+    [["done", done.path]],
   );
 });

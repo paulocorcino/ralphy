@@ -26,6 +26,7 @@ import { addProjectDialog } from "../assets/ui/wb-add-project-dialog.ts";
 import { wbColumns, wbConsoleMenus } from "../assets/ui/wb-consoles-tab.ts";
 import { wbFiles } from "../assets/ui/wb-files.ts";
 import { wbMoveDialog } from "../assets/ui/wb-move-dialog.ts";
+import { wbUploadDialog } from "../assets/ui/wb-files-upload.ts";
 import { wbPropertiesDialog } from "../assets/ui/wb-properties-dialog.ts";
 import { wbRuns } from "../assets/ui/wb-runs-panel.ts";
 import { wbBoard } from "../assets/ui/wb-board.ts";
@@ -42,6 +43,7 @@ import { checkoutsStore } from "../assets/ui/wb-checkouts-store.ts";
 import { releaseStore } from "../assets/ui/wb-release-store.ts";
 import { modalsStore } from "../assets/ui/wb-modals-store.ts";
 import { tabsStore } from "../assets/ui/wb-tabs-store.ts";
+import { uploadsStore } from "../assets/ui/wb-uploads-store.ts";
 import { WBSpend } from "../assets/ui/wb-spend.ts";
 import { WBKanban } from "../assets/ui/wb-kanban.ts";
 import { createDaemon } from "../assets/ui/wb-daemon.ts";
@@ -77,6 +79,7 @@ export const STORES = {
   checkouts: checkoutsStore,
   release: releaseStore,
   tabs: tabsStore,
+  uploads: uploadsStore,
 };
 
 // The Alpine components, by the name the markup gives `x-data`: `loadComponent`
@@ -92,6 +95,7 @@ const MODULE_COMPONENTS = {
   wbColumns,
   wbFiles,
   wbMoveDialog,
+  wbUploadDialog,
   wbPropertiesDialog,
   wbRuns,
   wbBoard,

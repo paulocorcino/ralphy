@@ -107,11 +107,16 @@ impl RunsSettings {
 pub struct FilesSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub encoding: Option<String>,
+    /// The largest file the workbench may upload, in MiB (`files.upload_max_mb`,
+    /// ADR-0036 amendment 2026-10-19). `None` → 25; the daemon reads a value
+    /// above 1024 as 1024.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upload_max_mb: Option<u64>,
 }
 
 impl FilesSettings {
     pub fn is_empty(&self) -> bool {
-        self.encoding.is_none()
+        self.encoding.is_none() && self.upload_max_mb.is_none()
     }
 }
 

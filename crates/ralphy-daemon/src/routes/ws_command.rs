@@ -75,6 +75,7 @@ pub(crate) async fn answer_one(ctx: &CommandCtx, cmd: &Command, who: &SocketAudi
         fleet::Route::UnknownDaemon { daemon_id } => unknown_daemon(daemon_id),
         fleet::Route::Peer { peer, slug } => relay_to_peer(peer, &for_peer(cmd, slug)).await,
     };
+    who.record_upload(verb, cmd, &reply);
     Answer::Reply(reply)
 }
 

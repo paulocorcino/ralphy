@@ -165,7 +165,7 @@ const NOT_PEER_REPLIES: &[(&str, &str, &str)] = &[
 /// field of their replies is optional in the page type, and an older peer
 /// answers them `unknown verb`, which the Properties dialog shows as a refusal
 /// that names the older daemon.
-const PEER_REPLY_PIN: (u32, u64) = (4, 0xf35f_d192_cf23_68e2);
+const PEER_REPLY_PIN: (u32, u64) = (4, 0xe6fc_9371_d11c_bb24);
 
 /// Where `PEER_PROTOCOL_VERSION` is, from the repo root.
 const PEER_RS: &str = "crates/ralphy-daemon/src/peer.rs";

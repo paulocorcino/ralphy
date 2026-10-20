@@ -16,7 +16,7 @@ use tokio_tungstenite::tungstenite::Message;
 /// Bind a daemon over a temp repo seeded with `a.txt`; return the
 /// `ws://…/ws/command` URL, the repo slug, AND the leaked repo root so a test can
 /// assert on-disk state after a Write.
-async fn serve_repo() -> (String, String, PathBuf) {
+pub(super) async fn serve_repo() -> (String, String, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("a.txt"), b"x").unwrap();
     let root = dir.path().to_path_buf();
@@ -55,7 +55,7 @@ async fn serve_repo() -> (String, String, PathBuf) {
 
 /// Send one `Command` and collect every reply frame on `id` until the socket
 /// closes, returning `(replies, spawned_count)`.
-async fn round_trip(
+pub(super) async fn round_trip(
     url: &str,
     id: u64,
     verb: &str,
@@ -479,7 +479,7 @@ async fn image_write_takes_no_path_from_the_client() {
 /// A repo with a linked worktree, the same fixture shape `observe_read.rs`
 /// uses: the pointer FILE is what `checkout::is_linked` reads, so no `git`
 /// child is needed to make `wt-a` resolve.
-async fn serve_worktree_repo() -> (String, String, PathBuf) {
+pub(super) async fn serve_worktree_repo() -> (String, String, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("a.txt"), b"x").unwrap();
     let wt = dir.path().join(".ralphy/worktrees/wt-a");

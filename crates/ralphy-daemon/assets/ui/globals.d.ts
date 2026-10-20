@@ -73,6 +73,9 @@ interface DaemonReplies {
   "note.write": WriteReply;
   /** The path the daemon saved the pasted image at. */
   "image.write": DaemonReply & { path?: string };
+  /** One part of an upload: `received` while the file is not complete, `path`
+   * and `result` on the last part, `expected` with `reason: "offset"`. */
+  "file.upload": DaemonReply & { received?: number; expected?: number; path?: string; result?: string };
   "runs.list": DaemonReply & {
     runs?: import("./wb-runs.ts").RunSnapshot[];
     unreadable?: { runid: string; reason: string }[];
@@ -300,6 +303,29 @@ interface WunderbaumOptions {
   dblclick(e: WunderbaumEvent): boolean;
   /** `false` stops the tree's own handling of the key. */
   keydown(e: WunderbaumKeyEvent): false | undefined;
+  /** Files dropped from the operator's computer; no `dragStart`, so no row
+   * of the tree can be dragged. */
+  dnd: {
+    /** `false` lets a folder that is not loaded yet take a drop. */
+    preventLazyParents: boolean;
+    /** The drop effect when the drag names none. */
+    dropEffectDefault: "copy" | "move" | "link";
+    /** How long the pointer rests on a closed folder before it opens. */
+    autoExpandMS: number;
+    /** The drop regions a row takes; `false` refuses the drop. */
+    dragEnter(e: WunderbaumDndEvent): "over" | false;
+    /** Every `dragover` on a row. */
+    dragOver(e: WunderbaumDndEvent): void;
+    /** `false` keeps a closed folder closed this time. */
+    dragExpand(e: WunderbaumDndEvent): boolean;
+    drop(e: WunderbaumDndEvent): void;
+  };
+}
+
+/** `dnd.dragEnter` and `dnd.drop`: the row under the pointer, and the
+ * browser's event. */
+interface WunderbaumDndEvent extends WunderbaumEvent {
+  event: DragEvent;
 }
 
 interface Window {
@@ -321,6 +347,7 @@ interface Window {
     store(name: "release"): import("./wb-release-store.ts").ReleaseStore;
     store(name: "modals"): import("./wb-modals-store.ts").ModalsStore;
     store(name: "tabs"): import("./wb-tabs-store.ts").TabsStore;
+    store(name: "uploads"): import("./wb-uploads-store.ts").UploadsStore;
     store(name: string, value: object): void;
     raw<T>(value: T): T;
     nextTick(callback: () => void): Promise<void>;
@@ -524,6 +551,7 @@ interface WindowEventMap {
   "workbench:file-search-open": CustomEvent<null>;
   /** Ask where to move the row at the full rel path `from`. */
   "workbench:move-open": CustomEvent<{ from: string }>;
+  "workbench:upload-open": CustomEvent<import("./wb-files-upload.ts").UploadOpen>;
   "workbench:move-confirmed": CustomEvent<{ from: string; to: string }>;
   /** Show the properties of the row at the rel path `path` ("" is the project root). */
   "workbench:properties-open": CustomEvent<{ path: string; isFolder: boolean }>;

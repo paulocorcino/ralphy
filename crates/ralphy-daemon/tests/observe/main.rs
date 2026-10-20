@@ -10,4 +10,5 @@ mod file_encoding;
 mod observe_read;
 mod properties;
 mod runs_list;
+mod workspace_upload;
 mod workspace_write;

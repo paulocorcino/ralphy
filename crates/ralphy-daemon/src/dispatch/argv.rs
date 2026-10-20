@@ -92,6 +92,7 @@ pub fn spawn_argv(verb: Verb, payload: &serde_json::Value) -> Result<Vec<String>
         | Verb::FileCopy
         | Verb::FileDelete
         | Verb::ImageWrite
+        | Verb::FileUpload
         | Verb::NoteWrite
         | Verb::BranchList
         | Verb::BranchSwitch

@@ -2,10 +2,11 @@
 //! mutations of the editor and the clipboard drop (ADR-0036 §2, ADR-0055).
 
 use std::path::Path;
+use std::time::SystemTime;
 
 use super::{encoding_param, note_write};
 use crate::routes::blocking_read;
-use crate::{clipboard, dispatch, fswrite, protocol};
+use crate::{clipboard, dispatch, fswrite, protocol, uploads};
 
 /// Answer one Write verb. A note write is the ONE Write a `checkout` is
 /// honoured on (ADR-0064 §5): it is answered above the refusal below, because
@@ -34,6 +35,9 @@ pub(super) async fn write(
     if verb == dispatch::Verb::ImageWrite {
         return image_write(cmd, repo_path).await;
     }
+    if verb == dispatch::Verb::FileUpload {
+        return file_upload(cmd, repo_path).await;
+    }
     file_verb(verb, cmd, repo_path)
 }
 
@@ -54,6 +58,32 @@ async fn image_write(cmd: &protocol::Command, repo_path: &Path) -> serde_json::V
     match outcome {
         Some(Ok(path)) => serde_json::json!({ "status": "ok", "path": path }),
         Some(Err(reason)) => serde_json::json!({ "status": "error", "reason": reason }),
+        None => serde_json::json!({ "status": "error", "reason": "unavailable" }),
+    }
+}
+
+/// One part of an upload (ADR-0036 amendment 2026-10-19). The reply to the
+/// last part names the path the daemon used and whether a file was replaced;
+/// the audit record is built from it (`audit_layer::upload_event`).
+async fn file_upload(cmd: &protocol::Command, repo_path: &Path) -> serde_json::Value {
+    let part = match uploads::parse(&cmd.payload) {
+        Ok(part) => part,
+        Err(e) => return e.reply(),
+    };
+    let root = repo_path.to_path_buf();
+    let outcome = blocking_read(move || {
+        let limit = uploads::limit_bytes(&root);
+        uploads::accept(&root, &part, SystemTime::now(), limit)
+    })
+    .await;
+    match outcome {
+        Some(Ok(uploads::Step::Received(received))) => {
+            serde_json::json!({ "status": "ok", "received": received })
+        }
+        Some(Ok(uploads::Step::Done { path, placed })) => {
+            serde_json::json!({ "status": "ok", "path": path, "result": placed.as_str() })
+        }
+        Some(Err(e)) => e.reply(),
         None => serde_json::json!({ "status": "error", "reason": "unavailable" }),
     }
 }

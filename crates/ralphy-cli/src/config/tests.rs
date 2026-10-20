@@ -252,7 +252,7 @@ fn config_keys_round_trip_through_set_and_unset() {
     // (key, value, read the stored value as Debug text, the Debug text once
     // set, a refused value and the words of its refusal)
     type Row<'a> = (&'a str, &'a str, Read, &'a str, Option<(&'a str, &'a str)>);
-    let rows: [Row; 6] = [
+    let rows: [Row; 7] = [
         (
             "remote_control",
             "true",
@@ -297,6 +297,13 @@ fn config_keys_round_trip_through_set_and_unset() {
             |s| format!("{:?}", s.runs.keep),
             "Some(7)",
             None,
+        ),
+        (
+            "files.upload_max_mb",
+            "100",
+            |s| format!("{:?}", s.files.upload_max_mb),
+            "Some(100)",
+            Some(("0", "at least 1")),
         ),
     ];
     for (key, value, read, stored, refused) in rows {
@@ -503,6 +510,7 @@ fn every_registry_key_is_handled_by_all_subcommands() {
             "remote_control" => "true",
             "claude.max_minutes_per_issue" => "45",
             "runs.keep" => "50",
+            "files.upload_max_mb" => "25",
             "claude.console_name" => "true",
             // Validated against effort vocabularies, so `x` is refused.
             "claude.plan_effort"

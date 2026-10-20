@@ -489,6 +489,28 @@
             x-show="!treeError && treeNotLive"
             x-text="treeNotLive"
           ></div>
+          <!-- The files the operator uploads (the store `uploads`), of every
+               project: a change of project does not stop them. -->
+          <div class="upload-card" x-show="$store.uploads.visible" x-cloak>
+            <div class="upload-card-head">
+              <i class="bi bi-cloud-upload"></i>
+              <span>Uploads</span>
+              <span class="spacer"></span>
+              <button type="button" class="btn" @click="$store.uploads.clearFinished()">Clear finished</button>
+            </div>
+            <template x-for="u in $store.uploads.items" :key="u.key">
+              <div class="upload-row" :class="u.state">
+                <div class="upload-line">
+                  <span class="upload-name" x-text="u.path || u.name" :title="$store.projects.projectLabel(u.repo)"></span>
+                  <span class="upload-state" x-text="$store.uploads.stateText(u)"></span>
+                  <button type="button" class="btn" x-show="u.state === 'failed'" @click="$store.uploads.retry(u.key)">Try again</button>
+                  <button type="button" class="btn" x-show="u.state === 'sending' || u.state === 'waiting' || u.state === 'failed'" @click="$store.uploads.cancel(u.key)">Cancel</button>
+                </div>
+                <progress max="100" x-show="u.state === 'sending'" :value="$store.uploads.percent(u)"></progress>
+                <p class="upload-error" x-show="u.error" x-text="u.error"></p>
+              </div>
+            </template>
+          </div>
         </div>
         <!-- ===================================================================
              The end of the FILES tree of the open project (wbFiles).
@@ -2850,6 +2872,45 @@
         <div class="modal-foot">
           <button class="btn" @click="movePickCancel()">Cancel</button>
           <button class="btn accent" @click="movePickConfirm()" :disabled="movePickBlocked()">Move here</button>
+        </div>
+      </div>
+    </div>
+    </div>
+
+    <!-- ===================================================================
+         The upload dialog (wbUploadDialog, wb-files-upload.ts): the files
+         dropped or picked for one folder, the ones over the limit, and one
+         choice for the names that exist.
+    ==================================================================== -->
+    <div class="upload-dialog" x-data="wbUploadDialog" @workbench:upload-open.window="openUpload($event.detail)">
+    <div class="modal-scrim" x-cloak x-bind="$store.modals.scrim('upload.open', () => uploadCancel())">
+      <div class="modal upload-picker" role="dialog" aria-modal="true" aria-label="Upload files">
+        <div class="modal-head">
+          <i class="bi bi-cloud-upload"></i>
+          <span class="modal-title">Upload files</span>
+          <span class="modal-sub" x-text="upload.folder || $store.projects.projectLabel(upload.repo) + ' (project root)'"></span>
+          <span class="spacer"></span>
+          <button class="modal-x" @click="uploadCancel()" title="Close"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="move-list">
+          <template x-for="r in upload.rows" :key="r.name">
+            <div class="upload-file" :class="{ refused: r.tooBig }">
+              <i class="bi bi-file-earmark"></i>
+              <span class="upload-name" x-text="r.name"></span>
+              <span class="upload-state" x-text="uploadRowText(r)"></span>
+            </div>
+          </template>
+        </div>
+        <fieldset class="upload-choice" x-show="uploadHasExisting()">
+          <legend>Some of these names exist in the folder</legend>
+          <label><input type="radio" value="keep_both" x-model="upload.choice"> Keep both</label>
+          <label><input type="radio" value="replace" x-model="upload.choice"> Replace</label>
+          <label><input type="radio" value="skip" x-model="upload.choice"> Skip</label>
+        </fieldset>
+        <p class="move-error" x-show="upload.error" x-text="upload.error"></p>
+        <div class="modal-foot">
+          <button class="btn" @click="uploadCancel()">Cancel</button>
+          <button class="btn accent" @click="uploadConfirm()" :disabled="uploadBlocked()">Upload</button>
         </div>
       </div>
     </div>
