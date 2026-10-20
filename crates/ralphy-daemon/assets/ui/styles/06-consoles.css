@@ -86,6 +86,19 @@
   min-height: 0;
   border-radius: 0;
 }
+/* The console of the active console tab (ADR-0037 §3d) fills the viewport,
+   also when it is a column of a grid the tab does not own. It comes after the
+   column rule and wins over it. A repaint of the columns raises them, so
+   the front is a fixed tier: above the stack's ceiling (120, wb-stage-stack.ts)
+   and below the runs overlay (150). */
+.session-window.tab-front {
+  z-index: 121 !important;
+  left: var(--max-left, 0px) !important;
+  top: var(--max-top, 0px) !important;
+  width: 100% !important;
+  height: calc(100% - var(--kb-inset, 0px)) !important;
+  border-radius: 0;
+}
 /* A column is not moved, resized, locked or closed: Restore takes it out
    first. Restart, the worktree picker and full screen stay. Full screen moves
    and closes nothing: the column fills the display, and leaving it puts the

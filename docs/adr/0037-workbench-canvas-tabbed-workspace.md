@@ -126,9 +126,14 @@ console maximized.
   store keeps it as `consoleTabs: [{deskId, title}]`, beside the file tabs
   (ADR-0051 §8). Another device sees no tab.
 - **Its maximize is not written to the desk.** The tab maximizes its console
-  on this page only. While a tab holds the first console of the columns, the
-  columns write no maximize to the desk either. On a phone, Switch in a
-  console tab opens the tab of the picked console. The maximize button of the stage is unchanged.
+  on this page only.
+- **The active tab's console is in front.** It fills the viewport above every
+  other console, also when it is a column of a grid of the Consoles tab.
+- **A column grid belongs to the tab it was opened in.** The grid is kept per
+  device with the desk id of its console tab (`columnsTab`), or none for the
+  Consoles tab. Only that tab shows the grid. A grid of a console tab writes
+  no maximize to the desk. On a phone, Switch in a console tab opens the tab
+  of the picked console. The maximize button of the stage is unchanged.
 - **The same window, not a copy.** The console stays on the stage. It stays
   maximized when the operator goes back to the Consoles tab, until the tab
   closes.

@@ -103,6 +103,7 @@ export function buildConsoleApi(parts: ConsoleParts) {
       if (win) stageWindow.tabMax(win, on, records.deskRecords().some((r) => r.id === id && r.max));
       return !!win;
     },
+    tabFront: (id: string | null) => stageWindow.tabFront(id ? view.findWindow(id) : null),
     touchScrollLines: WBConsoleInput.touchScrollLines,
     touchScrollTarget: WBConsoleInput.touchScrollTarget,
     touchGesture: WBConsoleInput.touchGesture,

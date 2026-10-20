@@ -590,6 +590,8 @@ export function createChrome(deps: ChromeDeps) {
     // double tap on it. `wbColumns` (wb-consoles-tab.ts) owns the columns, so
     // a column's restore is its decision.
     const maxOrRestore = () => {
+      // The console of the active console tab keeps its place.
+      if (win.classList.contains("tab-front")) return;
       if (win.classList.contains("column")) {
         sendDocument(document, "workbench:column-restore", { id: win._deskId });
         return;

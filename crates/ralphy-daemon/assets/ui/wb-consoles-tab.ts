@@ -350,6 +350,9 @@ export function wbColumns() {
     // state, never desk state. The ids left to right; empty whenever fewer
     // than two remain, so a lone survivor is an ordinary maximize again.
     columns: [] as Grid,
+    // The desk id of the console tab the grid was opened in, or null when it
+    // was opened on the Consoles tab (ADR-0037 §3d). Only that tab shows it.
+    columnsTab: null as string | null,
     columnMenu: false,
     consoleCount: 0,
     // The stage extent, for the footer pill (#338).
@@ -376,8 +379,19 @@ export function wbColumns() {
     // tab holds it: then it is this page's own (ADR-0037 §3d). Read before
     // the grid changes, while the first console is still the old one.
     writesMax() {
-      const lead = columnLead(this.columnIds());
-      return !lead || !this.$store.tabs.holds(lead);
+      return !this.columnsTab;
+    },
+    // The console of the active console tab, or null.
+    activeTabConsole(): string | null {
+      const tabs = this.$store.tabs;
+      return tabs.tabs.find((t) => t.id === tabs.active && t.kind === "console")?.deskId ?? null;
+    },
+    // A console tab shows its console in front, or the grid it owns.
+    showTabConsole() {
+      const deskId = this.activeTabConsole();
+      const own = !!deskId && deskId === this.columnsTab && this.columnIds().length >= 2;
+      WBConsole.tabFront(own ? null : deskId);
+      if (own) this.paintColumns({ raise: true });
     },
     columnCap() {
       return WBColumns.cap(WBConsole.columnMeasure().viewport, WBConsole.PHONE_MAX_WIDTH);
@@ -386,10 +400,14 @@ export function wbColumns() {
     // changes: `paintColumns` runs on every `consoles-changed` during boot with
     // an empty grid, and an unconditional write would erase the stored grid
     // before `restoreColumns` reads it.
-    setColumns(next: Grid) {
-      if (JSON.stringify(next) === JSON.stringify(this.columns)) return;
+    // A new grid belongs to the tab it opens in; an ended grid to no tab.
+    setColumns(next: Grid, owner?: string | null) {
+      const kept = this.columns.length ? this.columnsTab : this.activeTabConsole();
+      const columnsTab = next.length ? (owner === undefined ? kept : owner) : null;
+      if (JSON.stringify(next) === JSON.stringify(this.columns) && columnsTab === this.columnsTab) return;
       this.columns = next;
-      window.WBView?.patch({ columns: WBColumns.toStored(next) });
+      this.columnsTab = columnsTab;
+      window.WBView?.patch({ columns: WBColumns.toStored(next), columnsTab });
     },
     // Once, on `workbench:desk-restored`. A list the desk does not confirm is
     // ignored and cleared from the store; a kept one is painted with `persist`.
@@ -399,8 +417,9 @@ export function wbColumns() {
       const stored = window.WBView?.read();
       this.columnDir = WBColumns.dirOf(stored?.columnDir);
       const raw = stored?.columns ?? null;
-      const next = WBColumns.fromStored(raw, WBConsole.deskRecords(), this.$store.tabs.consoleDeskIds());
-      this.setColumns(next);
+      const owner = this.storedOwner(stored);
+      const next = WBColumns.fromStored(raw, WBConsole.deskRecords(), owner);
+      this.setColumns(next, owner);
       // `setColumns` writes only a change; an ignored grid meets an empty one.
       // A flat list stored before rows is written back as a grid.
       if (next.length && JSON.stringify(raw) !== JSON.stringify(next)) {
@@ -408,6 +427,11 @@ export function wbColumns() {
       }
       if (!next.length && raw !== null) window.WBView?.patch({ columns: null });
       if (next.length) this.paintColumns({ raise: true });
+    },
+    // The console tab a stored grid belongs to, while this page still has it.
+    storedOwner(stored: ReturnType<Window["WBView"]["read"]> | undefined): string | null {
+      const id = stored?.columnsTab;
+      return id && this.$store.tabs.holds(id) ? id : null;
     },
     effectiveColumns(fromId: string): Grid {
       return this.columnIds().includes(fromId) ? this.columns : [[fromId]];
@@ -538,7 +562,7 @@ export function wbColumns() {
       else this.openColumn(id);
     },
     endTabColumns(deskId: string) {
-      if (this.columnIds()[0] !== deskId) return;
+      if (this.columnsTab !== deskId) return;
       this.setColumns([]);
       WBConsole.applyColumns([], { unmax: null, persist: false });
     },
@@ -688,10 +712,12 @@ export function wbColumns() {
       });
       document.addEventListener("workbench:desk-restored", () => {
         this.restoreColumns();
+        this.showTabConsole();
       });
       // The columns of a console tab end with the tab. Nothing is written to
       // the desk: the tab's maximize was never there.
       document.addEventListener("workbench:console-tab-closed", (e) => this.endTabColumns(e.detail.deskId));
+      document.addEventListener("workbench:tab-shown", () => this.showTabConsole());
       // A narrower or wider viewport changes the cap. One repaint per frame.
       let columnsFrame = 0;
       window.addEventListener("resize", () => {

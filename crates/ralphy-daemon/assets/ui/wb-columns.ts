@@ -290,17 +290,17 @@ export const WBColumns = (function () {
   }
 
   // The first console of a stored grid is on the desk and maximized there, or
-  // held by a console tab of this page.
-  function leadsGrid(records: { id: string; max?: boolean }[], first: string | undefined, tabbed: readonly string[] | undefined) {
-    return records.some((r) => r.id === first && (r.max === true || !!tabbed?.includes(r.id)));
+  // the console of the console tab that owns the grid.
+  function leadsGrid(records: { id: string; max?: boolean }[], first: string | undefined, owner: string | null | undefined) {
+    return records.some((r) => r.id === first && (r.max === true || r.id === owner));
   }
 
   // The stored grid, checked against the desk (`[{id, max}]`) on restore. A
   // flat list of ids, stored before rows existed, reads as one row per
   // column. The FIRST stored id must be the desk's maximized console, or the
-  // console of a console tab (`tabbed`, ADR-0037 §3d), or the grid is ignored
+  // console of the console tab that owns it (`owner`, ADR-0037 §3d), or the grid is ignored
   // (ADR-0051 §8); then ids no longer on the desk drop.
-  function fromStored(stored: unknown, desk: { id: string; max?: boolean }[] | null | undefined, tabbed?: readonly string[]): Grid {
+  function fromStored(stored: unknown, desk: { id: string; max?: boolean }[] | null | undefined, owner?: string | null): Grid {
     if (!Array.isArray(stored)) return [];
     const seen = new Set<string>();
     const cols: Grid = [];
@@ -315,7 +315,7 @@ export const WBColumns = (function () {
       if (col.length) cols.push(col);
     }
     const records = desk || [];
-    if (!leadsGrid(records, flat(cols)[0], tabbed)) return [];
+    if (!leadsGrid(records, flat(cols)[0], owner)) return [];
     const next = keep(cols, new Set(records.map((r) => r.id)));
     return flat(next).length >= 2 ? next : [];
   }

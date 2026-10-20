@@ -19,6 +19,9 @@ T6  after a reload the tab comes back active, with w-b maximized and its column
 T7  at a phone width only the main console shows
 T8  the × returns w-b to its rect; it keeps running, and the desk is unchanged
 T9  closing a console closes its tab
+T10 a console that is a column of the Consoles tab's grid shows alone, in
+    front, in its tab; the Consoles tab shows the grid again
+T11 with two console tabs, each tab puts its own console in front
 
 The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
 doubles as the orchestrator on this host).
@@ -42,7 +45,7 @@ T.BASE = BASE = f"http://127.0.0.1:{PORT}/"
 SHOT = os.path.join(T.REPO_ROOT, ".ralphy", "screenshots", "748-console-tab-2026-10-20.png")
 WIDE = {"width": 2400, "height": 1000}
 PHONE = {"width": 400, "height": 800}
-FLOOR = 22  # every check above the floor check; pinned after the first green run
+FLOOR = 31  # every check above the floor check; pinned after the first green run
 
 results = []
 
@@ -57,6 +60,8 @@ TAB_IDS = f"() => {T.TABS}.tabs.map((t) => t.id)"
 ACTIVE = f"() => {T.TABS}.active"
 PLUS_ROWS = "() => [...document.querySelectorAll('.console-tab-menu .console-tab-item')].map((b) => b.dataset.id).sort()"
 COLUMN_ROWS = "() => [...document.querySelectorAll('.column-menu .column-item')].map((b) => b.dataset.id).sort()"
+TOP = """() => { const r = document.getElementById('workspace').getBoundingClientRect();
+  return document.elementFromPoint(r.left + r.width * 0.75, r.top + r.height / 2)?.closest('.session-window')?._deskId ?? null; }"""
 RESTORE = "(id) => { const b = __W(id)?.querySelector('.session-max'); return b && { hidden: b.hidden, title: b.title }; }"
 
 
@@ -201,6 +206,32 @@ def main():
                 pass
             check("T9 closing the console closes its tab", "console:w-c" not in page.evaluate(TAB_IDS),
                   str(page.evaluate(TAB_IDS)))
+
+            # T10 ------------------------------------------------------------
+            page.evaluate(f"() => {T.TABS}.activate('consoles')")
+            page.wait_for_timeout(400)
+            T.open_column(page, "w-a", "w-b")
+            check("T10 setup: a grid on the Consoles tab", T.shell_cols(page) == ["w-a", "w-b"], str(T.shell_cols(page)))
+            pick(page, "w-a")
+            check("T10 the tab's console is on top at the right half", page.evaluate(TOP) == "w-a", str(page.evaluate(TOP)))
+            check("T10 …it fills the viewport", page.evaluate(
+                "() => { const w = __W('w-a').getBoundingClientRect(), r = document.getElementById('workspace').getBoundingClientRect();"
+                " return Math.abs(w.width - r.width) < 2; }"))
+            btn = page.evaluate(RESTORE, "w-a")
+            check("T10 …with no Restore", btn and btn["hidden"], str(btn))
+            page.evaluate(f"() => {T.TABS}.activate('consoles')")
+            page.wait_for_timeout(500)
+            check("T10 the Consoles tab shows the grid again", page.evaluate(TOP) == "w-b", str(page.evaluate(TOP)))
+
+            # T11 ------------------------------------------------------------
+            pick(page, "w-b")
+            check("T11 the second tab shows w-b", page.evaluate(TOP) == "w-b", str(page.evaluate(TOP)))
+            page.evaluate(f"() => {T.TABS}.activate('console:w-a')")
+            page.wait_for_timeout(500)
+            check("T11 the first tab shows w-a again", page.evaluate(TOP) == "w-a", str(page.evaluate(TOP)))
+            page.evaluate(f"() => {T.TABS}.activate('console:w-b')")
+            page.wait_for_timeout(500)
+            check("T11 …and the second w-b again", page.evaluate(TOP) == "w-b", str(page.evaluate(TOP)))
 
             check("no page errors", not errors, str(errors[:3]))
             browser.close()

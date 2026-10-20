@@ -134,13 +134,37 @@ export function createStageWindow(deps: StageWindowDeps) {
     paintMaxButton(win);
   }
 
+  // The console of the active console tab is in front and fills the viewport,
+  // also when it is a column of a grid the tab does not own. `null` takes the
+  // front off every console.
+  function tabFront(win: ConsoleWin | null) {
+    for (const w of stage()?.querySelectorAll<ConsoleWin>(".session-window.tab-front") ?? []) {
+      if (w === win) continue;
+      w.classList.remove("tab-front");
+      paintMaxButton(w);
+      fitTerm(w);
+    }
+    if (!win) return;
+    win.classList.add("tab-front");
+    paintMaxButton(win);
+    focusWin(win);
+    fitTerm(win);
+  }
+
+  function fitTerm(win: ConsoleWin) {
+    try {
+      win._term?.fit.fit();
+    } catch {}
+  }
+
   // A column restores like a maximize, so it shows the same control. The
   // console of a console tab has none: a restore would take it out of its tab.
   function paintMaxButton(win: ConsoleWin) {
     const btn = win._maxBtn;
     if (!btn) return;
     const column = win.classList.contains("column");
-    btn.hidden = !column && win.classList.contains("maximized") && heldByTab(win._deskId);
+    btn.hidden =
+      win.classList.contains("tab-front") || (!column && win.classList.contains("maximized") && heldByTab(win._deskId));
     const on = win.classList.contains("maximized") || column;
     btn.title = on ? "Restore" : "Maximize";
     btn.innerHTML = on
@@ -342,6 +366,7 @@ export function createStageWindow(deps: StageWindowDeps) {
     setMax,
     toggleMax,
     tabMax,
+    tabFront,
     paintMaxButton,
     isFull,
     isLocked,

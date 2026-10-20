@@ -455,6 +455,7 @@ test("the console module's events reach the columns: the count, the stage extent
   columns.leaveColumns = (ids) => calls.push(`leave ${ids}`);
   columns.columnsFromFence = (items) => calls.push(`fence ${items.length}`);
   columns.restoreColumns = () => calls.push("restore all");
+  columns.showTabConsole = () => calls.push("tab");
   fire("document", "workbench:consoles-changed", { count: 3 });
   fire("document", "workbench:stage-extent", { width: 800, height: 600 });
   fire("document", "workbench:column-open", { id: "a", rect: { right: 10 } });
@@ -463,9 +464,10 @@ test("the console module's events reach the columns: the count, the stage extent
   fire("document", "workbench:columns-leave", { ids: ["c"] });
   fire("document", "workbench:fence-columns", { items: [1, 2] });
   fire("document", "workbench:desk-restored");
+  fire("document", "workbench:tab-shown", { id: "consoles" });
   assert.equal(columns.consoleCount, 3);
   assert.deepEqual([columns.stageW, columns.stageH], [800, 600]);
-  assert.deepEqual(calls, ["paint", "list a 10", "restore b", "paint", "leave c", "fence 2", "restore all"]);
+  assert.deepEqual(calls, ["paint", "list a 10", "restore b", "paint", "leave c", "fence 2", "restore all", "tab", "tab"]);
 });
 
 test("the columns give the console module the hook for consoles another client removed", () => {

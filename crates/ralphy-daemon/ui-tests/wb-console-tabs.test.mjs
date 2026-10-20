@@ -108,8 +108,8 @@ test("the stored columns of a console tab come back without a maximize on the de
     { id: "w2", max: false },
   ];
   assert.deepEqual(WBColumns.fromStored([["w1"], ["w2"]], desk), [], "no maximize, no tab: ignored");
-  assert.deepEqual(WBColumns.fromStored([["w1"], ["w2"]], desk, ["w1"]), [["w1"], ["w2"]]);
-  assert.deepEqual(WBColumns.fromStored([["w1"], ["w2"]], desk, ["w2"]), [], "the tab's console must be first");
+  assert.deepEqual(WBColumns.fromStored([["w1"], ["w2"]], desk, "w1"), [["w1"], ["w2"]]);
+  assert.deepEqual(WBColumns.fromStored([["w1"], ["w2"]], desk, "w2"), [], "the tab's console must be first");
 });
 
 // A window with the classes `classes`, and the window states of a page where
@@ -177,6 +177,7 @@ function columnsPersist(held, act = (state) => state.restoreColumn("w3")) {
   globalThis.WBConsole = {
     ...realConsole,
     applyColumns: (_painted, opts) => writes.push(opts.persist),
+    tabFront: (id) => writes.push(["front", id]),
     columnMeasure: () => ({ viewport: 1920 }),
     focusedId: () => null,
     focusColumn() {},
@@ -187,6 +188,7 @@ function columnsPersist(held, act = (state) => state.restoreColumn("w3")) {
     if (held) state.$store.tabs.openConsoleTab("w1", "w1");
     state.columnCap = () => 3;
     state.columns = [["w1"], ["w2"], ["w3"]];
+    state.columnsTab = held ? "w1" : null;
     act(state);
     return writes;
   } finally {
@@ -221,4 +223,33 @@ test("on a phone, Switch in a console tab opens the tab of the picked console", 
   });
   assert.equal(tabs.active, "console:w2");
   assert.deepEqual(writes, [], "no swap is painted");
+});
+
+test("a grid opened in a console tab belongs to that tab; one opened on Consoles to none", () => {
+  const owners = [];
+  columnsPersist(true, (state) => {
+    state.columns = [];
+    state.columnsTab = null;
+    state.setColumns([["w1"], ["w2"]]);
+    owners.push(state.columnsTab);
+    state.$store.tabs.activate("consoles");
+    state.setColumns([["w1"], ["w2"], ["w3"]]);
+    owners.push(state.columnsTab, "|");
+    state.setColumns([]);
+    state.setColumns([["w2"], ["w3"]]);
+    owners.push(state.columnsTab);
+  });
+  assert.deepEqual(owners, ["w1", "w1", "|", null]);
+});
+
+test("a console tab puts its console in front unless the tab owns the grid", () => {
+  const fronts = (owner) => {
+    const writes = columnsPersist(true, (state) => {
+      state.columnsTab = owner;
+      state.showTabConsole();
+    });
+    return writes.filter((w) => Array.isArray(w));
+  };
+  assert.deepEqual(fronts(null), [["front", "w1"]], "a grid of the Consoles tab stays behind");
+  assert.deepEqual(fronts("w1"), [["front", null]], "the tab's own grid is painted");
 });
