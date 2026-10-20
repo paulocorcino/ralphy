@@ -10,6 +10,7 @@
    --------------------------------------------------------------------------- */
 import { WBGeometry } from "./wb-geometry.ts";
 import { sendDocument } from "./wb-events.ts";
+import { inTab } from "./wb-console-place.ts";
 import type { ConsoleWin, DeskWindowFields, ExtentOpts, Stacked } from "./wb-types.d.ts";
 
 // Plane geometry is `wb-geometry.ts` (ADR-0057): pure folds over rects.
@@ -33,12 +34,10 @@ export type StageWindowDeps = {
   // Re-asks which windows are covered. It runs after a maximize or a
   // full-screen change.
   refreshCover: () => void;
-  // Whether a console tab of this page holds the console (ADR-0037 §3d).
-  heldByTab: (deskId: string) => boolean;
 };
 
 export function createStageWindow(deps: StageWindowDeps) {
-  const { document, workspace, stage, focusWin, setWin, heldByFence, refreshCover, heldByTab } = deps;
+  const { document, workspace, stage, focusWin, setWin, heldByFence, refreshCover } = deps;
 
   // Columns, a maximize and the physical screen each fill the whole viewport,
   // so every other console is under them.
@@ -69,8 +68,9 @@ export function createStageWindow(deps: StageWindowDeps) {
     if (!measurable(win)) return fromInline();
     // A column's painted box is view state (ADR-0051 §5): like a maximize, the
     // inline rect is the desk rect underneath it. So is a card on top's
-    // (ADR-0064, 2026-09-26 amendment).
-    if (win.classList.contains("on-top")) return fromInline();
+    // (ADR-0064, 2026-09-26 amendment). So is the box of a console in its own
+    // tab, which fills the tab's pane (ADR-0037 §3d).
+    if (win.classList.contains("on-top") || inTab(win)) return fromInline();
     if (!win.classList.contains("maximized") && !win.classList.contains("column") && !isFull(win)) {
       return {
         left: win.offsetLeft,
@@ -120,52 +120,15 @@ export function createStageWindow(deps: StageWindowDeps) {
     if (persist) setWin(win, { max: on });
   }
 
-  // The console of a console tab keeps its maximize: the title bar's double
-  // click is a Restore too, and it would write the desk (ADR-0037 §3d).
   function toggleMax(win: ConsoleWin) {
-    if (heldByTab(win._deskId) && win.classList.contains("maximized")) return;
     setMax(win, !win.classList.contains("maximized"), true);
   }
 
-  // A console tab maximizes its console on this page only, and the desk's
-  // maximize comes back when the tab closes (ADR-0037 §3d).
-  function tabMax(win: ConsoleWin, on: boolean, deskMax: boolean) {
-    setMax(win, on || deskMax, false);
-    paintMaxButton(win);
-  }
-
-  // The console of the active console tab is in front and fills the viewport,
-  // also when it is a column of a grid the tab does not own. `null` takes the
-  // front off every console.
-  function tabFront(win: ConsoleWin | null) {
-    for (const w of stage()?.querySelectorAll<ConsoleWin>(".session-window.tab-front") ?? []) {
-      if (w === win) continue;
-      w.classList.remove("tab-front");
-      paintMaxButton(w);
-      fitTerm(w);
-    }
-    if (!win) return;
-    win.classList.add("tab-front");
-    paintMaxButton(win);
-    focusWin(win);
-    fitTerm(win);
-  }
-
-  function fitTerm(win: ConsoleWin) {
-    try {
-      win._term?.fit.fit();
-    } catch {}
-  }
-
-  // A column restores like a maximize, so it shows the same control. The
-  // console of a console tab has none: a restore would take it out of its tab.
+  // A column restores like a maximize, so it shows the same control.
   function paintMaxButton(win: ConsoleWin) {
     const btn = win._maxBtn;
     if (!btn) return;
-    const column = win.classList.contains("column");
-    btn.hidden =
-      win.classList.contains("tab-front") || (!column && win.classList.contains("maximized") && heldByTab(win._deskId));
-    const on = win.classList.contains("maximized") || column;
+    const on = win.classList.contains("maximized") || win.classList.contains("column");
     btn.title = on ? "Restore" : "Maximize";
     btn.innerHTML = on
       ? '<i class="bi bi-fullscreen-exit"></i>'
@@ -365,8 +328,6 @@ export function createStageWindow(deps: StageWindowDeps) {
     restoreRect,
     setMax,
     toggleMax,
-    tabMax,
-    tabFront,
     paintMaxButton,
     isFull,
     isLocked,

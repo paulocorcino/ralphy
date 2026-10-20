@@ -146,8 +146,9 @@ export function createGpuBudget(deps: GpuBudgetDeps) {
       gpuHolders(
         list.map((w) => ({
           // `=== true`, not the dormancy fold's reading: an unobserved window
-          // is not yet seen.
-          seen: w._visible === true,
+          // is not yet seen. The console of the active console tab is seen:
+          // the observer watches the stage only.
+          seen: w._visible === true || w.classList.contains("tab-shown"),
           covered: isCovered(w),
           hasTerminal: !!w._term,
           z: parseInt(w.style.zIndex, 10) || 0,

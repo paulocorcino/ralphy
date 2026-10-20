@@ -14,6 +14,7 @@
 import * as WBConsoleInput from "./wb-console-input.ts";
 import * as WBConsoleSession from "./wb-console-session.ts";
 import { dormantAfterMs } from "./wb-console-gpu.ts";
+import { inTab } from "./wb-console-place.ts";
 import { sendDocument } from "./wb-events.ts";
 import type { Stack } from "./wb-stage-stack.ts";
 import type { WBDeskSync } from "./wb-desk-sync.ts";
@@ -45,8 +46,8 @@ export type DormancyDeps = {
   fillsViewport: (win: ConsoleWin) => boolean;
   // Whether a window is in full screen. Built later: a lazy arrow.
   isFull: (win: HTMLElement) => boolean;
-  // Whether the Consoles tab is the one on screen.
-  consolesShown: () => boolean;
+  // Whether the tab that holds the window is the one on screen.
+  windowShown: (win: ConsoleWin) => boolean;
   // Builds the terminal of a window. Built later: a lazy arrow.
   attachTerminal: (body: HTMLElement, opts: TerminalOpts) => ConsoleTerm;
   // Sends the desk changes after `ms`. Built later: a lazy arrow.
@@ -67,7 +68,7 @@ export function createDormancy(deps: DormancyDeps) {
     budget,
     fillsViewport,
     isFull,
-    consolesShown,
+    windowShown,
     attachTerminal,
     scheduleDeskFlush,
     revivePlaceholders,
@@ -179,9 +180,11 @@ export function createDormancy(deps: DormancyDeps) {
     return verdict;
   }
 
+  // A console in a tab is in another pane than the stage: it covers no
+  // window of the stage, and none covers it (ADR-0037 §3d).
   function isCovered(win: ConsoleWin) {
-    if (fillsViewport(win)) return false;
-    for (const other of wins) if (other !== win && fillsViewport(other)) return true;
+    if (inTab(win) || fillsViewport(win)) return false;
+    for (const other of wins) if (other !== win && !inTab(other) && fillsViewport(other)) return true;
     return false;
   }
 
@@ -203,7 +206,9 @@ export function createDormancy(deps: DormancyDeps) {
     return {
       // Unobserved windows have never been told; treat them as visible, which
       // is the reading that changes nothing.
-      intersecting: win._visible !== false,
+      // The observer watches the stage's viewport; a console in a tab fills
+      // its own pane.
+      intersecting: inTab(win) || win._visible !== false,
       covered: isCovered(win),
       dormant: !!win._dormant,
       maximized: win.classList.contains("maximized") || win.classList.contains("column"),
@@ -215,7 +220,7 @@ export function createDormancy(deps: DormancyDeps) {
       // spawned-but-silent console with only `_wantsSession` would sleep with
       // nothing for `wakeWindow` to reattach to, and never come back.
       sessionId: win._term?.sessionId ?? win._dormantSession ?? null,
-      tabShown: consolesShown(),
+      tabShown: windowShown(win),
     };
   }
 

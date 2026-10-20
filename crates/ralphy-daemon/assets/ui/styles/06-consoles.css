@@ -86,19 +86,6 @@
   min-height: 0;
   border-radius: 0;
 }
-/* The console of the active console tab (ADR-0037 §3d) fills the viewport,
-   also when it is a column of a grid the tab does not own. It comes after the
-   column rule and wins over it. A repaint of the columns raises them, so
-   the front is a fixed tier: above the stack's ceiling (120, wb-stage-stack.ts)
-   and below the runs overlay (150). */
-.session-window.tab-front {
-  z-index: 121 !important;
-  left: var(--max-left, 0px) !important;
-  top: var(--max-top, 0px) !important;
-  width: 100% !important;
-  height: calc(100% - var(--kb-inset, 0px)) !important;
-  border-radius: 0;
-}
 /* A column is not moved, resized, locked or closed: Restore takes it out
    first. Restart, the worktree picker and full screen stay. Full screen moves
    and closes nothing: the column fills the display, and leaving it puts the
@@ -121,6 +108,37 @@
 .session-window.fullscreen .session-actions .session-max,
 .session-window.fullscreen .session-actions .session-column {
   display: none !important;
+}
+/* A console in its own tab (ADR-0037 §3d) fills the tab's pane. It comes
+   after the maximize and column rules and wins over them: the window keeps
+   its classes and its inline rect, which are its state on the stage. Only the
+   active tab's window is shown; the others keep their geometry, hidden like a
+   hidden tab. The tab has no move, resize, maximize, Slice, lock or close:
+   those are for the stage, and the tab's × closes the tab. */
+.session-window.in-tab {
+  left: 0 !important;
+  top: 0 !important;
+  width: 100% !important;
+  height: calc(100% - var(--kb-inset, 0px)) !important;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.session-window.in-tab:not(.tab-shown) {
+  visibility: hidden;
+}
+.session-window.in-tab .session-resize,
+.session-window.in-tab .session-handle,
+.session-window.in-tab .session-actions .session-max,
+.session-window.in-tab .session-actions .session-column,
+.session-window.in-tab .session-actions .session-lock,
+.session-window.in-tab .session-actions .session-close {
+  display: none !important;
+}
+.session-window.in-tab .session-titlebar {
+  cursor: default;
 }
 /* Two columns touch, so the focused one needs a mark that a shared edge does
    not hide. */

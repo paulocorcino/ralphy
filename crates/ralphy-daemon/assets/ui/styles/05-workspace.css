@@ -111,6 +111,15 @@
 .consoles-tab.tab-hidden {
   visibility: hidden;
 }
+/* The pane of the console tabs (ADR-0037 §3d). Hidden the same way, for the
+   same reason: its windows keep their geometry and their renderer. */
+.console-tabs-pane {
+  position: absolute;
+  inset: 0;
+}
+.console-tabs-pane.tab-hidden {
+  visibility: hidden;
+}
 /* the VIEWPORT: a fixed box that scrolls over the stage. Nothing is ever moved
    or resized to fit it — shrinking it only changes the scroll offsets. */
 #workspace {

@@ -36,6 +36,7 @@ import { createStack, createGestures } from "./wb-stage-stack.ts";
 import { createPopupRegistry } from "./wb-desk-popups.ts";
 import { createFences } from "./wb-stage-fences.ts";
 import { createStageWindow } from "./wb-stage-window.ts";
+import { createPlace, inTab } from "./wb-console-place.ts";
 import { createStageColumns } from "./wb-stage-columns.ts";
 import { createDesk } from "./wb-desk.ts";
 import { createDeskRecords } from "./wb-desk-records.ts";
@@ -159,10 +160,12 @@ export function createConsole(window: Window, document: Document, location: Pick
     fillsViewport: (win: ConsoleWin) => fillsViewport(win),
     isFull: (win: HTMLElement) => isFull(win),
     // The detached popup and the node harness have no tabs store: their
-    // consoles are always on screen.
-    consolesShown: () => {
+    // consoles are always on screen. A console in a tab is on screen while
+    // its tab is the active one (ADR-0037 §3d).
+    windowShown: (win: ConsoleWin) => {
       const tabs = window.Alpine?.store("tabs");
-      return !tabs || tabs.stageShown();
+      if (!tabs) return true;
+      return inTab(win) ? win.classList.contains("tab-shown") : tabs.active === "consoles";
     },
     attachTerminal: (body: HTMLElement, termOpts: TerminalOpts) => attachTerminal(body, termOpts),
     scheduleDeskFlush: (ms?: number) => scheduleDeskFlush(ms),
@@ -179,8 +182,6 @@ export function createConsole(window: Window, document: Document, location: Pick
     setWin,
     heldByFence: (win: HTMLElement) => heldByFence(win),
     refreshCover,
-    // The detached popup and the node harness have no tabs store.
-    heldByTab: (deskId: string) => !!window.Alpine?.store("tabs")?.holds(deskId),
   });
   const { fillsViewport, restoreRect, setMax, toggleMax, paintMaxButton, isFull, isLocked, applyLock, paintLockGlyph, toggleLock, toggleFull, syncFullState, raiseMaximized, syncMaxLock, syncMaxPin, applyExtent, resetExtentEdge } = stageWindow;
   // ---- the column paint: `wb-stage-columns.ts` (ADR-0051 §5) -------------
@@ -239,6 +240,19 @@ export function createConsole(window: Window, document: Document, location: Pick
     IntersectionObserver:
       typeof IntersectionObserver === "function" ? IntersectionObserver : undefined,
     queueMicrotask: (task) => queueMicrotask(task),
+  });
+
+  // ---- the console tabs: `wb-console-place.ts` (ADR-0037 §3d) -----------------
+  const place = createPlace({
+    document,
+    stage,
+    tabsPane,
+    pageWindows,
+    focusWin,
+    moved: (win: ConsoleWin) => {
+      applyDormancy(win);
+      budget.scheduleGpu();
+    },
   });
 
   // ---- the opener's side of the detach: `wb-desk-detach.ts` --------------------
@@ -501,5 +515,6 @@ export function createConsole(window: Window, document: Document, location: Pick
     stack,
     gestures,
     wins,
+    place,
   });
 }

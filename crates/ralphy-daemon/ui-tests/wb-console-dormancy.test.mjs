@@ -29,7 +29,7 @@ function dormancy(p, wins = new Set()) {
     budget: () => ({ scheduleGpu() {} }),
     fillsViewport: () => false,
     isFull: () => false,
-    consolesShown: () => true,
+    windowShown: () => true,
     attachTerminal: () => null,
     scheduleDeskFlush() {},
     revivePlaceholders: async () => {},
@@ -93,7 +93,7 @@ test("hiding the Consoles tab puts its consoles to sleep, and showing it wakes t
     budget: () => ({ scheduleGpu() {} }),
     fillsViewport: () => false,
     isFull: () => false,
-    consolesShown: () => shown,
+    windowShown: () => shown,
     attachTerminal: (_body, opts) => {
       attached.push(opts.id);
       return { sessionId: opts.id };

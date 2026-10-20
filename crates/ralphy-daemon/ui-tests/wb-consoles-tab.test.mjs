@@ -455,7 +455,6 @@ test("the console module's events reach the columns: the count, the stage extent
   columns.leaveColumns = (ids) => calls.push(`leave ${ids}`);
   columns.columnsFromFence = (items) => calls.push(`fence ${items.length}`);
   columns.restoreColumns = () => calls.push("restore all");
-  columns.showTabConsole = () => calls.push("tab");
   fire("document", "workbench:consoles-changed", { count: 3 });
   fire("document", "workbench:stage-extent", { width: 800, height: 600 });
   fire("document", "workbench:column-open", { id: "a", rect: { right: 10 } });
@@ -464,10 +463,9 @@ test("the console module's events reach the columns: the count, the stage extent
   fire("document", "workbench:columns-leave", { ids: ["c"] });
   fire("document", "workbench:fence-columns", { items: [1, 2] });
   fire("document", "workbench:desk-restored");
-  fire("document", "workbench:tab-shown", { id: "consoles" });
   assert.equal(columns.consoleCount, 3);
   assert.deepEqual([columns.stageW, columns.stageH], [800, 600]);
-  assert.deepEqual(calls, ["paint", "list a 10", "restore b", "paint", "leave c", "fence 2", "restore all", "tab", "tab"]);
+  assert.deepEqual(calls, ["paint", "list a 10", "restore b", "paint", "leave c", "fence 2", "restore all"]);
 });
 
 test("the columns give the console module the hook for consoles another client removed", () => {
@@ -500,13 +498,19 @@ test("the menu head and the columns list name a project without its path- key or
 // The Consoles tab is hidden with `visibility`, never `display:none`: with
 // `display:none` the consoles leave the dormancy observer, lose their WebGL
 // renderer, and the first frame on return paints stretched text.
-test("the Consoles tab hides without display:none, so its consoles keep their renderer", () => {
-  const open = withoutComments(HTML).match(/<section class="consoles-tab"[^>]*>/);
+test("the Consoles tab and the console tabs' pane hide without display:none, so their consoles keep their renderer", () => {
+  const html = withoutComments(HTML);
+  const open = html.match(/<section class="consoles-tab"[^>]*>/);
   assert.ok(open, "index.html must keep the consoles tab");
   assert.doesNotMatch(open[0], /x-show/);
   assert.match(open[0], /'tab-hidden': !\$store\.tabs\.stageShown\(\)/);
+  const pane = html.match(/<section id="console-tabs-pane"[^>]*>/);
+  assert.ok(pane, "index.html must keep the pane of the console tabs");
+  assert.doesNotMatch(pane[0], /x-show/);
+  assert.match(pane[0], /'tab-hidden': !\$store\.tabs\.consoleTabShown\(\)/);
   const css = readFileSync(join(UI, "styles", "05-workspace.css"), "utf8");
   assert.match(css, /\.consoles-tab\.tab-hidden \{\s*visibility: hidden;\s*\}/);
+  assert.match(css, /\.console-tabs-pane\.tab-hidden \{\s*visibility: hidden;\s*\}/);
 });
 
 // `paintColumns` on a stage of `wins` (`[id, maximized]`), with the console

@@ -133,7 +133,8 @@ console fills it.
   rect, its lock and its maximize. The tab writes nothing to the desk, and
   another device sees no change. The column list, the + and Switch name the
   console as in a tab, and a pick shows that tab. A console that is a column
-  leaves the grid when its tab opens.
+  leaves the grid when its tab opens, as a console of a detached fence does;
+  the grid's own rule (ADR-0051 §5) then decides which console it maximizes.
 - **One console per tab.** The tab has no Slice, no maximize or Restore, no
   move and no resize: these are for the stage. A column grid lives only on
   the Consoles tab.

@@ -15,6 +15,7 @@ import { WBWindowState } from "./wb-window-state.ts";
 import { WBConsoleName } from "./wb-console-name.ts";
 import * as WBConsoleInput from "./wb-console-input.ts";
 import { sendDocument } from "./wb-events.ts";
+import { inTab } from "./wb-console-place.ts";
 import type { Gestures } from "./wb-stage-stack.ts";
 import type { ConsoleWin, DeskFence, DeskRecord, DeskWindowFields, Point, Presentation, Rect, Size } from "./wb-types.d.ts";
 
@@ -167,7 +168,7 @@ export function createChrome(deps: ChromeDeps) {
       focusWin(win);
       // No drag while maximized (double-click still restores) or fullscreen —
       // the top layer ignores the move while the drag REWRITES the inline rect.
-      if (win.classList.contains("maximized") || win.classList.contains("column") || isFull(win)) return;
+      if (win.classList.contains("maximized") || win.classList.contains("column") || inTab(win) || isFull(win)) return;
       // Locked in place — by its own record or by the fence holding it.
       if (heldFast()) return;
       gestures.begin(win);
@@ -352,7 +353,7 @@ export function createChrome(deps: ChromeDeps) {
       if (e.button !== 0 || !e.isPrimary) return; // see makeDraggable
       const pointerId = e.pointerId;
       focusWin(win);
-      if (win.classList.contains("maximized") || win.classList.contains("column") || isFull(win)) return;
+      if (win.classList.contains("maximized") || win.classList.contains("column") || inTab(win) || isFull(win)) return;
       if (heldFast()) return; // the JS guard is the truth; the CSS only hides the bands
       gestures.begin(win);
       const rect = {
@@ -589,9 +590,10 @@ export function createChrome(deps: ChromeDeps) {
     // Maximize/restore: the button, a double-click on the titlebar, or a
     // double tap on it. `wbColumns` (wb-consoles-tab.ts) owns the columns, so
     // a column's restore is its decision.
+    // A console in its own tab fills the tab's pane: nothing to maximize or
+    // restore (ADR-0037 §3d).
     const maxOrRestore = () => {
-      // The console of the active console tab keeps its place.
-      if (win.classList.contains("tab-front")) return;
+      if (inTab(win)) return;
       if (win.classList.contains("column")) {
         sendDocument(document, "workbench:column-restore", { id: win._deskId });
         return;

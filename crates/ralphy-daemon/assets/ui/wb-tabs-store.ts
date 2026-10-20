@@ -24,7 +24,7 @@ import { WBChanges } from "./wb-changes.ts";
 import { classify, fileTabId, tabIcon } from "./wb-file-paths.ts";
 import { WBSplit } from "./wb-split.ts";
 import { sendDocument, sendWindow } from "./wb-events.ts";
-import { consoleTab, consoleTabId, isConsoleTabId, showsStage } from "./wb-console-tabs.ts";
+import { consoleTab, consoleTabId, isConsoleTabId } from "./wb-console-tabs.ts";
 import type { Messages } from "./wb-messages.ts";
 import type { CanvasTab, ChangeEntry, DiffTarget, MenuItem, Slot, TabBody, TabOpen } from "./wb-shell-types.d.ts";
 
@@ -66,9 +66,16 @@ export function tabsStore(deps: TabsStoreDeps) {
     },
 
     // --- console tabs (ADR-0037 §3d) ----------------------------------------
-    // Whether the active tab shows the stage.
+    // Whether the active tab shows the stage, or the pane of a console tab.
     stageShown() {
-      return showsStage(this.active);
+      return this.active === "consoles";
+    },
+    consoleTabShown() {
+      return isConsoleTabId(this.active);
+    },
+    // The console of the active console tab, or null.
+    activeConsole(): string | null {
+      return this.tabs.find((t) => t.id === this.active && t.kind === "console")?.deskId ?? null;
     },
     // Whether a console tab holds the console `deskId`.
     holds(deskId: string) {
@@ -82,14 +89,13 @@ export function tabsStore(deps: TabsStoreDeps) {
       if (!this.tabs.some((t) => t.id === id)) this.tabs.push(consoleTab(deskId, title));
       this.activate(id);
     },
-    // The console stays on the stage and keeps running. Its columns end
-    // first, so no maximize of the tab is moved to the desk.
-    releaseConsole(deskId: string) {
-      sendDocument(document, "workbench:console-tab-closed", { deskId });
-      window.WBConsole?.tabMax(deskId, false);
+    // Each console with a tab goes into the tab's pane, and every other one
+    // goes back to the stage. The console module moves the windows.
+    placeConsoleTabs() {
+      window.WBConsole?.placeTabs(this.consoleDeskIds(), this.activeConsole());
     },
-    // Read before the desk: the columns and the window buttons ask `holds`
-    // while the desk restores, and no maximize of a tab may reach the desk.
+    // Read before the desk, so `restoreView` knows a stored active console
+    // tab. The windows go into their tabs at `syncConsoleTabs`.
     _consoleTabsRestored: false,
     _stageRestored: false,
     restoreConsoleTabs() {
@@ -99,8 +105,8 @@ export function tabsStore(deps: TabsStoreDeps) {
         if (!this.holds(t.deskId)) this.tabs.push(consoleTab(t.deskId, t.title));
       }
     },
-    // A tab whose console left the stage closes; the others maximize their
-    // console and take its current name. A console that relaunches keeps its tab.
+    // A tab whose console left the page closes; the others take its current
+    // name and hold its window. A console that relaunches keeps its tab.
     syncConsoleTabs() {
       const rows = new Map(window.WBConsole.list().map((r) => [r.id, r]));
       for (const deskId of this.consoleDeskIds()) {
@@ -115,8 +121,8 @@ export function tabsStore(deps: TabsStoreDeps) {
           tab.title = title;
           this.persistView();
         }
-        window.WBConsole.tabMax(deskId, true);
       }
+      this.placeConsoleTabs();
     },
 
     // --- canvas tabs ------------------------------------------------------
@@ -446,9 +452,8 @@ export function tabsStore(deps: TabsStoreDeps) {
       window.Alpine.nextTick(() => {
         this.syncViewer();
         // A console opened while another tab was active measured 0×0.
-        if (showsStage(id)) window.WBConsole?.refitAll?.();
-        const deskId = this.tabs.find((t) => t.id === id && t.kind === "console")?.deskId;
-        if (deskId) window.WBConsole?.tabMax(deskId, true);
+        if (id === "consoles") window.WBConsole?.refitAll?.();
+        this.placeConsoleTabs();
       });
       this.persistView();
     },
@@ -512,7 +517,8 @@ export function tabsStore(deps: TabsStoreDeps) {
       if (this.lastLeft === id) this.lastLeft = null;
       WBViewer.close(id);
       this.tabs.splice(idx, 1);
-      if (tab.deskId) this.releaseConsole(tab.deskId);
+      // The console goes back to the stage and keeps running.
+      if (tab.deskId) this.placeConsoleTabs();
       if (this.active === id) {
         // fall back to the neighbour, else the Consoles tab
         const next = this.tabs[idx] || this.tabs[idx - 1] || this.tabs[0];

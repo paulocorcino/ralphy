@@ -63,6 +63,10 @@ pub(super) const CONSOLE_FAMILY: &[(&str, &str)] = &[
         include_str!("../../assets/ui/wb-console-paste.ts"),
     ),
     (
+        "wb-console-place.ts",
+        include_str!("../../assets/ui/wb-console-place.ts"),
+    ),
+    (
         "wb-console-placeholder.ts",
         include_str!("../../assets/ui/wb-console-placeholder.ts"),
     ),

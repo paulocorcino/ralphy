@@ -31,6 +31,7 @@ import type { createPlaceholders } from "./wb-console-placeholder.ts";
 import type { createChrome } from "./wb-stage-chrome.ts";
 import type { createMessages } from "./wb-messages.ts";
 import type { createStack, Gestures } from "./wb-stage-stack.ts";
+import type { createPlace } from "./wb-console-place.ts";
 import type { ConsoleWin } from "./wb-types.d.ts";
 
 // What `createConsole` hands over: the result object of each part, the
@@ -56,6 +57,7 @@ export type ConsoleParts = {
   stack: ReturnType<typeof createStack>;
   gestures: Gestures;
   wins: Set<ConsoleWin>;
+  place: ReturnType<typeof createPlace>;
 };
 
 export function buildConsoleApi(parts: ConsoleParts) {
@@ -96,14 +98,6 @@ export function buildConsoleApi(parts: ConsoleParts) {
     DORMANT_MARGIN_PX,
     keyboardInset: WBConsoleInput.keyboardInset,
     raiseMaximized: stageWindow.raiseMaximized,
-    // A console tab (ADR-0037 §3d): the maximize of this page only. Answers
-    // whether the console is on the stage.
-    tabMax: (id: string, on: boolean) => {
-      const win = view.findWindow(id);
-      if (win) stageWindow.tabMax(win, on, records.deskRecords().some((r) => r.id === id && r.max));
-      return !!win;
-    },
-    tabFront: (id: string | null) => stageWindow.tabFront(id ? view.findWindow(id) : null),
     touchScrollLines: WBConsoleInput.touchScrollLines,
     touchScrollTarget: WBConsoleInput.touchScrollTarget,
     touchGesture: WBConsoleInput.touchGesture,
@@ -166,6 +160,8 @@ export function buildConsoleApi(parts: ConsoleParts) {
     consolePrefix: title.consolePrefix,
     list: feeds.list,
     reveal: view.reveal,
+    // A console in its own tab (ADR-0037 §3d).
+    placeTabs: parts.place.placeTabs,
     afterLogin: desk.afterLogin,
     checkoutOf: records.checkoutOf,
     setCheckout: records.setCheckout,

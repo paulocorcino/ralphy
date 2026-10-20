@@ -64,6 +64,8 @@ type ListFoldInput = {
   columns?: string[] | null;
   from?: string | null;
   full?: boolean;
+  /** The consoles in their own tab on this page (ADR-0037 §3d). */
+  tabbed?: readonly string[] | null;
 };
 
 /** A change that came from outside this client. */
@@ -84,6 +86,7 @@ export const WBColumns = (function () {
   const REASON_OPEN = "Already in a column";
   const REASON_DETACHED = "In a detached fence";
   const REASON_FULL = "No room for another console";
+  const REASON_TAB = "In its own tab";
   // From this many rows, the list opens with a filter box.
   const FILTER_MIN = 8;
   // Where "Slice" puts the console it opens (ADR-0051 §5, rows).
@@ -289,18 +292,11 @@ export const WBColumns = (function () {
     return flat(grid).length >= 2 ? grid.map((col) => [...col]) : null;
   }
 
-  // The first console of a stored grid is on the desk and maximized there, or
-  // the console of the console tab that owns the grid.
-  function leadsGrid(records: { id: string; max?: boolean }[], first: string | undefined, owner: string | null | undefined) {
-    return records.some((r) => r.id === first && (r.max === true || r.id === owner));
-  }
-
   // The stored grid, checked against the desk (`[{id, max}]`) on restore. A
   // flat list of ids, stored before rows existed, reads as one row per
   // column. The FIRST stored id must be the desk's maximized console, or the
-  // console of the console tab that owns it (`owner`, ADR-0037 §3d), or the grid is ignored
-  // (ADR-0051 §8); then ids no longer on the desk drop.
-  function fromStored(stored: unknown, desk: { id: string; max?: boolean }[] | null | undefined, owner?: string | null): Grid {
+  // grid is ignored (ADR-0051 §8); then ids no longer on the desk drop.
+  function fromStored(stored: unknown, desk: { id: string; max?: boolean }[] | null | undefined): Grid {
     if (!Array.isArray(stored)) return [];
     const seen = new Set<string>();
     const cols: Grid = [];
@@ -315,7 +311,7 @@ export const WBColumns = (function () {
       if (col.length) cols.push(col);
     }
     const records = desk || [];
-    if (!leadsGrid(records, flat(cols)[0], owner)) return [];
+    if (!records.some((r) => r.id === flat(cols)[0] && r.max === true)) return [];
     const next = keep(cols, new Set(records.map((r) => r.id)));
     return flat(next).length >= 2 ? next : [];
   }
@@ -343,8 +339,21 @@ export const WBColumns = (function () {
     return fenceOfWin;
   }
 
-  // The row of a console on this stage. `open`: it is in the grid already.
-  function liveRow(r: RosterRow, open: boolean, full: boolean | undefined): ColumnRow {
+  function idSet(ids: readonly string[] | null | undefined) {
+    return new Set(ids || []);
+  }
+
+  // The reason a console on this page cannot be opened as a column, or null.
+  function rowReason(open: boolean, full: boolean | undefined, tabbed: boolean) {
+    if (tabbed) return REASON_TAB;
+    if (open) return REASON_OPEN;
+    return full ? REASON_FULL : null;
+  }
+
+  // The row of a console on this page. `open`: it is in the grid already.
+  // `tabbed`: it is in its own tab, out of the stage.
+  function liveRow(r: RosterRow, open: boolean, full: boolean | undefined, tabbed: boolean): ColumnRow {
+    const reason = rowReason(open, full, tabbed);
     return {
       id: r.id,
       agent: r.agent,
@@ -353,9 +362,9 @@ export const WBColumns = (function () {
       kind: r.kind,
       state: r.state ?? null,
       running: r.running !== false,
-      enabled: !open && !full,
-      reason: open ? REASON_OPEN : full ? REASON_FULL : null,
-      swappable: true,
+      enabled: !reason,
+      reason,
+      swappable: !tabbed,
     };
   }
 
@@ -375,8 +384,9 @@ export const WBColumns = (function () {
     };
   }
 
-  function listFold({ rows, fences, membership, detached, columns, from, full }: ListFoldInput): ColumnGroup[] {
-    const inColumns = new Set(columns || []);
+  function listFold({ rows, fences, membership, detached, columns, from, full, tabbed }: ListFoldInput): ColumnGroup[] {
+    const inColumns = idSet(columns);
+    const inTabs = idSet(tabbed);
     // A console in no fence looks up `undefined`.
     const byFence = new Map<string | undefined, ColumnRow[]>((fences || []).map((f) => [f.id, []]));
     const fenceOfWin = fenceOfWindow(membership);
@@ -384,7 +394,7 @@ export const WBColumns = (function () {
     for (const r of rows || []) {
       if (r.id === from) continue;
       const into = byFence.get(fenceOfWin.get(r.id));
-      (into || loose).push(liveRow(r, inColumns.has(r.id), full));
+      (into || loose).push(liveRow(r, inColumns.has(r.id), full, inTabs.has(r.id)));
     }
     for (const [fenceId, members] of Object.entries(detached || {})) {
       const into = byFence.get(fenceId);
@@ -428,6 +438,7 @@ export const WBColumns = (function () {
     REASON_OPEN,
     REASON_DETACHED,
     REASON_FULL,
+    REASON_TAB,
     FILTER_MIN,
     cap,
     open,

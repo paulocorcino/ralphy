@@ -3,12 +3,14 @@
    and the + menu at the end of the tab strip.
 
    The tab belongs to this device: the store `tabs` keeps it, and the view
-   store (`WBView`) holds it as `consoleTabs`. Its console is maximized on this
-   page only, through `WBConsole.tabMax`, which never writes the desk.
+   store (`WBView`) holds it as `consoleTabs`. The tab has its own pane: the
+   console's window moves there (`WBConsole.placeTabs`, wb-console-place.ts)
+   and nothing is written to the desk.
 
    `wbConsoleTabMenu` is the + menu. Its rows are the rows of the column list
    (`WBColumns.listFold` over `WBConsole.columnRoster()`), so the + lists the
-   same consoles as the column menu of a phone. `main.ts` registers it.
+   same consoles as the column menu of a phone. A console that has a tab is
+   a row too: the pick shows its tab. `main.ts` registers it.
    --------------------------------------------------------------------------- */
 import { component } from "./wb-alpine.ts";
 import { WBColumns } from "./wb-columns.ts";
@@ -26,11 +28,6 @@ export function isConsoleTabId(id: string) {
   return id.startsWith(PREFIX);
 }
 
-// The tabs whose pane is the stage: the fixed Consoles tab and every console tab.
-export function showsStage(id: string) {
-  return id === "consoles" || isConsoleTabId(id);
-}
-
 export function consoleTab(deskId: string, title: string): CanvasTab {
   return { id: consoleTabId(deskId), kind: "console", title, icon: "bi bi-terminal", closable: true, deskId };
 }
@@ -46,15 +43,25 @@ export function wbConsoleTabMenu() {
       if (was) return;
       // No console is the one the list opens from, and no column is open:
       // every live console of the stage is a row.
-      this.groups = WBColumns.listFold({ ...WBConsole.columnRoster(), columns: [], from: null, full: false });
+      this.groups = WBColumns.listFold({
+        ...WBConsole.columnRoster(),
+        columns: [],
+        from: null,
+        full: false,
+        tabbed: this.$store.tabs.consoleDeskIds(),
+      });
       this.menuAt = { top: Math.round((rect?.bottom || 0) + 4), left: Math.round(rect?.left || 0) };
       this.open = true;
     },
     rowLabel(r: ColumnRow) {
       return WBColumns.rowLabel(r, window.WBConsoleName.consoleLabel);
     },
+    // A console with a tab is picked too: its tab comes to the front.
+    rowOff(r: ColumnRow) {
+      return !r.enabled && !this.$store.tabs.holds(r.id);
+    },
     pick(r: ColumnRow) {
-      if (!r.enabled) return;
+      if (this.rowOff(r)) return;
       this.open = false;
       this.$store.tabs.openConsoleTab(r.id, this.rowLabel(r));
     },

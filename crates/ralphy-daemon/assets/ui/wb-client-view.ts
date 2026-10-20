@@ -52,10 +52,6 @@ function storedConsoleTabs(raw: unknown): StoredConsoleTab[] {
   );
 }
 
-function stringOrNull(v: unknown): string | null {
-  return typeof v === "string" ? v : null;
-}
-
 export const WBView = (function () {
   const KEY = "wb.view.v1";
 
@@ -115,9 +111,6 @@ export const WBView = (function () {
               return Array.isArray(c) ? [c.filter((s): s is string => typeof s === "string")] : [];
             })
           : null,
-        // The console tab the column grid was opened in, or null for the
-        // Consoles tab (ADR-0037 §3d).
-        columnsTab: stringOrNull(parsed.columnsTab),
         // Where "Slice" opens, as last picked in this browser.
         columnDir: parsed.columnDir === "right" || parsed.columnDir === "down" ? parsed.columnDir : null,
       };

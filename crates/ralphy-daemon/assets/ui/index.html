@@ -776,7 +776,7 @@
                     <span class="column-group-name" x-text="g.fence?.name"></span>
                   </div>
                   <template x-for="r in g.rows" :key="r.id">
-                    <button class="console-tab-item" :disabled="!r.enabled" :title="r.enabled ? '' : r.reason || ''"
+                    <button class="console-tab-item" :disabled="rowOff(r)" :title="r.enabled ? '' : r.reason || ''"
                             :data-id="r.id" @click="pick(r)">
                       <i class="bi bi-terminal"></i>
                       <span class="row-name" x-text="rowLabel(r)"></span>
@@ -980,6 +980,11 @@
       <div class="tabbody">
         <!-- Consoles tab: the floating-console workspace. Consoles live here as
              draggable windows over the dotted floor. -->
+        <!-- The pane of the console tabs (ADR-0037 §3d): the window of a
+             console that has a tab moves here from the stage, and only the
+             active tab's window is shown. -->
+        <section id="console-tabs-pane" class="console-tabs-pane"
+                 :class="{ 'tab-hidden': !$store.tabs.consoleTabShown() }"></section>
         <section class="consoles-tab" :class="{ 'tab-hidden': !$store.tabs.stageShown() }">
           <!-- `#workspace` is the VIEWPORT (overflow:auto) and `#stage` the plane
                it scrolls over; wb-console.js appends the floating console windows
