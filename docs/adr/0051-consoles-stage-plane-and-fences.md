@@ -157,6 +157,9 @@ stage, over what the operator is looking at.)*
   place at a time (§8). A maximize changed on another device does not reach
   this client's columns until its next restore, where the desk wins (§8).*
 
+*(Amended 2026-10-20, console tabs. A console tab holds its own grid, with
+the rules of this section except the desk's maximize: ADR-0037 §3d.)*
+
 *(Amended 2026-09-29, rows. A column can hold more than one console, one above
 the other. Each console in a column is a **row** of that column. A column with
 one console has one row, so every rule above still holds when no column has a

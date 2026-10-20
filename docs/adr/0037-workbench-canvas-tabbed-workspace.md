@@ -11,8 +11,9 @@ Amended by #358: §3 is widened — a closable tab may also be a **daemon view**
 not only an open file.
 Amended 2026-09-22: §3c adds the **slot** — one secondary pane beside the
 active tab, holding a pinned tab or a mirror of the active code tab.
-Amended by #748: §3d adds the **console tab** — one console of the stage in
-a closable tab with its own pane, on this device only.
+Amended by #748: §3d adds the **console tab** — consoles of the stage in
+a closable tab with its own pane, on this device only. A tab may hold
+columns and rows (amended 2026-10-20).
 
 The daemon workbench (ADR-0032, promoted to the daemon's `/` in #200) lays out
 as four columns: **icon rail · sidebar · canvas · Runs panel**. This ADR records
@@ -122,26 +123,42 @@ rows of the column list (ADR-0051 §5). A pick opens a closable tab of kind
 `console`, after the fixed Consoles tab. The tab has its own pane, and the
 console fills it.
 
-- **The tab belongs to this device.** Its id is `console:<desk id>`. The view
-  store keeps it as `consoleTabs: [{deskId, title}]`, beside the file tabs
-  (ADR-0051 §8). Another device sees no tab.
+- **The tab belongs to this device.** Its id is `console:<desk id>` of the
+  console it opened for, with a number added when that id is taken. The view
+  store keeps it as `consoleTabs: [{id, deskId, title, grid}]`, beside the
+  file tabs (ADR-0051 §8). Another device sees no tab. A tab stored before
+  the grid (`{deskId, title}`) is read as a grid of that one console.
 - **The window moves; it is not copied.** The console's window leaves the
   stage of this page and goes into the pane of the tab. The terminal, its
   socket and the writer slot stay the same, so typing and the PTY size do not
-  change hands. The pane's size is the console's size.
+  change hands. The window's box in the pane is the console's size.
 - **The stage of this page does not show it.** The desk keeps its record: its
   rect, its lock and its maximize. The tab writes nothing to the desk, and
   another device sees no change. The column list, the + and Switch name the
   console as in a tab, and a pick shows that tab. A console that is a column
   leaves the grid when its tab opens, as a console of a detached fence does;
   the grid's own rule (ADR-0051 §5) then decides which console it maximizes.
-- **One console per tab.** The tab has no Slice, no maximize or Restore, no
-  move and no resize: these are for the stage. A column grid lives only on
-  the Consoles tab.
-- **The × only closes the tab.** The window goes back to the stage, at its
-  rect, maximized when the desk records it as maximized. The console keeps
-  running. A console that leaves the stage closes its tab; a console that
-  relaunches keeps it.
+- **A tab holds a grid of consoles** *(amended 2026-10-20)*. The tab's
+  consoles are columns and rows, with the rules of ADR-0051 §5: Slice opens a
+  console Right or Down of the one that asked, Swap changes places, the sizes
+  are equal, Alt+Shift+arrows move the focus, and at a phone width only the
+  first console is painted and Slice becomes Switch. Three things differ from
+  the stage. The grid never writes the desk: no console of a tab is the
+  maximized console. Restore takes the console out of the tab and back to the
+  stage; with one console left the tab has no Restore, because its × does
+  the same. A console of another tab is a row of the list that cannot be
+  opened or swapped: a console is in one place at a time. The grid is kept
+  with the tab, per device.
+- **A console in a tab is not moved by hand.** No maximize, move or resize:
+  these are for the stage. Lock and close are hidden, as in a column.
+- **The tab keeps the name it opened with.** A rename of the console it
+  opened for renames the tab while that console is in it; no other console
+  changes the name.
+- **The × only closes the tab.** Every window of the tab goes back to the
+  stage, at its rect, maximized when the desk records it as maximized. The
+  consoles keep running. A console that leaves the stage leaves its tab's
+  grid, and a tab with no console left closes; a console that relaunches
+  keeps its place.
 
 ## Rejected alternatives
 
@@ -150,6 +167,9 @@ console fills it.
   same window had four owners (the desk maximize, the tab maximize, a z-index
   tier and the column grid). A Slice in the tab changed the stage of the
   Consoles tab, and each stage feature needed a new guard.
+- **(#748, 2026-10-20) A button that moves the stage's columns into a new
+  tab.** Not in the first version: a tab grid is built with Slice inside the
+  tab. It can come later, on measured use.
 
 - **A single-view canvas that swaps content (agents *or* a file, never both).**
   Rejected: a human running an agent console needs to open a file without
