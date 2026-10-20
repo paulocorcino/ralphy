@@ -486,11 +486,17 @@ function Restart-Windows([string]$why) {
     $code = Invoke-Logged "ralphy daemon restart ($why)" { & $Bin daemon restart --yes }
     if ($code -ne 0) { return $false }
     # The restart said yes; check it: a recorded pid that is alive and is the
-    # one listening on the port.
-    $info = Read-PidFile $Store
-    $running = if ($info.Pid -gt 0) { Get-Process -Id $info.Pid -ErrorAction SilentlyContinue } else { $null }
+    # one listening on the port. The new daemon writes its pid file after the
+    # restart returns, so the check waits for it.
+    $deadline = (Get-Date).AddSeconds(15)
+    do {
+        $info = Read-PidFile $Store
+        $running = if ($info.Pid -gt 0) { Get-Process -Id $info.Pid -ErrorAction SilentlyContinue } else { $null }
+        $owner = if ($running) { Get-PortOwner $Port } else { $null }
+        if ($running -and $owner -and $owner.ProcessId -eq $info.Pid) { break }
+        Start-Sleep -Milliseconds 500
+    } while ((Get-Date) -lt $deadline)
     if (-not $running) { Write-Log 'ERROR: no daemon is recorded as running after the restart'; return $false }
-    $owner = Get-PortOwner $Port
     if (-not $owner -or $owner.ProcessId -ne $info.Pid) {
         $who = if ($owner) { "pid $($owner.ProcessId)" } else { 'nothing' }
         Write-Log "ERROR: daemon pid $($info.Pid) runs, but port $Port is held by $who"
