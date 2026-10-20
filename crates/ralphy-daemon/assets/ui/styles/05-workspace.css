@@ -283,7 +283,8 @@
 .window-item,
 .fence-item,
 .note-item,
-.column-item {
+.column-item,
+.console-tab-item {
   all: unset;
   display: flex;
   align-items: center;
@@ -300,7 +301,8 @@
 .window-item:hover,
 .fence-item:hover,
 .note-item:not(:disabled):hover,
-.column-item:not(:disabled):hover {
+.column-item:not(:disabled):hover,
+.console-tab-item:not(:disabled):hover {
   background: var(--surface-hi);
 }
 /* an agent row with no repo selected: it needs a repo to work in, so it is
@@ -310,7 +312,8 @@
 .dropdown-item:disabled,
 .fence-item:disabled,
 .note-item:disabled,
-.column-item:disabled {
+.column-item:disabled,
+.console-tab-item:disabled {
   cursor: not-allowed;
   opacity: 0.4;
 }
@@ -395,7 +398,8 @@
 .window-item .bi,
 .fence-item .bi,
 .note-item .bi,
-.column-item .bi {
+.column-item .bi,
+.console-tab-item .bi {
   color: var(--console-text);
 }
 /* a Go-to row for a restored console the daemon no longer runs — it is still
@@ -420,6 +424,32 @@
    layout. */
 .note-menu {
   min-width: 240px;
+}
+/* The + at the end of the tab strip: a console in its own tab. */
+.tab-add-wrap {
+  display: flex;
+  flex: none;
+}
+.tab-add {
+  all: unset;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  padding: 0 0.6rem;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.tab-add:hover {
+  color: var(--text);
+  background: var(--surface-hi);
+}
+/* Fixed to the viewport, under the +: the tab strip scrolls and would clip it. */
+.console-tab-menu {
+  position: fixed;
+  right: auto;
+  min-width: 260px;
+  max-height: 60vh;
+  overflow: auto;
 }
 /* Opened from a console's title bar, not from the toolbar: placed under the
    button that opened it (`columnMenuAt`), so it is fixed to the viewport. */
@@ -545,7 +575,8 @@
   padding: 0.35rem 0.6rem;
   opacity: 0.7;
 }
-.column-item .row-name {
+.column-item .row-name,
+.console-tab-item .row-name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

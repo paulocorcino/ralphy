@@ -502,7 +502,7 @@ test("the Consoles tab hides without display:none, so its consoles keep their re
   const open = withoutComments(HTML).match(/<section class="consoles-tab"[^>]*>/);
   assert.ok(open, "index.html must keep the consoles tab");
   assert.doesNotMatch(open[0], /x-show/);
-  assert.match(open[0], /'tab-hidden': \$store\.tabs\.active !== 'consoles'/);
+  assert.match(open[0], /'tab-hidden': !\$store\.tabs\.stageShown\(\)/);
   const css = readFileSync(join(UI, "styles", "05-workspace.css"), "utf8");
   assert.match(css, /\.consoles-tab\.tab-hidden \{\s*visibility: hidden;\s*\}/);
 });

@@ -96,6 +96,13 @@ export function buildConsoleApi(parts: ConsoleParts) {
     DORMANT_MARGIN_PX,
     keyboardInset: WBConsoleInput.keyboardInset,
     raiseMaximized: stageWindow.raiseMaximized,
+    // A console tab (ADR-0037 §3d): the maximize of this page only. Answers
+    // whether the console is on the stage.
+    tabMax: (id: string, on: boolean) => {
+      const win = view.findWindow(id);
+      if (win) stageWindow.tabMax(win, on, records.deskRecords().some((r) => r.id === id && r.max));
+      return !!win;
+    },
     touchScrollLines: WBConsoleInput.touchScrollLines,
     touchScrollTarget: WBConsoleInput.touchScrollTarget,
     touchGesture: WBConsoleInput.touchGesture,

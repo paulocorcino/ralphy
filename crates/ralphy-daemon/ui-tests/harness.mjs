@@ -24,6 +24,7 @@ import { securityDialog } from "../assets/ui/wb-security-dialog.ts";
 import { releaseDialogs } from "../assets/ui/wb-release-dialogs.ts";
 import { addProjectDialog } from "../assets/ui/wb-add-project-dialog.ts";
 import { wbColumns, wbConsoleMenus } from "../assets/ui/wb-consoles-tab.ts";
+import { wbConsoleTabMenu } from "../assets/ui/wb-console-tabs.ts";
 import { wbFiles } from "../assets/ui/wb-files.ts";
 import { wbMoveDialog } from "../assets/ui/wb-move-dialog.ts";
 import { wbUploadDialog } from "../assets/ui/wb-files-upload.ts";
@@ -93,6 +94,7 @@ const MODULE_COMPONENTS = {
   wbAddProjectDialog: addProjectDialog,
   wbConsoleMenus,
   wbColumns,
+  wbConsoleTabMenu,
   wbFiles,
   wbMoveDialog,
   wbUploadDialog,

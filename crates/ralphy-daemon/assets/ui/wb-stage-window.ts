@@ -33,10 +33,12 @@ export type StageWindowDeps = {
   // Re-asks which windows are covered. It runs after a maximize or a
   // full-screen change.
   refreshCover: () => void;
+  // Whether a console tab of this page holds the console (ADR-0037 §3d).
+  heldByTab: (deskId: string) => boolean;
 };
 
 export function createStageWindow(deps: StageWindowDeps) {
-  const { document, workspace, stage, focusWin, setWin, heldByFence, refreshCover } = deps;
+  const { document, workspace, stage, focusWin, setWin, heldByFence, refreshCover, heldByTab } = deps;
 
   // Columns, a maximize and the physical screen each fill the whole viewport,
   // so every other console is under them.
@@ -122,11 +124,21 @@ export function createStageWindow(deps: StageWindowDeps) {
     setMax(win, !win.classList.contains("maximized"), true);
   }
 
-  // A column restores like a maximize, so it shows the same control.
+  // A console tab maximizes its console on this page only, and the desk's
+  // maximize comes back when the tab closes (ADR-0037 §3d).
+  function tabMax(win: ConsoleWin, on: boolean, deskMax: boolean) {
+    setMax(win, on || deskMax, false);
+    paintMaxButton(win);
+  }
+
+  // A column restores like a maximize, so it shows the same control. The
+  // console of a console tab has none: a restore would take it out of its tab.
   function paintMaxButton(win: ConsoleWin) {
     const btn = win._maxBtn;
     if (!btn) return;
-    const on = win.classList.contains("maximized") || win.classList.contains("column");
+    const column = win.classList.contains("column");
+    btn.hidden = !column && win.classList.contains("maximized") && heldByTab(win._deskId);
+    const on = win.classList.contains("maximized") || column;
     btn.title = on ? "Restore" : "Maximize";
     btn.innerHTML = on
       ? '<i class="bi bi-fullscreen-exit"></i>'
@@ -326,6 +338,7 @@ export function createStageWindow(deps: StageWindowDeps) {
     restoreRect,
     setMax,
     toggleMax,
+    tabMax,
     paintMaxButton,
     isFull,
     isLocked,

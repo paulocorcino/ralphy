@@ -760,6 +760,35 @@
               </button>
             </div>
           </template>
+          <!-- A console of the stage in its own tab (ADR-0037 §3d). The rows are
+               the rows of the column list; the classes are their own, so
+               queries scoped to the column list stay inert. -->
+          <div x-data="wbConsoleTabMenu" class="tab-add-wrap" @click.outside="open = false">
+            <button type="button" class="tab-add" title="Open a console in a tab" aria-label="Open a console in a tab"
+                    @click="toggle($el.getBoundingClientRect())">
+              <i class="bi bi-plus-lg"></i>
+            </button>
+            <div class="dropdown console-tab-menu" x-show="open" x-cloak
+                 :style="`top: ${menuAt.top}px; left: ${menuAt.left}px`">
+              <template x-for="g in groups" :key="g.fence ? g.fence.id : '-loose'">
+                <div class="column-group">
+                  <div class="dropdown-head column-group-head" x-show="g.fence">
+                    <span class="column-group-name" x-text="g.fence?.name"></span>
+                  </div>
+                  <template x-for="r in g.rows" :key="r.id">
+                    <button class="console-tab-item" :disabled="!r.enabled" :title="r.enabled ? '' : r.reason || ''"
+                            :data-id="r.id" @click="pick(r)">
+                      <i class="bi bi-terminal"></i>
+                      <span class="row-name" x-text="rowLabel(r)"></span>
+                      <span class="session-state" :class="r.state" x-show="r.state" :title="window.WBConsole?.agentStateTitle(r.state)"></span>
+                      <span class="row-off" x-show="!r.running">not running</span>
+                    </button>
+                  </template>
+                </div>
+              </template>
+              <div class="column-empty" x-show="!groups.length">No console on the stage</div>
+            </div>
+          </div>
         </div>
 
         <!-- console controls, only meaningful on the Consoles tab -->
@@ -951,7 +980,7 @@
       <div class="tabbody">
         <!-- Consoles tab: the floating-console workspace. Consoles live here as
              draggable windows over the dotted floor. -->
-        <section class="consoles-tab" :class="{ 'tab-hidden': $store.tabs.active !== 'consoles' }">
+        <section class="consoles-tab" :class="{ 'tab-hidden': !$store.tabs.stageShown() }">
           <!-- `#workspace` is the VIEWPORT (overflow:auto) and `#stage` the plane
                it scrolls over; wb-console.js appends the floating console windows
                into the stage and sizes it from their bbox (issue #336). -->

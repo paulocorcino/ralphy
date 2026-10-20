@@ -79,6 +79,10 @@ pub(super) const CONSOLE_FAMILY: &[(&str, &str)] = &[
         include_str!("../../assets/ui/wb-console-spawn.ts"),
     ),
     (
+        "wb-console-tabs.ts",
+        include_str!("../../assets/ui/wb-console-tabs.ts"),
+    ),
+    (
         "wb-console-terminal.ts",
         include_str!("../../assets/ui/wb-console-terminal.ts"),
     ),
@@ -252,6 +256,10 @@ pub(super) const SHELL_FAMILY: &[(&str, &str)] = &[
     (
         "wb-connection-store.ts",
         include_str!("../../assets/ui/wb-connection-store.ts"),
+    ),
+    (
+        "wb-console-tabs.ts",
+        include_str!("../../assets/ui/wb-console-tabs.ts"),
     ),
     (
         "wb-consoles-tab.ts",

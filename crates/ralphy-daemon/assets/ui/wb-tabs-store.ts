@@ -24,6 +24,7 @@ import { WBChanges } from "./wb-changes.ts";
 import { classify, fileTabId, tabIcon } from "./wb-file-paths.ts";
 import { WBSplit } from "./wb-split.ts";
 import { sendDocument, sendWindow } from "./wb-events.ts";
+import { consoleTab, consoleTabId, isConsoleTabId, showsStage } from "./wb-console-tabs.ts";
 import type { Messages } from "./wb-messages.ts";
 import type { CanvasTab, ChangeEntry, DiffTarget, MenuItem, Slot, TabBody, TabOpen } from "./wb-shell-types.d.ts";
 
@@ -52,6 +53,70 @@ export function tabsStore(deps: TabsStoreDeps) {
         if (!this.tabs.some((t) => t.id === tab.id)) this.tabs.push(tab);
         this.activate(tab.id);
       });
+      this.restoreConsoleTabs();
+      // The console tabs are checked against the stage once the desk put
+      // every console on it, and on every change of the stage after that.
+      document.addEventListener("workbench:desk-restored", () => {
+        this._stageRestored = true;
+        this.syncConsoleTabs();
+      });
+      document.addEventListener("workbench:consoles-changed", () => {
+        if (this._stageRestored) this.syncConsoleTabs();
+      });
+    },
+
+    // --- console tabs (ADR-0037 §3d) ----------------------------------------
+    // Whether the active tab shows the stage.
+    stageShown() {
+      return showsStage(this.active);
+    },
+    // Whether a console tab holds the console `deskId`.
+    holds(deskId: string) {
+      return this.tabs.some((t) => t.kind === "console" && t.deskId === deskId);
+    },
+    consoleDeskIds(): string[] {
+      return this.tabs.flatMap((t) => (t.kind === "console" && t.deskId ? [t.deskId] : []));
+    },
+    openConsoleTab(deskId: string, title: string) {
+      const id = consoleTabId(deskId);
+      if (!this.tabs.some((t) => t.id === id)) this.tabs.push(consoleTab(deskId, title));
+      this.activate(id);
+    },
+    // The console stays on the stage and keeps running. Its columns end
+    // first, so no maximize of the tab is moved to the desk.
+    releaseConsole(deskId: string) {
+      sendDocument(document, "workbench:console-tab-closed", { deskId });
+      window.WBConsole?.tabMax(deskId, false);
+    },
+    // Read before the desk: the columns and the window buttons ask `holds`
+    // while the desk restores, and no maximize of a tab may reach the desk.
+    _consoleTabsRestored: false,
+    _stageRestored: false,
+    restoreConsoleTabs() {
+      if (this._consoleTabsRestored || !window.WBView) return;
+      this._consoleTabsRestored = true;
+      for (const t of window.WBView.read()?.consoleTabs || []) {
+        if (!this.holds(t.deskId)) this.tabs.push(consoleTab(t.deskId, t.title));
+      }
+    },
+    // A tab whose console left the stage closes; the others maximize their
+    // console and take its current name. A console that relaunches keeps its tab.
+    syncConsoleTabs() {
+      const rows = new Map(window.WBConsole.list().map((r) => [r.id, r]));
+      for (const deskId of this.consoleDeskIds()) {
+        const row = rows.get(deskId);
+        if (!row) {
+          if (!window.WBConsole.isRelaunching(deskId)) this.closeTab(consoleTabId(deskId));
+          continue;
+        }
+        const tab = this.tabs.find((t) => t.id === consoleTabId(deskId));
+        const title = window.WBConsoleName.consoleLabel(row.name || "", row.agent);
+        if (tab && title && tab.title !== title) {
+          tab.title = title;
+          this.persistView();
+        }
+        window.WBConsole.tabMax(deskId, true);
+      }
     },
 
     // --- canvas tabs ------------------------------------------------------
@@ -381,7 +446,9 @@ export function tabsStore(deps: TabsStoreDeps) {
       window.Alpine.nextTick(() => {
         this.syncViewer();
         // A console opened while another tab was active measured 0×0.
-        if (id === "consoles") window.WBConsole?.refitAll?.();
+        if (showsStage(id)) window.WBConsole?.refitAll?.();
+        const deskId = this.tabs.find((t) => t.id === id && t.kind === "console")?.deskId;
+        if (deskId) window.WBConsole?.tabMax(deskId, true);
       });
       this.persistView();
     },
@@ -397,7 +464,7 @@ export function tabsStore(deps: TabsStoreDeps) {
         tabs: this.tabs,
         lastLeft: this.lastLeft,
         width: WBViewer.width(),
-        paneless: this.PANELESS_TABS.includes(this.active),
+        paneless: this.PANELESS_TABS.includes(this.active) || isConsoleTabId(this.active),
       });
       // Remembered where the decision is made, not in `activate`: `openTab`
       // and `openDiff` put a tab on the left without going through it.
@@ -445,6 +512,7 @@ export function tabsStore(deps: TabsStoreDeps) {
       if (this.lastLeft === id) this.lastLeft = null;
       WBViewer.close(id);
       this.tabs.splice(idx, 1);
+      if (tab.deskId) this.releaseConsole(tab.deskId);
       if (this.active === id) {
         // fall back to the neighbour, else the Consoles tab
         const next = this.tabs[idx] || this.tabs[idx - 1] || this.tabs[0];
@@ -475,13 +543,16 @@ export function tabsStore(deps: TabsStoreDeps) {
           // The pin (#406) survives a reload.
           checkout: t.checkout ?? null,
         }));
+      const consoleTabs = this.tabs.flatMap((t) => (t.kind === "console" && t.deskId ? [{ deskId: t.deskId, title: t.title }] : []));
       // A stored `active` naming a tab this store does not carry would leave
       // the canvas blank: degrade to Consoles.
       const alive =
         this.active === "consoles" ||
+        consoleTabs.some((t) => consoleTabId(t.deskId) === this.active) ||
         files.some((f) => fileTabId(f.project!, f.path!, f.checkout) === this.active);
       window.WBView?.patch({
         tabs: files,
+        consoleTabs,
         active: alive ? this.active : "consoles",
         // ALWAYS written, null included: `patch` is read-modify-write, and a
         // key left out would let a stale pin outlive the tab it named.
@@ -495,6 +566,7 @@ export function tabsStore(deps: TabsStoreDeps) {
     restoreView() {
       if (this._viewRestored) return;
       this._viewRestored = true;
+      this.restoreConsoleTabs();
       const stored = window.WBView?.read();
       if (!stored) return;
       this._restoring = true;
@@ -528,6 +600,11 @@ export function tabsStore(deps: TabsStoreDeps) {
     // Consoles and Spend have no pane to put beside another, so no menu.
     showTabMenu(x: number, y: number, t: CanvasTab) {
       if (!t?.closable) return;
+      // A console tab shows the stage, which has no pane to put beside another.
+      if (t.kind === "console") this.renderMenu(x, y, [{ label: "Close", icon: "bi-x-lg", run: () => this.closeTab(t.id) }]);
+      else this.showSlotMenu(x, y, t);
+    },
+    showSlotMenu(x: number, y: number, t: CanvasTab) {
       const pinned = this.slot?.kind === "pin" && this.slot.id === t.id;
       const mirrored = this.slot?.kind === "mirror";
       const wide = this.splitAvailable();

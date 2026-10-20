@@ -587,6 +587,8 @@ interface DocumentEventMap {
   /** These consoles leave the columns. */
   "workbench:columns-leave": CustomEvent<{ ids: string[] }>;
   "workbench:desk-restored": CustomEvent<null>;
+  /** The console tab of this console closed: its columns end. */
+  "workbench:console-tab-closed": CustomEvent<{ deskId: string }>;
   /** A card chose the file name of a never-saved note, before its first write. */
   "workbench:note-claimed": CustomEvent<{ id: string; claim: string }>;
   /** A card gave a never-saved note its file. */

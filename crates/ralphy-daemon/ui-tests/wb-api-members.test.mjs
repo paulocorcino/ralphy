@@ -193,6 +193,7 @@ const CONSOLE_MEMBERS = [
   "startResize function",
   "stepFence function",
   "stepFont function",
+  "tabMax function",
   "terminalInputMode function",
   "tileIntoRect function",
   "toast function",

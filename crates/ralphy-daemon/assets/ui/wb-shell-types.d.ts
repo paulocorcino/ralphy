@@ -88,7 +88,7 @@ export type SecurityFact = {
   policy: string;
 };
 
-/** A tab of the canvas. A file or diff tab names its file and its checkout. */
+/** A tab of the canvas. A file or diff tab names its file and its checkout; a console tab its console. */
 export type CanvasTab = {
   id: string;
   kind: string;
@@ -98,6 +98,7 @@ export type CanvasTab = {
   path?: string;
   project?: string;
   checkout?: string | null;
+  deskId?: string;
 };
 
 /** What `openTab` takes. `content` is the bytes a re-attached popup brings back. */

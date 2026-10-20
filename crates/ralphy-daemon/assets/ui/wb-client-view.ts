@@ -41,6 +41,17 @@ function isStoredTab(v: unknown): v is StoredTab {
   );
 }
 
+/** A stored console tab (ADR-0037 §3d): what `persistView` writes. */
+export type StoredConsoleTab = { deskId: string; title: string };
+
+// Read strictly, like the file tabs: a record of another shape is not restored.
+function storedConsoleTabs(raw: unknown): StoredConsoleTab[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (v): v is StoredConsoleTab => isRecord(v) && typeof v.deskId === "string" && v.deskId !== "" && typeof v.title === "string",
+  );
+}
+
 export const WBView = (function () {
   const KEY = "wb.view.v1";
 
@@ -66,7 +77,9 @@ export const WBView = (function () {
       return {
         ...stored,
         tabs: Array.isArray(parsed.tabs) ? parsed.tabs.filter(isStoredTab) : [],
-        // The tab that was active: a file tab's id, or "consoles".
+        // The console tabs of this device (ADR-0037 §3d): a desk id and a title.
+        consoleTabs: storedConsoleTabs(parsed.consoleTabs),
+        // The tab that was active: a file tab's id, a console tab's id, or "consoles".
         active: typeof parsed.active === "string" ? parsed.active : null,
         // Read STRICTLY: anything that is not a stored `true` means "do not
         // launch". A truthy coercion here would turn a corrupt or half-written

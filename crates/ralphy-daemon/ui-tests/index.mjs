@@ -45,6 +45,7 @@ import "./wb-console-title.test.mjs";
 import "./wb-stage-view.test.mjs";
 import "./wb-console.test.mjs";
 import "./wb-consoles-tab.test.mjs";
+import "./wb-console-tabs.test.mjs";
 import "./wb-daemon.test.mjs";
 import "./wb-read-retry.test.mjs";
 import "./wb-resume.test.mjs";

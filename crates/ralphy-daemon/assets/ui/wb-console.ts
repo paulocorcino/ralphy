@@ -155,7 +155,7 @@ export function createConsole(window: Window, document: Document, location: Pick
     // consoles are always on screen.
     consolesShown: () => {
       const tabs = window.Alpine?.store("tabs");
-      return !tabs || tabs.active === "consoles";
+      return !tabs || tabs.stageShown();
     },
     attachTerminal: (body: HTMLElement, termOpts: TerminalOpts) => attachTerminal(body, termOpts),
     scheduleDeskFlush: (ms?: number) => scheduleDeskFlush(ms),
@@ -172,6 +172,8 @@ export function createConsole(window: Window, document: Document, location: Pick
     setWin,
     heldByFence: (win: HTMLElement) => heldByFence(win),
     refreshCover,
+    // The detached popup and the node harness have no tabs store.
+    heldByTab: (deskId: string) => !!window.Alpine?.store("tabs")?.holds(deskId),
   });
   const { fillsViewport, restoreRect, setMax, toggleMax, paintMaxButton, isFull, isLocked, applyLock, paintLockGlyph, toggleLock, toggleFull, syncFullState, raiseMaximized, syncMaxLock, syncMaxPin, applyExtent, resetExtentEdge } = stageWindow;
   // ---- the column paint: `wb-stage-columns.ts` (ADR-0051 §5) -------------
