@@ -590,14 +590,14 @@ export function createChrome(deps: ChromeDeps) {
     // Maximize/restore: the button, a double-click on the titlebar, or a
     // double tap on it. `wbColumns` (wb-consoles-tab.ts) owns the columns, so
     // a column's restore is its decision.
-    // A console in its own tab fills the tab's pane: nothing to maximize or
-    // restore (ADR-0037 §3d).
+    // A console in a tab is not maximized; in a tab of two consoles or more
+    // its Restore takes it back to the stage (ADR-0037 §3d).
     const maxOrRestore = () => {
-      if (inTab(win)) return;
-      if (win.classList.contains("column")) {
+      if (win.classList.contains("column") || win.classList.contains("tab-grid")) {
         sendDocument(document, "workbench:column-restore", { id: win._deskId });
         return;
       }
+      if (inTab(win)) return;
       toggleMax(win);
       sendDocument(document, "workbench:columns-stale");
     };

@@ -42,14 +42,30 @@ function isStoredTab(v: unknown): v is StoredTab {
 }
 
 /** A stored console tab (ADR-0037 §3d): what `persistView` writes. */
-export type StoredConsoleTab = { deskId: string; title: string };
+// `id` is null for a tab stored before the grid: the store gives it the id it had.
+export type StoredConsoleTab = { id: string | null; deskId: string; title: string; grid: string[][] };
 
-// Read strictly, like the file tabs: a record of another shape is not restored.
+function isIdGrid(v: unknown): v is string[][] {
+  return (
+    Array.isArray(v) &&
+    v.length > 0 &&
+    v.every((col) => Array.isArray(col) && col.length > 0 && col.every((id) => typeof id === "string" && id !== ""))
+  );
+}
+
+// Read strictly, like the file tabs: a record of another shape is not
+// restored. A tab stored before the grid, `{deskId, title}`, is a grid of its
+// one console.
+function storedConsoleTab(v: unknown): StoredConsoleTab | null {
+  if (!isRecord(v) || typeof v.deskId !== "string" || v.deskId === "" || typeof v.title !== "string") return null;
+  const id = typeof v.id === "string" && v.id !== "" ? v.id : null;
+  if (v.grid === undefined) return { id, deskId: v.deskId, title: v.title, grid: [[v.deskId]] };
+  return isIdGrid(v.grid) ? { id, deskId: v.deskId, title: v.title, grid: v.grid } : null;
+}
+
 function storedConsoleTabs(raw: unknown): StoredConsoleTab[] {
   if (!Array.isArray(raw)) return [];
-  return raw.filter(
-    (v): v is StoredConsoleTab => isRecord(v) && typeof v.deskId === "string" && v.deskId !== "" && typeof v.title === "string",
-  );
+  return raw.flatMap((v) => storedConsoleTab(v) ?? []);
 }
 
 export const WBView = (function () {
@@ -77,7 +93,8 @@ export const WBView = (function () {
       return {
         ...stored,
         tabs: Array.isArray(parsed.tabs) ? parsed.tabs.filter(isStoredTab) : [],
-        // The console tabs of this device (ADR-0037 §3d): a desk id and a title.
+        // The console tabs of this device (ADR-0037 §3d): an id, the console
+        // the tab opened for, a title and the grid of its consoles.
         consoleTabs: storedConsoleTabs(parsed.consoleTabs),
         // The tab that was active: a file tab's id, a console tab's id, or "consoles".
         active: typeof parsed.active === "string" ? parsed.active : null,

@@ -27,6 +27,17 @@ T9  a tab for the grid's first console takes it out of the grid
 T10 the × returns each window to the stage at its rect; it keeps running, and
     the desk keeps its rects; the maximize is the grid's (w-c, after T9)
 T11 closing a console closes its tab
+T12 Slice in a tab (2026-10-20): the list shows over the tab; w-a opens Right
+    and w-f Down, each in its box of the pane; the desk is unchanged
+T13 typing in a console of the tab grid reaches its shell; Alt+Shift+arrows
+    move the one focus mark inside the tab
+T14 going between the tabs many times keeps the tab grid and its boxes; a
+    reload brings the grid back
+T15 at a phone width only the tab's first console is painted
+T16 Swap puts w-l in w-f's box and w-f back on the stage; Restore takes w-a
+    back to the stage at its rect
+T17 the × returns every window of the grid to the stage; the desk keeps its
+    rects and its maximize
 
 The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
 doubles as the orchestrator on this host).
@@ -48,9 +59,10 @@ PORT = 7748
 T.PORT = PORT
 T.BASE = BASE = f"http://127.0.0.1:{PORT}/"
 SHOT = os.path.join(T.REPO_ROOT, ".ralphy", "screenshots", "748-console-tab-pane-2026-10-20.png")
+SHOT_GRID = os.path.join(T.REPO_ROOT, ".ralphy", "screenshots", "748-console-tab-grid-2026-10-20.png")
 WIDE = {"width": 2400, "height": 1000}
 PHONE = {"width": 400, "height": 800}
-FLOOR = 42  # every check above the floor check; pinned after the first green run
+FLOOR = 62  # every check above the floor check; pinned after the first green run
 
 results = []
 
@@ -78,6 +90,29 @@ SHOWN_BUTTONS = """(id) => [...__P(id).querySelectorAll('.session-max, .session-
   .filter((b) => b.getClientRects().length > 0).map((b) => b.className)"""
 TEXT = "(id) => { const b = __P(id)._term.term.buffer.active; let s = ''; for (let i = 0; i < b.length; i++) s += b.getLine(i)?.translateToString(true) + '\\n'; return s; }"
 COLS_OF = "(id) => __P(id)._term?.term?.cols ?? 0"
+# A window's box in the pane, in px: [left, top, width, height].
+BOX = """(id) => { const w = __P(id).getBoundingClientRect(), p = document.getElementById('console-tabs-pane').getBoundingClientRect();
+  return [w.left - p.left, w.top - p.top, w.width, w.height].map(Math.round); }"""
+PANE = "() => { const r = document.getElementById('console-tabs-pane').getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; }"
+SHOWN_IN_TAB = "() => [...document.querySelectorAll('#console-tabs-pane .session-window.tab-shown')].map((w) => w._deskId).sort()"
+
+
+def near(a, b):
+    return all(abs(x - y) <= 2 for x, y in zip(a, b))
+
+
+def tab_slice(page, from_id, id, swap=False):
+    """The Slice list of a console in a tab, then a click on a row or its swap icon."""
+    page.evaluate("(id) => __P(id).querySelector('.session-column').click()", from_id)
+    page.wait_for_function(
+        "() => { const m = document.querySelector('.column-menu');"
+        " return m.getClientRects().length > 0 && getComputedStyle(m).visibility === 'visible'; }",
+        timeout=5000,
+    )
+    page.wait_for_timeout(150)
+    sel = ".column-swap" if swap else ".column-item"
+    page.locator(f".column-menu {sel}[data-id='{id}']").click()
+    page.wait_for_timeout(600)
 
 
 def open_plus(page):
@@ -162,7 +197,7 @@ def main():
             check("T2 w-b fills the pane", page.evaluate(FILLS, "w-b"))
             check("T2 w-b is what the tab shows", page.evaluate(CENTER) == "w-b", str(page.evaluate(CENTER)))
             shown = page.evaluate(SHOWN_BUTTONS, "w-b")
-            check("T2 no maximize, Slice, lock or close in the tab", shown == [], str(shown))
+            check("T2 no maximize, lock or close in the tab; Slice shows", shown == ["session-column"], str(shown))
             check("T2 the stage is hidden", page.evaluate(
                 "() => document.querySelector('.consoles-tab').classList.contains('tab-hidden')"))
             check("T2 w-b keeps its stage rect", page.evaluate("() => __inline('w-b')") == b_rect,
@@ -296,6 +331,96 @@ def main():
                 pass
             check("T11 closing the console closes its tab", "console:w-c" not in page.evaluate(TAB_IDS),
                   str(page.evaluate(TAB_IDS)))
+
+            # T12 -----------------------------------------------------------
+            desk_t12 = desk_state()
+            a_rect = page.evaluate("() => __inline('w-a')")
+            pick(page, "w-b")
+            tab_slice(page, "w-b", "w-a")
+            page.evaluate(f"() => {T.COLS}.setColumnDir('down')")
+            tab_slice(page, "w-a", "w-f")
+            page.evaluate(f"() => {T.COLS}.setColumnDir('right')")
+            grid = page.evaluate(f"() => {T.TABS}.tabOf('w-b')?.grid")
+            check("T12 the tab holds the grid", grid == [["w-b"], ["w-a", "w-f"]], str(grid))
+            check("T12 the grid's consoles are in the pane",
+                  [page.evaluate("(id) => __where(id)", i) for i in ("w-b", "w-a", "w-f")] == ["pane"] * 3)
+            W, H = page.evaluate(PANE)
+            boxes = {i: page.evaluate(BOX, i) for i in ("w-b", "w-a", "w-f")}
+            check("T12 each console has its box", near(boxes["w-b"], [0, 0, W / 2, H])
+                  and near(boxes["w-a"], [W / 2, 0, W / 2, H / 2]) and near(boxes["w-f"], [W / 2, H / 2, W / 2, H / 2]),
+                  f"pane={W}x{H} {boxes}")
+            check("T12 Restore and Slice show in the grid, no lock or close",
+                  sorted(page.evaluate(SHOWN_BUTTONS, "w-a")) == ["session-column", "session-max"],
+                  str(page.evaluate(SHOWN_BUTTONS, "w-a")))
+            page.wait_for_timeout(1500)
+            check("T12 the desk is unchanged", desk_state() == desk_t12, str(desk_state()))
+            page.screenshot(path=SHOT_GRID)
+
+            # T13 -----------------------------------------------------------
+            page.evaluate("() => __P('w-a')._term.term.focus()")
+            page.keyboard.type("echo grid748")
+            page.keyboard.press("Enter")
+            try:
+                page.wait_for_function("(id) => /grid748/.test((" + TEXT + ")(id))", arg="w-a", timeout=8000)
+            except Exception:
+                pass
+            check("T13 typing in w-a in the grid reaches its shell", "grid748" in page.evaluate(TEXT, "w-a"))
+            page.evaluate("() => __P('w-a').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))")
+            page.keyboard.press("Alt+Shift+ArrowLeft")
+            page.wait_for_timeout(300)
+            check("T13 Alt+Shift+← moves the focus mark to w-b, the only one",
+                  page.evaluate("() => __focused()") == ["w-b"], str(page.evaluate("() => __focused()")))
+
+            # T14 -----------------------------------------------------------
+            for _ in range(3):
+                activate(page, "consoles")
+                activate(page, "console:w-b")
+            now = {i: page.evaluate(BOX, i) for i in boxes}
+            check("T14 after many switches the boxes are the same", all(near(now[i], boxes[i]) for i in boxes), str(now))
+            page.reload()
+            boot_here(page, want=4)
+            grid = page.evaluate(f"() => {T.TABS}.tabOf('w-b')?.grid")
+            check("T14 after a reload the grid is back", grid == [["w-b"], ["w-a", "w-f"]], str(grid))
+            now = {i: page.evaluate(BOX, i) for i in boxes}
+            check("T14 …and painted", page.evaluate(SHOWN_IN_TAB) == ["w-a", "w-b", "w-f"]
+                  and all(near(now[i], boxes[i]) for i in boxes), f"{page.evaluate(SHOWN_IN_TAB)} {now}")
+
+            # T15 -----------------------------------------------------------
+            page.set_viewport_size(dict(PHONE))
+            page.wait_for_timeout(800)
+            check("T15 at a phone width only the first console is painted", page.evaluate(SHOWN_IN_TAB) == ["w-b"],
+                  str(page.evaluate(SHOWN_IN_TAB)))
+            check("T15 …and it fills the tab", page.evaluate(FILLS, "w-b"))
+            page.set_viewport_size(dict(WIDE))
+            page.wait_for_timeout(800)
+
+            # T16 -----------------------------------------------------------
+            f_rect = page.evaluate("() => __inline('w-f')")
+            tab_slice(page, "w-f", "w-l", swap=True)
+            grid = page.evaluate(f"() => {T.TABS}.tabOf('w-b')?.grid")
+            check("T16 Swap puts w-l in w-f's box",
+                  grid == [["w-b"], ["w-a", "w-l"]] and near(page.evaluate(BOX, "w-l"), boxes["w-f"]), str(grid))
+            check("T16 …and w-f is back on the stage at its rect",
+                  page.evaluate("() => __where('w-f')") == "stage" and page.evaluate("() => __inline('w-f')") == f_rect)
+            page.evaluate("() => __P('w-a').querySelector('.session-max').click()")
+            page.wait_for_timeout(600)
+            grid = page.evaluate(f"() => {T.TABS}.tabOf('w-b')?.grid")
+            check("T16 Restore takes w-a out of the tab", grid == [["w-b"], ["w-l"]], str(grid))
+            check("T16 …back on the stage at its rect",
+                  page.evaluate("() => __where('w-a')") == "stage" and page.evaluate("() => __inline('w-a')") == a_rect,
+                  page.evaluate("() => __inline('w-a')"))
+            check("T16 the other two share the tab", near(page.evaluate(BOX, "w-l"), [W / 2, 0, W / 2, H]),
+                  str(page.evaluate(BOX, "w-l")))
+
+            # T17 -----------------------------------------------------------
+            page.locator(".tab.active .tab-close").click()
+            page.wait_for_timeout(600)
+            check("T17 the × puts every window of the grid on the stage",
+                  [page.evaluate("(id) => __where(id)", i) for i in ("w-b", "w-l")] == ["stage", "stage"])
+            check("T17 …with no box of the tab", page.evaluate(
+                "() => ['w-b','w-l'].every((id) => !__P(id).style.getPropertyValue('--tab-col-count'))"))
+            page.wait_for_timeout(1500)
+            check("T17 the desk keeps its rects and its maximize", desk_state() == desk_t12, str(desk_state()))
 
             check("no page errors", not errors, str(errors[:3]))
             browser.close()

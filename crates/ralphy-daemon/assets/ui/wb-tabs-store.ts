@@ -24,7 +24,8 @@ import { WBChanges } from "./wb-changes.ts";
 import { classify, fileTabId, tabIcon } from "./wb-file-paths.ts";
 import { WBSplit } from "./wb-split.ts";
 import { sendDocument, sendWindow } from "./wb-events.ts";
-import { consoleTab, consoleTabId, isConsoleTabId } from "./wb-console-tabs.ts";
+import { consoleTab, consoleTabId, freshTabId, isConsoleTabId } from "./wb-console-tabs.ts";
+import { WBColumns } from "./wb-columns.ts";
 import type { Messages } from "./wb-messages.ts";
 import type { CanvasTab, ChangeEntry, DiffTarget, MenuItem, Slot, TabBody, TabOpen } from "./wb-shell-types.d.ts";
 
@@ -63,6 +64,16 @@ export function tabsStore(deps: TabsStoreDeps) {
       document.addEventListener("workbench:consoles-changed", () => {
         if (this._stageRestored) this.syncConsoleTabs();
       });
+      // A narrower or wider window changes how many consoles a tab paints
+      // (one at a phone width). One placement per frame.
+      let frame = 0;
+      window.addEventListener("resize", () => {
+        if (frame || !this.consoleTabShown()) return;
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          this.placeConsoleTabs();
+        });
+      });
     },
 
     // --- console tabs (ADR-0037 §3d) ----------------------------------------
@@ -73,56 +84,88 @@ export function tabsStore(deps: TabsStoreDeps) {
     consoleTabShown() {
       return isConsoleTabId(this.active);
     },
-    // The console of the active console tab, or null.
-    activeConsole(): string | null {
-      return this.tabs.find((t) => t.id === this.active && t.kind === "console")?.deskId ?? null;
+    consoleTabs(): CanvasTab[] {
+      return this.tabs.filter((t) => t.kind === "console");
     },
-    // Whether a console tab holds the console `deskId`.
+    // The console tab that holds the console `deskId`, if one does.
+    tabOf(deskId: string): CanvasTab | undefined {
+      return this.consoleTabs().find((t) => (t.grid || []).some((col) => col.includes(deskId)));
+    },
     holds(deskId: string) {
-      return this.tabs.some((t) => t.kind === "console" && t.deskId === deskId);
+      return !!this.tabOf(deskId);
     },
     consoleDeskIds(): string[] {
-      return this.tabs.flatMap((t) => (t.kind === "console" && t.deskId ? [t.deskId] : []));
+      return this.consoleTabs().flatMap((t) => WBColumns.flat(t.grid || []));
     },
+    // The grid of the active console tab, or null.
+    activeGrid(): string[][] | null {
+      return this.consoleTabs().find((t) => t.id === this.active)?.grid ?? null;
+    },
+    // A console that has a tab shows that tab; any other gets a new one.
     openConsoleTab(deskId: string, title: string) {
-      const id = consoleTabId(deskId);
-      if (!this.tabs.some((t) => t.id === id)) this.tabs.push(consoleTab(deskId, title));
+      const held = this.tabOf(deskId);
+      if (held) return this.activate(held.id);
+      const id = freshTabId(deskId, (x) => this.tabs.some((t) => t.id === x));
+      this.tabs.push(consoleTab(id, deskId, title, [[deskId]]));
       this.activate(id);
+    },
+    // The one writer of a console tab's grid. A tab with no console left
+    // closes; its windows go back to the stage.
+    setTabGrid(tabId: string, grid: string[][]) {
+      const tab = this.consoleTabs().find((t) => t.id === tabId);
+      if (!tab) return;
+      if (!WBColumns.flat(grid).length) return this.closeTab(tabId);
+      tab.grid = grid;
+      this.persistView();
+      this.placeConsoleTabs();
+    },
+    // Restore of a console in a tab: it goes back to the stage, and the tab
+    // keeps the others.
+    leaveTab(deskId: string) {
+      const tab = this.tabOf(deskId);
+      if (tab) this.setTabGrid(tab.id, WBColumns.restore(tab.grid || [], deskId).columns);
     },
     // Each console with a tab goes into the tab's pane, and every other one
     // goes back to the stage. The console module moves the windows.
     placeConsoleTabs() {
-      window.WBConsole?.placeTabs(this.consoleDeskIds(), this.activeConsole());
+      window.WBConsole?.placeTabs(this.consoleDeskIds(), this.activeGrid());
     },
     // Read before the desk, so `restoreView` knows a stored active console
-    // tab. The windows go into their tabs at `syncConsoleTabs`.
+    // tab. The windows go into their tabs at `syncConsoleTabs`. A console
+    // that two stored tabs name stays in the first.
     _consoleTabsRestored: false,
     _stageRestored: false,
     restoreConsoleTabs() {
       if (this._consoleTabsRestored || !window.WBView) return;
       this._consoleTabsRestored = true;
       for (const t of window.WBView.read()?.consoleTabs || []) {
-        if (!this.holds(t.deskId)) this.tabs.push(consoleTab(t.deskId, t.title));
+        const id = t.id ?? consoleTabId(t.deskId);
+        const seen = new Set(this.consoleDeskIds());
+        const grid = t.grid.map((col) => col.filter((x) => !seen.has(x))).filter((col) => col.length);
+        if (grid.length && !this.tabs.some((x) => x.id === id)) this.tabs.push(consoleTab(id, t.deskId, t.title, grid));
       }
     },
-    // A tab whose console left the page closes; the others take its current
-    // name and hold its window. A console that relaunches keeps its tab.
+    // A console that left the page leaves its tab's grid, and a tab with no
+    // console left closes. A console that relaunches keeps its place.
     syncConsoleTabs() {
       const rows = new Map(window.WBConsole.list().map((r) => [r.id, r]));
-      for (const deskId of this.consoleDeskIds()) {
-        const row = rows.get(deskId);
-        if (!row) {
-          if (!window.WBConsole.isRelaunching(deskId)) this.closeTab(consoleTabId(deskId));
-          continue;
-        }
-        const tab = this.tabs.find((t) => t.id === consoleTabId(deskId));
-        const title = window.WBConsoleName.consoleLabel(row.name || "", row.agent);
-        if (tab && title && tab.title !== title) {
-          tab.title = title;
-          this.persistView();
-        }
+      const here = (id: string) => rows.has(id) || window.WBConsole.isRelaunching(id);
+      for (const tab of this.consoleTabs()) {
+        const grid = tab.grid || [];
+        const kept = WBColumns.keep(grid, new Set(WBColumns.flat(grid).filter(here)));
+        if (JSON.stringify(kept) !== JSON.stringify(grid)) this.setTabGrid(tab.id, kept);
+        else if (tab.deskId && WBColumns.flat(grid).includes(tab.deskId)) this.renameConsoleTab(tab, rows.get(tab.deskId));
       }
       this.placeConsoleTabs();
+    },
+    // The tab follows a rename of the console it opened for, while that
+    // console is in it; no other console names it (ADR-0037 §3d).
+    renameConsoleTab(tab: CanvasTab, row: { name: string | null; agent: string } | undefined) {
+      if (!row) return;
+      const title = window.WBConsoleName.consoleLabel(row.name || "", row.agent);
+      if (!title || tab.title === title) return;
+      tab.title = title;
+      this.persistView();
     },
 
     // --- canvas tabs ------------------------------------------------------
@@ -517,8 +560,8 @@ export function tabsStore(deps: TabsStoreDeps) {
       if (this.lastLeft === id) this.lastLeft = null;
       WBViewer.close(id);
       this.tabs.splice(idx, 1);
-      // The console goes back to the stage and keeps running.
-      if (tab.deskId) this.placeConsoleTabs();
+      // The consoles go back to the stage and keep running.
+      if (tab.kind === "console") this.placeConsoleTabs();
       if (this.active === id) {
         // fall back to the neighbour, else the Consoles tab
         const next = this.tabs[idx] || this.tabs[idx - 1] || this.tabs[0];
@@ -549,12 +592,12 @@ export function tabsStore(deps: TabsStoreDeps) {
           // The pin (#406) survives a reload.
           checkout: t.checkout ?? null,
         }));
-      const consoleTabs = this.tabs.flatMap((t) => (t.kind === "console" && t.deskId ? [{ deskId: t.deskId, title: t.title }] : []));
+      const consoleTabs = this.consoleTabs().map((t) => ({ id: t.id, deskId: t.deskId || "", title: t.title, grid: t.grid || [] }));
       // A stored `active` naming a tab this store does not carry would leave
       // the canvas blank: degrade to Consoles.
       const alive =
         this.active === "consoles" ||
-        consoleTabs.some((t) => consoleTabId(t.deskId) === this.active) ||
+        consoleTabs.some((t) => t.id === this.active) ||
         files.some((f) => fileTabId(f.project!, f.path!, f.checkout) === this.active);
       window.WBView?.patch({
         tabs: files,

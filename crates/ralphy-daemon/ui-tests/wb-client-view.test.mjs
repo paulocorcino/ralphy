@@ -121,3 +121,16 @@ test("tabs read as the file tabs the shell stored; active as a string or null", 
   assert.deepEqual(read({ tabs: "a.md", active: 4 }).tabs, []);
   assert.equal(read({ active: 4 }).active, null);
 });
+
+// A console tab (ADR-0037 §3d) is read with its grid. One stored before the
+// grid is a grid of its one console, with no id: the store gives it the id it
+// had. A grid of another shape drops the tab.
+test("a console tab is read with its grid, and one stored before the grid is a grid of its console", () => {
+  const tabs = (consoleTabs) => load(JSON.stringify({ v: 1, consoleTabs })).read().consoleTabs;
+  assert.deepEqual(tabs([{ id: "console:a-2", deskId: "a", title: "t", grid: [["a", "b"], ["c"]] }]), [
+    { id: "console:a-2", deskId: "a", title: "t", grid: [["a", "b"], ["c"]] },
+  ]);
+  assert.deepEqual(tabs([{ deskId: "a", title: "t" }]), [{ id: null, deskId: "a", title: "t", grid: [["a"]] }]);
+  assert.deepEqual(tabs([{ id: "x", deskId: "a", title: "t", grid: [[]] }]), []);
+  assert.deepEqual(tabs([{ id: "x", deskId: "a", title: "t", grid: [["a", 3]] }]), []);
+});

@@ -30,6 +30,8 @@ export type FocusHook = {
 export function createStack(document: Document) {
   // The viewport (the scrolling box); the windows and the cards are inside it.
   const workspace = () => document.getElementById("workspace");
+  // The pane of the console tabs (ADR-0037 §3d); a page without it has none.
+  const tabsPane = () => document.getElementById("console-tabs-pane");
   let hook: FocusHook | null = null;
 
   // Focus stacking. `z` climbs each time a window is raised; when it reaches the
@@ -73,7 +75,12 @@ export function createStack(document: Document) {
       z += 1;
     }
     win.style.zIndex = z;
-    for (const w of workspace()!.querySelectorAll<ConsoleWin>(".session-window.focused, .note-card.focused")) {
+    // One focus mark on the page: a console in its own tab is in the pane of
+    // the console tabs, outside the viewport (ADR-0037 §3d).
+    const marked = [workspace(), tabsPane()].flatMap((el) =>
+      el ? [...el.querySelectorAll<ConsoleWin>(".session-window.focused, .note-card.focused")] : [],
+    );
+    for (const w of marked) {
       if (w === win) continue;
       w.classList.remove("focused");
       hook?.blurred(w);

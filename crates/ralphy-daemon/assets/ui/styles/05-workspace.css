@@ -469,6 +469,11 @@
   min-width: 260px;
   overflow: hidden;
 }
+/* A console in its own tab opens the same list (ADR-0037 §3d), while the
+   Consoles tab around the list is hidden. */
+.consoles-tab.tab-hidden .column-menu {
+  visibility: visible;
+}
 .column-list {
   flex: 1 1 auto;
   overflow: auto;

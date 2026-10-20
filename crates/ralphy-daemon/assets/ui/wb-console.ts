@@ -189,6 +189,7 @@ export function createConsole(window: Window, document: Document, location: Pick
   const columns = createStageColumns({
     OPTS,
     wins,
+    pageWindows,
     workspace,
     stage,
     popups,
@@ -252,6 +253,8 @@ export function createConsole(window: Window, document: Document, location: Pick
     moved: (win: ConsoleWin) => {
       applyDormancy(win);
       budget.scheduleGpu();
+      paintMaxButton(win);
+      columns.paintListButtons();
     },
   });
 

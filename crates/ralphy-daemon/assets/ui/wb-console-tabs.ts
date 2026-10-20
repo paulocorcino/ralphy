@@ -1,11 +1,13 @@
 /* ---------------------------------------------------------------------------
-   A console in its own tab (ADR-0037 §3d): the tab's id, its stored shape,
-   and the + menu at the end of the tab strip.
+   A console in its own tab (ADR-0037 §3d): the tab's id, its shape, and the
+   + menu at the end of the tab strip.
 
    The tab belongs to this device: the store `tabs` keeps it, and the view
    store (`WBView`) holds it as `consoleTabs`. The tab has its own pane: the
-   console's window moves there (`WBConsole.placeTabs`, wb-console-place.ts)
-   and nothing is written to the desk.
+   windows of its consoles move there (`WBConsole.placeTabs`,
+   wb-console-place.ts) and nothing is written to the desk. The tab holds a
+   grid of consoles, as the stage's columns do (ADR-0051 §5); `deskId` is the
+   console it opened for.
 
    `wbConsoleTabMenu` is the + menu. Its rows are the rows of the column list
    (`WBColumns.listFold` over `WBConsole.columnRoster()`), so the + lists the
@@ -28,8 +30,17 @@ export function isConsoleTabId(id: string) {
   return id.startsWith(PREFIX);
 }
 
-export function consoleTab(deskId: string, title: string): CanvasTab {
-  return { id: consoleTabId(deskId), kind: "console", title, icon: "bi bi-terminal", closable: true, deskId };
+// The id of a new tab for `deskId`. A tab that `deskId` left keeps its id, so
+// a second tab for it takes the next free number.
+export function freshTabId(deskId: string, taken: (id: string) => boolean) {
+  const base = consoleTabId(deskId);
+  let id = base;
+  for (let n = 2; taken(id); n++) id = `${base}-${n}`;
+  return id;
+}
+
+export function consoleTab(id: string, deskId: string, title: string, grid: string[][]): CanvasTab {
+  return { id, kind: "console", title, icon: "bi bi-terminal", closable: true, deskId, grid };
 }
 
 export function wbConsoleTabMenu() {

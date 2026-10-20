@@ -26,15 +26,16 @@ export function wirePress({ term, body, window, writeClipboard }: PressDeps) {
   // belongs to the child.
   term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
     // Alt+Shift+arrows in a column walk the columns and their rows (ADR-0051
-    // §5): xterm must not send them to the child, and the document listener
-    // of the columns (wb-consoles-tab.ts) takes them.
+    // §5), and so in the grid of a console tab (ADR-0037 §3d): xterm must not
+    // send them to the child, and the document listener of the columns
+    // (wb-consoles-tab.ts) takes them.
     if (
       e.altKey &&
       e.shiftKey &&
       !e.ctrlKey &&
       !e.metaKey &&
       /^Arrow(Left|Right|Up|Down)$/.test(e.code) &&
-      body.closest(".session-window")?.classList.contains("column")
+      !!body.closest(".session-window.column, .session-window.tab-grid")
     ) {
       return false;
     }

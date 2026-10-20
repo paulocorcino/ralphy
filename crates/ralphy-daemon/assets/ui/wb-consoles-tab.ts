@@ -18,7 +18,6 @@
 import { component } from "./wb-alpine.ts";
 import { WBAgents } from "./wb-agents.ts";
 import { WBColumns } from "./wb-columns.ts";
-import { consoleTabId } from "./wb-console-tabs.ts";
 import type { ColumnGroup, ColumnRow, Grid } from "./wb-columns.ts";
 import type { ConsoleWin } from "./wb-types.d.ts";
 import type { MenuRow } from "./wb-agents.ts";
@@ -182,8 +181,9 @@ export function wbConsoleMenus() {
     revealWindow(id: string) {
       this.windowMenu = false;
       // A console in its own tab is shown in its tab (ADR-0037 §3d).
-      if (this.$store.tabs.holds(id)) {
-        this.$store.tabs.activate(consoleTabId(id));
+      const tab = this.$store.tabs.tabOf(id);
+      if (tab) {
+        this.$store.tabs.activate(tab.id);
         return;
       }
       if (this.$store.tabs.active !== "consoles") this.$store.tabs.activate("consoles");
@@ -411,6 +411,18 @@ export function wbColumns() {
     effectiveColumns(fromId: string): Grid {
       return this.columnIds().includes(fromId) ? this.columns : [[fromId]];
     },
+    // The grid the list opened from works on: the grid of the console tab
+    // that holds `fromId` (ADR-0037 §3d), else the stage's columns.
+    menuGrid(fromId: string): { tab: string | null; grid: Grid } {
+      const tab = this.$store.tabs.tabOf(fromId);
+      return tab ? { tab: tab.id, grid: tab.grid || [] } : { tab: null, grid: this.effectiveColumns(fromId) };
+    },
+    // The consoles of the console tabs, but the ones in `grid`: they are rows
+    // of a list that opens from a tab.
+    otherTabs(grid: Grid) {
+      const own = WBColumns.flat(grid);
+      return this.$store.tabs.consoleDeskIds().filter((id) => !own.includes(id));
+    },
     // The Right | Down choice at the top of the list, kept in this browser.
     setColumnDir(dir: string | null | undefined) {
       this.columnDir = WBColumns.dirOf(dir);
@@ -486,14 +498,15 @@ export function wbColumns() {
     },
     toggleColumnMenu(id: string, rect: DOMRect | undefined) {
       const was = this.columnMenu && this.columnFrom === id;
-      const ids = WBColumns.flat(this.effectiveColumns(id));
+      const { grid } = this.menuGrid(id);
+      const ids = WBColumns.flat(grid);
       const cap = this.columnCap();
       this.columnGroups = WBColumns.listFold({
         ...WBConsole.columnRoster(),
         columns: ids,
         from: id,
         full: ids.length >= cap,
-        tabbed: this.$store.tabs.consoleDeskIds(),
+        tabbed: this.otherTabs(grid),
       });
       this.columnSwitch = cap < 2;
       this.columnFrom = id;
@@ -552,29 +565,38 @@ export function wbColumns() {
     openColumn(id: string) {
       const from = this.columnFrom;
       if (!from) return;
-      const cols = this.effectiveColumns(from);
-      const out = WBColumns.open(cols, from, id, this.columnCap(), this.columnDir);
+      const { tab, grid } = this.menuGrid(from);
+      const out = WBColumns.open(grid, from, id, this.columnCap(), this.columnDir);
       if (!out.ok) {
         if (out.reason) this.$store.modals.flash(out.reason);
         return;
       }
-      this.setColumns(out.columns);
       this.columnMenu = false;
-      this.paintColumns({ raise: true });
+      if (tab) this.$store.tabs.setTabGrid(tab, out.columns);
+      else {
+        this.setColumns(out.columns);
+        this.paintColumns({ raise: true });
+      }
       WBConsole.focusColumn(id);
     },
     // Put `id` in the row that opened the list (ADR-0051 §5, swap).
     swapColumn(id: string) {
       const from = this.columnFrom;
       if (!from) return;
-      const r = WBColumns.swap(this.effectiveColumns(from), from, id);
+      const { tab, grid } = this.menuGrid(from);
+      const r = WBColumns.swap(grid, from, id);
       if (!r.ok) return;
+      this.columnMenu = false;
+      // A tab never writes the desk: the console that leaves goes to the stage.
+      if (tab) this.$store.tabs.setTabGrid(tab, r.columns);
+      else this.swapStage(r);
+      WBConsole.focusColumn(id);
+    },
+    swapStage(r: { columns: Grid; ended: boolean; unmax: string | null }) {
       const cap = this.columnCap();
       this.setColumns(r.ended ? [] : r.columns);
-      this.columnMenu = false;
       WBConsole.applyColumns(WBColumns.painted(r.columns, cap), { unmax: r.unmax, raise: true, persist: true });
       this.paintColumns();
-      WBConsole.focusColumn(id);
     },
     restoreColumn(id: string) {
       const r = WBColumns.restore(this.columns, id);
@@ -610,11 +632,18 @@ export function wbColumns() {
       if (this.$store.tabs.active !== "consoles") return null;
       return WBConsole.stepFence(step);
     },
+    // The grid the arrows walk: the stage's columns on the Consoles tab, the
+    // active console tab's grid (ADR-0037 §3d), else none.
+    arrowGrid(): Grid {
+      const tabs = this.$store.tabs;
+      return tabs.active === "consoles" ? this.columns : (tabs.activeGrid() ?? []);
+    },
     // Alt+Shift+arrows among the painted consoles: "x" across the columns,
     // "y" along the rows of one column. Returns whether it applied.
     stepColumn(axis: string, step: number) {
-      if (this.$store.tabs.active !== "consoles" || this.columnIds().length < 2) return false;
-      const painted = WBColumns.painted(this.columns, this.columnCap());
+      const grid = this.arrowGrid();
+      if (WBColumns.flat(grid).length < 2) return false;
+      const painted = WBColumns.painted(grid, this.columnCap());
       const to = WBColumns.focusMove(painted, WBConsole.focusedId(), axis, step);
       if (to) WBConsole.focusColumn(to);
       return true;
@@ -622,7 +651,7 @@ export function wbColumns() {
     // The columns while they are open, the fences otherwise (ADR-0051 §5). The
     // fences have no "y": ↑/↓ with no columns open applies nothing.
     arrowStep(axis: string, step: number) {
-      if (this.columnIds().length >= 2) return this.stepColumn(axis, step);
+      if (WBColumns.flat(this.arrowGrid()).length >= 2) return this.stepColumn(axis, step);
       return axis === "x" && !!this.stepFence(step);
     },
 
@@ -652,8 +681,10 @@ export function wbColumns() {
       document.addEventListener("workbench:column-open", (e) => {
         this.toggleColumnMenu(e.detail.id, e.detail.rect);
       });
+      // A console in a tab goes back to the stage (ADR-0037 §3d).
       document.addEventListener("workbench:column-restore", (e) => {
-        this.restoreColumn(e.detail.id);
+        if (this.$store.tabs.holds(e.detail.id)) this.$store.tabs.leaveTab(e.detail.id);
+        else this.restoreColumn(e.detail.id);
       });
       document.addEventListener("workbench:columns-stale", () => {
         this.paintColumns();
@@ -697,7 +728,7 @@ export function wbColumns() {
         if (!e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return;
         const move = ARROW_STEPS[e.code as keyof typeof ARROW_STEPS];
         if (!move) return;
-        if (this.$store.modals.consoleShortcutsBlocked(this.columnIds().length >= 2)) return;
+        if (this.$store.modals.consoleShortcutsBlocked(WBColumns.flat(this.arrowGrid()).length >= 2)) return;
         if (!this.arrowStep(move[0], move[1])) return;
         e.preventDefault();
       });

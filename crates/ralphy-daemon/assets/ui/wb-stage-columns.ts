@@ -9,6 +9,7 @@
    --------------------------------------------------------------------------- */
 import { WBGeometry } from "./wb-geometry.ts";
 import { PHONE_MAX_WIDTH } from "./wb-viewport.ts";
+import { inTab } from "./wb-console-place.ts";
 import * as WBDeskFolds from "./wb-desk-folds.ts";
 import type { DetachedMember, Painted } from "./wb-columns.ts";
 import type { ConsoleOpts, ConsoleWin, DeskRecord, Stacked } from "./wb-types.d.ts";
@@ -38,6 +39,8 @@ export type StageColumnsDeps = {
   OPTS: ConsoleOpts;
   // Every console window on this page.
   wins: Set<ConsoleWin>;
+  // The same windows, read from the page: on the stage, then in the console tabs.
+  pageWindows: () => ConsoleWin[];
   // The viewport (the scrolling box) and the stage (the plane inside it);
   // null before the page has them.
   workspace: () => HTMLElement | null;
@@ -74,6 +77,7 @@ export function createStageColumns(deps: StageColumnsDeps) {
   const {
     OPTS,
     wins,
+    pageWindows,
     workspace,
     stage,
     popups,
@@ -160,7 +164,8 @@ export function createStageColumns(deps: StageColumnsDeps) {
     return c.column || c.maximized ? win : null;
   }
 
-  // Never disabled: at the cap the list still swaps (ADR-0051 §5). A phone
+  // Never disabled: at the cap the list still swaps (ADR-0051 §5). A console
+  // in its own tab has the button too: the tab holds a grid (ADR-0037 §3d). A phone
   // paints one console, so there the same list only switches the maximized
   // console (#599). The viewport is read here, not the caller's cap: a
   // caller with no columns open passes a cap of 1 at any width.
@@ -169,7 +174,7 @@ export function createStageColumns(deps: StageColumnsDeps) {
     for (const win of wins) {
       const btn = win._colBtn;
       if (!btn) continue;
-      const held = win.classList.contains("maximized") || win.classList.contains("column");
+      const held = win.classList.contains("maximized") || win.classList.contains("column") || inTab(win);
       btn.hidden = !(OPTS.autoBoot !== false && held);
       paintColumnButton(btn, narrow);
     }
@@ -218,7 +223,7 @@ export function createStageColumns(deps: StageColumnsDeps) {
   }
 
   function focusedId() {
-    return stage()?.querySelector<ConsoleWin>(".session-window.focused")?._deskId ?? null;
+    return pageWindows().find((w) => w.classList.contains("focused"))?._deskId ?? null;
   }
 
   function focusColumn(id: string) {
@@ -256,6 +261,7 @@ export function createStageColumns(deps: StageColumnsDeps) {
   return {
     columnMeasure,
     applyColumns,
+    paintListButtons,
     dropClosedElsewhere,
     focusedId,
     focusColumn,

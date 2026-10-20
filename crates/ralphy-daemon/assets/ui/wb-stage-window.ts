@@ -124,11 +124,12 @@ export function createStageWindow(deps: StageWindowDeps) {
     setMax(win, !win.classList.contains("maximized"), true);
   }
 
-  // A column restores like a maximize, so it shows the same control.
+  // A column restores like a maximize, so it shows the same control; so does
+  // a console in a tab of two consoles or more (ADR-0037 §3d).
   function paintMaxButton(win: ConsoleWin) {
     const btn = win._maxBtn;
     if (!btn) return;
-    const on = win.classList.contains("maximized") || win.classList.contains("column");
+    const on = ["maximized", "column", "tab-grid"].some((c) => win.classList.contains(c));
     btn.title = on ? "Restore" : "Maximize";
     btn.innerHTML = on
       ? '<i class="bi bi-fullscreen-exit"></i>'
