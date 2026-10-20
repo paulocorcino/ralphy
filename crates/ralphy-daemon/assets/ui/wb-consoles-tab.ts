@@ -537,6 +537,15 @@ export function wbColumns() {
       if (this.columnSwitch) this.swapColumn(id);
       else this.openColumn(id);
     },
+    endTabColumns(deskId: string) {
+      if (this.columnIds()[0] !== deskId) return;
+      this.setColumns([]);
+      WBConsole.applyColumns([], { unmax: null, persist: false });
+    },
+    switchLabel(id: string) {
+      const row = this.columnGroups.flatMap((g) => g.rows).find((r) => r.id === id);
+      return row ? this.columnRowLabel(row) : id;
+    },
     columnRowOff(r: ColumnRow) {
       return this.columnSwitch ? !r.swappable : !r.enabled;
     },
@@ -571,6 +580,13 @@ export function wbColumns() {
       const persist = this.writesMax();
       const from = this.columnFrom;
       if (!from) return;
+      // On a phone in a console tab, Switch goes to the tab of the picked
+      // console: a swap would take the tab's console out of its own tab.
+      if (this.$store.tabs.holds(from) && this.$store.tabs.stageShown() && this.$store.tabs.active !== "consoles") {
+        this.columnMenu = false;
+        this.$store.tabs.openConsoleTab(id, this.switchLabel(id));
+        return;
+      }
       const r = WBColumns.swap(this.effectiveColumns(from), from, id);
       if (!r.ok) return;
       const cap = this.columnCap();
@@ -675,11 +691,7 @@ export function wbColumns() {
       });
       // The columns of a console tab end with the tab. Nothing is written to
       // the desk: the tab's maximize was never there.
-      document.addEventListener("workbench:console-tab-closed", (e) => {
-        if (this.columnIds()[0] !== e.detail.deskId) return;
-        this.setColumns([]);
-        WBConsole.applyColumns([], { unmax: null, persist: false });
-      });
+      document.addEventListener("workbench:console-tab-closed", (e) => this.endTabColumns(e.detail.deskId));
       // A narrower or wider viewport changes the cap. One repaint per frame.
       let columnsFrame = 0;
       window.addEventListener("resize", () => {

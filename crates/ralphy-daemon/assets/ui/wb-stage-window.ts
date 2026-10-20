@@ -120,7 +120,10 @@ export function createStageWindow(deps: StageWindowDeps) {
     if (persist) setWin(win, { max: on });
   }
 
+  // The console of a console tab keeps its maximize: the title bar's double
+  // click is a Restore too, and it would write the desk (ADR-0037 §3d).
   function toggleMax(win: ConsoleWin) {
+    if (heldByTab(win._deskId) && win.classList.contains("maximized")) return;
     setMax(win, !win.classList.contains("maximized"), true);
   }
 
