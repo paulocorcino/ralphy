@@ -33,6 +33,7 @@ async fn two_parts_land_one_file_and_a_resend_learns_the_offset() {
     assert_eq!(replies[0]["status"], "ok", "{:?}", replies[0]);
     assert_eq!(replies[0]["path"], "up.bin");
     assert_eq!(replies[0]["result"], "created");
+    super::golden::check("file.upload", replies[0].clone(), &[]);
     assert_eq!(std::fs::read(root.join("up.bin")).unwrap(), b"abcdef");
 }
 
