@@ -226,7 +226,7 @@ New costs:
 ## Compliance
 
 - D1: checked by `first_party_scripts_move_to_typescript_and_never_back`
-  (`crates/ralphy-daemon/src/tests.rs`) as a ratchet: it fails on a
+  (`crates/ralphy-daemon/src/tests/`) as a ratchet: it fails on a
   first-party `.js` file in `assets/ui/` that is not in `CLASSIC_SCRIPTS`, and
   on a name in that list that is no longer a `.js` file. `erasableSyntaxOnly`
   is checked by `tsc` (D4).
@@ -336,7 +336,7 @@ exported `wire(window, document)`, so a test runs it on its own stubs and
 each call starts with new state (D7).
 
 D5 is now checked by `each_page_starts_from_one_entry_module`
-(`crates/ralphy-daemon/src/tests.rs`): each page has one module tag, the
+(`crates/ralphy-daemon/src/tests/`): each page has one module tag, the
 entry it names; only `main.ts` calls `Alpine.start`, `Alpine.data` and
 `Alpine.directive`; and `main.ts` registers exactly the `x-data` names of
 `index.html`.

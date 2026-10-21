@@ -39,7 +39,7 @@ it serves the built page as it does today.
 
 What reads the markup today (measured on 2026-10-12):
 
-- 36 tests in `crates/ralphy-daemon/src/tests.rs` read
+- 36 tests in `crates/ralphy-daemon/src/tests/` read
   `include_str!("../assets/ui/index.html")`, with 170 claims
   (`cargo run -p xtask -- asset-pins`). About 12 of them count matches or cut
   the file at a position. These would give wrong results on one part.
@@ -146,13 +146,13 @@ markup.
 
 - D1: checked by `build/ui.rs`: the build writes the page from the source
   and its markers. The pilot adds a unit test of the marker rule.
-- D2: checked by `crates/ralphy-daemon/src/tests.rs` (a test the pilot adds:
+- D2: checked by `crates/ralphy-daemon/src/tests/` (a test the pilot adds:
   no path in the embedded tree ends with `.part.html`).
 - D3: checked by `build/ui.rs`: each case stops the build with an error.
   The pilot adds a unit test for each case.
 - D4: not checked by code: reviewed in the PR.
 - D5: not checked by code: reviewed in the PR.
-  `every_shell_links_the_whole_cascade` (`crates/ralphy-daemon/src/tests.rs`)
+  `every_shell_links_the_whole_cascade` (`crates/ralphy-daemon/src/tests/`)
   still checks, on the built pages, that each page links every stylesheet.
 - D6: not checked by code: reviewed in the PR. A test that reads the source
   page still passes while the page has its markup.

@@ -200,7 +200,7 @@ change to modules is mechanical.
   source type, and no test reads the `type` of a `<script>` tag.
 - D2: not checked by code: reviewed in the PR. Which state is "layout" is a
   judgment. D8 limits how much `shell()` can grow.
-- D3: checked by `crates/ralphy-daemon/src/tests.rs`
+- D3: checked by `crates/ralphy-daemon/src/tests/`
   (`every_alpine_component_can_be_built_and_has_a_test`, added by the pilot):
   every first-party file that calls `Alpine.data` also assigns a `window.WB*`
   name, or exports its factory when it is a module (ADR-0075), and has a
@@ -634,7 +634,7 @@ returned object. Ten workbench modules have more than 700 lines: `app.ts`
    family is every module named `wb-console.ts`, `wb-console-*.ts`,
    `wb-stage-*.ts`, `wb-desk.ts` or `wb-desk-*.ts` (21 modules at
    `8783a20e`; `wb-consoles-tab.ts` is not one). `CONSOLE_FAMILY` in
-   `crates/ralphy-daemon/src/tests.rs` lists them in a fixed order:
+   `crates/ralphy-daemon/src/tests/` lists them in a fixed order:
    `wb-console.ts`, then the `wb-console-*` modules, the `wb-stage-*`
    modules, `wb-desk.ts`, and the `wb-desk-*` modules, each group sorted.
    `wb-desk-sync.ts` declares a second `function deskOf(`, so the console
@@ -732,7 +732,7 @@ the returned object. Without decision 3, `app.ts` stops near 850 lines.
    is `app.ts`, then `wb-wire.ts` and `wb-icon.ts` when they exist, then
    every module that `main.ts` imports a registered Alpine component or
    Alpine store from, sorted (11 modules at `6408f3c0`). `SHELL_FAMILY` in
-   `crates/ralphy-daemon/src/tests.rs` lists them, and the pins that read
+   `crates/ralphy-daemon/src/tests/` lists them, and the pins that read
    `app.ts` read the joined text (`shell_family()`), so a move from `app.ts`
    into a family module does not move them. `app.ts` comes first, and every
    exact count and scoped slice of those pins is the same over the joined

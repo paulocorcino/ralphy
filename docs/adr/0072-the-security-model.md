@@ -361,7 +361,7 @@ surface.
   row (`negative_price_rows_are_skipped`).
 - D10: checked by `every_response_carries_the_security_headers` and
   `no_shell_carries_an_inline_event_handler`
-  (`crates/ralphy-daemon/src/tests.rs`); a new `eval` or `new Function` is
+  (`crates/ralphy-daemon/src/tests/`); a new `eval` or `new Function` is
   flagged by `xtask capabilities`. `'unsafe-eval'` stays in `script-src`
   for Alpine and Monaco (accepted). The context menu (`app.js`
   `renderMenu`) and the console key bar (`wb-console.js` `key()`) build

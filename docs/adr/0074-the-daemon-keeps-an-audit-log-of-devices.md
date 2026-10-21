@@ -188,7 +188,7 @@ the browser's device, and one line on the peer with the actor `bearer`
   `crates/ralphy-daemon/ui-tests/wb-device.test.mjs` (the 409 report test).
 - D6: not checked by code: manual: reviewed in the PR. The rules are pinned
   on the measured devices by `crates/ralphy-daemon/src/audit/normalize/tests.rs`.
-- D7: checked by `crates/ralphy-daemon/src/tests.rs`
+- D7: checked by `crates/ralphy-daemon/src/tests/`
   (`every_response_carries_the_security_headers`, which pins
   `connect-src 'self'`).
 - D8: not checked by code: manual: reviewed in the PR.

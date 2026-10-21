@@ -40,7 +40,7 @@ the same commit, or leave both unchanged.
 ## TypeScript modules
 
 The page code is `.ts` ES modules. No first-party classic script is left:
-`CLASSIC_SCRIPTS` in `crates/ralphy-daemon/src/tests.rs` is empty, and a
+`CLASSIC_SCRIPTS` in `crates/ralphy-daemon/src/tests/` is empty, and a
 first-party `.js` file in `assets/ui/` fails that test. Only the vendored
 libraries are classic scripts.
 
@@ -73,7 +73,7 @@ libraries are classic scripts.
   (`popup.WBViewer`), or a browser check. The page instances (`WB`,
   `WBConsole`, `WBDaemon`, `WBNotes`, `WBViewer`) are on `window` because
   the entry module creates them for its page; `globals.d.ts` types them.
-  `MODULE_WINDOW_NAMES` in `crates/ralphy-daemon/src/tests.rs` lists every
+  `MODULE_WINDOW_NAMES` in `crates/ralphy-daemon/src/tests/` lists every
   name a module may set.
 - **Components.** `component(uses, data)` in `wb-alpine.ts` types the
   component's `this` from its `uses` list, against the type of the real
@@ -139,7 +139,7 @@ AMD build), with these exclusions:
 | `assets/{css,html,json,ts}.worker-*.js` | the four language workers (8.8 MB, `ts.worker` alone 7.0 MB). Language services are out of scope, and `wb-monaco.ts` disables all four mode configurations at boot |
 
 The embed-pin test `monaco_replaced_codemirror_in_the_embedded_ui`
-(`crates/ralphy-daemon/src/tests.rs`) checks these rows by prefix.
+(`crates/ralphy-daemon/src/tests/`) checks these rows by prefix.
 
 - `assets/editor.worker-*.js` and `assets/editorWebWorkerMain-*.js` stay: they
   are the base editor worker. No page sets `globalThis.MonacoEnvironment`, so
