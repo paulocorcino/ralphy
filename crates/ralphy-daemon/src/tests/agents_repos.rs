@@ -1,6 +1,7 @@
 //! `/api/agents` and `/api/repos`.
 
 use super::*;
+use std::sync::Arc;
 
 #[tokio::test]
 async fn api_agents_serves_the_roster() {
