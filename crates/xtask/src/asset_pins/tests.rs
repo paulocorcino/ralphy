@@ -338,3 +338,41 @@ fn a_new_test_forgets_what_the_previous_test_read() {
     assert!(out.iter().all(|p| p.asset.is_none()));
     assert!(out.iter().all(|p| p.shape == Shape::Identifier));
 }
+
+/// A test file one directory deeper reaches the assets with one more `../`.
+/// The daemon's `src/tests/` children are such files.
+#[test]
+fn gather_reads_the_children_of_the_daemon_tests_folder() {
+    let root = tempfile::tempdir().unwrap();
+    let dir = root.path().join("crates/ralphy-daemon/src/tests");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("child.rs"),
+        r#"
+#[test]
+fn reads_x() {
+    let js = include_str!("../../assets/ui/x.ts");
+    assert!(js.contains("needle"), "msg");
+}
+"#,
+    )
+    .unwrap();
+    let pins = gather(root.path()).unwrap();
+    assert_eq!(pins.len(), 1);
+    assert_eq!(pins[0].asset.as_deref(), Some("x.ts"));
+    assert!(
+        pins[0].file.ends_with("src/tests/child.rs"),
+        "{}",
+        pins[0].file
+    );
+}
+
+/// The path an `include_str!` argument names is how a test NAMES an asset, at
+/// any depth.
+#[test]
+fn an_include_path_of_any_depth_is_not_a_claim() {
+    let mut out = Vec::new();
+    keep(&mut out, "../../assets/ui/a.ts".to_string());
+    keep(&mut out, "../assets/ui/a.ts".to_string());
+    assert!(out.is_empty(), "{out:?}");
+}
