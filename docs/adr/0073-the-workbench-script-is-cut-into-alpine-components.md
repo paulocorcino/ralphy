@@ -751,3 +751,33 @@ release fact in the account menu and the release dialogs. A component
 cannot read the data of another component, so these facts are stores. The
 account menu (`wbAccount`) and the login gate (`wbLogin`) keep only their
 own state, and log off resets that state through `workbench:log-off`.
+
+## Amendment (2026-10-21): a member's body may live in a function that takes the component
+
+Issue #699 brings every workbench module under 700 lines of code (ADR-0022
+§7). `wb-files.ts` is one Alpine component, `wbFiles`, with 773 lines of
+code at `a45ecdcf`, and D3 gives a component one file. Four modules already
+hold part of its work without a rule that names the shape:
+`wb-files-reconcile.ts`, `wb-files-menu.ts`, `wb-files-properties.ts` and
+`wb-files-upload.ts`. This amendment names it.
+
+1. **A member may hand its body to a function in another module of its
+   domain.** The module is named `wb-<domain>-<part>.ts` (the 2026-10-10
+   amendment). The function takes the component as its first parameter,
+   typed by a local type that lists only the members the function reads,
+   writes or calls, as `ReconcileFiles` does in `wb-files-reconcile.ts`.
+   The member keeps its name and stays on the component, and its body
+   becomes one call:
+   `applyFileSearch(hits, truncated, seq) { return applySearch(this, hits, truncated, seq); }`.
+   So the markup, the `uses` list and the frozen member lists do not
+   change, and `tsc` refuses a read that the type does not list.
+2. **The function keeps no state of its own.** State stays a field of the
+   component or of a store. A part that needs its own state is a component
+   or a `create<Name>(deps)` factory instead.
+3. **Members are not spread into a component from another module.**
+   `component(uses, { ...searchMembers, … })` stays rejected for the reason
+   in *Considered options*: every member would still share one `this`, and
+   the type of the part could not say what the part reads or writes.
+4. Each cut still follows a responsibility the component already has (the
+   2026-10-11 amendment, decision 1). No cut moves code only to lower the
+   count.
