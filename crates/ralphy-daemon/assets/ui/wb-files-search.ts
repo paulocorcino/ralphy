@@ -11,6 +11,7 @@
    --------------------------------------------------------------------------- */
 import { WBFail } from "./wb-fail.ts";
 import { WBFileSearch } from "./wb-file-search.ts";
+import type { AlpineMagics } from "./wb-alpine.ts";
 import type { Hit } from "./wb-file-search.ts";
 
 /** What a search step reads, writes or calls on the files component. */
@@ -27,7 +28,7 @@ type SearchFiles = {
   _fileSearchTimer: ReturnType<typeof setTimeout> | null;
   _fileHits: Map<string, number | true> | null;
   _restoringExpansion: boolean;
-  $store: import("./wb-alpine.ts").AlpineMagics["$store"];
+  $store: AlpineMagics["$store"];
   rawTree(): WunderbaumTree | null;
   relPath(node: WunderbaumNode | null): string;
   isFolder(node: WunderbaumNode | null | undefined): boolean;
