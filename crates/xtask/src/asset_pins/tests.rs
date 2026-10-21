@@ -165,6 +165,23 @@ fn a_pin_is_booked_to_the_receiver_its_own_statement_reads() {
         .any(|(t, a)| t.contains("function shell(") && *a == Some("app.ts")));
 }
 
+/// The `include_str!` marker also matches a path outside the UI
+/// (`../vendor-build/…`); a UI asset later on the same line still names the
+/// asset.
+#[test]
+fn a_ui_asset_after_another_embed_on_the_line_is_booked() {
+    let src = r#"
+fn t() {
+    let (_v, js) = (include_str!("../vendor-build/a.js"), include_str!("../../assets/ui/x.ts"));
+    assert!(js.contains("needle"));
+}
+"#;
+    let mut out = Vec::new();
+    collect("x.rs", src, &mut out);
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].asset.as_deref(), Some("x.ts"));
+}
+
 /// The stylesheet is named by a CALL, not a path — and after it became twelve
 /// partials this tool reported ZERO claims on it until it learned that.
 #[test]

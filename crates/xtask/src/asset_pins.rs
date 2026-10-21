@@ -187,7 +187,8 @@ fn test_files_under(root: &Path, dir: &str) -> Result<Vec<String>> {
     }
     let mut names = Vec::new();
     for entry in std::fs::read_dir(&path).with_context(|| format!("reading {}", path.display()))? {
-        names.push(entry?.file_name().to_string_lossy().into_owned());
+        let entry = entry.with_context(|| format!("reading {}", path.display()))?;
+        names.push(entry.file_name().to_string_lossy().into_owned());
     }
     names.sort();
     let mut found = Vec::new();

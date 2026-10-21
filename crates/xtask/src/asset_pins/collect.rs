@@ -263,15 +263,18 @@ impl Scan<'_> {
 /// `get_local` also fetches ROUTES (`/api/session`), which are not assets and
 /// carry no pins. An extension is what tells the two apart.
 fn asset_after(line: &str, marker: &str) -> Option<String> {
-    let at = line.find(marker)?;
-    let mut rest = &line[at + marker.len()..];
-    if marker.starts_with("include_str!") {
-        rest = rest
-            .trim_start_matches("../")
-            .strip_prefix(EMBEDDED_ASSET_DIR)?;
-    }
-    let named = &rest[..rest.find('"')?];
-    named.contains('.').then(|| named.to_string())
+    // The `include_str!` marker also matches an embed outside the UI
+    // (`../vendor-build/…`), so every match on the line is tried.
+    line.match_indices(marker).find_map(|(at, _)| {
+        let mut rest = &line[at + marker.len()..];
+        if marker.starts_with("include_str!") {
+            rest = rest
+                .trim_start_matches("../")
+                .strip_prefix(EMBEDDED_ASSET_DIR)?;
+        }
+        let named = &rest[..rest.find('"')?];
+        named.contains('.').then(|| named.to_string())
+    })
 }
 
 /// A TUPLE loop variable — `for (doc, name) in [(shell, "index.html"), …]` —
