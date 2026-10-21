@@ -2,7 +2,7 @@
 //! Observe branch answers on the requesting `Command` id with the repo's live
 //! snapshot documents and NEVER spawns. A document whose pid is dead is swept,
 //! not listed; a malformed one is reported under `unreadable`, not hidden.
-//! Mirrors `tests/observe_read.rs`.
+//! Mirrors `tests/observe/observe_read.rs`.
 
 use std::time::{Duration, Instant};
 

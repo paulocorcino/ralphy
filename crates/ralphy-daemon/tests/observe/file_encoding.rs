@@ -6,8 +6,8 @@
 //! refuses `unencodable` rather than substituting; `tree.grep` decodes the
 //! same way, so a windows-1252 file is a hit. Fixtures are byte literals seeded
 //! into a temp repo — there is no `.gitattributes` protecting a checked-in
-//! UTF-16 file from `autocrlf`. Mirrors `tests/observe_read.rs` and
-//! `tests/workspace_write.rs`.
+//! UTF-16 file from `autocrlf`. Mirrors `tests/observe/observe_read.rs` and
+//! `tests/observe/workspace_write.rs`.
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};

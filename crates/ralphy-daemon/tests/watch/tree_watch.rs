@@ -2,7 +2,7 @@
 //! `/ws/tree` client that `watch`es a repo dir receives a `tree.dirty` nudge when
 //! a file changes there, and the per-repo watcher is SHARED — a second client on
 //! the same dir keeps receiving after the first disconnects. Mirrors
-//! `tests/observe_read.rs`'s `serve_repo` harness, but the URL is `…/ws/tree` and
+//! `tests/observe/observe_read.rs`'s `serve_repo` harness, but the URL is `…/ws/tree` and
 //! the socket stays OPEN (a subscription, not one answer-and-close).
 
 use std::path::PathBuf;

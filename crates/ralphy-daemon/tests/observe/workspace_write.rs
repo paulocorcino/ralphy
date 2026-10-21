@@ -3,7 +3,7 @@
 //! perform a confined byte-op in-daemon and reply once on the SAME `id`, with ZERO
 //! `status:"spawned"` frames. A write-escape (traversal or symlink) is refused
 //! verbatim as `reason:"refused"` and touches NOTHING outside the root. Mirrors
-//! `tests/observe_read.rs`.
+//! `tests/observe/observe_read.rs`.
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
