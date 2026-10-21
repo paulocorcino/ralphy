@@ -15,6 +15,11 @@
 
    Editing is allowed but never touches disk: a Save emits a `save` intent on the
    `workbench:action` seam carrying the new content, for a backend to persist.
+
+   This module owns the panes, the split and the mirror. The Markdown pane,
+   the find, the encoding menu and the save steps are its siblings
+   `wb-viewer-markdown.ts`, `-find.ts`, `-encoding.ts` and `-save.ts`; it
+   builds them in `createViewer`.
 --------------------------------------------------------------------------- */
 import { WBMonaco } from "./wb-monaco.ts";
 import { WBSplit } from "./wb-split.ts";
@@ -23,10 +28,15 @@ import { WBFleet } from "./wb-fleet.ts";
 import { sendDocument } from "./wb-events.ts";
 import { isNullableString, isOptionalString, isRecord } from "./wb-api.ts";
 import { focusTarget, isSplit, paneLayout } from "./wb-viewer-panes.ts";
-import { decorateZoomable } from "./wb-zoom-overlay.ts";
 import type { MonacoDiffEditor, MonacoDisposable, MonacoEditor } from "./wb-monaco.ts";
 import type { Messages } from "./wb-messages.ts";
-import { drawDiagram, isRendered, prepareFind, renderBody, slugOf } from "./wb-viewer-render.ts";
+import { isRendered } from "./wb-viewer-render.ts";
+import { createViewerEncoding, encodingBtnHtml, encodingLabel, refreshEncodingPill } from "./wb-viewer-encoding.ts";
+import { createViewerFind } from "./wb-viewer-find.ts";
+import { createViewerMarkdown, linkTarget, remoteImageNotice } from "./wb-viewer-markdown.ts";
+import { createViewerSave } from "./wb-viewer-save.ts";
+import type { ViewerMarkdown } from "./wb-viewer-markdown.ts";
+import type { ReopenBytes } from "./wb-viewer-save.ts";
 import type { ViewerSlot } from "./wb-viewer-panes.ts";
 import type { MermaidWindow } from "./wb-viewer-render.ts";
 
@@ -71,10 +81,10 @@ type PaneRecord = {
 
 /** A pane over the file's bytes. A record never changes between the two
  * kinds: a refused pane that gets bytes is replaced (`reopenRefused`). */
-type BytesRecord = PaneRecord & { content: string; refused: null };
+export type BytesRecord = PaneRecord & { content: string; refused: null };
 /** A pane that holds the daemon's reason for serving no bytes. */
-type RefusedRecord = PaneRecord & { refused: string };
-type ViewerRecord = BytesRecord | RefusedRecord;
+export type RefusedRecord = PaneRecord & { refused: string };
+export type ViewerRecord = BytesRecord | RefusedRecord;
 
 /** What `open` takes: the fields of a `FileDescriptor`, or the reason a pane has no bytes. */
 type OpenSpec = {
@@ -99,9 +109,6 @@ type Mirror = {
   ro: ResizeObserver | undefined;
   saveKey: MonacoDisposable | undefined;
 };
-
-/** The ENCODINGS rows: the label, the daemon's name, and whether a BOM is written. */
-type Encoding = [label: string, name: string, bom: boolean];
 
 /** Whether `v` has the shape `descOf` gives a file: what one window posts to
  * another when a file pane is detached or comes home. */
@@ -150,6 +157,25 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
   // `has`: tab ids are stable per file, so a close+reopen inside the boot
   // window puts a DIFFERENT record under the same key.
   const alive = (rec: ViewerRecord) => map.get(rec.id) === rec;
+
+  // The viewer's parts, built in the order of what each one reads. The save
+  // steps read `renderMarkdown` and `drawMermaid`, which are built after
+  // them, so they take those two late.
+  const find = createViewerFind({ document, alive });
+  const { findInEditor, findInMarkdown } = find;
+  const saver = createViewerSave({
+    window, messages, reopenRefused,
+    renderMarkdown: (rec) => markdown.renderMarkdown(rec),
+    drawMermaid: (rec) => markdown.drawMermaid(rec),
+  });
+  const { save, showSaveError, clearSaveError, descOf, reloadFile, applyFresh, showDiskBadge, hideDiskBadge } = saver;
+  const encoding = createViewerEncoding({ window, document, messages, saver, reopenRefused });
+  const { wireEncodingMenu } = encoding;
+  const markdown: ViewerMarkdown = createViewerMarkdown({
+    window, document, viewers, setPathLabel, setCaption, detachBtnHtml, detachClick, mountEditor, saver, encoding, find,
+  });
+  const { buildMarkdown, drawMermaid, jumpTo } = markdown;
+
 
   // --- the secondary pane: the slot (ADR-0037 §3c) ---------------------------
   // What is on screen: the active pane and, beside it, the slot the shell
@@ -540,122 +566,10 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
     mountEditor(rec, el.querySelector<HTMLElement>(".viewer-body")!, {});
   }
 
-  function save(rec: ViewerRecord) {
-    // A diff and an image are read-only: a `save` intent from either would be a
-    // mutation those surfaces forbid, so it never reaches the action seam. (An
-    // image's `content` is a `data:` URL, not the file's bytes — saving it would
-    // write the URL over the image.) A refused pane has no bytes to save.
-    if (rec.kind === "diff" || rec.kind === "image" || rec.refused !== null) return;
-    const content = contentOf(rec);
-    rec.content = content;
-    hideDiskBadge(rec);
-    clearSaveError(rec);
-    // The dirty mark is cleared by `saveDone`, on the daemon's ack — not here:
-    // a refused write (`unencodable`, a denylisted path) must leave the pane
-    // looking unsaved, because it is.
-    // `checkout` is the tab's PIN (#406): the write goes to the tree the bytes
-    // came from, whatever the project's selection is by now. `encoding`/`bom`
-    // are what the read reported (or a "save with…" chose), so the bytes go
-    // back the way they came (ADR-0036 amendment 2026-09-22).
-    window.WB.emit("save", {
-      project: rec.project,
-      path: rec.path,
-      bytes: content.length,
-      content,
-      checkout: rec.checkout,
-      encoding: rec.encoding,
-      bom: !!rec.bom,
-    });
-    if (isRendered(rec.kind) && !rec.editing) renderMarkdown(rec); // keep preview fresh
-  }
-
-  // The inline "not saved" line beside the Save button: a write refusal must
-  // be read from the pane it concerns, not from a flash in another panel.
-  function showSaveError(rec: ViewerRecord, text: string) {
-    const el = rec.el?.querySelector<HTMLElement>(".viewer-save-err");
-    if (!el) return;
-    el.textContent = text;
-    el.style.display = "";
-  }
-  function clearSaveError(rec: ViewerRecord) {
-    const el = rec.el?.querySelector<HTMLElement>(".viewer-save-err");
-    if (el) el.style.display = "none";
-  }
-
-  // The pane's current bytes, whether shown as source (Monaco) or as a rendered
-  // markdown preview. Before Monaco finishes booting `rec.ed` is undefined and
-  // `rec.content` is still authoritative.
-  function contentOf(rec: BytesRecord) {
-    if (rec.kind === "diff") return rec.content;
-    if (rec.ed && (rec.kind === "code" || rec.editing)) return (rec.ed as MonacoEditor).getValue();
-    return rec.content;
-  }
-
-  // A portable descriptor — enough to reopen this file anywhere (a tab or a
-  // detached popup), carrying the *current* (possibly edited) content.
-  // The pin rides the descriptor (#406): a detached pane saves and reloads
-  // against the tree its bytes came from, and re-attaches pinned to it.
-  function descOf(rec: BytesRecord): FileDescriptor {
-    return {
-      project: rec.project,
-      label: rec.label,
-      path: rec.path,
-      ftype: rec.kind,
-      content: contentOf(rec),
-      checkout: rec.checkout ?? null,
-      encoding: rec.encoding,
-      bom: !!rec.bom,
-    };
-  }
-
-  // Reload discards local edits and reloads from source. Daemon-backed repos
-  // re-read the REAL file via `file.read` (#197). The apply step is shared via
-  // `applyFresh`. With no daemon client loaded (a unit test) it does nothing.
-  function reloadFile(rec: ViewerRecord) {
-    const daemonBacked = !!window.WBDaemon?.observe;
-    if (daemonBacked) {
-      // Daemon mode: a non-ok reply or a transport drop must NOT regenerate
-      // synthetic bytes (C1). The tab stays — the operator's bytes are still
-      // the best answer the pane has — and the reason lands in the pane.
-      const fail = (reply?: DaemonReply) => {
-        showSaveError(rec, WBFail.failed(reply, "Could not reload the file: the daemon gave no reason."));
-        messages.flash("Could not reload the file.");
-      };
-      // An image reloads through its own verb (ADR-0049): `file.read` refuses
-      // its bytes, so routing it here would turn every image Reload into a
-      // "reload failed".
-      if (rec.kind === "image") {
-        WBDaemon.readImage(rec.project, rec.path, undefined, rec.checkout)
-          .then((url) => (!url ? fail() : rec.refused !== null ? reopenRefused(rec, { content: url }) : applyFresh(rec, url)))
-          .catch(() => fail());
-        return;
-      }
-      readWith(rec, rec.encoding)
-        .then((reply) => {
-          if (!reply || reply.status !== "ok") return fail(reply);
-          rec.bom = !!reply.bom;
-          if (reply.encoding) rec.encoding = reply.encoding;
-          refreshEncodingPill(rec);
-          if (rec.refused !== null) return reopenRefused(rec, reply);
-          applyFresh(rec, reply.content);
-        })
-        .catch(() => fail());
-    }
-  }
-
-  // `file.read` for this pane, with `encoding` as the hint: a tab's encoding is
-  // sticky once opened (the daemon's detection, or a "reopen with…"), so a
-  // reload never silently re-detects it.
-  function readWith(rec: ViewerRecord, encoding: string | undefined) {
-    const payload = WBDaemon.withCheckout({ repo: rec.project, path: rec.path }, rec.checkout);
-    if (encoding) payload.encoding = encoding;
-    return WBDaemon.observe("file.read", payload);
-  }
-
   // A pane that opened refused now has bytes: rebuild it as the pane its
   // kind deserves. `open` returns early on a known id, so the record is
   // replaced under the same id — the tab in the shell is untouched.
-  function reopenRefused(rec: RefusedRecord, bytes: { content: string; encoding?: string; bom?: boolean }) {
+  function reopenRefused(rec: RefusedRecord, bytes: ReopenBytes) {
     const { id, project, label, path, kind, checkout, detached } = rec;
     API.close(id);
     API.open({ id, project, label, path, ftype: kind, checkout, detached, content: bytes.content, encoding: bytes.encoding, bom: bytes.bom });
@@ -663,188 +577,11 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
     window.WB.emit("reload", { project: rec.project, path: rec.path });
   }
 
-  function applyFresh(rec: BytesRecord, fresh: string) {
-    // A diff pane has no single "fresh bytes" to apply: reloading it means
-    // re-resolving BOTH sides, which is a reopen, not a refresh.
-    if (rec.kind === "diff") return;
-    // `rec.content` FIRST: bytes that land before Monaco boots are picked up by
-    // the pending `create()`, and setValue fires the change event, so the dirty
-    // flag is cleared *after* the update, not before.
-    rec.content = fresh;
-    if (rec.kind === "image") {
-      // A fresh `data:` URL repaints the pane; the `onload` handler re-reads the
-      // intrinsic size, which an overwritten image may well have changed.
-      const img = rec.el?.querySelector<HTMLImageElement>(".img-canvas");
-      if (img) img.src = fresh;
-    } else if (rec.kind === "code" || rec.editing) {
-      if (rec.ed) (rec.ed as MonacoEditor).setValue(fresh);
-      // In the read-only fallback there is no editor to update, and leaving the
-      // <pre> stale would show bytes that no longer match rec.content.
-      else if (rec.fallbackEl) rec.fallbackEl.textContent = fresh;
-    } else {
-      renderMarkdown(rec);
-      if (rec.visible) drawMermaid(rec);
-    }
-    rec.dirty = false;
-    rec.saveBtn?.classList.remove("dirty");
-    hideDiskBadge(rec);
-    window.WB.emit("reload", { project: rec.project, path: rec.path });
-  }
-
-  // The "changed on disk" badge: shown when an EXTERNAL write lands on a DIRTY
-  // tab (never auto-applied — the operator's unsaved edits win until they click).
-  function showDiskBadge(rec: ViewerRecord) {
-    const b = rec.el?.querySelector<HTMLElement>(".viewer-disk-badge");
-    if (b) b.style.display = "";
-  }
-  function hideDiskBadge(rec: ViewerRecord) {
-    rec.pendingDisk = undefined;
-    const b = rec.el?.querySelector<HTMLElement>(".viewer-disk-badge");
-    if (b) b.style.display = "none";
-  }
-
   // The Detach/Re-attach button. A file tab detaches into a standalone popup
   // (watch an agent in the main window, read the file in another); a detached
   // pane folds back in. wb-file-viewer only *requests* it — the shell (app.ts) opens
   // the popup, and the popup (detached.html) folds back — so this module stays
   // agnostic to windows/tabs.
-  // --- the encoding pill and its menu ---------------------------------------
-  // What the pane will save with, as the daemon named it (ADR-0036 amendment
-  // 2026-09-22), and the two things an operator can do about it: REOPEN the
-  // same bytes under another encoding (the daemon re-decodes; the operator
-  // judges by the glyphs), or SAVE the text under another one (a deliberate
-  // conversion — the daemon never converts on its own).
-  const ENCODINGS: Encoding[] = [
-    ["UTF-8", "utf-8", false],
-    ["UTF-8 BOM", "utf-8", true],
-    ["UTF-16 LE", "utf-16le", true],
-    ["UTF-16 BE", "utf-16be", true],
-    ["Windows-1252", "windows-1252", false],
-    ["ISO-8859-2", "iso-8859-2", false],
-    ["ISO-8859-15", "iso-8859-15", false],
-    ["Windows-1250", "windows-1250", false],
-    ["Windows-1251", "windows-1251", false],
-    ["KOI8-R", "koi8-r", false],
-    ["Shift_JIS", "shift_jis", false],
-    ["EUC-JP", "euc-jp", false],
-    ["GBK", "gbk", false],
-    ["Big5", "big5", false],
-    ["EUC-KR", "euc-kr", false],
-  ];
-
-  // The pill's text: the daemon's canonical name made readable (`UTF-16LE`
-  // → `UTF-16 LE`, `windows-1252` → `Windows-1252`), plus ` BOM` when one
-  // was read and will be written back.
-  function encodingLabel(name: string | null | undefined, bom: boolean) {
-    let text = String(name || "UTF-8");
-    text = text.replace(/^utf-16(le|be)$/i, (_, e: string) => `UTF-16 ${e.toUpperCase()}`);
-    text = text.replace(/^windows-/i, "Windows-");
-    return bom ? `${text} BOM` : text;
-  }
-
-  function encodingBtnHtml(rec: ViewerRecord) {
-    return `<button class="vbtn viewer-enc" data-act="encoding" title="Encoding — reopen or save with another" aria-label="Encoding"><span class="viewer-enc-label">${encodingLabel(rec.encoding, rec.bom)}</span></button>`;
-  }
-
-  function refreshEncodingPill(rec: ViewerRecord) {
-    const label = rec.el?.querySelector<HTMLElement>(".viewer-enc-label");
-    if (label) label.textContent = encodingLabel(rec.encoding, rec.bom);
-  }
-
-  function wireEncodingMenu(rec: ViewerRecord, el: HTMLElement) {
-    const btn = el.querySelector<HTMLElement>('[data-act="encoding"]');
-    if (!btn) return;
-    const menu = document.createElement("div");
-    menu.className = "enc-menu";
-    menu.style.display = "none";
-    const group = (head: string, act: string) =>
-      `<div class="dropdown-head">${head}</div>` +
-      ENCODINGS.map(
-        ([label, name, bom], i) =>
-          `<button class="enc-item" data-${act}="${i}"><span>${label}</span></button>`,
-      ).join("");
-    menu.innerHTML = group("Reopen with", "reopen") + group("Save with", "savewith");
-    el.append(menu);
-    rec.encMenu = menu;
-    const close = () => {
-      menu.style.display = "none";
-      document.removeEventListener("click", onOutside, true);
-      document.removeEventListener("keydown", onKey, true);
-    };
-    const onOutside = (ev: MouseEvent) => {
-      if (!menu.contains(ev.target as Node) && ev.target !== btn) close();
-    };
-    const onKey = (ev: KeyboardEvent) => {
-      if (ev.key === "Escape") close();
-    };
-    btn.onclick = (ev: MouseEvent) => {
-      ev.stopPropagation();
-      if (menu.style.display !== "none") return close();
-      markCurrentEncoding(rec, menu);
-      menu.style.display = "";
-      document.addEventListener("click", onOutside, true);
-      document.addEventListener("keydown", onKey, true);
-    };
-    menu.onclick = (ev: MouseEvent) => {
-      const item = (ev.target as Element).closest?.<HTMLElement>(".enc-item");
-      if (!item) return;
-      ev.stopPropagation();
-      close();
-      if (item.dataset.reopen != null) reopenWith(rec, ENCODINGS[Number(item.dataset.reopen)]);
-      else if (item.dataset.savewith != null) saveWith(rec, ENCODINGS[Number(item.dataset.savewith)]);
-    };
-  }
-
-  function markCurrentEncoding(rec: ViewerRecord, menu: HTMLElement) {
-    for (const item of menu.querySelectorAll<HTMLElement>(".enc-item")) {
-      const i = Number(item.dataset.reopen ?? item.dataset.savewith);
-      const [, name, bom] = ENCODINGS[i];
-      const current =
-        String(rec.encoding).toLowerCase() === name && !!rec.bom === bom;
-      item.classList.toggle("current", current);
-    }
-  }
-
-  // Reopen: the same bytes, decoded as `name`. Unsaved edits would be lost
-  // to the re-read, so a dirty pane asks first.
-  function reopenWith(rec: ViewerRecord, [label, name]: Encoding) {
-    const go = () => {
-      readWith(rec, name)
-        .then((reply) => {
-          if (!reply || reply.status !== "ok") {
-            showSaveError(rec, WBFail.failed(reply, `Could not reopen as ${label}: the daemon gave no reason.`));
-            return;
-          }
-          rec.encoding = reply.encoding || name;
-          rec.bom = !!reply.bom;
-          refreshEncodingPill(rec);
-          if (rec.refused !== null) return reopenRefused(rec, reply);
-          applyFresh(rec, reply.content);
-        })
-        .catch(() => showSaveError(rec, `Could not reopen as ${label}: the daemon did not answer.`));
-    };
-    if (!rec.dirty) return go();
-    // The design-system dialog where there is a shell; `window.confirm` only
-    // in a detached popup, which has no shell and no other dialog.
-    const ask =
-      messages.askInShell({
-        title: `Reopen as ${label}?`,
-        message: "Unsaved changes in this tab are discarded.",
-        confirmLabel: "Reopen",
-        danger: true,
-      }) ?? Promise.resolve(window.confirm(`Reopen as ${label}? Unsaved changes are discarded.`));
-    ask.then((ok) => ok && go());
-  }
-
-  // Save with: the text as it is, written under `name` — the conversion the
-  // operator asked for, by name.
-  function saveWith(rec: ViewerRecord, [, name, bom]: Encoding) {
-    rec.encoding = name;
-    rec.bom = bom;
-    refreshEncodingPill(rec);
-    save(rec);
-  }
-
   function detachBtnHtml(rec: ViewerRecord) {
     return rec.detached
       ? '<button class="vbtn" data-act="detach" title="Re-attach" aria-label="Re-attach"><i class="bi bi-box-arrow-in-down-left"></i><span class="vbtn-label">Re-attach</span></button>'
@@ -985,436 +722,6 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
     viewers!.append(el);
     el.querySelector<HTMLElement>('[data-act="reload"]')!.onclick = () => reloadFile(rec);
     rec.el = el;
-  }
-
-  // --- a Markdown tab -----------------------------------------------------
-  function buildMarkdown(rec: BytesRecord) {
-    const el = document.createElement("div");
-    el.className = "viewer md-viewer";
-    el.dataset.tabId = rec.id;
-    el.dataset.kind = rec.kind;
-    el.style.display = "none";
-    el.innerHTML = `
-      <div class="viewer-toolbar">
-        <span class="viewer-path"></span>
-        <button class="vbtn md-toc-btn" data-act="outline" title="Contents" aria-label="Contents"><i class="bi bi-list-ul"></i></button>
-        <span class="spacer"></span>
-        <button class="vbtn" data-act="find" title="Find" aria-label="Find"><i class="bi bi-search"></i><span class="vbtn-label">Find</span></button>
-        <button class="vbtn" data-act="reload" title="Reload" aria-label="Reload"><i class="bi bi-arrow-clockwise"></i><span class="vbtn-label">Reload</span></button>
-        <button class="vbtn" data-act="toggle" title="Edit" aria-label="Edit"><i class="bi bi-pencil"></i><span class="vbtn-label">Edit</span></button>
-        <button class="vbtn viewer-disk-badge" data-act="disk" style="display:none" title="Changed on disk — reload" aria-label="Changed on disk — reload"><i class="bi bi-exclamation-triangle"></i><span class="vbtn-label">Changed on disk — reload</span></button>
-        <span class="viewer-save-err" style="display:none"></span>
-        ${encodingBtnHtml(rec)}
-        <button class="vbtn save" data-act="save" title="Save" aria-label="Save"><i class="bi bi-save"></i><span class="vbtn-label">Save</span></button>
-        ${detachBtnHtml(rec)}
-      </div>
-      <div class="md-find">
-        <input class="md-find-input" placeholder="Find in page…" />
-        <span class="md-find-count"></span>
-        <button class="vbtn" data-find="prev" title="Previous match" aria-label="Previous match"><i class="bi bi-chevron-up"></i></button>
-        <button class="vbtn" data-find="next" title="Next match" aria-label="Next match"><i class="bi bi-chevron-down"></i></button>
-        <button class="vbtn" data-find="close" title="Close search" aria-label="Close search"><i class="bi bi-x"></i></button>
-      </div>
-      <div class="md-split">
-        <nav class="md-outline"></nav>
-        <div class="md-scroll"><article class="md-body"></article></div>
-        <div class="md-editor" style="display:none"></div>
-      </div>`;
-    setPathLabel(el, rec);
-    viewers!.append(el);
-    wireEncodingMenu(rec, el);
-    rec.el = el;
-    rec.saveBtn = el.querySelector<HTMLElement>('[data-act="save"]');
-
-    // edit / preview toggle
-    el.querySelector<HTMLElement>('[data-act="toggle"]')!.onclick = () => toggleEdit(rec);
-    // The heading outline on a NARROW pane: the same <nav>, laid over the
-    // article by CSS while `.md-split` carries `toc-open` (on a wide pane the
-    // button is not shown and the nav is the column it always was). A jump or
-    // a tap on the article closes it — the index is a way in, not a fixture.
-    const split = el.querySelector(".md-split")!;
-    el.querySelector<HTMLElement>('[data-act="outline"]')!.onclick = () => split.classList.toggle("toc-open");
-    el.querySelector(".md-outline")!.addEventListener("click", (ev) => {
-      if ((ev.target as Element).closest(".outline-item")) split.classList.remove("toc-open");
-    });
-    el.querySelector(".md-scroll")!.addEventListener("pointerdown", () => split.classList.remove("toc-open"));
-    el.querySelector<HTMLElement>('[data-act="save"]')!.onclick = () => save(rec);
-    el.querySelector<HTMLElement>('[data-act="reload"]')!.onclick = () => reloadFile(rec);
-    el.querySelector<HTMLElement>('[data-act="disk"]')!.onclick = () => {
-      applyFresh(rec, rec.pendingDisk!);
-      hideDiskBadge(rec);
-    };
-    el.querySelector<HTMLElement>('[data-act="detach"]')!.onclick = () => detachClick(rec);
-    // in-page find over the rendered article
-    const find = el.querySelector(".md-find")!;
-    const input = el.querySelector<HTMLInputElement>(".md-find-input")!;
-    el.querySelector<HTMLElement>('[data-act="find"]')!.onclick = () => {
-      find.classList.add("open");
-      input.focus();
-      input.select();
-    };
-    input.addEventListener("input", () => mdSearch(rec, input.value));
-    input.addEventListener("keydown", (e: KeyboardEvent) => {
-      if (e.key === "Enter") mdSearchStep(rec, e.shiftKey ? -1 : 1);
-      if (e.key === "Escape") mdSearchClose(rec);
-    });
-    el.querySelector<HTMLElement>('[data-find="next"]')!.onclick = () => mdSearchStep(rec, 1);
-    el.querySelector<HTMLElement>('[data-find="prev"]')!.onclick = () => mdSearchStep(rec, -1);
-    el.querySelector<HTMLElement>('[data-find="close"]')!.onclick = () => mdSearchClose(rec);
-    // Links inside the rendered article: one delegated listener for the pane's
-    // lifetime, so a re-render (reload, edit→preview) never re-wires anything.
-    el.querySelector(".md-body")!.addEventListener("click", (ev) => linkClick(rec, ev));
-
-    renderMarkdown(rec);
-  }
-
-  function renderMarkdown(rec: BytesRecord) {
-    if (!isRendered(rec.kind)) return;
-    const article = rec.el!.querySelector(".md-body")!;
-    rec.mermaidPending = renderBody(rec.kind, article, rec.content, rec.uid, document);
-    resolveImages(rec, article);
-    decorateZoomable(article);
-    buildOutline(rec, article);
-    if (rec.visible) drawMermaid(rec);
-  }
-
-  // Repo-relative `<img>` sources resolve through `file.image` (ADR-0049 §5),
-  // against the DOCUMENT's own directory. This runs on the SANITIZED DOM, after
-  // DOMPurify, so nothing set here re-enters the sanitizer's decision. An
-  // absolute or `http(s)` source is the author's explicit request for a remote
-  // asset and is left exactly as written — the daemon's CSP decides whether it
-  // loads, and `blockedImage` explains a refusal; a source that REFUSES is left alone
-  // too — a broken image is an honest rendering of a broken link, and a
-  // placeholder would fabricate.
-  function resolveImages(rec: ViewerRecord, article: Element) {
-    if (!window.WBDaemon?.readImage) return;
-    const dir = rec.path.includes("/") ? rec.path.slice(0, rec.path.lastIndexOf("/")) : "";
-    article.querySelectorAll<HTMLImageElement>("img[src]").forEach((img) => {
-      const src = img.getAttribute("src") || "";
-      // Anything carrying a scheme (`data:`, `https:`) or rooted at `/` is not
-      // ours to resolve.
-      if (/^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith("/")) return;
-      const rel = repoRelative(dir, src);
-      if (!rel) return;
-      WBDaemon.readImage(rec.project, rel, undefined, rec.checkout)
-        .then((url) => {
-          if (url) img.src = url;
-        })
-        .catch(() => {});
-    });
-  }
-
-  // An image the page's CSP refused (a remote one, while remote images are
-  // off: ADR-0032 amendment 2026-09-27) says so, instead of a broken icon. The
-  // event comes from the browser, so the notice only shows when the policy of
-  // THIS page really blocked the image. Chromium 140 fires it at the document
-  // with no element (measured), so the article's images are matched by URL.
-  // Built with `textContent`, never `innerHTML`: the alt text is document
-  // content.
-  function blockedImage(ev: SecurityPolicyViolationEvent) {
-    if (ev.effectiveDirective !== "img-src" || !ev.blockedURI) return;
-    document.querySelectorAll<HTMLImageElement>(".md-body img").forEach((img) => {
-      if (img.src !== ev.blockedURI) return;
-      const note = document.createElement("span");
-      note.className = "md-img-blocked";
-      const icon = document.createElement("i");
-      icon.className = "bi bi-image";
-      const { text, reason } = remoteImageNotice(img.getAttribute("src") || "", img.getAttribute("alt") || "");
-      note.title = reason;
-      note.append(icon, text);
-      img.replaceWith(note);
-    });
-  }
-
-  // The words of that notice, from the image's `src` and `alt` alone: a short
-  // `text` that keeps a row of badges one row, and the `reason` for its
-  // tooltip. A plain-`http:` image stays blocked even with remote images on
-  // (the policy admits `https:` only), so it gets its own reason.
-  function remoteImageNotice(src: string, alt: string) {
-    let url: URL | null = null;
-    try {
-      url = new URL(src);
-    } catch {
-      // Not an absolute URL: no host to name.
-    }
-    const what = alt.trim() || "image";
-    const from = url?.host ? ` (${url.host})` : "";
-    const reason =
-      url?.protocol === "http:"
-        ? "Images over plain http are not shown."
-        : "Turn on Remote images in Security settings, then reload the page.";
-    return { text: ` Image not shown: ${what}${from}`, reason };
-  }
-
-  // A markdown `src` folded against `dir` into a repo-relative path: query and
-  // fragment dropped, percent-escapes decoded (a `%20` in a filename is the
-  // markdown spelling of a space), `.`/`..` segments resolved. Returns `null`
-  // for anything that climbs OUT of the repo — the daemon would refuse it
-  // anyway, and not asking is the honest way to spell "not ours".
-  function repoRelative(dir: string, src: string) {
-    let clean = src.split(/[?#]/)[0];
-    try {
-      clean = decodeURIComponent(clean);
-    } catch {
-      // A malformed escape is not a path we can resolve; use it verbatim and let
-      // the daemon refuse it.
-    }
-    const out: string[] = [];
-    for (const part of (dir ? dir.split("/") : []).concat(clean.split("/"))) {
-      if (!part || part === ".") continue;
-      if (part === "..") {
-        if (!out.length) return null;
-        out.pop();
-        continue;
-      }
-      out.push(part);
-    }
-    return out.join("/") || null;
-  }
-
-  // What a rendered link points at, decided from its `href` alone (no DOM, no
-  // daemon): the pure half of `linkClick`, so the decision table is testable.
-  //   • `#frag`                → { kind: "fragment", fragment }  — same document
-  //   • scheme or `/`-rooted   → { kind: "external" }            — the author's
-  //     explicit request for something outside the repo; left to the browser
-  //   • anything else          → { kind: "file", path, fragment } — a repo file,
-  //     folded against the document's own directory like an `<img src>`
-  //   • climbs out of the repo → null — not ours, and the daemon would refuse it
-  function linkTarget(dir: string, href: string | null) {
-    if (!href) return null;
-    if (href.startsWith("#")) return { kind: "fragment" as const, fragment: href.slice(1) };
-    if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("/")) return { kind: "external" as const };
-    const path = repoRelative(dir, href);
-    if (!path) return null;
-    const hash = href.indexOf("#");
-    return { kind: "file" as const, path, fragment: hash < 0 ? "" : href.slice(hash + 1) };
-  }
-
-  // A click on a rendered `<a>`: a raw `href` would navigate the WHOLE
-  // window. A repo file becomes an open REQUEST to the shell; external links
-  // open in a new tab so the workbench is not what gets replaced.
-  function linkClick(rec: ViewerRecord, ev: Event) {
-    const a = (ev.target as Element).closest?.<HTMLAnchorElement>("a[href]");
-    if (!a || !rec.el!.contains(a)) return;
-    const dir = rec.path.includes("/") ? rec.path.slice(0, rec.path.lastIndexOf("/")) : "";
-    const target = linkTarget(dir, a.getAttribute("href"));
-    if (!target) {
-      ev.preventDefault();
-      return;
-    }
-    if (target.kind === "external") {
-      a.target = "_blank";
-      a.rel = "noopener";
-      return;
-    }
-    ev.preventDefault();
-    if (target.kind === "fragment") {
-      jumpTo(rec, target.fragment);
-      return;
-    }
-    sendDocument(document, "workbench:open-request", {
-      project: rec.project,
-      path: target.path,
-      fragment: target.fragment,
-      checkout: rec.checkout ?? null,
-    });
-  }
-
-  // Scroll a rendered document to the heading a `#fragment` names, matched
-  // by the slug of the heading text (`slugOf`).
-  function jumpTo(rec: ViewerRecord, fragment: string) {
-    if (!fragment) return;
-    let want = fragment;
-    try {
-      want = decodeURIComponent(fragment);
-    } catch {
-      // A malformed escape still names SOMETHING; match it as written.
-    }
-    want = want.toLowerCase();
-    const heads = rec.el!.querySelectorAll(".md-body h1, .md-body h2, .md-body h3, .md-body h4, .md-body h5, .md-body h6");
-    for (const h of heads) {
-      if (slugOf(h.textContent) === want) {
-        h.scrollIntoView({ behavior: "smooth", block: "start" });
-        return;
-      }
-    }
-  }
-
-  function drawMermaid(rec: ViewerRecord) {
-    if (!rec.mermaidPending || !rec.mermaidPending.length) return;
-    const pending = rec.mermaidPending;
-    rec.mermaidPending = [];
-    pending.forEach((holder) => {
-      // `drawDiagram` returns the SVG already sanitized.
-      drawDiagram(window, holder.id + "-svg", holder.dataset.src!)
-        .then((svg) => (holder.innerHTML = svg))
-        .catch((err) => {
-          holder.classList.add("mermaid-error");
-          holder.textContent = "Mermaid error: " + (err?.message || err);
-        });
-    });
-  }
-
-  // Heading outline: the jump index, one entry per heading, indented by level.
-  function buildOutline(rec: ViewerRecord, article: Element) {
-    const nav = rec.el!.querySelector(".md-outline")!;
-    nav.innerHTML = "";
-    const heads = article.querySelectorAll("h1, h2, h3, h4");
-    if (!heads.length) {
-      nav.innerHTML = '<div class="outline-empty">No headings</div>';
-      return;
-    }
-    heads.forEach((h, i) => {
-      const id = `h-${rec.uid}-${i}`;
-      h.id = id;
-      const a = document.createElement("a");
-      a.className = "outline-item lvl-" + h.tagName.toLowerCase();
-      a.textContent = h.textContent;
-      a.title = h.textContent;
-      a.onclick = () => h.scrollIntoView({ behavior: "smooth", block: "start" });
-      nav.append(a);
-    });
-  }
-
-  // --- in-page find over rendered markdown -------------------------------
-  function clearHits(rec: ViewerRecord) {
-    (rec.hits || []).forEach((mk) => {
-      const t = document.createTextNode(mk.textContent);
-      mk.replaceWith(t);
-    });
-    rec.el!.querySelector(".md-body")!.normalize();
-    rec.hits = [];
-    rec.hitIdx = -1;
-  }
-
-  // Land a mounted code editor on the first occurrence of `term` and open the
-  // find widget seeded with it, so F3/Enter walks the rest — the content
-  // search's "jump to line", done with what Monaco already has. Literal and
-  // case-insensitive, like the search that produced the hit.
-  function findInEditor(rec: ViewerRecord, term: string) {
-    const ed = rec.ed as MonacoEditor | undefined;
-    if (!ed || !term) return;
-    // The pane must be laid out BEFORE the widget opens: Monaco keeps the
-    // widest "N of M" measurement in a module-wide maximum, and one taken in a
-    // settling pane squeezed every find input on the page to 12px (MEASURED
-    // 2026-09-15). A pane not on screen waits for `setActive`.
-    if (!rec.visible) {
-      rec.pendingFind = term;
-      return;
-    }
-    ed.layout();
-    requestAnimationFrame(() => {
-      if (!alive(rec) || !rec.ed) return;
-      const model = ed.getModel();
-      const hit = model?.findNextMatch?.(term, { lineNumber: 1, column: 1 }, false, false, null, false);
-      if (hit) {
-        ed.setSelection(hit.range);
-        ed.revealRangeInCenter(hit.range);
-      }
-      ed.focus();
-      ed.trigger("wb-file-search", "actions.find", { searchString: term, isRegex: false, matchCase: false });
-    });
-  }
-
-  // The markdown pane's equivalent: its own find bar, opened and seeded.
-  function findInMarkdown(rec: ViewerRecord, term: string) {
-    const find = rec.el?.querySelector(".md-find");
-    const input = rec.el?.querySelector<HTMLInputElement>(".md-find-input");
-    if (!find || !input) return;
-    find.classList.add("open");
-    input.value = term;
-    mdSearch(rec, term);
-  }
-
-  function mdSearch(rec: ViewerRecord, term: string) {
-    clearHits(rec);
-    const count = rec.el!.querySelector(".md-find-count")!;
-    const article = rec.el!.querySelector(".md-body")!;
-    prepareFind(rec.kind, article, term);
-    if (!term) {
-      count.textContent = "";
-      return;
-    }
-    const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT, {
-      acceptNode: (n) =>
-        n.nodeValue!.trim() && !n.parentElement!.closest("svg, script, style, button, [hidden]")
-          ? NodeFilter.FILTER_ACCEPT
-          : NodeFilter.FILTER_REJECT,
-    });
-    const targets: Text[] = [];
-    let node;
-    while ((node = walker.nextNode())) targets.push(node as Text);
-    const needle = term.toLowerCase();
-    const hits: HTMLElement[] = [];
-    for (const text of targets) {
-      const val = text.nodeValue!;
-      const lower = val.toLowerCase();
-      let idx = lower.indexOf(needle);
-      if (idx < 0) continue;
-      const frag = document.createDocumentFragment();
-      let last = 0;
-      while (idx >= 0) {
-        if (idx > last) frag.append(document.createTextNode(val.slice(last, idx)));
-        const mk = document.createElement("mark");
-        mk.className = "find-hit";
-        mk.textContent = val.slice(idx, idx + term.length);
-        frag.append(mk);
-        hits.push(mk);
-        last = idx + term.length;
-        idx = lower.indexOf(needle, last);
-      }
-      if (last < val.length) frag.append(document.createTextNode(val.slice(last)));
-      text.replaceWith(frag);
-    }
-    rec.hits = hits;
-    rec.hitIdx = -1;
-    count.textContent = hits.length ? `0/${hits.length}` : "No matches";
-    if (hits.length) mdSearchStep(rec, 1);
-  }
-
-  function mdSearchStep(rec: ViewerRecord, dir: number) {
-    if (!rec.hits || !rec.hits.length) return;
-    if (rec.hitIdx! >= 0) rec.hits[rec.hitIdx!].classList.remove("current");
-    rec.hitIdx = (rec.hitIdx! + dir + rec.hits.length) % rec.hits.length;
-    const mk = rec.hits[rec.hitIdx];
-    mk.classList.add("current");
-    mk.scrollIntoView({ block: "center", behavior: "smooth" });
-    rec.el!.querySelector(".md-find-count")!.textContent = `${rec.hitIdx + 1}/${rec.hits.length}`;
-  }
-
-  function mdSearchClose(rec: ViewerRecord) {
-    mdSearch(rec, "");
-    rec.el!.querySelector(".md-find")!.classList.remove("open");
-    rec.el!.querySelector<HTMLInputElement>(".md-find-input")!.value = "";
-  }
-
-  // Swap the markdown pane between rendered preview and a raw-source editor.
-  function toggleEdit(rec: BytesRecord) {
-    const split = rec.el!.querySelector(".md-split")!;
-    const editor = rec.el!.querySelector<HTMLElement>(".md-editor")!;
-    const toggle = rec.el!.querySelector<HTMLElement>('[data-act="toggle"]')!;
-    rec.editing = !rec.editing;
-    if (rec.editing) {
-      split.classList.add("editing");
-      split.classList.remove("toc-open");
-      editor.style.display = "block";
-      if (!rec.ed) {
-        mountEditor(rec, editor, { wordWrap: "on" });
-      } else {
-        (rec.ed as MonacoEditor).setValue(rec.content);
-      }
-      setCaption(toggle, "bi-eye", "Preview");
-      setTimeout(() => rec.ed?.layout(), 0);
-    } else {
-      // `rec.editing` is already false here, so read the editor directly —
-      // contentOf() would hand back the pre-edit bytes.
-      if (rec.ed) rec.content = (rec.ed as MonacoEditor).getValue();
-      split.classList.remove("editing");
-      editor.style.display = "none";
-      setCaption(toggle, "bi-pencil", "Edit");
-      renderMarkdown(rec);
-      if (rec.visible) drawMermaid(rec);
-    }
   }
 
   // --- public API ---------------------------------------------------------
@@ -1596,7 +903,5 @@ export function createViewer(window: MermaidWindow, document: Document, deps: Vi
       }
     },
   };
-  // One listener for every markdown pane; a test's stub document has none.
-  document.addEventListener?.("securitypolicyviolation", blockedImage);
   return API;
 }
