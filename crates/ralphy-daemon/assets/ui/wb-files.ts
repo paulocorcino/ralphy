@@ -26,6 +26,7 @@ import { classify, fullPath, newEntryTitle, parentRel, treeIcon } from "./wb-fil
 import { sendWindow } from "./wb-events.ts";
 import { propertiesKey } from "./wb-files-properties.ts";
 import { treeMenu } from "./wb-files-menu.ts";
+import { applySearch, clearSearch, resetSearch, searchNow } from "./wb-files-search.ts";
 import { guardEmptySpace, treeDrop } from "./wb-files-upload.ts";
 import type { WBDaemonApi } from "./wb-daemon.ts";
 import type { Hit } from "./wb-file-search.ts";
@@ -511,37 +512,9 @@ export function wbFiles() {
       this._fileSearchTimer = setTimeout(() => this.fileSearchNow(), WBFileSearch.DEBOUNCE_MS);
     },
 
-    // One Observe read, dated by `seq`: a reply that is not the newest, or
-    // arrives after a project switch, is dropped.
+    // One Observe read, dated by `seq` (wb-files-search.ts).
     fileSearchNow() {
-      clearTimeout(this._fileSearchTimer);
-      const query = String(this.fileSearch.query ?? "").trim();
-      if (!WBFileSearch.worthSearching(query)) {
-        return this.clearFileSearch();
-      }
-      const seq = ++this.fileSearch.seq;
-      if (!this.useDaemonTree()) {
-        this.fileSearch.note = "search needs a daemon";
-        return Promise.resolve();
-      }
-      const slug = this.$store.projects.openSlug;
-      const verb = WBFileSearch.verbFor(this.fileSearch.mode);
-      this.fileSearch.note = "searching…";
-      // Find and grep walk the SELECTED tree (#406).
-      const payload = window.WBDaemon.withCheckout({ repo: slug, query }, this.$store.checkouts.checkoutOf(slug));
-      return window.WBDaemon.observe(verb, payload)
-        .then((reply) => {
-          if (seq !== this.fileSearch.seq || slug !== this.$store.projects.openSlug) return;
-          if (WBFail.isError(reply) || !Array.isArray(reply?.hits)) {
-            this.fileSearch.note = WBFail.failed(reply, "Could not search: the daemon gave no reason.");
-            return;
-          }
-          return this.applyFileSearch(reply.hits, !!reply.truncated, seq);
-        })
-        .catch((err) => {
-          if (seq !== this.fileSearch.seq) return;
-          this.fileSearch.note = WBFail.failed({ message: err?.message }, "Could not search: the daemon did not answer.");
-        });
+      return searchNow(this);
     },
 
     // The Wunderbaum instance WITHOUT Alpine's Proxy. Every node reached
@@ -564,93 +537,19 @@ export function wbFiles() {
       return rels;
     },
 
-    // Narrow the tree to `hits`: snapshot the expansion once per search
-    // session, load every ancestor level (shallow-first), then filter. The
-    // expands run under `_restoringExpansion`: the remembered expansion must
-    // not learn them.
+    // Narrow the tree to `hits` (wb-files-search.ts).
     async applyFileSearch(hits: Hit[], truncated: boolean, seq: number) {
-      this.treeMem();
-      this.fileSearch.hits = hits;
-      this.fileSearch.truncated = truncated;
-      this.fileSearch.note = WBFileSearch.note({ hits, truncated });
-      const tree = this.rawTree();
-      if (!tree) return;
-      if (this.fileSearch.expandedBefore === null) this.fileSearch.expandedBefore = this.expandedRels();
-      // ONE paint, at the end: every lazy level repaints on its own, and one
-      // landing between the old marks cleared and the new ones set left a
-      // blank tree that nothing repainted (MEASURED 2026-09-15).
-      this._restoringExpansion = true;
-      tree.enableUpdate(false);
-      try {
-        for (const dir of WBFileSearch.dirsToLoad(hits)) {
-          // A newer search, or a torn-down tree, owns the screen now.
-          if (seq !== this.fileSearch.seq || tree !== this.rawTree()) return;
-          const f = tree.findFirst((n: WunderbaumNode) => this.relPath(n) === dir);
-          if (f && this.isFolder(f) && !f.expanded) await f.setExpanded(true);
-        }
-        if (seq !== this.fileSearch.seq || tree !== this.rawTree()) return;
-        this._fileHits = WBFileSearch.hitMap(hits);
-        // `autoExpand: false`: the extension would also open every MATCHED
-        // folder, a burst of lazy loads.
-        tree.filterNodes((n: WunderbaumNode) => this._fileHits!.has(this.relPath(n)), {
-          mode: "hide",
-          autoExpand: false,
-          matchBranch: false,
-          noData: false,
-        });
-      } finally {
-        this._restoringExpansion = false;
-        // Set BEFORE the paint: the row window is computed from `scrollTop`,
-        // and a leftover offset painted two rows at the bottom of a 52-row tree.
-        if (tree === this.rawTree()) {
-          tree.element.scrollTop = 0;
-          // Re-enabling paints immediately and in full.
-          tree.enableUpdate(true);
-        }
-      }
+      return applySearch(this, hits, truncated, seq);
     },
 
-    // Take the filter off and fold back what the search opened, deepest first.
+    // Take the filter off and fold back what the search opened.
     async clearFileSearch() {
-      this.treeMem();
-      this._fileHits = new Map();
-      this.fileSearch.hits = [];
-      this.fileSearch.truncated = false;
-      this.fileSearch.note = "";
-      const before = this.fileSearch.expandedBefore;
-      this.fileSearch.expandedBefore = null;
-      const tree = this.rawTree();
-      if (!tree) return;
-      // Same one-paint discipline as `applyFileSearch`.
-      this._restoringExpansion = true;
-      tree.enableUpdate(false);
-      try {
-        if (tree.isFilterActive?.()) tree.clearFilter();
-        const fold = WBFileSearch.toCollapse(before, this.expandedRels());
-        for (const rel of fold) {
-          if (tree !== this.rawTree()) return;
-          const f = tree.findFirst((n: WunderbaumNode) => this.relPath(n) === rel);
-          if (f && f.expanded) await f.setExpanded(false);
-        }
-      } finally {
-        this._restoringExpansion = false;
-        if (tree === this.rawTree()) {
-          tree.element.scrollTop = 0;
-          tree.enableUpdate(true);
-        }
-      }
+      return clearSearch(this);
     },
 
     // The search's memory of a tree that no longer exists (see `destroyTree`).
     resetFileSearch() {
-      clearTimeout(this._fileSearchTimer);
-      this.fileSearch.seq++;
-      this.fileSearch.query = "";
-      this.fileSearch.hits = [];
-      this.fileSearch.truncated = false;
-      this.fileSearch.note = "";
-      this.fileSearch.expandedBefore = null;
-      this._fileHits = new Map();
+      return resetSearch(this);
     },
 
     // A `head.dirty` push: the open checkout's HEAD moved (a switch, a commit).
