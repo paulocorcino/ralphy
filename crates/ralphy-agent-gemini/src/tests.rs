@@ -266,6 +266,7 @@ fn run_accounting_never_reads_the_session_store() {
         include_str!("usage.rs"),
         include_str!("outcome.rs"),
         include_str!("outcome/tests.rs"),
+        include_str!("outcome/tests/notices.rs"),
     ] {
         assert!(
             !src.contains(&needle),

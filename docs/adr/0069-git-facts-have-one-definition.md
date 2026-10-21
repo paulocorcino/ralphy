@@ -95,6 +95,6 @@ invocation, as ADR-0036 §3 says.
   starts with a prefix from a fixed read-only list, and `run` refuses any
   other.
 - D4: checked by the ADR-0068 D5 spawn ratchet
-  (`spawn_sites_match_the_baseline`, `crates/xtask/tests/ratchets.rs`):
+  (`spawn_sites_match_the_baseline`, `crates/xtask/tests/ratchets/`):
   `crates/ralphy-daemon/src` and `crates/ralphy-usage-scan/src` have zero
   `Command::new("git")` sites in production code, and the crate has one.

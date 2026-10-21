@@ -523,7 +523,7 @@ protocol version.
   `routes/api_sessions.rs`, `store_from_repos_json` in `fleet.rs`).
 - **A test makes the choice visible.** The test
   `peer_reply_types_are_pinned_to_the_protocol_version` in
-  `crates/xtask/tests/ratchets.rs` hashes the page types that read a reply a
+  `crates/xtask/tests/ratchets/` hashes the page types that read a reply a
   peer wrote (`PEER_REPLY_TYPES`) and compares the hash and
   `PEER_PROTOCOL_VERSION` with a pinned pair. A changed type fails it until
   the pin names the new hash, with a new version or with the same one. A raise

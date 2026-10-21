@@ -93,11 +93,11 @@ no adapter, but only by the component named as its owner in
 
 - D1: not checked by code: a classification, applied in review and listed in
   `docs/ARCHITECTURE.md`.
-- D2, D3 (forge in Rust): checked by `crates/xtask/tests/ratchets.rs` as a
+- D2, D3 (forge in Rust): checked by `crates/xtask/tests/ratchets/` as a
   ratchet (`forge_use_matches_the_baseline`): baseline 24 distinct
   `github::` items used from `crates/ralphy-cli/src`; the check fails if the
   count changes.
-- D2, D3 (forge in prompts): checked by `crates/xtask/tests/ratchets.rs` as
+- D2, D3 (forge in prompts): checked by `crates/xtask/tests/ratchets/` as
   a ratchet (`forge_use_matches_the_baseline`): baseline 20 `gh issue view`
   lines under `assets/prompts/`; the check fails if the count changes.
 - D2 (agent vendors in core): not checked by code: a vendor date format in
@@ -105,7 +105,7 @@ no adapter, but only by the component named as its owner in
   `crates/ralphy-core/src/runner/clock.rs`.
 - D4: checked by the compiler: `is_closed` and `create_issue` have no
   default, so a tracker that does not implement them does not build.
-- D5: checked by `crates/xtask/tests/ratchets.rs` as a ratchet
+- D5: checked by `crates/xtask/tests/ratchets/` as a ratchet
   (`spawn_sites_match_the_baseline`): baseline 11 literal
   `Command::new("git" | "gh" | "ssh")` sites in 7 files of production code;
   the check fails if a site is added or a count changes. A spawn through a

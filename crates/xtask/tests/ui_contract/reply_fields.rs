@@ -1,6 +1,6 @@
 //! The reply fields of the verbs, checked against the daemon (ADR-0070
 //! Compliance): where each ok reply file carries its JSON. Split from
-//! `ui_contract.rs`, which holds the other checks of the contract.
+//! `ui_contract/main.rs`, which holds the other checks of the contract.
 
 use regex::Regex;
 

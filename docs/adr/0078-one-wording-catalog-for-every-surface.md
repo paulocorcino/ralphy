@@ -235,7 +235,7 @@ consumer breaks.
 ## Compliance
 
 - D1: checked by the ratchet on hand-written status tables (planned:
-  `value_wordings_have_one_source` in `crates/xtask/tests/ratchets.rs`),
+  `value_wordings_have_one_source` in `crates/xtask/tests/ratchets/`),
   baseline 3 (`line.rs`/`ui.rs`, `render.rs`, `wb-runs.ts`).
 - D2, D3: not checked by code: whether a sentence is told by more than one
   surface is a judgment, reviewed in the PR.
@@ -253,7 +253,7 @@ consumer breaks.
 - D9, D10: checked by `core_and_adapters_keep_their_dependency_edges`
   (`crates/xtask/tests/crate_dependencies.rs`), extended to keep
   `ralphy-wording` a leaf crate (planned).
-- D11, D12: checked as ratchets (planned, in `crates/xtask/tests/ratchets.rs`):
+- D11, D12: checked as ratchets (planned, in `crates/xtask/tests/ratchets/`):
   the rows of the `CAUSE` table in `wb-fail.ts`; the verbs whose failure still
   reaches the browser as CLI output; and the daemon replies that still send
   `format!("{e:#}")` or a free `message`. Each ratchet only goes down, to

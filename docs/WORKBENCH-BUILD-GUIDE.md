@@ -89,7 +89,7 @@ libraries are classic scripts.
   speaks this daemon's peer protocol version. The same version means the
   same reply shapes: the test
   `peer_reply_types_are_pinned_to_the_protocol_version` in
-  `crates/xtask/tests/ratchets.rs` pins the page types that read a peer's
+  `crates/xtask/tests/ratchets/` pins the page types that read a peer's
   reply to `PEER_PROTOCOL_VERSION`. A change to one of those types raises
   the version (the default), or declares each new field optional and keeps
   the version; the commit says why. Any other data from outside

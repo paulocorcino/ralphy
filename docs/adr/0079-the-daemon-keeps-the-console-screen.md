@@ -281,9 +281,9 @@ Two limits found while this decision was built:
 ## Compliance
 
 Rust tests named here are in `crates/ralphy-daemon/src/`:
-`session/screen/tests.rs` (the screen), `session/manager/tests.rs` (the
-manager), `routes/ws_session/bridge.rs` (the bridge) and `tests.rs` (the
-relay). Browser checks are in `tests/browser/console/`; they are not CI tests.
+`session/screen/tests.rs` (the screen), `session/manager/tests.rs` and
+`session/manager/tests/` (the manager), `routes/ws_session/bridge.rs` (the
+bridge) and `tests.rs` (the relay). Browser checks are in `tests/browser/console/`; they are not CI tests.
 
 - D1: not checked by code. The crate is named only in `session/screen.rs` and
   `session/screen/`; a test in `crates/xtask/tests/` that fails on any other
@@ -309,7 +309,7 @@ relay). Browser checks are in `tests/browser/console/`; they are not CI tests.
   `a_watcher_gets_the_size_before_the_replay_and_on_each_resize`, the manager
   test `a_resize_by_the_writer_reaches_every_attachment`, the
   `wb-console-fit` and `wb-console-frames` ui-tests, `session-size` in the
-  push verbs of `crates/xtask/tests/ui_contract.rs`, and the browser check
+  push verbs of `crates/xtask/tests/ui_contract/`, and the browser check
   `wb_console_watch_size_689.py`.
 - D7: checked by the manager tests
   `a_lower_attempt_of_the_same_holder_is_superseded_and_evicts_nobody`,
@@ -344,6 +344,6 @@ relay). Browser checks are in `tests/browser/console/`; they are not CI tests.
   `wake_gzip_bytes`; the decision and its number are in D11.
 - D12: checked by `crates/ralphy-daemon/src/session/manager/tests.rs`
   (`scrollback_cap_is_512_kib`).
-- D13: checked by `crates/xtask/tests/ratchets.rs`
+- D13: checked by `crates/xtask/tests/ratchets/`
   (`peer_reply_types_are_pinned_to_the_protocol_version`).
 - D14: not checked by code: `read_screen` is not built yet (#679).

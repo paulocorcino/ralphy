@@ -1,6 +1,6 @@
 //! The scans of the workbench modules that read code through the `ui-copy`
-//! lexer: casts and `new WebSocket(` sites. Split out of `ratchets.rs`, which
-//! holds the baselines and the tests.
+//! lexer: casts and `new WebSocket(` sites. `type_escapes.rs` holds the
+//! baselines and the tests.
 
 use super::lex;
 
