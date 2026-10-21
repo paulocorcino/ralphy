@@ -321,7 +321,6 @@ fn tag_references(html: &str) -> Vec<String> {
     out
 }
 
-mod act_bar;
 /// The body of one Alpine method in the shell family text, sliced from its
 /// opener to the first four-space-indented `},` — the method terminator. Whole-file
 /// `contains` is useless for these pins: a call such as `this.$nextTick(`
@@ -346,6 +345,7 @@ fn css_rule_body<'a>(css: &'a str, selector: &str) -> &'a str {
         .0
 }
 
+mod act_bar;
 mod agents_repos;
 mod asset_graph;
 mod audit_routes;
