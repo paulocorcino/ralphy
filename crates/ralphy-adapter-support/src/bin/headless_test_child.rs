@@ -1,4 +1,4 @@
-//! Test helper child driven by `tests/headless.rs` via `CARGO_BIN_EXE_*`. Its
+//! Test helper child driven by `tests/headless/main.rs` via `CARGO_BIN_EXE_*`. Its
 //! single argv arg selects a deterministic behavior so the shared `run_headless`
 //! loop can be exercised against a real process, portably on Windows and Unix:
 //!
@@ -50,7 +50,7 @@
 //!   INTERMEDIATE node is caught too, not only one that orphaned the leaf.
 //!
 //! The stdout/stderr marker lines and the large-output byte count are kept in sync
-//! with the assertions in `tests/headless.rs` via the shared constants below.
+//! with the assertions in `tests/headless/main.rs` via the shared constants below.
 
 use std::io::Write;
 use std::time::Duration;

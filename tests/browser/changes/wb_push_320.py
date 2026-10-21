@@ -292,7 +292,7 @@ def main():
             # Scenario c (pushing the remote's DEFAULT branch is refused) is
             # REMOVED: ADR-0046 amendment 2026-09-16 (docs/adr/0046-orchestrator
             # -side-push.md:64) allows it, and
-            # crates/ralphy-core/src/sync/tests.rs::push_publishes_the_remotes_
+            # crates/ralphy-core/src/sync/tests/push.rs::push_publishes_the_remotes_
             # default_branch covers the new behavior.
 
             # --- scenario d: a remote that moved on ---------------------------
