@@ -945,14 +945,8 @@
       ]
     },
     "crates/xtask/src/ui_groups.rs": {
-      "render": [
-        14
-      ],
       "scan_accesses": [
         18
-      ],
-      "stats": [
-        15
       ],
       "writes": [
         17
@@ -961,6 +955,14 @@
     "crates/xtask/src/ui_groups/html.rs": {
       "read_tag": [
         13
+      ]
+    },
+    "crates/xtask/src/ui_groups/report.rs": {
+      "render": [
+        14
+      ],
+      "stats": [
+        15
       ]
     }
   }
