@@ -477,7 +477,7 @@ type OpenRequest = {
 
 // The `workbench:*` events (#633): every name a module sends or hears, and its
 // `detail`. An event with no detail has `null`, as `new CustomEvent(name)`
-// gives. `wb-events.ts` sends them; `src/tests.rs` fails on a `workbench:`
+// gives. `wb-events.ts` sends them; `src/tests/` fails on a `workbench:`
 // name in a module or in `index.html` that is not listed here.
 
 /** The `workbench:*` events sent on `window`. The `-open` events that

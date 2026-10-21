@@ -433,9 +433,6 @@
       ]
     },
     "crates/ralphy-daemon/assets/ui/wb-file-viewer.ts": {
-      "applyFresh": [
-        11
-      ],
       "disposeEditor": [
         12
       ],
@@ -443,10 +440,12 @@
         13
       ]
     },
-    "crates/ralphy-daemon/assets/ui/wb-files.ts": {
-      "applyFileSearch": [
+    "crates/ralphy-daemon/assets/ui/wb-files-search.ts": {
+      "applySearch": [
         12
-      ],
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-files.ts": {
       "duplicateNode": [
         15
       ],
@@ -508,6 +507,11 @@
         11
       ]
     },
+    "crates/ralphy-daemon/assets/ui/wb-notes-file.ts": {
+      "commitRename": [
+        14
+      ]
+    },
     "crates/ralphy-daemon/assets/ui/wb-notes-folds.ts": {
       "withHeader": [
         13
@@ -524,9 +528,6 @@
       ],
       "addCard": [
         12
-      ],
-      "commitRename": [
-        14
       ],
       "render": [
         16
@@ -640,6 +641,11 @@
       ],
       "restoreView": [
         15
+      ]
+    },
+    "crates/ralphy-daemon/assets/ui/wb-viewer-save.ts": {
+      "applyFresh": [
+        11
       ]
     },
     "crates/ralphy-daemon/assets/ui/wb-wire.ts": {

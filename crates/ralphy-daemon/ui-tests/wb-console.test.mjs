@@ -14,7 +14,7 @@ const UI = join(dirname(fileURLToPath(import.meta.url)), "../assets/ui");
 // The console family's source text, for the few pins on how it is written.
 // It is every module named `wb-console.ts`, `wb-console-*.ts`,
 // `wb-stage-*.ts`, `wb-desk.ts` or `wb-desk-*.ts`, joined in the order of
-// `CONSOLE_FAMILY` in `src/tests.rs`, so a move between family modules does
+// `CONSOLE_FAMILY` in `src/tests/`, so a move between family modules does
 // not move a pin (#621).
 function familyGroup(name) {
   if (!name.endsWith(".ts") || name.endsWith(".d.ts")) return -1;

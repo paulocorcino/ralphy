@@ -3,7 +3,8 @@
 //!
 //! ## Why this is a command and not a document
 //!
-//! `crates/ralphy-daemon/src/tests.rs` holds a large, undocumented contract:
+//! `crates/ralphy-daemon/src/tests.rs` and the files in `src/tests/` hold a large,
+//! undocumented contract:
 //! `include_str!` a `.js`/`.css`/`.html` file and assert a substring of it.
 //! Nobody decided to build that contract — it accreted, one pin per issue, and
 //! it is now the only CI-visible gate over most of the workbench. Any plan to
@@ -165,7 +166,41 @@ pub(crate) fn gather(root: &Path) -> Result<Vec<Pin>> {
             .with_context(|| format!("reading {}", path.display()))?;
         collect(rel, &text, &mut pins);
     }
+    for rel in test_files_under(root, DAEMON_TESTS_DIR)? {
+        let path = root.join(&rel);
+        let text = std::fs::read_to_string(&path)
+            .with_context(|| format!("reading {}", path.display()))?;
+        collect(&rel, &text, &mut pins);
+    }
     Ok(pins)
+}
+
+/// The folder of the daemon's test files that `src/tests.rs` declares.
+const DAEMON_TESTS_DIR: &str = "crates/ralphy-daemon/src/tests";
+
+/// Every `.rs` file under `dir` (relative to `root`), as `/`-separated paths in
+/// sorted order. A missing folder has none.
+fn test_files_under(root: &Path, dir: &str) -> Result<Vec<String>> {
+    let path = root.join(dir);
+    if !path.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut names = Vec::new();
+    for entry in std::fs::read_dir(&path).with_context(|| format!("reading {}", path.display()))? {
+        let entry = entry.with_context(|| format!("reading {}", path.display()))?;
+        names.push(entry.file_name().to_string_lossy().into_owned());
+    }
+    names.sort();
+    let mut found = Vec::new();
+    for name in names {
+        let rel = format!("{dir}/{name}");
+        if root.join(&rel).is_dir() {
+            found.extend(test_files_under(root, &rel)?);
+        } else if name.ends_with(".rs") {
+            found.push(rel);
+        }
+    }
+    Ok(found)
 }
 
 /// The local variable a `let` binds, if the line is a binding.
@@ -336,7 +371,7 @@ fn keep(out: &mut Vec<String>, lit: String) {
     // An `include_str!` argument is how a test NAMES an asset, not a claim about
     // one. Counting it added nine phantom claims, three of them from a test this
     // very branch added.
-    if lit.starts_with("../assets/ui/") {
+    if lit.starts_with("../") && lit.trim_start_matches("../").starts_with("assets/ui/") {
         return;
     }
     // A bare format placeholder — `{name}`, `{path}` — is the message's, not a
@@ -412,26 +447,31 @@ fn classify(stmt: &str) -> Option<Shape> {
 /// `!lc.contains(…)` and `!html.contains(…)` are negatives; `assert!(x.contains(…))`
 /// is not, even though the statement holds a `!`.
 fn receiver_is_negated(before: &str) -> bool {
-    let mut chars = before.chars().rev().peekable();
+    let chars: Vec<char> = before.chars().collect();
+    let ident = |c: char| c.is_alphanumeric() || c == '_';
+    let mut at = chars.len();
     let mut saw_receiver = false;
     // The receiver can be a chain — `body.to_lowercase()`, `src[0..10]` — so the
     // walk back has to step OVER a balanced group rather than stopping at its
     // opening bracket. Anything inside `(…)` or `[…]` belongs to the receiver.
     let mut depth = 0i32;
-    while let Some(&c) = chars.peek() {
-        match c {
+    while at > 0 {
+        match chars[at - 1] {
             ')' | ']' => {
                 depth += 1;
                 saw_receiver = true;
             }
             '(' | '[' if depth > 0 => depth -= 1,
             _ if depth > 0 => {}
-            c if c.is_alphanumeric() || c == '_' || c == '.' => saw_receiver = true,
+            c if ident(c) || c == '.' => saw_receiver = true,
+            // A macro's `!` follows its name: `include_str!(…)` is a call in
+            // the receiver, not a negation.
+            '!' if at >= 2 && ident(chars[at - 2]) => {}
             _ => break,
         }
-        chars.next();
+        at -= 1;
     }
-    saw_receiver && chars.peek() == Some(&'!')
+    saw_receiver && at > 0 && chars[at - 1] == '!'
 }
 
 fn report(pins: &[Pin], verbose: bool) {

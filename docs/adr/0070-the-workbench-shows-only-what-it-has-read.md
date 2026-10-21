@@ -186,4 +186,4 @@ detached file windows, which sends each file home as a tab.
     tags, the write denylist and its note exception) with its Rust constant,
     and the test compares the values. It follows the settings test
     `every_settable_key_the_panel_offers_is_a_key_the_cli_accepts`
-    (`crates/ralphy-daemon/src/tests.rs`).
+    (`crates/ralphy-daemon/src/tests/`).

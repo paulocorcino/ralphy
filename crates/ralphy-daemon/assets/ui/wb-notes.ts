@@ -18,19 +18,22 @@
 import { WBFail } from "./wb-fail.ts";
 import { WBGeometry } from "./wb-geometry.ts";
 import { addNote, removeNote, NOTE_MAX } from "./wb-desk-folds.ts";
-import { DEFAULT_DIR, DEFAULT_FILL, DEFAULT_FONT, DEFAULT_INK, DEFAULT_SIZE, DEFAULT_TONE, FILLS, FONTS, INKS, NEW_NOTE_STYLE, NOTE_DEFAULT, NOTE_MIN, ON_TOP_BAND_BELOW, ON_TOP_FLOOR, ON_TOP_TOP, SAVE_AFTER_MS, SIZES, SWATCH_NAME, TONES, anchorsOf, applyLook, baseName, bodyOf, colorOf, dirName, fillOf, fontOf, inkOf, isSafeScheme, lockedBy, lookOf, noCredential, noteDormancyDecision, noteSlug, onTopClamp, onTopRect, popupLinkTarget, savedLabel, sizeOf, spawnRect, stampName, styleOf, titleFieldOf, titleOf, toneOf, veiledOf, withStyle, withTitle, withVeil } from "./wb-notes-folds.ts";
+import { DEFAULT_DIR, DEFAULT_FILL, DEFAULT_FONT, DEFAULT_INK, DEFAULT_SIZE, DEFAULT_TONE, FILLS, FONTS, INKS, NEW_NOTE_STYLE, NOTE_DEFAULT, NOTE_MIN, ON_TOP_BAND_BELOW, ON_TOP_FLOOR, ON_TOP_TOP, SAVE_AFTER_MS, SIZES, TONES, anchorsOf, applyLook, bodyOf, colorOf, fillOf, fontOf, inkOf, isSafeScheme, lockedBy, noCredential, noteDormancyDecision, noteSlug, onTopClamp, onTopRect, popupLinkTarget, savedLabel, sizeOf, spawnRect, stampName, styleOf, titleFieldOf, titleOf, toneOf, veiledOf, withStyle, withTitle, withVeil } from "./wb-notes-folds.ts";
 import { sendDocument } from "./wb-events.ts";
-import { dormantAfterMs, DORMANT_MARGIN_PX } from "./wb-console-gpu.ts";
+import { createNoteDormancy } from "./wb-notes-dormancy.ts";
 import { createNoteEditor } from "./wb-notes-editor.ts";
+import { createNoteFile } from "./wb-notes-file.ts";
+import { createNoteMenus } from "./wb-notes-menus.ts";
 import { createNoteOnTop } from "./wb-notes-on-top.ts";
 import { createNoteVeil } from "./wb-notes-veil.ts";
 import { createNoteMap } from "./wb-notes-map.ts";
+import { createNotePalette } from "./wb-notes-palette.ts";
 import { createNoteStage } from "./wb-notes-stage.ts";
 import type { CrepeLean } from "./wb-notes-editor.ts";
 import type { Home } from "./wb-notes-stage.ts";
 import type { Messages } from "./wb-messages.ts";
 import type { Gestures, Stack } from "./wb-stage-stack.ts";
-import type { CardHost, DeskFence, DeskNote, NoteCard, NoteEditor, NoteLook, NoteSource, Offset, Point, Size } from "./wb-types.d.ts";
+import type { CardHost, DeskFence, DeskNote, NoteCard, NoteEditor, NoteSource, Offset, Point, Size } from "./wb-types.d.ts";
 
 type NotesWindow = Window & {
   CrepeLean?: CrepeLean;
@@ -506,133 +509,35 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
   // ---- the editor (in `wb-notes-editor.ts`) ------------------------------------
 
   const { mountEditor, loadInto, paintTitle, paintState, syncFromEditor, markDirty, flush, paintPath } =
-    createNoteEditor({ window, document, consoleHost, recordOf, patch, render, paintIndex, veilPanel, paintVeil, fragment: () => fragment });
+    createNoteEditor({ window, document, consoleHost, recordOf, patch, render, paintIndex: (el) => paintIndex(el), veilPanel, paintVeil, fragment: () => fragment });
 
-  // The tone cycles through the closed set and is written into the FILE, so a
-  // close and a reopen keep it (ADR-0064 §3).
-  // ---- the palette (ADR-0064 §8, amended 2026-09-22) ---------------------------
+  // ---- the palette (in `wb-notes-palette.ts`) ----------------------------------
 
-  // The ground and the ink, as two rows of swatches. The pair is the
-  // operator's: the tones are desaturated by design, so a card that must READ
-  // as yellow needs the solid fill, and a solid fill needs an ink chosen for
-  // it. Rendered into the same popover so the two are picked together and the
-  // card repaints under the pointer.
-  let openPalette: HTMLElement | null = null;
-  function togglePalette(el: NoteCard) {
-    const pop = el.querySelector<HTMLElement>(".note-palette");
-    // A VEILED card is refused: it holds only its header, so writing the
-    // document from here would save that header OVER the note. A LOCKED one is
-    // not — the lock pins the card, it does not freeze the note.
-    if (!pop || veiledNow(el)) return;
-    const wasOpen = !pop.hidden;
-    closePalette();
-    closeMenu();
-    if (wasOpen) return;
-    paintPalette(el);
-    pop.hidden = false;
-    openPalette = pop;
-    document.addEventListener("pointerdown", closePaletteOutside, true);
-  }
-  function closePalette() {
-    if (!openPalette) return;
-    openPalette.hidden = true;
-    openPalette = null;
-    document.removeEventListener("pointerdown", closePaletteOutside, true);
-  }
-  function closePaletteOutside(ev: PointerEvent) {
-    if (openPalette && !openPalette.contains(ev.target as Node | null) && !(ev.target as Element | null)?.closest?.(".note-tone")) {
-      closePalette();
-    }
-  }
+  // The palette and the menus close each other, so the palette reaches the
+  // menus' `closeMenu` through an arrow.
+  const { togglePalette, closePalette, buildPalette } = createNotePalette({
+    document, veiledNow, closeMenu: () => closeMenu(), syncFromEditor, markDirty,
+  });
 
-  function buildPalette(el: NoteCard) {
-    const pop = document.createElement("div");
-    pop.className = "note-palette";
-    pop.hidden = true;
-    // The press must not reach the card's drag or the plane's accelerators,
-    // and the swatch must not blur the editor before it repaints.
-    pop.addEventListener("pointerdown", (ev) => ev.stopPropagation());
-    pop.addEventListener("mousedown", (ev) => ev.preventDefault());
-    // `text` turns the strip from swatches into CHIPS — a colour can be shown
-    // as itself, a font and a size cannot, so those two rows name what they
-    // offer and the font chips are drawn IN the font they name.
-    const row = (label: string, cls: string, names: string[], pick: (el: NoteCard, name: string) => void, text?: (name: string) => string) => {
-      const strip = document.createElement("div");
-      strip.className = "note-swatches";
-      const cap = document.createElement("span");
-      cap.className = "note-swatch-label";
-      cap.textContent = label;
-      strip.append(cap);
-      for (const name of names) {
-        const b = document.createElement("button");
-        b.className = cls;
-        b.type = "button";
-        b.dataset.name = name;
-        b.title = SWATCH_NAME[name] || name;
-        if (text) b.textContent = text(name);
-        b.setAttribute("aria-label", label + ": " + (SWATCH_NAME[name] || name));
-        b.addEventListener("click", (ev) => {
-          ev.stopPropagation();
-          pick(el, name);
-        });
-        strip.append(b);
-      }
-      pop.append(strip);
-    };
-    row("Color", "note-swatch note-swatch-tone", TONES, setTone);
-    row("Fill", "note-swatch note-swatch-fill", FILLS, setFill);
-    row("Text", "note-swatch note-swatch-ink", INKS, setInk);
-    // `Aa` in each face, and the step names for the size: the chip is a sample
-    // of what pressing it does, which is the only honest label a font has.
-    row("Font", "note-swatch note-swatch-font", FONTS, setFont, () => "Aa");
-    row("Size", "note-swatch note-swatch-size", SIZES, setSize, (n) => n.toUpperCase());
-    return pop;
-  }
+  // ---- the menus and the cheat sheet (in `wb-notes-menus.ts`) ------------------
 
-  // Which swatch is the card's now — read off the card, so a palette opened on
-  // a note whose file was hand-edited shows what the file says.
-  function paintPalette(el: NoteCard) {
-    const pop = el.querySelector<HTMLElement>(".note-palette");
-    if (!pop) return;
-    const have: NoteLook = lookOf(el);
-    for (const [key, cls] of [
-      ["tone", "note-swatch-tone"],
-      ["fill", "note-swatch-fill"],
-      ["ink", "note-swatch-ink"],
-      ["font", "note-swatch-font"],
-      ["size", "note-swatch-size"],
-    ]) {
-      for (const b of pop.querySelectorAll<HTMLElement>("." + cls)) {
-        b.classList.toggle("is-on", b.dataset.name === have[key as keyof NoteLook]);
-      }
-    }
-  }
+  const { toggleMenu, toggleIndex, paintIndex, closeMenu, markdownHelp, MARKDOWN_HELP } = createNoteMenus({
+    window, document, recordOf, syncFromEditor, closePalette,
+  });
 
-  // One restyle: the card repaints at once and the DOCUMENT is what carries
-  // it, because the look is the file's (ADR-0064 §8) — close the card and
-  // reopen it and the colours come back with the text.
-  function restyle(el: NoteCard, next: Partial<NoteLook>) {
-    applyLook(el, { ...lookOf(el), ...next });
-    // Through `syncFromEditor` first: the operator may have typed a character
-    // the change listener has not reported yet, and a restyle rewrites the
-    // whole document.
-    syncFromEditor(el);
-    el._noteMarkdown = withStyle(el._noteMarkdown, lookOf(el));
-    // A mermaid fence is an SVG with its colours written into it as inline
-    // fills (`entry.js` seeds them from this card), so the cascade cannot
-    // reach it — without this, restyling a note left every diagram in it
-    // wearing the tone the card used to be.
-    try {
-      el._noteEditor?.redrawDiagrams?.();
-    } catch {}
-    paintPalette(el);
-    markDirty(el);
-  }
-  const setTone = (el: NoteCard, tone: string) => restyle(el, { tone });
-  const setFill = (el: NoteCard, fill: string) => restyle(el, { fill });
-  const setInk = (el: NoteCard, ink: string) => restyle(el, { ink });
-  const setFont = (el: NoteCard, font: string) => restyle(el, { font });
-  const setSize = (el: NoteCard, size: string) => restyle(el, { size });
+  // ---- the file acts (in `wb-notes-file.ts`) -----------------------------------
+
+  const { pointElsewhere, renameNote, endRename, commitRename, deleteNote } = createNoteFile({
+    window, consoleHost, messages, recordOf, patch, render, paintPath, paintState, loadInto,
+  });
+
+  // ---- dormancy (in `wb-notes-dormancy.ts`) ------------------------------------
+
+  // A card on top is never put to sleep, and `onTopNow` is built after this, so
+  // it reaches the dormancy through an arrow.
+  const { trackDormancy, untrackDormancy, wakeCard } = createNoteDormancy({
+    window, document, recordOf, loadInto, onTopNow: () => onTopNow(), veiledNow,
+  });
 
   // ---- the title, as a rename (ADR-0064 §4) -------------------------------------
 
@@ -677,7 +582,7 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     paintTitle(el);
   }
 
-  // ---- links, keys, dormancy ----------------------------------------------------
+  // ---- links, keys ----------------------------------------------------
 
   // A link inside a note obeys the viewer's rule (ADR-0064 §12): an external
   // one opens in a new tab, a repo-relative one is an open REQUEST to the
@@ -746,49 +651,6 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     });
   }
 
-  // Dormancy (ADR-0064 §14). Its OWN observer, not the consoles': a console
-  // sleeps by dropping a socket, a card by destroying an editor, and the two
-  // have different refusals — a card with unsaved text never sleeps.
-  let observer: IntersectionObserver | null = null;
-  let sweeper: ReturnType<typeof setInterval> | null = null;
-  const watched = new Map<NoteCard, { visible: boolean; since: number }>();
-  const SWEEP_MS = 5000;
-  function trackDormancy(el: NoteCard) {
-    if (typeof window.IntersectionObserver !== "function") return;
-    const root = document.getElementById("workspace");
-    if (!root) return;
-    if (!observer) {
-      observer = new IntersectionObserver(
-        (entries) => {
-          for (const entry of entries) {
-            const seen = watched.get(entry.target as NoteCard);
-            if (!seen) continue;
-            seen.visible = entry.isIntersecting;
-            seen.since = Date.now();
-            if (entry.isIntersecting) wakeCard(entry.target as NoteCard);
-          }
-        },
-        { root, rootMargin: `${DORMANT_MARGIN_PX}px` },
-      );
-    }
-    if (sweeper == null) sweeper = setInterval(sweepDormancy, SWEEP_MS);
-    watched.set(el, { visible: true, since: Date.now() });
-    observer.observe(el);
-  }
-  function untrackDormancy(el: NoteCard) {
-    watched.delete(el);
-    observer?.unobserve(el);
-    // Nothing left to watch: a page that once showed a note must not keep a
-    // 5 s timer and an observer alive for the document's life — a popup that
-    // reattached its fence would carry both forever.
-    if (!watched.size) {
-      if (sweeper != null) clearInterval(sweeper);
-      sweeper = null;
-      observer?.disconnect();
-      observer = null;
-    }
-  }
-
   // The ONE place a card is taken off the stage: the editor goes with it,
   // whether it had finished mounting or not.
   function tearDownCard(el: NoteCard) {
@@ -802,54 +664,6 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
       editor?.destroy();
     } catch {}
     el.remove();
-  }
-  function sweepDormancy() {
-    const after = dormantAfterMs();
-    for (const [el, seen] of [...watched]) {
-      if (!el.isConnected) {
-        untrackDormancy(el);
-        continue;
-      }
-      const verdict = noteDormancyDecision({
-        visible: seen.visible,
-        onTop: el.dataset.noteId === onTopNow(),
-        dirty: !!el._noteDirty,
-        inFlight: !!el._noteInFlight,
-        asleep: !!el._noteAsleep,
-        elapsed: Date.now() - seen.since,
-        after,
-      });
-      if (verdict === "sleep") sleepCard(el);
-    }
-  }
-  function sleepCard(el: NoteCard) {
-    if (el._noteAsleep || el._noteDirty || el._noteInFlight) return;
-    // A veiled card has already given its editor back and is already showing
-    // the one line it is allowed to show; putting it to sleep would replace
-    // that with the "asleep" line and lose what the card is saying.
-    if (veiledNow(el)) return;
-    el._noteAsleep = true;
-    const editor = el._noteEditor;
-    el._noteEditor = null;
-    try {
-      editor?.destroy();
-    } catch {}
-    const body = el.querySelector<HTMLElement>(".note-body");
-    if (body) {
-      body.textContent = "";
-      const p = document.createElement("p");
-      p.className = "note-asleep";
-      p.textContent = titleOf(el._noteMarkdown, "Untitled note");
-      body.append(p);
-    }
-  }
-  function wakeCard(el: NoteCard) {
-    if (!el._noteAsleep) return;
-    el._noteAsleep = false;
-    const record = recordOf(el.dataset.noteId);
-    // Re-READ rather than remount the text held here: another page may have
-    // written the file while this card slept, and the file is the note.
-    if (record) loadInto(el, record);
   }
 
   // ---- creating, closing, rendering ---------------------------------------------
@@ -1103,341 +917,6 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
     buildCard, drafts, mountHome, loadInto, trackDormancy, onTopNow, putBack, flush, tearDownCard, isFragment: () => fragment,
   });
 
-  // ---- the file actions (ADR-0064 §11) ------------------------------------------
-
-  // The head's dropdowns — the `⋯` file menu and the `☰` index. ONE open at a
-  // time across the whole plane, closed by the next press anywhere else: the
-  // card is a small surface and a menu left open over the text is in the way
-  // of the thing it belongs to. They share this opener because they share that
-  // rule; two independent close-on-outside listeners left one hanging when the
-  // other opened.
-  let openMenu: HTMLElement | null = null;
-  let openMenuTrigger = "";
-  function openDrop(el: NoteCard, popSelector: string, triggerSelector: string, fill: (pop: HTMLElement) => boolean | void) {
-    const pop = el.querySelector<HTMLElement>(popSelector);
-    if (!pop) return;
-    const wasOpen = !pop.hidden;
-    closeMenu();
-    closePalette();
-    if (wasOpen) return;
-    if (fill && fill(pop) === false) return;
-    pop.hidden = false;
-    openMenu = pop;
-    openMenuTrigger = triggerSelector;
-    document.addEventListener("pointerdown", closeOnOutside, true);
-  }
-  function toggleMenu(el: NoteCard) {
-    openDrop(el, ".note-menu-card:not(.note-anchors)", ".note-more", (menu) => {
-      const record = recordOf(el.dataset.noteId);
-      // Only a saved note in the PRIMARY tree has file actions: a worktree note
-      // cannot be renamed or deleted yet (ADR-0064, amendment: `note.write` is
-      // the only Write verb that crosses the worktree gate).
-      const writable = !!record?.path && !record?.checkout;
-      const missing = el.classList.contains("missing");
-      // Renaming and deleting need a file that is there.
-      for (const item of menu.querySelectorAll<HTMLButtonElement>(".note-menu-file")) {
-        item.disabled = !writable || missing;
-      }
-      // Only on a note that IS marked: hiding is the eye's, and this is the
-      // one door out of it.
-      const mark = menu.querySelector<HTMLButtonElement>(".note-menu-mark");
-      if (mark) {
-        mark.hidden = !veiledOf(el._noteMarkdown);
-        mark.disabled = missing;
-      }
-      // Re-aiming is the MISSING card's verb and the only one it has, so it is
-      // not shown at all until the card is in that state.
-      const point = menu.querySelector<HTMLButtonElement>(".note-menu-point");
-      if (point) {
-        point.hidden = !missing;
-        point.disabled = !record;
-      }
-    });
-  }
-
-  // The index (ADR-0064 §10), rebuilt on every open from the live document.
-  function toggleIndex(el: NoteCard) {
-    openDrop(el, ".note-anchors", ".note-index", (pop) => {
-      syncFromEditor(el);
-      const found = anchorsOf(el._noteMarkdown);
-      pop.textContent = "";
-      if (!found.length) return false;
-      for (const a of found) {
-        const row = document.createElement("button");
-        row.className = "note-menu-item";
-        row.type = "button";
-        row.textContent = a.text;
-        row.title = a.text;
-        row.addEventListener("click", () => {
-          closeMenu();
-          scrollToAnchor(el, a.index);
-        });
-        pop.append(row);
-      }
-      return true;
-    });
-  }
-
-  // Show the index button only when there is an index. A card whose note has
-  // no `##` would otherwise offer a control that opens onto nothing.
-  function paintIndex(el: NoteCard) {
-    const btn = el.querySelector<HTMLElement>(".note-index");
-    if (!btn) return;
-    btn.hidden = anchorsOf(el._noteMarkdown).length === 0;
-  }
-
-  // Scroll this card's body to its `index`-th `##`. By ORDINAL and not by
-  // text, for `jump`'s reason: a note may hold two sections with one name.
-  //
-  // The BODY is scrolled, and nothing else. `heading.scrollIntoView()` walks
-  // every scrollable ancestor and moves each one — so picking a section also
-  // panned the plane under the card, which is the operator's report: the
-  // canvas moved when only the note should have. The offset is computed
-  // against the body's own box, which is the one box that must move.
-  function scrollToAnchor(el: NoteCard, index: number) {
-    const body = el.querySelector<HTMLElement>(".note-body");
-    const heading = body?.querySelectorAll?.("h2")?.[index];
-    if (!body || !heading) return;
-    const top =
-      heading.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop;
-    body.scrollTo({ top: Math.max(0, top), behavior: reducedMotion() ? "auto" : "smooth" });
-  }
-
-  function closeMenu() {
-    if (!openMenu) return;
-    openMenu.hidden = true;
-    openMenu = null;
-    openMenuTrigger = "";
-    document.removeEventListener("pointerdown", closeOnOutside, true);
-  }
-  function closeOnOutside(ev: PointerEvent) {
-    if (openMenu && !openMenu.contains(ev.target as Node | null) && !(ev.target as Element | null)?.closest?.(openMenuTrigger)) {
-      closeMenu();
-    }
-  }
-
-  // ---- the cheat sheet ----------------------------------------------------------
-
-  // WHAT TO TYPE. The editor is hybrid WYSIWYG (ADR-0064 §6) — the markup
-  // dissolves the moment it is recognised — which is exactly why the marks
-  // themselves are not discoverable: there is nothing left on screen to read
-  // them off. The `/` menu answers the same question for BLOCKS and nothing
-  // answered it for marks.
-  //
-  // The flavour is CommonMark + GFM, because that is what the editor's two
-  // presets parse; every row below was typed into the real bundle and its
-  // markdown read back (2026-09-22), so nothing here is a guess at upstream's
-  // rules. Three of them are this bundle's own additions, because upstream had
-  // no rule at all: `[ ] ` on a plain line, `[text](url)` (commonmark ships an
-  // input rule for an IMAGE and none for a link), and the `@@path` shorthand.
-  const MARKDOWN_HELP = [
-    ["**bold**", "Bold"],
-    ["*italic*", "Italic"],
-    ["`code`", "Inline code"],
-    ["~~struck~~", "Strikethrough"],
-    ["[text](url)", "A link"],
-    ["@@path/to/file", "A link to that file"],
-    ["#", "Large heading"],
-    ["##", "Heading. It is also listed in the heading index."],
-    ["-", "A bullet"],
-    ["1.", "A numbered item"],
-    ["[ ]", "A task. [x] marks it as done."],
-    [">", "A quote"],
-    ["|3x3|", "A 3×3 table"],
-    ["---", "A horizontal line"],
-    ["```", "A code block"],
-    ["```mermaid", "A diagram. Click it to edit."],
-    ["/", "The block menu"],
-    ["Shift+Enter", "A line break inside the block"],
-  ];
-  // The trailing SPACE is what fires a block mark, and it cannot be seen in a
-  // chip — so the table drops it and this line carries it instead.
-  const MARKDOWN_HELP_NOTE = "Type a space after a mark to apply it.";
-
-  // Borrowed from `wb-messages.ts`'s `askConfirm`: the shell's modal CLASSES
-  // over DOM this module builds itself, so the card keeps working in the
-  // detached-fence popup, which has no Alpine and no modal markup.
-  function markdownHelp() {
-    const scrim = document.createElement("div");
-    scrim.className = "modal-scrim wb-note-help";
-    const modal = document.createElement("div");
-    modal.className = "modal note-help-modal";
-    modal.setAttribute("role", "dialog");
-    modal.setAttribute("aria-modal", "true");
-    modal.setAttribute("aria-label", "Markdown in a note");
-    const head = document.createElement("div");
-    head.className = "modal-head";
-    head.innerHTML = '<i class="bi bi-markdown"></i>';
-    const heading = document.createElement("span");
-    heading.className = "modal-title";
-    heading.textContent = "Markdown in a note";
-    const sub = document.createElement("span");
-    sub.className = "modal-sub";
-    sub.textContent = "CommonMark + GFM";
-    head.append(heading, sub);
-    const table = document.createElement("table");
-    table.className = "note-help-table";
-    for (const [type, gets] of MARKDOWN_HELP) {
-      const tr = document.createElement("tr");
-      const td1 = document.createElement("td");
-      const code = document.createElement("code");
-      code.textContent = type;
-      td1.append(code);
-      const td2 = document.createElement("td");
-      td2.textContent = gets;
-      tr.append(td1, td2);
-      table.append(tr);
-    }
-    const note = document.createElement("p");
-    note.className = "note-help-note";
-    note.textContent = MARKDOWN_HELP_NOTE;
-    const foot = document.createElement("div");
-    foot.className = "modal-foot";
-    const ok = document.createElement("button");
-    ok.className = "btn accent";
-    ok.type = "button";
-    ok.textContent = "Close";
-    foot.append(ok);
-    modal.append(head, table, note, foot);
-    scrim.append(modal);
-    document.body.append(scrim);
-    ok.focus();
-    const done = () => {
-      document.removeEventListener("keydown", onKey, true);
-      scrim.remove();
-    };
-    const onKey = (ev: KeyboardEvent) => {
-      if (ev.key === "Escape" || (ev.key === "Enter" && document.activeElement === ok)) {
-        ev.stopPropagation();
-        done();
-      }
-    };
-    // CAPTURE, for `askConfirm`'s reason: the plane's accelerators and a
-    // console's terminal both take Escape before a bubbling listener would.
-    document.addEventListener("keydown", onKey, true);
-    ok.addEventListener("click", done);
-    return scrim;
-  }
-
-  // Point a card at another file (ADR-0064 §11's missing-file state). The
-  // record is re-aimed and the file is re-read; nothing on disk is touched,
-  // because there is nothing there to touch — which is why this is a separate
-  // verb from the rename beside it.
-  function pointElsewhere(el: NoteCard) {
-    const record = recordOf(el.dataset.noteId);
-    if (!record) return;
-    const field = el.querySelector<HTMLInputElement>(".note-rename");
-    if (!field) return;
-    el._notePointing = true;
-    field.value = record.path || "";
-    field.hidden = false;
-    const path = el.querySelector<HTMLElement>(".note-path");
-    if (path) path.hidden = true;
-    field.focus();
-    field.select();
-  }
-
-  // Rename the FILE and follow it with the record (ADR-0064 §4: a title change
-  // never renames, so this is the only way a note's name moves). The daemon's
-  // `file.rename` is what reaches it, through the denylist's one carve-out.
-  function renameNote(el: NoteCard) {
-    const record = recordOf(el.dataset.noteId);
-    if (!record?.path || record.checkout) return;
-    const field = el.querySelector<HTMLInputElement>(".note-rename");
-    const path = el.querySelector<HTMLElement>(".note-path");
-    if (!field) return;
-    field.value = baseName(record.path);
-    field.hidden = false;
-    if (path) path.hidden = true;
-    field.focus();
-    field.select();
-  }
-  function endRename(el: NoteCard) {
-    const field = el.querySelector<HTMLInputElement>(".note-rename");
-    if (!field || field.hidden) return;
-    field.hidden = true;
-    el._notePointing = false;
-    const path = el.querySelector<HTMLElement>(".note-path");
-    if (path) path.hidden = false;
-  }
-  function commitRename(el: NoteCard) {
-    const record = recordOf(el.dataset.noteId);
-    const field = el.querySelector<HTMLInputElement>(".note-rename");
-    const next = String(field?.value || "").trim();
-    const pointing = !!el._notePointing;
-    endRename(el);
-    if (!record || !next) return;
-    if (pointing) {
-      // A whole rel path, not a file name: the card is being aimed somewhere
-      // else in the checkout, and the read decides whether there is a note
-      // there. Identity is `(repo, checkout, path)` (ADR-0064 §4) and this is
-      // the one gesture that could break it: two cards over one file would be
-      // two editors autosaving it, each overwriting the other with stale text
-      // and neither told.
-      const taken = (consoleHost?.notes?.() || []).find(
-        (n) =>
-          n.id !== record.id &&
-          n.repo === record.repo &&
-          (n.checkout ?? null) === (record.checkout ?? null) &&
-          n.path === next,
-      );
-      if (taken) {
-        paintState(el, "Another note already uses that file.");
-        return;
-      }
-      patch(record.id, { path: next });
-      paintPath(el, next);
-      el.classList.remove("missing");
-      loadInto(el, { ...record, path: next });
-      return;
-    }
-    if (!record.path || next === baseName(record.path)) return;
-    // Always a `.note`: the verbs refuse anything else, and a note renamed out
-    // of its extension would be a file nothing can open (ADR-0064 §5).
-    const name = next.endsWith(".note") ? next : next + ".note";
-    const dir = dirName(record.path);
-    const to = (dir ? dir + "/" : "") + name;
-    window.WBDaemon.write("file.rename", { repo: record.repo, path: record.path, to })
-      .then((reply) => {
-        if (WBFail.isError(reply)) {
-          paintState(el, WBFail.failed(reply, "Could not rename: the daemon gave no reason."));
-          return;
-        }
-        patch(record.id, { path: to });
-        paintPath(el, to);
-        paintState(el, "Renamed");
-      })
-      .catch((err: Error) => paintState(el, WBFail.cause({ message: err?.message }, "The daemon did not answer.")));
-  }
-
-  // Delete the file — a SEPARATE act from closing the card (§11), confirmed,
-  // and it takes the card with it because there is nothing left to show.
-  function deleteNote(el: NoteCard) {
-    const record = recordOf(el.dataset.noteId);
-    if (!record?.path || record.checkout) return;
-    messages?.askConfirm({
-      title: "Delete this note's file?",
-      message: `${record.path} is deleted from the checkout. This cannot be undone.`,
-      confirmLabel: "Delete",
-      danger: true,
-    }).then((ok) => {
-      if (!ok) return;
-      window.WBDaemon.write("file.delete", { repo: record.repo, path: record.path })
-        .then((reply) => {
-          if (WBFail.isError(reply)) {
-            paintState(el, WBFail.failed(reply, "Could not delete: the daemon gave no reason."));
-            return;
-          }
-          // The record goes without a toast: an undo that cannot put the file
-          // back would be a lie.
-          el._noteDirty = false;
-          consoleHost?.saveNotes(removeNote(consoleHost?.notes() || [], record.id));
-          render();
-        })
-        .catch((err: Error) => paintState(el, WBFail.cause({ message: err?.message }, "The daemon did not answer.")));
-    });
-  }
-
   // ---- opening from the explorer (ADR-0064 §11) ---------------------------------
 
   // A double-click on a `.note` in the tree: jump to the card if it is already
@@ -1459,14 +938,6 @@ export function createNotes(window: NotesWindow, document: Document, deps: Notes
   // ---- the map (in `wb-notes-map.ts`) ------------------------------------------
 
   const { list, jump } = createNoteMap({ consoleHost, cardEl, isAway, onTopNow });
-
-  function reducedMotion() {
-    try {
-      return !!window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
-    } catch {
-      return false;
-    }
-  }
 
   // Every card writes what it holds before the page goes. A best effort by
   // definition — the socket may not finish — but an 800 ms debounce loses a
