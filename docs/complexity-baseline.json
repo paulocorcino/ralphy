@@ -654,14 +654,18 @@
       ]
     },
     "crates/ralphy-daemon/src/audit/normalize.rs": {
-      "browser": [
-        13
-      ],
-      "gpu": [
-        14
-      ],
       "normalize": [
         12
+      ]
+    },
+    "crates/ralphy-daemon/src/audit/normalize/hardware.rs": {
+      "gpu": [
+        14
+      ]
+    },
+    "crates/ralphy-daemon/src/audit/normalize/software.rs": {
+      "browser": [
+        13
       ]
     },
     "crates/ralphy-daemon/src/dispatch/host.rs": {

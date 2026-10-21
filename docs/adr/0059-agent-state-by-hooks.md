@@ -363,6 +363,6 @@ loses the interrupt row; both folds are pinned by it as before.
 - *Does the switcher's pre-flight reach a peer's tree?* `tree.list` with a
   `checkout` is proxied to the owning daemon with the name intact (only
   `repo` is rewritten), and its `unknown checkout` comes back verbatim —
-  pinned in `tests/fleet_command.rs`. A live WSL peer adds nothing the pin
+  pinned in `tests/fleet_command/`. A live WSL peer adds nothing the pin
   does not say.
 
