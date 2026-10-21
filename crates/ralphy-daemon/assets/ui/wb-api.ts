@@ -269,7 +269,7 @@ export function socketFrame<T>(bytes: Uint8Array): T {
   // peer protocol version, and the daemon refuses a peer of another version.
   // The same version means the same reply shapes, because a change to a type
   // that reads a peer's reply fails `peer_reply_types_are_pinned_to_the_protocol_version`
-  // (crates/xtask/tests/ratchets.rs) until the version is raised, or until
+  // (crates/xtask/tests/ratchets/) until the version is raised, or until
   // each change is a new field declared optional (#653).
   return JSON.parse(new TextDecoder().decode(bytes.subarray(1)));
 }

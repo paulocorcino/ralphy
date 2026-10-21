@@ -172,16 +172,16 @@ detached file windows, which sends each file home as a tab.
     through `crates/ralphy-daemon/tests/support/golden.rs`, and
     `ui-tests/shared-replies.test.mjs` runs the real JS folds on the same
     files. `message_types_without_a_shared_reply_match_the_baseline`
-    (`crates/xtask/tests/ui_contract.rs`) counts the message types with no
+    (`crates/xtask/tests/ui_contract/`) counts the message types with no
     shared reply against the baseline in that test; the check fails if that
     count changes, and a new verb, route or message starts with one.
   - **Error literals**: `every_error_literal_the_ui_compares_is_produced_by_rust`
-    (`crates/xtask/tests/ui_contract.rs`). Every string the JS compares with a
+    (`crates/xtask/tests/ui_contract/`). Every string the JS compares with a
     reply's `reason`, `message` or `state`, and every key of the cause table in
     `assets/ui/wb-fail.js`, appears as a literal in the daemon's or the CLI's
     Rust source.
   - **Mirrored constants**: `every_mirrored_limit_equals_its_rust_constant`
-    (`crates/xtask/tests/ui_contract.rs`). A table pairs each limit the JS
+    (`crates/xtask/tests/ui_contract/`). A table pairs each limit the JS
     repeats (desk, fence and note caps, console name length, image size, frame
     tags, the write denylist and its note exception) with its Rust constant,
     and the test compares the values. It follows the settings test

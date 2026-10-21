@@ -329,7 +329,7 @@ which the build does not serve.
 hand-written `shell.d.ts`. `app.ts` was converted mechanically: a parameter
 with no obvious type is `any`, and `strict` stays on. Narrowing the `any`s is
 later work, one area at a time. That work is done (#613): no module has an
-explicit `any`, `ANY_BASELINE` in `crates/xtask/tests/ratchets.rs` is empty,
+explicit `any`, `ANY_BASELINE` in `crates/xtask/tests/ratchets/` is empty,
 and `typescript/no-explicit-any` holds for every module with no override.
 Everything `app.js` did at load is in the
 exported `wire(window, document)`, so a test runs it on its own stubs and
@@ -483,7 +483,7 @@ its dev tunnel and deletes it at the end, so the account does not fill up
 **Lines.** `wb-console.ts` went from 7,889 to 6,789 lines. The four new
 modules have 1,109 lines, and `wb-geometry.ts` gained 212. The ADR-0073 D8
 ratchet on `wb-console.ts` now exists: `the_console_script_matches_the_line_baseline`
-(`crates/xtask/tests/ratchets.rs`) holds it at 6,789 lines.
+(`crates/xtask/tests/ratchets/`) holds it at 6,789 lines.
 
 **The terminal is cut as `createTerminal(deps)` (#597).** `attachTerminal`,
 `detachSocket` and `announceDetach` are in `wb-console-terminal.ts`, and

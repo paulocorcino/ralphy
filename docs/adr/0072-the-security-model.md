@@ -281,7 +281,7 @@ surface.
   PR. Accepted: `/api/session` tells a caller before login whether a
   password is set (audit F15); the login screen needs it.
 - D3: partly checked: a new `git`, `gh` or `ssh` spawn site fails
-  `spawn_sites_match_the_baseline` (`crates/xtask/tests/ratchets.rs`), and a
+  `spawn_sites_match_the_baseline` (`crates/xtask/tests/ratchets/`), and a
   new subprocess anywhere is flagged by `xtask capabilities`. "The browser
   reaches only the daemon" is held by the CSP's `connect-src 'self'` (see
   D10).

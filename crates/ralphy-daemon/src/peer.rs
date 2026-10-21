@@ -29,7 +29,7 @@ mod tests;
 /// the compatibility gate. A change to the shape of a reply that a peer can
 /// answer raises it, unless each change is a new field the page reads as
 /// optional (ADR-0052, amendment of 2026-10-10). The pin in
-/// `crates/xtask/tests/ratchets.rs` fails until the change makes one of the two.
+/// `crates/xtask/tests/ratchets/` fails until the change makes one of the two.
 pub const PEER_PROTOCOL_VERSION: u32 = 4;
 
 /// How to wake a peer that is not answering. Only ever populated by a daemon
