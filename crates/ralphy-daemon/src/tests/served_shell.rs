@@ -97,21 +97,25 @@ fn the_explorer_opens_a_note_as_a_card() {
     // is no `note.rename`/`note.delete`, and adding one would re-derive the
     // confinement the carve-out already gives.
     let notes = include_str!("../../assets/ui/wb-notes.ts");
+    let file = include_str!("../../assets/ui/wb-notes-file.ts");
     for pin in [r#"write("file.rename""#, r#"write("file.delete""#] {
-        assert!(notes.contains(pin), "wb-notes.ts must keep the pin {pin}");
+        assert!(
+            file.contains(pin),
+            "wb-notes-file.ts must keep the pin {pin}"
+        );
     }
     // The native dialogs are pinned OUT for the reason `wb-messages.ts`
     // records: an automated browser dismisses them by default, which turns
     // a guarded click into a silently cancelled one.
     let stage = include_str!("../../assets/ui/wb-notes-stage.ts");
-    for js in [notes, stage] {
+    for js in [notes, stage, file] {
         assert!(
             !js.contains("window.confirm(") && !js.contains("window.prompt("),
             "a note's file actions must use the workbench's own dialog and field"
         );
     }
     assert!(
-        notes.contains("messages?.askConfirm({"),
+        file.contains("messages?.askConfirm({"),
         "deleting a note's FILE must ask first (ADR-0064 §11)"
     );
     // THE LOCK PINS THE CARD AND NOTHING ELSE (ADR-0064, amendment
@@ -156,7 +160,7 @@ fn the_explorer_opens_a_note_as_a_card() {
 /// second place to change one value.
 #[test]
 fn a_notes_hand_and_size_are_a_closed_set_on_both_sides() {
-    let notes = include_str!("../../assets/ui/wb-notes.ts");
+    let palette = include_str!("../../assets/ui/wb-notes-palette.ts");
     let folds = include_str!("../../assets/ui/wb-notes-folds.ts");
     let css = include_str!("../../assets/ui/styles/13-notes.css");
     assert!(
@@ -217,7 +221,7 @@ fn a_notes_hand_and_size_are_a_closed_set_on_both_sides() {
     // The colours are inline fills in the SVG, so the cascade cannot reach
     // them: a restyle has to redraw or the diagram keeps the old tone.
     assert!(
-        notes.contains("el._noteEditor?.redrawDiagrams?.()") && crepe.contains("redrawDiagrams:"),
+        palette.contains("el._noteEditor?.redrawDiagrams?.()") && crepe.contains("redrawDiagrams:"),
         "restyling a card must repaint the diagrams in it (ADR-0064 §15 amendment)"
     );
     // Written to the FILE, so a note keeps its face when the card is

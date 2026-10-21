@@ -508,6 +508,11 @@
         11
       ]
     },
+    "crates/ralphy-daemon/assets/ui/wb-notes-file.ts": {
+      "commitRename": [
+        14
+      ]
+    },
     "crates/ralphy-daemon/assets/ui/wb-notes-folds.ts": {
       "withHeader": [
         13
@@ -524,9 +529,6 @@
       ],
       "addCard": [
         12
-      ],
-      "commitRename": [
-        14
       ],
       "render": [
         16

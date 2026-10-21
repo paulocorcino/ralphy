@@ -16,6 +16,7 @@ fn a_note_card_is_stacked_and_wears_the_console_chrome() {
     let stack = include_str!("../../assets/ui/wb-stage-stack.ts");
     let notes = include_str!("../../assets/ui/wb-notes.ts");
     let veil = include_str!("../../assets/ui/wb-notes-veil.ts");
+    let menus = include_str!("../../assets/ui/wb-notes-menus.ts");
     // The seam: a place in the tier WITHOUT focus, because a restore
     // focuses nothing and `focusWin` is the only other way to get one.
     assert!(
@@ -89,7 +90,7 @@ fn a_note_card_is_stacked_and_wears_the_console_chrome() {
     );
     assert!(
         notes.contains(r#"mark.textContent = "Stop hiding this note""#)
-            && notes.contains("mark.hidden = !veiledOf(el._noteMarkdown)"),
+            && menus.contains("mark.hidden = !veiledOf(el._noteMarkdown)"),
         "the one door OUT of the veil must stay, and show only on a veiled note"
     );
     // A veiled card holds only its header, so unmarking straight from it
@@ -153,6 +154,22 @@ fn the_shell_writes_the_desk_only_as_changes() {
         (
             "wb-notes-map.ts",
             include_str!("../../assets/ui/wb-notes-map.ts"),
+        ),
+        (
+            "wb-notes-dormancy.ts",
+            include_str!("../../assets/ui/wb-notes-dormancy.ts"),
+        ),
+        (
+            "wb-notes-file.ts",
+            include_str!("../../assets/ui/wb-notes-file.ts"),
+        ),
+        (
+            "wb-notes-menus.ts",
+            include_str!("../../assets/ui/wb-notes-menus.ts"),
+        ),
+        (
+            "wb-notes-palette.ts",
+            include_str!("../../assets/ui/wb-notes-palette.ts"),
         ),
         (
             "wb-messages.ts",
