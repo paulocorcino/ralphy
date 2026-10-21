@@ -281,9 +281,9 @@ Two limits found while this decision was built:
 ## Compliance
 
 Rust tests named here are in `crates/ralphy-daemon/src/`:
-`session/screen/tests.rs` (the screen), `session/manager/tests.rs` (the
-manager), `routes/ws_session/bridge.rs` (the bridge) and `tests.rs` (the
-relay). Browser checks are in `tests/browser/console/`; they are not CI tests.
+`session/screen/tests.rs` (the screen), `session/manager/tests.rs` and
+`session/manager/tests/` (the manager), `routes/ws_session/bridge.rs` (the
+bridge) and `tests.rs` (the relay). Browser checks are in `tests/browser/console/`; they are not CI tests.
 
 - D1: not checked by code. The crate is named only in `session/screen.rs` and
   `session/screen/`; a test in `crates/xtask/tests/` that fails on any other
