@@ -23,6 +23,20 @@ fn a_negated_receiver_is_not_confused_with_the_assert_macro() {
     );
 }
 
+/// `include_str!(…)` as the receiver ends in a macro's `!`, which is not a
+/// negation; a negated macro receiver still is.
+#[test]
+fn a_macro_call_receiver_is_not_a_negation() {
+    assert_eq!(
+        classify(r#"assert!(include_str!("../../assets/ui/a.ts").contains("x"));"#),
+        Some(Shape::Identifier)
+    );
+    assert_eq!(
+        classify(r#"assert!(!include_str!("../../assets/ui/a.ts").contains("x"));"#),
+        Some(Shape::Negative)
+    );
+}
+
 #[test]
 fn the_more_specific_shapes_win_over_a_bare_contains() {
     assert_eq!(

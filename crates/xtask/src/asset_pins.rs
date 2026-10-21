@@ -446,26 +446,31 @@ fn classify(stmt: &str) -> Option<Shape> {
 /// `!lc.contains(…)` and `!html.contains(…)` are negatives; `assert!(x.contains(…))`
 /// is not, even though the statement holds a `!`.
 fn receiver_is_negated(before: &str) -> bool {
-    let mut chars = before.chars().rev().peekable();
+    let chars: Vec<char> = before.chars().collect();
+    let ident = |c: char| c.is_alphanumeric() || c == '_';
+    let mut at = chars.len();
     let mut saw_receiver = false;
     // The receiver can be a chain — `body.to_lowercase()`, `src[0..10]` — so the
     // walk back has to step OVER a balanced group rather than stopping at its
     // opening bracket. Anything inside `(…)` or `[…]` belongs to the receiver.
     let mut depth = 0i32;
-    while let Some(&c) = chars.peek() {
-        match c {
+    while at > 0 {
+        match chars[at - 1] {
             ')' | ']' => {
                 depth += 1;
                 saw_receiver = true;
             }
             '(' | '[' if depth > 0 => depth -= 1,
             _ if depth > 0 => {}
-            c if c.is_alphanumeric() || c == '_' || c == '.' => saw_receiver = true,
+            c if ident(c) || c == '.' => saw_receiver = true,
+            // A macro's `!` follows its name: `include_str!(…)` is a call in
+            // the receiver, not a negation.
+            '!' if at >= 2 && ident(chars[at - 2]) => {}
             _ => break,
         }
-        chars.next();
+        at -= 1;
     }
-    saw_receiver && chars.peek() == Some(&'!')
+    saw_receiver && at > 0 && chars[at - 1] == '!'
 }
 
 fn report(pins: &[Pin], verbose: bool) {
