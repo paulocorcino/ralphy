@@ -501,7 +501,32 @@ export function createTerminal(deps: TerminalDeps) {
         ws.send(encodeTerminal(d));
         return true;
       }
+      inputWhileDown();
       return false;
+    }
+
+    // A key typed while the socket is down is not sent. The link strip says
+    // so, and the reconnect comes now instead of after the backoff (#751).
+    // A CONNECTING socket is already the reconnect.
+    function inputWhileDown() {
+      if (leaving || ended || held || currentSessionId == null) return;
+      link("lost");
+      if (ws && ws.readyState === 0) return;
+      const now = Date.now();
+      if (now - lastResumeAt < RESUME_DEBOUNCE_MS) return;
+      lastResumeAt = now;
+      reconnectNow();
+    }
+
+    // Reattach now: a pending backoff is dropped, else the old socket is.
+    function reconnectNow() {
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+      } else {
+        detachSocket(ws, "reconnect");
+      }
+      connect({ id: currentSessionId, repo: currentRepo, watch: watching });
     }
 
     // The backlog's old queries are answered again during a replay; those
@@ -586,19 +611,13 @@ export function createTerminal(deps: TerminalDeps) {
         if (now - lastResumeAt < RESUME_DEBOUNCE_MS) return false;
         // A pending backoff is brought forward. `retryDelay` is kept: it stops
         // a second fleet read for one drop.
-        if (retryTimer) {
-          lastResumeAt = now;
-          clearTimeout(retryTimer);
-          retryTimer = null;
-          connect({ id: currentSessionId, repo: currentRepo, watch: watching });
-          return true;
+        if (!retryTimer) {
+          const readyState = ws ? ws.readyState : null;
+          const connectingMs = now - connectingSince;
+          if (resumeDecision({ readyState, stale, connectingMs }) === "none") return false;
         }
-        const readyState = ws ? ws.readyState : null;
-        const connectingMs = now - connectingSince;
-        if (resumeDecision({ readyState, stale, connectingMs }) === "none") return false;
         lastResumeAt = now;
-        detachSocket(ws, "reconnect");
-        connect({ id: currentSessionId, repo: currentRepo, watch: watching });
+        reconnectNow();
         return true;
       },
       // The ONLY place in this file that sets `takeover` — from the parked
