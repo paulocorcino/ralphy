@@ -13,9 +13,10 @@
 // heartbeat (`setStaleProbe`); the popup, with none, falls back to how long
 // it was hidden — so an ordinary desktop tab switch churns nothing.
 
-// Two resume triggers (`visibilitychange` and `online`) land within the same
-// millisecond on an iOS resume. Without a debounce the second one tears down
-// the socket the first one just opened.
+// Three triggers resume the page: `visibilitychange`, `online`, and the
+// heartbeat that stops while the page stays visible (`onHeartbeatLost`, #751).
+// The first two land within the same millisecond on an iOS resume. Without a
+// debounce the second one tears down the socket the first one just opened.
 export const RESUME_DEBOUNCE_MS = 1500;
 
 // A handshake gets this long to open. Without a deadline a reattach opened

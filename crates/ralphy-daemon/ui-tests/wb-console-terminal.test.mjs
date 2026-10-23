@@ -43,7 +43,10 @@ function fakePage() {
       done?.();
     }
     attachCustomKeyEventHandler() {}
-    onData() {}
+    // The data handler, so a test can type.
+    onData(handler) {
+      this.type = handler;
+    }
     onResize() {}
     focus() {}
     reset() {
@@ -397,6 +400,34 @@ test("a dropped link keeps the count, writes nothing, and the strip shows until 
     assert.deepEqual(links, ["lost", "back"]);
     handle.dispose();
     assert.deepEqual(links, ["lost", "back"], "a link that is back is not told again");
+  } finally {
+    page.restore();
+  }
+});
+
+// #751: a key typed while the socket is down brings the reconnect forward
+// and shows the link strip; it never vanishes in silence.
+test("a key typed during the backoff reconnects now, and a key while connecting opens no second socket", () => {
+  const page = fakePage();
+  try {
+    const links = [];
+    const handle = createTerminal(fakeDeps().deps).attachTerminal(fakeElement(), {
+      id: 5,
+      onLink: (state) => links.push(state),
+    });
+    open(page.sockets[0], { offset: 40, replay: true });
+    page.sockets[0].readyState = 3;
+    page.sockets[0].onclose({});
+    assert.equal(page.sockets.length, 1, "the backoff waits");
+    page.terminals[0].type("x");
+    assert.equal(page.sockets.length, 2, "the key reconnects now");
+    assert.equal(sinceOf(page.sockets[1]), "40", "the count is kept");
+    page.terminals[0].type("y");
+    assert.equal(page.sockets.length, 2, "a connecting socket is already the reconnect");
+    assert.deepEqual(links, ["lost"]);
+    open(page.sockets[1], { offset: 40, replay: true, resume: true });
+    assert.deepEqual(links, ["lost", "back"]);
+    handle.dispose();
   } finally {
     page.restore();
   }
