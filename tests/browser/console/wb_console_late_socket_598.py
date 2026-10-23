@@ -26,6 +26,13 @@ Half-open reclaim
    as `taken-over`, the window shows no prompt, and a typed line reaches
    the child.
 
+Lost heartbeat (#751)
+7  The route stops forwarding both the writer socket and the presence
+   socket `/ws`, and keeps both open on the daemon side. The page stays
+   visible and the check sends no resume. Once the heartbeat is stale, the
+   page resumes by itself: a new console socket opens, the window shows no
+   prompt, and a typed line reaches the child.
+
 Real take over
 6  A second browser context (another tab: another holder) shows the
    take-over prompt; its "Take over" button gives it the console: a line it
@@ -86,6 +93,8 @@ results = []
 routed = []
 # What the route does with the next socket: "forward" or "hold".
 mode = {"next": "forward"}
+# Every presence socket `/ws` of page A, in order.
+presence = []
 
 
 def check(name, ok, detail=""):
@@ -226,6 +235,15 @@ def route(ws):
     ws.on_message(from_page)
 
 
+def route_presence(ws):
+    """Forward the presence socket until `forward` is turned off."""
+    rec = {"url": ws.url, "forward": True, "ws": ws}
+    presence.append(rec)
+    server = ws.connect_to_server()
+    server.on_message(lambda m: rec["forward"] and ws.send(m))
+    ws.on_message(lambda m: rec["forward"] and server.send(m))
+
+
 def half_open(rec):
     """Stop passing anything, and keep the daemon side open when the page closes."""
     rec["forward"] = False
@@ -287,6 +305,7 @@ def main():
             browser = p.chromium.launch(headless=True, args=["--disable-webgl", "--disable-gpu"])
             ctx_a = browser.new_context(viewport={"width": 1400, "height": 900})
             ctx_a.route_web_socket(re.compile(r"/ws/session"), route)
+            ctx_a.route_web_socket(re.compile(r"/ws(\?|$)"), route_presence)
             page = open_page(ctx_a)
             page.wait_for_function(
                 f"() => document.querySelector('{WIN}')._term?.sessionId != null", timeout=20000
@@ -359,6 +378,30 @@ def main():
                 f"old end={second['end']} new open={third and third['open'] is not None} parked={parked(page)}",
             )
 
+            # --- lost heartbeat (#751) ----------------------------------------
+            # A desktop that slept with the tab in front: no page event, and
+            # sockets that read OPEN with no byte to come.
+            page.wait_for_timeout(DEBOUNCE_MS)
+            half_open(third)
+            for rec in presence:
+                half_open(rec)
+            known = len(routed)
+            stale = pump(page, lambda: page.evaluate("() => Alpine.store('connection').presenceStale"), 15)
+            pump(page, lambda: len(routed) > known and routed[known]["open"] is not None, 15)
+            fourth = routed[known] if len(routed) > known else None
+            page.wait_for_timeout(500)
+            type_line(page, "BEAT-751")
+            check(
+                "7 a lost heartbeat resumes the console with no page event",
+                stale
+                and fourth is not None
+                and fourth["open"] is not None
+                and parked(page) == 0
+                and reached_child(page, "BEAT-751"),
+                f"stale={stale} new open={fourth and fourth['open'] is not None} parked={parked(page)}",
+            )
+            writer = fourth or third
+
             # --- real take over -----------------------------------------------
             ctx_b = browser.new_context(viewport={"width": 1400, "height": 900})
             page_b = open_page(ctx_b)
@@ -376,8 +419,8 @@ def main():
             a_parked = pump(page, lambda: parked(page) == 1, 15)
             check(
                 "6 another tab sees the prompt, and its Take over works",
-                took and a_parked and third["end"] == "taken-over",
-                f"prompt={shown} B wrote={took} A parked={a_parked} A end={third and third['end']}",
+                took and a_parked and writer["end"] == "taken-over",
+                f"prompt={shown} B wrote={took} A parked={a_parked} A end={writer and writer['end']}",
             )
             ctx_b.close()
             ctx_a.close()
