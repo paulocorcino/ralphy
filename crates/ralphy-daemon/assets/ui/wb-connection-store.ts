@@ -92,7 +92,9 @@ export function connectionStore(deps: ConnectionStoreDeps) {
       // the shell's (app.ts).
       this._clockTick = setInterval(() => {
         // Unconditional: the flag must already be true when the menu opens.
+        const was = this.presenceStale;
         this.presenceStale = this.socketsAreStale();
+        if (!was && this.presenceStale) this.onHeartbeatLost();
       }, 1000);
     },
 
@@ -119,6 +121,17 @@ export function connectionStore(deps: ConnectionStoreDeps) {
     // return the stamp is old; a desktop tab switch leaves it fresh.
     socketsAreStale() {
       return !this._lastHeartbeat || Date.now() - this._lastHeartbeat > 6000;
+    },
+
+    // The heartbeat stopped while the page stays visible: a desktop that slept
+    // with the tab in front may fire neither `visibilitychange` nor `online`,
+    // and its sockets read OPEN with no byte to come (#751). One resume per
+    // loss, so a daemon that is down is not dialled every second. A page that
+    // never had a heartbeat lost nothing; a hidden one resumes on its return.
+    onHeartbeatLost() {
+      if (!this._lastHeartbeat || this.tabHidden()) return;
+      this.resumeSockets(true);
+      window.WBConsole?.resumeAll?.(true);
     },
 
     // Bring the long-lived subscriptions back after a suspend. Each decides for

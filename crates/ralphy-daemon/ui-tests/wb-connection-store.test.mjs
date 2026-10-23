@@ -121,12 +121,52 @@ test("presenceStale turns true on the clock once the heartbeat is older than the
   }
   const clock = ticks.find((t) => t.ms === 1000);
   assert.ok(clock, "init starts the one-second presence clock");
+  // The resume on a lost heartbeat has its own test below.
+  store.resumeSockets = () => {};
   store._lastHeartbeat = Date.now();
   clock.fn();
   assert.equal(store.presenceStale, false, "a fresh heartbeat is not stale");
   store._lastHeartbeat = Date.now() - 7000;
   clock.fn();
   assert.equal(store.presenceStale, true, "three missed heartbeats are stale");
+});
+
+// #751: a desktop that slept with the tab in front fires no page event. The
+// clock resumes the page once, when the heartbeat stops while it is visible.
+test("a heartbeat that stops while the page is visible resumes the sockets and the consoles once", () => {
+  const { store } = storeOnly();
+  const ticks = [];
+  const realSetInterval = globalThis.setInterval;
+  const realFetch = globalThis.fetch;
+  globalThis.setInterval = (fn, ms) => (ticks.push({ fn, ms }), 0);
+  globalThis.fetch = async () => ({ ok: false, status: 404, json: async () => null });
+  try {
+    store.init();
+  } finally {
+    globalThis.setInterval = realSetInterval;
+    globalThis.fetch = realFetch;
+  }
+  const clock = ticks.find((t) => t.ms === 1000);
+  const calls = [];
+  store.resumeSockets = (stale) => calls.push(["sockets", stale]);
+  window.WBConsole = { resumeAll: (stale) => calls.push(["consoles", stale]) };
+
+  clock.fn();
+  assert.deepEqual(calls, [], "a page that never had a heartbeat lost nothing");
+  store._lastHeartbeat = Date.now();
+  clock.fn();
+  store._lastHeartbeat = Date.now() - 7000;
+  clock.fn();
+  assert.deepEqual(calls, [["sockets", true], ["consoles", true]]);
+  clock.fn();
+  assert.equal(calls.length, 2, "one resume per loss, not one per tick");
+
+  store._lastHeartbeat = Date.now();
+  clock.fn();
+  document.visibilityState = "hidden";
+  store._lastHeartbeat = Date.now() - 7000;
+  clock.fn();
+  assert.equal(calls.length, 2, "a hidden page resumes on its return instead");
 });
 
 test("returning to the tab reads the release view again", () => {
