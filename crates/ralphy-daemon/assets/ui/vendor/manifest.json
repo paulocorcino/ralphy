@@ -46,7 +46,7 @@
         },
         {
           "path": "crepe/crepe.js",
-          "sha256": "ce803d148ee8cb9f38fdbbfd2da7fabbcf664e7980e22e8771b299a50728086f"
+          "sha256": "c8984c5ebf3a9085c77356648a633e84156141f73a3759d9529c5f6f057c5fd8"
         }
       ]
     },
@@ -70,12 +70,12 @@
     {
       "name": "DOMPurify",
       "npm": "dompurify",
-      "version": "3.4.16",
-      "source": "https://registry.npmjs.org/dompurify/-/dompurify-3.4.16.tgz",
+      "version": "3.4.17",
+      "source": "https://registry.npmjs.org/dompurify/-/dompurify-3.4.17.tgz",
       "files": [
         {
           "path": "dompurify.min.js",
-          "sha256": "2c90a9b46d6463f26038a29b686e82bc91de01fdac9d5229e7cfe3b360134ea2"
+          "sha256": "cd37898f9782adf54820c413191b5691803f0f137c799d6edcfd38523b4c2c31"
         }
       ]
     },
