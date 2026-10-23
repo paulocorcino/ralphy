@@ -9,6 +9,8 @@ Scenario 1   ctx B parks on ctx A's live session; its `.session-parked` says
              the session is read-only and another window has control
 Scenario 2   typing into parked B never reaches the child, the strip pulses
              `is-nudged` with a read-only hint, and the pulse is transient
+Scenario 2b  a parked B with no strip builds the strip on its first
+             refused key (#751)
 Scenario 3   B's explicit take-over click parks A, replays B's scrollback
              exactly once, and B's next keystroke reaches the child
 Scenario 4   parked A re-claims with one click and drives the child again,
@@ -449,6 +451,32 @@ def main():
                 hint_after == "",
                 f"got={hint_after!r}",
             )
+
+            # --- scenario 2b: a watcher with no strip builds it on a key (#751)
+            # A dormant watcher that wakes is built with no park, so it has no
+            # strip until a key is refused.
+            page_b.evaluate("() => document.querySelector('.session-parked').remove()")
+            check("…the strip is gone before the key", parked(page_b) == 0, f"got={parked(page_b)}")
+            type_line(page_b, 0, "watcher-without-strip")
+            check(
+                "a key refused with no strip builds the strip",
+                parked(page_b) == 1,
+                f"got={parked(page_b)}",
+            )
+            hint_text = page_b.locator(".session-parked-hint").inner_text()
+            check(
+                "…with the read-only hint",
+                hint_text == "Input is read-only. Take over to type.",
+                f"got={hint_text!r}",
+            )
+            check(
+                "…and the strip sits before the terminal body",
+                page_b.evaluate(
+                    "() => document.querySelector('.session-parked').nextElementSibling"
+                    "?.classList.contains('session-body') === true"
+                ),
+            )
+            page_b.wait_for_timeout(3000)
 
             # --- scenario 3: the baton moves on an EXPLICIT click ------------
             take_over_count = page_b.locator('[data-act="take-over"]').count()

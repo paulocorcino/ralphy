@@ -209,6 +209,34 @@ export function createSpawn(deps: SpawnDeps) {
       if (label) btn.textContent = label;
     };
 
+    // The parked strip: this window watches a session another window drives.
+    // Built once; returns the strip.
+    const showParked = (): HTMLElement => {
+      const shown = win.querySelector<HTMLElement>(".session-parked");
+      if (shown) return shown;
+      const strip = document.createElement("div");
+      strip.className = "session-parked";
+      const text = document.createElement("span");
+      // The titlebar already names the agent and the repo; repeating them here
+      // wraps the strip on a phone.
+      text.textContent = "Read-only. Another window has control.";
+      const hint = document.createElement("span");
+      hint.className = "session-parked-hint";
+      const btn = document.createElement("button");
+      btn.className = "session-reconnect";
+      btn.dataset.act = "take-over";
+      btn.textContent = "Take over";
+      btn.addEventListener("click", (e: MouseEvent) => {
+        e.stopPropagation();
+        win._term?.takeOver();
+      });
+      strip.append(text, hint, btn);
+      // The body read now, not `body`: a dormant window gets a new body node
+      // (`sleepWindow`), and the old one is no longer a child of `win`.
+      win.insertBefore(strip, win.querySelector(".session-body"));
+      return strip;
+    };
+
     // NAMED, not inline: a dormant console rebuilds its terminal (`wakeWindow`)
     // and the rebuild must be wired to the same chrome. Everything closes over
     // `win`, never a particular terminal.
@@ -244,31 +272,14 @@ export function createSpawn(deps: SpawnDeps) {
       // and output; the strip's button is the only way `takeover` is ever sent
       // (#334, ADR-0051 §9).
       onPark: () => {
-        if (win.querySelector(".session-parked")) return;
-        const strip = document.createElement("div");
-        strip.className = "session-parked";
-        const text = document.createElement("span");
-        // The titlebar already names the agent and the repo; repeating them here
-        // wraps the strip on a phone.
-        text.textContent = "Read-only. Another window has control.";
-        const hint = document.createElement("span");
-        hint.className = "session-parked-hint";
-        const btn = document.createElement("button");
-        btn.className = "session-reconnect";
-        btn.dataset.act = "take-over";
-        btn.textContent = "Take over";
-        btn.addEventListener("click", (e: MouseEvent) => {
-          e.stopPropagation();
-          win._term?.takeOver();
-        });
-        strip.append(text, hint, btn);
-        win.insertBefore(strip, body);
+        showParked();
       },
       // A watcher's keystroke never reaches the child (gated in
       // `attachTerminal`); this pulses the strip so the refusal is SEEN (#335).
+      // A watcher built with no park (a dormant watcher that wakes) has no
+      // strip yet, so the first refused key builds it (#751).
       onWatchedInput: () => {
-        const strip = win.querySelector(".session-parked");
-        if (!strip) return;
+        const strip = showParked();
         clearTimeout(nudgeTimer);
         strip.classList.add("is-nudged");
         const hintEl = strip.querySelector(".session-parked-hint");
