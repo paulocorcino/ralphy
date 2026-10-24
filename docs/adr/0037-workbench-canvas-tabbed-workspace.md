@@ -13,7 +13,8 @@ Amended 2026-09-22: §3c adds the **slot** — one secondary pane beside the
 active tab, holding a pinned tab or a mirror of the active code tab.
 Amended by #748: §3d adds the **console tab** — consoles of the stage in
 a closable tab with its own pane, on this device only. A tab may hold
-columns and rows (amended 2026-10-20).
+columns and rows (amended 2026-10-20). The stage keeps a **shadow** in the
+place of a console in a tab (amended 2026-10-24).
 
 The daemon workbench (ADR-0032, promoted to the daemon's `/` in #200) lays out
 as four columns: **icon rail · sidebar · canvas · Runs panel**. This ADR records
@@ -132,10 +133,19 @@ console fills it.
   stage of this page and goes into the pane of the tab. The terminal, its
   socket and the writer slot stay the same, so typing and the PTY size do not
   change hands. The window's box in the pane is the console's size.
-- **The stage of this page does not show it.** The desk keeps its record: its
-  rect, its lock and its maximize. The tab writes nothing to the desk, and
-  another device sees no change. The column list, the + and Switch name the
-  console as in a tab, and a pick shows that tab. A console that is a column
+- **The stage of this page shows its shadow** *(amended 2026-10-24)*. The
+  desk keeps its record: its rect, its lock and its maximize. The tab writes
+  nothing to the desk, and another device sees no change. In the console's
+  place the stage shows a **shadow**, as for a card on top (ADR-0064): a
+  dashed outline with the tab's icon and the console name, at the desk rect.
+  Without it a fence looks empty, and something else could be put in that
+  place. The shadow is a member of its fence by the title-bar rule: the
+  fence counts it, the column list and the + list it under that fence, and
+  a fence drag moves it and writes the console's new rect. It is not moved
+  by hand. A click on it shows the console's tab. Arrange, the fence's
+  columns and a detach leave the console in its tab; a detached fence keeps
+  the shadow. The column list, the + and Switch name the console as in a
+  tab, and a pick shows that tab. A console that is a column
   leaves the grid when its tab opens, as a console of a detached fence does;
   the grid's own rule (ADR-0051 §5) then decides which console it maximizes.
 - **A tab holds a grid of consoles** *(amended 2026-10-20)*. The tab's

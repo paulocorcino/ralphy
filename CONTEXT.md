@@ -418,6 +418,12 @@ in front of the console windows. Its place on the stage stays as a **shadow**.
 _Avoid_: note on top (the file does not move), floating card, pinned note,
 detached note (detach is the fence's popup).
 
+**Shadow**:
+The place on the **stage** of a **card on top** or of a console in its own
+tab, kept while that thing is shown elsewhere. It is a member of its fence and
+moves with it; a click on it goes to the thing. (ADR-0064, ADR-0037)
+_Avoid_: ghost, placeholder (a console window with no session), preview.
+
 **Slot (secondary pane)**:
 The canvas's one optional second pane, beside the active tab. It holds a
 **pin** (another open tab) or a **mirror** (the same code tab in a second
