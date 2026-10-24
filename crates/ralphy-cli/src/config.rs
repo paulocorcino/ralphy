@@ -126,6 +126,7 @@ const SUPPORTED_KEYS: &[&str] = &[
     "claude.exec_effort",
     "claude.max_minutes_per_issue",
     "claude.console_name",
+    "claude.console_classic_screen",
     "copilot.plan_model",
     "copilot.exec_model",
     "copilot.plan_effort",
@@ -167,6 +168,9 @@ repository that still allows Cursor to upload its code for indexing. \
 claude.console_name=true starts a Claude console in the workbench with its \
 console name as the session name, such as wb-fincal-1. Other Claude sessions \
 use that name to send it messages. When off, Claude picks the name. \
+claude.console_classic_screen=true starts a Claude console in the workbench in \
+Claude's classic view, so the conversation stays in the console's text, with a \
+scrollbar. When off, Claude chooses its view. \
 gemini.plan_model and gemini.exec_model set Gemini's model for each phase; \
 without them, Gemini makes one extra, billed call per turn to choose a model.)";
 
@@ -345,6 +349,12 @@ fn set_agent_key(s: &mut Settings, key: &str, value: &str) -> Result<()> {
                 .map_err(|_| anyhow!("{key} must be 'true' or 'false', got '{value}'"))?;
             with_claude(s, |c| c.console_name = b)?
         }
+        "claude.console_classic_screen" => {
+            let b = value
+                .parse::<bool>()
+                .map_err(|_| anyhow!("{key} must be 'true' or 'false', got '{value}'"))?;
+            with_claude(s, |c| c.console_classic_screen = b)?
+        }
         "copilot.plan_model" => with_copilot(s, |c| c.plan_model = Some(value.to_owned()))?,
         "copilot.exec_model" => with_copilot(s, |c| c.exec_model = Some(value.to_owned()))?,
         "copilot.plan_effort" | "copilot.exec_effort" => set_copilot_effort(s, key, value)?,
@@ -464,6 +474,9 @@ pub fn unset(ws: &Workspace, key: &str) -> Result<()> {
         "claude.exec_effort" => with_claude(&mut s, |c| c.exec_effort = None)?,
         "claude.max_minutes_per_issue" => with_claude(&mut s, |c| c.max_minutes_per_issue = None)?,
         "claude.console_name" => with_claude(&mut s, |c| c.console_name = false)?,
+        "claude.console_classic_screen" => {
+            with_claude(&mut s, |c| c.console_classic_screen = false)?
+        }
         "copilot.plan_model" => with_copilot(&mut s, |c| c.plan_model = None)?,
         "copilot.exec_model" => with_copilot(&mut s, |c| c.exec_model = None)?,
         "copilot.plan_effort" => with_copilot(&mut s, |c| c.plan_effort = None)?,

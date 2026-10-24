@@ -1,5 +1,6 @@
 use super::*;
 
+mod classic_screen;
 mod console_name;
 
 #[test]

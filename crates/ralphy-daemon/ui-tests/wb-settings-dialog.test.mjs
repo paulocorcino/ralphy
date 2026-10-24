@@ -127,6 +127,11 @@ test("every schema key is seeded, so config.get can merge over it", () => {
     }
   }
   assert.equal(state.settings["claude.console_name"], false, "the name is off until asked for");
+  assert.equal(
+    state.settings["claude.console_classic_screen"],
+    false,
+    "the classic view is off until asked for: Claude chooses its own view",
+  );
 });
 
 test("a failed settings read says so, and a project setting is not written", async () => {

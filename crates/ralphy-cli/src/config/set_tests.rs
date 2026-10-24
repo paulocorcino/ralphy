@@ -48,3 +48,22 @@ fn set_refuses_a_console_name_that_is_not_a_bool() {
         .unwrap();
     assert!(!claude.console_name);
 }
+
+/// `claude.console_classic_screen` takes only `true` or `false`, and a `true`
+/// lands in the field the daemon's launch path reads.
+#[test]
+fn set_writes_the_classic_screen_opt_in_as_a_bool() {
+    let (ws, _dir) = workspace();
+    let err = set(&ws, "claude.console_classic_screen", "on").unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "claude.console_classic_screen must be 'true' or 'false', got 'on'"
+    );
+    set(&ws, "claude.console_classic_screen", "true").unwrap();
+    let claude: ClaudeSettings = Settings::load(&ws)
+        .unwrap()
+        .agent_settings(ClaudeSettings::SECTION)
+        .unwrap();
+    assert!(claude.console_classic_screen);
+    assert!(!claude.console_name, "the other opt-in stays off");
+}

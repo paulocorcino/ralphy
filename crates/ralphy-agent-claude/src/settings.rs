@@ -76,6 +76,17 @@ pub struct ClaudeSettings {
     /// pins the section and key against this schema.
     #[serde(default, skip_serializing_if = "is_false")]
     pub console_name: bool,
+    /// Opt-in: start a workbench-opened Claude console in Claude Code's classic
+    /// renderer (`CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1`), so the conversation
+    /// stays in the terminal's history and the console's scrollbar reaches it.
+    /// Left off, Claude Code picks its renderer itself; its fullscreen renderer
+    /// draws on the alternate screen, which has no history to scroll.
+    ///
+    /// A plain `bool` for the reason `console_name` gives. Read by the daemon's
+    /// launch path, which reparses the file; `crates/ralphy-daemon/src/session/spec.rs`
+    /// pins the key against this schema.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub console_classic_screen: bool,
 }
 
 /// `skip_serializing_if` for a `false` flag: an un-opted repo writes no key, so

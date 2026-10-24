@@ -55,6 +55,10 @@ pub fn get(ws: &Workspace, json: bool) -> Result<()> {
         None => println!("claude.max_minutes_per_issue: not set"),
     }
     println!("claude.console_name = {}", claude.console_name);
+    println!(
+        "claude.console_classic_screen = {}",
+        claude.console_classic_screen
+    );
     print_str("copilot.plan_model", copilot.plan_model);
     print_str("copilot.exec_model", copilot.exec_model);
     print_str("copilot.plan_effort", copilot.plan_effort);
@@ -122,6 +126,7 @@ pub(super) fn config_json(ws: &Workspace) -> Result<serde_json::Value> {
         "claude.exec_effort": claude.exec_effort,
         "claude.max_minutes_per_issue": claude.max_minutes_per_issue,
         "claude.console_name": claude.console_name,
+        "claude.console_classic_screen": claude.console_classic_screen,
         "copilot.plan_model": copilot.plan_model,
         "copilot.exec_model": copilot.exec_model,
         "copilot.plan_effort": copilot.plan_effort,
