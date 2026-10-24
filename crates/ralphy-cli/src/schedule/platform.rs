@@ -63,12 +63,14 @@ pub fn render_install(p: Platform, spec: &TimerSpec) -> Vec<String> {
             // Single-quote the paths so PowerShell tolerates spaces; the outer
             // double-quotes belong to the `-Command` argument, not to schtasks
             // shell-quoting (we pass this argv straight to CreateProcess).
+            // The `&` call operator is required: a quoted path followed by
+            // arguments is a ParserError in PowerShell.
             let tr = match &pre {
                 Some(pre) => format!(
-                    "pwsh -NoProfile -WindowStyle Hidden -Command \"Set-Location '{wd}'; '{exe}' {pre} *>> '{log}'; '{exe}' {args} *>> '{log}'\""
+                    "pwsh -NoProfile -WindowStyle Hidden -Command \"Set-Location '{wd}'; & '{exe}' {pre} *>> '{log}'; & '{exe}' {args} *>> '{log}'\""
                 ),
                 None => format!(
-                    "pwsh -NoProfile -WindowStyle Hidden -Command \"Set-Location '{wd}'; '{exe}' {args} *>> '{log}'\""
+                    "pwsh -NoProfile -WindowStyle Hidden -Command \"Set-Location '{wd}'; & '{exe}' {args} *>> '{log}'\""
                 ),
             };
             vec![
@@ -223,8 +225,9 @@ mod tests {
             "run",
             "--if-idle",
             "Set-Location",
+            // `&` is the call operator: without it PowerShell rejects the command.
+            "; & '/usr/local/bin/ralphy' run --if-idle *>>",
             "-WindowStyle Hidden",
-            "*>>",
         ] {
             assert!(joined.contains(needle), "missing {needle:?} in {joined:?}");
         }
@@ -350,10 +353,13 @@ mod tests {
             triage_idx < run_idx,
             "triage must render before run: {joined:?}"
         );
-        assert!(
-            joined.contains("; '"),
-            "phases must be `;`-chained: {joined:?}"
-        );
+        for phase in ["triage --yes", "run --if-idle"] {
+            let call = format!("; & '/usr/local/bin/ralphy' {phase} *>>");
+            assert!(
+                joined.contains(&call),
+                "phases must be `;`-chained calls: {joined:?}"
+            );
+        }
         assert!(
             !joined.contains("triage --yes &&"),
             "chain must use `;`, not `&&`: {joined:?}"
