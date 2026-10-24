@@ -76,7 +76,7 @@ not own:
   child): a Rust helper binary in `src/bin/<name>_test_child.rs`, run from an
   integration test in `tests/` through `CARGO_BIN_EXE_<name>`. Cargo sets
   `CARGO_BIN_EXE_*` only for integration tests, and a shell script child does
-  not run on Windows CI. Example: `ralphy-adapter-support`'s
+  not run on Windows. Example: `ralphy-adapter-support`'s
   `headless_test_child`, driven by `tests/headless/`.
 - **Time and timeouts:** inject them.
 - **What the host has installed:** inject it, or make the test an `#[ignore]`
