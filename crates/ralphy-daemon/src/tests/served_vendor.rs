@@ -34,6 +34,39 @@ async fn root_serves_vendored_xterm() {
     );
 }
 
+/// `showScrollbarWhileNeeded` (wb-console-terminal.ts) reaches the scrollbar
+/// through xterm's private fields. An xterm that renames them would bring
+/// back the bar that hides by itself, with no error, so every link of the
+/// path is pinned against the vendored file.
+#[test]
+fn the_console_scrollbar_path_matches_the_vendored_xterm() {
+    let xterm = include_str!("../../assets/ui/vendor/xterm.js");
+    for link in [
+        "this._core=this._register(new r.CoreBrowserTerminal(e))",
+        "this._viewport=this._register(",
+        "this._scrollableElement=this._register(new h.SmoothScrollableElement(",
+        "void 0!==e.vertical&&(this._options.vertical=e.vertical)",
+        "this._visibilityController.setVisibility(e.vertical)",
+        "e[e.Visible=3]=\"Visible\"",
+    ] {
+        assert!(
+            xterm.contains(link),
+            "the vendored xterm no longer has `{link}`"
+        );
+    }
+    let terminal = include_str!("../../assets/ui/wb-console-terminal.ts");
+    let after_open = terminal
+        .split_once("term.open(body);")
+        .expect("the console terminal must call `open`")
+        .1;
+    assert!(
+        after_open
+            .trim_start()
+            .starts_with("showScrollbarWhileNeeded(term);"),
+        "the scrollbar setting must run right after `open`, which builds the viewport"
+    );
+}
+
 /// The recipe is read with `include_str!` from OUTSIDE `assets/ui/`: it must
 /// not be embedded (`include_dir!` would serve `node_modules/` to the
 /// browser), and this is also the assertion that it exists.

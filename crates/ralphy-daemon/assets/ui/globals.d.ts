@@ -154,6 +154,9 @@ interface XtermTerminal {
   modes: { mouseTrackingMode: string; applicationCursorKeysMode: boolean };
   buffer: { active: { type: string; viewportY: number } };
   parser: { registerOscHandler(ident: number, handler: (data: string) => boolean): XtermDisposable };
+  /** xterm's private core: only the scrollbar's visibility is read through it
+   *  (`showScrollbarWhileNeeded`, wb-console-terminal.ts). */
+  _core?: { _viewport?: { _scrollableElement?: { updateOptions(options: { vertical: number }): void } } };
   open(parent: HTMLElement): void;
   loadAddon(addon: XtermAddon): void;
   write(data: string | Uint8Array, callback?: () => void): void;

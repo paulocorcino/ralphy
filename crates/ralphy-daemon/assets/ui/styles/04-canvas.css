@@ -158,9 +158,11 @@
    `::-webkit-scrollbar-thumb:hover` was inert here for the same reason. What is
    left is what was actually being drawn, minus the illusion.
 
-   Vendored widgets inside the shell (xterm, Excalidraw, mermaid) are covered too
-   — deliberately: they were the loudest offenders. Monaco is the exception; it
-   paints its own slider and reads no scrollbar property at all (end of section). */
+   Vendored widgets inside the shell (Excalidraw, mermaid) are covered too
+   — deliberately: they were the loudest offenders. Monaco and xterm 6 are the
+   exceptions; each paints its own slider and reads no scrollbar property at all
+   (Monaco: end of section; xterm: `showScrollbarWhileNeeded`,
+   wb-console-terminal.ts). */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
@@ -180,7 +182,7 @@
    someone noticed it. They are covered by the rule above — that is the whole point
    of it, and the reason this is a comment instead of fifty selectors.
 
-   Monaco is the one surface it cannot reach: it paints its scrollbars itself
+   Monaco is a surface it cannot reach: it paints its scrollbars itself
    inside `.monaco-scrollable-element`, so it takes the palette directly. */
 .monaco-scrollable-element > .scrollbar > .slider {
   background: var(--border);
