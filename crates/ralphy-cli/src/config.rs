@@ -170,7 +170,7 @@ console name as the session name, such as wb-fincal-1. Other Claude sessions \
 use that name to send it messages. When off, Claude picks the name. \
 claude.console_classic_screen=true starts a Claude console in the workbench in \
 Claude's classic view, so the conversation stays in the console's text, with a \
-scrollbar. When off, Claude chooses its view. \
+scrollbar. When off, Claude follows its own settings. \
 gemini.plan_model and gemini.exec_model set Gemini's model for each phase; \
 without them, Gemini makes one extra, billed call per turn to choose a model.)";
 

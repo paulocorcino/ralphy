@@ -49,8 +49,9 @@ fn set_refuses_a_console_name_that_is_not_a_bool() {
     assert!(!claude.console_name);
 }
 
-/// `claude.console_classic_screen` takes only `true` or `false`, and a `true`
-/// lands in the field the daemon's launch path reads.
+/// `claude.console_classic_screen` takes only `true` or `false`, a `true`
+/// lands in the field the daemon's launch path reads and in the JSON view the
+/// Settings dialog reads back, and `unset` turns it off again.
 #[test]
 fn set_writes_the_classic_screen_opt_in_as_a_bool() {
     let (ws, _dir) = workspace();
@@ -66,4 +67,20 @@ fn set_writes_the_classic_screen_opt_in_as_a_bool() {
         .unwrap();
     assert!(claude.console_classic_screen);
     assert!(!claude.console_name, "the other opt-in stays off");
+    assert_eq!(
+        config_json(&ws).unwrap()["claude.console_classic_screen"],
+        serde_json::json!(true),
+        "the dialog reads the opt-in back from the JSON view"
+    );
+
+    unset(&ws, "claude.console_classic_screen").unwrap();
+    let claude: ClaudeSettings = Settings::load(&ws)
+        .unwrap()
+        .agent_settings(ClaudeSettings::SECTION)
+        .unwrap();
+    assert!(!claude.console_classic_screen, "unset turns the opt-in off");
+    assert_eq!(
+        config_json(&ws).unwrap()["claude.console_classic_screen"],
+        serde_json::json!(false)
+    );
 }

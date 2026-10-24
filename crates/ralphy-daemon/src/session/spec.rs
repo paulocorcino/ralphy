@@ -386,7 +386,7 @@ pub fn claude_console_named(repo_root: &Path) -> bool {
 /// with the same reparse and the same invariant as [`claude_console_named`].
 /// `the_classic_screen_key_matches_the_adapters_own_schema` reds if the
 /// adapter renames the key.
-pub fn claude_console_classic_screen(repo_root: &Path) -> bool {
+fn claude_console_classic_screen(repo_root: &Path) -> bool {
     claude_opt_in(repo_root, "console_classic_screen")
 }
 

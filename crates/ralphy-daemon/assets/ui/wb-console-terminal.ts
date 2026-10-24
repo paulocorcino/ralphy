@@ -69,7 +69,12 @@ const TERMINAL_THEME = {
 // pinned against the vendored file in `served_vendor.rs`.
 const SCROLLBAR_VISIBLE = 3;
 function showScrollbarWhileNeeded(term: XtermTerminal) {
-  term._core?._viewport?._scrollableElement?.updateOptions({ vertical: SCROLLBAR_VISIBLE });
+  const scrollable = term._core?._viewport?._scrollableElement;
+  if (!scrollable) {
+    console.warn("console scrollbar: xterm has no scrollable element at the expected path");
+    return;
+  }
+  scrollable.updateOptions({ vertical: SCROLLBAR_VISIBLE });
 }
 
 // What the terminal reads from the console, and nothing else.

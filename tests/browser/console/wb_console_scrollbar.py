@@ -11,10 +11,13 @@ One Playwright pass over a REAL daemon on a scratch `RALPHY_DAEMON_DIR`, so the
 operator's own desk and login policy are untouched. PORT 7600. The daemon and
 fixture helpers are `wb_columns_473.py`'s. The desk holds one plain console.
 
-S1  with more text than the window and the mouse away, the bar is shown
-S2  it is still shown well after the fade time
-S3  on the alternate screen (nothing to scroll) the bar is hidden
-S4  back on the normal screen the bar is shown again
+S1  right after the write the bar is shown (the scroll alone shows it,
+    so this step holds with or without the fix)
+S2  with the mouse away, it is still shown well after the fade time: the
+    step that fails without the fix
+S3  on the alternate screen (nothing to scroll) the bar is hidden; this
+    guards against a fix that shows the bar always
+S4  back on the normal screen, and past the fade time, the bar is shown
 
 The daemon is stopped by its own subprocess handle, NEVER by name (`ralphy.exe`
 doubles as the orchestrator on this host).
@@ -105,10 +108,10 @@ def main():
             # S1-S2 -------------------------------------------------------------
             lines = "".join(f"line {i}\r\n" for i in range(400))
             page.evaluate(WRITE, lines)
-            # Far from the console: the bar must not need the mouse.
+            # Far from the console, so only the fix can keep the bar shown.
             page.mouse.move(VIEW["width"] - 5, VIEW["height"] - 5)
             page.wait_for_timeout(300)
-            check("S1 with text to scroll and the mouse away, the bar is shown", shown(page.evaluate(BAR)),
+            check("S1 right after the write the bar is shown", shown(page.evaluate(BAR)),
                   str(page.evaluate(BAR)))
             page.wait_for_timeout(PAST_FADE_MS)
             check("S2 the bar is still shown after the fade time", shown(page.evaluate(BAR)),
@@ -117,13 +120,13 @@ def main():
             # S3 ---------------------------------------------------------------
             page.evaluate(WRITE, "\x1b[?1049h")
             page.wait_for_timeout(300)
-            check("S3 on the alternate screen the bar is hidden", hidden(page.evaluate(BAR)),
+            check("S3 on the alternate screen the bar is hidden, not forced on", hidden(page.evaluate(BAR)),
                   str(page.evaluate(BAR)))
 
             # S4 ---------------------------------------------------------------
             page.evaluate(WRITE, "\x1b[?1049l")
-            page.wait_for_timeout(300)
-            check("S4 back on the normal screen the bar is shown", shown(page.evaluate(BAR)),
+            page.wait_for_timeout(PAST_FADE_MS)
+            check("S4 back on the normal screen, past the fade time, the bar is shown", shown(page.evaluate(BAR)),
                   str(page.evaluate(BAR)))
 
             check("no page errors", not errors, str(errors[:3]))

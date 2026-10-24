@@ -375,7 +375,7 @@ export const WB_SETTINGS: Section[] = [
         label: "Keep Claude's text in the console",
         type: "toggle",
         default: false,
-        help: "Start Claude in its classic view. The conversation stays in the console's text, with a scrollbar. When off, Claude chooses its view; its full-screen view scrolls by itself and shows no scrollbar. Applies to consoles opened after the change.",
+        help: "Start Claude in its classic view. The conversation stays in the console's text, with a scrollbar. When off, Claude follows its own settings; its full-screen view scrolls by itself and shows no scrollbar. Applies to consoles opened after the change.",
       },
     ],
   },
