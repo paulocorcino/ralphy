@@ -252,6 +252,41 @@ A **workbench session** that runs a shell, or one command line the operator
 typed, instead of an agent CLI.
 _Avoid_: remote shell.
 
+**Idle (console)**:
+The condition of a **workbench session** whose processes showed no activity
+for the whole window and that no blocker holds. It is what the daemon
+observes, not a state. (ADR-0083)
+_Avoid_: inactive (that is the state that follows), dormant (the page's
+renderer), asleep.
+
+**Suspended**:
+The state of a **workbench session** whose processes the daemon stopped and
+whose memory it trimmed. A **reactivate** resumes it in under a second.
+(ADR-0083)
+_Avoid_: frozen (see **Locked**), paused, asleep.
+
+**Hibernated**:
+The state of a **workbench session** whose processes the daemon ended, keeping
+its screen and the agent's session id. A **reactivate** relaunches the agent
+on the same conversation. (ADR-0083)
+_Avoid_: closed, ended, placeholder (a window with no session to bring back).
+
+**Inactive console**:
+A console that is **Suspended** or **Hibernated**. (ADR-0083)
+_Avoid_: idle (the condition, not the state), sleeping.
+
+**Reactivate**:
+To bring an **inactive console** back: a click in it, a key from the writer,
+or `ralphy console reactivate`. (ADR-0083)
+_Avoid_: wake (reserved for a sleeping **peer**), resume (see **Resume**),
+restore (the desk history), thaw.
+
+**Always on**:
+A per-console setting that keeps a console from ever becoming **Suspended** or
+**Hibernated**. (ADR-0083)
+_Avoid_: pinned (the stage's origin is what is pinned), keep alive, locked
+(see **Locked**).
+
 **Writer slot**:
 The right to type into a **workbench session**, held by one browser client at
 a time. The other attached clients are **watchers**: they see the same output

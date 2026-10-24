@@ -6,6 +6,8 @@ Amended by ADR-0076 (proposed: a fence is also a squad, and the daemon owns whic
 
 Amended by ADR-0079 (proposed: one size per session, the daemon keeps the screen, and a reattach is ordered and resumable).
 
+Amended by ADR-0083 (proposed: an idle console is suspended, then hibernated, and the daemon relaunches a hibernated console).
+
 The **Consoles tab** hosts floating console windows over a dotted floor
 (ADR-0037), and their placement is daemon state (ADR-0050). Both ADRs assume the
 stage *is* the visible box: a rect is absolute pixels inside `#workspace`, and
